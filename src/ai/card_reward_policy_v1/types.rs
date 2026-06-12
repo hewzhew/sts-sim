@@ -216,7 +216,7 @@ pub struct CardRewardCandidateImpactV1 {
     pub energy_delta: i32,
     pub scaling_signals: Vec<CardRewardScalingSignalV1>,
     pub dependency_assessments: Vec<CardRewardDependencyAssessmentV1>,
-    pub certification_blockers: Vec<CardRewardEvidenceGapV1>,
+    pub approval_blockers: Vec<CardRewardEvidenceGapV1>,
     pub evidence_notes: Vec<String>,
 }
 
@@ -270,6 +270,7 @@ pub enum CardRewardEvidenceGapV1 {
     ValueMarginTooSmall,
     ValueUncertaintyTooHigh,
     UnresolvedCandidateDependencies,
+    StrategicCompilerRejectedCandidate,
     MissingStrategicPlanEvidence,
     UnsatisfiedRouteUpgradeEvidence,
     UnsatisfiedStrengthScalingEvidence,
@@ -281,7 +282,7 @@ pub enum CardRewardEvidenceGapV1 {
     RandomOutcomeRequiresPolicy,
     ConditionalPlayabilityRequiresPolicy,
     SingingBowlAddsMaxHpChoice,
-    NoAutoPickCertificate,
+    NoDecisionApproval,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -408,7 +409,7 @@ pub struct CardRewardValueComponentV1 {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CardRewardPickCertificateV1 {
+pub struct CardRewardDecisionApprovalV1 {
     pub index: usize,
     pub card: CardId,
     pub confidence: f32,
@@ -439,7 +440,8 @@ pub struct CardRewardDecisionV1 {
     pub value_arbitration: CardRewardEstimatorArbitrationV1,
     pub autopilot_gate: CardRewardAutopilotGateReportV1,
     pub evidence_gaps: Vec<CardRewardEvidenceGapV1>,
-    pub pick_certificate: Option<CardRewardPickCertificateV1>,
+    pub decision_approval: Option<CardRewardDecisionApprovalV1>,
+    pub strategic_trace: crate::ai::strategic::StrategicDecisionTrace,
     pub label_role: &'static str,
 }
 

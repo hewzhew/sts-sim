@@ -17,6 +17,7 @@ pub(super) struct CampfireBranchOption {
     pub(super) representative_count: usize,
     pub(super) suppressed_count: usize,
     semantic_class: String,
+    boss_relevant: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +53,7 @@ pub(super) fn campfire_branch_options(
                 priority: metadata.priority,
                 representative_count: 1,
                 suppressed_count: 0,
+                boss_relevant: metadata.boss_relevant,
             })
         })
         .collect::<Vec<_>>();
@@ -76,6 +78,10 @@ fn select_campfire_branch_options_with_limit(
     let capped_limit = limit.min(options.len());
     if options.len() <= capped_limit {
         return CampfireBranchOptionSelection { options };
+    }
+
+    if options.iter().any(|option| option.boss_relevant) {
+        return select_boss_pressure_campfire_options(options, capped_limit);
     }
 
     let mut annotated = options
@@ -107,6 +113,54 @@ fn select_campfire_branch_options_with_limit(
         }
         if !selected.contains(&index) {
             selected.push(index);
+        }
+    }
+
+    selected.sort_unstable();
+    let selected_indices = selected.iter().copied().collect::<BTreeSet<_>>();
+    let options = options
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, option)| selected_indices.contains(&index).then_some(option))
+        .collect();
+    CampfireBranchOptionSelection { options }
+}
+
+fn select_boss_pressure_campfire_options(
+    options: Vec<CampfireBranchOption>,
+    limit: usize,
+) -> CampfireBranchOptionSelection {
+    let mut annotated = options
+        .iter()
+        .enumerate()
+        .map(|(index, option)| (index, campfire_option_priority(option)))
+        .collect::<Vec<_>>();
+    annotated.sort_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
+
+    let mut selected = Vec::new();
+    if let Some((rest_index, _)) = annotated
+        .iter()
+        .find(|(index, _)| options[*index].semantic_class == "rest:wounded")
+    {
+        selected.push(*rest_index);
+    }
+
+    for (index, _) in &annotated {
+        if selected.len() >= limit {
+            break;
+        }
+        let option = &options[*index];
+        if option.boss_relevant && !selected.contains(index) {
+            selected.push(*index);
+        }
+    }
+
+    for (index, _) in &annotated {
+        if selected.len() >= limit {
+            break;
+        }
+        if !selected.contains(index) && options[*index].semantic_class != "rest:full_hp" {
+            selected.push(*index);
         }
     }
 
@@ -157,6 +211,7 @@ struct CampfireOptionMetadata {
     semantic_class: String,
     equivalence_key: String,
     priority: i32,
+    boss_relevant: bool,
 }
 
 fn campfire_option_metadata(
@@ -185,13 +240,21 @@ fn campfire_option_metadata(
                 card,
                 &session.run_state,
             );
+            let boss_strategy_tag =
+                crate::ai::campfire_policy_v1::campfire_smith_upgrade_strategy_tag_v1(
+                    card,
+                    &session.run_state,
+                );
             CampfireOptionMetadata {
                 card: Some(card.id),
                 upgrades: Some(card.upgrades),
                 effect_kind: "upgrade_card".to_string(),
-                semantic_class: format!("smith:{class_key}"),
+                semantic_class: boss_strategy_tag
+                    .map(|tag| format!("smith:{tag}"))
+                    .unwrap_or_else(|| format!("smith:{class_key}")),
                 equivalence_key: format!("smith:{}", super::card_stat_identity_key(card)),
                 priority,
+                boss_relevant: boss_strategy_tag.is_some(),
             }
         }
         CampfireChoice::Dig => campfire_metadata_without_card("dig", "dig"),
@@ -207,6 +270,7 @@ fn campfire_option_metadata(
                     .map(|card| format!("toke:{}", super::card_stat_identity_key(card)))
                     .unwrap_or_else(|| "toke:unknown".to_string()),
                 priority: 200,
+                boss_relevant: false,
             }
         }
         CampfireChoice::Recall => campfire_metadata_without_card("recall", "recall"),
@@ -224,6 +288,7 @@ fn campfire_metadata_without_card(
         semantic_class: semantic_class.to_string(),
         equivalence_key: semantic_class.to_string(),
         priority: 0,
+        boss_relevant: false,
     }
 }
 

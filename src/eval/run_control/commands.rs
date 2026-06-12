@@ -79,6 +79,7 @@ pub enum RunControlCommand {
         target: RewardAutomationTarget,
         enabled: bool,
     },
+    BranchSkipCardReward(usize),
     RecordedCardRewardPick(usize),
     CardIndex(usize),
     RelicIndex(usize),

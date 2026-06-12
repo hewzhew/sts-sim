@@ -14,9 +14,9 @@ use crate::eval::branch_experiment_boundary::{
     CardRewardPortfolioContext,
 };
 use crate::eval::branch_experiment_retention::{
-    default_branch_retention_decision_v1, select_branch_retention_portfolio_v1,
-    BranchRetentionCandidateInputV1, BranchRetentionConfigV1, BranchRetentionDecisionV1,
-    BranchRetentionSlotV1,
+    default_branch_retention_decision_v1, effective_branch_retention_rank_key_v1,
+    select_branch_retention_portfolio_v1, BranchRetentionCandidateInputV1, BranchRetentionConfigV1,
+    BranchRetentionDecisionV1, BranchRetentionSlotV1,
 };
 use crate::eval::branch_experiment_trajectory::{
     summarize_branch_trajectory_v1, BranchTrajectorySignatureV1,
@@ -392,12 +392,14 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
 
                 explored_branch_points = explored_branch_points.saturating_add(1);
                 expanded_any = true;
+                let boundary_title = current_boundary_title(&branch.session);
                 for option in boundary.options {
                     next.push(expand_branch_choice(
                         &branch,
                         BranchChoiceDraft {
                             depth,
                             kind: option.kind,
+                            boundary_title: boundary_title.clone(),
                             label: option.label,
                             command: option.command,
                             card: option.card,
@@ -455,7 +457,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
             let summary = run_summary(&branch.session, &branch.choices);
             let frontier = branch_frontier(&branch.session);
             BranchExperimentBranchReportV1 {
-                rank_key: branch_rank_key(&branch),
+                rank_key: branch_effective_rank_key(&branch),
                 retention: branch.retention,
                 branch_id: branch.id,
                 status: branch.status,
@@ -711,6 +713,7 @@ fn experiment_branch_options_available(session: &RunControlSession) -> bool {
 struct BranchChoiceDraft {
     depth: usize,
     kind: &'static str,
+    boundary_title: String,
     label: String,
     command: String,
     card: Option<CardId>,
@@ -736,6 +739,7 @@ fn expand_branch_choice(
     child.choices.push(BranchExperimentChoiceV1 {
         depth: draft.depth,
         kind: draft.kind.to_string(),
+        boundary_title: draft.boundary_title,
         card: draft.card,
         upgrades: draft.upgrades,
         selected_cards: draft.selected_cards,
@@ -805,27 +809,7 @@ fn apply_branch_retention(
     let candidates = branches
         .iter()
         .enumerate()
-        .map(|(index, branch)| {
-            let choice_profiles = branch_choice_profiles(branch);
-            let choice_effect_keys = branch_choice_effect_keys(branch);
-            let frontier = branch_frontier(&branch.session);
-            BranchRetentionCandidateInputV1 {
-                index,
-                act: branch.session.run_state.act_num,
-                floor: branch.session.run_state.floor_num,
-                frontier_key: frontier.key,
-                rank_key: branch_rank_key(branch),
-                hp: branch.session.run_state.current_hp,
-                max_hp: branch.session.run_state.max_hp,
-                gold: branch.session.run_state.gold,
-                deck_count: branch.session.run_state.master_deck.len(),
-                strategy_formation: Some(strategy_formation_summary(&branch.session)),
-                trajectory: summarize_branch_trajectory_v1(&choice_profiles),
-                choice_profiles,
-                choice_effect_keys,
-                lineage_flags: frontier.lineage.sequence_breakers_present,
-            }
-        })
+        .map(|(index, branch)| branch_retention_candidate_input(index, branch))
         .collect::<Vec<_>>();
     let selection = select_branch_retention_portfolio_v1(
         &candidates,
@@ -867,7 +851,7 @@ fn apply_branch_retention(
             .cmp(&retention_report_slot_priority(retention_report_slot(
                 right.retention.selected_by_slot,
             )))
-            .then_with(|| branch_rank_key(right).cmp(&branch_rank_key(left)))
+            .then_with(|| branch_effective_rank_key(right).cmp(&branch_effective_rank_key(left)))
             .then_with(|| left.id.cmp(&right.id))
     });
 
@@ -879,6 +863,39 @@ fn apply_branch_retention(
         pruned_first_pick_counts,
         pruned_branch_summary,
     }
+}
+
+fn branch_retention_candidate_input(
+    index: usize,
+    branch: &BranchWork,
+) -> BranchRetentionCandidateInputV1 {
+    let choice_profiles = branch_choice_profiles(branch);
+    let choice_effect_keys = branch_choice_effect_keys(branch);
+    let frontier = branch_frontier(&branch.session);
+    BranchRetentionCandidateInputV1 {
+        index,
+        act: branch.session.run_state.act_num,
+        floor: branch.session.run_state.floor_num,
+        frontier_key: frontier.key,
+        rank_key: branch_rank_key(branch),
+        hp: branch.session.run_state.current_hp,
+        max_hp: branch.session.run_state.max_hp,
+        gold: branch.session.run_state.gold,
+        deck_count: branch.session.run_state.master_deck.len(),
+        strategy_formation: Some(strategy_formation_summary(&branch.session)),
+        trajectory: summarize_branch_trajectory_v1(&choice_profiles),
+        choice_profiles,
+        choice_effect_keys,
+        lineage_flags: frontier.lineage.sequence_breakers_present,
+        startup: crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(
+            &branch.session.run_state,
+        ),
+    }
+}
+
+fn branch_effective_rank_key(branch: &BranchWork) -> i32 {
+    let candidate = branch_retention_candidate_input(0, branch);
+    effective_branch_retention_rank_key_v1(&candidate)
 }
 
 fn pruned_first_pick_counts_for_selection(

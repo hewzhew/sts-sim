@@ -1,11 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ai::card_admission_policy_v1::{
-    card_admission_pressure_v1, evaluate_card_profile_admission_v1, CardAdmissionContextV1,
-    CardAdmissionPressureV1, CardAdmissionSourceV1, CardAdmissionVerdictV1,
+use crate::ai::card_component_marginal_value_v1::{
+    evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
+    CardComponentMarginalVerdictV1,
 };
 use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
+use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
 use crate::ai::noncombat_strategy_v1::StrategyFormationSummaryV2;
+use crate::ai::strategic::{BranchSignature, RetentionBucket};
 use crate::eval::branch_experiment_trajectory::{
     branch_trajectory_family_key_v1, BranchTrajectorySignatureV1,
 };
@@ -18,6 +20,7 @@ mod effect_coverage;
 
 use context_packet::{
     branch_retention_context_packet_v2, context_score, BranchRetentionContextKeyV2,
+    BranchRetentionContextPacketV2,
 };
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -85,6 +88,7 @@ pub struct BranchRetentionCandidateInputV1 {
     pub choice_profiles: Vec<CardRewardSemanticProfileV1>,
     pub choice_effect_keys: Vec<String>,
     pub lineage_flags: Vec<String>,
+    pub startup: DeckStartupProfileV1,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -102,6 +106,8 @@ pub struct BranchRetentionDecisionV1 {
     pub selected_by_slot: Option<BranchRetentionSlotV1>,
     pub slots: Vec<BranchRetentionSlotV1>,
     pub reasons: Vec<String>,
+    #[serde(default)]
+    pub strategic_signature: BranchSignature,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -128,6 +134,7 @@ pub fn default_branch_retention_decision_v1() -> BranchRetentionDecisionV1 {
         selected_by_slot: Some(BranchRetentionSlotV1::Diversity),
         slots: vec![BranchRetentionSlotV1::Diversity],
         reasons: vec!["default branch representative".to_string()],
+        strategic_signature: BranchSignature::default(),
     }
 }
 
@@ -228,43 +235,62 @@ pub fn decide_branch_retention_v1(
     let mut slots = Vec::new();
     let mut reasons = Vec::new();
     let context = branch_retention_context_packet_v2(candidate);
+    let component_context = component_marginal_context_for_retention_candidate(candidate);
+    let startup_rejected = added_cards_have_startup_liability(candidate);
+    let component_negative =
+        added_cards_have_negative_component_margin(candidate, &component_context);
 
-    if has_package_candidate(&candidate.choice_profiles) {
+    if has_package_candidate(&candidate.choice_profiles) && !startup_rejected && !component_negative
+    {
         slots.push(BranchRetentionSlotV1::Package);
         reasons.push("contains a semantic package payoff candidate".to_string());
     }
-    if complete_package_count(&candidate.trajectory) > 0 {
+    if complete_package_count(&candidate.trajectory) > 0 && !startup_rejected && !component_negative
+    {
         slots.push(BranchRetentionSlotV1::Package);
         reasons.push("contains both setup and payoff for a trajectory package".to_string());
     }
-    if has_engine_setup(&candidate.trajectory) {
+    if has_engine_setup(&candidate.trajectory) && !startup_rejected && !component_negative {
         slots.push(BranchRetentionSlotV1::EngineSetup);
         reasons.push("contains a long-horizon engine or package setup seed".to_string());
     }
-    if context
-        .keys
-        .contains(&BranchRetentionContextKeyV2::ClosesPackage)
-        || context
+    if !startup_rejected
+        && !component_negative
+        && (context
             .keys
-            .contains(&BranchRetentionContextKeyV2::SupportsCommittedPackage)
+            .contains(&BranchRetentionContextKeyV2::ClosesPackage)
+            || context
+                .keys
+                .contains(&BranchRetentionContextKeyV2::SupportsCommittedPackage))
     {
         slots.push(BranchRetentionSlotV1::Package);
         reasons.push("context: closes or supports an active package".to_string());
     }
-    if context
-        .keys
-        .contains(&BranchRetentionContextKeyV2::OpensPackageSetup)
+    if !startup_rejected
+        && !component_negative
+        && context
+            .keys
+            .contains(&BranchRetentionContextKeyV2::OpensPackageSetup)
     {
         slots.push(BranchRetentionSlotV1::EngineSetup);
         reasons.push("context: opens a setup path worth carrying forward".to_string());
     }
-    if candidate
-        .choice_profiles
-        .iter()
-        .any(|profile| profile_has_any_role(profile, SCALING_ROLES))
+    if !startup_rejected
+        && !component_negative
+        && candidate
+            .choice_profiles
+            .iter()
+            .any(|profile| profile_has_any_role(profile, SCALING_ROLES))
     {
         slots.push(BranchRetentionSlotV1::Scaling);
         reasons.push("contains long-run scaling or engine setup".to_string());
+    }
+    if startup_rejected {
+        reasons.push("startup profile rejects at least one added card".to_string());
+    }
+    if component_negative {
+        reasons
+            .push("component marginal value is negative for at least one added card".to_string());
     }
     if candidate
         .choice_profiles
@@ -285,26 +311,29 @@ pub fn decide_branch_retention_v1(
         slots.push(BranchRetentionSlotV1::Survival);
         reasons.push("context: patches low-hp or route pressure".to_string());
     }
-    let admission_context = card_admission_context_for_retention_candidate(candidate);
-    let deck_bloat_pressure =
-        card_admission_pressure_v1(&admission_context) >= CardAdmissionPressureV1::High;
+    let deck_bloat_pressure = deck_bloat_pressure_high(candidate);
     let immediate_safety_patch = context
         .keys
         .contains(&BranchRetentionContextKeyV2::ImmediateSafetyPatch);
-    let rejected_by_admission = added_cards_rejected_by_admission(candidate, &admission_context);
 
     if candidate.choice_profiles.iter().any(|profile| {
         profile
             .roles
             .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
-    }) && (!rejected_by_admission || immediate_safety_patch)
-    {
+    }) && frontload_lane_allowed(
+        candidate,
+        &context,
+        component_negative,
+        immediate_safety_patch,
+    ) {
         slots.push(BranchRetentionSlotV1::Frontload);
         reasons.push("contains immediate combat output".to_string());
     }
-    if context
-        .keys
-        .contains(&BranchRetentionContextKeyV2::MatchesFormationFrontloadNeed)
+    if !startup_rejected
+        && !component_negative
+        && context
+            .keys
+            .contains(&BranchRetentionContextKeyV2::MatchesFormationFrontloadNeed)
     {
         slots.push(BranchRetentionSlotV1::Frontload);
         reasons.push("context: matches current frontload need".to_string());
@@ -316,16 +345,20 @@ pub fn decide_branch_retention_v1(
         slots.push(BranchRetentionSlotV1::DefenseEngine);
         reasons.push("context: matches current block or mitigation need".to_string());
     }
-    if context
-        .keys
-        .contains(&BranchRetentionContextKeyV2::MatchesFormationScalingNeed)
+    if !startup_rejected
+        && !component_negative
+        && context
+            .keys
+            .contains(&BranchRetentionContextKeyV2::MatchesFormationScalingNeed)
     {
         slots.push(BranchRetentionSlotV1::Scaling);
         reasons.push("context: matches current scaling need".to_string());
     }
-    if context
-        .keys
-        .contains(&BranchRetentionContextKeyV2::MatchesFormationDrawEnergyNeed)
+    if !startup_rejected
+        && !component_negative
+        && context
+            .keys
+            .contains(&BranchRetentionContextKeyV2::MatchesFormationDrawEnergyNeed)
     {
         slots.push(BranchRetentionSlotV1::EngineSetup);
         reasons.push("context: matches current draw/energy need".to_string());
@@ -363,9 +396,159 @@ pub fn decide_branch_retention_v1(
     BranchRetentionDecisionV1 {
         primary_slot,
         selected_by_slot: None,
+        strategic_signature: strategic_signature_for_retention_candidate(
+            candidate,
+            &slots,
+            startup_rejected,
+            component_negative,
+        ),
         slots,
         reasons,
     }
+}
+
+fn strategic_signature_for_retention_candidate(
+    candidate: &BranchRetentionCandidateInputV1,
+    slots: &[BranchRetentionSlotV1],
+    startup_rejected: bool,
+    component_negative: bool,
+) -> BranchSignature {
+    let mut buckets = Vec::new();
+    if has_any_slot(
+        slots,
+        &[
+            BranchRetentionSlotV1::Survival,
+            BranchRetentionSlotV1::Frontload,
+        ],
+    ) {
+        push_retention_bucket(&mut buckets, RetentionBucket::BestImmediateSurvival);
+    }
+    if has_any_slot(
+        slots,
+        &[
+            BranchRetentionSlotV1::DefenseEngine,
+            BranchRetentionSlotV1::Scaling,
+        ],
+    ) {
+        push_retention_bucket(&mut buckets, RetentionBucket::BestBossPrepared);
+    }
+    if slots.contains(&BranchRetentionSlotV1::CleanDeck) {
+        push_retention_bucket(&mut buckets, RetentionBucket::BestCleanDeck);
+    }
+    if has_any_slot(
+        slots,
+        &[
+            BranchRetentionSlotV1::Package,
+            BranchRetentionSlotV1::EngineSetup,
+            BranchRetentionSlotV1::Scaling,
+        ],
+    ) {
+        push_retention_bucket(&mut buckets, RetentionBucket::BestCoreEngine);
+    }
+    if has_resource_conversion_signal(candidate) {
+        push_retention_bucket(&mut buckets, RetentionBucket::BestResourceConverted);
+    }
+    if slots.contains(&BranchRetentionSlotV1::Diversity) {
+        push_retention_bucket(&mut buckets, RetentionBucket::BestHighVariance);
+    }
+
+    let defense_signals =
+        count_profiles_with_any_role(&candidate.choice_profiles, DEFENSE_ENGINE_ROLES)
+            + i32::from(candidate.trajectory.defense_picks > 0);
+    let scaling_signals = count_profiles_with_any_role(&candidate.choice_profiles, SCALING_ROLES)
+        + i32::from(candidate.trajectory.scaling_picks > 0)
+        + complete_package_count(&candidate.trajectory);
+    let engine_signals = candidate.trajectory.setup_keys.len() as i32
+        + i32::from(candidate.trajectory.engine_generator_picks > 0)
+        + i32::from(candidate.trajectory.draw_energy_picks > 0)
+        + complete_package_count(&candidate.trajectory);
+    let transition_attacks = transition_attack_count(&candidate.choice_profiles);
+    let hp_is_safe = candidate.max_hp > 0 && candidate.hp * 100 >= candidate.max_hp * 60;
+    let deck_bloat = candidate.deck_count.saturating_sub(24) as i32;
+    let setup_debt_count = startup_debt_count(candidate, startup_rejected, component_negative);
+    let package_coherence_count = complete_package_count(&candidate.trajectory)
+        + i32::from(slots.contains(&BranchRetentionSlotV1::Package))
+        + i32::from(
+            candidate
+                .strategy_formation
+                .as_ref()
+                .is_some_and(|formation| !formation.strengths.is_empty()),
+        );
+
+    BranchSignature {
+        boss_readiness: bounded_signal(
+            defense_signals + scaling_signals + i32::from(hp_is_safe),
+            5,
+        ),
+        clean_score: if slots.contains(&BranchRetentionSlotV1::CleanDeck) {
+            1.0
+        } else if transition_attacks <= 1 && !component_negative {
+            0.5
+        } else {
+            0.0
+        },
+        engine_score: bounded_signal(engine_signals, 4),
+        cycle_debt: bounded_signal(deck_bloat / 4 + transition_attacks, 5),
+        setup_debt: bounded_signal(setup_debt_count, 5),
+        economy_conversion: if has_resource_conversion_signal(candidate) {
+            1.0
+        } else {
+            0.0
+        },
+        package_coherence: bounded_signal(package_coherence_count, 3),
+        buckets,
+    }
+}
+
+fn has_any_slot(slots: &[BranchRetentionSlotV1], targets: &[BranchRetentionSlotV1]) -> bool {
+    targets.iter().any(|target| slots.contains(target))
+}
+
+fn push_retention_bucket(buckets: &mut Vec<RetentionBucket>, bucket: RetentionBucket) {
+    if !buckets.contains(&bucket) {
+        buckets.push(bucket);
+    }
+}
+
+fn bounded_signal(value: i32, full_scale: i32) -> f32 {
+    if full_scale <= 0 {
+        return 0.0;
+    }
+    (value.max(0) as f32 / full_scale as f32).min(1.0)
+}
+
+fn startup_debt_count(
+    candidate: &BranchRetentionCandidateInputV1,
+    startup_rejected: bool,
+    component_negative: bool,
+) -> i32 {
+    i32::from(startup_rejected)
+        + i32::from(component_negative)
+        + i32::from(candidate.startup.has_setup_debt_high_payment_low)
+        + i32::from(candidate.startup.has_fnp_duplicate_without_exhaust_engine)
+        + i32::from(candidate.startup.has_dual_wield_without_target)
+        + i32::from(candidate.startup.has_anger_duplicate_without_digest)
+        + i32::from(candidate.startup.has_strength_payoff_without_strength)
+        + i32::from(candidate.startup.has_rupture_without_self_damage)
+        + i32::from(candidate.startup.has_armaments_unupgraded_duplicate)
+        + i32::from(candidate.startup.has_pyramid_unupgraded_apparition)
+}
+
+fn has_resource_conversion_signal(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    candidate
+        .choice_effect_keys
+        .iter()
+        .chain(candidate.lineage_flags.iter())
+        .any(|key| {
+            let key = key.to_ascii_lowercase();
+            key.contains("shop")
+                || key.contains("buy")
+                || key.contains("purchase")
+                || key.contains("gold")
+                || key.contains("remove")
+                || key.contains("potion")
+                || key.contains("relic")
+        })
 }
 
 fn select_positions_for_slots(
@@ -642,9 +825,8 @@ fn compare_rank(
 ) -> std::cmp::Ordering {
     let left_takes_card = !is_plain_card_reward_skip(&candidates[left]);
     let right_takes_card = !is_plain_card_reward_skip(&candidates[right]);
-    candidates[left]
-        .rank_key
-        .cmp(&candidates[right].rank_key)
+    effective_branch_retention_rank_key_v1(&candidates[left])
+        .cmp(&effective_branch_retention_rank_key_v1(&candidates[right]))
         .then_with(|| candidates[left].hp.cmp(&candidates[right].hp))
         .then_with(|| candidates[left].gold.cmp(&candidates[right].gold))
         .then_with(|| left_takes_card.cmp(&right_takes_card))
@@ -654,6 +836,19 @@ fn compare_rank(
                 .cmp(&candidates[left].deck_count)
         })
         .then_with(|| candidates[right].index.cmp(&candidates[left].index))
+}
+
+pub fn effective_branch_retention_rank_key_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
+    let mut rank = candidate.rank_key;
+    let component_context = component_marginal_context_for_retention_candidate(candidate);
+    if added_cards_have_startup_liability(candidate) {
+        rank = rank.saturating_sub(50_000);
+    }
+    rank = rank.saturating_add(component_margin_rank_adjustment(
+        candidate,
+        &component_context,
+    ));
+    rank
 }
 
 fn compare_slot_score(
@@ -1219,9 +1414,9 @@ fn slot_score(candidate: &BranchRetentionCandidateInputV1, slot: BranchRetention
     }
 }
 
-fn card_admission_context_for_retention_candidate(
+fn component_marginal_context_for_retention_candidate(
     candidate: &BranchRetentionCandidateInputV1,
-) -> CardAdmissionContextV1 {
+) -> CardComponentMarginalContextV1 {
     let frontload_jobs = count_profiles_with_any_role(
         &candidate.choice_profiles,
         &[
@@ -1237,17 +1432,16 @@ fn card_admission_context_for_retention_candidate(
             CardRewardSemanticRoleV1::EnemyStrengthDown,
         ],
     ) as usize;
-    CardAdmissionContextV1 {
+    CardComponentMarginalContextV1 {
         act: candidate.act,
         floor: candidate.floor,
         boss: None,
         hp: candidate.hp,
         max_hp: candidate.max_hp,
         deck_size: candidate.deck_count,
-        powers: 0,
-        curses: 0,
-        draw_sources: 0,
-        exhaust_generators: 0,
+        powers: candidate.startup.setup_debt as usize,
+        draw_sources: candidate.startup.strong_draw_count as usize,
+        exhaust_generators: candidate.startup.exhaust_engine_count as usize,
         frontload_jobs,
         block_jobs,
         formation_needs: candidate
@@ -1255,19 +1449,113 @@ fn card_admission_context_for_retention_candidate(
             .as_ref()
             .map(|formation| formation.needs.clone())
             .unwrap_or_default(),
+        startup: candidate.startup.clone(),
     }
 }
 
-fn added_cards_rejected_by_admission(
+fn added_cards_have_startup_liability(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    if candidate.choice_profiles.is_empty() {
+        return false;
+    }
+    let risky_startup = candidate.startup.has_setup_debt_high_payment_low
+        || candidate.startup.has_fnp_duplicate_without_exhaust_engine
+        || candidate.startup.has_dual_wield_without_target
+        || candidate.startup.has_anger_duplicate_without_digest
+        || candidate.startup.has_strength_payoff_without_strength
+        || candidate.startup.has_rupture_without_self_damage
+        || candidate.startup.has_armaments_unupgraded_duplicate
+        || candidate.startup.has_pyramid_unupgraded_apparition;
+    let profile_requires_missing_startup = candidate.choice_profiles.iter().any(|profile| {
+        (profile
+            .roles
+            .contains(&CardRewardSemanticRoleV1::StrengthPayoff)
+            && candidate.startup.persistent_strength_source_count == 0)
+            || (profile
+                .roles
+                .contains(&CardRewardSemanticRoleV1::SelfDamagePayoff)
+                && candidate.startup.self_damage_source_count == 0)
+            || (profile
+                .roles
+                .contains(&CardRewardSemanticRoleV1::ExhaustPayoff)
+                && candidate.startup.exhaust_engine_count == 0)
+    });
+    profile_requires_missing_startup
+        || (risky_startup
+            && candidate
+                .trajectory
+                .engine_generator_picks
+                .saturating_add(candidate.trajectory.engine_payoff_picks)
+                > candidate.trajectory.draw_energy_picks)
+}
+
+fn frontload_lane_allowed(
     candidate: &BranchRetentionCandidateInputV1,
-    context: &CardAdmissionContextV1,
+    context: &BranchRetentionContextPacketV2,
+    component_negative: bool,
+    immediate_safety_patch: bool,
 ) -> bool {
-    !candidate.choice_profiles.is_empty()
-        && candidate.choice_profiles.iter().all(|profile| {
-            evaluate_card_profile_admission_v1(context, profile, CardAdmissionSourceV1::Reward)
-                .verdict
-                == CardAdmissionVerdictV1::Reject
+    if component_negative && !immediate_safety_patch {
+        return false;
+    }
+    if deck_bloat_pressure_high(candidate)
+        && !immediate_safety_patch
+        && !context
+            .keys
+            .contains(&BranchRetentionContextKeyV2::MatchesFormationFrontloadNeed)
+    {
+        return false;
+    }
+    true
+}
+
+fn added_cards_have_negative_component_margin(
+    candidate: &BranchRetentionCandidateInputV1,
+    context: &CardComponentMarginalContextV1,
+) -> bool {
+    candidate.choice_profiles.iter().any(|profile| {
+        let report = evaluate_card_component_marginal_value_v1(context, profile);
+        matches!(
+            report.verdict,
+            CardComponentMarginalVerdictV1::Reject | CardComponentMarginalVerdictV1::SkipPreferred
+        )
+    })
+}
+
+fn component_margin_rank_adjustment(
+    candidate: &BranchRetentionCandidateInputV1,
+    context: &CardComponentMarginalContextV1,
+) -> i32 {
+    candidate
+        .choice_profiles
+        .iter()
+        .map(|profile| {
+            let report = evaluate_card_component_marginal_value_v1(context, profile);
+            match report.verdict {
+                CardComponentMarginalVerdictV1::MustTake => 12_000,
+                CardComponentMarginalVerdictV1::StrongTake => 6_000,
+                CardComponentMarginalVerdictV1::ContextTake => 2_000,
+                CardComponentMarginalVerdictV1::Speculative => 0,
+                CardComponentMarginalVerdictV1::SkipPreferred => -8_000,
+                CardComponentMarginalVerdictV1::Reject => -20_000,
+            }
         })
+        .sum()
+}
+
+fn deck_bloat_pressure_high(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    candidate.deck_count >= 28
+        || candidate
+            .strategy_formation
+            .as_ref()
+            .is_some_and(|formation| {
+                formation
+                    .needs
+                    .iter()
+                    .any(|need| {
+                        *need
+                            == crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1::Consistency
+                    })
+            })
 }
 
 fn is_plain_card_reward_skip(candidate: &BranchRetentionCandidateInputV1) -> bool {

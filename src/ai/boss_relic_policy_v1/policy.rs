@@ -4,7 +4,7 @@ use crate::ai::noncombat_strategy_v1::{
 use crate::content::relics::RelicId;
 use crate::state::run::RunState;
 
-use super::certificates::pick_certificates;
+use super::approvals::pick_approvals;
 use super::types::{
     BossRelicCandidateEvidenceV1, BossRelicDecisionContextV1, BossRelicDecisionV1,
     BossRelicPolicyActionV1, BossRelicPolicyClassV1, BossRelicPolicyConfigV1,
@@ -30,20 +30,20 @@ pub fn plan_boss_relic_decision_v1(
     context: &BossRelicDecisionContextV1,
     config: &BossRelicPolicyConfigV1,
 ) -> BossRelicDecisionV1 {
-    let certificates = pick_certificates(context, config);
+    let approvals = pick_approvals(context, config);
 
-    let action = match certificates.as_slice() {
-        [certificate] => BossRelicPolicyActionV1::Pick {
-            index: certificate.index,
-            relic: certificate.relic,
-            confidence: certificate.confidence,
-            reason: certificate.reason.clone(),
+    let action = match approvals.as_slice() {
+        [approval] => BossRelicPolicyActionV1::Pick {
+            index: approval.index,
+            relic: approval.relic,
+            confidence: approval.confidence,
+            reason: approval.reason.clone(),
         },
         [] => BossRelicPolicyActionV1::Stop {
             reason: stop_reason(context),
         },
         _ => BossRelicPolicyActionV1::Stop {
-            reason: "boss relic policy stopped because multiple conservative certificates matched"
+            reason: "boss relic policy stopped because multiple conservative approvals matched"
                 .to_string(),
         },
     };
@@ -101,7 +101,7 @@ fn candidate_evidence(
             risks.push("high-impact boss relic requires deck-specific human judgment".to_string());
         }
         BossRelicPolicyClassV1::Unknown => {
-            risks.push("boss relic policy has no safe certificate for this relic".to_string());
+            risks.push("boss relic policy has no safe approval for this relic".to_string());
         }
     }
 
@@ -181,5 +181,5 @@ fn stop_reason(context: &BossRelicDecisionContextV1) -> String {
         .map(|candidate| format!("{:?}:{:?}", candidate.relic, candidate.class))
         .collect::<Vec<_>>()
         .join(", ");
-    format!("boss relic policy stopped because no conservative V2 certificate matched ({classes})")
+    format!("boss relic policy stopped because no conservative V2 approval matched ({classes})")
 }

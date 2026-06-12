@@ -11,13 +11,13 @@ pub(crate) fn candidate_impact(
     route: Option<&CardRewardRouteEvidenceV1>,
 ) -> CardRewardCandidateImpactV1 {
     let mut dependency_assessments = Vec::new();
-    let mut certification_blockers = Vec::new();
+    let mut approval_blockers = Vec::new();
     let mut evidence_notes = Vec::new();
 
     for dependency in &facts.pick_dependencies {
         let assessment = assess_dependency(*dependency, deck, route);
         if let Some(gap) = blocker_for_assessment(&assessment) {
-            push_gap(&mut certification_blockers, gap);
+            push_gap(&mut approval_blockers, gap);
         }
         evidence_notes.push(assessment.reason.clone());
         dependency_assessments.push(assessment);
@@ -25,21 +25,21 @@ pub(crate) fn candidate_impact(
 
     for unsupported in &facts.unsupported_mechanics {
         push_gap(
-            &mut certification_blockers,
+            &mut approval_blockers,
             CardRewardEvidenceGapV1::UnsupportedCardMechanics,
         );
         evidence_notes.push(format!("unsupported mechanics: {unsupported}"));
     }
     if facts.is_random_output {
         push_gap(
-            &mut certification_blockers,
+            &mut approval_blockers,
             CardRewardEvidenceGapV1::RandomOutcomeRequiresPolicy,
         );
         evidence_notes.push("random output requires an explicit distribution policy".to_string());
     }
     if facts.has_conditional_playability {
         push_gap(
-            &mut certification_blockers,
+            &mut approval_blockers,
             CardRewardEvidenceGapV1::ConditionalPlayabilityRequiresPolicy,
         );
         evidence_notes.push(
@@ -56,7 +56,7 @@ pub(crate) fn candidate_impact(
         energy_delta: facts.energy_gain,
         scaling_signals: scaling_signals(facts),
         dependency_assessments,
-        certification_blockers,
+        approval_blockers,
         evidence_notes,
     }
 }

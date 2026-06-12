@@ -7,32 +7,32 @@ use super::types::{
 };
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct PickCertificate {
+pub(crate) struct PickApproval {
     pub(crate) index: usize,
     pub(crate) relic: RelicId,
     pub(crate) confidence: f32,
     pub(crate) reason: String,
 }
 
-pub(crate) fn pick_certificates(
+pub(crate) fn pick_approvals(
     context: &BossRelicDecisionContextV1,
     config: &BossRelicPolicyConfigV1,
-) -> Vec<PickCertificate> {
+) -> Vec<PickApproval> {
     context
         .candidates
         .iter()
-        .filter_map(|candidate| pick_certificate(candidate, context, config))
+        .filter_map(|candidate| pick_approval(candidate, context, config))
         .collect()
 }
 
-fn pick_certificate(
+fn pick_approval(
     candidate: &BossRelicCandidateEvidenceV1,
     context: &BossRelicDecisionContextV1,
     config: &BossRelicPolicyConfigV1,
-) -> Option<PickCertificate> {
+) -> Option<PickApproval> {
     match candidate.class {
         BossRelicPolicyClassV1::StarterRelicUpgrade if config.allow_starter_upgrade => {
-            Some(PickCertificate {
+            Some(PickApproval {
                 index: candidate.index,
                 relic: candidate.relic,
                 confidence: 0.95,
@@ -47,7 +47,7 @@ fn pick_certificate(
                 && support_gate_at_least(candidate, StrategyPlanSupportV1::Plausible)
                 && no_higher_agency_competitor(context, candidate.index) =>
         {
-            Some(PickCertificate {
+            Some(PickApproval {
                 index: candidate.index,
                 relic: candidate.relic,
                 confidence: 0.82,
@@ -62,7 +62,7 @@ fn pick_certificate(
                 && candidate.relic == RelicId::TinyHouse
                 && all_other_candidates_are_constrained(context, candidate.index) =>
         {
-            Some(PickCertificate {
+            Some(PickApproval {
                 index: candidate.index,
                 relic: candidate.relic,
                 confidence: 0.78,

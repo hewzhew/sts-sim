@@ -40,7 +40,11 @@ Runs without coarse campaign progress messages.
 
 .EXAMPLE
 .\tools\campaign.ps1 -NoBossSegments
-Keeps boss combats on complete-win search only instead of allowing turn segments.
+Compatibility switch; boss combats already stay on complete-win search by default.
+
+.EXAMPLE
+.\tools\campaign.ps1 -BossSegments
+Allows turn-segment continuation inside boss combats. This is slower, but can push through bosses while debugging combat strategy.
 
 .EXAMPLE
 .\tools\campaign.ps1 -DebugBuild
@@ -59,6 +63,7 @@ param(
     [switch] $DryRun,
     [switch] $NoProgress,
     [switch] $NoBossSegments,
+    [switch] $BossSegments,
     [switch] $DebugBuild,
     [switch] $Build,
 
@@ -119,13 +124,26 @@ $DriverArgs = @(
     "--seed", "$Seed"
 )
 
+$CampaignBoundParameters = @{}
+foreach ($ParameterName in $PSBoundParameters.Keys) {
+    $CampaignBoundParameters[$ParameterName] = $true
+}
+
 $ResumeCampaignPath = $null
 $ResumeCheckpointPath = $null
+$ResumeRoundsCompleted = $null
+$TargetRounds = $null
 if ($More) {
     if (-not (Test-Path $LatestCampaignPath)) {
         throw "No previous campaign report found at $LatestCampaignPath. Run .\tools\campaign.ps1 first, or use -Last to rerun the previous seed from the start."
     }
     $ResumeCampaignPath = $LatestCampaignPath
+    $ResumeReport = Get-Content -LiteralPath $ResumeCampaignPath -Raw | ConvertFrom-Json
+    $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
+    if ($CampaignBoundParameters.ContainsKey("MaxRounds")) {
+        $TargetRounds = $MaxRounds
+        $MaxRounds = [Math]::Max(0, $TargetRounds - $ResumeRoundsCompleted)
+    }
     $DriverArgs += @("--resume", "$ResumeCampaignPath")
     if (Test-Path $LatestCheckpointPath) {
         $ResumeCheckpointPath = $LatestCheckpointPath
@@ -134,11 +152,6 @@ if ($More) {
 }
 
 $DriverArgs += @("--out", "$LatestCampaignPath", "--checkpoint-out", "$LatestCheckpointPath")
-
-$CampaignBoundParameters = @{}
-foreach ($ParameterName in $PSBoundParameters.Keys) {
-    $CampaignBoundParameters[$ParameterName] = $true
-}
 
 function Add-DriverArgIfBound {
     param(
@@ -175,8 +188,19 @@ function Test-ExtraCombatOptionKey {
     return $false
 }
 
-if (-not $NoBossSegments -and -not (Test-ExtraCombatOptionKey -Tokens $ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
-    $DriverArgs += @("--combat-search-option", "segment=turn")
+if ($BossSegments -and $NoBossSegments) {
+    throw "-BossSegments and -NoBossSegments conflict; choose one segment policy."
+}
+
+$CombatSegmentMode = "custom"
+if (-not (Test-ExtraCombatOptionKey -Tokens $ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
+    if ($BossSegments) {
+        $DriverArgs += @("--combat-search-option", "segment=turn")
+        $CombatSegmentMode = "turn"
+    } else {
+        $DriverArgs += @("--combat-search-option", "segment=non_boss_turn")
+        $CombatSegmentMode = "non_boss_turn"
+    }
 }
 
 if (-not $NoProgress) {
@@ -230,13 +254,23 @@ Write-Host "rerun-last=.\tools\campaign.ps1 -Last"
 Write-Host "run-more=.\tools\campaign.ps1 -More"
 Write-Host "report=$LatestCampaignPath"
 Write-Host "checkpoint=$LatestCheckpointPath"
+Write-Host "combat-segment=$CombatSegmentMode"
 if ($ResumeCampaignPath) {
     Write-Host "resume=$ResumeCampaignPath"
+    Write-Host "resume-rounds=$ResumeRoundsCompleted"
+    if ($CampaignBoundParameters.ContainsKey("MaxRounds")) {
+        Write-Host "target-rounds=$TargetRounds additional-rounds=$MaxRounds"
+    }
     if ($ResumeCheckpointPath) {
         Write-Host "resume-checkpoint=$ResumeCheckpointPath"
     } else {
         Write-Host "resume-checkpoint=missing; falling back to replay"
     }
+}
+
+if ($More -and $CampaignBoundParameters.ContainsKey("MaxRounds") -and $MaxRounds -eq 0) {
+    Write-Host "already-at-target-rounds=yes; nothing to run"
+    exit 0
 }
 
 if ($DryRun) {

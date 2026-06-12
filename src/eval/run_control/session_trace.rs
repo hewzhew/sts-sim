@@ -1338,6 +1338,12 @@ mod tests {
     fn test_session_at_ambiguous_card_reward() -> RunControlSession {
         let mut session = RunControlSession::new(RunControlConfig::default());
         session.run_state.event_state = None;
+        session
+            .run_state
+            .relics
+            .push(crate::content::relics::RelicState::new(
+                crate::content::relics::RelicId::SingingBowl,
+            ));
         let mut reward = crate::state::rewards::RewardState::new();
         reward.items = vec![crate::state::rewards::RewardItem::Card {
             cards: vec![

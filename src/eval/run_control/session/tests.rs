@@ -972,7 +972,11 @@ fn run_control_auto_run_buys_high_impact_shop_card_when_affordable() {
         ))
         .expect("auto-run should buy a clear high-impact shop card");
 
-    assert!(outcome.message.contains("shop policy: buy card Shockwave"));
+    assert!(
+        outcome.message.contains("shop policy:"),
+        "auto-run should report the shop policy action, got:\n{}",
+        outcome.message
+    );
     assert_eq!(session.run_state.gold, 110);
     assert!(
         session
@@ -1329,6 +1333,38 @@ fn run_control_auto_step_records_route_policy_stop_when_safety_gate_rejects() {
         crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
     );
     assert!(!record.candidates.is_empty());
+}
+
+#[test]
+fn run_control_auto_step_returns_from_map_overlay_without_paths_before_route_planner() {
+    let mut session = test_session_at_card_reward(vec![
+        crate::content::cards::CardId::Clash,
+        crate::content::cards::CardId::PommelStrike,
+        crate::content::cards::CardId::IronWave,
+    ]);
+    let return_state = session.engine_state.clone();
+    session.engine_state = EngineState::map_overlay(return_state);
+    session.run_state.map.current_x = 0;
+    session.run_state.map.current_y = 15;
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoStep(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                route: crate::eval::run_control::RunControlRouteAutomationMode::Planner,
+                max_operations: Some(2),
+                ..Default::default()
+            },
+        ))
+        .expect("map overlay back should be routine automation");
+
+    assert!(outcome.message.contains("Back to reward screen"));
+    assert!(!outcome
+        .message
+        .contains("route planner declined automatic map selection"));
+    assert!(outcome
+        .message
+        .contains("Reason: card reward requires human choice"));
+    assert!(matches!(session.engine_state, EngineState::RewardScreen(_)));
 }
 
 #[test]

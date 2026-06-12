@@ -1,0 +1,249 @@
+use super::StrategicSnapshot;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrategicJob {
+    Frontload,
+    Block,
+    Scaling,
+    DrawEnergy,
+    Consistency,
+    EnemyStrengthDown,
+    StatusControl,
+    ExhaustAccess,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrategicDebt {
+    CycleTime,
+    SetupDebt,
+    UpgradeDebt,
+    PayoffWithoutEnabler,
+    CurseOrStarterDensity,
+    CombatShapeRisk,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrategicBossTax {
+    AwakenedPowerTax,
+    AwakenedPhaseTwoBlock,
+    AutomatonHyperbeamPlan,
+    AutomatonOrbControl,
+    TimeEaterCardCount,
+    ChampExecutePlan,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PressureHorizon {
+    Immediate,
+    NextCombat,
+    VisibleRoute,
+    ActBoss,
+    LongTerm,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PressureKind {
+    MissingJob(StrategicJob),
+    DeckDebt(StrategicDebt),
+    BossTax(StrategicBossTax),
+    RouteRisk,
+    EconomyNeed,
+    UpgradeNeed,
+    BranchDiversityNeed,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct PressureItem {
+    pub id: String,
+    pub kind: PressureKind,
+    pub horizon: PressureHorizon,
+    pub severity: f32,
+    pub confidence: f32,
+    pub evidence: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct PressureLedger {
+    pub items: Vec<PressureItem>,
+}
+
+impl PressureLedger {
+    pub fn push(
+        &mut self,
+        id: impl Into<String>,
+        kind: PressureKind,
+        horizon: PressureHorizon,
+        severity: f32,
+        confidence: f32,
+        evidence: Vec<String>,
+    ) {
+        self.items.push(PressureItem {
+            id: id.into(),
+            kind,
+            horizon,
+            severity: severity.clamp(0.0, 1.0),
+            confidence: confidence.clamp(0.0, 1.0),
+            evidence,
+        });
+    }
+
+    pub fn strongest(&self) -> Option<&PressureItem> {
+        self.items.iter().max_by(|left, right| {
+            left.severity
+                .partial_cmp(&right.severity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+    }
+}
+
+pub fn ledger_from_snapshot(snapshot: &StrategicSnapshot) -> PressureLedger {
+    let mut ledger = PressureLedger::default();
+
+    for need in &snapshot.formation_needs {
+        ledger.push(
+            format!("missing_job:{need:?}"),
+            PressureKind::MissingJob(*need),
+            PressureHorizon::VisibleRoute,
+            0.55,
+            0.65,
+            vec!["formation summary reports this current need".to_string()],
+        );
+    }
+
+    let effective_cycle_pressure = if snapshot.deck.deck_size >= 40 {
+        Some(0.85)
+    } else if snapshot.deck.deck_size >= 34 {
+        Some(0.70)
+    } else if snapshot.deck.deck_size >= 28 {
+        Some(0.50)
+    } else {
+        None
+    };
+    if let Some(severity) = effective_cycle_pressure {
+        ledger.push(
+            "deck_debt:cycle_time",
+            PressureKind::DeckDebt(StrategicDebt::CycleTime),
+            PressureHorizon::LongTerm,
+            severity,
+            0.65,
+            vec![format!("deck_size={}", snapshot.deck.deck_size)],
+        );
+    }
+
+    if snapshot.deck.curses > 0
+        || snapshot.deck.starter_strikes + snapshot.deck.starter_defends >= 7
+    {
+        ledger.push(
+            "deck_debt:curse_or_starter_density",
+            PressureKind::DeckDebt(StrategicDebt::CurseOrStarterDensity),
+            PressureHorizon::VisibleRoute,
+            0.55,
+            0.70,
+            vec![format!(
+                "curses={} starter_cards={}",
+                snapshot.deck.curses,
+                snapshot.deck.starter_strikes + snapshot.deck.starter_defends
+            )],
+        );
+    }
+
+    if snapshot.deck.draw_sources == 0 && snapshot.deck.deck_size >= 18 {
+        ledger.push(
+            "missing_job:draw_energy",
+            PressureKind::MissingJob(StrategicJob::DrawEnergy),
+            PressureHorizon::VisibleRoute,
+            0.65,
+            0.70,
+            vec!["deck has no explicit draw source at this abstraction level".to_string()],
+        );
+    }
+
+    if let Some(route) = &snapshot.route {
+        let route_pressure = (route.avoid_damage + (1.0 - route.can_take_elite)).clamp(0.0, 1.0);
+        if route_pressure >= 0.45 {
+            ledger.push(
+                "route_risk:visible_pressure",
+                PressureKind::RouteRisk,
+                PressureHorizon::VisibleRoute,
+                route_pressure,
+                0.55,
+                vec![format!(
+                    "avoid_damage={:.2} can_take_elite={:.2}",
+                    route.avoid_damage, route.can_take_elite
+                )],
+            );
+        }
+        if route.need_upgrade >= 0.55 {
+            ledger.push(
+                "upgrade_need:visible_route",
+                PressureKind::UpgradeNeed,
+                PressureHorizon::VisibleRoute,
+                route.need_upgrade,
+                0.55,
+                vec![format!("need_upgrade={:.2}", route.need_upgrade)],
+            );
+        }
+    }
+
+    match snapshot.boss.as_deref() {
+        Some("AwakenedOne") => {
+            if snapshot.deck.powers > 0 {
+                ledger.push(
+                    "boss_tax:awakened_power_tax",
+                    PressureKind::BossTax(StrategicBossTax::AwakenedPowerTax),
+                    PressureHorizon::ActBoss,
+                    (snapshot.deck.powers as f32 / 4.0).clamp(0.35, 0.90),
+                    0.75,
+                    vec![format!("power_count={}", snapshot.deck.powers)],
+                );
+            }
+            ledger.push(
+                "boss_tax:awakened_phase_two_block",
+                PressureKind::BossTax(StrategicBossTax::AwakenedPhaseTwoBlock),
+                PressureHorizon::ActBoss,
+                0.65,
+                0.70,
+                vec!["Awakened One phase two asks for a real block plan".to_string()],
+            );
+        }
+        Some("Automaton") => {
+            ledger.push(
+                "boss_tax:automaton_hyperbeam_plan",
+                PressureKind::BossTax(StrategicBossTax::AutomatonHyperbeamPlan),
+                PressureHorizon::ActBoss,
+                0.75,
+                0.70,
+                vec!["Bronze Automaton asks for a hyperbeam mitigation plan".to_string()],
+            );
+        }
+        Some("TimeEater") => {
+            ledger.push(
+                "boss_tax:time_eater_card_count",
+                PressureKind::BossTax(StrategicBossTax::TimeEaterCardCount),
+                PressureHorizon::ActBoss,
+                0.65,
+                0.70,
+                vec!["Time Eater taxes low-impact card spam".to_string()],
+            );
+        }
+        Some("TheChamp") => {
+            ledger.push(
+                "boss_tax:champ_execute_plan",
+                PressureKind::BossTax(StrategicBossTax::ChampExecutePlan),
+                PressureHorizon::ActBoss,
+                0.60,
+                0.65,
+                vec!["The Champ asks for execute-phase mitigation or scaling".to_string()],
+            );
+        }
+        _ => {}
+    }
+
+    ledger
+}

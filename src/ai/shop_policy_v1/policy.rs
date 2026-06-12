@@ -5,7 +5,7 @@ use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
 use crate::state::run::RunState;
 use crate::state::shop::ShopState;
 
-use super::certificates::certified_action;
+use super::approvals::approved_action;
 use super::types::{
     purge_candidate_id, ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopDecisionV1,
     ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
@@ -121,13 +121,17 @@ pub fn plan_shop_decision_v1(
     context: &ShopDecisionContextV1,
     config: &ShopPolicyConfigV1,
 ) -> ShopDecisionV1 {
-    let action = certified_action(context, config).unwrap_or_else(|| ShopPolicyActionV1::Stop {
-        reason: stop_reason(context),
+    let strategic_trace = crate::ai::strategic::strategic_trace_for_shop(context);
+    let action = approved_action(context, config, &strategic_trace).unwrap_or_else(|| {
+        ShopPolicyActionV1::Stop {
+            reason: stop_reason(context),
+        }
     });
 
     ShopDecisionV1 {
         action,
         label_role: "behavior_policy_not_teacher",
+        strategic_trace,
         context: context.clone(),
     }
 }
@@ -170,7 +174,7 @@ fn purge_candidate_evidence(
             }
         }
         _ => {
-            risks.push("shop policy has no purge certificate for this card".to_string());
+            risks.push("shop policy has no purge approval for this card".to_string());
         }
     }
 
@@ -357,5 +361,5 @@ fn stop_reason(context: &ShopDecisionContextV1) -> String {
             context.need.gold, context.need.floors_to_boss
         );
     }
-    format!("shop policy stopped because no conservative purge certificate matched ({classes})")
+    format!("shop policy stopped because no conservative purge approval matched ({classes})")
 }

@@ -1,5 +1,6 @@
 use crate::engine::run_loop::tick_run_active_with_observer;
 use crate::state::core::{ClientInput, EngineState, RunResult};
+use crate::state::rewards::RewardItem;
 
 use super::{CombatCompletionSource, RunControlCommandOutcome, RunControlSession};
 use crate::eval::run_control::auto_capture::render_auto_capture_result;
@@ -129,6 +130,9 @@ impl RunControlSession {
                     self.reward_automation.summary(),
                 ))
             }
+            RunControlCommand::BranchSkipCardReward(index) => {
+                self.apply_branch_skip_card_reward(index)
+            }
             RunControlCommand::RecordedCardRewardPick(index) => {
                 super::super::card_reward_auto::apply_recorded_card_reward_pick(self, index)
             }
@@ -185,6 +189,38 @@ impl RunControlSession {
                 }
             }
             RunControlCommand::Input(input) => self.apply_input(input),
+        }
+    }
+
+    fn apply_branch_skip_card_reward(
+        &mut self,
+        reward_index: usize,
+    ) -> Result<RunControlCommandOutcome, String> {
+        let reward_empty = {
+            let EngineState::RewardScreen(reward) = &mut self.engine_state else {
+                return Err("branch-skip-card-reward is only valid on a reward screen".to_string());
+            };
+            if reward.pending_card_choice.is_some() {
+                return Err(
+                    "branch-skip-card-reward requires an unopened card reward item".to_string(),
+                );
+            }
+            if !matches!(
+                reward.items.get(reward_index),
+                Some(RewardItem::Card { .. })
+            ) {
+                return Err(format!("reward item {reward_index} is not a card reward"));
+            }
+            reward.items.remove(reward_index);
+            reward.items.is_empty()
+        };
+
+        if reward_empty {
+            self.apply_input(ClientInput::Proceed)
+        } else {
+            Ok(RunControlCommandOutcome::message(format!(
+                "Branch skipped card reward at item {reward_index}"
+            )))
         }
     }
 

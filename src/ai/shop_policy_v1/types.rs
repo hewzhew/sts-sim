@@ -92,6 +92,7 @@ pub struct ShopDecisionV1 {
     pub action: ShopPolicyActionV1,
     pub label_role: &'static str,
     pub context: ShopDecisionContextV1,
+    pub strategic_trace: crate::ai::strategic::StrategicDecisionTrace,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -143,7 +144,7 @@ impl ShopDecisionV1 {
             evidence: EvidenceBundleV1 {
                 items: evidence_items(&self.context),
                 assumptions: vec![
-                    "shop automation handles conservative purge and high-impact purchase certificates"
+                    "shop automation handles conservative purge and high-impact purchase approvals"
                         .to_string(),
                     "shop automation is a behavior policy, not a teacher label".to_string(),
                 ],
@@ -158,7 +159,7 @@ impl ShopDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "conservative_shop_certificate".to_string(),
+                    selection_mode: "conservative_shop_approval".to_string(),
                 },
                 ShopPolicyActionV1::Purchase {
                     confidence, reason, ..
@@ -167,7 +168,7 @@ impl ShopDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "conservative_shop_certificate".to_string(),
+                    selection_mode: "conservative_shop_approval".to_string(),
                 },
                 ShopPolicyActionV1::Stop { reason } => PolicySelectionV1 {
                     status: PolicySelectionStatusV1::Stopped,

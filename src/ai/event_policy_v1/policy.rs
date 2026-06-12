@@ -6,7 +6,7 @@ use crate::state::events::{
 };
 use crate::state::run::RunState;
 
-use super::certificates::pick_certificates;
+use super::approvals::pick_approvals;
 use super::types::{
     EventCandidateEvidenceV1, EventDecisionContextV1, EventDecisionV1, EventPolicyActionV1,
     EventPolicyClassV1, EventPolicyConfigV1,
@@ -43,20 +43,20 @@ pub fn plan_event_decision_v1(
         );
     }
 
-    let certificates = pick_certificates(context, config);
+    let approvals = pick_approvals(context, config);
 
-    let action = match certificates.as_slice() {
-        [certificate] => EventPolicyActionV1::Pick {
-            index: certificate.index,
-            label: certificate.label.clone(),
-            confidence: certificate.confidence,
-            reason: certificate.reason.clone(),
+    let action = match approvals.as_slice() {
+        [approval] => EventPolicyActionV1::Pick {
+            index: approval.index,
+            label: approval.label.clone(),
+            confidence: approval.confidence,
+            reason: approval.reason.clone(),
         },
         [] => EventPolicyActionV1::Stop {
             reason: stop_reason(context),
         },
         _ => EventPolicyActionV1::Stop {
-            reason: "event policy stopped because multiple conservative certificates matched"
+            reason: "event policy stopped because multiple conservative approvals matched"
                 .to_string(),
         },
     };
@@ -106,7 +106,7 @@ fn candidate_evidence(index: usize, option: EventOption) -> EventCandidateEviden
             risks.push("contains random or unresolved reward outcome".to_string());
         }
         EventPolicyClassV1::Unknown => {
-            risks.push("event policy has no safe certificate for this option".to_string());
+            risks.push("event policy has no safe approval for this option".to_string());
         }
     }
 
@@ -324,7 +324,7 @@ fn stop_reason(context: &EventDecisionContextV1) -> String {
         .map(|candidate| format!("{}:{:?}", candidate.label, candidate.class))
         .collect::<Vec<_>>()
         .join(", ");
-    format!("event policy stopped because no conservative certificate matched ({classes})")
+    format!("event policy stopped because no conservative approval matched ({classes})")
 }
 
 fn display_event_label(label: &str) -> String {

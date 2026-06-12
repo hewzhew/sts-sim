@@ -2,6 +2,8 @@ use super::*;
 use crate::ai::noncombat_strategy_v1::{
     StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1, StrategyPackageIdV2,
 };
+use crate::ai::strategic::RetentionBucket;
+use crate::content::cards::CardId;
 
 #[test]
 fn portfolio_retention_keeps_distinct_choice_prefixes_when_slots_are_redundant() {
@@ -352,6 +354,52 @@ fn portfolio_retention_caps_dominant_first_pick_across_distinct_families() {
 }
 
 #[test]
+fn retention_decision_carries_strategic_signature_for_engine_branches() {
+    let candidate = named_semantic_retention_candidate(
+        0,
+        10_900,
+        "Barricade",
+        trajectory_with(&["block_engine"], &["block_engine"], 0, 1, 1, 1),
+        &[
+            CardRewardSemanticRoleV1::Block,
+            CardRewardSemanticRoleV1::ScalingSource,
+        ],
+    );
+
+    let decision = decide_branch_retention_v1(&candidate);
+
+    assert!(decision
+        .strategic_signature
+        .buckets
+        .contains(&RetentionBucket::BestCoreEngine));
+    assert!(decision
+        .strategic_signature
+        .buckets
+        .contains(&RetentionBucket::BestBossPrepared));
+    assert!(decision.strategic_signature.engine_score > 0.0);
+    assert!(decision.strategic_signature.boss_readiness > 0.0);
+}
+
+#[test]
+fn retention_decision_carries_strategic_debt_for_startup_rejected_branches() {
+    let mut candidate = named_semantic_retention_candidate(
+        0,
+        10_900,
+        "Rupture",
+        BranchTrajectorySignatureV1::default(),
+        &[CardRewardSemanticRoleV1::ScalingSource],
+    );
+    candidate.choice_profiles[0].card = CardId::Rupture;
+    candidate.startup.rupture_count = 1;
+    candidate.startup.self_damage_source_count = 0;
+    candidate.startup.has_rupture_without_self_damage = true;
+
+    let decision = decide_branch_retention_v1(&candidate);
+
+    assert!(decision.strategic_signature.setup_debt > 0.0);
+}
+
+#[test]
 fn portfolio_retention_preserves_distinct_formations_under_same_first_pick() {
     let mut starter = retention_candidate(0, 10_900, &["Twin Strike", "Iron Wave"]);
     starter.strategy_formation = Some(formation(
@@ -436,6 +484,7 @@ fn portfolio_retention_preserves_distinct_trajectories_under_same_formation() {
         ],
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
+        startup: Default::default(),
     };
     let mut other_first_pick = retention_candidate(3, 10_700, &["Shockwave", "Clash"]);
     other_first_pick.strategy_formation = Some(formation);
@@ -681,6 +730,7 @@ fn retention_slots_come_from_semantic_profiles_not_card_names() {
         )],
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
+        startup: Default::default(),
     };
 
     let decision = decide_branch_retention_v1(&candidate);
@@ -690,6 +740,157 @@ fn retention_slots_come_from_semantic_profiles_not_card_names() {
         .slots
         .contains(&BranchRetentionSlotV1::DefenseEngine));
     assert!(!decision.slots.contains(&BranchRetentionSlotV1::Frontload));
+}
+
+#[test]
+fn startup_rejected_strength_payoff_does_not_claim_scaling_slot() {
+    let candidate = BranchRetentionCandidateInputV1 {
+        index: 0,
+        act: 2,
+        floor: 25,
+        frontier_key: "same-frontier".to_string(),
+        rank_key: 10_000,
+        hp: 70,
+        max_hp: 80,
+        gold: 120,
+        deck_count: 20,
+        strategy_formation: Some(formation(
+            StrategyDeckFormationStageV1::PlanSeeded,
+            &[StrategyDeckFormationNeedV1::Scaling],
+            &[],
+        )),
+        trajectory: BranchTrajectorySignatureV1::default(),
+        choice_profiles: vec![CardRewardSemanticProfileV1 {
+            card: CardId::Pummel,
+            name: "Pummel".to_string(),
+            roles: vec![
+                CardRewardSemanticRoleV1::StrengthPayoff,
+                CardRewardSemanticRoleV1::PackagePayoff,
+            ],
+            dependencies: Vec::new(),
+            unsupported_mechanics: Vec::new(),
+        }],
+        choice_effect_keys: vec!["take_card".to_string()],
+        lineage_flags: Vec::new(),
+        startup: Default::default(),
+    };
+
+    let decision = decide_branch_retention_v1(&candidate);
+
+    assert!(!decision.slots.contains(&BranchRetentionSlotV1::Package));
+    assert!(!decision.slots.contains(&BranchRetentionSlotV1::Scaling));
+    assert!(decision
+        .reasons
+        .iter()
+        .any(|reason| reason == "startup profile rejects at least one added card"));
+}
+
+#[test]
+fn portfolio_fill_penalizes_startup_rejected_card_picks() {
+    let rejected_pummel = BranchRetentionCandidateInputV1 {
+        index: 0,
+        act: 2,
+        floor: 25,
+        frontier_key: "same-frontier".to_string(),
+        rank_key: 50_000,
+        hp: 70,
+        max_hp: 80,
+        gold: 120,
+        deck_count: 20,
+        strategy_formation: None,
+        trajectory: BranchTrajectorySignatureV1::default(),
+        choice_profiles: vec![CardRewardSemanticProfileV1 {
+            card: CardId::Pummel,
+            name: "Pummel".to_string(),
+            roles: vec![
+                CardRewardSemanticRoleV1::StrengthPayoff,
+                CardRewardSemanticRoleV1::PackagePayoff,
+            ],
+            dependencies: Vec::new(),
+            unsupported_mechanics: Vec::new(),
+        }],
+        choice_effect_keys: vec!["take_card".to_string()],
+        lineage_flags: Vec::new(),
+        startup: Default::default(),
+    };
+    let skip = BranchRetentionCandidateInputV1 {
+        index: 1,
+        act: 2,
+        floor: 25,
+        frontier_key: "same-frontier".to_string(),
+        rank_key: 10_000,
+        hp: 70,
+        max_hp: 80,
+        gold: 120,
+        deck_count: 19,
+        strategy_formation: None,
+        trajectory: BranchTrajectorySignatureV1::default(),
+        choice_profiles: Vec::new(),
+        choice_effect_keys: vec!["skip_reward".to_string()],
+        lineage_flags: Vec::new(),
+        startup: Default::default(),
+    };
+
+    let selection = select_branch_retention_portfolio_v1(
+        &[rejected_pummel, skip],
+        retention_config(1, Some(1)),
+    );
+
+    assert!(selection.keep_indices.contains(&1));
+    assert!(!selection.keep_indices.contains(&0));
+}
+
+#[test]
+fn effective_rank_exposes_startup_and_component_margin_penalty() {
+    let rejected_pummel = BranchRetentionCandidateInputV1 {
+        index: 0,
+        act: 2,
+        floor: 25,
+        frontier_key: "same-frontier".to_string(),
+        rank_key: 50_000,
+        hp: 70,
+        max_hp: 80,
+        gold: 120,
+        deck_count: 20,
+        strategy_formation: None,
+        trajectory: BranchTrajectorySignatureV1::default(),
+        choice_profiles: vec![CardRewardSemanticProfileV1 {
+            card: CardId::Pummel,
+            name: "Pummel".to_string(),
+            roles: vec![
+                CardRewardSemanticRoleV1::StrengthPayoff,
+                CardRewardSemanticRoleV1::PackagePayoff,
+            ],
+            dependencies: Vec::new(),
+            unsupported_mechanics: Vec::new(),
+        }],
+        choice_effect_keys: vec!["take_card".to_string()],
+        lineage_flags: Vec::new(),
+        startup: Default::default(),
+    };
+    let skip = BranchRetentionCandidateInputV1 {
+        index: 1,
+        act: 2,
+        floor: 25,
+        frontier_key: "same-frontier".to_string(),
+        rank_key: 10_000,
+        hp: 70,
+        max_hp: 80,
+        gold: 120,
+        deck_count: 19,
+        strategy_formation: None,
+        trajectory: BranchTrajectorySignatureV1::default(),
+        choice_profiles: Vec::new(),
+        choice_effect_keys: vec!["skip_reward".to_string()],
+        lineage_flags: Vec::new(),
+        startup: Default::default(),
+    };
+
+    assert!(
+        effective_branch_retention_rank_key_v1(&rejected_pummel)
+            < effective_branch_retention_rank_key_v1(&skip),
+        "campaign-visible rank should carry the same startup/component penalty used by retention"
+    );
 }
 
 #[test]
@@ -758,6 +959,7 @@ fn retention_candidate(
         choice_profiles,
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
+        startup: Default::default(),
     }
 }
 
@@ -781,6 +983,7 @@ fn effect_retention_candidate(
         choice_profiles: Vec::new(),
         choice_effect_keys: vec![effect_key.to_string()],
         lineage_flags: Vec::new(),
+        startup: Default::default(),
     }
 }
 
@@ -821,6 +1024,7 @@ fn semantic_retention_candidate(
         choice_profiles: vec![semantic_profile("Semantic Candidate", roles)],
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
+        startup: Default::default(),
     }
 }
 

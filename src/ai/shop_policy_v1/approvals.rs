@@ -1,13 +1,15 @@
 use crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1;
+use crate::ai::strategic::{CandidateAction, StrategicDecisionTrace};
 
 use super::types::{
     ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPolicyActionV1, ShopPolicyClassV1,
     ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 
-pub(crate) fn certified_action(
+pub(crate) fn approved_action(
     context: &ShopDecisionContextV1,
     config: &ShopPolicyConfigV1,
+    strategic_trace: &StrategicDecisionTrace,
 ) -> Option<ShopPolicyActionV1> {
     if config.allow_curse_purge {
         if let Some(action) = context
@@ -32,7 +34,8 @@ pub(crate) fn certified_action(
                 let target = candidate.purchase_target?;
                 let priority = candidate.purchase_priority?;
                 let threshold = purchase_priority_threshold(target, config);
-                (priority >= threshold).then_some((candidate, priority, threshold))
+                (priority >= threshold && purchase_allowed_by_strategic_trace(target, strategic_trace))
+                    .then_some((candidate, priority, threshold))
             })
             .max_by_key(|(_, priority, _)| *priority)
             .and_then(|(candidate, priority, threshold)| {
@@ -40,7 +43,7 @@ pub(crate) fn certified_action(
                     candidate,
                     0.76,
                     format!(
-                        "high-impact shop purchase priority {priority} clears threshold {threshold}"
+                        "high-impact shop purchase priority {priority} clears threshold {threshold}; strategic verdict allows purchase"
                     ),
                 )
             })
@@ -61,13 +64,14 @@ pub(crate) fn certified_action(
                 Some((candidate, candidate.purchase_priority?, candidate.purchase_target?))
             })
             .filter(|(_, priority, _)| *priority > 0)
+            .filter(|(_, _, target)| purchase_allowed_by_strategic_trace(*target, strategic_trace))
             .max_by_key(|(_, priority, target)| (*priority, purchase_tiebreaker(*target)))
             .and_then(|(candidate, priority, _)| {
                 purchase_action(
                     candidate,
                     0.64,
                     format!(
-                        "shop conversion pressure selected best affordable purchase priority {priority}"
+                        "shop conversion pressure selected best affordable purchase priority {priority}; strategic verdict allows purchase"
                     ),
                 )
             })
@@ -95,6 +99,24 @@ pub(crate) fn certified_action(
                 "CorePlanProtection Strong and no affordable purchase competes",
             )
         })
+}
+
+fn purchase_allowed_by_strategic_trace(
+    target: ShopPurchaseTargetV1,
+    strategic_trace: &StrategicDecisionTrace,
+) -> bool {
+    let ShopPurchaseTargetV1::Card { index, card } = target else {
+        return true;
+    };
+    let action = CandidateAction::BuyCard {
+        shop_index: index,
+        card,
+        gold: 0,
+    };
+    strategic_trace
+        .compiled_for_action(&action)
+        .map(|decision| decision.verdict.allows_behavior_acquisition())
+        .unwrap_or(false)
 }
 
 fn purchase_tiebreaker(target: ShopPurchaseTargetV1) -> i32 {

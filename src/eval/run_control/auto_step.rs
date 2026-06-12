@@ -169,6 +169,15 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
             );
         }
 
+        if let Some((outcome, summary)) = apply_map_overlay_back_without_route_candidates(session)?
+        {
+            let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+            trace_annotations.extend(outcome.trace_annotations);
+            applied.push(summary);
+            applied.extend(auto_capture_summaries);
+            continue;
+        }
+
         if session.engine_state.is_map_surface()
             && options.route == RunControlRouteAutomationMode::Planner
         {
@@ -454,6 +463,45 @@ fn high_stakes_auto_search_requires_hp_loss_gate(
 ) -> bool {
     super::combat_auto_policy::combat_auto_search_plan(session, options)
         .requires_explicit_hp_loss_gate
+}
+
+fn apply_map_overlay_back_without_route_candidates(
+    session: &mut RunControlSession,
+) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
+    if !matches!(session.engine_state, EngineState::MapOverlay { .. }) {
+        return Ok(None);
+    }
+
+    let view = build_run_control_view_model(session);
+    let has_route_candidate = view.candidates.iter().any(|candidate| {
+        matches!(
+            candidate.action.executable_input(),
+            Some(ClientInput::SelectMapNode(_))
+        )
+    });
+    if has_route_candidate {
+        return Ok(None);
+    }
+
+    let Some(label) = view
+        .candidates
+        .iter()
+        .find(|candidate| candidate.action.executable_input() == Some(ClientInput::Cancel))
+        .map(|candidate| candidate.label.clone())
+    else {
+        return Ok(None);
+    };
+
+    let outcome = session.apply_input(ClientInput::Cancel)?;
+    let label = outcome
+        .action_result
+        .as_ref()
+        .map(|result| result.chosen_label.clone())
+        .unwrap_or(label);
+    Ok(Some((
+        outcome,
+        format!("routine: {label} (map preview has no route action)"),
+    )))
 }
 
 fn auto_advance_candidate<'a>(

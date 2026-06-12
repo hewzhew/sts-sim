@@ -127,7 +127,7 @@ impl EventDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "conservative_event_certificate".to_string(),
+                    selection_mode: "conservative_event_approval".to_string(),
                 },
                 EventPolicyActionV1::Stop { reason } => PolicySelectionV1 {
                     status: PolicySelectionStatusV1::Stopped,

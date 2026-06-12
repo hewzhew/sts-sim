@@ -1,11 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ai::card_admission_policy_v1::{
-    evaluate_card_admission_v1, CardAdmissionSourceV1, CardAdmissionVerdictV1,
-};
 use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
 };
+use crate::ai::strategic::{AcquisitionVerdict, CandidateAction};
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::{
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
@@ -90,7 +88,7 @@ pub(crate) fn select_card_reward_branch_options_for_session(
             portfolio: None,
         };
     };
-    select_card_reward_branch_options_with_limit_and_admission(
+    select_card_reward_branch_options_with_limit_and_strategy(
         options,
         limit,
         portfolio_context,
@@ -104,7 +102,7 @@ pub(crate) fn select_card_reward_branch_options_with_limit(
     limit: usize,
     portfolio_context: Option<CardRewardPortfolioContext>,
 ) -> CardRewardBranchOptionSelection {
-    select_card_reward_branch_options_with_limit_and_admission(
+    select_card_reward_branch_options_with_limit_and_strategy(
         options,
         limit,
         portfolio_context,
@@ -112,7 +110,7 @@ pub(crate) fn select_card_reward_branch_options_with_limit(
     )
 }
 
-fn select_card_reward_branch_options_with_limit_and_admission(
+fn select_card_reward_branch_options_with_limit_and_strategy(
     options: Vec<CardRewardBranchOption>,
     limit: usize,
     portfolio_context: Option<CardRewardPortfolioContext>,
@@ -126,6 +124,7 @@ fn select_card_reward_branch_options_with_limit_and_admission(
         };
     }
 
+    let strategy_orders = reward_option_strategy_orders(session, &options);
     let mut annotated = options
         .iter()
         .enumerate()
@@ -133,20 +132,31 @@ fn select_card_reward_branch_options_with_limit_and_admission(
             let profile =
                 card_reward_semantic_profile_v1(&RewardCard::new(option.card, option.upgrades));
             let (priority, class_key) = reward_option_semantic_class(&profile);
-            let admission = reward_option_admission_order(session, option);
-            (index, admission, priority, class_key)
+            let strategy = strategy_orders
+                .get(&index)
+                .cloned()
+                .unwrap_or_else(RewardOptionStrategyOrder::missing);
+            (
+                index,
+                strategy.order,
+                strategy.score_key,
+                priority,
+                class_key,
+                strategy.label,
+            )
         })
         .collect::<Vec<_>>();
     annotated.sort_by(|left, right| {
         left.1
             .cmp(&right.1)
             .then_with(|| left.2.cmp(&right.2))
+            .then_with(|| left.3.cmp(&right.3))
             .then_with(|| left.0.cmp(&right.0))
     });
 
     let mut selected = Vec::new();
     let mut selected_classes = BTreeSet::new();
-    for (index, _, _, class_key) in &annotated {
+    for (index, _, _, _, class_key, _) in &annotated {
         if selected.len() >= limit {
             break;
         }
@@ -190,13 +200,16 @@ fn reward_option_portfolio_report(
     boundary_title: String,
     max_reward_options_per_branch: usize,
     options: &[CardRewardBranchOption],
-    annotated: &[(usize, usize, usize, String)],
+    annotated: &[(usize, usize, i32, usize, String, String)],
     selected_indices: &BTreeSet<usize>,
 ) -> BranchExperimentRewardOptionPortfolioV1 {
     let class_by_index = annotated
         .iter()
-        .map(|(index, admission, _, class_key)| {
-            (*index, format!("admission={admission}:{class_key}"))
+        .map(|(index, strategy_order, _, _, class_key, strategy_label)| {
+            (
+                *index,
+                format!("strategy={strategy_order}:{strategy_label}:{class_key}"),
+            )
         })
         .collect::<BTreeMap<_, _>>();
     let mut selected_options = Vec::new();
@@ -230,23 +243,76 @@ fn reward_option_portfolio_report(
     }
 }
 
-fn reward_option_admission_order(
+#[derive(Clone, Debug)]
+struct RewardOptionStrategyOrder {
+    order: usize,
+    score_key: i32,
+    label: String,
+}
+
+fn reward_option_strategy_orders(
     session: Option<&RunControlSession>,
-    option: &CardRewardBranchOption,
-) -> usize {
+    options: &[CardRewardBranchOption],
+) -> BTreeMap<usize, RewardOptionStrategyOrder> {
     let Some(session) = session else {
-        return 0;
+        return options
+            .iter()
+            .enumerate()
+            .map(|(index, _)| (index, RewardOptionStrategyOrder::unavailable()))
+            .collect();
     };
-    match evaluate_card_admission_v1(
+    let cards = options
+        .iter()
+        .map(|option| RewardCard::new(option.card, option.upgrades))
+        .collect::<Vec<_>>();
+    let route_trace = crate::ai::route_planner_v1::plan_route_decision_v1(
         &session.run_state,
-        RewardCard::new(option.card, option.upgrades),
-        CardAdmissionSourceV1::Reward,
-    )
-    .verdict
-    {
-        CardAdmissionVerdictV1::Admit => 0,
-        CardAdmissionVerdictV1::AdmitIfNoCleanerAlternative => 1,
-        CardAdmissionVerdictV1::Reject => 4,
+        &session.engine_state,
+        Default::default(),
+    );
+    let route_trace = (!route_trace.candidates.is_empty()).then_some(route_trace);
+    let context = crate::ai::card_reward_policy_v1::build_card_reward_decision_context_v1(
+        &session.run_state,
+        cards,
+        route_trace.as_ref(),
+    );
+    let trace = crate::ai::strategic::strategic_trace_for_card_reward(&context);
+    options
+        .iter()
+        .enumerate()
+        .map(|(index, option)| {
+            let action = CandidateAction::TakeCard {
+                index,
+                card: option.card,
+            };
+            let order = trace
+                .compiled_for_action(&action)
+                .map(|compiled| RewardOptionStrategyOrder {
+                    order: compiled.verdict.retention_order(),
+                    score_key: -((compiled.score * 1000.0).round() as i32),
+                    label: format!("{:?}", compiled.verdict),
+                })
+                .unwrap_or_else(RewardOptionStrategyOrder::missing);
+            (index, order)
+        })
+        .collect()
+}
+
+impl RewardOptionStrategyOrder {
+    fn unavailable() -> Self {
+        Self {
+            order: 0,
+            score_key: 0,
+            label: "strategy_unavailable".to_string(),
+        }
+    }
+
+    fn missing() -> Self {
+        Self {
+            order: AcquisitionVerdict::Reject.retention_order(),
+            score_key: 0,
+            label: "missing_strategic_candidate".to_string(),
+        }
     }
 }
 

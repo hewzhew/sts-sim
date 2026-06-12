@@ -128,7 +128,7 @@ impl RewardDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "low_agency_reward_certificate".to_string(),
+                    selection_mode: "low_agency_reward_approval".to_string(),
                 },
                 RewardPolicyActionV1::Stop { reason } => PolicySelectionV1 {
                     status: PolicySelectionStatusV1::Stopped,

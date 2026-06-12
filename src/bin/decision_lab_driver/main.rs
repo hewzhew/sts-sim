@@ -1323,6 +1323,7 @@ mod tests {
             sts_simulator::eval::branch_experiment::BranchExperimentChoiceV1 {
                 depth: 0,
                 kind: "card_reward".to_string(),
+                boundary_title: "Card Reward".to_string(),
                 card: None,
                 upgrades: None,
                 selected_cards: Vec::new(),
@@ -1902,6 +1903,7 @@ mod tests {
                 selected_by_slot: Some(sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1::Frontload),
                 slots: vec![sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1::Frontload],
                 reasons: reasons.iter().map(|reason| (*reason).to_string()).collect(),
+                strategic_signature: Default::default(),
             },
             choices: Vec::new(),
             stop_reason: "test".to_string(),

@@ -392,7 +392,7 @@ fn recorded_card_reward_decision(
         reason: "human recorded card reward pick; diagnostic behavior data, not a teacher label"
             .to_string(),
     };
-    decision.pick_certificate = None;
+    decision.decision_approval = None;
     decision.label_role = "behavior_policy_not_teacher";
     Ok(decision)
 }

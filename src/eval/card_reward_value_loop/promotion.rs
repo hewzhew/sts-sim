@@ -352,7 +352,7 @@ mod tests {
             }
         ));
         assert!(decision.autopilot_gate.value_source_eligible);
-        assert!(decision.pick_certificate.is_some());
+        assert!(decision.decision_approval.is_some());
     }
 
     fn calibration_fixture(

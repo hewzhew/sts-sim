@@ -28,16 +28,15 @@ pub use replay::{
 pub use semantics::card_reward_semantic_profile_v1;
 pub(crate) use threat_response::candidate_response_threat_tags_v1;
 pub use types::{
-    CardRewardAutopilotGateReportV1, CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1,
-    CardRewardDecisionV1, CardRewardEstimatorArbitrationV1,
+    CardRewardAutopilotGateReportV1, CardRewardCandidateEvidenceV1, CardRewardDecisionApprovalV1,
+    CardRewardDecisionContextV1, CardRewardDecisionV1, CardRewardEstimatorArbitrationV1,
     CardRewardEstimatorCandidateArbitrationV1, CardRewardEstimatorInputsV1,
-    CardRewardEvidenceGapV1, CardRewardFactsV1, CardRewardPickCertificateV1,
-    CardRewardPickDependencyV1, CardRewardPlanEffectV1, CardRewardPolicyActionV1,
-    CardRewardPolicyConfigV1, CardRewardRouteEvidenceV1, CardRewardSelectedRouteV1,
-    CardRewardSemanticProfileV1, CardRewardSemanticRoleV1, CardRewardStopDispositionV1,
-    CardRewardValueComponentV1, CardRewardValueEligibilityReasonV1, CardRewardValueEligibilityV1,
-    CardRewardValueEstimateV1, CardRewardValueHorizonV1, CardRewardValueSourceV1,
-    CardRewardValueStatusV1,
+    CardRewardEvidenceGapV1, CardRewardFactsV1, CardRewardPickDependencyV1, CardRewardPlanEffectV1,
+    CardRewardPolicyActionV1, CardRewardPolicyConfigV1, CardRewardRouteEvidenceV1,
+    CardRewardSelectedRouteV1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
+    CardRewardStopDispositionV1, CardRewardValueComponentV1, CardRewardValueEligibilityReasonV1,
+    CardRewardValueEligibilityV1, CardRewardValueEstimateV1, CardRewardValueHorizonV1,
+    CardRewardValueSourceV1, CardRewardValueStatusV1,
 };
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-mod certificates;
+mod approvals;
 mod policy;
 mod types;
 

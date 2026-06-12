@@ -278,8 +278,8 @@ fn branch_experiment_executes_shop_combo_purchase_branch() {
 
     assert!(combo_choice.command.contains(" && "));
     assert_eq!(
-        combo_branch.summary.gold, 391,
-        "combo branch should spend both the relic and card costs"
+        combo_branch.summary.gold, 351,
+        "high-pressure combo branch should spend the relic, card, and potion costs"
     );
     assert_eq!(
         combo_branch.summary.boundary_title, "Shop",
@@ -769,7 +769,7 @@ fn branch_experiment_reports_reward_option_portfolio_pruning() {
     assert!(portfolio
         .pruned_options
         .iter()
-        .any(|option| option.semantic_class == "pure_transition_frontload"));
+        .any(|option| option.semantic_class.contains("pure_transition_frontload")));
 }
 
 #[test]
@@ -1184,6 +1184,7 @@ fn branch_with_choice(branch_id: &str, effect_kind: &str) -> BranchWork {
         choices: vec![BranchExperimentChoiceV1 {
             depth: 0,
             kind: "card_reward".to_string(),
+            boundary_title: "Card Reward".to_string(),
             card: Some(CardId::TwinStrike),
             upgrades: Some(0),
             selected_cards: Vec::new(),
@@ -1220,6 +1221,7 @@ fn retention_candidate(
         choice_profiles: Vec::new(),
         choice_effect_keys: Vec::new(),
         lineage_flags: Vec::new(),
+        startup: Default::default(),
     }
 }
 
@@ -1243,6 +1245,7 @@ fn retention_decision(
         selected_by_slot: None,
         slots: slots.to_vec(),
         reasons: Vec::new(),
+        strategic_signature: Default::default(),
     }
 }
 

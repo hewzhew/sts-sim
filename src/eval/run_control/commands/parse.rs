@@ -87,6 +87,10 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "nr" | "next-route" | "advance-route" => parse_route_auto_step_command(&rest),
         "ar" | "auto-run" | "autorun" | "run-auto" => parse_auto_run_command(&rest),
         "auto-reward" => parse_auto_reward_command(&rest),
+        "branch-skip-card-reward" => Ok(RunControlCommand::BranchSkipCardReward(parse_usize_arg(
+            rest.first(),
+            "card reward item index",
+        )?)),
         "action" => Ok(RunControlCommand::ActionIndex(parse_usize_arg(
             rest.first(),
             "action index",

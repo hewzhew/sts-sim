@@ -137,10 +137,14 @@ fn candidate_value_summary(
     decision: &CardRewardDecisionV1,
 ) -> Vec<String> {
     let Some(report) = selected_arbitration_report(candidate, decision) else {
-        return vec!["selected_value_source=none".to_string()];
+        let mut summary = vec!["selected_value_source=none".to_string()];
+        summary.extend(candidate_strategic_delta_summary(candidate, decision));
+        return summary;
     };
     let Some(estimate) = selected_arbitration_estimate(candidate, decision) else {
-        return vec!["selected_value_source=none".to_string()];
+        let mut summary = vec!["selected_value_source=none".to_string()];
+        summary.extend(candidate_strategic_delta_summary(candidate, decision));
+        return summary;
     };
 
     let mut summary = vec![
@@ -161,6 +165,48 @@ fn candidate_value_summary(
                     || component.name.starts_with("strategy_threat_alignment_")
             })
             .map(|component| format!("component={}", component.name)),
+    );
+    summary.extend(candidate_strategic_delta_summary(candidate, decision));
+    summary
+}
+
+fn candidate_strategic_delta_summary(
+    candidate: &CardRewardCandidateEvidenceV1,
+    decision: &CardRewardDecisionV1,
+) -> Vec<String> {
+    let candidate_id = format!("card_reward:{}:{:?}", candidate.index, candidate.card);
+    let mut summary = vec![format!(
+        "strategic_audit=delta_coverage:{}/{} missing={}",
+        decision.strategic_trace.audit.delta_count,
+        decision.strategic_trace.audit.candidate_count,
+        decision.strategic_trace.audit.candidate_without_delta_count
+    )];
+    let Some(delta) = decision
+        .strategic_trace
+        .candidate_deltas
+        .iter()
+        .find(|delta| delta.action.candidate_id() == candidate_id)
+    else {
+        summary.push("strategic_delta=missing".to_string());
+        return summary;
+    };
+    summary.push(format!("strategic_role={:?}", delta.role));
+    summary.push(format!("strategic_verdict_hint={:?}", delta.verdict_hint));
+    summary.push(format!("strategic_positive={:.2}", delta.positive_amount()));
+    summary.push(format!("strategic_negative={:.2}", delta.negative_amount()));
+    summary.extend(
+        delta
+            .positive
+            .iter()
+            .take(3)
+            .map(|item| format!("strategic_plus={}", item.reason)),
+    );
+    summary.extend(
+        delta
+            .negative
+            .iter()
+            .take(3)
+            .map(|item| format!("strategic_minus={}", item.reason)),
     );
     summary
 }

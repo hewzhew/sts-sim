@@ -1,11 +1,13 @@
 use super::arbitration::{estimate_source_gate_eligible_v1, value_status_autopilot_eligible_v1};
-use super::behavior_gate::behavior_pick_certificate;
+use super::behavior_gate::behavior_decision_approval;
 use super::types::{
-    CardRewardAutopilotGateReportV1, CardRewardDecisionContextV1, CardRewardEvidenceGapV1,
-    CardRewardPickCertificateV1, CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
+    CardRewardAutopilotGateReportV1, CardRewardDecisionApprovalV1, CardRewardDecisionContextV1,
+    CardRewardEvidenceGapV1, CardRewardPolicyActionV1, CardRewardPolicyConfigV1,
     CardRewardStopDispositionV1, CardRewardValueEstimateV1, CardRewardValueStatusV1,
 };
+use crate::ai::strategic::{AcquisitionVerdict, CandidateAction, StrategicDecisionTrace};
 
+#[cfg(test)]
 pub(crate) fn pick_gate(
     context: &CardRewardDecisionContextV1,
     gate_value_estimates: &[CardRewardValueEstimateV1],
@@ -15,7 +17,49 @@ pub(crate) fn pick_gate(
     CardRewardPolicyActionV1,
     CardRewardAutopilotGateReportV1,
     Vec<CardRewardEvidenceGapV1>,
-    Option<CardRewardPickCertificateV1>,
+    Option<CardRewardDecisionApprovalV1>,
+) {
+    pick_gate_inner(
+        context,
+        gate_value_estimates,
+        all_value_estimates,
+        config,
+        None,
+    )
+}
+
+pub(crate) fn pick_gate_with_strategic_trace(
+    context: &CardRewardDecisionContextV1,
+    gate_value_estimates: &[CardRewardValueEstimateV1],
+    all_value_estimates: &[CardRewardValueEstimateV1],
+    config: &CardRewardPolicyConfigV1,
+    strategic_trace: &StrategicDecisionTrace,
+) -> (
+    CardRewardPolicyActionV1,
+    CardRewardAutopilotGateReportV1,
+    Vec<CardRewardEvidenceGapV1>,
+    Option<CardRewardDecisionApprovalV1>,
+) {
+    pick_gate_inner(
+        context,
+        gate_value_estimates,
+        all_value_estimates,
+        config,
+        Some(strategic_trace),
+    )
+}
+
+fn pick_gate_inner(
+    context: &CardRewardDecisionContextV1,
+    gate_value_estimates: &[CardRewardValueEstimateV1],
+    all_value_estimates: &[CardRewardValueEstimateV1],
+    config: &CardRewardPolicyConfigV1,
+    strategic_trace: Option<&StrategicDecisionTrace>,
+) -> (
+    CardRewardPolicyActionV1,
+    CardRewardAutopilotGateReportV1,
+    Vec<CardRewardEvidenceGapV1>,
+    Option<CardRewardDecisionApprovalV1>,
 ) {
     let mut gaps = Vec::new();
 
@@ -56,21 +100,23 @@ pub(crate) fn pick_gate(
         push_gap(&mut gaps, CardRewardEvidenceGapV1::MissingValueEstimate);
     }
     for candidate in &context.candidates {
-        for gap in &candidate.impact.certification_blockers {
+        for gap in &candidate.impact.approval_blockers {
             push_gap(&mut gaps, *gap);
         }
     }
 
     let gate_report = evaluate_autopilot_gate(context, gate_value_estimates, &gaps);
 
-    if let Some(certificate) =
-        generic_certificate(context, gate_value_estimates, &gate_report, config)
-    {
-        return pick_from_certificate(certificate, gate_report, gaps);
+    if let Some(approval) = generic_approval(context, gate_value_estimates, &gate_report, config) {
+        if let Some(approval) = strategic_backed_approval(approval, strategic_trace, &mut gaps) {
+            return pick_from_approval(approval, gate_report, gaps);
+        }
     }
 
-    if let Some(certificate) = behavior_pick_certificate(context, all_value_estimates, config) {
-        return pick_from_certificate(certificate, gate_report, gaps);
+    if let Some(approval) = behavior_decision_approval(context, all_value_estimates, config) {
+        if let Some(approval) = strategic_backed_approval(approval, strategic_trace, &mut gaps) {
+            return pick_from_approval(approval, gate_report, gaps);
+        }
     }
 
     for estimate in gate_value_estimates {
@@ -85,7 +131,7 @@ pub(crate) fn pick_gate(
     for gap in &gate_report.blocked_reasons {
         push_gap(&mut gaps, *gap);
     }
-    push_gap(&mut gaps, CardRewardEvidenceGapV1::NoAutoPickCertificate);
+    push_gap(&mut gaps, CardRewardEvidenceGapV1::NoDecisionApproval);
     (
         CardRewardPolicyActionV1::Stop {
             reason: stop_reason(&gaps),
@@ -97,20 +143,74 @@ pub(crate) fn pick_gate(
     )
 }
 
-fn pick_from_certificate(
-    certificate: CardRewardPickCertificateV1,
+fn strategic_backed_approval(
+    mut approval: CardRewardDecisionApprovalV1,
+    strategic_trace: Option<&StrategicDecisionTrace>,
+    gaps: &mut Vec<CardRewardEvidenceGapV1>,
+) -> Option<CardRewardDecisionApprovalV1> {
+    let Some(strategic_trace) = strategic_trace else {
+        return Some(approval);
+    };
+    let Some(verdict) = strategic_verdict_for_approval(&approval, strategic_trace) else {
+        push_gap(
+            gaps,
+            CardRewardEvidenceGapV1::StrategicCompilerRejectedCandidate,
+        );
+        return None;
+    };
+    if !strategic_verdict_allows_pick(verdict) {
+        push_gap(
+            gaps,
+            CardRewardEvidenceGapV1::StrategicCompilerRejectedCandidate,
+        );
+        return None;
+    }
+    approval
+        .reasons
+        .push(format!("strategic_compiler_verdict={verdict:?}"));
+    Some(approval)
+}
+
+fn strategic_verdict_for_approval(
+    approval: &CardRewardDecisionApprovalV1,
+    strategic_trace: &StrategicDecisionTrace,
+) -> Option<AcquisitionVerdict> {
+    strategic_trace
+        .compiled
+        .iter()
+        .find(|decision| {
+            matches!(
+                decision.action,
+                CandidateAction::TakeCard { index, card }
+                    if index == approval.index && card == approval.card
+            )
+        })
+        .map(|decision| decision.verdict)
+}
+
+fn strategic_verdict_allows_pick(verdict: AcquisitionVerdict) -> bool {
+    matches!(
+        verdict,
+        AcquisitionVerdict::MustTake
+            | AcquisitionVerdict::StrongTake
+            | AcquisitionVerdict::ContextTake
+    )
+}
+
+fn pick_from_approval(
+    approval: CardRewardDecisionApprovalV1,
     gate_report: CardRewardAutopilotGateReportV1,
     gaps: Vec<CardRewardEvidenceGapV1>,
 ) -> (
     CardRewardPolicyActionV1,
     CardRewardAutopilotGateReportV1,
     Vec<CardRewardEvidenceGapV1>,
-    Option<CardRewardPickCertificateV1>,
+    Option<CardRewardDecisionApprovalV1>,
 ) {
-    let index = certificate.index;
-    let card = certificate.card;
-    let confidence = certificate.confidence;
-    let reason = certificate.reasons.join("; ");
+    let index = approval.index;
+    let card = approval.card;
+    let confidence = approval.confidence;
+    let reason = approval.reasons.join("; ");
     (
         CardRewardPolicyActionV1::Pick {
             index,
@@ -120,7 +220,7 @@ fn pick_from_certificate(
         },
         gate_report,
         gaps,
-        Some(certificate),
+        Some(approval),
     )
 }
 
@@ -245,12 +345,12 @@ fn evaluate_autopilot_gate(
     }
 }
 
-fn generic_certificate(
+fn generic_approval(
     context: &CardRewardDecisionContextV1,
     value_estimates: &[CardRewardValueEstimateV1],
     gate_report: &CardRewardAutopilotGateReportV1,
     config: &CardRewardPolicyConfigV1,
-) -> Option<CardRewardPickCertificateV1> {
+) -> Option<CardRewardDecisionApprovalV1> {
     if !config.allow_autopilot_value_gate {
         return None;
     }
@@ -273,7 +373,7 @@ fn generic_certificate(
         .candidates
         .iter()
         .find(|candidate| candidate.index == index)?;
-    Some(CardRewardPickCertificateV1 {
+    Some(CardRewardDecisionApprovalV1 {
         index,
         card: candidate.card,
         confidence: (1.0 - estimate.uncertainty).clamp(0.0, 1.0),
@@ -308,7 +408,7 @@ fn candidate_dependencies_clear(context: &CardRewardDecisionContextV1, index: us
         .candidates
         .iter()
         .find(|candidate| candidate.index == index)
-        .map(|candidate| candidate.impact.certification_blockers.is_empty())
+        .map(|candidate| candidate.impact.approval_blockers.is_empty())
         .unwrap_or(false)
 }
 

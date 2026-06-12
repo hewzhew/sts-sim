@@ -6,6 +6,7 @@ use crate::eval::branch_experiment::{
 use crate::eval::run_control::RunControlSession;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::EngineState;
+use crate::state::rewards::RewardItem;
 
 mod boss_relic;
 mod campfire;
@@ -106,10 +107,10 @@ pub(crate) fn current_branch_boundary(
             if has_singing_bowl(session) && card_reward_bowl_available(session) {
                 options.push(BranchBoundaryOptionV1::card_reward_bowl());
             }
-            if card_reward_skip_available(session)
-                && (config.include_event_reward_skip || !completed_event_reward_skip(session))
-            {
-                options.push(BranchBoundaryOptionV1::card_reward_skip());
+            if config.include_event_reward_skip || !completed_event_reward_skip(session) {
+                if let Some(command) = card_reward_skip_command(session) {
+                    options.push(BranchBoundaryOptionV1::card_reward_skip(command));
+                }
             }
         }
         return Some(BranchBoundarySelectionV1 {
@@ -201,15 +202,18 @@ pub(crate) fn branch_boundary_available(session: &RunControlSession) -> bool {
         || event_branch_options(session, Some(4)).is_some()
 }
 
-fn card_reward_skip_available(session: &RunControlSession) -> bool {
-    match &session.engine_state {
-        EngineState::RewardScreen(reward) => {
-            reward.pending_card_choice.is_none()
-                && reward.skippable
-                && reward.has_card_reward_item()
-        }
-        _ => false,
+fn card_reward_skip_command(session: &RunControlSession) -> Option<String> {
+    let EngineState::RewardScreen(reward) = &session.engine_state else {
+        return None;
+    };
+    if reward.pending_card_choice.is_some() {
+        return None;
     }
+    let reward_index = reward
+        .items
+        .iter()
+        .position(|item| matches!(item, RewardItem::Card { .. }))?;
+    Some(format!("branch-skip-card-reward {reward_index}"))
 }
 
 fn completed_event_reward_skip(session: &RunControlSession) -> bool {
@@ -258,12 +262,12 @@ impl BranchBoundaryOptionV1 {
         }
     }
 
-    fn card_reward_skip() -> Self {
+    fn card_reward_skip(command: String) -> Self {
         Self {
             kind: "card_reward_skip",
             effect_label: "Skip card reward".to_string(),
             label: "Skip card reward".to_string(),
-            command: "skip".to_string(),
+            command,
             card: None,
             upgrades: None,
             selected_cards: Vec::new(),

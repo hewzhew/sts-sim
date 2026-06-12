@@ -4,7 +4,7 @@ use crate::ai::noncombat_strategy_v1::{
 use crate::state::core::CampfireChoice;
 use crate::state::run::RunState;
 
-use super::certificates::certified_action;
+use super::approvals::approved_action;
 use super::types::{
     candidate_id, CampfireCandidateEvidenceV1, CampfireDecisionContextV1, CampfireDecisionV1,
     CampfirePolicyActionV1, CampfirePolicyClassV1, CampfirePolicyConfigV1,
@@ -58,10 +58,9 @@ pub fn plan_campfire_decision_v1(
     context: &CampfireDecisionContextV1,
     config: &CampfirePolicyConfigV1,
 ) -> CampfireDecisionV1 {
-    let action =
-        certified_action(context, config).unwrap_or_else(|| CampfirePolicyActionV1::Stop {
-            reason: stop_reason(context),
-        });
+    let action = approved_action(context, config).unwrap_or_else(|| CampfirePolicyActionV1::Stop {
+        reason: stop_reason(context),
+    });
 
     CampfireDecisionV1 {
         action,
@@ -106,7 +105,7 @@ fn candidate_evidence(
             risks.push("ruby key timing is a high-level route objective".to_string());
         }
         CampfirePolicyClassV1::Unknown => {
-            risks.push("campfire policy has no safe certificate for this option".to_string());
+            risks.push("campfire policy has no safe approval for this option".to_string());
         }
     }
 

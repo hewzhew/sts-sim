@@ -31,7 +31,7 @@ fn card_facts_are_mechanical_and_do_not_contain_pick_value() {
     assert_eq!(candidate.facts.damage.hit_count, 2);
     assert_eq!(candidate.facts.damage.total_damage, 10);
     assert!(candidate.facts.pick_dependencies.is_empty());
-    assert!(candidate.impact.certification_blockers.is_empty());
+    assert!(candidate.impact.approval_blockers.is_empty());
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn decision_context_marks_missing_route_evidence_as_policy_gap_not_card_fact() {
     assert!(decision
         .evidence_gaps
         .contains(&CardRewardEvidenceGapV1::MissingRouteEvidence));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn archetype_dependent_card_requires_matching_deck_evidence() {
         .contains(&crate::ai::card_reward_policy_v1::CardRewardPickDependencyV1::StrengthScaling));
     assert!(candidate
         .impact
-        .certification_blockers
+        .approval_blockers
         .contains(&CardRewardEvidenceGapV1::UnsatisfiedStrengthScalingEvidence));
 
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
@@ -112,7 +112,7 @@ fn archetype_dependent_card_requires_matching_deck_evidence() {
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
 }
 
 #[test]
@@ -220,7 +220,7 @@ fn searing_blow_exports_upgrade_commitment_but_uncalibrated_gate_stops() {
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
     assert_eq!(
         context
             .strategy
@@ -332,7 +332,7 @@ fn heavy_blade_exports_strength_plan_but_uncalibrated_gate_stops() {
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
     assert_eq!(
         context
             .strategy
@@ -482,7 +482,7 @@ fn clothesline_exports_weak_frontload_patch_but_uncalibrated_gate_stops() {
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
     assert_eq!(
         context
             .strategy
@@ -602,7 +602,7 @@ fn early_transition_attack_exports_frontload_patch_but_uncalibrated_gate_stops()
     assert!(sword_boomerang.facts.is_random_output);
     assert!(sword_boomerang
         .impact
-        .certification_blockers
+        .approval_blockers
         .contains(&CardRewardEvidenceGapV1::RandomOutcomeRequiresPolicy));
 
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
@@ -611,7 +611,7 @@ fn early_transition_attack_exports_frontload_patch_but_uncalibrated_gate_stops()
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
     assert!(decision
         .candidates
         .iter()
@@ -643,7 +643,7 @@ fn transition_attack_value_gate_stops_when_multiple_deterministic_attacks_match(
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
 }
 
 #[test]
@@ -675,7 +675,7 @@ fn multi_debuff_control_exports_combat_control_but_uncalibrated_gate_stops() {
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
     assert!(!decision.autopilot_gate.value_source_eligible);
 }
 
@@ -706,7 +706,7 @@ fn weak_frontload_patch_does_not_auto_certify_when_core_plan_is_committed() {
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
 }
 
 #[test]
@@ -729,7 +729,7 @@ fn score_threshold_overrides_cannot_force_a_pick_without_value_gate() {
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
 }
 
 #[test]
@@ -780,7 +780,7 @@ fn route_risk_values_are_consumed_by_gate_but_cannot_certify_pick_without_promot
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
     assert!(decision
         .evidence_gaps
         .contains(&CardRewardEvidenceGapV1::IneligibleValueSource));
@@ -815,7 +815,7 @@ fn route_risk_blocks_even_when_old_rule_would_have_matched_without_promotion() {
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
     assert_eq!(
         estimates_for_source(
             &decision.value_estimates,
@@ -854,7 +854,7 @@ fn behavior_autopick_gate_stops_when_offer_contains_unresolved_plan_dependency()
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
     assert!(decision
         .evidence_gaps
         .contains(&CardRewardEvidenceGapV1::UnsatisfiedRouteUpgradeEvidence));
@@ -891,7 +891,7 @@ fn outcome_calibration_estimates_are_not_autopilot_eligible_without_arbitration_
         })
         .collect::<Vec<_>>();
 
-    let (action, gate_report, gaps, certificate) = super::gate::pick_gate(
+    let (action, gate_report, gaps, approval) = super::gate::pick_gate(
         &context,
         &value_estimates,
         &value_estimates,
@@ -899,7 +899,7 @@ fn outcome_calibration_estimates_are_not_autopilot_eligible_without_arbitration_
     );
 
     assert!(matches!(action, CardRewardPolicyActionV1::Stop { .. }));
-    assert!(certificate.is_none());
+    assert!(approval.is_none());
     assert!(!gate_report.value_source_eligible);
     assert!(gate_report
         .blocked_reasons
@@ -937,7 +937,7 @@ fn outcome_calibration_gate_eligibility_is_estimate_level_not_source_level() {
     value_estimates[1].eligibility.usable_for_autopilot_gate = true;
     value_estimates[1].eligibility.reasons.clear();
 
-    let (action, gate_report, gaps, certificate) = super::gate::pick_gate(
+    let (action, gate_report, gaps, approval) = super::gate::pick_gate(
         &context,
         &value_estimates,
         &value_estimates,
@@ -956,7 +956,115 @@ fn outcome_calibration_gate_eligibility_is_estimate_level_not_source_level() {
             ..
         }
     ));
-    assert!(certificate.is_some());
+    assert!(approval.is_some());
+}
+
+#[test]
+fn card_reward_autopick_uses_decision_approval_not_strategy_proof() {
+    let mut context = context_for_cards(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::Cleave, 0),
+    ]);
+    context.route = Some(route_with_combat_pressure());
+    let mut value_estimates = vec![
+        test_value_estimate(
+            0,
+            CardId::TwinStrike,
+            CardRewardValueSourceV1::OutcomeCalibration,
+            CardRewardValueStatusV1::OutcomeCalibrated,
+            2.0,
+            0.1,
+        ),
+        test_value_estimate(
+            1,
+            CardId::Cleave,
+            CardRewardValueSourceV1::OutcomeCalibration,
+            CardRewardValueStatusV1::OutcomeCalibrated,
+            0.5,
+            0.1,
+        ),
+    ];
+    for estimate in &mut value_estimates {
+        estimate.eligibility.usable_for_autopilot_gate = true;
+        estimate.eligibility.reasons.clear();
+    }
+
+    let decision = plan_card_reward_decision_with_estimator_inputs_v1(
+        &context,
+        &CardRewardPolicyConfigV1::default(),
+        &CardRewardEstimatorInputsV1 {
+            external_value_estimates: value_estimates,
+        },
+    );
+
+    assert!(decision.decision_approval.is_some());
+}
+
+#[test]
+fn value_gate_cannot_pick_candidate_without_strategic_compiler_backing() {
+    let context = context_for_cards_with_route(
+        vec![
+            RewardCard::new(CardId::Metallicize, 0),
+            RewardCard::new(CardId::TwinStrike, 0),
+        ],
+        route_with_combat_pressure(),
+    );
+    let mut value_estimates = vec![
+        test_value_estimate(
+            0,
+            CardId::Metallicize,
+            CardRewardValueSourceV1::OutcomeCalibration,
+            CardRewardValueStatusV1::OutcomeCalibrated,
+            3.0,
+            0.1,
+        ),
+        test_value_estimate(
+            1,
+            CardId::TwinStrike,
+            CardRewardValueSourceV1::OutcomeCalibration,
+            CardRewardValueStatusV1::OutcomeCalibrated,
+            0.5,
+            0.1,
+        ),
+    ];
+    for estimate in &mut value_estimates {
+        estimate.eligibility.usable_for_autopilot_gate = true;
+        estimate.eligibility.reasons.clear();
+    }
+
+    let decision = plan_card_reward_decision_with_estimator_inputs_v1(
+        &context,
+        &CardRewardPolicyConfigV1::default(),
+        &CardRewardEstimatorInputsV1 {
+            external_value_estimates: value_estimates,
+        },
+    );
+    let metallicize_verdict = decision
+        .strategic_trace
+        .compiled
+        .iter()
+        .find(|compiled| {
+            matches!(
+                compiled.action,
+                crate::ai::strategic::CandidateAction::TakeCard {
+                    index: 0,
+                    card: CardId::Metallicize,
+                }
+            )
+        })
+        .map(|compiled| compiled.verdict)
+        .expect("Metallicize should have a compiled strategic verdict");
+
+    assert!(matches!(
+        metallicize_verdict,
+        crate::ai::strategic::AcquisitionVerdict::SkipPreferred
+            | crate::ai::strategic::AcquisitionVerdict::Reject
+    ));
+    assert!(matches!(
+        decision.action,
+        CardRewardPolicyActionV1::Stop { .. }
+    ));
+    assert!(decision.decision_approval.is_none());
 }
 
 #[test]
@@ -1130,7 +1238,7 @@ fn card_reward_policy_routes_value_estimates_through_arbitration() {
             report.selected_for_gate
                 && report.selected_source == Some(CardRewardValueSourceV1::RouteRisk)
         }));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
 }
 
 #[test]
@@ -1171,7 +1279,7 @@ fn policy_accepts_external_calibrated_estimates_before_arbitration_without_autop
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
 }
 
 #[test]
@@ -1348,7 +1456,7 @@ fn strategy_package_estimator_exports_plan_alignment_without_certifying_autopick
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
 }
 
 #[test]

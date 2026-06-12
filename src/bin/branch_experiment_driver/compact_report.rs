@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use sts_simulator::ai::strategic::{compact_branch_signature, BranchSignature};
 use sts_simulator::eval::branch_experiment::{
     branch_experiment_choice_effect_key_v1, BranchExperimentBranchReportV1,
     BranchExperimentBranchStatusV1, BranchExperimentChoiceV1, BranchExperimentReportV1,
@@ -564,8 +565,9 @@ fn render_branch_line(
     let formation = render_formation_summary(branch);
     let trajectory = render_trajectory_summary(branch);
     let context = render_retention_context_suffix(branch);
+    let strategic = render_strategic_signature_suffix(&branch.retention.strategic_signature);
     format!(
-        "  A{}F{} HP {}/{} gold {} | {}{} | {} | {}{} | lane={} keep=[{}] | choices: {} | next_reward=[{}]",
+        "  A{}F{} HP {}/{} gold {} | {}{} | {} | {}{} | lane={} keep=[{}]{} | choices: {} | next_reward=[{}]",
         branch.summary.act,
         branch.summary.floor,
         branch.summary.hp,
@@ -578,9 +580,18 @@ fn render_branch_line(
         context,
         lane,
         retention,
+        strategic,
         choices,
         next_reward
     )
+}
+
+fn render_strategic_signature_suffix(signature: &BranchSignature) -> String {
+    let summary = compact_branch_signature(signature);
+    if summary.is_empty() {
+        return String::new();
+    }
+    format!(" | strat=[{summary}]")
 }
 
 fn render_retention_context_suffix(branch: &BranchExperimentBranchReportV1) -> String {
@@ -853,6 +864,7 @@ fn retention_slot_name(slot: BranchRetentionSlotV1) -> &'static str {
 mod tests {
     use super::*;
     use sts_simulator::ai::noncombat_strategy_v1::StrategyDeckFormationStageV1;
+    use sts_simulator::ai::strategic::{BranchSignature, RetentionBucket};
     use sts_simulator::content::cards::CardId;
     use sts_simulator::eval::branch_experiment::{
         BranchExperimentChoiceV1, BranchExperimentFrontierGroupV1, BranchExperimentFrontierV1,
@@ -1437,6 +1449,37 @@ mod tests {
     }
 
     #[test]
+    fn compact_report_renders_strategic_retention_signature() {
+        let mut branch = branch_report(
+            "b0",
+            "Barricade",
+            2,
+            22,
+            65,
+            BranchRetentionSlotV1::EngineSetup,
+            "Card Reward",
+        );
+        branch.retention.strategic_signature = BranchSignature {
+            boss_readiness: 0.6,
+            clean_score: 0.8,
+            engine_score: 1.0,
+            cycle_debt: 0.2,
+            setup_debt: 0.4,
+            economy_conversion: 0.0,
+            package_coherence: 0.7,
+            buckets: vec![RetentionBucket::BestCoreEngine],
+        };
+        let report = BranchExperimentReportV1 {
+            branches: vec![branch],
+            ..empty_report()
+        };
+
+        let rendered = render_compact_report(&report);
+
+        assert!(rendered.contains("strat=[boss:0.6 clean:0.8 eng:1.0 debt:0.2/0.4 pkg:0.7]"));
+    }
+
+    #[test]
     fn retention_lane_count_line_summarizes_actual_portfolio_budget() {
         let rendered = render_retention_lane_count_line(&[
             Some(BranchRetentionSlotV1::Package),
@@ -1914,10 +1957,12 @@ mod tests {
                 selected_by_slot: Some(primary_slot),
                 slots: vec![primary_slot],
                 reasons: Vec::new(),
+                strategic_signature: Default::default(),
             },
             choices: vec![BranchExperimentChoiceV1 {
                 depth: 0,
                 kind: "card_reward".to_string(),
+                boundary_title: "Card Reward".to_string(),
                 card: Some(CardId::Strike),
                 upgrades: Some(0),
                 selected_cards: Vec::new(),
@@ -1976,6 +2021,7 @@ mod tests {
             BranchExperimentChoiceV1 {
                 depth: 0,
                 kind: "event".to_string(),
+                boundary_title: "Event".to_string(),
                 card: None,
                 upgrades: None,
                 selected_cards: Vec::new(),

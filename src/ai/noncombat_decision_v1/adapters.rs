@@ -331,7 +331,7 @@ fn card_reward_uncertainty_notes(candidate: &CardRewardCandidateEvidenceV1) -> V
     notes.extend(
         candidate
             .impact
-            .certification_blockers
+            .approval_blockers
             .iter()
             .map(|gap| format!("autopilot blocker: {gap:?}")),
     );
@@ -364,9 +364,9 @@ fn card_reward_selection(decision: &CardRewardDecisionV1) -> PolicySelectionV1 {
             reason: reason.clone(),
             confidence: *confidence,
             selection_mode: decision
-                .pick_certificate
+                .decision_approval
                 .as_ref()
-                .map(|certificate| certificate.selection_mode)
+                .map(|approval| approval.selection_mode)
                 .unwrap_or("card_reward_policy_pick")
                 .to_string(),
         },
@@ -401,8 +401,8 @@ fn card_reward_fact_components(candidate: &CardRewardCandidateEvidenceV1) -> Vec
             candidate.facts.enemy_strength_down as f32,
         ),
         ValueComponentV1::new(
-            "certification_blockers",
-            candidate.impact.certification_blockers.len() as f32,
+            "approval_blockers",
+            candidate.impact.approval_blockers.len() as f32,
         ),
         ValueComponentV1::new(
             format!("plan_support_{:?}", candidate.plan_delta.support),

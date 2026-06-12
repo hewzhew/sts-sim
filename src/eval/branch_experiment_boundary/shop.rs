@@ -43,7 +43,7 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
             reason,
         } => {
             let card_name = get_card_definition(card).name;
-            Some(vec![ShopBranchOption {
+            let mut options = vec![ShopBranchOption {
                 label: format!("Purge {card_name}"),
                 command: format!("purge {deck_index}"),
                 card: Some(card),
@@ -51,7 +51,17 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
                 effect_label: format!("Purge {card_name} | confidence={confidence:.2} | {reason}"),
                 representative_count: 1,
                 suppressed_count: 0,
-            }])
+            }];
+            if shop_conversion_pressure_v1(&session.run_state, shop) {
+                if let Some(purchase_options) = low_fanout_purchase_branch_options(shop, session) {
+                    options.extend(
+                        purchase_options
+                            .into_iter()
+                            .filter(|option| option.effect_kind != "shop_leave"),
+                    );
+                }
+            }
+            Some(options)
         }
         ShopPolicyActionV1::Purchase { .. } => low_fanout_purchase_branch_options(shop, session),
         ShopPolicyActionV1::Stop { .. } if !context.affordable_purchase_exists => {

@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use super::types::{
-    CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1, CardRewardPickCertificateV1,
+    CardRewardCandidateEvidenceV1, CardRewardDecisionApprovalV1, CardRewardDecisionContextV1,
     CardRewardPolicyConfigV1, CardRewardValueEstimateV1, CardRewardValueSourceV1,
     CardRewardValueStatusV1,
 };
@@ -14,11 +14,11 @@ struct BehaviorCandidate<'a> {
     source_labels: Vec<&'static str>,
 }
 
-pub(crate) fn behavior_pick_certificate(
+pub(crate) fn behavior_decision_approval(
     context: &CardRewardDecisionContextV1,
     value_estimates: &[CardRewardValueEstimateV1],
     config: &CardRewardPolicyConfigV1,
-) -> Option<CardRewardPickCertificateV1> {
+) -> Option<CardRewardDecisionApprovalV1> {
     if !config.allow_behavior_autopick_gate || context.has_singing_bowl {
         return None;
     }
@@ -29,7 +29,7 @@ pub(crate) fn behavior_pick_certificate(
     let mut candidates = context
         .candidates
         .iter()
-        .filter(|candidate| candidate.impact.certification_blockers.is_empty())
+        .filter(|candidate| candidate.impact.approval_blockers.is_empty())
         .filter_map(|candidate| behavior_candidate(candidate, value_estimates, config))
         .collect::<Vec<_>>();
 
@@ -58,7 +58,7 @@ pub(crate) fn behavior_pick_certificate(
         return None;
     }
 
-    Some(CardRewardPickCertificateV1 {
+    Some(CardRewardDecisionApprovalV1 {
         index: best.candidate.index,
         card: best.candidate.card,
         confidence: (1.0 - best.max_uncertainty).clamp(0.0, 1.0),
@@ -78,7 +78,7 @@ pub(crate) fn behavior_pick_certificate(
 
 fn offer_has_plan_dependency_blocker(context: &CardRewardDecisionContextV1) -> bool {
     context.candidates.iter().any(|candidate| {
-        candidate.impact.certification_blockers.iter().any(|gap| {
+        candidate.impact.approval_blockers.iter().any(|gap| {
             matches!(
                 gap,
                 super::types::CardRewardEvidenceGapV1::UnsatisfiedRouteUpgradeEvidence

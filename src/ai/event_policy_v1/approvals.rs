@@ -3,35 +3,35 @@ use super::types::{
 };
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct PickCertificate {
+pub(crate) struct PickApproval {
     pub(crate) index: usize,
     pub(crate) label: String,
     pub(crate) confidence: f32,
     pub(crate) reason: String,
 }
 
-pub(crate) fn pick_certificates(
+pub(crate) fn pick_approvals(
     context: &EventDecisionContextV1,
     config: &EventPolicyConfigV1,
-) -> Vec<PickCertificate> {
+) -> Vec<PickApproval> {
     context
         .candidates
         .iter()
-        .filter_map(|candidate| pick_certificate(candidate, context, config))
+        .filter_map(|candidate| pick_approval(candidate, context, config))
         .collect()
 }
 
-fn pick_certificate(
+fn pick_approval(
     candidate: &EventCandidateEvidenceV1,
     context: &EventDecisionContextV1,
     config: &EventPolicyConfigV1,
-) -> Option<PickCertificate> {
+) -> Option<PickApproval> {
     if candidate.disabled {
         return None;
     }
     match candidate.class {
         EventPolicyClassV1::FreeKnownBenefit if config.allow_free_known_benefit => {
-            Some(PickCertificate {
+            Some(PickApproval {
                 index: candidate.index,
                 label: candidate.label.clone(),
                 confidence: 0.84,
@@ -42,7 +42,7 @@ fn pick_certificate(
             if config.allow_safe_exit_from_risky_event
                 && all_other_enabled_candidates_are_risky(context, candidate.index) =>
         {
-            Some(PickCertificate {
+            Some(PickApproval {
                 index: candidate.index,
                 label: candidate.label.clone(),
                 confidence: 0.72,
@@ -53,7 +53,7 @@ fn pick_certificate(
             if config.allow_max_hp_for_safe_hp_cost
                 && max_hp_for_hp_cost_is_safe(context, candidate, config) =>
         {
-            Some(PickCertificate {
+            Some(PickApproval {
                 index: candidate.index,
                 label: candidate.label.clone(),
                 confidence: 0.74,

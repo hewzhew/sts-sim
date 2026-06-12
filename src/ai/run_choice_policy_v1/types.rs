@@ -131,7 +131,7 @@ impl RunChoiceDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "conservative_run_choice_certificate".to_string(),
+                    selection_mode: "conservative_run_choice_approval".to_string(),
                 },
                 RunChoicePolicyActionV1::Stop { reason } => PolicySelectionV1 {
                     status: PolicySelectionStatusV1::Stopped,

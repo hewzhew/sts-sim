@@ -1,5 +1,6 @@
 use super::*;
 use crate::ai::noncombat_strategy_v1::{StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1};
+use crate::ai::strategic::{BranchSignature, BranchSignatureCompact, RetentionBucket};
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::{
     BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentChoiceV1,
@@ -12,7 +13,7 @@ use crate::eval::run_control::{
 };
 use crate::state::core::EngineState;
 use crate::state::events::{EventId, EventState};
-use crate::state::rewards::{RewardCard, RewardState};
+use crate::state::rewards::{RewardCard, RewardItem, RewardState};
 use std::collections::BTreeMap;
 
 #[test]
@@ -136,8 +137,11 @@ fn compact_campaign_report_renders_active_branch_differences() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 2);
 
+    assert!(
+        rendered.contains("2. A1F35 HP 80/80 gold 99 deck 10 sel=[rank=80 res=0] | Card Reward")
+    );
     assert!(rendered.contains(
-        "2. A1F35 HP 80/80 gold 99 deck 10 | Card Reward | choices: Rampage -> Sever Soul -> ... -> Buy Warcry | 23 gold | diff: choices +Dark Embrace; stage PlanSeeded->Mature; strengths +ExhaustEngine +StrengthScaling"
+        "diff: choices +Dark Embrace; stage PlanSeeded->Mature; strengths +ExhaustEngine +StrengthScaling"
     ));
 }
 
@@ -294,6 +298,195 @@ fn campaign_report_branch_preserves_stop_reason() {
 }
 
 #[test]
+fn campaign_report_branch_preserves_strategic_summary() {
+    let parent = test_campaign_branch("parent", 3, 80);
+    let mut child = test_report_branch(
+        "child",
+        vec![("rp 1", "Barricade")],
+        BranchExperimentBranchStatusV1::Active,
+    );
+    child.retention.strategic_signature = BranchSignature {
+        boss_readiness: 0.6,
+        clean_score: 0.8,
+        engine_score: 1.0,
+        cycle_debt: 0.2,
+        setup_debt: 0.4,
+        economy_conversion: 0.0,
+        package_coherence: 0.7,
+        buckets: vec![RetentionBucket::BestCoreEngine],
+    };
+
+    let campaign_branch = campaign_branch_from_report_branch_v1(&parent, &child);
+    let mut report = test_campaign_report_with_active("placeholder", 1, 80);
+    report.active = vec![campaign_branch];
+    report.frozen.clear();
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains("strat=[boss:0.6 clean:0.8 eng:1.0 debt:0.2/0.4 pkg:0.7]"));
+}
+
+#[test]
+fn compact_campaign_report_shows_selection_basis_for_branch_examples() {
+    let mut report = test_campaign_report_with_active("active", 3, 80);
+    report.active[0].rank_key = 123;
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains("sel=[rank=123 res=0]"));
+}
+
+#[test]
+fn compact_campaign_report_formats_large_selection_rank_readably() {
+    let mut report = test_campaign_report_with_active("active", 3, 80);
+    report.active[0].rank_key = 11_513;
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains("sel=[rank=11.5k res=0]"));
+}
+
+#[test]
+fn campaign_choice_label_prefixes_generic_event_leave_with_boundary() {
+    let choice = BranchExperimentChoiceV1 {
+        depth: 0,
+        kind: "event".to_string(),
+        boundary_title: "GoopPuddle".to_string(),
+        card: None,
+        upgrades: None,
+        selected_cards: Vec::new(),
+        effect_kind: "event".to_string(),
+        effect_key: "leave".to_string(),
+        effect_label: "[Leave] Lose 27 Gold.".to_string(),
+        representative_count: 1,
+        suppressed_count: 0,
+        label: "[Leave] Lose 27 Gold.".to_string(),
+        command: "event 1".to_string(),
+    };
+
+    assert_eq!(
+        campaign_choice_label_v1(&choice),
+        "GoopPuddle: [Leave] Lose 27 Gold."
+    );
+}
+
+#[test]
+fn campaign_choice_label_prefixes_bracketed_event_choices_with_boundary() {
+    let choice = BranchExperimentChoiceV1 {
+        depth: 0,
+        kind: "event".to_string(),
+        boundary_title: "GoldenWing".to_string(),
+        card: None,
+        upgrades: None,
+        selected_cards: Vec::new(),
+        effect_kind: "event".to_string(),
+        effect_key: "remove_card".to_string(),
+        effect_label: "[Remove a card] Take 7 damage. Remove a card from your deck.".to_string(),
+        representative_count: 1,
+        suppressed_count: 0,
+        label: "[Remove a card] Take 7 damage. Remove a card from your deck.".to_string(),
+        command: "event 0".to_string(),
+    };
+
+    assert_eq!(
+        campaign_choice_label_v1(&choice),
+        "GoldenWing: [Remove a card] Take 7 damage. Remove a card from your deck."
+    );
+}
+
+#[test]
+fn compact_campaign_report_summarizes_active_strategic_signals() {
+    let parent = test_campaign_branch("parent", 3, 80);
+    let mut engine = test_report_branch(
+        "engine",
+        vec![("rp 1", "Barricade")],
+        BranchExperimentBranchStatusV1::Active,
+    );
+    engine.retention.strategic_signature = BranchSignature {
+        boss_readiness: 0.6,
+        clean_score: 0.8,
+        engine_score: 1.0,
+        cycle_debt: 0.2,
+        setup_debt: 0.4,
+        economy_conversion: 0.0,
+        package_coherence: 0.7,
+        buckets: vec![RetentionBucket::BestCoreEngine],
+    };
+    let mut clean = test_report_branch(
+        "clean",
+        vec![("skip", "Skip card reward")],
+        BranchExperimentBranchStatusV1::Active,
+    );
+    clean.retention.strategic_signature = BranchSignature {
+        boss_readiness: 0.2,
+        clean_score: 1.0,
+        engine_score: 0.0,
+        cycle_debt: 0.0,
+        setup_debt: 0.0,
+        economy_conversion: 0.0,
+        package_coherence: 0.0,
+        buckets: vec![RetentionBucket::BestCleanDeck],
+    };
+
+    let mut report = test_campaign_report_with_active("placeholder", 1, 80);
+    report.active = vec![
+        campaign_branch_from_report_branch_v1(&parent, &engine),
+        campaign_branch_from_report_branch_v1(&parent, &clean),
+    ];
+    report.frozen.clear();
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains(
+        "Strategic signals: active n=2 avg=[boss:0.4 clean:0.9 eng:0.5 debt:0.1/0.2 pkg:0.4]"
+    ));
+}
+
+#[test]
+fn compact_campaign_report_flags_frozen_engine_above_active() {
+    let mut report = test_campaign_report_with_active("placeholder", 1, 80);
+    report.active.clear();
+    report.frozen.clear();
+    report.strategic_signals = BranchCampaignStrategicSignalsV1 {
+        groups: vec![
+            BranchCampaignStrategicSignalGroupV1 {
+                label: "active".to_string(),
+                count: 2,
+                average: BranchSignatureCompact {
+                    present: true,
+                    boss_readiness_milli: 600,
+                    clean_score_milli: 900,
+                    engine_score_milli: 100,
+                    cycle_debt_milli: 100,
+                    setup_debt_milli: 0,
+                    economy_conversion_milli: 0,
+                    package_coherence_milli: 100,
+                },
+            },
+            BranchCampaignStrategicSignalGroupV1 {
+                label: "frozen".to_string(),
+                count: 6,
+                average: BranchSignatureCompact {
+                    present: true,
+                    boss_readiness_milli: 500,
+                    clean_score_milli: 700,
+                    engine_score_milli: 500,
+                    cycle_debt_milli: 100,
+                    setup_debt_milli: 0,
+                    economy_conversion_milli: 0,
+                    package_coherence_milli: 300,
+                },
+            },
+        ],
+    };
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains(
+        "Strategic concern: frozen_engine_above_active=0.4 frozen_package_above_active=0.2"
+    ));
+}
+
+#[test]
 fn campaign_frozen_overflow_replaces_weaker_existing_branch() {
     let mut existing = test_campaign_branch("existing", 3, 80);
     existing.choice_labels = vec!["Body Slam".to_string()];
@@ -365,6 +558,38 @@ fn campaign_frozen_overflow_replaces_unconverted_gold_branch_when_progress_ties(
 }
 
 #[test]
+fn campaign_frozen_overflow_replaces_weaker_strategic_branch_when_progress_ties() {
+    let mut frozen = vec![test_campaign_branch("existing-weak", 8, 70)];
+    frozen[0].rank_key = 100;
+    let mut incoming = test_campaign_branch("incoming-engine", 8, 70);
+    incoming.rank_key = 100;
+    incoming.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 500,
+        clean_score_milli: 700,
+        engine_score_milli: 900,
+        cycle_debt_milli: 100,
+        setup_debt_milli: 100,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 800,
+    };
+    let mut discarded_count = 0usize;
+    let mut discarded_examples = Vec::new();
+
+    let added = append_limited_frozen_v1(
+        &mut frozen,
+        vec![incoming],
+        1,
+        &mut discarded_count,
+        &mut discarded_examples,
+    );
+
+    assert_eq!(added, 1);
+    assert_eq!(frozen[0].branch_id, "incoming-engine");
+    assert_eq!(discarded_count, 1);
+}
+
+#[test]
 fn campaign_frozen_merge_replaces_duplicate_with_better_branch() {
     let mut existing = test_campaign_branch("existing", 6, 70);
     existing.rank_key = 70;
@@ -421,6 +646,147 @@ fn campaign_selection_prefers_converted_gold_when_progress_is_tied() {
 
     assert_eq!(selected.active.len(), 1);
     assert_eq!(selected.active[0].branch_id, "b-converted");
+}
+
+#[test]
+fn campaign_selection_does_not_reward_unspent_gold_pressure_near_boss() {
+    let mut hoarded = test_campaign_branch("a-hoarded", 16, 41);
+    hoarded.rank_key = 14_500;
+    hoarded.summary.as_mut().unwrap().gold = 370;
+    let mut healthy = test_campaign_branch("b-healthy", 15, 77);
+    healthy.rank_key = 12_800;
+    healthy.summary.as_mut().unwrap().gold = 120;
+
+    let selected = select_campaign_branches_v1(vec![hoarded, healthy], 1, 4);
+
+    assert_eq!(selected.active.len(), 1);
+    assert_eq!(
+        selected.active[0].branch_id, "b-healthy",
+        "near boss, missed resource conversion should not be rewarded as plain gold"
+    );
+}
+
+#[test]
+fn campaign_selection_uses_strategic_summary_as_late_tie_break() {
+    let mut weak = test_campaign_branch("a-weak", 6, 70);
+    weak.rank_key = 100;
+    weak.summary.as_mut().unwrap().trajectory_key = "weak".to_string();
+    let mut engine = test_campaign_branch("z-engine", 6, 70);
+    engine.rank_key = 100;
+    engine.summary.as_mut().unwrap().trajectory_key = "engine".to_string();
+    engine.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 500,
+        clean_score_milli: 600,
+        engine_score_milli: 900,
+        cycle_debt_milli: 100,
+        setup_debt_milli: 100,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 800,
+    };
+
+    let selected = select_campaign_branches_v1(vec![weak, engine], 1, 4);
+
+    assert_eq!(selected.active.len(), 1);
+    assert_eq!(selected.active[0].branch_id, "z-engine");
+}
+
+#[test]
+fn campaign_selection_allows_strategy_to_beat_small_raw_rank_gap() {
+    let mut plain = test_campaign_branch("plain-short-term", 13, 78);
+    plain.rank_key = 12_300;
+    let mut package = test_campaign_branch("package-direction", 13, 77);
+    package.rank_key = 12_100;
+    package.summary.as_mut().unwrap().trajectory_key = "strength-scaling".to_string();
+    package.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 200,
+        clean_score_milli: 1000,
+        engine_score_milli: 300,
+        cycle_debt_milli: 0,
+        setup_debt_milli: 0,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 500,
+    };
+
+    let selected = select_campaign_branches_v1(vec![plain, package], 1, 4);
+
+    assert_eq!(selected.active.len(), 1);
+    assert_eq!(selected.active[0].branch_id, "package-direction");
+}
+
+#[test]
+fn campaign_selection_prioritizes_boss_readiness_at_final_boss_checkpoint() {
+    let mut short_term = test_campaign_branch("short-term-rank", 46, 50);
+    short_term.summary.as_mut().unwrap().act = 3;
+    short_term.summary.as_mut().unwrap().boss = "AwakenedOne".to_string();
+    short_term.rank_key = 37_500;
+    short_term.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 200,
+        clean_score_milli: 500,
+        engine_score_milli: 0,
+        cycle_debt_milli: 800,
+        setup_debt_milli: 0,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 300,
+    };
+
+    let mut boss_ready = test_campaign_branch("boss-ready", 46, 70);
+    boss_ready.summary.as_mut().unwrap().act = 3;
+    boss_ready.summary.as_mut().unwrap().boss = "AwakenedOne".to_string();
+    boss_ready.rank_key = 28_500;
+    boss_ready.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 1000,
+        clean_score_milli: 1000,
+        engine_score_milli: 0,
+        cycle_debt_milli: 600,
+        setup_debt_milli: 200,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 300,
+    };
+
+    let selected = select_campaign_branches_v1(vec![short_term, boss_ready], 1, 4);
+
+    assert_eq!(selected.active[0].branch_id, "boss-ready");
+}
+
+#[test]
+fn campaign_selection_keeps_progress_anchor_when_local_shop_variants_dominate_active() {
+    let mut buy_flash = test_campaign_branch("shop-flash", 39, 77);
+    buy_flash.summary.as_mut().unwrap().act = 3;
+    buy_flash.summary.as_mut().unwrap().gold = 528;
+    buy_flash.frontier_title = "Shop".to_string();
+    buy_flash.rank_key = 35_198;
+    buy_flash.choice_labels = vec!["Buy Flash of Steel | 60 gold".to_string()];
+
+    let mut buy_heavy = test_campaign_branch("shop-heavy", 39, 77);
+    buy_heavy.summary.as_mut().unwrap().act = 3;
+    buy_heavy.summary.as_mut().unwrap().gold = 234;
+    buy_heavy.frontier_title = "Shop".to_string();
+    buy_heavy.rank_key = 35_160;
+    buy_heavy.choice_labels = vec!["Buy Heavy Blade | 70 gold".to_string()];
+
+    let mut campfire = test_campaign_branch("campfire-rest", 42, 77);
+    campfire.summary.as_mut().unwrap().act = 3;
+    campfire.summary.as_mut().unwrap().gold = 47;
+    campfire.frontier_title = "Campfire".to_string();
+    campfire.rank_key = 35_017;
+    campfire.choice_labels = vec!["Rest".to_string()];
+
+    let selected = select_campaign_branches_v1(vec![buy_flash, buy_heavy, campfire], 2, 4);
+
+    assert_eq!(
+        selected
+            .active
+            .iter()
+            .map(|branch| branch.branch_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["shop-flash", "campfire-rest"],
+        "local shop purchase variants should not crowd out a clearly progressed branch"
+    );
+    assert_eq!(selected.frozen[0].branch_id, "shop-heavy");
 }
 
 #[test]
@@ -508,6 +874,87 @@ fn campaign_promotes_converted_gold_frozen_branch_when_progress_ties() {
     assert_eq!(promoted, 1);
     assert_eq!(active[0].branch_id, "b-converted");
     assert_eq!(frozen[0].branch_id, "a-rich");
+}
+
+#[test]
+fn campaign_rebalances_stronger_frozen_branch_into_active_pool() {
+    let mut active = vec![
+        test_campaign_branch("active-a", 23, 68),
+        test_campaign_branch("active-b", 22, 80),
+    ];
+    for branch in &mut active {
+        branch.status = BranchCampaignBranchStatusV1::Active;
+        branch.rank_key = 23_500;
+    }
+    let mut frozen = vec![{
+        let mut branch = test_campaign_branch("frozen-strength", 21, 73);
+        branch.status = BranchCampaignBranchStatusV1::Frozen;
+        branch.rank_key = 25_500;
+        branch.strategic_summary = BranchSignatureCompact {
+            present: true,
+            boss_readiness_milli: 1000,
+            clean_score_milli: 1000,
+            engine_score_milli: 500,
+            cycle_debt_milli: 0,
+            setup_debt_milli: 0,
+            economy_conversion_milli: 0,
+            package_coherence_milli: 700,
+        };
+        branch
+    }];
+
+    let promoted = rebalance_active_with_stronger_frozen_v1(&mut active, &mut frozen, 2);
+
+    assert_eq!(promoted, 1);
+    assert!(active
+        .iter()
+        .any(|branch| branch.branch_id == "frozen-strength"));
+    assert_eq!(
+        active
+            .iter()
+            .filter(|branch| branch.status == BranchCampaignBranchStatusV1::Active)
+            .count(),
+        2
+    );
+    assert!(frozen
+        .iter()
+        .all(|branch| branch.status == BranchCampaignBranchStatusV1::Frozen));
+}
+
+#[test]
+fn campaign_rebalance_does_not_replace_progress_anchor_with_local_shop_variant() {
+    let mut shop = test_campaign_branch("shop-representative", 39, 77);
+    shop.summary.as_mut().unwrap().act = 3;
+    shop.frontier_title = "Shop".to_string();
+    shop.rank_key = 35_200;
+
+    let mut campfire = test_campaign_branch("progress-anchor", 42, 77);
+    campfire.summary.as_mut().unwrap().act = 3;
+    campfire.frontier_title = "Campfire".to_string();
+    campfire.rank_key = 35_017;
+
+    let mut active = vec![shop, campfire];
+    for branch in &mut active {
+        branch.status = BranchCampaignBranchStatusV1::Active;
+    }
+
+    let mut frozen_shop = test_campaign_branch("frozen-shop-variant", 39, 77);
+    frozen_shop.summary.as_mut().unwrap().act = 3;
+    frozen_shop.frontier_title = "Shop".to_string();
+    frozen_shop.rank_key = 35_800;
+    frozen_shop.status = BranchCampaignBranchStatusV1::Frozen;
+    let mut frozen = vec![frozen_shop];
+
+    let promoted = rebalance_active_with_stronger_frozen_v1(&mut active, &mut frozen, 2);
+
+    assert_eq!(
+        promoted, 0,
+        "a stronger local shop variant should not evict the only clearly progressed branch"
+    );
+    assert!(active
+        .iter()
+        .any(|branch| branch.branch_id == "progress-anchor"));
+    assert_eq!(frozen[0].branch_id, "frozen-shop-variant");
 }
 
 #[test]
@@ -709,6 +1156,7 @@ fn campaign_branch_from_report_appends_new_choice_path() {
         commands: vec!["rp 0".to_string()],
         choice_labels: vec!["Shockwave".to_string()],
         summary: None,
+        strategic_summary: Default::default(),
         frontier_title: "Card Reward".to_string(),
         status: BranchCampaignBranchStatusV1::Active,
         stop_reason: "test".to_string(),
@@ -771,6 +1219,7 @@ fn compact_campaign_report_renders_strategy_prompt() {
             suggested_action: "provide Falling policy".to_string(),
         }],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
 
@@ -817,6 +1266,7 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
             suggested_action: "raise combat search budget".to_string(),
         }],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
         rounds: vec![BranchCampaignRoundSummaryV1 {
             round: 5,
             started_active: 2,
@@ -873,6 +1323,7 @@ fn compact_campaign_report_suppresses_deferred_strategy_notes_while_active_conti
             suggested_action: "raise combat search budget".to_string(),
         }],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
 
@@ -1256,6 +1707,7 @@ fn compact_campaign_report_renders_budget_stop_hint() {
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
 
@@ -1293,6 +1745,7 @@ fn compact_campaign_report_labels_nonfatal_requests_as_deferred_notes() {
             suggested_action: "adjust route planner policy".to_string(),
         }],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
 
@@ -1339,6 +1792,7 @@ fn compact_campaign_report_renders_context_only_strategy_packet() {
             suggested_action: "provide event policy".to_string(),
         }],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
 
@@ -1437,7 +1891,7 @@ fn campaign_progress_events_render_concrete_stage_information() {
     );
     assert_eq!(
         promoted_line,
-        "promoted 2 frozen branch(es) after active branches ran out; active_after=2 frozen=4"
+        "promoted/rebalanced 2 frozen branch(es); active_after=2 frozen=4"
     );
 }
 
@@ -1620,6 +2074,7 @@ fn campaign_resume_checkpoint_drops_unrestorable_stuck_branches_and_requests() {
         discarded_examples: Vec::new(),
         strategy_requests: vec![request],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
     let checkpoint = BranchCampaignCheckpointV1 {
@@ -1673,6 +2128,7 @@ fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_command
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
     let checkpoint = BranchCampaignCheckpointV1 {
@@ -1759,6 +2215,7 @@ fn campaign_resume_rehydrates_checkpointed_combat_failures() {
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
     let mut restored_session = RunControlSession::new(RunControlConfig::default());
@@ -1818,6 +2275,261 @@ fn campaign_resume_rehydrates_checkpointed_combat_failures() {
 }
 
 #[test]
+fn campaign_resume_rehydrates_auto_advanceable_map_overlay_stuck() {
+    let mut map_overlay_stuck = test_campaign_branch_with_boundary(
+        "map-overlay",
+        "Map Preview",
+        "route planner declined automatic map selection",
+        16,
+        80,
+    );
+    map_overlay_stuck.commands = vec!["relic 0".to_string(), "skip".to_string()];
+    map_overlay_stuck.status = BranchCampaignBranchStatusV1::Stuck;
+
+    let mut request = test_campaign_request("route_policy_gap", "Map Preview");
+    request.act = 1;
+    request.floor = 16;
+    request.stop_reasons = vec!["route planner declined automatic map selection".to_string()];
+
+    let previous = BranchCampaignReportV1 {
+        schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 8,
+        stop_reason: "max_rounds".to_string(),
+        active: Vec::new(),
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: Vec::new(),
+        stuck: vec![map_overlay_stuck.clone()],
+        discarded_count: 0,
+        discarded_examples: Vec::new(),
+        strategy_requests: vec![request],
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
+        rounds: Vec::new(),
+    };
+    let mut reward = RewardState::new();
+    reward.pending_card_choice = Some(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::Cleave, 0),
+    ]);
+    let mut restored_session = RunControlSession::new(RunControlConfig::default());
+    restored_session.engine_state = EngineState::map_overlay(EngineState::RewardScreen(reward));
+    restored_session.run_state.act_num = 1;
+    restored_session.run_state.floor_num = 16;
+    restored_session.run_state.map.current_x = 0;
+    restored_session.run_state.map.current_y = 15;
+    restored_session.run_state.map.boss_node_available = false;
+    restored_session.run_state.pending_boss_act_transition = true;
+    let checkpoint = BranchCampaignCheckpointV1 {
+        schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 8,
+        sessions: vec![BranchCampaignCheckpointSessionV1 {
+            commands: map_overlay_stuck.commands.clone(),
+            session: RunControlSessionCheckpointV1::from_session(&restored_session),
+        }],
+    };
+
+    let result = run_branch_campaign_from_report_with_checkpoint_v1(
+        &BranchCampaignConfigV1 {
+            seed: 1,
+            max_rounds: 0,
+            max_active: 1,
+            max_frozen: 2,
+            ..BranchCampaignConfigV1::default()
+        },
+        &previous,
+        Some(&checkpoint),
+    )
+    .expect("checkpointed map overlay stuck branch should be recoverable");
+
+    assert!(
+        result.report.active.iter().any(|branch| {
+            branch.branch_id == "map-overlay" && branch.frontier_title == "Card Reward"
+        }),
+        "map overlay stuck branch should re-enter the campaign at its returned reward boundary"
+    );
+    assert!(
+        result.report.stuck.is_empty(),
+        "recovered map overlay branch should not remain in stale stuck diagnostics"
+    );
+    assert!(
+        result.report.strategy_requests.is_empty(),
+        "resolved map overlay request should be pruned after recovery"
+    );
+}
+
+#[test]
+fn campaign_resume_rehydrates_stale_map_preview_to_checkpoint_card_reward_frontier() {
+    let mut map_overlay_stuck = test_campaign_branch_with_boundary(
+        "map-overlay",
+        "Map Preview",
+        "route planner declined automatic map selection",
+        16,
+        85,
+    );
+    map_overlay_stuck.commands = vec!["relic 0".to_string(), "skip".to_string()];
+    map_overlay_stuck.status = BranchCampaignBranchStatusV1::Stuck;
+
+    let mut request = test_campaign_request("route_policy_gap", "Map Preview");
+    request.act = 1;
+    request.floor = 16;
+    request.stop_reasons = vec!["route planner declined automatic map selection".to_string()];
+
+    let previous = BranchCampaignReportV1 {
+        schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 8,
+        stop_reason: "max_rounds".to_string(),
+        active: Vec::new(),
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: Vec::new(),
+        stuck: vec![map_overlay_stuck.clone()],
+        discarded_count: 0,
+        discarded_examples: Vec::new(),
+        strategy_requests: vec![request],
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
+        rounds: Vec::new(),
+    };
+    let mut reward = RewardState::new();
+    reward.skippable = true;
+    reward.items.push(RewardItem::Card {
+        cards: vec![
+            RewardCard::new(CardId::WildStrike, 0),
+            RewardCard::new(CardId::TrueGrit, 0),
+            RewardCard::new(CardId::BattleTrance, 0),
+        ],
+    });
+    let mut restored_session = RunControlSession::new(RunControlConfig::default());
+    restored_session.engine_state = EngineState::RewardScreen(reward);
+    restored_session.run_state.act_num = 1;
+    restored_session.run_state.floor_num = 16;
+    restored_session.run_state.current_hp = 85;
+    restored_session.run_state.max_hp = 85;
+    let checkpoint = BranchCampaignCheckpointV1 {
+        schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 8,
+        sessions: vec![BranchCampaignCheckpointSessionV1 {
+            commands: map_overlay_stuck.commands.clone(),
+            session: RunControlSessionCheckpointV1::from_session(&restored_session),
+        }],
+    };
+
+    let result = run_branch_campaign_from_report_with_checkpoint_v1(
+        &BranchCampaignConfigV1 {
+            seed: 1,
+            max_rounds: 0,
+            max_active: 1,
+            max_frozen: 2,
+            ..BranchCampaignConfigV1::default()
+        },
+        &previous,
+        Some(&checkpoint),
+    )
+    .expect("checkpoint frontier should be authoritative when stale report says map preview");
+
+    assert!(
+        result.report.active.iter().any(|branch| {
+            branch.branch_id == "map-overlay" && branch.frontier_title == "Reward Screen"
+        }),
+        "stale map-preview branch should resume at the exact checkpoint reward frontier"
+    );
+    assert!(result.report.stuck.is_empty());
+    assert!(result.report.strategy_requests.is_empty());
+}
+
+#[test]
+fn campaign_resume_drops_resolved_map_overlay_stuck_when_no_branch_slot_remains() {
+    let mut active = test_campaign_branch_with_boundary("active", "Campfire", "test", 24, 80);
+    active.commands = vec!["active".to_string()];
+
+    let mut map_overlay_stuck = test_campaign_branch_with_boundary(
+        "map-overlay",
+        "Map Preview",
+        "route planner declined automatic map selection",
+        16,
+        80,
+    );
+    map_overlay_stuck.commands = vec!["relic 0".to_string(), "skip".to_string()];
+    map_overlay_stuck.status = BranchCampaignBranchStatusV1::Stuck;
+
+    let mut request = test_campaign_request("route_policy_gap", "Map Preview");
+    request.act = 1;
+    request.floor = 16;
+    request.stop_reasons = vec!["route planner declined automatic map selection".to_string()];
+
+    let previous = BranchCampaignReportV1 {
+        schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 8,
+        stop_reason: "max_rounds".to_string(),
+        active: vec![active],
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: Vec::new(),
+        stuck: vec![map_overlay_stuck.clone()],
+        discarded_count: 0,
+        discarded_examples: Vec::new(),
+        strategy_requests: vec![request],
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
+        rounds: Vec::new(),
+    };
+    let mut restored_session = RunControlSession::new(RunControlConfig::default());
+    let mut empty_reward = RewardState::new();
+    empty_reward.skippable = true;
+    restored_session.engine_state = EngineState::RewardScreen(empty_reward);
+    restored_session.run_state.act_num = 1;
+    restored_session.run_state.floor_num = 16;
+    restored_session.run_state.map.current_x = 0;
+    restored_session.run_state.map.current_y = 15;
+    let checkpoint = BranchCampaignCheckpointV1 {
+        schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 8,
+        sessions: vec![BranchCampaignCheckpointSessionV1 {
+            commands: map_overlay_stuck.commands.clone(),
+            session: RunControlSessionCheckpointV1::from_session(&restored_session),
+        }],
+    };
+
+    let result = run_branch_campaign_from_report_with_checkpoint_v1(
+        &BranchCampaignConfigV1 {
+            seed: 1,
+            max_rounds: 0,
+            max_active: 1,
+            max_frozen: 0,
+            ..BranchCampaignConfigV1::default()
+        },
+        &previous,
+        Some(&checkpoint),
+    )
+    .expect("resolved map overlay stuck should not require human strategy");
+
+    assert!(
+        result.report.stuck.is_empty(),
+        "resolved map overlay branch should not remain as a stale intervention request"
+    );
+    assert!(
+        result.report.strategy_requests.is_empty(),
+        "resolved map overlay request should be pruned even when the recovered branch is discarded"
+    );
+}
+
+#[test]
 fn campaign_resume_rehydrates_only_active_capacity_for_combat_failures() {
     let mut abandoned = Vec::new();
     let mut checkpoint_sessions = Vec::new();
@@ -1862,6 +2574,7 @@ fn campaign_resume_rehydrates_only_active_capacity_for_combat_failures() {
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
     let checkpoint = BranchCampaignCheckpointV1 {
@@ -1930,6 +2643,7 @@ fn test_campaign_report_with_active(id: &str, floor: i32, hp: i32) -> BranchCamp
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
         rounds: vec![BranchCampaignRoundSummaryV1 {
             round: 1,
             started_active: 1,
@@ -1968,6 +2682,7 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
             boss: String::new(),
             boss_pressure: Vec::new(),
         }),
+        strategic_summary: Default::default(),
         frontier_title: "Card Reward".to_string(),
         status: BranchCampaignBranchStatusV1::Active,
         stop_reason: "test".to_string(),
@@ -2000,12 +2715,14 @@ fn test_report_branch_at(
             selected_by_slot: Some(BranchRetentionSlotV1::Diversity),
             slots: vec![BranchRetentionSlotV1::Diversity],
             reasons: vec!["test".to_string()],
+            strategic_signature: Default::default(),
         },
         choices: choices
             .into_iter()
             .map(|(command, label)| BranchExperimentChoiceV1 {
                 depth: 0,
                 kind: "card_reward".to_string(),
+                boundary_title: "Card Reward".to_string(),
                 card: None,
                 upgrades: None,
                 selected_cards: Vec::new(),

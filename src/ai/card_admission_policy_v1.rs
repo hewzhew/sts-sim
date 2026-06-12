@@ -1,5 +1,13 @@
+use crate::ai::card_component_marginal_value_v1::{
+    evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
+    CardComponentMarginalVerdictV1,
+};
 use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
+};
+use crate::ai::deck_startup_profile_v1::{
+    deck_startup_profile_v1, startup_liability_for_candidate_v1, startup_support_for_candidate_v1,
+    DeckStartupProfileV1,
 };
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyDeckFormationNeedV1,
@@ -47,6 +55,7 @@ pub struct CardAdmissionContextV1 {
     pub frontload_jobs: usize,
     pub block_jobs: usize,
     pub formation_needs: Vec<StrategyDeckFormationNeedV1>,
+    pub startup: DeckStartupProfileV1,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -76,6 +85,7 @@ pub fn card_admission_context_from_run_state_v1(run_state: &RunState) -> CardAdm
         frontload_jobs: 0,
         block_jobs: 0,
         formation_needs: strategy.formation_summary().needs,
+        startup: deck_startup_profile_v1(run_state),
     };
 
     for card in &run_state.master_deck {
@@ -138,9 +148,20 @@ pub fn evaluate_card_profile_admission_v1(
     let strong_access = is_strong_access_or_thinning(profile);
     let contextual_boss_answer = is_contextual_boss_answer(context, profile);
     let boss_answer = boss_answer || contextual_boss_answer;
+    let component = evaluate_card_component_marginal_value_v1(
+        &component_marginal_context_from_admission_context(context),
+        profile,
+    );
+    let component_negative = component.is_negative();
+    let package_enabler = package_enabler && !component_negative;
+    let component_strong_take = component.verdict >= CardComponentMarginalVerdictV1::StrongTake;
+    let component_context_take = component.verdict >= CardComponentMarginalVerdictV1::ContextTake;
     let draw_one_only = is_draw_one_style_goodstuff(profile);
     let ordinary_frontload = is_ordinary_frontload(profile);
     let boss_specific_liability = is_contextual_boss_liability(context, profile);
+    let startup_liability =
+        startup_liability_for_candidate_v1(&context.startup, profile.card, context.act);
+    let startup_support = startup_support_for_candidate_v1(&context.startup, profile.card);
     let redundant_saturated_job = redundant_saturated_job(context, profile, fills_missing_job);
 
     if fills_missing_job {
@@ -155,9 +176,27 @@ pub fn evaluate_card_profile_admission_v1(
     if boss_specific_liability {
         reasons.push("boss_specific_cycle_or_counter_liability");
     }
+    if let Some(reason) = startup_liability {
+        reasons.push(reason);
+    }
+    if let Some(reason) = startup_support {
+        reasons.push(reason);
+    }
     if package_enabler {
         reasons.push("package_enabler");
     }
+    if component_strong_take {
+        reasons.push("component_marginal_strong_take");
+    } else if component_context_take {
+        reasons.push("component_marginal_context_take");
+    } else if component.verdict == CardComponentMarginalVerdictV1::SkipPreferred {
+        reasons.push("component_marginal_skip_preferred");
+    } else if component.verdict == CardComponentMarginalVerdictV1::Reject {
+        reasons.push("component_marginal_reject");
+    }
+    reasons.extend(component.positive_components.iter().copied());
+    reasons.extend(component.debts.iter().copied());
+    reasons.extend(component.boss_taxes.iter().copied());
     if strong_access {
         reasons.push("pays_cycle_cost_with_access_or_thinning");
     } else if draw_one_only {
@@ -171,9 +210,32 @@ pub fn evaluate_card_profile_admission_v1(
     }
 
     let verdict = match pressure {
-        CardAdmissionPressureV1::Low => CardAdmissionVerdictV1::Admit,
+        CardAdmissionPressureV1::Low => {
+            if component.verdict == CardComponentMarginalVerdictV1::Reject && !boss_answer {
+                reasons.push("low_pressure_rejects_negative_component_margin");
+                CardAdmissionVerdictV1::Reject
+            } else if startup_liability.is_some() && startup_support.is_none() && !boss_answer {
+                reasons.push("low_pressure_rejects_unpayable_startup_debt");
+                CardAdmissionVerdictV1::Reject
+            } else {
+                CardAdmissionVerdictV1::Admit
+            }
+        }
         CardAdmissionPressureV1::Medium => {
-            if boss_answer || package_enabler || strong_access || fills_missing_job {
+            if component_strong_take {
+                CardAdmissionVerdictV1::Admit
+            } else if component.verdict == CardComponentMarginalVerdictV1::Reject && !boss_answer {
+                reasons.push("medium_pressure_rejects_negative_component_margin");
+                CardAdmissionVerdictV1::Reject
+            } else if startup_liability.is_some() && startup_support.is_none() && !boss_answer {
+                reasons.push("medium_pressure_rejects_unpayable_startup_debt");
+                CardAdmissionVerdictV1::Reject
+            } else if boss_answer
+                || package_enabler
+                || strong_access
+                || fills_missing_job
+                || component_context_take
+            {
                 CardAdmissionVerdictV1::Admit
             } else if boss_specific_liability {
                 reasons.push("medium_pressure_rejects_known_boss_liability");
@@ -186,7 +248,15 @@ pub fn evaluate_card_profile_admission_v1(
             }
         }
         CardAdmissionPressureV1::High => {
-            if boss_answer || package_enabler || strong_access {
+            if component_strong_take {
+                CardAdmissionVerdictV1::Admit
+            } else if component_negative && !boss_answer {
+                reasons.push("high_pressure_rejects_negative_component_margin");
+                CardAdmissionVerdictV1::Reject
+            } else if startup_liability.is_some() && startup_support.is_none() && !boss_answer {
+                reasons.push("high_pressure_rejects_unpayable_startup_debt");
+                CardAdmissionVerdictV1::Reject
+            } else if boss_answer || package_enabler || strong_access || startup_support.is_some() {
                 CardAdmissionVerdictV1::Admit
             } else if boss_specific_liability {
                 reasons.push("high_pressure_rejects_known_boss_liability");
@@ -199,7 +269,15 @@ pub fn evaluate_card_profile_admission_v1(
             }
         }
         CardAdmissionPressureV1::Severe => {
-            if boss_answer || package_enabler || strong_access {
+            if component_strong_take {
+                CardAdmissionVerdictV1::Admit
+            } else if component_negative && !boss_answer {
+                reasons.push("severe_pressure_rejects_negative_component_margin");
+                CardAdmissionVerdictV1::Reject
+            } else if startup_liability.is_some() && startup_support.is_none() && !boss_answer {
+                reasons.push("severe_pressure_rejects_unpayable_startup_debt");
+                CardAdmissionVerdictV1::Reject
+            } else if boss_answer || package_enabler || strong_access || startup_support.is_some() {
                 CardAdmissionVerdictV1::Admit
             } else {
                 reasons.push("severe_pressure_rejects_cycle_debt");
@@ -222,6 +300,26 @@ pub fn evaluate_card_profile_admission_v1(
         effective_cycle_cards_after: after,
         shop_priority_adjustment,
         reasons,
+    }
+}
+
+fn component_marginal_context_from_admission_context(
+    context: &CardAdmissionContextV1,
+) -> CardComponentMarginalContextV1 {
+    CardComponentMarginalContextV1 {
+        act: context.act,
+        floor: context.floor,
+        boss: context.boss,
+        hp: context.hp,
+        max_hp: context.max_hp,
+        deck_size: context.deck_size,
+        powers: context.powers,
+        draw_sources: context.draw_sources,
+        exhaust_generators: context.exhaust_generators,
+        frontload_jobs: context.frontload_jobs,
+        block_jobs: context.block_jobs,
+        formation_needs: context.formation_needs.clone(),
+        startup: context.startup.clone(),
     }
 }
 
@@ -645,5 +743,76 @@ mod tests {
 
         assert_eq!(report.verdict, CardAdmissionVerdictV1::Admit);
         assert!(report.reasons.contains(&"boss_specific_answer"));
+    }
+
+    #[test]
+    fn startup_profile_rejects_more_fnp_without_exhaust_engine() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.act_num = 1;
+        run_state.add_card_to_deck(CardId::FeelNoPain);
+
+        let report = evaluate_card_admission_v1(
+            &run_state,
+            RewardCard::new(CardId::FeelNoPain, 0),
+            CardAdmissionSourceV1::Reward,
+        );
+
+        assert_eq!(report.verdict, CardAdmissionVerdictV1::Reject);
+        assert!(report
+            .reasons
+            .contains(&"startup_rejects_more_fnp_without_exhaust_engine"));
+    }
+
+    #[test]
+    fn startup_profile_supports_exhaust_engine_for_fnp_deck() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.act_num = 2;
+        run_state.add_card_to_deck(CardId::FeelNoPain);
+
+        let report = evaluate_card_admission_v1(
+            &run_state,
+            RewardCard::new(CardId::BurningPact, 0),
+            CardAdmissionSourceV1::Reward,
+        );
+
+        assert_eq!(report.verdict, CardAdmissionVerdictV1::Admit);
+        assert!(report
+            .reasons
+            .contains(&"startup_supports_fnp_exhaust_engine"));
+    }
+
+    #[test]
+    fn startup_profile_rejects_act2_strength_payoff_without_strength() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.act_num = 2;
+
+        let report = evaluate_card_admission_v1(
+            &run_state,
+            RewardCard::new(CardId::HeavyBlade, 0),
+            CardAdmissionSourceV1::Reward,
+        );
+
+        assert_eq!(report.verdict, CardAdmissionVerdictV1::Reject);
+        assert!(report
+            .reasons
+            .contains(&"startup_rejects_strength_payoff_without_strength"));
+    }
+
+    #[test]
+    fn startup_profile_does_not_treat_unpaid_rupture_as_strength_source() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.act_num = 2;
+        run_state.add_card_to_deck(CardId::Rupture);
+
+        let report = evaluate_card_admission_v1(
+            &run_state,
+            RewardCard::new(CardId::Pummel, 0),
+            CardAdmissionSourceV1::Reward,
+        );
+
+        assert_eq!(report.verdict, CardAdmissionVerdictV1::Reject);
+        assert!(report
+            .reasons
+            .contains(&"startup_rejects_strength_payoff_without_strength"));
     }
 }

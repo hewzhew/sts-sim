@@ -1,10 +1,11 @@
 use super::arbitration::arbitrate_card_reward_value_estimates_v1;
-use super::gate::pick_gate;
+use super::gate::pick_gate_with_strategic_trace;
 use super::types::{
     CardRewardDecisionContextV1, CardRewardDecisionV1, CardRewardEstimatorInputsV1,
     CardRewardPolicyConfigV1,
 };
 use super::value::estimate_card_reward_values;
+use crate::ai::strategic::strategic_trace_for_card_reward;
 
 pub fn plan_card_reward_decision_v1(
     context: &CardRewardDecisionContextV1,
@@ -35,11 +36,13 @@ pub fn plan_card_reward_decision_with_estimator_inputs_v1(
             .cloned(),
     );
     let value_arbitration = arbitrate_card_reward_value_estimates_v1(context, &value_estimates);
-    let (action, autopilot_gate, evidence_gaps, pick_certificate) = pick_gate(
+    let strategic_trace = strategic_trace_for_card_reward(context);
+    let (action, autopilot_gate, evidence_gaps, decision_approval) = pick_gate_with_strategic_trace(
         context,
         &value_arbitration.gate_value_estimates,
         &value_estimates,
         config,
+        &strategic_trace,
     );
 
     CardRewardDecisionV1 {
@@ -50,7 +53,8 @@ pub fn plan_card_reward_decision_with_estimator_inputs_v1(
         value_arbitration,
         autopilot_gate,
         evidence_gaps,
-        pick_certificate,
+        decision_approval,
+        strategic_trace,
         label_role: "behavior_policy_not_teacher",
     }
 }

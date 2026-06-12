@@ -109,6 +109,18 @@ fn shop_card_priority_preserves_boss_patch_cards_when_deck_is_bloated() {
 }
 
 #[test]
+fn shop_card_priority_penalizes_more_fnp_without_exhaust_engine() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.add_card_to_deck(CardId::FeelNoPain);
+
+    assert!(
+        shop_card_conversion_priority_v1(CardId::FeelNoPain, &run_state) <= 0,
+        "FNP should stop being a high-impact shop buy when the deck cannot exhaust cards"
+    );
+}
+
+#[test]
 fn shop_policy_does_not_convert_gold_into_transition_card_when_deck_is_bloated() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 3;

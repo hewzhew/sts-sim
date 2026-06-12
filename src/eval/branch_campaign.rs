@@ -1,9 +1,13 @@
+use crate::ai::strategic::{
+    compact_branch_signature_data, format_compact_branch_signature, BranchSignatureCompact,
+};
 use crate::eval::branch_experiment::{
     run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
     BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentConfigV1,
     BranchExperimentRouteDecisionV1, BranchExperimentRunResultV1,
     BranchExperimentStrategyRequestV1, BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
 };
+use crate::eval::branch_experiment_boundary::branch_boundary_available;
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::eval::branch_experiment_trajectory::branch_trajectory_key_v1;
 use crate::eval::run_control::{
@@ -13,6 +17,20 @@ use crate::eval::run_control::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+
+mod selection_key;
+mod strategic_signals;
+use selection_key::{
+    campaign_branch_retention_key_v1, compare_campaign_branches_for_active_v1,
+    compare_campaign_branches_for_promotion_v1, render_campaign_branch_selection_basis_v1,
+};
+use strategic_signals::{
+    campaign_strategic_signals_for_render_v1, campaign_strategic_signals_from_groups_v1,
+    render_campaign_strategic_concern_v1, render_campaign_strategic_signals_v1,
+};
+pub use strategic_signals::{
+    BranchCampaignStrategicSignalGroupV1, BranchCampaignStrategicSignalsV1,
+};
 
 pub const BRANCH_CAMPAIGN_SCHEMA_NAME: &str = "BranchCampaignV1";
 pub const BRANCH_CAMPAIGN_SCHEMA_VERSION: u32 = 1;
@@ -133,6 +151,8 @@ pub struct BranchCampaignBranchV1 {
     pub commands: Vec<String>,
     pub choice_labels: Vec<String>,
     pub summary: Option<BranchCampaignBranchSummaryV1>,
+    #[serde(default, skip_serializing_if = "BranchSignatureCompact::is_empty")]
+    pub strategic_summary: BranchSignatureCompact,
     pub frontier_title: String,
     pub status: BranchCampaignBranchStatusV1,
     #[serde(default)]
@@ -237,6 +257,11 @@ pub struct BranchCampaignReportV1 {
     pub strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
     #[serde(default)]
     pub route_evidence: BranchCampaignRouteEvidenceSummaryV1,
+    #[serde(
+        default,
+        skip_serializing_if = "BranchCampaignStrategicSignalsV1::is_empty"
+    )]
+    pub strategic_signals: BranchCampaignStrategicSignalsV1,
     pub rounds: Vec<BranchCampaignRoundSummaryV1>,
 }
 
@@ -599,6 +624,11 @@ where
             config.max_active,
             config.max_frozen,
         );
+        let rebalanced_from_frozen = rebalance_active_with_stronger_frozen_v1(
+            &mut state.active,
+            &mut state.frozen,
+            config.max_active,
+        );
         state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
             state.strategy_requests,
             &state.active,
@@ -633,6 +663,8 @@ where
         } else {
             0
         };
+        let total_promoted_from_frozen =
+            promoted_from_frozen.saturating_add(rebalanced_from_frozen);
         let round_summary = BranchCampaignRoundSummaryV1 {
             round: round_number,
             started_active,
@@ -657,9 +689,9 @@ where
             frozen_added,
             strategy_requests: state.strategy_requests.len(),
         });
-        if promoted_from_frozen > 0 {
+        if total_promoted_from_frozen > 0 {
             progress(BranchCampaignProgressEventV1::FrozenPromoted {
-                promoted: promoted_from_frozen,
+                promoted: total_promoted_from_frozen,
                 active_after: state.active.len(),
                 frozen_remaining: state.frozen.len(),
             });
@@ -713,6 +745,13 @@ where
         stuck: state.stuck.len(),
     });
 
+    let strategic_signals = campaign_strategic_signals_from_groups_v1(
+        &state.active,
+        &state.frozen,
+        &state.victories,
+        &state.abandoned,
+        &state.stuck,
+    );
     let checkpoint = campaign_checkpoint_from_state_v1(config, &state);
     let report = BranchCampaignReportV1 {
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
@@ -730,6 +769,7 @@ where
         discarded_examples: state.discarded_examples,
         strategy_requests: state.strategy_requests,
         route_evidence: state.route_evidence,
+        strategic_signals,
         rounds: state.rounds,
     };
     Ok(BranchCampaignRunResultV1 { report, checkpoint })
@@ -989,7 +1029,7 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             active_after,
             frozen_remaining,
         } => format!(
-            "promoted {promoted} frozen branch(es) after active branches ran out; active_after={active_after} frozen={frozen_remaining}"
+            "promoted/rebalanced {promoted} frozen branch(es); active_after={active_after} frozen={frozen_remaining}"
         ),
         BranchCampaignProgressEventV1::CampaignFinished {
             stop_reason,
@@ -1106,6 +1146,13 @@ pub fn render_branch_campaign_compact_v1(
             pressure.boss_counts, pressure.signal_counts
         ));
         lines.push(format!("  boss example: {}", pressure.example));
+    }
+    let strategic_signals = campaign_strategic_signals_for_render_v1(report);
+    if let Some(strategic) = render_campaign_strategic_signals_v1(&strategic_signals) {
+        lines.push(strategic);
+    }
+    if let Some(concern) = render_campaign_strategic_concern_v1(&strategic_signals) {
+        lines.push(concern);
     }
     if let Some(victory_lines) = render_campaign_victory_quality_lines_v1(report) {
         lines.push(String::new());
@@ -1836,6 +1883,7 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
         commands: Vec::new(),
         choice_labels: Vec::new(),
         summary: None,
+        strategic_summary: BranchSignatureCompact::default(),
         frontier_title: "start".to_string(),
         status: BranchCampaignBranchStatusV1::Active,
         stop_reason: "initial".to_string(),
@@ -2538,17 +2586,7 @@ pub fn select_campaign_branches_v1(
         }
     }
 
-    active_candidates.sort_by(|left, right| {
-        right
-            .rank_key
-            .cmp(&left.rank_key)
-            .then_with(|| branch_progress_key(right).cmp(&branch_progress_key(left)))
-            .then_with(|| {
-                branch_resource_conversion_key_v1(right)
-                    .cmp(&branch_resource_conversion_key_v1(left))
-            })
-            .then_with(|| left.branch_id.cmp(&right.branch_id))
-    });
+    active_candidates.sort_by(compare_campaign_branches_for_active_v1);
 
     let mut retained_quality_keys = BTreeSet::new();
     for mut branch in active_candidates {
@@ -2577,7 +2615,79 @@ pub fn select_campaign_branches_v1(
             }
         }
     }
+    rebalance_active_progress_anchor_v1(&mut selection.active, &mut selection.frozen);
     selection
+}
+
+fn rebalance_active_progress_anchor_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+) -> bool {
+    if active.len() < 2 || frozen.is_empty() {
+        return false;
+    }
+
+    let Some((frozen_index, frozen_branch)) =
+        frozen.iter().enumerate().max_by(|(_, left), (_, right)| {
+            branch_progress_key(left)
+                .cmp(&branch_progress_key(right))
+                .then_with(|| compare_campaign_branches_for_active_v1(left, right).reverse())
+        })
+    else {
+        return false;
+    };
+    let frozen_progress = branch_progress_key(frozen_branch);
+
+    let duplicate_keys = active
+        .iter()
+        .map(campaign_branch_local_frontier_key_v1)
+        .fold(BTreeMap::<String, usize>::new(), |mut counts, key| {
+            *counts.entry(key).or_default() += 1;
+            counts
+        });
+
+    let Some((replace_index, _)) = active
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| {
+            duplicate_keys
+                .get(&campaign_branch_local_frontier_key_v1(branch))
+                .copied()
+                .unwrap_or(0)
+                > 1
+                && campaign_progress_is_clearly_ahead_v1(
+                    frozen_progress,
+                    branch_progress_key(branch),
+                )
+        })
+        .max_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
+    else {
+        return false;
+    };
+
+    let mut promoted = frozen.remove(frozen_index);
+    promoted.status = BranchCampaignBranchStatusV1::Active;
+    let mut demoted = std::mem::replace(&mut active[replace_index], promoted);
+    demoted.status = BranchCampaignBranchStatusV1::Frozen;
+    frozen.push(demoted);
+    active.sort_by(compare_campaign_branches_for_active_v1);
+    frozen.sort_by(compare_campaign_branches_for_promotion_v1);
+    true
+}
+
+fn campaign_branch_local_frontier_key_v1(branch: &BranchCampaignBranchV1) -> String {
+    let (act, floor, _) = branch_progress_key(branch);
+    format!(
+        "a{act}f{floor}|{}",
+        normalized_campaign_boundary_title(&branch.frontier_title)
+    )
+}
+
+fn campaign_progress_is_clearly_ahead_v1(left: (u8, i32, i32), right: (u8, i32, i32)) -> bool {
+    if left.0 > right.0 {
+        return true;
+    }
+    left.0 == right.0 && left.1 >= right.1.saturating_add(2)
 }
 
 fn campaign_stuck_branch_should_be_abandoned_for_combat_triage_v1(
@@ -2622,16 +2732,7 @@ fn promote_frozen_to_active_v1(
     frozen: &mut Vec<BranchCampaignBranchV1>,
     max_active: usize,
 ) -> usize {
-    frozen.sort_by(|left, right| {
-        branch_progress_key(right)
-            .cmp(&branch_progress_key(left))
-            .then_with(|| right.rank_key.cmp(&left.rank_key))
-            .then_with(|| {
-                branch_resource_conversion_key_v1(right)
-                    .cmp(&branch_resource_conversion_key_v1(left))
-            })
-            .then_with(|| left.branch_id.cmp(&right.branch_id))
-    });
+    frozen.sort_by(compare_campaign_branches_for_promotion_v1);
     let mut promoted = 0usize;
     while active.len() < max_active && !frozen.is_empty() {
         let mut branch = frozen.remove(0);
@@ -2640,6 +2741,64 @@ fn promote_frozen_to_active_v1(
         promoted = promoted.saturating_add(1);
     }
     promoted
+}
+
+fn rebalance_active_with_stronger_frozen_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+    max_active: usize,
+) -> usize {
+    if max_active == 0 || frozen.is_empty() {
+        return 0;
+    }
+    if active.len() < max_active {
+        return promote_frozen_to_active_v1(active, frozen, max_active);
+    }
+    if active.is_empty() {
+        return 0;
+    }
+
+    let Some((worst_active_index, worst_active)) = active
+        .iter()
+        .enumerate()
+        .max_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
+    else {
+        return 0;
+    };
+    let Some((best_frozen_index, best_frozen)) = frozen
+        .iter()
+        .enumerate()
+        .min_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
+    else {
+        return 0;
+    };
+
+    if active.iter().any(|branch| {
+        campaign_branch_local_frontier_key_v1(branch)
+            == campaign_branch_local_frontier_key_v1(best_frozen)
+    }) && active.iter().any(|branch| {
+        campaign_progress_is_clearly_ahead_v1(
+            branch_progress_key(branch),
+            branch_progress_key(best_frozen),
+        )
+    }) {
+        return 0;
+    }
+
+    if compare_campaign_branches_for_active_v1(best_frozen, worst_active)
+        != std::cmp::Ordering::Less
+    {
+        return 0;
+    }
+
+    let mut promoted = frozen.remove(best_frozen_index);
+    promoted.status = BranchCampaignBranchStatusV1::Active;
+    let mut demoted = std::mem::replace(&mut active[worst_active_index], promoted);
+    demoted.status = BranchCampaignBranchStatusV1::Frozen;
+    frozen.push(demoted);
+    active.sort_by(compare_campaign_branches_for_active_v1);
+    frozen.sort_by(compare_campaign_branches_for_promotion_v1);
+    1
 }
 
 fn recover_auto_advanceable_stuck_branches_v1(
@@ -2660,17 +2819,14 @@ fn recover_auto_advanceable_stuck_branches_v1(
         if let Some(recovered_branch) =
             try_recover_auto_advanceable_stuck_branch_v1(&branch, snapshot_cache)
         {
-            if place_recovered_campaign_branch_v1(
+            let _placed = place_recovered_campaign_branch_v1(
                 active,
                 frozen,
                 recovered_branch,
                 max_active,
                 max_frozen,
-            ) {
-                recovered = recovered.saturating_add(1);
-            } else {
-                remaining.push(branch);
-            }
+            );
+            recovered = recovered.saturating_add(1);
         } else {
             remaining.push(branch);
         }
@@ -2711,6 +2867,14 @@ fn rehydrate_checkpoint_failures_on_resume_v1(
         max_active,
         &mut recovered,
     );
+    recovered = recovered.saturating_add(recover_auto_advanceable_stuck_branches_v1(
+        &mut state.active,
+        &mut state.frozen,
+        &mut state.stuck,
+        &mut state.snapshot_cache,
+        max_active,
+        max_frozen,
+    ));
     recovered
 }
 
@@ -2849,6 +3013,16 @@ fn try_recover_auto_advanceable_stuck_branch_v1(
 ) -> Option<BranchCampaignBranchV1> {
     let original_frontier = branch.frontier_title.clone();
     let mut session = snapshot_cache.get(&branch.commands)?.clone();
+    let checkpoint_frontier = build_decision_surface(&session).view.header.title;
+    if checkpoint_frontier != original_frontier && branch_boundary_available(&session) {
+        let mut recovered = branch.clone();
+        recovered.frontier_title = checkpoint_frontier;
+        recovered.status = BranchCampaignBranchStatusV1::Active;
+        recovered.stop_reason = "recovered from checkpoint frontier drift".to_string();
+        campaign_refresh_branch_summary_from_session_v1(&mut recovered, &session);
+        return Some(recovered);
+    }
+
     let outcome = apply_branch_experiment_auto_run(
         &mut session,
         RunControlAutoStepOptions {
@@ -2907,17 +3081,6 @@ fn place_recovered_campaign_branch_v1(
     }
     frozen[worst_index] = recovered;
     true
-}
-
-fn campaign_branch_retention_key_v1(branch: &BranchCampaignBranchV1) -> (u8, i32, i32, i32, i32) {
-    let (act, floor, hp) = branch_progress_key(branch);
-    (
-        act,
-        floor,
-        hp,
-        branch.rank_key,
-        branch_resource_conversion_key_v1(branch),
-    )
 }
 
 fn campaign_branch_quality_key_v1(branch: &BranchCampaignBranchV1) -> String {
@@ -3004,7 +3167,7 @@ fn campaign_strategy_request_matches_branch_v1(
 }
 
 fn render_campaign_branch_state(branch: &BranchCampaignBranchV1) -> String {
-    branch
+    let state = branch
         .summary
         .as_ref()
         .map(|summary| {
@@ -3018,7 +3181,14 @@ fn render_campaign_branch_state(branch: &BranchCampaignBranchV1) -> String {
                 summary.deck_count
             )
         })
-        .unwrap_or_else(|| "start".to_string())
+        .unwrap_or_else(|| "start".to_string());
+    let selection_basis = render_campaign_branch_selection_basis_v1(branch);
+    let strategic_summary = format_compact_branch_signature(&branch.strategic_summary);
+    if strategic_summary.is_empty() {
+        format!("{state} {selection_basis}")
+    } else {
+        format!("{state} {selection_basis} strat=[{}]", strategic_summary)
+    }
 }
 
 fn render_choice_path(labels: &[String]) -> String {
@@ -3079,6 +3249,7 @@ pub fn campaign_branch_from_report_branch_v1(
         commands,
         choice_labels,
         summary: Some(campaign_summary_from_report_branch_v1(branch)),
+        strategic_summary: compact_branch_signature_data(&branch.retention.strategic_signature),
         frontier_title: branch.summary.boundary_title.clone(),
         status: campaign_status_from_report_status(branch.status),
         stop_reason: branch.stop_reason.clone(),
@@ -3143,10 +3314,16 @@ fn branch_meets_victory_quality_v1(
 fn campaign_choice_label_v1(
     choice: &crate::eval::branch_experiment::BranchExperimentChoiceV1,
 ) -> String {
-    if choice.effect_label.is_empty() {
+    let label = if choice.effect_label.is_empty() {
         choice.label.clone()
     } else {
         choice.effect_label.clone()
+    };
+    if choice.kind == "event" && label.starts_with('[') && !choice.boundary_title.trim().is_empty()
+    {
+        format!("{}: {}", choice.boundary_title, label)
+    } else {
+        label
     }
 }
 

@@ -117,7 +117,7 @@ impl CampfireDecisionV1 {
             evidence: EvidenceBundleV1 {
                 items: evidence_items(&self.context),
                 assumptions: vec![
-                    "campfire automation handles conservative rest and clear-priority smith certificates"
+                    "campfire automation handles conservative rest and clear-priority smith approvals"
                         .to_string(),
                     "healthy smith automation requires a clear core upgrade priority threshold"
                         .to_string(),
@@ -132,7 +132,7 @@ impl CampfireDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "conservative_campfire_certificate".to_string(),
+                    selection_mode: "conservative_campfire_approval".to_string(),
                 },
                 CampfirePolicyActionV1::Smith {
                     confidence, reason, ..
@@ -141,7 +141,7 @@ impl CampfireDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "conservative_campfire_certificate".to_string(),
+                    selection_mode: "conservative_campfire_approval".to_string(),
                 },
                 CampfirePolicyActionV1::Stop { reason } => PolicySelectionV1 {
                     status: PolicySelectionStatusV1::Stopped,

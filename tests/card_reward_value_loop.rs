@@ -713,7 +713,7 @@ fn runtime_counterfactual_probe_estimates_can_drive_generic_value_gate() {
             ..
         }
     ));
-    assert!(decision.pick_certificate.is_some());
+    assert!(decision.decision_approval.is_some());
 }
 
 #[test]
@@ -752,7 +752,7 @@ fn runtime_counterfactual_probe_gate_requires_probe_coverage_for_every_candidate
         decision.action,
         CardRewardPolicyActionV1::Stop { .. }
     ));
-    assert!(decision.pick_certificate.is_none());
+    assert!(decision.decision_approval.is_none());
     assert!(!decision.autopilot_gate.candidate_coverage_complete);
 }
 

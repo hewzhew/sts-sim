@@ -233,6 +233,8 @@ pub enum BranchExperimentBranchStatusV1 {
 pub struct BranchExperimentChoiceV1 {
     pub depth: usize,
     pub kind: String,
+    #[serde(default)]
+    pub boundary_title: String,
     pub card: Option<CardId>,
     pub upgrades: Option<u8>,
     #[serde(default)]

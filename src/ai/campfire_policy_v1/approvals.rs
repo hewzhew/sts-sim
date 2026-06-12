@@ -3,7 +3,7 @@ use crate::state::core::CampfireChoice;
 
 use super::types::{CampfireDecisionContextV1, CampfirePolicyActionV1, CampfirePolicyConfigV1};
 
-pub(crate) fn certified_action(
+pub(crate) fn approved_action(
     context: &CampfireDecisionContextV1,
     config: &CampfirePolicyConfigV1,
 ) -> Option<CampfirePolicyActionV1> {

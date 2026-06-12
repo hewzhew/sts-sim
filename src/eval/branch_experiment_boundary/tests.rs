@@ -157,14 +157,15 @@ fn current_boundary_does_not_treat_opened_card_reward_back_as_skip_option() {
             .options
             .iter()
             .any(|option| option.kind == "card_reward_skip"),
-        "opened card reward back/cancel does not consume the reward; skip branching belongs to the unopened reward screen"
+        "opened card reward back/cancel does not consume the reward; branch experiment must not model it as a consumed skip"
     );
 }
 
 #[test]
-fn current_boundary_can_include_skip_for_unopened_card_reward_item() {
+fn current_boundary_does_not_include_map_preview_skip_for_unopened_card_reward_item() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward = RewardState::new();
+    reward.skippable = true;
     reward.items.push(RewardItem::Card {
         cards: vec![
             RewardCard::new(CardId::TwinStrike, 0),
@@ -185,15 +186,16 @@ fn current_boundary_can_include_skip_for_unopened_card_reward_item() {
     )
     .expect("visible card reward boundary");
 
+    assert!(!boundary
+        .options
+        .iter()
+        .any(|option| option.command == "skip"));
     let skip = boundary
         .options
         .iter()
         .find(|option| option.kind == "card_reward_skip")
-        .expect("skip branch should be present on unopened reward screen");
-
-    assert_eq!(skip.command, "skip");
-    assert_eq!(skip.effect_kind, "skip_card_reward");
-    assert!(skip.selected_cards.is_empty());
+        .expect("branch experiment may synthesize a true card-reward skip branch");
+    assert_eq!(skip.command, "branch-skip-card-reward 0");
 }
 
 #[test]
@@ -219,7 +221,7 @@ fn current_boundary_uses_admission_to_keep_boss_answer_over_bloated_goodstuff() 
         BranchBoundaryConfigV1 {
             max_reward_options_per_branch: Some(1),
             max_campfire_options_per_branch: None,
-            include_skip: true,
+            include_skip: false,
             include_event_reward_skip: false,
         },
         None,
@@ -238,13 +240,10 @@ fn current_boundary_uses_admission_to_keep_boss_answer_over_bloated_goodstuff() 
         }),
         "rejected goodstuff should not occupy the only card reward branch slot"
     );
-    assert!(
-        boundary
-            .options
-            .iter()
-            .any(|option| option.kind == "card_reward_skip"),
-        "skip remains an explicit clean-deck branch at unopened rewards"
-    );
+    assert!(!boundary
+        .options
+        .iter()
+        .any(|option| option.kind == "card_reward_skip"));
 }
 
 #[test]
@@ -361,10 +360,12 @@ fn current_boundary_can_opt_into_completed_event_reward_skip() {
     )
     .expect("visible Neow card reward boundary");
 
-    assert!(boundary
+    let skip = boundary
         .options
         .iter()
-        .any(|option| option.kind == "card_reward_skip" && option.command == "skip"));
+        .find(|option| option.kind == "card_reward_skip")
+        .expect("explicit opt-in should expose the synthetic card reward skip branch");
+    assert_eq!(skip.command, "branch-skip-card-reward 0");
 }
 
 #[test]
@@ -601,7 +602,7 @@ fn current_boundary_includes_three_purchase_combo_for_high_gold_shop_pressure() 
     session.run_state.gold = 430;
     let mut shop = ShopState::new();
     shop.cards.push(ShopCard {
-        card_id: CardId::FeelNoPain,
+        card_id: CardId::Shockwave,
         upgrades: 0,
         price: 90,
         can_buy: true,
@@ -834,6 +835,52 @@ fn current_boundary_does_not_convert_bloated_deck_into_transition_shop_card() {
 }
 
 #[test]
+fn current_boundary_does_not_branch_late_act3_bloated_shop_goodstuff_cards() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.act_num = 3;
+    session.run_state.floor_num = 39;
+    session.run_state.gold = 999;
+    for _ in 0..35 {
+        session.run_state.add_card_to_deck(CardId::Strike);
+    }
+    let mut shop = ShopState::new();
+    for card_id in [
+        CardId::BodySlam,
+        CardId::HeavyBlade,
+        CardId::Havoc,
+        CardId::Metallicize,
+    ] {
+        shop.cards.push(ShopCard {
+            card_id,
+            upgrades: 0,
+            price: 50,
+            can_buy: true,
+            blocked_reason: None,
+        });
+    }
+    session.engine_state = EngineState::Shop(shop);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("late bloated shop should still expose leave");
+
+    assert!(
+        boundary
+            .options
+            .iter()
+            .all(|option| option.effect_kind != "shop_buy_card"),
+        "late Act3 shop should not keep low-impact goodstuff card buys for a bloated deck"
+    );
+    assert_eq!(
+        boundary
+            .options
+            .iter()
+            .map(|option| option.command.as_str())
+            .collect::<Vec<_>>(),
+        vec!["leave"]
+    );
+}
+
+#[test]
 fn current_boundary_suppresses_nloth_energy_relic_trade() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session
@@ -1018,7 +1065,7 @@ fn current_boundary_waits_for_low_agency_reward_before_full_potion_skip() {
 }
 
 #[test]
-fn current_boundary_can_include_singing_bowl_for_unopened_card_reward_item() {
+fn current_boundary_can_include_singing_bowl_but_not_skip_for_unopened_card_reward_item() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session
         .run_state
@@ -1049,7 +1096,7 @@ fn current_boundary_can_include_singing_bowl_for_unopened_card_reward_item() {
         .options
         .iter()
         .any(|option| option.kind == "card_reward_bowl" && option.command == "bowl"));
-    assert!(boundary
+    assert!(!boundary
         .options
         .iter()
         .any(|option| option.kind == "card_reward_skip" && option.command == "skip"));
@@ -1636,6 +1683,54 @@ fn campfire_branch_option_portfolio_prefers_bash_over_starter_filler_when_tightl
         vec!["smith 9"]
     );
     assert_eq!(selected[0].card, Some(CardId::Bash));
+}
+
+#[test]
+fn campfire_branch_option_portfolio_prefers_automaton_boss_answers() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.act_num = 2;
+    session.run_state.floor_num = 31;
+    session.run_state.boss_key = Some(crate::content::monsters::factory::EncounterId::Automaton);
+    session.run_state.current_hp = 17;
+    session.run_state.max_hp = 40;
+    session
+        .run_state
+        .relics
+        .push(RelicState::new(RelicId::PeacePipe));
+    session.run_state.master_deck = vec![
+        CombatCard::new(CardId::Strike, 10),
+        CombatCard::new(CardId::Bash, 11),
+        CombatCard::new(CardId::Apparition, 12),
+        CombatCard::new(CardId::Impervious, 13),
+        CombatCard::new(CardId::PommelStrike, 14),
+    ];
+    session.engine_state = EngineState::Campfire;
+
+    let options = campfire_branch_options(&session).expect("campfire options");
+    let selected = select_campfire_branch_options(options, Some(3)).options;
+    let selected_cards = selected
+        .iter()
+        .map(|option| option.card)
+        .collect::<Vec<_>>();
+
+    assert!(
+        selected.iter().any(|option| option.command == "rest"),
+        "low-hp pre-Automaton campfire should keep the recovery branch"
+    );
+    assert!(
+        selected_cards.contains(&Some(CardId::Apparition)),
+        "Apparition upgrade is a concrete Automaton survival branch"
+    );
+    assert!(
+        selected_cards.contains(&Some(CardId::Impervious)),
+        "big block upgrade is a concrete Hyperbeam branch"
+    );
+    assert!(
+        selected
+            .iter()
+            .all(|option| !option.command.starts_with("toke ")),
+        "tight pre-boss budget should not spend a slot on Peace Pipe before core boss answers"
+    );
 }
 
 #[test]
