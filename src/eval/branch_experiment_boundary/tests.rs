@@ -1446,6 +1446,39 @@ fn current_boundary_wraps_single_card_run_selection_options() {
 }
 
 #[test]
+fn current_boundary_does_not_expand_nonbasic_purge_when_low_value_targets_exist() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session
+        .run_state
+        .master_deck
+        .push(CombatCard::new(CardId::TrueGrit, 99));
+    session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
+        min_choices: 1,
+        max_choices: 1,
+        reason: RunPendingChoiceReason::Purge,
+        return_state: Box::new(EngineState::EventRoom),
+    });
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("run selection boundary");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::RunSelection);
+    let commands = boundary
+        .options
+        .iter()
+        .map(|option| (option.command.as_str(), option.card))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        commands,
+        vec![
+            ("select 0", Some(CardId::Strike)),
+            ("select 5", Some(CardId::Defend)),
+            ("select 9", Some(CardId::Bash)),
+        ]
+    );
+}
+
+#[test]
 fn current_boundary_keeps_distinct_run_selection_card_state_separate() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut first = CombatCard::new(CardId::RitualDagger, 10);

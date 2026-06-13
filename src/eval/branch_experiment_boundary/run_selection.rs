@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::content::cards::CardId;
+use crate::content::cards::{get_card_definition, CardId, CardRarity, CardTag, CardType};
 use crate::eval::branch_experiment::BranchExperimentChoiceCardV1;
 use crate::eval::run_control::RunControlSession;
 use crate::runtime::combat::CombatCard;
@@ -57,7 +57,10 @@ pub(super) fn run_selection_branch_options(
 
     let deck_options = run_selection_deck_card_options(session, choice);
     if choice.min_choices == 1 {
-        let options = compressed_single_run_selection_options(deck_options);
+        let options = filter_single_run_selection_options_for_branching(
+            compressed_single_run_selection_options(deck_options),
+            choice.reason,
+        );
         if options.is_empty() || options.len() > MAX_RUN_SELECTION_OPTIONS_PER_BRANCH {
             if choice.reason == RunPendingChoiceReason::Duplicate {
                 let duplicate_options = select_duplicate_branch_options(session, options);
@@ -76,6 +79,37 @@ pub(super) fn run_selection_branch_options(
         MAX_RUN_SELECTION_OPTIONS_PER_BRANCH,
     )
     .or_else(|| policy_run_selection_branch_option(session, choice).map(|option| vec![option]))
+}
+
+fn filter_single_run_selection_options_for_branching(
+    options: Vec<RunSelectionBranchOption>,
+    reason: RunPendingChoiceReason,
+) -> Vec<RunSelectionBranchOption> {
+    if !matches!(
+        reason,
+        RunPendingChoiceReason::Purge | RunPendingChoiceReason::PurgeNonBottled
+    ) {
+        return options;
+    }
+
+    let low_value_options = options
+        .iter()
+        .filter(|option| option.card.is_some_and(single_purge_option_is_low_value))
+        .cloned()
+        .collect::<Vec<_>>();
+    if low_value_options.is_empty() {
+        options
+    } else {
+        low_value_options
+    }
+}
+
+fn single_purge_option_is_low_value(card: CardId) -> bool {
+    let definition = get_card_definition(card);
+    definition.card_type == CardType::Curse
+        || definition.tags.contains(&CardTag::StarterStrike)
+        || definition.tags.contains(&CardTag::StarterDefend)
+        || definition.rarity == CardRarity::Basic
 }
 
 fn run_selection_deck_card_options(
