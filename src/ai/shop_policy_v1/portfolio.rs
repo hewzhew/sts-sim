@@ -111,6 +111,7 @@ fn scored_shop_plan_candidate_v1(
     }
     let mut plan =
         single_candidate_plan_v1(candidate, ShopPlanSourceV1::LegacyShopPortfolioSource)?;
+    plan.plan_id = format!("legacy_portfolio:{}", candidate.candidate_id);
     let (score, effect_kind, can_start_combo, can_follow_combo) = match candidate.class {
         ShopPolicyClassV1::CursePurge => (1000, "shop_purge", false, false),
         ShopPolicyClassV1::StarterStrikePurge => (700, "shop_purge", false, false),

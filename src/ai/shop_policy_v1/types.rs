@@ -132,6 +132,7 @@ pub struct CompiledShopDecisionV1 {
 pub struct ShopPlanCandidateV1 {
     pub plan: ShopPlanV1,
     pub role: ShopPlanCandidateRoleV1,
+    pub evaluation: ShopPlanEvaluationV1,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -139,6 +140,75 @@ pub enum ShopPlanCandidateRoleV1 {
     SingleAction,
     PortfolioAlternative,
     StopFallback,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShopPlanEvaluationV1 {
+    pub verdict: ShopPlanVerdictV1,
+    pub tier: i32,
+    pub score: i32,
+    pub confidence: f32,
+    pub reasons: Vec<String>,
+    pub legacy_priority: Option<i32>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopPlanVerdictV1 {
+    Allow,
+    Stop,
+    Block,
+}
+
+impl ShopPlanEvaluationV1 {
+    pub(crate) fn pending() -> Self {
+        Self {
+            verdict: ShopPlanVerdictV1::Block,
+            tier: 0,
+            score: 0,
+            confidence: 0.0,
+            reasons: vec!["pending shop plan evaluation".to_string()],
+            legacy_priority: None,
+        }
+    }
+
+    pub(crate) fn allow(
+        tier: i32,
+        score: i32,
+        confidence: f32,
+        legacy_priority: Option<i32>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            verdict: ShopPlanVerdictV1::Allow,
+            tier,
+            score,
+            confidence,
+            reasons: vec![reason.into()],
+            legacy_priority,
+        }
+    }
+
+    pub(crate) fn stop(reason: impl Into<String>) -> Self {
+        Self {
+            verdict: ShopPlanVerdictV1::Stop,
+            tier: 0,
+            score: 0,
+            confidence: 0.0,
+            reasons: vec![reason.into()],
+            legacy_priority: None,
+        }
+    }
+
+    pub(crate) fn block(legacy_priority: Option<i32>, reason: impl Into<String>) -> Self {
+        Self {
+            verdict: ShopPlanVerdictV1::Block,
+            tier: 0,
+            score: legacy_priority.unwrap_or_default(),
+            confidence: 0.0,
+            reasons: vec![reason.into()],
+            legacy_priority,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

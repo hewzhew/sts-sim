@@ -1,11 +1,11 @@
-use super::approvals::approved_action;
+use super::legacy_evaluator::evaluate_shop_plan_candidate_v1;
 use super::policy::stop_reason;
 use super::portfolio::legacy_shop_portfolio_plans_v1;
 use super::types::{
-    purge_candidate_id, CompiledShopDecisionV1, ShopCandidateEvidenceV1, ShopCompileModeV1,
-    ShopDecisionContextV1, ShopDecisionSourceV1, ShopPlanCandidateRoleV1, ShopPlanCandidateV1,
-    ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPolicyActionV1,
-    ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    CompiledShopDecisionV1, ShopCandidateEvidenceV1, ShopCompileModeV1, ShopDecisionContextV1,
+    ShopDecisionSourceV1, ShopPlanCandidateRoleV1, ShopPlanCandidateV1, ShopPlanEvaluationV1,
+    ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
+    ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 
 pub fn compile_shop_decision_v1(
@@ -14,28 +14,34 @@ pub fn compile_shop_decision_v1(
     mode: ShopCompileModeV1,
 ) -> CompiledShopDecisionV1 {
     let strategic_trace = crate::ai::strategic::strategic_trace_for_shop(context);
-    let action = approved_action(context, config, &strategic_trace).unwrap_or_else(|| {
-        ShopPolicyActionV1::Stop {
-            reason: stop_reason(context),
-        }
-    });
     let mut candidate_plans = enumerate_single_action_plan_candidates_v1(context);
     candidate_plans.push(stop_candidate_plan_v1(stop_reason(context)));
-    let alternatives =
-        match mode {
-            ShopCompileModeV1::ExecuteOne => Vec::new(),
-            ShopCompileModeV1::BranchTopK { max_plans } => {
-                let alternatives = legacy_shop_portfolio_plans_v1(context, max_plans);
-                candidate_plans.extend(alternatives.iter().cloned().map(|plan| {
-                    ShopPlanCandidateV1 {
-                        plan,
-                        role: ShopPlanCandidateRoleV1::PortfolioAlternative,
-                    }
-                }));
-                alternatives
-            }
-        };
-    let selected_plan = select_legacy_approved_plan_v1(context, &action, &candidate_plans);
+    if let ShopCompileModeV1::BranchTopK { max_plans } = mode {
+        candidate_plans.extend(
+            legacy_shop_portfolio_plans_v1(context, max_plans)
+                .into_iter()
+                .map(|plan| ShopPlanCandidateV1 {
+                    plan,
+                    role: ShopPlanCandidateRoleV1::PortfolioAlternative,
+                    evaluation: ShopPlanEvaluationV1::pending(),
+                }),
+        );
+    }
+    let candidate_plans = candidate_plans
+        .into_iter()
+        .map(|mut candidate| {
+            candidate.evaluation =
+                evaluate_shop_plan_candidate_v1(context, config, &strategic_trace, &candidate);
+            candidate
+        })
+        .collect::<Vec<_>>();
+    let selected_plan = select_evaluated_shop_plan_v1(&candidate_plans);
+    let alternatives = match mode {
+        ShopCompileModeV1::ExecuteOne => Vec::new(),
+        ShopCompileModeV1::BranchTopK { max_plans } => {
+            evaluated_branch_alternatives_v1(&candidate_plans, max_plans)
+        }
+    };
 
     CompiledShopDecisionV1 {
         selected_plan,
@@ -86,56 +92,64 @@ pub fn shop_policy_action_from_plan_v1(plan: &ShopPlanV1) -> Option<ShopPolicyAc
     }
 }
 
-fn select_legacy_approved_plan_v1(
-    context: &ShopDecisionContextV1,
-    action: &ShopPolicyActionV1,
+fn select_evaluated_shop_plan_v1(candidates: &[ShopPlanCandidateV1]) -> ShopPlanV1 {
+    candidates
+        .iter()
+        .max_by(|left, right| compare_evaluated_shop_candidates_v1(left, right))
+        .map(|candidate| plan_with_evaluation_v1(&candidate.plan, &candidate.evaluation))
+        .unwrap_or_else(|| {
+            stop_candidate_plan_v1("shop compiler produced no candidates".to_string()).plan
+        })
+}
+
+fn evaluated_branch_alternatives_v1(
     candidates: &[ShopPlanCandidateV1],
-) -> ShopPlanV1 {
-    match action {
-        ShopPolicyActionV1::Purge {
-            deck_index,
-            confidence,
-            reason,
-            ..
-        } => context
-            .candidates
-            .iter()
-            .find(|candidate| candidate.candidate_id == purge_candidate_id(*deck_index))
-            .and_then(|candidate| find_candidate_plan_by_id(candidates, &candidate.candidate_id))
-            .map(|mut plan| {
-                plan.legacy_confidence = Some(*confidence);
-                plan.reason = reason.clone();
-                plan
-            })
-            .unwrap_or_else(|| stop_candidate_plan_v1(reason.clone()).plan),
-        ShopPolicyActionV1::Purchase {
-            target,
-            confidence,
-            reason,
-        } => context
-            .candidates
-            .iter()
-            .find(|candidate| {
-                candidate
-                    .purchase_target
-                    .is_some_and(|candidate_target| candidate_target == *target)
-            })
-            .and_then(|candidate| find_candidate_plan_by_id(candidates, &candidate.candidate_id))
-            .map(|mut plan| {
-                plan.legacy_confidence = Some(*confidence);
-                plan.reason = reason.clone();
-                plan
-            })
-            .unwrap_or_else(|| stop_candidate_plan_v1(reason.clone()).plan),
-        ShopPolicyActionV1::Stop { reason } => candidates
-            .iter()
-            .find(|candidate| candidate.role == ShopPlanCandidateRoleV1::StopFallback)
-            .map(|candidate| {
-                let mut plan = candidate.plan.clone();
-                plan.reason = reason.clone();
-                plan
-            })
-            .unwrap_or_else(|| stop_candidate_plan_v1(reason.clone()).plan),
+    max_plans: usize,
+) -> Vec<ShopPlanV1> {
+    candidates
+        .iter()
+        .filter(|candidate| candidate.role == ShopPlanCandidateRoleV1::PortfolioAlternative)
+        .filter(|candidate| candidate.evaluation.verdict == ShopPlanVerdictV1::Allow)
+        .take(max_plans)
+        .map(|candidate| plan_with_evaluation_v1(&candidate.plan, &candidate.evaluation))
+        .collect()
+}
+
+fn compare_evaluated_shop_candidates_v1(
+    left: &ShopPlanCandidateV1,
+    right: &ShopPlanCandidateV1,
+) -> std::cmp::Ordering {
+    candidate_rank_v1(left).cmp(&candidate_rank_v1(right))
+}
+
+fn candidate_rank_v1(
+    candidate: &ShopPlanCandidateV1,
+) -> (i32, i32, i32, i32, i32, std::cmp::Reverse<String>) {
+    (
+        verdict_rank_v1(candidate.evaluation.verdict),
+        candidate.evaluation.tier,
+        candidate.evaluation.score,
+        (candidate.evaluation.confidence * 1000.0).round() as i32,
+        role_rank_v1(candidate),
+        std::cmp::Reverse(candidate.plan.plan_id.clone()),
+    )
+}
+
+fn verdict_rank_v1(verdict: ShopPlanVerdictV1) -> i32 {
+    match verdict {
+        ShopPlanVerdictV1::Allow => 2,
+        ShopPlanVerdictV1::Stop => 1,
+        ShopPlanVerdictV1::Block => 0,
+    }
+}
+
+fn role_rank_v1(candidate: &ShopPlanCandidateV1) -> i32 {
+    match (candidate.evaluation.verdict, candidate.role) {
+        (ShopPlanVerdictV1::Stop, ShopPlanCandidateRoleV1::StopFallback) => 4,
+        (ShopPlanVerdictV1::Stop, _) => 1,
+        (_, ShopPlanCandidateRoleV1::SingleAction) => 3,
+        (_, ShopPlanCandidateRoleV1::StopFallback) => 2,
+        (_, ShopPlanCandidateRoleV1::PortfolioAlternative) => 1,
     }
 }
 
@@ -150,26 +164,21 @@ fn enumerate_single_action_plan_candidates_v1(
                 ShopPlanCandidateV1 {
                     plan,
                     role: ShopPlanCandidateRoleV1::SingleAction,
+                    evaluation: ShopPlanEvaluationV1::pending(),
                 }
             })
         })
         .collect()
 }
 
-fn find_candidate_plan_by_id(
-    candidates: &[ShopPlanCandidateV1],
-    candidate_id: &str,
-) -> Option<ShopPlanV1> {
-    candidates
-        .iter()
-        .find(|candidate| {
-            candidate
-                .plan
-                .candidate_ids
-                .iter()
-                .any(|id| id == candidate_id)
-        })
-        .map(|candidate| candidate.plan.clone())
+fn plan_with_evaluation_v1(plan: &ShopPlanV1, evaluation: &ShopPlanEvaluationV1) -> ShopPlanV1 {
+    let mut plan = plan.clone();
+    plan.legacy_priority = evaluation.legacy_priority.or(plan.legacy_priority);
+    plan.legacy_confidence = Some(evaluation.confidence);
+    if let Some(reason) = evaluation.reasons.first() {
+        plan.reason = reason.clone();
+    }
+    plan
 }
 
 pub(super) fn single_candidate_plan_v1(
@@ -242,5 +251,6 @@ fn stop_candidate_plan_v1(reason: String) -> ShopPlanCandidateV1 {
             reason,
         },
         role: ShopPlanCandidateRoleV1::StopFallback,
+        evaluation: ShopPlanEvaluationV1::pending(),
     }
 }

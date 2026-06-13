@@ -570,7 +570,7 @@ fn render_checkpoint_shop_evidence_v1(session: &RunControlSession) -> Result<Str
     ));
     lines.push(format!(
         "selected_plan: {}",
-        render_shop_plan_v1(&compiled.selected_plan)
+        render_shop_plan_with_evaluation_v1(&compiled.selected_plan, &compiled.candidate_plans)
     ));
     lines.push(render_shop_plan_candidate_summary_v1(
         &compiled.candidate_plans,
@@ -583,7 +583,10 @@ fn render_checkpoint_shop_evidence_v1(session: &RunControlSession) -> Result<Str
             compiled.alternatives.len()
         ));
         for (idx, plan) in compiled.alternatives.iter().enumerate() {
-            lines.push(format!("  {idx}. {}", render_shop_plan_v1(plan)));
+            lines.push(format!(
+                "  {idx}. {}",
+                render_shop_plan_with_evaluation_v1(plan, &compiled.candidate_plans)
+            ));
         }
     }
     lines.push("candidate evidence:".to_string());
@@ -655,7 +658,16 @@ fn render_shop_plan_candidate_summary_v1(
     let examples = candidates
         .iter()
         .take(4)
-        .map(|candidate| format!("{:?}:{}", candidate.role, candidate.plan.plan_id))
+        .map(|candidate| {
+            format!(
+                "{:?}:{:?}:tier{}:score{}:{}",
+                candidate.role,
+                candidate.evaluation.verdict,
+                candidate.evaluation.tier,
+                candidate.evaluation.score,
+                candidate.plan.plan_id
+            )
+        })
         .collect::<Vec<_>>()
         .join("; ");
     format!(
@@ -663,6 +675,36 @@ fn render_shop_plan_candidate_summary_v1(
         candidates.len(),
         counts,
         if examples.is_empty() { "-" } else { &examples }
+    )
+}
+
+fn render_shop_plan_with_evaluation_v1(
+    plan: &sts_simulator::ai::shop_policy_v1::ShopPlanV1,
+    candidates: &[sts_simulator::ai::shop_policy_v1::ShopPlanCandidateV1],
+) -> String {
+    let evaluation = candidates
+        .iter()
+        .find(|candidate| candidate.plan.plan_id == plan.plan_id)
+        .map(|candidate| render_shop_plan_evaluation_v1(&candidate.evaluation))
+        .unwrap_or_else(|| "evaluation=-".to_string());
+    format!("{} | {}", render_shop_plan_v1(plan), evaluation)
+}
+
+fn render_shop_plan_evaluation_v1(
+    evaluation: &sts_simulator::ai::shop_policy_v1::ShopPlanEvaluationV1,
+) -> String {
+    let legacy_priority = evaluation
+        .legacy_priority
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "-".to_string());
+    format!(
+        "evaluation={:?} tier={} score={} confidence={:.2} legacy_priority={} reasons=[{}]",
+        evaluation.verdict,
+        evaluation.tier,
+        evaluation.score,
+        evaluation.confidence,
+        legacy_priority,
+        render_short_list(&evaluation.reasons)
     )
 }
 

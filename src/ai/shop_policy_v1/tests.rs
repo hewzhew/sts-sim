@@ -6,7 +6,7 @@ use crate::ai::decision_tags_v1::{
 use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, compile_shop_decision_v1, plan_shop_decision_v1,
     shop_card_conversion_priority_v1, ShopCompileModeV1, ShopDecisionSourceV1, ShopPlanKindV1,
-    ShopPlanStepV1, ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1,
+    ShopPlanStepV1, ShopPlanVerdictV1, ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1,
     ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{CandidateAction, PressureKind, StrategicJob};
@@ -329,6 +329,196 @@ fn compiled_shop_stop_selection_is_also_a_plan_candidate() {
         .candidate_plans
         .iter()
         .any(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id));
+}
+
+#[test]
+fn compiled_shop_decision_evaluates_every_candidate_plan() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.floor_num = 46;
+    run_state.gold = 430;
+    run_state.add_card_to_deck_without_interception_from(
+        CardId::Doubt,
+        0,
+        crate::state::selection::DomainEventSource::DeckMutation,
+    );
+    let mut shop = ShopState::new();
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 146,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 4 },
+    );
+
+    assert!(!compiled.candidate_plans.is_empty());
+    assert!(compiled
+        .candidate_plans
+        .iter()
+        .all(|candidate| !candidate.evaluation.reasons.is_empty()));
+    let selected = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id)
+        .expect("selected plan must come from evaluated candidate plans");
+    assert_eq!(selected.evaluation.verdict, ShopPlanVerdictV1::Allow);
+    assert!(selected.evaluation.confidence > 0.0);
+}
+
+#[test]
+fn compiled_shop_branch_alternatives_are_evaluated_plan_candidates() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Shockwave,
+        upgrades: 0,
+        price: 89,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 146,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 3 },
+    );
+
+    assert!(!compiled.alternatives.is_empty());
+    for alternative in &compiled.alternatives {
+        let candidate = compiled
+            .candidate_plans
+            .iter()
+            .find(|candidate| candidate.plan.plan_id == alternative.plan_id)
+            .expect("alternative must be backed by an evaluated candidate plan");
+        assert_eq!(candidate.evaluation.verdict, ShopPlanVerdictV1::Allow);
+        assert!(
+            candidate.evaluation.score > 0,
+            "branch alternatives should carry evaluator score"
+        );
+    }
+}
+
+#[test]
+fn compiled_shop_branch_candidate_plan_ids_are_unique() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Shockwave,
+        upgrades: 0,
+        price: 89,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 146,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 3 },
+    );
+    let unique_ids = compiled
+        .candidate_plans
+        .iter()
+        .map(|candidate| candidate.plan.plan_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert_eq!(
+        unique_ids.len(),
+        compiled.candidate_plans.len(),
+        "plan ids must be unique so inspect and branch alternatives attach the correct evaluation"
+    );
+}
+
+#[test]
+fn compiled_shop_branch_portfolio_evaluation_is_distinct_from_single_action_gate() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 18;
+    run_state.gold = 274;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Inflame,
+        upgrades: 0,
+        price: 73,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::OrangePellets,
+        price: 151,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 6 },
+    );
+
+    let single = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| {
+            candidate.role == crate::ai::shop_policy_v1::ShopPlanCandidateRoleV1::SingleAction
+                && candidate.plan.candidate_ids == vec!["shop:card-0".to_string()]
+        })
+        .expect("single-action card candidate should exist");
+    let portfolio = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| {
+            candidate.role
+                == crate::ai::shop_policy_v1::ShopPlanCandidateRoleV1::PortfolioAlternative
+                && candidate.plan.candidate_ids == vec!["shop:card-0".to_string()]
+        })
+        .expect("portfolio card candidate should exist");
+
+    assert_eq!(single.evaluation.verdict, ShopPlanVerdictV1::Block);
+    assert_eq!(portfolio.evaluation.verdict, ShopPlanVerdictV1::Allow);
+    assert_ne!(single.plan.plan_id, portfolio.plan.plan_id);
+    assert!(
+        portfolio
+            .evaluation
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("branch exploration")),
+        "portfolio alternatives must explain that they are exploration candidates"
+    );
 }
 
 #[test]
