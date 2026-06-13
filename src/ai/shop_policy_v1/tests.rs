@@ -5,9 +5,9 @@ use crate::ai::decision_tags_v1::{
 };
 use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, compile_shop_decision_v1, plan_shop_decision_v1,
-    shop_card_conversion_priority_v1, ShopCompileModeV1, ShopDecisionSourceV1, ShopPlanKindV1,
-    ShopPlanStepV1, ShopPlanVerdictV1, ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1,
-    ShopPurchaseTargetV1,
+    shop_card_conversion_priority_v1, ShopCompileModeV1, ShopDecisionSourceV1,
+    ShopPlanComponentKindV1, ShopPlanKindV1, ShopPlanStepV1, ShopPlanVerdictV1, ShopPolicyActionV1,
+    ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{CandidateAction, PressureKind, StrategicJob};
 use crate::content::cards::CardId;
@@ -369,6 +369,151 @@ fn compiled_shop_decision_evaluates_every_candidate_plan() {
         .expect("selected plan must come from evaluated candidate plans");
     assert_eq!(selected.evaluation.verdict, ShopPlanVerdictV1::Allow);
     assert!(selected.evaluation.confidence > 0.0);
+}
+
+#[test]
+fn compiled_shop_plan_evaluations_expose_neutral_components() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 18;
+    run_state.gold = 500;
+    run_state.add_card_to_deck_without_interception_from(
+        CardId::Doubt,
+        0,
+        crate::state::selection::DomainEventSource::DeckMutation,
+    );
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::ShrugItOff,
+        upgrades: 0,
+        price: 73,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 146,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 4 },
+    );
+    let purge = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| {
+            candidate.plan.steps.iter().any(|step| {
+                matches!(
+                    step,
+                    ShopPlanStepV1::RemoveCard {
+                        card: CardId::Doubt,
+                        ..
+                    }
+                )
+            })
+        })
+        .expect("curse purge plan should exist");
+    let card = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| {
+            candidate.plan.steps.iter().any(|step| {
+                matches!(
+                    step,
+                    ShopPlanStepV1::BuyCard {
+                        card: CardId::ShrugItOff,
+                        ..
+                    }
+                )
+            })
+        })
+        .expect("card purchase plan should exist");
+    let relic = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| {
+            candidate.plan.steps.iter().any(|step| {
+                matches!(
+                    step,
+                    ShopPlanStepV1::BuyRelic {
+                        relic: RelicId::Anchor,
+                        ..
+                    }
+                )
+            })
+        })
+        .expect("relic purchase plan should exist");
+    let potion = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| {
+            candidate.plan.steps.iter().any(|step| {
+                matches!(
+                    step,
+                    ShopPlanStepV1::BuyPotion {
+                        potion: PotionId::FirePotion,
+                        ..
+                    }
+                )
+            })
+        })
+        .expect("potion purchase plan should exist");
+
+    assert_plan_has_component(purge, ShopPlanComponentKindV1::DeckCleanup);
+    assert_plan_has_component(card, ShopPlanComponentKindV1::DeckBloatCost);
+    assert_plan_has_component(relic, ShopPlanComponentKindV1::RelicValue);
+    assert_plan_has_component(potion, ShopPlanComponentKindV1::PotionFill);
+    assert_plan_has_component(card, ShopPlanComponentKindV1::GoldSpend);
+    assert_plan_has_component(relic, ShopPlanComponentKindV1::LegacyEstimate);
+}
+
+#[test]
+fn compiled_shop_plan_evaluation_components_do_not_change_selected_plan() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.floor_num = 46;
+    run_state.gold = 430;
+    let mut shop = ShopState::new();
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 146,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecuteOne,
+    );
+
+    assert_eq!(
+        compiled.selected_plan.steps,
+        vec![ShopPlanStepV1::BuyRelic {
+            index: 0,
+            relic: RelicId::Anchor,
+            cost: 146,
+        }]
+    );
+    let selected = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id)
+        .expect("selected plan should be a candidate");
+    assert_plan_has_component(selected, ShopPlanComponentKindV1::RelicValue);
+    assert_plan_has_component(selected, ShopPlanComponentKindV1::LegacyEstimate);
 }
 
 #[test]
@@ -738,6 +883,22 @@ fn assert_has_evidence(candidate: &crate::ai::shop_policy_v1::ShopCandidateEvide
         candidate.evidence.iter().any(|item| item == tag),
         "{} should include evidence tag {tag}",
         candidate.label
+    );
+}
+
+fn assert_plan_has_component(
+    candidate: &crate::ai::shop_policy_v1::ShopPlanCandidateV1,
+    kind: ShopPlanComponentKindV1,
+) {
+    assert!(
+        candidate
+            .evaluation
+            .components
+            .iter()
+            .any(|component| component.kind == kind),
+        "{} should include component {kind:?}, got {:?}",
+        candidate.plan.label,
+        candidate.evaluation.components
     );
 }
 

@@ -698,14 +698,33 @@ fn render_shop_plan_evaluation_v1(
         .map(|value| value.to_string())
         .unwrap_or_else(|| "-".to_string());
     format!(
-        "evaluation={:?} tier={} score={} confidence={:.2} legacy_priority={} reasons=[{}]",
+        "evaluation={:?} tier={} score={} confidence={:.2} legacy_priority={} components=[{}] reasons=[{}]",
         evaluation.verdict,
         evaluation.tier,
         evaluation.score,
         evaluation.confidence,
         legacy_priority,
+        render_shop_plan_components_v1(&evaluation.components),
         render_short_list(&evaluation.reasons)
     )
+}
+
+fn render_shop_plan_components_v1(
+    components: &[sts_simulator::ai::shop_policy_v1::ShopPlanComponentV1],
+) -> String {
+    if components.is_empty() {
+        return "-".to_string();
+    }
+    components
+        .iter()
+        .map(|component| {
+            format!(
+                "{:?}:{:.1}:{}",
+                component.kind, component.amount, component.reason
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn render_shop_plan_v1(plan: &sts_simulator::ai::shop_policy_v1::ShopPlanV1) -> String {

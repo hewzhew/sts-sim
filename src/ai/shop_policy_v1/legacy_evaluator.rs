@@ -3,8 +3,8 @@ use crate::ai::strategic::{CandidateAction, StrategicDecisionTrace};
 
 use super::types::{
     ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPlanCandidateRoleV1, ShopPlanCandidateV1,
-    ShopPlanEvaluationV1, ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPolicyClassV1,
-    ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    ShopPlanComponentKindV1, ShopPlanComponentV1, ShopPlanEvaluationV1, ShopPlanKindV1,
+    ShopPlanSourceV1, ShopPlanStepV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 
 pub(crate) fn evaluate_shop_plan_candidate_v1(
@@ -17,13 +17,17 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
         || candidate_plan.role == ShopPlanCandidateRoleV1::StopFallback
         || candidate_plan.plan.steps.is_empty()
     {
-        return ShopPlanEvaluationV1::stop(candidate_plan.plan.reason.clone());
+        let mut evaluation = ShopPlanEvaluationV1::stop(candidate_plan.plan.reason.clone());
+        evaluation.components = plan_components_v1(candidate_plan, None);
+        return evaluation;
     }
 
     if candidate_plan.role == ShopPlanCandidateRoleV1::PortfolioAlternative
         || candidate_plan.plan.source == ShopPlanSourceV1::LegacyShopPortfolioSource
     {
-        return evaluate_legacy_portfolio_plan_v1(candidate_plan);
+        let mut evaluation = evaluate_legacy_portfolio_plan_v1(candidate_plan);
+        evaluation.components = plan_components_v1(candidate_plan, None);
+        return evaluation;
     }
 
     let Some(candidate_id) = candidate_plan.plan.candidate_ids.first() else {
@@ -43,7 +47,9 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
         );
     };
 
-    evaluate_single_candidate_v1(context, config, strategic_trace, candidate)
+    let mut evaluation = evaluate_single_candidate_v1(context, config, strategic_trace, candidate);
+    evaluation.components = plan_components_v1(candidate_plan, Some(candidate));
+    evaluation
 }
 
 fn evaluate_single_candidate_v1(
@@ -237,5 +243,124 @@ fn purchase_priority_threshold(target: ShopPurchaseTargetV1, config: &ShopPolicy
         ShopPurchaseTargetV1::Potion { .. } => {
             config.high_impact_potion_purchase_priority_threshold
         }
+    }
+}
+
+fn plan_components_v1(
+    candidate_plan: &ShopPlanCandidateV1,
+    candidate: Option<&ShopCandidateEvidenceV1>,
+) -> Vec<ShopPlanComponentV1> {
+    let mut components = Vec::new();
+    for step in &candidate_plan.plan.steps {
+        match *step {
+            ShopPlanStepV1::RemoveCard { cost, .. } => {
+                if cost > 0 {
+                    components.push(component_v1(
+                        ShopPlanComponentKindV1::GoldSpend,
+                        cost as f32,
+                        "shop purge spends gold",
+                    ));
+                }
+                components.push(component_v1(
+                    ShopPlanComponentKindV1::DeckCleanup,
+                    1.0,
+                    "shop purge removes a deck card",
+                ));
+            }
+            ShopPlanStepV1::BuyCard { cost, .. } => {
+                if cost > 0 {
+                    components.push(component_v1(
+                        ShopPlanComponentKindV1::GoldSpend,
+                        cost as f32,
+                        "card purchase spends gold",
+                    ));
+                }
+                components.push(component_v1(
+                    ShopPlanComponentKindV1::DeckBloatCost,
+                    1.0,
+                    "card purchase adds one deck card",
+                ));
+            }
+            ShopPlanStepV1::BuyRelic { cost, .. } => {
+                if cost > 0 {
+                    components.push(component_v1(
+                        ShopPlanComponentKindV1::GoldSpend,
+                        cost as f32,
+                        "relic purchase spends gold",
+                    ));
+                }
+                components.push(component_v1(
+                    ShopPlanComponentKindV1::RelicValue,
+                    1.0,
+                    "shop relic adds persistent power",
+                ));
+            }
+            ShopPlanStepV1::BuyPotion { cost, .. } => {
+                if cost > 0 {
+                    components.push(component_v1(
+                        ShopPlanComponentKindV1::GoldSpend,
+                        cost as f32,
+                        "potion purchase spends gold",
+                    ));
+                }
+                components.push(component_v1(
+                    ShopPlanComponentKindV1::PotionFill,
+                    1.0,
+                    "shop potion fills a potion slot",
+                ));
+            }
+            ShopPlanStepV1::LeaveShop => components.push(component_v1(
+                ShopPlanComponentKindV1::StopReason,
+                1.0,
+                "leave shop is a non-purchase plan",
+            )),
+        }
+    }
+
+    if let Some(priority) = candidate_plan.plan.legacy_priority {
+        components.push(component_v1(
+            ShopPlanComponentKindV1::LegacyEstimate,
+            priority as f32,
+            "legacy purchase priority retained as an estimate component",
+        ));
+    }
+    if candidate_plan.role == ShopPlanCandidateRoleV1::PortfolioAlternative {
+        components.push(component_v1(
+            ShopPlanComponentKindV1::BranchExploration,
+            1.0,
+            "portfolio plan is retained for branch exploration",
+        ));
+    }
+    if candidate.is_some_and(|candidate| {
+        candidate
+            .evidence
+            .iter()
+            .any(|evidence| evidence.contains("answer"))
+    }) {
+        components.push(component_v1(
+            ShopPlanComponentKindV1::BossAnswer,
+            1.0,
+            "candidate evidence marks this as a combat answer",
+        ));
+    }
+    if components.is_empty() {
+        components.push(component_v1(
+            ShopPlanComponentKindV1::StopReason,
+            1.0,
+            "shop plan has no executable purchase component",
+        ));
+    }
+    components
+}
+
+fn component_v1(
+    kind: ShopPlanComponentKindV1,
+    amount: f32,
+    reason: &'static str,
+) -> ShopPlanComponentV1 {
+    ShopPlanComponentV1 {
+        kind,
+        amount,
+        reason: reason.to_string(),
     }
 }

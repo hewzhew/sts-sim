@@ -150,6 +150,7 @@ pub struct ShopPlanEvaluationV1 {
     pub confidence: f32,
     pub reasons: Vec<String>,
     pub legacy_priority: Option<i32>,
+    pub components: Vec<ShopPlanComponentV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -157,6 +158,26 @@ pub enum ShopPlanVerdictV1 {
     Allow,
     Stop,
     Block,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShopPlanComponentV1 {
+    pub kind: ShopPlanComponentKindV1,
+    pub amount: f32,
+    pub reason: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopPlanComponentKindV1 {
+    DeckCleanup,
+    RelicValue,
+    PotionFill,
+    DeckBloatCost,
+    GoldSpend,
+    LegacyEstimate,
+    BranchExploration,
+    BossAnswer,
+    StopReason,
 }
 
 impl ShopPlanEvaluationV1 {
@@ -168,6 +189,7 @@ impl ShopPlanEvaluationV1 {
             confidence: 0.0,
             reasons: vec!["pending shop plan evaluation".to_string()],
             legacy_priority: None,
+            components: Vec::new(),
         }
     }
 
@@ -185,6 +207,7 @@ impl ShopPlanEvaluationV1 {
             confidence,
             reasons: vec![reason.into()],
             legacy_priority,
+            components: Vec::new(),
         }
     }
 
@@ -196,6 +219,7 @@ impl ShopPlanEvaluationV1 {
             confidence: 0.0,
             reasons: vec![reason.into()],
             legacy_priority: None,
+            components: Vec::new(),
         }
     }
 
@@ -207,6 +231,7 @@ impl ShopPlanEvaluationV1 {
             confidence: 0.0,
             reasons: vec![reason.into()],
             legacy_priority,
+            components: Vec::new(),
         }
     }
 }

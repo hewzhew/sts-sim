@@ -22,7 +22,7 @@ pub use policy::{
 pub use types::{
     CompiledShopDecisionV1, ShopCandidateEvidenceV1, ShopCompileModeV1, ShopDecisionContextV1,
     ShopDecisionSourceV1, ShopDecisionV1, ShopNeedProfileV1, ShopPlanCandidateRoleV1,
-    ShopPlanCandidateV1, ShopPlanEvaluationV1, ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1,
-    ShopPlanV1, ShopPlanVerdictV1, ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1,
-    ShopPurchaseTargetV1,
+    ShopPlanCandidateV1, ShopPlanComponentKindV1, ShopPlanComponentV1, ShopPlanEvaluationV1,
+    ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
+    ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
