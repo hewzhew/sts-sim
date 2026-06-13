@@ -4,8 +4,10 @@ use crate::ai::decision_tags_v1::{
     TAG_DIGEST_CAPACITY_STATUS, TAG_DIGEST_CAPACITY_TOPDECK,
 };
 use crate::ai::shop_policy_v1::{
-    build_shop_decision_context_v1, plan_shop_decision_v1, shop_card_conversion_priority_v1,
-    ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    build_shop_decision_context_v1, compile_shop_decision_v1, plan_shop_decision_v1,
+    shop_card_conversion_priority_v1, ShopCompileModeV1, ShopDecisionSourceV1,
+    ShopPlanKindV1, ShopPlanStepV1, ShopPolicyActionV1, ShopPolicyClassV1,
+    ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{CandidateAction, PressureKind, StrategicJob};
 use crate::content::cards::CardId;
@@ -171,6 +173,124 @@ fn shop_policy_converts_high_gold_into_affordable_relic_even_below_old_high_impa
             ..
         }
     ));
+}
+
+#[test]
+fn compiled_shop_decision_wraps_selected_relic_purchase_as_plan() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.floor_num = 46;
+    run_state.gold = 430;
+    let mut shop = ShopState::new();
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 146,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecuteOne,
+    );
+
+    assert_eq!(compiled.source, ShopDecisionSourceV1::LegacyWrapped);
+    assert_eq!(compiled.selected_plan.kind, ShopPlanKindV1::Execute);
+    assert_eq!(compiled.selected_plan.total_gold_spent, 146);
+    let relic_candidate_priority = context
+        .candidates
+        .iter()
+        .find(|candidate| {
+            candidate.purchase_target
+                == Some(ShopPurchaseTargetV1::Relic {
+                    index: 0,
+                    relic: RelicId::Anchor,
+                })
+        })
+        .and_then(|candidate| candidate.purchase_priority);
+    assert_eq!(compiled.selected_plan.legacy_priority, relic_candidate_priority);
+    assert_eq!(
+        compiled.selected_plan.steps,
+        vec![ShopPlanStepV1::BuyRelic {
+            index: 0,
+            relic: RelicId::Anchor,
+            cost: 146,
+        }]
+    );
+}
+
+#[test]
+fn compiled_shop_decision_wraps_curse_purge_as_plan() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 100;
+    run_state.add_card_to_deck_without_interception_from(
+        CardId::Doubt,
+        0,
+        crate::state::selection::DomainEventSource::DeckMutation,
+    );
+    let shop = ShopState::new();
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecuteOne,
+    );
+
+    assert_eq!(compiled.selected_plan.kind, ShopPlanKindV1::Execute);
+    assert_eq!(
+        compiled.selected_plan.steps,
+        vec![ShopPlanStepV1::RemoveCard {
+            deck_index: 10,
+            card: CardId::Doubt,
+            cost: 75,
+        }]
+    );
+}
+
+#[test]
+fn compiled_shop_branch_topk_returns_plan_alternatives() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Shockwave,
+        upgrades: 0,
+        price: 89,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 146,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 3 },
+    );
+
+    assert!(!compiled.alternatives.is_empty());
+    assert!(compiled.alternatives.len() <= 3);
+    assert!(compiled.alternatives.iter().all(|plan| {
+        !plan.steps.is_empty() || matches!(plan.kind, ShopPlanKindV1::Stop)
+    }));
+    assert!(compiled
+        .alternatives
+        .iter()
+        .any(|plan| plan.candidate_ids.iter().any(|id| id.starts_with("shop:"))));
 }
 
 #[test]

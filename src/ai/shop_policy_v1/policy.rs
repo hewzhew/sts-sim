@@ -5,11 +5,12 @@ use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
 use crate::state::run::RunState;
 use crate::state::shop::ShopState;
 
-use super::approvals::approved_action;
+use super::compiler::{compile_shop_decision_v1, shop_policy_action_from_plan_v1};
 use super::strategy_tags::shop_purchase_strategy_analysis_v1;
 use super::types::{
-    purge_candidate_id, ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopDecisionV1,
-    ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    purge_candidate_id, ShopCandidateEvidenceV1, ShopCompileModeV1, ShopDecisionContextV1,
+    ShopDecisionV1, ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1,
+    ShopPurchaseTargetV1,
 };
 use crate::ai::decision_tags_v1::TAG_DECK_CLEANING;
 
@@ -55,6 +56,7 @@ pub fn build_shop_decision_context_v1(
             card.can_buy && card.price <= run_state.gold,
             target,
             priority,
+            card.price,
             analysis.evidence,
         )
     }));
@@ -69,6 +71,7 @@ pub fn build_shop_decision_context_v1(
             relic.can_buy && relic.price <= run_state.gold,
             target,
             crate::ai::shop_policy_v1::shop_relic_conversion_priority_v1(relic.relic_id),
+            relic.price,
             analysis.evidence,
         )
     }));
@@ -78,12 +81,13 @@ pub fn build_shop_decision_context_v1(
             potion: potion.potion_id,
         };
         let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy);
+        let potion_can_buy = shop_potion_purchase_block_reason_v1(run_state, potion).is_none();
         purchase_candidate_evidence(
             format!(
                 "buy potion {:?} for {} gold",
                 potion.potion_id, potion.price
             ),
-            potion.can_buy && potion.price <= run_state.gold,
+            potion_can_buy,
             target,
             purchase_priority_with_strategy(
                 target,
@@ -93,6 +97,7 @@ pub fn build_shop_decision_context_v1(
                 ),
                 &strategy,
             ),
+            potion.price,
             analysis.evidence,
         )
     }));
@@ -104,6 +109,7 @@ pub fn build_shop_decision_context_v1(
         card: None,
         purchase_target: None,
         purchase_priority: None,
+        gold_cost: None,
         support_gate: StrategyPlanSupportV1::Strong,
         evidence: leave_shop_evidence(&need, conversion_pressure),
         risks: leave_shop_risks(&need, conversion_pressure, affordable_purchase_exists),
@@ -118,14 +124,50 @@ pub fn build_shop_decision_context_v1(
     }
 }
 
+pub fn shop_potion_purchase_is_allowed_v1(
+    run_state: &RunState,
+    potion: &crate::state::shop::ShopPotion,
+) -> bool {
+    shop_potion_purchase_block_reason_v1(run_state, potion).is_none()
+}
+
+pub fn shop_potion_purchase_block_reason_v1(
+    run_state: &RunState,
+    potion: &crate::state::shop::ShopPotion,
+) -> Option<String> {
+    if !potion.can_buy {
+        return Some(
+            potion
+                .blocked_reason
+                .clone()
+                .unwrap_or_else(|| "cannot buy".to_string()),
+        );
+    }
+    if run_state.gold < potion.price {
+        return Some("not enough gold".to_string());
+    }
+    if run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == crate::content::relics::RelicId::Sozu)
+    {
+        return Some("blocked by Sozu".to_string());
+    }
+    if run_state.find_empty_potion_slot().is_none() {
+        return Some("no empty potion slot".to_string());
+    }
+    None
+}
+
 pub fn plan_shop_decision_v1(
     context: &ShopDecisionContextV1,
     config: &ShopPolicyConfigV1,
 ) -> ShopDecisionV1 {
-    let strategic_trace = crate::ai::strategic::strategic_trace_for_shop(context);
-    let action = approved_action(context, config, &strategic_trace).unwrap_or_else(|| {
+    let compiled = compile_shop_decision_v1(context, config, ShopCompileModeV1::ExecuteOne);
+    let strategic_trace = compiled.strategic_trace.clone();
+    let action = shop_policy_action_from_plan_v1(&compiled.selected_plan).unwrap_or_else(|| {
         ShopPolicyActionV1::Stop {
-            reason: stop_reason(context),
+            reason: compiled.selected_plan.reason.clone(),
         }
     });
 
@@ -189,6 +231,7 @@ fn purge_candidate_evidence(
         card: Some(card),
         purchase_target: None,
         purchase_priority: None,
+        gold_cost: Some(purge_cost),
         support_gate,
         evidence,
         risks,
@@ -200,9 +243,13 @@ fn purchase_candidate_evidence(
     can_buy: bool,
     target: ShopPurchaseTargetV1,
     priority: i32,
+    price: i32,
     extra_evidence: Vec<String>,
 ) -> ShopCandidateEvidenceV1 {
-    let mut evidence = vec![format!("can_buy={can_buy}"), format!("priority={priority}")];
+    let mut evidence = vec![
+        format!("can_buy={can_buy}"),
+        format!("legacy_priority={priority}"),
+    ];
     evidence.extend(extra_evidence);
     let risks = if can_buy {
         vec!["purchase must clear high-impact priority gate".to_string()]
@@ -221,6 +268,7 @@ fn purchase_candidate_evidence(
         },
         purchase_target: Some(target),
         purchase_priority: Some(priority),
+        gold_cost: Some(price),
         support_gate: if can_buy {
             StrategyPlanSupportV1::Strong
         } else {
@@ -356,7 +404,7 @@ fn leave_shop_risks(
     risks
 }
 
-fn stop_reason(context: &ShopDecisionContextV1) -> String {
+pub(super) fn stop_reason(context: &ShopDecisionContextV1) -> String {
     let classes = context
         .candidates
         .iter()

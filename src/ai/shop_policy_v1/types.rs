@@ -43,6 +43,7 @@ pub struct ShopCandidateEvidenceV1 {
     pub card: Option<CardId>,
     pub purchase_target: Option<ShopPurchaseTargetV1>,
     pub purchase_priority: Option<i32>,
+    pub gold_cost: Option<i32>,
     pub support_gate: StrategyPlanSupportV1,
     pub evidence: Vec<String>,
     pub risks: Vec<String>,
@@ -93,6 +94,77 @@ pub struct ShopDecisionV1 {
     pub label_role: &'static str,
     pub context: ShopDecisionContextV1,
     pub strategic_trace: crate::ai::strategic::StrategicDecisionTrace,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopDecisionSourceV1 {
+    LegacyWrapped,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopPlanSourceV1 {
+    LegacyWrapped,
+    LegacyShopPortfolioSource,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopCompileModeV1 {
+    ExecuteOne,
+    BranchTopK { max_plans: usize },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopPlanKindV1 {
+    Execute,
+    Stop,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompiledShopDecisionV1 {
+    pub selected_plan: ShopPlanV1,
+    pub alternatives: Vec<ShopPlanV1>,
+    pub strategic_trace: crate::ai::strategic::StrategicDecisionTrace,
+    pub source: ShopDecisionSourceV1,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShopPlanV1 {
+    pub plan_id: String,
+    pub label: String,
+    pub kind: ShopPlanKindV1,
+    pub steps: Vec<ShopPlanStepV1>,
+    pub total_gold_spent: i32,
+    pub candidate_ids: Vec<String>,
+    pub source: ShopPlanSourceV1,
+    pub legacy_priority: Option<i32>,
+    pub legacy_confidence: Option<f32>,
+    pub suppressed_count: usize,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ShopPlanStepV1 {
+    BuyCard {
+        index: usize,
+        card: CardId,
+        cost: i32,
+    },
+    BuyRelic {
+        index: usize,
+        relic: RelicId,
+        cost: i32,
+    },
+    BuyPotion {
+        index: usize,
+        potion: PotionId,
+        cost: i32,
+    },
+    RemoveCard {
+        deck_index: usize,
+        card: CardId,
+        cost: i32,
+    },
+    LeaveShop,
 }
 
 #[derive(Clone, Debug, PartialEq)]

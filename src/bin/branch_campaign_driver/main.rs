@@ -546,10 +546,15 @@ fn render_checkpoint_shop_evidence_v1(session: &RunControlSession) -> Result<Str
     };
     let context =
         sts_simulator::ai::shop_policy_v1::build_shop_decision_context_v1(&session.run_state, shop);
-    let trace = sts_simulator::ai::strategic::strategic_trace_for_shop(&context);
+    let compiled = sts_simulator::ai::shop_policy_v1::compile_shop_decision_v1(
+        &context,
+        &sts_simulator::ai::shop_policy_v1::ShopPolicyConfigV1::default(),
+        sts_simulator::ai::shop_policy_v1::ShopCompileModeV1::BranchTopK { max_plans: 6 },
+    );
+    let trace = &compiled.strategic_trace;
     let mut lines = Vec::new();
     lines.push(format!(
-        "Shop candidate evidence: act={} floor={} hp={}/{} gold={} boss={:?}",
+        "Shop compiled decision: act={} floor={} hp={}/{} gold={} boss={:?}",
         session.run_state.act_num,
         session.run_state.floor_num,
         session.run_state.current_hp,
@@ -563,6 +568,22 @@ fn render_checkpoint_shop_evidence_v1(session: &RunControlSession) -> Result<Str
         context.affordable_purchase_exists,
         context.candidates.len()
     ));
+    lines.push(format!(
+        "selected_plan: {}",
+        render_shop_plan_v1(&compiled.selected_plan)
+    ));
+    if compiled.alternatives.is_empty() {
+        lines.push("alternative_plans: -".to_string());
+    } else {
+        lines.push(format!(
+            "alternative_plans: {}",
+            compiled.alternatives.len()
+        ));
+        for (idx, plan) in compiled.alternatives.iter().enumerate() {
+            lines.push(format!("  {idx}. {}", render_shop_plan_v1(plan)));
+        }
+    }
+    lines.push("candidate evidence:".to_string());
     for candidate in &context.candidates {
         let action_id = inspect_shop_candidate_action_id(candidate);
         let compiled = trace
@@ -574,7 +595,7 @@ fn render_checkpoint_shop_evidence_v1(session: &RunControlSession) -> Result<Str
             .iter()
             .find(|delta| delta.action.candidate_id() == action_id);
         lines.push(format!(
-            "- {} | id={} | class={:?} gate={:?} priority={} verdict={} score={}",
+            "- {} | id={} | class={:?} gate={:?} legacy_priority={} verdict={} score={}",
             candidate.label,
             action_id,
             candidate.class,
@@ -614,6 +635,57 @@ fn render_checkpoint_shop_evidence_v1(session: &RunControlSession) -> Result<Str
         lines.push("trace_would_choose: -".to_string());
     }
     Ok(lines.join("\n"))
+}
+
+fn render_shop_plan_v1(plan: &sts_simulator::ai::shop_policy_v1::ShopPlanV1) -> String {
+    let steps = if plan.steps.is_empty() {
+        "-".to_string()
+    } else {
+        plan.steps
+            .iter()
+            .map(render_shop_plan_step_v1)
+            .collect::<Vec<_>>()
+            .join(" then ")
+    };
+    let priority = plan
+        .legacy_priority
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "-".to_string());
+    format!(
+        "{} | kind={:?} source={:?} cost={} legacy_priority={} candidates=[{}] steps=[{}] reason={}",
+        plan.label,
+        plan.kind,
+        plan.source,
+        plan.total_gold_spent,
+        priority,
+        plan.candidate_ids.join(","),
+        steps,
+        plan.reason
+    )
+}
+
+fn render_shop_plan_step_v1(
+    step: &sts_simulator::ai::shop_policy_v1::ShopPlanStepV1,
+) -> String {
+    match *step {
+        sts_simulator::ai::shop_policy_v1::ShopPlanStepV1::BuyCard { index, card, cost } => {
+            format!("buy card {index} {:?} {cost}g", card)
+        }
+        sts_simulator::ai::shop_policy_v1::ShopPlanStepV1::BuyRelic { index, relic, cost } => {
+            format!("buy relic {index} {relic:?} {cost}g")
+        }
+        sts_simulator::ai::shop_policy_v1::ShopPlanStepV1::BuyPotion {
+            index,
+            potion,
+            cost,
+        } => format!("buy potion {index} {potion:?} {cost}g"),
+        sts_simulator::ai::shop_policy_v1::ShopPlanStepV1::RemoveCard {
+            deck_index,
+            card,
+            cost,
+        } => format!("purge deck {deck_index} {card:?} {cost}g"),
+        sts_simulator::ai::shop_policy_v1::ShopPlanStepV1::LeaveShop => "leave shop".to_string(),
+    }
 }
 
 fn inspect_shop_candidate_action_id(

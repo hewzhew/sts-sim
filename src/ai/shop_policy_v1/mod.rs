@@ -1,6 +1,8 @@
 mod approvals;
+mod compiler;
 mod conversion;
 mod policy;
+mod portfolio;
 mod strategy_tags;
 mod types;
 
@@ -12,8 +14,14 @@ pub use conversion::{
     shop_potion_conversion_priority_for_v1, shop_potion_conversion_priority_v1,
     shop_relic_conversion_priority_v1,
 };
-pub use policy::{build_shop_decision_context_v1, plan_shop_decision_v1};
+pub use compiler::{compile_shop_decision_v1, shop_policy_action_from_plan_v1};
+pub use policy::{
+    build_shop_decision_context_v1, plan_shop_decision_v1,
+    shop_potion_purchase_block_reason_v1, shop_potion_purchase_is_allowed_v1,
+};
 pub use types::{
-    ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopDecisionV1, ShopNeedProfileV1,
-    ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    CompiledShopDecisionV1, ShopCandidateEvidenceV1, ShopCompileModeV1, ShopDecisionContextV1,
+    ShopDecisionSourceV1, ShopDecisionV1, ShopNeedProfileV1, ShopPlanKindV1, ShopPlanSourceV1,
+    ShopPlanStepV1, ShopPlanV1, ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1,
+    ShopPurchaseTargetV1,
 };
