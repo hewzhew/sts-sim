@@ -517,6 +517,118 @@ fn compiled_shop_plan_evaluation_components_do_not_change_selected_plan() {
 }
 
 #[test]
+fn compiled_shop_plan_evaluations_expose_component_score() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::ShrugItOff,
+        upgrades: 0,
+        price: 73,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 146,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 4 },
+    );
+
+    for candidate in &compiled.candidate_plans {
+        assert!(
+            !candidate.evaluation.component_score.explanation.is_empty(),
+            "{} should expose a component score explanation",
+            candidate.plan.label
+        );
+    }
+    let relic = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| {
+            candidate.plan.steps.iter().any(|step| {
+                matches!(
+                    step,
+                    ShopPlanStepV1::BuyRelic {
+                        relic: RelicId::Anchor,
+                        ..
+                    }
+                )
+            })
+        })
+        .expect("relic purchase plan should exist");
+    assert!(
+        relic.evaluation.component_score.positive > 0.0,
+        "relic plan should have positive component score"
+    );
+}
+
+#[test]
+fn compiled_shop_branch_alternatives_are_sorted_by_component_score() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Shockwave,
+        upgrades: 0,
+        price: 89,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 146,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 4 },
+    );
+    let scores = compiled
+        .alternatives
+        .iter()
+        .map(|plan| {
+            compiled
+                .candidate_plans
+                .iter()
+                .find(|candidate| candidate.plan.plan_id == plan.plan_id)
+                .expect("alternative should have matching candidate")
+                .evaluation
+                .component_score
+                .net
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        scores.windows(2).all(|pair| pair[0] >= pair[1]),
+        "branch alternatives should be sorted by component score, got {scores:?}"
+    );
+}
+
+#[test]
 fn compiled_shop_branch_alternatives_are_evaluated_plan_candidates() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 500;

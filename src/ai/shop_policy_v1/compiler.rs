@@ -106,13 +106,32 @@ fn evaluated_branch_alternatives_v1(
     candidates: &[ShopPlanCandidateV1],
     max_plans: usize,
 ) -> Vec<ShopPlanV1> {
-    candidates
+    let mut alternatives = candidates
         .iter()
         .filter(|candidate| candidate.role == ShopPlanCandidateRoleV1::PortfolioAlternative)
         .filter(|candidate| candidate.evaluation.verdict == ShopPlanVerdictV1::Allow)
+        .collect::<Vec<_>>();
+    alternatives.sort_by(|left, right| compare_branch_alternative_candidates_v1(left, right));
+    alternatives
+        .into_iter()
         .take(max_plans)
         .map(|candidate| plan_with_evaluation_v1(&candidate.plan, &candidate.evaluation))
         .collect()
+}
+
+fn compare_branch_alternative_candidates_v1(
+    left: &&ShopPlanCandidateV1,
+    right: &&ShopPlanCandidateV1,
+) -> std::cmp::Ordering {
+    right
+        .evaluation
+        .component_score
+        .net
+        .partial_cmp(&left.evaluation.component_score.net)
+        .unwrap_or(std::cmp::Ordering::Equal)
+        .then_with(|| right.evaluation.tier.cmp(&left.evaluation.tier))
+        .then_with(|| right.evaluation.score.cmp(&left.evaluation.score))
+        .then_with(|| left.plan.plan_id.cmp(&right.plan.plan_id))
 }
 
 fn compare_evaluated_shop_candidates_v1(

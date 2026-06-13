@@ -475,14 +475,15 @@ fn current_boundary_expands_low_fanout_shop_purchase_choices() {
     let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
         .expect("low-fanout shop purchase boundary");
 
-    let commands = boundary
+    let mut commands = boundary
         .options
         .iter()
         .map(|option| option.command.as_str())
         .collect::<Vec<_>>();
+    commands.sort_unstable();
 
     assert_eq!(boundary.id, BranchBoundaryIdV1::Shop);
-    assert_eq!(commands, vec!["buy relic 0", "buy card 0", "buy potion 0"]);
+    assert_eq!(commands, vec!["buy card 0", "buy potion 0", "buy relic 0"]);
     assert!(boundary
         .options
         .iter()

@@ -151,6 +151,7 @@ pub struct ShopPlanEvaluationV1 {
     pub reasons: Vec<String>,
     pub legacy_priority: Option<i32>,
     pub components: Vec<ShopPlanComponentV1>,
+    pub component_score: ShopPlanComponentScoreV1,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -165,6 +166,15 @@ pub struct ShopPlanComponentV1 {
     pub kind: ShopPlanComponentKindV1,
     pub amount: f32,
     pub reason: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShopPlanComponentScoreV1 {
+    pub positive: f32,
+    pub negative: f32,
+    pub net: f32,
+    pub confidence: f32,
+    pub explanation: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -190,6 +200,9 @@ impl ShopPlanEvaluationV1 {
             reasons: vec!["pending shop plan evaluation".to_string()],
             legacy_priority: None,
             components: Vec::new(),
+            component_score: ShopPlanComponentScoreV1::neutral(
+                "component score pending shop plan evaluation",
+            ),
         }
     }
 
@@ -208,6 +221,7 @@ impl ShopPlanEvaluationV1 {
             reasons: vec![reason.into()],
             legacy_priority,
             components: Vec::new(),
+            component_score: ShopPlanComponentScoreV1::neutral("component score not attached yet"),
         }
     }
 
@@ -220,6 +234,7 @@ impl ShopPlanEvaluationV1 {
             reasons: vec![reason.into()],
             legacy_priority: None,
             components: Vec::new(),
+            component_score: ShopPlanComponentScoreV1::neutral("component score not attached yet"),
         }
     }
 
@@ -232,6 +247,19 @@ impl ShopPlanEvaluationV1 {
             reasons: vec![reason.into()],
             legacy_priority,
             components: Vec::new(),
+            component_score: ShopPlanComponentScoreV1::neutral("component score not attached yet"),
+        }
+    }
+}
+
+impl ShopPlanComponentScoreV1 {
+    pub(crate) fn neutral(explanation: impl Into<String>) -> Self {
+        Self {
+            positive: 0.0,
+            negative: 0.0,
+            net: 0.0,
+            confidence: 0.0,
+            explanation: explanation.into(),
         }
     }
 }

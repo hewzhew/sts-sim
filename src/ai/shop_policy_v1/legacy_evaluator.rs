@@ -1,6 +1,7 @@
 use crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1;
 use crate::ai::strategic::{CandidateAction, StrategicDecisionTrace};
 
+use super::component_scorer::score_shop_plan_components_v1;
 use super::types::{
     ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPlanCandidateRoleV1, ShopPlanCandidateV1,
     ShopPlanComponentKindV1, ShopPlanComponentV1, ShopPlanEvaluationV1, ShopPlanKindV1,
@@ -17,23 +18,31 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
         || candidate_plan.role == ShopPlanCandidateRoleV1::StopFallback
         || candidate_plan.plan.steps.is_empty()
     {
-        let mut evaluation = ShopPlanEvaluationV1::stop(candidate_plan.plan.reason.clone());
-        evaluation.components = plan_components_v1(candidate_plan, None);
-        return evaluation;
+        return attach_components_and_score_v1(
+            ShopPlanEvaluationV1::stop(candidate_plan.plan.reason.clone()),
+            candidate_plan,
+            None,
+        );
     }
 
     if candidate_plan.role == ShopPlanCandidateRoleV1::PortfolioAlternative
         || candidate_plan.plan.source == ShopPlanSourceV1::LegacyShopPortfolioSource
     {
-        let mut evaluation = evaluate_legacy_portfolio_plan_v1(candidate_plan);
-        evaluation.components = plan_components_v1(candidate_plan, None);
-        return evaluation;
+        return attach_components_and_score_v1(
+            evaluate_legacy_portfolio_plan_v1(candidate_plan),
+            candidate_plan,
+            None,
+        );
     }
 
     let Some(candidate_id) = candidate_plan.plan.candidate_ids.first() else {
-        return ShopPlanEvaluationV1::block(
-            candidate_plan.plan.legacy_priority,
-            "shop plan has no candidate id",
+        return attach_components_and_score_v1(
+            ShopPlanEvaluationV1::block(
+                candidate_plan.plan.legacy_priority,
+                "shop plan has no candidate id",
+            ),
+            candidate_plan,
+            None,
         );
     };
     let Some(candidate) = context
@@ -41,14 +50,30 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
         .iter()
         .find(|candidate| &candidate.candidate_id == candidate_id)
     else {
-        return ShopPlanEvaluationV1::block(
-            candidate_plan.plan.legacy_priority,
-            format!("shop plan candidate id {candidate_id} is no longer visible"),
+        return attach_components_and_score_v1(
+            ShopPlanEvaluationV1::block(
+                candidate_plan.plan.legacy_priority,
+                format!("shop plan candidate id {candidate_id} is no longer visible"),
+            ),
+            candidate_plan,
+            None,
         );
     };
 
-    let mut evaluation = evaluate_single_candidate_v1(context, config, strategic_trace, candidate);
-    evaluation.components = plan_components_v1(candidate_plan, Some(candidate));
+    attach_components_and_score_v1(
+        evaluate_single_candidate_v1(context, config, strategic_trace, candidate),
+        candidate_plan,
+        Some(candidate),
+    )
+}
+
+fn attach_components_and_score_v1(
+    mut evaluation: ShopPlanEvaluationV1,
+    candidate_plan: &ShopPlanCandidateV1,
+    candidate: Option<&ShopCandidateEvidenceV1>,
+) -> ShopPlanEvaluationV1 {
+    evaluation.components = plan_components_v1(candidate_plan, candidate);
+    evaluation.component_score = score_shop_plan_components_v1(&evaluation.components);
     evaluation
 }
 

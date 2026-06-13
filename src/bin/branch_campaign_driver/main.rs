@@ -698,12 +698,16 @@ fn render_shop_plan_evaluation_v1(
         .map(|value| value.to_string())
         .unwrap_or_else(|| "-".to_string());
     format!(
-        "evaluation={:?} tier={} score={} confidence={:.2} legacy_priority={} components=[{}] reasons=[{}]",
+        "evaluation={:?} tier={} score={} confidence={:.2} legacy_priority={} component_score=net:{:.1}/pos:{:.1}/neg:{:.1}/conf:{:.2} components=[{}] reasons=[{}]",
         evaluation.verdict,
         evaluation.tier,
         evaluation.score,
         evaluation.confidence,
         legacy_priority,
+        evaluation.component_score.net,
+        evaluation.component_score.positive,
+        evaluation.component_score.negative,
+        evaluation.component_score.confidence,
         render_shop_plan_components_v1(&evaluation.components),
         render_short_list(&evaluation.reasons)
     )
