@@ -123,8 +123,22 @@ pub enum ShopPlanKindV1 {
 pub struct CompiledShopDecisionV1 {
     pub selected_plan: ShopPlanV1,
     pub alternatives: Vec<ShopPlanV1>,
+    pub candidate_plans: Vec<ShopPlanCandidateV1>,
     pub strategic_trace: crate::ai::strategic::StrategicDecisionTrace,
     pub source: ShopDecisionSourceV1,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShopPlanCandidateV1 {
+    pub plan: ShopPlanV1,
+    pub role: ShopPlanCandidateRoleV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopPlanCandidateRoleV1 {
+    SingleAction,
+    PortfolioAlternative,
+    StopFallback,
 }
 
 #[derive(Clone, Debug, PartialEq)]

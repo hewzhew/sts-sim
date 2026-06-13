@@ -1,11 +1,11 @@
 use super::approvals::approved_action;
-use super::portfolio::legacy_shop_portfolio_plans_v1;
 use super::policy::stop_reason;
+use super::portfolio::legacy_shop_portfolio_plans_v1;
 use super::types::{
     purge_candidate_id, CompiledShopDecisionV1, ShopCandidateEvidenceV1, ShopCompileModeV1,
-    ShopDecisionContextV1, ShopDecisionSourceV1, ShopPlanKindV1, ShopPlanSourceV1,
-    ShopPlanStepV1, ShopPlanV1, ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1,
-    ShopPurchaseTargetV1,
+    ShopDecisionContextV1, ShopDecisionSourceV1, ShopPlanCandidateRoleV1, ShopPlanCandidateV1,
+    ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPolicyActionV1,
+    ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 
 pub fn compile_shop_decision_v1(
@@ -19,18 +19,28 @@ pub fn compile_shop_decision_v1(
             reason: stop_reason(context),
         }
     });
-    let selected_plan =
-        shop_plan_from_action_v1(context, &action, ShopPlanSourceV1::LegacyWrapped);
-    let alternatives = match mode {
-        ShopCompileModeV1::ExecuteOne => Vec::new(),
-        ShopCompileModeV1::BranchTopK { max_plans } => {
-            legacy_shop_portfolio_plans_v1(context, max_plans)
-        }
-    };
+    let mut candidate_plans = enumerate_single_action_plan_candidates_v1(context);
+    candidate_plans.push(stop_candidate_plan_v1(stop_reason(context)));
+    let alternatives =
+        match mode {
+            ShopCompileModeV1::ExecuteOne => Vec::new(),
+            ShopCompileModeV1::BranchTopK { max_plans } => {
+                let alternatives = legacy_shop_portfolio_plans_v1(context, max_plans);
+                candidate_plans.extend(alternatives.iter().cloned().map(|plan| {
+                    ShopPlanCandidateV1 {
+                        plan,
+                        role: ShopPlanCandidateRoleV1::PortfolioAlternative,
+                    }
+                }));
+                alternatives
+            }
+        };
+    let selected_plan = select_legacy_approved_plan_v1(context, &action, &candidate_plans);
 
     CompiledShopDecisionV1 {
         selected_plan,
         alternatives,
+        candidate_plans,
         strategic_trace,
         source: ShopDecisionSourceV1::LegacyWrapped,
     }
@@ -76,10 +86,10 @@ pub fn shop_policy_action_from_plan_v1(plan: &ShopPlanV1) -> Option<ShopPolicyAc
     }
 }
 
-fn shop_plan_from_action_v1(
+fn select_legacy_approved_plan_v1(
     context: &ShopDecisionContextV1,
     action: &ShopPolicyActionV1,
-    source: ShopPlanSourceV1,
+    candidates: &[ShopPlanCandidateV1],
 ) -> ShopPlanV1 {
     match action {
         ShopPolicyActionV1::Purge {
@@ -91,13 +101,13 @@ fn shop_plan_from_action_v1(
             .candidates
             .iter()
             .find(|candidate| candidate.candidate_id == purge_candidate_id(*deck_index))
-            .and_then(|candidate| single_candidate_plan_v1(candidate, source))
+            .and_then(|candidate| find_candidate_plan_by_id(candidates, &candidate.candidate_id))
             .map(|mut plan| {
                 plan.legacy_confidence = Some(*confidence);
                 plan.reason = reason.clone();
                 plan
             })
-            .unwrap_or_else(|| stop_plan_v1(reason.clone(), source)),
+            .unwrap_or_else(|| stop_candidate_plan_v1(reason.clone()).plan),
         ShopPolicyActionV1::Purchase {
             target,
             confidence,
@@ -110,15 +120,56 @@ fn shop_plan_from_action_v1(
                     .purchase_target
                     .is_some_and(|candidate_target| candidate_target == *target)
             })
-            .and_then(|candidate| single_candidate_plan_v1(candidate, source))
+            .and_then(|candidate| find_candidate_plan_by_id(candidates, &candidate.candidate_id))
             .map(|mut plan| {
                 plan.legacy_confidence = Some(*confidence);
                 plan.reason = reason.clone();
                 plan
             })
-            .unwrap_or_else(|| stop_plan_v1(reason.clone(), source)),
-        ShopPolicyActionV1::Stop { reason } => stop_plan_v1(reason.clone(), source),
+            .unwrap_or_else(|| stop_candidate_plan_v1(reason.clone()).plan),
+        ShopPolicyActionV1::Stop { reason } => candidates
+            .iter()
+            .find(|candidate| candidate.role == ShopPlanCandidateRoleV1::StopFallback)
+            .map(|candidate| {
+                let mut plan = candidate.plan.clone();
+                plan.reason = reason.clone();
+                plan
+            })
+            .unwrap_or_else(|| stop_candidate_plan_v1(reason.clone()).plan),
     }
+}
+
+fn enumerate_single_action_plan_candidates_v1(
+    context: &ShopDecisionContextV1,
+) -> Vec<ShopPlanCandidateV1> {
+    context
+        .candidates
+        .iter()
+        .filter_map(|candidate| {
+            single_candidate_plan_v1(candidate, ShopPlanSourceV1::LegacyWrapped).map(|plan| {
+                ShopPlanCandidateV1 {
+                    plan,
+                    role: ShopPlanCandidateRoleV1::SingleAction,
+                }
+            })
+        })
+        .collect()
+}
+
+fn find_candidate_plan_by_id(
+    candidates: &[ShopPlanCandidateV1],
+    candidate_id: &str,
+) -> Option<ShopPlanV1> {
+    candidates
+        .iter()
+        .find(|candidate| {
+            candidate
+                .plan
+                .candidate_ids
+                .iter()
+                .any(|id| id == candidate_id)
+        })
+        .map(|candidate| candidate.plan.clone())
 }
 
 pub(super) fn single_candidate_plan_v1(
@@ -141,13 +192,11 @@ pub(super) fn single_candidate_plan_v1(
             card,
             cost: candidate.gold_cost.unwrap_or_default(),
         },
-        (_, _, Some(ShopPurchaseTargetV1::Relic { index, relic }), _) => {
-            ShopPlanStepV1::BuyRelic {
-                index,
-                relic,
-                cost: candidate.gold_cost.unwrap_or_default(),
-            }
-        }
+        (_, _, Some(ShopPurchaseTargetV1::Relic { index, relic }), _) => ShopPlanStepV1::BuyRelic {
+            index,
+            relic,
+            cost: candidate.gold_cost.unwrap_or_default(),
+        },
         (_, _, Some(ShopPurchaseTargetV1::Potion { index, potion }), _) => {
             ShopPlanStepV1::BuyPotion {
                 index,
@@ -177,18 +226,21 @@ pub(super) fn single_candidate_plan_v1(
     })
 }
 
-fn stop_plan_v1(reason: String, source: ShopPlanSourceV1) -> ShopPlanV1 {
-    ShopPlanV1 {
-        plan_id: "legacy:stop".to_string(),
-        label: "stop shop automation".to_string(),
-        kind: ShopPlanKindV1::Stop,
-        steps: Vec::new(),
-        total_gold_spent: 0,
-        candidate_ids: Vec::new(),
-        source,
-        legacy_priority: None,
-        legacy_confidence: None,
-        suppressed_count: 0,
-        reason,
+fn stop_candidate_plan_v1(reason: String) -> ShopPlanCandidateV1 {
+    ShopPlanCandidateV1 {
+        plan: ShopPlanV1 {
+            plan_id: "legacy:stop".to_string(),
+            label: "stop shop automation".to_string(),
+            kind: ShopPlanKindV1::Stop,
+            steps: Vec::new(),
+            total_gold_spent: 0,
+            candidate_ids: Vec::new(),
+            source: ShopPlanSourceV1::LegacyWrapped,
+            legacy_priority: None,
+            legacy_confidence: None,
+            suppressed_count: 0,
+            reason,
+        },
+        role: ShopPlanCandidateRoleV1::StopFallback,
     }
 }

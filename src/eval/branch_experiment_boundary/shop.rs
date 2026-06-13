@@ -1,6 +1,6 @@
 use crate::ai::shop_policy_v1::{
-    build_shop_decision_context_v1, compile_shop_decision_v1, ShopCompileModeV1,
-    ShopPlanStepV1, ShopPlanV1, ShopPolicyConfigV1,
+    build_shop_decision_context_v1, compile_shop_decision_v1, ShopCompileModeV1, ShopPlanStepV1,
+    ShopPlanV1, ShopPolicyConfigV1,
 };
 use crate::content::cards::{get_card_definition, CardId};
 use crate::content::potions::get_potion_definition;
@@ -153,7 +153,10 @@ fn shop_plan_step_label(step: &ShopPlanStepV1) -> String {
         }
         ShopPlanStepV1::BuyRelic { relic, cost, .. } => format!("Buy {relic:?} | {cost} gold"),
         ShopPlanStepV1::BuyPotion { potion, cost, .. } => {
-            format!("Buy {} potion | {cost} gold", get_potion_definition(potion).name)
+            format!(
+                "Buy {} potion | {cost} gold",
+                get_potion_definition(potion).name
+            )
         }
         ShopPlanStepV1::RemoveCard { card, cost, .. } => {
             format!("Purge {} | {cost} gold", get_card_definition(card).name)

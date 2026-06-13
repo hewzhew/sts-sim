@@ -2,8 +2,8 @@ use crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1;
 
 use super::compiler::single_candidate_plan_v1;
 use super::types::{
-    ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPlanKindV1, ShopPlanSourceV1,
-    ShopPlanV1, ShopPolicyClassV1, ShopPurchaseTargetV1,
+    ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPlanKindV1, ShopPlanSourceV1, ShopPlanV1,
+    ShopPolicyClassV1, ShopPurchaseTargetV1,
 };
 
 pub(super) fn legacy_shop_portfolio_plans_v1(
@@ -55,7 +55,12 @@ pub(super) fn legacy_shop_portfolio_plans_v1(
         selected.push(combo.plan);
     }
 
-    for effect_kind in ["shop_buy_relic", "shop_buy_card", "shop_buy_potion", "shop_purge"] {
+    for effect_kind in [
+        "shop_buy_relic",
+        "shop_buy_card",
+        "shop_buy_potion",
+        "shop_purge",
+    ] {
         if selected.len() >= max_plans {
             break;
         }
@@ -122,9 +127,7 @@ fn scored_shop_plan_candidate_v1(
                     shop_relic_purchase_keeps_shop_open(relic),
                     false,
                 ),
-                ShopPurchaseTargetV1::Potion { .. } => {
-                    (priority, "shop_buy_potion", true, true)
-                }
+                ShopPurchaseTargetV1::Potion { .. } => (priority, "shop_buy_potion", true, true),
             }
         }
         ShopPolicyClassV1::Leave => return None,
@@ -229,7 +232,10 @@ fn shop_combo_plan_v1(entries: &[&ScoredShopPlanCandidateV1]) -> ScoredShopPlanC
         legacy_priority: Some(score),
         legacy_confidence: None,
         suppressed_count: 0,
-        reason: format!("legacy shop portfolio combo: {}", label.replace(" + ", " then ")),
+        reason: format!(
+            "legacy shop portfolio combo: {}",
+            label.replace(" + ", " then ")
+        ),
     };
     ScoredShopPlanCandidateV1 {
         score,

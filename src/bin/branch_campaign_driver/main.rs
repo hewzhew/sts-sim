@@ -572,6 +572,9 @@ fn render_checkpoint_shop_evidence_v1(session: &RunControlSession) -> Result<Str
         "selected_plan: {}",
         render_shop_plan_v1(&compiled.selected_plan)
     ));
+    lines.push(render_shop_plan_candidate_summary_v1(
+        &compiled.candidate_plans,
+    ));
     if compiled.alternatives.is_empty() {
         lines.push("alternative_plans: -".to_string());
     } else {
@@ -637,6 +640,32 @@ fn render_checkpoint_shop_evidence_v1(session: &RunControlSession) -> Result<Str
     Ok(lines.join("\n"))
 }
 
+fn render_shop_plan_candidate_summary_v1(
+    candidates: &[sts_simulator::ai::shop_policy_v1::ShopPlanCandidateV1],
+) -> String {
+    let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    for candidate in candidates {
+        *counts.entry(format!("{:?}", candidate.role)).or_insert(0) += 1;
+    }
+    let counts = counts
+        .into_iter()
+        .map(|(role, count)| format!("{role}={count}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let examples = candidates
+        .iter()
+        .take(4)
+        .map(|candidate| format!("{:?}:{}", candidate.role, candidate.plan.plan_id))
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!(
+        "candidate_plans: {} [{}] examples=[{}]",
+        candidates.len(),
+        counts,
+        if examples.is_empty() { "-" } else { &examples }
+    )
+}
+
 fn render_shop_plan_v1(plan: &sts_simulator::ai::shop_policy_v1::ShopPlanV1) -> String {
     let steps = if plan.steps.is_empty() {
         "-".to_string()
@@ -664,9 +693,7 @@ fn render_shop_plan_v1(plan: &sts_simulator::ai::shop_policy_v1::ShopPlanV1) -> 
     )
 }
 
-fn render_shop_plan_step_v1(
-    step: &sts_simulator::ai::shop_policy_v1::ShopPlanStepV1,
-) -> String {
+fn render_shop_plan_step_v1(step: &sts_simulator::ai::shop_policy_v1::ShopPlanStepV1) -> String {
     match *step {
         sts_simulator::ai::shop_policy_v1::ShopPlanStepV1::BuyCard { index, card, cost } => {
             format!("buy card {index} {:?} {cost}g", card)

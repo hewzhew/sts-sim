@@ -20,12 +20,11 @@ pub(super) fn apply_shop_policy_action(
     let Some(step) = compiled.selected_plan.steps.first() else {
         return Ok(None);
     };
-    let action = crate::ai::shop_policy_v1::shop_policy_action_from_plan_v1(
-        &compiled.selected_plan,
-    )
-    .unwrap_or_else(|| crate::ai::shop_policy_v1::ShopPolicyActionV1::Stop {
-        reason: compiled.selected_plan.reason.clone(),
-    });
+    let action =
+        crate::ai::shop_policy_v1::shop_policy_action_from_plan_v1(&compiled.selected_plan)
+            .unwrap_or_else(|| crate::ai::shop_policy_v1::ShopPolicyActionV1::Stop {
+                reason: compiled.selected_plan.reason.clone(),
+            });
     let decision = crate::ai::shop_policy_v1::ShopDecisionV1 {
         action,
         label_role: "behavior_policy_not_teacher",

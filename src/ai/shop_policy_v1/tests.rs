@@ -5,9 +5,9 @@ use crate::ai::decision_tags_v1::{
 };
 use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, compile_shop_decision_v1, plan_shop_decision_v1,
-    shop_card_conversion_priority_v1, ShopCompileModeV1, ShopDecisionSourceV1,
-    ShopPlanKindV1, ShopPlanStepV1, ShopPolicyActionV1, ShopPolicyClassV1,
-    ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    shop_card_conversion_priority_v1, ShopCompileModeV1, ShopDecisionSourceV1, ShopPlanKindV1,
+    ShopPlanStepV1, ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1,
+    ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{CandidateAction, PressureKind, StrategicJob};
 use crate::content::cards::CardId;
@@ -210,7 +210,10 @@ fn compiled_shop_decision_wraps_selected_relic_purchase_as_plan() {
                 })
         })
         .and_then(|candidate| candidate.purchase_priority);
-    assert_eq!(compiled.selected_plan.legacy_priority, relic_candidate_priority);
+    assert_eq!(
+        compiled.selected_plan.legacy_priority,
+        relic_candidate_priority
+    );
     assert_eq!(
         compiled.selected_plan.steps,
         vec![ShopPlanStepV1::BuyRelic {
@@ -219,6 +222,10 @@ fn compiled_shop_decision_wraps_selected_relic_purchase_as_plan() {
             cost: 146,
         }]
     );
+    assert!(compiled
+        .candidate_plans
+        .iter()
+        .any(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id));
 }
 
 #[test]
@@ -284,13 +291,44 @@ fn compiled_shop_branch_topk_returns_plan_alternatives() {
 
     assert!(!compiled.alternatives.is_empty());
     assert!(compiled.alternatives.len() <= 3);
-    assert!(compiled.alternatives.iter().all(|plan| {
-        !plan.steps.is_empty() || matches!(plan.kind, ShopPlanKindV1::Stop)
-    }));
+    let candidate_plan_ids = compiled
+        .candidate_plans
+        .iter()
+        .map(|candidate| candidate.plan.plan_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(candidate_plan_ids.contains(compiled.selected_plan.plan_id.as_str()));
+    assert!(compiled
+        .alternatives
+        .iter()
+        .all(|plan| { !plan.steps.is_empty() || matches!(plan.kind, ShopPlanKindV1::Stop) }));
+    assert!(compiled
+        .alternatives
+        .iter()
+        .all(|plan| candidate_plan_ids.contains(plan.plan_id.as_str())));
     assert!(compiled
         .alternatives
         .iter()
         .any(|plan| plan.candidate_ids.iter().any(|id| id.starts_with("shop:"))));
+}
+
+#[test]
+fn compiled_shop_stop_selection_is_also_a_plan_candidate() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 10;
+    let shop = ShopState::new();
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecuteOne,
+    );
+
+    assert_eq!(compiled.selected_plan.kind, ShopPlanKindV1::Stop);
+    assert!(compiled
+        .candidate_plans
+        .iter()
+        .any(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id));
 }
 
 #[test]
