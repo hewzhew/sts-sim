@@ -134,6 +134,19 @@ fn neow_remove_one_followup_emits_one_legal_selection_command() {
 }
 
 #[test]
+fn neow_followup_selection_is_sourced_from_deck_mutation_compiler() {
+    let run_state = RunState::new(1, 0, false, "Ironclad");
+    let decision = neow_followup_selection_v1(
+        &run_state,
+        &pending_choice(RunPendingChoiceReason::Purge, 1),
+        "Ironclad",
+    )
+    .expect("remove one should be handled");
+
+    assert_eq!(decision.selection_mode, "deck_mutation_compiler_v1");
+}
+
+#[test]
 fn neow_transform_two_followup_emits_two_legal_selection_commands() {
     let run_state = RunState::new(1, 0, false, "Ironclad");
     let decision = neow_followup_selection_v1(
