@@ -1246,6 +1246,8 @@ fn retention_decision(
         slots: slots.to_vec(),
         reasons: Vec::new(),
         strategic_signature: Default::default(),
+        coverage_selection: Default::default(),
+        legacy_strategy_adjustment: Default::default(),
     }
 }
 

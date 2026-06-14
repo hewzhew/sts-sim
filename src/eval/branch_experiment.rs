@@ -14,7 +14,7 @@ use crate::eval::branch_experiment_boundary::{
     CardRewardPortfolioContext,
 };
 use crate::eval::branch_experiment_retention::{
-    default_branch_retention_decision_v1, effective_branch_retention_rank_key_v1,
+    branch_retention_order_rank_key_v1, default_branch_retention_decision_v1,
     select_branch_retention_portfolio_v1, BranchRetentionCandidateInputV1, BranchRetentionConfigV1,
     BranchRetentionDecisionV1, BranchRetentionSlotV1,
 };
@@ -893,7 +893,7 @@ fn branch_retention_candidate_input(
 
 fn branch_effective_rank_key(branch: &BranchWork) -> i32 {
     let candidate = branch_retention_candidate_input(0, branch);
-    effective_branch_retention_rank_key_v1(&candidate)
+    branch_retention_order_rank_key_v1(&candidate)
 }
 
 fn pruned_first_pick_counts_for_selection(

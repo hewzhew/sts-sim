@@ -1,21 +1,11 @@
 use std::cmp::Ordering;
 
-use super::strategic_signals::{
-    campaign_branch_strategic_sort_key_v1, BranchCampaignStrategicSortKeyV1,
-};
-use super::{branch_progress_key, branch_resource_conversion_key_v1, BranchCampaignBranchV1};
+use super::{branch_progress_key, BranchCampaignBranchV1};
 
 type BranchCampaignBossCheckpointSortKeyV1 = (u8, i32, i32, i32);
-type BranchCampaignActiveSortKeyV1 = (
-    BranchCampaignBossCheckpointSortKeyV1,
-    i32,
-    (u8, i32, i32),
-    i32,
-    BranchCampaignStrategicSortKeyV1,
-);
-type BranchCampaignPromotionSortKeyV1 =
-    ((u8, i32, i32), i32, i32, BranchCampaignStrategicSortKeyV1);
-type BranchCampaignRetentionKeyV1 = (u8, i32, i32, i32, i32, BranchCampaignStrategicSortKeyV1);
+type BranchCampaignActiveSortKeyV1 = (BranchCampaignBossCheckpointSortKeyV1, i32, (u8, i32, i32));
+type BranchCampaignPromotionSortKeyV1 = ((u8, i32, i32), i32);
+type BranchCampaignRetentionKeyV1 = (u8, i32, i32, i32);
 
 pub(super) fn compare_campaign_branches_for_active_v1(
     left: &BranchCampaignBranchV1,
@@ -44,16 +34,13 @@ pub(super) fn campaign_branch_retention_key_v1(
         floor,
         hp,
         campaign_branch_selection_rank_key_v1(branch),
-        branch_resource_conversion_key_v1(branch),
-        campaign_branch_strategic_sort_key_v1(branch),
     )
 }
 
 pub(super) fn render_campaign_branch_selection_basis_v1(branch: &BranchCampaignBranchV1) -> String {
     format!(
-        "sel=[rank={} res={}]",
+        "sel=[rank={}]",
         format_campaign_selection_rank_key_v1(campaign_branch_selection_rank_key_v1(branch)),
-        branch_resource_conversion_key_v1(branch)
     )
 }
 
@@ -74,8 +61,6 @@ fn campaign_branch_active_sort_key_v1(
         campaign_branch_boss_checkpoint_sort_key_v1(branch),
         campaign_branch_selection_rank_key_v1(branch),
         branch_progress_key(branch),
-        branch_resource_conversion_key_v1(branch),
-        campaign_branch_strategic_sort_key_v1(branch),
     )
 }
 
@@ -85,30 +70,11 @@ fn campaign_branch_promotion_sort_key_v1(
     (
         branch_progress_key(branch),
         campaign_branch_selection_rank_key_v1(branch),
-        branch_resource_conversion_key_v1(branch),
-        campaign_branch_strategic_sort_key_v1(branch),
     )
 }
 
 fn campaign_branch_selection_rank_key_v1(branch: &BranchCampaignBranchV1) -> i32 {
-    branch
-        .rank_key
-        .saturating_add(branch_resource_conversion_key_v1(branch).saturating_mul(10))
-        .saturating_add(campaign_branch_strategic_rank_adjustment_v1(branch))
-}
-
-fn campaign_branch_strategic_rank_adjustment_v1(branch: &BranchCampaignBranchV1) -> i32 {
-    let signature = &branch.strategic_summary;
-    if signature.is_empty() {
-        return 0;
-    }
-    signature
-        .boss_readiness_milli
-        .saturating_add(signature.engine_score_milli)
-        .saturating_add(signature.package_coherence_milli)
-        .saturating_add(signature.economy_conversion_milli / 2)
-        .saturating_sub(signature.cycle_debt_milli)
-        .saturating_sub(signature.setup_debt_milli)
+    branch.rank_key
 }
 
 fn campaign_branch_boss_checkpoint_sort_key_v1(
@@ -124,6 +90,8 @@ fn campaign_branch_boss_checkpoint_sort_key_v1(
     if signature.is_empty() {
         return (0, 0, 0, 0);
     }
+    // Strategic summaries are diagnostic during ordinary campaign selection.
+    // Only final boss checkpoints consume them as an explicit stage gate.
     let hp_percent = if summary.max_hp > 0 {
         summary.hp.max(0).saturating_mul(100) / summary.max_hp
     } else {

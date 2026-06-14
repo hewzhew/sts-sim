@@ -1958,6 +1958,8 @@ mod tests {
                 slots: vec![primary_slot],
                 reasons: Vec::new(),
                 strategic_signature: Default::default(),
+                coverage_selection: Default::default(),
+                legacy_strategy_adjustment: Default::default(),
             },
             choices: vec![BranchExperimentChoiceV1 {
                 depth: 0,

@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 
 use super::{BranchCampaignBranchV1, BranchCampaignReportV1};
 
-pub(super) type BranchCampaignStrategicSortKeyV1 = (u8, i32, i32, i32, i32, i32, i32);
-
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchCampaignStrategicSignalsV1 {
@@ -113,27 +111,6 @@ pub(super) fn render_campaign_strategic_concern_v1(
         ));
     }
     Some(format!("Strategic concern: {}", concerns.join(" ")))
-}
-
-pub(super) fn campaign_branch_strategic_sort_key_v1(
-    branch: &BranchCampaignBranchV1,
-) -> BranchCampaignStrategicSortKeyV1 {
-    let signature = &branch.strategic_summary;
-    if signature.is_empty() {
-        return (0, 0, 0, 0, 0, 0, 0);
-    }
-    let debt = signature
-        .cycle_debt_milli
-        .saturating_add(signature.setup_debt_milli);
-    (
-        1,
-        signature.boss_readiness_milli,
-        signature.engine_score_milli,
-        signature.package_coherence_milli,
-        signature.clean_score_milli,
-        signature.economy_conversion_milli,
-        -debt,
-    )
 }
 
 fn campaign_strategic_group_by_label_v1<'a>(

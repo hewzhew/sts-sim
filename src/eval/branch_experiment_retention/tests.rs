@@ -203,7 +203,7 @@ fn portfolio_retention_treats_special_campfire_actions_as_distinct_effect_kinds(
 }
 
 #[test]
-fn bloated_deck_transition_pick_does_not_claim_clean_deck_or_frontload_slots() {
+fn bloated_deck_transition_pick_still_claims_frontload_shape_slot() {
     let mut candidate = retention_candidate(0, 10_900, &["Pommel Strike"]);
     candidate.deck_count = 42;
 
@@ -214,8 +214,12 @@ fn bloated_deck_transition_pick_does_not_claim_clean_deck_or_frontload_slots() {
         "taking another pure transition card in a bloated deck is not a clean-deck branch"
     );
     assert!(
-        !decision.slots.contains(&BranchRetentionSlotV1::Frontload),
-        "high-hp bloated decks should not reserve a frontload lane for another pure transition card"
+        decision.slots.contains(&BranchRetentionSlotV1::Frontload),
+        "deck bloat is debt evidence, not a reason to hide the candidate's frontload shape"
+    );
+    assert!(
+        decision.strategic_signature.cycle_debt > 0.0,
+        "deck bloat should remain visible as diagnostic debt"
     );
 }
 
@@ -231,7 +235,7 @@ fn bloated_deck_skip_can_claim_clean_deck_slot() {
         "declining a card reward is the clean-deck branch once deck size is already high"
     );
     assert!(
-        slot_score(&candidate, BranchRetentionSlotV1::CleanDeck) > 0,
+        legacy_slot_score(&candidate, BranchRetentionSlotV1::CleanDeck) > 0,
         "clean-deck scoring should be able to select the skip branch under deck bloat"
     );
 }
@@ -743,7 +747,7 @@ fn retention_slots_come_from_semantic_profiles_not_card_names() {
 }
 
 #[test]
-fn startup_rejected_strength_payoff_does_not_claim_scaling_slot() {
+fn startup_liability_is_legacy_evidence_not_coverage_slot_gate() {
     let candidate = BranchRetentionCandidateInputV1 {
         index: 0,
         act: 2,
@@ -777,16 +781,154 @@ fn startup_rejected_strength_payoff_does_not_claim_scaling_slot() {
 
     let decision = decide_branch_retention_v1(&candidate);
 
-    assert!(!decision.slots.contains(&BranchRetentionSlotV1::Package));
-    assert!(!decision.slots.contains(&BranchRetentionSlotV1::Scaling));
+    assert!(
+        decision.slots.contains(&BranchRetentionSlotV1::Package),
+        "candidate shape should still be visible to package coverage"
+    );
+    assert!(
+        decision.slots.contains(&BranchRetentionSlotV1::Scaling),
+        "candidate shape should still be visible to scaling coverage"
+    );
+    assert!(decision
+        .coverage_selection
+        .slots
+        .contains(&BranchRetentionSlotV1::Package));
+    assert!(decision
+        .coverage_selection
+        .slots
+        .contains(&BranchRetentionSlotV1::Scaling));
     assert!(decision
         .reasons
         .iter()
         .any(|reason| reason == "startup profile rejects at least one added card"));
+    assert!(decision.legacy_strategy_adjustment.startup_adjustment < 0);
+    assert!(decision
+        .legacy_strategy_adjustment
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("startup_liability")));
 }
 
 #[test]
-fn portfolio_fill_penalizes_startup_rejected_card_picks() {
+fn portfolio_fill_records_startup_rejection_without_penalizing_selection() {
+    let rejected_pummel = BranchRetentionCandidateInputV1 {
+        index: 0,
+        act: 2,
+        floor: 25,
+        frontier_key: "same-frontier".to_string(),
+        rank_key: 50_000,
+        hp: 70,
+        max_hp: 80,
+        gold: 120,
+        deck_count: 20,
+        strategy_formation: None,
+        trajectory: BranchTrajectorySignatureV1::default(),
+        choice_profiles: vec![CardRewardSemanticProfileV1 {
+            card: CardId::Pummel,
+            name: "Pummel".to_string(),
+            roles: vec![
+                CardRewardSemanticRoleV1::StrengthPayoff,
+                CardRewardSemanticRoleV1::PackagePayoff,
+            ],
+            dependencies: Vec::new(),
+            unsupported_mechanics: Vec::new(),
+        }],
+        choice_effect_keys: vec!["take_card".to_string()],
+        lineage_flags: Vec::new(),
+        startup: Default::default(),
+    };
+    let skip = BranchRetentionCandidateInputV1 {
+        index: 1,
+        act: 2,
+        floor: 25,
+        frontier_key: "same-frontier".to_string(),
+        rank_key: 10_000,
+        hp: 70,
+        max_hp: 80,
+        gold: 120,
+        deck_count: 19,
+        strategy_formation: None,
+        trajectory: BranchTrajectorySignatureV1::default(),
+        choice_profiles: Vec::new(),
+        choice_effect_keys: vec!["skip_reward".to_string()],
+        lineage_flags: Vec::new(),
+        startup: Default::default(),
+    };
+
+    let selection = select_branch_retention_portfolio_v1(
+        &[rejected_pummel.clone(), skip],
+        retention_config(1, Some(1)),
+    );
+
+    assert!(selection.keep_indices.contains(&0));
+    assert!(!selection.keep_indices.contains(&1));
+
+    let decision = selection
+        .decisions_by_index
+        .get(&0)
+        .expect("retention decision exists for rejected candidate");
+    assert!(decision
+        .legacy_strategy_adjustment
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("startup_liability")));
+}
+
+#[test]
+fn legacy_adjusted_rank_exposes_startup_and_component_margin_penalty() {
+    let rejected_pummel = BranchRetentionCandidateInputV1 {
+        index: 0,
+        act: 2,
+        floor: 25,
+        frontier_key: "same-frontier".to_string(),
+        rank_key: 50_000,
+        hp: 70,
+        max_hp: 80,
+        gold: 120,
+        deck_count: 20,
+        strategy_formation: None,
+        trajectory: BranchTrajectorySignatureV1::default(),
+        choice_profiles: vec![CardRewardSemanticProfileV1 {
+            card: CardId::Pummel,
+            name: "Pummel".to_string(),
+            roles: vec![
+                CardRewardSemanticRoleV1::StrengthPayoff,
+                CardRewardSemanticRoleV1::PackagePayoff,
+            ],
+            dependencies: Vec::new(),
+            unsupported_mechanics: Vec::new(),
+        }],
+        choice_effect_keys: vec!["take_card".to_string()],
+        lineage_flags: Vec::new(),
+        startup: Default::default(),
+    };
+    let skip = BranchRetentionCandidateInputV1 {
+        index: 1,
+        act: 2,
+        floor: 25,
+        frontier_key: "same-frontier".to_string(),
+        rank_key: 10_000,
+        hp: 70,
+        max_hp: 80,
+        gold: 120,
+        deck_count: 19,
+        strategy_formation: None,
+        trajectory: BranchTrajectorySignatureV1::default(),
+        choice_profiles: Vec::new(),
+        choice_effect_keys: vec!["skip_reward".to_string()],
+        lineage_flags: Vec::new(),
+        startup: Default::default(),
+    };
+
+    assert!(
+        legacy_adjusted_branch_retention_rank_key_v1(&rejected_pummel)
+            < legacy_adjusted_branch_retention_rank_key_v1(&skip),
+        "legacy adjusted rank should expose the old startup/component penalty for audit"
+    );
+}
+
+#[test]
+fn retention_selection_uses_base_rank_not_legacy_strategy_adjustment() {
     let rejected_pummel = BranchRetentionCandidateInputV1 {
         index: 0,
         act: 2,
@@ -836,12 +978,15 @@ fn portfolio_fill_penalizes_startup_rejected_card_picks() {
         retention_config(1, Some(1)),
     );
 
-    assert!(selection.keep_indices.contains(&1));
-    assert!(!selection.keep_indices.contains(&0));
+    assert!(
+        selection.keep_indices.contains(&0),
+        "branch retention should expose startup/component concerns as legacy evidence, not use them to override base rank"
+    );
+    assert!(!selection.keep_indices.contains(&1));
 }
 
 #[test]
-fn effective_rank_exposes_startup_and_component_margin_penalty() {
+fn legacy_strategy_adjustment_exposes_rank_components() {
     let rejected_pummel = BranchRetentionCandidateInputV1 {
         index: 0,
         act: 2,
@@ -868,29 +1013,97 @@ fn effective_rank_exposes_startup_and_component_margin_penalty() {
         lineage_flags: Vec::new(),
         startup: Default::default(),
     };
-    let skip = BranchRetentionCandidateInputV1 {
-        index: 1,
-        act: 2,
-        floor: 25,
-        frontier_key: "same-frontier".to_string(),
-        rank_key: 10_000,
-        hp: 70,
-        max_hp: 80,
-        gold: 120,
-        deck_count: 19,
-        strategy_formation: None,
-        trajectory: BranchTrajectorySignatureV1::default(),
-        choice_profiles: Vec::new(),
-        choice_effect_keys: vec!["skip_reward".to_string()],
-        lineage_flags: Vec::new(),
-        startup: Default::default(),
-    };
+
+    let adjustment = legacy_branch_retention_strategy_adjustment_v1(&rejected_pummel);
+
+    assert_eq!(adjustment.base_rank_key, 50_000);
+    assert_eq!(adjustment.startup_adjustment, -50_000);
+    assert!(adjustment.component_adjustment < 0);
+    assert_eq!(
+        adjustment.effective_rank_key,
+        legacy_adjusted_branch_retention_rank_key_v1(&rejected_pummel)
+    );
+    assert!(
+        adjustment
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("startup_liability")),
+        "legacy strategic rank adjustment should name the startup contribution"
+    );
+}
+
+#[test]
+fn package_lane_selection_uses_rank_not_legacy_slot_score() {
+    let high_rank_package = named_semantic_retention_candidate(
+        0,
+        50_000,
+        "Generic Package",
+        BranchTrajectorySignatureV1::default(),
+        &[CardRewardSemanticRoleV1::PackagePayoff],
+    );
+    let mut context_boosted_package = named_semantic_retention_candidate(
+        1,
+        10_000,
+        "Strength Package",
+        BranchTrajectorySignatureV1::default(),
+        &[
+            CardRewardSemanticRoleV1::StrengthPayoff,
+            CardRewardSemanticRoleV1::PackagePayoff,
+        ],
+    );
+    context_boosted_package.strategy_formation = Some(formation(
+        StrategyDeckFormationStageV1::PlanSeeded,
+        &[],
+        &[StrategyPackageIdV2::StrengthScaling],
+    ));
+    context_boosted_package
+        .startup
+        .persistent_strength_source_count = 1;
+
+    let candidates = vec![high_rank_package, context_boosted_package];
+    let selection = select_branch_retention_portfolio_v1(&candidates, retention_config(1, Some(1)));
 
     assert!(
-        effective_branch_retention_rank_key_v1(&rejected_pummel)
-            < effective_branch_retention_rank_key_v1(&skip),
-        "campaign-visible rank should carry the same startup/component penalty used by retention"
+        selection.keep_indices.contains(&0),
+        "legacy slot_score/context boosts should be evidence, not the lane-local selector"
     );
+    assert!(!selection.keep_indices.contains(&1));
+}
+
+#[test]
+fn context_packet_keys_are_legacy_evidence_not_coverage_slots() {
+    let mut candidate = semantic_retention_candidate(
+        0,
+        10_000,
+        64,
+        80,
+        BranchTrajectorySignatureV1::default(),
+        &[CardRewardSemanticRoleV1::CardDraw],
+    );
+    candidate.strategy_formation = Some(formation(
+        StrategyDeckFormationStageV1::Transitional,
+        &[StrategyDeckFormationNeedV1::DrawEnergy],
+        &[],
+    ));
+
+    let decision = decide_branch_retention_v1(&candidate);
+
+    assert!(
+        !decision.slots.contains(&BranchRetentionSlotV1::EngineSetup),
+        "context packet matches should not directly add coverage slots"
+    );
+    assert!(
+        !decision
+            .coverage_selection
+            .slots
+            .contains(&BranchRetentionSlotV1::EngineSetup),
+        "coverage selection should stay candidate-shape only"
+    );
+    assert!(decision
+        .legacy_strategy_adjustment
+        .context_keys
+        .iter()
+        .any(|key| key == "matches_formation_draw_energy_need"));
 }
 
 #[test]

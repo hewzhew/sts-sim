@@ -137,9 +137,7 @@ fn compact_campaign_report_renders_active_branch_differences() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 2);
 
-    assert!(
-        rendered.contains("2. A1F35 HP 80/80 gold 99 deck 10 sel=[rank=80 res=0] | Card Reward")
-    );
+    assert!(rendered.contains("2. A1F35 HP 80/80 gold 99 deck 10 sel=[rank=80] | Card Reward"));
     assert!(rendered.contains(
         "diff: choices +Dark Embrace; stage PlanSeeded->Mature; strengths +ExhaustEngine +StrengthScaling"
     ));
@@ -332,7 +330,7 @@ fn compact_campaign_report_shows_selection_basis_for_branch_examples() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
-    assert!(rendered.contains("sel=[rank=123 res=0]"));
+    assert!(rendered.contains("sel=[rank=123]"));
 }
 
 #[test]
@@ -342,7 +340,7 @@ fn compact_campaign_report_formats_large_selection_rank_readably() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
-    assert!(rendered.contains("sel=[rank=11.5k res=0]"));
+    assert!(rendered.contains("sel=[rank=11.5k]"));
 }
 
 #[test]
@@ -535,7 +533,7 @@ fn campaign_frozen_overflow_discards_weaker_incoming_branch() {
 }
 
 #[test]
-fn campaign_frozen_overflow_replaces_unconverted_gold_branch_when_progress_ties() {
+fn campaign_frozen_overflow_does_not_replace_branch_by_unspent_gold_pressure() {
     let mut rich = test_campaign_branch("rich", 16, 30);
     rich.summary.as_mut().unwrap().gold = 485;
     let mut frozen = vec![rich];
@@ -552,13 +550,13 @@ fn campaign_frozen_overflow_replaces_unconverted_gold_branch_when_progress_ties(
         &mut discarded_examples,
     );
 
-    assert_eq!(added, 1);
-    assert_eq!(frozen[0].branch_id, "converted");
+    assert_eq!(added, 0);
+    assert_eq!(frozen[0].branch_id, "rich");
     assert_eq!(discarded_count, 1);
 }
 
 #[test]
-fn campaign_frozen_overflow_replaces_weaker_strategic_branch_when_progress_ties() {
+fn campaign_frozen_overflow_does_not_replace_branch_by_strategic_summary_tie_break() {
     let mut frozen = vec![test_campaign_branch("existing-weak", 8, 70)];
     frozen[0].rank_key = 100;
     let mut incoming = test_campaign_branch("incoming-engine", 8, 70);
@@ -584,8 +582,8 @@ fn campaign_frozen_overflow_replaces_weaker_strategic_branch_when_progress_ties(
         &mut discarded_examples,
     );
 
-    assert_eq!(added, 1);
-    assert_eq!(frozen[0].branch_id, "incoming-engine");
+    assert_eq!(added, 0);
+    assert_eq!(frozen[0].branch_id, "existing-weak");
     assert_eq!(discarded_count, 1);
 }
 
@@ -634,7 +632,7 @@ fn campaign_selection_freezes_active_overflow() {
 }
 
 #[test]
-fn campaign_selection_prefers_converted_gold_when_progress_is_tied() {
+fn campaign_selection_does_not_prefer_converted_gold_as_hidden_strategy() {
     let mut rich = test_campaign_branch("a-rich", 16, 30);
     rich.rank_key = 100;
     rich.summary.as_mut().unwrap().gold = 485;
@@ -645,11 +643,14 @@ fn campaign_selection_prefers_converted_gold_when_progress_is_tied() {
     let selected = select_campaign_branches_v1(vec![rich, converted], 1, 4);
 
     assert_eq!(selected.active.len(), 1);
-    assert_eq!(selected.active[0].branch_id, "b-converted");
+    assert_eq!(
+        selected.active[0].branch_id, "a-rich",
+        "unspent gold pressure is a report concern, not a hidden campaign selector"
+    );
 }
 
 #[test]
-fn campaign_selection_does_not_reward_unspent_gold_pressure_near_boss() {
+fn campaign_selection_keeps_raw_rank_when_unspent_gold_pressure_is_only_diagnostic() {
     let mut hoarded = test_campaign_branch("a-hoarded", 16, 41);
     hoarded.rank_key = 14_500;
     hoarded.summary.as_mut().unwrap().gold = 370;
@@ -661,13 +662,13 @@ fn campaign_selection_does_not_reward_unspent_gold_pressure_near_boss() {
 
     assert_eq!(selected.active.len(), 1);
     assert_eq!(
-        selected.active[0].branch_id, "b-healthy",
-        "near boss, missed resource conversion should not be rewarded as plain gold"
+        selected.active[0].branch_id, "a-hoarded",
+        "campaign selection should not demote a branch solely because resource-concern reporting flags unspent gold"
     );
 }
 
 #[test]
-fn campaign_selection_uses_strategic_summary_as_late_tie_break() {
+fn campaign_selection_does_not_use_strategic_summary_as_ordinary_tie_break() {
     let mut weak = test_campaign_branch("a-weak", 6, 70);
     weak.rank_key = 100;
     weak.summary.as_mut().unwrap().trajectory_key = "weak".to_string();
@@ -688,11 +689,14 @@ fn campaign_selection_uses_strategic_summary_as_late_tie_break() {
     let selected = select_campaign_branches_v1(vec![weak, engine], 1, 4);
 
     assert_eq!(selected.active.len(), 1);
-    assert_eq!(selected.active[0].branch_id, "z-engine");
+    assert_eq!(
+        selected.active[0].branch_id, "a-weak",
+        "strategic summary should not be a hidden ordinary tie-break"
+    );
 }
 
 #[test]
-fn campaign_selection_allows_strategy_to_beat_small_raw_rank_gap() {
+fn campaign_selection_does_not_use_strategy_summary_to_beat_raw_rank_gap() {
     let mut plain = test_campaign_branch("plain-short-term", 13, 78);
     plain.rank_key = 12_300;
     let mut package = test_campaign_branch("package-direction", 13, 77);
@@ -712,7 +716,10 @@ fn campaign_selection_allows_strategy_to_beat_small_raw_rank_gap() {
     let selected = select_campaign_branches_v1(vec![plain, package], 1, 4);
 
     assert_eq!(selected.active.len(), 1);
-    assert_eq!(selected.active[0].branch_id, "package-direction");
+    assert_eq!(
+        selected.active[0].branch_id, "plain-short-term",
+        "strategic summary is diagnostic/tie-break evidence, not a hidden rank adjustment"
+    );
 }
 
 #[test]
@@ -859,7 +866,7 @@ fn campaign_promotes_frozen_when_active_pool_is_empty() {
 }
 
 #[test]
-fn campaign_promotes_converted_gold_frozen_branch_when_progress_ties() {
+fn campaign_promotion_does_not_prefer_converted_gold_as_hidden_strategy() {
     let mut active = Vec::new();
     let mut rich = test_campaign_branch("a-rich", 16, 30);
     rich.status = BranchCampaignBranchStatusV1::Frozen;
@@ -872,8 +879,8 @@ fn campaign_promotes_converted_gold_frozen_branch_when_progress_ties() {
     let promoted = promote_frozen_to_active_v1(&mut active, &mut frozen, 1);
 
     assert_eq!(promoted, 1);
-    assert_eq!(active[0].branch_id, "b-converted");
-    assert_eq!(frozen[0].branch_id, "a-rich");
+    assert_eq!(active[0].branch_id, "a-rich");
+    assert_eq!(frozen[0].branch_id, "b-converted");
 }
 
 #[test]
@@ -2716,6 +2723,8 @@ fn test_report_branch_at(
             slots: vec![BranchRetentionSlotV1::Diversity],
             reasons: vec!["test".to_string()],
             strategic_signature: Default::default(),
+            coverage_selection: Default::default(),
+            legacy_strategy_adjustment: Default::default(),
         },
         choices: choices
             .into_iter()

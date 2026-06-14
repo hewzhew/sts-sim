@@ -3265,17 +3265,6 @@ fn branch_progress_key(branch: &BranchCampaignBranchV1) -> (u8, i32, i32) {
         .unwrap_or((0, 0, 0))
 }
 
-fn branch_resource_conversion_key_v1(branch: &BranchCampaignBranchV1) -> i32 {
-    if branch_has_unspent_gold_pressure_v1(branch) {
-        return -branch
-            .summary
-            .as_ref()
-            .map(|summary| summary.gold)
-            .unwrap_or(0);
-    }
-    0
-}
-
 fn campaign_should_stop_after_victory_v1(
     config: &BranchCampaignConfigV1,
     victories: &[BranchCampaignBranchV1],

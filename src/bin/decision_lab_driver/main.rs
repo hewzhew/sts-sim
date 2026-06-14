@@ -1904,6 +1904,8 @@ mod tests {
                 slots: vec![sts_simulator::eval::branch_experiment_retention::BranchRetentionSlotV1::Frontload],
                 reasons: reasons.iter().map(|reason| (*reason).to_string()).collect(),
                 strategic_signature: Default::default(),
+                coverage_selection: Default::default(),
+                legacy_strategy_adjustment: Default::default(),
             },
             choices: Vec::new(),
             stop_reason: "test".to_string(),
