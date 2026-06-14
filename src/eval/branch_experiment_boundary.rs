@@ -22,7 +22,7 @@ pub(crate) use card_reward::{
     active_or_visible_reward_cards, card_offer_labels, CardRewardPortfolioContext,
 };
 use card_reward::{
-    card_reward_branch_options, format_reward_card_label, reward_option_semantic_class,
+    card_reward_branch_options, reward_option_semantic_class,
     select_card_reward_branch_options_for_session, CardRewardBranchOption,
 };
 use event::{event_branch_options, EventBranchOption};

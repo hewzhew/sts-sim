@@ -1082,7 +1082,9 @@ fn run_control_auto_run_purges_curse_at_run_pending_purge_choice() {
         ))
         .expect("auto-run should purge a curse at a run pending purge choice");
 
-    assert!(outcome.message.contains("run choice policy: select Doubt"));
+    assert!(outcome
+        .message
+        .contains("deck mutation compiler: select Doubt"));
     let record = outcome
         .trace_annotations
         .iter()
@@ -1132,7 +1134,9 @@ fn run_control_auto_run_selects_starter_at_run_pending_purge_choice() {
         ))
         .expect("auto-run should select a low-value starter at a purge choice without a curse");
 
-    assert!(outcome.message.contains("run choice policy: select Strike"));
+    assert!(outcome
+        .message
+        .contains("deck mutation compiler: select Strike"));
     assert_eq!(session.run_state.master_deck.len(), 9);
     assert_eq!(
         session

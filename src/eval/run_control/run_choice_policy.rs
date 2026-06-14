@@ -8,24 +8,24 @@ pub(super) fn apply_run_choice_policy_deck_selection(
     let EngineState::RunPendingChoice(choice) = &session.engine_state else {
         return Ok(None);
     };
-    let context = crate::ai::run_choice_policy_v1::build_run_choice_decision_context_v1(
+    let decision = crate::ai::deck_mutation_compiler_v1::compile_deck_mutation_decision_v1(
         &session.run_state,
         choice,
+        crate::ai::deck_mutation_compiler_v1::DeckMutationCompilerModeV1::ExecuteOne,
     );
-    let decision = crate::ai::run_choice_policy_v1::plan_run_choice_decision_v1(
-        &context,
-        &crate::ai::run_choice_policy_v1::RunChoicePolicyConfigV1::default(),
-    );
-    let noncombat_record = decision.to_noncombat_decision_record_v1();
-    let crate::ai::run_choice_policy_v1::RunChoicePolicyActionV1::SelectDeckIndices {
-        indices,
-        labels,
-        confidence,
-        reason,
-    } = decision.action
-    else {
+    let noncombat_record = decision.legacy_decision.to_noncombat_decision_record_v1();
+    let Some(selected_plan) = decision.selected_plan else {
         return Ok(None);
     };
+    let indices = selected_plan.step.deck_indices.clone();
+    let labels = selected_plan
+        .step
+        .cards
+        .iter()
+        .map(|card| card.label.clone())
+        .collect::<Vec<_>>();
+    let confidence = selected_plan.confidence;
+    let reason = selected_plan.reasons.join("; ");
 
     let outcome = session
         .apply_input(ClientInput::SubmitDeckSelect(indices))?
@@ -38,7 +38,7 @@ pub(super) fn apply_run_choice_policy_deck_selection(
     Ok(Some((
         outcome,
         format!(
-            "run choice policy: select {} confidence={confidence:.2} reason={reason} label_role={}",
+            "deck mutation compiler: select {} confidence={confidence:.2} reason={reason} label_role={}",
             labels.join(", "),
             decision.label_role
         ),
