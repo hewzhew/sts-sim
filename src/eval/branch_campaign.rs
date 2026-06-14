@@ -2773,12 +2773,6 @@ fn rebalance_active_progress_anchor_v1(
     true
 }
 
-fn campaign_branch_has_core_engine_anchor_v1(branch: &BranchCampaignBranchV1) -> bool {
-    let signature = &branch.strategic_summary;
-    signature.present
-        && (signature.engine_score_milli >= 500 || signature.package_coherence_milli >= 500)
-}
-
 fn rebalance_active_survival_anchor_v1(
     active: &mut Vec<BranchCampaignBranchV1>,
     frozen: &mut Vec<BranchCampaignBranchV1>,
@@ -3015,12 +3009,6 @@ fn rebalance_active_with_stronger_frozen_v1(
             branch_progress_key(best_frozen),
         )
     }) {
-        return 0;
-    }
-
-    if campaign_branch_has_core_engine_anchor_v1(worst_active)
-        && !campaign_branch_has_core_engine_anchor_v1(best_frozen)
-    {
         return 0;
     }
 

@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ai::card_component_marginal_value_v1::{
-    evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
-    CardComponentMarginalVerdictV1,
+use crate::ai::card_admission_policy_v1::{
+    evaluate_card_profile_admission_v1, CardAdmissionContextV1, CardAdmissionSourceV1,
+    CardAdmissionVerdictV1,
 };
 use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
+use crate::ai::deck_shape_v1::DeckShapeProfileV1;
 use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
 use crate::ai::noncombat_strategy_v1::StrategyFormationSummaryV2;
 use crate::ai::strategic::{BranchSignature, RetentionBucket};
@@ -155,6 +156,15 @@ pub struct BranchRetentionLegacySlotScoreV1 {
     pub score: i32,
 }
 
+#[derive(Clone, Debug, Default)]
+struct BranchRetentionCardAdmissionSummaryV1 {
+    startup_blocking: bool,
+    rejects_added_card: bool,
+    admits_only_without_cleaner: bool,
+    rank_adjustment: i32,
+    reasons: Vec<String>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchRetentionSelectionV1 {
     pub keep_indices: BTreeSet<usize>,
@@ -290,10 +300,8 @@ pub fn decide_branch_retention_v1(
 ) -> BranchRetentionDecisionV1 {
     let mut slots = Vec::new();
     let mut reasons = Vec::new();
-    let component_context = component_marginal_context_for_retention_candidate(candidate);
-    let startup_liability = branch_retention_startup_liability_flags(candidate);
-    let component_negative =
-        added_cards_have_negative_component_margin(candidate, &component_context);
+    let current_startup_liability = branch_retention_current_startup_liability(candidate);
+    let card_admission = branch_retention_card_admission_summary_v1(candidate);
 
     if has_package_candidate(&candidate.choice_profiles) {
         slots.push(BranchRetentionSlotV1::Package);
@@ -315,15 +323,14 @@ pub fn decide_branch_retention_v1(
         slots.push(BranchRetentionSlotV1::Scaling);
         reasons.push("contains long-run scaling or engine setup".to_string());
     }
-    if startup_liability.added_card {
-        reasons.push("startup profile rejects at least one added card".to_string());
+    if card_admission.rejects_added_card {
+        reasons.push("card admission rejects at least one added card".to_string());
     }
-    if startup_liability.unresolved_deck {
+    if current_startup_liability {
         reasons.push("current deck has unresolved startup liability".to_string());
     }
-    if component_negative {
-        reasons
-            .push("component marginal value is negative for at least one added card".to_string());
+    if card_admission.admits_only_without_cleaner {
+        reasons.push("card admission would prefer a cleaner alternative".to_string());
     }
     if candidate
         .choice_profiles
@@ -383,8 +390,8 @@ pub fn decide_branch_retention_v1(
         strategic_signature: strategic_signature_for_retention_candidate(
             candidate,
             &slots,
-            startup_liability.any(),
-            component_negative,
+            current_startup_liability || card_admission.startup_blocking,
+            card_admission.rejects_added_card || card_admission.admits_only_without_cleaner,
         ),
         slots,
         reasons,
@@ -859,22 +866,18 @@ pub fn legacy_branch_retention_strategy_adjustment_v1(
     candidate: &BranchRetentionCandidateInputV1,
 ) -> BranchRetentionLegacyStrategyAdjustmentV1 {
     let context = branch_retention_context_packet_v2(candidate);
-    let component_context = component_marginal_context_for_retention_candidate(candidate);
-    let startup_adjustment = if candidate_has_startup_liability(candidate) {
+    let card_admission = branch_retention_card_admission_summary_v1(candidate);
+    let startup_adjustment = if card_admission.startup_blocking {
         -50_000
     } else {
         0
     };
-    let component_adjustment = component_margin_rank_adjustment(candidate, &component_context);
-    let mut reasons = Vec::new();
+    let component_adjustment = card_admission.rank_adjustment;
+    let mut reasons = card_admission.reasons;
 
     if startup_adjustment != 0 {
-        reasons.push(format!("legacy_startup_liability:{startup_adjustment}"));
+        reasons.push(format!("card_admission_startup_block:{startup_adjustment}"));
     }
-    reasons.extend(component_margin_rank_adjustment_reasons(
-        candidate,
-        &component_context,
-    ));
 
     let effective_rank_key = candidate
         .rank_key
@@ -1483,65 +1486,53 @@ fn legacy_slot_score(
     }
 }
 
-fn component_marginal_context_for_retention_candidate(
+fn card_admission_context_for_retention_candidate(
     candidate: &BranchRetentionCandidateInputV1,
-) -> CardComponentMarginalContextV1 {
-    let frontload_jobs = count_profiles_with_any_role(
-        &candidate.choice_profiles,
-        &[
-            CardRewardSemanticRoleV1::FrontloadDamage,
-            CardRewardSemanticRoleV1::AoeDamage,
-        ],
-    ) as usize;
-    let block_jobs = count_profiles_with_any_role(
-        &candidate.choice_profiles,
-        &[
-            CardRewardSemanticRoleV1::Block,
-            CardRewardSemanticRoleV1::Weak,
-            CardRewardSemanticRoleV1::EnemyStrengthDown,
-        ],
-    ) as usize;
-    CardComponentMarginalContextV1 {
+) -> CardAdmissionContextV1 {
+    CardAdmissionContextV1 {
         act: candidate.act,
         floor: candidate.floor,
         boss: None,
         hp: candidate.hp,
         max_hp: candidate.max_hp,
         deck_size: candidate.deck_count,
-        powers: candidate.startup.setup_debt as usize,
+        powers: 0,
+        curses: 0,
         draw_sources: candidate.startup.strong_draw_count as usize,
         exhaust_generators: candidate.startup.exhaust_engine_count as usize,
-        frontload_jobs,
-        block_jobs,
+        frontload_jobs: 0,
+        block_jobs: 0,
         formation_needs: candidate
             .strategy_formation
             .as_ref()
             .map(|formation| formation.needs.clone())
             .unwrap_or_default(),
         startup: candidate.startup.clone(),
+        deck_shape: deck_shape_profile_for_retention_candidate(candidate),
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct BranchRetentionStartupLiabilityFlagsV1 {
-    added_card: bool,
-    unresolved_deck: bool,
-}
-
-impl BranchRetentionStartupLiabilityFlagsV1 {
-    fn any(self) -> bool {
-        self.added_card || self.unresolved_deck
-    }
-}
-
-fn candidate_has_startup_liability(candidate: &BranchRetentionCandidateInputV1) -> bool {
-    branch_retention_startup_liability_flags(candidate).any()
-}
-
-fn branch_retention_startup_liability_flags(
+fn deck_shape_profile_for_retention_candidate(
     candidate: &BranchRetentionCandidateInputV1,
-) -> BranchRetentionStartupLiabilityFlagsV1 {
-    let unresolved_deck = candidate.startup.has_setup_debt_high_payment_low
+) -> DeckShapeProfileV1 {
+    DeckShapeProfileV1 {
+        exhaust_enabler_count: candidate.startup.exhaust_engine_count,
+        exhaust_payoff_count: candidate.startup.exhaust_payoff_count,
+        status_generator_count: candidate.startup.status_generator_count,
+        status_digest_count: candidate.startup.status_digest_count,
+        corruption_count: candidate.startup.corruption_count,
+        havoc_count: candidate.startup.havoc_count,
+        clash_count: if candidate.startup.has_clash_playability_debt {
+            1
+        } else {
+            0
+        },
+        ..Default::default()
+    }
+}
+
+fn branch_retention_current_startup_liability(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    candidate.startup.has_setup_debt_high_payment_low
         || candidate.startup.has_fnp_duplicate_without_exhaust_engine
         || candidate.startup.has_corruption_duplicate_without_payoff
         || candidate.startup.has_havoc_duplicate_without_payoff
@@ -1554,83 +1545,68 @@ fn branch_retention_startup_liability_flags(
         || candidate.startup.has_strength_payoff_without_strength
         || candidate.startup.has_rupture_without_self_damage
         || candidate.startup.has_armaments_unupgraded_duplicate
-        || candidate.startup.has_pyramid_unupgraded_apparition;
-    let added_card = candidate.choice_profiles.iter().any(|profile| {
-        (profile
-            .roles
-            .contains(&CardRewardSemanticRoleV1::StrengthPayoff)
-            && candidate.startup.persistent_strength_source_count == 0)
-            || (profile
-                .roles
-                .contains(&CardRewardSemanticRoleV1::SelfDamagePayoff)
-                && candidate.startup.self_damage_source_count == 0)
-            || (profile
-                .roles
-                .contains(&CardRewardSemanticRoleV1::ExhaustPayoff)
-                && candidate.startup.exhaust_engine_count == 0)
-    });
+        || candidate.startup.has_pyramid_unupgraded_apparition
+}
 
-    BranchRetentionStartupLiabilityFlagsV1 {
-        added_card,
-        unresolved_deck,
+fn branch_retention_card_admission_summary_v1(
+    candidate: &BranchRetentionCandidateInputV1,
+) -> BranchRetentionCardAdmissionSummaryV1 {
+    let context = card_admission_context_for_retention_candidate(candidate);
+    let mut summary = BranchRetentionCardAdmissionSummaryV1::default();
+
+    for profile in &candidate.choice_profiles {
+        let report =
+            evaluate_card_profile_admission_v1(&context, profile, CardAdmissionSourceV1::Reward);
+        let adjustment = card_admission_verdict_rank_adjustment(report.verdict);
+        summary.rank_adjustment = summary.rank_adjustment.saturating_add(adjustment);
+        match report.verdict {
+            CardAdmissionVerdictV1::Admit => {}
+            CardAdmissionVerdictV1::AdmitIfNoCleanerAlternative => {
+                summary.admits_only_without_cleaner = true;
+            }
+            CardAdmissionVerdictV1::Reject => {
+                summary.rejects_added_card = true;
+            }
+        }
+        if report.verdict == CardAdmissionVerdictV1::Reject
+            && report
+                .reasons
+                .iter()
+                .any(|reason| card_admission_reason_is_startup_blocking(reason))
+        {
+            summary.startup_blocking = true;
+        }
+        if adjustment != 0 {
+            summary.reasons.push(format!(
+                "card_admission:{}:{:?}:{adjustment}",
+                profile.name, report.verdict
+            ));
+        }
+        if report.verdict != CardAdmissionVerdictV1::Admit {
+            summary.reasons.extend(
+                report
+                    .reasons
+                    .iter()
+                    .map(|reason| format!("card_admission_reason:{}:{reason}", profile.name)),
+            );
+        }
     }
+
+    summary
 }
 
-fn added_cards_have_negative_component_margin(
-    candidate: &BranchRetentionCandidateInputV1,
-    context: &CardComponentMarginalContextV1,
-) -> bool {
-    candidate.choice_profiles.iter().any(|profile| {
-        let report = evaluate_card_component_marginal_value_v1(context, profile);
-        matches!(
-            report.verdict,
-            CardComponentMarginalVerdictV1::Reject | CardComponentMarginalVerdictV1::SkipPreferred
-        )
-    })
+fn card_admission_reason_is_startup_blocking(reason: &str) -> bool {
+    reason.starts_with("startup_")
+        || reason.starts_with("deck_shape_")
+        || reason.contains("cycle_debt")
+        || reason.contains("startup_debt")
 }
 
-fn component_margin_rank_adjustment(
-    candidate: &BranchRetentionCandidateInputV1,
-    context: &CardComponentMarginalContextV1,
-) -> i32 {
-    candidate
-        .choice_profiles
-        .iter()
-        .map(|profile| {
-            let report = evaluate_card_component_marginal_value_v1(context, profile);
-            component_margin_verdict_rank_adjustment(report.verdict)
-        })
-        .sum()
-}
-
-fn component_margin_rank_adjustment_reasons(
-    candidate: &BranchRetentionCandidateInputV1,
-    context: &CardComponentMarginalContextV1,
-) -> Vec<String> {
-    candidate
-        .choice_profiles
-        .iter()
-        .filter_map(|profile| {
-            let report = evaluate_card_component_marginal_value_v1(context, profile);
-            let adjustment = component_margin_verdict_rank_adjustment(report.verdict);
-            (adjustment != 0).then(|| {
-                format!(
-                    "legacy_component_margin:{}:{:?}:{adjustment}",
-                    profile.name, report.verdict
-                )
-            })
-        })
-        .collect()
-}
-
-fn component_margin_verdict_rank_adjustment(verdict: CardComponentMarginalVerdictV1) -> i32 {
+fn card_admission_verdict_rank_adjustment(verdict: CardAdmissionVerdictV1) -> i32 {
     match verdict {
-        CardComponentMarginalVerdictV1::MustTake => 12_000,
-        CardComponentMarginalVerdictV1::StrongTake => 6_000,
-        CardComponentMarginalVerdictV1::ContextTake => 2_000,
-        CardComponentMarginalVerdictV1::Speculative => 0,
-        CardComponentMarginalVerdictV1::SkipPreferred => -8_000,
-        CardComponentMarginalVerdictV1::Reject => -20_000,
+        CardAdmissionVerdictV1::Admit => 0,
+        CardAdmissionVerdictV1::AdmitIfNoCleanerAlternative => -8_000,
+        CardAdmissionVerdictV1::Reject => -50_000,
     }
 }
 

@@ -855,13 +855,13 @@ fn startup_liability_is_legacy_evidence_not_coverage_slot_gate() {
     assert!(decision
         .reasons
         .iter()
-        .any(|reason| reason == "startup profile rejects at least one added card"));
-    assert!(decision.legacy_strategy_adjustment.startup_adjustment < 0);
+        .any(|reason| reason == "card admission rejects at least one added card"));
+    assert!(decision.legacy_strategy_adjustment.component_adjustment < 0);
     assert!(decision
         .legacy_strategy_adjustment
         .reasons
         .iter()
-        .any(|reason| reason.contains("startup_liability")));
+        .any(|reason| reason.contains("card_admission")));
 }
 
 #[test]
@@ -926,11 +926,11 @@ fn portfolio_fill_records_startup_rejection_and_penalizes_selection() {
         .legacy_strategy_adjustment
         .reasons
         .iter()
-        .any(|reason| reason.contains("startup_liability")));
+        .any(|reason| reason.contains("card_admission")));
 }
 
 #[test]
-fn legacy_adjusted_rank_exposes_startup_and_component_margin_penalty() {
+fn legacy_adjusted_rank_exposes_card_admission_penalty() {
     let rejected_pummel = BranchRetentionCandidateInputV1 {
         index: 0,
         act: 2,
@@ -978,7 +978,7 @@ fn legacy_adjusted_rank_exposes_startup_and_component_margin_penalty() {
     assert!(
         legacy_adjusted_branch_retention_rank_key_v1(&rejected_pummel)
             < legacy_adjusted_branch_retention_rank_key_v1(&skip),
-        "legacy adjusted rank should expose the old startup/component penalty for audit"
+        "legacy adjusted rank should expose card admission rejection for audit"
     );
 }
 
@@ -1041,7 +1041,7 @@ fn retention_selection_uses_strategic_rank_adjustment() {
 }
 
 #[test]
-fn legacy_strategy_adjustment_exposes_rank_components() {
+fn legacy_strategy_adjustment_exposes_card_admission_components() {
     let rejected_pummel = BranchRetentionCandidateInputV1 {
         index: 0,
         act: 2,
@@ -1072,7 +1072,6 @@ fn legacy_strategy_adjustment_exposes_rank_components() {
     let adjustment = legacy_branch_retention_strategy_adjustment_v1(&rejected_pummel);
 
     assert_eq!(adjustment.base_rank_key, 50_000);
-    assert_eq!(adjustment.startup_adjustment, -50_000);
     assert!(adjustment.component_adjustment < 0);
     assert_eq!(
         adjustment.effective_rank_key,
@@ -1082,13 +1081,13 @@ fn legacy_strategy_adjustment_exposes_rank_components() {
         adjustment
             .reasons
             .iter()
-            .any(|reason| reason.contains("startup_liability")),
-        "legacy strategic rank adjustment should name the startup contribution"
+            .any(|reason| reason.contains("card_admission")),
+        "legacy strategic rank adjustment should name the card admission contribution"
     );
 }
 
 #[test]
-fn legacy_strategy_adjustment_penalizes_unresolved_deck_startup_liability() {
+fn legacy_strategy_adjustment_reports_unresolved_deck_without_global_rank_penalty() {
     let mut unresolved_deck = BranchRetentionCandidateInputV1 {
         index: 0,
         act: 1,
@@ -1111,14 +1110,14 @@ fn legacy_strategy_adjustment_penalizes_unresolved_deck_startup_liability() {
     let adjustment = legacy_branch_retention_strategy_adjustment_v1(&unresolved_deck);
     let decision = decide_branch_retention_v1(&unresolved_deck);
 
-    assert_eq!(adjustment.startup_adjustment, -50_000);
-    assert_eq!(adjustment.effective_rank_key, -38_000);
+    assert_eq!(adjustment.startup_adjustment, 0);
+    assert_eq!(adjustment.effective_rank_key, 12_000);
     assert!(decision
         .reasons
         .contains(&"current deck has unresolved startup liability".to_string()));
     assert!(!decision
         .reasons
-        .contains(&"startup profile rejects at least one added card".to_string()));
+        .contains(&"card admission rejects at least one added card".to_string()));
 }
 
 #[test]
