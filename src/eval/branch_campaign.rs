@@ -40,7 +40,7 @@ const COMBAT_RETRY_NODE_MULTIPLIER: usize = 4;
 const COMBAT_RETRY_WALL_MULTIPLIER: u64 = 4;
 const COMBAT_RETRY_MIN_NODES: usize = 200_000;
 const COMBAT_RETRY_MAX_NODES: usize = 500_000;
-const COMBAT_RETRY_MIN_WALL_MS: u64 = 1_200;
+const COMBAT_RETRY_MIN_WALL_MS: u64 = 5_000;
 const COMBAT_RETRY_MAX_WALL_MS: u64 = 5_000;
 const UNSPENT_GOLD_PRESSURE_THRESHOLD: i32 = 300;
 
@@ -374,6 +374,7 @@ struct BranchCampaignRunStateV1 {
     route_evidence: BranchCampaignRouteEvidenceSummaryV1,
     rounds: Vec<BranchCampaignRoundSummaryV1>,
     snapshot_cache: BTreeMap<Vec<String>, RunControlSession>,
+    recovered_checkpoint_failure_commands: BTreeSet<Vec<String>>,
 }
 
 pub fn run_branch_campaign_v1(
@@ -538,6 +539,53 @@ where
             }
         }
         if state.active.is_empty()
+            && !campaign_should_stop_after_victory_v1(
+                config,
+                &state.victories,
+                &state.active,
+                &state.frozen,
+            )
+        {
+            let promoted = promote_rehydrated_combat_failures_to_active_on_stall_v1(
+                &mut state.active,
+                &mut state.frozen,
+                config.max_active,
+            );
+            if promoted > 0 {
+                progress(BranchCampaignProgressEventV1::FrozenPromoted {
+                    promoted,
+                    active_after: state.active.len(),
+                    frozen_remaining: state.frozen.len(),
+                });
+            }
+        }
+        if state.active.is_empty()
+            && state.frozen.is_empty()
+            && !campaign_should_stop_after_victory_v1(
+                config,
+                &state.victories,
+                &state.active,
+                &state.frozen,
+            )
+        {
+            let recovered =
+                recover_checkpointed_combat_failures_on_stall_v1(&mut state, config.max_active);
+            if recovered > 0 {
+                state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
+                    state.strategy_requests,
+                    &state.active,
+                    &state.frozen,
+                    &state.stuck,
+                    &state.abandoned,
+                );
+                progress(BranchCampaignProgressEventV1::FrozenPromoted {
+                    promoted: recovered,
+                    active_after: state.active.len(),
+                    frozen_remaining: state.frozen.len(),
+                });
+            }
+        }
+        if state.active.is_empty()
             && campaign_should_stop_after_victory_v1(
                 config,
                 &state.victories,
@@ -665,8 +713,46 @@ where
         } else {
             0
         };
-        let total_promoted_from_frozen =
-            promoted_from_frozen.saturating_add(rebalanced_from_frozen);
+        let promoted_rehydrated_from_frozen = if state.active.is_empty()
+            && !campaign_should_stop_after_victory_v1(
+                config,
+                &state.victories,
+                &state.active,
+                &state.frozen,
+            ) {
+            promote_rehydrated_combat_failures_to_active_on_stall_v1(
+                &mut state.active,
+                &mut state.frozen,
+                config.max_active,
+            )
+        } else {
+            0
+        };
+        let recovered_from_abandoned = if state.active.is_empty()
+            && state.frozen.is_empty()
+            && !campaign_should_stop_after_victory_v1(
+                config,
+                &state.victories,
+                &state.active,
+                &state.frozen,
+            ) {
+            recover_checkpointed_combat_failures_on_stall_v1(&mut state, config.max_active)
+        } else {
+            0
+        };
+        if recovered_from_abandoned > 0 {
+            state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
+                state.strategy_requests,
+                &state.active,
+                &state.frozen,
+                &state.stuck,
+                &state.abandoned,
+            );
+        }
+        let total_promoted_from_frozen = promoted_from_frozen
+            .saturating_add(rebalanced_from_frozen)
+            .saturating_add(promoted_rehydrated_from_frozen)
+            .saturating_add(recovered_from_abandoned);
         let round_summary = BranchCampaignRoundSummaryV1 {
             round: round_number,
             started_active,
@@ -792,6 +878,7 @@ fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         rounds: Vec::new(),
         snapshot_cache: BTreeMap::new(),
+        recovered_checkpoint_failure_commands: BTreeSet::new(),
     }
 }
 
@@ -810,6 +897,7 @@ fn campaign_state_from_report_v1(report: &BranchCampaignReportV1) -> BranchCampa
         route_evidence: report.route_evidence.clone(),
         rounds: report.rounds.clone(),
         snapshot_cache: BTreeMap::new(),
+        recovered_checkpoint_failure_commands: BTreeSet::new(),
     }
 }
 
@@ -2917,6 +3005,31 @@ fn promote_frozen_to_active_v1(
     promoted
 }
 
+fn promote_rehydrated_combat_failures_to_active_on_stall_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+    max_active: usize,
+) -> usize {
+    if max_active == 0 || !active.is_empty() {
+        return 0;
+    }
+    frozen.sort_by(compare_campaign_branches_for_promotion_v1);
+    let mut promoted = 0usize;
+    while active.len() < max_active {
+        let Some(promote_index) = frozen
+            .iter()
+            .position(branch_is_rehydrated_checkpointed_combat_failure_v1)
+        else {
+            break;
+        };
+        let mut branch = frozen.remove(promote_index);
+        branch.status = BranchCampaignBranchStatusV1::Active;
+        active.push(branch);
+        promoted = promoted.saturating_add(1);
+    }
+    promoted
+}
+
 fn rebalance_active_with_stronger_frozen_v1(
     active: &mut Vec<BranchCampaignBranchV1>,
     frozen: &mut Vec<BranchCampaignBranchV1>,
@@ -3042,6 +3155,66 @@ fn recover_auto_advanceable_stuck_branches_v1(
     recovered
 }
 
+fn recover_checkpointed_combat_failures_on_stall_v1(
+    state: &mut BranchCampaignRunStateV1,
+    max_active: usize,
+) -> usize {
+    if max_active == 0 || !state.active.is_empty() || !state.frozen.is_empty() {
+        return 0;
+    }
+    if state.snapshot_cache.is_empty() || state.abandoned.is_empty() {
+        return 0;
+    }
+
+    let mut candidates = Vec::new();
+    let mut remaining = Vec::new();
+    for branch in std::mem::take(&mut state.abandoned) {
+        if state
+            .recovered_checkpoint_failure_commands
+            .contains(&branch.commands)
+        {
+            remaining.push(branch);
+            continue;
+        }
+        if campaign_checkpoint_failure_is_combat_resume_candidate_v1(
+            &branch,
+            match state.snapshot_cache.get(&branch.commands) {
+                Some(session) => session,
+                None => {
+                    remaining.push(branch);
+                    continue;
+                }
+            },
+        ) {
+            candidates.push(branch);
+        } else {
+            remaining.push(branch);
+        }
+    }
+    candidates.sort_by(compare_campaign_branches_for_promotion_v1);
+
+    let mut recovered = 0usize;
+    for branch in candidates {
+        if recovered >= max_active {
+            remaining.push(branch);
+            continue;
+        }
+        match try_rehydrate_checkpoint_failure_branch_v1(&branch, &state.snapshot_cache) {
+            Some(mut recovered_branch) => {
+                recovered_branch.status = BranchCampaignBranchStatusV1::Active;
+                state
+                    .recovered_checkpoint_failure_commands
+                    .insert(branch.commands.clone());
+                state.active.push(recovered_branch);
+                recovered = recovered.saturating_add(1);
+            }
+            None => remaining.push(branch),
+        }
+    }
+    state.abandoned = remaining;
+    recovered
+}
+
 fn rehydrate_checkpoint_failures_on_resume_v1(
     state: &mut BranchCampaignRunStateV1,
     max_active: usize,
@@ -3058,6 +3231,7 @@ fn rehydrate_checkpoint_failures_on_resume_v1(
         &mut state.active,
         &mut state.frozen,
         &state.snapshot_cache,
+        &mut state.recovered_checkpoint_failure_commands,
         max_active,
         max_frozen,
         max_active,
@@ -3069,6 +3243,7 @@ fn rehydrate_checkpoint_failures_on_resume_v1(
         &mut state.active,
         &mut state.frozen,
         &state.snapshot_cache,
+        &mut state.recovered_checkpoint_failure_commands,
         max_active,
         max_frozen,
         max_active,
@@ -3090,6 +3265,7 @@ fn rehydrate_checkpoint_failure_list_v1(
     active: &mut Vec<BranchCampaignBranchV1>,
     frozen: &mut Vec<BranchCampaignBranchV1>,
     snapshot_cache: &BTreeMap<Vec<String>, RunControlSession>,
+    recovered_commands: &mut BTreeSet<Vec<String>>,
     max_active: usize,
     max_frozen: usize,
     max_recovered: usize,
@@ -3105,6 +3281,7 @@ fn rehydrate_checkpoint_failure_list_v1(
         {
             if place_recovered_campaign_branch_v1(active, frozen, recovered, max_active, max_frozen)
             {
+                recovered_commands.insert(branch.commands.clone());
                 *recovered_count = recovered_count.saturating_add(1);
                 continue;
             }

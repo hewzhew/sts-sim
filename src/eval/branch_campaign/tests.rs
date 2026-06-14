@@ -14,7 +14,7 @@ use crate::eval::run_control::{
 use crate::state::core::EngineState;
 use crate::state::events::{EventId, EventState};
 use crate::state::rewards::{RewardCard, RewardItem, RewardState};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn campaign_compact_report_renders_route_evidence_summary() {
@@ -1252,7 +1252,7 @@ fn campaign_retry_budget_raises_combat_search_without_restoring_hp_gate() {
     let retry = combat_retry_campaign_config_v1(&config).expect("retry config");
 
     assert_eq!(retry.search_max_nodes, Some(200_000));
-    assert_eq!(retry.search_wall_ms, Some(1_200));
+    assert_eq!(retry.search_wall_ms, Some(5_000));
     assert_eq!(
         retry.search_max_hp_loss,
         Some(RunControlHpLossLimit::Unlimited)
@@ -2213,6 +2213,7 @@ fn campaign_state_uses_snapshot_without_replaying_parent_commands() {
             route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
             rounds: Vec::new(),
             snapshot_cache: BTreeMap::from([(parent.commands.clone(), session)]),
+            recovered_checkpoint_failure_commands: BTreeSet::new(),
         },
         |_| {},
     )
@@ -2267,6 +2268,7 @@ fn campaign_checkpoint_preserves_abandoned_and_stuck_snapshots_for_diagnostics()
             (abandoned.commands.clone(), abandoned_session),
             (stuck.commands.clone(), stuck_session),
         ]),
+        recovered_checkpoint_failure_commands: BTreeSet::new(),
     };
 
     let checkpoint = campaign_checkpoint_from_state_v1(&config, &state);
