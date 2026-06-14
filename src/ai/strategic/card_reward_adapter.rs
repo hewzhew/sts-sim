@@ -20,12 +20,13 @@ pub fn strategic_trace_for_card_reward(
 ) -> super::StrategicDecisionTrace {
     let snapshot = snapshot_from_card_reward_context(context);
     let ledger = ledger_from_snapshot(&snapshot);
-    let deltas = context
+    let mut deltas = context
         .candidates
         .iter()
         .map(|candidate| candidate_delta_from_card_reward(context, candidate))
         .collect::<Vec<_>>();
-    compile_decision(snapshot, ledger, context.candidates.len(), deltas)
+    deltas.push(decline_delta_from_card_reward_context(context));
+    compile_decision(snapshot, ledger, context.candidates.len() + 1, deltas)
 }
 
 fn snapshot_from_card_reward_context(context: &CardRewardDecisionContextV1) -> StrategicSnapshot {
@@ -116,6 +117,34 @@ fn candidate_delta_from_card_reward(
     let mut delta = CandidateDelta::from_component_report(action, &component_report);
     add_candidate_impact_deltas(candidate, &mut delta);
     add_candidate_facts_deltas(candidate, &mut delta);
+    delta
+}
+
+fn decline_delta_from_card_reward_context(context: &CardRewardDecisionContextV1) -> CandidateDelta {
+    let mut delta = if context.has_singing_bowl {
+        CandidateDelta::empty(CandidateAction::TakeSingingBowl { max_hp_gain: 2 })
+    } else {
+        CandidateDelta::empty(CandidateAction::SkipCardReward)
+    };
+    delta.role = if context.has_singing_bowl {
+        CandidateRole::ResourceConversion
+    } else {
+        CandidateRole::DeckCleaning
+    };
+    delta.verdict_hint = VerdictHint::Speculative;
+    delta
+        .evidence
+        .push("card_reward_decline_candidate".to_string());
+    if context.has_singing_bowl {
+        delta
+            .evidence
+            .push("singing_bowl_max_hp_alternative".to_string());
+    } else if context.deck.deck_size >= 24 {
+        delta.notes.push(format!(
+            "skip_preserves_deck_consistency deck_size={}",
+            context.deck.deck_size
+        ));
+    }
     delta
 }
 

@@ -22,6 +22,9 @@ pub enum CandidateAction {
         card: CardId,
     },
     SkipCardReward,
+    TakeSingingBowl {
+        max_hp_gain: i32,
+    },
     BuyCard {
         shop_index: usize,
         card: CardId,
@@ -66,6 +69,7 @@ impl CandidateAction {
         match self {
             Self::TakeCard { index, card } => format!("card_reward:{index}:{card:?}"),
             Self::SkipCardReward => "card_reward:skip".to_string(),
+            Self::TakeSingingBowl { .. } => "card_reward:singing_bowl".to_string(),
             Self::BuyCard {
                 shop_index, card, ..
             } => format!("shop:buy_card:{shop_index}:{card:?}"),
