@@ -324,7 +324,7 @@ fn campfire_option_metadata(
             let profile = crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1(
                 &RewardCard::new(card.id, upgraded),
             );
-            let (_, class_key) = super::reward_option_semantic_class(&profile);
+            let class_key = super::reward_option_semantic_class(&profile);
             let priority = crate::ai::campfire_policy_v1::campfire_smith_upgrade_priority_v1(
                 card,
                 &session.run_state,

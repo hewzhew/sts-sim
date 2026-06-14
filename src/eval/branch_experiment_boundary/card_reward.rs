@@ -164,7 +164,7 @@ fn select_card_reward_branch_options_with_limit_and_strategy(
         .iter()
         .enumerate()
         .map(|(index, option)| {
-            let (priority, class_key) = reward_option_semantic_class_for_option(option);
+            let class_key = reward_option_semantic_class_for_option(option);
             let strategy = strategy_orders
                 .get(&index)
                 .cloned()
@@ -173,7 +173,6 @@ fn select_card_reward_branch_options_with_limit_and_strategy(
                 index,
                 strategy.order,
                 strategy.score_key,
-                priority,
                 class_key,
                 strategy.label,
             )
@@ -183,13 +182,12 @@ fn select_card_reward_branch_options_with_limit_and_strategy(
         left.1
             .cmp(&right.1)
             .then_with(|| left.2.cmp(&right.2))
-            .then_with(|| left.3.cmp(&right.3))
             .then_with(|| left.0.cmp(&right.0))
     });
 
     let mut selected = Vec::new();
     let mut selected_classes = BTreeSet::new();
-    for (index, _, _, _, class_key, _) in &annotated {
+    for (index, _, _, class_key, _) in &annotated {
         if selected.len() >= limit {
             break;
         }
@@ -233,12 +231,12 @@ fn reward_option_portfolio_report(
     boundary_title: String,
     max_reward_options_per_branch: usize,
     options: &[CardRewardBranchOption],
-    annotated: &[(usize, usize, i32, usize, String, String)],
+    annotated: &[(usize, usize, i32, String, String)],
     selected_indices: &BTreeSet<usize>,
 ) -> BranchExperimentRewardOptionPortfolioV1 {
     let class_by_index = annotated
         .iter()
-        .map(|(index, strategy_order, _, _, class_key, strategy_label)| {
+        .map(|(index, strategy_order, _, class_key, strategy_label)| {
             (
                 *index,
                 format!("strategy={strategy_order}:{strategy_label}:{class_key}"),
@@ -376,31 +374,29 @@ impl RewardOptionStrategyOrder {
     }
 }
 
-pub(super) fn reward_option_semantic_class(
-    profile: &CardRewardSemanticProfileV1,
-) -> (usize, String) {
+pub(super) fn reward_option_semantic_class(profile: &CardRewardSemanticProfileV1) -> String {
     let signature = summarize_branch_trajectory_v1(std::slice::from_ref(profile));
     let setup = join_or_dash(&signature.setup_keys);
     let package = join_or_dash(&signature.package_keys);
     if !signature.setup_keys.is_empty() && !signature.package_keys.is_empty() {
-        return (0, format!("closed_package:{setup}->{package}"));
+        return format!("closed_package:{setup}->{package}");
     }
     if !signature.package_keys.is_empty() {
-        return (1, format!("payoff:{package}"));
+        return format!("payoff:{package}");
     }
     if !signature.setup_keys.is_empty() {
-        return (2, format!("setup:{setup}"));
+        return format!("setup:{setup}");
     }
     if signature.defense_picks > 0 || signature.draw_energy_picks > 0 {
-        return (3, format!("stabilizer:{}", stabilizer_role_key(profile)));
+        return format!("stabilizer:{}", stabilizer_role_key(profile));
     }
     if signature.transition_frontload_picks > 0 {
-        return (4, "pure_transition_frontload".to_string());
+        return "pure_transition_frontload".to_string();
     }
-    (5, "other".to_string())
+    "other".to_string()
 }
 
-fn reward_option_semantic_class_for_option(option: &CardRewardBranchOption) -> (usize, String) {
+fn reward_option_semantic_class_for_option(option: &CardRewardBranchOption) -> String {
     match option.source {
         CardRewardBranchOptionSource::PermanentReward
         | CardRewardBranchOptionSource::CombatGeneratedToHand => {
@@ -412,8 +408,8 @@ fn reward_option_semantic_class_for_option(option: &CardRewardBranchOption) -> (
             ));
             reward_option_semantic_class(&profile)
         }
-        CardRewardBranchOptionSource::SkipCardReward => (3, "decline:skip_card_reward".to_string()),
-        CardRewardBranchOptionSource::SingingBowl => (3, "decline:singing_bowl".to_string()),
+        CardRewardBranchOptionSource::SkipCardReward => "decline:skip_card_reward".to_string(),
+        CardRewardBranchOptionSource::SingingBowl => "decline:singing_bowl".to_string(),
     }
 }
 

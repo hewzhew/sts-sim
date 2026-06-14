@@ -50,6 +50,45 @@ fn card_reward_option_portfolio_keeps_semantic_variety() {
 }
 
 #[test]
+fn card_reward_portfolio_without_strategy_preserves_input_order_across_classes() {
+    let options = vec![
+        super::card_reward::CardRewardBranchOption {
+            label: "Twin Strike".to_string(),
+            command: "rp 0".to_string(),
+            card: Some(CardId::TwinStrike),
+            upgrades: Some(0),
+            source: super::card_reward::CardRewardBranchOptionSource::PermanentReward,
+        },
+        super::card_reward::CardRewardBranchOption {
+            label: "Body Slam".to_string(),
+            command: "rp 1".to_string(),
+            card: Some(CardId::BodySlam),
+            upgrades: Some(0),
+            source: super::card_reward::CardRewardBranchOptionSource::PermanentReward,
+        },
+        super::card_reward::CardRewardBranchOption {
+            label: "Shrug It Off".to_string(),
+            command: "rp 2".to_string(),
+            card: Some(CardId::ShrugItOff),
+            upgrades: Some(0),
+            source: super::card_reward::CardRewardBranchOptionSource::PermanentReward,
+        },
+    ];
+
+    let selected = select_card_reward_branch_options_with_limit(options, 2, None).options;
+    let labels = selected
+        .iter()
+        .map(|option| option.label.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        labels,
+        vec!["Twin Strike", "Body Slam"],
+        "without strategic context, semantic classes should diversify the input order rather than impose package/stabilizer value priority"
+    );
+}
+
+#[test]
 fn card_reward_option_portfolio_includes_decline_candidates() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session
@@ -1848,8 +1887,8 @@ fn reward_option_semantic_class_distinguishes_stabilizer_roles() {
     let shockwave = card_reward_semantic_profile_v1(&RewardCard::new(CardId::Shockwave, 0));
     let armaments = card_reward_semantic_profile_v1(&RewardCard::new(CardId::Armaments, 0));
 
-    let (_, shockwave_class) = reward_option_semantic_class(&shockwave);
-    let (_, armaments_class) = reward_option_semantic_class(&armaments);
+    let shockwave_class = reward_option_semantic_class(&shockwave);
+    let armaments_class = reward_option_semantic_class(&armaments);
 
     assert_ne!(
         shockwave_class, armaments_class,
