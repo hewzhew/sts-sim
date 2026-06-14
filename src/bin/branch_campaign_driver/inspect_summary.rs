@@ -403,9 +403,7 @@ fn boss_pressure_labels(session: &RunControlSession) -> Vec<String> {
 mod tests {
     use super::render_session_headline;
     use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
-    use sts_simulator::state::core::{
-        ActiveCombat, CombatContext, EngineState, RoomCombatContext,
-    };
+    use sts_simulator::state::core::{ActiveCombat, CombatContext, EngineState, RoomCombatContext};
     use sts_simulator::state::map::node::RoomType;
 
     #[test]

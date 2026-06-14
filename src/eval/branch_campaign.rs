@@ -2617,6 +2617,7 @@ pub fn select_campaign_branches_v1(
     }
     rebalance_active_progress_anchor_v1(&mut selection.active, &mut selection.frozen);
     rebalance_active_core_engine_anchor_v1(&mut selection.active, &mut selection.frozen);
+    rebalance_active_survival_anchor_v1(&mut selection.active, &mut selection.frozen);
     selection
 }
 
@@ -2660,6 +2661,7 @@ fn rebalance_active_progress_anchor_v1(
                     frozen_progress,
                     branch_progress_key(branch),
                 )
+                && campaign_active_swap_respects_survival_v1(frozen_branch, branch)
         })
         .max_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
     else {
@@ -2756,6 +2758,58 @@ fn campaign_branch_core_engine_anchor_key_v1(
     )
 }
 
+fn rebalance_active_survival_anchor_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+) -> bool {
+    if active.is_empty() || frozen.is_empty() {
+        return false;
+    }
+
+    let Some((replace_index, replace_hp)) = active
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, branch)| campaign_branch_hp_percent_v1(branch).map(|hp| (idx, hp)))
+        .filter(|(_, hp)| *hp < 25)
+        .min_by_key(|(_, hp)| *hp)
+    else {
+        return false;
+    };
+
+    let Some((frozen_index, _)) = frozen
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| !branch_is_rehydrated_checkpointed_combat_failure_v1(branch))
+        .filter(|(_, branch)| {
+            campaign_progress_is_nearby_v1(
+                branch_progress_key(branch),
+                branch_progress_key(&active[replace_index]),
+            )
+        })
+        .filter_map(|(idx, branch)| {
+            let hp = campaign_branch_hp_percent_v1(branch)?;
+            (hp >= replace_hp.saturating_add(20)).then_some((idx, hp))
+        })
+        .max_by(|(left_idx, left_hp), (right_idx, right_hp)| {
+            left_hp.cmp(right_hp).then_with(|| {
+                campaign_branch_retention_key_v1(&frozen[*left_idx])
+                    .cmp(&campaign_branch_retention_key_v1(&frozen[*right_idx]))
+            })
+        })
+    else {
+        return false;
+    };
+
+    let mut promoted = frozen.remove(frozen_index);
+    promoted.status = BranchCampaignBranchStatusV1::Active;
+    let mut demoted = std::mem::replace(&mut active[replace_index], promoted);
+    demoted.status = BranchCampaignBranchStatusV1::Frozen;
+    frozen.push(demoted);
+    active.sort_by(compare_campaign_branches_for_active_v1);
+    frozen.sort_by(compare_campaign_branches_for_promotion_v1);
+    true
+}
+
 fn campaign_branch_local_frontier_key_v1(branch: &BranchCampaignBranchV1) -> String {
     let (act, floor, _) = branch_progress_key(branch);
     format!(
@@ -2769,6 +2823,37 @@ fn campaign_progress_is_clearly_ahead_v1(left: (u8, i32, i32), right: (u8, i32, 
         return true;
     }
     left.0 == right.0 && left.1 >= right.1.saturating_add(2)
+}
+
+fn campaign_active_swap_respects_survival_v1(
+    candidate: &BranchCampaignBranchV1,
+    replaced: &BranchCampaignBranchV1,
+) -> bool {
+    if !campaign_progress_is_nearby_v1(
+        branch_progress_key(candidate),
+        branch_progress_key(replaced),
+    ) {
+        return true;
+    }
+    let Some(candidate_hp_percent) = campaign_branch_hp_percent_v1(candidate) else {
+        return true;
+    };
+    let Some(replaced_hp_percent) = campaign_branch_hp_percent_v1(replaced) else {
+        return true;
+    };
+    !(candidate_hp_percent < 25 && replaced_hp_percent >= candidate_hp_percent.saturating_add(20))
+}
+
+fn campaign_progress_is_nearby_v1(left: (u8, i32, i32), right: (u8, i32, i32)) -> bool {
+    left.0 == right.0 && (left.1 - right.1).abs() <= 2
+}
+
+fn campaign_branch_hp_percent_v1(branch: &BranchCampaignBranchV1) -> Option<i32> {
+    let summary = branch.summary.as_ref()?;
+    if summary.max_hp <= 0 {
+        return None;
+    }
+    Some(summary.hp.max(0).saturating_mul(100) / summary.max_hp)
 }
 
 fn campaign_stuck_branch_should_be_abandoned_for_combat_triage_v1(
@@ -2845,6 +2930,10 @@ fn rebalance_active_with_stronger_frozen_v1(
         return 0;
     }
 
+    if rebalance_active_survival_anchor_v1(active, frozen) {
+        return 1;
+    }
+
     let Some((worst_active_index, worst_active)) = active
         .iter()
         .enumerate()
@@ -2886,6 +2975,10 @@ fn rebalance_active_with_stronger_frozen_v1(
     if campaign_branch_has_core_engine_anchor_v1(worst_active)
         && !campaign_branch_has_core_engine_anchor_v1(best_frozen)
     {
+        return 0;
+    }
+
+    if !campaign_active_swap_respects_survival_v1(best_frozen, worst_active) {
         return 0;
     }
 

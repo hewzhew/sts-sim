@@ -70,12 +70,8 @@ pub fn summarize_route_from(
             .iter()
             .filter_map(|stats| stats.first_fire_floor)
             .min(),
-        min_damage_rooms_before_recovery: min(|stats| {
-            stats.damage_rooms_before_first_recovery
-        }),
-        max_damage_rooms_before_recovery: max(|stats| {
-            stats.damage_rooms_before_first_recovery
-        }),
+        min_damage_rooms_before_recovery: min(|stats| stats.damage_rooms_before_first_recovery),
+        max_damage_rooms_before_recovery: max(|stats| stats.damage_rooms_before_first_recovery),
         min_unknowns_before_recovery: min(|stats| stats.unknowns_before_first_recovery),
         max_unknowns_before_recovery: max(|stats| stats.unknowns_before_first_recovery),
         paths_with_recovery_before_damage: paths

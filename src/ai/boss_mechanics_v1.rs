@@ -323,8 +323,7 @@ impl BossMechanicDeckFactsV1 {
                 facts.transition_burst_count = facts.transition_burst_count.saturating_add(1);
             }
             if is_direct_execute_block_plan(card.id) {
-                facts.execute_block_plan_count =
-                    facts.execute_block_plan_count.saturating_add(1);
+                facts.execute_block_plan_count = facts.execute_block_plan_count.saturating_add(1);
             }
             if is_direct_dark_echo_block_plan(card.id) {
                 facts.dark_echo_block_plan_count =
@@ -653,9 +652,7 @@ mod tests {
             !supported_profile.has_missing_answer(BossMechanicMissingAnswerV1::DarkEchoBlockPlan)
         );
         assert!(!supported_profile.has_red_flag(BossMechanicRedFlagV1::NoDarkEchoBlockPlan));
-        assert!(
-            !supported_profile.has_missing_answer(BossMechanicMissingAnswerV1::PhasePowerPlan)
-        );
+        assert!(!supported_profile.has_missing_answer(BossMechanicMissingAnswerV1::PhasePowerPlan));
 
         let mut unsupported = RunState::new(744270980, 0, false, "Ironclad");
         unsupported.act_num = 3;
@@ -670,8 +667,7 @@ mod tests {
             boss_mechanic_pressure_profile_v1(&unsupported, EncounterId::AwakenedOne);
 
         assert!(
-            unsupported_profile
-                .has_missing_answer(BossMechanicMissingAnswerV1::DarkEchoBlockPlan)
+            unsupported_profile.has_missing_answer(BossMechanicMissingAnswerV1::DarkEchoBlockPlan)
         );
         assert!(unsupported_profile.has_red_flag(BossMechanicRedFlagV1::NoDarkEchoBlockPlan));
     }
@@ -764,15 +760,16 @@ mod tests {
         payoff_only.act_num = 2;
         payoff_only.floor_num = 31;
         payoff_only.boss_key = Some(EncounterId::TheChamp);
-        replace_deck(&mut payoff_only, &[CardId::HeavyBlade, CardId::PowerThrough]);
+        replace_deck(
+            &mut payoff_only,
+            &[CardId::HeavyBlade, CardId::PowerThrough],
+        );
 
         let payoff_only_profile =
             boss_mechanic_pressure_profile_v1(&payoff_only, EncounterId::TheChamp);
 
-        assert!(
-            payoff_only_profile
-                .has_missing_answer(BossMechanicMissingAnswerV1::ChampTransitionBurst)
-        );
+        assert!(payoff_only_profile
+            .has_missing_answer(BossMechanicMissingAnswerV1::ChampTransitionBurst));
 
         let mut supported = payoff_only.clone();
         replace_deck(
@@ -780,11 +777,10 @@ mod tests {
             &[CardId::HeavyBlade, CardId::JAX, CardId::PowerThrough],
         );
 
-        let supported_profile = boss_mechanic_pressure_profile_v1(&supported, EncounterId::TheChamp);
+        let supported_profile =
+            boss_mechanic_pressure_profile_v1(&supported, EncounterId::TheChamp);
 
-        assert!(
-            !supported_profile
-                .has_missing_answer(BossMechanicMissingAnswerV1::ChampTransitionBurst)
-        );
+        assert!(!supported_profile
+            .has_missing_answer(BossMechanicMissingAnswerV1::ChampTransitionBurst));
     }
 }

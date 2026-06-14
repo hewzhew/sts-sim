@@ -875,6 +875,57 @@ fn campaign_selection_keeps_progress_anchor_when_local_shop_variants_dominate_ac
 }
 
 #[test]
+fn campaign_rebalance_does_not_promote_critical_hp_nearby_progress_over_healthy_active() {
+    let mut healthy = test_campaign_branch("healthy-nearby", 29, 41);
+    healthy.summary.as_mut().unwrap().act = 2;
+    healthy.summary.as_mut().unwrap().max_hp = 100;
+    healthy.rank_key = 24_000;
+
+    let mut critical_ahead = test_campaign_branch("critical-ahead", 30, 12);
+    critical_ahead.summary.as_mut().unwrap().act = 2;
+    critical_ahead.summary.as_mut().unwrap().max_hp = 100;
+    critical_ahead.rank_key = 24_500;
+
+    let mut active = vec![healthy];
+    let mut frozen = vec![critical_ahead];
+
+    let promoted = rebalance_active_with_stronger_frozen_v1(&mut active, &mut frozen, 1);
+
+    assert_eq!(promoted, 0);
+    assert_eq!(active[0].branch_id, "healthy-nearby");
+    assert_eq!(frozen[0].branch_id, "critical-ahead");
+}
+
+#[test]
+fn campaign_selection_promotes_nearby_healthy_frozen_over_critical_active() {
+    let mut critical_a = test_campaign_branch("critical-a", 30, 12);
+    critical_a.summary.as_mut().unwrap().act = 2;
+    critical_a.summary.as_mut().unwrap().max_hp = 100;
+    critical_a.rank_key = 25_000;
+
+    let mut critical_b = test_campaign_branch("critical-b", 30, 9);
+    critical_b.summary.as_mut().unwrap().act = 2;
+    critical_b.summary.as_mut().unwrap().max_hp = 100;
+    critical_b.rank_key = 24_900;
+
+    let mut healthy_nearby = test_campaign_branch("healthy-nearby", 29, 41);
+    healthy_nearby.summary.as_mut().unwrap().act = 2;
+    healthy_nearby.summary.as_mut().unwrap().max_hp = 100;
+    healthy_nearby.rank_key = 24_000;
+
+    let selected = select_campaign_branches_v1(vec![critical_a, critical_b, healthy_nearby], 2, 4);
+
+    let active_ids = selected
+        .active
+        .iter()
+        .map(|branch| branch.branch_id.as_str())
+        .collect::<Vec<_>>();
+
+    assert!(active_ids.contains(&"healthy-nearby"));
+    assert_eq!(selected.frozen.len(), 1);
+}
+
+#[test]
 fn campaign_rebalance_does_not_promote_stale_rehydrated_combat_over_later_active() {
     let mut active = vec![test_campaign_branch_with_boundary(
         "act3-campfire",
