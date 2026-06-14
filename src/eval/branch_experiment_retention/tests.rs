@@ -55,7 +55,8 @@ fn portfolio_fill_continues_preferring_new_prefixes_after_slot_pass() {
 #[test]
 fn resource_conversion_signal_ignores_full_potion_skip() {
     let candidate = effect_retention_candidate(0, 10_000, "reward_skip_full_potion");
-    let selection = select_branch_retention_portfolio_v1(&[candidate], retention_config(1, Some(1)));
+    let selection =
+        select_branch_retention_portfolio_v1(&[candidate], retention_config(1, Some(1)));
     let decision = selection
         .decisions_by_index
         .get(&0)
@@ -74,7 +75,8 @@ fn resource_conversion_signal_ignores_full_potion_skip() {
 #[test]
 fn resource_conversion_signal_keeps_shop_purchase() {
     let candidate = effect_retention_candidate(0, 10_000, "shop_buy_combo");
-    let selection = select_branch_retention_portfolio_v1(&[candidate], retention_config(1, Some(1)));
+    let selection =
+        select_branch_retention_portfolio_v1(&[candidate], retention_config(1, Some(1)));
     let decision = selection
         .decisions_by_index
         .get(&0)

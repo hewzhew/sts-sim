@@ -237,6 +237,12 @@ struct Args {
         help = "Print current-code DeckMutationCompiler plan groups for the selected checkpoint session"
     )]
     inspect_deck_mutation: bool,
+
+    #[arg(
+        long = "inspect-route-evidence",
+        help = "Print current-code route planner candidate evidence for the selected map checkpoint session"
+    )]
+    inspect_route_evidence: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -533,6 +539,8 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
         println!("{}", render_checkpoint_shop_evidence_v1(&session)?);
     } else if args.inspect_deck_mutation {
         println!("{}", render_checkpoint_deck_mutation_v1(&session)?);
+    } else if args.inspect_route_evidence {
+        println!("{}", render_checkpoint_route_evidence_v1(&session)?);
     } else if args.inspect_search {
         let options = inspect_search_options_from_args(args)?;
         let outcome = session.apply_command(RunControlCommand::SearchCombat(options))?;
@@ -543,6 +551,21 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
         println!("{}", render_run_control_state(&session));
     }
     Ok(())
+}
+
+fn render_checkpoint_route_evidence_v1(session: &RunControlSession) -> Result<String, String> {
+    if !session.engine_state.is_map_surface() {
+        return Err(format!(
+            "--inspect-route-evidence requires MapNavigation/MapOverlay engine state, got {:?}",
+            session.engine_state
+        ));
+    }
+    let trace = sts_simulator::ai::route_planner_v1::plan_route_decision_v1(
+        &session.run_state,
+        &session.engine_state,
+        sts_simulator::ai::route_planner_v1::RoutePlannerConfigV1::default(),
+    );
+    Ok(sts_simulator::ai::route_planner_v1::render_route_decision_trace_v1(&trace))
 }
 
 fn render_checkpoint_deck_mutation_v1(session: &RunControlSession) -> Result<String, String> {
@@ -1228,6 +1251,28 @@ mod tests {
             Some(PathBuf::from("latest.campaign.json"))
         );
         assert!(args.inspect_deck_mutation);
+    }
+
+    #[test]
+    fn campaign_cli_accepts_checkpoint_route_evidence_inspection() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-route-evidence",
+        ]);
+
+        assert_eq!(
+            args.inspect_checkpoint,
+            Some(PathBuf::from("latest.checkpoint.json"))
+        );
+        assert_eq!(
+            args.inspect_report,
+            Some(PathBuf::from("latest.campaign.json"))
+        );
+        assert!(args.inspect_route_evidence);
     }
 
     #[test]
