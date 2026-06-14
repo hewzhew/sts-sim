@@ -97,14 +97,7 @@ pub(in crate::ai::combat_search_v2) fn combat_eval_from_rollout_estimate(
 
 impl Ord for CombatEvalV2 {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.outcome
-            .cmp(&other.outcome)
-            .then_with(|| self.evidence.cmp(&other.evidence))
-            .then_with(|| match self.outcome {
-                CombatEvalOutcomeClass::Win => self.compare_win(other),
-                CombatEvalOutcomeClass::Loss => self.compare_loss_estimate(other),
-                CombatEvalOutcomeClass::Unresolved => self.compare_unresolved(other),
-            })
+        self.cmp_core(other)
             .then_with(|| self.resource_conservation.cmp(&other.resource_conservation))
             .then_with(|| self.faster_turns.cmp(&other.faster_turns))
             .then_with(|| self.fewer_cards_played.cmp(&other.fewer_cards_played))
@@ -118,6 +111,17 @@ impl PartialOrd for CombatEvalV2 {
 }
 
 impl CombatEvalV2 {
+    pub(in crate::ai::combat_search_v2) fn cmp_core(&self, other: &Self) -> Ordering {
+        self.outcome
+            .cmp(&other.outcome)
+            .then_with(|| self.evidence.cmp(&other.evidence))
+            .then_with(|| match self.outcome {
+                CombatEvalOutcomeClass::Win => self.compare_win(other),
+                CombatEvalOutcomeClass::Loss => self.compare_loss_estimate(other),
+                CombatEvalOutcomeClass::Unresolved => self.compare_unresolved(other),
+            })
+    }
+
     pub(in crate::ai::combat_search_v2) fn outcome_class(self) -> CombatEvalOutcomeClass {
         self.outcome
     }

@@ -85,8 +85,10 @@ fn card_facts(combat: &CombatState, input: &ClientInput) -> Option<CombatSearchV
         evaluated_damage: evaluated.base_damage_mut.max(0),
         evaluated_block: evaluated.base_block_mut.max(0),
         evaluated_magic: evaluated.base_magic_num_mut.max(0),
-        exhaust: card.exhaust_override.unwrap_or(def.exhaust),
-        ethereal: def.ethereal,
+        exhaust: card
+            .exhaust_override
+            .unwrap_or_else(|| cards::exhausts_when_played(card)),
+        ethereal: cards::is_ethereal(card),
         innate: def.innate,
     })
 }

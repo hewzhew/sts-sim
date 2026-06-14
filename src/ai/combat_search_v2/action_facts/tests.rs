@@ -115,6 +115,29 @@ fn facts_report_player_strength_gain_without_enemy_scaling_risk() {
 }
 
 #[test]
+fn facts_report_effective_ethereal_after_upgrade_sensitive_overrides() {
+    let mut combat = blank_test_combat();
+    let mut echo_form = CombatCard::new(CardId::EchoForm, 10);
+    echo_form.upgrades = 1;
+    combat.zones.hand = vec![echo_form];
+
+    let facts = summarize_action_facts(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: None,
+        },
+        &EngineCombatStepper,
+        250,
+    );
+
+    let card = facts.card.expect("echo form card facts");
+    assert_eq!(card.name, "Echo Form");
+    assert!(!card.ethereal, "Echo Form+ should not be reported ethereal");
+}
+
+#[test]
 fn facts_report_dropkick_contextual_draw_and_energy_delta_from_simulator() {
     let mut combat = blank_test_combat();
     combat.zones.hand = vec![CombatCard::new(CardId::Dropkick, 10)];
