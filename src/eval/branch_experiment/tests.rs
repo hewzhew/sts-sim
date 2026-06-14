@@ -7,10 +7,14 @@ use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::content::relics::RelicState;
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
-use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
+use crate::state::core::{
+    ActiveCombat, CombatContext, RoomCombatContext, RunPendingChoiceReason, RunPendingChoiceState,
+};
 use crate::state::events::{EventId, EventState};
+use crate::state::map::node::RoomType;
 use crate::state::rewards::{BossRelicChoiceState, RewardState};
 use crate::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
+use crate::test_support::blank_test_combat;
 use std::fs;
 use std::path::PathBuf;
 
@@ -1177,6 +1181,36 @@ fn branch_rank_treats_curse_gain_as_strategic_debt_despite_gold() {
     );
 }
 
+#[test]
+fn branch_summary_uses_active_combat_visible_hp() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.act_num = 3;
+    session.run_state.floor_num = 48;
+    session.run_state.current_hp = 64;
+    session.run_state.max_hp = 97;
+    attach_active_combat_hp(&mut session, 13, 97);
+
+    let summary = run_summary(&session, &[]);
+
+    assert_eq!(summary.hp, 13);
+    assert_eq!(summary.max_hp, 97);
+}
+
+#[test]
+fn branch_rank_uses_active_combat_visible_hp() {
+    let mut safer = branch_with_choice("safer", "test");
+    let mut dying = branch_with_choice("dying", "test");
+    safer.session.run_state.current_hp = 64;
+    dying.session.run_state.current_hp = 64;
+    attach_active_combat_hp(&mut safer.session, 40, 80);
+    attach_active_combat_hp(&mut dying.session, 5, 80);
+
+    assert!(
+        branch_rank_key(&safer) > branch_rank_key(&dying),
+        "combat branch ranking should use current combat HP, not stale run_state HP"
+    );
+}
+
 fn branch_with_choice(branch_id: &str, effect_kind: &str) -> BranchWork {
     BranchWork {
         id: branch_id.to_string(),
@@ -1200,6 +1234,20 @@ fn branch_with_choice(branch_id: &str, effect_kind: &str) -> BranchWork {
         stop_reason: "test".to_string(),
         retention: default_branch_retention_decision_v1(),
     }
+}
+
+fn attach_active_combat_hp(session: &mut RunControlSession, current_hp: i32, max_hp: i32) {
+    let mut combat = blank_test_combat();
+    combat.entities.player.current_hp = current_hp;
+    combat.entities.player.max_hp = max_hp;
+    session.engine_state = EngineState::CombatPlayerTurn;
+    session.active_combat = Some(ActiveCombat::new(
+        EngineState::CombatPlayerTurn,
+        combat,
+        CombatContext::Room(RoomCombatContext {
+            room_type: RoomType::MonsterRoom,
+        }),
+    ));
 }
 
 fn retention_candidate(

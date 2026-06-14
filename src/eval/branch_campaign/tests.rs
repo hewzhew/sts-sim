@@ -827,6 +827,61 @@ fn campaign_rebalance_does_not_promote_stale_rehydrated_combat_over_later_active
 }
 
 #[test]
+fn campaign_recovered_checkpointed_combat_failure_is_frozen_not_active() {
+    let mut active = Vec::new();
+    let mut frozen = Vec::new();
+    let recovered = test_campaign_branch_with_boundary(
+        "rehydrated-combat",
+        "Combat",
+        "rehydrated checkpointed Abandoned combat branch: combat search did not find an executable complete win",
+        48,
+        97,
+    );
+
+    assert!(place_recovered_campaign_branch_v1(
+        &mut active,
+        &mut frozen,
+        recovered,
+        2,
+        4
+    ));
+
+    assert!(active.is_empty());
+    assert_eq!(frozen.len(), 1);
+    assert_eq!(frozen[0].branch_id, "rehydrated-combat");
+}
+
+#[test]
+fn campaign_promotion_prefers_real_frozen_branch_over_rehydrated_combat_failure() {
+    let mut active = Vec::new();
+    let mut stale = test_campaign_branch_with_boundary(
+        "rehydrated-combat",
+        "Combat",
+        "rehydrated checkpointed Abandoned combat branch: combat search did not find an executable complete win",
+        48,
+        97,
+    );
+    stale.rank_key = 999_999;
+    let mut real_branch = test_campaign_branch_with_boundary(
+        "campfire-branch",
+        "Campfire",
+        "campfire action requires human choice",
+        47,
+        64,
+    );
+    real_branch.rank_key = 35_000;
+    let mut frozen = vec![stale, real_branch];
+
+    let promoted = promote_frozen_to_active_v1(&mut active, &mut frozen, 1);
+
+    assert_eq!(promoted, 1);
+    assert_eq!(active[0].branch_id, "campfire-branch");
+    assert!(frozen
+        .iter()
+        .any(|branch| branch.branch_id == "rehydrated-combat"));
+}
+
+#[test]
 fn campaign_selection_merges_duplicate_quality_branches() {
     let mut best = test_campaign_branch("best-frontload", 5, 80);
     best.rank_key = 120;
@@ -2652,7 +2707,7 @@ fn campaign_resume_drops_resolved_map_overlay_stuck_when_no_branch_slot_remains(
 }
 
 #[test]
-fn campaign_resume_rehydrates_only_active_capacity_for_combat_failures() {
+fn campaign_resume_rehydrates_combat_failures_as_frozen_diagnostics_only() {
     let mut abandoned = Vec::new();
     let mut checkpoint_sessions = Vec::new();
     for idx in 0..3 {
@@ -2722,12 +2777,13 @@ fn campaign_resume_rehydrates_only_active_capacity_for_combat_failures() {
 
     assert_eq!(
         result.report.active.len(),
-        2,
-        "resume should retry only the active-capacity combat failure representatives"
+        0,
+        "resume should not automatically retry abandoned combat failure representatives"
     );
-    assert!(
-        result.report.frozen.is_empty(),
-        "resume should not fill frozen with expensive checkpointed combat failures"
+    assert_eq!(
+        result.report.frozen.len(),
+        2,
+        "resume may keep active-capacity combat failure representatives as frozen diagnostics"
     );
     assert_eq!(
         result.report.abandoned.len(),

@@ -133,7 +133,7 @@ impl RunControlSession {
             .unwrap_or(self.run_state.potions.as_slice())
     }
 
-    pub(in crate::eval::run_control) fn visible_player_hp(&self) -> (i32, i32) {
+    pub(crate) fn visible_player_hp(&self) -> (i32, i32) {
         self.active_combat
             .as_ref()
             .map(|active| {

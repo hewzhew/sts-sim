@@ -897,14 +897,15 @@ fn branch_retention_candidate_input(
     let choice_profiles = branch_choice_profiles(branch);
     let choice_effect_keys = branch_choice_effect_keys(branch);
     let frontier = branch_frontier(&branch.session);
+    let (hp, max_hp) = visible_player_hp(&branch.session);
     BranchRetentionCandidateInputV1 {
         index,
         act: branch.session.run_state.act_num,
         floor: branch.session.run_state.floor_num,
         frontier_key: frontier.key,
         rank_key: branch_rank_key(branch),
-        hp: branch.session.run_state.current_hp,
-        max_hp: branch.session.run_state.max_hp,
+        hp,
+        max_hp,
         gold: branch.session.run_state.gold,
         deck_count: branch.session.run_state.master_deck.len(),
         strategy_formation: Some(strategy_formation_summary(&branch.session)),
@@ -1167,9 +1168,10 @@ fn branch_rank_key(branch: &BranchWork) -> i32 {
         BranchExperimentBranchStatusV1::Pruned => -800_000,
         BranchExperimentBranchStatusV1::Active
         | BranchExperimentBranchStatusV1::NeedsHumanBoundary => {
+            let (current_hp, _) = visible_player_hp(&branch.session);
             branch.session.run_state.act_num as i32 * 10_000
                 + branch.session.run_state.floor_num * 100
-                + branch.session.run_state.current_hp * 10
+                + current_hp * 10
                 + branch.session.run_state.gold
                 + event_debt_rank_adjustment(&branch.choices)
         }
@@ -1190,11 +1192,12 @@ fn run_summary(
 ) -> BranchExperimentRunSummaryV1 {
     let formation = strategy_formation_summary(session);
     let choice_profiles = choice_profiles_from_choices(choices);
+    let (hp, max_hp) = visible_player_hp(session);
     BranchExperimentRunSummaryV1 {
         act: session.run_state.act_num,
         floor: session.run_state.floor_num,
-        hp: session.run_state.current_hp,
-        max_hp: session.run_state.max_hp,
+        hp,
+        max_hp,
         gold: session.run_state.gold,
         deck_count: session.run_state.master_deck.len(),
         relic_count: session.run_state.relics.len(),
@@ -1214,6 +1217,10 @@ fn run_summary(
 
 fn strategy_formation_summary(session: &RunControlSession) -> StrategyFormationSummaryV2 {
     build_run_strategy_snapshot_from_run_state_v2(&session.run_state).formation_summary()
+}
+
+fn visible_player_hp(session: &RunControlSession) -> (i32, i32) {
+    session.visible_player_hp()
 }
 
 fn branch_choice_profiles(

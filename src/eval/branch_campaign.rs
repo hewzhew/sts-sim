@@ -2735,15 +2735,10 @@ fn promote_frozen_to_active_v1(
     frozen.sort_by(compare_campaign_branches_for_promotion_v1);
     let mut promoted = 0usize;
     while active.len() < max_active && !frozen.is_empty() {
-        let Some(promote_index) = frozen.iter().position(|branch| {
-            !branch_is_rehydrated_checkpointed_combat_failure_v1(branch)
-                || !active.iter().any(|active_branch| {
-                    campaign_progress_is_clearly_ahead_v1(
-                        branch_progress_key(active_branch),
-                        branch_progress_key(branch),
-                    )
-                })
-        }) else {
+        let Some(promote_index) = frozen
+            .iter()
+            .position(|branch| !branch_is_rehydrated_checkpointed_combat_failure_v1(branch))
+        else {
             break;
         };
         let mut branch = frozen.remove(promote_index);
@@ -3006,8 +3001,9 @@ fn campaign_refresh_branch_summary_from_session_v1(
     };
     summary.act = session.run_state.act_num;
     summary.floor = session.run_state.floor_num;
-    summary.hp = session.run_state.current_hp;
-    summary.max_hp = session.run_state.max_hp;
+    let (hp, max_hp) = session.visible_player_hp();
+    summary.hp = hp;
+    summary.max_hp = max_hp;
     summary.gold = session.run_state.gold;
     summary.deck_count = session.run_state.master_deck.len();
     summary.boss = branch_campaign_boss_label_v1(session);
@@ -3093,7 +3089,10 @@ fn place_recovered_campaign_branch_v1(
             branch_progress_key(&recovered),
         )
     });
-    if active.len() < max_active && !recovered_is_behind_active {
+    if active.len() < max_active
+        && !recovered_is_behind_active
+        && !branch_is_rehydrated_checkpointed_combat_failure_v1(&recovered)
+    {
         recovered.status = BranchCampaignBranchStatusV1::Active;
         active.push(recovered);
         return true;
