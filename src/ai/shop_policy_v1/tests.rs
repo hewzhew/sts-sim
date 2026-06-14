@@ -38,6 +38,33 @@ fn shop_context_exposes_visible_curse_purge_candidate() {
 }
 
 #[test]
+fn shop_purge_candidates_are_sourced_from_deck_mutation_compiler() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 100;
+    run_state.add_card_to_deck_without_interception_from(
+        CardId::Doubt,
+        0,
+        crate::state::selection::DomainEventSource::DeckMutation,
+    );
+    let shop = ShopState::new();
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let purge = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.class == ShopPolicyClassV1::CursePurge)
+        .expect("expected visible curse purge candidate");
+
+    assert!(
+        purge
+            .evidence
+            .iter()
+            .any(|item| item.contains("DeckMutationCompilerV1")),
+        "shop purge targets must come from the deck mutation compiler boundary"
+    );
+}
+
+#[test]
 fn shop_context_exposes_purchase_candidates_without_selecting_policy() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 100;

@@ -1,7 +1,8 @@
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyPackageIdV2, StrategyPlanSupportV1,
 };
-use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
+use crate::content::cards::get_card_definition;
+use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::run::RunState;
 use crate::state::shop::ShopState;
 
@@ -13,6 +14,10 @@ use super::types::{
     ShopPurchaseTargetV1,
 };
 use crate::ai::decision_tags_v1::TAG_DECK_CLEANING;
+use crate::ai::deck_mutation_compiler_v1::{
+    compile_deck_mutation_decision_v1, DeckMutationCompilerModeV1, DeckMutationKindV1,
+    DeckMutationPlanCandidateV1, DeckMutationPlanRoleV1, DeckMutationTargetClassV1,
+};
 
 pub fn build_shop_decision_context_v1(
     run_state: &RunState,
@@ -26,16 +31,9 @@ pub fn build_shop_decision_context_v1(
     let mut candidates = Vec::new();
 
     if shop.purge_available && run_state.gold >= shop.purge_cost {
-        candidates.extend(
-            run_state
-                .master_deck
-                .iter()
-                .enumerate()
-                .filter(|(_, card)| purge_eligible(run_state, card))
-                .map(|(deck_index, card)| {
-                    purge_candidate_evidence(deck_index, card.id, shop.purge_cost, &strategy)
-                }),
-        );
+        candidates.extend(shop_purge_candidates_from_deck_mutation_compiler_v1(
+            run_state, shop, &strategy,
+        ));
     }
 
     candidates.extend(shop.cards.iter().enumerate().map(|(index, card)| {
@@ -180,19 +178,51 @@ pub fn plan_shop_decision_v1(
 }
 
 fn purge_candidate_evidence(
-    deck_index: usize,
-    card: CardId,
+    plan: &DeckMutationPlanCandidateV1,
     purge_cost: i32,
     strategy: &crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
-) -> ShopCandidateEvidenceV1 {
-    let class = purge_class(card);
+) -> Option<ShopCandidateEvidenceV1> {
+    if plan.step.kind != DeckMutationKindV1::Remove || plan.step.cards.len() != 1 {
+        return None;
+    }
+    let card_snapshot = plan.step.cards.first()?;
+    let deck_index = card_snapshot.deck_index;
+    let card = card_snapshot.card;
+    let class = purge_class_from_deck_mutation_target(card_snapshot.target_class);
     let support_gate = purge_support_gate(class, strategy);
     let card_name = get_card_definition(card).name;
     let mut evidence = vec![
-        format!("deck index {deck_index} is purge eligible"),
+        format!("DeckMutationCompilerV1 plan_id={}", plan.plan_id),
+        format!("deck mutation role={:?}", plan.role),
+        format!(
+            "deck mutation allowed execute={} branch={} inspect={}",
+            plan.allowed_consumers.execute_autopilot,
+            plan.allowed_consumers.branch_active,
+            plan.allowed_consumers.inspect
+        ),
+        format!(
+            "deck mutation target_class={:?}",
+            card_snapshot.target_class
+        ),
+        format!("deck mutation effect={}", plan.step.effect_label),
+        format!(
+            "deck mutation representative_count={} suppressed_count={}",
+            plan.representative_count, plan.suppressed_count
+        ),
         format!("purge cost={purge_cost}"),
     ];
+    evidence.extend(plan.reasons.iter().cloned());
     let mut risks = Vec::new();
+    risks.extend(plan.risks.iter().cloned());
+    if matches!(
+        plan.role,
+        DeckMutationPlanRoleV1::InspectOnly | DeckMutationPlanRoleV1::Blocked
+    ) {
+        risks.push(format!(
+            "deck mutation compiler did not approve this target for automatic execution: {:?}",
+            plan.role
+        ));
+    }
     match class {
         ShopPolicyClassV1::CursePurge => {
             evidence.push(TAG_DECK_CLEANING.to_string());
@@ -223,7 +253,7 @@ fn purge_candidate_evidence(
         }
     }
 
-    ShopCandidateEvidenceV1 {
+    Some(ShopCandidateEvidenceV1 {
         candidate_id: purge_candidate_id(deck_index),
         label: format!("purge {card_name}"),
         class,
@@ -235,7 +265,7 @@ fn purge_candidate_evidence(
         support_gate,
         evidence,
         risks,
-    }
+    })
 }
 
 fn purchase_candidate_evidence(
@@ -312,14 +342,39 @@ fn combat_patch_purchase_bonus(
     }
 }
 
-fn purge_class(card: CardId) -> ShopPolicyClassV1 {
-    let definition = get_card_definition(card);
-    if definition.card_type == CardType::Curse {
-        ShopPolicyClassV1::CursePurge
-    } else if definition.tags.contains(&CardTag::StarterStrike) {
-        ShopPolicyClassV1::StarterStrikePurge
-    } else {
-        ShopPolicyClassV1::Unknown
+fn shop_purge_candidates_from_deck_mutation_compiler_v1(
+    run_state: &RunState,
+    shop: &ShopState,
+    strategy: &crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
+) -> Vec<ShopCandidateEvidenceV1> {
+    let choice = RunPendingChoiceState {
+        min_choices: 1,
+        max_choices: 1,
+        reason: RunPendingChoiceReason::PurgeNonBottled,
+        return_state: Box::new(EngineState::Shop(shop.clone())),
+    };
+    let decision = compile_deck_mutation_decision_v1(
+        run_state,
+        &choice,
+        DeckMutationCompilerModeV1::BranchTopK {
+            max_active: usize::MAX,
+        },
+    );
+
+    decision
+        .candidate_plans
+        .iter()
+        .filter_map(|plan| purge_candidate_evidence(plan, shop.purge_cost, strategy))
+        .collect()
+}
+
+fn purge_class_from_deck_mutation_target(
+    target_class: DeckMutationTargetClassV1,
+) -> ShopPolicyClassV1 {
+    match target_class {
+        DeckMutationTargetClassV1::Curse => ShopPolicyClassV1::CursePurge,
+        DeckMutationTargetClassV1::StarterStrike => ShopPolicyClassV1::StarterStrikePurge,
+        _ => ShopPolicyClassV1::Unknown,
     }
 }
 
@@ -347,11 +402,6 @@ fn purge_support_gate(
         }
         _ => StrategyPlanSupportV1::Blocked,
     }
-}
-
-fn purge_eligible(run_state: &RunState, card: &crate::runtime::combat::CombatCard) -> bool {
-    crate::state::core::master_deck_card_is_purgeable(card)
-        && !crate::state::core::master_deck_card_is_bottled(card, &run_state.relics)
 }
 
 fn affordable_purchase_exists(shop: &ShopState, gold: i32) -> bool {
