@@ -38,6 +38,8 @@ mod types;
 
 const EVENT_CURSE_DEBT_RANK_PENALTY: i32 = 2_000;
 const BRANCH_EXPERIMENT_COMMAND_SEQUENCE_SEPARATOR: &str = " && ";
+const COMBAT_TURN_SEGMENT_PROGRESS_STOP_REASON: &str =
+    "combat turn segment progressed; continue next campaign round";
 
 pub use types::{
     BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentChoiceCardV1,
@@ -576,8 +578,16 @@ fn advance_to_experiment_boundary(
             route_decisions.extend(outcome.trace_annotations.iter().filter_map(|annotation| {
                 branch_route_decision_from_annotation(&branch.id, annotation)
             }));
-            branch.stop_reason = first_reason_line(&outcome.message)
-                .unwrap_or_else(|| current_boundary_title(&branch.session));
+            branch.stop_reason =
+                if outcome_has_combat_turn_segment_progress(&outcome.trace_annotations)
+                    && normalized_boundary_title(&current_boundary_title(&branch.session))
+                        == "combat"
+                {
+                    COMBAT_TURN_SEGMENT_PROGRESS_STOP_REASON.to_string()
+                } else {
+                    first_reason_line(&outcome.message)
+                        .unwrap_or_else(|| current_boundary_title(&branch.session))
+                };
             update_terminal_status(branch);
         }
         Err(err) => {
@@ -679,7 +689,9 @@ fn settle_branch_to_frontier(
 
 fn mark_unbranchable_boundary(branch: &mut BranchWork) {
     let boundary_title = current_boundary_title(&branch.session);
-    if is_budget_unresolved_combat_boundary(&boundary_title, &branch.stop_reason) {
+    if is_combat_turn_segment_progress_boundary(&boundary_title, &branch.stop_reason) {
+        return;
+    } else if is_budget_unresolved_combat_boundary(&boundary_title, &branch.stop_reason) {
         branch.status = BranchExperimentBranchStatusV1::Pruned;
     } else {
         branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
@@ -694,6 +706,21 @@ fn is_budget_unresolved_combat_boundary(boundary_title: &str, stop_reason: &str)
         && stop_reason
             .to_ascii_lowercase()
             .contains("combat search did not find an executable complete win")
+}
+
+fn is_combat_turn_segment_progress_boundary(boundary_title: &str, stop_reason: &str) -> bool {
+    normalized_boundary_title(boundary_title) == "combat"
+        && stop_reason.eq_ignore_ascii_case(COMBAT_TURN_SEGMENT_PROGRESS_STOP_REASON)
+}
+
+fn outcome_has_combat_turn_segment_progress(annotations: &[RunControlTraceAnnotationV1]) -> bool {
+    annotations.iter().any(|annotation| {
+        matches!(
+            annotation,
+            RunControlTraceAnnotationV1::CombatAutomationTrajectory { source, .. }
+                if source == "search_combat_turn_segment"
+        )
+    })
 }
 
 fn normalized_boundary_title(value: &str) -> String {

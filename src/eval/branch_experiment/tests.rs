@@ -1428,6 +1428,22 @@ fn unresolved_combat_autorun_stop_is_prunable_not_human_strategy() {
 }
 
 #[test]
+fn combat_turn_segment_progress_is_continuable_not_prunable() {
+    assert!(is_combat_turn_segment_progress_boundary(
+        "Combat",
+        "combat turn segment progressed; continue next campaign round"
+    ));
+    assert!(!is_budget_unresolved_combat_boundary(
+        "Combat",
+        "combat turn segment progressed; continue next campaign round"
+    ));
+    assert!(!is_combat_turn_segment_progress_boundary(
+        "Card Reward",
+        "combat turn segment progressed; continue next campaign round"
+    ));
+}
+
+#[test]
 fn branch_experiment_prunes_to_max_branches() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward = RewardState::new();
