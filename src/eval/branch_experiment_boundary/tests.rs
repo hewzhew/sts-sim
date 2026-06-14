@@ -724,6 +724,8 @@ fn current_boundary_includes_three_purchase_combo_for_high_gold_shop_pressure() 
 #[test]
 fn current_boundary_includes_combo_purchase_for_capped_affordable_shop() {
     let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.act_num = 2;
+    session.run_state.floor_num = 25;
     session.run_state.gold = 220;
     let mut shop = ShopState::new();
     for card_id in [

@@ -980,7 +980,7 @@ fn compiled_shop_branch_candidate_plan_ids_are_unique() {
 }
 
 #[test]
-fn compiled_shop_branch_portfolio_evaluation_is_distinct_from_single_action_gate() {
+fn compiled_shop_branch_portfolio_cannot_bypass_strategic_card_gate() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
     run_state.floor_num = 18;
@@ -1026,15 +1026,16 @@ fn compiled_shop_branch_portfolio_evaluation_is_distinct_from_single_action_gate
         .expect("portfolio card candidate should exist");
 
     assert_eq!(single.evaluation.verdict, ShopPlanVerdictV1::Block);
-    assert_eq!(portfolio.evaluation.verdict, ShopPlanVerdictV1::Allow);
+    assert_eq!(portfolio.evaluation.verdict, ShopPlanVerdictV1::Block);
     assert_ne!(single.plan.plan_id, portfolio.plan.plan_id);
     assert!(
         portfolio
             .evaluation
             .reasons
             .iter()
-            .any(|reason| reason.contains("branch exploration")),
-        "portfolio alternatives must explain that they are exploration candidates"
+            .any(|reason| reason.contains("strategic trace blocks")),
+        "portfolio alternatives must reuse the same strategic card gate, got {:?}",
+        portfolio.evaluation.reasons
     );
 }
 

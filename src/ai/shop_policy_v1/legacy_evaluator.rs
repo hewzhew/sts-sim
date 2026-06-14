@@ -32,7 +32,7 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
         || candidate_plan.plan.source == ShopPlanSourceV1::LegacyShopPortfolioSource
     {
         return attach_components_and_score_v1(
-            evaluate_legacy_portfolio_plan_v1(context, candidate_plan),
+            evaluate_portfolio_plan_v1(context, config, strategic_trace, candidate_plan),
             candidate_plan,
             None,
         );
@@ -234,8 +234,10 @@ fn evaluate_starter_strike_purge_v1(
     )
 }
 
-fn evaluate_legacy_portfolio_plan_v1(
+fn evaluate_portfolio_plan_v1(
     context: &ShopDecisionContextV1,
+    config: &ShopPolicyConfigV1,
+    strategic_trace: &StrategicDecisionTrace,
     candidate_plan: &ShopPlanCandidateV1,
 ) -> ShopPlanEvaluationV1 {
     if candidate_plan.plan.steps.is_empty() {
@@ -253,36 +255,60 @@ fn evaluate_legacy_portfolio_plan_v1(
     if priority <= 0 {
         return ShopPlanEvaluationV1::block(
             candidate_plan.plan.legacy_priority,
-            "legacy portfolio plan has no positive priority",
+            "portfolio plan has no positive legacy estimate",
         );
     }
-    if let Some(reason) = blocking_portfolio_risk_reason_v1(context, candidate_plan) {
-        return ShopPlanEvaluationV1::block(candidate_plan.plan.legacy_priority, reason);
+    if candidate_plan.plan.candidate_ids.is_empty() {
+        return ShopPlanEvaluationV1::block(
+            candidate_plan.plan.legacy_priority,
+            "portfolio plan has no candidate ids for unified shop evaluation",
+        );
     }
+
+    let mut step_evaluations = Vec::new();
+    for candidate_id in &candidate_plan.plan.candidate_ids {
+        let Some(candidate) = context
+            .candidates
+            .iter()
+            .find(|candidate| &candidate.candidate_id == candidate_id)
+        else {
+            return ShopPlanEvaluationV1::block(
+                candidate_plan.plan.legacy_priority,
+                format!("portfolio plan candidate id {candidate_id} is no longer visible"),
+            );
+        };
+        let evaluation = evaluate_single_candidate_v1(context, config, strategic_trace, candidate);
+        if evaluation.verdict != super::types::ShopPlanVerdictV1::Allow {
+            let reason = evaluation
+                .reasons
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "candidate blocked by unified shop gate".to_string());
+            return ShopPlanEvaluationV1::block(
+                candidate
+                    .purchase_priority
+                    .or(candidate_plan.plan.legacy_priority),
+                format!("portfolio step {candidate_id} failed unified shop gate: {reason}"),
+            );
+        }
+        step_evaluations.push(evaluation);
+    }
+
+    let confidence = step_evaluations
+        .iter()
+        .map(|evaluation| evaluation.confidence)
+        .fold(0.50_f32, f32::min);
     ShopPlanEvaluationV1::allow(
         150,
-        priority,
-        0.50,
+        step_evaluations
+            .iter()
+            .map(|evaluation| evaluation.score)
+            .sum::<i32>()
+            .max(priority),
+        confidence,
         Some(priority),
-        "legacy portfolio alternative retained for branch exploration",
+        "portfolio alternative passed unified shop gates; legacy priority retained as branch estimate",
     )
-}
-
-fn blocking_portfolio_risk_reason_v1(
-    context: &ShopDecisionContextV1,
-    candidate_plan: &ShopPlanCandidateV1,
-) -> Option<String> {
-    candidate_plan
-        .plan
-        .candidate_ids
-        .iter()
-        .filter_map(|candidate_id| {
-            context
-                .candidates
-                .iter()
-                .find(|candidate| &candidate.candidate_id == candidate_id)
-        })
-        .find_map(blocking_purchase_risk_reason_v1)
 }
 
 fn blocking_purchase_risk_reason_v1(candidate: &ShopCandidateEvidenceV1) -> Option<String> {
