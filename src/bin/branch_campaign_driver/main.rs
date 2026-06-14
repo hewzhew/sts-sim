@@ -905,7 +905,7 @@ fn inspect_visible_player_hp(session: &RunControlSession) -> (i32, i32) {
 fn inspect_search_options_from_args(args: &Args) -> Result<RunControlSearchCombatOptions, String> {
     let mut options = parse_branch_experiment_search_options_v1(&args.combat_search_options)?;
     options.max_nodes = args.search_max_nodes.or(options.max_nodes);
-    options.wall_ms = Some(args.search_wall_ms).or(options.wall_ms);
+    options.wall_ms = options.wall_ms.or(Some(args.search_wall_ms));
     options.max_hp_loss = parse_hp_loss_limit(args.max_hp_loss.as_deref())?.or(options.max_hp_loss);
     Ok(options)
 }
@@ -1187,6 +1187,25 @@ mod tests {
         assert_eq!(args.inspect_act, Some(2));
         assert_eq!(args.inspect_floor, Some(18));
         assert!(args.inspect_shop_evidence);
+    }
+
+    #[test]
+    fn inspect_search_keeps_combat_search_wall_ms_option() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-search",
+            "--combat-search-option",
+            "wall_ms=5000",
+        ])
+        .expect("args parse");
+
+        let options = inspect_search_options_from_args(&args).expect("options parse");
+
+        assert_eq!(options.wall_ms, Some(5_000));
     }
 
     #[test]
