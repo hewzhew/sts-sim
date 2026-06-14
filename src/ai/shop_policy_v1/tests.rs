@@ -1074,59 +1074,37 @@ fn shop_policy_buys_elite_potion_when_first_elite_prep_window_is_open() {
 }
 
 #[test]
-fn shop_policy_uses_champ_pressure_for_transition_burst_purchase() {
+fn shop_card_priority_does_not_apply_champ_boss_bonus_directly() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
     run_state.floor_num = 18;
     run_state.boss_key = Some(EncounterId::TheChamp);
     run_state.gold = 125;
-    let mut shop = ShopState::new();
-    shop.cards.push(ShopCard {
-        card_id: CardId::Carnage,
-        upgrades: 0,
-        price: 36,
-        can_buy: true,
-        blocked_reason: None,
-    });
-    shop.cards.push(ShopCard {
-        card_id: CardId::DeepBreath,
-        upgrades: 0,
-        price: 96,
-        can_buy: true,
-        blocked_reason: None,
-    });
+    let mut no_boss = run_state.clone();
+    no_boss.boss_key = None;
 
-    let context = build_shop_decision_context_v1(&run_state, &shop);
-    let decision = plan_shop_decision_v1(&context, &ShopPolicyConfigV1::default());
-
-    assert!(
-        shop_card_conversion_priority_v1(CardId::Carnage, &run_state)
-            >= ShopPolicyConfigV1::default().high_impact_card_purchase_priority_threshold
+    assert_eq!(
+        shop_card_conversion_priority_v1(CardId::Carnage, &run_state),
+        shop_card_conversion_priority_v1(CardId::Carnage, &no_boss),
+        "shop raw purchase priority must not encode The Champ transition-burst policy"
     );
-    assert!(matches!(
-        decision.action,
-        ShopPolicyActionV1::Purchase {
-            target: ShopPurchaseTargetV1::Card {
-                card: CardId::Carnage,
-                ..
-            },
-            ..
-        }
-    ));
 }
 
 #[test]
-fn shop_policy_treats_flex_as_champ_burst_piece_when_payoff_exists() {
+fn shop_card_priority_does_not_apply_champ_flex_bonus_directly() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
     run_state.floor_num = 18;
     run_state.boss_key = Some(EncounterId::TheChamp);
     run_state.gold = 125;
     run_state.add_card_to_deck(CardId::HeavyBlade);
+    let mut no_boss = run_state.clone();
+    no_boss.boss_key = None;
 
-    assert!(
-        shop_card_conversion_priority_v1(CardId::Flex, &run_state)
-            > shop_card_conversion_priority_v1(CardId::DeepBreath, &run_state)
+    assert_eq!(
+        shop_card_conversion_priority_v1(CardId::Flex, &run_state),
+        shop_card_conversion_priority_v1(CardId::Flex, &no_boss),
+        "Flex conversion potential must be modeled by shared strength/component profiles, not by a shop-local Champ bonus"
     );
 }
 
