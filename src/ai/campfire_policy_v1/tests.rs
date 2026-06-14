@@ -3,6 +3,7 @@ use crate::ai::campfire_policy_v1::{
     CampfirePolicyClassV1, CampfirePolicyConfigV1,
 };
 use crate::content::cards::CardId;
+use crate::content::monsters::factory::EncounterId;
 use crate::state::core::CampfireChoice;
 use crate::state::map::{MapEdge, MapRoomNode, MapState, RoomType};
 use crate::state::run::RunState;
@@ -59,6 +60,38 @@ fn campfire_deck_mutation_targets_are_sourced_from_deck_mutation_compiler() {
             .iter()
             .any(|item| item.contains("DeckMutationCompilerV1")),
         "campfire toke targets must come from the deck mutation compiler boundary"
+    );
+}
+
+#[test]
+fn campfire_smith_candidate_exposes_boss_strategy_tag() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.boss_key = Some(EncounterId::TheChamp);
+    run_state.add_card_to_deck(CardId::TrueGrit);
+    let true_grit_index = run_state
+        .master_deck
+        .iter()
+        .position(|card| card.id == CardId::TrueGrit)
+        .expect("test deck should contain True Grit");
+
+    let context = build_campfire_decision_context_v1(
+        &run_state,
+        vec![CampfireChoice::Smith(true_grit_index)],
+    );
+    let true_grit = context
+        .candidates
+        .iter()
+        .find(|candidate| matches!(candidate.choice, CampfireChoice::Smith(idx) if idx == true_grit_index))
+        .expect("expected True Grit smith candidate");
+
+    assert!(
+        true_grit
+            .evidence
+            .iter()
+            .any(|item| item == "smith strategy tag is champ:execute_block"),
+        "smith candidate should expose boss strategy tag, got {:?}",
+        true_grit.evidence
     );
 }
 

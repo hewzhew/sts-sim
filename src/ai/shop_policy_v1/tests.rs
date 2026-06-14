@@ -9,7 +9,7 @@ use crate::ai::shop_policy_v1::{
     ShopPlanComponentKindV1, ShopPlanKindV1, ShopPlanStepV1, ShopPlanVerdictV1, ShopPolicyActionV1,
     ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
-use crate::ai::strategic::{CandidateAction, PressureKind, StrategicJob};
+use crate::ai::strategic::{CandidateAction, PressureKind, StrategicBossTax, StrategicJob};
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
@@ -170,6 +170,67 @@ fn shop_strategic_trace_maps_buy_cards_by_semantic_jobs() {
     assert_delta_lacks_job(shrug, StrategicJob::Frontload);
     assert_delta_has_job(burning_pact, StrategicJob::DrawEnergy);
     assert_delta_has_job(burning_pact, StrategicJob::ExhaustAccess);
+}
+
+#[test]
+fn shop_strategic_trace_carries_champ_execute_pressure() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 18;
+    run_state.boss_key = Some(EncounterId::TheChamp);
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::FlameBarrier,
+        upgrades: 0,
+        price: 73,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let trace = crate::ai::strategic::strategic_trace_for_shop(&context);
+
+    assert!(
+        trace
+            .ledger
+            .items
+            .iter()
+            .any(|item| { item.kind == PressureKind::BossTax(StrategicBossTax::ChampExecutePlan) }),
+        "shop strategic trace should carry The Champ execute pressure, got {:?}",
+        trace.ledger.items
+    );
+}
+
+#[test]
+fn shop_strategic_delta_maps_champ_execute_answer_through_component_report() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 18;
+    run_state.boss_key = Some(EncounterId::TheChamp);
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::FlameBarrier,
+        upgrades: 0,
+        price: 73,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let trace = crate::ai::strategic::strategic_trace_for_shop(&context);
+    let flame_barrier = buy_card_delta(&trace, CardId::FlameBarrier);
+
+    assert_delta_has_boss_tax(flame_barrier, StrategicBossTax::ChampExecutePlan);
+    assert!(
+        flame_barrier
+            .evidence
+            .iter()
+            .any(|evidence| evidence == "card_component_marginal_value contributor"),
+        "shop card deltas should reuse the component report boundary, got {:?}",
+        flame_barrier.evidence
+    );
 }
 
 #[test]
@@ -1177,6 +1238,17 @@ fn assert_delta_lacks_job(delta: &crate::ai::strategic::CandidateDelta, job: Str
             .iter()
             .all(|entry| entry.kind != PressureKind::MissingJob(job)),
         "delta should not include positive job {job:?}, got {:?}",
+        delta.positive
+    );
+}
+
+fn assert_delta_has_boss_tax(delta: &crate::ai::strategic::CandidateDelta, tax: StrategicBossTax) {
+    assert!(
+        delta
+            .positive
+            .iter()
+            .any(|entry| entry.kind == PressureKind::BossTax(tax)),
+        "delta should include positive boss tax {tax:?}, got {:?}",
         delta.positive
     );
 }

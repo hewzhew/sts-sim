@@ -3,10 +3,14 @@ use super::{
     LedgerDelta, OpportunityCost, PressureKind, StrategicDebt, StrategicDecisionSite,
     StrategicDeckFacts, StrategicJob, StrategicSnapshot, VerdictHint,
 };
+use crate::ai::card_component_marginal_value_v1::{
+    evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
+};
 use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
 use crate::ai::decision_tags_v1::{
     strings_have_tag, TAG_COLLECTOR_ANSWER, TAG_ENGINE_CLOSURE, TAG_STARTUP_ACCESS,
 };
+use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
 use crate::ai::shop_policy_v1::{
     ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPolicyClassV1, ShopPurchaseTargetV1,
 };
@@ -18,7 +22,7 @@ pub fn strategic_trace_for_shop(context: &ShopDecisionContextV1) -> super::Strat
     let deltas = context
         .candidates
         .iter()
-        .map(candidate_delta_from_shop_candidate)
+        .map(|candidate| candidate_delta_from_shop_candidate(context, candidate))
         .collect::<Vec<_>>();
     compile_decision(snapshot, ledger, context.candidates.len(), deltas)
 }
@@ -29,9 +33,9 @@ fn snapshot_from_shop_context(context: &ShopDecisionContextV1) -> StrategicSnaps
         site: StrategicDecisionSite::Shop,
         act: context.need.act,
         floor: context.need.floor,
-        boss: None,
-        hp: 0,
-        max_hp: 0,
+        boss: context.need.boss.map(|boss| format!("{boss:?}")),
+        hp: context.need.hp,
+        max_hp: context.need.max_hp,
         gold: context.need.gold,
         deck: StrategicDeckFacts {
             deck_size: deck.deck_size,
@@ -65,7 +69,10 @@ fn snapshot_from_shop_context(context: &ShopDecisionContextV1) -> StrategicSnaps
     }
 }
 
-fn candidate_delta_from_shop_candidate(candidate: &ShopCandidateEvidenceV1) -> CandidateDelta {
+fn candidate_delta_from_shop_candidate(
+    context: &ShopDecisionContextV1,
+    candidate: &ShopCandidateEvidenceV1,
+) -> CandidateDelta {
     let action = match candidate.purchase_target {
         Some(ShopPurchaseTargetV1::Card { index, card }) => CandidateAction::BuyCard {
             shop_index: index,
@@ -120,7 +127,7 @@ fn candidate_delta_from_shop_candidate(candidate: &ShopCandidateEvidenceV1) -> C
             delta.role = CandidateRole::ResourceConversion;
             delta.verdict_hint = purchase_verdict_hint(candidate.purchase_priority);
             if candidate.card.is_some() {
-                add_shop_card_purchase_deltas(candidate, &mut delta);
+                add_shop_card_purchase_deltas(context, candidate, &mut delta);
                 delta.negative.push(LedgerDelta {
                     kind: PressureKind::DeckDebt(StrategicDebt::CycleTime),
                     amount: 0.12,
@@ -172,7 +179,11 @@ fn candidate_delta_from_shop_candidate(candidate: &ShopCandidateEvidenceV1) -> C
     delta
 }
 
-fn add_shop_card_purchase_deltas(candidate: &ShopCandidateEvidenceV1, delta: &mut CandidateDelta) {
+fn add_shop_card_purchase_deltas(
+    context: &ShopDecisionContextV1,
+    candidate: &ShopCandidateEvidenceV1,
+    delta: &mut CandidateDelta,
+) {
     let priority_amount = purchase_priority_amount(candidate.purchase_priority);
 
     if candidate_has_evidence(candidate, TAG_COLLECTOR_ANSWER) {
@@ -212,6 +223,7 @@ fn add_shop_card_purchase_deltas(candidate: &ShopCandidateEvidenceV1, delta: &mu
     }
 
     add_default_shop_card_semantic_deltas(candidate, delta, priority_amount);
+    add_shop_card_component_deltas(context, candidate, delta);
 }
 
 fn add_default_shop_card_semantic_deltas(
@@ -286,6 +298,65 @@ fn add_default_shop_card_semantic_deltas(
             amount: priority_amount,
             reason: "shop_card_converts_gold_without_specific_job".to_string(),
         });
+    }
+}
+
+fn add_shop_card_component_deltas(
+    context: &ShopDecisionContextV1,
+    candidate: &ShopCandidateEvidenceV1,
+    delta: &mut CandidateDelta,
+) {
+    let Some(card) = candidate.card else {
+        return;
+    };
+    let profile = card_reward_semantic_profile_v1(&RewardCard::new(card, 0));
+    let report = evaluate_card_component_marginal_value_v1(
+        &component_context_from_shop_context(context),
+        &profile,
+    );
+    let component_delta = CandidateDelta::from_component_report(delta.action.clone(), &report);
+
+    if matches!(
+        delta.role,
+        CandidateRole::ResourceConversion | CandidateRole::Unknown
+    ) && component_delta.role != CandidateRole::Unknown
+    {
+        delta.role = component_delta.role;
+    }
+    delta.positive.extend(component_delta.positive);
+    delta.negative.extend(component_delta.negative);
+    delta.notes.extend(component_delta.notes);
+    delta.evidence.extend(component_delta.evidence);
+}
+
+fn component_context_from_shop_context(
+    context: &ShopDecisionContextV1,
+) -> CardComponentMarginalContextV1 {
+    let deck = &context.strategy.v1.deck;
+    CardComponentMarginalContextV1 {
+        act: context.need.act,
+        floor: context.need.floor,
+        boss: context.need.boss,
+        hp: context.need.hp,
+        max_hp: context.need.max_hp,
+        deck_size: deck.deck_size,
+        powers: deck.powers as usize,
+        draw_sources: deck.draw_sources as usize,
+        exhaust_generators: deck.exhaust_generators as usize,
+        frontload_jobs: deck.attacks as usize,
+        block_jobs: deck.skills as usize,
+        formation_needs: context.strategy.formation_summary().needs,
+        startup: DeckStartupProfileV1 {
+            feel_no_pain_count: deck.exhaust_payoffs,
+            exhaust_engine_count: deck.exhaust_generators,
+            exhaust_payoff_count: deck.exhaust_payoffs,
+            status_generator_count: deck.status_generators,
+            status_digest_count: deck.status_payoffs,
+            strong_draw_count: deck.draw_sources,
+            persistent_strength_source_count: deck.strength_sources,
+            strength_payoff_count: deck.strength_payoffs,
+            ..Default::default()
+        },
     }
 }
 

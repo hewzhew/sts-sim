@@ -8,6 +8,7 @@ use crate::ai::noncombat_strategy_v1::{
     RunStrategySnapshotV2, StrategyPackageIdV2, StrategyPlanSupportV1,
 };
 use crate::content::cards::CardId;
+use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 
@@ -24,6 +25,9 @@ pub struct ShopDecisionContextV1 {
 pub struct ShopNeedProfileV1 {
     pub act: u8,
     pub floor: i32,
+    pub boss: Option<EncounterId>,
+    pub hp: i32,
+    pub max_hp: i32,
     pub gold: i32,
     pub floors_to_boss: i32,
     pub near_boss: bool,

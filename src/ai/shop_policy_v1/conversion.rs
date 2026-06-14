@@ -21,6 +21,9 @@ pub fn build_shop_need_profile_v1(run_state: &RunState) -> ShopNeedProfileV1 {
     ShopNeedProfileV1 {
         act: run_state.act_num,
         floor: run_state.floor_num,
+        boss: run_state.boss_key,
+        hp: run_state.current_hp,
+        max_hp: run_state.max_hp,
         gold: run_state.gold,
         floors_to_boss,
         near_boss: floors_to_boss <= 4,

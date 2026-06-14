@@ -157,6 +157,17 @@ fn candidate_evidence(
             if let Some(priority) = upgrade_priority {
                 evidence.push(format!("smith upgrade priority is {priority}"));
             }
+            if let CampfireChoice::Smith(idx) = choice {
+                if let Some(card) = run_state.master_deck.get(idx) {
+                    if let Some(tag) =
+                        crate::ai::campfire_policy_v1::campfire_smith_upgrade_strategy_tag_v1(
+                            card, run_state,
+                        )
+                    {
+                        evidence.push(format!("smith strategy tag is {tag}"));
+                    }
+                }
+            }
             risks.push("smith choice changes upgrade plan unless priority clears gate".to_string());
         }
         CampfirePolicyClassV1::RelicAction => {
