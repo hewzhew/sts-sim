@@ -60,11 +60,12 @@ pub fn render_route_decision_trace_v1(trace: &RouteDecisionTraceV1) -> String {
         push_line(
             &mut out,
             format!(
-                "    terms: card={:.2} relic={:.2} shop={:.2} heal={:.2} hp={:.2} risk={:.2} flex={:.2} elite_prep={:.2}",
+                "    terms: card={:.2} relic={:.2} shop={:.2} heal={:.2} curse={:.2} hp={:.2} risk={:.2} flex={:.2} elite_prep={:.2}",
                 candidate.score_terms.card_reward,
                 candidate.score_terms.relic,
                 candidate.score_terms.shop,
                 candidate.score_terms.heal,
+                candidate.score_terms.curse_debt,
                 candidate.score_terms.hp_loss,
                 candidate.score_terms.death_risk,
                 candidate.score_terms.flexibility,

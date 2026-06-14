@@ -89,6 +89,8 @@ pub struct RouteRelicSummaryV1 {
     pub has_smiling_mask: bool,
     pub has_membership_card: bool,
     pub has_courier: bool,
+    #[serde(default)]
+    pub has_cursed_key: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

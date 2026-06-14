@@ -29,6 +29,7 @@ pub fn plan_route_decision_v1(
                 context.hp,
                 context.max_hp,
                 has_empty_potion_slot,
+                context.relics.has_cursed_key,
                 &config,
             );
             let score_terms = score_route_candidate(
@@ -37,6 +38,7 @@ pub fn plan_route_decision_v1(
                 &needs,
                 target.move_kind,
                 context.counters.emerald_key_taken,
+                context.relics.has_cursed_key,
                 &config,
             );
             let safety = safety_flag(&features, &path_summary, &needs);

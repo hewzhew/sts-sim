@@ -25,6 +25,8 @@ pub struct RouteScoreTermsV1 {
     pub shop: f32,
     pub event: f32,
     pub potion: f32,
+    #[serde(default)]
+    pub curse_debt: f32,
     pub hp_loss: f32,
     pub death_risk: f32,
     pub flexibility: f32,
@@ -44,6 +46,7 @@ impl RouteScoreTermsV1 {
             + self.shop
             + self.event
             + self.potion
+            + self.curse_debt
             + self.hp_loss
             + self.death_risk
             + self.flexibility

@@ -14,6 +14,8 @@ pub struct RoutePlannerConfigV1 {
     pub very_low_hp_ratio: f32,
     pub early_shop_good_gold: i32,
     pub wing_boots_charge_cost: f32,
+    #[serde(default = "default_cursed_key_treasure_curse_penalty")]
+    pub cursed_key_treasure_curse_penalty: f32,
 }
 
 impl Default for RoutePlannerConfigV1 {
@@ -29,6 +31,11 @@ impl Default for RoutePlannerConfigV1 {
             very_low_hp_ratio: 0.28,
             early_shop_good_gold: 150,
             wing_boots_charge_cost: 2.0,
+            cursed_key_treasure_curse_penalty: 1.35,
         }
     }
+}
+
+fn default_cursed_key_treasure_curse_penalty() -> f32 {
+    RoutePlannerConfigV1::default().cursed_key_treasure_curse_penalty
 }

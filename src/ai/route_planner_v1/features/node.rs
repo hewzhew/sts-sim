@@ -10,6 +10,7 @@ pub(in crate::ai::route_planner_v1) fn node_features(
     hp: i32,
     max_hp: i32,
     has_empty_potion_slot: bool,
+    has_cursed_key: bool,
     config: &RoutePlannerConfigV1,
 ) -> NodeFeaturesV1 {
     let hp_ratio = if max_hp > 0 {
@@ -24,6 +25,9 @@ pub(in crate::ai::route_planner_v1) fn node_features(
     if target.room_type == Some(RoomType::EventRoom) {
         apply_unknown_room_belief(&mut features, belief, config);
     }
+    if has_cursed_key {
+        apply_cursed_key_chest_debt(&mut features, target.room_type, belief);
+    }
     if !has_empty_potion_slot {
         features.expected_potion_gain = 0.0;
     }
@@ -32,6 +36,18 @@ pub(in crate::ai::route_planner_v1) fn node_features(
     }
     features.death_risk = features.death_risk.clamp(0.0, 1.0);
     features
+}
+
+fn apply_cursed_key_chest_debt(
+    features: &mut NodeFeaturesV1,
+    room_type: Option<RoomType>,
+    belief: &UnknownRoomBeliefV1,
+) {
+    match room_type {
+        Some(RoomType::TreasureRoom) => features.expected_curse_debt += 1.0,
+        Some(RoomType::EventRoom) => features.expected_curse_debt += belief.treasure_chance,
+        _ => {}
+    }
 }
 
 fn base_node_features(room_type: Option<RoomType>) -> NodeFeaturesV1 {
@@ -122,6 +138,7 @@ fn empty_features() -> NodeFeaturesV1 {
         expected_relics: 0.0,
         expected_gold_gain: 0.0,
         expected_potion_gain: 0.0,
+        expected_curse_debt: 0.0,
         shop_access: 0.0,
         remove_access: 0.0,
         upgrade_access: 0.0,

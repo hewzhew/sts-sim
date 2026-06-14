@@ -18,6 +18,7 @@ pub(super) fn build_relic_summary(run_state: &RunState) -> RouteRelicSummaryV1 {
     let has_smiling_mask = has_relic(&relics, RelicId::SmilingMask);
     let has_membership_card = has_relic(&relics, RelicId::MembershipCard);
     let has_courier = has_relic(&relics, RelicId::Courier);
+    let has_cursed_key = has_relic(&relics, RelicId::CursedKey);
     let wing_boots_charges = run_state
         .relics
         .iter()
@@ -37,6 +38,7 @@ pub(super) fn build_relic_summary(run_state: &RunState) -> RouteRelicSummaryV1 {
         has_smiling_mask,
         has_membership_card,
         has_courier,
+        has_cursed_key,
     }
 }
 

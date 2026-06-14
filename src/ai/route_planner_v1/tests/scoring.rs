@@ -2,6 +2,7 @@ use crate::ai::route_planner_v1::{
     plan_route_decision_v1, RoutePlannerConfigV1, RouteSafetyFlagV1,
 };
 use crate::content::cards::CardId;
+use crate::content::relics::{RelicId, RelicState};
 use crate::runtime::combat::CombatCard;
 use crate::state::core::EngineState;
 use crate::state::map::node::RoomType;
@@ -145,6 +146,40 @@ fn route_score_exposes_first_elite_preparation_as_its_own_term() {
     assert!(
         prepared_elite_path.score_terms.elite_prep > immediate_elite_path.score_terms.elite_prep,
         "route scoring should expose first-elite preparation separately from the total score"
+    );
+}
+
+#[test]
+fn cursed_key_makes_treasure_route_curse_debt_visible() {
+    let no_key = run_with_start_nodes(&[RoomType::TreasureRoom], Some(RoomType::RestRoom));
+    let mut cursed_key = no_key.clone();
+    cursed_key.relics.push(RelicState::new(RelicId::CursedKey));
+
+    let no_key_trace = plan_route_decision_v1(
+        &no_key,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let cursed_key_trace = plan_route_decision_v1(
+        &cursed_key,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let no_key_treasure = candidate_by_room(&no_key_trace, RoomType::TreasureRoom);
+    let cursed_key_treasure = candidate_by_room(&cursed_key_trace, RoomType::TreasureRoom);
+
+    assert_eq!(no_key_treasure.score_terms.curse_debt, 0.0);
+    assert_eq!(cursed_key_treasure.features.expected_curse_debt, 1.0);
+    assert!(
+        cursed_key_treasure.score_terms.curse_debt < 0.0,
+        "Cursed Key treasure should expose a negative curse debt term"
+    );
+    assert!(
+        cursed_key_treasure
+            .cautions
+            .iter()
+            .any(|caution| caution.contains("Cursed Key chest curse debt")),
+        "route trace should explain the Cursed Key treasure debt"
     );
 }
 

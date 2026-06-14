@@ -11,6 +11,7 @@ pub(super) fn score_route_candidate(
     needs: &NeedVectorV1,
     move_kind: RouteMoveKindV1,
     emerald_key_taken: bool,
+    has_cursed_key: bool,
     config: &RoutePlannerConfigV1,
 ) -> RouteScoreTermsV1 {
     RouteScoreTermsV1 {
@@ -25,6 +26,9 @@ pub(super) fn score_route_candidate(
         shop: needs.need_shop * (features.shop_access + path.max_shops as f32 * 0.10),
         event: needs.need_event * (features.event_access + path.max_unknowns as f32 * 0.08),
         potion: needs.need_potion * features.expected_potion_gain,
+        curse_debt: -expected_cursed_key_chest_debt(features, path, has_cursed_key)
+            * config.cursed_key_treasure_curse_penalty
+            * (1.0 + needs.need_remove + needs.avoid_damage * 0.5),
         hp_loss: -needs.avoid_damage * features.expected_hp_loss_p90 / 12.0,
         death_risk: -features.death_risk * (1.0 + needs.avoid_damage) * 5.0,
         flexibility: needs.value_flexibility * flexibility_value(path),
@@ -41,6 +45,23 @@ pub(super) fn score_route_candidate(
             0.0
         },
     }
+}
+
+fn expected_cursed_key_chest_debt(
+    features: &NodeFeaturesV1,
+    path: &RoutePathSummaryV1,
+    has_cursed_key: bool,
+) -> f32 {
+    if !has_cursed_key {
+        return 0.0;
+    }
+    let visible_chests = path.max_treasures as f32;
+    let current_unknown_treasure_risk = if features.is_question_mark {
+        features.expected_curse_debt
+    } else {
+        0.0
+    };
+    visible_chests + current_unknown_treasure_risk
 }
 
 pub(super) fn safety_flag(
@@ -87,6 +108,12 @@ pub(super) fn route_reasons(
         }
         Some(RoomType::TreasureRoom) => reasons.push("immediate relic without combat".to_string()),
         _ => {}
+    }
+    if features.expected_curse_debt > 0.0 {
+        cautions.push(format!(
+            "Cursed Key chest curse debt: expected {:.2}",
+            features.expected_curse_debt
+        ));
     }
     if path.max_elites > path.min_elites {
         reasons.push("elite fights are optional on visible continuations".to_string());

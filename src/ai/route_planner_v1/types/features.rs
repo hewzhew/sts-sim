@@ -61,6 +61,8 @@ pub struct NodeFeaturesV1 {
     pub expected_relics: f32,
     pub expected_gold_gain: f32,
     pub expected_potion_gain: f32,
+    #[serde(default)]
+    pub expected_curse_debt: f32,
     pub shop_access: f32,
     pub remove_access: f32,
     pub upgrade_access: f32,
