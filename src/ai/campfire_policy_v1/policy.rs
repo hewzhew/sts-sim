@@ -1,7 +1,13 @@
+use crate::ai::deck_mutation_compiler_v1::{
+    compile_deck_mutation_decision_v1, DeckMutationCompilerModeV1, DeckMutationKindV1,
+    DeckMutationPlanCandidateV1, DeckMutationPlanRoleV1,
+};
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyPackageIdV2, StrategyPlanSupportV1,
 };
-use crate::state::core::CampfireChoice;
+use crate::state::core::{
+    CampfireChoice, EngineState, RunPendingChoiceReason, RunPendingChoiceState,
+};
 use crate::state::run::RunState;
 
 use super::approvals::approved_action;
@@ -29,29 +35,70 @@ pub fn build_campfire_decision_context_v1(
     }
 }
 
-fn expand_choice_targets(run_state: &RunState, choice: CampfireChoice) -> Vec<CampfireChoice> {
+#[derive(Clone, Debug)]
+struct ExpandedCampfireChoice {
+    choice: CampfireChoice,
+    deck_mutation_plan: Option<DeckMutationPlanCandidateV1>,
+}
+
+fn expand_choice_targets(
+    run_state: &RunState,
+    choice: CampfireChoice,
+) -> Vec<ExpandedCampfireChoice> {
     match choice {
-        CampfireChoice::Smith(_) => run_state
-            .master_deck
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, card)| {
-                crate::state::core::master_deck_card_can_upgrade(card)
-                    .then_some(CampfireChoice::Smith(idx))
-            })
-            .collect(),
-        CampfireChoice::Toke(_) => run_state
-            .master_deck
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, card)| {
-                (crate::state::core::master_deck_card_is_purgeable(card)
-                    && !crate::state::core::master_deck_card_is_bottled(card, &run_state.relics))
-                .then_some(CampfireChoice::Toke(idx))
-            })
-            .collect(),
-        _ => vec![choice],
+        CampfireChoice::Smith(_) => deck_mutation_campfire_targets(
+            run_state,
+            RunPendingChoiceReason::Upgrade,
+            DeckMutationKindV1::Upgrade,
+            CampfireChoice::Smith,
+        ),
+        CampfireChoice::Toke(_) => deck_mutation_campfire_targets(
+            run_state,
+            RunPendingChoiceReason::PurgeNonBottled,
+            DeckMutationKindV1::Remove,
+            CampfireChoice::Toke,
+        ),
+        _ => vec![ExpandedCampfireChoice {
+            choice,
+            deck_mutation_plan: None,
+        }],
     }
+}
+
+fn deck_mutation_campfire_targets(
+    run_state: &RunState,
+    reason: RunPendingChoiceReason,
+    expected_kind: DeckMutationKindV1,
+    choice_for_index: fn(usize) -> CampfireChoice,
+) -> Vec<ExpandedCampfireChoice> {
+    let choice = RunPendingChoiceState {
+        min_choices: 1,
+        max_choices: 1,
+        reason,
+        return_state: Box::new(EngineState::Campfire),
+    };
+    let decision = compile_deck_mutation_decision_v1(
+        run_state,
+        &choice,
+        DeckMutationCompilerModeV1::BranchTopK {
+            max_active: usize::MAX,
+        },
+    );
+
+    decision
+        .candidate_plans
+        .into_iter()
+        .filter_map(|plan| {
+            if plan.step.kind != expected_kind || plan.step.deck_indices.len() != 1 {
+                return None;
+            }
+            let deck_index = *plan.step.deck_indices.first()?;
+            Some(ExpandedCampfireChoice {
+                choice: choice_for_index(deck_index),
+                deck_mutation_plan: Some(plan),
+            })
+        })
+        .collect()
 }
 
 pub fn plan_campfire_decision_v1(
@@ -70,10 +117,11 @@ pub fn plan_campfire_decision_v1(
 }
 
 fn candidate_evidence(
-    choice: CampfireChoice,
+    expanded: ExpandedCampfireChoice,
     strategy: &crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
     run_state: &RunState,
 ) -> CampfireCandidateEvidenceV1 {
+    let choice = expanded.choice;
     let class = class_for_choice(choice);
     let support_gate = support_gate_for_choice(choice, strategy);
     let mut evidence = vec![format!("campfire choice is {choice:?}")];
@@ -84,6 +132,19 @@ fn candidate_evidence(
         }),
         _ => None,
     };
+    if let Some(plan) = &expanded.deck_mutation_plan {
+        evidence.extend(deck_mutation_plan_evidence(plan));
+        risks.extend(plan.risks.iter().cloned());
+        if matches!(
+            plan.role,
+            DeckMutationPlanRoleV1::InspectOnly | DeckMutationPlanRoleV1::Blocked
+        ) {
+            risks.push(format!(
+                "deck mutation compiler did not approve this target for automatic execution: {:?}",
+                plan.role
+            ));
+        }
+    }
 
     match class {
         CampfirePolicyClassV1::RestRecovery => {
@@ -119,6 +180,26 @@ fn candidate_evidence(
         evidence,
         risks,
     }
+}
+
+fn deck_mutation_plan_evidence(plan: &DeckMutationPlanCandidateV1) -> Vec<String> {
+    let mut evidence = vec![
+        format!("DeckMutationCompilerV1 plan_id={}", plan.plan_id),
+        format!("deck mutation role={:?}", plan.role),
+        format!(
+            "deck mutation allowed execute={} branch={} inspect={}",
+            plan.allowed_consumers.execute_autopilot,
+            plan.allowed_consumers.branch_active,
+            plan.allowed_consumers.inspect
+        ),
+        format!("deck mutation effect={}", plan.step.effect_label),
+        format!(
+            "deck mutation representative_count={} suppressed_count={}",
+            plan.representative_count, plan.suppressed_count
+        ),
+    ];
+    evidence.extend(plan.reasons.iter().cloned());
+    evidence
 }
 
 fn class_for_choice(choice: CampfireChoice) -> CampfirePolicyClassV1 {

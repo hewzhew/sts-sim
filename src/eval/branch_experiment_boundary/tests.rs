@@ -1211,6 +1211,34 @@ fn current_boundary_keeps_distinct_campfire_smith_card_state_separate() {
 }
 
 #[test]
+fn campfire_toke_branch_options_use_deck_mutation_compiler_roles() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session
+        .run_state
+        .relics
+        .push(RelicState::new(RelicId::PeacePipe));
+    session
+        .run_state
+        .master_deck
+        .push(CombatCard::new(CardId::TrueGrit, 99));
+    session.engine_state = EngineState::Campfire;
+
+    let options = campfire_branch_options(&session).expect("campfire options");
+    let toke_cards = options
+        .iter()
+        .filter(|option| option.effect_kind == "remove_card")
+        .map(|option| option.card)
+        .collect::<Vec<_>>();
+
+    assert!(toke_cards.contains(&Some(CardId::Strike)));
+    assert!(toke_cards.contains(&Some(CardId::Defend)));
+    assert!(
+        !toke_cards.contains(&Some(CardId::TrueGrit)),
+        "functional toke targets should not consume active campfire branch slots while low-value targets exist"
+    );
+}
+
+#[test]
 fn current_boundary_wraps_boss_relic_options() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.engine_state = EngineState::BossRelicSelect(BossRelicChoiceState::new(vec![

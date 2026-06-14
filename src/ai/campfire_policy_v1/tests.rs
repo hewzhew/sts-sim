@@ -29,6 +29,40 @@ fn campfire_context_exposes_rest_and_smith_candidates() {
 }
 
 #[test]
+fn campfire_deck_mutation_targets_are_sourced_from_deck_mutation_compiler() {
+    let run_state = RunState::new(1, 0, false, "Ironclad");
+    let context = build_campfire_decision_context_v1(
+        &run_state,
+        vec![CampfireChoice::Smith(0), CampfireChoice::Toke(0)],
+    );
+
+    let smith = context
+        .candidates
+        .iter()
+        .find(|candidate| matches!(candidate.choice, CampfireChoice::Smith(_)))
+        .expect("expected smith candidate");
+    let toke = context
+        .candidates
+        .iter()
+        .find(|candidate| matches!(candidate.choice, CampfireChoice::Toke(_)))
+        .expect("expected toke candidate");
+
+    assert!(
+        smith
+            .evidence
+            .iter()
+            .any(|item| item.contains("DeckMutationCompilerV1")),
+        "campfire smith targets must come from the deck mutation compiler boundary"
+    );
+    assert!(
+        toke.evidence
+            .iter()
+            .any(|item| item.contains("DeckMutationCompilerV1")),
+        "campfire toke targets must come from the deck mutation compiler boundary"
+    );
+}
+
+#[test]
 fn campfire_policy_smiths_clear_upgrade_when_first_elite_prep_window_is_open() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.current_hp = 70;
