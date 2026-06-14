@@ -2616,6 +2616,7 @@ pub fn select_campaign_branches_v1(
         }
     }
     rebalance_active_progress_anchor_v1(&mut selection.active, &mut selection.frozen);
+    rebalance_active_core_engine_anchor_v1(&mut selection.active, &mut selection.frozen);
     selection
 }
 
@@ -2673,6 +2674,86 @@ fn rebalance_active_progress_anchor_v1(
     active.sort_by(compare_campaign_branches_for_active_v1);
     frozen.sort_by(compare_campaign_branches_for_promotion_v1);
     true
+}
+
+fn rebalance_active_core_engine_anchor_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+) -> bool {
+    if active.len() < 2 || frozen.is_empty() {
+        return false;
+    }
+    if active.iter().any(campaign_branch_has_core_engine_anchor_v1) {
+        return false;
+    }
+
+    let active_frontier_counts = active
+        .iter()
+        .map(campaign_branch_local_frontier_key_v1)
+        .fold(BTreeMap::<String, usize>::new(), |mut counts, key| {
+            *counts.entry(key).or_default() += 1;
+            counts
+        });
+
+    let Some((frozen_index, frozen_branch)) = frozen
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| campaign_branch_has_core_engine_anchor_v1(branch))
+        .filter(|(_, branch)| {
+            active_frontier_counts
+                .get(&campaign_branch_local_frontier_key_v1(branch))
+                .copied()
+                .unwrap_or_default()
+                > 0
+        })
+        .max_by(|(_, left), (_, right)| {
+            campaign_branch_core_engine_anchor_key_v1(left)
+                .cmp(&campaign_branch_core_engine_anchor_key_v1(right))
+                .then_with(|| compare_campaign_branches_for_active_v1(left, right).reverse())
+        })
+    else {
+        return false;
+    };
+    let frontier_key = campaign_branch_local_frontier_key_v1(frozen_branch);
+
+    let Some((replace_index, _)) = active
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| campaign_branch_local_frontier_key_v1(branch) == frontier_key)
+        .max_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
+    else {
+        return false;
+    };
+
+    let mut promoted = frozen.remove(frozen_index);
+    promoted.status = BranchCampaignBranchStatusV1::Active;
+    let mut demoted = std::mem::replace(&mut active[replace_index], promoted);
+    demoted.status = BranchCampaignBranchStatusV1::Frozen;
+    frozen.push(demoted);
+    active.sort_by(compare_campaign_branches_for_active_v1);
+    frozen.sort_by(compare_campaign_branches_for_promotion_v1);
+    true
+}
+
+fn campaign_branch_has_core_engine_anchor_v1(branch: &BranchCampaignBranchV1) -> bool {
+    let signature = &branch.strategic_summary;
+    signature.present
+        && (signature.engine_score_milli >= 500 || signature.package_coherence_milli >= 500)
+}
+
+fn campaign_branch_core_engine_anchor_key_v1(
+    branch: &BranchCampaignBranchV1,
+) -> (i32, i32, i32, i32) {
+    let signature = &branch.strategic_summary;
+    let debt = signature
+        .cycle_debt_milli
+        .saturating_add(signature.setup_debt_milli);
+    (
+        signature.engine_score_milli,
+        signature.package_coherence_milli,
+        signature.boss_readiness_milli,
+        -debt,
+    )
 }
 
 fn campaign_branch_local_frontier_key_v1(branch: &BranchCampaignBranchV1) -> String {
@@ -2799,6 +2880,12 @@ fn rebalance_active_with_stronger_frozen_v1(
             branch_progress_key(best_frozen),
         )
     }) {
+        return 0;
+    }
+
+    if campaign_branch_has_core_engine_anchor_v1(worst_active)
+        && !campaign_branch_has_core_engine_anchor_v1(best_frozen)
+    {
         return 0;
     }
 

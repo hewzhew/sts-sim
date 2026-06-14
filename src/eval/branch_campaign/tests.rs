@@ -723,6 +723,45 @@ fn campaign_selection_does_not_use_strategy_summary_to_beat_raw_rank_gap() {
 }
 
 #[test]
+fn campaign_selection_promotes_same_frontier_core_engine_anchor() {
+    let mut short_term_a = test_campaign_branch("headbutt-disarm", 3, 80);
+    short_term_a.rank_key = 11_200;
+    short_term_a.summary.as_mut().unwrap().trajectory_key = "frontload=1,weak=1".to_string();
+    short_term_a.choice_labels = vec!["Headbutt".to_string(), "Disarm".to_string()];
+    let mut short_term_b = test_campaign_branch("headbutt-shrug", 3, 80);
+    short_term_b.rank_key = 11_200;
+    short_term_b.summary.as_mut().unwrap().trajectory_key = "frontload=1,block=1".to_string();
+    short_term_b.choice_labels = vec!["Headbutt".to_string(), "Shrug It Off".to_string()];
+    let mut engine = test_campaign_branch("sever-soul-shrug", 3, 80);
+    engine.rank_key = 11_200;
+    engine.summary.as_mut().unwrap().trajectory_key = "exhaust_engine=1,block=1".to_string();
+    engine.choice_labels = vec!["Sever Soul".to_string(), "Shrug It Off".to_string()];
+    engine.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 600,
+        clean_score_milli: 500,
+        engine_score_milli: 800,
+        cycle_debt_milli: 0,
+        setup_debt_milli: 0,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 0,
+    };
+
+    let selected = select_campaign_branches_v1(vec![short_term_a, short_term_b, engine], 2, 4);
+    let active_ids = selected
+        .active
+        .iter()
+        .map(|branch| branch.branch_id.as_str())
+        .collect::<Vec<_>>();
+
+    assert!(
+        active_ids.contains(&"sever-soul-shrug"),
+        "one same-frontier core engine anchor should stay active instead of being frozen behind duplicate short-term branches"
+    );
+    assert_eq!(selected.frozen.len(), 1);
+}
+
+#[test]
 fn campaign_selection_prioritizes_boss_readiness_at_final_boss_checkpoint() {
     let mut short_term = test_campaign_branch("short-term-rank", 46, 50);
     short_term.summary.as_mut().unwrap().act = 3;
