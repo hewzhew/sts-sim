@@ -1,6 +1,7 @@
 use super::types::{
     EventCandidateEvidenceV1, EventDecisionContextV1, EventPolicyClassV1, EventPolicyConfigV1,
 };
+use crate::state::events::EventId;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PickApproval {
@@ -28,6 +29,9 @@ fn pick_approval(
 ) -> Option<PickApproval> {
     if candidate.disabled {
         return None;
+    }
+    if let Some(approval) = winding_halls_mark_of_bloom_approval(candidate, context) {
+        return Some(approval);
     }
     match candidate.class {
         EventPolicyClassV1::FreeKnownBenefit if config.allow_free_known_benefit => {
@@ -65,6 +69,29 @@ fn pick_approval(
         }
         _ => None,
     }
+}
+
+fn winding_halls_mark_of_bloom_approval(
+    candidate: &EventCandidateEvidenceV1,
+    context: &EventDecisionContextV1,
+) -> Option<PickApproval> {
+    if context.event_id != EventId::WindingHalls || !context.has_mark_of_the_bloom {
+        return None;
+    }
+    if candidate.max_hp_loss <= 0
+        || candidate.hp_cost > 0
+        || candidate.heal_amount > 0
+        || candidate.curse_count > 0
+        || candidate.obtained_card_count > 0
+    {
+        return None;
+    }
+    Some(PickApproval {
+        index: candidate.index,
+        label: candidate.label.clone(),
+        confidence: 0.82,
+        reason: "Winding Halls: Mark of the Bloom blocks the heal option, so prefer the structured max-HP loss option over curse or deck growth".to_string(),
+    })
 }
 
 fn max_hp_for_hp_cost_is_safe(

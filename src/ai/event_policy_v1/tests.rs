@@ -7,6 +7,7 @@ use crate::state::events::{
     EventOptionTransition, EventState,
 };
 use crate::state::run::RunState;
+use crate::{content::relics::RelicId, content::relics::RelicState};
 
 #[test]
 fn event_context_classifies_free_known_benefit() {
@@ -206,6 +207,27 @@ fn event_policy_stops_max_hp_for_hp_when_health_buffer_is_low() {
     let decision = plan_event_decision_v1(&context, &EventPolicyConfigV1::default());
 
     assert!(matches!(decision.action, EventPolicyActionV1::Stop { .. }));
+}
+
+#[test]
+fn winding_halls_with_mark_of_the_bloom_prefers_max_hp_loss_over_blocked_heal_curse() {
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.current_hp = 79;
+    run.max_hp = 90;
+    run.relics.push(RelicState::new(RelicId::MarkOfTheBloom));
+    let mut event_state = EventState::new(EventId::WindingHalls);
+    event_state.current_screen = 1;
+    run.event_state = Some(event_state);
+    let options =
+        crate::content::events::winding_halls::get_options(&run, run.event_state.as_ref().unwrap());
+    let context = build_event_decision_context_v1(&run, EventId::WindingHalls, options);
+
+    let decision = plan_event_decision_v1(&context, &EventPolicyConfigV1::default());
+
+    assert!(matches!(
+        decision.action,
+        EventPolicyActionV1::Pick { index: 2, .. }
+    ));
 }
 
 fn option(

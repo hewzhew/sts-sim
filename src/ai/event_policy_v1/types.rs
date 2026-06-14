@@ -15,6 +15,7 @@ pub struct EventDecisionContextV1 {
     pub strategy: RunStrategySnapshotV2,
     pub current_hp: i32,
     pub max_hp: i32,
+    pub has_mark_of_the_bloom: bool,
     pub candidates: Vec<EventCandidateEvidenceV1>,
 }
 
@@ -28,7 +29,11 @@ pub struct EventCandidateEvidenceV1 {
     pub risks: Vec<String>,
     pub disabled: bool,
     pub hp_cost: i32,
+    pub max_hp_loss: i32,
+    pub heal_amount: i32,
     pub max_hp_gain: i32,
+    pub curse_count: i32,
+    pub obtained_card_count: i32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

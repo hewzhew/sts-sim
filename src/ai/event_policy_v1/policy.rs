@@ -1,6 +1,7 @@
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyPlanSupportV1,
 };
+use crate::content::relics::RelicId;
 use crate::state::events::{
     EventActionKind, EventEffect, EventId, EventOption, EventOptionTransition,
 };
@@ -28,6 +29,10 @@ pub fn build_event_decision_context_v1(
         strategy,
         current_hp: run_state.current_hp,
         max_hp: run_state.max_hp,
+        has_mark_of_the_bloom: run_state
+            .relics
+            .iter()
+            .any(|relic| relic.id == RelicId::MarkOfTheBloom),
         candidates,
     }
 }
@@ -70,7 +75,11 @@ pub fn plan_event_decision_v1(
 
 fn candidate_evidence(index: usize, option: EventOption) -> EventCandidateEvidenceV1 {
     let hp_cost = hp_cost(&option);
+    let max_hp_loss = max_hp_loss(&option);
+    let heal_amount = heal_amount(&option);
     let max_hp_gain = max_hp_gain(&option);
+    let curse_count = curse_count(&option);
+    let obtained_card_count = obtained_card_count(&option);
     let class = classify_event_option(&option);
     let mut evidence = vec![format!(
         "event action kind is {:?}",
@@ -119,7 +128,11 @@ fn candidate_evidence(index: usize, option: EventOption) -> EventCandidateEviden
         risks,
         disabled: option.ui.disabled,
         hp_cost,
+        max_hp_loss,
+        heal_amount,
         max_hp_gain,
+        curse_count,
+        obtained_card_count,
     }
 }
 
@@ -176,6 +189,30 @@ fn hp_cost(option: &EventOption) -> i32 {
         .sum()
 }
 
+fn max_hp_loss(option: &EventOption) -> i32 {
+    option
+        .semantics
+        .effects
+        .iter()
+        .map(|effect| match effect {
+            EventEffect::LoseMaxHp(value) => *value,
+            _ => 0,
+        })
+        .sum()
+}
+
+fn heal_amount(option: &EventOption) -> i32 {
+    option
+        .semantics
+        .effects
+        .iter()
+        .map(|effect| match effect {
+            EventEffect::Heal(value) => *value,
+            _ => 0,
+        })
+        .sum()
+}
+
 fn max_hp_gain(option: &EventOption) -> i32 {
     option
         .semantics
@@ -183,6 +220,31 @@ fn max_hp_gain(option: &EventOption) -> i32 {
         .iter()
         .map(|effect| match effect {
             EventEffect::GainMaxHp(value) => *value,
+            _ => 0,
+        })
+        .sum()
+}
+
+fn curse_count(option: &EventOption) -> i32 {
+    option
+        .semantics
+        .effects
+        .iter()
+        .map(|effect| match effect {
+            EventEffect::ObtainCurse { count, .. } => *count as i32,
+            _ => 0,
+        })
+        .sum()
+}
+
+fn obtained_card_count(option: &EventOption) -> i32 {
+    option
+        .semantics
+        .effects
+        .iter()
+        .map(|effect| match effect {
+            EventEffect::ObtainCard { count, .. }
+            | EventEffect::ObtainColorlessCard { count, .. } => *count as i32,
             _ => 0,
         })
         .sum()
