@@ -67,7 +67,7 @@ pub fn compile_decision(
 ) -> StrategicDecisionTrace {
     let mut compiled = candidate_deltas
         .iter()
-        .map(|delta| compile_candidate(delta))
+        .map(|delta| compile_candidate(delta, &ledger))
         .collect::<Vec<_>>();
     compiled.sort_by(|left, right| {
         right
@@ -91,9 +91,10 @@ pub fn compile_decision(
     }
 }
 
-fn compile_candidate(delta: &CandidateDelta) -> CompiledDecision {
-    let score =
-        delta.positive_amount() - delta.negative_amount() + verdict_bias(delta.verdict_hint);
+fn compile_candidate(delta: &CandidateDelta, ledger: &PressureLedger) -> CompiledDecision {
+    let score = delta.positive_amount() + ledger_alignment_bonus(delta, ledger)
+        - delta.negative_amount()
+        + verdict_bias(delta.verdict_hint);
     let verdict = if !delta.contraindications.is_empty() {
         AcquisitionVerdict::Reject
     } else if score >= 1.20 {
@@ -120,6 +121,7 @@ fn compile_candidate(delta: &CandidateDelta) -> CompiledDecision {
             .iter()
             .map(|delta| format!("-{}:{:?}", delta.reason, delta.kind)),
     );
+    reasons.extend(ledger_alignment_reasons(delta, ledger));
 
     CompiledDecision {
         action: delta.action.clone(),
@@ -127,6 +129,34 @@ fn compile_candidate(delta: &CandidateDelta) -> CompiledDecision {
         score,
         reasons,
     }
+}
+
+fn ledger_alignment_bonus(delta: &CandidateDelta, ledger: &PressureLedger) -> f32 {
+    delta
+        .positive
+        .iter()
+        .map(|delta| delta.amount * ledger_match_strength(ledger, delta.kind))
+        .sum()
+}
+
+fn ledger_alignment_reasons(delta: &CandidateDelta, ledger: &PressureLedger) -> Vec<String> {
+    delta
+        .positive
+        .iter()
+        .filter_map(|delta| {
+            let strength = ledger_match_strength(ledger, delta.kind);
+            (strength > 0.0).then(|| format!("+ledger_match:{:?}:{strength:.2}", delta.kind))
+        })
+        .collect()
+}
+
+fn ledger_match_strength(ledger: &PressureLedger, kind: super::PressureKind) -> f32 {
+    ledger
+        .items
+        .iter()
+        .filter(|item| item.kind == kind)
+        .map(|item| item.severity * item.confidence)
+        .fold(0.0_f32, f32::max)
 }
 
 fn verdict_bias(hint: VerdictHint) -> f32 {

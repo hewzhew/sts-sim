@@ -2,7 +2,10 @@ use crate::ai::card_reward_policy_v1::{
     build_card_reward_decision_context_v1, plan_card_reward_decision_v1,
     replay_card_reward_decision_v1, CardRewardPolicyConfigV1, PublicRewardDecisionPacketV1,
 };
-use crate::ai::strategic::CandidateAction;
+use crate::ai::strategic::{
+    compile_decision, CandidateAction, CandidateDelta, LedgerDelta, PressureHorizon, PressureKind,
+    PressureLedger, StrategicDecisionSite, StrategicDeckFacts, StrategicJob, StrategicSnapshot,
+};
 use crate::content::cards::CardId;
 use crate::content::relics::{RelicId, RelicState};
 use crate::state::rewards::RewardCard;
@@ -114,4 +117,75 @@ fn card_reward_replay_exposes_strategic_delta_summary() {
         .value_summary
         .iter()
         .any(|line| line.starts_with("strategic_role=")));
+}
+
+#[test]
+fn strategic_compiler_prefers_candidate_matching_active_pressure() {
+    let snapshot = StrategicSnapshot {
+        site: StrategicDecisionSite::CardReward,
+        act: 1,
+        floor: 3,
+        boss: None,
+        hp: 80,
+        max_hp: 80,
+        gold: 99,
+        deck: StrategicDeckFacts::default(),
+        route: None,
+        formation_needs: vec![StrategicJob::Block],
+    };
+    let mut ledger = PressureLedger::default();
+    ledger.push(
+        "missing_job:block",
+        PressureKind::MissingJob(StrategicJob::Block),
+        PressureHorizon::VisibleRoute,
+        1.0,
+        1.0,
+        vec!["test pressure".to_string()],
+    );
+
+    let mut frontload = CandidateDelta::empty(CandidateAction::Unknown {
+        id: "frontload".to_string(),
+        label: "frontload".to_string(),
+    });
+    frontload.positive.push(LedgerDelta {
+        kind: PressureKind::MissingJob(StrategicJob::Frontload),
+        amount: 0.60,
+        reason: "frontload_delta".to_string(),
+    });
+
+    let mut block = CandidateDelta::empty(CandidateAction::Unknown {
+        id: "block".to_string(),
+        label: "block".to_string(),
+    });
+    block.positive.push(LedgerDelta {
+        kind: PressureKind::MissingJob(StrategicJob::Block),
+        amount: 0.60,
+        reason: "block_delta".to_string(),
+    });
+
+    let trace = compile_decision(snapshot, ledger, 2, vec![frontload, block]);
+    let frontload_score = trace
+        .compiled
+        .iter()
+        .find(|decision| decision.action.candidate_id() == "frontload")
+        .expect("frontload candidate should compile")
+        .score;
+    let block_score = trace
+        .compiled
+        .iter()
+        .find(|decision| decision.action.candidate_id() == "block")
+        .expect("block candidate should compile")
+        .score;
+
+    assert!(
+        block_score > frontload_score,
+        "equal raw deltas should be ordered by active pressure alignment"
+    );
+    assert_eq!(
+        trace
+            .would_choose
+            .expect("trace should choose a non-rejected candidate")
+            .candidate_id(),
+        "block"
+    );
 }
