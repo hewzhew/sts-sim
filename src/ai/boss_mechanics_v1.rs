@@ -205,6 +205,7 @@ struct BossMechanicDeckFactsV1 {
     low_value_spam_count: usize,
     transition_burst_count: usize,
     execute_block_plan_count: usize,
+    dark_echo_block_plan_count: usize,
     feel_no_pain_count: usize,
     exhaust_access_count: usize,
     second_wind_count: usize,
@@ -281,6 +282,7 @@ impl BossMechanicDeckFactsV1 {
             low_value_spam_count: 0,
             transition_burst_count: 0,
             execute_block_plan_count: 0,
+            dark_echo_block_plan_count: 0,
             feel_no_pain_count: 0,
             exhaust_access_count: 0,
             second_wind_count: 0,
@@ -324,6 +326,10 @@ impl BossMechanicDeckFactsV1 {
                 facts.execute_block_plan_count =
                     facts.execute_block_plan_count.saturating_add(1);
             }
+            if is_direct_dark_echo_block_plan(card.id) {
+                facts.dark_echo_block_plan_count =
+                    facts.dark_echo_block_plan_count.saturating_add(1);
+            }
             if card.id == CardId::FeelNoPain {
                 facts.feel_no_pain_count = facts.feel_no_pain_count.saturating_add(1);
             }
@@ -336,9 +342,11 @@ impl BossMechanicDeckFactsV1 {
         }
         if facts.feel_no_pain_count > 0 && facts.exhaust_access_count > 0 {
             facts.execute_block_plan_count = facts.execute_block_plan_count.saturating_add(1);
+            facts.dark_echo_block_plan_count = facts.dark_echo_block_plan_count.saturating_add(1);
         }
         if facts.second_wind_count > 0 && facts.non_attack_count >= 4 {
             facts.execute_block_plan_count = facts.execute_block_plan_count.saturating_add(1);
+            facts.dark_echo_block_plan_count = facts.dark_echo_block_plan_count.saturating_add(1);
         }
         facts
     }
@@ -351,17 +359,18 @@ fn awakened_one_pressure(
     profile.push_pressure(BossMechanicPressurePointV1::PowerPlayPenalty);
     profile.push_pressure(BossMechanicPressurePointV1::DarkEchoBlockCheck);
     profile.push_pressure(BossMechanicPressurePointV1::CultistGrowthPressure);
-    profile.push_missing_answer(BossMechanicMissingAnswerV1::DarkEchoBlockPlan);
 
-    if facts.power_count > 0 {
+    if facts.power_count > 1 || facts.minor_power_count > 0 {
         profile.push_missing_answer(BossMechanicMissingAnswerV1::PhasePowerPlan);
     }
     if facts.minor_power_count > 0 {
         profile.push_bias(BossMechanicBiasV1::DelayMinorPowers);
     }
-    if facts.big_block_count == 0 {
+    if facts.dark_echo_block_plan_count == 0 {
+        profile.push_missing_answer(BossMechanicMissingAnswerV1::DarkEchoBlockPlan);
         profile.push_red_flag(BossMechanicRedFlagV1::NoDarkEchoBlockPlan);
-    } else {
+    }
+    if facts.big_block_count > 0 {
         profile.push_bias(BossMechanicBiasV1::PreferBigBlock);
     }
     if facts.enemy_strength_relic_pressure {
@@ -508,6 +517,13 @@ fn is_direct_execute_block_plan(card: CardId) -> bool {
     )
 }
 
+fn is_direct_dark_echo_block_plan(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier | CardId::Barricade
+    )
+}
+
 fn is_exhaust_access(card: CardId) -> bool {
     matches!(
         card,
@@ -609,6 +625,55 @@ mod tests {
         assert!(profile.has_red_flag(BossMechanicRedFlagV1::EnemyStrengthMultiHitRisk));
         assert!(profile.has_bias(BossMechanicBiasV1::DelayMinorPowers));
         assert!(profile.has_missing_answer(BossMechanicMissingAnswerV1::PhasePowerPlan));
+    }
+
+    #[test]
+    fn awakened_one_profile_only_marks_dark_echo_missing_when_no_block_plan_exists() {
+        let mut supported = RunState::new(744270980, 0, false, "Ironclad");
+        supported.act_num = 3;
+        supported.floor_num = 48;
+        supported.boss_key = Some(EncounterId::AwakenedOne);
+        replace_deck(
+            &mut supported,
+            &[
+                CardId::FeelNoPain,
+                CardId::SecondWind,
+                CardId::TrueGrit,
+                CardId::PowerThrough,
+                CardId::Defend,
+                CardId::Strike,
+            ],
+        );
+
+        let supported_profile =
+            boss_mechanic_pressure_profile_v1(&supported, EncounterId::AwakenedOne);
+
+        assert!(supported_profile.has_pressure(BossMechanicPressurePointV1::DarkEchoBlockCheck));
+        assert!(
+            !supported_profile.has_missing_answer(BossMechanicMissingAnswerV1::DarkEchoBlockPlan)
+        );
+        assert!(!supported_profile.has_red_flag(BossMechanicRedFlagV1::NoDarkEchoBlockPlan));
+        assert!(
+            !supported_profile.has_missing_answer(BossMechanicMissingAnswerV1::PhasePowerPlan)
+        );
+
+        let mut unsupported = RunState::new(744270980, 0, false, "Ironclad");
+        unsupported.act_num = 3;
+        unsupported.floor_num = 48;
+        unsupported.boss_key = Some(EncounterId::AwakenedOne);
+        replace_deck(
+            &mut unsupported,
+            &[CardId::Strike, CardId::Strike, CardId::Defend, CardId::Bash],
+        );
+
+        let unsupported_profile =
+            boss_mechanic_pressure_profile_v1(&unsupported, EncounterId::AwakenedOne);
+
+        assert!(
+            unsupported_profile
+                .has_missing_answer(BossMechanicMissingAnswerV1::DarkEchoBlockPlan)
+        );
+        assert!(unsupported_profile.has_red_flag(BossMechanicRedFlagV1::NoDarkEchoBlockPlan));
     }
 
     #[test]
