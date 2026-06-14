@@ -231,6 +231,12 @@ struct Args {
         help = "Print current-code shop candidate evidence and strategic deltas for the selected checkpoint session"
     )]
     inspect_shop_evidence: bool,
+
+    #[arg(
+        long = "inspect-deck-mutation",
+        help = "Print current-code DeckMutationCompiler plan groups for the selected checkpoint session"
+    )]
+    inspect_deck_mutation: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -525,6 +531,8 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
     println!("commands: {}", render_inspect_command_path(&commands));
     if args.inspect_shop_evidence {
         println!("{}", render_checkpoint_shop_evidence_v1(&session)?);
+    } else if args.inspect_deck_mutation {
+        println!("{}", render_checkpoint_deck_mutation_v1(&session)?);
     } else if args.inspect_search {
         let options = inspect_search_options_from_args(args)?;
         let outcome = session.apply_command(RunControlCommand::SearchCombat(options))?;
@@ -535,6 +543,25 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
         println!("{}", render_run_control_state(&session));
     }
     Ok(())
+}
+
+fn render_checkpoint_deck_mutation_v1(session: &RunControlSession) -> Result<String, String> {
+    let EngineState::RunPendingChoice(choice) = &session.engine_state else {
+        return Err(format!(
+            "--inspect-deck-mutation requires RunPendingChoice engine state, got {:?}",
+            session.engine_state
+        ));
+    };
+    let decision = sts_simulator::ai::deck_mutation_compiler_v1::compile_deck_mutation_decision_v1(
+        &session.run_state,
+        choice,
+        sts_simulator::ai::deck_mutation_compiler_v1::DeckMutationCompilerModeV1::Inspect,
+    );
+    Ok(
+        sts_simulator::ai::deck_mutation_compiler_v1::render_compiled_deck_mutation_decision_v1(
+            &decision,
+        ),
+    )
 }
 
 fn render_checkpoint_shop_evidence_v1(session: &RunControlSession) -> Result<String, String> {
@@ -1160,6 +1187,28 @@ mod tests {
         assert_eq!(args.inspect_act, Some(2));
         assert_eq!(args.inspect_floor, Some(18));
         assert!(args.inspect_shop_evidence);
+    }
+
+    #[test]
+    fn campaign_cli_accepts_checkpoint_deck_mutation_inspection() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-deck-mutation",
+        ]);
+
+        assert_eq!(
+            args.inspect_checkpoint,
+            Some(PathBuf::from("latest.checkpoint.json"))
+        );
+        assert_eq!(
+            args.inspect_report,
+            Some(PathBuf::from("latest.campaign.json"))
+        );
+        assert!(args.inspect_deck_mutation);
     }
 
     #[test]

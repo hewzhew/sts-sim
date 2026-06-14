@@ -1,5 +1,6 @@
 use crate::ai::deck_mutation_compiler_v1::{
-    compile_deck_mutation_decision_v1, DeckMutationCompilerModeV1, DeckMutationPlanRoleV1,
+    compile_deck_mutation_decision_v1, render_compiled_deck_mutation_decision_v1,
+    DeckMutationCompilerModeV1, DeckMutationPlanRoleV1,
 };
 use crate::content::cards::CardId;
 use crate::runtime::combat::CombatCard;
@@ -73,6 +74,29 @@ fn compiler_execute_one_uses_legacy_selected_plan() {
     assert_eq!(selected.step.command, "select 0");
     assert_eq!(selected.role, DeckMutationPlanRoleV1::PolicyPreferred);
     assert!(selected.allowed_consumers.execute_autopilot);
+}
+
+#[test]
+fn compiler_render_exposes_active_and_inspect_only_plan_groups() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state
+        .master_deck
+        .push(CombatCard::new(CardId::TrueGrit, 99));
+    let choice = choice(RunPendingChoiceReason::Purge, 1);
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice,
+        DeckMutationCompilerModeV1::BranchTopK { max_active: 12 },
+    );
+
+    let rendered = render_compiled_deck_mutation_decision_v1(&decision);
+
+    assert!(rendered.contains("DeckMutationCompilerV1"));
+    assert!(rendered.contains("selected_plan:"));
+    assert!(rendered.contains("branch_active:"));
+    assert!(rendered.contains("inspect_only:"));
+    assert!(rendered.contains("True Grit"));
+    assert!(rendered.contains("role=InspectOnly"));
 }
 
 fn choice(reason: RunPendingChoiceReason, count: usize) -> RunPendingChoiceState {

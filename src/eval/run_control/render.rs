@@ -112,6 +112,18 @@ pub fn render_run_control_details(session: &RunControlSession) -> String {
                 ),
             );
             render_master_deck(&session.run_state, &mut out);
+            let decision = crate::ai::deck_mutation_compiler_v1::compile_deck_mutation_decision_v1(
+                &session.run_state,
+                choice,
+                crate::ai::deck_mutation_compiler_v1::DeckMutationCompilerModeV1::Inspect,
+            );
+            push_line(&mut out, "");
+            out.push_str(
+                &crate::ai::deck_mutation_compiler_v1::render_compiled_deck_mutation_decision_v1(
+                    &decision,
+                ),
+            );
+            push_line(&mut out, "");
         }
         EngineState::CombatStart(request) => {
             push_line(

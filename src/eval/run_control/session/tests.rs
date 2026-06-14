@@ -1151,6 +1151,33 @@ fn run_control_auto_run_selects_starter_at_run_pending_purge_choice() {
 }
 
 #[test]
+fn run_control_details_include_deck_mutation_compiler_groups() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session
+        .run_state
+        .master_deck
+        .push(crate::runtime::combat::CombatCard::new(
+            crate::content::cards::CardId::TrueGrit,
+            99,
+        ));
+    session.engine_state =
+        EngineState::RunPendingChoice(crate::state::core::RunPendingChoiceState {
+            min_choices: 1,
+            max_choices: 1,
+            reason: crate::state::core::RunPendingChoiceReason::Purge,
+            return_state: Box::new(EngineState::MapNavigation),
+        });
+
+    let rendered = render_run_control_details(&session);
+
+    assert!(rendered.contains("DeckMutationCompilerV1"));
+    assert!(rendered.contains("branch_active:"));
+    assert!(rendered.contains("inspect_only:"));
+    assert!(rendered.contains("True Grit"));
+    assert!(rendered.contains("role=InspectOnly"));
+}
+
+#[test]
 fn run_control_auto_run_executes_single_forced_run_pending_choice() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.master_deck = vec![crate::runtime::combat::CombatCard::new(
