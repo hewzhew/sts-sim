@@ -34,6 +34,16 @@ pub struct RoutePathSummaryV1 {
     pub max_treasures: usize,
     pub first_shop_floor: Option<i32>,
     pub first_fire_floor: Option<i32>,
+    #[serde(default)]
+    pub min_damage_rooms_before_recovery: usize,
+    #[serde(default)]
+    pub max_damage_rooms_before_recovery: usize,
+    #[serde(default)]
+    pub min_unknowns_before_recovery: usize,
+    #[serde(default)]
+    pub max_unknowns_before_recovery: usize,
+    #[serde(default)]
+    pub paths_with_recovery_before_damage: usize,
     pub first_elite: RouteFirstEliteSegmentV1,
 }
 

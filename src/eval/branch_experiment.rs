@@ -237,7 +237,7 @@ fn prepare_branch_experiment_start(
                     search: branch_experiment_search_options(config),
                     max_operations: Some(config.auto_max_operations),
                     route: RunControlRouteAutomationMode::Planner,
-                    allow_route_reject_unless_forced: true,
+                    allow_route_reject_unless_forced: false,
                 },
             )?;
         } else {
@@ -569,7 +569,7 @@ fn advance_to_experiment_boundary(
             search: branch_experiment_search_options(config),
             max_operations: Some(config.auto_max_operations),
             route: RunControlRouteAutomationMode::Planner,
-            allow_route_reject_unless_forced: true,
+            allow_route_reject_unless_forced: false,
         },
     );
 

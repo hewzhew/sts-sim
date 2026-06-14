@@ -116,6 +116,92 @@ fn route_path_summary_tracks_first_elite_preparation_window() {
 }
 
 #[test]
+fn route_path_summary_tracks_recovery_pressure_window() {
+    let run = run_with_start_paths(&[
+        &[RoomType::MonsterRoom, RoomType::RestRoom],
+        &[RoomType::RestRoom, RoomType::MonsterRoom],
+    ]);
+
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let damage_before_recovery = trace
+        .candidates
+        .iter()
+        .find(|candidate| candidate.target.x == 0)
+        .expect("trace should include monster-first route");
+    let recovery_before_damage = trace
+        .candidates
+        .iter()
+        .find(|candidate| candidate.target.x == 1)
+        .expect("trace should include rest-first route");
+
+    assert_eq!(
+        damage_before_recovery
+            .path_summary
+            .min_damage_rooms_before_recovery,
+        1
+    );
+    assert_eq!(
+        damage_before_recovery
+            .path_summary
+            .paths_with_recovery_before_damage,
+        0
+    );
+    assert_eq!(
+        recovery_before_damage
+            .path_summary
+            .min_damage_rooms_before_recovery,
+        0
+    );
+    assert_eq!(
+        recovery_before_damage
+            .path_summary
+            .paths_with_recovery_before_damage,
+        1
+    );
+}
+
+#[test]
+fn very_low_hp_rejects_forced_damage_before_recovery() {
+    let mut run = run_with_start_paths(&[
+        &[RoomType::MonsterRoom, RoomType::RestRoom],
+        &[RoomType::RestRoom, RoomType::MonsterRoom],
+    ]);
+    run.current_hp = 8;
+    run.max_hp = 80;
+
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let damage_before_recovery = trace
+        .candidates
+        .iter()
+        .find(|candidate| candidate.target.x == 0)
+        .expect("trace should include monster-first route");
+    let recovery_before_damage = trace
+        .candidates
+        .iter()
+        .find(|candidate| candidate.target.x == 1)
+        .expect("trace should include rest-first route");
+
+    assert_eq!(
+        damage_before_recovery.safety,
+        RouteSafetyFlagV1::RejectUnlessNoAlternative
+    );
+    assert_ne!(
+        recovery_before_damage.safety,
+        RouteSafetyFlagV1::RejectUnlessNoAlternative
+    );
+    assert_eq!(trace.selected_index, Some(0));
+    assert_eq!(trace.candidates[0].target.x, 1);
+}
+
+#[test]
 fn route_score_exposes_first_elite_preparation_as_its_own_term() {
     let run = run_with_start_paths(&[
         &[RoomType::MonsterRoom, RoomType::MonsterRoomElite],

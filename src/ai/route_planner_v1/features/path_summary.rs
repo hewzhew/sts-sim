@@ -18,6 +18,10 @@ struct PathStats {
     unknowns_before_first_elite: usize,
     fires_before_first_elite: usize,
     shops_before_first_elite: usize,
+    first_recovery_seen: bool,
+    damage_rooms_before_first_recovery: usize,
+    unknowns_before_first_recovery: usize,
+    recovery_before_damage: bool,
 }
 
 pub fn summarize_route_from(
@@ -66,6 +70,18 @@ pub fn summarize_route_from(
             .iter()
             .filter_map(|stats| stats.first_fire_floor)
             .min(),
+        min_damage_rooms_before_recovery: min(|stats| {
+            stats.damage_rooms_before_first_recovery
+        }),
+        max_damage_rooms_before_recovery: max(|stats| {
+            stats.damage_rooms_before_first_recovery
+        }),
+        min_unknowns_before_recovery: min(|stats| stats.unknowns_before_first_recovery),
+        max_unknowns_before_recovery: max(|stats| stats.unknowns_before_first_recovery),
+        paths_with_recovery_before_damage: paths
+            .iter()
+            .filter(|stats| stats.recovery_before_damage)
+            .count(),
         first_elite: first_elite_segment(&paths),
     }
 }
@@ -94,6 +110,11 @@ fn empty_summary() -> RoutePathSummaryV1 {
         max_treasures: 0,
         first_shop_floor: None,
         first_fire_floor: None,
+        min_damage_rooms_before_recovery: 0,
+        max_damage_rooms_before_recovery: 0,
+        min_unknowns_before_recovery: 0,
+        max_unknowns_before_recovery: 0,
+        paths_with_recovery_before_damage: 0,
         first_elite: RouteFirstEliteSegmentV1::default(),
     }
 }
@@ -169,6 +190,9 @@ fn update_path_stats(mut stats: PathStats, node: &MapRoomNode) -> PathStats {
             if !stats.first_elite_seen {
                 stats.hallway_fights_before_first_elite += 1;
             }
+            if !stats.first_recovery_seen {
+                stats.damage_rooms_before_first_recovery += 1;
+            }
         }
         Some(RoomType::MonsterRoomElite) => {
             stats.elites += 1;
@@ -178,12 +202,20 @@ fn update_path_stats(mut stats: PathStats, node: &MapRoomNode) -> PathStats {
             if !stats.first_elite_seen {
                 stats.first_elite_seen = true;
             }
+            if !stats.first_recovery_seen {
+                stats.damage_rooms_before_first_recovery += 1;
+            }
         }
         Some(RoomType::ShopRoom) => {
             stats.shops += 1;
             stats.first_shop_floor.get_or_insert(node.y + 1);
             if !stats.first_elite_seen {
                 stats.shops_before_first_elite += 1;
+            }
+            if !stats.first_recovery_seen {
+                stats.recovery_before_damage = stats.damage_rooms_before_first_recovery == 0
+                    && stats.unknowns_before_first_recovery == 0;
+                stats.first_recovery_seen = true;
             }
         }
         Some(RoomType::RestRoom) => {
@@ -192,11 +224,19 @@ fn update_path_stats(mut stats: PathStats, node: &MapRoomNode) -> PathStats {
             if !stats.first_elite_seen {
                 stats.fires_before_first_elite += 1;
             }
+            if !stats.first_recovery_seen {
+                stats.recovery_before_damage = stats.damage_rooms_before_first_recovery == 0
+                    && stats.unknowns_before_first_recovery == 0;
+                stats.first_recovery_seen = true;
+            }
         }
         Some(RoomType::EventRoom) => {
             stats.unknowns += 1;
             if !stats.first_elite_seen {
                 stats.unknowns_before_first_elite += 1;
+            }
+            if !stats.first_recovery_seen {
+                stats.unknowns_before_first_recovery += 1;
             }
         }
         Some(RoomType::TreasureRoom) => stats.treasures += 1,

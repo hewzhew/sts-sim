@@ -80,7 +80,13 @@ pub(super) fn safety_flag(
     if forced_elite && no_pre_elite_bailout && needs.can_take_elite < 0.45 {
         return RouteSafetyFlagV1::RejectUnlessNoAlternative;
     }
+    if very_low_hp_forced_damage_before_recovery(path, needs) {
+        return RouteSafetyFlagV1::RejectUnlessNoAlternative;
+    }
     if first_elite_is_underprepared(path) && needs.can_take_elite < 0.65 {
+        return RouteSafetyFlagV1::RiskyButAllowed;
+    }
+    if low_hp_damage_before_recovery(path, needs) {
         return RouteSafetyFlagV1::RiskyButAllowed;
     }
     if features.death_risk > 0.35 || needs.avoid_damage > 0.65 && expected_damage_room(features) {
@@ -155,6 +161,29 @@ pub(super) fn route_reasons(
     if path.max_shops > 0 {
         reasons.push(format!("shop access exists: {}", path.max_shops));
     }
+    if path.min_damage_rooms_before_recovery > 0 {
+        cautions.push(format!(
+            "forced damage before recovery: {} room(s)",
+            format_range(
+                path.min_damage_rooms_before_recovery,
+                path.max_damage_rooms_before_recovery
+            )
+        ));
+    } else if path.max_damage_rooms_before_recovery > 0 {
+        reasons.push(format!(
+            "some continuations can recover before damage; worst pre-recovery damage rooms={}",
+            path.max_damage_rooms_before_recovery
+        ));
+    }
+    if path.min_unknowns_before_recovery > 0 {
+        cautions.push(format!(
+            "forced ? before recovery: {}",
+            format_range(
+                path.min_unknowns_before_recovery,
+                path.max_unknowns_before_recovery
+            )
+        ));
+    }
     if path.path_count > 1 {
         reasons.push(format!(
             "keeps {} visible continuations open",
@@ -213,6 +242,20 @@ fn first_elite_is_underprepared(path: &RoutePathSummaryV1) -> bool {
         && segment.max_hallway_fights_before < 2
         && !segment.can_bail_to_rest_before
         && !segment.can_bail_to_shop_before
+}
+
+fn very_low_hp_forced_damage_before_recovery(
+    path: &RoutePathSummaryV1,
+    needs: &NeedVectorV1,
+) -> bool {
+    needs.need_heal >= 0.95 && path.min_damage_rooms_before_recovery > 0
+}
+
+fn low_hp_damage_before_recovery(path: &RoutePathSummaryV1, needs: &NeedVectorV1) -> bool {
+    (needs.need_heal >= 0.75 && path.min_damage_rooms_before_recovery > 0)
+        || needs.need_heal >= 0.95
+            && path.min_unknowns_before_recovery > 0
+            && path.paths_with_recovery_before_damage == 0
 }
 
 fn forced_path_penalty(path: &RoutePathSummaryV1, needs: &NeedVectorV1) -> f32 {

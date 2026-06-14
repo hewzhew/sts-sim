@@ -100,7 +100,7 @@ pub fn render_route_decision_trace_v1(trace: &RouteDecisionTraceV1) -> String {
 
 fn path_line(path: &RoutePathSummaryV1) -> String {
     format!(
-        "paths={} elites={} fires={} shops={} unknowns={} treasures={} early_pressure={} first_elite={}",
+        "paths={} elites={} fires={} shops={} unknowns={} treasures={} early_pressure={} recovery={} first_elite={}",
         path.path_count,
         format_range(path.min_elites, path.max_elites),
         format_range(path.min_fires, path.max_fires),
@@ -108,7 +108,23 @@ fn path_line(path: &RoutePathSummaryV1) -> String {
         format_range(path.min_unknowns, path.max_unknowns),
         format_range(path.min_treasures, path.max_treasures),
         format_range(path.min_early_pressure, path.max_early_pressure),
+        recovery_pressure_line(path),
         first_elite_line(path),
+    )
+}
+
+fn recovery_pressure_line(path: &RoutePathSummaryV1) -> String {
+    format!(
+        "damage_before_recovery:{} ?_before_recovery:{} immediate_recovery_paths:{}",
+        format_range(
+            path.min_damage_rooms_before_recovery,
+            path.max_damage_rooms_before_recovery
+        ),
+        format_range(
+            path.min_unknowns_before_recovery,
+            path.max_unknowns_before_recovery
+        ),
+        path.paths_with_recovery_before_damage
     )
 }
 
