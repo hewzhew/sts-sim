@@ -286,7 +286,7 @@ fn purchase_candidate_evidence(
     ];
     evidence.extend(extra_evidence);
     let mut risks = if can_buy {
-        vec!["purchase must clear high-impact priority gate".to_string()]
+        vec!["purchase must clear compiled shop plan evaluation".to_string()]
     } else {
         Vec::new()
     };

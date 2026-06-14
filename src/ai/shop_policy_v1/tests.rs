@@ -234,6 +234,79 @@ fn shop_strategic_delta_maps_champ_execute_answer_through_component_report() {
 }
 
 #[test]
+fn compiled_shop_card_purchase_can_be_approved_by_strategic_verdict() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 18;
+    run_state.boss_key = Some(EncounterId::TheChamp);
+    run_state.gold = 125;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Carnage,
+        upgrades: 0,
+        price: 36,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    assert!(
+        !context.conversion_pressure,
+        "test requires no legacy conversion-pressure approval path"
+    );
+    let carnage = shop_card_candidate(&context, CardId::Carnage);
+    assert_eq!(carnage.purchase_priority, Some(250));
+    assert!(
+        carnage.purchase_priority.unwrap()
+            < ShopPolicyConfigV1::default().high_impact_card_purchase_priority_threshold,
+        "test requires legacy priority below high-impact gate"
+    );
+
+    let strategic_trace = crate::ai::strategic::strategic_trace_for_shop(&context);
+    let carnage_delta = buy_card_delta(&strategic_trace, CardId::Carnage);
+    let strategic_decision = strategic_trace
+        .compiled_for_action(&carnage_delta.action)
+        .expect("strategic compiler should evaluate Carnage");
+    assert!(
+        strategic_decision.verdict.allows_behavior_acquisition(),
+        "test requires strategic compiler to allow the purchase, got {:?}",
+        strategic_decision
+    );
+
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecuteOne,
+    );
+    let carnage_plan = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| {
+            candidate.plan.steps.iter().any(|step| {
+                matches!(
+                    step,
+                    ShopPlanStepV1::BuyCard {
+                        card: CardId::Carnage,
+                        ..
+                    }
+                )
+            })
+        })
+        .expect("Carnage shop plan should exist");
+
+    assert_eq!(carnage_plan.evaluation.verdict, ShopPlanVerdictV1::Allow);
+    assert!(
+        carnage_plan
+            .evaluation
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("strategic approval")),
+        "strategic approval should be the purchase reason, got {:?}",
+        carnage_plan.evaluation.reasons
+    );
+}
+
+#[test]
 fn shop_policy_converts_high_gold_into_affordable_relic_even_below_old_high_impact_threshold() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 3;

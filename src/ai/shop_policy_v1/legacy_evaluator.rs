@@ -1,6 +1,8 @@
 use crate::ai::decision_tags_v1::TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK;
 use crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1;
-use crate::ai::strategic::{CandidateAction, StrategicDecisionTrace};
+use crate::ai::strategic::{
+    AcquisitionVerdict, CandidateAction, CompiledDecision, StrategicDecisionTrace,
+};
 
 use super::component_scorer::score_shop_plan_components_v1;
 use super::types::{
@@ -137,11 +139,32 @@ fn evaluate_purchase_v1(
     if let Some(reason) = blocking_purchase_risk_reason_v1(candidate) {
         return ShopPlanEvaluationV1::block(Some(priority), reason);
     }
-    if !purchase_allowed_by_strategic_trace(target, strategic_trace) {
-        return ShopPlanEvaluationV1::block(
-            Some(priority),
-            "strategic trace blocks shop purchase behavior acquisition",
-        );
+    if let ShopPurchaseTargetV1::Card { .. } = target {
+        let Some(strategic_decision) = purchase_strategic_decision(target, strategic_trace) else {
+            return ShopPlanEvaluationV1::block(
+                Some(priority),
+                "strategic trace has no shop card purchase decision",
+            );
+        };
+        if !strategic_decision.verdict.allows_behavior_acquisition() {
+            return ShopPlanEvaluationV1::block(
+                Some(priority),
+                format!(
+                    "strategic trace blocks shop purchase behavior acquisition verdict={:?} score={:.2}",
+                    strategic_decision.verdict, strategic_decision.score
+                ),
+            );
+        }
+        if priority <= 0 && strategic_decision.verdict != AcquisitionVerdict::MustTake {
+            return ShopPlanEvaluationV1::block(
+                Some(priority),
+                format!(
+                    "shop purchase legacy estimate is non-positive ({priority}); strategic verdict {:?} is not MustTake",
+                    strategic_decision.verdict
+                ),
+            );
+        }
+        return strategic_purchase_approval_v1(priority, target, strategic_decision);
     }
 
     let threshold = purchase_priority_threshold(target, config);
@@ -270,22 +293,53 @@ fn blocking_purchase_risk_reason_v1(candidate: &ShopCandidateEvidenceV1) -> Opti
         .map(|risk| format!("shop purchase blocked by {risk}"))
 }
 
-fn purchase_allowed_by_strategic_trace(
+fn purchase_strategic_decision(
     target: ShopPurchaseTargetV1,
     strategic_trace: &StrategicDecisionTrace,
-) -> bool {
+) -> Option<&CompiledDecision> {
     let ShopPurchaseTargetV1::Card { index, card } = target else {
-        return true;
+        return None;
     };
     let action = CandidateAction::BuyCard {
         shop_index: index,
         card,
         gold: 0,
     };
-    strategic_trace
-        .compiled_for_action(&action)
-        .map(|decision| decision.verdict.allows_behavior_acquisition())
-        .unwrap_or(false)
+    strategic_trace.compiled_for_action(&action)
+}
+
+fn strategic_purchase_approval_v1(
+    legacy_priority: i32,
+    target: ShopPurchaseTargetV1,
+    strategic_decision: &CompiledDecision,
+) -> ShopPlanEvaluationV1 {
+    let tier = match strategic_decision.verdict {
+        AcquisitionVerdict::MustTake => 330,
+        AcquisitionVerdict::StrongTake => 320,
+        AcquisitionVerdict::ContextTake => 300,
+        _ => 0,
+    };
+    let strategic_score = (strategic_decision.score.max(0.0) * 1000.0).round() as i32;
+    let score = strategic_score
+        .saturating_add(legacy_priority.max(0))
+        .saturating_add(purchase_tiebreaker(target));
+    let confidence = match strategic_decision.verdict {
+        AcquisitionVerdict::MustTake => 0.82,
+        AcquisitionVerdict::StrongTake => 0.76,
+        AcquisitionVerdict::ContextTake => 0.68,
+        _ => 0.0,
+    };
+
+    ShopPlanEvaluationV1::allow(
+        tier,
+        score,
+        confidence,
+        Some(legacy_priority),
+        format!(
+            "strategic approval: verdict={:?} score={:.2}; legacy priority {legacy_priority} retained as tie-breaker",
+            strategic_decision.verdict, strategic_decision.score
+        ),
+    )
 }
 
 fn purchase_tiebreaker(target: ShopPurchaseTargetV1) -> i32 {
