@@ -253,4 +253,15 @@ mod tests {
                     .contains(&StrengthConversionRequirementV1::AttackSkillPowerSameTurn)
         }));
     }
+
+    #[test]
+    fn jax_counts_as_persistent_strength_source() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.add_card_to_deck(CardId::JAX);
+
+        let profile = strength_profile_v1(&run_state);
+
+        assert_eq!(profile.stable_sources, 1);
+        assert_eq!(profile.temporary_bursts, 0);
+    }
 }

@@ -36,7 +36,7 @@ pub fn card_mechanics_profile_v1(card: CardId) -> CardMechanicsProfileV1 {
     CardMechanicsProfileV1 {
         persistent_strength_source: matches!(
             card,
-            CardId::Inflame | CardId::SpotWeakness | CardId::DemonForm
+            CardId::Inflame | CardId::SpotWeakness | CardId::DemonForm | CardId::JAX
         ),
         temporary_strength_burst: matches!(card, CardId::Flex),
         applies_strength_down_debuff: matches!(card, CardId::Flex),

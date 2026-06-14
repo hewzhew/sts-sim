@@ -204,6 +204,11 @@ struct BossMechanicDeckFactsV1 {
     key_card_count: usize,
     low_value_spam_count: usize,
     transition_burst_count: usize,
+    execute_block_plan_count: usize,
+    feel_no_pain_count: usize,
+    exhaust_access_count: usize,
+    second_wind_count: usize,
+    non_attack_count: usize,
     enemy_strength_relic_pressure: bool,
 }
 
@@ -265,6 +270,7 @@ impl BossMechanicPressureProfileV1 {
 
 impl BossMechanicDeckFactsV1 {
     fn from_run_state(run_state: &RunState) -> Self {
+        let strength_profile = crate::ai::strength_profile_v1::strength_profile_v1(run_state);
         let mut facts = Self {
             power_count: 0,
             minor_power_count: 0,
@@ -274,6 +280,11 @@ impl BossMechanicDeckFactsV1 {
             key_card_count: 0,
             low_value_spam_count: 0,
             transition_burst_count: 0,
+            execute_block_plan_count: 0,
+            feel_no_pain_count: 0,
+            exhaust_access_count: 0,
+            second_wind_count: 0,
+            non_attack_count: 0,
             enemy_strength_relic_pressure: run_state
                 .relics
                 .iter()
@@ -284,6 +295,9 @@ impl BossMechanicDeckFactsV1 {
             let def = get_card_definition(card.id);
             if def.card_type == CardType::Power {
                 facts.power_count = facts.power_count.saturating_add(1);
+            }
+            if def.card_type != CardType::Attack {
+                facts.non_attack_count = facts.non_attack_count.saturating_add(1);
             }
             if is_minor_power(card.id) {
                 facts.minor_power_count = facts.minor_power_count.saturating_add(1);
@@ -303,9 +317,28 @@ impl BossMechanicDeckFactsV1 {
             if is_low_value_spam(card.id) {
                 facts.low_value_spam_count = facts.low_value_spam_count.saturating_add(1);
             }
-            if is_transition_burst(card.id) {
+            if is_transition_burst(card.id, &strength_profile) {
                 facts.transition_burst_count = facts.transition_burst_count.saturating_add(1);
             }
+            if is_direct_execute_block_plan(card.id) {
+                facts.execute_block_plan_count =
+                    facts.execute_block_plan_count.saturating_add(1);
+            }
+            if card.id == CardId::FeelNoPain {
+                facts.feel_no_pain_count = facts.feel_no_pain_count.saturating_add(1);
+            }
+            if card.id == CardId::SecondWind {
+                facts.second_wind_count = facts.second_wind_count.saturating_add(1);
+            }
+            if is_exhaust_access(card.id) {
+                facts.exhaust_access_count = facts.exhaust_access_count.saturating_add(1);
+            }
+        }
+        if facts.feel_no_pain_count > 0 && facts.exhaust_access_count > 0 {
+            facts.execute_block_plan_count = facts.execute_block_plan_count.saturating_add(1);
+        }
+        if facts.second_wind_count > 0 && facts.non_attack_count >= 4 {
+            facts.execute_block_plan_count = facts.execute_block_plan_count.saturating_add(1);
         }
         facts
     }
@@ -379,16 +412,17 @@ fn donu_deca_pressure(
 fn champ_pressure(facts: &BossMechanicDeckFactsV1, profile: &mut BossMechanicPressureProfileV1) {
     profile.push_pressure(BossMechanicPressurePointV1::ChampTransitionWindow);
     profile.push_pressure(BossMechanicPressurePointV1::ExecuteBlockCheck);
-    profile.push_missing_answer(BossMechanicMissingAnswerV1::ChampTransitionBurst);
-    profile.push_missing_answer(BossMechanicMissingAnswerV1::ExecuteBlockPlan);
     profile.push_bias(BossMechanicBiasV1::PreferTransitionBurst);
 
     if facts.transition_burst_count == 0 {
+        profile.push_missing_answer(BossMechanicMissingAnswerV1::ChampTransitionBurst);
         profile.push_red_flag(BossMechanicRedFlagV1::PrematureChampTransitionRisk);
     }
-    if facts.big_block_count == 0 {
+    if facts.execute_block_plan_count == 0 {
+        profile.push_missing_answer(BossMechanicMissingAnswerV1::ExecuteBlockPlan);
         profile.push_red_flag(BossMechanicRedFlagV1::NoExecuteBlockPlan);
-    } else {
+    }
+    if facts.big_block_count > 0 {
         profile.push_bias(BossMechanicBiasV1::PreferBigBlock);
     }
 }
@@ -467,6 +501,25 @@ fn is_big_block(card: CardId) -> bool {
     )
 }
 
+fn is_direct_execute_block_plan(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier | CardId::Barricade
+    )
+}
+
+fn is_exhaust_access(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::BurningPact
+            | CardId::Corruption
+            | CardId::FiendFire
+            | CardId::SecondWind
+            | CardId::SeverSoul
+            | CardId::TrueGrit
+    )
+}
+
 fn is_key_card_for_stasis(card: CardId) -> bool {
     matches!(
         card,
@@ -491,17 +544,24 @@ fn is_low_value_spam(card: CardId) -> bool {
     )
 }
 
-fn is_transition_burst(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::LimitBreak
-            | CardId::DemonForm
-            | CardId::HeavyBlade
-            | CardId::Carnage
-            | CardId::Bludgeon
-            | CardId::Offering
-            | CardId::Whirlwind
-    )
+fn is_transition_burst(
+    card: CardId,
+    strength: &crate::ai::strength_profile_v1::StrengthProfileV1,
+) -> bool {
+    match card {
+        CardId::DemonForm
+        | CardId::Carnage
+        | CardId::Bludgeon
+        | CardId::Offering
+        | CardId::Whirlwind => true,
+        CardId::HeavyBlade => {
+            strength.stable_sources > 0
+                || strength.temporary_bursts > 0
+                || strength.convertible_potential_count > 0
+        }
+        CardId::LimitBreak => strength.stable_sources > 0 || strength.temporary_bursts > 0,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -577,5 +637,89 @@ mod tests {
         assert!(profile.has_red_flag(BossMechanicRedFlagV1::NoHyperbeamBlockPlan));
         assert!(profile.has_missing_answer(BossMechanicMissingAnswerV1::Block50OrKillBeforeBeam));
         assert!(profile.has_bias(BossMechanicBiasV1::DefensivePotionPriority));
+    }
+
+    #[test]
+    fn champ_profile_only_marks_answers_missing_when_no_plan_exists() {
+        let mut run = RunState::new(744270980, 0, false, "Ironclad");
+        run.act_num = 2;
+        run.floor_num = 31;
+        run.boss_key = Some(EncounterId::TheChamp);
+        replace_deck(
+            &mut run,
+            &[
+                CardId::Carnage,
+                CardId::SecondWind,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::GhostlyArmor,
+                CardId::ShrugItOff,
+            ],
+        );
+
+        let profile = boss_mechanic_pressure_profile_v1(&run, EncounterId::TheChamp);
+
+        assert_eq!(profile.boss, EncounterId::TheChamp);
+        assert!(profile.has_pressure(BossMechanicPressurePointV1::ChampTransitionWindow));
+        assert!(profile.has_pressure(BossMechanicPressurePointV1::ExecuteBlockCheck));
+        assert!(!profile.has_missing_answer(BossMechanicMissingAnswerV1::ChampTransitionBurst));
+        assert!(!profile.has_missing_answer(BossMechanicMissingAnswerV1::ExecuteBlockPlan));
+        assert!(!profile.has_red_flag(BossMechanicRedFlagV1::PrematureChampTransitionRisk));
+        assert!(!profile.has_red_flag(BossMechanicRedFlagV1::NoExecuteBlockPlan));
+    }
+
+    #[test]
+    fn champ_profile_marks_starter_like_deck_as_missing_burst_and_execute_plan() {
+        let mut run = RunState::new(744270980, 0, false, "Ironclad");
+        run.act_num = 2;
+        run.floor_num = 31;
+        run.boss_key = Some(EncounterId::TheChamp);
+        replace_deck(
+            &mut run,
+            &[
+                CardId::Strike,
+                CardId::Strike,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Bash,
+            ],
+        );
+
+        let profile = boss_mechanic_pressure_profile_v1(&run, EncounterId::TheChamp);
+
+        assert!(profile.has_missing_answer(BossMechanicMissingAnswerV1::ChampTransitionBurst));
+        assert!(profile.has_missing_answer(BossMechanicMissingAnswerV1::ExecuteBlockPlan));
+        assert!(profile.has_red_flag(BossMechanicRedFlagV1::PrematureChampTransitionRisk));
+        assert!(profile.has_red_flag(BossMechanicRedFlagV1::NoExecuteBlockPlan));
+    }
+
+    #[test]
+    fn champ_profile_does_not_count_strength_payoff_as_burst_without_strength_source() {
+        let mut payoff_only = RunState::new(744270980, 0, false, "Ironclad");
+        payoff_only.act_num = 2;
+        payoff_only.floor_num = 31;
+        payoff_only.boss_key = Some(EncounterId::TheChamp);
+        replace_deck(&mut payoff_only, &[CardId::HeavyBlade, CardId::PowerThrough]);
+
+        let payoff_only_profile =
+            boss_mechanic_pressure_profile_v1(&payoff_only, EncounterId::TheChamp);
+
+        assert!(
+            payoff_only_profile
+                .has_missing_answer(BossMechanicMissingAnswerV1::ChampTransitionBurst)
+        );
+
+        let mut supported = payoff_only.clone();
+        replace_deck(
+            &mut supported,
+            &[CardId::HeavyBlade, CardId::JAX, CardId::PowerThrough],
+        );
+
+        let supported_profile = boss_mechanic_pressure_profile_v1(&supported, EncounterId::TheChamp);
+
+        assert!(
+            !supported_profile
+                .has_missing_answer(BossMechanicMissingAnswerV1::ChampTransitionBurst)
+        );
     }
 }
