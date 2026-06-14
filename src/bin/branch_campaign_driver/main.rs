@@ -129,6 +129,12 @@ struct Args {
     #[arg(long, value_enum, default_value_t = BranchCampaignCombatRetryArgV1::OnStall)]
     combat_retry: BranchCampaignCombatRetryArgV1,
 
+    #[arg(
+        long,
+        help = "Override the wall-clock budget used by the one-shot combat retry pass"
+    )]
+    combat_retry_wall_ms: Option<u64>,
+
     #[arg(long, default_value_t = 20)]
     min_acceptable_victory_hp_percent: u8,
 
@@ -1065,6 +1071,7 @@ fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, Stri
             }
             BranchCampaignCombatRetryArgV1::Disabled => BranchCampaignCombatRetryPolicyV1::Disabled,
         },
+        combat_retry_wall_ms: args.combat_retry_wall_ms,
         include_event_reward_skip: false,
         min_acceptable_victory_hp_percent: args.min_acceptable_victory_hp_percent,
         prefix_commands,
@@ -1381,6 +1388,21 @@ mod tests {
             config.combat_retry_policy,
             BranchCampaignCombatRetryPolicyV1::Immediate
         );
+    }
+
+    #[test]
+    fn campaign_cli_accepts_explicit_combat_retry_wall_budget() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "--preset",
+            "quick",
+            "--combat-retry-wall-ms",
+            "1000",
+        ])
+        .expect("args parse");
+        let config = campaign_config_from_args(&args).expect("config builds");
+
+        assert_eq!(config.combat_retry_wall_ms, Some(1_000));
     }
 
     #[test]

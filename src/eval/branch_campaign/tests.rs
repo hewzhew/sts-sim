@@ -1260,6 +1260,21 @@ fn campaign_retry_budget_raises_combat_search_without_restoring_hp_gate() {
 }
 
 #[test]
+fn campaign_retry_budget_can_use_explicit_wall_cap() {
+    let config = BranchCampaignConfigV1 {
+        search_max_nodes: Some(10_000),
+        search_wall_ms: Some(50),
+        combat_retry_wall_ms: Some(1_000),
+        ..BranchCampaignConfigV1::default()
+    };
+
+    let retry = combat_retry_campaign_config_v1(&config).expect("retry config");
+
+    assert_eq!(retry.search_max_nodes, Some(200_000));
+    assert_eq!(retry.search_wall_ms, Some(1_000));
+}
+
+#[test]
 fn campaign_retries_only_when_all_results_are_abandoned_combat() {
     let abandoned_combat = test_report_branch_at(
         "a",

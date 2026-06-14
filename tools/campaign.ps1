@@ -79,6 +79,7 @@ param(
     [int] $ExperimentWallMs = 10000,
     [int] $SearchWallMs = 300,
     [int] $SearchMaxNodes = 50000,
+    [int] $CombatRetryWallMs = 0,
     [int] $BranchExamples = 4,
     [ValidateRange(0, 100)]
     [int] $VictoryHpPercent = 20,
@@ -179,6 +180,9 @@ Add-DriverArgIfBound "MaxRounds" "--max-rounds" $MaxRounds
 Add-DriverArgIfBound "ExperimentWallMs" "--experiment-wall-ms" $ExperimentWallMs
 Add-DriverArgIfBound "SearchWallMs" "--search-wall-ms" $SearchWallMs
 Add-DriverArgIfBound "SearchMaxNodes" "--search-max-nodes" $SearchMaxNodes
+if ($CampaignBoundParameters.ContainsKey("CombatRetryWallMs") -and $CombatRetryWallMs -gt 0) {
+    $DriverArgs += @("--combat-retry-wall-ms", "$CombatRetryWallMs")
+}
 Add-DriverArgIfBound "BranchExamples" "--branch-examples" $BranchExamples
 Add-DriverArgIfBound "VictoryHpPercent" "--min-acceptable-victory-hp-percent" $VictoryHpPercent
 

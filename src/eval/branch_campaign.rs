@@ -76,6 +76,7 @@ pub struct BranchCampaignConfigV1 {
     pub search_max_hp_loss: Option<RunControlHpLossLimit>,
     pub search_options: RunControlSearchCombatOptions,
     pub combat_retry_policy: BranchCampaignCombatRetryPolicyV1,
+    pub combat_retry_wall_ms: Option<u64>,
     pub include_event_reward_skip: bool,
     pub min_acceptable_victory_hp_percent: u8,
     pub prefix_commands: Vec<String>,
@@ -106,6 +107,7 @@ impl Default for BranchCampaignConfigV1 {
                 ..RunControlSearchCombatOptions::default()
             },
             combat_retry_policy: BranchCampaignCombatRetryPolicyV1::OnStall,
+            combat_retry_wall_ms: None,
             include_event_reward_skip: false,
             min_acceptable_victory_hp_percent: 20,
             prefix_commands: Vec::new(),
@@ -2156,7 +2158,9 @@ fn combat_retry_campaign_config_v1(
     config: &BranchCampaignConfigV1,
 ) -> Option<BranchCampaignConfigV1> {
     let retry_nodes = retry_node_budget_v1(config.search_max_nodes);
-    let retry_wall_ms = retry_wall_budget_v1(config.search_wall_ms);
+    let retry_wall_ms = config
+        .combat_retry_wall_ms
+        .or_else(|| retry_wall_budget_v1(config.search_wall_ms));
     if retry_nodes == config.search_max_nodes && retry_wall_ms == config.search_wall_ms {
         return None;
     }
