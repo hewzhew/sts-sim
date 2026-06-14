@@ -294,6 +294,8 @@ fn branch_experiment_executes_shop_combo_purchase_branch() {
 #[test]
 fn branch_experiment_retains_shop_combo_purchase_under_branch_cap() {
     let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.act_num = 2;
+    session.run_state.floor_num = 25;
     session.run_state.gold = 220;
     let mut shop = ShopState::new();
     for card_id in [

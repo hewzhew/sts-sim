@@ -865,7 +865,7 @@ fn startup_liability_is_legacy_evidence_not_coverage_slot_gate() {
 }
 
 #[test]
-fn portfolio_fill_records_startup_rejection_without_penalizing_selection() {
+fn portfolio_fill_records_startup_rejection_and_penalizes_selection() {
     let rejected_pummel = BranchRetentionCandidateInputV1 {
         index: 0,
         act: 2,
@@ -915,8 +915,8 @@ fn portfolio_fill_records_startup_rejection_without_penalizing_selection() {
         retention_config(1, Some(1)),
     );
 
-    assert!(selection.keep_indices.contains(&0));
-    assert!(!selection.keep_indices.contains(&1));
+    assert!(!selection.keep_indices.contains(&0));
+    assert!(selection.keep_indices.contains(&1));
 
     let decision = selection
         .decisions_by_index
@@ -983,7 +983,7 @@ fn legacy_adjusted_rank_exposes_startup_and_component_margin_penalty() {
 }
 
 #[test]
-fn retention_selection_uses_base_rank_not_legacy_strategy_adjustment() {
+fn retention_selection_uses_strategic_rank_adjustment() {
     let rejected_pummel = BranchRetentionCandidateInputV1 {
         index: 0,
         act: 2,
@@ -1033,11 +1033,11 @@ fn retention_selection_uses_base_rank_not_legacy_strategy_adjustment() {
         retention_config(1, Some(1)),
     );
 
+    assert!(!selection.keep_indices.contains(&0));
     assert!(
-        selection.keep_indices.contains(&0),
-        "branch retention should expose startup/component concerns as legacy evidence, not use them to override base rank"
+        selection.keep_indices.contains(&1),
+        "branch retention should use startup/component concerns when choosing active branches"
     );
-    assert!(!selection.keep_indices.contains(&1));
 }
 
 #[test]
@@ -1085,6 +1085,40 @@ fn legacy_strategy_adjustment_exposes_rank_components() {
             .any(|reason| reason.contains("startup_liability")),
         "legacy strategic rank adjustment should name the startup contribution"
     );
+}
+
+#[test]
+fn legacy_strategy_adjustment_penalizes_unresolved_deck_startup_liability() {
+    let mut unresolved_deck = BranchRetentionCandidateInputV1 {
+        index: 0,
+        act: 1,
+        floor: 11,
+        frontier_key: "same-frontier".to_string(),
+        rank_key: 12_000,
+        hp: 72,
+        max_hp: 80,
+        gold: 113,
+        deck_count: 14,
+        strategy_formation: None,
+        trajectory: BranchTrajectorySignatureV1::default(),
+        choice_profiles: Vec::new(),
+        choice_effect_keys: Vec::new(),
+        lineage_flags: Vec::new(),
+        startup: Default::default(),
+    };
+    unresolved_deck.startup.has_strength_payoff_without_strength = true;
+
+    let adjustment = legacy_branch_retention_strategy_adjustment_v1(&unresolved_deck);
+    let decision = decide_branch_retention_v1(&unresolved_deck);
+
+    assert_eq!(adjustment.startup_adjustment, -50_000);
+    assert_eq!(adjustment.effective_rank_key, -38_000);
+    assert!(decision
+        .reasons
+        .contains(&"current deck has unresolved startup liability".to_string()));
+    assert!(!decision
+        .reasons
+        .contains(&"startup profile rejects at least one added card".to_string()));
 }
 
 #[test]

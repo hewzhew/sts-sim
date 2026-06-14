@@ -291,7 +291,7 @@ pub fn decide_branch_retention_v1(
     let mut slots = Vec::new();
     let mut reasons = Vec::new();
     let component_context = component_marginal_context_for_retention_candidate(candidate);
-    let startup_rejected = added_cards_have_startup_liability(candidate);
+    let startup_liability = branch_retention_startup_liability_flags(candidate);
     let component_negative =
         added_cards_have_negative_component_margin(candidate, &component_context);
 
@@ -315,8 +315,11 @@ pub fn decide_branch_retention_v1(
         slots.push(BranchRetentionSlotV1::Scaling);
         reasons.push("contains long-run scaling or engine setup".to_string());
     }
-    if startup_rejected {
+    if startup_liability.added_card {
         reasons.push("startup profile rejects at least one added card".to_string());
+    }
+    if startup_liability.unresolved_deck {
+        reasons.push("current deck has unresolved startup liability".to_string());
     }
     if component_negative {
         reasons
@@ -380,7 +383,7 @@ pub fn decide_branch_retention_v1(
         strategic_signature: strategic_signature_for_retention_candidate(
             candidate,
             &slots,
-            startup_rejected,
+            startup_liability.any(),
             component_negative,
         ),
         slots,
@@ -769,9 +772,20 @@ fn best_position_for_slot(
                 .get(&candidates[*position].index)
                 .is_some_and(|decision| decision.slots.contains(&slot))
         })
+        .filter(|position| {
+            slot == BranchRetentionSlotV1::Diversity
+                || !candidate_has_slot_blocking_strategic_liability(&candidates[*position])
+        })
         .max_by(|left, right| {
             compare_family_then_rank(candidates, *left, *right, &covered_families)
         })
+}
+
+fn candidate_has_slot_blocking_strategic_liability(
+    candidate: &BranchRetentionCandidateInputV1,
+) -> bool {
+    let adjustment = legacy_branch_retention_strategy_adjustment_v1(candidate);
+    adjustment.startup_adjustment < 0 || adjustment.component_adjustment < 0
 }
 
 fn best_fill_position(
@@ -832,7 +846,7 @@ fn compare_rank(
 }
 
 pub fn branch_retention_order_rank_key_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
-    candidate.rank_key
+    legacy_adjusted_branch_retention_rank_key_v1(candidate)
 }
 
 pub fn legacy_adjusted_branch_retention_rank_key_v1(
@@ -846,7 +860,7 @@ pub fn legacy_branch_retention_strategy_adjustment_v1(
 ) -> BranchRetentionLegacyStrategyAdjustmentV1 {
     let context = branch_retention_context_packet_v2(candidate);
     let component_context = component_marginal_context_for_retention_candidate(candidate);
-    let startup_adjustment = if added_cards_have_startup_liability(candidate) {
+    let startup_adjustment = if candidate_has_startup_liability(candidate) {
         -50_000
     } else {
         0
@@ -1508,11 +1522,26 @@ fn component_marginal_context_for_retention_candidate(
     }
 }
 
-fn added_cards_have_startup_liability(candidate: &BranchRetentionCandidateInputV1) -> bool {
-    if candidate.choice_profiles.is_empty() {
-        return false;
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct BranchRetentionStartupLiabilityFlagsV1 {
+    added_card: bool,
+    unresolved_deck: bool,
+}
+
+impl BranchRetentionStartupLiabilityFlagsV1 {
+    fn any(self) -> bool {
+        self.added_card || self.unresolved_deck
     }
-    let risky_startup = candidate.startup.has_setup_debt_high_payment_low
+}
+
+fn candidate_has_startup_liability(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    branch_retention_startup_liability_flags(candidate).any()
+}
+
+fn branch_retention_startup_liability_flags(
+    candidate: &BranchRetentionCandidateInputV1,
+) -> BranchRetentionStartupLiabilityFlagsV1 {
+    let unresolved_deck = candidate.startup.has_setup_debt_high_payment_low
         || candidate.startup.has_fnp_duplicate_without_exhaust_engine
         || candidate.startup.has_corruption_duplicate_without_payoff
         || candidate.startup.has_havoc_duplicate_without_payoff
@@ -1526,7 +1555,7 @@ fn added_cards_have_startup_liability(candidate: &BranchRetentionCandidateInputV
         || candidate.startup.has_rupture_without_self_damage
         || candidate.startup.has_armaments_unupgraded_duplicate
         || candidate.startup.has_pyramid_unupgraded_apparition;
-    let profile_requires_missing_startup = candidate.choice_profiles.iter().any(|profile| {
+    let added_card = candidate.choice_profiles.iter().any(|profile| {
         (profile
             .roles
             .contains(&CardRewardSemanticRoleV1::StrengthPayoff)
@@ -1540,13 +1569,11 @@ fn added_cards_have_startup_liability(candidate: &BranchRetentionCandidateInputV
                 .contains(&CardRewardSemanticRoleV1::ExhaustPayoff)
                 && candidate.startup.exhaust_engine_count == 0)
     });
-    profile_requires_missing_startup
-        || (risky_startup
-            && candidate
-                .trajectory
-                .engine_generator_picks
-                .saturating_add(candidate.trajectory.engine_payoff_picks)
-                > candidate.trajectory.draw_energy_picks)
+
+    BranchRetentionStartupLiabilityFlagsV1 {
+        added_card,
+        unresolved_deck,
+    }
 }
 
 fn added_cards_have_negative_component_margin(
