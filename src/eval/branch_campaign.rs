@@ -2735,7 +2735,18 @@ fn promote_frozen_to_active_v1(
     frozen.sort_by(compare_campaign_branches_for_promotion_v1);
     let mut promoted = 0usize;
     while active.len() < max_active && !frozen.is_empty() {
-        let mut branch = frozen.remove(0);
+        let Some(promote_index) = frozen.iter().position(|branch| {
+            !branch_is_rehydrated_checkpointed_combat_failure_v1(branch)
+                || !active.iter().any(|active_branch| {
+                    campaign_progress_is_clearly_ahead_v1(
+                        branch_progress_key(active_branch),
+                        branch_progress_key(branch),
+                    )
+                })
+        }) else {
+            break;
+        };
+        let mut branch = frozen.remove(promote_index);
         branch.status = BranchCampaignBranchStatusV1::Active;
         active.push(branch);
         promoted = promoted.saturating_add(1);
@@ -2773,6 +2784,17 @@ fn rebalance_active_with_stronger_frozen_v1(
         return 0;
     };
 
+    if branch_is_rehydrated_checkpointed_combat_failure_v1(best_frozen)
+        && active.iter().any(|branch| {
+            campaign_progress_is_clearly_ahead_v1(
+                branch_progress_key(branch),
+                branch_progress_key(best_frozen),
+            )
+        })
+    {
+        return 0;
+    }
+
     if active.iter().any(|branch| {
         campaign_branch_local_frontier_key_v1(branch)
             == campaign_branch_local_frontier_key_v1(best_frozen)
@@ -2799,6 +2821,14 @@ fn rebalance_active_with_stronger_frozen_v1(
     active.sort_by(compare_campaign_branches_for_active_v1);
     frozen.sort_by(compare_campaign_branches_for_promotion_v1);
     1
+}
+
+fn branch_is_rehydrated_checkpointed_combat_failure_v1(branch: &BranchCampaignBranchV1) -> bool {
+    normalized_campaign_boundary_title(&branch.frontier_title).starts_with("combat")
+        && branch
+            .stop_reason
+            .to_ascii_lowercase()
+            .contains("rehydrated checkpointed")
 }
 
 fn recover_auto_advanceable_stuck_branches_v1(
@@ -3057,7 +3087,13 @@ fn place_recovered_campaign_branch_v1(
     max_active: usize,
     max_frozen: usize,
 ) -> bool {
-    if active.len() < max_active {
+    let recovered_is_behind_active = active.iter().any(|branch| {
+        campaign_progress_is_clearly_ahead_v1(
+            branch_progress_key(branch),
+            branch_progress_key(&recovered),
+        )
+    });
+    if active.len() < max_active && !recovered_is_behind_active {
         recovered.status = BranchCampaignBranchStatusV1::Active;
         active.push(recovered);
         return true;

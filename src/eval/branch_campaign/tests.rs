@@ -797,6 +797,36 @@ fn campaign_selection_keeps_progress_anchor_when_local_shop_variants_dominate_ac
 }
 
 #[test]
+fn campaign_rebalance_does_not_promote_stale_rehydrated_combat_over_later_active() {
+    let mut active = vec![test_campaign_branch_with_boundary(
+        "act3-campfire",
+        "Campfire",
+        "campfire action requires human choice",
+        47,
+        74,
+    )];
+    active[0].summary.as_mut().expect("summary").act = 3;
+    active[0].rank_key = 35_600;
+
+    let mut stale = test_campaign_branch_with_boundary(
+        "act2-rehydrated-combat",
+        "Combat",
+        "rehydrated checkpointed Abandoned combat branch: combat search did not find an executable complete win",
+        32,
+        87,
+    );
+    stale.summary.as_mut().expect("summary").act = 2;
+    stale.rank_key = 800_000;
+    let mut frozen = vec![stale];
+
+    let promoted = rebalance_active_with_stronger_frozen_v1(&mut active, &mut frozen, 2);
+
+    assert_eq!(promoted, 0);
+    assert_eq!(active[0].branch_id, "act3-campfire");
+    assert_eq!(frozen[0].branch_id, "act2-rehydrated-combat");
+}
+
+#[test]
 fn campaign_selection_merges_duplicate_quality_branches() {
     let mut best = test_campaign_branch("best-frontload", 5, 80);
     best.rank_key = 120;
@@ -2278,6 +2308,91 @@ fn campaign_resume_rehydrates_checkpointed_combat_failures() {
             .iter()
             .any(|branch| branch.branch_id == "event-old"),
         "noncombat abandoned branches should not be rehydrated by the combat checkpoint path"
+    );
+}
+
+#[test]
+fn campaign_resume_does_not_promote_stale_combat_failure_over_later_active_branch() {
+    let mut active = test_campaign_branch_with_boundary("act3-active", "Campfire", "test", 47, 74);
+    active.summary.as_mut().expect("summary").act = 3;
+    active.commands = vec!["act3-active".to_string()];
+
+    let mut stale_combat_failure = test_campaign_branch_with_boundary(
+        "act2-combat",
+        "Combat",
+        "combat search did not find an executable complete win",
+        32,
+        87,
+    );
+    stale_combat_failure.summary.as_mut().expect("summary").act = 2;
+    stale_combat_failure.commands = vec!["old-act2-combat".to_string()];
+    stale_combat_failure.status = BranchCampaignBranchStatusV1::Abandoned;
+
+    let previous = BranchCampaignReportV1 {
+        schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 48,
+        stop_reason: "max_rounds".to_string(),
+        active: vec![active],
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: vec![stale_combat_failure.clone()],
+        stuck: Vec::new(),
+        discarded_count: 0,
+        discarded_examples: Vec::new(),
+        strategy_requests: Vec::new(),
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
+        rounds: Vec::new(),
+    };
+    let mut restored_session = RunControlSession::new(RunControlConfig::default());
+    restored_session.engine_state = EngineState::CombatPlayerTurn;
+    restored_session.run_state.act_num = 2;
+    restored_session.run_state.floor_num = 32;
+    restored_session.run_state.current_hp = 87;
+    restored_session.run_state.max_hp = 97;
+    let checkpoint = BranchCampaignCheckpointV1 {
+        schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 48,
+        sessions: vec![BranchCampaignCheckpointSessionV1 {
+            commands: stale_combat_failure.commands.clone(),
+            session: RunControlSessionCheckpointV1::from_session(&restored_session),
+        }],
+    };
+
+    let result = run_branch_campaign_from_report_with_checkpoint_v1(
+        &BranchCampaignConfigV1 {
+            seed: 1,
+            max_rounds: 0,
+            max_active: 2,
+            max_frozen: 4,
+            ..BranchCampaignConfigV1::default()
+        },
+        &previous,
+        Some(&checkpoint),
+    )
+    .expect("checkpointed stale combat failure should be restorable but not promoted");
+
+    assert_eq!(result.report.active.len(), 1);
+    assert!(
+        result
+            .report
+            .active
+            .iter()
+            .all(|branch| branch.branch_id != "act2-combat"),
+        "stale Act2 combat failure should not consume an active slot while a later Act3 branch remains active"
+    );
+    assert!(
+        result
+            .report
+            .frozen
+            .iter()
+            .any(|branch| branch.branch_id == "act2-combat"),
+        "stale combat failure should remain available as frozen diagnostic material"
     );
 }
 
