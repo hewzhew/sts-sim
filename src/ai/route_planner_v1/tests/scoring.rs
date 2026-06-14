@@ -6,6 +6,8 @@ use crate::content::relics::{RelicId, RelicState};
 use crate::runtime::combat::CombatCard;
 use crate::state::core::EngineState;
 use crate::state::map::node::RoomType;
+use crate::state::map::node::{MapEdge, MapRoomNode};
+use crate::state::map::state::MapState;
 use crate::state::RunState;
 
 use super::fixtures::{
@@ -76,6 +78,95 @@ fn route_planner_shop_need_increases_with_gold() {
     assert!(
         very_high_near_boss_shop.score_terms.shop > high_shop.score_terms.shop,
         "stronger conversion pressure should flow into route score terms"
+    );
+}
+
+#[test]
+fn high_unconverted_gold_prefers_guaranteed_shop_route_over_optional_shop_access() {
+    let mut run = RunState::new(521, 0, false, "Ironclad");
+    run.act_num = 3;
+    run.floor_num = 32;
+    run.current_hp = run.max_hp;
+    run.gold = 900;
+    run.event_state = None;
+    run.map = MapState::new(vec![
+        vec![
+            linked_node(
+                0,
+                0,
+                RoomType::MonsterRoom,
+                &[
+                    (0, 1),
+                    (1, 1),
+                    (2, 1),
+                    (3, 1),
+                    (4, 1),
+                    (5, 1),
+                    (6, 1),
+                    (7, 1),
+                ],
+            ),
+            linked_node(1, 0, RoomType::MonsterRoom, &[(8, 1)]),
+        ],
+        vec![
+            linked_node(0, 1, RoomType::MonsterRoom, &[(0, 2)]),
+            linked_node(1, 1, RoomType::EventRoom, &[(1, 2)]),
+            linked_node(2, 1, RoomType::MonsterRoom, &[(2, 2)]),
+            linked_node(3, 1, RoomType::EventRoom, &[(3, 2)]),
+            linked_node(4, 1, RoomType::RestRoom, &[(4, 2)]),
+            linked_node(5, 1, RoomType::MonsterRoom, &[(5, 2)]),
+            linked_node(6, 1, RoomType::ShopRoom, &[(6, 2)]),
+            linked_node(7, 1, RoomType::ShopRoom, &[(7, 2)]),
+            linked_node(8, 1, RoomType::ShopRoom, &[(8, 2)]),
+        ],
+        (0..=8)
+            .map(|x| linked_node(x, 2, RoomType::RestRoom, &[]))
+            .collect(),
+    ]);
+
+    let trace = plan_route_decision_v1(
+        &run,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
+    let optional_shop = trace
+        .candidates
+        .iter()
+        .find(|candidate| candidate.target.x == 0)
+        .expect("trace should include optional-shop route");
+    let guaranteed_shop = trace
+        .candidates
+        .iter()
+        .find(|candidate| candidate.target.x == 1)
+        .expect("trace should include guaranteed-shop route");
+
+    assert_eq!(optional_shop.path_summary.min_shops, 0);
+    assert_eq!(optional_shop.path_summary.max_shops, 1);
+    assert!(optional_shop.path_summary.path_count > guaranteed_shop.path_summary.path_count);
+    assert_eq!(guaranteed_shop.path_summary.min_shops, 1);
+    assert_eq!(guaranteed_shop.path_summary.max_shops, 1);
+    assert!(
+        guaranteed_shop.score_terms.shop > optional_shop.score_terms.shop,
+        "guaranteed shop access should be valued above optional shop access when gold is high"
+    );
+    assert!(
+        optional_shop
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("optional shop access")),
+        "route trace should distinguish optional shop access"
+    );
+    assert!(
+        guaranteed_shop
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("guaranteed shop access")),
+        "route trace should distinguish guaranteed shop access"
+    );
+    assert_eq!(
+        selected_candidate(&trace).target.x,
+        1,
+        "high unconverted gold should prefer the route that guarantees a shop"
     );
 }
 
@@ -389,4 +480,13 @@ fn replace_master_deck(run: &mut RunState, cards: &[CardId]) {
         .enumerate()
         .map(|(idx, &card_id)| CombatCard::new(card_id, idx as u32))
         .collect();
+}
+
+fn linked_node(x: i32, y: i32, room_type: RoomType, edges: &[(i32, i32)]) -> MapRoomNode {
+    let mut node = MapRoomNode::new(x, y);
+    node.class = Some(room_type);
+    for &(dst_x, dst_y) in edges {
+        node.edges.insert(MapEdge::new(x, y, dst_x, dst_y));
+    }
+    node
 }

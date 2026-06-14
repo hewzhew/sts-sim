@@ -156,8 +156,13 @@ pub(super) fn route_reasons(
     } else {
         cautions.push("no visible rest site before boss".to_string());
     }
-    if path.max_shops > 0 {
-        reasons.push(format!("shop access exists: {}", path.max_shops));
+    if path.min_shops > 0 {
+        reasons.push(format!(
+            "guaranteed shop access: {}",
+            format_range(path.min_shops, path.max_shops)
+        ));
+    } else if path.max_shops > 0 {
+        reasons.push(format!("optional shop access: {}", path.max_shops));
     }
     if path.min_damage_rooms_before_recovery > 0 {
         cautions.push(format!(
@@ -210,9 +215,22 @@ fn flexibility_value(path: &RoutePathSummaryV1) -> f32 {
 }
 
 fn shop_route_access_value(features: &NodeFeaturesV1, path: &RoutePathSummaryV1) -> f32 {
-    features.shop_access
-        + path.min_shops as f32 * 0.28
-        + path.max_shops.saturating_sub(path.min_shops) as f32 * 0.12
+    let guaranteed_shop_value = path.min_shops as f32 * 0.62;
+    let optional_shop_value = path.max_shops.saturating_sub(path.min_shops) as f32 * 0.08;
+    let early_shop_value = path
+        .first_shop_floor
+        .map(|floor| {
+            if floor <= 3 {
+                0.12
+            } else if floor <= 6 {
+                0.06
+            } else {
+                0.0
+            }
+        })
+        .unwrap_or(0.0);
+
+    features.shop_access + guaranteed_shop_value + optional_shop_value + early_shop_value
 }
 
 fn first_elite_preparation_value(path: &RoutePathSummaryV1, needs: &NeedVectorV1) -> f32 {
