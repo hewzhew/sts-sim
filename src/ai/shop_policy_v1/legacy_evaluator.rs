@@ -1,3 +1,4 @@
+use crate::ai::decision_tags_v1::TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK;
 use crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1;
 use crate::ai::strategic::{CandidateAction, StrategicDecisionTrace};
 
@@ -29,7 +30,7 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
         || candidate_plan.plan.source == ShopPlanSourceV1::LegacyShopPortfolioSource
     {
         return attach_components_and_score_v1(
-            evaluate_legacy_portfolio_plan_v1(candidate_plan),
+            evaluate_legacy_portfolio_plan_v1(context, candidate_plan),
             candidate_plan,
             None,
         );
@@ -133,6 +134,9 @@ fn evaluate_purchase_v1(
     let Some(priority) = candidate.purchase_priority else {
         return ShopPlanEvaluationV1::block(None, "purchase legacy priority missing");
     };
+    if let Some(reason) = blocking_purchase_risk_reason_v1(candidate) {
+        return ShopPlanEvaluationV1::block(Some(priority), reason);
+    }
     if !purchase_allowed_by_strategic_trace(target, strategic_trace) {
         return ShopPlanEvaluationV1::block(
             Some(priority),
@@ -207,7 +211,10 @@ fn evaluate_starter_strike_purge_v1(
     )
 }
 
-fn evaluate_legacy_portfolio_plan_v1(candidate_plan: &ShopPlanCandidateV1) -> ShopPlanEvaluationV1 {
+fn evaluate_legacy_portfolio_plan_v1(
+    context: &ShopDecisionContextV1,
+    candidate_plan: &ShopPlanCandidateV1,
+) -> ShopPlanEvaluationV1 {
     if candidate_plan.plan.steps.is_empty() {
         return ShopPlanEvaluationV1::stop(candidate_plan.plan.reason.clone());
     }
@@ -226,6 +233,9 @@ fn evaluate_legacy_portfolio_plan_v1(candidate_plan: &ShopPlanCandidateV1) -> Sh
             "legacy portfolio plan has no positive priority",
         );
     }
+    if let Some(reason) = blocking_portfolio_risk_reason_v1(context, candidate_plan) {
+        return ShopPlanEvaluationV1::block(candidate_plan.plan.legacy_priority, reason);
+    }
     ShopPlanEvaluationV1::allow(
         150,
         priority,
@@ -233,6 +243,31 @@ fn evaluate_legacy_portfolio_plan_v1(candidate_plan: &ShopPlanCandidateV1) -> Sh
         Some(priority),
         "legacy portfolio alternative retained for branch exploration",
     )
+}
+
+fn blocking_portfolio_risk_reason_v1(
+    context: &ShopDecisionContextV1,
+    candidate_plan: &ShopPlanCandidateV1,
+) -> Option<String> {
+    candidate_plan
+        .plan
+        .candidate_ids
+        .iter()
+        .filter_map(|candidate_id| {
+            context
+                .candidates
+                .iter()
+                .find(|candidate| &candidate.candidate_id == candidate_id)
+        })
+        .find_map(blocking_purchase_risk_reason_v1)
+}
+
+fn blocking_purchase_risk_reason_v1(candidate: &ShopCandidateEvidenceV1) -> Option<String> {
+    candidate
+        .risks
+        .iter()
+        .find(|risk| risk.as_str() == TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK)
+        .map(|risk| format!("shop purchase blocked by {risk}"))
 }
 
 fn purchase_allowed_by_strategic_trace(

@@ -56,6 +56,7 @@ pub fn build_shop_decision_context_v1(
             priority,
             card.price,
             analysis.evidence,
+            analysis.risks,
         )
     }));
     candidates.extend(shop.relics.iter().enumerate().map(|(index, relic)| {
@@ -71,6 +72,7 @@ pub fn build_shop_decision_context_v1(
             crate::ai::shop_policy_v1::shop_relic_conversion_priority_v1(relic.relic_id),
             relic.price,
             analysis.evidence,
+            analysis.risks,
         )
     }));
     candidates.extend(shop.potions.iter().enumerate().map(|(index, potion)| {
@@ -97,6 +99,7 @@ pub fn build_shop_decision_context_v1(
             ),
             potion.price,
             analysis.evidence,
+            analysis.risks,
         )
     }));
     candidates.push(ShopCandidateEvidenceV1 {
@@ -275,17 +278,19 @@ fn purchase_candidate_evidence(
     priority: i32,
     price: i32,
     extra_evidence: Vec<String>,
+    extra_risks: Vec<String>,
 ) -> ShopCandidateEvidenceV1 {
     let mut evidence = vec![
         format!("can_buy={can_buy}"),
         format!("legacy_priority={priority}"),
     ];
     evidence.extend(extra_evidence);
-    let risks = if can_buy {
+    let mut risks = if can_buy {
         vec!["purchase must clear high-impact priority gate".to_string()]
     } else {
         Vec::new()
     };
+    risks.extend(extra_risks);
 
     ShopCandidateEvidenceV1 {
         candidate_id: super::types::purchase_candidate_id(target),

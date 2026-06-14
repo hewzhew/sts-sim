@@ -1,8 +1,13 @@
+use crate::ai::boss_mechanics_v1::{
+    boss_mechanic_pressure_profile_v1, relic_creates_enemy_strength_pressure_v1,
+    BossMechanicRedFlagV1,
+};
 use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
 use crate::ai::decision_tags_v1::{
-    combat_shape_change_tags_for_card_v1, TAG_COLLECTOR_ANSWER, TAG_DIGEST_CAPACITY_DRAW,
-    TAG_DIGEST_CAPACITY_EXHAUST, TAG_DIGEST_CAPACITY_STATUS, TAG_DIGEST_CAPACITY_TOPDECK,
-    TAG_ENGINE_CLOSURE, TAG_STARTUP_ACCESS,
+    combat_shape_change_tags_for_card_v1, TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK,
+    TAG_COLLECTOR_ANSWER, TAG_DIGEST_CAPACITY_DRAW, TAG_DIGEST_CAPACITY_EXHAUST,
+    TAG_DIGEST_CAPACITY_STATUS, TAG_DIGEST_CAPACITY_TOPDECK, TAG_ENGINE_CLOSURE,
+    TAG_STARTUP_ACCESS,
 };
 use crate::ai::noncombat_strategy_v1::{
     RunStrategySnapshotV2, StrategyPackageIdV2, StrategyPlanSupportV1,
@@ -19,6 +24,7 @@ use super::types::ShopPurchaseTargetV1;
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ShopPurchaseStrategyAnalysisV1 {
     pub evidence: Vec<String>,
+    pub risks: Vec<String>,
 }
 
 pub(crate) fn shop_purchase_strategy_analysis_v1(
@@ -87,6 +93,9 @@ fn analyze_shop_relic(
         && crate::ai::strength_profile_v1::strength_profile_v1(run_state).temporary_bursts > 0
     {
         push_evidence(analysis, TAG_ENGINE_CLOSURE);
+    }
+    if relic_purchase_creates_boss_enemy_strength_risk(relic, run_state) {
+        push_risk(analysis, TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK);
     }
 }
 
@@ -258,4 +267,27 @@ fn push_evidence(analysis: &mut ShopPurchaseStrategyAnalysisV1, tag: &'static st
     if !analysis.evidence.iter().any(|item| item == tag) {
         analysis.evidence.push(tag.to_string());
     }
+}
+
+fn push_risk(analysis: &mut ShopPurchaseStrategyAnalysisV1, tag: &'static str) {
+    if !analysis.risks.iter().any(|item| item == tag) {
+        analysis.risks.push(tag.to_string());
+    }
+}
+
+fn relic_purchase_creates_boss_enemy_strength_risk(relic: RelicId, run_state: &RunState) -> bool {
+    if !relic_creates_enemy_strength_pressure_v1(relic) {
+        return false;
+    }
+    let Some(boss) = run_state.boss_key else {
+        return false;
+    };
+    let mut hypothetical = run_state.clone();
+    if !hypothetical.relics.iter().any(|owned| owned.id == relic) {
+        hypothetical
+            .relics
+            .push(crate::content::relics::RelicState::new(relic));
+    }
+    boss_mechanic_pressure_profile_v1(&hypothetical, boss)
+        .has_red_flag(BossMechanicRedFlagV1::EnemyStrengthMultiHitRisk)
 }

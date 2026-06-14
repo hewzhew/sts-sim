@@ -240,6 +240,10 @@ pub fn boss_mechanic_pressure_profile_v1(
     profile
 }
 
+pub fn relic_creates_enemy_strength_pressure_v1(relic: RelicId) -> bool {
+    matches!(relic, RelicId::Brimstone | RelicId::PhilosopherStone)
+}
+
 impl BossMechanicPressureProfileV1 {
     fn push_pressure(&mut self, value: BossMechanicPressurePointV1) {
         self.pressure_points.push(value);
@@ -290,7 +294,7 @@ impl BossMechanicDeckFactsV1 {
             enemy_strength_relic_pressure: run_state
                 .relics
                 .iter()
-                .any(|relic| matches!(relic.id, RelicId::Brimstone | RelicId::PhilosopherStone)),
+                .any(|relic| relic_creates_enemy_strength_pressure_v1(relic.id)),
         };
 
         for card in &run_state.master_deck {

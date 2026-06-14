@@ -13,6 +13,8 @@ pub const TAG_DIGEST_CAPACITY_STATUS: &str = "digest_capacity:status";
 pub const TAG_DIGEST_CAPACITY_EXHAUST: &str = "digest_capacity:exhaust";
 pub const TAG_DIGEST_CAPACITY_DRAW: &str = "digest_capacity:draw";
 pub const TAG_DIGEST_CAPACITY_TOPDECK: &str = "digest_capacity:topdeck";
+pub const TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK: &str =
+    "boss_pressure:enemy_strength_multi_hit_risk";
 
 pub fn strings_have_tag(items: &[String], tag: &str) -> bool {
     items.iter().any(|item| item == tag)

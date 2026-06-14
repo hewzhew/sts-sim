@@ -256,6 +256,105 @@ fn compiled_shop_decision_wraps_selected_relic_purchase_as_plan() {
 }
 
 #[test]
+fn shop_compiler_blocks_enemy_strength_relic_when_boss_pressure_flags_multi_hit_risk() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 3;
+    run_state.floor_num = 46;
+    run_state.boss_key = Some(EncounterId::AwakenedOne);
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Brimstone,
+        price: 156,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let brimstone_candidate = context
+        .candidates
+        .iter()
+        .find(|candidate| {
+            candidate.purchase_target
+                == Some(ShopPurchaseTargetV1::Relic {
+                    index: 0,
+                    relic: RelicId::Brimstone,
+                })
+        })
+        .expect("Brimstone purchase candidate should exist");
+    assert!(
+        brimstone_candidate
+            .risks
+            .iter()
+            .any(|risk| risk.contains("enemy_strength_multi_hit_risk")),
+        "enemy-strength relics should surface boss pressure risk, got {:?}",
+        brimstone_candidate.risks
+    );
+
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecuteOne,
+    );
+    let brimstone_plan = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| {
+            candidate.plan.steps.iter().any(|step| {
+                matches!(
+                    step,
+                    ShopPlanStepV1::BuyRelic {
+                        relic: RelicId::Brimstone,
+                        ..
+                    }
+                )
+            })
+        })
+        .expect("Brimstone plan candidate should exist");
+
+    assert_eq!(brimstone_plan.evaluation.verdict, ShopPlanVerdictV1::Block);
+    assert!(
+        brimstone_plan
+            .evaluation
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("enemy_strength_multi_hit_risk")),
+        "blocked relic plan should explain the boss pressure risk, got {:?}",
+        brimstone_plan.evaluation.reasons
+    );
+    assert!(
+        !matches!(
+            compiled.selected_plan.steps.first(),
+            Some(ShopPlanStepV1::BuyRelic {
+                relic: RelicId::Brimstone,
+                ..
+            })
+        ),
+        "selected shop plan must not bypass the boss pressure block"
+    );
+
+    let branch_compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 4 },
+    );
+    assert!(
+        branch_compiled.alternatives.iter().all(|plan| {
+            !plan.steps.iter().any(|step| {
+                matches!(
+                    step,
+                    ShopPlanStepV1::BuyRelic {
+                        relic: RelicId::Brimstone,
+                        ..
+                    }
+                )
+            })
+        }),
+        "branch alternatives must not retain blocked boss-pressure purchases"
+    );
+}
+
+#[test]
 fn compiled_shop_decision_wraps_curse_purge_as_plan() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 100;
