@@ -760,6 +760,45 @@ fn campaign_selection_prioritizes_boss_readiness_at_final_boss_checkpoint() {
 }
 
 #[test]
+fn campaign_selection_does_not_treat_low_hp_zero_readiness_boss_checkpoint_as_absolute_progress() {
+    let mut low_hp_boss_door = test_campaign_branch("low-hp-boss-door", 46, 10);
+    low_hp_boss_door.summary.as_mut().unwrap().act = 3;
+    low_hp_boss_door.summary.as_mut().unwrap().max_hp = 80;
+    low_hp_boss_door.summary.as_mut().unwrap().boss = "TimeEater".to_string();
+    low_hp_boss_door.rank_key = 34_800;
+    low_hp_boss_door.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 0,
+        clean_score_milli: 500,
+        engine_score_milli: 0,
+        cycle_debt_milli: 600,
+        setup_debt_milli: 0,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 300,
+    };
+
+    let mut healthy_pre_boss = test_campaign_branch("healthy-pre-boss", 45, 45);
+    healthy_pre_boss.summary.as_mut().unwrap().act = 3;
+    healthy_pre_boss.summary.as_mut().unwrap().max_hp = 80;
+    healthy_pre_boss.summary.as_mut().unwrap().boss = "TimeEater".to_string();
+    healthy_pre_boss.rank_key = 35_000;
+    healthy_pre_boss.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 0,
+        clean_score_milli: 500,
+        engine_score_milli: 0,
+        cycle_debt_milli: 600,
+        setup_debt_milli: 0,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 300,
+    };
+
+    let selected = select_campaign_branches_v1(vec![low_hp_boss_door, healthy_pre_boss], 1, 4);
+
+    assert_eq!(selected.active[0].branch_id, "healthy-pre-boss");
+}
+
+#[test]
 fn campaign_selection_keeps_progress_anchor_when_local_shop_variants_dominate_active() {
     let mut buy_flash = test_campaign_branch("shop-flash", 39, 77);
     buy_flash.summary.as_mut().unwrap().act = 3;
