@@ -141,18 +141,32 @@ fn render_session_headline(
     let rank = branch
         .map(|branch| format!(" rank={}", branch.rank_key))
         .unwrap_or_default();
+    let (hp, max_hp) = visible_session_hp(session);
     format!(
         "{}A{}F{} HP {}/{} gold {} deck {} | {}{}",
         status,
         session.run_state.act_num,
         session.run_state.floor_num,
-        session.run_state.current_hp,
-        session.run_state.max_hp,
+        hp,
+        max_hp,
         session.run_state.gold,
         session.run_state.master_deck.len(),
         surface.view.header.title,
         rank
     )
+}
+
+fn visible_session_hp(session: &RunControlSession) -> (i32, i32) {
+    session
+        .active_combat
+        .as_ref()
+        .map(|active| {
+            (
+                active.combat_state.entities.player.current_hp,
+                active.combat_state.entities.player.max_hp,
+            )
+        })
+        .unwrap_or((session.run_state.current_hp, session.run_state.max_hp))
 }
 
 fn render_session_details(
@@ -383,6 +397,44 @@ fn boss_pressure_labels(session: &RunControlSession) -> Vec<String> {
         boss,
     )
     .summary_labels()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_session_headline;
+    use sts_simulator::eval::run_control::{RunControlConfig, RunControlSession};
+    use sts_simulator::state::core::{
+        ActiveCombat, CombatContext, EngineState, RoomCombatContext,
+    };
+    use sts_simulator::state::map::node::RoomType;
+
+    #[test]
+    fn inspect_headline_uses_visible_active_combat_hp() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.current_hp = 71;
+        session.run_state.max_hp = 80;
+        let mut combat = sts_simulator::test_support::blank_test_combat();
+        combat.entities.player.current_hp = 14;
+        combat.entities.player.max_hp = 80;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoomBoss,
+            }),
+        ));
+
+        let headline = render_session_headline(&session, None, None);
+
+        assert!(
+            headline.contains("HP 14/80"),
+            "headline should use active combat HP, got {headline}"
+        );
+        assert!(
+            !headline.contains("HP 71/80"),
+            "stale run HP should not appear while active combat is present"
+        );
+    }
 }
 
 fn join_debug<T: std::fmt::Debug>(items: &[T]) -> String {
