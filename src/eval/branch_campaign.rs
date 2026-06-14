@@ -9,7 +9,9 @@ use crate::eval::branch_experiment::{
 };
 use crate::eval::branch_experiment_boundary::branch_boundary_available;
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
-use crate::eval::branch_experiment_trajectory::branch_trajectory_key_v1;
+use crate::eval::branch_experiment_trajectory::{
+    branch_trajectory_key_v1, BranchTrajectorySignatureV1,
+};
 use crate::eval::run_control::{
     apply_branch_experiment_auto_run, build_decision_surface, RunControlAutoStepOptions,
     RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlRouteAutomationMode,
@@ -3666,7 +3668,7 @@ pub fn campaign_branch_from_report_branch_v1(
         branch_id: branch.branch_id.clone(),
         commands,
         choice_labels,
-        summary: Some(campaign_summary_from_report_branch_v1(branch)),
+        summary: Some(campaign_summary_from_report_branch_v1(parent, branch)),
         strategic_summary: compact_branch_signature_data(&branch.retention.strategic_signature),
         frontier_title: branch.summary.boundary_title.clone(),
         status: campaign_status_from_report_status(branch.status),
@@ -3735,8 +3737,10 @@ fn campaign_choice_label_v1(
 }
 
 fn campaign_summary_from_report_branch_v1(
+    parent: &BranchCampaignBranchV1,
     branch: &BranchExperimentBranchReportV1,
 ) -> BranchCampaignBranchSummaryV1 {
+    let trajectory_key = campaign_trajectory_key_from_report_branch_v1(parent, branch);
     BranchCampaignBranchSummaryV1 {
         act: branch.summary.act,
         floor: branch.summary.floor,
@@ -3758,10 +3762,99 @@ fn campaign_summary_from_report_branch_v1(
             .iter()
             .map(|value| format!("{value:?}"))
             .collect(),
-        trajectory_key: branch_trajectory_key_v1(&branch.summary.trajectory),
+        trajectory_key,
         boss: String::new(),
         boss_pressure: Vec::new(),
     }
+}
+
+fn campaign_trajectory_key_from_report_branch_v1(
+    parent: &BranchCampaignBranchV1,
+    branch: &BranchExperimentBranchReportV1,
+) -> String {
+    let mut trajectory = parent
+        .summary
+        .as_ref()
+        .and_then(|summary| parse_branch_trajectory_key_for_campaign_v1(&summary.trajectory_key))
+        .unwrap_or_default();
+    merge_campaign_branch_trajectory_v1(&mut trajectory, &branch.summary.trajectory);
+    branch_trajectory_key_v1(&trajectory)
+}
+
+fn merge_campaign_branch_trajectory_v1(
+    target: &mut BranchTrajectorySignatureV1,
+    source: &BranchTrajectorySignatureV1,
+) {
+    target.frontload_picks = target
+        .frontload_picks
+        .saturating_add(source.frontload_picks);
+    target.transition_frontload_picks = target
+        .transition_frontload_picks
+        .saturating_add(source.transition_frontload_picks);
+    target.scaling_picks = target.scaling_picks.saturating_add(source.scaling_picks);
+    target.defense_picks = target.defense_picks.saturating_add(source.defense_picks);
+    target.engine_generator_picks = target
+        .engine_generator_picks
+        .saturating_add(source.engine_generator_picks);
+    target.engine_payoff_picks = target
+        .engine_payoff_picks
+        .saturating_add(source.engine_payoff_picks);
+    target.draw_energy_picks = target
+        .draw_energy_picks
+        .saturating_add(source.draw_energy_picks);
+    merge_campaign_trajectory_keys_v1(&mut target.setup_keys, &source.setup_keys);
+    merge_campaign_trajectory_keys_v1(&mut target.package_keys, &source.package_keys);
+}
+
+fn merge_campaign_trajectory_keys_v1(target: &mut Vec<String>, source: &[String]) {
+    for key in source {
+        if !target.iter().any(|existing| existing == key) {
+            target.push(key.clone());
+        }
+    }
+    target.sort();
+}
+
+fn parse_branch_trajectory_key_for_campaign_v1(key: &str) -> Option<BranchTrajectorySignatureV1> {
+    if key.trim().is_empty() {
+        return None;
+    }
+    let mut signature = BranchTrajectorySignatureV1::default();
+    for part in key.split('|') {
+        if let Some(value) = part.strip_prefix("setup=") {
+            signature.setup_keys = parse_campaign_trajectory_key_list_v1(value);
+        } else if let Some(value) = part.strip_prefix("pkg=") {
+            signature.package_keys = parse_campaign_trajectory_key_list_v1(value);
+        } else if let Some(value) = part.strip_prefix("frontload=") {
+            signature.frontload_picks = value.parse().ok()?;
+        } else if let Some(value) = part.strip_prefix("transition=") {
+            signature.transition_frontload_picks = value.parse().ok()?;
+        } else if let Some(value) = part.strip_prefix("scaling=") {
+            signature.scaling_picks = value.parse().ok()?;
+        } else if let Some(value) = part.strip_prefix("defense=") {
+            signature.defense_picks = value.parse().ok()?;
+        } else if let Some(value) = part.strip_prefix("engine_gen=") {
+            signature.engine_generator_picks = value.parse().ok()?;
+        } else if let Some(value) = part.strip_prefix("engine_payoff=") {
+            signature.engine_payoff_picks = value.parse().ok()?;
+        } else if let Some(value) = part.strip_prefix("draw_energy=") {
+            signature.draw_energy_picks = value.parse().ok()?;
+        }
+    }
+    signature.setup_keys.sort();
+    signature.package_keys.sort();
+    Some(signature)
+}
+
+fn parse_campaign_trajectory_key_list_v1(value: &str) -> Vec<String> {
+    if value == "-" || value.is_empty() {
+        return Vec::new();
+    }
+    value
+        .split('+')
+        .filter(|key| !key.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 fn campaign_status_from_report_status(

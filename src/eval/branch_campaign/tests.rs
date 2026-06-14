@@ -324,6 +324,60 @@ fn campaign_report_branch_preserves_strategic_summary() {
 }
 
 #[test]
+fn campaign_branch_from_report_preserves_parent_trajectory_when_child_has_none() {
+    let mut parent = test_campaign_branch("parent", 6, 80);
+    parent.summary.as_mut().unwrap().trajectory_key =
+        "setup=-|pkg=-|frontload=2|transition=1|scaling=0|defense=1|engine_gen=0|engine_payoff=0|draw_energy=1"
+            .to_string();
+    let mut child = test_report_branch(
+        "child",
+        vec![("skip", "Skip card reward")],
+        BranchExperimentBranchStatusV1::Active,
+    );
+    child.summary.trajectory = BranchTrajectorySignatureV1::default();
+
+    let campaign_branch = campaign_branch_from_report_branch_v1(&parent, &child);
+
+    assert_eq!(
+        campaign_branch.summary.unwrap().trajectory_key,
+        "setup=-|pkg=-|frontload=2|transition=1|scaling=0|defense=1|engine_gen=0|engine_payoff=0|draw_energy=1"
+    );
+}
+
+#[test]
+fn campaign_branch_from_report_merges_parent_and_child_trajectory() {
+    let mut parent = test_campaign_branch("parent", 6, 80);
+    parent.summary.as_mut().unwrap().trajectory_key =
+        "setup=exhaust_engine|pkg=-|frontload=2|transition=1|scaling=0|defense=0|engine_gen=1|engine_payoff=0|draw_energy=0"
+            .to_string();
+    let mut child = test_report_branch(
+        "child",
+        vec![("rp 2", "Heavy Blade")],
+        BranchExperimentBranchStatusV1::Active,
+    );
+    child.summary.trajectory.frontload_picks = 1;
+    child.summary.trajectory.scaling_picks = 1;
+    child.summary.trajectory.engine_payoff_picks = 1;
+    child
+        .summary
+        .trajectory
+        .setup_keys
+        .push("strength_scaling".to_string());
+    child
+        .summary
+        .trajectory
+        .package_keys
+        .push("strength_scaling".to_string());
+
+    let campaign_branch = campaign_branch_from_report_branch_v1(&parent, &child);
+
+    assert_eq!(
+        campaign_branch.summary.unwrap().trajectory_key,
+        "setup=exhaust_engine+strength_scaling|pkg=strength_scaling|frontload=3|transition=1|scaling=1|defense=0|engine_gen=1|engine_payoff=1|draw_energy=0"
+    );
+}
+
+#[test]
 fn compact_campaign_report_shows_selection_basis_for_branch_examples() {
     let mut report = test_campaign_report_with_active("active", 3, 80);
     report.active[0].rank_key = 123;

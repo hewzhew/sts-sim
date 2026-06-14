@@ -1162,6 +1162,31 @@ fn branch_choice_effect_key_preserves_shop_effects() {
 }
 
 #[test]
+fn branch_summary_tracks_shop_buy_card_choice_in_trajectory() {
+    let session = RunControlSession::new(RunControlConfig::default());
+    let choices = vec![BranchExperimentChoiceV1 {
+        depth: 0,
+        kind: "shop_buy_card".to_string(),
+        boundary_title: "Shop".to_string(),
+        card: Some(CardId::PommelStrike),
+        upgrades: Some(0),
+        selected_cards: Vec::new(),
+        effect_kind: "shop_buy_card".to_string(),
+        effect_key: "shop:shop_buy_card:buy card 0".to_string(),
+        effect_label: "Buy Pommel Strike".to_string(),
+        representative_count: 1,
+        suppressed_count: 0,
+        label: "Buy Pommel Strike".to_string(),
+        command: "buy card 0".to_string(),
+    }];
+
+    let summary = run_summary(&session, &choices);
+
+    assert_eq!(summary.trajectory.frontload_picks, 1);
+    assert_eq!(summary.trajectory.draw_energy_picks, 1);
+}
+
+#[test]
 fn branch_rank_does_not_hardcode_card_reward_acquisition_bias() {
     let take = branch_with_choice("take", "add_card");
     let skip = branch_with_choice("skip", "skip_card_reward");

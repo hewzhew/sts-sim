@@ -1249,9 +1249,7 @@ fn choice_profiles_from_choices(
 }
 
 fn choice_profile_cards(choice: &BranchExperimentChoiceV1) -> Vec<BranchExperimentChoiceCardV1> {
-    if !choice.effect_kind.is_empty()
-        && !matches!(choice.effect_kind.as_str(), "add_card" | "duplicate_card")
-    {
+    if !branch_choice_effect_adds_card_profile(&choice.effect_kind) {
         return Vec::new();
     }
     if !choice.selected_cards.is_empty() {
@@ -1266,6 +1264,18 @@ fn choice_profile_cards(choice: &BranchExperimentChoiceV1) -> Vec<BranchExperime
             }]
         })
         .unwrap_or_default()
+}
+
+fn branch_choice_effect_adds_card_profile(effect_kind: &str) -> bool {
+    matches!(
+        effect_kind,
+        "" | "add_card"
+            | "duplicate_card"
+            | "event_card_reward"
+            | "event_duplicate_card"
+            | "shop_buy_card"
+            | "shop_buy_combo"
+    )
 }
 
 fn branch_choice_display_label(choice: &BranchExperimentChoiceV1) -> String {
