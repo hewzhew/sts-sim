@@ -11,6 +11,11 @@ pub struct DeckStartupProfileV1 {
     pub combat_shape_risk: u8,
     pub feel_no_pain_count: u8,
     pub exhaust_engine_count: u8,
+    pub exhaust_payoff_count: u8,
+    pub corruption_count: u8,
+    pub havoc_count: u8,
+    pub status_generator_count: u8,
+    pub status_digest_count: u8,
     pub strong_draw_count: u8,
     pub persistent_strength_source_count: u8,
     pub temporary_strength_burst_count: u8,
@@ -29,6 +34,10 @@ pub struct DeckStartupProfileV1 {
     pub has_runic_pyramid: bool,
     pub has_setup_debt_high_payment_low: bool,
     pub has_fnp_duplicate_without_exhaust_engine: bool,
+    pub has_corruption_duplicate_without_payoff: bool,
+    pub has_havoc_duplicate_without_payoff: bool,
+    pub has_status_generator_saturation_without_digest: bool,
+    pub has_clash_playability_debt: bool,
     pub has_dual_wield_without_target: bool,
     pub has_anger_duplicate_without_digest: bool,
     pub has_strength_payoff_without_strength: bool,
@@ -39,6 +48,7 @@ pub struct DeckStartupProfileV1 {
 
 pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
     let strength = crate::ai::strength_profile_v1::strength_profile_v1(run_state);
+    let deck_shape = crate::ai::deck_shape_v1::deck_shape_profile_v1(run_state);
     let mut profile = DeckStartupProfileV1 {
         has_runic_pyramid: run_state
             .relics
@@ -54,7 +64,6 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
             }
             RelicId::MedicalKit => {
                 profile.exhaust_engine_count = profile.exhaust_engine_count.saturating_add(1);
-                profile.payoff_engine = profile.payoff_engine.saturating_add(1);
             }
             _ => {}
         }
@@ -76,7 +85,6 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
         }
         if is_exhaust_engine_card(id) {
             profile.exhaust_engine_count = profile.exhaust_engine_count.saturating_add(1);
-            profile.payoff_engine = profile.payoff_engine.saturating_add(1);
         }
         if is_strong_draw_card(id) {
             profile.strong_draw_count = profile.strong_draw_count.saturating_add(1);
@@ -118,13 +126,20 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
     }
 
     profile.persistent_strength_source_count = strength.stable_sources;
+    profile.exhaust_payoff_count = deck_shape.exhaust_payoff_count;
+    profile.corruption_count = deck_shape.corruption_count;
+    profile.havoc_count = deck_shape.havoc_count;
+    profile.status_generator_count = deck_shape.status_generator_count;
+    profile.status_digest_count = deck_shape.status_digest_count;
     profile.temporary_strength_burst_count = strength.temporary_bursts;
     profile.strength_converter_count = strength.converters;
     profile.convertible_strength_source_count = strength.convertible_potential_count;
     profile.strength_payoff_count = strength.payoffs;
     profile.payoff_engine = profile
         .payoff_engine
-        .saturating_add(strength.stable_sources);
+        .saturating_add(strength.stable_sources)
+        .saturating_add(deck_shape.exhaust_payoff_count)
+        .saturating_add(deck_shape.status_digest_count);
     if strength.convertible_potential_count > 0 {
         profile.payoff_engine = profile.payoff_engine.saturating_add(1);
     }
@@ -136,6 +151,36 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
             <= 2;
     profile.has_fnp_duplicate_without_exhaust_engine =
         profile.feel_no_pain_count >= 2 && profile.exhaust_engine_count == 0;
+    profile.has_corruption_duplicate_without_payoff = deck_shape.risks.iter().any(|risk| {
+        matches!(
+            risk,
+            crate::ai::deck_shape_v1::DeckShapeRiskV1::NonstackingPowerDuplicateWithoutPayoff {
+                card: CardId::Corruption,
+                ..
+            }
+        )
+    });
+    profile.has_havoc_duplicate_without_payoff = deck_shape.risks.iter().any(|risk| {
+        matches!(
+            risk,
+            crate::ai::deck_shape_v1::DeckShapeRiskV1::RandomExhaustSaturationWithoutPayoff {
+                card: CardId::Havoc,
+                ..
+            }
+        )
+    });
+    profile.has_status_generator_saturation_without_digest = deck_shape.risks.iter().any(|risk| {
+        matches!(
+            risk,
+            crate::ai::deck_shape_v1::DeckShapeRiskV1::StatusGeneratorSaturationWithoutDigest { .. }
+        )
+    });
+    profile.has_clash_playability_debt = deck_shape.risks.iter().any(|risk| {
+        matches!(
+            risk,
+            crate::ai::deck_shape_v1::DeckShapeRiskV1::ClashPlayabilityDebt { .. }
+        )
+    });
     profile.has_dual_wield_without_target =
         profile.dual_wield_count > 0 && profile.dual_wield_target_count == 0;
     profile.has_anger_duplicate_without_digest = profile.anger_count >= 2
@@ -162,6 +207,22 @@ pub fn startup_liability_for_candidate_v1(
     act: u8,
 ) -> Option<&'static str> {
     match candidate {
+        CardId::Corruption
+            if startup.exhaust_payoff_count == 0 && startup.corruption_count >= 1 =>
+        {
+            Some("startup_rejects_corruption_duplicate_without_payoff")
+        }
+        CardId::Havoc if startup.exhaust_payoff_count == 0 && startup.havoc_count >= 1 => {
+            Some("startup_rejects_havoc_duplicate_without_payoff")
+        }
+        CardId::WildStrike | CardId::RecklessCharge | CardId::PowerThrough | CardId::Immolate
+            if startup.status_generator_count >= 1 && startup.status_digest_count == 0 =>
+        {
+            Some("startup_rejects_status_generator_duplicate_without_digest")
+        }
+        CardId::Clash if startup.has_clash_playability_debt => {
+            Some("startup_rejects_clash_playability_debt")
+        }
         CardId::FeelNoPain
             if startup.feel_no_pain_count >= 1 && startup.exhaust_engine_count == 0 =>
         {
@@ -459,5 +520,37 @@ mod tests {
         assert_eq!(profile.temporary_strength_burst_count, 1);
         assert_eq!(profile.strength_converter_count, 1);
         assert_eq!(profile.convertible_strength_source_count, 1);
+    }
+
+    #[test]
+    fn corruption_duplicates_are_enabler_saturation_not_exhaust_payoff() {
+        let mut run_state = RunState::new(2, 0, false, "Ironclad");
+        run_state.add_card_to_deck(CardId::Corruption);
+        run_state.add_card_to_deck(CardId::Corruption);
+
+        let profile = deck_startup_profile_v1(&run_state);
+
+        assert_eq!(profile.exhaust_engine_count, 2);
+        assert_eq!(profile.exhaust_payoff_count, 0);
+        assert!(profile.has_corruption_duplicate_without_payoff);
+        assert_eq!(
+            startup_liability_for_candidate_v1(&profile, CardId::Corruption, 2),
+            Some("startup_rejects_corruption_duplicate_without_payoff")
+        );
+    }
+
+    #[test]
+    fn repeated_status_generators_need_status_digest_capacity() {
+        let mut run_state = RunState::new(2, 0, false, "Ironclad");
+        run_state.add_card_to_deck(CardId::WildStrike);
+
+        let profile = deck_startup_profile_v1(&run_state);
+
+        assert_eq!(profile.status_generator_count, 1);
+        assert_eq!(profile.status_digest_count, 0);
+        assert_eq!(
+            startup_liability_for_candidate_v1(&profile, CardId::WildStrike, 2),
+            Some("startup_rejects_status_generator_duplicate_without_digest")
+        );
     }
 }

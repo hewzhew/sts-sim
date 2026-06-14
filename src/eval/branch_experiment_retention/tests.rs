@@ -90,6 +90,24 @@ fn resource_conversion_signal_keeps_shop_purchase() {
 }
 
 #[test]
+fn branch_signature_counts_deck_shape_startup_debt() {
+    let mut candidate = retention_candidate(0, 10_000, &["Corruption"]);
+    candidate.startup.has_corruption_duplicate_without_payoff = true;
+    candidate.startup.has_havoc_duplicate_without_payoff = true;
+    candidate
+        .startup
+        .has_status_generator_saturation_without_digest = true;
+    candidate.startup.has_clash_playability_debt = true;
+
+    let decision = decide_branch_retention_v1(&candidate);
+
+    assert!(
+        decision.strategic_signature.setup_debt >= 0.75,
+        "deck-shape liabilities should be visible to branch retention, not hidden in admission only"
+    );
+}
+
+#[test]
 fn portfolio_retention_does_not_fill_budget_with_redundant_first_pick_variants() {
     let candidates = vec![
         retention_candidate(0, 10_900, &["Twin Strike", "Iron Wave"]),

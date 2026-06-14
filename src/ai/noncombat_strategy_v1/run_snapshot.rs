@@ -240,6 +240,7 @@ fn add_card_package_facts(card_id: CardId, facts: &mut StrategyDeckFactsV1) {
     if matches!(
         card_id,
         CardId::BurningPact
+            | CardId::Corruption
             | CardId::TrueGrit
             | CardId::SecondWind
             | CardId::SeverSoul
@@ -249,10 +250,7 @@ fn add_card_package_facts(card_id: CardId, facts: &mut StrategyDeckFactsV1) {
     ) {
         facts.exhaust_generators = facts.exhaust_generators.saturating_add(1);
     }
-    if matches!(
-        card_id,
-        CardId::FeelNoPain | CardId::DarkEmbrace | CardId::Corruption
-    ) {
+    if matches!(card_id, CardId::FeelNoPain | CardId::DarkEmbrace) {
         facts.exhaust_payoffs = facts.exhaust_payoffs.saturating_add(1);
     }
     if matches!(

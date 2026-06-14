@@ -509,6 +509,14 @@ fn startup_debt_count(
         + i32::from(component_negative)
         + i32::from(candidate.startup.has_setup_debt_high_payment_low)
         + i32::from(candidate.startup.has_fnp_duplicate_without_exhaust_engine)
+        + i32::from(candidate.startup.has_corruption_duplicate_without_payoff)
+        + i32::from(candidate.startup.has_havoc_duplicate_without_payoff)
+        + i32::from(
+            candidate
+                .startup
+                .has_status_generator_saturation_without_digest,
+        )
+        + i32::from(candidate.startup.has_clash_playability_debt)
         + i32::from(candidate.startup.has_dual_wield_without_target)
         + i32::from(candidate.startup.has_anger_duplicate_without_digest)
         + i32::from(candidate.startup.has_strength_payoff_without_strength)
@@ -1506,6 +1514,12 @@ fn added_cards_have_startup_liability(candidate: &BranchRetentionCandidateInputV
     }
     let risky_startup = candidate.startup.has_setup_debt_high_payment_low
         || candidate.startup.has_fnp_duplicate_without_exhaust_engine
+        || candidate.startup.has_corruption_duplicate_without_payoff
+        || candidate.startup.has_havoc_duplicate_without_payoff
+        || candidate
+            .startup
+            .has_status_generator_saturation_without_digest
+        || candidate.startup.has_clash_playability_debt
         || candidate.startup.has_dual_wield_without_target
         || candidate.startup.has_anger_duplicate_without_digest
         || candidate.startup.has_strength_payoff_without_strength

@@ -875,6 +875,17 @@ fn exhaust_engine_candidate_delta_uses_generator_and_payoff_roles() {
 }
 
 #[test]
+fn run_snapshot_treats_corruption_as_generator_not_payoff() {
+    let mut run_state = crate::state::run::RunState::new(2, 0, false, "Ironclad");
+    run_state.add_card_to_deck(CardId::Corruption);
+
+    let snapshot = super::build_run_strategy_snapshot_from_run_state_v2(&run_state);
+
+    assert_eq!(snapshot.v1.deck.exhaust_generators, 1);
+    assert_eq!(snapshot.v1.deck.exhaust_payoffs, 0);
+}
+
+#[test]
 fn status_package_candidate_delta_uses_generator_and_payoff_roles() {
     let snapshot = super::build_run_strategy_snapshot_v2(
         StrategyDeckFactsV1 {

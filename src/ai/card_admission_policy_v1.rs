@@ -6,6 +6,9 @@ use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
 };
 use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
+use crate::ai::deck_shape_v1::{
+    deck_shape_candidate_delta_v1, deck_shape_profile_v1, DeckShapeProfileV1,
+};
 use crate::ai::deck_startup_profile_v1::{
     deck_startup_profile_v1, startup_liability_for_candidate_v1, startup_support_for_candidate_v1,
     DeckStartupProfileV1,
@@ -57,6 +60,7 @@ pub struct CardAdmissionContextV1 {
     pub block_jobs: usize,
     pub formation_needs: Vec<StrategyDeckFormationNeedV1>,
     pub startup: DeckStartupProfileV1,
+    pub deck_shape: DeckShapeProfileV1,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -87,6 +91,7 @@ pub fn card_admission_context_from_run_state_v1(run_state: &RunState) -> CardAdm
         block_jobs: 0,
         formation_needs: strategy.formation_summary().needs,
         startup: deck_startup_profile_v1(run_state),
+        deck_shape: deck_shape_profile_v1(run_state),
     };
 
     for card in &run_state.master_deck {
@@ -163,6 +168,7 @@ pub fn evaluate_card_profile_admission_v1(
     let startup_liability =
         startup_liability_for_candidate_v1(&context.startup, profile.card, context.act);
     let startup_support = startup_support_for_candidate_v1(&context.startup, profile.card);
+    let deck_shape_delta = deck_shape_candidate_delta_v1(&context.deck_shape, profile.card);
     let redundant_saturated_job = redundant_saturated_job(context, profile, fills_missing_job);
 
     if fills_missing_job {
@@ -183,6 +189,7 @@ pub fn evaluate_card_profile_admission_v1(
     if let Some(reason) = startup_support {
         reasons.push(reason);
     }
+    reasons.extend(deck_shape_delta.labels.iter().copied());
     if package_enabler {
         reasons.push("package_enabler");
     }
@@ -819,5 +826,26 @@ mod tests {
         assert!(report
             .reasons
             .contains(&"startup_rejects_strength_payoff_without_strength"));
+    }
+
+    #[test]
+    fn admission_reports_deck_shape_evidence_for_corruption_duplicate() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.act_num = 2;
+        run_state.add_card_to_deck(CardId::Corruption);
+
+        let report = evaluate_card_admission_v1(
+            &run_state,
+            RewardCard::new(CardId::Corruption, 0),
+            CardAdmissionSourceV1::Reward,
+        );
+
+        assert_eq!(report.verdict, CardAdmissionVerdictV1::Reject);
+        assert!(report
+            .reasons
+            .contains(&"startup_rejects_corruption_duplicate_without_payoff"));
+        assert!(report
+            .reasons
+            .contains(&"deck_shape_nonstacking_power_duplicate_without_payoff"));
     }
 }

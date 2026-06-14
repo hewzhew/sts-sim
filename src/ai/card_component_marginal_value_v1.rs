@@ -142,7 +142,14 @@ fn add_card_specific_components(
             );
         }
         CardId::Corruption => {
-            push_str(&mut report.positive_components, "exhaust_engine_enabler");
+            if context.startup.has_corruption_duplicate_without_payoff {
+                push_str(
+                    &mut report.debts,
+                    "deck_shape_nonstacking_power_duplicate_without_payoff",
+                );
+            } else {
+                push_str(&mut report.positive_components, "exhaust_engine_enabler");
+            }
             if context.startup.feel_no_pain_count > 0 {
                 push_str(&mut report.positive_components, "unlocks_fnp_engine");
             }
@@ -606,5 +613,25 @@ mod tests {
         assert_eq!(report.verdict, CardComponentMarginalVerdictV1::ContextTake);
         assert!(report.positive_components.contains(&"unlocks_fnp_engine"));
         assert!(report.notes.contains(&"awakened_one_power_but_core_engine"));
+    }
+
+    #[test]
+    fn duplicate_corruption_without_payoff_reports_shape_debt() {
+        let mut context = context();
+        context.startup.corruption_count = 1;
+        context.startup.exhaust_payoff_count = 0;
+        context.startup.has_corruption_duplicate_without_payoff = true;
+
+        let report = evaluate_card_component_marginal_value_v1(
+            &context,
+            &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Corruption, 0)),
+        );
+
+        assert!(!report
+            .positive_components
+            .contains(&"exhaust_engine_enabler"));
+        assert!(report
+            .debts
+            .contains(&"deck_shape_nonstacking_power_duplicate_without_payoff"));
     }
 }
