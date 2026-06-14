@@ -1156,13 +1156,13 @@ fn branch_choice_effect_key_preserves_shop_effects() {
 }
 
 #[test]
-fn branch_rank_tracks_card_reward_development_debt() {
+fn branch_rank_does_not_hardcode_card_reward_acquisition_bias() {
     let take = branch_with_choice("take", "add_card");
     let skip = branch_with_choice("skip", "skip_card_reward");
     let full_potion_skip = branch_with_choice("potion-skip", "reward_skip_full_potion");
 
-    assert!(branch_rank_key(&take) > branch_rank_key(&full_potion_skip));
-    assert!(branch_rank_key(&full_potion_skip) > branch_rank_key(&skip));
+    assert_eq!(branch_rank_key(&take), branch_rank_key(&skip));
+    assert_eq!(branch_rank_key(&take), branch_rank_key(&full_potion_skip));
 }
 
 #[test]
