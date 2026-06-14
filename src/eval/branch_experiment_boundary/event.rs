@@ -2,6 +2,10 @@ use super::card_reward::{
     select_card_reward_branch_options_for_session, CardRewardBranchOption,
     CardRewardBranchOptionSource,
 };
+use crate::ai::event_policy_v1::{
+    build_event_decision_context_v1, plan_event_decision_v1, EventPolicyActionV1,
+    EventPolicyClassV1, EventPolicyConfigV1,
+};
 use crate::content::cards::CardId;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{ClientInput, EngineState};
@@ -76,6 +80,11 @@ pub(crate) fn event_branch_options(
     if branch_options.is_empty() {
         return None;
     }
+    if let Some(policy_options) =
+        event_policy_safe_exit_branch_options(session, &event_options, &branch_options)
+    {
+        return Some(policy_options);
+    }
     if branch_options.len() > MAX_EVENT_OPTIONS_PER_BRANCH {
         if branch_options
             .iter()
@@ -89,6 +98,52 @@ pub(crate) fn event_branch_options(
         return None;
     }
     Some(branch_options)
+}
+
+fn event_policy_safe_exit_branch_options(
+    session: &RunControlSession,
+    event_options: &[EventOption],
+    branch_options: &[EventBranchOption],
+) -> Option<Vec<EventBranchOption>> {
+    let event_id = session.run_state.event_state.as_ref()?.id;
+    let context =
+        build_event_decision_context_v1(&session.run_state, event_id, event_options.to_vec());
+    let decision = plan_event_decision_v1(&context, &EventPolicyConfigV1::default());
+    let EventPolicyActionV1::Pick {
+        index,
+        reason,
+        confidence,
+        ..
+    } = decision.action
+    else {
+        return None;
+    };
+    let candidate = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.index == index)?;
+    if candidate.class != EventPolicyClassV1::SafeExit {
+        return None;
+    }
+    let exits_optional_combat = context.candidates.iter().any(|candidate| {
+        candidate.index != index
+            && !candidate.disabled
+            && candidate.class == EventPolicyClassV1::CombatStart
+    });
+    if !exits_optional_combat {
+        return None;
+    }
+
+    let selected_command = format!("event {index}");
+    let mut selected = branch_options
+        .iter()
+        .find(|option| option.command == selected_command)?
+        .clone();
+    selected.effect_label = format!(
+        "{} | event policy safe exit confidence={confidence:.2}: {reason}",
+        selected.effect_label
+    );
+    Some(vec![selected])
 }
 
 fn select_event_card_reward_branch_options(

@@ -1461,6 +1461,31 @@ fn current_boundary_does_not_branch_terminal_single_event_leave_screen() {
 }
 
 #[test]
+fn current_boundary_uses_event_policy_safe_exit_for_optional_combat_event() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.act_num = 3;
+    session.run_state.floor_num = 45;
+    session.run_state.current_hp = 71;
+    session.run_state.max_hp = 90;
+    session.run_state.event_state = Some(EventState::new(EventId::MysteriousSphere));
+    session.engine_state = EngineState::EventRoom;
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("Mysterious Sphere should expose a resolved event boundary");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
+    assert_eq!(
+        boundary
+            .options
+            .iter()
+            .map(|option| (option.command.as_str(), option.effect_kind.as_str()))
+            .collect::<Vec<_>>(),
+        vec![("event 1", "event_leave")],
+        "branch boundaries should consume the central event policy safe-exit approval instead of preserving the optional high-risk fight as an equal branch"
+    );
+}
+
+#[test]
 fn current_boundary_wraps_neow_bonus_four_options() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session
