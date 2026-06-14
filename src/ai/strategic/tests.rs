@@ -4,7 +4,8 @@ use crate::ai::card_reward_policy_v1::{
 };
 use crate::ai::strategic::{
     compile_decision, CandidateAction, CandidateDelta, LedgerDelta, PressureHorizon, PressureKind,
-    PressureLedger, StrategicDecisionSite, StrategicDeckFacts, StrategicJob, StrategicSnapshot,
+    PressureLedger, StrategicDebt, StrategicDecisionSite, StrategicDeckFacts, StrategicJob,
+    StrategicSnapshot,
 };
 use crate::content::cards::CardId;
 use crate::content::relics::{RelicId, RelicState};
@@ -98,6 +99,35 @@ fn card_reward_shadow_trace_records_component_debt() {
 }
 
 #[test]
+fn card_component_strength_down_maps_to_enemy_strength_pressure() {
+    let run_state = RunState::new(521, 0, false, "Ironclad");
+    let context = build_card_reward_decision_context_v1(
+        &run_state,
+        vec![RewardCard::new(CardId::Disarm, 0)],
+        None,
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let disarm_delta = decision
+        .strategic_trace
+        .candidate_deltas
+        .iter()
+        .find(|delta| delta.action.candidate_id().contains("Disarm"))
+        .expect("Disarm candidate should have a strategic delta");
+    let direct_strength_down = disarm_delta
+        .positive
+        .iter()
+        .find(|delta| delta.reason == "direct_strength_down_answer")
+        .expect("Disarm component report should include direct strength-down answer");
+
+    assert_eq!(
+        direct_strength_down.kind,
+        PressureKind::MissingJob(StrategicJob::EnemyStrengthDown),
+        "component reason mapping should not classify strength-down as generic scaling"
+    );
+}
+
+#[test]
 fn card_reward_replay_exposes_strategic_delta_summary() {
     let run_state = RunState::new(521, 0, false, "Ironclad");
     let context = build_card_reward_decision_context_v1(
@@ -188,4 +218,89 @@ fn strategic_compiler_prefers_candidate_matching_active_pressure() {
             .candidate_id(),
         "block"
     );
+}
+
+#[test]
+fn strategic_compiler_amplifies_debt_that_matches_active_pressure() {
+    let snapshot = StrategicSnapshot {
+        site: StrategicDecisionSite::CardReward,
+        act: 2,
+        floor: 24,
+        boss: None,
+        hp: 60,
+        max_hp: 80,
+        gold: 200,
+        deck: StrategicDeckFacts::default(),
+        route: None,
+        formation_needs: vec![],
+    };
+
+    let mut clean = CandidateDelta::empty(CandidateAction::Unknown {
+        id: "clean_block".to_string(),
+        label: "clean_block".to_string(),
+    });
+    clean.positive.push(LedgerDelta {
+        kind: PressureKind::MissingJob(StrategicJob::Block),
+        amount: 0.50,
+        reason: "block_delta".to_string(),
+    });
+
+    let mut bloated = CandidateDelta::empty(CandidateAction::Unknown {
+        id: "bloated_block".to_string(),
+        label: "bloated_block".to_string(),
+    });
+    bloated.positive.push(LedgerDelta {
+        kind: PressureKind::MissingJob(StrategicJob::Block),
+        amount: 0.50,
+        reason: "block_delta".to_string(),
+    });
+    bloated.negative.push(LedgerDelta {
+        kind: PressureKind::DeckDebt(StrategicDebt::CycleTime),
+        amount: 0.20,
+        reason: "adds_cycle_card".to_string(),
+    });
+
+    let empty_trace = compile_decision(
+        snapshot.clone(),
+        PressureLedger::default(),
+        2,
+        vec![clean.clone(), bloated.clone()],
+    );
+    let mut pressured_ledger = PressureLedger::default();
+    pressured_ledger.push(
+        "deck_debt:cycle_time",
+        PressureKind::DeckDebt(StrategicDebt::CycleTime),
+        PressureHorizon::LongTerm,
+        1.0,
+        1.0,
+        vec!["test cycle pressure".to_string()],
+    );
+    let pressured_trace = compile_decision(snapshot, pressured_ledger, 2, vec![clean, bloated]);
+
+    let empty_gap =
+        compiled_score(&empty_trace, "clean_block") - compiled_score(&empty_trace, "bloated_block");
+    let pressured_gap = compiled_score(&pressured_trace, "clean_block")
+        - compiled_score(&pressured_trace, "bloated_block");
+
+    assert!(
+        pressured_gap > empty_gap,
+        "active cycle pressure should amplify candidates that add cycle debt"
+    );
+    assert!(pressured_trace
+        .compiled
+        .iter()
+        .find(|decision| decision.action.candidate_id() == "bloated_block")
+        .expect("bloated candidate should compile")
+        .reasons
+        .iter()
+        .any(|reason| reason.starts_with("-ledger_pressure:")));
+}
+
+fn compiled_score(trace: &crate::ai::strategic::StrategicDecisionTrace, id: &str) -> f32 {
+    trace
+        .compiled
+        .iter()
+        .find(|decision| decision.action.candidate_id() == id)
+        .unwrap_or_else(|| panic!("{id} candidate should compile"))
+        .score
 }

@@ -94,6 +94,7 @@ pub fn compile_decision(
 fn compile_candidate(delta: &CandidateDelta, ledger: &PressureLedger) -> CompiledDecision {
     let score = delta.positive_amount() + ledger_alignment_bonus(delta, ledger)
         - delta.negative_amount()
+        - ledger_pressure_penalty(delta, ledger)
         + verdict_bias(delta.verdict_hint);
     let verdict = if !delta.contraindications.is_empty() {
         AcquisitionVerdict::Reject
@@ -122,6 +123,7 @@ fn compile_candidate(delta: &CandidateDelta, ledger: &PressureLedger) -> Compile
             .map(|delta| format!("-{}:{:?}", delta.reason, delta.kind)),
     );
     reasons.extend(ledger_alignment_reasons(delta, ledger));
+    reasons.extend(ledger_pressure_reasons(delta, ledger));
 
     CompiledDecision {
         action: delta.action.clone(),
@@ -146,6 +148,25 @@ fn ledger_alignment_reasons(delta: &CandidateDelta, ledger: &PressureLedger) -> 
         .filter_map(|delta| {
             let strength = ledger_match_strength(ledger, delta.kind);
             (strength > 0.0).then(|| format!("+ledger_match:{:?}:{strength:.2}", delta.kind))
+        })
+        .collect()
+}
+
+fn ledger_pressure_penalty(delta: &CandidateDelta, ledger: &PressureLedger) -> f32 {
+    delta
+        .negative
+        .iter()
+        .map(|delta| delta.amount * ledger_match_strength(ledger, delta.kind))
+        .sum()
+}
+
+fn ledger_pressure_reasons(delta: &CandidateDelta, ledger: &PressureLedger) -> Vec<String> {
+    delta
+        .negative
+        .iter()
+        .filter_map(|delta| {
+            let strength = ledger_match_strength(ledger, delta.kind);
+            (strength > 0.0).then(|| format!("-ledger_pressure:{:?}:{strength:.2}", delta.kind))
         })
         .collect()
 }

@@ -87,7 +87,7 @@ impl CandidateDelta {
             .positive_components
             .iter()
             .map(|reason| LedgerDelta {
-                kind: component_reason_pressure(reason),
+                kind: positive_component_reason_pressure(reason),
                 amount: 0.35,
                 reason: (*reason).to_string(),
             })
@@ -97,7 +97,7 @@ impl CandidateDelta {
             .iter()
             .chain(report.boss_taxes.iter())
             .map(|reason| LedgerDelta {
-                kind: component_reason_pressure(reason),
+                kind: negative_component_reason_pressure(reason),
                 amount: 0.35,
                 reason: (*reason).to_string(),
             })
@@ -162,25 +162,56 @@ fn component_role(report: &CardComponentMarginalReportV1) -> CandidateRole {
     }
 }
 
-fn component_reason_pressure(reason: &str) -> PressureKind {
-    use super::{StrategicBossTax, StrategicDebt, StrategicJob};
-    if reason.contains("awakened_one") || reason.contains("power_tax") {
-        PressureKind::BossTax(StrategicBossTax::AwakenedPowerTax)
-    } else if reason.contains("automaton") || reason.contains("hyperbeam") {
-        PressureKind::BossTax(StrategicBossTax::AutomatonHyperbeamPlan)
-    } else if reason.contains("strength") {
-        PressureKind::MissingJob(StrategicJob::Scaling)
-    } else if reason.contains("draw") || reason.contains("access") || reason.contains("conversion")
-    {
-        PressureKind::MissingJob(StrategicJob::DrawEnergy)
-    } else if reason.contains("block") {
-        PressureKind::MissingJob(StrategicJob::Block)
-    } else if reason.contains("payoff_without")
-        || reason.contains("without_generator")
-        || reason.contains("setup")
-    {
-        PressureKind::DeckDebt(StrategicDebt::PayoffWithoutEnabler)
-    } else {
-        PressureKind::DeckDebt(StrategicDebt::CycleTime)
+fn positive_component_reason_pressure(reason: &str) -> PressureKind {
+    use super::{StrategicBossTax, StrategicJob};
+    match reason {
+        "direct_strength_down_answer" => PressureKind::MissingJob(StrategicJob::EnemyStrengthDown),
+        "mitigates_enemy_damage" => PressureKind::MissingJob(StrategicJob::Block),
+        "improves_access_or_conversion" => PressureKind::MissingJob(StrategicJob::DrawEnergy),
+        "exhaust_engine_enabler" | "unlocks_fnp_engine" | "exhaust_payoff_has_generator" => {
+            PressureKind::MissingJob(StrategicJob::ExhaustAccess)
+        }
+        "self_damage_payoff_has_enabler"
+        | "strength_payoff_has_convertible_burst_source"
+        | "strength_payoff_has_generator"
+        | "hp_loss_payoff_has_support" => PressureKind::MissingJob(StrategicJob::Scaling),
+        "block_payoff_has_block_density" | "big_block_doubles_as_exhaust_material" => {
+            PressureKind::MissingJob(StrategicJob::Block)
+        }
+        "awakened_one_multi_hit_strength_answer" => {
+            PressureKind::BossTax(StrategicBossTax::AwakenedPowerTax)
+        }
+        "automaton_big_turn_or_multi_hit_answer" => {
+            PressureKind::BossTax(StrategicBossTax::AutomatonHyperbeamPlan)
+        }
+        "champ_execute_or_scaling_answer" => {
+            PressureKind::BossTax(StrategicBossTax::ChampExecutePlan)
+        }
+        "time_eater_high_impact_or_access" => {
+            PressureKind::BossTax(StrategicBossTax::TimeEaterCardCount)
+        }
+        "fills_current_formation_need" => PressureKind::BranchDiversityNeed,
+        _ => PressureKind::BranchDiversityNeed,
+    }
+}
+
+fn negative_component_reason_pressure(reason: &str) -> PressureKind {
+    use super::{StrategicBossTax, StrategicDebt};
+    match reason {
+        "awakened_one_minor_power_tax" => PressureKind::BossTax(StrategicBossTax::AwakenedPowerTax),
+        "payoff_without_visible_gap_fill"
+        | "exhaust_payoff_without_generator"
+        | "self_damage_payoff_without_enabler"
+        | "strength_payoff_without_stable_generator"
+        | "strength_payoff_without_generator"
+        | "block_payoff_without_block_engine" => {
+            PressureKind::DeckDebt(StrategicDebt::PayoffWithoutEnabler)
+        }
+        "status_payoff_low_trigger_or_access"
+        | "plain_block_redundancy"
+        | "hp_loss_payoff_relies_on_accidental_damage" => {
+            PressureKind::DeckDebt(StrategicDebt::CombatShapeRisk)
+        }
+        _ => PressureKind::DeckDebt(StrategicDebt::CombatShapeRisk),
     }
 }
