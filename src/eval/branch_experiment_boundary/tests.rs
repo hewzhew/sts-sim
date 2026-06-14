@@ -50,6 +50,54 @@ fn card_reward_option_portfolio_keeps_semantic_variety() {
 }
 
 #[test]
+fn card_reward_option_portfolio_includes_decline_candidates() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session
+        .run_state
+        .relics
+        .push(RelicState::new(RelicId::SingingBowl));
+    let mut reward = RewardState::new();
+    reward.items.push(RewardItem::Card {
+        cards: vec![
+            RewardCard::new(CardId::TwinStrike, 0),
+            RewardCard::new(CardId::Cleave, 0),
+            RewardCard::new(CardId::ShrugItOff, 0),
+        ],
+    });
+    session.engine_state = EngineState::RewardScreen(reward);
+
+    let boundary = current_branch_boundary(
+        &session,
+        BranchBoundaryConfigV1 {
+            max_reward_options_per_branch: Some(2),
+            max_campfire_options_per_branch: None,
+            include_skip: true,
+            include_event_reward_skip: false,
+        },
+        Some(CardRewardPortfolioContext {
+            depth: 0,
+            frontier_key: "frontier".to_string(),
+            boundary_title: "Card Reward".to_string(),
+        }),
+    )
+    .expect("card reward boundary");
+
+    let portfolio = boundary
+        .reward_option_portfolio
+        .expect("capped card reward boundary should emit a portfolio report");
+    let labels = portfolio
+        .selected_options
+        .iter()
+        .chain(portfolio.pruned_options.iter())
+        .map(|entry| entry.label.as_str())
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(portfolio.original_count, 5);
+    assert!(labels.contains("Skip card reward"));
+    assert!(labels.contains("Singing Bowl | gain 2 max HP"));
+}
+
+#[test]
 fn current_boundary_wraps_card_reward_options() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward = RewardState::new();

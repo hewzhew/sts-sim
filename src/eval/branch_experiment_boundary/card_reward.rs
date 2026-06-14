@@ -5,6 +5,7 @@ use crate::ai::card_reward_policy_v1::{
 };
 use crate::ai::strategic::{AcquisitionVerdict, CandidateAction};
 use crate::content::cards::CardId;
+use crate::content::relics::RelicId;
 use crate::eval::branch_experiment::{
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
 };
@@ -18,8 +19,8 @@ use crate::state::rewards::{RewardCard, RewardItem};
 pub(crate) struct CardRewardBranchOption {
     pub(crate) label: String,
     pub(crate) command: String,
-    pub(crate) card: CardId,
-    pub(crate) upgrades: u8,
+    pub(crate) card: Option<CardId>,
+    pub(crate) upgrades: Option<u8>,
     pub(crate) source: CardRewardBranchOptionSource,
 }
 
@@ -27,6 +28,8 @@ pub(crate) struct CardRewardBranchOption {
 pub(crate) enum CardRewardBranchOptionSource {
     PermanentReward,
     CombatGeneratedToHand,
+    SkipCardReward,
+    SingingBowl,
 }
 
 #[derive(Clone, Debug)]
@@ -55,9 +58,13 @@ pub(crate) fn card_reward_branch_options(
             command: match source {
                 CardRewardBranchOptionSource::PermanentReward => format!("rp {idx}"),
                 CardRewardBranchOptionSource::CombatGeneratedToHand => format!("choose {idx}"),
+                CardRewardBranchOptionSource::SkipCardReward
+                | CardRewardBranchOptionSource::SingingBowl => {
+                    unreachable!("card reward card options cannot use non-card reward sources")
+                }
             },
-            card: card.id,
-            upgrades: card.upgrades,
+            card: Some(card.id),
+            upgrades: Some(card.upgrades),
             source,
         })
         .collect::<Vec<_>>();
@@ -65,6 +72,34 @@ pub(crate) fn card_reward_branch_options(
         return None;
     }
     Some(options)
+}
+
+pub(crate) fn card_reward_decline_branch_options(
+    session: &RunControlSession,
+    include_event_reward_skip: bool,
+) -> Vec<CardRewardBranchOption> {
+    let mut options = Vec::new();
+    if has_singing_bowl(session) && card_reward_bowl_available(session) {
+        options.push(CardRewardBranchOption {
+            label: "Singing Bowl | gain 2 max HP".to_string(),
+            command: "bowl".to_string(),
+            card: None,
+            upgrades: None,
+            source: CardRewardBranchOptionSource::SingingBowl,
+        });
+    }
+    if include_event_reward_skip || !completed_event_reward_skip(session) {
+        if let Some(command) = card_reward_skip_command(session) {
+            options.push(CardRewardBranchOption {
+                label: "Skip card reward".to_string(),
+                command,
+                card: None,
+                upgrades: None,
+                source: CardRewardBranchOptionSource::SkipCardReward,
+            });
+        }
+    }
+    options
 }
 
 pub(crate) fn select_card_reward_branch_options_for_session(
@@ -129,9 +164,7 @@ fn select_card_reward_branch_options_with_limit_and_strategy(
         .iter()
         .enumerate()
         .map(|(index, option)| {
-            let profile =
-                card_reward_semantic_profile_v1(&RewardCard::new(option.card, option.upgrades));
-            let (priority, class_key) = reward_option_semantic_class(&profile);
+            let (priority, class_key) = reward_option_semantic_class_for_option(option);
             let strategy = strategy_orders
                 .get(&index)
                 .cloned()
@@ -261,9 +294,16 @@ fn reward_option_strategy_orders(
             .map(|(index, _)| (index, RewardOptionStrategyOrder::unavailable()))
             .collect();
     };
+    let mut option_card_indices = BTreeMap::new();
     let cards = options
         .iter()
-        .map(|option| RewardCard::new(option.card, option.upgrades))
+        .enumerate()
+        .filter_map(|(option_index, option)| {
+            let card = option.card?;
+            let card_index = option_card_indices.len();
+            option_card_indices.insert(option_index, card_index);
+            Some(RewardCard::new(card, option.upgrades.unwrap_or_default()))
+        })
         .collect::<Vec<_>>();
     let route_trace = crate::ai::route_planner_v1::plan_route_decision_v1(
         &session.run_state,
@@ -281,10 +321,7 @@ fn reward_option_strategy_orders(
         .iter()
         .enumerate()
         .map(|(index, option)| {
-            let action = CandidateAction::TakeCard {
-                index,
-                card: option.card,
-            };
+            let action = candidate_action_for_reward_option(index, option, &option_card_indices);
             let order = trace
                 .compiled_for_action(&action)
                 .map(|compiled| RewardOptionStrategyOrder {
@@ -296,6 +333,29 @@ fn reward_option_strategy_orders(
             (index, order)
         })
         .collect()
+}
+
+fn candidate_action_for_reward_option(
+    option_index: usize,
+    option: &CardRewardBranchOption,
+    option_card_indices: &BTreeMap<usize, usize>,
+) -> CandidateAction {
+    match option.source {
+        CardRewardBranchOptionSource::PermanentReward
+        | CardRewardBranchOptionSource::CombatGeneratedToHand => CandidateAction::TakeCard {
+            index: option_card_indices
+                .get(&option_index)
+                .copied()
+                .unwrap_or(option_index),
+            card: option
+                .card
+                .expect("card reward option source should carry a card"),
+        },
+        CardRewardBranchOptionSource::SkipCardReward => CandidateAction::SkipCardReward,
+        CardRewardBranchOptionSource::SingingBowl => {
+            CandidateAction::TakeSingingBowl { max_hp_gain: 2 }
+        }
+    }
 }
 
 impl RewardOptionStrategyOrder {
@@ -338,6 +398,23 @@ pub(super) fn reward_option_semantic_class(
         return (4, "pure_transition_frontload".to_string());
     }
     (5, "other".to_string())
+}
+
+fn reward_option_semantic_class_for_option(option: &CardRewardBranchOption) -> (usize, String) {
+    match option.source {
+        CardRewardBranchOptionSource::PermanentReward
+        | CardRewardBranchOptionSource::CombatGeneratedToHand => {
+            let profile = card_reward_semantic_profile_v1(&RewardCard::new(
+                option
+                    .card
+                    .expect("card reward option source should carry a card"),
+                option.upgrades.unwrap_or_default(),
+            ));
+            reward_option_semantic_class(&profile)
+        }
+        CardRewardBranchOptionSource::SkipCardReward => (3, "decline:skip_card_reward".to_string()),
+        CardRewardBranchOptionSource::SingingBowl => (3, "decline:singing_bowl".to_string()),
+    }
 }
 
 fn join_or_dash(values: &[String]) -> String {
@@ -408,6 +485,48 @@ fn card_reward_option_source(session: &RunControlSession) -> Option<CardRewardBr
         }) => Some(CardRewardBranchOptionSource::CombatGeneratedToHand),
         _ => None,
     }
+}
+
+fn card_reward_skip_command(session: &RunControlSession) -> Option<String> {
+    let EngineState::RewardScreen(reward) = &session.engine_state else {
+        return None;
+    };
+    if reward.pending_card_choice.is_some() {
+        return None;
+    }
+    let reward_index = reward
+        .items
+        .iter()
+        .position(|item| matches!(item, RewardItem::Card { .. }))?;
+    Some(format!("branch-skip-card-reward {reward_index}"))
+}
+
+fn completed_event_reward_skip(session: &RunControlSession) -> bool {
+    session
+        .run_state
+        .event_state
+        .as_ref()
+        .is_some_and(|event| event.completed && !event.combat_pending)
+}
+
+fn card_reward_bowl_available(session: &RunControlSession) -> bool {
+    match &session.engine_state {
+        EngineState::RewardScreen(reward) => {
+            reward.pending_card_choice.is_some() || reward.has_card_reward_item()
+        }
+        EngineState::RewardOverlay { reward_state, .. } => {
+            reward_state.pending_card_choice.is_some() || reward_state.has_card_reward_item()
+        }
+        _ => false,
+    }
+}
+
+fn has_singing_bowl(session: &RunControlSession) -> bool {
+    session
+        .run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::SingingBowl)
 }
 
 fn first_visible_card_reward(

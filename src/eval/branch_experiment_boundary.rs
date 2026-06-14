@@ -1,12 +1,9 @@
 use crate::content::cards::CardId;
-use crate::content::relics::RelicId;
 use crate::eval::branch_experiment::{
     BranchExperimentChoiceCardV1, BranchExperimentRewardOptionPortfolioV1,
 };
 use crate::eval::run_control::RunControlSession;
 use crate::runtime::combat::CombatCard;
-use crate::state::core::EngineState;
-use crate::state::rewards::RewardItem;
 
 mod boss_relic;
 mod campfire;
@@ -22,7 +19,7 @@ pub(crate) use card_reward::{
     active_or_visible_reward_cards, card_offer_labels, CardRewardPortfolioContext,
 };
 use card_reward::{
-    card_reward_branch_options, reward_option_semantic_class,
+    card_reward_branch_options, card_reward_decline_branch_options, reward_option_semantic_class,
     select_card_reward_branch_options_for_session, CardRewardBranchOption,
 };
 use event::{event_branch_options, EventBranchOption};
@@ -91,28 +88,24 @@ pub(crate) fn current_branch_boundary(
     config: BranchBoundaryConfigV1,
     reward_portfolio_context: Option<CardRewardPortfolioContext>,
 ) -> Option<BranchBoundarySelectionV1> {
-    if let Some(options) = card_reward_branch_options(session) {
+    if let Some(mut options) = card_reward_branch_options(session) {
+        if config.include_skip {
+            options.extend(card_reward_decline_branch_options(
+                session,
+                config.include_event_reward_skip,
+            ));
+        }
         let selected = select_card_reward_branch_options_for_session(
             session,
             options,
             config.max_reward_options_per_branch,
             reward_portfolio_context,
         );
-        let mut options = selected
+        let options = selected
             .options
             .into_iter()
             .map(BranchBoundaryOptionV1::from_card_reward)
             .collect::<Vec<_>>();
-        if config.include_skip {
-            if has_singing_bowl(session) && card_reward_bowl_available(session) {
-                options.push(BranchBoundaryOptionV1::card_reward_bowl());
-            }
-            if config.include_event_reward_skip || !completed_event_reward_skip(session) {
-                if let Some(command) = card_reward_skip_command(session) {
-                    options.push(BranchBoundaryOptionV1::card_reward_skip(command));
-                }
-            }
-        }
         return Some(BranchBoundarySelectionV1 {
             id: BranchBoundaryIdV1::CardReward,
             options,
@@ -202,83 +195,7 @@ pub(crate) fn branch_boundary_available(session: &RunControlSession) -> bool {
         || event_branch_options(session, Some(4)).is_some()
 }
 
-fn card_reward_skip_command(session: &RunControlSession) -> Option<String> {
-    let EngineState::RewardScreen(reward) = &session.engine_state else {
-        return None;
-    };
-    if reward.pending_card_choice.is_some() {
-        return None;
-    }
-    let reward_index = reward
-        .items
-        .iter()
-        .position(|item| matches!(item, RewardItem::Card { .. }))?;
-    Some(format!("branch-skip-card-reward {reward_index}"))
-}
-
-fn completed_event_reward_skip(session: &RunControlSession) -> bool {
-    session
-        .run_state
-        .event_state
-        .as_ref()
-        .is_some_and(|event| event.completed && !event.combat_pending)
-}
-
-fn card_reward_bowl_available(session: &RunControlSession) -> bool {
-    match &session.engine_state {
-        EngineState::RewardScreen(reward) => {
-            reward.pending_card_choice.is_some() || reward.has_card_reward_item()
-        }
-        EngineState::RewardOverlay { reward_state, .. } => {
-            reward_state.pending_card_choice.is_some() || reward_state.has_card_reward_item()
-        }
-        _ => false,
-    }
-}
-
-fn has_singing_bowl(session: &RunControlSession) -> bool {
-    session
-        .run_state
-        .relics
-        .iter()
-        .any(|relic| relic.id == RelicId::SingingBowl)
-}
-
 impl BranchBoundaryOptionV1 {
-    fn card_reward_bowl() -> Self {
-        Self {
-            kind: "card_reward_bowl",
-            effect_label: "Singing Bowl | gain 2 max HP".to_string(),
-            label: "Singing Bowl | gain 2 max HP".to_string(),
-            command: "bowl".to_string(),
-            card: None,
-            upgrades: None,
-            selected_cards: Vec::new(),
-            effect_kind: "singing_bowl".to_string(),
-            effect_key: "card_reward:singing_bowl".to_string(),
-            representative_count: 1,
-            suppressed_count: 0,
-            success_reason: "singing bowl card reward branch applied",
-        }
-    }
-
-    fn card_reward_skip(command: String) -> Self {
-        Self {
-            kind: "card_reward_skip",
-            effect_label: "Skip card reward".to_string(),
-            label: "Skip card reward".to_string(),
-            command,
-            card: None,
-            upgrades: None,
-            selected_cards: Vec::new(),
-            effect_kind: "skip_card_reward".to_string(),
-            effect_key: "card_reward:skip".to_string(),
-            representative_count: 1,
-            suppressed_count: 0,
-            success_reason: "card reward skip branch applied",
-        }
-    }
-
     fn from_card_reward(option: CardRewardBranchOption) -> Self {
         let (kind, effect_kind, effect_key_prefix, success_reason) = match option.source {
             card_reward::CardRewardBranchOptionSource::PermanentReward => (
@@ -293,17 +210,55 @@ impl BranchBoundaryOptionV1 {
                 "combat_card_reward:to_hand",
                 "combat card reward branch applied",
             ),
+            card_reward::CardRewardBranchOptionSource::SkipCardReward => {
+                return Self {
+                    kind: "card_reward_skip",
+                    effect_label: option.label.clone(),
+                    label: option.label,
+                    command: option.command,
+                    card: None,
+                    upgrades: None,
+                    selected_cards: Vec::new(),
+                    effect_kind: "skip_card_reward".to_string(),
+                    effect_key: "card_reward:skip".to_string(),
+                    representative_count: 1,
+                    suppressed_count: 0,
+                    success_reason: "card reward skip branch applied",
+                };
+            }
+            card_reward::CardRewardBranchOptionSource::SingingBowl => {
+                return Self {
+                    kind: "card_reward_bowl",
+                    effect_label: option.label.clone(),
+                    label: option.label,
+                    command: option.command,
+                    card: None,
+                    upgrades: None,
+                    selected_cards: Vec::new(),
+                    effect_kind: "singing_bowl".to_string(),
+                    effect_key: "card_reward:singing_bowl".to_string(),
+                    representative_count: 1,
+                    suppressed_count: 0,
+                    success_reason: "singing bowl card reward branch applied",
+                };
+            }
         };
+        let card = option
+            .card
+            .expect("card reward branch option source should carry a card");
+        let upgrades = option
+            .upgrades
+            .expect("card reward branch option source should carry upgrades");
         Self {
             kind,
             effect_label: option.label.clone(),
             label: option.label,
             command: option.command,
-            card: Some(option.card),
-            upgrades: Some(option.upgrades),
-            selected_cards: selected_card_vec(Some(option.card), Some(option.upgrades)),
+            card: Some(card),
+            upgrades: Some(upgrades),
+            selected_cards: selected_card_vec(Some(card), Some(upgrades)),
             effect_kind: effect_kind.to_string(),
-            effect_key: format!("{effect_key_prefix}:{:?}:{}", option.card, option.upgrades),
+            effect_key: format!("{effect_key_prefix}:{:?}:{}", card, upgrades),
             representative_count: 1,
             suppressed_count: 0,
             success_reason,

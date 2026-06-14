@@ -106,8 +106,8 @@ fn select_event_card_reward_branch_options(
             Some(CardRewardBranchOption {
                 label: option.label.clone(),
                 command: option.command.clone(),
-                card: option.card?,
-                upgrades: option.upgrades.unwrap_or_default(),
+                card: Some(option.card?),
+                upgrades: Some(option.upgrades.unwrap_or_default()),
                 source: CardRewardBranchOptionSource::PermanentReward,
             })
         })
