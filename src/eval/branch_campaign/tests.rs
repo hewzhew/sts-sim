@@ -1042,6 +1042,31 @@ fn campaign_selection_merges_duplicate_quality_branches() {
 }
 
 #[test]
+fn campaign_selection_does_not_merge_distinct_deck_fingerprints() {
+    let mut pommel = test_campaign_branch("pommel-shop", 5, 80);
+    pommel.rank_key = 120;
+    pommel.choice_labels = vec!["Buy Pommel Strike".to_string()];
+    pommel.summary.as_mut().unwrap().deck_key = "Bash+0x1;PommelStrike+0x1;Strike+0x5".to_string();
+
+    let mut shrug = test_campaign_branch("shrug-shop", 5, 80);
+    shrug.rank_key = 100;
+    shrug.choice_labels = vec!["Buy Shrug It Off".to_string()];
+    shrug.summary.as_mut().unwrap().deck_key = "Bash+0x1;ShrugItOff+0x1;Strike+0x5".to_string();
+
+    let selected = select_campaign_branches_v1(vec![shrug, pommel], 2, 4);
+
+    assert_eq!(
+        selected
+            .active
+            .iter()
+            .map(|branch| branch.branch_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["pommel-shop", "shrug-shop"]
+    );
+    assert_eq!(selected.discarded_count, 0);
+}
+
+#[test]
 fn campaign_branch_experiment_config_preserves_shop_auto_leave_guard() {
     let config = BranchCampaignConfigV1::default();
 
@@ -2982,6 +3007,7 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
             max_hp: 80,
             gold: 99,
             deck_count: 10,
+            deck_key: String::new(),
             formation_stage: "PlanSeeded".to_string(),
             formation_strengths: Vec::new(),
             formation_needs: Vec::new(),

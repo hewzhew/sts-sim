@@ -37,6 +37,10 @@ fn route_planner_shop_need_increases_with_gold() {
     low_gold.gold = 80;
     let mut high_gold = low_gold.clone();
     high_gold.gold = 250;
+    let mut very_high_gold_near_boss = low_gold.clone();
+    very_high_gold_near_boss.act_num = 2;
+    very_high_gold_near_boss.floor_num = 29;
+    very_high_gold_near_boss.gold = 800;
 
     let low = plan_route_decision_v1(
         &low_gold,
@@ -48,8 +52,14 @@ fn route_planner_shop_need_increases_with_gold() {
         &EngineState::MapNavigation,
         RoutePlannerConfigV1::default(),
     );
+    let very_high_near_boss = plan_route_decision_v1(
+        &very_high_gold_near_boss,
+        &EngineState::MapNavigation,
+        RoutePlannerConfigV1::default(),
+    );
     let low_shop = candidate_by_room(&low, RoomType::ShopRoom);
     let high_shop = candidate_by_room(&high, RoomType::ShopRoom);
+    let very_high_near_boss_shop = candidate_by_room(&very_high_near_boss, RoomType::ShopRoom);
 
     assert!(
         high_shop.needs.need_shop > low_shop.needs.need_shop,
@@ -58,6 +68,14 @@ fn route_planner_shop_need_increases_with_gold() {
     assert!(
         high_shop.score_terms.shop > low_shop.score_terms.shop,
         "higher shop need should flow into decomposed score terms"
+    );
+    assert!(
+        very_high_near_boss_shop.needs.need_shop > high_shop.needs.need_shop,
+        "large unconverted gold near the act boss should create stronger route-level shop pressure"
+    );
+    assert!(
+        very_high_near_boss_shop.score_terms.shop > high_shop.score_terms.shop,
+        "stronger conversion pressure should flow into route score terms"
     );
 }
 

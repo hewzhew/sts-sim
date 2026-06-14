@@ -522,16 +522,20 @@ fn has_resource_conversion_signal(candidate: &BranchRetentionCandidateInputV1) -
         .choice_effect_keys
         .iter()
         .chain(candidate.lineage_flags.iter())
-        .any(|key| {
-            let key = key.to_ascii_lowercase();
-            key.contains("shop")
-                || key.contains("buy")
-                || key.contains("purchase")
-                || key.contains("gold")
-                || key.contains("remove")
-                || key.contains("potion")
-                || key.contains("relic")
-        })
+        .any(|key| resource_conversion_effect_key_v1(key))
+}
+
+fn resource_conversion_effect_key_v1(key: &str) -> bool {
+    matches!(
+        key.to_ascii_lowercase().as_str(),
+        "shop_buy_card"
+            | "shop_buy_relic"
+            | "shop_buy_potion"
+            | "shop_buy_combo"
+            | "shop_purge"
+            | "event_pay_resource"
+            | "event_trade"
+    )
 }
 
 fn select_positions_for_slots(

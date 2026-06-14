@@ -18,12 +18,10 @@ pub(super) fn score_route_candidate(
         card_reward: needs.need_card_rewards
             * (features.expected_card_rewards + path.max_early_pressure as f32 * 0.15),
         relic: needs.need_relics * (features.expected_relics + path.max_elites as f32 * 0.45),
-        remove: needs.need_remove
-            * needs.need_shop
-            * (features.remove_access + path.max_shops as f32 * 0.12),
+        remove: needs.need_remove * needs.need_shop * shop_route_access_value(features, path),
         upgrade: needs.need_upgrade * (features.upgrade_access + path.max_fires as f32 * 0.10),
         heal: needs.need_heal * (features.heal_access + path.max_fires as f32 * 0.16),
-        shop: needs.need_shop * (features.shop_access + path.max_shops as f32 * 0.10),
+        shop: needs.need_shop * shop_route_access_value(features, path),
         event: needs.need_event * (features.event_access + path.max_unknowns as f32 * 0.08),
         potion: needs.need_potion * features.expected_potion_gain,
         curse_debt: -expected_cursed_key_chest_debt(features, path, has_cursed_key)
@@ -209,6 +207,12 @@ fn flexibility_value(path: &RoutePathSummaryV1) -> f32 {
         + usize::from(path.max_unknowns > 0)
         + usize::from(path.max_elites > 0);
     branches + room_variety as f32 * 0.12
+}
+
+fn shop_route_access_value(features: &NodeFeaturesV1, path: &RoutePathSummaryV1) -> f32 {
+    features.shop_access
+        + path.min_shops as f32 * 0.28
+        + path.max_shops.saturating_sub(path.min_shops) as f32 * 0.12
 }
 
 fn first_elite_preparation_value(path: &RoutePathSummaryV1, needs: &NeedVectorV1) -> f32 {

@@ -53,6 +53,41 @@ fn portfolio_fill_continues_preferring_new_prefixes_after_slot_pass() {
 }
 
 #[test]
+fn resource_conversion_signal_ignores_full_potion_skip() {
+    let candidate = effect_retention_candidate(0, 10_000, "reward_skip_full_potion");
+    let selection = select_branch_retention_portfolio_v1(&[candidate], retention_config(1, Some(1)));
+    let decision = selection
+        .decisions_by_index
+        .get(&0)
+        .expect("candidate should have a retention decision");
+
+    assert_eq!(decision.strategic_signature.economy_conversion, 0.0);
+    assert!(
+        !decision
+            .strategic_signature
+            .buckets
+            .contains(&RetentionBucket::BestResourceConverted),
+        "skipping a potion because slots are full is not resource conversion"
+    );
+}
+
+#[test]
+fn resource_conversion_signal_keeps_shop_purchase() {
+    let candidate = effect_retention_candidate(0, 10_000, "shop_buy_combo");
+    let selection = select_branch_retention_portfolio_v1(&[candidate], retention_config(1, Some(1)));
+    let decision = selection
+        .decisions_by_index
+        .get(&0)
+        .expect("candidate should have a retention decision");
+
+    assert_eq!(decision.strategic_signature.economy_conversion, 1.0);
+    assert!(decision
+        .strategic_signature
+        .buckets
+        .contains(&RetentionBucket::BestResourceConverted));
+}
+
+#[test]
 fn portfolio_retention_does_not_fill_budget_with_redundant_first_pick_variants() {
     let candidates = vec![
         retention_candidate(0, 10_900, &["Twin Strike", "Iron Wave"]),

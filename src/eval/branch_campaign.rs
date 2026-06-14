@@ -133,6 +133,8 @@ pub struct BranchCampaignBranchSummaryV1 {
     pub max_hp: i32,
     pub gold: i32,
     pub deck_count: usize,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub deck_key: String,
     pub formation_stage: String,
     pub formation_strengths: Vec<String>,
     pub formation_needs: Vec<String>,
@@ -3186,8 +3188,23 @@ fn campaign_refresh_branch_summary_from_session_v1(
     summary.max_hp = max_hp;
     summary.gold = session.run_state.gold;
     summary.deck_count = session.run_state.master_deck.len();
+    summary.deck_key = campaign_deck_key_v1(session);
     summary.boss = branch_campaign_boss_label_v1(session);
     summary.boss_pressure = branch_campaign_boss_pressure_labels_v1(session);
+}
+
+fn campaign_deck_key_v1(session: &RunControlSession) -> String {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for card in &session.run_state.master_deck {
+        *counts
+            .entry(format!("{:?}+{}", card.id, card.upgrades))
+            .or_default() += 1;
+    }
+    counts
+        .into_iter()
+        .map(|(card, count)| format!("{card}x{count}"))
+        .collect::<Vec<_>>()
+        .join(";")
 }
 
 fn branch_campaign_boss_label_v1(session: &RunControlSession) -> String {
@@ -3316,6 +3333,11 @@ fn campaign_branch_quality_key_v1(branch: &BranchCampaignBranchV1) -> String {
     } else {
         summary.trajectory_key.clone()
     };
+    let deck_identity = if summary.deck_key.trim().is_empty() {
+        summary.deck_count.to_string()
+    } else {
+        summary.deck_key.clone()
+    };
     format!(
         "frontier={frontier}|a{}f{}|hp={}/{}|gold={}|deck={}|stage={}|strengths={}|needs={}|traj={}",
         summary.act,
@@ -3323,7 +3345,7 @@ fn campaign_branch_quality_key_v1(branch: &BranchCampaignBranchV1) -> String {
         summary.hp,
         summary.max_hp,
         summary.gold,
-        summary.deck_count,
+        deck_identity,
         summary.formation_stage,
         strengths,
         needs,
@@ -3541,6 +3563,7 @@ fn campaign_summary_from_report_branch_v1(
         max_hp: branch.summary.max_hp,
         gold: branch.summary.gold,
         deck_count: branch.summary.deck_count,
+        deck_key: String::new(),
         formation_stage: format!("{:?}", branch.summary.formation_stage),
         formation_strengths: branch
             .summary

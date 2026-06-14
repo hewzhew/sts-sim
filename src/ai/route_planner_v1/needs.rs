@@ -14,7 +14,9 @@ pub(super) fn estimate_needs(
     let weak_frontload = ctx.deck.frontload_damage_score < 45;
     let low_block = ctx.deck.block_score < 24;
     let has_empty_potion_slot = ctx.potions.filled < ctx.potions.slots;
-    let high_gold = ctx.gold >= config.early_shop_good_gold;
+    let gold_conversion_pressure = route_gold_conversion_pressure(ctx, config);
+    let near_boss_with_unconverted_gold =
+        floors_to_act_boss(ctx.act, ctx.floor) <= 5 && ctx.gold >= config.early_shop_good_gold * 2;
     let elite_deck_adjustment = elite_readiness_adjustment(ctx, weak_frontload);
 
     NeedVectorV1 {
@@ -50,7 +52,12 @@ pub(super) fn estimate_needs(
             0.20
         }),
         need_shop: clamp01(
-            if high_gold { 0.55 } else { 0.20 }
+            0.20 + gold_conversion_pressure * 0.60
+                + if near_boss_with_unconverted_gold {
+                    0.15
+                } else {
+                    0.0
+                }
                 + if ctx.deck.curses > 0 { 0.20 } else { 0.0 }
                 + if ctx.relics.has_smiling_mask || ctx.relics.has_membership_card {
                     0.20
@@ -90,6 +97,27 @@ pub(super) fn estimate_needs(
 
 fn clamp01(value: f32) -> f32 {
     value.clamp(0.0, 1.0)
+}
+
+fn route_gold_conversion_pressure(
+    ctx: &RouteDecisionContextV1,
+    config: &RoutePlannerConfigV1,
+) -> f32 {
+    if ctx.gold <= config.early_shop_good_gold {
+        return 0.0;
+    }
+    let spendable_window = (ctx.gold - config.early_shop_good_gold) as f32;
+    (spendable_window / 450.0).clamp(0.0, 1.0)
+}
+
+fn floors_to_act_boss(act: u8, floor: i32) -> i32 {
+    let boss_floor = match act {
+        1 => 16,
+        2 => 32,
+        3 => 48,
+        _ => floor,
+    };
+    boss_floor.saturating_sub(floor)
 }
 
 fn elite_readiness_adjustment(ctx: &RouteDecisionContextV1, weak_frontload: bool) -> f32 {
