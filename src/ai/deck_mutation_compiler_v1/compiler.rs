@@ -479,6 +479,11 @@ fn evaluate_candidate(
     candidate: &mut DeckMutationPlanCandidateV1,
     low_value_available: bool,
 ) {
+    let has_unsupported_target = candidate
+        .step
+        .cards
+        .iter()
+        .any(|card| card.target_class == DeckMutationTargetClassV1::Unsupported);
     let has_functional_target = candidate.step.cards.iter().any(|card| {
         card.target_class == DeckMutationTargetClassV1::Functional
             || card.target_class == DeckMutationTargetClassV1::Unsupported
@@ -490,19 +495,14 @@ fn evaluate_candidate(
         .all(|card| card.target_class.is_low_value_mutation_target());
     let mutation_choice = is_remove_choice(choice.reason) || is_transform_choice(choice.reason);
 
-    let role = if candidate.legacy_selected {
-        DeckMutationPlanRoleV1::PolicyPreferred
+    let role = if has_unsupported_target {
+        DeckMutationPlanRoleV1::Blocked
     } else if mutation_choice && has_functional_target && low_value_available {
         DeckMutationPlanRoleV1::InspectOnly
-    } else if candidate
-        .step
-        .cards
-        .iter()
-        .any(|card| card.target_class == DeckMutationTargetClassV1::Unsupported)
-    {
-        DeckMutationPlanRoleV1::Blocked
     } else if mutation_choice && has_functional_target {
         DeckMutationPlanRoleV1::RiskyExploration
+    } else if candidate.legacy_selected {
+        DeckMutationPlanRoleV1::PolicyPreferred
     } else if mutation_choice && all_low_value {
         DeckMutationPlanRoleV1::SafeAlternative
     } else if matches!(choice.reason, RunPendingChoiceReason::Upgrade) {
@@ -518,7 +518,7 @@ fn evaluate_candidate(
         DeckMutationPlanRoleV1::RiskyExploration => 0.35,
         DeckMutationPlanRoleV1::InspectOnly | DeckMutationPlanRoleV1::Blocked => 0.0,
     };
-    candidate.allowed_consumers = allowed_consumers(role, candidate.legacy_selected);
+    candidate.allowed_consumers = allowed_consumers(choice.reason, role, candidate);
     candidate.reasons.push(format!("role={role:?}"));
     if candidate.legacy_selected {
         candidate
@@ -534,12 +534,26 @@ fn evaluate_candidate(
 }
 
 fn allowed_consumers(
+    reason: RunPendingChoiceReason,
     role: DeckMutationPlanRoleV1,
-    legacy_selected: bool,
+    candidate: &DeckMutationPlanCandidateV1,
 ) -> AllowedDeckMutationConsumersV1 {
+    let all_low_value = candidate
+        .step
+        .cards
+        .iter()
+        .all(|card| card.target_class.is_low_value_mutation_target());
+    let execute_autopilot = match role {
+        DeckMutationPlanRoleV1::PolicyPreferred => true,
+        DeckMutationPlanRoleV1::SafeAlternative => is_remove_choice(reason) && all_low_value,
+        DeckMutationPlanRoleV1::RiskyExploration
+        | DeckMutationPlanRoleV1::InspectOnly
+        | DeckMutationPlanRoleV1::Blocked => false,
+    };
+
     match role {
         DeckMutationPlanRoleV1::PolicyPreferred => AllowedDeckMutationConsumersV1 {
-            execute_autopilot: legacy_selected,
+            execute_autopilot,
             branch_active: true,
             branch_frozen: false,
             inspect: true,
@@ -547,7 +561,7 @@ fn allowed_consumers(
             human_prompt: false,
         },
         DeckMutationPlanRoleV1::SafeAlternative => AllowedDeckMutationConsumersV1 {
-            execute_autopilot: false,
+            execute_autopilot,
             branch_active: true,
             branch_frozen: false,
             inspect: true,
