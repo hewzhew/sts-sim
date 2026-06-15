@@ -6,7 +6,9 @@ use crate::eval::branch_experiment::{
     BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentChoiceV1,
     BranchExperimentFrontierV1, BranchExperimentLineageV1, BranchExperimentRunSummaryV1,
 };
-use crate::eval::branch_experiment_retention::{BranchRetentionDecisionV1, BranchRetentionSlotV1};
+use crate::eval::branch_experiment_retention::{
+    BranchRetentionDecisionV1, BranchRetentionRankAdjustmentV1, BranchRetentionSlotV1,
+};
 use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
 use crate::eval::run_control::{
     RunControlConfig, RunControlSession, RunControlSessionCheckpointV1,
@@ -1921,6 +1923,7 @@ fn campaign_branch_from_report_appends_new_choice_path() {
         frontier_title: "Card Reward".to_string(),
         status: BranchCampaignBranchStatusV1::Active,
         stop_reason: "test".to_string(),
+        lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
     };
     let report_branch = test_report_branch(
@@ -1938,6 +1941,30 @@ fn campaign_branch_from_report_appends_new_choice_path() {
 }
 
 #[test]
+fn campaign_branch_from_report_carries_lineage_decision_signal_without_double_counting_current() {
+    let mut parent = test_campaign_branch("root", 4, 80);
+    parent.lineage_decision_signal_rank_adjustment = -830;
+    parent.rank_key = 12_000;
+
+    let mut report_branch = test_report_branch(
+        "root.event 1",
+        vec![("event 1", "costly event choice")],
+        BranchExperimentBranchStatusV1::Active,
+    );
+    report_branch.rank_key = 21_500;
+    report_branch.retention.rank_adjustment = BranchRetentionRankAdjustmentV1 {
+        decision_signal_adjustment: -100,
+        effective_rank_key: 21_500,
+        ..BranchRetentionRankAdjustmentV1::default()
+    };
+
+    let child = campaign_branch_from_report_branch_v1(&parent, &report_branch);
+
+    assert_eq!(child.rank_key, 20_670);
+    assert_eq!(child.lineage_decision_signal_rank_adjustment, -930);
+}
+
+#[test]
 fn campaign_branch_from_report_prefixes_parent_branch_id() {
     let parent = BranchCampaignBranchV1 {
         branch_id: "root.rp 0.branch-skip-card-reward 0".to_string(),
@@ -1948,6 +1975,7 @@ fn campaign_branch_from_report_prefixes_parent_branch_id() {
         frontier_title: "Card Reward".to_string(),
         status: BranchCampaignBranchStatusV1::Active,
         stop_reason: "test".to_string(),
+        lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
     };
     let report_branch = test_report_branch(
@@ -3766,6 +3794,7 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
         frontier_title: "Card Reward".to_string(),
         status: BranchCampaignBranchStatusV1::Active,
         stop_reason: "test".to_string(),
+        lineage_decision_signal_rank_adjustment: 0,
         rank_key: hp,
     }
 }

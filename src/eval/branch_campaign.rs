@@ -166,6 +166,8 @@ pub struct BranchCampaignBranchV1 {
     pub status: BranchCampaignBranchStatusV1,
     #[serde(default)]
     pub stop_reason: String,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub lineage_decision_signal_rank_adjustment: i32,
     pub rank_key: i32,
 }
 
@@ -2256,6 +2258,7 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
         frontier_title: "start".to_string(),
         status: BranchCampaignBranchStatusV1::Active,
         stop_reason: "initial".to_string(),
+        lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
     }
 }
@@ -4075,6 +4078,11 @@ pub fn campaign_branch_from_report_branch_v1(
     commands.extend(branch.choices.iter().map(|choice| choice.command.clone()));
     let mut choice_labels = parent.choice_labels.clone();
     choice_labels.extend(branch.choices.iter().map(campaign_choice_label_v1));
+    let current_decision_signal_adjustment =
+        branch.retention.rank_adjustment.decision_signal_adjustment;
+    let lineage_decision_signal_rank_adjustment = parent
+        .lineage_decision_signal_rank_adjustment
+        .saturating_add(current_decision_signal_adjustment);
     BranchCampaignBranchV1 {
         branch_id: campaign_child_branch_id_v1(&parent.branch_id, &branch.branch_id),
         commands,
@@ -4084,8 +4092,15 @@ pub fn campaign_branch_from_report_branch_v1(
         frontier_title: branch.summary.boundary_title.clone(),
         status: campaign_status_from_report_status(branch.status),
         stop_reason: branch.stop_reason.clone(),
-        rank_key: branch.rank_key,
+        lineage_decision_signal_rank_adjustment,
+        rank_key: branch
+            .rank_key
+            .saturating_add(parent.lineage_decision_signal_rank_adjustment),
     }
+}
+
+fn is_zero_i32(value: &i32) -> bool {
+    *value == 0
 }
 
 fn campaign_child_branch_id_v1(parent_id: &str, child_id: &str) -> String {

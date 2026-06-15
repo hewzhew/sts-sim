@@ -139,7 +139,17 @@ fn render_session_headline(
         .map(|status| format!("{status:?} "))
         .unwrap_or_default();
     let rank = branch
-        .map(|branch| format!(" rank={}", branch.rank_key))
+        .map(|branch| {
+            let lineage = if branch.lineage_decision_signal_rank_adjustment == 0 {
+                String::new()
+            } else {
+                format!(
+                    " lineage_signal={}",
+                    branch.lineage_decision_signal_rank_adjustment
+                )
+            };
+            format!(" rank={}{}", branch.rank_key, lineage)
+        })
         .unwrap_or_default();
     let (hp, max_hp) = visible_session_hp(session);
     format!(
