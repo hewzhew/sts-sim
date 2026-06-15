@@ -10,10 +10,11 @@ use crate::state::core::{
 };
 use crate::state::run::RunState;
 
-use super::approvals::approved_action;
+use super::approvals::legacy_approved_action;
 use super::types::{
     candidate_id, CampfireCandidateEvidenceV1, CampfireDecisionContextV1, CampfireDecisionV1,
-    CampfirePolicyActionV1, CampfirePolicyClassV1, CampfirePolicyConfigV1,
+    CampfirePlanCandidateV1, CampfirePlanRoleV1, CampfirePolicyActionV1, CampfirePolicyClassV1,
+    CampfirePolicyConfigV1,
 };
 
 pub fn build_campfire_decision_context_v1(
@@ -105,14 +106,175 @@ pub fn plan_campfire_decision_v1(
     context: &CampfireDecisionContextV1,
     config: &CampfirePolicyConfigV1,
 ) -> CampfireDecisionV1 {
-    let action = approved_action(context, config).unwrap_or_else(|| CampfirePolicyActionV1::Stop {
-        reason: stop_reason(context),
-    });
+    let legacy_action = legacy_approved_action(context, config);
+    let mut candidate_plans = campfire_candidate_plans(context, legacy_action.as_ref());
+    candidate_plans.push(stop_candidate_plan(context, legacy_action.is_none()));
+    candidate_plans.sort_by(compare_campfire_plan_candidates_v1);
+
+    let selected_plan = candidate_plans
+        .iter()
+        .find(|candidate| candidate.execute_autopilot)
+        .cloned()
+        .unwrap_or_else(|| CampfirePlanCandidateV1 {
+            plan_id: "campfire:stop:fallback".to_string(),
+            choice: None,
+            action: CampfirePolicyActionV1::Stop {
+                reason: "campfire compiler found no executable plan".to_string(),
+            },
+            role: CampfirePlanRoleV1::StopFallback,
+            score_hint: 0,
+            confidence: 0.0,
+            reasons: vec!["campfire compiler found no executable plan".to_string()],
+            execute_autopilot: true,
+        });
 
     CampfireDecisionV1 {
-        action,
+        action: selected_plan.action.clone(),
+        selected_plan,
+        candidate_plans,
         label_role: "behavior_policy_not_teacher",
         context: context.clone(),
+    }
+}
+
+fn campfire_candidate_plans(
+    context: &CampfireDecisionContextV1,
+    legacy_action: Option<&CampfirePolicyActionV1>,
+) -> Vec<CampfirePlanCandidateV1> {
+    context
+        .candidates
+        .iter()
+        .map(|candidate| campfire_candidate_plan(candidate, legacy_action))
+        .collect()
+}
+
+fn campfire_candidate_plan(
+    candidate: &CampfireCandidateEvidenceV1,
+    legacy_action: Option<&CampfirePolicyActionV1>,
+) -> CampfirePlanCandidateV1 {
+    let candidate_action = action_for_candidate(candidate);
+    let legacy_selected =
+        legacy_action.is_some_and(|legacy| action_matches(legacy, &candidate_action));
+    let action = if legacy_selected {
+        legacy_action.cloned().unwrap_or(candidate_action)
+    } else {
+        candidate_action
+    };
+    let (confidence, reasons) = if legacy_selected {
+        action_confidence_and_reason(&action)
+    } else {
+        (
+            0.0,
+            candidate
+                .risks
+                .iter()
+                .cloned()
+                .chain(candidate.evidence.iter().take(1).cloned())
+                .collect(),
+        )
+    };
+
+    CampfirePlanCandidateV1 {
+        plan_id: candidate.candidate_id.clone(),
+        choice: Some(candidate.choice),
+        action,
+        role: if legacy_selected {
+            CampfirePlanRoleV1::PolicyPreferred
+        } else {
+            CampfirePlanRoleV1::InspectOnly
+        },
+        score_hint: candidate.upgrade_priority.unwrap_or_default(),
+        confidence,
+        reasons,
+        execute_autopilot: legacy_selected,
+    }
+}
+
+fn stop_candidate_plan(
+    context: &CampfireDecisionContextV1,
+    legacy_selected: bool,
+) -> CampfirePlanCandidateV1 {
+    let reason = stop_reason(context);
+    CampfirePlanCandidateV1 {
+        plan_id: "campfire:stop".to_string(),
+        choice: None,
+        action: CampfirePolicyActionV1::Stop {
+            reason: reason.clone(),
+        },
+        role: if legacy_selected {
+            CampfirePlanRoleV1::PolicyPreferred
+        } else {
+            CampfirePlanRoleV1::StopFallback
+        },
+        score_hint: 0,
+        confidence: 0.0,
+        reasons: vec![reason],
+        execute_autopilot: legacy_selected,
+    }
+}
+
+fn action_for_candidate(candidate: &CampfireCandidateEvidenceV1) -> CampfirePolicyActionV1 {
+    match candidate.choice {
+        CampfireChoice::Rest => CampfirePolicyActionV1::Rest {
+            confidence: 0.0,
+            reason: "campfire candidate plan: rest".to_string(),
+        },
+        CampfireChoice::Smith(deck_index) => CampfirePolicyActionV1::Smith {
+            deck_index,
+            confidence: 0.0,
+            reason: "campfire candidate plan: smith".to_string(),
+        },
+        _ => CampfirePolicyActionV1::Stop {
+            reason: format!(
+                "campfire candidate {:?} is inspect-only in policy v1",
+                candidate.choice
+            ),
+        },
+    }
+}
+
+fn action_matches(left: &CampfirePolicyActionV1, right: &CampfirePolicyActionV1) -> bool {
+    match (left, right) {
+        (CampfirePolicyActionV1::Rest { .. }, CampfirePolicyActionV1::Rest { .. }) => true,
+        (
+            CampfirePolicyActionV1::Smith {
+                deck_index: left, ..
+            },
+            CampfirePolicyActionV1::Smith {
+                deck_index: right, ..
+            },
+        ) => left == right,
+        (CampfirePolicyActionV1::Stop { .. }, CampfirePolicyActionV1::Stop { .. }) => true,
+        _ => false,
+    }
+}
+
+fn action_confidence_and_reason(action: &CampfirePolicyActionV1) -> (f32, Vec<String>) {
+    match action {
+        CampfirePolicyActionV1::Rest { confidence, reason }
+        | CampfirePolicyActionV1::Smith {
+            confidence, reason, ..
+        } => (*confidence, vec![reason.clone()]),
+        CampfirePolicyActionV1::Stop { reason } => (0.0, vec![reason.clone()]),
+    }
+}
+
+fn compare_campfire_plan_candidates_v1(
+    left: &CampfirePlanCandidateV1,
+    right: &CampfirePlanCandidateV1,
+) -> std::cmp::Ordering {
+    campfire_plan_role_rank(left.role)
+        .cmp(&campfire_plan_role_rank(right.role))
+        .then_with(|| right.score_hint.cmp(&left.score_hint))
+        .then_with(|| right.confidence.total_cmp(&left.confidence))
+        .then_with(|| left.plan_id.cmp(&right.plan_id))
+}
+
+fn campfire_plan_role_rank(role: CampfirePlanRoleV1) -> u8 {
+    match role {
+        CampfirePlanRoleV1::PolicyPreferred => 0,
+        CampfirePlanRoleV1::InspectOnly => 1,
+        CampfirePlanRoleV1::StopFallback => 2,
     }
 }
 

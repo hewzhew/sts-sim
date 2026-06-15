@@ -1,6 +1,6 @@
 use crate::ai::campfire_policy_v1::{
-    build_campfire_decision_context_v1, plan_campfire_decision_v1, CampfirePolicyActionV1,
-    CampfirePolicyClassV1, CampfirePolicyConfigV1,
+    build_campfire_decision_context_v1, plan_campfire_decision_v1, CampfirePlanRoleV1,
+    CampfirePolicyActionV1, CampfirePolicyClassV1, CampfirePolicyConfigV1,
 };
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
@@ -121,6 +121,34 @@ fn campfire_policy_smiths_clear_upgrade_when_first_elite_prep_window_is_open() {
         decision.action,
         CampfirePolicyActionV1::Smith { deck_index, .. } if deck_index == bash_index
     ));
+}
+
+#[test]
+fn campfire_decision_selects_from_candidate_plan_pool() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = 70;
+    run_state.max_hp = 80;
+    install_current_room_route(
+        &mut run_state,
+        RoomType::RestRoom,
+        &[RoomType::MonsterRoom, RoomType::MonsterRoomElite],
+    );
+    let context = build_campfire_decision_context_v1(
+        &run_state,
+        vec![CampfireChoice::Rest, CampfireChoice::Smith(0)],
+    );
+
+    let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+
+    assert_eq!(decision.action, decision.selected_plan.action);
+    assert_eq!(
+        decision.selected_plan.role,
+        CampfirePlanRoleV1::PolicyPreferred
+    );
+    assert!(decision
+        .candidate_plans
+        .iter()
+        .any(|candidate| candidate.plan_id == decision.selected_plan.plan_id));
 }
 
 fn install_visible_rest_route(run_state: &mut RunState) {

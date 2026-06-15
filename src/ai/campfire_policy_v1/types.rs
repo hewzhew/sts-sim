@@ -64,8 +64,29 @@ impl Default for CampfirePolicyConfigV1 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CampfireDecisionV1 {
     pub action: CampfirePolicyActionV1,
+    pub selected_plan: CampfirePlanCandidateV1,
+    pub candidate_plans: Vec<CampfirePlanCandidateV1>,
     pub label_role: &'static str,
     pub context: CampfireDecisionContextV1,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CampfirePlanCandidateV1 {
+    pub plan_id: String,
+    pub choice: Option<CampfireChoice>,
+    pub action: CampfirePolicyActionV1,
+    pub role: CampfirePlanRoleV1,
+    pub score_hint: i32,
+    pub confidence: f32,
+    pub reasons: Vec<String>,
+    pub execute_autopilot: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CampfirePlanRoleV1 {
+    PolicyPreferred,
+    InspectOnly,
+    StopFallback,
 }
 
 #[derive(Clone, Debug, PartialEq)]
