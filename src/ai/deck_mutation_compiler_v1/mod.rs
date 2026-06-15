@@ -14,4 +14,5 @@ pub use types::{
     AllowedDeckMutationConsumersV1, CompiledDeckMutationDecisionV1, DeckMutationCardSnapshotV1,
     DeckMutationCompilerModeV1, DeckMutationKindV1, DeckMutationPlanCandidateV1,
     DeckMutationPlanRoleV1, DeckMutationPlanStepV1, DeckMutationTargetClassV1,
+    DeckMutationTargetLossTierV1, DeckMutationTargetLossV1,
 };

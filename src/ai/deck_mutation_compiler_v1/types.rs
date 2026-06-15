@@ -50,6 +50,23 @@ pub enum DeckMutationTargetClassV1 {
     Unsupported,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub enum DeckMutationTargetLossTierV1 {
+    #[default]
+    LowValue,
+    RedundantFunctional,
+    Functional,
+    CoreFunctional,
+    Unsupported,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DeckMutationTargetLossV1 {
+    pub tier: DeckMutationTargetLossTierV1,
+    pub same_card_count: usize,
+    pub signals: Vec<String>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AllowedDeckMutationConsumersV1 {
     pub execute_autopilot: bool,
@@ -67,6 +84,7 @@ pub struct DeckMutationCardSnapshotV1 {
     pub upgrades: u8,
     pub label: String,
     pub target_class: DeckMutationTargetClassV1,
+    pub target_loss: DeckMutationTargetLossV1,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -213,13 +213,16 @@ fn apply_direct_event_deck_mutation_plan(
     plan: DeckMutationPlanCandidateV1,
 ) {
     let card = plan.step.cards.first();
+    let loss = card
+        .map(|card| format!(" loss={:?}", card.target_loss.tier))
+        .unwrap_or_default();
     option.card = card.map(|card| card.card);
     option.upgrades = card.map(|card| card.upgrades);
     option.effect_kind = plan.step.effect_kind;
     option.effect_key = plan.step.effect_key;
     option.effect_label = format!(
-        "{} | deck mutation role={:?} confidence={:.2}",
-        option.effect_label, plan.role, plan.confidence
+        "{} | deck mutation role={:?}{} confidence={:.2}",
+        option.effect_label, plan.role, loss, plan.confidence
     );
     option.representative_count = plan.representative_count;
     option.suppressed_count = plan.suppressed_count;

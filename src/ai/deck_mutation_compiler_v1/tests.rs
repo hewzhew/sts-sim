@@ -1,6 +1,6 @@
 use crate::ai::deck_mutation_compiler_v1::{
     compile_deck_mutation_decision_v1, render_compiled_deck_mutation_decision_v1,
-    DeckMutationCompilerModeV1, DeckMutationPlanRoleV1,
+    DeckMutationCompilerModeV1, DeckMutationPlanRoleV1, DeckMutationTargetLossTierV1,
 };
 use crate::content::cards::CardId;
 use crate::runtime::combat::CombatCard;
@@ -101,6 +101,55 @@ fn compiler_render_exposes_active_and_inspect_only_plan_groups() {
     assert!(rendered.contains("inspect_only:"));
     assert!(rendered.contains("True Grit"));
     assert!(rendered.contains("role=InspectOnly"));
+}
+
+#[test]
+fn compiler_exposes_target_loss_for_functional_mutation_targets() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state
+        .master_deck
+        .push(CombatCard::new(CardId::BurningPact, 90));
+    run_state
+        .master_deck
+        .push(CombatCard::new(CardId::TrueGrit, 91));
+    run_state
+        .master_deck
+        .push(CombatCard::new(CardId::TrueGrit, 92));
+    let choice = choice(RunPendingChoiceReason::Purge, 1);
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice,
+        DeckMutationCompilerModeV1::BranchTopK { max_active: 16 },
+    );
+
+    let burning_pact = decision
+        .candidate_plans
+        .iter()
+        .find(|plan| plan.step.cards[0].card == CardId::BurningPact)
+        .expect("Burning Pact candidate");
+    let true_grit = decision
+        .candidate_plans
+        .iter()
+        .find(|plan| plan.step.cards[0].card == CardId::TrueGrit)
+        .expect("True Grit candidate");
+
+    assert_eq!(
+        burning_pact.step.cards[0].target_loss.tier,
+        DeckMutationTargetLossTierV1::CoreFunctional
+    );
+    assert_eq!(
+        true_grit.step.cards[0].target_loss.tier,
+        DeckMutationTargetLossTierV1::Functional
+    );
+    assert!(
+        true_grit.score_hint > burning_pact.score_hint,
+        "redundant functional target should be ranked before singleton core functional target"
+    );
+    assert!(burning_pact
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("target_loss=CoreFunctional")));
 }
 
 fn choice(reason: RunPendingChoiceReason, count: usize) -> RunPendingChoiceState {

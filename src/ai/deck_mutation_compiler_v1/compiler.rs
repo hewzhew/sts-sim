@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
 use crate::ai::run_choice_policy_v1::{
     build_run_choice_decision_context_v1, plan_run_choice_decision_v1,
     run_choice_duplicate_priority_v1, RunChoicePolicyActionV1, RunChoicePolicyClassV1,
@@ -8,12 +9,14 @@ use crate::ai::run_choice_policy_v1::{
 use crate::content::cards::{get_card_definition, CardId, CardRarity, CardTag, CardType};
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
+use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 
 use super::types::{
     AllowedDeckMutationConsumersV1, CompiledDeckMutationDecisionV1, DeckMutationCardSnapshotV1,
     DeckMutationCompilerModeV1, DeckMutationKindV1, DeckMutationPlanCandidateV1,
     DeckMutationPlanRoleV1, DeckMutationPlanStepV1, DeckMutationTargetClassV1,
+    DeckMutationTargetLossTierV1, DeckMutationTargetLossV1,
 };
 
 const MAX_DUPLICATE_OPTIONS_PER_BRANCH: usize = 4;
@@ -203,13 +206,15 @@ fn exact_target_for_deck_index(
     upgrade_priority: Option<i32>,
 ) -> Option<ExactTarget> {
     let card = run_state.master_deck.get(deck_index)?;
+    let target_class = target_class_for_card_mutation(reason, card);
     Some(ExactTarget {
         card: DeckMutationCardSnapshotV1 {
             deck_index,
             card: card.id,
             upgrades: card.upgrades,
             label: card_label(card.id, card.upgrades),
-            target_class: target_class_for_card_mutation(reason, card),
+            target_class,
+            target_loss: target_loss_for_card_mutation(run_state, reason, card, target_class),
         },
         identity_key: card_stat_identity_key(card),
         selectable,
@@ -518,10 +523,14 @@ fn candidate_from_targets_for_reason(
         run_choice_policy_selected: false,
         score_hint,
         confidence: 0.0,
-        reasons: vec![format!("candidate for {:?}", reason)],
+        reasons: selected_targets
+            .iter()
+            .flat_map(|target| target_loss_reasons(&target.card))
+            .chain(std::iter::once(format!("candidate for {:?}", reason)))
+            .collect(),
         risks: selected_targets
             .iter()
-            .flat_map(|target| target_risks(target.card.target_class))
+            .flat_map(|target| target_risks(&target.card))
             .collect(),
     }
 }
@@ -746,11 +755,23 @@ fn target_score_hint(reason: RunPendingChoiceReason, target: &ExactTarget) -> i3
         | RunPendingChoiceReason::Transform
         | RunPendingChoiceReason::TransformNonBottled
         | RunPendingChoiceReason::TransformUpgraded => {
-            -target_class_rank(target.card.target_class) - i32::from(target.card.upgrades) * 5
+            -target_class_rank(target.card.target_class)
+                - target_loss_rank(target.card.target_loss.tier)
+                - i32::from(target.card.upgrades) * 5
         }
         RunPendingChoiceReason::BottleFlame
         | RunPendingChoiceReason::BottleLightning
         | RunPendingChoiceReason::BottleTornado => 0,
+    }
+}
+
+fn target_loss_rank(tier: DeckMutationTargetLossTierV1) -> i32 {
+    match tier {
+        DeckMutationTargetLossTierV1::LowValue => 0,
+        DeckMutationTargetLossTierV1::RedundantFunctional => 25,
+        DeckMutationTargetLossTierV1::Functional => 60,
+        DeckMutationTargetLossTierV1::CoreFunctional => 120,
+        DeckMutationTargetLossTierV1::Unsupported => 10_000,
     }
 }
 
@@ -766,8 +787,134 @@ fn target_class_rank(class: DeckMutationTargetClassV1) -> i32 {
     }
 }
 
-fn target_risks(class: DeckMutationTargetClassV1) -> Vec<String> {
-    match class {
+fn target_loss_for_card_mutation(
+    run_state: &RunState,
+    reason: RunPendingChoiceReason,
+    card: &CombatCard,
+    target_class: DeckMutationTargetClassV1,
+) -> DeckMutationTargetLossV1 {
+    let same_card_count = run_state
+        .master_deck
+        .iter()
+        .filter(|deck_card| deck_card.id == card.id)
+        .count();
+    let mut loss = DeckMutationTargetLossV1 {
+        same_card_count,
+        ..DeckMutationTargetLossV1::default()
+    };
+
+    if !(is_remove_choice(reason) || is_transform_choice(reason)) {
+        loss.tier = DeckMutationTargetLossTierV1::LowValue;
+        return loss;
+    }
+
+    if target_class == DeckMutationTargetClassV1::Unsupported {
+        loss.tier = DeckMutationTargetLossTierV1::Unsupported;
+        loss.signals.push("unsupported_target".to_string());
+        return loss;
+    }
+
+    if target_class.is_low_value_mutation_target() {
+        loss.tier = DeckMutationTargetLossTierV1::LowValue;
+        loss.signals.push(format!("target_class={target_class:?}"));
+        return loss;
+    }
+
+    let semantic = card_reward_semantic_profile_v1(&RewardCard::new(card.id, card.upgrades));
+    let mut has_core_signal = false;
+    for role in &semantic.roles {
+        if let Some(signal) = target_loss_signal_for_role(*role) {
+            loss.signals.push(signal.to_string());
+            if target_loss_role_is_core(*role) {
+                has_core_signal = true;
+            }
+        }
+    }
+    if card.upgrades > 0 {
+        loss.signals.push("upgraded_target".to_string());
+    }
+    if same_card_count > 1 {
+        loss.signals
+            .push(format!("same_card_count={same_card_count}"));
+    }
+
+    loss.tier = if same_card_count > 1 && !has_core_signal {
+        DeckMutationTargetLossTierV1::RedundantFunctional
+    } else if same_card_count > 1 {
+        DeckMutationTargetLossTierV1::Functional
+    } else if has_core_signal {
+        DeckMutationTargetLossTierV1::CoreFunctional
+    } else {
+        DeckMutationTargetLossTierV1::Functional
+    };
+    loss
+}
+
+fn target_loss_signal_for_role(role: CardRewardSemanticRoleV1) -> Option<&'static str> {
+    match role {
+        CardRewardSemanticRoleV1::FrontloadDamage => Some("frontload_damage"),
+        CardRewardSemanticRoleV1::AoeDamage => Some("aoe_damage"),
+        CardRewardSemanticRoleV1::Block => Some("block"),
+        CardRewardSemanticRoleV1::BlockRetention => Some("block_retention"),
+        CardRewardSemanticRoleV1::BlockMultiplier => Some("block_multiplier"),
+        CardRewardSemanticRoleV1::CardDraw => Some("card_draw"),
+        CardRewardSemanticRoleV1::EnergySource => Some("energy_source"),
+        CardRewardSemanticRoleV1::Vulnerable => Some("vulnerable"),
+        CardRewardSemanticRoleV1::Weak => Some("weak"),
+        CardRewardSemanticRoleV1::EnemyStrengthDown => Some("enemy_strength_down"),
+        CardRewardSemanticRoleV1::ScalingSource => Some("scaling_source"),
+        CardRewardSemanticRoleV1::TemporaryStrengthBurst => Some("temporary_strength_burst"),
+        CardRewardSemanticRoleV1::StrengthPayoff => Some("strength_payoff"),
+        CardRewardSemanticRoleV1::BlockPayoff => Some("block_payoff"),
+        CardRewardSemanticRoleV1::StrikePayoff => Some("strike_payoff"),
+        CardRewardSemanticRoleV1::UpgradePayoff => Some("upgrade_payoff"),
+        CardRewardSemanticRoleV1::ExhaustGenerator => Some("exhaust_generator"),
+        CardRewardSemanticRoleV1::ExhaustPayoff => Some("exhaust_payoff"),
+        CardRewardSemanticRoleV1::StatusGenerator => Some("status_generator"),
+        CardRewardSemanticRoleV1::StatusPayoff => Some("status_payoff"),
+        CardRewardSemanticRoleV1::SelfDamagePayoff => Some("self_damage_payoff"),
+        CardRewardSemanticRoleV1::PackagePayoff => None,
+        CardRewardSemanticRoleV1::RandomOutput => Some("random_output"),
+        CardRewardSemanticRoleV1::ConditionalPlayability => Some("conditional_playability"),
+        CardRewardSemanticRoleV1::UnsupportedMechanics => Some("unsupported_mechanics"),
+    }
+}
+
+fn target_loss_role_is_core(role: CardRewardSemanticRoleV1) -> bool {
+    matches!(
+        role,
+        CardRewardSemanticRoleV1::BlockRetention
+            | CardRewardSemanticRoleV1::BlockMultiplier
+            | CardRewardSemanticRoleV1::CardDraw
+            | CardRewardSemanticRoleV1::EnergySource
+            | CardRewardSemanticRoleV1::Vulnerable
+            | CardRewardSemanticRoleV1::Weak
+            | CardRewardSemanticRoleV1::EnemyStrengthDown
+            | CardRewardSemanticRoleV1::ScalingSource
+            | CardRewardSemanticRoleV1::BlockPayoff
+            | CardRewardSemanticRoleV1::ExhaustGenerator
+            | CardRewardSemanticRoleV1::ExhaustPayoff
+            | CardRewardSemanticRoleV1::StatusPayoff
+            | CardRewardSemanticRoleV1::SelfDamagePayoff
+    )
+}
+
+fn target_loss_reasons(card: &DeckMutationCardSnapshotV1) -> Vec<String> {
+    let mut reasons = vec![format!(
+        "target_loss={:?} same_card_count={}",
+        card.target_loss.tier, card.target_loss.same_card_count
+    )];
+    if !card.target_loss.signals.is_empty() {
+        reasons.push(format!(
+            "target_loss_signals={}",
+            card.target_loss.signals.join(",")
+        ));
+    }
+    reasons
+}
+
+fn target_risks(card: &DeckMutationCardSnapshotV1) -> Vec<String> {
+    let mut risks = match card.target_class {
         DeckMutationTargetClassV1::StarterStrike => {
             vec!["mutating starter attacks can reduce short-term frontload".to_string()]
         }
@@ -781,7 +928,21 @@ fn target_risks(class: DeckMutationTargetClassV1) -> Vec<String> {
             vec!["unsupported target is blocked from automatic consumers".to_string()]
         }
         _ => Vec::new(),
+    };
+    match card.target_loss.tier {
+        DeckMutationTargetLossTierV1::CoreFunctional => {
+            risks.push("target carries singleton core deck function".to_string());
+        }
+        DeckMutationTargetLossTierV1::Functional => {
+            risks.push("target carries replaceable but real deck function".to_string());
+        }
+        DeckMutationTargetLossTierV1::Unsupported => {
+            risks.push("target loss profile is unsupported".to_string());
+        }
+        DeckMutationTargetLossTierV1::LowValue
+        | DeckMutationTargetLossTierV1::RedundantFunctional => {}
     }
+    risks
 }
 
 fn is_remove_choice(reason: RunPendingChoiceReason) -> bool {
