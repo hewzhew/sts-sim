@@ -1381,6 +1381,54 @@ fn current_boundary_wraps_low_fanout_event_options() {
 }
 
 #[test]
+fn current_boundary_routes_direct_event_removes_through_deck_mutation_compiler() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.master_deck = vec![
+        CombatCard::new(CardId::SecondWind, 100),
+        CombatCard::new(CardId::Evolve, 101),
+        CombatCard::new(CardId::Cleave, 102),
+    ];
+    session.run_state.master_deck[0].upgrades = 1;
+    session.run_state.master_deck[1].upgrades = 1;
+    session.run_state.event_state = Some(EventState {
+        id: EventId::Falling,
+        current_screen: 1,
+        internal_state: (0 & 0x3FF) | ((1 & 0x3FF) << 10) | ((2 & 0x3FF) << 20),
+        completed: false,
+        combat_pending: false,
+        extra_data: Vec::new(),
+    });
+    session.engine_state = EngineState::EventRoom;
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("Falling should expose direct remove options");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
+    assert_eq!(
+        boundary
+            .options
+            .iter()
+            .map(|option| (
+                option.command.as_str(),
+                option.effect_kind.as_str(),
+                option.card,
+                option.upgrades,
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("event 2", "remove_card", Some(CardId::Cleave), Some(0)),
+            ("event 0", "remove_card", Some(CardId::SecondWind), Some(1)),
+            ("event 1", "remove_card", Some(CardId::Evolve), Some(1)),
+        ],
+        "direct event removals should be sorted by the deck mutation compiler, not raw event UI order"
+    );
+    assert!(boundary
+        .options
+        .iter()
+        .all(|option| option.effect_label.contains("deck mutation role=")));
+}
+
+#[test]
 fn current_boundary_caps_library_card_offer_with_card_semantics() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.event_state = Some(EventState {

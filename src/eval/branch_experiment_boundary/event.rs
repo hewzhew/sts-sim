@@ -2,13 +2,17 @@ use super::card_reward::{
     select_card_reward_branch_options_for_session, CardRewardBranchOption,
     CardRewardBranchOptionSource,
 };
+use crate::ai::deck_mutation_compiler_v1::{
+    compile_direct_deck_mutation_plan_candidate_v1, deck_mutation_target_class_for_card_v1,
+    DeckMutationPlanCandidateV1, DeckMutationTargetClassV1,
+};
 use crate::ai::event_policy_v1::{
     build_event_decision_context_v1, plan_event_decision_v1, EventPolicyActionV1,
     EventPolicyClassV1, EventPolicyConfigV1,
 };
 use crate::content::cards::CardId;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
-use crate::state::core::{ClientInput, EngineState};
+use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
 use crate::state::events::{
     EventActionKind, EventCardKind, EventEffect, EventOption, EventOptionSemantics,
     EventOptionTransition, EventRelicKind, EventSelectionKind,
@@ -27,6 +31,7 @@ pub(crate) struct EventBranchOption {
     pub(crate) effect_label: String,
     pub(crate) representative_count: usize,
     pub(crate) suppressed_count: usize,
+    deck_mutation_order_key: Option<(u8, i32)>,
 }
 
 #[derive(Clone, Debug)]
@@ -49,6 +54,8 @@ pub(crate) fn event_branch_options(
     }
     let surface = build_decision_surface(session);
     let mut branch_options = Vec::new();
+    let direct_remove_low_value_available =
+        direct_event_remove_card_low_value_available(session, &event_options);
 
     for candidate in &surface.view.candidates {
         let Some(ClientInput::EventChoice(index)) = candidate.action.executable_input() else {
@@ -66,7 +73,7 @@ pub(crate) fn event_branch_options(
         let semantics = branch_semantics_for_event_option(event_option);
         let (card, upgrades) =
             event_option_specific_card_with_upgrades(session, index, event_option);
-        branch_options.push(EventBranchOption {
+        let mut branch_option = EventBranchOption {
             label: candidate.label.clone(),
             command: candidate.action.command_hint(),
             card,
@@ -76,12 +83,23 @@ pub(crate) fn event_branch_options(
             effect_label: semantics.effect_label,
             representative_count: 1,
             suppressed_count: 0,
-        });
+            deck_mutation_order_key: None,
+        };
+        if let Some(plan) = compile_direct_event_remove_card_plan(
+            session,
+            event_option,
+            &branch_option.command,
+            direct_remove_low_value_available,
+        ) {
+            apply_direct_event_deck_mutation_plan(&mut branch_option, plan);
+        }
+        branch_options.push(branch_option);
     }
 
     if branch_options.is_empty() {
         return None;
     }
+    sort_all_direct_deck_mutation_options(&mut branch_options);
     if let Some(policy_options) =
         event_policy_safe_exit_branch_options(session, &event_options, &branch_options)
     {
@@ -100,6 +118,127 @@ pub(crate) fn event_branch_options(
         return None;
     }
     Some(branch_options)
+}
+
+fn sort_all_direct_deck_mutation_options(options: &mut [EventBranchOption]) {
+    if options.is_empty()
+        || !options
+            .iter()
+            .all(|option| option.deck_mutation_order_key.is_some())
+    {
+        return;
+    }
+    options.sort_by(|left, right| {
+        left.deck_mutation_order_key
+            .cmp(&right.deck_mutation_order_key)
+            .then_with(|| left.command.cmp(&right.command))
+    });
+}
+
+fn direct_event_remove_card_low_value_available(
+    session: &RunControlSession,
+    event_options: &[EventOption],
+) -> bool {
+    event_options.iter().any(|option| {
+        let Some(deck_index) = event_option_remove_card_target_deck_index(session, option) else {
+            return false;
+        };
+        let Some(card) = session.run_state.master_deck.get(deck_index) else {
+            return false;
+        };
+        direct_event_remove_target_is_low_value(deck_mutation_target_class_for_card_v1(
+            RunPendingChoiceReason::Purge,
+            card,
+        ))
+    })
+}
+
+fn direct_event_remove_target_is_low_value(class: DeckMutationTargetClassV1) -> bool {
+    matches!(
+        class,
+        DeckMutationTargetClassV1::Curse
+            | DeckMutationTargetClassV1::StarterStrike
+            | DeckMutationTargetClassV1::StarterDefend
+            | DeckMutationTargetClassV1::Basic
+    )
+}
+
+fn compile_direct_event_remove_card_plan(
+    session: &RunControlSession,
+    option: &EventOption,
+    command: &str,
+    low_value_available: bool,
+) -> Option<DeckMutationPlanCandidateV1> {
+    let deck_index = event_option_remove_card_target_deck_index(session, option)?;
+    let effect_key = format!(
+        "event:direct_remove_card:{}",
+        stable_event_option_key(option)
+    );
+    compile_direct_deck_mutation_plan_candidate_v1(
+        &session.run_state,
+        RunPendingChoiceReason::Purge,
+        deck_index,
+        command.to_string(),
+        "remove_card".to_string(),
+        effect_key,
+        option.ui.text.clone(),
+        low_value_available,
+    )
+}
+
+fn event_option_remove_card_target_deck_index(
+    session: &RunControlSession,
+    option: &EventOption,
+) -> Option<usize> {
+    let target_uuid = option
+        .semantics
+        .effects
+        .iter()
+        .find_map(|effect| match effect {
+            EventEffect::RemoveCard {
+                target_uuid: Some(uuid),
+                ..
+            } => Some(*uuid),
+            _ => None,
+        })?;
+    session
+        .run_state
+        .master_deck
+        .iter()
+        .position(|card| card.uuid == target_uuid)
+}
+
+fn apply_direct_event_deck_mutation_plan(
+    option: &mut EventBranchOption,
+    plan: DeckMutationPlanCandidateV1,
+) {
+    let card = plan.step.cards.first();
+    option.card = card.map(|card| card.card);
+    option.upgrades = card.map(|card| card.upgrades);
+    option.effect_kind = plan.step.effect_kind;
+    option.effect_key = plan.step.effect_key;
+    option.effect_label = format!(
+        "{} | deck mutation role={:?} confidence={:.2}",
+        option.effect_label, plan.role, plan.confidence
+    );
+    option.representative_count = plan.representative_count;
+    option.suppressed_count = plan.suppressed_count;
+    option.deck_mutation_order_key = Some((
+        direct_event_deck_mutation_role_rank(plan.role),
+        -plan.score_hint,
+    ));
+}
+
+fn direct_event_deck_mutation_role_rank(
+    role: crate::ai::deck_mutation_compiler_v1::DeckMutationPlanRoleV1,
+) -> u8 {
+    match role {
+        crate::ai::deck_mutation_compiler_v1::DeckMutationPlanRoleV1::PolicyPreferred => 0,
+        crate::ai::deck_mutation_compiler_v1::DeckMutationPlanRoleV1::SafeAlternative => 1,
+        crate::ai::deck_mutation_compiler_v1::DeckMutationPlanRoleV1::RiskyExploration => 2,
+        crate::ai::deck_mutation_compiler_v1::DeckMutationPlanRoleV1::InspectOnly => 3,
+        crate::ai::deck_mutation_compiler_v1::DeckMutationPlanRoleV1::Blocked => 4,
+    }
 }
 
 fn event_policy_safe_exit_branch_options(

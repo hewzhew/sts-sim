@@ -5,7 +5,7 @@ use crate::ai::run_choice_policy_v1::{
     run_choice_duplicate_priority_v1, RunChoicePolicyActionV1, RunChoicePolicyClassV1,
     RunChoicePolicyConfigV1,
 };
-use crate::content::cards::{get_card_definition, CardId};
+use crate::content::cards::{get_card_definition, CardId, CardRarity, CardTag, CardType};
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::run::RunState;
@@ -112,6 +112,37 @@ pub fn compile_deck_mutation_decision_v1(
     }
 }
 
+pub fn compile_direct_deck_mutation_plan_candidate_v1(
+    run_state: &RunState,
+    reason: RunPendingChoiceReason,
+    deck_index: usize,
+    command: String,
+    effect_kind: String,
+    effect_key: String,
+    effect_label: String,
+    low_value_available: bool,
+) -> Option<DeckMutationPlanCandidateV1> {
+    let target = exact_target_for_deck_index(run_state, reason, deck_index, true, None)?;
+    let mut candidate = candidate_from_targets_for_reason(reason, vec![target], 1);
+    candidate.plan_id = format!("deck_mutation:{effect_key}");
+    candidate.step.command = command;
+    candidate.step.effect_kind = effect_kind;
+    candidate.step.effect_key = effect_key;
+    candidate.step.effect_label = effect_label;
+    candidate
+        .reasons
+        .push("direct event deck mutation option".to_string());
+    evaluate_candidate_for_reason(reason, &mut candidate, low_value_available);
+    Some(candidate)
+}
+
+pub fn deck_mutation_target_class_for_card_v1(
+    reason: RunPendingChoiceReason,
+    card: &CombatCard,
+) -> DeckMutationTargetClassV1 {
+    target_class_for_card_mutation(reason, card)
+}
+
 fn compare_deck_mutation_candidates_v1(
     left: &DeckMutationPlanCandidateV1,
     right: &DeckMutationPlanCandidateV1,
@@ -148,30 +179,43 @@ fn exact_targets(run_state: &RunState, choice: &RunPendingChoiceState) -> Vec<Ex
         .iter()
         .enumerate()
         .filter(|(_, card)| target_uuids.contains(&card.uuid))
-        .map(|(deck_index, card)| {
+        .filter_map(|(deck_index, _card)| {
             let run_choice_candidate = run_choice_context
                 .candidates
                 .iter()
                 .find(|candidate| candidate.deck_index == deck_index);
-            ExactTarget {
-                card: DeckMutationCardSnapshotV1 {
-                    deck_index,
-                    card: card.id,
-                    upgrades: card.upgrades,
-                    label: card_label(card.id, card.upgrades),
-                    target_class: target_class_for_choice(
-                        choice.reason,
-                        run_choice_candidate.map(|candidate| candidate.class),
-                    ),
-                },
-                identity_key: card_stat_identity_key(card),
-                selectable: run_choice_candidate.is_some_and(|candidate| candidate.selectable),
-                upgrade_priority: run_choice_candidate
-                    .and_then(|candidate| candidate.upgrade_priority),
-                duplicate_priority: run_choice_duplicate_priority_v1(card, run_state),
-            }
+            exact_target_for_deck_index(
+                run_state,
+                choice.reason,
+                deck_index,
+                run_choice_candidate.is_some_and(|candidate| candidate.selectable),
+                run_choice_candidate.and_then(|candidate| candidate.upgrade_priority),
+            )
         })
         .collect()
+}
+
+fn exact_target_for_deck_index(
+    run_state: &RunState,
+    reason: RunPendingChoiceReason,
+    deck_index: usize,
+    selectable: bool,
+    upgrade_priority: Option<i32>,
+) -> Option<ExactTarget> {
+    let card = run_state.master_deck.get(deck_index)?;
+    Some(ExactTarget {
+        card: DeckMutationCardSnapshotV1 {
+            deck_index,
+            card: card.id,
+            upgrades: card.upgrades,
+            label: card_label(card.id, card.upgrades),
+            target_class: target_class_for_card_mutation(reason, card),
+        },
+        identity_key: card_stat_identity_key(card),
+        selectable,
+        upgrade_priority,
+        duplicate_priority: run_choice_duplicate_priority_v1(card, run_state),
+    })
 }
 
 fn plan_candidates(
@@ -408,7 +452,15 @@ fn candidate_from_targets(
     selected_targets: Vec<ExactTarget>,
     representative_count: usize,
 ) -> DeckMutationPlanCandidateV1 {
-    let kind = deck_mutation_kind(choice.reason);
+    candidate_from_targets_for_reason(choice.reason, selected_targets, representative_count)
+}
+
+fn candidate_from_targets_for_reason(
+    reason: RunPendingChoiceReason,
+    selected_targets: Vec<ExactTarget>,
+    representative_count: usize,
+) -> DeckMutationPlanCandidateV1 {
+    let kind = deck_mutation_kind(reason);
     let cards = selected_targets
         .iter()
         .map(|target| target.card.clone())
@@ -418,7 +470,7 @@ fn candidate_from_targets(
         .iter()
         .map(|card| card.label.as_str())
         .collect::<Vec<_>>();
-    let effect_kind = effect_kind(choice.reason).to_string();
+    let effect_kind = effect_kind(reason).to_string();
     let effect_key = if selected_targets.len() == 1 {
         format!(
             "run_selection:{}:{}",
@@ -436,12 +488,12 @@ fn candidate_from_targets(
     };
     let effect_label = format!(
         "{} {}",
-        effect_verb(choice.reason),
+        effect_verb(reason),
         render_repeated_labels(&labels)
     );
     let score_hint = selected_targets
         .iter()
-        .map(|target| target_score_hint(choice.reason, target))
+        .map(|target| target_score_hint(reason, target))
         .sum();
     DeckMutationPlanCandidateV1 {
         plan_id: format!("deck_mutation:{effect_key}"),
@@ -466,7 +518,7 @@ fn candidate_from_targets(
         run_choice_policy_selected: false,
         score_hint,
         confidence: 0.0,
-        reasons: vec![format!("candidate for {:?}", choice.reason)],
+        reasons: vec![format!("candidate for {:?}", reason)],
         risks: selected_targets
             .iter()
             .flat_map(|target| target_risks(target.card.target_class))
@@ -476,6 +528,14 @@ fn candidate_from_targets(
 
 fn evaluate_candidate(
     choice: &RunPendingChoiceState,
+    candidate: &mut DeckMutationPlanCandidateV1,
+    low_value_available: bool,
+) {
+    evaluate_candidate_for_reason(choice.reason, candidate, low_value_available);
+}
+
+fn evaluate_candidate_for_reason(
+    reason: RunPendingChoiceReason,
     candidate: &mut DeckMutationPlanCandidateV1,
     low_value_available: bool,
 ) {
@@ -493,7 +553,7 @@ fn evaluate_candidate(
         .cards
         .iter()
         .all(|card| card.target_class.is_low_value_mutation_target());
-    let mutation_choice = is_remove_choice(choice.reason) || is_transform_choice(choice.reason);
+    let mutation_choice = is_remove_choice(reason) || is_transform_choice(reason);
 
     let role = if has_unsupported_target {
         DeckMutationPlanRoleV1::Blocked
@@ -505,7 +565,7 @@ fn evaluate_candidate(
         DeckMutationPlanRoleV1::PolicyPreferred
     } else if mutation_choice && all_low_value {
         DeckMutationPlanRoleV1::SafeAlternative
-    } else if matches!(choice.reason, RunPendingChoiceReason::Upgrade) {
+    } else if matches!(reason, RunPendingChoiceReason::Upgrade) {
         DeckMutationPlanRoleV1::SafeAlternative
     } else {
         DeckMutationPlanRoleV1::SafeAlternative
@@ -518,7 +578,7 @@ fn evaluate_candidate(
         DeckMutationPlanRoleV1::RiskyExploration => 0.35,
         DeckMutationPlanRoleV1::InspectOnly | DeckMutationPlanRoleV1::Blocked => 0.0,
     };
-    candidate.allowed_consumers = allowed_consumers(choice.reason, role, candidate);
+    candidate.allowed_consumers = allowed_consumers(reason, role, candidate);
     candidate.reasons.push(format!("role={role:?}"));
     if candidate.run_choice_policy_selected {
         candidate
@@ -621,9 +681,9 @@ fn target_class_from_run_choice_policy(class: RunChoicePolicyClassV1) -> DeckMut
     }
 }
 
-fn target_class_for_choice(
+fn target_class_for_card_mutation(
     reason: RunPendingChoiceReason,
-    run_choice_class: Option<RunChoicePolicyClassV1>,
+    card: &CombatCard,
 ) -> DeckMutationTargetClassV1 {
     match reason {
         RunPendingChoiceReason::Upgrade => DeckMutationTargetClassV1::UpgradeTarget,
@@ -635,9 +695,24 @@ fn target_class_for_choice(
         | RunPendingChoiceReason::PurgeNonBottled
         | RunPendingChoiceReason::Transform
         | RunPendingChoiceReason::TransformNonBottled
-        | RunPendingChoiceReason::TransformUpgraded => run_choice_class
-            .map(target_class_from_run_choice_policy)
-            .unwrap_or(DeckMutationTargetClassV1::Unsupported),
+        | RunPendingChoiceReason::TransformUpgraded => {
+            target_class_from_run_choice_policy(run_choice_policy_class_for_card_mutation(card))
+        }
+    }
+}
+
+fn run_choice_policy_class_for_card_mutation(card: &CombatCard) -> RunChoicePolicyClassV1 {
+    let definition = get_card_definition(card.id);
+    if definition.card_type == CardType::Curse {
+        RunChoicePolicyClassV1::CursePurge
+    } else if definition.tags.contains(&CardTag::StarterStrike) {
+        RunChoicePolicyClassV1::StarterStrikeMutation
+    } else if definition.tags.contains(&CardTag::StarterDefend) {
+        RunChoicePolicyClassV1::StarterDefendMutation
+    } else if definition.rarity == CardRarity::Basic {
+        RunChoicePolicyClassV1::BasicCardMutation
+    } else {
+        RunChoicePolicyClassV1::OtherDeckMutation
     }
 }
 
