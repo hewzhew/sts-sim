@@ -1097,7 +1097,7 @@ fn legacy_strategy_adjustment_exposes_card_admission_components() {
 }
 
 #[test]
-fn legacy_strategy_adjustment_reports_unresolved_deck_without_global_rank_penalty() {
+fn legacy_strategy_adjustment_lightly_penalizes_unresolved_deck_debt() {
     let mut unresolved_deck = BranchRetentionCandidateInputV1 {
         index: 0,
         act: 1,
@@ -1121,8 +1121,12 @@ fn legacy_strategy_adjustment_reports_unresolved_deck_without_global_rank_penalt
     let adjustment = legacy_branch_retention_strategy_adjustment_v1(&unresolved_deck);
     let decision = decide_branch_retention_v1(&unresolved_deck);
 
-    assert_eq!(adjustment.startup_adjustment, 0);
-    assert_eq!(adjustment.effective_rank_key, 12_000);
+    assert_eq!(adjustment.startup_adjustment, -1_000);
+    assert_eq!(adjustment.effective_rank_key, 11_000);
+    assert!(adjustment
+        .reasons
+        .iter()
+        .any(|reason| reason == "current_startup_debt_rank_adjustment:-1000"));
     assert!(decision
         .reasons
         .contains(&"current deck has unresolved startup liability".to_string()));

@@ -877,16 +877,28 @@ pub fn legacy_branch_retention_strategy_adjustment_v1(
 ) -> BranchRetentionLegacyStrategyAdjustmentV1 {
     let context = branch_retention_context_packet_v2(candidate);
     let card_admission = branch_retention_card_admission_summary_v1(candidate);
-    let startup_adjustment = if card_admission.startup_blocking {
-        -50_000
-    } else {
-        0
-    };
+    let current_startup_debt_adjustment = current_startup_debt_rank_adjustment_v1(candidate);
+    let startup_adjustment = current_startup_debt_adjustment
+        + if card_admission.startup_blocking {
+            -50_000
+        } else {
+            0
+        };
     let component_adjustment = card_admission.rank_adjustment;
     let mut reasons = card_admission.reasons;
 
+    if current_startup_debt_adjustment != 0 {
+        reasons.push(format!(
+            "current_startup_debt_rank_adjustment:{current_startup_debt_adjustment}"
+        ));
+    }
+    if card_admission.startup_blocking {
+        reasons.push("card_admission_startup_block:-50000".to_string());
+    }
     if startup_adjustment != 0 {
-        reasons.push(format!("card_admission_startup_block:{startup_adjustment}"));
+        reasons.push(format!(
+            "startup_rank_adjustment_total:{startup_adjustment}"
+        ));
     }
 
     let effective_rank_key = candidate
@@ -1614,6 +1626,14 @@ fn card_admission_reason_is_startup_blocking(reason: &str) -> bool {
         || reason.starts_with("deck_shape_")
         || reason.contains("cycle_debt")
         || reason.contains("startup_debt")
+}
+
+fn current_startup_debt_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
+    let debt_count = startup_debt_count(candidate, false, false);
+    if debt_count <= 0 {
+        return 0;
+    }
+    -1_000 * debt_count.min(6)
 }
 
 fn card_admission_verdict_rank_adjustment(verdict: CardAdmissionVerdictV1) -> i32 {
