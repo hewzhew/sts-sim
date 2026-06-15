@@ -160,7 +160,7 @@ pub struct BranchRetentionSlotEvidenceScoreV1 {
 }
 
 #[derive(Clone, Debug, Default)]
-struct BranchRetentionCardAdmissionSummaryV1 {
+struct BranchRetentionCardAdmissionRankCostV1 {
     startup_blocking: bool,
     rejects_added_card: bool,
     admits_only_without_cleaner: bool,
@@ -304,7 +304,7 @@ pub fn decide_branch_retention_v1(
     let mut slots = Vec::new();
     let mut reasons = Vec::new();
     let current_startup_liability = branch_retention_current_startup_liability(candidate);
-    let card_admission = branch_retention_card_admission_summary_v1(candidate);
+    let card_admission = branch_retention_card_admission_rank_cost_v1(candidate);
 
     if has_package_candidate(&candidate.choice_profiles) {
         slots.push(BranchRetentionSlotV1::Package);
@@ -874,7 +874,7 @@ pub fn branch_retention_rank_adjustment_v1(
     candidate: &BranchRetentionCandidateInputV1,
 ) -> BranchRetentionRankAdjustmentV1 {
     let context = branch_retention_context_packet_v2(candidate);
-    let card_admission = branch_retention_card_admission_summary_v1(candidate);
+    let card_admission = branch_retention_card_admission_rank_cost_v1(candidate);
     let current_startup_debt_adjustment = current_startup_debt_rank_adjustment_v1(candidate);
     let startup_adjustment = current_startup_debt_adjustment
         + if card_admission.startup_blocking {
@@ -1572,11 +1572,11 @@ fn branch_retention_current_startup_liability(candidate: &BranchRetentionCandida
         || candidate.startup.has_pyramid_unupgraded_apparition
 }
 
-fn branch_retention_card_admission_summary_v1(
+fn branch_retention_card_admission_rank_cost_v1(
     candidate: &BranchRetentionCandidateInputV1,
-) -> BranchRetentionCardAdmissionSummaryV1 {
+) -> BranchRetentionCardAdmissionRankCostV1 {
     let context = card_admission_context_for_retention_candidate(candidate);
-    let mut summary = BranchRetentionCardAdmissionSummaryV1::default();
+    let mut summary = BranchRetentionCardAdmissionRankCostV1::default();
 
     for profile in &candidate.choice_profiles {
         let report =
