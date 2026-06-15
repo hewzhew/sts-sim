@@ -7,32 +7,32 @@ use super::types::{
 };
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct PickApproval {
+pub(crate) struct AutopilotPick {
     pub(crate) index: usize,
     pub(crate) relic: RelicId,
     pub(crate) confidence: f32,
     pub(crate) reason: String,
 }
 
-pub(crate) fn pick_approvals(
+pub(crate) fn autopilot_picks(
     context: &BossRelicDecisionContextV1,
     config: &BossRelicPolicyConfigV1,
-) -> Vec<PickApproval> {
+) -> Vec<AutopilotPick> {
     context
         .candidates
         .iter()
-        .filter_map(|candidate| pick_approval(candidate, context, config))
+        .filter_map(|candidate| autopilot_pick(candidate, context, config))
         .collect()
 }
 
-fn pick_approval(
+fn autopilot_pick(
     candidate: &BossRelicCandidateEvidenceV1,
     context: &BossRelicDecisionContextV1,
     config: &BossRelicPolicyConfigV1,
-) -> Option<PickApproval> {
+) -> Option<AutopilotPick> {
     match candidate.class {
         BossRelicPolicyClassV1::StarterRelicUpgrade if config.allow_starter_upgrade => {
-            Some(PickApproval {
+            Some(AutopilotPick {
                 index: candidate.index,
                 relic: candidate.relic,
                 confidence: 0.95,
@@ -47,7 +47,7 @@ fn pick_approval(
                 && support_gate_at_least(candidate, StrategyPlanSupportV1::Plausible)
                 && no_higher_agency_competitor(context, candidate.index) =>
         {
-            Some(PickApproval {
+            Some(AutopilotPick {
                 index: candidate.index,
                 relic: candidate.relic,
                 confidence: 0.82,
@@ -62,7 +62,7 @@ fn pick_approval(
                 && candidate.relic == RelicId::TinyHouse
                 && all_other_candidates_are_constrained(context, candidate.index) =>
         {
-            Some(PickApproval {
+            Some(AutopilotPick {
                 index: candidate.index,
                 relic: candidate.relic,
                 confidence: 0.78,

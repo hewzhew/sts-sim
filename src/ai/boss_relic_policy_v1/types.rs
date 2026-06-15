@@ -105,7 +105,7 @@ impl BossRelicDecisionV1 {
             evidence: EvidenceBundleV1 {
                 items: evidence_items(&self.context),
                 assumptions: vec![
-                    "boss relic automation is a conservative behavior policy, not an optimal-action label"
+                    "boss relic automation is a behavior policy, not an optimal-action label"
                         .to_string(),
                     "uncertain, deck-transforming, route-dependent, and high-variance boss relic choices remain human boundaries"
                         .to_string(),
@@ -123,7 +123,7 @@ impl BossRelicDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "boss_relic_candidate_approval_v1".to_string(),
+                    selection_mode: "boss_relic_autopilot_pick_v1".to_string(),
                 },
                 BossRelicPolicyActionV1::Stop { reason } => PolicySelectionV1 {
                     status: PolicySelectionStatusV1::Stopped,
