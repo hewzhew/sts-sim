@@ -136,7 +136,8 @@ fn candidate_delta_from_shop_candidate(
                 delta.positive.push(LedgerDelta {
                     kind: PressureKind::EconomyNeed,
                     amount: SHOP_PURCHASE_GOLD_CONVERSION_SIGNAL,
-                    reason: "shop_purchase_converts_gold_without_legacy_priority".to_string(),
+                    reason: "shop_purchase_converts_gold_without_shop_priority_estimate"
+                        .to_string(),
                 });
             }
             delta.opportunity_costs.push(OpportunityCost {
@@ -292,7 +293,8 @@ fn add_default_shop_card_semantic_deltas(
         delta.positive.push(LedgerDelta {
             kind: PressureKind::EconomyNeed,
             amount: SHOP_CARD_GENERIC_GOLD_CONVERSION_SIGNAL,
-            reason: "shop_card_converts_gold_without_specific_job_or_legacy_priority".to_string(),
+            reason: "shop_card_converts_gold_without_specific_job_or_shop_priority_estimate"
+                .to_string(),
         });
     }
 }

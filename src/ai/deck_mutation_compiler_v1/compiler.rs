@@ -523,7 +523,7 @@ fn evaluate_candidate(
     if candidate.run_choice_policy_selected {
         candidate
             .reasons
-            .push("legacy run-choice policy selected this plan".to_string());
+            .push("run-choice policy selected this plan".to_string());
     }
     if mutation_choice && has_functional_target && low_value_available {
         candidate.reasons.push(
@@ -609,7 +609,7 @@ fn apply_portfolio_suppression(candidates: &mut [DeckMutationPlanCandidateV1], l
     }
 }
 
-fn target_class_from_legacy(class: RunChoicePolicyClassV1) -> DeckMutationTargetClassV1 {
+fn target_class_from_run_choice_policy(class: RunChoicePolicyClassV1) -> DeckMutationTargetClassV1 {
     match class {
         RunChoicePolicyClassV1::CursePurge => DeckMutationTargetClassV1::Curse,
         RunChoicePolicyClassV1::StarterStrikeMutation => DeckMutationTargetClassV1::StarterStrike,
@@ -636,7 +636,7 @@ fn target_class_for_choice(
         | RunPendingChoiceReason::Transform
         | RunPendingChoiceReason::TransformNonBottled
         | RunPendingChoiceReason::TransformUpgraded => run_choice_class
-            .map(target_class_from_legacy)
+            .map(target_class_from_run_choice_policy)
             .unwrap_or(DeckMutationTargetClassV1::Unsupported),
     }
 }

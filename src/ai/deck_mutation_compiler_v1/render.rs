@@ -46,7 +46,7 @@ fn push_plan_group(lines: &mut Vec<String>, label: &str, plans: &[DeckMutationPl
 
 fn render_plan_line(plan: &DeckMutationPlanCandidateV1) -> String {
     format!(
-        "{} | command={} | role={:?} | allowed={} | legacy={} | confidence={:.2} | reps={} suppressed={} | reasons=[{}] | risks=[{}]",
+        "{} | command={} | role={:?} | allowed={} | run_choice_selected={} | confidence={:.2} | reps={} suppressed={} | reasons=[{}] | risks=[{}]",
         plan.step.effect_label,
         plan.step.command,
         plan.role,
