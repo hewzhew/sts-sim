@@ -4,38 +4,38 @@ use super::types::{
 use crate::state::events::EventId;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct PickApproval {
+pub(crate) struct AutopilotPick {
     pub(crate) index: usize,
     pub(crate) label: String,
     pub(crate) confidence: f32,
     pub(crate) reason: String,
 }
 
-pub(crate) fn pick_approvals(
+pub(crate) fn autopilot_picks(
     context: &EventDecisionContextV1,
     config: &EventPolicyConfigV1,
-) -> Vec<PickApproval> {
+) -> Vec<AutopilotPick> {
     context
         .candidates
         .iter()
-        .filter_map(|candidate| pick_approval(candidate, context, config))
+        .filter_map(|candidate| autopilot_pick(candidate, context, config))
         .collect()
 }
 
-fn pick_approval(
+fn autopilot_pick(
     candidate: &EventCandidateEvidenceV1,
     context: &EventDecisionContextV1,
     config: &EventPolicyConfigV1,
-) -> Option<PickApproval> {
+) -> Option<AutopilotPick> {
     if candidate.disabled {
         return None;
     }
-    if let Some(approval) = winding_halls_mark_of_bloom_approval(candidate, context) {
-        return Some(approval);
+    if let Some(pick) = winding_halls_mark_of_bloom_autopilot_pick(candidate, context) {
+        return Some(pick);
     }
     match candidate.class {
         EventPolicyClassV1::FreeKnownBenefit if config.allow_free_known_benefit => {
-            Some(PickApproval {
+            Some(AutopilotPick {
                 index: candidate.index,
                 label: candidate.label.clone(),
                 confidence: 0.84,
@@ -46,7 +46,7 @@ fn pick_approval(
             if config.allow_safe_exit_from_risky_event
                 && all_other_enabled_candidates_are_risky(context, candidate.index) =>
         {
-            Some(PickApproval {
+            Some(AutopilotPick {
                 index: candidate.index,
                 label: candidate.label.clone(),
                 confidence: 0.72,
@@ -57,7 +57,7 @@ fn pick_approval(
             if config.allow_max_hp_for_safe_hp_cost
                 && max_hp_for_hp_cost_is_safe(context, candidate, config) =>
         {
-            Some(PickApproval {
+            Some(AutopilotPick {
                 index: candidate.index,
                 label: candidate.label.clone(),
                 confidence: 0.74,
@@ -71,10 +71,10 @@ fn pick_approval(
     }
 }
 
-fn winding_halls_mark_of_bloom_approval(
+fn winding_halls_mark_of_bloom_autopilot_pick(
     candidate: &EventCandidateEvidenceV1,
     context: &EventDecisionContextV1,
-) -> Option<PickApproval> {
+) -> Option<AutopilotPick> {
     if context.event_id != EventId::WindingHalls || !context.has_mark_of_the_bloom {
         return None;
     }
@@ -86,7 +86,7 @@ fn winding_halls_mark_of_bloom_approval(
     {
         return None;
     }
-    Some(PickApproval {
+    Some(AutopilotPick {
         index: candidate.index,
         label: candidate.label.clone(),
         confidence: 0.82,

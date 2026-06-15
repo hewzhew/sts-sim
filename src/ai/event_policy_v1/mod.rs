@@ -1,4 +1,4 @@
-mod approvals;
+mod evaluator;
 mod policy;
 mod types;
 

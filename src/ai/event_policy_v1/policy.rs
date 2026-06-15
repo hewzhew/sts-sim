@@ -7,7 +7,7 @@ use crate::state::events::{
 };
 use crate::state::run::RunState;
 
-use super::approvals::pick_approvals;
+use super::evaluator::autopilot_picks;
 use super::types::{
     EventCandidateEvidenceV1, EventDecisionContextV1, EventDecisionV1, EventPolicyActionV1,
     EventPolicyClassV1, EventPolicyConfigV1,
@@ -48,20 +48,20 @@ pub fn plan_event_decision_v1(
         );
     }
 
-    let approvals = pick_approvals(context, config);
+    let autopilot_picks = autopilot_picks(context, config);
 
-    let action = match approvals.as_slice() {
-        [approval] => EventPolicyActionV1::Pick {
-            index: approval.index,
-            label: approval.label.clone(),
-            confidence: approval.confidence,
-            reason: approval.reason.clone(),
+    let action = match autopilot_picks.as_slice() {
+        [pick] => EventPolicyActionV1::Pick {
+            index: pick.index,
+            label: pick.label.clone(),
+            confidence: pick.confidence,
+            reason: pick.reason.clone(),
         },
         [] => EventPolicyActionV1::Stop {
             reason: stop_reason(context),
         },
         _ => EventPolicyActionV1::Stop {
-            reason: "event policy stopped because multiple candidate approvals matched".to_string(),
+            reason: "event policy stopped because multiple autopilot picks matched".to_string(),
         },
     };
 
@@ -114,7 +114,7 @@ fn candidate_evidence(index: usize, option: EventOption) -> EventCandidateEviden
             risks.push("contains random or unresolved reward outcome".to_string());
         }
         EventPolicyClassV1::Unknown => {
-            risks.push("event policy has no safe approval for this option".to_string());
+            risks.push("event policy did not select this option for autopilot".to_string());
         }
     }
 
@@ -385,7 +385,7 @@ fn stop_reason(context: &EventDecisionContextV1) -> String {
         .map(|candidate| format!("{}:{:?}", candidate.label, candidate.class))
         .collect::<Vec<_>>()
         .join(", ");
-    format!("event policy stopped because no candidate approval matched ({classes})")
+    format!("event policy stopped because no autopilot pick matched ({classes})")
 }
 
 fn display_event_label(label: &str) -> String {

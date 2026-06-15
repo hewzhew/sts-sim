@@ -1485,7 +1485,7 @@ fn current_boundary_uses_event_policy_safe_exit_for_optional_combat_event() {
             .map(|option| (option.command.as_str(), option.effect_kind.as_str()))
             .collect::<Vec<_>>(),
         vec![("event 1", "event_leave")],
-        "branch boundaries should consume the central event policy safe-exit approval instead of preserving the optional high-risk fight as an equal branch"
+        "branch boundaries should consume the central event policy safe-exit autopilot pick instead of preserving the optional high-risk fight as an equal branch"
     );
 }
 
