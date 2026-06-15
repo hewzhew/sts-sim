@@ -176,6 +176,11 @@ fn select_card_reward_branch_options_with_limit_and_strategy(
                 strategic_score_sort_key: retention_key.strategic_score_sort_key,
                 class_key,
                 verdict_label: retention_key.verdict_label,
+                is_decline: matches!(
+                    option.source,
+                    CardRewardBranchOptionSource::SkipCardReward
+                        | CardRewardBranchOptionSource::SingingBowl
+                ),
             }
         })
         .collect::<Vec<_>>();
@@ -191,6 +196,7 @@ fn select_card_reward_branch_options_with_limit_and_strategy(
 
     let reject_order = AcquisitionVerdict::Reject.retention_order();
     let mut selected = select_reward_option_indices(&annotated, limit, reject_order);
+    selected = preserve_decline_option_indices(&annotated, selected, limit, reject_order);
 
     selected.sort_unstable();
     let selected_indices = selected.iter().copied().collect::<BTreeSet<_>>();
@@ -220,6 +226,7 @@ struct RewardOptionAnnotated {
     strategic_score_sort_key: i32,
     class_key: String,
     verdict_label: String,
+    is_decline: bool,
 }
 
 fn select_reward_option_indices(
@@ -273,6 +280,73 @@ fn select_reward_option_indices(
     }
 
     selected
+}
+
+fn preserve_decline_option_indices(
+    annotated: &[RewardOptionAnnotated],
+    mut selected: Vec<usize>,
+    limit: usize,
+    reject_order: usize,
+) -> Vec<usize> {
+    if limit < 2
+        || selected.iter().any(|index| {
+            annotated_entry_by_option_index(annotated, *index).is_some_and(|entry| entry.is_decline)
+        })
+        || selected.len() < limit.min(annotated.len())
+    {
+        return selected;
+    }
+
+    let Some(decline) = annotated
+        .iter()
+        .filter(|entry| entry.is_decline)
+        .filter(|entry| entry.verdict_retention_order < reject_order)
+        .min_by(|left, right| {
+            left.verdict_retention_order
+                .cmp(&right.verdict_retention_order)
+                .then_with(|| {
+                    left.strategic_score_sort_key
+                        .cmp(&right.strategic_score_sort_key)
+                })
+                .then_with(|| left.index.cmp(&right.index))
+        })
+    else {
+        return selected;
+    };
+
+    let strong_take_order = AcquisitionVerdict::StrongTake.retention_order();
+    let Some(remove_position) = selected
+        .iter()
+        .enumerate()
+        .filter_map(|(position, index)| {
+            annotated_entry_by_option_index(annotated, *index).map(|entry| (position, entry))
+        })
+        .filter(|(_, entry)| !entry.is_decline)
+        .filter(|(_, entry)| entry.verdict_retention_order > strong_take_order)
+        .max_by(|(_, left), (_, right)| {
+            left.verdict_retention_order
+                .cmp(&right.verdict_retention_order)
+                .then_with(|| {
+                    left.strategic_score_sort_key
+                        .cmp(&right.strategic_score_sort_key)
+                })
+                .then_with(|| right.index.cmp(&left.index))
+        })
+        .map(|(position, _)| position)
+    else {
+        return selected;
+    };
+
+    selected.remove(remove_position);
+    selected.push(decline.index);
+    selected
+}
+
+fn annotated_entry_by_option_index(
+    annotated: &[RewardOptionAnnotated],
+    index: usize,
+) -> Option<&RewardOptionAnnotated> {
+    annotated.iter().find(|entry| entry.index == index)
 }
 
 fn reward_option_portfolio_report(
@@ -600,7 +674,9 @@ pub(super) fn format_reward_card_label(card: &RewardCard) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{select_reward_option_indices, RewardOptionAnnotated};
+    use super::{
+        preserve_decline_option_indices, select_reward_option_indices, RewardOptionAnnotated,
+    };
     use crate::ai::strategic::AcquisitionVerdict;
 
     fn entry(
@@ -615,6 +691,18 @@ mod tests {
             strategic_score_sort_key,
             class_key: class_key.to_string(),
             verdict_label: format!("{verdict:?}"),
+            is_decline: false,
+        }
+    }
+
+    fn decline_entry(
+        index: usize,
+        verdict: AcquisitionVerdict,
+        strategic_score_sort_key: i32,
+    ) -> RewardOptionAnnotated {
+        RewardOptionAnnotated {
+            is_decline: true,
+            ..entry(index, verdict, strategic_score_sort_key, "decline")
         }
     }
 
@@ -636,6 +724,42 @@ mod tests {
             selected,
             vec![0, 1],
             "semantic diversity may break ties within a strategic tier, but must not promote a lower verdict over an available higher-verdict candidate"
+        );
+    }
+
+    #[test]
+    fn reward_option_decline_can_replace_weaker_capped_context_branch() {
+        let reject_order = AcquisitionVerdict::Reject.retention_order();
+        let annotated = vec![
+            entry(0, AcquisitionVerdict::StrongTake, -1000, "frontload"),
+            entry(1, AcquisitionVerdict::ContextTake, -900, "engine"),
+            decline_entry(2, AcquisitionVerdict::ContextTake, -800),
+        ];
+
+        let selected = preserve_decline_option_indices(&annotated, vec![0, 1], 2, reject_order);
+
+        assert_eq!(
+            selected,
+            vec![0, 2],
+            "a capped branch portfolio should retain one clean/decline representative without displacing the strongest take candidate"
+        );
+    }
+
+    #[test]
+    fn reward_option_decline_does_not_displace_strong_take_branches() {
+        let reject_order = AcquisitionVerdict::Reject.retention_order();
+        let annotated = vec![
+            entry(0, AcquisitionVerdict::StrongTake, -1000, "frontload"),
+            entry(1, AcquisitionVerdict::StrongTake, -900, "engine"),
+            decline_entry(2, AcquisitionVerdict::ContextTake, -800),
+        ];
+
+        let selected = preserve_decline_option_indices(&annotated, vec![0, 1], 2, reject_order);
+
+        assert_eq!(
+            selected,
+            vec![0, 1],
+            "decline preservation must not become a hidden rule that overrides strong acquisition verdicts"
         );
     }
 }
