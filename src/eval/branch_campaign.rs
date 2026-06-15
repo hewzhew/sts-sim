@@ -1770,9 +1770,9 @@ fn render_unspent_gold_cause_counts_v1(branches: &[&BranchCampaignBranchV1]) -> 
 
 fn boss_approach_floor_v1(act: u8) -> i32 {
     match act {
-        1 => 14,
-        2 => 30,
-        3 => 46,
+        1 => 10,
+        2 => 24,
+        3 => 40,
         _ => i32::MAX,
     }
 }

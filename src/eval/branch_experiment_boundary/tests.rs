@@ -1516,14 +1516,13 @@ fn current_boundary_allows_event_options_that_open_single_card_selection() {
         .expect("event boundary");
 
     assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
-    assert_eq!(
-        boundary
-            .options
-            .iter()
-            .map(|option| (option.kind, option.command.as_str()))
-            .collect::<Vec<_>>(),
-        vec![("event", "event 0"), ("event", "event 1")]
-    );
+    let mut options = boundary
+        .options
+        .iter()
+        .map(|option| (option.kind, option.command.as_str()))
+        .collect::<Vec<_>>();
+    options.sort();
+    assert_eq!(options, vec![("event", "event 0"), ("event", "event 1")]);
 }
 
 #[test]

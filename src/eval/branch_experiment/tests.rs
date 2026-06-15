@@ -873,8 +873,10 @@ fn branch_experiment_expands_low_fanout_event_choices() {
         .iter()
         .map(|choice| (choice.effect_kind.as_str(), choice.effect_label.as_str()))
         .collect::<BTreeMap<_, _>>();
-    assert_eq!(event_effects["event_heal"], "[Banana] Heal 26 HP.");
-    assert_eq!(event_effects["event_gain_max_hp"], "[Donut] Gain 5 Max HP.");
+    assert!(event_effects["event_heal"].contains("[Banana] Heal 26 HP."));
+    assert!(event_effects["event_heal"].contains("event_eval"));
+    assert!(event_effects["event_gain_max_hp"].contains("[Donut] Gain 5 Max HP."));
+    assert!(event_effects["event_gain_max_hp"].contains("event_eval"));
     assert!(event_effects["event_gain_relic"].contains("Obtain a random Relic"));
     assert!(event_effects["event_gain_relic"].contains("Regret"));
 }
@@ -1316,6 +1318,7 @@ fn retention_candidate(
         max_hp: 80,
         gold: 99,
         deck_count: 10,
+        curse_count: 0,
         strategy_formation: None,
         trajectory,
         choice_profiles: Vec::new(),

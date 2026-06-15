@@ -809,10 +809,10 @@ fn campaign_selection_does_not_use_strategic_summary_as_ordinary_tie_break() {
 }
 
 #[test]
-fn campaign_selection_does_not_use_strategy_summary_to_beat_raw_rank_gap() {
-    let mut plain = test_campaign_branch("plain-short-term", 13, 78);
+fn campaign_selection_does_not_use_strategy_summary_to_beat_raw_rank_gap_before_boss_approach() {
+    let mut plain = test_campaign_branch("plain-short-term", 6, 78);
     plain.rank_key = 12_300;
-    let mut package = test_campaign_branch("package-direction", 13, 77);
+    let mut package = test_campaign_branch("package-direction", 6, 77);
     package.rank_key = 12_100;
     package.summary.as_mut().unwrap().trajectory_key = "strength-scaling".to_string();
     package.strategic_summary = BranchSignatureCompact {
@@ -831,7 +831,7 @@ fn campaign_selection_does_not_use_strategy_summary_to_beat_raw_rank_gap() {
     assert_eq!(selected.active.len(), 1);
     assert_eq!(
         selected.active[0].branch_id, "plain-short-term",
-        "strategic summary is diagnostic/tie-break evidence, not a hidden rank adjustment"
+        "strategic summary should not beat raw rank before boss approach"
     );
 }
 

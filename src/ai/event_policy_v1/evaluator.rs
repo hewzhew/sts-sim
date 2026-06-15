@@ -1,5 +1,6 @@
 use super::types::{
-    EventCandidateEvidenceV1, EventDecisionContextV1, EventPolicyClassV1, EventPolicyConfigV1,
+    EventCandidateEvaluationV1, EventCandidateEvidenceV1, EventCandidateTierV1,
+    EventDecisionContextV1, EventPolicyClassV1, EventPolicyConfigV1,
 };
 use crate::state::events::EventId;
 
@@ -20,6 +21,126 @@ pub(crate) fn autopilot_picks(
         .iter()
         .filter_map(|candidate| autopilot_pick(candidate, context, config))
         .collect()
+}
+
+pub(crate) fn evaluate_event_candidate_v1(
+    current_hp: i32,
+    max_hp: i32,
+    candidate: &EventCandidateEvidenceV1,
+) -> EventCandidateEvaluationV1 {
+    if candidate.disabled {
+        return EventCandidateEvaluationV1 {
+            score: -10_000,
+            tier: EventCandidateTierV1::Blocked,
+            reasons: vec!["disabled event option".to_string()],
+        };
+    }
+
+    let hp_ratio = if max_hp > 0 {
+        current_hp.max(0) as f32 / max_hp as f32
+    } else {
+        0.0
+    };
+    let mut score = 0;
+    let mut reasons = Vec::new();
+
+    match candidate.class {
+        EventPolicyClassV1::FreeKnownBenefit => {
+            score += 700;
+            reasons.push("free known benefit".to_string());
+        }
+        EventPolicyClassV1::SafeExit => {
+            score += 120;
+            reasons.push("safe exit preserves current run state".to_string());
+        }
+        EventPolicyClassV1::MaxHpForHpCost => {
+            score += 300;
+            score -= candidate.hp_cost.saturating_mul(8);
+            reasons.push("max hp for visible hp cost".to_string());
+        }
+        EventPolicyClassV1::CombatStart => {
+            if hp_ratio >= 0.65 {
+                score += 260;
+                reasons.push("optional combat is plausible at healthy hp".to_string());
+            } else if hp_ratio >= 0.45 {
+                score += 40;
+                reasons.push("optional combat is risky but still explorable".to_string());
+            } else {
+                score -= 240;
+                reasons.push("optional combat is dangerous at low hp".to_string());
+            }
+        }
+        EventPolicyClassV1::CurseDebt => {
+            score -= 700 * candidate.curse_count.max(1);
+            reasons.push("adds curse deck debt".to_string());
+        }
+        EventPolicyClassV1::SelectionOrDeckMutation => {
+            score -= 80;
+            reasons.push("mutates deck identity or opens selection".to_string());
+        }
+        EventPolicyClassV1::ResourceCost => {
+            score -= 120;
+            reasons.push("visible resource cost".to_string());
+        }
+        EventPolicyClassV1::UncertainReward => {
+            score -= 160;
+            reasons.push("unresolved reward outcome".to_string());
+        }
+        EventPolicyClassV1::Unknown => {
+            score -= 240;
+            reasons.push("unknown event option semantics".to_string());
+        }
+    }
+
+    if candidate.heal_amount > 0 {
+        let missing_hp = max_hp.saturating_sub(current_hp).max(0);
+        let useful_heal = candidate.heal_amount.min(missing_hp);
+        let heal_need_multiplier = if hp_ratio < 0.35 {
+            18
+        } else if hp_ratio < 0.55 {
+            10
+        } else if hp_ratio < 0.75 {
+            4
+        } else {
+            0
+        };
+        let heal_score = useful_heal.saturating_mul(heal_need_multiplier);
+        if heal_score > 0 {
+            score += heal_score;
+            reasons.push(format!("heals useful hp: +{heal_score}"));
+        } else {
+            reasons.push("heal has little current value".to_string());
+        }
+    }
+
+    if candidate.max_hp_loss > 0 {
+        score -= candidate.max_hp_loss.saturating_mul(14);
+        reasons.push("loses max hp".to_string());
+    }
+    if candidate.hp_cost > 0 && candidate.max_hp_gain == 0 {
+        score -= candidate.hp_cost.saturating_mul(6);
+        reasons.push("costs current hp".to_string());
+    }
+    if candidate.obtained_card_count > 0 && candidate.curse_count == 0 {
+        score -= candidate.obtained_card_count.saturating_mul(30);
+        reasons.push("adds permanent card count".to_string());
+    }
+
+    let tier = if score >= 450 {
+        EventCandidateTierV1::Preferred
+    } else if score >= 80 {
+        EventCandidateTierV1::Viable
+    } else if score >= -250 {
+        EventCandidateTierV1::Risky
+    } else {
+        EventCandidateTierV1::Avoid
+    };
+
+    EventCandidateEvaluationV1 {
+        score,
+        tier,
+        reasons,
+    }
 }
 
 fn autopilot_pick(

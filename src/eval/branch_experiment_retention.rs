@@ -78,6 +78,7 @@ pub struct BranchRetentionCandidateInputV1 {
     pub max_hp: i32,
     pub gold: i32,
     pub deck_count: usize,
+    pub curse_count: usize,
     pub strategy_formation: Option<StrategyFormationSummaryV2>,
     pub trajectory: BranchTrajectorySignatureV1,
     pub choice_profiles: Vec<CardRewardSemanticProfileV1>,
@@ -443,6 +444,7 @@ fn strategic_signature_for_retention_candidate(
     let transition_attacks = transition_attack_count(&candidate.choice_profiles);
     let hp_is_safe = candidate.max_hp > 0 && candidate.hp * 100 >= candidate.max_hp * 60;
     let deck_bloat = candidate.deck_count.saturating_sub(24) as i32;
+    let curse_debt = candidate.curse_count as i32;
     let setup_debt_count = startup_debt_count(candidate, startup_rejected, component_negative);
     let package_coherence_count = complete_package_count(&candidate.trajectory)
         + i32::from(slots.contains(&BranchRetentionSlotV1::Package))
@@ -458,7 +460,9 @@ fn strategic_signature_for_retention_candidate(
             defense_signals + scaling_signals + i32::from(hp_is_safe),
             5,
         ),
-        clean_score: if slots.contains(&BranchRetentionSlotV1::CleanDeck) {
+        clean_score: if curse_debt > 0 {
+            0.0
+        } else if slots.contains(&BranchRetentionSlotV1::CleanDeck) {
             1.0
         } else if transition_attacks <= 1 && !component_negative {
             0.5
@@ -466,7 +470,7 @@ fn strategic_signature_for_retention_candidate(
             0.0
         },
         engine_score: bounded_signal(engine_signals, 4),
-        cycle_debt: bounded_signal(deck_bloat / 4 + transition_attacks, 5),
+        cycle_debt: bounded_signal(deck_bloat / 4 + transition_attacks + curse_debt * 2, 5),
         setup_debt: bounded_signal(setup_debt_count, 5),
         economy_conversion: if has_resource_conversion_signal(candidate) {
             1.0
@@ -658,6 +662,9 @@ pub fn branch_retention_rank_adjustment_v1(
 
     let strategic_debt_adjustment = branch_strategic_debt_rank_adjustment_v1(candidate);
     if strategic_debt_adjustment != 0 {
+        if candidate.curse_count > 0 {
+            reasons.push(format!("curse_debt_count:{}", candidate.curse_count));
+        }
         for tag in &candidate.strategic_debt_tags {
             reasons.push(format!("strategic_debt_tag:{tag}"));
         }
@@ -688,18 +695,20 @@ pub fn branch_retention_rank_adjustment_v1(
 }
 
 fn branch_strategic_debt_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
-    candidate
-        .strategic_debt_tags
-        .iter()
-        .map(|tag| match tag.as_str() {
-            "relic_constraint:sozu_potion_lock" => -700,
-            "bottle_debt:high_opening_hand" => -1_200,
-            "bottle_debt:situational_opening_hand" => -800,
-            "bottle_debt:power_vs_awakened_one" => -1_000,
-            "bottle_debt:temporary_strength_burst" => -600,
-            _ => 0,
-        })
-        .sum()
+    let curse_adjustment = -(candidate.curse_count as i32).saturating_mul(1_200);
+    curse_adjustment
+        + candidate
+            .strategic_debt_tags
+            .iter()
+            .map(|tag| match tag.as_str() {
+                "relic_constraint:sozu_potion_lock" => -700,
+                "bottle_debt:high_opening_hand" => -1_200,
+                "bottle_debt:situational_opening_hand" => -800,
+                "bottle_debt:power_vs_awakened_one" => -1_000,
+                "bottle_debt:temporary_strength_burst" => -600,
+                _ => 0,
+            })
+            .sum::<i32>()
 }
 
 fn branch_retention_slot_evidence_scores_v1(

@@ -7,7 +7,7 @@ use crate::state::events::{
 };
 use crate::state::run::RunState;
 
-use super::evaluator::autopilot_picks;
+use super::evaluator::{autopilot_picks, evaluate_event_candidate_v1};
 use super::types::{
     EventCandidateEvidenceV1, EventDecisionContextV1, EventDecisionV1, EventPolicyActionV1,
     EventPolicyClassV1, EventPolicyConfigV1,
@@ -22,7 +22,9 @@ pub fn build_event_decision_context_v1(
     let candidates = options
         .into_iter()
         .enumerate()
-        .map(|(index, option)| candidate_evidence(index, option))
+        .map(|(index, option)| {
+            candidate_evidence(index, option, run_state.current_hp, run_state.max_hp)
+        })
         .collect();
     EventDecisionContextV1 {
         event_id,
@@ -72,7 +74,12 @@ pub fn plan_event_decision_v1(
     }
 }
 
-fn candidate_evidence(index: usize, option: EventOption) -> EventCandidateEvidenceV1 {
+fn candidate_evidence(
+    index: usize,
+    option: EventOption,
+    current_hp: i32,
+    max_hp: i32,
+) -> EventCandidateEvidenceV1 {
     let hp_cost = hp_cost(&option);
     let max_hp_loss = max_hp_loss(&option);
     let heal_amount = heal_amount(&option);
@@ -118,10 +125,15 @@ fn candidate_evidence(index: usize, option: EventOption) -> EventCandidateEviden
         }
     }
 
-    EventCandidateEvidenceV1 {
+    let mut candidate = EventCandidateEvidenceV1 {
         index,
         label: display_event_label(&option.ui.text),
         class,
+        evaluation: super::types::EventCandidateEvaluationV1 {
+            score: 0,
+            tier: super::types::EventCandidateTierV1::Risky,
+            reasons: Vec::new(),
+        },
         support_gate: support_gate_for_class(class),
         evidence,
         risks,
@@ -132,7 +144,9 @@ fn candidate_evidence(index: usize, option: EventOption) -> EventCandidateEviden
         max_hp_gain,
         curse_count,
         obtained_card_count,
-    }
+    };
+    candidate.evaluation = evaluate_event_candidate_v1(current_hp, max_hp, &candidate);
+    candidate
 }
 
 fn classify_event_option(option: &EventOption) -> EventPolicyClassV1 {

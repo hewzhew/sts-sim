@@ -909,6 +909,7 @@ fn branch_retention_candidate_input(
         max_hp,
         gold: branch.session.run_state.gold,
         deck_count: branch.session.run_state.master_deck.len(),
+        curse_count: branch_curse_count(&branch.session.run_state),
         strategy_formation: Some(strategy_formation_summary(&branch.session)),
         trajectory: summarize_branch_trajectory_v1(&choice_profiles),
         choice_profiles,
@@ -919,6 +920,14 @@ fn branch_retention_candidate_input(
             &branch.session.run_state,
         ),
     }
+}
+
+fn branch_curse_count(run_state: &RunState) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|card| get_card_definition(card.id).card_type == CardType::Curse)
+        .count()
 }
 
 fn branch_effective_rank_key(branch: &BranchWork) -> i32 {

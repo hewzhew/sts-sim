@@ -24,6 +24,7 @@ pub struct EventCandidateEvidenceV1 {
     pub index: usize,
     pub label: String,
     pub class: EventPolicyClassV1,
+    pub evaluation: EventCandidateEvaluationV1,
     pub support_gate: StrategyPlanSupportV1,
     pub evidence: Vec<String>,
     pub risks: Vec<String>,
@@ -47,6 +48,22 @@ pub enum EventPolicyClassV1 {
     CombatStart,
     UncertainReward,
     Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct EventCandidateEvaluationV1 {
+    pub score: i32,
+    pub tier: EventCandidateTierV1,
+    pub reasons: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum EventCandidateTierV1 {
+    Preferred,
+    Viable,
+    Risky,
+    Avoid,
+    Blocked,
 }
 
 #[derive(Clone, Debug, PartialEq)]

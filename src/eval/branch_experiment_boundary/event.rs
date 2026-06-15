@@ -7,8 +7,8 @@ use crate::ai::deck_mutation_compiler_v1::{
     DeckMutationPlanCandidateV1, DeckMutationTargetClassV1,
 };
 use crate::ai::event_policy_v1::{
-    build_event_decision_context_v1, plan_event_decision_v1, EventPolicyActionV1,
-    EventPolicyClassV1, EventPolicyConfigV1,
+    build_event_decision_context_v1, plan_event_decision_v1, EventCandidateTierV1,
+    EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
 };
 use crate::content::cards::CardId;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
@@ -32,6 +32,7 @@ pub(crate) struct EventBranchOption {
     pub(crate) representative_count: usize,
     pub(crate) suppressed_count: usize,
     deck_mutation_order_key: Option<(u8, i32)>,
+    event_policy_order_key: Option<(u8, i32)>,
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +53,9 @@ pub(crate) fn event_branch_options(
     if event_options.len() == 1 && terminal_no_effect_leave(&event_options[0]) {
         return None;
     }
+    let event_id = session.run_state.event_state.as_ref()?.id;
+    let event_policy_context =
+        build_event_decision_context_v1(&session.run_state, event_id, event_options.clone());
     let surface = build_decision_surface(session);
     let mut branch_options = Vec::new();
     let direct_remove_low_value_available =
@@ -73,6 +77,26 @@ pub(crate) fn event_branch_options(
         let semantics = branch_semantics_for_event_option(event_option);
         let (card, upgrades) =
             event_option_specific_card_with_upgrades(session, index, event_option);
+        let policy_candidate = event_policy_context
+            .candidates
+            .iter()
+            .find(|candidate| candidate.index == index);
+        let event_policy_order_key = policy_candidate.map(|candidate| {
+            (
+                event_candidate_tier_rank(candidate.evaluation.tier),
+                -candidate.evaluation.score,
+            )
+        });
+        let event_policy_note = policy_candidate
+            .map(|candidate| {
+                format!(
+                    " | event_eval tier={:?} score={} reasons={}",
+                    candidate.evaluation.tier,
+                    candidate.evaluation.score,
+                    candidate.evaluation.reasons.join("; ")
+                )
+            })
+            .unwrap_or_default();
         let mut branch_option = EventBranchOption {
             label: candidate.label.clone(),
             command: candidate.action.command_hint(),
@@ -80,10 +104,11 @@ pub(crate) fn event_branch_options(
             upgrades,
             effect_kind: semantics.effect_kind,
             effect_key: semantics.effect_key,
-            effect_label: semantics.effect_label,
+            effect_label: format!("{}{}", semantics.effect_label, event_policy_note),
             representative_count: 1,
             suppressed_count: 0,
             deck_mutation_order_key: None,
+            event_policy_order_key,
         };
         if let Some(plan) = compile_direct_event_remove_card_plan(
             session,
@@ -100,6 +125,7 @@ pub(crate) fn event_branch_options(
         return None;
     }
     sort_all_direct_deck_mutation_options(&mut branch_options);
+    sort_event_options_by_policy(&mut branch_options);
     if let Some(policy_options) =
         event_policy_safe_exit_branch_options(session, &event_options, &branch_options)
     {
@@ -118,6 +144,34 @@ pub(crate) fn event_branch_options(
         return None;
     }
     Some(branch_options)
+}
+
+fn event_candidate_tier_rank(tier: EventCandidateTierV1) -> u8 {
+    match tier {
+        EventCandidateTierV1::Preferred => 0,
+        EventCandidateTierV1::Viable => 1,
+        EventCandidateTierV1::Risky => 2,
+        EventCandidateTierV1::Avoid => 3,
+        EventCandidateTierV1::Blocked => 4,
+    }
+}
+
+fn sort_event_options_by_policy(options: &mut [EventBranchOption]) {
+    if options.is_empty()
+        || options
+            .iter()
+            .all(|option| option.deck_mutation_order_key.is_some())
+        || !options
+            .iter()
+            .all(|option| option.event_policy_order_key.is_some())
+    {
+        return;
+    }
+    options.sort_by(|left, right| {
+        left.event_policy_order_key
+            .cmp(&right.event_policy_order_key)
+            .then_with(|| left.command.cmp(&right.command))
+    });
 }
 
 fn sort_all_direct_deck_mutation_options(options: &mut [EventBranchOption]) {

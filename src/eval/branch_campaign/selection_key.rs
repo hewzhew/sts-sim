@@ -8,6 +8,7 @@ type BranchCampaignActiveSortKeyV1 = (
     BranchCampaignActClearSortKeyV1,
     BranchCampaignBossCheckpointSortKeyV1,
     i32,
+    i32,
     (u8, i32, i32),
     i32,
 );
@@ -68,6 +69,7 @@ fn campaign_branch_active_sort_key_v1(
         campaign_branch_act_clear_sort_key_v1(branch),
         campaign_branch_boss_checkpoint_sort_key_v1(branch),
         campaign_branch_primary_eligible_key_v1(branch),
+        campaign_branch_selection_rank_bucket_v1(branch),
         branch_progress_key(branch),
         campaign_branch_selection_rank_key_v1(branch),
     )
@@ -86,6 +88,10 @@ fn campaign_branch_selection_rank_key_v1(branch: &BranchCampaignBranchV1) -> i32
     branch.rank_key
 }
 
+fn campaign_branch_selection_rank_bucket_v1(branch: &BranchCampaignBranchV1) -> i32 {
+    campaign_branch_selection_rank_key_v1(branch).div_euclid(1_000)
+}
+
 fn campaign_branch_primary_eligible_key_v1(branch: &BranchCampaignBranchV1) -> i32 {
     i32::from(branch.rank_key >= 0)
 }
@@ -96,7 +102,7 @@ fn campaign_branch_boss_checkpoint_sort_key_v1(
     let Some(summary) = branch.summary.as_ref() else {
         return (0, 0, 0, 0);
     };
-    if summary.floor < final_boss_checkpoint_floor_v1(summary.act) {
+    if summary.floor < boss_readiness_checkpoint_floor_v1(summary.act) {
         return (0, 0, 0, 0);
     }
     let signature = &branch.strategic_summary;
@@ -147,6 +153,15 @@ fn final_boss_checkpoint_floor_v1(act: u8) -> i32 {
         1 => 14,
         2 => 30,
         3 => 46,
+        _ => i32::MAX,
+    }
+}
+
+fn boss_readiness_checkpoint_floor_v1(act: u8) -> i32 {
+    match act {
+        1 => 10,
+        2 => 24,
+        3 => 40,
         _ => i32::MAX,
     }
 }
