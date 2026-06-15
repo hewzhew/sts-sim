@@ -686,6 +686,40 @@ fn campaign_selection_freezes_active_overflow() {
 }
 
 #[test]
+fn campaign_selection_does_not_fill_active_cap_with_negative_rank_when_primary_exists() {
+    let mut primary = test_campaign_branch("primary", 2, 80);
+    primary.rank_key = 100;
+    primary.summary.as_mut().unwrap().trajectory_key = "primary".to_string();
+    let mut rejected = test_campaign_branch("rejected", 2, 80);
+    rejected.rank_key = -50_000;
+    rejected.summary.as_mut().unwrap().trajectory_key = "rejected".to_string();
+
+    let selected = select_campaign_branches_v1(vec![primary, rejected], 2, 4);
+
+    assert_eq!(selected.active.len(), 1);
+    assert_eq!(selected.active[0].branch_id, "primary");
+    assert_eq!(selected.frozen.len(), 1);
+    assert_eq!(selected.frozen[0].branch_id, "rejected");
+}
+
+#[test]
+fn campaign_selection_keeps_best_negative_rank_active_when_no_primary_exists() {
+    let mut rejected_a = test_campaign_branch("rejected-a", 2, 80);
+    rejected_a.rank_key = -50_000;
+    rejected_a.summary.as_mut().unwrap().trajectory_key = "rejected-a".to_string();
+    let mut rejected_b = test_campaign_branch("rejected-b", 2, 80);
+    rejected_b.rank_key = -80_000;
+    rejected_b.summary.as_mut().unwrap().trajectory_key = "rejected-b".to_string();
+
+    let selected = select_campaign_branches_v1(vec![rejected_a, rejected_b], 2, 4);
+
+    assert_eq!(selected.active.len(), 1);
+    assert_eq!(selected.active[0].branch_id, "rejected-a");
+    assert_eq!(selected.frozen.len(), 1);
+    assert_eq!(selected.frozen[0].branch_id, "rejected-b");
+}
+
+#[test]
 fn campaign_selection_does_not_prefer_converted_gold_as_hidden_strategy() {
     let mut rich = test_campaign_branch("a-rich", 16, 30);
     rich.rank_key = 100;
@@ -1117,6 +1151,24 @@ fn campaign_promotes_frozen_when_active_pool_is_empty() {
     assert_eq!(active[0].status, BranchCampaignBranchStatusV1::Active);
     assert_eq!(frozen.len(), 1);
     assert_eq!(frozen[0].branch_id, "f1");
+}
+
+#[test]
+fn campaign_promotion_does_not_fill_secondary_active_slot_with_negative_rank() {
+    let mut active = vec![test_campaign_branch("primary", 4, 80)];
+    active[0].rank_key = 100;
+    let mut rejected = test_campaign_branch("rejected", 7, 75);
+    rejected.status = BranchCampaignBranchStatusV1::Frozen;
+    rejected.rank_key = -50_000;
+    let mut frozen = vec![rejected];
+
+    let promoted = promote_frozen_to_active_v1(&mut active, &mut frozen, 2);
+
+    assert_eq!(promoted, 0);
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].branch_id, "primary");
+    assert_eq!(frozen.len(), 1);
+    assert_eq!(frozen[0].branch_id, "rejected");
 }
 
 #[test]

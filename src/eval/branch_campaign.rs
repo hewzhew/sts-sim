@@ -2696,7 +2696,9 @@ pub fn select_campaign_branches_v1(
             continue;
         }
 
-        if selection.active.len() < max_active {
+        if selection.active.len() < max_active
+            && (campaign_branch_primary_active_eligible_v1(&branch) || selection.active.is_empty())
+        {
             branch.status = BranchCampaignBranchStatusV1::Active;
             selection.active.push(branch);
         } else if selection.frozen.len() < max_frozen {
@@ -2916,10 +2918,11 @@ fn promote_frozen_to_active_v1(
     frozen.sort_by(compare_campaign_branches_for_promotion_v1);
     let mut promoted = 0usize;
     while active.len() < max_active && !frozen.is_empty() {
-        let Some(promote_index) = frozen
-            .iter()
-            .position(|branch| !branch_is_rehydrated_checkpointed_combat_failure_v1(branch))
-        else {
+        let require_primary_eligible = !active.is_empty();
+        let Some(promote_index) = frozen.iter().position(|branch| {
+            !branch_is_rehydrated_checkpointed_combat_failure_v1(branch)
+                && (!require_primary_eligible || campaign_branch_primary_active_eligible_v1(branch))
+        }) else {
             break;
         };
         let mut branch = frozen.remove(promote_index);
@@ -2928,6 +2931,10 @@ fn promote_frozen_to_active_v1(
         promoted = promoted.saturating_add(1);
     }
     promoted
+}
+
+fn campaign_branch_primary_active_eligible_v1(branch: &BranchCampaignBranchV1) -> bool {
+    branch.rank_key >= 0
 }
 
 fn promote_rehydrated_combat_failures_to_active_on_stall_v1(
