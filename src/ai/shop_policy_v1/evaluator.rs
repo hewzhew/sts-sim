@@ -89,7 +89,7 @@ fn evaluate_single_candidate_v1(
     match candidate.class {
         ShopPolicyClassV1::CursePurge => evaluate_curse_purge_v1(candidate, config),
         ShopPolicyClassV1::StarterStrikePurge | ShopPolicyClassV1::StarterDefendPurge => {
-            evaluate_starter_purge_v1(candidate, config)
+            evaluate_starter_purge_v1(candidate, config, strategic_trace)
         }
         ShopPolicyClassV1::PurchaseOpportunity => {
             evaluate_purchase_v1(candidate, context, config, strategic_trace)
@@ -202,6 +202,7 @@ fn evaluate_purchase_v1(
 fn evaluate_starter_purge_v1(
     candidate: &ShopCandidateEvidenceV1,
     config: &ShopPolicyConfigV1,
+    strategic_trace: &StrategicDecisionTrace,
 ) -> ShopPlanEvaluationV1 {
     if !config.allow_starter_strike_purge_when_core_plan_protected {
         return ShopPlanEvaluationV1::block(
@@ -218,20 +219,21 @@ fn evaluate_starter_purge_v1(
             ),
         );
     }
-    let (tier, score, reason) = match candidate.class {
-        ShopPolicyClassV1::StarterStrikePurge => (
-            260,
-            760,
-            "shop evaluator: starter strike cleanup from DeckMutationCompiler",
-        ),
-        ShopPolicyClassV1::StarterDefendPurge => (
-            240,
-            720,
-            "shop evaluator: starter defend cleanup from DeckMutationCompiler",
-        ),
-        _ => (100, 700, "shop evaluator: starter cleanup"),
+    let Some(strategic_decision) = starter_purge_strategic_decision(candidate, strategic_trace)
+    else {
+        return ShopPlanEvaluationV1::block(None, "strategic trace has no starter purge decision");
     };
-    ShopPlanEvaluationV1::allow(tier, score, 0.74, None, reason)
+    if !strategic_decision.verdict.allows_behavior_acquisition() {
+        return ShopPlanEvaluationV1::block(
+            None,
+            format!(
+                "strategic trace blocks starter purge behavior acquisition verdict={:?} score={:.2}",
+                strategic_decision.verdict, strategic_decision.score
+            ),
+        );
+    }
+
+    strategic_starter_purge_evaluation_v1(candidate, strategic_decision)
 }
 
 fn evaluate_portfolio_plan_v1(
@@ -332,6 +334,54 @@ fn purchase_strategic_decision(
         gold: 0,
     };
     strategic_trace.compiled_for_action(&action)
+}
+
+fn starter_purge_strategic_decision<'a>(
+    candidate: &ShopCandidateEvidenceV1,
+    strategic_trace: &'a StrategicDecisionTrace,
+) -> Option<&'a CompiledDecision> {
+    let action = CandidateAction::RemoveCard {
+        deck_index: candidate.deck_index?,
+        card: candidate.card?,
+        gold: None,
+    };
+    strategic_trace.compiled_for_action(&action)
+}
+
+fn strategic_starter_purge_evaluation_v1(
+    candidate: &ShopCandidateEvidenceV1,
+    strategic_decision: &CompiledDecision,
+) -> ShopPlanEvaluationV1 {
+    let tier = match strategic_decision.verdict {
+        AcquisitionVerdict::MustTake => 330,
+        AcquisitionVerdict::StrongTake => 320,
+        AcquisitionVerdict::ContextTake => 300,
+        _ => 0,
+    };
+    let base_score = match candidate.class {
+        ShopPolicyClassV1::StarterStrikePurge => 40,
+        ShopPolicyClassV1::StarterDefendPurge => 0,
+        _ => 0,
+    };
+    let strategic_score = (strategic_decision.score.max(0.0) * 1000.0).round() as i32;
+    let score = strategic_score.saturating_add(base_score);
+    let confidence = match strategic_decision.verdict {
+        AcquisitionVerdict::MustTake => 0.82,
+        AcquisitionVerdict::StrongTake => 0.76,
+        AcquisitionVerdict::ContextTake => 0.68,
+        _ => 0.0,
+    };
+
+    ShopPlanEvaluationV1::allow(
+        tier,
+        score,
+        confidence,
+        None,
+        format!(
+            "strategic deck-cleaning evaluation: verdict={:?} score={:.2}",
+            strategic_decision.verdict, strategic_decision.score
+        ),
+    )
 }
 
 fn strategic_purchase_evaluation_v1(
