@@ -927,6 +927,24 @@ fn campaign_selection_prioritizes_act_clear_frontier_over_pre_boss_checkpoint() 
 }
 
 #[test]
+fn campaign_selection_does_not_keep_act_clear_transition_over_next_act_progress() {
+    let mut act_clear = test_campaign_branch("act1-boss-relic", 16, 61);
+    act_clear.summary.as_mut().unwrap().act = 1;
+    act_clear.frontier_title = "Boss Relic".to_string();
+    act_clear.rank_key = 12_547;
+
+    let mut next_act = test_campaign_branch("act2-reward", 18, 80);
+    next_act.summary.as_mut().unwrap().act = 2;
+    next_act.frontier_title = "Reward Screen".to_string();
+    next_act.rank_key = 22_978;
+
+    let selected = select_campaign_branches_v1(vec![act_clear, next_act], 1, 4);
+
+    assert_eq!(selected.active[0].branch_id, "act2-reward");
+    assert_eq!(selected.frozen[0].branch_id, "act1-boss-relic");
+}
+
+#[test]
 fn campaign_selection_does_not_treat_low_hp_zero_readiness_boss_checkpoint_as_absolute_progress() {
     let mut low_hp_boss_door = test_campaign_branch("low-hp-boss-door", 46, 10);
     low_hp_boss_door.summary.as_mut().unwrap().act = 3;
@@ -1360,6 +1378,64 @@ fn campaign_rebalance_repeats_until_active_pool_is_stable() {
         .collect::<Vec<_>>();
     assert!(active_ids.contains(&"frozen-strong-a"));
     assert!(active_ids.contains(&"frozen-strong-b"));
+}
+
+#[test]
+fn campaign_rebalance_promotes_next_act_progress_over_stale_act_clear_transition() {
+    let mut active = vec![
+        {
+            let mut branch = test_campaign_branch("act1-boss-relic", 16, 61);
+            branch.summary.as_mut().unwrap().act = 1;
+            branch.frontier_title = "Boss Relic".to_string();
+            branch.rank_key = 12_547;
+            branch.strategic_summary = BranchSignatureCompact {
+                present: true,
+                boss_readiness_milli: 200,
+                clean_score_milli: 1000,
+                engine_score_milli: 0,
+                cycle_debt_milli: 0,
+                setup_debt_milli: 0,
+                economy_conversion_milli: 0,
+                package_coherence_milli: 0,
+            };
+            branch
+        },
+        {
+            let mut branch = test_campaign_branch("act1-reward", 16, 46);
+            branch.summary.as_mut().unwrap().act = 1;
+            branch.frontier_title = "Reward Screen".to_string();
+            branch.rank_key = 12_388;
+            branch
+        },
+    ];
+    let mut frozen = vec![
+        {
+            let mut branch = test_campaign_branch("act2-reward", 18, 80);
+            branch.summary.as_mut().unwrap().act = 2;
+            branch.frontier_title = "Reward Screen".to_string();
+            branch.rank_key = 22_978;
+            branch.status = BranchCampaignBranchStatusV1::Frozen;
+            branch
+        },
+        {
+            let mut branch = test_campaign_branch("act2-nest", 19, 65);
+            branch.summary.as_mut().unwrap().act = 2;
+            branch.frontier_title = "Nest".to_string();
+            branch.rank_key = 22_937;
+            branch.status = BranchCampaignBranchStatusV1::Frozen;
+            branch
+        },
+    ];
+
+    let promoted = rebalance_active_with_stronger_frozen_v1(&mut active, &mut frozen, 2);
+
+    assert_eq!(promoted, 2);
+    let active_ids = active
+        .iter()
+        .map(|branch| branch.branch_id.as_str())
+        .collect::<Vec<_>>();
+    assert!(active_ids.contains(&"act2-reward"));
+    assert!(active_ids.contains(&"act2-nest"));
 }
 
 #[test]

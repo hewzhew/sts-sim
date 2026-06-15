@@ -102,6 +102,13 @@ fn campaign_branch_boss_checkpoint_sort_key_v1(
     let Some(summary) = branch.summary.as_ref() else {
         return (0, 0, 0, 0);
     };
+    let frontier = normalized_frontier_title_v1(&branch.frontier_title);
+    if summary.act < 3
+        && summary.floor >= act_boss_floor_v1(summary.act)
+        && matches!(frontier.as_str(), "bossrelic" | "rewardscreen")
+    {
+        return (0, 0, 0, 0);
+    }
     if summary.floor < boss_readiness_checkpoint_floor_v1(summary.act) {
         return (0, 0, 0, 0);
     }
@@ -131,17 +138,19 @@ fn campaign_branch_act_clear_sort_key_v1(
     let Some(summary) = branch.summary.as_ref() else {
         return (0, 0, 0);
     };
-    if summary.act >= 3 || summary.floor < act_boss_floor_v1(summary.act) {
-        return (0, 0, 0);
-    }
     let frontier = normalized_frontier_title_v1(&branch.frontier_title);
-    if !matches!(frontier.as_str(), "bossrelic" | "rewardscreen") {
-        return (0, 0, 0);
+    let is_act_clear_transition = summary.act < 3
+        && summary.floor >= act_boss_floor_v1(summary.act)
+        && matches!(frontier.as_str(), "bossrelic" | "rewardscreen");
+    if !is_act_clear_transition {
+        return (summary.act, 0, 0);
     }
     // Once an act boss has actually been cleared, campaign selection should keep
     // processing the reward/relic transition instead of revisiting unproven
-    // pre-boss checkpoints with better diagnostic readiness.
-    (1, i32::from(summary.act), summary.floor)
+    // pre-boss checkpoints. Treat that transition as the start of the next act,
+    // but do not let it outrank branches that have already advanced deeper into
+    // that next act.
+    (summary.act.saturating_add(1), 0, 0)
 }
 
 pub(super) fn act_boss_floor_v1(act: u8) -> i32 {
