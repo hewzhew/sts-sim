@@ -1566,6 +1566,51 @@ fn campaign_default_retry_policy_retries_act_boss_gate_combat_parent_immediately
 }
 
 #[test]
+fn campaign_boss_gate_retry_ledger_limits_attempts_per_gate() {
+    let abandoned_act1_boss = test_report_branch_at(
+        "a1",
+        Vec::new(),
+        BranchExperimentBranchStatusV1::Pruned,
+        "Combat",
+        16,
+        80,
+    );
+    let gate = branch_report_act_boss_gate_retry_key_v1(&[abandoned_act1_boss])
+        .expect("act boss combat should have a retry gate key");
+    let mut ledger = BranchCampaignCombatRetryLedgerStateV1::default();
+
+    assert!(ledger.try_consume_boss_gate_retry_v1(gate));
+    assert!(ledger.try_consume_boss_gate_retry_v1(gate));
+    assert!(!ledger.try_consume_boss_gate_retry_v1(gate));
+
+    let report = ledger.to_report_v1();
+    assert_eq!(report.boss_gate_attempts.len(), 1);
+    assert_eq!(report.boss_gate_attempts[0].act, 1);
+    assert_eq!(report.boss_gate_attempts[0].floor, 16);
+    assert_eq!(
+        report.boss_gate_attempts[0].attempts,
+        BOSS_GATE_RETRY_ATTEMPTS_PER_GATE
+    );
+}
+
+#[test]
+fn campaign_non_boss_gate_combat_has_no_boss_gate_retry_key() {
+    let abandoned_hallway = test_report_branch_at(
+        "a",
+        Vec::new(),
+        BranchExperimentBranchStatusV1::Pruned,
+        "Combat",
+        10,
+        70,
+    );
+
+    assert_eq!(
+        branch_report_act_boss_gate_retry_key_v1(&[abandoned_hallway]),
+        None
+    );
+}
+
+#[test]
 fn campaign_on_stall_retries_when_round_exhausts_only_abandoned_combat() {
     let config = BranchCampaignConfigV1::default();
     let mut abandoned = test_campaign_branch("abandoned-combat", 1, 80);
@@ -1774,6 +1819,7 @@ fn compact_campaign_report_renders_strategy_prompt() {
             suggested_action: "provide Falling policy".to_string(),
         }],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -1821,6 +1867,7 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
             suggested_action: "raise combat search budget".to_string(),
         }],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: vec![BranchCampaignRoundSummaryV1 {
             round: 5,
@@ -1879,6 +1926,7 @@ fn compact_campaign_report_suppresses_deferred_strategy_notes_while_active_conti
             suggested_action: "raise combat search budget".to_string(),
         }],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -2298,6 +2346,7 @@ fn compact_campaign_report_renders_budget_stop_hint() {
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -2336,6 +2385,7 @@ fn compact_campaign_report_labels_nonfatal_requests_as_deferred_notes() {
             suggested_action: "adjust route planner policy".to_string(),
         }],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -2383,6 +2433,7 @@ fn compact_campaign_report_renders_context_only_strategy_packet() {
             suggested_action: "provide event policy".to_string(),
         }],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -2617,6 +2668,7 @@ fn campaign_state_uses_snapshot_without_replaying_parent_commands() {
             discarded_examples: Vec::new(),
             strategy_requests: Vec::new(),
             route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+            combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),
             rounds: Vec::new(),
             snapshot_cache: BTreeMap::from([(parent.commands.clone(), session)]),
             recovered_checkpoint_failure_commands: BTreeSet::new(),
@@ -2669,6 +2721,7 @@ fn campaign_checkpoint_preserves_abandoned_and_stuck_snapshots_for_diagnostics()
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),
         rounds: Vec::new(),
         snapshot_cache: BTreeMap::from([
             (abandoned.commands.clone(), abandoned_session),
@@ -2728,6 +2781,7 @@ fn campaign_resume_checkpoint_drops_unrestorable_stuck_branches_and_requests() {
         discarded_examples: Vec::new(),
         strategy_requests: vec![request],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -2782,6 +2836,7 @@ fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_command
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -2869,6 +2924,7 @@ fn campaign_resume_rehydrates_checkpointed_combat_failures() {
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -2961,6 +3017,7 @@ fn campaign_resume_does_not_promote_stale_combat_failure_over_later_active_branc
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -3046,6 +3103,7 @@ fn campaign_resume_rehydrates_auto_advanceable_map_overlay_stuck() {
         discarded_examples: Vec::new(),
         strategy_requests: vec![request],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -3135,6 +3193,7 @@ fn campaign_resume_rehydrates_stale_map_preview_to_checkpoint_card_reward_fronti
         discarded_examples: Vec::new(),
         strategy_requests: vec![request],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -3223,6 +3282,7 @@ fn campaign_resume_drops_resolved_map_overlay_stuck_when_no_branch_slot_remains(
         discarded_examples: Vec::new(),
         strategy_requests: vec![request],
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -3313,6 +3373,7 @@ fn campaign_resume_rehydrates_combat_failures_as_frozen_diagnostics_only() {
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -3404,6 +3465,7 @@ fn campaign_resume_rehydrates_later_combat_failure_before_stale_early_failure() 
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: Vec::new(),
     };
@@ -3456,6 +3518,7 @@ fn test_campaign_report_with_active(id: &str, floor: i32, hp: i32) -> BranchCamp
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         rounds: vec![BranchCampaignRoundSummaryV1 {
             round: 1,

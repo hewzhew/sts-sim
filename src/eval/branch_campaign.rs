@@ -45,6 +45,7 @@ const COMBAT_RETRY_MIN_NODES: usize = 200_000;
 const COMBAT_RETRY_MAX_NODES: usize = 500_000;
 const COMBAT_RETRY_MIN_WALL_MS: u64 = 1_000;
 const COMBAT_RETRY_MAX_WALL_MS: u64 = 1_000;
+const BOSS_GATE_RETRY_ATTEMPTS_PER_GATE: usize = 2;
 const UNSPENT_GOLD_PRESSURE_THRESHOLD: i32 = 300;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -203,6 +204,27 @@ pub struct BranchCampaignStrategyRequestV1 {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct BranchCampaignCombatRetryLedgerV1 {
+    #[serde(default)]
+    pub boss_gate_attempts: Vec<BranchCampaignCombatRetryLedgerEntryV1>,
+}
+
+impl BranchCampaignCombatRetryLedgerV1 {
+    fn is_empty(&self) -> bool {
+        self.boss_gate_attempts.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignCombatRetryLedgerEntryV1 {
+    pub act: u8,
+    pub floor: i32,
+    pub attempts: usize,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BranchCampaignRoundSummaryV1 {
     pub round: usize,
     pub started_active: usize,
@@ -274,6 +296,11 @@ pub struct BranchCampaignReportV1 {
     pub strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
     #[serde(default)]
     pub route_evidence: BranchCampaignRouteEvidenceSummaryV1,
+    #[serde(
+        default,
+        skip_serializing_if = "BranchCampaignCombatRetryLedgerV1::is_empty"
+    )]
+    pub combat_retry_ledger: BranchCampaignCombatRetryLedgerV1,
     #[serde(
         default,
         skip_serializing_if = "BranchCampaignStrategicSignalsV1::is_empty"
@@ -395,9 +422,60 @@ struct BranchCampaignRunStateV1 {
     discarded_examples: Vec<String>,
     strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
     route_evidence: BranchCampaignRouteEvidenceSummaryV1,
+    combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1,
     rounds: Vec<BranchCampaignRoundSummaryV1>,
     snapshot_cache: BTreeMap<Vec<String>, RunControlSession>,
     recovered_checkpoint_failure_commands: BTreeSet<Vec<String>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct BranchCampaignBossGateRetryKeyV1 {
+    act: u8,
+    floor: i32,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct BranchCampaignCombatRetryLedgerStateV1 {
+    boss_gate_attempts: BTreeMap<BranchCampaignBossGateRetryKeyV1, usize>,
+}
+
+impl BranchCampaignCombatRetryLedgerStateV1 {
+    fn from_report_v1(report: &BranchCampaignCombatRetryLedgerV1) -> Self {
+        let mut ledger = Self::default();
+        for entry in &report.boss_gate_attempts {
+            let key = BranchCampaignBossGateRetryKeyV1 {
+                act: entry.act,
+                floor: entry.floor,
+            };
+            ledger
+                .boss_gate_attempts
+                .insert(key, entry.attempts.min(BOSS_GATE_RETRY_ATTEMPTS_PER_GATE));
+        }
+        ledger
+    }
+
+    fn to_report_v1(&self) -> BranchCampaignCombatRetryLedgerV1 {
+        BranchCampaignCombatRetryLedgerV1 {
+            boss_gate_attempts: self
+                .boss_gate_attempts
+                .iter()
+                .map(|(key, attempts)| BranchCampaignCombatRetryLedgerEntryV1 {
+                    act: key.act,
+                    floor: key.floor,
+                    attempts: *attempts,
+                })
+                .collect(),
+        }
+    }
+
+    fn try_consume_boss_gate_retry_v1(&mut self, key: BranchCampaignBossGateRetryKeyV1) -> bool {
+        let attempts = self.boss_gate_attempts.entry(key).or_default();
+        if *attempts >= BOSS_GATE_RETRY_ATTEMPTS_PER_GATE {
+            return false;
+        }
+        *attempts = attempts.saturating_add(1);
+        true
+    }
 }
 
 pub fn run_branch_campaign_v1(
@@ -649,6 +727,7 @@ where
             config,
             &parents,
             &mut state.snapshot_cache,
+            &mut state.combat_retry_ledger,
             round_number,
             false,
             &mut progress,
@@ -668,29 +747,40 @@ where
             &selected,
             state.frozen.len(),
         ) {
-            if let Some(retry_config) = combat_retry_campaign_config_v1(config) {
-                batch = run_campaign_parent_batch_v1(
-                    &retry_config,
-                    &parents,
-                    &mut state.snapshot_cache,
-                    round_number,
-                    true,
-                    &mut progress,
-                )?;
-                parent_elapsed_wall_ms_sum = parent_elapsed_wall_ms_sum
-                    .saturating_add(batch.parent_elapsed_wall_ms_sum);
-                parent_elapsed_wall_ms_max =
-                    parent_elapsed_wall_ms_max.max(batch.parent_elapsed_wall_ms_max);
-                combat_retry_elapsed_wall_ms_sum = combat_retry_elapsed_wall_ms_sum
-                    .saturating_add(batch.combat_retry_elapsed_wall_ms_sum);
-                combat_retry_elapsed_wall_ms_max = combat_retry_elapsed_wall_ms_max
-                    .max(batch.combat_retry_elapsed_wall_ms_max);
-                produced_branches = batch.candidates.len();
-                selected = select_campaign_branches_v1(
-                    batch.candidates.clone(),
-                    config.max_active,
-                    config.max_frozen,
-                );
+            let retry_gate_key = campaign_selection_act_boss_gate_retry_key_v1(&selected);
+            let retry_allowed = retry_gate_key
+                .map(|key| {
+                    state
+                        .combat_retry_ledger
+                        .try_consume_boss_gate_retry_v1(key)
+                })
+                .unwrap_or(true);
+            if retry_allowed {
+                if let Some(retry_config) = combat_retry_campaign_config_v1(config) {
+                    batch = run_campaign_parent_batch_v1(
+                        &retry_config,
+                        &parents,
+                        &mut state.snapshot_cache,
+                        &mut state.combat_retry_ledger,
+                        round_number,
+                        true,
+                        &mut progress,
+                    )?;
+                    parent_elapsed_wall_ms_sum =
+                        parent_elapsed_wall_ms_sum.saturating_add(batch.parent_elapsed_wall_ms_sum);
+                    parent_elapsed_wall_ms_max =
+                        parent_elapsed_wall_ms_max.max(batch.parent_elapsed_wall_ms_max);
+                    combat_retry_elapsed_wall_ms_sum = combat_retry_elapsed_wall_ms_sum
+                        .saturating_add(batch.combat_retry_elapsed_wall_ms_sum);
+                    combat_retry_elapsed_wall_ms_max = combat_retry_elapsed_wall_ms_max
+                        .max(batch.combat_retry_elapsed_wall_ms_max);
+                    produced_branches = batch.candidates.len();
+                    selected = select_campaign_branches_v1(
+                        batch.candidates.clone(),
+                        config.max_active,
+                        config.max_frozen,
+                    );
+                }
             }
         }
         state.strategy_requests = merge_campaign_strategy_request_queue_v1(
@@ -914,6 +1004,7 @@ where
         discarded_examples: state.discarded_examples,
         strategy_requests: state.strategy_requests,
         route_evidence: state.route_evidence,
+        combat_retry_ledger: state.combat_retry_ledger.to_report_v1(),
         strategic_signals,
         rounds: state.rounds,
     };
@@ -933,6 +1024,7 @@ fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
         discarded_examples: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),
         rounds: Vec::new(),
         snapshot_cache: BTreeMap::new(),
         recovered_checkpoint_failure_commands: BTreeSet::new(),
@@ -952,6 +1044,9 @@ fn campaign_state_from_report_v1(report: &BranchCampaignReportV1) -> BranchCampa
         discarded_examples: report.discarded_examples.clone(),
         strategy_requests: report.strategy_requests.clone(),
         route_evidence: report.route_evidence.clone(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::from_report_v1(
+            &report.combat_retry_ledger,
+        ),
         rounds: report.rounds.clone(),
         snapshot_cache: BTreeMap::new(),
         recovered_checkpoint_failure_commands: BTreeSet::new(),
@@ -1264,6 +1359,12 @@ pub fn render_branch_campaign_compact_v1(
             format_seconds_1dp_v1(combat_retry_elapsed_wall_ms_max),
         ));
     }
+    if !report.combat_retry_ledger.is_empty() {
+        lines.push(format!(
+            "Combat retry ledger: boss_gate={}",
+            render_combat_retry_ledger_v1(&report.combat_retry_ledger)
+        ));
+    }
     if report.discarded_count > 0 && !report.discarded_examples.is_empty() {
         lines.push(format!(
             "Branch pressure: discarded={} examples=[{}]",
@@ -1429,6 +1530,20 @@ fn format_seconds_1dp_v1(ms: u64) -> String {
 
 fn format_bp(value: i32) -> String {
     format!("{:.2}", f64::from(value) / 100.0)
+}
+
+fn render_combat_retry_ledger_v1(ledger: &BranchCampaignCombatRetryLedgerV1) -> String {
+    ledger
+        .boss_gate_attempts
+        .iter()
+        .map(|entry| {
+            format!(
+                "A{}F{}={}/{}",
+                entry.act, entry.floor, entry.attempts, BOSS_GATE_RETRY_ATTEMPTS_PER_GATE
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 struct CampaignUnspentGoldPressureV1 {
@@ -2083,6 +2198,7 @@ fn run_campaign_parent_batch_v1<F>(
     config: &BranchCampaignConfigV1,
     parents: &[BranchCampaignBranchV1],
     snapshot_cache: &mut BTreeMap<Vec<String>, RunControlSession>,
+    combat_retry_ledger: &mut BranchCampaignCombatRetryLedgerStateV1,
     round_number: usize,
     round_retry: bool,
     progress: &mut F,
@@ -2111,7 +2227,13 @@ where
             choices: render_compact_choice_path(&parent.choice_labels),
         });
         let parent_snapshot = snapshot_cache.get(&parent.commands).cloned();
-        let parent_result = run_campaign_parent_round_v1(config, parent, parent_snapshot)?;
+        let parent_result = run_campaign_parent_round_v1(
+            config,
+            parent,
+            parent_snapshot,
+            combat_retry_ledger,
+            !round_retry,
+        )?;
         parent_elapsed_wall_ms_sum =
             parent_elapsed_wall_ms_sum.saturating_add(parent_result.elapsed_wall_ms_sum);
         parent_elapsed_wall_ms_max =
@@ -2198,11 +2320,14 @@ fn run_campaign_parent_round_v1(
     config: &BranchCampaignConfigV1,
     parent: &BranchCampaignBranchV1,
     parent_snapshot: Option<RunControlSession>,
+    combat_retry_ledger: &mut BranchCampaignCombatRetryLedgerStateV1,
+    parent_combat_retry_enabled: bool,
 ) -> Result<BranchCampaignParentRoundResultV1, String> {
     let result = match run_campaign_parent_round_once_v1(config, parent, parent_snapshot.clone()) {
         Ok(result) => result,
         Err(err)
-            if campaign_parent_replay_error_is_retryable_v1(&err)
+            if parent_combat_retry_enabled
+                && campaign_parent_replay_error_is_retryable_v1(&err)
                 && combat_retry_campaign_config_v1(config).is_some() =>
         {
             let retry_config = combat_retry_campaign_config_v1(config)
@@ -2227,7 +2352,9 @@ fn run_campaign_parent_round_v1(
         }
         Err(err) => return Err(err),
     };
-    if !campaign_parent_should_retry_combat_budget_now_v1(config, &result.report.branches) {
+    if !parent_combat_retry_enabled
+        || !campaign_parent_should_retry_combat_budget_now_v1(config, &result.report.branches)
+    {
         let elapsed = result.report.elapsed_wall_ms;
         return Ok(BranchCampaignParentRoundResultV1 {
             result,
@@ -2250,6 +2377,19 @@ fn run_campaign_parent_round_v1(
             combat_retry_elapsed_wall_ms_max: 0,
         });
     };
+    if let Some(gate_key) = branch_report_act_boss_gate_retry_key_v1(&result.report.branches) {
+        if !combat_retry_ledger.try_consume_boss_gate_retry_v1(gate_key) {
+            let elapsed = result.report.elapsed_wall_ms;
+            return Ok(BranchCampaignParentRoundResultV1 {
+                result,
+                combat_budget_retry_used: false,
+                elapsed_wall_ms_sum: elapsed,
+                elapsed_wall_ms_max: elapsed,
+                combat_retry_elapsed_wall_ms_sum: 0,
+                combat_retry_elapsed_wall_ms_max: 0,
+            });
+        }
+    }
     let initial_elapsed = result.report.elapsed_wall_ms;
     let retry_result = run_campaign_parent_round_once_v1(&retry_config, parent, parent_snapshot)?;
     let retry_elapsed = retry_result.report.elapsed_wall_ms;
@@ -2310,10 +2450,7 @@ fn campaign_branch_experiment_config_v1(
 }
 
 fn campaign_elapsed_ms_u64(started_at: Instant) -> u64 {
-    started_at
-        .elapsed()
-        .as_millis()
-        .min(u128::from(u64::MAX)) as u64
+    started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
 }
 
 fn campaign_parent_replay_error_is_retryable_v1(error: &str) -> bool {
@@ -2385,9 +2522,35 @@ fn campaign_parent_should_retry_combat_budget_now_v1(
 fn branch_report_is_act_boss_gate_combat_retry_candidate_v1(
     branches: &[BranchExperimentBranchReportV1],
 ) -> bool {
-    branches.iter().any(|branch| {
-        normalized_campaign_boundary_title(&branch.summary.boundary_title) == "combat"
-            && branch.summary.floor >= act_boss_floor_v1(branch.summary.act)
+    branch_report_act_boss_gate_retry_key_v1(branches).is_some()
+}
+
+fn branch_report_act_boss_gate_retry_key_v1(
+    branches: &[BranchExperimentBranchReportV1],
+) -> Option<BranchCampaignBossGateRetryKeyV1> {
+    branches.iter().find_map(|branch| {
+        let act = branch.summary.act;
+        let floor = branch.summary.floor;
+        (normalized_campaign_boundary_title(&branch.summary.boundary_title) == "combat"
+            && floor >= act_boss_floor_v1(act))
+        .then_some(BranchCampaignBossGateRetryKeyV1 {
+            act,
+            floor: act_boss_floor_v1(act),
+        })
+    })
+}
+
+fn campaign_selection_act_boss_gate_retry_key_v1(
+    selection: &BranchCampaignSelectionV1,
+) -> Option<BranchCampaignBossGateRetryKeyV1> {
+    selection.abandoned.iter().find_map(|branch| {
+        let summary = branch.summary.as_ref()?;
+        (normalized_campaign_boundary_title(&branch.frontier_title) == "combat"
+            && summary.floor >= act_boss_floor_v1(summary.act))
+        .then_some(BranchCampaignBossGateRetryKeyV1 {
+            act: summary.act,
+            floor: act_boss_floor_v1(summary.act),
+        })
     })
 }
 
