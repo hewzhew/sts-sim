@@ -290,7 +290,7 @@ fn bloated_deck_skip_can_claim_clean_deck_slot() {
         "declining a card reward is the clean-deck branch once deck size is already high"
     );
     assert!(
-        legacy_slot_score(&candidate, BranchRetentionSlotV1::CleanDeck) > 0,
+        branch_retention_slot_evidence_score_v1(&candidate, BranchRetentionSlotV1::CleanDeck) > 0,
         "clean-deck scoring should be able to select the skip branch under deck bloat"
     );
 }
@@ -1132,7 +1132,7 @@ fn legacy_strategy_adjustment_reports_unresolved_deck_without_global_rank_penalt
 }
 
 #[test]
-fn package_lane_selection_uses_rank_not_legacy_slot_score() {
+fn package_lane_selection_uses_rank_not_slot_evidence_score() {
     let high_rank_package = named_semantic_retention_candidate(
         0,
         50_000,
@@ -1164,7 +1164,7 @@ fn package_lane_selection_uses_rank_not_legacy_slot_score() {
 
     assert!(
         selection.keep_indices.contains(&0),
-        "legacy slot_score/context boosts should be evidence, not the lane-local selector"
+        "slot evidence/context boosts should be evidence, not the lane-local selector"
     );
     assert!(!selection.keep_indices.contains(&1));
 }

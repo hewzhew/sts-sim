@@ -145,14 +145,16 @@ pub struct BranchRetentionLegacyStrategyAdjustmentV1 {
     pub effective_rank_key: i32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub context_keys: Vec<String>,
+    /// Report-only lane evidence. Portfolio selection uses slots plus effective rank,
+    /// not these lane-local evidence scores.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub slot_scores: Vec<BranchRetentionLegacySlotScoreV1>,
+    pub slot_scores: Vec<BranchRetentionSlotEvidenceScoreV1>,
     pub reasons: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct BranchRetentionLegacySlotScoreV1 {
+pub struct BranchRetentionSlotEvidenceScoreV1 {
     pub slot: BranchRetentionSlotV1,
     pub score: i32,
 }
@@ -895,20 +897,20 @@ pub fn legacy_branch_retention_strategy_adjustment_v1(
             .iter()
             .map(|key| branch_retention_context_key_label(*key).to_string())
             .collect(),
-        slot_scores: legacy_branch_retention_slot_scores_v1(candidate),
+        slot_scores: branch_retention_slot_evidence_scores_v1(candidate),
         reasons,
     }
 }
 
-fn legacy_branch_retention_slot_scores_v1(
+fn branch_retention_slot_evidence_scores_v1(
     candidate: &BranchRetentionCandidateInputV1,
-) -> Vec<BranchRetentionLegacySlotScoreV1> {
+) -> Vec<BranchRetentionSlotEvidenceScoreV1> {
     SLOT_ORDER
         .iter()
         .copied()
         .filter_map(|slot| {
-            let score = legacy_slot_score(candidate, slot);
-            (score > 0).then_some(BranchRetentionLegacySlotScoreV1 { slot, score })
+            let score = branch_retention_slot_evidence_score_v1(candidate, slot);
+            (score > 0).then_some(BranchRetentionSlotEvidenceScoreV1 { slot, score })
         })
         .collect()
 }
@@ -1401,7 +1403,7 @@ fn is_payoff_only_package_branch(candidate: &BranchRetentionCandidateInputV1) ->
         && candidate.trajectory.draw_energy_picks == 0
 }
 
-fn legacy_slot_score(
+fn branch_retention_slot_evidence_score_v1(
     candidate: &BranchRetentionCandidateInputV1,
     slot: BranchRetentionSlotV1,
 ) -> i32 {
