@@ -34,6 +34,8 @@ pub enum StrategicBossTax {
     AutomatonOrbControl,
     TimeEaterCardCount,
     ChampExecutePlan,
+    CollectorMinionPlan,
+    CollectorTurnFourDebuffPlan,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -202,7 +204,26 @@ pub fn ledger_from_snapshot(snapshot: &StrategicSnapshot) -> PressureLedger {
             )],
         );
     }
-    if snapshot.deck.strength_payoffs > 0 && snapshot.deck.strength_sources == 0 {
+    if snapshot.deck.strength_payoffs > 0
+        && snapshot.deck.strength_sources == 0
+        && snapshot.deck.convertible_strength_sources > 0
+    {
+        ledger.push(
+            "deck_debt:strength_payoff_without_stable_source",
+            PressureKind::DeckDebt(StrategicDebt::PayoffWithoutEnabler),
+            PressureHorizon::VisibleRoute,
+            (snapshot.deck.strength_payoffs as f32 / 4.0).clamp(0.25, 0.60),
+            0.75,
+            vec![format!(
+                "strength_payoffs={} stable_sources={} temporary_bursts={} converters={} convertible_sources={}",
+                snapshot.deck.strength_payoffs,
+                snapshot.deck.strength_sources,
+                snapshot.deck.temporary_strength_bursts,
+                snapshot.deck.strength_converters,
+                snapshot.deck.convertible_strength_sources
+            )],
+        );
+    } else if snapshot.deck.strength_payoffs > 0 && snapshot.deck.strength_sources == 0 {
         ledger.push(
             "deck_debt:strength_payoff_without_source",
             PressureKind::DeckDebt(StrategicDebt::PayoffWithoutEnabler),
@@ -292,6 +313,24 @@ pub fn ledger_from_snapshot(snapshot: &StrategicSnapshot) -> PressureLedger {
                 0.60,
                 0.65,
                 vec!["The Champ asks for execute-phase mitigation or scaling".to_string()],
+            );
+        }
+        Some("Collector") => {
+            ledger.push(
+                "boss_tax:collector_minion_plan",
+                PressureKind::BossTax(StrategicBossTax::CollectorMinionPlan),
+                PressureHorizon::ActBoss,
+                0.70,
+                0.70,
+                vec!["Collector asks for minion control or efficient AOE".to_string()],
+            );
+            ledger.push(
+                "boss_tax:collector_turn4_debuff_plan",
+                PressureKind::BossTax(StrategicBossTax::CollectorTurnFourDebuffPlan),
+                PressureHorizon::ActBoss,
+                0.55,
+                0.65,
+                vec!["Collector turn four debuff asks for mitigation or tempo".to_string()],
             );
         }
         _ => {}

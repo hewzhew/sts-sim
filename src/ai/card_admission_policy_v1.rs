@@ -1,6 +1,6 @@
 use crate::ai::card_component_marginal_value_v1::{
     evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
-    CardComponentMarginalVerdictV1,
+    CardComponentMarginalReportV1, CardComponentMarginalVerdictV1,
 };
 use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
@@ -68,6 +68,9 @@ pub struct CardAdmissionReportV1 {
     pub source: CardAdmissionSourceV1,
     pub pressure: CardAdmissionPressureV1,
     pub verdict: CardAdmissionVerdictV1,
+    pub strategic_verdict: Option<crate::ai::strategic::AcquisitionVerdict>,
+    pub strategic_score: Option<f32>,
+    pub strategic_reasons: Vec<String>,
     pub effective_cycle_cards_before: f32,
     pub effective_cycle_cards_after: f32,
     pub shop_priority_adjustment: i32,
@@ -158,6 +161,7 @@ pub fn evaluate_card_profile_admission_v1(
         &component_marginal_context_from_admission_context(context),
         profile,
     );
+    let strategic_shadow = strategic_shadow_decision_for_admission(context, profile, &component);
     let component_negative = component.is_negative();
     let package_enabler = package_enabler && !component_negative;
     let component_strong_take = component.verdict >= CardComponentMarginalVerdictV1::StrongTake;
@@ -304,11 +308,94 @@ pub fn evaluate_card_profile_admission_v1(
         source,
         pressure,
         verdict,
+        strategic_verdict: strategic_shadow.as_ref().map(|decision| decision.verdict),
+        strategic_score: strategic_shadow.as_ref().map(|decision| decision.score),
+        strategic_reasons: strategic_shadow
+            .as_ref()
+            .map(|decision| {
+                let mut reasons =
+                    vec![format!("strategic_compiler_verdict={:?}", decision.verdict)];
+                reasons.extend(decision.reasons.clone());
+                reasons
+            })
+            .unwrap_or_default(),
         effective_cycle_cards_before: before,
         effective_cycle_cards_after: after,
         shop_priority_adjustment,
         reasons,
     }
+}
+
+fn strategic_shadow_decision_for_admission(
+    context: &CardAdmissionContextV1,
+    profile: &CardRewardSemanticProfileV1,
+    component: &CardComponentMarginalReportV1,
+) -> Option<crate::ai::strategic::CompiledDecision> {
+    use crate::ai::strategic::{
+        compile_decision, ledger_from_snapshot, CandidateAction, CandidateDelta,
+        StrategicDecisionSite, StrategicDeckFacts, StrategicJob, StrategicSnapshot,
+    };
+
+    let snapshot = StrategicSnapshot {
+        site: StrategicDecisionSite::CardReward,
+        act: context.act,
+        floor: context.floor,
+        boss: context.boss.map(|boss| format!("{boss:?}")),
+        hp: context.hp,
+        max_hp: context.max_hp,
+        gold: 0,
+        deck: StrategicDeckFacts {
+            deck_size: context.deck_size,
+            attacks: 0,
+            skills: 0,
+            powers: context.powers as u8,
+            curses: context.curses as u8,
+            starter_strikes: 0,
+            starter_defends: 0,
+            draw_sources: context.draw_sources as u8,
+            energy_sources: 0,
+            strength_sources: context.startup.persistent_strength_source_count,
+            temporary_strength_bursts: context.startup.temporary_strength_burst_count,
+            strength_converters: context.startup.strength_converter_count,
+            convertible_strength_sources: context.startup.convertible_strength_source_count,
+            strength_payoffs: context.startup.strength_payoff_count,
+            weak_sources: 0,
+            vulnerable_sources: 0,
+            exhaust_generators: context.exhaust_generators as u8,
+            exhaust_payoffs: context.startup.exhaust_payoff_count,
+            status_generators: context.startup.status_generator_count,
+            status_payoffs: context.startup.status_digest_count,
+            total_attack_damage: 0,
+            total_block: 0,
+        },
+        route: None,
+        formation_needs: context
+            .formation_needs
+            .iter()
+            .map(|need| match need {
+                StrategyDeckFormationNeedV1::Frontload => StrategicJob::Frontload,
+                StrategyDeckFormationNeedV1::Block => StrategicJob::Block,
+                StrategyDeckFormationNeedV1::Scaling => StrategicJob::Scaling,
+                StrategyDeckFormationNeedV1::DrawEnergy => StrategicJob::DrawEnergy,
+                StrategyDeckFormationNeedV1::Consistency => StrategicJob::Consistency,
+            })
+            .collect(),
+    };
+    let action = CandidateAction::TakeCard {
+        index: 0,
+        card: profile.card,
+    };
+    let delta = CandidateDelta::from_component_report(action.clone(), component);
+    let trace = compile_decision(
+        snapshot.clone(),
+        ledger_from_snapshot(&snapshot),
+        1,
+        vec![delta],
+    );
+    trace
+        .compiled
+        .into_iter()
+        .find(|decision| decision.action.candidate_id() == action.candidate_id())
 }
 
 fn component_marginal_context_from_admission_context(
@@ -847,5 +934,33 @@ mod tests {
         assert!(report
             .reasons
             .contains(&"deck_shape_nonstacking_power_duplicate_without_payoff"));
+    }
+
+    #[test]
+    fn admission_report_carries_shadow_strategic_verdict() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.act_num = 2;
+        run_state.add_card_to_deck(CardId::Flex);
+        run_state.add_card_to_deck(CardId::LimitBreak);
+        run_state.add_card_to_deck(CardId::HeavyBlade);
+
+        let report = evaluate_card_admission_v1(
+            &run_state,
+            RewardCard::new(CardId::SpotWeakness, 0),
+            CardAdmissionSourceV1::Reward,
+        );
+
+        assert!(
+            report.strategic_verdict.is_some(),
+            "card admission should expose the unified strategic compiler verdict as shadow evidence"
+        );
+        assert!(
+            report.strategic_score.is_some(),
+            "card admission should expose the unified strategic compiler score as shadow evidence"
+        );
+        assert!(report
+            .strategic_reasons
+            .iter()
+            .any(|reason| reason.starts_with("strategic_compiler_verdict=")));
     }
 }

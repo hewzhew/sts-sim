@@ -341,6 +341,109 @@ fn pressure_ledger_exposes_access_and_package_debts_from_deck_facts() {
         .any(|item| item.id == "deck_debt:strength_payoff_without_source"));
 }
 
+#[test]
+fn card_reward_strategic_snapshot_preserves_convertible_strength_facts() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.master_deck.clear();
+    run_state.add_card_to_deck(CardId::Flex);
+    run_state.add_card_to_deck(CardId::LimitBreak);
+    run_state.add_card_to_deck(CardId::HeavyBlade);
+
+    let context = build_card_reward_decision_context_v1(
+        &run_state,
+        vec![RewardCard::new(CardId::PommelStrike, 0)],
+        None,
+    );
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+
+    assert_eq!(decision.strategic_trace.snapshot.deck.strength_sources, 0);
+    assert_eq!(
+        decision
+            .strategic_trace
+            .snapshot
+            .deck
+            .temporary_strength_bursts,
+        1
+    );
+    assert_eq!(
+        decision.strategic_trace.snapshot.deck.strength_converters,
+        1
+    );
+    assert_eq!(
+        decision
+            .strategic_trace
+            .snapshot
+            .deck
+            .convertible_strength_sources,
+        1
+    );
+}
+
+#[test]
+fn pressure_ledger_distinguishes_convertible_strength_from_stable_scaling() {
+    let snapshot = StrategicSnapshot {
+        site: StrategicDecisionSite::CardReward,
+        act: 2,
+        floor: 25,
+        boss: None,
+        hp: 60,
+        max_hp: 80,
+        gold: 200,
+        deck: StrategicDeckFacts {
+            strength_sources: 0,
+            temporary_strength_bursts: 1,
+            strength_converters: 1,
+            convertible_strength_sources: 1,
+            strength_payoffs: 2,
+            ..StrategicDeckFacts::default()
+        },
+        route: None,
+        formation_needs: vec![],
+    };
+
+    let ledger = ledger_from_snapshot(&snapshot);
+
+    assert!(ledger
+        .items
+        .iter()
+        .any(|item| item.id == "deck_debt:strength_payoff_without_stable_source"));
+    assert!(!ledger
+        .items
+        .iter()
+        .any(|item| item.id == "deck_debt:strength_payoff_without_source"));
+}
+
+#[test]
+fn collector_pressure_and_aoe_candidate_share_boss_tax_kind() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.boss_key = Some(crate::content::monsters::factory::EncounterId::Collector);
+    let context = build_card_reward_decision_context_v1(
+        &run_state,
+        vec![RewardCard::new(CardId::Immolate, 0)],
+        None,
+    );
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+
+    assert!(decision
+        .strategic_trace
+        .ledger
+        .items
+        .iter()
+        .any(|item| item.id == "boss_tax:collector_minion_plan"));
+
+    let immolate_delta = decision
+        .strategic_trace
+        .candidate_deltas
+        .iter()
+        .find(|delta| delta.action.candidate_id().contains("Immolate"))
+        .expect("Immolate should have a strategic delta");
+
+    assert!(immolate_delta.positive.iter().any(|delta| {
+        delta.kind
+            == PressureKind::BossTax(crate::ai::strategic::StrategicBossTax::CollectorMinionPlan)
+    }));
+}
+
 fn compiled_score(trace: &crate::ai::strategic::StrategicDecisionTrace, id: &str) -> f32 {
     trace
         .compiled

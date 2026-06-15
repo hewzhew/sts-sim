@@ -1,7 +1,8 @@
 use super::{
     compile_decision, ledger_from_snapshot, CandidateAction, CandidateDelta, CandidateRole,
-    LedgerDelta, OpportunityCost, PressureKind, StrategicDebt, StrategicDecisionSite,
-    StrategicDeckFacts, StrategicJob, StrategicRouteFacts, StrategicSnapshot, VerdictHint,
+    LedgerDelta, OpportunityCost, PressureKind, StrategicBossTax, StrategicDebt,
+    StrategicDecisionSite, StrategicDeckFacts, StrategicJob, StrategicRouteFacts,
+    StrategicSnapshot, VerdictHint,
 };
 use crate::ai::card_component_marginal_value_v1::{
     evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
@@ -49,6 +50,9 @@ fn snapshot_from_card_reward_context(context: &CardRewardDecisionContextV1) -> S
             draw_sources: context.deck.draw_cards,
             energy_sources: context.deck.energy_sources,
             strength_sources: context.deck.strength_sources,
+            temporary_strength_bursts: context.deck.temporary_strength_bursts,
+            strength_converters: context.deck.strength_converters,
+            convertible_strength_sources: context.deck.convertible_strength_sources,
             strength_payoffs: context.deck.strength_payoffs,
             weak_sources: context.deck.weak_sources,
             vulnerable_sources: context.deck.vulnerable_sources,
@@ -118,6 +122,7 @@ fn candidate_delta_from_card_reward(
     let mut delta = CandidateDelta::from_component_report(action, &component_report);
     add_candidate_impact_deltas(candidate, &mut delta);
     add_candidate_facts_deltas(candidate, &mut delta);
+    add_candidate_boss_pressure_deltas(context, &profile, &mut delta);
     delta
 }
 
@@ -228,6 +233,28 @@ fn add_candidate_facts_deltas(
             amount: (candidate.facts.vulnerable as f32 / 5.0).clamp(0.12, 0.45),
             reason: "vulnerable_coverage_delta".to_string(),
         });
+    }
+}
+
+fn add_candidate_boss_pressure_deltas(
+    context: &CardRewardDecisionContextV1,
+    profile: &crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1,
+    delta: &mut CandidateDelta,
+) {
+    let boss = context.run.boss.as_deref().and_then(parse_boss);
+    if boss == Some(EncounterId::Collector)
+        && profile
+            .roles
+            .contains(&crate::ai::card_reward_policy_v1::CardRewardSemanticRoleV1::AoeDamage)
+    {
+        delta.positive.push(LedgerDelta {
+            kind: PressureKind::BossTax(StrategicBossTax::CollectorMinionPlan),
+            amount: 0.55,
+            reason: "collector_aoe_minion_plan".to_string(),
+        });
+        if delta.role == CandidateRole::Unknown || delta.role == CandidateRole::Transition {
+            delta.role = CandidateRole::BossAnswer;
+        }
     }
 }
 
