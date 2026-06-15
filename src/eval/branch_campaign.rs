@@ -519,6 +519,18 @@ where
                 &state.stuck,
                 &state.abandoned,
             );
+            let promoted = rebalance_active_with_stronger_frozen_v1(
+                &mut state.active,
+                &mut state.frozen,
+                config.max_active,
+            );
+            if promoted > 0 {
+                progress(BranchCampaignProgressEventV1::FrozenPromoted {
+                    promoted,
+                    active_after: state.active.len(),
+                    frozen_remaining: state.frozen.len(),
+                });
+            }
         }
         if state.active.is_empty()
             && !campaign_should_stop_after_victory_v1(
@@ -2793,7 +2805,7 @@ fn rebalance_active_survival_anchor_v1(
         return false;
     };
 
-    let Some((frozen_index, _)) = frozen
+    let maybe_nearby = frozen
         .iter()
         .enumerate()
         .filter(|(_, branch)| !branch_is_rehydrated_checkpointed_combat_failure_v1(branch))
@@ -2812,8 +2824,32 @@ fn rebalance_active_survival_anchor_v1(
                 campaign_branch_retention_key_v1(&frozen[*left_idx])
                     .cmp(&campaign_branch_retention_key_v1(&frozen[*right_idx]))
             })
-        })
-    else {
+        });
+
+    let maybe_salvage = || {
+        frozen
+            .iter()
+            .enumerate()
+            .filter(|(_, branch)| !branch_is_rehydrated_checkpointed_combat_failure_v1(branch))
+            .filter(|(_, branch)| {
+                campaign_progress_is_survival_salvage_checkpoint_v1(
+                    branch_progress_key(branch),
+                    branch_progress_key(&active[replace_index]),
+                )
+            })
+            .filter_map(|(idx, branch)| {
+                let hp = campaign_branch_hp_percent_v1(branch)?;
+                (hp >= 50 && hp >= replace_hp.saturating_add(40)).then_some((idx, hp))
+            })
+            .max_by(|(left_idx, left_hp), (right_idx, right_hp)| {
+                left_hp.cmp(right_hp).then_with(|| {
+                    campaign_branch_retention_key_v1(&frozen[*left_idx])
+                        .cmp(&campaign_branch_retention_key_v1(&frozen[*right_idx]))
+                })
+            })
+    };
+
+    let Some((frozen_index, _)) = maybe_nearby.or_else(maybe_salvage) else {
         return false;
     };
 
@@ -2846,23 +2882,39 @@ fn campaign_active_swap_respects_survival_v1(
     candidate: &BranchCampaignBranchV1,
     replaced: &BranchCampaignBranchV1,
 ) -> bool {
-    if !campaign_progress_is_nearby_v1(
-        branch_progress_key(candidate),
-        branch_progress_key(replaced),
-    ) {
-        return true;
-    }
     let Some(candidate_hp_percent) = campaign_branch_hp_percent_v1(candidate) else {
         return true;
     };
     let Some(replaced_hp_percent) = campaign_branch_hp_percent_v1(replaced) else {
         return true;
     };
+    let candidate_progress = branch_progress_key(candidate);
+    let replaced_progress = branch_progress_key(replaced);
+    if candidate_progress.0 == replaced_progress.0
+        && candidate_progress.1 >= replaced_progress.1
+        && candidate_progress.1.saturating_sub(replaced_progress.1) <= 8
+        && candidate_hp_percent < 25
+        && replaced_hp_percent >= candidate_hp_percent.saturating_add(40)
+    {
+        return false;
+    }
+    if !campaign_progress_is_nearby_v1(candidate_progress, replaced_progress) {
+        return true;
+    }
     !(candidate_hp_percent < 25 && replaced_hp_percent >= candidate_hp_percent.saturating_add(20))
 }
 
 fn campaign_progress_is_nearby_v1(left: (u8, i32, i32), right: (u8, i32, i32)) -> bool {
     left.0 == right.0 && (left.1 - right.1).abs() <= 2
+}
+
+fn campaign_progress_is_survival_salvage_checkpoint_v1(
+    candidate: (u8, i32, i32),
+    replaced: (u8, i32, i32),
+) -> bool {
+    candidate.0 == replaced.0
+        && candidate.1 <= replaced.1
+        && replaced.1.saturating_sub(candidate.1) <= 8
 }
 
 fn campaign_branch_hp_percent_v1(branch: &BranchCampaignBranchV1) -> Option<i32> {
@@ -3365,6 +3417,15 @@ fn try_recover_auto_advanceable_stuck_branch_v1(
         campaign_refresh_branch_summary_from_session_v1(&mut recovered, &session);
         return Some(recovered);
     }
+    if campaign_stale_empty_portfolio_branch_is_now_available_v1(branch, &session) {
+        let mut recovered = branch.clone();
+        recovered.frontier_title = checkpoint_frontier;
+        recovered.status = BranchCampaignBranchStatusV1::Active;
+        recovered.stop_reason = "recovered from current branch boundary".to_string();
+        campaign_refresh_branch_summary_from_session_v1(&mut recovered, &session);
+        snapshot_cache.insert(branch.commands.clone(), session);
+        return Some(recovered);
+    }
 
     let outcome = apply_branch_experiment_auto_run(
         &mut session,
@@ -3390,6 +3451,17 @@ fn try_recover_auto_advanceable_stuck_branch_v1(
     campaign_refresh_branch_summary_from_session_v1(&mut recovered, &session);
     snapshot_cache.insert(branch.commands.clone(), session);
     Some(recovered)
+}
+
+fn campaign_stale_empty_portfolio_branch_is_now_available_v1(
+    branch: &BranchCampaignBranchV1,
+    session: &RunControlSession,
+) -> bool {
+    branch
+        .stop_reason
+        .to_ascii_lowercase()
+        .contains("option portfolio is empty")
+        && branch_boundary_available(session)
 }
 
 fn place_recovered_campaign_branch_v1(

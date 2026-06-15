@@ -1055,6 +1055,28 @@ fn campaign_selection_promotes_nearby_healthy_frozen_over_critical_active() {
 }
 
 #[test]
+fn campaign_rebalance_promotes_healthy_salvage_checkpoint_over_critical_active() {
+    let mut critical_late = test_campaign_branch("critical-late", 45, 17);
+    critical_late.summary.as_mut().unwrap().act = 3;
+    critical_late.summary.as_mut().unwrap().max_hp = 80;
+    critical_late.rank_key = 35_900;
+
+    let mut healthy_checkpoint = test_campaign_branch("healthy-checkpoint", 38, 80);
+    healthy_checkpoint.summary.as_mut().unwrap().act = 3;
+    healthy_checkpoint.summary.as_mut().unwrap().max_hp = 80;
+    healthy_checkpoint.rank_key = 34_000;
+
+    let mut active = vec![critical_late];
+    let mut frozen = vec![healthy_checkpoint];
+
+    let promoted = rebalance_active_with_stronger_frozen_v1(&mut active, &mut frozen, 1);
+
+    assert_eq!(promoted, 1);
+    assert_eq!(active[0].branch_id, "healthy-checkpoint");
+    assert_eq!(frozen[0].branch_id, "critical-late");
+}
+
+#[test]
 fn campaign_rebalance_does_not_promote_stale_rehydrated_combat_over_later_active() {
     let mut active = vec![test_campaign_branch_with_boundary(
         "act3-campfire",
@@ -2042,6 +2064,41 @@ fn campaign_recovers_stuck_branch_if_one_auto_step_leaves_frontier() {
             .engine_state,
         EngineState::MapNavigation
     ));
+}
+
+#[test]
+fn campaign_recovers_stale_empty_campfire_portfolio_when_boundary_is_now_available() {
+    let mut active = Vec::new();
+    let mut frozen = Vec::new();
+    let mut stuck = vec![test_campaign_branch_with_boundary(
+        "campfire-stale",
+        "Campfire",
+        "campfire option portfolio is empty",
+        38,
+        80,
+    )];
+    let mut snapshot_cache = BTreeMap::new();
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state = EngineState::Campfire;
+    snapshot_cache.insert(stuck[0].commands.clone(), session);
+
+    let recovered = recover_auto_advanceable_stuck_branches_v1(
+        &mut active,
+        &mut frozen,
+        &mut stuck,
+        &mut snapshot_cache,
+        1,
+        4,
+    );
+
+    assert_eq!(recovered, 1);
+    assert!(stuck.is_empty());
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].branch_id, "campfire-stale");
+    assert_eq!(active[0].frontier_title, "Campfire");
+    assert!(active[0]
+        .stop_reason
+        .contains("recovered from current branch boundary"));
 }
 
 #[test]
