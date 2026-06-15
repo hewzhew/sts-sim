@@ -859,7 +859,7 @@ fn startup_liability_is_rank_evidence_not_coverage_slot_gate() {
         .reasons
         .iter()
         .any(|reason| reason == "card admission rejects at least one added card"));
-    assert!(decision.rank_adjustment.component_adjustment < 0);
+    assert!(decision.rank_adjustment.admission_pressure < 0);
     assert!(decision
         .rank_adjustment
         .reasons
@@ -971,7 +971,7 @@ fn adjusted_rank_keeps_card_admission_as_report_only_evidence() {
         "card admission evidence must not become a second rank-scoring path"
     );
     assert!(
-        adjustment.component_adjustment < 0,
+        adjustment.admission_pressure < 0,
         "card admission pressure should remain visible for audit"
     );
 }
@@ -1037,7 +1037,7 @@ fn retention_selection_filters_hard_admission_before_diversity_fallback() {
 }
 
 #[test]
-fn rank_adjustment_exposes_card_admission_components() {
+fn rank_adjustment_exposes_card_admission_pressure() {
     let rejected_pummel = BranchRetentionCandidateInputV1 {
         index: 0,
         act: 2,
@@ -1069,7 +1069,7 @@ fn rank_adjustment_exposes_card_admission_components() {
     let adjustment = branch_retention_rank_adjustment_v1(&rejected_pummel);
 
     assert_eq!(adjustment.base_rank_key, 50_000);
-    assert!(adjustment.component_adjustment < 0);
+    assert!(adjustment.admission_pressure < 0);
     assert_eq!(
         adjustment.effective_rank_key, rejected_pummel.rank_key,
         "card admission component evidence should not be applied to effective rank"

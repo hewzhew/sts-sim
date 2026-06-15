@@ -144,7 +144,8 @@ pub struct BranchRetentionRankAdjustmentV1 {
     /// Report-only card admission pressure for the branch's added cards.
     /// Branch retention may use the underlying admission verdicts as slot
     /// eligibility gates, but this value is not folded into effective_rank_key.
-    pub component_adjustment: i32,
+    #[serde(default, alias = "component_adjustment")]
+    pub admission_pressure: i32,
     pub effective_rank_key: i32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub context_keys: Vec<String>,
@@ -163,11 +164,11 @@ pub struct BranchRetentionSlotEvidenceScoreV1 {
 }
 
 #[derive(Clone, Debug, Default)]
-struct BranchRetentionCardAdmissionRankCostV1 {
+struct BranchRetentionCardAdmissionEvidenceV1 {
     startup_blocking: bool,
     rejects_added_card: bool,
     admits_only_without_cleaner: bool,
-    rank_adjustment: i32,
+    report_pressure: i32,
     reasons: Vec<String>,
 }
 
@@ -307,7 +308,7 @@ pub fn decide_branch_retention_v1(
     let mut slots = Vec::new();
     let mut reasons = Vec::new();
     let current_startup_liability = branch_retention_current_startup_liability(candidate);
-    let card_admission = branch_retention_card_admission_rank_cost_v1(candidate);
+    let card_admission = branch_retention_card_admission_evidence_v1(candidate);
 
     if has_package_candidate(&candidate.choice_profiles) {
         slots.push(BranchRetentionSlotV1::Package);
@@ -827,7 +828,7 @@ fn best_position_for_slot_with_admission_filter(
 pub(super) fn candidate_has_hard_slot_blocking_admission_liability(
     candidate: &BranchRetentionCandidateInputV1,
 ) -> bool {
-    branch_retention_card_admission_rank_cost_v1(candidate).rejects_added_card
+    branch_retention_card_admission_evidence_v1(candidate).rejects_added_card
 }
 
 fn best_fill_position(
@@ -906,10 +907,10 @@ pub fn branch_retention_rank_adjustment_v1(
     candidate: &BranchRetentionCandidateInputV1,
 ) -> BranchRetentionRankAdjustmentV1 {
     let context = branch_retention_context_packet_v2(candidate);
-    let card_admission = branch_retention_card_admission_rank_cost_v1(candidate);
+    let card_admission = branch_retention_card_admission_evidence_v1(candidate);
     let current_startup_debt_adjustment = current_startup_debt_rank_adjustment_v1(candidate);
     let startup_adjustment = current_startup_debt_adjustment;
-    let component_adjustment = card_admission.rank_adjustment;
+    let admission_pressure = card_admission.report_pressure;
     let mut reasons = card_admission.reasons;
 
     if current_startup_debt_adjustment != 0 {
@@ -931,7 +932,7 @@ pub fn branch_retention_rank_adjustment_v1(
     BranchRetentionRankAdjustmentV1 {
         base_rank_key: candidate.rank_key,
         startup_adjustment,
-        component_adjustment,
+        admission_pressure,
         effective_rank_key,
         context_keys: context
             .keys
@@ -1596,17 +1597,17 @@ fn branch_retention_current_startup_liability(candidate: &BranchRetentionCandida
         || candidate.startup.has_pyramid_unupgraded_apparition
 }
 
-fn branch_retention_card_admission_rank_cost_v1(
+fn branch_retention_card_admission_evidence_v1(
     candidate: &BranchRetentionCandidateInputV1,
-) -> BranchRetentionCardAdmissionRankCostV1 {
+) -> BranchRetentionCardAdmissionEvidenceV1 {
     let context = card_admission_context_for_retention_candidate(candidate);
-    let mut summary = BranchRetentionCardAdmissionRankCostV1::default();
+    let mut summary = BranchRetentionCardAdmissionEvidenceV1::default();
 
     for profile in &candidate.choice_profiles {
         let report =
             evaluate_card_profile_admission_v1(&context, profile, CardAdmissionSourceV1::Reward);
-        let adjustment = card_admission_verdict_rank_adjustment(report.verdict);
-        summary.rank_adjustment = summary.rank_adjustment.saturating_add(adjustment);
+        let pressure = card_admission_verdict_report_pressure(report.verdict);
+        summary.report_pressure = summary.report_pressure.saturating_add(pressure);
         match report.verdict {
             CardAdmissionVerdictV1::Admit => {}
             CardAdmissionVerdictV1::AdmitIfNoCleanerAlternative => {
@@ -1624,9 +1625,9 @@ fn branch_retention_card_admission_rank_cost_v1(
         {
             summary.startup_blocking = true;
         }
-        if adjustment != 0 {
+        if pressure != 0 {
             summary.reasons.push(format!(
-                "card_admission_evidence:{}:{:?}:{adjustment}",
+                "card_admission_evidence:{}:{:?}:{pressure}",
                 profile.name, report.verdict
             ));
         }
@@ -1658,7 +1659,7 @@ fn current_startup_debt_rank_adjustment_v1(candidate: &BranchRetentionCandidateI
     -1_000 * debt_count.min(6)
 }
 
-fn card_admission_verdict_rank_adjustment(verdict: CardAdmissionVerdictV1) -> i32 {
+fn card_admission_verdict_report_pressure(verdict: CardAdmissionVerdictV1) -> i32 {
     match verdict {
         CardAdmissionVerdictV1::Admit => 0,
         CardAdmissionVerdictV1::AdmitIfNoCleanerAlternative => -8_000,
