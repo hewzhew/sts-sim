@@ -21,6 +21,25 @@ pub(in crate::eval::run_control) fn apply_route_go(
 pub(in crate::eval::run_control) fn apply_route_go_with_summary(
     session: &mut RunControlSession,
 ) -> Result<RouteGoApplied, String> {
+    apply_route_go_with_safety_mode(session, RouteGoSafetyMode::RejectForcedRisk)
+}
+
+pub(in crate::eval::run_control) fn apply_route_go_with_summary_allowing_forced_risk(
+    session: &mut RunControlSession,
+) -> Result<RouteGoApplied, String> {
+    apply_route_go_with_safety_mode(session, RouteGoSafetyMode::AllowForcedRisk)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RouteGoSafetyMode {
+    RejectForcedRisk,
+    AllowForcedRisk,
+}
+
+fn apply_route_go_with_safety_mode(
+    session: &mut RunControlSession,
+    safety_mode: RouteGoSafetyMode,
+) -> Result<RouteGoApplied, String> {
     if !session.engine_state.is_map_surface() {
         return Err(format!(
             "route-go is only valid on Map. Use `rs` for read-only route evidence from this screen.\n{}",
@@ -37,7 +56,9 @@ pub(in crate::eval::run_control) fn apply_route_go_with_summary(
         .get(selected_index)
         .cloned()
         .ok_or_else(|| "route planner selected an out-of-range map target".to_string())?;
-    if candidate.safety == RouteSafetyFlagV1::RejectUnlessNoAlternative {
+    if safety_mode == RouteGoSafetyMode::RejectForcedRisk
+        && candidate.safety == RouteSafetyFlagV1::RejectUnlessNoAlternative
+    {
         return Err(format!(
             "route planner selected only reject-unless-forced routes; inspect with `rs` and choose manually with `go <x>` or `fly <x> <y>`.\n{}",
             render_route_go_selection(&candidate)

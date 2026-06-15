@@ -1368,7 +1368,31 @@ fn run_control_auto_step_stops_on_map_without_mutating_state() {
 }
 
 #[test]
-fn run_control_auto_step_records_route_policy_stop_when_safety_gate_rejects() {
+fn run_control_route_go_keeps_manual_safety_gate_when_all_routes_are_forced_risk() {
+    let mut session = test_session_with_forced_unsafe_elite_route();
+    let before = (
+        session.run_state.map.current_x,
+        session.run_state.map.current_y,
+        session.run_state.current_hp,
+    );
+
+    let err = session
+        .apply_command(RunControlCommand::RouteGo)
+        .expect_err("manual route-go should keep the safety gate");
+
+    assert!(err.contains("route planner selected only reject-unless-forced routes"));
+    assert_eq!(
+        before,
+        (
+            session.run_state.map.current_x,
+            session.run_state.map.current_y,
+            session.run_state.current_hp
+        )
+    );
+}
+
+#[test]
+fn run_control_auto_step_applies_forced_route_when_no_safe_alternative_exists() {
     let mut session = test_session_with_forced_unsafe_elite_route();
     let before = (
         session.run_state.map.current_x,
@@ -1384,13 +1408,15 @@ fn run_control_auto_step_records_route_policy_stop_when_safety_gate_rejects() {
                 ..Default::default()
             },
         ))
-        .expect("route planner safety gate should stop cleanly");
+        .expect("auto-step should apply the least-bad forced route");
 
     assert!(outcome
         .message
-        .contains("Reason: route planner declined automatic map selection"));
-    assert!(outcome.message.contains("route planner policy stopped:"));
-    assert_eq!(
+        .contains("route planner: x=0 Elite [reject_unless_forced"));
+    assert!(!outcome
+        .message
+        .contains("route planner declined automatic map selection"));
+    assert_ne!(
         before,
         (
             session.run_state.map.current_x,
@@ -1398,15 +1424,17 @@ fn run_control_auto_step_records_route_policy_stop_when_safety_gate_rejects() {
             session.run_state.current_hp
         )
     );
-    assert!(outcome.action_result.is_none());
+    assert!(outcome.action_result.is_some());
     let record = outcome
         .trace_annotations
         .iter()
         .find_map(|annotation| match annotation {
-            RunControlTraceAnnotationV1::NonCombatPolicyDecision { record, .. } => Some(record),
+            RunControlTraceAnnotationV1::RoutePlannerSelection {
+                noncombat_record, ..
+            } => noncombat_record.as_ref(),
             _ => None,
         })
-        .expect("declined route planner should attach a noncombat policy record");
+        .expect("forced route planner application should attach a noncombat policy record");
     assert_eq!(
         record.site,
         crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Map
@@ -1417,7 +1445,7 @@ fn run_control_auto_step_records_route_policy_stop_when_safety_gate_rejects() {
     );
     assert_eq!(
         record.selection.status,
-        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
     );
     assert!(!record.candidates.is_empty());
 }

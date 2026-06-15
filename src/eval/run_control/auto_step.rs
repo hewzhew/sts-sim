@@ -181,7 +181,8 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
         if session.engine_state.is_map_surface()
             && options.route == RunControlRouteAutomationMode::Planner
         {
-            let route_result = super::route_policy::apply_route_go_with_summary(session);
+            let route_result =
+                super::route_policy::apply_route_go_with_summary_allowing_forced_risk(session);
             match route_result {
                 Ok(applied_route) => {
                     if applied_route.outcome.action_result.is_some() {
