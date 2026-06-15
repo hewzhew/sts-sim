@@ -48,6 +48,7 @@ const COMBAT_RETRY_MIN_WALL_MS: u64 = 1_000;
 const COMBAT_RETRY_MAX_WALL_MS: u64 = 1_000;
 const BOSS_GATE_RETRY_ATTEMPTS_PER_GATE: usize = 2;
 const UNSPENT_GOLD_PRESSURE_THRESHOLD: i32 = 300;
+const PROGRESS_ANCHOR_MAX_RANK_LAG: i32 = 1_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BranchCampaignCombatRetryPolicyV1 {
@@ -3170,6 +3171,7 @@ fn rebalance_active_progress_anchor_v1(
                     branch_progress_key(branch),
                 )
                 && campaign_active_swap_respects_survival_v1(frozen_branch, branch)
+                && campaign_progress_anchor_rank_close_enough_v1(frozen_branch, branch)
         })
         .max_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
     else {
@@ -3184,6 +3186,16 @@ fn rebalance_active_progress_anchor_v1(
     active.sort_by(compare_campaign_branches_for_active_v1);
     frozen.sort_by(compare_campaign_branches_for_promotion_v1);
     true
+}
+
+fn campaign_progress_anchor_rank_close_enough_v1(
+    candidate: &BranchCampaignBranchV1,
+    replaced: &BranchCampaignBranchV1,
+) -> bool {
+    candidate
+        .rank_key
+        .saturating_add(PROGRESS_ANCHOR_MAX_RANK_LAG)
+        >= replaced.rank_key
 }
 
 fn rebalance_active_survival_anchor_v1(
@@ -3216,7 +3228,12 @@ fn rebalance_active_survival_anchor_v1(
         })
         .filter_map(|(idx, branch)| {
             let hp = campaign_branch_hp_percent_v1(branch)?;
-            (hp >= replace_hp.saturating_add(20)).then_some((idx, hp))
+            (hp >= replace_hp.saturating_add(20)
+                && campaign_survival_anchor_respects_low_max_hp_risk_v1(
+                    branch,
+                    &active[replace_index],
+                ))
+            .then_some((idx, hp))
         })
         .max_by(|(left_idx, left_hp), (right_idx, right_hp)| {
             left_hp.cmp(right_hp).then_with(|| {
@@ -3238,7 +3255,13 @@ fn rebalance_active_survival_anchor_v1(
             })
             .filter_map(|(idx, branch)| {
                 let hp = campaign_branch_hp_percent_v1(branch)?;
-                (hp >= 50 && hp >= replace_hp.saturating_add(40)).then_some((idx, hp))
+                (hp >= 50
+                    && hp >= replace_hp.saturating_add(40)
+                    && campaign_survival_anchor_respects_low_max_hp_risk_v1(
+                        branch,
+                        &active[replace_index],
+                    ))
+                .then_some((idx, hp))
             })
             .max_by(|(left_idx, left_hp), (right_idx, right_hp)| {
                 left_hp.cmp(right_hp).then_with(|| {
@@ -3260,6 +3283,29 @@ fn rebalance_active_survival_anchor_v1(
     active.sort_by(compare_campaign_branches_for_active_v1);
     frozen.sort_by(compare_campaign_branches_for_promotion_v1);
     true
+}
+
+fn campaign_survival_anchor_respects_low_max_hp_risk_v1(
+    candidate: &BranchCampaignBranchV1,
+    replaced: &BranchCampaignBranchV1,
+) -> bool {
+    let (Some(candidate_summary), Some(replaced_summary)) =
+        (candidate.summary.as_ref(), replaced.summary.as_ref())
+    else {
+        return true;
+    };
+    let candidate_max_hp = candidate_summary.max_hp.max(0);
+    let replaced_max_hp = replaced_summary.max_hp.max(0);
+    if candidate_max_hp == 0 || replaced_max_hp == 0 {
+        return true;
+    }
+    if candidate_max_hp.saturating_mul(3) >= replaced_max_hp.saturating_mul(2) {
+        return true;
+    }
+    candidate
+        .rank_key
+        .saturating_add(PROGRESS_ANCHOR_MAX_RANK_LAG)
+        >= replaced.rank_key
 }
 
 fn campaign_branch_local_frontier_key_v1(branch: &BranchCampaignBranchV1) -> String {
@@ -4080,9 +4126,10 @@ pub fn campaign_branch_from_report_branch_v1(
     choice_labels.extend(branch.choices.iter().map(campaign_choice_label_v1));
     let current_decision_signal_adjustment =
         branch.retention.rank_adjustment.decision_signal_adjustment;
+    let current_lineage_decision_signal_adjustment = current_decision_signal_adjustment.min(0);
     let lineage_decision_signal_rank_adjustment = parent
         .lineage_decision_signal_rank_adjustment
-        .saturating_add(current_decision_signal_adjustment);
+        .saturating_add(current_lineage_decision_signal_adjustment);
     BranchCampaignBranchV1 {
         branch_id: campaign_child_branch_id_v1(&parent.branch_id, &branch.branch_id),
         commands,

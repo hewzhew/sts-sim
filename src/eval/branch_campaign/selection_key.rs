@@ -121,6 +121,9 @@ fn campaign_branch_boss_checkpoint_sort_key_v1(
     if summary.floor < boss_readiness_checkpoint_floor_v1(summary.act) {
         return (0, 0, 0, 0);
     }
+    if summary.act < 3 {
+        return (0, 0, 0, 0);
+    }
     let signature = &branch.strategic_summary;
     if signature.is_empty() {
         return (0, 0, 0, 0);
@@ -129,7 +132,7 @@ fn campaign_branch_boss_checkpoint_sort_key_v1(
         return (0, 0, 0, 0);
     }
     // Strategic summaries are diagnostic during ordinary campaign selection.
-    // Only final boss checkpoints consume them as an explicit stage gate.
+    // Only final-act boss checkpoints consume them as an explicit stage gate.
     let hp_percent = if summary.max_hp > 0 {
         summary.hp.max(0).saturating_mul(100) / summary.max_hp
     } else {

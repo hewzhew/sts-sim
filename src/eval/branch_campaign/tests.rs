@@ -1016,6 +1016,34 @@ fn campaign_selection_does_not_let_one_hp_at_boss_checkpoint_override_rank() {
 }
 
 #[test]
+fn campaign_selection_keeps_act2_boss_readiness_diagnostic_not_stage_gate() {
+    let mut partial_boss_answer = test_campaign_branch("partial-boss-answer", 26, 28);
+    partial_boss_answer.summary.as_mut().unwrap().act = 2;
+    partial_boss_answer.summary.as_mut().unwrap().max_hp = 28;
+    partial_boss_answer.rank_key = 20_300;
+    partial_boss_answer.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 200,
+        clean_score_milli: 1000,
+        engine_score_milli: 0,
+        cycle_debt_milli: 200,
+        setup_debt_milli: 0,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 0,
+    };
+
+    let mut stronger_general_branch = test_campaign_branch("stronger-general-branch", 24, 15);
+    stronger_general_branch.summary.as_mut().unwrap().act = 2;
+    stronger_general_branch.summary.as_mut().unwrap().max_hp = 85;
+    stronger_general_branch.rank_key = 22_400;
+
+    let selected =
+        select_campaign_branches_v1(vec![partial_boss_answer, stronger_general_branch], 1, 4);
+
+    assert_eq!(selected.active[0].branch_id, "stronger-general-branch");
+}
+
+#[test]
 fn campaign_selection_keeps_progress_anchor_when_local_shop_variants_dominate_active() {
     let mut buy_flash = test_campaign_branch("shop-flash", 39, 77);
     buy_flash.summary.as_mut().unwrap().act = 3;
@@ -1962,6 +1990,29 @@ fn campaign_branch_from_report_carries_lineage_decision_signal_without_double_co
 
     assert_eq!(child.rank_key, 20_670);
     assert_eq!(child.lineage_decision_signal_rank_adjustment, -930);
+}
+
+#[test]
+fn campaign_branch_from_report_does_not_persist_positive_decision_signal() {
+    let mut parent = test_campaign_branch("root", 4, 80);
+    parent.lineage_decision_signal_rank_adjustment = -300;
+
+    let mut report_branch = test_report_branch(
+        "root.event 0",
+        vec![("event 0", "good event choice")],
+        BranchExperimentBranchStatusV1::Active,
+    );
+    report_branch.rank_key = 21_500;
+    report_branch.retention.rank_adjustment = BranchRetentionRankAdjustmentV1 {
+        decision_signal_adjustment: 700,
+        effective_rank_key: 21_500,
+        ..BranchRetentionRankAdjustmentV1::default()
+    };
+
+    let child = campaign_branch_from_report_branch_v1(&parent, &report_branch);
+
+    assert_eq!(child.rank_key, 21_200);
+    assert_eq!(child.lineage_decision_signal_rank_adjustment, -300);
 }
 
 #[test]
