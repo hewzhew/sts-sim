@@ -266,6 +266,10 @@ pub struct StrategyPackageV2 {
 pub struct StrategyResourceFactsV2 {
     pub current_hp: i32,
     pub max_hp: i32,
+    #[serde(default)]
+    pub anticipated_next_combat_start_heal: i32,
+    #[serde(default)]
+    pub effective_next_combat_hp: i32,
     pub gold: i32,
     pub estimated_purge_cost: i32,
     pub potion_slots: usize,

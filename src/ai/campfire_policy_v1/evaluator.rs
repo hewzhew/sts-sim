@@ -63,7 +63,10 @@ fn smith_autopilot_window(
     config: &CampfirePolicyConfigV1,
 ) -> Option<SmithAutopilotWindow> {
     if config.allow_combat_patch_smith_when_safe
-        && hp_percent_at_least(context, config.combat_patch_smith_min_hp_percent)
+        && effective_next_combat_hp_percent_at_least(
+            context,
+            config.combat_patch_smith_min_hp_percent,
+        )
         && matches!(
             context
                 .strategy
@@ -76,11 +79,18 @@ fn smith_autopilot_window(
             confidence: 0.70,
             reason_prefix: "CombatPatchWindow active",
         })
-    } else if config.allow_clear_core_smith_when_healthy && context.current_hp >= context.max_hp {
+    } else if config.allow_clear_core_smith_when_healthy
+        && effective_next_combat_hp_percent_at_least(context, 100)
+    {
+        let reason_prefix = if context.current_hp >= context.max_hp {
+            "HP is full"
+        } else {
+            "effective next-combat HP is full"
+        };
         Some(SmithAutopilotWindow {
             threshold: config.clear_core_smith_priority_threshold,
             confidence: 0.72,
-            reason_prefix: "HP is full",
+            reason_prefix,
         })
     } else {
         None
@@ -127,6 +137,14 @@ fn best_executable_smith(
         .max_by_key(|(_, priority)| *priority)
 }
 
-fn hp_percent_at_least(context: &CampfireDecisionContextV1, threshold: i32) -> bool {
-    context.max_hp > 0 && context.current_hp.saturating_mul(100) >= context.max_hp * threshold
+fn effective_next_combat_hp_percent_at_least(
+    context: &CampfireDecisionContextV1,
+    threshold: i32,
+) -> bool {
+    let effective_hp = context
+        .strategy
+        .resources
+        .effective_next_combat_hp
+        .max(context.current_hp);
+    context.max_hp > 0 && effective_hp.saturating_mul(100) >= context.max_hp * threshold
 }

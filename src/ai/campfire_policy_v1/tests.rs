@@ -4,6 +4,7 @@ use crate::ai::campfire_policy_v1::{
 };
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
+use crate::content::relics::{RelicId, RelicState};
 use crate::state::core::CampfireChoice;
 use crate::state::map::{MapEdge, MapRoomNode, MapState, RoomType};
 use crate::state::run::RunState;
@@ -178,6 +179,44 @@ fn campfire_policy_respects_deck_mutation_execute_gate_for_smith_targets() {
         "campfire must not re-enable a smith target blocked by DeckMutationCompiler: {:?}",
         decision.action
     );
+}
+
+#[test]
+fn campfire_policy_uses_boss_start_heal_for_smith_safety() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = 55;
+    run_state.max_hp = 80;
+    run_state.relics.push(RelicState::new(RelicId::Pantograph));
+    install_current_room_route(
+        &mut run_state,
+        RoomType::RestRoom,
+        &[RoomType::MonsterRoomBoss],
+    );
+    let bash_index = run_state
+        .master_deck
+        .iter()
+        .position(|card| card.id == CardId::Bash)
+        .expect("Ironclad starter deck should include Bash");
+
+    let context = build_campfire_decision_context_v1(
+        &run_state,
+        vec![CampfireChoice::Rest, CampfireChoice::Smith(0)],
+    );
+    assert_eq!(
+        context
+            .strategy
+            .resources
+            .anticipated_next_combat_start_heal,
+        25
+    );
+    assert_eq!(context.strategy.resources.effective_next_combat_hp, 80);
+
+    let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+
+    assert!(matches!(
+        decision.action,
+        CampfirePolicyActionV1::Smith { deck_index, .. } if deck_index == bash_index
+    ));
 }
 
 fn install_visible_rest_route(run_state: &mut RunState) {

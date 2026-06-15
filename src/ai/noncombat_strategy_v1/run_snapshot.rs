@@ -125,10 +125,18 @@ fn resource_facts_from_run_state_v2(run_state: &RunState) -> StrategyResourceFac
             starter_cards += 1;
         }
     }
+    let anticipated_next_combat_start_heal = anticipated_next_combat_start_heal(run_state);
+    let effective_next_combat_hp = run_state
+        .current_hp
+        .saturating_add(anticipated_next_combat_start_heal)
+        .min(run_state.max_hp)
+        .max(0);
 
     StrategyResourceFactsV2 {
         current_hp: run_state.current_hp,
         max_hp: run_state.max_hp,
+        anticipated_next_combat_start_heal,
+        effective_next_combat_hp,
         gold: run_state.gold,
         estimated_purge_cost,
         potion_slots,
@@ -139,6 +147,27 @@ fn resource_facts_from_run_state_v2(run_state: &RunState) -> StrategyResourceFac
         starter_cards,
         relic_constraints: relic_constraints(run_state),
     }
+}
+
+fn anticipated_next_combat_start_heal(run_state: &RunState) -> i32 {
+    if !run_state.map.boss_node_available_now() {
+        return 0;
+    }
+    if run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::MarkOfTheBloom)
+    {
+        return 0;
+    }
+    if run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::Pantograph)
+    {
+        return 25;
+    }
+    0
 }
 
 fn estimated_purge_cost(run_state: &RunState) -> i32 {

@@ -98,10 +98,16 @@ fn hp_safety_package(resources: &StrategyResourceFactsV2) -> StrategyPackageV2 {
         domain: StrategyPackageDomainV2::Resource,
         support,
         missing_roles: Vec::new(),
-        evidence: vec![format!(
-            "hp={}/{} ratio={:.2}",
-            resources.current_hp, resources.max_hp, hp_ratio
-        )],
+        evidence: vec![
+            format!(
+                "hp={}/{} ratio={:.2}",
+                resources.current_hp, resources.max_hp, hp_ratio
+            ),
+            format!(
+                "anticipated_next_combat_start_heal={} effective_next_combat_hp={}",
+                resources.anticipated_next_combat_start_heal, resources.effective_next_combat_hp
+            ),
+        ],
         blockers: if support == StrategyPlanSupportV1::Blocked {
             vec!["hp pressure is not currently visible".to_string()]
         } else {
@@ -310,6 +316,8 @@ fn empty_resource_facts() -> StrategyResourceFactsV2 {
     StrategyResourceFactsV2 {
         current_hp: 0,
         max_hp: 0,
+        anticipated_next_combat_start_heal: 0,
+        effective_next_combat_hp: 0,
         gold: 0,
         estimated_purge_cost: 75,
         potion_slots: 0,
