@@ -146,6 +146,8 @@ pub type CardRewardPlanEffectV1 = crate::ai::noncombat_strategy_v1::StrategyPlan
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CardRewardFactsV1 {
     pub card: CardId,
+    #[serde(default)]
+    pub upgrades: u8,
     pub name: String,
     pub card_type: CardType,
     pub rarity: CardRarity,

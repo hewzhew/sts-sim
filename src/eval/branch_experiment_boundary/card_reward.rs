@@ -87,6 +87,7 @@ pub(crate) fn card_reward_decline_branch_options(
             upgrades: None,
             source: CardRewardBranchOptionSource::SingingBowl,
         });
+        return options;
     }
     if include_event_reward_skip || !completed_event_reward_skip(session) {
         if let Some(command) = card_reward_skip_command(session) {
@@ -185,22 +186,39 @@ fn select_card_reward_branch_options_with_limit_and_strategy(
             .then_with(|| left.0.cmp(&right.0))
     });
 
+    let reject_order = AcquisitionVerdict::Reject.retention_order();
     let mut selected = Vec::new();
     let mut selected_classes = BTreeSet::new();
-    for (index, _, _, class_key, _) in &annotated {
+    for (index, strategy_order, _, class_key, _) in &annotated {
         if selected.len() >= limit {
             break;
+        }
+        if *strategy_order >= reject_order {
+            continue;
         }
         if selected_classes.insert(class_key.clone()) {
             selected.push(*index);
         }
     }
-    for index in 0..options.len() {
+    for (index, strategy_order, _, _, _) in &annotated {
         if selected.len() >= limit {
             break;
         }
-        if !selected.contains(&index) {
-            selected.push(index);
+        if *strategy_order >= reject_order {
+            continue;
+        }
+        if !selected.contains(index) {
+            selected.push(*index);
+        }
+    }
+    if selected.is_empty() {
+        for (index, _, _, _, _) in &annotated {
+            if selected.len() >= limit {
+                break;
+            }
+            if !selected.contains(index) {
+                selected.push(*index);
+            }
         }
     }
 

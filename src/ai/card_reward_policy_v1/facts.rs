@@ -16,6 +16,7 @@ pub(crate) fn card_facts(card: &RewardCard) -> CardRewardFactsV1 {
 
     CardRewardFactsV1 {
         card: card.id,
+        upgrades: card.upgrades,
         name: def.name.to_string(),
         card_type: def.card_type,
         rarity: def.rarity,

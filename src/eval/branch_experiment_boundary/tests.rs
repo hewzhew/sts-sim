@@ -131,9 +131,9 @@ fn card_reward_option_portfolio_includes_decline_candidates() {
         .map(|entry| entry.label.as_str())
         .collect::<BTreeSet<_>>();
 
-    assert_eq!(portfolio.original_count, 5);
-    assert!(labels.contains("Skip card reward"));
+    assert_eq!(portfolio.original_count, 4);
     assert!(labels.contains("Singing Bowl | gain 2 max HP"));
+    assert!(!labels.contains("Skip card reward"));
 }
 
 #[test]
@@ -1189,7 +1189,7 @@ fn current_boundary_can_include_singing_bowl_but_not_skip_for_unopened_card_rewa
     assert!(!boundary
         .options
         .iter()
-        .any(|option| option.kind == "card_reward_skip" && option.command == "skip"));
+        .any(|option| option.kind == "card_reward_skip"));
 }
 
 #[test]

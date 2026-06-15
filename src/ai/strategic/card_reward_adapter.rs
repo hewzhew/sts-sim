@@ -109,7 +109,8 @@ fn candidate_delta_from_card_reward(
         index: candidate.index,
         card: candidate.card,
     };
-    let profile = card_reward_semantic_profile_v1(&RewardCard::new(candidate.card, 0));
+    let profile =
+        card_reward_semantic_profile_v1(&RewardCard::new(candidate.card, candidate.facts.upgrades));
     let component_report = evaluate_card_component_marginal_value_v1(
         &component_context_from_card_reward_context(context),
         &profile,

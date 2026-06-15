@@ -199,7 +199,8 @@ pub(crate) fn strategy_route_future(
 pub(crate) fn strategy_candidate_facts(
     facts: &super::types::CardRewardFactsV1,
 ) -> crate::ai::noncombat_strategy_v1::StrategyCandidateFactsV1 {
-    let semantic_profile = card_reward_semantic_profile_v1(&RewardCard::new(facts.card, 0));
+    let semantic_profile =
+        card_reward_semantic_profile_v1(&RewardCard::new(facts.card, facts.upgrades));
     crate::ai::noncombat_strategy_v1::StrategyCandidateFactsV1 {
         card: facts.card,
         damage_total: facts.damage.total_damage,
