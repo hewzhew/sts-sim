@@ -3,9 +3,9 @@ use crate::ai::card_reward_policy_v1::{
     replay_card_reward_decision_v1, CardRewardPolicyConfigV1, PublicRewardDecisionPacketV1,
 };
 use crate::ai::strategic::{
-    compile_decision, CandidateAction, CandidateDelta, LedgerDelta, PressureHorizon, PressureKind,
-    PressureLedger, StrategicDebt, StrategicDecisionSite, StrategicDeckFacts, StrategicJob,
-    StrategicSnapshot,
+    compile_decision, ledger_from_snapshot, CandidateAction, CandidateDelta, LedgerDelta,
+    PressureHorizon, PressureKind, PressureLedger, StrategicDebt, StrategicDecisionSite,
+    StrategicDeckFacts, StrategicJob, StrategicSnapshot,
 };
 use crate::content::cards::CardId;
 use crate::content::relics::{RelicId, RelicState};
@@ -294,6 +294,51 @@ fn strategic_compiler_amplifies_debt_that_matches_active_pressure() {
         .reasons
         .iter()
         .any(|reason| reason.starts_with("-ledger_pressure:")));
+}
+
+#[test]
+fn pressure_ledger_exposes_access_and_package_debts_from_deck_facts() {
+    let snapshot = StrategicSnapshot {
+        site: StrategicDecisionSite::CardReward,
+        act: 2,
+        floor: 25,
+        boss: None,
+        hp: 60,
+        max_hp: 80,
+        gold: 200,
+        deck: StrategicDeckFacts {
+            deck_size: 26,
+            draw_sources: 1,
+            status_generators: 2,
+            status_payoffs: 0,
+            exhaust_generators: 0,
+            exhaust_payoffs: 1,
+            strength_sources: 0,
+            strength_payoffs: 1,
+            ..StrategicDeckFacts::default()
+        },
+        route: None,
+        formation_needs: vec![],
+    };
+
+    let ledger = ledger_from_snapshot(&snapshot);
+
+    assert!(ledger
+        .items
+        .iter()
+        .any(|item| item.id == "deck_debt:low_access_large_deck"));
+    assert!(ledger
+        .items
+        .iter()
+        .any(|item| item.id == "deck_debt:status_without_digest"));
+    assert!(ledger
+        .items
+        .iter()
+        .any(|item| item.id == "deck_debt:exhaust_payoff_without_enabler"));
+    assert!(ledger
+        .items
+        .iter()
+        .any(|item| item.id == "deck_debt:strength_payoff_without_source"));
 }
 
 fn compiled_score(trace: &crate::ai::strategic::StrategicDecisionTrace, id: &str) -> f32 {

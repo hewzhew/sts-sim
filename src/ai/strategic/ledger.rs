@@ -163,6 +163,58 @@ pub fn ledger_from_snapshot(snapshot: &StrategicSnapshot) -> PressureLedger {
             vec!["deck has no explicit draw source at this abstraction level".to_string()],
         );
     }
+    if snapshot.deck.deck_size >= 24 && snapshot.deck.draw_sources <= 1 {
+        ledger.push(
+            "deck_debt:low_access_large_deck",
+            PressureKind::DeckDebt(StrategicDebt::CycleTime),
+            PressureHorizon::VisibleRoute,
+            0.60,
+            0.70,
+            vec![format!(
+                "deck_size={} draw_sources={}",
+                snapshot.deck.deck_size, snapshot.deck.draw_sources
+            )],
+        );
+    }
+    if snapshot.deck.status_generators > 0 && snapshot.deck.status_payoffs == 0 {
+        ledger.push(
+            "deck_debt:status_without_digest",
+            PressureKind::DeckDebt(StrategicDebt::CombatShapeRisk),
+            PressureHorizon::VisibleRoute,
+            (snapshot.deck.status_generators as f32 / 3.0).clamp(0.35, 0.80),
+            0.70,
+            vec![format!(
+                "status_generators={} status_payoffs={}",
+                snapshot.deck.status_generators, snapshot.deck.status_payoffs
+            )],
+        );
+    }
+    if snapshot.deck.exhaust_payoffs > 0 && snapshot.deck.exhaust_generators == 0 {
+        ledger.push(
+            "deck_debt:exhaust_payoff_without_enabler",
+            PressureKind::DeckDebt(StrategicDebt::PayoffWithoutEnabler),
+            PressureHorizon::VisibleRoute,
+            (snapshot.deck.exhaust_payoffs as f32 / 3.0).clamp(0.35, 0.75),
+            0.70,
+            vec![format!(
+                "exhaust_payoffs={} exhaust_generators={}",
+                snapshot.deck.exhaust_payoffs, snapshot.deck.exhaust_generators
+            )],
+        );
+    }
+    if snapshot.deck.strength_payoffs > 0 && snapshot.deck.strength_sources == 0 {
+        ledger.push(
+            "deck_debt:strength_payoff_without_source",
+            PressureKind::DeckDebt(StrategicDebt::PayoffWithoutEnabler),
+            PressureHorizon::VisibleRoute,
+            (snapshot.deck.strength_payoffs as f32 / 3.0).clamp(0.35, 0.75),
+            0.70,
+            vec![format!(
+                "strength_payoffs={} strength_sources={}",
+                snapshot.deck.strength_payoffs, snapshot.deck.strength_sources
+            )],
+        );
+    }
 
     if let Some(route) = &snapshot.route {
         let route_pressure = (route.avoid_damage + (1.0 - route.can_take_elite)).clamp(0.0, 1.0);
