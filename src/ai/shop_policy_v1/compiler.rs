@@ -35,7 +35,7 @@ pub fn compile_shop_decision_v1(
             candidate
         })
         .collect::<Vec<_>>();
-    let selected_plan = select_evaluated_shop_plan_v1(&candidate_plans);
+    let selected_plan = select_evaluated_shop_plan_v1(&candidate_plans, mode);
     let alternatives = match mode {
         ShopCompileModeV1::ExecuteOne => Vec::new(),
         ShopCompileModeV1::BranchTopK { max_plans } => {
@@ -52,10 +52,13 @@ pub fn compile_shop_decision_v1(
     }
 }
 
-fn select_evaluated_shop_plan_v1(candidates: &[ShopPlanCandidateV1]) -> ShopPlanV1 {
+fn select_evaluated_shop_plan_v1(
+    candidates: &[ShopPlanCandidateV1],
+    mode: ShopCompileModeV1,
+) -> ShopPlanV1 {
     candidates
         .iter()
-        .max_by(|left, right| compare_evaluated_shop_candidates_v1(left, right))
+        .max_by(|left, right| compare_evaluated_shop_candidates_v1(left, right, mode))
         .map(|candidate| plan_with_evaluation_v1(&candidate.plan, &candidate.evaluation))
         .unwrap_or_else(|| {
             stop_candidate_plan_v1("shop compiler produced no candidates".to_string()).plan
@@ -94,24 +97,26 @@ fn compare_branch_alternative_candidates_v1(
         .then_with(|| left.plan.plan_id.cmp(&right.plan.plan_id))
 }
 
-fn compare_evaluated_shop_candidates_v1(
-    left: &ShopPlanCandidateV1,
-    right: &ShopPlanCandidateV1,
-) -> std::cmp::Ordering {
-    candidate_rank_v1(left).cmp(&candidate_rank_v1(right))
-}
-
 fn candidate_rank_v1(
     candidate: &ShopPlanCandidateV1,
+    mode: ShopCompileModeV1,
 ) -> (i32, i32, i32, i32, i32, std::cmp::Reverse<String>) {
     (
         verdict_rank_v1(candidate.evaluation.verdict),
         candidate.evaluation.tier,
         candidate.evaluation.score,
         (candidate.evaluation.confidence * 1000.0).round() as i32,
-        role_rank_v1(candidate),
+        role_rank_v1(candidate, mode),
         std::cmp::Reverse(candidate.plan.plan_id.clone()),
     )
+}
+
+fn compare_evaluated_shop_candidates_v1(
+    left: &ShopPlanCandidateV1,
+    right: &ShopPlanCandidateV1,
+    mode: ShopCompileModeV1,
+) -> std::cmp::Ordering {
+    candidate_rank_v1(left, mode).cmp(&candidate_rank_v1(right, mode))
 }
 
 fn verdict_rank_v1(verdict: ShopPlanVerdictV1) -> i32 {
@@ -122,7 +127,13 @@ fn verdict_rank_v1(verdict: ShopPlanVerdictV1) -> i32 {
     }
 }
 
-fn role_rank_v1(candidate: &ShopPlanCandidateV1) -> i32 {
+fn role_rank_v1(candidate: &ShopPlanCandidateV1, mode: ShopCompileModeV1) -> i32 {
+    if candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
+        && matches!(mode, ShopCompileModeV1::BranchTopK { .. })
+        && plan_has_leave_shop_step_v1(candidate)
+    {
+        return 5;
+    }
     match (candidate.evaluation.verdict, candidate.role) {
         (ShopPlanVerdictV1::Stop, ShopPlanCandidateRoleV1::StopFallback) => 4,
         (ShopPlanVerdictV1::Stop, _) => 1,
@@ -130,6 +141,14 @@ fn role_rank_v1(candidate: &ShopPlanCandidateV1) -> i32 {
         (_, ShopPlanCandidateRoleV1::StopFallback) => 2,
         (_, ShopPlanCandidateRoleV1::PortfolioAlternative) => 1,
     }
+}
+
+fn plan_has_leave_shop_step_v1(candidate: &ShopPlanCandidateV1) -> bool {
+    candidate
+        .plan
+        .steps
+        .iter()
+        .any(|step| matches!(step, ShopPlanStepV1::LeaveShop))
 }
 
 fn enumerate_single_action_plan_candidates_v1(

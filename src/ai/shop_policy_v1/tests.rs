@@ -595,6 +595,36 @@ fn compiled_shop_stop_selection_is_also_a_plan_candidate() {
 }
 
 #[test]
+fn compiled_shop_branch_topk_uses_executable_leave_when_no_purchase_is_selected() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 10;
+    let shop = ShopState::new();
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let execute = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecuteOne,
+    );
+    let branch = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 4 },
+    );
+
+    assert_eq!(execute.selected_plan.kind, ShopPlanKindV1::Stop);
+    assert!(
+        execute.selected_plan.steps.is_empty(),
+        "ordinary shop automation should remain conservative when no purchase is selected"
+    );
+    assert!(branch
+        .selected_plan
+        .steps
+        .iter()
+        .any(|step| matches!(step, ShopPlanStepV1::LeaveShop)));
+}
+
+#[test]
 fn compiled_shop_decision_evaluates_every_candidate_plan() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 3;
