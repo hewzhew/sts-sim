@@ -890,6 +890,43 @@ fn campaign_selection_prioritizes_boss_readiness_at_final_boss_checkpoint() {
 }
 
 #[test]
+fn campaign_selection_prioritizes_act_clear_frontier_over_pre_boss_checkpoint() {
+    let mut pre_boss = test_campaign_branch("pre-boss-campfire", 31, 62);
+    pre_boss.summary.as_mut().unwrap().act = 2;
+    pre_boss.frontier_title = "Campfire".to_string();
+    pre_boss.rank_key = 23_767;
+    pre_boss.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 200,
+        clean_score_milli: 1000,
+        engine_score_milli: 0,
+        cycle_debt_milli: 0,
+        setup_debt_milli: 0,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 0,
+    };
+
+    let mut act_clear = test_campaign_branch("act-clear-boss-relic", 32, 22);
+    act_clear.summary.as_mut().unwrap().act = 2;
+    act_clear.frontier_title = "Boss Relic".to_string();
+    act_clear.rank_key = 23_563;
+    act_clear.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 0,
+        clean_score_milli: 1000,
+        engine_score_milli: 0,
+        cycle_debt_milli: 0,
+        setup_debt_milli: 0,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 0,
+    };
+
+    let selected = select_campaign_branches_v1(vec![pre_boss, act_clear], 1, 4);
+
+    assert_eq!(selected.active[0].branch_id, "act-clear-boss-relic");
+}
+
+#[test]
 fn campaign_selection_does_not_treat_low_hp_zero_readiness_boss_checkpoint_as_absolute_progress() {
     let mut low_hp_boss_door = test_campaign_branch("low-hp-boss-door", 46, 10);
     low_hp_boss_door.summary.as_mut().unwrap().act = 3;

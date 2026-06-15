@@ -3,7 +3,9 @@ use std::cmp::Ordering;
 use super::{branch_progress_key, BranchCampaignBranchV1};
 
 type BranchCampaignBossCheckpointSortKeyV1 = (u8, i32, i32, i32);
+type BranchCampaignActClearSortKeyV1 = (u8, i32, i32);
 type BranchCampaignActiveSortKeyV1 = (
+    BranchCampaignActClearSortKeyV1,
     BranchCampaignBossCheckpointSortKeyV1,
     i32,
     (u8, i32, i32),
@@ -63,6 +65,7 @@ fn campaign_branch_active_sort_key_v1(
     branch: &BranchCampaignBranchV1,
 ) -> BranchCampaignActiveSortKeyV1 {
     (
+        campaign_branch_act_clear_sort_key_v1(branch),
         campaign_branch_boss_checkpoint_sort_key_v1(branch),
         campaign_branch_primary_eligible_key_v1(branch),
         branch_progress_key(branch),
@@ -116,6 +119,29 @@ fn campaign_branch_boss_checkpoint_sort_key_v1(
     (1, signature.boss_readiness_milli, hp_percent, -debt)
 }
 
+fn campaign_branch_act_clear_sort_key_v1(
+    branch: &BranchCampaignBranchV1,
+) -> BranchCampaignActClearSortKeyV1 {
+    let Some(summary) = branch.summary.as_ref() else {
+        return (0, 0, 0);
+    };
+    if summary.act >= 3 || summary.floor < act_boss_floor_v1(summary.act) {
+        return (0, 0, 0);
+    }
+    let frontier = normalized_frontier_title_v1(&branch.frontier_title);
+    if !matches!(frontier.as_str(), "bossrelic" | "rewardscreen") {
+        return (0, 0, 0);
+    }
+    // Once an act boss has actually been cleared, campaign selection should keep
+    // processing the reward/relic transition instead of revisiting unproven
+    // pre-boss checkpoints with better diagnostic readiness.
+    (1, i32::from(summary.act), summary.floor)
+}
+
+fn act_boss_floor_v1(act: u8) -> i32 {
+    final_boss_checkpoint_floor_v1(act).saturating_add(2)
+}
+
 fn final_boss_checkpoint_floor_v1(act: u8) -> i32 {
     match act {
         1 => 14,
@@ -123,4 +149,12 @@ fn final_boss_checkpoint_floor_v1(act: u8) -> i32 {
         3 => 46,
         _ => i32::MAX,
     }
+}
+
+fn normalized_frontier_title_v1(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .map(|ch| ch.to_ascii_lowercase())
+        .collect()
 }
