@@ -140,7 +140,7 @@ impl CompiledDeckMutationDecisionV1 {
                     .map(deck_mutation_evidence_item)
                     .collect(),
                 assumptions: vec![
-                    "deck mutation compiler consumes run-choice policy signals but owns execution approval"
+                    "deck mutation compiler owns target classification and execution approval"
                         .to_string(),
                     "allowed consumers specify whether a candidate may execute, branch, inspect, or replay"
                         .to_string(),
@@ -180,9 +180,6 @@ fn deck_mutation_evidence_item(plan: &DeckMutationPlanCandidateV1) -> EvidenceIt
         ValueComponentV1::new("suppressed_count", plan.suppressed_count as f32),
         ValueComponentV1::new(format!("role_{:?}", plan.role), 1.0),
     ];
-    if plan.run_choice_policy_selected {
-        components.push(ValueComponentV1::new("run_choice_policy_selected", 1.0));
-    }
     components.extend(
         plan.step
             .cards

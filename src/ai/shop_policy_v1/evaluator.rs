@@ -29,7 +29,7 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
     }
 
     if candidate_plan.role == ShopPlanCandidateRoleV1::PortfolioAlternative
-        || candidate_plan.plan.source == ShopPlanSourceV1::LegacyShopPortfolioSource
+        || candidate_plan.plan.source == ShopPlanSourceV1::PortfolioCandidate
     {
         return attach_components_and_score_v1(
             evaluate_portfolio_plan_v1(context, config, strategic_trace, candidate_plan),
@@ -97,7 +97,7 @@ fn evaluate_single_candidate_v1(
         ShopPolicyClassV1::Leave => ShopPlanEvaluationV1::stop("legacy shop leave candidate"),
         ShopPolicyClassV1::Unknown => ShopPlanEvaluationV1::block(
             candidate.purchase_priority,
-            "legacy evaluator does not mark unknown shop candidate executable",
+            "shop evaluator does not mark unknown shop candidate executable",
         ),
     }
 }
@@ -112,7 +112,7 @@ fn evaluate_curse_purge_v1(
     if candidate.deck_index.is_none() || candidate.card.is_none() {
         return ShopPlanEvaluationV1::block(None, "curse purge candidate lacks deck/card identity");
     }
-    ShopPlanEvaluationV1::allow(400, 1000, 0.92, None, "legacy evaluator: curse cleanup")
+    ShopPlanEvaluationV1::allow(400, 1000, 0.92, None, "shop evaluator: curse cleanup")
 }
 
 fn evaluate_purchase_v1(
@@ -175,7 +175,7 @@ fn evaluate_purchase_v1(
             0.76,
             Some(priority),
             format!(
-                "legacy evaluator: high-impact shop purchase priority {priority} clears threshold {threshold}; strategic verdict allows purchase"
+                "shop evaluator: high-impact purchase estimate {priority} clears threshold {threshold}; strategic verdict allows purchase"
             ),
         );
     }
@@ -188,7 +188,7 @@ fn evaluate_purchase_v1(
             0.64,
             Some(priority),
             format!(
-                "legacy evaluator: shop conversion pressure selected affordable purchase priority {priority}; strategic verdict allows purchase"
+                "shop evaluator: conversion pressure selected affordable purchase estimate {priority}; strategic verdict allows purchase"
             ),
         );
     }
@@ -230,7 +230,7 @@ fn evaluate_starter_strike_purge_v1(
         700,
         0.74,
         None,
-        "legacy evaluator: CorePlanProtection Strong and no affordable purchase competes",
+        "shop evaluator: CorePlanProtection Strong and no affordable purchase competes",
     )
 }
 

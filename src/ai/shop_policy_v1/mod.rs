@@ -1,7 +1,7 @@
 mod compiler;
 mod component_scorer;
 mod conversion;
-mod legacy_evaluator;
+mod evaluator;
 mod policy;
 mod portfolio;
 mod strategy_tags;

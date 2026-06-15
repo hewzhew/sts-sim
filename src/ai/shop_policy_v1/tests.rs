@@ -1129,78 +1129,6 @@ fn compiled_shop_branch_portfolio_cannot_bypass_strategic_card_gate() {
 }
 
 #[test]
-fn shop_card_priority_penalizes_transition_cards_when_deck_is_bloated() {
-    let mut bloated = RunState::new(1, 0, false, "Ironclad");
-    bloated.act_num = 3;
-    bloated.floor_num = 46;
-    add_deck_bloat(&mut bloated, 34);
-
-    assert!(
-        shop_card_conversion_priority_v1(CardId::PommelStrike, &bloated) <= 0,
-        "large decks should not keep treating a normal transition card as shop conversion"
-    );
-}
-
-#[test]
-fn shop_card_priority_preserves_boss_patch_cards_when_deck_is_bloated() {
-    let mut run_state = RunState::new(1, 0, false, "Ironclad");
-    run_state.act_num = 3;
-    run_state.floor_num = 46;
-    add_deck_bloat(&mut run_state, 34);
-
-    assert!(
-        shop_card_conversion_priority_v1(CardId::Shockwave, &run_state)
-            >= ShopPolicyConfigV1::default().high_impact_card_purchase_priority_threshold,
-        "deck bloat pressure should not block a clear boss/elite answer"
-    );
-}
-
-#[test]
-fn shop_card_priority_penalizes_more_fnp_without_exhaust_engine() {
-    let mut run_state = RunState::new(1, 0, false, "Ironclad");
-    run_state.act_num = 2;
-    run_state.add_card_to_deck(CardId::FeelNoPain);
-
-    assert!(
-        shop_card_conversion_priority_v1(CardId::FeelNoPain, &run_state) <= 0,
-        "FNP should stop being a high-impact shop buy when the deck cannot exhaust cards"
-    );
-}
-
-#[test]
-fn shop_policy_does_not_convert_gold_into_transition_card_when_deck_is_bloated() {
-    let mut run_state = RunState::new(1, 0, false, "Ironclad");
-    run_state.act_num = 3;
-    run_state.floor_num = 46;
-    run_state.gold = 430;
-    add_deck_bloat(&mut run_state, 34);
-    let mut shop = ShopState::new();
-    shop.cards.push(ShopCard {
-        card_id: CardId::PommelStrike,
-        upgrades: 0,
-        price: 50,
-        can_buy: true,
-        blocked_reason: None,
-    });
-
-    let context = build_shop_decision_context_v1(&run_state, &shop);
-    let compiled = compile_shop_decision_v1(
-        &context,
-        &ShopPolicyConfigV1::default(),
-        ShopCompileModeV1::ExecuteOne,
-    );
-
-    assert!(context.conversion_pressure);
-    if let Some(ShopPlanStepV1::BuyCard { card, .. }) = compiled.selected_plan.steps.first() {
-        assert_ne!(
-            *card,
-            CardId::PommelStrike,
-            "conversion pressure should not force ordinary card bloat when the deck is already oversized"
-        );
-    }
-}
-
-#[test]
 fn shop_policy_buys_elite_potion_when_first_elite_prep_window_is_open() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 1;
@@ -1269,12 +1197,6 @@ fn shop_card_priority_does_not_apply_champ_flex_bonus_directly() {
         shop_card_conversion_priority_v1(CardId::Flex, &no_boss),
         "Flex conversion potential must be modeled by shared strength/component profiles, not by a shop-local Champ bonus"
     );
-}
-
-fn add_deck_bloat(run_state: &mut RunState, count: usize) {
-    for _ in 0..count {
-        run_state.add_card_to_deck(CardId::Strike);
-    }
 }
 
 fn install_current_room_route(

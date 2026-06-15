@@ -1,4 +1,4 @@
-use super::legacy_evaluator::evaluate_shop_plan_candidate_v1;
+use super::evaluator::evaluate_shop_plan_candidate_v1;
 use super::policy::stop_reason;
 use super::portfolio::legacy_shop_portfolio_plans_v1;
 use super::types::{
@@ -158,11 +158,16 @@ fn compare_branch_alternative_candidates_v1(
 ) -> std::cmp::Ordering {
     right
         .evaluation
-        .component_score
-        .net
-        .partial_cmp(&left.evaluation.component_score.net)
-        .unwrap_or(std::cmp::Ordering::Equal)
-        .then_with(|| right.evaluation.tier.cmp(&left.evaluation.tier))
+        .tier
+        .cmp(&left.evaluation.tier)
+        .then_with(|| {
+            right
+                .evaluation
+                .component_score
+                .net
+                .partial_cmp(&left.evaluation.component_score.net)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
         .then_with(|| right.evaluation.score.cmp(&left.evaluation.score))
         .then_with(|| left.plan.plan_id.cmp(&right.plan.plan_id))
 }
@@ -170,15 +175,20 @@ fn compare_branch_alternative_candidates_v1(
 fn candidate_rank_v1(
     candidate: &ShopPlanCandidateV1,
     mode: ShopCompileModeV1,
-) -> (i32, i32, i32, i32, i32, std::cmp::Reverse<String>) {
+) -> (i32, i32, i32, i32, i32, i32, std::cmp::Reverse<String>) {
     (
         verdict_rank_v1(candidate.evaluation.verdict),
         candidate.evaluation.tier,
-        candidate.evaluation.score,
+        component_net_rank_v1(candidate),
         (candidate.evaluation.confidence * 1000.0).round() as i32,
+        candidate.evaluation.score,
         role_rank_v1(candidate, mode),
         std::cmp::Reverse(candidate.plan.plan_id.clone()),
     )
+}
+
+fn component_net_rank_v1(candidate: &ShopPlanCandidateV1) -> i32 {
+    (candidate.evaluation.component_score.net * 1000.0).round() as i32
 }
 
 fn compare_evaluated_shop_candidates_v1(
@@ -228,7 +238,7 @@ fn enumerate_single_action_plan_candidates_v1(
         .candidates
         .iter()
         .filter_map(|candidate| {
-            single_candidate_plan_v1(candidate, ShopPlanSourceV1::LegacyWrapped).map(|plan| {
+            single_candidate_plan_v1(candidate, ShopPlanSourceV1::CandidateEvidence).map(|plan| {
                 ShopPlanCandidateV1 {
                     plan,
                     role: ShopPlanCandidateRoleV1::SingleAction,
@@ -312,7 +322,7 @@ fn stop_candidate_plan_v1(reason: String) -> ShopPlanCandidateV1 {
             steps: Vec::new(),
             total_gold_spent: 0,
             candidate_ids: Vec::new(),
-            source: ShopPlanSourceV1::LegacyWrapped,
+            source: ShopPlanSourceV1::CandidateEvidence,
             legacy_priority: None,
             legacy_confidence: None,
             suppressed_count: 0,

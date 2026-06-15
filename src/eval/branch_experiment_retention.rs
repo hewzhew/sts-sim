@@ -1,11 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ai::card_admission_policy_v1::{
-    evaluate_card_profile_admission_v1, CardAdmissionContextV1, CardAdmissionSourceV1,
-    CardAdmissionVerdictV1,
-};
 use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
-use crate::ai::deck_shape_v1::DeckShapeProfileV1;
 use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
 use crate::ai::noncombat_strategy_v1::StrategyFormationSummaryV2;
 use crate::ai::strategic::{BranchSignature, RetentionBucket};
@@ -90,7 +85,6 @@ pub struct BranchRetentionCandidateInputV1 {
     pub lineage_flags: Vec<String>,
     pub strategic_debt_tags: Vec<String>,
     pub startup: DeckStartupProfileV1,
-    pub card_admission_context: Option<CardAdmissionContextV1>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -144,16 +138,15 @@ pub struct BranchRetentionRankAdjustmentV1 {
     pub startup_adjustment: i32,
     #[serde(default)]
     pub strategic_debt_adjustment: i32,
-    /// Report-only card admission pressure for the branch's added cards.
-    /// Branch retention may use the underlying admission verdicts as slot
-    /// eligibility gates, but this value is not folded into effective_rank_key.
+    /// Deprecated report-only pressure field kept for trace compatibility.
+    /// Branch retention no longer consumes card-admission verdicts as gates.
     #[serde(default, alias = "component_adjustment")]
     pub admission_pressure: i32,
     pub effective_rank_key: i32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub context_keys: Vec<String>,
-    /// Report-only lane evidence. Portfolio selection uses slots plus effective rank,
-    /// not these lane-local evidence scores.
+    /// Report-only lane evidence. Portfolio selection uses rank, branch-family
+    /// coverage, and effect coverage; it does not consume these lane-local scores.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub slot_scores: Vec<BranchRetentionSlotEvidenceScoreV1>,
     pub reasons: Vec<String>,
@@ -164,15 +157,6 @@ pub struct BranchRetentionRankAdjustmentV1 {
 pub struct BranchRetentionSlotEvidenceScoreV1 {
     pub slot: BranchRetentionSlotV1,
     pub score: i32,
-}
-
-#[derive(Clone, Debug, Default)]
-struct BranchRetentionCardAdmissionEvidenceV1 {
-    startup_blocking: bool,
-    rejects_added_card: bool,
-    admits_only_without_cleaner: bool,
-    report_pressure: i32,
-    reasons: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -251,9 +235,8 @@ pub fn select_branch_retention_portfolio_v1(
         if config.max_per_frontier.is_some() && group_limit < group_positions.len() {
             frontier_limit_hit = true;
         }
-        let group_picks = select_positions_for_slots(
+        let group_picks = select_positions_for_retention_portfolio(
             candidates,
-            &decisions_by_index,
             &group_positions,
             group_limit,
             config.budget_profile,
@@ -274,9 +257,8 @@ pub fn select_branch_retention_portfolio_v1(
                     .then_some(position)
             })
             .collect::<Vec<_>>();
-        selected_picks = select_positions_for_slots(
+        selected_picks = select_positions_for_retention_portfolio(
             candidates,
-            &decisions_by_index,
             &positions,
             config.max_total,
             config.budget_profile,
@@ -311,7 +293,6 @@ pub fn decide_branch_retention_v1(
     let mut slots = Vec::new();
     let mut reasons = Vec::new();
     let current_startup_liability = branch_retention_current_startup_liability(candidate);
-    let card_admission = branch_retention_card_admission_evidence_v1(candidate);
 
     if has_package_candidate(&candidate.choice_profiles) {
         slots.push(BranchRetentionSlotV1::Package);
@@ -333,14 +314,8 @@ pub fn decide_branch_retention_v1(
         slots.push(BranchRetentionSlotV1::Scaling);
         reasons.push("contains long-run scaling or engine setup".to_string());
     }
-    if card_admission.rejects_added_card {
-        reasons.push("card admission rejects at least one added card".to_string());
-    }
     if current_startup_liability {
         reasons.push("current deck has unresolved startup liability".to_string());
-    }
-    if card_admission.admits_only_without_cleaner {
-        reasons.push("card admission would prefer a cleaner alternative".to_string());
     }
     if candidate
         .choice_profiles
@@ -400,8 +375,8 @@ pub fn decide_branch_retention_v1(
         strategic_signature: strategic_signature_for_retention_candidate(
             candidate,
             &slots,
-            current_startup_liability || card_admission.startup_blocking,
-            card_admission.rejects_added_card || card_admission.admits_only_without_cleaner,
+            current_startup_liability,
+            false,
         ),
         slots,
         reasons,
@@ -566,36 +541,17 @@ fn resource_conversion_effect_key_v1(key: &str) -> bool {
     )
 }
 
-fn select_positions_for_slots(
+fn select_positions_for_retention_portfolio(
     candidates: &[BranchRetentionCandidateInputV1],
-    decisions_by_index: &BTreeMap<usize, BranchRetentionDecisionV1>,
     positions: &[usize],
     limit: usize,
-    budget_profile: BranchRetentionBudgetProfileV1,
+    _budget_profile: BranchRetentionBudgetProfileV1,
 ) -> Vec<BranchRetentionLanePick> {
     if limit == 0 {
         return Vec::new();
     }
     let mut selected = Vec::<BranchRetentionLanePick>::new();
     let mut selected_set = BTreeSet::<usize>::new();
-    for slot in retention_lane_sequence(budget_profile, limit) {
-        if selected.len() >= limit {
-            break;
-        }
-        if let Some(position) = best_position_for_slot(
-            candidates,
-            decisions_by_index,
-            positions,
-            slot,
-            &selected_set,
-        ) {
-            selected.push(BranchRetentionLanePick {
-                position,
-                selected_by_slot: slot,
-            });
-            selected_set.insert(position);
-        }
-    }
     while selected.len() < limit {
         let Some(position) = best_fill_position(candidates, positions, &selected_set) else {
             break;
@@ -608,230 +564,11 @@ fn select_positions_for_slots(
     }
     let selected = cap_redundant_choice_prefixes(candidates, positions, selected, limit);
     let selected = cap_redundant_first_pick_prefixes(candidates, positions, selected, limit);
-    let selected = cap_pure_transition_saturation(candidates, positions, selected, limit);
-    let selected = cap_payoff_only_package_saturation(candidates, positions, selected, limit);
-    let selected = preserve_late_clean_branch(candidates, positions, selected, limit);
     let selected =
         effect_coverage::preserve_choice_effect_coverage(candidates, positions, selected, limit);
     let selected =
         effect_coverage::preserve_lineage_flag_coverage(candidates, positions, selected, limit);
-    let selected =
-        drop_excess_first_pick_prefixes_after_coverage(candidates, positions, selected, limit);
-    drop_excess_payoff_only_package_after_coverage(candidates, positions, selected, limit)
-}
-
-fn preserve_late_clean_branch(
-    candidates: &[BranchRetentionCandidateInputV1],
-    available_positions: &[usize],
-    selected_picks: Vec<BranchRetentionLanePick>,
-    limit: usize,
-) -> Vec<BranchRetentionLanePick> {
-    if limit < 2
-        || !available_positions
-            .iter()
-            .any(|position| late_clean_retention_applies(&candidates[*position]))
-        || selected_picks
-            .iter()
-            .any(|pick| candidate_has_clean_deck_slot(candidates, pick.position))
-    {
-        return selected_picks;
-    }
-
-    let Some(clean_position) = available_positions
-        .iter()
-        .copied()
-        .filter(|position| candidate_has_clean_deck_slot(candidates, *position))
-        .max_by(|left, right| compare_rank(candidates, *left, *right))
-    else {
-        return selected_picks;
-    };
-
-    let mut selected = selected_picks
-        .iter()
-        .map(|pick| pick.position)
-        .collect::<BTreeSet<_>>();
-    if !selected.insert(clean_position) {
-        return selected_picks;
-    }
-
-    let mut kept = selected_picks;
-    if kept.len() >= limit {
-        if let Some(remove_index) = kept
-            .iter()
-            .enumerate()
-            .filter(|(_, pick)| pick.selected_by_slot != BranchRetentionSlotV1::CleanDeck)
-            .min_by(|(_, left), (_, right)| compare_rank(candidates, left.position, right.position))
-            .map(|(index, _)| index)
-        {
-            kept.remove(remove_index);
-        } else {
-            return kept;
-        }
-    }
-    kept.push(BranchRetentionLanePick {
-        position: clean_position,
-        selected_by_slot: BranchRetentionSlotV1::CleanDeck,
-    });
-    kept
-}
-
-fn late_clean_retention_applies(candidate: &BranchRetentionCandidateInputV1) -> bool {
-    (candidate.act >= 3 || candidate.act == 2 && candidate.floor >= 24)
-        && candidate.max_hp > 0
-        && candidate.hp * 100 >= candidate.max_hp * 35
-}
-
-fn candidate_has_clean_deck_slot(
-    candidates: &[BranchRetentionCandidateInputV1],
-    position: usize,
-) -> bool {
-    let candidate = &candidates[position];
-    decide_branch_retention_v1(candidate)
-        .slots
-        .contains(&BranchRetentionSlotV1::CleanDeck)
-}
-
-fn retention_lane_sequence(
-    profile: BranchRetentionBudgetProfileV1,
-    limit: usize,
-) -> Vec<BranchRetentionSlotV1> {
-    let weights = retention_lane_weights(profile);
-    let mut sequence = Vec::new();
-    let mut counts = BTreeMap::<BranchRetentionSlotV1, usize>::new();
-    while sequence.len() < limit {
-        let mut added = false;
-        for &(slot, cap) in weights {
-            if counts.get(&slot).copied().unwrap_or_default() < cap {
-                sequence.push(slot);
-                *counts.entry(slot).or_default() += 1;
-                added = true;
-                if sequence.len() >= limit {
-                    break;
-                }
-            }
-        }
-        if !added {
-            for &(slot, _) in weights {
-                sequence.push(slot);
-                if sequence.len() >= limit {
-                    break;
-                }
-            }
-        }
-    }
-    sequence
-}
-
-fn retention_lane_weights(
-    profile: BranchRetentionBudgetProfileV1,
-) -> &'static [(BranchRetentionSlotV1, usize)] {
-    match profile {
-        BranchRetentionBudgetProfileV1::Balanced => &[
-            (BranchRetentionSlotV1::Package, 4),
-            (BranchRetentionSlotV1::EngineSetup, 3),
-            (BranchRetentionSlotV1::Scaling, 2),
-            (BranchRetentionSlotV1::DefenseEngine, 3),
-            (BranchRetentionSlotV1::Survival, 2),
-            (BranchRetentionSlotV1::Frontload, 2),
-            (BranchRetentionSlotV1::CleanDeck, 2),
-            (BranchRetentionSlotV1::Diversity, 2),
-        ],
-        BranchRetentionBudgetProfileV1::Exploration => &[
-            (BranchRetentionSlotV1::Package, 5),
-            (BranchRetentionSlotV1::EngineSetup, 4),
-            (BranchRetentionSlotV1::Scaling, 3),
-            (BranchRetentionSlotV1::DefenseEngine, 2),
-            (BranchRetentionSlotV1::Survival, 1),
-            (BranchRetentionSlotV1::Frontload, 1),
-            (BranchRetentionSlotV1::CleanDeck, 2),
-            (BranchRetentionSlotV1::Diversity, 2),
-        ],
-        BranchRetentionBudgetProfileV1::Survival => &[
-            (BranchRetentionSlotV1::DefenseEngine, 4),
-            (BranchRetentionSlotV1::Survival, 4),
-            (BranchRetentionSlotV1::Frontload, 3),
-            (BranchRetentionSlotV1::CleanDeck, 3),
-            (BranchRetentionSlotV1::Package, 2),
-            (BranchRetentionSlotV1::EngineSetup, 1),
-            (BranchRetentionSlotV1::Scaling, 1),
-            (BranchRetentionSlotV1::Diversity, 2),
-        ],
-        BranchRetentionBudgetProfileV1::Package => &[
-            (BranchRetentionSlotV1::Package, 6),
-            (BranchRetentionSlotV1::EngineSetup, 4),
-            (BranchRetentionSlotV1::Scaling, 3),
-            (BranchRetentionSlotV1::CleanDeck, 2),
-            (BranchRetentionSlotV1::DefenseEngine, 2),
-            (BranchRetentionSlotV1::Survival, 1),
-            (BranchRetentionSlotV1::Frontload, 1),
-            (BranchRetentionSlotV1::Diversity, 1),
-        ],
-    }
-}
-
-fn best_position_for_slot(
-    candidates: &[BranchRetentionCandidateInputV1],
-    decisions_by_index: &BTreeMap<usize, BranchRetentionDecisionV1>,
-    positions: &[usize],
-    slot: BranchRetentionSlotV1,
-    selected: &BTreeSet<usize>,
-) -> Option<usize> {
-    best_position_for_slot_with_admission_filter(
-        candidates,
-        decisions_by_index,
-        positions,
-        slot,
-        selected,
-        true,
-    )
-    .or_else(|| {
-        (slot == BranchRetentionSlotV1::Diversity).then(|| {
-            best_position_for_slot_with_admission_filter(
-                candidates,
-                decisions_by_index,
-                positions,
-                slot,
-                selected,
-                false,
-            )
-        })?
-    })
-}
-
-fn best_position_for_slot_with_admission_filter(
-    candidates: &[BranchRetentionCandidateInputV1],
-    decisions_by_index: &BTreeMap<usize, BranchRetentionDecisionV1>,
-    positions: &[usize],
-    slot: BranchRetentionSlotV1,
-    selected: &BTreeSet<usize>,
-    filter_hard_admission_liability: bool,
-) -> Option<usize> {
-    let covered_families = selected
-        .iter()
-        .map(|position| branch_family_key(&candidates[*position]))
-        .collect::<BTreeSet<_>>();
-    positions
-        .iter()
-        .copied()
-        .filter(|position| !selected.contains(position))
-        .filter(|position| {
-            decisions_by_index
-                .get(&candidates[*position].index)
-                .is_some_and(|decision| decision.slots.contains(&slot))
-        })
-        .filter(|position| {
-            !filter_hard_admission_liability
-                || !candidate_has_hard_slot_blocking_admission_liability(&candidates[*position])
-        })
-        .max_by(|left, right| {
-            compare_family_then_rank(candidates, *left, *right, &covered_families)
-        })
-}
-
-pub(super) fn candidate_has_hard_slot_blocking_admission_liability(
-    candidate: &BranchRetentionCandidateInputV1,
-) -> bool {
-    branch_retention_card_admission_evidence_v1(candidate).rejects_added_card
+    drop_excess_first_pick_prefixes_after_coverage(candidates, positions, selected, limit)
 }
 
 fn best_fill_position(
@@ -839,14 +576,7 @@ fn best_fill_position(
     positions: &[usize],
     selected: &BTreeSet<usize>,
 ) -> Option<usize> {
-    best_fill_position_allowed(candidates, positions, selected, |position| {
-        !candidate_has_hard_slot_blocking_admission_liability(&candidates[position])
-    })
-    .or_else(|| {
-        selected
-            .is_empty()
-            .then(|| best_fill_position_allowed(candidates, positions, selected, |_| true))?
-    })
+    best_fill_position_allowed(candidates, positions, selected, |_| true)
 }
 
 fn best_fill_position_allowed<F>(
@@ -910,19 +640,15 @@ pub fn branch_retention_rank_adjustment_v1(
     candidate: &BranchRetentionCandidateInputV1,
 ) -> BranchRetentionRankAdjustmentV1 {
     let context = branch_retention_context_packet_v2(candidate);
-    let card_admission = branch_retention_card_admission_evidence_v1(candidate);
     let current_startup_debt_adjustment = current_startup_debt_rank_adjustment_v1(candidate);
     let startup_adjustment = current_startup_debt_adjustment;
-    let admission_pressure = card_admission.report_pressure;
-    let mut reasons = card_admission.reasons;
+    let admission_pressure = 0;
+    let mut reasons = Vec::new();
 
     if current_startup_debt_adjustment != 0 {
         reasons.push(format!(
             "current_startup_debt_rank_adjustment:{current_startup_debt_adjustment}"
         ));
-    }
-    if card_admission.startup_blocking {
-        reasons.push("card_admission_startup_block:evidence_only".to_string());
     }
     if startup_adjustment != 0 {
         reasons.push(format!(
@@ -1009,19 +735,6 @@ fn branch_retention_context_key_label(key: BranchRetentionContextKeyV2) -> &'sta
         BranchRetentionContextKeyV2::SupportsCommittedPackage => "supports_committed_package",
         BranchRetentionContextKeyV2::ImmediateSafetyPatch => "immediate_safety_patch",
     }
-}
-
-fn compare_family_then_rank(
-    candidates: &[BranchRetentionCandidateInputV1],
-    left: usize,
-    right: usize,
-    covered_families: &BTreeSet<String>,
-) -> std::cmp::Ordering {
-    let left_new_family = !covered_families.contains(&branch_family_key(&candidates[left]));
-    let right_new_family = !covered_families.contains(&branch_family_key(&candidates[right]));
-    left_new_family
-        .cmp(&right_new_family)
-        .then_with(|| compare_rank(candidates, left, right))
 }
 
 fn choice_prefix_key(candidate: &BranchRetentionCandidateInputV1) -> String {
@@ -1248,235 +961,6 @@ fn protected_coverage_keys(candidate: &BranchRetentionCandidateInputV1) -> Vec<S
     keys
 }
 
-fn cap_pure_transition_saturation(
-    candidates: &[BranchRetentionCandidateInputV1],
-    available_positions: &[usize],
-    selected_picks: Vec<BranchRetentionLanePick>,
-    limit: usize,
-) -> Vec<BranchRetentionLanePick> {
-    if !available_positions
-        .iter()
-        .any(|position| !is_pure_transition_branch(&candidates[*position]))
-    {
-        return selected_picks;
-    }
-
-    let max_pure_transition = pure_transition_branch_cap(candidates, available_positions, limit);
-    let mut pure_transition_count = 0usize;
-    let mut capped = false;
-    let mut kept = Vec::new();
-
-    for pick in selected_picks {
-        if is_pure_transition_branch(&candidates[pick.position]) {
-            if pure_transition_count >= max_pure_transition {
-                capped = true;
-                continue;
-            }
-            pure_transition_count += 1;
-        }
-        kept.push(pick);
-    }
-
-    if !capped {
-        return kept;
-    }
-
-    let mut selected = kept
-        .iter()
-        .map(|pick| pick.position)
-        .collect::<BTreeSet<_>>();
-    while kept.len() < limit {
-        let allow_more_pure_transition = pure_transition_count < max_pure_transition;
-        let Some(position) =
-            best_fill_position_allowed(candidates, available_positions, &selected, |position| {
-                allow_more_pure_transition || !is_pure_transition_branch(&candidates[position])
-            })
-        else {
-            break;
-        };
-
-        if is_pure_transition_branch(&candidates[position]) {
-            pure_transition_count += 1;
-        }
-        selected.insert(position);
-        kept.push(BranchRetentionLanePick {
-            position,
-            selected_by_slot: BranchRetentionSlotV1::Diversity,
-        });
-    }
-
-    kept
-}
-
-fn pure_transition_branch_cap(
-    candidates: &[BranchRetentionCandidateInputV1],
-    available_positions: &[usize],
-    limit: usize,
-) -> usize {
-    let non_transition_families = available_positions
-        .iter()
-        .filter(|position| !is_pure_transition_branch(&candidates[**position]))
-        .map(|position| branch_family_key(&candidates[*position]))
-        .collect::<BTreeSet<_>>();
-    limit
-        .saturating_sub(non_transition_families.len())
-        .max(1)
-        .min(3)
-}
-
-fn is_pure_transition_branch(candidate: &BranchRetentionCandidateInputV1) -> bool {
-    let has_committed_formation_strength = candidate
-        .strategy_formation
-        .as_ref()
-        .is_some_and(|formation| !formation.strengths.is_empty());
-
-    candidate.trajectory.transition_frontload_picks > 0
-        && !has_committed_formation_strength
-        && candidate.trajectory.setup_keys.is_empty()
-        && candidate.trajectory.package_keys.is_empty()
-        && candidate.trajectory.scaling_picks == 0
-        && candidate.trajectory.defense_picks == 0
-        && candidate.trajectory.engine_generator_picks == 0
-        && candidate.trajectory.engine_payoff_picks == 0
-        && candidate.trajectory.draw_energy_picks == 0
-}
-
-fn cap_payoff_only_package_saturation(
-    candidates: &[BranchRetentionCandidateInputV1],
-    available_positions: &[usize],
-    selected_picks: Vec<BranchRetentionLanePick>,
-    limit: usize,
-) -> Vec<BranchRetentionLanePick> {
-    if !available_positions
-        .iter()
-        .any(|position| !is_payoff_only_package_branch(&candidates[*position]))
-    {
-        return selected_picks;
-    }
-
-    let max_payoff_only = payoff_only_package_branch_cap(candidates, available_positions, limit);
-    let mut payoff_only_count = 0usize;
-    let mut capped = false;
-    let mut kept = Vec::new();
-
-    for pick in selected_picks {
-        if is_payoff_only_package_branch(&candidates[pick.position]) {
-            if payoff_only_count >= max_payoff_only {
-                capped = true;
-                continue;
-            }
-            payoff_only_count += 1;
-        }
-        kept.push(pick);
-    }
-
-    if !capped {
-        return kept;
-    }
-
-    let mut selected = kept
-        .iter()
-        .map(|pick| pick.position)
-        .collect::<BTreeSet<_>>();
-    while kept.len() < limit {
-        let allow_more_payoff_only = payoff_only_count < max_payoff_only;
-        let Some(position) =
-            best_fill_position_allowed(candidates, available_positions, &selected, |position| {
-                allow_more_payoff_only || !is_payoff_only_package_branch(&candidates[position])
-            })
-        else {
-            break;
-        };
-
-        if is_payoff_only_package_branch(&candidates[position]) {
-            payoff_only_count += 1;
-        }
-        selected.insert(position);
-        kept.push(BranchRetentionLanePick {
-            position,
-            selected_by_slot: BranchRetentionSlotV1::Diversity,
-        });
-    }
-
-    kept
-}
-
-fn payoff_only_package_branch_cap(
-    candidates: &[BranchRetentionCandidateInputV1],
-    available_positions: &[usize],
-    limit: usize,
-) -> usize {
-    if !available_positions
-        .iter()
-        .any(|position| has_committed_package_context(&candidates[*position]))
-    {
-        return 1;
-    }
-    let distinct_payoff_packages = available_positions
-        .iter()
-        .filter(|position| is_payoff_only_package_branch(&candidates[**position]))
-        .map(|position| candidates[*position].trajectory.package_keys.join("+"))
-        .collect::<BTreeSet<_>>()
-        .len();
-    let non_payoff_families = available_positions
-        .iter()
-        .filter(|position| !is_payoff_only_package_branch(&candidates[**position]))
-        .map(|position| branch_family_key(&candidates[*position]))
-        .collect::<BTreeSet<_>>();
-    limit
-        .saturating_sub(non_payoff_families.len())
-        .max(distinct_payoff_packages)
-        .max(1)
-        .min(3)
-}
-
-fn has_committed_package_context(candidate: &BranchRetentionCandidateInputV1) -> bool {
-    candidate
-        .strategy_formation
-        .as_ref()
-        .is_some_and(|formation| !formation.strengths.is_empty())
-        || complete_package_count(&candidate.trajectory) > 0
-}
-
-fn drop_excess_payoff_only_package_after_coverage(
-    candidates: &[BranchRetentionCandidateInputV1],
-    available_positions: &[usize],
-    selected_picks: Vec<BranchRetentionLanePick>,
-    limit: usize,
-) -> Vec<BranchRetentionLanePick> {
-    if !available_positions
-        .iter()
-        .any(|position| !is_payoff_only_package_branch(&candidates[*position]))
-    {
-        return selected_picks;
-    }
-
-    let max_payoff_only = payoff_only_package_branch_cap(candidates, available_positions, limit);
-    let protected_counts = protected_coverage_counts(candidates, &selected_picks);
-    let mut payoff_only_count = 0usize;
-    let mut kept = Vec::new();
-    for pick in selected_picks {
-        let candidate = &candidates[pick.position];
-        if is_payoff_only_package_branch(candidate) {
-            if payoff_only_count >= max_payoff_only
-                && !candidate_has_unique_protected_coverage(candidate, &protected_counts)
-            {
-                continue;
-            }
-            payoff_only_count += 1;
-        }
-        kept.push(pick);
-    }
-    kept
-}
-
-fn is_payoff_only_package_branch(candidate: &BranchRetentionCandidateInputV1) -> bool {
-    !candidate.trajectory.package_keys.is_empty()
-        && candidate.trajectory.setup_keys.is_empty()
-        && candidate.trajectory.engine_generator_picks == 0
-        && candidate.trajectory.draw_energy_picks == 0
-}
-
 fn branch_retention_slot_evidence_score_v1(
     candidate: &BranchRetentionCandidateInputV1,
     slot: BranchRetentionSlotV1,
@@ -1563,55 +1047,6 @@ fn branch_retention_slot_evidence_score_v1(
     }
 }
 
-fn card_admission_context_for_retention_candidate(
-    candidate: &BranchRetentionCandidateInputV1,
-) -> CardAdmissionContextV1 {
-    if let Some(context) = &candidate.card_admission_context {
-        return context.clone();
-    }
-
-    CardAdmissionContextV1 {
-        act: candidate.act,
-        floor: candidate.floor,
-        boss: None,
-        hp: candidate.hp,
-        max_hp: candidate.max_hp,
-        deck_size: candidate.deck_count,
-        powers: 0,
-        curses: 0,
-        draw_sources: candidate.startup.strong_draw_count as usize,
-        exhaust_generators: candidate.startup.exhaust_engine_count as usize,
-        frontload_jobs: 0,
-        block_jobs: 0,
-        formation_needs: candidate
-            .strategy_formation
-            .as_ref()
-            .map(|formation| formation.needs.clone())
-            .unwrap_or_default(),
-        startup: candidate.startup.clone(),
-        deck_shape: deck_shape_profile_for_retention_candidate(candidate),
-    }
-}
-
-fn deck_shape_profile_for_retention_candidate(
-    candidate: &BranchRetentionCandidateInputV1,
-) -> DeckShapeProfileV1 {
-    DeckShapeProfileV1 {
-        exhaust_enabler_count: candidate.startup.exhaust_engine_count,
-        exhaust_payoff_count: candidate.startup.exhaust_payoff_count,
-        status_generator_count: candidate.startup.status_generator_count,
-        status_digest_count: candidate.startup.status_digest_count,
-        corruption_count: candidate.startup.corruption_count,
-        havoc_count: candidate.startup.havoc_count,
-        clash_count: if candidate.startup.has_clash_playability_debt {
-            1
-        } else {
-            0
-        },
-        ..Default::default()
-    }
-}
-
 fn branch_retention_current_startup_liability(candidate: &BranchRetentionCandidateInputV1) -> bool {
     candidate.startup.has_setup_debt_high_payment_low
         || candidate.startup.has_fnp_duplicate_without_exhaust_engine
@@ -1629,74 +1064,12 @@ fn branch_retention_current_startup_liability(candidate: &BranchRetentionCandida
         || candidate.startup.has_pyramid_unupgraded_apparition
 }
 
-fn branch_retention_card_admission_evidence_v1(
-    candidate: &BranchRetentionCandidateInputV1,
-) -> BranchRetentionCardAdmissionEvidenceV1 {
-    let context = card_admission_context_for_retention_candidate(candidate);
-    let mut summary = BranchRetentionCardAdmissionEvidenceV1::default();
-
-    for profile in &candidate.choice_profiles {
-        let report =
-            evaluate_card_profile_admission_v1(&context, profile, CardAdmissionSourceV1::Reward);
-        let pressure = card_admission_verdict_report_pressure(report.verdict);
-        summary.report_pressure = summary.report_pressure.saturating_add(pressure);
-        match report.verdict {
-            CardAdmissionVerdictV1::Admit => {}
-            CardAdmissionVerdictV1::AdmitIfNoCleanerAlternative => {
-                summary.admits_only_without_cleaner = true;
-            }
-            CardAdmissionVerdictV1::Reject => {
-                summary.rejects_added_card = true;
-            }
-        }
-        if report.verdict == CardAdmissionVerdictV1::Reject
-            && report
-                .reasons
-                .iter()
-                .any(|reason| card_admission_reason_is_startup_blocking(reason))
-        {
-            summary.startup_blocking = true;
-        }
-        if pressure != 0 {
-            summary.reasons.push(format!(
-                "card_admission_evidence:{}:{:?}:{pressure}",
-                profile.name, report.verdict
-            ));
-        }
-        if report.verdict != CardAdmissionVerdictV1::Admit {
-            summary.reasons.extend(
-                report
-                    .reasons
-                    .iter()
-                    .map(|reason| format!("card_admission_reason:{}:{reason}", profile.name)),
-            );
-        }
-    }
-
-    summary
-}
-
-fn card_admission_reason_is_startup_blocking(reason: &str) -> bool {
-    reason.starts_with("startup_")
-        || reason.starts_with("deck_shape_")
-        || reason.contains("cycle_debt")
-        || reason.contains("startup_debt")
-}
-
 fn current_startup_debt_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
     let debt_count = startup_debt_count(candidate, false, false);
     if debt_count <= 0 {
         return 0;
     }
     -1_000 * debt_count.min(6)
-}
-
-fn card_admission_verdict_report_pressure(verdict: CardAdmissionVerdictV1) -> i32 {
-    match verdict {
-        CardAdmissionVerdictV1::Admit => 0,
-        CardAdmissionVerdictV1::AdmitIfNoCleanerAlternative => -8_000,
-        CardAdmissionVerdictV1::Reject => -50_000,
-    }
 }
 
 fn deck_bloat_pressure_high(candidate: &BranchRetentionCandidateInputV1) -> bool {
@@ -1837,6 +1210,3 @@ const NON_TRANSITION_ROLES: &[CardRewardSemanticRoleV1] = &[
     CardRewardSemanticRoleV1::SelfDamagePayoff,
     CardRewardSemanticRoleV1::PackagePayoff,
 ];
-
-#[cfg(test)]
-mod tests;

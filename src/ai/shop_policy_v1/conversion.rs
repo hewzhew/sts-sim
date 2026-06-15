@@ -1,11 +1,7 @@
-use crate::ai::card_admission_policy_v1::{
-    evaluate_card_admission_v1, CardAdmissionSourceV1, CardAdmissionVerdictV1,
-};
 use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
-use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 use crate::state::shop::ShopState;
 
@@ -90,20 +86,6 @@ pub fn shop_card_conversion_priority_v1(card: CardId, run_state: &RunState) -> i
     }
     if run_state.act_num >= 2 && shop_card_is_combat_patch_v1(card) {
         priority += 200;
-    }
-    let admission = evaluate_card_admission_v1(
-        run_state,
-        RewardCard::new(card, 0),
-        CardAdmissionSourceV1::Shop,
-    );
-    priority += admission.shop_priority_adjustment;
-    if admission.verdict == CardAdmissionVerdictV1::Reject
-        && admission
-            .reasons
-            .iter()
-            .any(|reason| reason.starts_with("startup_rejects_"))
-    {
-        priority -= 350;
     }
     priority
 }

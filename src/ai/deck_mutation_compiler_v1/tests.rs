@@ -1,6 +1,6 @@
 use crate::ai::deck_mutation_compiler_v1::{
     compile_deck_mutation_decision_v1, render_compiled_deck_mutation_decision_v1,
-    DeckMutationCompilerModeV1, DeckMutationPlanRoleV1, DeckMutationTargetLossTierV1,
+    DeckMutationCompilerModeV1, DeckMutationTargetLossTierV1,
 };
 use crate::content::cards::CardId;
 use crate::runtime::combat::CombatCard;
@@ -60,7 +60,7 @@ fn compiler_keeps_low_value_purge_targets_branch_active() {
 }
 
 #[test]
-fn compiler_execute_one_selects_evaluated_policy_preferred_plan() {
+fn compiler_execute_one_selects_evaluated_executable_plan() {
     let run_state = RunState::new(1, 0, false, "Ironclad");
     let choice = choice(RunPendingChoiceReason::PurgeNonBottled, 1);
 
@@ -72,7 +72,6 @@ fn compiler_execute_one_selects_evaluated_policy_preferred_plan() {
     let selected = decision.selected_plan.expect("selected plan");
 
     assert_eq!(selected.step.command, "select 0");
-    assert_eq!(selected.role, DeckMutationPlanRoleV1::PolicyPreferred);
     assert!(selected.allowed_consumers.execute_autopilot);
     assert!(decision
         .candidate_plans

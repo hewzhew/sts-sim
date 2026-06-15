@@ -98,8 +98,8 @@ pub enum ShopDecisionSourceV1 {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShopPlanSourceV1 {
-    LegacyWrapped,
-    LegacyShopPortfolioSource,
+    CandidateEvidence,
+    PortfolioCandidate,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

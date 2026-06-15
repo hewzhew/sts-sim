@@ -31,7 +31,6 @@ pub(crate) fn score_shop_plan_components_v1(
                 has_non_legacy_signal = true;
             }
             ShopPlanComponentKindV1::LegacyEstimate => {
-                positive += component.amount.max(0.0) / 10.0;
                 has_legacy_estimate = true;
             }
             ShopPlanComponentKindV1::BranchExploration => {

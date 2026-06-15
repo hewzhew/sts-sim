@@ -1,7 +1,6 @@
 pub mod boss_mechanics_v1;
 pub mod boss_relic_policy_v1;
 pub mod campfire_policy_v1;
-pub mod card_admission_policy_v1;
 pub mod card_component_marginal_value_v1;
 pub mod card_reward_policy_v1;
 pub mod card_semantics_v1;
@@ -22,7 +21,6 @@ pub mod noncombat_strategy_v1;
 pub mod relic_trade_policy_v1;
 pub mod reward_policy_v1;
 pub mod route_planner_v1;
-pub mod run_choice_policy_v1;
 pub mod shop_policy_v1;
 pub mod strategic;
 pub mod strength_profile_v1;

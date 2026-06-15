@@ -26,7 +26,7 @@ pub(super) fn legacy_shop_portfolio_plans_v1(
             .iter()
             .find(|candidate| candidate.class == ShopPolicyClassV1::Leave)
             .and_then(|candidate| {
-                single_candidate_plan_v1(candidate, ShopPlanSourceV1::LegacyShopPortfolioSource)
+                single_candidate_plan_v1(candidate, ShopPlanSourceV1::PortfolioCandidate)
             })
             .into_iter()
             .collect();
@@ -109,8 +109,7 @@ fn scored_shop_plan_candidate_v1(
     if candidate.support_gate != StrategyPlanSupportV1::Strong {
         return None;
     }
-    let mut plan =
-        single_candidate_plan_v1(candidate, ShopPlanSourceV1::LegacyShopPortfolioSource)?;
+    let mut plan = single_candidate_plan_v1(candidate, ShopPlanSourceV1::PortfolioCandidate)?;
     plan.plan_id = format!("legacy_portfolio:{}", candidate.candidate_id);
     let (score, effect_kind, can_start_combo, can_follow_combo) = match candidate.class {
         ShopPolicyClassV1::CursePurge => (1000, "shop_purge", false, false),
@@ -229,7 +228,7 @@ fn shop_combo_plan_v1(entries: &[&ScoredShopPlanCandidateV1]) -> ScoredShopPlanC
         steps,
         total_gold_spent: cost,
         candidate_ids,
-        source: ShopPlanSourceV1::LegacyShopPortfolioSource,
+        source: ShopPlanSourceV1::PortfolioCandidate,
         legacy_priority: Some(score),
         legacy_confidence: None,
         suppressed_count: 0,

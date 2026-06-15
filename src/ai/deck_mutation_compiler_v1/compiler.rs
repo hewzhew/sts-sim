@@ -1,11 +1,6 @@
 use std::collections::BTreeSet;
 
 use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
-use crate::ai::run_choice_policy_v1::{
-    build_run_choice_decision_context_v1, plan_run_choice_decision_v1,
-    run_choice_duplicate_priority_v1, RunChoicePolicyActionV1, RunChoicePolicyClassV1,
-    RunChoicePolicyConfigV1,
-};
 use crate::content::cards::{get_card_definition, CardId, CardRarity, CardTag, CardType};
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
@@ -47,23 +42,8 @@ pub fn compile_deck_mutation_decision_v1(
     choice: &RunPendingChoiceState,
     mode: DeckMutationCompilerModeV1,
 ) -> CompiledDeckMutationDecisionV1 {
-    let run_choice_context = build_run_choice_decision_context_v1(run_state, choice);
-    let run_choice_decision =
-        plan_run_choice_decision_v1(&run_choice_context, &RunChoicePolicyConfigV1::default());
-    let run_choice_policy_indices = run_choice_policy_selected_indices(&run_choice_decision);
     let targets = exact_targets(run_state, choice);
-    let mut candidate_plans = plan_candidates(run_state, choice, &targets, mode);
-
-    if let Some(indices) = &run_choice_policy_indices {
-        if !candidate_plans
-            .iter()
-            .any(|candidate| candidate.step.deck_indices == *indices)
-        {
-            if let Some(candidate) = run_choice_policy_plan_candidate(choice, &targets, indices) {
-                candidate_plans.push(candidate);
-            }
-        }
-    }
+    let mut candidate_plans = plan_candidates(choice, &targets, mode);
 
     let low_value_available = targets
         .iter()
@@ -71,9 +51,6 @@ pub fn compile_deck_mutation_decision_v1(
         .any(|target| target.card.target_class.is_low_value_mutation_target());
 
     for candidate in &mut candidate_plans {
-        candidate.run_choice_policy_selected = run_choice_policy_indices
-            .as_ref()
-            .is_some_and(|indices| candidate.step.deck_indices == *indices);
         evaluate_candidate(choice, candidate, low_value_available);
     }
     candidate_plans.sort_by(compare_deck_mutation_candidates_v1);
@@ -176,24 +153,30 @@ fn exact_targets(run_state: &RunState, choice: &RunPendingChoiceState) -> Vec<Ex
             crate::state::selection::SelectionTargetRef::CardUuid(uuid) => *uuid,
         })
         .collect::<BTreeSet<_>>();
-    let run_choice_context = build_run_choice_decision_context_v1(run_state, choice);
-
     run_state
         .master_deck
         .iter()
         .enumerate()
         .filter(|(_, card)| target_uuids.contains(&card.uuid))
         .filter_map(|(deck_index, _card)| {
-            let run_choice_candidate = run_choice_context
-                .candidates
-                .iter()
-                .find(|candidate| candidate.deck_index == deck_index);
             exact_target_for_deck_index(
                 run_state,
                 choice.reason,
                 deck_index,
-                run_choice_candidate.is_some_and(|candidate| candidate.selectable),
-                run_choice_candidate.and_then(|candidate| candidate.upgrade_priority),
+                run_state.master_deck.get(deck_index).is_some_and(|card| {
+                    crate::state::core::run_pending_choice_allows_card_for_run(
+                        &choice.reason,
+                        card,
+                        run_state,
+                    )
+                }),
+                run_state.master_deck.get(deck_index).and_then(|card| {
+                    matches!(choice.reason, RunPendingChoiceReason::Upgrade).then(|| {
+                        crate::ai::campfire_policy_v1::campfire_smith_upgrade_priority_v1(
+                            card, run_state,
+                        )
+                    })
+                }),
             )
         })
         .collect()
@@ -226,7 +209,6 @@ fn exact_target_for_deck_index(
 }
 
 fn plan_candidates(
-    run_state: &RunState,
     choice: &RunPendingChoiceState,
     targets: &[ExactTarget],
     mode: DeckMutationCompilerModeV1,
@@ -265,14 +247,38 @@ fn plan_candidates(
         },
     )
     .unwrap_or_else(|| {
-        let run_choice_context = build_run_choice_decision_context_v1(run_state, choice);
-        let run_choice_decision =
-            plan_run_choice_decision_v1(&run_choice_context, &RunChoicePolicyConfigV1::default());
-        run_choice_policy_selected_indices(&run_choice_decision)
-            .and_then(|indices| run_choice_policy_plan_candidate(choice, targets, &indices))
+        greedy_multi_candidate(choice, targets)
             .into_iter()
             .collect()
     })
+}
+
+fn greedy_multi_candidate(
+    choice: &RunPendingChoiceState,
+    targets: &[ExactTarget],
+) -> Option<DeckMutationPlanCandidateV1> {
+    let mut selectable = targets
+        .iter()
+        .filter(|target| target.selectable)
+        .cloned()
+        .collect::<Vec<_>>();
+    if selectable.len() < choice.min_choices {
+        return None;
+    }
+    selectable.sort_by(|left, right| {
+        target_score_hint(choice.reason, right)
+            .cmp(&target_score_hint(choice.reason, left))
+            .then_with(|| left.card.deck_index.cmp(&right.card.deck_index))
+    });
+    let selected = selectable
+        .into_iter()
+        .take(choice.min_choices)
+        .collect::<Vec<_>>();
+    let mut candidate = candidate_from_targets(choice, selected, 1);
+    candidate
+        .reasons
+        .push("bounded compiler fallback selected a greedy representative".to_string());
+    Some(candidate)
 }
 
 fn compressed_single_candidates(
@@ -437,23 +443,6 @@ fn binomial(n: usize, k: usize) -> usize {
     (0..k).fold(1usize, |acc, i| acc * (n - i) / (i + 1))
 }
 
-fn run_choice_policy_plan_candidate(
-    choice: &RunPendingChoiceState,
-    targets: &[ExactTarget],
-    indices: &[usize],
-) -> Option<DeckMutationPlanCandidateV1> {
-    let selected = indices
-        .iter()
-        .filter_map(|idx| {
-            targets
-                .iter()
-                .find(|target| target.card.deck_index == *idx)
-                .cloned()
-        })
-        .collect::<Vec<_>>();
-    (selected.len() == indices.len()).then(|| candidate_from_targets(choice, selected, 1))
-}
-
 fn candidate_from_targets(
     choice: &RunPendingChoiceState,
     selected_targets: Vec<ExactTarget>,
@@ -522,7 +511,6 @@ fn candidate_from_targets_for_reason(
         allowed_consumers: AllowedDeckMutationConsumersV1::default(),
         representative_count,
         suppressed_count: representative_count.saturating_sub(1),
-        run_choice_policy_selected: false,
         score_hint,
         confidence: 0.0,
         reasons: selected_targets
@@ -582,7 +570,9 @@ fn evaluate_candidate_for_reason(
         DeckMutationPlanRoleV1::InspectOnly
     } else if mutation_choice && has_functional_target {
         DeckMutationPlanRoleV1::RiskyExploration
-    } else if candidate.run_choice_policy_selected {
+    } else if matches!(reason, RunPendingChoiceReason::Upgrade)
+        && candidate.score_hint >= clear_upgrade_priority_threshold()
+    {
         DeckMutationPlanRoleV1::PolicyPreferred
     } else if mutation_choice && all_low_value {
         DeckMutationPlanRoleV1::SafeAlternative
@@ -601,11 +591,6 @@ fn evaluate_candidate_for_reason(
     };
     candidate.allowed_consumers = allowed_consumers(reason, role, candidate);
     candidate.reasons.push(format!("role={role:?}"));
-    if candidate.run_choice_policy_selected {
-        candidate
-            .reasons
-            .push("run-choice policy selected this plan".to_string());
-    }
     if mutation_choice && has_functional_target && low_value_available {
         candidate.reasons.push(
             "functional deck mutation target is inspect-only while low-value targets exist"
@@ -632,7 +617,9 @@ fn allowed_consumers(
         .all(|card| card.target_class.is_low_value_mutation_target());
     let execute_autopilot = match role {
         DeckMutationPlanRoleV1::PolicyPreferred => true,
-        DeckMutationPlanRoleV1::SafeAlternative => is_remove_choice(reason) && all_low_value,
+        DeckMutationPlanRoleV1::SafeAlternative => {
+            (is_remove_choice(reason) || is_transform_choice(reason)) && all_low_value
+        }
         DeckMutationPlanRoleV1::RiskyExploration
         | DeckMutationPlanRoleV1::InspectOnly
         | DeckMutationPlanRoleV1::Blocked => false,
@@ -682,6 +669,11 @@ fn allowed_consumers(
     }
 }
 
+fn clear_upgrade_priority_threshold() -> i32 {
+    crate::ai::campfire_policy_v1::CampfirePolicyConfigV1::default()
+        .clear_core_smith_priority_threshold
+}
+
 fn apply_portfolio_suppression(candidates: &mut [DeckMutationPlanCandidateV1], limit: usize) {
     let suppressed = candidates.len().saturating_sub(limit);
     if suppressed == 0 {
@@ -693,18 +685,6 @@ fn apply_portfolio_suppression(candidates: &mut [DeckMutationPlanCandidateV1], l
             "{} | compiler portfolio cap suppressed {suppressed} candidate(s)",
             first.step.effect_label
         );
-    }
-}
-
-fn target_class_from_run_choice_policy(class: RunChoicePolicyClassV1) -> DeckMutationTargetClassV1 {
-    match class {
-        RunChoicePolicyClassV1::CursePurge => DeckMutationTargetClassV1::Curse,
-        RunChoicePolicyClassV1::StarterStrikeMutation => DeckMutationTargetClassV1::StarterStrike,
-        RunChoicePolicyClassV1::StarterDefendMutation => DeckMutationTargetClassV1::StarterDefend,
-        RunChoicePolicyClassV1::BasicCardMutation => DeckMutationTargetClassV1::Basic,
-        RunChoicePolicyClassV1::OtherDeckMutation => DeckMutationTargetClassV1::Functional,
-        RunChoicePolicyClassV1::UpgradeTarget => DeckMutationTargetClassV1::UpgradeTarget,
-        RunChoicePolicyClassV1::UnsupportedChoice => DeckMutationTargetClassV1::Unsupported,
     }
 }
 
@@ -723,23 +703,23 @@ fn target_class_for_card_mutation(
         | RunPendingChoiceReason::Transform
         | RunPendingChoiceReason::TransformNonBottled
         | RunPendingChoiceReason::TransformUpgraded => {
-            target_class_from_run_choice_policy(run_choice_policy_class_for_card_mutation(card))
+            target_class_for_card_mutation_candidate(card)
         }
     }
 }
 
-fn run_choice_policy_class_for_card_mutation(card: &CombatCard) -> RunChoicePolicyClassV1 {
+fn target_class_for_card_mutation_candidate(card: &CombatCard) -> DeckMutationTargetClassV1 {
     let definition = get_card_definition(card.id);
     if definition.card_type == CardType::Curse {
-        RunChoicePolicyClassV1::CursePurge
+        DeckMutationTargetClassV1::Curse
     } else if definition.tags.contains(&CardTag::StarterStrike) {
-        RunChoicePolicyClassV1::StarterStrikeMutation
+        DeckMutationTargetClassV1::StarterStrike
     } else if definition.tags.contains(&CardTag::StarterDefend) {
-        RunChoicePolicyClassV1::StarterDefendMutation
+        DeckMutationTargetClassV1::StarterDefend
     } else if definition.rarity == CardRarity::Basic {
-        RunChoicePolicyClassV1::BasicCardMutation
+        DeckMutationTargetClassV1::Basic
     } else {
-        RunChoicePolicyClassV1::OtherDeckMutation
+        DeckMutationTargetClassV1::Functional
     }
 }
 
@@ -753,15 +733,6 @@ impl DeckMutationTargetClassV1 {
                 | DeckMutationTargetClassV1::Basic
         )
     }
-}
-
-fn run_choice_policy_selected_indices(
-    decision: &crate::ai::run_choice_policy_v1::RunChoiceDecisionV1,
-) -> Option<Vec<usize>> {
-    let RunChoicePolicyActionV1::SelectDeckIndices { indices, .. } = &decision.action else {
-        return None;
-    };
-    Some(indices.clone())
 }
 
 fn target_score_hint(reason: RunPendingChoiceReason, target: &ExactTarget) -> i32 {
@@ -781,6 +752,119 @@ fn target_score_hint(reason: RunPendingChoiceReason, target: &ExactTarget) -> i3
         | RunPendingChoiceReason::BottleLightning
         | RunPendingChoiceReason::BottleTornado => 0,
     }
+}
+
+fn run_choice_duplicate_priority_v1(card: &CombatCard, run_state: &RunState) -> i32 {
+    let def = get_card_definition(card.id);
+    if matches!(def.card_type, CardType::Curse | CardType::Status) {
+        return -10_000;
+    }
+
+    let profile = card_reward_semantic_profile_v1(&RewardCard::new(card.id, card.upgrades));
+    let mut priority = 100;
+
+    for role in profile.roles {
+        priority += match role {
+            CardRewardSemanticRoleV1::CardDraw => 180,
+            CardRewardSemanticRoleV1::EnergySource => 170,
+            CardRewardSemanticRoleV1::EnemyStrengthDown
+            | CardRewardSemanticRoleV1::Weak
+            | CardRewardSemanticRoleV1::Vulnerable => 160,
+            CardRewardSemanticRoleV1::ScalingSource => 150,
+            CardRewardSemanticRoleV1::TemporaryStrengthBurst => 70,
+            CardRewardSemanticRoleV1::Block
+            | CardRewardSemanticRoleV1::BlockRetention
+            | CardRewardSemanticRoleV1::BlockMultiplier => 130,
+            CardRewardSemanticRoleV1::ExhaustGenerator => 120,
+            CardRewardSemanticRoleV1::PackagePayoff
+            | CardRewardSemanticRoleV1::ExhaustPayoff
+            | CardRewardSemanticRoleV1::StatusPayoff
+            | CardRewardSemanticRoleV1::BlockPayoff
+            | CardRewardSemanticRoleV1::StrengthPayoff
+            | CardRewardSemanticRoleV1::StrikePayoff
+            | CardRewardSemanticRoleV1::UpgradePayoff
+            | CardRewardSemanticRoleV1::SelfDamagePayoff => 90,
+            CardRewardSemanticRoleV1::FrontloadDamage => 80,
+            CardRewardSemanticRoleV1::AoeDamage => 60,
+            CardRewardSemanticRoleV1::RandomOutput => -50,
+            CardRewardSemanticRoleV1::ConditionalPlayability => -80,
+            CardRewardSemanticRoleV1::UnsupportedMechanics => -120,
+            CardRewardSemanticRoleV1::StatusGenerator => -40,
+        };
+    }
+
+    priority += high_impact_duplicate_bonus(card.id);
+    if card.upgrades > 0 {
+        priority += 60;
+    }
+    if supports_existing_deck_package(card.id, run_state) {
+        priority += 100;
+    }
+    if def.tags.contains(&CardTag::StarterStrike) || def.tags.contains(&CardTag::StarterDefend) {
+        priority -= 500;
+    }
+    if def.rarity == CardRarity::Basic {
+        priority -= 300;
+    }
+
+    priority
+}
+
+fn high_impact_duplicate_bonus(card: CardId) -> i32 {
+    match card {
+        CardId::Offering | CardId::Corruption => 520,
+        CardId::Shockwave | CardId::Disarm => 480,
+        CardId::Impervious | CardId::DemonForm | CardId::Feed | CardId::Reaper => 400,
+        CardId::FiendFire | CardId::DarkEmbrace | CardId::FeelNoPain => 360,
+        CardId::BattleTrance | CardId::BurningPact | CardId::PowerThrough => 300,
+        CardId::FlameBarrier | CardId::Entrench | CardId::Barricade | CardId::BodySlam => 250,
+        CardId::Uppercut | CardId::ShrugItOff | CardId::PommelStrike | CardId::TrueGrit => 220,
+        CardId::Armaments | CardId::SpotWeakness | CardId::Inflame => 180,
+        _ => 0,
+    }
+}
+
+fn supports_existing_deck_package(card: CardId, run_state: &RunState) -> bool {
+    match card {
+        CardId::BodySlam | CardId::Entrench | CardId::Barricade => deck_has_any(
+            run_state,
+            &[CardId::BodySlam, CardId::Entrench, CardId::Barricade],
+        ),
+        CardId::HeavyBlade | CardId::LimitBreak => {
+            let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
+            startup.persistent_strength_source_count > 0
+                || startup.convertible_strength_source_count > 0
+        }
+        CardId::FeelNoPain | CardId::DarkEmbrace | CardId::Corruption => deck_has_any(
+            run_state,
+            &[
+                CardId::FeelNoPain,
+                CardId::DarkEmbrace,
+                CardId::Corruption,
+                CardId::SecondWind,
+                CardId::FiendFire,
+                CardId::TrueGrit,
+            ],
+        ),
+        CardId::Evolve | CardId::FireBreathing => deck_has_any(
+            run_state,
+            &[
+                CardId::Evolve,
+                CardId::FireBreathing,
+                CardId::PowerThrough,
+                CardId::WildStrike,
+                CardId::RecklessCharge,
+            ],
+        ),
+        _ => false,
+    }
+}
+
+fn deck_has_any(run_state: &RunState, cards: &[CardId]) -> bool {
+    run_state
+        .master_deck
+        .iter()
+        .any(|card| cards.contains(&card.id))
 }
 
 fn target_loss_rank(tier: DeckMutationTargetLossTierV1) -> i32 {

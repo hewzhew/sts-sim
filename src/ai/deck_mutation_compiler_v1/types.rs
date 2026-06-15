@@ -122,7 +122,6 @@ pub struct DeckMutationPlanCandidateV1 {
     pub allowed_consumers: AllowedDeckMutationConsumersV1,
     pub representative_count: usize,
     pub suppressed_count: usize,
-    pub run_choice_policy_selected: bool,
     pub score_hint: i32,
     pub confidence: f32,
     pub reasons: Vec<String>,

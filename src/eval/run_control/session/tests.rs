@@ -783,32 +783,6 @@ fn run_control_auto_run_uses_recovery_route_package_to_rest_at_low_hp_campfire()
 }
 
 #[test]
-fn run_control_auto_run_smiths_clear_core_upgrade_at_healthy_campfire() {
-    let mut session = test_session_at_campfire_with_hp(80, 80);
-
-    let outcome = session
-        .apply_command(RunControlCommand::AutoRun(
-            crate::eval::run_control::RunControlAutoStepOptions {
-                max_operations: Some(1),
-                ..Default::default()
-            },
-        ))
-        .expect("auto-run should smith a clear core upgrade at healthy campfire");
-
-    assert!(outcome.message.contains("campfire policy: smith"));
-    assert!(outcome.action_result.is_some());
-    assert!(
-        session
-            .run_state
-            .master_deck
-            .iter()
-            .any(|card| card.id == crate::content::cards::CardId::Bash && card.upgrades == 1),
-        "healthy campfire policy should upgrade Bash as the default Ironclad core upgrade"
-    );
-    assert!(matches!(session.engine_state, EngineState::MapNavigation));
-}
-
-#[test]
 fn run_control_auto_run_purges_curse_at_shop() {
     let mut session = test_session_at_shop();
     session
