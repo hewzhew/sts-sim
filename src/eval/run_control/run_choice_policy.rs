@@ -13,7 +13,7 @@ pub(super) fn apply_run_choice_policy_deck_selection(
         choice,
         crate::ai::deck_mutation_compiler_v1::DeckMutationCompilerModeV1::ExecuteOne,
     );
-    let noncombat_record = decision.legacy_decision.to_noncombat_decision_record_v1();
+    let noncombat_record = decision.to_noncombat_decision_record_v1();
     let Some(selected_plan) = decision.selected_plan else {
         return Ok(None);
     };

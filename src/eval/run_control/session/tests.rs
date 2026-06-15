@@ -1106,6 +1106,8 @@ fn run_control_auto_run_purges_curse_at_run_pending_purge_choice() {
         record.data_role,
         crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
     );
+    assert_eq!(record.provenance.source_policy, "deck_mutation_compiler_v1");
+    assert_eq!(record.selection.selection_mode, "deck_mutation_compiler_v1");
     assert!(!session
         .run_state
         .master_deck
