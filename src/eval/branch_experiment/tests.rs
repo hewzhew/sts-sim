@@ -1345,6 +1345,7 @@ fn retention_candidate(
         choice_profiles: Vec::new(),
         choice_effect_keys: Vec::new(),
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     }

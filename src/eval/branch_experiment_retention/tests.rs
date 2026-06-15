@@ -543,6 +543,7 @@ fn portfolio_retention_preserves_distinct_trajectories_under_same_formation() {
         ],
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     };
@@ -790,6 +791,7 @@ fn retention_slots_come_from_semantic_profiles_not_card_names() {
         )],
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     };
@@ -833,6 +835,7 @@ fn startup_liability_is_rank_evidence_not_coverage_slot_gate() {
         }],
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     };
@@ -893,6 +896,7 @@ fn portfolio_fill_records_startup_rejection_and_penalizes_selection() {
         }],
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     };
@@ -911,6 +915,7 @@ fn portfolio_fill_records_startup_rejection_and_penalizes_selection() {
         choice_profiles: Vec::new(),
         choice_effect_keys: vec!["skip_reward".to_string()],
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     };
@@ -960,6 +965,7 @@ fn adjusted_rank_keeps_card_admission_as_report_only_evidence() {
         }],
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     };
@@ -1002,6 +1008,7 @@ fn retention_selection_filters_hard_admission_before_diversity_fallback() {
         }],
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     };
@@ -1020,6 +1027,7 @@ fn retention_selection_filters_hard_admission_before_diversity_fallback() {
         choice_profiles: Vec::new(),
         choice_effect_keys: vec!["skip_reward".to_string()],
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     };
@@ -1062,6 +1070,7 @@ fn rank_adjustment_exposes_card_admission_pressure() {
         }],
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     };
@@ -1100,6 +1109,7 @@ fn rank_adjustment_lightly_penalizes_unresolved_deck_debt() {
         choice_profiles: Vec::new(),
         choice_effect_keys: Vec::new(),
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     };
@@ -1262,6 +1272,7 @@ fn retention_candidate(
         choice_profiles,
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     }
@@ -1287,6 +1298,7 @@ fn effect_retention_candidate(
         choice_profiles: Vec::new(),
         choice_effect_keys: vec![effect_key.to_string()],
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     }
@@ -1329,6 +1341,7 @@ fn semantic_retention_candidate(
         choice_profiles: vec![semantic_profile("Semantic Candidate", roles)],
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
+        strategic_debt_tags: Vec::new(),
         startup: Default::default(),
         card_admission_context: None,
     }

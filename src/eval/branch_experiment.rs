@@ -4,7 +4,7 @@ use std::time::Instant;
 use self::lineage::{branch_frontier, frontier_groups};
 use self::strategy_request::branch_strategy_requests;
 use crate::ai::card_admission_policy_v1::card_admission_context_from_run_state_v1;
-use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
+use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyFormationSummaryV2,
 };
@@ -915,6 +915,7 @@ fn branch_retention_candidate_input(
         choice_profiles,
         choice_effect_keys,
         lineage_flags: frontier.lineage.sequence_breakers_present,
+        strategic_debt_tags: branch_strategic_debt_tags(&branch.session),
         startup: crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(
             &branch.session.run_state,
         ),
@@ -1007,6 +1008,96 @@ fn branch_choice_effect_keys(branch: &BranchWork) -> Vec<String> {
         .into_iter()
         .map(str::to_string)
         .collect()
+}
+
+fn branch_strategic_debt_tags(session: &RunControlSession) -> Vec<String> {
+    let run_state = &session.run_state;
+    let mut tags = BTreeSet::<String>::new();
+
+    if run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::Sozu)
+    {
+        tags.insert("relic_constraint:sozu_potion_lock".to_string());
+    }
+
+    for relic in &run_state.relics {
+        if !matches!(
+            relic.id,
+            RelicId::BottledFlame | RelicId::BottledLightning | RelicId::BottledTornado
+        ) || relic.amount <= 0
+        {
+            continue;
+        }
+        let Some(card) = run_state
+            .master_deck
+            .iter()
+            .find(|card| card.uuid as i32 == relic.amount)
+        else {
+            continue;
+        };
+        for tag in bottled_card_debt_tags_v1(run_state, relic.id, card.id, card.upgrades) {
+            tags.insert(tag);
+        }
+    }
+
+    tags.into_iter().collect()
+}
+
+fn bottled_card_debt_tags_v1(
+    run_state: &RunState,
+    relic: RelicId,
+    card: CardId,
+    upgrades: u8,
+) -> Vec<String> {
+    let profile = card_reward_semantic_profile_v1(&RewardCard::new(card, upgrades));
+    let has = |role| profile.roles.contains(&role);
+    let mut tags = Vec::new();
+
+    match relic {
+        RelicId::BottledTornado => {
+            let context_dependent_power = has(CardRewardSemanticRoleV1::StatusPayoff)
+                || has(CardRewardSemanticRoleV1::PackagePayoff)
+                || has(CardRewardSemanticRoleV1::ConditionalPlayability)
+                || has(CardRewardSemanticRoleV1::RandomOutput);
+            let setup_power = has(CardRewardSemanticRoleV1::ScalingSource)
+                || has(CardRewardSemanticRoleV1::ExhaustGenerator)
+                || has(CardRewardSemanticRoleV1::ExhaustPayoff)
+                || has(CardRewardSemanticRoleV1::BlockRetention);
+            let awakened_one_boss = run_state.boss_key
+                == Some(crate::content::monsters::factory::EncounterId::AwakenedOne);
+
+            if awakened_one_boss && context_dependent_power {
+                tags.push("bottle_debt:power_vs_awakened_one".to_string());
+                tags.push("bottle_debt:high_opening_hand".to_string());
+            } else if context_dependent_power {
+                tags.push("bottle_debt:situational_opening_hand".to_string());
+            } else if awakened_one_boss && !setup_power {
+                tags.push("bottle_debt:situational_opening_hand".to_string());
+            }
+        }
+        RelicId::BottledLightning => {
+            if has(CardRewardSemanticRoleV1::TemporaryStrengthBurst)
+                || has(CardRewardSemanticRoleV1::ConditionalPlayability)
+                || has(CardRewardSemanticRoleV1::RandomOutput)
+            {
+                tags.push("bottle_debt:temporary_strength_burst".to_string());
+                tags.push("bottle_debt:situational_opening_hand".to_string());
+            }
+        }
+        RelicId::BottledFlame => {
+            if has(CardRewardSemanticRoleV1::StrengthPayoff)
+                || has(CardRewardSemanticRoleV1::BlockPayoff)
+                || has(CardRewardSemanticRoleV1::ConditionalPlayability)
+            {
+                tags.push("bottle_debt:situational_opening_hand".to_string());
+            }
+        }
+        _ => {}
+    }
+
+    tags
 }
 
 pub fn branch_experiment_choice_effect_key_v1(effect_kind: &str) -> &'static str {

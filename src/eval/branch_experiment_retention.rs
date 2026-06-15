@@ -88,6 +88,7 @@ pub struct BranchRetentionCandidateInputV1 {
     pub choice_profiles: Vec<CardRewardSemanticProfileV1>,
     pub choice_effect_keys: Vec<String>,
     pub lineage_flags: Vec<String>,
+    pub strategic_debt_tags: Vec<String>,
     pub startup: DeckStartupProfileV1,
     pub card_admission_context: Option<CardAdmissionContextV1>,
 }
@@ -141,6 +142,8 @@ impl Default for BranchRetentionCoverageSelectionV1 {
 pub struct BranchRetentionRankAdjustmentV1 {
     pub base_rank_key: i32,
     pub startup_adjustment: i32,
+    #[serde(default)]
+    pub strategic_debt_adjustment: i32,
     /// Report-only card admission pressure for the branch's added cards.
     /// Branch retention may use the underlying admission verdicts as slot
     /// eligibility gates, but this value is not folded into effective_rank_key.
@@ -927,11 +930,25 @@ pub fn branch_retention_rank_adjustment_v1(
         ));
     }
 
-    let effective_rank_key = candidate.rank_key.saturating_add(startup_adjustment);
+    let strategic_debt_adjustment = branch_strategic_debt_rank_adjustment_v1(candidate);
+    if strategic_debt_adjustment != 0 {
+        for tag in &candidate.strategic_debt_tags {
+            reasons.push(format!("strategic_debt_tag:{tag}"));
+        }
+        reasons.push(format!(
+            "strategic_debt_rank_adjustment:{strategic_debt_adjustment}"
+        ));
+    }
+
+    let effective_rank_key = candidate
+        .rank_key
+        .saturating_add(startup_adjustment)
+        .saturating_add(strategic_debt_adjustment);
 
     BranchRetentionRankAdjustmentV1 {
         base_rank_key: candidate.rank_key,
         startup_adjustment,
+        strategic_debt_adjustment,
         admission_pressure,
         effective_rank_key,
         context_keys: context
@@ -942,6 +959,21 @@ pub fn branch_retention_rank_adjustment_v1(
         slot_scores: branch_retention_slot_evidence_scores_v1(candidate),
         reasons,
     }
+}
+
+fn branch_strategic_debt_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
+    candidate
+        .strategic_debt_tags
+        .iter()
+        .map(|tag| match tag.as_str() {
+            "relic_constraint:sozu_potion_lock" => -700,
+            "bottle_debt:high_opening_hand" => -1_200,
+            "bottle_debt:situational_opening_hand" => -800,
+            "bottle_debt:power_vs_awakened_one" => -1_000,
+            "bottle_debt:temporary_strength_burst" => -600,
+            _ => 0,
+        })
+        .sum()
 }
 
 fn branch_retention_slot_evidence_scores_v1(

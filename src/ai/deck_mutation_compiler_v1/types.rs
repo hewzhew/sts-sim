@@ -67,6 +67,21 @@ pub struct DeckMutationTargetLossV1 {
     pub signals: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub enum DeckMutationOpeningHandDebtTierV1 {
+    #[default]
+    None,
+    Mild,
+    Situational,
+    High,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DeckMutationOpeningHandProfileV1 {
+    pub debt_tier: DeckMutationOpeningHandDebtTierV1,
+    pub signals: Vec<String>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AllowedDeckMutationConsumersV1 {
     pub execute_autopilot: bool,
@@ -85,6 +100,7 @@ pub struct DeckMutationCardSnapshotV1 {
     pub label: String,
     pub target_class: DeckMutationTargetClassV1,
     pub target_loss: DeckMutationTargetLossV1,
+    pub opening_hand: DeckMutationOpeningHandProfileV1,
 }
 
 #[derive(Clone, Debug, PartialEq)]
