@@ -1489,9 +1489,45 @@ fn campaign_branch_from_report_appends_new_choice_path() {
 
     let child = campaign_branch_from_report_branch_v1(&parent, &report_branch);
 
+    assert_eq!(child.branch_id, "root.rp 1");
     assert_eq!(child.commands, vec!["rp 0", "rp 1"]);
     assert_eq!(child.choice_labels, vec!["Shockwave", "True Grit"]);
     assert_eq!(child.frontier_title, "Card Reward");
+}
+
+#[test]
+fn campaign_branch_from_report_prefixes_parent_branch_id() {
+    let parent = BranchCampaignBranchV1 {
+        branch_id: "root.rp 0.branch-skip-card-reward 0".to_string(),
+        commands: vec!["rp 0".to_string(), "branch-skip-card-reward 0".to_string()],
+        choice_labels: vec!["Shockwave".to_string(), "Skip card reward".to_string()],
+        summary: None,
+        strategic_summary: Default::default(),
+        frontier_title: "Card Reward".to_string(),
+        status: BranchCampaignBranchStatusV1::Active,
+        stop_reason: "test".to_string(),
+        rank_key: 0,
+    };
+    let report_branch = test_report_branch(
+        "root.branch-skip-card-reward 0",
+        vec![("branch-skip-card-reward 0", "Skip card reward")],
+        BranchExperimentBranchStatusV1::Active,
+    );
+
+    let child = campaign_branch_from_report_branch_v1(&parent, &report_branch);
+
+    assert_eq!(
+        child.branch_id,
+        "root.rp 0.branch-skip-card-reward 0.branch-skip-card-reward 0"
+    );
+    assert_eq!(
+        child.commands,
+        vec![
+            "rp 0",
+            "branch-skip-card-reward 0",
+            "branch-skip-card-reward 0"
+        ]
+    );
 }
 
 #[test]

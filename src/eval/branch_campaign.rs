@@ -3584,7 +3584,7 @@ pub fn campaign_branch_from_report_branch_v1(
     let mut choice_labels = parent.choice_labels.clone();
     choice_labels.extend(branch.choices.iter().map(campaign_choice_label_v1));
     BranchCampaignBranchV1 {
-        branch_id: branch.branch_id.clone(),
+        branch_id: campaign_child_branch_id_v1(&parent.branch_id, &branch.branch_id),
         commands,
         choice_labels,
         summary: Some(campaign_summary_from_report_branch_v1(parent, branch)),
@@ -3593,6 +3593,26 @@ pub fn campaign_branch_from_report_branch_v1(
         status: campaign_status_from_report_status(branch.status),
         stop_reason: branch.stop_reason.clone(),
         rank_key: branch.rank_key,
+    }
+}
+
+fn campaign_child_branch_id_v1(parent_id: &str, child_id: &str) -> String {
+    if parent_id.trim().is_empty() || parent_id == "root" {
+        if child_id.starts_with("root") {
+            return child_id.to_string();
+        }
+        return format!("root.{child_id}");
+    }
+
+    let suffix = child_id
+        .strip_prefix("root.")
+        .or_else(|| child_id.strip_prefix("root"))
+        .unwrap_or(child_id)
+        .trim_start_matches('.');
+    if suffix.is_empty() {
+        parent_id.to_string()
+    } else {
+        format!("{parent_id}.{suffix}")
     }
 }
 
