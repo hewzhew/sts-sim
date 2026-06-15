@@ -160,29 +160,32 @@ fn select_card_reward_branch_options_with_limit_and_strategy(
         };
     }
 
-    let strategy_orders = reward_option_strategy_orders(session, &options);
+    let strategic_retention_keys = reward_option_strategic_retention_keys(session, &options);
     let mut annotated = options
         .iter()
         .enumerate()
         .map(|(index, option)| {
             let class_key = reward_option_semantic_class_for_option(option);
-            let strategy = strategy_orders
+            let retention_key = strategic_retention_keys
                 .get(&index)
                 .cloned()
-                .unwrap_or_else(RewardOptionStrategyOrder::missing);
+                .unwrap_or_else(RewardOptionStrategicRetentionKey::missing);
             RewardOptionAnnotated {
                 index,
-                strategy_order: strategy.order,
-                score_key: strategy.score_key,
+                verdict_retention_order: retention_key.verdict_retention_order,
+                strategic_score_sort_key: retention_key.strategic_score_sort_key,
                 class_key,
-                strategy_label: strategy.label,
+                verdict_label: retention_key.verdict_label,
             }
         })
         .collect::<Vec<_>>();
     annotated.sort_by(|left, right| {
-        left.strategy_order
-            .cmp(&right.strategy_order)
-            .then_with(|| left.score_key.cmp(&right.score_key))
+        left.verdict_retention_order
+            .cmp(&right.verdict_retention_order)
+            .then_with(|| {
+                left.strategic_score_sort_key
+                    .cmp(&right.strategic_score_sort_key)
+            })
             .then_with(|| left.index.cmp(&right.index))
     });
 
@@ -213,10 +216,10 @@ fn select_card_reward_branch_options_with_limit_and_strategy(
 #[derive(Clone, Debug)]
 struct RewardOptionAnnotated {
     index: usize,
-    strategy_order: usize,
-    score_key: i32,
+    verdict_retention_order: usize,
+    strategic_score_sort_key: i32,
     class_key: String,
-    strategy_label: String,
+    verdict_label: String,
 }
 
 fn select_reward_option_indices(
@@ -227,8 +230,8 @@ fn select_reward_option_indices(
     let mut selected = Vec::new();
     let tiers = annotated
         .iter()
-        .filter(|entry| entry.strategy_order < reject_order)
-        .map(|entry| entry.strategy_order)
+        .filter(|entry| entry.verdict_retention_order < reject_order)
+        .map(|entry| entry.verdict_retention_order)
         .collect::<BTreeSet<_>>();
 
     for tier in tiers {
@@ -237,7 +240,7 @@ fn select_reward_option_indices(
         }
         let tier_entries = annotated
             .iter()
-            .filter(|entry| entry.strategy_order == tier)
+            .filter(|entry| entry.verdict_retention_order == tier)
             .collect::<Vec<_>>();
         let mut selected_classes = BTreeSet::new();
         for entry in &tier_entries {
@@ -287,8 +290,8 @@ fn reward_option_portfolio_report(
             (
                 entry.index,
                 format!(
-                    "strategy={}:{}:{}",
-                    entry.strategy_order, entry.strategy_label, entry.class_key
+                    "strategic_retention=verdict_order:{}:verdict:{}:class:{}",
+                    entry.verdict_retention_order, entry.verdict_label, entry.class_key
                 ),
             )
         })
@@ -325,21 +328,21 @@ fn reward_option_portfolio_report(
 }
 
 #[derive(Clone, Debug)]
-struct RewardOptionStrategyOrder {
-    order: usize,
-    score_key: i32,
-    label: String,
+struct RewardOptionStrategicRetentionKey {
+    verdict_retention_order: usize,
+    strategic_score_sort_key: i32,
+    verdict_label: String,
 }
 
-fn reward_option_strategy_orders(
+fn reward_option_strategic_retention_keys(
     session: Option<&RunControlSession>,
     options: &[CardRewardBranchOption],
-) -> BTreeMap<usize, RewardOptionStrategyOrder> {
+) -> BTreeMap<usize, RewardOptionStrategicRetentionKey> {
     let Some(session) = session else {
         return options
             .iter()
             .enumerate()
-            .map(|(index, _)| (index, RewardOptionStrategyOrder::unavailable()))
+            .map(|(index, _)| (index, RewardOptionStrategicRetentionKey::unavailable()))
             .collect();
     };
     let mut option_card_indices = BTreeMap::new();
@@ -372,12 +375,12 @@ fn reward_option_strategy_orders(
             let action = candidate_action_for_reward_option(index, option, &option_card_indices);
             let order = trace
                 .compiled_for_action(&action)
-                .map(|compiled| RewardOptionStrategyOrder {
-                    order: compiled.verdict.retention_order(),
-                    score_key: -((compiled.score * 1000.0).round() as i32),
-                    label: format!("{:?}", compiled.verdict),
+                .map(|compiled| RewardOptionStrategicRetentionKey {
+                    verdict_retention_order: compiled.verdict.retention_order(),
+                    strategic_score_sort_key: -((compiled.score * 1000.0).round() as i32),
+                    verdict_label: format!("{:?}", compiled.verdict),
                 })
-                .unwrap_or_else(RewardOptionStrategyOrder::missing);
+                .unwrap_or_else(RewardOptionStrategicRetentionKey::missing);
             (index, order)
         })
         .collect()
@@ -406,20 +409,20 @@ fn candidate_action_for_reward_option(
     }
 }
 
-impl RewardOptionStrategyOrder {
+impl RewardOptionStrategicRetentionKey {
     fn unavailable() -> Self {
         Self {
-            order: 0,
-            score_key: 0,
-            label: "strategy_unavailable".to_string(),
+            verdict_retention_order: 0,
+            strategic_score_sort_key: 0,
+            verdict_label: "strategy_unavailable".to_string(),
         }
     }
 
     fn missing() -> Self {
         Self {
-            order: AcquisitionVerdict::Reject.retention_order(),
-            score_key: 0,
-            label: "missing_strategic_candidate".to_string(),
+            verdict_retention_order: AcquisitionVerdict::Reject.retention_order(),
+            strategic_score_sort_key: 0,
+            verdict_label: "missing_strategic_candidate".to_string(),
         }
     }
 }
@@ -608,15 +611,15 @@ mod tests {
     fn entry(
         index: usize,
         verdict: AcquisitionVerdict,
-        score_key: i32,
+        strategic_score_sort_key: i32,
         class_key: &str,
     ) -> RewardOptionAnnotated {
         RewardOptionAnnotated {
             index,
-            strategy_order: verdict.retention_order(),
-            score_key,
+            verdict_retention_order: verdict.retention_order(),
+            strategic_score_sort_key,
             class_key: class_key.to_string(),
-            strategy_label: format!("{verdict:?}"),
+            verdict_label: format!("{verdict:?}"),
         }
     }
 
