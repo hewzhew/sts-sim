@@ -804,7 +804,7 @@ fn retention_slots_come_from_semantic_profiles_not_card_names() {
 }
 
 #[test]
-fn startup_liability_is_legacy_evidence_not_coverage_slot_gate() {
+fn startup_liability_is_rank_evidence_not_coverage_slot_gate() {
     let candidate = BranchRetentionCandidateInputV1 {
         index: 0,
         act: 2,
@@ -1174,7 +1174,7 @@ fn package_lane_selection_uses_rank_not_slot_evidence_score() {
 }
 
 #[test]
-fn context_packet_keys_are_legacy_evidence_not_coverage_slots() {
+fn context_packet_keys_are_rank_evidence_not_coverage_slots() {
     let mut candidate = semantic_retention_candidate(
         0,
         10_000,
