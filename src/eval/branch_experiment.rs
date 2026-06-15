@@ -9,7 +9,8 @@ use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyFormationSummaryV2,
 };
 use crate::ai::shop_policy_v1::shop_conversion_pressure_v1;
-use crate::content::cards::CardId;
+use crate::content::cards::{get_card_definition, CardId, CardType};
+use crate::content::relics::RelicId;
 use crate::eval::branch_experiment_boundary::{
     branch_boundary_available, current_branch_boundary, BranchBoundaryConfigV1,
     CardRewardPortfolioContext,
@@ -30,14 +31,16 @@ use crate::eval::run_control::{
     RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSession,
     RunControlTraceAnnotationV1, SessionTraceReplayOptions, SessionTraceReplayStop,
 };
-use crate::state::core::{EngineState, RunResult};
+use crate::state::core::{
+    master_deck_card_is_bottled, master_deck_card_is_purgeable, EngineState, RunResult,
+};
 use crate::state::rewards::RewardCard;
+use crate::state::run::RunState;
 
 mod lineage;
 mod strategy_request;
 mod types;
 
-const EVENT_CURSE_DEBT_RANK_PENALTY: i32 = 2_000;
 const BRANCH_EXPERIMENT_COMMAND_SEQUENCE_SEPARATOR: &str = " && ";
 const COMBAT_TURN_SEGMENT_PROGRESS_STOP_REASON: &str =
     "combat turn segment progressed; continue next campaign round";
@@ -1183,18 +1186,44 @@ fn branch_rank_key(branch: &BranchWork) -> i32 {
             branch.session.run_state.act_num as i32 * 10_000
                 + branch.session.run_state.floor_num * 100
                 + current_hp * 10
-                + branch.session.run_state.gold
-                + event_debt_rank_adjustment(&branch.choices)
+                + branch_effective_gold_after_deck_debt(&branch.session)
         }
     }
 }
 
-fn event_debt_rank_adjustment(choices: &[BranchExperimentChoiceV1]) -> i32 {
-    let curse_debt_events = choices
+fn branch_effective_gold_after_deck_debt(session: &RunControlSession) -> i32 {
+    session
+        .run_state
+        .gold
+        .saturating_sub(removable_curse_purge_debt_v1(&session.run_state))
+}
+
+fn removable_curse_purge_debt_v1(run_state: &RunState) -> i32 {
+    let removable_curses = run_state
+        .master_deck
         .iter()
-        .filter(|choice| choice.effect_kind == "event_gain_curse")
+        .filter(|card| get_card_definition(card.id).card_type == CardType::Curse)
+        .filter(|card| master_deck_card_is_purgeable(card))
+        .filter(|card| !master_deck_card_is_bottled(card, &run_state.relics))
         .count() as i32;
-    -curse_debt_events * EVENT_CURSE_DEBT_RANK_PENALTY
+    if removable_curses <= 0 {
+        return 0;
+    }
+    removable_curses
+        .min(3)
+        .saturating_mul(estimated_purge_cost_v1(run_state))
+}
+
+fn estimated_purge_cost_v1(run_state: &RunState) -> i32 {
+    if run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::SmilingMask)
+    {
+        50
+    } else {
+        75 + run_state.shop_purge_count.saturating_mul(25)
+    }
 }
 
 fn run_summary(

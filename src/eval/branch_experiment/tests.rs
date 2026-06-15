@@ -7,6 +7,7 @@ use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::content::relics::RelicState;
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
+use crate::runtime::combat::CombatCard;
 use crate::state::core::{
     ActiveCombat, CombatContext, RoomCombatContext, RunPendingChoiceReason, RunPendingChoiceState,
 };
@@ -1197,14 +1198,38 @@ fn branch_rank_does_not_hardcode_card_reward_acquisition_bias() {
 }
 
 #[test]
-fn branch_rank_treats_curse_gain_as_strategic_debt_despite_gold() {
-    let clean = branch_with_choice("clean", "event_leave");
-    let mut curse_gold = branch_with_choice("curse-gold", "event_gain_curse");
-    curse_gold.session.run_state.gold = clean.session.run_state.gold + 999;
+fn branch_rank_accounts_for_current_removable_curse_purge_debt() {
+    let mut clean = branch_with_choice("clean", "event_leave");
+    let mut cursed = branch_with_choice("cursed", "event_leave");
+    clean.session.run_state.gold = 125;
+    cursed.session.run_state.gold = 199;
+    cursed
+        .session
+        .run_state
+        .master_deck
+        .push(CombatCard::new(CardId::Regret, 90_001));
 
     assert!(
-        branch_rank_key(&clean) > branch_rank_key(&curse_gold),
-        "large gold gain should not make a curse-debt event branch outrank a clean branch"
+        branch_rank_key(&clean) > branch_rank_key(&cursed),
+        "gold reserved for removing a visible curse should not rank as freely converted value"
+    );
+}
+
+#[test]
+fn branch_rank_values_gold_beyond_current_curse_purge_debt() {
+    let mut clean = branch_with_choice("clean", "event_leave");
+    let mut cursed = branch_with_choice("cursed", "event_leave");
+    clean.session.run_state.gold = 125;
+    cursed.session.run_state.gold = 225;
+    cursed
+        .session
+        .run_state
+        .master_deck
+        .push(CombatCard::new(CardId::Regret, 90_001));
+
+    assert!(
+        branch_rank_key(&cursed) > branch_rank_key(&clean),
+        "curse debt should reserve purge cost, not erase all extra gold value"
     );
 }
 
