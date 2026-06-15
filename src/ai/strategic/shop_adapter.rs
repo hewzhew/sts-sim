@@ -125,19 +125,18 @@ fn candidate_delta_from_shop_candidate(
         }
         ShopPolicyClassV1::PurchaseOpportunity => {
             delta.role = CandidateRole::ResourceConversion;
-            delta.verdict_hint = purchase_verdict_hint(candidate.purchase_priority);
             if candidate.card.is_some() {
                 add_shop_card_purchase_deltas(context, candidate, &mut delta);
                 delta.negative.push(LedgerDelta {
                     kind: PressureKind::DeckDebt(StrategicDebt::CycleTime),
-                    amount: 0.12,
-                    reason: "shop_card_adds_cycle_card".to_string(),
+                    amount: shop_card_add_cycle_debt_amount(context),
+                    reason: shop_card_add_cycle_debt_reason(context),
                 });
             } else {
                 delta.positive.push(LedgerDelta {
                     kind: PressureKind::EconomyNeed,
-                    amount: purchase_priority_amount(candidate.purchase_priority),
-                    reason: "shop_purchase_converts_gold".to_string(),
+                    amount: SHOP_PURCHASE_GOLD_CONVERSION_SIGNAL,
+                    reason: "shop_purchase_converts_gold_without_legacy_priority".to_string(),
                 });
             }
             delta.opportunity_costs.push(OpportunityCost {
@@ -184,13 +183,11 @@ fn add_shop_card_purchase_deltas(
     candidate: &ShopCandidateEvidenceV1,
     delta: &mut CandidateDelta,
 ) {
-    let priority_amount = purchase_priority_amount(candidate.purchase_priority);
-
     if candidate_has_evidence(candidate, TAG_COLLECTOR_ANSWER) {
         delta.role = CandidateRole::BossAnswer;
         delta.positive.push(LedgerDelta {
             kind: PressureKind::MissingJob(StrategicJob::StatusControl),
-            amount: priority_amount.max(0.45),
+            amount: SHOP_CARD_BOSS_ANSWER_SIGNAL,
             reason: TAG_COLLECTOR_ANSWER.to_string(),
         });
         delta.positive.push(LedgerDelta {
@@ -206,7 +203,7 @@ fn add_shop_card_purchase_deltas(
         }
         delta.positive.push(LedgerDelta {
             kind: PressureKind::MissingJob(StrategicJob::ExhaustAccess),
-            amount: priority_amount.max(0.45),
+            amount: SHOP_CARD_ENGINE_CLOSURE_SIGNAL,
             reason: TAG_ENGINE_CLOSURE.to_string(),
         });
     }
@@ -217,19 +214,18 @@ fn add_shop_card_purchase_deltas(
         }
         delta.positive.push(LedgerDelta {
             kind: PressureKind::MissingJob(StrategicJob::DrawEnergy),
-            amount: priority_amount.max(0.35),
+            amount: SHOP_CARD_STARTUP_ACCESS_SIGNAL,
             reason: TAG_STARTUP_ACCESS.to_string(),
         });
     }
 
-    add_default_shop_card_semantic_deltas(candidate, delta, priority_amount);
+    add_default_shop_card_semantic_deltas(candidate, delta);
     add_shop_card_component_deltas(context, candidate, delta);
 }
 
 fn add_default_shop_card_semantic_deltas(
     candidate: &ShopCandidateEvidenceV1,
     delta: &mut CandidateDelta,
-    priority_amount: f32,
 ) {
     let Some(card) = candidate.card else {
         return;
@@ -243,7 +239,7 @@ fn add_default_shop_card_semantic_deltas(
         delta.role = CandidateRole::Transition;
         delta.positive.push(LedgerDelta {
             kind: PressureKind::MissingJob(StrategicJob::Frontload),
-            amount: priority_amount,
+            amount: SHOP_CARD_DEFAULT_JOB_SIGNAL,
             reason: "shop_card_adds_frontload".to_string(),
         });
     }
@@ -258,7 +254,7 @@ fn add_default_shop_card_semantic_deltas(
         }
         delta.positive.push(LedgerDelta {
             kind: PressureKind::MissingJob(StrategicJob::Block),
-            amount: priority_amount.max(0.25),
+            amount: SHOP_CARD_DEFAULT_JOB_SIGNAL,
             reason: "shop_card_adds_block_or_mitigation".to_string(),
         });
     }
@@ -272,7 +268,7 @@ fn add_default_shop_card_semantic_deltas(
         }
         delta.positive.push(LedgerDelta {
             kind: PressureKind::MissingJob(StrategicJob::DrawEnergy),
-            amount: priority_amount.max(0.25),
+            amount: SHOP_CARD_DEFAULT_JOB_SIGNAL,
             reason: "shop_card_adds_draw_or_energy".to_string(),
         });
     }
@@ -288,15 +284,15 @@ fn add_default_shop_card_semantic_deltas(
         }
         delta.positive.push(LedgerDelta {
             kind: PressureKind::MissingJob(StrategicJob::ExhaustAccess),
-            amount: priority_amount.max(0.25),
+            amount: SHOP_CARD_DEFAULT_JOB_SIGNAL,
             reason: "shop_card_adds_exhaust_access".to_string(),
         });
     }
     if delta.positive.is_empty() {
         delta.positive.push(LedgerDelta {
             kind: PressureKind::EconomyNeed,
-            amount: priority_amount,
-            reason: "shop_card_converts_gold_without_specific_job".to_string(),
+            amount: SHOP_CARD_GENERIC_GOLD_CONVERSION_SIGNAL,
+            reason: "shop_card_converts_gold_without_specific_job_or_legacy_priority".to_string(),
         });
     }
 }
@@ -323,6 +319,7 @@ fn add_shop_card_component_deltas(
     {
         delta.role = component_delta.role;
     }
+    delta.verdict_hint = component_delta.verdict_hint;
     delta.positive.extend(component_delta.positive);
     delta.negative.extend(component_delta.negative);
     delta.notes.extend(component_delta.notes);
@@ -364,15 +361,30 @@ fn candidate_has_evidence(candidate: &ShopCandidateEvidenceV1, tag: &str) -> boo
     strings_have_tag(&candidate.evidence, tag)
 }
 
-fn purchase_verdict_hint(priority: Option<i32>) -> VerdictHint {
-    match priority.unwrap_or_default() {
-        value if value >= 900 => VerdictHint::StrongTake,
-        value if value >= 650 => VerdictHint::ContextTake,
-        value if value >= 250 => VerdictHint::Speculative,
-        _ => VerdictHint::SkipPreferred,
+fn shop_card_add_cycle_debt_amount(context: &ShopDecisionContextV1) -> f32 {
+    let deck = &context.strategy.v1.deck;
+    if deck.deck_size >= 40 {
+        0.78
+    } else if deck.deck_size >= 34 {
+        0.62
+    } else if deck.deck_size >= 28 && deck.draw_sources <= 1 {
+        0.42
+    } else {
+        0.12
     }
 }
 
-fn purchase_priority_amount(priority: Option<i32>) -> f32 {
-    (priority.unwrap_or_default().max(0) as f32 / 1000.0).clamp(0.0, 1.0)
+fn shop_card_add_cycle_debt_reason(context: &ShopDecisionContextV1) -> String {
+    let deck = &context.strategy.v1.deck;
+    format!(
+        "shop_card_adds_cycle_card deck_size={} draw_sources={}",
+        deck.deck_size, deck.draw_sources
+    )
 }
+
+const SHOP_PURCHASE_GOLD_CONVERSION_SIGNAL: f32 = 0.20;
+const SHOP_CARD_BOSS_ANSWER_SIGNAL: f32 = 0.55;
+const SHOP_CARD_ENGINE_CLOSURE_SIGNAL: f32 = 0.45;
+const SHOP_CARD_STARTUP_ACCESS_SIGNAL: f32 = 0.35;
+const SHOP_CARD_DEFAULT_JOB_SIGNAL: f32 = 0.30;
+const SHOP_CARD_GENERIC_GOLD_CONVERSION_SIGNAL: f32 = 0.05;
