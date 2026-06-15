@@ -125,6 +125,7 @@ pub fn plan_campfire_decision_v1(
             },
             role: CampfirePlanRoleV1::StopFallback,
             score_hint: 0,
+            strategy_tag: None,
             confidence: 0.0,
             reasons: vec!["campfire compiler found no executable plan".to_string()],
             execute_autopilot: true,
@@ -186,6 +187,7 @@ fn campfire_candidate_plan(
             CampfirePlanRoleV1::InspectOnly
         },
         score_hint: campfire_candidate_score_hint(context, candidate),
+        strategy_tag: candidate.strategy_tag.clone(),
         confidence,
         reasons,
         execute_autopilot: autopilot_allowed,
@@ -212,6 +214,7 @@ fn stop_candidate_plan(
             CampfirePlanRoleV1::StopFallback
         },
         score_hint: 0,
+        strategy_tag: None,
         confidence: 0.0,
         reasons: vec![reason],
         execute_autopilot: selected_by_policy,
@@ -327,6 +330,13 @@ fn candidate_evidence(
         }),
         _ => None,
     };
+    let strategy_tag = match choice {
+        CampfireChoice::Smith(idx) => run_state.master_deck.get(idx).and_then(|card| {
+            crate::ai::campfire_policy_v1::campfire_smith_upgrade_strategy_tag_v1(card, run_state)
+                .map(ToString::to_string)
+        }),
+        _ => None,
+    };
     if let Some(plan) = &expanded.deck_mutation_plan {
         evidence.extend(deck_mutation_plan_evidence(plan));
         risks.extend(plan.risks.iter().cloned());
@@ -353,12 +363,8 @@ fn candidate_evidence(
                 evidence.push(format!("smith upgrade priority is {priority}"));
             }
             if let CampfireChoice::Smith(idx) = choice {
-                if let Some(card) = run_state.master_deck.get(idx) {
-                    if let Some(tag) =
-                        crate::ai::campfire_policy_v1::campfire_smith_upgrade_strategy_tag_v1(
-                            card, run_state,
-                        )
-                    {
+                if run_state.master_deck.get(idx).is_some() {
+                    if let Some(tag) = &strategy_tag {
                         evidence.push(format!("smith strategy tag is {tag}"));
                     }
                 }
@@ -382,6 +388,7 @@ fn candidate_evidence(
         choice,
         class,
         upgrade_priority,
+        strategy_tag,
         deck_mutation_execute_allowed,
         deck_mutation_branch_allowed,
         representative_count,

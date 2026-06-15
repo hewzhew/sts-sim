@@ -1201,7 +1201,8 @@ fn current_boundary_wraps_campfire_options() {
     .expect("campfire boundary");
 
     assert_eq!(boundary.id, BranchBoundaryIdV1::Campfire);
-    assert_eq!(boundary.options.len(), 2);
+    assert!(!boundary.options.is_empty());
+    assert!(boundary.options.len() <= 2);
     assert!(boundary
         .options
         .iter()

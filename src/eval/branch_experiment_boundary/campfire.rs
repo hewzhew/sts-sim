@@ -5,6 +5,7 @@ use crate::ai::campfire_policy_v1::{
 use crate::content::cards::CardId;
 use crate::eval::run_control::RunControlSession;
 use crate::state::core::{CampfireChoice, EngineState};
+use std::collections::BTreeSet;
 
 #[derive(Clone, Debug)]
 pub(super) struct CampfireBranchOption {
@@ -14,6 +15,7 @@ pub(super) struct CampfireBranchOption {
     pub(super) upgrades: Option<u8>,
     pub(super) effect_kind: String,
     pub(super) equivalence_key: String,
+    pub(super) strategy_tag: Option<String>,
     pub(super) representative_count: usize,
     pub(super) suppressed_count: usize,
 }
@@ -57,6 +59,7 @@ fn campfire_branch_option_from_plan(
         upgrades: metadata.upgrades,
         effect_kind: metadata.effect_kind,
         equivalence_key: metadata.equivalence_key,
+        strategy_tag: plan.strategy_tag.clone(),
         representative_count: plan.representative_count,
         suppressed_count: plan.suppressed_count,
     })
@@ -76,13 +79,158 @@ fn select_campfire_branch_options_with_limit(
     options: Vec<CampfireBranchOption>,
     limit: usize,
 ) -> CampfireBranchOptionSelection {
+    let options = options
+        .into_iter()
+        .filter(|option| !is_full_hp_rest_branch_option(option))
+        .collect::<Vec<_>>();
     let capped_limit = limit.min(options.len());
-    if options.len() <= capped_limit {
+    if capped_limit == 0 || options.len() <= capped_limit {
         return CampfireBranchOptionSelection { options };
     }
 
-    let options = options.into_iter().take(capped_limit).collect();
+    let mut selected_indices = Vec::<usize>::new();
+    let mut used_indices = BTreeSet::<usize>::new();
+    let mut used_smith_tags = BTreeSet::<String>::new();
+    let mut used_untagged_smith = false;
+
+    if let Some(index) = options.iter().position(is_recovery_rest_branch_option) {
+        push_campfire_option_index(
+            index,
+            &options,
+            &mut selected_indices,
+            &mut used_indices,
+            &mut used_smith_tags,
+            &mut used_untagged_smith,
+        );
+    }
+
+    if selected_indices.len() < capped_limit {
+        if let Some(index) = options.iter().position(is_smith_branch_option) {
+            push_campfire_option_index(
+                index,
+                &options,
+                &mut selected_indices,
+                &mut used_indices,
+                &mut used_smith_tags,
+                &mut used_untagged_smith,
+            );
+        }
+    }
+
+    while selected_indices.len() < capped_limit {
+        let Some(index) = options.iter().enumerate().position(|(index, option)| {
+            !used_indices.contains(&index)
+                && is_smith_branch_option(option)
+                && option
+                    .strategy_tag
+                    .as_ref()
+                    .is_some_and(|tag| !used_smith_tags.contains(tag))
+        }) else {
+            break;
+        };
+        push_campfire_option_index(
+            index,
+            &options,
+            &mut selected_indices,
+            &mut used_indices,
+            &mut used_smith_tags,
+            &mut used_untagged_smith,
+        );
+    }
+
+    while selected_indices.len() < capped_limit {
+        let Some(index) = options.iter().enumerate().position(|(index, option)| {
+            !used_indices.contains(&index)
+                && !is_smith_branch_option(option)
+                && !is_full_hp_rest_branch_option(option)
+        }) else {
+            break;
+        };
+        push_campfire_option_index(
+            index,
+            &options,
+            &mut selected_indices,
+            &mut used_indices,
+            &mut used_smith_tags,
+            &mut used_untagged_smith,
+        );
+    }
+
+    while selected_indices.len() < capped_limit {
+        let Some(index) = options.iter().enumerate().position(|(index, option)| {
+            !used_indices.contains(&index)
+                && campfire_branch_option_adds_new_smith_coverage(
+                    option,
+                    &used_smith_tags,
+                    used_untagged_smith,
+                )
+        }) else {
+            break;
+        };
+        push_campfire_option_index(
+            index,
+            &options,
+            &mut selected_indices,
+            &mut used_indices,
+            &mut used_smith_tags,
+            &mut used_untagged_smith,
+        );
+    }
+
+    let options = selected_indices
+        .into_iter()
+        .filter_map(|index| options.get(index).cloned())
+        .collect();
     CampfireBranchOptionSelection { options }
+}
+
+fn push_campfire_option_index(
+    index: usize,
+    options: &[CampfireBranchOption],
+    selected_indices: &mut Vec<usize>,
+    used_indices: &mut BTreeSet<usize>,
+    used_smith_tags: &mut BTreeSet<String>,
+    used_untagged_smith: &mut bool,
+) {
+    if !used_indices.insert(index) {
+        return;
+    }
+    if let Some(option) = options.get(index) {
+        if is_smith_branch_option(option) {
+            if let Some(tag) = &option.strategy_tag {
+                used_smith_tags.insert(tag.clone());
+            } else {
+                *used_untagged_smith = true;
+            }
+        }
+    }
+    selected_indices.push(index);
+}
+
+fn is_smith_branch_option(option: &CampfireBranchOption) -> bool {
+    option.effect_kind == "upgrade_card"
+}
+
+fn is_recovery_rest_branch_option(option: &CampfireBranchOption) -> bool {
+    option.command == "rest" && option.equivalence_key == "rest:wounded"
+}
+
+fn is_full_hp_rest_branch_option(option: &CampfireBranchOption) -> bool {
+    option.command == "rest" && option.equivalence_key == "rest:full_hp"
+}
+
+fn campfire_branch_option_adds_new_smith_coverage(
+    option: &CampfireBranchOption,
+    used_smith_tags: &BTreeSet<String>,
+    used_untagged_smith: bool,
+) -> bool {
+    if !is_smith_branch_option(option) {
+        return true;
+    }
+    match &option.strategy_tag {
+        Some(tag) => !used_smith_tags.contains(tag),
+        None => !used_untagged_smith,
+    }
 }
 
 fn compressed_campfire_branch_options(
