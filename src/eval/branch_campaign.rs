@@ -23,6 +23,7 @@ use std::time::Instant;
 
 mod selection_key;
 mod strategic_signals;
+mod thaw_scheduler;
 use selection_key::{
     act_boss_floor_v1, campaign_branch_retention_key_v1, compare_campaign_branches_for_active_v1,
     compare_campaign_branches_for_promotion_v1, render_campaign_branch_selection_basis_v1,
@@ -821,6 +822,12 @@ where
             &mut state.frozen,
             config.max_active,
         );
+        let thawed_from_frozen = thaw_scheduler::thaw_promising_frozen_v0(
+            &mut state.active,
+            &mut state.frozen,
+            config.max_active,
+        )
+        .promoted;
         state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
             state.strategy_requests,
             &state.active,
@@ -893,6 +900,7 @@ where
         }
         let total_promoted_from_frozen = promoted_from_frozen
             .saturating_add(rebalanced_from_frozen)
+            .saturating_add(thawed_from_frozen)
             .saturating_add(promoted_rehydrated_from_frozen)
             .saturating_add(recovered_from_abandoned);
         let round_summary = BranchCampaignRoundSummaryV1 {

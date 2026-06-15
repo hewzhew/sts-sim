@@ -1024,6 +1024,97 @@ fn campaign_selection_keeps_progress_anchor_when_local_shop_variants_dominate_ac
 }
 
 #[test]
+fn campaign_thaw_promotes_nearby_structurally_stronger_frozen_branch() {
+    let mut active_front = test_campaign_branch("active-front", 13, 80);
+    active_front.rank_key = 12_900;
+    active_front.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 100,
+        clean_score_milli: 500,
+        engine_score_milli: 100,
+        cycle_debt_milli: 500,
+        setup_debt_milli: 100,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 100,
+    };
+    let mut active_peer = test_campaign_branch("active-peer", 13, 78);
+    active_peer.rank_key = 12_700;
+    active_peer.strategic_summary = active_front.strategic_summary;
+
+    let mut promising_frozen = test_campaign_branch("promising-frozen", 11, 80);
+    promising_frozen.status = BranchCampaignBranchStatusV1::Frozen;
+    promising_frozen.rank_key = 12_400;
+    promising_frozen.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 800,
+        clean_score_milli: 800,
+        engine_score_milli: 500,
+        cycle_debt_milli: 100,
+        setup_debt_milli: 100,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 500,
+    };
+
+    let mut active = vec![active_front, active_peer];
+    let mut frozen = vec![promising_frozen];
+
+    let thawed = thaw_scheduler::thaw_promising_frozen_v0(&mut active, &mut frozen, 2).promoted;
+
+    assert_eq!(thawed, 1);
+    assert!(active
+        .iter()
+        .any(|branch| branch.branch_id == "promising-frozen"));
+    assert_eq!(frozen.len(), 1);
+    assert!(frozen
+        .iter()
+        .any(|branch| branch.branch_id == "active-peer"));
+}
+
+#[test]
+fn campaign_thaw_rejects_rank_poor_single_axis_engine_frozen_branch() {
+    let mut active_front = test_campaign_branch("active-front", 13, 80);
+    active_front.rank_key = 12_900;
+    active_front.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 300,
+        clean_score_milli: 600,
+        engine_score_milli: 300,
+        cycle_debt_milli: 100,
+        setup_debt_milli: 100,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 300,
+    };
+    let mut active_peer = test_campaign_branch("active-peer", 13, 78);
+    active_peer.rank_key = 12_700;
+    active_peer.strategic_summary = active_front.strategic_summary;
+
+    let mut engine_only = test_campaign_branch("engine-only", 11, 80);
+    engine_only.status = BranchCampaignBranchStatusV1::Frozen;
+    engine_only.rank_key = 9_000;
+    engine_only.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 100,
+        clean_score_milli: 200,
+        engine_score_milli: 1000,
+        cycle_debt_milli: 400,
+        setup_debt_milli: 500,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 700,
+    };
+
+    let mut active = vec![active_front, active_peer];
+    let mut frozen = vec![engine_only];
+
+    let thawed = thaw_scheduler::thaw_promising_frozen_v0(&mut active, &mut frozen, 2).promoted;
+
+    assert_eq!(thawed, 0);
+    assert!(active
+        .iter()
+        .all(|branch| branch.branch_id != "engine-only"));
+    assert_eq!(frozen[0].branch_id, "engine-only");
+}
+
+#[test]
 fn campaign_rebalance_does_not_promote_critical_hp_nearby_progress_over_healthy_active() {
     let mut healthy = test_campaign_branch("healthy-nearby", 29, 41);
     healthy.summary.as_mut().unwrap().act = 2;
