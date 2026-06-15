@@ -1552,7 +1552,24 @@ fn campaign_on_stall_retries_when_round_exhausts_only_abandoned_combat() {
     };
 
     assert!(campaign_round_should_retry_combat_budget_on_stall_v1(
-        &config, &selection
+        &config, &selection, 0
+    ));
+}
+
+#[test]
+fn campaign_on_stall_uses_existing_frozen_before_combat_retry() {
+    let config = BranchCampaignConfigV1::default();
+    let mut abandoned = test_campaign_branch("abandoned-combat", 1, 80);
+    abandoned.status = BranchCampaignBranchStatusV1::Abandoned;
+    abandoned.frontier_title = "Combat".to_string();
+
+    let selection = BranchCampaignSelectionV1 {
+        abandoned: vec![abandoned],
+        ..BranchCampaignSelectionV1::default()
+    };
+
+    assert!(!campaign_round_should_retry_combat_budget_on_stall_v1(
+        &config, &selection, 3
     ));
 }
 
@@ -1570,7 +1587,7 @@ fn campaign_on_stall_does_not_retry_when_other_branches_remain() {
     };
 
     assert!(!campaign_round_should_retry_combat_budget_on_stall_v1(
-        &config, &selection
+        &config, &selection, 0
     ));
 }
 
@@ -1587,7 +1604,7 @@ fn campaign_on_stall_does_not_retry_non_combat_abandoned_branches() {
     };
 
     assert!(!campaign_round_should_retry_combat_budget_on_stall_v1(
-        &config, &selection
+        &config, &selection, 0
     ));
 }
 
@@ -1794,6 +1811,7 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
             wall_limit_hit: false,
             branch_limit_hit: false,
             combat_budget_retries: 2,
+            ..BranchCampaignRoundSummaryV1::default()
         }],
     };
 
@@ -2439,6 +2457,67 @@ fn campaign_progress_events_render_concrete_stage_information() {
     assert_eq!(
         promoted_line,
         "promoted/rebalanced 2 frozen branch(es); active_after=2 frozen=4"
+    );
+}
+
+#[test]
+fn campaign_round_summary_persists_timing_metrics() {
+    let summary = BranchCampaignRoundSummaryV1 {
+        round: 3,
+        started_active: 2,
+        produced_branches: 5,
+        active_after: 2,
+        frozen_added: 1,
+        dead_added: 0,
+        abandoned_added: 1,
+        victories_added: 0,
+        stuck_added: 0,
+        discarded_added: 1,
+        explored_branch_points: 4,
+        wall_limit_hit: false,
+        branch_limit_hit: true,
+        combat_budget_retries: 1,
+        elapsed_wall_ms: 7_000,
+        parent_elapsed_wall_ms_sum: 6_500,
+        parent_elapsed_wall_ms_max: 4_000,
+        combat_retry_elapsed_wall_ms_sum: 3_000,
+        combat_retry_elapsed_wall_ms_max: 3_000,
+    };
+
+    let value = serde_json::to_value(summary).expect("round summary should serialize");
+
+    assert_eq!(value["elapsed_wall_ms"], 7_000);
+    assert_eq!(value["parent_elapsed_wall_ms_sum"], 6_500);
+    assert_eq!(value["parent_elapsed_wall_ms_max"], 4_000);
+    assert_eq!(value["combat_retry_elapsed_wall_ms_sum"], 3_000);
+    assert_eq!(value["combat_retry_elapsed_wall_ms_max"], 3_000);
+}
+
+#[test]
+fn compact_campaign_report_surfaces_timing_summary() {
+    let mut report = test_campaign_report_with_active("timed", 12, 80);
+    report.rounds[0].elapsed_wall_ms = 9_000;
+    report.rounds[0].parent_elapsed_wall_ms_sum = 8_000;
+    report.rounds[0].parent_elapsed_wall_ms_max = 5_000;
+    report.rounds[0].combat_retry_elapsed_wall_ms_sum = 3_000;
+    report.rounds[0].combat_retry_elapsed_wall_ms_max = 3_000;
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains(
+        "Timing: rounds=9.0s parent_sum=8.0s parent_max=5.0s combat_retry_sum=3.0s combat_retry_max=3.0s"
+    ));
+}
+
+#[test]
+fn campaign_round_retry_counts_parent_elapsed_as_retry_timing() {
+    assert_eq!(
+        campaign_retry_timing_for_parent_v1(true, 5_000, 3_000, 0, 0),
+        (5_000, 3_000)
+    );
+    assert_eq!(
+        campaign_retry_timing_for_parent_v1(false, 5_000, 3_000, 1_500, 1_000),
+        (1_500, 1_000)
     );
 }
 
@@ -3367,6 +3446,7 @@ fn test_campaign_report_with_active(id: &str, floor: i32, hp: i32) -> BranchCamp
             wall_limit_hit: false,
             branch_limit_hit: false,
             combat_budget_retries: 0,
+            ..BranchCampaignRoundSummaryV1::default()
         }],
     }
 }

@@ -19,6 +19,7 @@ use crate::eval::run_control::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Instant;
 
 mod selection_key;
 mod strategic_signals;
@@ -217,6 +218,16 @@ pub struct BranchCampaignRoundSummaryV1 {
     pub wall_limit_hit: bool,
     pub branch_limit_hit: bool,
     pub combat_budget_retries: usize,
+    #[serde(default)]
+    pub elapsed_wall_ms: u64,
+    #[serde(default)]
+    pub parent_elapsed_wall_ms_sum: u64,
+    #[serde(default)]
+    pub parent_elapsed_wall_ms_max: u64,
+    #[serde(default)]
+    pub combat_retry_elapsed_wall_ms_sum: u64,
+    #[serde(default)]
+    pub combat_retry_elapsed_wall_ms_max: u64,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -352,6 +363,10 @@ pub enum BranchCampaignProgressEventV1 {
 struct BranchCampaignParentRoundResultV1 {
     result: BranchExperimentRunResultV1,
     combat_budget_retry_used: bool,
+    elapsed_wall_ms_sum: u64,
+    elapsed_wall_ms_max: u64,
+    combat_retry_elapsed_wall_ms_sum: u64,
+    combat_retry_elapsed_wall_ms_max: u64,
 }
 
 struct BranchCampaignParentBatchResultV1 {
@@ -362,6 +377,10 @@ struct BranchCampaignParentBatchResultV1 {
     wall_limit_hit: bool,
     branch_limit_hit: bool,
     combat_budget_retries: usize,
+    parent_elapsed_wall_ms_sum: u64,
+    parent_elapsed_wall_ms_max: u64,
+    combat_retry_elapsed_wall_ms_sum: u64,
+    combat_retry_elapsed_wall_ms_max: u64,
 }
 
 struct BranchCampaignRunStateV1 {
@@ -623,6 +642,7 @@ where
             active_branches: state.active.len(),
             frozen_branches: state.frozen.len(),
         });
+        let round_started_at = Instant::now();
         let parents = std::mem::take(&mut state.active);
         let started_active = parents.len();
         let mut batch = run_campaign_parent_batch_v1(
@@ -633,13 +653,21 @@ where
             false,
             &mut progress,
         )?;
+        let mut parent_elapsed_wall_ms_sum = batch.parent_elapsed_wall_ms_sum;
+        let mut parent_elapsed_wall_ms_max = batch.parent_elapsed_wall_ms_max;
+        let mut combat_retry_elapsed_wall_ms_sum = batch.combat_retry_elapsed_wall_ms_sum;
+        let mut combat_retry_elapsed_wall_ms_max = batch.combat_retry_elapsed_wall_ms_max;
         let mut produced_branches = batch.candidates.len();
         let mut selected = select_campaign_branches_v1(
             batch.candidates.clone(),
             config.max_active,
             config.max_frozen,
         );
-        if campaign_round_should_retry_combat_budget_on_stall_v1(config, &selected) {
+        if campaign_round_should_retry_combat_budget_on_stall_v1(
+            config,
+            &selected,
+            state.frozen.len(),
+        ) {
             if let Some(retry_config) = combat_retry_campaign_config_v1(config) {
                 batch = run_campaign_parent_batch_v1(
                     &retry_config,
@@ -649,6 +677,14 @@ where
                     true,
                     &mut progress,
                 )?;
+                parent_elapsed_wall_ms_sum = parent_elapsed_wall_ms_sum
+                    .saturating_add(batch.parent_elapsed_wall_ms_sum);
+                parent_elapsed_wall_ms_max =
+                    parent_elapsed_wall_ms_max.max(batch.parent_elapsed_wall_ms_max);
+                combat_retry_elapsed_wall_ms_sum = combat_retry_elapsed_wall_ms_sum
+                    .saturating_add(batch.combat_retry_elapsed_wall_ms_sum);
+                combat_retry_elapsed_wall_ms_max = combat_retry_elapsed_wall_ms_max
+                    .max(batch.combat_retry_elapsed_wall_ms_max);
                 produced_branches = batch.candidates.len();
                 selected = select_campaign_branches_v1(
                     batch.candidates.clone(),
@@ -784,6 +820,11 @@ where
             wall_limit_hit: batch.wall_limit_hit,
             branch_limit_hit: batch.branch_limit_hit,
             combat_budget_retries: batch.combat_budget_retries,
+            elapsed_wall_ms: campaign_elapsed_ms_u64(round_started_at),
+            parent_elapsed_wall_ms_sum,
+            parent_elapsed_wall_ms_max,
+            combat_retry_elapsed_wall_ms_sum,
+            combat_retry_elapsed_wall_ms_max,
         };
         progress(BranchCampaignProgressEventV1::RoundFinished {
             round: round_number,
@@ -1186,6 +1227,43 @@ pub fn render_branch_campaign_compact_v1(
             }
         ));
     }
+    let total_round_elapsed_ms: u64 = report
+        .rounds
+        .iter()
+        .map(|round| round.elapsed_wall_ms)
+        .sum();
+    let parent_elapsed_wall_ms_sum: u64 = report
+        .rounds
+        .iter()
+        .map(|round| round.parent_elapsed_wall_ms_sum)
+        .sum();
+    let parent_elapsed_wall_ms_max = report
+        .rounds
+        .iter()
+        .map(|round| round.parent_elapsed_wall_ms_max)
+        .max()
+        .unwrap_or_default();
+    let combat_retry_elapsed_wall_ms_sum: u64 = report
+        .rounds
+        .iter()
+        .map(|round| round.combat_retry_elapsed_wall_ms_sum)
+        .sum();
+    let combat_retry_elapsed_wall_ms_max = report
+        .rounds
+        .iter()
+        .map(|round| round.combat_retry_elapsed_wall_ms_max)
+        .max()
+        .unwrap_or_default();
+    if total_round_elapsed_ms > 0 || parent_elapsed_wall_ms_sum > 0 {
+        lines.push(format!(
+            "Timing: rounds={} parent_sum={} parent_max={} combat_retry_sum={} combat_retry_max={}",
+            format_seconds_1dp_v1(total_round_elapsed_ms),
+            format_seconds_1dp_v1(parent_elapsed_wall_ms_sum),
+            format_seconds_1dp_v1(parent_elapsed_wall_ms_max),
+            format_seconds_1dp_v1(combat_retry_elapsed_wall_ms_sum),
+            format_seconds_1dp_v1(combat_retry_elapsed_wall_ms_max),
+        ));
+    }
     if report.discarded_count > 0 && !report.discarded_examples.is_empty() {
         lines.push(format!(
             "Branch pressure: discarded={} examples=[{}]",
@@ -1343,6 +1421,10 @@ pub fn render_branch_campaign_compact_v1(
         }
     }
     lines.join("\n")
+}
+
+fn format_seconds_1dp_v1(ms: u64) -> String {
+    format!("{:.1}s", ms as f64 / 1000.0)
 }
 
 fn format_bp(value: i32) -> String {
@@ -2016,6 +2098,10 @@ where
     let mut branch_limit_hit = false;
     let mut combat_budget_retries = 0usize;
     let mut route_evidence = BranchCampaignRouteEvidenceSummaryV1::default();
+    let mut parent_elapsed_wall_ms_sum = 0u64;
+    let mut parent_elapsed_wall_ms_max = 0u64;
+    let mut combat_retry_elapsed_wall_ms_sum = 0u64;
+    let mut combat_retry_elapsed_wall_ms_max = 0u64;
 
     for (parent_index, parent) in parents.iter().enumerate() {
         progress(BranchCampaignProgressEventV1::BranchStarted {
@@ -2026,6 +2112,22 @@ where
         });
         let parent_snapshot = snapshot_cache.get(&parent.commands).cloned();
         let parent_result = run_campaign_parent_round_v1(config, parent, parent_snapshot)?;
+        parent_elapsed_wall_ms_sum =
+            parent_elapsed_wall_ms_sum.saturating_add(parent_result.elapsed_wall_ms_sum);
+        parent_elapsed_wall_ms_max =
+            parent_elapsed_wall_ms_max.max(parent_result.elapsed_wall_ms_max);
+        let (parent_retry_elapsed_sum, parent_retry_elapsed_max) =
+            campaign_retry_timing_for_parent_v1(
+                round_retry,
+                parent_result.elapsed_wall_ms_sum,
+                parent_result.elapsed_wall_ms_max,
+                parent_result.combat_retry_elapsed_wall_ms_sum,
+                parent_result.combat_retry_elapsed_wall_ms_max,
+            );
+        combat_retry_elapsed_wall_ms_sum =
+            combat_retry_elapsed_wall_ms_sum.saturating_add(parent_retry_elapsed_sum);
+        combat_retry_elapsed_wall_ms_max =
+            combat_retry_elapsed_wall_ms_max.max(parent_retry_elapsed_max);
         let result = parent_result.result;
         let report = result.report;
         let combat_budget_retry_used = round_retry || parent_result.combat_budget_retry_used;
@@ -2068,7 +2170,28 @@ where
         wall_limit_hit,
         branch_limit_hit,
         combat_budget_retries,
+        parent_elapsed_wall_ms_sum,
+        parent_elapsed_wall_ms_max,
+        combat_retry_elapsed_wall_ms_sum,
+        combat_retry_elapsed_wall_ms_max,
     })
+}
+
+fn campaign_retry_timing_for_parent_v1(
+    round_retry: bool,
+    parent_elapsed_wall_ms_sum: u64,
+    parent_elapsed_wall_ms_max: u64,
+    parent_retry_elapsed_wall_ms_sum: u64,
+    parent_retry_elapsed_wall_ms_max: u64,
+) -> (u64, u64) {
+    if round_retry {
+        (parent_elapsed_wall_ms_sum, parent_elapsed_wall_ms_max)
+    } else {
+        (
+            parent_retry_elapsed_wall_ms_sum,
+            parent_retry_elapsed_wall_ms_max,
+        )
+    }
 }
 
 fn run_campaign_parent_round_v1(
@@ -2085,9 +2208,16 @@ fn run_campaign_parent_round_v1(
             let retry_config = combat_retry_campaign_config_v1(config)
                 .expect("retry config was checked before retrying parent replay");
             return run_campaign_parent_round_once_v1(&retry_config, parent, parent_snapshot)
-                .map(|result| BranchCampaignParentRoundResultV1 {
-                    result,
-                    combat_budget_retry_used: true,
+                .map(|result| {
+                    let retry_elapsed = result.report.elapsed_wall_ms;
+                    BranchCampaignParentRoundResultV1 {
+                        result,
+                        combat_budget_retry_used: true,
+                        elapsed_wall_ms_sum: retry_elapsed,
+                        elapsed_wall_ms_max: retry_elapsed,
+                        combat_retry_elapsed_wall_ms_sum: retry_elapsed,
+                        combat_retry_elapsed_wall_ms_max: retry_elapsed,
+                    }
                 })
                 .map_err(|retry_err| {
                     format!(
@@ -2098,22 +2228,38 @@ fn run_campaign_parent_round_v1(
         Err(err) => return Err(err),
     };
     if !campaign_parent_should_retry_combat_budget_now_v1(config, &result.report.branches) {
+        let elapsed = result.report.elapsed_wall_ms;
         return Ok(BranchCampaignParentRoundResultV1 {
             result,
             combat_budget_retry_used: false,
+            elapsed_wall_ms_sum: elapsed,
+            elapsed_wall_ms_max: elapsed,
+            combat_retry_elapsed_wall_ms_sum: 0,
+            combat_retry_elapsed_wall_ms_max: 0,
         });
     }
 
     let Some(retry_config) = combat_retry_campaign_config_v1(config) else {
+        let elapsed = result.report.elapsed_wall_ms;
         return Ok(BranchCampaignParentRoundResultV1 {
             result,
             combat_budget_retry_used: false,
+            elapsed_wall_ms_sum: elapsed,
+            elapsed_wall_ms_max: elapsed,
+            combat_retry_elapsed_wall_ms_sum: 0,
+            combat_retry_elapsed_wall_ms_max: 0,
         });
     };
+    let initial_elapsed = result.report.elapsed_wall_ms;
     let retry_result = run_campaign_parent_round_once_v1(&retry_config, parent, parent_snapshot)?;
+    let retry_elapsed = retry_result.report.elapsed_wall_ms;
     Ok(BranchCampaignParentRoundResultV1 {
         result: retry_result,
         combat_budget_retry_used: true,
+        elapsed_wall_ms_sum: initial_elapsed.saturating_add(retry_elapsed),
+        elapsed_wall_ms_max: initial_elapsed.max(retry_elapsed),
+        combat_retry_elapsed_wall_ms_sum: retry_elapsed,
+        combat_retry_elapsed_wall_ms_max: retry_elapsed,
     })
 }
 
@@ -2161,6 +2307,13 @@ fn campaign_branch_experiment_config_v1(
         auto_leave_after_shop_purchase_branch: true,
         ..BranchExperimentConfigV1::default()
     }
+}
+
+fn campaign_elapsed_ms_u64(started_at: Instant) -> u64 {
+    started_at
+        .elapsed()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64
 }
 
 fn campaign_parent_replay_error_is_retryable_v1(error: &str) -> bool {
@@ -2242,11 +2395,13 @@ fn branch_report_is_final_boss_combat_retry_candidate_v1(
 fn campaign_round_should_retry_combat_budget_on_stall_v1(
     config: &BranchCampaignConfigV1,
     selection: &BranchCampaignSelectionV1,
+    existing_frozen_branches: usize,
 ) -> bool {
     matches!(
         config.combat_retry_policy,
         BranchCampaignCombatRetryPolicyV1::OnStall
     ) && combat_retry_campaign_config_v1(config).is_some()
+        && existing_frozen_branches == 0
         && selection.active.is_empty()
         && selection.frozen.is_empty()
         && selection.victories.is_empty()
