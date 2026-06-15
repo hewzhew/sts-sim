@@ -1,14 +1,10 @@
-use std::collections::BTreeSet;
-
-use crate::ai::deck_mutation_compiler_v1::{
-    compile_deck_mutation_decision_v1, DeckMutationCompilerModeV1, DeckMutationKindV1,
+use crate::ai::campfire_policy_v1::{
+    build_campfire_decision_context_v1, plan_campfire_decision_v1, CampfirePlanCandidateV1,
+    CampfirePolicyConfigV1,
 };
 use crate::content::cards::CardId;
-use crate::eval::run_control::{build_decision_surface, RunControlSession};
-use crate::state::core::{
-    CampfireChoice, ClientInput, EngineState, RunPendingChoiceReason, RunPendingChoiceState,
-};
-use crate::state::rewards::RewardCard;
+use crate::eval::run_control::RunControlSession;
+use crate::state::core::{CampfireChoice, EngineState};
 
 #[derive(Clone, Debug)]
 pub(super) struct CampfireBranchOption {
@@ -18,11 +14,8 @@ pub(super) struct CampfireBranchOption {
     pub(super) upgrades: Option<u8>,
     pub(super) effect_kind: String,
     pub(super) equivalence_key: String,
-    priority: i32,
     pub(super) representative_count: usize,
     pub(super) suppressed_count: usize,
-    semantic_class: String,
-    boss_relevant: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -36,117 +29,37 @@ pub(super) fn campfire_branch_options(
     if !matches!(session.engine_state, EngineState::Campfire) {
         return None;
     }
-    let surface = build_decision_surface(session);
-    let mut has_smith = false;
-    let mut has_toke = false;
-    let mut options = Vec::new();
-    for candidate in &surface.view.candidates {
-        if let Some(option) = (|| {
-            let input = candidate.action.executable_input()?;
-            let ClientInput::CampfireOption(choice) = input else {
-                return None;
-            };
-            match choice {
-                CampfireChoice::Smith(_) => {
-                    has_smith = true;
-                    return None;
-                }
-                CampfireChoice::Toke(_) => {
-                    has_toke = true;
-                    return None;
-                }
-                _ => {}
-            }
-            let metadata = campfire_option_metadata(session, choice);
-            Some(CampfireBranchOption {
-                label: candidate.label.clone(),
-                command: candidate.action.command_hint(),
-                card: metadata.card,
-                upgrades: metadata.upgrades,
-                effect_kind: metadata.effect_kind,
-                semantic_class: metadata.semantic_class,
-                equivalence_key: metadata.equivalence_key,
-                priority: metadata.priority,
-                representative_count: 1,
-                suppressed_count: 0,
-                boss_relevant: metadata.boss_relevant,
-            })
-        })() {
-            options.push(option);
-        }
-    }
-    if has_smith {
-        options.extend(deck_mutation_campfire_branch_options(
-            session,
-            RunPendingChoiceReason::Upgrade,
-            DeckMutationKindV1::Upgrade,
-            CampfireChoice::Smith,
-            "Smith",
-        ));
-    }
-    if has_toke {
-        options.extend(deck_mutation_campfire_branch_options(
-            session,
-            RunPendingChoiceReason::PurgeNonBottled,
-            DeckMutationKindV1::Remove,
-            CampfireChoice::Toke,
-            "Toke",
-        ));
-    }
+    let choices = crate::engine::campfire_handler::get_available_options(&session.run_state);
+    let context = build_campfire_decision_context_v1(&session.run_state, choices);
+    let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+    let options = decision
+        .candidate_plans
+        .iter()
+        .filter_map(|plan| campfire_branch_option_from_plan(session, plan))
+        .collect();
     let options = compressed_campfire_branch_options(options);
     (!options.is_empty()).then_some(options)
 }
 
-fn deck_mutation_campfire_branch_options(
+fn campfire_branch_option_from_plan(
     session: &RunControlSession,
-    reason: RunPendingChoiceReason,
-    expected_kind: DeckMutationKindV1,
-    choice_for_index: fn(usize) -> CampfireChoice,
-    label_verb: &str,
-) -> Vec<CampfireBranchOption> {
-    let choice = RunPendingChoiceState {
-        min_choices: 1,
-        max_choices: 1,
-        reason,
-        return_state: Box::new(EngineState::Campfire),
-    };
-    let decision = compile_deck_mutation_decision_v1(
-        &session.run_state,
-        &choice,
-        DeckMutationCompilerModeV1::BranchTopK {
-            max_active: usize::MAX,
-        },
-    );
-
-    decision
-        .branch_active_plans
-        .into_iter()
-        .filter_map(|plan| {
-            if plan.step.kind != expected_kind || plan.step.deck_indices.len() != 1 {
-                return None;
-            }
-            let card = plan.step.cards.first()?;
-            let choice = choice_for_index(card.deck_index);
-            let metadata = campfire_option_metadata(session, choice);
-            Some(CampfireBranchOption {
-                label: format!("{label_verb} {}", card.label),
-                command: match choice {
-                    CampfireChoice::Smith(idx) => format!("smith {idx}"),
-                    CampfireChoice::Toke(idx) => format!("toke {idx}"),
-                    _ => return None,
-                },
-                card: metadata.card,
-                upgrades: metadata.upgrades,
-                effect_kind: metadata.effect_kind,
-                semantic_class: metadata.semantic_class,
-                equivalence_key: metadata.equivalence_key,
-                priority: metadata.priority,
-                representative_count: plan.representative_count,
-                suppressed_count: plan.suppressed_count,
-                boss_relevant: metadata.boss_relevant,
-            })
-        })
-        .collect()
+    plan: &CampfirePlanCandidateV1,
+) -> Option<CampfireBranchOption> {
+    if !plan.branch_active {
+        return None;
+    }
+    let choice = plan.choice?;
+    let metadata = campfire_option_metadata(session, choice);
+    Some(CampfireBranchOption {
+        label: campfire_option_label(session, choice).unwrap_or_else(|| plan.plan_id.clone()),
+        command: campfire_option_command(choice),
+        card: metadata.card,
+        upgrades: metadata.upgrades,
+        effect_kind: metadata.effect_kind,
+        equivalence_key: metadata.equivalence_key,
+        representative_count: plan.representative_count,
+        suppressed_count: plan.suppressed_count,
+    })
 }
 
 pub(super) fn select_campfire_branch_options(
@@ -168,97 +81,7 @@ fn select_campfire_branch_options_with_limit(
         return CampfireBranchOptionSelection { options };
     }
 
-    if options.iter().any(|option| option.boss_relevant) {
-        return select_boss_pressure_campfire_options(options, capped_limit);
-    }
-
-    let mut annotated = options
-        .iter()
-        .enumerate()
-        .map(|(index, option)| {
-            (
-                index,
-                campfire_option_priority(option),
-                option.semantic_class.clone(),
-            )
-        })
-        .collect::<Vec<_>>();
-    annotated.sort_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
-
-    let mut selected = Vec::new();
-    let mut selected_classes = BTreeSet::new();
-    for (index, _, class_key) in &annotated {
-        if selected.len() >= capped_limit {
-            break;
-        }
-        if selected_classes.insert(class_key.clone()) {
-            selected.push(*index);
-        }
-    }
-    for index in 0..options.len() {
-        if selected.len() >= capped_limit {
-            break;
-        }
-        if !selected.contains(&index) {
-            selected.push(index);
-        }
-    }
-
-    selected.sort_unstable();
-    let selected_indices = selected.iter().copied().collect::<BTreeSet<_>>();
-    let options = options
-        .into_iter()
-        .enumerate()
-        .filter_map(|(index, option)| selected_indices.contains(&index).then_some(option))
-        .collect();
-    CampfireBranchOptionSelection { options }
-}
-
-fn select_boss_pressure_campfire_options(
-    options: Vec<CampfireBranchOption>,
-    limit: usize,
-) -> CampfireBranchOptionSelection {
-    let mut annotated = options
-        .iter()
-        .enumerate()
-        .map(|(index, option)| (index, campfire_option_priority(option)))
-        .collect::<Vec<_>>();
-    annotated.sort_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0)));
-
-    let mut selected = Vec::new();
-    if let Some((rest_index, _)) = annotated
-        .iter()
-        .find(|(index, _)| options[*index].semantic_class == "rest:wounded")
-    {
-        selected.push(*rest_index);
-    }
-
-    for (index, _) in &annotated {
-        if selected.len() >= limit {
-            break;
-        }
-        let option = &options[*index];
-        if option.boss_relevant && !selected.contains(index) {
-            selected.push(*index);
-        }
-    }
-
-    for (index, _) in &annotated {
-        if selected.len() >= limit {
-            break;
-        }
-        if !selected.contains(index) && options[*index].semantic_class != "rest:full_hp" {
-            selected.push(*index);
-        }
-    }
-
-    selected.sort_unstable();
-    let selected_indices = selected.iter().copied().collect::<BTreeSet<_>>();
-    let options = options
-        .into_iter()
-        .enumerate()
-        .filter_map(|(index, option)| selected_indices.contains(&index).then_some(option))
-        .collect();
+    let options = options.into_iter().take(capped_limit).collect();
     CampfireBranchOptionSelection { options }
 }
 
@@ -297,10 +120,7 @@ struct CampfireOptionMetadata {
     card: Option<CardId>,
     upgrades: Option<u8>,
     effect_kind: String,
-    semantic_class: String,
     equivalence_key: String,
-    priority: i32,
-    boss_relevant: bool,
 }
 
 fn campfire_option_metadata(
@@ -309,41 +129,22 @@ fn campfire_option_metadata(
 ) -> CampfireOptionMetadata {
     match choice {
         CampfireChoice::Rest => {
-            let semantic_class = if session.run_state.current_hp < session.run_state.max_hp {
+            let equivalence_key = if session.run_state.current_hp < session.run_state.max_hp {
                 "rest:wounded"
             } else {
                 "rest:full_hp"
             };
-            campfire_metadata_without_card(semantic_class, "rest")
+            campfire_metadata_without_card(equivalence_key, "rest")
         }
         CampfireChoice::Smith(idx) => {
             let Some(card) = session.run_state.master_deck.get(idx) else {
                 return campfire_metadata_without_card("smith:unknown", "upgrade_card");
             };
-            let upgraded = card.upgrades.saturating_add(1);
-            let profile = crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1(
-                &RewardCard::new(card.id, upgraded),
-            );
-            let class_key = super::reward_option_semantic_class(&profile);
-            let priority = crate::ai::campfire_policy_v1::campfire_smith_upgrade_priority_v1(
-                card,
-                &session.run_state,
-            );
-            let boss_strategy_tag =
-                crate::ai::campfire_policy_v1::campfire_smith_upgrade_strategy_tag_v1(
-                    card,
-                    &session.run_state,
-                );
             CampfireOptionMetadata {
                 card: Some(card.id),
                 upgrades: Some(card.upgrades),
                 effect_kind: "upgrade_card".to_string(),
-                semantic_class: boss_strategy_tag
-                    .map(|tag| format!("smith:{tag}"))
-                    .unwrap_or_else(|| format!("smith:{class_key}")),
                 equivalence_key: format!("smith:{}", super::card_stat_identity_key(card)),
-                priority,
-                boss_relevant: boss_strategy_tag.is_some(),
             }
         }
         CampfireChoice::Dig => campfire_metadata_without_card("dig", "dig"),
@@ -354,12 +155,9 @@ fn campfire_option_metadata(
                 card: card.map(|card| card.id),
                 upgrades: card.map(|card| card.upgrades),
                 effect_kind: "remove_card".to_string(),
-                semantic_class: "toke".to_string(),
                 equivalence_key: card
                     .map(|card| format!("toke:{}", super::card_stat_identity_key(card)))
                     .unwrap_or_else(|| "toke:unknown".to_string()),
-                priority: 200,
-                boss_relevant: false,
             }
         }
         CampfireChoice::Recall => campfire_metadata_without_card("recall", "recall"),
@@ -367,27 +165,45 @@ fn campfire_option_metadata(
 }
 
 fn campfire_metadata_without_card(
-    semantic_class: &str,
+    equivalence_key: &str,
     effect_kind: &str,
 ) -> CampfireOptionMetadata {
     CampfireOptionMetadata {
         card: None,
         upgrades: None,
         effect_kind: effect_kind.to_string(),
-        semantic_class: semantic_class.to_string(),
-        equivalence_key: semantic_class.to_string(),
-        priority: 0,
-        boss_relevant: false,
+        equivalence_key: equivalence_key.to_string(),
     }
 }
 
-fn campfire_option_priority(option: &CampfireBranchOption) -> i32 {
-    match option.semantic_class.as_str() {
-        "rest:wounded" => -10_000,
-        class if class.starts_with("smith:") => 1_000 - option.priority,
-        "dig" | "lift" | "toke" => 2_000 - option.priority,
-        "rest:full_hp" => 3_000,
-        "recall" => 4_000,
-        _ => 5_000,
+fn campfire_option_command(choice: CampfireChoice) -> String {
+    match choice {
+        CampfireChoice::Rest => "rest".to_string(),
+        CampfireChoice::Smith(idx) => format!("smith {idx}"),
+        CampfireChoice::Dig => "dig".to_string(),
+        CampfireChoice::Lift => "lift".to_string(),
+        CampfireChoice::Toke(idx) => format!("toke {idx}"),
+        CampfireChoice::Recall => "recall".to_string(),
+    }
+}
+
+fn campfire_option_label(session: &RunControlSession, choice: CampfireChoice) -> Option<String> {
+    match choice {
+        CampfireChoice::Rest => Some("Rest".to_string()),
+        CampfireChoice::Smith(idx) => session.run_state.master_deck.get(idx).map(|card| {
+            format!(
+                "Smith {}",
+                crate::content::cards::get_card_definition(card.id).name
+            )
+        }),
+        CampfireChoice::Dig => Some("Dig".to_string()),
+        CampfireChoice::Lift => Some("Lift".to_string()),
+        CampfireChoice::Toke(idx) => session.run_state.master_deck.get(idx).map(|card| {
+            format!(
+                "Toke {}",
+                crate::content::cards::get_card_definition(card.id).name
+            )
+        }),
+        CampfireChoice::Recall => Some("Recall ruby key".to_string()),
     }
 }

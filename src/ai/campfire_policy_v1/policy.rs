@@ -128,6 +128,9 @@ pub fn plan_campfire_decision_v1(
             confidence: 0.0,
             reasons: vec!["campfire compiler found no executable plan".to_string()],
             execute_autopilot: true,
+            branch_active: false,
+            representative_count: 1,
+            suppressed_count: 0,
         });
 
     CampfireDecisionV1 {
@@ -182,10 +185,13 @@ fn campfire_candidate_plan(
         } else {
             CampfirePlanRoleV1::InspectOnly
         },
-        score_hint: candidate.upgrade_priority.unwrap_or_default(),
+        score_hint: campfire_candidate_score_hint(context, candidate),
         confidence,
         reasons,
         execute_autopilot: approved,
+        branch_active: candidate.deck_mutation_branch_allowed.unwrap_or(true),
+        representative_count: candidate.representative_count,
+        suppressed_count: candidate.suppressed_count,
     }
 }
 
@@ -209,6 +215,9 @@ fn stop_candidate_plan(
         confidence: 0.0,
         reasons: vec![reason],
         execute_autopilot: legacy_selected,
+        branch_active: false,
+        representative_count: 1,
+        suppressed_count: 0,
     }
 }
 
@@ -239,6 +248,29 @@ fn action_confidence_and_reason(action: &CampfirePolicyActionV1) -> (f32, Vec<St
             confidence, reason, ..
         } => (*confidence, vec![reason.clone()]),
         CampfirePolicyActionV1::Stop { reason } => (0.0, vec![reason.clone()]),
+    }
+}
+
+fn campfire_candidate_score_hint(
+    context: &CampfireDecisionContextV1,
+    candidate: &CampfireCandidateEvidenceV1,
+) -> i32 {
+    match candidate.choice {
+        CampfireChoice::Rest => {
+            let missing_hp = context.max_hp.saturating_sub(context.current_hp).max(0);
+            if missing_hp == 0 || context.max_hp <= 0 {
+                0
+            } else if context.current_hp.saturating_mul(2) < context.max_hp {
+                10_000 + missing_hp
+            } else {
+                missing_hp.saturating_mul(1_000) / context.max_hp
+            }
+        }
+        CampfireChoice::Smith(_) => candidate.upgrade_priority.unwrap_or_default(),
+        CampfireChoice::Dig
+        | CampfireChoice::Lift
+        | CampfireChoice::Toke(_)
+        | CampfireChoice::Recall => 0,
     }
 }
 
@@ -273,6 +305,20 @@ fn candidate_evidence(
         .deck_mutation_plan
         .as_ref()
         .map(|plan| plan.allowed_consumers.execute_autopilot);
+    let deck_mutation_branch_allowed = expanded
+        .deck_mutation_plan
+        .as_ref()
+        .map(|plan| plan.allowed_consumers.branch_active);
+    let representative_count = expanded
+        .deck_mutation_plan
+        .as_ref()
+        .map(|plan| plan.representative_count)
+        .unwrap_or(1);
+    let suppressed_count = expanded
+        .deck_mutation_plan
+        .as_ref()
+        .map(|plan| plan.suppressed_count)
+        .unwrap_or(0);
     let mut evidence = vec![format!("campfire choice is {choice:?}")];
     let mut risks = Vec::new();
     let upgrade_priority = match choice {
@@ -337,6 +383,9 @@ fn candidate_evidence(
         class,
         upgrade_priority,
         deck_mutation_execute_allowed,
+        deck_mutation_branch_allowed,
+        representative_count,
+        suppressed_count,
         support_gate,
         evidence,
         risks,

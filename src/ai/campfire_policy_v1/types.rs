@@ -26,6 +26,9 @@ pub struct CampfireCandidateEvidenceV1 {
     pub class: CampfirePolicyClassV1,
     pub upgrade_priority: Option<i32>,
     pub deck_mutation_execute_allowed: Option<bool>,
+    pub deck_mutation_branch_allowed: Option<bool>,
+    pub representative_count: usize,
+    pub suppressed_count: usize,
     pub support_gate: StrategyPlanSupportV1,
     pub evidence: Vec<String>,
     pub risks: Vec<String>,
@@ -82,6 +85,9 @@ pub struct CampfirePlanCandidateV1 {
     pub confidence: f32,
     pub reasons: Vec<String>,
     pub execute_autopilot: bool,
+    pub branch_active: bool,
+    pub representative_count: usize,
+    pub suppressed_count: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -251,6 +257,12 @@ fn campfire_plan_evidence_item(candidate: &CampfirePlanCandidateV1) -> EvidenceI
                 "execute_autopilot",
                 candidate.execute_autopilot as u8 as f32,
             ),
+            ValueComponentV1::new("branch_active", candidate.branch_active as u8 as f32),
+            ValueComponentV1::new(
+                "representative_count",
+                candidate.representative_count as f32,
+            ),
+            ValueComponentV1::new("suppressed_count", candidate.suppressed_count as f32),
             ValueComponentV1::new("score_hint", candidate.score_hint as f32),
             ValueComponentV1::new("confidence", candidate.confidence),
         ],

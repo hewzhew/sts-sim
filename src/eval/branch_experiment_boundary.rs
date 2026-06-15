@@ -15,11 +15,13 @@ mod shop;
 
 use boss_relic::{boss_relic_branch_options, BossRelicBranchOption};
 use campfire::{campfire_branch_options, select_campfire_branch_options, CampfireBranchOption};
+#[cfg(test)]
+use card_reward::reward_option_semantic_class;
 pub(crate) use card_reward::{
     active_or_visible_reward_cards, card_offer_labels, CardRewardPortfolioContext,
 };
 use card_reward::{
-    card_reward_branch_options, card_reward_decline_branch_options, reward_option_semantic_class,
+    card_reward_branch_options, card_reward_decline_branch_options,
     select_card_reward_branch_options_for_session, CardRewardBranchOption,
 };
 use event::{event_branch_options, EventBranchOption};
