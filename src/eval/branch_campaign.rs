@@ -43,8 +43,8 @@ const COMBAT_RETRY_NODE_MULTIPLIER: usize = 4;
 const COMBAT_RETRY_WALL_MULTIPLIER: u64 = 4;
 const COMBAT_RETRY_MIN_NODES: usize = 200_000;
 const COMBAT_RETRY_MAX_NODES: usize = 500_000;
-const COMBAT_RETRY_MIN_WALL_MS: u64 = 5_000;
-const COMBAT_RETRY_MAX_WALL_MS: u64 = 5_000;
+const COMBAT_RETRY_MIN_WALL_MS: u64 = 1_000;
+const COMBAT_RETRY_MAX_WALL_MS: u64 = 1_000;
 const UNSPENT_GOLD_PRESSURE_THRESHOLD: i32 = 300;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2379,15 +2379,14 @@ fn campaign_parent_should_retry_combat_budget_now_v1(
     matches!(
         config.combat_retry_policy,
         BranchCampaignCombatRetryPolicyV1::Immediate
-    ) || branch_report_is_final_boss_combat_retry_candidate_v1(branches)
+    ) || branch_report_is_act_boss_gate_combat_retry_candidate_v1(branches)
 }
 
-fn branch_report_is_final_boss_combat_retry_candidate_v1(
+fn branch_report_is_act_boss_gate_combat_retry_candidate_v1(
     branches: &[BranchExperimentBranchReportV1],
 ) -> bool {
     branches.iter().any(|branch| {
         normalized_campaign_boundary_title(&branch.summary.boundary_title) == "combat"
-            && branch.summary.act >= 3
             && branch.summary.floor >= act_boss_floor_v1(branch.summary.act)
     })
 }

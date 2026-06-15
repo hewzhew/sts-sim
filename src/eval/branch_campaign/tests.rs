@@ -1447,7 +1447,7 @@ fn campaign_retry_budget_raises_combat_search_without_restoring_hp_gate() {
     let retry = combat_retry_campaign_config_v1(&config).expect("retry config");
 
     assert_eq!(retry.search_max_nodes, Some(200_000));
-    assert_eq!(retry.search_wall_ms, Some(5_000));
+    assert_eq!(retry.search_wall_ms, Some(1_000));
     assert_eq!(
         retry.search_max_hp_loss,
         Some(RunControlHpLossLimit::Unlimited)
@@ -1505,7 +1505,7 @@ fn campaign_default_retry_policy_does_not_retry_each_parent_immediately() {
         Vec::new(),
         BranchExperimentBranchStatusV1::Pruned,
         "Combat",
-        16,
+        10,
         70,
     );
 
@@ -1520,19 +1520,45 @@ fn campaign_default_retry_policy_does_not_retry_each_parent_immediately() {
 }
 
 #[test]
-fn campaign_default_retry_policy_retries_final_boss_combat_parent_immediately() {
+fn campaign_default_retry_policy_retries_act_boss_gate_combat_parent_immediately() {
     let config = BranchCampaignConfigV1::default();
+    let abandoned_act1_boss = test_report_branch_at(
+        "a1",
+        Vec::new(),
+        BranchExperimentBranchStatusV1::Pruned,
+        "Combat",
+        16,
+        80,
+    );
+    let mut abandoned_act2_boss = test_report_branch_at(
+        "a2",
+        Vec::new(),
+        BranchExperimentBranchStatusV1::Pruned,
+        "Combat",
+        32,
+        80,
+    );
     let mut abandoned_final_boss = test_report_branch_at(
-        "a",
+        "a3",
         Vec::new(),
         BranchExperimentBranchStatusV1::Pruned,
         "Combat",
         48,
         80,
     );
+    abandoned_act2_boss.summary.act = 2;
+    abandoned_act2_boss.frontier.act = 2;
     abandoned_final_boss.summary.act = 3;
     abandoned_final_boss.frontier.act = 3;
 
+    assert!(campaign_parent_should_retry_combat_budget_now_v1(
+        &config,
+        &[abandoned_act1_boss]
+    ));
+    assert!(campaign_parent_should_retry_combat_budget_now_v1(
+        &config,
+        &[abandoned_act2_boss]
+    ));
     assert!(campaign_parent_should_retry_combat_budget_now_v1(
         &config,
         &[abandoned_final_boss]
