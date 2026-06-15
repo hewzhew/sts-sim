@@ -6,12 +6,12 @@ use super::types::{
     CampfirePolicyConfigV1,
 };
 
-pub(crate) fn candidate_approved_action(
+pub(crate) fn candidate_autopilot_action(
     context: &CampfireDecisionContextV1,
     config: &CampfirePolicyConfigV1,
     candidate: &CampfireCandidateEvidenceV1,
 ) -> Option<CampfirePolicyActionV1> {
-    if rest_is_approved(context, config) {
+    if rest_is_autopilot_allowed(context, config) {
         return matches!(candidate.choice, CampfireChoice::Rest).then(|| {
             CampfirePolicyActionV1::Rest {
                 confidence: 0.86,
@@ -21,8 +21,8 @@ pub(crate) fn candidate_approved_action(
         });
     }
 
-    smith_approval_window(context, config).and_then(|window| {
-        approved_smith_candidate(context, candidate, window.threshold).map(
+    smith_autopilot_window(context, config).and_then(|window| {
+        autopilot_smith_candidate(context, candidate, window.threshold).map(
             |(deck_index, priority)| CampfirePolicyActionV1::Smith {
                 deck_index,
                 confidence: window.confidence,
@@ -36,13 +36,16 @@ pub(crate) fn candidate_approved_action(
 }
 
 #[derive(Clone, Copy)]
-struct SmithApprovalWindow {
+struct SmithAutopilotWindow {
     threshold: i32,
     confidence: f32,
     reason_prefix: &'static str,
 }
 
-fn rest_is_approved(context: &CampfireDecisionContextV1, config: &CampfirePolicyConfigV1) -> bool {
+fn rest_is_autopilot_allowed(
+    context: &CampfireDecisionContextV1,
+    config: &CampfirePolicyConfigV1,
+) -> bool {
     config.allow_rest_under_recovery_pressure
         && context.current_hp < context.max_hp
         && context
@@ -55,10 +58,10 @@ fn rest_is_approved(context: &CampfireDecisionContextV1, config: &CampfirePolicy
             == StrategyPlanSupportV1::Strong
 }
 
-fn smith_approval_window(
+fn smith_autopilot_window(
     context: &CampfireDecisionContextV1,
     config: &CampfirePolicyConfigV1,
-) -> Option<SmithApprovalWindow> {
+) -> Option<SmithAutopilotWindow> {
     if config.allow_combat_patch_smith_when_safe
         && hp_percent_at_least(context, config.combat_patch_smith_min_hp_percent)
         && matches!(
@@ -68,13 +71,13 @@ fn smith_approval_window(
             StrategyPlanSupportV1::Strong | StrategyPlanSupportV1::Plausible
         )
     {
-        Some(SmithApprovalWindow {
+        Some(SmithAutopilotWindow {
             threshold: config.combat_patch_smith_priority_threshold,
             confidence: 0.70,
             reason_prefix: "CombatPatchWindow active",
         })
     } else if config.allow_clear_core_smith_when_healthy && context.current_hp >= context.max_hp {
-        Some(SmithApprovalWindow {
+        Some(SmithAutopilotWindow {
             threshold: config.clear_core_smith_priority_threshold,
             confidence: 0.72,
             reason_prefix: "HP is full",
@@ -84,7 +87,7 @@ fn smith_approval_window(
     }
 }
 
-fn approved_smith_candidate(
+fn autopilot_smith_candidate(
     context: &CampfireDecisionContextV1,
     candidate: &CampfireCandidateEvidenceV1,
     threshold: i32,

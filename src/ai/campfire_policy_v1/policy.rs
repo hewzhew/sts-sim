@@ -10,7 +10,7 @@ use crate::state::core::{
 };
 use crate::state::run::RunState;
 
-use super::approvals::candidate_approved_action;
+use super::evaluator::candidate_autopilot_action;
 use super::types::{
     candidate_id, CampfireCandidateEvidenceV1, CampfireDecisionContextV1, CampfireDecisionV1,
     CampfirePlanCandidateV1, CampfirePlanRoleV1, CampfirePolicyActionV1, CampfirePolicyClassV1,
@@ -159,10 +159,10 @@ fn campfire_candidate_plan(
     candidate: &CampfireCandidateEvidenceV1,
 ) -> CampfirePlanCandidateV1 {
     let candidate_action = action_for_candidate(candidate);
-    let approved_action = candidate_approved_action(context, config, candidate);
-    let approved = approved_action.is_some();
-    let action = approved_action.unwrap_or(candidate_action);
-    let (confidence, reasons) = if approved {
+    let autopilot_action = candidate_autopilot_action(context, config, candidate);
+    let autopilot_allowed = autopilot_action.is_some();
+    let action = autopilot_action.unwrap_or(candidate_action);
+    let (confidence, reasons) = if autopilot_allowed {
         action_confidence_and_reason(&action)
     } else {
         (
@@ -180,7 +180,7 @@ fn campfire_candidate_plan(
         plan_id: candidate.candidate_id.clone(),
         choice: Some(candidate.choice),
         action,
-        role: if approved {
+        role: if autopilot_allowed {
             CampfirePlanRoleV1::PolicyPreferred
         } else {
             CampfirePlanRoleV1::InspectOnly
@@ -188,7 +188,7 @@ fn campfire_candidate_plan(
         score_hint: campfire_candidate_score_hint(context, candidate),
         confidence,
         reasons,
-        execute_autopilot: approved,
+        execute_autopilot: autopilot_allowed,
         branch_active: candidate.deck_mutation_branch_allowed.unwrap_or(true),
         representative_count: candidate.representative_count,
         suppressed_count: candidate.suppressed_count,
