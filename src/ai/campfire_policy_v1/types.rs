@@ -115,7 +115,7 @@ pub enum CampfirePolicyActionV1 {
 
 impl CampfireDecisionV1 {
     pub fn to_noncombat_decision_record_v1(&self) -> NonCombatDecisionRecordV1 {
-        let selected_candidate_id = match self.action {
+        let selected_candidate_id = match self.selected_plan.action {
             CampfirePolicyActionV1::Rest { .. } => Some(candidate_id(CampfireChoice::Rest)),
             CampfirePolicyActionV1::Smith { deck_index, .. } => {
                 Some(candidate_id(CampfireChoice::Smith(deck_index)))
@@ -155,7 +155,7 @@ impl CampfireDecisionV1 {
                 warnings: Vec::new(),
             },
             values: Vec::new(),
-            selection: match &self.action {
+            selection: match &self.selected_plan.action {
                 CampfirePolicyActionV1::Rest { confidence, reason } => PolicySelectionV1 {
                     status: PolicySelectionStatusV1::Selected,
                     selected_candidate_id,

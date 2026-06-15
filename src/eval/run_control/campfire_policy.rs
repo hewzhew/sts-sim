@@ -18,7 +18,7 @@ pub(super) fn apply_campfire_policy_action(
         &crate::ai::campfire_policy_v1::CampfirePolicyConfigV1::default(),
     );
     let noncombat_record = decision.to_noncombat_decision_record_v1();
-    let (choice, verb, confidence, reason) = match decision.action {
+    let (choice, verb, confidence, reason) = match decision.selected_plan.action.clone() {
         crate::ai::campfire_policy_v1::CampfirePolicyActionV1::Rest { confidence, reason } => {
             (CampfireChoice::Rest, "rest", confidence, reason)
         }
