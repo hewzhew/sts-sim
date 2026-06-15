@@ -875,7 +875,7 @@ fn apply_branch_retention(
             .cmp(&retention_report_slot_priority(retention_report_slot(
                 right.retention.selected_by_slot,
             )))
-            .then_with(|| branch_effective_rank_key(right).cmp(&branch_effective_rank_key(left)))
+            .then_with(|| applied_retention_rank_key(right).cmp(&applied_retention_rank_key(left)))
             .then_with(|| left.id.cmp(&right.id))
     });
 
@@ -924,6 +924,15 @@ fn branch_retention_candidate_input(
 fn branch_effective_rank_key(branch: &BranchWork) -> i32 {
     let candidate = branch_retention_candidate_input(0, branch);
     branch_retention_order_rank_key_v1(&candidate)
+}
+
+fn applied_retention_rank_key(branch: &BranchWork) -> i32 {
+    let adjustment = &branch.retention.rank_adjustment;
+    if adjustment.base_rank_key != 0 || adjustment.effective_rank_key != 0 {
+        adjustment.effective_rank_key
+    } else {
+        branch_effective_rank_key(branch)
+    }
 }
 
 fn pruned_first_pick_counts_for_selection(
