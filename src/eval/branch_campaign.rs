@@ -3354,7 +3354,6 @@ fn try_recover_auto_advanceable_stuck_branch_v1(
         RunControlAutoStepOptions {
             max_operations: Some(1),
             route: RunControlRouteAutomationMode::Planner,
-            allow_route_reject_unless_forced: true,
             ..Default::default()
         },
     )

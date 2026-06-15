@@ -196,7 +196,6 @@ fn run_control_parser_accepts_auto_step_options() {
             },
             max_operations: Some(9),
             route: RunControlRouteAutomationMode::Manual,
-            allow_route_reject_unless_forced: false,
         })
     );
     assert_eq!(
@@ -206,7 +205,6 @@ fn run_control_parser_accepts_auto_step_options() {
             search: RunControlSearchCombatOptions::default(),
             max_operations: Some(9),
             route: RunControlRouteAutomationMode::Planner,
-            allow_route_reject_unless_forced: false,
         })
     );
     assert_eq!(
@@ -218,7 +216,6 @@ fn run_control_parser_accepts_auto_step_options() {
             },
             max_operations: Some(9),
             route: RunControlRouteAutomationMode::Planner,
-            allow_route_reject_unless_forced: false,
         })
     );
     assert!(
@@ -273,7 +270,6 @@ fn run_control_parser_accepts_auto_run_options() {
             },
             max_operations: Some(33),
             route: RunControlRouteAutomationMode::Planner,
-            allow_route_reject_unless_forced: false,
         })
     );
     assert_eq!(

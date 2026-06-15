@@ -161,7 +161,6 @@ fn run_seed_inner(args: &Args, seed: u64) -> Result<AutoRunBatchRowV1, String> {
             search: RunControlSearchCombatOptions::default(),
             max_operations: Some(args.max_operations),
             route: Default::default(),
-            allow_route_reject_unless_forced: false,
         },
     ))?;
     let reason = extract_stop_reason(&outcome.message)

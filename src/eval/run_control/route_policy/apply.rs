@@ -2,7 +2,6 @@ use crate::ai::route_planner_v1::{RouteCandidateTraceV1, RouteMoveKindV1, RouteS
 use crate::state::core::ClientInput;
 
 use super::super::session::{RunControlCommandOutcome, RunControlSession};
-use super::super::view_model::{build_run_control_view_model, CandidateAction};
 use super::format::{render_route_go_auto_step_summary, render_route_go_selection};
 use super::planner::plan_route_for_session;
 use super::suggestion::render_route_suggestion;
@@ -22,19 +21,6 @@ pub(in crate::eval::run_control) fn apply_route_go(
 pub(in crate::eval::run_control) fn apply_route_go_with_summary(
     session: &mut RunControlSession,
 ) -> Result<RouteGoApplied, String> {
-    apply_route_go_with_summary_options(session, false)
-}
-
-pub(in crate::eval::run_control) fn apply_route_go_with_summary_allowing_reject_unless_forced(
-    session: &mut RunControlSession,
-) -> Result<RouteGoApplied, String> {
-    apply_route_go_with_summary_options(session, true)
-}
-
-fn apply_route_go_with_summary_options(
-    session: &mut RunControlSession,
-    allow_reject_unless_forced: bool,
-) -> Result<RouteGoApplied, String> {
     if !session.engine_state.is_map_surface() {
         return Err(format!(
             "route-go is only valid on Map. Use `rs` for read-only route evidence from this screen.\n{}",
@@ -44,9 +30,6 @@ fn apply_route_go_with_summary_options(
 
     let trace = plan_route_for_session(session);
     let Some(selected_index) = trace.selected_index else {
-        if allow_reject_unless_forced {
-            return apply_visible_map_surface_fallback(session);
-        }
         return Err("route planner found no legal map target".to_string());
     };
     let candidate = trace
@@ -54,9 +37,7 @@ fn apply_route_go_with_summary_options(
         .get(selected_index)
         .cloned()
         .ok_or_else(|| "route planner selected an out-of-range map target".to_string())?;
-    if candidate.safety == RouteSafetyFlagV1::RejectUnlessNoAlternative
-        && !allow_reject_unless_forced
-    {
+    if candidate.safety == RouteSafetyFlagV1::RejectUnlessNoAlternative {
         return Err(format!(
             "route planner selected only reject-unless-forced routes; inspect with `rs` and choose manually with `go <x>` or `fly <x> <y>`.\n{}",
             render_route_go_selection(&candidate)
@@ -75,53 +56,6 @@ fn apply_route_go_with_summary_options(
             ..outcome
         }
         .with_trace_annotations(vec![trace_annotation]),
-    })
-}
-
-fn apply_visible_map_surface_fallback(
-    session: &mut RunControlSession,
-) -> Result<RouteGoApplied, String> {
-    let view = build_run_control_view_model(session);
-    let Some(candidate) = view.candidates.iter().find(|candidate| {
-        matches!(
-            candidate.action,
-            CandidateAction::Input(ClientInput::SelectMapNode(_))
-                | CandidateAction::Input(ClientInput::FlyToNode(_, _))
-        )
-    }) else {
-        return Err("route planner found no legal map target".to_string());
-    };
-    let Some(input) = candidate.action.executable_input() else {
-        return Err("route planner fallback selected a non-executable map candidate".to_string());
-    };
-    let summary = match &input {
-        ClientInput::SelectMapNode(x) => {
-            format!(
-                "route planner fallback: visible map path x={} {} label_role=behavior_policy_not_teacher",
-                x, candidate.label
-            )
-        }
-        ClientInput::FlyToNode(x, y) => {
-            format!(
-                "route planner fallback: visible Wing Boots path x={} y={} {} label_role=behavior_policy_not_teacher",
-                x, y, candidate.label
-            )
-        }
-        _ => "route planner fallback: visible map action label_role=behavior_policy_not_teacher"
-            .to_string(),
-    };
-    let selection = format!(
-        "Route planner fallback selected:\n  {} | command={}\n  label_role: behavior_policy_not_teacher",
-        candidate.label,
-        candidate.action.command_hint()
-    );
-    let outcome = session.apply_input(input)?;
-    Ok(RouteGoApplied {
-        auto_step_summary: summary,
-        outcome: RunControlCommandOutcome {
-            message: format!("{selection}\n{}", outcome.message),
-            ..outcome
-        },
     })
 }
 
