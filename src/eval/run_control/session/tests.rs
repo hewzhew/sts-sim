@@ -767,7 +767,7 @@ fn run_control_auto_run_uses_recovery_route_package_to_rest_at_low_hp_campfire()
     assert_eq!(record.provenance.source_schema_name, "CampfireDecisionV1");
     assert_eq!(
         record.selection.selection_mode,
-        "campfire_candidate_approval_v1"
+        "campfire_autopilot_plan_v1"
     );
     assert!(record
         .evidence

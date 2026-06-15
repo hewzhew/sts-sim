@@ -3430,7 +3430,7 @@ fn campaign_branch_quality_key_v1(branch: &BranchCampaignBranchV1) -> String {
     let needs = sorted_string_key_v1(&summary.formation_needs);
     let trajectory = if summary.trajectory_key.trim().is_empty() {
         format!(
-            "legacy_choices={}",
+            "recorded_choices={}",
             render_choice_path(&branch.choice_labels)
         )
     } else {

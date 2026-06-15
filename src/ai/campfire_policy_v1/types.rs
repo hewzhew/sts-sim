@@ -161,7 +161,7 @@ impl CampfireDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "campfire_candidate_approval_v1".to_string(),
+                    selection_mode: "campfire_autopilot_plan_v1".to_string(),
                 },
                 CampfirePolicyActionV1::Smith {
                     confidence, reason, ..
@@ -170,7 +170,7 @@ impl CampfireDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "campfire_candidate_approval_v1".to_string(),
+                    selection_mode: "campfire_autopilot_plan_v1".to_string(),
                 },
                 CampfirePolicyActionV1::Stop { reason } => PolicySelectionV1 {
                     status: PolicySelectionStatusV1::Stopped,

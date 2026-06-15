@@ -372,7 +372,7 @@ fn candidate_evidence(
             risks.push("ruby key timing is a high-level route objective".to_string());
         }
         CampfirePolicyClassV1::Unknown => {
-            risks.push("campfire policy has no safe approval for this option".to_string());
+            risks.push("campfire policy did not select this option for autopilot".to_string());
         }
     }
 
