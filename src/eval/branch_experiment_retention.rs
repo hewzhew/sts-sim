@@ -653,7 +653,7 @@ fn preserve_late_clean_branch(
             .iter()
             .enumerate()
             .filter(|(_, pick)| pick.selected_by_slot != BranchRetentionSlotV1::CleanDeck)
-            .min_by_key(|(_, pick)| candidates[pick.position].rank_key)
+            .min_by(|(_, left), (_, right)| compare_rank(candidates, left.position, right.position))
             .map(|(index, _)| index)
         {
             kept.remove(remove_index);

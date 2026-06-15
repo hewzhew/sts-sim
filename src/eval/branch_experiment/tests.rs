@@ -699,7 +699,7 @@ fn branch_experiment_retention_preserves_card_reward_skip_effect() {
 }
 
 #[test]
-fn branch_experiment_retention_preserves_singing_bowl_effect() {
+fn branch_experiment_retention_uses_singing_bowl_as_decline_effect() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.relics.push(RelicState::new(
         crate::content::relics::RelicId::SingingBowl,
@@ -732,7 +732,7 @@ fn branch_experiment_retention_preserves_singing_bowl_effect() {
             .iter()
             .any(|choice| choice.effect_kind == "singing_bowl")
     }));
-    assert!(report.branches.iter().any(|branch| {
+    assert!(!report.branches.iter().any(|branch| {
         branch
             .choices
             .iter()
