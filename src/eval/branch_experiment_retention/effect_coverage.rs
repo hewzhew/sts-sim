@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    best_fill_position_allowed, compare_rank, BranchRetentionCandidateInputV1,
-    BranchRetentionLanePick, BranchRetentionSlotV1,
+    best_fill_position_allowed, candidate_has_slot_blocking_strategic_liability, compare_rank,
+    BranchRetentionCandidateInputV1, BranchRetentionLanePick, BranchRetentionSlotV1,
 };
 
 pub(super) fn preserve_choice_effect_coverage(
@@ -146,6 +146,7 @@ where
 {
     best_fill_position_allowed(candidates, available_positions, selected, |position| {
         candidate_has_string_key(&candidates[position], key, &keys_for_candidate)
+            && !candidate_has_slot_blocking_strategic_liability(&candidates[position])
     })
 }
 

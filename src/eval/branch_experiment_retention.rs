@@ -791,7 +791,7 @@ fn best_position_for_slot(
         })
 }
 
-fn candidate_has_slot_blocking_strategic_liability(
+pub(super) fn candidate_has_slot_blocking_strategic_liability(
     candidate: &BranchRetentionCandidateInputV1,
 ) -> bool {
     let adjustment = legacy_branch_retention_strategy_adjustment_v1(candidate);
@@ -803,7 +803,14 @@ fn best_fill_position(
     positions: &[usize],
     selected: &BTreeSet<usize>,
 ) -> Option<usize> {
-    best_fill_position_allowed(candidates, positions, selected, |_| true)
+    best_fill_position_allowed(candidates, positions, selected, |position| {
+        !candidate_has_slot_blocking_strategic_liability(&candidates[position])
+    })
+    .or_else(|| {
+        selected
+            .is_empty()
+            .then(|| best_fill_position_allowed(candidates, positions, selected, |_| true))?
+    })
 }
 
 fn best_fill_position_allowed<F>(
