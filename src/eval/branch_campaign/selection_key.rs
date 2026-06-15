@@ -3,7 +3,12 @@ use std::cmp::Ordering;
 use super::{branch_progress_key, BranchCampaignBranchV1};
 
 type BranchCampaignBossCheckpointSortKeyV1 = (u8, i32, i32, i32);
-type BranchCampaignActiveSortKeyV1 = (BranchCampaignBossCheckpointSortKeyV1, i32, (u8, i32, i32));
+type BranchCampaignActiveSortKeyV1 = (
+    BranchCampaignBossCheckpointSortKeyV1,
+    i32,
+    (u8, i32, i32),
+    i32,
+);
 type BranchCampaignPromotionSortKeyV1 = ((u8, i32, i32), i32);
 type BranchCampaignRetentionKeyV1 = (u8, i32, i32, i32);
 
@@ -59,8 +64,9 @@ fn campaign_branch_active_sort_key_v1(
 ) -> BranchCampaignActiveSortKeyV1 {
     (
         campaign_branch_boss_checkpoint_sort_key_v1(branch),
-        campaign_branch_selection_rank_key_v1(branch),
+        campaign_branch_primary_eligible_key_v1(branch),
         branch_progress_key(branch),
+        campaign_branch_selection_rank_key_v1(branch),
     )
 }
 
@@ -75,6 +81,10 @@ fn campaign_branch_promotion_sort_key_v1(
 
 fn campaign_branch_selection_rank_key_v1(branch: &BranchCampaignBranchV1) -> i32 {
     branch.rank_key
+}
+
+fn campaign_branch_primary_eligible_key_v1(branch: &BranchCampaignBranchV1) -> i32 {
+    i32::from(branch.rank_key >= 0)
 }
 
 fn campaign_branch_boss_checkpoint_sort_key_v1(

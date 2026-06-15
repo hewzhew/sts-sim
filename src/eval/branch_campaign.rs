@@ -2967,6 +2967,23 @@ fn rebalance_active_with_stronger_frozen_v1(
     frozen: &mut Vec<BranchCampaignBranchV1>,
     max_active: usize,
 ) -> usize {
+    let mut total = 0usize;
+    let max_iterations = active.len().saturating_add(frozen.len()).saturating_add(1);
+    for _ in 0..max_iterations {
+        let promoted = rebalance_active_with_stronger_frozen_once_v1(active, frozen, max_active);
+        if promoted == 0 {
+            break;
+        }
+        total = total.saturating_add(promoted);
+    }
+    total
+}
+
+fn rebalance_active_with_stronger_frozen_once_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+    max_active: usize,
+) -> usize {
     if max_active == 0 || frozen.is_empty() {
         return 0;
     }

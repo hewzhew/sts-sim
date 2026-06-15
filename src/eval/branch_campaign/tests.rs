@@ -681,9 +681,15 @@ fn campaign_selection_freezes_active_overflow() {
 
     assert_eq!(selected.active.len(), 2);
     assert_eq!(selected.frozen.len(), 1);
-    assert_eq!(selected.active[0].branch_id, "a");
-    assert_eq!(selected.active[1].branch_id, "b");
-    assert_eq!(selected.frozen[0].branch_id, "c");
+    assert_eq!(
+        selected
+            .active
+            .iter()
+            .map(|branch| branch.branch_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["c", "b"]
+    );
+    assert_eq!(selected.frozen[0].branch_id, "a");
 }
 
 #[test]
@@ -718,6 +724,24 @@ fn campaign_selection_keeps_best_negative_rank_active_when_no_primary_exists() {
     assert_eq!(selected.active[0].branch_id, "rejected-a");
     assert_eq!(selected.frozen.len(), 1);
     assert_eq!(selected.frozen[0].branch_id, "rejected-b");
+}
+
+#[test]
+fn campaign_selection_prefers_primary_rank_over_deeper_negative_branch() {
+    let mut positive = test_campaign_branch("positive-shop", 35, 82);
+    positive.summary.as_mut().unwrap().act = 3;
+    positive.frontier_title = "Shop".to_string();
+    positive.rank_key = 34_300;
+
+    let mut negative = test_campaign_branch("negative-combat", 37, 69);
+    negative.summary.as_mut().unwrap().act = 3;
+    negative.frontier_title = "Combat".to_string();
+    negative.rank_key = -800_000;
+
+    let selected = select_campaign_branches_v1(vec![negative, positive], 1, 4);
+
+    assert_eq!(selected.active[0].branch_id, "positive-shop");
+    assert_eq!(selected.frozen[0].branch_id, "negative-combat");
 }
 
 #[test]
@@ -809,6 +833,23 @@ fn campaign_selection_does_not_use_strategy_summary_to_beat_raw_rank_gap() {
         selected.active[0].branch_id, "plain-short-term",
         "strategic summary is diagnostic/tie-break evidence, not a hidden rank adjustment"
     );
+}
+
+#[test]
+fn campaign_selection_prioritizes_progress_over_small_rank_gap() {
+    let mut later_shop = test_campaign_branch("later-shop", 35, 82);
+    later_shop.summary.as_mut().unwrap().act = 3;
+    later_shop.frontier_title = "Shop".to_string();
+    later_shop.rank_key = 34_368;
+
+    let mut earlier_reward = test_campaign_branch("earlier-reward", 33, 81);
+    earlier_reward.summary.as_mut().unwrap().act = 3;
+    earlier_reward.frontier_title = "Reward Screen".to_string();
+    earlier_reward.rank_key = 34_408;
+
+    let selected = select_campaign_branches_v1(vec![earlier_reward, later_shop], 1, 4);
+
+    assert_eq!(selected.active[0].branch_id, "later-shop");
 }
 
 #[test]
@@ -912,13 +953,14 @@ fn campaign_selection_keeps_progress_anchor_when_local_shop_variants_dominate_ac
 
     let selected = select_campaign_branches_v1(vec![buy_flash, buy_heavy, campfire], 2, 4);
 
-    assert_eq!(
-        selected
-            .active
-            .iter()
-            .map(|branch| branch.branch_id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["shop-flash", "campfire-rest"],
+    let active_ids = selected
+        .active
+        .iter()
+        .map(|branch| branch.branch_id.as_str())
+        .collect::<Vec<_>>();
+    assert!(active_ids.contains(&"shop-flash"));
+    assert!(
+        active_ids.contains(&"campfire-rest"),
         "local shop purchase variants should not crowd out a clearly progressed branch"
     );
     assert_eq!(selected.frozen[0].branch_id, "shop-heavy");
@@ -1201,7 +1243,7 @@ fn campaign_rebalances_stronger_frozen_branch_into_active_pool() {
         branch.rank_key = 23_500;
     }
     let mut frozen = vec![{
-        let mut branch = test_campaign_branch("frozen-strength", 21, 73);
+        let mut branch = test_campaign_branch("frozen-strength", 23, 73);
         branch.status = BranchCampaignBranchStatusV1::Frozen;
         branch.rank_key = 25_500;
         branch
@@ -1223,6 +1265,42 @@ fn campaign_rebalances_stronger_frozen_branch_into_active_pool() {
     assert!(frozen
         .iter()
         .all(|branch| branch.status == BranchCampaignBranchStatusV1::Frozen));
+}
+
+#[test]
+fn campaign_rebalance_repeats_until_active_pool_is_stable() {
+    let mut active = vec![
+        test_campaign_branch("active-weak-a", 20, 60),
+        test_campaign_branch("active-weak-b", 20, 59),
+    ];
+    for branch in &mut active {
+        branch.status = BranchCampaignBranchStatusV1::Active;
+        branch.rank_key = 20_000;
+    }
+    let mut frozen = vec![
+        {
+            let mut branch = test_campaign_branch("frozen-strong-a", 21, 73);
+            branch.status = BranchCampaignBranchStatusV1::Frozen;
+            branch.rank_key = 25_500;
+            branch
+        },
+        {
+            let mut branch = test_campaign_branch("frozen-strong-b", 21, 72);
+            branch.status = BranchCampaignBranchStatusV1::Frozen;
+            branch.rank_key = 25_400;
+            branch
+        },
+    ];
+
+    let promoted = rebalance_active_with_stronger_frozen_v1(&mut active, &mut frozen, 2);
+
+    assert_eq!(promoted, 2);
+    let active_ids = active
+        .iter()
+        .map(|branch| branch.branch_id.as_str())
+        .collect::<Vec<_>>();
+    assert!(active_ids.contains(&"frozen-strong-a"));
+    assert!(active_ids.contains(&"frozen-strong-b"));
 }
 
 #[test]
