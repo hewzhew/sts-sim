@@ -97,7 +97,7 @@ fn evaluate_single_candidate_v1(
         ShopPolicyClassV1::Leave => ShopPlanEvaluationV1::stop("legacy shop leave candidate"),
         ShopPolicyClassV1::Unknown => ShopPlanEvaluationV1::block(
             candidate.purchase_priority,
-            "legacy evaluator does not approve unknown shop candidate",
+            "legacy evaluator does not mark unknown shop candidate executable",
         ),
     }
 }
@@ -112,7 +112,7 @@ fn evaluate_curse_purge_v1(
     if candidate.deck_index.is_none() || candidate.card.is_none() {
         return ShopPlanEvaluationV1::block(None, "curse purge candidate lacks deck/card identity");
     }
-    ShopPlanEvaluationV1::allow(400, 1000, 0.92, None, "legacy approval: curse cleanup")
+    ShopPlanEvaluationV1::allow(400, 1000, 0.92, None, "legacy evaluator: curse cleanup")
 }
 
 fn evaluate_purchase_v1(
@@ -164,7 +164,7 @@ fn evaluate_purchase_v1(
                 ),
             );
         }
-        return strategic_purchase_approval_v1(priority, target, strategic_decision);
+        return strategic_purchase_evaluation_v1(priority, target, strategic_decision);
     }
 
     let threshold = purchase_priority_threshold(target, config);
@@ -175,7 +175,7 @@ fn evaluate_purchase_v1(
             0.76,
             Some(priority),
             format!(
-                "legacy approval: high-impact shop purchase priority {priority} clears threshold {threshold}; strategic verdict allows purchase"
+                "legacy evaluator: high-impact shop purchase priority {priority} clears threshold {threshold}; strategic verdict allows purchase"
             ),
         );
     }
@@ -188,14 +188,14 @@ fn evaluate_purchase_v1(
             0.64,
             Some(priority),
             format!(
-                "legacy approval: shop conversion pressure selected affordable purchase priority {priority}; strategic verdict allows purchase"
+                "legacy evaluator: shop conversion pressure selected affordable purchase priority {priority}; strategic verdict allows purchase"
             ),
         );
     }
 
     ShopPlanEvaluationV1::block(
         Some(priority),
-        format!("purchase priority {priority} does not clear legacy shop approval gates"),
+        format!("purchase priority {priority} does not clear legacy shop evaluator gates"),
     )
 }
 
@@ -230,7 +230,7 @@ fn evaluate_starter_strike_purge_v1(
         700,
         0.74,
         None,
-        "legacy approval: CorePlanProtection Strong and no affordable purchase competes",
+        "legacy evaluator: CorePlanProtection Strong and no affordable purchase competes",
     )
 }
 
@@ -334,7 +334,7 @@ fn purchase_strategic_decision(
     strategic_trace.compiled_for_action(&action)
 }
 
-fn strategic_purchase_approval_v1(
+fn strategic_purchase_evaluation_v1(
     legacy_priority: i32,
     target: ShopPurchaseTargetV1,
     strategic_decision: &CompiledDecision,
@@ -362,7 +362,7 @@ fn strategic_purchase_approval_v1(
         confidence,
         Some(legacy_priority),
         format!(
-            "strategic approval: verdict={:?} score={:.2}; legacy priority {legacy_priority} retained as tie-breaker",
+            "strategic evaluation: verdict={:?} score={:.2}; legacy priority {legacy_priority} retained as tie-breaker",
             strategic_decision.verdict, strategic_decision.score
         ),
     )

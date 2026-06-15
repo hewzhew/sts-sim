@@ -175,7 +175,7 @@ fn campfire_policy_respects_deck_mutation_execute_gate_for_smith_targets() {
 
     assert!(
         matches!(decision.action, CampfirePolicyActionV1::Stop { .. }),
-        "campfire must not re-approve a smith target blocked by DeckMutationCompiler: {:?}",
+        "campfire must not re-enable a smith target blocked by DeckMutationCompiler: {:?}",
         decision.action
     );
 }

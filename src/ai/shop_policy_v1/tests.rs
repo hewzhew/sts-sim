@@ -135,7 +135,7 @@ fn shop_context_exposes_neutral_combat_shape_and_digest_evidence() {
             .risks
             .iter()
             .all(|risk| !risk.contains("combat_shape")),
-        "combat shape is neutral evidence, not a risk/approval shortcut"
+        "combat shape is neutral evidence, not a risk/evaluator shortcut"
     );
 }
 
@@ -233,7 +233,7 @@ fn shop_strategic_delta_maps_champ_execute_answer_through_component_report() {
 }
 
 #[test]
-fn compiled_shop_card_purchase_can_be_approved_by_strategic_verdict() {
+fn compiled_shop_card_purchase_can_be_allowed_by_strategic_verdict() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
     run_state.floor_num = 18;
@@ -251,7 +251,7 @@ fn compiled_shop_card_purchase_can_be_approved_by_strategic_verdict() {
     let context = build_shop_decision_context_v1(&run_state, &shop);
     assert!(
         !context.conversion_pressure,
-        "test requires no legacy conversion-pressure approval path"
+        "test requires no legacy conversion-pressure evaluator path"
     );
     let carnage = shop_card_candidate(&context, CardId::Carnage);
     assert_eq!(carnage.purchase_priority, Some(250));
@@ -299,8 +299,8 @@ fn compiled_shop_card_purchase_can_be_approved_by_strategic_verdict() {
             .evaluation
             .reasons
             .iter()
-            .any(|reason| reason.contains("strategic approval")),
-        "strategic approval should be the purchase reason, got {:?}",
+            .any(|reason| reason.contains("strategic evaluation")),
+        "strategic evaluation should be the purchase reason, got {:?}",
         carnage_plan.evaluation.reasons
     );
 }

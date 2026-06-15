@@ -335,7 +335,7 @@ fn candidate_evidence(
             DeckMutationPlanRoleV1::InspectOnly | DeckMutationPlanRoleV1::Blocked
         ) {
             risks.push(format!(
-                "deck mutation compiler did not approve this target for automatic execution: {:?}",
+                "deck mutation compiler did not allow this target for automatic execution: {:?}",
                 plan.role
             ));
         }

@@ -200,7 +200,7 @@ fn purge_candidate_evidence(
         DeckMutationPlanRoleV1::InspectOnly | DeckMutationPlanRoleV1::Blocked
     ) {
         risks.push(format!(
-            "deck mutation compiler did not approve this target for automatic execution: {:?}",
+            "deck mutation compiler did not allow this target for automatic execution: {:?}",
             plan.role
         ));
     }
@@ -230,7 +230,7 @@ fn purge_candidate_evidence(
             }
         }
         _ => {
-            risks.push("shop policy has no purge approval for this card".to_string());
+            risks.push("shop policy has no purge executor for this card".to_string());
         }
     }
 
