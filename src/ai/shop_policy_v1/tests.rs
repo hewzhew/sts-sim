@@ -5,8 +5,9 @@ use crate::ai::decision_tags_v1::{
 };
 use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, compile_shop_decision_v1, shop_card_conversion_priority_v1,
-    ShopCompileModeV1, ShopDecisionSourceV1, ShopPlanComponentKindV1, ShopPlanKindV1,
-    ShopPlanStepV1, ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    ShopCompileModeV1, ShopDecisionSourceV1, ShopPlanCandidateRoleV1, ShopPlanComponentKindV1,
+    ShopPlanKindV1, ShopPlanStepV1, ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1,
+    ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{CandidateAction, PressureKind, StrategicBossTax, StrategicJob};
 use crate::content::cards::CardId;
@@ -966,6 +967,55 @@ fn compiled_shop_branch_alternatives_are_evaluated_plan_candidates() {
             "branch alternatives should carry evaluator score"
         );
     }
+}
+
+#[test]
+fn compiled_shop_branch_alternatives_are_not_limited_to_legacy_portfolio() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Shockwave,
+        upgrades: 0,
+        price: 89,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Anchor,
+        price: 146,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.potions.push(ShopPotion {
+        potion_id: PotionId::FirePotion,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 8 },
+    );
+    let alternative_roles = compiled
+        .alternatives
+        .iter()
+        .filter_map(|plan| {
+            compiled
+                .candidate_plans
+                .iter()
+                .find(|candidate| candidate.plan.plan_id == plan.plan_id)
+                .map(|candidate| candidate.role)
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        alternative_roles.contains(&ShopPlanCandidateRoleV1::SingleAction),
+        "branch alternatives should come from the evaluated candidate pool, not only legacy portfolio candidates: {alternative_roles:?}"
+    );
 }
 
 #[test]

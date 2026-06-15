@@ -69,11 +69,25 @@ fn evaluated_branch_alternatives_v1(
     candidates: &[ShopPlanCandidateV1],
     max_plans: usize,
 ) -> Vec<ShopPlanV1> {
-    let mut alternatives = candidates
+    let allow_candidates = candidates
         .iter()
-        .filter(|candidate| candidate.role == ShopPlanCandidateRoleV1::PortfolioAlternative)
-        .filter(|candidate| candidate.evaluation.verdict == ShopPlanVerdictV1::Allow)
+        .filter(|candidate| {
+            !candidate.plan.steps.is_empty()
+                && candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
+        })
         .collect::<Vec<_>>();
+    let mut alternatives = if allow_candidates.is_empty() {
+        candidates
+            .iter()
+            .filter(|candidate| {
+                !candidate.plan.steps.is_empty()
+                    && candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
+                    && plan_has_leave_shop_step_v1(candidate)
+            })
+            .collect::<Vec<_>>()
+    } else {
+        allow_candidates
+    };
     alternatives.sort_by(|left, right| compare_branch_alternative_candidates_v1(left, right));
     alternatives
         .into_iter()
