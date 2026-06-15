@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use self::lineage::{branch_frontier, frontier_groups};
 use self::strategy_request::branch_strategy_requests;
+use crate::ai::card_admission_policy_v1::card_admission_context_from_run_state_v1;
 use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyFormationSummaryV2,
@@ -916,6 +917,9 @@ fn branch_retention_candidate_input(
         startup: crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(
             &branch.session.run_state,
         ),
+        card_admission_context: Some(card_admission_context_from_run_state_v1(
+            &branch.session.run_state,
+        )),
     }
 }
 

@@ -89,6 +89,7 @@ pub struct BranchRetentionCandidateInputV1 {
     pub choice_effect_keys: Vec<String>,
     pub lineage_flags: Vec<String>,
     pub startup: DeckStartupProfileV1,
+    pub card_admission_context: Option<CardAdmissionContextV1>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1489,6 +1490,10 @@ fn legacy_slot_score(
 fn card_admission_context_for_retention_candidate(
     candidate: &BranchRetentionCandidateInputV1,
 ) -> CardAdmissionContextV1 {
+    if let Some(context) = &candidate.card_admission_context {
+        return context.clone();
+    }
+
     CardAdmissionContextV1 {
         act: candidate.act,
         floor: candidate.floor,

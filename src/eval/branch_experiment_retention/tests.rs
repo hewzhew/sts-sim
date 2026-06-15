@@ -544,6 +544,7 @@ fn portfolio_retention_preserves_distinct_trajectories_under_same_formation() {
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     };
     let mut other_first_pick = retention_candidate(3, 10_700, &["Shockwave", "Clash"]);
     other_first_pick.strategy_formation = Some(formation);
@@ -790,6 +791,7 @@ fn retention_slots_come_from_semantic_profiles_not_card_names() {
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     };
 
     let decision = decide_branch_retention_v1(&candidate);
@@ -832,6 +834,7 @@ fn startup_liability_is_legacy_evidence_not_coverage_slot_gate() {
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     };
 
     let decision = decide_branch_retention_v1(&candidate);
@@ -891,6 +894,7 @@ fn portfolio_fill_records_startup_rejection_and_penalizes_selection() {
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     };
     let skip = BranchRetentionCandidateInputV1 {
         index: 1,
@@ -908,6 +912,7 @@ fn portfolio_fill_records_startup_rejection_and_penalizes_selection() {
         choice_effect_keys: vec!["skip_reward".to_string()],
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     };
 
     let selection = select_branch_retention_portfolio_v1(
@@ -956,6 +961,7 @@ fn legacy_adjusted_rank_exposes_card_admission_penalty() {
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     };
     let skip = BranchRetentionCandidateInputV1 {
         index: 1,
@@ -973,6 +979,7 @@ fn legacy_adjusted_rank_exposes_card_admission_penalty() {
         choice_effect_keys: vec!["skip_reward".to_string()],
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     };
 
     assert!(
@@ -1009,6 +1016,7 @@ fn retention_selection_uses_strategic_rank_adjustment() {
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     };
     let skip = BranchRetentionCandidateInputV1 {
         index: 1,
@@ -1026,6 +1034,7 @@ fn retention_selection_uses_strategic_rank_adjustment() {
         choice_effect_keys: vec!["skip_reward".to_string()],
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     };
 
     let selection = select_branch_retention_portfolio_v1(
@@ -1067,6 +1076,7 @@ fn legacy_strategy_adjustment_exposes_card_admission_components() {
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     };
 
     let adjustment = legacy_branch_retention_strategy_adjustment_v1(&rejected_pummel);
@@ -1104,6 +1114,7 @@ fn legacy_strategy_adjustment_reports_unresolved_deck_without_global_rank_penalt
         choice_effect_keys: Vec::new(),
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     };
     unresolved_deck.startup.has_strength_payoff_without_strength = true;
 
@@ -1261,6 +1272,7 @@ fn retention_candidate(
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     }
 }
 
@@ -1285,6 +1297,7 @@ fn effect_retention_candidate(
         choice_effect_keys: vec![effect_key.to_string()],
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     }
 }
 
@@ -1326,6 +1339,7 @@ fn semantic_retention_candidate(
         choice_effect_keys: vec!["take_card".to_string()],
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     }
 }
 

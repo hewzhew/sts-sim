@@ -1238,6 +1238,30 @@ fn branch_rank_uses_active_combat_visible_hp() {
     );
 }
 
+#[test]
+fn branch_retention_candidate_carries_run_state_admission_context() {
+    let mut branch = branch_with_choice("take-card", "add_card");
+    branch.session.run_state.act_num = 2;
+    branch.session.run_state.floor_num = 25;
+    branch.session.run_state.current_hp = 41;
+    branch.session.run_state.max_hp = 80;
+
+    let candidate = branch_retention_candidate_input(0, &branch);
+    let context = candidate
+        .card_admission_context
+        .as_ref()
+        .expect("real branch retention candidates should carry full card admission context");
+
+    assert_eq!(context.act, 2);
+    assert_eq!(context.floor, 25);
+    assert_eq!(context.hp, 41);
+    assert_eq!(context.max_hp, 80);
+    assert_eq!(
+        context.deck_size,
+        branch.session.run_state.master_deck.len()
+    );
+}
+
 fn branch_with_choice(branch_id: &str, effect_kind: &str) -> BranchWork {
     BranchWork {
         id: branch_id.to_string(),
@@ -1297,6 +1321,7 @@ fn retention_candidate(
         choice_effect_keys: Vec::new(),
         lineage_flags: Vec::new(),
         startup: Default::default(),
+        card_admission_context: None,
     }
 }
 
