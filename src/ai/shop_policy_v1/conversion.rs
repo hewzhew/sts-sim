@@ -98,6 +98,13 @@ pub fn shop_relic_conversion_priority_v1(relic: RelicId) -> i32 {
     }
 }
 
+pub fn shop_relic_conversion_priority_for_v1(relic: RelicId, run_state: &RunState) -> i32 {
+    if relic == RelicId::ChemicalX && !deck_has_x_cost_payoff_v1(run_state) {
+        return 720;
+    }
+    shop_relic_conversion_priority_v1(relic)
+}
+
 pub fn shop_potion_conversion_priority_v1(run_state: &RunState) -> i32 {
     if run_state.act_num >= 2 {
         680
@@ -218,6 +225,13 @@ fn high_impact_shop_relic(relic: RelicId) -> bool {
             | RelicId::DollysMirror
             | RelicId::Orrery
     )
+}
+
+fn deck_has_x_cost_payoff_v1(run_state: &RunState) -> bool {
+    run_state
+        .master_deck
+        .iter()
+        .any(|card| get_card_definition(card.id).cost == -1)
 }
 
 fn purgeable_curse(card: &CombatCard, run_state: &RunState) -> bool {

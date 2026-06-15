@@ -67,7 +67,10 @@ pub fn build_shop_decision_context_v1(
             format!("buy relic {:?} for {} gold", relic.relic_id, relic.price),
             relic.can_buy && relic.price <= run_state.gold,
             target,
-            crate::ai::shop_policy_v1::shop_relic_conversion_priority_v1(relic.relic_id),
+            crate::ai::shop_policy_v1::shop_relic_conversion_priority_for_v1(
+                relic.relic_id,
+                run_state,
+            ),
             relic.price,
             analysis.evidence,
             analysis.risks,

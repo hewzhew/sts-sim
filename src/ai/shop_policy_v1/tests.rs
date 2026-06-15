@@ -1212,6 +1212,39 @@ fn shop_card_priority_does_not_apply_champ_flex_bonus_directly() {
     );
 }
 
+#[test]
+fn shop_chemical_x_priority_requires_existing_x_cost_payoff() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.gold = 200;
+    let mut shop = ShopState::new();
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::ChemicalX,
+        price: 145,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context_without_payoff = build_shop_decision_context_v1(&run_state, &shop);
+    let chemical_x_without_payoff =
+        shop_relic_candidate(&context_without_payoff, RelicId::ChemicalX);
+
+    run_state.add_card_to_deck(CardId::Whirlwind);
+    let context_with_payoff = build_shop_decision_context_v1(&run_state, &shop);
+    let chemical_x_with_payoff = shop_relic_candidate(&context_with_payoff, RelicId::ChemicalX);
+
+    assert_eq!(
+        chemical_x_without_payoff.purchase_priority,
+        Some(720),
+        "Chemical X should be ordinary relic value until the deck has an X-cost payoff"
+    );
+    assert_eq!(
+        chemical_x_with_payoff.purchase_priority,
+        Some(950),
+        "Chemical X should keep high-impact shop priority when an X-cost payoff exists"
+    );
+}
+
 fn install_current_room_route(
     run_state: &mut RunState,
     current_room: RoomType,
@@ -1251,6 +1284,19 @@ fn shop_card_candidate(
         .iter()
         .find(|candidate| candidate.card == Some(card))
         .expect("shop card candidate should exist")
+}
+
+fn shop_relic_candidate(
+    context: &crate::ai::shop_policy_v1::ShopDecisionContextV1,
+    relic: RelicId,
+) -> &crate::ai::shop_policy_v1::ShopCandidateEvidenceV1 {
+    context
+        .candidates
+        .iter()
+        .find(|candidate| {
+            candidate.purchase_target == Some(ShopPurchaseTargetV1::Relic { index: 0, relic })
+        })
+        .expect("shop relic candidate should exist")
 }
 
 fn assert_has_evidence(candidate: &crate::ai::shop_policy_v1::ShopCandidateEvidenceV1, tag: &str) {
