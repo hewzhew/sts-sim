@@ -170,57 +170,24 @@ fn select_card_reward_branch_options_with_limit_and_strategy(
                 .get(&index)
                 .cloned()
                 .unwrap_or_else(RewardOptionStrategyOrder::missing);
-            (
+            RewardOptionAnnotated {
                 index,
-                strategy.order,
-                strategy.score_key,
+                strategy_order: strategy.order,
+                score_key: strategy.score_key,
                 class_key,
-                strategy.label,
-            )
+                strategy_label: strategy.label,
+            }
         })
         .collect::<Vec<_>>();
     annotated.sort_by(|left, right| {
-        left.1
-            .cmp(&right.1)
-            .then_with(|| left.2.cmp(&right.2))
-            .then_with(|| left.0.cmp(&right.0))
+        left.strategy_order
+            .cmp(&right.strategy_order)
+            .then_with(|| left.score_key.cmp(&right.score_key))
+            .then_with(|| left.index.cmp(&right.index))
     });
 
     let reject_order = AcquisitionVerdict::Reject.retention_order();
-    let mut selected = Vec::new();
-    let mut selected_classes = BTreeSet::new();
-    for (index, strategy_order, _, class_key, _) in &annotated {
-        if selected.len() >= limit {
-            break;
-        }
-        if *strategy_order >= reject_order {
-            continue;
-        }
-        if selected_classes.insert(class_key.clone()) {
-            selected.push(*index);
-        }
-    }
-    for (index, strategy_order, _, _, _) in &annotated {
-        if selected.len() >= limit {
-            break;
-        }
-        if *strategy_order >= reject_order {
-            continue;
-        }
-        if !selected.contains(index) {
-            selected.push(*index);
-        }
-    }
-    if selected.is_empty() {
-        for (index, _, _, _, _) in &annotated {
-            if selected.len() >= limit {
-                break;
-            }
-            if !selected.contains(index) {
-                selected.push(*index);
-            }
-        }
-    }
+    let mut selected = select_reward_option_indices(&annotated, limit, reject_order);
 
     selected.sort_unstable();
     let selected_indices = selected.iter().copied().collect::<BTreeSet<_>>();
@@ -243,21 +210,86 @@ fn select_card_reward_branch_options_with_limit_and_strategy(
     CardRewardBranchOptionSelection { options, portfolio }
 }
 
+#[derive(Clone, Debug)]
+struct RewardOptionAnnotated {
+    index: usize,
+    strategy_order: usize,
+    score_key: i32,
+    class_key: String,
+    strategy_label: String,
+}
+
+fn select_reward_option_indices(
+    annotated: &[RewardOptionAnnotated],
+    limit: usize,
+    reject_order: usize,
+) -> Vec<usize> {
+    let mut selected = Vec::new();
+    let tiers = annotated
+        .iter()
+        .filter(|entry| entry.strategy_order < reject_order)
+        .map(|entry| entry.strategy_order)
+        .collect::<BTreeSet<_>>();
+
+    for tier in tiers {
+        if selected.len() >= limit {
+            break;
+        }
+        let tier_entries = annotated
+            .iter()
+            .filter(|entry| entry.strategy_order == tier)
+            .collect::<Vec<_>>();
+        let mut selected_classes = BTreeSet::new();
+        for entry in &tier_entries {
+            if selected.len() >= limit {
+                break;
+            }
+            if selected_classes.insert(entry.class_key.clone()) {
+                selected.push(entry.index);
+            }
+        }
+        for entry in &tier_entries {
+            if selected.len() >= limit {
+                break;
+            }
+            if !selected.contains(&entry.index) {
+                selected.push(entry.index);
+            }
+        }
+    }
+
+    if selected.is_empty() {
+        for entry in annotated {
+            if selected.len() >= limit {
+                break;
+            }
+            if !selected.contains(&entry.index) {
+                selected.push(entry.index);
+            }
+        }
+    }
+
+    selected
+}
+
 fn reward_option_portfolio_report(
     depth: usize,
     frontier_key: String,
     boundary_title: String,
     max_reward_options_per_branch: usize,
     options: &[CardRewardBranchOption],
-    annotated: &[(usize, usize, i32, String, String)],
+    annotated: &[RewardOptionAnnotated],
     selected_indices: &BTreeSet<usize>,
 ) -> BranchExperimentRewardOptionPortfolioV1 {
     let class_by_index = annotated
         .iter()
-        .map(|(index, strategy_order, _, class_key, strategy_label)| {
+        .map(|entry| {
             (
-                *index,
-                format!("strategy={strategy_order}:{strategy_label}:{class_key}"),
+                entry.index,
+                format!(
+                    "strategy={}:{}:{}",
+                    entry.strategy_order, entry.strategy_label, entry.class_key
+                ),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -565,5 +597,47 @@ pub(super) fn format_reward_card_label(card: &RewardCard) -> String {
         0 => name.to_string(),
         1 => format!("{name}+"),
         upgrades => format!("{name}+{upgrades}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{select_reward_option_indices, RewardOptionAnnotated};
+    use crate::ai::strategic::AcquisitionVerdict;
+
+    fn entry(
+        index: usize,
+        verdict: AcquisitionVerdict,
+        score_key: i32,
+        class_key: &str,
+    ) -> RewardOptionAnnotated {
+        RewardOptionAnnotated {
+            index,
+            strategy_order: verdict.retention_order(),
+            score_key,
+            class_key: class_key.to_string(),
+            strategy_label: format!("{verdict:?}"),
+        }
+    }
+
+    #[test]
+    fn reward_option_diversity_does_not_cross_strategic_verdict_tiers() {
+        let annotated = vec![
+            entry(0, AcquisitionVerdict::StrongTake, -1000, "frontload"),
+            entry(1, AcquisitionVerdict::StrongTake, -900, "frontload"),
+            entry(2, AcquisitionVerdict::ContextTake, -2000, "block"),
+        ];
+
+        let selected = select_reward_option_indices(
+            &annotated,
+            2,
+            AcquisitionVerdict::Reject.retention_order(),
+        );
+
+        assert_eq!(
+            selected,
+            vec![0, 1],
+            "semantic diversity may break ties within a strategic tier, but must not promote a lower verdict over an available higher-verdict candidate"
+        );
     }
 }
