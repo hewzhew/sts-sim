@@ -197,7 +197,7 @@ fn campfire_candidate_plan(
 
 fn stop_candidate_plan(
     context: &CampfireDecisionContextV1,
-    legacy_selected: bool,
+    selected_by_policy: bool,
 ) -> CampfirePlanCandidateV1 {
     let reason = stop_reason(context);
     CampfirePlanCandidateV1 {
@@ -206,7 +206,7 @@ fn stop_candidate_plan(
         action: CampfirePolicyActionV1::Stop {
             reason: reason.clone(),
         },
-        role: if legacy_selected {
+        role: if selected_by_policy {
             CampfirePlanRoleV1::PolicyPreferred
         } else {
             CampfirePlanRoleV1::StopFallback
@@ -214,7 +214,7 @@ fn stop_candidate_plan(
         score_hint: 0,
         confidence: 0.0,
         reasons: vec![reason],
-        execute_autopilot: legacy_selected,
+        execute_autopilot: selected_by_policy,
         branch_active: false,
         representative_count: 1,
         suppressed_count: 0,
