@@ -5,7 +5,7 @@ use super::types::{
     CompiledShopDecisionV1, ShopCandidateEvidenceV1, ShopCompileModeV1, ShopDecisionContextV1,
     ShopDecisionSourceV1, ShopPlanCandidateRoleV1, ShopPlanCandidateV1, ShopPlanEvaluationV1,
     ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
-    ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 
 pub fn compile_shop_decision_v1(
@@ -49,46 +49,6 @@ pub fn compile_shop_decision_v1(
         candidate_plans,
         strategic_trace,
         source: ShopDecisionSourceV1::LegacyWrapped,
-    }
-}
-
-pub fn shop_policy_action_from_plan_v1(plan: &ShopPlanV1) -> Option<ShopPolicyActionV1> {
-    let confidence = plan.legacy_confidence.unwrap_or(0.0);
-    let reason = plan.reason.clone();
-    match plan.steps.first()? {
-        ShopPlanStepV1::RemoveCard {
-            deck_index, card, ..
-        } => Some(ShopPolicyActionV1::Purge {
-            deck_index: *deck_index,
-            card: *card,
-            confidence,
-            reason,
-        }),
-        ShopPlanStepV1::BuyCard { index, card, .. } => Some(ShopPolicyActionV1::Purchase {
-            target: ShopPurchaseTargetV1::Card {
-                index: *index,
-                card: *card,
-            },
-            confidence,
-            reason,
-        }),
-        ShopPlanStepV1::BuyRelic { index, relic, .. } => Some(ShopPolicyActionV1::Purchase {
-            target: ShopPurchaseTargetV1::Relic {
-                index: *index,
-                relic: *relic,
-            },
-            confidence,
-            reason,
-        }),
-        ShopPlanStepV1::BuyPotion { index, potion, .. } => Some(ShopPolicyActionV1::Purchase {
-            target: ShopPurchaseTargetV1::Potion {
-                index: *index,
-                potion: *potion,
-            },
-            confidence,
-            reason,
-        }),
-        ShopPlanStepV1::LeaveShop => None,
     }
 }
 

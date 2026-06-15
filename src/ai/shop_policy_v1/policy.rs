@@ -6,11 +6,9 @@ use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceSt
 use crate::state::run::RunState;
 use crate::state::shop::ShopState;
 
-use super::compiler::{compile_shop_decision_v1, shop_policy_action_from_plan_v1};
 use super::strategy_tags::shop_purchase_strategy_analysis_v1;
 use super::types::{
-    purge_candidate_id, ShopCandidateEvidenceV1, ShopCompileModeV1, ShopDecisionContextV1,
-    ShopDecisionV1, ShopPolicyActionV1, ShopPolicyClassV1, ShopPolicyConfigV1,
+    purge_candidate_id, ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPolicyClassV1,
     ShopPurchaseTargetV1,
 };
 use crate::ai::decision_tags_v1::TAG_DECK_CLEANING;
@@ -158,26 +156,6 @@ pub fn shop_potion_purchase_block_reason_v1(
         return Some("no empty potion slot".to_string());
     }
     None
-}
-
-pub fn plan_shop_decision_v1(
-    context: &ShopDecisionContextV1,
-    config: &ShopPolicyConfigV1,
-) -> ShopDecisionV1 {
-    let compiled = compile_shop_decision_v1(context, config, ShopCompileModeV1::ExecuteOne);
-    let strategic_trace = compiled.strategic_trace.clone();
-    let action = shop_policy_action_from_plan_v1(&compiled.selected_plan).unwrap_or_else(|| {
-        ShopPolicyActionV1::Stop {
-            reason: compiled.selected_plan.reason.clone(),
-        }
-    });
-
-    ShopDecisionV1 {
-        action,
-        label_role: "behavior_policy_not_teacher",
-        strategic_trace,
-        context: context.clone(),
-    }
 }
 
 fn purge_candidate_evidence(

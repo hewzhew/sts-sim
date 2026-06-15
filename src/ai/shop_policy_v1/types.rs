@@ -91,14 +91,6 @@ impl Default for ShopPolicyConfigV1 {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct ShopDecisionV1 {
-    pub action: ShopPolicyActionV1,
-    pub label_role: &'static str,
-    pub context: ShopDecisionContextV1,
-    pub strategic_trace: crate::ai::strategic::StrategicDecisionTrace,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShopDecisionSourceV1 {
     LegacyWrapped,
@@ -305,24 +297,6 @@ pub enum ShopPlanStepV1 {
         cost: i32,
     },
     LeaveShop,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum ShopPolicyActionV1 {
-    Purge {
-        deck_index: usize,
-        card: CardId,
-        confidence: f32,
-        reason: String,
-    },
-    Purchase {
-        target: ShopPurchaseTargetV1,
-        confidence: f32,
-        reason: String,
-    },
-    Stop {
-        reason: String,
-    },
 }
 
 impl CompiledShopDecisionV1 {

@@ -4,10 +4,9 @@ use crate::ai::decision_tags_v1::{
     TAG_DIGEST_CAPACITY_STATUS, TAG_DIGEST_CAPACITY_TOPDECK,
 };
 use crate::ai::shop_policy_v1::{
-    build_shop_decision_context_v1, compile_shop_decision_v1, plan_shop_decision_v1,
-    shop_card_conversion_priority_v1, ShopCompileModeV1, ShopDecisionSourceV1,
-    ShopPlanComponentKindV1, ShopPlanKindV1, ShopPlanStepV1, ShopPlanVerdictV1, ShopPolicyActionV1,
-    ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    build_shop_decision_context_v1, compile_shop_decision_v1, shop_card_conversion_priority_v1,
+    ShopCompileModeV1, ShopDecisionSourceV1, ShopPlanComponentKindV1, ShopPlanKindV1,
+    ShopPlanStepV1, ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{CandidateAction, PressureKind, StrategicBossTax, StrategicJob};
 use crate::content::cards::CardId;
@@ -321,19 +320,20 @@ fn shop_policy_converts_high_gold_into_affordable_relic_even_below_old_high_impa
     });
 
     let context = build_shop_decision_context_v1(&run_state, &shop);
-    let decision = plan_shop_decision_v1(&context, &ShopPolicyConfigV1::default());
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecuteOne,
+    );
 
     assert!(context.conversion_pressure);
-    assert!(matches!(
-        decision.action,
-        ShopPolicyActionV1::Purchase {
-            target: ShopPurchaseTargetV1::Relic {
-                relic: RelicId::Anchor,
-                ..
-            },
-            ..
-        }
-    ));
+    let Some(ShopPlanStepV1::BuyRelic { relic, .. }) = compiled.selected_plan.steps.first() else {
+        panic!(
+            "expected selected shop plan to buy Anchor, got {:?}",
+            compiled.selected_plan
+        );
+    };
+    assert_eq!(*relic, RelicId::Anchor);
 }
 
 #[test]
@@ -1095,22 +1095,20 @@ fn shop_policy_does_not_convert_gold_into_transition_card_when_deck_is_bloated()
     });
 
     let context = build_shop_decision_context_v1(&run_state, &shop);
-    let decision = plan_shop_decision_v1(&context, &ShopPolicyConfigV1::default());
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecuteOne,
+    );
 
     assert!(context.conversion_pressure);
-    assert!(
-        !matches!(
-            decision.action,
-            ShopPolicyActionV1::Purchase {
-                target: ShopPurchaseTargetV1::Card {
-                    card: CardId::PommelStrike,
-                    ..
-                },
-                ..
-            }
-        ),
-        "conversion pressure should not force ordinary card bloat when the deck is already oversized"
-    );
+    if let Some(ShopPlanStepV1::BuyCard { card, .. }) = compiled.selected_plan.steps.first() {
+        assert_ne!(
+            *card,
+            CardId::PommelStrike,
+            "conversion pressure should not force ordinary card bloat when the deck is already oversized"
+        );
+    }
 }
 
 #[test]
@@ -1133,18 +1131,20 @@ fn shop_policy_buys_elite_potion_when_first_elite_prep_window_is_open() {
     });
 
     let context = build_shop_decision_context_v1(&run_state, &shop);
-    let decision = plan_shop_decision_v1(&context, &ShopPolicyConfigV1::default());
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::ExecuteOne,
+    );
 
-    assert!(matches!(
-        decision.action,
-        ShopPolicyActionV1::Purchase {
-            target: ShopPurchaseTargetV1::Potion {
-                potion: PotionId::FirePotion,
-                ..
-            },
-            ..
-        }
-    ));
+    let Some(ShopPlanStepV1::BuyPotion { potion, .. }) = compiled.selected_plan.steps.first()
+    else {
+        panic!(
+            "expected selected shop plan to buy Fire Potion, got {:?}",
+            compiled.selected_plan
+        );
+    };
+    assert_eq!(*potion, PotionId::FirePotion);
 }
 
 #[test]
