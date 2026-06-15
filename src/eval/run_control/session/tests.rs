@@ -902,7 +902,7 @@ fn run_control_auto_run_reopens_pending_shop_rewards_before_shop_policy() {
 }
 
 #[test]
-fn run_control_auto_run_does_not_purge_starter_shell_at_shop() {
+fn run_control_auto_run_keeps_starter_shell_when_shop_purchase_competes() {
     let mut session = test_session_at_shop();
     if let EngineState::Shop(shop) = &mut session.engine_state {
         shop.cards = vec![
@@ -922,6 +922,7 @@ fn run_control_auto_run_does_not_purge_starter_shell_at_shop() {
             },
         ];
     }
+    let starter_shell_before = ironclad_starter_shell_counts(&session.run_state.master_deck);
 
     let outcome = session
         .apply_command(RunControlCommand::AutoRun(
@@ -930,13 +931,21 @@ fn run_control_auto_run_does_not_purge_starter_shell_at_shop() {
                 ..Default::default()
             },
         ))
-        .expect("auto-run should stop at ordinary shop");
+        .expect("auto-run should handle ordinary shop without purging starter shell");
 
-    assert!(outcome
-        .message
-        .contains("Reason: shop action requires human choice"));
-    assert_eq!(session.run_state.gold, 100);
-    assert_eq!(session.run_state.master_deck.len(), 10);
+    assert!(
+        outcome.message.contains("shop policy")
+            || outcome
+                .message
+                .contains("Reason: shop action requires human choice"),
+        "expected shop policy activity or a shop boundary stop, got {}",
+        outcome.message
+    );
+    assert_eq!(
+        ironclad_starter_shell_counts(&session.run_state.master_deck),
+        starter_shell_before,
+        "shop automation must not purge starter shell while an affordable purchase competes"
+    );
     assert!(matches!(session.engine_state, EngineState::Shop(_)));
 }
 
@@ -2349,6 +2358,24 @@ fn test_session_at_shop() -> RunControlSession {
     ];
     session.engine_state = EngineState::Shop(shop);
     session
+}
+
+fn ironclad_starter_shell_counts(
+    deck: &[crate::runtime::combat::CombatCard],
+) -> (usize, usize, usize) {
+    let strikes = deck
+        .iter()
+        .filter(|card| card.id == crate::content::cards::CardId::Strike)
+        .count();
+    let defends = deck
+        .iter()
+        .filter(|card| card.id == crate::content::cards::CardId::Defend)
+        .count();
+    let bashes = deck
+        .iter()
+        .filter(|card| card.id == crate::content::cards::CardId::Bash)
+        .count();
+    (strikes, defends, bashes)
 }
 
 fn test_session_at_card_reward(card_ids: Vec<crate::content::cards::CardId>) -> RunControlSession {

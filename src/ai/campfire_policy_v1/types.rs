@@ -24,6 +24,7 @@ pub struct CampfireCandidateEvidenceV1 {
     pub choice: CampfireChoice,
     pub class: CampfirePolicyClassV1,
     pub upgrade_priority: Option<i32>,
+    pub deck_mutation_execute_allowed: Option<bool>,
     pub support_gate: StrategyPlanSupportV1,
     pub evidence: Vec<String>,
     pub risks: Vec<String>,

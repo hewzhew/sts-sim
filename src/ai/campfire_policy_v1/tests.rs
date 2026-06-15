@@ -151,6 +151,35 @@ fn campfire_decision_selects_from_candidate_plan_pool() {
         .any(|candidate| candidate.plan_id == decision.selected_plan.plan_id));
 }
 
+#[test]
+fn campfire_policy_respects_deck_mutation_execute_gate_for_smith_targets() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = run_state.max_hp;
+    let bash_index = run_state
+        .master_deck
+        .iter()
+        .position(|card| card.id == CardId::Bash)
+        .expect("Ironclad starter deck should include Bash");
+    let mut context =
+        build_campfire_decision_context_v1(&run_state, vec![CampfireChoice::Smith(bash_index)]);
+    let smith = context
+        .candidates
+        .iter_mut()
+        .find(
+            |candidate| matches!(candidate.choice, CampfireChoice::Smith(idx) if idx == bash_index),
+        )
+        .expect("expected Bash smith candidate");
+    smith.deck_mutation_execute_allowed = Some(false);
+
+    let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+
+    assert!(
+        matches!(decision.action, CampfirePolicyActionV1::Stop { .. }),
+        "campfire must not re-approve a smith target blocked by DeckMutationCompiler: {:?}",
+        decision.action
+    );
+}
+
 fn install_visible_rest_route(run_state: &mut RunState) {
     let mut rest = MapRoomNode::new(0, 0);
     rest.class = Some(RoomType::RestRoom);

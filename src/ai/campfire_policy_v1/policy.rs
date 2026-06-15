@@ -10,7 +10,7 @@ use crate::state::core::{
 };
 use crate::state::run::RunState;
 
-use super::approvals::legacy_approved_action;
+use super::approvals::candidate_approved_action;
 use super::types::{
     candidate_id, CampfireCandidateEvidenceV1, CampfireDecisionContextV1, CampfireDecisionV1,
     CampfirePlanCandidateV1, CampfirePlanRoleV1, CampfirePolicyActionV1, CampfirePolicyClassV1,
@@ -106,9 +106,11 @@ pub fn plan_campfire_decision_v1(
     context: &CampfireDecisionContextV1,
     config: &CampfirePolicyConfigV1,
 ) -> CampfireDecisionV1 {
-    let legacy_action = legacy_approved_action(context, config);
-    let mut candidate_plans = campfire_candidate_plans(context, legacy_action.as_ref());
-    candidate_plans.push(stop_candidate_plan(context, legacy_action.is_none()));
+    let mut candidate_plans = campfire_candidate_plans(context, config);
+    let has_executable_plan = candidate_plans
+        .iter()
+        .any(|candidate| candidate.execute_autopilot);
+    candidate_plans.push(stop_candidate_plan(context, !has_executable_plan));
     candidate_plans.sort_by(compare_campfire_plan_candidates_v1);
 
     let selected_plan = candidate_plans
@@ -139,28 +141,25 @@ pub fn plan_campfire_decision_v1(
 
 fn campfire_candidate_plans(
     context: &CampfireDecisionContextV1,
-    legacy_action: Option<&CampfirePolicyActionV1>,
+    config: &CampfirePolicyConfigV1,
 ) -> Vec<CampfirePlanCandidateV1> {
     context
         .candidates
         .iter()
-        .map(|candidate| campfire_candidate_plan(candidate, legacy_action))
+        .map(|candidate| campfire_candidate_plan(context, config, candidate))
         .collect()
 }
 
 fn campfire_candidate_plan(
+    context: &CampfireDecisionContextV1,
+    config: &CampfirePolicyConfigV1,
     candidate: &CampfireCandidateEvidenceV1,
-    legacy_action: Option<&CampfirePolicyActionV1>,
 ) -> CampfirePlanCandidateV1 {
     let candidate_action = action_for_candidate(candidate);
-    let legacy_selected =
-        legacy_action.is_some_and(|legacy| action_matches(legacy, &candidate_action));
-    let action = if legacy_selected {
-        legacy_action.cloned().unwrap_or(candidate_action)
-    } else {
-        candidate_action
-    };
-    let (confidence, reasons) = if legacy_selected {
+    let approved_action = candidate_approved_action(context, config, candidate);
+    let approved = approved_action.is_some();
+    let action = approved_action.unwrap_or(candidate_action);
+    let (confidence, reasons) = if approved {
         action_confidence_and_reason(&action)
     } else {
         (
@@ -178,7 +177,7 @@ fn campfire_candidate_plan(
         plan_id: candidate.candidate_id.clone(),
         choice: Some(candidate.choice),
         action,
-        role: if legacy_selected {
+        role: if approved {
             CampfirePlanRoleV1::PolicyPreferred
         } else {
             CampfirePlanRoleV1::InspectOnly
@@ -186,7 +185,7 @@ fn campfire_candidate_plan(
         score_hint: candidate.upgrade_priority.unwrap_or_default(),
         confidence,
         reasons,
-        execute_autopilot: legacy_selected,
+        execute_autopilot: approved,
     }
 }
 
@@ -233,22 +232,6 @@ fn action_for_candidate(candidate: &CampfireCandidateEvidenceV1) -> CampfirePoli
     }
 }
 
-fn action_matches(left: &CampfirePolicyActionV1, right: &CampfirePolicyActionV1) -> bool {
-    match (left, right) {
-        (CampfirePolicyActionV1::Rest { .. }, CampfirePolicyActionV1::Rest { .. }) => true,
-        (
-            CampfirePolicyActionV1::Smith {
-                deck_index: left, ..
-            },
-            CampfirePolicyActionV1::Smith {
-                deck_index: right, ..
-            },
-        ) => left == right,
-        (CampfirePolicyActionV1::Stop { .. }, CampfirePolicyActionV1::Stop { .. }) => true,
-        _ => false,
-    }
-}
-
 fn action_confidence_and_reason(action: &CampfirePolicyActionV1) -> (f32, Vec<String>) {
     match action {
         CampfirePolicyActionV1::Rest { confidence, reason }
@@ -286,6 +269,10 @@ fn candidate_evidence(
     let choice = expanded.choice;
     let class = class_for_choice(choice);
     let support_gate = support_gate_for_choice(choice, strategy);
+    let deck_mutation_execute_allowed = expanded
+        .deck_mutation_plan
+        .as_ref()
+        .map(|plan| plan.allowed_consumers.execute_autopilot);
     let mut evidence = vec![format!("campfire choice is {choice:?}")];
     let mut risks = Vec::new();
     let upgrade_priority = match choice {
@@ -349,6 +336,7 @@ fn candidate_evidence(
         choice,
         class,
         upgrade_priority,
+        deck_mutation_execute_allowed,
         support_gate,
         evidence,
         risks,
