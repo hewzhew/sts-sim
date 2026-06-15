@@ -3,6 +3,7 @@ use crate::ai::campfire_policy_v1::{
     CampfirePolicyConfigV1,
 };
 use crate::content::cards::CardId;
+use crate::eval::branch_experiment::BranchExperimentChoiceDecisionSignalV1;
 use crate::eval::run_control::RunControlSession;
 use crate::state::core::{CampfireChoice, EngineState};
 use std::collections::BTreeSet;
@@ -18,6 +19,7 @@ pub(super) struct CampfireBranchOption {
     pub(super) strategy_tag: Option<String>,
     pub(super) representative_count: usize,
     pub(super) suppressed_count: usize,
+    pub(super) decision_signal: Option<BranchExperimentChoiceDecisionSignalV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -62,6 +64,7 @@ fn campfire_branch_option_from_plan(
         strategy_tag: plan.strategy_tag.clone(),
         representative_count: plan.representative_count,
         suppressed_count: plan.suppressed_count,
+        decision_signal: Some(super::campfire_plan_decision_signal_v1(plan)),
     })
 }
 

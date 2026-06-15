@@ -1,3 +1,6 @@
+use crate::ai::campfire_policy_v1::{CampfirePlanCandidateV1, CampfirePlanRoleV1};
+use crate::ai::deck_mutation_compiler_v1::{DeckMutationPlanCandidateV1, DeckMutationPlanRoleV1};
+use crate::ai::event_policy_v1::EventCandidateTierV1;
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::{
     BranchExperimentChoiceCardV1, BranchExperimentChoiceDecisionSignalV1,
@@ -286,7 +289,7 @@ impl BranchBoundaryOptionV1 {
             effect_key,
             representative_count: option.representative_count,
             suppressed_count: option.suppressed_count,
-            decision_signal: None,
+            decision_signal: option.decision_signal,
             success_reason: "campfire branch applied",
         }
     }
@@ -323,7 +326,7 @@ impl BranchBoundaryOptionV1 {
             effect_label: option.effect_label,
             representative_count: option.representative_count,
             suppressed_count: option.suppressed_count,
-            decision_signal: None,
+            decision_signal: option.decision_signal,
             success_reason: "run selection branch applied",
         }
     }
@@ -390,9 +393,77 @@ impl BranchBoundaryOptionV1 {
             effect_label: option.effect_label,
             representative_count: option.representative_count,
             suppressed_count: option.suppressed_count,
-            decision_signal: None,
+            decision_signal: option.decision_signal,
             success_reason: "event branch applied",
         }
+    }
+}
+
+pub(super) fn deck_mutation_decision_signal_v1(
+    plan: &DeckMutationPlanCandidateV1,
+) -> BranchExperimentChoiceDecisionSignalV1 {
+    BranchExperimentChoiceDecisionSignalV1 {
+        source: "deck_mutation_compiler_v1".to_string(),
+        verdict: format!("{:?}", plan.role),
+        tier: deck_mutation_role_tier_v1(plan.role),
+        score: plan.score_hint,
+        confidence_milli: (plan.confidence * 1000.0).round() as i32,
+        component_net_rank: plan.score_hint,
+    }
+}
+
+pub(super) fn campfire_plan_decision_signal_v1(
+    plan: &CampfirePlanCandidateV1,
+) -> BranchExperimentChoiceDecisionSignalV1 {
+    BranchExperimentChoiceDecisionSignalV1 {
+        source: "campfire_plan_v1".to_string(),
+        verdict: format!("{:?}", plan.role),
+        tier: campfire_plan_role_tier_v1(plan.role),
+        score: plan.score_hint,
+        confidence_milli: (plan.confidence * 1000.0).round() as i32,
+        component_net_rank: plan.score_hint,
+    }
+}
+
+pub(super) fn event_policy_decision_signal_v1(
+    tier: EventCandidateTierV1,
+    score: i32,
+) -> BranchExperimentChoiceDecisionSignalV1 {
+    BranchExperimentChoiceDecisionSignalV1 {
+        source: "event_policy_v1".to_string(),
+        verdict: format!("{:?}", tier),
+        tier: event_candidate_tier_order_v1(tier),
+        score,
+        confidence_milli: 0,
+        component_net_rank: score,
+    }
+}
+
+fn deck_mutation_role_tier_v1(role: DeckMutationPlanRoleV1) -> i32 {
+    match role {
+        DeckMutationPlanRoleV1::PolicyPreferred => 0,
+        DeckMutationPlanRoleV1::SafeAlternative => 1,
+        DeckMutationPlanRoleV1::RiskyExploration => 2,
+        DeckMutationPlanRoleV1::InspectOnly => 3,
+        DeckMutationPlanRoleV1::Blocked => 4,
+    }
+}
+
+fn campfire_plan_role_tier_v1(role: CampfirePlanRoleV1) -> i32 {
+    match role {
+        CampfirePlanRoleV1::PolicyPreferred => 0,
+        CampfirePlanRoleV1::InspectOnly => 3,
+        CampfirePlanRoleV1::StopFallback => 4,
+    }
+}
+
+fn event_candidate_tier_order_v1(tier: EventCandidateTierV1) -> i32 {
+    match tier {
+        EventCandidateTierV1::Preferred => 0,
+        EventCandidateTierV1::Viable => 1,
+        EventCandidateTierV1::Risky => 2,
+        EventCandidateTierV1::Avoid => 3,
+        EventCandidateTierV1::Blocked => 4,
     }
 }
 

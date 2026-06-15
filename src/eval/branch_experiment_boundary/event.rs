@@ -11,6 +11,7 @@ use crate::ai::event_policy_v1::{
     EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
 };
 use crate::content::cards::CardId;
+use crate::eval::branch_experiment::BranchExperimentChoiceDecisionSignalV1;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
 use crate::state::events::{
@@ -31,6 +32,7 @@ pub(crate) struct EventBranchOption {
     pub(crate) effect_label: String,
     pub(crate) representative_count: usize,
     pub(crate) suppressed_count: usize,
+    pub(crate) decision_signal: Option<BranchExperimentChoiceDecisionSignalV1>,
     deck_mutation_order_key: Option<(u8, i32)>,
     event_policy_order_key: Option<(u8, i32)>,
 }
@@ -97,6 +99,12 @@ pub(crate) fn event_branch_options(
                 )
             })
             .unwrap_or_default();
+        let decision_signal = policy_candidate.map(|candidate| {
+            super::event_policy_decision_signal_v1(
+                candidate.evaluation.tier,
+                candidate.evaluation.score,
+            )
+        });
         let mut branch_option = EventBranchOption {
             label: candidate.label.clone(),
             command: candidate.action.command_hint(),
@@ -107,6 +115,7 @@ pub(crate) fn event_branch_options(
             effect_label: format!("{}{}", semantics.effect_label, event_policy_note),
             representative_count: 1,
             suppressed_count: 0,
+            decision_signal,
             deck_mutation_order_key: None,
             event_policy_order_key,
         };
@@ -266,6 +275,7 @@ fn apply_direct_event_deck_mutation_plan(
     option: &mut EventBranchOption,
     plan: DeckMutationPlanCandidateV1,
 ) {
+    let decision_signal = Some(super::deck_mutation_decision_signal_v1(&plan));
     let card = plan.step.cards.first();
     let loss = card
         .map(|card| format!(" loss={:?}", card.target_loss.tier))
@@ -280,6 +290,7 @@ fn apply_direct_event_deck_mutation_plan(
     );
     option.representative_count = plan.representative_count;
     option.suppressed_count = plan.suppressed_count;
+    option.decision_signal = decision_signal;
     option.deck_mutation_order_key = Some((
         direct_event_deck_mutation_role_rank(plan.role),
         -plan.score_hint,

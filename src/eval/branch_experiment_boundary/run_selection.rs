@@ -2,7 +2,9 @@ use crate::ai::deck_mutation_compiler_v1::{
     compile_deck_mutation_decision_v1, DeckMutationCompilerModeV1, DeckMutationPlanCandidateV1,
 };
 use crate::content::cards::CardId;
-use crate::eval::branch_experiment::BranchExperimentChoiceCardV1;
+use crate::eval::branch_experiment::{
+    BranchExperimentChoiceCardV1, BranchExperimentChoiceDecisionSignalV1,
+};
 use crate::eval::run_control::RunControlSession;
 use crate::state::core::EngineState;
 
@@ -20,6 +22,7 @@ pub(super) struct RunSelectionBranchOption {
     pub(super) effect_label: String,
     pub(super) representative_count: usize,
     pub(super) suppressed_count: usize,
+    pub(super) decision_signal: Option<BranchExperimentChoiceDecisionSignalV1>,
 }
 
 pub(super) fn run_selection_branch_options(
@@ -46,6 +49,7 @@ pub(super) fn run_selection_branch_options(
 fn run_selection_branch_option_from_compiled(
     plan: DeckMutationPlanCandidateV1,
 ) -> RunSelectionBranchOption {
+    let decision_signal = Some(super::deck_mutation_decision_signal_v1(&plan));
     RunSelectionBranchOption {
         label: plan.step.effect_label.clone(),
         command: plan.step.command,
@@ -65,5 +69,6 @@ fn run_selection_branch_option_from_compiled(
         effect_label: plan.step.effect_label,
         representative_count: plan.representative_count,
         suppressed_count: plan.suppressed_count,
+        decision_signal,
     }
 }
