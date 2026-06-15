@@ -2,7 +2,8 @@ use crate::ai::noncombat_decision_v1::{
     CandidateDescriptorV1, DataRoleV1, DecisionSiteKindV1, EvidenceBundleV1, EvidenceItemV1,
     EvidenceKindV1, InformationBoundaryV1, InformationClassV1, NonCombatDecisionRecordV1,
     PolicyProvenanceV1, PolicySelectionStatusV1, PolicySelectionV1, PublicActionPlanV1,
-    NONCOMBAT_DECISION_RECORD_SCHEMA_NAME, NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
+    ValueComponentV1, NONCOMBAT_DECISION_RECORD_SCHEMA_NAME,
+    NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
 };
 use crate::ai::noncombat_strategy_v1::{
     RunStrategySnapshotV2, StrategyPackageIdV2, StrategyPlanSupportV1,
@@ -137,9 +138,9 @@ impl CampfireDecisionV1 {
                 .map(candidate_descriptor)
                 .collect(),
             evidence: EvidenceBundleV1 {
-                items: evidence_items(&self.context),
+                items: evidence_items(self),
                 assumptions: vec![
-                    "campfire automation handles conservative rest and clear-priority smith approvals"
+                    "campfire automation evaluates candidate plans before selecting an action"
                         .to_string(),
                     "healthy smith automation requires a clear core upgrade priority threshold"
                         .to_string(),
@@ -154,7 +155,7 @@ impl CampfireDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "conservative_campfire_approval".to_string(),
+                    selection_mode: "campfire_candidate_approval_v1".to_string(),
                 },
                 CampfirePolicyActionV1::Smith {
                     confidence, reason, ..
@@ -163,7 +164,7 @@ impl CampfireDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "conservative_campfire_approval".to_string(),
+                    selection_mode: "campfire_candidate_approval_v1".to_string(),
                 },
                 CampfirePolicyActionV1::Stop { reason } => PolicySelectionV1 {
                     status: PolicySelectionStatusV1::Stopped,
@@ -191,8 +192,9 @@ fn candidate_descriptor(candidate: &CampfireCandidateEvidenceV1) -> CandidateDes
     }
 }
 
-fn evidence_items(context: &CampfireDecisionContextV1) -> Vec<EvidenceItemV1> {
-    let mut items = context
+fn evidence_items(decision: &CampfireDecisionV1) -> Vec<EvidenceItemV1> {
+    let mut items = decision
+        .context
         .candidates
         .iter()
         .map(|candidate| EvidenceItemV1 {
@@ -207,13 +209,20 @@ fn evidence_items(context: &CampfireDecisionContextV1) -> Vec<EvidenceItemV1> {
         })
         .collect::<Vec<_>>();
 
+    items.extend(
+        decision
+            .candidate_plans
+            .iter()
+            .map(campfire_plan_evidence_item),
+    );
+
     for id in [
         StrategyPackageIdV2::RecoveryPressure,
         StrategyPackageIdV2::HpSafety,
         StrategyPackageIdV2::UpgradeCommitment,
         StrategyPackageIdV2::RelicConstraints,
     ] {
-        if let Some(package) = context.strategy.package(id) {
+        if let Some(package) = decision.context.strategy.package(id) {
             items.push(EvidenceItemV1 {
                 kind: EvidenceKindV1::PolicyGate,
                 candidate_id: None,
@@ -225,6 +234,27 @@ fn evidence_items(context: &CampfireDecisionContextV1) -> Vec<EvidenceItemV1> {
     }
 
     items
+}
+
+fn campfire_plan_evidence_item(candidate: &CampfirePlanCandidateV1) -> EvidenceItemV1 {
+    EvidenceItemV1 {
+        kind: EvidenceKindV1::PolicyGate,
+        candidate_id: candidate.choice.map(|_| candidate.plan_id.clone()),
+        label: format!(
+            "campfire plan role={:?} execute={} score_hint={} confidence={:.2}",
+            candidate.role, candidate.execute_autopilot, candidate.score_hint, candidate.confidence
+        ),
+        information_class: InformationClassV1::Belief,
+        components: vec![
+            ValueComponentV1::new(format!("role_{:?}", candidate.role), 1.0),
+            ValueComponentV1::new(
+                "execute_autopilot",
+                candidate.execute_autopilot as u8 as f32,
+            ),
+            ValueComponentV1::new("score_hint", candidate.score_hint as f32),
+            ValueComponentV1::new("confidence", candidate.confidence),
+        ],
+    }
 }
 
 pub(crate) fn candidate_id(choice: CampfireChoice) -> String {

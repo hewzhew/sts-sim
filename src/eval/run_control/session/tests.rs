@@ -763,6 +763,15 @@ fn run_control_auto_run_uses_recovery_route_package_to_rest_at_low_hp_campfire()
         record.data_role,
         crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
     );
+    assert_eq!(
+        record.selection.selection_mode,
+        "campfire_candidate_approval_v1"
+    );
+    assert!(record
+        .evidence
+        .items
+        .iter()
+        .any(|item| item.label.contains("campfire plan role=")));
     assert!(outcome.action_result.is_some());
     assert!(
         session.run_state.current_hp > 20,
