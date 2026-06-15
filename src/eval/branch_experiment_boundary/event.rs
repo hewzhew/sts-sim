@@ -64,11 +64,13 @@ pub(crate) fn event_branch_options(
             continue;
         }
         let semantics = branch_semantics_for_event_option(event_option);
+        let (card, upgrades) =
+            event_option_specific_card_with_upgrades(session, index, event_option);
         branch_options.push(EventBranchOption {
             label: candidate.label.clone(),
             command: candidate.action.command_hint(),
-            card: event_option_specific_card(event_option),
-            upgrades: event_option_upgrade_hint(event_option),
+            card,
+            upgrades,
             effect_kind: semantics.effect_kind,
             effect_key: semantics.effect_key,
             effect_label: semantics.effect_label,
@@ -217,8 +219,39 @@ fn event_option_specific_card(option: &EventOption) -> Option<CardId> {
         })
 }
 
-fn event_option_upgrade_hint(option: &EventOption) -> Option<u8> {
-    option.ui.text.contains('+').then_some(1)
+fn event_option_specific_card_with_upgrades(
+    session: &RunControlSession,
+    index: usize,
+    option: &EventOption,
+) -> (Option<CardId>, Option<u8>) {
+    let card = event_option_specific_card(option);
+    let upgrades =
+        card.map(|card| event_option_specific_card_upgrades(session, index, card).unwrap_or(0));
+    (card, upgrades)
+}
+
+fn event_option_specific_card_upgrades(
+    session: &RunControlSession,
+    index: usize,
+    card: CardId,
+) -> Option<u8> {
+    let event_state = session.run_state.event_state.as_ref()?;
+    match event_state.id {
+        crate::state::events::EventId::TheLibrary if event_state.current_screen == 1 => {
+            let (entry_card, upgrades) =
+                crate::content::events::the_library::library_card_entry_at(
+                    &session.run_state,
+                    &event_state.extra_data,
+                    index,
+                )?;
+            (entry_card == card).then_some(upgrades)
+        }
+        crate::state::events::EventId::NoteForYourself if event_state.current_screen == 1 => {
+            (session.run_state.note_for_yourself_card == card)
+                .then_some(session.run_state.note_for_yourself_upgrades)
+        }
+        _ => None,
+    }
 }
 
 fn nloth_trade_is_protected(session: &RunControlSession, option: &EventOption) -> bool {

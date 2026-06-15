@@ -189,7 +189,7 @@ fn library_entry_count(extra_data: &[i32]) -> usize {
     extra_data.len() / LIBRARY_ENTRY_WIDTH
 }
 
-fn library_card_entry_at(
+pub(crate) fn library_card_entry_at(
     run_state: &RunState,
     extra_data: &[i32],
     idx: usize,

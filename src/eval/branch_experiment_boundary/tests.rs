@@ -1526,6 +1526,28 @@ fn current_boundary_allows_event_options_that_open_single_card_selection() {
 }
 
 #[test]
+fn current_boundary_reads_event_card_upgrade_state_from_event_data() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut event_state = EventState::new(EventId::TheLibrary);
+    event_state.current_screen = 1;
+    event_state.extra_data = vec![CardId::ShrugItOff as i32, 2];
+    session.run_state.event_state = Some(event_state);
+    session.engine_state = EngineState::EventRoom;
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("Library card choice should be an event boundary");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
+    assert_eq!(boundary.options.len(), 1);
+    assert_eq!(boundary.options[0].card, Some(CardId::ShrugItOff));
+    assert_eq!(
+        boundary.options[0].upgrades,
+        Some(2),
+        "event card branch metadata should come from structured event state, not the UI '+' suffix"
+    );
+}
+
+#[test]
 fn current_boundary_wraps_single_card_run_selection_options() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
