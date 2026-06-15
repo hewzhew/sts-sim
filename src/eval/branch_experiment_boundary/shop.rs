@@ -1,9 +1,10 @@
 use crate::ai::shop_policy_v1::{
-    build_shop_decision_context_v1, compile_shop_decision_v1, ShopCompileModeV1, ShopPlanStepV1,
-    ShopPlanV1, ShopPolicyConfigV1,
+    build_shop_decision_context_v1, compile_shop_decision_v1, ShopCompileModeV1,
+    ShopPlanEvaluationV1, ShopPlanStepV1, ShopPlanV1, ShopPolicyConfigV1,
 };
 use crate::content::cards::{get_card_definition, CardId};
 use crate::content::potions::get_potion_definition;
+use crate::eval::branch_experiment::BranchExperimentChoiceDecisionSignalV1;
 use crate::eval::run_control::RunControlSession;
 use crate::state::core::EngineState;
 
@@ -19,6 +20,7 @@ pub(crate) struct ShopBranchOption {
     pub(crate) effect_label: String,
     pub(crate) representative_count: usize,
     pub(crate) suppressed_count: usize,
+    pub(crate) decision_signal: Option<BranchExperimentChoiceDecisionSignalV1>,
 }
 
 pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<ShopBranchOption>> {
@@ -40,14 +42,24 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
     let mut options = Vec::new();
     let mut seen_commands = std::collections::BTreeSet::<String>::new();
     for plan in &compiled.alternatives {
-        if let Some(option) = shop_branch_option_from_plan(plan) {
+        let evaluation = compiled
+            .candidate_plans
+            .iter()
+            .find(|candidate| candidate.plan.plan_id == plan.plan_id)
+            .map(|candidate| &candidate.evaluation);
+        if let Some(option) = shop_branch_option_from_plan(plan, evaluation) {
             if seen_commands.insert(option.command.clone()) {
                 options.push(option);
             }
         }
     }
     if options.is_empty() {
-        if let Some(option) = shop_branch_option_from_plan(&compiled.selected_plan) {
+        let evaluation = compiled
+            .candidate_plans
+            .iter()
+            .find(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id)
+            .map(|candidate| &candidate.evaluation);
+        if let Some(option) = shop_branch_option_from_plan(&compiled.selected_plan, evaluation) {
             options.push(option);
         }
     }
@@ -58,7 +70,10 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
     Some(options)
 }
 
-fn shop_branch_option_from_plan(plan: &ShopPlanV1) -> Option<ShopBranchOption> {
+fn shop_branch_option_from_plan(
+    plan: &ShopPlanV1,
+    evaluation: Option<&ShopPlanEvaluationV1>,
+) -> Option<ShopBranchOption> {
     if plan.steps.is_empty() {
         return None;
     }
@@ -70,7 +85,21 @@ fn shop_branch_option_from_plan(plan: &ShopPlanV1) -> Option<ShopBranchOption> {
         effect_label: shop_plan_effect_label(plan),
         representative_count: plan.steps.len(),
         suppressed_count: plan.suppressed_count,
+        decision_signal: evaluation.map(shop_decision_signal_v1),
     })
+}
+
+fn shop_decision_signal_v1(
+    evaluation: &ShopPlanEvaluationV1,
+) -> BranchExperimentChoiceDecisionSignalV1 {
+    BranchExperimentChoiceDecisionSignalV1 {
+        source: "shop_plan_evaluation_v1".to_string(),
+        verdict: format!("{:?}", evaluation.verdict),
+        tier: evaluation.tier,
+        score: evaluation.score,
+        confidence_milli: (evaluation.confidence * 1000.0).round() as i32,
+        component_net_rank: evaluation.component_score.net.round() as i32,
+    }
 }
 
 fn shop_plan_command(plan: &ShopPlanV1) -> String {

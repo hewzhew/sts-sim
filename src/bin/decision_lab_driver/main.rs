@@ -1332,6 +1332,7 @@ mod tests {
                 effect_label: "test".to_string(),
                 representative_count: 1,
                 suppressed_count: 0,
+                decision_signal: None,
                 label: "test".to_string(),
                 command: "rp 0".to_string(),
             },

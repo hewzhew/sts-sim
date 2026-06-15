@@ -21,7 +21,7 @@ use std::path::PathBuf;
 
 #[test]
 fn branch_experiment_schema_version_tracks_lineage_pruned_summary() {
-    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 20);
+    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 21);
 }
 
 #[test]
@@ -1179,6 +1179,7 @@ fn branch_summary_tracks_shop_buy_card_choice_in_trajectory() {
         effect_label: "Buy Pommel Strike".to_string(),
         representative_count: 1,
         suppressed_count: 0,
+        decision_signal: None,
         label: "Buy Pommel Strike".to_string(),
         command: "buy card 0".to_string(),
     }];
@@ -1281,6 +1282,7 @@ fn branch_with_choice(branch_id: &str, effect_kind: &str) -> BranchWork {
             effect_label: effect_kind.to_string(),
             representative_count: 1,
             suppressed_count: 0,
+            decision_signal: None,
             label: effect_kind.to_string(),
             command: "test".to_string(),
         }],
@@ -1324,6 +1326,7 @@ fn retention_candidate(
         choice_profiles: Vec::new(),
         choice_effect_keys: Vec::new(),
         lineage_flags: Vec::new(),
+        decision_signals: Vec::new(),
         strategic_debt_tags: Vec::new(),
         startup: Default::default(),
     }

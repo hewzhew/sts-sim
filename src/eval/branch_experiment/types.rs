@@ -14,7 +14,7 @@ use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
 use crate::eval::run_control::{RunControlHpLossLimit, RunControlSearchCombatOptions};
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 20;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 21;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {
@@ -249,8 +249,21 @@ pub struct BranchExperimentChoiceV1 {
     pub representative_count: usize,
     #[serde(default)]
     pub suppressed_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_signal: Option<BranchExperimentChoiceDecisionSignalV1>,
     pub label: String,
     pub command: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentChoiceDecisionSignalV1 {
+    pub source: String,
+    pub verdict: String,
+    pub tier: i32,
+    pub score: i32,
+    pub confidence_milli: i32,
+    pub component_net_rank: i32,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

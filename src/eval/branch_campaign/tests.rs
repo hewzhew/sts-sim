@@ -412,6 +412,7 @@ fn campaign_choice_label_prefixes_generic_event_leave_with_boundary() {
         effect_label: "[Leave] Lose 27 Gold.".to_string(),
         representative_count: 1,
         suppressed_count: 0,
+        decision_signal: None,
         label: "[Leave] Lose 27 Gold.".to_string(),
         command: "event 1".to_string(),
     };
@@ -436,6 +437,7 @@ fn campaign_choice_label_prefixes_bracketed_event_choices_with_boundary() {
         effect_label: "[Remove a card] Take 7 damage. Remove a card from your deck.".to_string(),
         representative_count: 1,
         suppressed_count: 0,
+        decision_signal: None,
         label: "[Remove a card] Take 7 damage. Remove a card from your deck.".to_string(),
         command: "event 0".to_string(),
     };
@@ -670,7 +672,7 @@ fn campaign_frozen_merge_replaces_duplicate_with_better_branch() {
 }
 
 #[test]
-fn campaign_selection_freezes_active_overflow() {
+fn campaign_selection_freezes_active_overflow_by_retention_rank() {
     let branches = vec![
         test_campaign_branch("a", 1, 80),
         test_campaign_branch("b", 2, 75),
@@ -687,9 +689,9 @@ fn campaign_selection_freezes_active_overflow() {
             .iter()
             .map(|branch| branch.branch_id.as_str())
             .collect::<Vec<_>>(),
-        vec!["c", "b"]
+        vec!["a", "b"]
     );
-    assert_eq!(selected.frozen[0].branch_id, "a");
+    assert_eq!(selected.frozen[0].branch_id, "c");
 }
 
 #[test]
@@ -836,7 +838,7 @@ fn campaign_selection_does_not_use_strategy_summary_to_beat_raw_rank_gap_before_
 }
 
 #[test]
-fn campaign_selection_prioritizes_progress_over_small_rank_gap() {
+fn campaign_selection_does_not_double_count_progress_over_exact_rank() {
     let mut later_shop = test_campaign_branch("later-shop", 35, 82);
     later_shop.summary.as_mut().unwrap().act = 3;
     later_shop.frontier_title = "Shop".to_string();
@@ -849,7 +851,7 @@ fn campaign_selection_prioritizes_progress_over_small_rank_gap() {
 
     let selected = select_campaign_branches_v1(vec![earlier_reward, later_shop], 1, 4);
 
-    assert_eq!(selected.active[0].branch_id, "later-shop");
+    assert_eq!(selected.active[0].branch_id, "earlier-reward");
 }
 
 #[test]
@@ -3705,6 +3707,7 @@ fn test_report_branch_at(
                 effect_label: label.to_string(),
                 representative_count: 1,
                 suppressed_count: 0,
+                decision_signal: None,
                 label: label.to_string(),
                 command: command.to_string(),
             })

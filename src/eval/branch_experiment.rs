@@ -46,14 +46,14 @@ const COMBAT_TURN_SEGMENT_PROGRESS_STOP_REASON: &str =
 
 pub use types::{
     BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentChoiceCardV1,
-    BranchExperimentChoiceV1, BranchExperimentConfigV1, BranchExperimentFirstEliteEvidenceV1,
-    BranchExperimentFrontierGroupV1, BranchExperimentFrontierV1, BranchExperimentLineageV1,
-    BranchExperimentPrunedBranchSummaryV1, BranchExperimentPrunedFirstPickCountV1,
-    BranchExperimentReportV1, BranchExperimentRewardOptionPortfolioEntryV1,
-    BranchExperimentRewardOptionPortfolioV1, BranchExperimentRouteDecisionV1,
-    BranchExperimentRunSummaryV1, BranchExperimentStrategyRequestV1,
-    BranchExperimentWallLimitPhaseV1, BRANCH_EXPERIMENT_SCHEMA_NAME,
-    BRANCH_EXPERIMENT_SCHEMA_VERSION,
+    BranchExperimentChoiceDecisionSignalV1, BranchExperimentChoiceV1, BranchExperimentConfigV1,
+    BranchExperimentFirstEliteEvidenceV1, BranchExperimentFrontierGroupV1,
+    BranchExperimentFrontierV1, BranchExperimentLineageV1, BranchExperimentPrunedBranchSummaryV1,
+    BranchExperimentPrunedFirstPickCountV1, BranchExperimentReportV1,
+    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentRouteDecisionV1, BranchExperimentRunSummaryV1,
+    BranchExperimentStrategyRequestV1, BranchExperimentWallLimitPhaseV1,
+    BRANCH_EXPERIMENT_SCHEMA_NAME, BRANCH_EXPERIMENT_SCHEMA_VERSION,
 };
 
 pub(crate) const BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND: &str =
@@ -412,6 +412,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
                             effect_label: option.effect_label,
                             representative_count: option.representative_count,
                             suppressed_count: option.suppressed_count,
+                            decision_signal: option.decision_signal,
                             success_reason: option.success_reason,
                         },
                         config,
@@ -750,6 +751,7 @@ struct BranchChoiceDraft {
     effect_label: String,
     representative_count: usize,
     suppressed_count: usize,
+    decision_signal: Option<BranchExperimentChoiceDecisionSignalV1>,
     success_reason: &'static str,
 }
 
@@ -774,6 +776,7 @@ fn expand_branch_choice(
         effect_label: draft.effect_label,
         representative_count: draft.representative_count,
         suppressed_count: draft.suppressed_count,
+        decision_signal: draft.decision_signal,
         label: draft.label,
         command: draft.command.clone(),
     });
@@ -915,6 +918,11 @@ fn branch_retention_candidate_input(
         choice_profiles,
         choice_effect_keys,
         lineage_flags: frontier.lineage.sequence_breakers_present,
+        decision_signals: branch
+            .choices
+            .iter()
+            .filter_map(|choice| choice.decision_signal.clone())
+            .collect(),
         strategic_debt_tags: branch_strategic_debt_tags(&branch.session),
         startup: crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(
             &branch.session.run_state,

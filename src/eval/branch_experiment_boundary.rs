@@ -1,6 +1,7 @@
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::{
-    BranchExperimentChoiceCardV1, BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentChoiceCardV1, BranchExperimentChoiceDecisionSignalV1,
+    BranchExperimentRewardOptionPortfolioV1,
 };
 use crate::eval::run_control::RunControlSession;
 use crate::runtime::combat::CombatCard;
@@ -82,6 +83,7 @@ pub(crate) struct BranchBoundaryOptionV1 {
     pub(crate) effect_label: String,
     pub(crate) representative_count: usize,
     pub(crate) suppressed_count: usize,
+    pub(crate) decision_signal: Option<BranchExperimentChoiceDecisionSignalV1>,
     pub(crate) success_reason: &'static str,
 }
 
@@ -225,6 +227,7 @@ impl BranchBoundaryOptionV1 {
                     effect_key: "card_reward:skip".to_string(),
                     representative_count: 1,
                     suppressed_count: 0,
+                    decision_signal: None,
                     success_reason: "card reward skip branch applied",
                 };
             }
@@ -241,6 +244,7 @@ impl BranchBoundaryOptionV1 {
                     effect_key: "card_reward:singing_bowl".to_string(),
                     representative_count: 1,
                     suppressed_count: 0,
+                    decision_signal: None,
                     success_reason: "singing bowl card reward branch applied",
                 };
             }
@@ -263,6 +267,7 @@ impl BranchBoundaryOptionV1 {
             effect_key: format!("{effect_key_prefix}:{:?}:{}", card, upgrades),
             representative_count: 1,
             suppressed_count: 0,
+            decision_signal: None,
             success_reason,
         }
     }
@@ -281,6 +286,7 @@ impl BranchBoundaryOptionV1 {
             effect_key,
             representative_count: option.representative_count,
             suppressed_count: option.suppressed_count,
+            decision_signal: None,
             success_reason: "campfire branch applied",
         }
     }
@@ -299,6 +305,7 @@ impl BranchBoundaryOptionV1 {
             effect_key,
             representative_count: 1,
             suppressed_count: 0,
+            decision_signal: None,
             success_reason: "boss relic branch applied",
         }
     }
@@ -316,6 +323,7 @@ impl BranchBoundaryOptionV1 {
             effect_label: option.effect_label,
             representative_count: option.representative_count,
             suppressed_count: option.suppressed_count,
+            decision_signal: None,
             success_reason: "run selection branch applied",
         }
     }
@@ -342,6 +350,7 @@ impl BranchBoundaryOptionV1 {
             effect_key,
             representative_count: option.representative_count,
             suppressed_count: option.suppressed_count,
+            decision_signal: option.decision_signal,
             success_reason: "shop branch applied",
         }
     }
@@ -363,6 +372,7 @@ impl BranchBoundaryOptionV1 {
             effect_key: option.effect_key,
             representative_count: 1,
             suppressed_count: 0,
+            decision_signal: None,
             success_reason,
         }
     }
@@ -380,6 +390,7 @@ impl BranchBoundaryOptionV1 {
             effect_label: option.effect_label,
             representative_count: option.representative_count,
             suppressed_count: option.suppressed_count,
+            decision_signal: None,
             success_reason: "event branch applied",
         }
     }

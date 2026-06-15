@@ -4,6 +4,7 @@ use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSe
 use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
 use crate::ai::noncombat_strategy_v1::StrategyFormationSummaryV2;
 use crate::ai::strategic::{BranchSignature, RetentionBucket};
+use crate::eval::branch_experiment::BranchExperimentChoiceDecisionSignalV1;
 use crate::eval::branch_experiment_trajectory::{
     branch_trajectory_family_key_v1, BranchTrajectorySignatureV1,
 };
@@ -84,6 +85,7 @@ pub struct BranchRetentionCandidateInputV1 {
     pub choice_profiles: Vec<CardRewardSemanticProfileV1>,
     pub choice_effect_keys: Vec<String>,
     pub lineage_flags: Vec<String>,
+    pub decision_signals: Vec<BranchExperimentChoiceDecisionSignalV1>,
     pub strategic_debt_tags: Vec<String>,
     pub startup: DeckStartupProfileV1,
 }
@@ -139,6 +141,8 @@ pub struct BranchRetentionRankAdjustmentV1 {
     pub startup_adjustment: i32,
     #[serde(default)]
     pub strategic_debt_adjustment: i32,
+    #[serde(default)]
+    pub decision_signal_adjustment: i32,
     /// Deprecated report-only pressure field kept for trace compatibility.
     /// Branch retention no longer consumes card-admission verdicts as gates.
     #[serde(default, alias = "component_adjustment")]
@@ -672,16 +676,24 @@ pub fn branch_retention_rank_adjustment_v1(
             "strategic_debt_rank_adjustment:{strategic_debt_adjustment}"
         ));
     }
+    let decision_signal_adjustment = branch_decision_signal_rank_adjustment_v1(candidate);
+    if decision_signal_adjustment != 0 {
+        reasons.push(format!(
+            "decision_signal_component_rank_adjustment:{decision_signal_adjustment}"
+        ));
+    }
 
     let effective_rank_key = candidate
         .rank_key
         .saturating_add(startup_adjustment)
-        .saturating_add(strategic_debt_adjustment);
+        .saturating_add(strategic_debt_adjustment)
+        .saturating_add(decision_signal_adjustment);
 
     BranchRetentionRankAdjustmentV1 {
         base_rank_key: candidate.rank_key,
         startup_adjustment,
         strategic_debt_adjustment,
+        decision_signal_adjustment,
         admission_pressure,
         effective_rank_key,
         context_keys: context
@@ -692,6 +704,14 @@ pub fn branch_retention_rank_adjustment_v1(
         slot_scores: branch_retention_slot_evidence_scores_v1(candidate),
         reasons,
     }
+}
+
+fn branch_decision_signal_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
+    candidate
+        .decision_signals
+        .iter()
+        .map(|signal| signal.component_net_rank)
+        .sum()
 }
 
 fn branch_strategic_debt_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
