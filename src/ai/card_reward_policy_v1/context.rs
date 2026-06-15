@@ -1,3 +1,4 @@
+use crate::state::core::EngineState;
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 
@@ -54,4 +55,18 @@ pub fn build_card_reward_decision_context_v1(
             .any(|relic| relic.id == crate::content::relics::RelicId::SingingBowl),
         candidates,
     }
+}
+
+pub fn build_card_reward_decision_context_with_current_route_v1(
+    run_state: &RunState,
+    engine_state: &EngineState,
+    cards: Vec<RewardCard>,
+) -> CardRewardDecisionContextV1 {
+    let route_trace = crate::ai::route_planner_v1::plan_route_decision_v1(
+        run_state,
+        engine_state,
+        Default::default(),
+    );
+    let route_trace = (!route_trace.candidates.is_empty()).then_some(route_trace);
+    build_card_reward_decision_context_v1(run_state, cards, route_trace.as_ref())
 }

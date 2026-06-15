@@ -17,7 +17,9 @@ mod types;
 mod value;
 
 pub use arbitration::arbitrate_card_reward_value_estimates_v1;
-pub use context::build_card_reward_decision_context_v1;
+pub use context::{
+    build_card_reward_decision_context_v1, build_card_reward_decision_context_with_current_route_v1,
+};
 pub use policy::{
     plan_card_reward_decision_v1, plan_card_reward_decision_with_estimator_inputs_v1,
 };
