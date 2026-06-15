@@ -137,7 +137,8 @@ fn compact_campaign_report_renders_active_branch_differences() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 2);
 
-    assert!(rendered.contains("2. A1F35 HP 80/80 gold 99 deck 10 sel=[rank=80] | Card Reward"));
+    assert!(rendered
+        .contains("2. A1F35 HP 80/80 gold 99 deck 10 sel=[retention_rank=80] | Card Reward"));
     assert!(rendered.contains(
         "diff: choices +Dark Embrace; stage PlanSeeded->Mature; strengths +ExhaustEngine +StrengthScaling"
     ));
@@ -384,7 +385,7 @@ fn compact_campaign_report_shows_selection_basis_for_branch_examples() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
-    assert!(rendered.contains("sel=[rank=123]"));
+    assert!(rendered.contains("sel=[retention_rank=123]"));
 }
 
 #[test]
@@ -394,7 +395,7 @@ fn compact_campaign_report_formats_large_selection_rank_readably() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
-    assert!(rendered.contains("sel=[rank=11.5k]"));
+    assert!(rendered.contains("sel=[retention_rank=11.5k]"));
 }
 
 #[test]

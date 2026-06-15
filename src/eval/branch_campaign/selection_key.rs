@@ -39,7 +39,7 @@ pub(super) fn campaign_branch_retention_key_v1(
 
 pub(super) fn render_campaign_branch_selection_basis_v1(branch: &BranchCampaignBranchV1) -> String {
     format!(
-        "sel=[rank={}]",
+        "sel=[retention_rank={}]",
         format_campaign_selection_rank_key_v1(campaign_branch_selection_rank_key_v1(branch)),
     )
 }
