@@ -219,6 +219,31 @@ fn campfire_policy_uses_boss_start_heal_for_smith_safety() {
     ));
 }
 
+#[test]
+fn campfire_policy_uses_full_hp_rest_as_empty_campfire_exit() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = run_state.max_hp;
+    run_state
+        .relics
+        .push(RelicState::new(RelicId::FusionHammer));
+
+    let context = build_campfire_decision_context_v1(
+        &run_state,
+        crate::engine::campfire_handler::get_available_options(&run_state),
+    );
+    let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+
+    assert!(matches!(
+        decision.action,
+        CampfirePolicyActionV1::Rest { .. }
+    ));
+    assert!(decision
+        .selected_plan
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("campfire exit")));
+}
+
 fn install_visible_rest_route(run_state: &mut RunState) {
     let mut rest = MapRoomNode::new(0, 0);
     rest.class = Some(RoomType::RestRoom);

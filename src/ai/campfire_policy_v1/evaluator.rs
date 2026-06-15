@@ -11,6 +11,14 @@ pub(crate) fn candidate_autopilot_action(
     config: &CampfirePolicyConfigV1,
     candidate: &CampfireCandidateEvidenceV1,
 ) -> Option<CampfirePolicyActionV1> {
+    if rest_is_routine_exit_allowed(context, candidate) {
+        return Some(CampfirePolicyActionV1::Rest {
+            confidence: 0.90,
+            reason: "Rest is the only available campfire action and functions as the campfire exit"
+                .to_string(),
+        });
+    }
+
     if rest_is_autopilot_allowed(context, config) {
         return matches!(candidate.choice, CampfireChoice::Rest).then(|| {
             CampfirePolicyActionV1::Rest {
@@ -33,6 +41,18 @@ pub(crate) fn candidate_autopilot_action(
             },
         )
     })
+}
+
+fn rest_is_routine_exit_allowed(
+    context: &CampfireDecisionContextV1,
+    candidate: &CampfireCandidateEvidenceV1,
+) -> bool {
+    candidate.choice == CampfireChoice::Rest
+        && context.current_hp >= context.max_hp
+        && context.candidates.iter().all(|other| {
+            matches!(other.choice, CampfireChoice::Rest)
+                || other.deck_mutation_execute_allowed == Some(false)
+        })
 }
 
 #[derive(Clone, Copy)]

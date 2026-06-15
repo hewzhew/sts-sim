@@ -79,10 +79,19 @@ fn select_campfire_branch_options_with_limit(
     options: Vec<CampfireBranchOption>,
     limit: usize,
 ) -> CampfireBranchOptionSelection {
-    let options = options
-        .into_iter()
+    let filtered = options
+        .iter()
+        .cloned()
         .filter(|option| !is_full_hp_rest_branch_option(option))
         .collect::<Vec<_>>();
+    let options = if filtered.is_empty() {
+        options
+            .into_iter()
+            .filter(is_full_hp_rest_branch_option)
+            .collect::<Vec<_>>()
+    } else {
+        filtered
+    };
     let capped_limit = limit.min(options.len());
     if capped_limit == 0 || options.len() <= capped_limit {
         return CampfireBranchOptionSelection { options };

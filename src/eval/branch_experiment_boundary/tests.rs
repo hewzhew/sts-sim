@@ -1910,6 +1910,28 @@ fn campfire_branch_option_portfolio_does_not_spend_cap_on_full_hp_rest() {
 }
 
 #[test]
+fn campfire_branch_option_portfolio_keeps_full_hp_rest_when_it_is_the_only_exit() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session
+        .run_state
+        .relics
+        .push(RelicState::new(RelicId::FusionHammer));
+    session.engine_state = EngineState::Campfire;
+
+    let options = campfire_branch_options(&session).expect("campfire options");
+    let selected = select_campfire_branch_options(options, Some(2)).options;
+
+    assert_eq!(
+        selected
+            .iter()
+            .map(|option| option.command.as_str())
+            .collect::<Vec<_>>(),
+        vec!["rest"],
+        "full-hp rest is normally filtered, but it must remain when it is the only campfire exit"
+    );
+}
+
+#[test]
 fn campfire_branch_option_portfolio_prefers_bash_over_starter_filler_when_tightly_capped() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.engine_state = EngineState::Campfire;
