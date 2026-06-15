@@ -935,7 +935,7 @@ fn portfolio_fill_records_startup_rejection_and_penalizes_selection() {
 }
 
 #[test]
-fn adjusted_rank_exposes_card_admission_penalty() {
+fn adjusted_rank_keeps_card_admission_as_report_only_evidence() {
     let rejected_pummel = BranchRetentionCandidateInputV1 {
         index: 0,
         act: 2,
@@ -963,34 +963,21 @@ fn adjusted_rank_exposes_card_admission_penalty() {
         startup: Default::default(),
         card_admission_context: None,
     };
-    let skip = BranchRetentionCandidateInputV1 {
-        index: 1,
-        act: 2,
-        floor: 25,
-        frontier_key: "same-frontier".to_string(),
-        rank_key: 10_000,
-        hp: 70,
-        max_hp: 80,
-        gold: 120,
-        deck_count: 19,
-        strategy_formation: None,
-        trajectory: BranchTrajectorySignatureV1::default(),
-        choice_profiles: Vec::new(),
-        choice_effect_keys: vec!["skip_reward".to_string()],
-        lineage_flags: Vec::new(),
-        startup: Default::default(),
-        card_admission_context: None,
-    };
+    let adjustment = branch_retention_rank_adjustment_v1(&rejected_pummel);
 
+    assert_eq!(
+        branch_retention_adjusted_rank_key_v1(&rejected_pummel),
+        rejected_pummel.rank_key,
+        "card admission evidence must not become a second rank-scoring path"
+    );
     assert!(
-        branch_retention_adjusted_rank_key_v1(&rejected_pummel)
-            < branch_retention_adjusted_rank_key_v1(&skip),
-        "adjusted rank should expose card admission rejection for audit"
+        adjustment.component_adjustment < 0,
+        "card admission pressure should remain visible for audit"
     );
 }
 
 #[test]
-fn retention_selection_uses_strategic_rank_adjustment() {
+fn retention_selection_filters_hard_admission_before_diversity_fallback() {
     let rejected_pummel = BranchRetentionCandidateInputV1 {
         index: 0,
         act: 2,
@@ -1045,7 +1032,7 @@ fn retention_selection_uses_strategic_rank_adjustment() {
     assert!(!selection.keep_indices.contains(&0));
     assert!(
         selection.keep_indices.contains(&1),
-        "branch retention should use startup/component concerns when choosing active branches"
+        "branch retention should prefer ordinary candidates over hard-blocked admission branches without needing rank penalties"
     );
 }
 
@@ -1084,8 +1071,8 @@ fn rank_adjustment_exposes_card_admission_components() {
     assert_eq!(adjustment.base_rank_key, 50_000);
     assert!(adjustment.component_adjustment < 0);
     assert_eq!(
-        adjustment.effective_rank_key,
-        branch_retention_adjusted_rank_key_v1(&rejected_pummel)
+        adjustment.effective_rank_key, rejected_pummel.rank_key,
+        "card admission component evidence should not be applied to effective rank"
     );
     assert!(
         adjustment

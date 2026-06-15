@@ -141,6 +141,9 @@ impl Default for BranchRetentionCoverageSelectionV1 {
 pub struct BranchRetentionRankAdjustmentV1 {
     pub base_rank_key: i32,
     pub startup_adjustment: i32,
+    /// Report-only card admission pressure for the branch's added cards.
+    /// Branch retention may use the underlying admission verdicts as slot
+    /// eligibility gates, but this value is not folded into effective_rank_key.
     pub component_adjustment: i32,
     pub effective_rank_key: i32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -769,6 +772,36 @@ fn best_position_for_slot(
     slot: BranchRetentionSlotV1,
     selected: &BTreeSet<usize>,
 ) -> Option<usize> {
+    best_position_for_slot_with_admission_filter(
+        candidates,
+        decisions_by_index,
+        positions,
+        slot,
+        selected,
+        true,
+    )
+    .or_else(|| {
+        (slot == BranchRetentionSlotV1::Diversity).then(|| {
+            best_position_for_slot_with_admission_filter(
+                candidates,
+                decisions_by_index,
+                positions,
+                slot,
+                selected,
+                false,
+            )
+        })?
+    })
+}
+
+fn best_position_for_slot_with_admission_filter(
+    candidates: &[BranchRetentionCandidateInputV1],
+    decisions_by_index: &BTreeMap<usize, BranchRetentionDecisionV1>,
+    positions: &[usize],
+    slot: BranchRetentionSlotV1,
+    selected: &BTreeSet<usize>,
+    filter_hard_admission_liability: bool,
+) -> Option<usize> {
     let covered_families = selected
         .iter()
         .map(|position| branch_family_key(&candidates[*position]))
@@ -783,7 +816,7 @@ fn best_position_for_slot(
                 .is_some_and(|decision| decision.slots.contains(&slot))
         })
         .filter(|position| {
-            slot == BranchRetentionSlotV1::Diversity
+            !filter_hard_admission_liability
                 || !candidate_has_hard_slot_blocking_admission_liability(&candidates[*position])
         })
         .max_by(|left, right| {
@@ -893,10 +926,7 @@ pub fn branch_retention_rank_adjustment_v1(
         ));
     }
 
-    let effective_rank_key = candidate
-        .rank_key
-        .saturating_add(startup_adjustment)
-        .saturating_add(component_adjustment);
+    let effective_rank_key = candidate.rank_key.saturating_add(startup_adjustment);
 
     BranchRetentionRankAdjustmentV1 {
         base_rank_key: candidate.rank_key,
@@ -1596,7 +1626,7 @@ fn branch_retention_card_admission_rank_cost_v1(
         }
         if adjustment != 0 {
             summary.reasons.push(format!(
-                "card_admission:{}:{:?}:{adjustment}",
+                "card_admission_evidence:{}:{:?}:{adjustment}",
                 profile.name, report.verdict
             ));
         }
