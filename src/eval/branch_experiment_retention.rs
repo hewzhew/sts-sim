@@ -111,8 +111,8 @@ pub struct BranchRetentionDecisionV1 {
     pub strategic_signature: BranchSignature,
     #[serde(default)]
     pub coverage_selection: BranchRetentionCoverageSelectionV1,
-    #[serde(default)]
-    pub legacy_strategy_adjustment: BranchRetentionLegacyStrategyAdjustmentV1,
+    #[serde(default, alias = "legacy_strategy_adjustment")]
+    pub rank_adjustment: BranchRetentionRankAdjustmentV1,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -138,7 +138,7 @@ impl Default for BranchRetentionCoverageSelectionV1 {
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct BranchRetentionLegacyStrategyAdjustmentV1 {
+pub struct BranchRetentionRankAdjustmentV1 {
     pub base_rank_key: i32,
     pub startup_adjustment: i32,
     pub component_adjustment: i32,
@@ -201,7 +201,7 @@ pub fn default_branch_retention_decision_v1() -> BranchRetentionDecisionV1 {
             slots,
             reasons,
         },
-        legacy_strategy_adjustment: BranchRetentionLegacyStrategyAdjustmentV1::default(),
+        rank_adjustment: BranchRetentionRankAdjustmentV1::default(),
     }
 }
 
@@ -385,7 +385,7 @@ pub fn decide_branch_retention_v1(
         slots: slots.clone(),
         reasons: reasons.clone(),
     };
-    let legacy_strategy_adjustment = legacy_branch_retention_strategy_adjustment_v1(candidate);
+    let rank_adjustment = branch_retention_rank_adjustment_v1(candidate);
 
     BranchRetentionDecisionV1 {
         primary_slot,
@@ -399,7 +399,7 @@ pub fn decide_branch_retention_v1(
         slots,
         reasons,
         coverage_selection,
-        legacy_strategy_adjustment,
+        rank_adjustment,
     }
 }
 
@@ -794,7 +794,7 @@ fn best_position_for_slot(
 pub(super) fn candidate_has_slot_blocking_strategic_liability(
     candidate: &BranchRetentionCandidateInputV1,
 ) -> bool {
-    let adjustment = legacy_branch_retention_strategy_adjustment_v1(candidate);
+    let adjustment = branch_retention_rank_adjustment_v1(candidate);
     adjustment.startup_adjustment < 0 || adjustment.component_adjustment < 0
 }
 
@@ -863,18 +863,16 @@ fn compare_rank(
 }
 
 pub fn branch_retention_order_rank_key_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
-    legacy_adjusted_branch_retention_rank_key_v1(candidate)
+    branch_retention_adjusted_rank_key_v1(candidate)
 }
 
-pub fn legacy_adjusted_branch_retention_rank_key_v1(
-    candidate: &BranchRetentionCandidateInputV1,
-) -> i32 {
-    legacy_branch_retention_strategy_adjustment_v1(candidate).effective_rank_key
+pub fn branch_retention_adjusted_rank_key_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
+    branch_retention_rank_adjustment_v1(candidate).effective_rank_key
 }
 
-pub fn legacy_branch_retention_strategy_adjustment_v1(
+pub fn branch_retention_rank_adjustment_v1(
     candidate: &BranchRetentionCandidateInputV1,
-) -> BranchRetentionLegacyStrategyAdjustmentV1 {
+) -> BranchRetentionRankAdjustmentV1 {
     let context = branch_retention_context_packet_v2(candidate);
     let card_admission = branch_retention_card_admission_summary_v1(candidate);
     let current_startup_debt_adjustment = current_startup_debt_rank_adjustment_v1(candidate);
@@ -906,7 +904,7 @@ pub fn legacy_branch_retention_strategy_adjustment_v1(
         .saturating_add(startup_adjustment)
         .saturating_add(component_adjustment);
 
-    BranchRetentionLegacyStrategyAdjustmentV1 {
+    BranchRetentionRankAdjustmentV1 {
         base_rank_key: candidate.rank_key,
         startup_adjustment,
         component_adjustment,

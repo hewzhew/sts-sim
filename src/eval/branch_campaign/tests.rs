@@ -3124,7 +3124,7 @@ fn test_report_branch_at(
             reasons: vec!["test".to_string()],
             strategic_signature: Default::default(),
             coverage_selection: Default::default(),
-            legacy_strategy_adjustment: Default::default(),
+            rank_adjustment: Default::default(),
         },
         choices: choices
             .into_iter()

@@ -1347,7 +1347,7 @@ fn retention_decision(
         reasons: Vec::new(),
         strategic_signature: Default::default(),
         coverage_selection: Default::default(),
-        legacy_strategy_adjustment: Default::default(),
+        rank_adjustment: Default::default(),
     }
 }
 
