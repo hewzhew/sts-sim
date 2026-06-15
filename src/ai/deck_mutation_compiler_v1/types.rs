@@ -1,4 +1,3 @@
-use crate::ai::run_choice_policy_v1::RunChoiceDecisionV1;
 use crate::content::cards::CardId;
 use crate::state::core::RunPendingChoiceReason;
 
@@ -12,7 +11,6 @@ pub struct CompiledDeckMutationDecisionV1 {
     pub inspect_only_plans: Vec<DeckMutationPlanCandidateV1>,
     pub blocked_plans: Vec<DeckMutationPlanCandidateV1>,
     pub candidate_plans: Vec<DeckMutationPlanCandidateV1>,
-    pub legacy_decision: RunChoiceDecisionV1,
     pub label_role: &'static str,
 }
 
@@ -90,7 +88,7 @@ pub struct DeckMutationPlanCandidateV1 {
     pub allowed_consumers: AllowedDeckMutationConsumersV1,
     pub representative_count: usize,
     pub suppressed_count: usize,
-    pub legacy_selected: bool,
+    pub run_choice_policy_selected: bool,
     pub score_hint: i32,
     pub confidence: f32,
     pub reasons: Vec<String>,

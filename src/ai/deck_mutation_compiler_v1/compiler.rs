@@ -43,19 +43,19 @@ pub fn compile_deck_mutation_decision_v1(
     choice: &RunPendingChoiceState,
     mode: DeckMutationCompilerModeV1,
 ) -> CompiledDeckMutationDecisionV1 {
-    let legacy_context = build_run_choice_decision_context_v1(run_state, choice);
-    let legacy_decision =
-        plan_run_choice_decision_v1(&legacy_context, &RunChoicePolicyConfigV1::default());
-    let legacy_indices = legacy_selected_indices(&legacy_decision);
+    let run_choice_context = build_run_choice_decision_context_v1(run_state, choice);
+    let run_choice_decision =
+        plan_run_choice_decision_v1(&run_choice_context, &RunChoicePolicyConfigV1::default());
+    let run_choice_policy_indices = run_choice_policy_selected_indices(&run_choice_decision);
     let targets = exact_targets(run_state, choice);
     let mut candidate_plans = plan_candidates(run_state, choice, &targets, mode);
 
-    if let Some(indices) = &legacy_indices {
+    if let Some(indices) = &run_choice_policy_indices {
         if !candidate_plans
             .iter()
             .any(|candidate| candidate.step.deck_indices == *indices)
         {
-            if let Some(candidate) = legacy_plan_candidate(choice, &targets, indices) {
+            if let Some(candidate) = run_choice_policy_plan_candidate(choice, &targets, indices) {
                 candidate_plans.push(candidate);
             }
         }
@@ -67,7 +67,7 @@ pub fn compile_deck_mutation_decision_v1(
         .any(|target| target.card.target_class.is_low_value_mutation_target());
 
     for candidate in &mut candidate_plans {
-        candidate.legacy_selected = legacy_indices
+        candidate.run_choice_policy_selected = run_choice_policy_indices
             .as_ref()
             .is_some_and(|indices| candidate.step.deck_indices == *indices);
         evaluate_candidate(choice, candidate, low_value_available);
@@ -108,7 +108,6 @@ pub fn compile_deck_mutation_decision_v1(
         inspect_only_plans,
         blocked_plans,
         candidate_plans,
-        legacy_decision,
         label_role: "behavior_policy_not_teacher",
     }
 }
@@ -142,7 +141,7 @@ fn exact_targets(run_state: &RunState, choice: &RunPendingChoiceState) -> Vec<Ex
             crate::state::selection::SelectionTargetRef::CardUuid(uuid) => *uuid,
         })
         .collect::<BTreeSet<_>>();
-    let legacy_context = build_run_choice_decision_context_v1(run_state, choice);
+    let run_choice_context = build_run_choice_decision_context_v1(run_state, choice);
 
     run_state
         .master_deck
@@ -150,7 +149,7 @@ fn exact_targets(run_state: &RunState, choice: &RunPendingChoiceState) -> Vec<Ex
         .enumerate()
         .filter(|(_, card)| target_uuids.contains(&card.uuid))
         .map(|(deck_index, card)| {
-            let legacy_candidate = legacy_context
+            let run_choice_candidate = run_choice_context
                 .candidates
                 .iter()
                 .find(|candidate| candidate.deck_index == deck_index);
@@ -162,12 +161,13 @@ fn exact_targets(run_state: &RunState, choice: &RunPendingChoiceState) -> Vec<Ex
                     label: card_label(card.id, card.upgrades),
                     target_class: target_class_for_choice(
                         choice.reason,
-                        legacy_candidate.map(|candidate| candidate.class),
+                        run_choice_candidate.map(|candidate| candidate.class),
                     ),
                 },
                 identity_key: card_stat_identity_key(card),
-                selectable: legacy_candidate.is_some_and(|candidate| candidate.selectable),
-                upgrade_priority: legacy_candidate.and_then(|candidate| candidate.upgrade_priority),
+                selectable: run_choice_candidate.is_some_and(|candidate| candidate.selectable),
+                upgrade_priority: run_choice_candidate
+                    .and_then(|candidate| candidate.upgrade_priority),
                 duplicate_priority: run_choice_duplicate_priority_v1(card, run_state),
             }
         })
@@ -214,11 +214,11 @@ fn plan_candidates(
         },
     )
     .unwrap_or_else(|| {
-        let legacy_context = build_run_choice_decision_context_v1(run_state, choice);
-        let legacy_decision =
-            plan_run_choice_decision_v1(&legacy_context, &RunChoicePolicyConfigV1::default());
-        legacy_selected_indices(&legacy_decision)
-            .and_then(|indices| legacy_plan_candidate(choice, targets, &indices))
+        let run_choice_context = build_run_choice_decision_context_v1(run_state, choice);
+        let run_choice_decision =
+            plan_run_choice_decision_v1(&run_choice_context, &RunChoicePolicyConfigV1::default());
+        run_choice_policy_selected_indices(&run_choice_decision)
+            .and_then(|indices| run_choice_policy_plan_candidate(choice, targets, &indices))
             .into_iter()
             .collect()
     })
@@ -386,7 +386,7 @@ fn binomial(n: usize, k: usize) -> usize {
     (0..k).fold(1usize, |acc, i| acc * (n - i) / (i + 1))
 }
 
-fn legacy_plan_candidate(
+fn run_choice_policy_plan_candidate(
     choice: &RunPendingChoiceState,
     targets: &[ExactTarget],
     indices: &[usize],
@@ -463,7 +463,7 @@ fn candidate_from_targets(
         allowed_consumers: AllowedDeckMutationConsumersV1::default(),
         representative_count,
         suppressed_count: representative_count.saturating_sub(1),
-        legacy_selected: false,
+        run_choice_policy_selected: false,
         score_hint,
         confidence: 0.0,
         reasons: vec![format!("candidate for {:?}", choice.reason)],
@@ -501,7 +501,7 @@ fn evaluate_candidate(
         DeckMutationPlanRoleV1::InspectOnly
     } else if mutation_choice && has_functional_target {
         DeckMutationPlanRoleV1::RiskyExploration
-    } else if candidate.legacy_selected {
+    } else if candidate.run_choice_policy_selected {
         DeckMutationPlanRoleV1::PolicyPreferred
     } else if mutation_choice && all_low_value {
         DeckMutationPlanRoleV1::SafeAlternative
@@ -520,7 +520,7 @@ fn evaluate_candidate(
     };
     candidate.allowed_consumers = allowed_consumers(choice.reason, role, candidate);
     candidate.reasons.push(format!("role={role:?}"));
-    if candidate.legacy_selected {
+    if candidate.run_choice_policy_selected {
         candidate
             .reasons
             .push("legacy run-choice policy selected this plan".to_string());
@@ -623,7 +623,7 @@ fn target_class_from_legacy(class: RunChoicePolicyClassV1) -> DeckMutationTarget
 
 fn target_class_for_choice(
     reason: RunPendingChoiceReason,
-    legacy_class: Option<RunChoicePolicyClassV1>,
+    run_choice_class: Option<RunChoicePolicyClassV1>,
 ) -> DeckMutationTargetClassV1 {
     match reason {
         RunPendingChoiceReason::Upgrade => DeckMutationTargetClassV1::UpgradeTarget,
@@ -635,7 +635,7 @@ fn target_class_for_choice(
         | RunPendingChoiceReason::PurgeNonBottled
         | RunPendingChoiceReason::Transform
         | RunPendingChoiceReason::TransformNonBottled
-        | RunPendingChoiceReason::TransformUpgraded => legacy_class
+        | RunPendingChoiceReason::TransformUpgraded => run_choice_class
             .map(target_class_from_legacy)
             .unwrap_or(DeckMutationTargetClassV1::Unsupported),
     }
@@ -653,7 +653,7 @@ impl DeckMutationTargetClassV1 {
     }
 }
 
-fn legacy_selected_indices(
+fn run_choice_policy_selected_indices(
     decision: &crate::ai::run_choice_policy_v1::RunChoiceDecisionV1,
 ) -> Option<Vec<usize>> {
     let RunChoicePolicyActionV1::SelectDeckIndices { indices, .. } = &decision.action else {

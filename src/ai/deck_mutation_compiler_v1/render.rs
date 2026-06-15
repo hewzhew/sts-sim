@@ -51,7 +51,7 @@ fn render_plan_line(plan: &DeckMutationPlanCandidateV1) -> String {
         plan.step.command,
         plan.role,
         render_allowed(plan),
-        plan.legacy_selected,
+        plan.run_choice_policy_selected,
         plan.confidence,
         plan.representative_count,
         plan.suppressed_count,
