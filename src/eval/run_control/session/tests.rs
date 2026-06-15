@@ -843,6 +843,12 @@ fn run_control_auto_run_purges_curse_at_shop() {
         record.selection.status,
         crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
     );
+    assert_eq!(record.provenance.source_policy, "shop_compiler_v1");
+    assert_eq!(
+        record.provenance.source_schema_name,
+        "CompiledShopDecisionV1"
+    );
+    assert_eq!(record.selection.selection_mode, "compiled_shop_decision_v1");
     assert_eq!(session.run_state.gold, 25);
     assert!(!session
         .run_state

@@ -20,18 +20,7 @@ pub(super) fn apply_shop_policy_action(
     let Some(step) = compiled.selected_plan.steps.first() else {
         return Ok(None);
     };
-    let action =
-        crate::ai::shop_policy_v1::shop_policy_action_from_plan_v1(&compiled.selected_plan)
-            .unwrap_or_else(|| crate::ai::shop_policy_v1::ShopPolicyActionV1::Stop {
-                reason: compiled.selected_plan.reason.clone(),
-            });
-    let decision = crate::ai::shop_policy_v1::ShopDecisionV1 {
-        action,
-        label_role: "behavior_policy_not_teacher",
-        context: context.clone(),
-        strategic_trace: compiled.strategic_trace.clone(),
-    };
-    let noncombat_record = decision.to_noncombat_decision_record_v1();
+    let noncombat_record = compiled.to_noncombat_decision_record_v1();
     let (input, label) = shop_plan_step_input_and_label(step);
     let confidence = compiled.selected_plan.legacy_confidence.unwrap_or(0.0);
     let summary = format!(
@@ -40,7 +29,7 @@ pub(super) fn apply_shop_policy_action(
         compiled.selected_plan.reason,
         compiled.selected_plan.plan_id,
         compiled.selected_plan.source,
-        decision.label_role
+        "behavior_policy_not_teacher"
     );
 
     let outcome = session.apply_input(input)?.with_trace_annotations(vec![

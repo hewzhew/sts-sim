@@ -2,7 +2,8 @@ use crate::ai::noncombat_decision_v1::{
     CandidateDescriptorV1, DataRoleV1, DecisionSiteKindV1, EvidenceBundleV1, EvidenceItemV1,
     EvidenceKindV1, InformationBoundaryV1, InformationClassV1, NonCombatDecisionRecordV1,
     PolicyProvenanceV1, PolicySelectionStatusV1, PolicySelectionV1, PublicActionPlanV1,
-    NONCOMBAT_DECISION_RECORD_SCHEMA_NAME, NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
+    ValueComponentV1, ValueEstimateV1, NONCOMBAT_DECISION_RECORD_SCHEMA_NAME,
+    NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
 };
 use crate::ai::noncombat_strategy_v1::{
     RunStrategySnapshotV2, StrategyPackageIdV2, StrategyPlanSupportV1,
@@ -324,6 +325,149 @@ pub enum ShopPolicyActionV1 {
     Stop {
         reason: String,
     },
+}
+
+impl CompiledShopDecisionV1 {
+    pub fn to_noncombat_decision_record_v1(&self) -> NonCombatDecisionRecordV1 {
+        let selected_candidate_id = (self.selected_plan.kind == ShopPlanKindV1::Execute
+            && !self.selected_plan.steps.is_empty())
+        .then(|| self.selected_plan.plan_id.clone());
+        let selected_evaluation = self
+            .candidate_plans
+            .iter()
+            .find(|candidate| candidate.plan.plan_id == self.selected_plan.plan_id)
+            .map(|candidate| &candidate.evaluation);
+
+        NonCombatDecisionRecordV1 {
+            schema_name: NONCOMBAT_DECISION_RECORD_SCHEMA_NAME.to_string(),
+            schema_version: NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
+            site: DecisionSiteKindV1::Shop,
+            data_role: DataRoleV1::BehaviorPolicyNotTeacher,
+            information_boundary: InformationBoundaryV1::hidden_free(vec![
+                InformationClassV1::PublicObservation,
+                InformationClassV1::Belief,
+            ]),
+            provenance: PolicyProvenanceV1 {
+                source_policy: "shop_compiler_v1".to_string(),
+                source_schema_name: "CompiledShopDecisionV1".to_string(),
+                source_schema_version: 1,
+            },
+            candidates: self
+                .candidate_plans
+                .iter()
+                .map(compiled_shop_candidate_descriptor)
+                .collect(),
+            evidence: EvidenceBundleV1 {
+                items: self
+                    .candidate_plans
+                    .iter()
+                    .map(compiled_shop_evidence_item)
+                    .collect(),
+                assumptions: vec![
+                    "shop compiler evaluates plan candidates before selecting an action"
+                        .to_string(),
+                    "legacy priority is retained as estimate evidence, not as an execution entry point"
+                        .to_string(),
+                    "shop automation is a behavior policy, not a teacher label".to_string(),
+                ],
+                warnings: Vec::new(),
+            },
+            values: self
+                .candidate_plans
+                .iter()
+                .map(compiled_shop_value_estimate)
+                .collect(),
+            selection: PolicySelectionV1 {
+                status: if selected_candidate_id.is_some() {
+                    PolicySelectionStatusV1::Selected
+                } else {
+                    PolicySelectionStatusV1::Stopped
+                },
+                selected_candidate_id,
+                reason: self.selected_plan.reason.clone(),
+                confidence: selected_evaluation
+                    .map(|evaluation| evaluation.confidence)
+                    .or(self.selected_plan.legacy_confidence)
+                    .unwrap_or(0.0),
+                selection_mode: "compiled_shop_decision_v1".to_string(),
+            },
+        }
+    }
+}
+
+fn compiled_shop_candidate_descriptor(candidate: &ShopPlanCandidateV1) -> CandidateDescriptorV1 {
+    CandidateDescriptorV1 {
+        candidate_id: candidate.plan.plan_id.clone(),
+        site: DecisionSiteKindV1::Shop,
+        label: candidate.plan.label.clone(),
+        action_plan: PublicActionPlanV1 {
+            summary: candidate.plan.label.clone(),
+            command: candidate.plan.steps.first().map(compiled_shop_step_command),
+        },
+        information_classes: vec![
+            InformationClassV1::PublicObservation,
+            InformationClassV1::Belief,
+        ],
+        uncertainty_notes: candidate.evaluation.reasons.clone(),
+    }
+}
+
+fn compiled_shop_evidence_item(candidate: &ShopPlanCandidateV1) -> EvidenceItemV1 {
+    let evaluation = &candidate.evaluation;
+    let mut components = vec![
+        ValueComponentV1::new(format!("role_{:?}", candidate.role), 1.0),
+        ValueComponentV1::new(format!("verdict_{:?}", evaluation.verdict), 1.0),
+        ValueComponentV1::new("tier", evaluation.tier as f32),
+        ValueComponentV1::new("score", evaluation.score as f32),
+        ValueComponentV1::new("confidence", evaluation.confidence),
+        ValueComponentV1::new("component_net", evaluation.component_score.net),
+    ];
+    if let Some(priority) = evaluation.legacy_priority {
+        components.push(ValueComponentV1::new("legacy_priority", priority as f32));
+    }
+
+    EvidenceItemV1 {
+        kind: EvidenceKindV1::PolicyGate,
+        candidate_id: Some(candidate.plan.plan_id.clone()),
+        label: format!(
+            "shop plan role={:?} verdict={:?} tier={} score={} source={:?}",
+            candidate.role,
+            evaluation.verdict,
+            evaluation.tier,
+            evaluation.score,
+            candidate.plan.source
+        ),
+        information_class: InformationClassV1::Belief,
+        components,
+    }
+}
+
+fn compiled_shop_value_estimate(candidate: &ShopPlanCandidateV1) -> ValueEstimateV1 {
+    let evaluation = &candidate.evaluation;
+    ValueEstimateV1 {
+        candidate_id: candidate.plan.plan_id.clone(),
+        mean_utility: evaluation.score as f32,
+        risk_adjusted_utility: evaluation.score as f32 + evaluation.component_score.net,
+        confidence: evaluation.confidence,
+        components: vec![
+            ValueComponentV1::new("tier", evaluation.tier as f32),
+            ValueComponentV1::new("score", evaluation.score as f32),
+            ValueComponentV1::new("component_positive", evaluation.component_score.positive),
+            ValueComponentV1::new("component_negative", evaluation.component_score.negative),
+            ValueComponentV1::new("component_net", evaluation.component_score.net),
+        ],
+        evidence_refs: Vec::new(),
+    }
+}
+
+fn compiled_shop_step_command(step: &ShopPlanStepV1) -> String {
+    match *step {
+        ShopPlanStepV1::BuyCard { index, .. } => format!("buy-card {index}"),
+        ShopPlanStepV1::BuyRelic { index, .. } => format!("buy-relic {index}"),
+        ShopPlanStepV1::BuyPotion { index, .. } => format!("buy-potion {index}"),
+        ShopPlanStepV1::RemoveCard { deck_index, .. } => format!("purge {deck_index}"),
+        ShopPlanStepV1::LeaveShop => "leave".to_string(),
+    }
 }
 
 impl ShopDecisionV1 {
