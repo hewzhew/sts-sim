@@ -89,11 +89,67 @@ fn evaluated_branch_alternatives_v1(
         allow_candidates
     };
     alternatives.sort_by(|left, right| compare_branch_alternative_candidates_v1(left, right));
+    let alternatives = select_branch_alternatives_with_effect_coverage_v1(&alternatives, max_plans);
     alternatives
         .into_iter()
-        .take(max_plans)
         .map(|candidate| plan_with_evaluation_v1(&candidate.plan, &candidate.evaluation))
         .collect()
+}
+
+fn select_branch_alternatives_with_effect_coverage_v1<'a>(
+    sorted_candidates: &[&'a ShopPlanCandidateV1],
+    max_plans: usize,
+) -> Vec<&'a ShopPlanCandidateV1> {
+    if max_plans == 0 {
+        return Vec::new();
+    }
+
+    let mut selected = Vec::new();
+    let mut represented = std::collections::BTreeSet::<String>::new();
+    for effect_kind in [
+        "shop_buy_combo",
+        "shop_buy_relic",
+        "shop_buy_card",
+        "shop_buy_potion",
+        "shop_purge",
+        "shop_leave",
+    ] {
+        if selected.len() >= max_plans {
+            break;
+        }
+        let Some(candidate) = sorted_candidates.iter().copied().find(|candidate| {
+            shop_plan_effect_kind_for_coverage_v1(&candidate.plan) == effect_kind
+                && !represented.contains(&candidate.plan.plan_id)
+        }) else {
+            continue;
+        };
+        represented.insert(candidate.plan.plan_id.clone());
+        selected.push(candidate);
+    }
+
+    for candidate in sorted_candidates.iter().copied() {
+        if selected.len() >= max_plans {
+            break;
+        }
+        if represented.insert(candidate.plan.plan_id.clone()) {
+            selected.push(candidate);
+        }
+    }
+    selected
+}
+
+fn shop_plan_effect_kind_for_coverage_v1(plan: &ShopPlanV1) -> &'static str {
+    if plan.steps.len() > 1 {
+        return "shop_buy_combo";
+    }
+    match plan.steps.first() {
+        Some(ShopPlanStepV1::BuyCard { .. }) => "shop_buy_card",
+        Some(ShopPlanStepV1::BuyRelic { .. }) => "shop_buy_relic",
+        Some(ShopPlanStepV1::BuyPotion { .. }) => "shop_buy_potion",
+        Some(ShopPlanStepV1::RemoveCard { .. }) => "shop_purge",
+        Some(ShopPlanStepV1::LeaveShop) => "shop_leave",
+        None => "shop_stop",
+    }
 }
 
 fn compare_branch_alternative_candidates_v1(

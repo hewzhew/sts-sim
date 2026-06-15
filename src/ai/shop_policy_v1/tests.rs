@@ -871,7 +871,7 @@ fn compiled_shop_plan_evaluations_expose_component_score() {
 }
 
 #[test]
-fn compiled_shop_branch_alternatives_are_sorted_by_component_score() {
+fn compiled_shop_branch_alternatives_preserve_effect_coverage() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 500;
     let mut shop = ShopState::new();
@@ -901,24 +901,30 @@ fn compiled_shop_branch_alternatives_are_sorted_by_component_score() {
         &ShopPolicyConfigV1::default(),
         ShopCompileModeV1::BranchTopK { max_plans: 4 },
     );
-    let scores = compiled
+    let effect_kinds = compiled
         .alternatives
         .iter()
         .map(|plan| {
-            compiled
-                .candidate_plans
-                .iter()
-                .find(|candidate| candidate.plan.plan_id == plan.plan_id)
-                .expect("alternative should have matching candidate")
-                .evaluation
-                .component_score
-                .net
+            if plan.steps.len() > 1 {
+                "shop_buy_combo"
+            } else {
+                match plan.steps.first() {
+                    Some(ShopPlanStepV1::BuyCard { .. }) => "shop_buy_card",
+                    Some(ShopPlanStepV1::BuyRelic { .. }) => "shop_buy_relic",
+                    Some(ShopPlanStepV1::BuyPotion { .. }) => "shop_buy_potion",
+                    Some(ShopPlanStepV1::RemoveCard { .. }) => "shop_purge",
+                    Some(ShopPlanStepV1::LeaveShop) => "shop_leave",
+                    None => "shop_stop",
+                }
+            }
         })
-        .collect::<Vec<_>>();
+        .collect::<std::collections::BTreeSet<_>>();
 
+    assert!(effect_kinds.contains("shop_buy_relic"));
+    assert!(effect_kinds.contains("shop_buy_potion"));
     assert!(
-        scores.windows(2).all(|pair| pair[0] >= pair[1]),
-        "branch alternatives should be sorted by component score, got {scores:?}"
+        effect_kinds.len() >= 3,
+        "branch alternatives should preserve effect coverage, got {effect_kinds:?}"
     );
 }
 
