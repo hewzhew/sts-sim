@@ -2,7 +2,7 @@ use super::types::{
     RewardCandidateEvidenceV1, RewardPolicyActionV1, RewardPolicyClassV1, RewardPolicyConfigV1,
 };
 
-pub(crate) fn claim_approval(
+pub(crate) fn low_agency_claim_action(
     candidate: &RewardCandidateEvidenceV1,
     config: &RewardPolicyConfigV1,
 ) -> Option<RewardPolicyActionV1> {

@@ -4,7 +4,7 @@ use crate::content::relics::RelicId;
 use crate::state::rewards::{RewardItem, RewardState};
 use crate::state::run::RunState;
 
-use super::approvals::claim_approval;
+use super::evaluator::low_agency_claim_action;
 use super::types::{
     reward_candidate_id, RewardCandidateEvidenceV1, RewardDecisionContextV1, RewardDecisionV1,
     RewardPolicyActionV1, RewardPolicyClassV1, RewardPolicyConfigV1,
@@ -59,7 +59,7 @@ pub fn plan_reward_decision_v1(
         context
             .candidates
             .iter()
-            .find_map(|candidate| claim_approval(candidate, config))
+            .find_map(|candidate| low_agency_claim_action(candidate, config))
             .unwrap_or_else(|| RewardPolicyActionV1::Stop {
                 reason: stop_reason(context),
             })
@@ -199,5 +199,5 @@ fn stop_reason(context: &RewardDecisionContextV1) -> String {
         .map(|candidate| format!("{}:{:?}", candidate.label, candidate.class))
         .collect::<Vec<_>>()
         .join(", ");
-    format!("reward policy stopped because no low-agency claim approval matched ({classes})")
+    format!("reward policy stopped because no low-agency claim action matched ({classes})")
 }
