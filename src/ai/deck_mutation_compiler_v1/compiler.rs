@@ -72,17 +72,11 @@ pub fn compile_deck_mutation_decision_v1(
             .is_some_and(|indices| candidate.step.deck_indices == *indices);
         evaluate_candidate(choice, candidate, low_value_available);
     }
+    candidate_plans.sort_by(compare_deck_mutation_candidates_v1);
 
     let selected_plan = candidate_plans
         .iter()
-        .find(|candidate| {
-            candidate.legacy_selected && candidate.allowed_consumers.execute_autopilot
-        })
-        .or_else(|| {
-            candidate_plans
-                .iter()
-                .find(|candidate| candidate.allowed_consumers.execute_autopilot)
-        })
+        .find(|candidate| candidate.allowed_consumers.execute_autopilot)
         .cloned();
     let branch_limit = match mode {
         DeckMutationCompilerModeV1::BranchTopK { max_active } => max_active,
@@ -116,6 +110,26 @@ pub fn compile_deck_mutation_decision_v1(
         candidate_plans,
         legacy_decision,
         label_role: "behavior_policy_not_teacher",
+    }
+}
+
+fn compare_deck_mutation_candidates_v1(
+    left: &DeckMutationPlanCandidateV1,
+    right: &DeckMutationPlanCandidateV1,
+) -> std::cmp::Ordering {
+    deck_mutation_role_rank(left.role)
+        .cmp(&deck_mutation_role_rank(right.role))
+        .then_with(|| right.score_hint.cmp(&left.score_hint))
+        .then_with(|| left.step.command.cmp(&right.step.command))
+}
+
+fn deck_mutation_role_rank(role: DeckMutationPlanRoleV1) -> u8 {
+    match role {
+        DeckMutationPlanRoleV1::PolicyPreferred => 0,
+        DeckMutationPlanRoleV1::SafeAlternative => 1,
+        DeckMutationPlanRoleV1::RiskyExploration => 2,
+        DeckMutationPlanRoleV1::InspectOnly => 3,
+        DeckMutationPlanRoleV1::Blocked => 4,
     }
 }
 

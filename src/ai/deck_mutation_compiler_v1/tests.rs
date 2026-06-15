@@ -60,7 +60,7 @@ fn compiler_keeps_low_value_purge_targets_branch_active() {
 }
 
 #[test]
-fn compiler_execute_one_uses_legacy_selected_plan() {
+fn compiler_execute_one_selects_evaluated_policy_preferred_plan() {
     let run_state = RunState::new(1, 0, false, "Ironclad");
     let choice = choice(RunPendingChoiceReason::PurgeNonBottled, 1);
 
@@ -74,6 +74,10 @@ fn compiler_execute_one_uses_legacy_selected_plan() {
     assert_eq!(selected.step.command, "select 0");
     assert_eq!(selected.role, DeckMutationPlanRoleV1::PolicyPreferred);
     assert!(selected.allowed_consumers.execute_autopilot);
+    assert!(decision
+        .candidate_plans
+        .iter()
+        .any(|candidate| candidate.plan_id == selected.plan_id));
 }
 
 #[test]

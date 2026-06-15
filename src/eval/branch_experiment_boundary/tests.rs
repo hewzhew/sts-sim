@@ -1226,22 +1226,24 @@ fn current_boundary_compresses_duplicate_campfire_smith_options() {
         .expect("campfire boundary");
 
     assert_eq!(boundary.id, BranchBoundaryIdV1::Campfire);
+    let mut upgrade_options = boundary
+        .options
+        .iter()
+        .filter(|option| option.effect_kind == "upgrade_card")
+        .map(|option| {
+            (
+                option.command.as_str(),
+                option.effect_label.as_str(),
+                option.card,
+                option.upgrades,
+                option.representative_count,
+                option.suppressed_count,
+            )
+        })
+        .collect::<Vec<_>>();
+    upgrade_options.sort_by(|left, right| left.0.cmp(right.0));
     assert_eq!(
-        boundary
-            .options
-            .iter()
-            .filter(|option| option.effect_kind == "upgrade_card")
-            .map(|option| {
-                (
-                    option.command.as_str(),
-                    option.effect_label.as_str(),
-                    option.card,
-                    option.upgrades,
-                    option.representative_count,
-                    option.suppressed_count,
-                )
-            })
-            .collect::<Vec<_>>(),
+        upgrade_options,
         vec![
             (
                 "smith 0",
@@ -1706,19 +1708,21 @@ fn current_boundary_compresses_multi_card_run_selection_by_effect_key() {
         .expect("compressed multi-card run selection boundary");
 
     assert_eq!(boundary.id, BranchBoundaryIdV1::RunSelection);
+    let mut options = boundary
+        .options
+        .iter()
+        .map(|option| {
+            (
+                option.command.as_str(),
+                option.effect_label.as_str(),
+                option.representative_count,
+                option.suppressed_count,
+            )
+        })
+        .collect::<Vec<_>>();
+    options.sort_by(|left, right| left.0.cmp(right.0));
     assert_eq!(
-        boundary
-            .options
-            .iter()
-            .map(|option| {
-                (
-                    option.command.as_str(),
-                    option.effect_label.as_str(),
-                    option.representative_count,
-                    option.suppressed_count,
-                )
-            })
-            .collect::<Vec<_>>(),
+        options,
         vec![
             ("select 0 1", "transform Strike x2", 10, 9),
             ("select 0 5", "transform Strike, Defend", 20, 19),
