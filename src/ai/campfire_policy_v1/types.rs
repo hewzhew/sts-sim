@@ -134,7 +134,7 @@ impl CampfireDecisionV1 {
             ]),
             provenance: PolicyProvenanceV1 {
                 source_policy: "campfire_policy_v1".to_string(),
-                source_schema_name: "CampfirePolicyConfigV1".to_string(),
+                source_schema_name: "CampfireDecisionV1".to_string(),
                 source_schema_version: 1,
             },
             candidates: self

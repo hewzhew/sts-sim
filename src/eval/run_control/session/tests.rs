@@ -763,6 +763,8 @@ fn run_control_auto_run_uses_recovery_route_package_to_rest_at_low_hp_campfire()
         record.data_role,
         crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
     );
+    assert_eq!(record.provenance.source_policy, "campfire_policy_v1");
+    assert_eq!(record.provenance.source_schema_name, "CampfireDecisionV1");
     assert_eq!(
         record.selection.selection_mode,
         "campfire_candidate_approval_v1"
