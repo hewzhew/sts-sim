@@ -51,17 +51,10 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
             options.push(option);
         }
     }
-    if options.is_empty() {
-        options.push(ShopBranchOption {
-            label: "Leave shop".to_string(),
-            command: "leave".to_string(),
-            card: None,
-            effect_kind: "shop_leave".to_string(),
-            effect_label: "Leave shop | no compiled executable shop plan".to_string(),
-            representative_count: 1,
-            suppressed_count: 0,
-        });
-    }
+    debug_assert!(
+        !options.is_empty(),
+        "shop compiler should expose an executable branch option, usually LeaveShop"
+    );
     Some(options)
 }
 
