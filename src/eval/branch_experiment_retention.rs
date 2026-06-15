@@ -876,12 +876,7 @@ pub fn branch_retention_rank_adjustment_v1(
     let context = branch_retention_context_packet_v2(candidate);
     let card_admission = branch_retention_card_admission_rank_cost_v1(candidate);
     let current_startup_debt_adjustment = current_startup_debt_rank_adjustment_v1(candidate);
-    let startup_adjustment = current_startup_debt_adjustment
-        + if card_admission.startup_blocking {
-            -50_000
-        } else {
-            0
-        };
+    let startup_adjustment = current_startup_debt_adjustment;
     let component_adjustment = card_admission.rank_adjustment;
     let mut reasons = card_admission.reasons;
 
@@ -891,7 +886,7 @@ pub fn branch_retention_rank_adjustment_v1(
         ));
     }
     if card_admission.startup_blocking {
-        reasons.push("card_admission_startup_block:-50000".to_string());
+        reasons.push("card_admission_startup_block:evidence_only".to_string());
     }
     if startup_adjustment != 0 {
         reasons.push(format!(
