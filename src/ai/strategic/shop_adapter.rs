@@ -112,7 +112,9 @@ fn candidate_delta_from_shop_candidate(
     delta.notes.extend(candidate.risks.clone());
 
     match candidate.class {
-        ShopPolicyClassV1::CursePurge | ShopPolicyClassV1::StarterStrikePurge => {
+        ShopPolicyClassV1::CursePurge
+        | ShopPolicyClassV1::StarterStrikePurge
+        | ShopPolicyClassV1::StarterDefendPurge => {
             delta.role = CandidateRole::DeckCleaning;
             delta.verdict_hint = VerdictHint::StrongTake;
             delta.positive.push(LedgerDelta {

@@ -63,6 +63,7 @@ pub enum ShopPurchaseTargetV1 {
 pub enum ShopPolicyClassV1 {
     CursePurge,
     StarterStrikePurge,
+    StarterDefendPurge,
     PurchaseOpportunity,
     Leave,
     Unknown,

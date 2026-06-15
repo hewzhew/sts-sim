@@ -88,8 +88,8 @@ fn evaluate_single_candidate_v1(
 ) -> ShopPlanEvaluationV1 {
     match candidate.class {
         ShopPolicyClassV1::CursePurge => evaluate_curse_purge_v1(candidate, config),
-        ShopPolicyClassV1::StarterStrikePurge => {
-            evaluate_starter_strike_purge_v1(context, candidate, config)
+        ShopPolicyClassV1::StarterStrikePurge | ShopPolicyClassV1::StarterDefendPurge => {
+            evaluate_starter_purge_v1(candidate, config)
         }
         ShopPolicyClassV1::PurchaseOpportunity => {
             evaluate_purchase_v1(candidate, context, config, strategic_trace)
@@ -199,8 +199,7 @@ fn evaluate_purchase_v1(
     )
 }
 
-fn evaluate_starter_strike_purge_v1(
-    context: &ShopDecisionContextV1,
+fn evaluate_starter_purge_v1(
     candidate: &ShopCandidateEvidenceV1,
     config: &ShopPolicyConfigV1,
 ) -> ShopPlanEvaluationV1 {
@@ -219,19 +218,20 @@ fn evaluate_starter_strike_purge_v1(
             ),
         );
     }
-    if context.affordable_purchase_exists {
-        return ShopPlanEvaluationV1::block(
-            None,
-            "starter strike purge blocked because affordable purchase competes",
-        );
-    }
-    ShopPlanEvaluationV1::allow(
-        100,
-        700,
-        0.74,
-        None,
-        "shop evaluator: CorePlanProtection Strong and no affordable purchase competes",
-    )
+    let (tier, score, reason) = match candidate.class {
+        ShopPolicyClassV1::StarterStrikePurge => (
+            260,
+            760,
+            "shop evaluator: starter strike cleanup from DeckMutationCompiler",
+        ),
+        ShopPolicyClassV1::StarterDefendPurge => (
+            240,
+            720,
+            "shop evaluator: starter defend cleanup from DeckMutationCompiler",
+        ),
+        _ => (100, 700, "shop evaluator: starter cleanup"),
+    };
+    ShopPlanEvaluationV1::allow(tier, score, 0.74, None, reason)
 }
 
 fn evaluate_portfolio_plan_v1(

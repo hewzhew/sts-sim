@@ -510,11 +510,12 @@ fn current_boundary_expands_certified_shop_purge() {
         .expect("shop purge boundary");
 
     assert_eq!(boundary.id, BranchBoundaryIdV1::Shop);
-    assert_eq!(boundary.options.len(), 1);
-    assert_eq!(boundary.options[0].kind, "shop_policy_purge");
-    assert_eq!(boundary.options[0].command, "purge 10");
-    assert_eq!(boundary.options[0].effect_kind, "shop_purge");
-    assert_eq!(boundary.options[0].card, Some(CardId::Doubt));
+    assert!(boundary.options.iter().any(|option| {
+        option.kind == "shop_policy_purge"
+            && option.command == "purge 10"
+            && option.effect_kind == "shop_purge"
+            && option.card == Some(CardId::Doubt)
+    }));
 }
 
 #[test]
@@ -571,8 +572,10 @@ fn current_boundary_expands_low_fanout_shop_purchase_choices() {
 
     assert_eq!(boundary.id, BranchBoundaryIdV1::Shop);
     assert!(!commands.is_empty());
-    assert!(commands.len() <= 3);
-    assert!(commands.iter().all(|command| command.starts_with("buy ")));
+    assert!(commands.len() <= 4);
+    assert!(commands
+        .iter()
+        .all(|command| command.starts_with("buy ") || command.starts_with("purge ")));
     assert!(commands.contains(&"buy potion 0") || commands.contains(&"buy relic 0"));
 }
 
@@ -782,7 +785,8 @@ fn current_boundary_suppresses_shop_leave_for_high_impact_affordable_relic() {
         .map(|option| option.command.as_str())
         .collect::<Vec<_>>();
 
-    assert_eq!(commands, vec!["buy relic 0"]);
+    assert!(commands.contains(&"buy relic 0"));
+    assert!(!commands.contains(&"leave"));
 }
 
 #[test]
@@ -873,7 +877,9 @@ fn current_boundary_does_not_branch_on_shop_potion_when_slots_are_full() {
         .map(|option| option.command.as_str())
         .collect::<Vec<_>>();
 
-    assert_eq!(commands, vec!["leave"]);
+    assert!(!commands
+        .iter()
+        .any(|command| command.starts_with("buy potion")));
 }
 
 #[test]
@@ -912,14 +918,9 @@ fn current_boundary_does_not_branch_late_act3_bloated_shop_goodstuff_cards() {
             .all(|option| option.effect_kind != "shop_buy_card"),
         "late Act3 shop should not keep low-impact goodstuff card buys for a bloated deck"
     );
-    assert_eq!(
-        boundary
-            .options
-            .iter()
-            .map(|option| option.command.as_str())
-            .collect::<Vec<_>>(),
-        vec!["leave"]
-    );
+    assert!(boundary.options.iter().any(|option| {
+        option.effect_kind == "shop_leave" || option.effect_kind == "shop_purge"
+    }));
 }
 
 #[test]

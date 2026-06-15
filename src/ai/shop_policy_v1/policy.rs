@@ -170,7 +170,7 @@ fn purge_candidate_evidence(
     let deck_index = card_snapshot.deck_index;
     let card = card_snapshot.card;
     let class = purge_class_from_deck_mutation_target(card_snapshot.target_class);
-    let support_gate = purge_support_gate(class, strategy);
+    let support_gate = purge_support_gate(class, plan, strategy);
     let card_name = get_card_definition(card).name;
     let mut evidence = vec![
         format!("DeckMutationCompilerV1 plan_id={}", plan.plan_id),
@@ -209,7 +209,7 @@ fn purge_candidate_evidence(
             evidence.push(TAG_DECK_CLEANING.to_string());
             evidence.push("card is a curse".to_string());
         }
-        ShopPolicyClassV1::StarterStrikePurge => {
+        ShopPolicyClassV1::StarterStrikePurge | ShopPolicyClassV1::StarterDefendPurge => {
             evidence.push(TAG_DECK_CLEANING.to_string());
             evidence.push(format!(
                 "CorePlanProtection support is {:?}",
@@ -225,7 +225,8 @@ fn purge_candidate_evidence(
             ));
             if support_gate != StrategyPlanSupportV1::Strong {
                 risks.push(
-                    "starter strike purge is blocked by current strategy packages".to_string(),
+                    "starter purge is blocked by deck mutation compiler or strategy packages"
+                        .to_string(),
                 );
             }
         }
@@ -357,23 +358,28 @@ fn purge_class_from_deck_mutation_target(
     match target_class {
         DeckMutationTargetClassV1::Curse => ShopPolicyClassV1::CursePurge,
         DeckMutationTargetClassV1::StarterStrike => ShopPolicyClassV1::StarterStrikePurge,
+        DeckMutationTargetClassV1::StarterDefend => ShopPolicyClassV1::StarterDefendPurge,
         _ => ShopPolicyClassV1::Unknown,
     }
 }
 
 fn purge_support_gate(
     class: ShopPolicyClassV1,
+    plan: &DeckMutationPlanCandidateV1,
     strategy: &crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
 ) -> StrategyPlanSupportV1 {
     match class {
         ShopPolicyClassV1::CursePurge => StrategyPlanSupportV1::Strong,
-        ShopPolicyClassV1::StarterStrikePurge => {
+        ShopPolicyClassV1::StarterStrikePurge | ShopPolicyClassV1::StarterDefendPurge => {
+            if !plan.allowed_consumers.execute_autopilot {
+                return StrategyPlanSupportV1::Blocked;
+            }
             let core_plan = strategy
                 .support(crate::ai::noncombat_strategy_v1::StrategyPackageIdV2::CorePlanProtection);
             let patch_window = strategy
                 .support(crate::ai::noncombat_strategy_v1::StrategyPackageIdV2::CombatPatchWindow);
             if core_plan == StrategyPlanSupportV1::Strong
-                && !matches!(
+                || !matches!(
                     patch_window,
                     StrategyPlanSupportV1::Strong | StrategyPlanSupportV1::Plausible
                 )

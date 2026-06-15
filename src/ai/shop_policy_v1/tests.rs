@@ -312,6 +312,7 @@ fn shop_policy_converts_high_gold_into_affordable_relic_even_below_old_high_impa
     run_state.act_num = 3;
     run_state.floor_num = 46;
     run_state.gold = 430;
+    run_state.master_deck.clear();
     let mut shop = ShopState::new();
     shop.relics.push(ShopRelic {
         relic_id: RelicId::Anchor,
@@ -343,6 +344,7 @@ fn compiled_shop_decision_wraps_selected_relic_purchase_as_plan() {
     run_state.act_num = 3;
     run_state.floor_num = 46;
     run_state.gold = 430;
+    run_state.master_deck.clear();
     let mut shop = ShopState::new();
     shop.relics.push(ShopRelic {
         relic_id: RelicId::Anchor,
@@ -773,7 +775,7 @@ fn compiled_shop_plan_evaluations_expose_neutral_components() {
 }
 
 #[test]
-fn compiled_shop_plan_evaluation_components_do_not_change_selected_plan() {
+fn ordinary_affordable_purchase_does_not_block_starter_purge_plan() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 3;
     run_state.floor_num = 46;
@@ -795,10 +797,10 @@ fn compiled_shop_plan_evaluation_components_do_not_change_selected_plan() {
 
     assert_eq!(
         compiled.selected_plan.steps,
-        vec![ShopPlanStepV1::BuyRelic {
-            index: 0,
-            relic: RelicId::Anchor,
-            cost: 146,
+        vec![ShopPlanStepV1::RemoveCard {
+            deck_index: 0,
+            card: CardId::Strike,
+            cost: 75,
         }]
     );
     let selected = compiled
@@ -806,8 +808,19 @@ fn compiled_shop_plan_evaluation_components_do_not_change_selected_plan() {
         .iter()
         .find(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id)
         .expect("selected plan should be a candidate");
-    assert_plan_has_component(selected, ShopPlanComponentKindV1::RelicValue);
-    assert_plan_has_component(selected, ShopPlanComponentKindV1::LegacyEstimate);
+    assert_eq!(selected.evaluation.verdict, ShopPlanVerdictV1::Allow);
+    assert_plan_has_component(selected, ShopPlanComponentKindV1::DeckCleanup);
+    assert!(compiled.candidate_plans.iter().any(|candidate| {
+        candidate.plan.steps.iter().any(|step| {
+            matches!(
+                step,
+                ShopPlanStepV1::RemoveCard {
+                    card: CardId::Defend,
+                    ..
+                }
+            )
+        })
+    }));
 }
 
 #[test]
