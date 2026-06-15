@@ -1447,7 +1447,7 @@ pub fn render_branch_campaign_compact_v1(
         && (!report.active.is_empty() || !report.frozen.is_empty())
     {
         lines.push(
-            "Next: budget ended; use .\\tools\\campaign.ps1 -More or raise -MaxRounds to keep exploring this seed"
+            "Next: budget ended; use .\\tools\\campaign.ps1 -More, or .\\tools\\campaign.ps1 -More -Rounds N to add a small fixed number of rounds"
                 .to_string(),
         );
     }

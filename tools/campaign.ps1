@@ -19,6 +19,14 @@ Reuses the last non-dry-run campaign seed.
 Resumes the latest saved campaign report with deeper defaults.
 
 .EXAMPLE
+.\tools\campaign.ps1 -More -Rounds 1
+Resumes the latest saved campaign report and advances exactly one additional round.
+
+.EXAMPLE
+.\tools\campaign.ps1 -More -UntilRound 33
+Resumes the latest saved campaign report and advances until total round 33.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Inspect
 Summarizes the latest saved campaign checkpoint with active/frozen/abandoned deck context.
 
@@ -74,6 +82,12 @@ param(
 
     [ValidateSet("quick", "focused", "deep")]
     [string] $Mode = "focused",
+
+    [ValidateRange(0, 100000)]
+    [int] $Rounds = 0,
+
+    [ValidateRange(0, 100000)]
+    [int] $UntilRound = 0,
 
     [int] $MaxRounds = 6,
     [int] $ExperimentWallMs = 10000,
@@ -140,6 +154,27 @@ foreach ($ParameterName in $PSBoundParameters.Keys) {
     $CampaignBoundParameters[$ParameterName] = $true
 }
 
+$RoundsBound = $CampaignBoundParameters.ContainsKey("Rounds")
+$UntilRoundBound = $CampaignBoundParameters.ContainsKey("UntilRound")
+$MaxRoundsBound = $CampaignBoundParameters.ContainsKey("MaxRounds")
+if (($RoundsBound -and $UntilRoundBound) -or ($RoundsBound -and $MaxRoundsBound) -or ($UntilRoundBound -and $MaxRoundsBound)) {
+    throw "Choose only one round budget: -Rounds N, -UntilRound N, or legacy -MaxRounds N."
+}
+
+$PassMaxRoundsToDriver = $MaxRoundsBound
+$RoundBudgetSource = if ($MaxRoundsBound) { "MaxRounds" } else { "preset" }
+if (-not $More) {
+    if ($RoundsBound) {
+        $MaxRounds = $Rounds
+        $PassMaxRoundsToDriver = $true
+        $RoundBudgetSource = "Rounds"
+    } elseif ($UntilRoundBound) {
+        $MaxRounds = $UntilRound
+        $PassMaxRoundsToDriver = $true
+        $RoundBudgetSource = "UntilRound"
+    }
+}
+
 $ResumeCampaignPath = $null
 $ResumeCheckpointPath = $null
 $ResumeRoundsCompleted = $null
@@ -151,9 +186,21 @@ if ($More) {
     $ResumeCampaignPath = $LatestCampaignPath
     $ResumeReport = Get-Content -LiteralPath $ResumeCampaignPath -Raw | ConvertFrom-Json
     $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
-    if ($CampaignBoundParameters.ContainsKey("MaxRounds")) {
+    if ($RoundsBound) {
+        $TargetRounds = $ResumeRoundsCompleted + $Rounds
+        $MaxRounds = $Rounds
+        $PassMaxRoundsToDriver = $true
+        $RoundBudgetSource = "Rounds"
+    } elseif ($UntilRoundBound) {
+        $TargetRounds = $UntilRound
+        $MaxRounds = [Math]::Max(0, $TargetRounds - $ResumeRoundsCompleted)
+        $PassMaxRoundsToDriver = $true
+        $RoundBudgetSource = "UntilRound"
+    } elseif ($MaxRoundsBound) {
         $TargetRounds = $MaxRounds
         $MaxRounds = [Math]::Max(0, $TargetRounds - $ResumeRoundsCompleted)
+        $PassMaxRoundsToDriver = $true
+        $RoundBudgetSource = "LegacyMaxRounds"
     }
     $DriverArgs += @("--resume", "$ResumeCampaignPath")
     if (Test-Path $LatestCheckpointPath) {
@@ -176,7 +223,9 @@ function Add-DriverArgIfBound {
     }
 }
 
-Add-DriverArgIfBound "MaxRounds" "--max-rounds" $MaxRounds
+if ($PassMaxRoundsToDriver) {
+    $DriverArgs += @("--max-rounds", "$MaxRounds")
+}
 Add-DriverArgIfBound "ExperimentWallMs" "--experiment-wall-ms" $ExperimentWallMs
 Add-DriverArgIfBound "SearchWallMs" "--search-wall-ms" $SearchWallMs
 Add-DriverArgIfBound "SearchMaxNodes" "--search-max-nodes" $SearchMaxNodes
@@ -327,14 +376,20 @@ if ($NeedsBuild) {
 }
 Write-Host "rerun-last=.\tools\campaign.ps1 -Last"
 Write-Host "run-more=.\tools\campaign.ps1 -More"
+Write-Host "run-one-more=.\tools\campaign.ps1 -More -Rounds 1"
 Write-Host "report=$LatestCampaignPath"
 Write-Host "checkpoint=$LatestCheckpointPath"
 Write-Host "combat-segment=$CombatSegmentMode"
 if ($ResumeCampaignPath) {
     Write-Host "resume=$ResumeCampaignPath"
     Write-Host "resume-rounds=$ResumeRoundsCompleted"
-    if ($CampaignBoundParameters.ContainsKey("MaxRounds")) {
-        Write-Host "target-rounds=$TargetRounds additional-rounds=$MaxRounds"
+    if ($RoundBudgetSource -eq "LegacyMaxRounds") {
+        Write-Warning "-MaxRounds with -More uses legacy target-total semantics. Prefer -Rounds N for additional rounds or -UntilRound N for a total-round target."
+    }
+    if ($TargetRounds -ne $null) {
+        Write-Host "round-budget=$RoundBudgetSource target-rounds=$TargetRounds additional-rounds=$MaxRounds"
+    } else {
+        Write-Host "round-budget=preset additional-rounds=mode-default"
     }
     if ($ResumeCheckpointPath) {
         Write-Host "resume-checkpoint=$ResumeCheckpointPath"
@@ -343,7 +398,7 @@ if ($ResumeCampaignPath) {
     }
 }
 
-if ($More -and $CampaignBoundParameters.ContainsKey("MaxRounds") -and $MaxRounds -eq 0) {
+if ($More -and $TargetRounds -ne $null -and $MaxRounds -eq 0) {
     Write-Host "already-at-target-rounds=yes; nothing to run"
     exit 0
 }
