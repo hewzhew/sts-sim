@@ -1203,16 +1203,6 @@ fn campaign_rebalances_stronger_frozen_branch_into_active_pool() {
         let mut branch = test_campaign_branch("frozen-strength", 21, 73);
         branch.status = BranchCampaignBranchStatusV1::Frozen;
         branch.rank_key = 25_500;
-        branch.strategic_summary = BranchSignatureCompact {
-            present: true,
-            boss_readiness_milli: 1000,
-            clean_score_milli: 1000,
-            engine_score_milli: 500,
-            cycle_debt_milli: 0,
-            setup_debt_milli: 0,
-            economy_conversion_milli: 0,
-            package_coherence_milli: 700,
-        };
         branch
     }];
 
