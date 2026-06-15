@@ -48,7 +48,7 @@ pub fn compile_shop_decision_v1(
         alternatives,
         candidate_plans,
         strategic_trace,
-        source: ShopDecisionSourceV1::LegacyWrapped,
+        source: ShopDecisionSourceV1::PlanEvaluationCompiler,
     }
 }
 

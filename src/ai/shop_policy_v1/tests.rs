@@ -357,7 +357,10 @@ fn compiled_shop_decision_wraps_selected_relic_purchase_as_plan() {
         ShopCompileModeV1::ExecuteOne,
     );
 
-    assert_eq!(compiled.source, ShopDecisionSourceV1::LegacyWrapped);
+    assert_eq!(
+        compiled.source,
+        ShopDecisionSourceV1::PlanEvaluationCompiler
+    );
     assert_eq!(compiled.selected_plan.kind, ShopPlanKindV1::Execute);
     assert_eq!(compiled.selected_plan.total_gold_spent, 146);
     let relic_candidate_priority = context

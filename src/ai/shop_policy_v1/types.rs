@@ -93,7 +93,7 @@ impl Default for ShopPolicyConfigV1 {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShopDecisionSourceV1 {
-    LegacyWrapped,
+    PlanEvaluationCompiler,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
