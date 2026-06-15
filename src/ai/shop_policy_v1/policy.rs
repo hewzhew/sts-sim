@@ -450,5 +450,5 @@ pub(super) fn stop_reason(context: &ShopDecisionContextV1) -> String {
             context.need.gold, context.need.floors_to_boss
         );
     }
-    format!("shop policy stopped because no conservative purge approval matched ({classes})")
+    format!("shop compiler stopped because no executable plan cleared evaluation gates ({classes})")
 }
