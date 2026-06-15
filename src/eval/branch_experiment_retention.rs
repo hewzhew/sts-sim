@@ -784,18 +784,17 @@ fn best_position_for_slot(
         })
         .filter(|position| {
             slot == BranchRetentionSlotV1::Diversity
-                || !candidate_has_slot_blocking_strategic_liability(&candidates[*position])
+                || !candidate_has_hard_slot_blocking_admission_liability(&candidates[*position])
         })
         .max_by(|left, right| {
             compare_family_then_rank(candidates, *left, *right, &covered_families)
         })
 }
 
-pub(super) fn candidate_has_slot_blocking_strategic_liability(
+pub(super) fn candidate_has_hard_slot_blocking_admission_liability(
     candidate: &BranchRetentionCandidateInputV1,
 ) -> bool {
-    let adjustment = branch_retention_rank_adjustment_v1(candidate);
-    adjustment.startup_adjustment < 0 || adjustment.component_adjustment < 0
+    branch_retention_card_admission_rank_cost_v1(candidate).rejects_added_card
 }
 
 fn best_fill_position(
@@ -804,7 +803,7 @@ fn best_fill_position(
     selected: &BTreeSet<usize>,
 ) -> Option<usize> {
     best_fill_position_allowed(candidates, positions, selected, |position| {
-        !candidate_has_slot_blocking_strategic_liability(&candidates[position])
+        !candidate_has_hard_slot_blocking_admission_liability(&candidates[position])
     })
     .or_else(|| {
         selected
