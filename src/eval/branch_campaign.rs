@@ -378,6 +378,11 @@ pub enum BranchCampaignProgressEventV1 {
         promoted: usize,
         active_after: usize,
         frozen_remaining: usize,
+        filled_active: usize,
+        stronger_rebalanced: usize,
+        structural_thawed: usize,
+        rehydrated_recovered: usize,
+        checkpoint_recovered: usize,
     },
     CampaignFinished {
         stop_reason: String,
@@ -627,6 +632,11 @@ where
                     promoted,
                     active_after: state.active.len(),
                     frozen_remaining: state.frozen.len(),
+                    filled_active: 0,
+                    stronger_rebalanced: promoted,
+                    structural_thawed: 0,
+                    rehydrated_recovered: 0,
+                    checkpoint_recovered: 0,
                 });
             }
         }
@@ -649,6 +659,11 @@ where
                     promoted,
                     active_after: state.active.len(),
                     frozen_remaining: state.frozen.len(),
+                    filled_active: promoted,
+                    stronger_rebalanced: 0,
+                    structural_thawed: 0,
+                    rehydrated_recovered: 0,
+                    checkpoint_recovered: 0,
                 });
             }
         }
@@ -670,6 +685,11 @@ where
                     promoted,
                     active_after: state.active.len(),
                     frozen_remaining: state.frozen.len(),
+                    filled_active: 0,
+                    stronger_rebalanced: 0,
+                    structural_thawed: 0,
+                    rehydrated_recovered: promoted,
+                    checkpoint_recovered: 0,
                 });
             }
         }
@@ -696,6 +716,11 @@ where
                     promoted: recovered,
                     active_after: state.active.len(),
                     frozen_remaining: state.frozen.len(),
+                    filled_active: 0,
+                    stronger_rebalanced: 0,
+                    structural_thawed: 0,
+                    rehydrated_recovered: 0,
+                    checkpoint_recovered: recovered,
                 });
             }
         }
@@ -937,6 +962,11 @@ where
                 promoted: total_promoted_from_frozen,
                 active_after: state.active.len(),
                 frozen_remaining: state.frozen.len(),
+                filled_active: promoted_from_frozen,
+                stronger_rebalanced: rebalanced_from_frozen,
+                structural_thawed: thawed_from_frozen,
+                rehydrated_recovered: promoted_rehydrated_from_frozen,
+                checkpoint_recovered: recovered_from_abandoned,
             });
         }
         state.rounds.push(round_summary);
@@ -1278,9 +1308,37 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             promoted,
             active_after,
             frozen_remaining,
-        } => format!(
-            "promoted/rebalanced {promoted} frozen branch(es); active_after={active_after} frozen={frozen_remaining}"
-        ),
+            filled_active,
+            stronger_rebalanced,
+            structural_thawed,
+            rehydrated_recovered,
+            checkpoint_recovered,
+        } => {
+            let mut sources = Vec::new();
+            if *filled_active > 0 {
+                sources.push(format!("fill={filled_active}"));
+            }
+            if *stronger_rebalanced > 0 {
+                sources.push(format!("stronger={stronger_rebalanced}"));
+            }
+            if *structural_thawed > 0 {
+                sources.push(format!("thaw={structural_thawed}"));
+            }
+            if *rehydrated_recovered > 0 {
+                sources.push(format!("rehydrated={rehydrated_recovered}"));
+            }
+            if *checkpoint_recovered > 0 {
+                sources.push(format!("checkpoint={checkpoint_recovered}"));
+            }
+            let source_suffix = if sources.is_empty() {
+                String::new()
+            } else {
+                format!(" sources=[{}]", sources.join(" "))
+            };
+            format!(
+                "promoted/rebalanced {promoted} frozen branch(es); active_after={active_after} frozen={frozen_remaining}{source_suffix}"
+            )
+        }
         BranchCampaignProgressEventV1::CampaignFinished {
             stop_reason,
             active,

@@ -2690,6 +2690,11 @@ fn campaign_progress_events_render_concrete_stage_information() {
             promoted: 2,
             active_after: 2,
             frozen_remaining: 4,
+            filled_active: 0,
+            stronger_rebalanced: 1,
+            structural_thawed: 1,
+            rehydrated_recovered: 0,
+            checkpoint_recovered: 0,
         });
 
     assert_eq!(
@@ -2702,7 +2707,7 @@ fn campaign_progress_events_render_concrete_stage_information() {
     );
     assert_eq!(
         promoted_line,
-        "promoted/rebalanced 2 frozen branch(es); active_after=2 frozen=4"
+        "promoted/rebalanced 2 frozen branch(es); active_after=2 frozen=4 sources=[stronger=1 thaw=1]"
     );
 }
 
