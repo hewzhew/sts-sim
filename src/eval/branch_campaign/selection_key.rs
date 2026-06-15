@@ -126,10 +126,11 @@ fn campaign_branch_boss_checkpoint_sort_key_v1(
     } else {
         0
     };
+    let hp_bucket = hp_percent.div_euclid(10);
     let debt = signature
         .cycle_debt_milli
         .saturating_add(signature.setup_debt_milli);
-    (1, signature.boss_readiness_milli, hp_percent, -debt)
+    (1, signature.boss_readiness_milli, hp_bucket, -debt)
 }
 
 fn campaign_branch_act_clear_sort_key_v1(

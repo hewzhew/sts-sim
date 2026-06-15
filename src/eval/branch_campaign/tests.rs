@@ -986,6 +986,34 @@ fn campaign_selection_does_not_treat_low_hp_zero_readiness_boss_checkpoint_as_ab
 }
 
 #[test]
+fn campaign_selection_does_not_let_one_hp_at_boss_checkpoint_override_rank() {
+    let mut slightly_healthier = test_campaign_branch("slightly-healthier", 27, 58);
+    slightly_healthier.summary.as_mut().unwrap().act = 2;
+    slightly_healthier.summary.as_mut().unwrap().max_hp = 80;
+    slightly_healthier.rank_key = 21_900;
+    slightly_healthier.strategic_summary = BranchSignatureCompact {
+        present: true,
+        boss_readiness_milli: 200,
+        clean_score_milli: 0,
+        engine_score_milli: 0,
+        cycle_debt_milli: 400,
+        setup_debt_milli: 0,
+        economy_conversion_milli: 0,
+        package_coherence_milli: 0,
+    };
+
+    let mut better_rank = test_campaign_branch("better-rank", 29, 57);
+    better_rank.summary.as_mut().unwrap().act = 2;
+    better_rank.summary.as_mut().unwrap().max_hp = 80;
+    better_rank.rank_key = 22_400;
+    better_rank.strategic_summary = slightly_healthier.strategic_summary;
+
+    let selected = select_campaign_branches_v1(vec![slightly_healthier, better_rank], 1, 4);
+
+    assert_eq!(selected.active[0].branch_id, "better-rank");
+}
+
+#[test]
 fn campaign_selection_keeps_progress_anchor_when_local_shop_variants_dominate_active() {
     let mut buy_flash = test_campaign_branch("shop-flash", 39, 77);
     buy_flash.summary.as_mut().unwrap().act = 3;
