@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 mod selection_key;
 mod strategic_signals;
 use selection_key::{
-    campaign_branch_retention_key_v1, compare_campaign_branches_for_active_v1,
+    act_boss_floor_v1, campaign_branch_retention_key_v1, compare_campaign_branches_for_active_v1,
     compare_campaign_branches_for_promotion_v1, render_campaign_branch_selection_basis_v1,
 };
 use strategic_signals::{
@@ -2220,10 +2220,23 @@ fn campaign_parent_should_retry_combat_budget_now_v1(
     config: &BranchCampaignConfigV1,
     branches: &[BranchExperimentBranchReportV1],
 ) -> bool {
+    if !branch_report_needs_combat_budget_retry_v1(branches) {
+        return false;
+    }
     matches!(
         config.combat_retry_policy,
         BranchCampaignCombatRetryPolicyV1::Immediate
-    ) && branch_report_needs_combat_budget_retry_v1(branches)
+    ) || branch_report_is_final_boss_combat_retry_candidate_v1(branches)
+}
+
+fn branch_report_is_final_boss_combat_retry_candidate_v1(
+    branches: &[BranchExperimentBranchReportV1],
+) -> bool {
+    branches.iter().any(|branch| {
+        normalized_campaign_boundary_title(&branch.summary.boundary_title) == "combat"
+            && branch.summary.act >= 3
+            && branch.summary.floor >= act_boss_floor_v1(branch.summary.act)
+    })
 }
 
 fn campaign_round_should_retry_combat_budget_on_stall_v1(
@@ -3267,22 +3280,29 @@ fn rehydrate_checkpoint_failure_list_v1(
     recovered_count: &mut usize,
 ) -> Vec<BranchCampaignBranchV1> {
     let mut remaining = Vec::new();
+    let mut candidates = Vec::<(BranchCampaignBranchV1, BranchCampaignBranchV1)>::new();
     for branch in branches {
-        if *recovered_count >= max_recovered {
-            remaining.push(branch);
-            continue;
-        }
         if let Some(recovered) = try_rehydrate_checkpoint_failure_branch_v1(&branch, snapshot_cache)
         {
-            if place_recovered_campaign_branch_v1(active, frozen, recovered, max_active, max_frozen)
-            {
-                recovered_commands.insert(branch.commands.clone());
-                *recovered_count = recovered_count.saturating_add(1);
-                continue;
-            }
+            candidates.push((branch, recovered));
+        } else {
+            remaining.push(branch);
         }
-        remaining.push(branch);
     }
+    candidates
+        .sort_by(|(_, left), (_, right)| compare_campaign_branches_for_promotion_v1(left, right));
+
+    for (branch, recovered) in candidates {
+        if *recovered_count < max_recovered
+            && place_recovered_campaign_branch_v1(active, frozen, recovered, max_active, max_frozen)
+        {
+            recovered_commands.insert(branch.commands.clone());
+            *recovered_count = recovered_count.saturating_add(1);
+        } else {
+            remaining.push(branch);
+        }
+    }
+
     remaining
 }
 

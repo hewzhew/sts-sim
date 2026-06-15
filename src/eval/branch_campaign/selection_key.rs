@@ -138,7 +138,7 @@ fn campaign_branch_act_clear_sort_key_v1(
     (1, i32::from(summary.act), summary.floor)
 }
 
-fn act_boss_floor_v1(act: u8) -> i32 {
+pub(super) fn act_boss_floor_v1(act: u8) -> i32 {
     final_boss_checkpoint_floor_v1(act).saturating_add(2)
 }
 

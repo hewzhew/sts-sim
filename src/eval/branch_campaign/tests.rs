@@ -1520,6 +1520,26 @@ fn campaign_default_retry_policy_does_not_retry_each_parent_immediately() {
 }
 
 #[test]
+fn campaign_default_retry_policy_retries_final_boss_combat_parent_immediately() {
+    let config = BranchCampaignConfigV1::default();
+    let mut abandoned_final_boss = test_report_branch_at(
+        "a",
+        Vec::new(),
+        BranchExperimentBranchStatusV1::Pruned,
+        "Combat",
+        48,
+        80,
+    );
+    abandoned_final_boss.summary.act = 3;
+    abandoned_final_boss.frontier.act = 3;
+
+    assert!(campaign_parent_should_retry_combat_budget_now_v1(
+        &config,
+        &[abandoned_final_boss]
+    ));
+}
+
+#[test]
 fn campaign_on_stall_retries_when_round_exhausts_only_abandoned_combat() {
     let config = BranchCampaignConfigV1::default();
     let mut abandoned = test_campaign_branch("abandoned-combat", 1, 80);
@@ -3230,6 +3250,79 @@ fn campaign_resume_rehydrates_combat_failures_as_frozen_diagnostics_only() {
 }
 
 #[test]
+fn campaign_resume_rehydrates_later_combat_failure_before_stale_early_failure() {
+    let mut early_failure = test_campaign_branch_with_boundary(
+        "act2-combat",
+        "Combat",
+        "combat search did not find an executable complete win",
+        32,
+        80,
+    );
+    early_failure.summary.as_mut().expect("summary").act = 2;
+    early_failure.commands = vec!["act2".to_string()];
+    early_failure.status = BranchCampaignBranchStatusV1::Abandoned;
+
+    let mut final_boss_failure = test_campaign_branch_with_boundary(
+        "act3-boss",
+        "Combat",
+        "combat search did not find an executable complete win",
+        48,
+        80,
+    );
+    final_boss_failure.summary.as_mut().expect("summary").act = 3;
+    final_boss_failure.commands = vec!["act3".to_string()];
+    final_boss_failure.status = BranchCampaignBranchStatusV1::Abandoned;
+
+    let checkpoint = BranchCampaignCheckpointV1 {
+        schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 8,
+        sessions: vec![
+            test_combat_checkpoint_session(&early_failure, 2, 32, 80),
+            test_combat_checkpoint_session(&final_boss_failure, 3, 48, 80),
+        ],
+    };
+    let previous = BranchCampaignReportV1 {
+        schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
+        schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
+        seed: 1,
+        rounds_completed: 8,
+        stop_reason: "max_rounds".to_string(),
+        active: Vec::new(),
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: vec![early_failure, final_boss_failure],
+        stuck: Vec::new(),
+        discarded_count: 0,
+        discarded_examples: Vec::new(),
+        strategy_requests: Vec::new(),
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        strategic_signals: Default::default(),
+        rounds: Vec::new(),
+    };
+
+    let result = run_branch_campaign_from_report_with_checkpoint_v1(
+        &BranchCampaignConfigV1 {
+            seed: 1,
+            max_rounds: 0,
+            max_active: 1,
+            max_frozen: 1,
+            ..BranchCampaignConfigV1::default()
+        },
+        &previous,
+        Some(&checkpoint),
+    )
+    .expect("checkpointed combat failures should be resumable");
+
+    assert_eq!(result.report.frozen.len(), 1);
+    assert_eq!(result.report.frozen[0].branch_id, "act3-boss");
+    assert_eq!(result.report.abandoned.len(), 1);
+    assert_eq!(result.report.abandoned[0].branch_id, "act2-combat");
+}
+
+#[test]
 fn campaign_status_distinguishes_pruned_from_terminal_defeat() {
     assert_eq!(
         campaign_status_from_report_status(BranchExperimentBranchStatusV1::Pruned),
@@ -3303,6 +3396,24 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
         status: BranchCampaignBranchStatusV1::Active,
         stop_reason: "test".to_string(),
         rank_key: hp,
+    }
+}
+
+fn test_combat_checkpoint_session(
+    branch: &BranchCampaignBranchV1,
+    act: u8,
+    floor: i32,
+    hp: i32,
+) -> BranchCampaignCheckpointSessionV1 {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state = EngineState::CombatPlayerTurn;
+    session.run_state.act_num = act;
+    session.run_state.floor_num = floor;
+    session.run_state.current_hp = hp;
+    session.run_state.max_hp = 80;
+    BranchCampaignCheckpointSessionV1 {
+        commands: branch.commands.clone(),
+        session: RunControlSessionCheckpointV1::from_session(&session),
     }
 }
 
