@@ -93,7 +93,7 @@ impl BossRelicDecisionV1 {
             ]),
             provenance: PolicyProvenanceV1 {
                 source_policy: "boss_relic_policy_v1".to_string(),
-                source_schema_name: "BossRelicPolicyConfigV1".to_string(),
+                source_schema_name: "BossRelicDecisionV1".to_string(),
                 source_schema_version: 1,
             },
             candidates: self
@@ -123,7 +123,7 @@ impl BossRelicDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "conservative_approval".to_string(),
+                    selection_mode: "boss_relic_candidate_approval_v1".to_string(),
                 },
                 BossRelicPolicyActionV1::Stop { reason } => PolicySelectionV1 {
                     status: PolicySelectionStatusV1::Stopped,

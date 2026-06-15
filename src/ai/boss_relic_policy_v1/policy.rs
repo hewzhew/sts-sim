@@ -43,7 +43,7 @@ pub fn plan_boss_relic_decision_v1(
             reason: stop_reason(context),
         },
         _ => BossRelicPolicyActionV1::Stop {
-            reason: "boss relic policy stopped because multiple conservative approvals matched"
+            reason: "boss relic policy stopped because multiple candidate approvals matched"
                 .to_string(),
         },
     };
@@ -181,5 +181,5 @@ fn stop_reason(context: &BossRelicDecisionContextV1) -> String {
         .map(|candidate| format!("{:?}:{:?}", candidate.relic, candidate.class))
         .collect::<Vec<_>>()
         .join(", ");
-    format!("boss relic policy stopped because no conservative V2 approval matched ({classes})")
+    format!("boss relic policy stopped because no candidate approval matched ({classes})")
 }

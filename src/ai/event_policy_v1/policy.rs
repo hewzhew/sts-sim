@@ -61,8 +61,7 @@ pub fn plan_event_decision_v1(
             reason: stop_reason(context),
         },
         _ => EventPolicyActionV1::Stop {
-            reason: "event policy stopped because multiple conservative approvals matched"
-                .to_string(),
+            reason: "event policy stopped because multiple candidate approvals matched".to_string(),
         },
     };
 
@@ -386,7 +385,7 @@ fn stop_reason(context: &EventDecisionContextV1) -> String {
         .map(|candidate| format!("{}:{:?}", candidate.label, candidate.class))
         .collect::<Vec<_>>()
         .join(", ");
-    format!("event policy stopped because no conservative approval matched ({classes})")
+    format!("event policy stopped because no candidate approval matched ({classes})")
 }
 
 fn display_event_label(label: &str) -> String {

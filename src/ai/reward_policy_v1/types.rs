@@ -101,7 +101,7 @@ impl RewardDecisionV1 {
             ]),
             provenance: PolicyProvenanceV1 {
                 source_policy: "reward_policy_v1".to_string(),
-                source_schema_name: "RewardPolicyConfigV1".to_string(),
+                source_schema_name: "RewardDecisionV1".to_string(),
                 source_schema_version: 1,
             },
             candidates: self

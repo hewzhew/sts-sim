@@ -108,7 +108,7 @@ impl EventDecisionV1 {
             ]),
             provenance: PolicyProvenanceV1 {
                 source_policy: "event_policy_v1".to_string(),
-                source_schema_name: "EventPolicyConfigV1".to_string(),
+                source_schema_name: "EventDecisionV1".to_string(),
                 source_schema_version: 1,
             },
             candidates: self.context.candidates.iter().map(candidate_descriptor).collect(),
@@ -132,7 +132,7 @@ impl EventDecisionV1 {
                     selected_candidate_id,
                     reason: reason.clone(),
                     confidence: *confidence,
-                    selection_mode: "conservative_event_approval".to_string(),
+                    selection_mode: "event_candidate_approval_v1".to_string(),
                 },
                 EventPolicyActionV1::Stop { reason } => PolicySelectionV1 {
                     status: PolicySelectionStatusV1::Stopped,
