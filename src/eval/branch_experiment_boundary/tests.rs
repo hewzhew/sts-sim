@@ -1603,22 +1603,16 @@ fn current_boundary_wraps_single_card_run_selection_options() {
                 4,
                 3,
             ),
-            (
-                "run_selection",
-                "select 9",
-                Some(CardId::Bash),
-                Some(0),
-                "run_selection:remove_card:Bash:0",
-                "remove Bash",
-                1,
-                0,
-            ),
         ]
     );
+    assert!(!boundary
+        .options
+        .iter()
+        .any(|option| option.card == Some(CardId::Bash)));
 }
 
 #[test]
-fn current_boundary_does_not_expand_nonbasic_purge_when_low_value_targets_exist() {
+fn current_boundary_does_not_expand_core_basic_purge_when_low_value_targets_exist() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session
         .run_state
@@ -1645,9 +1639,12 @@ fn current_boundary_does_not_expand_nonbasic_purge_when_low_value_targets_exist(
         vec![
             ("select 0", Some(CardId::Strike)),
             ("select 5", Some(CardId::Defend)),
-            ("select 9", Some(CardId::Bash)),
         ]
     );
+    assert!(!boundary
+        .options
+        .iter()
+        .any(|option| option.card == Some(CardId::Bash)));
 }
 
 #[test]
@@ -1754,11 +1751,12 @@ fn current_boundary_compresses_multi_card_run_selection_by_effect_key() {
         vec![
             ("select 0 1", "transform Strike x2", 10, 9),
             ("select 0 5", "transform Strike, Defend", 20, 19),
-            ("select 0 9", "transform Strike, Bash", 5, 4),
             ("select 5 6", "transform Defend x2", 6, 5),
-            ("select 5 9", "transform Defend, Bash", 4, 3),
         ]
     );
+    assert!(!options
+        .iter()
+        .any(|(_, label, _, _)| label.contains("Bash")));
 }
 
 #[test]

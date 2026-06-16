@@ -55,12 +55,13 @@ fn compiler_keeps_low_value_purge_targets_branch_active() {
         .collect::<Vec<_>>();
     assert_eq!(
         commands,
-        vec![
-            ("select 0", CardId::Strike),
-            ("select 5", CardId::Defend),
-            ("select 9", CardId::Bash),
-        ]
+        vec![("select 0", CardId::Strike), ("select 5", CardId::Defend),]
     );
+    assert!(!decision.branch_active_plans.iter().any(|plan| plan
+        .step
+        .cards
+        .iter()
+        .any(|card| card.card == CardId::Bash)));
 }
 
 #[test]

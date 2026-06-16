@@ -865,7 +865,7 @@ fn branch_experiment_expands_single_card_run_selection_choices() {
     );
 
     assert_eq!(report.explored_branch_points, 1);
-    assert_eq!(report.branches.len(), 3);
+    assert_eq!(report.branches.len(), 2);
     assert!(report.branches.iter().all(|branch| {
         branch.summary.trajectory.frontload_picks == 0
             && branch.summary.trajectory.transition_frontload_picks == 0
@@ -888,12 +888,11 @@ fn branch_experiment_expands_single_card_run_selection_choices() {
                 )
             })
             .collect::<Vec<_>>(),
-        vec![
-            ("remove Strike", 5, 4),
-            ("remove Defend", 4, 3),
-            ("remove Bash", 1, 0),
-        ]
+        vec![("remove Strike", 5, 4), ("remove Defend", 4, 3),]
     );
+    assert!(!choices
+        .iter()
+        .any(|choice| choice.effect_label == "remove Bash"));
 }
 
 #[test]

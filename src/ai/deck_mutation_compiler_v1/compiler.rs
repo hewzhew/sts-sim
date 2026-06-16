@@ -650,6 +650,7 @@ fn evaluate_candidate_for_reason(
         .any(|card| card.target_class == DeckMutationTargetClassV1::Unsupported);
     let has_functional_target = candidate.step.cards.iter().any(|card| {
         card.target_class == DeckMutationTargetClassV1::Functional
+            || card.target_class == DeckMutationTargetClassV1::BasicCore
             || card.target_class == DeckMutationTargetClassV1::Unsupported
     });
     let all_low_value = candidate
@@ -836,7 +837,7 @@ fn target_class_for_card_mutation_candidate(card: &CombatCard) -> DeckMutationTa
     } else if definition.tags.contains(&CardTag::StarterDefend) {
         DeckMutationTargetClassV1::StarterDefend
     } else if definition.rarity == CardRarity::Basic {
-        DeckMutationTargetClassV1::Basic
+        DeckMutationTargetClassV1::BasicCore
     } else {
         DeckMutationTargetClassV1::Functional
     }
@@ -1239,6 +1240,7 @@ fn target_class_rank(class: DeckMutationTargetClassV1) -> i32 {
         DeckMutationTargetClassV1::StarterStrike => 10,
         DeckMutationTargetClassV1::StarterDefend => 20,
         DeckMutationTargetClassV1::Basic => 35,
+        DeckMutationTargetClassV1::BasicCore => 90,
         DeckMutationTargetClassV1::Functional => 100,
         DeckMutationTargetClassV1::UpgradeTarget => 10_000,
         DeckMutationTargetClassV1::Unsupported => 10_000,
@@ -1415,6 +1417,9 @@ fn target_risks(card: &DeckMutationCardSnapshotV1) -> Vec<String> {
         }
         DeckMutationTargetClassV1::Functional => {
             vec!["functional card mutation requires explicit strategy context".to_string()]
+        }
+        DeckMutationTargetClassV1::BasicCore => {
+            vec!["basic core card mutation requires explicit strategy context".to_string()]
         }
         DeckMutationTargetClassV1::Unsupported => {
             vec!["unsupported target is blocked from automatic consumers".to_string()]

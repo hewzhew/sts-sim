@@ -76,6 +76,7 @@ pub enum DeckMutationTargetClassV1 {
     StarterStrike,
     StarterDefend,
     Basic,
+    BasicCore,
     Functional,
     UpgradeTarget,
     Unsupported,
