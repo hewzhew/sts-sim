@@ -616,9 +616,8 @@ where
                 !covered_families.contains(&branch_family_key(&candidates[*left]));
             let right_new_family =
                 !covered_families.contains(&branch_family_key(&candidates[*right]));
-            left_new_family
-                .cmp(&right_new_family)
-                .then_with(|| compare_rank(candidates, *left, *right))
+            compare_rank(candidates, *left, *right)
+                .then_with(|| left_new_family.cmp(&right_new_family))
         })
 }
 
