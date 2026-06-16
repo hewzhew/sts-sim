@@ -46,18 +46,9 @@ pub(super) fn campaign_branch_retention_key_v1(
 }
 
 pub(super) fn render_campaign_branch_selection_basis_v1(branch: &BranchCampaignBranchV1) -> String {
-    let lineage = if branch.lineage_decision_signal_rank_adjustment == 0 {
-        String::new()
-    } else {
-        format!(
-            " lineage_signal={}",
-            format_campaign_selection_rank_key_v1(branch.lineage_decision_signal_rank_adjustment)
-        )
-    };
     format!(
-        "sel=[retention_rank={}{}]",
+        "sel=[retention_rank={}]",
         format_campaign_selection_rank_key_v1(campaign_branch_selection_rank_key_v1(branch)),
-        lineage,
     )
 }
 

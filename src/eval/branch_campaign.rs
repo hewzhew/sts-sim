@@ -166,6 +166,9 @@ pub struct BranchCampaignBranchV1 {
     pub status: BranchCampaignBranchStatusV1,
     #[serde(default)]
     pub stop_reason: String,
+    /// Deprecated compatibility field. Older campaign checkpoints may contain
+    /// this, but campaign selection no longer carries local decision signals
+    /// across rounds.
     #[serde(default, skip_serializing_if = "is_zero_i32")]
     pub lineage_decision_signal_rank_adjustment: i32,
     pub rank_key: i32,
@@ -4106,12 +4109,6 @@ pub fn campaign_branch_from_report_branch_v1(
     commands.extend(branch.choices.iter().map(|choice| choice.command.clone()));
     let mut choice_labels = parent.choice_labels.clone();
     choice_labels.extend(branch.choices.iter().map(campaign_choice_label_v1));
-    let current_decision_signal_adjustment =
-        branch.retention.rank_adjustment.decision_signal_adjustment;
-    let current_lineage_decision_signal_adjustment = current_decision_signal_adjustment.min(0);
-    let lineage_decision_signal_rank_adjustment = parent
-        .lineage_decision_signal_rank_adjustment
-        .saturating_add(current_lineage_decision_signal_adjustment);
     BranchCampaignBranchV1 {
         branch_id: campaign_child_branch_id_v1(&parent.branch_id, &branch.branch_id),
         commands,
@@ -4121,10 +4118,8 @@ pub fn campaign_branch_from_report_branch_v1(
         frontier_title: branch.summary.boundary_title.clone(),
         status: campaign_status_from_report_status(branch.status),
         stop_reason: branch.stop_reason.clone(),
-        lineage_decision_signal_rank_adjustment,
-        rank_key: branch
-            .rank_key
-            .saturating_add(parent.lineage_decision_signal_rank_adjustment),
+        lineage_decision_signal_rank_adjustment: 0,
+        rank_key: branch.rank_key,
     }
 }
 

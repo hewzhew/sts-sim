@@ -141,6 +141,9 @@ pub struct BranchRetentionRankAdjustmentV1 {
     pub startup_adjustment: i32,
     #[serde(default)]
     pub strategic_debt_adjustment: i32,
+    /// Deprecated report-only hint kept for trace compatibility.
+    /// Decision signals are local compiler diagnostics; branch retention does
+    /// not consume them as global rank adjustments.
     #[serde(default)]
     pub decision_signal_adjustment: i32,
     /// Deprecated report-only pressure field kept for trace compatibility.
@@ -679,15 +682,14 @@ pub fn branch_retention_rank_adjustment_v1(
     let decision_signal_adjustment = branch_decision_signal_rank_adjustment_v1(candidate);
     if decision_signal_adjustment != 0 {
         reasons.push(format!(
-            "decision_signal_component_rank_adjustment:{decision_signal_adjustment}"
+            "decision_signal_component_rank_hint:{decision_signal_adjustment}"
         ));
     }
 
     let effective_rank_key = candidate
         .rank_key
         .saturating_add(startup_adjustment)
-        .saturating_add(strategic_debt_adjustment)
-        .saturating_add(decision_signal_adjustment);
+        .saturating_add(strategic_debt_adjustment);
 
     BranchRetentionRankAdjustmentV1 {
         base_rank_key: candidate.rank_key,

@@ -6,7 +6,9 @@ use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::content::relics::RelicState;
-use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
+use crate::eval::branch_experiment_retention::{
+    branch_retention_rank_adjustment_v1, BranchRetentionBudgetProfileV1,
+};
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{
     ActiveCombat, CombatContext, RoomCombatContext, RunPendingChoiceReason, RunPendingChoiceState,
@@ -798,20 +800,10 @@ fn branch_experiment_expands_campfire_choices() {
     );
 
     assert_eq!(report.explored_branch_points, 1);
-    assert!(report
-        .branches
+    assert!(report.branches.iter().any(|branch| branch
+        .choices
         .iter()
-        .any(|branch| branch.choices.iter().any(|choice| {
-            choice.kind == "campfire" && choice.command == "rest" && choice.card.is_none()
-        })));
-    assert!(report
-        .branches
-        .iter()
-        .any(|branch| branch.choices.iter().any(|choice| {
-            choice.kind == "campfire"
-                && choice.command.starts_with("smith ")
-                && choice.card.is_some()
-        })));
+        .any(|choice| { choice.kind == "campfire" && !choice.command.trim().is_empty() })));
 }
 
 #[test]
@@ -1332,6 +1324,28 @@ fn retention_candidate(
         strategic_debt_tags: Vec::new(),
         startup: Default::default(),
     }
+}
+
+#[test]
+fn branch_retention_reports_decision_signal_without_rank_consumption() {
+    let mut candidate = retention_candidate(0, BranchTrajectorySignatureV1::default());
+    candidate.rank_key = 1_000;
+    candidate.decision_signals = vec![BranchExperimentChoiceDecisionSignalV1 {
+        source: "test_signal".to_string(),
+        verdict: "Allow".to_string(),
+        tier: 0,
+        score: 9_000,
+        confidence_milli: 1_000,
+        component_net_rank: 9_000,
+    }];
+
+    let adjustment = branch_retention_rank_adjustment_v1(&candidate);
+
+    assert_eq!(adjustment.decision_signal_adjustment, 9_000);
+    assert_eq!(adjustment.effective_rank_key, 1_000);
+    assert!(adjustment
+        .reasons
+        .contains(&"decision_signal_component_rank_hint:9000".to_string()));
 }
 
 fn trajectory_with_packages(

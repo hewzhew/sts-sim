@@ -1878,7 +1878,7 @@ fn campaign_branch_from_report_appends_new_choice_path() {
 }
 
 #[test]
-fn campaign_branch_from_report_carries_lineage_decision_signal_without_double_counting_current() {
+fn campaign_branch_from_report_ignores_deprecated_lineage_decision_signal() {
     let mut parent = test_campaign_branch("root", 4, 80);
     parent.lineage_decision_signal_rank_adjustment = -830;
     parent.rank_key = 12_000;
@@ -1897,31 +1897,8 @@ fn campaign_branch_from_report_carries_lineage_decision_signal_without_double_co
 
     let child = campaign_branch_from_report_branch_v1(&parent, &report_branch);
 
-    assert_eq!(child.rank_key, 20_670);
-    assert_eq!(child.lineage_decision_signal_rank_adjustment, -930);
-}
-
-#[test]
-fn campaign_branch_from_report_does_not_persist_positive_decision_signal() {
-    let mut parent = test_campaign_branch("root", 4, 80);
-    parent.lineage_decision_signal_rank_adjustment = -300;
-
-    let mut report_branch = test_report_branch(
-        "root.event 0",
-        vec![("event 0", "good event choice")],
-        BranchExperimentBranchStatusV1::Active,
-    );
-    report_branch.rank_key = 21_500;
-    report_branch.retention.rank_adjustment = BranchRetentionRankAdjustmentV1 {
-        decision_signal_adjustment: 700,
-        effective_rank_key: 21_500,
-        ..BranchRetentionRankAdjustmentV1::default()
-    };
-
-    let child = campaign_branch_from_report_branch_v1(&parent, &report_branch);
-
-    assert_eq!(child.rank_key, 21_200);
-    assert_eq!(child.lineage_decision_signal_rank_adjustment, -300);
+    assert_eq!(child.rank_key, 21_500);
+    assert_eq!(child.lineage_decision_signal_rank_adjustment, 0);
 }
 
 #[test]
