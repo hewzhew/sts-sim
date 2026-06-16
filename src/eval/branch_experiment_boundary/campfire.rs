@@ -1,6 +1,6 @@
 use crate::ai::campfire_policy_v1::{
     build_campfire_decision_context_v1, plan_campfire_decision_v1, CampfirePlanCandidateV1,
-    CampfirePolicyConfigV1,
+    CampfirePlanRoleV1, CampfirePolicyConfigV1,
 };
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::BranchExperimentChoiceDecisionSignalV1;
@@ -20,6 +20,8 @@ pub(super) struct CampfireBranchOption {
     pub(super) representative_count: usize,
     pub(super) suppressed_count: usize,
     pub(super) decision_signal: Option<BranchExperimentChoiceDecisionSignalV1>,
+    pub(super) plan_role: CampfirePlanRoleV1,
+    pub(super) score_hint: i32,
 }
 
 #[derive(Clone, Debug)]
@@ -65,6 +67,8 @@ fn campfire_branch_option_from_plan(
         representative_count: plan.representative_count,
         suppressed_count: plan.suppressed_count,
         decision_signal: Some(super::campfire_plan_decision_signal_v1(plan)),
+        plan_role: plan.role,
+        score_hint: plan.score_hint,
     })
 }
 
@@ -92,6 +96,16 @@ fn select_campfire_branch_options_with_limit(
             .into_iter()
             .filter(is_full_hp_rest_branch_option)
             .collect::<Vec<_>>()
+    } else {
+        filtered
+    };
+    let filtered = options
+        .iter()
+        .cloned()
+        .filter(|option| !is_unprotected_rest_branch_option(option))
+        .collect::<Vec<_>>();
+    let options = if filtered.is_empty() {
+        options
     } else {
         filtered
     };
@@ -224,11 +238,22 @@ fn is_smith_branch_option(option: &CampfireBranchOption) -> bool {
 }
 
 fn is_recovery_rest_branch_option(option: &CampfireBranchOption) -> bool {
-    option.command == "rest" && option.equivalence_key == "rest:wounded"
+    option.command == "rest"
+        && option.equivalence_key == "rest:wounded"
+        && (option.plan_role == CampfirePlanRoleV1::PolicyPreferred
+            || option.score_hint >= severe_rest_score_hint_threshold())
 }
 
 fn is_full_hp_rest_branch_option(option: &CampfireBranchOption) -> bool {
     option.command == "rest" && option.equivalence_key == "rest:full_hp"
+}
+
+fn is_unprotected_rest_branch_option(option: &CampfireBranchOption) -> bool {
+    option.command == "rest" && !is_recovery_rest_branch_option(option)
+}
+
+fn severe_rest_score_hint_threshold() -> i32 {
+    2_000
 }
 
 fn campfire_branch_option_adds_new_smith_coverage(

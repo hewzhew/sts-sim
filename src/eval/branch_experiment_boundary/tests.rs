@@ -1835,9 +1835,30 @@ fn current_boundary_keeps_high_value_duplicate_targets_when_fanout_is_high() {
 }
 
 #[test]
-fn campfire_branch_option_portfolio_keeps_rest_when_wounded() {
+fn campfire_branch_option_portfolio_does_not_spend_cap_on_minor_rest() {
     let mut session = RunControlSession::new(RunControlConfig::default());
-    session.run_state.current_hp = session.run_state.max_hp - 20;
+    session.run_state.current_hp = session.run_state.max_hp - 4;
+    session.engine_state = EngineState::Campfire;
+
+    let options = campfire_branch_options(&session).expect("campfire options");
+    let selected = select_campfire_branch_options(options, Some(2)).options;
+
+    assert!(
+        selected.iter().all(|option| option.command != "rest"),
+        "minor HP recovery should not consume capped campaign/campfire branch slots when smith targets exist"
+    );
+    assert!(
+        selected
+            .iter()
+            .any(|option| option.command.starts_with("smith ")),
+        "smith options should remain represented when campfire branching is capped"
+    );
+}
+
+#[test]
+fn campfire_branch_option_portfolio_keeps_rest_under_recovery_pressure() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.current_hp = 20;
     session.engine_state = EngineState::Campfire;
 
     let options = campfire_branch_options(&session).expect("campfire options");
@@ -1845,13 +1866,13 @@ fn campfire_branch_option_portfolio_keeps_rest_when_wounded() {
 
     assert!(
         selected.iter().any(|option| option.command == "rest"),
-        "rest should remain represented when campfire branching is capped"
+        "low-HP recovery should remain represented when campfire branching is capped"
     );
     assert!(
         selected
             .iter()
             .any(|option| option.command.starts_with("smith ")),
-        "at least one smith option should remain represented when campfire branching is capped"
+        "at least one smith option should remain represented alongside recovery"
     );
 }
 
