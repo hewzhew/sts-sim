@@ -1,7 +1,10 @@
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ai::noncombat_strategy_v1::{StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1};
+use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
+use crate::ai::noncombat_strategy_v1::{
+    StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1, StrategyFormationSummaryV2,
+};
 use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
@@ -1312,6 +1315,29 @@ fn branch_retention_reports_decision_signal_without_rank_consumption() {
     assert!(adjustment
         .reasons
         .contains(&"decision_signal_component_rank_hint:9000".to_string()));
+}
+
+#[test]
+fn branch_retention_consumes_formation_need_match_as_bounded_rank_input() {
+    let mut candidate = retention_candidate(0, BranchTrajectorySignatureV1::default());
+    candidate.rank_key = 1_000;
+    candidate.strategy_formation = Some(StrategyFormationSummaryV2 {
+        stage: StrategyDeckFormationStageV1::PlanSeeded,
+        needs: vec![StrategyDeckFormationNeedV1::Block],
+        strengths: Vec::new(),
+    });
+    candidate.choice_profiles = vec![card_reward_semantic_profile_v1(&RewardCard::new(
+        CardId::ShrugItOff,
+        0,
+    ))];
+
+    let adjustment = branch_retention_rank_adjustment_v1(&candidate);
+
+    assert_eq!(adjustment.formation_need_adjustment, 350);
+    assert_eq!(adjustment.effective_rank_key, 1_350);
+    assert!(adjustment
+        .reasons
+        .contains(&"formation_context_key:matches_formation_block_need".to_string()));
 }
 
 fn trajectory_with_packages(

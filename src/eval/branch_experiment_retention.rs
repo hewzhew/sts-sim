@@ -17,6 +17,7 @@ mod effect_coverage;
 
 use context_packet::{
     branch_retention_context_packet_v2, context_score, BranchRetentionContextKeyV2,
+    BranchRetentionContextPacketV2,
 };
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -141,6 +142,8 @@ pub struct BranchRetentionRankAdjustmentV1 {
     pub startup_adjustment: i32,
     #[serde(default)]
     pub strategic_debt_adjustment: i32,
+    #[serde(default)]
+    pub formation_need_adjustment: i32,
     /// Deprecated report-only hint kept for trace compatibility.
     /// Decision signals are local compiler diagnostics; branch retention does
     /// not consume them as global rank adjustments.
@@ -679,6 +682,18 @@ pub fn branch_retention_rank_adjustment_v1(
             "strategic_debt_rank_adjustment:{strategic_debt_adjustment}"
         ));
     }
+    let formation_need_adjustment = branch_formation_need_rank_adjustment_v1(&context);
+    if formation_need_adjustment != 0 {
+        for key in &context.keys {
+            reasons.push(format!(
+                "formation_context_key:{}",
+                branch_retention_context_key_label(*key)
+            ));
+        }
+        reasons.push(format!(
+            "formation_need_rank_adjustment:{formation_need_adjustment}"
+        ));
+    }
     let decision_signal_adjustment = branch_decision_signal_rank_adjustment_v1(candidate);
     if decision_signal_adjustment != 0 {
         reasons.push(format!(
@@ -689,12 +704,14 @@ pub fn branch_retention_rank_adjustment_v1(
     let effective_rank_key = candidate
         .rank_key
         .saturating_add(startup_adjustment)
-        .saturating_add(strategic_debt_adjustment);
+        .saturating_add(strategic_debt_adjustment)
+        .saturating_add(formation_need_adjustment);
 
     BranchRetentionRankAdjustmentV1 {
         base_rank_key: candidate.rank_key,
         startup_adjustment,
         strategic_debt_adjustment,
+        formation_need_adjustment,
         decision_signal_adjustment,
         admission_pressure,
         effective_rank_key,
@@ -714,6 +731,53 @@ fn branch_decision_signal_rank_adjustment_v1(candidate: &BranchRetentionCandidat
         .iter()
         .map(|signal| signal.component_net_rank)
         .sum()
+}
+
+fn branch_formation_need_rank_adjustment_v1(context: &BranchRetentionContextPacketV2) -> i32 {
+    let mut adjustment = 0i32;
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::MatchesFormationFrontloadNeed)
+    {
+        adjustment = adjustment.saturating_add(250);
+    }
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::MatchesFormationBlockNeed)
+    {
+        adjustment = adjustment.saturating_add(350);
+    }
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::MatchesFormationDrawEnergyNeed)
+    {
+        adjustment = adjustment.saturating_add(350);
+    }
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::MatchesFormationScalingNeed)
+    {
+        adjustment = adjustment.saturating_add(200);
+    }
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::ImmediateSafetyPatch)
+    {
+        adjustment = adjustment.saturating_add(400);
+    }
+    if context
+        .keys
+        .contains(&BranchRetentionContextKeyV2::ClosesPackage)
+        || context
+            .keys
+            .contains(&BranchRetentionContextKeyV2::SupportsCommittedPackage)
+    {
+        adjustment = adjustment.saturating_add(250);
+    }
+    // Consistency is deliberately not a positive rank input yet: the current
+    // context key also matches ordinary skips, so consuming it here would
+    // reintroduce a hidden skip preference through a different path.
+    adjustment.min(1_200)
 }
 
 fn branch_strategic_debt_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
