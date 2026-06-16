@@ -24,3 +24,4 @@ pub mod route_planner_v1;
 pub mod shop_policy_v1;
 pub mod strategic;
 pub mod strength_profile_v1;
+pub mod upgrade_planner_v1;

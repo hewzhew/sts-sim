@@ -269,12 +269,38 @@ fn campfire_candidate_score_hint(
                 missing_hp.saturating_mul(1_000) / context.max_hp
             }
         }
-        CampfireChoice::Smith(_) => candidate.upgrade_priority.unwrap_or_default(),
+        CampfireChoice::Smith(_) => candidate
+            .upgrade_plan_score_hint
+            .or(candidate.upgrade_priority)
+            .unwrap_or_default(),
         CampfireChoice::Dig
         | CampfireChoice::Lift
         | CampfireChoice::Toke(_)
         | CampfireChoice::Recall => 0,
     }
+}
+
+fn campfire_upgrade_plan_score_hint_v1(
+    candidate: &crate::ai::upgrade_planner_v1::UpgradeCandidateV1,
+) -> i32 {
+    use crate::ai::upgrade_planner_v1::{UpgradeDebtSeverityV1, UpgradeVerdictV1};
+
+    let verdict_rank = match candidate.verdict {
+        UpgradeVerdictV1::CoreDebtPayment => 1_200,
+        UpgradeVerdictV1::Important => 1_000,
+        UpgradeVerdictV1::Useful => 650,
+        UpgradeVerdictV1::Opportunistic => 300,
+        UpgradeVerdictV1::Defer => 80,
+        UpgradeVerdictV1::Avoid => 0,
+    };
+    let urgency_rank = match candidate.urgency {
+        UpgradeDebtSeverityV1::CriticalBeforeBoss => 300,
+        UpgradeDebtSeverityV1::ImportantBeforeBoss => 220,
+        UpgradeDebtSeverityV1::UsefulSoon => 120,
+        UpgradeDebtSeverityV1::Opportunistic => 40,
+        UpgradeDebtSeverityV1::Defer | UpgradeDebtSeverityV1::Avoid => 0,
+    };
+    verdict_rank + urgency_rank + candidate.pays_debts.len() as i32 * 25
 }
 
 fn compare_campfire_plan_candidates_v1(
@@ -337,6 +363,20 @@ fn candidate_evidence(
         }),
         _ => None,
     };
+    let upgrade_plan_candidate = match choice {
+        CampfireChoice::Smith(idx) => {
+            crate::ai::upgrade_planner_v1::upgrade_candidate_for_deck_index_v1(run_state, idx)
+        }
+        _ => None,
+    };
+    let upgrade_plan_score_hint = upgrade_plan_candidate
+        .as_ref()
+        .map(campfire_upgrade_plan_score_hint_v1);
+    if let CampfireChoice::Smith(idx) = choice {
+        evidence.extend(
+            crate::ai::upgrade_planner_v1::upgrade_plan_evidence_for_deck_index_v1(run_state, idx),
+        );
+    }
     if let Some(plan) = &expanded.deck_mutation_plan {
         evidence.extend(deck_mutation_plan_evidence(plan));
         risks.extend(plan.risks.iter().cloned());
@@ -388,6 +428,7 @@ fn candidate_evidence(
         choice,
         class,
         upgrade_priority,
+        upgrade_plan_score_hint,
         strategy_tag,
         deck_mutation_execute_allowed,
         deck_mutation_branch_allowed,
