@@ -9,7 +9,9 @@ use crate::ai::shop_policy_v1::{
     ShopPlanKindV1, ShopPlanStepV1, ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1,
     ShopPurchaseTargetV1,
 };
-use crate::ai::strategic::{CandidateAction, PressureKind, StrategicBossTax, StrategicJob};
+use crate::ai::strategic::{
+    AcquisitionVerdict, CandidateAction, PressureKind, StrategicBossTax, StrategicJob,
+};
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
@@ -234,7 +236,7 @@ fn shop_strategic_delta_maps_champ_execute_answer_through_component_report() {
 }
 
 #[test]
-fn compiled_shop_card_purchase_can_be_allowed_by_strategic_verdict() {
+fn compiled_shop_card_purchase_requires_spend_gate_or_must_take_verdict() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
     run_state.floor_num = 18;
@@ -267,10 +269,10 @@ fn compiled_shop_card_purchase_can_be_allowed_by_strategic_verdict() {
     let strategic_decision = strategic_trace
         .compiled_for_action(&carnage_delta.action)
         .expect("strategic compiler should evaluate Carnage");
-    assert!(
-        strategic_decision.verdict.allows_behavior_acquisition(),
-        "test requires strategic compiler to allow the purchase, got {:?}",
-        strategic_decision
+    assert_ne!(
+        strategic_decision.verdict,
+        AcquisitionVerdict::MustTake,
+        "test requires a non-mandatory strategic card purchase verdict"
     );
 
     let compiled = compile_shop_decision_v1(
@@ -294,14 +296,14 @@ fn compiled_shop_card_purchase_can_be_allowed_by_strategic_verdict() {
         })
         .expect("Carnage shop plan should exist");
 
-    assert_eq!(carnage_plan.evaluation.verdict, ShopPlanVerdictV1::Allow);
+    assert_eq!(carnage_plan.evaluation.verdict, ShopPlanVerdictV1::Block);
     assert!(
         carnage_plan
             .evaluation
             .reasons
             .iter()
-            .any(|reason| reason.contains("strategic evaluation")),
-        "strategic evaluation should be the purchase reason, got {:?}",
+            .any(|reason| reason.contains("below spend threshold")),
+        "low-priority shop card purchases should not pass only because they are strategically plausible, got {:?}",
         carnage_plan.evaluation.reasons
     );
 }

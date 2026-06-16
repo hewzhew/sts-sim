@@ -164,6 +164,16 @@ fn evaluate_purchase_v1(
                 ),
             );
         }
+        let threshold = purchase_priority_threshold(target, config);
+        if priority < threshold && strategic_decision.verdict != AcquisitionVerdict::MustTake {
+            return ShopPlanEvaluationV1::block(
+                Some(priority),
+                format!(
+                    "shop card purchase estimate {priority} is below spend threshold {threshold}; strategic verdict {:?} is not MustTake",
+                    strategic_decision.verdict
+                ),
+            );
+        }
         return strategic_purchase_evaluation_v1(priority, target, strategic_decision);
     }
 
