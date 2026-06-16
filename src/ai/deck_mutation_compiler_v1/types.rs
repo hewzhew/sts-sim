@@ -110,6 +110,7 @@ pub enum DeckMutationOpeningHandDebtTierV1 {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DeckMutationOpeningHandProfileV1 {
     pub debt_tier: DeckMutationOpeningHandDebtTierV1,
+    pub score_hint: i32,
     pub signals: Vec<String>,
 }
 

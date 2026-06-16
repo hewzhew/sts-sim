@@ -1,6 +1,6 @@
 use crate::ai::deck_mutation_compiler_v1::{
     best_duplicate_target_for_shop_v1, compile_deck_mutation_decision_v1,
-    render_compiled_deck_mutation_decision_v1, DeckMutationCompilerModeV1,
+    render_compiled_deck_mutation_decision_v1, DeckMutationCompilerModeV1, DeckMutationPlanRoleV1,
     DeckMutationTargetLossTierV1, DuplicateTargetRoleV1,
 };
 use crate::content::cards::CardId;
@@ -206,6 +206,54 @@ fn duplicate_compiler_exposes_target_role_evidence() {
             })),
         "ordinary good reward cards should be explainable as non-premium mirror targets"
     );
+}
+
+#[test]
+fn bottle_flame_compiler_does_not_rank_starter_strike_above_real_opening_target() {
+    let run_state = RunState::new(1, 0, false, "Ironclad");
+    let choice = choice(RunPendingChoiceReason::BottleFlame, 1);
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice,
+        DeckMutationCompilerModeV1::BranchTopK { max_active: 3 },
+    );
+
+    let first = decision
+        .branch_active_plans
+        .first()
+        .expect("bottle target option");
+    assert_eq!(first.step.cards[0].card, CardId::Bash);
+    assert!(first
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("opening_hand_target_verdict")));
+}
+
+#[test]
+fn bottle_compiler_keeps_best_bad_target_branchable_when_no_clean_target_exists() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.master_deck.retain(|card| card.id != CardId::Bash);
+    let choice = choice(RunPendingChoiceReason::BottleFlame, 1);
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice,
+        DeckMutationCompilerModeV1::BranchTopK { max_active: 3 },
+    );
+
+    assert!(
+        !decision.branch_active_plans.is_empty(),
+        "forced bottle choice should keep a risky fallback branch when every target is bad"
+    );
+    assert_eq!(
+        decision.branch_active_plans[0].role,
+        DeckMutationPlanRoleV1::RiskyExploration
+    );
+    assert!(decision.branch_active_plans[0]
+        .risks
+        .iter()
+        .any(|risk| risk.contains("opening-hand debt")));
 }
 
 fn choice(reason: RunPendingChoiceReason, count: usize) -> RunPendingChoiceState {

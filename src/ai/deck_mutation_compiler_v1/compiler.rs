@@ -1,6 +1,9 @@
 use std::collections::BTreeSet;
 
 use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
+use crate::ai::opening_hand_target_plan_v1::{
+    opening_hand_target_profile_for_card_v1, OpeningHandDebtTierV1,
+};
 use crate::content::cards::{get_card_definition, CardId, CardRarity, CardTag, CardType};
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{RunPendingChoiceReason, RunPendingChoiceState};
@@ -51,9 +54,25 @@ pub fn compile_deck_mutation_decision_v1(
         .iter()
         .filter(|target| target.selectable)
         .any(|target| target.card.target_class.is_low_value_mutation_target());
+    let clean_bottle_target_available = if is_bottle_choice(choice.reason) {
+        targets
+            .iter()
+            .filter(|target| target.selectable)
+            .any(|target| {
+                target.card.opening_hand.debt_tier <= DeckMutationOpeningHandDebtTierV1::Mild
+                    && target.card.opening_hand.score_hint > 0
+            })
+    } else {
+        false
+    };
 
     for candidate in &mut candidate_plans {
-        evaluate_candidate(choice, candidate, low_value_available);
+        evaluate_candidate(
+            choice,
+            candidate,
+            low_value_available,
+            clean_bottle_target_available,
+        );
     }
     candidate_plans.sort_by(compare_deck_mutation_candidates_v1);
 
@@ -115,7 +134,7 @@ pub fn compile_direct_deck_mutation_plan_candidate_v1(
     candidate
         .reasons
         .push("direct event deck mutation option".to_string());
-    evaluate_candidate_for_reason(reason, &mut candidate, low_value_available);
+    evaluate_candidate_for_reason(reason, &mut candidate, low_value_available, false);
     Some(candidate)
 }
 
@@ -565,14 +584,21 @@ fn evaluate_candidate(
     choice: &RunPendingChoiceState,
     candidate: &mut DeckMutationPlanCandidateV1,
     low_value_available: bool,
+    clean_bottle_target_available: bool,
 ) {
-    evaluate_candidate_for_reason(choice.reason, candidate, low_value_available);
+    evaluate_candidate_for_reason(
+        choice.reason,
+        candidate,
+        low_value_available,
+        clean_bottle_target_available,
+    );
 }
 
 fn evaluate_candidate_for_reason(
     reason: RunPendingChoiceReason,
     candidate: &mut DeckMutationPlanCandidateV1,
     low_value_available: bool,
+    clean_bottle_target_available: bool,
 ) {
     let has_unsupported_target = candidate
         .step
@@ -598,10 +624,15 @@ fn evaluate_candidate_for_reason(
         .max()
         .unwrap_or_default();
 
+    let has_bottle_debt =
+        bottle_choice && max_opening_debt >= DeckMutationOpeningHandDebtTierV1::Situational;
+
     let role = if has_unsupported_target {
         DeckMutationPlanRoleV1::Blocked
-    } else if bottle_choice && max_opening_debt >= DeckMutationOpeningHandDebtTierV1::Situational {
+    } else if has_bottle_debt && clean_bottle_target_available {
         DeckMutationPlanRoleV1::InspectOnly
+    } else if has_bottle_debt {
+        DeckMutationPlanRoleV1::RiskyExploration
     } else if mutation_choice && has_functional_target && low_value_available {
         DeckMutationPlanRoleV1::InspectOnly
     } else if mutation_choice && has_functional_target {
@@ -633,11 +664,20 @@ fn evaluate_candidate_for_reason(
                 .to_string(),
         );
     }
-    if bottle_choice && max_opening_debt >= DeckMutationOpeningHandDebtTierV1::Situational {
+    if has_bottle_debt {
         candidate.reasons.push(format!(
             "bottle target has {:?} opening-hand debt",
             max_opening_debt
         ));
+        if clean_bottle_target_available {
+            candidate
+                .reasons
+                .push("cleaner bottle target exists in candidate pool".to_string());
+        } else {
+            candidate
+                .reasons
+                .push("no cleaner bottle target exists; keeping risky fallback branch".to_string());
+        }
     }
 }
 
@@ -786,7 +826,7 @@ fn target_score_hint(reason: RunPendingChoiceReason, target: &ExactTarget) -> i3
         }
         RunPendingChoiceReason::BottleFlame
         | RunPendingChoiceReason::BottleLightning
-        | RunPendingChoiceReason::BottleTornado => 0,
+        | RunPendingChoiceReason::BottleTornado => target.card.opening_hand.score_hint,
     }
 }
 
@@ -1230,106 +1270,21 @@ fn opening_hand_profile_for_card_mutation(
     reason: RunPendingChoiceReason,
     card: &CombatCard,
 ) -> DeckMutationOpeningHandProfileV1 {
-    if !is_bottle_choice(reason) {
-        return DeckMutationOpeningHandProfileV1::default();
+    let profile = opening_hand_target_profile_for_card_v1(run_state, reason, card);
+    DeckMutationOpeningHandProfileV1 {
+        debt_tier: map_opening_hand_debt_tier(profile.debt_tier),
+        score_hint: profile.score_hint,
+        signals: profile.signals,
     }
+}
 
-    let semantic = card_reward_semantic_profile_v1(&RewardCard::new(card.id, card.upgrades));
-    let has = |role| semantic.roles.contains(&role);
-    let mut profile = DeckMutationOpeningHandProfileV1 {
-        debt_tier: DeckMutationOpeningHandDebtTierV1::Mild,
-        signals: vec!["bottle_opening_hand_mutation".to_string()],
-    };
-
-    let definition = get_card_definition(card.id);
-    match reason {
-        RunPendingChoiceReason::BottleLightning => {
-            if has(CardRewardSemanticRoleV1::CardDraw)
-                || has(CardRewardSemanticRoleV1::EnergySource)
-                || has(CardRewardSemanticRoleV1::Weak)
-                || has(CardRewardSemanticRoleV1::EnemyStrengthDown)
-            {
-                profile.debt_tier = DeckMutationOpeningHandDebtTierV1::None;
-                profile
-                    .signals
-                    .push("skill_bottle_has_immediate_access_role".to_string());
-            } else if has(CardRewardSemanticRoleV1::TemporaryStrengthBurst)
-                || has(CardRewardSemanticRoleV1::ConditionalPlayability)
-                || has(CardRewardSemanticRoleV1::RandomOutput)
-            {
-                profile.debt_tier = DeckMutationOpeningHandDebtTierV1::Situational;
-                profile
-                    .signals
-                    .push("skill_bottle_needs_turn_specific_context".to_string());
-            }
-        }
-        RunPendingChoiceReason::BottleTornado => {
-            let context_dependent_power = has(CardRewardSemanticRoleV1::StatusPayoff)
-                || has(CardRewardSemanticRoleV1::PackagePayoff)
-                || has(CardRewardSemanticRoleV1::ConditionalPlayability)
-                || has(CardRewardSemanticRoleV1::RandomOutput);
-            let setup_power = has(CardRewardSemanticRoleV1::ScalingSource)
-                || has(CardRewardSemanticRoleV1::ExhaustGenerator)
-                || has(CardRewardSemanticRoleV1::ExhaustPayoff)
-                || has(CardRewardSemanticRoleV1::BlockRetention);
-            let awakened_one_boss = run_state.boss_key
-                == Some(crate::content::monsters::factory::EncounterId::AwakenedOne);
-
-            if awakened_one_boss && context_dependent_power {
-                profile.debt_tier = DeckMutationOpeningHandDebtTierV1::High;
-                profile.signals.push(
-                    "context_dependent_power_bottle_conflicts_with_awakened_one_pressure"
-                        .to_string(),
-                );
-            } else if context_dependent_power {
-                profile.debt_tier = DeckMutationOpeningHandDebtTierV1::Situational;
-                profile
-                    .signals
-                    .push("power_bottle_is_package_or_context_dependent".to_string());
-            } else if setup_power {
-                profile.debt_tier = DeckMutationOpeningHandDebtTierV1::Mild;
-                profile
-                    .signals
-                    .push("power_bottle_has_setup_role".to_string());
-            } else if awakened_one_boss {
-                profile.debt_tier = DeckMutationOpeningHandDebtTierV1::Situational;
-                profile
-                    .signals
-                    .push("power_bottle_has_awakened_one_pressure".to_string());
-            }
-        }
-        RunPendingChoiceReason::BottleFlame => {
-            if has(CardRewardSemanticRoleV1::FrontloadDamage)
-                || has(CardRewardSemanticRoleV1::AoeDamage)
-                || has(CardRewardSemanticRoleV1::Vulnerable)
-            {
-                profile.debt_tier = DeckMutationOpeningHandDebtTierV1::None;
-                profile
-                    .signals
-                    .push("attack_bottle_has_immediate_damage_role".to_string());
-            } else if has(CardRewardSemanticRoleV1::StrengthPayoff)
-                || has(CardRewardSemanticRoleV1::BlockPayoff)
-                || has(CardRewardSemanticRoleV1::ConditionalPlayability)
-            {
-                profile.debt_tier = DeckMutationOpeningHandDebtTierV1::Situational;
-                profile
-                    .signals
-                    .push("attack_bottle_payoff_needs_support".to_string());
-            }
-        }
-        _ => {}
+fn map_opening_hand_debt_tier(tier: OpeningHandDebtTierV1) -> DeckMutationOpeningHandDebtTierV1 {
+    match tier {
+        OpeningHandDebtTierV1::None => DeckMutationOpeningHandDebtTierV1::None,
+        OpeningHandDebtTierV1::Mild => DeckMutationOpeningHandDebtTierV1::Mild,
+        OpeningHandDebtTierV1::Situational => DeckMutationOpeningHandDebtTierV1::Situational,
+        OpeningHandDebtTierV1::High => DeckMutationOpeningHandDebtTierV1::High,
     }
-
-    if definition.cost >= 2 && profile.debt_tier < DeckMutationOpeningHandDebtTierV1::High {
-        profile
-            .signals
-            .push("bottle_target_has_high_opening_energy_cost".to_string());
-        if profile.debt_tier < DeckMutationOpeningHandDebtTierV1::Mild {
-            profile.debt_tier = DeckMutationOpeningHandDebtTierV1::Mild;
-        }
-    }
-
-    profile
 }
 
 fn target_loss_signal_for_role(role: CardRewardSemanticRoleV1) -> Option<&'static str> {
