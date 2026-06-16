@@ -1235,8 +1235,8 @@ fn shop_chemical_x_priority_requires_existing_x_cost_payoff() {
 
     assert_eq!(
         chemical_x_without_payoff.purchase_priority,
-        Some(720),
-        "Chemical X should be ordinary relic value until the deck has an X-cost payoff"
+        Some(0),
+        "Chemical X should have no purchase estimate until the deck has an X-cost payoff"
     );
     assert_eq!(
         chemical_x_with_payoff.purchase_priority,

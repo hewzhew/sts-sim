@@ -100,7 +100,7 @@ pub fn shop_relic_conversion_priority_v1(relic: RelicId) -> i32 {
 
 pub fn shop_relic_conversion_priority_for_v1(relic: RelicId, run_state: &RunState) -> i32 {
     if relic == RelicId::ChemicalX && !deck_has_x_cost_payoff_v1(run_state) {
-        return 720;
+        return 0;
     }
     shop_relic_conversion_priority_v1(relic)
 }
