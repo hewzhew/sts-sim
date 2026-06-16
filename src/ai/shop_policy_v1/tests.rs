@@ -6,8 +6,8 @@ use crate::ai::decision_tags_v1::{
 use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, compile_shop_decision_v1, shop_card_conversion_priority_v1,
     ShopCompileModeV1, ShopDecisionSourceV1, ShopPlanCandidateRoleV1, ShopPlanComponentKindV1,
-    ShopPlanKindV1, ShopPlanStepV1, ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1,
-    ShopPurchaseTargetV1,
+    ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
+    ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{
     AcquisitionVerdict, CandidateAction, PressureKind, StrategicBossTax, StrategicJob,
@@ -236,7 +236,7 @@ fn shop_strategic_delta_maps_champ_execute_answer_through_component_report() {
 }
 
 #[test]
-fn compiled_shop_card_purchase_requires_spend_gate_or_must_take_verdict() {
+fn compiled_shop_card_purchase_uses_strategic_verdict_over_legacy_spend_gate() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
     run_state.floor_num = 18;
@@ -296,14 +296,14 @@ fn compiled_shop_card_purchase_requires_spend_gate_or_must_take_verdict() {
         })
         .expect("Carnage shop plan should exist");
 
-    assert_eq!(carnage_plan.evaluation.verdict, ShopPlanVerdictV1::Block);
+    assert_eq!(carnage_plan.evaluation.verdict, ShopPlanVerdictV1::Allow);
     assert!(
         carnage_plan
             .evaluation
             .reasons
             .iter()
-            .any(|reason| reason.contains("below spend threshold")),
-        "low-priority shop card purchases should not pass only because they are strategically plausible, got {:?}",
+            .any(|reason| reason.contains("strategic evaluation")),
+        "shop card purchases should be governed by strategic acquisition verdicts, with legacy priority retained only as estimate/tie-breaker; got {:?}",
         carnage_plan.evaluation.reasons
     );
 }
@@ -1160,6 +1160,64 @@ fn compiled_shop_branch_portfolio_cannot_bypass_strategic_card_gate() {
             .any(|reason| reason.contains("strategic trace blocks")),
         "portfolio alternatives must reuse the same strategic card gate, got {:?}",
         portfolio.evaluation.reasons
+    );
+}
+
+#[test]
+fn compiled_shop_portfolio_uses_step_evaluation_over_plan_legacy_gate() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 18;
+    run_state.boss_key = Some(EncounterId::TheChamp);
+    run_state.gold = 125;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Carnage,
+        upgrades: 0,
+        price: 36,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let strategic_trace = crate::ai::strategic::strategic_trace_for_shop(&context);
+    let candidate_plan = crate::ai::shop_policy_v1::ShopPlanCandidateV1 {
+        plan: ShopPlanV1 {
+            plan_id: "test:portfolio-zero-legacy".to_string(),
+            label: "portfolio Carnage".to_string(),
+            kind: ShopPlanKindV1::Execute,
+            steps: vec![ShopPlanStepV1::BuyCard {
+                index: 0,
+                card: CardId::Carnage,
+                cost: 36,
+            }],
+            total_gold_spent: 36,
+            candidate_ids: vec!["shop:card-0".to_string()],
+            source: ShopPlanSourceV1::PortfolioCandidate,
+            legacy_priority: Some(0),
+            legacy_confidence: None,
+            suppressed_count: 0,
+            reason: "test portfolio plan with zero legacy estimate".to_string(),
+        },
+        role: ShopPlanCandidateRoleV1::PortfolioAlternative,
+        evaluation: crate::ai::shop_policy_v1::ShopPlanEvaluationV1::pending(),
+    };
+
+    let evaluation = super::evaluator::evaluate_shop_plan_candidate_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        &strategic_trace,
+        &candidate_plan,
+    );
+
+    assert_eq!(evaluation.verdict, ShopPlanVerdictV1::Allow);
+    assert!(
+        evaluation
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("portfolio alternative passed unified shop gates")),
+        "portfolio candidates should be judged by their step evaluations, not by a raw legacy plan gate; got {:?}",
+        evaluation.reasons
     );
 }
 

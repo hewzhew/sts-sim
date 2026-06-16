@@ -131,50 +131,35 @@ fn evaluate_purchase_v1(
     let Some(target) = candidate.purchase_target else {
         return ShopPlanEvaluationV1::block(candidate.purchase_priority, "purchase target missing");
     };
-    let Some(priority) = candidate.purchase_priority else {
-        return ShopPlanEvaluationV1::block(None, "purchase legacy priority missing");
-    };
     if let Some(reason) = blocking_purchase_risk_reason_v1(candidate) {
-        return ShopPlanEvaluationV1::block(Some(priority), reason);
+        return ShopPlanEvaluationV1::block(candidate.purchase_priority, reason);
     }
     if let ShopPurchaseTargetV1::Card { .. } = target {
         let Some(strategic_decision) = purchase_strategic_decision(target, strategic_trace) else {
             return ShopPlanEvaluationV1::block(
-                Some(priority),
+                candidate.purchase_priority,
                 "strategic trace has no shop card purchase decision",
             );
         };
         if !strategic_decision.verdict.allows_behavior_acquisition() {
             return ShopPlanEvaluationV1::block(
-                Some(priority),
+                candidate.purchase_priority,
                 format!(
                     "strategic trace blocks shop purchase behavior acquisition verdict={:?} score={:.2}",
                     strategic_decision.verdict, strategic_decision.score
                 ),
             );
         }
-        if priority <= 0 && strategic_decision.verdict != AcquisitionVerdict::MustTake {
-            return ShopPlanEvaluationV1::block(
-                Some(priority),
-                format!(
-                    "shop purchase legacy estimate is non-positive ({priority}); strategic verdict {:?} is not MustTake",
-                    strategic_decision.verdict
-                ),
-            );
-        }
-        let threshold = purchase_priority_threshold(target, config);
-        if priority < threshold && strategic_decision.verdict != AcquisitionVerdict::MustTake {
-            return ShopPlanEvaluationV1::block(
-                Some(priority),
-                format!(
-                    "shop card purchase estimate {priority} is below spend threshold {threshold}; strategic verdict {:?} is not MustTake",
-                    strategic_decision.verdict
-                ),
-            );
-        }
-        return strategic_purchase_evaluation_v1(priority, target, strategic_decision);
+        return strategic_purchase_evaluation_v1(
+            candidate.purchase_priority,
+            target,
+            strategic_decision,
+        );
     }
 
+    let Some(priority) = candidate.purchase_priority else {
+        return ShopPlanEvaluationV1::block(None, "purchase legacy priority missing");
+    };
     let threshold = purchase_priority_threshold(target, config);
     if config.allow_high_impact_purchase && priority >= threshold {
         return ShopPlanEvaluationV1::allow(
@@ -248,13 +233,6 @@ fn evaluate_portfolio_plan_v1(
     {
         return ShopPlanEvaluationV1::stop(candidate_plan.plan.reason.clone());
     }
-    let priority = candidate_plan.plan.legacy_priority.unwrap_or_default();
-    if priority <= 0 {
-        return ShopPlanEvaluationV1::block(
-            candidate_plan.plan.legacy_priority,
-            "portfolio plan has no positive legacy estimate",
-        );
-    }
     if candidate_plan.plan.candidate_ids.is_empty() {
         return ShopPlanEvaluationV1::block(
             candidate_plan.plan.legacy_priority,
@@ -295,15 +273,16 @@ fn evaluate_portfolio_plan_v1(
         .iter()
         .map(|evaluation| evaluation.confidence)
         .fold(0.50_f32, f32::min);
+    let legacy_priority = candidate_plan.plan.legacy_priority.unwrap_or_default();
     ShopPlanEvaluationV1::allow(
         150,
         step_evaluations
             .iter()
             .map(|evaluation| evaluation.score)
             .sum::<i32>()
-            .max(priority),
+            .max(legacy_priority),
         confidence,
-        Some(priority),
+        candidate_plan.plan.legacy_priority,
         "portfolio alternative passed unified shop gates; legacy priority retained as branch estimate",
     )
 }
@@ -380,7 +359,7 @@ fn strategic_starter_purge_evaluation_v1(
 }
 
 fn strategic_purchase_evaluation_v1(
-    legacy_priority: i32,
+    legacy_priority: Option<i32>,
     target: ShopPurchaseTargetV1,
     strategic_decision: &CompiledDecision,
 ) -> ShopPlanEvaluationV1 {
@@ -392,7 +371,7 @@ fn strategic_purchase_evaluation_v1(
     };
     let strategic_score = (strategic_decision.score.max(0.0) * 1000.0).round() as i32;
     let score = strategic_score
-        .saturating_add(legacy_priority.max(0))
+        .saturating_add(legacy_priority.unwrap_or_default().max(0))
         .saturating_add(purchase_tiebreaker(target));
     let confidence = match strategic_decision.verdict {
         AcquisitionVerdict::MustTake => 0.82,
@@ -405,10 +384,10 @@ fn strategic_purchase_evaluation_v1(
         tier,
         score,
         confidence,
-        Some(legacy_priority),
+        legacy_priority,
         format!(
-            "strategic evaluation: verdict={:?} score={:.2}; legacy priority {legacy_priority} retained as tie-breaker",
-            strategic_decision.verdict, strategic_decision.score
+            "strategic evaluation: verdict={:?} score={:.2}; legacy priority {:?} retained as tie-breaker",
+            strategic_decision.verdict, strategic_decision.score, legacy_priority
         ),
     )
 }
