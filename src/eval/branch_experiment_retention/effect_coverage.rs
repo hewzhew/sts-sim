@@ -17,6 +17,7 @@ pub(super) fn preserve_choice_effect_coverage(
         selected_picks,
         limit,
         CHOICE_EFFECT_COVERAGE_ORDER,
+        UNPROTECTED_CHOICE_EFFECT_KEYS,
         |candidate| &candidate.choice_effect_keys,
     )
 }
@@ -33,6 +34,7 @@ pub(super) fn preserve_lineage_flag_coverage(
         selected_picks,
         limit,
         LINEAGE_FLAG_COVERAGE_ORDER,
+        &[],
         |candidate| &candidate.lineage_flags,
     )
 }
@@ -43,6 +45,7 @@ fn preserve_string_key_coverage<F>(
     selected_picks: Vec<BranchRetentionLanePick>,
     limit: usize,
     priority_order: &[&str],
+    ignored_keys: &[&str],
     keys_for_candidate: F,
 ) -> Vec<BranchRetentionLanePick>
 where
@@ -52,8 +55,12 @@ where
         return selected_picks;
     }
 
-    let available_keys =
-        available_string_keys(candidates, available_positions, &keys_for_candidate);
+    let available_keys = available_string_keys(
+        candidates,
+        available_positions,
+        ignored_keys,
+        &keys_for_candidate,
+    );
     if available_keys.is_empty() {
         return selected_picks;
     }
@@ -108,6 +115,7 @@ where
 fn available_string_keys<F>(
     candidates: &[BranchRetentionCandidateInputV1],
     positions: &[usize],
+    ignored_keys: &[&str],
     keys_for_candidate: F,
 ) -> BTreeSet<String>
 where
@@ -117,6 +125,7 @@ where
         .iter()
         .flat_map(|position| keys_for_candidate(&candidates[*position]).iter().cloned())
         .filter(|key| !key.is_empty())
+        .filter(|key| !ignored_keys.contains(&key.as_str()))
         .collect()
 }
 
@@ -194,7 +203,6 @@ where
 }
 
 const CHOICE_EFFECT_COVERAGE_ORDER: &[&str] = &[
-    "skip_reward",
     "singing_bowl",
     "remove_card",
     "transform_card",
@@ -209,6 +217,13 @@ const CHOICE_EFFECT_COVERAGE_ORDER: &[&str] = &[
     "event_choice",
     "take_card",
     "other",
+];
+
+const UNPROTECTED_CHOICE_EFFECT_KEYS: &[&str] = &[
+    // A skip branch is a normal deck-shape choice. If it is valuable, retention
+    // rank should keep it directly; effect coverage should not force it into
+    // the branch budget as a rare action class.
+    "skip_reward",
 ];
 
 const LINEAGE_FLAG_COVERAGE_ORDER: &[&str] = &[

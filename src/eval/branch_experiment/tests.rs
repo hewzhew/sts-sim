@@ -670,40 +670,6 @@ fn branch_experiment_include_skip_expands_card_reward_skip_branch() {
 }
 
 #[test]
-fn branch_experiment_retention_preserves_card_reward_skip_effect() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    let mut reward = RewardState::new();
-    reward.items.push(crate::state::rewards::RewardItem::Card {
-        cards: vec![
-            RewardCard::new(CardId::TwinStrike, 0),
-            RewardCard::new(CardId::Cleave, 0),
-            RewardCard::new(CardId::ShrugItOff, 0),
-        ],
-    });
-    session.engine_state = EngineState::RewardScreen(reward);
-
-    let report = run_branch_experiment_from_session(
-        session,
-        &BranchExperimentConfigV1 {
-            max_depth: 1,
-            max_branches: 3,
-            auto_max_operations: 0,
-            include_skip: true,
-            ..BranchExperimentConfigV1::default()
-        },
-    );
-
-    assert_eq!(report.branches.len(), 3);
-    assert!(report.branches.iter().any(|branch| {
-        branch
-            .choices
-            .iter()
-            .any(|choice| choice.effect_kind == "skip_card_reward")
-    }));
-    assert!(report.pruned_branch_summary.choice_effect_counts["take_card"] >= 1);
-}
-
-#[test]
 fn branch_experiment_retention_uses_singing_bowl_as_decline_effect() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.relics.push(RelicState::new(
