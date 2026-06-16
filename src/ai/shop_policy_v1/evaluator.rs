@@ -64,7 +64,7 @@ pub(crate) fn evaluate_shop_plan_candidate_v1(
     };
 
     attach_components_and_score_v1(
-        evaluate_single_candidate_v1(context, config, strategic_trace, candidate),
+        evaluate_single_candidate_v1(config, strategic_trace, candidate),
         candidate_plan,
         Some(candidate),
     )
@@ -81,7 +81,6 @@ fn attach_components_and_score_v1(
 }
 
 fn evaluate_single_candidate_v1(
-    context: &ShopDecisionContextV1,
     config: &ShopPolicyConfigV1,
     strategic_trace: &StrategicDecisionTrace,
     candidate: &ShopCandidateEvidenceV1,
@@ -92,7 +91,7 @@ fn evaluate_single_candidate_v1(
             evaluate_starter_purge_v1(candidate, config, strategic_trace)
         }
         ShopPolicyClassV1::PurchaseOpportunity => {
-            evaluate_purchase_v1(candidate, context, config, strategic_trace)
+            evaluate_purchase_v1(candidate, config, strategic_trace)
         }
         ShopPolicyClassV1::Leave => ShopPlanEvaluationV1::stop("legacy shop leave candidate"),
         ShopPolicyClassV1::Unknown => ShopPlanEvaluationV1::block(
@@ -117,7 +116,6 @@ fn evaluate_curse_purge_v1(
 
 fn evaluate_purchase_v1(
     candidate: &ShopCandidateEvidenceV1,
-    context: &ShopDecisionContextV1,
     config: &ShopPolicyConfigV1,
     strategic_trace: &StrategicDecisionTrace,
 ) -> ShopPlanEvaluationV1 {
@@ -186,19 +184,6 @@ fn evaluate_purchase_v1(
             Some(priority),
             format!(
                 "shop evaluator: high-impact purchase estimate {priority} clears threshold {threshold}; strategic verdict allows purchase"
-            ),
-        );
-    }
-
-    if context.conversion_pressure && priority > 0 {
-        return ShopPlanEvaluationV1::allow(
-            200,
-            priority.saturating_mul(10)
-                .saturating_add(purchase_tiebreaker(target)),
-            0.64,
-            Some(priority),
-            format!(
-                "shop evaluator: conversion pressure selected affordable purchase estimate {priority}; strategic verdict allows purchase"
             ),
         );
     }
@@ -289,7 +274,7 @@ fn evaluate_portfolio_plan_v1(
                 format!("portfolio plan candidate id {candidate_id} is no longer visible"),
             );
         };
-        let evaluation = evaluate_single_candidate_v1(context, config, strategic_trace, candidate);
+        let evaluation = evaluate_single_candidate_v1(config, strategic_trace, candidate);
         if evaluation.verdict != super::types::ShopPlanVerdictV1::Allow {
             let reason = evaluation
                 .reasons

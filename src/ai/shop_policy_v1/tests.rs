@@ -309,7 +309,7 @@ fn compiled_shop_card_purchase_requires_spend_gate_or_must_take_verdict() {
 }
 
 #[test]
-fn shop_policy_converts_high_gold_into_affordable_relic_even_below_old_high_impact_threshold() {
+fn shop_policy_does_not_convert_high_gold_into_ordinary_relic_without_high_impact_signal() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 3;
     run_state.floor_num = 46;
@@ -331,13 +331,31 @@ fn shop_policy_converts_high_gold_into_affordable_relic_even_below_old_high_impa
     );
 
     assert!(context.conversion_pressure);
-    let Some(ShopPlanStepV1::BuyRelic { relic, .. }) = compiled.selected_plan.steps.first() else {
-        panic!(
-            "expected selected shop plan to buy Anchor, got {:?}",
-            compiled.selected_plan
-        );
-    };
-    assert_eq!(*relic, RelicId::Anchor);
+    assert!(
+        compiled
+            .candidate_plans
+            .iter()
+            .filter(|candidate| {
+                candidate.plan.steps.iter().any(|step| {
+                    matches!(step, ShopPlanStepV1::BuyRelic { relic: RelicId::Anchor, .. })
+                })
+            })
+            .all(|candidate| candidate.evaluation.verdict == ShopPlanVerdictV1::Block),
+        "ordinary relic purchases should not pass only because high gold creates conversion pressure"
+    );
+    assert!(
+        !compiled.selected_plan.steps.iter().any(|step| {
+            matches!(
+                step,
+                ShopPlanStepV1::BuyRelic {
+                    relic: RelicId::Anchor,
+                    ..
+                }
+            )
+        }),
+        "selected shop plan should not buy ordinary Anchor solely under conversion pressure: {:?}",
+        compiled.selected_plan
+    );
 }
 
 #[test]
@@ -349,7 +367,7 @@ fn compiled_shop_decision_wraps_selected_relic_purchase_as_plan() {
     run_state.master_deck.clear();
     let mut shop = ShopState::new();
     shop.relics.push(ShopRelic {
-        relic_id: RelicId::Anchor,
+        relic_id: RelicId::MedicalKit,
         price: 146,
         can_buy: true,
         blocked_reason: None,
@@ -375,7 +393,7 @@ fn compiled_shop_decision_wraps_selected_relic_purchase_as_plan() {
             candidate.purchase_target
                 == Some(ShopPurchaseTargetV1::Relic {
                     index: 0,
-                    relic: RelicId::Anchor,
+                    relic: RelicId::MedicalKit,
                 })
         })
         .and_then(|candidate| candidate.purchase_priority);
@@ -387,7 +405,7 @@ fn compiled_shop_decision_wraps_selected_relic_purchase_as_plan() {
         compiled.selected_plan.steps,
         vec![ShopPlanStepV1::BuyRelic {
             index: 0,
-            relic: RelicId::Anchor,
+            relic: RelicId::MedicalKit,
             cost: 146,
         }]
     );
@@ -538,7 +556,7 @@ fn compiled_shop_branch_topk_returns_plan_alternatives() {
         blocked_reason: None,
     });
     shop.relics.push(ShopRelic {
-        relic_id: RelicId::Anchor,
+        relic_id: RelicId::MedicalKit,
         price: 146,
         can_buy: true,
         blocked_reason: None,
@@ -886,7 +904,7 @@ fn compiled_shop_plan_evaluations_expose_component_score() {
 }
 
 #[test]
-fn compiled_shop_branch_alternatives_preserve_effect_coverage() {
+fn compiled_shop_candidate_pool_preserves_effect_coverage() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 500;
     let mut shop = ShopState::new();
@@ -898,7 +916,7 @@ fn compiled_shop_branch_alternatives_preserve_effect_coverage() {
         blocked_reason: None,
     });
     shop.relics.push(ShopRelic {
-        relic_id: RelicId::Anchor,
+        relic_id: RelicId::MedicalKit,
         price: 146,
         can_buy: true,
         blocked_reason: None,
@@ -916,10 +934,11 @@ fn compiled_shop_branch_alternatives_preserve_effect_coverage() {
         &ShopPolicyConfigV1::default(),
         ShopCompileModeV1::BranchTopK { max_plans: 4 },
     );
-    let effect_kinds = compiled
-        .alternatives
+    let candidate_effect_kinds = compiled
+        .candidate_plans
         .iter()
-        .map(|plan| {
+        .map(|candidate| {
+            let plan = &candidate.plan;
             if plan.steps.len() > 1 {
                 "shop_buy_combo"
             } else {
@@ -935,11 +954,12 @@ fn compiled_shop_branch_alternatives_preserve_effect_coverage() {
         })
         .collect::<std::collections::BTreeSet<_>>();
 
-    assert!(effect_kinds.contains("shop_buy_relic"));
-    assert!(effect_kinds.contains("shop_buy_potion"));
+    assert!(candidate_effect_kinds.contains("shop_buy_card"));
+    assert!(candidate_effect_kinds.contains("shop_buy_relic"));
+    assert!(candidate_effect_kinds.contains("shop_buy_potion"));
     assert!(
-        effect_kinds.len() >= 3,
-        "branch alternatives should preserve effect coverage, got {effect_kinds:?}"
+        candidate_effect_kinds.len() >= 3,
+        "compiled shop candidate pool should preserve effect coverage, got {candidate_effect_kinds:?}"
     );
 }
 
