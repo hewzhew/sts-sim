@@ -4,8 +4,8 @@ use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSe
 use crate::ai::noncombat_strategy_v1::{StrategyDeckFormationNeedV1, StrategyPackageIdV2};
 
 use super::{
-    complete_package_count, profile_has_any_role, transition_attack_count,
-    BranchRetentionCandidateInputV1, DEFENSE_ENGINE_ROLES, SCALING_ROLES,
+    complete_package_count, profile_has_any_effective_slot_role, profile_has_any_role,
+    transition_attack_count, BranchRetentionCandidateInputV1, DEFENSE_ENGINE_ROLES, SCALING_ROLES,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -33,6 +33,7 @@ pub(super) fn branch_retention_context_packet_v2(
     let Some(formation) = candidate.strategy_formation.as_ref() else {
         return packet;
     };
+    let package_claim = candidate_has_context_package_claim(candidate);
 
     if formation
         .needs
@@ -50,10 +51,9 @@ pub(super) fn branch_retention_context_packet_v2(
     if formation
         .needs
         .contains(&StrategyDeckFormationNeedV1::Block)
-        && candidate
-            .choice_profiles
-            .iter()
-            .any(|profile| profile_has_any_role(profile, DEFENSE_ENGINE_ROLES))
+        && candidate.choice_profiles.iter().any(|profile| {
+            profile_has_any_effective_slot_role(profile, DEFENSE_ENGINE_ROLES, package_claim)
+        })
     {
         packet
             .keys
@@ -62,10 +62,9 @@ pub(super) fn branch_retention_context_packet_v2(
     if formation
         .needs
         .contains(&StrategyDeckFormationNeedV1::Scaling)
-        && candidate
-            .choice_profiles
-            .iter()
-            .any(|profile| profile_has_any_role(profile, SCALING_ROLES))
+        && candidate.choice_profiles.iter().any(|profile| {
+            profile_has_any_effective_slot_role(profile, SCALING_ROLES, package_claim)
+        })
     {
         packet
             .keys
@@ -115,7 +114,7 @@ pub(super) fn branch_retention_context_packet_v2(
             profile
                 .roles
                 .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
-                || profile_has_any_role(profile, DEFENSE_ENGINE_ROLES)
+                || profile_has_any_effective_slot_role(profile, DEFENSE_ENGINE_ROLES, package_claim)
         })
     {
         packet
@@ -124,6 +123,18 @@ pub(super) fn branch_retention_context_packet_v2(
     }
 
     packet
+}
+
+fn candidate_has_context_package_claim(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    complete_package_count(&candidate.trajectory) > 0
+        || candidate
+            .strategy_formation
+            .as_ref()
+            .is_some_and(|formation| {
+                formation.strengths.iter().any(|package| {
+                    choice_profiles_support_committed_package(*package, &candidate.choice_profiles)
+                })
+            })
 }
 
 pub(super) fn context_score(
@@ -142,7 +153,7 @@ fn choice_profiles_support_committed_package(
             profile
                 .roles
                 .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
-                || profile_has_any_role(profile, DEFENSE_ENGINE_ROLES)
+                || profile_has_any_effective_slot_role(profile, DEFENSE_ENGINE_ROLES, false)
         }),
         StrategyPackageIdV2::WeakControl => profiles.iter().any(|profile| {
             profile.roles.contains(&CardRewardSemanticRoleV1::Weak)
@@ -185,7 +196,7 @@ fn choice_profiles_support_committed_package(
             profile
                 .roles
                 .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
-                || profile_has_any_role(profile, DEFENSE_ENGINE_ROLES)
+                || profile_has_any_effective_slot_role(profile, DEFENSE_ENGINE_ROLES, false)
         }),
         StrategyPackageIdV2::UpgradeCommitment => profiles
             .iter()

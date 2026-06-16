@@ -317,22 +317,14 @@ pub fn decide_branch_retention_v1(
         slots.push(BranchRetentionSlotV1::EngineSetup);
         reasons.push("contains a long-horizon engine or package setup seed".to_string());
     }
-    if candidate
-        .choice_profiles
-        .iter()
-        .any(|profile| profile_has_any_role(profile, SCALING_ROLES))
-    {
+    if candidate_has_effective_slot_role(candidate, SCALING_ROLES) {
         slots.push(BranchRetentionSlotV1::Scaling);
         reasons.push("contains long-run scaling or engine setup".to_string());
     }
     if current_startup_liability {
         reasons.push("current deck has unresolved startup liability".to_string());
     }
-    if candidate
-        .choice_profiles
-        .iter()
-        .any(|profile| profile_has_any_role(profile, DEFENSE_ENGINE_ROLES))
-    {
+    if candidate_has_effective_slot_role(candidate, DEFENSE_ENGINE_ROLES) {
         slots.push(BranchRetentionSlotV1::DefenseEngine);
         reasons.push("contains block, weak, or defensive engine support".to_string());
     }
@@ -441,10 +433,9 @@ fn strategic_signature_for_retention_candidate(
         push_retention_bucket(&mut buckets, RetentionBucket::BestHighVariance);
     }
 
-    let defense_signals =
-        count_profiles_with_any_role(&candidate.choice_profiles, DEFENSE_ENGINE_ROLES)
-            + i32::from(candidate.trajectory.defense_picks > 0);
-    let scaling_signals = count_profiles_with_any_role(&candidate.choice_profiles, SCALING_ROLES)
+    let defense_signals = count_profiles_with_effective_slot_role(candidate, DEFENSE_ENGINE_ROLES)
+        + i32::from(candidate.trajectory.defense_picks > 0);
+    let scaling_signals = count_profiles_with_effective_slot_role(candidate, SCALING_ROLES)
         + i32::from(candidate.trajectory.scaling_picks > 0)
         + complete_package_count(&candidate.trajectory);
     let engine_signals = candidate.trajectory.setup_keys.len() as i32
@@ -1123,7 +1114,7 @@ fn branch_retention_slot_evidence_score_v1(
                 + candidate.hp * 10
         }
         BranchRetentionSlotV1::Scaling => {
-            count_profiles_with_any_role(&candidate.choice_profiles, SCALING_ROLES) * 10_000
+            count_profiles_with_effective_slot_role(candidate, SCALING_ROLES) * 10_000
                 + context_score(
                     &context,
                     &[BranchRetentionContextKeyV2::MatchesFormationScalingNeed],
@@ -1131,7 +1122,7 @@ fn branch_retention_slot_evidence_score_v1(
                 + candidate.hp * 10
         }
         BranchRetentionSlotV1::DefenseEngine => {
-            count_profiles_with_any_role(&candidate.choice_profiles, DEFENSE_ENGINE_ROLES) * 10_000
+            count_profiles_with_effective_slot_role(candidate, DEFENSE_ENGINE_ROLES) * 10_000
                 + context_score(
                     &context,
                     &[
@@ -1235,6 +1226,54 @@ fn supports_committed_package(candidate: &BranchRetentionCandidateInputV1) -> bo
         .contains(&BranchRetentionContextKeyV2::SupportsCommittedPackage)
 }
 
+fn candidate_has_effective_slot_role(
+    candidate: &BranchRetentionCandidateInputV1,
+    roles: &[CardRewardSemanticRoleV1],
+) -> bool {
+    let package_claim = has_package_retention_claim(candidate);
+    candidate
+        .choice_profiles
+        .iter()
+        .any(|profile| profile_has_any_effective_slot_role(profile, roles, package_claim))
+}
+
+fn count_profiles_with_effective_slot_role(
+    candidate: &BranchRetentionCandidateInputV1,
+    roles: &[CardRewardSemanticRoleV1],
+) -> i32 {
+    let package_claim = has_package_retention_claim(candidate);
+    candidate
+        .choice_profiles
+        .iter()
+        .filter(|profile| profile_has_any_effective_slot_role(profile, roles, package_claim))
+        .count() as i32
+}
+
+pub(super) fn profile_has_any_effective_slot_role(
+    profile: &CardRewardSemanticProfileV1,
+    roles: &[CardRewardSemanticRoleV1],
+    package_claim: bool,
+) -> bool {
+    roles.iter().any(|role| {
+        profile.roles.contains(role)
+            && (package_claim || !role_requires_package_claim_for_slot(*role))
+    })
+}
+
+fn role_requires_package_claim_for_slot(role: CardRewardSemanticRoleV1) -> bool {
+    matches!(
+        role,
+        CardRewardSemanticRoleV1::BlockPayoff
+            | CardRewardSemanticRoleV1::StrengthPayoff
+            | CardRewardSemanticRoleV1::StrikePayoff
+            | CardRewardSemanticRoleV1::UpgradePayoff
+            | CardRewardSemanticRoleV1::ExhaustPayoff
+            | CardRewardSemanticRoleV1::StatusPayoff
+            | CardRewardSemanticRoleV1::SelfDamagePayoff
+            | CardRewardSemanticRoleV1::PackagePayoff
+    )
+}
+
 fn package_score(profiles: &[CardRewardSemanticProfileV1]) -> i32 {
     count_profiles_with_any_role(profiles, PACKAGE_PAYOFF_ROLES)
 }
@@ -1313,6 +1352,8 @@ const PACKAGE_PAYOFF_ROLES: &[CardRewardSemanticRoleV1] = &[
 
 const DEFENSE_ENGINE_ROLES: &[CardRewardSemanticRoleV1] = &[
     CardRewardSemanticRoleV1::Block,
+    CardRewardSemanticRoleV1::BlockRetention,
+    CardRewardSemanticRoleV1::BlockMultiplier,
     CardRewardSemanticRoleV1::BlockPayoff,
     CardRewardSemanticRoleV1::Weak,
     CardRewardSemanticRoleV1::EnemyStrengthDown,
@@ -1374,6 +1415,28 @@ mod tests {
     }
 
     #[test]
+    fn payoff_only_candidate_does_not_claim_scaling_or_defense_slots() {
+        let profiles = vec![semantic_profile(CardId::BodySlam)];
+        let candidate = retention_candidate(
+            0,
+            profiles.clone(),
+            summarize_branch_trajectory_v1(&profiles),
+        );
+
+        let decision = decide_branch_retention_v1(&candidate);
+
+        assert!(!decision.slots.contains(&BranchRetentionSlotV1::Scaling));
+        assert!(!decision
+            .slots
+            .contains(&BranchRetentionSlotV1::DefenseEngine));
+        assert!(!decision
+            .strategic_signature
+            .buckets
+            .contains(&RetentionBucket::BestBossPrepared));
+        assert_eq!(decision.strategic_signature.engine_score, 0.0);
+    }
+
+    #[test]
     fn closed_package_candidate_keeps_package_slot_and_coherence() {
         let profiles = vec![
             semantic_profile(CardId::Entrench),
@@ -1389,6 +1452,28 @@ mod tests {
 
         assert!(decision.slots.contains(&BranchRetentionSlotV1::Package));
         assert!(decision.strategic_signature.package_coherence > 0.0);
+    }
+
+    #[test]
+    fn closed_package_candidate_can_claim_scaling_and_defense_slots() {
+        let profiles = vec![
+            semantic_profile(CardId::Entrench),
+            semantic_profile(CardId::BodySlam),
+        ];
+        let candidate = retention_candidate(
+            0,
+            profiles.clone(),
+            summarize_branch_trajectory_v1(&profiles),
+        );
+
+        let decision = decide_branch_retention_v1(&candidate);
+
+        assert!(decision.slots.contains(&BranchRetentionSlotV1::Scaling));
+        assert!(decision
+            .slots
+            .contains(&BranchRetentionSlotV1::DefenseEngine));
+        assert!(decision.strategic_signature.boss_readiness > 0.0);
+        assert!(decision.strategic_signature.engine_score > 0.0);
     }
 
     #[test]

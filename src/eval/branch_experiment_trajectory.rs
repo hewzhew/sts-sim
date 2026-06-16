@@ -214,15 +214,7 @@ fn is_non_transition_role(role: &CardRewardSemanticRoleV1) -> bool {
 }
 
 fn is_scaling_role(role: &CardRewardSemanticRoleV1) -> bool {
-    matches!(
-        role,
-        CardRewardSemanticRoleV1::ScalingSource
-            | CardRewardSemanticRoleV1::StrengthPayoff
-            | CardRewardSemanticRoleV1::BlockPayoff
-            | CardRewardSemanticRoleV1::ExhaustPayoff
-            | CardRewardSemanticRoleV1::StatusPayoff
-            | CardRewardSemanticRoleV1::SelfDamagePayoff
-    )
+    matches!(role, CardRewardSemanticRoleV1::ScalingSource)
 }
 
 fn is_defense_role(role: &CardRewardSemanticRoleV1) -> bool {
@@ -233,7 +225,6 @@ fn is_defense_role(role: &CardRewardSemanticRoleV1) -> bool {
             | CardRewardSemanticRoleV1::EnemyStrengthDown
             | CardRewardSemanticRoleV1::BlockRetention
             | CardRewardSemanticRoleV1::BlockMultiplier
-            | CardRewardSemanticRoleV1::BlockPayoff
     )
 }
 
