@@ -182,7 +182,7 @@ fn branch_experiment_keeps_high_gold_shop_open_after_single_purchase() {
         blocked_reason: None,
     });
     shop.relics.push(ShopRelic {
-        relic_id: RelicId::Anchor,
+        relic_id: RelicId::FrozenEye,
         price: 120,
         can_buy: true,
         blocked_reason: None,
@@ -233,6 +233,7 @@ fn branch_experiment_keeps_high_gold_shop_open_after_single_purchase() {
 #[test]
 fn branch_experiment_executes_shop_combo_purchase_branch() {
     let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.floor_num = 6;
     session.run_state.gold = 631;
     let mut shop = ShopState::new();
     shop.cards.push(ShopCard {
@@ -243,7 +244,7 @@ fn branch_experiment_executes_shop_combo_purchase_branch() {
         blocked_reason: None,
     });
     shop.relics.push(ShopRelic {
-        relic_id: RelicId::Anchor,
+        relic_id: RelicId::FrozenEye,
         price: 120,
         can_buy: true,
         blocked_reason: None,
@@ -315,7 +316,7 @@ fn branch_experiment_retains_shop_combo_purchase_under_branch_cap() {
         });
     }
     shop.relics.push(ShopRelic {
-        relic_id: RelicId::Anchor,
+        relic_id: RelicId::FrozenEye,
         price: 120,
         can_buy: true,
         blocked_reason: None,
@@ -395,6 +396,7 @@ fn branch_experiment_does_not_auto_leave_shop_purchase_that_opens_reward_overlay
 fn branch_experiment_does_not_auto_leave_shop_purchase_that_opens_duplicate_choice() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.gold = 200;
+    session.run_state.add_card_to_deck(CardId::Offering);
     let mut shop = ShopState::new();
     shop.relics.push(ShopRelic {
         relic_id: RelicId::DollysMirror,

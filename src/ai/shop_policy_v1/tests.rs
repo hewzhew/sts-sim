@@ -1267,6 +1267,39 @@ fn shop_chemical_x_priority_requires_existing_x_cost_payoff() {
     );
 }
 
+#[test]
+fn shop_dollys_mirror_priority_requires_premium_duplicate_target() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.gold = 300;
+    let mut shop = ShopState::new();
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::DollysMirror,
+        price: 175,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context_without_target = build_shop_decision_context_v1(&run_state, &shop);
+    let mirror_without_target =
+        shop_relic_candidate(&context_without_target, RelicId::DollysMirror);
+
+    run_state.add_card_to_deck(CardId::Offering);
+    let context_with_target = build_shop_decision_context_v1(&run_state, &shop);
+    let mirror_with_target = shop_relic_candidate(&context_with_target, RelicId::DollysMirror);
+
+    assert_eq!(
+        mirror_without_target.purchase_priority,
+        Some(0),
+        "Dolly's Mirror should have no high-impact shop estimate without a premium duplicate target"
+    );
+    assert_eq!(
+        mirror_with_target.purchase_priority,
+        Some(950),
+        "Dolly's Mirror should keep high-impact shop priority when a premium duplicate target exists"
+    );
+}
+
 fn install_current_room_route(
     run_state: &mut RunState,
     current_room: RoomType,

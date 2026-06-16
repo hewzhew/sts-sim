@@ -102,6 +102,12 @@ pub fn shop_relic_conversion_priority_for_v1(relic: RelicId, run_state: &RunStat
     if relic == RelicId::ChemicalX && !deck_has_x_cost_payoff_v1(run_state) {
         return 0;
     }
+    if relic == RelicId::DollysMirror
+        && crate::ai::deck_mutation_compiler_v1::best_duplicate_target_for_shop_v1(run_state)
+            .is_none()
+    {
+        return 0;
+    }
     shop_relic_conversion_priority_v1(relic)
 }
 
@@ -133,21 +139,21 @@ pub fn shop_potion_conversion_priority_for_v1(potion: PotionId, run_state: &RunS
 
 fn affordable_high_impact_shop_purchase(run_state: &RunState, shop: &ShopState) -> bool {
     let gold = run_state.gold;
-    shop.relics
-        .iter()
-        .any(|relic| relic.can_buy && relic.price <= gold && high_impact_shop_relic(relic.relic_id))
-        || shop.cards.iter().any(|card| {
-            card.can_buy
-                && card.price <= gold
-                && high_impact_shop_card(card.card_id)
-                && (run_state.act_num >= 2 || shop_card_is_combat_patch_v1(card.card_id))
-        })
-        || shop.potions.iter().any(|potion| {
-            potion.can_buy
-                && potion.price <= gold
-                && shop_potion_is_combat_patch_v1(potion.potion_id)
-                && (run_state.act_num >= 2 || run_state.floor_num >= 6)
-        })
+    shop.relics.iter().any(|relic| {
+        relic.can_buy
+            && relic.price <= gold
+            && shop_relic_conversion_priority_for_v1(relic.relic_id, run_state) >= 900
+    }) || shop.cards.iter().any(|card| {
+        card.can_buy
+            && card.price <= gold
+            && high_impact_shop_card(card.card_id)
+            && (run_state.act_num >= 2 || shop_card_is_combat_patch_v1(card.card_id))
+    }) || shop.potions.iter().any(|potion| {
+        potion.can_buy
+            && potion.price <= gold
+            && shop_potion_is_combat_patch_v1(potion.potion_id)
+            && (run_state.act_num >= 2 || run_state.floor_num >= 6)
+    })
 }
 
 fn high_impact_shop_card(card: CardId) -> bool {

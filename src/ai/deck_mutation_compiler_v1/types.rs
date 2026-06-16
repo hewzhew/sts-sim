@@ -30,6 +30,37 @@ pub enum DeckMutationKindV1 {
     Bottle,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DuplicateTargetRoleV1 {
+    SetupAccelerator,
+    EnginePayoff,
+    EngineEnabler,
+    CompactBossAnswer,
+    WinCondition,
+    OrdinaryFiller,
+    Reject,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DuplicateStackBehaviorV1 {
+    Stackable,
+    ConsistencyOnly,
+    NonStackingDeadAfterFirst,
+    Ordinary,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DuplicateTargetEvaluationV1 {
+    pub card: CardId,
+    pub upgrades: u8,
+    pub priority: i32,
+    pub premium: bool,
+    pub role: DuplicateTargetRoleV1,
+    pub stack_behavior: DuplicateStackBehaviorV1,
+    pub reasons: Vec<String>,
+    pub risks: Vec<String>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum DeckMutationPlanRoleV1 {
     PolicyPreferred,

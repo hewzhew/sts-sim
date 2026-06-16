@@ -12,10 +12,12 @@ use super::types::{
     DeckMutationCompilerModeV1, DeckMutationKindV1, DeckMutationOpeningHandDebtTierV1,
     DeckMutationOpeningHandProfileV1, DeckMutationPlanCandidateV1, DeckMutationPlanRoleV1,
     DeckMutationPlanStepV1, DeckMutationTargetClassV1, DeckMutationTargetLossTierV1,
-    DeckMutationTargetLossV1,
+    DeckMutationTargetLossV1, DuplicateStackBehaviorV1, DuplicateTargetEvaluationV1,
+    DuplicateTargetRoleV1,
 };
 
 const MAX_DUPLICATE_OPTIONS_PER_BRANCH: usize = 4;
+const PREMIUM_DUPLICATE_TARGET_PRIORITY: i32 = 760;
 
 #[derive(Clone, Debug)]
 struct ExactTarget {
@@ -23,7 +25,7 @@ struct ExactTarget {
     identity_key: String,
     selectable: bool,
     upgrade_priority: Option<i32>,
-    duplicate_priority: i32,
+    duplicate_evaluation: DuplicateTargetEvaluationV1,
 }
 
 #[derive(Clone, Debug)]
@@ -124,6 +126,22 @@ pub fn deck_mutation_target_class_for_card_v1(
     target_class_for_card_mutation(reason, card)
 }
 
+pub fn best_duplicate_target_for_shop_v1(
+    run_state: &RunState,
+) -> Option<DuplicateTargetEvaluationV1> {
+    run_state
+        .master_deck
+        .iter()
+        .map(|card| duplicate_target_evaluation_v1(card, run_state))
+        .filter(|evaluation| evaluation.premium)
+        .max_by(|left, right| {
+            left.priority
+                .cmp(&right.priority)
+                .then_with(|| (left.card as i32).cmp(&(right.card as i32)))
+                .then_with(|| left.upgrades.cmp(&right.upgrades))
+        })
+}
+
 fn compare_deck_mutation_candidates_v1(
     left: &DeckMutationPlanCandidateV1,
     right: &DeckMutationPlanCandidateV1,
@@ -204,7 +222,7 @@ fn exact_target_for_deck_index(
         identity_key: card_stat_identity_key(card),
         selectable,
         upgrade_priority,
-        duplicate_priority: run_choice_duplicate_priority_v1(card, run_state),
+        duplicate_evaluation: duplicate_target_evaluation_v1(card, run_state),
     })
 }
 
@@ -491,6 +509,22 @@ fn candidate_from_targets_for_reason(
         .iter()
         .map(|target| target_score_hint(reason, target))
         .sum();
+    let duplicate_reasons = if matches!(reason, RunPendingChoiceReason::Duplicate) {
+        selected_targets
+            .iter()
+            .flat_map(|target| target.duplicate_evaluation.reasons.iter().cloned())
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let duplicate_risks = if matches!(reason, RunPendingChoiceReason::Duplicate) {
+        selected_targets
+            .iter()
+            .flat_map(|target| target.duplicate_evaluation.risks.iter().cloned())
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
     DeckMutationPlanCandidateV1 {
         plan_id: format!("deck_mutation:{effect_key}"),
         step: DeckMutationPlanStepV1 {
@@ -516,11 +550,13 @@ fn candidate_from_targets_for_reason(
         reasons: selected_targets
             .iter()
             .flat_map(|target| target_loss_reasons(&target.card))
+            .chain(duplicate_reasons)
             .chain(std::iter::once(format!("candidate for {:?}", reason)))
             .collect(),
         risks: selected_targets
             .iter()
             .flat_map(|target| target_risks(&target.card))
+            .chain(duplicate_risks)
             .collect(),
     }
 }
@@ -737,7 +773,7 @@ impl DeckMutationTargetClassV1 {
 
 fn target_score_hint(reason: RunPendingChoiceReason, target: &ExactTarget) -> i32 {
     match reason {
-        RunPendingChoiceReason::Duplicate => target.duplicate_priority,
+        RunPendingChoiceReason::Duplicate => target.duplicate_evaluation.priority,
         RunPendingChoiceReason::Upgrade => target.upgrade_priority.unwrap_or_default(),
         RunPendingChoiceReason::Purge
         | RunPendingChoiceReason::PurgeNonBottled
@@ -754,77 +790,294 @@ fn target_score_hint(reason: RunPendingChoiceReason, target: &ExactTarget) -> i3
     }
 }
 
-fn run_choice_duplicate_priority_v1(card: &CombatCard, run_state: &RunState) -> i32 {
+fn duplicate_target_evaluation_v1(
+    card: &CombatCard,
+    run_state: &RunState,
+) -> DuplicateTargetEvaluationV1 {
     let def = get_card_definition(card.id);
+    let mut evaluation = DuplicateTargetEvaluationV1 {
+        card: card.id,
+        upgrades: card.upgrades,
+        priority: 0,
+        premium: false,
+        role: DuplicateTargetRoleV1::OrdinaryFiller,
+        stack_behavior: DuplicateStackBehaviorV1::Ordinary,
+        reasons: Vec::new(),
+        risks: Vec::new(),
+    };
+
     if matches!(def.card_type, CardType::Curse | CardType::Status) {
-        return -10_000;
+        evaluation.priority = -10_000;
+        evaluation.role = DuplicateTargetRoleV1::Reject;
+        evaluation.reasons.push("duplicate_role=reject".to_string());
+        evaluation
+            .risks
+            .push("duplicate_rejects_curse_or_status".to_string());
+        return evaluation;
+    }
+    if def.tags.contains(&CardTag::StarterStrike) || def.tags.contains(&CardTag::StarterDefend) {
+        evaluation.priority = -500;
+        evaluation.reasons.push("duplicate_role=reject".to_string());
+        evaluation
+            .risks
+            .push("duplicate_target_is_starter_card".to_string());
+        return evaluation;
+    }
+    if def.rarity == CardRarity::Basic {
+        evaluation.priority = -300;
+        evaluation.reasons.push("duplicate_role=reject".to_string());
+        evaluation
+            .risks
+            .push("duplicate_target_is_basic_card".to_string());
+        return evaluation;
     }
 
-    let profile = card_reward_semantic_profile_v1(&RewardCard::new(card.id, card.upgrades));
-    let mut priority = 100;
+    let same_card_count = run_state
+        .master_deck
+        .iter()
+        .filter(|deck_card| deck_card.id == card.id)
+        .count();
+    let upgraded = card.upgrades > 0;
+    let exhaust_access_count = exhaust_access_count_v1(run_state);
+    let has_exhaust_fuel = exhaust_access_count > 0;
+    let has_exhaust_payoff = deck_has_any(run_state, &[CardId::FeelNoPain, CardId::DarkEmbrace]);
+    let has_strength_plan = {
+        let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
+        startup.persistent_strength_source_count > 0
+            || startup.convertible_strength_source_count > 0
+    };
 
+    match card.id {
+        CardId::Offering => {
+            evaluation.role = DuplicateTargetRoleV1::SetupAccelerator;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::Stackable;
+            evaluation.priority = 980;
+            evaluation
+                .reasons
+                .push("duplicate_role=setup_accelerator".to_string());
+        }
+        CardId::BattleTrance => {
+            evaluation.role = DuplicateTargetRoleV1::SetupAccelerator;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::Stackable;
+            evaluation.priority = 830;
+            evaluation
+                .reasons
+                .push("duplicate_role=setup_accelerator".to_string());
+            evaluation
+                .risks
+                .push("duplicate_draw_lockout_requires_turn_planning".to_string());
+        }
+        CardId::BurningPact if upgraded || has_exhaust_payoff => {
+            evaluation.role = DuplicateTargetRoleV1::SetupAccelerator;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::Stackable;
+            evaluation.priority = if upgraded { 860 } else { 760 };
+            evaluation
+                .reasons
+                .push("duplicate_role=setup_accelerator".to_string());
+            evaluation
+                .reasons
+                .push("duplicate_adds_draw_and_controlled_exhaust".to_string());
+        }
+        CardId::DarkEmbrace | CardId::FeelNoPain if has_exhaust_fuel => {
+            evaluation.role = DuplicateTargetRoleV1::EnginePayoff;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::Stackable;
+            evaluation.priority = if same_card_count >= 2 { 660 } else { 820 };
+            evaluation
+                .reasons
+                .push("duplicate_role=engine_payoff".to_string());
+            evaluation.reasons.push(format!(
+                "duplicate_exhaust_fuel_count={exhaust_access_count}"
+            ));
+            if same_card_count >= 2 {
+                evaluation
+                    .risks
+                    .push("duplicate_engine_payoff_already_redundant".to_string());
+            }
+        }
+        CardId::Corruption => {
+            evaluation.role = DuplicateTargetRoleV1::EngineEnabler;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::ConsistencyOnly;
+            evaluation.priority = if same_card_count >= 2 {
+                360
+            } else if has_exhaust_payoff {
+                800
+            } else {
+                680
+            };
+            evaluation
+                .reasons
+                .push("duplicate_role=engine_enabler".to_string());
+            evaluation
+                .risks
+                .push("duplicate_non_stacking_power_copy_is_consistency_only".to_string());
+        }
+        CardId::SecondWind | CardId::FiendFire => {
+            evaluation.role = DuplicateTargetRoleV1::EngineEnabler;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::Stackable;
+            evaluation.priority = if has_exhaust_payoff { 810 } else { 700 };
+            evaluation
+                .reasons
+                .push("duplicate_role=engine_enabler".to_string());
+        }
+        CardId::TrueGrit if upgraded && has_exhaust_payoff => {
+            evaluation.role = DuplicateTargetRoleV1::EngineEnabler;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::Stackable;
+            evaluation.priority = 780;
+            evaluation
+                .reasons
+                .push("duplicate_role=engine_enabler".to_string());
+            evaluation
+                .reasons
+                .push("duplicate_requires_upgraded_controlled_exhaust".to_string());
+        }
+        CardId::Shockwave | CardId::Disarm => {
+            evaluation.role = DuplicateTargetRoleV1::CompactBossAnswer;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::Stackable;
+            evaluation.priority = 880;
+            evaluation
+                .reasons
+                .push("duplicate_role=compact_boss_answer".to_string());
+        }
+        CardId::Uppercut if upgraded => {
+            evaluation.role = DuplicateTargetRoleV1::CompactBossAnswer;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::Stackable;
+            evaluation.priority = 780;
+            evaluation
+                .reasons
+                .push("duplicate_role=compact_boss_answer".to_string());
+            evaluation
+                .reasons
+                .push("duplicate_requires_upgraded_debuff_density".to_string());
+        }
+        CardId::Feed | CardId::Reaper => {
+            evaluation.role = DuplicateTargetRoleV1::WinCondition;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::Stackable;
+            evaluation.priority = 830;
+            evaluation
+                .reasons
+                .push("duplicate_role=win_condition".to_string());
+        }
+        CardId::LimitBreak if upgraded && has_strength_plan => {
+            evaluation.role = DuplicateTargetRoleV1::WinCondition;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::Stackable;
+            evaluation.priority = 820;
+            evaluation
+                .reasons
+                .push("duplicate_role=win_condition".to_string());
+            evaluation
+                .reasons
+                .push("duplicate_strength_plan_present".to_string());
+        }
+        CardId::RitualDagger if card.misc_value >= 20 => {
+            evaluation.role = DuplicateTargetRoleV1::WinCondition;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::Stackable;
+            evaluation.priority = 850 + card.misc_value.min(40);
+            evaluation
+                .reasons
+                .push("duplicate_role=win_condition".to_string());
+            evaluation.reasons.push(format!(
+                "duplicate_scaled_ritual_dagger={}",
+                card.misc_value
+            ));
+        }
+        CardId::SearingBlow if card.upgrades >= 3 => {
+            evaluation.role = DuplicateTargetRoleV1::WinCondition;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::Stackable;
+            evaluation.priority = 780 + i32::from(card.upgrades) * 20;
+            evaluation
+                .reasons
+                .push("duplicate_role=win_condition".to_string());
+            evaluation
+                .reasons
+                .push(format!("duplicate_scaled_searing_blow=+{}", card.upgrades));
+        }
+        _ => {
+            evaluation.role = DuplicateTargetRoleV1::OrdinaryFiller;
+            evaluation.stack_behavior = DuplicateStackBehaviorV1::Ordinary;
+            evaluation.priority = ordinary_duplicate_priority_v1(card, run_state);
+            evaluation
+                .reasons
+                .push("duplicate_role=ordinary_filler".to_string());
+            if matches!(
+                card.id,
+                CardId::ShrugItOff | CardId::PommelStrike | CardId::FlameBarrier
+            ) {
+                evaluation
+                    .risks
+                    .push("duplicate_good_reward_card_but_not_premium_mirror_target".to_string());
+            }
+        }
+    }
+
+    if upgraded {
+        evaluation
+            .reasons
+            .push("duplicate_target_upgraded".to_string());
+        evaluation.priority += 30;
+    }
+    if same_card_count > 1 {
+        evaluation
+            .reasons
+            .push(format!("duplicate_same_card_count={same_card_count}"));
+        if evaluation.stack_behavior == DuplicateStackBehaviorV1::ConsistencyOnly {
+            evaluation.priority -= 180;
+        } else {
+            evaluation.priority -= 60 * (same_card_count.saturating_sub(1) as i32);
+        }
+    }
+    if run_state.master_deck.len() >= 30
+        && matches!(
+            evaluation.role,
+            DuplicateTargetRoleV1::OrdinaryFiller | DuplicateTargetRoleV1::CompactBossAnswer
+        )
+    {
+        evaluation.priority -= 40;
+        evaluation
+            .risks
+            .push("duplicate_large_deck_requires_stronger_access_case".to_string());
+    }
+
+    evaluation.premium = evaluation.priority >= PREMIUM_DUPLICATE_TARGET_PRIORITY
+        && !matches!(
+            evaluation.role,
+            DuplicateTargetRoleV1::OrdinaryFiller | DuplicateTargetRoleV1::Reject
+        );
+    evaluation
+        .reasons
+        .push(format!("duplicate_priority={}", evaluation.priority));
+    evaluation
+        .reasons
+        .push(format!("duplicate_premium={}", evaluation.premium));
+    evaluation
+}
+
+fn ordinary_duplicate_priority_v1(card: &CombatCard, run_state: &RunState) -> i32 {
+    let mut priority = 120;
+    let profile = card_reward_semantic_profile_v1(&RewardCard::new(card.id, card.upgrades));
     for role in profile.roles {
         priority += match role {
-            CardRewardSemanticRoleV1::CardDraw => 180,
-            CardRewardSemanticRoleV1::EnergySource => 170,
+            CardRewardSemanticRoleV1::CardDraw => 100,
+            CardRewardSemanticRoleV1::EnergySource => 90,
             CardRewardSemanticRoleV1::EnemyStrengthDown
             | CardRewardSemanticRoleV1::Weak
-            | CardRewardSemanticRoleV1::Vulnerable => 160,
-            CardRewardSemanticRoleV1::ScalingSource => 150,
-            CardRewardSemanticRoleV1::TemporaryStrengthBurst => 70,
+            | CardRewardSemanticRoleV1::Vulnerable => 80,
             CardRewardSemanticRoleV1::Block
             | CardRewardSemanticRoleV1::BlockRetention
-            | CardRewardSemanticRoleV1::BlockMultiplier => 130,
-            CardRewardSemanticRoleV1::ExhaustGenerator => 120,
-            CardRewardSemanticRoleV1::PackagePayoff
-            | CardRewardSemanticRoleV1::ExhaustPayoff
-            | CardRewardSemanticRoleV1::StatusPayoff
-            | CardRewardSemanticRoleV1::BlockPayoff
-            | CardRewardSemanticRoleV1::StrengthPayoff
-            | CardRewardSemanticRoleV1::StrikePayoff
-            | CardRewardSemanticRoleV1::UpgradePayoff
-            | CardRewardSemanticRoleV1::SelfDamagePayoff => 90,
-            CardRewardSemanticRoleV1::FrontloadDamage => 80,
-            CardRewardSemanticRoleV1::AoeDamage => 60,
+            | CardRewardSemanticRoleV1::BlockMultiplier => 50,
+            CardRewardSemanticRoleV1::FrontloadDamage | CardRewardSemanticRoleV1::AoeDamage => 35,
             CardRewardSemanticRoleV1::RandomOutput => -50,
             CardRewardSemanticRoleV1::ConditionalPlayability => -80,
             CardRewardSemanticRoleV1::UnsupportedMechanics => -120,
-            CardRewardSemanticRoleV1::StatusGenerator => -40,
+            _ => 0,
         };
     }
-
-    priority += high_impact_duplicate_bonus(card.id);
-    if card.upgrades > 0 {
-        priority += 60;
+    if supports_existing_duplicate_package(card.id, run_state) {
+        priority += 40;
     }
-    if supports_existing_deck_package(card.id, run_state) {
-        priority += 100;
-    }
-    if def.tags.contains(&CardTag::StarterStrike) || def.tags.contains(&CardTag::StarterDefend) {
-        priority -= 500;
-    }
-    if def.rarity == CardRarity::Basic {
-        priority -= 300;
-    }
-
     priority
 }
 
-fn high_impact_duplicate_bonus(card: CardId) -> i32 {
-    match card {
-        CardId::Offering | CardId::Corruption => 520,
-        CardId::Shockwave | CardId::Disarm => 480,
-        CardId::Impervious | CardId::DemonForm | CardId::Feed | CardId::Reaper => 400,
-        CardId::FiendFire | CardId::DarkEmbrace | CardId::FeelNoPain => 360,
-        CardId::BattleTrance | CardId::BurningPact | CardId::PowerThrough => 300,
-        CardId::FlameBarrier | CardId::Entrench | CardId::Barricade | CardId::BodySlam => 250,
-        CardId::Uppercut | CardId::ShrugItOff | CardId::PommelStrike | CardId::TrueGrit => 220,
-        CardId::Armaments | CardId::SpotWeakness | CardId::Inflame => 180,
-        _ => 0,
-    }
-}
-
-fn supports_existing_deck_package(card: CardId, run_state: &RunState) -> bool {
+fn supports_existing_duplicate_package(card: CardId, run_state: &RunState) -> bool {
     match card {
         CardId::BodySlam | CardId::Entrench | CardId::Barricade => deck_has_any(
             run_state,
@@ -858,6 +1111,26 @@ fn supports_existing_deck_package(card: CardId, run_state: &RunState) -> bool {
         ),
         _ => false,
     }
+}
+
+fn exhaust_access_count_v1(run_state: &RunState) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|card| {
+            matches!(
+                card.id,
+                CardId::BurningPact
+                    | CardId::Corruption
+                    | CardId::SecondWind
+                    | CardId::FiendFire
+                    | CardId::SeverSoul
+                    | CardId::TrueGrit
+                    | CardId::Havoc
+                    | CardId::Exhume
+            )
+        })
+        .count()
 }
 
 fn deck_has_any(run_state: &RunState, cards: &[CardId]) -> bool {

@@ -550,7 +550,7 @@ fn current_boundary_expands_low_fanout_shop_purchase_choices() {
         blocked_reason: None,
     });
     shop.relics.push(ShopRelic {
-        relic_id: RelicId::Anchor,
+        relic_id: RelicId::FrozenEye,
         price: 120,
         can_buy: true,
         blocked_reason: None,
@@ -585,6 +585,7 @@ fn current_boundary_expands_low_fanout_shop_purchase_choices() {
 #[test]
 fn current_boundary_caps_high_fanout_shop_purchase_choices() {
     let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.floor_num = 6;
     session.run_state.gold = 500;
     let mut shop = ShopState::new();
     for card_id in [
@@ -603,7 +604,7 @@ fn current_boundary_caps_high_fanout_shop_purchase_choices() {
         });
     }
     shop.relics.push(ShopRelic {
-        relic_id: RelicId::Anchor,
+        relic_id: RelicId::FrozenEye,
         price: 120,
         can_buy: true,
         blocked_reason: None,
@@ -635,6 +636,7 @@ fn current_boundary_caps_high_fanout_shop_purchase_choices() {
 #[test]
 fn current_boundary_includes_combo_purchase_for_high_pressure_shop() {
     let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.floor_num = 6;
     session.run_state.gold = 631;
     let mut shop = ShopState::new();
     shop.cards.push(ShopCard {
@@ -652,7 +654,7 @@ fn current_boundary_includes_combo_purchase_for_high_pressure_shop() {
         blocked_reason: None,
     });
     shop.relics.push(ShopRelic {
-        relic_id: RelicId::Anchor,
+        relic_id: RelicId::FrozenEye,
         price: 120,
         can_buy: true,
         blocked_reason: None,
@@ -694,7 +696,7 @@ fn current_boundary_includes_three_purchase_combo_for_high_gold_shop_pressure() 
         blocked_reason: None,
     });
     shop.relics.push(ShopRelic {
-        relic_id: RelicId::Anchor,
+        relic_id: RelicId::FrozenEye,
         price: 146,
         can_buy: true,
         blocked_reason: None,
@@ -741,7 +743,7 @@ fn current_boundary_includes_combo_purchase_for_capped_affordable_shop() {
         });
     }
     shop.relics.push(ShopRelic {
-        relic_id: RelicId::Anchor,
+        relic_id: RelicId::FrozenEye,
         price: 120,
         can_buy: true,
         blocked_reason: None,
@@ -814,7 +816,7 @@ fn current_boundary_prefers_boss_potion_over_smoke_bomb_in_capped_shop_portfolio
         });
     }
     shop.relics.push(ShopRelic {
-        relic_id: RelicId::Anchor,
+        relic_id: RelicId::FrozenEye,
         price: 120,
         can_buy: true,
         blocked_reason: None,

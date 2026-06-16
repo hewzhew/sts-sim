@@ -1,6 +1,7 @@
 use crate::ai::deck_mutation_compiler_v1::{
-    compile_deck_mutation_decision_v1, render_compiled_deck_mutation_decision_v1,
-    DeckMutationCompilerModeV1, DeckMutationTargetLossTierV1,
+    best_duplicate_target_for_shop_v1, compile_deck_mutation_decision_v1,
+    render_compiled_deck_mutation_decision_v1, DeckMutationCompilerModeV1,
+    DeckMutationTargetLossTierV1, DuplicateTargetRoleV1,
 };
 use crate::content::cards::CardId;
 use crate::runtime::combat::CombatCard;
@@ -149,6 +150,62 @@ fn compiler_exposes_target_loss_for_functional_mutation_targets() {
         .reasons
         .iter()
         .any(|reason| reason.contains("target_loss=CoreFunctional")));
+}
+
+#[test]
+fn duplicate_shop_target_requires_premium_duplicate_role() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+
+    assert!(
+        best_duplicate_target_for_shop_v1(&run_state).is_none(),
+        "starter deck should not make Dolly's Mirror a high-impact purchase"
+    );
+
+    run_state.add_card_to_deck(CardId::Offering);
+    let target = best_duplicate_target_for_shop_v1(&run_state).expect("premium duplicate target");
+
+    assert_eq!(target.card, CardId::Offering);
+    assert_eq!(target.role, DuplicateTargetRoleV1::SetupAccelerator);
+    assert!(target.premium);
+    assert!(target.priority >= 760);
+}
+
+#[test]
+fn duplicate_compiler_exposes_target_role_evidence() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.add_card_to_deck(CardId::Offering);
+    run_state.add_card_to_deck(CardId::ShrugItOff);
+    let choice = choice(RunPendingChoiceReason::Duplicate, 1);
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice,
+        DeckMutationCompilerModeV1::BranchTopK { max_active: 4 },
+    );
+    let offering = decision
+        .branch_active_plans
+        .iter()
+        .find(|plan| plan.step.cards[0].card == CardId::Offering)
+        .expect("Offering duplicate candidate should remain visible");
+
+    assert!(offering
+        .reasons
+        .iter()
+        .any(|reason| reason == "duplicate_role=setup_accelerator"));
+    assert!(offering
+        .reasons
+        .iter()
+        .any(|reason| reason == "duplicate_premium=true"));
+    assert!(
+        decision
+            .candidate_plans
+            .iter()
+            .find(|plan| plan.step.cards[0].card == CardId::ShrugItOff)
+            .is_some_and(|plan| plan.risks.iter().any(|risk| {
+                risk == "duplicate_good_reward_card_but_not_premium_mirror_target"
+            })),
+        "ordinary good reward cards should be explainable as non-premium mirror targets"
+    );
 }
 
 fn choice(reason: RunPendingChoiceReason, count: usize) -> RunPendingChoiceState {
