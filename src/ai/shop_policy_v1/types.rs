@@ -6,6 +6,7 @@ use crate::ai::noncombat_decision_v1::{
     NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
 };
 use crate::ai::noncombat_strategy_v1::{RunStrategySnapshotV2, StrategyPlanSupportV1};
+use crate::ai::strength_profile_v1::StrengthProfileV1;
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
@@ -14,6 +15,7 @@ use crate::content::relics::RelicId;
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShopDecisionContextV1 {
     pub strategy: RunStrategySnapshotV2,
+    pub strength: StrengthProfileV1,
     pub need: ShopNeedProfileV1,
     pub candidates: Vec<ShopCandidateEvidenceV1>,
     pub affordable_purchase_exists: bool,

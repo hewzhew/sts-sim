@@ -205,6 +205,32 @@ fn shop_strategic_trace_carries_champ_execute_pressure() {
 }
 
 #[test]
+fn shop_strategic_snapshot_preserves_convertible_strength_facts() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 500;
+    run_state.master_deck.clear();
+    run_state.add_card_to_deck(CardId::Flex);
+    run_state.add_card_to_deck(CardId::LimitBreak);
+    run_state.add_card_to_deck(CardId::HeavyBlade);
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::PommelStrike,
+        upgrades: 0,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let trace = crate::ai::strategic::strategic_trace_for_shop(&context);
+
+    assert_eq!(trace.snapshot.deck.strength_sources, 0);
+    assert_eq!(trace.snapshot.deck.temporary_strength_bursts, 1);
+    assert_eq!(trace.snapshot.deck.strength_converters, 1);
+    assert_eq!(trace.snapshot.deck.convertible_strength_sources, 1);
+}
+
+#[test]
 fn shop_strategic_delta_maps_champ_execute_answer_through_component_report() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
