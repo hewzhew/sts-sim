@@ -125,6 +125,19 @@ pub(crate) fn evaluate_event_candidate_v1(
         score -= candidate.obtained_card_count.saturating_mul(30);
         reasons.push("adds permanent card count".to_string());
     }
+    if candidate.obtains_mark_of_the_bloom {
+        let bloom_penalty = if hp_ratio < 0.65 {
+            620
+        } else if hp_ratio < 0.85 {
+            420
+        } else {
+            240
+        };
+        score -= bloom_penalty;
+        reasons.push(format!(
+            "Mark of the Bloom disables future healing: -{bloom_penalty}"
+        ));
+    }
 
     let tier = if score >= 450 {
         EventCandidateTierV1::Preferred

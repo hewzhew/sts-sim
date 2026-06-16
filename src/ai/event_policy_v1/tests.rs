@@ -1,6 +1,6 @@
 use crate::ai::event_policy_v1::{
-    build_event_decision_context_v1, plan_event_decision_v1, EventPolicyActionV1,
-    EventPolicyClassV1, EventPolicyConfigV1,
+    build_event_decision_context_v1, plan_event_decision_v1, EventCandidateTierV1,
+    EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
 };
 use crate::state::events::{
     EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionSemantics,
@@ -228,6 +228,34 @@ fn winding_halls_with_mark_of_the_bloom_prefers_max_hp_loss_over_blocked_heal_cu
         decision.action,
         EventPolicyActionV1::Pick { index: 2, .. }
     ));
+}
+
+#[test]
+fn mind_bloom_remember_exposes_mark_of_the_bloom_healing_lock_risk() {
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.current_hp = 58;
+    run.max_hp = 80;
+    run.floor_num = 37;
+    run.event_state = Some(EventState::new(EventId::MindBloom));
+    let options =
+        crate::content::events::mind_bloom::get_options(&run, run.event_state.as_ref().unwrap());
+    let context = build_event_decision_context_v1(&run, EventId::MindBloom, options);
+
+    let remember = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.label.contains("[Remember]"))
+        .expect("Mind Bloom Remember option should be visible");
+
+    assert!(remember.obtains_mark_of_the_bloom);
+    assert!(
+        remember
+            .risks
+            .iter()
+            .any(|risk| risk.contains("disables all future healing")),
+        "Remember should expose the Mark of the Bloom healing lock risk"
+    );
+    assert_eq!(remember.evaluation.tier, EventCandidateTierV1::Avoid);
 }
 
 fn option(

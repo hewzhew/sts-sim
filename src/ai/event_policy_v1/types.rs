@@ -35,6 +35,7 @@ pub struct EventCandidateEvidenceV1 {
     pub max_hp_gain: i32,
     pub curse_count: i32,
     pub obtained_card_count: i32,
+    pub obtains_mark_of_the_bloom: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

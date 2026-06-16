@@ -86,6 +86,7 @@ fn candidate_evidence(
     let max_hp_gain = max_hp_gain(&option);
     let curse_count = curse_count(&option);
     let obtained_card_count = obtained_card_count(&option);
+    let obtains_mark_of_the_bloom = obtains_mark_of_the_bloom(&option);
     let class = classify_event_option(&option);
     let mut evidence = vec![format!(
         "event action kind is {:?}",
@@ -124,6 +125,10 @@ fn candidate_evidence(
             risks.push("event policy did not select this option for autopilot".to_string());
         }
     }
+    if obtains_mark_of_the_bloom {
+        evidence.push("obtains Mark of the Bloom".to_string());
+        risks.push("Mark of the Bloom disables all future healing".to_string());
+    }
 
     let mut candidate = EventCandidateEvidenceV1 {
         index,
@@ -144,6 +149,7 @@ fn candidate_evidence(
         max_hp_gain,
         curse_count,
         obtained_card_count,
+        obtains_mark_of_the_bloom,
     };
     candidate.evaluation = evaluate_event_candidate_v1(current_hp, max_hp, &candidate);
     candidate
@@ -261,6 +267,18 @@ fn obtained_card_count(option: &EventOption) -> i32 {
             _ => 0,
         })
         .sum()
+}
+
+fn obtains_mark_of_the_bloom(option: &EventOption) -> bool {
+    option.semantics.effects.iter().any(|effect| {
+        matches!(
+            effect,
+            EventEffect::ObtainRelic {
+                kind: crate::state::events::EventRelicKind::Specific(RelicId::MarkOfTheBloom),
+                ..
+            }
+        )
+    })
 }
 
 fn is_safe_exit(option: &EventOption) -> bool {
