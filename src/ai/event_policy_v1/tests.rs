@@ -2,6 +2,12 @@ use crate::ai::event_policy_v1::{
     build_event_decision_context_v1, plan_event_decision_v1, EventCandidateTierV1,
     EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
 };
+use crate::ai::random_upgrade_opportunity_v1::{
+    evaluate_random_upgrade_opportunity_v1, ProbabilityBucketV1, RandomUpgradeSourceV1,
+    RandomUpgradeVerdictV1,
+};
+use crate::content::cards::CardId;
+use crate::runtime::combat::CombatCard;
 use crate::state::events::{
     EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionSemantics,
     EventOptionTransition, EventState,
@@ -256,6 +262,102 @@ fn mind_bloom_remember_exposes_mark_of_the_bloom_healing_lock_risk() {
         "Remember should expose the Mark of the Bloom healing lock risk"
     );
     assert_eq!(remember.evaluation.tier, EventCandidateTierV1::Avoid);
+}
+
+#[test]
+fn random_upgrade_opportunity_detects_high_debt_density_with_safe_hp_cost() {
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.current_hp = 72;
+    run.max_hp = 80;
+    run.master_deck.clear();
+    run.master_deck.push(CombatCard::new(CardId::TrueGrit, 1));
+    run.master_deck.push(CombatCard::new(CardId::Armaments, 2));
+    run.master_deck.push(CombatCard::new(CardId::Bash, 3));
+    run.master_deck.push(CombatCard::new(CardId::Strike, 4));
+
+    let plan = evaluate_random_upgrade_opportunity_v1(
+        &run,
+        RandomUpgradeSourceV1::ShiningLight {
+            hp_cost: 16,
+            upgrade_count: 2,
+        },
+    );
+
+    assert_eq!(plan.eligible_count, 4);
+    assert!(plan.hit_distribution.important_or_better_targets >= 2);
+    assert!(
+        plan.hit_distribution.p_hit_at_least_one_important_or_better >= ProbabilityBucketV1::Medium
+    );
+    assert!(matches!(
+        plan.verdict,
+        RandomUpgradeVerdictV1::EnterClean | RandomUpgradeVerdictV1::EnterRisky
+    ));
+}
+
+#[test]
+fn shining_light_uses_random_upgrade_opportunity_instead_of_default_leave() {
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.current_hp = 72;
+    run.max_hp = 80;
+    run.event_state = Some(EventState::new(EventId::ShiningLight));
+    run.master_deck.clear();
+    run.master_deck.push(CombatCard::new(CardId::TrueGrit, 1));
+    run.master_deck.push(CombatCard::new(CardId::Armaments, 2));
+    run.master_deck.push(CombatCard::new(CardId::Bash, 3));
+    run.master_deck.push(CombatCard::new(CardId::Strike, 4));
+    let options =
+        crate::content::events::shining_light::get_options(&run, run.event_state.as_ref().unwrap());
+
+    let context = build_event_decision_context_v1(&run, EventId::ShiningLight, options);
+    let enter = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.label.contains("[Enter the Light]"))
+        .expect("enter candidate");
+
+    assert_eq!(enter.class, EventPolicyClassV1::RandomUpgradeOpportunity);
+    assert!(enter.evaluation.score > 120);
+    assert!(enter
+        .evaluation
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("random upgrade opportunity")));
+
+    let decision = plan_event_decision_v1(&context, &EventPolicyConfigV1::default());
+    assert!(matches!(
+        decision.action,
+        EventPolicyActionV1::Pick { index: 0, .. }
+    ));
+}
+
+#[test]
+fn random_upgrade_opportunity_is_scoped_to_shining_light_event() {
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.current_hp = 72;
+    run.max_hp = 80;
+    run.master_deck.clear();
+    run.master_deck.push(CombatCard::new(CardId::TrueGrit, 1));
+    run.master_deck.push(CombatCard::new(CardId::Armaments, 2));
+
+    let context = build_event_decision_context_v1(
+        &run,
+        EventId::MindBloom,
+        vec![option(
+            "[Test] Lose HP. Upgrade a card.",
+            EventActionKind::Special,
+            vec![
+                EventEffect::LoseHp(16),
+                EventEffect::UpgradeCard { count: 1 },
+            ],
+            EventOptionTransition::AdvanceScreen,
+        )],
+    );
+
+    assert_eq!(
+        context.candidates[0].class,
+        EventPolicyClassV1::SelectionOrDeckMutation
+    );
+    assert!(context.candidates[0].random_upgrade_opportunity.is_none());
 }
 
 fn option(

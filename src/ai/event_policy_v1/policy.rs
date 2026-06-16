@@ -1,6 +1,10 @@
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyPlanSupportV1,
 };
+use crate::ai::random_upgrade_opportunity_v1::{
+    evaluate_random_upgrade_opportunity_v1, RandomUpgradeOpportunityPlanV1, RandomUpgradeSourceV1,
+    RandomUpgradeVerdictV1,
+};
 use crate::content::relics::RelicId;
 use crate::state::events::{
     EventActionKind, EventEffect, EventId, EventOption, EventOptionTransition,
@@ -22,9 +26,7 @@ pub fn build_event_decision_context_v1(
     let candidates = options
         .into_iter()
         .enumerate()
-        .map(|(index, option)| {
-            candidate_evidence(index, option, run_state.current_hp, run_state.max_hp)
-        })
+        .map(|(index, option)| candidate_evidence(index, option, run_state, event_id))
         .collect();
     EventDecisionContextV1 {
         event_id,
@@ -77,8 +79,8 @@ pub fn plan_event_decision_v1(
 fn candidate_evidence(
     index: usize,
     option: EventOption,
-    current_hp: i32,
-    max_hp: i32,
+    run_state: &RunState,
+    event_id: EventId,
 ) -> EventCandidateEvidenceV1 {
     let hp_cost = hp_cost(&option);
     let max_hp_loss = max_hp_loss(&option);
@@ -87,7 +89,8 @@ fn candidate_evidence(
     let curse_count = curse_count(&option);
     let obtained_card_count = obtained_card_count(&option);
     let obtains_mark_of_the_bloom = obtains_mark_of_the_bloom(&option);
-    let class = classify_event_option(&option);
+    let random_upgrade_opportunity = random_upgrade_opportunity(&option, run_state, event_id);
+    let class = classify_event_option(&option, random_upgrade_opportunity.as_ref());
     let mut evidence = vec![format!(
         "event action kind is {:?}",
         option.semantics.action
@@ -105,6 +108,17 @@ fn candidate_evidence(
         EventPolicyClassV1::MaxHpForHpCost => {
             evidence.push(format!("gain {max_hp_gain} max HP for {hp_cost} HP"));
             risks.push("visible current HP cost".to_string());
+        }
+        EventPolicyClassV1::RandomUpgradeOpportunity => {
+            if let Some(plan) = &random_upgrade_opportunity {
+                evidence.extend(plan.evidence.iter().cloned());
+                risks.extend(plan.risks.iter().cloned());
+                if matches!(plan.verdict, RandomUpgradeVerdictV1::Leave) {
+                    risks.push(
+                        "random upgrade opportunity evaluator recommends leaving".to_string(),
+                    );
+                }
+            }
         }
         EventPolicyClassV1::ResourceCost => {
             risks.push("visible resource cost".to_string());
@@ -150,12 +164,17 @@ fn candidate_evidence(
         curse_count,
         obtained_card_count,
         obtains_mark_of_the_bloom,
+        random_upgrade_opportunity,
     };
-    candidate.evaluation = evaluate_event_candidate_v1(current_hp, max_hp, &candidate);
+    candidate.evaluation =
+        evaluate_event_candidate_v1(run_state.current_hp, run_state.max_hp, &candidate);
     candidate
 }
 
-fn classify_event_option(option: &EventOption) -> EventPolicyClassV1 {
+fn classify_event_option(
+    option: &EventOption,
+    random_upgrade_opportunity: Option<&RandomUpgradeOpportunityPlanV1>,
+) -> EventPolicyClassV1 {
     if option.ui.disabled {
         return EventPolicyClassV1::Unknown;
     }
@@ -167,6 +186,9 @@ fn classify_event_option(option: &EventOption) -> EventPolicyClassV1 {
     }
     if has_curse_debt(option) {
         return EventPolicyClassV1::CurseDebt;
+    }
+    if random_upgrade_opportunity.is_some() {
+        return EventPolicyClassV1::RandomUpgradeOpportunity;
     }
     if has_selection_or_deck_mutation(option) {
         return EventPolicyClassV1::SelectionOrDeckMutation;
@@ -184,6 +206,34 @@ fn classify_event_option(option: &EventOption) -> EventPolicyClassV1 {
         return EventPolicyClassV1::FreeKnownBenefit;
     }
     EventPolicyClassV1::Unknown
+}
+
+fn random_upgrade_opportunity(
+    option: &EventOption,
+    run_state: &RunState,
+    event_id: EventId,
+) -> Option<RandomUpgradeOpportunityPlanV1> {
+    if event_id != EventId::ShiningLight {
+        return None;
+    }
+    let upgrade_count = option
+        .semantics
+        .effects
+        .iter()
+        .find_map(|effect| match effect {
+            EventEffect::UpgradeCard { count } => Some(*count),
+            _ => None,
+        })?;
+    if hp_cost(option) <= 0 {
+        return None;
+    }
+    Some(evaluate_random_upgrade_opportunity_v1(
+        run_state,
+        RandomUpgradeSourceV1::ShiningLight {
+            hp_cost: hp_cost(option),
+            upgrade_count,
+        },
+    ))
 }
 
 fn is_max_hp_for_hp_cost(option: &EventOption) -> bool {
@@ -387,7 +437,9 @@ fn support_gate_for_class(class: EventPolicyClassV1) -> StrategyPlanSupportV1 {
         EventPolicyClassV1::FreeKnownBenefit | EventPolicyClassV1::SafeExit => {
             StrategyPlanSupportV1::Strong
         }
-        EventPolicyClassV1::MaxHpForHpCost => StrategyPlanSupportV1::Plausible,
+        EventPolicyClassV1::MaxHpForHpCost | EventPolicyClassV1::RandomUpgradeOpportunity => {
+            StrategyPlanSupportV1::Plausible
+        }
         EventPolicyClassV1::ResourceCost
         | EventPolicyClassV1::CurseDebt
         | EventPolicyClassV1::SelectionOrDeckMutation

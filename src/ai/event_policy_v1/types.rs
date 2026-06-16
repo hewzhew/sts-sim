@@ -7,6 +7,7 @@ use crate::ai::noncombat_decision_v1::{
 use crate::ai::noncombat_strategy_v1::{
     RunStrategySnapshotV2, StrategyPackageIdV2, StrategyPlanSupportV1,
 };
+use crate::ai::random_upgrade_opportunity_v1::RandomUpgradeOpportunityPlanV1;
 use crate::state::events::EventId;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -36,6 +37,7 @@ pub struct EventCandidateEvidenceV1 {
     pub curse_count: i32,
     pub obtained_card_count: i32,
     pub obtains_mark_of_the_bloom: bool,
+    pub random_upgrade_opportunity: Option<RandomUpgradeOpportunityPlanV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,6 +46,7 @@ pub enum EventPolicyClassV1 {
     SafeExit,
     MaxHpForHpCost,
     ResourceCost,
+    RandomUpgradeOpportunity,
     CurseDebt,
     SelectionOrDeckMutation,
     CombatStart,
@@ -72,6 +75,7 @@ pub struct EventPolicyConfigV1 {
     pub allow_free_known_benefit: bool,
     pub allow_safe_exit_from_risky_event: bool,
     pub allow_max_hp_for_safe_hp_cost: bool,
+    pub allow_random_upgrade_opportunity: bool,
     pub min_hp_after_safe_hp_cost: i32,
     pub min_hp_ratio_after_safe_hp_cost: f32,
 }
@@ -82,6 +86,7 @@ impl Default for EventPolicyConfigV1 {
             allow_free_known_benefit: true,
             allow_safe_exit_from_risky_event: true,
             allow_max_hp_for_safe_hp_cost: true,
+            allow_random_upgrade_opportunity: true,
             min_hp_after_safe_hp_cost: 35,
             min_hp_ratio_after_safe_hp_cost: 0.50,
         }

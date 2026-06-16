@@ -2,6 +2,7 @@ use super::types::{
     EventCandidateEvaluationV1, EventCandidateEvidenceV1, EventCandidateTierV1,
     EventDecisionContextV1, EventPolicyClassV1, EventPolicyConfigV1,
 };
+use crate::ai::random_upgrade_opportunity_v1::RandomUpgradeVerdictV1;
 use crate::state::events::EventId;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -77,6 +78,25 @@ pub(crate) fn evaluate_event_candidate_v1(
         EventPolicyClassV1::SelectionOrDeckMutation => {
             score -= 80;
             reasons.push("mutates deck identity or opens selection".to_string());
+        }
+        EventPolicyClassV1::RandomUpgradeOpportunity => {
+            if let Some(plan) = &candidate.random_upgrade_opportunity {
+                score += plan.score_hint;
+                reasons.push(format!(
+                    "random upgrade opportunity verdict={:?}",
+                    plan.verdict
+                ));
+                reasons.push(format!(
+                    "random upgrade opportunity p_important={:?}",
+                    plan.hit_distribution.p_hit_at_least_one_important_or_better
+                ));
+                if !plan.blockers.is_empty() {
+                    reasons.push(format!("random upgrade blockers={:?}", plan.blockers));
+                }
+            } else {
+                score -= 240;
+                reasons.push("random upgrade opportunity missing evaluator plan".to_string());
+            }
         }
         EventPolicyClassV1::ResourceCost => {
             score -= 120;
@@ -201,8 +221,29 @@ fn autopilot_pick(
                 ),
             })
         }
+        EventPolicyClassV1::RandomUpgradeOpportunity
+            if config.allow_random_upgrade_opportunity
+                && random_upgrade_opportunity_is_safe(candidate) =>
+        {
+            Some(AutopilotPick {
+                index: candidate.index,
+                label: candidate.label.clone(),
+                confidence: 0.70,
+                reason: "random upgrade opportunity pays current upgrade debt with acceptable HP risk"
+                    .to_string(),
+            })
+        }
         _ => None,
     }
+}
+
+fn random_upgrade_opportunity_is_safe(candidate: &EventCandidateEvidenceV1) -> bool {
+    let Some(plan) = &candidate.random_upgrade_opportunity else {
+        return false;
+    };
+    matches!(plan.verdict, RandomUpgradeVerdictV1::EnterClean)
+        || (matches!(plan.verdict, RandomUpgradeVerdictV1::EnterRisky)
+            && candidate.evaluation.tier <= EventCandidateTierV1::Viable)
 }
 
 fn winding_halls_mark_of_bloom_autopilot_pick(
