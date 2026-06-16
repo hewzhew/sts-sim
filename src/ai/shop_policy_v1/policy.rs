@@ -42,7 +42,7 @@ pub fn build_shop_decision_context_v1(
         };
         let base_priority =
             crate::ai::shop_policy_v1::shop_card_conversion_priority_v1(card.card_id, run_state);
-        let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy);
+        let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy, &strength);
         let priority = purchase_priority_with_strategy(target, base_priority, &strategy);
         purchase_candidate_evidence(
             format!(
@@ -63,7 +63,7 @@ pub fn build_shop_decision_context_v1(
             index,
             relic: relic.relic_id,
         };
-        let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy);
+        let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy, &strength);
         purchase_candidate_evidence(
             format!("buy relic {:?} for {} gold", relic.relic_id, relic.price),
             relic.can_buy && relic.price <= run_state.gold,
@@ -82,7 +82,7 @@ pub fn build_shop_decision_context_v1(
             index,
             potion: potion.potion_id,
         };
-        let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy);
+        let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy, &strength);
         let potion_can_buy = shop_potion_purchase_block_reason_v1(run_state, potion).is_none();
         purchase_candidate_evidence(
             format!(

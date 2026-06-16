@@ -12,6 +12,7 @@ use crate::ai::decision_tags_v1::{
 use crate::ai::noncombat_strategy_v1::{
     RunStrategySnapshotV2, StrategyPackageIdV2, StrategyPlanSupportV1,
 };
+use crate::ai::strength_profile_v1::StrengthProfileV1;
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
@@ -31,6 +32,7 @@ pub(crate) fn shop_purchase_strategy_analysis_v1(
     target: ShopPurchaseTargetV1,
     run_state: &RunState,
     strategy: &RunStrategySnapshotV2,
+    strength: &StrengthProfileV1,
 ) -> ShopPurchaseStrategyAnalysisV1 {
     let mut analysis = ShopPurchaseStrategyAnalysisV1::default();
     match target {
@@ -38,7 +40,7 @@ pub(crate) fn shop_purchase_strategy_analysis_v1(
             analyze_shop_card(card, run_state, strategy, &mut analysis);
         }
         ShopPurchaseTargetV1::Relic { relic, .. } => {
-            analyze_shop_relic(relic, run_state, &mut analysis);
+            analyze_shop_relic(relic, run_state, strength, &mut analysis);
         }
         ShopPurchaseTargetV1::Potion { potion, .. } => {
             analyze_shop_potion(potion, run_state, &mut analysis);
@@ -81,6 +83,7 @@ fn analyze_shop_card(
 fn analyze_shop_relic(
     relic: RelicId,
     run_state: &RunState,
+    strength: &StrengthProfileV1,
     analysis: &mut ShopPurchaseStrategyAnalysisV1,
 ) {
     if relic == RelicId::MedicalKit
@@ -89,9 +92,7 @@ fn analyze_shop_relic(
         push_evidence(analysis, TAG_ENGINE_CLOSURE);
         push_evidence(analysis, TAG_DIGEST_CAPACITY_STATUS);
     }
-    if relic == RelicId::OrangePellets
-        && crate::ai::strength_profile_v1::strength_profile_v1(run_state).temporary_bursts > 0
-    {
+    if relic == RelicId::OrangePellets && strength.temporary_bursts > 0 {
         push_evidence(analysis, TAG_ENGINE_CLOSURE);
     }
     if relic_purchase_creates_boss_enemy_strength_risk(relic, run_state) {
