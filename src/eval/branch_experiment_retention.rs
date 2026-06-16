@@ -305,13 +305,13 @@ pub fn decide_branch_retention_v1(
     let mut reasons = Vec::new();
     let current_startup_liability = branch_retention_current_startup_liability(candidate);
 
-    if has_package_candidate(&candidate.choice_profiles) {
-        slots.push(BranchRetentionSlotV1::Package);
-        reasons.push("contains a semantic package payoff candidate".to_string());
-    }
     if complete_package_count(&candidate.trajectory) > 0 {
         slots.push(BranchRetentionSlotV1::Package);
         reasons.push("contains both setup and payoff for a trajectory package".to_string());
+    }
+    if supports_committed_package(candidate) {
+        slots.push(BranchRetentionSlotV1::Package);
+        reasons.push("supports an already committed deck package".to_string());
     }
     if has_engine_setup(&candidate.trajectory) {
         slots.push(BranchRetentionSlotV1::EngineSetup);
@@ -1054,6 +1054,11 @@ fn candidate_has_unique_protected_coverage(
 }
 
 fn protected_coverage_keys(candidate: &BranchRetentionCandidateInputV1) -> Vec<String> {
+    let setup_keys = candidate
+        .trajectory
+        .setup_keys
+        .iter()
+        .collect::<BTreeSet<_>>();
     let mut keys = candidate
         .choice_effect_keys
         .iter()
@@ -1077,6 +1082,7 @@ fn protected_coverage_keys(candidate: &BranchRetentionCandidateInputV1) -> Vec<S
             .trajectory
             .package_keys
             .iter()
+            .filter(|key| setup_keys.contains(*key))
             .map(|key| format!("package:{key}")),
     );
     keys
@@ -1089,6 +1095,9 @@ fn branch_retention_slot_evidence_score_v1(
     let context = branch_retention_context_packet_v2(candidate);
     match slot {
         BranchRetentionSlotV1::Package => {
+            if !has_package_retention_claim(candidate) {
+                return 0;
+            }
             package_score(&candidate.choice_profiles) * 10_000
                 + complete_package_count(&candidate.trajectory) * 25_000
                 + context_score(
@@ -1216,8 +1225,14 @@ fn is_plain_card_reward_skip(candidate: &BranchRetentionCandidateInputV1) -> boo
         .any(|effect| effect == "skip_reward")
 }
 
-fn has_package_candidate(profiles: &[CardRewardSemanticProfileV1]) -> bool {
-    package_score(profiles) > 0
+fn has_package_retention_claim(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    complete_package_count(&candidate.trajectory) > 0 || supports_committed_package(candidate)
+}
+
+fn supports_committed_package(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    branch_retention_context_packet_v2(candidate)
+        .keys
+        .contains(&BranchRetentionContextKeyV2::SupportsCommittedPackage)
 }
 
 fn package_score(profiles: &[CardRewardSemanticProfileV1]) -> i32 {
@@ -1331,3 +1346,99 @@ const NON_TRANSITION_ROLES: &[CardRewardSemanticRoleV1] = &[
     CardRewardSemanticRoleV1::SelfDamagePayoff,
     CardRewardSemanticRoleV1::PackagePayoff,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
+    use crate::ai::noncombat_strategy_v1::{
+        StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1, StrategyPackageIdV2,
+    };
+    use crate::content::cards::CardId;
+    use crate::eval::branch_experiment_trajectory::summarize_branch_trajectory_v1;
+    use crate::state::rewards::RewardCard;
+
+    #[test]
+    fn payoff_only_candidate_does_not_claim_package_slot_or_coherence() {
+        let profiles = vec![semantic_profile(CardId::BodySlam)];
+        let candidate = retention_candidate(
+            0,
+            profiles.clone(),
+            summarize_branch_trajectory_v1(&profiles),
+        );
+
+        let decision = decide_branch_retention_v1(&candidate);
+
+        assert!(!decision.slots.contains(&BranchRetentionSlotV1::Package));
+        assert_eq!(decision.strategic_signature.package_coherence, 0.0);
+    }
+
+    #[test]
+    fn closed_package_candidate_keeps_package_slot_and_coherence() {
+        let profiles = vec![
+            semantic_profile(CardId::Entrench),
+            semantic_profile(CardId::BodySlam),
+        ];
+        let candidate = retention_candidate(
+            0,
+            profiles.clone(),
+            summarize_branch_trajectory_v1(&profiles),
+        );
+
+        let decision = decide_branch_retention_v1(&candidate);
+
+        assert!(decision.slots.contains(&BranchRetentionSlotV1::Package));
+        assert!(decision.strategic_signature.package_coherence > 0.0);
+    }
+
+    #[test]
+    fn payoff_for_committed_package_keeps_package_slot() {
+        let profiles = vec![semantic_profile(CardId::BodySlam)];
+        let mut candidate = retention_candidate(
+            0,
+            profiles.clone(),
+            summarize_branch_trajectory_v1(&profiles),
+        );
+        candidate.strategy_formation = Some(StrategyFormationSummaryV2 {
+            stage: StrategyDeckFormationStageV1::PlanSeeded,
+            needs: vec![StrategyDeckFormationNeedV1::Consistency],
+            strengths: vec![StrategyPackageIdV2::BlockEngine],
+        });
+
+        let decision = decide_branch_retention_v1(&candidate);
+
+        assert!(decision.slots.contains(&BranchRetentionSlotV1::Package));
+        assert!(decision.strategic_signature.package_coherence > 0.0);
+    }
+
+    fn semantic_profile(card: CardId) -> CardRewardSemanticProfileV1 {
+        card_reward_semantic_profile_v1(&RewardCard::new(card, 0))
+    }
+
+    fn retention_candidate(
+        index: usize,
+        choice_profiles: Vec<CardRewardSemanticProfileV1>,
+        trajectory: BranchTrajectorySignatureV1,
+    ) -> BranchRetentionCandidateInputV1 {
+        BranchRetentionCandidateInputV1 {
+            index,
+            act: 1,
+            floor: 1,
+            frontier_key: "frontier".to_string(),
+            rank_key: 0,
+            hp: 80,
+            max_hp: 80,
+            gold: 99,
+            deck_count: 10,
+            curse_count: 0,
+            strategy_formation: None,
+            trajectory,
+            choice_profiles,
+            choice_effect_keys: Vec::new(),
+            lineage_flags: Vec::new(),
+            decision_signals: Vec::new(),
+            strategic_debt_tags: Vec::new(),
+            startup: DeckStartupProfileV1::default(),
+        }
+    }
+}
