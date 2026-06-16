@@ -7,7 +7,8 @@ use crate::ai::strategic::{AcquisitionVerdict, CandidateAction};
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 use crate::eval::branch_experiment::{
-    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentChoiceDecisionSignalV1, BranchExperimentRewardOptionPortfolioEntryV1,
+    BranchExperimentRewardOptionPortfolioV1,
 };
 use crate::eval::branch_experiment_trajectory::summarize_branch_trajectory_v1;
 use crate::eval::run_control::RunControlSession;
@@ -22,6 +23,7 @@ pub(crate) struct CardRewardBranchOption {
     pub(crate) card: Option<CardId>,
     pub(crate) upgrades: Option<u8>,
     pub(crate) source: CardRewardBranchOptionSource,
+    pub(crate) decision_signal: Option<BranchExperimentChoiceDecisionSignalV1>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,6 +68,7 @@ pub(crate) fn card_reward_branch_options(
             card: Some(card.id),
             upgrades: Some(card.upgrades),
             source,
+            decision_signal: None,
         })
         .collect::<Vec<_>>();
     if options.is_empty() {
@@ -86,6 +89,7 @@ pub(crate) fn card_reward_decline_branch_options(
             card: None,
             upgrades: None,
             source: CardRewardBranchOptionSource::SingingBowl,
+            decision_signal: None,
         });
         return options;
     }
@@ -97,6 +101,7 @@ pub(crate) fn card_reward_decline_branch_options(
                 card: None,
                 upgrades: None,
                 source: CardRewardBranchOptionSource::SkipCardReward,
+                decision_signal: None,
             });
         }
     }
@@ -105,10 +110,12 @@ pub(crate) fn card_reward_decline_branch_options(
 
 pub(crate) fn select_card_reward_branch_options_for_session(
     session: &RunControlSession,
-    options: Vec<CardRewardBranchOption>,
+    mut options: Vec<CardRewardBranchOption>,
     max_reward_options_per_branch: Option<usize>,
     portfolio_context: Option<CardRewardPortfolioContext>,
 ) -> CardRewardBranchOptionSelection {
+    attach_card_reward_decision_signals(session, &mut options);
+
     if options
         .iter()
         .all(|option| option.source == CardRewardBranchOptionSource::CombatGeneratedToHand)
@@ -406,6 +413,26 @@ struct RewardOptionStrategicRetentionKey {
     verdict_retention_order: usize,
     strategic_score_sort_key: i32,
     verdict_label: String,
+    score_milli: Option<i32>,
+}
+
+fn attach_card_reward_decision_signals(
+    session: &RunControlSession,
+    options: &mut [CardRewardBranchOption],
+) {
+    if options
+        .iter()
+        .all(|option| option.source == CardRewardBranchOptionSource::CombatGeneratedToHand)
+    {
+        return;
+    }
+
+    let strategic_retention_keys = reward_option_strategic_retention_keys(Some(session), options);
+    for (index, option) in options.iter_mut().enumerate() {
+        option.decision_signal = strategic_retention_keys
+            .get(&index)
+            .and_then(RewardOptionStrategicRetentionKey::decision_signal);
+    }
 }
 
 fn reward_option_strategic_retention_keys(
@@ -445,6 +472,7 @@ fn reward_option_strategic_retention_keys(
             let order = trace
                 .compiled_for_action(&action)
                 .map(|compiled| RewardOptionStrategicRetentionKey {
+                    score_milli: Some((compiled.score * 1000.0).round() as i32),
                     verdict_retention_order: compiled.verdict.retention_order(),
                     strategic_score_sort_key: -((compiled.score * 1000.0).round() as i32),
                     verdict_label: format!("{:?}", compiled.verdict),
@@ -484,6 +512,7 @@ impl RewardOptionStrategicRetentionKey {
             verdict_retention_order: 0,
             strategic_score_sort_key: 0,
             verdict_label: "strategy_unavailable".to_string(),
+            score_milli: None,
         }
     }
 
@@ -492,7 +521,20 @@ impl RewardOptionStrategicRetentionKey {
             verdict_retention_order: AcquisitionVerdict::Reject.retention_order(),
             strategic_score_sort_key: 0,
             verdict_label: "missing_strategic_candidate".to_string(),
+            score_milli: None,
         }
+    }
+
+    fn decision_signal(&self) -> Option<BranchExperimentChoiceDecisionSignalV1> {
+        let score = self.score_milli?;
+        Some(BranchExperimentChoiceDecisionSignalV1 {
+            source: "card_reward_strategic_trace_v1".to_string(),
+            verdict: self.verdict_label.clone(),
+            tier: self.verdict_retention_order as i32,
+            score,
+            confidence_milli: 650,
+            component_net_rank: score.clamp(-1_200, 1_200),
+        })
     }
 }
 

@@ -294,6 +294,14 @@ pub fn ledger_from_snapshot(snapshot: &StrategicSnapshot) -> PressureLedger {
                 0.70,
                 vec!["Bronze Automaton asks for a hyperbeam mitigation plan".to_string()],
             );
+            ledger.push(
+                "boss_tax:automaton_orb_control",
+                PressureKind::BossTax(StrategicBossTax::AutomatonOrbControl),
+                PressureHorizon::ActBoss,
+                0.60,
+                0.65,
+                vec!["Bronze Automaton asks for orb control and stasis recovery".to_string()],
+            );
         }
         Some("TimeEater") => {
             ledger.push(

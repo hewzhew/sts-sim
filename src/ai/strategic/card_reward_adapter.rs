@@ -9,7 +9,7 @@ use crate::ai::card_component_marginal_value_v1::{
 };
 use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1,
-    CardRewardEvidenceGapV1,
+    CardRewardEvidenceGapV1, CardRewardSemanticRoleV1,
 };
 use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
 use crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1;
@@ -241,21 +241,79 @@ fn add_candidate_boss_pressure_deltas(
     profile: &crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1,
     delta: &mut CandidateDelta,
 ) {
+    const AUTOMATON_HYPERBEAM_MITIGATION_SIGNAL: f32 = 0.45;
+    const AUTOMATON_ORB_CONTROL_SIGNAL: f32 = 0.40;
+    const COLLECTOR_MINION_CONTROL_SIGNAL: f32 = 0.55;
+
     let boss = context.run.boss.as_deref().and_then(parse_boss);
     if boss == Some(EncounterId::Collector)
-        && profile
-            .roles
-            .contains(&crate::ai::card_reward_policy_v1::CardRewardSemanticRoleV1::AoeDamage)
+        && profile_has_role(profile, CardRewardSemanticRoleV1::AoeDamage)
     {
         delta.positive.push(LedgerDelta {
             kind: PressureKind::BossTax(StrategicBossTax::CollectorMinionPlan),
-            amount: 0.55,
+            amount: COLLECTOR_MINION_CONTROL_SIGNAL,
             reason: "collector_aoe_minion_plan".to_string(),
         });
         if delta.role == CandidateRole::Unknown || delta.role == CandidateRole::Transition {
             delta.role = CandidateRole::BossAnswer;
         }
     }
+
+    if boss == Some(EncounterId::Automaton) {
+        if profile_has_any_role(
+            profile,
+            &[
+                CardRewardSemanticRoleV1::Block,
+                CardRewardSemanticRoleV1::Weak,
+                CardRewardSemanticRoleV1::EnemyStrengthDown,
+            ],
+        ) {
+            delta.positive.push(LedgerDelta {
+                kind: PressureKind::BossTax(StrategicBossTax::AutomatonHyperbeamPlan),
+                amount: AUTOMATON_HYPERBEAM_MITIGATION_SIGNAL,
+                reason: "automaton_hyperbeam_mitigation".to_string(),
+            });
+            if delta.role == CandidateRole::Unknown
+                || delta.role == CandidateRole::Transition
+                || delta.role == CandidateRole::DefensivePatch
+            {
+                delta.role = CandidateRole::BossAnswer;
+            }
+        }
+
+        if profile_has_any_role(
+            profile,
+            &[
+                CardRewardSemanticRoleV1::FrontloadDamage,
+                CardRewardSemanticRoleV1::AoeDamage,
+                CardRewardSemanticRoleV1::CardDraw,
+                CardRewardSemanticRoleV1::EnergySource,
+            ],
+        ) {
+            delta.positive.push(LedgerDelta {
+                kind: PressureKind::BossTax(StrategicBossTax::AutomatonOrbControl),
+                amount: AUTOMATON_ORB_CONTROL_SIGNAL,
+                reason: "automaton_orb_control_or_stasis_recovery".to_string(),
+            });
+            if delta.role == CandidateRole::Unknown || delta.role == CandidateRole::Transition {
+                delta.role = CandidateRole::BossAnswer;
+            }
+        }
+    }
+}
+
+fn profile_has_role(
+    profile: &crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1,
+    role: CardRewardSemanticRoleV1,
+) -> bool {
+    profile.roles.contains(&role)
+}
+
+fn profile_has_any_role(
+    profile: &crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1,
+    roles: &[CardRewardSemanticRoleV1],
+) -> bool {
+    roles.iter().any(|role| profile_has_role(profile, *role))
 }
 
 fn component_context_from_card_reward_context(

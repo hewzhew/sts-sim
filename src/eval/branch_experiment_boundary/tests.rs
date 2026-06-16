@@ -58,6 +58,7 @@ fn card_reward_portfolio_without_strategy_preserves_input_order_across_classes()
             card: Some(CardId::TwinStrike),
             upgrades: Some(0),
             source: super::card_reward::CardRewardBranchOptionSource::PermanentReward,
+            decision_signal: None,
         },
         super::card_reward::CardRewardBranchOption {
             label: "Body Slam".to_string(),
@@ -65,6 +66,7 @@ fn card_reward_portfolio_without_strategy_preserves_input_order_across_classes()
             card: Some(CardId::BodySlam),
             upgrades: Some(0),
             source: super::card_reward::CardRewardBranchOptionSource::PermanentReward,
+            decision_signal: None,
         },
         super::card_reward::CardRewardBranchOption {
             label: "Shrug It Off".to_string(),
@@ -72,6 +74,7 @@ fn card_reward_portfolio_without_strategy_preserves_input_order_across_classes()
             card: Some(CardId::ShrugItOff),
             upgrades: Some(0),
             source: super::card_reward::CardRewardBranchOptionSource::PermanentReward,
+            decision_signal: None,
         },
     ];
 

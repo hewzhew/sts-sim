@@ -373,6 +373,7 @@ fn select_event_card_reward_branch_options(
                 card: Some(option.card?),
                 upgrades: Some(option.upgrades.unwrap_or_default()),
                 source: CardRewardBranchOptionSource::PermanentReward,
+                decision_signal: None,
             })
         })
         .collect::<Option<Vec<_>>>()?;

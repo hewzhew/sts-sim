@@ -230,7 +230,7 @@ impl BranchBoundaryOptionV1 {
                     effect_key: "card_reward:skip".to_string(),
                     representative_count: 1,
                     suppressed_count: 0,
-                    decision_signal: None,
+                    decision_signal: option.decision_signal,
                     success_reason: "card reward skip branch applied",
                 };
             }
@@ -247,7 +247,7 @@ impl BranchBoundaryOptionV1 {
                     effect_key: "card_reward:singing_bowl".to_string(),
                     representative_count: 1,
                     suppressed_count: 0,
-                    decision_signal: None,
+                    decision_signal: option.decision_signal,
                     success_reason: "singing bowl card reward branch applied",
                 };
             }
@@ -270,7 +270,7 @@ impl BranchBoundaryOptionV1 {
             effect_key: format!("{effect_key_prefix}:{:?}:{}", card, upgrades),
             representative_count: 1,
             suppressed_count: 0,
-            decision_signal: None,
+            decision_signal: option.decision_signal,
             success_reason,
         }
     }
