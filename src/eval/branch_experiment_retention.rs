@@ -208,7 +208,7 @@ pub fn default_branch_retention_decision_v1() -> BranchRetentionDecisionV1 {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct BranchRetentionLanePick {
+pub(super) struct BranchRetentionLanePick {
     position: usize,
     selected_by_slot: BranchRetentionSlotV1,
 }
@@ -570,10 +570,9 @@ fn select_positions_for_retention_portfolio(
         let Some(position) = best_fill_position(candidates, positions, &selected_set) else {
             break;
         };
-        selected.push(BranchRetentionLanePick {
-            position,
-            selected_by_slot: BranchRetentionSlotV1::Diversity,
-        });
+        selected.push(branch_retention_lane_pick_for_position(
+            candidates, position,
+        ));
         selected_set.insert(position);
     }
     let selected = cap_redundant_choice_prefixes(candidates, positions, selected, limit);
@@ -948,13 +947,41 @@ fn cap_redundant_first_pick_prefixes(
             .entry(choice_prefix_key(&candidates[position]))
             .or_default() += 1;
         selected.insert(position);
-        kept.push(BranchRetentionLanePick {
-            position,
-            selected_by_slot: BranchRetentionSlotV1::Diversity,
-        });
+        kept.push(branch_retention_lane_pick_for_position(
+            candidates, position,
+        ));
     }
 
     kept
+}
+
+pub(super) fn branch_retention_lane_pick_for_position(
+    candidates: &[BranchRetentionCandidateInputV1],
+    position: usize,
+) -> BranchRetentionLanePick {
+    let decision = decide_branch_retention_v1(&candidates[position]);
+    BranchRetentionLanePick {
+        position,
+        selected_by_slot: representative_retention_slot_v1(&decision.slots),
+    }
+}
+
+fn representative_retention_slot_v1(slots: &[BranchRetentionSlotV1]) -> BranchRetentionSlotV1 {
+    const REPRESENTATIVE_ORDER: [BranchRetentionSlotV1; 8] = [
+        BranchRetentionSlotV1::Package,
+        BranchRetentionSlotV1::EngineSetup,
+        BranchRetentionSlotV1::Scaling,
+        BranchRetentionSlotV1::DefenseEngine,
+        BranchRetentionSlotV1::Frontload,
+        BranchRetentionSlotV1::CleanDeck,
+        BranchRetentionSlotV1::Survival,
+        BranchRetentionSlotV1::Diversity,
+    ];
+    REPRESENTATIVE_ORDER
+        .iter()
+        .copied()
+        .find(|slot| slots.contains(slot))
+        .unwrap_or(BranchRetentionSlotV1::Diversity)
 }
 
 fn first_pick_prefix_cap(limit: usize, distinct_prefixes: usize) -> usize {

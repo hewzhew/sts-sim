@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    best_fill_position_allowed, compare_rank, BranchRetentionCandidateInputV1,
-    BranchRetentionLanePick, BranchRetentionSlotV1,
+    best_fill_position_allowed, branch_retention_lane_pick_for_position, compare_rank,
+    BranchRetentionCandidateInputV1, BranchRetentionLanePick,
 };
 
 pub(super) fn preserve_choice_effect_coverage(
@@ -88,10 +88,9 @@ where
         };
 
         if kept.len() < limit {
-            kept.push(BranchRetentionLanePick {
-                position,
-                selected_by_slot: BranchRetentionSlotV1::Diversity,
-            });
+            kept.push(branch_retention_lane_pick_for_position(
+                candidates, position,
+            ));
             selected.insert(position);
             continue;
         }
@@ -102,10 +101,7 @@ where
             continue;
         };
         selected.remove(&kept[replace_index].position);
-        kept[replace_index] = BranchRetentionLanePick {
-            position,
-            selected_by_slot: BranchRetentionSlotV1::Diversity,
-        };
+        kept[replace_index] = branch_retention_lane_pick_for_position(candidates, position);
         selected.insert(position);
     }
 
