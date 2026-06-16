@@ -23,7 +23,6 @@ use std::time::Instant;
 
 mod selection_key;
 mod strategic_signals;
-mod thaw_scheduler;
 use selection_key::{
     act_boss_floor_v1, campaign_branch_retention_key_v1, compare_campaign_branches_for_active_v1,
     compare_campaign_branches_for_promotion_v1, render_campaign_branch_selection_basis_v1,
@@ -383,7 +382,6 @@ pub enum BranchCampaignProgressEventV1 {
         frozen_remaining: usize,
         filled_active: usize,
         stronger_rebalanced: usize,
-        structural_thawed: usize,
         rehydrated_recovered: usize,
         checkpoint_recovered: usize,
     },
@@ -637,7 +635,6 @@ where
                     frozen_remaining: state.frozen.len(),
                     filled_active: 0,
                     stronger_rebalanced: promoted,
-                    structural_thawed: 0,
                     rehydrated_recovered: 0,
                     checkpoint_recovered: 0,
                 });
@@ -664,7 +661,6 @@ where
                     frozen_remaining: state.frozen.len(),
                     filled_active: promoted,
                     stronger_rebalanced: 0,
-                    structural_thawed: 0,
                     rehydrated_recovered: 0,
                     checkpoint_recovered: 0,
                 });
@@ -690,7 +686,6 @@ where
                     frozen_remaining: state.frozen.len(),
                     filled_active: 0,
                     stronger_rebalanced: 0,
-                    structural_thawed: 0,
                     rehydrated_recovered: promoted,
                     checkpoint_recovered: 0,
                 });
@@ -721,7 +716,6 @@ where
                     frozen_remaining: state.frozen.len(),
                     filled_active: 0,
                     stronger_rebalanced: 0,
-                    structural_thawed: 0,
                     rehydrated_recovered: 0,
                     checkpoint_recovered: recovered,
                 });
@@ -850,12 +844,6 @@ where
             &mut state.frozen,
             config.max_active,
         );
-        let thawed_from_frozen = thaw_scheduler::thaw_promising_frozen_v0(
-            &mut state.active,
-            &mut state.frozen,
-            config.max_active,
-        )
-        .promoted;
         state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
             state.strategy_requests,
             &state.active,
@@ -928,7 +916,6 @@ where
         }
         let total_promoted_from_frozen = promoted_from_frozen
             .saturating_add(rebalanced_from_frozen)
-            .saturating_add(thawed_from_frozen)
             .saturating_add(promoted_rehydrated_from_frozen)
             .saturating_add(recovered_from_abandoned);
         let round_summary = BranchCampaignRoundSummaryV1 {
@@ -967,7 +954,6 @@ where
                 frozen_remaining: state.frozen.len(),
                 filled_active: promoted_from_frozen,
                 stronger_rebalanced: rebalanced_from_frozen,
-                structural_thawed: thawed_from_frozen,
                 rehydrated_recovered: promoted_rehydrated_from_frozen,
                 checkpoint_recovered: recovered_from_abandoned,
             });
@@ -1313,7 +1299,6 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             frozen_remaining,
             filled_active,
             stronger_rebalanced,
-            structural_thawed,
             rehydrated_recovered,
             checkpoint_recovered,
         } => {
@@ -1323,9 +1308,6 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             }
             if *stronger_rebalanced > 0 {
                 sources.push(format!("stronger={stronger_rebalanced}"));
-            }
-            if *structural_thawed > 0 {
-                sources.push(format!("thaw={structural_thawed}"));
             }
             if *rehydrated_recovered > 0 {
                 sources.push(format!("rehydrated={rehydrated_recovered}"));
