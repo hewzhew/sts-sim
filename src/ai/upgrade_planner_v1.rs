@@ -36,6 +36,8 @@ pub struct UpgradeDebtV1 {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum UpgradeDebtKindV1 {
     ControlledExhaust,
+    StasisRecovery,
+    HyperbeamBlock,
     PhaseBurst,
     ExecuteBlock,
     AccessRecovery,
@@ -197,6 +199,8 @@ impl UpgradeDebtKindV1 {
     pub fn label(self) -> &'static str {
         match self {
             Self::ControlledExhaust => "controlled_exhaust",
+            Self::StasisRecovery => "stasis_recovery",
+            Self::HyperbeamBlock => "hyperbeam_block",
             Self::PhaseBurst => "phase_burst",
             Self::ExecuteBlock => "execute_block",
             Self::AccessRecovery => "access_recovery",
@@ -265,6 +269,53 @@ pub fn upgrade_candidate_for_deck_index_v1(
         .candidates
         .into_iter()
         .find(|candidate| candidate.deck_index == deck_index)
+}
+
+pub fn upgrade_candidate_score_hint_v1(candidate: &UpgradeCandidateV1) -> i32 {
+    let verdict_rank = match candidate.verdict {
+        UpgradeVerdictV1::CoreDebtPayment => 1_200,
+        UpgradeVerdictV1::Important => 1_000,
+        UpgradeVerdictV1::Useful => 650,
+        UpgradeVerdictV1::Opportunistic => 300,
+        UpgradeVerdictV1::Defer => 80,
+        UpgradeVerdictV1::Avoid => 0,
+    };
+    let urgency_rank = match candidate.urgency {
+        UpgradeDebtSeverityV1::CriticalBeforeBoss => 300,
+        UpgradeDebtSeverityV1::ImportantBeforeBoss => 220,
+        UpgradeDebtSeverityV1::UsefulSoon => 120,
+        UpgradeDebtSeverityV1::Opportunistic => 40,
+        UpgradeDebtSeverityV1::Defer | UpgradeDebtSeverityV1::Avoid => 0,
+    };
+    verdict_rank + urgency_rank + candidate.pays_debts.len() as i32 * 25
+}
+
+pub fn upgrade_candidate_strategy_tag_v1(candidate: &UpgradeCandidateV1) -> Option<String> {
+    candidate
+        .pays_debts
+        .iter()
+        .max_by_key(|debt| upgrade_debt_strategy_tag_priority(**debt))
+        .map(|debt| format!("upgrade_debt:{}", debt.label()))
+        .or_else(|| {
+            candidate
+                .roles
+                .first()
+                .map(|role| format!("upgrade_role:{}", role.label()))
+        })
+}
+
+fn upgrade_debt_strategy_tag_priority(debt: UpgradeDebtKindV1) -> u8 {
+    match debt {
+        UpgradeDebtKindV1::StasisRecovery => 95,
+        UpgradeDebtKindV1::HyperbeamBlock => 92,
+        UpgradeDebtKindV1::PhaseBurst => 90,
+        UpgradeDebtKindV1::ExecuteBlock => 85,
+        UpgradeDebtKindV1::ScalingSetup => 80,
+        UpgradeDebtKindV1::DebuffCoverage => 75,
+        UpgradeDebtKindV1::AccessRecovery => 70,
+        UpgradeDebtKindV1::ControlledExhaust => 65,
+        UpgradeDebtKindV1::TransitionalFrontload => 50,
+    }
 }
 
 pub fn upgrade_plan_evidence_for_deck_index_v1(
@@ -681,6 +732,9 @@ fn build_upgrade_debt_ledger(
     candidates: &[UpgradeCandidateV1],
 ) -> UpgradeDebtLedgerV1 {
     let mut debts = Vec::new();
+    let boss_pressure = run_state
+        .boss_key
+        .map(|boss| boss_mechanic_pressure_profile_v1(run_state, boss));
     add_debt_if_candidates(
         &mut debts,
         UpgradeDebtKindV1::ControlledExhaust,
@@ -693,6 +747,37 @@ fn build_upgrade_debt_ledger(
         pressure_label(run_state, "controlled exhaust"),
         "unpaid controlled exhaust makes exhaust packages less reliable",
     );
+    if boss_pressure.as_ref().is_some_and(|pressure| {
+        pressure.has_pressure(BossMechanicPressurePointV1::StasisKeyCardAccess)
+    }) {
+        add_debt_if_candidates(
+            &mut debts,
+            UpgradeDebtKindV1::StasisRecovery,
+            candidates,
+            |candidate| candidate.card == CardId::Apparition,
+            UpgradeDebtSeverityV1::ImportantBeforeBoss,
+            pressure_label(run_state, "stasis recovery"),
+            "unpaid stasis recovery upgrade can leave key defensive cards unusable on the boss turn",
+        );
+    }
+    if boss_pressure.as_ref().is_some_and(|pressure| {
+        pressure.has_pressure(BossMechanicPressurePointV1::HyperbeamTurnSixCheck)
+    }) {
+        add_debt_if_candidates(
+            &mut debts,
+            UpgradeDebtKindV1::HyperbeamBlock,
+            candidates,
+            |candidate| {
+                matches!(
+                    candidate.card,
+                    CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier
+                )
+            },
+            UpgradeDebtSeverityV1::ImportantBeforeBoss,
+            pressure_label(run_state, "hyperbeam block"),
+            "unpaid hyperbeam block upgrade can leave the Automaton turn-six check undercovered",
+        );
+    }
     add_debt_if_candidates(
         &mut debts,
         UpgradeDebtKindV1::PhaseBurst,

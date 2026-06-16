@@ -280,29 +280,6 @@ fn campfire_candidate_score_hint(
     }
 }
 
-fn campfire_upgrade_plan_score_hint_v1(
-    candidate: &crate::ai::upgrade_planner_v1::UpgradeCandidateV1,
-) -> i32 {
-    use crate::ai::upgrade_planner_v1::{UpgradeDebtSeverityV1, UpgradeVerdictV1};
-
-    let verdict_rank = match candidate.verdict {
-        UpgradeVerdictV1::CoreDebtPayment => 1_200,
-        UpgradeVerdictV1::Important => 1_000,
-        UpgradeVerdictV1::Useful => 650,
-        UpgradeVerdictV1::Opportunistic => 300,
-        UpgradeVerdictV1::Defer => 80,
-        UpgradeVerdictV1::Avoid => 0,
-    };
-    let urgency_rank = match candidate.urgency {
-        UpgradeDebtSeverityV1::CriticalBeforeBoss => 300,
-        UpgradeDebtSeverityV1::ImportantBeforeBoss => 220,
-        UpgradeDebtSeverityV1::UsefulSoon => 120,
-        UpgradeDebtSeverityV1::Opportunistic => 40,
-        UpgradeDebtSeverityV1::Defer | UpgradeDebtSeverityV1::Avoid => 0,
-    };
-    verdict_rank + urgency_rank + candidate.pays_debts.len() as i32 * 25
-}
-
 fn compare_campfire_plan_candidates_v1(
     left: &CampfirePlanCandidateV1,
     right: &CampfirePlanCandidateV1,
@@ -350,19 +327,6 @@ fn candidate_evidence(
         .unwrap_or(0);
     let mut evidence = vec![format!("campfire choice is {choice:?}")];
     let mut risks = Vec::new();
-    let upgrade_priority = match choice {
-        CampfireChoice::Smith(idx) => run_state.master_deck.get(idx).map(|card| {
-            crate::ai::campfire_policy_v1::campfire_smith_upgrade_priority_v1(card, run_state)
-        }),
-        _ => None,
-    };
-    let strategy_tag = match choice {
-        CampfireChoice::Smith(idx) => run_state.master_deck.get(idx).and_then(|card| {
-            crate::ai::campfire_policy_v1::campfire_smith_upgrade_strategy_tag_v1(card, run_state)
-                .map(ToString::to_string)
-        }),
-        _ => None,
-    };
     let upgrade_plan_candidate = match choice {
         CampfireChoice::Smith(idx) => {
             crate::ai::upgrade_planner_v1::upgrade_candidate_for_deck_index_v1(run_state, idx)
@@ -371,7 +335,11 @@ fn candidate_evidence(
     };
     let upgrade_plan_score_hint = upgrade_plan_candidate
         .as_ref()
-        .map(campfire_upgrade_plan_score_hint_v1);
+        .map(crate::ai::upgrade_planner_v1::upgrade_candidate_score_hint_v1);
+    let upgrade_priority = upgrade_plan_score_hint;
+    let strategy_tag = upgrade_plan_candidate
+        .as_ref()
+        .and_then(crate::ai::upgrade_planner_v1::upgrade_candidate_strategy_tag_v1);
     if let CampfireChoice::Smith(idx) = choice {
         evidence.extend(
             crate::ai::upgrade_planner_v1::upgrade_plan_evidence_for_deck_index_v1(run_state, idx),
@@ -400,7 +368,7 @@ fn candidate_evidence(
         }
         CampfirePolicyClassV1::UpgradeAgency => {
             if let Some(priority) = upgrade_priority {
-                evidence.push(format!("smith upgrade priority is {priority}"));
+                evidence.push(format!("smith upgrade planner score is {priority}"));
             }
             if let CampfireChoice::Smith(idx) = choice {
                 if run_state.master_deck.get(idx).is_some() {

@@ -1,8 +1,11 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
 use crate::ai::opening_hand_target_plan_v1::{
     opening_hand_target_profile_for_card_v1, OpeningHandDebtTierV1,
+};
+use crate::ai::upgrade_planner_v1::{
+    plan_upgrades_v1, upgrade_candidate_score_hint_v1, UpgradeCandidateV1,
 };
 use crate::content::cards::{get_card_definition, CardId, CardRarity, CardTag, CardType};
 use crate::runtime::combat::CombatCard;
@@ -28,6 +31,7 @@ struct ExactTarget {
     identity_key: String,
     selectable: bool,
     upgrade_priority: Option<i32>,
+    upgrade_candidate: Option<UpgradeCandidateV1>,
     duplicate_evaluation: DuplicateTargetEvaluationV1,
 }
 
@@ -190,6 +194,15 @@ fn exact_targets(run_state: &RunState, choice: &RunPendingChoiceState) -> Vec<Ex
             crate::state::selection::SelectionTargetRef::CardUuid(uuid) => *uuid,
         })
         .collect::<BTreeSet<_>>();
+    let upgrade_candidates_by_index = if matches!(choice.reason, RunPendingChoiceReason::Upgrade) {
+        plan_upgrades_v1(run_state)
+            .candidates
+            .into_iter()
+            .map(|candidate| (candidate.deck_index, candidate))
+            .collect::<BTreeMap<_, _>>()
+    } else {
+        BTreeMap::new()
+    };
     run_state
         .master_deck
         .iter()
@@ -207,13 +220,7 @@ fn exact_targets(run_state: &RunState, choice: &RunPendingChoiceState) -> Vec<Ex
                         run_state,
                     )
                 }),
-                run_state.master_deck.get(deck_index).and_then(|card| {
-                    matches!(choice.reason, RunPendingChoiceReason::Upgrade).then(|| {
-                        crate::ai::campfire_policy_v1::campfire_smith_upgrade_priority_v1(
-                            card, run_state,
-                        )
-                    })
-                }),
+                upgrade_candidates_by_index.get(&deck_index).cloned(),
             )
         })
         .collect()
@@ -224,10 +231,13 @@ fn exact_target_for_deck_index(
     reason: RunPendingChoiceReason,
     deck_index: usize,
     selectable: bool,
-    upgrade_priority: Option<i32>,
+    upgrade_candidate: Option<UpgradeCandidateV1>,
 ) -> Option<ExactTarget> {
     let card = run_state.master_deck.get(deck_index)?;
     let target_class = target_class_for_card_mutation(reason, card);
+    let upgrade_priority = upgrade_candidate
+        .as_ref()
+        .map(upgrade_candidate_score_hint_v1);
     Some(ExactTarget {
         card: DeckMutationCardSnapshotV1 {
             deck_index,
@@ -241,6 +251,7 @@ fn exact_target_for_deck_index(
         identity_key: card_stat_identity_key(card),
         selectable,
         upgrade_priority,
+        upgrade_candidate,
         duplicate_evaluation: duplicate_target_evaluation_v1(card, run_state),
     })
 }
@@ -544,6 +555,36 @@ fn candidate_from_targets_for_reason(
     } else {
         Vec::new()
     };
+    let upgrade_reasons = if matches!(reason, RunPendingChoiceReason::Upgrade) {
+        selected_targets
+            .iter()
+            .filter_map(|target| target.upgrade_candidate.as_ref())
+            .flat_map(|candidate| {
+                std::iter::once(format!("upgrade_plan: {}", candidate.summary_label())).chain(
+                    candidate
+                        .evidence
+                        .iter()
+                        .map(|item| format!("upgrade_evidence: {item}")),
+                )
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let upgrade_risks = if matches!(reason, RunPendingChoiceReason::Upgrade) {
+        selected_targets
+            .iter()
+            .filter_map(|target| target.upgrade_candidate.as_ref())
+            .flat_map(|candidate| {
+                candidate
+                    .risks
+                    .iter()
+                    .map(|item| format!("upgrade_risk: {item}"))
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
     DeckMutationPlanCandidateV1 {
         plan_id: format!("deck_mutation:{effect_key}"),
         step: DeckMutationPlanStepV1 {
@@ -570,12 +611,14 @@ fn candidate_from_targets_for_reason(
             .iter()
             .flat_map(|target| target_loss_reasons(&target.card))
             .chain(duplicate_reasons)
+            .chain(upgrade_reasons)
             .chain(std::iter::once(format!("candidate for {:?}", reason)))
             .collect(),
         risks: selected_targets
             .iter()
             .flat_map(|target| target_risks(&target.card))
             .chain(duplicate_risks)
+            .chain(upgrade_risks)
             .collect(),
     }
 }

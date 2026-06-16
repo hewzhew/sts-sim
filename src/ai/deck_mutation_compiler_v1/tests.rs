@@ -3,6 +3,9 @@ use crate::ai::deck_mutation_compiler_v1::{
     render_compiled_deck_mutation_decision_v1, DeckMutationCompilerModeV1, DeckMutationPlanRoleV1,
     DeckMutationTargetLossTierV1, DuplicateTargetRoleV1,
 };
+use crate::ai::upgrade_planner_v1::{
+    upgrade_candidate_for_deck_index_v1, upgrade_candidate_score_hint_v1,
+};
 use crate::content::cards::CardId;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
@@ -150,6 +153,43 @@ fn compiler_exposes_target_loss_for_functional_mutation_targets() {
         .reasons
         .iter()
         .any(|reason| reason.contains("target_loss=CoreFunctional")));
+}
+
+#[test]
+fn upgrade_compiler_scores_targets_from_upgrade_planner() {
+    let run_state = RunState::new(1, 0, false, "Ironclad");
+    let bash_index = run_state
+        .master_deck
+        .iter()
+        .position(|card| card.id == CardId::Bash)
+        .expect("starter deck should contain Bash");
+    let choice = choice(RunPendingChoiceReason::Upgrade, 1);
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice,
+        DeckMutationCompilerModeV1::BranchTopK { max_active: 12 },
+    );
+    let bash_plan = decision
+        .candidate_plans
+        .iter()
+        .find(|plan| plan.step.cards[0].deck_index == bash_index)
+        .expect("Bash upgrade candidate");
+    let upgrade_candidate =
+        upgrade_candidate_for_deck_index_v1(&run_state, bash_index).expect("planner candidate");
+
+    assert_eq!(
+        bash_plan.score_hint,
+        upgrade_candidate_score_hint_v1(&upgrade_candidate),
+        "deck mutation upgrade score must be sourced from UpgradePlanner"
+    );
+    assert!(
+        bash_plan
+            .reasons
+            .iter()
+            .any(|reason| reason.starts_with("upgrade_plan: ")),
+        "upgrade candidates should expose UpgradePlanner evidence"
+    );
 }
 
 #[test]

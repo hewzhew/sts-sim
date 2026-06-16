@@ -90,7 +90,7 @@ fn campfire_smith_candidate_exposes_boss_strategy_tag() {
         true_grit
             .evidence
             .iter()
-            .any(|item| item == "smith strategy tag is champ:execute_block"),
+            .any(|item| item == "smith strategy tag is upgrade_debt:execute_block"),
         "smith candidate should expose boss strategy tag, got {:?}",
         true_grit.evidence
     );
