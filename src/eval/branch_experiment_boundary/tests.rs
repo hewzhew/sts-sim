@@ -1519,6 +1519,18 @@ fn current_boundary_wraps_neow_bonus_four_options() {
 }
 
 #[test]
+fn current_boundary_skips_single_flavor_event_advance() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = Some(EventState::new(EventId::NoteForYourself));
+    session.engine_state = EngineState::EventRoom;
+
+    assert!(
+        current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None).is_none(),
+        "single narrative event advances should remain routine automation, not branch choices"
+    );
+}
+
+#[test]
 fn current_boundary_allows_event_options_that_open_single_card_selection() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.event_state = Some(EventState::new(EventId::UpgradeShrine));

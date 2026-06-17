@@ -98,7 +98,7 @@ pub(crate) fn event_branch_options(
         return None;
     }
     let event_options = crate::engine::event_handler::get_event_options(&session.run_state);
-    if event_options.len() == 1 && terminal_no_effect_leave(&event_options[0]) {
+    if event_options.len() == 1 && single_no_branch_event_transition(&event_options[0]) {
         return None;
     }
     let event_id = session.run_state.event_state.as_ref()?.id;
@@ -573,6 +573,22 @@ fn terminal_no_effect_leave(option: &EventOption) -> bool {
         && option.semantics.constraints.is_empty()
         && option.semantics.terminal
         && matches!(option.semantics.transition, EventOptionTransition::Complete)
+}
+
+fn single_no_branch_event_transition(option: &EventOption) -> bool {
+    if option.ui.disabled {
+        return false;
+    }
+    if terminal_no_effect_leave(option) {
+        return true;
+    }
+    option.semantics.effects.is_empty()
+        && option.semantics.constraints.is_empty()
+        && !option.semantics.repeatable
+        && matches!(
+            option.semantics.transition,
+            EventOptionTransition::AdvanceScreen | EventOptionTransition::Complete
+        )
 }
 
 fn event_option_specific_card(option: &EventOption) -> Option<CardId> {
