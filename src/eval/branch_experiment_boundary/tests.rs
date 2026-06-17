@@ -1183,7 +1183,7 @@ fn current_boundary_wraps_campfire_options() {
 }
 
 #[test]
-fn current_boundary_compresses_duplicate_campfire_smith_options() {
+fn current_boundary_prunes_low_value_duplicate_campfire_smith_options() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.engine_state = EngineState::Campfire;
 
@@ -1209,25 +1209,7 @@ fn current_boundary_compresses_duplicate_campfire_smith_options() {
     upgrade_options.sort_by(|left, right| left.0.cmp(right.0));
     assert_eq!(
         upgrade_options,
-        vec![
-            (
-                "smith 0",
-                "Smith Strike",
-                Some(CardId::Strike),
-                Some(0),
-                5,
-                4
-            ),
-            (
-                "smith 5",
-                "Smith Defend",
-                Some(CardId::Defend),
-                Some(0),
-                4,
-                3
-            ),
-            ("smith 9", "Smith Bash", Some(CardId::Bash), Some(0), 1, 0),
-        ]
+        vec![("smith 9", "Smith Bash", Some(CardId::Bash), Some(0), 1, 0)]
     );
 }
 

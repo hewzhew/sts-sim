@@ -8,6 +8,8 @@ use crate::eval::run_control::RunControlSession;
 use crate::state::core::{CampfireChoice, EngineState};
 use std::collections::BTreeSet;
 
+const MIN_INSPECT_ONLY_SMITH_BRANCH_SCORE: i32 = 300;
+
 #[derive(Clone, Debug)]
 pub(super) struct CampfireBranchOption {
     pub(super) label: String,
@@ -55,6 +57,14 @@ fn campfire_branch_option_from_plan(
         return None;
     }
     let choice = plan.choice?;
+    if matches!(choice, CampfireChoice::Smith(_))
+        && plan.role == CampfirePlanRoleV1::InspectOnly
+        && plan.score_hint < MIN_INSPECT_ONLY_SMITH_BRANCH_SCORE
+        && plan.suppressed_count > 0
+        && !campfire_smith_tag_is_concrete_branch(plan.strategy_tag.as_deref())
+    {
+        return None;
+    }
     let metadata = campfire_option_metadata(session, choice);
     Some(CampfireBranchOption {
         label: campfire_option_label(session, choice).unwrap_or_else(|| plan.plan_id.clone()),
@@ -70,6 +80,23 @@ fn campfire_branch_option_from_plan(
         plan_role: plan.role,
         score_hint: plan.score_hint,
     })
+}
+
+fn campfire_smith_tag_is_concrete_branch(tag: Option<&str>) -> bool {
+    matches!(
+        tag,
+        Some(
+            "upgrade_role:defensive_survival"
+                | "upgrade_role:phase_burst"
+                | "upgrade_role:debuff_coverage"
+                | "upgrade_debt:stasis_recovery"
+                | "upgrade_debt:hyperbeam_block"
+                | "upgrade_debt:phase_burst"
+                | "upgrade_debt:execute_block"
+                | "upgrade_debt:debuff_coverage"
+                | "upgrade_debt:transitional_frontload"
+        )
+    )
 }
 
 pub(super) fn select_campfire_branch_options(
@@ -130,6 +157,22 @@ fn select_campfire_branch_options_with_limit(
         );
     }
 
+    while selected_indices.len() < capped_limit {
+        let Some(index) = options.iter().enumerate().position(|(index, option)| {
+            !used_indices.contains(&index) && is_concrete_smith_branch_option(option)
+        }) else {
+            break;
+        };
+        push_campfire_option_index(
+            index,
+            &options,
+            &mut selected_indices,
+            &mut used_indices,
+            &mut used_smith_tags,
+            &mut used_untagged_smith,
+        );
+    }
+
     if selected_indices.len() < capped_limit {
         if let Some(index) = options.iter().position(is_smith_branch_option) {
             push_campfire_option_index(
@@ -147,10 +190,11 @@ fn select_campfire_branch_options_with_limit(
         let Some(index) = options.iter().enumerate().position(|(index, option)| {
             !used_indices.contains(&index)
                 && is_smith_branch_option(option)
-                && option
-                    .strategy_tag
-                    .as_ref()
-                    .is_some_and(|tag| !used_smith_tags.contains(tag))
+                && campfire_branch_option_adds_new_smith_coverage(
+                    option,
+                    &used_smith_tags,
+                    used_untagged_smith,
+                )
         }) else {
             break;
         };
@@ -237,6 +281,11 @@ fn is_smith_branch_option(option: &CampfireBranchOption) -> bool {
     option.effect_kind == "upgrade_card"
 }
 
+fn is_concrete_smith_branch_option(option: &CampfireBranchOption) -> bool {
+    is_smith_branch_option(option)
+        && campfire_smith_tag_is_concrete_branch(option.strategy_tag.as_deref())
+}
+
 fn is_recovery_rest_branch_option(option: &CampfireBranchOption) -> bool {
     option.command == "rest"
         && option.equivalence_key == "rest:wounded"
@@ -265,6 +314,7 @@ fn campfire_branch_option_adds_new_smith_coverage(
         return true;
     }
     match &option.strategy_tag {
+        Some(tag) if campfire_smith_tag_is_concrete_branch(Some(tag)) => true,
         Some(tag) => !used_smith_tags.contains(tag),
         None => !used_untagged_smith,
     }
