@@ -1,8 +1,8 @@
 use super::{
     add_startup_profile_pressure_to_ledger, compile_decision, ledger_from_snapshot,
     CandidateAction, CandidateDelta, CandidateRole, LedgerDelta, OpportunityCost, PressureHorizon,
-    PressureKind, PressureLedger, StrategicDebt, StrategicDecisionSite, StrategicDeckFacts,
-    StrategicJob, StrategicSnapshot, VerdictHint,
+    PressureKind, PressureLedger, StrategicBossTax, StrategicDebt, StrategicDecisionSite,
+    StrategicDeckFacts, StrategicJob, StrategicSnapshot, VerdictHint,
 };
 use crate::ai::card_component_marginal_value_v1::{
     evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
@@ -214,7 +214,7 @@ fn add_shop_card_purchase_deltas(
     if candidate_has_evidence(candidate, TAG_COLLECTOR_ANSWER) {
         delta.role = CandidateRole::BossAnswer;
         delta.positive.push(LedgerDelta {
-            kind: PressureKind::MissingJob(StrategicJob::StatusControl),
+            kind: PressureKind::BossTax(StrategicBossTax::CollectorMinionPlan),
             amount: SHOP_CARD_BOSS_ANSWER_SIGNAL,
             reason: TAG_COLLECTOR_ANSWER.to_string(),
         });

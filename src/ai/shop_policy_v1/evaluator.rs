@@ -363,12 +363,19 @@ fn strategic_purchase_evaluation_v1(
     target: ShopPurchaseTargetV1,
     strategic_decision: &CompiledDecision,
 ) -> ShopPlanEvaluationV1 {
-    let tier = match strategic_decision.verdict {
+    let mut tier = match strategic_decision.verdict {
         AcquisitionVerdict::MustTake => 330,
         AcquisitionVerdict::StrongTake => 320,
         AcquisitionVerdict::ContextTake => 300,
         _ => 0,
     };
+    let matches_boss_tax = strategic_decision_matches_boss_tax_v1(strategic_decision);
+    if matches_boss_tax && tier > 0 {
+        // Directly paying an act-boss pressure should not lose to generic deck
+        // cleanup at the same shop. The specific boss/card semantics live in
+        // the strategic ledger; this layer only honors that ledger alignment.
+        tier = tier.max(340);
+    }
     let strategic_score = (strategic_decision.score.max(0.0) * 1000.0).round() as i32;
     let score = strategic_score
         .saturating_add(legacy_priority.unwrap_or_default().max(0))
@@ -385,11 +392,25 @@ fn strategic_purchase_evaluation_v1(
         score,
         confidence,
         legacy_priority,
-        format!(
+        if matches_boss_tax {
+            format!(
+                "strategic evaluation: verdict={:?} score={:.2}; matched boss tax; legacy estimate {:?} retained as tie-breaker",
+                strategic_decision.verdict, strategic_decision.score, legacy_priority
+            )
+        } else {
+            format!(
             "strategic evaluation: verdict={:?} score={:.2}; legacy estimate {:?} retained as tie-breaker",
             strategic_decision.verdict, strategic_decision.score, legacy_priority
-        ),
+            )
+        },
     )
+}
+
+fn strategic_decision_matches_boss_tax_v1(strategic_decision: &CompiledDecision) -> bool {
+    strategic_decision
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("+ledger_match:BossTax("))
 }
 
 fn purchase_tiebreaker(target: ShopPurchaseTargetV1) -> i32 {

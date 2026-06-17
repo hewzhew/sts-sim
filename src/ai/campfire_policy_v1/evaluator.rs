@@ -29,8 +29,93 @@ pub(crate) fn candidate_autopilot_action(
         });
     }
 
-    let _ = (config, candidate);
+    if smith_is_autopilot_allowed(context, config, candidate) {
+        if let CampfireChoice::Smith(deck_index) = candidate.choice {
+            return Some(CampfirePolicyActionV1::Smith {
+                deck_index,
+                confidence: 0.78,
+                reason: format!(
+                    "Smith clears campfire upgrade gate: tag={} score={} hp={}/{}",
+                    candidate.strategy_tag.as_deref().unwrap_or("none"),
+                    candidate.upgrade_plan_score_hint.unwrap_or_default(),
+                    context.current_hp,
+                    context.max_hp
+                ),
+            });
+        }
+    }
+
     None
+}
+
+fn smith_is_autopilot_allowed(
+    context: &CampfireDecisionContextV1,
+    config: &CampfirePolicyConfigV1,
+    candidate: &CampfireCandidateEvidenceV1,
+) -> bool {
+    if !matches!(candidate.choice, CampfireChoice::Smith(_)) {
+        return false;
+    }
+    if candidate.deck_mutation_execute_allowed == Some(false) {
+        return false;
+    }
+    if context
+        .strategy
+        .support(StrategyPackageIdV2::RecoveryPressure)
+        == StrategyPlanSupportV1::Strong
+    {
+        return false;
+    }
+
+    let score = candidate.upgrade_plan_score_hint.unwrap_or_default();
+    let tag = candidate.strategy_tag.as_deref().unwrap_or_default();
+    if config.allow_clear_core_smith_when_healthy
+        && score >= config.clear_core_smith_priority_threshold
+        && clear_core_upgrade_tag(tag)
+    {
+        return true;
+    }
+
+    let hp_percent = hp_percent(context.current_hp, context.max_hp);
+    config.allow_combat_patch_smith_when_safe
+        && hp_percent >= config.combat_patch_smith_min_hp_percent
+        && score >= config.combat_patch_smith_priority_threshold
+        && combat_patch_upgrade_tag(tag)
+}
+
+fn clear_core_upgrade_tag(tag: &str) -> bool {
+    matches!(
+        tag,
+        "upgrade_role:core_mechanic"
+            | "upgrade_role:engine_enabler"
+            | "upgrade_role:consistency"
+            | "upgrade_role:scaling"
+            | "upgrade_debt:controlled_exhaust"
+            | "upgrade_debt:access_recovery"
+            | "upgrade_debt:scaling_setup"
+    )
+}
+
+fn combat_patch_upgrade_tag(tag: &str) -> bool {
+    matches!(
+        tag,
+        "upgrade_role:defensive_survival"
+            | "upgrade_role:phase_burst"
+            | "upgrade_role:debuff_coverage"
+            | "upgrade_debt:stasis_recovery"
+            | "upgrade_debt:hyperbeam_block"
+            | "upgrade_debt:phase_burst"
+            | "upgrade_debt:execute_block"
+            | "upgrade_debt:debuff_coverage"
+            | "upgrade_debt:transitional_frontload"
+    )
+}
+
+fn hp_percent(current_hp: i32, max_hp: i32) -> i32 {
+    if max_hp <= 0 {
+        return 0;
+    }
+    current_hp.saturating_mul(100) / max_hp
 }
 
 fn rest_is_routine_exit_allowed(
