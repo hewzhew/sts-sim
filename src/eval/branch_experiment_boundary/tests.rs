@@ -1538,6 +1538,40 @@ fn current_boundary_allows_event_options_that_open_single_card_selection() {
 }
 
 #[test]
+fn current_boundary_preexpands_transmorgrifier_target_selection_through_deck_mutation_compiler() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = Some(EventState::new(EventId::Transmorgrifier));
+    session.engine_state = EngineState::EventRoom;
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("Transmorgrifier should expose compound event mutation branches");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
+    assert!(
+        boundary
+            .options
+            .iter()
+            .any(|option| option.command.starts_with("event 0 && select ")
+                && option
+                    .decision_signal
+                    .as_ref()
+                    .is_some_and(|signal| signal.source == "deck_mutation_compiler_v1")),
+        "Transmorgrifier should pre-expand target choices through DeckMutationCompiler"
+    );
+    assert!(
+        boundary
+            .options
+            .iter()
+            .any(|option| option.kind == "event" && option.command == "event 1"),
+        "the ordinary event leave option should remain available"
+    );
+    assert!(!boundary
+        .options
+        .iter()
+        .any(|option| option.command == "event 0"));
+}
+
+#[test]
 fn current_boundary_reads_event_card_upgrade_state_from_event_data() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut event_state = EventState::new(EventId::TheLibrary);

@@ -3,7 +3,8 @@ use super::card_reward::{
     CardRewardBranchOptionSource,
 };
 use crate::ai::deck_mutation_compiler_v1::{
-    compile_direct_deck_mutation_plan_candidate_v1, deck_mutation_target_class_for_card_v1,
+    compile_deck_mutation_decision_v1, compile_direct_deck_mutation_plan_candidate_v1,
+    deck_mutation_target_class_for_card_v1, DeckMutationCompilerModeV1,
     DeckMutationPlanCandidateV1, DeckMutationTargetClassV1,
 };
 use crate::ai::event_policy_v1::{
@@ -13,13 +14,15 @@ use crate::ai::event_policy_v1::{
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::BranchExperimentChoiceDecisionSignalV1;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
-use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
+use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{
-    EventActionKind, EventCardKind, EventEffect, EventOption, EventOptionSemantics,
+    EventActionKind, EventCardKind, EventEffect, EventId, EventOption, EventOptionSemantics,
     EventOptionTransition, EventRelicKind, EventSelectionKind,
 };
 
 const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 4;
+const MAX_OPEN_SELECTION_DECK_MUTATION_OPTIONS_PER_EVENT: usize = 3;
+const EVENT_COMMAND_SEQUENCE_SEPARATOR: &str = " && ";
 
 #[derive(Clone, Debug)]
 pub(crate) struct EventBranchOption {
@@ -44,6 +47,49 @@ struct EventOptionBranchSemantics {
     effect_label: String,
 }
 
+#[derive(Clone, Debug)]
+struct EventCommandPlanV1 {
+    steps: Vec<EventCommandStepV1>,
+}
+
+#[derive(Clone, Debug)]
+enum EventCommandStepV1 {
+    ChooseEventOption { command: String },
+    ChoosePendingDeckMutationTarget { command: String },
+}
+
+impl EventCommandPlanV1 {
+    fn open_selection_deck_mutation(event_command: String, target_command: String) -> Self {
+        Self {
+            steps: vec![
+                EventCommandStepV1::ChooseEventOption {
+                    command: event_command,
+                },
+                EventCommandStepV1::ChoosePendingDeckMutationTarget {
+                    command: target_command,
+                },
+            ],
+        }
+    }
+
+    fn render_command(&self) -> String {
+        self.steps
+            .iter()
+            .map(EventCommandStepV1::command)
+            .collect::<Vec<_>>()
+            .join(EVENT_COMMAND_SEQUENCE_SEPARATOR)
+    }
+}
+
+impl EventCommandStepV1 {
+    fn command(&self) -> &str {
+        match self {
+            EventCommandStepV1::ChooseEventOption { command }
+            | EventCommandStepV1::ChoosePendingDeckMutationTarget { command } => command,
+        }
+    }
+}
+
 pub(crate) fn event_branch_options(
     session: &RunControlSession,
     max_card_offer_options: Option<usize>,
@@ -62,6 +108,8 @@ pub(crate) fn event_branch_options(
     let mut branch_options = Vec::new();
     let direct_remove_low_value_available =
         direct_event_remove_card_low_value_available(session, &event_options);
+    let can_expand_open_selection_deck_mutation = event_options.len() <= 2
+        && open_selection_deck_mutation_option_count(event_id, &event_options) == 1;
 
     for candidate in &surface.view.candidates {
         let Some(ClientInput::EventChoice(index)) = candidate.action.executable_input() else {
@@ -127,6 +175,16 @@ pub(crate) fn event_branch_options(
         ) {
             apply_direct_event_deck_mutation_plan(&mut branch_option, plan);
         }
+        if can_expand_open_selection_deck_mutation {
+            if let Some(expanded) = expand_open_selection_deck_mutation_event_option(
+                session,
+                event_option,
+                &branch_option,
+            ) {
+                branch_options.extend(expanded);
+                continue;
+            }
+        }
         branch_options.push(branch_option);
     }
 
@@ -153,6 +211,114 @@ pub(crate) fn event_branch_options(
         return None;
     }
     Some(branch_options)
+}
+
+fn open_selection_deck_mutation_option_count(
+    event_id: EventId,
+    event_options: &[EventOption],
+) -> usize {
+    event_options
+        .iter()
+        .filter(|option| open_selection_deck_mutation_choice(event_id, option).is_some())
+        .count()
+}
+
+fn open_selection_deck_mutation_choice(
+    event_id: EventId,
+    option: &EventOption,
+) -> Option<RunPendingChoiceState> {
+    if event_id != EventId::Transmorgrifier {
+        return None;
+    }
+    if option.semantics.action != EventActionKind::DeckOperation {
+        return None;
+    }
+    if !matches!(
+        option.semantics.transition,
+        EventOptionTransition::OpenSelection(EventSelectionKind::TransformCard)
+    ) {
+        return None;
+    }
+    let transform_count = option
+        .semantics
+        .effects
+        .iter()
+        .find_map(|effect| match effect {
+            EventEffect::TransformCard { count } => Some(*count),
+            _ => None,
+        })?;
+    if transform_count != 1
+        || option
+            .semantics
+            .effects
+            .iter()
+            .any(|effect| !matches!(effect, EventEffect::TransformCard { .. }))
+    {
+        return None;
+    }
+    Some(RunPendingChoiceState {
+        reason: RunPendingChoiceReason::TransformNonBottled,
+        min_choices: 1,
+        max_choices: 1,
+        return_state: Box::new(EngineState::EventRoom),
+    })
+}
+
+fn expand_open_selection_deck_mutation_event_option(
+    session: &RunControlSession,
+    option: &EventOption,
+    base_option: &EventBranchOption,
+) -> Option<Vec<EventBranchOption>> {
+    let event_id = session.run_state.event_state.as_ref()?.id;
+    let choice = open_selection_deck_mutation_choice(event_id, option)?;
+    let decision = compile_deck_mutation_decision_v1(
+        &session.run_state,
+        &choice,
+        DeckMutationCompilerModeV1::BranchTopK {
+            max_active: MAX_OPEN_SELECTION_DECK_MUTATION_OPTIONS_PER_EVENT,
+        },
+    );
+    let expanded = decision
+        .branch_active_plans
+        .into_iter()
+        .map(|plan| open_selection_deck_mutation_event_branch_option(base_option, plan))
+        .collect::<Vec<_>>();
+    (!expanded.is_empty()).then_some(expanded)
+}
+
+fn open_selection_deck_mutation_event_branch_option(
+    base_option: &EventBranchOption,
+    plan: DeckMutationPlanCandidateV1,
+) -> EventBranchOption {
+    let decision_signal = Some(super::deck_mutation_decision_signal_v1(&plan));
+    let card = plan.step.cards.first();
+    let loss = card
+        .map(|card| format!(" loss={:?}", card.target_loss.tier))
+        .unwrap_or_default();
+    let command_plan = EventCommandPlanV1::open_selection_deck_mutation(
+        base_option.command.clone(),
+        plan.step.command.clone(),
+    );
+    EventBranchOption {
+        label: format!("{} -> {}", base_option.label, plan.step.effect_label),
+        command: command_plan.render_command(),
+        card: card.map(|card| card.card),
+        upgrades: card.map(|card| card.upgrades),
+        effect_kind: plan.step.effect_kind.clone(),
+        effect_key: format!("{}:{}", base_option.effect_key, plan.step.effect_key),
+        effect_label: format!(
+            "{} -> {} | deck mutation role={:?}{} confidence={:.2}",
+            base_option.effect_label, plan.step.effect_label, plan.role, loss, plan.confidence
+        ),
+        representative_count: plan.representative_count,
+        suppressed_count: plan.suppressed_count,
+        decision_signal,
+        deck_mutation_order_key: Some((
+            direct_event_deck_mutation_role_rank(plan.role),
+            -plan.score_hint,
+        )),
+        event_policy_order_key: base_option.event_policy_order_key,
+    }
 }
 
 fn event_candidate_tier_rank(tier: EventCandidateTierV1) -> u8 {
