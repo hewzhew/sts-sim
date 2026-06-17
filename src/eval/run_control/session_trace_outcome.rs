@@ -9,7 +9,7 @@ use crate::state::core::{EngineState, RunResult};
 use crate::state::map::RoomType;
 
 use super::session::RunControlSession;
-use super::trace_annotation::RunControlTraceAnnotationV1;
+use super::trace_annotation::{combat_automation_trajectories_v1, RunControlTraceAnnotationV1};
 use super::transition_report::{ActionResult, ActionResultChange};
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -62,17 +62,8 @@ pub(super) fn update_outcome_counters(
         .iter()
         .filter(|change| matches!(change, ActionResultChange::CombatEnded))
         .count() as u32;
-    let combat_automation_trajectories = annotations
-        .iter()
-        .filter(|annotation| {
-            matches!(
-                annotation,
-                RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-                    action_count,
-                    ..
-                } if *action_count > 0
-            )
-        })
+    let combat_automation_trajectories = combat_automation_trajectories_v1(annotations)
+        .filter(|trajectory| trajectory.action_count > 0)
         .count() as u32;
     let completed_combats = combat_ended_changes.max(combat_automation_trajectories);
     if completed_combats == 0 {
@@ -139,13 +130,10 @@ pub(super) fn update_pending_outcome_observations(
         }
     }
 
-    for annotation in annotations {
-        let RunControlTraceAnnotationV1::CombatAutomationTrajectory { actions, .. } = annotation
-        else {
-            continue;
-        };
+    for trajectory in combat_automation_trajectories_v1(annotations) {
         for pending in pending_outcomes.iter_mut() {
-            let played_count = actions
+            let played_count = trajectory
+                .actions
                 .iter()
                 .filter(|action| {
                     selected_card_reward_matches_action_key(pending, &action.action_key)
@@ -157,7 +145,8 @@ pub(super) fn update_pending_outcome_observations(
                     played_count,
                 );
             }
-            let drawn_count = actions
+            let drawn_count = trajectory
+                .actions
                 .iter()
                 .flat_map(|action| action.drawn_cards.iter())
                 .filter(|card| selected_card_reward_matches_card(pending, card))

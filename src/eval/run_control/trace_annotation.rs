@@ -229,9 +229,17 @@ impl RunControlTraceAnnotationV1 {
 pub fn annotations_have_combat_automation_trajectory_v1(
     annotations: &[RunControlTraceAnnotationV1],
 ) -> bool {
+    combat_automation_trajectories_v1(annotations)
+        .next()
+        .is_some()
+}
+
+pub fn combat_automation_trajectories_v1(
+    annotations: &[RunControlTraceAnnotationV1],
+) -> impl Iterator<Item = CombatAutomationTrajectoryRefV1<'_>> {
     annotations
         .iter()
-        .any(|annotation| annotation.as_combat_automation_trajectory_v1().is_some())
+        .filter_map(RunControlTraceAnnotationV1::as_combat_automation_trajectory_v1)
 }
 
 pub(in crate::eval::run_control) fn validate_run_control_trace_annotations_v1(
@@ -342,5 +350,36 @@ mod tests {
         assert!(annotations_have_combat_automation_trajectory_v1(
             &annotations
         ));
+    }
+
+    #[test]
+    fn combat_automation_trajectory_iterator_returns_recorded_trajectories_only() {
+        let annotations = vec![
+            RunControlTraceAnnotationV1::AutoCombatCapture {
+                case_id: "case".to_string(),
+                capture_path: "case.json".to_string(),
+                benchmark_manifest_path: "manifest.json".to_string(),
+                label_role: "human_review_artifact".to_string(),
+            },
+            RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+                source: "search_combat".to_string(),
+                action_count: 2,
+                actions: vec![CombatAutomationActionV1 {
+                    step_index: 0,
+                    action_key: "combat/end_turn".to_string(),
+                    input: ClientInput::EndTurn,
+                    drawn_cards: Vec::new(),
+                    combat_after: None,
+                }],
+                label_role: "simulator_generated_not_teacher_label".to_string(),
+            },
+        ];
+
+        let trajectories = combat_automation_trajectories_v1(&annotations).collect::<Vec<_>>();
+
+        assert_eq!(trajectories.len(), 1);
+        assert_eq!(trajectories[0].source, "search_combat");
+        assert_eq!(trajectories[0].action_count, 2);
+        assert_eq!(trajectories[0].actions[0].step_index, 0);
     }
 }
