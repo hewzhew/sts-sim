@@ -915,6 +915,7 @@ mod tests {
             action_key: action_key.to_string(),
             input,
             drawn_cards,
+            combat_after: None,
         }
     }
 

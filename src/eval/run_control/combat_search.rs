@@ -5,6 +5,7 @@ use crate::ai::combat_search_v2::{
     SearchTerminalLabel,
 };
 use crate::content::monsters::EnemyId;
+use crate::content::powers::{store, PowerId};
 use crate::sim::combat::{
     combat_terminal, CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal,
     EngineCombatStepper,
@@ -19,7 +20,8 @@ use super::registry::BenchmarkCasePaths;
 use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenceContextV1};
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::trace_annotation::{
-    CombatAutomationActionV1, CombatSearchPerformanceSnapshotV1, RunControlTraceAnnotationV1,
+    CombatAutomationActionV1, CombatAutomationMonsterStateV1, CombatAutomationStepStateV1,
+    CombatSearchPerformanceSnapshotV1, RunControlTraceAnnotationV1,
 };
 use super::transition_report::{
     action_result_from_transition, render_action_result, ActionResult, ActionResultChange,
@@ -140,6 +142,7 @@ pub(super) fn apply_search_combat(
             action_key: action.action_key.clone(),
             input: action.input.clone(),
             drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
+            combat_after: combat_automation_step_state_v1(session),
         });
     }
     let after_snapshot = RunVisibleSnapshot::capture(session);
@@ -202,6 +205,7 @@ fn try_apply_turn_segment_after_rejection(
             action_key: action.action_key.clone(),
             input: action.input.clone(),
             drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
+            combat_after: combat_automation_step_state_v1(session),
         });
     }
     let after_snapshot = RunVisibleSnapshot::capture(session);
@@ -263,6 +267,37 @@ fn combat_automation_trace_annotation(
         actions,
         label_role: "simulator_generated_not_teacher_label".to_string(),
     }
+}
+
+fn combat_automation_step_state_v1(
+    session: &RunControlSession,
+) -> Option<CombatAutomationStepStateV1> {
+    let combat = &session.active_combat.as_ref()?.combat_state;
+    Some(CombatAutomationStepStateV1 {
+        player_hp: combat.entities.player.current_hp,
+        player_max_hp: combat.entities.player.max_hp,
+        player_block: combat.entities.player.block,
+        energy: combat.turn.energy,
+        cards_played_this_turn: combat.turn.counters.cards_played_this_turn,
+        early_end_turn_pending: combat.turn.counters.early_end_turn_pending,
+        monsters: combat
+            .entities
+            .monsters
+            .iter()
+            .map(|monster| CombatAutomationMonsterStateV1 {
+                id: monster.id,
+                label: EnemyId::from_id(monster.monster_type)
+                    .map(|enemy| enemy.get_name().to_string())
+                    .unwrap_or_else(|| format!("monster#{}", monster.monster_type)),
+                hp: monster.current_hp,
+                max_hp: monster.max_hp,
+                block: monster.block,
+                alive: monster.is_alive_for_action(),
+                time_warp: store::power_amount(combat, monster.id, PowerId::TimeWarp),
+                strength: store::power_amount(combat, monster.id, PowerId::Strength),
+            })
+            .collect(),
+    })
 }
 
 fn combat_search_performance_trace_annotation(
@@ -941,10 +976,12 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use super::{
-        combat_automation_trace_annotation, effective_hp_loss_limit, high_stakes_search_options,
-        next_available_evidence_path, search_config, segment_mode_allows_turn_segment,
+        combat_automation_step_state_v1, combat_automation_trace_annotation,
+        effective_hp_loss_limit, high_stakes_search_options, next_available_evidence_path,
+        search_config, segment_mode_allows_turn_segment,
     };
     use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
+    use crate::content::powers::{store, PowerId};
     use crate::eval::run_control::trace_annotation::{
         CombatAutomationActionV1, RunControlTraceAnnotationV1,
     };
@@ -973,6 +1010,57 @@ mod tests {
             }),
         ));
         session
+    }
+
+    #[test]
+    fn combat_automation_step_state_records_time_warp_counter_and_forced_end_state() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.monsters = vec![crate::test_support::test_monster(
+            crate::content::monsters::EnemyId::TimeEater,
+        )];
+        let monster_id = combat.entities.monsters[0].id;
+        store::set_powers_for(
+            &mut combat,
+            monster_id,
+            vec![
+                crate::runtime::combat::Power {
+                    power_type: PowerId::TimeWarp,
+                    instance_id: None,
+                    amount: 11,
+                    extra_data: 0,
+                    payload: crate::runtime::combat::PowerPayload::None,
+                    just_applied: false,
+                },
+                crate::runtime::combat::Power {
+                    power_type: PowerId::Strength,
+                    instance_id: None,
+                    amount: 2,
+                    extra_data: 0,
+                    payload: crate::runtime::combat::PowerPayload::None,
+                    just_applied: false,
+                },
+            ],
+        );
+        combat.turn.counters.cards_played_this_turn = 11;
+        combat.turn.mark_early_end_turn_pending();
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoomBoss,
+            }),
+        ));
+
+        let snapshot = combat_automation_step_state_v1(&session)
+            .expect("active combat should produce automation step state");
+
+        assert_eq!(snapshot.cards_played_this_turn, 11);
+        assert!(snapshot.early_end_turn_pending);
+        assert_eq!(snapshot.monsters.len(), 1);
+        assert_eq!(snapshot.monsters[0].label, "Time Eater");
+        assert_eq!(snapshot.monsters[0].time_warp, 11);
+        assert_eq!(snapshot.monsters[0].strength, 2);
     }
 
     fn session_with_combat_flags(is_boss_fight: bool, is_elite_fight: bool) -> RunControlSession {
@@ -1043,6 +1131,7 @@ mod tests {
                 action_key: "combat/end_turn".to_string(),
                 input: ClientInput::EndTurn,
                 drawn_cards: Vec::new(),
+                combat_after: None,
             }],
         );
 

@@ -3836,6 +3836,7 @@ fn campaign_branch_preserves_final_boss_combat_record_from_experiment_report() {
                 action_key: "end".to_string(),
                 input: crate::state::core::ClientInput::EndTurn,
                 drawn_cards: Vec::new(),
+                combat_after: None,
             }],
             label_role: "behavior_policy_not_teacher".to_string(),
         },

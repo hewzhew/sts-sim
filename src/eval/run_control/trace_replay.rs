@@ -837,6 +837,7 @@ mod tests {
                 action_key: "combat/end_turn".to_string(),
                 input: ClientInput::EndTurn,
                 drawn_cards: Vec::new(),
+                combat_after: None,
             }],
             label_role: "simulator_generated_not_teacher_label".to_string(),
         }];

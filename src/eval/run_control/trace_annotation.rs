@@ -17,6 +17,33 @@ pub struct CombatAutomationActionV1 {
     pub input: ClientInput,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drawn_cards: Vec<CardSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combat_after: Option<CombatAutomationStepStateV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatAutomationStepStateV1 {
+    pub player_hp: i32,
+    pub player_max_hp: i32,
+    pub player_block: i32,
+    pub energy: u8,
+    pub cards_played_this_turn: u8,
+    pub early_end_turn_pending: bool,
+    pub monsters: Vec<CombatAutomationMonsterStateV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatAutomationMonsterStateV1 {
+    pub id: usize,
+    pub label: String,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub block: i32,
+    pub alive: bool,
+    pub time_warp: i32,
+    pub strength: i32,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

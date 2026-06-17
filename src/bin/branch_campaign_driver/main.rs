@@ -261,6 +261,12 @@ struct Args {
         help = "Print current-code route planner candidate evidence for the selected map checkpoint session"
     )]
     inspect_route_evidence: bool,
+
+    #[arg(
+        long = "inspect-final-boss-combat",
+        help = "Print a final boss combat timeline from a BranchCampaignV1 report"
+    )]
+    inspect_final_boss_combat: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -427,6 +433,9 @@ fn apply_campaign_preset_defaults<F>(
 }
 
 fn run(args: Args) -> Result<(), String> {
+    if args.inspect_final_boss_combat {
+        return run_final_boss_combat_report_inspection(&args);
+    }
     if args.inspect_checkpoint.is_some() {
         return run_checkpoint_inspection(&args);
     }
@@ -487,6 +496,150 @@ fn run(args: Args) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+fn run_final_boss_combat_report_inspection(args: &Args) -> Result<(), String> {
+    let path = args
+        .inspect_report
+        .as_ref()
+        .ok_or_else(|| "--inspect-final-boss-combat requires --inspect-report PATH".to_string())?;
+    let report = read_campaign_report_v1(path)?;
+    print!(
+        "{}",
+        render_final_boss_combat_report_inspection_v1(&report, args.inspect_index)?
+    );
+    Ok(())
+}
+
+fn render_final_boss_combat_report_inspection_v1(
+    report: &BranchCampaignReportV1,
+    inspect_index: usize,
+) -> Result<String, String> {
+    let candidates: Vec<(
+        usize,
+        &sts_simulator::eval::branch_campaign::BranchCampaignBranchV1,
+    )> = report
+        .victories
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| branch.final_boss_combat_record.is_some())
+        .collect();
+    if candidates.is_empty() {
+        return Err("campaign report contains no final boss combat records".to_string());
+    }
+    if inspect_index >= candidates.len() {
+        return Err(format!(
+            "--inspect-index {inspect_index} is out of range for {} final boss combat record(s)",
+            candidates.len()
+        ));
+    }
+    let (victory_index, branch) = candidates[inspect_index];
+    let record = branch
+        .final_boss_combat_record
+        .as_ref()
+        .expect("candidate filter requires a final boss combat record");
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Final boss combat record: seed={} victory={}/{} source={} actions={} snapshots={}",
+        report.seed,
+        victory_index + 1,
+        report.victories.len(),
+        record.source,
+        record.action_count,
+        record
+            .actions
+            .iter()
+            .filter(|action| action.combat_after.is_some())
+            .count()
+    ));
+    if let Some(summary) = branch.summary.as_ref() {
+        lines.push(format!(
+            "Branch: A{}F{} HP {}/{} gold {} deck {} boss={}",
+            summary.act,
+            summary.floor,
+            summary.hp,
+            summary.max_hp,
+            summary.gold,
+            summary.deck_count,
+            if summary.boss.is_empty() {
+                "unknown"
+            } else {
+                summary.boss.as_str()
+            }
+        ));
+    }
+    if !branch.choice_labels.is_empty() {
+        lines.push(format!(
+            "Choices: {}",
+            render_truncated_text(&branch.choice_labels.join(" -> "), 360)
+        ));
+    }
+    lines.push("Timeline: step cards tw str hp boss_hp tags | action".to_string());
+
+    let mut previous_time_warp: Option<i32> = None;
+    let mut previous_strength: Option<i32> = None;
+    let mut previous_early_end_pending = false;
+    for action in &record.actions {
+        let Some(after) = action.combat_after.as_ref() else {
+            lines.push(format!(
+                "  {:>3} legacy-no-snapshot | {}",
+                action.step_index, action.action_key
+            ));
+            continue;
+        };
+        let monster = after.monsters.first();
+        let time_warp = monster.map(|monster| monster.time_warp).unwrap_or_default();
+        let strength = monster.map(|monster| monster.strength).unwrap_or_default();
+        let boss_hp = monster
+            .map(|monster| format!("{}/{}", monster.hp, monster.max_hp))
+            .unwrap_or_else(|| "-".to_string());
+        let mut tags = Vec::new();
+        if previous_early_end_pending && !after.early_end_turn_pending {
+            tags.push("forced_end_resolved_before_action");
+        }
+        if after.early_end_turn_pending {
+            tags.push("early_end_pending");
+        }
+        if previous_time_warp.is_some_and(|previous| previous >= 11) && time_warp == 0 {
+            tags.push("TIME_WARP_TRIGGER");
+        }
+        if previous_strength.is_some_and(|previous| strength == previous + 2) {
+            tags.push("monster_strength+2");
+        }
+        previous_time_warp = Some(time_warp);
+        previous_strength = Some(strength);
+        previous_early_end_pending = after.early_end_turn_pending;
+        let tag_text = if tags.is_empty() {
+            "-".to_string()
+        } else {
+            tags.join(",")
+        };
+        lines.push(format!(
+            "  {:>3} {:>2} {:>2} {:>3} {}/{} {:>9} {:<38} | {}",
+            action.step_index,
+            after.cards_played_this_turn,
+            time_warp,
+            strength,
+            after.player_hp,
+            after.player_max_hp,
+            boss_hp,
+            tag_text,
+            action.action_key
+        ));
+    }
+    Ok(format!("{}\n", lines.join("\n")))
+}
+
+fn render_truncated_text(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    let mut rendered = value
+        .chars()
+        .take(max_chars.saturating_sub(3))
+        .collect::<String>();
+    rendered.push_str("...");
+    rendered
 }
 
 fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
@@ -1556,6 +1709,22 @@ mod tests {
             Some(PathBuf::from("latest.campaign.json"))
         );
         assert!(args.inspect_route_evidence);
+    }
+
+    #[test]
+    fn campaign_cli_accepts_final_boss_combat_report_inspection() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-final-boss-combat",
+        ]);
+
+        assert_eq!(
+            args.inspect_report,
+            Some(PathBuf::from("latest.campaign.json"))
+        );
+        assert!(args.inspect_final_boss_combat);
     }
 
     #[test]
