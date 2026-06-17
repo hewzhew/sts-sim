@@ -90,6 +90,13 @@ fn analyze_shop_relic(
     strength: &StrengthProfileV1,
     analysis: &mut ShopPurchaseStrategyAnalysisV1,
 ) {
+    let mechanics = crate::ai::card_semantics_v1::relic_mechanics_profile_v1(relic);
+    if mechanics.core_defense_or_survival {
+        push_evidence(analysis, "shop_relic_core_defense_or_survival");
+    }
+    if mechanics.core_card_access {
+        push_evidence(analysis, "shop_relic_core_card_access");
+    }
     if relic == RelicId::MedicalKit
         && deck_contains_any(run_state, &[CardId::WildStrike, CardId::PowerThrough])
     {

@@ -218,6 +218,10 @@ pub(crate) fn shop_potion_is_combat_patch_v1(potion: PotionId) -> bool {
 }
 
 fn high_impact_shop_relic(relic: RelicId) -> bool {
+    let mechanics = crate::ai::card_semantics_v1::relic_mechanics_profile_v1(relic);
+    if mechanics.core_defense_or_survival || mechanics.core_card_access {
+        return true;
+    }
     matches!(
         relic,
         RelicId::MembershipCard

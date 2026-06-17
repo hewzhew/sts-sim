@@ -83,43 +83,11 @@ fn expired_or_resolved_trade_relic(relic: &RelicState) -> bool {
 }
 
 fn core_defense_or_survival_relic(id: RelicId) -> bool {
-    matches!(
-        id,
-        RelicId::BurningBlood
-            | RelicId::BlackBlood
-            | RelicId::BloodVial
-            | RelicId::MagicFlower
-            | RelicId::MeatOnTheBone
-            | RelicId::Pantograph
-            | RelicId::FossilizedHelix
-            | RelicId::IncenseBurner
-            | RelicId::ThreadAndNeedle
-            | RelicId::Torii
-            | RelicId::TungstenRod
-            | RelicId::Calipers
-            | RelicId::Orichalcum
-            | RelicId::HornCleat
-            | RelicId::CaptainsWheel
-            | RelicId::LizardTail
-            | RelicId::SacredBark
-    )
+    crate::ai::card_semantics_v1::relic_mechanics_profile_v1(id).core_defense_or_survival
 }
 
 fn core_card_access_relic(id: RelicId) -> bool {
-    matches!(
-        id,
-        RelicId::RunicPyramid
-            | RelicId::SneckoEye
-            | RelicId::GamblingChip
-            | RelicId::FrozenEye
-            | RelicId::BagOfPreparation
-            | RelicId::Pocketwatch
-            | RelicId::QuestionCard
-            | RelicId::InkBottle
-            | RelicId::RunicCube
-            | RelicId::Sundial
-            | RelicId::IceCream
-    )
+    crate::ai::card_semantics_v1::relic_mechanics_profile_v1(id).core_card_access
 }
 
 fn ironclad_core_relic(id: RelicId, run_state: &RunState) -> bool {

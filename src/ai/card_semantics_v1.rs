@@ -25,6 +25,8 @@ pub struct RelicMechanicsProfileV1 {
     pub persistent_strength_source: bool,
     pub temporary_strength_burst: bool,
     pub strength_converter: Option<StrengthConversionMechanicV1>,
+    pub core_defense_or_survival: bool,
+    pub core_card_access: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -81,6 +83,40 @@ pub fn relic_mechanics_profile_v1(relic: RelicId) -> RelicMechanicsProfileV1 {
             RelicId::OrangePellets => Some(StrengthConversionMechanicV1::ClearStrengthDownDebuff),
             _ => None,
         },
+        core_defense_or_survival: matches!(
+            relic,
+            RelicId::BurningBlood
+                | RelicId::BlackBlood
+                | RelicId::BloodVial
+                | RelicId::MagicFlower
+                | RelicId::MeatOnTheBone
+                | RelicId::Pantograph
+                | RelicId::FossilizedHelix
+                | RelicId::IncenseBurner
+                | RelicId::ThreadAndNeedle
+                | RelicId::Torii
+                | RelicId::TungstenRod
+                | RelicId::Calipers
+                | RelicId::Orichalcum
+                | RelicId::HornCleat
+                | RelicId::CaptainsWheel
+                | RelicId::LizardTail
+                | RelicId::SacredBark
+        ),
+        core_card_access: matches!(
+            relic,
+            RelicId::RunicPyramid
+                | RelicId::SneckoEye
+                | RelicId::GamblingChip
+                | RelicId::FrozenEye
+                | RelicId::BagOfPreparation
+                | RelicId::Pocketwatch
+                | RelicId::QuestionCard
+                | RelicId::InkBottle
+                | RelicId::RunicCube
+                | RelicId::Sundial
+                | RelicId::IceCream
+        ),
     }
 }
 
