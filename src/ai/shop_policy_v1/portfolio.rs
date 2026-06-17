@@ -20,9 +20,10 @@ pub(super) fn evaluated_shop_portfolio_combo_plans_v1(
         return Vec::new();
     }
 
-    best_shop_combo_plan_v1(&options, context.need.gold)
-        .map(|combo| vec![combo.plan])
-        .unwrap_or_default()
+    best_shop_combo_plans_v1(&options, context.need.gold, max_plans)
+        .into_iter()
+        .map(|combo| combo.plan)
+        .collect()
 }
 
 #[derive(Clone, Debug)]
@@ -90,11 +91,12 @@ fn evaluated_candidate_rank_v1(candidate: &ShopPlanCandidateV1) -> i32 {
         .saturating_add(component_rank)
 }
 
-fn best_shop_combo_plan_v1(
+fn best_shop_combo_plans_v1(
     options: &[EvaluatedShopComboOptionV1],
     gold: i32,
-) -> Option<EvaluatedShopComboOptionV1> {
-    let mut best = None::<EvaluatedShopComboOptionV1>;
+    max_plans: usize,
+) -> Vec<EvaluatedShopComboOptionV1> {
+    let mut candidates = std::collections::BTreeMap::<String, EvaluatedShopComboOptionV1>::new();
     for first in options.iter().filter(|entry| entry.can_start_combo) {
         for second in options.iter().filter(|entry| {
             entry.can_follow_combo
@@ -105,12 +107,7 @@ fn best_shop_combo_plan_v1(
                 continue;
             }
             let candidate = shop_combo_plan_v1(&[first, second]);
-            if best
-                .as_ref()
-                .is_none_or(|current| candidate.rank > current.rank)
-            {
-                best = Some(candidate);
-            }
+            insert_shop_combo_candidate_v1(&mut candidates, candidate);
         }
     }
     if gold >= 300 {
@@ -137,17 +134,35 @@ fn best_shop_combo_plan_v1(
                         continue;
                     }
                     let candidate = shop_combo_plan_v1(&[first, second, third]);
-                    if best
-                        .as_ref()
-                        .is_none_or(|current| candidate.rank > current.rank)
-                    {
-                        best = Some(candidate);
-                    }
+                    insert_shop_combo_candidate_v1(&mut candidates, candidate);
                 }
             }
         }
     }
-    best
+    let mut candidates = candidates.into_values().collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        right
+            .rank
+            .cmp(&left.rank)
+            .then_with(|| left.plan.plan_id.cmp(&right.plan.plan_id))
+    });
+    candidates.truncate(max_plans);
+    candidates
+}
+
+fn insert_shop_combo_candidate_v1(
+    candidates: &mut std::collections::BTreeMap<String, EvaluatedShopComboOptionV1>,
+    candidate: EvaluatedShopComboOptionV1,
+) {
+    let mut candidate_ids = candidate.plan.candidate_ids.clone();
+    candidate_ids.sort();
+    let key = candidate_ids.join("+");
+    if candidates
+        .get(&key)
+        .is_none_or(|existing| candidate.rank > existing.rank)
+    {
+        candidates.insert(key, candidate);
+    }
 }
 
 fn shop_combo_plan_v1(entries: &[&EvaluatedShopComboOptionV1]) -> EvaluatedShopComboOptionV1 {

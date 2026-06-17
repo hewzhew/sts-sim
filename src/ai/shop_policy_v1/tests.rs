@@ -1292,6 +1292,62 @@ fn compiled_shop_selected_plan_can_be_multi_step_cleanup_plus_relic() {
 }
 
 #[test]
+fn compiled_shop_portfolio_retains_multiple_multi_step_plans() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 1;
+    run_state.floor_num = 5;
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::QuestionCard,
+        price: 255,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::OrangePellets,
+        price: 151,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 6 },
+    );
+
+    let multi_step_portfolio = compiled
+        .candidate_plans
+        .iter()
+        .filter(|candidate| {
+            candidate.role == ShopPlanCandidateRoleV1::PortfolioAlternative
+                && candidate.plan.steps.len() >= 2
+                && candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
+        })
+        .collect::<Vec<_>>();
+    let distinct_plan_ids = multi_step_portfolio
+        .iter()
+        .map(|candidate| candidate.plan.plan_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert!(
+        multi_step_portfolio.len() >= 2,
+        "shop compiler should retain multiple complete portfolio plans for branch/inspect comparison, got {:?}",
+        multi_step_portfolio
+            .iter()
+            .map(|candidate| candidate.plan.label.as_str())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        distinct_plan_ids.len(),
+        multi_step_portfolio.len(),
+        "multi-step portfolio candidates should have stable distinct plan ids"
+    );
+}
+
+#[test]
 fn compiled_shop_portfolio_uses_step_evaluation_over_plan_legacy_gate() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
