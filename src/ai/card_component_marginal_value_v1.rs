@@ -129,6 +129,19 @@ fn add_generic_components(
     {
         push_str(&mut report.debts, "payoff_without_visible_gap_fill");
     }
+    if profile
+        .roles
+        .contains(&CardRewardSemanticRoleV1::ExhaustPayoff)
+    {
+        if context.startup.exhaust_engine_count > 0 {
+            push_str(
+                &mut report.positive_components,
+                "exhaust_payoff_has_generator",
+            );
+        } else {
+            push_str(&mut report.debts, "exhaust_payoff_without_generator");
+        }
+    }
     if context.same_card_count > 0
         && profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
         && card_mechanics_profile_v1(profile.card).applies_no_draw_debuff
@@ -166,16 +179,7 @@ fn add_card_specific_components(
                 push_str(&mut report.positive_components, "unlocks_fnp_engine");
             }
         }
-        CardId::FeelNoPain => {
-            if context.startup.exhaust_engine_count > 0 {
-                push_str(
-                    &mut report.positive_components,
-                    "exhaust_payoff_has_generator",
-                );
-            } else {
-                push_str(&mut report.debts, "exhaust_payoff_without_generator");
-            }
-        }
+        CardId::FeelNoPain => {}
         CardId::FireBreathing => {
             if context.startup.self_damage_source_count == 0
                 && context.startup.exhaust_engine_count == 0
@@ -630,6 +634,16 @@ mod tests {
         assert!(report
             .notes
             .contains(&"duplicate_access_requires_turn_planning"));
+    }
+
+    #[test]
+    fn exhaust_payoff_without_generator_emits_structural_debt() {
+        let report = evaluate_card_component_marginal_value_v1(
+            &context(),
+            &card_reward_semantic_profile_v1(&RewardCard::new(CardId::DarkEmbrace, 0)),
+        );
+
+        assert!(report.debts.contains(&"exhaust_payoff_without_generator"));
     }
 
     #[test]

@@ -123,7 +123,7 @@ fn candidate_delta_from_card_reward(
         &profile,
     );
     let mut delta = CandidateDelta::from_component_report(action, &component_report);
-    add_candidate_impact_deltas(candidate, &mut delta);
+    add_candidate_impact_deltas(context, candidate, &mut delta);
     add_candidate_facts_deltas(candidate, &mut delta);
     add_candidate_startup_deltas(context, candidate, &mut delta);
     add_candidate_boss_pressure_deltas(context, &profile, &mut delta);
@@ -159,32 +159,57 @@ fn decline_delta_from_card_reward_context(context: &CardRewardDecisionContextV1)
 }
 
 fn add_candidate_impact_deltas(
+    context: &CardRewardDecisionContextV1,
     candidate: &CardRewardCandidateEvidenceV1,
     delta: &mut CandidateDelta,
 ) {
     if candidate.impact.frontload_damage_delta > 0 {
-        delta.positive.push(LedgerDelta {
-            kind: PressureKind::MissingJob(StrategicJob::Frontload),
-            amount: (candidate.impact.frontload_damage_delta as f32 / 20.0).clamp(0.05, 0.60),
-            reason: "frontload_damage_delta".to_string(),
-        });
+        if formation_needs_include(context, StrategyDeckFormationNeedV1::Frontload) {
+            delta.positive.push(LedgerDelta {
+                kind: PressureKind::MissingJob(StrategicJob::Frontload),
+                amount: (candidate.impact.frontload_damage_delta as f32 / 20.0).clamp(0.05, 0.60),
+                reason: "frontload_damage_delta".to_string(),
+            });
+        } else {
+            delta.notes.push(format!(
+                "frontload_delta_not_current_need value={}",
+                candidate.impact.frontload_damage_delta
+            ));
+        }
     }
     if candidate.impact.block_delta > 0 {
-        delta.positive.push(LedgerDelta {
-            kind: PressureKind::MissingJob(StrategicJob::Block),
-            amount: (candidate.impact.block_delta as f32 / 18.0).clamp(0.05, 0.55),
-            reason: "block_delta".to_string(),
-        });
+        if formation_needs_include(context, StrategyDeckFormationNeedV1::Block) {
+            delta.positive.push(LedgerDelta {
+                kind: PressureKind::MissingJob(StrategicJob::Block),
+                amount: (candidate.impact.block_delta as f32 / 18.0).clamp(0.05, 0.55),
+                reason: "block_delta".to_string(),
+            });
+        } else {
+            delta.notes.push(format!(
+                "block_delta_not_current_need value={}",
+                candidate.impact.block_delta
+            ));
+        }
     }
     if candidate.impact.draw_delta > 0 || candidate.impact.energy_delta > 0 {
-        delta.positive.push(LedgerDelta {
-            kind: PressureKind::MissingJob(StrategicJob::DrawEnergy),
-            amount: ((candidate.impact.draw_delta + candidate.impact.energy_delta) as f32 / 4.0)
-                .clamp(0.10, 0.65),
-            reason: "draw_or_energy_delta".to_string(),
-        });
-        if delta.role == CandidateRole::Unknown {
-            delta.role = CandidateRole::Lubricant;
+        if formation_needs_include(context, StrategyDeckFormationNeedV1::DrawEnergy)
+            || formation_needs_include(context, StrategyDeckFormationNeedV1::Consistency)
+        {
+            delta.positive.push(LedgerDelta {
+                kind: PressureKind::MissingJob(StrategicJob::DrawEnergy),
+                amount: ((candidate.impact.draw_delta + candidate.impact.energy_delta) as f32
+                    / 4.0)
+                    .clamp(0.10, 0.65),
+                reason: "draw_or_energy_delta".to_string(),
+            });
+            if delta.role == CandidateRole::Unknown {
+                delta.role = CandidateRole::Lubricant;
+            }
+        } else {
+            delta.notes.push(format!(
+                "draw_energy_delta_not_current_need draw={} energy={}",
+                candidate.impact.draw_delta, candidate.impact.energy_delta
+            ));
         }
     }
     if candidate.impact.added_deck_size > 0 {
@@ -205,6 +230,13 @@ fn add_candidate_impact_deltas(
             .notes
             .push("no explicit positive ledger delta".to_string());
     }
+}
+
+fn formation_needs_include(
+    context: &CardRewardDecisionContextV1,
+    need: StrategyDeckFormationNeedV1,
+) -> bool {
+    context.strategy.formation_summary().needs.contains(&need)
 }
 
 fn add_candidate_facts_deltas(
