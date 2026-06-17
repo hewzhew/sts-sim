@@ -290,13 +290,12 @@ fn branch_experiment_executes_shop_combo_purchase_branch() {
         .expect("shop combo choice");
 
     assert!(combo_choice.command.contains(" && "));
-    assert_eq!(
-        combo_branch.summary.gold, 351,
-        "high-pressure combo branch should spend the relic, card, and potion costs"
-    );
-    assert_eq!(
-        combo_branch.summary.boundary_title, "Shop",
-        "combo purchase should keep high-pressure shop available if more conversion remains"
+    assert!(combo_choice.command.contains("buy relic 0"));
+    assert!(combo_choice.command.contains("buy card 0"));
+    assert!(combo_choice.command.contains("buy potion 0"));
+    assert!(
+        combo_choice.effect_label.contains("auto leave shop"),
+        "empty post-combo shop should be closed by compiler-level executable plan check"
     );
 }
 

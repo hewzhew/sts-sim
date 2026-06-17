@@ -10,7 +10,9 @@ mod types;
 #[cfg(test)]
 mod tests;
 
-pub use compiler::compile_shop_decision_v1;
+pub use compiler::{
+    compile_shop_decision_v1, compiled_shop_decision_has_executable_conversion_branch_v1,
+};
 pub use conversion::{
     build_shop_need_profile_v1, shop_card_conversion_priority_v1, shop_conversion_pressure_v1,
     shop_potion_conversion_priority_for_v1, shop_potion_conversion_priority_v1,

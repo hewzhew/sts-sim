@@ -61,6 +61,14 @@ pub fn compile_shop_decision_v1(
     }
 }
 
+pub fn compiled_shop_decision_has_executable_conversion_branch_v1(
+    decision: &CompiledShopDecisionV1,
+) -> bool {
+    std::iter::once(&decision.selected_plan)
+        .chain(decision.alternatives.iter())
+        .any(shop_plan_has_conversion_step_v1)
+}
+
 fn select_evaluated_shop_plan_v1(
     candidates: &[ShopPlanCandidateV1],
     mode: ShopCompileModeV1,
@@ -277,6 +285,18 @@ fn plan_has_leave_shop_step_v1(candidate: &ShopPlanCandidateV1) -> bool {
         .steps
         .iter()
         .any(|step| matches!(step, ShopPlanStepV1::LeaveShop))
+}
+
+fn shop_plan_has_conversion_step_v1(plan: &ShopPlanV1) -> bool {
+    plan.steps.iter().any(|step| {
+        matches!(
+            step,
+            ShopPlanStepV1::BuyCard { .. }
+                | ShopPlanStepV1::BuyRelic { .. }
+                | ShopPlanStepV1::BuyPotion { .. }
+                | ShopPlanStepV1::RemoveCard { .. }
+        )
+    })
 }
 
 fn enumerate_single_action_plan_candidates_v1(

@@ -8,7 +8,11 @@ use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyFormationSummaryV2,
 };
 use crate::ai::opening_hand_target_plan_v1::opening_hand_target_debt_tags_v1;
-use crate::ai::shop_policy_v1::shop_conversion_pressure_v1;
+use crate::ai::shop_policy_v1::{
+    build_shop_decision_context_v1, compile_shop_decision_v1,
+    compiled_shop_decision_has_executable_conversion_branch_v1, ShopCompileModeV1,
+    ShopPolicyConfigV1,
+};
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::relics::RelicId;
 use crate::eval::branch_experiment_boundary::{
@@ -895,7 +899,16 @@ fn shop_should_auto_leave_after_purchase(session: &RunControlSession) -> bool {
     let EngineState::Shop(shop) = &session.engine_state else {
         return false;
     };
-    shop.pending_reward_overlay.is_none() && !shop_conversion_pressure_v1(&session.run_state, shop)
+    if shop.pending_reward_overlay.is_some() {
+        return false;
+    }
+    let context = build_shop_decision_context_v1(&session.run_state, shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 4 },
+    );
+    !compiled_shop_decision_has_executable_conversion_branch_v1(&compiled)
 }
 
 #[derive(Clone, Debug)]
