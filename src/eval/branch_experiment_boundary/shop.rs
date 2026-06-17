@@ -41,27 +41,56 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
     );
     let mut options = Vec::new();
     let mut seen_commands = std::collections::BTreeSet::<String>::new();
-    for plan in &compiled.alternatives {
-        let evaluation = compiled
-            .candidate_plans
-            .iter()
-            .find(|candidate| candidate.plan.plan_id == plan.plan_id)
-            .map(|candidate| &candidate.evaluation);
-        if let Some(option) = shop_branch_option_from_plan(plan, evaluation) {
-            if seen_commands.insert(option.command.clone()) {
-                options.push(option);
+    let mut represented_effects = std::collections::BTreeSet::<String>::new();
+
+    let selected_evaluation = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id)
+        .map(|candidate| &candidate.evaluation);
+    if let Some(option) = shop_branch_option_from_plan(&compiled.selected_plan, selected_evaluation)
+    {
+        seen_commands.insert(option.command.clone());
+        represented_effects.insert(option.effect_kind.clone());
+        options.push(option);
+    }
+
+    for prefer_new_effect in [true, false] {
+        for plan in &compiled.alternatives {
+            if options.len() >= MAX_SHOP_PURCHASE_OPTIONS_PER_BRANCH {
+                break;
             }
+            let evaluation = compiled
+                .candidate_plans
+                .iter()
+                .find(|candidate| candidate.plan.plan_id == plan.plan_id)
+                .map(|candidate| &candidate.evaluation);
+            if let Some(option) = shop_branch_option_from_plan(plan, evaluation) {
+                let has_effect = represented_effects.contains(&option.effect_kind);
+                if prefer_new_effect && has_effect {
+                    continue;
+                }
+                if seen_commands.insert(option.command.clone()) {
+                    represented_effects.insert(option.effect_kind.clone());
+                    options.push(option);
+                }
+            }
+        }
+        if options.len() >= MAX_SHOP_PURCHASE_OPTIONS_PER_BRANCH {
+            break;
         }
     }
     if options.is_empty() {
-        let evaluation = compiled
-            .candidate_plans
-            .iter()
-            .find(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id)
-            .map(|candidate| &candidate.evaluation);
-        if let Some(option) = shop_branch_option_from_plan(&compiled.selected_plan, evaluation) {
-            options.push(option);
-        }
+        // Defensive fallback for stop-only compiler output. Ordinary executable
+        // shop decisions should already have inserted selected_plan above.
+        options.extend(compiled.alternatives.iter().filter_map(|plan| {
+            let evaluation = compiled
+                .candidate_plans
+                .iter()
+                .find(|candidate| candidate.plan.plan_id == plan.plan_id)
+                .map(|candidate| &candidate.evaluation);
+            shop_branch_option_from_plan(plan, evaluation)
+        }));
     }
     debug_assert!(
         !options.is_empty(),

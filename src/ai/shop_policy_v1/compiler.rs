@@ -107,11 +107,14 @@ fn select_branch_alternatives_with_effect_coverage_v1<'a>(
     let mut selected = Vec::new();
     let mut represented = std::collections::BTreeSet::<String>::new();
     for effect_kind in [
-        "shop_buy_combo",
-        "shop_buy_relic",
-        "shop_buy_card",
-        "shop_buy_potion",
+        // Keep primitive actions ahead of portfolio probes. Multi-step shop
+        // combos are useful coverage probes, but they should not consume the
+        // fanout budget before a cleanup or single-purchase branch can appear.
         "shop_purge",
+        "shop_buy_relic",
+        "shop_buy_potion",
+        "shop_buy_card",
+        "shop_buy_combo",
         "shop_leave",
     ] {
         if selected.len() >= max_plans {

@@ -634,7 +634,7 @@ fn current_boundary_caps_high_fanout_shop_purchase_choices() {
 }
 
 #[test]
-fn current_boundary_includes_combo_purchase_for_high_pressure_shop() {
+fn current_boundary_keeps_selected_shop_purge_ahead_of_combo_purchase() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.floor_num = 6;
     session.run_state.gold = 631;
@@ -668,16 +668,20 @@ fn current_boundary_includes_combo_purchase_for_high_pressure_shop() {
     session.engine_state = EngineState::Shop(shop);
 
     let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
-        .expect("high-pressure shop should expose a purchase portfolio");
+        .expect("high-pressure shop should expose a capped shop portfolio");
 
     assert_eq!(boundary.id, BranchBoundaryIdV1::Shop);
+    assert!(boundary.options.len() <= 4);
+    assert_eq!(
+        boundary.options[0].command, "purge 0",
+        "compiled selected plan should be the first shop branch option"
+    );
     assert!(
         boundary
             .options
             .iter()
-            .any(|option| option.effect_kind == "shop_buy_combo"
-                && option.command.contains(" && ")),
-        "high-pressure shops should expose compact multi-purchase portfolio branches"
+            .any(|option| option.effect_kind == "shop_purge"),
+        "selected purge should not be crowded out by portfolio coverage"
     );
 }
 
@@ -707,6 +711,7 @@ fn current_boundary_includes_three_purchase_combo_for_high_gold_shop_pressure() 
         can_buy: true,
         blocked_reason: None,
     });
+    shop.purge_available = false;
     session.engine_state = EngineState::Shop(shop);
 
     let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
@@ -754,6 +759,7 @@ fn current_boundary_includes_combo_purchase_for_capped_affordable_shop() {
         can_buy: true,
         blocked_reason: None,
     });
+    shop.purge_available = false;
     session.engine_state = EngineState::Shop(shop);
 
     let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)

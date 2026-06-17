@@ -198,6 +198,7 @@ fn branch_experiment_keeps_high_gold_shop_open_after_single_purchase() {
         can_buy: true,
         blocked_reason: None,
     });
+    shop.purge_available = false;
     session.engine_state = EngineState::Shop(shop);
 
     let report = run_branch_experiment_from_session(
@@ -260,6 +261,7 @@ fn branch_experiment_executes_shop_combo_purchase_branch() {
         can_buy: true,
         blocked_reason: None,
     });
+    shop.purge_available = false;
     session.engine_state = EngineState::Shop(shop);
 
     let report = run_branch_experiment_from_session(
@@ -305,6 +307,7 @@ fn branch_experiment_retains_shop_combo_purchase_under_branch_cap() {
     session.run_state.floor_num = 25;
     session.run_state.gold = 220;
     let mut shop = ShopState::new();
+    shop.purge_available = false;
     for card_id in [
         CardId::PommelStrike,
         CardId::TwinStrike,
@@ -1314,6 +1317,39 @@ fn branch_retention_reports_decision_signal_without_rank_consumption() {
     assert!(adjustment
         .reasons
         .contains(&"decision_signal_component_rank_hint:9000".to_string()));
+}
+
+#[test]
+fn branch_retention_consumes_only_unified_shop_plan_signal() {
+    let mut candidate = retention_candidate(0, BranchTrajectorySignatureV1::default());
+    candidate.rank_key = 1_000;
+    candidate.decision_signals = vec![
+        BranchExperimentChoiceDecisionSignalV1 {
+            source: "test_signal".to_string(),
+            verdict: "Allow".to_string(),
+            tier: 999,
+            score: 99_999,
+            confidence_milli: 1_000,
+            component_net_rank: 99_999,
+        },
+        BranchExperimentChoiceDecisionSignalV1 {
+            source: "shop_plan_evaluation_v1".to_string(),
+            verdict: "Allow".to_string(),
+            tier: 330,
+            score: 1_879,
+            confidence_milli: 820,
+            component_net_rank: 71,
+        },
+    ];
+
+    let adjustment = branch_retention_rank_adjustment_v1(&candidate);
+
+    assert_eq!(adjustment.decision_signal_adjustment, 100_070);
+    assert_eq!(adjustment.shop_plan_adjustment, 364);
+    assert_eq!(adjustment.effective_rank_key, 1_364);
+    assert!(adjustment
+        .reasons
+        .contains(&"shop_plan_rank_adjustment:364".to_string()));
 }
 
 #[test]
