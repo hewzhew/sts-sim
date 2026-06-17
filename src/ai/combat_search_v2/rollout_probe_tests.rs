@@ -400,6 +400,7 @@ fn score_with_survival(
         action_visible_mitigation: 0,
         action_debuff_setup: 0,
         action_progress_hint: 0,
+        action_access_gain: 0,
         action_reactive_safety: 0,
         pending_choice_fanout: 0,
         ordered_preference: 0,

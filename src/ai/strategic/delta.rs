@@ -168,6 +168,7 @@ fn positive_component_reason_pressure(reason: &str) -> PressureKind {
         "direct_strength_down_answer" => PressureKind::MissingJob(StrategicJob::EnemyStrengthDown),
         "mitigates_enemy_damage" => PressureKind::MissingJob(StrategicJob::Block),
         "improves_access_or_conversion" => PressureKind::MissingJob(StrategicJob::DrawEnergy),
+        "improves_exhaust_access" => PressureKind::MissingJob(StrategicJob::ExhaustAccess),
         "exhaust_engine_enabler" | "unlocks_fnp_engine" | "exhaust_payoff_has_generator" => {
             PressureKind::MissingJob(StrategicJob::ExhaustAccess)
         }

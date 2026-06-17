@@ -108,11 +108,14 @@ fn add_generic_components(
     {
         push_str(&mut report.positive_components, "mitigates_enemy_damage");
     }
-    if effective_access_or_conversion_component(context, profile) {
+    if effective_draw_energy_access_component(context, profile) {
         push_str(
             &mut report.positive_components,
             "improves_access_or_conversion",
         );
+    }
+    if effective_exhaust_access_component(context, profile) {
+        push_str(&mut report.positive_components, "improves_exhaust_access");
     }
     if profile
         .roles
@@ -432,9 +435,7 @@ fn component_roles(profile: &CardRewardSemanticProfileV1) -> Vec<CardComponentRo
     if profile.roles.iter().any(|role| {
         matches!(
             role,
-            CardRewardSemanticRoleV1::CardDraw
-                | CardRewardSemanticRoleV1::EnergySource
-                | CardRewardSemanticRoleV1::ExhaustGenerator
+            CardRewardSemanticRoleV1::CardDraw | CardRewardSemanticRoleV1::EnergySource
         )
     }) {
         push_role(&mut roles, CardComponentRoleV1::Lubricant);
@@ -496,21 +497,15 @@ fn fills_current_need(
                     .contains(&CardRewardSemanticRoleV1::PackagePayoff)
         }
         StrategyDeckFormationNeedV1::DrawEnergy | StrategyDeckFormationNeedV1::Consistency => {
-            effective_access_or_conversion_component(context, profile)
+            effective_draw_energy_access_component(context, profile)
         }
     })
 }
 
-fn effective_access_or_conversion_component(
+fn effective_draw_energy_access_component(
     context: &CardComponentMarginalContextV1,
     profile: &CardRewardSemanticProfileV1,
 ) -> bool {
-    if profile
-        .roles
-        .contains(&CardRewardSemanticRoleV1::ExhaustGenerator)
-    {
-        return true;
-    }
     if startup_energy_candidate_discounted_by_snecko_v1(&context.startup, profile.card) {
         return false;
     }
@@ -518,6 +513,21 @@ fn effective_access_or_conversion_component(
         || profile
             .roles
             .contains(&CardRewardSemanticRoleV1::EnergySource)
+}
+
+fn effective_exhaust_access_component(
+    context: &CardComponentMarginalContextV1,
+    profile: &CardRewardSemanticProfileV1,
+) -> bool {
+    if !profile
+        .roles
+        .contains(&CardRewardSemanticRoleV1::ExhaustGenerator)
+    {
+        return false;
+    }
+    context.startup.exhaust_payoff_count > 0
+        || context.startup.feel_no_pain_count > 0
+        || context.startup.exhaust_engine_count > 0
 }
 
 fn profile_is_minor_power(profile: &CardRewardSemanticProfileV1) -> bool {
@@ -683,6 +693,26 @@ mod tests {
         assert!(report
             .notes
             .contains(&"offering_energy_gain_is_less_reliable_under_snecko"));
+    }
+
+    #[test]
+    fn exhaust_generator_is_exhaust_access_not_draw_energy_lubricant() {
+        let mut context = context();
+        context.startup.exhaust_payoff_count = 1;
+        context.startup.exhaust_engine_count = 1;
+
+        let report = evaluate_card_component_marginal_value_v1(
+            &context,
+            &card_reward_semantic_profile_v1(&RewardCard::new(CardId::SeverSoul, 1)),
+        );
+
+        assert!(report
+            .positive_components
+            .contains(&"improves_exhaust_access"));
+        assert!(!report
+            .positive_components
+            .contains(&"improves_access_or_conversion"));
+        assert!(!report.roles.contains(&CardComponentRoleV1::Lubricant));
     }
 
     #[test]

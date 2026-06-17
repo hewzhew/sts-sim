@@ -22,6 +22,7 @@ pub(super) struct RolloutActionProbeScore {
     pub(super) action_visible_mitigation: i32,
     pub(super) action_debuff_setup: i32,
     pub(super) action_progress_hint: i32,
+    pub(super) action_access_gain: i32,
     pub(super) action_reactive_safety: i32,
     pub(super) pending_choice_fanout: i32,
     pub(super) ordered_preference: i32,
@@ -60,6 +61,7 @@ struct RolloutActionFactsProbeScore {
     visible_mitigation: i32,
     debuff_setup: i32,
     progress_hint: i32,
+    access_gain: i32,
     reactive_safety: i32,
 }
 
@@ -165,6 +167,7 @@ pub(super) fn probe_action(
         action_visible_mitigation: action_facts_score.visible_mitigation,
         action_debuff_setup: action_facts_score.debuff_setup,
         action_progress_hint: action_facts_score.progress_hint,
+        action_access_gain: action_facts_score.access_gain,
         action_reactive_safety: action_facts_score.reactive_safety,
         pending_choice_fanout: -(phase_profile.pending_choice.estimated_action_fanout as i32),
         ordered_preference: -(ordered_index as i32),
@@ -279,6 +282,12 @@ fn action_facts_probe_score(facts: &CombatSearchV2ActionFacts) -> RolloutActionF
             .target_progress_hint
             .max(facts.immediate.all_enemy_progress_hint)
             .saturating_add(facts.mechanics.reactive_enemy_damage),
+        access_gain: facts
+            .exact_one_step_delta
+            .hand_delta
+            .saturating_add(1)
+            .max(0)
+            .saturating_add(facts.exact_one_step_delta.energy_delta.max(0)),
         reactive_safety: -facts
             .mechanics
             .enemy_strength_gain
@@ -304,6 +313,7 @@ impl RolloutActionProbeScore {
             visible_mitigation: self.action_visible_mitigation,
             debuff_setup: self.action_debuff_setup,
             progress_hint: self.action_progress_hint,
+            access_gain: self.action_access_gain,
             reactive_safety: self.action_reactive_safety,
         }
     }
