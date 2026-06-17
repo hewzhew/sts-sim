@@ -1,6 +1,6 @@
 use super::evaluator::evaluate_shop_plan_candidate_v1;
 use super::policy::stop_reason;
-use super::portfolio::legacy_shop_portfolio_plans_v1;
+use super::portfolio::evaluated_shop_portfolio_combo_plans_v1;
 use super::types::{
     CompiledShopDecisionV1, ShopCandidateEvidenceV1, ShopCompileModeV1, ShopDecisionContextV1,
     ShopDecisionSourceV1, ShopPlanCandidateRoleV1, ShopPlanCandidateV1, ShopPlanEvaluationV1,
@@ -16,18 +16,7 @@ pub fn compile_shop_decision_v1(
     let strategic_trace = crate::ai::strategic::strategic_trace_for_shop(context);
     let mut candidate_plans = enumerate_single_action_plan_candidates_v1(context);
     candidate_plans.push(stop_candidate_plan_v1(stop_reason(context)));
-    if let ShopCompileModeV1::BranchTopK { max_plans } = mode {
-        candidate_plans.extend(
-            legacy_shop_portfolio_plans_v1(context, max_plans)
-                .into_iter()
-                .map(|plan| ShopPlanCandidateV1 {
-                    plan,
-                    role: ShopPlanCandidateRoleV1::PortfolioAlternative,
-                    evaluation: ShopPlanEvaluationV1::pending(),
-                }),
-        );
-    }
-    let candidate_plans = candidate_plans
+    let mut candidate_plans = candidate_plans
         .into_iter()
         .map(|mut candidate| {
             candidate.evaluation =
@@ -35,6 +24,26 @@ pub fn compile_shop_decision_v1(
             candidate
         })
         .collect::<Vec<_>>();
+    if let ShopCompileModeV1::BranchTopK { max_plans } = mode {
+        let portfolio_candidates =
+            evaluated_shop_portfolio_combo_plans_v1(context, &candidate_plans, max_plans)
+                .into_iter()
+                .map(|plan| {
+                    let mut candidate = ShopPlanCandidateV1 {
+                        plan,
+                        role: ShopPlanCandidateRoleV1::PortfolioAlternative,
+                        evaluation: ShopPlanEvaluationV1::pending(),
+                    };
+                    candidate.evaluation = evaluate_shop_plan_candidate_v1(
+                        context,
+                        config,
+                        &strategic_trace,
+                        &candidate,
+                    );
+                    candidate
+                });
+        candidate_plans.extend(portfolio_candidates);
+    }
     let selected_plan = select_evaluated_shop_plan_v1(&candidate_plans, mode);
     let alternatives = match mode {
         ShopCompileModeV1::ExecuteOne => Vec::new(),

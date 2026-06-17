@@ -696,9 +696,7 @@ pub fn branch_retention_rank_adjustment_v1(
     }
     let shop_plan_adjustment = branch_shop_plan_rank_adjustment_v1(candidate);
     if shop_plan_adjustment != 0 {
-        reasons.push(format!(
-            "shop_plan_rank_adjustment:{shop_plan_adjustment}"
-        ));
+        reasons.push(format!("shop_plan_rank_adjustment:{shop_plan_adjustment}"));
     }
 
     let effective_rank_key = candidate
@@ -739,22 +737,14 @@ fn branch_shop_plan_rank_adjustment_v1(candidate: &BranchRetentionCandidateInput
     candidate
         .decision_signals
         .iter()
-        .filter(|signal| {
-            signal.source == "shop_plan_evaluation_v1" && signal.verdict == "Allow"
-        })
+        .filter(|signal| signal.source == "shop_plan_evaluation_v1" && signal.verdict == "Allow")
         .map(shop_plan_signal_rank_adjustment_v1)
         .sum::<i32>()
         .clamp(-500, 500)
 }
 
-fn shop_plan_signal_rank_adjustment_v1(
-    signal: &BranchExperimentChoiceDecisionSignalV1,
-) -> i32 {
-    let tier_bonus = signal
-        .tier
-        .saturating_sub(250)
-        .max(0)
-        .saturating_mul(2);
+fn shop_plan_signal_rank_adjustment_v1(signal: &BranchExperimentChoiceDecisionSignalV1) -> i32 {
+    let tier_bonus = signal.tier.saturating_sub(250).max(0).saturating_mul(2);
     let score_bonus = (signal.score.max(0) / 10).min(250);
     let component_bonus = (signal.component_net_rank.max(0) / 4).min(100);
     tier_bonus

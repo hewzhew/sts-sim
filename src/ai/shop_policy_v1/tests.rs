@@ -1130,7 +1130,7 @@ fn compiled_shop_branch_candidate_plan_ids_are_unique() {
 }
 
 #[test]
-fn compiled_shop_branch_portfolio_cannot_bypass_strategic_card_gate() {
+fn compiled_shop_branch_portfolio_excludes_blocked_single_action_candidates() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
     run_state.floor_num = 18;
@@ -1165,27 +1165,15 @@ fn compiled_shop_branch_portfolio_cannot_bypass_strategic_card_gate() {
                 && candidate.plan.candidate_ids == vec!["shop:card-0".to_string()]
         })
         .expect("single-action card candidate should exist");
-    let portfolio = compiled
-        .candidate_plans
-        .iter()
-        .find(|candidate| {
-            candidate.role
-                == crate::ai::shop_policy_v1::ShopPlanCandidateRoleV1::PortfolioAlternative
-                && candidate.plan.candidate_ids == vec!["shop:card-0".to_string()]
-        })
-        .expect("portfolio card candidate should exist");
+    let blocked_portfolio = compiled.candidate_plans.iter().find(|candidate| {
+        candidate.role == crate::ai::shop_policy_v1::ShopPlanCandidateRoleV1::PortfolioAlternative
+            && candidate.plan.candidate_ids == vec!["shop:card-0".to_string()]
+    });
 
     assert_eq!(single.evaluation.verdict, ShopPlanVerdictV1::Block);
-    assert_eq!(portfolio.evaluation.verdict, ShopPlanVerdictV1::Block);
-    assert_ne!(single.plan.plan_id, portfolio.plan.plan_id);
     assert!(
-        portfolio
-            .evaluation
-            .reasons
-            .iter()
-            .any(|reason| reason.contains("strategic trace blocks")),
-        "portfolio alternatives must reuse the same strategic card gate, got {:?}",
-        portfolio.evaluation.reasons
+        blocked_portfolio.is_none(),
+        "portfolio alternatives are generated from evaluated Allow single-action candidates only"
     );
 }
 

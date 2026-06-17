@@ -1,101 +1,39 @@
-use crate::ai::noncombat_strategy_v1::StrategyPlanSupportV1;
-
-use super::compiler::single_candidate_plan_v1;
 use super::types::{
-    ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPlanKindV1, ShopPlanSourceV1, ShopPlanV1,
-    ShopPolicyClassV1, ShopPurchaseTargetV1,
+    ShopDecisionContextV1, ShopPlanCandidateRoleV1, ShopPlanCandidateV1, ShopPlanKindV1,
+    ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
 };
 
-pub(super) fn legacy_shop_portfolio_plans_v1(
+pub(super) fn evaluated_shop_portfolio_combo_plans_v1(
     context: &ShopDecisionContextV1,
+    evaluated_candidates: &[ShopPlanCandidateV1],
     max_plans: usize,
 ) -> Vec<ShopPlanV1> {
     if max_plans == 0 {
         return Vec::new();
     }
 
-    let mut options = context
-        .candidates
+    let options = evaluated_candidates
         .iter()
-        .filter_map(scored_shop_plan_candidate_v1)
+        .filter_map(evaluated_combo_option_v1)
         .collect::<Vec<_>>();
-
-    if options.is_empty() {
-        return context
-            .candidates
-            .iter()
-            .find(|candidate| candidate.class == ShopPolicyClassV1::Leave)
-            .and_then(|candidate| {
-                single_candidate_plan_v1(candidate, ShopPlanSourceV1::PortfolioCandidate)
-            })
-            .into_iter()
-            .collect();
+    if options.len() < 3 {
+        return Vec::new();
     }
 
-    options.sort_by(|left, right| {
-        right
-            .score
-            .cmp(&left.score)
-            .then_with(|| left.plan.plan_id.cmp(&right.plan.plan_id))
-    });
-
-    let combo_pressure = options.len() >= 3
-        && (options.len() > max_plans || (context.need.gold >= 300 && context.conversion_pressure));
-    let combo = combo_pressure
-        .then(|| best_shop_combo_plan_v1(&options, context.need.gold))
-        .flatten();
-    if options.len() <= max_plans && combo.is_none() {
-        return options.into_iter().map(|entry| entry.plan).collect();
+    let combo_pressure =
+        options.len() > max_plans || (context.need.gold >= 300 && context.conversion_pressure);
+    if !combo_pressure {
+        return Vec::new();
     }
 
-    let mut selected = Vec::<ShopPlanV1>::new();
-    let mut represented = std::collections::BTreeSet::<String>::new();
-    if let Some(combo) = combo {
-        represented.insert(combo.plan.plan_id.clone());
-        selected.push(combo.plan);
-    }
-
-    for effect_kind in [
-        "shop_buy_relic",
-        "shop_buy_card",
-        "shop_buy_potion",
-        "shop_purge",
-    ] {
-        if selected.len() >= max_plans {
-            break;
-        }
-        if let Some(entry) = options.iter().find(|entry| {
-            entry.effect_kind == effect_kind && !represented.contains(&entry.plan.plan_id)
-        }) {
-            represented.insert(entry.plan.plan_id.clone());
-            selected.push(entry.plan.clone());
-        }
-    }
-    for entry in &options {
-        if selected.len() >= max_plans {
-            break;
-        }
-        if represented.insert(entry.plan.plan_id.clone()) {
-            selected.push(entry.plan.clone());
-        }
-    }
-
-    let suppressed_count = options.len().saturating_sub(represented.len());
-    if suppressed_count > 0 {
-        if let Some(plan) = selected.first_mut() {
-            plan.suppressed_count = suppressed_count;
-            plan.reason = format!(
-                "{} | shop portfolio cap suppressed {suppressed_count} affordable plan(s)",
-                plan.reason
-            );
-        }
-    }
-    selected
+    best_shop_combo_plan_v1(&options, context.need.gold)
+        .map(|combo| vec![combo.plan])
+        .unwrap_or_default()
 }
 
 #[derive(Clone, Debug)]
-struct ScoredShopPlanCandidateV1 {
-    score: i32,
+struct EvaluatedShopComboOptionV1 {
+    rank: i32,
     cost: i32,
     can_start_combo: bool,
     can_follow_combo: bool,
@@ -103,41 +41,40 @@ struct ScoredShopPlanCandidateV1 {
     plan: ShopPlanV1,
 }
 
-fn scored_shop_plan_candidate_v1(
-    candidate: &ShopCandidateEvidenceV1,
-) -> Option<ScoredShopPlanCandidateV1> {
-    if candidate.support_gate != StrategyPlanSupportV1::Strong {
+fn evaluated_combo_option_v1(
+    candidate: &ShopPlanCandidateV1,
+) -> Option<EvaluatedShopComboOptionV1> {
+    if candidate.role != ShopPlanCandidateRoleV1::SingleAction
+        || candidate.evaluation.verdict != ShopPlanVerdictV1::Allow
+        || candidate.plan.steps.len() != 1
+    {
         return None;
     }
-    let mut plan = single_candidate_plan_v1(candidate, ShopPlanSourceV1::PortfolioCandidate)?;
-    plan.plan_id = format!("legacy_portfolio:{}", candidate.candidate_id);
-    let (score, effect_kind, can_start_combo, can_follow_combo) = match candidate.class {
-        ShopPolicyClassV1::CursePurge => (1000, "shop_purge", false, false),
-        ShopPolicyClassV1::StarterStrikePurge => (760, "shop_purge", false, false),
-        ShopPolicyClassV1::StarterDefendPurge => (720, "shop_purge", false, false),
-        ShopPolicyClassV1::PurchaseOpportunity => {
-            let priority = candidate.purchase_priority.unwrap_or_default();
-            if priority <= 0 {
-                return None;
-            }
-            match candidate.purchase_target? {
-                ShopPurchaseTargetV1::Card { .. } => (priority, "shop_buy_card", true, true),
-                ShopPurchaseTargetV1::Relic { relic, .. } => (
-                    priority,
-                    "shop_buy_relic",
-                    shop_relic_purchase_keeps_shop_open(relic),
-                    false,
-                ),
-                ShopPurchaseTargetV1::Potion { .. } => (priority, "shop_buy_potion", true, true),
-            }
-        }
-        ShopPolicyClassV1::Leave => return None,
-        ShopPolicyClassV1::Unknown => return None,
+
+    let step = candidate.plan.steps.first()?;
+    let (effect_kind, can_start_combo, can_follow_combo) = match *step {
+        ShopPlanStepV1::BuyCard { .. } => ("shop_buy_card", true, true),
+        ShopPlanStepV1::BuyPotion { .. } => ("shop_buy_potion", true, true),
+        ShopPlanStepV1::BuyRelic { relic, .. } => (
+            "shop_buy_relic",
+            shop_relic_purchase_keeps_shop_open(relic),
+            false,
+        ),
+        ShopPlanStepV1::RemoveCard { .. } | ShopPlanStepV1::LeaveShop => return None,
     };
-    plan.legacy_priority = Some(score);
-    Some(ScoredShopPlanCandidateV1 {
-        score,
-        cost: candidate.gold_cost.unwrap_or_default(),
+
+    let mut plan = candidate.plan.clone();
+    plan.plan_id = format!("portfolio:{}", candidate.plan.plan_id);
+    plan.source = ShopPlanSourceV1::PortfolioCandidate;
+    plan.legacy_priority = None;
+    plan.reason = format!(
+        "evaluated shop portfolio option from {}",
+        candidate.plan.plan_id
+    );
+
+    Some(EvaluatedShopComboOptionV1 {
+        rank: evaluated_candidate_rank_v1(candidate),
+        cost: candidate.plan.total_gold_spent,
         can_start_combo,
         can_follow_combo,
         effect_kind,
@@ -145,11 +82,21 @@ fn scored_shop_plan_candidate_v1(
     })
 }
 
+fn evaluated_candidate_rank_v1(candidate: &ShopPlanCandidateV1) -> i32 {
+    let component_rank = (candidate.evaluation.component_score.net * 100.0).round() as i32;
+    candidate
+        .evaluation
+        .tier
+        .saturating_mul(1_000)
+        .saturating_add(candidate.evaluation.score.max(0))
+        .saturating_add(component_rank)
+}
+
 fn best_shop_combo_plan_v1(
-    options: &[ScoredShopPlanCandidateV1],
+    options: &[EvaluatedShopComboOptionV1],
     gold: i32,
-) -> Option<ScoredShopPlanCandidateV1> {
-    let mut best = None::<ScoredShopPlanCandidateV1>;
+) -> Option<EvaluatedShopComboOptionV1> {
+    let mut best = None::<EvaluatedShopComboOptionV1>;
     for first in options.iter().filter(|entry| entry.can_start_combo) {
         for second in options.iter().filter(|entry| {
             entry.can_follow_combo
@@ -162,7 +109,7 @@ fn best_shop_combo_plan_v1(
             let candidate = shop_combo_plan_v1(&[first, second]);
             if best
                 .as_ref()
-                .is_none_or(|current| candidate.score > current.score)
+                .is_none_or(|current| candidate.rank > current.rank)
             {
                 best = Some(candidate);
             }
@@ -193,7 +140,7 @@ fn best_shop_combo_plan_v1(
                     let candidate = shop_combo_plan_v1(&[first, second, third]);
                     if best
                         .as_ref()
-                        .is_none_or(|current| candidate.score > current.score)
+                        .is_none_or(|current| candidate.rank > current.rank)
                     {
                         best = Some(candidate);
                     }
@@ -204,10 +151,10 @@ fn best_shop_combo_plan_v1(
     best
 }
 
-fn shop_combo_plan_v1(entries: &[&ScoredShopPlanCandidateV1]) -> ScoredShopPlanCandidateV1 {
-    let score = entries
+fn shop_combo_plan_v1(entries: &[&EvaluatedShopComboOptionV1]) -> EvaluatedShopComboOptionV1 {
+    let rank = entries
         .iter()
-        .map(|entry| entry.score)
+        .map(|entry| entry.rank)
         .sum::<i32>()
         .saturating_add((entries.len() as i32).saturating_sub(1) * 100);
     let cost = entries.iter().map(|entry| entry.cost).sum::<i32>();
@@ -223,23 +170,23 @@ fn shop_combo_plan_v1(entries: &[&ScoredShopPlanCandidateV1]) -> ScoredShopPlanC
         candidate_ids.extend(entry.plan.candidate_ids.clone());
     }
     let plan = ShopPlanV1 {
-        plan_id: format!("legacy:combo:{}", candidate_ids.join("+")),
+        plan_id: format!("portfolio:combo:{}", candidate_ids.join("+")),
         label: label.clone(),
         kind: ShopPlanKindV1::Execute,
         steps,
         total_gold_spent: cost,
         candidate_ids,
         source: ShopPlanSourceV1::PortfolioCandidate,
-        legacy_priority: Some(score),
+        legacy_priority: None,
         legacy_confidence: None,
         suppressed_count: 0,
         reason: format!(
-            "legacy shop portfolio combo: {}",
+            "evaluated shop portfolio combo: {}",
             label.replace(" + ", " then ")
         ),
     };
-    ScoredShopPlanCandidateV1 {
-        score,
+    EvaluatedShopComboOptionV1 {
+        rank,
         cost,
         can_start_combo: false,
         can_follow_combo: false,
