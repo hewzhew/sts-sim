@@ -371,10 +371,15 @@ fn strategic_purchase_evaluation_v1(
     };
     let matches_boss_tax = strategic_decision_matches_boss_tax_v1(strategic_decision);
     if matches_boss_tax && tier > 0 {
-        // Directly paying an act-boss pressure should not lose to generic deck
-        // cleanup at the same shop. The specific boss/card semantics live in
-        // the strategic ledger; this layer only honors that ledger alignment.
-        tier = tier.max(340);
+        // Boss-pressure alignment should win ties inside the same strategic
+        // verdict class, but it must not let a ContextTake purchase outrank a
+        // StrongTake/MustTake plan from the same unified compiler.
+        tier = tier.max(match strategic_decision.verdict {
+            AcquisitionVerdict::MustTake => 335,
+            AcquisitionVerdict::StrongTake => 325,
+            AcquisitionVerdict::ContextTake => 310,
+            _ => tier,
+        });
     }
     let strategic_score = (strategic_decision.score.max(0.0) * 1000.0).round() as i32;
     let score = strategic_score
