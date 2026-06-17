@@ -19,8 +19,8 @@ pub use delta::{
     VerdictHint,
 };
 pub use ledger::{
-    ledger_from_snapshot, PressureHorizon, PressureItem, PressureKind, PressureLedger,
-    StrategicBossTax, StrategicDebt, StrategicJob,
+    add_startup_profile_pressure_to_ledger, ledger_from_snapshot, PressureHorizon, PressureItem,
+    PressureKind, PressureLedger, StrategicBossTax, StrategicDebt, StrategicJob,
 };
 pub use retention::{
     compact_branch_signature, compact_branch_signature_data, format_compact_branch_signature,

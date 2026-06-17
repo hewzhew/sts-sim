@@ -126,7 +126,8 @@ fn draw_cards(card_id: CardId, magic: i32) -> i32 {
 fn energy_gain(card_id: CardId, magic: i32) -> i32 {
     match card_id {
         CardId::Offering => 2,
-        CardId::SeeingRed | CardId::Bloodletting | CardId::Turbo => magic,
+        CardId::SeeingRed => 2,
+        CardId::Bloodletting | CardId::Turbo => magic,
         _ => 0,
     }
 }
@@ -259,5 +260,18 @@ fn unsupported_mechanics(card_id: CardId) -> Vec<String> {
         CardId::Exhume => vec!["exhaust-pile selection".to_string()],
         CardId::FiendFire => vec!["hand-size dependent exhaust damage".to_string()],
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::rewards::RewardCard;
+
+    #[test]
+    fn seeing_red_facts_report_fixed_energy_gain() {
+        let facts = card_facts(&RewardCard::new(CardId::SeeingRed, 0));
+
+        assert_eq!(facts.energy_gain, 2);
     }
 }

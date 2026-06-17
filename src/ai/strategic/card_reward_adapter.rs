@@ -1,8 +1,8 @@
 use super::{
-    compile_decision, ledger_from_snapshot, CandidateAction, CandidateDelta, CandidateRole,
-    LedgerDelta, OpportunityCost, PressureKind, StrategicBossTax, StrategicDebt,
-    StrategicDecisionSite, StrategicDeckFacts, StrategicJob, StrategicRouteFacts,
-    StrategicSnapshot, VerdictHint,
+    add_startup_profile_pressure_to_ledger, compile_decision, ledger_from_snapshot,
+    CandidateAction, CandidateDelta, CandidateRole, LedgerDelta, OpportunityCost, PressureKind,
+    StrategicBossTax, StrategicDebt, StrategicDecisionSite, StrategicDeckFacts, StrategicJob,
+    StrategicRouteFacts, StrategicSnapshot, VerdictHint,
 };
 use crate::ai::card_component_marginal_value_v1::{
     evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
@@ -11,9 +11,9 @@ use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1,
     CardRewardEvidenceGapV1, CardRewardSemanticRoleV1,
 };
-use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
 use crate::ai::deck_startup_profile_v1::{
-    startup_liability_for_candidate_v1, startup_support_for_candidate_v1,
+    startup_energy_candidate_discounted_by_snecko_v1, startup_liability_for_candidate_v1,
+    startup_support_for_candidate_v1,
 };
 use crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1;
 use crate::content::monsters::factory::EncounterId;
@@ -23,7 +23,8 @@ pub fn strategic_trace_for_card_reward(
     context: &CardRewardDecisionContextV1,
 ) -> super::StrategicDecisionTrace {
     let snapshot = snapshot_from_card_reward_context(context);
-    let ledger = ledger_from_snapshot(&snapshot);
+    let mut ledger = ledger_from_snapshot(&snapshot);
+    add_startup_profile_pressure_to_ledger(&mut ledger, &context.startup);
     let mut deltas = context
         .candidates
         .iter()
@@ -192,7 +193,12 @@ fn add_candidate_impact_deltas(
         }
     }
     if candidate.impact.draw_delta > 0 || candidate.impact.energy_delta > 0 {
-        if formation_needs_include(context, StrategyDeckFormationNeedV1::DrawEnergy)
+        if startup_energy_candidate_discounted_by_snecko_v1(&context.startup, candidate.card) {
+            delta.notes.push(format!(
+                "draw_energy_delta_discounted_by_snecko draw={} energy={}",
+                candidate.impact.draw_delta, candidate.impact.energy_delta
+            ));
+        } else if formation_needs_include(context, StrategyDeckFormationNeedV1::DrawEnergy)
             || formation_needs_include(context, StrategyDeckFormationNeedV1::Consistency)
         {
             delta.positive.push(LedgerDelta {
@@ -474,18 +480,7 @@ fn component_context_from_card_reward_context(
         block_jobs: context.deck.skills as usize,
         same_card_count,
         formation_needs: context.strategy.formation_summary().needs,
-        startup: DeckStartupProfileV1 {
-            feel_no_pain_count: context.deck.exhaust_payoffs,
-            exhaust_engine_count: context.deck.exhaust_generators,
-            strong_draw_count: context.deck.draw_cards,
-            persistent_strength_source_count: context.deck.strength_sources,
-            temporary_strength_burst_count: context.deck.temporary_strength_bursts,
-            strength_converter_count: context.deck.strength_converters,
-            convertible_strength_source_count: context.deck.convertible_strength_sources,
-            self_damage_source_count: 0,
-            strength_payoff_count: context.deck.strength_payoffs,
-            ..Default::default()
-        },
+        startup: context.startup.clone(),
     }
 }
 

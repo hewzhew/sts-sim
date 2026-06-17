@@ -261,10 +261,11 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
         session.run_state.boss_key
     ));
     lines.push(format!(
-        "context: candidates={} deck_size={} startup_strong_draw={} has_singing_bowl={}",
+        "context: candidates={} deck_size={} startup_strong_draw={}->{} has_singing_bowl={}",
         context.candidates.len(),
         context.deck.deck_size,
         context.startup.strong_draw_count,
+        context.startup.effective_strong_draw_count,
         context.has_singing_bowl
     ));
     lines.push("candidate evidence:".to_string());

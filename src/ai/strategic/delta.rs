@@ -207,6 +207,9 @@ fn negative_component_reason_pressure(reason: &str) -> PressureKind {
         | "block_payoff_without_block_engine" => {
             PressureKind::DeckDebt(StrategicDebt::PayoffWithoutEnabler)
         }
+        "snecko_random_cost_discounts_energy_startup" => {
+            PressureKind::DeckDebt(StrategicDebt::SetupDebt)
+        }
         "status_payoff_low_trigger_or_access"
         | "plain_block_redundancy"
         | "hp_loss_payoff_relies_on_accidental_damage" => {

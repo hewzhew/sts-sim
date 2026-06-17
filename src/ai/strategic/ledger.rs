@@ -1,4 +1,5 @@
 use super::StrategicSnapshot;
+use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -345,4 +346,50 @@ pub fn ledger_from_snapshot(snapshot: &StrategicSnapshot) -> PressureLedger {
     }
 
     ledger
+}
+
+pub fn add_startup_profile_pressure_to_ledger(
+    ledger: &mut PressureLedger,
+    startup: &DeckStartupProfileV1,
+) {
+    if startup.has_snecko_eye && startup.has_snecko_low_cost_volatility {
+        ledger.push(
+            "deck_debt:snecko_low_cost_volatility",
+            PressureKind::DeckDebt(StrategicDebt::SetupDebt),
+            PressureHorizon::VisibleRoute,
+            (0.40 + startup.snecko_random_cost_debt as f32 * 0.15).clamp(0.40, 0.75),
+            0.70,
+            vec![
+                "Snecko Eye randomizes card costs; low-cost decks lose startup reliability"
+                    .to_string(),
+                format!(
+                    "low_cost_cards={} high_cost_cards={} random_cost_debt={}",
+                    startup.low_cost_card_count,
+                    startup.high_cost_card_count,
+                    startup.snecko_random_cost_debt
+                ),
+            ],
+        );
+    }
+
+    if startup.has_snecko_offering_reliability_debt {
+        ledger.push(
+            "deck_debt:snecko_offering_reliability",
+            PressureKind::DeckDebt(StrategicDebt::SetupDebt),
+            PressureHorizon::VisibleRoute,
+            0.55,
+            0.70,
+            vec![
+                "Offering draw/energy is less reliable when Snecko randomizes follow-up costs"
+                    .to_string(),
+                format!(
+                    "raw_setup_payment={} effective_setup_payment={} raw_strong_draw={} effective_strong_draw={}",
+                    startup.setup_payment,
+                    startup.effective_setup_payment,
+                    startup.strong_draw_count,
+                    startup.effective_strong_draw_count
+                ),
+            ],
+        );
+    }
 }

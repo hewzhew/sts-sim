@@ -1,7 +1,8 @@
 use super::{
-    compile_decision, ledger_from_snapshot, CandidateAction, CandidateDelta, CandidateRole,
-    LedgerDelta, OpportunityCost, PressureHorizon, PressureKind, PressureLedger, StrategicDebt,
-    StrategicDecisionSite, StrategicDeckFacts, StrategicJob, StrategicSnapshot, VerdictHint,
+    add_startup_profile_pressure_to_ledger, compile_decision, ledger_from_snapshot,
+    CandidateAction, CandidateDelta, CandidateRole, LedgerDelta, OpportunityCost, PressureHorizon,
+    PressureKind, PressureLedger, StrategicDebt, StrategicDecisionSite, StrategicDeckFacts,
+    StrategicJob, StrategicSnapshot, VerdictHint,
 };
 use crate::ai::card_component_marginal_value_v1::{
     evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
@@ -12,6 +13,7 @@ use crate::ai::card_reward_policy_v1::{
 use crate::ai::decision_tags_v1::{
     strings_have_tag, TAG_COLLECTOR_ANSWER, TAG_ENGINE_CLOSURE, TAG_STARTUP_ACCESS,
 };
+use crate::ai::deck_startup_profile_v1::startup_energy_candidate_discounted_by_snecko_v1;
 use crate::ai::shop_policy_v1::{
     ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPolicyClassV1, ShopPurchaseTargetV1,
 };
@@ -21,6 +23,7 @@ pub fn strategic_trace_for_shop(context: &ShopDecisionContextV1) -> super::Strat
     let snapshot = snapshot_from_shop_context(context);
     let mut ledger = ledger_from_snapshot(&snapshot);
     add_shop_upgrade_pressure_to_ledger(context, &mut ledger);
+    add_startup_profile_pressure_to_ledger(&mut ledger, &context.startup);
     let deltas = context
         .candidates
         .iter()
@@ -244,11 +247,12 @@ fn add_shop_card_purchase_deltas(
         });
     }
 
-    add_default_shop_card_semantic_deltas(candidate, delta);
+    add_default_shop_card_semantic_deltas(context, candidate, delta);
     add_shop_card_component_deltas(context, candidate, delta);
 }
 
 fn add_default_shop_card_semantic_deltas(
+    context: &ShopDecisionContextV1,
     candidate: &ShopCandidateEvidenceV1,
     delta: &mut CandidateDelta,
 ) {
@@ -288,14 +292,20 @@ fn add_default_shop_card_semantic_deltas(
             .roles
             .contains(&CardRewardSemanticRoleV1::EnergySource)
     {
-        if delta.role == CandidateRole::ResourceConversion {
-            delta.role = CandidateRole::Lubricant;
+        if startup_energy_candidate_discounted_by_snecko_v1(&context.startup, card) {
+            delta
+                .notes
+                .push("shop_card_draw_energy_discounted_by_snecko".to_string());
+        } else {
+            if delta.role == CandidateRole::ResourceConversion {
+                delta.role = CandidateRole::Lubricant;
+            }
+            delta.positive.push(LedgerDelta {
+                kind: PressureKind::MissingJob(StrategicJob::DrawEnergy),
+                amount: SHOP_CARD_DEFAULT_JOB_SIGNAL,
+                reason: "shop_card_adds_draw_or_energy".to_string(),
+            });
         }
-        delta.positive.push(LedgerDelta {
-            kind: PressureKind::MissingJob(StrategicJob::DrawEnergy),
-            amount: SHOP_CARD_DEFAULT_JOB_SIGNAL,
-            reason: "shop_card_adds_draw_or_energy".to_string(),
-        });
     }
     if profile
         .roles

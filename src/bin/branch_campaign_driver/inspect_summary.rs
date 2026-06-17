@@ -219,13 +219,17 @@ fn render_session_details(
     ));
     let liabilities = startup_liability_labels(&startup);
     lines.push(format!(
-        "startup: setup_debt={} payment={} strong_draw={} exhaust={} strength_src={} strength_payoff={} liabilities=[{}]",
+        "startup: setup_debt={} payment={}->{} strong_draw={}->{} exhaust={} strength_src={} strength_payoff={} snecko_low/high={}/{} liabilities=[{}]",
         startup.setup_debt,
         startup.setup_payment,
+        startup.effective_setup_payment,
         startup.strong_draw_count,
+        startup.effective_strong_draw_count,
         startup.exhaust_engine_count,
         startup.persistent_strength_source_count,
         startup.strength_payoff_count,
+        startup.low_cost_card_count,
+        startup.high_cost_card_count,
         if liabilities.is_empty() { "-".to_string() } else { liabilities.join(",") }
     ));
     lines.push(format!(
@@ -340,6 +344,12 @@ fn startup_liability_labels(
     }
     if startup.has_pyramid_unupgraded_apparition {
         labels.push("pyramid_unupgraded_apparition");
+    }
+    if startup.has_snecko_low_cost_volatility {
+        labels.push("snecko_low_cost_volatility");
+    }
+    if startup.has_snecko_offering_reliability_debt {
+        labels.push("snecko_offering_reliability");
     }
     labels
 }

@@ -1,6 +1,8 @@
 use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
 use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
-use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
+use crate::ai::deck_startup_profile_v1::{
+    startup_energy_candidate_discounted_by_snecko_v1, DeckStartupProfileV1,
+};
 use crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1;
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
@@ -106,14 +108,7 @@ fn add_generic_components(
     {
         push_str(&mut report.positive_components, "mitigates_enemy_damage");
     }
-    if profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
-        || profile
-            .roles
-            .contains(&CardRewardSemanticRoleV1::EnergySource)
-        || profile
-            .roles
-            .contains(&CardRewardSemanticRoleV1::ExhaustGenerator)
-    {
+    if effective_access_or_conversion_component(context, profile) {
         push_str(
             &mut report.positive_components,
             "improves_access_or_conversion",
@@ -160,6 +155,25 @@ fn add_card_specific_components(
     report: &mut CardComponentMarginalReportV1,
 ) {
     match card {
+        CardId::Offering | CardId::SeeingRed | CardId::Bloodletting
+            if startup_energy_candidate_discounted_by_snecko_v1(&context.startup, card) =>
+        {
+            push_str(
+                &mut report.debts,
+                "snecko_random_cost_discounts_energy_startup",
+            );
+            if card == CardId::Offering {
+                push_str(
+                    &mut report.notes,
+                    "offering_energy_gain_is_less_reliable_under_snecko",
+                );
+            } else {
+                push_str(
+                    &mut report.notes,
+                    "energy_gain_is_less_reliable_under_snecko",
+                );
+            }
+        }
         CardId::Disarm => {
             push_str(
                 &mut report.positive_components,
@@ -482,15 +496,28 @@ fn fills_current_need(
                     .contains(&CardRewardSemanticRoleV1::PackagePayoff)
         }
         StrategyDeckFormationNeedV1::DrawEnergy | StrategyDeckFormationNeedV1::Consistency => {
-            profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
-                || profile
-                    .roles
-                    .contains(&CardRewardSemanticRoleV1::EnergySource)
-                || profile
-                    .roles
-                    .contains(&CardRewardSemanticRoleV1::ExhaustGenerator)
+            effective_access_or_conversion_component(context, profile)
         }
     })
+}
+
+fn effective_access_or_conversion_component(
+    context: &CardComponentMarginalContextV1,
+    profile: &CardRewardSemanticProfileV1,
+) -> bool {
+    if profile
+        .roles
+        .contains(&CardRewardSemanticRoleV1::ExhaustGenerator)
+    {
+        return true;
+    }
+    if startup_energy_candidate_discounted_by_snecko_v1(&context.startup, profile.card) {
+        return false;
+    }
+    profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
+        || profile
+            .roles
+            .contains(&CardRewardSemanticRoleV1::EnergySource)
 }
 
 fn profile_is_minor_power(profile: &CardRewardSemanticProfileV1) -> bool {
@@ -635,6 +662,27 @@ mod tests {
         assert!(report
             .notes
             .contains(&"duplicate_access_requires_turn_planning"));
+    }
+
+    #[test]
+    fn offering_under_snecko_low_cost_volatility_is_not_clean_startup_access() {
+        let mut context = context();
+        context.startup.has_snecko_eye = true;
+        context.startup.has_snecko_low_cost_volatility = true;
+        context.startup.snecko_random_cost_debt = 1;
+        context.startup.has_snecko_offering_reliability_debt = true;
+
+        let report = evaluate_card_component_marginal_value_v1(
+            &context,
+            &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Offering, 0)),
+        );
+
+        assert!(report
+            .debts
+            .contains(&"snecko_random_cost_discounts_energy_startup"));
+        assert!(report
+            .notes
+            .contains(&"offering_energy_gain_is_less_reliable_under_snecko"));
     }
 
     #[test]

@@ -3,14 +3,38 @@ use crate::ai::card_reward_policy_v1::{
     replay_card_reward_decision_v1, CardRewardPolicyConfigV1, PublicRewardDecisionPacketV1,
 };
 use crate::ai::strategic::{
-    compile_decision, ledger_from_snapshot, CandidateAction, CandidateDelta, LedgerDelta,
-    PressureHorizon, PressureKind, PressureLedger, StrategicDebt, StrategicDecisionSite,
-    StrategicDeckFacts, StrategicJob, StrategicSnapshot,
+    add_startup_profile_pressure_to_ledger, compile_decision, ledger_from_snapshot,
+    CandidateAction, CandidateDelta, LedgerDelta, PressureHorizon, PressureKind, PressureLedger,
+    StrategicDebt, StrategicDecisionSite, StrategicDeckFacts, StrategicJob, StrategicSnapshot,
 };
 use crate::content::cards::CardId;
 use crate::content::relics::{RelicId, RelicState};
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
+
+#[test]
+fn startup_profile_pressure_records_snecko_low_cost_volatility() {
+    let mut ledger = PressureLedger::default();
+    let startup = crate::ai::deck_startup_profile_v1::DeckStartupProfileV1 {
+        has_snecko_eye: true,
+        has_snecko_low_cost_volatility: true,
+        low_cost_card_count: 14,
+        high_cost_card_count: 3,
+        snecko_random_cost_debt: 2,
+        ..Default::default()
+    };
+
+    add_startup_profile_pressure_to_ledger(&mut ledger, &startup);
+
+    assert!(ledger.items.iter().any(|item| {
+        item.id == "deck_debt:snecko_low_cost_volatility"
+            && item.kind == PressureKind::DeckDebt(StrategicDebt::SetupDebt)
+            && item
+                .evidence
+                .iter()
+                .any(|line| line.contains("low_cost_cards=14"))
+    }));
+}
 
 #[test]
 fn card_reward_shadow_trace_covers_each_candidate_with_delta() {
