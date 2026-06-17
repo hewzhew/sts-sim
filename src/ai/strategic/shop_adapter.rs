@@ -265,12 +265,18 @@ fn add_default_shop_card_semantic_deltas(
             .roles
             .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
     {
-        delta.role = CandidateRole::Transition;
-        delta.positive.push(LedgerDelta {
-            kind: PressureKind::MissingJob(StrategicJob::Frontload),
-            amount: SHOP_CARD_DEFAULT_JOB_SIGNAL,
-            reason: "shop_card_adds_frontload".to_string(),
-        });
+        if shop_card_frontload_is_current_need(context) {
+            delta.role = CandidateRole::Transition;
+            delta.positive.push(LedgerDelta {
+                kind: PressureKind::MissingJob(StrategicJob::Frontload),
+                amount: SHOP_CARD_DEFAULT_JOB_SIGNAL,
+                reason: "shop_card_adds_frontload_current_need".to_string(),
+            });
+        } else {
+            delta
+                .evidence
+                .push("shop_card_frontload_not_current_need".to_string());
+        }
     }
     if profile.roles.contains(&CardRewardSemanticRoleV1::Block)
         || profile.roles.contains(&CardRewardSemanticRoleV1::Weak)
@@ -393,6 +399,20 @@ fn component_context_from_shop_context(
         formation_needs: context.strategy.formation_summary().needs,
         startup: context.startup.clone(),
     }
+}
+
+fn shop_card_frontload_is_current_need(context: &ShopDecisionContextV1) -> bool {
+    context
+        .strategy
+        .formation_summary()
+        .needs
+        .iter()
+        .any(|need| {
+            matches!(
+                need,
+                crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1::Frontload
+            )
+        })
 }
 
 fn candidate_has_evidence(candidate: &ShopCandidateEvidenceV1, tag: &str) -> bool {
