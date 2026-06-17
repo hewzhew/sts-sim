@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use super::card_reward::select_card_reward_branch_options_with_limit;
 use super::*;
 use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
+use crate::ai::event_policy_v1::{build_event_decision_context_v1, EventPolicyClassV1};
 use crate::content::cards::CardId;
 use crate::content::potions::{Potion, PotionId};
 use crate::content::relics::{RelicId, RelicState};
@@ -1319,11 +1320,14 @@ fn current_boundary_wraps_low_fanout_event_options() {
             .iter()
             .map(|option| (option.kind, option.command.as_str(), option.card))
             .collect::<Vec<_>>(),
-        vec![
-            ("event", "event 0", None),
-            ("event", "event 1", None),
-            ("event", "event 2", None),
-        ]
+        vec![("event", "event 0", None), ("event", "event 1", None)]
+    );
+    assert!(
+        boundary
+            .options
+            .iter()
+            .all(|option| option.effect_kind != "event_gain_curse"),
+        "Avoid-tier curse options should not enter branch campaign when safer alternatives exist"
     );
 }
 
@@ -1428,16 +1432,27 @@ fn current_boundary_classifies_gold_plus_curse_event_as_curse_debt() {
     session.run_state.event_state = Some(EventState::new(EventId::MindBloom));
     session.engine_state = EngineState::EventRoom;
 
-    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
-        .expect("Mind Bloom should be a branchable event");
-    let desire = boundary
-        .options
+    let event_options = crate::engine::event_handler::get_event_options(&session.run_state);
+    let context =
+        build_event_decision_context_v1(&session.run_state, EventId::MindBloom, event_options);
+    let desire = context
+        .candidates
         .iter()
-        .find(|option| option.label.contains("Normality"))
-        .expect("low-floor Mind Bloom Desire should be visible");
+        .find(|candidate| candidate.label.contains("Normality"))
+        .expect("low-floor Mind Bloom Desire should be classified by event policy");
 
-    assert_eq!(desire.effect_kind, "event_gain_curse");
-    assert!(desire.effect_key.contains("Normality"));
+    assert_eq!(desire.class, EventPolicyClassV1::CurseDebt);
+    assert!(desire.curse_count > 0);
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("Mind Bloom should still expose non-Avoid branch options");
+    assert!(
+        boundary
+            .options
+            .iter()
+            .all(|option| !option.label.contains("Normality")),
+        "Avoid-tier curse options should be classified but pruned from branch campaign when alternatives exist"
+    );
 }
 
 #[test]

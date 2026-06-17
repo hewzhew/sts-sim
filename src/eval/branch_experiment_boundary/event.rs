@@ -158,6 +158,7 @@ pub(crate) fn event_branch_options(
     }
     sort_all_direct_deck_mutation_options(&mut branch_options);
     sort_event_options_by_policy(&mut branch_options);
+    prune_avoidable_event_options_when_alternatives_exist(&mut branch_options);
     if let Some(policy_options) =
         event_policy_safe_exit_branch_options(session, &event_options, &branch_options)
     {
@@ -403,6 +404,29 @@ fn sort_event_options_by_policy(options: &mut [EventBranchOption]) {
         left.event_policy_order_key
             .cmp(&right.event_policy_order_key)
             .then_with(|| left.command.cmp(&right.command))
+    });
+}
+
+fn prune_avoidable_event_options_when_alternatives_exist(options: &mut Vec<EventBranchOption>) {
+    if options.len() <= 1
+        || !options
+            .iter()
+            .all(|option| option.event_policy_order_key.is_some())
+    {
+        return;
+    }
+    let has_non_avoid_option = options.iter().any(|option| {
+        option.event_policy_order_key.is_some_and(|(tier_rank, _)| {
+            tier_rank < event_candidate_tier_rank(EventCandidateTierV1::Avoid)
+        })
+    });
+    if !has_non_avoid_option {
+        return;
+    }
+    options.retain(|option| {
+        option.event_policy_order_key.is_none_or(|(tier_rank, _)| {
+            tier_rank < event_candidate_tier_rank(EventCandidateTierV1::Avoid)
+        })
     });
 }
 
