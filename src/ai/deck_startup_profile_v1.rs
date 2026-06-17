@@ -1,8 +1,9 @@
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 use crate::state::run::RunState;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DeckStartupProfileV1 {
     pub setup_debt: u8,
     pub setup_payment: u8,

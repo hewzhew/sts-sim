@@ -12,6 +12,9 @@ use crate::ai::card_reward_policy_v1::{
     CardRewardEvidenceGapV1, CardRewardSemanticRoleV1,
 };
 use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
+use crate::ai::deck_startup_profile_v1::{
+    startup_liability_for_candidate_v1, startup_support_for_candidate_v1,
+};
 use crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1;
 use crate::content::monsters::factory::EncounterId;
 use crate::state::rewards::RewardCard;
@@ -122,6 +125,7 @@ fn candidate_delta_from_card_reward(
     let mut delta = CandidateDelta::from_component_report(action, &component_report);
     add_candidate_impact_deltas(candidate, &mut delta);
     add_candidate_facts_deltas(candidate, &mut delta);
+    add_candidate_startup_deltas(context, candidate, &mut delta);
     add_candidate_boss_pressure_deltas(context, &profile, &mut delta);
     delta
 }
@@ -233,6 +237,110 @@ fn add_candidate_facts_deltas(
             amount: (candidate.facts.vulnerable as f32 / 5.0).clamp(0.12, 0.45),
             reason: "vulnerable_coverage_delta".to_string(),
         });
+    }
+}
+
+fn add_candidate_startup_deltas(
+    context: &CardRewardDecisionContextV1,
+    candidate: &CardRewardCandidateEvidenceV1,
+    delta: &mut CandidateDelta,
+) {
+    if let Some(label) =
+        startup_liability_for_candidate_v1(&context.startup, candidate.card, context.run.act)
+    {
+        delta.negative.push(LedgerDelta {
+            kind: startup_liability_kind(label),
+            amount: startup_liability_amount(label),
+            reason: label.to_string(),
+        });
+        delta.evidence.push(label.to_string());
+    }
+
+    let shape_delta = crate::ai::deck_shape_v1::deck_shape_candidate_delta_v1(
+        &context.deck_shape,
+        candidate.card,
+    );
+    for label in shape_delta.labels {
+        delta.negative.push(LedgerDelta {
+            kind: PressureKind::DeckDebt(StrategicDebt::CombatShapeRisk),
+            amount: 0.45,
+            reason: label.to_string(),
+        });
+        delta.evidence.push(label.to_string());
+    }
+
+    if let Some(label) = startup_support_for_candidate_v1(&context.startup, candidate.card) {
+        delta.positive.push(LedgerDelta {
+            kind: startup_support_kind(label),
+            amount: startup_support_amount(label),
+            reason: label.to_string(),
+        });
+        delta.evidence.push(label.to_string());
+    }
+}
+
+fn startup_liability_kind(label: &str) -> PressureKind {
+    match label {
+        "startup_rejects_status_generator_duplicate_without_digest"
+        | "startup_rejects_clash_playability_debt"
+        | "startup_rejects_havoc_duplicate_without_payoff"
+        | "startup_rejects_more_anger_without_digest"
+        | "startup_rejects_dual_wield_without_target_or_payment" => {
+            PressureKind::DeckDebt(StrategicDebt::CombatShapeRisk)
+        }
+        "startup_rejects_strength_payoff_without_strength"
+        | "startup_rejects_rupture_without_self_damage"
+        | "startup_rejects_corruption_duplicate_without_payoff"
+        | "startup_rejects_more_fnp_without_exhaust_engine" => {
+            PressureKind::DeckDebt(StrategicDebt::PayoffWithoutEnabler)
+        }
+        "startup_rejects_third_fnp_without_setup_payment" => {
+            PressureKind::DeckDebt(StrategicDebt::SetupDebt)
+        }
+        _ => PressureKind::DeckDebt(StrategicDebt::SetupDebt),
+    }
+}
+
+fn startup_liability_amount(label: &str) -> f32 {
+    match label {
+        "startup_rejects_corruption_duplicate_without_payoff"
+        | "startup_rejects_third_fnp_without_setup_payment" => 0.75,
+        "startup_rejects_status_generator_duplicate_without_digest"
+        | "startup_rejects_havoc_duplicate_without_payoff"
+        | "startup_rejects_more_anger_without_digest" => 0.65,
+        "startup_rejects_dual_wield_without_target_or_payment"
+        | "startup_rejects_strength_payoff_without_strength"
+        | "startup_rejects_rupture_without_self_damage"
+        | "startup_rejects_more_fnp_without_exhaust_engine" => 0.55,
+        _ => 0.45,
+    }
+}
+
+fn startup_support_kind(label: &str) -> PressureKind {
+    match label {
+        "startup_supports_setup_payment" => PressureKind::MissingJob(StrategicJob::DrawEnergy),
+        "startup_supports_fnp_exhaust_engine" => {
+            PressureKind::MissingJob(StrategicJob::ExhaustAccess)
+        }
+        "startup_supports_strength_source" | "startup_supports_conditional_strength_source" => {
+            PressureKind::MissingJob(StrategicJob::Scaling)
+        }
+        "startup_supports_rupture_self_damage_source" => {
+            PressureKind::DeckDebt(StrategicDebt::PayoffWithoutEnabler)
+        }
+        "startup_supports_upgrade_access" => PressureKind::UpgradeNeed,
+        _ => PressureKind::MissingJob(StrategicJob::Consistency),
+    }
+}
+
+fn startup_support_amount(label: &str) -> f32 {
+    match label {
+        "startup_supports_setup_payment" => 0.60,
+        "startup_supports_fnp_exhaust_engine" => 0.55,
+        "startup_supports_strength_source" | "startup_supports_conditional_strength_source" => 0.50,
+        "startup_supports_rupture_self_damage_source" => 0.45,
+        "startup_supports_upgrade_access" => 0.40,
+        _ => 0.30,
     }
 }
 

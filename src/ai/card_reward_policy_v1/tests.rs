@@ -2699,6 +2699,8 @@ fn context_for_run_with_route(
     crate::ai::card_reward_policy_v1::CardRewardDecisionContextV1 {
         run: super::profile::run_context(run_state),
         deck,
+        startup: crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state),
+        deck_shape: crate::ai::deck_shape_v1::deck_shape_profile_v1(run_state),
         route,
         strategy,
         has_singing_bowl: run_state

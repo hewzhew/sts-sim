@@ -15,6 +15,8 @@ pub fn build_card_reward_decision_context_v1(
     route_trace: Option<&crate::ai::route_planner_v1::RouteDecisionTraceV1>,
 ) -> CardRewardDecisionContextV1 {
     let deck = deck_profile(run_state);
+    let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
+    let deck_shape = crate::ai::deck_shape_v1::deck_shape_profile_v1(run_state);
     let route = route_evidence(route_trace);
     let strategy =
         crate::ai::noncombat_strategy_v1::build_run_strategy_snapshot_from_run_state_with_route_v2(
@@ -47,6 +49,8 @@ pub fn build_card_reward_decision_context_v1(
     CardRewardDecisionContextV1 {
         run: run_context(run_state),
         deck,
+        startup,
+        deck_shape,
         route,
         strategy,
         has_singing_bowl: run_state

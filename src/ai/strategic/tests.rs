@@ -99,6 +99,34 @@ fn card_reward_shadow_trace_records_component_debt() {
 }
 
 #[test]
+fn card_reward_shadow_trace_records_startup_and_shape_debt() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.add_card_to_deck(CardId::WildStrike);
+    let context = build_card_reward_decision_context_v1(
+        &run_state,
+        vec![RewardCard::new(CardId::WildStrike, 0)],
+        None,
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let wild_strike_delta = decision
+        .strategic_trace
+        .candidate_deltas
+        .iter()
+        .find(|delta| delta.action.candidate_id().contains("WildStrike"))
+        .expect("Wild Strike candidate should have a strategic delta");
+
+    assert!(wild_strike_delta.negative.iter().any(|delta| {
+        delta.reason == "startup_rejects_status_generator_duplicate_without_digest"
+            && delta.kind == PressureKind::DeckDebt(StrategicDebt::CombatShapeRisk)
+    }));
+    assert!(wild_strike_delta
+        .evidence
+        .contains(&"deck_shape_status_generator_duplicate_without_digest".to_string()));
+}
+
+#[test]
 fn card_component_strength_down_maps_to_enemy_strength_pressure() {
     let run_state = RunState::new(521, 0, false, "Ironclad");
     let context = build_card_reward_decision_context_v1(

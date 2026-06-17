@@ -44,6 +44,10 @@ pub struct CardRewardEstimatorInputsV1 {
 pub struct CardRewardDecisionContextV1 {
     pub run: CardRewardRunContextV1,
     pub deck: DeckProfileV1,
+    #[serde(default)]
+    pub startup: crate::ai::deck_startup_profile_v1::DeckStartupProfileV1,
+    #[serde(default)]
+    pub deck_shape: crate::ai::deck_shape_v1::DeckShapeProfileV1,
     pub route: Option<CardRewardRouteEvidenceV1>,
     pub strategy: CardRewardStrategySnapshotV2,
     pub has_singing_bowl: bool,

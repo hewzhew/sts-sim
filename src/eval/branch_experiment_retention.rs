@@ -770,17 +770,27 @@ fn branch_formation_need_rank_adjustment_v1(context: &BranchRetentionContextPack
 }
 
 fn branch_strategic_debt_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
+    const SOZU_POTION_LOCK_DEBT: i32 = -700;
+    const VELVET_CHOKER_ACTION_CAP_DEBT: i32 = -900;
+    const RUNIC_DOME_HIDDEN_INTENTS_DEBT: i32 = -800;
+    const BOTTLE_HIGH_OPENING_HAND_DEBT: i32 = -1_200;
+    const BOTTLE_SITUATIONAL_OPENING_HAND_DEBT: i32 = -800;
+    const BOTTLE_POWER_VS_AWAKENED_ONE_DEBT: i32 = -1_000;
+    const BOTTLE_TEMPORARY_STRENGTH_BURST_DEBT: i32 = -600;
+
     let curse_adjustment = -(candidate.curse_count as i32).saturating_mul(1_200);
     curse_adjustment
         + candidate
             .strategic_debt_tags
             .iter()
             .map(|tag| match tag.as_str() {
-                "relic_constraint:sozu_potion_lock" => -700,
-                "bottle_debt:high_opening_hand" => -1_200,
-                "bottle_debt:situational_opening_hand" => -800,
-                "bottle_debt:power_vs_awakened_one" => -1_000,
-                "bottle_debt:temporary_strength_burst" => -600,
+                "relic_constraint:sozu_potion_lock" => SOZU_POTION_LOCK_DEBT,
+                "relic_constraint:velvet_choker_action_cap" => VELVET_CHOKER_ACTION_CAP_DEBT,
+                "relic_constraint:runic_dome_hidden_intents" => RUNIC_DOME_HIDDEN_INTENTS_DEBT,
+                "bottle_debt:high_opening_hand" => BOTTLE_HIGH_OPENING_HAND_DEBT,
+                "bottle_debt:situational_opening_hand" => BOTTLE_SITUATIONAL_OPENING_HAND_DEBT,
+                "bottle_debt:power_vs_awakened_one" => BOTTLE_POWER_VS_AWAKENED_ONE_DEBT,
+                "bottle_debt:temporary_strength_burst" => BOTTLE_TEMPORARY_STRENGTH_BURST_DEBT,
                 _ => 0,
             })
             .sum::<i32>()

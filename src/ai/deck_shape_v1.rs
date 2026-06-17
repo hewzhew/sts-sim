@@ -1,8 +1,9 @@
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::relics::RelicId;
 use crate::state::run::RunState;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DeckShapeProfileV1 {
     pub exhaust_enabler_count: u8,
     pub exhaust_payoff_count: u8,
@@ -17,7 +18,7 @@ pub struct DeckShapeProfileV1 {
     pub risks: Vec<DeckShapeRiskV1>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum DeckShapeRiskV1 {
     NonstackingPowerDuplicateWithoutPayoff { card: CardId, copies: u8 },
     RandomExhaustSaturationWithoutPayoff { card: CardId, copies: u8 },
