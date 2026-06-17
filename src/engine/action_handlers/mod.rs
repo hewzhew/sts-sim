@@ -31,7 +31,7 @@ mod tests {
     use crate::content::powers::PowerId;
     use crate::content::relics::{RelicId, RelicState};
     use crate::runtime::action::Action;
-    use crate::runtime::combat::{Power, PowerPayload, StanceId};
+    use crate::runtime::combat::{CombatPhase, Power, PowerPayload, StanceId};
     use crate::test_support::blank_test_combat;
 
     #[test]
@@ -88,6 +88,66 @@ mod tests {
 
         execute_action(Action::DiscardPotion { slot: 1 }, &mut state);
         assert!(state.entities.potions[1].is_none());
+    }
+
+    #[test]
+    fn time_warp_trigger_resets_counter_ends_turn_and_grants_monster_strength() {
+        let mut state = blank_test_combat();
+        let mut eater =
+            crate::test_support::test_monster(crate::content::monsters::EnemyId::TimeEater);
+        eater.id = 1;
+        state.entities.monsters = vec![eater];
+        state.entities.power_db.insert(
+            1,
+            vec![Power {
+                power_type: PowerId::TimeWarp,
+                instance_id: None,
+                amount: 12,
+                extra_data: 0,
+                payload: PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+
+        execute_action(Action::TriggerTimeWarpEndTurn { owner: 1 }, &mut state);
+
+        assert_eq!(
+            crate::content::powers::store::power_amount(&state, 1, PowerId::TimeWarp),
+            0
+        );
+        assert!(state.turn.counters.early_end_turn_pending);
+        assert_eq!(
+            state.pop_next_action(),
+            Some(Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::Strength,
+                amount: 2,
+            })
+        );
+        execute_action(
+            Action::ApplyPower {
+                source: 1,
+                target: 1,
+                power_id: PowerId::Strength,
+                amount: 2,
+            },
+            &mut state,
+        );
+        execute_action(
+            Action::UseCardDone {
+                should_exhaust: false,
+                trigger_after_use_hooks: false,
+            },
+            &mut state,
+        );
+
+        assert_eq!(
+            crate::content::powers::store::power_amount(&state, 1, PowerId::Strength),
+            2
+        );
+        assert_eq!(state.turn.current_phase, CombatPhase::TurnTransition);
+        assert_eq!(state.pop_next_action(), Some(Action::EndTurnTrigger));
     }
 
     #[test]
