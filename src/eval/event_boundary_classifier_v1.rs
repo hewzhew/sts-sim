@@ -1,0 +1,99 @@
+use crate::state::events::{EventActionKind, EventEffect, EventOption, EventOptionTransition};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EventBoundaryClassV1 {
+    Disabled,
+    FlavorAdvance,
+    TerminalNoopLeave,
+    ForcedStateResolution,
+    FollowupSelection,
+    FollowupReward,
+    CombatStart,
+    RepeatableChoice,
+    StrategicChoice,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct EventBoundaryClassificationV1 {
+    pub(crate) class: EventBoundaryClassV1,
+}
+
+impl EventBoundaryClassificationV1 {
+    pub(crate) fn skips_branch_when_only_option(self) -> bool {
+        matches!(
+            self.class,
+            EventBoundaryClassV1::FlavorAdvance
+                | EventBoundaryClassV1::TerminalNoopLeave
+                | EventBoundaryClassV1::ForcedStateResolution
+        )
+    }
+
+    pub(crate) fn safe_single_auto_advance(self) -> bool {
+        self.skips_branch_when_only_option()
+    }
+
+    pub(crate) fn single_candidate_note(self) -> Option<&'static str> {
+        match self.class {
+            EventBoundaryClassV1::FlavorAdvance | EventBoundaryClassV1::TerminalNoopLeave => {
+                Some("routine")
+            }
+            EventBoundaryClassV1::ForcedStateResolution => Some("forced event resolution"),
+            _ => None,
+        }
+    }
+}
+
+pub(crate) fn classify_event_option_boundary_v1(
+    option: &EventOption,
+) -> EventBoundaryClassificationV1 {
+    let class = if option.ui.disabled {
+        EventBoundaryClassV1::Disabled
+    } else if starts_combat(option) {
+        EventBoundaryClassV1::CombatStart
+    } else {
+        match option.semantics.transition {
+            EventOptionTransition::OpenSelection(_) => EventBoundaryClassV1::FollowupSelection,
+            EventOptionTransition::OpenReward => EventBoundaryClassV1::FollowupReward,
+            EventOptionTransition::Complete if terminal_no_effect_leave(option) => {
+                EventBoundaryClassV1::TerminalNoopLeave
+            }
+            EventOptionTransition::AdvanceScreen | EventOptionTransition::Complete
+                if has_no_state_surface(option) && !option.semantics.repeatable =>
+            {
+                EventBoundaryClassV1::FlavorAdvance
+            }
+            EventOptionTransition::AdvanceScreen | EventOptionTransition::Complete
+                if matches!(option.semantics.action, EventActionKind::Continue)
+                    && !option.semantics.repeatable =>
+            {
+                EventBoundaryClassV1::ForcedStateResolution
+            }
+            _ if option.semantics.repeatable => EventBoundaryClassV1::RepeatableChoice,
+            _ => EventBoundaryClassV1::StrategicChoice,
+        }
+    };
+
+    EventBoundaryClassificationV1 { class }
+}
+
+fn starts_combat(option: &EventOption) -> bool {
+    matches!(
+        option.semantics.transition,
+        EventOptionTransition::StartCombat
+    ) || matches!(option.semantics.action, EventActionKind::Fight)
+        || option
+            .semantics
+            .effects
+            .iter()
+            .any(|effect| matches!(effect, EventEffect::StartCombat))
+}
+
+fn terminal_no_effect_leave(option: &EventOption) -> bool {
+    matches!(option.semantics.action, EventActionKind::Leave)
+        && has_no_state_surface(option)
+        && option.semantics.terminal
+}
+
+fn has_no_state_surface(option: &EventOption) -> bool {
+    option.semantics.effects.is_empty() && option.semantics.constraints.is_empty()
+}

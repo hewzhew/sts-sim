@@ -1531,6 +1531,20 @@ fn current_boundary_skips_single_flavor_event_advance() {
 }
 
 #[test]
+fn current_boundary_skips_single_forced_state_event_resolution() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut event_state = EventState::new(EventId::TheJoust);
+    event_state.current_screen = 3;
+    session.run_state.event_state = Some(event_state);
+    session.engine_state = EngineState::EventRoom;
+
+    assert!(
+        current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None).is_none(),
+        "single forced event resolutions should auto-advance, not become raw event branches"
+    );
+}
+
+#[test]
 fn current_boundary_allows_event_options_that_open_single_card_selection() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.event_state = Some(EventState::new(EventId::UpgradeShrine));

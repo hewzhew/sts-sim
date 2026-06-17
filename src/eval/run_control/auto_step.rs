@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use crate::eval::event_boundary_classifier_v1::classify_event_option_boundary_v1;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{ActiveCombat, ClientInput, EngineState, RunResult};
 
@@ -616,6 +617,12 @@ fn event_single_candidate_is_safe(
         event.id == crate::state::events::EventId::Neow && event.current_screen > 0
     }) {
         return false;
+    }
+    if let Ok(index) = candidate.id.parse::<usize>() {
+        let options = crate::engine::event_handler::get_event_options(&session.run_state);
+        if let Some(option) = options.get(index) {
+            return classify_event_option_boundary_v1(option).safe_single_auto_advance();
+        }
     }
     let Some(resolution) = candidate.resolution.as_ref() else {
         return candidate.note.as_deref() == Some("routine");

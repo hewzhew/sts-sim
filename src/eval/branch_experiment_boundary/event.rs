@@ -13,6 +13,7 @@ use crate::ai::event_policy_v1::{
 };
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::BranchExperimentChoiceDecisionSignalV1;
+use crate::eval::event_boundary_classifier_v1::classify_event_option_boundary_v1;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{
@@ -98,7 +99,9 @@ pub(crate) fn event_branch_options(
         return None;
     }
     let event_options = crate::engine::event_handler::get_event_options(&session.run_state);
-    if event_options.len() == 1 && single_no_branch_event_transition(&event_options[0]) {
+    if event_options.len() == 1
+        && classify_event_option_boundary_v1(&event_options[0]).skips_branch_when_only_option()
+    {
         return None;
     }
     let event_id = session.run_state.event_state.as_ref()?.id;
@@ -565,30 +568,6 @@ fn select_event_card_reward_branch_options(
         }
     }
     Some(selected_options)
-}
-
-fn terminal_no_effect_leave(option: &EventOption) -> bool {
-    matches!(option.semantics.action, EventActionKind::Leave)
-        && option.semantics.effects.is_empty()
-        && option.semantics.constraints.is_empty()
-        && option.semantics.terminal
-        && matches!(option.semantics.transition, EventOptionTransition::Complete)
-}
-
-fn single_no_branch_event_transition(option: &EventOption) -> bool {
-    if option.ui.disabled {
-        return false;
-    }
-    if terminal_no_effect_leave(option) {
-        return true;
-    }
-    option.semantics.effects.is_empty()
-        && option.semantics.constraints.is_empty()
-        && !option.semantics.repeatable
-        && matches!(
-            option.semantics.transition,
-            EventOptionTransition::AdvanceScreen | EventOptionTransition::Complete
-        )
 }
 
 fn event_option_specific_card(option: &EventOption) -> Option<CardId> {

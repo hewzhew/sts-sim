@@ -9,6 +9,7 @@ pub mod branch_experiment_trajectory;
 pub mod card_reward_value_loop;
 pub mod combat_capture;
 pub mod combat_search_v2;
+pub(crate) mod event_boundary_classifier_v1;
 pub mod fingerprint;
 pub mod neow_guided_prefix;
 pub mod observation_boundary;

@@ -1,5 +1,6 @@
 use crate::content::potions::get_potion_definition;
 use crate::content::relics::RelicId;
+use crate::eval::event_boundary_classifier_v1::classify_event_option_boundary_v1;
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState, PendingChoice, PileType};
@@ -79,13 +80,10 @@ fn event_option_note(option: &EventOption, option_count: usize) -> Option<String
             option.ui.disabled_reason.as_deref().unwrap_or("disabled")
         ));
     }
-    if option_count == 1
-        && matches!(
-            option.semantics.transition,
-            EventOptionTransition::AdvanceScreen | EventOptionTransition::Complete
-        )
-    {
-        return Some("routine".to_string());
+    if option_count == 1 {
+        if let Some(note) = classify_event_option_boundary_v1(option).single_candidate_note() {
+            return Some(note.to_string());
+        }
     }
     match option.semantics.transition {
         EventOptionTransition::OpenSelection(kind) => {
