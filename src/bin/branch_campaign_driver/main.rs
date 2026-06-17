@@ -13,7 +13,9 @@ use checkpoint_evidence::{
     render_checkpoint_deck_mutation_v1, render_checkpoint_route_evidence_v1,
     render_checkpoint_shop_evidence_v1,
 };
-use final_boss_combat::render_final_boss_combat_report_inspection_v1;
+use final_boss_combat::{
+    render_final_boss_combat_report_inspection_v1, render_last_auto_combat_checkpoint_inspection_v1,
+};
 use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_v1, render_branch_campaign_progress_event_v1,
     run_branch_campaign_from_report_with_checkpoint_and_progress_v1,
@@ -238,6 +240,12 @@ struct Args {
         help = "Run search-combat from the selected checkpoint session and print the result"
     )]
     inspect_search: bool,
+
+    #[arg(
+        long = "inspect-last-auto-combat",
+        help = "Print the last stored automated combat trajectory for the selected checkpoint session"
+    )]
+    inspect_last_auto_combat: bool,
 
     #[arg(
         long = "inspect-shop-evidence",
@@ -592,6 +600,17 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
         println!("{}", render_checkpoint_deck_mutation_v1(&session)?);
     } else if args.inspect_route_evidence {
         println!("{}", render_checkpoint_route_evidence_v1(&session)?);
+    } else if args.inspect_last_auto_combat {
+        print!(
+            "{}",
+            render_last_auto_combat_checkpoint_inspection_v1(
+                checkpoint.seed,
+                args.inspect_index,
+                match_count,
+                &session,
+                &commands,
+            )?
+        );
     } else if args.inspect_search {
         let options = inspect_search_options_from_args(args)?;
         let outcome = session.apply_command(RunControlCommand::SearchCombat(options))?;
@@ -1031,6 +1050,22 @@ mod tests {
             Some(PathBuf::from("latest.campaign.json"))
         );
         assert!(args.inspect_route_evidence);
+    }
+
+    #[test]
+    fn campaign_cli_accepts_checkpoint_last_auto_combat_inspection() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--inspect-last-auto-combat",
+        ]);
+
+        assert_eq!(
+            args.inspect_checkpoint,
+            Some(PathBuf::from("latest.checkpoint.json"))
+        );
+        assert!(args.inspect_last_auto_combat);
     }
 
     #[test]

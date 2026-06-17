@@ -1,4 +1,5 @@
 use sts_simulator::eval::branch_campaign::BranchCampaignReportV1;
+use sts_simulator::eval::run_control::CombatAutomationTrajectoryRecordV1;
 
 pub(super) fn render_final_boss_combat_report_inspection_v1(
     report: &BranchCampaignReportV1,
@@ -63,12 +64,81 @@ pub(super) fn render_final_boss_combat_report_inspection_v1(
             render_truncated_text(&branch.choice_labels.join(" -> "), 360)
         ));
     }
-    lines.push("Timeline: step cards tw str hp boss_hp tags | action".to_string());
+    lines.extend(render_combat_automation_timeline_lines_v1(
+        record.source.as_str(),
+        record.action_count,
+        &record.actions,
+    ));
+    Ok(format!("{}\n", lines.join("\n")))
+}
+
+pub(super) fn render_last_auto_combat_checkpoint_inspection_v1(
+    seed: u64,
+    match_index: usize,
+    match_count: usize,
+    session: &sts_simulator::eval::run_control::RunControlSession,
+    commands: &[String],
+) -> Result<String, String> {
+    let record = session.last_combat_automation_trajectory().ok_or_else(|| {
+        "selected checkpoint session has no last automation trajectory; rerun campaign with a checkpoint created after this feature, or choose a branch whose last combat was resolved by search-combat".to_string()
+    })?;
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Last auto combat record: seed={} match={}/{} source={} actions={} snapshots={}",
+        seed,
+        match_index + 1,
+        match_count,
+        record.source,
+        record.action_count,
+        record
+            .actions
+            .iter()
+            .filter(|action| action.combat_after.is_some())
+            .count()
+    ));
+    lines.push(format!(
+        "Branch: A{}F{} HP {}/{} gold {} deck {}",
+        session.run_state.act_num,
+        session.run_state.floor_num,
+        session.run_state.current_hp,
+        session.run_state.max_hp,
+        session.run_state.gold,
+        session.run_state.master_deck.len()
+    ));
+    if !commands.is_empty() {
+        lines.push(format!(
+            "Commands: {}",
+            render_truncated_text(&commands.join(" -> "), 360)
+        ));
+    }
+    lines.extend(render_combat_automation_record_timeline_lines_v1(record));
+    Ok(format!("{}\n", lines.join("\n")))
+}
+
+fn render_combat_automation_record_timeline_lines_v1(
+    record: &CombatAutomationTrajectoryRecordV1,
+) -> Vec<String> {
+    render_combat_automation_timeline_lines_v1(
+        record.source.as_str(),
+        record.action_count,
+        &record.actions,
+    )
+}
+
+fn render_combat_automation_timeline_lines_v1(
+    source: &str,
+    action_count: usize,
+    actions: &[sts_simulator::eval::run_control::CombatAutomationActionV1],
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Timeline: source={source} actions={action_count} | step cards tw str hp enemy_hp tags | action"
+    ));
 
     let mut previous_time_warp: Option<i32> = None;
     let mut previous_strength: Option<i32> = None;
     let mut previous_early_end_pending = false;
-    for action in &record.actions {
+    for action in actions {
         let Some(after) = action.combat_after.as_ref() else {
             lines.push(format!(
                 "  {:>3} legacy-no-snapshot | {}",
@@ -79,7 +149,7 @@ pub(super) fn render_final_boss_combat_report_inspection_v1(
         let monster = after.monsters.first();
         let time_warp = monster.map(|monster| monster.time_warp).unwrap_or_default();
         let strength = monster.map(|monster| monster.strength).unwrap_or_default();
-        let boss_hp = monster
+        let enemy_hp = monster
             .map(|monster| format!("{}/{}", monster.hp, monster.max_hp))
             .unwrap_or_else(|| "-".to_string());
         let mut tags = Vec::new();
@@ -111,12 +181,12 @@ pub(super) fn render_final_boss_combat_report_inspection_v1(
             strength,
             after.player_hp,
             after.player_max_hp,
-            boss_hp,
+            enemy_hp,
             tag_text,
             action.action_key
         ));
     }
-    Ok(format!("{}\n", lines.join("\n")))
+    lines
 }
 
 fn render_truncated_text(value: &str, max_chars: usize) -> String {
@@ -207,6 +277,19 @@ mod tests {
         assert!(rendered.contains("Final boss combat record: seed=521"));
         assert!(rendered.contains("TIME_WARP_TRIGGER"));
         assert!(rendered.contains("monster_strength+2"));
+        assert!(rendered.contains("early_end_pending"));
+    }
+
+    #[test]
+    fn shared_auto_combat_timeline_renders_checkpoint_records() {
+        let lines = super::render_combat_automation_timeline_lines_v1(
+            "search_combat",
+            1,
+            &[combat_action_with_time_warp(0, 11, 0, true)],
+        );
+        let rendered = lines.join("\n");
+
+        assert!(rendered.contains("source=search_combat"));
         assert!(rendered.contains("early_end_pending"));
     }
 
