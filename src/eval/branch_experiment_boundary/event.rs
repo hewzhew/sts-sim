@@ -18,8 +18,8 @@ use crate::eval::event_boundary_classifier_v1::classify_event_option_boundary_v1
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{
-    EventActionKind, EventCardKind, EventEffect, EventId, EventOption, EventOptionSemantics,
-    EventOptionTransition, EventRelicKind, EventSelectionKind,
+    EventActionKind, EventCardKind, EventEffect, EventId, EventOption, EventOptionConstraint,
+    EventOptionSemantics, EventOptionTransition, EventRelicKind, EventSelectionKind,
 };
 
 const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 4;
@@ -190,41 +190,99 @@ fn open_selection_deck_mutation_choice(
     event_id: EventId,
     option: &EventOption,
 ) -> Option<RunPendingChoiceState> {
-    if event_id != EventId::Transmorgrifier {
+    if event_id == EventId::Neow {
         return None;
     }
-    if option.semantics.action != EventActionKind::DeckOperation {
+    let EventOptionTransition::OpenSelection(selection_kind) = option.semantics.transition else {
+        return None;
+    };
+    let (reason, count) = open_selection_deck_mutation_reason_and_count(selection_kind, option)?;
+    if count != 1 {
         return None;
     }
-    if !matches!(
-        option.semantics.transition,
-        EventOptionTransition::OpenSelection(EventSelectionKind::TransformCard)
-    ) {
-        return None;
-    }
-    let transform_count = option
-        .semantics
-        .effects
-        .iter()
-        .find_map(|effect| match effect {
-            EventEffect::TransformCard { count } => Some(*count),
-            _ => None,
-        })?;
-    if transform_count != 1
-        || option
-            .semantics
-            .effects
-            .iter()
-            .any(|effect| !matches!(effect, EventEffect::TransformCard { .. }))
-    {
-        return None;
-    }
+
     Some(RunPendingChoiceState {
-        reason: RunPendingChoiceReason::TransformNonBottled,
+        reason,
         min_choices: 1,
         max_choices: 1,
         return_state: Box::new(EngineState::EventRoom),
     })
+}
+
+fn open_selection_deck_mutation_reason_and_count(
+    selection_kind: EventSelectionKind,
+    option: &EventOption,
+) -> Option<(RunPendingChoiceReason, usize)> {
+    match selection_kind {
+        EventSelectionKind::RemoveCard => {
+            let count = option
+                .semantics
+                .effects
+                .iter()
+                .find_map(|effect| match effect {
+                    EventEffect::RemoveCard { count, .. } => Some(*count),
+                    _ => None,
+                })?;
+            let reason = if has_event_constraint(
+                option,
+                EventOptionConstraint::RequiresNonBottledPurgeableCard,
+            ) {
+                RunPendingChoiceReason::PurgeNonBottled
+            } else {
+                RunPendingChoiceReason::Purge
+            };
+            Some((reason, count))
+        }
+        EventSelectionKind::UpgradeCard => {
+            let count = option
+                .semantics
+                .effects
+                .iter()
+                .find_map(|effect| match effect {
+                    EventEffect::UpgradeCard { count } => Some(*count),
+                    _ => None,
+                })?;
+            Some((RunPendingChoiceReason::Upgrade, count))
+        }
+        EventSelectionKind::TransformCard => {
+            let count = option
+                .semantics
+                .effects
+                .iter()
+                .find_map(|effect| match effect {
+                    EventEffect::TransformCard { count } => Some(*count),
+                    _ => None,
+                })?;
+            let reason = if has_event_constraint(
+                option,
+                EventOptionConstraint::RequiresNonBottledPurgeableCard,
+            ) || has_event_constraint(
+                option,
+                EventOptionConstraint::RequiresTransformableCard,
+            ) {
+                RunPendingChoiceReason::TransformNonBottled
+            } else {
+                RunPendingChoiceReason::Transform
+            };
+            Some((reason, count))
+        }
+        EventSelectionKind::DuplicateCard => {
+            let count = option
+                .semantics
+                .effects
+                .iter()
+                .find_map(|effect| match effect {
+                    EventEffect::DuplicateCard { count } => Some(*count),
+                    _ => None,
+                })?;
+            Some((RunPendingChoiceReason::Duplicate, count))
+        }
+        EventSelectionKind::None | EventSelectionKind::OfferCard => None,
+    }
+}
+
+fn has_event_constraint(option: &EventOption, constraint: EventOptionConstraint) -> bool {
+    option.semantics.constraints.contains(&constraint)
 }
 
 fn expand_open_selection_deck_mutation_event_option(

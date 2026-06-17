@@ -1557,7 +1557,7 @@ fn current_boundary_skips_single_forced_random_event_resolution() {
 }
 
 #[test]
-fn current_boundary_allows_event_options_that_open_single_card_selection() {
+fn current_boundary_preexpands_upgrade_shrine_target_selection_through_deck_mutation_compiler() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.event_state = Some(EventState::new(EventId::UpgradeShrine));
     session.engine_state = EngineState::EventRoom;
@@ -1566,13 +1566,30 @@ fn current_boundary_allows_event_options_that_open_single_card_selection() {
         .expect("event boundary");
 
     assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
-    let mut options = boundary
+    assert!(
+        boundary
+            .options
+            .iter()
+            .any(|option| option.command.starts_with("event-select 0 ")
+                && !option.command.contains(" && ")
+                && option.effect_kind == "upgrade_card"
+                && option
+                    .decision_signal
+                    .as_ref()
+                    .is_some_and(|signal| signal.source == "deck_mutation_compiler_v1")),
+        "Upgrade Shrine should pre-expand upgrade targets through a typed event-select action"
+    );
+    assert!(
+        boundary
+            .options
+            .iter()
+            .any(|option| option.kind == "event" && option.command == "event 1"),
+        "the ordinary event leave option should remain available"
+    );
+    assert!(!boundary
         .options
         .iter()
-        .map(|option| (option.kind, option.command.as_str()))
-        .collect::<Vec<_>>();
-    options.sort();
-    assert_eq!(options, vec![("event", "event 0"), ("event", "event 1")]);
+        .any(|option| option.command == "event 0"));
 }
 
 #[test]

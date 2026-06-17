@@ -899,7 +899,7 @@ fn branch_experiment_expands_single_card_run_selection_choices() {
 }
 
 #[test]
-fn branch_experiment_can_chain_event_option_into_run_selection_choices() {
+fn branch_experiment_applies_typed_event_deck_mutation_choices() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.master_deck.truncate(2);
     session.run_state.event_state = Some(EventState::new(EventId::UpgradeShrine));
@@ -916,11 +916,10 @@ fn branch_experiment_can_chain_event_option_into_run_selection_choices() {
     );
 
     assert!(report.branches.iter().any(|branch| {
-        branch.choices.len() == 2
+        branch.choices.len() == 1
             && branch.choices[0].kind == "event"
-            && branch.choices[0].command == "event 0"
-            && branch.choices[1].kind == "run_selection"
-            && branch.choices[1].command.starts_with("select ")
+            && branch.choices[0].command.starts_with("event-select 0 ")
+            && branch.choices[0].effect_kind == "upgrade_card"
     }));
 }
 
