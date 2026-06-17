@@ -83,6 +83,7 @@ pub struct BranchRetentionCandidateInputV1 {
     pub curse_count: usize,
     pub strategy_formation: Option<StrategyFormationSummaryV2>,
     pub trajectory: BranchTrajectorySignatureV1,
+    pub recent_choice_profiles: Vec<CardRewardSemanticProfileV1>,
     pub choice_profiles: Vec<CardRewardSemanticProfileV1>,
     pub choice_effect_keys: Vec<String>,
     pub lineage_flags: Vec<String>,
@@ -345,7 +346,7 @@ pub fn decide_branch_retention_v1(
     }
     let deck_bloat_pressure = deck_bloat_pressure_high(candidate);
 
-    if candidate.choice_profiles.iter().any(|profile| {
+    if candidate.recent_choice_profiles.iter().any(|profile| {
         profile
             .roles
             .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
@@ -1216,7 +1217,7 @@ fn branch_retention_slot_evidence_score_v1(
         }
         BranchRetentionSlotV1::Frontload => {
             count_profiles_with_role(
-                &candidate.choice_profiles,
+                &candidate.recent_choice_profiles,
                 CardRewardSemanticRoleV1::FrontloadDamage,
             ) * 10_000
                 + context_score(
@@ -1592,6 +1593,7 @@ mod tests {
             curse_count: 0,
             strategy_formation: None,
             trajectory,
+            recent_choice_profiles: choice_profiles.clone(),
             choice_profiles,
             choice_effect_keys: Vec::new(),
             lineage_flags: Vec::new(),

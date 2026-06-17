@@ -831,7 +831,7 @@ fn branch_experiment_expands_low_fanout_event_choices() {
         .flat_map(|branch| &branch.choices)
         .collect::<Vec<_>>();
     assert_eq!(report.explored_branch_points, 1);
-    assert_eq!(choices.len(), 3);
+    assert_eq!(choices.len(), 2);
     assert!(choices.iter().all(|choice| {
         choice.kind == "event" && choice.card.is_none() && choice.upgrades.is_none()
     }));
@@ -843,8 +843,10 @@ fn branch_experiment_expands_low_fanout_event_choices() {
     assert!(event_effects["event_heal"].contains("event_eval"));
     assert!(event_effects["event_gain_max_hp"].contains("[Donut] Gain 5 Max HP."));
     assert!(event_effects["event_gain_max_hp"].contains("event_eval"));
-    assert!(event_effects["event_gain_relic"].contains("Obtain a random Relic"));
-    assert!(event_effects["event_gain_relic"].contains("Regret"));
+    assert!(
+        !event_effects.contains_key("event_gain_relic"),
+        "Avoid-tier curse relic option should be pruned when safer event branches exist"
+    );
 }
 
 #[test]
@@ -1288,6 +1290,7 @@ fn retention_candidate(
         curse_count: 0,
         strategy_formation: None,
         trajectory,
+        recent_choice_profiles: Vec::new(),
         choice_profiles: Vec::new(),
         choice_effect_keys: Vec::new(),
         lineage_flags: Vec::new(),
@@ -1361,10 +1364,11 @@ fn branch_retention_consumes_formation_need_match_as_bounded_rank_input() {
         needs: vec![StrategyDeckFormationNeedV1::Block],
         strengths: Vec::new(),
     });
-    candidate.choice_profiles = vec![card_reward_semantic_profile_v1(&RewardCard::new(
+    candidate.recent_choice_profiles = vec![card_reward_semantic_profile_v1(&RewardCard::new(
         CardId::ShrugItOff,
         0,
     ))];
+    candidate.choice_profiles = candidate.recent_choice_profiles.clone();
 
     let adjustment = branch_retention_rank_adjustment_v1(&candidate);
 

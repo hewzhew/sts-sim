@@ -977,6 +977,7 @@ fn branch_retention_candidate_input(
     branch: &BranchWork,
 ) -> BranchRetentionCandidateInputV1 {
     let choice_profiles = branch_choice_profiles(branch);
+    let recent_choice_profiles = branch_recent_choice_profiles(branch);
     let choice_effect_keys = branch_choice_effect_keys(branch);
     let frontier = branch_frontier(&branch.session);
     let (hp, max_hp) = visible_player_hp(&branch.session);
@@ -993,6 +994,7 @@ fn branch_retention_candidate_input(
         curse_count: branch_curse_count(&branch.session.run_state),
         strategy_formation: Some(strategy_formation_summary(&branch.session)),
         trajectory: summarize_branch_trajectory_v1(&choice_profiles),
+        recent_choice_profiles,
         choice_profiles,
         choice_effect_keys,
         lineage_flags: frontier.lineage.sequence_breakers_present,
@@ -1434,21 +1436,32 @@ fn branch_choice_profiles(
     choice_profiles_from_choices(&branch.choices)
 }
 
+fn branch_recent_choice_profiles(
+    branch: &BranchWork,
+) -> Vec<crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1> {
+    branch
+        .choices
+        .last()
+        .map(choice_profiles_from_choice)
+        .unwrap_or_default()
+}
+
 fn choice_profiles_from_choices(
     choices: &[BranchExperimentChoiceV1],
 ) -> Vec<crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1> {
     choices
         .iter()
-        .flat_map(|choice| {
-            choice_profile_cards(choice)
-                .into_iter()
-                .map(|selected| {
-                    card_reward_semantic_profile_v1(&RewardCard::new(
-                        selected.card,
-                        selected.upgrades,
-                    ))
-                })
-                .collect::<Vec<_>>()
+        .flat_map(choice_profiles_from_choice)
+        .collect()
+}
+
+fn choice_profiles_from_choice(
+    choice: &BranchExperimentChoiceV1,
+) -> Vec<crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1> {
+    choice_profile_cards(choice)
+        .into_iter()
+        .map(|selected| {
+            card_reward_semantic_profile_v1(&RewardCard::new(selected.card, selected.upgrades))
         })
         .collect()
 }

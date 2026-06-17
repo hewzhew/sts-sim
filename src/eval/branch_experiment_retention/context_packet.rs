@@ -38,7 +38,7 @@ pub(super) fn branch_retention_context_packet_v2(
     if formation
         .needs
         .contains(&StrategyDeckFormationNeedV1::Frontload)
-        && candidate.choice_profiles.iter().any(|profile| {
+        && candidate.recent_choice_profiles.iter().any(|profile| {
             profile
                 .roles
                 .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
@@ -51,7 +51,7 @@ pub(super) fn branch_retention_context_packet_v2(
     if formation
         .needs
         .contains(&StrategyDeckFormationNeedV1::Block)
-        && candidate.choice_profiles.iter().any(|profile| {
+        && candidate.recent_choice_profiles.iter().any(|profile| {
             profile_has_any_effective_slot_role(profile, DEFENSE_ENGINE_ROLES, package_claim)
         })
     {
@@ -62,7 +62,7 @@ pub(super) fn branch_retention_context_packet_v2(
     if formation
         .needs
         .contains(&StrategyDeckFormationNeedV1::Scaling)
-        && candidate.choice_profiles.iter().any(|profile| {
+        && candidate.recent_choice_profiles.iter().any(|profile| {
             profile_has_any_effective_slot_role(profile, SCALING_ROLES, package_claim)
         })
     {
@@ -74,7 +74,7 @@ pub(super) fn branch_retention_context_packet_v2(
         .needs
         .contains(&StrategyDeckFormationNeedV1::DrawEnergy)
         && candidate
-            .choice_profiles
+            .recent_choice_profiles
             .iter()
             .any(|profile| profile_has_any_role(profile, DRAW_ENERGY_ROLES))
     {
@@ -85,7 +85,7 @@ pub(super) fn branch_retention_context_packet_v2(
     if formation
         .needs
         .contains(&StrategyDeckFormationNeedV1::Consistency)
-        && transition_attack_count(&candidate.choice_profiles) == 0
+        && transition_attack_count(&candidate.recent_choice_profiles) == 0
     {
         packet
             .keys
@@ -102,7 +102,7 @@ pub(super) fn branch_retention_context_packet_v2(
             .insert(BranchRetentionContextKeyV2::ClosesPackage);
     }
     if formation.strengths.iter().any(|package| {
-        choice_profiles_support_committed_package(*package, &candidate.choice_profiles)
+        choice_profiles_support_committed_package(*package, &candidate.recent_choice_profiles)
     }) {
         packet
             .keys
@@ -110,7 +110,7 @@ pub(super) fn branch_retention_context_packet_v2(
     }
     if candidate.max_hp > 0
         && candidate.hp * 100 < candidate.max_hp * 65
-        && candidate.choice_profiles.iter().any(|profile| {
+        && candidate.recent_choice_profiles.iter().any(|profile| {
             profile
                 .roles
                 .contains(&CardRewardSemanticRoleV1::FrontloadDamage)
