@@ -226,6 +226,14 @@ impl RunControlTraceAnnotationV1 {
     }
 }
 
+pub fn annotations_have_combat_automation_trajectory_v1(
+    annotations: &[RunControlTraceAnnotationV1],
+) -> bool {
+    annotations
+        .iter()
+        .any(|annotation| annotation.as_combat_automation_trajectory_v1().is_some())
+}
+
 pub(in crate::eval::run_control) fn validate_run_control_trace_annotations_v1(
     annotations: &[RunControlTraceAnnotationV1],
 ) -> Result<(), String> {
@@ -304,5 +312,35 @@ mod tests {
             trajectory.label_role,
             "simulator_generated_not_teacher_label"
         );
+    }
+
+    #[test]
+    fn combat_automation_trajectory_slice_helper_detects_any_recorded_trajectory() {
+        let action = CombatAutomationActionV1 {
+            step_index: 0,
+            action_key: "combat/end_turn".to_string(),
+            input: ClientInput::EndTurn,
+            drawn_cards: Vec::new(),
+            combat_after: None,
+        };
+        let annotations = vec![
+            RunControlTraceAnnotationV1::AutoCombatCapture {
+                case_id: "case".to_string(),
+                capture_path: "case.json".to_string(),
+                benchmark_manifest_path: "manifest.json".to_string(),
+                label_role: "human_review_artifact".to_string(),
+            },
+            RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+                source: "search_combat".to_string(),
+                action_count: 1,
+                actions: vec![action],
+                label_role: "simulator_generated_not_teacher_label".to_string(),
+            },
+        ];
+
+        assert!(!annotations_have_combat_automation_trajectory_v1(&[]));
+        assert!(annotations_have_combat_automation_trajectory_v1(
+            &annotations
+        ));
     }
 }

@@ -89,7 +89,8 @@ pub use session_trace::{
 };
 pub(crate) use shop_legal::shop_potion_purchase_block_reason_v1;
 pub use trace_annotation::{
-    CombatAutomationActionV1, CombatSearchPerformanceSnapshotV1, RunControlTraceAnnotationV1,
+    annotations_have_combat_automation_trajectory_v1, CombatAutomationActionV1,
+    CombatSearchPerformanceSnapshotV1, RunControlTraceAnnotationV1,
 };
 pub use trace_replay::{
     load_session_trace_v1, render_session_trace_replay_report, replay_session_trace,

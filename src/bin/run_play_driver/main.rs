@@ -418,14 +418,9 @@ fn validate_card_reward_calibration_args(args: &Args) -> Result<(), String> {
 
 fn trace_has_combat_automation(trace: &SessionTraceV1) -> bool {
     trace.steps.iter().any(|step| {
-        step.annotations.iter().any(|annotation| {
-            matches!(
-                annotation,
-                sts_simulator::eval::run_control::RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-                    ..
-                }
-            )
-        })
+        sts_simulator::eval::run_control::annotations_have_combat_automation_trajectory_v1(
+            &step.annotations,
+        )
     })
 }
 
