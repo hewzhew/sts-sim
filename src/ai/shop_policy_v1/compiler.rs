@@ -67,6 +67,7 @@ fn select_evaluated_shop_plan_v1(
 ) -> ShopPlanV1 {
     candidates
         .iter()
+        .filter(|candidate| shop_plan_is_selectable_in_mode_v1(candidate, mode))
         .max_by(|left, right| compare_evaluated_shop_candidates_v1(left, right, mode))
         .map(|candidate| plan_with_evaluation_v1(&candidate.plan, &candidate.evaluation))
         .unwrap_or_else(|| {
@@ -78,13 +79,22 @@ fn evaluated_branch_alternatives_v1(
     candidates: &[ShopPlanCandidateV1],
     max_plans: usize,
 ) -> Vec<ShopPlanV1> {
-    let allow_candidates = candidates
+    let mut allow_candidates = candidates
         .iter()
         .filter(|candidate| {
             !candidate.plan.steps.is_empty()
                 && candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
         })
         .collect::<Vec<_>>();
+    if allow_candidates
+        .iter()
+        .any(|candidate| shop_plan_is_context_card_purchase_v1(candidate))
+    {
+        allow_candidates.extend(candidates.iter().filter(|candidate| {
+            candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
+                && plan_has_leave_shop_step_v1(candidate)
+        }));
+    }
     let mut alternatives = if allow_candidates.is_empty() {
         candidates
             .iter()
@@ -103,6 +113,26 @@ fn evaluated_branch_alternatives_v1(
         .into_iter()
         .map(|candidate| plan_with_evaluation_v1(&candidate.plan, &candidate.evaluation))
         .collect()
+}
+
+fn shop_plan_is_selectable_in_mode_v1(
+    candidate: &ShopPlanCandidateV1,
+    mode: ShopCompileModeV1,
+) -> bool {
+    match mode {
+        ShopCompileModeV1::BranchTopK { .. } => true,
+        ShopCompileModeV1::ExecuteOne => !shop_plan_is_context_card_purchase_v1(candidate),
+    }
+}
+
+fn shop_plan_is_context_card_purchase_v1(candidate: &ShopPlanCandidateV1) -> bool {
+    candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
+        && candidate.evaluation.tier < 320
+        && candidate.plan.steps.len() == 1
+        && matches!(
+            candidate.plan.steps.first(),
+            Some(ShopPlanStepV1::BuyCard { .. })
+        )
 }
 
 fn select_branch_alternatives_with_effect_coverage_v1<'a>(

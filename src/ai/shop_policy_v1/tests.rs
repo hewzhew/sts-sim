@@ -1028,10 +1028,21 @@ fn compiled_shop_branch_alternatives_are_evaluated_plan_candidates() {
             .iter()
             .find(|candidate| candidate.plan.plan_id == alternative.plan_id)
             .expect("alternative must be backed by an evaluated candidate plan");
-        assert_eq!(candidate.evaluation.verdict, ShopPlanVerdictV1::Allow);
         assert!(
-            candidate.evaluation.score > 0,
-            "branch alternatives should carry evaluator score"
+            candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
+                || (candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
+                    && candidate
+                        .plan
+                        .steps
+                        .iter()
+                        .any(|step| matches!(step, ShopPlanStepV1::LeaveShop))),
+            "branch alternatives may include executable purchases or an explicit leave-shop branch, got {:?}",
+            candidate
+        );
+        assert!(
+            candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
+                || candidate.evaluation.score > 0,
+            "purchase branch alternatives should carry evaluator score"
         );
     }
 }
