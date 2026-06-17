@@ -124,7 +124,7 @@ fn presence_bucket(value: u8) -> &'static str {
     }
 }
 
-fn setup_keys_for_profile(profile: &CardRewardSemanticProfileV1) -> Vec<&'static str> {
+pub(crate) fn setup_keys_for_profile(profile: &CardRewardSemanticProfileV1) -> Vec<&'static str> {
     let mut keys = Vec::new();
     if profile.roles.iter().any(|role| {
         matches!(
@@ -159,7 +159,9 @@ fn setup_keys_for_profile(profile: &CardRewardSemanticProfileV1) -> Vec<&'static
     keys
 }
 
-fn payoff_package_keys_for_profile(profile: &CardRewardSemanticProfileV1) -> Vec<&'static str> {
+pub(crate) fn payoff_package_keys_for_profile(
+    profile: &CardRewardSemanticProfileV1,
+) -> Vec<&'static str> {
     let mut keys = Vec::new();
     if has_role(profile, CardRewardSemanticRoleV1::BlockPayoff) {
         keys.push("block_engine");

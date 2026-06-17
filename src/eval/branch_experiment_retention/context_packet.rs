@@ -2,6 +2,9 @@ use std::collections::BTreeSet;
 
 use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
 use crate::ai::noncombat_strategy_v1::{StrategyDeckFormationNeedV1, StrategyPackageIdV2};
+use crate::eval::branch_experiment_trajectory::{
+    payoff_package_keys_for_profile, setup_keys_for_profile,
+};
 
 use super::{
     complete_package_count, profile_has_any_effective_slot_role, profile_has_any_role,
@@ -91,12 +94,16 @@ pub(super) fn branch_retention_context_packet_v2(
             .keys
             .insert(BranchRetentionContextKeyV2::MatchesFormationConsistencyNeed);
     }
-    if !candidate.trajectory.setup_keys.is_empty() {
+    if candidate
+        .recent_choice_profiles
+        .iter()
+        .any(profile_opens_package_setup_v2)
+    {
         packet
             .keys
             .insert(BranchRetentionContextKeyV2::OpensPackageSetup);
     }
-    if complete_package_count(&candidate.trajectory) > 0 {
+    if recent_choice_closes_existing_package_v2(candidate) {
         packet
             .keys
             .insert(BranchRetentionContextKeyV2::ClosesPackage);
@@ -135,6 +142,24 @@ fn candidate_has_context_package_claim(candidate: &BranchRetentionCandidateInput
                     choice_profiles_support_committed_package(*package, &candidate.choice_profiles)
                 })
             })
+}
+
+fn recent_choice_closes_existing_package_v2(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    let setup_keys = candidate
+        .trajectory
+        .setup_keys
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    candidate.recent_choice_profiles.iter().any(|profile| {
+        payoff_package_keys_for_profile(profile)
+            .into_iter()
+            .any(|key| setup_keys.contains(key))
+    })
+}
+
+fn profile_opens_package_setup_v2(profile: &CardRewardSemanticProfileV1) -> bool {
+    !setup_keys_for_profile(profile).is_empty()
 }
 
 pub(super) fn context_score(
