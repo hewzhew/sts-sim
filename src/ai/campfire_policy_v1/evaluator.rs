@@ -1,4 +1,5 @@
 use crate::ai::noncombat_strategy_v1::{StrategyPackageIdV2, StrategyPlanSupportV1};
+use crate::ai::upgrade_planner_v1::RestVsSmithVerdictV1;
 use crate::state::core::CampfireChoice;
 
 use super::types::{
@@ -21,10 +22,17 @@ pub(crate) fn candidate_autopilot_action(
 
     if rest_is_autopilot_allowed(context, config) {
         return matches!(candidate.choice, CampfireChoice::Rest).then(|| {
+            let reason = if context.rest_vs_smith.verdict == RestVsSmithVerdictV1::RestFavored {
+                format!(
+                    "Rest favored by rest-vs-smith plan: effective_heal={} hp={}/{}",
+                    context.rest_vs_smith.effective_rest_heal, context.current_hp, context.max_hp
+                )
+            } else {
+                "RecoveryPressure Strong and Rest is available while HP is missing".to_string()
+            };
             CampfirePolicyActionV1::Rest {
                 confidence: 0.86,
-                reason: "RecoveryPressure Strong and Rest is available while HP is missing"
-                    .to_string(),
+                reason,
             }
         });
     }
@@ -64,6 +72,9 @@ fn smith_is_autopilot_allowed(
         .support(StrategyPackageIdV2::RecoveryPressure)
         == StrategyPlanSupportV1::Strong
     {
+        return false;
+    }
+    if context.rest_vs_smith.verdict == RestVsSmithVerdictV1::RestFavored {
         return false;
     }
 
@@ -140,8 +151,9 @@ fn rest_is_autopilot_allowed(
             .candidates
             .iter()
             .any(|candidate| candidate.choice == CampfireChoice::Rest)
-        && context
-            .strategy
-            .support(StrategyPackageIdV2::RecoveryPressure)
-            == StrategyPlanSupportV1::Strong
+        && (context.rest_vs_smith.verdict == RestVsSmithVerdictV1::RestFavored
+            || context
+                .strategy
+                .support(StrategyPackageIdV2::RecoveryPressure)
+                == StrategyPlanSupportV1::Strong)
 }

@@ -22,14 +22,16 @@ pub fn build_campfire_decision_context_v1(
     available_choices: Vec<CampfireChoice>,
 ) -> CampfireDecisionContextV1 {
     let strategy = build_run_strategy_snapshot_from_run_state_v2(run_state);
+    let upgrade_plan = crate::ai::upgrade_planner_v1::plan_upgrades_v1(run_state);
     let candidates = available_choices
         .into_iter()
         .flat_map(|choice| expand_choice_targets(run_state, choice))
-        .map(|choice| candidate_evidence(choice, &strategy, run_state))
+        .map(|choice| candidate_evidence(choice, &strategy, run_state, &upgrade_plan.rest_vs_smith))
         .collect();
 
     CampfireDecisionContextV1 {
         strategy,
+        rest_vs_smith: upgrade_plan.rest_vs_smith,
         current_hp: run_state.current_hp,
         max_hp: run_state.max_hp,
         candidates,
@@ -303,6 +305,7 @@ fn candidate_evidence(
     expanded: ExpandedCampfireChoice,
     strategy: &crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
     run_state: &RunState,
+    rest_vs_smith: &crate::ai::upgrade_planner_v1::RestVsSmithPlanV1,
 ) -> CampfireCandidateEvidenceV1 {
     let choice = expanded.choice;
     let class = class_for_choice(choice);
@@ -361,6 +364,10 @@ fn candidate_evidence(
 
     match class {
         CampfirePolicyClassV1::RestRecovery => {
+            evidence.push(format!(
+                "rest_vs_smith verdict is {:?}",
+                rest_vs_smith.verdict
+            ));
             evidence.push(format!(
                 "RecoveryPressure support is {:?}",
                 strategy.support(StrategyPackageIdV2::RecoveryPressure)

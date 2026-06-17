@@ -125,6 +125,34 @@ fn campfire_decision_selects_from_candidate_plan_pool() {
 }
 
 #[test]
+fn campfire_policy_consumes_rest_vs_smith_rest_favored_verdict() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.current_hp = 35;
+    run_state.max_hp = 80;
+    let bash_index = run_state
+        .master_deck
+        .iter()
+        .position(|card| card.id == CardId::Bash)
+        .expect("Ironclad starter deck should include Bash");
+
+    let context = build_campfire_decision_context_v1(
+        &run_state,
+        vec![CampfireChoice::Rest, CampfireChoice::Smith(bash_index)],
+    );
+    let decision = plan_campfire_decision_v1(&context, &CampfirePolicyConfigV1::default());
+
+    assert!(matches!(
+        decision.action,
+        CampfirePolicyActionV1::Rest { .. }
+    ));
+    assert!(decision
+        .selected_plan
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("Rest favored by rest-vs-smith plan")));
+}
+
+#[test]
 fn campfire_policy_respects_deck_mutation_execute_gate_for_smith_targets() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.current_hp = run_state.max_hp;

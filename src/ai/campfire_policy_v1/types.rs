@@ -8,11 +8,13 @@ use crate::ai::noncombat_decision_v1::{
 use crate::ai::noncombat_strategy_v1::{
     RunStrategySnapshotV2, StrategyPackageIdV2, StrategyPlanSupportV1,
 };
+use crate::ai::upgrade_planner_v1::RestVsSmithPlanV1;
 use crate::state::core::CampfireChoice;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CampfireDecisionContextV1 {
     pub strategy: RunStrategySnapshotV2,
+    pub rest_vs_smith: RestVsSmithPlanV1,
     pub current_hp: i32,
     pub max_hp: i32,
     pub candidates: Vec<CampfireCandidateEvidenceV1>,
