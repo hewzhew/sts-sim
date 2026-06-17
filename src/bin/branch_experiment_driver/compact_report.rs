@@ -2014,6 +2014,7 @@ mod tests {
                     sequence_breakers_present: Vec::new(),
                 },
             },
+            final_boss_combat_record: None,
             boundary_details: Vec::new(),
         }
     }

@@ -47,7 +47,8 @@ const COMBAT_TURN_SEGMENT_PROGRESS_STOP_REASON: &str =
     "combat turn segment progressed; continue next campaign round";
 
 pub use types::{
-    BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentChoiceCardV1,
+    BranchExperimentBossCombatRecordV1, BranchExperimentBranchReportV1,
+    BranchExperimentBranchStatusV1, BranchExperimentChoiceCardV1,
     BranchExperimentChoiceDecisionSignalV1, BranchExperimentChoiceV1, BranchExperimentConfigV1,
     BranchExperimentFirstEliteEvidenceV1, BranchExperimentFrontierGroupV1,
     BranchExperimentFrontierV1, BranchExperimentLineageV1, BranchExperimentPrunedBranchSummaryV1,
@@ -69,6 +70,7 @@ struct BranchWork {
     status: BranchExperimentBranchStatusV1,
     stop_reason: String,
     retention: BranchRetentionDecisionV1,
+    final_boss_combat_record: Option<BranchExperimentBossCombatRecordV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -235,9 +237,10 @@ fn prepare_branch_experiment_start(
         }
     }
 
+    let mut prefix_final_boss_combat_record = None;
     for command_line in &config.prefix_commands {
         if command_line == BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND {
-            crate::eval::run_control::apply_branch_experiment_auto_run(
+            let outcome = crate::eval::run_control::apply_branch_experiment_auto_run(
                 &mut session,
                 RunControlAutoStepOptions {
                     search: branch_experiment_search_options(config),
@@ -245,6 +248,9 @@ fn prepare_branch_experiment_start(
                     route: RunControlRouteAutomationMode::Planner,
                 },
             )?;
+            prefix_final_boss_combat_record =
+                final_boss_combat_record_from_annotations_v1(&session, &outcome.trace_annotations)
+                    .or(prefix_final_boss_combat_record);
         } else {
             apply_branch_choice(&mut session, command_line)?;
         }
@@ -257,6 +263,7 @@ fn prepare_branch_experiment_start(
         status: BranchExperimentBranchStatusV1::Active,
         stop_reason: "initial".to_string(),
         retention: default_branch_retention_decision_v1(),
+        final_boss_combat_record: prefix_final_boss_combat_record,
     };
     if settle_to_first_boundary {
         let mut ignored_route_decisions = Vec::new();
@@ -305,6 +312,7 @@ fn run_branch_experiment_from_session_with_replay_and_snapshots(
             status: BranchExperimentBranchStatusV1::Active,
             stop_reason: "initial".to_string(),
             retention: default_branch_retention_decision_v1(),
+            final_boss_combat_record: None,
         },
         config,
         replay_trace_applied_steps,
@@ -489,6 +497,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
                 stop_reason: branch.stop_reason,
                 summary,
                 frontier,
+                final_boss_combat_record: branch.final_boss_combat_record,
                 boundary_details: branch_boundary_details(&branch.session),
             }
         })
@@ -620,6 +629,13 @@ fn advance_to_experiment_boundary(
                         .unwrap_or_else(|| current_boundary_title(&branch.session))
                 };
             update_terminal_status(branch);
+            if branch.status == BranchExperimentBranchStatusV1::TerminalVictory {
+                branch.final_boss_combat_record = final_boss_combat_record_from_annotations_v1(
+                    &branch.session,
+                    &outcome.trace_annotations,
+                )
+                .or_else(|| branch.final_boss_combat_record.clone());
+            }
         }
         Err(err) => {
             branch.status = BranchExperimentBranchStatusV1::Failed;
@@ -694,6 +710,35 @@ fn combat_performance_snapshot_from_annotation(
         RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot } => Some(snapshot.clone()),
         _ => None,
     }
+}
+
+fn final_boss_combat_record_from_annotations_v1(
+    session: &RunControlSession,
+    annotations: &[RunControlTraceAnnotationV1],
+) -> Option<BranchExperimentBossCombatRecordV1> {
+    if !matches!(
+        session.engine_state,
+        EngineState::GameOver(RunResult::Victory)
+    ) {
+        return None;
+    }
+    annotations.iter().rev().find_map(|annotation| {
+        let RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+            source,
+            action_count,
+            actions,
+            label_role,
+        } = annotation
+        else {
+            return None;
+        };
+        Some(BranchExperimentBossCombatRecordV1 {
+            source: source.clone(),
+            action_count: *action_count,
+            actions: actions.clone(),
+            label_role: label_role.clone(),
+        })
+    })
 }
 
 fn update_terminal_status(branch: &mut BranchWork) {

@@ -3,9 +3,10 @@ use crate::ai::strategic::{
 };
 use crate::eval::branch_experiment::{
     run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
-    BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentConfigV1,
-    BranchExperimentRouteDecisionV1, BranchExperimentRunResultV1,
-    BranchExperimentStrategyRequestV1, BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
+    BranchExperimentBossCombatRecordV1, BranchExperimentBranchReportV1,
+    BranchExperimentBranchStatusV1, BranchExperimentConfigV1, BranchExperimentRouteDecisionV1,
+    BranchExperimentRunResultV1, BranchExperimentStrategyRequestV1,
+    BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
 };
 use crate::eval::branch_experiment_boundary::branch_boundary_available;
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
@@ -180,6 +181,8 @@ pub struct BranchCampaignBranchV1 {
     #[serde(default, skip_serializing_if = "is_zero_i32")]
     pub lineage_decision_signal_rank_adjustment: i32,
     pub rank_key: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub final_boss_combat_record: Option<BranchExperimentBossCombatRecordV1>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -2288,6 +2291,7 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
         stop_reason: "initial".to_string(),
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
+        final_boss_combat_record: None,
     }
 }
 
@@ -4290,6 +4294,7 @@ pub fn campaign_branch_from_report_branch_v1(
         stop_reason: branch.stop_reason.clone(),
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: branch.rank_key,
+        final_boss_combat_record: branch.final_boss_combat_record.clone(),
     }
 }
 

@@ -9,7 +9,7 @@ use crate::state::core::ClientInput;
 
 use super::transition_report::CardSnapshot;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatAutomationActionV1 {
     pub step_index: usize,

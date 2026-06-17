@@ -2,7 +2,7 @@ use crate::core::EntityId;
 use crate::state::selection::SelectionResolution;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum ClientInput {
     PlayCard {
         card_index: usize,
@@ -39,7 +39,7 @@ pub enum ClientInput {
     Cancel,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum CampfireChoice {
     Rest,
     Smith(usize),
