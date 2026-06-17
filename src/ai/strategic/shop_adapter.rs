@@ -10,7 +10,6 @@ use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewa
 use crate::ai::decision_tags_v1::{
     strings_have_tag, TAG_COLLECTOR_ANSWER, TAG_ENGINE_CLOSURE, TAG_STARTUP_ACCESS,
 };
-use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
 use crate::ai::shop_policy_v1::{
     ShopCandidateEvidenceV1, ShopDecisionContextV1, ShopPolicyClassV1, ShopPurchaseTargetV1,
 };
@@ -350,17 +349,7 @@ fn component_context_from_shop_context(
         frontload_jobs: deck.attacks as usize,
         block_jobs: deck.skills as usize,
         formation_needs: context.strategy.formation_summary().needs,
-        startup: DeckStartupProfileV1 {
-            feel_no_pain_count: deck.exhaust_payoffs,
-            exhaust_engine_count: deck.exhaust_generators,
-            exhaust_payoff_count: deck.exhaust_payoffs,
-            status_generator_count: deck.status_generators,
-            status_digest_count: deck.status_payoffs,
-            strong_draw_count: deck.draw_sources,
-            persistent_strength_source_count: deck.strength_sources,
-            strength_payoff_count: deck.strength_payoffs,
-            ..Default::default()
-        },
+        startup: context.startup.clone(),
     }
 }
 

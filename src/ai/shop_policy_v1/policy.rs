@@ -23,6 +23,7 @@ pub fn build_shop_decision_context_v1(
 ) -> ShopDecisionContextV1 {
     let strategy = build_run_strategy_snapshot_from_run_state_v2(run_state);
     let strength = crate::ai::strength_profile_v1::strength_profile_v1(run_state);
+    let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
     let need = crate::ai::shop_policy_v1::build_shop_need_profile_v1(run_state);
     let affordable_purchase_exists = affordable_purchase_exists(shop, run_state.gold);
     let conversion_pressure =
@@ -121,6 +122,7 @@ pub fn build_shop_decision_context_v1(
     ShopDecisionContextV1 {
         strategy,
         strength,
+        startup,
         need,
         candidates,
         affordable_purchase_exists,

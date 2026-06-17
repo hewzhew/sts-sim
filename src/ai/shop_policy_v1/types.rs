@@ -1,3 +1,4 @@
+use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
 use crate::ai::noncombat_decision_v1::{
     CandidateDescriptorV1, DataRoleV1, DecisionSiteKindV1, EvidenceBundleV1, EvidenceItemV1,
     EvidenceKindV1, InformationBoundaryV1, InformationClassV1, NonCombatDecisionRecordV1,
@@ -16,6 +17,7 @@ use crate::content::relics::RelicId;
 pub struct ShopDecisionContextV1 {
     pub strategy: RunStrategySnapshotV2,
     pub strength: StrengthProfileV1,
+    pub startup: DeckStartupProfileV1,
     pub need: ShopNeedProfileV1,
     pub candidates: Vec<ShopCandidateEvidenceV1>,
     pub affordable_purchase_exists: bool,
