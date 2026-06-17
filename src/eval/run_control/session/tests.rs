@@ -7,6 +7,7 @@ use crate::eval::run_control::{
     CombatBaselineOutcomeV1, RunControlCommand, RunControlHpLossLimit,
     RunControlSearchCombatOptions, RunControlSearchDefaultsCommand,
 };
+use crate::eval::run_control::{CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1};
 use crate::state::core::ClientInput;
 use crate::state::map::node::{MapEdge, MapRoomNode, RoomType};
 use crate::state::map::state::MapState;
@@ -78,6 +79,40 @@ fn run_control_session_checkpoint_round_trips_exact_state() {
     assert_eq!(restored.decision_step, session.decision_step);
     assert_eq!(restored.search_max_nodes, session.search_max_nodes);
     assert_eq!(restored.search_wall_ms, session.search_wall_ms);
+}
+
+#[test]
+fn run_control_session_checkpoint_preserves_last_combat_automation_trajectory() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.remember_combat_automation_trajectory(CombatAutomationTrajectoryRecordV1::new(
+        "search_combat",
+        vec![CombatAutomationActionV1 {
+            step_index: 0,
+            action_key: "combat/end_turn".to_string(),
+            input: ClientInput::EndTurn,
+            drawn_cards: Vec::new(),
+            combat_after: None,
+        }],
+    ));
+
+    let checkpoint = RunControlSessionCheckpointV1::from_session(&session);
+    let text = serde_json::to_string(&checkpoint).expect("checkpoint should serialize");
+    let loaded: RunControlSessionCheckpointV1 =
+        serde_json::from_str(&text).expect("checkpoint should deserialize");
+    let restored = loaded.into_session().expect("checkpoint should restore");
+    let trajectory = restored
+        .last_combat_automation_trajectory()
+        .expect("checkpoint should preserve last automation trajectory");
+
+    assert_eq!(trajectory.source, "search_combat");
+    assert_eq!(trajectory.action_count, 1);
+    assert_eq!(trajectory.actions[0].action_key, "combat/end_turn");
+    assert!(
+        restored
+            .last_completed_combat_automation_trajectory()
+            .is_none(),
+        "raw automation trajectory should not masquerade as completed combat without matching sequence"
+    );
 }
 
 #[test]

@@ -21,7 +21,8 @@ use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenc
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::trace_annotation::{
     CombatAutomationActionV1, CombatAutomationMonsterStateV1, CombatAutomationStepStateV1,
-    CombatSearchPerformanceSnapshotV1, RunControlTraceAnnotationV1,
+    CombatAutomationTrajectoryRecordV1, CombatSearchPerformanceSnapshotV1,
+    RunControlTraceAnnotationV1,
 };
 use super::transition_report::{
     action_result_from_transition, render_action_result, ActionResult, ActionResultChange,
@@ -166,9 +167,12 @@ pub(super) fn apply_search_combat(
         render_action_result(&action_result),
         super::render::render_run_control_state(session)
     );
+    let automation_record =
+        CombatAutomationTrajectoryRecordV1::new("search_combat", automation_actions);
+    session.remember_combat_automation_trajectory(automation_record.clone());
     let mut outcome = RunControlCommandOutcome::action(message, action_result)
         .with_trace_annotations(vec![
-            combat_automation_trace_annotation("search_combat", automation_actions),
+            automation_record.into_annotation(),
             combat_search_performance_trace_annotation("search_combat", session, &start, &report),
         ]);
     outcome.search_evidence_path = saved_evidence;
@@ -232,9 +236,12 @@ fn try_apply_turn_segment_after_rejection(
         render_action_result(&action_result),
         super::render::render_run_control_state(session)
     );
+    let automation_record =
+        CombatAutomationTrajectoryRecordV1::new("search_combat_turn_segment", automation_actions);
+    session.remember_combat_automation_trajectory(automation_record.clone());
     let mut outcome = RunControlCommandOutcome::action(message, action_result)
         .with_trace_annotations(vec![
-            combat_automation_trace_annotation("search_combat_turn_segment", automation_actions),
+            automation_record.into_annotation(),
             combat_search_performance_trace_annotation(
                 "search_combat_turn_segment",
                 session,
@@ -254,18 +261,6 @@ fn segment_mode_allows_turn_segment(
         Some(RunControlCombatSegmentMode::TurnBoundary) => true,
         Some(RunControlCombatSegmentMode::NonBossTurnBoundary) => !start.combat.meta.is_boss_fight,
         None => false,
-    }
-}
-
-fn combat_automation_trace_annotation(
-    source: impl Into<String>,
-    actions: Vec<CombatAutomationActionV1>,
-) -> RunControlTraceAnnotationV1 {
-    RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-        source: source.into(),
-        action_count: actions.len(),
-        actions,
-        label_role: "simulator_generated_not_teacher_label".to_string(),
     }
 }
 
@@ -976,14 +971,13 @@ mod tests {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     use super::{
-        combat_automation_step_state_v1, combat_automation_trace_annotation,
-        effective_hp_loss_limit, high_stakes_search_options, next_available_evidence_path,
-        search_config, segment_mode_allows_turn_segment,
+        combat_automation_step_state_v1, effective_hp_loss_limit, high_stakes_search_options,
+        next_available_evidence_path, search_config, segment_mode_allows_turn_segment,
     };
     use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
     use crate::content::powers::{store, PowerId};
     use crate::eval::run_control::trace_annotation::{
-        CombatAutomationActionV1, RunControlTraceAnnotationV1,
+        CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1, RunControlTraceAnnotationV1,
     };
     use crate::eval::run_control::{
         RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
@@ -1124,7 +1118,7 @@ mod tests {
 
     #[test]
     fn combat_automation_trace_annotation_preserves_action_inputs() {
-        let annotation = combat_automation_trace_annotation(
+        let annotation = CombatAutomationTrajectoryRecordV1::new(
             "unit_test",
             vec![CombatAutomationActionV1 {
                 step_index: 7,
@@ -1133,7 +1127,8 @@ mod tests {
                 drawn_cards: Vec::new(),
                 combat_after: None,
             }],
-        );
+        )
+        .into_annotation();
 
         let RunControlTraceAnnotationV1::CombatAutomationTrajectory {
             source,

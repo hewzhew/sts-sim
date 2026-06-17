@@ -91,7 +91,8 @@ pub(crate) use shop_legal::shop_potion_purchase_block_reason_v1;
 pub(crate) use trace_annotation::combat_automation_trajectories_v1;
 pub use trace_annotation::{
     annotations_have_combat_automation_trajectory_v1, CombatAutomationActionV1,
-    CombatAutomationMonsterStateV1, CombatAutomationStepStateV1, CombatSearchPerformanceSnapshotV1,
+    CombatAutomationMonsterStateV1, CombatAutomationStepStateV1,
+    CombatAutomationTrajectoryRecordV1, CombatSearchPerformanceSnapshotV1,
     RunControlTraceAnnotationV1,
 };
 pub use trace_replay::{

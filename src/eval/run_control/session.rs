@@ -11,7 +11,7 @@ use crate::state::run::{RunState, RunStateCheckpointV1};
 use super::auto_capture::AutoCombatCaptureConfig;
 use super::outcome::CombatOutcomeTracker;
 use super::reward_auto::RewardAutomationConfig;
-use super::trace_annotation::RunControlTraceAnnotationV1;
+use super::trace_annotation::{CombatAutomationTrajectoryRecordV1, RunControlTraceAnnotationV1};
 use super::transition_report::ActionResult;
 
 mod apply;
@@ -81,6 +81,8 @@ pub struct RunControlSession {
     last_completed_combat_sequence: Option<u64>,
     last_completed_combat_source: Option<CombatCompletionSource>,
     current_combat_source: Option<CombatCompletionSource>,
+    last_combat_automation_sequence: Option<u64>,
+    last_combat_automation_trajectory: Option<CombatAutomationTrajectoryRecordV1>,
     last_capture_case: Option<LastBenchmarkCaptureCase>,
 }
 
@@ -120,6 +122,10 @@ pub struct RunControlSessionCheckpointV1 {
     last_completed_combat_sequence: Option<u64>,
     last_completed_combat_source: Option<CombatCompletionSource>,
     current_combat_source: Option<CombatCompletionSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_combat_automation_sequence: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_combat_automation_trajectory: Option<CombatAutomationTrajectoryRecordV1>,
     last_capture_case: Option<LastBenchmarkCaptureCase>,
 }
 
@@ -207,6 +213,8 @@ impl RunControlSession {
             last_completed_combat_sequence: None,
             last_completed_combat_source: None,
             current_combat_source: None,
+            last_combat_automation_sequence: None,
+            last_combat_automation_trajectory: None,
             last_capture_case: None,
         }
     }
@@ -237,6 +245,8 @@ impl RunControlSessionCheckpointV1 {
             last_completed_combat_sequence: session.last_completed_combat_sequence,
             last_completed_combat_source: session.last_completed_combat_source,
             current_combat_source: session.current_combat_source,
+            last_combat_automation_sequence: session.last_combat_automation_sequence,
+            last_combat_automation_trajectory: session.last_combat_automation_trajectory.clone(),
             last_capture_case: session.last_capture_case.clone(),
         }
     }
@@ -263,6 +273,8 @@ impl RunControlSessionCheckpointV1 {
             last_completed_combat_sequence: self.last_completed_combat_sequence,
             last_completed_combat_source: self.last_completed_combat_source,
             current_combat_source: self.current_combat_source,
+            last_combat_automation_sequence: self.last_combat_automation_sequence,
+            last_combat_automation_trajectory: self.last_combat_automation_trajectory,
             last_capture_case: self.last_capture_case,
         })
     }

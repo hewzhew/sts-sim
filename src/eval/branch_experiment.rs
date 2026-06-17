@@ -727,6 +727,14 @@ fn final_boss_combat_record_from_annotations_v1(
     ) {
         return None;
     }
+    if let Some(record) = session.last_completed_combat_automation_trajectory() {
+        return Some(BranchExperimentBossCombatRecordV1 {
+            source: record.source.clone(),
+            action_count: record.action_count,
+            actions: record.actions.clone(),
+            label_role: record.label_role.clone(),
+        });
+    }
     combat_automation_trajectories_v1(annotations)
         .last()
         .map(|trajectory| BranchExperimentBossCombatRecordV1 {

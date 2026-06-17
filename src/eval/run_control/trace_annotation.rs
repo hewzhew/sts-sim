@@ -46,6 +46,15 @@ pub struct CombatAutomationMonsterStateV1 {
     pub strength: i32,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CombatAutomationTrajectoryRecordV1 {
+    pub source: String,
+    pub action_count: usize,
+    pub actions: Vec<CombatAutomationActionV1>,
+    pub label_role: String,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatSearchPerformanceSnapshotV1 {
@@ -202,6 +211,35 @@ pub struct CombatAutomationTrajectoryRefV1<'a> {
     pub action_count: usize,
     pub actions: &'a [CombatAutomationActionV1],
     pub label_role: &'a str,
+}
+
+impl CombatAutomationTrajectoryRecordV1 {
+    pub fn new(source: impl Into<String>, actions: Vec<CombatAutomationActionV1>) -> Self {
+        Self {
+            source: source.into(),
+            action_count: actions.len(),
+            actions,
+            label_role: "simulator_generated_not_teacher_label".to_string(),
+        }
+    }
+
+    pub fn from_ref(value: CombatAutomationTrajectoryRefV1<'_>) -> Self {
+        Self {
+            source: value.source.to_string(),
+            action_count: value.action_count,
+            actions: value.actions.to_vec(),
+            label_role: value.label_role.to_string(),
+        }
+    }
+
+    pub fn into_annotation(self) -> RunControlTraceAnnotationV1 {
+        RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+            source: self.source,
+            action_count: self.action_count,
+            actions: self.actions,
+            label_role: self.label_role,
+        }
+    }
 }
 
 impl RunControlTraceAnnotationV1 {
@@ -381,5 +419,29 @@ mod tests {
         assert_eq!(trajectories[0].source, "search_combat");
         assert_eq!(trajectories[0].action_count, 2);
         assert_eq!(trajectories[0].actions[0].step_index, 0);
+    }
+
+    #[test]
+    fn combat_automation_trajectory_record_converts_to_annotation() {
+        let record = CombatAutomationTrajectoryRecordV1::new(
+            "search_combat",
+            vec![CombatAutomationActionV1 {
+                step_index: 1,
+                action_key: "combat/end_turn".to_string(),
+                input: ClientInput::EndTurn,
+                drawn_cards: Vec::new(),
+                combat_after: None,
+            }],
+        );
+
+        let annotation = record.clone().into_annotation();
+        let view = annotation
+            .as_combat_automation_trajectory_v1()
+            .expect("record should convert into trajectory annotation");
+
+        assert_eq!(view.source, record.source);
+        assert_eq!(view.action_count, record.action_count);
+        assert_eq!(view.actions, record.actions.as_slice());
+        assert_eq!(view.label_role, record.label_role);
     }
 }

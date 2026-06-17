@@ -5,6 +5,7 @@ use crate::sim::combat::CombatPosition;
 use crate::state::core::EngineState;
 
 use super::{CombatCompletionSource, LastBenchmarkCaptureCase, RunControlSession};
+use crate::eval::run_control::trace_annotation::CombatAutomationTrajectoryRecordV1;
 
 impl RunControlSession {
     pub(crate) fn current_active_combat_position(&self) -> Result<CombatPosition, String> {
@@ -124,6 +125,27 @@ impl RunControlSession {
         if self.active_combat.is_some() {
             self.current_combat_source = Some(CombatCompletionSource::SearchCombat);
         }
+    }
+
+    pub(in crate::eval::run_control) fn remember_combat_automation_trajectory(
+        &mut self,
+        record: CombatAutomationTrajectoryRecordV1,
+    ) {
+        self.last_combat_automation_sequence = Some(self.combat_sequence);
+        self.last_combat_automation_trajectory = Some(record);
+    }
+
+    pub fn last_combat_automation_trajectory(&self) -> Option<&CombatAutomationTrajectoryRecordV1> {
+        self.last_combat_automation_trajectory.as_ref()
+    }
+
+    pub fn last_completed_combat_automation_trajectory(
+        &self,
+    ) -> Option<&CombatAutomationTrajectoryRecordV1> {
+        if self.last_completed_combat_sequence != self.last_combat_automation_sequence {
+            return None;
+        }
+        self.last_combat_automation_trajectory.as_ref()
     }
 
     pub(in crate::eval::run_control) fn visible_potions(&self) -> &[Option<Potion>] {

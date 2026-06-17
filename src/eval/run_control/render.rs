@@ -50,6 +50,22 @@ pub fn render_run_control_details(session: &RunControlSession) -> String {
             ),
         );
     }
+    if let Some(trajectory) = session.last_combat_automation_trajectory() {
+        push_line(
+            &mut out,
+            format!(
+                "last_auto_combat source={} actions={} snapshots={} label_role={}",
+                trajectory.source,
+                trajectory.action_count,
+                trajectory
+                    .actions
+                    .iter()
+                    .filter(|action| action.combat_after.is_some())
+                    .count(),
+                trajectory.label_role
+            ),
+        );
+    }
     if let Some(case) = session.last_capture_case() {
         push_line(
             &mut out,
