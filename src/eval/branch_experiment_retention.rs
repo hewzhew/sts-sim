@@ -149,6 +149,12 @@ pub struct BranchRetentionRankAdjustmentV1 {
     /// compiler-owned signal so portfolio probes cannot bypass shop ownership.
     #[serde(default)]
     pub shop_plan_adjustment: i32,
+    /// Bounded rank input from the unified campfire compiler. Ordinary
+    /// decision signals remain report-only; campfire branch retention consumes
+    /// only this compiler-owned signal so smith/rest branch probes cannot
+    /// bypass campfire ownership.
+    #[serde(default)]
+    pub campfire_plan_adjustment: i32,
     /// Deprecated report-only hint kept for trace compatibility.
     /// Decision signals are local compiler diagnostics; branch retention does
     /// not consume them as global rank adjustments.
@@ -698,13 +704,20 @@ pub fn branch_retention_rank_adjustment_v1(
     if shop_plan_adjustment != 0 {
         reasons.push(format!("shop_plan_rank_adjustment:{shop_plan_adjustment}"));
     }
+    let campfire_plan_adjustment = branch_campfire_plan_rank_adjustment_v1(candidate);
+    if campfire_plan_adjustment != 0 {
+        reasons.push(format!(
+            "campfire_plan_rank_adjustment:{campfire_plan_adjustment}"
+        ));
+    }
 
     let effective_rank_key = candidate
         .rank_key
         .saturating_add(startup_adjustment)
         .saturating_add(strategic_debt_adjustment)
         .saturating_add(formation_need_adjustment)
-        .saturating_add(shop_plan_adjustment);
+        .saturating_add(shop_plan_adjustment)
+        .saturating_add(campfire_plan_adjustment);
 
     BranchRetentionRankAdjustmentV1 {
         base_rank_key: candidate.rank_key,
@@ -712,6 +725,7 @@ pub fn branch_retention_rank_adjustment_v1(
         strategic_debt_adjustment,
         formation_need_adjustment,
         shop_plan_adjustment,
+        campfire_plan_adjustment,
         decision_signal_adjustment,
         admission_pressure,
         effective_rank_key,
@@ -750,6 +764,26 @@ fn shop_plan_signal_rank_adjustment_v1(signal: &BranchExperimentChoiceDecisionSi
     tier_bonus
         .saturating_add(score_bonus)
         .saturating_add(component_bonus)
+}
+
+fn branch_campfire_plan_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
+    candidate
+        .decision_signals
+        .iter()
+        .filter(|signal| signal.source == "campfire_plan_v1")
+        .map(campfire_plan_signal_rank_adjustment_v1)
+        .sum::<i32>()
+        .clamp(0, 1_000)
+}
+
+fn campfire_plan_signal_rank_adjustment_v1(signal: &BranchExperimentChoiceDecisionSignalV1) -> i32 {
+    let role_bonus = match signal.verdict.as_str() {
+        "PolicyPreferred" => 300,
+        "InspectOnly" => 0,
+        "StopFallback" => 0,
+        _ => 0,
+    };
+    role_bonus + signal.score.max(0).min(1_000)
 }
 
 fn branch_formation_need_rank_adjustment_v1(context: &BranchRetentionContextPacketV2) -> i32 {
