@@ -55,6 +55,7 @@ pub fn build_shop_decision_context_v1(
             target,
             priority,
             card.price,
+            run_state_same_card_count(run_state, card.card_id),
             analysis.evidence,
             analysis.risks,
         )
@@ -74,6 +75,7 @@ pub fn build_shop_decision_context_v1(
                 run_state,
             ),
             relic.price,
+            0,
             analysis.evidence,
             analysis.risks,
         )
@@ -101,6 +103,7 @@ pub fn build_shop_decision_context_v1(
                 &strategy,
             ),
             potion.price,
+            0,
             analysis.evidence,
             analysis.risks,
         )
@@ -111,6 +114,7 @@ pub fn build_shop_decision_context_v1(
         class: ShopPolicyClassV1::Leave,
         deck_index: None,
         card: None,
+        same_card_count: 0,
         purchase_target: None,
         purchase_priority: None,
         gold_cost: None,
@@ -248,6 +252,7 @@ fn purge_candidate_evidence(
         class,
         deck_index: Some(deck_index),
         card: Some(card),
+        same_card_count: run_state_same_card_count_from_plan(plan),
         purchase_target: None,
         purchase_priority: None,
         gold_cost: Some(purge_cost),
@@ -263,6 +268,7 @@ fn purchase_candidate_evidence(
     target: ShopPurchaseTargetV1,
     priority: i32,
     price: i32,
+    same_card_count: usize,
     extra_evidence: Vec<String>,
     extra_risks: Vec<String>,
 ) -> ShopCandidateEvidenceV1 {
@@ -287,6 +293,7 @@ fn purchase_candidate_evidence(
             ShopPurchaseTargetV1::Card { card, .. } => Some(card),
             _ => None,
         },
+        same_card_count,
         purchase_target: Some(target),
         purchase_priority: Some(priority),
         gold_cost: Some(price),
@@ -298,6 +305,22 @@ fn purchase_candidate_evidence(
         evidence,
         risks,
     }
+}
+
+fn run_state_same_card_count(run_state: &RunState, card: crate::content::cards::CardId) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|deck_card| deck_card.id == card)
+        .count()
+}
+
+fn run_state_same_card_count_from_plan(plan: &DeckMutationPlanCandidateV1) -> usize {
+    plan.step
+        .cards
+        .first()
+        .map(|card| card.target_loss.same_card_count)
+        .unwrap_or_default()
 }
 
 fn legacy_purchase_estimate_with_strategy(

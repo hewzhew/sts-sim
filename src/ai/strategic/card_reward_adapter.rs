@@ -119,7 +119,7 @@ fn candidate_delta_from_card_reward(
     let profile =
         card_reward_semantic_profile_v1(&RewardCard::new(candidate.card, candidate.facts.upgrades));
     let component_report = evaluate_card_component_marginal_value_v1(
-        &component_context_from_card_reward_context(context),
+        &component_context_from_card_reward_context(context, candidate.same_card_count),
         &profile,
     );
     let mut delta = CandidateDelta::from_component_report(action, &component_report);
@@ -426,6 +426,7 @@ fn profile_has_any_role(
 
 fn component_context_from_card_reward_context(
     context: &CardRewardDecisionContextV1,
+    same_card_count: usize,
 ) -> CardComponentMarginalContextV1 {
     CardComponentMarginalContextV1 {
         act: context.run.act,
@@ -439,6 +440,7 @@ fn component_context_from_card_reward_context(
         exhaust_generators: context.deck.exhaust_generators as usize,
         frontload_jobs: context.deck.attacks as usize,
         block_jobs: context.deck.skills as usize,
+        same_card_count,
         formation_needs: context.strategy.formation_summary().needs,
         startup: DeckStartupProfileV1 {
             feel_no_pain_count: context.deck.exhaust_payoffs,

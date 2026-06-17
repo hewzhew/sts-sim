@@ -1,4 +1,5 @@
 use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
+use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
 use crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1;
 use crate::content::cards::CardId;
@@ -37,6 +38,7 @@ pub struct CardComponentMarginalContextV1 {
     pub exhaust_generators: usize,
     pub frontload_jobs: usize,
     pub block_jobs: usize,
+    pub same_card_count: usize,
     pub formation_needs: Vec<StrategyDeckFormationNeedV1>,
     pub startup: DeckStartupProfileV1,
 }
@@ -126,6 +128,16 @@ fn add_generic_components(
             .all(|component| *component != "fills_current_formation_need")
     {
         push_str(&mut report.debts, "payoff_without_visible_gap_fill");
+    }
+    if context.same_card_count > 0
+        && profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
+        && card_mechanics_profile_v1(profile.card).applies_no_draw_debuff
+    {
+        push_str(
+            &mut report.debts,
+            "duplicate_draw_access_applies_no_draw_debuff",
+        );
+        push_str(&mut report.notes, "duplicate_access_requires_turn_planning");
     }
 }
 
@@ -533,6 +545,7 @@ mod tests {
             exhaust_generators: 1,
             frontload_jobs: 7,
             block_jobs: 7,
+            same_card_count: 0,
             formation_needs: vec![StrategyDeckFormationNeedV1::Consistency],
             startup: DeckStartupProfileV1::default(),
         }
@@ -599,6 +612,24 @@ mod tests {
         assert!(convertible_report
             .notes
             .contains(&"convertible_strength_requires_draw_timing"));
+    }
+
+    #[test]
+    fn duplicate_no_draw_access_card_emits_structural_debt() {
+        let mut context = context();
+        context.same_card_count = 1;
+
+        let report = evaluate_card_component_marginal_value_v1(
+            &context,
+            &card_reward_semantic_profile_v1(&RewardCard::new(CardId::BattleTrance, 0)),
+        );
+
+        assert!(report
+            .debts
+            .contains(&"duplicate_draw_access_applies_no_draw_debuff"));
+        assert!(report
+            .notes
+            .contains(&"duplicate_access_requires_turn_planning"));
     }
 
     #[test]

@@ -135,6 +135,8 @@ pub struct DeckProfileV1 {
 pub struct CardRewardCandidateEvidenceV1 {
     pub index: usize,
     pub card: CardId,
+    #[serde(default)]
+    pub same_card_count: usize,
     pub name: String,
     pub card_type: CardType,
     pub facts: CardRewardFactsV1,

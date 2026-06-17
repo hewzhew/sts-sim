@@ -2687,6 +2687,11 @@ fn context_for_run_with_route(
             crate::ai::card_reward_policy_v1::CardRewardCandidateEvidenceV1 {
                 index,
                 card: facts.card,
+                same_card_count: run_state
+                    .master_deck
+                    .iter()
+                    .filter(|deck_card| deck_card.id == facts.card)
+                    .count(),
                 name,
                 card_type: facts.card_type,
                 facts,

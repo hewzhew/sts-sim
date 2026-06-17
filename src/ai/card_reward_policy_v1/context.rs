@@ -37,6 +37,11 @@ pub fn build_card_reward_decision_context_v1(
             CardRewardCandidateEvidenceV1 {
                 index,
                 card: facts.card,
+                same_card_count: run_state
+                    .master_deck
+                    .iter()
+                    .filter(|deck_card| deck_card.id == facts.card)
+                    .count(),
                 name,
                 card_type: facts.card_type,
                 facts,

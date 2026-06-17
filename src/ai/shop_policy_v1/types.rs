@@ -48,6 +48,7 @@ pub struct ShopCandidateEvidenceV1 {
     pub class: ShopPolicyClassV1,
     pub deck_index: Option<usize>,
     pub card: Option<CardId>,
+    pub same_card_count: usize,
     pub purchase_target: Option<ShopPurchaseTargetV1>,
     /// Legacy purchase estimate retained as an input signal. This is not a
     /// final priority; executable behavior must go through ShopPlanEvaluation.

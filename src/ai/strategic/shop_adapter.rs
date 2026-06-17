@@ -313,7 +313,7 @@ fn add_shop_card_component_deltas(
     };
     let profile = card_reward_semantic_profile_v1(&RewardCard::new(card, 0));
     let report = evaluate_card_component_marginal_value_v1(
-        &component_context_from_shop_context(context),
+        &component_context_from_shop_context(context, candidate.same_card_count),
         &profile,
     );
     let component_delta = CandidateDelta::from_component_report(delta.action.clone(), &report);
@@ -334,6 +334,7 @@ fn add_shop_card_component_deltas(
 
 fn component_context_from_shop_context(
     context: &ShopDecisionContextV1,
+    same_card_count: usize,
 ) -> CardComponentMarginalContextV1 {
     let deck = &context.strategy.v1.deck;
     CardComponentMarginalContextV1 {
@@ -348,6 +349,7 @@ fn component_context_from_shop_context(
         exhaust_generators: deck.exhaust_generators as usize,
         frontload_jobs: deck.attacks as usize,
         block_jobs: deck.skills as usize,
+        same_card_count,
         formation_needs: context.strategy.formation_summary().needs,
         startup: context.startup.clone(),
     }
