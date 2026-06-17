@@ -8,9 +8,9 @@ type BranchCampaignActiveSortKeyV1 = (
     BranchCampaignActClearSortKeyV1,
     BranchCampaignBossCheckpointSortKeyV1,
     i32,
-    i32,
-    i32,
     (u8, i32, i32),
+    i32,
+    i32,
 );
 type BranchCampaignPromotionSortKeyV1 = ((u8, i32, i32), i32);
 type BranchCampaignRetentionKeyV1 = (u8, i32, i32, i32);
@@ -69,9 +69,9 @@ fn campaign_branch_active_sort_key_v1(
         campaign_branch_act_clear_sort_key_v1(branch),
         campaign_branch_boss_checkpoint_sort_key_v1(branch),
         campaign_branch_primary_eligible_key_v1(branch),
+        branch_progress_key(branch),
         campaign_branch_selection_rank_bucket_v1(branch),
         campaign_branch_selection_rank_key_v1(branch),
-        branch_progress_key(branch),
     )
 }
 

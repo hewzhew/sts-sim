@@ -744,7 +744,7 @@ fn campaign_frozen_merge_replaces_duplicate_with_better_branch() {
 }
 
 #[test]
-fn campaign_selection_freezes_active_overflow_by_retention_rank() {
+fn campaign_selection_freezes_active_overflow_by_progress_then_rank() {
     let branches = vec![
         test_campaign_branch("a", 1, 80),
         test_campaign_branch("b", 2, 75),
@@ -761,9 +761,9 @@ fn campaign_selection_freezes_active_overflow_by_retention_rank() {
             .iter()
             .map(|branch| branch.branch_id.as_str())
             .collect::<Vec<_>>(),
-        vec!["a", "b"]
+        vec!["c", "b"]
     );
-    assert_eq!(selected.frozen[0].branch_id, "c");
+    assert_eq!(selected.frozen[0].branch_id, "a");
 }
 
 #[test]
@@ -910,7 +910,7 @@ fn campaign_selection_does_not_use_strategy_summary_to_beat_raw_rank_gap_before_
 }
 
 #[test]
-fn campaign_selection_does_not_double_count_progress_over_exact_rank() {
+fn campaign_selection_prioritizes_progress_over_local_exact_rank() {
     let mut later_shop = test_campaign_branch("later-shop", 35, 82);
     later_shop.summary.as_mut().unwrap().act = 3;
     later_shop.frontier_title = "Shop".to_string();
@@ -923,7 +923,7 @@ fn campaign_selection_does_not_double_count_progress_over_exact_rank() {
 
     let selected = select_campaign_branches_v1(vec![earlier_reward, later_shop], 1, 4);
 
-    assert_eq!(selected.active[0].branch_id, "earlier-reward");
+    assert_eq!(selected.active[0].branch_id, "later-shop");
 }
 
 #[test]
@@ -1086,7 +1086,7 @@ fn campaign_selection_does_not_let_one_hp_at_boss_checkpoint_override_rank() {
 }
 
 #[test]
-fn campaign_selection_keeps_act2_boss_readiness_diagnostic_not_stage_gate() {
+fn campaign_selection_keeps_act2_boss_readiness_diagnostic_but_prioritizes_progress() {
     let mut partial_boss_answer = test_campaign_branch("partial-boss-answer", 26, 28);
     partial_boss_answer.summary.as_mut().unwrap().act = 2;
     partial_boss_answer.summary.as_mut().unwrap().max_hp = 28;
@@ -1110,7 +1110,7 @@ fn campaign_selection_keeps_act2_boss_readiness_diagnostic_not_stage_gate() {
     let selected =
         select_campaign_branches_v1(vec![partial_boss_answer, stronger_general_branch], 1, 4);
 
-    assert_eq!(selected.active[0].branch_id, "stronger-general-branch");
+    assert_eq!(selected.active[0].branch_id, "partial-boss-answer");
 }
 
 #[test]
