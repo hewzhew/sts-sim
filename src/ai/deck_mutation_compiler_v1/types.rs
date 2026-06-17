@@ -115,6 +115,42 @@ pub struct DeckMutationOpeningHandProfileV1 {
     pub signals: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub enum TransformRandomAdditionBandV1 {
+    #[default]
+    NotTransform,
+    LikelyBetterThanTarget,
+    Mixed,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub enum TransformVarianceRiskV1 {
+    #[default]
+    NotTransform,
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DeckMutationTransformProfileV1 {
+    pub random_addition_band: TransformRandomAdditionBandV1,
+    pub variance_risk: TransformVarianceRiskV1,
+    pub branch_lane: DeckMutationPlanRoleV1,
+    pub signals: Vec<String>,
+}
+
+impl Default for DeckMutationTransformProfileV1 {
+    fn default() -> Self {
+        Self {
+            random_addition_band: TransformRandomAdditionBandV1::NotTransform,
+            variance_risk: TransformVarianceRiskV1::NotTransform,
+            branch_lane: DeckMutationPlanRoleV1::InspectOnly,
+            signals: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AllowedDeckMutationConsumersV1 {
     pub execute_autopilot: bool,
@@ -134,6 +170,7 @@ pub struct DeckMutationCardSnapshotV1 {
     pub target_class: DeckMutationTargetClassV1,
     pub target_loss: DeckMutationTargetLossV1,
     pub opening_hand: DeckMutationOpeningHandProfileV1,
+    pub transform: DeckMutationTransformProfileV1,
 }
 
 #[derive(Clone, Debug, PartialEq)]

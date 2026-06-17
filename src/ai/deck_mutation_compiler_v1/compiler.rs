@@ -18,8 +18,9 @@ use super::types::{
     DeckMutationCompilerModeV1, DeckMutationKindV1, DeckMutationOpeningHandDebtTierV1,
     DeckMutationOpeningHandProfileV1, DeckMutationPlanCandidateV1, DeckMutationPlanRoleV1,
     DeckMutationPlanStepV1, DeckMutationTargetClassV1, DeckMutationTargetLossTierV1,
-    DeckMutationTargetLossV1, DuplicateStackBehaviorV1, DuplicateTargetEvaluationV1,
-    DuplicateTargetRoleV1,
+    DeckMutationTargetLossV1, DeckMutationTransformProfileV1, DuplicateStackBehaviorV1,
+    DuplicateTargetEvaluationV1, DuplicateTargetRoleV1, TransformRandomAdditionBandV1,
+    TransformVarianceRiskV1,
 };
 
 const MAX_DUPLICATE_OPTIONS_PER_BRANCH: usize = 4;
@@ -247,6 +248,7 @@ fn exact_target_for_deck_index(
             target_class,
             target_loss: target_loss_for_card_mutation(run_state, reason, card, target_class),
             opening_hand: opening_hand_profile_for_card_mutation(run_state, reason, card),
+            transform: transform_profile_for_card_mutation(run_state, reason, card, target_class),
         },
         identity_key: card_stat_identity_key(card),
         selectable,
@@ -585,6 +587,22 @@ fn candidate_from_targets_for_reason(
     } else {
         Vec::new()
     };
+    let transform_reasons = if is_transform_choice(reason) {
+        selected_targets
+            .iter()
+            .flat_map(|target| transform_reasons(&target.card))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let transform_risks = if is_transform_choice(reason) {
+        selected_targets
+            .iter()
+            .flat_map(|target| transform_risks(&target.card))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
     DeckMutationPlanCandidateV1 {
         plan_id: format!("deck_mutation:{effect_key}"),
         step: DeckMutationPlanStepV1 {
@@ -612,6 +630,7 @@ fn candidate_from_targets_for_reason(
             .flat_map(|target| target_loss_reasons(&target.card))
             .chain(duplicate_reasons)
             .chain(upgrade_reasons)
+            .chain(transform_reasons)
             .chain(std::iter::once(format!("candidate for {:?}", reason)))
             .collect(),
         risks: selected_targets
@@ -619,6 +638,7 @@ fn candidate_from_targets_for_reason(
             .flat_map(|target| target_risks(&target.card))
             .chain(duplicate_risks)
             .chain(upgrade_risks)
+            .chain(transform_risks)
             .collect(),
     }
 }
@@ -673,6 +693,8 @@ fn evaluate_candidate_for_reason(
 
     let role = if has_unsupported_target {
         DeckMutationPlanRoleV1::Blocked
+    } else if is_transform_choice(reason) {
+        transform_candidate_role(candidate, has_functional_target, low_value_available)
     } else if has_bottle_debt && clean_bottle_target_available {
         DeckMutationPlanRoleV1::InspectOnly
     } else if has_bottle_debt {
@@ -737,9 +759,7 @@ fn allowed_consumers(
         .all(|card| card.target_class.is_low_value_mutation_target());
     let execute_autopilot = match role {
         DeckMutationPlanRoleV1::PolicyPreferred => true,
-        DeckMutationPlanRoleV1::SafeAlternative => {
-            (is_remove_choice(reason) || is_transform_choice(reason)) && all_low_value
-        }
+        DeckMutationPlanRoleV1::SafeAlternative => is_remove_choice(reason) && all_low_value,
         DeckMutationPlanRoleV1::RiskyExploration
         | DeckMutationPlanRoleV1::InspectOnly
         | DeckMutationPlanRoleV1::Blocked => false,
@@ -787,6 +807,23 @@ fn allowed_consumers(
             human_prompt: true,
         },
     }
+}
+
+fn transform_candidate_role(
+    candidate: &DeckMutationPlanCandidateV1,
+    has_functional_target: bool,
+    low_value_available: bool,
+) -> DeckMutationPlanRoleV1 {
+    if has_functional_target && low_value_available {
+        return DeckMutationPlanRoleV1::InspectOnly;
+    }
+    candidate
+        .step
+        .cards
+        .iter()
+        .map(|card| card.transform.branch_lane)
+        .max()
+        .unwrap_or(DeckMutationPlanRoleV1::InspectOnly)
 }
 
 fn clear_upgrade_priority_threshold() -> i32 {
@@ -1323,6 +1360,76 @@ fn opening_hand_profile_for_card_mutation(
     }
 }
 
+fn transform_profile_for_card_mutation(
+    run_state: &RunState,
+    reason: RunPendingChoiceReason,
+    _card: &CombatCard,
+    target_class: DeckMutationTargetClassV1,
+) -> DeckMutationTransformProfileV1 {
+    if !is_transform_choice(reason) {
+        return DeckMutationTransformProfileV1::default();
+    }
+
+    let mut profile = DeckMutationTransformProfileV1 {
+        random_addition_band: TransformRandomAdditionBandV1::Mixed,
+        variance_risk: TransformVarianceRiskV1::Medium,
+        branch_lane: DeckMutationPlanRoleV1::RiskyExploration,
+        signals: vec!["transform_adds_random_card".to_string()],
+    };
+
+    match target_class {
+        DeckMutationTargetClassV1::Curse
+        | DeckMutationTargetClassV1::StarterStrike
+        | DeckMutationTargetClassV1::StarterDefend
+        | DeckMutationTargetClassV1::Basic => {
+            profile.random_addition_band = TransformRandomAdditionBandV1::LikelyBetterThanTarget;
+            profile.branch_lane = DeckMutationPlanRoleV1::SafeAlternative;
+            profile
+                .signals
+                .push(format!("target_class={target_class:?}"));
+        }
+        DeckMutationTargetClassV1::BasicCore | DeckMutationTargetClassV1::Functional => {
+            profile.random_addition_band = TransformRandomAdditionBandV1::Mixed;
+            profile.variance_risk = TransformVarianceRiskV1::High;
+            profile.branch_lane = DeckMutationPlanRoleV1::RiskyExploration;
+            profile
+                .signals
+                .push("functional_transform_requires_strategy_context".to_string());
+        }
+        DeckMutationTargetClassV1::Unsupported | DeckMutationTargetClassV1::UpgradeTarget => {
+            profile.random_addition_band = TransformRandomAdditionBandV1::Mixed;
+            profile.variance_risk = TransformVarianceRiskV1::High;
+            profile.branch_lane = DeckMutationPlanRoleV1::Blocked;
+            profile
+                .signals
+                .push("unsupported_transform_target".to_string());
+        }
+    }
+
+    match target_class {
+        DeckMutationTargetClassV1::StarterStrike => profile
+            .signals
+            .push("short_term_frontload_loss_risk".to_string()),
+        DeckMutationTargetClassV1::StarterDefend => profile
+            .signals
+            .push("short_term_block_loss_risk".to_string()),
+        _ => {}
+    }
+    if run_state.act_num == 1 && run_state.floor_num <= 7 {
+        profile
+            .signals
+            .push("act1_early_transform_variance".to_string());
+        if matches!(
+            target_class,
+            DeckMutationTargetClassV1::StarterStrike | DeckMutationTargetClassV1::StarterDefend
+        ) {
+            profile.variance_risk = TransformVarianceRiskV1::Medium;
+        }
+    }
+
+    profile
+}
+
 fn map_opening_hand_debt_tier(tier: OpeningHandDebtTierV1) -> DeckMutationOpeningHandDebtTierV1 {
     match tier {
         OpeningHandDebtTierV1::None => DeckMutationOpeningHandDebtTierV1::None,
@@ -1407,6 +1514,53 @@ fn target_loss_reasons(card: &DeckMutationCardSnapshotV1) -> Vec<String> {
         ));
     }
     reasons
+}
+
+fn transform_reasons(card: &DeckMutationCardSnapshotV1) -> Vec<String> {
+    if card.transform.random_addition_band == TransformRandomAdditionBandV1::NotTransform {
+        return Vec::new();
+    }
+    let mut reasons = vec![
+        format!(
+            "transform_random_addition_band={:?}",
+            card.transform.random_addition_band
+        ),
+        format!("transform_branch_lane={:?}", card.transform.branch_lane),
+    ];
+    if !card.transform.signals.is_empty() {
+        reasons.push(format!(
+            "transform_signals={}",
+            card.transform.signals.join(",")
+        ));
+    }
+    reasons
+}
+
+fn transform_risks(card: &DeckMutationCardSnapshotV1) -> Vec<String> {
+    if card.transform.variance_risk == TransformVarianceRiskV1::NotTransform {
+        return Vec::new();
+    }
+    let mut risks = vec![format!(
+        "transform_variance_risk={:?}",
+        card.transform.variance_risk
+    )];
+    if card
+        .transform
+        .signals
+        .iter()
+        .any(|signal| signal == "short_term_frontload_loss_risk")
+    {
+        risks.push("transforming this target can reduce immediate attack density".to_string());
+    }
+    if card
+        .transform
+        .signals
+        .iter()
+        .any(|signal| signal == "short_term_block_loss_risk")
+    {
+        risks.push("transforming this target can reduce immediate block density".to_string());
+    }
+    risks
 }
 
 fn target_risks(card: &DeckMutationCardSnapshotV1) -> Vec<String> {

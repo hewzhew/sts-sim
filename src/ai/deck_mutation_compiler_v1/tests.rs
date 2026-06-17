@@ -1,7 +1,8 @@
 use crate::ai::deck_mutation_compiler_v1::{
     best_duplicate_target_for_shop_v1, compile_deck_mutation_decision_v1,
     render_compiled_deck_mutation_decision_v1, DeckMutationCompilerModeV1, DeckMutationPlanRoleV1,
-    DeckMutationTargetLossTierV1, DuplicateTargetRoleV1,
+    DeckMutationTargetLossTierV1, DuplicateTargetRoleV1, TransformRandomAdditionBandV1,
+    TransformVarianceRiskV1,
 };
 use crate::ai::upgrade_planner_v1::{
     upgrade_candidate_for_deck_index_v1, upgrade_candidate_score_hint_v1,
@@ -82,6 +83,84 @@ fn compiler_execute_one_selects_evaluated_executable_plan() {
         .candidate_plans
         .iter()
         .any(|candidate| candidate.plan_id == selected.plan_id));
+}
+
+#[test]
+fn transform_compiler_keeps_low_value_targets_branchable_without_autopilot_execution() {
+    let run_state = RunState::new(1, 0, false, "Ironclad");
+    let choice = choice(RunPendingChoiceReason::TransformNonBottled, 1);
+
+    let branch_decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice,
+        DeckMutationCompilerModeV1::BranchTopK { max_active: 12 },
+    );
+
+    let strike_transform = branch_decision
+        .branch_active_plans
+        .iter()
+        .find(|plan| plan.step.cards[0].card == CardId::Strike)
+        .expect("starter Strike transform should stay branchable");
+    assert_eq!(
+        strike_transform.step.cards[0]
+            .transform
+            .random_addition_band,
+        TransformRandomAdditionBandV1::LikelyBetterThanTarget
+    );
+    assert_eq!(
+        strike_transform.step.cards[0].transform.variance_risk,
+        TransformVarianceRiskV1::Medium
+    );
+    assert!(!strike_transform.allowed_consumers.execute_autopilot);
+    assert!(strike_transform
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("transform_random_addition_band")));
+
+    let execute_decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice,
+        DeckMutationCompilerModeV1::ExecuteOne,
+    );
+    assert!(
+        execute_decision.selected_plan.is_none(),
+        "transform is a random deck mutation and should not share purge's autopilot gate"
+    );
+}
+
+#[test]
+fn transform_compiler_marks_functional_targets_as_high_variance() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.add_card_to_deck(CardId::TrueGrit);
+    let choice = choice(RunPendingChoiceReason::TransformNonBottled, 1);
+
+    let decision = compile_deck_mutation_decision_v1(
+        &run_state,
+        &choice,
+        DeckMutationCompilerModeV1::BranchTopK { max_active: 12 },
+    );
+    let true_grit = decision
+        .candidate_plans
+        .iter()
+        .find(|plan| plan.step.cards[0].card == CardId::TrueGrit)
+        .expect("True Grit transform candidate should exist");
+
+    assert_eq!(
+        true_grit.step.cards[0].transform.random_addition_band,
+        TransformRandomAdditionBandV1::Mixed
+    );
+    assert_eq!(
+        true_grit.step.cards[0].transform.variance_risk,
+        TransformVarianceRiskV1::High
+    );
+    assert!(matches!(
+        true_grit.role,
+        DeckMutationPlanRoleV1::InspectOnly | DeckMutationPlanRoleV1::RiskyExploration
+    ));
+    assert!(true_grit
+        .risks
+        .iter()
+        .any(|risk| risk == "transform_variance_risk=High"));
 }
 
 #[test]
