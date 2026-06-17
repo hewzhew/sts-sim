@@ -101,22 +101,7 @@ fn execute_line(
         println!("{}", outcome.message);
     }
     if let Some(recorder) = trace.as_deref_mut() {
-        if let Some(action_result) = outcome.action_result.as_ref() {
-            if let Some(pending) = pending_trace {
-                recorder.record_action_step(
-                    pending,
-                    session,
-                    action_result,
-                    &outcome.trace_annotations,
-                )?;
-            }
-        } else {
-            recorder.record_artifact_command(trimmed, session, &command)?;
-            recorder.record_boundary_annotations(trimmed, session, &outcome.trace_annotations)?;
-        }
-        if let Some(path) = outcome.search_evidence_path.as_ref() {
-            recorder.record_search_evidence_artifact(trimmed, session, path)?;
-        }
+        recorder.record_command_outcome(pending_trace, trimmed, session, &command, &outcome)?;
     }
     Ok(ExecuteLineResult {
         should_quit: outcome.should_quit,

@@ -8,7 +8,7 @@ use crate::ai::noncombat_decision_v1::{NonCombatOutcomeAttachmentV1, NonCombatOu
 
 use super::commands::RunControlCommand;
 use super::registry::BenchmarkCasePaths;
-use super::session::RunControlSession;
+use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::session_trace_outcome::{
     noncombat_outcome_snapshot, queue_selected_noncombat_outcomes, resolve_pending_outcomes,
     update_outcome_counters, update_pending_outcome_observations, SessionTraceOutcomeCounters,
@@ -335,6 +335,39 @@ impl SessionTraceRecorder {
             annotations,
             SessionTraceStepSourceV1::ManualOrAutomation,
         )
+    }
+
+    pub fn record_command_outcome(
+        &mut self,
+        pending: Option<SessionTracePendingStep>,
+        raw_command_line: &str,
+        session_after: &RunControlSession,
+        command: &RunControlCommand,
+        outcome: &RunControlCommandOutcome,
+    ) -> Result<(), String> {
+        if let Some(action_result) = outcome.action_result.as_ref() {
+            let pending = pending.ok_or_else(|| {
+                "record_command_outcome requires a pending trace step for action results"
+                    .to_string()
+            })?;
+            self.record_action_step(
+                pending,
+                session_after,
+                action_result,
+                &outcome.trace_annotations,
+            )?;
+        } else {
+            self.record_artifact_command(raw_command_line, session_after, command)?;
+            self.record_boundary_annotations(
+                raw_command_line,
+                session_after,
+                &outcome.trace_annotations,
+            )?;
+        }
+        if let Some(path) = outcome.search_evidence_path.as_ref() {
+            self.record_search_evidence_artifact(raw_command_line, session_after, path)?;
+        }
+        Ok(())
     }
 
     pub(in crate::eval::run_control) fn record_action_step_with_source(
@@ -887,6 +920,29 @@ mod tests {
         );
         assert!(step.selected_candidate.is_some());
         assert!(step.annotations.is_empty());
+        assert!(path.exists());
+
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn recorder_records_state_changing_command_outcome() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let path = unique_temp_dir("session_trace_command_outcome").join("trace.json");
+        let mut recorder = SessionTraceRecorder::new(path.clone(), &session);
+        let command = RunControlCommand::DefaultCandidate;
+        let pending = SessionTraceRecorder::prepare_step(&session, "", &command);
+        let outcome = session
+            .apply_command(command.clone())
+            .expect("default candidate should advance Neow intro");
+
+        recorder
+            .record_command_outcome(Some(pending), "", &session, &command, &outcome)
+            .expect("trace step should save through command outcome helper");
+
+        assert_eq!(recorder.trace().steps.len(), 1);
+        assert_eq!(recorder.trace().steps[0].decision_step_after, 1);
+        assert!(recorder.trace().boundary_records.is_empty());
         assert!(path.exists());
 
         let _ = fs::remove_dir_all(path.parent().unwrap());
