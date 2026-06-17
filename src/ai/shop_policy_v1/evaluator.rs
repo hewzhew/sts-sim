@@ -273,9 +273,14 @@ fn evaluate_portfolio_plan_v1(
         .iter()
         .map(|evaluation| evaluation.confidence)
         .fold(0.50_f32, f32::min);
+    let tier = step_evaluations
+        .iter()
+        .map(|evaluation| evaluation.tier)
+        .max()
+        .unwrap_or(150);
     let legacy_priority = candidate_plan.plan.legacy_priority.unwrap_or_default();
     ShopPlanEvaluationV1::allow(
-        150,
+        tier,
         step_evaluations
             .iter()
             .map(|evaluation| evaluation.score)
@@ -283,7 +288,7 @@ fn evaluate_portfolio_plan_v1(
             .max(legacy_priority),
         confidence,
         candidate_plan.plan.legacy_priority,
-        "portfolio alternative passed unified shop gates; legacy estimate retained as branch estimate",
+        "multi-step shop plan passed unified shop gates; strongest step tier retained for plan comparison",
     )
 }
 

@@ -16,13 +16,7 @@ pub(super) fn evaluated_shop_portfolio_combo_plans_v1(
         .iter()
         .filter_map(evaluated_combo_option_v1)
         .collect::<Vec<_>>();
-    if options.len() < 3 {
-        return Vec::new();
-    }
-
-    let combo_pressure =
-        options.len() > max_plans || (context.need.gold >= 300 && context.conversion_pressure);
-    if !combo_pressure {
+    if options.len() < 2 {
         return Vec::new();
     }
 
@@ -37,6 +31,7 @@ struct EvaluatedShopComboOptionV1 {
     cost: i32,
     can_start_combo: bool,
     can_follow_combo: bool,
+    can_continue_combo: bool,
     effect_kind: &'static str,
     plan: ShopPlanV1,
 }
@@ -52,15 +47,17 @@ fn evaluated_combo_option_v1(
     }
 
     let step = candidate.plan.steps.first()?;
-    let (effect_kind, can_start_combo, can_follow_combo) = match *step {
-        ShopPlanStepV1::BuyCard { .. } => ("shop_buy_card", true, true),
-        ShopPlanStepV1::BuyPotion { .. } => ("shop_buy_potion", true, true),
+    let (effect_kind, can_start_combo, can_follow_combo, can_continue_combo) = match *step {
+        ShopPlanStepV1::BuyCard { .. } => ("shop_buy_card", true, true, true),
+        ShopPlanStepV1::BuyPotion { .. } => ("shop_buy_potion", true, true, true),
         ShopPlanStepV1::BuyRelic { relic, .. } => (
             "shop_buy_relic",
             shop_relic_purchase_keeps_shop_open(relic),
-            false,
+            true,
+            shop_relic_purchase_keeps_shop_open(relic),
         ),
-        ShopPlanStepV1::RemoveCard { .. } | ShopPlanStepV1::LeaveShop => return None,
+        ShopPlanStepV1::RemoveCard { .. } => ("shop_purge", true, true, true),
+        ShopPlanStepV1::LeaveShop => return None,
     };
 
     let mut plan = candidate.plan.clone();
@@ -77,6 +74,7 @@ fn evaluated_combo_option_v1(
         cost: candidate.plan.total_gold_spent,
         can_start_combo,
         can_follow_combo,
+        can_continue_combo,
         effect_kind,
         plan,
     })
@@ -119,6 +117,7 @@ fn best_shop_combo_plan_v1(
         for first in options.iter().filter(|entry| entry.can_start_combo) {
             for second in options.iter().filter(|entry| {
                 entry.can_follow_combo
+                    && entry.can_continue_combo
                     && entry.plan.plan_id != first.plan.plan_id
                     && entry.effect_kind != first.effect_kind
             }) {
@@ -190,6 +189,7 @@ fn shop_combo_plan_v1(entries: &[&EvaluatedShopComboOptionV1]) -> EvaluatedShopC
         cost,
         can_start_combo: false,
         can_follow_combo: false,
+        can_continue_combo: false,
         effect_kind: "shop_buy_combo",
         plan,
     }

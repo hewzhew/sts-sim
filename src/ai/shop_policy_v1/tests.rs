@@ -1239,6 +1239,59 @@ fn compiled_shop_branch_portfolio_excludes_blocked_single_action_candidates() {
 }
 
 #[test]
+fn compiled_shop_selected_plan_can_be_multi_step_cleanup_plus_relic() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 1;
+    run_state.floor_num = 5;
+    run_state.gold = 260;
+    let mut shop = ShopState::new();
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::OrangePellets,
+        price: 151,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 4 },
+    );
+
+    assert!(
+        compiled.selected_plan.steps.iter().any(|step| {
+            matches!(
+                step,
+                ShopPlanStepV1::RemoveCard {
+                    card: CardId::Strike,
+                    ..
+                }
+            )
+        }),
+        "selected shop plan should retain the deck-cleaning step, got {:?}",
+        compiled.selected_plan
+    );
+    assert!(
+        compiled.selected_plan.steps.iter().any(|step| {
+            matches!(
+                step,
+                ShopPlanStepV1::BuyRelic {
+                    relic: RelicId::OrangePellets,
+                    ..
+                }
+            )
+        }),
+        "selected shop plan should include the high-value relic conversion, got {:?}",
+        compiled.selected_plan
+    );
+    assert!(
+        compiled.selected_plan.steps.len() >= 2,
+        "shop compiler should compare complete multi-step plans instead of forcing local single-step selection"
+    );
+}
+
+#[test]
 fn compiled_shop_portfolio_uses_step_evaluation_over_plan_legacy_gate() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
@@ -1290,7 +1343,7 @@ fn compiled_shop_portfolio_uses_step_evaluation_over_plan_legacy_gate() {
         evaluation
             .reasons
             .iter()
-            .any(|reason| reason.contains("portfolio alternative passed unified shop gates")),
+            .any(|reason| reason.contains("passed unified shop gates")),
         "portfolio candidates should be judged by their step evaluations, not by a raw legacy plan gate; got {:?}",
         evaluation.reasons
     );

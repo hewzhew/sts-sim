@@ -635,7 +635,7 @@ fn current_boundary_caps_high_fanout_shop_purchase_choices() {
 }
 
 #[test]
-fn current_boundary_keeps_selected_shop_purge_ahead_of_combo_purchase() {
+fn current_boundary_keeps_compiled_selected_shop_plan_first() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.floor_num = 6;
     session.run_state.gold = 631;
@@ -674,15 +674,19 @@ fn current_boundary_keeps_selected_shop_purge_ahead_of_combo_purchase() {
     assert_eq!(boundary.id, BranchBoundaryIdV1::Shop);
     assert!(boundary.options.len() <= 4);
     assert_eq!(
-        boundary.options[0].command, "purge 0",
+        boundary.options[0]
+            .decision_signal
+            .as_ref()
+            .map(|signal| signal.source.as_str()),
+        Some(crate::eval::branch_experiment::BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1),
         "compiled selected plan should be the first shop branch option"
     );
     assert!(
         boundary
             .options
             .iter()
-            .any(|option| option.effect_kind == "shop_purge"),
-        "selected purge should not be crowded out by portfolio coverage"
+            .any(|option| option.command.contains("purge 0")),
+        "shop cleanup should remain represented in compiled shop branch options"
     );
 }
 
