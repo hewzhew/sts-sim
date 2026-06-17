@@ -617,6 +617,13 @@ fn compiled_shop_branch_topk_returns_plan_alternatives() {
         .alternatives
         .iter()
         .all(|plan| candidate_plan_ids.contains(plan.plan_id.as_str())));
+    assert!(
+        compiled
+            .alternatives
+            .iter()
+            .all(|plan| plan.plan_id != compiled.selected_plan.plan_id),
+        "branch alternatives should not duplicate the selected shop plan"
+    );
     assert!(compiled
         .alternatives
         .iter()
@@ -1288,6 +1295,13 @@ fn compiled_shop_selected_plan_can_be_multi_step_cleanup_plus_relic() {
     assert!(
         compiled.selected_plan.steps.len() >= 2,
         "shop compiler should compare complete multi-step plans instead of forcing local single-step selection"
+    );
+    assert!(
+        compiled
+            .alternatives
+            .iter()
+            .all(|plan| plan.plan_id != compiled.selected_plan.plan_id),
+        "branch alternatives should not duplicate the selected multi-step shop plan"
     );
 }
 

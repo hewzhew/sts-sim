@@ -48,7 +48,7 @@ pub fn compile_shop_decision_v1(
     let alternatives = match mode {
         ShopCompileModeV1::ExecuteOne => Vec::new(),
         ShopCompileModeV1::BranchTopK { max_plans } => {
-            evaluated_branch_alternatives_v1(context, &candidate_plans, max_plans)
+            evaluated_branch_alternatives_v1(context, &candidate_plans, max_plans, &selected_plan)
         }
     };
 
@@ -87,12 +87,14 @@ fn evaluated_branch_alternatives_v1(
     context: &ShopDecisionContextV1,
     candidates: &[ShopPlanCandidateV1],
     max_plans: usize,
+    selected_plan: &ShopPlanV1,
 ) -> Vec<ShopPlanV1> {
     let mut allow_candidates = candidates
         .iter()
         .filter(|candidate| {
             !candidate.plan.steps.is_empty()
                 && candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
+                && candidate.plan.plan_id != selected_plan.plan_id
         })
         .collect::<Vec<_>>();
     if branch_should_include_leave_with_allowed_candidates_v1(context)
@@ -103,6 +105,7 @@ fn evaluated_branch_alternatives_v1(
         allow_candidates.extend(candidates.iter().filter(|candidate| {
             candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
                 && plan_has_leave_shop_step_v1(candidate)
+                && candidate.plan.plan_id != selected_plan.plan_id
         }));
     }
     let mut alternatives = if allow_candidates.is_empty() {
@@ -112,6 +115,7 @@ fn evaluated_branch_alternatives_v1(
                 !candidate.plan.steps.is_empty()
                     && candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
                     && plan_has_leave_shop_step_v1(candidate)
+                    && candidate.plan.plan_id != selected_plan.plan_id
             })
             .collect::<Vec<_>>()
     } else {
