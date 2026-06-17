@@ -224,9 +224,12 @@ pub(super) fn render_checkpoint_shop_evidence_v1(
         }
     }
     if let Some(action) = trace.would_choose.as_ref() {
-        lines.push(format!("trace_would_choose: {}", action.candidate_id()));
+        lines.push(format!(
+            "strategic_trace_would_choose: {}",
+            action.candidate_id()
+        ));
     } else {
-        lines.push("trace_would_choose: -".to_string());
+        lines.push("strategic_trace_would_choose: -".to_string());
     }
     Ok(lines.join("\n"))
 }

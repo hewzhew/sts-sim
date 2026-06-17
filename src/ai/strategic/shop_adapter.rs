@@ -1,12 +1,14 @@
 use super::{
     compile_decision, ledger_from_snapshot, CandidateAction, CandidateDelta, CandidateRole,
-    LedgerDelta, OpportunityCost, PressureKind, StrategicDebt, StrategicDecisionSite,
-    StrategicDeckFacts, StrategicJob, StrategicSnapshot, VerdictHint,
+    LedgerDelta, OpportunityCost, PressureHorizon, PressureKind, PressureLedger, StrategicDebt,
+    StrategicDecisionSite, StrategicDeckFacts, StrategicJob, StrategicSnapshot, VerdictHint,
 };
 use crate::ai::card_component_marginal_value_v1::{
     evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
 };
-use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
+use crate::ai::card_reward_policy_v1::{
+    card_facts, card_reward_semantic_profile_v1, CardRewardSemanticRoleV1,
+};
 use crate::ai::decision_tags_v1::{
     strings_have_tag, TAG_COLLECTOR_ANSWER, TAG_ENGINE_CLOSURE, TAG_STARTUP_ACCESS,
 };
@@ -17,13 +19,31 @@ use crate::state::rewards::RewardCard;
 
 pub fn strategic_trace_for_shop(context: &ShopDecisionContextV1) -> super::StrategicDecisionTrace {
     let snapshot = snapshot_from_shop_context(context);
-    let ledger = ledger_from_snapshot(&snapshot);
+    let mut ledger = ledger_from_snapshot(&snapshot);
+    add_shop_upgrade_pressure_to_ledger(context, &mut ledger);
     let deltas = context
         .candidates
         .iter()
         .map(|candidate| candidate_delta_from_shop_candidate(context, candidate))
         .collect::<Vec<_>>();
     compile_decision(snapshot, ledger, context.candidates.len(), deltas)
+}
+
+fn add_shop_upgrade_pressure_to_ledger(
+    context: &ShopDecisionContextV1,
+    ledger: &mut PressureLedger,
+) {
+    if context.upgrade_need.pressure <= 0.0 {
+        return;
+    }
+    ledger.push(
+        "upgrade_need:shop_upgrade_debt",
+        PressureKind::UpgradeNeed,
+        PressureHorizon::ActBoss,
+        context.upgrade_need.pressure,
+        0.70,
+        context.upgrade_need.evidence.clone(),
+    );
 }
 
 fn snapshot_from_shop_context(context: &ShopDecisionContextV1) -> StrategicSnapshot {
@@ -293,6 +313,16 @@ fn add_default_shop_card_semantic_deltas(
             reason: "shop_card_adds_exhaust_access".to_string(),
         });
     }
+    if card_facts(&RewardCard::new(card, 0)).upgrades_cards {
+        if delta.role == CandidateRole::ResourceConversion {
+            delta.role = CandidateRole::Enabler;
+        }
+        delta.positive.push(LedgerDelta {
+            kind: PressureKind::UpgradeNeed,
+            amount: SHOP_CARD_UPGRADE_ACCESS_SIGNAL,
+            reason: "shop_card_upgrades_existing_deck".to_string(),
+        });
+    }
     if delta.positive.is_empty() {
         delta.positive.push(LedgerDelta {
             kind: PressureKind::EconomyNeed,
@@ -385,4 +415,5 @@ const SHOP_CARD_BOSS_ANSWER_SIGNAL: f32 = 0.55;
 const SHOP_CARD_ENGINE_CLOSURE_SIGNAL: f32 = 0.45;
 const SHOP_CARD_STARTUP_ACCESS_SIGNAL: f32 = 0.35;
 const SHOP_CARD_DEFAULT_JOB_SIGNAL: f32 = 0.30;
+const SHOP_CARD_UPGRADE_ACCESS_SIGNAL: f32 = 0.70;
 const SHOP_CARD_GENERIC_GOLD_CONVERSION_SIGNAL: f32 = 0.05;

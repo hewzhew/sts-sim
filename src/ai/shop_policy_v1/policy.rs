@@ -16,6 +16,7 @@ use crate::ai::deck_mutation_compiler_v1::{
     compile_deck_mutation_decision_v1, DeckMutationCompilerModeV1, DeckMutationKindV1,
     DeckMutationPlanCandidateV1, DeckMutationPlanRoleV1, DeckMutationTargetClassV1,
 };
+use crate::ai::upgrade_planner_v1::{plan_upgrades_v1, UpgradeSlotPressureV1};
 
 pub fn build_shop_decision_context_v1(
     run_state: &RunState,
@@ -24,6 +25,7 @@ pub fn build_shop_decision_context_v1(
     let strategy = build_run_strategy_snapshot_from_run_state_v2(run_state);
     let strength = crate::ai::strength_profile_v1::strength_profile_v1(run_state);
     let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
+    let upgrade_need = shop_upgrade_need_profile_from_run_state_v1(run_state);
     let need = crate::ai::shop_policy_v1::build_shop_need_profile_v1(run_state);
     let affordable_purchase_exists = affordable_purchase_exists(shop, run_state.gold);
     let conversion_pressure =
@@ -127,10 +129,38 @@ pub fn build_shop_decision_context_v1(
         strategy,
         strength,
         startup,
+        upgrade_need,
         need,
         candidates,
         affordable_purchase_exists,
         conversion_pressure,
+    }
+}
+
+fn shop_upgrade_need_profile_from_run_state_v1(
+    run_state: &RunState,
+) -> super::types::ShopUpgradeNeedProfileV1 {
+    let plan = plan_upgrades_v1(run_state);
+    let pressure = match plan.debt_ledger.upgrade_slots_pressure {
+        UpgradeSlotPressureV1::Low => 0.0,
+        UpgradeSlotPressureV1::Medium => 0.55,
+        UpgradeSlotPressureV1::High => 0.78,
+    };
+    let mut evidence = Vec::new();
+    if plan.debt_ledger.unpaid_core_count > 0 {
+        evidence.push(format!(
+            "upgrade_debt_unpaid_core_count={}",
+            plan.debt_ledger.unpaid_core_count
+        ));
+    }
+    if let Some(debt) = plan.rest_vs_smith.best_smith_debt_paid {
+        evidence.push(format!("best_smith_debt={}", debt.label()));
+    }
+    evidence.extend(plan.notes);
+    super::types::ShopUpgradeNeedProfileV1 {
+        unpaid_core_count: plan.debt_ledger.unpaid_core_count,
+        pressure,
+        evidence,
     }
 }
 

@@ -18,10 +18,18 @@ pub struct ShopDecisionContextV1 {
     pub strategy: RunStrategySnapshotV2,
     pub strength: StrengthProfileV1,
     pub startup: DeckStartupProfileV1,
+    pub upgrade_need: ShopUpgradeNeedProfileV1,
     pub need: ShopNeedProfileV1,
     pub candidates: Vec<ShopCandidateEvidenceV1>,
     pub affordable_purchase_exists: bool,
     pub conversion_pressure: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ShopUpgradeNeedProfileV1 {
+    pub unpaid_core_count: usize,
+    pub pressure: f32,
+    pub evidence: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
