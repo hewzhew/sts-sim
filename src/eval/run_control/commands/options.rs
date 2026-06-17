@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use crate::ai::combat_search_v2::{
-    CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
-    CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy,
+    CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
 };
 use crate::state::core::ClientInput;
 
@@ -47,6 +47,9 @@ pub(super) fn parse_search_combat_options(
             }
             "rollout" | "rollout_policy" => {
                 options.rollout_policy = Some(parse_rollout_policy(value)?);
+            }
+            "child_rollout" | "child_rollout_policy" | "child-rollout-policy" => {
+                options.child_rollout_policy = Some(parse_child_rollout_policy(value)?);
             }
             "rollouts" | "rollout_max_evaluations" | "max_rollouts" => {
                 options.rollout_max_evaluations =
@@ -147,6 +150,9 @@ fn validate_search_default_options(options: &RunControlSearchCombatOptions) -> R
     }
     if options.rollout_policy.is_some() {
         unsupported.push("rollout");
+    }
+    if options.child_rollout_policy.is_some() {
+        unsupported.push("child_rollout");
     }
     if options.rollout_max_evaluations.is_some() {
         unsupported.push("rollouts");
@@ -274,6 +280,16 @@ fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, Stri
         }
         _ => Err(format!(
             "invalid rollout policy '{value}', expected disabled|enemy_mechanics_adaptive_no_potion|conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion"
+        )),
+    }
+}
+
+fn parse_child_rollout_policy(value: &str) -> Result<CombatSearchV2ChildRolloutPolicy, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "lazy" | "lazy_on_pop" | "lazy-on-pop" => Ok(CombatSearchV2ChildRolloutPolicy::LazyOnPop),
+        "immediate" | "eager" => Ok(CombatSearchV2ChildRolloutPolicy::Immediate),
+        _ => Err(format!(
+            "invalid child rollout policy '{value}', expected lazy_on_pop|immediate"
         )),
     }
 }

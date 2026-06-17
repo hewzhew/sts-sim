@@ -23,6 +23,7 @@ use crate::eval::branch_experiment_retention::{
 use crate::eval::branch_experiment_trajectory::{
     summarize_branch_trajectory_v1, BranchTrajectorySignatureV1,
 };
+use crate::eval::run_control::CombatSearchPerformanceSnapshotV1;
 #[cfg(test)]
 use crate::eval::run_control::RunControlCommand;
 use crate::eval::run_control::{
@@ -82,6 +83,7 @@ pub struct BranchExperimentRunResultV1 {
     pub report: BranchExperimentReportV1,
     pub branch_sessions: BTreeMap<String, RunControlSession>,
     pub start_elapsed_wall_ms: u64,
+    pub combat_performance_samples: Vec<CombatSearchPerformanceSnapshotV1>,
 }
 
 pub fn run_branch_experiment_v1(
@@ -258,7 +260,13 @@ fn prepare_branch_experiment_start(
     };
     if settle_to_first_boundary {
         let mut ignored_route_decisions = Vec::new();
-        settle_branch_to_frontier(&mut branch, config, &mut ignored_route_decisions);
+        let mut ignored_combat_performance = Vec::new();
+        settle_branch_to_frontier(
+            &mut branch,
+            config,
+            &mut ignored_route_decisions,
+            &mut ignored_combat_performance,
+        );
     }
 
     Ok(BranchExperimentPreparedStart {
@@ -338,6 +346,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
     let mut pruned_branch_summary = BranchExperimentPrunedBranchSummaryV1::default();
     let mut reward_option_portfolios = Vec::new();
     let mut route_decisions = Vec::new();
+    let mut combat_performance_samples = Vec::new();
 
     for depth in 0..config.max_depth {
         if experiment_wall_limit_hit(started_at, config) {
@@ -360,7 +369,12 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
                 continue;
             }
 
-            advance_to_experiment_boundary(&mut branch, config, &mut route_decisions);
+            advance_to_experiment_boundary(
+                &mut branch,
+                config,
+                &mut route_decisions,
+                &mut combat_performance_samples,
+            );
             if branch.status != BranchExperimentBranchStatusV1::Active {
                 next.push(branch);
                 continue;
@@ -448,7 +462,12 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
             wall_limit_phase.get_or_insert(BranchExperimentWallLimitPhaseV1::FinalSettle);
             break;
         }
-        settle_branch_to_frontier(branch, config, &mut route_decisions);
+        settle_branch_to_frontier(
+            branch,
+            config,
+            &mut route_decisions,
+            &mut combat_performance_samples,
+        );
     }
 
     let mut branch_sessions = branches
@@ -522,6 +541,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
         report,
         branch_sessions,
         start_elapsed_wall_ms: 0,
+        combat_performance_samples,
     }
 }
 
@@ -561,6 +581,7 @@ fn advance_to_experiment_boundary(
     branch: &mut BranchWork,
     config: &BranchExperimentConfigV1,
     route_decisions: &mut Vec<BranchExperimentRouteDecisionV1>,
+    combat_performance_samples: &mut Vec<CombatSearchPerformanceSnapshotV1>,
 ) {
     if is_terminal(&branch.session) || experiment_branch_options_available(&branch.session) {
         update_terminal_status(branch);
@@ -581,6 +602,12 @@ fn advance_to_experiment_boundary(
             route_decisions.extend(outcome.trace_annotations.iter().filter_map(|annotation| {
                 branch_route_decision_from_annotation(&branch.id, annotation)
             }));
+            combat_performance_samples.extend(
+                outcome
+                    .trace_annotations
+                    .iter()
+                    .filter_map(combat_performance_snapshot_from_annotation),
+            );
             branch.stop_reason =
                 if outcome_has_combat_turn_segment_progress(&outcome.trace_annotations)
                     && normalized_boundary_title(&current_boundary_title(&branch.session))
@@ -659,6 +686,15 @@ fn branch_route_decision_from_annotation(
     })
 }
 
+fn combat_performance_snapshot_from_annotation(
+    annotation: &RunControlTraceAnnotationV1,
+) -> Option<CombatSearchPerformanceSnapshotV1> {
+    match annotation {
+        RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot } => Some(snapshot.clone()),
+        _ => None,
+    }
+}
+
 fn update_terminal_status(branch: &mut BranchWork) {
     match &branch.session.engine_state {
         EngineState::GameOver(RunResult::Victory) => {
@@ -677,11 +713,12 @@ fn settle_branch_to_frontier(
     branch: &mut BranchWork,
     config: &BranchExperimentConfigV1,
     route_decisions: &mut Vec<BranchExperimentRouteDecisionV1>,
+    combat_performance_samples: &mut Vec<CombatSearchPerformanceSnapshotV1>,
 ) {
     if branch.status != BranchExperimentBranchStatusV1::Active {
         return;
     }
-    advance_to_experiment_boundary(branch, config, route_decisions);
+    advance_to_experiment_boundary(branch, config, route_decisions, combat_performance_samples);
     if branch.status != BranchExperimentBranchStatusV1::Active || is_terminal(&branch.session) {
         return;
     }
@@ -796,7 +833,13 @@ fn expand_branch_choice(
             update_terminal_status(&mut child);
             if !config.defer_branch_settle {
                 let mut ignored_route_decisions = Vec::new();
-                settle_branch_to_frontier(&mut child, config, &mut ignored_route_decisions);
+                let mut ignored_combat_performance = Vec::new();
+                settle_branch_to_frontier(
+                    &mut child,
+                    config,
+                    &mut ignored_route_decisions,
+                    &mut ignored_combat_performance,
+                );
             }
         }
         Err(err) => {
@@ -1034,6 +1077,20 @@ fn branch_strategic_debt_tags(session: &RunControlSession) -> Vec<String> {
         .any(|relic| relic.id == RelicId::Sozu)
     {
         tags.insert("relic_constraint:sozu_potion_lock".to_string());
+    }
+    if run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::VelvetChoker)
+    {
+        tags.insert("relic_constraint:velvet_choker_action_cap".to_string());
+    }
+    if run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::RunicDome)
+    {
+        tags.insert("relic_constraint:runic_dome_hidden_intents".to_string());
     }
 
     for relic in &run_state.relics {

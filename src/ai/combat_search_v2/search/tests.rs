@@ -183,6 +183,39 @@ impl CombatStepper for OneCardWinStepper {
 }
 
 #[derive(Clone, Copy)]
+struct DuplicateUnresolvedChildStepper;
+
+impl CombatStepper for DuplicateUnresolvedChildStepper {
+    fn legal_actions(&self, position: &CombatPosition) -> Vec<ClientInput> {
+        if matches!(position.engine, EngineState::CombatPlayerTurn) {
+            vec![ClientInput::EndTurn, ClientInput::Proceed]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn apply_to_stable(
+        &self,
+        position: &CombatPosition,
+        _input: ClientInput,
+        _limits: CombatStepLimits,
+    ) -> crate::sim::combat::CombatStepResult {
+        crate::sim::combat::CombatStepResult {
+            terminal: combat_terminal(&position.engine, &position.combat),
+            alive: true,
+            truncated: false,
+            timed_out: false,
+            engine_steps: 1,
+            position: position.clone(),
+        }
+    }
+
+    fn terminal(&self, position: &CombatPosition) -> CombatTerminal {
+        combat_terminal(&position.engine, &position.combat)
+    }
+}
+
+#[derive(Clone, Copy)]
 struct TwoTurnWinStepper;
 
 impl CombatStepper for TwoTurnWinStepper {
@@ -367,7 +400,7 @@ fn search_report_declares_privileged_policy_evidence_boundary() {
         &OneCardWinStepper,
     );
 
-    assert_eq!(report.schema_version, 7);
+    assert_eq!(report.schema_version, 9);
     assert_eq!(
         report.policy_evidence.information_access,
         CombatSearchV2InformationAccess::PrivilegedSimulator
@@ -419,6 +452,71 @@ fn hp_loss_acceptance_threshold_stops_after_good_enough_complete_win() {
             .map(|trajectory| trajectory.hp_loss),
         Some(0)
     );
+}
+
+#[test]
+fn zero_hp_loss_complete_win_stops_without_explicit_hp_gate() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+        crate::content::cards::CardId::Strike,
+        100,
+    )];
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 20,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            stop_on_win_hp_loss_at_most: None,
+            ..CombatSearchV2Config::default()
+        },
+        &WinOrDelayStepper,
+    );
+
+    assert_eq!(
+        report.outcome.coverage_status,
+        SearchCoverageStatus::AcceptedCompleteCandidate
+    );
+    assert_eq!(
+        report
+            .best_complete_trajectory
+            .as_ref()
+            .map(|trajectory| trajectory.hp_loss),
+        Some(0)
+    );
+    assert!(
+        report.stats.nodes_expanded < 20,
+        "zero-loss complete win cannot be improved on hp loss, so search should stop early"
+    );
+}
+
+#[test]
+fn zero_hp_loss_complete_win_waits_when_external_payoff_remains_possible() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+        crate::content::cards::CardId::Feed,
+        100,
+    )];
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 20,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            stop_on_win_hp_loss_at_most: None,
+            ..CombatSearchV2Config::default()
+        },
+        &WinOrDelayStepper,
+    );
+
+    assert_ne!(
+        report.outcome.coverage_status,
+        SearchCoverageStatus::AcceptedCompleteCandidate,
+        "default zero-loss early accept should not close search when combat-external payoff cards remain relevant"
+    );
+    assert!(report.outcome.complete_trajectory_found);
 }
 
 #[test]
@@ -543,6 +641,164 @@ fn root_turn_plan_frontier_seed_remains_explicit_opt_in() {
         .diagnosis
         .contains(&"turn_plan_frontier_seeded"));
     assert_eq!(seeded.search_policy.turn_plan_policy, "root_frontier_seed");
+}
+
+#[test]
+fn report_includes_search_performance_attribution_counts() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![crate::runtime::combat::CombatCard::new(
+        crate::content::cards::CardId::Strike,
+        100,
+    )];
+
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 2,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::RootFrontierSeed,
+            ..CombatSearchV2Config::default()
+        },
+        &OneCardWinStepper,
+    );
+
+    assert!(report.performance.rollout_estimate_calls >= 1);
+    assert_eq!(report.performance.root_rollout_estimate_calls, 1);
+    assert_eq!(
+        report.performance.rollout_estimate_calls,
+        report
+            .performance
+            .root_rollout_estimate_calls
+            .saturating_add(report.performance.child_rollout_estimate_calls)
+            .saturating_add(report.performance.deferred_child_rollout_estimate_calls)
+            .saturating_add(report.performance.turn_plan_seed_rollout_estimate_calls)
+    );
+    assert!(report.performance.frontier_pop_calls >= 1);
+    assert_eq!(report.performance.turn_plan_frontier_seed_calls, 1);
+    assert!(report.performance.total_elapsed_us >= report.performance.engine_step_elapsed_us);
+    assert!(report.performance.total_elapsed_us >= report.performance.rollout_estimate_elapsed_us);
+    assert!(report.performance.total_elapsed_us >= report.performance.shadow_audit_elapsed_us);
+    assert!(
+        report.performance.total_elapsed_us
+            >= report.performance.root_turn_plan_diagnostics_elapsed_us
+    );
+
+    let exact_report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 2,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            ..CombatSearchV2Config::default()
+        },
+        &OneCardWinStepper,
+    );
+
+    assert!(exact_report.performance.engine_step_calls >= 1);
+}
+
+#[test]
+fn terminal_children_skip_rollout_estimate() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 2,
+            rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            ..CombatSearchV2Config::default()
+        },
+        &OneCardWinStepper,
+    );
+
+    assert_eq!(
+        report.performance.rollout_estimate_calls, 1,
+        "only the root needs a rollout estimate; the generated terminal child should use terminal value"
+    );
+    assert_eq!(report.performance.root_rollout_estimate_calls, 1);
+    assert_eq!(report.performance.child_rollout_estimate_calls, 0);
+    assert_eq!(report.performance.terminal_child_rollout_skips, 1);
+    assert_eq!(report.stats.terminal_wins, 1);
+}
+
+#[test]
+fn terminal_turn_plan_seeds_skip_rollout_estimate() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    combat.zones.hand = vec![CombatCard::new(CardId::Strike, 100)];
+
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 1,
+            rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::RootFrontierSeed,
+            ..CombatSearchV2Config::default()
+        },
+        &OneCardWinStepper,
+    );
+
+    assert_eq!(report.performance.root_rollout_estimate_calls, 1);
+    assert_eq!(report.performance.turn_plan_seed_rollout_estimate_calls, 0);
+    assert!(
+        report.performance.terminal_turn_plan_seed_rollout_skips >= 1,
+        "terminal turn-plan seed nodes should use terminal value instead of rollout"
+    );
+}
+
+#[test]
+fn turn_local_dominance_pruned_children_skip_rollout_estimate() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 1,
+            rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            child_rollout_policy: CombatSearchV2ChildRolloutPolicy::Immediate,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            ..CombatSearchV2Config::default()
+        },
+        &DuplicateUnresolvedChildStepper,
+    );
+
+    assert_eq!(report.stats.turn_local_dominance_prunes, 1);
+    assert_eq!(report.performance.child_rollout_estimate_calls, 1);
+    assert_eq!(report.performance.turn_local_dominance_rollout_skips, 1);
+}
+
+#[test]
+fn lazy_child_rollout_is_completed_from_frontier_pop() {
+    let mut combat = blank_test_combat();
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+
+    let report = run_combat_search_v2_with_stepper(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        CombatSearchV2Config {
+            max_nodes: 2,
+            rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            child_rollout_policy: CombatSearchV2ChildRolloutPolicy::LazyOnPop,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            ..CombatSearchV2Config::default()
+        },
+        &DuplicateUnresolvedChildStepper,
+    );
+
+    assert_eq!(report.performance.child_rollout_estimate_calls, 0);
+    assert!(report.performance.deferred_child_rollout_nodes >= 1);
+    assert!(report.performance.deferred_child_rollout_estimate_calls >= 1);
+    assert!(report.performance.deferred_child_rollout_requeues >= 1);
 }
 
 #[test]

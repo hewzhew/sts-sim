@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use crate::ai::combat_search_v2::{
-    CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
-    CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy,
+    CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
 };
 
 use super::super::reward_auto::RewardAutomationTarget;
@@ -81,7 +81,7 @@ fn run_control_parser_accepts_recorded_card_reward_pick() {
 fn run_control_parser_accepts_search_combat_options() {
     assert_eq!(
             parse_run_control_command(
-                "search-combat max_nodes=123 wall_ms=50 max_hp_loss=12 potion=semantic max_potions=1 rollout=turn_beam_no_potion rollouts=7 rollout_actions=11 beam=4 turn_plan=root_frontier_seed frontier=round_robin",
+                "search-combat max_nodes=123 wall_ms=50 max_hp_loss=12 potion=semantic max_potions=1 rollout=turn_beam_no_potion child_rollout=immediate rollouts=7 rollout_actions=11 beam=4 turn_plan=root_frontier_seed frontier=round_robin",
             )
             .expect("search-combat should parse"),
             RunControlCommand::SearchCombat(RunControlSearchCombatOptions {
@@ -93,6 +93,7 @@ fn run_control_parser_accepts_search_combat_options() {
                 potion_policy: Some(CombatSearchV2PotionPolicy::SemanticBudgeted),
                 max_potions_used: Some(1),
                 rollout_policy: Some(CombatSearchV2RolloutPolicy::TurnBeamNoPotion),
+                child_rollout_policy: Some(CombatSearchV2ChildRolloutPolicy::Immediate),
                 rollout_max_evaluations: Some(7),
                 rollout_max_actions: Some(11),
                 rollout_beam_width: Some(4),
@@ -186,6 +187,7 @@ fn run_control_parser_accepts_auto_step_options() {
                 potion_policy: None,
                 max_potions_used: None,
                 rollout_policy: None,
+                child_rollout_policy: None,
                 rollout_max_evaluations: None,
                 rollout_max_actions: None,
                 rollout_beam_width: None,

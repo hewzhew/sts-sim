@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use super::value::combat_eval_from_rollout_estimate;
 use super::*;
+use crate::ai::combat_search_v2::rollout_profile::RolloutPerformanceCounters;
 use crate::ai::combat_search_v2::rollout_scheduler::turn_beam_extension_budget;
 
 #[derive(Clone, Debug, Default)]
@@ -27,8 +28,13 @@ pub(super) struct RolloutCache {
     pub(super) turn_beam_best_pv_len: usize,
     pub(super) turn_beam_best_pv_terminal: Option<SearchTerminalLabel>,
     pub(super) evaluations: u64,
+    pub(super) cache_queries: u64,
     pub(super) cache_hits: u64,
+    pub(super) cache_misses: u64,
+    pub(super) cache_inserts: u64,
     pub(super) budget_skips: u64,
+    pub(super) max_evaluation_budget_skips: u64,
+    pub(super) deadline_budget_skips: u64,
     pub(super) truncated: u64,
     pub(super) terminal_wins: u64,
     pub(super) terminal_losses: u64,
@@ -36,6 +42,7 @@ pub(super) struct RolloutCache {
     pub(super) rollouts_stopped_on_high_fanout_pending_choice: u64,
     pub(super) pending_choice_actions_simulated: u64,
     pub(super) max_pending_choice_estimated_action_fanout: usize,
+    pub(super) performance: RolloutPerformanceCounters,
     pub(super) cache: HashMap<CombatExactStateKey, RolloutNodeEstimate>,
 }
 
@@ -67,21 +74,35 @@ impl RolloutCache {
             return RolloutNodeEstimate::unevaluated();
         }
 
+        let cache_lookup_started = Instant::now();
         let key = combat_exact_state_key(&node.engine, &node.combat);
+        self.cache_queries = self.cache_queries.saturating_add(1);
         if let Some(cached) = self.cache.get(&key).copied() {
+            self.performance.cache_lookup_elapsed_us = self
+                .performance
+                .cache_lookup_elapsed_us
+                .saturating_add(cache_lookup_started.elapsed().as_micros());
             self.cache_hits = self.cache_hits.saturating_add(1);
             return cached;
         }
+        self.performance.cache_lookup_elapsed_us = self
+            .performance
+            .cache_lookup_elapsed_us
+            .saturating_add(cache_lookup_started.elapsed().as_micros());
+        self.cache_misses = self.cache_misses.saturating_add(1);
         if self.evaluations as usize >= self.max_evaluations {
             self.budget_skips = self.budget_skips.saturating_add(1);
+            self.max_evaluation_budget_skips = self.max_evaluation_budget_skips.saturating_add(1);
             return RolloutNodeEstimate::unevaluated();
         }
         if deadline.is_some_and(|limit| Instant::now() >= limit) {
             self.budget_skips = self.budget_skips.saturating_add(1);
+            self.deadline_budget_skips = self.deadline_budget_skips.saturating_add(1);
             return RolloutNodeEstimate::unevaluated();
         }
 
         self.evaluations = self.evaluations.saturating_add(1);
+        let policy_dispatch_started = Instant::now();
         let estimate = match self.policy {
             CombatSearchV2RolloutPolicy::Disabled => RolloutNodeEstimate::unevaluated(),
             CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion => {
@@ -93,6 +114,7 @@ impl RolloutCache {
                             config,
                             self.max_actions,
                             deadline,
+                            &mut self.performance,
                         )
                     }
                     _ => rollout::conservative_no_potion_rollout(
@@ -101,6 +123,7 @@ impl RolloutCache {
                         config,
                         self.max_actions,
                         deadline,
+                        &mut self.performance,
                     ),
                 }
             }
@@ -111,6 +134,7 @@ impl RolloutCache {
                     config,
                     self.max_actions,
                     deadline,
+                    &mut self.performance,
                 )
             }
             CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => {
@@ -120,6 +144,7 @@ impl RolloutCache {
                     config,
                     self.max_actions,
                     deadline,
+                    &mut self.performance,
                 )
             }
             CombatSearchV2RolloutPolicy::TurnBeamNoPotion => {
@@ -130,6 +155,7 @@ impl RolloutCache {
                     config,
                     self.max_actions,
                     deadline,
+                    &mut self.performance,
                 );
                 self.turn_beam_conservative_anchor_present =
                     self.turn_beam_conservative_anchor_present.saturating_add(1);
@@ -158,6 +184,7 @@ impl RolloutCache {
                         config,
                         self.max_actions,
                         deadline,
+                        &mut self.performance,
                     );
                     self.observe_turn_beam_extension_attribution(attribution);
                     let selected = better_rollout_estimate(beam, anchor);
@@ -171,6 +198,10 @@ impl RolloutCache {
                 }
             }
         };
+        self.performance.policy_dispatch_elapsed_us = self
+            .performance
+            .policy_dispatch_elapsed_us
+            .saturating_add(policy_dispatch_started.elapsed().as_micros());
         if estimate.truncated {
             self.truncated = self.truncated.saturating_add(1);
         }
@@ -196,6 +227,7 @@ impl RolloutCache {
             SearchTerminalLabel::Unresolved => {}
         }
         self.cache.insert(key, estimate);
+        self.cache_inserts = self.cache_inserts.saturating_add(1);
         estimate
     }
 
@@ -211,8 +243,13 @@ impl RolloutCache {
             turn_beam_extensions: self.turn_beam_extensions,
             turn_beam_extension_budget_skips: self.turn_beam_extension_budget_skips,
             evaluations: self.evaluations,
+            cache_queries: self.cache_queries,
             cache_hits: self.cache_hits,
+            cache_misses: self.cache_misses,
+            cache_inserts: self.cache_inserts,
             budget_skips: self.budget_skips,
+            max_evaluation_budget_skips: self.max_evaluation_budget_skips,
+            deadline_budget_skips: self.deadline_budget_skips,
             truncated_rollouts: self.truncated,
             terminal_wins: self.terminal_wins,
             terminal_losses: self.terminal_losses,
@@ -222,6 +259,7 @@ impl RolloutCache {
             pending_choice_actions_simulated: self.pending_choice_actions_simulated,
             max_pending_choice_estimated_action_fanout: self
                 .max_pending_choice_estimated_action_fanout,
+            performance: self.performance.to_report(),
             turn_beam_attribution: CombatSearchV2TurnBeamAttributionReport {
                 enabled: self.policy == CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
                 calls: self.turn_beam_calls,
@@ -351,6 +389,61 @@ mod tests {
             adaptive_no_potion_rollout_policy(&test_search_node(combat)),
             CombatSearchV2RolloutPolicy::PhaseAwareNoPotion
         );
+    }
+
+    #[test]
+    fn rollout_report_exposes_cache_audit_and_internal_performance_buckets() {
+        let mut cache = RolloutCache::new(
+            CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+            384,
+            80,
+            3,
+        );
+        cache.cache_queries = 4;
+        cache.cache_misses = 3;
+        cache.cache_inserts = 2;
+        cache.max_evaluation_budget_skips = 1;
+        cache.deadline_budget_skips = 2;
+        cache.performance.cache_lookup_elapsed_us = 11;
+        cache.performance.policy_dispatch_elapsed_us = 17;
+        cache.performance.no_potion_iterations = 23;
+        cache.performance.no_potion_phase_profile_elapsed_us = 29;
+        cache.performance.no_potion_legal_actions_elapsed_us = 31;
+        cache.performance.no_potion_choose_action_elapsed_us = 37;
+        cache.performance.no_potion_choose_ordering_elapsed_us = 39;
+        cache.performance.no_potion_probe_elapsed_us = 40;
+        cache.performance.no_potion_probe_score_calls = 5;
+        cache.performance.no_potion_probe_actions_evaluated = 4;
+        cache.performance.no_potion_probe_step_reuses = 3;
+        cache.performance.no_potion_probe_engine_step_elapsed_us = 6;
+        cache.performance.no_potion_probe_phase_profile_elapsed_us = 7;
+        cache.performance.no_potion_probe_action_facts_elapsed_us = 8;
+        cache.performance.no_potion_engine_step_elapsed_us = 41;
+        cache.performance.no_potion_child_build_elapsed_us = 43;
+
+        let report = cache.finish(None);
+
+        assert_eq!(report.cache_queries, 4);
+        assert_eq!(report.cache_misses, 3);
+        assert_eq!(report.cache_inserts, 2);
+        assert_eq!(report.max_evaluation_budget_skips, 1);
+        assert_eq!(report.deadline_budget_skips, 2);
+        assert_eq!(report.performance.cache_lookup_us, 11);
+        assert_eq!(report.performance.policy_dispatch_us, 17);
+        assert_eq!(report.performance.no_potion_iterations, 23);
+        assert_eq!(report.performance.no_potion_phase_profile_us, 29);
+        assert_eq!(report.performance.no_potion_legal_actions_us, 31);
+        assert_eq!(report.performance.no_potion_choose_action_us, 37);
+        assert_eq!(report.performance.no_potion_choose_ordering_us, 39);
+        assert_eq!(report.performance.no_potion_probe_us, 40);
+        assert_eq!(report.performance.no_potion_probe_score_calls, 5);
+        assert_eq!(report.performance.no_potion_probe_actions_evaluated, 4);
+        assert_eq!(report.performance.no_potion_probe_step_reuses, 3);
+        assert_eq!(report.performance.no_potion_probe_engine_step_us, 6);
+        assert_eq!(report.performance.no_potion_probe_phase_profile_us, 7);
+        assert_eq!(report.performance.no_potion_probe_action_facts_us, 8);
+        assert_eq!(report.performance.no_potion_engine_step_us, 41);
+        assert_eq!(report.performance.no_potion_child_build_us, 43);
     }
 
     fn test_search_node(combat: CombatState) -> SearchNode {

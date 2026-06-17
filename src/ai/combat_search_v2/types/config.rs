@@ -13,6 +13,7 @@ pub struct CombatSearchV2Config {
     pub potion_policy: CombatSearchV2PotionPolicy,
     pub max_potions_used: Option<u32>,
     pub rollout_policy: CombatSearchV2RolloutPolicy,
+    pub child_rollout_policy: CombatSearchV2ChildRolloutPolicy,
     pub rollout_max_evaluations: usize,
     pub rollout_max_actions: usize,
     pub rollout_beam_width: usize,
@@ -32,6 +33,7 @@ impl Default for CombatSearchV2Config {
             potion_policy: CombatSearchV2PotionPolicy::Never,
             max_potions_used: None,
             rollout_policy: CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion,
+            child_rollout_policy: CombatSearchV2ChildRolloutPolicy::default(),
             rollout_max_evaluations: super::super::rollout::DEFAULT_ROLLOUT_MAX_EVALUATIONS,
             rollout_max_actions: super::super::rollout::DEFAULT_ROLLOUT_MAX_ACTIONS,
             rollout_beam_width: super::super::rollout::DEFAULT_TURN_BEAM_WIDTH,
@@ -73,6 +75,28 @@ pub fn high_stakes_semantic_potion_budget(
         Some(HIGH_STAKES_ELITE_MAX_POTIONS_USED)
     } else {
         None
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatSearchV2ChildRolloutPolicy {
+    Immediate,
+    LazyOnPop,
+}
+
+impl Default for CombatSearchV2ChildRolloutPolicy {
+    fn default() -> Self {
+        Self::Immediate
+    }
+}
+
+impl CombatSearchV2ChildRolloutPolicy {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Immediate => "immediate",
+            Self::LazyOnPop => "lazy_on_pop",
+        }
     }
 }
 

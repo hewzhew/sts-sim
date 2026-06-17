@@ -21,6 +21,72 @@ pub struct CombatAutomationActionV1 {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct CombatSearchPerformanceSnapshotV1 {
+    pub source: String,
+    pub act: u8,
+    pub floor: i32,
+    pub turn: u32,
+    pub combat_kind: String,
+    pub enemies: Vec<String>,
+    pub boss: String,
+    pub external_payoff_opportunity: bool,
+    pub coverage_status: String,
+    pub complete_trajectory_found: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best_hp_loss: Option<i32>,
+    pub nodes_expanded: u64,
+    pub nodes_generated: u64,
+    pub terminal_wins: u64,
+    pub total_us: u64,
+    pub unattributed_us: u64,
+    pub rollout_calls: u64,
+    pub root_rollout_calls: u64,
+    pub child_rollout_calls: u64,
+    pub deferred_child_rollout_calls: u64,
+    pub turn_plan_seed_rollout_calls: u64,
+    pub deferred_child_rollout_nodes: u64,
+    pub deferred_child_rollout_requeues: u64,
+    pub rollout_cache_hits: u64,
+    pub rollout_cache_queries: u64,
+    pub rollout_cache_misses: u64,
+    pub rollout_cache_inserts: u64,
+    pub rollout_budget_skips: u64,
+    pub rollout_max_evaluation_budget_skips: u64,
+    pub rollout_deadline_budget_skips: u64,
+    pub rollout_truncated: u64,
+    pub rollout_terminal_wins: u64,
+    pub rollout_cache_lookup_us: u64,
+    pub rollout_policy_dispatch_us: u64,
+    pub rollout_no_potion_iterations: u64,
+    pub rollout_no_potion_phase_profile_us: u64,
+    pub rollout_no_potion_legal_actions_us: u64,
+    pub rollout_no_potion_choose_action_us: u64,
+    pub rollout_no_potion_choose_ordering_us: u64,
+    pub rollout_no_potion_probe_us: u64,
+    pub rollout_no_potion_probe_score_calls: u64,
+    pub rollout_no_potion_probe_actions_evaluated: u64,
+    pub rollout_no_potion_probe_step_reuses: u64,
+    pub rollout_no_potion_probe_engine_step_us: u64,
+    pub rollout_no_potion_probe_phase_profile_us: u64,
+    pub rollout_no_potion_probe_action_facts_us: u64,
+    pub rollout_no_potion_engine_step_us: u64,
+    pub rollout_no_potion_child_build_us: u64,
+    pub terminal_child_rollout_skips: u64,
+    pub terminal_turn_plan_seed_rollout_skips: u64,
+    pub turn_local_dominance_rollout_skips: u64,
+    pub rollout_us: u64,
+    pub expansion_us: u64,
+    pub child_bookkeeping_us: u64,
+    pub engine_step_us: u64,
+    pub pre_expand_us: u64,
+    pub frontier_pop_us: u64,
+    pub turn_plan_seed_us: u64,
+    pub shadow_audit_us: u64,
+    pub root_turn_plan_diag_us: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RoutePlannerCandidateSummaryV1 {
     pub rank: usize,
     pub target_x: i32,
@@ -98,6 +164,9 @@ pub enum RunControlTraceAnnotationV1 {
         actions: Vec<CombatAutomationActionV1>,
         label_role: String,
     },
+    CombatSearchPerformance {
+        snapshot: CombatSearchPerformanceSnapshotV1,
+    },
 }
 
 pub(in crate::eval::run_control) fn validate_run_control_trace_annotations_v1(
@@ -129,7 +198,8 @@ fn validate_run_control_trace_annotation_v1(
             ..
         }
         | RunControlTraceAnnotationV1::AutoCombatCapture { .. }
-        | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. } => Ok(()),
+        | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
+        | RunControlTraceAnnotationV1::CombatSearchPerformance { .. } => Ok(()),
     }
 }
 

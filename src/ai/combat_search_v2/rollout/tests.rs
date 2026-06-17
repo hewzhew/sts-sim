@@ -1,3 +1,4 @@
+use super::super::rollout_profile::RolloutPerformanceCounters;
 use super::*;
 use crate::content::monsters::EnemyId;
 use crate::test_support::{blank_test_combat, test_monster};
@@ -127,8 +128,16 @@ fn conservative_rollout_records_estimated_terminal_win() {
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let config = CombatSearchV2Config::default();
+    let mut performance = RolloutPerformanceCounters::default();
 
-    let estimate = conservative_no_potion_rollout(&node, &FirstActionWinsStepper, &config, 4, None);
+    let estimate = conservative_no_potion_rollout(
+        &node,
+        &FirstActionWinsStepper,
+        &config,
+        4,
+        None,
+        &mut performance,
+    );
 
     assert!(estimate.evaluated);
     assert_eq!(estimate.terminal, SearchTerminalLabel::Win);
@@ -301,8 +310,16 @@ fn conservative_rollout_stops_before_large_pending_choice_branch() {
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let config = CombatSearchV2Config::default();
+    let mut performance = RolloutPerformanceCounters::default();
 
-    let estimate = conservative_no_potion_rollout(&node, &FirstActionWinsStepper, &config, 4, None);
+    let estimate = conservative_no_potion_rollout(
+        &node,
+        &FirstActionWinsStepper,
+        &config,
+        4,
+        None,
+        &mut performance,
+    );
 
     assert!(estimate.evaluated);
     assert!(estimate.truncated);
@@ -339,9 +356,16 @@ fn conservative_rollout_tracks_small_pending_choice_resolution() {
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let config = CombatSearchV2Config::default();
+    let mut performance = RolloutPerformanceCounters::default();
 
-    let estimate =
-        conservative_no_potion_rollout(&node, &PendingChoiceWinsStepper, &config, 4, None);
+    let estimate = conservative_no_potion_rollout(
+        &node,
+        &PendingChoiceWinsStepper,
+        &config,
+        4,
+        None,
+        &mut performance,
+    );
 
     assert_eq!(estimate.terminal, SearchTerminalLabel::Win);
     assert!(!estimate.truncated);

@@ -88,7 +88,7 @@ pub use session_trace::{
     SESSION_TRACE_SCHEMA_VERSION,
 };
 pub(crate) use shop_legal::shop_potion_purchase_block_reason_v1;
-pub use trace_annotation::RunControlTraceAnnotationV1;
+pub use trace_annotation::{CombatSearchPerformanceSnapshotV1, RunControlTraceAnnotationV1};
 pub use trace_replay::{
     load_session_trace_v1, render_session_trace_replay_report, replay_session_trace,
     replay_session_trace_with_recorder, SessionTraceReplayAppliedStep, SessionTraceReplayDrift,

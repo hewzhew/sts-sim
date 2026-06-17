@@ -2,7 +2,8 @@ use std::time::Instant;
 
 use crate::sim::combat::CombatStepper;
 
-use super::rollout_probe::choose_by_one_step_probe;
+use super::rollout_probe::{choose_by_one_step_probe, OneStepProbeSelection};
+use super::rollout_profile::RolloutPerformanceCounters;
 use super::*;
 
 pub(super) const ROLLOUT_ACTION_REASON_CONSERVATIVE_ORDERING_FIRST: &str =
@@ -22,6 +23,7 @@ pub(super) const CONSERVATIVE_ROLLOUT_PROBE_ACTION_LIMIT: usize = 6;
 pub(super) struct RolloutPolicySelection {
     pub(super) choice: IndexedActionChoice,
     pub(super) reason: &'static str,
+    pub(super) cached_step: Option<crate::sim::combat::CombatStepResult>,
 }
 
 pub(super) fn filtered_rollout_legal_actions(
@@ -49,20 +51,45 @@ pub(super) fn choose_rollout_action(
     engine: &EngineState,
     combat: &CombatState,
     legal: Vec<CombatActionChoice>,
+    performance: &mut RolloutPerformanceCounters,
 ) -> Option<RolloutPolicySelection> {
     match policy {
         CombatSearchV2RolloutPolicy::Disabled => None,
         CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
         | CombatSearchV2RolloutPolicy::ConservativeNoPotion => {
             choose_conservative_no_potion_action(
-                false, node, stepper, config, deadline, engine, combat, legal,
+                false,
+                node,
+                stepper,
+                config,
+                deadline,
+                engine,
+                combat,
+                legal,
+                performance,
             )
         }
         CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => choose_conservative_no_potion_action(
-            true, node, stepper, config, deadline, engine, combat, legal,
+            true,
+            node,
+            stepper,
+            config,
+            deadline,
+            engine,
+            combat,
+            legal,
+            performance,
         ),
         CombatSearchV2RolloutPolicy::TurnBeamNoPotion => choose_conservative_no_potion_action(
-            true, node, stepper, config, deadline, engine, combat, legal,
+            true,
+            node,
+            stepper,
+            config,
+            deadline,
+            engine,
+            combat,
+            legal,
+            performance,
         ),
     }
 }
@@ -76,6 +103,7 @@ fn choose_conservative_no_potion_action(
     engine: &EngineState,
     combat: &CombatState,
     legal: Vec<CombatActionChoice>,
+    performance: &mut RolloutPerformanceCounters,
 ) -> Option<RolloutPolicySelection> {
     let choices = legal
         .into_iter()
@@ -85,14 +113,20 @@ fn choose_conservative_no_potion_action(
             choice,
         })
         .collect();
+    let ordering_started = Instant::now();
     let ordered = order_indexed_action_choices(engine, combat, choices);
+    performance.no_potion_choose_ordering_elapsed_us = performance
+        .no_potion_choose_ordering_elapsed_us
+        .saturating_add(ordering_started.elapsed().as_micros());
     let fallback = ordered.choices.first().cloned()?;
     if ordered.choices.len() == 1 {
         return Some(RolloutPolicySelection {
             choice: fallback,
             reason: ROLLOUT_ACTION_REASON_CONSERVATIVE_ORDERING_FIRST,
+            cached_step: None,
         });
     }
+    let probe_started = Instant::now();
     let probed = choose_by_one_step_probe(
         node,
         stepper,
@@ -100,12 +134,30 @@ fn choose_conservative_no_potion_action(
         deadline,
         &ordered.choices,
         allow_nonterminal_probe_upgrade,
+        performance,
     );
+    performance.no_potion_probe_elapsed_us = performance
+        .no_potion_probe_elapsed_us
+        .saturating_add(probe_started.elapsed().as_micros());
     Some(match probed {
-        Some((choice, reason)) => RolloutPolicySelection { choice, reason },
-        None => RolloutPolicySelection {
+        OneStepProbeSelection::Upgrade {
+            choice,
+            reason,
+            step,
+        } => RolloutPolicySelection {
+            choice,
+            reason,
+            cached_step: Some(step),
+        },
+        OneStepProbeSelection::Fallback { step } => RolloutPolicySelection {
             choice: fallback,
             reason: ROLLOUT_ACTION_REASON_CONSERVATIVE_ORDERING_FIRST,
+            cached_step: Some(step),
+        },
+        OneStepProbeSelection::NoUsableProbe => RolloutPolicySelection {
+            choice: fallback,
+            reason: ROLLOUT_ACTION_REASON_CONSERVATIVE_ORDERING_FIRST,
+            cached_step: None,
         },
     })
 }

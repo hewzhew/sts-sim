@@ -12,6 +12,7 @@ pub(super) struct SearchFinishInput {
     pub(super) best_complete: Option<SearchNode>,
     pub(super) best_frontier: Option<SearchNode>,
     pub(super) rollout_cache: RolloutCache,
+    pub(super) performance: CombatSearchV2PerformanceReport,
     pub(super) unresolved_leaf_count: u64,
     pub(super) max_actions_cut_count: u64,
     pub(super) engine_step_limit_count: u64,
@@ -32,6 +33,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         best_complete,
         best_frontier,
         rollout_cache,
+        performance,
         unresolved_leaf_count,
         max_actions_cut_count,
         engine_step_limit_count,
@@ -63,7 +65,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
 
     CombatSearchV2Report {
         schema_name: "CombatSearchV2Report",
-        schema_version: 7,
+        schema_version: 9,
         input_label: config.input_label,
         information_boundary: "engine_state_snapshot_truth_v0",
         policy_evidence,
@@ -80,6 +82,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
             transposition_table: "exact_runtime_state_key_with_resource_coverage",
             dominance_pruning: "global_dominance_bucket_resource_vector_plus_same_parent_same_turn_sibling_coverage",
             rollout_value: "combat_eval_v2_risk_bucketed_unresolved_estimate_used_for_frontier_priority_only_not_terminal_claims",
+            child_rollout_policy: config.child_rollout_policy.label(),
             llm_authority: "none",
         },
         budget: CombatSearchV2BudgetReport {
@@ -122,6 +125,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         rollout: rollout_cache.finish(best_frontier.as_ref()),
         diagnostics,
         stats,
+        performance,
         evidence_reliability: CombatSearchV2EvidenceReport {
             hidden_info_policy: "uses_only_the_supplied_engine_state; if that state contains hidden draw/rng truth, the report is engine-evidence rather than public-agent evidence",
             random_policy: "rng state is part of the transposition key; belief particles are not implemented in this first runner",

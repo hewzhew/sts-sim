@@ -4,6 +4,7 @@ use std::time::Instant;
 use crate::sim::combat::CombatStepper;
 
 use super::super::rollout_pending_choice::RolloutPendingChoiceProgress;
+use super::super::rollout_profile::RolloutPerformanceCounters;
 use super::super::turn_planner::{
     enumerate_turn_plans, TurnPlanBucket, TurnPlanEnumeration, TurnPlannerConfigV1,
 };
@@ -75,15 +76,36 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_no_potion_rollout(
     max_actions: usize,
     deadline: Option<Instant>,
 ) -> RolloutNodeEstimate {
+    let mut performance = RolloutPerformanceCounters::default();
     if !matches!(node.engine, EngineState::CombatPlayerTurn) {
-        return turn_beam_extension_rollout(node, stepper, config, max_actions, deadline);
+        return turn_beam_extension_rollout(
+            node,
+            stepper,
+            config,
+            max_actions,
+            deadline,
+            &mut performance,
+        );
     }
-    let anchor =
-        turn_beam_conservative_anchor_rollout(node, stepper, config, max_actions, deadline);
+    let anchor = turn_beam_conservative_anchor_rollout(
+        node,
+        stepper,
+        config,
+        max_actions,
+        deadline,
+        &mut performance,
+    );
     if anchor.terminal == SearchTerminalLabel::Win {
         return anchor;
     }
-    let beam = turn_beam_extension_rollout(node, stepper, config, max_actions, deadline);
+    let beam = turn_beam_extension_rollout(
+        node,
+        stepper,
+        config,
+        max_actions,
+        deadline,
+        &mut performance,
+    );
     better_estimate(beam, anchor)
 }
 
@@ -93,9 +115,16 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_conservative_anchor_rollout(
     config: &CombatSearchV2Config,
     max_actions: usize,
     deadline: Option<Instant>,
+    performance: &mut RolloutPerformanceCounters,
 ) -> RolloutNodeEstimate {
-    let mut estimate =
-        super::conservative_no_potion_rollout(node, stepper, config, max_actions, deadline);
+    let mut estimate = super::conservative_no_potion_rollout(
+        node,
+        stepper,
+        config,
+        max_actions,
+        deadline,
+        performance,
+    );
     estimate.last_action_reason = Some(TURN_BEAM_CONSERVATIVE_ANCHOR_REASON);
     estimate
 }
@@ -107,8 +136,17 @@ fn turn_beam_extension_rollout(
     config: &CombatSearchV2Config,
     max_actions: usize,
     deadline: Option<Instant>,
+    performance: &mut RolloutPerformanceCounters,
 ) -> RolloutNodeEstimate {
-    turn_beam_extension_rollout_with_attribution(node, stepper, config, max_actions, deadline).0
+    turn_beam_extension_rollout_with_attribution(
+        node,
+        stepper,
+        config,
+        max_actions,
+        deadline,
+        performance,
+    )
+    .0
 }
 
 pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout_with_attribution(
@@ -117,6 +155,7 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout_with_attribut
     config: &CombatSearchV2Config,
     max_actions: usize,
     deadline: Option<Instant>,
+    performance: &mut RolloutPerformanceCounters,
 ) -> (RolloutNodeEstimate, TurnBeamExtensionAttribution) {
     let root_action_count = node.actions.len();
     let beam_width = config.rollout_beam_width.max(1);
@@ -196,6 +235,7 @@ pub(in crate::ai::combat_search_v2) fn turn_beam_extension_rollout_with_attribut
                     config,
                     remaining_actions,
                     deadline,
+                    performance,
                 );
                 estimate.actions_simulated = estimate.actions_simulated.saturating_add(simulated);
                 estimate.last_action_reason = Some(TURN_BEAM_BOUNDARY_FALLBACK_REASON);

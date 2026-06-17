@@ -52,6 +52,7 @@ impl CombatSearchV2RunOptions {
             potion_policy: self.potion_policy.unwrap_or(defaults.potion_policy),
             max_potions_used: self.max_potions_used.or(defaults.max_potions_used),
             rollout_policy: self.rollout_policy.unwrap_or(defaults.rollout_policy),
+            child_rollout_policy: defaults.child_rollout_policy,
             rollout_max_evaluations: self
                 .rollout_max_evaluations
                 .unwrap_or(defaults.rollout_max_evaluations),

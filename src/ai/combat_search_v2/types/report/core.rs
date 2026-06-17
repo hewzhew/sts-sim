@@ -23,6 +23,7 @@ pub struct CombatSearchV2Report {
     pub rollout: CombatSearchV2RolloutReport,
     pub diagnostics: CombatSearchV2DiagnosticsReport,
     pub stats: CombatSearchV2Stats,
+    pub performance: CombatSearchV2PerformanceReport,
     pub evidence_reliability: CombatSearchV2EvidenceReport,
 }
 
@@ -39,6 +40,7 @@ pub struct CombatSearchV2PolicyReport {
     pub transposition_table: &'static str,
     pub dominance_pruning: &'static str,
     pub rollout_value: &'static str,
+    pub child_rollout_policy: &'static str,
     pub llm_authority: &'static str,
 }
 
@@ -76,6 +78,34 @@ pub struct CombatSearchV2Stats {
     pub deadline_hit: bool,
     pub node_budget_hit: bool,
     pub elapsed_ms: u128,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CombatSearchV2PerformanceReport {
+    pub total_elapsed_us: u128,
+    pub unattributed_elapsed_us: u128,
+    pub rollout_estimate_calls: u64,
+    pub root_rollout_estimate_calls: u64,
+    pub child_rollout_estimate_calls: u64,
+    pub deferred_child_rollout_estimate_calls: u64,
+    pub turn_plan_seed_rollout_estimate_calls: u64,
+    pub deferred_child_rollout_nodes: u64,
+    pub deferred_child_rollout_requeues: u64,
+    pub terminal_child_rollout_skips: u64,
+    pub terminal_turn_plan_seed_rollout_skips: u64,
+    pub turn_local_dominance_rollout_skips: u64,
+    pub rollout_estimate_elapsed_us: u128,
+    pub engine_step_calls: u64,
+    pub engine_step_elapsed_us: u128,
+    pub frontier_pop_calls: u64,
+    pub frontier_pop_elapsed_us: u128,
+    pub pre_expand_elapsed_us: u128,
+    pub expansion_elapsed_us: u128,
+    pub child_bookkeeping_elapsed_us: u128,
+    pub turn_plan_frontier_seed_calls: u64,
+    pub turn_plan_frontier_seed_elapsed_us: u128,
+    pub shadow_audit_elapsed_us: u128,
+    pub root_turn_plan_diagnostics_elapsed_us: u128,
 }
 
 #[derive(Clone, Debug, Serialize)]

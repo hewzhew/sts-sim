@@ -45,6 +45,7 @@ mod rollout_cache;
 mod rollout_estimate;
 mod rollout_pending_choice;
 mod rollout_policy;
+mod rollout_profile;
 mod rollout_scheduler;
 
 // Turn-level planning and current-turn structure.
@@ -58,6 +59,7 @@ mod turn_sequence_effect;
 // Combat phase and enemy mechanics facts.
 mod enemy_mechanics_profile;
 mod enemy_phase_transition;
+mod external_payoff;
 mod phase_action_ordering;
 mod phase_profile;
 
@@ -153,6 +155,7 @@ pub use decision_microscope::{
     CombatSearchV2DecisionOneStepReport, CombatSearchV2DecisionSelectedAction,
     CombatSearchV2DecisionTrajectorySummary,
 };
+pub(crate) use external_payoff::has_external_payoff_opportunity;
 pub use search::{run_combat_search_v2, run_combat_search_v2_with_stepper};
 pub use segment_plan::{plan_combat_turn_segment_v1, CombatSearchV2TurnSegmentReport};
 pub use trajectory_report::trajectory_from_state;

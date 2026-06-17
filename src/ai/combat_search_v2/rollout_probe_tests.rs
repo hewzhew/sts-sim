@@ -1,3 +1,4 @@
+use super::super::rollout_profile::RolloutPerformanceCounters;
 use super::*;
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
@@ -68,7 +69,11 @@ fn one_step_probe_can_choose_nonterminal_special_phase_value_upgrade() {
         ),
     ];
 
-    let (selection, reason) = choose_by_one_step_probe(
+    let OneStepProbeSelection::Upgrade {
+        choice: selection,
+        reason,
+        ..
+    } = choose_by_one_step_probe(
         &node,
         &ProbeStepper {
             damage_on_card_index: Some(1),
@@ -78,8 +83,11 @@ fn one_step_probe_can_choose_nonterminal_special_phase_value_upgrade() {
         None,
         &ordered,
         true,
+        &mut RolloutPerformanceCounters::default(),
     )
-    .expect("phase progress without hp regression should be eligible");
+    else {
+        panic!("phase progress without hp regression should be eligible");
+    };
 
     assert_eq!(selection.original_action_id, 1);
     assert_eq!(
@@ -114,9 +122,10 @@ fn one_step_probe_rejects_phase_upgrade_with_hp_regression() {
         None,
         &ordered,
         true,
+        &mut RolloutPerformanceCounters::default(),
     );
 
-    assert!(selection.is_none());
+    assert!(matches!(selection, OneStepProbeSelection::Fallback { .. }));
 }
 
 #[test]
@@ -145,9 +154,10 @@ fn one_step_probe_terminal_only_mode_rejects_nonterminal_phase_upgrade() {
         None,
         &ordered,
         false,
+        &mut RolloutPerformanceCounters::default(),
     );
 
-    assert!(selection.is_none());
+    assert!(matches!(selection, OneStepProbeSelection::Fallback { .. }));
 }
 
 #[test]
@@ -176,7 +186,11 @@ fn one_step_probe_can_choose_sustained_mitigation_from_action_facts() {
         ),
     ];
 
-    let (selection, reason) = choose_by_one_step_probe(
+    let OneStepProbeSelection::Upgrade {
+        choice: selection,
+        reason,
+        ..
+    } = choose_by_one_step_probe(
         &node,
         &ProbeStepper {
             damage_on_card_index: None,
@@ -186,8 +200,11 @@ fn one_step_probe_can_choose_sustained_mitigation_from_action_facts() {
         None,
         &ordered,
         true,
+        &mut RolloutPerformanceCounters::default(),
     )
-    .expect("Disarm facts should be eligible when it does not regress survival");
+    else {
+        panic!("Disarm facts should be eligible when it does not regress survival");
+    };
 
     assert_eq!(selection.original_action_id, 1);
     assert_eq!(
@@ -356,6 +373,7 @@ fn test_config() -> CombatSearchV2Config {
         potion_policy: CombatSearchV2PotionPolicy::Never,
         max_potions_used: None,
         rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+        child_rollout_policy: CombatSearchV2ChildRolloutPolicy::Immediate,
         rollout_max_evaluations: 10,
         rollout_max_actions: 10,
         rollout_beam_width: 3,

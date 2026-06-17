@@ -1,4 +1,5 @@
 use super::*;
+use crate::ai::combat_search_v2::rollout_profile::RolloutPerformanceCounters;
 use crate::content::monsters::EnemyId;
 use crate::sim::combat::{CombatPosition, CombatStepLimits};
 use crate::test_support::{blank_test_combat, test_monster};
@@ -79,6 +80,7 @@ fn conservative_rollout_policy_reports_selection_reason() {
         &EngineState::CombatPlayerTurn,
         &combat,
         legal,
+        &mut RolloutPerformanceCounters::default(),
     )
     .expect("single legal action should be selected");
 
@@ -115,6 +117,7 @@ fn conservative_rollout_probe_can_select_non_first_terminal_win() {
         &EngineState::CombatPlayerTurn,
         &combat,
         legal,
+        &mut RolloutPerformanceCounters::default(),
     )
     .expect("probe should select an action");
 
@@ -126,6 +129,43 @@ fn conservative_rollout_probe_can_select_non_first_terminal_win() {
         selection.choice.choice.input,
         ClientInput::PlayCard { .. }
     ));
+}
+
+#[test]
+fn conservative_rollout_probe_does_not_rescore_fallback_candidate() {
+    let combat = non_terminal_combat();
+    let legal = vec![
+        CombatActionChoice::from_input(&combat, ClientInput::EndTurn),
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 99,
+                target: None,
+            },
+        ),
+    ];
+    let mut performance = RolloutPerformanceCounters::default();
+
+    let selection = choose_rollout_action(
+        CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+        &test_node(combat.clone()),
+        &ProbeWinStepper,
+        &test_config(),
+        None,
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        legal,
+        &mut performance,
+    )
+    .expect("probe should select an action");
+
+    assert_eq!(
+        selection.reason,
+        ROLLOUT_ACTION_REASON_CONSERVATIVE_ONE_STEP_PROBE
+    );
+    assert!(selection.cached_step.is_some());
+    assert_eq!(performance.no_potion_probe_score_calls, 2);
+    assert_eq!(performance.no_potion_probe_actions_evaluated, 2);
 }
 
 fn test_node(combat: CombatState) -> SearchNode {
@@ -161,6 +201,7 @@ fn test_config() -> CombatSearchV2Config {
         potion_policy: CombatSearchV2PotionPolicy::Never,
         max_potions_used: None,
         rollout_policy: CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+        child_rollout_policy: CombatSearchV2ChildRolloutPolicy::Immediate,
         rollout_max_evaluations: 10,
         rollout_max_actions: 10,
         rollout_beam_width: 3,

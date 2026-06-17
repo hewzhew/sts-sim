@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use crate::ai::combat_search_v2::{
-    CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy,
+    CombatSearchV2RolloutPolicy,
 };
 use crate::state::core::ClientInput;
 
@@ -113,6 +114,7 @@ pub struct RunControlSearchCombatOptions {
     pub potion_policy: Option<CombatSearchV2PotionPolicy>,
     pub max_potions_used: Option<u32>,
     pub rollout_policy: Option<CombatSearchV2RolloutPolicy>,
+    pub child_rollout_policy: Option<CombatSearchV2ChildRolloutPolicy>,
     pub rollout_max_evaluations: Option<usize>,
     pub rollout_max_actions: Option<usize>,
     pub rollout_beam_width: Option<usize>,

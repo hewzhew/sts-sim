@@ -1,9 +1,10 @@
 use std::cmp::Ordering;
 use std::time::Instant;
 
-use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper};
+use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepResult, CombatStepper};
 
 use super::super::phase_profile::combat_search_phase_profile;
+use super::super::rollout_profile::RolloutPerformanceCounters;
 use super::super::transition::terminal_label;
 use super::super::*;
 
@@ -25,6 +26,25 @@ pub(super) struct RolloutActionProbeScore {
     pub(super) pending_choice_fanout: i32,
     pub(super) ordered_preference: i32,
     pub(super) nonterminal_upgrade_eligible: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct RolloutActionProbeResult {
+    pub(super) score: RolloutActionProbeScore,
+    pub(super) step: CombatStepResult,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub(super) struct RolloutTerminalProbeScore {
+    pub(super) terminal_rank: i32,
+    pub(super) final_hp: i32,
+    pub(super) ordered_preference: i32,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct RolloutTerminalProbeResult {
+    pub(super) score: RolloutTerminalProbeScore,
+    pub(super) step: CombatStepResult,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -67,18 +87,22 @@ impl PartialOrd for RolloutActionProbeScore {
     }
 }
 
-pub(super) fn probe_action_score(
+pub(super) fn probe_action(
     node: &SearchNode,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
     deadline: Option<Instant>,
     choice: &IndexedActionChoice,
     ordered_index: usize,
-) -> Option<RolloutActionProbeScore> {
+    performance: &mut RolloutPerformanceCounters,
+) -> Option<RolloutActionProbeResult> {
     if deadline.is_some_and(|limit| Instant::now() >= limit) {
         return None;
     }
+    performance.no_potion_probe_score_calls =
+        performance.no_potion_probe_score_calls.saturating_add(1);
     let position = CombatPosition::new(node.engine.clone(), node.combat.clone());
+    let engine_step_started = Instant::now();
     let step = stepper.apply_to_stable(
         &position,
         choice.choice.input.clone(),
@@ -87,10 +111,20 @@ pub(super) fn probe_action_score(
             deadline,
         },
     );
+    performance.no_potion_probe_engine_step_elapsed_us = performance
+        .no_potion_probe_engine_step_elapsed_us
+        .saturating_add(engine_step_started.elapsed().as_micros());
     if step.truncated || step.timed_out {
         return None;
     }
+    performance.no_potion_probe_actions_evaluated = performance
+        .no_potion_probe_actions_evaluated
+        .saturating_add(1);
+    let phase_profile_started = Instant::now();
     let phase_profile = combat_search_phase_profile(&step.position.engine, &step.position.combat);
+    performance.no_potion_probe_phase_profile_elapsed_us = performance
+        .no_potion_probe_phase_profile_elapsed_us
+        .saturating_add(phase_profile_started.elapsed().as_micros());
     let terminal = terminal_label(&step.position.engine, &step.position.combat);
     let mechanics_pressure = (phase_profile
         .enemy_mechanics
@@ -108,11 +142,15 @@ pub(super) fn probe_action_score(
                 .gremlin_nob_anger_amount_total
                 .max(0),
         );
+    let action_facts_started = Instant::now();
     let action_facts = summarize_action_facts_from_step(&node.combat, &choice.choice.input, &step);
+    performance.no_potion_probe_action_facts_elapsed_us = performance
+        .no_potion_probe_action_facts_elapsed_us
+        .saturating_add(action_facts_started.elapsed().as_micros());
     let action_facts_score = action_facts_probe_score(&action_facts);
     let player_block = step.position.combat.entities.player.block;
     let visible_hp_loss = (phase_profile.pressure.visible_incoming_damage - player_block).max(0);
-    Some(RolloutActionProbeScore {
+    let score = RolloutActionProbeScore {
         terminal_rank: terminal_rank(terminal),
         final_hp: step.position.combat.entities.player.current_hp,
         survival_margin: phase_profile.pressure.survival_margin,
@@ -131,6 +169,51 @@ pub(super) fn probe_action_score(
         pending_choice_fanout: -(phase_profile.pending_choice.estimated_action_fanout as i32),
         ordered_preference: -(ordered_index as i32),
         nonterminal_upgrade_eligible: !matches!(choice.choice.input, ClientInput::EndTurn),
+    };
+    Some(RolloutActionProbeResult { score, step })
+}
+
+pub(super) fn probe_terminal_action(
+    node: &SearchNode,
+    stepper: &impl CombatStepper,
+    config: &CombatSearchV2Config,
+    deadline: Option<Instant>,
+    choice: &IndexedActionChoice,
+    ordered_index: usize,
+    performance: &mut RolloutPerformanceCounters,
+) -> Option<RolloutTerminalProbeResult> {
+    if deadline.is_some_and(|limit| Instant::now() >= limit) {
+        return None;
+    }
+    performance.no_potion_probe_score_calls =
+        performance.no_potion_probe_score_calls.saturating_add(1);
+    let position = CombatPosition::new(node.engine.clone(), node.combat.clone());
+    let engine_step_started = Instant::now();
+    let step = stepper.apply_to_stable(
+        &position,
+        choice.choice.input.clone(),
+        CombatStepLimits {
+            max_engine_steps: config.max_engine_steps_per_action,
+            deadline,
+        },
+    );
+    performance.no_potion_probe_engine_step_elapsed_us = performance
+        .no_potion_probe_engine_step_elapsed_us
+        .saturating_add(engine_step_started.elapsed().as_micros());
+    if step.truncated || step.timed_out {
+        return None;
+    }
+    performance.no_potion_probe_actions_evaluated = performance
+        .no_potion_probe_actions_evaluated
+        .saturating_add(1);
+    let terminal = terminal_label(&step.position.engine, &step.position.combat);
+    Some(RolloutTerminalProbeResult {
+        score: RolloutTerminalProbeScore {
+            terminal_rank: terminal_rank(terminal),
+            final_hp: step.position.combat.entities.player.current_hp,
+            ordered_preference: -(ordered_index as i32),
+        },
+        step,
     })
 }
 

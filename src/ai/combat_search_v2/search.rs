@@ -7,6 +7,14 @@ use finalize::{finish_combat_search_report, SearchFinishInput};
 
 const TURN_PLAN_SEED_CRITICAL_SURVIVAL_MARGIN: i32 = 6;
 
+#[derive(Clone, Copy, Debug)]
+enum RolloutEstimateSource {
+    Root,
+    Child,
+    DeferredChild,
+    TurnPlanSeed,
+}
+
 pub fn run_combat_search_v2(
     engine: &EngineState,
     combat: &CombatState,
@@ -36,6 +44,7 @@ pub fn run_combat_search_v2_with_stepper(
         config.rollout_max_actions,
         config.rollout_beam_width,
     );
+    let mut performance = CombatSearchV2PerformanceReport::default();
     let mut frontier = FrontierQueue::new(config.frontier_policy);
     let mut turn_plan_seeded_sources = HashSet::new();
     let mut next_sequence_id = 0u64;
@@ -52,7 +61,15 @@ pub fn run_combat_search_v2_with_stepper(
         last_turn_branch_priority: 0,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
-    root.rollout_estimate = rollout_cache.estimate(&root, stepper, &config, deadline);
+    root.rollout_estimate = timed_rollout_estimate(
+        &mut rollout_cache,
+        &root,
+        stepper,
+        &config,
+        deadline,
+        &mut performance,
+        RolloutEstimateSource::Root,
+    );
     if terminal_label(&root.engine, &root.combat) == SearchTerminalLabel::Win {
         stats.nodes_to_first_win = Some(0);
     }
@@ -65,6 +82,7 @@ pub fn run_combat_search_v2_with_stepper(
             &config,
             deadline,
             &mut rollout_cache,
+            &mut performance,
             &mut stats,
             &mut diagnostics,
             &mut frontier,
@@ -82,7 +100,16 @@ pub fn run_combat_search_v2_with_stepper(
     let mut exhausted = false;
     let mut accepted_complete_candidate = false;
 
-    while let Some(entry) = frontier.pop() {
+    loop {
+        let frontier_pop_started = Instant::now();
+        let Some(entry) = frontier.pop() else {
+            break;
+        };
+        performance.frontier_pop_calls = performance.frontier_pop_calls.saturating_add(1);
+        performance.frontier_pop_elapsed_us = performance
+            .frontier_pop_elapsed_us
+            .saturating_add(frontier_pop_started.elapsed().as_micros());
+
         if stats.nodes_expanded as usize >= config.max_nodes {
             stats.node_budget_hit = true;
             exhausted = true;
@@ -96,7 +123,27 @@ pub fn run_combat_search_v2_with_stepper(
             break;
         }
 
-        let node = entry.node;
+        let mut node = entry.node;
+        if should_complete_deferred_child_rollout(&node, &config) {
+            node.rollout_estimate = timed_rollout_estimate(
+                &mut rollout_cache,
+                &node,
+                stepper,
+                &config,
+                deadline,
+                &mut performance,
+                RolloutEstimateSource::DeferredChild,
+            );
+            if node.rollout_estimate.is_evaluated() {
+                performance.deferred_child_rollout_requeues = performance
+                    .deferred_child_rollout_requeues
+                    .saturating_add(1);
+                push_frontier(&mut frontier, node, &mut next_sequence_id);
+                continue;
+            }
+        }
+
+        let pre_expand_started = Instant::now();
         remember_best_frontier(&mut best_frontier, &node);
 
         match terminal_label(&node.engine, &node.combat) {
@@ -110,14 +157,23 @@ pub fn run_combat_search_v2_with_stepper(
                     .as_ref()
                     .is_some_and(|best| accepted_complete_win(best, &config))
                 {
+                    performance.pre_expand_elapsed_us = performance
+                        .pre_expand_elapsed_us
+                        .saturating_add(pre_expand_started.elapsed().as_micros());
                     accepted_complete_candidate = true;
                     break;
                 }
+                performance.pre_expand_elapsed_us = performance
+                    .pre_expand_elapsed_us
+                    .saturating_add(pre_expand_started.elapsed().as_micros());
                 continue;
             }
             SearchTerminalLabel::Loss => {
                 stats.terminal_losses = stats.terminal_losses.saturating_add(1);
                 remember_best_complete(&mut best_complete, node);
+                performance.pre_expand_elapsed_us = performance
+                    .pre_expand_elapsed_us
+                    .saturating_add(pre_expand_started.elapsed().as_micros());
                 continue;
             }
             SearchTerminalLabel::Unresolved => {}
@@ -125,6 +181,9 @@ pub fn run_combat_search_v2_with_stepper(
 
         if node.actions.len() >= config.max_actions_per_line {
             max_actions_cut_count = max_actions_cut_count.saturating_add(1);
+            performance.pre_expand_elapsed_us = performance
+                .pre_expand_elapsed_us
+                .saturating_add(pre_expand_started.elapsed().as_micros());
             continue;
         }
 
@@ -132,12 +191,18 @@ pub fn run_combat_search_v2_with_stepper(
         let exact_key = combat_exact_state_key(&node.engine, &node.combat);
         if is_resource_covered(&mut exact_transpositions, exact_key, resource) {
             stats.transposition_prunes = stats.transposition_prunes.saturating_add(1);
+            performance.pre_expand_elapsed_us = performance
+                .pre_expand_elapsed_us
+                .saturating_add(pre_expand_started.elapsed().as_micros());
             continue;
         }
 
         let dominance_key = combat_dominance_key(&node.engine, &node.combat);
         if is_resource_covered(&mut dominance, dominance_key, resource) {
             stats.dominance_prunes = stats.dominance_prunes.saturating_add(1);
+            performance.pre_expand_elapsed_us = performance
+                .pre_expand_elapsed_us
+                .saturating_add(pre_expand_started.elapsed().as_micros());
             continue;
         }
 
@@ -148,6 +213,7 @@ pub fn run_combat_search_v2_with_stepper(
                 &config,
                 deadline,
                 &mut rollout_cache,
+                &mut performance,
                 &mut stats,
                 &mut diagnostics,
                 &mut frontier,
@@ -155,8 +221,12 @@ pub fn run_combat_search_v2_with_stepper(
                 &mut turn_plan_seeded_sources,
             );
         }
+        performance.pre_expand_elapsed_us = performance
+            .pre_expand_elapsed_us
+            .saturating_add(pre_expand_started.elapsed().as_micros());
 
         stats.nodes_expanded = stats.nodes_expanded.saturating_add(1);
+        let expansion_started = Instant::now();
         let position = CombatPosition::new(node.engine.clone(), node.combat.clone());
         let legal = filtered_legal_actions(
             stepper.legal_action_choices(&position),
@@ -177,6 +247,9 @@ pub fn run_combat_search_v2_with_stepper(
         diagnostics.observe_target_fanout(&target_fanout);
         if legal.is_empty() {
             unresolved_leaf_count = unresolved_leaf_count.saturating_add(1);
+            performance.expansion_elapsed_us = performance
+                .expansion_elapsed_us
+                .saturating_add(expansion_started.elapsed().as_micros());
             continue;
         }
         let equivalence = compress_equivalent_actions(&node.engine, &node.combat, legal);
@@ -191,6 +264,9 @@ pub fn run_combat_search_v2_with_stepper(
             &node.combat,
             ordered.choices.len(),
         );
+        performance.expansion_elapsed_us = performance
+            .expansion_elapsed_us
+            .saturating_add(expansion_started.elapsed().as_micros());
 
         for ordered_choice in ordered.choices {
             let action_id = ordered_choice.original_action_id;
@@ -209,6 +285,7 @@ pub fn run_combat_search_v2_with_stepper(
                 exhausted = true;
                 break;
             }
+            let step_started = Instant::now();
             let step = stepper.apply_to_stable(
                 &position,
                 choice.input.clone(),
@@ -217,6 +294,10 @@ pub fn run_combat_search_v2_with_stepper(
                     deadline,
                 },
             );
+            performance.engine_step_calls = performance.engine_step_calls.saturating_add(1);
+            performance.engine_step_elapsed_us = performance
+                .engine_step_elapsed_us
+                .saturating_add(step_started.elapsed().as_micros());
             if step.truncated && !step.timed_out {
                 engine_step_limit_count = engine_step_limit_count.saturating_add(1);
             }
@@ -225,6 +306,7 @@ pub fn run_combat_search_v2_with_stepper(
                 exhausted = true;
             }
 
+            let child_bookkeeping_started = Instant::now();
             let mut child = node.clone_for_child(step.position.engine, step.position.combat);
             diagnostics.observe_pending_choice_child_transition(
                 pending_choice.as_ref(),
@@ -251,14 +333,54 @@ pub fn run_combat_search_v2_with_stepper(
                 input: choice.input,
             });
             stats.nodes_generated = stats.nodes_generated.saturating_add(1);
-            child.rollout_estimate = rollout_cache.estimate(&child, stepper, &config, deadline);
+            performance.child_bookkeeping_elapsed_us = performance
+                .child_bookkeeping_elapsed_us
+                .saturating_add(child_bookkeeping_started.elapsed().as_micros());
 
+            let child_bookkeeping_started = Instant::now();
             if !step.truncated && turn_local_dominance.observe_child(&child) {
                 stats.turn_local_dominance_prunes =
                     stats.turn_local_dominance_prunes.saturating_add(1);
+                performance.turn_local_dominance_rollout_skips = performance
+                    .turn_local_dominance_rollout_skips
+                    .saturating_add(1);
+                performance.child_bookkeeping_elapsed_us = performance
+                    .child_bookkeeping_elapsed_us
+                    .saturating_add(child_bookkeeping_started.elapsed().as_micros());
                 continue;
             }
 
+            child.rollout_estimate = if terminal_label(&child.engine, &child.combat)
+                != SearchTerminalLabel::Unresolved
+            {
+                performance.terminal_child_rollout_skips =
+                    performance.terminal_child_rollout_skips.saturating_add(1);
+                RolloutNodeEstimate::from_node(
+                    &child,
+                    0,
+                    RolloutStopReason::TerminalState,
+                    Some("terminal_child_no_rollout"),
+                    super::rollout_pending_choice::RolloutPendingChoiceProgress::default(),
+                )
+            } else if config.child_rollout_policy == CombatSearchV2ChildRolloutPolicy::LazyOnPop
+                && config.rollout_policy != CombatSearchV2RolloutPolicy::Disabled
+            {
+                performance.deferred_child_rollout_nodes =
+                    performance.deferred_child_rollout_nodes.saturating_add(1);
+                RolloutNodeEstimate::unevaluated()
+            } else {
+                timed_rollout_estimate(
+                    &mut rollout_cache,
+                    &child,
+                    stepper,
+                    &config,
+                    deadline,
+                    &mut performance,
+                    RolloutEstimateSource::Child,
+                )
+            };
+
+            let child_bookkeeping_started = Instant::now();
             if stats.nodes_to_first_win.is_none()
                 && terminal_label(&child.engine, &child.combat) == SearchTerminalLabel::Win
             {
@@ -271,6 +393,9 @@ pub fn run_combat_search_v2_with_stepper(
                 unresolved_leaf_count = unresolved_leaf_count.saturating_add(1);
                 remember_best_frontier(&mut best_frontier, &child);
             }
+            performance.child_bookkeeping_elapsed_us = performance
+                .child_bookkeeping_elapsed_us
+                .saturating_add(child_bookkeeping_started.elapsed().as_micros());
         }
         diagnostics.observe_turn_branching(&turn_branching);
         diagnostics.observe_turn_local_dominance(&turn_local_dominance);
@@ -280,9 +405,28 @@ pub fn run_combat_search_v2_with_stepper(
         }
     }
 
+    let shadow_audit_started = Instant::now();
     diagnostics.run_discard_order_exact_shadow_audit(stepper, &config);
-    stats.elapsed_ms = started.elapsed().as_millis();
+    performance.shadow_audit_elapsed_us = shadow_audit_started.elapsed().as_micros();
+    let root_turn_plan_diagnostics_started = Instant::now();
     diagnostics.observe_root_turn_plan(&root_for_turn_plan_diagnostics, stepper);
+    performance.root_turn_plan_diagnostics_elapsed_us =
+        root_turn_plan_diagnostics_started.elapsed().as_micros();
+    let total_elapsed = started.elapsed();
+    stats.elapsed_ms = total_elapsed.as_millis();
+    performance.total_elapsed_us = total_elapsed.as_micros();
+    performance.unattributed_elapsed_us = performance.total_elapsed_us.saturating_sub(
+        performance
+            .engine_step_elapsed_us
+            .saturating_add(performance.rollout_estimate_elapsed_us)
+            .saturating_add(performance.frontier_pop_elapsed_us)
+            .saturating_add(performance.pre_expand_elapsed_us)
+            .saturating_add(performance.expansion_elapsed_us)
+            .saturating_add(performance.child_bookkeeping_elapsed_us)
+            .saturating_add(performance.turn_plan_frontier_seed_elapsed_us)
+            .saturating_add(performance.shadow_audit_elapsed_us)
+            .saturating_add(performance.root_turn_plan_diagnostics_elapsed_us),
+    );
     finish_combat_search_report(SearchFinishInput {
         config,
         policy_evidence,
@@ -294,6 +438,7 @@ pub fn run_combat_search_v2_with_stepper(
         best_complete,
         best_frontier,
         rollout_cache,
+        performance,
         unresolved_leaf_count,
         max_actions_cut_count,
         engine_step_limit_count,
@@ -303,14 +448,65 @@ pub fn run_combat_search_v2_with_stepper(
     })
 }
 
+fn timed_rollout_estimate(
+    rollout_cache: &mut RolloutCache,
+    node: &SearchNode,
+    stepper: &impl CombatStepper,
+    config: &CombatSearchV2Config,
+    deadline: Option<Instant>,
+    performance: &mut CombatSearchV2PerformanceReport,
+    source: RolloutEstimateSource,
+) -> RolloutNodeEstimate {
+    let started = Instant::now();
+    let estimate = rollout_cache.estimate(node, stepper, config, deadline);
+    performance.rollout_estimate_calls = performance.rollout_estimate_calls.saturating_add(1);
+    match source {
+        RolloutEstimateSource::Root => {
+            performance.root_rollout_estimate_calls =
+                performance.root_rollout_estimate_calls.saturating_add(1);
+        }
+        RolloutEstimateSource::Child => {
+            performance.child_rollout_estimate_calls =
+                performance.child_rollout_estimate_calls.saturating_add(1);
+        }
+        RolloutEstimateSource::DeferredChild => {
+            performance.deferred_child_rollout_estimate_calls = performance
+                .deferred_child_rollout_estimate_calls
+                .saturating_add(1);
+        }
+        RolloutEstimateSource::TurnPlanSeed => {
+            performance.turn_plan_seed_rollout_estimate_calls = performance
+                .turn_plan_seed_rollout_estimate_calls
+                .saturating_add(1);
+        }
+    }
+    performance.rollout_estimate_elapsed_us = performance
+        .rollout_estimate_elapsed_us
+        .saturating_add(started.elapsed().as_micros());
+    estimate
+}
+
+fn should_complete_deferred_child_rollout(
+    node: &SearchNode,
+    config: &CombatSearchV2Config,
+) -> bool {
+    config.child_rollout_policy == CombatSearchV2ChildRolloutPolicy::LazyOnPop
+        && config.rollout_policy != CombatSearchV2RolloutPolicy::Disabled
+        && !node.rollout_estimate.is_evaluated()
+        && terminal_label(&node.engine, &node.combat) == SearchTerminalLabel::Unresolved
+}
+
 fn accepted_complete_win(node: &SearchNode, config: &CombatSearchV2Config) -> bool {
     if terminal_label(&node.engine, &node.combat) != SearchTerminalLabel::Win {
         return false;
     }
+    let hp_loss = (node.initial_hp - node.combat.entities.player.current_hp).max(0) as u32;
+    if hp_loss == 0 && !super::external_payoff::has_external_payoff_opportunity(&node.combat) {
+        return true;
+    }
     let Some(limit) = config.stop_on_win_hp_loss_at_most else {
         return false;
     };
-    let hp_loss = (node.initial_hp - node.combat.entities.player.current_hp).max(0) as u32;
     hp_loss <= limit
 }
 
@@ -320,6 +516,7 @@ fn seed_turn_plan_frontier(
     config: &CombatSearchV2Config,
     deadline: Option<Instant>,
     rollout_cache: &mut RolloutCache,
+    performance: &mut CombatSearchV2PerformanceReport,
     stats: &mut CombatSearchV2Stats,
     diagnostics: &mut SearchDiagnosticsCollector,
     frontier: &mut FrontierQueue,
@@ -331,10 +528,38 @@ fn seed_turn_plan_frontier(
         return;
     }
 
+    let seed_started = Instant::now();
     let mut seeded_nodes = turn_plan_frontier_seed(source, stepper, config, deadline);
+    performance.turn_plan_frontier_seed_calls =
+        performance.turn_plan_frontier_seed_calls.saturating_add(1);
+    performance.turn_plan_frontier_seed_elapsed_us = performance
+        .turn_plan_frontier_seed_elapsed_us
+        .saturating_add(seed_started.elapsed().as_micros());
     diagnostics.observe_turn_plan_frontier_seeded_nodes(seeded_nodes.nodes.len());
     for mut seed in seeded_nodes.nodes.drain(..) {
-        seed.rollout_estimate = rollout_cache.estimate(&seed, stepper, config, deadline);
+        seed.rollout_estimate =
+            if terminal_label(&seed.engine, &seed.combat) == SearchTerminalLabel::Unresolved {
+                timed_rollout_estimate(
+                    rollout_cache,
+                    &seed,
+                    stepper,
+                    config,
+                    deadline,
+                    performance,
+                    RolloutEstimateSource::TurnPlanSeed,
+                )
+            } else {
+                performance.terminal_turn_plan_seed_rollout_skips = performance
+                    .terminal_turn_plan_seed_rollout_skips
+                    .saturating_add(1);
+                RolloutNodeEstimate::from_node(
+                    &seed,
+                    0,
+                    RolloutStopReason::TerminalState,
+                    Some("terminal_turn_plan_seed_no_rollout"),
+                    super::rollout_pending_choice::RolloutPendingChoiceProgress::default(),
+                )
+            };
         stats.nodes_generated = stats.nodes_generated.saturating_add(1);
         if stats.nodes_to_first_win.is_none()
             && terminal_label(&seed.engine, &seed.combat) == SearchTerminalLabel::Win

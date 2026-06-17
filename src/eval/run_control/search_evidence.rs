@@ -10,7 +10,7 @@ use crate::ai::combat_search_v2::{
 
 pub const COMBAT_SEARCH_EVIDENCE_SCHEMA_NAME: &str = "CombatSearchEvidenceV1";
 pub const COMBAT_SEARCH_EVIDENCE_SCHEMA_VERSION: u32 = 1;
-pub const COMBAT_SEARCH_REPORT_SCHEMA_VERSION: u64 = 7;
+pub const COMBAT_SEARCH_REPORT_SCHEMA_VERSION: u64 = 9;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CombatSearchEvidenceContextV1 {
@@ -133,8 +133,9 @@ fn validate_report(report: Option<&Value>) -> Result<(), String> {
         "CombatSearchV2Report",
         "report.schema_name",
     )?;
-    expect_u64(
+    expect_u64_range(
         report.get("schema_version"),
+        7,
         COMBAT_SEARCH_REPORT_SCHEMA_VERSION,
         "report.schema_version",
     )?;
@@ -239,6 +240,18 @@ fn expect_u64(value: Option<&Value>, expected: u64, field: &str) -> Result<(), S
     Ok(())
 }
 
+fn expect_u64_range(value: Option<&Value>, min: u64, max: u64, field: &str) -> Result<(), String> {
+    let actual = value
+        .and_then(Value::as_u64)
+        .ok_or_else(|| format!("combat search evidence {field} is missing"))?;
+    if !(min..=max).contains(&actual) {
+        return Err(format!(
+            "combat search evidence {field} expected {min}..={max}, got {actual}"
+        ));
+    }
+    Ok(())
+}
+
 fn expect_bool(value: Option<&Value>, expected: bool, field: &str) -> Result<(), String> {
     let actual = value
         .and_then(Value::as_bool)
@@ -283,7 +296,7 @@ mod tests {
             },
             "report": {
                 "schema_name": "CombatSearchV2Report",
-                "schema_version": 7,
+                "schema_version": 8,
                 "policy_evidence": {
                     "information_access": "privileged_simulator",
                     "public_safe": false,
@@ -310,6 +323,15 @@ mod tests {
         evidence["label_role"] = json!("search_evidence_not_human_baseline");
         validate_combat_search_evidence_v1(&evidence)
             .expect("valid search evidence envelope should pass");
+    }
+
+    #[test]
+    fn search_evidence_validation_accepts_previous_search_report_schema() {
+        let mut evidence = valid_search_evidence();
+        evidence["report"]["schema_version"] = json!(7);
+
+        validate_combat_search_evidence_v1(&evidence)
+            .expect("v7 search reports should remain readable after adding performance fields");
     }
 
     #[test]

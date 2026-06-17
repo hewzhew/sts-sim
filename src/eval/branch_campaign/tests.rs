@@ -94,6 +94,76 @@ fn compact_campaign_report_truncates_long_branch_pressure_examples() {
 }
 
 #[test]
+fn compact_campaign_report_renders_combat_performance_summary() {
+    let mut report = test_campaign_report_with_active("a", 7, 80);
+    report.rounds[0].combat_performance = BranchCampaignCombatPerformanceSummaryV1 {
+        samples: 2,
+        total_us: 10_000,
+        rollout_us: 4_000,
+        rollout_calls: 10,
+        root_rollout_calls: 2,
+        child_rollout_calls: 7,
+        deferred_child_rollout_calls: 5,
+        turn_plan_seed_rollout_calls: 1,
+        deferred_child_rollout_nodes: 9,
+        deferred_child_rollout_requeues: 5,
+        rollout_cache_hits: 3,
+        rollout_cache_queries: 13,
+        rollout_cache_misses: 10,
+        rollout_cache_inserts: 8,
+        rollout_budget_skips: 2,
+        rollout_max_evaluation_budget_skips: 1,
+        rollout_deadline_budget_skips: 1,
+        rollout_truncated: 1,
+        rollout_terminal_wins: 4,
+        rollout_cache_lookup_us: 100,
+        rollout_policy_dispatch_us: 2_000,
+        rollout_no_potion_iterations: 19,
+        rollout_no_potion_phase_profile_us: 300,
+        rollout_no_potion_legal_actions_us: 400,
+        rollout_no_potion_choose_action_us: 500,
+        rollout_no_potion_choose_ordering_us: 100,
+        rollout_no_potion_probe_us: 250,
+        rollout_no_potion_probe_score_calls: 11,
+        rollout_no_potion_probe_actions_evaluated: 10,
+        rollout_no_potion_probe_step_reuses: 3,
+        rollout_no_potion_probe_engine_step_us: 60,
+        rollout_no_potion_probe_phase_profile_us: 70,
+        rollout_no_potion_probe_action_facts_us: 80,
+        rollout_no_potion_engine_step_us: 600,
+        rollout_no_potion_child_build_us: 200,
+        terminal_child_rollout_skips: 2,
+        terminal_turn_plan_seed_rollout_skips: 1,
+        turn_local_dominance_rollout_skips: 3,
+        expansion_us: 2_000,
+        child_bookkeeping_us: 1_500,
+        engine_step_us: 1_000,
+        external_payoff_samples: 1,
+        boss_samples: 1,
+        slowest: vec![BranchCampaignCombatPerformanceExampleV1 {
+            total_us: 7_000,
+            act: 2,
+            floor: 32,
+            turn: 1,
+            combat_kind: "boss".to_string(),
+            enemies: "Bronze Automaton".to_string(),
+            coverage_status: "TimeBudgetLimited".to_string(),
+            dominant_bucket: "rollout".to_string(),
+        }],
+        ..BranchCampaignCombatPerformanceSummaryV1::default()
+    };
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains(
+        "Combat perf: samples=2 total=0.0s dominant=rollout rollout=40% expansion=20% child=15% engine=10% rollout_calls=10 root_calls=2 child_calls=7 deferred_child_calls=5 seed_calls=1 deferred_nodes=9 deferred_requeues=5 cache=hits/queries/misses/inserts:3/13/10/8 budget_skips=2(max=1 deadline=1) terminal_skips=2 seed_terminal_skips=1 dominance_skips=3 rollout_inner=iters:19 policy_total:20% phase:3% legal:4% choose:5% order:1% probe:2% probe_calls:11 probe_eval:10 probe_reuse:3 probe_engine:0% probe_phase:0% probe_facts:0% engine:6% build:2% external_payoff=1 boss=1"
+    ));
+    assert!(rendered.contains(
+        "slowest: A2F32 turn=1 boss Bronze Automaton 0.0s bucket=rollout status=TimeBudgetLimited"
+    ));
+}
+
+#[test]
 fn compact_campaign_report_truncates_long_active_choice_paths() {
     let mut report = test_campaign_report_with_active("a", 7, 80);
     report.active[0].choice_labels = vec![
@@ -1591,6 +1661,23 @@ fn campaign_retry_budget_raises_combat_search_without_restoring_hp_gate() {
 }
 
 #[test]
+fn campaign_retry_budget_keeps_single_search_strong_but_limits_candidate_breadth() {
+    let config = BranchCampaignConfigV1 {
+        max_active: 2,
+        max_branches_per_active: 12,
+        search_max_nodes: Some(50_000),
+        search_wall_ms: Some(300),
+        ..BranchCampaignConfigV1::default()
+    };
+
+    let retry = combat_retry_campaign_config_v1(&config).expect("retry config");
+
+    assert_eq!(retry.search_max_nodes, Some(200_000));
+    assert_eq!(retry.search_wall_ms, Some(1_000));
+    assert_eq!(retry.max_branches_per_active, 2);
+}
+
+#[test]
 fn campaign_retry_budget_can_use_explicit_wall_cap() {
     let config = BranchCampaignConfigV1 {
         search_max_nodes: Some(10_000),
@@ -1603,6 +1690,47 @@ fn campaign_retry_budget_can_use_explicit_wall_cap() {
 
     assert_eq!(retry.search_max_nodes, Some(200_000));
     assert_eq!(retry.search_wall_ms, Some(1_000));
+}
+
+#[test]
+fn campaign_parent_batch_starts_all_parents_before_finished_events() {
+    let config = BranchCampaignConfigV1 {
+        round_depth: 0,
+        max_branches_per_active: 1,
+        experiment_wall_ms: Some(100),
+        search_wall_ms: Some(10),
+        search_max_nodes: Some(100),
+        combat_retry_policy: BranchCampaignCombatRetryPolicyV1::Disabled,
+        ..BranchCampaignConfigV1::default()
+    };
+    let parents = vec![root_campaign_branch_v1(), root_campaign_branch_v1()];
+    let mut snapshot_cache = BTreeMap::new();
+    let mut retry_ledger = BranchCampaignCombatRetryLedgerStateV1::default();
+    let mut progress_sequence = Vec::new();
+
+    run_campaign_parent_batch_v1(
+        &config,
+        &parents,
+        &mut snapshot_cache,
+        &mut retry_ledger,
+        1,
+        false,
+        &mut |event| match event {
+            BranchCampaignProgressEventV1::BranchStarted { branch_index, .. } => {
+                progress_sequence.push(format!("start{branch_index}"));
+            }
+            BranchCampaignProgressEventV1::BranchFinished { branch_index, .. } => {
+                progress_sequence.push(format!("finish{branch_index}"));
+            }
+            _ => {}
+        },
+    )
+    .expect("parent batch should run");
+
+    assert_eq!(
+        progress_sequence,
+        vec!["start1", "start2", "finish1", "finish2"]
+    );
 }
 
 #[test]
@@ -1652,6 +1780,27 @@ fn campaign_default_retry_policy_does_not_retry_each_parent_immediately() {
     assert!(!campaign_parent_should_retry_combat_budget_now_v1(
         &config,
         &[abandoned_combat]
+    ));
+}
+
+#[test]
+fn campaign_disabled_retry_policy_disables_act_boss_gate_parent_retry() {
+    let config = BranchCampaignConfigV1 {
+        combat_retry_policy: BranchCampaignCombatRetryPolicyV1::Disabled,
+        ..BranchCampaignConfigV1::default()
+    };
+    let abandoned_act1_boss = test_report_branch_at(
+        "a1",
+        Vec::new(),
+        BranchExperimentBranchStatusV1::Pruned,
+        "Combat",
+        16,
+        80,
+    );
+
+    assert!(!campaign_parent_should_retry_combat_budget_now_v1(
+        &config,
+        &[abandoned_act1_boss]
     ));
 }
 
@@ -2725,6 +2874,7 @@ fn campaign_round_summary_persists_timing_metrics() {
         parent_elapsed_wall_ms_max: 4_000,
         combat_retry_elapsed_wall_ms_sum: 3_000,
         combat_retry_elapsed_wall_ms_max: 3_000,
+        combat_performance: BranchCampaignCombatPerformanceSummaryV1::default(),
     };
 
     let value = serde_json::to_value(summary).expect("round summary should serialize");

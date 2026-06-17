@@ -111,6 +111,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                     applied.extend(auto_capture_summaries);
                     continue;
                 }
+                trace_annotations.extend(outcome.trace_annotations);
                 no_potion_rejection = Some(trim_search_rejection(&outcome.message));
             }
 
@@ -131,6 +132,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 continue;
             }
             let fallback_rejection = trim_search_rejection(&outcome.message);
+            trace_annotations.extend(outcome.trace_annotations);
             if let Some(rescue_options) = auto_potion_rescue_options(session, &options.search) {
                 let rescue = super::combat_search::apply_search_combat(session, rescue_options)?;
                 if let Some(result) = rescue.action_result.as_ref() {
@@ -143,6 +145,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                     applied.extend(auto_capture_summaries);
                     continue;
                 }
+                trace_annotations.extend(rescue.trace_annotations);
                 return finish_auto_step(
                     session,
                     &before,
@@ -393,7 +396,8 @@ fn auto_capture_summaries(annotations: &[RunControlTraceAnnotationV1]) -> Vec<St
             RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
             | RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
             | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
-            | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. } => None,
+            | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
+            | RunControlTraceAnnotationV1::CombatSearchPerformance { .. } => None,
         })
         .collect()
 }

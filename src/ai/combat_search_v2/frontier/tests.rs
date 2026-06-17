@@ -140,6 +140,35 @@ fn round_robin_frontier_gives_dangerous_race_progress_its_own_budget() {
     );
 }
 
+#[test]
+fn round_robin_frontier_does_not_treat_unevaluated_rollout_as_survival_crisis() {
+    let mut queue = FrontierQueue::new(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets);
+    let mut next_sequence_id = 0;
+
+    for index in 0..8 {
+        let mut progress = evaluated_node(20, 40);
+        progress
+            .actions
+            .push(test_action_trace(format!("progress-{index}")));
+        push_frontier(&mut queue, progress, &mut next_sequence_id);
+    }
+    let mut unevaluated = test_node();
+    unevaluated.combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    unevaluated
+        .actions
+        .push(test_action_trace("unevaluated".to_string()));
+    push_frontier(&mut queue, unevaluated, &mut next_sequence_id);
+
+    let popped = (0..8)
+        .map(|_| queue.pop().unwrap().node.actions[0].action_key.clone())
+        .collect::<Vec<_>>();
+
+    assert!(
+        popped.iter().all(|key| key.starts_with("progress-")),
+        "unevaluated rollout should stay in balanced lane instead of taking survival-lane budget; popped={popped:?}"
+    );
+}
+
 fn evaluated_node(survival_margin: i32, phase_adjusted_enemy_effort: i32) -> SearchNode {
     let mut node = test_node();
     node.combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];

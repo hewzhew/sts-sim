@@ -587,7 +587,8 @@ fn is_boundary_record_annotation(annotation: &RunControlTraceAnnotationV1) -> bo
         ),
         RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
         | RunControlTraceAnnotationV1::AutoCombatCapture { .. }
-        | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. } => false,
+        | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
+        | RunControlTraceAnnotationV1::CombatSearchPerformance { .. } => false,
     }
 }
 
@@ -615,7 +616,8 @@ fn annotation_artifact_refs(
             RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
             | RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
             | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
-            | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. } => None,
+            | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
+            | RunControlTraceAnnotationV1::CombatSearchPerformance { .. } => None,
         })
         .collect()
 }

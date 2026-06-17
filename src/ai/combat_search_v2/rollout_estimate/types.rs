@@ -48,6 +48,10 @@ pub(in crate::ai::combat_search_v2) enum RolloutStopReason {
 }
 
 impl RolloutNodeEstimate {
+    pub(in crate::ai::combat_search_v2) fn is_evaluated(self) -> bool {
+        self.evaluated
+    }
+
     pub(in crate::ai::combat_search_v2) fn unevaluated() -> Self {
         Self {
             evaluated: false,

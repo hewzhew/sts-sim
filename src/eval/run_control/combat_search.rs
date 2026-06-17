@@ -1,8 +1,10 @@
 use crate::ai::combat_search_v2::{
-    filter_combat_search_legal_actions, plan_combat_turn_segment_v1, run_combat_search_v2,
-    CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2Report,
-    CombatSearchV2TurnSegmentReport, SearchTerminalLabel,
+    filter_combat_search_legal_actions, has_external_payoff_opportunity,
+    plan_combat_turn_segment_v1, run_combat_search_v2, CombatSearchV2ActionTrace,
+    CombatSearchV2Config, CombatSearchV2Report, CombatSearchV2TurnSegmentReport,
+    SearchTerminalLabel,
 };
+use crate::content::monsters::EnemyId;
 use crate::sim::combat::{
     combat_terminal, CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal,
     EngineCombatStepper,
@@ -16,7 +18,9 @@ use super::commands::{
 use super::registry::BenchmarkCasePaths;
 use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenceContextV1};
 use super::session::{RunControlCommandOutcome, RunControlSession};
-use super::trace_annotation::{CombatAutomationActionV1, RunControlTraceAnnotationV1};
+use super::trace_annotation::{
+    CombatAutomationActionV1, CombatSearchPerformanceSnapshotV1, RunControlTraceAnnotationV1,
+};
 use super::transition_report::{
     action_result_from_transition, render_action_result, ActionResult, ActionResultChange,
     CardSnapshot, RunApplyStatus, RunVisibleSnapshot, TransitionAction,
@@ -40,6 +44,14 @@ pub(super) fn apply_search_combat(
             render_saved_evidence_note(saved_evidence.as_deref()),
             super::render::render_run_control_state(session)
         ));
+        outcome
+            .trace_annotations
+            .push(combat_search_performance_trace_annotation(
+                "search_combat_rejected",
+                session,
+                &start,
+                &report,
+            ));
         outcome.search_evidence_path = saved_evidence;
         return Ok(outcome);
     }
@@ -65,6 +77,14 @@ pub(super) fn apply_search_combat(
             render_saved_evidence_note(saved_evidence.as_deref()),
             super::render::render_run_control_state(session)
         ));
+        outcome
+            .trace_annotations
+            .push(combat_search_performance_trace_annotation(
+                "search_combat_rejected",
+                session,
+                &start,
+                &report,
+            ));
         outcome.search_evidence_path = saved_evidence;
         return Ok(outcome);
     };
@@ -94,6 +114,14 @@ pub(super) fn apply_search_combat(
                 render_saved_evidence_note(saved_evidence.as_deref()),
                 super::render::render_run_control_state(session)
             ));
+            outcome
+                .trace_annotations
+                .push(combat_search_performance_trace_annotation(
+                    "search_combat_rejected",
+                    session,
+                    &start,
+                    &report,
+                ));
             outcome.search_evidence_path = saved_evidence;
             return Ok(outcome);
         }
@@ -135,9 +163,10 @@ pub(super) fn apply_search_combat(
         render_action_result(&action_result),
         super::render::render_run_control_state(session)
     );
-    let mut outcome =
-        RunControlCommandOutcome::action(message, action_result).with_trace_annotations(vec![
+    let mut outcome = RunControlCommandOutcome::action(message, action_result)
+        .with_trace_annotations(vec![
             combat_automation_trace_annotation("search_combat", automation_actions),
+            combat_search_performance_trace_annotation("search_combat", session, &start, &report),
         ]);
     outcome.search_evidence_path = saved_evidence;
     Ok(outcome)
@@ -199,9 +228,15 @@ fn try_apply_turn_segment_after_rejection(
         render_action_result(&action_result),
         super::render::render_run_control_state(session)
     );
-    let mut outcome =
-        RunControlCommandOutcome::action(message, action_result).with_trace_annotations(vec![
+    let mut outcome = RunControlCommandOutcome::action(message, action_result)
+        .with_trace_annotations(vec![
             combat_automation_trace_annotation("search_combat_turn_segment", automation_actions),
+            combat_search_performance_trace_annotation(
+                "search_combat_turn_segment",
+                session,
+                start,
+                search_report,
+            ),
         ]);
     outcome.search_evidence_path = saved_evidence.map(|path| path.to_path_buf());
     Ok(Some(outcome))
@@ -228,6 +263,148 @@ fn combat_automation_trace_annotation(
         actions,
         label_role: "simulator_generated_not_teacher_label".to_string(),
     }
+}
+
+fn combat_search_performance_trace_annotation(
+    source: impl Into<String>,
+    session: &RunControlSession,
+    start: &CombatPosition,
+    report: &CombatSearchV2Report,
+) -> RunControlTraceAnnotationV1 {
+    RunControlTraceAnnotationV1::CombatSearchPerformance {
+        snapshot: combat_search_performance_snapshot(source.into(), session, start, report),
+    }
+}
+
+fn combat_search_performance_snapshot(
+    source: String,
+    session: &RunControlSession,
+    start: &CombatPosition,
+    report: &CombatSearchV2Report,
+) -> CombatSearchPerformanceSnapshotV1 {
+    let combat = &start.combat;
+    CombatSearchPerformanceSnapshotV1 {
+        source,
+        act: session.run_state.act_num,
+        floor: session.run_state.floor_num,
+        turn: combat.turn.turn_count,
+        combat_kind: combat_kind_label(combat),
+        enemies: combat_enemy_names(combat),
+        boss: session
+            .run_state
+            .boss_key
+            .map(|boss| format!("{boss:?}"))
+            .unwrap_or_else(|| "unknown".to_string()),
+        external_payoff_opportunity: has_external_payoff_opportunity(combat),
+        coverage_status: format!("{:?}", report.outcome.coverage_status),
+        complete_trajectory_found: report.outcome.complete_trajectory_found,
+        best_hp_loss: report
+            .best_complete_trajectory
+            .as_ref()
+            .map(|trajectory| trajectory.hp_loss),
+        nodes_expanded: report.stats.nodes_expanded,
+        nodes_generated: report.stats.nodes_generated,
+        terminal_wins: report.stats.terminal_wins,
+        total_us: micros_to_u64(report.performance.total_elapsed_us),
+        unattributed_us: micros_to_u64(report.performance.unattributed_elapsed_us),
+        rollout_calls: report.performance.rollout_estimate_calls,
+        root_rollout_calls: report.performance.root_rollout_estimate_calls,
+        child_rollout_calls: report.performance.child_rollout_estimate_calls,
+        deferred_child_rollout_calls: report.performance.deferred_child_rollout_estimate_calls,
+        turn_plan_seed_rollout_calls: report.performance.turn_plan_seed_rollout_estimate_calls,
+        deferred_child_rollout_nodes: report.performance.deferred_child_rollout_nodes,
+        deferred_child_rollout_requeues: report.performance.deferred_child_rollout_requeues,
+        rollout_cache_hits: report.rollout.cache_hits,
+        rollout_cache_queries: report.rollout.cache_queries,
+        rollout_cache_misses: report.rollout.cache_misses,
+        rollout_cache_inserts: report.rollout.cache_inserts,
+        rollout_budget_skips: report.rollout.budget_skips,
+        rollout_max_evaluation_budget_skips: report.rollout.max_evaluation_budget_skips,
+        rollout_deadline_budget_skips: report.rollout.deadline_budget_skips,
+        rollout_truncated: report.rollout.truncated_rollouts,
+        rollout_terminal_wins: report.rollout.terminal_wins,
+        rollout_cache_lookup_us: micros_to_u64(report.rollout.performance.cache_lookup_us),
+        rollout_policy_dispatch_us: micros_to_u64(report.rollout.performance.policy_dispatch_us),
+        rollout_no_potion_iterations: report.rollout.performance.no_potion_iterations,
+        rollout_no_potion_phase_profile_us: micros_to_u64(
+            report.rollout.performance.no_potion_phase_profile_us,
+        ),
+        rollout_no_potion_legal_actions_us: micros_to_u64(
+            report.rollout.performance.no_potion_legal_actions_us,
+        ),
+        rollout_no_potion_choose_action_us: micros_to_u64(
+            report.rollout.performance.no_potion_choose_action_us,
+        ),
+        rollout_no_potion_choose_ordering_us: micros_to_u64(
+            report.rollout.performance.no_potion_choose_ordering_us,
+        ),
+        rollout_no_potion_probe_us: micros_to_u64(report.rollout.performance.no_potion_probe_us),
+        rollout_no_potion_probe_score_calls: report.rollout.performance.no_potion_probe_score_calls,
+        rollout_no_potion_probe_actions_evaluated: report
+            .rollout
+            .performance
+            .no_potion_probe_actions_evaluated,
+        rollout_no_potion_probe_step_reuses: report.rollout.performance.no_potion_probe_step_reuses,
+        rollout_no_potion_probe_engine_step_us: micros_to_u64(
+            report.rollout.performance.no_potion_probe_engine_step_us,
+        ),
+        rollout_no_potion_probe_phase_profile_us: micros_to_u64(
+            report.rollout.performance.no_potion_probe_phase_profile_us,
+        ),
+        rollout_no_potion_probe_action_facts_us: micros_to_u64(
+            report.rollout.performance.no_potion_probe_action_facts_us,
+        ),
+        rollout_no_potion_engine_step_us: micros_to_u64(
+            report.rollout.performance.no_potion_engine_step_us,
+        ),
+        rollout_no_potion_child_build_us: micros_to_u64(
+            report.rollout.performance.no_potion_child_build_us,
+        ),
+        terminal_child_rollout_skips: report.performance.terminal_child_rollout_skips,
+        terminal_turn_plan_seed_rollout_skips: report
+            .performance
+            .terminal_turn_plan_seed_rollout_skips,
+        turn_local_dominance_rollout_skips: report.performance.turn_local_dominance_rollout_skips,
+        rollout_us: micros_to_u64(report.performance.rollout_estimate_elapsed_us),
+        expansion_us: micros_to_u64(report.performance.expansion_elapsed_us),
+        child_bookkeeping_us: micros_to_u64(report.performance.child_bookkeeping_elapsed_us),
+        engine_step_us: micros_to_u64(report.performance.engine_step_elapsed_us),
+        pre_expand_us: micros_to_u64(report.performance.pre_expand_elapsed_us),
+        frontier_pop_us: micros_to_u64(report.performance.frontier_pop_elapsed_us),
+        turn_plan_seed_us: micros_to_u64(report.performance.turn_plan_frontier_seed_elapsed_us),
+        shadow_audit_us: micros_to_u64(report.performance.shadow_audit_elapsed_us),
+        root_turn_plan_diag_us: micros_to_u64(
+            report.performance.root_turn_plan_diagnostics_elapsed_us,
+        ),
+    }
+}
+
+fn combat_kind_label(combat: &crate::runtime::combat::CombatState) -> String {
+    if combat.meta.is_boss_fight {
+        "boss".to_string()
+    } else if combat.meta.is_elite_fight {
+        "elite".to_string()
+    } else {
+        "hallway".to_string()
+    }
+}
+
+fn combat_enemy_names(combat: &crate::runtime::combat::CombatState) -> Vec<String> {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.current_hp > 0 && !monster.is_escaped)
+        .map(|monster| {
+            EnemyId::from_id(monster.monster_type)
+                .map(|enemy| enemy.get_name().to_string())
+                .unwrap_or_else(|| format!("monster#{}", monster.monster_type))
+        })
+        .collect()
+}
+
+fn micros_to_u64(value: u128) -> u64 {
+    value.min(u128::from(u64::MAX)) as u64
 }
 
 fn drawn_cards_from_action_result(action_result: Option<&ActionResult>) -> Vec<CardSnapshot> {
@@ -380,6 +557,9 @@ fn search_config(
             .or(session.search_max_potions_used)
             .or(defaults.max_potions_used),
         rollout_policy: options.rollout_policy.unwrap_or(defaults.rollout_policy),
+        child_rollout_policy: options
+            .child_rollout_policy
+            .unwrap_or(defaults.child_rollout_policy),
         rollout_max_evaluations: options
             .rollout_max_evaluations
             .unwrap_or(defaults.rollout_max_evaluations),
@@ -523,6 +703,7 @@ fn render_search_rejection(
         format!("  coverage_status={:?}", report.outcome.coverage_status),
         render_search_policy_summary(report),
         render_search_diagnostics_summary(report),
+        render_search_performance_summary(report),
         render_policy_evidence_summary(report),
         format!(
             "  complete_trajectory_found={}",
@@ -557,6 +738,7 @@ fn render_search_application(
         ),
         render_search_policy_summary(report),
         render_search_diagnostics_summary(report),
+        render_search_performance_summary(report),
         render_policy_evidence_summary(report),
         format!("  coverage_reason={}", report.outcome.coverage_reason),
         format!("  terminal={:?}", trajectory.terminal),
@@ -637,6 +819,7 @@ fn render_segment_application(
             search_report.outcome.coverage_status, search_report.evidence_reliability.reliability
         ),
         render_search_policy_summary(search_report),
+        render_search_performance_summary(search_report),
         render_policy_evidence_summary(search_report),
         "  terminal_claim=none; this is an exact applied prefix, not a complete-win proof"
             .to_string(),
@@ -681,6 +864,62 @@ fn render_search_diagnostics_summary(report: &CombatSearchV2Report) -> String {
         report.diagnostics.pending_choice.pending_choice_states,
         report.diagnostics.pending_choice.high_fanout_states,
         report.rollout.budget_skips,
+    )
+}
+
+fn render_search_performance_summary(report: &CombatSearchV2Report) -> String {
+    format!(
+        "  search_performance=elapsed_ms={} total_us={} unattributed_us={} frontier_pop_calls={} frontier_pop_us={} pre_expand_us={} expansion_us={} child_bookkeeping_us={} engine_step_calls={} engine_step_us={} rollout_calls={} root_rollout_calls={} child_rollout_calls={} deferred_child_rollout_calls={} turn_plan_seed_rollout_calls={} deferred_child_nodes={} deferred_child_requeues={} rollout_cache=hits/queries/misses/inserts:{}/{}/{}/{} rollout_budget_skips={} max_eval_budget_skips={} deadline_budget_skips={} rollout_truncated={} rollout_terminal_wins={} rollout_inner_us=iters:{} cache_lookup:{} policy_total:{} phase:{} legal:{} choose:{} order:{} probe:{} probe_calls:{} probe_eval:{} probe_reuse:{} probe_engine:{} probe_phase:{} probe_facts:{} engine:{} build:{} terminal_child_rollout_skips={} terminal_turn_plan_seed_rollout_skips={} turn_local_dominance_rollout_skips={} rollout_us={} turn_plan_seed_calls={} turn_plan_seed_us={} shadow_audit_us={} root_turn_plan_diag_us={}",
+        report.stats.elapsed_ms,
+        report.performance.total_elapsed_us,
+        report.performance.unattributed_elapsed_us,
+        report.performance.frontier_pop_calls,
+        report.performance.frontier_pop_elapsed_us,
+        report.performance.pre_expand_elapsed_us,
+        report.performance.expansion_elapsed_us,
+        report.performance.child_bookkeeping_elapsed_us,
+        report.performance.engine_step_calls,
+        report.performance.engine_step_elapsed_us,
+        report.performance.rollout_estimate_calls,
+        report.performance.root_rollout_estimate_calls,
+        report.performance.child_rollout_estimate_calls,
+        report.performance.deferred_child_rollout_estimate_calls,
+        report.performance.turn_plan_seed_rollout_estimate_calls,
+        report.performance.deferred_child_rollout_nodes,
+        report.performance.deferred_child_rollout_requeues,
+        report.rollout.cache_hits,
+        report.rollout.cache_queries,
+        report.rollout.cache_misses,
+        report.rollout.cache_inserts,
+        report.rollout.budget_skips,
+        report.rollout.max_evaluation_budget_skips,
+        report.rollout.deadline_budget_skips,
+        report.rollout.truncated_rollouts,
+        report.rollout.terminal_wins,
+        report.rollout.performance.no_potion_iterations,
+        report.rollout.performance.cache_lookup_us,
+        report.rollout.performance.policy_dispatch_us,
+        report.rollout.performance.no_potion_phase_profile_us,
+        report.rollout.performance.no_potion_legal_actions_us,
+        report.rollout.performance.no_potion_choose_action_us,
+        report.rollout.performance.no_potion_choose_ordering_us,
+        report.rollout.performance.no_potion_probe_us,
+        report.rollout.performance.no_potion_probe_score_calls,
+        report.rollout.performance.no_potion_probe_actions_evaluated,
+        report.rollout.performance.no_potion_probe_step_reuses,
+        report.rollout.performance.no_potion_probe_engine_step_us,
+        report.rollout.performance.no_potion_probe_phase_profile_us,
+        report.rollout.performance.no_potion_probe_action_facts_us,
+        report.rollout.performance.no_potion_engine_step_us,
+        report.rollout.performance.no_potion_child_build_us,
+        report.performance.terminal_child_rollout_skips,
+        report.performance.terminal_turn_plan_seed_rollout_skips,
+        report.performance.turn_local_dominance_rollout_skips,
+        report.performance.rollout_estimate_elapsed_us,
+        report.performance.turn_plan_frontier_seed_calls,
+        report.performance.turn_plan_frontier_seed_elapsed_us,
+        report.performance.shadow_audit_elapsed_us,
+        report.performance.root_turn_plan_diagnostics_elapsed_us,
     )
 }
 

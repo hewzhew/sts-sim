@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use super::super::rollout_pending_choice::RolloutPendingChoiceProgress;
+use super::super::rollout_profile::RolloutPerformanceCounters;
 use super::super::*;
 
 pub(in crate::ai::combat_search_v2) fn conservative_no_potion_rollout(
@@ -9,6 +10,7 @@ pub(in crate::ai::combat_search_v2) fn conservative_no_potion_rollout(
     config: &CombatSearchV2Config,
     max_actions: usize,
     deadline: Option<Instant>,
+    performance: &mut RolloutPerformanceCounters,
 ) -> RolloutNodeEstimate {
     no_potion_rollout(
         CombatSearchV2RolloutPolicy::ConservativeNoPotion,
@@ -17,6 +19,7 @@ pub(in crate::ai::combat_search_v2) fn conservative_no_potion_rollout(
         config,
         max_actions,
         deadline,
+        performance,
     )
 }
 
@@ -26,6 +29,7 @@ pub(in crate::ai::combat_search_v2) fn phase_aware_no_potion_rollout(
     config: &CombatSearchV2Config,
     max_actions: usize,
     deadline: Option<Instant>,
+    performance: &mut RolloutPerformanceCounters,
 ) -> RolloutNodeEstimate {
     no_potion_rollout(
         CombatSearchV2RolloutPolicy::PhaseAwareNoPotion,
@@ -34,6 +38,7 @@ pub(in crate::ai::combat_search_v2) fn phase_aware_no_potion_rollout(
         config,
         max_actions,
         deadline,
+        performance,
     )
 }
 
@@ -44,11 +49,13 @@ fn no_potion_rollout(
     config: &CombatSearchV2Config,
     max_actions: usize,
     deadline: Option<Instant>,
+    performance: &mut RolloutPerformanceCounters,
 ) -> RolloutNodeEstimate {
     let mut rollout = node.clone_for_rollout();
     let mut last_action_reason = None;
     let mut pending_choice_progress = RolloutPendingChoiceProgress::default();
     for actions_simulated in 0..=max_actions {
+        performance.no_potion_iterations = performance.no_potion_iterations.saturating_add(1);
         if terminal_label(&rollout.engine, &rollout.combat) != SearchTerminalLabel::Unresolved {
             return RolloutNodeEstimate::from_node(
                 &rollout,
@@ -76,7 +83,11 @@ fn no_potion_rollout(
                 pending_choice_progress,
             );
         }
+        let phase_profile_started = Instant::now();
         let phase_profile = combat_search_phase_profile(&rollout.engine, &rollout.combat);
+        performance.no_potion_phase_profile_elapsed_us = performance
+            .no_potion_phase_profile_elapsed_us
+            .saturating_add(phase_profile_started.elapsed().as_micros());
         pending_choice_progress.observe_boundary(phase_profile.pending_choice);
         if phase_profile.pending_choice.high_fanout {
             return RolloutNodeEstimate::from_node(
@@ -88,12 +99,16 @@ fn no_potion_rollout(
             );
         }
 
+        let legal_actions_started = Instant::now();
         let position = CombatPosition::new(rollout.engine.clone(), rollout.combat.clone());
         let legal = filtered_rollout_legal_actions(
             policy,
             stepper.legal_action_choices(&position),
             &rollout.combat,
         );
+        performance.no_potion_legal_actions_elapsed_us = performance
+            .no_potion_legal_actions_elapsed_us
+            .saturating_add(legal_actions_started.elapsed().as_micros());
         if legal.is_empty() {
             return RolloutNodeEstimate::from_node(
                 &rollout,
@@ -104,6 +119,7 @@ fn no_potion_rollout(
             );
         }
 
+        let choose_action_started = Instant::now();
         let Some(selection) = choose_rollout_action(
             policy,
             &rollout,
@@ -113,7 +129,11 @@ fn no_potion_rollout(
             &rollout.engine,
             &rollout.combat,
             legal,
+            performance,
         ) else {
+            performance.no_potion_choose_action_elapsed_us = performance
+                .no_potion_choose_action_elapsed_us
+                .saturating_add(choose_action_started.elapsed().as_micros());
             return RolloutNodeEstimate::from_node(
                 &rollout,
                 actions_simulated,
@@ -122,18 +142,34 @@ fn no_potion_rollout(
                 pending_choice_progress,
             );
         };
+        performance.no_potion_choose_action_elapsed_us = performance
+            .no_potion_choose_action_elapsed_us
+            .saturating_add(choose_action_started.elapsed().as_micros());
         last_action_reason = Some(selection.reason);
+        let cached_step = selection.cached_step;
         let choice = selection.choice;
         pending_choice_progress.note_simulated_action(phase_profile.pending_choice);
 
-        let step = stepper.apply_to_stable(
-            &position,
-            choice.choice.input.clone(),
-            CombatStepLimits {
-                max_engine_steps: config.max_engine_steps_per_action,
-                deadline,
-            },
-        );
+        let step = if let Some(step) = cached_step {
+            performance.no_potion_probe_step_reuses =
+                performance.no_potion_probe_step_reuses.saturating_add(1);
+            step
+        } else {
+            let engine_step_started = Instant::now();
+            let step = stepper.apply_to_stable(
+                &position,
+                choice.choice.input.clone(),
+                CombatStepLimits {
+                    max_engine_steps: config.max_engine_steps_per_action,
+                    deadline,
+                },
+            );
+            performance.no_potion_engine_step_elapsed_us = performance
+                .no_potion_engine_step_elapsed_us
+                .saturating_add(engine_step_started.elapsed().as_micros());
+            step
+        };
+        let child_build_started = Instant::now();
         let mut child = rollout.clone_for_child(step.position.engine, step.position.combat);
         child.note_input(&choice.choice.input);
         child.actions.push(CombatSearchV2ActionTrace {
@@ -144,6 +180,9 @@ fn no_potion_rollout(
             input: choice.choice.input,
         });
         rollout = child;
+        performance.no_potion_child_build_elapsed_us = performance
+            .no_potion_child_build_elapsed_us
+            .saturating_add(child_build_started.elapsed().as_micros());
 
         if step.truncated {
             return RolloutNodeEstimate::from_node(

@@ -13,8 +13,13 @@ pub struct CombatSearchV2RolloutReport {
     pub turn_beam_extensions: u64,
     pub turn_beam_extension_budget_skips: u64,
     pub evaluations: u64,
+    pub cache_queries: u64,
     pub cache_hits: u64,
+    pub cache_misses: u64,
+    pub cache_inserts: u64,
     pub budget_skips: u64,
+    pub max_evaluation_budget_skips: u64,
+    pub deadline_budget_skips: u64,
     pub truncated_rollouts: u64,
     pub terminal_wins: u64,
     pub terminal_losses: u64,
@@ -22,9 +27,30 @@ pub struct CombatSearchV2RolloutReport {
     pub rollouts_stopped_on_high_fanout_pending_choice: u64,
     pub pending_choice_actions_simulated: u64,
     pub max_pending_choice_estimated_action_fanout: usize,
+    pub performance: CombatSearchV2RolloutPerformanceReport,
     pub turn_beam_attribution: CombatSearchV2TurnBeamAttributionReport,
     pub best_frontier_estimate: Option<CombatSearchV2RolloutEstimateReport>,
     pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CombatSearchV2RolloutPerformanceReport {
+    pub cache_lookup_us: u128,
+    pub policy_dispatch_us: u128,
+    pub no_potion_iterations: u64,
+    pub no_potion_phase_profile_us: u128,
+    pub no_potion_legal_actions_us: u128,
+    pub no_potion_choose_action_us: u128,
+    pub no_potion_choose_ordering_us: u128,
+    pub no_potion_probe_us: u128,
+    pub no_potion_probe_score_calls: u64,
+    pub no_potion_probe_actions_evaluated: u64,
+    pub no_potion_probe_step_reuses: u64,
+    pub no_potion_probe_engine_step_us: u128,
+    pub no_potion_probe_phase_profile_us: u128,
+    pub no_potion_probe_action_facts_us: u128,
+    pub no_potion_engine_step_us: u128,
+    pub no_potion_child_build_us: u128,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
