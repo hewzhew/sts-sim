@@ -48,6 +48,9 @@ pub fn card_reward_semantic_profile_v1(card: &RewardCard) -> CardRewardSemanticP
     if facts.exhausts_other_cards {
         push_role(&mut roles, CardRewardSemanticRoleV1::ExhaustGenerator);
     }
+    if facts.card == CardId::Exhume {
+        push_role(&mut roles, CardRewardSemanticRoleV1::ExhaustReuse);
+    }
     if facts.adds_status_cards > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::StatusGenerator);
     }

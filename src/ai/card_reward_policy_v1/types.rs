@@ -205,6 +205,7 @@ pub enum CardRewardSemanticRoleV1 {
     StrikePayoff,
     UpgradePayoff,
     ExhaustGenerator,
+    ExhaustReuse,
     ExhaustPayoff,
     StatusGenerator,
     StatusPayoff,

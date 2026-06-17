@@ -252,6 +252,7 @@ fn strategy_plan_effects_from_roles(
             CardRewardSemanticRoleV1::ExhaustGenerator => {
                 push_effect(&mut effects, StrategyPlanEffectV1::ExhaustGenerator)
             }
+            CardRewardSemanticRoleV1::ExhaustReuse => {}
             CardRewardSemanticRoleV1::ExhaustPayoff => {
                 push_effect(&mut effects, StrategyPlanEffectV1::ExhaustPayoff)
             }

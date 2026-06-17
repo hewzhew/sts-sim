@@ -406,6 +406,7 @@ fn component_roles(profile: &CardRewardSemanticProfileV1) -> Vec<CardComponentRo
                 | CardRewardSemanticRoleV1::BlockPayoff
                 | CardRewardSemanticRoleV1::StrikePayoff
                 | CardRewardSemanticRoleV1::UpgradePayoff
+                | CardRewardSemanticRoleV1::ExhaustReuse
                 | CardRewardSemanticRoleV1::ExhaustPayoff
                 | CardRewardSemanticRoleV1::StatusPayoff
                 | CardRewardSemanticRoleV1::SelfDamagePayoff

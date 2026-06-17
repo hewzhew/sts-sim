@@ -275,7 +275,6 @@ fn add_card_package_facts(card_id: CardId, facts: &mut StrategyDeckFactsV1) {
             | CardId::SeverSoul
             | CardId::FiendFire
             | CardId::Recycle
-            | CardId::Exhume
     ) {
         facts.exhaust_generators = facts.exhaust_generators.saturating_add(1);
     }

@@ -171,7 +171,6 @@ fn exhausts_other_cards(card_id: CardId) -> bool {
             | CardId::SeverSoul
             | CardId::FiendFire
             | CardId::Recycle
-            | CardId::Exhume
     )
 }
 
