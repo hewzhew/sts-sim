@@ -1577,12 +1577,13 @@ fn current_boundary_preexpands_transmorgrifier_target_selection_through_deck_mut
         boundary
             .options
             .iter()
-            .any(|option| option.command.starts_with("event 0 && select ")
+            .any(|option| option.command.starts_with("event-select 0 ")
+                && !option.command.contains(" && ")
                 && option
                     .decision_signal
                     .as_ref()
                     .is_some_and(|signal| signal.source == "deck_mutation_compiler_v1")),
-        "Transmorgrifier should pre-expand target choices through DeckMutationCompiler"
+        "Transmorgrifier should pre-expand target choices through a typed event-select action"
     );
     assert!(
         boundary

@@ -7,6 +7,7 @@ use crate::ai::combat_search_v2::{
 
 use super::super::reward_auto::RewardAutomationTarget;
 use super::*;
+use crate::state::core::ClientInput;
 
 #[test]
 fn run_control_parser_accepts_capture_label() {
@@ -444,5 +445,20 @@ fn run_control_parser_accepts_view_commands() {
     assert_eq!(
         parse_run_control_command("select 2 4").expect("selection indices should parse"),
         RunControlCommand::SelectionIndices(vec![2, 4])
+    );
+}
+
+#[test]
+fn run_control_parser_accepts_typed_event_select_sequence() {
+    assert_eq!(
+        parse_run_control_command("event-select 0 3").expect("event-select should parse"),
+        RunControlCommand::InputSequence(vec![
+            ClientInput::EventChoice(0),
+            ClientInput::SubmitDeckSelect(vec![3]),
+        ])
+    );
+    assert!(
+        parse_run_control_command("event-select 0").is_err(),
+        "event-select should include the deck selection target"
     );
 }

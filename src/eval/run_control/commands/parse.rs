@@ -117,6 +117,7 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         "event" | "option" => Ok(RunControlCommand::Input(ClientInput::EventChoice(
             parse_usize_arg(rest.first(), "event option index")?,
         ))),
+        "event-select" | "event-selection" => parse_event_select_command(&rest),
         "claim" => Ok(RunControlCommand::Input(ClientInput::ClaimReward(
             parse_usize_arg(rest.first(), "reward index")?,
         ))),
@@ -175,6 +176,18 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
         )?)),
         other => Err(format!("unknown run/play command '{other}'")),
     }
+}
+
+fn parse_event_select_command(rest: &[&str]) -> Result<RunControlCommand, String> {
+    let event_index = parse_usize_arg(rest.first(), "event option index")?;
+    let deck_indices = parse_usize_list(&rest[1.min(rest.len())..], "deck selection index")?;
+    if deck_indices.is_empty() {
+        return Err("event-select requires at least one deck selection index".to_string());
+    }
+    Ok(RunControlCommand::InputSequence(vec![
+        ClientInput::EventChoice(event_index),
+        ClientInput::SubmitDeckSelect(deck_indices),
+    ]))
 }
 
 fn is_candidate_id(command: &str) -> bool {

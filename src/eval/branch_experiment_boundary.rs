@@ -8,6 +8,7 @@ use crate::eval::branch_experiment::{
 };
 use crate::eval::run_control::RunControlSession;
 use crate::runtime::combat::CombatCard;
+use crate::state::core::ClientInput;
 
 mod boss_relic;
 mod campfire;
@@ -78,6 +79,7 @@ pub(crate) struct BranchBoundaryOptionV1 {
     pub(crate) kind: &'static str,
     pub(crate) label: String,
     pub(crate) command: String,
+    pub(crate) action: BranchBoundaryActionV1,
     pub(crate) card: Option<CardId>,
     pub(crate) upgrades: Option<u8>,
     pub(crate) selected_cards: Vec<BranchExperimentChoiceCardV1>,
@@ -88,6 +90,18 @@ pub(crate) struct BranchBoundaryOptionV1 {
     pub(crate) suppressed_count: usize,
     pub(crate) decision_signal: Option<BranchExperimentChoiceDecisionSignalV1>,
     pub(crate) success_reason: &'static str,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum BranchBoundaryActionV1 {
+    Command(String),
+    Inputs(Vec<ClientInput>),
+}
+
+impl BranchBoundaryActionV1 {
+    pub(crate) fn command(command: &str) -> Self {
+        Self::Command(command.to_string())
+    }
 }
 
 pub(crate) fn current_branch_boundary(
@@ -222,6 +236,7 @@ impl BranchBoundaryOptionV1 {
                     kind: "card_reward_skip",
                     effect_label: option.label.clone(),
                     label: option.label,
+                    action: BranchBoundaryActionV1::command(&option.command),
                     command: option.command,
                     card: None,
                     upgrades: None,
@@ -239,6 +254,7 @@ impl BranchBoundaryOptionV1 {
                     kind: "card_reward_bowl",
                     effect_label: option.label.clone(),
                     label: option.label,
+                    action: BranchBoundaryActionV1::command(&option.command),
                     command: option.command,
                     card: None,
                     upgrades: None,
@@ -262,6 +278,7 @@ impl BranchBoundaryOptionV1 {
             kind,
             effect_label: option.label.clone(),
             label: option.label,
+            action: BranchBoundaryActionV1::command(&option.command),
             command: option.command,
             card: Some(card),
             upgrades: Some(upgrades),
@@ -281,6 +298,7 @@ impl BranchBoundaryOptionV1 {
             kind: "campfire",
             effect_label: option.label.clone(),
             label: option.label,
+            action: BranchBoundaryActionV1::command(&option.command),
             command: option.command,
             card: option.card,
             upgrades: option.upgrades,
@@ -300,6 +318,7 @@ impl BranchBoundaryOptionV1 {
             kind: "boss_relic",
             effect_label: option.label.clone(),
             label: option.label,
+            action: BranchBoundaryActionV1::command(&option.command),
             command: option.command,
             card: None,
             upgrades: None,
@@ -317,6 +336,7 @@ impl BranchBoundaryOptionV1 {
         Self {
             kind: "run_selection",
             label: option.label,
+            action: BranchBoundaryActionV1::command(&option.command),
             command: option.command,
             card: option.card,
             upgrades: option.upgrades,
@@ -345,6 +365,7 @@ impl BranchBoundaryOptionV1 {
             },
             effect_label: option.effect_label,
             label: option.label,
+            action: BranchBoundaryActionV1::command(&option.command),
             command: option.command,
             card: option.card,
             upgrades: None,
@@ -367,6 +388,7 @@ impl BranchBoundaryOptionV1 {
             kind: option.kind,
             effect_label: option.effect_label,
             label: option.label,
+            action: BranchBoundaryActionV1::command(&option.command),
             command: option.command,
             card: None,
             upgrades: None,
@@ -384,6 +406,7 @@ impl BranchBoundaryOptionV1 {
         Self {
             kind: "event",
             label: option.label,
+            action: option.action,
             command: option.command,
             card: option.card,
             upgrades: option.upgrades,

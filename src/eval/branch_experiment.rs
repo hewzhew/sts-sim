@@ -12,8 +12,8 @@ use crate::ai::shop_policy_v1::shop_conversion_pressure_v1;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::relics::RelicId;
 use crate::eval::branch_experiment_boundary::{
-    branch_boundary_available, current_branch_boundary, BranchBoundaryConfigV1,
-    CardRewardPortfolioContext,
+    branch_boundary_available, current_branch_boundary, BranchBoundaryActionV1,
+    BranchBoundaryConfigV1, CardRewardPortfolioContext,
 };
 use crate::eval::branch_experiment_retention::{
     branch_retention_order_rank_key_v1, default_branch_retention_decision_v1,
@@ -419,6 +419,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
                             boundary_title: boundary_title.clone(),
                             label: option.label,
                             command: option.command,
+                            action: option.action,
                             card: option.card,
                             upgrades: option.upgrades,
                             selected_cards: option.selected_cards,
@@ -781,6 +782,7 @@ struct BranchChoiceDraft {
     boundary_title: String,
     label: String,
     command: String,
+    action: BranchBoundaryActionV1,
     card: Option<CardId>,
     upgrades: Option<u8>,
     selected_cards: Vec<BranchExperimentChoiceCardV1>,
@@ -818,7 +820,7 @@ fn expand_branch_choice(
         label: draft.label,
         command: draft.command.clone(),
     });
-    match apply_branch_choice(&mut child.session, &draft.command).and_then(|_| {
+    match apply_branch_action(&mut child.session, &draft.action).and_then(|_| {
         if maybe_auto_leave_after_purchase && shop_should_auto_leave_after_purchase(&child.session)
         {
             apply_branch_choice(&mut child.session, "leave")?;
@@ -1274,6 +1276,21 @@ fn apply_branch_choice(session: &mut RunControlSession, command: &str) -> Result
         session.apply_command(command)?;
     }
     Ok(())
+}
+
+fn apply_branch_action(
+    session: &mut RunControlSession,
+    action: &BranchBoundaryActionV1,
+) -> Result<(), String> {
+    match action {
+        BranchBoundaryActionV1::Command(command) => apply_branch_choice(session, command),
+        BranchBoundaryActionV1::Inputs(inputs) => {
+            session.apply_command(crate::eval::run_control::RunControlCommand::InputSequence(
+                inputs.clone(),
+            ))?;
+            Ok(())
+        }
+    }
 }
 
 fn current_boundary_title(session: &RunControlSession) -> String {
