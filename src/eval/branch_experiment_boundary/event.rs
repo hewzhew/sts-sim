@@ -24,6 +24,7 @@ use crate::state::events::{
 
 const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 4;
 const MAX_OPEN_SELECTION_DECK_MUTATION_OPTIONS_PER_EVENT: usize = 3;
+const MAX_OPEN_SELECTION_DECK_MUTATION_TARGETS_PER_EVENT: usize = 2;
 #[derive(Clone, Debug)]
 pub(crate) struct EventBranchOption {
     pub(crate) label: String,
@@ -69,8 +70,8 @@ pub(crate) fn event_branch_options(
     let mut branch_options = Vec::new();
     let direct_remove_low_value_available =
         direct_event_remove_card_low_value_available(session, &event_options);
-    let can_expand_open_selection_deck_mutation = event_options.len() <= 2
-        && open_selection_deck_mutation_option_count(event_id, &event_options) == 1;
+    let open_selection_deck_mutation_budget =
+        open_selection_deck_mutation_expansion_budget(event_id, &event_options);
 
     for candidate in &surface.view.candidates {
         let Some(ClientInput::EventChoice(index)) = candidate.action.executable_input() else {
@@ -138,11 +139,12 @@ pub(crate) fn event_branch_options(
         ) {
             apply_direct_event_deck_mutation_plan(&mut branch_option, plan);
         }
-        if can_expand_open_selection_deck_mutation {
+        if let Some(max_expanded_options) = open_selection_deck_mutation_budget {
             if let Some(expanded) = expand_open_selection_deck_mutation_event_option(
                 session,
                 event_option,
                 &branch_option,
+                max_expanded_options,
             ) {
                 branch_options.extend(expanded);
                 continue;
@@ -186,6 +188,21 @@ fn open_selection_deck_mutation_option_count(
         .count()
 }
 
+fn open_selection_deck_mutation_expansion_budget(
+    event_id: EventId,
+    event_options: &[EventOption],
+) -> Option<usize> {
+    let mutation_option_count = open_selection_deck_mutation_option_count(event_id, event_options);
+    if mutation_option_count != 1 {
+        return None;
+    }
+    let non_expanded_options = event_options.len().saturating_sub(mutation_option_count);
+    let available = MAX_EVENT_OPTIONS_PER_BRANCH
+        .saturating_sub(non_expanded_options)
+        .max(1);
+    Some(available.min(MAX_OPEN_SELECTION_DECK_MUTATION_OPTIONS_PER_EVENT))
+}
+
 fn open_selection_deck_mutation_choice(
     event_id: EventId,
     option: &EventOption,
@@ -197,14 +214,14 @@ fn open_selection_deck_mutation_choice(
         return None;
     };
     let (reason, count) = open_selection_deck_mutation_reason_and_count(selection_kind, option)?;
-    if count != 1 {
+    if count == 0 || count > MAX_OPEN_SELECTION_DECK_MUTATION_TARGETS_PER_EVENT {
         return None;
     }
 
     Some(RunPendingChoiceState {
         reason,
-        min_choices: 1,
-        max_choices: 1,
+        min_choices: count,
+        max_choices: count,
         return_state: Box::new(EngineState::EventRoom),
     })
 }
@@ -289,6 +306,7 @@ fn expand_open_selection_deck_mutation_event_option(
     session: &RunControlSession,
     option: &EventOption,
     base_option: &EventBranchOption,
+    max_expanded_options: usize,
 ) -> Option<Vec<EventBranchOption>> {
     let event_id = session.run_state.event_state.as_ref()?.id;
     let choice = open_selection_deck_mutation_choice(event_id, option)?;
@@ -296,7 +314,7 @@ fn expand_open_selection_deck_mutation_event_option(
         &session.run_state,
         &choice,
         DeckMutationCompilerModeV1::BranchTopK {
-            max_active: MAX_OPEN_SELECTION_DECK_MUTATION_OPTIONS_PER_EVENT,
+            max_active: max_expanded_options,
         },
     );
     let expanded = decision

@@ -1628,6 +1628,44 @@ fn current_boundary_preexpands_transmorgrifier_target_selection_through_deck_mut
 }
 
 #[test]
+fn current_boundary_preexpands_multi_card_event_deck_mutation_with_bounded_portfolio() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = Some(EventState::new(EventId::DrugDealer));
+    session.engine_state = EngineState::EventRoom;
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("Drug Dealer should expose bounded event branches");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
+    let transform_options = boundary
+        .options
+        .iter()
+        .filter(|option| option.command.starts_with("event-select 1 "))
+        .collect::<Vec<_>>();
+    assert!(
+        !transform_options.is_empty(),
+        "Drug Dealer transform-2 should pre-expand through typed event-select actions"
+    );
+    assert!(
+        boundary.options.len() <= 4,
+        "expanded event branches should stay within the event boundary cap"
+    );
+    assert!(
+        transform_options.len() <= 2,
+        "multi-card event mutation expansion should leave room for other event options"
+    );
+    assert!(transform_options.iter().all(|option| {
+        option.command.split_whitespace().count() == 4
+            && !option.command.contains(" && ")
+            && option.effect_kind == "transform_card"
+            && option
+                .decision_signal
+                .as_ref()
+                .is_some_and(|signal| signal.source == "deck_mutation_compiler_v1")
+    }));
+}
+
+#[test]
 fn current_boundary_reads_event_card_upgrade_state_from_event_data() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut event_state = EventState::new(EventId::TheLibrary);
