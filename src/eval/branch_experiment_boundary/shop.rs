@@ -185,7 +185,7 @@ fn shop_plan_effect_label(plan: &ShopPlanV1) -> String {
         format!("{step_labels} | total {} gold", plan.total_gold_spent)
     };
     if let Some(priority) = plan.legacy_priority {
-        label.push_str(&format!(" | shop_priority_estimate={priority}"));
+        label.push_str(&format!(" | shop_legacy_estimate={priority}"));
     }
     label.push_str(&format!(" | source={:?}", plan.source));
     if plan.suppressed_count > 0 {

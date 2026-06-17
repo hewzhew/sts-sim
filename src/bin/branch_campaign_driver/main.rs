@@ -657,7 +657,7 @@ fn render_checkpoint_shop_evidence_v1(session: &RunControlSession) -> Result<Str
             .iter()
             .find(|delta| delta.action.candidate_id() == action_id);
         lines.push(format!(
-            "- {} | id={} | class={:?} gate={:?} legacy_priority={} verdict={} score={}",
+            "- {} | id={} | class={:?} gate={:?} legacy_estimate={} verdict={} score={}",
             candidate.label,
             action_id,
             candidate.class,
@@ -749,17 +749,17 @@ fn render_shop_plan_with_evaluation_v1(
 fn render_shop_plan_evaluation_v1(
     evaluation: &sts_simulator::ai::shop_policy_v1::ShopPlanEvaluationV1,
 ) -> String {
-    let legacy_priority = evaluation
+    let legacy_estimate = evaluation
         .legacy_priority
         .map(|value| value.to_string())
         .unwrap_or_else(|| "-".to_string());
     format!(
-        "evaluation={:?} tier={} score={} confidence={:.2} legacy_priority={} component_score=net:{:.1}/pos:{:.1}/neg:{:.1}/conf:{:.2} components=[{}] reasons=[{}]",
+        "evaluation={:?} tier={} score={} confidence={:.2} legacy_estimate={} component_score=net:{:.1}/pos:{:.1}/neg:{:.1}/conf:{:.2} components=[{}] reasons=[{}]",
         evaluation.verdict,
         evaluation.tier,
         evaluation.score,
         evaluation.confidence,
-        legacy_priority,
+        legacy_estimate,
         evaluation.component_score.net,
         evaluation.component_score.positive,
         evaluation.component_score.negative,
@@ -797,17 +797,17 @@ fn render_shop_plan_v1(plan: &sts_simulator::ai::shop_policy_v1::ShopPlanV1) -> 
             .collect::<Vec<_>>()
             .join(" then ")
     };
-    let priority = plan
+    let legacy_estimate = plan
         .legacy_priority
         .map(|value| value.to_string())
         .unwrap_or_else(|| "-".to_string());
     format!(
-        "{} | kind={:?} source={:?} cost={} legacy_priority={} candidates=[{}] steps=[{}] reason={}",
+        "{} | kind={:?} source={:?} cost={} legacy_estimate={} candidates=[{}] steps=[{}] reason={}",
         plan.label,
         plan.kind,
         plan.source,
         plan.total_gold_spent,
-        priority,
+        legacy_estimate,
         plan.candidate_ids.join(","),
         steps,
         plan.reason

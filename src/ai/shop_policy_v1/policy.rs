@@ -43,7 +43,7 @@ pub fn build_shop_decision_context_v1(
         let base_priority =
             crate::ai::shop_policy_v1::shop_card_conversion_priority_v1(card.card_id, run_state);
         let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy, &strength);
-        let priority = purchase_priority_with_strategy(target, base_priority, &strategy);
+        let priority = legacy_purchase_estimate_with_strategy(target, base_priority, &strategy);
         purchase_candidate_evidence(
             format!(
                 "buy card {} for {} gold",
@@ -91,7 +91,7 @@ pub fn build_shop_decision_context_v1(
             ),
             potion_can_buy,
             target,
-            purchase_priority_with_strategy(
+            legacy_purchase_estimate_with_strategy(
                 target,
                 crate::ai::shop_policy_v1::shop_potion_conversion_priority_for_v1(
                     potion.potion_id,
@@ -266,7 +266,7 @@ fn purchase_candidate_evidence(
 ) -> ShopCandidateEvidenceV1 {
     let mut evidence = vec![
         format!("can_buy={can_buy}"),
-        format!("legacy_priority={priority}"),
+        format!("legacy_estimate={priority}"),
     ];
     evidence.extend(extra_evidence);
     let mut risks = if can_buy {
@@ -298,7 +298,7 @@ fn purchase_candidate_evidence(
     }
 }
 
-fn purchase_priority_with_strategy(
+fn legacy_purchase_estimate_with_strategy(
     target: ShopPurchaseTargetV1,
     base_priority: i32,
     strategy: &crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2,

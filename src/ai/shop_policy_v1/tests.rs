@@ -1284,7 +1284,7 @@ fn shop_card_priority_does_not_apply_champ_boss_bonus_directly() {
     assert_eq!(
         shop_card_conversion_priority_v1(CardId::Carnage, &run_state),
         shop_card_conversion_priority_v1(CardId::Carnage, &no_boss),
-        "shop raw purchase priority must not encode The Champ transition-burst policy"
+        "shop legacy purchase estimate must not encode The Champ transition-burst policy"
     );
 }
 

@@ -47,6 +47,8 @@ pub struct ShopCandidateEvidenceV1 {
     pub deck_index: Option<usize>,
     pub card: Option<CardId>,
     pub purchase_target: Option<ShopPurchaseTargetV1>,
+    /// Legacy purchase estimate retained as an input signal. This is not a
+    /// final priority; executable behavior must go through ShopPlanEvaluation.
     pub purchase_priority: Option<i32>,
     pub gold_cost: Option<i32>,
     pub support_gate: StrategyPlanSupportV1,
@@ -76,6 +78,8 @@ pub struct ShopPolicyConfigV1 {
     pub allow_curse_purge: bool,
     pub allow_starter_strike_purge_when_core_plan_protected: bool,
     pub allow_high_impact_purchase: bool,
+    /// Legacy estimate thresholds for non-card purchases that do not yet have
+    /// a richer strategic evaluator. These gates should shrink over time.
     pub high_impact_card_purchase_priority_threshold: i32,
     pub high_impact_relic_purchase_priority_threshold: i32,
     pub high_impact_potion_purchase_priority_threshold: i32,
@@ -147,6 +151,8 @@ pub struct ShopPlanEvaluationV1 {
     pub score: i32,
     pub confidence: f32,
     pub reasons: Vec<String>,
+    /// Legacy estimate copied into traces for auditability. The component
+    /// scorer deliberately does not add this amount to plan value.
     pub legacy_priority: Option<i32>,
     pub components: Vec<ShopPlanComponentV1>,
     pub component_score: ShopPlanComponentScoreV1,
@@ -271,6 +277,8 @@ pub struct ShopPlanV1 {
     pub total_gold_spent: i32,
     pub candidate_ids: Vec<String>,
     pub source: ShopPlanSourceV1,
+    /// Legacy estimate copied from candidate/evaluation for trace continuity.
+    /// It must not be used as a direct execution path.
     pub legacy_priority: Option<i32>,
     pub legacy_confidence: Option<f32>,
     pub suppressed_count: usize,
@@ -398,7 +406,7 @@ fn compiled_shop_evidence_item(candidate: &ShopPlanCandidateV1) -> EvidenceItemV
         ValueComponentV1::new("component_net", evaluation.component_score.net),
     ];
     if let Some(priority) = evaluation.legacy_priority {
-        components.push(ValueComponentV1::new("legacy_priority", priority as f32));
+        components.push(ValueComponentV1::new("legacy_estimate", priority as f32));
     }
 
     EvidenceItemV1 {

@@ -158,7 +158,7 @@ fn evaluate_purchase_v1(
     }
 
     let Some(priority) = candidate.purchase_priority else {
-        return ShopPlanEvaluationV1::block(None, "purchase legacy priority missing");
+        return ShopPlanEvaluationV1::block(None, "purchase legacy estimate missing");
     };
     let threshold = purchase_priority_threshold(target, config);
     if config.allow_high_impact_purchase && priority >= threshold {
@@ -168,14 +168,14 @@ fn evaluate_purchase_v1(
             0.76,
             Some(priority),
             format!(
-                "shop evaluator: high-impact purchase estimate {priority} clears threshold {threshold}; strategic verdict allows purchase"
+                "shop evaluator: high-impact legacy estimate {priority} clears threshold {threshold}; strategic verdict allows purchase"
             ),
         );
     }
 
     ShopPlanEvaluationV1::block(
         Some(priority),
-        format!("purchase priority {priority} does not clear legacy shop evaluator gates"),
+        format!("purchase legacy estimate {priority} does not clear legacy shop evaluator gates"),
     )
 }
 
@@ -283,7 +283,7 @@ fn evaluate_portfolio_plan_v1(
             .max(legacy_priority),
         confidence,
         candidate_plan.plan.legacy_priority,
-        "portfolio alternative passed unified shop gates; legacy priority retained as branch estimate",
+        "portfolio alternative passed unified shop gates; legacy estimate retained as branch estimate",
     )
 }
 
@@ -386,7 +386,7 @@ fn strategic_purchase_evaluation_v1(
         confidence,
         legacy_priority,
         format!(
-            "strategic evaluation: verdict={:?} score={:.2}; legacy priority {:?} retained as tie-breaker",
+            "strategic evaluation: verdict={:?} score={:.2}; legacy estimate {:?} retained as tie-breaker",
             strategic_decision.verdict, strategic_decision.score, legacy_priority
         ),
     )
@@ -485,7 +485,7 @@ fn plan_components_v1(
         components.push(component_v1(
             ShopPlanComponentKindV1::LegacyEstimate,
             priority as f32,
-            "legacy purchase priority retained as an estimate component",
+            "legacy purchase estimate retained as an audit component",
         ));
     }
     if candidate_plan.role == ShopPlanCandidateRoleV1::PortfolioAlternative {
