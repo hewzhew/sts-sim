@@ -13,7 +13,7 @@ use super::session_trace::{
     SessionTraceStepV1, SessionTraceV1, SESSION_TRACE_SCHEMA_NAME, SESSION_TRACE_SCHEMA_VERSION,
 };
 use super::trace_annotation::{
-    validate_run_control_trace_annotations_v1, RunControlTraceAnnotationV1,
+    combat_automation_trajectories_v1, validate_run_control_trace_annotations_v1,
 };
 use super::view_model::build_run_control_view_model;
 
@@ -562,10 +562,7 @@ fn try_replay_recorded_combat_trajectory(
         return None;
     }
 
-    let trajectory = step
-        .annotations
-        .iter()
-        .find_map(RunControlTraceAnnotationV1::as_combat_automation_trajectory_v1)?;
+    let trajectory = combat_automation_trajectories_v1(&step.annotations).next()?;
     if trajectory.actions.is_empty() || trajectory.action_count != trajectory.actions.len() {
         return None;
     }
