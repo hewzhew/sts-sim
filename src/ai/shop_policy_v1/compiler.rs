@@ -48,7 +48,7 @@ pub fn compile_shop_decision_v1(
     let alternatives = match mode {
         ShopCompileModeV1::ExecuteOne => Vec::new(),
         ShopCompileModeV1::BranchTopK { max_plans } => {
-            evaluated_branch_alternatives_v1(&candidate_plans, max_plans)
+            evaluated_branch_alternatives_v1(context, &candidate_plans, max_plans)
         }
     };
 
@@ -76,6 +76,7 @@ fn select_evaluated_shop_plan_v1(
 }
 
 fn evaluated_branch_alternatives_v1(
+    context: &ShopDecisionContextV1,
     candidates: &[ShopPlanCandidateV1],
     max_plans: usize,
 ) -> Vec<ShopPlanV1> {
@@ -86,9 +87,10 @@ fn evaluated_branch_alternatives_v1(
                 && candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
         })
         .collect::<Vec<_>>();
-    if allow_candidates
-        .iter()
-        .any(|candidate| shop_plan_is_context_card_purchase_v1(candidate))
+    if branch_should_include_leave_with_allowed_candidates_v1(context)
+        && allow_candidates
+            .iter()
+            .any(|candidate| shop_plan_is_context_card_purchase_v1(candidate))
     {
         allow_candidates.extend(candidates.iter().filter(|candidate| {
             candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
@@ -113,6 +115,10 @@ fn evaluated_branch_alternatives_v1(
         .into_iter()
         .map(|candidate| plan_with_evaluation_v1(&candidate.plan, &candidate.evaluation))
         .collect()
+}
+
+fn branch_should_include_leave_with_allowed_candidates_v1(context: &ShopDecisionContextV1) -> bool {
+    !(context.conversion_pressure && context.affordable_purchase_exists)
 }
 
 fn shop_plan_is_selectable_in_mode_v1(

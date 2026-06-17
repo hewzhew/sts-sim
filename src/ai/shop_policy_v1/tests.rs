@@ -1048,6 +1048,56 @@ fn compiled_shop_branch_alternatives_are_evaluated_plan_candidates() {
 }
 
 #[test]
+fn compiled_shop_branch_alternatives_suppress_leave_under_conversion_pressure() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 2;
+    run_state.floor_num = 21;
+    run_state.gold = 254;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::ShrugItOff,
+        upgrades: 0,
+        price: 49,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.cards.push(ShopCard {
+        card_id: CardId::FlameBarrier,
+        upgrades: 0,
+        price: 39,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.cards.push(ShopCard {
+        card_id: CardId::ThunderClap,
+        upgrades: 0,
+        price: 53,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    assert!(context.conversion_pressure);
+    assert!(context.affordable_purchase_exists);
+
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 4 },
+    );
+
+    assert!(
+        compiled.alternatives.iter().all(|plan| {
+            !plan
+                .steps
+                .iter()
+                .any(|step| matches!(step, ShopPlanStepV1::LeaveShop))
+        }),
+        "leave shop should not consume a branch slot while gold conversion pressure remains"
+    );
+}
+
+#[test]
 fn compiled_shop_branch_alternatives_are_not_limited_to_legacy_portfolio() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 500;
