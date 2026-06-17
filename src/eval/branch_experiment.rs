@@ -27,10 +27,11 @@ use crate::eval::run_control::CombatSearchPerformanceSnapshotV1;
 #[cfg(test)]
 use crate::eval::run_control::RunControlCommand;
 use crate::eval::run_control::{
-    build_decision_surface, canonical_player_class, load_session_trace_v1,
-    parse_run_control_command, replay_session_trace, RunControlAutoStepOptions, RunControlConfig,
-    RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSession,
-    RunControlTraceAnnotationV1, SessionTraceReplayOptions, SessionTraceReplayStop,
+    build_decision_surface, canonical_player_class, combat_automation_trajectories_v1,
+    load_session_trace_v1, parse_run_control_command, replay_session_trace,
+    RunControlAutoStepOptions, RunControlConfig, RunControlRouteAutomationMode,
+    RunControlSearchCombatOptions, RunControlSession, RunControlTraceAnnotationV1,
+    SessionTraceReplayOptions, SessionTraceReplayStop,
 };
 use crate::state::core::{
     master_deck_card_is_bottled, master_deck_card_is_purgeable, EngineState, RunResult,
@@ -722,15 +723,14 @@ fn final_boss_combat_record_from_annotations_v1(
     ) {
         return None;
     }
-    annotations.iter().rev().find_map(|annotation| {
-        let trajectory = annotation.as_combat_automation_trajectory_v1()?;
-        Some(BranchExperimentBossCombatRecordV1 {
+    combat_automation_trajectories_v1(annotations)
+        .last()
+        .map(|trajectory| BranchExperimentBossCombatRecordV1 {
             source: trajectory.source.to_string(),
             action_count: trajectory.action_count,
             actions: trajectory.actions.to_vec(),
             label_role: trajectory.label_role.to_string(),
         })
-    })
 }
 
 fn update_terminal_status(branch: &mut BranchWork) {
@@ -792,11 +792,8 @@ fn is_combat_turn_segment_progress_boundary(boundary_title: &str, stop_reason: &
 }
 
 fn outcome_has_combat_turn_segment_progress(annotations: &[RunControlTraceAnnotationV1]) -> bool {
-    annotations.iter().any(|annotation| {
-        annotation
-            .as_combat_automation_trajectory_v1()
-            .is_some_and(|trajectory| trajectory.source == "search_combat_turn_segment")
-    })
+    combat_automation_trajectories_v1(annotations)
+        .any(|trajectory| trajectory.source == "search_combat_turn_segment")
 }
 
 fn normalized_boundary_title(value: &str) -> String {
