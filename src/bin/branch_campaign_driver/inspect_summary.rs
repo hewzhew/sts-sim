@@ -237,6 +237,17 @@ fn render_session_details(
         render_relics(session),
         render_potions(session)
     ));
+    if let Some(outcome) = session.last_combat_baseline() {
+        lines.push(format!(
+            "last_combat: terminal={:?} final_hp={} hp_loss={} turns={} potions_used={} cards_played={}",
+            outcome.terminal,
+            outcome.final_hp,
+            outcome.hp_loss,
+            outcome.turns,
+            outcome.potions_used,
+            outcome.cards_played
+        ));
+    }
     let boss_pressure = boss_pressure_labels(session);
     if !boss_pressure.is_empty() {
         lines.push(format!("boss_pressure: {}", boss_pressure.join(", ")));
