@@ -62,6 +62,8 @@ pub use types::{
     BranchExperimentRouteDecisionV1, BranchExperimentRunSummaryV1,
     BranchExperimentStrategyRequestV1, BranchExperimentWallLimitPhaseV1,
     BRANCH_EXPERIMENT_SCHEMA_NAME, BRANCH_EXPERIMENT_SCHEMA_VERSION,
+    BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1,
+    BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1,
 };
 
 pub(crate) const BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND: &str =

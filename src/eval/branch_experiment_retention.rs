@@ -4,7 +4,11 @@ use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSe
 use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
 use crate::ai::noncombat_strategy_v1::StrategyFormationSummaryV2;
 use crate::ai::strategic::{BranchSignature, RetentionBucket};
-use crate::eval::branch_experiment::BranchExperimentChoiceDecisionSignalV1;
+use crate::eval::branch_experiment::{
+    BranchExperimentChoiceDecisionSignalV1,
+    BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1,
+    BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1,
+};
 use crate::eval::branch_experiment_trajectory::{
     branch_trajectory_family_key_v1, BranchTrajectorySignatureV1,
 };
@@ -19,6 +23,9 @@ use context_packet::{
     branch_retention_context_packet_v2, context_score, BranchRetentionContextKeyV2,
     BranchRetentionContextPacketV2,
 };
+
+const SHOP_COVERAGE_ALTERNATIVE_PRIMARY_ACTIVE_PENALTY: i32 = -20_000;
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BranchRetentionSlotV1 {
@@ -752,19 +759,37 @@ fn branch_shop_plan_rank_adjustment_v1(candidate: &BranchRetentionCandidateInput
     candidate
         .decision_signals
         .iter()
-        .filter(|signal| signal.source == "shop_plan_evaluation_v1" && signal.verdict == "Allow")
+        .filter(|signal| {
+            matches!(
+                signal.source.as_str(),
+                BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1
+                    | BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1
+            ) && signal.verdict == "Allow"
+        })
         .map(shop_plan_signal_rank_adjustment_v1)
         .sum::<i32>()
-        .clamp(-500, 500)
+        .clamp(-25_000, 1_000)
 }
 
 fn shop_plan_signal_rank_adjustment_v1(signal: &BranchExperimentChoiceDecisionSignalV1) -> i32 {
     let tier_bonus = signal.tier.saturating_sub(250).max(0).saturating_mul(2);
     let score_bonus = (signal.score.max(0) / 10).min(250);
     let component_bonus = (signal.component_net_rank.max(0) / 4).min(100);
-    tier_bonus
+    let evaluation_bonus = tier_bonus
         .saturating_add(score_bonus)
-        .saturating_add(component_bonus)
+        .saturating_add(component_bonus);
+    match signal.source.as_str() {
+        BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1 => {
+            evaluation_bonus.saturating_add(600).min(1_000)
+        }
+        BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1 => {
+            // Alternative shop plans are coverage probes. Keep them available in
+            // frozen, but do not let a faster auto-leave purchase line become a
+            // primary active branch ahead of the compiler-selected shop line.
+            SHOP_COVERAGE_ALTERNATIVE_PRIMARY_ACTIVE_PENALTY.saturating_add(evaluation_bonus)
+        }
+        _ => 0,
+    }
 }
 
 fn branch_campfire_plan_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {

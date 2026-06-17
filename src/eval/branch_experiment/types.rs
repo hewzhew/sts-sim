@@ -279,6 +279,11 @@ pub struct BranchExperimentChoiceDecisionSignalV1 {
     pub component_net_rank: i32,
 }
 
+pub const BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1: &str =
+    "shop_selected_plan_evaluation_v1";
+pub const BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1: &str =
+    "shop_plan_evaluation_v1";
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchExperimentChoiceCardV1 {

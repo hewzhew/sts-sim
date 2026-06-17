@@ -4,7 +4,11 @@ use crate::ai::shop_policy_v1::{
 };
 use crate::content::cards::{get_card_definition, CardId};
 use crate::content::potions::get_potion_definition;
-use crate::eval::branch_experiment::BranchExperimentChoiceDecisionSignalV1;
+use crate::eval::branch_experiment::{
+    BranchExperimentChoiceDecisionSignalV1,
+    BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1,
+    BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1,
+};
 use crate::eval::run_control::RunControlSession;
 use crate::state::core::EngineState;
 
@@ -48,7 +52,8 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
         .iter()
         .find(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id)
         .map(|candidate| &candidate.evaluation);
-    if let Some(option) = shop_branch_option_from_plan(&compiled.selected_plan, selected_evaluation)
+    if let Some(option) =
+        shop_branch_option_from_plan(&compiled.selected_plan, selected_evaluation, true)
     {
         seen_commands.insert(option.command.clone());
         represented_effects.insert(option.effect_kind.clone());
@@ -65,7 +70,7 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
                 .iter()
                 .find(|candidate| candidate.plan.plan_id == plan.plan_id)
                 .map(|candidate| &candidate.evaluation);
-            if let Some(option) = shop_branch_option_from_plan(plan, evaluation) {
+            if let Some(option) = shop_branch_option_from_plan(plan, evaluation, false) {
                 let has_effect = represented_effects.contains(&option.effect_kind);
                 if prefer_new_effect && has_effect {
                     continue;
@@ -89,7 +94,7 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
                 .iter()
                 .find(|candidate| candidate.plan.plan_id == plan.plan_id)
                 .map(|candidate| &candidate.evaluation);
-            shop_branch_option_from_plan(plan, evaluation)
+            shop_branch_option_from_plan(plan, evaluation, false)
         }));
     }
     debug_assert!(
@@ -102,6 +107,7 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
 fn shop_branch_option_from_plan(
     plan: &ShopPlanV1,
     evaluation: Option<&ShopPlanEvaluationV1>,
+    selected_plan: bool,
 ) -> Option<ShopBranchOption> {
     if plan.steps.is_empty() {
         return None;
@@ -114,15 +120,22 @@ fn shop_branch_option_from_plan(
         effect_label: shop_plan_effect_label(plan),
         representative_count: plan.steps.len(),
         suppressed_count: plan.suppressed_count,
-        decision_signal: evaluation.map(shop_decision_signal_v1),
+        decision_signal: evaluation
+            .map(|evaluation| shop_decision_signal_v1(evaluation, selected_plan)),
     })
 }
 
 fn shop_decision_signal_v1(
     evaluation: &ShopPlanEvaluationV1,
+    selected_plan: bool,
 ) -> BranchExperimentChoiceDecisionSignalV1 {
     BranchExperimentChoiceDecisionSignalV1 {
-        source: "shop_plan_evaluation_v1".to_string(),
+        source: if selected_plan {
+            BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1
+        } else {
+            BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1
+        }
+        .to_string(),
         verdict: format!("{:?}", evaluation.verdict),
         tier: evaluation.tier,
         score: evaluation.score,

@@ -1335,7 +1335,7 @@ fn branch_retention_consumes_only_unified_shop_plan_signal() {
             component_net_rank: 99_999,
         },
         BranchExperimentChoiceDecisionSignalV1 {
-            source: "shop_plan_evaluation_v1".to_string(),
+            source: BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1.to_string(),
             verdict: "Allow".to_string(),
             tier: 330,
             score: 1_879,
@@ -1347,11 +1347,11 @@ fn branch_retention_consumes_only_unified_shop_plan_signal() {
     let adjustment = branch_retention_rank_adjustment_v1(&candidate);
 
     assert_eq!(adjustment.decision_signal_adjustment, 100_070);
-    assert_eq!(adjustment.shop_plan_adjustment, 364);
-    assert_eq!(adjustment.effective_rank_key, 1_364);
+    assert_eq!(adjustment.shop_plan_adjustment, 964);
+    assert_eq!(adjustment.effective_rank_key, 1_964);
     assert!(adjustment
         .reasons
-        .contains(&"shop_plan_rank_adjustment:364".to_string()));
+        .contains(&"shop_plan_rank_adjustment:964".to_string()));
 }
 
 #[test]
