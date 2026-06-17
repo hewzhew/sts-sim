@@ -723,20 +723,12 @@ fn final_boss_combat_record_from_annotations_v1(
         return None;
     }
     annotations.iter().rev().find_map(|annotation| {
-        let RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-            source,
-            action_count,
-            actions,
-            label_role,
-        } = annotation
-        else {
-            return None;
-        };
+        let trajectory = annotation.as_combat_automation_trajectory_v1()?;
         Some(BranchExperimentBossCombatRecordV1 {
-            source: source.clone(),
-            action_count: *action_count,
-            actions: actions.clone(),
-            label_role: label_role.clone(),
+            source: trajectory.source.to_string(),
+            action_count: trajectory.action_count,
+            actions: trajectory.actions.to_vec(),
+            label_role: trajectory.label_role.to_string(),
         })
     })
 }
@@ -801,11 +793,9 @@ fn is_combat_turn_segment_progress_boundary(boundary_title: &str, stop_reason: &
 
 fn outcome_has_combat_turn_segment_progress(annotations: &[RunControlTraceAnnotationV1]) -> bool {
     annotations.iter().any(|annotation| {
-        matches!(
-            annotation,
-            RunControlTraceAnnotationV1::CombatAutomationTrajectory { source, .. }
-                if source == "search_combat_turn_segment"
-        )
+        annotation
+            .as_combat_automation_trajectory_v1()
+            .is_some_and(|trajectory| trajectory.source == "search_combat_turn_segment")
     })
 }
 

@@ -562,25 +562,17 @@ fn try_replay_recorded_combat_trajectory(
         return None;
     }
 
-    let (source, action_count, actions) =
-        step.annotations
-            .iter()
-            .find_map(|annotation| match annotation {
-                RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-                    source,
-                    action_count,
-                    actions,
-                    ..
-                } => Some((source, action_count, actions)),
-                _ => None,
-            })?;
-    if actions.is_empty() || *action_count != actions.len() {
+    let trajectory = step
+        .annotations
+        .iter()
+        .find_map(RunControlTraceAnnotationV1::as_combat_automation_trajectory_v1)?;
+    if trajectory.actions.is_empty() || trajectory.action_count != trajectory.actions.len() {
         return None;
     }
 
     let mut trial = session.clone();
     trial.mark_current_combat_search_resolved();
-    for action in actions {
+    for action in trajectory.actions {
         if trial.apply_input(action.input.clone()).is_err() {
             return None;
         }
@@ -601,8 +593,9 @@ fn try_replay_recorded_combat_trajectory(
     *session = trial;
     let outcome = RunControlCommandOutcome::action(
         format!(
-            "replayed recorded combat automation: {source} applied {} action(s)",
-            actions.len()
+            "replayed recorded combat automation: {} applied {} action(s)",
+            trajectory.source,
+            trajectory.actions.len()
         ),
         step.action_result.clone(),
     )

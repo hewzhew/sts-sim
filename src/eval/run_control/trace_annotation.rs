@@ -196,6 +196,36 @@ pub enum RunControlTraceAnnotationV1 {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CombatAutomationTrajectoryRefV1<'a> {
+    pub source: &'a str,
+    pub action_count: usize,
+    pub actions: &'a [CombatAutomationActionV1],
+    pub label_role: &'a str,
+}
+
+impl RunControlTraceAnnotationV1 {
+    pub fn as_combat_automation_trajectory_v1(
+        &self,
+    ) -> Option<CombatAutomationTrajectoryRefV1<'_>> {
+        let RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+            source,
+            action_count,
+            actions,
+            label_role,
+        } = self
+        else {
+            return None;
+        };
+        Some(CombatAutomationTrajectoryRefV1 {
+            source,
+            action_count: *action_count,
+            actions,
+            label_role,
+        })
+    }
+}
+
 pub(in crate::eval::run_control) fn validate_run_control_trace_annotations_v1(
     annotations: &[RunControlTraceAnnotationV1],
 ) -> Result<(), String> {
@@ -241,4 +271,38 @@ fn validate_noncombat_record_annotation(
             render_noncombat_decision_record_validation_errors(&errors)
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn combat_automation_trajectory_accessor_exposes_recorded_actions() {
+        let action = CombatAutomationActionV1 {
+            step_index: 3,
+            action_key: "combat/end_turn".to_string(),
+            input: ClientInput::EndTurn,
+            drawn_cards: Vec::new(),
+            combat_after: None,
+        };
+        let annotation = RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+            source: "search_combat".to_string(),
+            action_count: 1,
+            actions: vec![action],
+            label_role: "simulator_generated_not_teacher_label".to_string(),
+        };
+
+        let trajectory = annotation
+            .as_combat_automation_trajectory_v1()
+            .expect("combat automation annotation should expose a trajectory view");
+
+        assert_eq!(trajectory.source, "search_combat");
+        assert_eq!(trajectory.action_count, 1);
+        assert_eq!(trajectory.actions[0].step_index, 3);
+        assert_eq!(
+            trajectory.label_role,
+            "simulator_generated_not_teacher_label"
+        );
+    }
 }
