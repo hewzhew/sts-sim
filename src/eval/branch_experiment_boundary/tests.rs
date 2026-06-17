@@ -1545,6 +1545,18 @@ fn current_boundary_skips_single_forced_state_event_resolution() {
 }
 
 #[test]
+fn current_boundary_skips_single_forced_random_event_resolution() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = Some(EventState::new(EventId::GremlinWheelGame));
+    session.engine_state = EngineState::EventRoom;
+
+    assert!(
+        current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None).is_none(),
+        "single forced random event resolutions should auto-advance, not become branch choices"
+    );
+}
+
+#[test]
 fn current_boundary_allows_event_options_that_open_single_card_selection() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.event_state = Some(EventState::new(EventId::UpgradeShrine));
