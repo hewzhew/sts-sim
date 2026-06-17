@@ -1006,7 +1006,7 @@ fn run_control_auto_run_keeps_starter_shell_when_shop_purchase_competes() {
 }
 
 #[test]
-fn run_control_auto_run_buys_high_impact_shop_card_when_affordable() {
+fn run_control_auto_run_executes_compiled_shop_policy_when_purchase_is_visible() {
     let mut session = test_session_at_shop();
     session.run_state.gold = 200;
     if let EngineState::Shop(shop) = &mut session.engine_state {
@@ -1042,14 +1042,29 @@ fn run_control_auto_run_buys_high_impact_shop_card_when_affordable() {
         "auto-run should report the shop policy action, got:\n{}",
         outcome.message
     );
-    assert_eq!(session.run_state.gold, 110);
     assert!(
-        session
-            .run_state
-            .master_deck
-            .iter()
-            .any(|card| card.id == crate::content::cards::CardId::Shockwave),
-        "shop purchase should add the selected card to the master deck"
+        session.run_state.gold < 200,
+        "shop policy should execute the compiler-selected shop action"
+    );
+    let record = outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            crate::eval::run_control::RunControlTraceAnnotationV1::NonCombatPolicyDecision {
+                record,
+                ..
+            } => Some(record),
+            _ => None,
+        })
+        .expect("shop policy should attach a noncombat decision record");
+    assert_eq!(
+        record.site,
+        crate::ai::noncombat_decision_v1::DecisionSiteKindV1::Shop
+    );
+    assert_eq!(record.provenance.source_policy, "shop_compiler_v1");
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Selected
     );
     assert!(matches!(session.engine_state, EngineState::Shop(_)));
 }

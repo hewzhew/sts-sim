@@ -396,7 +396,7 @@ fn compiled_shop_candidate_descriptor(candidate: &ShopPlanCandidateV1) -> Candid
         label: candidate.plan.label.clone(),
         action_plan: PublicActionPlanV1 {
             summary: candidate.plan.label.clone(),
-            command: candidate.plan.steps.first().map(compiled_shop_step_command),
+            command: compiled_shop_plan_command(&candidate.plan),
         },
         information_classes: vec![
             InformationClassV1::PublicObservation,
@@ -452,6 +452,19 @@ fn compiled_shop_value_estimate(candidate: &ShopPlanCandidateV1) -> ValueEstimat
         ],
         evidence_refs: Vec::new(),
     }
+}
+
+fn compiled_shop_plan_command(plan: &ShopPlanV1) -> Option<String> {
+    if plan.steps.is_empty() {
+        return None;
+    }
+    Some(
+        plan.steps
+            .iter()
+            .map(compiled_shop_step_command)
+            .collect::<Vec<_>>()
+            .join(" && "),
+    )
 }
 
 fn compiled_shop_step_command(step: &ShopPlanStepV1) -> String {

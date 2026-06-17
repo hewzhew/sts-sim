@@ -1306,6 +1306,52 @@ fn compiled_shop_selected_plan_can_be_multi_step_cleanup_plus_relic() {
 }
 
 #[test]
+fn compiled_shop_noncombat_record_keeps_complete_multi_step_command() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 1;
+    run_state.floor_num = 5;
+    run_state.gold = 260;
+    let mut shop = ShopState::new();
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::OrangePellets,
+        price: 151,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 4 },
+    );
+    let record = compiled.to_noncombat_decision_record_v1();
+    let selected_descriptor = record
+        .candidates
+        .iter()
+        .find(|candidate| candidate.candidate_id == compiled.selected_plan.plan_id)
+        .expect("selected shop plan should have a public candidate descriptor");
+    let command = selected_descriptor
+        .action_plan
+        .command
+        .as_deref()
+        .expect("multi-step shop plan should expose a complete public command");
+
+    assert!(
+        command.contains("purge 0"),
+        "complete shop command should include the purge step, got {command}"
+    );
+    assert!(
+        command.contains("buy-relic 0"),
+        "complete shop command should include the relic purchase step, got {command}"
+    );
+    assert!(
+        command.contains("&&"),
+        "multi-step shop command should make sequencing explicit, got {command}"
+    );
+}
+
+#[test]
 fn compiled_shop_portfolio_retains_multiple_multi_step_plans() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 1;
