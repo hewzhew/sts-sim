@@ -31,6 +31,14 @@ Resumes the latest saved campaign report and advances until total round 33.
 Summarizes the latest saved campaign checkpoint with active/frozen/abandoned deck context.
 
 .EXAMPLE
+.\tools\campaign.ps1 -InspectShopEvidence -InspectIndex 0
+Prints shop compiler evidence for a selected checkpoint branch.
+
+.EXAMPLE
+.\tools\campaign.ps1 -InspectLastAutoCombat -InspectIndex 0
+Prints the last saved automated combat trajectory for a selected checkpoint branch.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Mode quick
 Runs a shorter random-seed campaign for fast smoke testing.
 
@@ -77,6 +85,8 @@ param(
     [switch] $Last,
     [switch] $More,
     [switch] $Inspect,
+    [switch] $InspectShopEvidence,
+    [switch] $InspectLastAutoCombat,
     [switch] $DryRun,
     [switch] $NoProgress,
     [switch] $NoBossSegments,
@@ -102,6 +112,9 @@ param(
     [int] $SearchMaxNodes = 50000,
     [int] $CombatRetryWallMs = 0,
     [int] $BranchExamples = 4,
+    [int] $InspectIndex = -1,
+    [int] $InspectAct = 0,
+    [int] $InspectFloor = 0,
     [ValidateRange(0, 100)]
     [int] $VictoryHpPercent = 20,
 
@@ -119,6 +132,10 @@ $LatestCampaignPath = Join-Path $CampaignDir "latest.campaign.json"
 $LatestCheckpointPath = Join-Path $CampaignDir "latest.checkpoint.json"
 
 New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
+
+if ($InspectShopEvidence -or $InspectLastAutoCombat) {
+    $Inspect = $true
+}
 
 if ($More) {
     $Last = $true
@@ -333,9 +350,27 @@ if ($Inspect) {
     $InspectArgs = @(
         "--inspect-checkpoint", "$LatestCheckpointPath",
         "--inspect-report", "$LatestCampaignPath",
-        "--inspect-summary",
         "--branch-examples", "$BranchExamples"
     )
+    $DetailedInspect = $InspectShopEvidence -or $InspectLastAutoCombat
+    if (-not $DetailedInspect) {
+        $InspectArgs += "--inspect-summary"
+    }
+    if ($InspectShopEvidence) {
+        $InspectArgs += "--inspect-shop-evidence"
+    }
+    if ($InspectLastAutoCombat) {
+        $InspectArgs += "--inspect-last-auto-combat"
+    }
+    if ($CampaignBoundParameters.ContainsKey("InspectIndex") -and $InspectIndex -ge 0) {
+        $InspectArgs += @("--inspect-index", "$InspectIndex")
+    }
+    if ($CampaignBoundParameters.ContainsKey("InspectAct") -and $InspectAct -gt 0) {
+        $InspectArgs += @("--inspect-act", "$InspectAct")
+    }
+    if ($CampaignBoundParameters.ContainsKey("InspectFloor") -and $InspectFloor -gt 0) {
+        $InspectArgs += @("--inspect-floor", "$InspectFloor")
+    }
 
     $RenderedInspectArgs = $InspectArgs | ForEach-Object {
         if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
