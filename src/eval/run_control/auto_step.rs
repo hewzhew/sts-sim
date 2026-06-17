@@ -596,7 +596,9 @@ fn classify_single_executable_candidate(
         {
             AutoAdvanceClass::Routine
         }
-        EngineState::EventRoom if event_single_candidate_is_safe(session, candidate) => {
+        EngineState::EventRoom
+            if event_single_candidate_auto_reason(session, candidate).is_some() =>
+        {
             AutoAdvanceClass::Forced
         }
         EngineState::RunPendingChoice(choice)
@@ -609,25 +611,26 @@ fn classify_single_executable_candidate(
     }
 }
 
-fn event_single_candidate_is_safe(
+fn event_single_candidate_auto_reason(
     session: &RunControlSession,
     candidate: &DecisionCandidate,
-) -> bool {
+) -> Option<&'static str> {
     if session.run_state.event_state.as_ref().is_some_and(|event| {
         event.id == crate::state::events::EventId::Neow && event.current_screen > 0
     }) {
-        return false;
+        return None;
     }
     if let Ok(index) = candidate.id.parse::<usize>() {
         let options = crate::engine::event_handler::get_event_options(&session.run_state);
         if let Some(option) = options.get(index) {
-            return classify_event_option_boundary_v1(option).safe_single_auto_advance();
+            return classify_event_option_boundary_v1(option).single_auto_advance_reason();
         }
     }
     let Some(resolution) = candidate.resolution.as_ref() else {
-        return candidate.note.as_deref() == Some("routine");
+        return (candidate.note.as_deref() == Some("routine"))
+            .then_some("routine event transition");
     };
-    resolution.known_effects.is_empty()
+    (resolution.known_effects.is_empty()
         && resolution.unresolved_effects.is_empty()
         && matches!(
             resolution.followup,
@@ -635,7 +638,8 @@ fn event_single_candidate_is_safe(
                 super::view_model::FollowupBoundary::EventScreenAdvance
                     | super::view_model::FollowupBoundary::EventComplete
             )
-        )
+        ))
+    .then_some("routine event transition")
 }
 
 fn single_candidate_reason(
@@ -646,7 +650,10 @@ fn single_candidate_reason(
     match (&session.engine_state, class, candidate.id.as_str()) {
         (EngineState::TreasureRoom(_), AutoAdvanceClass::Routine, _) => "single chest action",
         (EngineState::Shop(_), AutoAdvanceClass::Routine, "leave") => "only shop exit remains",
-        (EngineState::EventRoom, AutoAdvanceClass::Forced, _) => "single safe event transition",
+        (EngineState::EventRoom, AutoAdvanceClass::Forced, _) => {
+            event_single_candidate_auto_reason(session, candidate)
+                .unwrap_or("single forced event transition")
+        }
         (EngineState::RunPendingChoice(_), AutoAdvanceClass::Forced, _) => {
             "single forced run choice"
         }

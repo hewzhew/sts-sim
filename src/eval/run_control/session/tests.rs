@@ -495,6 +495,35 @@ fn run_control_auto_step_event_stop_exports_human_boundary_record() {
 }
 
 #[test]
+fn run_control_auto_step_labels_single_event_state_resolution_as_forced() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut event_state =
+        crate::state::events::EventState::new(crate::state::events::EventId::CursedTome);
+    event_state.current_screen = 1;
+    session.run_state.event_state = Some(event_state);
+    session.engine_state = EngineState::EventRoom;
+
+    let outcome = session
+        .apply_command(RunControlCommand::AutoStep(
+            crate::eval::run_control::RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        ))
+        .expect("auto-step should apply the forced Cursed Tome damage screen");
+
+    assert!(
+        outcome
+            .message
+            .contains("forced: [Continue] Take 1 damage. (forced event resolution)"),
+        "{}",
+        outcome.message
+    );
+    assert!(!outcome.message.contains("single safe event transition"));
+    assert_eq!(session.run_state.current_hp, 79);
+}
+
+#[test]
 fn run_control_auto_run_event_policy_takes_free_known_benefit() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.gold = 0;

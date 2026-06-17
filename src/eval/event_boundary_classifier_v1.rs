@@ -28,8 +28,14 @@ impl EventBoundaryClassificationV1 {
         )
     }
 
-    pub(crate) fn safe_single_auto_advance(self) -> bool {
-        self.skips_branch_when_only_option()
+    pub(crate) fn single_auto_advance_reason(self) -> Option<&'static str> {
+        match self.class {
+            EventBoundaryClassV1::FlavorAdvance | EventBoundaryClassV1::TerminalNoopLeave => {
+                Some("routine event transition")
+            }
+            EventBoundaryClassV1::ForcedStateResolution => Some("forced event resolution"),
+            _ => None,
+        }
     }
 
     pub(crate) fn single_candidate_note(self) -> Option<&'static str> {
