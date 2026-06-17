@@ -63,6 +63,10 @@ Allows turn-segment continuation inside boss combats. This is slower, but can pu
 Runs the slower debug build when you are debugging compilation or assertions.
 
 .EXAMPLE
+.\tools\campaign.ps1 -BuildProfile release-final
+Runs with the slow-to-build final-performance profile.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Build
 Rebuilds the branch campaign driver before running it.
 #>
@@ -79,6 +83,9 @@ param(
     [switch] $BossSegments,
     [switch] $DebugBuild,
     [switch] $Build,
+
+    [ValidateSet("fast-run", "release-final", "release", "dev-opt", "debug")]
+    [string] $BuildProfile = "fast-run",
 
     [ValidateSet("quick", "focused", "deep")]
     [string] $Mode = "focused",
@@ -137,11 +144,26 @@ if ($Inspect) {
     $Seed = Get-Random -Minimum 1 -Maximum 2147483647
 }
 
-$BuildProfile = if ($DebugBuild) { "debug" } else { "release" }
+$ExplicitBuildProfile = $PSBoundParameters.ContainsKey("BuildProfile")
+if ($DebugBuild) {
+    if ($ExplicitBuildProfile -and $BuildProfile -ne "debug") {
+        throw "-DebugBuild conflicts with -BuildProfile $BuildProfile. Use only one build profile selector."
+    }
+    $BuildProfile = "debug"
+}
+
 $DriverExe = Join-Path $RepoRoot "target\$BuildProfile\branch_campaign_driver.exe"
 $BuildArgs = @("build", "--quiet", "--bin", "branch_campaign_driver")
-if (-not $DebugBuild) {
-    $BuildArgs += "--release"
+switch ($BuildProfile) {
+    "debug" {
+        # Default cargo dev profile.
+    }
+    "release" {
+        $BuildArgs += "--release"
+    }
+    default {
+        $BuildArgs += @("--profile", "$BuildProfile")
+    }
 }
 
 $DriverArgs = @(
