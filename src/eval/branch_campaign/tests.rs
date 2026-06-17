@@ -1001,6 +1001,30 @@ fn campaign_selection_prioritizes_act_clear_frontier_over_pre_boss_checkpoint() 
 }
 
 #[test]
+fn campaign_rebalance_allows_low_hp_act_clear_transition_over_pre_boss_active() {
+    let mut pre_boss = test_campaign_branch("pre-boss-event", 30, 54);
+    pre_boss.summary.as_mut().unwrap().act = 2;
+    pre_boss.summary.as_mut().unwrap().max_hp = 85;
+    pre_boss.frontier_title = "KnowingSkull".to_string();
+    pre_boss.rank_key = 24_600;
+
+    let mut act_clear = test_campaign_branch("act-clear-boss-relic", 32, 20);
+    act_clear.summary.as_mut().unwrap().act = 2;
+    act_clear.summary.as_mut().unwrap().max_hp = 85;
+    act_clear.frontier_title = "Boss Relic".to_string();
+    act_clear.rank_key = 23_500;
+
+    let mut active = vec![pre_boss];
+    let mut frozen = vec![act_clear];
+
+    let promoted = rebalance_active_with_stronger_frozen_v1(&mut active, &mut frozen, 1);
+
+    assert_eq!(promoted, 1);
+    assert_eq!(active[0].branch_id, "act-clear-boss-relic");
+    assert_eq!(frozen[0].branch_id, "pre-boss-event");
+}
+
+#[test]
 fn campaign_selection_does_not_keep_act_clear_transition_over_next_act_progress() {
     let mut act_clear = test_campaign_branch("act1-boss-relic", 16, 61);
     act_clear.summary.as_mut().unwrap().act = 1;

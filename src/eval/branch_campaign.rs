@@ -3381,6 +3381,9 @@ fn rebalance_active_survival_anchor_v1(
     else {
         return false;
     };
+    if campaign_branch_is_act_clear_transition_v1(&active[replace_index]) {
+        return false;
+    }
 
     let maybe_nearby = frozen
         .iter()
@@ -3501,6 +3504,12 @@ fn campaign_active_swap_respects_survival_v1(
     candidate: &BranchCampaignBranchV1,
     replaced: &BranchCampaignBranchV1,
 ) -> bool {
+    if campaign_branch_is_act_clear_transition_v1(candidate)
+        && !campaign_branch_is_act_clear_transition_v1(replaced)
+    {
+        return true;
+    }
+
     let Some(candidate_hp_percent) = campaign_branch_hp_percent_v1(candidate) else {
         return true;
     };
@@ -3523,6 +3532,18 @@ fn campaign_active_swap_respects_survival_v1(
     !(candidate_hp_percent < SURVIVAL_ANCHOR_LOW_HP_PERCENT
         && replaced_hp_percent
             >= candidate_hp_percent.saturating_add(SURVIVAL_ANCHOR_NEARBY_MIN_HP_GAIN))
+}
+
+fn campaign_branch_is_act_clear_transition_v1(branch: &BranchCampaignBranchV1) -> bool {
+    let Some(summary) = branch.summary.as_ref() else {
+        return false;
+    };
+    summary.act < 3
+        && summary.floor >= act_boss_floor_v1(summary.act)
+        && matches!(
+            normalized_campaign_boundary_title(&branch.frontier_title).as_str(),
+            "bossrelic" | "rewardscreen"
+        )
 }
 
 fn campaign_progress_is_nearby_v1(left: (u8, i32, i32), right: (u8, i32, i32)) -> bool {
