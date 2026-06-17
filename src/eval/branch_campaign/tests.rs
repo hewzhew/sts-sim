@@ -1225,6 +1225,28 @@ fn campaign_rebalance_promotes_healthy_salvage_checkpoint_over_critical_active()
 }
 
 #[test]
+fn campaign_rebalance_promotes_stable_salvage_checkpoint_over_deep_critical_active() {
+    let mut deep_critical = test_campaign_branch("deep-critical", 42, 6);
+    deep_critical.summary.as_mut().unwrap().act = 3;
+    deep_critical.summary.as_mut().unwrap().max_hp = 95;
+    deep_critical.rank_key = 33_800;
+
+    let mut stable_checkpoint = test_campaign_branch("stable-checkpoint", 39, 32);
+    stable_checkpoint.summary.as_mut().unwrap().act = 3;
+    stable_checkpoint.summary.as_mut().unwrap().max_hp = 95;
+    stable_checkpoint.rank_key = 33_900;
+
+    let mut active = vec![deep_critical];
+    let mut frozen = vec![stable_checkpoint];
+
+    let promoted = rebalance_active_with_stronger_frozen_v1(&mut active, &mut frozen, 1);
+
+    assert_eq!(promoted, 1);
+    assert_eq!(active[0].branch_id, "stable-checkpoint");
+    assert_eq!(frozen[0].branch_id, "deep-critical");
+}
+
+#[test]
 fn campaign_rebalance_does_not_promote_stale_rehydrated_combat_over_later_active() {
     let mut active = vec![test_campaign_branch_with_boundary(
         "act3-campfire",

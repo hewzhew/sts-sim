@@ -57,6 +57,13 @@ const COMBAT_RETRY_MAX_WALL_MS: u64 = 1_000;
 const BOSS_GATE_RETRY_ATTEMPTS_PER_GATE: usize = 2;
 const UNSPENT_GOLD_PRESSURE_THRESHOLD: i32 = 300;
 const PROGRESS_ANCHOR_MAX_RANK_LAG: i32 = 1_000;
+const SURVIVAL_ANCHOR_LOW_HP_PERCENT: i32 = 25;
+const SURVIVAL_ANCHOR_NEARBY_MIN_HP_GAIN: i32 = 20;
+const SURVIVAL_ANCHOR_HEALTHY_SALVAGE_HP_PERCENT: i32 = 50;
+const SURVIVAL_ANCHOR_HEALTHY_SALVAGE_HP_GAIN: i32 = 40;
+const SURVIVAL_ANCHOR_CRITICAL_HP_PERCENT: i32 = 15;
+const SURVIVAL_ANCHOR_CRITICAL_SALVAGE_HP_PERCENT: i32 = 30;
+const SURVIVAL_ANCHOR_CRITICAL_SALVAGE_HP_GAIN: i32 = 25;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BranchCampaignCombatRetryPolicyV1 {
@@ -3369,7 +3376,7 @@ fn rebalance_active_survival_anchor_v1(
         .iter()
         .enumerate()
         .filter_map(|(idx, branch)| campaign_branch_hp_percent_v1(branch).map(|hp| (idx, hp)))
-        .filter(|(_, hp)| *hp < 25)
+        .filter(|(_, hp)| *hp < SURVIVAL_ANCHOR_LOW_HP_PERCENT)
         .min_by_key(|(_, hp)| *hp)
     else {
         return false;
@@ -3387,7 +3394,7 @@ fn rebalance_active_survival_anchor_v1(
         })
         .filter_map(|(idx, branch)| {
             let hp = campaign_branch_hp_percent_v1(branch)?;
-            (hp >= replace_hp.saturating_add(20)
+            (hp >= replace_hp.saturating_add(SURVIVAL_ANCHOR_NEARBY_MIN_HP_GAIN)
                 && campaign_survival_anchor_respects_low_max_hp_risk_v1(
                     branch,
                     &active[replace_index],
@@ -3414,8 +3421,7 @@ fn rebalance_active_survival_anchor_v1(
             })
             .filter_map(|(idx, branch)| {
                 let hp = campaign_branch_hp_percent_v1(branch)?;
-                (hp >= 50
-                    && hp >= replace_hp.saturating_add(40)
+                (campaign_branch_is_survival_salvage_v1(hp, replace_hp)
                     && campaign_survival_anchor_respects_low_max_hp_risk_v1(
                         branch,
                         &active[replace_index],
@@ -3442,6 +3448,15 @@ fn rebalance_active_survival_anchor_v1(
     active.sort_by(compare_campaign_branches_for_active_v1);
     frozen.sort_by(compare_campaign_branches_for_promotion_v1);
     true
+}
+
+fn campaign_branch_is_survival_salvage_v1(candidate_hp: i32, replaced_hp: i32) -> bool {
+    let healthy_salvage = candidate_hp >= SURVIVAL_ANCHOR_HEALTHY_SALVAGE_HP_PERCENT
+        && candidate_hp >= replaced_hp.saturating_add(SURVIVAL_ANCHOR_HEALTHY_SALVAGE_HP_GAIN);
+    let critical_salvage = replaced_hp < SURVIVAL_ANCHOR_CRITICAL_HP_PERCENT
+        && candidate_hp >= SURVIVAL_ANCHOR_CRITICAL_SALVAGE_HP_PERCENT
+        && candidate_hp >= replaced_hp.saturating_add(SURVIVAL_ANCHOR_CRITICAL_SALVAGE_HP_GAIN);
+    healthy_salvage || critical_salvage
 }
 
 fn campaign_survival_anchor_respects_low_max_hp_risk_v1(
@@ -3497,15 +3512,17 @@ fn campaign_active_swap_respects_survival_v1(
     if candidate_progress.0 == replaced_progress.0
         && candidate_progress.1 >= replaced_progress.1
         && candidate_progress.1.saturating_sub(replaced_progress.1) <= 8
-        && candidate_hp_percent < 25
-        && replaced_hp_percent >= candidate_hp_percent.saturating_add(40)
+        && candidate_hp_percent < SURVIVAL_ANCHOR_LOW_HP_PERCENT
+        && campaign_branch_is_survival_salvage_v1(replaced_hp_percent, candidate_hp_percent)
     {
         return false;
     }
     if !campaign_progress_is_nearby_v1(candidate_progress, replaced_progress) {
         return true;
     }
-    !(candidate_hp_percent < 25 && replaced_hp_percent >= candidate_hp_percent.saturating_add(20))
+    !(candidate_hp_percent < SURVIVAL_ANCHOR_LOW_HP_PERCENT
+        && replaced_hp_percent
+            >= candidate_hp_percent.saturating_add(SURVIVAL_ANCHOR_NEARBY_MIN_HP_GAIN))
 }
 
 fn campaign_progress_is_nearby_v1(left: (u8, i32, i32), right: (u8, i32, i32)) -> bool {
