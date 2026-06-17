@@ -245,6 +245,12 @@ struct Args {
     inspect_card_reward_evidence: bool,
 
     #[arg(
+        long = "inspect-campfire-evidence",
+        help = "Print current-code campfire candidate evidence and selected plan for the selected checkpoint session"
+    )]
+    inspect_campfire_evidence: bool,
+
+    #[arg(
         long = "inspect-deck-mutation",
         help = "Print current-code DeckMutationCompiler plan groups for the selected checkpoint session"
     )]
@@ -551,6 +557,8 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
         println!("{}", render_checkpoint_shop_evidence_v1(&session)?);
     } else if args.inspect_card_reward_evidence {
         println!("{}", render_checkpoint_card_reward_evidence_v1(&session)?);
+    } else if args.inspect_campfire_evidence {
+        println!("{}", render_checkpoint_campfire_evidence_v1(&session)?);
     } else if args.inspect_deck_mutation {
         println!("{}", render_checkpoint_deck_mutation_v1(&session)?);
     } else if args.inspect_route_evidence {
@@ -565,6 +573,88 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
         println!("{}", render_run_control_state(&session));
     }
     Ok(())
+}
+
+fn render_checkpoint_campfire_evidence_v1(session: &RunControlSession) -> Result<String, String> {
+    if !matches!(session.engine_state, EngineState::Campfire) {
+        return Err(format!(
+            "--inspect-campfire-evidence requires Campfire engine state, got {:?}",
+            session.engine_state
+        ));
+    }
+    let context = sts_simulator::ai::campfire_policy_v1::build_campfire_decision_context_v1(
+        &session.run_state,
+        sts_simulator::engine::campfire_handler::get_available_options(&session.run_state),
+    );
+    let decision = sts_simulator::ai::campfire_policy_v1::plan_campfire_decision_v1(
+        &context,
+        &sts_simulator::ai::campfire_policy_v1::CampfirePolicyConfigV1::default(),
+    );
+    let mut lines = Vec::new();
+    let formation = context.strategy.formation_summary();
+    lines.push(format!(
+        "Campfire compiled decision: act={} floor={} hp={}/{} gold={} boss={:?}",
+        session.run_state.act_num,
+        session.run_state.floor_num,
+        session.run_state.current_hp,
+        session.run_state.max_hp,
+        session.run_state.gold,
+        session.run_state.boss_key
+    ));
+    lines.push(format!(
+        "selected: plan_id={} role={:?} score={} execute={} confidence={:.2} action={:?}",
+        decision.selected_plan.plan_id,
+        decision.selected_plan.role,
+        decision.selected_plan.score_hint,
+        decision.selected_plan.execute_autopilot,
+        decision.selected_plan.confidence,
+        decision.selected_plan.action
+    ));
+    lines.push(format!(
+        "context: candidates={} formation={:?} needs={:?}",
+        context.candidates.len(),
+        formation.stage,
+        formation.needs
+    ));
+    lines.push("candidate plans:".to_string());
+    for plan in &decision.candidate_plans {
+        lines.push(format!(
+            "  - {} role={:?} score={} execute={} branch_active={} confidence={:.2} action={:?}",
+            plan.plan_id,
+            plan.role,
+            plan.score_hint,
+            plan.execute_autopilot,
+            plan.branch_active,
+            plan.confidence,
+            plan.action
+        ));
+        if let Some(tag) = &plan.strategy_tag {
+            lines.push(format!("      strategy_tag={tag}"));
+        }
+        for reason in plan.reasons.iter().take(4) {
+            lines.push(format!("      reason: {reason}"));
+        }
+        if let Some(candidate) = context
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate_id == plan.plan_id)
+        {
+            lines.push(format!(
+                "      class={:?} support_gate={:?} upgrade_score={:?} deck_mutation_execute={:?}",
+                candidate.class,
+                candidate.support_gate,
+                candidate.upgrade_plan_score_hint,
+                candidate.deck_mutation_execute_allowed
+            ));
+            for evidence in candidate.evidence.iter().take(6) {
+                lines.push(format!("      evidence: {evidence}"));
+            }
+            for risk in candidate.risks.iter().take(4) {
+                lines.push(format!("      risk: {risk}"));
+            }
+        }
+    }
+    Ok(lines.join("\n"))
 }
 
 fn render_checkpoint_route_evidence_v1(session: &RunControlSession) -> Result<String, String> {
@@ -1422,6 +1512,28 @@ mod tests {
             Some(PathBuf::from("latest.campaign.json"))
         );
         assert!(args.inspect_deck_mutation);
+    }
+
+    #[test]
+    fn campaign_cli_accepts_checkpoint_campfire_evidence_inspection() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-campfire-evidence",
+        ]);
+
+        assert_eq!(
+            args.inspect_checkpoint,
+            Some(PathBuf::from("latest.checkpoint.json"))
+        );
+        assert_eq!(
+            args.inspect_report,
+            Some(PathBuf::from("latest.campaign.json"))
+        );
+        assert!(args.inspect_campfire_evidence);
     }
 
     #[test]
