@@ -239,6 +239,12 @@ struct Args {
     inspect_shop_evidence: bool,
 
     #[arg(
+        long = "inspect-card-reward-evidence",
+        help = "Print current-code card reward candidate evidence and strategic deltas for the selected checkpoint session"
+    )]
+    inspect_card_reward_evidence: bool,
+
+    #[arg(
         long = "inspect-deck-mutation",
         help = "Print current-code DeckMutationCompiler plan groups for the selected checkpoint session"
     )]
@@ -543,6 +549,8 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
     println!("commands: {}", render_inspect_command_path(&commands));
     if args.inspect_shop_evidence {
         println!("{}", render_checkpoint_shop_evidence_v1(&session)?);
+    } else if args.inspect_card_reward_evidence {
+        println!("{}", render_checkpoint_card_reward_evidence_v1(&session)?);
     } else if args.inspect_deck_mutation {
         println!("{}", render_checkpoint_deck_mutation_v1(&session)?);
     } else if args.inspect_route_evidence {
@@ -697,6 +705,141 @@ fn render_checkpoint_shop_evidence_v1(session: &RunControlSession) -> Result<Str
         lines.push("trace_would_choose: -".to_string());
     }
     Ok(lines.join("\n"))
+}
+
+fn render_checkpoint_card_reward_evidence_v1(
+    session: &RunControlSession,
+) -> Result<String, String> {
+    let cards = active_or_visible_reward_cards_for_inspect_v1(session).ok_or_else(|| {
+        format!(
+            "--inspect-card-reward-evidence requires an open or visible card reward, got {:?}",
+            session.engine_state
+        )
+    })?;
+    let context =
+        sts_simulator::ai::card_reward_policy_v1::build_card_reward_decision_context_with_current_route_v1(
+            &session.run_state,
+            &session.engine_state,
+            cards,
+        );
+    let trace = sts_simulator::ai::strategic::strategic_trace_for_card_reward(&context);
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Card reward compiled decision: act={} floor={} hp={}/{} gold={} boss={:?}",
+        session.run_state.act_num,
+        session.run_state.floor_num,
+        session.run_state.current_hp,
+        session.run_state.max_hp,
+        session.run_state.gold,
+        session.run_state.boss_key
+    ));
+    lines.push(format!(
+        "context: candidates={} deck_size={} startup_strong_draw={} has_singing_bowl={}",
+        context.candidates.len(),
+        context.deck.deck_size,
+        context.startup.strong_draw_count,
+        context.has_singing_bowl
+    ));
+    lines.push("candidate evidence:".to_string());
+    for candidate in &context.candidates {
+        let action = sts_simulator::ai::strategic::CandidateAction::TakeCard {
+            index: candidate.index,
+            card: candidate.card,
+        };
+        let compiled = trace.compiled_for_action(&action);
+        let delta = trace
+            .candidate_deltas
+            .iter()
+            .find(|delta| delta.action == action);
+        lines.push(format!(
+            "- {} | index={} card={:?} same_card_count={} verdict={} score={}",
+            candidate.name,
+            candidate.index,
+            candidate.card,
+            candidate.same_card_count,
+            compiled
+                .map(|decision| format!("{:?}", decision.verdict))
+                .unwrap_or_else(|| "-".to_string()),
+            compiled
+                .map(|decision| format!("{:.2}", decision.score))
+                .unwrap_or_else(|| "-".to_string()),
+        ));
+        lines.push(format!(
+            "    facts: type={:?} cost={} damage={} block={} draw={} energy={} roles=[{}]",
+            candidate.card_type,
+            candidate.facts.cost,
+            candidate.facts.damage.total_damage,
+            candidate.facts.block,
+            candidate.facts.draw_cards,
+            candidate.facts.energy_gain,
+            render_short_list(
+                &sts_simulator::ai::card_reward_policy_v1::card_reward_semantic_profile_v1(
+                    &sts_simulator::state::rewards::RewardCard::new(
+                        candidate.card,
+                        candidate.facts.upgrades,
+                    ),
+                )
+                .roles
+                .iter()
+                .map(|role| format!("{role:?}"))
+                .collect::<Vec<_>>(),
+            )
+        ));
+        if let Some(delta) = delta {
+            lines.push(format!(
+                "    delta: role={:?} hint={:?} positive=[{}] negative=[{}] notes=[{}]",
+                delta.role,
+                delta.verdict_hint,
+                render_ledger_deltas(&delta.positive),
+                render_ledger_deltas(&delta.negative),
+                render_short_list(&delta.notes)
+            ));
+        }
+    }
+    let skip_action = if context.has_singing_bowl {
+        sts_simulator::ai::strategic::CandidateAction::TakeSingingBowl { max_hp_gain: 2 }
+    } else {
+        sts_simulator::ai::strategic::CandidateAction::SkipCardReward
+    };
+    if let Some(compiled) = trace.compiled_for_action(&skip_action) {
+        lines.push(format!(
+            "decline_candidate: action={} verdict={:?} score={:.2}",
+            skip_action.candidate_id(),
+            compiled.verdict,
+            compiled.score
+        ));
+    }
+    if let Some(action) = trace.would_choose.as_ref() {
+        lines.push(format!("trace_would_choose: {}", action.candidate_id()));
+    } else {
+        lines.push("trace_would_choose: -".to_string());
+    }
+    Ok(lines.join("\n"))
+}
+
+fn active_or_visible_reward_cards_for_inspect_v1(
+    session: &RunControlSession,
+) -> Option<Vec<sts_simulator::state::rewards::RewardCard>> {
+    match &session.engine_state {
+        EngineState::RewardScreen(reward) => reward
+            .pending_card_choice
+            .clone()
+            .or_else(|| first_visible_card_reward_for_inspect_v1(reward)),
+        EngineState::RewardOverlay { reward_state, .. } => reward_state
+            .pending_card_choice
+            .clone()
+            .or_else(|| first_visible_card_reward_for_inspect_v1(reward_state)),
+        _ => None,
+    }
+}
+
+fn first_visible_card_reward_for_inspect_v1(
+    reward: &sts_simulator::state::rewards::RewardState,
+) -> Option<Vec<sts_simulator::state::rewards::RewardCard>> {
+    reward.items.iter().find_map(|item| match item {
+        sts_simulator::state::rewards::RewardItem::Card { cards } => Some(cards.clone()),
+        _ => None,
+    })
 }
 
 fn render_shop_plan_candidate_summary_v1(
@@ -1217,6 +1360,27 @@ mod tests {
         assert_eq!(args.inspect_act, Some(2));
         assert_eq!(args.inspect_floor, Some(18));
         assert!(args.inspect_shop_evidence);
+    }
+
+    #[test]
+    fn campaign_cli_accepts_checkpoint_card_reward_evidence_inspection() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-act",
+            "1",
+            "--inspect-floor",
+            "11",
+            "--inspect-card-reward-evidence",
+        ])
+        .expect("args parse");
+
+        assert_eq!(args.inspect_act, Some(1));
+        assert_eq!(args.inspect_floor, Some(11));
+        assert!(args.inspect_card_reward_evidence);
     }
 
     #[test]
