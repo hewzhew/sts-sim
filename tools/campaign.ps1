@@ -43,6 +43,10 @@ Runs selected and alternative shop plans from a selected checkpoint branch, then
 Prints the last saved automated combat trajectory for a selected checkpoint branch.
 
 .EXAMPLE
+.\tools\campaign.ps1 -InspectCombatLab -InspectIndex 0
+Prints a report-only combat lab packet for a selected checkpoint branch.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Mode quick
 Runs a shorter random-seed campaign for fast smoke testing.
 
@@ -104,6 +108,7 @@ param(
     [switch] $InspectShopEvidence,
     [switch] $InspectShopChallenge,
     [switch] $InspectLastAutoCombat,
+    [switch] $InspectCombatLab,
     [switch] $DryRun,
     [switch] $NoProgress,
     [switch] $NoBossSegments,
@@ -198,7 +203,7 @@ function Read-LatestCampaignMode {
     return $null
 }
 
-if ($InspectShopEvidence -or $InspectShopChallenge -or $InspectLastAutoCombat) {
+if ($InspectShopEvidence -or $InspectShopChallenge -or $InspectLastAutoCombat -or $InspectCombatLab) {
     $Inspect = $true
 }
 if ($InspectShopChallenge -and -not $PSBoundParameters.ContainsKey("InspectBoundary")) {
@@ -468,7 +473,7 @@ if ($Inspect) {
         "--inspect-report", "$LatestCampaignPath",
         "--branch-examples", "$BranchExamples"
     )
-    $DetailedInspect = $InspectShopEvidence -or $InspectShopChallenge -or $InspectLastAutoCombat
+    $DetailedInspect = $InspectShopEvidence -or $InspectShopChallenge -or $InspectLastAutoCombat -or $InspectCombatLab
     if (-not $DetailedInspect) {
         $InspectArgs += "--inspect-summary"
     }
@@ -487,6 +492,13 @@ if ($Inspect) {
     }
     if ($InspectLastAutoCombat) {
         $InspectArgs += "--inspect-last-auto-combat"
+    }
+    if ($InspectCombatLab) {
+        $InspectArgs += @(
+            "--inspect-combat-lab",
+            "--combat-search-option", "wall_ms=$SearchWallMs",
+            "--combat-search-option", "max_nodes=$SearchMaxNodes"
+        )
     }
     if ($CampaignBoundParameters.ContainsKey("InspectIndex") -and $InspectIndex -ge 0) {
         $InspectArgs += @("--inspect-index", "$InspectIndex")

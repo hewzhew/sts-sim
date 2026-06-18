@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 mod checkpoint_evidence;
+mod combat_lab;
 mod final_boss_combat;
 mod inspect_summary;
 mod outcome_dataset;
@@ -288,6 +289,12 @@ struct Args {
         help = "Print the last stored automated combat trajectory for the selected checkpoint session"
     )]
     inspect_last_auto_combat: bool,
+
+    #[arg(
+        long = "inspect-combat-lab",
+        help = "Print a report-only CombatLabProbeV1 packet for the selected checkpoint branch"
+    )]
+    inspect_combat_lab: bool,
 
     #[arg(
         long = "inspect-shop-evidence",
@@ -776,8 +783,9 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
     let match_count = matches.len();
     let (commands, mut session) = matches.swap_remove(inspect_index);
     let (hp, max_hp) = inspect_visible_player_hp(&session);
+    let surface = build_decision_surface(&session);
     println!(
-        "Checkpoint inspection: seed={} match={}/{} act={} floor={} hp={}/{} engine={:?}",
+        "Checkpoint inspection: seed={} match={}/{} act={} floor={} hp={}/{} boundary={}",
         checkpoint.seed,
         inspect_index + 1,
         match_count,
@@ -785,7 +793,7 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
         session.run_state.floor_num,
         hp,
         max_hp,
-        session.engine_state
+        surface.view.header.title
     );
     println!("commands: {}", render_inspect_command_path(&commands));
     if args.inspect_shop_evidence {
@@ -814,6 +822,21 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
                 &commands,
             )?
         );
+    } else if args.inspect_combat_lab {
+        let options = inspect_search_options_from_args(args)?;
+        let branch = report_branch_for_commands_v1(report.as_ref(), &commands);
+        println!(
+            "{}",
+            combat_lab::render_checkpoint_combat_lab_v1(
+                checkpoint.seed,
+                inspect_index,
+                match_count,
+                &session,
+                &commands,
+                branch,
+                &options,
+            )
+        );
     } else if args.inspect_search {
         let options = inspect_search_options_from_args(args)?;
         let outcome = session.apply_command(RunControlCommand::SearchCombat(options))?;
@@ -824,6 +847,22 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
         println!("{}", render_run_control_state(&session));
     }
     Ok(())
+}
+
+fn report_branch_for_commands_v1<'a>(
+    report: Option<&'a BranchCampaignReportV1>,
+    commands: &[String],
+) -> Option<&'a sts_simulator::eval::branch_campaign::BranchCampaignBranchV1> {
+    let report = report?;
+    report
+        .active
+        .iter()
+        .chain(report.frozen.iter())
+        .chain(report.abandoned.iter())
+        .chain(report.stuck.iter())
+        .chain(report.victories.iter())
+        .chain(report.dead.iter())
+        .find(|branch| branch.commands == commands)
 }
 
 fn checkpoint_session_matches_filters(args: &Args, session: &RunControlSession) -> bool {
@@ -1330,6 +1369,27 @@ mod tests {
             Some(PathBuf::from("latest.checkpoint.json"))
         );
         assert!(args.inspect_last_auto_combat);
+    }
+
+    #[test]
+    fn campaign_cli_accepts_checkpoint_combat_lab_inspection() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-combat-lab",
+            "--combat-search-option",
+            "wall_ms=1000",
+        ]);
+
+        assert_eq!(
+            args.inspect_checkpoint,
+            Some(PathBuf::from("latest.checkpoint.json"))
+        );
+        assert!(args.inspect_combat_lab);
+        assert_eq!(args.combat_search_options, vec!["wall_ms=1000"]);
     }
 
     #[test]
