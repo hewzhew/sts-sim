@@ -212,7 +212,9 @@ pub fn diagnose_combat_lab_probe_v1(
     } else if result == "turn_segment_applied" {
         "turn_segment"
     } else if digest.contains("complete_winning_candidate_exceeds_hp_loss_limit")
-        || (digest.contains("hp_loss") && digest.contains("limit"))
+        || digest.contains("max_hp_loss")
+        || digest.contains("hp-loss limit")
+        || digest.contains("hp loss limit")
     {
         "hp_loss_limit"
     } else if digest.contains("wall-clock deadline hit")
@@ -382,5 +384,20 @@ mod tests {
         assert_eq!(diagnosis.confidence, "search_digest");
         assert!(diagnosis.signals.contains(&"no_terminal_wins".to_string()));
         assert!(diagnosis.signals.contains(&"budget_limited".to_string()));
+    }
+
+    #[test]
+    fn probe_diagnosis_does_not_confuse_time_budget_with_hp_loss_gate() {
+        let diagnosis = diagnose_combat_lab_probe_v1(
+            "unresolved_no_trajectory",
+            &[
+                "best_complete_candidate terminal=Loss final_hp=0 hp_loss=42 turns=2".to_string(),
+                "coverage_status=TimeBudgetLimited".to_string(),
+                "terminal_wins=0".to_string(),
+            ],
+        );
+
+        assert_eq!(diagnosis.search_reason, "time_budget_limited");
+        assert!(!diagnosis.signals.contains(&"hp_loss_gate".to_string()));
     }
 }
