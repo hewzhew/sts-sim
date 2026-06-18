@@ -3,10 +3,9 @@ use crate::ai::strategic::{
 };
 use crate::eval::branch_experiment::{
     run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
-    BranchExperimentBossCombatRecordV1, BranchExperimentBranchReportV1,
-    BranchExperimentBranchStatusV1, BranchExperimentConfigV1, BranchExperimentRouteDecisionV1,
-    BranchExperimentRunResultV1, BranchExperimentStrategyRequestV1,
-    BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
+    BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentConfigV1,
+    BranchExperimentRouteDecisionV1, BranchExperimentRunResultV1,
+    BranchExperimentStrategyRequestV1, BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
 };
 use crate::eval::branch_experiment_boundary::branch_boundary_available;
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
@@ -18,19 +17,38 @@ use crate::eval::run_control::{
     RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlRouteAutomationMode,
     RunControlSearchCombatOptions, RunControlSession, RunControlSessionCheckpointV1,
 };
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
+mod model;
 mod performance;
+mod progress;
+mod retry;
+mod run_domain;
 mod selection_key;
 mod strategic_signals;
+pub use model::{
+    BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
+    BranchCampaignCheckpointSessionV1, BranchCampaignCheckpointV1, BranchCampaignReportV1,
+    BranchCampaignRoundSummaryV1, BranchCampaignRouteEvidenceExampleV1,
+    BranchCampaignRouteEvidenceSummaryV1, BranchCampaignRunResultV1, BranchCampaignSelectionV1,
+    BranchCampaignStrategyRequestV1,
+};
 use performance::{
     add_combat_performance_samples_v1, aggregate_campaign_combat_performance_v1,
     format_seconds_from_us_1dp_v1, render_campaign_combat_performance_v1,
 };
 pub use performance::{
     BranchCampaignCombatPerformanceExampleV1, BranchCampaignCombatPerformanceSummaryV1,
+};
+pub use progress::{render_branch_campaign_progress_event_v1, BranchCampaignProgressEventV1};
+pub use retry::{
+    BranchCampaignCombatRetryLedgerEntryV1, BranchCampaignCombatRetryLedgerV1,
+    BranchCampaignCombatRetryPolicyV1,
+};
+pub use run_domain::{
+    branch_campaign_ascension_domain_label_v1, branch_campaign_ascension_domain_role_v1,
+    branch_campaign_run_domain_v1, BranchCampaignRunDomainV1,
 };
 use selection_key::{
     act_boss_floor_v1, campaign_branch_retention_key_v1, compare_campaign_branches_for_active_v1,
@@ -64,48 +82,6 @@ const SURVIVAL_ANCHOR_HEALTHY_SALVAGE_HP_GAIN: i32 = 40;
 const SURVIVAL_ANCHOR_CRITICAL_HP_PERCENT: i32 = 15;
 const SURVIVAL_ANCHOR_CRITICAL_SALVAGE_HP_PERCENT: i32 = 30;
 const SURVIVAL_ANCHOR_CRITICAL_SALVAGE_HP_GAIN: i32 = 25;
-
-pub fn branch_campaign_ascension_domain_label_v1(ascension_level: u8) -> &'static str {
-    match ascension_level {
-        0 => "debug_a0",
-        10 => "bane_a10",
-        15 => "event_a15",
-        17 => "monster_ai_a17",
-        20 => "target_a20",
-        _ => "custom",
-    }
-}
-
-pub fn branch_campaign_ascension_domain_role_v1(ascension_level: u8) -> &'static str {
-    match ascension_level {
-        0 => "debug_domain",
-        20 => "target_domain",
-        _ => "curriculum_domain",
-    }
-}
-
-pub fn branch_campaign_run_domain_v1(
-    ascension_level: u8,
-    player_class: &str,
-) -> BranchCampaignRunDomainV1 {
-    BranchCampaignRunDomainV1 {
-        ascension_level,
-        player_class: player_class.to_string(),
-        label: branch_campaign_ascension_domain_label_v1(ascension_level).to_string(),
-        role: branch_campaign_ascension_domain_role_v1(ascension_level).to_string(),
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BranchCampaignCombatRetryPolicyV1 {
-    /// Keep moving through available branches first. If all routes stall on combat,
-    /// the campaign will surface that as an intervention instead of retrying every parent.
-    OnStall,
-    /// Legacy behavior: immediately rerun a parent with a larger combat budget when all
-    /// produced children are pruned combat branches.
-    Immediate,
-    Disabled,
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchCampaignConfigV1 {
@@ -165,306 +141,6 @@ impl Default for BranchCampaignConfigV1 {
             prefix_commands: Vec::new(),
         }
     }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BranchCampaignBranchStatusV1 {
-    Active,
-    Frozen,
-    TerminalVictory,
-    TerminalDefeat,
-    Abandoned,
-    Stuck,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchCampaignBranchSummaryV1 {
-    pub act: u8,
-    pub floor: i32,
-    pub hp: i32,
-    pub max_hp: i32,
-    pub gold: i32,
-    pub deck_count: usize,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub deck_key: String,
-    pub formation_stage: String,
-    pub formation_strengths: Vec<String>,
-    pub formation_needs: Vec<String>,
-    #[serde(default)]
-    pub trajectory_key: String,
-    #[serde(default)]
-    pub boss: String,
-    #[serde(default)]
-    pub boss_pressure: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchCampaignBranchV1 {
-    pub branch_id: String,
-    pub commands: Vec<String>,
-    pub choice_labels: Vec<String>,
-    pub summary: Option<BranchCampaignBranchSummaryV1>,
-    #[serde(default, skip_serializing_if = "BranchSignatureCompact::is_empty")]
-    pub strategic_summary: BranchSignatureCompact,
-    pub frontier_title: String,
-    pub status: BranchCampaignBranchStatusV1,
-    #[serde(default)]
-    pub stop_reason: String,
-    /// Deprecated compatibility field. Older campaign checkpoints may contain
-    /// this, but campaign selection no longer carries local decision signals
-    /// across rounds.
-    #[serde(default, skip_serializing_if = "is_zero_i32")]
-    pub lineage_decision_signal_rank_adjustment: i32,
-    pub rank_key: i32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub final_boss_combat_record: Option<BranchExperimentBossCombatRecordV1>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchCampaignSelectionV1 {
-    pub active: Vec<BranchCampaignBranchV1>,
-    pub frozen: Vec<BranchCampaignBranchV1>,
-    pub victories: Vec<BranchCampaignBranchV1>,
-    pub dead: Vec<BranchCampaignBranchV1>,
-    pub abandoned: Vec<BranchCampaignBranchV1>,
-    pub stuck: Vec<BranchCampaignBranchV1>,
-    pub discarded_count: usize,
-    #[serde(default)]
-    pub discarded_examples: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchCampaignStrategyRequestV1 {
-    pub kind: String,
-    pub boundary_title: String,
-    pub branch_count: usize,
-    #[serde(default)]
-    pub act: u8,
-    #[serde(default)]
-    pub floor: i32,
-    #[serde(default)]
-    pub stop_reasons: Vec<String>,
-    pub examples: Vec<String>,
-    #[serde(default)]
-    pub next_card_reward_offer: Option<Vec<String>>,
-    #[serde(default)]
-    pub boundary_details: Vec<String>,
-    pub suggested_action: String,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchCampaignCombatRetryLedgerV1 {
-    #[serde(default)]
-    pub boss_gate_attempts: Vec<BranchCampaignCombatRetryLedgerEntryV1>,
-}
-
-impl BranchCampaignCombatRetryLedgerV1 {
-    fn is_empty(&self) -> bool {
-        self.boss_gate_attempts.is_empty()
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchCampaignCombatRetryLedgerEntryV1 {
-    pub act: u8,
-    pub floor: i32,
-    pub attempts: usize,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchCampaignRoundSummaryV1 {
-    pub round: usize,
-    pub started_active: usize,
-    pub produced_branches: usize,
-    pub active_after: usize,
-    pub frozen_added: usize,
-    pub dead_added: usize,
-    pub abandoned_added: usize,
-    pub victories_added: usize,
-    pub stuck_added: usize,
-    pub discarded_added: usize,
-    pub explored_branch_points: usize,
-    pub wall_limit_hit: bool,
-    pub branch_limit_hit: bool,
-    pub combat_budget_retries: usize,
-    #[serde(default)]
-    pub elapsed_wall_ms: u64,
-    #[serde(default)]
-    pub parent_elapsed_wall_ms_sum: u64,
-    #[serde(default)]
-    pub parent_elapsed_wall_ms_max: u64,
-    #[serde(default)]
-    pub combat_retry_elapsed_wall_ms_sum: u64,
-    #[serde(default)]
-    pub combat_retry_elapsed_wall_ms_max: u64,
-    #[serde(default)]
-    pub combat_performance: BranchCampaignCombatPerformanceSummaryV1,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchCampaignRouteEvidenceSummaryV1 {
-    pub decisions: usize,
-    pub first_elite_forced: usize,
-    pub first_elite_optional: usize,
-    pub first_elite_none: usize,
-    pub rest_bailout: usize,
-    pub shop_bailout: usize,
-    pub underprepared_first_elite: usize,
-    pub avg_elite_prep_bp: i32,
-    pub examples: Vec<BranchCampaignRouteEvidenceExampleV1>,
-    #[serde(default)]
-    pub underprepared_examples: Vec<BranchCampaignRouteEvidenceExampleV1>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchCampaignRouteEvidenceExampleV1 {
-    pub target: String,
-    pub first_elite: String,
-    pub elite_prep_bp: i32,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchCampaignRunDomainV1 {
-    pub ascension_level: u8,
-    pub player_class: String,
-    pub label: String,
-    pub role: String,
-}
-
-impl Default for BranchCampaignRunDomainV1 {
-    fn default() -> Self {
-        branch_campaign_run_domain_v1(0, "Ironclad")
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchCampaignReportV1 {
-    pub schema_name: String,
-    pub schema_version: u32,
-    pub seed: u64,
-    #[serde(default)]
-    pub run_domain: BranchCampaignRunDomainV1,
-    pub rounds_completed: usize,
-    pub stop_reason: String,
-    pub active: Vec<BranchCampaignBranchV1>,
-    pub frozen: Vec<BranchCampaignBranchV1>,
-    pub victories: Vec<BranchCampaignBranchV1>,
-    pub dead: Vec<BranchCampaignBranchV1>,
-    pub abandoned: Vec<BranchCampaignBranchV1>,
-    pub stuck: Vec<BranchCampaignBranchV1>,
-    pub discarded_count: usize,
-    #[serde(default)]
-    pub discarded_examples: Vec<String>,
-    pub strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
-    #[serde(default)]
-    pub route_evidence: BranchCampaignRouteEvidenceSummaryV1,
-    #[serde(
-        default,
-        skip_serializing_if = "BranchCampaignCombatRetryLedgerV1::is_empty"
-    )]
-    pub combat_retry_ledger: BranchCampaignCombatRetryLedgerV1,
-    #[serde(
-        default,
-        skip_serializing_if = "BranchCampaignStrategicSignalsV1::is_empty"
-    )]
-    pub strategic_signals: BranchCampaignStrategicSignalsV1,
-    pub rounds: Vec<BranchCampaignRoundSummaryV1>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchCampaignCheckpointSessionV1 {
-    pub commands: Vec<String>,
-    pub session: RunControlSessionCheckpointV1,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchCampaignCheckpointV1 {
-    pub schema_name: String,
-    pub schema_version: u32,
-    pub seed: u64,
-    #[serde(default)]
-    pub run_domain: BranchCampaignRunDomainV1,
-    pub rounds_completed: usize,
-    pub sessions: Vec<BranchCampaignCheckpointSessionV1>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct BranchCampaignRunResultV1 {
-    pub report: BranchCampaignReportV1,
-    pub checkpoint: BranchCampaignCheckpointV1,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum BranchCampaignProgressEventV1 {
-    CampaignStarted {
-        seed: u64,
-        max_rounds: usize,
-        round_depth: usize,
-        max_active: usize,
-        max_frozen: usize,
-    },
-    RoundStarted {
-        round: usize,
-        max_rounds: usize,
-        active_branches: usize,
-        frozen_branches: usize,
-    },
-    BranchStarted {
-        round: usize,
-        branch_index: usize,
-        branch_count: usize,
-        choices: String,
-    },
-    BranchFinished {
-        round: usize,
-        branch_index: usize,
-        branch_count: usize,
-        produced_branches: usize,
-        explored_branch_points: usize,
-        elapsed_wall_ms: u64,
-        start_elapsed_wall_ms: u64,
-        combat_budget_retry_used: bool,
-        wall_limit_hit: bool,
-        branch_limit_hit: bool,
-    },
-    RoundFinished {
-        round: usize,
-        started_active: usize,
-        produced_branches: usize,
-        active_after: usize,
-        frozen_added: usize,
-        strategy_requests: usize,
-    },
-    FrozenPromoted {
-        promoted: usize,
-        active_after: usize,
-        frozen_remaining: usize,
-        filled_active: usize,
-        stronger_rebalanced: usize,
-        rehydrated_recovered: usize,
-        checkpoint_recovered: usize,
-    },
-    CampaignFinished {
-        stop_reason: String,
-        active: usize,
-        frozen: usize,
-        victories: usize,
-        stuck: usize,
-    },
 }
 
 struct BranchCampaignParentRoundResultV1 {
@@ -1306,124 +982,6 @@ fn validate_campaign_resume_report_v1(
         ));
     }
     Ok(())
-}
-
-pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEventV1) -> String {
-    match event {
-        BranchCampaignProgressEventV1::CampaignStarted {
-            seed,
-            max_rounds,
-            round_depth,
-            max_active,
-            max_frozen,
-        } => format!(
-            "campaign start: seed={seed} rounds={max_rounds} round_depth={round_depth} active_cap={max_active} frozen_cap={max_frozen}"
-        ),
-        BranchCampaignProgressEventV1::RoundStarted {
-            round,
-            max_rounds,
-            active_branches,
-            frozen_branches,
-        } => format!(
-            "round {round}/{max_rounds}: advancing {active_branches} active branch(es), frozen={frozen_branches}"
-        ),
-        BranchCampaignProgressEventV1::BranchStarted {
-            round,
-            branch_index,
-            branch_count,
-            choices,
-        } => format!(
-            "round {round}: branch {branch_index}/{branch_count} running | choices: {choices}"
-        ),
-        BranchCampaignProgressEventV1::BranchFinished {
-            round,
-            branch_index,
-            branch_count,
-            produced_branches,
-            explored_branch_points,
-            elapsed_wall_ms,
-            start_elapsed_wall_ms,
-            combat_budget_retry_used,
-            wall_limit_hit,
-            branch_limit_hit,
-        } => {
-            let mut limits = Vec::new();
-            if *branch_limit_hit {
-                limits.push("branch");
-            }
-            if *wall_limit_hit {
-                limits.push("wall");
-            }
-            let limits = if limits.is_empty() {
-                "-".to_string()
-            } else {
-                limits.join(",")
-            };
-            let retry = if *combat_budget_retry_used {
-                " retry=combat_budget"
-            } else {
-                ""
-            };
-            let start = if *start_elapsed_wall_ms > 0 {
-                format!(" start_ms={start_elapsed_wall_ms}")
-            } else {
-                String::new()
-            };
-            format!(
-                "round {round}: branch {branch_index}/{branch_count} done | produced={produced_branches} branch_points={explored_branch_points} elapsed_ms={elapsed_wall_ms}{start}{retry} limits=[{limits}]"
-            )
-        }
-        BranchCampaignProgressEventV1::RoundFinished {
-            round,
-            started_active,
-            produced_branches,
-            active_after,
-            frozen_added,
-            strategy_requests,
-        } => format!(
-            "round {round} done: started={started_active} produced={produced_branches} active_after={active_after} frozen_added={frozen_added} strategy_requests={strategy_requests}"
-        ),
-        BranchCampaignProgressEventV1::FrozenPromoted {
-            promoted,
-            active_after,
-            frozen_remaining,
-            filled_active,
-            stronger_rebalanced,
-            rehydrated_recovered,
-            checkpoint_recovered,
-        } => {
-            let mut sources = Vec::new();
-            if *filled_active > 0 {
-                sources.push(format!("fill={filled_active}"));
-            }
-            if *stronger_rebalanced > 0 {
-                sources.push(format!("stronger={stronger_rebalanced}"));
-            }
-            if *rehydrated_recovered > 0 {
-                sources.push(format!("rehydrated={rehydrated_recovered}"));
-            }
-            if *checkpoint_recovered > 0 {
-                sources.push(format!("checkpoint={checkpoint_recovered}"));
-            }
-            let source_suffix = if sources.is_empty() {
-                String::new()
-            } else {
-                format!(" sources=[{}]", sources.join(" "))
-            };
-            format!(
-                "promoted/rebalanced {promoted} frozen branch(es); active_after={active_after} frozen={frozen_remaining}{source_suffix}"
-            )
-        }
-        BranchCampaignProgressEventV1::CampaignFinished {
-            stop_reason,
-            active,
-            frozen,
-            victories,
-            stuck,
-        } => format!(
-            "campaign finished: stop={stop_reason} active={active} frozen={frozen} victories={victories} stuck={stuck}"
-        ),
-    }
 }
 
 pub fn render_branch_campaign_compact_v1(
@@ -4393,10 +3951,6 @@ pub fn campaign_branch_from_report_branch_v1(
         rank_key: branch.rank_key,
         final_boss_combat_record: branch.final_boss_combat_record.clone(),
     }
-}
-
-fn is_zero_i32(value: &i32) -> bool {
-    *value == 0
 }
 
 fn campaign_child_branch_id_v1(parent_id: &str, child_id: &str) -> String {
