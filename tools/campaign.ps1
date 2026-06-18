@@ -137,6 +137,7 @@ param(
     [int] $SearchWallMs = 300,
     [int] $SearchMaxNodes = 50000,
     [int] $CombatRetryWallMs = 0,
+    [int] $ActiveLineageDiversity = -1,
     [int] $BranchExamples = 4,
     [int] $InspectIndex = -1,
     [int] $InspectAct = 0,
@@ -358,6 +359,9 @@ if ($PassMaxRoundsToDriver) {
 Add-DriverArgIfBound "ExperimentWallMs" "--experiment-wall-ms" $ExperimentWallMs
 Add-DriverArgIfBound "SearchWallMs" "--search-wall-ms" $SearchWallMs
 Add-DriverArgIfBound "SearchMaxNodes" "--search-max-nodes" $SearchMaxNodes
+if ($CampaignBoundParameters.ContainsKey("ActiveLineageDiversity") -and $ActiveLineageDiversity -ge 0) {
+    $DriverArgs += @("--active-lineage-diversity", "$ActiveLineageDiversity")
+}
 if ($CampaignBoundParameters.ContainsKey("CombatRetryWallMs") -and $CombatRetryWallMs -gt 0) {
     $DriverArgs += @("--combat-retry-wall-ms", "$CombatRetryWallMs")
 }
