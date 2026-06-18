@@ -12,6 +12,7 @@ use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::eval::branch_experiment_trajectory::{
     branch_trajectory_key_v1, BranchTrajectorySignatureV1,
 };
+use crate::eval::combat_lab_probe_v1::current_act_boss_preview_probe_v1;
 use crate::eval::run_control::{
     apply_branch_experiment_auto_run, build_decision_surface, RunControlAutoStepOptions,
     RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlRouteAutomationMode,
@@ -74,6 +75,8 @@ const COMBAT_RETRY_MIN_WALL_MS: u64 = 1_000;
 const COMBAT_RETRY_MAX_WALL_MS: u64 = 1_000;
 const BOSS_GATE_RETRY_ATTEMPTS_PER_GATE: usize = 2;
 const UNSPENT_GOLD_PRESSURE_THRESHOLD: i32 = 300;
+const COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_NODES: usize = 50_000;
+const COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_WALL_MS: u64 = 300;
 const PROGRESS_ANCHOR_MAX_RANK_LAG: i32 = 1_000;
 const SURVIVAL_ANCHOR_LOW_HP_PERCENT: i32 = 25;
 const SURVIVAL_ANCHOR_NEARBY_MIN_HP_GAIN: i32 = 20;
@@ -1205,6 +1208,9 @@ pub fn render_branch_campaign_compact_v1(
         ));
         lines.push(format!("  boss example: {}", pressure.example));
     }
+    if let Some(combat_lab) = render_campaign_combat_lab_probe_summary_v1(report) {
+        lines.extend(combat_lab);
+    }
     let strategic_signals = campaign_strategic_signals_for_render_v1(report);
     if let Some(strategic) = render_campaign_strategic_signals_v1(&strategic_signals) {
         lines.push(strategic);
@@ -1512,6 +1518,51 @@ fn branch_has_boss_mechanic_pressure_v1(branch: &BranchCampaignBranchV1) -> bool
     !summary.boss.is_empty()
         && !summary.boss_pressure.is_empty()
         && summary.floor >= boss_approach_floor_v1(summary.act)
+}
+
+fn render_campaign_combat_lab_probe_summary_v1(
+    report: &BranchCampaignReportV1,
+) -> Option<Vec<String>> {
+    let probes = report
+        .active
+        .iter()
+        .chain(report.frozen.iter())
+        .chain(report.victories.iter())
+        .chain(report.abandoned.iter())
+        .chain(report.stuck.iter())
+        .chain(report.dead.iter())
+        .flat_map(|branch| branch.combat_lab_probes.iter())
+        .collect::<Vec<_>>();
+    if probes.is_empty() {
+        return None;
+    }
+
+    let mut kind_counts = BTreeMap::<String, usize>::new();
+    let mut result_counts = BTreeMap::<String, usize>::new();
+    for probe in &probes {
+        *kind_counts.entry(probe.kind.clone()).or_default() += 1;
+        *result_counts.entry(probe.result.clone()).or_default() += 1;
+    }
+    let example = probes
+        .iter()
+        .find(|probe| probe.kind == "current_act_boss_preview")
+        .or_else(|| probes.first())
+        .expect("non-empty probe list");
+
+    Some(vec![
+        format!(
+            "Combat lab probes: {} {}",
+            render_string_count_map_v1(&kind_counts, 6),
+            render_string_count_map_v1(&result_counts, 6)
+        ),
+        format!(
+            "  probe example: boss={} source={} boundary={} result={}",
+            example.boss.as_deref().unwrap_or("unknown"),
+            example.source,
+            example.boundary,
+            example.result
+        ),
+    ])
 }
 
 fn boss_mechanic_pressure_key_v1(branch: &BranchCampaignBranchV1) -> (i32, i32, i32) {
@@ -2153,6 +2204,7 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
         final_boss_combat_record: None,
+        combat_lab_probes: Vec::new(),
     }
 }
 
@@ -2278,6 +2330,7 @@ where
             let mut child = campaign_branch_from_report_branch_v1(parent, branch);
             if let Some(snapshot) = result.branch_sessions.get(&branch.branch_id) {
                 campaign_refresh_branch_summary_from_session_v1(&mut child, snapshot);
+                maybe_attach_campaign_combat_lab_probe_v1(config, &mut child, snapshot);
                 snapshot_cache.insert(child.commands.clone(), snapshot.clone());
             }
             candidates.push(child);
@@ -4190,6 +4243,73 @@ fn campaign_refresh_branch_summary_from_session_v1(
     summary.boss_pressure = branch_campaign_boss_pressure_labels_v1(session);
 }
 
+fn maybe_attach_campaign_combat_lab_probe_v1(
+    config: &BranchCampaignConfigV1,
+    branch: &mut BranchCampaignBranchV1,
+    session: &RunControlSession,
+) {
+    if !campaign_branch_should_probe_current_act_boss_v1(branch) {
+        return;
+    }
+    let options = campaign_combat_lab_boss_probe_search_options_v1(config);
+    let packet = current_act_boss_preview_probe_v1(session, &options, "campaign_key_boundary");
+    branch.combat_lab_probes.push(packet);
+}
+
+fn campaign_branch_should_probe_current_act_boss_v1(branch: &BranchCampaignBranchV1) -> bool {
+    if branch
+        .combat_lab_probes
+        .iter()
+        .any(|probe| probe.kind == "current_act_boss_preview")
+    {
+        return false;
+    }
+    if !matches!(
+        branch.status,
+        BranchCampaignBranchStatusV1::Active | BranchCampaignBranchStatusV1::Stuck
+    ) {
+        return false;
+    }
+    let Some(summary) = branch.summary.as_ref() else {
+        return false;
+    };
+    if summary.act < 2
+        || summary.boss.is_empty()
+        || summary.floor < combat_lab_boss_probe_start_floor_v1(summary.act)
+    {
+        return false;
+    }
+    matches!(
+        normalized_campaign_boundary_title(&branch.frontier_title).as_str(),
+        "shop" | "campfire" | "cardreward" | "rewardscreen" | "rewardoverlay"
+    )
+}
+
+fn combat_lab_boss_probe_start_floor_v1(act: u8) -> i32 {
+    boss_approach_floor_v1(act).saturating_sub(1)
+}
+
+fn campaign_combat_lab_boss_probe_search_options_v1(
+    config: &BranchCampaignConfigV1,
+) -> RunControlSearchCombatOptions {
+    let mut options = config.search_options.clone();
+    let max_nodes = options
+        .max_nodes
+        .or(config.search_max_nodes)
+        .unwrap_or(COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_NODES)
+        .min(COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_NODES);
+    let wall_ms = options
+        .wall_ms
+        .or(config.search_wall_ms)
+        .unwrap_or(COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_WALL_MS)
+        .min(COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_WALL_MS);
+    options.max_nodes = Some(max_nodes);
+    options.wall_ms = Some(wall_ms);
+    options.max_hp_loss = Some(RunControlHpLossLimit::Unlimited);
+    options.evidence = None;
+    options
+}
+
 fn campaign_deck_key_v1(session: &RunControlSession) -> String {
     let mut counts = BTreeMap::<String, usize>::new();
     for card in &session.run_state.master_deck {
@@ -4632,6 +4752,7 @@ pub fn campaign_branch_from_report_branch_v1(
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: branch.rank_key,
         final_boss_combat_record: branch.final_boss_combat_record.clone(),
+        combat_lab_probes: Vec::new(),
     }
 }
 

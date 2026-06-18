@@ -1,5 +1,6 @@
 use crate::ai::strategic::BranchSignatureCompact;
 use crate::eval::branch_experiment::BranchExperimentBossCombatRecordV1;
+use crate::eval::combat_lab_probe_v1::CombatLabProbePacketV1;
 use crate::eval::run_control::RunControlSessionCheckpointV1;
 use serde::{Deserialize, Serialize};
 
@@ -62,6 +63,8 @@ pub struct BranchCampaignBranchV1 {
     pub rank_key: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub final_boss_combat_record: Option<BranchExperimentBossCombatRecordV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub combat_lab_probes: Vec<CombatLabProbePacketV1>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

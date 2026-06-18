@@ -10,8 +10,10 @@ use crate::eval::branch_experiment_retention::{
     BranchRetentionDecisionV1, BranchRetentionRankAdjustmentV1, BranchRetentionSlotV1,
 };
 use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
+use crate::eval::combat_lab_probe_v1::CombatLabProbePacketV1;
 use crate::eval::run_control::{
-    RunControlConfig, RunControlSession, RunControlSessionCheckpointV1,
+    RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
+    RunControlSessionCheckpointV1,
 };
 use crate::state::core::EngineState;
 use crate::state::events::{EventId, EventState};
@@ -112,6 +114,91 @@ fn compact_campaign_report_renders_boss_relic_lineage_coverage() {
     assert!(rendered.contains(
         "Boss relic coverage: active=[CursedKey=1] frozen=[FusionHammer=1] abandoned=[CursedKey=1] furthest=[CursedKey=A3F48 FusionHammer=A1F18]"
     ));
+}
+
+#[test]
+fn compact_campaign_report_renders_combat_lab_probe_summary() {
+    let mut report = test_campaign_report_with_active("active-key", 24, 70);
+    report.active[0].combat_lab_probes = vec![CombatLabProbePacketV1 {
+        kind: "current_act_boss_preview".to_string(),
+        source: "campaign_key_boundary".to_string(),
+        boss: Some("TheChamp".to_string()),
+        boundary: "Shop".to_string(),
+        result: "unresolved_no_trajectory".to_string(),
+        hp_loss: None,
+        final_hp: Some(70),
+        max_hp: Some(94),
+        actions: None,
+        search_digest: vec!["result=no_complete_winning_candidate".to_string()],
+    }];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered
+        .contains("Combat lab probes: current_act_boss_preview=1 unresolved_no_trajectory=1"));
+    assert!(rendered.contains(
+        "probe example: boss=TheChamp source=campaign_key_boundary boundary=Shop result=unresolved_no_trajectory"
+    ));
+}
+
+#[test]
+fn campaign_current_act_boss_probe_gate_accepts_only_late_key_boundaries() {
+    let mut late_shop = test_campaign_branch("late-shop", 24, 70);
+    late_shop.frontier_title = "Shop".to_string();
+    let summary = late_shop.summary.as_mut().unwrap();
+    summary.act = 2;
+    summary.boss = "TheChamp".to_string();
+
+    assert!(campaign_branch_should_probe_current_act_boss_v1(&late_shop));
+
+    let mut late_reward_overlay = late_shop.clone();
+    late_reward_overlay.frontier_title = "Reward Overlay".to_string();
+    late_reward_overlay.summary.as_mut().unwrap().floor = 23;
+    assert!(campaign_branch_should_probe_current_act_boss_v1(
+        &late_reward_overlay
+    ));
+
+    let mut early_reward = late_shop.clone();
+    early_reward.frontier_title = "Card Reward".to_string();
+    early_reward.summary.as_mut().unwrap().floor = 12;
+    assert!(!campaign_branch_should_probe_current_act_boss_v1(
+        &early_reward
+    ));
+
+    let mut combat = late_shop.clone();
+    combat.frontier_title = "Combat".to_string();
+    assert!(!campaign_branch_should_probe_current_act_boss_v1(&combat));
+}
+
+#[test]
+fn campaign_combat_lab_boss_probe_options_are_report_only_and_capped() {
+    let config = BranchCampaignConfigV1 {
+        search_max_nodes: Some(200_000),
+        search_wall_ms: Some(2_000),
+        search_options: RunControlSearchCombatOptions {
+            max_nodes: Some(150_000),
+            wall_ms: Some(1_500),
+            max_hp_loss: Some(RunControlHpLossLimit::Limit(3)),
+            evidence: Some(
+                crate::eval::run_control::RunControlSearchEvidenceTarget::LastCaptureCase,
+            ),
+            ..RunControlSearchCombatOptions::default()
+        },
+        ..BranchCampaignConfigV1::default()
+    };
+
+    let options = campaign_combat_lab_boss_probe_search_options_v1(&config);
+
+    assert_eq!(
+        options.max_nodes,
+        Some(super::COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_NODES)
+    );
+    assert_eq!(
+        options.wall_ms,
+        Some(super::COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_WALL_MS)
+    );
+    assert_eq!(options.max_hp_loss, Some(RunControlHpLossLimit::Unlimited));
+    assert_eq!(options.evidence, None);
 }
 
 #[test]
@@ -2246,6 +2333,7 @@ fn campaign_branch_from_report_appends_new_choice_path() {
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
         final_boss_combat_record: None,
+        combat_lab_probes: Vec::new(),
     };
     let report_branch = test_report_branch(
         "root.rp 1",
@@ -2299,6 +2387,7 @@ fn campaign_branch_from_report_prefixes_parent_branch_id() {
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
         final_boss_combat_record: None,
+        combat_lab_probes: Vec::new(),
     };
     let report_branch = test_report_branch(
         "root.branch-skip-card-reward 0",
@@ -4180,6 +4269,7 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: hp,
         final_boss_combat_record: None,
+        combat_lab_probes: Vec::new(),
     }
 }
 

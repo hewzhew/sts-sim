@@ -3,13 +3,13 @@ use std::collections::BTreeMap;
 use sts_simulator::content::cards::{get_card_definition, CardRarity, CardTag, CardType};
 use sts_simulator::content::relics::RelicId;
 use sts_simulator::eval::branch_campaign::BranchCampaignBranchV1;
-use sts_simulator::eval::run_control::{
-    build_decision_surface, RunControlCommand, RunControlHpLossLimit,
-    RunControlSearchCombatOptions, RunControlSession,
+use sts_simulator::eval::combat_lab_probe_v1::{
+    current_act_boss_preview_probe_v1, CombatLabProbePacketV1,
 };
-use sts_simulator::sim::combat_start::build_natural_combat_start;
-use sts_simulator::state::core::{ActiveCombat, CombatStartRequest, EngineState};
-use sts_simulator::state::map::node::RoomType;
+use sts_simulator::eval::run_control::{
+    build_decision_surface, RunControlSearchCombatOptions, RunControlSession,
+};
+use sts_simulator::state::core::EngineState;
 
 pub(super) fn render_checkpoint_combat_lab_v1(
     seed: u64,
@@ -140,149 +140,40 @@ fn render_boss_preview_v1(
     if !probe_boss {
         return vec!["Boss preview: disabled".to_string()];
     }
-    let Some(boss) = session
-        .run_state
-        .boss_key
-        .or_else(|| session.run_state.boss_list.first().copied())
-    else {
-        return vec!["Boss preview: unavailable reason=no current act boss".to_string()];
-    };
-    let initial_hp = session.run_state.current_hp;
-    let initial_potions = session.run_state.potions.clone();
-    let mut preview = session.clone();
-    let request = CombatStartRequest::room(boss, RoomType::MonsterRoomBoss);
-    let (engine_state, combat_state) =
-        match build_natural_combat_start(&mut preview.run_state, boss, RoomType::MonsterRoomBoss) {
-            Ok(start) => start,
-            Err(err) => {
-                return vec![format!(
-                    "Boss preview: unavailable boss={boss:?} reason=combat_start_failed: {err}"
-                )]
-            }
-        };
-    preview.engine_state = engine_state.clone();
-    preview.active_combat = Some(ActiveCombat::new(
-        engine_state,
-        combat_state,
-        request.context,
-    ));
-    let previous_trajectory_signature = preview
-        .last_combat_automation_trajectory()
-        .map(trajectory_signature_v1);
+    let packet = current_act_boss_preview_probe_v1(session, search_options, "checkpoint_inspect");
+    render_boss_preview_packet_v1(&packet, search_options)
+}
 
-    let mut options = search_options.clone();
-    if options.max_hp_loss.is_none() {
-        options.max_hp_loss = Some(RunControlHpLossLimit::Unlimited);
-    }
+fn render_boss_preview_packet_v1(
+    packet: &CombatLabProbePacketV1,
+    search_options: &RunControlSearchCombatOptions,
+) -> Vec<String> {
     let mut lines = Vec::new();
     lines.push(format!(
-        "Boss preview: boss={boss:?} search={}",
-        render_search_options_v1(&options)
+        "Boss preview: boss={} source={} search={}",
+        packet.boss.as_deref().unwrap_or("unknown"),
+        packet.source,
+        render_search_options_v1(search_options)
     ));
-    match preview.apply_command(RunControlCommand::SearchCombat(options)) {
-        Ok(outcome) => {
-            let hp_loss = initial_hp.saturating_sub(preview.run_state.current_hp);
-            let boundary = build_decision_surface(&preview).view.header.title;
-            let record = preview
-                .last_combat_automation_trajectory()
-                .filter(|record| {
-                    Some(trajectory_signature_v1(record)) != previous_trajectory_signature
-                });
-            if let Some(record) = record {
-                let result =
-                    boss_preview_result_label_v1(preview.active_combat.is_none(), &record.source);
-                lines.push(format!(
-                    "  result={} hp_loss={} final_hp={}/{} actions={} next_boundary={} potions_used={}",
-                    result,
-                    hp_loss,
-                    preview.run_state.current_hp,
-                    preview.run_state.max_hp,
-                    record.action_count,
-                    boundary,
-                    potion_slots_changed_v1(&initial_potions, &preview.run_state.potions)
-                ));
-            } else {
-                lines.push(format!(
-                    "  result=unresolved_no_trajectory hp_loss={} final_hp={}/{} next_boundary={}",
-                    hp_loss, preview.run_state.current_hp, preview.run_state.max_hp, boundary
-                ));
-            }
-            lines.extend(search_message_digest_v1(&outcome.message));
-        }
-        Err(err) => {
-            lines.push(format!("  result=error reason={err}"));
-        }
-    }
-    lines
-}
-
-fn trajectory_signature_v1(
-    record: &sts_simulator::eval::run_control::CombatAutomationTrajectoryRecordV1,
-) -> (String, usize, String, String) {
-    (
-        record.source.clone(),
-        record.action_count,
-        record
+    lines.push(format!(
+        "  result={} hp_loss={} final_hp={} actions={} boundary={}",
+        packet.result,
+        packet
+            .hp_loss
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        match (packet.final_hp, packet.max_hp) {
+            (Some(hp), Some(max_hp)) => format!("{hp}/{max_hp}"),
+            _ => "-".to_string(),
+        },
+        packet
             .actions
-            .first()
-            .map(|action| action.action_key.clone())
-            .unwrap_or_default(),
-        record
-            .actions
-            .last()
-            .map(|action| action.action_key.clone())
-            .unwrap_or_default(),
-    )
-}
-
-fn boss_preview_result_label_v1(combat_finished: bool, trajectory_source: &str) -> &'static str {
-    if combat_finished && trajectory_source == "search_combat" {
-        "complete_win_applied"
-    } else if trajectory_source.contains("turn_segment") {
-        "turn_segment_applied"
-    } else {
-        "partial_search_applied"
-    }
-}
-
-fn potion_slots_changed_v1<T: std::fmt::Debug>(before: &[Option<T>], after: &[Option<T>]) -> usize {
-    let max_len = before.len().max(after.len());
-    (0..max_len)
-        .filter(|idx| format!("{:?}", before.get(*idx)) != format!("{:?}", after.get(*idx)))
-        .count()
-}
-
-fn search_message_digest_v1(message: &str) -> Vec<String> {
-    let interesting_prefixes = [
-        "  result=",
-        "  detail=",
-        "  best_complete_candidate",
-        "  coverage_status=",
-        "  terminal_wins=",
-        "  nodes_expanded=",
-        "  nodes_generated=",
-        "  reason=",
-    ];
-    let mut lines = Vec::new();
-    for line in message.lines() {
-        let trimmed = line.trim_start();
-        if interesting_prefixes
-            .iter()
-            .any(|prefix| line.starts_with(prefix) || trimmed.starts_with(prefix.trim_start()))
-        {
-            lines.push(format!("  search: {}", trimmed));
-        }
-        if lines.len() >= 8 {
-            break;
-        }
-    }
-    if lines.is_empty() {
-        if let Some(first) = message.lines().find(|line| !line.trim().is_empty()) {
-            lines.push(format!(
-                "  search: {}",
-                render_truncated_text_v1(first.trim(), 180)
-            ));
-        }
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        packet.boundary,
+    ));
+    for digest in &packet.search_digest {
+        lines.push(format!("  search: {digest}"));
     }
     lines
 }
@@ -544,6 +435,7 @@ mod tests {
             lineage_decision_signal_rank_adjustment: 0,
             rank_key: 22_100,
             final_boss_combat_record: None,
+            combat_lab_probes: Vec::new(),
         };
 
         let rendered = render_checkpoint_combat_lab_v1(
@@ -589,18 +481,7 @@ mod tests {
             true,
         );
 
-        assert!(rendered.contains("Boss preview: unavailable reason=no current act boss"));
-    }
-
-    #[test]
-    fn boss_preview_result_distinguishes_segments_from_complete_wins() {
-        assert_eq!(
-            boss_preview_result_label_v1(true, "search_combat"),
-            "complete_win_applied"
-        );
-        assert_eq!(
-            boss_preview_result_label_v1(false, "search_combat_turn_segment"),
-            "turn_segment_applied"
-        );
+        assert!(rendered.contains("Boss preview: boss=unknown source=checkpoint_inspect"));
+        assert!(rendered.contains("result=unavailable_no_current_act_boss"));
     }
 }

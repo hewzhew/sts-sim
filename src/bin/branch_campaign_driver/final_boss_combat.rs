@@ -260,6 +260,7 @@ mod tests {
                     ],
                     label_role: "behavior_policy_not_teacher".to_string(),
                 }),
+                combat_lab_probes: Vec::new(),
             }],
             dead: Vec::new(),
             abandoned: Vec::new(),
