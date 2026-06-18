@@ -82,6 +82,38 @@ const SURVIVAL_ANCHOR_HEALTHY_SALVAGE_HP_GAIN: i32 = 40;
 const SURVIVAL_ANCHOR_CRITICAL_HP_PERCENT: i32 = 15;
 const SURVIVAL_ANCHOR_CRITICAL_SALVAGE_HP_PERCENT: i32 = 30;
 const SURVIVAL_ANCHOR_CRITICAL_SALVAGE_HP_GAIN: i32 = 25;
+const BOSS_RELIC_CHOICE_LABELS_V1: &[&str] = &[
+    "Astrolabe",
+    "BlackBlood",
+    "BlackStar",
+    "BustedCrown",
+    "CallingBell",
+    "CoffeeDripper",
+    "CursedKey",
+    "Ectoplasm",
+    "EmptyCage",
+    "FrozenCore",
+    "FusionHammer",
+    "HolyWater",
+    "HoveringKite",
+    "Inserter",
+    "MarkOfPain",
+    "NuclearBattery",
+    "PandorasBox",
+    "PhilosopherStone",
+    "RingOfTheSerpent",
+    "RunicCube",
+    "RunicDome",
+    "RunicPyramid",
+    "SacredBark",
+    "SlaversCollar",
+    "SneckoEye",
+    "Sozu",
+    "TinyHouse",
+    "VelvetChoker",
+    "VioletLotus",
+    "WristBlade",
+];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchCampaignConfigV1 {
@@ -1118,6 +1150,9 @@ pub fn render_branch_campaign_compact_v1(
     {
         lines.push(final_boss_failures);
     }
+    if let Some(boss_relic_coverage) = render_campaign_boss_relic_coverage_v1(report) {
+        lines.push(boss_relic_coverage);
+    }
     if report.route_evidence.decisions > 0 {
         lines.push(format!(
             "Route evidence: decisions={} first_elite optional={} forced={} none={} avg_elite_prep={} underprepared={} bailouts=rest:{} shop:{}",
@@ -1325,6 +1360,54 @@ fn render_campaign_final_boss_failure_summary_v1(
         deck_min,
         deck_max,
         examples
+    ))
+}
+
+fn render_campaign_boss_relic_coverage_v1(report: &BranchCampaignReportV1) -> Option<String> {
+    let active = campaign_boss_relic_lineage_counts_v1(&report.active);
+    let frozen = campaign_boss_relic_lineage_counts_v1(&report.frozen);
+    let abandoned = campaign_boss_relic_lineage_counts_v1(&report.abandoned);
+    if active.is_empty() && frozen.is_empty() && abandoned.is_empty() {
+        return None;
+    }
+
+    let mut furthest = BTreeMap::<String, (u8, i32)>::new();
+    for branch in report
+        .active
+        .iter()
+        .chain(report.frozen.iter())
+        .chain(report.abandoned.iter())
+        .chain(report.victories.iter())
+        .chain(report.dead.iter())
+        .chain(report.stuck.iter())
+    {
+        let Some(lineage) = campaign_branch_boss_relic_lineage_key_v1(branch) else {
+            continue;
+        };
+        let Some(summary) = branch.summary.as_ref() else {
+            continue;
+        };
+        let progress = (summary.act, summary.floor);
+        furthest
+            .entry(lineage)
+            .and_modify(|existing| {
+                if progress > *existing {
+                    *existing = progress;
+                }
+            })
+            .or_insert(progress);
+    }
+
+    Some(format!(
+        "Boss relic coverage: active=[{}] frozen=[{}] abandoned=[{}] furthest=[{}]",
+        render_string_counts_v1(&active),
+        render_string_counts_v1(&frozen),
+        render_string_counts_v1(&abandoned),
+        furthest
+            .into_iter()
+            .map(|(lineage, (act, floor))| format!("{lineage}=A{act}F{floor}"))
+            .collect::<Vec<_>>()
+            .join(" ")
     ))
 }
 
@@ -3090,18 +3173,89 @@ fn rebalance_active_lineage_diversity_v1(
     if target_unique_lineages == 0 || active.len() < 2 || frozen.is_empty() {
         return 0;
     }
-    let mut swaps = rebalance_active_lineage_spread_v1(
+    let mut swaps = rebalance_active_boss_relic_lineage_v1(active, frozen, target_unique_lineages);
+    swaps = swaps.saturating_add(rebalance_active_lineage_spread_v1(
         active,
         frozen,
         target_unique_lineages,
         campaign_branch_first_lineage_key_v1,
-    );
+    ));
     swaps = swaps.saturating_add(rebalance_active_unique_lineage_v1(
         active,
         frozen,
         target_unique_lineages,
         campaign_branch_path_lineage_key_v1,
     ));
+    swaps
+}
+
+fn rebalance_active_boss_relic_lineage_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+    target_lineage_slots: usize,
+) -> usize {
+    if target_lineage_slots == 0 || active.len() < 2 || frozen.is_empty() {
+        return 0;
+    }
+    let available_lineage_count = campaign_boss_relic_lineage_counts_for_pool_v1(active, frozen)
+        .len()
+        .min(target_lineage_slots)
+        .min(active.len());
+    if available_lineage_count < 2 {
+        return 0;
+    }
+    let max_per_lineage = active.len().div_ceil(available_lineage_count);
+    let mut swaps = 0usize;
+    loop {
+        let active_lineages = campaign_boss_relic_lineage_counts_v1(active);
+        let Some((overrepresented_key, overrepresented_count)) =
+            active_lineages
+                .iter()
+                .max_by(|(left_key, left_count), (right_key, right_count)| {
+                    left_count
+                        .cmp(right_count)
+                        .then_with(|| right_key.cmp(left_key))
+                })
+        else {
+            break;
+        };
+        if *overrepresented_count <= max_per_lineage {
+            break;
+        }
+        let Some((frozen_index, _)) = frozen
+            .iter()
+            .enumerate()
+            .filter(|(_, branch)| {
+                let Some(key) = campaign_branch_boss_relic_lineage_key_v1(branch) else {
+                    return false;
+                };
+                key != *overrepresented_key
+                    && active_lineages.get(&key).copied().unwrap_or(0) < max_per_lineage
+            })
+            .min_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
+        else {
+            break;
+        };
+        let Some((replace_index, _)) = active
+            .iter()
+            .enumerate()
+            .filter(|(_, branch)| {
+                campaign_branch_boss_relic_lineage_key_v1(branch).as_ref()
+                    == Some(overrepresented_key)
+            })
+            .max_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
+        else {
+            break;
+        };
+        let mut promoted = frozen.remove(frozen_index);
+        promoted.status = BranchCampaignBranchStatusV1::Active;
+        let mut demoted = std::mem::replace(&mut active[replace_index], promoted);
+        demoted.status = BranchCampaignBranchStatusV1::Frozen;
+        frozen.push(demoted);
+        active.sort_by(compare_campaign_branches_for_active_v1);
+        frozen.sort_by(compare_campaign_branches_for_promotion_v1);
+        swaps = swaps.saturating_add(1);
+    }
     swaps
 }
 
@@ -3263,6 +3417,59 @@ fn campaign_branch_path_lineage_key_v1(branch: &BranchCampaignBranchV1) -> Strin
         return first;
     }
     format!("{first} | latest={latest}")
+}
+
+fn campaign_branch_boss_relic_lineage_key_v1(branch: &BranchCampaignBranchV1) -> Option<String> {
+    let relics = branch
+        .choice_labels
+        .iter()
+        .filter_map(|label| campaign_boss_relic_label_v1(label))
+        .collect::<Vec<_>>();
+    (!relics.is_empty()).then(|| relics.join(">"))
+}
+
+fn campaign_boss_relic_label_v1(label: &str) -> Option<String> {
+    let trimmed = label.trim();
+    if BOSS_RELIC_CHOICE_LABELS_V1.contains(&trimmed) {
+        Some(trimmed.to_string())
+    } else {
+        None
+    }
+}
+
+fn campaign_boss_relic_lineage_counts_v1(
+    branches: &[BranchCampaignBranchV1],
+) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for branch in branches {
+        let Some(lineage) = campaign_branch_boss_relic_lineage_key_v1(branch) else {
+            continue;
+        };
+        *counts.entry(lineage).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn campaign_boss_relic_lineage_counts_for_pool_v1(
+    active: &[BranchCampaignBranchV1],
+    frozen: &[BranchCampaignBranchV1],
+) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for branch in active.iter().chain(frozen.iter()) {
+        let Some(lineage) = campaign_branch_boss_relic_lineage_key_v1(branch) else {
+            continue;
+        };
+        *counts.entry(lineage).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn render_string_counts_v1(counts: &BTreeMap<String, usize>) -> String {
+    counts
+        .iter()
+        .map(|(key, count)| format!("{key}={count}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn rebalance_active_progress_anchor_v1(

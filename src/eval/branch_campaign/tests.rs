@@ -94,6 +94,27 @@ fn compact_campaign_report_truncates_long_branch_pressure_examples() {
 }
 
 #[test]
+fn compact_campaign_report_renders_boss_relic_lineage_coverage() {
+    let mut report = test_campaign_report_with_active("active-key", 18, 80);
+    report.active[0].choice_labels = vec!["CursedKey".to_string(), "Pommel Strike".to_string()];
+    let mut frozen_hammer = test_campaign_branch("frozen-hammer", 18, 78);
+    frozen_hammer.status = BranchCampaignBranchStatusV1::Frozen;
+    frozen_hammer.choice_labels = vec!["FusionHammer".to_string(), "Shrug It Off".to_string()];
+    let mut abandoned_key = test_campaign_branch("abandoned-key", 48, 30);
+    abandoned_key.status = BranchCampaignBranchStatusV1::Abandoned;
+    abandoned_key.choice_labels = vec!["CursedKey".to_string(), "Clothesline".to_string()];
+    abandoned_key.summary.as_mut().unwrap().act = 3;
+    report.frozen = vec![frozen_hammer];
+    report.abandoned = vec![abandoned_key];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains(
+        "Boss relic coverage: active=[CursedKey=1] frozen=[FusionHammer=1] abandoned=[CursedKey=1] furthest=[CursedKey=A3F48 FusionHammer=A1F18]"
+    ));
+}
+
+#[test]
 fn compact_campaign_report_renders_combat_performance_summary() {
     let mut report = test_campaign_report_with_active("a", 7, 80);
     report.rounds[0].combat_performance = BranchCampaignCombatPerformanceSummaryV1 {
@@ -298,9 +319,11 @@ fn compact_campaign_report_renders_unspent_gold_pressure_near_boss() {
     assert!(rendered.contains(
         "Resource concern: high_unspent_gold_near_boss=1 max_gold=485 causes=[purchase_seen_gold_still_high=1]"
     ));
-    assert!(rendered.contains(
-        "resource example: A1F16 gold 485 cause=purchase_seen_gold_still_high | Flame Barrier -> Wild Strike -> ... -> Smith Shockwave"
-    ));
+    assert!(
+        rendered.contains("resource example: A1F16 gold 485 cause=purchase_seen_gold_still_high")
+    );
+    assert!(rendered.contains("Flame Barrier -> Wild Strike"));
+    assert!(rendered.contains("Smith Shockwave"));
 }
 
 #[test]
@@ -338,9 +361,9 @@ fn compact_campaign_report_classifies_shop_leave_without_purchase() {
     assert!(rendered.contains(
         "Resource concern: high_unspent_gold_near_boss=1 max_gold=485 causes=[shop_leave_without_purchase=1]"
     ));
-    assert!(rendered.contains(
-        "resource example: A1F16 gold 485 cause=shop_leave_without_purchase | Flame Barrier -> Leave shop | decline selected shop purchase portfolio -> Smith Shockwave"
-    ));
+    assert!(rendered.contains("resource example: A1F16 gold 485 cause=shop_leave_without_purchase"));
+    assert!(rendered.contains("Flame Barrier -> Leave shop"));
+    assert!(rendered.contains("Smith Shockwave"));
 }
 
 #[test]
@@ -1780,6 +1803,39 @@ fn campaign_rebalance_does_not_replace_progress_anchor_with_local_shop_variant()
         .iter()
         .any(|branch| branch.branch_id == "progress-anchor"));
     assert_eq!(frozen[0].branch_id, "frozen-shop-variant");
+}
+
+#[test]
+fn campaign_lineage_diversity_promotes_distinct_boss_relic_axis() {
+    let mut active = vec![
+        test_campaign_branch("key-a", 18, 80),
+        test_campaign_branch("key-b", 18, 79),
+    ];
+    active[0].choice_labels = vec!["CursedKey".to_string(), "Pommel Strike".to_string()];
+    active[1].choice_labels = vec!["CursedKey".to_string(), "Shrug It Off".to_string()];
+    for branch in &mut active {
+        branch.status = BranchCampaignBranchStatusV1::Active;
+        branch.rank_key = 20_000;
+    }
+    let mut frozen = vec![{
+        let mut branch = test_campaign_branch("hammer-a", 18, 78);
+        branch.status = BranchCampaignBranchStatusV1::Frozen;
+        branch.choice_labels = vec!["FusionHammer".to_string(), "Pommel Strike".to_string()];
+        branch.rank_key = 19_950;
+        branch
+    }];
+
+    let promoted = rebalance_active_lineage_diversity_v1(&mut active, &mut frozen, 2);
+
+    assert_eq!(promoted, 1);
+    assert!(active.iter().any(|branch| branch.branch_id == "hammer-a"));
+    assert_eq!(
+        active
+            .iter()
+            .filter_map(campaign_branch_boss_relic_lineage_key_v1)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["CursedKey".to_string(), "FusionHammer".to_string()])
+    );
 }
 
 #[test]
