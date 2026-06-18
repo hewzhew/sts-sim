@@ -47,6 +47,10 @@ Prints the last saved automated combat trajectory for a selected checkpoint bran
 Prints a report-only combat lab packet for a selected checkpoint branch.
 
 .EXAMPLE
+.\tools\campaign.ps1 -InspectCombatLab -ProbeBoss -InspectIndex 0
+Runs a report-only current-act boss preview for a selected checkpoint branch.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Mode quick
 Runs a shorter random-seed campaign for fast smoke testing.
 
@@ -109,6 +113,7 @@ param(
     [switch] $InspectShopChallenge,
     [switch] $InspectLastAutoCombat,
     [switch] $InspectCombatLab,
+    [switch] $ProbeBoss,
     [switch] $DryRun,
     [switch] $NoProgress,
     [switch] $NoBossSegments,
@@ -499,6 +504,9 @@ if ($Inspect) {
             "--combat-search-option", "wall_ms=$SearchWallMs",
             "--combat-search-option", "max_nodes=$SearchMaxNodes"
         )
+        if ($ProbeBoss) {
+            $InspectArgs += "--probe-boss"
+        }
     }
     if ($CampaignBoundParameters.ContainsKey("InspectIndex") -and $InspectIndex -ge 0) {
         $InspectArgs += @("--inspect-index", "$InspectIndex")

@@ -4,9 +4,12 @@ use sts_simulator::content::cards::{get_card_definition, CardRarity, CardTag, Ca
 use sts_simulator::content::relics::RelicId;
 use sts_simulator::eval::branch_campaign::BranchCampaignBranchV1;
 use sts_simulator::eval::run_control::{
-    build_decision_surface, RunControlSearchCombatOptions, RunControlSession,
+    build_decision_surface, RunControlCommand, RunControlHpLossLimit,
+    RunControlSearchCombatOptions, RunControlSession,
 };
-use sts_simulator::state::core::EngineState;
+use sts_simulator::sim::combat_start::build_natural_combat_start;
+use sts_simulator::state::core::{ActiveCombat, CombatStartRequest, EngineState};
+use sts_simulator::state::map::node::RoomType;
 
 pub(super) fn render_checkpoint_combat_lab_v1(
     seed: u64,
@@ -16,6 +19,7 @@ pub(super) fn render_checkpoint_combat_lab_v1(
     commands: &[String],
     branch: Option<&BranchCampaignBranchV1>,
     search_options: &RunControlSearchCombatOptions,
+    probe_boss: bool,
 ) -> String {
     let surface = build_decision_surface(session);
     let direct_search = current_combat_search_available_v1(&session.engine_state);
@@ -101,6 +105,7 @@ pub(super) fn render_checkpoint_combat_lab_v1(
             boss_pressure.join(" ")
         ));
     }
+    lines.extend(render_boss_preview_v1(session, search_options, probe_boss));
 
     let upstream = upstream_probe_notes_v1(session, branch, &relic_debts);
     lines.push("Upstream probes:".to_string());
@@ -125,6 +130,161 @@ fn current_combat_search_available_v1(engine_state: &EngineState) -> bool {
         engine_state,
         EngineState::CombatPlayerTurn | EngineState::CombatProcessing
     )
+}
+
+fn render_boss_preview_v1(
+    session: &RunControlSession,
+    search_options: &RunControlSearchCombatOptions,
+    probe_boss: bool,
+) -> Vec<String> {
+    if !probe_boss {
+        return vec!["Boss preview: disabled".to_string()];
+    }
+    let Some(boss) = session
+        .run_state
+        .boss_key
+        .or_else(|| session.run_state.boss_list.first().copied())
+    else {
+        return vec!["Boss preview: unavailable reason=no current act boss".to_string()];
+    };
+    let initial_hp = session.run_state.current_hp;
+    let initial_potions = session.run_state.potions.clone();
+    let mut preview = session.clone();
+    let request = CombatStartRequest::room(boss, RoomType::MonsterRoomBoss);
+    let (engine_state, combat_state) =
+        match build_natural_combat_start(&mut preview.run_state, boss, RoomType::MonsterRoomBoss) {
+            Ok(start) => start,
+            Err(err) => {
+                return vec![format!(
+                    "Boss preview: unavailable boss={boss:?} reason=combat_start_failed: {err}"
+                )]
+            }
+        };
+    preview.engine_state = engine_state.clone();
+    preview.active_combat = Some(ActiveCombat::new(
+        engine_state,
+        combat_state,
+        request.context,
+    ));
+    let previous_trajectory_signature = preview
+        .last_combat_automation_trajectory()
+        .map(trajectory_signature_v1);
+
+    let mut options = search_options.clone();
+    if options.max_hp_loss.is_none() {
+        options.max_hp_loss = Some(RunControlHpLossLimit::Unlimited);
+    }
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Boss preview: boss={boss:?} search={}",
+        render_search_options_v1(&options)
+    ));
+    match preview.apply_command(RunControlCommand::SearchCombat(options)) {
+        Ok(outcome) => {
+            let hp_loss = initial_hp.saturating_sub(preview.run_state.current_hp);
+            let boundary = build_decision_surface(&preview).view.header.title;
+            let record = preview
+                .last_combat_automation_trajectory()
+                .filter(|record| {
+                    Some(trajectory_signature_v1(record)) != previous_trajectory_signature
+                });
+            if let Some(record) = record {
+                let result =
+                    boss_preview_result_label_v1(preview.active_combat.is_none(), &record.source);
+                lines.push(format!(
+                    "  result={} hp_loss={} final_hp={}/{} actions={} next_boundary={} potions_used={}",
+                    result,
+                    hp_loss,
+                    preview.run_state.current_hp,
+                    preview.run_state.max_hp,
+                    record.action_count,
+                    boundary,
+                    potion_slots_changed_v1(&initial_potions, &preview.run_state.potions)
+                ));
+            } else {
+                lines.push(format!(
+                    "  result=unresolved_no_trajectory hp_loss={} final_hp={}/{} next_boundary={}",
+                    hp_loss, preview.run_state.current_hp, preview.run_state.max_hp, boundary
+                ));
+            }
+            lines.extend(search_message_digest_v1(&outcome.message));
+        }
+        Err(err) => {
+            lines.push(format!("  result=error reason={err}"));
+        }
+    }
+    lines
+}
+
+fn trajectory_signature_v1(
+    record: &sts_simulator::eval::run_control::CombatAutomationTrajectoryRecordV1,
+) -> (String, usize, String, String) {
+    (
+        record.source.clone(),
+        record.action_count,
+        record
+            .actions
+            .first()
+            .map(|action| action.action_key.clone())
+            .unwrap_or_default(),
+        record
+            .actions
+            .last()
+            .map(|action| action.action_key.clone())
+            .unwrap_or_default(),
+    )
+}
+
+fn boss_preview_result_label_v1(combat_finished: bool, trajectory_source: &str) -> &'static str {
+    if combat_finished && trajectory_source == "search_combat" {
+        "complete_win_applied"
+    } else if trajectory_source.contains("turn_segment") {
+        "turn_segment_applied"
+    } else {
+        "partial_search_applied"
+    }
+}
+
+fn potion_slots_changed_v1<T: std::fmt::Debug>(before: &[Option<T>], after: &[Option<T>]) -> usize {
+    let max_len = before.len().max(after.len());
+    (0..max_len)
+        .filter(|idx| format!("{:?}", before.get(*idx)) != format!("{:?}", after.get(*idx)))
+        .count()
+}
+
+fn search_message_digest_v1(message: &str) -> Vec<String> {
+    let interesting_prefixes = [
+        "  result=",
+        "  detail=",
+        "  best_complete_candidate",
+        "  coverage_status=",
+        "  terminal_wins=",
+        "  nodes_expanded=",
+        "  nodes_generated=",
+        "  reason=",
+    ];
+    let mut lines = Vec::new();
+    for line in message.lines() {
+        let trimmed = line.trim_start();
+        if interesting_prefixes
+            .iter()
+            .any(|prefix| line.starts_with(prefix) || trimmed.starts_with(prefix.trim_start()))
+        {
+            lines.push(format!("  search: {}", trimmed));
+        }
+        if lines.len() >= 8 {
+            break;
+        }
+    }
+    if lines.is_empty() {
+        if let Some(first) = message.lines().find(|line| !line.trim().is_empty()) {
+            lines.push(format!(
+                "  search: {}",
+                render_truncated_text_v1(first.trim(), 180)
+            ));
+        }
+    }
+    lines
 }
 
 fn visible_hp_v1(session: &RunControlSession) -> (i32, i32) {
@@ -397,6 +557,7 @@ mod tests {
                 wall_ms: Some(1_000),
                 ..RunControlSearchCombatOptions::default()
             },
+            false,
         );
 
         assert!(rendered.contains("CombatLabProbeV1 seed=521"));
@@ -407,6 +568,39 @@ mod tests {
             .contains("Boss pressure: missing:champ_transition_burst red:no_execute_block_plan"));
         assert!(
             rendered.contains("duplicate_acquisition: Clothesline deck_count=2 path_mentions=2")
+        );
+        assert!(rendered.contains("Boss preview: disabled"));
+    }
+
+    #[test]
+    fn combat_lab_boss_preview_reports_missing_boss_without_search() {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.run_state.boss_key = None;
+        session.run_state.boss_list.clear();
+
+        let rendered = render_checkpoint_combat_lab_v1(
+            521,
+            0,
+            1,
+            &session,
+            &[],
+            None,
+            &RunControlSearchCombatOptions::default(),
+            true,
+        );
+
+        assert!(rendered.contains("Boss preview: unavailable reason=no current act boss"));
+    }
+
+    #[test]
+    fn boss_preview_result_distinguishes_segments_from_complete_wins() {
+        assert_eq!(
+            boss_preview_result_label_v1(true, "search_combat"),
+            "complete_win_applied"
+        );
+        assert_eq!(
+            boss_preview_result_label_v1(false, "search_combat_turn_segment"),
+            "turn_segment_applied"
         );
     }
 }

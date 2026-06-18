@@ -297,6 +297,12 @@ struct Args {
     inspect_combat_lab: bool,
 
     #[arg(
+        long = "probe-boss",
+        help = "When used with --inspect-combat-lab, run a report-only search preview against the current act boss"
+    )]
+    probe_boss: bool,
+
+    #[arg(
         long = "inspect-shop-evidence",
         help = "Print current-code shop candidate evidence and strategic deltas for the selected checkpoint session"
     )]
@@ -835,6 +841,7 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
                 &commands,
                 branch,
                 &options,
+                args.probe_boss,
             )
         );
     } else if args.inspect_search {
@@ -1380,6 +1387,7 @@ mod tests {
             "--inspect-report",
             "latest.campaign.json",
             "--inspect-combat-lab",
+            "--probe-boss",
             "--combat-search-option",
             "wall_ms=1000",
         ]);
@@ -1389,6 +1397,7 @@ mod tests {
             Some(PathBuf::from("latest.checkpoint.json"))
         );
         assert!(args.inspect_combat_lab);
+        assert!(args.probe_boss);
         assert_eq!(args.combat_search_options, vec!["wall_ms=1000"]);
     }
 
