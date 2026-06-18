@@ -32,6 +32,7 @@ fn apply_use_card_after_use_hooks(
 pub fn handle_use_card_after_use_hooks(mut card: CombatCard, state: &mut CombatState) {
     card.free_to_play_once = false;
     apply_use_card_after_use_hooks(&card, state);
+    resolve_early_end_turn_pending_after_card_use(state);
 }
 
 pub fn handle_use_card_done(
@@ -75,6 +76,10 @@ pub fn handle_use_card_done(
         }
     }
 
+    resolve_early_end_turn_pending_after_card_use(state);
+}
+
+fn resolve_early_end_turn_pending_after_card_use(state: &mut CombatState) {
     if state.turn.counters.early_end_turn_pending {
         state.turn.clear_early_end_turn_pending();
         state.begin_turn_transition();

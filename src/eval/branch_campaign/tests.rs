@@ -188,15 +188,16 @@ fn branch_state_store_session_policy_keeps_long_suffix_frozen_anchor() {
 }
 
 #[test]
-fn campaign_session_retention_policy_scales_from_active_budget() {
+fn campaign_session_retention_policy_keeps_all_frozen_exact_sessions() {
     let config = BranchCampaignConfigV1 {
         max_active: 3,
+        max_frozen: 11,
         ..BranchCampaignConfigV1::default()
     };
 
     let policy = campaign_state_session_retention_policy_v1(&config);
 
-    assert_eq!(policy.max_frozen_exact_sessions, 6);
+    assert_eq!(policy.max_frozen_exact_sessions, 11);
     assert_eq!(policy.max_stuck_exact_sessions, 3);
     assert_eq!(policy.max_abandoned_exact_sessions, 0);
     assert_eq!(policy.max_suffix_commands_without_session, 6);

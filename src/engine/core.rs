@@ -350,6 +350,52 @@ mod tests {
     }
 
     #[test]
+    fn time_warp_power_card_trigger_forces_stable_turn_transition() {
+        let mut combat_state = blank_test_combat();
+        let mut monster = planned_monster(EnemyId::JawWorm, 1);
+        monster.id = 1;
+        combat_state.entities.monsters = vec![monster];
+        combat_state.entities.power_db.insert(
+            1,
+            vec![Power {
+                power_type: PowerId::TimeWarp,
+                instance_id: None,
+                amount: 11,
+                extra_data: 0,
+                payload: crate::runtime::combat::PowerPayload::None,
+                just_applied: false,
+            }],
+        );
+        combat_state.zones.hand = vec![CombatCard::new(CardId::Evolve, 10001)];
+        let mut engine_state = EngineState::CombatPlayerTurn;
+
+        let alive = super::tick_until_stable_turn(
+            &mut engine_state,
+            &mut combat_state,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: None,
+            },
+        );
+
+        assert!(alive);
+        assert_eq!(engine_state, EngineState::CombatPlayerTurn);
+        assert!(
+            !combat_state.turn.counters.early_end_turn_pending,
+            "Time Warp triggered by a Power card must be consumed before exposing the next player boundary"
+        );
+        assert_eq!(
+            crate::content::powers::store::power_amount(&combat_state, 1, PowerId::TimeWarp),
+            0
+        );
+        assert_eq!(
+            crate::content::powers::store::power_amount(&combat_state, 1, PowerId::Strength),
+            2
+        );
+        assert_eq!(combat_state.turn.counters.cards_played_this_turn, 0);
+    }
+
+    #[test]
     fn foreign_influence_any_color_attack_pool_matches_java_shape() {
         let common = any_color_attack_pool_sorted(crate::content::cards::CardRarity::Common);
         assert!(common.contains(&CardId::PommelStrike));

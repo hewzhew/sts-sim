@@ -2364,7 +2364,8 @@ where
         .collect::<Vec<_>>();
     let base_results =
         run_campaign_parent_base_passes_parallel_v1(config, parents, &parent_replay_starts)?;
-    let mut parent_results = Vec::new();
+    let mut parent_results: Vec<Option<BranchCampaignParentRoundResultV1>> =
+        std::iter::repeat_with(|| None).take(parents.len()).collect();
     let mut retry_requests = Vec::new();
     for base_result in base_results {
         let parent_index = base_result.parent_index;
@@ -2377,12 +2378,21 @@ where
                 .unwrap_or(None),
             combat_retry_ledger,
             !round_retry,
-        )? {
-            Ok(result) => parent_results.push(Some(result)),
-            Err(request) => {
-                parent_results.push(None);
+        ) {
+            Ok(Ok(result)) => {
+                if let Some(slot) = parent_results.get_mut(parent_index) {
+                    *slot = Some(result);
+                }
+            }
+            Ok(Err(request)) => {
                 retry_requests.push(request);
             }
+            Err(err) if campaign_parent_replay_error_is_branch_invalid_v1(&err) => {
+                if let Some(parent) = parents.get(parent_index) {
+                    candidates.push(campaign_branch_from_parent_replay_error_v1(parent, &err));
+                }
+            }
+            Err(err) => return Err(err),
         }
     }
     let retry_results = run_campaign_parent_retry_passes_parallel_v1(parents, retry_requests)?;
@@ -2393,12 +2403,9 @@ where
     }
 
     for (parent_index, parent_result) in parent_results.into_iter().enumerate() {
-        let parent_result = parent_result.ok_or_else(|| {
-            format!(
-                "internal error: missing branch campaign parent result for parent {}",
-                parent_index + 1
-            )
-        })?;
+        let Some(parent_result) = parent_result else {
+            continue;
+        };
         let parent = &parents[parent_index];
         parent_elapsed_wall_ms_sum =
             parent_elapsed_wall_ms_sum.saturating_add(parent_result.elapsed_wall_ms_sum);
@@ -2515,6 +2522,9 @@ fn campaign_parent_retry_request_or_result_v1(
     let parent_index = base_result.parent_index;
     let result = match base_result.result {
         Ok(result) => result,
+        Err(err) if campaign_parent_replay_error_is_branch_invalid_v1(&err) => {
+            return Err(err);
+        }
         Err(err)
             if parent_combat_retry_enabled
                 && campaign_parent_replay_error_is_retryable_v1(&err)
@@ -2717,7 +2727,7 @@ fn campaign_state_session_retention_policy_v1(
     config: &BranchCampaignConfigV1,
 ) -> BranchStateSessionRetentionPolicyV1 {
     BranchStateSessionRetentionPolicyV1 {
-        max_frozen_exact_sessions: config.max_active.saturating_mul(2),
+        max_frozen_exact_sessions: config.max_frozen,
         max_stuck_exact_sessions: config.max_active,
         max_abandoned_exact_sessions: 0,
         max_suffix_commands_without_session: 6,
@@ -2731,6 +2741,25 @@ fn campaign_elapsed_ms_u64(started_at: Instant) -> u64 {
 fn campaign_parent_replay_error_is_retryable_v1(error: &str) -> bool {
     error.contains("is not valid on the current screen")
         || error.contains("is only valid on a card reward item or card reward screen")
+}
+
+fn campaign_parent_replay_error_is_branch_invalid_v1(error: &str) -> bool {
+    error.contains("branch-skip-card-reward is only valid on a reward screen")
+        || error.contains("rp <idx> is only valid on a card reward item or card reward screen")
+}
+
+fn campaign_branch_from_parent_replay_error_v1(
+    parent: &BranchCampaignBranchV1,
+    error: &str,
+) -> BranchCampaignBranchV1 {
+    let mut branch = parent.clone();
+    branch.branch_id = format!("{}.replay-error", parent.branch_id);
+    branch.status = BranchCampaignBranchStatusV1::Abandoned;
+    branch.stop_reason = format!("parent replay failed: {error}");
+    branch.rank_key = -900_000;
+    branch.final_boss_combat_record = None;
+    branch.combat_lab_probes.clear();
+    branch
 }
 
 fn combat_retry_campaign_config_v1(
