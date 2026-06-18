@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 use crate::eval::run_control::RunControlSession;
 
@@ -59,10 +60,7 @@ impl BranchStateStoreV1 {
         let parent_id = self.node_ids_by_commands.get(parent_commands).copied();
         let (parent_id, added_commands) =
             if parent_id.is_some() && child_commands.starts_with(parent_commands) {
-                (
-                    parent_id,
-                    child_commands[parent_commands.len()..].to_vec(),
-                )
+                (parent_id, child_commands[parent_commands.len()..].to_vec())
             } else {
                 (None, child_commands.clone())
             };
@@ -75,10 +73,7 @@ impl BranchStateStoreV1 {
         self.sessions_by_commands.get(commands)
     }
 
-    pub(super) fn get_session_cloned(
-        &mut self,
-        commands: &[String],
-    ) -> Option<RunControlSession> {
+    pub(super) fn get_session_cloned(&mut self, commands: &[String]) -> Option<RunControlSession> {
         let session = self.sessions_by_commands.get(commands).cloned();
         if session.is_some() {
             self.lookup_hits = self.lookup_hits.saturating_add(1);
@@ -93,18 +88,12 @@ impl BranchStateStoreV1 {
     }
 
     #[cfg(test)]
-    pub(super) fn node_id_for_commands(
-        &self,
-        commands: &[String],
-    ) -> Option<BranchStateNodeIdV1> {
+    pub(super) fn node_id_for_commands(&self, commands: &[String]) -> Option<BranchStateNodeIdV1> {
         self.node_ids_by_commands.get(commands).copied()
     }
 
     #[cfg(test)]
-    pub(super) fn node_for_commands(
-        &self,
-        commands: &[String],
-    ) -> Option<&BranchStateNodeV1> {
+    pub(super) fn node_for_commands(&self, commands: &[String]) -> Option<&BranchStateNodeV1> {
         let id = self.node_ids_by_commands.get(commands)?;
         self.nodes.get(id.0)
     }
@@ -126,9 +115,10 @@ impl BranchStateStoreV1 {
             .chain(abandoned.iter())
             .chain(stuck.iter())
             .map(|branch| branch.commands.clone())
-            .collect::<std::collections::BTreeSet<_>>();
+            .collect::<BTreeSet<_>>();
         self.sessions_by_commands
             .retain(|commands, _| keep.contains(commands));
+        self.retain_nodes_for_commands_and_ancestors(&keep);
         self.retains = self.retains.saturating_add(1);
     }
 
@@ -156,6 +146,48 @@ impl BranchStateStoreV1 {
         });
         self.node_ids_by_commands.insert(commands, id);
         id
+    }
+
+    fn retain_nodes_for_commands_and_ancestors(&mut self, commands: &BTreeSet<Vec<String>>) {
+        let mut keep_ids = BTreeSet::<BranchStateNodeIdV1>::new();
+        for command_path in commands {
+            let mut current = self.node_ids_by_commands.get(command_path).copied();
+            while let Some(id) = current {
+                if !keep_ids.insert(id) {
+                    break;
+                }
+                current = self.nodes.get(id.0).and_then(|node| node.parent_id);
+            }
+        }
+        if keep_ids.len() == self.nodes.len() {
+            return;
+        }
+
+        let mut old_to_new = BTreeMap::<BranchStateNodeIdV1, BranchStateNodeIdV1>::new();
+        let mut new_nodes = Vec::<BranchStateNodeV1>::new();
+        for node in &self.nodes {
+            if keep_ids.contains(&node.id) {
+                let new_id = BranchStateNodeIdV1(new_nodes.len());
+                old_to_new.insert(node.id, new_id);
+                new_nodes.push(BranchStateNodeV1 {
+                    id: new_id,
+                    parent_id: node.parent_id,
+                    commands: node.commands.clone(),
+                    added_commands: node.added_commands.clone(),
+                });
+            }
+        }
+        for node in &mut new_nodes {
+            node.parent_id = node
+                .parent_id
+                .and_then(|parent_id| old_to_new.get(&parent_id).copied());
+        }
+        self.node_ids_by_commands.clear();
+        for node in &new_nodes {
+            self.node_ids_by_commands
+                .insert(node.commands.clone(), node.id);
+        }
+        self.nodes = new_nodes;
     }
 
     pub(super) fn summary(&self) -> BranchCampaignStateStoreSummaryV1 {

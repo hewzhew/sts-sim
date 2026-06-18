@@ -39,7 +39,7 @@ fn branch_state_store_tracks_snapshot_hits_and_retention() {
 
     let summary = store.summary();
     assert_eq!(summary.sessions, 1);
-    assert_eq!(summary.nodes, 2);
+    assert_eq!(summary.nodes, 1);
     assert_eq!(summary.lookup_hits, 1);
     assert_eq!(summary.lookup_misses, 1);
     assert!(store.contains_commands(&kept.commands));
@@ -50,11 +50,7 @@ fn branch_state_store_tracks_snapshot_hits_and_retention() {
 fn branch_state_store_records_child_parent_link_and_command_delta() {
     let mut store = super::state_graph::BranchStateStoreV1::new();
     let parent_commands = vec!["rp 0".to_string()];
-    let child_commands = vec![
-        "rp 0".to_string(),
-        "go 2".to_string(),
-        "rp 1".to_string(),
-    ];
+    let child_commands = vec!["rp 0".to_string(), "go 2".to_string(), "rp 1".to_string()];
 
     store.insert_session(
         parent_commands.clone(),
@@ -74,8 +70,39 @@ fn branch_state_store_records_child_parent_link_and_command_delta() {
         .expect("child node should exist");
 
     assert_eq!(child.parent_id(), Some(parent_id));
-    assert_eq!(child.added_commands(), &["go 2".to_string(), "rp 1".to_string()]);
+    assert_eq!(
+        child.added_commands(),
+        &["go 2".to_string(), "rp 1".to_string()]
+    );
     assert_eq!(store.summary().linked_nodes, 1);
+}
+
+#[test]
+fn branch_state_store_retain_keeps_child_ancestor_nodes_without_parent_session() {
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+    let parent_commands = vec!["rp 0".to_string()];
+    let child_commands = vec!["rp 0".to_string(), "go 2".to_string()];
+    let mut child_branch = test_campaign_branch("child", 6, 80);
+    child_branch.commands = child_commands.clone();
+
+    store.insert_session(
+        parent_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.insert_child_session(
+        &parent_commands,
+        child_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.retain_for_branches(&[child_branch], &[], &[], &[]);
+
+    let summary = store.summary();
+    assert_eq!(summary.sessions, 1);
+    assert_eq!(summary.nodes, 2);
+    assert_eq!(summary.linked_nodes, 1);
+    assert!(!store.contains_commands(&parent_commands));
+    assert!(store.node_id_for_commands(&parent_commands).is_some());
+    assert!(store.node_id_for_commands(&child_commands).is_some());
 }
 
 #[test]
@@ -137,9 +164,8 @@ fn campaign_compact_report_renders_state_store_summary() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
-    assert!(rendered.contains(
-        "State store: sessions=4 nodes=5 linked=3 lookups=2/1 inserts=6 retains=1"
-    ));
+    assert!(rendered
+        .contains("State store: sessions=4 nodes=5 linked=3 lookups=2/1 inserts=6 retains=1"));
 }
 
 #[test]

@@ -4217,8 +4217,7 @@ fn rehydrate_checkpoint_failure_list_v1(
     let mut remaining = Vec::new();
     let mut candidates = Vec::<(BranchCampaignBranchV1, BranchCampaignBranchV1)>::new();
     for branch in branches {
-        if let Some(recovered) = try_rehydrate_checkpoint_failure_branch_v1(&branch, state_store)
-        {
+        if let Some(recovered) = try_rehydrate_checkpoint_failure_branch_v1(&branch, state_store) {
             candidates.push((branch, recovered));
         } else {
             remaining.push(branch);
