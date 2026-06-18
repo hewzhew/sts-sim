@@ -1,6 +1,7 @@
 use crate::ai::card_reward_policy_v1::{CardRewardSemanticProfileV1, CardRewardSemanticRoleV1};
 use crate::ai::strategic::{
-    CandidateDelta, LedgerDelta, PressureKind, StrategicDebt, StrategicJob,
+    AcquisitionThesisRole, AcquisitionThesisSignal, AcquisitionThesisStatus, CandidateDelta,
+    LedgerDelta, PressureKind, StrategicDebt, StrategicJob,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -305,6 +306,13 @@ pub fn apply_acquisition_saturation_to_delta_v1(
     report: &AcquisitionSaturationReportV1,
 ) {
     for signal in &report.signals {
+        delta.acquisition_theses.push(AcquisitionThesisSignal {
+            role: thesis_role(signal.role),
+            status: thesis_status(signal.status),
+            amount: signal.amount,
+            reason: signal.reason.clone(),
+            source: "acquisition_saturation_v1".to_string(),
+        });
         match signal.status {
             AcquisitionSaturationStatusV1::Missing | AcquisitionSaturationStatusV1::Useful => {
                 if let Some(kind) = positive_pressure(signal.role) {
@@ -333,6 +341,30 @@ pub fn apply_acquisition_saturation_to_delta_v1(
     }
     for note in &report.notes {
         delta.notes.push(format!("acquisition_saturation:{note}"));
+    }
+}
+
+fn thesis_role(role: AcquisitionRoleV1) -> AcquisitionThesisRole {
+    match role {
+        AcquisitionRoleV1::TransitionFrontload => AcquisitionThesisRole::TransitionFrontload,
+        AcquisitionRoleV1::MitigationCoverage => AcquisitionThesisRole::MitigationCoverage,
+        AcquisitionRoleV1::PlainBlock => AcquisitionThesisRole::PlainBlock,
+        AcquisitionRoleV1::DrawAccess => AcquisitionThesisRole::DrawAccess,
+        AcquisitionRoleV1::ExhaustAccess => AcquisitionThesisRole::ExhaustAccess,
+        AcquisitionRoleV1::ScalingOrEngine => AcquisitionThesisRole::ScalingOrEngine,
+        AcquisitionRoleV1::BossSpecificAnswer => AcquisitionThesisRole::BossSpecificAnswer,
+        AcquisitionRoleV1::RedundantCoverage => AcquisitionThesisRole::RedundantCoverage,
+        AcquisitionRoleV1::LiabilityOrDependency => AcquisitionThesisRole::LiabilityOrDependency,
+    }
+}
+
+fn thesis_status(status: AcquisitionSaturationStatusV1) -> AcquisitionThesisStatus {
+    match status {
+        AcquisitionSaturationStatusV1::Missing => AcquisitionThesisStatus::Missing,
+        AcquisitionSaturationStatusV1::Useful => AcquisitionThesisStatus::Useful,
+        AcquisitionSaturationStatusV1::Saturated => AcquisitionThesisStatus::Saturated,
+        AcquisitionSaturationStatusV1::OverBudget => AcquisitionThesisStatus::OverBudget,
+        AcquisitionSaturationStatusV1::Unsupported => AcquisitionThesisStatus::Unsupported,
     }
 }
 

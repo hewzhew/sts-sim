@@ -48,6 +48,39 @@ pub struct StrategicContraindication {
     pub severity: f32,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AcquisitionThesisRole {
+    TransitionFrontload,
+    MitigationCoverage,
+    PlainBlock,
+    DrawAccess,
+    ExhaustAccess,
+    ScalingOrEngine,
+    BossSpecificAnswer,
+    RedundantCoverage,
+    LiabilityOrDependency,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AcquisitionThesisStatus {
+    Missing,
+    Useful,
+    Saturated,
+    OverBudget,
+    Unsupported,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct AcquisitionThesisSignal {
+    pub role: AcquisitionThesisRole,
+    pub status: AcquisitionThesisStatus,
+    pub amount: f32,
+    pub reason: String,
+    pub source: String,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CandidateDelta {
     pub action: CandidateAction,
@@ -59,6 +92,8 @@ pub struct CandidateDelta {
     pub contraindications: Vec<StrategicContraindication>,
     pub notes: Vec<String>,
     pub evidence: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub acquisition_theses: Vec<AcquisitionThesisSignal>,
 }
 
 impl CandidateDelta {
@@ -73,6 +108,7 @@ impl CandidateDelta {
             contraindications: Vec::new(),
             notes: Vec::new(),
             evidence: Vec::new(),
+            acquisition_theses: Vec::new(),
         }
     }
 

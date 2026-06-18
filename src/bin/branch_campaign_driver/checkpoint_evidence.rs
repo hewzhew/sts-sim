@@ -215,9 +215,10 @@ pub(super) fn render_checkpoint_shop_evidence_v1(
         ));
         if let Some(delta) = delta {
             lines.push(format!(
-                "    delta: role={:?} hint={:?} positive=[{}] negative=[{}]",
+                "    delta: role={:?} hint={:?} theses=[{}] positive=[{}] negative=[{}]",
                 delta.role,
                 delta.verdict_hint,
+                render_acquisition_theses(&delta.acquisition_theses),
                 render_ledger_deltas(&delta.positive),
                 render_ledger_deltas(&delta.negative)
             ));
@@ -315,9 +316,10 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
         ));
         if let Some(delta) = delta {
             lines.push(format!(
-                "    delta: role={:?} hint={:?} positive=[{}] negative=[{}] notes=[{}]",
+                "    delta: role={:?} hint={:?} theses=[{}] positive=[{}] negative=[{}] notes=[{}]",
                 delta.role,
                 delta.verdict_hint,
+                render_acquisition_theses(&delta.acquisition_theses),
                 render_ledger_deltas(&delta.positive),
                 render_ledger_deltas(&delta.negative),
                 render_short_list(&delta.notes)
@@ -563,6 +565,24 @@ fn render_ledger_deltas(items: &[sts_simulator::ai::strategic::LedgerDelta]) -> 
     items
         .iter()
         .map(|delta| format!("{:?}:{:.2}:{}", delta.kind, delta.amount, delta.reason))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn render_acquisition_theses(
+    items: &[sts_simulator::ai::strategic::AcquisitionThesisSignal],
+) -> String {
+    if items.is_empty() {
+        return "-".to_string();
+    }
+    items
+        .iter()
+        .map(|thesis| {
+            format!(
+                "{:?}/{:?}:{:.2}:{}",
+                thesis.role, thesis.status, thesis.amount, thesis.reason
+            )
+        })
         .collect::<Vec<_>>()
         .join("; ")
 }

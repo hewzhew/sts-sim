@@ -16,8 +16,8 @@ pub use compiler::{
     compile_decision, AcquisitionVerdict, CompiledDecision, StrategicDecisionTrace,
 };
 pub use delta::{
-    CandidateDelta, CandidateRole, LedgerDelta, OpportunityCost, StrategicContraindication,
-    VerdictHint,
+    AcquisitionThesisRole, AcquisitionThesisSignal, AcquisitionThesisStatus, CandidateDelta,
+    CandidateRole, LedgerDelta, OpportunityCost, StrategicContraindication, VerdictHint,
 };
 pub use ledger::{
     add_run_debt_candidate_deltas_v1, add_run_debt_pressure_to_ledger,
