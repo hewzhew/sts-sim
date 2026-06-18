@@ -9,6 +9,7 @@ use crate::content::relics::RelicId;
 use crate::eval::branch_experiment::{
     BranchExperimentChoiceDecisionSignalV1, BranchExperimentRewardOptionPortfolioEntryV1,
     BranchExperimentRewardOptionPortfolioV1,
+    BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1,
 };
 use crate::eval::branch_experiment_trajectory::summarize_branch_trajectory_v1;
 use crate::eval::run_control::RunControlSession;
@@ -528,7 +529,7 @@ impl RewardOptionStrategicRetentionKey {
     fn decision_signal(&self) -> Option<BranchExperimentChoiceDecisionSignalV1> {
         let score = self.score_milli?;
         Some(BranchExperimentChoiceDecisionSignalV1 {
-            source: "card_reward_strategic_trace_v1".to_string(),
+            source: BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1.to_string(),
             verdict: self.verdict_label.clone(),
             tier: self.verdict_retention_order as i32,
             score,

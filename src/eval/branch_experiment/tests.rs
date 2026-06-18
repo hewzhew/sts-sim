@@ -1338,6 +1338,28 @@ fn branch_retention_reports_decision_signal_without_rank_consumption() {
 }
 
 #[test]
+fn branch_retention_consumes_card_reward_reject_as_active_rank_penalty() {
+    let mut candidate = retention_candidate(0, BranchTrajectorySignatureV1::default());
+    candidate.rank_key = 1_000;
+    candidate.decision_signals = vec![BranchExperimentChoiceDecisionSignalV1 {
+        source: BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1.to_string(),
+        verdict: "Reject".to_string(),
+        tier: 5,
+        score: -470,
+        confidence_milli: 650,
+        component_net_rank: -470,
+    }];
+
+    let adjustment = branch_retention_rank_adjustment_v1(&candidate);
+
+    assert_eq!(adjustment.card_reward_plan_adjustment, -1_135);
+    assert_eq!(adjustment.effective_rank_key, -135);
+    assert!(adjustment
+        .reasons
+        .contains(&"card_reward_plan_rank_adjustment:-1135".to_string()));
+}
+
+#[test]
 fn branch_retention_consumes_only_unified_shop_plan_signal() {
     let mut candidate = retention_candidate(0, BranchTrajectorySignatureV1::default());
     candidate.rank_key = 1_000;

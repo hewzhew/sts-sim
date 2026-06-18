@@ -17,6 +17,8 @@ use crate::eval::run_control::{
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
 pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 22;
+pub const BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1: &str =
+    "card_reward_strategic_trace_v1";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchExperimentConfigV1 {

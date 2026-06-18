@@ -6,6 +6,7 @@ use crate::ai::noncombat_strategy_v1::StrategyFormationSummaryV2;
 use crate::ai::strategic::{BranchSignature, RetentionBucket};
 use crate::eval::branch_experiment::{
     BranchExperimentChoiceDecisionSignalV1,
+    BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1,
     BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1,
     BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1,
 };
@@ -163,6 +164,12 @@ pub struct BranchRetentionRankAdjustmentV1 {
     /// bypass campfire ownership.
     #[serde(default)]
     pub campfire_plan_adjustment: i32,
+    /// Bounded active-selection input from the unified card reward compiler.
+    /// Only negative card-admission verdicts are consumed here; strong/card
+    /// value positives stay in branch-retention slots instead of becoming a
+    /// second hidden card picker.
+    #[serde(default)]
+    pub card_reward_plan_adjustment: i32,
     /// Deprecated report-only hint kept for trace compatibility.
     /// Decision signals are local compiler diagnostics; branch retention does
     /// not consume them as global rank adjustments.
@@ -710,6 +717,12 @@ pub fn branch_retention_rank_adjustment_v1(
             "decision_signal_component_rank_hint:{decision_signal_adjustment}"
         ));
     }
+    let card_reward_plan_adjustment = branch_card_reward_plan_rank_adjustment_v1(candidate);
+    if card_reward_plan_adjustment != 0 {
+        reasons.push(format!(
+            "card_reward_plan_rank_adjustment:{card_reward_plan_adjustment}"
+        ));
+    }
     let shop_plan_adjustment = branch_shop_plan_rank_adjustment_v1(candidate);
     if shop_plan_adjustment != 0 {
         reasons.push(format!("shop_plan_rank_adjustment:{shop_plan_adjustment}"));
@@ -726,6 +739,7 @@ pub fn branch_retention_rank_adjustment_v1(
         .saturating_add(startup_adjustment)
         .saturating_add(strategic_debt_adjustment)
         .saturating_add(formation_need_adjustment)
+        .saturating_add(card_reward_plan_adjustment)
         .saturating_add(shop_plan_adjustment)
         .saturating_add(campfire_plan_adjustment);
 
@@ -736,6 +750,7 @@ pub fn branch_retention_rank_adjustment_v1(
         formation_need_adjustment,
         shop_plan_adjustment,
         campfire_plan_adjustment,
+        card_reward_plan_adjustment,
         decision_signal_adjustment,
         admission_pressure,
         effective_rank_key,
@@ -755,6 +770,28 @@ fn branch_decision_signal_rank_adjustment_v1(candidate: &BranchRetentionCandidat
         .iter()
         .map(|signal| signal.component_net_rank)
         .sum()
+}
+
+fn branch_card_reward_plan_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
+    candidate
+        .decision_signals
+        .iter()
+        .filter(|signal| {
+            signal.source == BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1
+        })
+        .map(card_reward_signal_rank_adjustment_v1)
+        .sum::<i32>()
+        .clamp(-2_500, 0)
+}
+
+fn card_reward_signal_rank_adjustment_v1(
+    signal: &BranchExperimentChoiceDecisionSignalV1,
+) -> i32 {
+    match signal.verdict.as_str() {
+        "Reject" => -900 + signal.component_net_rank.min(0) / 2,
+        "SkipPreferred" => -500 + signal.component_net_rank.min(0) / 2,
+        _ => 0,
+    }
 }
 
 fn branch_shop_plan_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
