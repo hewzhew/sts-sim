@@ -65,6 +65,7 @@ const FOCUSED_PRESET_ROUND_DEPTH: usize = 2;
 const FOCUSED_PRESET_MAX_ACTIVE: usize = 2;
 const FOCUSED_PRESET_MAX_FROZEN: usize = 16;
 const FOCUSED_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 8;
+const FOCUSED_PRESET_ACTIVE_LINEAGE_DIVERSITY: usize = 2;
 const FOCUSED_PRESET_EXPERIMENT_WALL_MS: u64 = 10_000;
 const FOCUSED_PRESET_SEARCH_WALL_MS: u64 = 300;
 const FOCUSED_PRESET_SEARCH_MAX_NODES: usize = 50_000;
@@ -75,6 +76,7 @@ const DEEP_PRESET_ROUND_DEPTH: usize = 2;
 const DEEP_PRESET_MAX_ACTIVE: usize = 2;
 const DEEP_PRESET_MAX_FROZEN: usize = 16;
 const DEEP_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 8;
+const DEEP_PRESET_ACTIVE_LINEAGE_DIVERSITY: usize = 2;
 const DEEP_PRESET_EXPERIMENT_WALL_MS: u64 = 30_000;
 const DEEP_PRESET_SEARCH_WALL_MS: u64 = 1_000;
 const DEEP_PRESET_SEARCH_MAX_NODES: usize = 200_000;
@@ -514,7 +516,7 @@ where
             max_active: FOCUSED_PRESET_MAX_ACTIVE,
             max_frozen: FOCUSED_PRESET_MAX_FROZEN,
             max_branches_per_active: FOCUSED_PRESET_MAX_BRANCHES_PER_ACTIVE,
-            active_lineage_diversity: 0,
+            active_lineage_diversity: FOCUSED_PRESET_ACTIVE_LINEAGE_DIVERSITY,
             experiment_wall_ms: FOCUSED_PRESET_EXPERIMENT_WALL_MS,
             search_wall_ms: FOCUSED_PRESET_SEARCH_WALL_MS,
             search_max_nodes: FOCUSED_PRESET_SEARCH_MAX_NODES,
@@ -536,7 +538,7 @@ where
             max_active: DEEP_PRESET_MAX_ACTIVE,
             max_frozen: DEEP_PRESET_MAX_FROZEN,
             max_branches_per_active: DEEP_PRESET_MAX_BRANCHES_PER_ACTIVE,
-            active_lineage_diversity: 0,
+            active_lineage_diversity: DEEP_PRESET_ACTIVE_LINEAGE_DIVERSITY,
             experiment_wall_ms: DEEP_PRESET_EXPERIMENT_WALL_MS,
             search_wall_ms: DEEP_PRESET_SEARCH_WALL_MS,
             search_max_nodes: DEEP_PRESET_SEARCH_MAX_NODES,
@@ -1546,7 +1548,7 @@ mod tests {
         assert_eq!(config.max_active, 2);
         assert_eq!(config.max_frozen, 16);
         assert_eq!(config.max_branches_per_active, 8);
-        assert_eq!(config.active_lineage_diversity_slots, 0);
+        assert_eq!(config.active_lineage_diversity_slots, 2);
         assert_eq!(config.experiment_wall_ms, Some(10_000));
         assert_eq!(config.search_wall_ms, Some(300));
         assert_eq!(config.search_max_nodes, Some(50_000));
@@ -1613,7 +1615,7 @@ mod tests {
         assert_eq!(config.max_active, 2);
         assert_eq!(config.max_frozen, 16);
         assert_eq!(config.max_branches_per_active, 8);
-        assert_eq!(config.active_lineage_diversity_slots, 0);
+        assert_eq!(config.active_lineage_diversity_slots, 2);
         assert_eq!(config.experiment_wall_ms, Some(30_000));
         assert_eq!(config.search_wall_ms, Some(1_000));
         assert_eq!(config.search_max_nodes, Some(200_000));
