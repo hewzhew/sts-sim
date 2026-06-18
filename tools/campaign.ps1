@@ -16,7 +16,7 @@ Reuses the last non-dry-run campaign seed.
 
 .EXAMPLE
 .\tools\campaign.ps1 -More
-Resumes the latest saved campaign report with deeper defaults.
+Resumes the latest saved campaign report with the previous mode.
 
 .EXAMPLE
 .\tools\campaign.ps1 -More -Rounds 1
@@ -160,6 +160,7 @@ $CampaignDir = Join-Path $RepoRoot "tools\artifacts\campaigns"
 $LatestSeedPath = Join-Path $CampaignDir "latest.seed.txt"
 $LatestAscensionPath = Join-Path $CampaignDir "latest.ascension.txt"
 $LatestClassPath = Join-Path $CampaignDir "latest.class.txt"
+$LatestModePath = Join-Path $CampaignDir "latest.mode.txt"
 $LatestCommandPath = Join-Path $CampaignDir "latest.command.txt"
 $LatestCampaignPath = Join-Path $CampaignDir "latest.campaign.json"
 $LatestCheckpointPath = Join-Path $CampaignDir "latest.checkpoint.json"
@@ -181,6 +182,22 @@ function Read-LatestCheckpointRunConfig {
     return $null
 }
 
+function Read-LatestCampaignMode {
+    if (Test-Path -LiteralPath $LatestModePath) {
+        $ModeText = (Get-Content -LiteralPath $LatestModePath -Raw).Trim().ToLowerInvariant()
+        if (@("quick", "focused", "explore", "deep") -contains $ModeText) {
+            return $ModeText
+        }
+    }
+    if (Test-Path -LiteralPath $LatestCommandPath) {
+        $CommandText = Get-Content -LiteralPath $LatestCommandPath -Raw
+        if ($CommandText -match "--preset\s+('?)(quick|focused|explore|deep)\1") {
+            return $Matches[2].ToLowerInvariant()
+        }
+    }
+    return $null
+}
+
 if ($InspectShopEvidence -or $InspectShopChallenge -or $InspectLastAutoCombat) {
     $Inspect = $true
 }
@@ -191,7 +208,12 @@ if ($InspectShopChallenge -and -not $PSBoundParameters.ContainsKey("InspectBound
 if ($More) {
     $Last = $true
     if (-not $PSBoundParameters.ContainsKey("Mode")) {
-        $Mode = "deep"
+        $SavedMode = Read-LatestCampaignMode
+        if ($SavedMode) {
+            $Mode = $SavedMode
+        } else {
+            $Mode = "deep"
+        }
     }
 }
 
@@ -583,6 +605,7 @@ if ($DryRun) {
 Set-Content -LiteralPath $LatestSeedPath -Value $Seed
 Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
 Set-Content -LiteralPath $LatestClassPath -Value $Class
+Set-Content -LiteralPath $LatestModePath -Value $Mode
 Set-Content -LiteralPath $LatestCommandPath -Value $RenderedCommand
 
 Push-Location $RepoRoot
