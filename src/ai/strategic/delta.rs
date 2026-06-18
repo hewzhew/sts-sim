@@ -190,9 +190,6 @@ fn positive_component_reason_pressure(reason: &str) -> PressureKind {
         "automaton_big_turn_or_multi_hit_answer" => {
             PressureKind::BossTax(StrategicBossTax::AutomatonHyperbeamPlan)
         }
-        "champ_execute_or_scaling_answer" => {
-            PressureKind::BossTax(StrategicBossTax::ChampExecutePlan)
-        }
         "time_eater_high_impact_or_access" => {
             PressureKind::BossTax(StrategicBossTax::TimeEaterCardCount)
         }

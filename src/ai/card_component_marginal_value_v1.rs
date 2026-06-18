@@ -321,21 +321,6 @@ fn add_boss_components(
                 );
             }
         }
-        Some(EncounterId::TheChamp) => {
-            if matches!(
-                profile.card,
-                CardId::Impervious
-                    | CardId::FlameBarrier
-                    | CardId::PowerThrough
-                    | CardId::Disarm
-                    | CardId::DemonForm
-            ) {
-                push_str(
-                    &mut report.positive_components,
-                    "champ_execute_or_scaling_answer",
-                );
-            }
-        }
         Some(EncounterId::TimeEater) => {
             if profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
                 || profile

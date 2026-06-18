@@ -229,61 +229,29 @@ fn shop_strategic_snapshot_preserves_convertible_strength_facts() {
 }
 
 #[test]
-fn shop_strategic_delta_maps_champ_execute_answer_through_component_report() {
+fn compiled_shop_card_purchase_records_strategic_evaluation_reason() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
-    run_state.act_num = 2;
-    run_state.floor_num = 18;
-    run_state.boss_key = Some(EncounterId::TheChamp);
-    run_state.gold = 500;
-    let mut shop = ShopState::new();
-    shop.cards.push(ShopCard {
-        card_id: CardId::FlameBarrier,
-        upgrades: 0,
-        price: 73,
-        can_buy: true,
-        blocked_reason: None,
-    });
-
-    let context = build_shop_decision_context_v1(&run_state, &shop);
-    let trace = crate::ai::strategic::strategic_trace_for_shop(&context);
-    let flame_barrier = buy_card_delta(&trace, CardId::FlameBarrier);
-
-    assert_delta_has_boss_tax(flame_barrier, StrategicBossTax::ChampExecutePlan);
-    assert!(
-        flame_barrier
-            .evidence
-            .iter()
-            .any(|evidence| evidence == "card_component_marginal_value contributor"),
-        "shop card deltas should reuse the component report boundary, got {:?}",
-        flame_barrier.evidence
-    );
-}
-
-#[test]
-fn compiled_shop_card_purchase_records_strategic_boss_answer_reason() {
-    let mut run_state = RunState::new(1, 0, false, "Ironclad");
-    run_state.act_num = 2;
-    run_state.floor_num = 18;
-    run_state.boss_key = Some(EncounterId::TheChamp);
+    run_state.act_num = 1;
+    run_state.floor_num = 4;
     run_state.gold = 125;
     let mut shop = ShopState::new();
     shop.cards.push(ShopCard {
-        card_id: CardId::Disarm,
+        card_id: CardId::ShrugItOff,
         upgrades: 0,
-        price: 74,
+        price: 47,
         can_buy: true,
         blocked_reason: None,
     });
 
     let context = build_shop_decision_context_v1(&run_state, &shop);
     let strategic_trace = crate::ai::strategic::strategic_trace_for_shop(&context);
-    let disarm_delta = buy_card_delta(&strategic_trace, CardId::Disarm);
+    let card_delta = buy_card_delta(&strategic_trace, CardId::ShrugItOff);
     let strategic_decision = strategic_trace
-        .compiled_for_action(&disarm_delta.action)
-        .expect("strategic compiler should evaluate Disarm");
+        .compiled_for_action(&card_delta.action)
+        .expect("strategic compiler should evaluate shop card");
     assert!(
         strategic_decision.verdict.allows_behavior_acquisition(),
-        "test requires a behavior-eligible strategic boss answer verdict"
+        "test requires a behavior-eligible strategic card purchase verdict"
     );
 
     let compiled = compile_shop_decision_v1(
@@ -291,7 +259,7 @@ fn compiled_shop_card_purchase_records_strategic_boss_answer_reason() {
         &ShopPolicyConfigV1::default(),
         ShopCompileModeV1::ExecuteOne,
     );
-    let disarm_plan = compiled
+    let card_plan = compiled
         .candidate_plans
         .iter()
         .find(|candidate| {
@@ -299,23 +267,23 @@ fn compiled_shop_card_purchase_records_strategic_boss_answer_reason() {
                 matches!(
                     step,
                     ShopPlanStepV1::BuyCard {
-                        card: CardId::Disarm,
+                        card: CardId::ShrugItOff,
                         ..
                     }
                 )
             })
         })
-        .expect("Disarm shop plan should exist");
+        .expect("shop card plan should exist");
 
-    assert_eq!(disarm_plan.evaluation.verdict, ShopPlanVerdictV1::Allow);
+    assert_eq!(card_plan.evaluation.verdict, ShopPlanVerdictV1::Allow);
     assert!(
-        disarm_plan
+        card_plan
             .evaluation
             .reasons
             .iter()
             .any(|reason| reason.contains("strategic evaluation")),
         "shop card purchases should be governed by strategic acquisition verdicts, with legacy priority retained only as estimate/tie-breaker; got {:?}",
-        disarm_plan.evaluation.reasons
+        card_plan.evaluation.reasons
     );
 }
 
@@ -1395,15 +1363,14 @@ fn compiled_shop_portfolio_retains_multiple_multi_step_plans() {
 #[test]
 fn compiled_shop_portfolio_uses_step_evaluation_over_plan_legacy_gate() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
-    run_state.act_num = 2;
-    run_state.floor_num = 18;
-    run_state.boss_key = Some(EncounterId::TheChamp);
+    run_state.act_num = 1;
+    run_state.floor_num = 4;
     run_state.gold = 125;
     let mut shop = ShopState::new();
     shop.cards.push(ShopCard {
-        card_id: CardId::Disarm,
+        card_id: CardId::ShrugItOff,
         upgrades: 0,
-        price: 74,
+        price: 47,
         can_buy: true,
         blocked_reason: None,
     });
@@ -1413,14 +1380,14 @@ fn compiled_shop_portfolio_uses_step_evaluation_over_plan_legacy_gate() {
     let candidate_plan = crate::ai::shop_policy_v1::ShopPlanCandidateV1 {
         plan: ShopPlanV1 {
             plan_id: "test:portfolio-zero-legacy".to_string(),
-            label: "portfolio Disarm".to_string(),
+            label: "portfolio Shrug It Off".to_string(),
             kind: ShopPlanKindV1::Execute,
             steps: vec![ShopPlanStepV1::BuyCard {
                 index: 0,
-                card: CardId::Disarm,
-                cost: 74,
+                card: CardId::ShrugItOff,
+                cost: 47,
             }],
-            total_gold_spent: 74,
+            total_gold_spent: 47,
             candidate_ids: vec!["shop:card-0".to_string()],
             source: ShopPlanSourceV1::PortfolioCandidate,
             legacy_priority: Some(0),
@@ -1702,17 +1669,6 @@ fn assert_delta_lacks_job(delta: &crate::ai::strategic::CandidateDelta, job: Str
             .iter()
             .all(|entry| entry.kind != PressureKind::MissingJob(job)),
         "delta should not include positive job {job:?}, got {:?}",
-        delta.positive
-    );
-}
-
-fn assert_delta_has_boss_tax(delta: &crate::ai::strategic::CandidateDelta, tax: StrategicBossTax) {
-    assert!(
-        delta
-            .positive
-            .iter()
-            .any(|entry| entry.kind == PressureKind::BossTax(tax)),
-        "delta should include positive boss tax {tax:?}, got {:?}",
         delta.positive
     );
 }
