@@ -4144,14 +4144,18 @@ fn render_campaign_branch_state(branch: &BranchCampaignBranchV1) -> String {
         .summary
         .as_ref()
         .map(|summary| {
+            let deck_shape = render_campaign_branch_deck_shape_v1(summary)
+                .map(|value| format!(" {value}"))
+                .unwrap_or_default();
             format!(
-                "A{}F{} HP {}/{} gold {} deck {}",
+                "A{}F{} HP {}/{} gold {} deck {}{}",
                 summary.act,
                 summary.floor,
                 summary.hp,
                 summary.max_hp,
                 summary.gold,
-                summary.deck_count
+                summary.deck_count,
+                deck_shape
             )
         })
         .unwrap_or_else(|| "start".to_string());
@@ -4162,6 +4166,101 @@ fn render_campaign_branch_state(branch: &BranchCampaignBranchV1) -> String {
     } else {
         format!("{state} {selection_basis} strat=[{}]", strategic_summary)
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CampaignDeckKeyEntryV1 {
+    card: String,
+    upgrades: usize,
+    count: usize,
+}
+
+fn render_campaign_branch_deck_shape_v1(summary: &BranchCampaignBranchSummaryV1) -> Option<String> {
+    let entries = parse_campaign_deck_key_entries_v1(&summary.deck_key);
+    if entries.is_empty() {
+        return None;
+    }
+    let strike_count = entries
+        .iter()
+        .filter(|entry| campaign_deck_entry_is_strike_v1(&entry.card))
+        .map(|entry| entry.count)
+        .sum::<usize>();
+    let defend_count = entries
+        .iter()
+        .filter(|entry| campaign_deck_entry_is_defend_v1(&entry.card))
+        .map(|entry| entry.count)
+        .sum::<usize>();
+    let starter_count = entries
+        .iter()
+        .filter(|entry| campaign_deck_entry_is_starter_v1(&entry.card))
+        .map(|entry| entry.count)
+        .sum::<usize>();
+    let upgraded_count = entries
+        .iter()
+        .filter(|entry| entry.upgrades > 0)
+        .map(|entry| entry.count)
+        .sum::<usize>();
+    let additions = entries
+        .iter()
+        .filter(|entry| !campaign_deck_entry_is_starter_v1(&entry.card))
+        .map(format_campaign_deck_key_entry_v1)
+        .take(4)
+        .collect::<Vec<_>>();
+    let additions = if additions.is_empty() {
+        "-".to_string()
+    } else {
+        additions.join(",")
+    };
+    Some(format!(
+        "[S{strike_count} D{defend_count} starter{starter_count} add:{additions} upg{upgraded_count}]"
+    ))
+}
+
+fn parse_campaign_deck_key_entries_v1(deck_key: &str) -> Vec<CampaignDeckKeyEntryV1> {
+    deck_key
+        .split(';')
+        .filter_map(|part| {
+            let part = part.trim();
+            let (card_and_upgrade, count) = part.rsplit_once('x')?;
+            let (card, upgrades) = card_and_upgrade.rsplit_once('+')?;
+            Some(CampaignDeckKeyEntryV1 {
+                card: card.trim().to_string(),
+                upgrades: upgrades.trim().parse().ok()?,
+                count: count.trim().parse().ok()?,
+            })
+        })
+        .collect()
+}
+
+fn format_campaign_deck_key_entry_v1(entry: &CampaignDeckKeyEntryV1) -> String {
+    let upgrade = match entry.upgrades {
+        0 => String::new(),
+        1 => "+".to_string(),
+        value => format!("+{value}"),
+    };
+    let count = if entry.count > 1 {
+        format!("x{}", entry.count)
+    } else {
+        String::new()
+    };
+    format!("{}{}{}", entry.card, upgrade, count)
+}
+
+fn campaign_deck_entry_is_starter_v1(card: &str) -> bool {
+    campaign_deck_entry_is_strike_v1(card)
+        || campaign_deck_entry_is_defend_v1(card)
+        || matches!(
+            card,
+            "Bash" | "Neutralize" | "Survivor" | "Zap" | "Dualcast" | "Eruption" | "Vigilance"
+        )
+}
+
+fn campaign_deck_entry_is_strike_v1(card: &str) -> bool {
+    matches!(card, "Strike" | "StrikeG" | "StrikeB" | "StrikeP")
+}
+
+fn campaign_deck_entry_is_defend_v1(card: &str) -> bool {
+    matches!(card, "Defend" | "DefendG" | "DefendB" | "DefendP")
 }
 
 fn render_choice_path(labels: &[String]) -> String {

@@ -473,6 +473,18 @@ fn compact_campaign_report_formats_large_selection_rank_readably() {
 }
 
 #[test]
+fn compact_campaign_report_shows_mechanical_deck_shape() {
+    let mut report = test_campaign_report_with_active("active", 3, 80);
+    report.active[0].summary.as_mut().unwrap().deck_count = 10;
+    report.active[0].summary.as_mut().unwrap().deck_key =
+        "Bash+1x1;Clash+0x1;Defend+0x3;Defend+1x1;Strike+0x4".to_string();
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered.contains("deck 10 [S4 D4 starter9 add:Clash upg2]"));
+}
+
+#[test]
 fn campaign_choice_label_prefixes_generic_event_leave_with_boundary() {
     let choice = BranchExperimentChoiceV1 {
         depth: 0,
