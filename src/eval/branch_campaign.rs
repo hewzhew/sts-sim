@@ -1549,7 +1549,7 @@ fn render_campaign_combat_lab_probe_summary_v1(
         .or_else(|| probes.first())
         .expect("non-empty probe list");
 
-    Some(vec![
+    let mut lines = vec![
         format!(
             "Combat lab probes: {} {}",
             render_string_count_map_v1(&kind_counts, 6),
@@ -1562,7 +1562,25 @@ fn render_campaign_combat_lab_probe_summary_v1(
             example.boundary,
             example.result
         ),
-    ])
+    ];
+    if !example.diagnosis.is_empty() {
+        lines.push(format!(
+            "  probe diagnosis: {}/{} confidence={} signals={}",
+            example.diagnosis.outcome_class,
+            example.diagnosis.search_reason,
+            example.diagnosis.confidence,
+            render_probe_signal_list_v1(&example.diagnosis.signals)
+        ));
+    }
+    Some(lines)
+}
+
+fn render_probe_signal_list_v1(signals: &[String]) -> String {
+    if signals.is_empty() {
+        "-".to_string()
+    } else {
+        signals.join(",")
+    }
 }
 
 fn boss_mechanic_pressure_key_v1(branch: &BranchCampaignBranchV1) -> (i32, i32, i32) {

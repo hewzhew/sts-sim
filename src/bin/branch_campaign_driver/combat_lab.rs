@@ -172,10 +172,27 @@ fn render_boss_preview_packet_v1(
             .unwrap_or_else(|| "-".to_string()),
         packet.boundary,
     ));
+    if !packet.diagnosis.is_empty() {
+        lines.push(format!(
+            "  diagnosis={}/{} confidence={} signals={}",
+            packet.diagnosis.outcome_class,
+            packet.diagnosis.search_reason,
+            packet.diagnosis.confidence,
+            render_probe_signal_list_v1(&packet.diagnosis.signals)
+        ));
+    }
     for digest in &packet.search_digest {
         lines.push(format!("  search: {digest}"));
     }
     lines
+}
+
+fn render_probe_signal_list_v1(signals: &[String]) -> String {
+    if signals.is_empty() {
+        "-".to_string()
+    } else {
+        signals.join(",")
+    }
 }
 
 fn visible_hp_v1(session: &RunControlSession) -> (i32, i32) {

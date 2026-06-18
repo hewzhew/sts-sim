@@ -10,7 +10,7 @@ use crate::eval::branch_experiment_retention::{
     BranchRetentionDecisionV1, BranchRetentionRankAdjustmentV1, BranchRetentionSlotV1,
 };
 use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
-use crate::eval::combat_lab_probe_v1::CombatLabProbePacketV1;
+use crate::eval::combat_lab_probe_v1::{CombatLabProbeDiagnosisV1, CombatLabProbePacketV1};
 use crate::eval::run_control::{
     RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
     RunControlSessionCheckpointV1,
@@ -130,6 +130,12 @@ fn compact_campaign_report_renders_combat_lab_probe_summary() {
         max_hp: Some(94),
         actions: None,
         search_digest: vec!["result=no_complete_winning_candidate".to_string()],
+        diagnosis: CombatLabProbeDiagnosisV1 {
+            outcome_class: "unresolved".to_string(),
+            search_reason: "wall_clock_deadline_hit".to_string(),
+            confidence: "search_digest".to_string(),
+            signals: vec!["budget_limited".to_string(), "no_terminal_wins".to_string()],
+        },
     }];
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
@@ -138,6 +144,9 @@ fn compact_campaign_report_renders_combat_lab_probe_summary() {
         .contains("Combat lab probes: current_act_boss_preview=1 unresolved_no_trajectory=1"));
     assert!(rendered.contains(
         "probe example: boss=TheChamp source=campaign_key_boundary boundary=Shop result=unresolved_no_trajectory"
+    ));
+    assert!(rendered.contains(
+        "probe diagnosis: unresolved/wall_clock_deadline_hit confidence=search_digest signals=budget_limited,no_terminal_wins"
     ));
 }
 
