@@ -3,7 +3,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
 };
-use crate::ai::strategic::{AcquisitionVerdict, CandidateAction};
+use crate::ai::strategic::{
+    AcquisitionThesisSignal, AcquisitionThesisStatus, AcquisitionVerdict, CandidateAction,
+    StrategicDecisionTrace,
+};
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 use crate::eval::branch_experiment::{
@@ -415,6 +418,8 @@ struct RewardOptionStrategicRetentionKey {
     strategic_score_sort_key: i32,
     verdict_label: String,
     score_milli: Option<i32>,
+    acquisition_thesis_rank_adjustment: i32,
+    acquisition_thesis_summary: Vec<String>,
 }
 
 fn attach_card_reward_decision_signals(
@@ -472,16 +477,60 @@ fn reward_option_strategic_retention_keys(
             let action = candidate_action_for_reward_option(index, option, &option_card_indices);
             let order = trace
                 .compiled_for_action(&action)
-                .map(|compiled| RewardOptionStrategicRetentionKey {
-                    score_milli: Some((compiled.score * 1000.0).round() as i32),
-                    verdict_retention_order: compiled.verdict.retention_order(),
-                    strategic_score_sort_key: -((compiled.score * 1000.0).round() as i32),
-                    verdict_label: format!("{:?}", compiled.verdict),
+                .map(|compiled| {
+                    let (thesis_adjustment, thesis_summary) =
+                        reward_option_acquisition_thesis_signal(&trace, &action);
+                    RewardOptionStrategicRetentionKey {
+                        score_milli: Some((compiled.score * 1000.0).round() as i32),
+                        verdict_retention_order: compiled.verdict.retention_order(),
+                        strategic_score_sort_key: -((compiled.score * 1000.0).round() as i32),
+                        verdict_label: format!("{:?}", compiled.verdict),
+                        acquisition_thesis_rank_adjustment: thesis_adjustment,
+                        acquisition_thesis_summary: thesis_summary,
+                    }
                 })
                 .unwrap_or_else(RewardOptionStrategicRetentionKey::missing);
             (index, order)
         })
         .collect()
+}
+
+fn reward_option_acquisition_thesis_signal(
+    trace: &StrategicDecisionTrace,
+    action: &CandidateAction,
+) -> (i32, Vec<String>) {
+    let Some(delta) = trace
+        .candidate_deltas
+        .iter()
+        .find(|delta| delta.action == *action)
+    else {
+        return (0, Vec::new());
+    };
+    let summary = delta
+        .acquisition_theses
+        .iter()
+        .map(render_acquisition_thesis_signal)
+        .collect::<Vec<_>>();
+    let adjustment = delta
+        .acquisition_theses
+        .iter()
+        .map(acquisition_thesis_rank_adjustment)
+        .sum::<i32>()
+        .clamp(-1_800, 0);
+    (adjustment, summary)
+}
+
+fn acquisition_thesis_rank_adjustment(thesis: &AcquisitionThesisSignal) -> i32 {
+    match thesis.status {
+        AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful => 0,
+        AcquisitionThesisStatus::Saturated => -450,
+        AcquisitionThesisStatus::OverBudget => -800,
+        AcquisitionThesisStatus::Unsupported => -1_000,
+    }
+}
+
+fn render_acquisition_thesis_signal(thesis: &AcquisitionThesisSignal) -> String {
+    format!("{:?}/{:?}:{}", thesis.role, thesis.status, thesis.reason)
 }
 
 fn candidate_action_for_reward_option(
@@ -514,6 +563,8 @@ impl RewardOptionStrategicRetentionKey {
             strategic_score_sort_key: 0,
             verdict_label: "strategy_unavailable".to_string(),
             score_milli: None,
+            acquisition_thesis_rank_adjustment: 0,
+            acquisition_thesis_summary: Vec::new(),
         }
     }
 
@@ -523,6 +574,8 @@ impl RewardOptionStrategicRetentionKey {
             strategic_score_sort_key: 0,
             verdict_label: "missing_strategic_candidate".to_string(),
             score_milli: None,
+            acquisition_thesis_rank_adjustment: 0,
+            acquisition_thesis_summary: Vec::new(),
         }
     }
 
@@ -535,6 +588,8 @@ impl RewardOptionStrategicRetentionKey {
             score,
             confidence_milli: 650,
             component_net_rank: score.clamp(-1_200, 1_200),
+            acquisition_thesis_rank_adjustment: self.acquisition_thesis_rank_adjustment,
+            acquisition_thesis_summary: self.acquisition_thesis_summary.clone(),
         })
     }
 }

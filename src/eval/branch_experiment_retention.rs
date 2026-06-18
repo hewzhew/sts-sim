@@ -722,6 +722,13 @@ pub fn branch_retention_rank_adjustment_v1(
         reasons.push(format!(
             "card_reward_plan_rank_adjustment:{card_reward_plan_adjustment}"
         ));
+        for signal in candidate.decision_signals.iter().filter(|signal| {
+            signal.source == BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1
+        }) {
+            for summary in &signal.acquisition_thesis_summary {
+                reasons.push(format!("acquisition_thesis:{summary}"));
+            }
+        }
     }
     let shop_plan_adjustment = branch_shop_plan_rank_adjustment_v1(candidate);
     if shop_plan_adjustment != 0 {
@@ -785,11 +792,14 @@ fn branch_card_reward_plan_rank_adjustment_v1(candidate: &BranchRetentionCandida
 }
 
 fn card_reward_signal_rank_adjustment_v1(signal: &BranchExperimentChoiceDecisionSignalV1) -> i32 {
-    match signal.verdict.as_str() {
+    let verdict_adjustment = match signal.verdict.as_str() {
         "Reject" => -900 + signal.component_net_rank.min(0) / 2,
         "SkipPreferred" => -500 + signal.component_net_rank.min(0) / 2,
         _ => 0,
-    }
+    };
+    verdict_adjustment
+        .saturating_add(signal.acquisition_thesis_rank_adjustment.min(0))
+        .clamp(-1_800, 0)
 }
 
 fn branch_shop_plan_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
@@ -1625,6 +1635,37 @@ mod tests {
 
         assert!(decision.slots.contains(&BranchRetentionSlotV1::Package));
         assert!(decision.strategic_signature.package_coherence > 0.0);
+    }
+
+    #[test]
+    fn card_reward_acquisition_thesis_debt_lowers_retention_rank() {
+        let profiles = vec![semantic_profile(CardId::Clothesline)];
+        let trajectory = summarize_branch_trajectory_v1(&profiles);
+        let clean = retention_candidate(0, profiles.clone(), trajectory.clone());
+        let mut over_budget = retention_candidate(1, profiles, trajectory);
+        over_budget.decision_signals = vec![BranchExperimentChoiceDecisionSignalV1 {
+            source: BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1.to_string(),
+            verdict: "ContextTake".to_string(),
+            tier: 2,
+            score: 0,
+            confidence_milli: 650,
+            component_net_rank: 0,
+            acquisition_thesis_rank_adjustment: -800,
+            acquisition_thesis_summary: vec![
+                "RedundantCoverage/OverBudget:duplicate_transition_or_mitigation".to_string(),
+            ],
+        }];
+
+        let clean_rank = branch_retention_rank_adjustment_v1(&clean);
+        let over_budget_rank = branch_retention_rank_adjustment_v1(&over_budget);
+
+        assert_eq!(clean_rank.card_reward_plan_adjustment, 0);
+        assert_eq!(over_budget_rank.card_reward_plan_adjustment, -800);
+        assert!(over_budget_rank.effective_rank_key < clean_rank.effective_rank_key);
+        assert!(over_budget_rank.reasons.iter().any(|reason| {
+            reason
+                == "acquisition_thesis:RedundantCoverage/OverBudget:duplicate_transition_or_mitigation"
+        }));
     }
 
     fn semantic_profile(card: CardId) -> CardRewardSemanticProfileV1 {

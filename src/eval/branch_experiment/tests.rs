@@ -1326,6 +1326,8 @@ fn branch_retention_reports_decision_signal_without_rank_consumption() {
         score: 9_000,
         confidence_milli: 1_000,
         component_net_rank: 9_000,
+        acquisition_thesis_rank_adjustment: 0,
+        acquisition_thesis_summary: Vec::new(),
     }];
 
     let adjustment = branch_retention_rank_adjustment_v1(&candidate);
@@ -1348,6 +1350,8 @@ fn branch_retention_consumes_card_reward_reject_as_active_rank_penalty() {
         score: -470,
         confidence_milli: 650,
         component_net_rank: -470,
+        acquisition_thesis_rank_adjustment: 0,
+        acquisition_thesis_summary: Vec::new(),
     }];
 
     let adjustment = branch_retention_rank_adjustment_v1(&candidate);
@@ -1371,6 +1375,8 @@ fn branch_retention_consumes_only_unified_shop_plan_signal() {
             score: 99_999,
             confidence_milli: 1_000,
             component_net_rank: 99_999,
+            acquisition_thesis_rank_adjustment: 0,
+            acquisition_thesis_summary: Vec::new(),
         },
         BranchExperimentChoiceDecisionSignalV1 {
             source: BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1.to_string(),
@@ -1379,6 +1385,8 @@ fn branch_retention_consumes_only_unified_shop_plan_signal() {
             score: 1_879,
             confidence_milli: 820,
             component_net_rank: 71,
+            acquisition_thesis_rank_adjustment: 0,
+            acquisition_thesis_summary: Vec::new(),
         },
     ];
 
