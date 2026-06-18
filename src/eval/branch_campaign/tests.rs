@@ -33,8 +33,10 @@ fn branch_state_store_tracks_snapshot_hits_and_retention() {
     store.insert_session(kept.commands.clone(), kept_session);
     store.insert_session(dropped.commands.clone(), dropped_session);
 
-    assert!(store.get_session_cloned(&kept.commands).is_some());
-    assert!(store.get_session_cloned(&["missing".to_string()]).is_none());
+    assert!(store.replay_start_for_commands(&kept.commands).is_some());
+    assert!(store
+        .replay_start_for_commands(&["missing".to_string()])
+        .is_none());
     store.retain_for_branches(&[kept.clone()], &[], &[], &[]);
 
     let summary = store.summary();
@@ -171,6 +173,53 @@ fn branch_state_store_restores_checkpoint_node_records_before_sessions() {
     assert_eq!(store.summary().sessions, 1);
     assert_eq!(store.summary().nodes, 2);
     assert_eq!(store.summary().linked_nodes, 1);
+}
+
+#[test]
+fn branch_state_store_replays_from_nearest_saved_ancestor() {
+    let parent_commands = vec!["rp 0".to_string()];
+    let child_commands = vec![
+        "rp 0".to_string(),
+        "go 2".to_string(),
+        "rp 1".to_string(),
+    ];
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+
+    store
+        .restore_checkpoint_nodes(&[
+            super::model::BranchCampaignCheckpointNodeV1 {
+                node_id: 0,
+                parent_id: None,
+                commands: parent_commands.clone(),
+                added_commands: parent_commands.clone(),
+            },
+            super::model::BranchCampaignCheckpointNodeV1 {
+                node_id: 1,
+                parent_id: Some(0),
+                commands: child_commands.clone(),
+                added_commands: vec!["go 2".to_string(), "rp 1".to_string()],
+            },
+        ])
+        .expect("checkpoint node graph should restore");
+    store.insert_session(
+        parent_commands,
+        RunControlSession::new(RunControlConfig::default()),
+    );
+
+    let replay_start = store
+        .replay_start_for_commands(&child_commands)
+        .expect("child should replay from saved parent state");
+
+    assert_eq!(
+        replay_start.source,
+        super::state_graph::BranchStateReplayStartSourceV1::Ancestor
+    );
+    assert_eq!(
+        replay_start.suffix_commands,
+        vec!["go 2".to_string(), "rp 1".to_string()]
+    );
+    assert_eq!(store.summary().lookup_hits, 1);
+    assert_eq!(store.summary().lookup_misses, 0);
 }
 
 #[test]

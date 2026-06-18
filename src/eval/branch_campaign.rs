@@ -3,6 +3,7 @@ use crate::ai::strategic::{
     BranchSignatureCompact,
 };
 use crate::eval::branch_experiment::{
+    run_branch_experiment_from_session_after_prefix_with_snapshots_v1,
     run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
     BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentConfigV1,
     BranchExperimentRouteDecisionV1, BranchExperimentRunResultV1,
@@ -57,7 +58,7 @@ use selection_key::{
     act_boss_floor_v1, campaign_branch_retention_key_v1, compare_campaign_branches_for_active_v1,
     compare_campaign_branches_for_promotion_v1, render_campaign_branch_selection_basis_v1,
 };
-use state_graph::BranchStateStoreV1;
+use state_graph::{BranchStateReplayStartV1, BranchStateStoreV1};
 use strategic_signals::{
     campaign_strategic_signals_for_render_v1, campaign_strategic_signals_from_groups_v1,
     render_campaign_strategic_concern_v1, render_campaign_strategic_signals_v1,
@@ -199,7 +200,7 @@ struct BranchCampaignParentBaseResultV1 {
 
 struct BranchCampaignParentRetryRequestV1 {
     parent_index: usize,
-    parent_snapshot: Option<RunControlSession>,
+    parent_replay_start: Option<BranchStateReplayStartV1>,
     retry_config: BranchCampaignConfigV1,
     initial_elapsed_wall_ms: Option<u64>,
     original_error: Option<String>,
@@ -2263,12 +2264,12 @@ where
         });
     }
 
-    let parent_snapshots = parents
+    let parent_replay_starts = parents
         .iter()
-        .map(|parent| state_store.get_session_cloned(&parent.commands))
+        .map(|parent| state_store.replay_start_for_commands(&parent.commands))
         .collect::<Vec<_>>();
     let base_results =
-        run_campaign_parent_base_passes_parallel_v1(config, parents, &parent_snapshots)?;
+        run_campaign_parent_base_passes_parallel_v1(config, parents, &parent_replay_starts)?;
     let mut parent_results = Vec::new();
     let mut retry_requests = Vec::new();
     for base_result in base_results {
@@ -2276,7 +2277,10 @@ where
         match campaign_parent_retry_request_or_result_v1(
             config,
             base_result,
-            parent_snapshots.get(parent_index).cloned().unwrap_or(None),
+            parent_replay_starts
+                .get(parent_index)
+                .cloned()
+                .unwrap_or(None),
             combat_retry_ledger,
             !round_retry,
         )? {
@@ -2380,15 +2384,18 @@ where
 fn run_campaign_parent_base_passes_parallel_v1(
     config: &BranchCampaignConfigV1,
     parents: &[BranchCampaignBranchV1],
-    parent_snapshots: &[Option<RunControlSession>],
+    parent_replay_starts: &[Option<BranchStateReplayStartV1>],
 ) -> Result<Vec<BranchCampaignParentBaseResultV1>, String> {
     let joined = std::thread::scope(|scope| {
         let mut handles = Vec::new();
         for (parent_index, parent) in parents.iter().enumerate() {
-            let parent_snapshot = parent_snapshots.get(parent_index).cloned().unwrap_or(None);
+            let parent_replay_start = parent_replay_starts
+                .get(parent_index)
+                .cloned()
+                .unwrap_or(None);
             handles.push(scope.spawn(move || BranchCampaignParentBaseResultV1 {
                 parent_index,
-                result: run_campaign_parent_round_once_v1(config, parent, parent_snapshot),
+                result: run_campaign_parent_round_once_v1(config, parent, parent_replay_start),
             }));
         }
         handles
@@ -2407,7 +2414,7 @@ fn run_campaign_parent_base_passes_parallel_v1(
 fn campaign_parent_retry_request_or_result_v1(
     config: &BranchCampaignConfigV1,
     base_result: BranchCampaignParentBaseResultV1,
-    parent_snapshot: Option<RunControlSession>,
+    parent_replay_start: Option<BranchStateReplayStartV1>,
     combat_retry_ledger: &mut BranchCampaignCombatRetryLedgerStateV1,
     parent_combat_retry_enabled: bool,
 ) -> Result<Result<BranchCampaignParentRoundResultV1, BranchCampaignParentRetryRequestV1>, String> {
@@ -2423,7 +2430,7 @@ fn campaign_parent_retry_request_or_result_v1(
                 .expect("retry config was checked before retrying parent replay");
             return Ok(Err(BranchCampaignParentRetryRequestV1 {
                 parent_index,
-                parent_snapshot,
+                parent_replay_start,
                 retry_config,
                 initial_elapsed_wall_ms: None,
                 original_error: Some(err),
@@ -2449,7 +2456,7 @@ fn campaign_parent_retry_request_or_result_v1(
     let initial_elapsed_wall_ms = result.report.elapsed_wall_ms;
     Ok(Err(BranchCampaignParentRetryRequestV1 {
         parent_index,
-        parent_snapshot,
+        parent_replay_start,
         retry_config,
         initial_elapsed_wall_ms: Some(initial_elapsed_wall_ms),
         original_error: None,
@@ -2488,7 +2495,7 @@ fn run_campaign_parent_retry_passes_parallel_v1(
                 let result = run_campaign_parent_round_once_v1(
                     &request.retry_config,
                     parent,
-                    request.parent_snapshot,
+                    request.parent_replay_start,
                 );
                 (
                     parent_index,
@@ -2562,13 +2569,20 @@ fn campaign_retry_timing_for_parent_v1(
 fn run_campaign_parent_round_once_v1(
     config: &BranchCampaignConfigV1,
     parent: &BranchCampaignBranchV1,
-    parent_snapshot: Option<RunControlSession>,
+    parent_replay_start: Option<BranchStateReplayStartV1>,
 ) -> Result<BranchExperimentRunResultV1, String> {
     let mut experiment_config = campaign_branch_experiment_config_v1(config);
-    if let Some(session) = parent_snapshot {
+    if let Some(replay_start) = parent_replay_start {
         experiment_config.prefix_commands.clear();
+        if !replay_start.suffix_commands.is_empty() {
+            return run_branch_experiment_from_session_after_prefix_with_snapshots_v1(
+                replay_start.session,
+                &experiment_config,
+                &campaign_replay_commands_for_path_v1(&replay_start.suffix_commands),
+            );
+        }
         return Ok(run_branch_experiment_from_session_with_snapshots_v1(
-            session,
+            replay_start.session,
             &experiment_config,
         ));
     }

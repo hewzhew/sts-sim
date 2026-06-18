@@ -42,6 +42,21 @@ pub(super) struct BranchStateStoreV1 {
     retains: usize,
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct BranchStateReplayStartV1 {
+    pub(super) session: RunControlSession,
+    pub(super) suffix_commands: Vec<String>,
+    #[cfg(test)]
+    pub(super) source: BranchStateReplayStartSourceV1,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum BranchStateReplayStartSourceV1 {
+    Exact,
+    Ancestor,
+}
+
 impl BranchStateStoreV1 {
     pub(super) fn new() -> Self {
         Self::default()
@@ -75,14 +90,42 @@ impl BranchStateStoreV1 {
         self.sessions_by_commands.get(commands)
     }
 
-    pub(super) fn get_session_cloned(&mut self, commands: &[String]) -> Option<RunControlSession> {
-        let session = self.sessions_by_commands.get(commands).cloned();
-        if session.is_some() {
+    pub(super) fn replay_start_for_commands(
+        &mut self,
+        commands: &[String],
+    ) -> Option<BranchStateReplayStartV1> {
+        if let Some(session) = self.sessions_by_commands.get(commands).cloned() {
             self.lookup_hits = self.lookup_hits.saturating_add(1);
-        } else {
-            self.lookup_misses = self.lookup_misses.saturating_add(1);
+            return Some(BranchStateReplayStartV1 {
+                session,
+                suffix_commands: Vec::new(),
+                #[cfg(test)]
+                source: BranchStateReplayStartSourceV1::Exact,
+            });
         }
-        session
+
+        let mut current = self.node_ids_by_commands.get(commands).copied();
+        let mut suffix_segments = Vec::<Vec<String>>::new();
+        while let Some(id) = current {
+            let Some(node) = self.nodes.get(id.0) else {
+                break;
+            };
+            if let Some(session) = self.sessions_by_commands.get(&node.commands).cloned() {
+                suffix_segments.reverse();
+                self.lookup_hits = self.lookup_hits.saturating_add(1);
+                return Some(BranchStateReplayStartV1 {
+                    session,
+                    suffix_commands: suffix_segments.into_iter().flatten().collect(),
+                    #[cfg(test)]
+                    source: BranchStateReplayStartSourceV1::Ancestor,
+                });
+            }
+            suffix_segments.push(node.added_commands.clone());
+            current = node.parent_id;
+        }
+
+        self.lookup_misses = self.lookup_misses.saturating_add(1);
+        None
     }
 
     pub(super) fn contains_commands(&self, commands: &[String]) -> bool {

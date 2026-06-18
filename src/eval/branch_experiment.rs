@@ -245,24 +245,8 @@ fn prepare_branch_experiment_start(
         }
     }
 
-    let mut prefix_final_boss_combat_record = None;
-    for command_line in &config.prefix_commands {
-        if command_line == BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND {
-            let outcome = crate::eval::run_control::apply_branch_experiment_auto_run(
-                &mut session,
-                RunControlAutoStepOptions {
-                    search: branch_experiment_search_options(config),
-                    max_operations: Some(config.auto_max_operations),
-                    route: RunControlRouteAutomationMode::Planner,
-                },
-            )?;
-            prefix_final_boss_combat_record =
-                final_boss_combat_record_from_annotations_v1(&session, &outcome.trace_annotations)
-                    .or(prefix_final_boss_combat_record);
-        } else {
-            apply_branch_choice(&mut session, command_line)?;
-        }
-    }
+    let prefix_final_boss_combat_record =
+        apply_branch_experiment_prefix_commands_v1(&mut session, config, &config.prefix_commands)?;
 
     let mut branch = BranchWork {
         id: "root".to_string(),
@@ -306,6 +290,29 @@ pub fn run_branch_experiment_from_session_with_snapshots_v1(
     run_branch_experiment_from_session_with_replay_and_snapshots(session, config, 0, None)
 }
 
+pub fn run_branch_experiment_from_session_after_prefix_with_snapshots_v1(
+    mut session: RunControlSession,
+    config: &BranchExperimentConfigV1,
+    prefix_commands: &[String],
+) -> Result<BranchExperimentRunResultV1, String> {
+    let prefix_final_boss_combat_record =
+        apply_branch_experiment_prefix_commands_v1(&mut session, config, prefix_commands)?;
+    Ok(run_branch_experiment_from_start_branch_with_replay_and_snapshots(
+        BranchWork {
+            id: "root".to_string(),
+            session,
+            choices: Vec::new(),
+            status: BranchExperimentBranchStatusV1::Active,
+            stop_reason: "initial".to_string(),
+            retention: default_branch_retention_decision_v1(),
+            final_boss_combat_record: prefix_final_boss_combat_record,
+        },
+        config,
+        0,
+        None,
+    ))
+}
+
 fn run_branch_experiment_from_session_with_replay_and_snapshots(
     session: RunControlSession,
     config: &BranchExperimentConfigV1,
@@ -341,6 +348,32 @@ fn run_branch_experiment_from_start_branch_with_replay(
         replay_trace_stop,
     )
     .report
+}
+
+fn apply_branch_experiment_prefix_commands_v1(
+    session: &mut RunControlSession,
+    config: &BranchExperimentConfigV1,
+    prefix_commands: &[String],
+) -> Result<Option<BranchExperimentBossCombatRecordV1>, String> {
+    let mut prefix_final_boss_combat_record = None;
+    for command_line in prefix_commands {
+        if command_line == BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND {
+            let outcome = crate::eval::run_control::apply_branch_experiment_auto_run(
+                session,
+                RunControlAutoStepOptions {
+                    search: branch_experiment_search_options(config),
+                    max_operations: Some(config.auto_max_operations),
+                    route: RunControlRouteAutomationMode::Planner,
+                },
+            )?;
+            prefix_final_boss_combat_record =
+                final_boss_combat_record_from_annotations_v1(session, &outcome.trace_annotations)
+                    .or(prefix_final_boss_combat_record);
+        } else {
+            apply_branch_choice(session, command_line)?;
+        }
+    }
+    Ok(prefix_final_boss_combat_record)
 }
 
 fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
