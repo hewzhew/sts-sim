@@ -272,6 +272,7 @@ mod tests {
             route_evidence: Default::default(),
             combat_retry_ledger: Default::default(),
             strategic_signals: Default::default(),
+            state_store: Default::default(),
             rounds: Vec::new(),
         };
 

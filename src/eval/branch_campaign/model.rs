@@ -190,7 +190,36 @@ pub struct BranchCampaignReportV1 {
         skip_serializing_if = "BranchCampaignStrategicSignalsV1::is_empty"
     )]
     pub strategic_signals: BranchCampaignStrategicSignalsV1,
+    #[serde(
+        default,
+        skip_serializing_if = "BranchCampaignStateStoreSummaryV1::is_empty"
+    )]
+    pub state_store: BranchCampaignStateStoreSummaryV1,
     pub rounds: Vec<BranchCampaignRoundSummaryV1>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignStateStoreSummaryV1 {
+    pub sessions: usize,
+    pub nodes: usize,
+    pub linked_nodes: usize,
+    pub lookup_hits: usize,
+    pub lookup_misses: usize,
+    pub inserts: usize,
+    pub retains: usize,
+}
+
+impl BranchCampaignStateStoreSummaryV1 {
+    pub fn is_empty(&self) -> bool {
+        self.sessions == 0
+            && self.nodes == 0
+            && self.linked_nodes == 0
+            && self.lookup_hits == 0
+            && self.lookup_misses == 0
+            && self.inserts == 0
+            && self.retains == 0
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

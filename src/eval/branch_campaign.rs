@@ -35,7 +35,7 @@ pub use model::{
     BranchCampaignCheckpointSessionV1, BranchCampaignCheckpointV1, BranchCampaignReportV1,
     BranchCampaignRoundSummaryV1, BranchCampaignRouteEvidenceExampleV1,
     BranchCampaignRouteEvidenceSummaryV1, BranchCampaignRunResultV1, BranchCampaignSelectionV1,
-    BranchCampaignStrategyRequestV1,
+    BranchCampaignStateStoreSummaryV1, BranchCampaignStrategyRequestV1,
 };
 use performance::{
     add_combat_performance_samples_v1, aggregate_campaign_combat_performance_v1,
@@ -845,6 +845,7 @@ where
         route_evidence: state.route_evidence,
         combat_retry_ledger: state.combat_retry_ledger.to_report_v1(),
         strategic_signals,
+        state_store: state.state_store.summary(),
         rounds: state.rounds,
     };
     Ok(BranchCampaignRunResultV1 { report, checkpoint })
@@ -1093,6 +1094,18 @@ pub fn render_branch_campaign_compact_v1(
             format_seconds_1dp_v1(parent_elapsed_wall_ms_max),
             format_seconds_1dp_v1(combat_retry_elapsed_wall_ms_sum),
             format_seconds_1dp_v1(combat_retry_elapsed_wall_ms_max),
+        ));
+    }
+    if !report.state_store.is_empty() {
+        lines.push(format!(
+            "State store: sessions={} nodes={} linked={} lookups={}/{} inserts={} retains={}",
+            report.state_store.sessions,
+            report.state_store.nodes,
+            report.state_store.linked_nodes,
+            report.state_store.lookup_hits,
+            report.state_store.lookup_misses,
+            report.state_store.inserts,
+            report.state_store.retains,
         ));
     }
     let combat_performance = aggregate_campaign_combat_performance_v1(report);

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::eval::run_control::RunControlSession;
 
-use super::model::BranchCampaignBranchV1;
+use super::model::{BranchCampaignBranchV1, BranchCampaignStateStoreSummaryV1};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct BranchStateNodeIdV1(usize);
@@ -28,16 +28,6 @@ impl BranchStateNodeV1 {
     }
 }
 
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(super) struct BranchStateStoreStatsV1 {
-    pub snapshot_count: usize,
-    pub lookup_hits: usize,
-    pub lookup_misses: usize,
-    pub inserts: usize,
-    pub retained: usize,
-}
-
 #[derive(Clone, Debug, Default)]
 pub(super) struct BranchStateStoreV1 {
     sessions_by_commands: BTreeMap<Vec<String>, RunControlSession>,
@@ -46,7 +36,7 @@ pub(super) struct BranchStateStoreV1 {
     lookup_hits: usize,
     lookup_misses: usize,
     inserts: usize,
-    retained: usize,
+    retains: usize,
 }
 
 impl BranchStateStoreV1 {
@@ -139,7 +129,7 @@ impl BranchStateStoreV1 {
             .collect::<std::collections::BTreeSet<_>>();
         self.sessions_by_commands
             .retain(|commands, _| keep.contains(commands));
-        self.retained = self.retained.saturating_add(1);
+        self.retains = self.retains.saturating_add(1);
     }
 
     fn upsert_node(
@@ -168,14 +158,19 @@ impl BranchStateStoreV1 {
         id
     }
 
-    #[cfg(test)]
-    pub(super) fn stats(&self) -> BranchStateStoreStatsV1 {
-        BranchStateStoreStatsV1 {
-            snapshot_count: self.sessions_by_commands.len(),
+    pub(super) fn summary(&self) -> BranchCampaignStateStoreSummaryV1 {
+        BranchCampaignStateStoreSummaryV1 {
+            sessions: self.sessions_by_commands.len(),
+            nodes: self.nodes.len(),
+            linked_nodes: self
+                .nodes
+                .iter()
+                .filter(|node| node.parent_id.is_some())
+                .count(),
             lookup_hits: self.lookup_hits,
             lookup_misses: self.lookup_misses,
             inserts: self.inserts,
-            retained: self.retained,
+            retains: self.retains,
         }
     }
 }
