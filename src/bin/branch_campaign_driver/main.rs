@@ -42,8 +42,9 @@ use sts_simulator::eval::neow_guided_prefix::{
 };
 use sts_simulator::eval::run_control::{canonical_player_class, RunControlHpLossLimit};
 use sts_simulator::eval::run_control::{
-    render_run_control_details, render_run_control_state, RunControlCombatSegmentMode,
-    RunControlCommand, RunControlSearchCombatOptions, RunControlSession,
+    build_decision_surface, render_run_control_details, render_run_control_state,
+    RunControlCombatSegmentMode, RunControlCommand, RunControlSearchCombatOptions,
+    RunControlSession,
 };
 
 const QUICK_PRESET_MAX_ROUNDS: usize = 2;
@@ -75,6 +76,16 @@ const DEEP_PRESET_EXPERIMENT_WALL_MS: u64 = 30_000;
 const DEEP_PRESET_SEARCH_WALL_MS: u64 = 1_000;
 const DEEP_PRESET_SEARCH_MAX_NODES: usize = 200_000;
 const DEEP_PRESET_BRANCH_EXAMPLES: usize = 6;
+
+const EXPLORE_PRESET_MAX_ROUNDS: usize = 4;
+const EXPLORE_PRESET_ROUND_DEPTH: usize = 1;
+const EXPLORE_PRESET_MAX_ACTIVE: usize = 6;
+const EXPLORE_PRESET_MAX_FROZEN: usize = 48;
+const EXPLORE_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 6;
+const EXPLORE_PRESET_EXPERIMENT_WALL_MS: u64 = 8_000;
+const EXPLORE_PRESET_SEARCH_WALL_MS: u64 = 200;
+const EXPLORE_PRESET_SEARCH_MAX_NODES: usize = 30_000;
+const EXPLORE_PRESET_BRANCH_EXAMPLES: usize = 8;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -241,6 +252,12 @@ struct Args {
     inspect_floor: Option<i32>,
 
     #[arg(
+        long = "inspect-boundary",
+        help = "Filter inspected checkpoint sessions by visible boundary title, e.g. Shop or Card Reward"
+    )]
+    inspect_boundary: Option<String>,
+
+    #[arg(
         long = "inspect-hp",
         help = "Filter inspected checkpoint sessions by current HP"
     )]
@@ -347,6 +364,7 @@ struct Args {
 enum BranchCampaignPresetV1 {
     Quick,
     Focused,
+    Explore,
     Deep,
 }
 
@@ -427,6 +445,7 @@ where
     match args.preset {
         Some(BranchCampaignPresetV1::Quick) => apply_quick_preset_defaults(args, was_explicit),
         Some(BranchCampaignPresetV1::Focused) => apply_focused_preset_defaults(args, was_explicit),
+        Some(BranchCampaignPresetV1::Explore) => apply_explore_preset_defaults(args, was_explicit),
         Some(BranchCampaignPresetV1::Deep) => apply_deep_preset_defaults(args, was_explicit),
         None => {}
     }
@@ -491,6 +510,27 @@ where
             search_wall_ms: DEEP_PRESET_SEARCH_WALL_MS,
             search_max_nodes: DEEP_PRESET_SEARCH_MAX_NODES,
             branch_examples: DEEP_PRESET_BRANCH_EXAMPLES,
+        },
+    );
+}
+
+fn apply_explore_preset_defaults<F>(args: &mut Args, was_explicit: F)
+where
+    F: Fn(&'static str) -> bool,
+{
+    apply_campaign_preset_defaults(
+        args,
+        was_explicit,
+        CampaignPresetDefaults {
+            max_rounds: EXPLORE_PRESET_MAX_ROUNDS,
+            round_depth: EXPLORE_PRESET_ROUND_DEPTH,
+            max_active: EXPLORE_PRESET_MAX_ACTIVE,
+            max_frozen: EXPLORE_PRESET_MAX_FROZEN,
+            max_branches_per_active: EXPLORE_PRESET_MAX_BRANCHES_PER_ACTIVE,
+            experiment_wall_ms: EXPLORE_PRESET_EXPERIMENT_WALL_MS,
+            search_wall_ms: EXPLORE_PRESET_SEARCH_WALL_MS,
+            search_max_nodes: EXPLORE_PRESET_SEARCH_MAX_NODES,
+            branch_examples: EXPLORE_PRESET_BRANCH_EXAMPLES,
         },
     );
 }
@@ -673,8 +713,8 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
     }
     if matches.is_empty() {
         return Err(format!(
-            "no checkpoint sessions matched filters act={:?} floor={:?} hp={:?}",
-            args.inspect_act, args.inspect_floor, args.inspect_hp
+            "no checkpoint sessions matched filters act={:?} floor={:?} boundary={:?} hp={:?}",
+            args.inspect_act, args.inspect_floor, args.inspect_boundary, args.inspect_hp
         ));
     }
     if args.inspect_summary {
@@ -769,7 +809,23 @@ fn checkpoint_session_matches_filters(args: &Args, session: &RunControlSession) 
     {
         return false;
     }
+    if let Some(boundary) = args.inspect_boundary.as_ref() {
+        let expected = normalized_inspect_boundary_title_v1(boundary);
+        let actual =
+            normalized_inspect_boundary_title_v1(&build_decision_surface(session).view.header.title);
+        if actual != expected {
+            return false;
+        }
+    }
     true
+}
+
+fn normalized_inspect_boundary_title_v1(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .map(|ch| ch.to_ascii_lowercase())
+        .collect()
 }
 
 fn inspect_visible_player_hp(session: &RunControlSession) -> (i32, i32) {
@@ -1079,6 +1135,8 @@ mod tests {
             "branch_campaign_driver",
             "--inspect-checkpoint",
             "latest.checkpoint.json",
+            "--inspect-boundary",
+            "Shop",
             "--challenge-shop-plans",
             "--challenge-max-plans",
             "5",
@@ -1091,6 +1149,7 @@ mod tests {
             args.inspect_checkpoint,
             Some(PathBuf::from("latest.checkpoint.json"))
         );
+        assert_eq!(args.inspect_boundary.as_deref(), Some("Shop"));
         assert!(args.challenge_shop_plans);
         assert_eq!(args.challenge_max_plans, 5);
         assert_eq!(args.challenge_depth, 3);
@@ -1367,6 +1426,27 @@ mod tests {
             Some(RunControlHpLossLimit::Unlimited)
         );
         assert_eq!(args.branch_examples, 6);
+    }
+
+    #[test]
+    fn explore_preset_uses_wider_shallower_branching() {
+        let args = parse_args_from(["branch_campaign_driver", "--preset", "explore"])
+            .expect("args parse");
+        let config = campaign_config_from_args(&args).expect("config builds");
+
+        assert_eq!(config.max_rounds, 4);
+        assert_eq!(config.round_depth, 1);
+        assert_eq!(config.max_active, 6);
+        assert_eq!(config.max_frozen, 48);
+        assert_eq!(config.max_branches_per_active, 6);
+        assert_eq!(config.experiment_wall_ms, Some(8_000));
+        assert_eq!(config.search_wall_ms, Some(200));
+        assert_eq!(config.search_max_nodes, Some(30_000));
+        assert_eq!(
+            config.search_max_hp_loss,
+            Some(RunControlHpLossLimit::Unlimited)
+        );
+        assert_eq!(args.branch_examples, 8);
     }
 
     #[test]

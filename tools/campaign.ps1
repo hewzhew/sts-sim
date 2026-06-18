@@ -35,6 +35,10 @@ Summarizes the latest saved campaign checkpoint with active/frozen/abandoned dec
 Prints shop compiler evidence for a selected checkpoint branch.
 
 .EXAMPLE
+.\tools\campaign.ps1 -InspectShopChallenge -InspectIndex 0
+Runs selected and alternative shop plans from a selected checkpoint branch, then rolls each forward briefly.
+
+.EXAMPLE
 .\tools\campaign.ps1 -InspectLastAutoCombat -InspectIndex 0
 Prints the last saved automated combat trajectory for a selected checkpoint branch.
 
@@ -53,6 +57,10 @@ Runs the current target-domain high-ascension campaign shortcut.
 .EXAMPLE
 .\tools\campaign.ps1 -Mode deep
 Runs a larger random-seed campaign when you want to leave it working longer.
+
+.EXAMPLE
+.\tools\campaign.ps1 -Mode explore
+Runs a wider, shallower campaign for branch comparison and strategy diagnosis.
 
 .EXAMPLE
 .\tools\campaign.ps1 -More -VictoryHpPercent 50
@@ -94,6 +102,7 @@ param(
     [switch] $More,
     [switch] $Inspect,
     [switch] $InspectShopEvidence,
+    [switch] $InspectShopChallenge,
     [switch] $InspectLastAutoCombat,
     [switch] $DryRun,
     [switch] $NoProgress,
@@ -105,7 +114,7 @@ param(
     [ValidateSet("fast-run", "release-final", "release", "dev-opt", "debug")]
     [string] $BuildProfile = "fast-run",
 
-    [ValidateSet("quick", "focused", "deep")]
+    [ValidateSet("quick", "focused", "explore", "deep")]
     [string] $Mode = "focused",
 
     [ValidateRange(0, 100000)]
@@ -132,6 +141,10 @@ param(
     [int] $InspectIndex = -1,
     [int] $InspectAct = 0,
     [int] $InspectFloor = 0,
+    [string] $InspectBoundary = "",
+    [int] $ChallengeMaxPlans = 6,
+    [int] $ChallengeDepth = 3,
+    [int] $ChallengeMaxBranches = 10,
     [ValidateRange(0, 100)]
     [int] $VictoryHpPercent = 20,
 
@@ -167,8 +180,11 @@ function Read-LatestCheckpointRunConfig {
     return $null
 }
 
-if ($InspectShopEvidence -or $InspectLastAutoCombat) {
+if ($InspectShopEvidence -or $InspectShopChallenge -or $InspectLastAutoCombat) {
     $Inspect = $true
+}
+if ($InspectShopChallenge -and -not $PSBoundParameters.ContainsKey("InspectBoundary")) {
+    $InspectBoundary = "Shop"
 }
 
 if ($More) {
@@ -426,12 +442,22 @@ if ($Inspect) {
         "--inspect-report", "$LatestCampaignPath",
         "--branch-examples", "$BranchExamples"
     )
-    $DetailedInspect = $InspectShopEvidence -or $InspectLastAutoCombat
+    $DetailedInspect = $InspectShopEvidence -or $InspectShopChallenge -or $InspectLastAutoCombat
     if (-not $DetailedInspect) {
         $InspectArgs += "--inspect-summary"
     }
     if ($InspectShopEvidence) {
         $InspectArgs += "--inspect-shop-evidence"
+    }
+    if ($InspectShopChallenge) {
+        $InspectArgs += @(
+            "--challenge-shop-plans",
+            "--challenge-max-plans", "$ChallengeMaxPlans",
+            "--challenge-depth", "$ChallengeDepth",
+            "--challenge-max-branches", "$ChallengeMaxBranches",
+            "--search-wall-ms", "$SearchWallMs",
+            "--search-max-nodes", "$SearchMaxNodes"
+        )
     }
     if ($InspectLastAutoCombat) {
         $InspectArgs += "--inspect-last-auto-combat"
@@ -444,6 +470,9 @@ if ($Inspect) {
     }
     if ($CampaignBoundParameters.ContainsKey("InspectFloor") -and $InspectFloor -gt 0) {
         $InspectArgs += @("--inspect-floor", "$InspectFloor")
+    }
+    if ($InspectBoundary) {
+        $InspectArgs += @("--inspect-boundary", "$InspectBoundary")
     }
 
     $RenderedInspectArgs = $InspectArgs | ForEach-Object {
