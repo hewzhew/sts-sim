@@ -266,6 +266,21 @@ fn evaluate_portfolio_plan_v1(
                 format!("portfolio step {candidate_id} failed unified shop gate: {reason}"),
             );
         }
+        if candidate_plan.plan.steps.len() > 1
+            && candidate.purchase_target.is_some_and(|target| {
+                matches!(target, ShopPurchaseTargetV1::Card { .. })
+            })
+            && evaluation.tier < 320
+        {
+            return ShopPlanEvaluationV1::block(
+                candidate
+                    .purchase_priority
+                    .or(candidate_plan.plan.legacy_priority),
+                format!(
+                    "portfolio step {candidate_id} is a context card purchase; keep it as a single-step branch probe instead of a multi-buy combo"
+                ),
+            );
+        }
         step_evaluations.push(evaluation);
     }
 

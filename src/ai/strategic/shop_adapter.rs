@@ -255,9 +255,9 @@ fn add_shop_card_purchase_deltas(
         });
     }
 
-    add_default_shop_card_semantic_deltas(context, candidate, delta);
     add_shop_card_component_deltas(context, candidate, delta);
     add_shop_card_acquisition_saturation_deltas(context, candidate, delta);
+    add_default_shop_card_semantic_deltas(context, candidate, delta);
 }
 
 fn add_shop_run_debt_deltas(
@@ -335,11 +335,12 @@ fn add_default_shop_card_semantic_deltas(
     {
         if shop_card_frontload_is_current_need(context) {
             delta.role = CandidateRole::Transition;
-            delta.positive.push(LedgerDelta {
-                kind: PressureKind::MissingJob(StrategicJob::Frontload),
-                amount: SHOP_CARD_DEFAULT_JOB_SIGNAL,
-                reason: "shop_card_adds_frontload_current_need".to_string(),
-            });
+            push_default_shop_card_positive_once(
+                delta,
+                PressureKind::MissingJob(StrategicJob::Frontload),
+                SHOP_CARD_DEFAULT_JOB_SIGNAL,
+                "shop_card_adds_frontload_current_need",
+            );
         } else {
             delta
                 .evidence
@@ -355,11 +356,12 @@ fn add_default_shop_card_semantic_deltas(
         if delta.role == CandidateRole::ResourceConversion {
             delta.role = CandidateRole::DefensivePatch;
         }
-        delta.positive.push(LedgerDelta {
-            kind: PressureKind::MissingJob(StrategicJob::Block),
-            amount: SHOP_CARD_DEFAULT_JOB_SIGNAL,
-            reason: "shop_card_adds_block_or_mitigation".to_string(),
-        });
+        push_default_shop_card_positive_once(
+            delta,
+            PressureKind::MissingJob(StrategicJob::Block),
+            SHOP_CARD_DEFAULT_JOB_SIGNAL,
+            "shop_card_adds_block_or_mitigation",
+        );
     }
     if profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
         || profile
@@ -374,11 +376,12 @@ fn add_default_shop_card_semantic_deltas(
             if delta.role == CandidateRole::ResourceConversion {
                 delta.role = CandidateRole::Lubricant;
             }
-            delta.positive.push(LedgerDelta {
-                kind: PressureKind::MissingJob(StrategicJob::DrawEnergy),
-                amount: SHOP_CARD_DEFAULT_JOB_SIGNAL,
-                reason: "shop_card_adds_draw_or_energy".to_string(),
-            });
+            push_default_shop_card_positive_once(
+                delta,
+                PressureKind::MissingJob(StrategicJob::DrawEnergy),
+                SHOP_CARD_DEFAULT_JOB_SIGNAL,
+                "shop_card_adds_draw_or_energy",
+            );
         }
     }
     if profile
@@ -391,21 +394,23 @@ fn add_default_shop_card_semantic_deltas(
         if delta.role == CandidateRole::ResourceConversion {
             delta.role = CandidateRole::Enabler;
         }
-        delta.positive.push(LedgerDelta {
-            kind: PressureKind::MissingJob(StrategicJob::ExhaustAccess),
-            amount: SHOP_CARD_DEFAULT_JOB_SIGNAL,
-            reason: "shop_card_adds_exhaust_access".to_string(),
-        });
+        push_default_shop_card_positive_once(
+            delta,
+            PressureKind::MissingJob(StrategicJob::ExhaustAccess),
+            SHOP_CARD_DEFAULT_JOB_SIGNAL,
+            "shop_card_adds_exhaust_access",
+        );
     }
     if card_facts(&RewardCard::new(card, 0)).upgrades_cards {
         if delta.role == CandidateRole::ResourceConversion {
             delta.role = CandidateRole::Enabler;
         }
-        delta.positive.push(LedgerDelta {
-            kind: PressureKind::UpgradeNeed,
-            amount: SHOP_CARD_UPGRADE_ACCESS_SIGNAL,
-            reason: "shop_card_upgrades_existing_deck".to_string(),
-        });
+        push_default_shop_card_positive_once(
+            delta,
+            PressureKind::UpgradeNeed,
+            SHOP_CARD_UPGRADE_ACCESS_SIGNAL,
+            "shop_card_upgrades_existing_deck",
+        );
     }
     if delta.positive.is_empty() {
         delta.positive.push(LedgerDelta {
@@ -440,10 +445,37 @@ fn add_shop_card_component_deltas(
         delta.role = component_delta.role;
     }
     delta.verdict_hint = component_delta.verdict_hint;
-    delta.positive.extend(component_delta.positive);
+    for positive in component_delta.positive {
+        if positive.kind == PressureKind::BranchDiversityNeed {
+            delta
+                .notes
+                .push(format!("shop_card_component_report_only:{}", positive.reason));
+        } else {
+            delta.positive.push(positive);
+        }
+    }
     delta.negative.extend(component_delta.negative);
     delta.notes.extend(component_delta.notes);
     delta.evidence.extend(component_delta.evidence);
+}
+
+fn push_default_shop_card_positive_once(
+    delta: &mut CandidateDelta,
+    kind: PressureKind,
+    amount: f32,
+    reason: &str,
+) {
+    if delta.positive.iter().any(|entry| entry.kind == kind) {
+        delta
+            .notes
+            .push(format!("shop_card_default_signal_deduped:{reason}"));
+        return;
+    }
+    delta.positive.push(LedgerDelta {
+        kind,
+        amount,
+        reason: reason.to_string(),
+    });
 }
 
 fn add_shop_card_acquisition_saturation_deltas(

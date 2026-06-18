@@ -88,6 +88,7 @@ const UNSPENT_GOLD_PRESSURE_THRESHOLD: i32 = 300;
 const COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_NODES: usize = 50_000;
 const COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_WALL_MS: u64 = 300;
 const PROGRESS_ANCHOR_MAX_RANK_LAG: i32 = 1_000;
+const LINEAGE_DIVERSITY_MAX_RANK_LAG: i32 = 1_000;
 const SURVIVAL_ANCHOR_LOW_HP_PERCENT: i32 = 25;
 const SURVIVAL_ANCHOR_NEARBY_MIN_HP_GAIN: i32 = 20;
 const SURVIVAL_ANCHOR_HEALTHY_SALVAGE_HP_PERCENT: i32 = 50;
@@ -3525,6 +3526,12 @@ fn rebalance_active_boss_relic_lineage_v1(
         else {
             break;
         };
+        if !campaign_lineage_diversity_rank_close_enough_v1(
+            &frozen[frozen_index],
+            &active[replace_index],
+        ) {
+            break;
+        }
         let mut promoted = frozen.remove(frozen_index);
         promoted.status = BranchCampaignBranchStatusV1::Active;
         let mut demoted = std::mem::replace(&mut active[replace_index], promoted);
@@ -3563,6 +3570,12 @@ fn rebalance_active_unique_lineage_v1(
         else {
             break;
         };
+        if !campaign_lineage_diversity_rank_close_enough_v1(
+            &frozen[frozen_index],
+            &active[replace_index],
+        ) {
+            break;
+        }
         let mut promoted = frozen.remove(frozen_index);
         promoted.status = BranchCampaignBranchStatusV1::Active;
         let mut demoted = std::mem::replace(&mut active[replace_index], promoted);
@@ -3630,6 +3643,12 @@ fn rebalance_active_lineage_spread_v1(
         else {
             break;
         };
+        if !campaign_lineage_diversity_rank_close_enough_v1(
+            &frozen[frozen_index],
+            &active[replace_index],
+        ) {
+            break;
+        }
         let mut promoted = frozen.remove(frozen_index);
         promoted.status = BranchCampaignBranchStatusV1::Active;
         let mut demoted = std::mem::replace(&mut active[replace_index], promoted);
@@ -3640,6 +3659,16 @@ fn rebalance_active_lineage_spread_v1(
         swaps = swaps.saturating_add(1);
     }
     swaps
+}
+
+fn campaign_lineage_diversity_rank_close_enough_v1(
+    candidate: &BranchCampaignBranchV1,
+    replaced: &BranchCampaignBranchV1,
+) -> bool {
+    candidate
+        .rank_key
+        .saturating_add(LINEAGE_DIVERSITY_MAX_RANK_LAG)
+        >= replaced.rank_key
 }
 
 fn campaign_active_lineage_count_v1(

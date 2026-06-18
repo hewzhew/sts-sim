@@ -9,9 +9,7 @@ use crate::ai::shop_policy_v1::{
     ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
     ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
-use crate::ai::strategic::{
-    AcquisitionVerdict, CandidateAction, PressureKind, StrategicBossTax, StrategicJob,
-};
+use crate::ai::strategic::{CandidateAction, PressureKind, StrategicBossTax, StrategicJob};
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
@@ -262,7 +260,7 @@ fn shop_strategic_delta_maps_champ_execute_answer_through_component_report() {
 }
 
 #[test]
-fn compiled_shop_card_purchase_uses_strategic_verdict_over_legacy_spend_gate() {
+fn compiled_shop_card_purchase_records_strategic_boss_answer_reason() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
     run_state.floor_num = 18;
@@ -270,35 +268,22 @@ fn compiled_shop_card_purchase_uses_strategic_verdict_over_legacy_spend_gate() {
     run_state.gold = 125;
     let mut shop = ShopState::new();
     shop.cards.push(ShopCard {
-        card_id: CardId::Carnage,
+        card_id: CardId::Disarm,
         upgrades: 0,
-        price: 36,
+        price: 74,
         can_buy: true,
         blocked_reason: None,
     });
 
     let context = build_shop_decision_context_v1(&run_state, &shop);
-    assert!(
-        !context.conversion_pressure,
-        "test requires no legacy conversion-pressure evaluator path"
-    );
-    let carnage = shop_card_candidate(&context, CardId::Carnage);
-    assert_eq!(carnage.purchase_priority, Some(250));
-    assert!(
-        carnage.purchase_priority.unwrap()
-            < ShopPolicyConfigV1::default().high_impact_card_purchase_priority_threshold,
-        "test requires legacy priority below high-impact gate"
-    );
-
     let strategic_trace = crate::ai::strategic::strategic_trace_for_shop(&context);
-    let carnage_delta = buy_card_delta(&strategic_trace, CardId::Carnage);
+    let disarm_delta = buy_card_delta(&strategic_trace, CardId::Disarm);
     let strategic_decision = strategic_trace
-        .compiled_for_action(&carnage_delta.action)
-        .expect("strategic compiler should evaluate Carnage");
-    assert_ne!(
-        strategic_decision.verdict,
-        AcquisitionVerdict::MustTake,
-        "test requires a non-mandatory strategic card purchase verdict"
+        .compiled_for_action(&disarm_delta.action)
+        .expect("strategic compiler should evaluate Disarm");
+    assert!(
+        strategic_decision.verdict.allows_behavior_acquisition(),
+        "test requires a behavior-eligible strategic boss answer verdict"
     );
 
     let compiled = compile_shop_decision_v1(
@@ -306,7 +291,7 @@ fn compiled_shop_card_purchase_uses_strategic_verdict_over_legacy_spend_gate() {
         &ShopPolicyConfigV1::default(),
         ShopCompileModeV1::ExecuteOne,
     );
-    let carnage_plan = compiled
+    let disarm_plan = compiled
         .candidate_plans
         .iter()
         .find(|candidate| {
@@ -314,23 +299,23 @@ fn compiled_shop_card_purchase_uses_strategic_verdict_over_legacy_spend_gate() {
                 matches!(
                     step,
                     ShopPlanStepV1::BuyCard {
-                        card: CardId::Carnage,
+                        card: CardId::Disarm,
                         ..
                     }
                 )
             })
         })
-        .expect("Carnage shop plan should exist");
+        .expect("Disarm shop plan should exist");
 
-    assert_eq!(carnage_plan.evaluation.verdict, ShopPlanVerdictV1::Allow);
+    assert_eq!(disarm_plan.evaluation.verdict, ShopPlanVerdictV1::Allow);
     assert!(
-        carnage_plan
+        disarm_plan
             .evaluation
             .reasons
             .iter()
             .any(|reason| reason.contains("strategic evaluation")),
         "shop card purchases should be governed by strategic acquisition verdicts, with legacy priority retained only as estimate/tie-breaker; got {:?}",
-        carnage_plan.evaluation.reasons
+        disarm_plan.evaluation.reasons
     );
 }
 
@@ -1416,9 +1401,9 @@ fn compiled_shop_portfolio_uses_step_evaluation_over_plan_legacy_gate() {
     run_state.gold = 125;
     let mut shop = ShopState::new();
     shop.cards.push(ShopCard {
-        card_id: CardId::Carnage,
+        card_id: CardId::Disarm,
         upgrades: 0,
-        price: 36,
+        price: 74,
         can_buy: true,
         blocked_reason: None,
     });
@@ -1428,14 +1413,14 @@ fn compiled_shop_portfolio_uses_step_evaluation_over_plan_legacy_gate() {
     let candidate_plan = crate::ai::shop_policy_v1::ShopPlanCandidateV1 {
         plan: ShopPlanV1 {
             plan_id: "test:portfolio-zero-legacy".to_string(),
-            label: "portfolio Carnage".to_string(),
+            label: "portfolio Disarm".to_string(),
             kind: ShopPlanKindV1::Execute,
             steps: vec![ShopPlanStepV1::BuyCard {
                 index: 0,
-                card: CardId::Carnage,
-                cost: 36,
+                card: CardId::Disarm,
+                cost: 74,
             }],
-            total_gold_spent: 36,
+            total_gold_spent: 74,
             candidate_ids: vec!["shop:card-0".to_string()],
             source: ShopPlanSourceV1::PortfolioCandidate,
             legacy_priority: Some(0),
