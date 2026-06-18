@@ -2,6 +2,9 @@ use crate::ai::card_reward_policy_v1::{
     build_card_reward_decision_context_v1, plan_card_reward_decision_v1,
     replay_card_reward_decision_v1, CardRewardPolicyConfigV1, PublicRewardDecisionPacketV1,
 };
+use crate::ai::card_component_marginal_value_v1::{
+    CardComponentMarginalReportV1, CardComponentMarginalVerdictV1,
+};
 use crate::ai::strategic::{
     add_startup_profile_pressure_to_ledger, compile_decision, ledger_from_snapshot,
     CandidateAction, CandidateDelta, LedgerDelta, PressureHorizon, PressureKind, PressureLedger,
@@ -234,6 +237,35 @@ fn card_component_strength_down_maps_to_enemy_strength_pressure() {
         PressureKind::MissingJob(StrategicJob::EnemyStrengthDown),
         "component reason mapping should not classify strength-down as generic scaling"
     );
+}
+
+#[test]
+fn component_formation_coverage_signal_is_report_only() {
+    let report = CardComponentMarginalReportV1 {
+        card: CardId::IronWave,
+        roles: Vec::new(),
+        verdict: CardComponentMarginalVerdictV1::ContextTake,
+        positive_components: vec!["fills_current_formation_need"],
+        debts: Vec::new(),
+        boss_taxes: Vec::new(),
+        notes: Vec::new(),
+    };
+
+    let delta = CandidateDelta::from_component_report(
+        CandidateAction::TakeCard {
+            index: 0,
+            card: CardId::IronWave,
+        },
+        &report,
+    );
+
+    assert!(
+        delta.positive.is_empty(),
+        "formation coverage is branch-retention evidence, not acquisition value"
+    );
+    assert!(delta
+        .notes
+        .contains(&"component_report_only:fills_current_formation_need".to_string()));
 }
 
 #[test]

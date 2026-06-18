@@ -83,15 +83,20 @@ impl CandidateDelta {
         let mut delta = Self::empty(action);
         delta.role = component_role(report);
         delta.verdict_hint = component_verdict(report.verdict);
-        delta.positive = report
-            .positive_components
-            .iter()
-            .map(|reason| LedgerDelta {
-                kind: positive_component_reason_pressure(reason),
+        for reason in &report.positive_components {
+            let kind = positive_component_reason_pressure(reason);
+            if kind == PressureKind::BranchDiversityNeed {
+                delta
+                    .notes
+                    .push(format!("component_report_only:{reason}"));
+                continue;
+            }
+            delta.positive.push(LedgerDelta {
+                kind,
                 amount: 0.35,
                 reason: (*reason).to_string(),
-            })
-            .collect();
+            });
+        }
         delta.negative = report
             .debts
             .iter()
@@ -102,11 +107,11 @@ impl CandidateDelta {
                 reason: (*reason).to_string(),
             })
             .collect();
-        delta.notes = report
+        delta.notes.extend(report
             .notes
             .iter()
             .map(|note| (*note).to_string())
-            .collect();
+        );
         delta
             .evidence
             .push("card_component_marginal_value contributor".to_string());

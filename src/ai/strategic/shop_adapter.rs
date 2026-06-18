@@ -445,15 +445,7 @@ fn add_shop_card_component_deltas(
         delta.role = component_delta.role;
     }
     delta.verdict_hint = component_delta.verdict_hint;
-    for positive in component_delta.positive {
-        if positive.kind == PressureKind::BranchDiversityNeed {
-            delta
-                .notes
-                .push(format!("shop_card_component_report_only:{}", positive.reason));
-        } else {
-            delta.positive.push(positive);
-        }
-    }
+    delta.positive.extend(component_delta.positive);
     delta.negative.extend(component_delta.negative);
     delta.notes.extend(component_delta.notes);
     delta.evidence.extend(component_delta.evidence);
