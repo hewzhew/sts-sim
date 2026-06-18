@@ -206,6 +206,20 @@ pub struct BranchCampaignStateStoreSummaryV1 {
     pub linked_nodes: usize,
     pub lookup_hits: usize,
     pub lookup_misses: usize,
+    #[serde(default)]
+    pub replay_exact_hits: usize,
+    #[serde(default)]
+    pub replay_ancestor_hits: usize,
+    #[serde(default)]
+    pub replay_misses: usize,
+    #[serde(default)]
+    pub replay_suffix_commands_sum: usize,
+    #[serde(default)]
+    pub replay_suffix_commands_max: usize,
+    #[serde(default)]
+    pub sessions_pruned: usize,
+    #[serde(default)]
+    pub anchor_sessions_kept: usize,
     pub inserts: usize,
     pub retains: usize,
 }
@@ -217,6 +231,13 @@ impl BranchCampaignStateStoreSummaryV1 {
             && self.linked_nodes == 0
             && self.lookup_hits == 0
             && self.lookup_misses == 0
+            && self.replay_exact_hits == 0
+            && self.replay_ancestor_hits == 0
+            && self.replay_misses == 0
+            && self.replay_suffix_commands_sum == 0
+            && self.replay_suffix_commands_max == 0
+            && self.sessions_pruned == 0
+            && self.anchor_sessions_kept == 0
             && self.inserts == 0
             && self.retains == 0
     }

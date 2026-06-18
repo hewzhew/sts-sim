@@ -318,6 +318,58 @@ fn branch_state_store_replays_from_nearest_saved_ancestor() {
 }
 
 #[test]
+fn branch_state_store_summary_tracks_replay_start_sources_and_suffixes() {
+    let exact_commands = vec!["rp 0".to_string()];
+    let ancestor_commands = vec![
+        "rp 0".to_string(),
+        "go 2".to_string(),
+        "rp 1".to_string(),
+    ];
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+    store.insert_session(
+        exact_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.insert_child_session(
+        &exact_commands,
+        ancestor_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    let mut active = test_campaign_branch("active", 4, 80);
+    active.commands = exact_commands.clone();
+    let mut frozen = test_campaign_branch("frozen", 6, 80);
+    frozen.commands = ancestor_commands.clone();
+    store.retain_for_branches_with_session_policy(
+        &[active],
+        &[frozen],
+        &[],
+        &[],
+        super::state_graph::BranchStateSessionRetentionPolicyV1 {
+            max_frozen_exact_sessions: 0,
+            max_stuck_exact_sessions: 0,
+            max_abandoned_exact_sessions: 0,
+            max_suffix_commands_without_session: usize::MAX,
+        },
+    );
+
+    assert!(store.replay_start_for_commands(&exact_commands).is_some());
+    assert!(store
+        .replay_start_for_commands(&ancestor_commands)
+        .is_some());
+    assert!(store
+        .replay_start_for_commands(&["missing".to_string()])
+        .is_none());
+
+    let summary = store.summary();
+    assert_eq!(summary.replay_exact_hits, 1);
+    assert_eq!(summary.replay_ancestor_hits, 1);
+    assert_eq!(summary.replay_misses, 1);
+    assert_eq!(summary.replay_suffix_commands_sum, 2);
+    assert_eq!(summary.replay_suffix_commands_max, 2);
+    assert_eq!(summary.sessions_pruned, 1);
+}
+
+#[test]
 fn campaign_checkpoint_writes_v2_state_graph_nodes() {
     let config = BranchCampaignConfigV1::default();
     let parent_commands = vec!["rp 0".to_string()];
@@ -418,14 +470,22 @@ fn campaign_compact_report_renders_state_store_summary() {
         linked_nodes: 3,
         lookup_hits: 2,
         lookup_misses: 1,
+        replay_exact_hits: 1,
+        replay_ancestor_hits: 1,
+        replay_misses: 1,
+        replay_suffix_commands_sum: 4,
+        replay_suffix_commands_max: 3,
+        sessions_pruned: 7,
+        anchor_sessions_kept: 2,
         inserts: 6,
         retains: 1,
     };
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
-    assert!(rendered
-        .contains("State store: sessions=4 nodes=5 linked=3 lookups=2/1 inserts=6 retains=1"));
+    assert!(rendered.contains(
+        "State store: sessions=4 nodes=5 linked=3 replay=exact:1 ancestor:1 miss:1 suffix=sum:4 max:3 cache=pruned:7 anchors:2 lookups=2/1 inserts=6 retains=1"
+    ));
 }
 
 #[test]

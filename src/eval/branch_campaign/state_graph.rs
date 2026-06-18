@@ -38,6 +38,13 @@ pub(super) struct BranchStateStoreV1 {
     nodes: Vec<BranchStateNodeV1>,
     lookup_hits: usize,
     lookup_misses: usize,
+    replay_exact_hits: usize,
+    replay_ancestor_hits: usize,
+    replay_misses: usize,
+    replay_suffix_commands_sum: usize,
+    replay_suffix_commands_max: usize,
+    sessions_pruned: usize,
+    anchor_sessions_kept: usize,
     inserts: usize,
     retains: usize,
 }
@@ -104,6 +111,7 @@ impl BranchStateStoreV1 {
     ) -> Option<BranchStateReplayStartV1> {
         if let Some(session) = self.sessions_by_commands.get(commands).cloned() {
             self.lookup_hits = self.lookup_hits.saturating_add(1);
+            self.replay_exact_hits = self.replay_exact_hits.saturating_add(1);
             return Some(BranchStateReplayStartV1 {
                 session,
                 suffix_commands: Vec::new(),
@@ -120,10 +128,17 @@ impl BranchStateStoreV1 {
             };
             if let Some(session) = self.sessions_by_commands.get(&node.commands).cloned() {
                 suffix_segments.reverse();
+                let suffix_commands = suffix_segments.into_iter().flatten().collect::<Vec<_>>();
                 self.lookup_hits = self.lookup_hits.saturating_add(1);
+                self.replay_ancestor_hits = self.replay_ancestor_hits.saturating_add(1);
+                self.replay_suffix_commands_sum = self
+                    .replay_suffix_commands_sum
+                    .saturating_add(suffix_commands.len());
+                self.replay_suffix_commands_max =
+                    self.replay_suffix_commands_max.max(suffix_commands.len());
                 return Some(BranchStateReplayStartV1 {
                     session,
-                    suffix_commands: suffix_segments.into_iter().flatten().collect(),
+                    suffix_commands,
                     #[cfg(test)]
                     source: BranchStateReplayStartSourceV1::Ancestor,
                 });
@@ -133,6 +148,7 @@ impl BranchStateStoreV1 {
         }
 
         self.lookup_misses = self.lookup_misses.saturating_add(1);
+        self.replay_misses = self.replay_misses.saturating_add(1);
         None
     }
 
@@ -267,14 +283,18 @@ impl BranchStateStoreV1 {
                 .map(|branch| branch.commands.clone()),
         );
         self.add_long_suffix_session_anchors(&keep, &mut keep_sessions, policy);
+        let before_sessions = self.sessions_by_commands.len();
         self.sessions_by_commands
             .retain(|commands, _| keep_sessions.contains(commands));
+        self.sessions_pruned = self
+            .sessions_pruned
+            .saturating_add(before_sessions.saturating_sub(self.sessions_by_commands.len()));
         self.retain_nodes_for_commands_and_ancestors(&keep);
         self.retains = self.retains.saturating_add(1);
     }
 
     fn add_long_suffix_session_anchors(
-        &self,
+        &mut self,
         branch_commands: &BTreeSet<Vec<String>>,
         keep_sessions: &mut BTreeSet<Vec<String>>,
         policy: BranchStateSessionRetentionPolicyV1,
@@ -291,6 +311,7 @@ impl BranchStateStoreV1 {
                 > policy.max_suffix_commands_without_session
             {
                 keep_sessions.insert(commands.clone());
+                self.anchor_sessions_kept = self.anchor_sessions_kept.saturating_add(1);
             }
         }
     }
@@ -394,6 +415,13 @@ impl BranchStateStoreV1 {
                 .count(),
             lookup_hits: self.lookup_hits,
             lookup_misses: self.lookup_misses,
+            replay_exact_hits: self.replay_exact_hits,
+            replay_ancestor_hits: self.replay_ancestor_hits,
+            replay_misses: self.replay_misses,
+            replay_suffix_commands_sum: self.replay_suffix_commands_sum,
+            replay_suffix_commands_max: self.replay_suffix_commands_max,
+            sessions_pruned: self.sessions_pruned,
+            anchor_sessions_kept: self.anchor_sessions_kept,
             inserts: self.inserts,
             retains: self.retains,
         }

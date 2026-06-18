@@ -1106,10 +1106,17 @@ pub fn render_branch_campaign_compact_v1(
     }
     if !report.state_store.is_empty() {
         lines.push(format!(
-            "State store: sessions={} nodes={} linked={} lookups={}/{} inserts={} retains={}",
+            "State store: sessions={} nodes={} linked={} replay=exact:{} ancestor:{} miss:{} suffix=sum:{} max:{} cache=pruned:{} anchors:{} lookups={}/{} inserts={} retains={}",
             report.state_store.sessions,
             report.state_store.nodes,
             report.state_store.linked_nodes,
+            report.state_store.replay_exact_hits,
+            report.state_store.replay_ancestor_hits,
+            report.state_store.replay_misses,
+            report.state_store.replay_suffix_commands_sum,
+            report.state_store.replay_suffix_commands_max,
+            report.state_store.sessions_pruned,
+            report.state_store.anchor_sessions_kept,
             report.state_store.lookup_hits,
             report.state_store.lookup_misses,
             report.state_store.inserts,
