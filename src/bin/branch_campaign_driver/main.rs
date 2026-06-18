@@ -31,7 +31,8 @@ use sts_simulator::eval::branch_campaign::{
     run_branch_campaign_from_report_with_checkpoint_v1,
     run_branch_campaign_with_checkpoint_and_progress_v1, run_branch_campaign_with_checkpoint_v1,
     BranchCampaignCheckpointV1, BranchCampaignCombatRetryPolicyV1, BranchCampaignConfigV1,
-    BranchCampaignReportV1,
+    BranchCampaignReportV1, BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME,
+    BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use sts_simulator::eval::branch_experiment_search_options::parse_branch_experiment_search_options_v1;
@@ -210,7 +211,7 @@ struct Args {
     #[arg(
         long = "resume-checkpoint",
         value_name = "PATH",
-        help = "Resume exact branch sessions from a BranchCampaignCheckpointV1 sidecar"
+        help = "Resume exact branch sessions from a BranchCampaignCheckpointV2 sidecar"
     )]
     resume_checkpoint: Option<PathBuf>,
 
@@ -224,14 +225,14 @@ struct Args {
     #[arg(
         long = "checkpoint-out",
         value_name = "PATH",
-        help = "Write the resulting BranchCampaignCheckpointV1 exact session sidecar"
+        help = "Write the resulting BranchCampaignCheckpointV2 exact session sidecar"
     )]
     checkpoint_out: Option<PathBuf>,
 
     #[arg(
         long = "inspect-checkpoint",
         value_name = "PATH",
-        help = "Inspect a saved BranchCampaignCheckpointV1 session instead of running a campaign"
+        help = "Inspect a saved BranchCampaignCheckpointV2 session instead of running a campaign"
     )]
     inspect_checkpoint: Option<PathBuf>,
 
@@ -966,12 +967,25 @@ fn read_campaign_checkpoint_v1(path: &PathBuf) -> Result<BranchCampaignCheckpoin
             path.display()
         )
     })?;
-    serde_json::from_str(&text).map_err(|err| {
+    let checkpoint: BranchCampaignCheckpointV1 = serde_json::from_str(&text).map_err(|err| {
         format!(
-            "failed to parse --resume-checkpoint {} as BranchCampaignCheckpointV1: {err}",
+            "failed to parse --resume-checkpoint {} as {BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME}: {err}",
             path.display()
         )
-    })
+    })?;
+    if checkpoint.schema_name != BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME
+        || checkpoint.schema_version != BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION
+    {
+        return Err(format!(
+            "checkpoint {} uses {} v{}; expected {} v{}. Rerun campaign to create a fresh checkpoint.",
+            path.display(),
+            checkpoint.schema_name,
+            checkpoint.schema_version,
+            BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME,
+            BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION
+        ));
+    }
+    Ok(checkpoint)
 }
 
 fn write_campaign_report_v1(path: &PathBuf, report: &BranchCampaignReportV1) -> Result<(), String> {
@@ -1007,7 +1021,7 @@ fn write_campaign_checkpoint_v1(
         })?;
     }
     let text = serde_json::to_string_pretty(checkpoint)
-        .map_err(|err| format!("failed to serialize BranchCampaignCheckpointV1: {err}"))?;
+        .map_err(|err| format!("failed to serialize BranchCampaignCheckpointV2: {err}"))?;
     fs::write(path, text)
         .map_err(|err| format!("failed to write --checkpoint-out {}: {err}", path.display()))
 }
@@ -1165,6 +1179,30 @@ mod tests {
             args.checkpoint_out,
             Some(PathBuf::from("new.checkpoint.json"))
         );
+    }
+
+    #[test]
+    fn campaign_checkpoint_reader_rejects_v1_schema() {
+        let path = std::env::temp_dir().join(format!(
+            "old-branch-campaign-checkpoint-{}.json",
+            std::process::id()
+        ));
+        fs::write(
+            &path,
+            r#"{
+  "schema_name": "BranchCampaignCheckpointV1",
+  "schema_version": 1,
+  "seed": 1,
+  "rounds_completed": 0,
+  "sessions": []
+}"#,
+        )
+        .expect("write old checkpoint fixture");
+
+        let err = read_campaign_checkpoint_v1(&path).expect_err("old checkpoint should be rejected");
+        let _ = fs::remove_file(&path);
+
+        assert!(err.contains("BranchCampaignCheckpointV2"));
     }
 
     #[test]

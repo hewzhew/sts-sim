@@ -68,8 +68,8 @@ pub use strategic_signals::{
 
 pub const BRANCH_CAMPAIGN_SCHEMA_NAME: &str = "BranchCampaignV1";
 pub const BRANCH_CAMPAIGN_SCHEMA_VERSION: u32 = 1;
-pub const BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME: &str = "BranchCampaignCheckpointV1";
-pub const BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 1;
+pub const BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME: &str = "BranchCampaignCheckpointV2";
+pub const BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 const COMBAT_RETRY_NODE_MULTIPLIER: usize = 4;
 const COMBAT_RETRY_WALL_MULTIPLIER: u64 = 4;
 const COMBAT_RETRY_MIN_NODES: usize = 200_000;
@@ -899,6 +899,9 @@ fn campaign_state_from_report_and_checkpoint_v1(
 ) -> Result<BranchCampaignRunStateV1, String> {
     validate_campaign_resume_checkpoint_v1(report, checkpoint)?;
     let mut state = campaign_state_from_report_v1(report);
+    state
+        .state_store
+        .restore_checkpoint_nodes(&checkpoint.nodes)?;
     let keep = state
         .active
         .iter()
@@ -955,6 +958,7 @@ fn campaign_checkpoint_from_state_v1(
         seed: config.seed,
         run_domain: branch_campaign_run_domain_v1(config.ascension_level, config.player_class),
         rounds_completed: state.rounds_completed,
+        nodes: state.state_store.checkpoint_nodes(),
         sessions,
     }
 }

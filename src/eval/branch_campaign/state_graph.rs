@@ -3,7 +3,9 @@ use std::collections::BTreeSet;
 
 use crate::eval::run_control::RunControlSession;
 
-use super::model::{BranchCampaignBranchV1, BranchCampaignStateStoreSummaryV1};
+use super::model::{
+    BranchCampaignBranchV1, BranchCampaignCheckpointNodeV1, BranchCampaignStateStoreSummaryV1,
+};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct BranchStateNodeIdV1(usize);
@@ -100,6 +102,58 @@ impl BranchStateStoreV1 {
 
     pub(super) fn is_empty(&self) -> bool {
         self.sessions_by_commands.is_empty()
+    }
+
+    pub(super) fn checkpoint_nodes(&self) -> Vec<BranchCampaignCheckpointNodeV1> {
+        self.nodes
+            .iter()
+            .map(|node| BranchCampaignCheckpointNodeV1 {
+                node_id: node.id.0,
+                parent_id: node.parent_id.map(|parent_id| parent_id.0),
+                commands: node.commands.clone(),
+                added_commands: node.added_commands.clone(),
+            })
+            .collect()
+    }
+
+    pub(super) fn restore_checkpoint_nodes(
+        &mut self,
+        nodes: &[BranchCampaignCheckpointNodeV1],
+    ) -> Result<(), String> {
+        self.nodes.clear();
+        self.node_ids_by_commands.clear();
+
+        let mut records = nodes.to_vec();
+        records.sort_by_key(|node| node.node_id);
+        for (expected_id, node) in records.iter().enumerate() {
+            if node.node_id != expected_id {
+                return Err(format!(
+                    "campaign checkpoint node ids must be contiguous: expected {}, found {}",
+                    expected_id, node.node_id
+                ));
+            }
+            if let Some(parent_id) = node.parent_id {
+                if parent_id >= node.node_id {
+                    return Err(format!(
+                        "campaign checkpoint node {} has invalid parent {}",
+                        node.node_id, parent_id
+                    ));
+                }
+            }
+        }
+
+        for node in records {
+            let id = BranchStateNodeIdV1(node.node_id);
+            let parent_id = node.parent_id.map(BranchStateNodeIdV1);
+            self.nodes.push(BranchStateNodeV1 {
+                id,
+                parent_id,
+                commands: node.commands.clone(),
+                added_commands: node.added_commands.clone(),
+            });
+            self.node_ids_by_commands.insert(node.commands, id);
+        }
+        Ok(())
     }
 
     pub(super) fn retain_for_branches(

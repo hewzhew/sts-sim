@@ -224,6 +224,16 @@ impl BranchCampaignStateStoreSummaryV1 {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointNodeV1 {
+    pub node_id: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<usize>,
+    pub commands: Vec<String>,
+    pub added_commands: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BranchCampaignCheckpointSessionV1 {
     pub commands: Vec<String>,
     pub session: RunControlSessionCheckpointV1,
@@ -238,6 +248,8 @@ pub struct BranchCampaignCheckpointV1 {
     #[serde(default)]
     pub run_domain: BranchCampaignRunDomainV1,
     pub rounds_completed: usize,
+    #[serde(default)]
+    pub nodes: Vec<BranchCampaignCheckpointNodeV1>,
     pub sessions: Vec<BranchCampaignCheckpointSessionV1>,
 }
 

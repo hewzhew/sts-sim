@@ -106,6 +106,122 @@ fn branch_state_store_retain_keeps_child_ancestor_nodes_without_parent_session()
 }
 
 #[test]
+fn branch_state_store_exports_checkpoint_node_records() {
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+    let parent_commands = vec!["rp 0".to_string()];
+    let child_commands = vec!["rp 0".to_string(), "go 2".to_string()];
+
+    store.insert_session(
+        parent_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.insert_child_session(
+        &parent_commands,
+        child_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+
+    let nodes = store.checkpoint_nodes();
+
+    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes[0].node_id, 0);
+    assert_eq!(nodes[0].parent_id, None);
+    assert_eq!(nodes[0].commands, parent_commands);
+    assert_eq!(nodes[1].node_id, 1);
+    assert_eq!(nodes[1].parent_id, Some(0));
+    assert_eq!(nodes[1].commands, child_commands);
+    assert_eq!(nodes[1].added_commands, vec!["go 2".to_string()]);
+}
+
+#[test]
+fn branch_state_store_restores_checkpoint_node_records_before_sessions() {
+    let parent_commands = vec!["rp 0".to_string()];
+    let child_commands = vec!["rp 0".to_string(), "go 2".to_string()];
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+
+    store
+        .restore_checkpoint_nodes(&[
+            super::model::BranchCampaignCheckpointNodeV1 {
+                node_id: 0,
+                parent_id: None,
+                commands: parent_commands.clone(),
+                added_commands: parent_commands.clone(),
+            },
+            super::model::BranchCampaignCheckpointNodeV1 {
+                node_id: 1,
+                parent_id: Some(0),
+                commands: child_commands.clone(),
+                added_commands: vec!["go 2".to_string()],
+            },
+        ])
+        .expect("checkpoint node graph should restore");
+    store.insert_session(
+        child_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+
+    let child = store
+        .node_for_commands(&child_commands)
+        .expect("child node should exist");
+    let parent_id = store
+        .node_id_for_commands(&parent_commands)
+        .expect("parent node should exist");
+
+    assert_eq!(child.parent_id(), Some(parent_id));
+    assert_eq!(store.summary().sessions, 1);
+    assert_eq!(store.summary().nodes, 2);
+    assert_eq!(store.summary().linked_nodes, 1);
+}
+
+#[test]
+fn campaign_checkpoint_writes_v2_state_graph_nodes() {
+    let config = BranchCampaignConfigV1::default();
+    let parent_commands = vec!["rp 0".to_string()];
+    let child_commands = vec!["rp 0".to_string(), "go 2".to_string()];
+    let mut child = test_campaign_branch("child", 6, 80);
+    child.commands = child_commands.clone();
+
+    let mut state_store = super::state_graph::BranchStateStoreV1::new();
+    state_store.insert_session(
+        parent_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    state_store.insert_child_session(
+        &parent_commands,
+        child_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+
+    let state = BranchCampaignRunStateV1 {
+        rounds_completed: 1,
+        active: vec![child],
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: Vec::new(),
+        stuck: Vec::new(),
+        discarded_count: 0,
+        discarded_examples: Vec::new(),
+        strategy_requests: Vec::new(),
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),
+        rounds: Vec::new(),
+        state_store,
+        recovered_checkpoint_failure_commands: BTreeSet::new(),
+    };
+
+    let checkpoint = campaign_checkpoint_from_state_v1(&config, &state);
+
+    assert_eq!(checkpoint.schema_name, "BranchCampaignCheckpointV2");
+    assert_eq!(checkpoint.schema_version, 2);
+    assert_eq!(checkpoint.nodes.len(), 2);
+    assert_eq!(checkpoint.nodes[1].parent_id, Some(0));
+    assert_eq!(checkpoint.nodes[1].added_commands, vec!["go 2".to_string()]);
+    assert_eq!(checkpoint.sessions.len(), 1);
+    assert_eq!(checkpoint.sessions[0].commands, child_commands);
+}
+
+#[test]
 fn campaign_compact_report_renders_route_evidence_summary() {
     let mut report = test_campaign_report_with_active("a", 6, 80);
     report.route_evidence = BranchCampaignRouteEvidenceSummaryV1 {
@@ -3659,6 +3775,7 @@ fn campaign_resume_checkpoint_drops_unrestorable_stuck_branches_and_requests() {
         seed: 1,
         run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 0,
+        nodes: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: restorable.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&RunControlSession::new(
@@ -3717,6 +3834,7 @@ fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_command
         seed: 1,
         run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 0,
+        nodes: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: parent.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&session),
@@ -3814,6 +3932,7 @@ fn campaign_resume_rehydrates_checkpointed_combat_failures() {
         seed: 1,
         run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
+        nodes: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: combat_failure.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&restored_session),
@@ -3910,6 +4029,7 @@ fn campaign_resume_does_not_promote_stale_combat_failure_over_later_active_branc
         seed: 1,
         run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 48,
+        nodes: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: stale_combat_failure.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&restored_session),
@@ -4006,6 +4126,7 @@ fn campaign_resume_rehydrates_auto_advanceable_map_overlay_stuck() {
         seed: 1,
         run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
+        nodes: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: map_overlay_stuck.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&restored_session),
@@ -4101,6 +4222,7 @@ fn campaign_resume_rehydrates_stale_map_preview_to_checkpoint_card_reward_fronti
         seed: 1,
         run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
+        nodes: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: map_overlay_stuck.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&restored_session),
@@ -4186,6 +4308,7 @@ fn campaign_resume_drops_resolved_map_overlay_stuck_when_no_branch_slot_remains(
         seed: 1,
         run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
+        nodes: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: map_overlay_stuck.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&restored_session),
@@ -4272,6 +4395,7 @@ fn campaign_resume_rehydrates_combat_failures_as_frozen_diagnostics_only() {
         seed: 1,
         run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
+        nodes: Vec::new(),
         sessions: checkpoint_sessions,
     };
 
@@ -4335,6 +4459,7 @@ fn campaign_resume_rehydrates_later_combat_failure_before_stale_early_failure() 
         seed: 1,
         run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
+        nodes: Vec::new(),
         sessions: vec![
             test_combat_checkpoint_session(&early_failure, 2, 32, 80),
             test_combat_checkpoint_session(&final_boss_failure, 3, 48, 80),
