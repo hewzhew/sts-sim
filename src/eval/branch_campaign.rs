@@ -4173,7 +4173,27 @@ fn render_choice_path(labels: &[String]) -> String {
 }
 
 fn render_compact_choice_path(labels: &[String]) -> String {
-    truncate_branch_pressure_example_v1(&render_choice_path(labels))
+    const MAX_CHARS: usize = 140;
+    if labels.is_empty() {
+        return "-".to_string();
+    }
+    let compact = if labels.len() > 5 {
+        let mut parts = Vec::new();
+        parts.extend(labels.iter().take(2).cloned());
+        parts.push("...".to_string());
+        parts.extend(labels.iter().skip(labels.len().saturating_sub(3)).cloned());
+        parts.join(" -> ")
+    } else {
+        render_choice_path(labels)
+    };
+    if compact.chars().count() <= MAX_CHARS {
+        return compact;
+    }
+    let prefix = compact
+        .chars()
+        .take(MAX_CHARS.saturating_sub(3))
+        .collect::<String>();
+    format!("{prefix}...")
 }
 
 fn campaign_strategy_next_step_v1(kind: &str) -> Option<&'static str> {

@@ -177,7 +177,9 @@ fn compact_campaign_report_truncates_long_active_choice_paths() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
-    assert!(rendered.contains("choices: Warcry -> Body Slam -> ... -> Whirlwind"));
+    assert!(rendered.contains(
+        "choices: Warcry -> Body Slam -> ... -> Sword Boomerang -> PandorasBox -> Whirlwind"
+    ));
     assert!(!rendered.contains(
         "choices: Warcry -> Body Slam -> Shrug It Off -> Sword Boomerang -> PandorasBox -> Whirlwind"
     ));
