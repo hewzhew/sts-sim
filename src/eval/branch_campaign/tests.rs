@@ -2155,6 +2155,7 @@ fn compact_campaign_report_renders_strategy_prompt() {
         schema_name: "BranchCampaignV1".to_string(),
         schema_version: 1,
         seed: 521,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 2,
         stop_reason: "needs_intervention".to_string(),
         active: Vec::new(),
@@ -2185,7 +2186,9 @@ fn compact_campaign_report_renders_strategy_prompt() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 2);
 
-    assert!(rendered.contains("BranchCampaignV1 seed=521 rounds=2 stop=needs_intervention"));
+    assert!(rendered.contains(
+        "BranchCampaignV1 seed=521 ascension=A0 domain=debug_a0 role=debug_domain class=Ironclad rounds=2 stop=needs_intervention"
+    ));
     assert!(rendered.contains(
         "Active 0 | Frozen 0 | Dead 0 | Abandoned 0 | Victories 0 | Stuck 0 | Discarded 3"
     ));
@@ -2203,6 +2206,7 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
         schema_name: "BranchCampaignV1".to_string(),
         schema_version: 1,
         seed: 521,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 6,
         stop_reason: "needs_intervention".to_string(),
         active: Vec::new(),
@@ -2262,6 +2266,7 @@ fn compact_campaign_report_suppresses_deferred_strategy_notes_while_active_conti
         schema_name: "BranchCampaignV1".to_string(),
         schema_version: 1,
         seed: 330404105,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 2,
         stop_reason: "max_rounds".to_string(),
         active: vec![test_campaign_branch("a", 6, 80)],
@@ -2693,6 +2698,7 @@ fn compact_campaign_report_renders_budget_stop_hint() {
         schema_name: "BranchCampaignV1".to_string(),
         schema_version: 1,
         seed: 521,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 2,
         stop_reason: "max_rounds".to_string(),
         active: vec![test_campaign_branch("a", 7, 80)],
@@ -2721,6 +2727,7 @@ fn compact_campaign_report_labels_nonfatal_requests_as_deferred_notes() {
         schema_name: "BranchCampaignV1".to_string(),
         schema_version: 1,
         seed: 521,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 2,
         stop_reason: "max_rounds".to_string(),
         active: vec![test_campaign_branch("a", 7, 80)],
@@ -2762,6 +2769,7 @@ fn compact_campaign_report_renders_context_only_strategy_packet() {
         schema_name: "BranchCampaignV1".to_string(),
         schema_version: 1,
         seed: 521,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 4,
         stop_reason: "needs_intervention".to_string(),
         active: Vec::new(),
@@ -3133,6 +3141,7 @@ fn campaign_resume_checkpoint_drops_unrestorable_stuck_branches_and_requests() {
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 0,
         stop_reason: "needs_intervention".to_string(),
         active: Vec::new(),
@@ -3153,6 +3162,7 @@ fn campaign_resume_checkpoint_drops_unrestorable_stuck_branches_and_requests() {
         schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 0,
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: restorable.commands.clone(),
@@ -3188,6 +3198,7 @@ fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_command
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 0,
         stop_reason: "max_rounds".to_string(),
         active: vec![parent.clone()],
@@ -3208,6 +3219,7 @@ fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_command
         schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 0,
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: parent.commands.clone(),
@@ -3276,6 +3288,7 @@ fn campaign_resume_rehydrates_checkpointed_combat_failures() {
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
         stop_reason: "max_rounds".to_string(),
         active: vec![active],
@@ -3302,6 +3315,7 @@ fn campaign_resume_rehydrates_checkpointed_combat_failures() {
         schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: combat_failure.commands.clone(),
@@ -3369,6 +3383,7 @@ fn campaign_resume_does_not_promote_stale_combat_failure_over_later_active_branc
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 48,
         stop_reason: "max_rounds".to_string(),
         active: vec![active],
@@ -3395,6 +3410,7 @@ fn campaign_resume_does_not_promote_stale_combat_failure_over_later_active_branc
         schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 48,
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: stale_combat_failure.commands.clone(),
@@ -3455,6 +3471,7 @@ fn campaign_resume_rehydrates_auto_advanceable_map_overlay_stuck() {
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
         stop_reason: "max_rounds".to_string(),
         active: Vec::new(),
@@ -3488,6 +3505,7 @@ fn campaign_resume_rehydrates_auto_advanceable_map_overlay_stuck() {
         schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: map_overlay_stuck.commands.clone(),
@@ -3545,6 +3563,7 @@ fn campaign_resume_rehydrates_stale_map_preview_to_checkpoint_card_reward_fronti
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
         stop_reason: "max_rounds".to_string(),
         active: Vec::new(),
@@ -3580,6 +3599,7 @@ fn campaign_resume_rehydrates_stale_map_preview_to_checkpoint_card_reward_fronti
         schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: map_overlay_stuck.commands.clone(),
@@ -3634,6 +3654,7 @@ fn campaign_resume_drops_resolved_map_overlay_stuck_when_no_branch_slot_remains(
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
         stop_reason: "max_rounds".to_string(),
         active: vec![active],
@@ -3662,6 +3683,7 @@ fn campaign_resume_drops_resolved_map_overlay_stuck_when_no_branch_slot_remains(
         schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: map_overlay_stuck.commands.clone(),
@@ -3725,6 +3747,7 @@ fn campaign_resume_rehydrates_combat_failures_as_frozen_diagnostics_only() {
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
         stop_reason: "needs_intervention".to_string(),
         active: Vec::new(),
@@ -3745,6 +3768,7 @@ fn campaign_resume_rehydrates_combat_failures_as_frozen_diagnostics_only() {
         schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
         sessions: checkpoint_sessions,
     };
@@ -3807,6 +3831,7 @@ fn campaign_resume_rehydrates_later_combat_failure_before_stale_early_failure() 
         schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
         sessions: vec![
             test_combat_checkpoint_session(&early_failure, 2, 32, 80),
@@ -3817,6 +3842,7 @@ fn campaign_resume_rehydrates_later_combat_failure_before_stale_early_failure() 
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: 1,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 8,
         stop_reason: "max_rounds".to_string(),
         active: Vec::new(),
@@ -3903,6 +3929,7 @@ fn test_campaign_report_with_active(id: &str, floor: i32, hp: i32) -> BranchCamp
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: 521,
+        run_domain: BranchCampaignRunDomainV1::default(),
         rounds_completed: 3,
         stop_reason: "max_rounds".to_string(),
         active: vec![test_campaign_branch(id, floor, hp)],

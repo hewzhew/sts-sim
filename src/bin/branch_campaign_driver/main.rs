@@ -1,3 +1,4 @@
+use clap::error::ErrorKind;
 use clap::parser::ValueSource;
 use clap::{CommandFactory, FromArgMatches, Parser, ValueEnum};
 use std::fs;
@@ -26,6 +27,11 @@ use sts_simulator::eval::branch_campaign::{
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use sts_simulator::eval::branch_experiment_search_options::parse_branch_experiment_search_options_v1;
+use sts_simulator::eval::branch_outcome_dataset_v1::{
+    analyze_branch_outcome_records_v1, extract_branch_outcome_records_v1,
+    parse_branch_outcome_records_jsonl_v1, render_branch_outcome_dataset_analysis_v1,
+    serialize_branch_outcome_records_jsonl_v1, summarize_branch_outcome_records_v1,
+};
 use sts_simulator::eval::neow_guided_prefix::{
     neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
 };
@@ -79,6 +85,13 @@ struct Args {
 
     #[arg(long, default_value_t = 0)]
     ascension: u8,
+
+    #[arg(
+        long,
+        value_enum,
+        help = "Set ascension from a named curriculum/target domain"
+    )]
+    ascension_domain: Option<BranchCampaignAscensionDomainArgV1>,
 
     #[arg(long = "class", default_value = "ironclad")]
     player_class: String,
@@ -282,6 +295,20 @@ struct Args {
         help = "Print a final boss combat timeline from a BranchCampaignV1 report"
     )]
     inspect_final_boss_combat: bool,
+
+    #[arg(
+        long = "export-outcome-dataset",
+        value_name = "PATH",
+        help = "Write BranchOutcomeRecordV1 JSONL from a campaign report and optional checkpoint sidecar"
+    )]
+    export_outcome_dataset: Option<PathBuf>,
+
+    #[arg(
+        long = "analyze-outcome-dataset",
+        value_name = "PATH",
+        help = "Print structural issue counts from a BranchOutcomeRecordV1 JSONL file"
+    )]
+    analyze_outcome_dataset: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -289,6 +316,27 @@ enum BranchCampaignPresetV1 {
     Quick,
     Focused,
     Deep,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum BranchCampaignAscensionDomainArgV1 {
+    A0,
+    A10,
+    A15,
+    A17,
+    A20,
+}
+
+impl BranchCampaignAscensionDomainArgV1 {
+    fn ascension_level(self) -> u8 {
+        match self {
+            Self::A0 => 0,
+            Self::A10 => 10,
+            Self::A15 => 15,
+            Self::A17 => 17,
+            Self::A20 => 20,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -317,6 +365,23 @@ where
 {
     let matches = Args::command().try_get_matches_from(itr)?;
     let mut args = Args::from_arg_matches(&matches)?;
+    if let Some(domain) = args.ascension_domain {
+        let domain_ascension = domain.ascension_level();
+        let ascension_was_explicit =
+            matches.value_source("ascension") == Some(ValueSource::CommandLine);
+        if ascension_was_explicit && args.ascension != domain_ascension {
+            return Err(clap::Error::raw(
+                ErrorKind::ValueValidation,
+                format!(
+                    "--ascension-domain {:?} implies --ascension {}, but --ascension {} was provided",
+                    domain, domain_ascension, args.ascension
+                ),
+            ));
+        }
+        if !ascension_was_explicit {
+            args.ascension = domain_ascension;
+        }
+    }
     apply_preset_defaults(&mut args, |name| {
         matches.value_source(name) == Some(ValueSource::CommandLine)
     });
@@ -448,6 +513,12 @@ fn apply_campaign_preset_defaults<F>(
 }
 
 fn run(args: Args) -> Result<(), String> {
+    if args.analyze_outcome_dataset.is_some() {
+        return run_branch_outcome_dataset_analysis(&args);
+    }
+    if args.export_outcome_dataset.is_some() && args.inspect_report.is_some() {
+        return run_branch_outcome_dataset_export(&args);
+    }
     if args.inspect_final_boss_combat {
         return run_final_boss_combat_report_inspection(&args);
     }
@@ -493,11 +564,30 @@ fn run(args: Args) -> Result<(), String> {
         run_branch_campaign_with_checkpoint_v1(&config)?
     };
     let report = result.report;
+    if !args.json {
+        eprintln!(
+            "run-domain: ascension=A{} label={} class={}",
+            report.run_domain.ascension_level,
+            report.run_domain.label,
+            report.run_domain.player_class
+        );
+    }
     if let Some(path) = args.out.as_ref() {
         write_campaign_report_v1(path, &report)?;
     }
     if let Some(path) = args.checkpoint_out.as_ref() {
         write_campaign_checkpoint_v1(path, &result.checkpoint)?;
+    }
+    if let Some(path) = args.export_outcome_dataset.as_ref() {
+        let records = extract_branch_outcome_records_v1(&report, Some(&result.checkpoint))?;
+        write_branch_outcome_dataset_jsonl_v1(path, &records)?;
+        let summary = summarize_branch_outcome_records_v1(&records);
+        eprintln!(
+            "wrote {} BranchOutcomeRecordV1 row(s) to {} (checkpoint_enriched={})",
+            summary.total_records,
+            path.display(),
+            summary.checkpoint_enriched_records
+        );
     }
     if args.json {
         println!(
@@ -508,6 +598,61 @@ fn run(args: Args) -> Result<(), String> {
         println!(
             "{}",
             render_branch_campaign_compact_v1(&report, args.branch_examples)
+        );
+    }
+    Ok(())
+}
+
+fn run_branch_outcome_dataset_analysis(args: &Args) -> Result<(), String> {
+    let path = args
+        .analyze_outcome_dataset
+        .as_ref()
+        .ok_or_else(|| "--analyze-outcome-dataset requires a path".to_string())?;
+    let text = fs::read_to_string(path).map_err(|err| {
+        format!(
+            "failed to read --analyze-outcome-dataset {}: {err}",
+            path.display()
+        )
+    })?;
+    let records = parse_branch_outcome_records_jsonl_v1(&text)?;
+    let analysis = analyze_branch_outcome_records_v1(&records);
+    println!("{}", render_branch_outcome_dataset_analysis_v1(&analysis));
+    Ok(())
+}
+
+fn run_branch_outcome_dataset_export(args: &Args) -> Result<(), String> {
+    let path = args
+        .export_outcome_dataset
+        .as_ref()
+        .ok_or_else(|| "--export-outcome-dataset requires a path".to_string())?;
+    let report_path = args
+        .inspect_report
+        .as_ref()
+        .ok_or_else(|| "--export-outcome-dataset requires --inspect-report PATH".to_string())?;
+    let report = read_campaign_report_v1(report_path)?;
+    let checkpoint = args
+        .inspect_checkpoint
+        .as_ref()
+        .map(read_campaign_checkpoint_v1)
+        .transpose()?;
+    let records = extract_branch_outcome_records_v1(&report, checkpoint.as_ref())?;
+    write_branch_outcome_dataset_jsonl_v1(path, &records)?;
+    let summary = summarize_branch_outcome_records_v1(&records);
+    println!(
+        "BranchOutcomeDatasetV1 records={} checkpoint_enriched={} output={}",
+        summary.total_records,
+        summary.checkpoint_enriched_records,
+        path.display()
+    );
+    if !summary.outcome_class_counts.is_empty() {
+        println!(
+            "outcome_classes={}",
+            summary
+                .outcome_class_counts
+                .iter()
+                .map(|entry| format!("{}:{}", entry.key, entry.count))
+                .collect::<Vec<_>>()
+                .join(",")
         );
     }
     Ok(())
@@ -744,6 +889,30 @@ fn write_campaign_checkpoint_v1(
         .map_err(|err| format!("failed to serialize BranchCampaignCheckpointV1: {err}"))?;
     fs::write(path, text)
         .map_err(|err| format!("failed to write --checkpoint-out {}: {err}", path.display()))
+}
+
+fn write_branch_outcome_dataset_jsonl_v1(
+    path: &PathBuf,
+    records: &[sts_simulator::eval::branch_outcome_dataset_v1::BranchOutcomeRecordV1],
+) -> Result<(), String> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent).map_err(|err| {
+            format!(
+                "failed to create --export-outcome-dataset directory {}: {err}",
+                parent.display()
+            )
+        })?;
+    }
+    let text = serialize_branch_outcome_records_jsonl_v1(records)?;
+    fs::write(path, text).map_err(|err| {
+        format!(
+            "failed to write --export-outcome-dataset {}: {err}",
+            path.display()
+        )
+    })
 }
 
 fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, String> {
@@ -1085,6 +1254,46 @@ mod tests {
     }
 
     #[test]
+    fn campaign_cli_accepts_branch_outcome_dataset_export() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--export-outcome-dataset",
+            "branch_outcomes.jsonl",
+        ]);
+
+        assert_eq!(
+            args.export_outcome_dataset,
+            Some(PathBuf::from("branch_outcomes.jsonl"))
+        );
+        assert_eq!(
+            args.inspect_report,
+            Some(PathBuf::from("latest.campaign.json"))
+        );
+        assert_eq!(
+            args.inspect_checkpoint,
+            Some(PathBuf::from("latest.checkpoint.json"))
+        );
+    }
+
+    #[test]
+    fn campaign_cli_accepts_branch_outcome_dataset_analysis() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--analyze-outcome-dataset",
+            "branch_outcomes.jsonl",
+        ]);
+
+        assert_eq!(
+            args.analyze_outcome_dataset,
+            Some(PathBuf::from("branch_outcomes.jsonl"))
+        );
+    }
+
+    #[test]
     fn campaign_cli_can_branch_all_reward_options() {
         let args = Args::try_parse_from(["branch_campaign_driver", "--all-reward-options"])
             .expect("args parse");
@@ -1133,6 +1342,29 @@ mod tests {
             BranchCampaignCombatRetryPolicyV1::OnStall
         );
         assert_eq!(args.branch_examples, 3);
+    }
+
+    #[test]
+    fn ascension_domain_sets_curriculum_ascension_when_not_explicit() {
+        let args = parse_args_from(["branch_campaign_driver", "--ascension-domain", "a20"])
+            .expect("args parse");
+        let config = campaign_config_from_args(&args).expect("config builds");
+
+        assert_eq!(config.ascension_level, 20);
+    }
+
+    #[test]
+    fn ascension_domain_rejects_conflicting_explicit_ascension() {
+        let err = parse_args_from([
+            "branch_campaign_driver",
+            "--ascension-domain",
+            "a20",
+            "--ascension",
+            "10",
+        ])
+        .expect_err("conflicting ascension should fail");
+
+        assert_eq!(err.kind(), ErrorKind::ValueValidation);
     }
 
     #[test]

@@ -43,6 +43,14 @@ Prints the last saved automated combat trajectory for a selected checkpoint bran
 Runs a shorter random-seed campaign for fast smoke testing.
 
 .EXAMPLE
+.\tools\campaign.ps1 -Ascension 20 -Mode quick
+Runs a high-ascension stress campaign on a random seed.
+
+.EXAMPLE
+.\tools\campaign.ps1 -Domain a20 -Mode quick
+Runs the current target-domain high-ascension campaign shortcut.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Mode deep
 Runs a larger random-seed campaign when you want to leave it working longer.
 
@@ -106,6 +114,15 @@ param(
     [ValidateRange(0, 100000)]
     [int] $UntilRound = 0,
 
+    [ValidateRange(0, 20)]
+    [int] $Ascension = 0,
+
+    [ValidateSet("a0", "a10", "a15", "a17", "a20")]
+    [string] $Domain = "",
+
+    [ValidateSet("ironclad", "silent", "defect", "watcher")]
+    [string] $Class = "ironclad",
+
     [int] $MaxRounds = 6,
     [int] $ExperimentWallMs = 10000,
     [int] $SearchWallMs = 300,
@@ -127,11 +144,28 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $CampaignDir = Join-Path $RepoRoot "tools\artifacts\campaigns"
 $LatestSeedPath = Join-Path $CampaignDir "latest.seed.txt"
+$LatestAscensionPath = Join-Path $CampaignDir "latest.ascension.txt"
+$LatestClassPath = Join-Path $CampaignDir "latest.class.txt"
 $LatestCommandPath = Join-Path $CampaignDir "latest.command.txt"
 $LatestCampaignPath = Join-Path $CampaignDir "latest.campaign.json"
 $LatestCheckpointPath = Join-Path $CampaignDir "latest.checkpoint.json"
 
 New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
+
+function Read-LatestCheckpointRunConfig {
+    if (-not (Test-Path -LiteralPath $LatestCheckpointPath)) {
+        return $null
+    }
+    try {
+        $Checkpoint = Get-Content -LiteralPath $LatestCheckpointPath -Raw | ConvertFrom-Json
+        if ($Checkpoint.sessions -and $Checkpoint.sessions.Count -gt 0) {
+            return $Checkpoint.sessions[0].session.run_state
+        }
+    } catch {
+        return $null
+    }
+    return $null
+}
 
 if ($InspectShopEvidence -or $InspectLastAutoCombat) {
     $Inspect = $true
@@ -161,6 +195,41 @@ if ($Inspect) {
     $Seed = Get-Random -Minimum 1 -Maximum 2147483647
 }
 
+$AscensionBound = $PSBoundParameters.ContainsKey("Ascension")
+$ClassBound = $PSBoundParameters.ContainsKey("Class")
+$DomainBound = $PSBoundParameters.ContainsKey("Domain") -and $Domain
+if ($DomainBound) {
+    $DomainAscension = [int] $Domain.Substring(1)
+    if ($AscensionBound -and $Ascension -ne $DomainAscension) {
+        throw "-Domain $Domain conflicts with -Ascension $Ascension."
+    }
+    $Ascension = $DomainAscension
+    $AscensionBound = $true
+}
+if ($Last -or $Inspect) {
+    if (-not $AscensionBound) {
+        if (Test-Path -LiteralPath $LatestAscensionPath) {
+            $AscensionText = (Get-Content -LiteralPath $LatestAscensionPath -Raw).Trim()
+            [void] [int]::TryParse($AscensionText, [ref] $Ascension)
+        } else {
+            $SavedConfig = Read-LatestCheckpointRunConfig
+            if ($SavedConfig -and $SavedConfig.ascension_level -ne $null) {
+                $Ascension = [int] $SavedConfig.ascension_level
+            }
+        }
+    }
+    if (-not $ClassBound) {
+        if (Test-Path -LiteralPath $LatestClassPath) {
+            $Class = (Get-Content -LiteralPath $LatestClassPath -Raw).Trim().ToLowerInvariant()
+        } else {
+            $SavedConfig = Read-LatestCheckpointRunConfig
+            if ($SavedConfig -and $SavedConfig.player_class) {
+                $Class = ([string] $SavedConfig.player_class).ToLowerInvariant()
+            }
+        }
+    }
+}
+
 $ExplicitBuildProfile = $PSBoundParameters.ContainsKey("BuildProfile")
 if ($DebugBuild) {
     if ($ExplicitBuildProfile -and $BuildProfile -ne "debug") {
@@ -185,8 +254,13 @@ switch ($BuildProfile) {
 
 $DriverArgs = @(
     "--preset", "$Mode",
-    "--seed", "$Seed"
+    "--seed", "$Seed",
+    "--ascension", "$Ascension",
+    "--class", "$Class"
 )
+if (@(0, 10, 15, 17, 20) -contains $Ascension) {
+    $DriverArgs += @("--ascension-domain", "a$Ascension")
+}
 
 $CampaignBoundParameters = @{}
 foreach ($ParameterName in $PSBoundParameters.Keys) {
@@ -382,6 +456,7 @@ if ($Inspect) {
     if ($Seed -gt 0) {
         Write-Host "seed=$Seed"
     }
+    Write-Host "ascension=A$Ascension domain=a$Ascension class=$Class"
     Write-Host "build=$BuildProfile exe=$DriverExe"
     if ($NeedsBuild) {
         Write-Host "build-needed=yes"
@@ -418,6 +493,7 @@ if ($Inspect) {
 }
 
 Write-Host "seed=$Seed"
+Write-Host "ascension=A$Ascension domain=a$Ascension class=$Class"
 $RenderedArgs = $DriverArgs | ForEach-Object {
     if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
 }
@@ -472,6 +548,8 @@ if ($DryRun) {
 }
 
 Set-Content -LiteralPath $LatestSeedPath -Value $Seed
+Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
+Set-Content -LiteralPath $LatestClassPath -Value $Class
 Set-Content -LiteralPath $LatestCommandPath -Value $RenderedCommand
 
 Push-Location $RepoRoot

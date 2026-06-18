@@ -206,7 +206,8 @@ mod tests {
     use sts_simulator::ai::strategic::BranchSignatureCompact;
     use sts_simulator::eval::branch_campaign::{
         BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
-        BranchCampaignReportV1, BRANCH_CAMPAIGN_SCHEMA_NAME, BRANCH_CAMPAIGN_SCHEMA_VERSION,
+        BranchCampaignReportV1, BranchCampaignRunDomainV1, BRANCH_CAMPAIGN_SCHEMA_NAME,
+        BRANCH_CAMPAIGN_SCHEMA_VERSION,
     };
     use sts_simulator::eval::branch_experiment::BranchExperimentBossCombatRecordV1;
     use sts_simulator::eval::run_control::{
@@ -220,6 +221,7 @@ mod tests {
             schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
             schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
             seed: 521,
+            run_domain: BranchCampaignRunDomainV1::default(),
             rounds_completed: 1,
             stop_reason: "victory".to_string(),
             active: Vec::new(),
