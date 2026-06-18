@@ -224,6 +224,58 @@ pub(crate) fn first_flipped(extra_data: &[i32]) -> i32 {
     extra_data[14]
 }
 
+pub(crate) fn stall_fingerprint(run_state: &RunState, event_state: &EventState) -> Option<String> {
+    if event_state.id != EventId::MatchAndKeep
+        || event_state.extra_data.len() <= LAST_FLIPPED_2_OFFSET
+    {
+        return None;
+    }
+
+    let extra_data = &event_state.extra_data;
+    let matched_mask = *extra_data.get(12)?;
+    let attempts = *extra_data.get(13)?;
+    let first = if event_state.current_screen == 2 {
+        let first = first_flipped(extra_data);
+        if first >= 0 {
+            format!("first{first}")
+        } else {
+            "first-".to_string()
+        }
+    } else {
+        "first-".to_string()
+    };
+    let result = if event_state.current_screen == 3 {
+        match match_and_keep_last_result_key(run_state, extra_data) {
+            Some(result) => result,
+            None => "result-".to_string(),
+        }
+    } else {
+        "result-".to_string()
+    };
+
+    Some(format!(
+        "mak:screen{}:attempts{}:matched{:04x}:{}:{}",
+        event_state.current_screen, attempts, matched_mask, first, result
+    ))
+}
+
+fn match_and_keep_last_result_key(run_state: &RunState, extra_data: &[i32]) -> Option<String> {
+    let first = *extra_data.get(LAST_FLIPPED_1_OFFSET)?;
+    let second = *extra_data.get(LAST_FLIPPED_2_OFFSET)?;
+    if first < 0 || second < 0 {
+        return None;
+    }
+    let first = first as usize;
+    let second = second as usize;
+    let (first_card, _) = card_entry_at(run_state, extra_data, first)?;
+    let (second_card, _) = card_entry_at(run_state, extra_data, second)?;
+    if first_card == second_card {
+        Some(format!("result=match:{first_card:?}"))
+    } else {
+        Some(format!("result=mismatch:{first}-{second}"))
+    }
+}
+
 fn build_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventChoiceMeta> {
     match event_state.current_screen {
         0 => {

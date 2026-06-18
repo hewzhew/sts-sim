@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use crate::eval::event_boundary_classifier_v1::classify_event_option_boundary_v1;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{ActiveCombat, ClientInput, EngineState, RunResult};
+use crate::state::events::EventId;
 
 use super::commands::{
     RunControlAutoStepOptions, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
@@ -57,15 +58,16 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
 
     for _ in 0..max_operations {
         let boundary_key = auto_boundary_key(session);
-        if !seen_boundaries.insert(boundary_key.clone()) {
+        let stall_key = auto_stall_key(session, &boundary_key);
+        if !seen_boundaries.insert(stall_key.clone()) {
             return finish_auto_step(
                 session,
                 &before,
                 applied,
                 trace_annotations,
-                "repeated boundary detected while advancing automatically",
+                "repeated auto boundary without progress",
                 Some(format!(
-                    "boundary={boundary_key}\nThis usually means an event or transition kept presenting the same screen after an automatic action."
+                    "boundary={boundary_key}\nstall_key={stall_key}\nThis usually means the selected automatic action did not mutate the visible boundary state."
                 )),
             );
         }
@@ -859,6 +861,21 @@ fn auto_boundary_key(session: &RunControlSession) -> String {
     )
 }
 
+fn auto_stall_key(session: &RunControlSession, boundary_key: &str) -> String {
+    let Some(event_state) = session.run_state.event_state.as_ref() else {
+        return boundary_key.to_string();
+    };
+    if event_state.id != EventId::MatchAndKeep {
+        return boundary_key.to_string();
+    }
+    let Some(fingerprint) =
+        crate::content::events::match_and_keep::stall_fingerprint(&session.run_state, event_state)
+    else {
+        return boundary_key.to_string();
+    };
+    format!("{boundary_key}|progress:{fingerprint}")
+}
+
 fn active_combat_boundary_key(active: &ActiveCombat) -> String {
     let combat = &active.combat_state;
     let player = &combat.entities.player;
@@ -1001,7 +1018,7 @@ fn indent_block(text: &str) -> String {
 mod tests {
     use super::{
         apply_guarded_auto_step, auto_boundary_key, auto_no_potion_first_options,
-        auto_potion_rescue_options, auto_search_options,
+        auto_potion_rescue_options, auto_search_options, auto_stall_key,
         high_stakes_auto_search_requires_hp_loss_gate,
     };
     use crate::ai::combat_search_v2::{
@@ -1052,6 +1069,52 @@ mod tests {
     }
 
     #[test]
+    fn match_and_keep_stall_key_tracks_result_progress_without_changing_boundary_identity() {
+        let bludgeon_result = match_and_keep_session_at_result(4, 7, 0x0090, 4);
+        let rage_result = match_and_keep_session_at_result(5, 9, 0x02b0, 3);
+
+        let bludgeon_boundary = auto_boundary_key(&bludgeon_result);
+        let rage_boundary = auto_boundary_key(&rage_result);
+        assert_eq!(
+            bludgeon_boundary, rage_boundary,
+            "boundary identity should remain coarse enough for logs and grouping"
+        );
+        assert_ne!(
+            auto_stall_key(&bludgeon_result, &bludgeon_boundary),
+            auto_stall_key(&rage_result, &rage_boundary),
+            "stall guard must treat MatchAndKeep result screens with new progress as distinct"
+        );
+    }
+
+    #[test]
+    fn match_and_keep_stall_key_ignores_stale_last_result_outside_result_screen() {
+        let mut first = match_and_keep_session_at_first_flip();
+        let mut second = match_and_keep_session_at_first_flip();
+        {
+            let event = second.run_state.event_state.as_mut().unwrap();
+            event.extra_data[27] = 4;
+            event.extra_data[28] = 7;
+        }
+
+        let first_boundary = auto_boundary_key(&first);
+        let second_boundary = auto_boundary_key(&second);
+        assert_eq!(first_boundary, second_boundary);
+        assert_eq!(
+            auto_stall_key(&first, &first_boundary),
+            auto_stall_key(&second, &second_boundary),
+            "screen 1 progress fingerprint should not include stale last_result fields"
+        );
+
+        first.run_state.event_state.as_mut().unwrap().extra_data[12] = 0x0090;
+        let updated_boundary = auto_boundary_key(&first);
+        assert_ne!(
+            auto_stall_key(&first, &updated_boundary),
+            auto_stall_key(&second, &second_boundary),
+            "matched_mask is real progress and should affect the stall fingerprint"
+        );
+    }
+
+    #[test]
     fn auto_search_options_only_add_interactive_time_budget_without_strategy_overrides() {
         let session = RunControlSession::new(RunControlConfig {
             search_wall_ms: Some(30_000),
@@ -1085,6 +1148,52 @@ mod tests {
         let session = RunControlSession::new(RunControlConfig::default());
         let options = auto_search_options(&session, RunControlSearchCombatOptions::default());
         assert_eq!(options.wall_ms, Some(5_000));
+    }
+
+    fn match_and_keep_session_at_first_flip() -> RunControlSession {
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        let mut event_state =
+            crate::state::events::EventState::new(crate::state::events::EventId::MatchAndKeep);
+        event_state.current_screen = 1;
+        event_state.extra_data = match_and_keep_extra_data();
+        session.run_state.event_state = Some(event_state);
+        session.engine_state = EngineState::EventRoom;
+        session
+    }
+
+    fn match_and_keep_session_at_result(
+        first_pos: i32,
+        second_pos: i32,
+        matched_mask: i32,
+        attempts: i32,
+    ) -> RunControlSession {
+        let mut session = match_and_keep_session_at_first_flip();
+        let event = session.run_state.event_state.as_mut().unwrap();
+        event.current_screen = 3;
+        event.extra_data[12] = matched_mask;
+        event.extra_data[13] = attempts;
+        event.extra_data[14] = -1;
+        event.extra_data[27] = first_pos;
+        event.extra_data[28] = second_pos;
+        session
+    }
+
+    fn match_and_keep_extra_data() -> Vec<i32> {
+        let mut extra_data = vec![3, 4, 4, 5, 0, 1, 2, 0, 3, 1, 5, 2, 0, 5, -1];
+        for (card_id, upgrades) in [
+            (crate::content::cards::CardId::Bludgeon, 0),
+            (crate::content::cards::CardId::Rage, 0),
+            (crate::content::cards::CardId::ThunderClap, 0),
+            (crate::content::cards::CardId::Impatience, 0),
+            (crate::content::cards::CardId::Doubt, 0),
+            (crate::content::cards::CardId::Bash, 0),
+        ] {
+            extra_data.push(card_id as i32);
+            extra_data.push(upgrades);
+        }
+        extra_data.push(-1);
+        extra_data.push(-1);
+        extra_data
     }
 
     #[test]
