@@ -165,7 +165,38 @@ fn decline_delta_from_card_reward_context(context: &CardRewardDecisionContextV1)
             context.deck.deck_size
         ));
     }
+    if card_reward_decline_preserves_cycle(context) {
+        delta.positive.push(LedgerDelta {
+            kind: PressureKind::DeckDebt(StrategicDebt::CycleTime),
+            amount: card_reward_decline_cycle_relief_amount(context),
+            reason: "skip_preserves_cycle_under_deck_pressure".to_string(),
+        });
+        delta
+            .evidence
+            .push("decline_candidate_preserves_deck_shape".to_string());
+    }
     delta
+}
+
+fn card_reward_decline_preserves_cycle(context: &CardRewardDecisionContextV1) -> bool {
+    context.deck.deck_size >= 24
+        || (context.deck.deck_size >= 18
+            && context
+                .deck
+                .draw_cards
+                .saturating_add(context.deck.energy_sources)
+                <= 1)
+        || formation_needs_include(context, StrategyDeckFormationNeedV1::Consistency)
+}
+
+fn card_reward_decline_cycle_relief_amount(context: &CardRewardDecisionContextV1) -> f32 {
+    if context.deck.deck_size >= 34 {
+        0.55
+    } else if context.deck.deck_size >= 24 {
+        0.42
+    } else {
+        0.30
+    }
 }
 
 fn add_candidate_impact_deltas(

@@ -12,6 +12,7 @@ pub enum AcquisitionRoleV1 {
     ExhaustAccess,
     ScalingOrEngine,
     BossSpecificAnswer,
+    RedundantCoverage,
     LiabilityOrDependency,
 }
 
@@ -284,9 +285,11 @@ pub fn evaluate_acquisition_saturation_v1(
             )
         })
     {
-        push_unique(
-            &mut report.negative_tags,
-            "acquisition_duplicate:transition_or_mitigation".to_string(),
+        report.push(
+            AcquisitionRoleV1::RedundantCoverage,
+            AcquisitionSaturationStatusV1::OverBudget,
+            (0.25 + input.same_card_count.min(3) as f32 * 0.10).clamp(0.25, 0.55),
+            "duplicate_transition_or_mitigation",
         );
         report.notes.push(format!(
             "duplicate_transition_or_mitigation same_card_count={}",
@@ -346,7 +349,9 @@ fn positive_pressure(role: AcquisitionRoleV1) -> Option<PressureKind> {
             Some(PressureKind::MissingJob(StrategicJob::ExhaustAccess))
         }
         AcquisitionRoleV1::ScalingOrEngine => Some(PressureKind::MissingJob(StrategicJob::Scaling)),
-        AcquisitionRoleV1::BossSpecificAnswer | AcquisitionRoleV1::LiabilityOrDependency => None,
+        AcquisitionRoleV1::BossSpecificAnswer
+        | AcquisitionRoleV1::RedundantCoverage
+        | AcquisitionRoleV1::LiabilityOrDependency => None,
     }
 }
 
@@ -358,7 +363,8 @@ fn negative_pressure(signal: &AcquisitionSaturationSignalV1) -> PressureKind {
         AcquisitionRoleV1::TransitionFrontload
         | AcquisitionRoleV1::PlainBlock
         | AcquisitionRoleV1::DrawAccess
-        | AcquisitionRoleV1::ExhaustAccess => PressureKind::DeckDebt(StrategicDebt::CycleTime),
+        | AcquisitionRoleV1::ExhaustAccess
+        | AcquisitionRoleV1::RedundantCoverage => PressureKind::DeckDebt(StrategicDebt::CycleTime),
         AcquisitionRoleV1::MitigationCoverage
         | AcquisitionRoleV1::ScalingOrEngine
         | AcquisitionRoleV1::BossSpecificAnswer => {
@@ -389,6 +395,7 @@ fn role_tag(role: AcquisitionRoleV1) -> &'static str {
         AcquisitionRoleV1::ExhaustAccess => "exhaust_access",
         AcquisitionRoleV1::ScalingOrEngine => "scaling_or_engine",
         AcquisitionRoleV1::BossSpecificAnswer => "boss_specific_answer",
+        AcquisitionRoleV1::RedundantCoverage => "redundant_coverage",
         AcquisitionRoleV1::LiabilityOrDependency => "liability_or_dependency",
     }
 }
@@ -444,7 +451,7 @@ mod tests {
             AcquisitionSaturationStatusV1::Saturated
         ));
         assert!(report.has_negative_tag("acquisition_saturated:mitigation_coverage"));
-        assert!(report.has_negative_tag("acquisition_duplicate:transition_or_mitigation"));
+        assert!(report.has_negative_tag("acquisition_over_budget:redundant_coverage"));
     }
 
     #[test]
@@ -493,7 +500,11 @@ mod tests {
         assert!(delta
             .evidence
             .iter()
-            .any(|entry| entry == "acquisition_duplicate:transition_or_mitigation"));
+            .any(|entry| entry == "acquisition_over_budget:redundant_coverage"));
+        assert!(delta.negative.iter().any(|entry| {
+            entry.kind == PressureKind::DeckDebt(StrategicDebt::CycleTime)
+                && entry.reason == "duplicate_transition_or_mitigation"
+        }));
     }
 
     #[test]
