@@ -1589,7 +1589,8 @@ fn render_campaign_choice_coverage_v1(report: &BranchCampaignReportV1) -> Option
 fn render_campaign_choice_count_summary_v1<'a>(choices: impl Iterator<Item = &'a str>) -> String {
     let mut counts = BTreeMap::<String, usize>::new();
     for choice in choices {
-        let choice = choice.trim();
+        let compact_choice = compact_campaign_choice_label_metadata_v1(choice);
+        let choice = compact_choice.trim();
         if choice.is_empty() {
             continue;
         }
@@ -1789,16 +1790,19 @@ where
 
 fn truncate_branch_pressure_example_v1(value: &str) -> String {
     const MAX_CHARS: usize = 96;
-    let parts = value.split(" -> ").collect::<Vec<_>>();
+    let parts = value
+        .split(" -> ")
+        .map(compact_campaign_choice_label_metadata_v1)
+        .collect::<Vec<_>>();
     let compressed = if parts.len() > 4 {
         format!(
             "{} -> {} -> ... -> {}",
             parts[0],
             parts[1],
-            parts.last().copied().unwrap_or_default()
+            parts.last().map(String::as_str).unwrap_or_default()
         )
     } else {
-        value.to_string()
+        parts.join(" -> ")
     };
     if compressed.chars().count() <= MAX_CHARS {
         return compressed;
@@ -4267,7 +4271,11 @@ fn render_choice_path(labels: &[String]) -> String {
     if labels.is_empty() {
         "-".to_string()
     } else {
-        labels.join(" -> ")
+        labels
+            .iter()
+            .map(|label| compact_campaign_choice_label_metadata_v1(label))
+            .collect::<Vec<_>>()
+            .join(" -> ")
     }
 }
 
@@ -4431,11 +4439,34 @@ fn campaign_choice_label_v1(
     } else {
         label
     };
+    let label = compact_campaign_choice_label_metadata_v1(&label);
     if choice.kind == "event" && label.starts_with('[') && !choice.boundary_title.trim().is_empty()
     {
         format!("{}: {}", choice.boundary_title, label)
     } else {
         label
+    }
+}
+
+fn compact_campaign_choice_label_metadata_v1(label: &str) -> String {
+    let parts = label
+        .split(" | ")
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .filter(|part| {
+            !part.starts_with("source=")
+                && !part.starts_with("shop_legacy_estimate=")
+                && !part.starts_with("deck mutation role=")
+                && !part.starts_with("event_eval ")
+                && !part.starts_with("total ")
+                && *part != "auto leave shop"
+        })
+        .map(|part| part.replace(" gold then ", "g then ").replace(" gold", "g"))
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        label.to_string()
+    } else {
+        parts.join(" ")
     }
 }
 

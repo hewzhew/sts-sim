@@ -562,6 +562,55 @@ fn campaign_choice_label_omits_event_eval_from_choice_path() {
 }
 
 #[test]
+fn campaign_choice_label_compacts_shop_metadata() {
+    let choice = BranchExperimentChoiceV1 {
+        depth: 0,
+        kind: "shop".to_string(),
+        boundary_title: "Shop".to_string(),
+        card: None,
+        upgrades: None,
+        selected_cards: Vec::new(),
+        effect_kind: "shop".to_string(),
+        effect_key: "buy".to_string(),
+        effect_label: "Purge Strike | 75 gold then Buy Flex Potion potion | 51 gold | total 126 gold | source=PortfolioCandidate | auto leave shop".to_string(),
+        representative_count: 1,
+        suppressed_count: 0,
+        decision_signal: None,
+        label: "shop".to_string(),
+        command: "shop 0".to_string(),
+    };
+
+    assert_eq!(
+        campaign_choice_label_v1(&choice),
+        "Purge Strike 75g then Buy Flex Potion potion 51g"
+    );
+}
+
+#[test]
+fn campaign_choice_label_compacts_deck_mutation_metadata() {
+    let choice = BranchExperimentChoiceV1 {
+        depth: 0,
+        kind: "deck_mutation".to_string(),
+        boundary_title: "UpgradeShrine".to_string(),
+        card: None,
+        upgrades: None,
+        selected_cards: Vec::new(),
+        effect_kind: "upgrade".to_string(),
+        effect_key: "upgrade".to_string(),
+        effect_label:
+            "upgrade Defend | deck mutation role=SafeAlternative loss=LowValue confidence=0.66"
+                .to_string(),
+        representative_count: 1,
+        suppressed_count: 0,
+        decision_signal: None,
+        label: "upgrade Defend".to_string(),
+        command: "select 3".to_string(),
+    };
+
+    assert_eq!(campaign_choice_label_v1(&choice), "upgrade Defend");
+}
+
+#[test]
 fn compact_campaign_report_summarizes_active_strategic_signals() {
     let parent = test_campaign_branch("parent", 3, 80);
     let mut engine = test_report_branch(
