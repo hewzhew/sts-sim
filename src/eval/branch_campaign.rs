@@ -400,6 +400,7 @@ where
                     frozen_remaining: state.frozen.len(),
                     filled_active: 0,
                     stronger_rebalanced: promoted,
+                    diversity_rebalanced: 0,
                     rehydrated_recovered: 0,
                     checkpoint_recovered: 0,
                 });
@@ -426,6 +427,7 @@ where
                     frozen_remaining: state.frozen.len(),
                     filled_active: promoted,
                     stronger_rebalanced: 0,
+                    diversity_rebalanced: 0,
                     rehydrated_recovered: 0,
                     checkpoint_recovered: 0,
                 });
@@ -451,6 +453,7 @@ where
                     frozen_remaining: state.frozen.len(),
                     filled_active: 0,
                     stronger_rebalanced: 0,
+                    diversity_rebalanced: 0,
                     rehydrated_recovered: promoted,
                     checkpoint_recovered: 0,
                 });
@@ -481,6 +484,7 @@ where
                     frozen_remaining: state.frozen.len(),
                     filled_active: 0,
                     stronger_rebalanced: 0,
+                    diversity_rebalanced: 0,
                     rehydrated_recovered: 0,
                     checkpoint_recovered: recovered,
                 });
@@ -602,6 +606,15 @@ where
             &mut state.frozen,
             config.max_active,
         );
+        let diversity_rebalanced_from_frozen = if config.active_lineage_diversity_slots > 0 {
+            rebalance_active_lineage_diversity_v1(
+                &mut state.active,
+                &mut state.frozen,
+                config.active_lineage_diversity_slots,
+            )
+        } else {
+            0
+        };
         state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
             state.strategy_requests,
             &state.active,
@@ -674,6 +687,7 @@ where
         }
         let total_promoted_from_frozen = promoted_from_frozen
             .saturating_add(rebalanced_from_frozen)
+            .saturating_add(diversity_rebalanced_from_frozen)
             .saturating_add(promoted_rehydrated_from_frozen)
             .saturating_add(recovered_from_abandoned);
         let round_summary = BranchCampaignRoundSummaryV1 {
@@ -713,6 +727,7 @@ where
                 frozen_remaining: state.frozen.len(),
                 filled_active: promoted_from_frozen,
                 stronger_rebalanced: rebalanced_from_frozen,
+                diversity_rebalanced: diversity_rebalanced_from_frozen,
                 rehydrated_recovered: promoted_rehydrated_from_frozen,
                 checkpoint_recovered: recovered_from_abandoned,
             });
@@ -1157,6 +1172,9 @@ pub fn render_branch_campaign_compact_v1(
     if let Some(concern) = render_campaign_strategic_concern_v1(&strategic_signals) {
         lines.push(concern);
     }
+    if let Some(choice_coverage) = render_campaign_choice_coverage_v1(report) {
+        lines.push(choice_coverage);
+    }
     if let Some(victory_lines) = render_campaign_victory_quality_lines_v1(report) {
         lines.push(String::new());
         lines.extend(victory_lines);
@@ -1532,6 +1550,74 @@ fn render_campaign_branch_stop_reasons_v1(
         max_examples,
     )
     .join(" | ")
+}
+
+fn render_campaign_choice_coverage_v1(report: &BranchCampaignReportV1) -> Option<String> {
+    if report.active.is_empty() && report.frozen.is_empty() {
+        return None;
+    }
+    let active_first = render_campaign_choice_count_summary_v1(
+        report
+            .active
+            .iter()
+            .filter_map(campaign_branch_first_choice_v1),
+    );
+    let active_latest = render_campaign_choice_count_summary_v1(
+        report
+            .active
+            .iter()
+            .filter_map(campaign_branch_latest_choice_v1),
+    );
+    let frozen_first = render_campaign_choice_count_summary_v1(
+        report
+            .frozen
+            .iter()
+            .filter_map(campaign_branch_first_choice_v1),
+    );
+    let frozen_latest = render_campaign_choice_count_summary_v1(
+        report
+            .frozen
+            .iter()
+            .filter_map(campaign_branch_latest_choice_v1),
+    );
+    Some(format!(
+        "Choice coverage: active_first=[{}] active_latest=[{}] frozen_first=[{}] frozen_latest=[{}]",
+        active_first, active_latest, frozen_first, frozen_latest
+    ))
+}
+
+fn render_campaign_choice_count_summary_v1<'a>(choices: impl Iterator<Item = &'a str>) -> String {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for choice in choices {
+        let choice = choice.trim();
+        if choice.is_empty() {
+            continue;
+        }
+        *counts.entry(choice.to_string()).or_default() += 1;
+    }
+    if counts.is_empty() {
+        return "-".to_string();
+    }
+    let mut entries = counts.into_iter().collect::<Vec<_>>();
+    entries.sort_by(|(left_label, left_count), (right_label, right_count)| {
+        right_count
+            .cmp(left_count)
+            .then_with(|| left_label.cmp(right_label))
+    });
+    entries
+        .into_iter()
+        .take(3)
+        .map(|(label, count)| format!("{}={count}", truncate_campaign_diff_label_v1(&label)))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn campaign_branch_first_choice_v1(branch: &BranchCampaignBranchV1) -> Option<&str> {
+    branch.choice_labels.first().map(String::as_str)
+}
+
+fn campaign_branch_latest_choice_v1(branch: &BranchCampaignBranchV1) -> Option<&str> {
+    branch.choice_labels.last().map(String::as_str)
 }
 
 fn render_campaign_branch_diff_suffix_v1(
@@ -2912,8 +2998,7 @@ fn select_campaign_branches_for_config_v1(
     branches: Vec<BranchCampaignBranchV1>,
     config: &BranchCampaignConfigV1,
 ) -> BranchCampaignSelectionV1 {
-    let mut selection =
-        select_campaign_branches_v1(branches, config.max_active, config.max_frozen);
+    let mut selection = select_campaign_branches_v1(branches, config.max_active, config.max_frozen);
     if config.active_lineage_diversity_slots > 0 {
         rebalance_active_lineage_diversity_v1(
             &mut selection.active,
@@ -2976,9 +3061,7 @@ fn campaign_active_lineage_count_v1(active: &[BranchCampaignBranchV1]) -> usize 
     campaign_active_lineage_counts_v1(active).len()
 }
 
-fn campaign_active_lineage_counts_v1(
-    active: &[BranchCampaignBranchV1],
-) -> BTreeMap<String, usize> {
+fn campaign_active_lineage_counts_v1(active: &[BranchCampaignBranchV1]) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for branch in active {
         *counts
@@ -2989,12 +3072,19 @@ fn campaign_active_lineage_counts_v1(
 }
 
 fn campaign_branch_lineage_key_v1(branch: &BranchCampaignBranchV1) -> String {
-    branch
+    let first = branch
         .choice_labels
         .first()
         .cloned()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| branch.branch_id.clone())
+        .unwrap_or_else(|| branch.branch_id.clone());
+    let Some(latest) = branch.choice_labels.last() else {
+        return first;
+    };
+    if latest == &first || latest.trim().is_empty() {
+        return first;
+    }
+    format!("{first} | latest={latest}")
 }
 
 fn rebalance_active_progress_anchor_v1(

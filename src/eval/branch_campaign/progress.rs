@@ -45,6 +45,7 @@ pub enum BranchCampaignProgressEventV1 {
         frozen_remaining: usize,
         filled_active: usize,
         stronger_rebalanced: usize,
+        diversity_rebalanced: usize,
         rehydrated_recovered: usize,
         checkpoint_recovered: usize,
     },
@@ -138,6 +139,7 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             frozen_remaining,
             filled_active,
             stronger_rebalanced,
+            diversity_rebalanced,
             rehydrated_recovered,
             checkpoint_recovered,
         } => {
@@ -147,6 +149,9 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             }
             if *stronger_rebalanced > 0 {
                 sources.push(format!("stronger={stronger_rebalanced}"));
+            }
+            if *diversity_rebalanced > 0 {
+                sources.push(format!("diversity={diversity_rebalanced}"));
             }
             if *rehydrated_recovered > 0 {
                 sources.push(format!("rehydrated={rehydrated_recovered}"));
