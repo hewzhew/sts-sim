@@ -46,6 +46,37 @@ fn branch_state_store_tracks_snapshot_hits_and_retention() {
 }
 
 #[test]
+fn branch_state_store_records_child_parent_link_and_command_delta() {
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+    let parent_commands = vec!["rp 0".to_string()];
+    let child_commands = vec![
+        "rp 0".to_string(),
+        "go 2".to_string(),
+        "rp 1".to_string(),
+    ];
+
+    store.insert_session(
+        parent_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.insert_child_session(
+        &parent_commands,
+        child_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+
+    let parent_id = store
+        .node_id_for_commands(&parent_commands)
+        .expect("parent node should exist");
+    let child = store
+        .node_for_commands(&child_commands)
+        .expect("child node should exist");
+
+    assert_eq!(child.parent_id(), Some(parent_id));
+    assert_eq!(child.added_commands(), &["go 2".to_string(), "rp 1".to_string()]);
+}
+
+#[test]
 fn campaign_compact_report_renders_route_evidence_summary() {
     let mut report = test_campaign_report_with_active("a", 6, 80);
     report.route_evidence = BranchCampaignRouteEvidenceSummaryV1 {

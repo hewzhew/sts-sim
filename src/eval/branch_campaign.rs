@@ -2334,7 +2334,11 @@ where
             if let Some(snapshot) = result.branch_sessions.get(&branch.branch_id) {
                 campaign_refresh_branch_summary_from_session_v1(&mut child, snapshot);
                 maybe_attach_campaign_combat_lab_probe_v1(config, &mut child, snapshot);
-                state_store.insert_session(child.commands.clone(), snapshot.clone());
+                state_store.insert_child_session(
+                    &parent.commands,
+                    child.commands.clone(),
+                    snapshot.clone(),
+                );
             }
             candidates.push(child);
         }
