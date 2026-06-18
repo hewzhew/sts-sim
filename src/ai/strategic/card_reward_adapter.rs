@@ -5,6 +5,10 @@ use super::{
     RunDebtCandidateSignalsV1, StrategicBossTax, StrategicDebt, StrategicDecisionSite,
     StrategicDeckFacts, StrategicJob, StrategicRouteFacts, StrategicSnapshot, VerdictHint,
 };
+use crate::ai::acquisition_saturation_v1::{
+    apply_acquisition_saturation_to_delta_v1, evaluate_acquisition_saturation_v1,
+    AcquisitionSaturationInputV1,
+};
 use crate::ai::card_component_marginal_value_v1::{
     evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
 };
@@ -131,6 +135,7 @@ fn candidate_delta_from_card_reward(
     add_candidate_facts_deltas(candidate, &mut delta);
     add_candidate_startup_deltas(context, candidate, &mut delta);
     add_candidate_boss_pressure_deltas(context, &profile, &mut delta);
+    add_candidate_acquisition_saturation_deltas(context, candidate, &profile, &mut delta);
     add_candidate_run_debt_deltas(context, candidate, &mut delta);
     delta
 }
@@ -469,6 +474,34 @@ fn add_candidate_run_debt_deltas(
             ..RunDebtCandidateSignalsV1::default()
         },
     );
+}
+
+fn add_candidate_acquisition_saturation_deltas(
+    context: &CardRewardDecisionContextV1,
+    candidate: &CardRewardCandidateEvidenceV1,
+    profile: &crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1,
+    delta: &mut CandidateDelta,
+) {
+    let report = evaluate_acquisition_saturation_v1(
+        &AcquisitionSaturationInputV1 {
+            act: context.run.act,
+            deck_size: context.deck.deck_size,
+            frontload_cards: context.deck.attacks as usize,
+            weak_sources: context.deck.weak_sources as usize,
+            block_cards: context.deck.skills as usize,
+            draw_sources: context
+                .deck
+                .draw_cards
+                .saturating_add(context.deck.energy_sources) as usize,
+            exhaust_generators: context.deck.exhaust_generators as usize,
+            scaling_sources: context.deck.strength_sources as usize,
+            same_card_count: candidate.same_card_count,
+            starter_strikes: context.deck.starter_strikes as usize,
+            strength_sources: context.deck.strength_sources as usize,
+        },
+        profile,
+    );
+    apply_acquisition_saturation_to_delta_v1(delta, &report);
 }
 
 fn candidate_delta_has_hp_loss_control(delta: &CandidateDelta) -> bool {

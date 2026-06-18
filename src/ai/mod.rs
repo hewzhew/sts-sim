@@ -1,3 +1,4 @@
+pub mod acquisition_saturation_v1;
 pub mod boss_mechanics_v1;
 pub mod boss_relic_policy_v1;
 pub mod campfire_policy_v1;
