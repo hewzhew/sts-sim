@@ -17,9 +17,13 @@ use crate::eval::branch_experiment_trajectory::{
 use crate::eval::combat_lab_probe_v1::current_act_boss_preview_probe_v1;
 use crate::eval::run_control::{
     apply_branch_experiment_auto_run, build_decision_surface, RunControlAutoStepOptions,
-    RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlRouteAutomationMode,
-    RunControlSearchCombatOptions, RunControlSession, RunControlSessionCheckpointV1,
+    RunControlCombatSegmentMode, RunControlConfig, RunControlHpLossLimit,
+    RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSession,
+    RunControlSessionCheckpointV1,
 };
+use crate::content::cards::CardId;
+use crate::state::core::EngineState;
+use crate::state::rewards::{RewardCard, RewardState};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
@@ -321,6 +325,86 @@ where
     F: FnMut(BranchCampaignProgressEventV1),
 {
     run_branch_campaign_from_state_with_progress_v1(config, root_campaign_state_v1(), progress)
+}
+
+pub fn run_branch_campaign_ancestor_replay_self_check_v1(
+) -> Result<BranchCampaignStateStoreSummaryV1, String> {
+    let mut parent_session = RunControlSession::new(RunControlConfig::default());
+    let mut reward = RewardState::new();
+    reward.pending_card_choice = Some(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::Cleave, 0),
+    ]);
+    parent_session.engine_state = EngineState::RewardScreen(reward);
+
+    let parent_commands = Vec::<String>::new();
+    let child_commands = vec!["rp 0".to_string()];
+    let mut parent_branch = root_campaign_branch_v1();
+    parent_branch.branch_id = "ancestor-anchor".to_string();
+    parent_branch.commands = parent_commands.clone();
+    let mut child_branch = root_campaign_branch_v1();
+    child_branch.branch_id = "ancestor-child".to_string();
+    child_branch.commands = child_commands.clone();
+
+    let mut state_store = BranchStateStoreV1::new();
+    state_store.insert_session(parent_commands.clone(), parent_session);
+    state_store.insert_child_session(
+        &parent_commands,
+        child_commands,
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    state_store.retain_for_branches_with_session_policy(
+        &[parent_branch],
+        &[child_branch.clone()],
+        &[],
+        &[],
+        BranchStateSessionRetentionPolicyV1 {
+            max_frozen_exact_sessions: 0,
+            max_stuck_exact_sessions: 0,
+            max_abandoned_exact_sessions: 0,
+            max_suffix_commands_without_session: usize::MAX,
+        },
+    );
+
+    let config = BranchCampaignConfigV1 {
+        round_depth: 0,
+        max_branches_per_active: 1,
+        experiment_wall_ms: Some(1_000),
+        search_wall_ms: Some(10),
+        search_max_nodes: Some(100),
+        ..BranchCampaignConfigV1::default()
+    };
+    let mut retry_ledger = BranchCampaignCombatRetryLedgerStateV1::default();
+    let batch = run_campaign_parent_batch_v1(
+        &config,
+        &[child_branch],
+        &mut state_store,
+        &mut retry_ledger,
+        1,
+        false,
+        &mut |_| {},
+    )?;
+    if batch.candidates.is_empty() {
+        return Err("ancestor replay self-check produced no candidate branches".to_string());
+    }
+
+    let summary = state_store.summary();
+    if summary.replay_exact_hits != 0
+        || summary.replay_ancestor_hits != 1
+        || summary.replay_misses != 0
+        || summary.replay_suffix_commands_sum != 1
+        || summary.replay_suffix_commands_max != 1
+    {
+        return Err(format!(
+            "ancestor replay self-check counters mismatch: exact={} ancestor={} miss={} suffix_sum={} suffix_max={}",
+            summary.replay_exact_hits,
+            summary.replay_ancestor_hits,
+            summary.replay_misses,
+            summary.replay_suffix_commands_sum,
+            summary.replay_suffix_commands_max
+        ));
+    }
+    Ok(summary)
 }
 
 pub fn run_branch_campaign_from_report_v1(

@@ -27,6 +27,7 @@ use outcome_dataset::{
 use shop_challenge::render_checkpoint_shop_plan_challenge_v1;
 use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_v1, render_branch_campaign_progress_event_v1,
+    run_branch_campaign_ancestor_replay_self_check_v1,
     run_branch_campaign_from_report_with_checkpoint_and_progress_v1,
     run_branch_campaign_from_report_with_checkpoint_v1,
     run_branch_campaign_with_checkpoint_and_progress_v1, run_branch_campaign_with_checkpoint_v1,
@@ -200,6 +201,12 @@ struct Args {
 
     #[arg(long, help = "Print coarse campaign progress to stderr while running")]
     progress: bool,
+
+    #[arg(
+        long = "self-check-ancestor-replay",
+        help = "Run a deterministic replay-cache self-check and print machine-readable counters"
+    )]
+    self_check_ancestor_replay: bool,
 
     #[arg(
         long,
@@ -614,6 +621,22 @@ fn apply_campaign_preset_defaults<F>(
 }
 
 fn run(args: Args) -> Result<(), String> {
+    if args.self_check_ancestor_replay {
+        let summary = run_branch_campaign_ancestor_replay_self_check_v1()?;
+        println!(
+            "AncestorReplaySelfCheckV1 exact={} ancestor={} miss={} suffix_sum={} suffix_max={} sessions={} nodes={} pruned={} anchors={}",
+            summary.replay_exact_hits,
+            summary.replay_ancestor_hits,
+            summary.replay_misses,
+            summary.replay_suffix_commands_sum,
+            summary.replay_suffix_commands_max,
+            summary.sessions,
+            summary.nodes,
+            summary.sessions_pruned,
+            summary.anchor_sessions_kept
+        );
+        return Ok(());
+    }
     if args.analyze_outcome_dataset.is_some() {
         return run_branch_outcome_dataset_analysis(&args);
     }
@@ -1179,6 +1202,14 @@ mod tests {
             args.checkpoint_out,
             Some(PathBuf::from("new.checkpoint.json"))
         );
+    }
+
+    #[test]
+    fn campaign_cli_accepts_ancestor_replay_self_check() {
+        let args = parse_args_from(["branch_campaign_driver", "--self-check-ancestor-replay"])
+            .expect("args parse");
+
+        assert!(args.self_check_ancestor_replay);
     }
 
     #[test]

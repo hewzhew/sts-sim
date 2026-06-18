@@ -370,6 +370,75 @@ fn branch_state_store_summary_tracks_replay_start_sources_and_suffixes() {
 }
 
 #[test]
+fn campaign_parent_batch_can_force_ancestor_replay_after_exact_session_pruned() {
+    let mut parent_session = RunControlSession::new(RunControlConfig::default());
+    let mut reward = RewardState::new();
+    reward.pending_card_choice = Some(vec![
+        RewardCard::new(CardId::TwinStrike, 0),
+        RewardCard::new(CardId::Cleave, 0),
+    ]);
+    parent_session.engine_state = EngineState::RewardScreen(reward);
+
+    let parent_commands = Vec::<String>::new();
+    let child_commands = vec!["rp 0".to_string()];
+    let mut parent_branch = test_campaign_branch("parent-anchor", 1, 80);
+    parent_branch.commands = parent_commands.clone();
+    let mut child_branch = test_campaign_branch("child-replay", 1, 80);
+    child_branch.commands = child_commands.clone();
+
+    let mut state_store = super::state_graph::BranchStateStoreV1::new();
+    state_store.insert_session(parent_commands.clone(), parent_session);
+    state_store.insert_child_session(
+        &parent_commands,
+        child_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    state_store.retain_for_branches_with_session_policy(
+        &[parent_branch],
+        &[child_branch.clone()],
+        &[],
+        &[],
+        super::state_graph::BranchStateSessionRetentionPolicyV1 {
+            max_frozen_exact_sessions: 0,
+            max_stuck_exact_sessions: 0,
+            max_abandoned_exact_sessions: 0,
+            max_suffix_commands_without_session: usize::MAX,
+        },
+    );
+    assert!(!state_store.contains_commands(&child_commands));
+
+    let mut retry_ledger = BranchCampaignCombatRetryLedgerStateV1::default();
+    let mut progress_events = Vec::new();
+    let config = BranchCampaignConfigV1 {
+        round_depth: 0,
+        max_branches_per_active: 1,
+        experiment_wall_ms: Some(1_000),
+        search_wall_ms: Some(10),
+        search_max_nodes: Some(100),
+        ..BranchCampaignConfigV1::default()
+    };
+
+    let batch = run_campaign_parent_batch_v1(
+        &config,
+        &[child_branch],
+        &mut state_store,
+        &mut retry_ledger,
+        1,
+        false,
+        &mut |event| progress_events.push(event),
+    )
+    .expect("forced ancestor replay batch should run");
+
+    let summary = state_store.summary();
+    assert_eq!(summary.replay_exact_hits, 0);
+    assert_eq!(summary.replay_ancestor_hits, 1);
+    assert_eq!(summary.replay_suffix_commands_sum, 1);
+    assert_eq!(summary.replay_suffix_commands_max, 1);
+    assert_eq!(summary.replay_misses, 0);
+    assert!(!batch.candidates.is_empty());
+}
+
+#[test]
 fn campaign_checkpoint_writes_v2_state_graph_nodes() {
     let config = BranchCampaignConfigV1::default();
     let parent_commands = vec!["rp 0".to_string()];
