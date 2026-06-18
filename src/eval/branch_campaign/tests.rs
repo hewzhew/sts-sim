@@ -140,7 +140,9 @@ fn branch_state_store_session_policy_prunes_extra_frozen_exact_sessions_only() {
     assert!(store.contains_commands(&active.commands));
     assert!(store.contains_commands(&frozen_kept.commands));
     assert!(!store.contains_commands(&frozen_pruned.commands));
-    assert!(store.node_id_for_commands(&frozen_pruned.commands).is_some());
+    assert!(store
+        .node_id_for_commands(&frozen_pruned.commands)
+        .is_some());
 }
 
 #[test]
@@ -274,11 +276,7 @@ fn branch_state_store_restores_checkpoint_node_records_before_sessions() {
 #[test]
 fn branch_state_store_replays_from_nearest_saved_ancestor() {
     let parent_commands = vec!["rp 0".to_string()];
-    let child_commands = vec![
-        "rp 0".to_string(),
-        "go 2".to_string(),
-        "rp 1".to_string(),
-    ];
+    let child_commands = vec!["rp 0".to_string(), "go 2".to_string(), "rp 1".to_string()];
     let mut store = super::state_graph::BranchStateStoreV1::new();
 
     store
@@ -321,11 +319,7 @@ fn branch_state_store_replays_from_nearest_saved_ancestor() {
 #[test]
 fn branch_state_store_summary_tracks_replay_start_sources_and_suffixes() {
     let exact_commands = vec!["rp 0".to_string()];
-    let ancestor_commands = vec![
-        "rp 0".to_string(),
-        "go 2".to_string(),
-        "rp 1".to_string(),
-    ];
+    let ancestor_commands = vec!["rp 0".to_string(), "go 2".to_string(), "rp 1".to_string()];
     let mut store = super::state_graph::BranchStateStoreV1::new();
     store.insert_session(
         exact_commands.clone(),
@@ -515,7 +509,11 @@ fn campaign_compact_report_renders_route_evidence_summary() {
         }],
     };
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Perf,
+    );
 
     assert!(rendered.contains(
         "Route evidence: decisions=3 first_elite optional=2 forced=1 none=0 avg_elite_prep=0.62 underprepared=1 bailouts=rest:2 shop:1"
@@ -551,7 +549,11 @@ fn campaign_compact_report_renders_state_store_summary() {
         retains: 1,
     };
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Perf,
+    );
 
     assert!(rendered.contains(
         "State store: sessions=4 nodes=5 linked=3 replay=exact:1 ancestor:1 miss:1 suffix=sum:4 max:3 cache=pruned:7 anchors:2 lookups=2/1 inserts=6 retains=1"
@@ -567,7 +569,11 @@ fn compact_campaign_report_renders_branch_pressure_examples() {
         "Body Slam -> Searing Blow".to_string(),
     ];
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Perf,
+    );
 
     assert!(rendered.contains(
         "Branch pressure: discarded=12 examples=[Anger -> Clash -> Skip card reward | Body Slam -> Searing Blow]"
@@ -582,7 +588,11 @@ fn compact_campaign_report_truncates_long_branch_pressure_examples() {
         "Wild Strike -> Headbutt -> Heavy Blade -> Heavy Blade -> [Proceed] -> [Take Card] Obtain Iron Wave. Remove a card.".to_string(),
     ];
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
 
     assert!(rendered.contains(
         "Branch pressure: discarded=1 examples=[Wild Strike -> Headbutt -> ... -> [Take Card] Obtain Iron Wave. Remove a card.]"
@@ -609,7 +619,11 @@ fn compact_campaign_report_renders_boss_relic_lineage_coverage() {
     report.frozen = vec![frozen_hammer];
     report.abandoned = vec![abandoned_key];
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Perf,
+    );
 
     assert!(rendered.contains(
         "Boss relic coverage: active=[CursedKey=1] frozen=[FusionHammer=1] abandoned=[CursedKey=1] furthest=[CursedKey=A3F48 FusionHammer=A1F18]"
@@ -638,7 +652,11 @@ fn compact_campaign_report_renders_combat_lab_probe_summary() {
         },
     }];
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
 
     assert!(rendered
         .contains("Combat lab probes: current_act_boss_preview=1 unresolved_no_trajectory=1"));
@@ -770,7 +788,11 @@ fn compact_campaign_report_renders_combat_performance_summary() {
         ..BranchCampaignCombatPerformanceSummaryV1::default()
     };
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Perf,
+    );
 
     assert!(rendered.contains(
         "Combat perf: samples=2 total=0.0s dominant=rollout rollout=40% expansion=20% child=15% engine=10% rollout_calls=10 root_calls=2 child_calls=7 deferred_child_calls=5 seed_calls=1 deferred_nodes=9 deferred_requeues=5 cache=hits/queries/misses/inserts:3/13/10/8 budget_skips=2(max=1 deadline=1) terminal_skips=2 seed_terminal_skips=1 dominance_skips=3 rollout_inner=iters:19 policy_total:20% phase:3% legal:4% choose:5% order:1% probe:2% probe_calls:11 probe_eval:10 probe_reuse:3 probe_engine:0% probe_phase:0% probe_facts:0% engine:6% build:2% external_payoff=1 boss=1"
@@ -792,7 +814,11 @@ fn compact_campaign_report_truncates_long_active_choice_paths() {
         "Whirlwind".to_string(),
     ];
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
 
     assert!(rendered.contains(
         "choices: Warcry -> Body Slam -> ... -> Sword Boomerang -> PandorasBox -> Whirlwind"
@@ -867,7 +893,11 @@ fn compact_campaign_report_renders_abandoned_examples_while_continuing() {
     ];
     report.abandoned = vec![abandoned];
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
 
     assert!(rendered.contains(
         "Abandoned examples: count=1 reasons=[combat search did not find an executable complete win] examples=[Havoc -> Hemokinesis -> Spot Weakness -> Searing Blow]"
@@ -891,7 +921,11 @@ fn compact_campaign_report_renders_final_boss_failure_summary() {
     }
     report.abandoned = vec![abandoned];
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
 
     assert!(rendered
         .contains("Final boss failures: abandoned=1 bosses=[DonuAndDeca=1] hp=88..88 deck=20..20"));
@@ -910,7 +944,11 @@ fn compact_campaign_report_renders_unspent_gold_pressure_near_boss() {
         "Smith Shockwave".to_string(),
     ];
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
 
     assert!(rendered.contains(
         "Resource concern: high_unspent_gold_near_boss=1 max_gold=485 causes=[purchase_seen_gold_still_high=1]"
@@ -932,7 +970,11 @@ fn compact_campaign_report_classifies_unspent_gold_without_shop_visit() {
         "Smith Shockwave".to_string(),
     ];
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
 
     assert!(rendered.contains(
         "Resource concern: high_unspent_gold_near_boss=1 max_gold=485 causes=[no_shop_action_seen=1]"
@@ -952,7 +994,11 @@ fn compact_campaign_report_classifies_shop_leave_without_purchase() {
         "Smith Shockwave".to_string(),
     ];
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
 
     assert!(rendered.contains(
         "Resource concern: high_unspent_gold_near_boss=1 max_gold=485 causes=[shop_leave_without_purchase=1]"
@@ -975,7 +1021,11 @@ fn compact_campaign_report_renders_boss_mechanic_pressure() {
         "missing:phase_power_plan".to_string(),
     ];
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
 
     assert!(rendered.contains("Boss pressure: bosses=[AwakenedOne=1]"));
     assert!(rendered.contains("pressure:dark_echo_block_check=1"));
@@ -1002,7 +1052,11 @@ fn compact_campaign_report_renders_boss_pressure_for_abandoned_combat_branches()
     ];
     report.abandoned = vec![abandoned];
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
 
     assert!(rendered.contains("Boss pressure: bosses=[TimeEater=1]"));
     assert!(rendered.contains("pressure:time_warp_counter_control=1"));
@@ -1054,7 +1108,11 @@ fn campaign_report_branch_preserves_strategic_summary() {
     let mut report = test_campaign_report_with_active("placeholder", 1, 80);
     report.active = vec![campaign_branch];
     report.frozen.clear();
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Perf,
+    );
 
     assert!(rendered.contains("strat=[boss:0.6 clean:0.8 eng:1.0 debt:0.2/0.4 pkg:0.7]"));
 }
@@ -1118,7 +1176,11 @@ fn compact_campaign_report_shows_selection_basis_for_branch_examples() {
     let mut report = test_campaign_report_with_active("active", 3, 80);
     report.active[0].rank_key = 123;
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
 
     assert!(rendered.contains("sel=[retention_rank=123]"));
 }
@@ -1128,7 +1190,11 @@ fn compact_campaign_report_formats_large_selection_rank_readably() {
     let mut report = test_campaign_report_with_active("active", 3, 80);
     report.active[0].rank_key = 11_513;
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Perf,
+    );
 
     assert!(rendered.contains("sel=[retention_rank=11.5k]"));
 }
@@ -1312,7 +1378,11 @@ fn compact_campaign_report_summarizes_active_strategic_signals() {
     ];
     report.frozen.clear();
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
 
     assert!(rendered.contains(
         "Strategic signals: active n=2 avg=[boss:0.4 clean:0.9 eng:0.5 debt:0.1/0.2 pkg:0.4]"
@@ -3787,6 +3857,57 @@ fn campaign_progress_events_render_concrete_stage_information() {
 }
 
 #[test]
+fn campaign_progress_summary_hides_noisy_branch_events() {
+    let branch_started = render_branch_campaign_progress_event_with_detail_v1(
+        &BranchCampaignProgressEventV1::BranchStarted {
+            round: 2,
+            branch_index: 1,
+            branch_count: 2,
+            choices: "Pommel Strike -> Shrug It Off".to_string(),
+        },
+        BranchCampaignProgressDetailV1::Summary,
+    );
+    let quick_branch_done = render_branch_campaign_progress_event_with_detail_v1(
+        &BranchCampaignProgressEventV1::BranchFinished {
+            round: 2,
+            branch_index: 1,
+            branch_count: 2,
+            produced_branches: 3,
+            explored_branch_points: 1,
+            elapsed_wall_ms: 900,
+            start_elapsed_wall_ms: 0,
+            combat_budget_retry_used: false,
+            wall_limit_hit: false,
+            branch_limit_hit: false,
+        },
+        BranchCampaignProgressDetailV1::Summary,
+    );
+    let slow_branch_done = render_branch_campaign_progress_event_with_detail_v1(
+        &BranchCampaignProgressEventV1::BranchFinished {
+            round: 2,
+            branch_index: 2,
+            branch_count: 2,
+            produced_branches: 4,
+            explored_branch_points: 2,
+            elapsed_wall_ms: 6_200,
+            start_elapsed_wall_ms: 0,
+            combat_budget_retry_used: false,
+            wall_limit_hit: true,
+            branch_limit_hit: false,
+        },
+        BranchCampaignProgressDetailV1::Summary,
+    )
+    .expect("slow branch should be visible in summary progress");
+
+    assert_eq!(branch_started, None);
+    assert_eq!(quick_branch_done, None);
+    assert_eq!(
+        slow_branch_done,
+        "round 2: branch 2/2 done produced=4 branch_points=2 | elapsed=6.2s limits=[wall]"
+    );
+}
+
+#[test]
 fn campaign_round_summary_persists_timing_metrics() {
     let summary = BranchCampaignRoundSummaryV1 {
         round: 3,
@@ -3829,7 +3950,11 @@ fn compact_campaign_report_surfaces_timing_summary() {
     report.rounds[0].combat_retry_elapsed_wall_ms_sum = 3_000;
     report.rounds[0].combat_retry_elapsed_wall_ms_max = 3_000;
 
-    let rendered = render_branch_campaign_compact_v1(&report, 1);
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Perf,
+    );
 
     assert!(rendered.contains(
         "Timing: rounds=9.0s parent_sum=8.0s parent_max=5.0s combat_retry_sum=3.0s combat_retry_max=3.0s"

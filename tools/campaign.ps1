@@ -83,6 +83,18 @@ Prints the cargo command without updating the last seed or running it.
 Runs without coarse campaign progress messages.
 
 .EXAMPLE
+.\tools\campaign.ps1 -Perf
+Prints campaign performance diagnostics in the final report.
+
+.EXAMPLE
+.\tools\campaign.ps1 -Diagnose
+Prints strategy and branch diagnostics in the final report.
+
+.EXAMPLE
+.\tools\campaign.ps1 -VerboseProgress
+Prints branch-by-branch progress messages while running.
+
+.EXAMPLE
 .\tools\campaign.ps1 -NoBossSegments
 Compatibility switch; boss combats already stay on complete-win search by default.
 
@@ -117,6 +129,9 @@ param(
     [switch] $ProbeBoss,
     [switch] $DryRun,
     [switch] $NoProgress,
+    [switch] $VerboseProgress,
+    [switch] $Diagnose,
+    [switch] $Perf,
     [switch] $NoBossSegments,
     [switch] $BossSegments,
     [switch] $DebugBuild,
@@ -440,6 +455,15 @@ if (-not (Test-ExtraCombatOptionKey -Tokens $ExtraArgs -Keys @("segment", "segme
 
 if (-not $NoProgress) {
     $DriverArgs += "--progress"
+    if ($VerboseProgress) {
+        $DriverArgs += @("--progress-detail", "verbose")
+    }
+}
+
+if ($Perf) {
+    $DriverArgs += @("--report-detail", "perf")
+} elseif ($Diagnose) {
+    $DriverArgs += @("--report-detail", "diagnose")
 }
 
 if ($ExtraArgs) {

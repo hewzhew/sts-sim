@@ -2,6 +2,7 @@ use crate::ai::strategic::{
     compact_branch_signature_data, format_compact_branch_signature, run_debt_ledger_v1,
     BranchSignatureCompact,
 };
+use crate::content::cards::CardId;
 use crate::eval::branch_experiment::{
     run_branch_experiment_from_session_after_prefix_with_snapshots_v1,
     run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
@@ -21,7 +22,6 @@ use crate::eval::run_control::{
     RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSession,
     RunControlSessionCheckpointV1,
 };
-use crate::content::cards::CardId;
 use crate::state::core::EngineState;
 use crate::state::rewards::{RewardCard, RewardState};
 use std::collections::{BTreeMap, BTreeSet};
@@ -49,7 +49,10 @@ use performance::{
 pub use performance::{
     BranchCampaignCombatPerformanceExampleV1, BranchCampaignCombatPerformanceSummaryV1,
 };
-pub use progress::{render_branch_campaign_progress_event_v1, BranchCampaignProgressEventV1};
+pub use progress::{
+    render_branch_campaign_progress_event_v1, render_branch_campaign_progress_event_with_detail_v1,
+    BranchCampaignProgressDetailV1, BranchCampaignProgressEventV1,
+};
 pub use retry::{
     BranchCampaignCombatRetryLedgerEntryV1, BranchCampaignCombatRetryLedgerV1,
     BranchCampaignCombatRetryPolicyV1,
@@ -1112,6 +1115,25 @@ pub fn render_branch_campaign_compact_v1(
     report: &BranchCampaignReportV1,
     branch_examples: usize,
 ) -> String {
+    render_branch_campaign_compact_with_detail_v1(
+        report,
+        branch_examples,
+        BranchCampaignReportDetailV1::Human,
+    )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BranchCampaignReportDetailV1 {
+    Human,
+    Diagnose,
+    Perf,
+}
+
+pub fn render_branch_campaign_compact_with_detail_v1(
+    report: &BranchCampaignReportV1,
+    branch_examples: usize,
+    detail: BranchCampaignReportDetailV1,
+) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
         "{} seed={} ascension=A{} domain={} role={} class={} rounds={} stop={}",
@@ -1135,22 +1157,27 @@ pub fn render_branch_campaign_compact_v1(
         report.discarded_count
     ));
     if let Some(round) = report.rounds.last() {
-        lines.push(format!(
-            "Last round: started={} produced={} branch_points={} active_after={} frozen_added={} discarded_added={} combat_retries={} limits=[{}{}]",
+        let mut last_round = format!(
+            "Last round: started={} produced={} branch_points={} active_after={}",
             round.started_active,
             round.produced_branches,
             round.explored_branch_points,
-            round.active_after,
-            round.frozen_added,
-            round.discarded_added,
-            round.combat_budget_retries,
-            if round.branch_limit_hit { "branch" } else { "" },
-            if round.wall_limit_hit {
-                if round.branch_limit_hit { ",wall" } else { "wall" }
-            } else {
-                ""
-            }
-        ));
+            round.active_after
+        );
+        if round.frozen_added > 0 {
+            last_round.push_str(&format!(" frozen+={}", round.frozen_added));
+        }
+        if round.discarded_added > 0 {
+            last_round.push_str(&format!(" discarded+={}", round.discarded_added));
+        }
+        if round.combat_budget_retries > 0 {
+            last_round.push_str(&format!(" combat_retries={}", round.combat_budget_retries));
+        }
+        let limits = render_round_limits_v1(round.branch_limit_hit, round.wall_limit_hit);
+        if !limits.is_empty() {
+            last_round.push_str(&format!(" limits=[{limits}]"));
+        }
+        lines.push(last_round);
     }
     let total_round_elapsed_ms: u64 = report
         .rounds
@@ -1179,7 +1206,9 @@ pub fn render_branch_campaign_compact_v1(
         .map(|round| round.combat_retry_elapsed_wall_ms_max)
         .max()
         .unwrap_or_default();
-    if total_round_elapsed_ms > 0 || parent_elapsed_wall_ms_sum > 0 {
+    if detail == BranchCampaignReportDetailV1::Perf
+        && (total_round_elapsed_ms > 0 || parent_elapsed_wall_ms_sum > 0)
+    {
         lines.push(format!(
             "Timing: rounds={} parent_sum={} parent_max={} combat_retry_sum={} combat_retry_max={}",
             format_seconds_1dp_v1(total_round_elapsed_ms),
@@ -1189,7 +1218,7 @@ pub fn render_branch_campaign_compact_v1(
             format_seconds_1dp_v1(combat_retry_elapsed_wall_ms_max),
         ));
     }
-    if !report.state_store.is_empty() {
+    if detail == BranchCampaignReportDetailV1::Perf && !report.state_store.is_empty() {
         lines.push(format!(
             "State store: sessions={} nodes={} linked={} replay=exact:{} ancestor:{} miss:{} suffix=sum:{} max:{} cache=pruned:{} anchors:{} lookups={}/{} inserts={} retains={}",
             report.state_store.sessions,
@@ -1209,7 +1238,7 @@ pub fn render_branch_campaign_compact_v1(
         ));
     }
     let combat_performance = aggregate_campaign_combat_performance_v1(report);
-    if combat_performance.samples > 0 {
+    if detail == BranchCampaignReportDetailV1::Perf && combat_performance.samples > 0 {
         lines.push(render_campaign_combat_performance_v1(&combat_performance));
         if let Some(example) = combat_performance.slowest.first() {
             lines.push(format!(
@@ -1225,20 +1254,23 @@ pub fn render_branch_campaign_compact_v1(
             ));
         }
     }
-    if !report.combat_retry_ledger.is_empty() {
+    if detail != BranchCampaignReportDetailV1::Human && !report.combat_retry_ledger.is_empty() {
         lines.push(format!(
             "Combat retry ledger: boss_gate={}",
             render_combat_retry_ledger_v1(&report.combat_retry_ledger)
         ));
     }
-    if report.discarded_count > 0 && !report.discarded_examples.is_empty() {
+    if detail != BranchCampaignReportDetailV1::Human
+        && report.discarded_count > 0
+        && !report.discarded_examples.is_empty()
+    {
         lines.push(format!(
             "Branch pressure: discarded={} examples=[{}]",
             report.discarded_count,
             render_branch_pressure_examples_v1(&report.discarded_examples)
         ));
     }
-    if !report.abandoned.is_empty() {
+    if detail != BranchCampaignReportDetailV1::Human && !report.abandoned.is_empty() {
         lines.push(format!(
             "Abandoned examples: count={} reasons=[{}] examples=[{}]",
             report.abandoned.len(),
@@ -1255,40 +1287,49 @@ pub fn render_branch_campaign_compact_v1(
         lines.push(boss_relic_coverage);
     }
     if report.route_evidence.decisions > 0 {
-        lines.push(format!(
-            "Route evidence: decisions={} first_elite optional={} forced={} none={} avg_elite_prep={} underprepared={} bailouts=rest:{} shop:{}",
-            report.route_evidence.decisions,
-            report.route_evidence.first_elite_optional,
-            report.route_evidence.first_elite_forced,
-            report.route_evidence.first_elite_none,
-            format_bp(report.route_evidence.avg_elite_prep_bp),
-            report.route_evidence.underprepared_first_elite,
-            report.route_evidence.rest_bailout,
-            report.route_evidence.shop_bailout,
-        ));
-        if let Some(example) = report.route_evidence.examples.first() {
+        if detail != BranchCampaignReportDetailV1::Human {
             lines.push(format!(
-                "  example: {} | first_elite={} elite_prep={}",
-                example.target,
-                example.first_elite,
-                format_bp(example.elite_prep_bp)
+                "Route evidence: decisions={} first_elite optional={} forced={} none={} avg_elite_prep={} underprepared={} bailouts=rest:{} shop:{}",
+                report.route_evidence.decisions,
+                report.route_evidence.first_elite_optional,
+                report.route_evidence.first_elite_forced,
+                report.route_evidence.first_elite_none,
+                format_bp(report.route_evidence.avg_elite_prep_bp),
+                report.route_evidence.underprepared_first_elite,
+                report.route_evidence.rest_bailout,
+                report.route_evidence.shop_bailout,
             ));
+            if let Some(example) = report.route_evidence.examples.first() {
+                lines.push(format!(
+                    "  example: {} | first_elite={} elite_prep={}",
+                    example.target,
+                    example.first_elite,
+                    format_bp(example.elite_prep_bp)
+                ));
+            }
         }
         if report.route_evidence.underprepared_first_elite > 0 {
+            let label = if detail == BranchCampaignReportDetailV1::Human {
+                "Warning route"
+            } else {
+                "Route concern"
+            };
             lines.push(format!(
-                "Route concern: forced_first_elite_underprepared={}/{} rest_bailout={} shop_bailout={}",
+                "{label}: forced_first_elite_underprepared={}/{} rest_bailout={} shop_bailout={}",
                 report.route_evidence.underprepared_first_elite,
                 report.route_evidence.decisions,
                 report.route_evidence.rest_bailout,
                 report.route_evidence.shop_bailout,
             ));
-            if let Some(example) = report.route_evidence.underprepared_examples.first() {
-                lines.push(format!(
-                    "  concern example: {} | first_elite={} elite_prep={}",
-                    example.target,
-                    example.first_elite,
-                    format_bp(example.elite_prep_bp)
-                ));
+            if detail != BranchCampaignReportDetailV1::Human {
+                if let Some(example) = report.route_evidence.underprepared_examples.first() {
+                    lines.push(format!(
+                        "  concern example: {} | first_elite={} elite_prep={}",
+                        example.target,
+                        example.first_elite,
+                        format_bp(example.elite_prep_bp)
+                    ));
+                }
             }
         }
     }
@@ -1297,27 +1338,35 @@ pub fn render_branch_campaign_compact_v1(
             "Resource concern: high_unspent_gold_near_boss={} max_gold={} causes=[{}]",
             pressure.count, pressure.max_gold, pressure.cause_counts
         ));
-        lines.push(format!("  resource example: {}", pressure.example));
+        if detail != BranchCampaignReportDetailV1::Human {
+            lines.push(format!("  resource example: {}", pressure.example));
+        }
     }
     if let Some(pressure) = campaign_boss_mechanic_pressure_v1(report) {
         lines.push(format!(
             "Boss pressure: bosses=[{}] signals=[{}]",
             pressure.boss_counts, pressure.signal_counts
         ));
-        lines.push(format!("  boss example: {}", pressure.example));
+        if detail != BranchCampaignReportDetailV1::Human {
+            lines.push(format!("  boss example: {}", pressure.example));
+        }
     }
     if let Some(combat_lab) = render_campaign_combat_lab_probe_summary_v1(report) {
         lines.extend(combat_lab);
     }
     let strategic_signals = campaign_strategic_signals_for_render_v1(report);
-    if let Some(strategic) = render_campaign_strategic_signals_v1(&strategic_signals) {
-        lines.push(strategic);
+    if detail != BranchCampaignReportDetailV1::Human {
+        if let Some(strategic) = render_campaign_strategic_signals_v1(&strategic_signals) {
+            lines.push(strategic);
+        }
     }
     if let Some(concern) = render_campaign_strategic_concern_v1(&strategic_signals) {
         lines.push(concern);
     }
-    if let Some(choice_coverage) = render_campaign_choice_coverage_v1(report) {
-        lines.push(choice_coverage);
+    if detail != BranchCampaignReportDetailV1::Human {
+        if let Some(choice_coverage) = render_campaign_choice_coverage_v1(report) {
+            lines.push(choice_coverage);
+        }
     }
     if let Some(victory_lines) = render_campaign_victory_quality_lines_v1(report) {
         lines.push(String::new());
@@ -1367,7 +1416,10 @@ pub fn render_branch_campaign_compact_v1(
         let shown = report
             .active
             .iter()
-            .take(branch_examples)
+            .take(render_branch_examples_for_detail_v1(
+                branch_examples,
+                detail,
+            ))
             .collect::<Vec<_>>();
         let baseline = shown.first().copied();
         for (index, branch) in shown.into_iter().enumerate() {
@@ -1387,7 +1439,10 @@ pub fn render_branch_campaign_compact_v1(
         let shown = report
             .frozen
             .iter()
-            .take(branch_examples)
+            .take(render_branch_examples_for_detail_v1(
+                branch_examples,
+                detail,
+            ))
             .collect::<Vec<_>>();
         let baseline = shown.first().copied();
         for (index, branch) in shown.into_iter().enumerate() {
@@ -1402,6 +1457,29 @@ pub fn render_branch_campaign_compact_v1(
         }
     }
     lines.join("\n")
+}
+
+fn render_round_limits_v1(branch_limit_hit: bool, wall_limit_hit: bool) -> String {
+    let mut limits = Vec::new();
+    if branch_limit_hit {
+        limits.push("branch");
+    }
+    if wall_limit_hit {
+        limits.push("wall");
+    }
+    limits.join(",")
+}
+
+fn render_branch_examples_for_detail_v1(
+    branch_examples: usize,
+    detail: BranchCampaignReportDetailV1,
+) -> usize {
+    match detail {
+        BranchCampaignReportDetailV1::Human => branch_examples.min(2),
+        BranchCampaignReportDetailV1::Diagnose | BranchCampaignReportDetailV1::Perf => {
+            branch_examples
+        }
+    }
 }
 
 fn render_campaign_final_boss_failure_summary_v1(
@@ -2366,7 +2444,9 @@ where
     let base_results =
         run_campaign_parent_base_passes_parallel_v1(config, parents, &parent_replay_starts)?;
     let mut parent_results: Vec<Option<BranchCampaignParentRoundResultV1>> =
-        std::iter::repeat_with(|| None).take(parents.len()).collect();
+        std::iter::repeat_with(|| None)
+            .take(parents.len())
+            .collect();
     let mut retry_requests = Vec::new();
     for base_result in base_results {
         let parent_index = base_result.parent_index;

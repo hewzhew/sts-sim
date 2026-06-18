@@ -26,14 +26,15 @@ use outcome_dataset::{
 };
 use shop_challenge::render_checkpoint_shop_plan_challenge_v1;
 use sts_simulator::eval::branch_campaign::{
-    render_branch_campaign_compact_v1, render_branch_campaign_progress_event_v1,
+    render_branch_campaign_compact_with_detail_v1, render_branch_campaign_progress_event_v1,
+    render_branch_campaign_progress_event_with_detail_v1,
     run_branch_campaign_ancestor_replay_self_check_v1,
     run_branch_campaign_from_report_with_checkpoint_and_progress_v1,
     run_branch_campaign_from_report_with_checkpoint_v1,
     run_branch_campaign_with_checkpoint_and_progress_v1, run_branch_campaign_with_checkpoint_v1,
     BranchCampaignCheckpointV1, BranchCampaignCombatRetryPolicyV1, BranchCampaignConfigV1,
-    BranchCampaignReportV1, BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME,
-    BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+    BranchCampaignProgressDetailV1, BranchCampaignReportDetailV1, BranchCampaignReportV1,
+    BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME, BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use sts_simulator::eval::branch_experiment_search_options::parse_branch_experiment_search_options_v1;
@@ -58,6 +59,38 @@ const QUICK_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 8;
 const QUICK_PRESET_EXPERIMENT_WALL_MS: u64 = 5_000;
 const QUICK_PRESET_SEARCH_WALL_MS: u64 = 300;
 const QUICK_PRESET_SEARCH_MAX_NODES: usize = 50_000;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum CampaignReportDetailArg {
+    Human,
+    Diagnose,
+    Perf,
+}
+
+impl From<CampaignReportDetailArg> for BranchCampaignReportDetailV1 {
+    fn from(value: CampaignReportDetailArg) -> Self {
+        match value {
+            CampaignReportDetailArg::Human => BranchCampaignReportDetailV1::Human,
+            CampaignReportDetailArg::Diagnose => BranchCampaignReportDetailV1::Diagnose,
+            CampaignReportDetailArg::Perf => BranchCampaignReportDetailV1::Perf,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum CampaignProgressDetailArg {
+    Summary,
+    Verbose,
+}
+
+impl From<CampaignProgressDetailArg> for BranchCampaignProgressDetailV1 {
+    fn from(value: CampaignProgressDetailArg) -> Self {
+        match value {
+            CampaignProgressDetailArg::Summary => BranchCampaignProgressDetailV1::Summary,
+            CampaignProgressDetailArg::Verbose => BranchCampaignProgressDetailV1::Verbose,
+        }
+    }
+}
 const QUICK_PRESET_BRANCH_EXAMPLES: usize = 3;
 
 const FOCUSED_PRESET_MAX_ROUNDS: usize = 6;
@@ -201,8 +234,14 @@ struct Args {
     #[arg(long)]
     json: bool,
 
+    #[arg(long, value_enum, default_value_t = CampaignReportDetailArg::Human)]
+    report_detail: CampaignReportDetailArg,
+
     #[arg(long, help = "Print coarse campaign progress to stderr while running")]
     progress: bool,
+
+    #[arg(long, value_enum, default_value_t = CampaignProgressDetailArg::Summary)]
+    progress_detail: CampaignProgressDetailArg,
 
     #[arg(
         long = "self-check-ancestor-replay",
@@ -667,12 +706,19 @@ fn run(args: Args) -> Result<(), String> {
         .transpose()?;
     let result = if args.progress && !args.json {
         let started_at = Instant::now();
+        let progress_detail = BranchCampaignProgressDetailV1::from(args.progress_detail);
         let progress = |event| {
-            println!(
-                "[{:>4}s] {}",
-                started_at.elapsed().as_secs(),
-                render_branch_campaign_progress_event_v1(&event)
-            );
+            let rendered = match progress_detail {
+                BranchCampaignProgressDetailV1::Summary => {
+                    render_branch_campaign_progress_event_with_detail_v1(&event, progress_detail)
+                }
+                BranchCampaignProgressDetailV1::Verbose => {
+                    Some(render_branch_campaign_progress_event_v1(&event))
+                }
+            };
+            if let Some(line) = rendered {
+                println!("[{:>4}s] {line}", started_at.elapsed().as_secs());
+            }
         };
         if let Some(previous) = previous.as_ref() {
             run_branch_campaign_from_report_with_checkpoint_and_progress_v1(
@@ -723,7 +769,11 @@ fn run(args: Args) -> Result<(), String> {
     } else {
         println!(
             "{}",
-            render_branch_campaign_compact_v1(&report, args.branch_examples)
+            render_branch_campaign_compact_with_detail_v1(
+                &report,
+                args.branch_examples,
+                BranchCampaignReportDetailV1::from(args.report_detail)
+            )
         );
     }
     Ok(())
@@ -1232,7 +1282,8 @@ mod tests {
         )
         .expect("write old checkpoint fixture");
 
-        let err = read_campaign_checkpoint_v1(&path).expect_err("old checkpoint should be rejected");
+        let err =
+            read_campaign_checkpoint_v1(&path).expect_err("old checkpoint should be rejected");
         let _ = fs::remove_file(&path);
 
         assert!(err.contains("BranchCampaignCheckpointV2"));

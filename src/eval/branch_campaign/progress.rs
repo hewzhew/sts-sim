@@ -58,6 +58,148 @@ pub enum BranchCampaignProgressEventV1 {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BranchCampaignProgressDetailV1 {
+    Summary,
+    Verbose,
+}
+
+pub fn render_branch_campaign_progress_event_with_detail_v1(
+    event: &BranchCampaignProgressEventV1,
+    detail: BranchCampaignProgressDetailV1,
+) -> Option<String> {
+    match detail {
+        BranchCampaignProgressDetailV1::Verbose => {
+            Some(render_branch_campaign_progress_event_v1(event))
+        }
+        BranchCampaignProgressDetailV1::Summary => {
+            render_branch_campaign_progress_summary_v1(event)
+        }
+    }
+}
+
+fn render_branch_campaign_progress_summary_v1(
+    event: &BranchCampaignProgressEventV1,
+) -> Option<String> {
+    match event {
+        BranchCampaignProgressEventV1::CampaignStarted {
+            seed,
+            max_rounds,
+            round_depth,
+            max_active,
+            max_frozen,
+        } => Some(format!(
+            "campaign start: seed={seed} rounds={max_rounds} depth={round_depth} active_cap={max_active} frozen_cap={max_frozen}"
+        )),
+        BranchCampaignProgressEventV1::RoundStarted {
+            round,
+            max_rounds,
+            active_branches,
+            frozen_branches,
+        } => Some(format!(
+            "round {round}/{max_rounds}: active={active_branches} frozen={frozen_branches}"
+        )),
+        BranchCampaignProgressEventV1::BranchStarted { .. } => None,
+        BranchCampaignProgressEventV1::BranchFinished {
+            round,
+            branch_index,
+            branch_count,
+            produced_branches,
+            explored_branch_points,
+            elapsed_wall_ms,
+            combat_budget_retry_used,
+            wall_limit_hit,
+            branch_limit_hit,
+            ..
+        } => {
+            if *elapsed_wall_ms < 5_000
+                && !*combat_budget_retry_used
+                && !*wall_limit_hit
+                && !*branch_limit_hit
+            {
+                return None;
+            }
+
+            let mut extras = Vec::new();
+            if *elapsed_wall_ms >= 5_000 {
+                extras.push(format!("elapsed={}", format_progress_seconds_v1(*elapsed_wall_ms)));
+            }
+            if *combat_budget_retry_used {
+                extras.push("retry=combat_budget".to_string());
+            }
+            let limits = render_progress_limits_v1(*branch_limit_hit, *wall_limit_hit);
+            if !limits.is_empty() {
+                extras.push(format!("limits=[{limits}]"));
+            }
+            let suffix = if extras.is_empty() {
+                String::new()
+            } else {
+                format!(" | {}", extras.join(" "))
+            };
+            Some(format!(
+                "round {round}: branch {branch_index}/{branch_count} done produced={produced_branches} branch_points={explored_branch_points}{suffix}"
+            ))
+        }
+        BranchCampaignProgressEventV1::RoundFinished {
+            round,
+            produced_branches,
+            active_after,
+            frozen_added,
+            strategy_requests,
+            ..
+        } => {
+            let mut extras = Vec::new();
+            if *frozen_added > 0 {
+                extras.push(format!("frozen+={frozen_added}"));
+            }
+            if *strategy_requests > 0 {
+                extras.push(format!("strategy_requests={strategy_requests}"));
+            }
+            let suffix = if extras.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", extras.join(" "))
+            };
+            Some(format!(
+                "round {round} done: candidates={produced_branches} active={active_after}{suffix}"
+            ))
+        }
+        BranchCampaignProgressEventV1::FrozenPromoted {
+            promoted,
+            active_after,
+            frozen_remaining,
+            filled_active,
+            stronger_rebalanced,
+            diversity_rebalanced,
+            rehydrated_recovered,
+            checkpoint_recovered,
+        } => {
+            if *promoted == 0 {
+                return None;
+            }
+            let source_suffix = render_progress_promotion_sources_v1(
+                *filled_active,
+                *stronger_rebalanced,
+                *diversity_rebalanced,
+                *rehydrated_recovered,
+                *checkpoint_recovered,
+            );
+            Some(format!(
+                "promoted {promoted}: active={active_after} frozen={frozen_remaining}{source_suffix}"
+            ))
+        }
+        BranchCampaignProgressEventV1::CampaignFinished {
+            stop_reason,
+            active,
+            frozen,
+            victories,
+            stuck,
+        } => Some(format!(
+            "campaign finished: stop={stop_reason} active={active} frozen={frozen} victories={victories} stuck={stuck}"
+        )),
+    }
+}
+
 pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEventV1) -> String {
     match event {
         BranchCampaignProgressEventV1::CampaignStarted {
@@ -97,18 +239,8 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             wall_limit_hit,
             branch_limit_hit,
         } => {
-            let mut limits = Vec::new();
-            if *branch_limit_hit {
-                limits.push("branch");
-            }
-            if *wall_limit_hit {
-                limits.push("wall");
-            }
-            let limits = if limits.is_empty() {
-                "-".to_string()
-            } else {
-                limits.join(",")
-            };
+            let limits = render_progress_limits_v1(*branch_limit_hit, *wall_limit_hit);
+            let limits = if limits.is_empty() { "-" } else { &limits };
             let retry = if *combat_budget_retry_used {
                 " retry=combat_budget"
             } else {
@@ -143,27 +275,13 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             rehydrated_recovered,
             checkpoint_recovered,
         } => {
-            let mut sources = Vec::new();
-            if *filled_active > 0 {
-                sources.push(format!("fill={filled_active}"));
-            }
-            if *stronger_rebalanced > 0 {
-                sources.push(format!("stronger={stronger_rebalanced}"));
-            }
-            if *diversity_rebalanced > 0 {
-                sources.push(format!("diversity={diversity_rebalanced}"));
-            }
-            if *rehydrated_recovered > 0 {
-                sources.push(format!("rehydrated={rehydrated_recovered}"));
-            }
-            if *checkpoint_recovered > 0 {
-                sources.push(format!("checkpoint={checkpoint_recovered}"));
-            }
-            let source_suffix = if sources.is_empty() {
-                String::new()
-            } else {
-                format!(" sources=[{}]", sources.join(" "))
-            };
+            let source_suffix = render_progress_promotion_sources_v1(
+                *filled_active,
+                *stronger_rebalanced,
+                *diversity_rebalanced,
+                *rehydrated_recovered,
+                *checkpoint_recovered,
+            );
             format!(
                 "promoted/rebalanced {promoted} frozen branch(es); active_after={active_after} frozen={frozen_remaining}{source_suffix}"
             )
@@ -178,4 +296,49 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             "campaign finished: stop={stop_reason} active={active} frozen={frozen} victories={victories} stuck={stuck}"
         ),
     }
+}
+
+fn render_progress_limits_v1(branch_limit_hit: bool, wall_limit_hit: bool) -> String {
+    let mut limits = Vec::new();
+    if branch_limit_hit {
+        limits.push("branch");
+    }
+    if wall_limit_hit {
+        limits.push("wall");
+    }
+    limits.join(",")
+}
+
+fn render_progress_promotion_sources_v1(
+    filled_active: usize,
+    stronger_rebalanced: usize,
+    diversity_rebalanced: usize,
+    rehydrated_recovered: usize,
+    checkpoint_recovered: usize,
+) -> String {
+    let mut sources = Vec::new();
+    if filled_active > 0 {
+        sources.push(format!("fill={filled_active}"));
+    }
+    if stronger_rebalanced > 0 {
+        sources.push(format!("stronger={stronger_rebalanced}"));
+    }
+    if diversity_rebalanced > 0 {
+        sources.push(format!("diversity={diversity_rebalanced}"));
+    }
+    if rehydrated_recovered > 0 {
+        sources.push(format!("rehydrated={rehydrated_recovered}"));
+    }
+    if checkpoint_recovered > 0 {
+        sources.push(format!("checkpoint={checkpoint_recovered}"));
+    }
+    if sources.is_empty() {
+        String::new()
+    } else {
+        format!(" sources=[{}]", sources.join(" "))
+    }
+}
+
+fn format_progress_seconds_v1(ms: u64) -> String {
+    format!("{:.1}s", ms as f64 / 1000.0)
 }
