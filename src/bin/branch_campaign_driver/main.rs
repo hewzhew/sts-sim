@@ -82,6 +82,7 @@ const EXPLORE_PRESET_ROUND_DEPTH: usize = 1;
 const EXPLORE_PRESET_MAX_ACTIVE: usize = 6;
 const EXPLORE_PRESET_MAX_FROZEN: usize = 48;
 const EXPLORE_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 6;
+const EXPLORE_PRESET_ACTIVE_LINEAGE_DIVERSITY: usize = 3;
 const EXPLORE_PRESET_EXPERIMENT_WALL_MS: u64 = 8_000;
 const EXPLORE_PRESET_SEARCH_WALL_MS: u64 = 200;
 const EXPLORE_PRESET_SEARCH_MAX_NODES: usize = 30_000;
@@ -129,6 +130,13 @@ struct Args {
 
     #[arg(long, default_value_t = 12)]
     max_branches_per_active: usize,
+
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Reserve active slots for distinct first-choice branch lineages; intended for exploration presets"
+    )]
+    active_lineage_diversity: usize,
 
     #[arg(long, default_value = "package")]
     retention_profile: String,
@@ -464,6 +472,7 @@ where
             max_active: QUICK_PRESET_MAX_ACTIVE,
             max_frozen: QUICK_PRESET_MAX_FROZEN,
             max_branches_per_active: QUICK_PRESET_MAX_BRANCHES_PER_ACTIVE,
+            active_lineage_diversity: 0,
             experiment_wall_ms: QUICK_PRESET_EXPERIMENT_WALL_MS,
             search_wall_ms: QUICK_PRESET_SEARCH_WALL_MS,
             search_max_nodes: QUICK_PRESET_SEARCH_MAX_NODES,
@@ -485,6 +494,7 @@ where
             max_active: FOCUSED_PRESET_MAX_ACTIVE,
             max_frozen: FOCUSED_PRESET_MAX_FROZEN,
             max_branches_per_active: FOCUSED_PRESET_MAX_BRANCHES_PER_ACTIVE,
+            active_lineage_diversity: 0,
             experiment_wall_ms: FOCUSED_PRESET_EXPERIMENT_WALL_MS,
             search_wall_ms: FOCUSED_PRESET_SEARCH_WALL_MS,
             search_max_nodes: FOCUSED_PRESET_SEARCH_MAX_NODES,
@@ -506,6 +516,7 @@ where
             max_active: DEEP_PRESET_MAX_ACTIVE,
             max_frozen: DEEP_PRESET_MAX_FROZEN,
             max_branches_per_active: DEEP_PRESET_MAX_BRANCHES_PER_ACTIVE,
+            active_lineage_diversity: 0,
             experiment_wall_ms: DEEP_PRESET_EXPERIMENT_WALL_MS,
             search_wall_ms: DEEP_PRESET_SEARCH_WALL_MS,
             search_max_nodes: DEEP_PRESET_SEARCH_MAX_NODES,
@@ -527,6 +538,7 @@ where
             max_active: EXPLORE_PRESET_MAX_ACTIVE,
             max_frozen: EXPLORE_PRESET_MAX_FROZEN,
             max_branches_per_active: EXPLORE_PRESET_MAX_BRANCHES_PER_ACTIVE,
+            active_lineage_diversity: EXPLORE_PRESET_ACTIVE_LINEAGE_DIVERSITY,
             experiment_wall_ms: EXPLORE_PRESET_EXPERIMENT_WALL_MS,
             search_wall_ms: EXPLORE_PRESET_SEARCH_WALL_MS,
             search_max_nodes: EXPLORE_PRESET_SEARCH_MAX_NODES,
@@ -542,6 +554,7 @@ struct CampaignPresetDefaults {
     max_active: usize,
     max_frozen: usize,
     max_branches_per_active: usize,
+    active_lineage_diversity: usize,
     experiment_wall_ms: u64,
     search_wall_ms: u64,
     search_max_nodes: usize,
@@ -569,6 +582,9 @@ fn apply_campaign_preset_defaults<F>(
     }
     if !was_explicit("max_branches_per_active") {
         args.max_branches_per_active = defaults.max_branches_per_active;
+    }
+    if !was_explicit("active_lineage_diversity") {
+        args.active_lineage_diversity = defaults.active_lineage_diversity;
     }
     if !was_explicit("experiment_wall_ms") {
         args.experiment_wall_ms = defaults.experiment_wall_ms;
@@ -960,6 +976,7 @@ fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, Stri
         max_active: args.max_active,
         max_frozen: args.max_frozen,
         max_branches_per_active: args.max_branches_per_active,
+        active_lineage_diversity_slots: args.active_lineage_diversity,
         retention_budget_profile: args
             .retention_profile
             .parse::<BranchRetentionBudgetProfileV1>()?,
@@ -1041,6 +1058,7 @@ mod tests {
         assert_eq!(config.max_active, 8);
         assert_eq!(config.max_frozen, 32);
         assert_eq!(config.round_depth, 1);
+        assert_eq!(config.active_lineage_diversity_slots, 0);
     }
 
     #[test]
@@ -1354,6 +1372,7 @@ mod tests {
         assert_eq!(config.max_active, 2);
         assert_eq!(config.max_frozen, 16);
         assert_eq!(config.max_branches_per_active, 8);
+        assert_eq!(config.active_lineage_diversity_slots, 0);
         assert_eq!(config.experiment_wall_ms, Some(10_000));
         assert_eq!(config.search_wall_ms, Some(300));
         assert_eq!(config.search_max_nodes, Some(50_000));
@@ -1371,6 +1390,7 @@ mod tests {
         assert_eq!(config.max_active, 2);
         assert_eq!(config.max_frozen, 16);
         assert_eq!(config.max_branches_per_active, 8);
+        assert_eq!(config.active_lineage_diversity_slots, 0);
         assert_eq!(config.experiment_wall_ms, Some(5_000));
         assert_eq!(config.search_wall_ms, Some(300));
         assert_eq!(config.search_max_nodes, Some(50_000));
@@ -1419,6 +1439,7 @@ mod tests {
         assert_eq!(config.max_active, 2);
         assert_eq!(config.max_frozen, 16);
         assert_eq!(config.max_branches_per_active, 8);
+        assert_eq!(config.active_lineage_diversity_slots, 0);
         assert_eq!(config.experiment_wall_ms, Some(30_000));
         assert_eq!(config.search_wall_ms, Some(1_000));
         assert_eq!(config.search_max_nodes, Some(200_000));
@@ -1440,6 +1461,7 @@ mod tests {
         assert_eq!(config.max_active, 6);
         assert_eq!(config.max_frozen, 48);
         assert_eq!(config.max_branches_per_active, 6);
+        assert_eq!(config.active_lineage_diversity_slots, 3);
         assert_eq!(config.experiment_wall_ms, Some(8_000));
         assert_eq!(config.search_wall_ms, Some(200));
         assert_eq!(config.search_max_nodes, Some(30_000));

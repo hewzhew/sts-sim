@@ -94,6 +94,7 @@ pub struct BranchCampaignConfigV1 {
     pub max_active: usize,
     pub max_frozen: usize,
     pub max_branches_per_active: usize,
+    pub active_lineage_diversity_slots: usize,
     pub retention_budget_profile: BranchRetentionBudgetProfileV1,
     pub max_reward_options_per_branch: Option<usize>,
     pub max_campfire_options_per_branch: usize,
@@ -122,6 +123,7 @@ impl Default for BranchCampaignConfigV1 {
             max_active: 8,
             max_frozen: 32,
             max_branches_per_active: 12,
+            active_lineage_diversity_slots: 0,
             retention_budget_profile: BranchRetentionBudgetProfileV1::Package,
             max_reward_options_per_branch: Some(2),
             max_campfire_options_per_branch: 3,
@@ -523,11 +525,7 @@ where
         let mut combat_retry_elapsed_wall_ms_sum = batch.combat_retry_elapsed_wall_ms_sum;
         let mut combat_retry_elapsed_wall_ms_max = batch.combat_retry_elapsed_wall_ms_max;
         let mut produced_branches = batch.candidates.len();
-        let mut selected = select_campaign_branches_v1(
-            batch.candidates.clone(),
-            config.max_active,
-            config.max_frozen,
-        );
+        let mut selected = select_campaign_branches_for_config_v1(batch.candidates.clone(), config);
         if campaign_round_should_retry_combat_budget_on_stall_v1(
             config,
             &selected,
@@ -561,11 +559,8 @@ where
                     combat_retry_elapsed_wall_ms_max = combat_retry_elapsed_wall_ms_max
                         .max(batch.combat_retry_elapsed_wall_ms_max);
                     produced_branches = batch.candidates.len();
-                    selected = select_campaign_branches_v1(
-                        batch.candidates.clone(),
-                        config.max_active,
-                        config.max_frozen,
-                    );
+                    selected =
+                        select_campaign_branches_for_config_v1(batch.candidates.clone(), config);
                 }
             }
         }
@@ -2911,6 +2906,95 @@ pub fn select_campaign_branches_v1(
     rebalance_active_progress_anchor_v1(&mut selection.active, &mut selection.frozen);
     rebalance_active_survival_anchor_v1(&mut selection.active, &mut selection.frozen);
     selection
+}
+
+fn select_campaign_branches_for_config_v1(
+    branches: Vec<BranchCampaignBranchV1>,
+    config: &BranchCampaignConfigV1,
+) -> BranchCampaignSelectionV1 {
+    let mut selection =
+        select_campaign_branches_v1(branches, config.max_active, config.max_frozen);
+    if config.active_lineage_diversity_slots > 0 {
+        rebalance_active_lineage_diversity_v1(
+            &mut selection.active,
+            &mut selection.frozen,
+            config.active_lineage_diversity_slots,
+        );
+    }
+    selection
+}
+
+fn rebalance_active_lineage_diversity_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+    target_unique_lineages: usize,
+) -> usize {
+    if target_unique_lineages == 0 || active.len() < 2 || frozen.is_empty() {
+        return 0;
+    }
+    let target_unique_lineages = target_unique_lineages.min(active.len());
+    let mut swaps = 0usize;
+    while campaign_active_lineage_count_v1(active) < target_unique_lineages {
+        let active_lineages = campaign_active_lineage_counts_v1(active);
+        let Some((frozen_index, _)) = frozen
+            .iter()
+            .enumerate()
+            .filter(|(_, branch)| {
+                !active_lineages.contains_key(&campaign_branch_lineage_key_v1(branch))
+            })
+            .min_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
+        else {
+            break;
+        };
+        let Some((replace_index, _)) = active
+            .iter()
+            .enumerate()
+            .filter(|(_, branch)| {
+                active_lineages
+                    .get(&campaign_branch_lineage_key_v1(branch))
+                    .copied()
+                    .unwrap_or(0)
+                    > 1
+            })
+            .max_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
+        else {
+            break;
+        };
+        let mut promoted = frozen.remove(frozen_index);
+        promoted.status = BranchCampaignBranchStatusV1::Active;
+        let mut demoted = std::mem::replace(&mut active[replace_index], promoted);
+        demoted.status = BranchCampaignBranchStatusV1::Frozen;
+        frozen.push(demoted);
+        active.sort_by(compare_campaign_branches_for_active_v1);
+        frozen.sort_by(compare_campaign_branches_for_promotion_v1);
+        swaps = swaps.saturating_add(1);
+    }
+    swaps
+}
+
+fn campaign_active_lineage_count_v1(active: &[BranchCampaignBranchV1]) -> usize {
+    campaign_active_lineage_counts_v1(active).len()
+}
+
+fn campaign_active_lineage_counts_v1(
+    active: &[BranchCampaignBranchV1],
+) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for branch in active {
+        *counts
+            .entry(campaign_branch_lineage_key_v1(branch))
+            .or_insert(0) += 1;
+    }
+    counts
+}
+
+fn campaign_branch_lineage_key_v1(branch: &BranchCampaignBranchV1) -> String {
+    branch
+        .choice_labels
+        .first()
+        .cloned()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| branch.branch_id.clone())
 }
 
 fn rebalance_active_progress_anchor_v1(
