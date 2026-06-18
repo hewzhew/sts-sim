@@ -4323,6 +4323,15 @@ fn campaign_choice_label_v1(
     } else {
         choice.effect_label.clone()
     };
+    let label = if choice.kind == "event" {
+        label
+            .split(" | event_eval ")
+            .next()
+            .unwrap_or(&label)
+            .to_string()
+    } else {
+        label
+    };
     if choice.kind == "event" && label.starts_with('[') && !choice.boundary_title.trim().is_empty()
     {
         format!("{}: {}", choice.boundary_title, label)

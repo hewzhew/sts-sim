@@ -523,6 +523,33 @@ fn campaign_choice_label_prefixes_bracketed_event_choices_with_boundary() {
 }
 
 #[test]
+fn campaign_choice_label_omits_event_eval_from_choice_path() {
+    let choice = BranchExperimentChoiceV1 {
+        depth: 0,
+        kind: "event".to_string(),
+        boundary_title: "UpgradeShrine".to_string(),
+        card: None,
+        upgrades: None,
+        selected_cards: Vec::new(),
+        effect_kind: "event".to_string(),
+        effect_key: "upgrade".to_string(),
+        effect_label:
+            "[Pray] Upgrade a card. | event_eval tier=Risky score=-80 reasons=mutates deck identity"
+                .to_string(),
+        representative_count: 1,
+        suppressed_count: 0,
+        decision_signal: None,
+        label: "[Pray] Upgrade a card.".to_string(),
+        command: "event 0 && select 7".to_string(),
+    };
+
+    assert_eq!(
+        campaign_choice_label_v1(&choice),
+        "UpgradeShrine: [Pray] Upgrade a card."
+    );
+}
+
+#[test]
 fn compact_campaign_report_summarizes_active_strategic_signals() {
     let parent = test_campaign_branch("parent", 3, 80);
     let mut engine = test_report_branch(
