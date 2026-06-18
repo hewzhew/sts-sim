@@ -8,7 +8,7 @@ use crate::ai::strategic::BranchSignatureCompact;
 use crate::content::cards::{get_card_definition, CardTag, CardType};
 use crate::eval::branch_campaign::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
-    BranchCampaignCheckpointV1, BranchCampaignReportV1,
+    BranchCampaignCheckpointV1, BranchCampaignReportV1, BranchCampaignRunDomainV1,
 };
 use crate::eval::run_control::RunControlSession;
 use crate::runtime::combat::CombatCard;
@@ -56,6 +56,8 @@ pub struct BranchOutcomeRecordV1 {
     pub policy_quality_claim: bool,
 
     pub seed: u64,
+    #[serde(default)]
+    pub run_domain: BranchCampaignRunDomainV1,
     pub report_rounds_completed: usize,
     pub report_stop_reason: String,
 
@@ -680,6 +682,7 @@ fn branch_outcome_record(
         trainable_as_action_label: false,
         policy_quality_claim: false,
         seed: report.seed,
+        run_domain: report.run_domain.clone(),
         report_rounds_completed: report.rounds_completed,
         report_stop_reason: report.stop_reason.clone(),
         branch_group: group.to_string(),
@@ -1045,6 +1048,7 @@ mod tests {
             trainable_as_action_label: false,
             policy_quality_claim: false,
             seed: 1,
+            run_domain: BranchCampaignRunDomainV1::default(),
             report_rounds_completed: 1,
             report_stop_reason: "test".to_string(),
             branch_group: group.to_string(),
