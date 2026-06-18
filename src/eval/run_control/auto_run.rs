@@ -205,6 +205,58 @@ mod tests {
         );
     }
 
+    #[test]
+    fn branch_experiment_auto_run_ignores_default_note_for_yourself() {
+        let mut session =
+            RunControlSession::new(crate::eval::run_control::RunControlConfig::default());
+        let mut event_state = EventState::new(EventId::NoteForYourself);
+        event_state.current_screen = 1;
+        session.run_state.event_state = Some(event_state);
+        session.run_state.note_for_yourself_card = crate::content::cards::CardId::IronWave;
+        session.run_state.note_for_yourself_upgrades = 0;
+        session.engine_state = EngineState::EventRoom;
+
+        let iron_wave_count_before = session
+            .run_state
+            .master_deck
+            .iter()
+            .filter(|card| card.id == crate::content::cards::CardId::IronWave)
+            .count();
+
+        let outcome = apply_branch_experiment_auto_run(
+            &mut session,
+            RunControlAutoStepOptions {
+                max_operations: Some(1),
+                ..Default::default()
+            },
+        )
+        .expect("branch campaign auto-run should ignore the default note card");
+
+        assert!(
+            outcome.message.contains("event policy: Note For Yourself"),
+            "message={}",
+            outcome.message
+        );
+        assert_eq!(
+            session
+                .run_state
+                .event_state
+                .as_ref()
+                .expect("event should remain active until routine leave")
+                .current_screen,
+            2
+        );
+        assert_eq!(
+            session
+                .run_state
+                .master_deck
+                .iter()
+                .filter(|card| card.id == crate::content::cards::CardId::IronWave)
+                .count(),
+            iron_wave_count_before
+        );
+    }
+
     fn match_and_keep_board_with_entries(
         entries: &[(crate::content::cards::CardId, u8); 6],
     ) -> Vec<i32> {

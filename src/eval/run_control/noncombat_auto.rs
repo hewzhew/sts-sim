@@ -85,6 +85,15 @@ pub(super) fn apply_branch_experiment_noncombat_policy(
             stop_after_reason: None,
         }));
     }
+    if let Some((outcome, summary)) =
+        super::event_policy::apply_note_for_yourself_policy_choice(session)?
+    {
+        return Ok(Some(NonCombatAutoApplication {
+            outcome,
+            summary,
+            stop_after_reason: None,
+        }));
+    }
 
     Ok(None)
 }

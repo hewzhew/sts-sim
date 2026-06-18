@@ -586,7 +586,9 @@ fn event_policy_safe_exit_branch_options(
             && !candidate.disabled
             && candidate.class == EventPolicyClassV1::CombatStart
     });
-    if !exits_optional_combat {
+    let exits_default_note_deck_mutation =
+        event_safe_exit_collapses_default_note_mutation(session, &context.candidates, index);
+    if !exits_optional_combat && !exits_default_note_deck_mutation {
         return None;
     }
 
@@ -600,6 +602,30 @@ fn event_policy_safe_exit_branch_options(
         selected.effect_label
     );
     Some(vec![selected])
+}
+
+fn event_safe_exit_collapses_default_note_mutation(
+    session: &RunControlSession,
+    candidates: &[crate::ai::event_policy_v1::EventCandidateEvidenceV1],
+    safe_exit_index: usize,
+) -> bool {
+    let Some(event_state) = session.run_state.event_state.as_ref() else {
+        return false;
+    };
+    if event_state.id != EventId::NoteForYourself || event_state.current_screen != 1 {
+        return false;
+    }
+    if !crate::eval::event_auto_policy_v1::note_for_yourself_default_note_is_ignorable(
+        &session.run_state,
+    ) {
+        return false;
+    }
+
+    candidates.iter().any(|candidate| {
+        candidate.index != safe_exit_index
+            && !candidate.disabled
+            && candidate.class == EventPolicyClassV1::SelectionOrDeckMutation
+    })
 }
 
 fn select_event_card_reward_branch_options(

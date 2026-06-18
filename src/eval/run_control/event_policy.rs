@@ -18,6 +18,9 @@ pub(super) fn apply_event_policy_choice(
     if event_state.id == EventId::MatchAndKeep {
         return apply_match_and_keep_policy_choice(session);
     }
+    if event_state.id == EventId::NoteForYourself {
+        return apply_note_for_yourself_policy_choice(session);
+    }
 
     let event_id = event_state.id;
     let options = crate::engine::event_handler::get_event_options(&session.run_state);
@@ -91,6 +94,35 @@ pub(super) fn apply_match_and_keep_policy_choice(
         outcome,
         format!(
             "event policy: Match and Keep {label} reason=board-pair strategy avoids curse/status pairs label_role=behavior_policy_not_teacher"
+        ),
+    )))
+}
+
+pub(super) fn apply_note_for_yourself_policy_choice(
+    session: &mut RunControlSession,
+) -> Result<Option<(RunControlCommandOutcome, String)>, String> {
+    let Some(event_state) = session.run_state.event_state.as_ref() else {
+        return Ok(None);
+    };
+    if event_state.id != EventId::NoteForYourself || event_state.current_screen != 1 {
+        return Ok(None);
+    }
+    if !crate::eval::event_auto_policy_v1::note_for_yourself_default_note_is_ignorable(
+        &session.run_state,
+    ) {
+        return Ok(None);
+    }
+
+    let ignore_index = 1usize;
+    let label = crate::engine::event_handler::get_event_options(&session.run_state)
+        .get(ignore_index)
+        .map(|option| option.ui.text.clone())
+        .unwrap_or_else(|| "Ignore".to_string());
+    let outcome = session.apply_input(ClientInput::EventChoice(ignore_index))?;
+    Ok(Some((
+        outcome,
+        format!(
+            "event policy: Note For Yourself {label} reason=ignore default low-value note card; take+remove needs deck mutation compiler label_role=behavior_policy_not_teacher"
         ),
     )))
 }

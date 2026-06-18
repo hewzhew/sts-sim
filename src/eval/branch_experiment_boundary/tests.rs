@@ -1532,6 +1532,26 @@ fn current_boundary_skips_single_flavor_event_advance() {
 }
 
 #[test]
+fn current_boundary_collapses_default_note_for_yourself_to_ignore() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    let mut event_state = EventState::new(EventId::NoteForYourself);
+    event_state.current_screen = 1;
+    session.run_state.event_state = Some(event_state);
+    session.run_state.note_for_yourself_card = crate::content::cards::CardId::IronWave;
+    session.run_state.note_for_yourself_upgrades = 0;
+    session.engine_state = EngineState::EventRoom;
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("default NoteForYourself should expose the safe ignore event branch");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
+    assert_eq!(boundary.options.len(), 1);
+    assert_eq!(boundary.options[0].command, "event 1");
+    assert_eq!(boundary.options[0].kind, "event");
+    assert_eq!(boundary.options[0].effect_kind, "event_decline");
+}
+
+#[test]
 fn current_boundary_skips_single_forced_state_event_resolution() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut event_state = EventState::new(EventId::TheJoust);
