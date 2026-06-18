@@ -1,5 +1,6 @@
 use crate::ai::strategic::{
-    compact_branch_signature_data, format_compact_branch_signature, BranchSignatureCompact,
+    compact_branch_signature_data, format_compact_branch_signature, run_debt_ledger_v1,
+    BranchSignatureCompact,
 };
 use crate::eval::branch_experiment::{
     run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
@@ -4259,6 +4260,7 @@ fn campaign_refresh_branch_summary_from_session_v1(
     summary.deck_key = campaign_deck_key_v1(session);
     summary.boss = branch_campaign_boss_label_v1(session);
     summary.boss_pressure = branch_campaign_boss_pressure_labels_v1(session);
+    summary.run_debt = branch_campaign_run_debt_labels_v1(session);
 }
 
 fn maybe_attach_campaign_combat_lab_probe_v1(
@@ -4354,6 +4356,10 @@ fn branch_campaign_boss_pressure_labels_v1(session: &RunControlSession) -> Vec<S
     };
     crate::ai::boss_mechanics_v1::boss_mechanic_pressure_profile_v1(&session.run_state, boss)
         .summary_labels()
+}
+
+fn branch_campaign_run_debt_labels_v1(session: &RunControlSession) -> Vec<String> {
+    run_debt_ledger_v1(&session.run_state).compact_labels()
 }
 
 fn branch_campaign_boss_v1(
@@ -4565,15 +4571,19 @@ fn render_campaign_branch_state(branch: &BranchCampaignBranchV1) -> String {
             let deck_shape = render_campaign_branch_deck_shape_v1(summary)
                 .map(|value| format!(" {value}"))
                 .unwrap_or_default();
+            let run_debt = render_campaign_branch_run_debt_v1(summary)
+                .map(|value| format!(" debt=[{value}]"))
+                .unwrap_or_default();
             format!(
-                "A{}F{} HP {}/{} gold {} deck {}{}",
+                "A{}F{} HP {}/{} gold {} deck {}{}{}",
                 summary.act,
                 summary.floor,
                 summary.hp,
                 summary.max_hp,
                 summary.gold,
                 summary.deck_count,
-                deck_shape
+                deck_shape,
+                run_debt
             )
         })
         .unwrap_or_else(|| "start".to_string());
@@ -4584,6 +4594,35 @@ fn render_campaign_branch_state(branch: &BranchCampaignBranchV1) -> String {
     } else {
         format!("{state} {selection_basis} strat=[{}]", strategic_summary)
     }
+}
+
+fn render_campaign_branch_run_debt_v1(summary: &BranchCampaignBranchSummaryV1) -> Option<String> {
+    if summary.run_debt.is_empty() {
+        return None;
+    }
+    let shown = summary
+        .run_debt
+        .iter()
+        .take(2)
+        .map(|label| truncate_campaign_run_debt_label_v1(label, 64))
+        .collect::<Vec<_>>();
+    let suffix = summary.run_debt.len().saturating_sub(shown.len());
+    if suffix == 0 {
+        Some(shown.join(" | "))
+    } else {
+        Some(format!("{} +{} more", shown.join(" | "), suffix))
+    }
+}
+
+fn truncate_campaign_run_debt_label_v1(label: &str, max_chars: usize) -> String {
+    if label.chars().count() <= max_chars {
+        return label.to_string();
+    }
+    let prefix = label
+        .chars()
+        .take(max_chars.saturating_sub(3))
+        .collect::<String>();
+    format!("{prefix}...")
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4914,6 +4953,7 @@ fn campaign_summary_from_report_branch_v1(
         trajectory_key,
         boss: String::new(),
         boss_pressure: Vec::new(),
+        run_debt: Vec::new(),
     }
 }
 

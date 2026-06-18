@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use sts_simulator::ai::strategic::run_debt_ledger_for_relics_v1;
 use sts_simulator::content::cards::{get_card_definition, CardRarity, CardTag, CardType};
 use sts_simulator::content::relics::RelicId;
 use sts_simulator::eval::branch_campaign::BranchCampaignBranchV1;
@@ -265,46 +266,26 @@ fn relic_debt_labels_v1(
     session: &RunControlSession,
     branch: Option<&BranchCampaignBranchV1>,
 ) -> Vec<String> {
-    let mut relics = Vec::<RelicId>::new();
-    for relic in &session.run_state.relics {
-        if !relics.contains(&relic.id) {
-            relics.push(relic.id);
-        }
-    }
+    let mut extra_relics = Vec::<RelicId>::new();
     if let Some(branch) = branch {
         for label in &branch.choice_labels {
             if let Some(relic) = boss_relic_from_label_v1(label) {
-                if !relics.contains(&relic) {
-                    relics.push(relic);
+                if !session
+                    .run_state
+                    .relics
+                    .iter()
+                    .any(|owned| owned.id == relic)
+                    && !extra_relics.contains(&relic)
+                {
+                    extra_relics.push(relic);
                 }
             }
         }
     }
-    let mut labels = relics
-        .into_iter()
-        .filter_map(relic_debt_label_v1)
-        .collect::<Vec<_>>();
+    let mut labels =
+        run_debt_ledger_for_relics_v1(&session.run_state, &extra_relics).compact_labels();
     labels.sort();
     labels
-}
-
-fn relic_debt_label_v1(relic: RelicId) -> Option<String> {
-    let debt = match relic {
-        RelicId::CallingBell => "curse_debt",
-        RelicId::CursedKey => "chest_curse_or_relic_skip_debt",
-        RelicId::FusionHammer => "smith_lock",
-        RelicId::BustedCrown => "reward_width_debt",
-        RelicId::CoffeeDripper => "rest_lock",
-        RelicId::Ectoplasm => "gold_income_lock",
-        RelicId::MarkOfPain => "wound_deck_debt",
-        RelicId::PhilosopherStone => "enemy_strength_debt",
-        RelicId::RunicDome => "intent_visibility_debt",
-        RelicId::SneckoEye => "random_cost_deck_shape_debt",
-        RelicId::Sozu => "potion_lock",
-        RelicId::VelvetChoker => "card_play_cap_debt",
-        _ => return None,
-    };
-    Some(format!("{relic:?}={debt}"))
 }
 
 fn boss_relic_from_label_v1(label: &str) -> Option<RelicId> {
@@ -444,6 +425,7 @@ mod tests {
                     "missing:champ_transition_burst".to_string(),
                     "red:no_execute_block_plan".to_string(),
                 ],
+                run_debt: Vec::new(),
             }),
             strategic_summary: Default::default(),
             frontier_title: "Shop".to_string(),

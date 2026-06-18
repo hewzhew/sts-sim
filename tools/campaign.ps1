@@ -111,6 +111,7 @@ param(
     [switch] $Inspect,
     [switch] $InspectShopEvidence,
     [switch] $InspectShopChallenge,
+    [switch] $InspectCardRewardEvidence,
     [switch] $InspectLastAutoCombat,
     [switch] $InspectCombatLab,
     [switch] $ProbeBoss,
@@ -208,7 +209,13 @@ function Read-LatestCampaignMode {
     return $null
 }
 
-if ($InspectShopEvidence -or $InspectShopChallenge -or $InspectLastAutoCombat -or $InspectCombatLab) {
+if (
+    $InspectShopEvidence -or
+    $InspectShopChallenge -or
+    $InspectCardRewardEvidence -or
+    $InspectLastAutoCombat -or
+    $InspectCombatLab
+) {
     $Inspect = $true
 }
 if ($InspectShopChallenge -and -not $PSBoundParameters.ContainsKey("InspectBoundary")) {
@@ -478,7 +485,12 @@ if ($Inspect) {
         "--inspect-report", "$LatestCampaignPath",
         "--branch-examples", "$BranchExamples"
     )
-    $DetailedInspect = $InspectShopEvidence -or $InspectShopChallenge -or $InspectLastAutoCombat -or $InspectCombatLab
+    $DetailedInspect =
+        $InspectShopEvidence -or
+        $InspectShopChallenge -or
+        $InspectCardRewardEvidence -or
+        $InspectLastAutoCombat -or
+        $InspectCombatLab
     if (-not $DetailedInspect) {
         $InspectArgs += "--inspect-summary"
     }
@@ -494,6 +506,9 @@ if ($Inspect) {
             "--search-wall-ms", "$SearchWallMs",
             "--search-max-nodes", "$SearchMaxNodes"
         )
+    }
+    if ($InspectCardRewardEvidence) {
+        $InspectArgs += "--inspect-card-reward-evidence"
     }
     if ($InspectLastAutoCombat) {
         $InspectArgs += "--inspect-last-auto-combat"
@@ -622,12 +637,6 @@ if ($DryRun) {
     exit 0
 }
 
-Set-Content -LiteralPath $LatestSeedPath -Value $Seed
-Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
-Set-Content -LiteralPath $LatestClassPath -Value $Class
-Set-Content -LiteralPath $LatestModePath -Value $Mode
-Set-Content -LiteralPath $LatestCommandPath -Value $RenderedCommand
-
 Push-Location $RepoRoot
 try {
     if ($NeedsBuild) {
@@ -637,7 +646,15 @@ try {
         }
     }
     & $DriverExe @DriverArgs
-    exit $LASTEXITCODE
+    $DriverExitCode = $LASTEXITCODE
+    if ($DriverExitCode -eq 0) {
+        Set-Content -LiteralPath $LatestSeedPath -Value $Seed
+        Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
+        Set-Content -LiteralPath $LatestClassPath -Value $Class
+        Set-Content -LiteralPath $LatestModePath -Value $Mode
+        Set-Content -LiteralPath $LatestCommandPath -Value $RenderedCommand
+    }
+    exit $DriverExitCode
 } finally {
     Pop-Location
 }

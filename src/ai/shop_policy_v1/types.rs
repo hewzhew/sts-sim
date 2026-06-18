@@ -7,6 +7,7 @@ use crate::ai::noncombat_decision_v1::{
     NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
 };
 use crate::ai::noncombat_strategy_v1::{RunStrategySnapshotV2, StrategyPlanSupportV1};
+use crate::ai::strategic::RunDebtLedgerV1;
 use crate::ai::strength_profile_v1::StrengthProfileV1;
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
@@ -18,6 +19,7 @@ pub struct ShopDecisionContextV1 {
     pub strategy: RunStrategySnapshotV2,
     pub strength: StrengthProfileV1,
     pub startup: DeckStartupProfileV1,
+    pub run_debt: RunDebtLedgerV1,
     pub upgrade_need: ShopUpgradeNeedProfileV1,
     pub need: ShopNeedProfileV1,
     pub candidates: Vec<ShopCandidateEvidenceV1>,

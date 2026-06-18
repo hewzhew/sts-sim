@@ -1,8 +1,9 @@
 use super::{
+    add_run_debt_candidate_deltas_v1, add_run_debt_pressure_to_ledger,
     add_startup_profile_pressure_to_ledger, compile_decision, ledger_from_snapshot,
     CandidateAction, CandidateDelta, CandidateRole, LedgerDelta, OpportunityCost, PressureHorizon,
-    PressureKind, PressureLedger, StrategicBossTax, StrategicDebt, StrategicDecisionSite,
-    StrategicDeckFacts, StrategicJob, StrategicSnapshot, VerdictHint,
+    PressureKind, PressureLedger, RunDebtCandidateSignalsV1, StrategicBossTax, StrategicDebt,
+    StrategicDecisionSite, StrategicDeckFacts, StrategicJob, StrategicSnapshot, VerdictHint,
 };
 use crate::ai::card_component_marginal_value_v1::{
     evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
@@ -10,6 +11,7 @@ use crate::ai::card_component_marginal_value_v1::{
 use crate::ai::card_reward_policy_v1::{
     card_facts, card_reward_semantic_profile_v1, CardRewardSemanticRoleV1,
 };
+use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::ai::decision_tags_v1::{
     strings_have_tag, TAG_COLLECTOR_ANSWER, TAG_ENGINE_CLOSURE, TAG_STARTUP_ACCESS,
 };
@@ -24,6 +26,7 @@ pub fn strategic_trace_for_shop(context: &ShopDecisionContextV1) -> super::Strat
     let mut ledger = ledger_from_snapshot(&snapshot);
     add_shop_upgrade_pressure_to_ledger(context, &mut ledger);
     add_startup_profile_pressure_to_ledger(&mut ledger, &context.startup);
+    add_run_debt_pressure_to_ledger(&mut ledger, &context.run_debt);
     let deltas = context
         .candidates
         .iter()
@@ -203,6 +206,7 @@ fn candidate_delta_from_shop_candidate(
         }
     }
 
+    add_shop_run_debt_deltas(context, candidate, &mut delta);
     delta
 }
 
@@ -249,6 +253,65 @@ fn add_shop_card_purchase_deltas(
 
     add_default_shop_card_semantic_deltas(context, candidate, delta);
     add_shop_card_component_deltas(context, candidate, delta);
+}
+
+fn add_shop_run_debt_deltas(
+    context: &ShopDecisionContextV1,
+    candidate: &ShopCandidateEvidenceV1,
+    delta: &mut CandidateDelta,
+) {
+    add_run_debt_candidate_deltas_v1(
+        delta,
+        &context.run_debt,
+        RunDebtCandidateSignalsV1 {
+            deck_cleanup_for_hp_loss_control: matches!(
+                candidate.class,
+                ShopPolicyClassV1::CursePurge
+                    | ShopPolicyClassV1::StarterStrikePurge
+                    | ShopPolicyClassV1::StarterDefendPurge
+            ),
+            adds_hp_loss_control: candidate_delta_has_hp_loss_control(delta),
+            improves_access_to_control: candidate_delta_has_access_control(delta),
+            self_damage_source: candidate
+                .card
+                .map(|card| card_mechanics_profile_v1(card).self_damage_source)
+                .unwrap_or(false),
+            same_card_count: candidate.same_card_count,
+            adds_card: candidate.card.is_some(),
+        },
+    );
+}
+
+fn candidate_delta_has_hp_loss_control(delta: &CandidateDelta) -> bool {
+    delta.positive.iter().any(|entry| {
+        if matches!(
+            entry.reason.as_str(),
+            "shop_card_adds_block_or_mitigation"
+                | "mitigates_enemy_damage"
+                | "direct_strength_down_answer"
+                | "rest_lock_candidate_adds_hp_loss_control"
+        ) {
+            return true;
+        }
+        matches!(
+            entry.kind,
+            PressureKind::MissingJob(StrategicJob::EnemyStrengthDown)
+                | PressureKind::BossTax(StrategicBossTax::AutomatonHyperbeamPlan)
+                | PressureKind::BossTax(StrategicBossTax::ChampExecutePlan)
+                | PressureKind::BossTax(StrategicBossTax::AwakenedPhaseTwoBlock)
+        )
+    })
+}
+
+fn candidate_delta_has_access_control(delta: &CandidateDelta) -> bool {
+    delta.positive.iter().any(|entry| {
+        matches!(
+            entry.kind,
+            PressureKind::MissingJob(StrategicJob::DrawEnergy)
+                | PressureKind::MissingJob(StrategicJob::ExhaustAccess)
+                | PressureKind::DeckDebt(StrategicDebt::CycleTime)
+        )
+    })
 }
 
 fn add_default_shop_card_semantic_deltas(

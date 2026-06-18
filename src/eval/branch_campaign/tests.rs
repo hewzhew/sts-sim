@@ -4270,6 +4270,7 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
             trajectory_key: "frontload=1".to_string(),
             boss: String::new(),
             boss_pressure: Vec::new(),
+            run_debt: Vec::new(),
         }),
         strategic_summary: Default::default(),
         frontier_title: "Card Reward".to_string(),

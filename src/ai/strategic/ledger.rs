@@ -1,4 +1,5 @@
-use super::StrategicSnapshot;
+use super::run_debt::{RunDebtContractKindV1, RunDebtContractV1, RunDebtLedgerV1};
+use super::{CandidateDelta, LedgerDelta, StrategicSnapshot};
 use crate::ai::deck_startup_profile_v1::DeckStartupProfileV1;
 use serde::{Deserialize, Serialize};
 
@@ -54,6 +55,7 @@ pub enum PressureHorizon {
 pub enum PressureKind {
     MissingJob(StrategicJob),
     DeckDebt(StrategicDebt),
+    RunDebt(RunDebtContractKindV1),
     BossTax(StrategicBossTax),
     RouteRisk,
     EconomyNeed,
@@ -392,4 +394,168 @@ pub fn add_startup_profile_pressure_to_ledger(
             ],
         );
     }
+}
+
+pub fn add_run_debt_pressure_to_ledger(ledger: &mut PressureLedger, run_debt: &RunDebtLedgerV1) {
+    for contract in &run_debt.contracts {
+        ledger.push(
+            format!("run_debt:{}:{}", contract.source, contract.kind.label()),
+            PressureKind::RunDebt(contract.kind),
+            run_debt_horizon(contract.kind),
+            run_debt_severity(contract),
+            run_debt_confidence(contract),
+            run_debt_evidence(contract),
+        );
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RunDebtCandidateSignalsV1 {
+    pub deck_cleanup_for_hp_loss_control: bool,
+    pub adds_hp_loss_control: bool,
+    pub improves_access_to_control: bool,
+    pub self_damage_source: bool,
+    pub same_card_count: usize,
+    pub adds_card: bool,
+}
+
+pub fn add_run_debt_candidate_deltas_v1(
+    delta: &mut CandidateDelta,
+    run_debt: &RunDebtLedgerV1,
+    signals: RunDebtCandidateSignalsV1,
+) {
+    add_rest_lock_candidate_deltas_v1(delta, run_debt, signals);
+}
+
+fn add_rest_lock_candidate_deltas_v1(
+    delta: &mut CandidateDelta,
+    run_debt: &RunDebtLedgerV1,
+    signals: RunDebtCandidateSignalsV1,
+) {
+    if !run_debt_has_kind(run_debt, RunDebtContractKindV1::RestLock) {
+        return;
+    }
+
+    let rest_lock = PressureKind::RunDebt(RunDebtContractKindV1::RestLock);
+    if signals.deck_cleanup_for_hp_loss_control {
+        delta.positive.push(LedgerDelta {
+            kind: rest_lock,
+            amount: 0.30,
+            reason: "rest_lock_values_deck_cleanup_for_hp_loss_control".to_string(),
+        });
+        return;
+    }
+
+    if signals.adds_hp_loss_control {
+        delta.positive.push(LedgerDelta {
+            kind: rest_lock,
+            amount: 0.35,
+            reason: "rest_lock_candidate_adds_hp_loss_control".to_string(),
+        });
+    } else if signals.improves_access_to_control {
+        delta.positive.push(LedgerDelta {
+            kind: rest_lock,
+            amount: 0.20,
+            reason: "rest_lock_candidate_improves_access_to_control".to_string(),
+        });
+    }
+
+    if signals.self_damage_source {
+        delta.negative.push(LedgerDelta {
+            kind: rest_lock,
+            amount: 0.60,
+            reason: "rest_lock_self_damage_candidate".to_string(),
+        });
+    } else if signals.same_card_count > 0 && !candidate_delta_has_positive_kind(delta, rest_lock) {
+        delta.negative.push(LedgerDelta {
+            kind: rest_lock,
+            amount: 0.34,
+            reason: "rest_lock_duplicate_card_without_hp_loss_control".to_string(),
+        });
+    } else if run_debt_has_unresolved_terms(run_debt, RunDebtContractKindV1::RestLock)
+        && signals.adds_card
+        && !candidate_delta_has_positive_kind(delta, rest_lock)
+    {
+        delta.negative.push(LedgerDelta {
+            kind: rest_lock,
+            amount: 0.22,
+            reason: "rest_lock_card_add_without_hp_loss_control".to_string(),
+        });
+    }
+}
+
+fn run_debt_has_kind(run_debt: &RunDebtLedgerV1, kind: RunDebtContractKindV1) -> bool {
+    run_debt
+        .contracts
+        .iter()
+        .any(|contract| contract.kind == kind)
+}
+
+fn run_debt_has_unresolved_terms(run_debt: &RunDebtLedgerV1, kind: RunDebtContractKindV1) -> bool {
+    run_debt
+        .contracts
+        .iter()
+        .any(|contract| contract.kind == kind && !contract.unresolved.is_empty())
+}
+
+fn candidate_delta_has_positive_kind(delta: &CandidateDelta, kind: PressureKind) -> bool {
+    delta.positive.iter().any(|entry| entry.kind == kind)
+}
+
+fn run_debt_horizon(kind: RunDebtContractKindV1) -> PressureHorizon {
+    match kind {
+        RunDebtContractKindV1::RestLock
+        | RunDebtContractKindV1::SmithLock
+        | RunDebtContractKindV1::RewardWidthDebt
+        | RunDebtContractKindV1::GoldIncomeLock
+        | RunDebtContractKindV1::PotionLock
+        | RunDebtContractKindV1::RandomCostDeckShapeDebt
+        | RunDebtContractKindV1::CardPlayCapDebt => PressureHorizon::LongTerm,
+        RunDebtContractKindV1::ChestCurseOrRelicSkipDebt
+        | RunDebtContractKindV1::CurseDebt
+        | RunDebtContractKindV1::WoundDeckDebt => PressureHorizon::VisibleRoute,
+        RunDebtContractKindV1::EnemyStrengthDebt
+        | RunDebtContractKindV1::IntentVisibilityDebt
+        | RunDebtContractKindV1::HealingDisabled => PressureHorizon::ActBoss,
+    }
+}
+
+fn run_debt_severity(contract: &RunDebtContractV1) -> f32 {
+    let base = match contract.kind {
+        RunDebtContractKindV1::RestLock | RunDebtContractKindV1::HealingDisabled => 0.58,
+        RunDebtContractKindV1::SmithLock | RunDebtContractKindV1::RewardWidthDebt => 0.52,
+        RunDebtContractKindV1::ChestCurseOrRelicSkipDebt
+        | RunDebtContractKindV1::CurseDebt
+        | RunDebtContractKindV1::WoundDeckDebt => 0.50,
+        RunDebtContractKindV1::PotionLock
+        | RunDebtContractKindV1::GoldIncomeLock
+        | RunDebtContractKindV1::RandomCostDeckShapeDebt
+        | RunDebtContractKindV1::CardPlayCapDebt
+        | RunDebtContractKindV1::EnemyStrengthDebt
+        | RunDebtContractKindV1::IntentVisibilityDebt => 0.45,
+    };
+    let unresolved = contract.unresolved.len() as f32 * 0.10;
+    let aggravators = contract.aggravators.len() as f32 * 0.04;
+    let mitigators = contract.mitigators.len() as f32 * 0.03;
+    (base + unresolved + aggravators - mitigators).clamp(0.25, 0.95)
+}
+
+fn run_debt_confidence(contract: &RunDebtContractV1) -> f32 {
+    if contract.unresolved.is_empty() {
+        0.62
+    } else {
+        0.76
+    }
+}
+
+fn run_debt_evidence(contract: &RunDebtContractV1) -> Vec<String> {
+    let mut evidence = vec![contract.compact_label()];
+    evidence.extend(
+        contract
+            .requirements
+            .iter()
+            .map(|requirement| format!("requires:{requirement}")),
+    );
+    evidence.extend(contract.tags.iter().map(|tag| format!("tag:{tag}")));
+    evidence
 }

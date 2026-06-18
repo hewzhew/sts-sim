@@ -2713,6 +2713,7 @@ fn context_for_run_with_route(
         deck,
         startup: crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state),
         deck_shape: crate::ai::deck_shape_v1::deck_shape_profile_v1(run_state),
+        run_debt: crate::ai::strategic::run_debt_ledger_v1(run_state),
         route,
         strategy,
         has_singing_bowl: run_state

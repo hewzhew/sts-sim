@@ -863,6 +863,11 @@ fn branch_strategic_debt_rank_adjustment_v1(candidate: &BranchRetentionCandidate
     const SOZU_POTION_LOCK_DEBT: i32 = -700;
     const VELVET_CHOKER_ACTION_CAP_DEBT: i32 = -900;
     const RUNIC_DOME_HIDDEN_INTENTS_DEBT: i32 = -800;
+    const COFFEE_DRIPPER_REST_LOCK_DEBT: i32 = -600;
+    const COFFEE_DRIPPER_NO_RECOVERY_DEBT: i32 = -1_400;
+    const COFFEE_DRIPPER_LOW_HP_DEBT: i32 = -1_000;
+    const COFFEE_DRIPPER_SELF_DAMAGE_DEBT: i32 = -800;
+    const COFFEE_DRIPPER_LOW_SURVIVAL_DEBT: i32 = -700;
     const BOTTLE_HIGH_OPENING_HAND_DEBT: i32 = -1_200;
     const BOTTLE_SITUATIONAL_OPENING_HAND_DEBT: i32 = -800;
     const BOTTLE_POWER_VS_AWAKENED_ONE_DEBT: i32 = -1_000;
@@ -877,6 +882,11 @@ fn branch_strategic_debt_rank_adjustment_v1(candidate: &BranchRetentionCandidate
                 "relic_constraint:sozu_potion_lock" => SOZU_POTION_LOCK_DEBT,
                 "relic_constraint:velvet_choker_action_cap" => VELVET_CHOKER_ACTION_CAP_DEBT,
                 "relic_constraint:runic_dome_hidden_intents" => RUNIC_DOME_HIDDEN_INTENTS_DEBT,
+                "relic_constraint:coffee_dripper_rest_lock" => COFFEE_DRIPPER_REST_LOCK_DEBT,
+                "run_debt:coffee_dripper:no_recovery_source" => COFFEE_DRIPPER_NO_RECOVERY_DEBT,
+                "run_debt:coffee_dripper:low_hp" => COFFEE_DRIPPER_LOW_HP_DEBT,
+                "run_debt:coffee_dripper:self_damage_aggravator" => COFFEE_DRIPPER_SELF_DAMAGE_DEBT,
+                "run_debt:coffee_dripper:low_survival_support" => COFFEE_DRIPPER_LOW_SURVIVAL_DEBT,
                 "bottle_debt:high_opening_hand" => BOTTLE_HIGH_OPENING_HAND_DEBT,
                 "bottle_debt:situational_opening_hand" => BOTTLE_SITUATIONAL_OPENING_HAND_DEBT,
                 "bottle_debt:power_vs_awakened_one" => BOTTLE_POWER_VS_AWAKENED_ONE_DEBT,

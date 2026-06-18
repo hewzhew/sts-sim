@@ -13,6 +13,7 @@ use crate::ai::shop_policy_v1::{
     compiled_shop_decision_has_executable_conversion_branch_v1, ShopCompileModeV1,
     ShopPolicyConfigV1,
 };
+use crate::ai::strategic::run_debt_ledger_v1;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::relics::RelicId;
 use crate::eval::branch_experiment_boundary::{
@@ -1128,29 +1129,10 @@ fn branch_choice_effect_keys(branch: &BranchWork) -> Vec<String> {
 
 fn branch_strategic_debt_tags(session: &RunControlSession) -> Vec<String> {
     let run_state = &session.run_state;
-    let mut tags = BTreeSet::<String>::new();
-
-    if run_state
-        .relics
-        .iter()
-        .any(|relic| relic.id == RelicId::Sozu)
-    {
-        tags.insert("relic_constraint:sozu_potion_lock".to_string());
-    }
-    if run_state
-        .relics
-        .iter()
-        .any(|relic| relic.id == RelicId::VelvetChoker)
-    {
-        tags.insert("relic_constraint:velvet_choker_action_cap".to_string());
-    }
-    if run_state
-        .relics
-        .iter()
-        .any(|relic| relic.id == RelicId::RunicDome)
-    {
-        tags.insert("relic_constraint:runic_dome_hidden_intents".to_string());
-    }
+    let mut tags = run_debt_ledger_v1(run_state)
+        .strategic_debt_tags()
+        .into_iter()
+        .collect::<BTreeSet<_>>();
 
     for relic in &run_state.relics {
         if !matches!(

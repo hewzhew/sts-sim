@@ -40,6 +40,8 @@ pub struct BranchCampaignBranchSummaryV1 {
     pub boss: String,
     #[serde(default)]
     pub boss_pressure: Vec<String>,
+    #[serde(default)]
+    pub run_debt: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

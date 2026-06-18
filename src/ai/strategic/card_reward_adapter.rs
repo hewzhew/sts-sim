@@ -1,8 +1,9 @@
 use super::{
+    add_run_debt_candidate_deltas_v1, add_run_debt_pressure_to_ledger,
     add_startup_profile_pressure_to_ledger, compile_decision, ledger_from_snapshot,
     CandidateAction, CandidateDelta, CandidateRole, LedgerDelta, OpportunityCost, PressureKind,
-    StrategicBossTax, StrategicDebt, StrategicDecisionSite, StrategicDeckFacts, StrategicJob,
-    StrategicRouteFacts, StrategicSnapshot, VerdictHint,
+    RunDebtCandidateSignalsV1, StrategicBossTax, StrategicDebt, StrategicDecisionSite,
+    StrategicDeckFacts, StrategicJob, StrategicRouteFacts, StrategicSnapshot, VerdictHint,
 };
 use crate::ai::card_component_marginal_value_v1::{
     evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
@@ -11,6 +12,7 @@ use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1,
     CardRewardEvidenceGapV1, CardRewardSemanticRoleV1,
 };
+use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::ai::deck_startup_profile_v1::{
     startup_energy_candidate_discounted_by_snecko_v1, startup_liability_for_candidate_v1,
     startup_support_for_candidate_v1,
@@ -25,6 +27,7 @@ pub fn strategic_trace_for_card_reward(
     let snapshot = snapshot_from_card_reward_context(context);
     let mut ledger = ledger_from_snapshot(&snapshot);
     add_startup_profile_pressure_to_ledger(&mut ledger, &context.startup);
+    add_run_debt_pressure_to_ledger(&mut ledger, &context.run_debt);
     let mut deltas = context
         .candidates
         .iter()
@@ -128,6 +131,7 @@ fn candidate_delta_from_card_reward(
     add_candidate_facts_deltas(candidate, &mut delta);
     add_candidate_startup_deltas(context, candidate, &mut delta);
     add_candidate_boss_pressure_deltas(context, &profile, &mut delta);
+    add_candidate_run_debt_deltas(context, candidate, &mut delta);
     delta
 }
 
@@ -446,6 +450,59 @@ fn add_candidate_boss_pressure_deltas(
             }
         }
     }
+}
+
+fn add_candidate_run_debt_deltas(
+    context: &CardRewardDecisionContextV1,
+    candidate: &CardRewardCandidateEvidenceV1,
+    delta: &mut CandidateDelta,
+) {
+    add_run_debt_candidate_deltas_v1(
+        delta,
+        &context.run_debt,
+        RunDebtCandidateSignalsV1 {
+            adds_hp_loss_control: candidate_delta_has_hp_loss_control(delta),
+            improves_access_to_control: candidate_delta_has_access_control(delta),
+            self_damage_source: card_mechanics_profile_v1(candidate.card).self_damage_source,
+            same_card_count: candidate.same_card_count,
+            adds_card: candidate.impact.added_deck_size > 0,
+            ..RunDebtCandidateSignalsV1::default()
+        },
+    );
+}
+
+fn candidate_delta_has_hp_loss_control(delta: &CandidateDelta) -> bool {
+    delta.positive.iter().any(|entry| {
+        if matches!(
+            entry.reason.as_str(),
+            "block_delta"
+                | "enemy_strength_down_delta"
+                | "weak_coverage_delta"
+                | "mitigates_enemy_damage"
+                | "direct_strength_down_answer"
+                | "rest_lock_candidate_adds_hp_loss_control"
+        ) {
+            return true;
+        }
+        matches!(
+            entry.kind,
+            PressureKind::MissingJob(StrategicJob::EnemyStrengthDown)
+                | PressureKind::BossTax(StrategicBossTax::AutomatonHyperbeamPlan)
+                | PressureKind::BossTax(StrategicBossTax::ChampExecutePlan)
+                | PressureKind::BossTax(StrategicBossTax::AwakenedPhaseTwoBlock)
+        )
+    })
+}
+
+fn candidate_delta_has_access_control(delta: &CandidateDelta) -> bool {
+    delta.positive.iter().any(|entry| {
+        matches!(
+            entry.kind,
+            PressureKind::MissingJob(StrategicJob::DrawEnergy)
+                | PressureKind::MissingJob(StrategicJob::ExhaustAccess)
+                | PressureKind::DeckDebt(StrategicDebt::CycleTime)
+        )
+    })
 }
 
 fn profile_has_role(
