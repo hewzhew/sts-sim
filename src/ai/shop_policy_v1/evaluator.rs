@@ -267,9 +267,9 @@ fn evaluate_portfolio_plan_v1(
             );
         }
         if candidate_plan.plan.steps.len() > 1
-            && candidate.purchase_target.is_some_and(|target| {
-                matches!(target, ShopPurchaseTargetV1::Card { .. })
-            })
+            && candidate
+                .purchase_target
+                .is_some_and(|target| matches!(target, ShopPurchaseTargetV1::Card { .. }))
             && evaluation.tier < 320
         {
             return ShopPlanEvaluationV1::block(

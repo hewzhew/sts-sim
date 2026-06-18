@@ -784,9 +784,7 @@ fn branch_card_reward_plan_rank_adjustment_v1(candidate: &BranchRetentionCandida
         .clamp(-2_500, 0)
 }
 
-fn card_reward_signal_rank_adjustment_v1(
-    signal: &BranchExperimentChoiceDecisionSignalV1,
-) -> i32 {
+fn card_reward_signal_rank_adjustment_v1(signal: &BranchExperimentChoiceDecisionSignalV1) -> i32 {
     match signal.verdict.as_str() {
         "Reject" => -900 + signal.component_net_rank.min(0) / 2,
         "SkipPreferred" => -500 + signal.component_net_rank.min(0) / 2,

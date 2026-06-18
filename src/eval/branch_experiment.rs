@@ -62,9 +62,8 @@ pub use types::{
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
     BranchExperimentRouteDecisionV1, BranchExperimentRunSummaryV1,
     BranchExperimentStrategyRequestV1, BranchExperimentWallLimitPhaseV1,
-    BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1,
-    BRANCH_EXPERIMENT_SCHEMA_NAME, BRANCH_EXPERIMENT_SCHEMA_VERSION,
-    BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1,
+    BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1, BRANCH_EXPERIMENT_SCHEMA_NAME,
+    BRANCH_EXPERIMENT_SCHEMA_VERSION, BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1,
     BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1,
 };
 
@@ -298,20 +297,22 @@ pub fn run_branch_experiment_from_session_after_prefix_with_snapshots_v1(
 ) -> Result<BranchExperimentRunResultV1, String> {
     let prefix_final_boss_combat_record =
         apply_branch_experiment_prefix_commands_v1(&mut session, config, prefix_commands)?;
-    Ok(run_branch_experiment_from_start_branch_with_replay_and_snapshots(
-        BranchWork {
-            id: "root".to_string(),
-            session,
-            choices: Vec::new(),
-            status: BranchExperimentBranchStatusV1::Active,
-            stop_reason: "initial".to_string(),
-            retention: default_branch_retention_decision_v1(),
-            final_boss_combat_record: prefix_final_boss_combat_record,
-        },
-        config,
-        0,
-        None,
-    ))
+    Ok(
+        run_branch_experiment_from_start_branch_with_replay_and_snapshots(
+            BranchWork {
+                id: "root".to_string(),
+                session,
+                choices: Vec::new(),
+                status: BranchExperimentBranchStatusV1::Active,
+                stop_reason: "initial".to_string(),
+                retention: default_branch_retention_decision_v1(),
+                final_boss_combat_record: prefix_final_boss_combat_record,
+            },
+            config,
+            0,
+            None,
+        ),
+    )
 }
 
 fn run_branch_experiment_from_session_with_replay_and_snapshots(

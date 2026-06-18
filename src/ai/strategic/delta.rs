@@ -86,9 +86,7 @@ impl CandidateDelta {
         for reason in &report.positive_components {
             let kind = positive_component_reason_pressure(reason);
             if kind == PressureKind::BranchDiversityNeed {
-                delta
-                    .notes
-                    .push(format!("component_report_only:{reason}"));
+                delta.notes.push(format!("component_report_only:{reason}"));
                 continue;
             }
             delta.positive.push(LedgerDelta {
@@ -107,11 +105,9 @@ impl CandidateDelta {
                 reason: (*reason).to_string(),
             })
             .collect();
-        delta.notes.extend(report
+        delta
             .notes
-            .iter()
-            .map(|note| (*note).to_string())
-        );
+            .extend(report.notes.iter().map(|note| (*note).to_string()));
         delta
             .evidence
             .push("card_component_marginal_value contributor".to_string());
