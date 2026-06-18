@@ -21,7 +21,7 @@ pub(super) fn apply_shop_policy_action(
         return Ok(None);
     };
     let noncombat_record = compiled.to_noncombat_decision_record_v1();
-    let (input, label) = shop_plan_step_input_and_label(step);
+    let (input, label) = shop_plan_step_input_and_label_v1(step);
     let confidence = compiled.selected_plan.legacy_confidence.unwrap_or(0.0);
     let summary = format!(
         "shop policy: {} confidence={confidence:.2} reason={} plan={} source={:?} label_role={}",
@@ -41,7 +41,7 @@ pub(super) fn apply_shop_policy_action(
     Ok(Some((outcome, summary)))
 }
 
-fn shop_plan_step_input_and_label(
+pub fn shop_plan_step_input_and_label_v1(
     step: &crate::ai::shop_policy_v1::ShopPlanStepV1,
 ) -> (ClientInput, String) {
     match *step {

@@ -9,6 +9,7 @@ mod checkpoint_evidence;
 mod final_boss_combat;
 mod inspect_summary;
 mod outcome_dataset;
+mod shop_challenge;
 
 use checkpoint_evidence::{
     render_checkpoint_campfire_evidence_v1, render_checkpoint_card_reward_evidence_v1,
@@ -22,6 +23,7 @@ use outcome_dataset::{
     run_branch_outcome_dataset_analysis, run_branch_outcome_dataset_export,
     write_branch_outcome_dataset_jsonl_v1,
 };
+use shop_challenge::render_checkpoint_shop_plan_challenge_v1;
 use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_v1, render_branch_campaign_progress_event_v1,
     run_branch_campaign_from_report_with_checkpoint_and_progress_v1,
@@ -268,6 +270,33 @@ struct Args {
         help = "Print current-code shop candidate evidence and strategic deltas for the selected checkpoint session"
     )]
     inspect_shop_evidence: bool,
+
+    #[arg(
+        long = "challenge-shop-plans",
+        help = "From a selected shop checkpoint, force compiled shop plans and rollout each branch for comparison"
+    )]
+    challenge_shop_plans: bool,
+
+    #[arg(
+        long = "challenge-max-plans",
+        default_value_t = 6,
+        help = "Maximum selected+alternative shop plans to challenge"
+    )]
+    challenge_max_plans: usize,
+
+    #[arg(
+        long = "challenge-depth",
+        default_value_t = 4,
+        help = "Branch experiment depth after each challenged shop plan"
+    )]
+    challenge_depth: usize,
+
+    #[arg(
+        long = "challenge-max-branches",
+        default_value_t = 12,
+        help = "Branch cap for each challenged shop plan rollout"
+    )]
+    challenge_max_branches: usize,
 
     #[arg(
         long = "inspect-card-reward-evidence",
@@ -685,6 +714,11 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
     println!("commands: {}", render_inspect_command_path(&commands));
     if args.inspect_shop_evidence {
         println!("{}", render_checkpoint_shop_evidence_v1(&session)?);
+    } else if args.challenge_shop_plans {
+        println!(
+            "{}",
+            render_checkpoint_shop_plan_challenge_v1(checkpoint.seed, &session, args)?
+        );
     } else if args.inspect_card_reward_evidence {
         println!("{}", render_checkpoint_card_reward_evidence_v1(&session)?);
     } else if args.inspect_campfire_evidence {
@@ -1037,6 +1071,29 @@ mod tests {
         assert_eq!(args.inspect_act, Some(2));
         assert_eq!(args.inspect_floor, Some(18));
         assert!(args.inspect_shop_evidence);
+    }
+
+    #[test]
+    fn campaign_cli_accepts_checkpoint_shop_plan_challenge() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--challenge-shop-plans",
+            "--challenge-max-plans",
+            "5",
+            "--challenge-depth",
+            "3",
+        ])
+        .expect("args parse");
+
+        assert_eq!(
+            args.inspect_checkpoint,
+            Some(PathBuf::from("latest.checkpoint.json"))
+        );
+        assert!(args.challenge_shop_plans);
+        assert_eq!(args.challenge_max_plans, 5);
+        assert_eq!(args.challenge_depth, 3);
     }
 
     #[test]

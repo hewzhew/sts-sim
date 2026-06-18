@@ -298,7 +298,7 @@ fn run_branch_experiment_from_session(
     run_branch_experiment_from_session_with_snapshots_v1(session, config).report
 }
 
-pub(crate) fn run_branch_experiment_from_session_with_snapshots_v1(
+pub fn run_branch_experiment_from_session_with_snapshots_v1(
     session: RunControlSession,
     config: &BranchExperimentConfigV1,
 ) -> BranchExperimentRunResultV1 {
