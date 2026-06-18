@@ -57,6 +57,14 @@ pub(super) enum BranchStateReplayStartSourceV1 {
     Ancestor,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct BranchStateSessionRetentionPolicyV1 {
+    pub(super) max_frozen_exact_sessions: usize,
+    pub(super) max_stuck_exact_sessions: usize,
+    pub(super) max_abandoned_exact_sessions: usize,
+    pub(super) max_suffix_commands_without_session: usize,
+}
+
 impl BranchStateStoreV1 {
     pub(super) fn new() -> Self {
         Self::default()
@@ -199,12 +207,35 @@ impl BranchStateStoreV1 {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(super) fn retain_for_branches(
         &mut self,
         active: &[BranchCampaignBranchV1],
         frozen: &[BranchCampaignBranchV1],
         abandoned: &[BranchCampaignBranchV1],
         stuck: &[BranchCampaignBranchV1],
+    ) {
+        self.retain_for_branches_with_session_policy(
+            active,
+            frozen,
+            abandoned,
+            stuck,
+            BranchStateSessionRetentionPolicyV1 {
+                max_frozen_exact_sessions: usize::MAX,
+                max_stuck_exact_sessions: usize::MAX,
+                max_abandoned_exact_sessions: usize::MAX,
+                max_suffix_commands_without_session: usize::MAX,
+            },
+        );
+    }
+
+    pub(super) fn retain_for_branches_with_session_policy(
+        &mut self,
+        active: &[BranchCampaignBranchV1],
+        frozen: &[BranchCampaignBranchV1],
+        abandoned: &[BranchCampaignBranchV1],
+        stuck: &[BranchCampaignBranchV1],
+        policy: BranchStateSessionRetentionPolicyV1,
     ) {
         let keep = active
             .iter()
@@ -213,10 +244,75 @@ impl BranchStateStoreV1 {
             .chain(stuck.iter())
             .map(|branch| branch.commands.clone())
             .collect::<BTreeSet<_>>();
+        let mut keep_sessions = active
+            .iter()
+            .map(|branch| branch.commands.clone())
+            .collect::<BTreeSet<_>>();
+        keep_sessions.extend(
+            frozen
+                .iter()
+                .take(policy.max_frozen_exact_sessions)
+                .map(|branch| branch.commands.clone()),
+        );
+        keep_sessions.extend(
+            stuck
+                .iter()
+                .take(policy.max_stuck_exact_sessions)
+                .map(|branch| branch.commands.clone()),
+        );
+        keep_sessions.extend(
+            abandoned
+                .iter()
+                .take(policy.max_abandoned_exact_sessions)
+                .map(|branch| branch.commands.clone()),
+        );
+        self.add_long_suffix_session_anchors(&keep, &mut keep_sessions, policy);
         self.sessions_by_commands
-            .retain(|commands, _| keep.contains(commands));
+            .retain(|commands, _| keep_sessions.contains(commands));
         self.retain_nodes_for_commands_and_ancestors(&keep);
         self.retains = self.retains.saturating_add(1);
+    }
+
+    fn add_long_suffix_session_anchors(
+        &self,
+        branch_commands: &BTreeSet<Vec<String>>,
+        keep_sessions: &mut BTreeSet<Vec<String>>,
+        policy: BranchStateSessionRetentionPolicyV1,
+    ) {
+        if policy.max_suffix_commands_without_session == usize::MAX {
+            return;
+        }
+        for commands in branch_commands {
+            if keep_sessions.contains(commands) || !self.sessions_by_commands.contains_key(commands)
+            {
+                continue;
+            }
+            if self.suffix_command_len_to_nearest_kept_session(commands, keep_sessions)
+                > policy.max_suffix_commands_without_session
+            {
+                keep_sessions.insert(commands.clone());
+            }
+        }
+    }
+
+    fn suffix_command_len_to_nearest_kept_session(
+        &self,
+        commands: &[String],
+        keep_sessions: &BTreeSet<Vec<String>>,
+    ) -> usize {
+        let mut current = self.node_ids_by_commands.get(commands).copied();
+        let mut suffix_len = 0usize;
+        while let Some(id) = current {
+            let Some(node) = self.nodes.get(id.0) else {
+                break;
+            };
+            if keep_sessions.contains(&node.commands) {
+                return suffix_len;
+            }
+            suffix_len = suffix_len.saturating_add(node.added_commands.len());
+            current = node.parent_id;
+        }
+        commands.len()
     }
 
     fn upsert_node(

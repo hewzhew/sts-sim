@@ -108,6 +108,101 @@ fn branch_state_store_retain_keeps_child_ancestor_nodes_without_parent_session()
 }
 
 #[test]
+fn branch_state_store_session_policy_prunes_extra_frozen_exact_sessions_only() {
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+    let mut active = test_campaign_branch("active", 4, 80);
+    active.commands = vec!["rp 0".to_string()];
+    let mut frozen_kept = test_campaign_branch("frozen-kept", 4, 80);
+    frozen_kept.commands = vec!["rp 1".to_string()];
+    let mut frozen_pruned = test_campaign_branch("frozen-pruned", 4, 80);
+    frozen_pruned.commands = vec!["rp 2".to_string()];
+
+    for branch in [&active, &frozen_kept, &frozen_pruned] {
+        store.insert_session(
+            branch.commands.clone(),
+            RunControlSession::new(RunControlConfig::default()),
+        );
+    }
+
+    store.retain_for_branches_with_session_policy(
+        &[active.clone()],
+        &[frozen_kept.clone(), frozen_pruned.clone()],
+        &[],
+        &[],
+        super::state_graph::BranchStateSessionRetentionPolicyV1 {
+            max_frozen_exact_sessions: 1,
+            max_stuck_exact_sessions: 0,
+            max_abandoned_exact_sessions: 0,
+            max_suffix_commands_without_session: usize::MAX,
+        },
+    );
+
+    assert!(store.contains_commands(&active.commands));
+    assert!(store.contains_commands(&frozen_kept.commands));
+    assert!(!store.contains_commands(&frozen_pruned.commands));
+    assert!(store.node_id_for_commands(&frozen_pruned.commands).is_some());
+}
+
+#[test]
+fn branch_state_store_session_policy_keeps_long_suffix_frozen_anchor() {
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+    let mut active = test_campaign_branch("active", 4, 80);
+    active.commands = vec!["rp 0".to_string()];
+    let mut frozen = test_campaign_branch("frozen", 6, 80);
+    frozen.commands = vec![
+        "rp 0".to_string(),
+        "go 2".to_string(),
+        "rp 1".to_string(),
+        "smith-3".to_string(),
+    ];
+
+    store.insert_session(
+        active.commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.insert_child_session(
+        &active.commands,
+        frozen.commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+
+    store.retain_for_branches_with_session_policy(
+        &[active.clone()],
+        &[frozen.clone()],
+        &[],
+        &[],
+        super::state_graph::BranchStateSessionRetentionPolicyV1 {
+            max_frozen_exact_sessions: 0,
+            max_stuck_exact_sessions: 0,
+            max_abandoned_exact_sessions: 0,
+            max_suffix_commands_without_session: 2,
+        },
+    );
+
+    let replay_start = store
+        .replay_start_for_commands(&frozen.commands)
+        .expect("long suffix frozen branch should keep exact session as an anchor");
+
+    assert!(store.contains_commands(&frozen.commands));
+    assert_eq!(replay_start.suffix_commands, Vec::<String>::new());
+}
+
+#[test]
+fn campaign_session_retention_policy_scales_from_active_budget() {
+    let config = BranchCampaignConfigV1 {
+        max_active: 3,
+        ..BranchCampaignConfigV1::default()
+    };
+
+    let policy = campaign_state_session_retention_policy_v1(&config);
+
+    assert_eq!(policy.max_frozen_exact_sessions, 6);
+    assert_eq!(policy.max_stuck_exact_sessions, 3);
+    assert_eq!(policy.max_abandoned_exact_sessions, 0);
+    assert_eq!(policy.max_suffix_commands_without_session, 6);
+}
+
+#[test]
 fn branch_state_store_exports_checkpoint_node_records() {
     let mut store = super::state_graph::BranchStateStoreV1::new();
     let parent_commands = vec!["rp 0".to_string()];

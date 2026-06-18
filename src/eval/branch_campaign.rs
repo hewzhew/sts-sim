@@ -58,7 +58,9 @@ use selection_key::{
     act_boss_floor_v1, campaign_branch_retention_key_v1, compare_campaign_branches_for_active_v1,
     compare_campaign_branches_for_promotion_v1, render_campaign_branch_selection_basis_v1,
 };
-use state_graph::{BranchStateReplayStartV1, BranchStateStoreV1};
+use state_graph::{
+    BranchStateReplayStartV1, BranchStateSessionRetentionPolicyV1, BranchStateStoreV1,
+};
 use strategic_signals::{
     campaign_strategic_signals_for_render_v1, campaign_strategic_signals_from_groups_v1,
     render_campaign_strategic_concern_v1, render_campaign_strategic_signals_v1,
@@ -661,11 +663,12 @@ where
             &state.stuck,
             &state.abandoned,
         );
-        state.state_store.retain_for_branches(
+        state.state_store.retain_for_branches_with_session_policy(
             &state.active,
             &state.frozen,
             &state.abandoned,
             &state.stuck,
+            campaign_state_session_retention_policy_v1(config),
         );
         let leading_abandoned_request = if state.active.is_empty() && state.victories.is_empty() {
             leading_abandoned_combat_intervention_request_v1(&state.frozen, &state.abandoned)
@@ -2616,6 +2619,17 @@ fn campaign_branch_experiment_config_v1(
         include_event_reward_skip: config.include_event_reward_skip,
         auto_leave_after_shop_purchase_branch: true,
         ..BranchExperimentConfigV1::default()
+    }
+}
+
+fn campaign_state_session_retention_policy_v1(
+    config: &BranchCampaignConfigV1,
+) -> BranchStateSessionRetentionPolicyV1 {
+    BranchStateSessionRetentionPolicyV1 {
+        max_frozen_exact_sessions: config.max_active.saturating_mul(2),
+        max_stuck_exact_sessions: config.max_active,
+        max_abandoned_exact_sessions: 0,
+        max_suffix_commands_without_session: 6,
     }
 }
 
