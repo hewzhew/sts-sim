@@ -219,6 +219,24 @@ fn compact_campaign_report_renders_active_branch_differences() {
 }
 
 #[test]
+fn compact_campaign_report_compacts_branch_difference_labels() {
+    let mut report = test_campaign_report_with_active("baseline", 35, 80);
+    report.active[0].choice_labels = vec!["Skip card reward".to_string()];
+    let mut shop_branch = test_campaign_branch("shop", 35, 80);
+    shop_branch.choice_labels = vec![
+        "Buy MembershipCard | 155 gold | total 155 gold | shop_legacy_estimate=950 | source=CandidateEvidence | auto leave shop"
+            .to_string(),
+    ];
+    report.active.push(shop_branch);
+
+    let rendered = render_branch_campaign_compact_v1(&report, 2);
+
+    assert!(rendered.contains("diff: choices +Buy MembershipCard 155g"));
+    assert!(!rendered.contains("source=CandidateEvidence"));
+    assert!(!rendered.contains("shop_legacy_estimate"));
+}
+
+#[test]
 fn compact_campaign_report_renders_abandoned_examples_while_continuing() {
     let mut report = test_campaign_report_with_active("a", 7, 80);
     let mut abandoned = test_campaign_branch("abandoned", 6, 55);

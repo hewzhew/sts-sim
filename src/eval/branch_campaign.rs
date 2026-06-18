@@ -1677,7 +1677,8 @@ fn render_campaign_choice_diff_v1(
             continue;
         }
         if let Some(label) = current {
-            additions.push(format!("+{}", truncate_campaign_diff_label_v1(label)));
+            let label = compact_campaign_choice_label_metadata_v1(label);
+            additions.push(format!("+{}", truncate_campaign_diff_label_v1(&label)));
         }
         if additions.len() >= 3 {
             break;
