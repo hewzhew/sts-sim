@@ -7,6 +7,7 @@ use crate::ai::noncombat_decision_v1::{
 use crate::ai::noncombat_strategy_v1::{
     RunStrategySnapshotV2, StrategyPackageIdV2, StrategyPlanSupportV1,
 };
+use crate::ai::strategic::RunDebtProjectionV1;
 use crate::content::relics::RelicId;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -21,6 +22,7 @@ pub struct BossRelicCandidateEvidenceV1 {
     pub relic: RelicId,
     pub class: BossRelicPolicyClassV1,
     pub support_gate: StrategyPlanSupportV1,
+    pub debt_projection: RunDebtProjectionV1,
     pub evidence: Vec<String>,
     pub risks: Vec<String>,
 }
@@ -159,8 +161,17 @@ fn evidence_items(context: &BossRelicDecisionContextV1) -> Vec<EvidenceItemV1> {
             kind: EvidenceKindV1::CandidateFacts,
             candidate_id: Some(candidate_id(candidate.index, candidate.relic)),
             label: format!(
-                "{:?}: {:?} gate={:?}",
-                candidate.relic, candidate.class, candidate.support_gate
+                "{:?}: {:?} gate={:?} added_debt={:?} compound={:?}",
+                candidate.relic,
+                candidate.class,
+                candidate.support_gate,
+                candidate
+                    .debt_projection
+                    .added_contracts
+                    .iter()
+                    .map(|contract| contract.kind.label())
+                    .collect::<Vec<_>>(),
+                candidate.debt_projection.compounding_tags
             ),
             information_class: InformationClassV1::PublicObservation,
             components: Vec::new(),

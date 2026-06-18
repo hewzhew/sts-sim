@@ -39,6 +39,59 @@ pub(super) fn preserve_lineage_flag_coverage(
     )
 }
 
+pub(super) fn preserve_boss_relic_axis_coverage(
+    candidates: &[BranchRetentionCandidateInputV1],
+    available_positions: &[usize],
+    selected_picks: Vec<BranchRetentionLanePick>,
+    limit: usize,
+) -> Vec<BranchRetentionLanePick> {
+    if limit == 0 || selected_picks.is_empty() {
+        return selected_picks;
+    }
+
+    let available_axes = available_boss_relic_axes(candidates, available_positions);
+    if available_axes.len() <= 1 {
+        return selected_picks;
+    }
+
+    let mut kept = selected_picks;
+    let mut selected = kept
+        .iter()
+        .map(|pick| pick.position)
+        .collect::<BTreeSet<_>>();
+    for axis in available_axes {
+        if selected
+            .iter()
+            .any(|position| candidate_has_boss_relic_axis(&candidates[*position], axis.as_str()))
+        {
+            continue;
+        }
+
+        let Some(position) =
+            best_position_for_boss_relic_axis(candidates, available_positions, &selected, &axis)
+        else {
+            continue;
+        };
+
+        if kept.len() < limit {
+            kept.push(branch_retention_lane_pick_for_position(
+                candidates, position,
+            ));
+            selected.insert(position);
+            continue;
+        }
+
+        let Some(replace_index) = replaceable_boss_relic_axis_pick_index(candidates, &kept) else {
+            continue;
+        };
+        selected.remove(&kept[replace_index].position);
+        kept[replace_index] = branch_retention_lane_pick_for_position(candidates, position);
+        selected.insert(position);
+    }
+
+    kept
+}
+
 fn preserve_string_key_coverage<F>(
     candidates: &[BranchRetentionCandidateInputV1],
     available_positions: &[usize],
@@ -106,6 +159,65 @@ where
     }
 
     kept
+}
+
+fn available_boss_relic_axes(
+    candidates: &[BranchRetentionCandidateInputV1],
+    positions: &[usize],
+) -> BTreeSet<String> {
+    positions
+        .iter()
+        .flat_map(|position| candidate_boss_relic_axes(&candidates[*position]))
+        .collect()
+}
+
+fn candidate_boss_relic_axes(candidate: &BranchRetentionCandidateInputV1) -> Vec<String> {
+    candidate
+        .choice_effect_keys
+        .iter()
+        .filter(|key| key.starts_with("boss_relic:"))
+        .cloned()
+        .collect()
+}
+
+fn candidate_has_boss_relic_axis(candidate: &BranchRetentionCandidateInputV1, axis: &str) -> bool {
+    candidate.choice_effect_keys.iter().any(|key| key == axis)
+}
+
+fn best_position_for_boss_relic_axis(
+    candidates: &[BranchRetentionCandidateInputV1],
+    available_positions: &[usize],
+    selected: &BTreeSet<usize>,
+    axis: &str,
+) -> Option<usize> {
+    best_fill_position_allowed(candidates, available_positions, selected, |position| {
+        candidate_has_boss_relic_axis(&candidates[position], axis)
+    })
+}
+
+fn replaceable_boss_relic_axis_pick_index(
+    candidates: &[BranchRetentionCandidateInputV1],
+    picks: &[BranchRetentionLanePick],
+) -> Option<usize> {
+    let mut axis_counts = BTreeMap::<String, usize>::new();
+    for pick in picks {
+        for axis in candidate_boss_relic_axes(&candidates[pick.position]) {
+            *axis_counts.entry(axis).or_default() += 1;
+        }
+    }
+
+    picks
+        .iter()
+        .enumerate()
+        .filter(|(_, pick)| {
+            let axes = candidate_boss_relic_axes(&candidates[pick.position]);
+            axes.is_empty()
+                || axes
+                    .iter()
+                    .all(|axis| axis_counts.get(axis).copied().unwrap_or_default() > 1)
+        })
+        .min_by(|(_, left), (_, right)| compare_rank(candidates, left.position, right.position))
+        .map(|(index, _)| index)
 }
 
 fn available_string_keys<F>(

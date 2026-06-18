@@ -440,7 +440,7 @@ fn render_choice_effect_count_line(
     report: &BranchExperimentReportV1,
     choice_focus: &ChoiceFocus,
 ) -> Option<String> {
-    let mut counts = BTreeMap::<&'static str, usize>::new();
+    let mut counts = BTreeMap::<String, usize>::new();
     for branch in &report.branches {
         if !choice_focus.branch_in_scope(branch) {
             continue;
@@ -453,10 +453,6 @@ fn render_choice_effect_count_line(
     if counts.is_empty() {
         return None;
     }
-    let counts = counts
-        .into_iter()
-        .map(|(effect, count)| (effect.to_string(), count))
-        .collect::<BTreeMap<_, _>>();
     Some(format!(
         "Kept choice effects: {}",
         render_choice_effect_counts(&counts)
@@ -466,7 +462,7 @@ fn render_choice_effect_count_line(
 fn choice_effect_keys(
     branch: &BranchExperimentBranchReportV1,
     choice_focus: &ChoiceFocus,
-) -> BTreeSet<&'static str> {
+) -> BTreeSet<String> {
     if choice_focus.is_targeted() {
         return choice_focus
             .focused_choice(branch)

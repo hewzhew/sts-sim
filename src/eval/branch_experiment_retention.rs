@@ -588,6 +588,8 @@ fn select_positions_for_retention_portfolio(
     let selected = cap_redundant_choice_prefixes(candidates, positions, selected, limit);
     let selected = cap_redundant_first_pick_prefixes(candidates, positions, selected, limit);
     let selected =
+        effect_coverage::preserve_boss_relic_axis_coverage(candidates, positions, selected, limit);
+    let selected =
         effect_coverage::preserve_choice_effect_coverage(candidates, positions, selected, limit);
     let selected =
         effect_coverage::preserve_lineage_flag_coverage(candidates, positions, selected, limit);
@@ -860,14 +862,6 @@ fn branch_formation_need_rank_adjustment_v1(context: &BranchRetentionContextPack
 }
 
 fn branch_strategic_debt_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
-    const SOZU_POTION_LOCK_DEBT: i32 = -700;
-    const VELVET_CHOKER_ACTION_CAP_DEBT: i32 = -900;
-    const RUNIC_DOME_HIDDEN_INTENTS_DEBT: i32 = -800;
-    const COFFEE_DRIPPER_REST_LOCK_DEBT: i32 = -600;
-    const COFFEE_DRIPPER_NO_RECOVERY_DEBT: i32 = -1_400;
-    const COFFEE_DRIPPER_LOW_HP_DEBT: i32 = -1_000;
-    const COFFEE_DRIPPER_SELF_DAMAGE_DEBT: i32 = -800;
-    const COFFEE_DRIPPER_LOW_SURVIVAL_DEBT: i32 = -700;
     const BOTTLE_HIGH_OPENING_HAND_DEBT: i32 = -1_200;
     const BOTTLE_SITUATIONAL_OPENING_HAND_DEBT: i32 = -800;
     const BOTTLE_POWER_VS_AWAKENED_ONE_DEBT: i32 = -1_000;
@@ -879,19 +873,11 @@ fn branch_strategic_debt_rank_adjustment_v1(candidate: &BranchRetentionCandidate
             .strategic_debt_tags
             .iter()
             .map(|tag| match tag.as_str() {
-                "relic_constraint:sozu_potion_lock" => SOZU_POTION_LOCK_DEBT,
-                "relic_constraint:velvet_choker_action_cap" => VELVET_CHOKER_ACTION_CAP_DEBT,
-                "relic_constraint:runic_dome_hidden_intents" => RUNIC_DOME_HIDDEN_INTENTS_DEBT,
-                "relic_constraint:coffee_dripper_rest_lock" => COFFEE_DRIPPER_REST_LOCK_DEBT,
-                "run_debt:coffee_dripper:no_recovery_source" => COFFEE_DRIPPER_NO_RECOVERY_DEBT,
-                "run_debt:coffee_dripper:low_hp" => COFFEE_DRIPPER_LOW_HP_DEBT,
-                "run_debt:coffee_dripper:self_damage_aggravator" => COFFEE_DRIPPER_SELF_DAMAGE_DEBT,
-                "run_debt:coffee_dripper:low_survival_support" => COFFEE_DRIPPER_LOW_SURVIVAL_DEBT,
                 "bottle_debt:high_opening_hand" => BOTTLE_HIGH_OPENING_HAND_DEBT,
                 "bottle_debt:situational_opening_hand" => BOTTLE_SITUATIONAL_OPENING_HAND_DEBT,
                 "bottle_debt:power_vs_awakened_one" => BOTTLE_POWER_VS_AWAKENED_ONE_DEBT,
                 "bottle_debt:temporary_strength_burst" => BOTTLE_TEMPORARY_STRENGTH_BURST_DEBT,
-                _ => 0,
+                _ => crate::ai::strategic::run_debt_tag_rank_adjustment_v1(tag),
             })
             .sum::<i32>()
 }

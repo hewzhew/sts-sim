@@ -102,10 +102,28 @@ impl RunDebtLedgerV1 {
         self.contracts
             .iter()
             .flat_map(|contract| contract.tags.iter().cloned())
+            .chain(run_debt_compounding_tags_v1(self))
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect()
     }
+
+    pub fn compounding_tags(&self) -> Vec<String> {
+        run_debt_compounding_tags_v1(self)
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunDebtProjectionV1 {
+    pub current: RunDebtLedgerV1,
+    pub projected: RunDebtLedgerV1,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added_contracts: Vec<RunDebtContractV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compounding_tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compounding_labels: Vec<String>,
 }
 
 pub fn run_debt_ledger_v1(run_state: &RunState) -> RunDebtLedgerV1 {
@@ -130,6 +148,60 @@ pub fn run_debt_ledger_for_relics_v1(
         .filter_map(|relic| run_debt_contract_for_relic_v1(run_state, relic))
         .collect();
     RunDebtLedgerV1 { contracts }
+}
+
+pub fn run_debt_projection_for_relic_v1(
+    run_state: &RunState,
+    relic: RelicId,
+) -> RunDebtProjectionV1 {
+    let current = run_debt_ledger_v1(run_state);
+    let projected = run_debt_ledger_for_relics_v1(run_state, &[relic]);
+    let current_keys = current
+        .contracts
+        .iter()
+        .map(run_debt_contract_key_v1)
+        .collect::<BTreeSet<_>>();
+    let added_contracts = projected
+        .contracts
+        .iter()
+        .filter(|contract| !current_keys.contains(&run_debt_contract_key_v1(contract)))
+        .cloned()
+        .collect::<Vec<_>>();
+    let compounding_tags = projected.compounding_tags();
+    let compounding_labels = compounding_tags
+        .iter()
+        .map(|tag| run_debt_compounding_label_v1(tag).to_string())
+        .collect();
+    RunDebtProjectionV1 {
+        current,
+        projected,
+        added_contracts,
+        compounding_tags,
+        compounding_labels,
+    }
+}
+
+pub fn run_debt_tag_rank_adjustment_v1(tag: &str) -> i32 {
+    match tag {
+        "relic_constraint:sozu_potion_lock" => -700,
+        "relic_constraint:velvet_choker_action_cap" => -900,
+        "relic_constraint:runic_dome_hidden_intents" => -800,
+        "relic_constraint:coffee_dripper_rest_lock" => -600,
+        "run_debt:coffee_dripper:no_recovery_source" => -1_400,
+        "run_debt:coffee_dripper:low_hp" => -1_000,
+        "run_debt:coffee_dripper:self_damage_aggravator" => -800,
+        "run_debt:coffee_dripper:low_survival_support" => -700,
+        "run_debt_compound:rest_lock+reward_width" => -1_500,
+        "run_debt_compound:rest_lock+smith_lock" => -1_500,
+        "run_debt_compound:reward_width+smith_lock" => -1_100,
+        "run_debt_compound:rest_lock+card_play_cap" => -1_200,
+        "run_debt_compound:random_cost+card_play_cap" => -1_200,
+        _ => 0,
+    }
+}
+
+fn run_debt_contract_key_v1(contract: &RunDebtContractV1) -> (String, RunDebtContractKindV1) {
+    (contract.source.clone(), contract.kind)
 }
 
 fn run_debt_contract_for_relic_v1(
@@ -184,6 +256,62 @@ fn relic_debt_kind_v1(relic: RelicId) -> Option<RunDebtContractKindV1> {
         RelicId::VelvetChoker => Some(RunDebtContractKindV1::CardPlayCapDebt),
         RelicId::MarkOfTheBloom => Some(RunDebtContractKindV1::HealingDisabled),
         _ => None,
+    }
+}
+
+fn run_debt_compounding_tags_v1(ledger: &RunDebtLedgerV1) -> Vec<String> {
+    let kinds = ledger
+        .contracts
+        .iter()
+        .map(|contract| contract.kind)
+        .collect::<BTreeSet<_>>();
+    let mut tags = Vec::new();
+    if kinds.contains(&RunDebtContractKindV1::RestLock)
+        && kinds.contains(&RunDebtContractKindV1::RewardWidthDebt)
+    {
+        tags.push("run_debt_compound:rest_lock+reward_width".to_string());
+    }
+    if kinds.contains(&RunDebtContractKindV1::RestLock)
+        && kinds.contains(&RunDebtContractKindV1::SmithLock)
+    {
+        tags.push("run_debt_compound:rest_lock+smith_lock".to_string());
+    }
+    if kinds.contains(&RunDebtContractKindV1::RewardWidthDebt)
+        && kinds.contains(&RunDebtContractKindV1::SmithLock)
+    {
+        tags.push("run_debt_compound:reward_width+smith_lock".to_string());
+    }
+    if kinds.contains(&RunDebtContractKindV1::RestLock)
+        && kinds.contains(&RunDebtContractKindV1::CardPlayCapDebt)
+    {
+        tags.push("run_debt_compound:rest_lock+card_play_cap".to_string());
+    }
+    if kinds.contains(&RunDebtContractKindV1::RandomCostDeckShapeDebt)
+        && kinds.contains(&RunDebtContractKindV1::CardPlayCapDebt)
+    {
+        tags.push("run_debt_compound:random_cost+card_play_cap".to_string());
+    }
+    tags
+}
+
+fn run_debt_compounding_label_v1(tag: &str) -> &'static str {
+    match tag {
+        "run_debt_compound:rest_lock+reward_width" => {
+            "rest is locked while future card reward width is reduced"
+        }
+        "run_debt_compound:rest_lock+smith_lock" => {
+            "rest is locked while campfire upgrades are also locked"
+        }
+        "run_debt_compound:reward_width+smith_lock" => {
+            "future card reward width and upgrade conversion are both reduced"
+        }
+        "run_debt_compound:rest_lock+card_play_cap" => {
+            "rest is locked while combat recovery through many small actions is capped"
+        }
+        "run_debt_compound:random_cost+card_play_cap" => {
+            "random card costs are combined with a hard card-play cap"
+        }
+        _ => "multiple boss relic constraints compound",
     }
 }
 
@@ -446,5 +574,24 @@ mod tests {
             .iter()
             .any(|item| item.contains("MeatOnTheBone")));
         assert!(!contract.unresolved.contains(&"recovery_source".to_string()));
+    }
+
+    #[test]
+    fn boss_relic_projection_reports_compounded_reward_width_after_rest_lock() {
+        let mut run_state = RunState::new(7, 0, false, "Ironclad");
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::CoffeeDripper));
+
+        let projection = run_debt_projection_for_relic_v1(&run_state, RelicId::BustedCrown);
+
+        assert!(projection.added_contracts.iter().any(|contract| {
+            contract.source == "BustedCrown"
+                && contract.kind == RunDebtContractKindV1::RewardWidthDebt
+        }));
+        assert!(projection
+            .compounding_tags
+            .contains(&"run_debt_compound:rest_lock+reward_width".to_string()));
+        assert!(run_debt_tag_rank_adjustment_v1("run_debt_compound:rest_lock+reward_width") < 0);
     }
 }

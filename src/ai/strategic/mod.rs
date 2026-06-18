@@ -30,8 +30,9 @@ pub use retention::{
     BranchSignature, BranchSignatureCompact, RetentionBucket,
 };
 pub use run_debt::{
-    run_debt_ledger_for_relics_v1, run_debt_ledger_v1, RunDebtContractKindV1, RunDebtContractV1,
-    RunDebtLedgerV1,
+    run_debt_ledger_for_relics_v1, run_debt_ledger_v1, run_debt_projection_for_relic_v1,
+    run_debt_tag_rank_adjustment_v1, RunDebtContractKindV1, RunDebtContractV1, RunDebtLedgerV1,
+    RunDebtProjectionV1,
 };
 pub use shop_adapter::strategic_trace_for_shop;
 pub use snapshot::{StrategicDeckFacts, StrategicRouteFacts, StrategicSnapshot};

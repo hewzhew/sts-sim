@@ -2785,16 +2785,14 @@ fn append_limited_frozen_v1(
             continue;
         }
 
-        let Some((worst_index, worst_branch)) =
-            frozen.iter().enumerate().min_by(|(_, left), (_, right)| {
-                campaign_branch_retention_key_v1(left).cmp(&campaign_branch_retention_key_v1(right))
-            })
-        else {
+        let Some(worst_index) = frozen_replacement_index_v1(frozen, &branch) else {
             record_campaign_discard_v1(&branch, discarded_count, discarded_examples);
             continue;
         };
+        let worst_branch = &frozen[worst_index];
         if campaign_branch_retention_key_v1(&branch)
             > campaign_branch_retention_key_v1(worst_branch)
+            || branch_introduces_new_boss_relic_lineage_v1(frozen, &branch)
         {
             let displaced = std::mem::replace(&mut frozen[worst_index], branch);
             record_campaign_discard_v1(&displaced, discarded_count, discarded_examples);
@@ -2804,6 +2802,61 @@ fn append_limited_frozen_v1(
         }
     }
     added
+}
+
+fn frozen_replacement_index_v1(
+    frozen: &[BranchCampaignBranchV1],
+    incoming: &BranchCampaignBranchV1,
+) -> Option<usize> {
+    let lineage_counts = campaign_boss_relic_lineage_counts_v1(frozen);
+    if branch_introduces_new_boss_relic_lineage_v1(frozen, incoming) {
+        if let Some((index, _)) = frozen
+            .iter()
+            .enumerate()
+            .filter(|(_, branch)| {
+                branch_is_replaceable_without_losing_boss_relic_lineage_v1(branch, &lineage_counts)
+            })
+            .min_by(|(_, left), (_, right)| {
+                campaign_branch_retention_key_v1(left).cmp(&campaign_branch_retention_key_v1(right))
+            })
+        {
+            return Some(index);
+        }
+        return None;
+    }
+
+    frozen
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| {
+            branch_is_replaceable_without_losing_boss_relic_lineage_v1(branch, &lineage_counts)
+        })
+        .min_by(|(_, left), (_, right)| {
+            campaign_branch_retention_key_v1(left).cmp(&campaign_branch_retention_key_v1(right))
+        })
+        .map(|(index, _)| index)
+}
+
+fn branch_is_replaceable_without_losing_boss_relic_lineage_v1(
+    branch: &BranchCampaignBranchV1,
+    lineage_counts: &BTreeMap<String, usize>,
+) -> bool {
+    let Some(lineage) = campaign_branch_boss_relic_lineage_key_v1(branch) else {
+        return true;
+    };
+    lineage_counts.get(&lineage).copied().unwrap_or_default() > 1
+}
+
+fn branch_introduces_new_boss_relic_lineage_v1(
+    frozen: &[BranchCampaignBranchV1],
+    incoming: &BranchCampaignBranchV1,
+) -> bool {
+    let Some(lineage) = campaign_branch_boss_relic_lineage_key_v1(incoming) else {
+        return false;
+    };
+    !frozen
+        .iter()
+        .any(|branch| campaign_branch_boss_relic_lineage_key_v1(branch).as_ref() == Some(&lineage))
 }
 
 fn record_campaign_discard_v1(
@@ -3504,6 +3557,10 @@ fn campaign_boss_relic_label_v1(label: &str) -> Option<String> {
     let trimmed = label.trim();
     if BOSS_RELIC_CHOICE_LABELS_V1.contains(&trimmed) {
         Some(trimmed.to_string())
+    } else if let Some(first_token) = trimmed.split_whitespace().next() {
+        BOSS_RELIC_CHOICE_LABELS_V1
+            .contains(&first_token)
+            .then(|| first_token.to_string())
     } else {
         None
     }

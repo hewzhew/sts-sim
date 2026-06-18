@@ -323,7 +323,7 @@ impl BranchBoundaryOptionV1 {
             card: None,
             upgrades: None,
             selected_cards: Vec::new(),
-            effect_kind: "boss_relic".to_string(),
+            effect_kind: option.effect_kind,
             effect_key,
             representative_count: 1,
             suppressed_count: 0,

@@ -1112,7 +1112,7 @@ fn pruned_branch_summary_for_selection(
     summary
 }
 
-fn branch_choice_effect_key(choice: &BranchExperimentChoiceV1) -> &'static str {
+fn branch_choice_effect_key(choice: &BranchExperimentChoiceV1) -> String {
     branch_experiment_choice_effect_key_v1(&choice.effect_kind)
 }
 
@@ -1123,7 +1123,6 @@ fn branch_choice_effect_keys(branch: &BranchWork) -> Vec<String> {
         .map(branch_choice_effect_key)
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .map(str::to_string)
         .collect()
 }
 
@@ -1166,7 +1165,10 @@ fn bottled_card_debt_tags_v1(
     opening_hand_target_debt_tags_v1(run_state, relic, card, upgrades)
 }
 
-pub fn branch_experiment_choice_effect_key_v1(effect_kind: &str) -> &'static str {
+pub fn branch_experiment_choice_effect_key_v1(effect_kind: &str) -> String {
+    if effect_kind.starts_with("boss_relic:") {
+        return effect_kind.to_string();
+    }
     match effect_kind {
         "" | "add_card" => "take_card",
         "skip_card_reward" => "skip_reward",
@@ -1212,6 +1214,7 @@ pub fn branch_experiment_choice_effect_key_v1(effect_kind: &str) -> &'static str
         "recall" => "recall",
         _ => "other",
     }
+    .to_string()
 }
 
 fn branch_trajectory_package_state_tags(trajectory: &BranchTrajectorySignatureV1) -> Vec<String> {

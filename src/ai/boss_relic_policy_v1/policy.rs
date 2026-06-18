@@ -1,6 +1,7 @@
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyPackageIdV2, StrategyPlanSupportV1,
 };
+use crate::ai::strategic::run_debt_projection_for_relic_v1;
 use crate::content::relics::RelicId;
 use crate::state::run::RunState;
 
@@ -18,7 +19,7 @@ pub fn build_boss_relic_decision_context_v1(
     let candidates = relics
         .into_iter()
         .enumerate()
-        .map(|(index, relic)| candidate_evidence(index, relic, &strategy))
+        .map(|(index, relic)| candidate_evidence(run_state, index, relic, &strategy))
         .collect();
     BossRelicDecisionContextV1 {
         strategy,
@@ -56,12 +57,14 @@ pub fn plan_boss_relic_decision_v1(
 }
 
 fn candidate_evidence(
+    run_state: &RunState,
     index: usize,
     relic: RelicId,
     strategy: &crate::ai::noncombat_strategy_v1::RunStrategySnapshotV2,
 ) -> BossRelicCandidateEvidenceV1 {
     let class = classify_boss_relic(relic);
     let support_gate = support_gate_for_candidate(relic, class, strategy);
+    let debt_projection = run_debt_projection_for_relic_v1(run_state, relic);
     let mut evidence = vec![format!("boss relic class is {class:?}")];
     let mut risks = Vec::new();
 
@@ -105,11 +108,23 @@ fn candidate_evidence(
         }
     }
 
+    for contract in &debt_projection.added_contracts {
+        evidence.push(format!(
+            "adds run debt contract {}={}",
+            contract.source,
+            contract.kind.label()
+        ));
+    }
+    for label in &debt_projection.compounding_labels {
+        risks.push(format!("debt compounding: {label}"));
+    }
+
     BossRelicCandidateEvidenceV1 {
         index,
         relic,
         class,
         support_gate,
+        debt_projection,
         evidence,
         risks,
     }

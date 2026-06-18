@@ -3,6 +3,7 @@ use crate::ai::boss_relic_policy_v1::{
 };
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
+use crate::content::relics::RelicState;
 use crate::runtime::combat::CombatCard;
 use crate::state::run::RunState;
 
@@ -57,4 +58,29 @@ fn boss_relic_context_marks_strategic_power_choices() {
         .candidates
         .iter()
         .any(|candidate| candidate.class == BossRelicPolicyClassV1::StrategicPower));
+}
+
+#[test]
+fn boss_relic_context_projects_compounded_run_debt() {
+    let mut run = RunState::new(7, 0, false, "Ironclad");
+    run.relics.push(RelicState::new(RelicId::CoffeeDripper));
+
+    let context = build_boss_relic_decision_context_v1(
+        &run,
+        vec![RelicId::BustedCrown, RelicId::TinyHouse, RelicId::EmptyCage],
+    );
+    let busted_crown = context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.relic == RelicId::BustedCrown)
+        .expect("Busted Crown candidate should exist");
+
+    assert!(busted_crown
+        .debt_projection
+        .compounding_tags
+        .contains(&"run_debt_compound:rest_lock+reward_width".to_string()));
+    assert!(busted_crown
+        .risks
+        .iter()
+        .any(|risk| risk.contains("debt compounding")));
 }

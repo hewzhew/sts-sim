@@ -98,10 +98,16 @@ fn compact_campaign_report_truncates_long_branch_pressure_examples() {
 #[test]
 fn compact_campaign_report_renders_boss_relic_lineage_coverage() {
     let mut report = test_campaign_report_with_active("active-key", 18, 80);
-    report.active[0].choice_labels = vec!["CursedKey".to_string(), "Pommel Strike".to_string()];
+    report.active[0].choice_labels = vec![
+        "CursedKey adds debt curse_chest_debt".to_string(),
+        "Pommel Strike".to_string(),
+    ];
     let mut frozen_hammer = test_campaign_branch("frozen-hammer", 18, 78);
     frozen_hammer.status = BranchCampaignBranchStatusV1::Frozen;
-    frozen_hammer.choice_labels = vec!["FusionHammer".to_string(), "Shrug It Off".to_string()];
+    frozen_hammer.choice_labels = vec![
+        "FusionHammer adds debt smith_lock".to_string(),
+        "Shrug It Off".to_string(),
+    ];
     let mut abandoned_key = test_campaign_branch("abandoned-key", 48, 30);
     abandoned_key.status = BranchCampaignBranchStatusV1::Abandoned;
     abandoned_key.choice_labels = vec!["CursedKey".to_string(), "Clothesline".to_string()];
@@ -910,6 +916,91 @@ fn campaign_frozen_overflow_discards_weaker_incoming_branch() {
     assert_eq!(frozen[0].branch_id, "existing");
     assert_eq!(discarded_count, 1);
     assert_eq!(discarded_examples, vec!["Wild Strike -> Skip card reward"]);
+}
+
+#[test]
+fn campaign_frozen_overflow_preserves_new_boss_relic_lineage() {
+    let mut coffee_high = test_campaign_branch("coffee-high", 18, 80);
+    coffee_high.rank_key = 20_000;
+    coffee_high.choice_labels = vec![
+        "CoffeeDripper adds debt rest_lock".to_string(),
+        "Pommel Strike".to_string(),
+    ];
+    let mut coffee_low = test_campaign_branch("coffee-low", 18, 78);
+    coffee_low.rank_key = 19_000;
+    coffee_low.choice_labels = vec![
+        "CoffeeDripper adds debt rest_lock".to_string(),
+        "Clothesline".to_string(),
+    ];
+    let mut hammer = test_campaign_branch("hammer", 18, 72);
+    hammer.rank_key = 18_000;
+    hammer.choice_labels = vec![
+        "FusionHammer adds debt smith_lock".to_string(),
+        "Shrug It Off".to_string(),
+    ];
+    let mut frozen = vec![coffee_high, coffee_low];
+    let mut discarded_count = 0usize;
+    let mut discarded_examples = Vec::new();
+
+    let added = append_limited_frozen_v1(
+        &mut frozen,
+        vec![hammer],
+        2,
+        &mut discarded_count,
+        &mut discarded_examples,
+    );
+
+    assert_eq!(added, 1);
+    assert_eq!(discarded_count, 1);
+    assert!(frozen
+        .iter()
+        .any(|branch| branch.branch_id == "coffee-high"));
+    assert!(frozen.iter().any(|branch| branch.branch_id == "hammer"));
+    assert_eq!(
+        frozen
+            .iter()
+            .filter_map(campaign_branch_boss_relic_lineage_key_v1)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["CoffeeDripper".to_string(), "FusionHammer".to_string()])
+    );
+}
+
+#[test]
+fn campaign_frozen_overflow_does_not_evict_unique_boss_relic_lineage_for_duplicate() {
+    let mut coffee = test_campaign_branch("coffee", 18, 78);
+    coffee.rank_key = 19_000;
+    coffee.choice_labels = vec![
+        "CoffeeDripper adds debt rest_lock".to_string(),
+        "Clothesline".to_string(),
+    ];
+    let mut hammer = test_campaign_branch("hammer", 18, 72);
+    hammer.rank_key = 18_000;
+    hammer.choice_labels = vec![
+        "FusionHammer adds debt smith_lock".to_string(),
+        "Shrug It Off".to_string(),
+    ];
+    let mut better_coffee = test_campaign_branch("better-coffee", 19, 80);
+    better_coffee.rank_key = 22_000;
+    better_coffee.choice_labels = vec![
+        "CoffeeDripper adds debt rest_lock".to_string(),
+        "Pommel Strike".to_string(),
+    ];
+    let mut frozen = vec![coffee, hammer];
+    let mut discarded_count = 0usize;
+    let mut discarded_examples = Vec::new();
+
+    let added = append_limited_frozen_v1(
+        &mut frozen,
+        vec![better_coffee],
+        2,
+        &mut discarded_count,
+        &mut discarded_examples,
+    );
+
+    assert_eq!(added, 0);
+    assert_eq!(discarded_count, 1);
+    assert!(frozen.iter().any(|branch| branch.branch_id == "coffee"));
+    assert!(frozen.iter().any(|branch| branch.branch_id == "hammer"));
 }
 
 #[test]

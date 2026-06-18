@@ -1130,6 +1130,22 @@ fn branch_choice_effect_key_preserves_shop_effects() {
 }
 
 #[test]
+fn branch_choice_effect_key_preserves_boss_relic_axis() {
+    assert_eq!(
+        branch_experiment_choice_effect_key_v1("boss_relic:BustedCrown"),
+        "boss_relic:BustedCrown"
+    );
+    assert_eq!(
+        branch_experiment_choice_effect_key_v1("boss_relic:TinyHouse"),
+        "boss_relic:TinyHouse"
+    );
+    assert_eq!(
+        branch_experiment_choice_effect_key_v1("boss_relic"),
+        "boss_relic"
+    );
+}
+
+#[test]
 fn branch_summary_tracks_shop_buy_card_choice_in_trajectory() {
     let session = RunControlSession::new(RunControlConfig::default());
     let choices = vec![BranchExperimentChoiceV1 {
