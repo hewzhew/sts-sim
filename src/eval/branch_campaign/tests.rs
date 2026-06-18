@@ -258,6 +258,30 @@ fn compact_campaign_report_renders_abandoned_examples_while_continuing() {
 }
 
 #[test]
+fn compact_campaign_report_renders_final_boss_failure_summary() {
+    let mut report = test_campaign_report_with_active("active", 47, 80);
+    let mut abandoned = test_campaign_branch("boss-fail", 48, 88);
+    abandoned.status = BranchCampaignBranchStatusV1::Abandoned;
+    abandoned.frontier_title = "Combat".to_string();
+    abandoned.stop_reason = "combat search did not find an executable complete win".to_string();
+    if let Some(summary) = abandoned.summary.as_mut() {
+        summary.act = 3;
+        summary.floor = 48;
+        summary.max_hp = 88;
+        summary.deck_count = 20;
+        summary.deck_key = "Strike+0x2;Defend+0x4;Bash+1x1;Bludgeon+1x1;Demon Form+0x1".to_string();
+        summary.boss = "DonuAndDeca".to_string();
+    }
+    report.abandoned = vec![abandoned];
+
+    let rendered = render_branch_campaign_compact_v1(&report, 1);
+
+    assert!(rendered
+        .contains("Final boss failures: abandoned=1 bosses=[DonuAndDeca=1] hp=88..88 deck=20..20"));
+    assert!(rendered.contains("A3F48 HP 88/88 gold 99 deck 20"));
+}
+
+#[test]
 fn compact_campaign_report_renders_unspent_gold_pressure_near_boss() {
     let mut report = test_campaign_report_with_active("rich", 16, 30);
     report.active[0].summary.as_mut().unwrap().gold = 485;

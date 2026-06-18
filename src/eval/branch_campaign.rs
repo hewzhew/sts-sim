@@ -1113,6 +1113,11 @@ pub fn render_branch_campaign_compact_v1(
             render_campaign_branch_examples_v1(&report.abandoned, 3)
         ));
     }
+    if let Some(final_boss_failures) =
+        render_campaign_final_boss_failure_summary_v1(report, branch_examples)
+    {
+        lines.push(final_boss_failures);
+    }
     if report.route_evidence.decisions > 0 {
         lines.push(format!(
             "Route evidence: decisions={} first_elite optional={} forced={} none={} avg_elite_prep={} underprepared={} bailouts=rest:{} shop:{}",
@@ -1258,6 +1263,69 @@ pub fn render_branch_campaign_compact_v1(
         }
     }
     lines.join("\n")
+}
+
+fn render_campaign_final_boss_failure_summary_v1(
+    report: &BranchCampaignReportV1,
+    branch_examples: usize,
+) -> Option<String> {
+    let failures = report
+        .abandoned
+        .iter()
+        .filter(|branch| {
+            branch.frontier_title == "Combat"
+                && branch
+                    .summary
+                    .as_ref()
+                    .is_some_and(|summary| summary.act == 3 && summary.floor >= 48)
+        })
+        .collect::<Vec<_>>();
+    if failures.is_empty() {
+        return None;
+    }
+
+    let mut boss_counts = BTreeMap::<String, usize>::new();
+    let mut hp_min = i32::MAX;
+    let mut hp_max = i32::MIN;
+    let mut deck_min = usize::MAX;
+    let mut deck_max = usize::MIN;
+    for branch in &failures {
+        if let Some(summary) = branch.summary.as_ref() {
+            let boss = if summary.boss.is_empty() {
+                "unknown".to_string()
+            } else {
+                summary.boss.clone()
+            };
+            *boss_counts.entry(boss).or_default() += 1;
+            hp_min = hp_min.min(summary.hp);
+            hp_max = hp_max.max(summary.hp);
+            deck_min = deck_min.min(summary.deck_count);
+            deck_max = deck_max.max(summary.deck_count);
+        }
+    }
+
+    let bosses = boss_counts
+        .into_iter()
+        .map(|(boss, count)| format!("{boss}={count}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let examples = failures
+        .iter()
+        .take(branch_examples.max(1).min(3))
+        .map(|branch| render_campaign_branch_state(branch))
+        .collect::<Vec<_>>()
+        .join(" | ");
+
+    Some(format!(
+        "Final boss failures: abandoned={} bosses=[{}] hp={}..{} deck={}..{} examples=[{}]",
+        failures.len(),
+        bosses,
+        hp_min,
+        hp_max,
+        deck_min,
+        deck_max,
+        examples
+    ))
 }
 
 fn format_seconds_1dp_v1(ms: u64) -> String {
