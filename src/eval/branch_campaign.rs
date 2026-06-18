@@ -28,6 +28,7 @@ mod progress;
 mod retry;
 mod run_domain;
 mod selection_key;
+mod state_graph;
 mod strategic_signals;
 pub use model::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
@@ -56,6 +57,7 @@ use selection_key::{
     act_boss_floor_v1, campaign_branch_retention_key_v1, compare_campaign_branches_for_active_v1,
     compare_campaign_branches_for_promotion_v1, render_campaign_branch_selection_basis_v1,
 };
+use state_graph::BranchStateStoreV1;
 use strategic_signals::{
     campaign_strategic_signals_for_render_v1, campaign_strategic_signals_from_groups_v1,
     render_campaign_strategic_concern_v1, render_campaign_strategic_signals_v1,
@@ -232,7 +234,7 @@ struct BranchCampaignRunStateV1 {
     route_evidence: BranchCampaignRouteEvidenceSummaryV1,
     combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1,
     rounds: Vec<BranchCampaignRoundSummaryV1>,
-    snapshot_cache: BTreeMap<Vec<String>, RunControlSession>,
+    state_store: BranchStateStoreV1,
     recovered_checkpoint_failure_commands: BTreeSet<Vec<String>>,
 }
 
@@ -412,7 +414,7 @@ where
             &mut state.active,
             &mut state.frozen,
             &mut state.stuck,
-            &mut state.snapshot_cache,
+            &mut state.state_store,
             config.max_active,
             config.max_frozen,
         );
@@ -554,7 +556,7 @@ where
         let mut batch = run_campaign_parent_batch_v1(
             config,
             &parents,
-            &mut state.snapshot_cache,
+            &mut state.state_store,
             &mut state.combat_retry_ledger,
             round_number,
             false,
@@ -584,7 +586,7 @@ where
                     batch = run_campaign_parent_batch_v1(
                         &retry_config,
                         &parents,
-                        &mut state.snapshot_cache,
+                        &mut state.state_store,
                         &mut state.combat_retry_ledger,
                         round_number,
                         true,
@@ -633,7 +635,7 @@ where
             &mut state.active,
             &mut state.frozen,
             &mut state.stuck,
-            &mut state.snapshot_cache,
+            &mut state.state_store,
             config.max_active,
             config.max_frozen,
         );
@@ -658,8 +660,7 @@ where
             &state.stuck,
             &state.abandoned,
         );
-        retain_campaign_snapshot_cache_v1(
-            &mut state.snapshot_cache,
+        state.state_store.retain_for_branches(
             &state.active,
             &state.frozen,
             &state.abandoned,
@@ -864,7 +865,7 @@ fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),
         rounds: Vec::new(),
-        snapshot_cache: BTreeMap::new(),
+        state_store: BranchStateStoreV1::new(),
         recovered_checkpoint_failure_commands: BTreeSet::new(),
     }
 }
@@ -886,7 +887,7 @@ fn campaign_state_from_report_v1(report: &BranchCampaignReportV1) -> BranchCampa
             &report.combat_retry_ledger,
         ),
         rounds: report.rounds.clone(),
-        snapshot_cache: BTreeMap::new(),
+        state_store: BranchStateStoreV1::new(),
         recovered_checkpoint_failure_commands: BTreeSet::new(),
     }
 }
@@ -907,7 +908,7 @@ fn campaign_state_from_report_and_checkpoint_v1(
         .collect::<std::collections::BTreeSet<_>>();
     for entry in &checkpoint.sessions {
         if keep.contains(&entry.commands) {
-            state.snapshot_cache.insert(
+            state.state_store.insert_session(
                 entry.commands.clone(),
                 entry.session.clone().into_session().map_err(|err| {
                     format!("failed to restore campaign checkpoint session: {err}")
@@ -917,7 +918,7 @@ fn campaign_state_from_report_and_checkpoint_v1(
     }
     state
         .stuck
-        .retain(|branch| state.snapshot_cache.contains_key(&branch.commands));
+        .retain(|branch| state.state_store.contains_commands(&branch.commands));
     state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
         state.strategy_requests,
         &state.active,
@@ -940,7 +941,7 @@ fn campaign_checkpoint_from_state_v1(
         .chain(state.abandoned.iter())
         .chain(state.stuck.iter())
     {
-        if let Some(session) = state.snapshot_cache.get(&branch.commands) {
+        if let Some(session) = state.state_store.get_session(&branch.commands) {
             sessions.push(BranchCampaignCheckpointSessionV1 {
                 commands: branch.commands.clone(),
                 session: RunControlSessionCheckpointV1::from_session(session),
@@ -955,23 +956,6 @@ fn campaign_checkpoint_from_state_v1(
         rounds_completed: state.rounds_completed,
         sessions,
     }
-}
-
-fn retain_campaign_snapshot_cache_v1(
-    snapshot_cache: &mut BTreeMap<Vec<String>, RunControlSession>,
-    active: &[BranchCampaignBranchV1],
-    frozen: &[BranchCampaignBranchV1],
-    abandoned: &[BranchCampaignBranchV1],
-    stuck: &[BranchCampaignBranchV1],
-) {
-    let keep = active
-        .iter()
-        .chain(frozen.iter())
-        .chain(abandoned.iter())
-        .chain(stuck.iter())
-        .map(|branch| branch.commands.clone())
-        .collect::<std::collections::BTreeSet<_>>();
-    snapshot_cache.retain(|commands, _| keep.contains(commands));
 }
 
 fn validate_campaign_resume_checkpoint_v1(
@@ -2230,7 +2214,7 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
 fn run_campaign_parent_batch_v1<F>(
     config: &BranchCampaignConfigV1,
     parents: &[BranchCampaignBranchV1],
-    snapshot_cache: &mut BTreeMap<Vec<String>, RunControlSession>,
+    state_store: &mut BranchStateStoreV1,
     combat_retry_ledger: &mut BranchCampaignCombatRetryLedgerStateV1,
     round_number: usize,
     round_retry: bool,
@@ -2264,7 +2248,7 @@ where
 
     let parent_snapshots = parents
         .iter()
-        .map(|parent| snapshot_cache.get(&parent.commands).cloned())
+        .map(|parent| state_store.get_session_cloned(&parent.commands))
         .collect::<Vec<_>>();
     let base_results =
         run_campaign_parent_base_passes_parallel_v1(config, parents, &parent_snapshots)?;
@@ -2350,7 +2334,7 @@ where
             if let Some(snapshot) = result.branch_sessions.get(&branch.branch_id) {
                 campaign_refresh_branch_summary_from_session_v1(&mut child, snapshot);
                 maybe_attach_campaign_combat_lab_probe_v1(config, &mut child, snapshot);
-                snapshot_cache.insert(child.commands.clone(), snapshot.clone());
+                state_store.insert_session(child.commands.clone(), snapshot.clone());
             }
             candidates.push(child);
         }
@@ -4067,7 +4051,7 @@ fn recover_auto_advanceable_stuck_branches_v1(
     active: &mut Vec<BranchCampaignBranchV1>,
     frozen: &mut Vec<BranchCampaignBranchV1>,
     stuck: &mut Vec<BranchCampaignBranchV1>,
-    snapshot_cache: &mut BTreeMap<Vec<String>, RunControlSession>,
+    state_store: &mut BranchStateStoreV1,
     max_active: usize,
     max_frozen: usize,
 ) -> usize {
@@ -4079,7 +4063,7 @@ fn recover_auto_advanceable_stuck_branches_v1(
     let mut recovered = 0usize;
     for branch in stuck.drain(..) {
         if let Some(recovered_branch) =
-            try_recover_auto_advanceable_stuck_branch_v1(&branch, snapshot_cache)
+            try_recover_auto_advanceable_stuck_branch_v1(&branch, state_store)
         {
             let _placed = place_recovered_campaign_branch_v1(
                 active,
@@ -4104,7 +4088,7 @@ fn recover_checkpointed_combat_failures_on_stall_v1(
     if max_active == 0 || !state.active.is_empty() || !state.frozen.is_empty() {
         return 0;
     }
-    if state.snapshot_cache.is_empty() || state.abandoned.is_empty() {
+    if state.state_store.is_empty() || state.abandoned.is_empty() {
         return 0;
     }
 
@@ -4120,7 +4104,7 @@ fn recover_checkpointed_combat_failures_on_stall_v1(
         }
         if campaign_checkpoint_failure_is_combat_resume_candidate_v1(
             &branch,
-            match state.snapshot_cache.get(&branch.commands) {
+            match state.state_store.get_session(&branch.commands) {
                 Some(session) => session,
                 None => {
                     remaining.push(branch);
@@ -4141,7 +4125,7 @@ fn recover_checkpointed_combat_failures_on_stall_v1(
             remaining.push(branch);
             continue;
         }
-        match try_rehydrate_checkpoint_failure_branch_v1(&branch, &state.snapshot_cache) {
+        match try_rehydrate_checkpoint_failure_branch_v1(&branch, &state.state_store) {
             Some(mut recovered_branch) => {
                 recovered_branch.status = BranchCampaignBranchStatusV1::Active;
                 state
@@ -4162,7 +4146,7 @@ fn rehydrate_checkpoint_failures_on_resume_v1(
     max_active: usize,
     max_frozen: usize,
 ) -> usize {
-    if state.snapshot_cache.is_empty() {
+    if state.state_store.is_empty() {
         return 0;
     }
 
@@ -4172,7 +4156,7 @@ fn rehydrate_checkpoint_failures_on_resume_v1(
         abandoned,
         &mut state.active,
         &mut state.frozen,
-        &state.snapshot_cache,
+        &state.state_store,
         &mut state.recovered_checkpoint_failure_commands,
         max_active,
         max_frozen,
@@ -4184,7 +4168,7 @@ fn rehydrate_checkpoint_failures_on_resume_v1(
         stuck,
         &mut state.active,
         &mut state.frozen,
-        &state.snapshot_cache,
+        &state.state_store,
         &mut state.recovered_checkpoint_failure_commands,
         max_active,
         max_frozen,
@@ -4195,7 +4179,7 @@ fn rehydrate_checkpoint_failures_on_resume_v1(
         &mut state.active,
         &mut state.frozen,
         &mut state.stuck,
-        &mut state.snapshot_cache,
+        &mut state.state_store,
         max_active,
         max_frozen,
     ));
@@ -4206,7 +4190,7 @@ fn rehydrate_checkpoint_failure_list_v1(
     branches: Vec<BranchCampaignBranchV1>,
     active: &mut Vec<BranchCampaignBranchV1>,
     frozen: &mut Vec<BranchCampaignBranchV1>,
-    snapshot_cache: &BTreeMap<Vec<String>, RunControlSession>,
+    state_store: &BranchStateStoreV1,
     recovered_commands: &mut BTreeSet<Vec<String>>,
     max_active: usize,
     max_frozen: usize,
@@ -4216,7 +4200,7 @@ fn rehydrate_checkpoint_failure_list_v1(
     let mut remaining = Vec::new();
     let mut candidates = Vec::<(BranchCampaignBranchV1, BranchCampaignBranchV1)>::new();
     for branch in branches {
-        if let Some(recovered) = try_rehydrate_checkpoint_failure_branch_v1(&branch, snapshot_cache)
+        if let Some(recovered) = try_rehydrate_checkpoint_failure_branch_v1(&branch, state_store)
         {
             candidates.push((branch, recovered));
         } else {
@@ -4242,9 +4226,9 @@ fn rehydrate_checkpoint_failure_list_v1(
 
 fn try_rehydrate_checkpoint_failure_branch_v1(
     branch: &BranchCampaignBranchV1,
-    snapshot_cache: &BTreeMap<Vec<String>, RunControlSession>,
+    state_store: &BranchStateStoreV1,
 ) -> Option<BranchCampaignBranchV1> {
-    let session = snapshot_cache.get(&branch.commands)?;
+    let session = state_store.get_session(&branch.commands)?;
     if !campaign_checkpoint_failure_is_combat_resume_candidate_v1(branch, session) {
         return None;
     }
@@ -4430,10 +4414,10 @@ fn branch_campaign_boss_v1(
 
 fn try_recover_auto_advanceable_stuck_branch_v1(
     branch: &BranchCampaignBranchV1,
-    snapshot_cache: &mut BTreeMap<Vec<String>, RunControlSession>,
+    state_store: &mut BranchStateStoreV1,
 ) -> Option<BranchCampaignBranchV1> {
     let original_frontier = branch.frontier_title.clone();
-    let mut session = snapshot_cache.get(&branch.commands)?.clone();
+    let mut session = state_store.get_session(&branch.commands)?.clone();
     let checkpoint_frontier = build_decision_surface(&session).view.header.title;
     if checkpoint_frontier != original_frontier && branch_boundary_available(&session) {
         let mut recovered = branch.clone();
@@ -4449,7 +4433,7 @@ fn try_recover_auto_advanceable_stuck_branch_v1(
         recovered.status = BranchCampaignBranchStatusV1::Active;
         recovered.stop_reason = "recovered from current branch boundary".to_string();
         campaign_refresh_branch_summary_from_session_v1(&mut recovered, &session);
-        snapshot_cache.insert(branch.commands.clone(), session);
+        state_store.insert_session(branch.commands.clone(), session);
         return Some(recovered);
     }
 
@@ -4475,7 +4459,7 @@ fn try_recover_auto_advanceable_stuck_branch_v1(
     recovered.status = BranchCampaignBranchStatusV1::Active;
     recovered.stop_reason = "recovered by one-step auto-advance".to_string();
     campaign_refresh_branch_summary_from_session_v1(&mut recovered, &session);
-    snapshot_cache.insert(branch.commands.clone(), session);
+    state_store.insert_session(branch.commands.clone(), session);
     Some(recovered)
 }
 

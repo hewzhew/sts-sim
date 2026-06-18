@@ -18,7 +18,32 @@ use crate::eval::run_control::{
 use crate::state::core::EngineState;
 use crate::state::events::{EventId, EventState};
 use crate::state::rewards::{RewardCard, RewardItem, RewardState};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
+
+#[test]
+fn branch_state_store_tracks_snapshot_hits_and_retention() {
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+    let mut kept = test_campaign_branch("kept", 6, 80);
+    kept.commands = vec!["rp 0".to_string(), "rp 1".to_string()];
+    let mut dropped = test_campaign_branch("dropped", 6, 78);
+    dropped.commands = vec!["rp 2".to_string()];
+    let kept_session = RunControlSession::new(RunControlConfig::default());
+    let dropped_session = RunControlSession::new(RunControlConfig::default());
+
+    store.insert_session(kept.commands.clone(), kept_session);
+    store.insert_session(dropped.commands.clone(), dropped_session);
+
+    assert!(store.get_session_cloned(&kept.commands).is_some());
+    assert!(store.get_session_cloned(&["missing".to_string()]).is_none());
+    store.retain_for_branches(&[kept.clone()], &[], &[], &[]);
+
+    let stats = store.stats();
+    assert_eq!(stats.snapshot_count, 1);
+    assert_eq!(stats.lookup_hits, 1);
+    assert_eq!(stats.lookup_misses, 1);
+    assert!(store.contains_commands(&kept.commands));
+    assert!(!store.contains_commands(&dropped.commands));
+}
 
 #[test]
 fn campaign_compact_report_renders_route_evidence_summary() {
@@ -2125,14 +2150,14 @@ fn campaign_parent_batch_starts_all_parents_before_finished_events() {
         ..BranchCampaignConfigV1::default()
     };
     let parents = vec![root_campaign_branch_v1(), root_campaign_branch_v1()];
-    let mut snapshot_cache = BTreeMap::new();
+    let mut state_store = super::state_graph::BranchStateStoreV1::new();
     let mut retry_ledger = BranchCampaignCombatRetryLedgerStateV1::default();
     let mut progress_sequence = Vec::new();
 
     run_campaign_parent_batch_v1(
         &config,
         &parents,
-        &mut snapshot_cache,
+        &mut state_store,
         &mut retry_ledger,
         1,
         false,
@@ -2884,7 +2909,7 @@ fn campaign_recovers_stuck_branch_if_one_auto_step_leaves_frontier() {
         21,
         53,
     )];
-    let mut snapshot_cache = BTreeMap::new();
+    let mut state_store = super::state_graph::BranchStateStoreV1::new();
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.event_state = Some(EventState {
         id: EventId::Beggar,
@@ -2895,13 +2920,13 @@ fn campaign_recovers_stuck_branch_if_one_auto_step_leaves_frontier() {
         extra_data: Vec::new(),
     });
     session.engine_state = EngineState::EventRoom;
-    snapshot_cache.insert(stuck[0].commands.clone(), session);
+    state_store.insert_session(stuck[0].commands.clone(), session);
 
     let recovered = recover_auto_advanceable_stuck_branches_v1(
         &mut active,
         &mut frozen,
         &mut stuck,
-        &mut snapshot_cache,
+        &mut state_store,
         1,
         0,
     );
@@ -2911,8 +2936,8 @@ fn campaign_recovers_stuck_branch_if_one_auto_step_leaves_frontier() {
     assert_eq!(active.len(), 1);
     assert_eq!(active[0].frontier_title, "Map");
     assert!(matches!(
-        snapshot_cache
-            .get(&active[0].commands)
+        state_store
+            .get_session(&active[0].commands)
             .expect("recovered snapshot should be retained")
             .engine_state,
         EngineState::MapNavigation
@@ -2930,16 +2955,16 @@ fn campaign_recovers_stale_empty_campfire_portfolio_when_boundary_is_now_availab
         38,
         80,
     )];
-    let mut snapshot_cache = BTreeMap::new();
+    let mut state_store = super::state_graph::BranchStateStoreV1::new();
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.engine_state = EngineState::Campfire;
-    snapshot_cache.insert(stuck[0].commands.clone(), session);
+    state_store.insert_session(stuck[0].commands.clone(), session);
 
     let recovered = recover_auto_advanceable_stuck_branches_v1(
         &mut active,
         &mut frozen,
         &mut stuck,
-        &mut snapshot_cache,
+        &mut state_store,
         1,
         4,
     );
@@ -3420,7 +3445,11 @@ fn campaign_state_uses_snapshot_without_replaying_parent_commands() {
             route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
             combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),
             rounds: Vec::new(),
-            snapshot_cache: BTreeMap::from([(parent.commands.clone(), session)]),
+            state_store: {
+                let mut store = super::state_graph::BranchStateStoreV1::new();
+                store.insert_session(parent.commands.clone(), session);
+                store
+            },
             recovered_checkpoint_failure_commands: BTreeSet::new(),
         },
         |_| {},
@@ -3473,10 +3502,12 @@ fn campaign_checkpoint_preserves_abandoned_and_stuck_snapshots_for_diagnostics()
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),
         rounds: Vec::new(),
-        snapshot_cache: BTreeMap::from([
-            (abandoned.commands.clone(), abandoned_session),
-            (stuck.commands.clone(), stuck_session),
-        ]),
+        state_store: {
+            let mut store = super::state_graph::BranchStateStoreV1::new();
+            store.insert_session(abandoned.commands.clone(), abandoned_session);
+            store.insert_session(stuck.commands.clone(), stuck_session);
+            store
+        },
         recovered_checkpoint_failure_commands: BTreeSet::new(),
     };
 
