@@ -40,12 +40,12 @@ use sts_simulator::eval::branch_outcome_dataset_v1::{
 use sts_simulator::eval::neow_guided_prefix::{
     neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
 };
-use sts_simulator::eval::run_control::{canonical_player_class, RunControlHpLossLimit};
 use sts_simulator::eval::run_control::{
     build_decision_surface, render_run_control_details, render_run_control_state,
     RunControlCombatSegmentMode, RunControlCommand, RunControlSearchCombatOptions,
     RunControlSession,
 };
+use sts_simulator::eval::run_control::{canonical_player_class, RunControlHpLossLimit};
 
 const QUICK_PRESET_MAX_ROUNDS: usize = 2;
 const QUICK_PRESET_ROUND_DEPTH: usize = 2;
@@ -811,8 +811,9 @@ fn checkpoint_session_matches_filters(args: &Args, session: &RunControlSession) 
     }
     if let Some(boundary) = args.inspect_boundary.as_ref() {
         let expected = normalized_inspect_boundary_title_v1(boundary);
-        let actual =
-            normalized_inspect_boundary_title_v1(&build_decision_surface(session).view.header.title);
+        let actual = normalized_inspect_boundary_title_v1(
+            &build_decision_surface(session).view.header.title,
+        );
         if actual != expected {
             return false;
         }
@@ -1430,8 +1431,8 @@ mod tests {
 
     #[test]
     fn explore_preset_uses_wider_shallower_branching() {
-        let args = parse_args_from(["branch_campaign_driver", "--preset", "explore"])
-            .expect("args parse");
+        let args =
+            parse_args_from(["branch_campaign_driver", "--preset", "explore"]).expect("args parse");
         let config = campaign_config_from_args(&args).expect("config builds");
 
         assert_eq!(config.max_rounds, 4);

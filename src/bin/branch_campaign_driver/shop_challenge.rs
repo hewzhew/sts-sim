@@ -10,8 +10,7 @@ use sts_simulator::eval::branch_experiment::{
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use sts_simulator::eval::run_control::{
-    shop_plan_step_input_and_label_v1, RunControlCommand, RunControlHpLossLimit,
-    RunControlSession,
+    shop_plan_step_input_and_label_v1, RunControlCommand, RunControlHpLossLimit, RunControlSession,
 };
 use sts_simulator::state::core::EngineState;
 
@@ -58,6 +57,7 @@ pub(super) fn render_checkpoint_shop_plan_challenge_v1(
         context.conversion_pressure, context.affordable_purchase_exists, context.need.boss
     ));
 
+    let mut comparison_rows = Vec::new();
     for (idx, plan) in plans.iter().enumerate() {
         lines.push(String::new());
         lines.push(format!(
@@ -91,6 +91,17 @@ pub(super) fn render_checkpoint_shop_plan_challenge_v1(
                         "  best: {}",
                         render_challenge_branch_summary_v1(best)
                     ));
+                    comparison_rows.push(ShopPlanChallengeComparisonRowV1::from_best_branch(
+                        idx,
+                        plan,
+                        &applied,
+                        &result.report.branches,
+                        best,
+                    ));
+                } else {
+                    comparison_rows.push(ShopPlanChallengeComparisonRowV1::empty_result(
+                        idx, plan, &applied,
+                    ));
                 }
                 let stop_reasons = result
                     .report
@@ -108,11 +119,131 @@ pub(super) fn render_checkpoint_shop_plan_challenge_v1(
             }
             Err(err) => {
                 lines.push(format!("  apply_error: {err}"));
+                comparison_rows.push(ShopPlanChallengeComparisonRowV1::apply_error(
+                    idx, plan, &err,
+                ));
             }
         }
     }
 
+    if !comparison_rows.is_empty() {
+        comparison_rows.sort_by(|left, right| right.sort_key().cmp(&left.sort_key()));
+        lines.push(String::new());
+        lines.push("Comparison:".to_string());
+        for row in comparison_rows {
+            lines.push(format!("  {}", row.render()));
+        }
+    }
+
     Ok(lines.join("\n"))
+}
+
+#[derive(Clone, Debug)]
+struct ShopPlanChallengeComparisonRowV1 {
+    plan_index: usize,
+    label: String,
+    applied: String,
+    branches: usize,
+    status_counts: String,
+    best_act: u8,
+    best_floor: i32,
+    best_hp: i32,
+    best_max_hp: i32,
+    best_gold: i32,
+    best_deck_count: usize,
+    best_frontier: String,
+    note: String,
+}
+
+impl ShopPlanChallengeComparisonRowV1 {
+    fn from_best_branch(
+        plan_index: usize,
+        plan: &ShopPlanV1,
+        applied: &[String],
+        branches: &[BranchExperimentBranchReportV1],
+        best: &BranchExperimentBranchReportV1,
+    ) -> Self {
+        Self {
+            plan_index,
+            label: plan.label.clone(),
+            applied: applied.join(" -> "),
+            branches: branches.len(),
+            status_counts: render_status_counts_v1(branches),
+            best_act: best.summary.act,
+            best_floor: best.summary.floor,
+            best_hp: best.summary.hp,
+            best_max_hp: best.summary.max_hp,
+            best_gold: best.summary.gold,
+            best_deck_count: best.summary.deck_count,
+            best_frontier: best.frontier.boundary_title.clone(),
+            note: best.stop_reason.clone(),
+        }
+    }
+
+    fn empty_result(plan_index: usize, plan: &ShopPlanV1, applied: &[String]) -> Self {
+        Self {
+            plan_index,
+            label: plan.label.clone(),
+            applied: applied.join(" -> "),
+            branches: 0,
+            status_counts: "-".to_string(),
+            best_act: 0,
+            best_floor: 0,
+            best_hp: 0,
+            best_max_hp: 0,
+            best_gold: 0,
+            best_deck_count: 0,
+            best_frontier: "-".to_string(),
+            note: "no rollout branches".to_string(),
+        }
+    }
+
+    fn apply_error(plan_index: usize, plan: &ShopPlanV1, error: &str) -> Self {
+        Self {
+            plan_index,
+            label: plan.label.clone(),
+            applied: "-".to_string(),
+            branches: 0,
+            status_counts: "ApplyError=1".to_string(),
+            best_act: 0,
+            best_floor: 0,
+            best_hp: 0,
+            best_max_hp: 0,
+            best_gold: 0,
+            best_deck_count: 0,
+            best_frontier: "-".to_string(),
+            note: error.to_string(),
+        }
+    }
+
+    fn sort_key(&self) -> (u8, i32, i32, i32, i32) {
+        (
+            self.best_act,
+            self.best_floor,
+            self.best_hp,
+            self.best_gold,
+            -(self.best_deck_count as i32),
+        )
+    }
+
+    fn render(&self) -> String {
+        format!(
+            "plan {} | {} | best=A{}F{} HP {}/{} gold {} deck {} {} | branches={} statuses={} | applied={} | note={}",
+            self.plan_index,
+            self.label,
+            self.best_act,
+            self.best_floor,
+            self.best_hp,
+            self.best_max_hp,
+            self.best_gold,
+            self.best_deck_count,
+            self.best_frontier,
+            self.branches,
+            self.status_counts,
+            self.applied,
+            self.note
+        )
+    }
 }
 
 fn selected_and_alternative_plans_v1(
