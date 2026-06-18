@@ -273,10 +273,9 @@ struct Args {
 
     #[arg(
         long = "inspect-index",
-        default_value_t = 0,
         help = "Select the Nth matching checkpoint session after filters"
     )]
-    inspect_index: usize,
+    inspect_index: Option<usize>,
 
     #[arg(
         long = "inspect-search",
@@ -699,7 +698,7 @@ fn run_final_boss_combat_report_inspection(args: &Args) -> Result<(), String> {
     let report = read_campaign_report_v1(path)?;
     print!(
         "{}",
-        render_final_boss_combat_report_inspection_v1(&report, args.inspect_index)?
+        render_final_boss_combat_report_inspection_v1(&report, args.inspect_index.unwrap_or(0))?
     );
     Ok(())
 }
@@ -734,6 +733,26 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
         ));
     }
     if args.inspect_summary {
+        if let Some(inspect_index) = args.inspect_index {
+            if inspect_index >= matches.len() {
+                return Err(format!(
+                    "--inspect-index {} is out of range for {} matching checkpoint session(s)",
+                    inspect_index,
+                    matches.len()
+                ));
+            }
+            let selected = vec![matches.swap_remove(inspect_index)];
+            println!(
+                "{}",
+                inspect_summary::render_checkpoint_inspect_summary_v1(
+                    checkpoint.seed,
+                    &selected,
+                    report.as_ref(),
+                    args.branch_examples,
+                )
+            );
+            return Ok(());
+        }
         println!(
             "{}",
             inspect_summary::render_checkpoint_inspect_summary_v1(
@@ -745,21 +764,22 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
         );
         return Ok(());
     }
-    if args.inspect_index >= matches.len() {
+    let inspect_index = args.inspect_index.unwrap_or(0);
+    if inspect_index >= matches.len() {
         return Err(format!(
             "--inspect-index {} is out of range for {} matching checkpoint session(s)",
-            args.inspect_index,
+            inspect_index,
             matches.len()
         ));
     }
 
     let match_count = matches.len();
-    let (commands, mut session) = matches.swap_remove(args.inspect_index);
+    let (commands, mut session) = matches.swap_remove(inspect_index);
     let (hp, max_hp) = inspect_visible_player_hp(&session);
     println!(
         "Checkpoint inspection: seed={} match={}/{} act={} floor={} hp={}/{} engine={:?}",
         checkpoint.seed,
-        args.inspect_index + 1,
+        inspect_index + 1,
         match_count,
         session.run_state.act_num,
         session.run_state.floor_num,
@@ -788,7 +808,7 @@ fn run_checkpoint_inspection(args: &Args) -> Result<(), String> {
             "{}",
             render_last_auto_combat_checkpoint_inspection_v1(
                 checkpoint.seed,
-                args.inspect_index,
+                inspect_index,
                 match_count,
                 &session,
                 &commands,
@@ -1125,6 +1145,22 @@ mod tests {
         );
         assert!(args.inspect_summary);
         assert_eq!(args.branch_examples, 2);
+        assert_eq!(args.inspect_index, None);
+    }
+
+    #[test]
+    fn campaign_cli_accepts_optional_checkpoint_inspect_index() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--inspect-summary",
+            "--inspect-index",
+            "18",
+        ])
+        .expect("args parse");
+
+        assert_eq!(args.inspect_index, Some(18));
     }
 
     #[test]
