@@ -223,9 +223,7 @@ fn positive_component_reason_pressure(reason: &str) -> PressureKind {
         "automaton_big_turn_or_multi_hit_answer" => {
             PressureKind::BossTax(StrategicBossTax::AutomatonHyperbeamPlan)
         }
-        "time_eater_high_impact_or_access" => {
-            PressureKind::BossTax(StrategicBossTax::TimeEaterCardCount)
-        }
+        "time_eater_high_impact_or_access" => PressureKind::CardPlayCap,
         "fills_current_formation_need" => PressureKind::BranchDiversityNeed,
         _ => PressureKind::BranchDiversityNeed,
     }

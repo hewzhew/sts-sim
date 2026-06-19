@@ -611,6 +611,61 @@ fn collector_pressure_and_aoe_candidate_share_boss_tax_kind() {
     }));
 }
 
+#[test]
+fn time_eater_access_candidates_align_to_card_play_cap_pressure() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.boss_key = Some(crate::content::monsters::factory::EncounterId::TimeEater);
+    let context = build_card_reward_decision_context_v1(
+        &run_state,
+        vec![RewardCard::new(CardId::Warcry, 0)],
+        None,
+    );
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+
+    assert!(decision
+        .strategic_trace
+        .ledger
+        .items
+        .iter()
+        .any(|item| item.id == "boss_tax:time_eater_card_count"
+            && item.kind == PressureKind::CardPlayCap));
+
+    let warcry_delta = decision
+        .strategic_trace
+        .candidate_deltas
+        .iter()
+        .find(|delta| delta.action.candidate_id().contains("Warcry"))
+        .expect("Warcry should have a strategic delta");
+
+    assert!(warcry_delta.positive.iter().any(|delta| {
+        delta.reason == "time_eater_high_impact_or_access"
+            && delta.kind == PressureKind::CardPlayCap
+    }));
+    assert!(!warcry_delta.positive.iter().any(|delta| {
+        delta.kind
+            == PressureKind::BossTax(crate::ai::strategic::StrategicBossTax::TimeEaterCardCount)
+    }));
+}
+
+#[test]
+fn velvet_choker_run_debt_aligns_to_card_play_cap_pressure() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state
+        .relics
+        .push(RelicState::new(RelicId::VelvetChoker));
+    let context = build_card_reward_decision_context_v1(
+        &run_state,
+        vec![RewardCard::new(CardId::Warcry, 0)],
+        None,
+    );
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+
+    assert!(decision.strategic_trace.ledger.items.iter().any(|item| {
+        item.id == "run_debt:VelvetChoker:card_play_cap_debt"
+            && item.kind == PressureKind::CardPlayCap
+    }));
+}
+
 fn compiled_score(trace: &crate::ai::strategic::StrategicDecisionTrace, id: &str) -> f32 {
     trace
         .compiled

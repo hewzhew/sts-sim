@@ -57,6 +57,7 @@ pub enum PressureKind {
     DeckDebt(StrategicDebt),
     RunDebt(RunDebtContractKindV1),
     BossTax(StrategicBossTax),
+    CardPlayCap,
     RouteRisk,
     EconomyNeed,
     UpgradeNeed,
@@ -309,7 +310,7 @@ pub fn ledger_from_snapshot(snapshot: &StrategicSnapshot) -> PressureLedger {
         Some("TimeEater") => {
             ledger.push(
                 "boss_tax:time_eater_card_count",
-                PressureKind::BossTax(StrategicBossTax::TimeEaterCardCount),
+                PressureKind::CardPlayCap,
                 PressureHorizon::ActBoss,
                 0.65,
                 0.70,
@@ -400,12 +401,19 @@ pub fn add_run_debt_pressure_to_ledger(ledger: &mut PressureLedger, run_debt: &R
     for contract in &run_debt.contracts {
         ledger.push(
             format!("run_debt:{}:{}", contract.source, contract.kind.label()),
-            PressureKind::RunDebt(contract.kind),
+            run_debt_pressure_kind(contract.kind),
             run_debt_horizon(contract.kind),
             run_debt_severity(contract),
             run_debt_confidence(contract),
             run_debt_evidence(contract),
         );
+    }
+}
+
+fn run_debt_pressure_kind(kind: RunDebtContractKindV1) -> PressureKind {
+    match kind {
+        RunDebtContractKindV1::CardPlayCapDebt => PressureKind::CardPlayCap,
+        _ => PressureKind::RunDebt(kind),
     }
 }
 
