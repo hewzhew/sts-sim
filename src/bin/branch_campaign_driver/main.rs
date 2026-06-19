@@ -22,8 +22,9 @@ use final_boss_combat::{
 };
 use outcome_dataset::{
     learning_dataset_export_context_v1, run_branch_outcome_dataset_analysis,
-    run_branch_outcome_dataset_export, run_learning_dataset_export,
-    write_branch_outcome_dataset_jsonl_v1, write_learning_dataset_jsonl_v1,
+    run_branch_outcome_dataset_export, run_decision_outcome_dataset_export,
+    run_learning_dataset_export, write_branch_outcome_dataset_jsonl_v1,
+    write_decision_outcome_dataset_jsonl_v1, write_learning_dataset_jsonl_v1,
 };
 use shop_challenge::render_checkpoint_shop_plan_challenge_v1;
 use sts_simulator::eval::branch_campaign::{
@@ -434,6 +435,13 @@ struct Args {
         help = "Write LearningBranchSampleV1 JSONL from a campaign report/run without treating choices as teacher labels"
     )]
     export_learning_dataset: Option<PathBuf>,
+
+    #[arg(
+        long = "export-decision-outcome-dataset",
+        value_name = "PATH",
+        help = "Write LearningDecisionOutcomeSampleV1 JSONL with observed sibling candidates and later outcomes"
+    )]
+    export_decision_outcome_dataset: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -694,6 +702,9 @@ fn run(args: Args) -> Result<(), String> {
     if args.export_learning_dataset.is_some() && args.inspect_report.is_some() {
         return run_learning_dataset_export(&args);
     }
+    if args.export_decision_outcome_dataset.is_some() && args.inspect_report.is_some() {
+        return run_decision_outcome_dataset_export(&args);
+    }
     if args.inspect_final_boss_combat {
         return run_final_boss_combat_report_inspection(&args);
     }
@@ -783,6 +794,24 @@ fn run(args: Args) -> Result<(), String> {
             "wrote {} LearningBranchSampleV1 row(s) to {}",
             samples.len(),
             path.display()
+        );
+    }
+    if let Some(path) = args.export_decision_outcome_dataset.as_ref() {
+        let records = extract_branch_outcome_records_v1(&report, Some(&result.checkpoint))?;
+        let samples = sts_simulator::eval::learning_dataset_v1::decision_outcome_samples_from_branch_outcomes_v1(
+            &records,
+            learning_dataset_export_context_v1(args.out.as_ref(), args.checkpoint_out.as_ref()),
+        );
+        write_decision_outcome_dataset_jsonl_v1(path, &samples)?;
+        let observed_sibling_samples = samples
+            .iter()
+            .filter(|sample| sample.observed_sibling_count > 1)
+            .count();
+        eprintln!(
+            "wrote {} LearningDecisionOutcomeSampleV1 row(s) to {} (observed_sibling_records={})",
+            samples.len(),
+            path.display(),
+            observed_sibling_samples
         );
     }
     if args.json {
@@ -1617,6 +1646,32 @@ mod tests {
         assert_eq!(
             args.export_learning_dataset,
             Some(PathBuf::from("learning.jsonl"))
+        );
+        assert_eq!(
+            args.inspect_report,
+            Some(PathBuf::from("latest.campaign.json"))
+        );
+        assert_eq!(
+            args.inspect_checkpoint,
+            Some(PathBuf::from("latest.checkpoint.json"))
+        );
+    }
+
+    #[test]
+    fn campaign_cli_accepts_decision_outcome_dataset_export() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--export-decision-outcome-dataset",
+            "decision_outcomes.jsonl",
+        ]);
+
+        assert_eq!(
+            args.export_decision_outcome_dataset,
+            Some(PathBuf::from("decision_outcomes.jsonl"))
         );
         assert_eq!(
             args.inspect_report,
