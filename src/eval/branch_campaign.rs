@@ -35,19 +35,19 @@ mod selection_key;
 mod state_graph;
 mod strategic_signals;
 mod summary;
+pub use active_selection::select_campaign_branches_v1;
 use active_selection::{
     append_discarded_examples_v1, branch_is_rehydrated_checkpointed_combat_failure_v1,
-    campaign_branch_primary_active_eligible_v1, campaign_progress_is_clearly_ahead_v1,
-    campaign_stuck_branch_should_be_abandoned_for_combat_triage_v1, promote_frozen_to_active_v1,
+    campaign_progress_is_clearly_ahead_v1, promote_frozen_to_active_v1,
     promote_rehydrated_combat_failures_to_active_on_stall_v1,
-    rebalance_active_lineage_diversity_v1, rebalance_active_progress_anchor_v1,
-    rebalance_active_survival_anchor_v1, rebalance_active_with_stronger_frozen_v1,
+    rebalance_active_lineage_diversity_v1, rebalance_active_with_stronger_frozen_v1,
+    select_campaign_branches_for_config_v1,
 };
 use branch_display::{
     compact_campaign_choice_label_metadata_v1, render_campaign_branch_state,
-    render_campaign_discard_example_v1, render_choice_path, render_compact_choice_path,
+    render_choice_path, render_compact_choice_path,
 };
-use frozen_pool::{append_limited_frozen_v1, record_campaign_duplicate_merge_v1};
+use frozen_pool::append_limited_frozen_v1;
 #[cfg(test)]
 use lineage::campaign_branch_boss_relic_lineage_key_v1;
 pub use model::{
@@ -79,7 +79,7 @@ pub use run_domain::{
     branch_campaign_run_domain_v1, BranchCampaignRunDomainV1,
 };
 use selection_key::{
-    act_boss_floor_v1, campaign_branch_retention_key_v1, compare_campaign_branches_for_active_v1,
+    act_boss_floor_v1, campaign_branch_retention_key_v1,
     compare_campaign_branches_for_promotion_v1,
 };
 use state_graph::{
@@ -2172,80 +2172,6 @@ fn campaign_intervention_options_v2(request: &BranchCampaignStrategyRequestV1) -
         }
         _ => "add a narrow strategy rule | keep branching | ask human",
     }
-}
-
-pub fn select_campaign_branches_v1(
-    branches: Vec<BranchCampaignBranchV1>,
-    max_active: usize,
-    max_frozen: usize,
-) -> BranchCampaignSelectionV1 {
-    let mut active_candidates = Vec::new();
-    let mut selection = BranchCampaignSelectionV1::default();
-    for branch in branches {
-        if campaign_stuck_branch_should_be_abandoned_for_combat_triage_v1(&branch) {
-            selection.abandoned.push(branch);
-            continue;
-        }
-        match branch.status {
-            BranchCampaignBranchStatusV1::TerminalVictory => selection.victories.push(branch),
-            BranchCampaignBranchStatusV1::TerminalDefeat => selection.dead.push(branch),
-            BranchCampaignBranchStatusV1::Abandoned => selection.abandoned.push(branch),
-            BranchCampaignBranchStatusV1::Stuck => selection.stuck.push(branch),
-            BranchCampaignBranchStatusV1::Frozen | BranchCampaignBranchStatusV1::Active => {
-                active_candidates.push(branch)
-            }
-        }
-    }
-
-    active_candidates.sort_by(compare_campaign_branches_for_active_v1);
-
-    let mut retained_quality_keys = BTreeSet::new();
-    for mut branch in active_candidates {
-        let quality_key = campaign_branch_quality_key_v1(&branch);
-        if !retained_quality_keys.insert(quality_key) {
-            record_campaign_duplicate_merge_v1(
-                &branch,
-                &mut selection.discarded_count,
-                &mut selection.discarded_examples,
-            );
-            continue;
-        }
-
-        if selection.active.len() < max_active
-            && (campaign_branch_primary_active_eligible_v1(&branch) || selection.active.is_empty())
-        {
-            branch.status = BranchCampaignBranchStatusV1::Active;
-            selection.active.push(branch);
-        } else if selection.frozen.len() < max_frozen {
-            branch.status = BranchCampaignBranchStatusV1::Frozen;
-            selection.frozen.push(branch);
-        } else {
-            selection.discarded_count = selection.discarded_count.saturating_add(1);
-            if selection.discarded_examples.len() < 6 {
-                selection
-                    .discarded_examples
-                    .push(render_campaign_discard_example_v1(&branch));
-            }
-        }
-    }
-    rebalance_active_progress_anchor_v1(&mut selection.active, &mut selection.frozen);
-    rebalance_active_survival_anchor_v1(&mut selection.active, &mut selection.frozen);
-    selection
-}
-
-fn select_campaign_branches_for_config_v1(
-    branches: Vec<BranchCampaignBranchV1>,
-    config: &BranchCampaignConfigV1,
-) -> BranchCampaignSelectionV1 {
-    let mut selection = select_campaign_branches_v1(branches, config.max_active, config.max_frozen);
-    if config.active_lineage_diversity_slots > 0 {
-        rebalance_active_lineage_diversity_v1(
-            &mut selection.active,
-            &mut selection.frozen,
-            config.active_lineage_diversity_slots,
-        );
-    }
-    selection
 }
 
 fn recover_auto_advanceable_stuck_branches_v1(
