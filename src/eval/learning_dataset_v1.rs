@@ -17,6 +17,8 @@ pub const LEARNING_DECISION_OUTCOME_SAMPLE_SCHEMA_VERSION: u32 = 1;
 pub const LEARNING_DECISION_OUTCOME_ANALYSIS_SCHEMA_NAME: &str =
     "LearningDecisionOutcomeAnalysisV1";
 pub const LEARNING_DECISION_OUTCOME_ANALYSIS_SCHEMA_VERSION: u32 = 1;
+pub const LEARNING_READINESS_PROBE_SCHEMA_NAME: &str = "LearningReadinessProbeV1";
+pub const LEARNING_READINESS_PROBE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -158,6 +160,36 @@ pub struct LearningDecisionGroupExampleV1 {
     pub sample_count: usize,
     pub candidate_summaries: Vec<String>,
     pub outcome_classes: Vec<LearningDecisionHistogramEntryV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningReadinessProbeV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub label_role: String,
+    pub trainable_as_action_label: bool,
+    pub policy_quality_claim: bool,
+    pub total_samples: usize,
+    pub decision_group_count: usize,
+    pub observed_sibling_group_count: usize,
+    pub terminal_group_count: usize,
+    pub terminal_observed_sibling_group_count: usize,
+    pub censored_only_group_count: usize,
+    pub branch_scheduling_censored_group_count: usize,
+    pub combat_unresolved_group_count: usize,
+    pub missing_context_group_count: usize,
+    pub missing_context_sample_count: usize,
+    pub bottlenecks: Vec<LearningReadinessBottleneckV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningReadinessBottleneckV1 {
+    pub key: String,
+    pub group_count: usize,
+    pub sample_count: usize,
+    pub next_action: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -456,6 +488,171 @@ pub fn render_learning_decision_outcome_analysis_v1(
     lines.join("\n")
 }
 
+pub fn probe_learning_readiness_v1(
+    samples: &[LearningDecisionOutcomeSampleV1],
+) -> LearningReadinessProbeV1 {
+    let mut groups = BTreeMap::<String, Vec<&LearningDecisionOutcomeSampleV1>>::new();
+    for sample in samples {
+        groups
+            .entry(sample.sibling_group_id.clone())
+            .or_default()
+            .push(sample);
+    }
+
+    let mut observed_sibling_group_count = 0usize;
+    let mut terminal_group_count = 0usize;
+    let mut terminal_observed_sibling_group_count = 0usize;
+    let mut censored_only_group_count = 0usize;
+    let mut branch_scheduling_censored_group_count = 0usize;
+    let mut combat_unresolved_group_count = 0usize;
+    let mut missing_context_group_count = 0usize;
+    let mut missing_context_sample_count = 0usize;
+    let mut no_sibling_sample_count = 0usize;
+    let mut censored_only_sample_count = 0usize;
+    let mut branch_scheduling_sample_count = 0usize;
+    let mut combat_unresolved_sample_count = 0usize;
+
+    for group_samples in groups.values() {
+        let observed_sibling = group_observed_sibling_count_v1(group_samples) > 1;
+        let terminal = group_samples.iter().any(|sample| {
+            sample.outcome.supervision_status == BranchOutcomeSupervisionStatusV1::TerminalOutcome
+        });
+        let censored_only = group_samples.iter().all(|sample| {
+            sample.outcome.supervision_status == BranchOutcomeSupervisionStatusV1::CensoredOngoing
+        });
+        let branch_scheduling_censored = group_samples
+            .iter()
+            .any(|sample| sample_looks_scheduling_censored_v1(sample));
+        let combat_unresolved = group_samples
+            .iter()
+            .any(|sample| sample_looks_combat_unresolved_v1(sample));
+        let missing_context_samples = group_samples
+            .iter()
+            .filter(|sample| sample_missing_context_v1(sample))
+            .count();
+
+        if observed_sibling {
+            observed_sibling_group_count += 1;
+        } else {
+            no_sibling_sample_count += group_samples.len();
+        }
+        if terminal {
+            terminal_group_count += 1;
+        }
+        if terminal && observed_sibling {
+            terminal_observed_sibling_group_count += 1;
+        }
+        if censored_only {
+            censored_only_group_count += 1;
+            censored_only_sample_count += group_samples.len();
+        }
+        if branch_scheduling_censored && !terminal {
+            branch_scheduling_censored_group_count += 1;
+            branch_scheduling_sample_count += group_samples.len();
+        }
+        if combat_unresolved && !terminal {
+            combat_unresolved_group_count += 1;
+            combat_unresolved_sample_count += group_samples.len();
+        }
+        if missing_context_samples > 0 {
+            missing_context_group_count += 1;
+            missing_context_sample_count += missing_context_samples;
+        }
+    }
+
+    let single_candidate_group_count = groups.len().saturating_sub(observed_sibling_group_count);
+    let mut bottlenecks = Vec::new();
+    push_readiness_bottleneck_v1(
+        &mut bottlenecks,
+        "missing_context_snapshot",
+        missing_context_group_count,
+        missing_context_sample_count,
+        "next=export with checkpoint/context enrichment",
+    );
+    push_readiness_bottleneck_v1(
+        &mut bottlenecks,
+        "no_sibling_alternatives",
+        single_candidate_group_count,
+        no_sibling_sample_count,
+        "next=sample sibling alternatives at the same parent boundary",
+    );
+    push_readiness_bottleneck_v1(
+        &mut bottlenecks,
+        "outcome_censored",
+        censored_only_group_count,
+        censored_only_sample_count,
+        "next=run targeted continuation to a milestone",
+    );
+    push_readiness_bottleneck_v1(
+        &mut bottlenecks,
+        "branch_scheduling_or_campaign_cutoff",
+        branch_scheduling_censored_group_count,
+        branch_scheduling_sample_count,
+        "next=continue frozen/active siblings before treating them as labels",
+    );
+    push_readiness_bottleneck_v1(
+        &mut bottlenecks,
+        "combat_unresolved_or_budget",
+        combat_unresolved_group_count,
+        combat_unresolved_sample_count,
+        "next=inspect combat search budget or combat policy on these groups",
+    );
+
+    LearningReadinessProbeV1 {
+        schema_name: LEARNING_READINESS_PROBE_SCHEMA_NAME.to_string(),
+        schema_version: LEARNING_READINESS_PROBE_SCHEMA_VERSION,
+        label_role: "campaign_observation_not_teacher".to_string(),
+        trainable_as_action_label: false,
+        policy_quality_claim: false,
+        total_samples: samples.len(),
+        decision_group_count: groups.len(),
+        observed_sibling_group_count,
+        terminal_group_count,
+        terminal_observed_sibling_group_count,
+        censored_only_group_count,
+        branch_scheduling_censored_group_count,
+        combat_unresolved_group_count,
+        missing_context_group_count,
+        missing_context_sample_count,
+        bottlenecks,
+    }
+}
+
+pub fn render_learning_readiness_probe_v1(probe: &LearningReadinessProbeV1) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "LearningReadinessProbeV1 samples={} groups={} observed_sibling_groups={} terminal_groups={} terminal_observed_sibling_groups={}",
+        probe.total_samples,
+        probe.decision_group_count,
+        probe.observed_sibling_group_count,
+        probe.terminal_group_count,
+        probe.terminal_observed_sibling_group_count
+    ));
+    lines.push(format!(
+        "Censoring: censored_only_groups={} branch_scheduling_censored_groups={} combat_unresolved_groups={} missing_context_groups={} missing_context_samples={}",
+        probe.censored_only_group_count,
+        probe.branch_scheduling_censored_group_count,
+        probe.combat_unresolved_group_count,
+        probe.missing_context_group_count,
+        probe.missing_context_sample_count
+    ));
+    if probe.bottlenecks.is_empty() {
+        lines.push("Bottlenecks: none".to_string());
+    } else {
+        lines.push("Bottlenecks:".to_string());
+        for bottleneck in &probe.bottlenecks {
+            lines.push(format!(
+                "  {} | groups={} samples={} | {}",
+                bottleneck.key,
+                bottleneck.group_count,
+                bottleneck.sample_count,
+                bottleneck.next_action
+            ));
+        }
+    }
+    lines.join("\n")
+}
+
 #[derive(Clone, Debug)]
 struct LearningDecisionCandidateDraftV1 {
     record_index: usize,
@@ -656,6 +853,63 @@ fn render_learning_histogram_v1(entries: &[LearningDecisionHistogramEntryV1]) ->
         .join(", ")
 }
 
+fn push_readiness_bottleneck_v1(
+    bottlenecks: &mut Vec<LearningReadinessBottleneckV1>,
+    key: &str,
+    group_count: usize,
+    sample_count: usize,
+    next_action: &str,
+) {
+    if group_count == 0 {
+        return;
+    }
+    bottlenecks.push(LearningReadinessBottleneckV1 {
+        key: key.to_string(),
+        group_count,
+        sample_count,
+        next_action: next_action.to_string(),
+    });
+}
+
+fn group_observed_sibling_count_v1(group_samples: &[&LearningDecisionOutcomeSampleV1]) -> usize {
+    group_samples
+        .iter()
+        .map(|sample| sample.observed_sibling_count)
+        .max()
+        .unwrap_or(0)
+}
+
+fn sample_looks_scheduling_censored_v1(sample: &LearningDecisionOutcomeSampleV1) -> bool {
+    if sample.outcome.supervision_status != BranchOutcomeSupervisionStatusV1::CensoredOngoing {
+        return false;
+    }
+    matches!(
+        sample.outcome.outcome_class,
+        BranchOutcomeClassV1::OngoingActive | BranchOutcomeClassV1::OngoingFrozen
+    ) || matches!(
+        sample.outcome.report_stop_reason.as_str(),
+        "max_rounds" | "victory_found"
+    )
+}
+
+fn sample_looks_combat_unresolved_v1(sample: &LearningDecisionOutcomeSampleV1) -> bool {
+    if sample.outcome.frontier_title != "Combat" {
+        return false;
+    }
+    matches!(
+        sample.outcome.outcome_class,
+        BranchOutcomeClassV1::Abandoned | BranchOutcomeClassV1::Stuck
+    ) || sample
+        .outcome
+        .stop_reason
+        .to_ascii_lowercase()
+        .contains("combat")
+}
+
+fn sample_missing_context_v1(sample: &LearningDecisionOutcomeSampleV1) -> bool {
+    !sample.outcome.checkpoint_enriched || sample.outcome.state_features.is_none()
+}
+
 fn compact_learning_text_v1(text: &str, max_len: usize) -> String {
     if text.len() <= max_len || max_len < 12 {
         return text.to_string();
@@ -782,8 +1036,10 @@ mod tests {
         BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignRunDomainV1,
     };
     use crate::eval::branch_outcome_dataset_v1::{
-        BranchOutcomeClassV1, BranchOutcomeRecordV1, BranchOutcomeSupervisionStatusV1,
-        BRANCH_OUTCOME_RECORD_SCHEMA_NAME, BRANCH_OUTCOME_RECORD_SCHEMA_VERSION,
+        BranchOutcomeClassV1, BranchOutcomeDeckFeaturesV1, BranchOutcomeFormationFeaturesV1,
+        BranchOutcomeRecordV1, BranchOutcomeStartupFeaturesV1, BranchOutcomeStateFeaturesV1,
+        BranchOutcomeSupervisionStatusV1, BRANCH_OUTCOME_RECORD_SCHEMA_NAME,
+        BRANCH_OUTCOME_RECORD_SCHEMA_VERSION,
     };
 
     #[test]
@@ -1028,6 +1284,81 @@ mod tests {
         assert!(rendered.lines().all(|line| line.len() <= 220));
     }
 
+    #[test]
+    fn learning_readiness_probe_separates_signal_from_censoring() {
+        let mut terminal = sample_decision_outcome_sample("rp 0", "Burning Pact");
+        terminal.sibling_group_id = "terminal-group".to_string();
+        terminal.observed_sibling_count = 2;
+        terminal.sibling_candidates = vec![
+            sample_sibling_candidate(
+                "rp 0",
+                "Burning Pact",
+                BranchOutcomeClassV1::TerminalVictory,
+            ),
+            sample_sibling_candidate("rp 1", "Skip", BranchOutcomeClassV1::Abandoned),
+        ];
+        terminal.outcome.outcome_class = BranchOutcomeClassV1::TerminalVictory;
+        terminal.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::TerminalOutcome;
+        terminal.outcome.checkpoint_enriched = true;
+        terminal.outcome.state_features = Some(sample_state_features());
+
+        let mut censored = sample_decision_outcome_sample("smith 1", "Smith Bash");
+        censored.sibling_group_id = "censored-group".to_string();
+        censored.observed_sibling_count = 1;
+        censored.outcome.outcome_class = BranchOutcomeClassV1::OngoingFrozen;
+        censored.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::CensoredOngoing;
+        censored.outcome.report_stop_reason = "victory_found".to_string();
+
+        let mut combat = sample_decision_outcome_sample("rp 2", "Carnage");
+        combat.sibling_group_id = "combat-group".to_string();
+        combat.outcome.outcome_class = BranchOutcomeClassV1::Abandoned;
+        combat.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::InterventionOrFailure;
+        combat.outcome.frontier_title = "Combat".to_string();
+        combat.outcome.stop_reason = "combat search did not find executable win".to_string();
+
+        let probe = probe_learning_readiness_v1(&[terminal, censored, combat]);
+
+        assert_eq!(probe.total_samples, 3);
+        assert_eq!(probe.decision_group_count, 3);
+        assert_eq!(probe.observed_sibling_group_count, 1);
+        assert_eq!(probe.terminal_group_count, 1);
+        assert_eq!(probe.terminal_observed_sibling_group_count, 1);
+        assert_eq!(probe.censored_only_group_count, 1);
+        assert_eq!(probe.branch_scheduling_censored_group_count, 1);
+        assert_eq!(probe.combat_unresolved_group_count, 1);
+        assert_eq!(probe.missing_context_group_count, 2);
+        assert_eq!(
+            probe
+                .bottlenecks
+                .iter()
+                .map(|entry| (entry.key.as_str(), entry.group_count))
+                .collect::<Vec<_>>(),
+            vec![
+                ("missing_context_snapshot", 2),
+                ("no_sibling_alternatives", 2),
+                ("outcome_censored", 1),
+                ("branch_scheduling_or_campaign_cutoff", 1),
+                ("combat_unresolved_or_budget", 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn learning_readiness_probe_render_names_next_actions() {
+        let mut censored = sample_decision_outcome_sample("skip", "Skip potion reward");
+        censored.outcome.outcome_class = BranchOutcomeClassV1::OngoingFrozen;
+        censored.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::CensoredOngoing;
+        censored.outcome.report_stop_reason = "max_rounds".to_string();
+
+        let probe = probe_learning_readiness_v1(&[censored]);
+        let rendered = render_learning_readiness_probe_v1(&probe);
+
+        assert!(rendered.contains("LearningReadinessProbeV1 samples=1 groups=1"));
+        assert!(rendered.contains("terminal_observed_sibling_groups=0"));
+        assert!(rendered.contains("outcome_censored"));
+        assert!(rendered.contains("next=run targeted continuation"));
+    }
+
     fn sample_decision_outcome_sample(
         command: &str,
         choice_label: &str,
@@ -1108,6 +1439,66 @@ mod tests {
                 outcome_class,
                 count: 1,
             }],
+        }
+    }
+
+    fn sample_state_features() -> BranchOutcomeStateFeaturesV1 {
+        BranchOutcomeStateFeaturesV1 {
+            engine_state: "RewardScreen".to_string(),
+            act: 1,
+            floor: 4,
+            hp: 70,
+            max_hp: 80,
+            gold: 120,
+            ascension_level: 0,
+            player_class: "Ironclad".to_string(),
+            boss: Some("TheGuardian".to_string()),
+            boss_pressure: Vec::new(),
+            deck: BranchOutcomeDeckFeaturesV1 {
+                deck_count: 12,
+                grouped_cards: Vec::new(),
+                attacks: 6,
+                skills: 5,
+                powers: 0,
+                curses: 0,
+                statuses: 0,
+                starter_strikes: 4,
+                starter_defends: 4,
+                upgraded: 1,
+            },
+            relics: Vec::new(),
+            potions: Vec::new(),
+            formation: BranchOutcomeFormationFeaturesV1 {
+                stage: "PlanSeeded".to_string(),
+                needs: vec!["Frontload".to_string()],
+                strengths: Vec::new(),
+            },
+            startup: BranchOutcomeStartupFeaturesV1 {
+                setup_debt: 0,
+                setup_payment: 0,
+                effective_setup_payment: 0,
+                immediate_survival: 1,
+                payoff_engine: 0,
+                combat_shape_risk: 0,
+                strong_draw_count: 0,
+                effective_strong_draw_count: 0,
+                exhaust_engine_count: 0,
+                exhaust_payoff_count: 0,
+                status_generator_count: 0,
+                status_digest_count: 0,
+                persistent_strength_source_count: 0,
+                temporary_strength_burst_count: 0,
+                strength_converter_count: 0,
+                convertible_strength_source_count: 0,
+                strength_payoff_count: 0,
+                zero_cost_card_count: 0,
+                low_cost_card_count: 10,
+                high_cost_card_count: 1,
+                has_snecko_eye: false,
+                snecko_random_cost_debt: 0,
+                liabilities: Vec::new(),
+            },
+            last_combat: None,
         }
     }
 

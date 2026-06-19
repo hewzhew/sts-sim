@@ -11,7 +11,8 @@ use sts_simulator::eval::branch_outcome_dataset_v1::{
 use sts_simulator::eval::learning_dataset_v1::{
     analyze_learning_decision_outcome_samples_v1, decision_outcome_samples_from_branch_outcomes_v1,
     learning_records_from_branch_outcomes_v1, parse_learning_decision_outcome_samples_jsonl_v1,
-    render_learning_decision_outcome_analysis_v1, serialize_learning_branch_samples_jsonl_v1,
+    probe_learning_readiness_v1, render_learning_decision_outcome_analysis_v1,
+    render_learning_readiness_probe_v1, serialize_learning_branch_samples_jsonl_v1,
     serialize_learning_decision_outcome_samples_jsonl_v1, LearningBranchSampleV1,
     LearningDatasetExportContextV1, LearningDecisionOutcomeSampleV1,
 };
@@ -52,6 +53,23 @@ pub(super) fn run_decision_outcome_dataset_analysis(args: &Args) -> Result<(), S
         "{}",
         render_learning_decision_outcome_analysis_v1(&analysis)
     );
+    Ok(())
+}
+
+pub(super) fn run_learning_readiness_probe(args: &Args) -> Result<(), String> {
+    let path = args
+        .probe_learning_readiness
+        .as_ref()
+        .ok_or_else(|| "--probe-learning-readiness requires a path".to_string())?;
+    let text = fs::read_to_string(path).map_err(|err| {
+        format!(
+            "failed to read --probe-learning-readiness {}: {err}",
+            path.display()
+        )
+    })?;
+    let samples = parse_learning_decision_outcome_samples_jsonl_v1(&text)?;
+    let probe = probe_learning_readiness_v1(&samples);
+    println!("{}", render_learning_readiness_probe_v1(&probe));
     Ok(())
 }
 

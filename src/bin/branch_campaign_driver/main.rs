@@ -23,7 +23,7 @@ use final_boss_combat::{
 use outcome_dataset::{
     learning_dataset_export_context_v1, run_branch_outcome_dataset_analysis,
     run_branch_outcome_dataset_export, run_decision_outcome_dataset_analysis,
-    run_decision_outcome_dataset_export, run_learning_dataset_export,
+    run_decision_outcome_dataset_export, run_learning_dataset_export, run_learning_readiness_probe,
     write_branch_outcome_dataset_jsonl_v1, write_decision_outcome_dataset_jsonl_v1,
     write_learning_dataset_jsonl_v1,
 };
@@ -439,6 +439,13 @@ struct Args {
     analyze_decision_outcome_dataset: Option<PathBuf>,
 
     #[arg(
+        long = "probe-learning-readiness",
+        value_name = "PATH",
+        help = "Diagnose whether a LearningDecisionOutcomeSampleV1 JSONL is blocked by censoring, scheduling, combat budget, missing context, or missing siblings"
+    )]
+    probe_learning_readiness: Option<PathBuf>,
+
+    #[arg(
         long = "export-learning-dataset",
         value_name = "PATH",
         help = "Write LearningBranchSampleV1 JSONL from a campaign report/run without treating choices as teacher labels"
@@ -707,6 +714,9 @@ fn run(args: Args) -> Result<(), String> {
     }
     if args.analyze_decision_outcome_dataset.is_some() {
         return run_decision_outcome_dataset_analysis(&args);
+    }
+    if args.probe_learning_readiness.is_some() {
+        return run_learning_readiness_probe(&args);
     }
     if args.export_outcome_dataset.is_some() && args.inspect_report.is_some() {
         return run_branch_outcome_dataset_export(&args);
@@ -1705,6 +1715,20 @@ mod tests {
 
         assert_eq!(
             args.analyze_decision_outcome_dataset,
+            Some(PathBuf::from("decision_outcomes.jsonl"))
+        );
+    }
+
+    #[test]
+    fn campaign_cli_accepts_learning_readiness_probe() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--probe-learning-readiness",
+            "decision_outcomes.jsonl",
+        ]);
+
+        assert_eq!(
+            args.probe_learning_readiness,
             Some(PathBuf::from("decision_outcomes.jsonl"))
         );
     }
