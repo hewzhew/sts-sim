@@ -57,6 +57,7 @@ pub enum AcquisitionThesisRole {
     DrawAccess,
     ExhaustAccess,
     ScalingOrEngine,
+    WinConditionOrCeiling,
     BossSpecificAnswer,
     RedundantCoverage,
     LiabilityOrDependency,

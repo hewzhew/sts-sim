@@ -12,6 +12,7 @@ pub enum AcquisitionRoleV1 {
     DrawAccess,
     ExhaustAccess,
     ScalingOrEngine,
+    WinConditionOrCeiling,
     BossSpecificAnswer,
     RedundantCoverage,
     LiabilityOrDependency,
@@ -29,13 +30,18 @@ pub enum AcquisitionSaturationStatusV1 {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AcquisitionSaturationInputV1 {
     pub act: u8,
+    pub floor: i32,
     pub deck_size: usize,
     pub frontload_cards: usize,
     pub weak_sources: usize,
     pub block_cards: usize,
     pub draw_sources: usize,
     pub exhaust_generators: usize,
+    pub exhaust_payoffs: usize,
     pub scaling_sources: usize,
+    pub status_generators: usize,
+    pub status_payoffs: usize,
+    pub block_engine_pieces: usize,
     pub same_card_count: usize,
     pub starter_strikes: usize,
     pub strength_sources: usize,
@@ -251,6 +257,18 @@ pub fn evaluate_acquisition_saturation_v1(
         );
     }
 
+    if run_is_ready_to_seed_ceiling(input)
+        && !deck_has_ceiling_or_win_condition(input)
+        && candidate_opens_ceiling_path(profile, input)
+    {
+        report.push(
+            AcquisitionRoleV1::WinConditionOrCeiling,
+            AcquisitionSaturationStatusV1::Missing,
+            0.60,
+            "candidate_opens_missing_win_condition_or_ceiling",
+        );
+    }
+
     if has(profile, CardRewardSemanticRoleV1::StrikePayoff) && input.starter_strikes < 3 {
         report.push(
             AcquisitionRoleV1::LiabilityOrDependency,
@@ -299,6 +317,46 @@ pub fn evaluate_acquisition_saturation_v1(
     }
 
     report
+}
+
+fn run_is_ready_to_seed_ceiling(input: &AcquisitionSaturationInputV1) -> bool {
+    let past_opening = input.act >= 2 || input.floor >= 8 || input.deck_size >= 16;
+    let transition_not_empty = input.frontload_cards >= 4 || input.block_cards >= 4;
+    past_opening && transition_not_empty
+}
+
+fn deck_has_ceiling_or_win_condition(input: &AcquisitionSaturationInputV1) -> bool {
+    input.scaling_sources > 0
+        || (input.exhaust_generators > 0 && input.exhaust_payoffs > 0)
+        || (input.status_generators > 0 && input.status_payoffs > 0)
+        || input.block_engine_pieces >= 2
+}
+
+fn candidate_opens_ceiling_path(
+    profile: &CardRewardSemanticProfileV1,
+    input: &AcquisitionSaturationInputV1,
+) -> bool {
+    let opens_scaling_or_package = has_any(
+        profile,
+        &[
+            CardRewardSemanticRoleV1::ScalingSource,
+            CardRewardSemanticRoleV1::ExhaustPayoff,
+            CardRewardSemanticRoleV1::StatusPayoff,
+        ],
+    ) || (has(profile, CardRewardSemanticRoleV1::ExhaustGenerator)
+        && input.exhaust_payoffs > 0)
+        || (has(profile, CardRewardSemanticRoleV1::StatusGenerator) && input.status_payoffs > 0);
+
+    let opens_block_engine = has_any(
+        profile,
+        &[
+            CardRewardSemanticRoleV1::BlockRetention,
+            CardRewardSemanticRoleV1::BlockPayoff,
+            CardRewardSemanticRoleV1::BlockMultiplier,
+        ],
+    ) && (input.block_cards >= 5 || input.block_engine_pieces > 0);
+
+    opens_scaling_or_package || opens_block_engine
 }
 
 pub fn apply_acquisition_saturation_to_delta_v1(
@@ -352,6 +410,7 @@ fn thesis_role(role: AcquisitionRoleV1) -> AcquisitionThesisRole {
         AcquisitionRoleV1::DrawAccess => AcquisitionThesisRole::DrawAccess,
         AcquisitionRoleV1::ExhaustAccess => AcquisitionThesisRole::ExhaustAccess,
         AcquisitionRoleV1::ScalingOrEngine => AcquisitionThesisRole::ScalingOrEngine,
+        AcquisitionRoleV1::WinConditionOrCeiling => AcquisitionThesisRole::WinConditionOrCeiling,
         AcquisitionRoleV1::BossSpecificAnswer => AcquisitionThesisRole::BossSpecificAnswer,
         AcquisitionRoleV1::RedundantCoverage => AcquisitionThesisRole::RedundantCoverage,
         AcquisitionRoleV1::LiabilityOrDependency => AcquisitionThesisRole::LiabilityOrDependency,
@@ -380,7 +439,9 @@ fn positive_pressure(role: AcquisitionRoleV1) -> Option<PressureKind> {
         AcquisitionRoleV1::ExhaustAccess => {
             Some(PressureKind::MissingJob(StrategicJob::ExhaustAccess))
         }
-        AcquisitionRoleV1::ScalingOrEngine => Some(PressureKind::MissingJob(StrategicJob::Scaling)),
+        AcquisitionRoleV1::ScalingOrEngine | AcquisitionRoleV1::WinConditionOrCeiling => {
+            Some(PressureKind::MissingJob(StrategicJob::Scaling))
+        }
         AcquisitionRoleV1::BossSpecificAnswer
         | AcquisitionRoleV1::RedundantCoverage
         | AcquisitionRoleV1::LiabilityOrDependency => None,
@@ -399,6 +460,7 @@ fn negative_pressure(signal: &AcquisitionSaturationSignalV1) -> PressureKind {
         | AcquisitionRoleV1::RedundantCoverage => PressureKind::DeckDebt(StrategicDebt::CycleTime),
         AcquisitionRoleV1::MitigationCoverage
         | AcquisitionRoleV1::ScalingOrEngine
+        | AcquisitionRoleV1::WinConditionOrCeiling
         | AcquisitionRoleV1::BossSpecificAnswer => {
             PressureKind::DeckDebt(StrategicDebt::CombatShapeRisk)
         }
@@ -426,6 +488,7 @@ fn role_tag(role: AcquisitionRoleV1) -> &'static str {
         AcquisitionRoleV1::DrawAccess => "draw_access",
         AcquisitionRoleV1::ExhaustAccess => "exhaust_access",
         AcquisitionRoleV1::ScalingOrEngine => "scaling_or_engine",
+        AcquisitionRoleV1::WinConditionOrCeiling => "win_condition_or_ceiling",
         AcquisitionRoleV1::BossSpecificAnswer => "boss_specific_answer",
         AcquisitionRoleV1::RedundantCoverage => "redundant_coverage",
         AcquisitionRoleV1::LiabilityOrDependency => "liability_or_dependency",
@@ -461,13 +524,18 @@ mod tests {
     fn input() -> AcquisitionSaturationInputV1 {
         AcquisitionSaturationInputV1 {
             act: 2,
+            floor: 18,
             deck_size: 28,
             frontload_cards: 7,
             weak_sources: 2,
             block_cards: 7,
             draw_sources: 1,
             exhaust_generators: 1,
+            exhaust_payoffs: 1,
             scaling_sources: 1,
+            status_generators: 0,
+            status_payoffs: 0,
+            block_engine_pieces: 0,
             same_card_count: 1,
             starter_strikes: 0,
             strength_sources: 1,
@@ -565,5 +633,144 @@ mod tests {
             entry.kind == PressureKind::MissingJob(StrategicJob::ExhaustAccess)
                 && entry.reason == "candidate_fills_missing_exhaust_access"
         }));
+    }
+
+    #[test]
+    fn midgame_missing_ceiling_marks_engine_candidate_as_win_condition_thesis() {
+        let report = evaluate_acquisition_saturation_v1(
+            &AcquisitionSaturationInputV1 {
+                act: 2,
+                deck_size: 18,
+                frontload_cards: 6,
+                block_cards: 5,
+                draw_sources: 1,
+                exhaust_generators: 0,
+                scaling_sources: 0,
+                strength_sources: 0,
+                same_card_count: 0,
+                ..input()
+            },
+            &profile(CardId::FeelNoPain),
+        );
+
+        assert!(report.has_signal(
+            AcquisitionRoleV1::WinConditionOrCeiling,
+            AcquisitionSaturationStatusV1::Missing
+        ));
+
+        let mut delta = CandidateDelta::empty(CandidateAction::TakeCard {
+            index: 2,
+            card: CardId::FeelNoPain,
+        });
+        apply_acquisition_saturation_to_delta_v1(&mut delta, &report);
+
+        assert!(delta.acquisition_theses.iter().any(|thesis| {
+            thesis.role == AcquisitionThesisRole::WinConditionOrCeiling
+                && thesis.status == AcquisitionThesisStatus::Missing
+                && thesis.reason == "candidate_opens_missing_win_condition_or_ceiling"
+        }));
+        assert!(delta.positive.iter().any(|entry| {
+            entry.kind == PressureKind::MissingJob(StrategicJob::Scaling)
+                && entry.reason == "candidate_opens_missing_win_condition_or_ceiling"
+        }));
+    }
+
+    #[test]
+    fn early_opening_does_not_seed_ceiling_before_transition_patch_exists() {
+        let report = evaluate_acquisition_saturation_v1(
+            &AcquisitionSaturationInputV1 {
+                act: 1,
+                floor: 3,
+                deck_size: 12,
+                frontload_cards: 2,
+                block_cards: 2,
+                draw_sources: 0,
+                exhaust_generators: 0,
+                exhaust_payoffs: 0,
+                scaling_sources: 0,
+                strength_sources: 0,
+                same_card_count: 0,
+                ..input()
+            },
+            &profile(CardId::FeelNoPain),
+        );
+
+        assert!(!report.has_signal(
+            AcquisitionRoleV1::WinConditionOrCeiling,
+            AcquisitionSaturationStatusV1::Missing
+        ));
+    }
+
+    #[test]
+    fn existing_ceiling_does_not_emit_missing_ceiling_thesis() {
+        let report = evaluate_acquisition_saturation_v1(
+            &AcquisitionSaturationInputV1 {
+                act: 2,
+                deck_size: 18,
+                frontload_cards: 6,
+                block_cards: 5,
+                draw_sources: 1,
+                exhaust_generators: 0,
+                scaling_sources: 1,
+                strength_sources: 1,
+                same_card_count: 0,
+                ..input()
+            },
+            &profile(CardId::FeelNoPain),
+        );
+
+        assert!(!report.has_signal(
+            AcquisitionRoleV1::WinConditionOrCeiling,
+            AcquisitionSaturationStatusV1::Missing
+        ));
+    }
+
+    #[test]
+    fn pure_transition_card_does_not_emit_missing_ceiling_thesis() {
+        let report = evaluate_acquisition_saturation_v1(
+            &AcquisitionSaturationInputV1 {
+                act: 2,
+                deck_size: 18,
+                frontload_cards: 5,
+                block_cards: 5,
+                draw_sources: 1,
+                exhaust_generators: 0,
+                scaling_sources: 0,
+                strength_sources: 0,
+                same_card_count: 0,
+                ..input()
+            },
+            &profile(CardId::Clothesline),
+        );
+
+        assert!(!report.has_signal(
+            AcquisitionRoleV1::WinConditionOrCeiling,
+            AcquisitionSaturationStatusV1::Missing
+        ));
+    }
+
+    #[test]
+    fn block_engine_seed_requires_some_block_density_or_support() {
+        let report = evaluate_acquisition_saturation_v1(
+            &AcquisitionSaturationInputV1 {
+                act: 2,
+                deck_size: 18,
+                frontload_cards: 6,
+                block_cards: 2,
+                draw_sources: 1,
+                exhaust_generators: 0,
+                scaling_sources: 0,
+                strength_sources: 0,
+                block_engine_pieces: 0,
+                same_card_count: 0,
+                ..input()
+            },
+            &profile(CardId::Barricade),
+        );
+
+        assert!(!report.has_signal(
+            AcquisitionRoleV1::WinConditionOrCeiling,
+            AcquisitionSaturationStatusV1::Missing
+        ));
     }
 }

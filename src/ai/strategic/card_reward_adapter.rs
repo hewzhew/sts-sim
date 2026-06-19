@@ -516,6 +516,7 @@ fn add_candidate_acquisition_saturation_deltas(
     let report = evaluate_acquisition_saturation_v1(
         &AcquisitionSaturationInputV1 {
             act: context.run.act,
+            floor: context.run.floor,
             deck_size: context.deck.deck_size,
             frontload_cards: context.deck.attacks as usize,
             weak_sources: context.deck.weak_sources as usize,
@@ -525,7 +526,18 @@ fn add_candidate_acquisition_saturation_deltas(
                 .draw_cards
                 .saturating_add(context.deck.energy_sources) as usize,
             exhaust_generators: context.deck.exhaust_generators as usize,
+            exhaust_payoffs: context.deck.exhaust_payoffs as usize,
             scaling_sources: context.deck.strength_sources as usize,
+            status_generators: context.deck.status_generators as usize,
+            status_payoffs: context.deck.status_payoffs as usize,
+            block_engine_pieces: context
+                .strategy
+                .v1
+                .deck
+                .block_retention_sources
+                .saturating_add(context.strategy.v1.deck.block_payoffs)
+                .saturating_add(context.strategy.v1.deck.block_multipliers)
+                as usize,
             same_card_count: candidate.same_card_count,
             starter_strikes: context.deck.starter_strikes as usize,
             strength_sources: context.deck.strength_sources as usize,

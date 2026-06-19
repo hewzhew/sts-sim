@@ -483,13 +483,21 @@ fn add_shop_card_acquisition_saturation_deltas(
     let report = evaluate_acquisition_saturation_v1(
         &AcquisitionSaturationInputV1 {
             act: context.need.act,
+            floor: context.need.floor,
             deck_size: deck.deck_size,
             frontload_cards: deck.attacks as usize,
             weak_sources: deck.weak_sources as usize,
             block_cards: deck.skills as usize,
             draw_sources: deck.draw_sources.saturating_add(deck.energy_sources) as usize,
             exhaust_generators: deck.exhaust_generators as usize,
+            exhaust_payoffs: deck.exhaust_payoffs as usize,
             scaling_sources: deck.strength_sources as usize,
+            status_generators: deck.status_generators as usize,
+            status_payoffs: deck.status_payoffs as usize,
+            block_engine_pieces: deck
+                .block_retention_sources
+                .saturating_add(deck.block_payoffs)
+                .saturating_add(deck.block_multipliers) as usize,
             same_card_count: candidate.same_card_count,
             starter_strikes: context.need.strike_count,
             strength_sources: deck.strength_sources as usize,
