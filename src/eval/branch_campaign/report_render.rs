@@ -15,14 +15,14 @@ use super::performance::{
     aggregate_campaign_combat_performance_v1, format_seconds_from_us_1dp_v1,
     render_campaign_combat_performance_v1,
 };
-use super::retry::BranchCampaignCombatRetryLedgerV1;
+use super::retry::{BranchCampaignCombatRetryLedgerV1, BOSS_GATE_RETRY_ATTEMPTS_PER_GATE};
 use super::strategic_signals::{
     campaign_strategic_signals_for_render_v1, render_campaign_strategic_concern_v1,
     render_campaign_strategic_signals_v1,
 };
 use super::{
     BranchCampaignBranchV1, BranchCampaignReportV1, BranchCampaignStrategyRequestV1,
-    BOSS_GATE_RETRY_ATTEMPTS_PER_GATE, UNSPENT_GOLD_PRESSURE_THRESHOLD,
+    UNSPENT_GOLD_PRESSURE_THRESHOLD,
 };
 
 pub fn render_branch_campaign_compact_v1(

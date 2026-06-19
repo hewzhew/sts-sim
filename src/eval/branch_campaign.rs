@@ -18,7 +18,7 @@ use crate::eval::run_control::{
 };
 use crate::state::core::EngineState;
 use crate::state::rewards::{RewardCard, RewardState};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::time::Instant;
 
 mod active_selection;
@@ -78,6 +78,13 @@ pub use report_render::{
     render_branch_campaign_compact_v1, render_branch_campaign_compact_with_detail_v1,
     BranchCampaignReportDetailV1,
 };
+#[cfg(test)]
+use retry::{branch_report_needs_combat_budget_retry_v1, BOSS_GATE_RETRY_ATTEMPTS_PER_GATE};
+use retry::{
+    campaign_parent_should_retry_combat_budget_now_v1,
+    campaign_round_should_retry_combat_budget_on_stall_v1, combat_retry_campaign_config_v1,
+    try_consume_branch_report_act_boss_gate_retry_v1, BranchCampaignCombatRetryLedgerStateV1,
+};
 pub use retry::{
     BranchCampaignCombatRetryLedgerEntryV1, BranchCampaignCombatRetryLedgerV1,
     BranchCampaignCombatRetryPolicyV1,
@@ -87,9 +94,7 @@ pub use run_domain::{
     branch_campaign_ascension_domain_label_v1, branch_campaign_ascension_domain_role_v1,
     branch_campaign_run_domain_v1, BranchCampaignRunDomainV1,
 };
-use selection_key::{
-    act_boss_floor_v1, campaign_branch_retention_key_v1, compare_campaign_branches_for_promotion_v1,
-};
+use selection_key::{campaign_branch_retention_key_v1, compare_campaign_branches_for_promotion_v1};
 use state_graph::{
     BranchStateReplayStartV1, BranchStateSessionRetentionPolicyV1, BranchStateStoreV1,
 };
@@ -106,13 +111,6 @@ pub const BRANCH_CAMPAIGN_SCHEMA_NAME: &str = "BranchCampaignV1";
 pub const BRANCH_CAMPAIGN_SCHEMA_VERSION: u32 = 1;
 pub const BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME: &str = "BranchCampaignCheckpointV2";
 pub const BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
-const COMBAT_RETRY_NODE_MULTIPLIER: usize = 4;
-const COMBAT_RETRY_WALL_MULTIPLIER: u64 = 4;
-const COMBAT_RETRY_MIN_NODES: usize = 200_000;
-const COMBAT_RETRY_MAX_NODES: usize = 500_000;
-const COMBAT_RETRY_MIN_WALL_MS: u64 = 1_000;
-const COMBAT_RETRY_MAX_WALL_MS: u64 = 1_000;
-const BOSS_GATE_RETRY_ATTEMPTS_PER_GATE: usize = 2;
 const UNSPENT_GOLD_PRESSURE_THRESHOLD: i32 = 300;
 const COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_NODES: usize = 50_000;
 const COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_WALL_MS: u64 = 300;
@@ -231,56 +229,6 @@ struct BranchCampaignRunStateV1 {
     rounds: Vec<BranchCampaignRoundSummaryV1>,
     state_store: BranchStateStoreV1,
     recovered_checkpoint_failure_commands: BTreeSet<Vec<String>>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct BranchCampaignBossGateRetryKeyV1 {
-    act: u8,
-    floor: i32,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct BranchCampaignCombatRetryLedgerStateV1 {
-    boss_gate_attempts: BTreeMap<BranchCampaignBossGateRetryKeyV1, usize>,
-}
-
-impl BranchCampaignCombatRetryLedgerStateV1 {
-    fn from_report_v1(report: &BranchCampaignCombatRetryLedgerV1) -> Self {
-        let mut ledger = Self::default();
-        for entry in &report.boss_gate_attempts {
-            let key = BranchCampaignBossGateRetryKeyV1 {
-                act: entry.act,
-                floor: entry.floor,
-            };
-            ledger
-                .boss_gate_attempts
-                .insert(key, entry.attempts.min(BOSS_GATE_RETRY_ATTEMPTS_PER_GATE));
-        }
-        ledger
-    }
-
-    fn to_report_v1(&self) -> BranchCampaignCombatRetryLedgerV1 {
-        BranchCampaignCombatRetryLedgerV1 {
-            boss_gate_attempts: self
-                .boss_gate_attempts
-                .iter()
-                .map(|(key, attempts)| BranchCampaignCombatRetryLedgerEntryV1 {
-                    act: key.act,
-                    floor: key.floor,
-                    attempts: *attempts,
-                })
-                .collect(),
-        }
-    }
-
-    fn try_consume_boss_gate_retry_v1(&mut self, key: BranchCampaignBossGateRetryKeyV1) -> bool {
-        let attempts = self.boss_gate_attempts.entry(key).or_default();
-        if *attempts >= BOSS_GATE_RETRY_ATTEMPTS_PER_GATE {
-            return false;
-        }
-        *attempts = attempts.saturating_add(1);
-        true
-    }
 }
 
 pub fn run_branch_campaign_v1(
@@ -648,14 +596,9 @@ where
             &selected,
             state.frozen.len(),
         ) {
-            let retry_gate_key = campaign_selection_act_boss_gate_retry_key_v1(&selected);
-            let retry_allowed = retry_gate_key
-                .map(|key| {
-                    state
-                        .combat_retry_ledger
-                        .try_consume_boss_gate_retry_v1(key)
-                })
-                .unwrap_or(true);
+            let retry_allowed = state
+                .combat_retry_ledger
+                .try_consume_selection_boss_gate_retry_v1(&selected);
             if retry_allowed {
                 if let Some(retry_config) = combat_retry_campaign_config_v1(config) {
                     batch = run_campaign_parent_batch_v1(
@@ -1345,10 +1288,11 @@ fn campaign_parent_retry_request_or_result_v1(
     let Some(retry_config) = combat_retry_campaign_config_v1(config) else {
         return Ok(Ok(parent_round_result_without_retry_v1(result)));
     };
-    if let Some(gate_key) = branch_report_act_boss_gate_retry_key_v1(&result.report.branches) {
-        if !combat_retry_ledger.try_consume_boss_gate_retry_v1(gate_key) {
-            return Ok(Ok(parent_round_result_without_retry_v1(result)));
-        }
+    if !try_consume_branch_report_act_boss_gate_retry_v1(
+        combat_retry_ledger,
+        &result.report.branches,
+    ) {
+        return Ok(Ok(parent_round_result_without_retry_v1(result)));
     }
     let initial_elapsed_wall_ms = result.report.elapsed_wall_ms;
     Ok(Err(BranchCampaignParentRetryRequestV1 {
@@ -1553,135 +1497,6 @@ fn campaign_branch_from_parent_replay_error_v1(
     branch.final_boss_combat_record = None;
     branch.combat_lab_probes.clear();
     branch
-}
-
-fn combat_retry_campaign_config_v1(
-    config: &BranchCampaignConfigV1,
-) -> Option<BranchCampaignConfigV1> {
-    let retry_nodes = retry_node_budget_v1(config.search_max_nodes);
-    let retry_wall_ms = config
-        .combat_retry_wall_ms
-        .or_else(|| retry_wall_budget_v1(config.search_wall_ms));
-    if retry_nodes == config.search_max_nodes && retry_wall_ms == config.search_wall_ms {
-        return None;
-    }
-
-    let mut retry_config = config.clone();
-    retry_config.search_max_nodes = retry_nodes;
-    retry_config.search_wall_ms = retry_wall_ms;
-    retry_config.max_branches_per_active = combat_retry_branch_width_v1(config);
-    retry_config.search_max_hp_loss = config
-        .search_max_hp_loss
-        .or(Some(RunControlHpLossLimit::Unlimited));
-    Some(retry_config)
-}
-
-fn combat_retry_branch_width_v1(config: &BranchCampaignConfigV1) -> usize {
-    config.max_branches_per_active.min(config.max_active.max(1))
-}
-
-fn retry_node_budget_v1(current: Option<usize>) -> Option<usize> {
-    let base = current.unwrap_or(COMBAT_RETRY_MIN_NODES);
-    Some(
-        base.saturating_mul(COMBAT_RETRY_NODE_MULTIPLIER)
-            .max(COMBAT_RETRY_MIN_NODES)
-            .min(COMBAT_RETRY_MAX_NODES),
-    )
-}
-
-fn retry_wall_budget_v1(current: Option<u64>) -> Option<u64> {
-    let base = current.unwrap_or(COMBAT_RETRY_MIN_WALL_MS);
-    Some(
-        base.saturating_mul(COMBAT_RETRY_WALL_MULTIPLIER)
-            .max(COMBAT_RETRY_MIN_WALL_MS)
-            .min(COMBAT_RETRY_MAX_WALL_MS),
-    )
-}
-
-fn branch_report_needs_combat_budget_retry_v1(branches: &[BranchExperimentBranchReportV1]) -> bool {
-    !branches.is_empty()
-        && branches
-            .iter()
-            .all(|branch| branch.status == BranchExperimentBranchStatusV1::Pruned)
-        && branches.iter().all(|branch| {
-            normalized_campaign_boundary_title(&branch.summary.boundary_title) == "combat"
-        })
-}
-
-fn campaign_parent_should_retry_combat_budget_now_v1(
-    config: &BranchCampaignConfigV1,
-    branches: &[BranchExperimentBranchReportV1],
-) -> bool {
-    if matches!(
-        config.combat_retry_policy,
-        BranchCampaignCombatRetryPolicyV1::Disabled
-    ) {
-        return false;
-    }
-    if !branch_report_needs_combat_budget_retry_v1(branches) {
-        return false;
-    }
-    matches!(
-        config.combat_retry_policy,
-        BranchCampaignCombatRetryPolicyV1::Immediate
-    ) || branch_report_is_act_boss_gate_combat_retry_candidate_v1(branches)
-}
-
-fn branch_report_is_act_boss_gate_combat_retry_candidate_v1(
-    branches: &[BranchExperimentBranchReportV1],
-) -> bool {
-    branch_report_act_boss_gate_retry_key_v1(branches).is_some()
-}
-
-fn branch_report_act_boss_gate_retry_key_v1(
-    branches: &[BranchExperimentBranchReportV1],
-) -> Option<BranchCampaignBossGateRetryKeyV1> {
-    branches.iter().find_map(|branch| {
-        let act = branch.summary.act;
-        let floor = branch.summary.floor;
-        (normalized_campaign_boundary_title(&branch.summary.boundary_title) == "combat"
-            && floor >= act_boss_floor_v1(act))
-        .then_some(BranchCampaignBossGateRetryKeyV1 {
-            act,
-            floor: act_boss_floor_v1(act),
-        })
-    })
-}
-
-fn campaign_selection_act_boss_gate_retry_key_v1(
-    selection: &BranchCampaignSelectionV1,
-) -> Option<BranchCampaignBossGateRetryKeyV1> {
-    selection.abandoned.iter().find_map(|branch| {
-        let summary = branch.summary.as_ref()?;
-        (normalized_campaign_boundary_title(&branch.frontier_title) == "combat"
-            && summary.floor >= act_boss_floor_v1(summary.act))
-        .then_some(BranchCampaignBossGateRetryKeyV1 {
-            act: summary.act,
-            floor: act_boss_floor_v1(summary.act),
-        })
-    })
-}
-
-fn campaign_round_should_retry_combat_budget_on_stall_v1(
-    config: &BranchCampaignConfigV1,
-    selection: &BranchCampaignSelectionV1,
-    existing_frozen_branches: usize,
-) -> bool {
-    matches!(
-        config.combat_retry_policy,
-        BranchCampaignCombatRetryPolicyV1::OnStall
-    ) && combat_retry_campaign_config_v1(config).is_some()
-        && existing_frozen_branches == 0
-        && selection.active.is_empty()
-        && selection.frozen.is_empty()
-        && selection.victories.is_empty()
-        && selection.dead.is_empty()
-        && selection.stuck.is_empty()
-        && !selection.abandoned.is_empty()
-        && selection
-            .abandoned
-            .iter()
-            .all(|branch| normalized_campaign_boundary_title(&branch.frontier_title) == "combat")
 }
 
 fn normalized_campaign_boundary_title(value: &str) -> String {

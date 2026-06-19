@@ -2630,13 +2630,20 @@ fn campaign_boss_gate_retry_ledger_limits_attempts_per_gate() {
         16,
         80,
     );
-    let gate = branch_report_act_boss_gate_retry_key_v1(&[abandoned_act1_boss])
-        .expect("act boss combat should have a retry gate key");
     let mut ledger = BranchCampaignCombatRetryLedgerStateV1::default();
 
-    assert!(ledger.try_consume_boss_gate_retry_v1(gate));
-    assert!(ledger.try_consume_boss_gate_retry_v1(gate));
-    assert!(!ledger.try_consume_boss_gate_retry_v1(gate));
+    assert!(try_consume_branch_report_act_boss_gate_retry_v1(
+        &mut ledger,
+        &[abandoned_act1_boss.clone()]
+    ));
+    assert!(try_consume_branch_report_act_boss_gate_retry_v1(
+        &mut ledger,
+        &[abandoned_act1_boss.clone()]
+    ));
+    assert!(!try_consume_branch_report_act_boss_gate_retry_v1(
+        &mut ledger,
+        &[abandoned_act1_boss]
+    ));
 
     let report = ledger.to_report_v1();
     assert_eq!(report.boss_gate_attempts.len(), 1);
@@ -2658,11 +2665,13 @@ fn campaign_non_boss_gate_combat_has_no_boss_gate_retry_key() {
         10,
         70,
     );
+    let mut ledger = BranchCampaignCombatRetryLedgerStateV1::default();
 
-    assert_eq!(
-        branch_report_act_boss_gate_retry_key_v1(&[abandoned_hallway]),
-        None
-    );
+    assert!(try_consume_branch_report_act_boss_gate_retry_v1(
+        &mut ledger,
+        &[abandoned_hallway]
+    ));
+    assert!(ledger.to_report_v1().boss_gate_attempts.is_empty());
 }
 
 #[test]
