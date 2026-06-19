@@ -1,5 +1,9 @@
 use std::collections::BTreeMap;
 
+use super::branch_display::{
+    compact_campaign_choice_label_metadata_v1, render_campaign_branch_state,
+    render_compact_choice_path,
+};
 use super::performance::{
     aggregate_campaign_combat_performance_v1, format_seconds_from_us_1dp_v1,
     render_campaign_combat_performance_v1,
@@ -11,11 +15,10 @@ use super::strategic_signals::{
 };
 use super::{
     campaign_boss_relic_lineage_counts_v1, campaign_branch_boss_relic_lineage_key_v1,
-    campaign_strategy_next_step_v1, compact_campaign_choice_label_metadata_v1,
-    render_campaign_branch_state, render_campaign_discard_example_v1,
-    render_campaign_intervention_details_v2, render_compact_choice_path, render_string_counts_v1,
-    BranchCampaignBranchV1, BranchCampaignReportV1, BranchCampaignStrategyRequestV1,
-    BOSS_GATE_RETRY_ATTEMPTS_PER_GATE, UNSPENT_GOLD_PRESSURE_THRESHOLD,
+    campaign_strategy_next_step_v1, render_campaign_discard_example_v1,
+    render_campaign_intervention_details_v2, render_string_counts_v1, BranchCampaignBranchV1,
+    BranchCampaignReportV1, BranchCampaignStrategyRequestV1, BOSS_GATE_RETRY_ATTEMPTS_PER_GATE,
+    UNSPENT_GOLD_PRESSURE_THRESHOLD,
 };
 
 pub fn render_branch_campaign_compact_v1(
