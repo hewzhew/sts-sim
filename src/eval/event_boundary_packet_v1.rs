@@ -66,11 +66,18 @@ pub fn event_boundary_packet_from_session_v1(
     }
     let event_state = session.run_state.event_state.as_ref()?;
     let options = crate::engine::event_handler::get_event_options(&session.run_state);
+    let option_count = options.len();
     let candidates = options
         .iter()
         .enumerate()
         .map(|(index, option)| {
-            event_candidate_snapshot_v1(event_state.id, event_state.current_screen, index, option)
+            event_candidate_snapshot_v1(
+                event_state.id,
+                event_state.current_screen,
+                index,
+                option,
+                option_count,
+            )
         })
         .collect::<Vec<_>>();
     Some(EventBoundaryPacketV1 {
@@ -160,6 +167,7 @@ fn event_candidate_snapshot_v1(
     current_screen: usize,
     index: usize,
     option: &EventOption,
+    option_count: usize,
 ) -> EventCandidateSnapshotV1 {
     let (transition, selection_kind) = transition_snapshot_v1(option.semantics.transition);
     let effects = option
@@ -186,7 +194,7 @@ fn event_candidate_snapshot_v1(
         selection_kind,
         terminal: option.semantics.terminal,
         repeatable: option.semantics.repeatable,
-        role: candidate_role_v1(option, &information_tags),
+        role: candidate_role_v1(option, &information_tags, option_count),
         information_tags,
         effects,
         constraints,
@@ -239,7 +247,11 @@ fn event_boundary_class_v1(candidates: &[EventCandidateSnapshotV1]) -> String {
     "event_boundary".to_string()
 }
 
-fn candidate_role_v1(option: &EventOption, information_tags: &[String]) -> String {
+fn candidate_role_v1(
+    option: &EventOption,
+    information_tags: &[String],
+    option_count: usize,
+) -> String {
     if option.ui.disabled {
         return "disabled".to_string();
     }
@@ -267,12 +279,17 @@ fn candidate_role_v1(option: &EventOption, information_tags: &[String]) -> Strin
         && option.semantics.terminal
         && option.semantics.effects.is_empty()
     {
-        return "forced_leave".to_string();
+        return if option_count == 1 {
+            "forced_leave".to_string()
+        } else {
+            "safe_exit".to_string()
+        };
     }
     if matches!(
         option.semantics.action,
         EventActionKind::Continue | EventActionKind::Leave
     ) && option.semantics.effects.is_empty()
+        && option_count == 1
     {
         return "trivial_continue".to_string();
     }
@@ -588,7 +605,7 @@ mod tests {
             },
         );
 
-        let candidate = event_candidate_snapshot_v1(EventId::Cleric, 0, 0, &option);
+        let candidate = event_candidate_snapshot_v1(EventId::Cleric, 0, 0, &option, 1);
 
         assert_eq!(candidate.transition, "open_selection");
         assert_eq!(candidate.selection_kind.as_deref(), Some("remove_card"));
@@ -618,5 +635,28 @@ mod tests {
         assert!(lines[2].contains("event 1 action=trade role=strategic_choice"));
         assert!(lines[2].contains("heal(amount=20)"));
         assert!(lines[2].contains("obtain_curse(card=Parasite,card_kind=specific,count=1)"));
+    }
+
+    #[test]
+    fn cursed_tome_intro_read_is_strategic_not_trivial_flavor() {
+        let mut session = RunControlSession::new(Default::default());
+        session.engine_state = EngineState::EventRoom;
+        session.run_state.event_state = Some(EventState::new(EventId::CursedTome));
+
+        let packet = event_boundary_packet_from_session_v1(&session).unwrap();
+
+        assert_eq!(packet.boundary_class, "strategic_choice");
+        let read = packet
+            .candidates
+            .iter()
+            .find(|candidate| candidate.command == "event 0")
+            .unwrap();
+        let leave = packet
+            .candidates
+            .iter()
+            .find(|candidate| candidate.command == "event 1")
+            .unwrap();
+        assert_eq!(read.role, "strategic_choice");
+        assert_eq!(leave.role, "safe_exit");
     }
 }
