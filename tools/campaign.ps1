@@ -141,6 +141,10 @@ Runs with the slow-to-build final-performance profile.
 .EXAMPLE
 .\tools\campaign.ps1 -Build
 Rebuilds the branch campaign driver before running it.
+
+.EXAMPLE
+.\tools\campaign.ps1 -Mode quick -AutoCaptureCombat -AutoCaptureRoot tools\artifacts\tmp\ml_capture_seed123
+Runs a campaign and registers fresh combat captures under the selected benchmark root.
 #>
 param(
     [Parameter(Position = 0)]
@@ -166,6 +170,7 @@ param(
     [switch] $Perf,
     [switch] $NoBossSegments,
     [switch] $BossSegments,
+    [switch] $AutoCaptureCombat,
     [switch] $DebugBuild,
     [switch] $Build,
     [switch] $PlanTargets,
@@ -173,6 +178,7 @@ param(
 
     [string] $ExportLearningDataset = "",
     [string] $DecisionOutcomeDataset = "",
+    [string] $AutoCaptureRoot = "",
 
     [ValidateSet("fast-run", "release-final", "release", "dev-opt", "debug")]
     [string] $BuildProfile = "fast-run",
@@ -480,6 +486,12 @@ if ($CampaignBoundParameters.ContainsKey("CombatRetryWallMs") -and $CombatRetryW
 }
 Add-DriverArgIfBound "BranchExamples" "--branch-examples" $BranchExamples
 Add-DriverArgIfBound "VictoryHpPercent" "--min-acceptable-victory-hp-percent" $VictoryHpPercent
+if ($AutoCaptureCombat) {
+    $DriverArgs += "--auto-capture-combat"
+    if ($AutoCaptureRoot) {
+        $DriverArgs += @("--auto-capture-root", "$AutoCaptureRoot")
+    }
+}
 
 function Test-ExtraCombatOptionKey {
     param(
@@ -667,6 +679,12 @@ if ($PlanTargets -or $ContinueTargets) {
         $ContinueTargetArgs += @("--report-detail", "perf")
     } elseif ($Diagnose) {
         $ContinueTargetArgs += @("--report-detail", "diagnose")
+    }
+    if ($AutoCaptureCombat) {
+        $ContinueTargetArgs += "--auto-capture-combat"
+        if ($AutoCaptureRoot) {
+            $ContinueTargetArgs += @("--auto-capture-root", "$AutoCaptureRoot")
+        }
     }
     if ($ExtraArgs) {
         $ContinueTargetArgs += $ExtraArgs
