@@ -1173,11 +1173,23 @@ fn learning_samples_by_sibling_group_v1(
     let mut groups = BTreeMap::<String, Vec<&LearningDecisionOutcomeSampleV1>>::new();
     for sample in samples {
         groups
-            .entry(sample.sibling_group_id.clone())
+            .entry(continuation_effect_group_key_v1(&sample.sibling_group_id))
             .or_default()
             .push(sample);
     }
     groups
+}
+
+fn continuation_effect_group_key_v1(sibling_group_id: &str) -> String {
+    let parts = sibling_group_id
+        .split('|')
+        .filter(|part| !part.starts_with("rounds="))
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        sibling_group_id.to_string()
+    } else {
+        parts.join("|")
+    }
 }
 
 fn learning_group_censored_only_v1(group: &[&LearningDecisionOutcomeSampleV1]) -> bool {
@@ -2072,6 +2084,26 @@ mod tests {
         assert_eq!(report.expanded_target_groups, 1);
         assert!(rendered.contains("ContinuationEffectReportV1"));
         assert!(rendered.contains("still_censored_target_groups=1"));
+    }
+
+    #[test]
+    fn continuation_effect_report_ignores_campaign_round_in_group_key() {
+        let mut before = sample_decision_outcome_sample("rp 1", "Skip");
+        before.sibling_group_id =
+            "seed=1|domain=debug_a0:0|rounds=7|parent=root.rp 0|step=3".to_string();
+        before.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::CensoredOngoing;
+
+        let mut after = sample_decision_outcome_sample("rp 1", "Skip");
+        after.sibling_group_id =
+            "seed=1|domain=debug_a0:0|rounds=8|parent=root.rp 0|step=3".to_string();
+        after.outcome.outcome_class = BranchOutcomeClassV1::TerminalVictory;
+        after.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::TerminalOutcome;
+
+        let report = analyze_continuation_effect_v1(&[before], &[after]);
+
+        assert_eq!(report.common_groups, 1);
+        assert_eq!(report.newly_terminal_groups, 1);
+        assert_eq!(report.after_censored_only_groups, 0);
     }
 
     #[test]
