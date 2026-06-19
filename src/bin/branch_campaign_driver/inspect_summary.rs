@@ -288,7 +288,7 @@ fn render_event_boundary_summary_v1(packet: &EventBoundaryPacketV1) -> String {
                 .effects
                 .iter()
                 .take(3)
-                .map(|effect| effect.kind.as_str())
+                .map(render_event_effect_short_v1)
                 .collect::<Vec<_>>()
                 .join("+");
             if effects.is_empty() {
@@ -314,6 +314,23 @@ fn render_event_boundary_summary_v1(packet: &EventBoundaryPacketV1) -> String {
         "event_boundary: {} screen={} class={} candidates=[{}{}]",
         packet.event_id, packet.current_screen, packet.boundary_class, candidates, suffix
     )
+}
+
+fn render_event_effect_short_v1(
+    effect: &sts_simulator::eval::event_boundary_packet_v1::EventEffectSnapshotV1,
+) -> String {
+    if effect.params.is_empty() {
+        return effect.kind.clone();
+    }
+    let params = effect
+        .params
+        .iter()
+        .take(3)
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let suffix = if effect.params.len() > 3 { ",..." } else { "" };
+    format!("{}({}{})", effect.kind, params, suffix)
 }
 
 fn render_reward_boundary_summary_v1(packet: &RewardBoundaryPacketV1) -> String {
