@@ -6,6 +6,9 @@ use sts_simulator::content::cards::{get_card_definition, CardTag, CardType};
 use sts_simulator::eval::branch_campaign::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchV1, BranchCampaignReportV1,
 };
+use sts_simulator::eval::event_boundary_packet_v1::{
+    event_boundary_packet_from_session_v1, EventBoundaryPacketV1,
+};
 use sts_simulator::eval::run_control::{build_decision_surface, RunControlSession};
 use sts_simulator::runtime::combat::CombatCard;
 
@@ -252,6 +255,9 @@ fn render_session_details(
     if !boss_pressure.is_empty() {
         lines.push(format!("boss_pressure: {}", boss_pressure.join(", ")));
     }
+    if let Some(packet) = event_boundary_packet_from_session_v1(session) {
+        lines.push(render_event_boundary_summary_v1(&packet));
+    }
     if let Some(branch) = branch {
         if !branch.stop_reason.trim().is_empty() {
             lines.push(format!("stop: {}", first_line(&branch.stop_reason)));
@@ -264,6 +270,44 @@ fn render_session_details(
         lines.push(format!("commands: {}", render_recent_path(commands)));
     }
     lines
+}
+
+fn render_event_boundary_summary_v1(packet: &EventBoundaryPacketV1) -> String {
+    let candidates = packet
+        .candidates
+        .iter()
+        .take(4)
+        .map(|candidate| {
+            let effects = candidate
+                .effects
+                .iter()
+                .take(3)
+                .map(|effect| effect.kind.as_str())
+                .collect::<Vec<_>>()
+                .join("+");
+            if effects.is_empty() {
+                format!(
+                    "{}:{}:{}",
+                    candidate.command, candidate.action_kind, candidate.role
+                )
+            } else {
+                format!(
+                    "{}:{}:{}:{}",
+                    candidate.command, candidate.action_kind, candidate.role, effects
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let suffix = if packet.candidates.len() > 4 {
+        format!(" | ... {} more", packet.candidates.len() - 4)
+    } else {
+        String::new()
+    };
+    format!(
+        "event_boundary: {} screen={} class={} candidates=[{}{}]",
+        packet.event_id, packet.current_screen, packet.boundary_class, candidates, suffix
+    )
 }
 
 #[derive(Default)]

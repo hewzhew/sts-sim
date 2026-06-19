@@ -331,6 +331,7 @@ mod tests {
                 boss: "TimeEater".to_string(),
                 boss_pressure: vec!["pressure:time_warp_counter_control".to_string()],
                 run_debt: Vec::new(),
+                event_boundary: None,
             }),
             checkpoint_enriched: false,
             state_features: None,

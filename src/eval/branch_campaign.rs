@@ -910,6 +910,8 @@ where
         stuck: state.stuck.len(),
     });
 
+    campaign_refresh_all_branch_summaries_from_state_store_v1(&mut state);
+
     let strategic_signals = campaign_strategic_signals_from_groups_v1(
         &state.active,
         &state.frozen,
@@ -941,6 +943,40 @@ where
         rounds: state.rounds,
     };
     Ok(BranchCampaignRunResultV1 { report, checkpoint })
+}
+
+fn campaign_refresh_all_branch_summaries_from_state_store_v1(state: &mut BranchCampaignRunStateV1) {
+    campaign_refresh_branch_group_summaries_from_state_store_v1(
+        &mut state.active,
+        &state.state_store,
+    );
+    campaign_refresh_branch_group_summaries_from_state_store_v1(
+        &mut state.frozen,
+        &state.state_store,
+    );
+    campaign_refresh_branch_group_summaries_from_state_store_v1(
+        &mut state.victories,
+        &state.state_store,
+    );
+    campaign_refresh_branch_group_summaries_from_state_store_v1(
+        &mut state.abandoned,
+        &state.state_store,
+    );
+    campaign_refresh_branch_group_summaries_from_state_store_v1(
+        &mut state.stuck,
+        &state.state_store,
+    );
+}
+
+fn campaign_refresh_branch_group_summaries_from_state_store_v1(
+    branches: &mut [BranchCampaignBranchV1],
+    state_store: &BranchStateStoreV1,
+) {
+    for branch in branches {
+        if let Some(session) = state_store.get_session(&branch.commands) {
+            campaign_refresh_branch_summary_from_session_v1(branch, session);
+        }
+    }
 }
 
 fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
@@ -4565,9 +4601,12 @@ fn campaign_refresh_branch_summary_from_session_v1(
     branch: &mut BranchCampaignBranchV1,
     session: &RunControlSession,
 ) {
+    let event_boundary =
+        crate::eval::event_boundary_packet_v1::event_boundary_packet_from_session_v1(session);
     let Some(summary) = branch.summary.as_mut() else {
         return;
     };
+    summary.event_boundary = event_boundary;
     summary.act = session.run_state.act_num;
     summary.floor = session.run_state.floor_num;
     let (hp, max_hp) = session.visible_player_hp();
@@ -5272,6 +5311,7 @@ fn campaign_summary_from_report_branch_v1(
         boss: String::new(),
         boss_pressure: Vec::new(),
         run_debt: Vec::new(),
+        event_boundary: None,
     }
 }
 

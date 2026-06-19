@@ -245,6 +245,7 @@ mod tests {
                     boss: "Time Eater".to_string(),
                     boss_pressure: Vec::new(),
                     run_debt: Vec::new(),
+                    event_boundary: None,
                 }),
                 strategic_summary: BranchSignatureCompact::default(),
                 frontier_title: "Game Over Victory".to_string(),

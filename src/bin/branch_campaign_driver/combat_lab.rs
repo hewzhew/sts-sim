@@ -426,6 +426,7 @@ mod tests {
                     "red:no_execute_block_plan".to_string(),
                 ],
                 run_debt: Vec::new(),
+                event_boundary: None,
             }),
             strategic_summary: Default::default(),
             frontier_title: "Shop".to_string(),

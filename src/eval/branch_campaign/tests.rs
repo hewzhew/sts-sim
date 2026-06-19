@@ -5012,6 +5012,7 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
             boss: String::new(),
             boss_pressure: Vec::new(),
             run_debt: Vec::new(),
+            event_boundary: None,
         }),
         strategic_summary: Default::default(),
         frontier_title: "Card Reward".to_string(),
