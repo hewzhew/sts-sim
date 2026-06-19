@@ -7,6 +7,8 @@ Input is either:
   by combat_search_guidance_samples.py.
 - CombatActionProbeSampleV1 JSONL produced from guidance-lab reports by
   combat_guidance_lab_extract.py.
+- CombatTurnPlanProbeSampleV1 JSONL produced from turn-plan guidance-lab
+  reports by combat_turn_plan_guidance_lab_extract.py.
 
 This is an offline diagnostic.  It does not train a combat policy and does not
 claim the selected action is human-optimal.  The label is only:
@@ -30,6 +32,7 @@ from typing import Any
 TARGET_KIND = "initial_decision_candidate_selected_by_best_complete"
 LEGACY_SCHEMA_NAME = "CombatSearchGuidanceSampleV1"
 PROBE_SCHEMA_NAME = "CombatActionProbeSampleV1"
+TURN_PLAN_SCHEMA_NAME = "CombatTurnPlanProbeSampleV1"
 
 
 def stable_hash(text: str) -> int:
@@ -54,21 +57,30 @@ def load_samples(paths: list[Path]) -> list[dict[str, Any]]:
                         continue
                     sample["_source_jsonl"] = str(path)
                     samples.append(sample)
-                elif schema_name == PROBE_SCHEMA_NAME:
+                elif schema_name in (PROBE_SCHEMA_NAME, TURN_PLAN_SCHEMA_NAME):
                     sample["_source_jsonl"] = str(path)
                     samples.append(sample)
                 else:
                     raise SystemExit(
                         f"{path}:{line_no}: expected {LEGACY_SCHEMA_NAME} or "
-                        f"{PROBE_SCHEMA_NAME}, got {schema_name!r}"
+                        f"{PROBE_SCHEMA_NAME} or {TURN_PLAN_SCHEMA_NAME}, got {schema_name!r}"
                     )
     return samples
 
 
+def is_root_context_schema(sample: dict[str, Any]) -> bool:
+    return sample.get("schema_name") in (PROBE_SCHEMA_NAME, TURN_PLAN_SCHEMA_NAME)
+
+
+def is_turn_plan_sample(sample: dict[str, Any]) -> bool:
+    return sample.get("schema_name") == TURN_PLAN_SCHEMA_NAME
+
+
 def group_key(sample: dict[str, Any]) -> str:
-    if sample.get("schema_name") == PROBE_SCHEMA_NAME:
+    if is_root_context_schema(sample):
         source = sample.get("source") or {}
         context = (sample.get("root_context") or {}).get("config") or {}
+        enumeration = (sample.get("root_context") or {}).get("enumeration") or {}
         return "|".join(
             str(part)
             for part in (
@@ -80,8 +92,12 @@ def group_key(sample: dict[str, Any]) -> str:
                 source.get("input_path"),
                 context.get("max_nodes"),
                 context.get("wall_time_ms"),
+                context.get("max_inner_nodes"),
+                context.get("max_end_states"),
+                context.get("per_bucket_limit"),
                 context.get("rollout_policy"),
                 context.get("frontier_policy"),
+                enumeration.get("planning_policy"),
             )
         )
     source = sample.get("source") or {}
@@ -111,7 +127,7 @@ def usable_groups(samples: list[dict[str, Any]]) -> dict[str, list[dict[str, Any
     for key, group in grouped_samples(samples).items():
         positives = sum(is_selected(sample) for sample in group)
         if positives == 1 and len(group) >= 2:
-            groups[key] = sorted(group, key=lambda sample: candidate(sample).get("ordered_index", 0))
+            groups[key] = sorted(group, key=sample_ordered_index)
     return groups
 
 
@@ -119,16 +135,22 @@ def is_selected(sample: dict[str, Any]) -> bool:
     if sample.get("schema_name") == PROBE_SCHEMA_NAME:
         target = sample.get("target") if isinstance(sample.get("target"), dict) else {}
         return bool(target.get("is_best_target_candidate"))
+    if is_turn_plan_sample(sample):
+        target = sample.get("target") if isinstance(sample.get("target"), dict) else {}
+        return bool(target.get("is_best_target_plan"))
     return bool((sample.get("label") or {}).get("selected_by_best_complete"))
 
 
 def candidate(sample: dict[str, Any]) -> dict[str, Any]:
+    if is_turn_plan_sample(sample):
+        value = sample.get("plan")
+        return value if isinstance(value, dict) else {}
     value = sample.get("candidate")
     return value if isinstance(value, dict) else {}
 
 
 def initial_context(sample: dict[str, Any]) -> dict[str, Any]:
-    if sample.get("schema_name") == PROBE_SCHEMA_NAME:
+    if is_root_context_schema(sample):
         context = (sample.get("root_context") or {}).get("initial_context")
         return context if isinstance(context, dict) else {}
     context = sample.get("initial_context")
@@ -136,7 +158,7 @@ def initial_context(sample: dict[str, Any]) -> dict[str, Any]:
 
 
 def search_context(sample: dict[str, Any]) -> dict[str, Any]:
-    if sample.get("schema_name") == PROBE_SCHEMA_NAME:
+    if is_root_context_schema(sample):
         context = (sample.get("root_context") or {}).get("config")
         return context if isinstance(context, dict) else {}
     context = sample.get("search_context")
@@ -154,6 +176,20 @@ def one_step_context(sample: dict[str, Any]) -> dict[str, Any]:
             "terminal": cand.get("one_step_terminal"),
         }
     return {}
+
+
+def candidate_action_key(sample: dict[str, Any]) -> str:
+    cand = candidate(sample)
+    if is_turn_plan_sample(sample):
+        return str(cand.get("first_action_key") or "")
+    return str(cand.get("action_key") or "")
+
+
+def sample_ordered_index(sample: dict[str, Any]) -> int:
+    cand = candidate(sample)
+    if is_turn_plan_sample(sample):
+        return int_or_max(cand.get("plan_index"))
+    return int_or_max(cand.get("ordered_index"))
 
 
 def candidate_outcome(sample: dict[str, Any]) -> tuple[int, int, int, int]:
@@ -242,14 +278,20 @@ def extract_features(sample: dict[str, Any], *, include_order_features: bool) ->
     frontier = context.get("frontier_value") if isinstance(context.get("frontier_value"), dict) else {}
     search = search_context(sample)
     one_step = one_step_context(sample)
-    action_key = str(cand.get("action_key") or "")
+    action_key = candidate_action_key(sample)
 
     add_token(features, "bias")
     add_token(features, f"schema:{sample.get('schema_name')}")
     add_token(features, f"action_class:{cand.get('action_class')}")
     add_token(features, f"action_role:{cand.get('action_role')}")
+    add_token(features, f"plan_bucket:{cand.get('bucket')}")
+    add_token(features, f"plan_stop_reason:{cand.get('stop_reason')}")
+    add_token(features, f"plan_outcome_class:{cand.get('outcome_class')}")
+    add_token(features, f"plan_survival_bucket:{cand.get('survival_bucket')}")
+    add_token(features, f"plan_progress_bucket:{cand.get('progress_bucket')}")
     add_token(features, f"rollout_policy:{search.get('rollout_policy')}")
     add_token(features, f"frontier_policy:{search.get('frontier_policy')}")
+    add_token(features, f"potion_policy:{search.get('potion_policy')}")
     add_token(features, f"one_step_status:{one_step.get('status')}")
     add_token(features, f"one_step_terminal:{one_step.get('terminal')}")
     add_token(features, f"one_step_transition:{one_step.get('transition')}")
@@ -264,8 +306,27 @@ def extract_features(sample: dict[str, Any], *, include_order_features: bool) ->
     if include_order_features and hand_match:
         add_number(features, "hand_index", int(hand_match.group(1)), 10.0)
     if include_order_features:
-        add_number(features, "ordered_index", cand.get("ordered_index"), 24.0)
+        add_number(features, "ordered_index", sample_ordered_index(sample), 24.0)
         add_number(features, "original_action_id", cand.get("original_action_id"), 24.0)
+
+    if is_turn_plan_sample(sample):
+        add_number(features, "plan_action_count", cand.get("action_count"), 12.0)
+        add_number(features, "plan_eval_final_hp", cand.get("eval_final_hp"), 100.0)
+        add_number(features, "plan_eval_risk_margin", cand.get("eval_risk_margin"), 100.0)
+        add_number(features, "plan_eval_enemy_progress", cand.get("eval_enemy_progress"), 300.0)
+        action_keys = cand.get("action_keys") if isinstance(cand.get("action_keys"), list) else []
+        for position, key in enumerate(action_keys[:8]):
+            action = str(key)
+            if action == "combat/end_turn":
+                add_token(features, f"plan_action:{position}:end_turn")
+                continue
+            card = normalized_card_from_action_key(action)
+            if card:
+                add_token(features, f"plan_card:{card}")
+                add_token(features, f"plan_action:{position}:card:{card}")
+            target = TARGET_IN_ACTION_RE.search(action)
+            if target:
+                add_token(features, f"plan_action:{position}:target:{target.group(1).split(':')[0]}")
 
     for path, scale in (
         ("player_hp", 100.0),
@@ -411,7 +472,7 @@ def selected_rank(group: list[dict[str, Any]], scores: list[float]) -> int:
 def evaluate_ordered_index(groups: dict[str, list[dict[str, Any]]]) -> dict[str, float]:
     group_scores = {}
     for key, group in groups.items():
-        group_scores[key] = [-(candidate(sample).get("ordered_index") or 0) for sample in group]
+        group_scores[key] = [-sample_ordered_index(sample) for sample in group]
     return metrics_from_group_scores(groups, group_scores)
 
 
@@ -450,7 +511,7 @@ def metrics_from_group_scores(
         top_index = max(range(len(group)), key=lambda index: scores[index])
         current_index = min(
             range(len(group)),
-            key=lambda index: candidate(group[index]).get("ordered_index", 10**9),
+            key=lambda index: sample_ordered_index(group[index]),
         )
         target_index = next((index for index, sample in enumerate(group) if is_selected(sample)), None)
         top = group[top_index]
@@ -538,7 +599,10 @@ def main() -> None:
         "inputs",
         nargs="+",
         type=Path,
-        help="CombatSearchGuidanceSampleV1 or CombatActionProbeSampleV1 JSONL",
+        help=(
+            "CombatSearchGuidanceSampleV1, CombatActionProbeSampleV1, or "
+            "CombatTurnPlanProbeSampleV1 JSONL"
+        ),
     )
     parser.add_argument("--dim", type=int, default=4096)
     parser.add_argument("--epochs", type=int, default=25)
@@ -560,10 +624,10 @@ def main() -> None:
     for group in groups.values():
         for sample in group:
             target_counts["selected" if is_selected(sample) else "not_selected"] += 1
-    print("CombatFirstActionRankingBaseline")
+    print("CombatSearchRankingBaseline")
     print(f"  samples={len(samples)} usable_groups={len(groups)} labels={dict(target_counts)}")
     print(
-        "  label_role=oracle_search_guidance_first_action_not_human_policy "
+        "  label_role=oracle_search_guidance_ranking_not_human_policy "
         "candidate_coverage=root_legal_candidates_reported_limit"
     )
     if len(groups) < 8:
