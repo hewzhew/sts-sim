@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use super::branch_display::{
     compact_campaign_choice_label_metadata_v1, render_campaign_branch_state,
-    render_compact_choice_path,
+    render_campaign_discard_example_v1, render_compact_choice_path,
 };
 use super::lineage::{
     campaign_boss_relic_lineage_counts_v1, campaign_branch_boss_relic_lineage_key_v1,
@@ -18,10 +18,9 @@ use super::strategic_signals::{
     render_campaign_strategic_signals_v1,
 };
 use super::{
-    campaign_strategy_next_step_v1, render_campaign_discard_example_v1,
-    render_campaign_intervention_details_v2, BranchCampaignBranchV1, BranchCampaignReportV1,
-    BranchCampaignStrategyRequestV1, BOSS_GATE_RETRY_ATTEMPTS_PER_GATE,
-    UNSPENT_GOLD_PRESSURE_THRESHOLD,
+    campaign_strategy_next_step_v1, render_campaign_intervention_details_v2,
+    BranchCampaignBranchV1, BranchCampaignReportV1, BranchCampaignStrategyRequestV1,
+    BOSS_GATE_RETRY_ATTEMPTS_PER_GATE, UNSPENT_GOLD_PRESSURE_THRESHOLD,
 };
 
 pub fn render_branch_campaign_compact_v1(

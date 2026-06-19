@@ -172,6 +172,15 @@ pub(super) fn render_choice_path(labels: &[String]) -> String {
     }
 }
 
+pub(super) fn render_campaign_discard_example_v1(branch: &BranchCampaignBranchV1) -> String {
+    let choices = render_choice_path(&branch.choice_labels);
+    if choices == "-" {
+        render_campaign_branch_state(branch)
+    } else {
+        choices
+    }
+}
+
 pub(super) fn render_compact_choice_path(labels: &[String]) -> String {
     const MAX_CHARS: usize = 140;
     if labels.is_empty() {
