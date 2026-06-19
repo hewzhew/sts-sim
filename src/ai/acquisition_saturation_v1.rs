@@ -348,16 +348,23 @@ fn candidate_opens_ceiling_path(
         && input.exhaust_payoffs > 0)
         || (has(profile, CardRewardSemanticRoleV1::StatusGenerator) && input.status_payoffs > 0);
 
-    let opens_block_engine = has_any(
+    let opens_block_engine = candidate_opens_block_engine_path(profile, input);
+
+    opens_scaling_or_package || opens_block_engine
+}
+
+fn candidate_opens_block_engine_path(
+    profile: &CardRewardSemanticProfileV1,
+    input: &AcquisitionSaturationInputV1,
+) -> bool {
+    has_any(
         profile,
         &[
             CardRewardSemanticRoleV1::BlockRetention,
             CardRewardSemanticRoleV1::BlockPayoff,
             CardRewardSemanticRoleV1::BlockMultiplier,
         ],
-    ) && (input.block_cards >= 5 || input.block_engine_pieces > 0);
-
-    opens_scaling_or_package || opens_block_engine
+    ) && input.block_engine_pieces > 0
 }
 
 pub fn apply_acquisition_saturation_to_delta_v1(
@@ -775,13 +782,13 @@ mod tests {
     }
 
     #[test]
-    fn block_engine_seed_requires_some_block_density_or_support() {
+    fn block_engine_seed_does_not_open_from_plain_block_density_only() {
         let report = evaluate_acquisition_saturation_v1(
             &AcquisitionSaturationInputV1 {
                 act: 2,
                 deck_size: 18,
                 frontload_cards: 6,
-                block_cards: 2,
+                block_cards: 7,
                 draw_sources: 1,
                 exhaust_generators: 0,
                 scaling_sources: 0,
@@ -794,6 +801,31 @@ mod tests {
         );
 
         assert!(!report.has_signal(
+            AcquisitionRoleV1::WinConditionOrCeiling,
+            AcquisitionSaturationStatusV1::Missing
+        ));
+    }
+
+    #[test]
+    fn block_engine_seed_can_open_when_another_engine_piece_exists() {
+        let report = evaluate_acquisition_saturation_v1(
+            &AcquisitionSaturationInputV1 {
+                act: 2,
+                deck_size: 18,
+                frontload_cards: 6,
+                block_cards: 5,
+                draw_sources: 1,
+                exhaust_generators: 0,
+                scaling_sources: 0,
+                strength_sources: 0,
+                block_engine_pieces: 1,
+                same_card_count: 0,
+                ..input()
+            },
+            &profile(CardId::Barricade),
+        );
+
+        assert!(report.has_signal(
             AcquisitionRoleV1::WinConditionOrCeiling,
             AcquisitionSaturationStatusV1::Missing
         ));

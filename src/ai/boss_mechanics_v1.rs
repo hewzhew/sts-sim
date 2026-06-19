@@ -201,6 +201,8 @@ struct BossMechanicDeckFactsV1 {
     aoe_count: usize,
     artifact_strip_count: usize,
     big_block_count: usize,
+    block_retention_count: usize,
+    block_multiplier_count: usize,
     key_card_count: usize,
     low_value_spam_count: usize,
     transition_burst_count: usize,
@@ -282,6 +284,8 @@ impl BossMechanicDeckFactsV1 {
             aoe_count: 0,
             artifact_strip_count: 0,
             big_block_count: 0,
+            block_retention_count: 0,
+            block_multiplier_count: 0,
             key_card_count: 0,
             low_value_spam_count: 0,
             transition_burst_count: 0,
@@ -317,6 +321,12 @@ impl BossMechanicDeckFactsV1 {
             if is_big_block(card.id) {
                 facts.big_block_count = facts.big_block_count.saturating_add(1);
             }
+            if card.id == CardId::Barricade {
+                facts.block_retention_count = facts.block_retention_count.saturating_add(1);
+            }
+            if card.id == CardId::Entrench {
+                facts.block_multiplier_count = facts.block_multiplier_count.saturating_add(1);
+            }
             if is_key_card_for_stasis(card.id) {
                 facts.key_card_count = facts.key_card_count.saturating_add(1);
             }
@@ -348,6 +358,15 @@ impl BossMechanicDeckFactsV1 {
             facts.dark_echo_block_plan_count = facts.dark_echo_block_plan_count.saturating_add(1);
         }
         if facts.second_wind_count > 0 && facts.non_attack_count >= 4 {
+            facts.execute_block_plan_count = facts.execute_block_plan_count.saturating_add(1);
+            facts.dark_echo_block_plan_count = facts.dark_echo_block_plan_count.saturating_add(1);
+        }
+        if facts.block_retention_count > 0
+            && (facts.block_multiplier_count > 0
+                || facts.big_block_count > 0
+                || (facts.feel_no_pain_count > 0 && facts.exhaust_access_count > 0)
+                || (facts.second_wind_count > 0 && facts.non_attack_count >= 4))
+        {
             facts.execute_block_plan_count = facts.execute_block_plan_count.saturating_add(1);
             facts.dark_echo_block_plan_count = facts.dark_echo_block_plan_count.saturating_add(1);
         }
@@ -509,21 +528,21 @@ fn is_artifact_strip(card: CardId) -> bool {
 fn is_big_block(card: CardId) -> bool {
     matches!(
         card,
-        CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier | CardId::Barricade
+        CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier
     )
 }
 
 fn is_direct_execute_block_plan(card: CardId) -> bool {
     matches!(
         card,
-        CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier | CardId::Barricade
+        CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier
     )
 }
 
 fn is_direct_dark_echo_block_plan(card: CardId) -> bool {
     matches!(
         card,
-        CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier | CardId::Barricade
+        CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier
     )
 }
 
@@ -756,6 +775,62 @@ mod tests {
         assert!(profile.has_missing_answer(BossMechanicMissingAnswerV1::ExecuteBlockPlan));
         assert!(profile.has_red_flag(BossMechanicRedFlagV1::PrematureChampTransitionRisk));
         assert!(profile.has_red_flag(BossMechanicRedFlagV1::NoExecuteBlockPlan));
+    }
+
+    #[test]
+    fn barricade_alone_is_not_a_direct_boss_block_plan() {
+        let mut champ = RunState::new(744270980, 0, false, "Ironclad");
+        champ.act_num = 2;
+        champ.floor_num = 31;
+        champ.boss_key = Some(EncounterId::TheChamp);
+        replace_deck(
+            &mut champ,
+            &[
+                CardId::Barricade,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Strike,
+                CardId::Bash,
+            ],
+        );
+
+        let champ_profile = boss_mechanic_pressure_profile_v1(&champ, EncounterId::TheChamp);
+
+        assert!(champ_profile.has_missing_answer(BossMechanicMissingAnswerV1::ExecuteBlockPlan));
+        assert!(champ_profile.has_red_flag(BossMechanicRedFlagV1::NoExecuteBlockPlan));
+
+        let mut automaton = champ.clone();
+        automaton.boss_key = Some(EncounterId::Automaton);
+
+        let automaton_profile =
+            boss_mechanic_pressure_profile_v1(&automaton, EncounterId::Automaton);
+
+        assert!(automaton_profile
+            .has_missing_answer(BossMechanicMissingAnswerV1::Block50OrKillBeforeBeam));
+        assert!(automaton_profile.has_red_flag(BossMechanicRedFlagV1::NoHyperbeamBlockPlan));
+    }
+
+    #[test]
+    fn barricade_with_block_multiplier_supports_long_block_plan() {
+        let mut run = RunState::new(744270980, 0, false, "Ironclad");
+        run.act_num = 2;
+        run.floor_num = 31;
+        run.boss_key = Some(EncounterId::TheChamp);
+        replace_deck(
+            &mut run,
+            &[
+                CardId::Barricade,
+                CardId::Entrench,
+                CardId::Defend,
+                CardId::Defend,
+                CardId::Carnage,
+            ],
+        );
+
+        let profile = boss_mechanic_pressure_profile_v1(&run, EncounterId::TheChamp);
+
+        assert!(!profile.has_missing_answer(BossMechanicMissingAnswerV1::ExecuteBlockPlan));
+        assert!(!profile.has_red_flag(BossMechanicRedFlagV1::NoExecuteBlockPlan));
     }
 
     #[test]
