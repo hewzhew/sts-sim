@@ -1463,6 +1463,7 @@ fn target_loss_signal_for_role(role: CardRewardSemanticRoleV1) -> Option<&'stati
         CardRewardSemanticRoleV1::StatusGenerator => Some("status_generator"),
         CardRewardSemanticRoleV1::StatusPayoff => Some("status_payoff"),
         CardRewardSemanticRoleV1::SelfDamagePayoff => Some("self_damage_payoff"),
+        CardRewardSemanticRoleV1::CombatExternalPayoff => Some("combat_external_payoff"),
         CardRewardSemanticRoleV1::PackagePayoff => None,
         CardRewardSemanticRoleV1::RandomOutput => Some("random_output"),
         CardRewardSemanticRoleV1::ConditionalPlayability => Some("conditional_playability"),
@@ -1487,6 +1488,7 @@ fn target_loss_role_is_core(role: CardRewardSemanticRoleV1) -> bool {
             | CardRewardSemanticRoleV1::ExhaustPayoff
             | CardRewardSemanticRoleV1::StatusPayoff
             | CardRewardSemanticRoleV1::SelfDamagePayoff
+            | CardRewardSemanticRoleV1::CombatExternalPayoff
     )
 }
 

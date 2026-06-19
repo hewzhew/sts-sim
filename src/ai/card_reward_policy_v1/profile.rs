@@ -270,6 +270,7 @@ fn strategy_plan_effects_from_roles(
             | CardRewardSemanticRoleV1::TemporaryStrengthBurst
             | CardRewardSemanticRoleV1::StrikePayoff
             | CardRewardSemanticRoleV1::SelfDamagePayoff
+            | CardRewardSemanticRoleV1::CombatExternalPayoff
             | CardRewardSemanticRoleV1::PackagePayoff
             | CardRewardSemanticRoleV1::RandomOutput
             | CardRewardSemanticRoleV1::ConditionalPlayability

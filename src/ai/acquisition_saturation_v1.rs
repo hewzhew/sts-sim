@@ -340,6 +340,7 @@ fn candidate_opens_ceiling_path(
         profile,
         &[
             CardRewardSemanticRoleV1::ScalingSource,
+            CardRewardSemanticRoleV1::CombatExternalPayoff,
             CardRewardSemanticRoleV1::ExhaustPayoff,
             CardRewardSemanticRoleV1::StatusPayoff,
         ],
@@ -673,6 +674,30 @@ mod tests {
             entry.kind == PressureKind::MissingJob(StrategicJob::Scaling)
                 && entry.reason == "candidate_opens_missing_win_condition_or_ceiling"
         }));
+    }
+
+    #[test]
+    fn midgame_missing_ceiling_accepts_combat_external_payoff_thesis() {
+        let report = evaluate_acquisition_saturation_v1(
+            &AcquisitionSaturationInputV1 {
+                act: 2,
+                deck_size: 18,
+                frontload_cards: 6,
+                block_cards: 5,
+                draw_sources: 1,
+                exhaust_generators: 0,
+                scaling_sources: 0,
+                strength_sources: 0,
+                same_card_count: 0,
+                ..input()
+            },
+            &profile(CardId::Feed),
+        );
+
+        assert!(report.has_signal(
+            AcquisitionRoleV1::WinConditionOrCeiling,
+            AcquisitionSaturationStatusV1::Missing
+        ));
     }
 
     #[test]

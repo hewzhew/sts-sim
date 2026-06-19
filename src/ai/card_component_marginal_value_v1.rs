@@ -412,6 +412,7 @@ fn component_roles(profile: &CardRewardSemanticProfileV1) -> Vec<CardComponentRo
                 | CardRewardSemanticRoleV1::ExhaustPayoff
                 | CardRewardSemanticRoleV1::StatusPayoff
                 | CardRewardSemanticRoleV1::SelfDamagePayoff
+                | CardRewardSemanticRoleV1::CombatExternalPayoff
                 | CardRewardSemanticRoleV1::PackagePayoff
         )
     }) {

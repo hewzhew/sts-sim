@@ -1,4 +1,4 @@
-use crate::content::cards::CardId;
+use crate::ai::card_semantics_v1::{card_mechanics_profile_v1, CombatExternalPayoffV1};
 use crate::runtime::combat::{CombatCard, CombatState};
 
 pub(crate) fn has_external_payoff_opportunity(combat: &CombatState) -> bool {
@@ -16,30 +16,11 @@ pub(crate) fn has_external_payoff_opportunity(combat: &CombatState) -> bool {
 }
 
 fn card_has_external_payoff_opportunity(card: &CombatCard, combat: &CombatState) -> bool {
-    if card_has_persistent_or_reward_payoff(card.id) {
-        return true;
+    match card_mechanics_profile_v1(card.id).combat_external_payoff {
+        Some(CombatExternalPayoffV1::PersistentOrReward) => true,
+        Some(CombatExternalPayoffV1::HealingIfDamaged) => {
+            combat.entities.player.current_hp < combat.entities.player.max_hp
+        }
+        None => false,
     }
-
-    combat.entities.player.current_hp < combat.entities.player.max_hp
-        && card_has_healing_payoff(card.id)
-}
-
-fn card_has_persistent_or_reward_payoff(card_id: CardId) -> bool {
-    matches!(
-        card_id,
-        CardId::Feed
-            | CardId::LessonLearned
-            | CardId::HandOfGreed
-            | CardId::RitualDagger
-            | CardId::Alchemize
-            | CardId::GeneticAlgorithm
-            | CardId::Wish
-    )
-}
-
-fn card_has_healing_payoff(card_id: CardId) -> bool {
-    matches!(
-        card_id,
-        CardId::BandageUp | CardId::Bite | CardId::Reaper | CardId::SelfRepair
-    )
 }

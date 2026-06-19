@@ -65,6 +65,7 @@ fn semantic_profile_exports_roles_without_card_name_scoring() {
     let demon_form = card_reward_semantic_profile_v1(&RewardCard::new(CardId::DemonForm, 0));
     let twin_strike = card_reward_semantic_profile_v1(&RewardCard::new(CardId::TwinStrike, 0));
     let exhume = card_reward_semantic_profile_v1(&RewardCard::new(CardId::Exhume, 0));
+    let feed = card_reward_semantic_profile_v1(&RewardCard::new(CardId::Feed, 0));
 
     assert!(body_slam
         .roles
@@ -97,6 +98,9 @@ fn semantic_profile_exports_roles_without_card_name_scoring() {
     assert!(!exhume
         .roles
         .contains(&CardRewardSemanticRoleV1::ExhaustGenerator));
+    assert!(feed
+        .roles
+        .contains(&CardRewardSemanticRoleV1::CombatExternalPayoff));
     assert_eq!(twin_strike.name, "Twin Strike");
 }
 

@@ -9,6 +9,12 @@ pub enum StrengthConversionMechanicV1 {
     ClearStrengthDownDebuff,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CombatExternalPayoffV1 {
+    PersistentOrReward,
+    HealingIfDamaged,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CardMechanicsProfileV1 {
     pub persistent_strength_source: bool,
@@ -18,6 +24,7 @@ pub struct CardMechanicsProfileV1 {
     pub strength_converter: Option<StrengthConversionMechanicV1>,
     pub strength_payoff: bool,
     pub self_damage_source: bool,
+    pub combat_external_payoff: Option<CombatExternalPayoffV1>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -69,6 +76,19 @@ pub fn card_mechanics_profile_v1(card: CardId) -> CardMechanicsProfileV1 {
                 | CardId::Brutality
                 | CardId::JAX
         ),
+        combat_external_payoff: match card {
+            CardId::Feed
+            | CardId::LessonLearned
+            | CardId::HandOfGreed
+            | CardId::RitualDagger
+            | CardId::Alchemize
+            | CardId::GeneticAlgorithm
+            | CardId::Wish => Some(CombatExternalPayoffV1::PersistentOrReward),
+            CardId::BandageUp | CardId::Bite | CardId::Reaper | CardId::SelfRepair => {
+                Some(CombatExternalPayoffV1::HealingIfDamaged)
+            }
+            _ => None,
+        },
     }
 }
 
@@ -129,5 +149,30 @@ pub fn potion_mechanics_profile_v1(potion: PotionId) -> PotionMechanicsProfileV1
             }
             _ => None,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn card_mechanics_exposes_combat_external_payoff_once() {
+        assert_eq!(
+            card_mechanics_profile_v1(CardId::Feed).combat_external_payoff,
+            Some(CombatExternalPayoffV1::PersistentOrReward)
+        );
+        assert_eq!(
+            card_mechanics_profile_v1(CardId::HandOfGreed).combat_external_payoff,
+            Some(CombatExternalPayoffV1::PersistentOrReward)
+        );
+        assert_eq!(
+            card_mechanics_profile_v1(CardId::Reaper).combat_external_payoff,
+            Some(CombatExternalPayoffV1::HealingIfDamaged)
+        );
+        assert_eq!(
+            card_mechanics_profile_v1(CardId::TwinStrike).combat_external_payoff,
+            None
+        );
     }
 }

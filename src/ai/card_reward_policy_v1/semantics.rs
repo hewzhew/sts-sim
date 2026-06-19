@@ -9,6 +9,7 @@ use super::types::{
 
 pub fn card_reward_semantic_profile_v1(card: &RewardCard) -> CardRewardSemanticProfileV1 {
     let facts = card_facts(card);
+    let mechanics = card_mechanics_profile_v1(facts.card);
     let mut roles = Vec::new();
 
     if facts.damage.total_damage > 0 {
@@ -40,10 +41,13 @@ pub fn card_reward_semantic_profile_v1(card: &RewardCard) -> CardRewardSemanticP
     if facts.enemy_strength_down > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::EnemyStrengthDown);
     }
-    if card_mechanics_profile_v1(facts.card).temporary_strength_burst && facts.strength_gain > 0 {
+    if mechanics.temporary_strength_burst && facts.strength_gain > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::TemporaryStrengthBurst);
     } else if facts.strength_gain > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::ScalingSource);
+    }
+    if mechanics.combat_external_payoff.is_some() {
+        push_role(&mut roles, CardRewardSemanticRoleV1::CombatExternalPayoff);
     }
     if facts.exhausts_other_cards {
         push_role(&mut roles, CardRewardSemanticRoleV1::ExhaustGenerator);
