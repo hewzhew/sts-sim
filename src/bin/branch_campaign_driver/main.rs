@@ -22,11 +22,11 @@ use final_boss_combat::{
 };
 use outcome_dataset::{
     learning_dataset_export_context_v1, run_branch_outcome_dataset_analysis,
-    run_branch_outcome_dataset_export, run_decision_outcome_dataset_analysis,
-    run_decision_outcome_dataset_export, run_learning_dataset_export, run_learning_readiness_probe,
-    run_targeted_continuation_execution, run_targeted_continuation_plan,
-    write_branch_outcome_dataset_jsonl_v1, write_decision_outcome_dataset_jsonl_v1,
-    write_learning_dataset_jsonl_v1,
+    run_branch_outcome_dataset_export, run_continuation_effect_report,
+    run_decision_outcome_dataset_analysis, run_decision_outcome_dataset_export,
+    run_learning_dataset_export, run_learning_readiness_probe, run_targeted_continuation_execution,
+    run_targeted_continuation_plan, write_branch_outcome_dataset_jsonl_v1,
+    write_decision_outcome_dataset_jsonl_v1, write_learning_dataset_jsonl_v1,
 };
 use shop_challenge::render_checkpoint_shop_plan_challenge_v1;
 use sts_simulator::eval::branch_campaign::{
@@ -461,6 +461,20 @@ struct Args {
     execute_targeted_continuation: Option<PathBuf>,
 
     #[arg(
+        long = "continuation-effect-before",
+        value_name = "PATH",
+        help = "Before LearningDecisionOutcomeSampleV1 JSONL for targeted continuation effect comparison"
+    )]
+    continuation_effect_before: Option<PathBuf>,
+
+    #[arg(
+        long = "continuation-effect-after",
+        value_name = "PATH",
+        help = "After LearningDecisionOutcomeSampleV1 JSONL for targeted continuation effect comparison"
+    )]
+    continuation_effect_after: Option<PathBuf>,
+
+    #[arg(
         long = "targeted-continuation-limit",
         default_value_t = 4,
         help = "Maximum targeted sibling groups to continue"
@@ -752,6 +766,9 @@ fn run(args: Args) -> Result<(), String> {
     }
     if args.execute_targeted_continuation.is_some() {
         return run_targeted_continuation_execution(&args);
+    }
+    if args.continuation_effect_before.is_some() || args.continuation_effect_after.is_some() {
+        return run_continuation_effect_report(&args);
     }
     if args.export_outcome_dataset.is_some() && args.inspect_report.is_some() {
         return run_branch_outcome_dataset_export(&args);
@@ -1804,6 +1821,26 @@ mod tests {
         );
         assert_eq!(args.targeted_continuation_limit, 3);
         assert_eq!(args.targeted_continuation_candidates_per_target, 2);
+    }
+
+    #[test]
+    fn campaign_cli_accepts_continuation_effect_report() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--continuation-effect-before",
+            "before.jsonl",
+            "--continuation-effect-after",
+            "after.jsonl",
+        ]);
+
+        assert_eq!(
+            args.continuation_effect_before,
+            Some(PathBuf::from("before.jsonl"))
+        );
+        assert_eq!(
+            args.continuation_effect_after,
+            Some(PathBuf::from("after.jsonl"))
+        );
     }
 
     #[test]

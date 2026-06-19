@@ -25,6 +25,9 @@ pub const TARGETED_CONTINUATION_PLAN_SCHEMA_VERSION: u32 = 1;
 pub const TARGETED_CONTINUATION_EXECUTION_PLAN_SCHEMA_NAME: &str =
     "TargetedContinuationExecutionPlanV1";
 pub const TARGETED_CONTINUATION_EXECUTION_PLAN_SCHEMA_VERSION: u32 = 1;
+pub const CONTINUATION_EFFECT_REPORT_SCHEMA_NAME: &str = "ContinuationEffectReportV1";
+pub const CONTINUATION_EFFECT_REPORT_SCHEMA_VERSION: u32 = 1;
+const CONTINUATION_EFFECT_EXAMPLE_LIMIT: usize = 6;
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -266,6 +269,38 @@ pub struct TargetedContinuationBranchRequestV1 {
     pub choice_label: String,
     pub representative_branch_id: String,
     pub representative_branch_group: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContinuationEffectReportV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub label_role: String,
+    pub trainable_as_action_label: bool,
+    pub policy_quality_claim: bool,
+    pub before_samples: usize,
+    pub after_samples: usize,
+    pub before_groups: usize,
+    pub after_groups: usize,
+    pub common_groups: usize,
+    pub before_censored_only_groups: usize,
+    pub after_censored_only_groups: usize,
+    pub censored_only_delta: isize,
+    pub newly_terminal_groups: usize,
+    pub newly_terminal_observed_sibling_groups: usize,
+    pub still_censored_target_groups: usize,
+    pub expanded_target_groups: usize,
+    pub examples: Vec<ContinuationEffectExampleV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContinuationEffectExampleV1 {
+    pub sibling_group_id: String,
+    pub effect: String,
+    pub before_summary: String,
+    pub after_summary: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -865,6 +900,131 @@ pub fn targeted_continuation_execution_plan_v1(
     }
 }
 
+pub fn analyze_continuation_effect_v1(
+    before_samples: &[LearningDecisionOutcomeSampleV1],
+    after_samples: &[LearningDecisionOutcomeSampleV1],
+) -> ContinuationEffectReportV1 {
+    let before_groups = learning_samples_by_sibling_group_v1(before_samples);
+    let after_groups = learning_samples_by_sibling_group_v1(after_samples);
+    let before_censored_only_groups = before_groups
+        .values()
+        .filter(|group| learning_group_censored_only_v1(group))
+        .count();
+    let after_censored_only_groups = after_groups
+        .values()
+        .filter(|group| learning_group_censored_only_v1(group))
+        .count();
+
+    let mut common_groups = 0usize;
+    let mut newly_terminal_groups = 0usize;
+    let mut newly_terminal_observed_sibling_groups = 0usize;
+    let mut still_censored_target_groups = 0usize;
+    let mut expanded_target_groups = 0usize;
+    let mut examples = Vec::new();
+
+    for (group_id, before_group) in &before_groups {
+        let Some(after_group) = after_groups.get(group_id) else {
+            continue;
+        };
+        common_groups = common_groups.saturating_add(1);
+        expanded_target_groups = expanded_target_groups.saturating_add(1);
+        let before_summary = learning_group_effect_summary_v1(before_group);
+        let after_summary = learning_group_effect_summary_v1(after_group);
+        let before_terminal = learning_group_has_terminal_v1(before_group);
+        let after_terminal = learning_group_has_terminal_v1(after_group);
+        let after_observed_sibling = learning_group_observed_sibling_count_v1(after_group) > 1;
+        if !before_terminal && after_terminal {
+            newly_terminal_groups = newly_terminal_groups.saturating_add(1);
+            if after_observed_sibling {
+                newly_terminal_observed_sibling_groups =
+                    newly_terminal_observed_sibling_groups.saturating_add(1);
+            }
+            if examples.len() < CONTINUATION_EFFECT_EXAMPLE_LIMIT {
+                examples.push(ContinuationEffectExampleV1 {
+                    sibling_group_id: group_id.clone(),
+                    effect: if after_observed_sibling {
+                        "new_terminal_observed_sibling".to_string()
+                    } else {
+                        "new_terminal_single_candidate".to_string()
+                    },
+                    before_summary,
+                    after_summary,
+                });
+            }
+        } else if learning_group_censored_only_v1(after_group) {
+            still_censored_target_groups = still_censored_target_groups.saturating_add(1);
+            if examples.len() < CONTINUATION_EFFECT_EXAMPLE_LIMIT {
+                examples.push(ContinuationEffectExampleV1 {
+                    sibling_group_id: group_id.clone(),
+                    effect: "still_censored".to_string(),
+                    before_summary,
+                    after_summary,
+                });
+            }
+        }
+    }
+
+    ContinuationEffectReportV1 {
+        schema_name: CONTINUATION_EFFECT_REPORT_SCHEMA_NAME.to_string(),
+        schema_version: CONTINUATION_EFFECT_REPORT_SCHEMA_VERSION,
+        label_role: "campaign_observation_not_teacher".to_string(),
+        trainable_as_action_label: false,
+        policy_quality_claim: false,
+        before_samples: before_samples.len(),
+        after_samples: after_samples.len(),
+        before_groups: before_groups.len(),
+        after_groups: after_groups.len(),
+        common_groups,
+        before_censored_only_groups,
+        after_censored_only_groups,
+        censored_only_delta: after_censored_only_groups as isize
+            - before_censored_only_groups as isize,
+        newly_terminal_groups,
+        newly_terminal_observed_sibling_groups,
+        still_censored_target_groups,
+        expanded_target_groups,
+        examples,
+    }
+}
+
+pub fn render_continuation_effect_report_v1(report: &ContinuationEffectReportV1) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "ContinuationEffectReportV1 before_samples={} after_samples={} before_groups={} after_groups={} common_groups={}",
+        report.before_samples,
+        report.after_samples,
+        report.before_groups,
+        report.after_groups,
+        report.common_groups
+    ));
+    lines.push(format!(
+        "Censoring: before_censored_only_groups={} after_censored_only_groups={} delta={}",
+        report.before_censored_only_groups,
+        report.after_censored_only_groups,
+        report.censored_only_delta
+    ));
+    lines.push(format!(
+        "Continuation effect: newly_terminal_groups={} newly_terminal_observed_sibling_groups={} still_censored_target_groups={} expanded_target_groups={}",
+        report.newly_terminal_groups,
+        report.newly_terminal_observed_sibling_groups,
+        report.still_censored_target_groups,
+        report.expanded_target_groups
+    ));
+    if !report.examples.is_empty() {
+        lines.push("Examples:".to_string());
+        for example in &report.examples {
+            lines.push(format!(
+                "  {} | effect={} before=[{}] after=[{}]",
+                compact_learning_text_v1(&example.sibling_group_id, 72),
+                example.effect,
+                example.before_summary,
+                example.after_summary
+            ));
+        }
+    }
+    lines.join("\n")
+}
+
 #[derive(Clone, Debug)]
 struct LearningDecisionCandidateDraftV1 {
     record_index: usize,
@@ -1005,6 +1165,60 @@ fn learning_outcome_class_counts_v1(
         }
     }
     counts
+}
+
+fn learning_samples_by_sibling_group_v1(
+    samples: &[LearningDecisionOutcomeSampleV1],
+) -> BTreeMap<String, Vec<&LearningDecisionOutcomeSampleV1>> {
+    let mut groups = BTreeMap::<String, Vec<&LearningDecisionOutcomeSampleV1>>::new();
+    for sample in samples {
+        groups
+            .entry(sample.sibling_group_id.clone())
+            .or_default()
+            .push(sample);
+    }
+    groups
+}
+
+fn learning_group_censored_only_v1(group: &[&LearningDecisionOutcomeSampleV1]) -> bool {
+    !group.is_empty()
+        && group.iter().all(|sample| {
+            sample.outcome.supervision_status == BranchOutcomeSupervisionStatusV1::CensoredOngoing
+        })
+}
+
+fn learning_group_has_terminal_v1(group: &[&LearningDecisionOutcomeSampleV1]) -> bool {
+    group.iter().any(|sample| {
+        sample.outcome.supervision_status == BranchOutcomeSupervisionStatusV1::TerminalOutcome
+    })
+}
+
+fn learning_group_observed_sibling_count_v1(group: &[&LearningDecisionOutcomeSampleV1]) -> usize {
+    group
+        .iter()
+        .map(|sample| sample.observed_sibling_count)
+        .max()
+        .unwrap_or(0)
+}
+
+fn learning_group_effect_summary_v1(group: &[&LearningDecisionOutcomeSampleV1]) -> String {
+    let mut status_counts = BTreeMap::<String, usize>::new();
+    let mut outcome_counts = BTreeMap::<String, usize>::new();
+    for sample in group {
+        *status_counts
+            .entry(format!("{:?}", sample.outcome.supervision_status))
+            .or_default() += 1;
+        *outcome_counts
+            .entry(format!("{:?}", sample.outcome.outcome_class))
+            .or_default() += 1;
+    }
+    format!(
+        "samples={} siblings={} status={} outcome={}",
+        group.len(),
+        learning_group_observed_sibling_count_v1(group),
+        render_learning_histogram_v1(&learning_histogram_entries_by_key_v1(status_counts)),
+        render_learning_histogram_v1(&learning_histogram_entries_by_key_v1(outcome_counts))
+    )
 }
 
 fn representative_decision_sample_v1<'a>(
@@ -1798,6 +2012,66 @@ mod tests {
 
         assert_eq!(execution.selected_branch_count, 0);
         assert_eq!(execution.missing_branch_count, 1);
+    }
+
+    #[test]
+    fn continuation_effect_report_detects_new_terminal_sibling_progress() {
+        let mut before = sample_decision_outcome_sample("rp 1", "Skip");
+        before.sibling_group_id = "reward-group".to_string();
+        before.observed_sibling_count = 2;
+        before.sibling_candidates = vec![
+            sample_sibling_candidate("rp 0", "Burning Pact", BranchOutcomeClassV1::OngoingFrozen),
+            sample_sibling_candidate("rp 1", "Skip", BranchOutcomeClassV1::OngoingFrozen),
+        ];
+        before.outcome.outcome_class = BranchOutcomeClassV1::OngoingFrozen;
+        before.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::CensoredOngoing;
+
+        let mut after_win = sample_decision_outcome_sample("rp 0", "Burning Pact");
+        after_win.sibling_group_id = "reward-group".to_string();
+        after_win.observed_sibling_count = 2;
+        after_win.sibling_candidates = vec![
+            sample_sibling_candidate(
+                "rp 0",
+                "Burning Pact",
+                BranchOutcomeClassV1::TerminalVictory,
+            ),
+            sample_sibling_candidate("rp 1", "Skip", BranchOutcomeClassV1::OngoingFrozen),
+        ];
+        after_win.outcome.outcome_class = BranchOutcomeClassV1::TerminalVictory;
+        after_win.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::TerminalOutcome;
+
+        let report = analyze_continuation_effect_v1(&[before], &[after_win]);
+
+        assert_eq!(report.common_groups, 1);
+        assert_eq!(report.before_censored_only_groups, 1);
+        assert_eq!(report.after_censored_only_groups, 0);
+        assert_eq!(report.censored_only_delta, -1);
+        assert_eq!(report.newly_terminal_groups, 1);
+        assert_eq!(report.newly_terminal_observed_sibling_groups, 1);
+        assert_eq!(report.still_censored_target_groups, 0);
+        assert_eq!(report.expanded_target_groups, 1);
+        assert_eq!(report.examples[0].effect, "new_terminal_observed_sibling");
+    }
+
+    #[test]
+    fn continuation_effect_report_detects_still_censored_targets() {
+        let mut before = sample_decision_outcome_sample("buy card 0", "Buy Warcry");
+        before.sibling_group_id = "shop-group".to_string();
+        before.observed_sibling_count = 2;
+        before.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::CensoredOngoing;
+
+        let mut after = before.clone();
+        after.branch_id = "root.buy card 0.rp 0".to_string();
+        after.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::CensoredOngoing;
+
+        let report = analyze_continuation_effect_v1(&[before], &[after]);
+        let rendered = render_continuation_effect_report_v1(&report);
+
+        assert_eq!(report.common_groups, 1);
+        assert_eq!(report.still_censored_target_groups, 1);
+        assert_eq!(report.expanded_target_groups, 1);
+        assert!(rendered.contains("ContinuationEffectReportV1"));
+        assert!(rendered.contains("still_censored_target_groups=1"));
     }
 
     #[test]

@@ -230,6 +230,8 @@ $LatestCommandPath = Join-Path $CampaignDir "latest.command.txt"
 $LatestCampaignPath = Join-Path $CampaignDir "latest.campaign.json"
 $LatestCheckpointPath = Join-Path $CampaignDir "latest.checkpoint.json"
 $LatestDecisionOutcomePath = Join-Path $CampaignDir "latest.decision_outcomes.jsonl"
+$LatestDecisionOutcomeBeforePath = Join-Path $CampaignDir "latest.decision_outcomes.before.jsonl"
+$LatestDecisionOutcomeAfterPath = Join-Path $CampaignDir "latest.decision_outcomes.after.jsonl"
 
 New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 
@@ -564,13 +566,28 @@ if ($PlanTargets -or $ContinueTargets) {
         throw "No previous campaign checkpoint found at $LatestCheckpointPath. Run .\tools\campaign.ps1 first."
     }
 
-    $TargetDecisionOutcomePath = if ($DecisionOutcomeDataset) { $DecisionOutcomeDataset } else { $LatestDecisionOutcomePath }
+    $TargetDecisionOutcomePath = if ($DecisionOutcomeDataset) {
+        $DecisionOutcomeDataset
+    } elseif ($ContinueTargets) {
+        $LatestDecisionOutcomeBeforePath
+    } else {
+        $LatestDecisionOutcomePath
+    }
     $ExportDecisionArgs = @(
         "--inspect-report", "$LatestCampaignPath",
         "--inspect-checkpoint", "$LatestCheckpointPath",
         "--export-decision-outcome-dataset", "$TargetDecisionOutcomePath"
     )
     $PlanTargetArgs = @("--plan-targeted-continuation", "$TargetDecisionOutcomePath")
+    $ExportDecisionAfterArgs = @(
+        "--inspect-report", "$LatestCampaignPath",
+        "--inspect-checkpoint", "$LatestCheckpointPath",
+        "--export-decision-outcome-dataset", "$LatestDecisionOutcomeAfterPath"
+    )
+    $ContinuationEffectArgs = @(
+        "--continuation-effect-before", "$TargetDecisionOutcomePath",
+        "--continuation-effect-after", "$LatestDecisionOutcomeAfterPath"
+    )
 
     $ResumeReport = Get-Content -LiteralPath $LatestCampaignPath -Raw | ConvertFrom-Json
     $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
@@ -676,6 +693,7 @@ if ($PlanTargets -or $ContinueTargets) {
     Write-Host "checkpoint=$LatestCheckpointPath"
     Write-Host "decision-outcomes=$TargetDecisionOutcomePath"
     if ($ContinueTargets) {
+        Write-Host "decision-outcomes-after=$LatestDecisionOutcomeAfterPath"
         Write-Host "continue-targets=$TargetedContinuationLimit candidates-per-target=$TargetedContinuationCandidatesPerTarget"
         Write-Host "resume-rounds=$ResumeRoundsCompleted"
         if ($TargetRounds -ne $null) {
@@ -698,6 +716,8 @@ if ($PlanTargets -or $ContinueTargets) {
         }
         if ($ContinueTargets) {
             Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
+            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ExportDecisionAfterArgs)
+            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinuationEffectArgs)
         }
         exit 0
     }
@@ -729,6 +749,14 @@ if ($PlanTargets -or $ContinueTargets) {
             & $DriverExe @ContinueTargetArgs
             $DriverExitCode = $LASTEXITCODE
             if ($DriverExitCode -eq 0) {
+                & $DriverExe @ExportDecisionAfterArgs
+                if ($LASTEXITCODE -ne 0) {
+                    exit $LASTEXITCODE
+                }
+                & $DriverExe @ContinuationEffectArgs
+                if ($LASTEXITCODE -ne 0) {
+                    exit $LASTEXITCODE
+                }
                 Set-Content -LiteralPath $LatestSeedPath -Value $Seed
                 Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
                 Set-Content -LiteralPath $LatestClassPath -Value $Class

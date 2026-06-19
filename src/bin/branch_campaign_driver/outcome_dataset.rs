@@ -14,9 +14,10 @@ use sts_simulator::eval::branch_outcome_dataset_v1::{
     BranchOutcomeRecordV1,
 };
 use sts_simulator::eval::learning_dataset_v1::{
-    analyze_learning_decision_outcome_samples_v1, decision_outcome_samples_from_branch_outcomes_v1,
-    learning_records_from_branch_outcomes_v1, parse_learning_decision_outcome_samples_jsonl_v1,
-    plan_targeted_continuations_v1, probe_learning_readiness_v1,
+    analyze_continuation_effect_v1, analyze_learning_decision_outcome_samples_v1,
+    decision_outcome_samples_from_branch_outcomes_v1, learning_records_from_branch_outcomes_v1,
+    parse_learning_decision_outcome_samples_jsonl_v1, plan_targeted_continuations_v1,
+    probe_learning_readiness_v1, render_continuation_effect_report_v1,
     render_learning_decision_outcome_analysis_v1, render_learning_readiness_probe_v1,
     render_targeted_continuation_plan_v1, serialize_learning_branch_samples_jsonl_v1,
     serialize_learning_decision_outcome_samples_jsonl_v1, targeted_continuation_execution_plan_v1,
@@ -64,6 +65,34 @@ pub(super) fn run_decision_outcome_dataset_analysis(args: &Args) -> Result<(), S
         "{}",
         render_learning_decision_outcome_analysis_v1(&analysis)
     );
+    Ok(())
+}
+
+pub(super) fn run_continuation_effect_report(args: &Args) -> Result<(), String> {
+    let before_path = args
+        .continuation_effect_before
+        .as_ref()
+        .ok_or_else(|| "--continuation-effect-before requires a path".to_string())?;
+    let after_path = args
+        .continuation_effect_after
+        .as_ref()
+        .ok_or_else(|| "--continuation-effect-after requires a path".to_string())?;
+    let before_text = fs::read_to_string(before_path).map_err(|err| {
+        format!(
+            "failed to read --continuation-effect-before {}: {err}",
+            before_path.display()
+        )
+    })?;
+    let after_text = fs::read_to_string(after_path).map_err(|err| {
+        format!(
+            "failed to read --continuation-effect-after {}: {err}",
+            after_path.display()
+        )
+    })?;
+    let before_samples = parse_learning_decision_outcome_samples_jsonl_v1(&before_text)?;
+    let after_samples = parse_learning_decision_outcome_samples_jsonl_v1(&after_text)?;
+    let report = analyze_continuation_effect_v1(&before_samples, &after_samples);
+    println!("{}", render_continuation_effect_report_v1(&report));
     Ok(())
 }
 
