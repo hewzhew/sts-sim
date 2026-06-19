@@ -10,7 +10,10 @@ use crate::ai::combat_search_v2::{
 };
 use crate::sim::combat::{CombatStepLimits, CombatStepper, EngineCombatStepper};
 
-use super::{CombatSearchV2LoadedStart, CombatSearchV2RunOptions};
+use super::{
+    CombatSearchV2BenchmarkInputKind, CombatSearchV2LoadedBenchmark, CombatSearchV2LoadedStart,
+    CombatSearchV2RunOptions,
+};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchGuidanceLabV1Report {
@@ -23,6 +26,40 @@ pub struct CombatSearchGuidanceLabV1Report {
     pub candidates: Vec<CombatSearchGuidanceLabCandidateV1>,
     pub summary: CombatSearchGuidanceLabSummaryV1,
     pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchGuidanceLabBenchmarkV1Report {
+    pub schema_name: &'static str,
+    pub schema_version: u32,
+    pub label_role: &'static str,
+    pub policy_quality_claim: bool,
+    pub benchmark_name: String,
+    pub requested_case_limit: Option<usize>,
+    pub effective_case_limit: usize,
+    pub summary: CombatSearchGuidanceLabBenchmarkSummaryV1,
+    pub cases: Vec<CombatSearchGuidanceLabBenchmarkCaseV1>,
+    pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CombatSearchGuidanceLabBenchmarkSummaryV1 {
+    pub cases_run: usize,
+    pub cases_available: usize,
+    pub candidate_count: usize,
+    pub child_searches_run: usize,
+    pub child_complete_wins: usize,
+    pub cases_best_target_not_first_by_current_ordering: usize,
+    pub cases_best_target_differs_from_best_complete_first_action: usize,
+    pub cases_without_best_complete_first_action: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchGuidanceLabBenchmarkCaseV1 {
+    pub id: String,
+    pub input_kind: CombatSearchV2BenchmarkInputKind,
+    pub input_path: String,
+    pub lab: CombatSearchGuidanceLabV1Report,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -90,7 +127,49 @@ pub struct CombatSearchGuidanceLabSummaryV1 {
     pub child_losses: usize,
     pub child_unresolved: usize,
     pub best_target_ordered_index: Option<usize>,
+    pub best_complete_first_action_ordered_index: Option<usize>,
     pub current_order_selected_rank: Option<usize>,
+}
+
+pub fn run_combat_search_guidance_lab_benchmark_v1(
+    loaded: &CombatSearchV2LoadedBenchmark,
+    root_options: CombatSearchV2RunOptions,
+    child_options: CombatSearchV2RunOptions,
+    max_cases: Option<usize>,
+) -> CombatSearchGuidanceLabBenchmarkV1Report {
+    let limit = max_cases.unwrap_or(4);
+    let cases = loaded
+        .cases
+        .iter()
+        .take(limit)
+        .map(|case| CombatSearchGuidanceLabBenchmarkCaseV1 {
+            id: case.id.clone(),
+            input_kind: case.input.kind,
+            input_path: case.input.path.display().to_string(),
+            lab: run_combat_search_guidance_lab_v1(
+                &case.start,
+                root_options.clone(),
+                child_options.clone(),
+            ),
+        })
+        .collect::<Vec<_>>();
+    let summary = summarize_benchmark(&cases, loaded.cases.len());
+    CombatSearchGuidanceLabBenchmarkV1Report {
+        schema_name: "CombatSearchGuidanceLabBenchmarkV1Report",
+        schema_version: 1,
+        label_role: "oracle_search_guidance_lab_not_human_policy",
+        policy_quality_claim: false,
+        benchmark_name: loaded.name.clone(),
+        requested_case_limit: max_cases,
+        effective_case_limit: limit,
+        summary,
+        cases,
+        notes: vec![
+            "offline batch lab only; does not alter combat search ordering",
+            "default benchmark limit is deliberately small to avoid probe explosion",
+            "increase --guidance-lab-max-cases only for explicit data collection runs",
+        ],
+    }
 }
 
 pub fn run_combat_search_guidance_lab_v1(
@@ -314,6 +393,7 @@ fn summarize_candidates(
     summary.best_target_ordered_index = ranked.first().map(|candidate| candidate.ordered_index);
     for (rank, candidate) in ranked.iter().enumerate() {
         if candidate.selected_by_best_complete {
+            summary.best_complete_first_action_ordered_index = Some(candidate.ordered_index);
             summary.current_order_selected_rank = Some(rank + 1);
             break;
         }
@@ -368,4 +448,36 @@ fn target_terminal_tier(target: &CombatSearchGuidanceLabTargetV1) -> u8 {
         (_, SearchTerminalLabel::Unresolved) => 1,
         (_, SearchTerminalLabel::Loss) => 0,
     }
+}
+
+fn summarize_benchmark(
+    cases: &[CombatSearchGuidanceLabBenchmarkCaseV1],
+    cases_available: usize,
+) -> CombatSearchGuidanceLabBenchmarkSummaryV1 {
+    let mut summary = CombatSearchGuidanceLabBenchmarkSummaryV1 {
+        cases_run: cases.len(),
+        cases_available,
+        ..CombatSearchGuidanceLabBenchmarkSummaryV1::default()
+    };
+    for case in cases {
+        let lab = &case.lab.summary;
+        summary.candidate_count += lab.candidate_count;
+        summary.child_searches_run += lab.child_searches_run;
+        summary.child_complete_wins += lab.child_complete_wins;
+        if lab
+            .best_target_ordered_index
+            .is_some_and(|index| index != 0)
+        {
+            summary.cases_best_target_not_first_by_current_ordering += 1;
+        }
+        match lab.best_complete_first_action_ordered_index {
+            Some(best_complete_index) => {
+                if lab.best_target_ordered_index != Some(best_complete_index) {
+                    summary.cases_best_target_differs_from_best_complete_first_action += 1;
+                }
+            }
+            None => summary.cases_without_best_complete_first_action += 1,
+        }
+    }
+    summary
 }

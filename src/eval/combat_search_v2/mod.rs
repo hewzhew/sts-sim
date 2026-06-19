@@ -22,7 +22,9 @@ pub use benchmark_gate::{
     CombatSearchV2BenchmarkGateSummary,
 };
 pub use guidance_lab::{
-    run_combat_search_guidance_lab_v1, CombatSearchGuidanceLabCandidateV1,
+    run_combat_search_guidance_lab_benchmark_v1, run_combat_search_guidance_lab_v1,
+    CombatSearchGuidanceLabBenchmarkCaseV1, CombatSearchGuidanceLabBenchmarkSummaryV1,
+    CombatSearchGuidanceLabBenchmarkV1Report, CombatSearchGuidanceLabCandidateV1,
     CombatSearchGuidanceLabChildSearchV1, CombatSearchGuidanceLabRootV1,
     CombatSearchGuidanceLabSummaryV1, CombatSearchGuidanceLabTargetV1,
     CombatSearchGuidanceLabTrajectoryV1, CombatSearchGuidanceLabV1Report,
