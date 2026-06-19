@@ -10,8 +10,8 @@ use sts_simulator::eval::combat_capture::load_combat_capture_v1;
 use sts_simulator::eval::combat_search_v2::{
     compare_combat_search_v2_frontier_policies, compare_combat_search_v2_rollout_policies,
     compare_combat_search_v2_turn_plan_policies, load_combat_search_v2_benchmark,
-    load_combat_search_v2_snapshot, load_combat_search_v2_start, run_combat_search_v2_benchmark,
-    run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
+    load_combat_search_v2_snapshot, load_combat_search_v2_start, run_combat_search_guidance_lab_v1,
+    run_combat_search_v2_benchmark, run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
 };
 use sts_simulator::eval::fingerprint::StateFingerprintV1;
 
@@ -93,6 +93,15 @@ struct Args {
     gate_only: bool,
 
     #[arg(long)]
+    guidance_lab: bool,
+
+    #[arg(long)]
+    probe_max_nodes: Option<usize>,
+
+    #[arg(long)]
+    probe_wall_ms: Option<u64>,
+
+    #[arg(long)]
     output: Option<PathBuf>,
 }
 
@@ -103,6 +112,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.gate_only && args.validate_only {
         return Err("--gate-only cannot be used with --validate-only".into());
+    }
+    if args.guidance_lab && args.benchmark_spec.is_some() {
+        return Err(
+            "--guidance-lab supports --start-spec or --combat-snapshot, not --benchmark-spec"
+                .into(),
+        );
+    }
+    if args.guidance_lab && args.validate_only {
+        return Err("--guidance-lab cannot be used with --validate-only".into());
+    }
+    if args.guidance_lab && args.gate_only {
+        return Err("--guidance-lab cannot be used with --gate-only".into());
+    }
+    if args.guidance_lab
+        && (args.compare_rollout.is_some()
+            || args.compare_turn_plan.is_some()
+            || args.compare_frontier.is_some()
+            || args.explain_case.is_some())
+    {
+        return Err("--guidance-lab cannot be combined with compare/explain modes".into());
     }
     if args.compare_rollout.is_some() && args.benchmark_spec.is_none() {
         return Err("--compare-rollout requires --benchmark-spec".into());
@@ -255,8 +284,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .expect("clap requires exactly one input");
             load_combat_search_v2_start(path)?
         };
-        let run = run_combat_search_v2_loaded_start(&loaded, options);
-        serde_json::to_string_pretty(&run.search_report)?
+        if args.guidance_lab {
+            let mut child_options = options.clone();
+            if args.probe_max_nodes.is_some() {
+                child_options.max_nodes = args.probe_max_nodes;
+            }
+            if args.probe_wall_ms.is_some() {
+                child_options.wall_ms = args.probe_wall_ms;
+            }
+            let report = run_combat_search_guidance_lab_v1(&loaded, options, child_options);
+            serde_json::to_string_pretty(&report)?
+        } else {
+            let run = run_combat_search_v2_loaded_start(&loaded, options);
+            serde_json::to_string_pretty(&run.search_report)?
+        }
     };
     write_or_print(args.output.as_ref(), &payload)?;
     Ok(())

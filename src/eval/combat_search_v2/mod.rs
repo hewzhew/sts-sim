@@ -1,5 +1,6 @@
 mod benchmark;
 mod benchmark_gate;
+mod guidance_lab;
 mod policy_compare;
 mod rollout_compare_attribution;
 mod start;
@@ -19,6 +20,12 @@ pub use benchmark_gate::{
     CombatSearchV2BenchmarkGateFocusCount, CombatSearchV2BenchmarkGateReport,
     CombatSearchV2BenchmarkGateRequirements, CombatSearchV2BenchmarkGateStatus,
     CombatSearchV2BenchmarkGateSummary,
+};
+pub use guidance_lab::{
+    run_combat_search_guidance_lab_v1, CombatSearchGuidanceLabCandidateV1,
+    CombatSearchGuidanceLabChildSearchV1, CombatSearchGuidanceLabRootV1,
+    CombatSearchGuidanceLabSummaryV1, CombatSearchGuidanceLabTargetV1,
+    CombatSearchGuidanceLabTrajectoryV1, CombatSearchGuidanceLabV1Report,
 };
 pub use policy_compare::{
     compare_combat_search_v2_frontier_policies, compare_combat_search_v2_rollout_policies,
