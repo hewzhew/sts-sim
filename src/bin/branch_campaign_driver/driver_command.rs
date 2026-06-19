@@ -1,4 +1,4 @@
-use super::{Args, BranchCampaignExplicitCommandV1};
+use super::{cli_args::BranchCampaignCliInputV1, Args, BranchCampaignExplicitCommandV1};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum BranchCampaignDriverCommandV1 {
@@ -17,19 +17,36 @@ pub(super) enum BranchCampaignDriverCommandV1 {
     RunCampaign,
 }
 
+pub(super) fn driver_command_from_cli_input(
+    input: &BranchCampaignCliInputV1,
+) -> BranchCampaignDriverCommandV1 {
+    if let Some(explicit) = input.explicit_command() {
+        return explicit_driver_command_from_args(explicit, input.args());
+    }
+    legacy_command_from_args(input.args())
+}
+
+#[cfg(test)]
 pub(super) fn driver_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
     if let Some(explicit) = args.explicit_command {
-        return match explicit {
-            BranchCampaignExplicitCommandV1::Run => BranchCampaignDriverCommandV1::RunCampaign,
-            BranchCampaignExplicitCommandV1::Inspect => inspect_command_from_args(args),
-            BranchCampaignExplicitCommandV1::Dataset => dataset_command_from_args(args),
-            BranchCampaignExplicitCommandV1::Continue => continuation_command_from_args(args),
-            BranchCampaignExplicitCommandV1::SelfCheck => {
-                BranchCampaignDriverCommandV1::SelfCheckAncestorReplay
-            }
-        };
+        return explicit_driver_command_from_args(explicit, args);
     }
     legacy_command_from_args(args)
+}
+
+fn explicit_driver_command_from_args(
+    explicit: BranchCampaignExplicitCommandV1,
+    args: &Args,
+) -> BranchCampaignDriverCommandV1 {
+    match explicit {
+        BranchCampaignExplicitCommandV1::Run => BranchCampaignDriverCommandV1::RunCampaign,
+        BranchCampaignExplicitCommandV1::Inspect => inspect_command_from_args(args),
+        BranchCampaignExplicitCommandV1::Dataset => dataset_command_from_args(args),
+        BranchCampaignExplicitCommandV1::Continue => continuation_command_from_args(args),
+        BranchCampaignExplicitCommandV1::SelfCheck => {
+            BranchCampaignDriverCommandV1::SelfCheckAncestorReplay
+        }
+    }
 }
 
 fn legacy_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {

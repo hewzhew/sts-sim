@@ -19,6 +19,9 @@ Active binaries:
   - legacy top-level flags remain temporarily parseable, but new tooling should
     call a subcommand explicitly; subcommand help is intentionally scoped to
     that command, while the top-level flattened flags are compatibility only
+  - implementation boundary: `cli_args.rs` owns parsing and typed command
+    input, `driver_command.rs` owns command selection, and `main.rs` owns
+    execution plus shared report/checkpoint helpers
 - `artifact_doctor`
   - read-only audit over benchmark artifact directories
   - `--root <path>` scans for `benchmark.json` suites, registered captures,
