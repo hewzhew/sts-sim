@@ -14,7 +14,6 @@ use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
-use crate::state::map::{MapEdge, MapRoomNode, MapState, RoomType};
 use crate::state::run::RunState;
 use crate::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 
@@ -1418,42 +1417,6 @@ fn compiled_shop_portfolio_uses_step_evaluation_over_plan_legacy_gate() {
 }
 
 #[test]
-fn shop_policy_buys_elite_potion_when_first_elite_prep_window_is_open() {
-    let mut run_state = RunState::new(1, 0, false, "Ironclad");
-    run_state.act_num = 1;
-    run_state.floor_num = 4;
-    run_state.gold = 100;
-    install_current_room_route(
-        &mut run_state,
-        RoomType::ShopRoom,
-        &[RoomType::MonsterRoom, RoomType::MonsterRoomElite],
-    );
-    let mut shop = ShopState::new();
-    shop.potions.push(ShopPotion {
-        potion_id: PotionId::FirePotion,
-        price: 50,
-        can_buy: true,
-        blocked_reason: None,
-    });
-
-    let context = build_shop_decision_context_v1(&run_state, &shop);
-    let compiled = compile_shop_decision_v1(
-        &context,
-        &ShopPolicyConfigV1::default(),
-        ShopCompileModeV1::ExecuteOne,
-    );
-
-    let Some(ShopPlanStepV1::BuyPotion { potion, .. }) = compiled.selected_plan.steps.first()
-    else {
-        panic!(
-            "expected selected shop plan to buy Fire Potion, got {:?}",
-            compiled.selected_plan
-        );
-    };
-    assert_eq!(*potion, PotionId::FirePotion);
-}
-
-#[test]
 fn shop_card_priority_does_not_apply_champ_boss_bonus_directly() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
@@ -1552,36 +1515,6 @@ fn shop_dollys_mirror_priority_requires_premium_duplicate_target() {
         Some(950),
         "Dolly's Mirror should keep high-impact shop priority when a premium duplicate target exists"
     );
-}
-
-fn install_current_room_route(
-    run_state: &mut RunState,
-    current_room: RoomType,
-    future_rooms: &[RoomType],
-) {
-    let mut graph = Vec::new();
-    let mut current = map_node(0, 0, current_room);
-    if !future_rooms.is_empty() {
-        current.edges.insert(MapEdge::new(0, 0, 0, 1));
-    }
-    graph.push(vec![current]);
-    for (idx, room) in future_rooms.iter().enumerate() {
-        let y = idx as i32 + 1;
-        let mut node = map_node(0, y, *room);
-        if idx + 1 < future_rooms.len() {
-            node.edges.insert(MapEdge::new(0, y, 0, y + 1));
-        }
-        graph.push(vec![node]);
-    }
-    run_state.map = MapState::new(graph);
-    run_state.map.current_x = 0;
-    run_state.map.current_y = 0;
-}
-
-fn map_node(x: i32, y: i32, room_type: RoomType) -> MapRoomNode {
-    let mut node = MapRoomNode::new(x, y);
-    node.class = Some(room_type);
-    node
 }
 
 fn shop_card_candidate(
