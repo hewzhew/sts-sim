@@ -10,7 +10,6 @@ use crate::eval::branch_experiment_retention::{
     BranchRetentionDecisionV1, BranchRetentionRankAdjustmentV1, BranchRetentionSlotV1,
 };
 use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
-use crate::eval::combat_lab_probe_v1::{CombatLabProbeDiagnosisV1, CombatLabProbePacketV1};
 use crate::eval::run_control::{
     RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
     RunControlSessionCheckpointV1,
