@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Dependency-free first-action ranking baseline for combat search guidance.
 
-Input is CombatSearchGuidanceSampleV1 JSONL produced from decision microscope
-reports by combat_search_guidance_samples.py.
+Input is either:
+
+- CombatSearchGuidanceSampleV1 JSONL produced from decision microscope reports
+  by combat_search_guidance_samples.py.
+- CombatActionProbeSampleV1 JSONL produced from guidance-lab reports by
+  combat_guidance_lab_extract.py.
 
 This is an offline diagnostic.  It does not train a combat policy and does not
 claim the selected action is human-optimal.  The label is only:
@@ -24,7 +28,8 @@ from typing import Any
 
 
 TARGET_KIND = "initial_decision_candidate_selected_by_best_complete"
-SCHEMA_NAME = "CombatSearchGuidanceSampleV1"
+LEGACY_SCHEMA_NAME = "CombatSearchGuidanceSampleV1"
+PROBE_SCHEMA_NAME = "CombatActionProbeSampleV1"
 
 
 def stable_hash(text: str) -> int:
@@ -43,17 +48,42 @@ def load_samples(paths: list[Path]) -> list[dict[str, Any]]:
                     sample = json.loads(stripped)
                 except json.JSONDecodeError as exc:
                     raise SystemExit(f"{path}:{line_no}: invalid JSONL: {exc}") from exc
-                if sample.get("schema_name") != SCHEMA_NAME:
-                    raise SystemExit(
-                        f"{path}:{line_no}: expected {SCHEMA_NAME}, got {sample.get('schema_name')!r}"
-                    )
-                if sample.get("target_kind") == TARGET_KIND:
+                schema_name = sample.get("schema_name")
+                if schema_name == LEGACY_SCHEMA_NAME:
+                    if sample.get("target_kind") != TARGET_KIND:
+                        continue
                     sample["_source_jsonl"] = str(path)
                     samples.append(sample)
+                elif schema_name == PROBE_SCHEMA_NAME:
+                    sample["_source_jsonl"] = str(path)
+                    samples.append(sample)
+                else:
+                    raise SystemExit(
+                        f"{path}:{line_no}: expected {LEGACY_SCHEMA_NAME} or "
+                        f"{PROBE_SCHEMA_NAME}, got {schema_name!r}"
+                    )
     return samples
 
 
 def group_key(sample: dict[str, Any]) -> str:
+    if sample.get("schema_name") == PROBE_SCHEMA_NAME:
+        source = sample.get("source") or {}
+        context = (sample.get("root_context") or {}).get("config") or {}
+        return "|".join(
+            str(part)
+            for part in (
+                sample.get("schema_name"),
+                source.get("source_file"),
+                source.get("benchmark_name"),
+                source.get("case_id"),
+                source.get("input_kind"),
+                source.get("input_path"),
+                context.get("max_nodes"),
+                context.get("wall_time_ms"),
+                context.get("rollout_policy"),
+                context.get("frontier_policy"),
+            )
+        )
     source = sample.get("source") or {}
     context = sample.get("search_context") or {}
     return "|".join(
@@ -86,12 +116,75 @@ def usable_groups(samples: list[dict[str, Any]]) -> dict[str, list[dict[str, Any
 
 
 def is_selected(sample: dict[str, Any]) -> bool:
+    if sample.get("schema_name") == PROBE_SCHEMA_NAME:
+        target = sample.get("target") if isinstance(sample.get("target"), dict) else {}
+        return bool(target.get("is_best_target_candidate"))
     return bool((sample.get("label") or {}).get("selected_by_best_complete"))
 
 
 def candidate(sample: dict[str, Any]) -> dict[str, Any]:
     value = sample.get("candidate")
     return value if isinstance(value, dict) else {}
+
+
+def initial_context(sample: dict[str, Any]) -> dict[str, Any]:
+    if sample.get("schema_name") == PROBE_SCHEMA_NAME:
+        context = (sample.get("root_context") or {}).get("initial_context")
+        return context if isinstance(context, dict) else {}
+    context = sample.get("initial_context")
+    return context if isinstance(context, dict) else {}
+
+
+def search_context(sample: dict[str, Any]) -> dict[str, Any]:
+    if sample.get("schema_name") == PROBE_SCHEMA_NAME:
+        context = (sample.get("root_context") or {}).get("config")
+        return context if isinstance(context, dict) else {}
+    context = sample.get("search_context")
+    return context if isinstance(context, dict) else {}
+
+
+def one_step_context(sample: dict[str, Any]) -> dict[str, Any]:
+    cand = candidate(sample)
+    one_step = cand.get("one_step") if isinstance(cand.get("one_step"), dict) else {}
+    if one_step:
+        return one_step
+    if sample.get("schema_name") == PROBE_SCHEMA_NAME:
+        return {
+            "status": cand.get("one_step_status"),
+            "terminal": cand.get("one_step_terminal"),
+        }
+    return {}
+
+
+def candidate_outcome(sample: dict[str, Any]) -> tuple[int, int, int, int]:
+    """Sort key for the candidate's bounded child-search result.
+
+    This is diagnostic target data, not an online policy feature.
+    """
+
+    target = sample.get("target") if isinstance(sample.get("target"), dict) else {}
+    complete_win = bool(target.get("complete_win"))
+    terminal = target.get("terminal")
+    if complete_win and terminal == "win":
+        tier = 3
+    elif terminal == "win":
+        tier = 2
+    elif terminal == "unresolved":
+        tier = 1
+    else:
+        tier = 0
+    return (
+        tier,
+        int_or_min(target.get("final_hp")),
+        -int_or_max(target.get("child_search_hp_loss")),
+        -int_or_max(target.get("nodes_expanded")),
+    )
+
+
+def candidate_final_hp(sample: dict[str, Any]) -> int | None:
+    target = sample.get("target") if isinstance(sample.get("target"), dict) else {}
+    value = target.get("final_hp")
+    return value if isinstance(value, int) else None
 
 
 def nested_get(root: dict[str, Any], path: str) -> Any:
@@ -101,6 +194,14 @@ def nested_get(root: dict[str, Any], path: str) -> Any:
             return None
         current = current.get(part)
     return current
+
+
+def int_or_min(value: Any) -> int:
+    return value if isinstance(value, int) else -10**9
+
+
+def int_or_max(value: Any) -> int:
+    return value if isinstance(value, int) else 10**9
 
 
 def add_token(features: dict[str, float], token: str, value: float = 1.0) -> None:
@@ -136,14 +237,15 @@ def normalized_card_from_action_key(action_key: str) -> str | None:
 def extract_features(sample: dict[str, Any], *, include_order_features: bool) -> dict[str, float]:
     features: dict[str, float] = defaultdict(float)
     cand = candidate(sample)
-    context = sample.get("initial_context") if isinstance(sample.get("initial_context"), dict) else {}
+    context = initial_context(sample)
     state = context.get("state") if isinstance(context.get("state"), dict) else {}
     frontier = context.get("frontier_value") if isinstance(context.get("frontier_value"), dict) else {}
-    search = sample.get("search_context") if isinstance(sample.get("search_context"), dict) else {}
-    one_step = cand.get("one_step") if isinstance(cand.get("one_step"), dict) else {}
+    search = search_context(sample)
+    one_step = one_step_context(sample)
     action_key = str(cand.get("action_key") or "")
 
     add_token(features, "bias")
+    add_token(features, f"schema:{sample.get('schema_name')}")
     add_token(features, f"action_class:{cand.get('action_class')}")
     add_token(features, f"action_role:{cand.get('action_role')}")
     add_token(features, f"rollout_policy:{search.get('rollout_policy')}")
@@ -307,11 +409,10 @@ def selected_rank(group: list[dict[str, Any]], scores: list[float]) -> int:
 
 
 def evaluate_ordered_index(groups: dict[str, list[dict[str, Any]]]) -> dict[str, float]:
-    ranks = []
-    for group in groups.values():
-        scores = [-(candidate(sample).get("ordered_index") or 0) for sample in group]
-        ranks.append(selected_rank(group, scores))
-    return metrics_from_ranks(groups, ranks)
+    group_scores = {}
+    for key, group in groups.items():
+        group_scores[key] = [-(candidate(sample).get("ordered_index") or 0) for sample in group]
+    return metrics_from_group_scores(groups, group_scores)
 
 
 def evaluate_model(
@@ -322,25 +423,74 @@ def evaluate_model(
     dim: int,
     include_order_features: bool,
 ) -> dict[str, float]:
-    ranks = []
-    for group in groups.values():
+    group_scores = {}
+    for key, group in groups.items():
         scores = []
         for sample in group:
             features = extract_features(sample, include_order_features=include_order_features)
             scores.append(dot(weights, hashed_features(features, dim), bias))
+        group_scores[key] = scores
+    return metrics_from_group_scores(groups, group_scores)
+
+
+def metrics_from_group_scores(
+    groups: dict[str, list[dict[str, Any]]], group_scores: dict[str, list[float]]
+) -> dict[str, float]:
+    ranks = []
+    hp_gains = []
+    positive_gain = 0
+    negative_gain = 0
+    target_missed = 0
+    target_outcome_missed = 0
+    for key, group in groups.items():
+        scores = group_scores.get(key) or []
+        if len(scores) != len(group):
+            continue
         ranks.append(selected_rank(group, scores))
-    return metrics_from_ranks(groups, ranks)
-
-
-def metrics_from_ranks(groups: dict[str, list[dict[str, Any]]], ranks: list[int]) -> dict[str, float]:
+        top_index = max(range(len(group)), key=lambda index: scores[index])
+        current_index = min(
+            range(len(group)),
+            key=lambda index: candidate(group[index]).get("ordered_index", 10**9),
+        )
+        target_index = next((index for index, sample in enumerate(group) if is_selected(sample)), None)
+        top = group[top_index]
+        current = group[current_index]
+        top_hp = candidate_final_hp(top)
+        current_hp = candidate_final_hp(current)
+        if top_hp is not None and current_hp is not None:
+            gain = top_hp - current_hp
+            hp_gains.append(gain)
+            if gain > 0:
+                positive_gain += 1
+            elif gain < 0:
+                negative_gain += 1
+        if target_index is not None and top_index != target_index:
+            target_missed += 1
+            if candidate_outcome(group[target_index]) != candidate_outcome(top):
+                target_outcome_missed += 1
     if not ranks:
-        return {"groups": 0.0, "top1": 0.0, "mrr": 0.0, "avg_rank": 0.0}
+        return {
+            "groups": 0.0,
+            "top1": 0.0,
+            "mrr": 0.0,
+            "avg_rank": 0.0,
+            "avg_hp_gain_vs_ordered": 0.0,
+            "positive_hp_gain": 0.0,
+            "negative_hp_gain": 0.0,
+            "target_missed": 0.0,
+            "target_outcome_missed": 0.0,
+        }
     return {
         "groups": float(len(ranks)),
         "top1": sum(1 for rank in ranks if rank == 1) / len(ranks),
         "mrr": sum(1.0 / rank for rank in ranks) / len(ranks),
         "avg_rank": sum(ranks) / len(ranks),
         "avg_candidates": sum(len(group) for group in groups.values()) / len(groups),
+        "avg_hp_gain_vs_ordered": sum(hp_gains) / len(hp_gains) if hp_gains else 0.0,
+        "positive_hp_gain": float(positive_gain),
+        "negative_hp_gain": float(negative_gain),
+        "target_missed": float(target_missed),
+        "target_outcome_missed": float(target_outcome_missed),
     }
 
 
@@ -373,13 +523,23 @@ def print_metrics(label: str, metrics: dict[str, float]) -> None:
     print(
         f"  {label}: groups={metrics['groups']:.0f} top1={metrics['top1']:.3f} "
         f"mrr={metrics['mrr']:.3f} avg_rank={metrics['avg_rank']:.2f} "
-        f"avg_candidates={metrics.get('avg_candidates', 0.0):.2f}"
+        f"avg_candidates={metrics.get('avg_candidates', 0.0):.2f} "
+        f"avg_hp_gain_vs_ordered={metrics.get('avg_hp_gain_vs_ordered', 0.0):+.2f} "
+        f"hp_gain(+/-)={metrics.get('positive_hp_gain', 0.0):.0f}/"
+        f"{metrics.get('negative_hp_gain', 0.0):.0f} "
+        f"target_missed={metrics.get('target_missed', 0.0):.0f} "
+        f"target_outcome_missed={metrics.get('target_outcome_missed', 0.0):.0f}"
     )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("inputs", nargs="+", type=Path, help="CombatSearchGuidanceSampleV1 JSONL")
+    parser.add_argument(
+        "inputs",
+        nargs="+",
+        type=Path,
+        help="CombatSearchGuidanceSampleV1 or CombatActionProbeSampleV1 JSONL",
+    )
     parser.add_argument("--dim", type=int, default=4096)
     parser.add_argument("--epochs", type=int, default=25)
     parser.add_argument("--learning-rate", type=float, default=0.05)
