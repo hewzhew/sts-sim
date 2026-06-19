@@ -18,6 +18,7 @@ use crate::state::rewards::{RewardCard, RewardState};
 use std::collections::BTreeSet;
 use std::time::Instant;
 
+mod active_lineage;
 mod active_selection;
 mod branch_display;
 mod frozen_pool;
@@ -35,13 +36,13 @@ mod selection_key;
 mod state_graph;
 mod strategic_signals;
 mod summary;
+use active_lineage::rebalance_active_lineage_diversity_v1;
 pub use active_selection::select_campaign_branches_v1;
 use active_selection::{
     append_discarded_examples_v1, branch_is_rehydrated_checkpointed_combat_failure_v1,
     campaign_progress_is_clearly_ahead_v1, promote_frozen_to_active_v1,
     promote_rehydrated_combat_failures_to_active_on_stall_v1,
-    rebalance_active_lineage_diversity_v1, rebalance_active_with_stronger_frozen_v1,
-    select_campaign_branches_for_config_v1,
+    rebalance_active_with_stronger_frozen_v1, select_campaign_branches_for_config_v1,
 };
 use branch_display::{compact_campaign_choice_label_metadata_v1, render_choice_path};
 use frozen_pool::append_limited_frozen_v1;
