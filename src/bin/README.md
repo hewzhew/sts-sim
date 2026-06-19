@@ -17,7 +17,8 @@ Active binaries:
     - `continue`: run targeted sibling continuation experiments
     - `self-check`: run internal replay/cache checks
   - legacy top-level flags remain temporarily parseable, but new tooling should
-    call a subcommand explicitly
+    call a subcommand explicitly; subcommand help is intentionally scoped to
+    that command, while the top-level flattened flags are compatibility only
 - `artifact_doctor`
   - read-only audit over benchmark artifact directories
   - `--root <path>` scans for `benchmark.json` suites, registered captures,
