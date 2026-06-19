@@ -19,6 +19,8 @@ pub const LEARNING_DECISION_OUTCOME_ANALYSIS_SCHEMA_NAME: &str =
 pub const LEARNING_DECISION_OUTCOME_ANALYSIS_SCHEMA_VERSION: u32 = 1;
 pub const LEARNING_READINESS_PROBE_SCHEMA_NAME: &str = "LearningReadinessProbeV1";
 pub const LEARNING_READINESS_PROBE_SCHEMA_VERSION: u32 = 1;
+pub const TARGETED_CONTINUATION_PLAN_SCHEMA_NAME: &str = "TargetedContinuationPlanV1";
+pub const TARGETED_CONTINUATION_PLAN_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -190,6 +192,47 @@ pub struct LearningReadinessBottleneckV1 {
     pub group_count: usize,
     pub sample_count: usize,
     pub next_action: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetedContinuationPlanV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub label_role: String,
+    pub trainable_as_action_label: bool,
+    pub policy_quality_claim: bool,
+    pub total_samples: usize,
+    pub total_decision_groups: usize,
+    pub selected_target_count: usize,
+    pub targets: Vec<TargetedContinuationTargetV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetedContinuationTargetV1 {
+    pub sibling_group_id: String,
+    pub parent_branch_id: String,
+    pub step_index: usize,
+    pub command_family: String,
+    pub priority_bucket: i32,
+    pub reason_keys: Vec<String>,
+    pub milestone: String,
+    pub candidates: Vec<TargetedContinuationCandidateV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetedContinuationCandidateV1 {
+    pub command: String,
+    pub choice_label: String,
+    pub representative_branch_id: String,
+    pub representative_branch_group: String,
+    pub observed_branch_count: usize,
+    pub best_outcome_class: BranchOutcomeClassV1,
+    pub best_supervision_status: BranchOutcomeSupervisionStatusV1,
+    pub best_rank_key: i32,
+    pub needs_continuation: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -653,6 +696,87 @@ pub fn render_learning_readiness_probe_v1(probe: &LearningReadinessProbeV1) -> S
     lines.join("\n")
 }
 
+pub fn plan_targeted_continuations_v1(
+    samples: &[LearningDecisionOutcomeSampleV1],
+) -> TargetedContinuationPlanV1 {
+    let mut groups = BTreeMap::<String, Vec<&LearningDecisionOutcomeSampleV1>>::new();
+    for sample in samples {
+        groups
+            .entry(sample.sibling_group_id.clone())
+            .or_default()
+            .push(sample);
+    }
+
+    let mut targets = Vec::new();
+    for group_samples in groups.values() {
+        if let Some(target) = targeted_continuation_target_v1(group_samples) {
+            targets.push(target);
+        }
+    }
+    targets.sort_by(|left, right| {
+        right
+            .priority_bucket
+            .cmp(&left.priority_bucket)
+            .then_with(|| left.command_family.cmp(&right.command_family))
+            .then_with(|| left.sibling_group_id.cmp(&right.sibling_group_id))
+    });
+
+    TargetedContinuationPlanV1 {
+        schema_name: TARGETED_CONTINUATION_PLAN_SCHEMA_NAME.to_string(),
+        schema_version: TARGETED_CONTINUATION_PLAN_SCHEMA_VERSION,
+        label_role: "campaign_observation_not_teacher".to_string(),
+        trainable_as_action_label: false,
+        policy_quality_claim: false,
+        total_samples: samples.len(),
+        total_decision_groups: groups.len(),
+        selected_target_count: targets.len(),
+        targets,
+    }
+}
+
+pub fn render_targeted_continuation_plan_v1(plan: &TargetedContinuationPlanV1) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "TargetedContinuationPlanV1 groups={} targets={} samples={}",
+        plan.total_decision_groups, plan.selected_target_count, plan.total_samples
+    ));
+    if plan.targets.is_empty() {
+        lines.push("Targets: none".to_string());
+    } else {
+        lines.push("Targets:".to_string());
+        for (index, target) in plan.targets.iter().take(12).enumerate() {
+            lines.push(format!(
+                "  {}. {} | family={} priority={} reason={} milestone={} candidates={}",
+                index + 1,
+                compact_learning_text_v1(&target.sibling_group_id, 72),
+                target.command_family,
+                target.priority_bucket,
+                target.reason_keys.join("+"),
+                target.milestone,
+                target.candidates.len()
+            ));
+            let shown_candidate_limit = 4;
+            let mut candidate_parts = target
+                .candidates
+                .iter()
+                .take(shown_candidate_limit)
+                .map(targeted_continuation_candidate_summary_v1)
+                .collect::<Vec<_>>();
+            if target.candidates.len() > shown_candidate_limit {
+                candidate_parts.push(format!(
+                    "... {} more candidate(s)",
+                    target.candidates.len() - shown_candidate_limit
+                ));
+            }
+            let candidate_line = candidate_parts.join("; ");
+            if !candidate_line.is_empty() {
+                lines.push(format!("     {candidate_line}"));
+            }
+        }
+    }
+    lines.join("\n")
+}
+
 #[derive(Clone, Debug)]
 struct LearningDecisionCandidateDraftV1 {
     record_index: usize,
@@ -908,6 +1032,107 @@ fn sample_looks_combat_unresolved_v1(sample: &LearningDecisionOutcomeSampleV1) -
 
 fn sample_missing_context_v1(sample: &LearningDecisionOutcomeSampleV1) -> bool {
     !sample.outcome.checkpoint_enriched || sample.outcome.state_features.is_none()
+}
+
+fn targeted_continuation_target_v1(
+    group_samples: &[&LearningDecisionOutcomeSampleV1],
+) -> Option<TargetedContinuationTargetV1> {
+    if group_samples.is_empty() {
+        return None;
+    }
+    let representative = representative_decision_sample_v1(group_samples);
+    if representative.observed_sibling_count <= 1 {
+        return None;
+    }
+    let has_terminal = group_samples.iter().any(|sample| {
+        sample.outcome.supervision_status == BranchOutcomeSupervisionStatusV1::TerminalOutcome
+    });
+    let has_censored = group_samples.iter().any(|sample| {
+        sample.outcome.supervision_status == BranchOutcomeSupervisionStatusV1::CensoredOngoing
+    });
+    let censored_only = group_samples.iter().all(|sample| {
+        sample.outcome.supervision_status == BranchOutcomeSupervisionStatusV1::CensoredOngoing
+    });
+    let mut reason_keys = Vec::new();
+    let priority_bucket = if has_terminal && has_censored {
+        reason_keys.push("partial_terminal_siblings".to_string());
+        300
+    } else if censored_only {
+        reason_keys.push("censored_sibling_group".to_string());
+        200
+    } else if decision_group_outcome_class_counts_v1(group_samples).len() > 1 {
+        reason_keys.push("outcome_divergent_siblings".to_string());
+        100
+    } else {
+        return None;
+    };
+
+    let candidates = representative
+        .sibling_candidates
+        .iter()
+        .map(targeted_continuation_candidate_v1)
+        .collect::<Vec<_>>();
+    if candidates
+        .iter()
+        .all(|candidate| !candidate.needs_continuation)
+    {
+        return None;
+    }
+
+    Some(TargetedContinuationTargetV1 {
+        sibling_group_id: representative.sibling_group_id.clone(),
+        parent_branch_id: representative.parent_branch_id.clone(),
+        step_index: representative.step_index,
+        command_family: command_family_v1(&representative.candidate_command),
+        priority_bucket,
+        reason_keys,
+        milestone: "next_major_milestone_or_terminal".to_string(),
+        candidates,
+    })
+}
+
+fn targeted_continuation_candidate_v1(
+    candidate: &LearningSiblingCandidateV1,
+) -> TargetedContinuationCandidateV1 {
+    TargetedContinuationCandidateV1 {
+        command: candidate.command.clone(),
+        choice_label: candidate.choice_label.clone(),
+        representative_branch_id: candidate.representative_branch_id.clone(),
+        representative_branch_group: candidate.representative_branch_group.clone(),
+        observed_branch_count: candidate.observed_branch_count,
+        best_outcome_class: candidate.best_outcome_class.clone(),
+        best_supervision_status: candidate.best_supervision_status.clone(),
+        best_rank_key: candidate.best_rank_key,
+        needs_continuation: candidate.best_supervision_status
+            != BranchOutcomeSupervisionStatusV1::TerminalOutcome,
+    }
+}
+
+fn targeted_continuation_candidate_summary_v1(
+    candidate: &TargetedContinuationCandidateV1,
+) -> String {
+    format!(
+        "{}:{}:{}:r{}",
+        if candidate.needs_continuation {
+            "continue"
+        } else {
+            "observed"
+        },
+        compact_learning_text_v1(&candidate.choice_label, 36),
+        targeted_continuation_outcome_label_v1(&candidate.best_outcome_class),
+        candidate.best_rank_key
+    )
+}
+
+fn targeted_continuation_outcome_label_v1(outcome: &BranchOutcomeClassV1) -> &'static str {
+    match outcome {
+        BranchOutcomeClassV1::OngoingActive => "active",
+        BranchOutcomeClassV1::OngoingFrozen => "frozen",
+        BranchOutcomeClassV1::TerminalVictory => "win",
+        BranchOutcomeClassV1::TerminalDefeat => "loss",
+        BranchOutcomeClassV1::Abandoned => "abandoned",
+        BranchOutcomeClassV1::Stuck => "stuck",
+    }
 }
 
 fn compact_learning_text_v1(text: &str, max_len: usize) -> String {
@@ -1357,6 +1582,99 @@ mod tests {
         assert!(rendered.contains("terminal_observed_sibling_groups=0"));
         assert!(rendered.contains("outcome_censored"));
         assert!(rendered.contains("next=run targeted continuation"));
+    }
+
+    #[test]
+    fn targeted_continuation_plan_selects_partial_terminal_sibling_groups() {
+        let mut terminal = sample_decision_outcome_sample("rp 0", "Burning Pact");
+        terminal.sibling_group_id = "reward-group".to_string();
+        terminal.observed_sibling_count = 2;
+        terminal.sibling_candidates = vec![
+            sample_sibling_candidate(
+                "rp 0",
+                "Burning Pact",
+                BranchOutcomeClassV1::TerminalVictory,
+            ),
+            sample_sibling_candidate("rp 1", "Skip", BranchOutcomeClassV1::OngoingFrozen),
+        ];
+        terminal.outcome.outcome_class = BranchOutcomeClassV1::TerminalVictory;
+        terminal.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::TerminalOutcome;
+
+        let mut frozen = sample_decision_outcome_sample("rp 1", "Skip");
+        frozen.sibling_group_id = "reward-group".to_string();
+        frozen.observed_sibling_count = 2;
+        frozen.sibling_candidates = terminal.sibling_candidates.clone();
+        frozen.outcome.outcome_class = BranchOutcomeClassV1::OngoingFrozen;
+        frozen.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::CensoredOngoing;
+
+        let mut singleton = sample_decision_outcome_sample("smith 1", "Smith Bash");
+        singleton.sibling_group_id = "single-group".to_string();
+        singleton.observed_sibling_count = 1;
+
+        let plan = plan_targeted_continuations_v1(&[terminal, frozen, singleton]);
+
+        assert_eq!(plan.total_decision_groups, 2);
+        assert_eq!(plan.selected_target_count, 1);
+        assert_eq!(plan.targets[0].sibling_group_id, "reward-group");
+        assert_eq!(plan.targets[0].command_family, "rp");
+        assert_eq!(
+            plan.targets[0].reason_keys,
+            vec!["partial_terminal_siblings".to_string()]
+        );
+        assert_eq!(
+            plan.targets[0].milestone,
+            "next_major_milestone_or_terminal"
+        );
+        assert_eq!(
+            plan.targets[0]
+                .candidates
+                .iter()
+                .map(|candidate| (
+                    candidate.choice_label.as_str(),
+                    candidate.needs_continuation
+                ))
+                .collect::<Vec<_>>(),
+            vec![("Burning Pact", false), ("Skip", true)]
+        );
+    }
+
+    #[test]
+    fn targeted_continuation_plan_render_summarizes_targets() {
+        let mut sample = sample_decision_outcome_sample("buy card 0", "Buy Burning Pact");
+        sample.sibling_group_id = "shop-group".to_string();
+        sample.observed_sibling_count = 2;
+        sample.sibling_candidates = vec![
+            sample_sibling_candidate(
+                "buy card 0",
+                "Buy Burning Pact",
+                BranchOutcomeClassV1::OngoingFrozen,
+            ),
+            sample_sibling_candidate("leave", "Leave shop", BranchOutcomeClassV1::OngoingFrozen),
+            sample_sibling_candidate(
+                "buy card 1",
+                "Buy Dark Embrace",
+                BranchOutcomeClassV1::OngoingFrozen,
+            ),
+            sample_sibling_candidate(
+                "buy card 2",
+                "Buy Shrug It Off",
+                BranchOutcomeClassV1::OngoingFrozen,
+            ),
+            sample_sibling_candidate(
+                "buy combo",
+                "Purge Strike 50g then Buy Dark Embrace 20g then Buy FrozenEye 72g",
+                BranchOutcomeClassV1::OngoingFrozen,
+            ),
+        ];
+
+        let plan = plan_targeted_continuations_v1(&[sample]);
+        let rendered = render_targeted_continuation_plan_v1(&plan);
+
+        assert!(rendered.contains("TargetedContinuationPlanV1 groups=1 targets=1"));
+        assert!(rendered.contains("reason=censored_sibling_group"));
+        assert!(rendered.contains("next_major_milestone_or_terminal"));
+        assert!(rendered.contains("... 1 more candidate(s)"));
+        assert!(!rendered.contains("then Buy FrozenEye"));
     }
 
     fn sample_decision_outcome_sample(

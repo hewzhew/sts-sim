@@ -24,8 +24,8 @@ use outcome_dataset::{
     learning_dataset_export_context_v1, run_branch_outcome_dataset_analysis,
     run_branch_outcome_dataset_export, run_decision_outcome_dataset_analysis,
     run_decision_outcome_dataset_export, run_learning_dataset_export, run_learning_readiness_probe,
-    write_branch_outcome_dataset_jsonl_v1, write_decision_outcome_dataset_jsonl_v1,
-    write_learning_dataset_jsonl_v1,
+    run_targeted_continuation_plan, write_branch_outcome_dataset_jsonl_v1,
+    write_decision_outcome_dataset_jsonl_v1, write_learning_dataset_jsonl_v1,
 };
 use shop_challenge::render_checkpoint_shop_plan_challenge_v1;
 use sts_simulator::eval::branch_campaign::{
@@ -446,6 +446,13 @@ struct Args {
     probe_learning_readiness: Option<PathBuf>,
 
     #[arg(
+        long = "plan-targeted-continuation",
+        value_name = "PATH",
+        help = "Print targeted sibling continuation groups from a LearningDecisionOutcomeSampleV1 JSONL file"
+    )]
+    plan_targeted_continuation: Option<PathBuf>,
+
+    #[arg(
         long = "export-learning-dataset",
         value_name = "PATH",
         help = "Write LearningBranchSampleV1 JSONL from a campaign report/run without treating choices as teacher labels"
@@ -717,6 +724,9 @@ fn run(args: Args) -> Result<(), String> {
     }
     if args.probe_learning_readiness.is_some() {
         return run_learning_readiness_probe(&args);
+    }
+    if args.plan_targeted_continuation.is_some() {
+        return run_targeted_continuation_plan(&args);
     }
     if args.export_outcome_dataset.is_some() && args.inspect_report.is_some() {
         return run_branch_outcome_dataset_export(&args);
@@ -1729,6 +1739,20 @@ mod tests {
 
         assert_eq!(
             args.probe_learning_readiness,
+            Some(PathBuf::from("decision_outcomes.jsonl"))
+        );
+    }
+
+    #[test]
+    fn campaign_cli_accepts_targeted_continuation_plan() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--plan-targeted-continuation",
+            "decision_outcomes.jsonl",
+        ]);
+
+        assert_eq!(
+            args.plan_targeted_continuation,
             Some(PathBuf::from("decision_outcomes.jsonl"))
         );
     }
