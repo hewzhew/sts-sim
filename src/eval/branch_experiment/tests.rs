@@ -100,6 +100,25 @@ fn branch_experiment_snapshot_result_tracks_final_branch_sessions() {
 }
 
 #[test]
+fn branch_boundary_details_prepend_structured_event_packet() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.engine_state = EngineState::EventRoom;
+    session.run_state.event_state = Some(EventState::new(EventId::Mushrooms));
+    session.run_state.max_hp = 80;
+
+    let details = branch_boundary_details(&session);
+
+    assert_eq!(
+        details[0],
+        "event Mushrooms screen=0 class=strategic_choice"
+    );
+    assert!(details[1].contains("event 0 action=fight role=strategic_choice"));
+    assert!(details[2].contains("event 1 action=trade role=strategic_choice"));
+    assert!(details[2].contains("heal(amount=20)"));
+    assert!(details[2].contains("obtain_curse(card=Parasite,card_kind=specific,count=1)"));
+}
+
+#[test]
 fn branch_experiment_marks_final_settle_wall_limit_phase() {
     let session = RunControlSession::new(RunControlConfig::default());
 

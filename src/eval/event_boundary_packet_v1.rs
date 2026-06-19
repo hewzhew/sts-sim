@@ -84,6 +84,77 @@ pub fn event_boundary_packet_from_session_v1(
     })
 }
 
+pub fn event_boundary_detail_lines_v1(
+    packet: &EventBoundaryPacketV1,
+    max_candidates: usize,
+) -> Vec<String> {
+    let mut lines = vec![format!(
+        "event {} screen={} class={}",
+        packet.event_id, packet.current_screen, packet.boundary_class
+    )];
+    lines.extend(
+        packet
+            .candidates
+            .iter()
+            .take(max_candidates)
+            .map(event_candidate_detail_line_v1),
+    );
+    let remaining = packet.candidates.len().saturating_sub(max_candidates);
+    if remaining > 0 {
+        lines.push(format!("event candidates omitted={remaining}"));
+    }
+    lines
+}
+
+fn event_candidate_detail_line_v1(candidate: &EventCandidateSnapshotV1) -> String {
+    let effects = event_candidate_effect_summary_v1(candidate);
+    let constraints = if candidate.constraints.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " constraints=[{}]",
+            candidate
+                .constraints
+                .iter()
+                .map(|constraint| constraint.kind.as_str())
+                .collect::<Vec<_>>()
+                .join("+")
+        )
+    };
+    format!(
+        "{} action={} role={} transition={} effects=[{}]{}",
+        candidate.command,
+        candidate.action_kind,
+        candidate.role,
+        candidate.transition,
+        effects,
+        constraints
+    )
+}
+
+fn event_candidate_effect_summary_v1(candidate: &EventCandidateSnapshotV1) -> String {
+    if candidate.effects.is_empty() {
+        return "-".to_string();
+    }
+    candidate
+        .effects
+        .iter()
+        .map(|effect| {
+            if effect.params.is_empty() {
+                return effect.kind.clone();
+            }
+            let params = effect
+                .params
+                .iter()
+                .map(|(key, value)| format!("{key}={value}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{}({})", effect.kind, params)
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
 fn event_candidate_snapshot_v1(
     event_id: EventId,
     current_screen: usize,
@@ -530,5 +601,22 @@ mod tests {
             .effects
             .iter()
             .any(|effect| effect.kind == "remove_card"));
+    }
+
+    #[test]
+    fn detail_lines_are_structured_and_do_not_require_label_parsing() {
+        let mut session = RunControlSession::new(Default::default());
+        session.engine_state = EngineState::EventRoom;
+        session.run_state.event_state = Some(EventState::new(EventId::Mushrooms));
+        session.run_state.max_hp = 80;
+
+        let packet = event_boundary_packet_from_session_v1(&session).unwrap();
+        let lines = event_boundary_detail_lines_v1(&packet, 2);
+
+        assert_eq!(lines[0], "event Mushrooms screen=0 class=strategic_choice");
+        assert!(lines[1].contains("event 0 action=fight role=strategic_choice"));
+        assert!(lines[2].contains("event 1 action=trade role=strategic_choice"));
+        assert!(lines[2].contains("heal(amount=20)"));
+        assert!(lines[2].contains("obtain_curse(card=Parasite,card_kind=specific,count=1)"));
     }
 }
