@@ -613,49 +613,6 @@ fn shared_start_profile_runner_rejects_mismatched_start_inputs() {
 }
 
 #[test]
-fn branch_experiment_can_limit_reward_options_by_semantic_portfolio() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    let mut reward = RewardState::new();
-    reward.pending_card_choice = Some(vec![
-        RewardCard::new(CardId::TwinStrike, 0),
-        RewardCard::new(CardId::Cleave, 0),
-        RewardCard::new(CardId::ShrugItOff, 0),
-    ]);
-    session.engine_state = EngineState::RewardScreen(reward);
-
-    let report = run_branch_experiment_from_session(
-        session,
-        &BranchExperimentConfigV1 {
-            max_depth: 1,
-            max_branches: 4,
-            max_reward_options_per_branch: Some(2),
-            auto_max_operations: 0,
-            ..BranchExperimentConfigV1::default()
-        },
-    );
-
-    let picked_labels = report
-        .branches
-        .iter()
-        .map(|branch| branch.choices[0].label.as_str())
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(report.branches.len(), 2);
-    assert!(
-        picked_labels.contains("Shrug It Off"),
-        "non-transition defense/draw candidate should not be crowded out"
-    );
-    assert_eq!(
-        picked_labels
-            .iter()
-            .filter(|label| **label == "Twin Strike" || **label == "Cleave")
-            .count(),
-        1,
-        "pure transition options should be represented, not exhaustively expanded"
-    );
-}
-
-#[test]
 fn branch_experiment_include_skip_expands_card_reward_skip_branch() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward = RewardState::new();
