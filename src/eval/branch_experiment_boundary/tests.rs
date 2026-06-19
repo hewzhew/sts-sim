@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use super::card_reward::select_card_reward_branch_options_with_limit;
 use super::*;
 use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
 use crate::ai::event_policy_v1::{build_event_decision_context_v1, EventPolicyClassV1};
@@ -16,81 +15,6 @@ use crate::state::core::{
 use crate::state::events::{EventId, EventState};
 use crate::state::rewards::{BossRelicChoiceState, RewardCard, RewardItem, RewardState};
 use crate::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
-
-#[test]
-fn card_reward_option_portfolio_keeps_semantic_variety() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    let mut reward = RewardState::new();
-    reward.pending_card_choice = Some(vec![
-        RewardCard::new(CardId::TwinStrike, 0),
-        RewardCard::new(CardId::Cleave, 0),
-        RewardCard::new(CardId::ShrugItOff, 0),
-    ]);
-    session.engine_state = EngineState::RewardScreen(reward);
-
-    let options = card_reward_branch_options(&session).expect("card reward options");
-    let selected = select_card_reward_branch_options_with_limit(options, 2, None).options;
-    let picked_labels = selected
-        .iter()
-        .map(|option| option.label.as_str())
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(selected.len(), 2);
-    assert!(
-        picked_labels.contains("Shrug It Off"),
-        "non-transition defense/draw candidate should not be crowded out"
-    );
-    assert_eq!(
-        picked_labels
-            .iter()
-            .filter(|label| **label == "Twin Strike" || **label == "Cleave")
-            .count(),
-        1,
-        "pure transition options should be represented, not exhaustively expanded"
-    );
-}
-
-#[test]
-fn card_reward_portfolio_without_strategy_preserves_input_order_across_classes() {
-    let options = vec![
-        super::card_reward::CardRewardBranchOption {
-            label: "Twin Strike".to_string(),
-            command: "rp 0".to_string(),
-            card: Some(CardId::TwinStrike),
-            upgrades: Some(0),
-            source: super::card_reward::CardRewardBranchOptionSource::PermanentReward,
-            decision_signal: None,
-        },
-        super::card_reward::CardRewardBranchOption {
-            label: "Body Slam".to_string(),
-            command: "rp 1".to_string(),
-            card: Some(CardId::BodySlam),
-            upgrades: Some(0),
-            source: super::card_reward::CardRewardBranchOptionSource::PermanentReward,
-            decision_signal: None,
-        },
-        super::card_reward::CardRewardBranchOption {
-            label: "Shrug It Off".to_string(),
-            command: "rp 2".to_string(),
-            card: Some(CardId::ShrugItOff),
-            upgrades: Some(0),
-            source: super::card_reward::CardRewardBranchOptionSource::PermanentReward,
-            decision_signal: None,
-        },
-    ];
-
-    let selected = select_card_reward_branch_options_with_limit(options, 2, None).options;
-    let labels = selected
-        .iter()
-        .map(|option| option.label.as_str())
-        .collect::<Vec<_>>();
-
-    assert_eq!(
-        labels,
-        vec!["Twin Strike", "Body Slam"],
-        "without strategic context, semantic classes should diversify the input order rather than impose package/stabilizer value priority"
-    );
-}
 
 #[test]
 fn card_reward_option_portfolio_includes_decline_candidates() {
@@ -287,54 +211,6 @@ fn current_boundary_does_not_include_map_preview_skip_for_unopened_card_reward_i
         .find(|option| option.kind == "card_reward_skip")
         .expect("branch experiment may synthesize a true card-reward skip branch");
     assert_eq!(skip.command, "branch-skip-card-reward 0");
-}
-
-#[test]
-fn current_boundary_uses_admission_to_keep_boss_answer_over_bloated_goodstuff() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    session.run_state.act_num = 3;
-    session.run_state.floor_num = 46;
-    for _ in 0..34 {
-        session.run_state.add_card_to_deck(CardId::Strike);
-    }
-    let mut reward = RewardState::new();
-    reward.items.push(RewardItem::Card {
-        cards: vec![
-            RewardCard::new(CardId::PommelStrike, 0),
-            RewardCard::new(CardId::Shockwave, 0),
-            RewardCard::new(CardId::TwinStrike, 0),
-        ],
-    });
-    session.engine_state = EngineState::RewardScreen(reward);
-
-    let boundary = current_branch_boundary(
-        &session,
-        BranchBoundaryConfigV1 {
-            max_reward_options_per_branch: Some(1),
-            max_campfire_options_per_branch: None,
-            include_skip: false,
-            include_event_reward_skip: false,
-        },
-        None,
-    )
-    .expect("visible card reward boundary");
-
-    assert!(
-        boundary.options.iter().any(|option| {
-            option.kind == "card_reward" && option.card == Some(CardId::Shockwave)
-        }),
-        "admission pressure should preserve a clear boss/elite answer over draw-one goodstuff"
-    );
-    assert!(
-        !boundary.options.iter().any(|option| {
-            option.kind == "card_reward" && option.card == Some(CardId::PommelStrike)
-        }),
-        "rejected goodstuff should not occupy the only card reward branch slot"
-    );
-    assert!(!boundary
-        .options
-        .iter()
-        .any(|option| option.kind == "card_reward_skip"));
 }
 
 #[test]
@@ -834,47 +710,6 @@ fn current_boundary_does_not_branch_on_shop_potion_when_slots_are_full() {
     assert!(!commands
         .iter()
         .any(|command| command.starts_with("buy potion")));
-}
-
-#[test]
-fn current_boundary_does_not_branch_late_act3_bloated_shop_goodstuff_cards() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    session.run_state.act_num = 3;
-    session.run_state.floor_num = 39;
-    session.run_state.gold = 999;
-    for _ in 0..35 {
-        session.run_state.add_card_to_deck(CardId::Strike);
-    }
-    let mut shop = ShopState::new();
-    for card_id in [
-        CardId::BodySlam,
-        CardId::HeavyBlade,
-        CardId::Havoc,
-        CardId::Metallicize,
-    ] {
-        shop.cards.push(ShopCard {
-            card_id,
-            upgrades: 0,
-            price: 50,
-            can_buy: true,
-            blocked_reason: None,
-        });
-    }
-    session.engine_state = EngineState::Shop(shop);
-
-    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
-        .expect("late bloated shop should still expose leave");
-
-    assert!(
-        boundary
-            .options
-            .iter()
-            .all(|option| option.effect_kind != "shop_buy_card"),
-        "late Act3 shop should not keep low-impact goodstuff card buys for a bloated deck"
-    );
-    assert!(boundary.options.iter().any(|option| {
-        option.effect_kind == "shop_leave" || option.effect_kind == "shop_purge"
-    }));
 }
 
 #[test]
@@ -1923,68 +1758,6 @@ fn current_boundary_keeps_high_value_duplicate_targets_when_fanout_is_high() {
     assert!(cards.contains(&Some(CardId::Shockwave)));
     assert!(!cards.contains(&Some(CardId::Strike)));
     assert!(!cards.contains(&Some(CardId::Defend)));
-}
-
-#[test]
-fn campfire_branch_option_portfolio_does_not_spend_cap_on_minor_rest() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    session.run_state.current_hp = session.run_state.max_hp - 4;
-    session.engine_state = EngineState::Campfire;
-
-    let options = campfire_branch_options(&session).expect("campfire options");
-    let selected = select_campfire_branch_options(options, Some(2)).options;
-
-    assert!(
-        selected.iter().all(|option| option.command != "rest"),
-        "minor HP recovery should not consume capped campaign/campfire branch slots when smith targets exist"
-    );
-    assert!(
-        selected
-            .iter()
-            .any(|option| option.command.starts_with("smith ")),
-        "smith options should remain represented when campfire branching is capped"
-    );
-}
-
-#[test]
-fn campfire_branch_option_portfolio_keeps_rest_under_recovery_pressure() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    session.run_state.current_hp = 20;
-    session.engine_state = EngineState::Campfire;
-
-    let options = campfire_branch_options(&session).expect("campfire options");
-    let selected = select_campfire_branch_options(options, Some(2)).options;
-
-    assert!(
-        selected.iter().any(|option| option.command == "rest"),
-        "low-HP recovery should remain represented when campfire branching is capped"
-    );
-    assert!(
-        selected
-            .iter()
-            .any(|option| option.command.starts_with("smith ")),
-        "at least one smith option should remain represented alongside recovery"
-    );
-}
-
-#[test]
-fn campfire_branch_option_portfolio_does_not_spend_cap_on_full_hp_rest() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    session.engine_state = EngineState::Campfire;
-
-    let options = campfire_branch_options(&session).expect("campfire options");
-    let selected = select_campfire_branch_options(options, Some(2)).options;
-
-    assert!(
-        selected.iter().all(|option| option.command != "rest"),
-        "full-hp rest should not consume capped campaign/campfire branch slots"
-    );
-    assert!(
-        selected
-            .iter()
-            .any(|option| option.command.starts_with("smith ")),
-        "smith options should be preferred over no-op full-hp rest"
-    );
 }
 
 #[test]

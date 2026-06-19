@@ -143,20 +143,6 @@ pub(crate) fn select_card_reward_branch_options_for_session(
     )
 }
 
-#[cfg(test)]
-pub(crate) fn select_card_reward_branch_options_with_limit(
-    options: Vec<CardRewardBranchOption>,
-    limit: usize,
-    portfolio_context: Option<CardRewardPortfolioContext>,
-) -> CardRewardBranchOptionSelection {
-    select_card_reward_branch_options_with_limit_and_strategy(
-        options,
-        limit,
-        portfolio_context,
-        None,
-    )
-}
-
 fn select_card_reward_branch_options_with_limit_and_strategy(
     options: Vec<CardRewardBranchOption>,
     limit: usize,
