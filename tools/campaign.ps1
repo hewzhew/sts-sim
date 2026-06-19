@@ -39,6 +39,22 @@ Prints shop compiler evidence for a selected checkpoint branch.
 Runs selected and alternative shop plans from a selected checkpoint branch, then rolls each forward briefly.
 
 .EXAMPLE
+.\tools\campaign.ps1 -InspectCardRewardEvidence -InspectIndex 0
+Prints card reward compiler evidence for a selected checkpoint branch.
+
+.EXAMPLE
+.\tools\campaign.ps1 -InspectDeckMutation -InspectIndex 0
+Prints DeckMutationCompiler evidence for a selected checkpoint branch.
+
+.EXAMPLE
+.\tools\campaign.ps1 -InspectCampfireEvidence -InspectIndex 0
+Prints campfire compiler evidence for a selected checkpoint branch.
+
+.EXAMPLE
+.\tools\campaign.ps1 -InspectRouteEvidence -InspectIndex 0
+Prints route planner evidence for a selected checkpoint branch.
+
+.EXAMPLE
 .\tools\campaign.ps1 -InspectLastAutoCombat -InspectIndex 0
 Prints the last saved automated combat trajectory for a selected checkpoint branch.
 
@@ -128,8 +144,12 @@ param(
     [switch] $InspectShopEvidence,
     [switch] $InspectShopChallenge,
     [switch] $InspectCardRewardEvidence,
+    [switch] $InspectCampfireEvidence,
+    [switch] $InspectDeckMutation,
+    [switch] $InspectRouteEvidence,
     [switch] $InspectLastAutoCombat,
     [switch] $InspectCombatLab,
+    [switch] $InspectFinalBossCombat,
     [switch] $ProbeBoss,
     [switch] $DryRun,
     [switch] $NoProgress,
@@ -234,8 +254,12 @@ if (
     $InspectShopEvidence -or
     $InspectShopChallenge -or
     $InspectCardRewardEvidence -or
+    $InspectCampfireEvidence -or
+    $InspectDeckMutation -or
+    $InspectRouteEvidence -or
     $InspectLastAutoCombat -or
-    $InspectCombatLab
+    $InspectCombatLab -or
+    $InspectFinalBossCombat
 ) {
     $Inspect = $true
 }
@@ -523,8 +547,12 @@ if ($Inspect) {
         $InspectShopEvidence -or
         $InspectShopChallenge -or
         $InspectCardRewardEvidence -or
+        $InspectCampfireEvidence -or
+        $InspectDeckMutation -or
+        $InspectRouteEvidence -or
         $InspectLastAutoCombat -or
-        $InspectCombatLab
+        $InspectCombatLab -or
+        $InspectFinalBossCombat
     if (-not $DetailedInspect) {
         $InspectArgs += "--inspect-summary"
     }
@@ -544,8 +572,20 @@ if ($Inspect) {
     if ($InspectCardRewardEvidence) {
         $InspectArgs += "--inspect-card-reward-evidence"
     }
+    if ($InspectCampfireEvidence) {
+        $InspectArgs += "--inspect-campfire-evidence"
+    }
+    if ($InspectDeckMutation) {
+        $InspectArgs += "--inspect-deck-mutation"
+    }
+    if ($InspectRouteEvidence) {
+        $InspectArgs += "--inspect-route-evidence"
+    }
     if ($InspectLastAutoCombat) {
         $InspectArgs += "--inspect-last-auto-combat"
+    }
+    if ($InspectFinalBossCombat) {
+        $InspectArgs += "--inspect-final-boss-combat"
     }
     if ($ExportLearningDataset) {
         $InspectArgs += @("--export-learning-dataset", "$ExportLearningDataset")
