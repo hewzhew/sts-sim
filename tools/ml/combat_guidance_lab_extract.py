@@ -215,6 +215,10 @@ def summarize(paths: list[Path], out_jsonl: Path | None) -> None:
 
     case_summaries = [lab_summary(meta, lab) for meta, lab in labs]
     counters = Counter()
+    role_candidates: Counter[str] = Counter()
+    role_child_wins: Counter[str] = Counter()
+    role_probe_targets: Counter[str] = Counter()
+    role_best_complete_first: Counter[str] = Counter()
     total_candidates = 0
     total_child = 0
     total_wins = 0
@@ -232,6 +236,20 @@ def summarize(paths: list[Path], out_jsonl: Path | None) -> None:
             counters["outcome_diff_current_first"] += 1
         if lab_summary(meta, lab)["best_target_outcome_differs_from_best_complete_first"]:
             counters["outcome_diff_best_complete_first"] += 1
+        best_index = ordered_index(best_target_candidate(lab))
+        selected_index = ordered_index(selected_best_complete_candidate(lab))
+        for candidate in lab.get("candidates", []):
+            if not isinstance(candidate, dict):
+                continue
+            role = str(candidate.get("action_role") or "unknown")
+            target = candidate.get("target") if isinstance(candidate.get("target"), dict) else {}
+            role_candidates[role] += 1
+            if target.get("complete_win") and target.get("terminal") == "win":
+                role_child_wins[role] += 1
+            if ordered_index(candidate) == best_index:
+                role_probe_targets[role] += 1
+            if ordered_index(candidate) == selected_index:
+                role_best_complete_first[role] += 1
 
     if out_jsonl:
         out_jsonl.parent.mkdir(parents=True, exist_ok=True)
@@ -258,6 +276,13 @@ def summarize(paths: list[Path], out_jsonl: Path | None) -> None:
         f"  outcome_diff_current_first={counters['outcome_diff_current_first']} "
         f"outcome_diff_best_complete_first={counters['outcome_diff_best_complete_first']}"
     )
+    print("  action roles:")
+    for role, count in role_candidates.most_common():
+        print(
+            f"    {role}: candidates={count} child_complete_wins={role_child_wins[role]} "
+            f"probe_targets={role_probe_targets[role]} "
+            f"best_complete_first={role_best_complete_first[role]}"
+        )
     if out_jsonl:
         print(f"  jsonl={out_jsonl}")
     print("  cases:")
