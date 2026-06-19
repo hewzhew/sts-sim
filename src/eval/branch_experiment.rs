@@ -606,6 +606,13 @@ fn branch_boundary_details(session: &RunControlSession) -> Vec<String> {
                 crate::eval::event_boundary_packet_v1::event_boundary_detail_lines_v1(&packet, 3)
             })
             .unwrap_or_default();
+    details.extend(
+        crate::eval::reward_boundary_packet_v1::reward_boundary_packet_from_session_v1(session)
+            .map(|packet| {
+                crate::eval::reward_boundary_packet_v1::reward_boundary_detail_lines_v1(&packet, 4)
+            })
+            .unwrap_or_default(),
+    );
     details.extend(surface.view.context.into_iter().take(3));
     details.extend(
         surface

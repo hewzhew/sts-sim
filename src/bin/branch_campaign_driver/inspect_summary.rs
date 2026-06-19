@@ -9,6 +9,9 @@ use sts_simulator::eval::branch_campaign::{
 use sts_simulator::eval::event_boundary_packet_v1::{
     event_boundary_packet_from_session_v1, EventBoundaryPacketV1,
 };
+use sts_simulator::eval::reward_boundary_packet_v1::{
+    reward_boundary_packet_from_session_v1, RewardBoundaryPacketV1,
+};
 use sts_simulator::eval::run_control::{build_decision_surface, RunControlSession};
 use sts_simulator::runtime::combat::CombatCard;
 
@@ -258,6 +261,9 @@ fn render_session_details(
     if let Some(packet) = event_boundary_packet_from_session_v1(session) {
         lines.push(render_event_boundary_summary_v1(&packet));
     }
+    if let Some(packet) = reward_boundary_packet_from_session_v1(session) {
+        lines.push(render_reward_boundary_summary_v1(&packet));
+    }
     if let Some(branch) = branch {
         if !branch.stop_reason.trim().is_empty() {
             lines.push(format!("stop: {}", first_line(&branch.stop_reason)));
@@ -307,6 +313,44 @@ fn render_event_boundary_summary_v1(packet: &EventBoundaryPacketV1) -> String {
     format!(
         "event_boundary: {} screen={} class={} candidates=[{}{}]",
         packet.event_id, packet.current_screen, packet.boundary_class, candidates, suffix
+    )
+}
+
+fn render_reward_boundary_summary_v1(packet: &RewardBoundaryPacketV1) -> String {
+    let candidates = packet
+        .candidates
+        .iter()
+        .take(4)
+        .map(|candidate| {
+            let cards = if candidate.cards.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    ":{}",
+                    candidate
+                        .cards
+                        .iter()
+                        .take(3)
+                        .map(|card| card.display_label.as_str())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )
+            };
+            format!(
+                "{}:{}:{}{}",
+                candidate.command, candidate.reward_kind, candidate.role, cards
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let suffix = if packet.candidates.len() > 4 {
+        format!(" | ... {} more", packet.candidates.len() - 4)
+    } else {
+        String::new()
+    };
+    format!(
+        "reward_boundary: {} context={} class={} candidates=[{}{}]",
+        packet.surface, packet.screen_context, packet.boundary_class, candidates, suffix
     )
 }
 

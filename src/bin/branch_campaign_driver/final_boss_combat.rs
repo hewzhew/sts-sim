@@ -246,6 +246,7 @@ mod tests {
                     boss_pressure: Vec::new(),
                     run_debt: Vec::new(),
                     event_boundary: None,
+                    reward_boundary: None,
                 }),
                 strategic_summary: BranchSignatureCompact::default(),
                 frontier_title: "Game Over Victory".to_string(),

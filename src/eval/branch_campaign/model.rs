@@ -2,6 +2,7 @@ use crate::ai::strategic::BranchSignatureCompact;
 use crate::eval::branch_experiment::BranchExperimentBossCombatRecordV1;
 use crate::eval::combat_lab_probe_v1::CombatLabProbePacketV1;
 use crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1;
+use crate::eval::reward_boundary_packet_v1::RewardBoundaryPacketV1;
 use crate::eval::run_control::RunControlSessionCheckpointV1;
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +46,8 @@ pub struct BranchCampaignBranchSummaryV1 {
     pub run_debt: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub event_boundary: Option<EventBoundaryPacketV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reward_boundary: Option<RewardBoundaryPacketV1>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

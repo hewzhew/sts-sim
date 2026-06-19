@@ -4603,10 +4603,13 @@ fn campaign_refresh_branch_summary_from_session_v1(
 ) {
     let event_boundary =
         crate::eval::event_boundary_packet_v1::event_boundary_packet_from_session_v1(session);
+    let reward_boundary =
+        crate::eval::reward_boundary_packet_v1::reward_boundary_packet_from_session_v1(session);
     let Some(summary) = branch.summary.as_mut() else {
         return;
     };
     summary.event_boundary = event_boundary;
+    summary.reward_boundary = reward_boundary;
     summary.act = session.run_state.act_num;
     summary.floor = session.run_state.floor_num;
     let (hp, max_hp) = session.visible_player_hp();
@@ -5312,6 +5315,7 @@ fn campaign_summary_from_report_branch_v1(
         boss_pressure: Vec::new(),
         run_debt: Vec::new(),
         event_boundary: None,
+        reward_boundary: None,
     }
 }
 
