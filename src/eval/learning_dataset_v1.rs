@@ -14,6 +14,9 @@ pub const LEARNING_BRANCH_SAMPLE_SCHEMA_NAME: &str = "LearningBranchSampleV1";
 pub const LEARNING_BRANCH_SAMPLE_SCHEMA_VERSION: u32 = 1;
 pub const LEARNING_DECISION_OUTCOME_SAMPLE_SCHEMA_NAME: &str = "LearningDecisionOutcomeSampleV1";
 pub const LEARNING_DECISION_OUTCOME_SAMPLE_SCHEMA_VERSION: u32 = 1;
+pub const LEARNING_DECISION_OUTCOME_ANALYSIS_SCHEMA_NAME: &str =
+    "LearningDecisionOutcomeAnalysisV1";
+pub const LEARNING_DECISION_OUTCOME_ANALYSIS_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -117,6 +120,44 @@ pub struct LearningSiblingCandidateV1 {
 pub struct LearningOutcomeClassCountV1 {
     pub outcome_class: BranchOutcomeClassV1,
     pub count: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningDecisionHistogramEntryV1 {
+    pub key: String,
+    pub count: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningDecisionOutcomeAnalysisV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub label_role: String,
+    pub trainable_as_action_label: bool,
+    pub policy_quality_claim: bool,
+    pub total_samples: usize,
+    pub decision_group_count: usize,
+    pub observed_sibling_group_count: usize,
+    pub outcome_divergent_group_count: usize,
+    pub censored_only_group_count: usize,
+    pub command_family_counts: Vec<LearningDecisionHistogramEntryV1>,
+    pub outcome_class_counts: Vec<LearningDecisionHistogramEntryV1>,
+    pub group_examples: Vec<LearningDecisionGroupExampleV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LearningDecisionGroupExampleV1 {
+    pub sibling_group_id: String,
+    pub parent_branch_id: String,
+    pub step_index: usize,
+    pub command_family: String,
+    pub observed_sibling_count: usize,
+    pub sample_count: usize,
+    pub candidate_summaries: Vec<String>,
+    pub outcome_classes: Vec<LearningDecisionHistogramEntryV1>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -283,6 +324,138 @@ pub fn parse_learning_decision_outcome_samples_jsonl_v1(
     Ok(samples)
 }
 
+pub fn analyze_learning_decision_outcome_samples_v1(
+    samples: &[LearningDecisionOutcomeSampleV1],
+) -> LearningDecisionOutcomeAnalysisV1 {
+    let mut groups = BTreeMap::<String, Vec<&LearningDecisionOutcomeSampleV1>>::new();
+    let mut outcome_class_counts = BTreeMap::<String, usize>::new();
+    for sample in samples {
+        groups
+            .entry(sample.sibling_group_id.clone())
+            .or_default()
+            .push(sample);
+        *outcome_class_counts
+            .entry(format!("{:?}", sample.outcome.outcome_class))
+            .or_default() += 1;
+    }
+
+    let mut command_family_counts = BTreeMap::<String, usize>::new();
+    let mut observed_sibling_group_count = 0usize;
+    let mut outcome_divergent_group_count = 0usize;
+    let mut censored_only_group_count = 0usize;
+    let mut group_examples = Vec::new();
+
+    for group_samples in groups.values() {
+        if group_samples.is_empty() {
+            continue;
+        }
+        let representative = representative_decision_sample_v1(group_samples);
+        let command_family = command_family_v1(&representative.candidate_command);
+        *command_family_counts
+            .entry(command_family.clone())
+            .or_default() += 1;
+
+        let observed_sibling_count = group_samples
+            .iter()
+            .map(|sample| sample.observed_sibling_count)
+            .max()
+            .unwrap_or(0);
+        if observed_sibling_count > 1 {
+            observed_sibling_group_count += 1;
+        }
+
+        let outcome_classes = decision_group_outcome_class_counts_v1(group_samples);
+        let outcome_divergent = outcome_classes.len() > 1;
+        if outcome_divergent {
+            outcome_divergent_group_count += 1;
+        }
+        if group_samples.iter().all(|sample| {
+            sample.outcome.supervision_status == BranchOutcomeSupervisionStatusV1::CensoredOngoing
+        }) {
+            censored_only_group_count += 1;
+        }
+
+        if group_examples.len() < 12 && (outcome_divergent || observed_sibling_count > 1) {
+            group_examples.push(LearningDecisionGroupExampleV1 {
+                sibling_group_id: representative.sibling_group_id.clone(),
+                parent_branch_id: representative.parent_branch_id.clone(),
+                step_index: representative.step_index,
+                command_family,
+                observed_sibling_count,
+                sample_count: group_samples.len(),
+                candidate_summaries: representative
+                    .sibling_candidates
+                    .iter()
+                    .map(learning_candidate_summary_v1)
+                    .collect(),
+                outcome_classes,
+            });
+        }
+    }
+
+    LearningDecisionOutcomeAnalysisV1 {
+        schema_name: LEARNING_DECISION_OUTCOME_ANALYSIS_SCHEMA_NAME.to_string(),
+        schema_version: LEARNING_DECISION_OUTCOME_ANALYSIS_SCHEMA_VERSION,
+        label_role: "campaign_observation_not_teacher".to_string(),
+        trainable_as_action_label: false,
+        policy_quality_claim: false,
+        total_samples: samples.len(),
+        decision_group_count: groups.len(),
+        observed_sibling_group_count,
+        outcome_divergent_group_count,
+        censored_only_group_count,
+        command_family_counts: learning_histogram_entries_by_key_v1(command_family_counts),
+        outcome_class_counts: learning_histogram_entries_by_key_v1(outcome_class_counts),
+        group_examples,
+    }
+}
+
+pub fn render_learning_decision_outcome_analysis_v1(
+    analysis: &LearningDecisionOutcomeAnalysisV1,
+) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "LearningDecisionOutcomeAnalysisV1 samples={} groups={} observed_sibling_groups={} outcome_divergent_groups={} censored_only_groups={}",
+        analysis.total_samples,
+        analysis.decision_group_count,
+        analysis.observed_sibling_group_count,
+        analysis.outcome_divergent_group_count,
+        analysis.censored_only_group_count
+    ));
+    if !analysis.command_family_counts.is_empty() {
+        lines.push(format!(
+            "Command families: {}",
+            render_learning_histogram_v1(&analysis.command_family_counts)
+        ));
+    }
+    if !analysis.outcome_class_counts.is_empty() {
+        lines.push(format!(
+            "Outcome classes: {}",
+            render_learning_histogram_v1(&analysis.outcome_class_counts)
+        ));
+    }
+    if !analysis.group_examples.is_empty() {
+        lines.push(String::new());
+        lines.push("Useful sibling group examples:".to_string());
+        for example in &analysis.group_examples {
+            lines.push(format!(
+                "  {} | family={} siblings={} samples={} outcomes={} parent={} step={}",
+                compact_learning_text_v1(&example.sibling_group_id, 72),
+                example.command_family,
+                example.observed_sibling_count,
+                example.sample_count,
+                render_learning_histogram_v1(&example.outcome_classes),
+                compact_learning_text_v1(&example.parent_branch_id, 48),
+                example.step_index
+            ));
+            if !example.candidate_summaries.is_empty() {
+                lines.push(format!("    {}", example.candidate_summaries.join("; ")));
+            }
+        }
+    }
+    lines.join("\n")
+}
+
 #[derive(Clone, Debug)]
 struct LearningDecisionCandidateDraftV1 {
     record_index: usize,
@@ -423,6 +596,73 @@ fn learning_outcome_class_counts_v1(
         }
     }
     counts
+}
+
+fn representative_decision_sample_v1<'a>(
+    group_samples: &[&'a LearningDecisionOutcomeSampleV1],
+) -> &'a LearningDecisionOutcomeSampleV1 {
+    group_samples
+        .iter()
+        .max_by_key(|sample| sample.observed_sibling_count)
+        .copied()
+        .unwrap_or_else(|| group_samples[0])
+}
+
+fn command_family_v1(command: &str) -> String {
+    command
+        .split_whitespace()
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+fn decision_group_outcome_class_counts_v1(
+    group_samples: &[&LearningDecisionOutcomeSampleV1],
+) -> Vec<LearningDecisionHistogramEntryV1> {
+    let mut counts = BTreeMap::<String, usize>::new();
+    for sample in group_samples {
+        *counts
+            .entry(format!("{:?}", sample.outcome.outcome_class))
+            .or_default() += 1;
+    }
+    learning_histogram_entries_by_key_v1(counts)
+}
+
+fn learning_candidate_summary_v1(candidate: &LearningSiblingCandidateV1) -> String {
+    format!(
+        "{} | best={:?} rank={} observed={}",
+        candidate.choice_label,
+        candidate.best_outcome_class,
+        candidate.best_rank_key,
+        candidate.observed_branch_count
+    )
+}
+
+fn learning_histogram_entries_by_key_v1(
+    counts: BTreeMap<String, usize>,
+) -> Vec<LearningDecisionHistogramEntryV1> {
+    counts
+        .into_iter()
+        .map(|(key, count)| LearningDecisionHistogramEntryV1 { key, count })
+        .collect()
+}
+
+fn render_learning_histogram_v1(entries: &[LearningDecisionHistogramEntryV1]) -> String {
+    entries
+        .iter()
+        .map(|entry| format!("{}:{}", entry.key, entry.count))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn compact_learning_text_v1(text: &str, max_len: usize) -> String {
+    if text.len() <= max_len || max_len < 12 {
+        return text.to_string();
+    }
+    let head_len = (max_len - 3) / 2;
+    let tail_len = max_len - 3 - head_len;
+    format!("{}...{}", &text[..head_len], &text[text.len() - tail_len..])
 }
 
 fn learning_record_from_branch_outcome_v1(
@@ -716,6 +956,159 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![("Clothesline", 2, 30), ("Shrug It Off", 1, 20)]
         );
+    }
+
+    #[test]
+    fn decision_outcome_analysis_identifies_useful_sibling_groups() {
+        let mut win = sample_decision_outcome_sample("rp 0", "Clothesline");
+        win.sibling_group_id = "group-a".to_string();
+        win.outcome.outcome_class = BranchOutcomeClassV1::TerminalVictory;
+        win.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::TerminalOutcome;
+        win.sibling_candidates = vec![
+            sample_sibling_candidate("rp 0", "Clothesline", BranchOutcomeClassV1::TerminalVictory),
+            sample_sibling_candidate("rp 1", "Shrug It Off", BranchOutcomeClassV1::Abandoned),
+        ];
+        win.observed_sibling_count = win.sibling_candidates.len();
+
+        let mut abandoned = sample_decision_outcome_sample("rp 1", "Shrug It Off");
+        abandoned.sibling_group_id = "group-a".to_string();
+        abandoned.outcome.outcome_class = BranchOutcomeClassV1::Abandoned;
+        abandoned.outcome.supervision_status =
+            BranchOutcomeSupervisionStatusV1::InterventionOrFailure;
+        abandoned.sibling_candidates = win.sibling_candidates.clone();
+        abandoned.observed_sibling_count = abandoned.sibling_candidates.len();
+
+        let analysis = analyze_learning_decision_outcome_samples_v1(&[win, abandoned]);
+
+        assert_eq!(analysis.total_samples, 2);
+        assert_eq!(analysis.decision_group_count, 1);
+        assert_eq!(analysis.observed_sibling_group_count, 1);
+        assert_eq!(analysis.outcome_divergent_group_count, 1);
+        assert_eq!(
+            analysis.command_family_counts,
+            vec![LearningDecisionHistogramEntryV1 {
+                key: "rp".to_string(),
+                count: 1
+            }]
+        );
+        assert_eq!(analysis.group_examples.len(), 1);
+        assert_eq!(analysis.group_examples[0].sibling_group_id, "group-a");
+        assert_eq!(
+            analysis.group_examples[0].candidate_summaries,
+            vec![
+                "Clothesline | best=TerminalVictory rank=42 observed=1".to_string(),
+                "Shrug It Off | best=Abandoned rank=42 observed=1".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn decision_outcome_analysis_render_reports_censored_groups() {
+        let mut sample = sample_decision_outcome_sample("buy card 0", "Buy Clothesline");
+        sample.sibling_group_id = format!("{}{}", "x".repeat(80), "y".repeat(80));
+        sample.parent_branch_id = format!("root.{}", "rp 0.".repeat(50));
+        sample.outcome.outcome_class = BranchOutcomeClassV1::OngoingFrozen;
+        sample.outcome.supervision_status = BranchOutcomeSupervisionStatusV1::CensoredOngoing;
+        sample.sibling_candidates = vec![
+            sample_sibling_candidate(
+                "buy card 0",
+                "Buy Clothesline",
+                BranchOutcomeClassV1::OngoingFrozen,
+            ),
+            sample_sibling_candidate("leave", "Leave shop", BranchOutcomeClassV1::OngoingFrozen),
+        ];
+        sample.observed_sibling_count = 2;
+
+        let analysis = analyze_learning_decision_outcome_samples_v1(&[sample]);
+        let rendered = render_learning_decision_outcome_analysis_v1(&analysis);
+
+        assert!(rendered.contains("LearningDecisionOutcomeAnalysisV1 samples=1 groups=1"));
+        assert!(rendered.contains("Command families: buy:1"));
+        assert!(rendered.contains("censored_only_groups=1"));
+        assert!(rendered.lines().all(|line| line.len() <= 220));
+    }
+
+    fn sample_decision_outcome_sample(
+        command: &str,
+        choice_label: &str,
+    ) -> LearningDecisionOutcomeSampleV1 {
+        LearningDecisionOutcomeSampleV1 {
+            schema_name: LEARNING_DECISION_OUTCOME_SAMPLE_SCHEMA_NAME.to_string(),
+            schema_version: LEARNING_DECISION_OUTCOME_SAMPLE_SCHEMA_VERSION,
+            label_role: "campaign_observation_not_teacher".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            provenance: LearningDatasetProvenanceV1 {
+                exporter_git_commit: None,
+                exporter_git_dirty: None,
+                source_report_path: None,
+                source_checkpoint_path: None,
+                source_record_schema_name: BRANCH_OUTCOME_RECORD_SCHEMA_NAME.to_string(),
+                source_record_schema_version: BRANCH_OUTCOME_RECORD_SCHEMA_VERSION,
+            },
+            seed: 521,
+            run_domain: BranchCampaignRunDomainV1::default(),
+            report_rounds_completed: 3,
+            decision_id: format!("group|candidate={command}"),
+            sibling_group_id: "group".to_string(),
+            parent_branch_id: "root".to_string(),
+            step_index: 0,
+            candidate_command: command.to_string(),
+            candidate_choice_label: choice_label.to_string(),
+            candidate_set_status: LearningCandidateSetStatusV1::ChosenOnly,
+            observed_candidate_index: 0,
+            observed_sibling_count: 1,
+            sibling_candidates: Vec::new(),
+            branch_group: "active".to_string(),
+            branch_index: 0,
+            branch_id: format!("root.{command}"),
+            strategic_summary: BranchSignatureCompact::default(),
+            outcome: LearningBranchOutcomeV1 {
+                branch_status: BranchCampaignBranchStatusV1::Active,
+                outcome_class: BranchOutcomeClassV1::OngoingActive,
+                supervision_status: BranchOutcomeSupervisionStatusV1::CensoredOngoing,
+                report_stop_reason: "max_rounds".to_string(),
+                stop_reason: "card reward requires human choice".to_string(),
+                frontier_title: "Card Reward".to_string(),
+                rank_key: 42,
+                report_summary: None,
+                checkpoint_enriched: false,
+                state_features: None,
+            },
+        }
+    }
+
+    fn sample_sibling_candidate(
+        command: &str,
+        choice_label: &str,
+        outcome_class: BranchOutcomeClassV1,
+    ) -> LearningSiblingCandidateV1 {
+        LearningSiblingCandidateV1 {
+            command: command.to_string(),
+            choice_label: choice_label.to_string(),
+            observed_branch_count: 1,
+            representative_branch_group: "active".to_string(),
+            representative_branch_index: 0,
+            representative_branch_id: format!("root.{command}"),
+            best_outcome_class: outcome_class.clone(),
+            best_supervision_status: match outcome_class {
+                BranchOutcomeClassV1::TerminalVictory | BranchOutcomeClassV1::TerminalDefeat => {
+                    BranchOutcomeSupervisionStatusV1::TerminalOutcome
+                }
+                BranchOutcomeClassV1::OngoingActive | BranchOutcomeClassV1::OngoingFrozen => {
+                    BranchOutcomeSupervisionStatusV1::CensoredOngoing
+                }
+                BranchOutcomeClassV1::Abandoned | BranchOutcomeClassV1::Stuck => {
+                    BranchOutcomeSupervisionStatusV1::InterventionOrFailure
+                }
+            },
+            best_rank_key: 42,
+            best_frontier_title: "Card Reward".to_string(),
+            outcome_class_counts: vec![LearningOutcomeClassCountV1 {
+                outcome_class,
+                count: 1,
+            }],
+        }
     }
 
     fn sample_branch_outcome_record() -> BranchOutcomeRecordV1 {

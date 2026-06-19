@@ -9,8 +9,9 @@ use sts_simulator::eval::branch_outcome_dataset_v1::{
     BranchOutcomeRecordV1,
 };
 use sts_simulator::eval::learning_dataset_v1::{
-    decision_outcome_samples_from_branch_outcomes_v1, learning_records_from_branch_outcomes_v1,
-    serialize_learning_branch_samples_jsonl_v1,
+    analyze_learning_decision_outcome_samples_v1, decision_outcome_samples_from_branch_outcomes_v1,
+    learning_records_from_branch_outcomes_v1, parse_learning_decision_outcome_samples_jsonl_v1,
+    render_learning_decision_outcome_analysis_v1, serialize_learning_branch_samples_jsonl_v1,
     serialize_learning_decision_outcome_samples_jsonl_v1, LearningBranchSampleV1,
     LearningDatasetExportContextV1, LearningDecisionOutcomeSampleV1,
 };
@@ -31,6 +32,26 @@ pub(super) fn run_branch_outcome_dataset_analysis(args: &Args) -> Result<(), Str
     let records = parse_branch_outcome_records_jsonl_v1(&text)?;
     let analysis = analyze_branch_outcome_records_v1(&records);
     println!("{}", render_branch_outcome_dataset_analysis_v1(&analysis));
+    Ok(())
+}
+
+pub(super) fn run_decision_outcome_dataset_analysis(args: &Args) -> Result<(), String> {
+    let path = args
+        .analyze_decision_outcome_dataset
+        .as_ref()
+        .ok_or_else(|| "--analyze-decision-outcome-dataset requires a path".to_string())?;
+    let text = fs::read_to_string(path).map_err(|err| {
+        format!(
+            "failed to read --analyze-decision-outcome-dataset {}: {err}",
+            path.display()
+        )
+    })?;
+    let samples = parse_learning_decision_outcome_samples_jsonl_v1(&text)?;
+    let analysis = analyze_learning_decision_outcome_samples_v1(&samples);
+    println!(
+        "{}",
+        render_learning_decision_outcome_analysis_v1(&analysis)
+    );
     Ok(())
 }
 

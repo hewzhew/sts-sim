@@ -22,9 +22,10 @@ use final_boss_combat::{
 };
 use outcome_dataset::{
     learning_dataset_export_context_v1, run_branch_outcome_dataset_analysis,
-    run_branch_outcome_dataset_export, run_decision_outcome_dataset_export,
-    run_learning_dataset_export, write_branch_outcome_dataset_jsonl_v1,
-    write_decision_outcome_dataset_jsonl_v1, write_learning_dataset_jsonl_v1,
+    run_branch_outcome_dataset_export, run_decision_outcome_dataset_analysis,
+    run_decision_outcome_dataset_export, run_learning_dataset_export,
+    write_branch_outcome_dataset_jsonl_v1, write_decision_outcome_dataset_jsonl_v1,
+    write_learning_dataset_jsonl_v1,
 };
 use shop_challenge::render_checkpoint_shop_plan_challenge_v1;
 use sts_simulator::eval::branch_campaign::{
@@ -429,6 +430,14 @@ struct Args {
         help = "Print structural issue counts from a BranchOutcomeRecordV1 JSONL file"
     )]
     analyze_outcome_dataset: Option<PathBuf>,
+
+    #[arg(
+        long = "analyze-decision-outcome-dataset",
+        value_name = "PATH",
+        help = "Print sibling decision group coverage and outcome divergence from a LearningDecisionOutcomeSampleV1 JSONL file"
+    )]
+    analyze_decision_outcome_dataset: Option<PathBuf>,
+
     #[arg(
         long = "export-learning-dataset",
         value_name = "PATH",
@@ -695,6 +704,9 @@ fn run(args: Args) -> Result<(), String> {
     }
     if args.analyze_outcome_dataset.is_some() {
         return run_branch_outcome_dataset_analysis(&args);
+    }
+    if args.analyze_decision_outcome_dataset.is_some() {
+        return run_decision_outcome_dataset_analysis(&args);
     }
     if args.export_outcome_dataset.is_some() && args.inspect_report.is_some() {
         return run_branch_outcome_dataset_export(&args);
@@ -1680,6 +1692,20 @@ mod tests {
         assert_eq!(
             args.inspect_checkpoint,
             Some(PathBuf::from("latest.checkpoint.json"))
+        );
+    }
+
+    #[test]
+    fn campaign_cli_accepts_decision_outcome_dataset_analysis() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--analyze-decision-outcome-dataset",
+            "decision_outcomes.jsonl",
+        ]);
+
+        assert_eq!(
+            args.analyze_decision_outcome_dataset,
+            Some(PathBuf::from("decision_outcomes.jsonl"))
         );
     }
 
