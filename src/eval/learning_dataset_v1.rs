@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::eval::branch_campaign::{
-    BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignRunDomainV1,
+    BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignReportV1,
+    BranchCampaignRunDomainV1,
 };
 use crate::eval::branch_outcome_dataset_v1::{
     BranchOutcomeClassV1, BranchOutcomeRecordV1, BranchOutcomeStateFeaturesV1,
@@ -21,6 +22,9 @@ pub const LEARNING_READINESS_PROBE_SCHEMA_NAME: &str = "LearningReadinessProbeV1
 pub const LEARNING_READINESS_PROBE_SCHEMA_VERSION: u32 = 1;
 pub const TARGETED_CONTINUATION_PLAN_SCHEMA_NAME: &str = "TargetedContinuationPlanV1";
 pub const TARGETED_CONTINUATION_PLAN_SCHEMA_VERSION: u32 = 1;
+pub const TARGETED_CONTINUATION_EXECUTION_PLAN_SCHEMA_NAME: &str =
+    "TargetedContinuationExecutionPlanV1";
+pub const TARGETED_CONTINUATION_EXECUTION_PLAN_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -233,6 +237,35 @@ pub struct TargetedContinuationCandidateV1 {
     pub best_supervision_status: BranchOutcomeSupervisionStatusV1,
     pub best_rank_key: i32,
     pub needs_continuation: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetedContinuationExecutionPlanV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub label_role: String,
+    pub trainable_as_action_label: bool,
+    pub policy_quality_claim: bool,
+    pub requested_target_count: usize,
+    pub selected_branch_count: usize,
+    pub missing_branch_count: usize,
+    pub skipped_candidate_count: usize,
+    pub branches: Vec<TargetedContinuationBranchRequestV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetedContinuationBranchRequestV1 {
+    pub sibling_group_id: String,
+    pub target_index: usize,
+    pub candidate_index: usize,
+    pub milestone: String,
+    pub reason_keys: Vec<String>,
+    pub command: String,
+    pub choice_label: String,
+    pub representative_branch_id: String,
+    pub representative_branch_group: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -777,6 +810,61 @@ pub fn render_targeted_continuation_plan_v1(plan: &TargetedContinuationPlanV1) -
     lines.join("\n")
 }
 
+pub fn targeted_continuation_execution_plan_v1(
+    plan: &TargetedContinuationPlanV1,
+    report: &BranchCampaignReportV1,
+    max_targets: usize,
+    max_candidates_per_target: usize,
+) -> TargetedContinuationExecutionPlanV1 {
+    let branch_ids = targeted_continuation_report_branch_ids_v1(report);
+    let mut branches = Vec::new();
+    let mut missing_branch_count = 0usize;
+    let mut skipped_candidate_count = 0usize;
+
+    for (target_index, target) in plan.targets.iter().take(max_targets).enumerate() {
+        let mut selected_for_target = 0usize;
+        for (candidate_index, candidate) in target.candidates.iter().enumerate() {
+            if !candidate.needs_continuation {
+                skipped_candidate_count = skipped_candidate_count.saturating_add(1);
+                continue;
+            }
+            if selected_for_target >= max_candidates_per_target {
+                skipped_candidate_count = skipped_candidate_count.saturating_add(1);
+                continue;
+            }
+            if !branch_ids.contains_key(&candidate.representative_branch_id) {
+                missing_branch_count = missing_branch_count.saturating_add(1);
+                continue;
+            }
+            branches.push(TargetedContinuationBranchRequestV1 {
+                sibling_group_id: target.sibling_group_id.clone(),
+                target_index,
+                candidate_index,
+                milestone: target.milestone.clone(),
+                reason_keys: target.reason_keys.clone(),
+                command: candidate.command.clone(),
+                choice_label: candidate.choice_label.clone(),
+                representative_branch_id: candidate.representative_branch_id.clone(),
+                representative_branch_group: candidate.representative_branch_group.clone(),
+            });
+            selected_for_target = selected_for_target.saturating_add(1);
+        }
+    }
+
+    TargetedContinuationExecutionPlanV1 {
+        schema_name: TARGETED_CONTINUATION_EXECUTION_PLAN_SCHEMA_NAME.to_string(),
+        schema_version: TARGETED_CONTINUATION_EXECUTION_PLAN_SCHEMA_VERSION,
+        label_role: "campaign_observation_not_teacher".to_string(),
+        trainable_as_action_label: false,
+        policy_quality_claim: false,
+        requested_target_count: max_targets.min(plan.targets.len()),
+        selected_branch_count: branches.len(),
+        missing_branch_count,
+        skipped_candidate_count,
+        branches,
+    }
+}
+
 #[derive(Clone, Debug)]
 struct LearningDecisionCandidateDraftV1 {
     record_index: usize,
@@ -1104,8 +1192,21 @@ fn targeted_continuation_candidate_v1(
         best_supervision_status: candidate.best_supervision_status.clone(),
         best_rank_key: candidate.best_rank_key,
         needs_continuation: candidate.best_supervision_status
-            != BranchOutcomeSupervisionStatusV1::TerminalOutcome,
+            == BranchOutcomeSupervisionStatusV1::CensoredOngoing,
     }
+}
+
+fn targeted_continuation_report_branch_ids_v1(
+    report: &BranchCampaignReportV1,
+) -> BTreeMap<String, ()> {
+    report
+        .active
+        .iter()
+        .chain(report.frozen.iter())
+        .chain(report.abandoned.iter())
+        .chain(report.stuck.iter())
+        .map(|branch| (branch.branch_id.clone(), ()))
+        .collect()
 }
 
 fn targeted_continuation_candidate_summary_v1(
@@ -1258,7 +1359,8 @@ mod tests {
     use super::*;
     use crate::ai::strategic::BranchSignatureCompact;
     use crate::eval::branch_campaign::{
-        BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignRunDomainV1,
+        BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
+        BranchCampaignRunDomainV1,
     };
     use crate::eval::branch_outcome_dataset_v1::{
         BranchOutcomeClassV1, BranchOutcomeDeckFeaturesV1, BranchOutcomeFormationFeaturesV1,
@@ -1639,6 +1741,66 @@ mod tests {
     }
 
     #[test]
+    fn targeted_continuation_candidate_does_not_continue_intervention_failures() {
+        let abandoned =
+            sample_sibling_candidate("rp 2", "Sentinel", BranchOutcomeClassV1::Abandoned);
+
+        let candidate = targeted_continuation_candidate_v1(&abandoned);
+
+        assert!(!candidate.needs_continuation);
+    }
+
+    #[test]
+    fn targeted_continuation_execution_plan_selects_existing_censored_branches() {
+        let mut frozen_sample = sample_decision_outcome_sample("rp 1", "Skip");
+        frozen_sample.sibling_group_id = "reward-group".to_string();
+        frozen_sample.observed_sibling_count = 2;
+        frozen_sample.sibling_candidates = vec![
+            sample_sibling_candidate(
+                "rp 0",
+                "Burning Pact",
+                BranchOutcomeClassV1::TerminalVictory,
+            ),
+            sample_sibling_candidate("rp 1", "Skip", BranchOutcomeClassV1::OngoingFrozen),
+            sample_sibling_candidate("rp 2", "Sentinel", BranchOutcomeClassV1::Abandoned),
+        ];
+        let plan = plan_targeted_continuations_v1(&[frozen_sample]);
+        let report = sample_campaign_report_with_branches(vec![
+            sample_report_branch("root.rp 1", BranchCampaignBranchStatusV1::Frozen),
+            sample_report_branch("root.rp 2", BranchCampaignBranchStatusV1::Abandoned),
+        ]);
+
+        let execution = targeted_continuation_execution_plan_v1(&plan, &report, 4, 2);
+
+        assert_eq!(execution.selected_branch_count, 1);
+        assert_eq!(execution.missing_branch_count, 0);
+        assert_eq!(execution.branches[0].representative_branch_id, "root.rp 1");
+        assert_eq!(execution.branches[0].choice_label, "Skip");
+    }
+
+    #[test]
+    fn targeted_continuation_execution_plan_reports_missing_branches() {
+        let mut frozen_sample = sample_decision_outcome_sample("rp 1", "Skip");
+        frozen_sample.sibling_group_id = "reward-group".to_string();
+        frozen_sample.observed_sibling_count = 2;
+        frozen_sample.sibling_candidates = vec![
+            sample_sibling_candidate(
+                "rp 0",
+                "Burning Pact",
+                BranchOutcomeClassV1::TerminalVictory,
+            ),
+            sample_sibling_candidate("rp 1", "Skip", BranchOutcomeClassV1::OngoingFrozen),
+        ];
+        let plan = plan_targeted_continuations_v1(&[frozen_sample]);
+        let report = sample_campaign_report_with_branches(Vec::new());
+
+        let execution = targeted_continuation_execution_plan_v1(&plan, &report, 4, 2);
+
+        assert_eq!(execution.selected_branch_count, 0);
+        assert_eq!(execution.missing_branch_count, 1);
+    }
+
+    #[test]
     fn targeted_continuation_plan_render_summarizes_targets() {
         let mut sample = sample_decision_outcome_sample("buy card 0", "Buy Burning Pact");
         sample.sibling_group_id = "shop-group".to_string();
@@ -1757,6 +1919,68 @@ mod tests {
                 outcome_class,
                 count: 1,
             }],
+        }
+    }
+
+    fn sample_campaign_report_with_branches(
+        branches: Vec<BranchCampaignBranchV1>,
+    ) -> BranchCampaignReportV1 {
+        let mut active = Vec::new();
+        let mut frozen = Vec::new();
+        let mut abandoned = Vec::new();
+        for branch in branches {
+            match branch.status {
+                BranchCampaignBranchStatusV1::Active => active.push(branch),
+                BranchCampaignBranchStatusV1::Frozen => frozen.push(branch),
+                BranchCampaignBranchStatusV1::Abandoned => abandoned.push(branch),
+                _ => frozen.push(branch),
+            }
+        }
+
+        BranchCampaignReportV1 {
+            schema_name: "BranchCampaignV1".to_string(),
+            schema_version: 1,
+            seed: 521,
+            run_domain: BranchCampaignRunDomainV1::default(),
+            rounds_completed: 3,
+            stop_reason: "max_rounds".to_string(),
+            active,
+            frozen,
+            victories: Vec::new(),
+            dead: Vec::new(),
+            abandoned,
+            stuck: Vec::new(),
+            discarded_count: 0,
+            discarded_examples: Vec::new(),
+            strategy_requests: Vec::new(),
+            route_evidence: Default::default(),
+            combat_retry_ledger: Default::default(),
+            strategic_signals: Default::default(),
+            state_store: Default::default(),
+            rounds: Vec::new(),
+        }
+    }
+
+    fn sample_report_branch(
+        branch_id: &str,
+        status: BranchCampaignBranchStatusV1,
+    ) -> BranchCampaignBranchV1 {
+        BranchCampaignBranchV1 {
+            branch_id: branch_id.to_string(),
+            commands: branch_id
+                .strip_prefix("root.")
+                .map(|suffix| suffix.split('.').map(str::to_string).collect())
+                .unwrap_or_default(),
+            choice_labels: vec![branch_id.to_string()],
+            summary: None,
+            strategic_summary: BranchSignatureCompact::default(),
+            frontier_title: "Card Reward".to_string(),
+            status,
+            stop_reason: String::new(),
+            lineage_decision_signal_rank_adjustment: 0,
+            rank_key: 42,
+            final_boss_combat_record: None,
+            combat_lab_probes: Vec::new(),
         }
     }
 

@@ -24,8 +24,9 @@ use outcome_dataset::{
     learning_dataset_export_context_v1, run_branch_outcome_dataset_analysis,
     run_branch_outcome_dataset_export, run_decision_outcome_dataset_analysis,
     run_decision_outcome_dataset_export, run_learning_dataset_export, run_learning_readiness_probe,
-    run_targeted_continuation_plan, write_branch_outcome_dataset_jsonl_v1,
-    write_decision_outcome_dataset_jsonl_v1, write_learning_dataset_jsonl_v1,
+    run_targeted_continuation_execution, run_targeted_continuation_plan,
+    write_branch_outcome_dataset_jsonl_v1, write_decision_outcome_dataset_jsonl_v1,
+    write_learning_dataset_jsonl_v1,
 };
 use shop_challenge::render_checkpoint_shop_plan_challenge_v1;
 use sts_simulator::eval::branch_campaign::{
@@ -453,6 +454,27 @@ struct Args {
     plan_targeted_continuation: Option<PathBuf>,
 
     #[arg(
+        long = "execute-targeted-continuation",
+        value_name = "PATH",
+        help = "Resume selected censored sibling branches from a LearningDecisionOutcomeSampleV1 JSONL file"
+    )]
+    execute_targeted_continuation: Option<PathBuf>,
+
+    #[arg(
+        long = "targeted-continuation-limit",
+        default_value_t = 4,
+        help = "Maximum targeted sibling groups to continue"
+    )]
+    targeted_continuation_limit: usize,
+
+    #[arg(
+        long = "targeted-continuation-candidates-per-target",
+        default_value_t = 1,
+        help = "Maximum censored candidate branches to continue per targeted sibling group"
+    )]
+    targeted_continuation_candidates_per_target: usize,
+
+    #[arg(
         long = "export-learning-dataset",
         value_name = "PATH",
         help = "Write LearningBranchSampleV1 JSONL from a campaign report/run without treating choices as teacher labels"
@@ -727,6 +749,9 @@ fn run(args: Args) -> Result<(), String> {
     }
     if args.plan_targeted_continuation.is_some() {
         return run_targeted_continuation_plan(&args);
+    }
+    if args.execute_targeted_continuation.is_some() {
+        return run_targeted_continuation_execution(&args);
     }
     if args.export_outcome_dataset.is_some() && args.inspect_report.is_some() {
         return run_branch_outcome_dataset_export(&args);
@@ -1755,6 +1780,30 @@ mod tests {
             args.plan_targeted_continuation,
             Some(PathBuf::from("decision_outcomes.jsonl"))
         );
+    }
+
+    #[test]
+    fn campaign_cli_accepts_targeted_continuation_execution() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--resume",
+            "latest.campaign.json",
+            "--resume-checkpoint",
+            "latest.checkpoint.json",
+            "--execute-targeted-continuation",
+            "decision_outcomes.jsonl",
+            "--targeted-continuation-limit",
+            "3",
+            "--targeted-continuation-candidates-per-target",
+            "2",
+        ]);
+
+        assert_eq!(
+            args.execute_targeted_continuation,
+            Some(PathBuf::from("decision_outcomes.jsonl"))
+        );
+        assert_eq!(args.targeted_continuation_limit, 3);
+        assert_eq!(args.targeted_continuation_candidates_per_target, 2);
     }
 
     #[test]

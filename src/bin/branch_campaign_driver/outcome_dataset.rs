@@ -2,6 +2,11 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+use sts_simulator::eval::branch_campaign::{
+    render_branch_campaign_compact_with_detail_v1,
+    run_branch_campaign_from_report_with_checkpoint_v1, BranchCampaignBranchStatusV1,
+    BranchCampaignBranchV1, BranchCampaignReportDetailV1, BranchCampaignReportV1,
+};
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     analyze_branch_outcome_records_v1, extract_branch_outcome_records_v1,
     parse_branch_outcome_records_jsonl_v1, render_branch_outcome_dataset_analysis_v1,
@@ -14,11 +19,16 @@ use sts_simulator::eval::learning_dataset_v1::{
     plan_targeted_continuations_v1, probe_learning_readiness_v1,
     render_learning_decision_outcome_analysis_v1, render_learning_readiness_probe_v1,
     render_targeted_continuation_plan_v1, serialize_learning_branch_samples_jsonl_v1,
-    serialize_learning_decision_outcome_samples_jsonl_v1, LearningBranchSampleV1,
-    LearningDatasetExportContextV1, LearningDecisionOutcomeSampleV1,
+    serialize_learning_decision_outcome_samples_jsonl_v1, targeted_continuation_execution_plan_v1,
+    LearningBranchSampleV1, LearningDatasetExportContextV1, LearningDecisionOutcomeSampleV1,
+    TargetedContinuationExecutionPlanV1,
 };
+use sts_simulator::eval::run_control::canonical_player_class;
 
-use super::{read_campaign_checkpoint_v1, read_campaign_report_v1, Args};
+use super::{
+    campaign_config_from_args, read_campaign_checkpoint_v1, read_campaign_report_v1,
+    write_campaign_checkpoint_v1, write_campaign_report_v1, Args,
+};
 
 pub(super) fn run_branch_outcome_dataset_analysis(args: &Args) -> Result<(), String> {
     let path = args
@@ -89,6 +99,128 @@ pub(super) fn run_targeted_continuation_plan(args: &Args) -> Result<(), String> 
     let plan = plan_targeted_continuations_v1(&samples);
     println!("{}", render_targeted_continuation_plan_v1(&plan));
     Ok(())
+}
+
+pub(super) fn run_targeted_continuation_execution(args: &Args) -> Result<(), String> {
+    let samples_path = args
+        .execute_targeted_continuation
+        .as_ref()
+        .ok_or_else(|| "--execute-targeted-continuation requires a path".to_string())?;
+    let report_path = args
+        .resume
+        .as_ref()
+        .ok_or_else(|| "--execute-targeted-continuation requires --resume PATH".to_string())?;
+    let checkpoint_path = args.resume_checkpoint.as_ref().ok_or_else(|| {
+        "--execute-targeted-continuation requires --resume-checkpoint PATH".to_string()
+    })?;
+
+    let source_report = read_campaign_report_v1(report_path)?;
+    let source_checkpoint = read_campaign_checkpoint_v1(checkpoint_path)?;
+    let text = fs::read_to_string(samples_path).map_err(|err| {
+        format!(
+            "failed to read --execute-targeted-continuation {}: {err}",
+            samples_path.display()
+        )
+    })?;
+    let samples = parse_learning_decision_outcome_samples_jsonl_v1(&text)?;
+    let plan = plan_targeted_continuations_v1(&samples);
+    let execution = targeted_continuation_execution_plan_v1(
+        &plan,
+        &source_report,
+        args.targeted_continuation_limit,
+        args.targeted_continuation_candidates_per_target,
+    );
+    if execution.branches.is_empty() {
+        return Err(format!(
+            "targeted continuation selected no executable branches (targets={} missing={} skipped={})",
+            execution.requested_target_count,
+            execution.missing_branch_count,
+            execution.skipped_candidate_count
+        ));
+    }
+
+    let continuation_report = continuation_source_report_v1(&source_report, &execution)
+        .ok_or_else(|| {
+            "targeted continuation selected branches but none were present in the source report"
+                .to_string()
+        })?;
+    let mut config = campaign_config_from_args(args)?;
+    config.seed = source_report.seed;
+    config.ascension_level = source_report.run_domain.ascension_level;
+    config.player_class = canonical_player_class(&source_report.run_domain.player_class)?;
+    config.prefix_commands.clear();
+
+    let result = run_branch_campaign_from_report_with_checkpoint_v1(
+        &config,
+        &continuation_report,
+        Some(&source_checkpoint),
+    )?;
+    if let Some(path) = args.out.as_ref() {
+        write_campaign_report_v1(path, &result.report)?;
+    }
+    if let Some(path) = args.checkpoint_out.as_ref() {
+        write_campaign_checkpoint_v1(path, &result.checkpoint)?;
+    }
+
+    println!(
+        "TargetedContinuationExecutionV1 targets={} selected={} missing={} skipped={}",
+        execution.requested_target_count,
+        execution.selected_branch_count,
+        execution.missing_branch_count,
+        execution.skipped_candidate_count
+    );
+    println!(
+        "{}",
+        render_branch_campaign_compact_with_detail_v1(
+            &result.report,
+            args.branch_examples,
+            BranchCampaignReportDetailV1::from(args.report_detail),
+        )
+    );
+    Ok(())
+}
+
+fn continuation_source_report_v1(
+    source_report: &BranchCampaignReportV1,
+    execution: &TargetedContinuationExecutionPlanV1,
+) -> Option<BranchCampaignReportV1> {
+    let mut selected = Vec::new();
+    for request in &execution.branches {
+        if let Some(mut branch) =
+            find_campaign_branch_by_id_v1(source_report, &request.representative_branch_id).cloned()
+        {
+            branch.status = BranchCampaignBranchStatusV1::Active;
+            branch.stop_reason = format!("targeted continuation to {}", request.milestone);
+            selected.push(branch);
+        }
+    }
+    if selected.is_empty() {
+        return None;
+    }
+
+    let mut report = source_report.clone();
+    report.stop_reason = "targeted_continuation_seed".to_string();
+    report.active = selected;
+    report.frozen.clear();
+    report.victories.clear();
+    report.dead.clear();
+    report.abandoned.clear();
+    report.stuck.clear();
+    report.strategy_requests.clear();
+    Some(report)
+}
+
+fn find_campaign_branch_by_id_v1<'a>(
+    report: &'a BranchCampaignReportV1,
+    branch_id: &str,
+) -> Option<&'a BranchCampaignBranchV1> {
+    report
+        .active
+        .iter()
+        .chain(report.frozen.iter())
+        .chain(report.abandoned.iter())
+        .chain(report.stuck.iter())
+        .find(|branch| branch.branch_id == branch_id)
 }
 
 pub(super) fn run_branch_outcome_dataset_export(args: &Args) -> Result<(), String> {
