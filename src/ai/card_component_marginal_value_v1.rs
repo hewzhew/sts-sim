@@ -86,6 +86,7 @@ pub fn evaluate_card_component_marginal_value_v1(
     add_generic_components(context, profile, &mut report);
     add_card_specific_components(context, profile.card, &mut report);
     add_boss_components(context, profile, &mut report);
+    add_unresolved_package_payoff_debts(profile, &mut report);
     report.verdict = marginal_verdict(context, &report);
     report
 }
@@ -119,16 +120,6 @@ fn add_generic_components(
     }
     if profile
         .roles
-        .contains(&CardRewardSemanticRoleV1::PackagePayoff)
-        && report
-            .positive_components
-            .iter()
-            .all(|component| *component != "fills_current_formation_need")
-    {
-        push_str(&mut report.debts, "payoff_without_visible_gap_fill");
-    }
-    if profile
-        .roles
         .contains(&CardRewardSemanticRoleV1::ExhaustPayoff)
     {
         if context.startup.exhaust_engine_count > 0 {
@@ -150,6 +141,41 @@ fn add_generic_components(
         );
         push_str(&mut report.notes, "duplicate_access_requires_turn_planning");
     }
+}
+
+fn add_unresolved_package_payoff_debts(
+    profile: &CardRewardSemanticProfileV1,
+    report: &mut CardComponentMarginalReportV1,
+) {
+    if !profile
+        .roles
+        .contains(&CardRewardSemanticRoleV1::PackagePayoff)
+    {
+        return;
+    }
+    if report
+        .positive_components
+        .iter()
+        .any(|component| package_payoff_support_component(component))
+    {
+        return;
+    }
+    push_str(&mut report.debts, "payoff_without_visible_gap_fill");
+}
+
+fn package_payoff_support_component(component: &str) -> bool {
+    matches!(
+        component,
+        "fills_current_formation_need"
+            | "exhaust_payoff_has_generator"
+            | "exhaust_engine_enabler"
+            | "unlocks_fnp_engine"
+            | "self_damage_payoff_has_enabler"
+            | "strength_payoff_has_convertible_burst_source"
+            | "strength_payoff_has_generator"
+            | "block_payoff_has_block_density"
+            | "hp_loss_payoff_has_support"
+    )
 }
 
 fn add_card_specific_components(
@@ -709,6 +735,24 @@ mod tests {
         );
 
         assert!(report.debts.contains(&"exhaust_payoff_without_generator"));
+        assert!(report.debts.contains(&"payoff_without_visible_gap_fill"));
+    }
+
+    #[test]
+    fn exhaust_payoff_with_generator_clears_unresolved_payoff_debt() {
+        let mut context = context();
+        context.startup.exhaust_engine_count = 1;
+
+        let report = evaluate_card_component_marginal_value_v1(
+            &context,
+            &card_reward_semantic_profile_v1(&RewardCard::new(CardId::DarkEmbrace, 0)),
+        );
+
+        assert!(report
+            .positive_components
+            .contains(&"exhaust_payoff_has_generator"));
+        assert!(!report.debts.contains(&"payoff_without_visible_gap_fill"));
+        assert_eq!(report.verdict, CardComponentMarginalVerdictV1::ContextTake);
     }
 
     #[test]
