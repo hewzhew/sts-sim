@@ -7,19 +7,20 @@ use sts_simulator::eval::branch_campaign::{
     run_branch_campaign_from_report_with_checkpoint_and_progress_v1,
     run_branch_campaign_from_report_with_checkpoint_v1,
     run_branch_campaign_with_checkpoint_and_progress_v1, run_branch_campaign_with_checkpoint_v1,
-    BranchCampaignProgressDetailV1, BranchCampaignReportDetailV1,
+    BranchCampaignProgressDetailV1,
 };
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     extract_branch_outcome_records_v1, summarize_branch_outcome_records_v1,
 };
 
+use super::command_inputs::RunCommandInput;
 use super::outcome_dataset::{
     learning_dataset_export_context_v1, write_branch_outcome_dataset_jsonl_v1,
     write_decision_outcome_dataset_jsonl_v1, write_learning_dataset_jsonl_v1,
 };
 use super::{
-    campaign_config_from_args, read_campaign_checkpoint_v1, read_campaign_report_v1,
-    write_campaign_checkpoint_v1, write_campaign_report_v1, Args,
+    read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
+    write_campaign_report_v1,
 };
 
 pub(super) fn run_ancestor_replay_self_check() -> Result<(), String> {
@@ -39,24 +40,23 @@ pub(super) fn run_ancestor_replay_self_check() -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn run_campaign_command(args: &Args) -> Result<(), String> {
-    let config = campaign_config_from_args(args)?;
-    if args.resume_checkpoint.is_some() && args.resume.is_none() {
+pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String> {
+    if input.resume_checkpoint.is_some() && input.resume.is_none() {
         return Err("--resume-checkpoint requires --resume".to_string());
     }
-    let previous = args
+    let previous = input
         .resume
         .as_ref()
         .map(read_campaign_report_v1)
         .transpose()?;
-    let checkpoint = args
+    let checkpoint = input
         .resume_checkpoint
         .as_ref()
         .map(read_campaign_checkpoint_v1)
         .transpose()?;
-    let result = if args.progress && !args.json {
+    let result = if input.progress && !input.json {
         let started_at = Instant::now();
-        let progress_detail = BranchCampaignProgressDetailV1::from(args.progress_detail);
+        let progress_detail = input.progress_detail;
         let progress = |event| {
             let rendered = match progress_detail {
                 BranchCampaignProgressDetailV1::Summary => {
@@ -72,21 +72,25 @@ pub(super) fn run_campaign_command(args: &Args) -> Result<(), String> {
         };
         if let Some(previous) = previous.as_ref() {
             run_branch_campaign_from_report_with_checkpoint_and_progress_v1(
-                &config,
+                &input.config,
                 previous,
                 checkpoint.as_ref(),
                 progress,
             )?
         } else {
-            run_branch_campaign_with_checkpoint_and_progress_v1(&config, progress)?
+            run_branch_campaign_with_checkpoint_and_progress_v1(&input.config, progress)?
         }
     } else if let Some(previous) = previous.as_ref() {
-        run_branch_campaign_from_report_with_checkpoint_v1(&config, previous, checkpoint.as_ref())?
+        run_branch_campaign_from_report_with_checkpoint_v1(
+            &input.config,
+            previous,
+            checkpoint.as_ref(),
+        )?
     } else {
-        run_branch_campaign_with_checkpoint_v1(&config)?
+        run_branch_campaign_with_checkpoint_v1(&input.config)?
     };
     let report = result.report;
-    if !args.json {
+    if !input.json {
         eprintln!(
             "run-domain: ascension=A{} label={} class={}",
             report.run_domain.ascension_level,
@@ -94,13 +98,13 @@ pub(super) fn run_campaign_command(args: &Args) -> Result<(), String> {
             report.run_domain.player_class
         );
     }
-    if let Some(path) = args.out.as_ref() {
+    if let Some(path) = input.out.as_ref() {
         write_campaign_report_v1(path, &report)?;
     }
-    if let Some(path) = args.checkpoint_out.as_ref() {
+    if let Some(path) = input.checkpoint_out.as_ref() {
         write_campaign_checkpoint_v1(path, &result.checkpoint)?;
     }
-    if let Some(path) = args.export_outcome_dataset.as_ref() {
+    if let Some(path) = input.export_outcome_dataset.as_ref() {
         let records = extract_branch_outcome_records_v1(&report, Some(&result.checkpoint))?;
         write_branch_outcome_dataset_jsonl_v1(path, &records)?;
         let summary = summarize_branch_outcome_records_v1(&records);
@@ -111,12 +115,15 @@ pub(super) fn run_campaign_command(args: &Args) -> Result<(), String> {
             summary.checkpoint_enriched_records
         );
     }
-    if let Some(path) = args.export_learning_dataset.as_ref() {
+    if let Some(path) = input.export_learning_dataset.as_ref() {
         let records = extract_branch_outcome_records_v1(&report, Some(&result.checkpoint))?;
         let samples =
             sts_simulator::eval::learning_dataset_v1::learning_records_from_branch_outcomes_v1(
                 &records,
-                learning_dataset_export_context_v1(args.out.as_ref(), args.checkpoint_out.as_ref()),
+                learning_dataset_export_context_v1(
+                    input.out.as_ref(),
+                    input.checkpoint_out.as_ref(),
+                ),
             );
         write_learning_dataset_jsonl_v1(path, &samples)?;
         eprintln!(
@@ -125,11 +132,11 @@ pub(super) fn run_campaign_command(args: &Args) -> Result<(), String> {
             path.display()
         );
     }
-    if let Some(path) = args.export_decision_outcome_dataset.as_ref() {
+    if let Some(path) = input.export_decision_outcome_dataset.as_ref() {
         let records = extract_branch_outcome_records_v1(&report, Some(&result.checkpoint))?;
         let samples = sts_simulator::eval::learning_dataset_v1::decision_outcome_samples_from_branch_outcomes_v1(
             &records,
-            learning_dataset_export_context_v1(args.out.as_ref(), args.checkpoint_out.as_ref()),
+            learning_dataset_export_context_v1(input.out.as_ref(), input.checkpoint_out.as_ref()),
         );
         write_decision_outcome_dataset_jsonl_v1(path, &samples)?;
         let observed_sibling_samples = samples
@@ -143,7 +150,7 @@ pub(super) fn run_campaign_command(args: &Args) -> Result<(), String> {
             observed_sibling_samples
         );
     }
-    if args.json {
+    if input.json {
         println!(
             "{}",
             serde_json::to_string_pretty(&report).map_err(|err| err.to_string())?
@@ -153,8 +160,8 @@ pub(super) fn run_campaign_command(args: &Args) -> Result<(), String> {
             "{}",
             render_branch_campaign_compact_with_detail_v1(
                 &report,
-                args.branch_examples,
-                BranchCampaignReportDetailV1::from(args.report_detail)
+                input.branch_examples,
+                input.report_detail
             )
         );
     }

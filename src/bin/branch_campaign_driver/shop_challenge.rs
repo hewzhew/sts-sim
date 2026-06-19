@@ -8,18 +8,17 @@ use sts_simulator::eval::branch_experiment::{
     run_branch_experiment_from_session_with_snapshots_v1, BranchExperimentBranchReportV1,
     BranchExperimentBranchStatusV1, BranchExperimentConfigV1,
 };
-use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use sts_simulator::eval::run_control::{
     shop_plan_step_input_and_label_v1, RunControlCommand, RunControlHpLossLimit, RunControlSession,
 };
 use sts_simulator::state::core::EngineState;
 
-use super::{campaign_search_options_from_args, Args};
+use super::command_inputs::ShopChallengeInput;
 
 pub(super) fn render_checkpoint_shop_plan_challenge_v1(
     seed: u64,
     base_session: &RunControlSession,
-    args: &Args,
+    input: &ShopChallengeInput,
 ) -> Result<String, String> {
     let EngineState::Shop(shop) = &base_session.engine_state else {
         return Err(format!(
@@ -32,12 +31,12 @@ pub(super) fn render_checkpoint_shop_plan_challenge_v1(
         &context,
         &ShopPolicyConfigV1::default(),
         ShopCompileModeV1::BranchTopK {
-            max_plans: args.challenge_max_plans,
+            max_plans: input.challenge_max_plans,
         },
     );
     let plans = selected_and_alternative_plans_v1(&compiled.selected_plan, &compiled.alternatives)
         .into_iter()
-        .take(args.challenge_max_plans)
+        .take(input.challenge_max_plans)
         .collect::<Vec<_>>();
 
     let mut lines = Vec::new();
@@ -49,8 +48,8 @@ pub(super) fn render_checkpoint_shop_plan_challenge_v1(
         base_session.run_state.max_hp,
         base_session.run_state.gold,
         plans.len(),
-        args.challenge_depth,
-        args.challenge_max_branches
+        input.challenge_depth,
+        input.challenge_max_branches
     ));
     lines.push(format!(
         "context: conversion_pressure={} affordable_purchase_exists={} boss={:?}",
@@ -72,7 +71,7 @@ pub(super) fn render_checkpoint_shop_plan_challenge_v1(
         match apply_shop_plan_then_leave_v1(&mut session, plan) {
             Ok(applied) => {
                 lines.push(format!("  applied: {}", applied.join(" -> ")));
-                let config = branch_experiment_config_for_shop_challenge_v1(seed, &session, args)?;
+                let config = branch_experiment_config_for_shop_challenge_v1(seed, &session, input)?;
                 let result = run_branch_experiment_from_session_with_snapshots_v1(session, &config);
                 lines.push(format!(
                     "  result: branches={} branch_points={} pruned={} wall_limit={} frontier_limit={}",
@@ -284,31 +283,25 @@ fn apply_shop_plan_then_leave_v1(
 fn branch_experiment_config_for_shop_challenge_v1(
     seed: u64,
     session: &RunControlSession,
-    args: &Args,
+    input: &ShopChallengeInput,
 ) -> Result<BranchExperimentConfigV1, String> {
     Ok(BranchExperimentConfigV1 {
         seed,
         ascension_level: session.run_state.ascension_level,
         player_class: session.run_state.player_class,
-        final_act: args.final_act,
-        max_branches: args.challenge_max_branches,
-        max_branches_per_frontier_group: Some(args.challenge_max_branches),
-        retention_budget_profile: args
-            .retention_profile
-            .parse::<BranchRetentionBudgetProfileV1>()?,
-        max_reward_options_per_branch: if args.all_reward_options {
-            None
-        } else {
-            Some(args.max_reward_options.unwrap_or(2))
-        },
-        max_campfire_options_per_branch: Some(args.max_campfire_options),
-        max_depth: args.challenge_depth,
-        auto_max_operations: args.auto_max_ops,
-        experiment_wall_ms: Some(args.experiment_wall_ms),
-        search_max_nodes: args.search_max_nodes,
-        search_wall_ms: Some(args.search_wall_ms),
+        final_act: input.final_act,
+        max_branches: input.challenge_max_branches,
+        max_branches_per_frontier_group: Some(input.challenge_max_branches),
+        retention_budget_profile: input.retention_budget_profile,
+        max_reward_options_per_branch: input.max_reward_options_per_branch,
+        max_campfire_options_per_branch: Some(input.max_campfire_options_per_branch),
+        max_depth: input.challenge_depth,
+        auto_max_operations: input.auto_max_operations,
+        experiment_wall_ms: Some(input.experiment_wall_ms),
+        search_max_nodes: input.search_max_nodes,
+        search_wall_ms: Some(input.search_wall_ms),
         search_max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
-        search_options: campaign_search_options_from_args(args)?,
+        search_options: input.search_options.clone(),
         include_skip: false,
         include_event_reward_skip: false,
         auto_leave_after_shop_purchase_branch: true,

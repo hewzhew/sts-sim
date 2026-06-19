@@ -5,7 +5,7 @@ use std::process::Command;
 use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_with_detail_v1,
     run_branch_campaign_from_report_with_checkpoint_v1, BranchCampaignBranchStatusV1,
-    BranchCampaignBranchV1, BranchCampaignReportDetailV1, BranchCampaignReportV1,
+    BranchCampaignBranchV1, BranchCampaignReportV1,
 };
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     analyze_branch_outcome_records_v1, extract_branch_outcome_records_v1,
@@ -26,13 +26,16 @@ use sts_simulator::eval::learning_dataset_v1::{
 };
 use sts_simulator::eval::run_control::canonical_player_class;
 
+use super::command_inputs::{ContinuationCommandInput, DatasetCommandInput};
 use super::{
-    campaign_config_from_args, read_campaign_checkpoint_v1, read_campaign_report_v1,
-    write_campaign_checkpoint_v1, write_campaign_report_v1, Args,
+    read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
+    write_campaign_report_v1,
 };
 
-pub(super) fn run_branch_outcome_dataset_analysis(args: &Args) -> Result<(), String> {
-    let path = args
+pub(super) fn run_branch_outcome_dataset_analysis(
+    input: &DatasetCommandInput,
+) -> Result<(), String> {
+    let path = input
         .analyze_outcome_dataset
         .as_ref()
         .ok_or_else(|| "--analyze-outcome-dataset requires a path".to_string())?;
@@ -48,8 +51,10 @@ pub(super) fn run_branch_outcome_dataset_analysis(args: &Args) -> Result<(), Str
     Ok(())
 }
 
-pub(super) fn run_decision_outcome_dataset_analysis(args: &Args) -> Result<(), String> {
-    let path = args
+pub(super) fn run_decision_outcome_dataset_analysis(
+    input: &DatasetCommandInput,
+) -> Result<(), String> {
+    let path = input
         .analyze_decision_outcome_dataset
         .as_ref()
         .ok_or_else(|| "--analyze-decision-outcome-dataset requires a path".to_string())?;
@@ -68,12 +73,14 @@ pub(super) fn run_decision_outcome_dataset_analysis(args: &Args) -> Result<(), S
     Ok(())
 }
 
-pub(super) fn run_continuation_effect_report(args: &Args) -> Result<(), String> {
-    let before_path = args
+pub(super) fn run_continuation_effect_report(
+    input: &ContinuationCommandInput,
+) -> Result<(), String> {
+    let before_path = input
         .continuation_effect_before
         .as_ref()
         .ok_or_else(|| "--continuation-effect-before requires a path".to_string())?;
-    let after_path = args
+    let after_path = input
         .continuation_effect_after
         .as_ref()
         .ok_or_else(|| "--continuation-effect-after requires a path".to_string())?;
@@ -96,8 +103,8 @@ pub(super) fn run_continuation_effect_report(args: &Args) -> Result<(), String> 
     Ok(())
 }
 
-pub(super) fn run_learning_readiness_probe(args: &Args) -> Result<(), String> {
-    let path = args
+pub(super) fn run_learning_readiness_probe(input: &DatasetCommandInput) -> Result<(), String> {
+    let path = input
         .probe_learning_readiness
         .as_ref()
         .ok_or_else(|| "--probe-learning-readiness requires a path".to_string())?;
@@ -113,8 +120,10 @@ pub(super) fn run_learning_readiness_probe(args: &Args) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn run_targeted_continuation_plan(args: &Args) -> Result<(), String> {
-    let path = args
+pub(super) fn run_targeted_continuation_plan(
+    input: &ContinuationCommandInput,
+) -> Result<(), String> {
+    let path = input
         .plan_targeted_continuation
         .as_ref()
         .ok_or_else(|| "--plan-targeted-continuation requires a path".to_string())?;
@@ -130,16 +139,18 @@ pub(super) fn run_targeted_continuation_plan(args: &Args) -> Result<(), String> 
     Ok(())
 }
 
-pub(super) fn run_targeted_continuation_execution(args: &Args) -> Result<(), String> {
-    let samples_path = args
+pub(super) fn run_targeted_continuation_execution(
+    input: &ContinuationCommandInput,
+) -> Result<(), String> {
+    let samples_path = input
         .execute_targeted_continuation
         .as_ref()
         .ok_or_else(|| "--execute-targeted-continuation requires a path".to_string())?;
-    let report_path = args
+    let report_path = input
         .resume
         .as_ref()
         .ok_or_else(|| "--execute-targeted-continuation requires --resume PATH".to_string())?;
-    let checkpoint_path = args.resume_checkpoint.as_ref().ok_or_else(|| {
+    let checkpoint_path = input.resume_checkpoint.as_ref().ok_or_else(|| {
         "--execute-targeted-continuation requires --resume-checkpoint PATH".to_string()
     })?;
 
@@ -156,8 +167,8 @@ pub(super) fn run_targeted_continuation_execution(args: &Args) -> Result<(), Str
     let execution = targeted_continuation_execution_plan_v1(
         &plan,
         &source_report,
-        args.targeted_continuation_limit,
-        args.targeted_continuation_candidates_per_target,
+        input.targeted_continuation_limit,
+        input.targeted_continuation_candidates_per_target,
     );
     if execution.branches.is_empty() {
         return Err(format!(
@@ -173,7 +184,7 @@ pub(super) fn run_targeted_continuation_execution(args: &Args) -> Result<(), Str
             "targeted continuation selected branches but none were present in the source report"
                 .to_string()
         })?;
-    let mut config = campaign_config_from_args(args)?;
+    let mut config = input.config.clone();
     config.seed = source_report.seed;
     config.ascension_level = source_report.run_domain.ascension_level;
     config.player_class = canonical_player_class(&source_report.run_domain.player_class)?;
@@ -184,10 +195,10 @@ pub(super) fn run_targeted_continuation_execution(args: &Args) -> Result<(), Str
         &continuation_report,
         Some(&source_checkpoint),
     )?;
-    if let Some(path) = args.out.as_ref() {
+    if let Some(path) = input.out.as_ref() {
         write_campaign_report_v1(path, &result.report)?;
     }
-    if let Some(path) = args.checkpoint_out.as_ref() {
+    if let Some(path) = input.checkpoint_out.as_ref() {
         write_campaign_checkpoint_v1(path, &result.checkpoint)?;
     }
 
@@ -202,8 +213,8 @@ pub(super) fn run_targeted_continuation_execution(args: &Args) -> Result<(), Str
         "{}",
         render_branch_campaign_compact_with_detail_v1(
             &result.report,
-            args.branch_examples,
-            BranchCampaignReportDetailV1::from(args.report_detail),
+            input.branch_examples,
+            input.report_detail,
         )
     );
     Ok(())
@@ -252,17 +263,17 @@ fn find_campaign_branch_by_id_v1<'a>(
         .find(|branch| branch.branch_id == branch_id)
 }
 
-pub(super) fn run_branch_outcome_dataset_export(args: &Args) -> Result<(), String> {
-    let path = args
+pub(super) fn run_branch_outcome_dataset_export(input: &DatasetCommandInput) -> Result<(), String> {
+    let path = input
         .export_outcome_dataset
         .as_ref()
         .ok_or_else(|| "--export-outcome-dataset requires a path".to_string())?;
-    let report_path = args
+    let report_path = input
         .inspect_report
         .as_ref()
         .ok_or_else(|| "--export-outcome-dataset requires --inspect-report PATH".to_string())?;
     let report = read_campaign_report_v1(report_path)?;
-    let checkpoint = args
+    let checkpoint = input
         .inspect_checkpoint
         .as_ref()
         .map(read_campaign_checkpoint_v1)
@@ -314,17 +325,17 @@ pub(super) fn write_branch_outcome_dataset_jsonl_v1(
     })
 }
 
-pub(super) fn run_learning_dataset_export(args: &Args) -> Result<(), String> {
-    let path = args
+pub(super) fn run_learning_dataset_export(input: &DatasetCommandInput) -> Result<(), String> {
+    let path = input
         .export_learning_dataset
         .as_ref()
         .ok_or_else(|| "--export-learning-dataset requires a path".to_string())?;
-    let report_path = args
+    let report_path = input
         .inspect_report
         .as_ref()
         .ok_or_else(|| "--export-learning-dataset requires --inspect-report PATH when used without running a campaign".to_string())?;
     let report = read_campaign_report_v1(report_path)?;
-    let checkpoint = args
+    let checkpoint = input
         .inspect_checkpoint
         .as_ref()
         .map(read_campaign_checkpoint_v1)
@@ -332,7 +343,7 @@ pub(super) fn run_learning_dataset_export(args: &Args) -> Result<(), String> {
     let outcome_records = extract_branch_outcome_records_v1(&report, checkpoint.as_ref())?;
     let samples = learning_records_from_branch_outcomes_v1(
         &outcome_records,
-        learning_dataset_export_context_v1(Some(report_path), args.inspect_checkpoint.as_ref()),
+        learning_dataset_export_context_v1(Some(report_path), input.inspect_checkpoint.as_ref()),
     );
     write_learning_dataset_jsonl_v1(path, &samples)?;
     println!(
@@ -343,17 +354,19 @@ pub(super) fn run_learning_dataset_export(args: &Args) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn run_decision_outcome_dataset_export(args: &Args) -> Result<(), String> {
-    let path = args
+pub(super) fn run_decision_outcome_dataset_export(
+    input: &DatasetCommandInput,
+) -> Result<(), String> {
+    let path = input
         .export_decision_outcome_dataset
         .as_ref()
         .ok_or_else(|| "--export-decision-outcome-dataset requires a path".to_string())?;
-    let report_path = args
+    let report_path = input
         .inspect_report
         .as_ref()
         .ok_or_else(|| "--export-decision-outcome-dataset requires --inspect-report PATH when used without running a campaign".to_string())?;
     let report = read_campaign_report_v1(report_path)?;
-    let checkpoint = args
+    let checkpoint = input
         .inspect_checkpoint
         .as_ref()
         .map(read_campaign_checkpoint_v1)
@@ -361,7 +374,7 @@ pub(super) fn run_decision_outcome_dataset_export(args: &Args) -> Result<(), Str
     let outcome_records = extract_branch_outcome_records_v1(&report, checkpoint.as_ref())?;
     let samples = decision_outcome_samples_from_branch_outcomes_v1(
         &outcome_records,
-        learning_dataset_export_context_v1(Some(report_path), args.inspect_checkpoint.as_ref()),
+        learning_dataset_export_context_v1(Some(report_path), input.inspect_checkpoint.as_ref()),
     );
     write_decision_outcome_dataset_jsonl_v1(path, &samples)?;
     let observed_sibling_samples = samples

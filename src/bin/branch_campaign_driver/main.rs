@@ -9,6 +9,7 @@ mod checkpoint_evidence;
 mod checkpoint_inspection;
 mod cli_args;
 mod combat_lab;
+mod command_inputs;
 mod driver_command;
 mod final_boss_combat;
 mod inspect_summary;
@@ -20,6 +21,9 @@ use checkpoint_inspection::{run_checkpoint_inspection, run_final_boss_combat_rep
 #[cfg(test)]
 use cli_args::parse_args_from;
 use cli_args::{parse_cli, BranchCampaignCliInputV1};
+use command_inputs::{
+    ContinuationCommandInput, DatasetCommandInput, InspectCommandInput, RunCommandInput,
+};
 #[cfg(test)]
 use driver_command::driver_command_from_args;
 use driver_command::{driver_command_from_cli_input, BranchCampaignDriverCommandV1};
@@ -725,35 +729,41 @@ fn run(cli_input: BranchCampaignCliInputV1) -> Result<(), String> {
     match driver_command_from_cli_input(&cli_input) {
         BranchCampaignDriverCommandV1::SelfCheckAncestorReplay => run_ancestor_replay_self_check(),
         BranchCampaignDriverCommandV1::AnalyzeOutcomeDataset => {
-            run_branch_outcome_dataset_analysis(&args)
+            run_branch_outcome_dataset_analysis(&DatasetCommandInput::from_args(args))
         }
         BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset => {
-            run_decision_outcome_dataset_analysis(&args)
+            run_decision_outcome_dataset_analysis(&DatasetCommandInput::from_args(args))
         }
         BranchCampaignDriverCommandV1::ProbeLearningReadiness => {
-            run_learning_readiness_probe(&args)
+            run_learning_readiness_probe(&DatasetCommandInput::from_args(args))
         }
         BranchCampaignDriverCommandV1::PlanTargetedContinuation => {
-            run_targeted_continuation_plan(&args)
+            run_targeted_continuation_plan(&ContinuationCommandInput::from_args(args)?)
         }
         BranchCampaignDriverCommandV1::ExecuteTargetedContinuation => {
-            run_targeted_continuation_execution(&args)
+            run_targeted_continuation_execution(&ContinuationCommandInput::from_args(args)?)
         }
         BranchCampaignDriverCommandV1::ContinuationEffectReport => {
-            run_continuation_effect_report(&args)
+            run_continuation_effect_report(&ContinuationCommandInput::from_args(args)?)
         }
         BranchCampaignDriverCommandV1::ExportOutcomeDataset => {
-            run_branch_outcome_dataset_export(&args)
+            run_branch_outcome_dataset_export(&DatasetCommandInput::from_args(args))
         }
-        BranchCampaignDriverCommandV1::ExportLearningDataset => run_learning_dataset_export(&args),
+        BranchCampaignDriverCommandV1::ExportLearningDataset => {
+            run_learning_dataset_export(&DatasetCommandInput::from_args(args))
+        }
         BranchCampaignDriverCommandV1::ExportDecisionOutcomeDataset => {
-            run_decision_outcome_dataset_export(&args)
+            run_decision_outcome_dataset_export(&DatasetCommandInput::from_args(args))
         }
         BranchCampaignDriverCommandV1::InspectFinalBossCombat => {
-            run_final_boss_combat_report_inspection(&args)
+            run_final_boss_combat_report_inspection(&InspectCommandInput::from_args(args)?)
         }
-        BranchCampaignDriverCommandV1::InspectCheckpoint => run_checkpoint_inspection(&args),
-        BranchCampaignDriverCommandV1::RunCampaign => run_campaign_command(&args),
+        BranchCampaignDriverCommandV1::InspectCheckpoint => {
+            run_checkpoint_inspection(&InspectCommandInput::from_args(args)?)
+        }
+        BranchCampaignDriverCommandV1::RunCampaign => {
+            run_campaign_command(&RunCommandInput::from_args(args)?)
+        }
     }
 }
 
@@ -1350,10 +1360,9 @@ mod tests {
         ])
         .expect("args parse");
 
-        let options =
-            checkpoint_inspection::inspect_search_options_from_args(&args).expect("options parse");
+        let input = InspectCommandInput::from_args(&args).expect("inspect input builds");
 
-        assert_eq!(options.wall_ms, Some(5_000));
+        assert_eq!(input.search_options.wall_ms, Some(5_000));
     }
 
     #[test]
