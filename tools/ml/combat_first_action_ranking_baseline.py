@@ -403,24 +403,77 @@ def sigmoid(value: float) -> float:
     return z / (1.0 + z)
 
 
+def sample_source_key(sample: dict[str, Any]) -> str:
+    source = sample.get("source") if isinstance(sample.get("source"), dict) else {}
+    value = source.get("source_file") or source.get("file") or sample.get("_source_jsonl")
+    return str(value or "unknown_source")
+
+
+def source_unit_to_group_keys(groups: dict[str, list[dict[str, Any]]]) -> dict[str, list[str]]:
+    units: dict[str, list[str]] = defaultdict(list)
+    for key, group in groups.items():
+        unit = sample_source_key(group[0]) if group else "unknown_source"
+        units[unit].append(key)
+    return dict(units)
+
+
 def split_groups(
-    groups: dict[str, list[dict[str, Any]]], test_ratio: float
-) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]]]:
+    groups: dict[str, list[dict[str, Any]]],
+    *,
+    test_ratio: float,
+    split_mode: str,
+    split_seed: int,
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]], dict[str, Any]]:
+    unit_to_group_keys: dict[str, list[str]] = defaultdict(list)
+    use_group_split = split_mode == "group"
+    if split_mode == "source":
+        sources = {
+            sample_source_key(group[0])
+            for group in groups.values()
+            if group
+        }
+        # A one-source dataset cannot honestly hold out a campaign/source. Fall
+        # back to group split so tiny smoke files still run.
+        use_group_split = len(sources) < 2
+    for key, group in groups.items():
+        if use_group_split or not group:
+            unit = key
+        else:
+            unit = sample_source_key(group[0])
+        unit_to_group_keys[unit].append(key)
+
+    unit_train: set[str] = set()
+    unit_test: set[str] = set()
+    threshold = int(test_ratio * 10_000)
+    for unit in sorted(unit_to_group_keys):
+        bucket = stable_hash(f"{split_seed}:{unit}") % 10_000
+        if bucket < threshold:
+            unit_test.add(unit)
+        else:
+            unit_train.add(unit)
+    if not unit_train and unit_test:
+        unit = sorted(unit_test)[0]
+        unit_test.remove(unit)
+        unit_train.add(unit)
+    if not unit_test and len(unit_train) > 1:
+        unit = sorted(unit_train)[-1]
+        unit_train.remove(unit)
+        unit_test.add(unit)
+
     train = {}
     test = {}
-    for key, group in groups.items():
-        bucket = stable_hash(key) % 10_000
-        if bucket < int(test_ratio * 10_000):
-            test[key] = group
-        else:
-            train[key] = group
-    if not train and test:
-        key = sorted(test)[0]
-        train[key] = test.pop(key)
-    if not test and len(train) > 1:
-        key = sorted(train)[-1]
-        test[key] = train.pop(key)
-    return train, test
+    for unit, keys in unit_to_group_keys.items():
+        target = test if unit in unit_test else train
+        for key in keys:
+            target[key] = groups[key]
+    meta = {
+        "mode": "group" if use_group_split else split_mode,
+        "requested_mode": split_mode,
+        "seed": split_seed,
+        "train_units": len(unit_train),
+        "test_units": len(unit_test),
+    }
+    return train, test, meta
 
 
 def flatten_training_examples(
@@ -492,6 +545,66 @@ def evaluate_model(
             scores.append(dot(weights, hashed_features(features, dim), bias))
         group_scores[key] = scores
     return metrics_from_group_scores(groups, group_scores)
+
+
+def source_cross_validated_model_metrics(
+    groups: dict[str, list[dict[str, Any]]],
+    *,
+    dim: int,
+    epochs: int,
+    learning_rate: float,
+    l2: float,
+    seed: int,
+    include_order_features: bool,
+) -> tuple[dict[str, float], dict[str, Any]]:
+    units = source_unit_to_group_keys(groups)
+    if len(units) < 2:
+        return (
+            {
+                "groups": 0.0,
+                "top1": 0.0,
+                "mrr": 0.0,
+                "avg_rank": 0.0,
+                "avg_candidates": 0.0,
+                "avg_hp_gain_vs_ordered": 0.0,
+                "positive_hp_gain": 0.0,
+                "negative_hp_gain": 0.0,
+                "target_missed": 0.0,
+                "target_outcome_missed": 0.0,
+            },
+            {"folds": 0, "source_units": len(units)},
+        )
+    out_of_fold_scores: dict[str, list[float]] = {}
+    folds = 0
+    for fold_index, held_out_unit in enumerate(sorted(units)):
+        test_keys = set(units[held_out_unit])
+        train_groups = {key: group for key, group in groups.items() if key not in test_keys}
+        test_groups = {key: group for key, group in groups.items() if key in test_keys}
+        train_examples = flatten_training_examples(
+            train_groups,
+            include_order_features=include_order_features,
+        )
+        if not train_examples or not test_groups:
+            continue
+        weights, bias = train_logistic(
+            train_examples,
+            dim=dim,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            l2=l2,
+            seed=seed + fold_index,
+        )
+        for key, group in test_groups.items():
+            scores = []
+            for sample in group:
+                features = extract_features(sample, include_order_features=include_order_features)
+                scores.append(dot(weights, hashed_features(features, dim), bias))
+            out_of_fold_scores[key] = scores
+        folds += 1
+    return (
+        metrics_from_group_scores(groups, out_of_fold_scores),
+        {"folds": folds, "source_units": len(units)},
+    )
 
 
 def metrics_from_group_scores(
@@ -611,6 +724,21 @@ def main() -> None:
     parser.add_argument("--test-ratio", type=float, default=0.3)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
+        "--split-mode",
+        choices=("source", "group", "source-cv"),
+        default="source",
+        help=(
+            "source holds out whole source/lab files; group is the older per-root "
+            "hash split; source-cv does leave-one-source-out evaluation."
+        ),
+    )
+    parser.add_argument(
+        "--split-seed",
+        type=int,
+        default=1,
+        help="Hash seed for train/test assignment; independent from --seed training shuffle.",
+    )
+    parser.add_argument(
         "--include-order-features",
         action="store_true",
         help="Allow ordered_index/original_action_id/hand_index as features",
@@ -630,6 +758,10 @@ def main() -> None:
         "  label_role=oracle_search_guidance_ranking_not_human_policy "
         "candidate_coverage=root_legal_candidates_reported_limit"
     )
+    print(
+        "  metric_note=top1 means the oracle target candidate was ranked first; "
+        "it is not human correctness or proof of optimal play"
+    )
     if len(groups) < 8:
         print("  readiness=too_few_groups_for_meaningful_ml")
     else:
@@ -637,8 +769,60 @@ def main() -> None:
     if not groups:
         return
 
-    train_groups, test_groups = split_groups(groups, args.test_ratio)
-    print(f"  split=train_groups:{len(train_groups)} test_groups:{len(test_groups)}")
+    if args.split_mode == "source-cv":
+        cv_metrics, cv_meta = source_cross_validated_model_metrics(
+            groups,
+            dim=args.dim,
+            epochs=args.epochs,
+            learning_rate=args.learning_rate,
+            l2=args.l2,
+            seed=args.seed,
+            include_order_features=args.include_order_features,
+        )
+        print(
+            f"  split=mode:source-cv source_units:{cv_meta['source_units']} "
+            f"folds:{cv_meta['folds']}"
+        )
+        print_metrics("ordered_index_all", evaluate_ordered_index(groups))
+        print_metrics("logistic_source_cv", cv_metrics)
+        train_examples = flatten_training_examples(
+            groups,
+            include_order_features=args.include_order_features,
+        )
+        if not train_examples:
+            print("  logistic=skipped_not_enough_data")
+            return
+        weights, _bias = train_logistic(
+            train_examples,
+            dim=args.dim,
+            epochs=args.epochs,
+            learning_rate=args.learning_rate,
+            l2=args.l2,
+            seed=args.seed,
+        )
+        print("  top_weighted_features_full_data:")
+        for name, weight in feature_weight_report(
+            weights,
+            groups,
+            dim=args.dim,
+            include_order_features=args.include_order_features,
+            limit=args.top_features,
+        ):
+            print(f"    {weight:+.4f} {name}")
+        return
+
+    train_groups, test_groups, split_meta = split_groups(
+        groups,
+        test_ratio=args.test_ratio,
+        split_mode=args.split_mode,
+        split_seed=args.split_seed,
+    )
+    print(
+        f"  split=mode:{split_meta['mode']} requested:{split_meta['requested_mode']} "
+        f"split_seed:{split_meta['seed']} train_groups:{len(train_groups)} "
+        f"test_groups:{len(test_groups)} train_units:{split_meta['train_units']} "
+        f"test_units:{split_meta['test_units']}"
+    )
     print_metrics("ordered_index_train", evaluate_ordered_index(train_groups))
     print_metrics("ordered_index_test", evaluate_ordered_index(test_groups))
 
