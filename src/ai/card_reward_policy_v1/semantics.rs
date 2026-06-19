@@ -1,4 +1,4 @@
-use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
+use crate::ai::card_semantics_v1::{card_mechanics_profile_v1, CombatExternalPayoffV1};
 use crate::content::cards::CardId;
 use crate::state::rewards::RewardCard;
 
@@ -46,7 +46,10 @@ pub fn card_reward_semantic_profile_v1(card: &RewardCard) -> CardRewardSemanticP
     } else if facts.strength_gain > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::ScalingSource);
     }
-    if mechanics.combat_external_payoff.is_some() {
+    if matches!(
+        mechanics.combat_external_payoff,
+        Some(CombatExternalPayoffV1::PersistentOrReward)
+    ) {
         push_role(&mut roles, CardRewardSemanticRoleV1::CombatExternalPayoff);
     }
     if facts.exhausts_other_cards {
