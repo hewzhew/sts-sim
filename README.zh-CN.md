@@ -16,29 +16,38 @@
 
 当前维护的闭环是：
 
-1. 从 Neow 开始运行确定性的模拟器 session
-2. 人类手动或在明确边界下自动处理低风险战斗外决策
-3. 需要时保存稳定 combat start
-4. 用 Combat Search V2 搜整场战斗轨迹
-5. 比较整场战斗 outcome，而不是逐步动作模仿
+1. 从 Neow 开始运行确定性的模拟器 campaign
+2. 在明确预算下同时保留若干战斗外分支
+3. 在这些分支内部用 Combat Search V2 搜整场战斗轨迹
+4. 分支失败时检查 checkpoint、最终 boss 战斗和 outcome dataset
+5. 比较整局 outcome 和 sibling branch，而不是逐步动作模仿
 
 Autopilot、route planner、card reward policy、trace、搜索托管战斗都是便利工具或证据工具，不是 teacher label。
 
 ## 快速开始
 
-先构建：
+运行当前 campaign 工作流：
 
 ```powershell
 cd D:\rust\sts_simulator
-cargo build --release --bin run_play_driver
+.\tools\campaign.ps1 -Mode quick
+.\tools\campaign.ps1 -More -Rounds 1
+.\tools\campaign.ps1 -Inspect
 ```
 
-用随机 seed 开始一局新的记录 session：
+调试 binary 时可以直接构建主 campaign driver：
+
+```powershell
+cd D:\rust\sts_simulator
+cargo build --profile fast-run --bin branch_campaign_driver
+```
+
+需要自己玩或手动观察模拟器时，仍然使用 REPL：
 
 ```powershell
 $seed = Get-Random -Minimum 1 -Maximum 2147483647
 echo "seed=$seed"
-.\target\release\run_play_driver.exe --seed $seed --ascension 0 --class ironclad --record --search-wall-ms 100
+cargo run --profile fast-run --bin run_play_driver -- --seed $seed --ascension 0 --class ironclad --record --search-wall-ms 100
 ```
 
 常用 session 命令：
@@ -66,6 +75,7 @@ echo "seed=$seed"
 
 | Binary | 用途 |
 | --- | --- |
+| `branch_campaign_driver` | 当前自动分支 campaign、checkpoint 检查、outcome 导出和 continuation 实验 |
 | `run_play_driver` | 手动和半自动模拟器跑局、trace、bookmark、capture、baseline |
 | `combat_search_v2_driver` | 从 start spec、combat capture 或 benchmark suite 跑整场战斗搜索 |
 | `artifact_doctor` | 只读审计 benchmark artifact 目录 |
@@ -112,6 +122,7 @@ cargo fmt --check
 cargo check --all-targets
 cargo test --quiet
 cargo check --release --all-targets
+cargo build --profile fast-run --bin branch_campaign_driver
 cargo build --release --bin run_play_driver
 cargo build --release --bin combat_search_v2_driver
 git diff --check

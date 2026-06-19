@@ -39,6 +39,21 @@
 - loose live-comm captures do not belong in the repo root
 - root-level one-off snapshots belong under `tools/artifacts/root_snapshots/`
 
+## Primary Campaign Workflow
+
+`tools/campaign.ps1` is the maintained user-facing wrapper for
+`branch_campaign_driver`.
+
+```powershell
+.\tools\campaign.ps1 -Mode quick
+.\tools\campaign.ps1 -More -Rounds 1
+.\tools\campaign.ps1 -Inspect
+```
+
+The script owns friendly defaults, build-profile selection, last-seed
+bookkeeping, and checkpoint/report paths. It should stay a wrapper over the
+Rust campaign driver; campaign semantics belong in Rust, not in PowerShell.
+
 ## Primary Java Analysis Workflow
 
 ```powershell

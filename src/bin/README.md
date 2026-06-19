@@ -6,6 +6,17 @@ not grow new long-lived binaries here.
 
 Active binaries:
 
+- `branch_campaign_driver`
+  - current automated branch-campaign engine used by `tools/campaign.ps1`
+  - primary roles:
+    - run active/frozen campaign branches from a seed, report, and checkpoint
+    - inspect checkpoint sessions, decks, route/shop/card/campfire evidence,
+      combat lab packets, and final boss timelines
+    - export or analyze branch/outcome/learning JSONL
+    - run targeted sibling continuation experiments
+  - this binary is still being consolidated: those roles are currently selected
+    by flags, but new work should treat them as separate command modes and avoid
+    adding unrelated top-level flags
 - `artifact_doctor`
   - read-only audit over benchmark artifact directories
   - `--root <path>` scans for `benchmark.json` suites, registered captures,
@@ -33,8 +44,8 @@ Active binaries:
     candidate ordering, and exact one-step consequences without writing
     artifacts or changing search policy
 - `auto_run_batch_driver`
-  - batch-smoke the current `run_control` auto-run chain across seed lists or
-    contiguous seed ranges
+  - diagnostic-only batch smoke for the current `run_control` auto-run chain
+    across seed lists or contiguous seed ranges
   - this is not a separate bot; it reuses the same `RunControlSession` and
     `auto-run` command as `run_play_driver`, then reports the next human
     boundary
@@ -127,6 +138,20 @@ Active binaries:
     refresh `benchmark.json`
   - `bench-add <benchmark_dir> <case_id>`: refresh a suite case from the saved
     capture and optional baseline
+
+Experimental or legacy binaries:
+
+- `branch_experiment_driver`
+  - standalone branch experiment microscope from a seed, bookmark, prefix, or
+    replay trace
+  - current campaign work should prefer `branch_campaign_driver` checkpoint
+    inspection or challenge modes unless a focused local experiment is needed
+- `decision_lab_driver`
+  - older seed-batch decision-lab wrapper over branch experiments
+  - retained for archaeology and comparison; not the current learning pipeline
+- `card_reward_value_loop_driver`
+  - older trace-based card reward value-loop utility
+  - retained until useful pieces are migrated into campaign outcome datasets
 
 Removed from the active binary surface:
 

@@ -19,30 +19,40 @@ later as adapters, but they do not define simulator truth or search quality.
 
 The maintained loop is:
 
-1. run a deterministic simulator session from Neow onward
-2. make or automate low-risk non-combat decisions under explicit boundaries
-3. capture stable combat starts when needed
-4. run Combat Search V2 over complete combat trajectories
-5. compare whole-combat outcomes, not step-by-step action agreement
+1. run a deterministic simulator campaign from Neow onward
+2. keep several noncombat branches alive under explicit budgets
+3. use Combat Search V2 for complete combat trajectories inside those branches
+4. inspect checkpoints, final boss combats, and outcome datasets when a branch fails
+5. compare whole-run outcomes and branch siblings, not step-by-step action agreement
 
 Autopilot, route planning, card reward policy, traces, and search-assisted
 combat are convenience/evidence tools. They are not teacher labels.
 
 ## Quick Start
 
-Build once:
+Run the current campaign workflow:
 
 ```powershell
 cd D:\rust\sts_simulator
-cargo build --release --bin run_play_driver
+.\tools\campaign.ps1 -Mode quick
+.\tools\campaign.ps1 -More -Rounds 1
+.\tools\campaign.ps1 -Inspect
 ```
 
-Start a fresh recorded run with a random seed:
+Build the main campaign driver directly when debugging the binary:
+
+```powershell
+cd D:\rust\sts_simulator
+cargo build --profile fast-run --bin branch_campaign_driver
+```
+
+Manual REPL runs are still supported when you want to play or inspect the
+simulator interactively:
 
 ```powershell
 $seed = Get-Random -Minimum 1 -Maximum 2147483647
 echo "seed=$seed"
-.\target\release\run_play_driver.exe --seed $seed --ascension 0 --class ironclad --record --search-wall-ms 100
+cargo run --profile fast-run --bin run_play_driver -- --seed $seed --ascension 0 --class ironclad --record --search-wall-ms 100
 ```
 
 Useful in-session commands:
@@ -71,6 +81,7 @@ workflow.
 
 | Binary | Purpose |
 | --- | --- |
+| `branch_campaign_driver` | current automated branch campaign, checkpoint inspection, outcome export, and continuation experiments |
 | `run_play_driver` | manual and semi-automatic simulator runs, traces, bookmarks, captures, baselines |
 | `combat_search_v2_driver` | whole-combat search from start specs, combat captures, or benchmark suites |
 | `artifact_doctor` | read-only audit over benchmark artifact directories |
@@ -118,6 +129,7 @@ cargo fmt --check
 cargo check --all-targets
 cargo test --quiet
 cargo check --release --all-targets
+cargo build --profile fast-run --bin branch_campaign_driver
 cargo build --release --bin run_play_driver
 cargo build --release --bin combat_search_v2_driver
 git diff --check
