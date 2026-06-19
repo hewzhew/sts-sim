@@ -1,8 +1,7 @@
 #[cfg(test)]
 use clap::error::ErrorKind;
-use std::fs;
-use std::path::PathBuf;
 
+mod campaign_artifacts;
 mod campaign_run;
 mod checkpoint_evidence;
 mod checkpoint_inspection;
@@ -37,10 +36,6 @@ use outcome_dataset::{
     run_continuation_effect_report, run_decision_outcome_dataset_analysis,
     run_decision_outcome_dataset_export, run_learning_dataset_export, run_learning_readiness_probe,
     run_targeted_continuation_execution, run_targeted_continuation_plan,
-};
-use sts_simulator::eval::branch_campaign::{
-    BranchCampaignCheckpointV1, BranchCampaignReportV1, BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME,
-    BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
 };
 #[cfg(test)]
 use sts_simulator::eval::run_control::RunControlCombatSegmentMode;
@@ -96,86 +91,13 @@ fn run(cli_input: BranchCampaignCliInputV1) -> Result<(), String> {
     }
 }
 
-fn read_campaign_report_v1(path: &PathBuf) -> Result<BranchCampaignReportV1, String> {
-    let text = fs::read_to_string(path)
-        .map_err(|err| format!("failed to read --resume {}: {err}", path.display()))?;
-    serde_json::from_str(&text).map_err(|err| {
-        format!(
-            "failed to parse --resume {} as BranchCampaignV1: {err}",
-            path.display()
-        )
-    })
-}
-
-fn read_campaign_checkpoint_v1(path: &PathBuf) -> Result<BranchCampaignCheckpointV1, String> {
-    let text = fs::read_to_string(path).map_err(|err| {
-        format!(
-            "failed to read --resume-checkpoint {}: {err}",
-            path.display()
-        )
-    })?;
-    let checkpoint: BranchCampaignCheckpointV1 = serde_json::from_str(&text).map_err(|err| {
-        format!(
-            "failed to parse --resume-checkpoint {} as {BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME}: {err}",
-            path.display()
-        )
-    })?;
-    if checkpoint.schema_name != BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME
-        || checkpoint.schema_version != BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION
-    {
-        return Err(format!(
-            "checkpoint {} uses {} v{}; expected {} v{}. Rerun campaign to create a fresh checkpoint.",
-            path.display(),
-            checkpoint.schema_name,
-            checkpoint.schema_version,
-            BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME,
-            BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION
-        ));
-    }
-    Ok(checkpoint)
-}
-
-fn write_campaign_report_v1(path: &PathBuf, report: &BranchCampaignReportV1) -> Result<(), String> {
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent).map_err(|err| {
-            format!(
-                "failed to create --out directory {}: {err}",
-                parent.display()
-            )
-        })?;
-    }
-    let text = serde_json::to_string_pretty(report)
-        .map_err(|err| format!("failed to serialize BranchCampaignV1 report: {err}"))?;
-    fs::write(path, text).map_err(|err| format!("failed to write --out {}: {err}", path.display()))
-}
-
-fn write_campaign_checkpoint_v1(
-    path: &PathBuf,
-    checkpoint: &BranchCampaignCheckpointV1,
-) -> Result<(), String> {
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent).map_err(|err| {
-            format!(
-                "failed to create --checkpoint-out directory {}: {err}",
-                parent.display()
-            )
-        })?;
-    }
-    let text = serde_json::to_string_pretty(checkpoint)
-        .map_err(|err| format!("failed to serialize BranchCampaignCheckpointV2: {err}"))?;
-    fs::write(path, text)
-        .map_err(|err| format!("failed to write --checkpoint-out {}: {err}", path.display()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::campaign_artifacts::read_campaign_checkpoint_v1;
+
+    use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn campaign_cli_default_run_config_smoke() {

@@ -4,6 +4,7 @@ use sts_simulator::eval::run_control::{
     RunControlCommand, RunControlSession,
 };
 
+use super::campaign_artifacts::{read_campaign_checkpoint_v1, read_campaign_report_v1};
 use super::checkpoint_evidence::{
     render_checkpoint_campfire_evidence_v1, render_checkpoint_card_reward_evidence_v1,
     render_checkpoint_deck_mutation_v1, render_checkpoint_route_evidence_v1,
@@ -14,7 +15,7 @@ use super::final_boss_combat::{
     render_final_boss_combat_report_inspection_v1, render_last_auto_combat_checkpoint_inspection_v1,
 };
 use super::shop_challenge::render_checkpoint_shop_plan_challenge_v1;
-use super::{combat_lab, inspect_summary, read_campaign_checkpoint_v1, read_campaign_report_v1};
+use super::{combat_lab, inspect_summary};
 
 pub(super) fn run_final_boss_combat_report_inspection(
     input: &InspectCommandInput,

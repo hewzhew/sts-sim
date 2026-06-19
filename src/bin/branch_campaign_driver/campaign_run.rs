@@ -13,14 +13,14 @@ use sts_simulator::eval::branch_outcome_dataset_v1::{
     extract_branch_outcome_records_v1, summarize_branch_outcome_records_v1,
 };
 
+use super::campaign_artifacts::{
+    read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
+    write_campaign_report_v1,
+};
 use super::command_inputs::RunCommandInput;
 use super::outcome_dataset::{
     learning_dataset_export_context_v1, write_branch_outcome_dataset_jsonl_v1,
     write_decision_outcome_dataset_jsonl_v1, write_learning_dataset_jsonl_v1,
-};
-use super::{
-    read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
-    write_campaign_report_v1,
 };
 
 pub(super) fn run_ancestor_replay_self_check() -> Result<(), String> {

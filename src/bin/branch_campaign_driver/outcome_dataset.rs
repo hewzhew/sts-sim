@@ -26,11 +26,11 @@ use sts_simulator::eval::learning_dataset_v1::{
 };
 use sts_simulator::eval::run_control::canonical_player_class;
 
-use super::command_inputs::{ContinuationCommandInput, DatasetCommandInput};
-use super::{
+use super::campaign_artifacts::{
     read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
     write_campaign_report_v1,
 };
+use super::command_inputs::{ContinuationCommandInput, DatasetCommandInput};
 
 pub(super) fn run_branch_outcome_dataset_analysis(
     input: &DatasetCommandInput,

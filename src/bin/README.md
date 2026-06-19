@@ -22,8 +22,8 @@ Active binaries:
   - implementation boundary: `cli_args.rs` owns parsing, legacy `Args`, and
     preset/default application; `driver_command.rs` owns command selection;
     `command_inputs.rs` converts CLI args into narrow handler inputs plus
-    campaign/search config; `main.rs` owns dispatch plus shared
-    report/checkpoint helpers
+    campaign/search config; `campaign_artifacts.rs` owns report/checkpoint
+    JSON IO; `main.rs` owns dispatch only
 - `artifact_doctor`
   - read-only audit over benchmark artifact directories
   - `--root <path>` scans for `benchmark.json` suites, registered captures,
