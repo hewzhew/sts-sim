@@ -8,10 +8,10 @@ use crate::eval::branch_experiment_boundary::branch_boundary_available;
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::eval::combat_lab_probe_v1::current_act_boss_preview_probe_v1;
 use crate::eval::run_control::{
-    apply_branch_experiment_auto_run, build_decision_surface, RunControlAutoStepOptions,
-    RunControlCombatSegmentMode, RunControlConfig, RunControlHpLossLimit,
-    RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSession,
-    RunControlSessionCheckpointV1,
+    apply_branch_experiment_auto_run, build_decision_surface, AutoCombatCaptureConfig,
+    RunControlAutoStepOptions, RunControlCombatSegmentMode, RunControlConfig,
+    RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
+    RunControlSession, RunControlSessionCheckpointV1,
 };
 use crate::state::core::EngineState;
 use crate::state::rewards::{RewardCard, RewardState};
@@ -138,6 +138,7 @@ pub struct BranchCampaignConfigV1 {
     pub search_wall_ms: Option<u64>,
     pub search_max_hp_loss: Option<RunControlHpLossLimit>,
     pub search_options: RunControlSearchCombatOptions,
+    pub auto_capture: AutoCombatCaptureConfig,
     pub combat_retry_policy: BranchCampaignCombatRetryPolicyV1,
     pub combat_retry_wall_ms: Option<u64>,
     pub include_event_reward_skip: bool,
@@ -170,6 +171,7 @@ impl Default for BranchCampaignConfigV1 {
                 segment_mode: Some(RunControlCombatSegmentMode::NonBossTurnBoundary),
                 ..RunControlSearchCombatOptions::default()
             },
+            auto_capture: AutoCombatCaptureConfig::default(),
             combat_retry_policy: BranchCampaignCombatRetryPolicyV1::OnStall,
             combat_retry_wall_ms: None,
             include_event_reward_skip: false,

@@ -9,7 +9,8 @@ use sts_simulator::eval::branch_experiment::{
     BranchExperimentBranchStatusV1, BranchExperimentConfigV1,
 };
 use sts_simulator::eval::run_control::{
-    shop_plan_step_input_and_label_v1, RunControlCommand, RunControlHpLossLimit, RunControlSession,
+    shop_plan_step_input_and_label_v1, AutoCombatCaptureConfig, RunControlCommand,
+    RunControlHpLossLimit, RunControlSession,
 };
 use sts_simulator::state::core::EngineState;
 
@@ -302,6 +303,7 @@ fn branch_experiment_config_for_shop_challenge_v1(
         search_wall_ms: Some(input.search_wall_ms),
         search_max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
         search_options: input.search_options.clone(),
+        auto_capture: AutoCombatCaptureConfig::default(),
         include_skip: false,
         include_event_reward_skip: false,
         auto_leave_after_shop_purchase_branch: true,

@@ -16,7 +16,8 @@ use sts_simulator::eval::neow_guided_prefix::{
     neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
 };
 use sts_simulator::eval::run_control::{
-    default_bookmark_registry_path, resolve_goto_bookmark, GotoBookmarkPlan, RunControlHpLossLimit,
+    default_bookmark_registry_path, resolve_goto_bookmark, AutoCombatCaptureConfig,
+    GotoBookmarkPlan, RunControlHpLossLimit,
 };
 
 mod compact_report;
@@ -299,6 +300,7 @@ fn branch_experiment_config(
         search_wall_ms: args.search_wall_ms.or(Some(100)),
         search_max_hp_loss: parse_hp_loss_limit(args.max_hp_loss.as_deref())?,
         search_options: parse_branch_experiment_search_options_v1(&args.combat_search_options)?,
+        auto_capture: AutoCombatCaptureConfig::default(),
         include_skip: args.include_skip || !args.exclude_skip,
         include_event_reward_skip: args.include_event_reward_skip,
         auto_leave_after_shop_purchase_branch: !args.allow_shop_multi_buy_branches,

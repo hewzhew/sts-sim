@@ -166,6 +166,7 @@ fn validate_shared_start_configs(configs: &[BranchExperimentConfigV1]) -> Result
         require_same!(search_wall_ms);
         require_same!(search_max_hp_loss);
         require_same!(search_options);
+        require_same!(auto_capture);
         require_same!(include_skip);
         require_same!(include_event_reward_skip);
         require_same!(auto_leave_after_shop_purchase_branch);
@@ -219,6 +220,7 @@ fn prepare_branch_experiment_start(
             .map(|trace| trace.run_config.final_act)
             .unwrap_or(config.final_act),
         player_class,
+        auto_capture: config.auto_capture.clone(),
         search_max_nodes: config.search_max_nodes,
         search_wall_ms: config.search_wall_ms,
         ..RunControlConfig::default()
@@ -296,6 +298,7 @@ pub fn run_branch_experiment_from_session_after_prefix_with_snapshots_v1(
     config: &BranchExperimentConfigV1,
     prefix_commands: &[String],
 ) -> Result<BranchExperimentRunResultV1, String> {
+    session.set_auto_capture_config(config.auto_capture.clone());
     let prefix_final_boss_combat_record =
         apply_branch_experiment_prefix_commands_v1(&mut session, config, prefix_commands)?;
     Ok(
@@ -317,11 +320,12 @@ pub fn run_branch_experiment_from_session_after_prefix_with_snapshots_v1(
 }
 
 fn run_branch_experiment_from_session_with_replay_and_snapshots(
-    session: RunControlSession,
+    mut session: RunControlSession,
     config: &BranchExperimentConfigV1,
     replay_trace_applied_steps: usize,
     replay_trace_stop: Option<String>,
 ) -> BranchExperimentRunResultV1 {
+    session.set_auto_capture_config(config.auto_capture.clone());
     run_branch_experiment_from_start_branch_with_replay_and_snapshots(
         BranchWork {
             id: "root".to_string(),

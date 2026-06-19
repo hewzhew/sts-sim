@@ -455,6 +455,7 @@ pub(super) fn campaign_branch_experiment_config_v1(
         search_wall_ms: config.search_wall_ms,
         search_max_hp_loss: config.search_max_hp_loss,
         search_options: config.search_options.clone(),
+        auto_capture: config.auto_capture.clone(),
         include_skip: true,
         include_event_reward_skip: config.include_event_reward_skip,
         auto_leave_after_shop_purchase_branch: true,

@@ -282,6 +282,19 @@ pub(super) struct Args {
     pub(super) checkpoint_out: Option<PathBuf>,
 
     #[arg(
+        long = "auto-capture-combat",
+        help = "Auto-save current-version CombatCaptureV1 cases whenever campaign automation enters a fresh combat"
+    )]
+    pub(super) auto_capture_combat: bool,
+
+    #[arg(
+        long = "auto-capture-root",
+        value_name = "PATH",
+        help = "Benchmark root for --auto-capture-combat; defaults to tools/artifacts/benchmarks/seed{seed}_act{act}"
+    )]
+    pub(super) auto_capture_root: Option<PathBuf>,
+
+    #[arg(
         long = "inspect-checkpoint",
         value_name = "PATH",
         help = "Inspect a saved BranchCampaignCheckpointV2 session instead of running a campaign"
@@ -808,6 +821,19 @@ struct CampaignRunOutputArgs {
     checkpoint_out: Option<PathBuf>,
 
     #[arg(
+        long = "auto-capture-combat",
+        help = "Auto-save current-version CombatCaptureV1 cases whenever campaign automation enters a fresh combat"
+    )]
+    auto_capture_combat: bool,
+
+    #[arg(
+        long = "auto-capture-root",
+        value_name = "PATH",
+        help = "Benchmark root for --auto-capture-combat"
+    )]
+    auto_capture_root: Option<PathBuf>,
+
+    #[arg(
         long = "export-outcome-dataset",
         value_name = "PATH",
         help = "Write BranchOutcomeRecordV1 JSONL from the resulting campaign report"
@@ -1144,6 +1170,8 @@ impl Args {
             resume_checkpoint: None,
             out: None,
             checkpoint_out: None,
+            auto_capture_combat: false,
+            auto_capture_root: None,
             inspect_checkpoint: None,
             inspect_report: None,
             inspect_summary: false,
@@ -1300,6 +1328,8 @@ impl CampaignRunOutputArgs {
         args.resume_checkpoint = self.resume_checkpoint;
         args.out = self.out;
         args.checkpoint_out = self.checkpoint_out;
+        args.auto_capture_combat = self.auto_capture_combat;
+        args.auto_capture_root = self.auto_capture_root;
         args.export_outcome_dataset = self.export_outcome_dataset;
         args.export_learning_dataset = self.export_learning_dataset;
         args.export_decision_outcome_dataset = self.export_decision_outcome_dataset;

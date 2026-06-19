@@ -10,8 +10,8 @@ use sts_simulator::eval::neow_guided_prefix::{
     neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
 };
 use sts_simulator::eval::run_control::{
-    canonical_player_class, RunControlCombatSegmentMode, RunControlHpLossLimit,
-    RunControlSearchCombatOptions,
+    canonical_player_class, AutoCombatCaptureConfig, RunControlCombatSegmentMode,
+    RunControlHpLossLimit, RunControlSearchCombatOptions,
 };
 
 use super::cli_args::{Args, BranchCampaignCombatRetryArgV1};
@@ -280,6 +280,10 @@ pub(super) fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignCon
         search_wall_ms: Some(args.search_wall_ms),
         search_max_hp_loss,
         search_options: campaign_search_options_from_args(args)?,
+        auto_capture: AutoCombatCaptureConfig {
+            enabled: args.auto_capture_combat,
+            root: args.auto_capture_root.clone(),
+        },
         combat_retry_policy: match args.combat_retry {
             BranchCampaignCombatRetryArgV1::OnStall => BranchCampaignCombatRetryPolicyV1::OnStall,
             BranchCampaignCombatRetryArgV1::Immediate => {

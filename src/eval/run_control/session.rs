@@ -218,6 +218,11 @@ impl RunControlSession {
             last_capture_case: None,
         }
     }
+
+    pub fn set_auto_capture_config(&mut self, auto_capture: AutoCombatCaptureConfig) {
+        self.auto_capture = auto_capture;
+        self.auto_capture_last_combat_sequence = None;
+    }
 }
 
 impl RunControlSessionCheckpointV1 {

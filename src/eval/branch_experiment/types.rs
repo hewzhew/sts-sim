@@ -12,7 +12,8 @@ use crate::eval::branch_experiment_retention::{
 };
 use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
 use crate::eval::run_control::{
-    CombatAutomationActionV1, RunControlHpLossLimit, RunControlSearchCombatOptions,
+    AutoCombatCaptureConfig, CombatAutomationActionV1, RunControlHpLossLimit,
+    RunControlSearchCombatOptions,
 };
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
@@ -38,6 +39,7 @@ pub struct BranchExperimentConfigV1 {
     pub search_wall_ms: Option<u64>,
     pub search_max_hp_loss: Option<RunControlHpLossLimit>,
     pub search_options: RunControlSearchCombatOptions,
+    pub auto_capture: AutoCombatCaptureConfig,
     pub include_skip: bool,
     pub include_event_reward_skip: bool,
     pub auto_leave_after_shop_purchase_branch: bool,
@@ -66,6 +68,7 @@ impl Default for BranchExperimentConfigV1 {
             search_wall_ms: Some(100),
             search_max_hp_loss: None,
             search_options: RunControlSearchCombatOptions::default(),
+            auto_capture: AutoCombatCaptureConfig::default(),
             include_skip: false,
             include_event_reward_skip: false,
             auto_leave_after_shop_purchase_branch: true,
