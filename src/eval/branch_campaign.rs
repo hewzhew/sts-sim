@@ -4,8 +4,8 @@ use crate::eval::branch_experiment::{
     run_branch_experiment_from_session_after_prefix_with_snapshots_v1,
     run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
     BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentConfigV1,
-    BranchExperimentRouteDecisionV1, BranchExperimentRunResultV1,
-    BranchExperimentStrategyRequestV1, BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
+    BranchExperimentRunResultV1, BranchExperimentStrategyRequestV1,
+    BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND,
 };
 use crate::eval::branch_experiment_boundary::branch_boundary_available;
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
@@ -30,6 +30,7 @@ mod performance;
 mod progress;
 mod report_render;
 mod retry;
+mod route_evidence;
 mod run_domain;
 mod selection_key;
 mod state_graph;
@@ -44,8 +45,8 @@ use active_selection::{
     select_campaign_branches_for_config_v1,
 };
 use branch_display::{
-    compact_campaign_choice_label_metadata_v1, render_campaign_branch_state,
-    render_choice_path, render_compact_choice_path,
+    compact_campaign_choice_label_metadata_v1, render_campaign_branch_state, render_choice_path,
+    render_compact_choice_path,
 };
 use frozen_pool::append_limited_frozen_v1;
 #[cfg(test)]
@@ -74,13 +75,13 @@ pub use retry::{
     BranchCampaignCombatRetryLedgerEntryV1, BranchCampaignCombatRetryLedgerV1,
     BranchCampaignCombatRetryPolicyV1,
 };
+use route_evidence::{merge_campaign_route_decisions_v1, merge_campaign_route_evidence_summary_v1};
 pub use run_domain::{
     branch_campaign_ascension_domain_label_v1, branch_campaign_ascension_domain_role_v1,
     branch_campaign_run_domain_v1, BranchCampaignRunDomainV1,
 };
 use selection_key::{
-    act_boss_floor_v1, campaign_branch_retention_key_v1,
-    compare_campaign_branches_for_promotion_v1,
+    act_boss_floor_v1, campaign_branch_retention_key_v1, compare_campaign_branches_for_promotion_v1,
 };
 use state_graph::{
     BranchStateReplayStartV1, BranchStateSessionRetentionPolicyV1, BranchStateStoreV1,
@@ -1087,155 +1088,6 @@ fn validate_campaign_resume_report_v1(
         ));
     }
     Ok(())
-}
-
-fn merge_campaign_route_decisions_v1(
-    summary: &mut BranchCampaignRouteEvidenceSummaryV1,
-    decisions: &[BranchExperimentRouteDecisionV1],
-) {
-    for decision in decisions {
-        add_campaign_route_decision_v1(summary, decision);
-    }
-}
-
-fn merge_campaign_route_evidence_summary_v1(
-    target: &mut BranchCampaignRouteEvidenceSummaryV1,
-    incoming: BranchCampaignRouteEvidenceSummaryV1,
-) {
-    if incoming.decisions == 0 {
-        return;
-    }
-    target.avg_elite_prep_bp = weighted_average_bp(
-        target.avg_elite_prep_bp,
-        target.decisions,
-        incoming.avg_elite_prep_bp,
-        incoming.decisions,
-    );
-    target.decisions = target.decisions.saturating_add(incoming.decisions);
-    target.first_elite_forced = target
-        .first_elite_forced
-        .saturating_add(incoming.first_elite_forced);
-    target.first_elite_optional = target
-        .first_elite_optional
-        .saturating_add(incoming.first_elite_optional);
-    target.first_elite_none = target
-        .first_elite_none
-        .saturating_add(incoming.first_elite_none);
-    target.rest_bailout = target.rest_bailout.saturating_add(incoming.rest_bailout);
-    target.shop_bailout = target.shop_bailout.saturating_add(incoming.shop_bailout);
-    target.underprepared_first_elite = target
-        .underprepared_first_elite
-        .saturating_add(incoming.underprepared_first_elite);
-    for example in incoming.examples {
-        if target.examples.len() >= 4 {
-            break;
-        }
-        target.examples.push(example);
-    }
-    for example in incoming.underprepared_examples {
-        if target.underprepared_examples.len() >= 4 {
-            break;
-        }
-        target.underprepared_examples.push(example);
-    }
-}
-
-fn add_campaign_route_decision_v1(
-    summary: &mut BranchCampaignRouteEvidenceSummaryV1,
-    decision: &BranchExperimentRouteDecisionV1,
-) {
-    summary.avg_elite_prep_bp = weighted_average_bp(
-        summary.avg_elite_prep_bp,
-        summary.decisions,
-        decision.elite_prep_bp,
-        1,
-    );
-    summary.decisions = summary.decisions.saturating_add(1);
-    if decision.first_elite.paths_with_first_elite == 0 {
-        summary.first_elite_none = summary.first_elite_none.saturating_add(1);
-    } else if decision.first_elite.forced {
-        summary.first_elite_forced = summary.first_elite_forced.saturating_add(1);
-    } else if decision.first_elite.optional {
-        summary.first_elite_optional = summary.first_elite_optional.saturating_add(1);
-    }
-    if decision.first_elite.can_bail_to_rest_before {
-        summary.rest_bailout = summary.rest_bailout.saturating_add(1);
-    }
-    if decision.first_elite.can_bail_to_shop_before {
-        summary.shop_bailout = summary.shop_bailout.saturating_add(1);
-    }
-    if route_decision_has_underprepared_first_elite_v1(decision) {
-        summary.underprepared_first_elite = summary.underprepared_first_elite.saturating_add(1);
-    }
-    if summary.examples.len() < 4 {
-        summary.examples.push(BranchCampaignRouteEvidenceExampleV1 {
-            target: decision.target.clone(),
-            first_elite: render_branch_campaign_first_elite_evidence_v1(decision),
-            elite_prep_bp: decision.elite_prep_bp,
-        });
-    }
-    if route_decision_has_underprepared_first_elite_v1(decision)
-        && summary.underprepared_examples.len() < 4
-    {
-        summary
-            .underprepared_examples
-            .push(BranchCampaignRouteEvidenceExampleV1 {
-                target: decision.target.clone(),
-                first_elite: render_branch_campaign_first_elite_evidence_v1(decision),
-                elite_prep_bp: decision.elite_prep_bp,
-            });
-    }
-}
-
-fn weighted_average_bp(
-    left_avg: i32,
-    left_count: usize,
-    right_avg: i32,
-    right_count: usize,
-) -> i32 {
-    let total_count = left_count.saturating_add(right_count);
-    if total_count == 0 {
-        return 0;
-    }
-    let total = i64::from(left_avg) * left_count as i64 + i64::from(right_avg) * right_count as i64;
-    (total / total_count as i64) as i32
-}
-
-fn route_decision_has_underprepared_first_elite_v1(
-    decision: &BranchExperimentRouteDecisionV1,
-) -> bool {
-    decision.first_elite.paths_with_first_elite > 0
-        && decision.first_elite.forced
-        && !decision.first_elite.can_bail_to_rest_before
-        && !decision.first_elite.can_bail_to_shop_before
-        && decision.first_elite.max_hallway_fights_before < 2
-}
-
-fn render_branch_campaign_first_elite_evidence_v1(
-    decision: &BranchExperimentRouteDecisionV1,
-) -> String {
-    let first_elite = &decision.first_elite;
-    if first_elite.paths_with_first_elite == 0 {
-        return "none".to_string();
-    }
-    let kind = if first_elite.forced {
-        "forced"
-    } else if first_elite.optional {
-        "optional"
-    } else {
-        "present"
-    };
-    format!(
-        "{kind} hallways={}-{} fires={}-{} shops={}-{} rest_bailout={} shop_bailout={}",
-        first_elite.min_hallway_fights_before,
-        first_elite.max_hallway_fights_before,
-        first_elite.min_fires_before,
-        first_elite.max_fires_before,
-        first_elite.min_shops_before,
-        first_elite.max_shops_before,
-        first_elite.can_bail_to_rest_before,
-        first_elite.can_bail_to_shop_before
-    )
 }
 
 fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
