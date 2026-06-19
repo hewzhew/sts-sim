@@ -51,6 +51,10 @@ Prints a report-only combat lab packet for a selected checkpoint branch.
 Runs a report-only current-act boss preview for a selected checkpoint branch.
 
 .EXAMPLE
+.\tools\campaign.ps1 -Inspect -ExportLearningDataset tools\artifacts\learning\latest.learning.jsonl
+Exports LearningBranchSampleV1 JSONL from the latest campaign report/checkpoint.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Mode quick
 Runs a shorter random-seed campaign for fast smoke testing.
 
@@ -136,6 +140,8 @@ param(
     [switch] $BossSegments,
     [switch] $DebugBuild,
     [switch] $Build,
+
+    [string] $ExportLearningDataset = "",
 
     [ValidateSet("fast-run", "release-final", "release", "dev-opt", "debug")]
     [string] $BuildProfile = "fast-run",
@@ -466,6 +472,10 @@ if ($Perf) {
     $DriverArgs += @("--report-detail", "diagnose")
 }
 
+if ($ExportLearningDataset -and -not $Inspect) {
+    $DriverArgs += @("--export-learning-dataset", "$ExportLearningDataset")
+}
+
 if ($ExtraArgs) {
     $DriverArgs += $ExtraArgs
 }
@@ -536,6 +546,9 @@ if ($Inspect) {
     }
     if ($InspectLastAutoCombat) {
         $InspectArgs += "--inspect-last-auto-combat"
+    }
+    if ($ExportLearningDataset) {
+        $InspectArgs += @("--export-learning-dataset", "$ExportLearningDataset")
     }
     if ($InspectCombatLab) {
         $InspectArgs += @(

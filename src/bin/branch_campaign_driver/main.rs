@@ -21,8 +21,9 @@ use final_boss_combat::{
     render_final_boss_combat_report_inspection_v1, render_last_auto_combat_checkpoint_inspection_v1,
 };
 use outcome_dataset::{
-    run_branch_outcome_dataset_analysis, run_branch_outcome_dataset_export,
-    write_branch_outcome_dataset_jsonl_v1,
+    learning_dataset_export_context_v1, run_branch_outcome_dataset_analysis,
+    run_branch_outcome_dataset_export, run_learning_dataset_export,
+    write_branch_outcome_dataset_jsonl_v1, write_learning_dataset_jsonl_v1,
 };
 use shop_challenge::render_checkpoint_shop_plan_challenge_v1;
 use sts_simulator::eval::branch_campaign::{
@@ -427,6 +428,12 @@ struct Args {
         help = "Print structural issue counts from a BranchOutcomeRecordV1 JSONL file"
     )]
     analyze_outcome_dataset: Option<PathBuf>,
+    #[arg(
+        long = "export-learning-dataset",
+        value_name = "PATH",
+        help = "Write LearningBranchSampleV1 JSONL from a campaign report/run without treating choices as teacher labels"
+    )]
+    export_learning_dataset: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -684,6 +691,9 @@ fn run(args: Args) -> Result<(), String> {
     if args.export_outcome_dataset.is_some() && args.inspect_report.is_some() {
         return run_branch_outcome_dataset_export(&args);
     }
+    if args.export_learning_dataset.is_some() && args.inspect_report.is_some() {
+        return run_learning_dataset_export(&args);
+    }
     if args.inspect_final_boss_combat {
         return run_final_boss_combat_report_inspection(&args);
     }
@@ -759,6 +769,20 @@ fn run(args: Args) -> Result<(), String> {
             summary.total_records,
             path.display(),
             summary.checkpoint_enriched_records
+        );
+    }
+    if let Some(path) = args.export_learning_dataset.as_ref() {
+        let records = extract_branch_outcome_records_v1(&report, Some(&result.checkpoint))?;
+        let samples =
+            sts_simulator::eval::learning_dataset_v1::learning_records_from_branch_outcomes_v1(
+                &records,
+                learning_dataset_export_context_v1(args.out.as_ref(), args.checkpoint_out.as_ref()),
+            );
+        write_learning_dataset_jsonl_v1(path, &samples)?;
+        eprintln!(
+            "wrote {} LearningBranchSampleV1 row(s) to {}",
+            samples.len(),
+            path.display()
         );
     }
     if args.json {
@@ -1576,6 +1600,31 @@ mod tests {
         assert_eq!(
             args.analyze_outcome_dataset,
             Some(PathBuf::from("branch_outcomes.jsonl"))
+        );
+    }
+    #[test]
+    fn campaign_cli_accepts_learning_dataset_export() {
+        let args = Args::parse_from([
+            "branch_campaign_driver",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--export-learning-dataset",
+            "learning.jsonl",
+        ]);
+
+        assert_eq!(
+            args.export_learning_dataset,
+            Some(PathBuf::from("learning.jsonl"))
+        );
+        assert_eq!(
+            args.inspect_report,
+            Some(PathBuf::from("latest.campaign.json"))
+        );
+        assert_eq!(
+            args.inspect_checkpoint,
+            Some(PathBuf::from("latest.checkpoint.json"))
         );
     }
 

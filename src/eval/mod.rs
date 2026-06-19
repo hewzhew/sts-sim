@@ -14,6 +14,7 @@ pub mod combat_search_v2;
 pub(crate) mod event_auto_policy_v1;
 pub(crate) mod event_boundary_classifier_v1;
 pub mod fingerprint;
+pub mod learning_dataset_v1;
 pub mod neow_guided_prefix;
 pub mod observation_boundary;
 pub mod run_control;
