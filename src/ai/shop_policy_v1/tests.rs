@@ -1161,8 +1161,8 @@ fn compiled_shop_branch_portfolio_excludes_blocked_single_action_candidates() {
         card_id: CardId::Inflame,
         upgrades: 0,
         price: 73,
-        can_buy: true,
-        blocked_reason: None,
+        can_buy: false,
+        blocked_reason: Some("test candidate is mechanically unavailable".to_string()),
     });
     shop.relics.push(ShopRelic {
         relic_id: RelicId::OrangePellets,

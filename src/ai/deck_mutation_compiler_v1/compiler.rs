@@ -1178,6 +1178,7 @@ fn ordinary_duplicate_priority_v1(card: &CombatCard, run_state: &RunState) -> i3
     for role in profile.roles {
         priority += match role {
             CardRewardSemanticRoleV1::CardDraw => 100,
+            CardRewardSemanticRoleV1::CycleAccess => 100,
             CardRewardSemanticRoleV1::EnergySource => 90,
             CardRewardSemanticRoleV1::EnemyStrengthDown
             | CardRewardSemanticRoleV1::Weak
@@ -1447,6 +1448,7 @@ fn target_loss_signal_for_role(role: CardRewardSemanticRoleV1) -> Option<&'stati
         CardRewardSemanticRoleV1::BlockRetention => Some("block_retention"),
         CardRewardSemanticRoleV1::BlockMultiplier => Some("block_multiplier"),
         CardRewardSemanticRoleV1::CardDraw => Some("card_draw"),
+        CardRewardSemanticRoleV1::CycleAccess => Some("cycle_access"),
         CardRewardSemanticRoleV1::EnergySource => Some("energy_source"),
         CardRewardSemanticRoleV1::Vulnerable => Some("vulnerable"),
         CardRewardSemanticRoleV1::Weak => Some("weak"),
@@ -1477,6 +1479,7 @@ fn target_loss_role_is_core(role: CardRewardSemanticRoleV1) -> bool {
         CardRewardSemanticRoleV1::BlockRetention
             | CardRewardSemanticRoleV1::BlockMultiplier
             | CardRewardSemanticRoleV1::CardDraw
+            | CardRewardSemanticRoleV1::CycleAccess
             | CardRewardSemanticRoleV1::EnergySource
             | CardRewardSemanticRoleV1::Vulnerable
             | CardRewardSemanticRoleV1::Weak

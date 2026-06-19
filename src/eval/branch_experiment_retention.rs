@@ -1414,7 +1414,9 @@ pub(super) fn profile_has_any_effective_slot_role(
 fn role_requires_package_claim_for_slot(role: CardRewardSemanticRoleV1) -> bool {
     matches!(
         role,
-        CardRewardSemanticRoleV1::BlockPayoff
+        CardRewardSemanticRoleV1::BlockRetention
+            | CardRewardSemanticRoleV1::BlockMultiplier
+            | CardRewardSemanticRoleV1::BlockPayoff
             | CardRewardSemanticRoleV1::StrengthPayoff
             | CardRewardSemanticRoleV1::StrikePayoff
             | CardRewardSemanticRoleV1::UpgradePayoff
@@ -1522,6 +1524,7 @@ const SCALING_ROLES: &[CardRewardSemanticRoleV1] = &[
 const NON_TRANSITION_ROLES: &[CardRewardSemanticRoleV1] = &[
     CardRewardSemanticRoleV1::Block,
     CardRewardSemanticRoleV1::CardDraw,
+    CardRewardSemanticRoleV1::CycleAccess,
     CardRewardSemanticRoleV1::EnergySource,
     CardRewardSemanticRoleV1::Vulnerable,
     CardRewardSemanticRoleV1::Weak,

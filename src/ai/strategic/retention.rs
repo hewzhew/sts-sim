@@ -33,6 +33,8 @@ pub struct BranchSignatureCompact {
     pub setup_debt_milli: i32,
     pub economy_conversion_milli: i32,
     pub package_coherence_milli: i32,
+    #[serde(default)]
+    pub bucket_mask: u8,
 }
 
 impl BranchSignatureCompact {
@@ -58,6 +60,7 @@ pub fn compact_branch_signature_data(signature: &BranchSignature) -> BranchSigna
         setup_debt_milli: signal_milli(signature.setup_debt),
         economy_conversion_milli: signal_milli(signature.economy_conversion),
         package_coherence_milli: signal_milli(signature.package_coherence),
+        bucket_mask: retention_bucket_mask(&signature.buckets),
     }
 }
 
@@ -65,6 +68,7 @@ pub fn format_compact_branch_signature(signature: &BranchSignatureCompact) -> St
     if signature.is_empty() {
         return String::new();
     }
+    let bucket_suffix = render_bucket_suffix(signature.bucket_mask);
     format!(
         "boss:{} clean:{} eng:{} debt:{}/{} pkg:{}",
         render_signal_1dp(signature.boss_readiness_milli),
@@ -73,7 +77,46 @@ pub fn format_compact_branch_signature(signature: &BranchSignatureCompact) -> St
         render_signal_1dp(signature.cycle_debt_milli),
         render_signal_1dp(signature.setup_debt_milli),
         render_signal_1dp(signature.package_coherence_milli),
-    )
+    ) + &bucket_suffix
+}
+
+fn retention_bucket_mask(buckets: &[RetentionBucket]) -> u8 {
+    buckets.iter().fold(0u8, |mask, bucket| {
+        mask | match bucket {
+            RetentionBucket::BestImmediateSurvival => 1 << 0,
+            RetentionBucket::BestBossPrepared => 1 << 1,
+            RetentionBucket::BestCleanDeck => 1 << 2,
+            RetentionBucket::BestCoreEngine => 1 << 3,
+            RetentionBucket::BestResourceConverted => 1 << 4,
+            RetentionBucket::BestHighVariance => 1 << 5,
+        }
+    })
+}
+
+fn render_bucket_suffix(mask: u8) -> String {
+    if mask == 0 {
+        return String::new();
+    }
+    let mut labels = Vec::new();
+    if mask & (1 << 0) != 0 {
+        labels.push("survival");
+    }
+    if mask & (1 << 1) != 0 {
+        labels.push("boss");
+    }
+    if mask & (1 << 2) != 0 {
+        labels.push("clean");
+    }
+    if mask & (1 << 3) != 0 {
+        labels.push("engine");
+    }
+    if mask & (1 << 4) != 0 {
+        labels.push("resource");
+    }
+    if mask & (1 << 5) != 0 {
+        labels.push("variance");
+    }
+    format!(" keep=[{}]", labels.join(","))
 }
 
 fn signal_milli(value: f32) -> i32 {

@@ -29,6 +29,9 @@ pub fn card_reward_semantic_profile_v1(card: &RewardCard) -> CardRewardSemanticP
     if facts.draw_cards > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::CardDraw);
     }
+    if mechanics.reshuffle_discard_into_draw {
+        push_role(&mut roles, CardRewardSemanticRoleV1::CycleAccess);
+    }
     if facts.energy_gain > 0 {
         push_role(&mut roles, CardRewardSemanticRoleV1::EnergySource);
     }

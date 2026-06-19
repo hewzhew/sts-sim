@@ -17,6 +17,7 @@ pub fn build_card_reward_decision_context_v1(
     let deck = deck_profile(run_state);
     let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
     let deck_shape = crate::ai::deck_shape_v1::deck_shape_profile_v1(run_state);
+    let block_plan = crate::ai::block_plan_profile_v1::block_plan_profile_v1(run_state);
     let run_debt = crate::ai::strategic::run_debt_ledger_v1(run_state);
     let route = route_evidence(route_trace);
     let strategy =
@@ -57,6 +58,7 @@ pub fn build_card_reward_decision_context_v1(
         deck,
         startup,
         deck_shape,
+        block_plan,
         run_debt,
         route,
         strategy,

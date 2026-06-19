@@ -1,3 +1,4 @@
+use crate::ai::block_plan_profile_v1::{block_plan_profile_v1, BlockPlanProfileV1};
 use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::monsters::factory::EncounterId;
@@ -196,13 +197,12 @@ impl BossMechanicBiasV1 {
 
 #[derive(Clone, Debug)]
 struct BossMechanicDeckFactsV1 {
+    block_plan: BlockPlanProfileV1,
     power_count: usize,
     minor_power_count: usize,
     aoe_count: usize,
     artifact_strip_count: usize,
     big_block_count: usize,
-    block_retention_count: usize,
-    block_multiplier_count: usize,
     key_card_count: usize,
     low_value_spam_count: usize,
     transition_burst_count: usize,
@@ -278,19 +278,19 @@ impl BossMechanicPressureProfileV1 {
 impl BossMechanicDeckFactsV1 {
     fn from_run_state(run_state: &RunState) -> Self {
         let strength_profile = crate::ai::strength_profile_v1::strength_profile_v1(run_state);
+        let block_plan = block_plan_profile_v1(run_state);
         let mut facts = Self {
+            big_block_count: block_plan.high_quality_block_chunks as usize,
+            execute_block_plan_count: usize::from(block_plan.has_execute_block_plan()),
+            dark_echo_block_plan_count: usize::from(block_plan.has_dark_echo_block_plan()),
+            key_card_count: block_plan.stasis_sensitive_key_cards as usize,
+            block_plan,
             power_count: 0,
             minor_power_count: 0,
             aoe_count: 0,
             artifact_strip_count: 0,
-            big_block_count: 0,
-            block_retention_count: 0,
-            block_multiplier_count: 0,
-            key_card_count: 0,
             low_value_spam_count: 0,
             transition_burst_count: 0,
-            execute_block_plan_count: 0,
-            dark_echo_block_plan_count: 0,
             feel_no_pain_count: 0,
             exhaust_access_count: 0,
             second_wind_count: 0,
@@ -318,30 +318,11 @@ impl BossMechanicDeckFactsV1 {
             if is_artifact_strip(card.id) {
                 facts.artifact_strip_count = facts.artifact_strip_count.saturating_add(1);
             }
-            if is_big_block(card.id) {
-                facts.big_block_count = facts.big_block_count.saturating_add(1);
-            }
-            if card.id == CardId::Barricade {
-                facts.block_retention_count = facts.block_retention_count.saturating_add(1);
-            }
-            if card.id == CardId::Entrench {
-                facts.block_multiplier_count = facts.block_multiplier_count.saturating_add(1);
-            }
-            if is_key_card_for_stasis(card.id) {
-                facts.key_card_count = facts.key_card_count.saturating_add(1);
-            }
             if is_low_value_spam(card.id) {
                 facts.low_value_spam_count = facts.low_value_spam_count.saturating_add(1);
             }
             if is_transition_burst(card.id, &strength_profile) {
                 facts.transition_burst_count = facts.transition_burst_count.saturating_add(1);
-            }
-            if is_direct_execute_block_plan(card.id) {
-                facts.execute_block_plan_count = facts.execute_block_plan_count.saturating_add(1);
-            }
-            if is_direct_dark_echo_block_plan(card.id) {
-                facts.dark_echo_block_plan_count =
-                    facts.dark_echo_block_plan_count.saturating_add(1);
             }
             if card.id == CardId::FeelNoPain {
                 facts.feel_no_pain_count = facts.feel_no_pain_count.saturating_add(1);
@@ -352,23 +333,6 @@ impl BossMechanicDeckFactsV1 {
             if is_exhaust_access(card.id) {
                 facts.exhaust_access_count = facts.exhaust_access_count.saturating_add(1);
             }
-        }
-        if facts.feel_no_pain_count > 0 && facts.exhaust_access_count > 0 {
-            facts.execute_block_plan_count = facts.execute_block_plan_count.saturating_add(1);
-            facts.dark_echo_block_plan_count = facts.dark_echo_block_plan_count.saturating_add(1);
-        }
-        if facts.second_wind_count > 0 && facts.non_attack_count >= 4 {
-            facts.execute_block_plan_count = facts.execute_block_plan_count.saturating_add(1);
-            facts.dark_echo_block_plan_count = facts.dark_echo_block_plan_count.saturating_add(1);
-        }
-        if facts.block_retention_count > 0
-            && (facts.block_multiplier_count > 0
-                || facts.big_block_count > 0
-                || (facts.feel_no_pain_count > 0 && facts.exhaust_access_count > 0)
-                || (facts.second_wind_count > 0 && facts.non_attack_count >= 4))
-        {
-            facts.execute_block_plan_count = facts.execute_block_plan_count.saturating_add(1);
-            facts.dark_echo_block_plan_count = facts.dark_echo_block_plan_count.saturating_add(1);
         }
         facts
     }
@@ -485,7 +449,7 @@ fn automaton_pressure(
     profile.push_missing_answer(BossMechanicMissingAnswerV1::StasisRecoveryPlan);
     profile.push_bias(BossMechanicBiasV1::RecoverStolenKeyCards);
 
-    if facts.big_block_count == 0 {
+    if !facts.block_plan.has_hyperbeam_block_plan() {
         profile.push_missing_answer(BossMechanicMissingAnswerV1::Block50OrKillBeforeBeam);
         profile.push_red_flag(BossMechanicRedFlagV1::NoHyperbeamBlockPlan);
         profile.push_bias(BossMechanicBiasV1::DefensivePotionPriority);
@@ -525,27 +489,6 @@ fn is_artifact_strip(card: CardId) -> bool {
     )
 }
 
-fn is_big_block(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier
-    )
-}
-
-fn is_direct_execute_block_plan(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier
-    )
-}
-
-fn is_direct_dark_echo_block_plan(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier
-    )
-}
-
 fn is_exhaust_access(card: CardId) -> bool {
     matches!(
         card,
@@ -555,19 +498,6 @@ fn is_exhaust_access(card: CardId) -> bool {
             | CardId::SecondWind
             | CardId::SeverSoul
             | CardId::TrueGrit
-    )
-}
-
-fn is_key_card_for_stasis(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::DemonForm
-            | CardId::Corruption
-            | CardId::Impervious
-            | CardId::Offering
-            | CardId::Shockwave
-            | CardId::LimitBreak
-            | CardId::Barricade
     )
 }
 

@@ -235,6 +235,7 @@ fn choice_profiles_support_committed_package(
 
 const DRAW_ENERGY_ROLES: &[CardRewardSemanticRoleV1] = &[
     CardRewardSemanticRoleV1::CardDraw,
+    CardRewardSemanticRoleV1::CycleAccess,
     CardRewardSemanticRoleV1::EnergySource,
 ];
 

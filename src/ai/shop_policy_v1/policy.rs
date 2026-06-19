@@ -24,6 +24,7 @@ pub fn build_shop_decision_context_v1(
 ) -> ShopDecisionContextV1 {
     let strategy = build_run_strategy_snapshot_from_run_state_v2(run_state);
     let strength = crate::ai::strength_profile_v1::strength_profile_v1(run_state);
+    let block_plan = crate::ai::block_plan_profile_v1::block_plan_profile_v1(run_state);
     let startup = crate::ai::deck_startup_profile_v1::deck_startup_profile_v1(run_state);
     let run_debt = crate::ai::strategic::run_debt_ledger_v1(run_state);
     let upgrade_need = shop_upgrade_need_profile_from_run_state_v1(run_state);
@@ -129,6 +130,7 @@ pub fn build_shop_decision_context_v1(
     ShopDecisionContextV1 {
         strategy,
         strength,
+        block_plan,
         startup,
         run_debt,
         upgrade_need,

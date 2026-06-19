@@ -49,6 +49,8 @@ pub struct CardRewardDecisionContextV1 {
     #[serde(default)]
     pub deck_shape: crate::ai::deck_shape_v1::DeckShapeProfileV1,
     #[serde(default)]
+    pub block_plan: crate::ai::block_plan_profile_v1::BlockPlanProfileV1,
+    #[serde(default)]
     pub run_debt: crate::ai::strategic::RunDebtLedgerV1,
     pub route: Option<CardRewardRouteEvidenceV1>,
     pub strategy: CardRewardStrategySnapshotV2,
@@ -196,6 +198,7 @@ pub enum CardRewardSemanticRoleV1 {
     BlockRetention,
     BlockMultiplier,
     CardDraw,
+    CycleAccess,
     EnergySource,
     Vulnerable,
     Weak,

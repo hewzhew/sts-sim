@@ -1114,7 +1114,8 @@ fn campaign_report_branch_preserves_strategic_summary() {
         BranchCampaignReportDetailV1::Perf,
     );
 
-    assert!(rendered.contains("strat=[boss:0.6 clean:0.8 eng:1.0 debt:0.2/0.4 pkg:0.7]"));
+    assert!(rendered.contains("strat=[boss:0.6 clean:0.8 eng:1.0 debt:0.2/0.4 pkg:0.7"));
+    assert!(rendered.contains("keep=[engine]"));
 }
 
 #[test]
@@ -1408,6 +1409,7 @@ fn compact_campaign_report_flags_frozen_engine_above_active() {
                     setup_debt_milli: 0,
                     economy_conversion_milli: 0,
                     package_coherence_milli: 100,
+                    bucket_mask: 0,
                 },
             },
             BranchCampaignStrategicSignalGroupV1 {
@@ -1422,6 +1424,7 @@ fn compact_campaign_report_flags_frozen_engine_above_active() {
                     setup_debt_milli: 0,
                     economy_conversion_milli: 0,
                     package_coherence_milli: 300,
+                    bucket_mask: 0,
                 },
             },
         ],
@@ -1605,6 +1608,7 @@ fn campaign_frozen_overflow_does_not_replace_branch_by_strategic_summary_tie_bre
         setup_debt_milli: 100,
         economy_conversion_milli: 0,
         package_coherence_milli: 800,
+        bucket_mask: 0,
     };
     let mut discarded_count = 0usize;
     let mut discarded_examples = Vec::new();
@@ -1777,6 +1781,7 @@ fn campaign_selection_does_not_use_strategic_summary_as_ordinary_tie_break() {
         setup_debt_milli: 100,
         economy_conversion_milli: 0,
         package_coherence_milli: 800,
+        bucket_mask: 0,
     };
 
     let selected = select_campaign_branches_v1(vec![weak, engine], 1, 4);
@@ -1804,6 +1809,7 @@ fn campaign_selection_does_not_use_strategy_summary_to_beat_raw_rank_gap_before_
         setup_debt_milli: 0,
         economy_conversion_milli: 0,
         package_coherence_milli: 500,
+        bucket_mask: 0,
     };
 
     let selected = select_campaign_branches_v1(vec![plain, package], 1, 4);
@@ -1847,6 +1853,7 @@ fn campaign_selection_prioritizes_boss_readiness_at_final_boss_checkpoint() {
         setup_debt_milli: 0,
         economy_conversion_milli: 0,
         package_coherence_milli: 300,
+        bucket_mask: 0,
     };
 
     let mut boss_ready = test_campaign_branch("boss-ready", 46, 70);
@@ -1862,6 +1869,7 @@ fn campaign_selection_prioritizes_boss_readiness_at_final_boss_checkpoint() {
         setup_debt_milli: 200,
         economy_conversion_milli: 0,
         package_coherence_milli: 300,
+        bucket_mask: 0,
     };
 
     let selected = select_campaign_branches_v1(vec![short_term, boss_ready], 1, 4);
@@ -1884,6 +1892,7 @@ fn campaign_selection_prioritizes_act_clear_frontier_over_pre_boss_checkpoint() 
         setup_debt_milli: 0,
         economy_conversion_milli: 0,
         package_coherence_milli: 0,
+        bucket_mask: 0,
     };
 
     let mut act_clear = test_campaign_branch("act-clear-boss-relic", 32, 22);
@@ -1899,6 +1908,7 @@ fn campaign_selection_prioritizes_act_clear_frontier_over_pre_boss_checkpoint() 
         setup_debt_milli: 0,
         economy_conversion_milli: 0,
         package_coherence_milli: 0,
+        bucket_mask: 0,
     };
 
     let selected = select_campaign_branches_v1(vec![pre_boss, act_clear], 1, 4);
@@ -1964,6 +1974,7 @@ fn campaign_selection_does_not_treat_low_hp_zero_readiness_boss_checkpoint_as_ab
         setup_debt_milli: 0,
         economy_conversion_milli: 0,
         package_coherence_milli: 300,
+        bucket_mask: 0,
     };
 
     let mut healthy_pre_boss = test_campaign_branch("healthy-pre-boss", 45, 45);
@@ -1980,6 +1991,7 @@ fn campaign_selection_does_not_treat_low_hp_zero_readiness_boss_checkpoint_as_ab
         setup_debt_milli: 0,
         economy_conversion_milli: 0,
         package_coherence_milli: 300,
+        bucket_mask: 0,
     };
 
     let selected = select_campaign_branches_v1(vec![low_hp_boss_door, healthy_pre_boss], 1, 4);
@@ -2002,6 +2014,7 @@ fn campaign_selection_does_not_let_one_hp_at_boss_checkpoint_override_rank() {
         setup_debt_milli: 0,
         economy_conversion_milli: 0,
         package_coherence_milli: 0,
+        bucket_mask: 0,
     };
 
     let mut better_rank = test_campaign_branch("better-rank", 29, 57);
@@ -2030,6 +2043,7 @@ fn campaign_selection_keeps_act2_boss_readiness_diagnostic_but_prioritizes_progr
         setup_debt_milli: 0,
         economy_conversion_milli: 0,
         package_coherence_milli: 0,
+        bucket_mask: 0,
     };
 
     let mut stronger_general_branch = test_campaign_branch("stronger-general-branch", 24, 15);
@@ -2479,6 +2493,7 @@ fn campaign_rebalance_promotes_next_act_progress_over_stale_act_clear_transition
                 setup_debt_milli: 0,
                 economy_conversion_milli: 0,
                 package_coherence_milli: 0,
+                bucket_mask: 0,
             };
             branch
         },

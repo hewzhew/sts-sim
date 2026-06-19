@@ -366,9 +366,16 @@ fn add_default_shop_card_semantic_deltas(
     if profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
         || profile
             .roles
+            .contains(&CardRewardSemanticRoleV1::CycleAccess)
+        || profile
+            .roles
             .contains(&CardRewardSemanticRoleV1::EnergySource)
     {
-        if startup_energy_candidate_discounted_by_snecko_v1(&context.startup, card) {
+        if profile
+            .roles
+            .contains(&CardRewardSemanticRoleV1::EnergySource)
+            && startup_energy_candidate_discounted_by_snecko_v1(&context.startup, card)
+        {
             delta
                 .notes
                 .push("shop_card_draw_energy_discounted_by_snecko".to_string());
@@ -494,10 +501,7 @@ fn add_shop_card_acquisition_saturation_deltas(
             scaling_sources: deck.strength_sources as usize,
             status_generators: deck.status_generators as usize,
             status_payoffs: deck.status_payoffs as usize,
-            block_engine_pieces: deck
-                .block_retention_sources
-                .saturating_add(deck.block_payoffs)
-                .saturating_add(deck.block_multipliers) as usize,
+            block_engine_pieces: context.block_plan.engine_support_score(),
             same_card_count: candidate.same_card_count,
             starter_strikes: context.need.strike_count,
             strength_sources: deck.strength_sources as usize,

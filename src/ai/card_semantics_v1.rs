@@ -21,6 +21,7 @@ pub struct CardMechanicsProfileV1 {
     pub temporary_strength_burst: bool,
     pub applies_strength_down_debuff: bool,
     pub applies_no_draw_debuff: bool,
+    pub reshuffle_discard_into_draw: bool,
     pub strength_converter: Option<StrengthConversionMechanicV1>,
     pub strength_payoff: bool,
     pub self_damage_source: bool,
@@ -51,6 +52,7 @@ pub fn card_mechanics_profile_v1(card: CardId) -> CardMechanicsProfileV1 {
         temporary_strength_burst: matches!(card, CardId::Flex),
         applies_strength_down_debuff: matches!(card, CardId::Flex),
         applies_no_draw_debuff: matches!(card, CardId::BattleTrance | CardId::BulletTime),
+        reshuffle_discard_into_draw: matches!(card, CardId::DeepBreath),
         strength_converter: match card {
             CardId::LimitBreak => Some(StrengthConversionMechanicV1::AmplifyCurrentStrength),
             CardId::Panacea | CardId::CoreSurge => {
@@ -174,5 +176,12 @@ mod tests {
             card_mechanics_profile_v1(CardId::TwinStrike).combat_external_payoff,
             None
         );
+    }
+
+    #[test]
+    fn deep_breath_exposes_reshuffle_access() {
+        let mechanics = card_mechanics_profile_v1(CardId::DeepBreath);
+
+        assert!(mechanics.reshuffle_discard_into_draw);
     }
 }

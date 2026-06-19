@@ -209,6 +209,9 @@ fn startup_access_card(
     profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
         || profile
             .roles
+            .contains(&CardRewardSemanticRoleV1::CycleAccess)
+        || profile
+            .roles
             .contains(&CardRewardSemanticRoleV1::EnergySource)
         || matches!(
             card,

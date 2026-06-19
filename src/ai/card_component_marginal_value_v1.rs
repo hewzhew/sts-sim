@@ -447,7 +447,9 @@ fn component_roles(profile: &CardRewardSemanticProfileV1) -> Vec<CardComponentRo
     if profile.roles.iter().any(|role| {
         matches!(
             role,
-            CardRewardSemanticRoleV1::CardDraw | CardRewardSemanticRoleV1::EnergySource
+            CardRewardSemanticRoleV1::CardDraw
+                | CardRewardSemanticRoleV1::CycleAccess
+                | CardRewardSemanticRoleV1::EnergySource
         )
     }) {
         push_role(&mut roles, CardComponentRoleV1::Lubricant);
@@ -522,6 +524,9 @@ fn effective_draw_energy_access_component(
         return false;
     }
     profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
+        || profile
+            .roles
+            .contains(&CardRewardSemanticRoleV1::CycleAccess)
         || profile
             .roles
             .contains(&CardRewardSemanticRoleV1::EnergySource)

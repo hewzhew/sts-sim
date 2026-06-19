@@ -473,6 +473,7 @@ fn add_candidate_boss_pressure_deltas(
                 CardRewardSemanticRoleV1::FrontloadDamage,
                 CardRewardSemanticRoleV1::AoeDamage,
                 CardRewardSemanticRoleV1::CardDraw,
+                CardRewardSemanticRoleV1::CycleAccess,
                 CardRewardSemanticRoleV1::EnergySource,
             ],
         ) {
@@ -530,14 +531,7 @@ fn add_candidate_acquisition_saturation_deltas(
             scaling_sources: context.deck.strength_sources as usize,
             status_generators: context.deck.status_generators as usize,
             status_payoffs: context.deck.status_payoffs as usize,
-            block_engine_pieces: context
-                .strategy
-                .v1
-                .deck
-                .block_retention_sources
-                .saturating_add(context.strategy.v1.deck.block_payoffs)
-                .saturating_add(context.strategy.v1.deck.block_multipliers)
-                as usize,
+            block_engine_pieces: context.block_plan.engine_support_score(),
             same_card_count: candidate.same_card_count,
             starter_strikes: context.deck.starter_strikes as usize,
             strength_sources: context.deck.strength_sources as usize,

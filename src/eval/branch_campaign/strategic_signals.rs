@@ -179,6 +179,7 @@ fn average_campaign_strategic_signature_v1(
             setup_debt_milli: average_campaign_signal_milli_v1(setup_debt, count),
             economy_conversion_milli: average_campaign_signal_milli_v1(economy, count),
             package_coherence_milli: average_campaign_signal_milli_v1(package, count),
+            bucket_mask: 0,
         },
     ))
 }

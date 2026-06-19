@@ -1,14 +1,14 @@
 <#
 .SYNOPSIS
-Runs the focused branch campaign with baby-friendly defaults.
+Runs the explore branch campaign with baby-friendly defaults.
 
 .EXAMPLE
 .\tools\campaign.ps1
-Runs a focused campaign on a random seed.
+Runs an explore campaign on a random seed.
 
 .EXAMPLE
 .\tools\campaign.ps1 521
-Runs the same focused campaign on seed 521.
+Runs the same explore campaign on seed 521.
 
 .EXAMPLE
 .\tools\campaign.ps1 -Last
@@ -178,7 +178,7 @@ param(
     [string] $BuildProfile = "fast-run",
 
     [ValidateSet("quick", "focused", "explore", "deep")]
-    [string] $Mode = "focused",
+    [string] $Mode = "explore",
 
     [ValidateRange(0, 100000)]
     [int] $Rounds = 0,
