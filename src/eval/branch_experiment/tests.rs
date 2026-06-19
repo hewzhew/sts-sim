@@ -944,6 +944,33 @@ fn branch_experiment_applies_typed_event_deck_mutation_choices() {
 }
 
 #[test]
+fn branch_experiment_records_event_deck_mutation_action_results() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.master_deck.truncate(2);
+    session.run_state.event_state = Some(EventState::new(EventId::Transmorgrifier));
+    session.engine_state = EngineState::EventRoom;
+
+    let report = run_branch_experiment_from_session(
+        session,
+        &BranchExperimentConfigV1 {
+            max_depth: 2,
+            max_branches: 8,
+            auto_max_operations: 0,
+            ..BranchExperimentConfigV1::default()
+        },
+    );
+
+    assert!(report.branches.iter().any(|branch| {
+        branch.choices.len() == 1
+            && branch.choices[0].kind == "event"
+            && branch.choices[0].command.starts_with("event-select 0 ")
+            && branch.choices[0].effect_kind == "transform_card"
+            && branch.choices[0].effect_label.contains("result:")
+            && branch.choices[0].effect_label.contains(" -> ")
+    }));
+}
+
+#[test]
 fn branch_experiment_skips_disabled_event_options_but_keeps_enabled_options() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.gold = 36;

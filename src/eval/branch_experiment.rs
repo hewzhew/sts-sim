@@ -34,7 +34,8 @@ use crate::eval::run_control::RunControlCommand;
 use crate::eval::run_control::{
     build_decision_surface, canonical_player_class, combat_automation_trajectories_v1,
     load_session_trace_v1, parse_run_control_command, replay_session_trace,
-    RunControlAutoStepOptions, RunControlConfig, RunControlRouteAutomationMode,
+    RunActionCardSnapshotV1, RunActionResultChangeV1, RunControlAutoStepOptions,
+    RunControlCommandOutcome, RunControlConfig, RunControlRouteAutomationMode,
     RunControlSearchCombatOptions, RunControlSession, RunControlTraceAnnotationV1,
     SessionTraceReplayOptions, SessionTraceReplayStop,
 };
@@ -915,10 +916,13 @@ fn expand_branch_choice(
         label: draft.label,
         command: draft.command.clone(),
     });
-    match apply_branch_action(&mut child.session, &draft.action).and_then(|_| {
+    match apply_branch_action(&mut child.session, &draft.action).and_then(|changes| {
+        if let Some(choice) = child.choices.last_mut() {
+            append_branch_action_result_to_choice(choice, &changes);
+        }
         if maybe_auto_leave_after_purchase && shop_should_auto_leave_after_purchase(&child.session)
         {
-            apply_branch_choice(&mut child.session, "leave")?;
+            let _ = apply_branch_choice(&mut child.session, "leave")?;
             if let Some(choice) = child.choices.last_mut() {
                 choice.effect_label = format!("{} | auto leave shop", choice.effect_label);
             }
@@ -1356,30 +1360,109 @@ fn retention_report_slot(slot: Option<BranchRetentionSlotV1>) -> BranchRetention
     slot.unwrap_or(BranchRetentionSlotV1::Diversity)
 }
 
-fn apply_branch_choice(session: &mut RunControlSession, command: &str) -> Result<(), String> {
+fn apply_branch_choice(
+    session: &mut RunControlSession,
+    command: &str,
+) -> Result<Vec<RunActionResultChangeV1>, String> {
+    let mut changes = Vec::new();
     for command in command
         .split(BRANCH_EXPERIMENT_COMMAND_SEQUENCE_SEPARATOR)
         .map(str::trim)
         .filter(|part| !part.is_empty())
     {
         let command = parse_run_control_command(command)?;
-        session.apply_command(command)?;
+        let outcome = session.apply_command(command)?;
+        changes.extend(branch_action_changes(&outcome));
     }
-    Ok(())
+    Ok(changes)
 }
 
 fn apply_branch_action(
     session: &mut RunControlSession,
     action: &BranchBoundaryActionV1,
-) -> Result<(), String> {
+) -> Result<Vec<RunActionResultChangeV1>, String> {
     match action {
         BranchBoundaryActionV1::Command(command) => apply_branch_choice(session, command),
         BranchBoundaryActionV1::Inputs(inputs) => {
-            session.apply_command(crate::eval::run_control::RunControlCommand::InputSequence(
-                inputs.clone(),
-            ))?;
-            Ok(())
+            let outcome = session.apply_command(
+                crate::eval::run_control::RunControlCommand::InputSequence(inputs.clone()),
+            )?;
+            Ok(branch_action_changes(&outcome))
         }
+    }
+}
+
+fn branch_action_changes(outcome: &RunControlCommandOutcome) -> Vec<RunActionResultChangeV1> {
+    outcome
+        .action_result
+        .as_ref()
+        .map(|result| result.changes.clone())
+        .unwrap_or_default()
+}
+
+fn append_branch_action_result_to_choice(
+    choice: &mut BranchExperimentChoiceV1,
+    changes: &[RunActionResultChangeV1],
+) {
+    if choice.kind != "event" {
+        return;
+    }
+    if !matches!(
+        choice.effect_kind.as_str(),
+        "remove_card" | "transform_card" | "upgrade_card"
+    ) {
+        return;
+    }
+    if choice.effect_label.contains("result:") {
+        return;
+    }
+    let Some(summary) = branch_action_card_mutation_result_label(changes) else {
+        return;
+    };
+    if choice.effect_label.is_empty() {
+        choice.effect_label = format!("result: {summary}");
+    } else {
+        choice.effect_label = format!("{} | result: {summary}", choice.effect_label);
+    }
+}
+
+fn branch_action_card_mutation_result_label(changes: &[RunActionResultChangeV1]) -> Option<String> {
+    let mut parts = Vec::new();
+    for change in changes {
+        match change {
+            RunActionResultChangeV1::CardRemoved { card } => {
+                parts.push(format!("removed {}", branch_action_card_label(card)));
+            }
+            RunActionResultChangeV1::CardTransformed { before, after } => {
+                parts.push(format!(
+                    "{} -> {}",
+                    branch_action_card_label(before),
+                    branch_action_card_label(after)
+                ));
+            }
+            RunActionResultChangeV1::CardUpgraded { before, after } => {
+                parts.push(format!(
+                    "upgraded {} -> {}",
+                    branch_action_card_label(before),
+                    branch_action_card_label(after)
+                ));
+            }
+            _ => {}
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(", "))
+    }
+}
+
+fn branch_action_card_label(card: &RunActionCardSnapshotV1) -> String {
+    let name = get_card_definition(card.id).name;
+    if card.upgrades == 0 {
+        name.to_string()
+    } else {
+        format!("{name}+{}", card.upgrades)
     }
 }
 
