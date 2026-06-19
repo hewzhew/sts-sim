@@ -12,7 +12,9 @@ use sts_simulator::eval::combat_search_v2::{
     compare_combat_search_v2_turn_plan_policies, load_combat_search_v2_benchmark,
     load_combat_search_v2_snapshot, load_combat_search_v2_start,
     run_combat_search_guidance_lab_benchmark_v1, run_combat_search_guidance_lab_v1,
-    run_combat_search_v2_benchmark, run_combat_search_v2_loaded_start, CombatSearchV2RunOptions,
+    run_combat_search_v2_benchmark, run_combat_search_v2_loaded_start,
+    run_combat_turn_plan_guidance_lab_benchmark_v1, run_combat_turn_plan_guidance_lab_v1,
+    CombatSearchV2RunOptions,
 };
 use sts_simulator::eval::fingerprint::StateFingerprintV1;
 
@@ -97,6 +99,9 @@ struct Args {
     guidance_lab: bool,
 
     #[arg(long)]
+    turn_plan_guidance_lab: bool,
+
+    #[arg(long)]
     guidance_lab_max_cases: Option<usize>,
 
     #[arg(long)]
@@ -117,26 +122,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.gate_only && args.validate_only {
         return Err("--gate-only cannot be used with --validate-only".into());
     }
-    if args.guidance_lab && args.validate_only {
-        return Err("--guidance-lab cannot be used with --validate-only".into());
+    if args.guidance_lab && args.turn_plan_guidance_lab {
+        return Err("--guidance-lab cannot be combined with --turn-plan-guidance-lab".into());
     }
-    if args.guidance_lab && args.gate_only {
-        return Err("--guidance-lab cannot be used with --gate-only".into());
+    if (args.guidance_lab || args.turn_plan_guidance_lab) && args.validate_only {
+        return Err("--guidance-lab modes cannot be used with --validate-only".into());
+    }
+    if (args.guidance_lab || args.turn_plan_guidance_lab) && args.gate_only {
+        return Err("--guidance-lab modes cannot be used with --gate-only".into());
     }
     if !args.guidance_lab
+        && !args.turn_plan_guidance_lab
         && (args.guidance_lab_max_cases.is_some()
             || args.probe_max_nodes.is_some()
             || args.probe_wall_ms.is_some())
     {
-        return Err("--guidance-lab-max-cases and --probe-* require --guidance-lab".into());
+        return Err("--guidance-lab-max-cases and --probe-* require a guidance lab mode".into());
     }
-    if args.guidance_lab
+    if (args.guidance_lab || args.turn_plan_guidance_lab)
         && (args.compare_rollout.is_some()
             || args.compare_turn_plan.is_some()
             || args.compare_frontier.is_some()
             || args.explain_case.is_some())
     {
-        return Err("--guidance-lab cannot be combined with compare/explain modes".into());
+        return Err("--guidance-lab modes cannot be combined with compare/explain modes".into());
     }
     if args.compare_rollout.is_some() && args.benchmark_spec.is_none() {
         return Err("--compare-rollout requires --benchmark-spec".into());
@@ -225,7 +234,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let payload = if let Some(path) = args.benchmark_spec.as_ref() {
         let loaded = load_combat_search_v2_benchmark(path)?;
-        if args.guidance_lab {
+        if args.guidance_lab || args.turn_plan_guidance_lab {
             let mut child_options = options.clone();
             if args.probe_max_nodes.is_some() {
                 child_options.max_nodes = args.probe_max_nodes;
@@ -233,13 +242,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if args.probe_wall_ms.is_some() {
                 child_options.wall_ms = args.probe_wall_ms;
             }
-            let report = run_combat_search_guidance_lab_benchmark_v1(
-                &loaded,
-                options,
-                child_options,
-                args.guidance_lab_max_cases,
-            );
-            serde_json::to_string_pretty(&report)?
+            if args.turn_plan_guidance_lab {
+                let report = run_combat_turn_plan_guidance_lab_benchmark_v1(
+                    &loaded,
+                    options,
+                    child_options,
+                    args.guidance_lab_max_cases,
+                );
+                serde_json::to_string_pretty(&report)?
+            } else {
+                let report = run_combat_search_guidance_lab_benchmark_v1(
+                    &loaded,
+                    options,
+                    child_options,
+                    args.guidance_lab_max_cases,
+                );
+                serde_json::to_string_pretty(&report)?
+            }
         } else if let Some(compare) = args.compare_rollout.as_deref() {
             let (left, right) = parse_rollout_policy_pair(compare)?;
             let run = compare_combat_search_v2_rollout_policies(&loaded, options, left, right);
@@ -304,7 +323,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .expect("clap requires exactly one input");
             load_combat_search_v2_start(path)?
         };
-        if args.guidance_lab {
+        if args.guidance_lab || args.turn_plan_guidance_lab {
             let mut child_options = options.clone();
             if args.probe_max_nodes.is_some() {
                 child_options.max_nodes = args.probe_max_nodes;
@@ -312,8 +331,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if args.probe_wall_ms.is_some() {
                 child_options.wall_ms = args.probe_wall_ms;
             }
-            let report = run_combat_search_guidance_lab_v1(&loaded, options, child_options);
-            serde_json::to_string_pretty(&report)?
+            if args.turn_plan_guidance_lab {
+                let report = run_combat_turn_plan_guidance_lab_v1(&loaded, options, child_options);
+                serde_json::to_string_pretty(&report)?
+            } else {
+                let report = run_combat_search_guidance_lab_v1(&loaded, options, child_options);
+                serde_json::to_string_pretty(&report)?
+            }
         } else {
             let run = run_combat_search_v2_loaded_start(&loaded, options);
             serde_json::to_string_pretty(&run.search_report)?

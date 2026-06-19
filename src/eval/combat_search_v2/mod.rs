@@ -4,6 +4,7 @@ mod guidance_lab;
 mod policy_compare;
 mod rollout_compare_attribution;
 mod start;
+mod turn_plan_guidance_lab;
 
 pub use benchmark::{
     load_combat_search_v2_benchmark, run_combat_search_v2_benchmark,
@@ -44,4 +45,10 @@ pub use rollout_compare_attribution::{
 pub use start::{
     load_combat_search_v2_snapshot, load_combat_search_v2_start, run_combat_search_v2_loaded_start,
     CombatSearchV2LoadedStart, CombatSearchV2RunOptions, CombatSearchV2SingleRun,
+};
+pub use turn_plan_guidance_lab::{
+    run_combat_turn_plan_guidance_lab_benchmark_v1, run_combat_turn_plan_guidance_lab_v1,
+    CombatTurnPlanGuidanceLabBenchmarkCaseV1, CombatTurnPlanGuidanceLabBenchmarkSummaryV1,
+    CombatTurnPlanGuidanceLabBenchmarkV1Report, CombatTurnPlanGuidanceLabCandidateV1,
+    CombatTurnPlanGuidanceLabSummaryV1, CombatTurnPlanGuidanceLabV1Report,
 };

@@ -81,6 +81,7 @@ mod diagnostics_tags;
 mod rollout_probe;
 mod segment_plan;
 mod trajectory_report;
+mod turn_plan_probe;
 
 #[cfg(test)]
 mod semantic_regression;
@@ -159,6 +160,10 @@ pub(crate) use external_payoff::has_external_payoff_opportunity;
 pub use search::{run_combat_search_v2, run_combat_search_v2_with_stepper};
 pub use segment_plan::{plan_combat_turn_segment_v1, CombatSearchV2TurnSegmentReport};
 pub use trajectory_report::trajectory_from_state;
+pub(crate) use turn_plan_probe::{
+    enumerate_combat_search_v2_turn_plan_probe_candidates,
+    CombatSearchV2TurnPlanProbeCandidateReport, CombatSearchV2TurnPlanProbeRootReport,
+};
 pub use types::*;
 
 pub(crate) fn combat_search_action_ordering_role_label_for_state(
