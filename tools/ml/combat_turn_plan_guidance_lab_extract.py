@@ -167,7 +167,13 @@ def sample_from_candidate(
     }
 
 
-def summarize(paths: list[Path], out_jsonl: Path | None) -> None:
+def summarize(
+    paths: list[Path],
+    out_jsonl: Path | None,
+    *,
+    summary_only: bool,
+    case_limit: int,
+) -> None:
     labs: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for path in paths:
         labs.extend(iter_labs(path, load_json(path)))
@@ -221,13 +227,15 @@ def summarize(paths: list[Path], out_jsonl: Path | None) -> None:
     print(f"  stop_reasons={dict(stop_counts)}")
     if out_jsonl:
         print(f"  jsonl={out_jsonl}")
+    if summary_only:
+        return
     print("  cases:")
-    for case_id, current, best in case_rows[:20]:
+    for case_id, current, best in case_rows[:case_limit]:
         print(f"    case={case_id}")
         print(f"      current: {plan_short(current)}")
         print(f"      target:  {plan_short(best)}")
-    if len(case_rows) > 20:
-        print(f"    ... {len(case_rows) - 20} more case(s)")
+    if len(case_rows) > case_limit:
+        print(f"    ... {len(case_rows) - case_limit} more case(s)")
 
 
 def int_or_zero(value: Any) -> int:
@@ -238,8 +246,24 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("inputs", nargs="+", type=Path)
     parser.add_argument("--out-jsonl", type=Path)
+    parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="Print aggregate counts only; still writes --out-jsonl when requested.",
+    )
+    parser.add_argument(
+        "--case-limit",
+        type=int,
+        default=20,
+        help="Maximum per-case previews to print unless --summary-only is set.",
+    )
     args = parser.parse_args()
-    summarize(args.inputs, args.out_jsonl)
+    summarize(
+        args.inputs,
+        args.out_jsonl,
+        summary_only=args.summary_only,
+        case_limit=max(args.case_limit, 0),
+    )
 
 
 if __name__ == "__main__":
