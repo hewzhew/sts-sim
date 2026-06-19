@@ -71,6 +71,14 @@ Runs a report-only current-act boss preview for a selected checkpoint branch.
 Exports LearningBranchSampleV1 JSONL from the latest campaign report/checkpoint.
 
 .EXAMPLE
+.\tools\campaign.ps1 -PlanTargets
+Exports latest decision outcomes and prints targeted sibling continuation groups.
+
+.EXAMPLE
+.\tools\campaign.ps1 -ContinueTargets -Rounds 1
+Exports latest decision outcomes, resumes selected censored sibling branches, and advances one round.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Mode quick
 Runs a shorter random-seed campaign for fast smoke testing.
 
@@ -160,8 +168,11 @@ param(
     [switch] $BossSegments,
     [switch] $DebugBuild,
     [switch] $Build,
+    [switch] $PlanTargets,
+    [switch] $ContinueTargets,
 
     [string] $ExportLearningDataset = "",
+    [string] $DecisionOutcomeDataset = "",
 
     [ValidateSet("fast-run", "release-final", "release", "dev-opt", "debug")]
     [string] $BuildProfile = "fast-run",
@@ -198,6 +209,8 @@ param(
     [int] $ChallengeMaxPlans = 6,
     [int] $ChallengeDepth = 3,
     [int] $ChallengeMaxBranches = 10,
+    [int] $TargetedContinuationLimit = 4,
+    [int] $TargetedContinuationCandidatesPerTarget = 1,
     [ValidateRange(0, 100)]
     [int] $VictoryHpPercent = 20,
 
@@ -216,6 +229,7 @@ $LatestModePath = Join-Path $CampaignDir "latest.mode.txt"
 $LatestCommandPath = Join-Path $CampaignDir "latest.command.txt"
 $LatestCampaignPath = Join-Path $CampaignDir "latest.campaign.json"
 $LatestCheckpointPath = Join-Path $CampaignDir "latest.checkpoint.json"
+$LatestDecisionOutcomePath = Join-Path $CampaignDir "latest.decision_outcomes.jsonl"
 
 New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 
@@ -265,6 +279,18 @@ if (
 }
 if ($InspectShopChallenge -and -not $PSBoundParameters.ContainsKey("InspectBoundary")) {
     $InspectBoundary = "Shop"
+}
+
+if ($PlanTargets -or $ContinueTargets) {
+    $Last = $true
+    if (-not $PSBoundParameters.ContainsKey("Mode")) {
+        $SavedMode = Read-LatestCampaignMode
+        if ($SavedMode) {
+            $Mode = $SavedMode
+        } else {
+            $Mode = "focused"
+        }
+    }
 }
 
 if ($More) {
@@ -529,6 +555,193 @@ function Test-DriverNeedsBuild {
 }
 
 $NeedsBuild = $Build -or (Test-DriverNeedsBuild $DriverExe)
+
+if ($PlanTargets -or $ContinueTargets) {
+    if (-not (Test-Path $LatestCampaignPath)) {
+        throw "No previous campaign report found at $LatestCampaignPath. Run .\tools\campaign.ps1 first."
+    }
+    if (-not (Test-Path $LatestCheckpointPath)) {
+        throw "No previous campaign checkpoint found at $LatestCheckpointPath. Run .\tools\campaign.ps1 first."
+    }
+
+    $TargetDecisionOutcomePath = if ($DecisionOutcomeDataset) { $DecisionOutcomeDataset } else { $LatestDecisionOutcomePath }
+    $ExportDecisionArgs = @(
+        "--inspect-report", "$LatestCampaignPath",
+        "--inspect-checkpoint", "$LatestCheckpointPath",
+        "--export-decision-outcome-dataset", "$TargetDecisionOutcomePath"
+    )
+    $PlanTargetArgs = @("--plan-targeted-continuation", "$TargetDecisionOutcomePath")
+
+    $ResumeReport = Get-Content -LiteralPath $LatestCampaignPath -Raw | ConvertFrom-Json
+    $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
+    $ContinuationRounds = 1
+    $TargetRounds = $null
+    $ContinuationRoundSource = "default"
+    if ($RoundsBound) {
+        $ContinuationRounds = $Rounds
+        $ContinuationRoundSource = "Rounds"
+        $TargetRounds = $ResumeRoundsCompleted + $Rounds
+    } elseif ($UntilRoundBound) {
+        $TargetRounds = $UntilRound
+        $ContinuationRounds = [Math]::Max(0, $TargetRounds - $ResumeRoundsCompleted)
+        $ContinuationRoundSource = "UntilRound"
+    } elseif ($MaxRoundsBound) {
+        $ContinuationRounds = $MaxRounds
+        $ContinuationRoundSource = "MaxRounds"
+        $TargetRounds = $ResumeRoundsCompleted + $MaxRounds
+    }
+
+    $ContinueTargetArgs = @(
+        "--preset", "$Mode",
+        "--seed", "$Seed",
+        "--ascension", "$Ascension",
+        "--class", "$Class"
+    )
+    if (@(0, 10, 15, 17, 20) -contains $Ascension) {
+        $ContinueTargetArgs += @("--ascension-domain", "a$Ascension")
+    }
+    $ContinueTargetArgs += @(
+        "--resume", "$LatestCampaignPath",
+        "--resume-checkpoint", "$LatestCheckpointPath",
+        "--execute-targeted-continuation", "$TargetDecisionOutcomePath",
+        "--targeted-continuation-limit", "$TargetedContinuationLimit",
+        "--targeted-continuation-candidates-per-target", "$TargetedContinuationCandidatesPerTarget",
+        "--out", "$LatestCampaignPath",
+        "--checkpoint-out", "$LatestCheckpointPath",
+        "--max-rounds", "$ContinuationRounds"
+    )
+    if ($CampaignBoundParameters.ContainsKey("ExperimentWallMs")) {
+        $ContinueTargetArgs += @("--experiment-wall-ms", "$ExperimentWallMs")
+    }
+    if ($CampaignBoundParameters.ContainsKey("SearchWallMs")) {
+        $ContinueTargetArgs += @("--search-wall-ms", "$SearchWallMs")
+    }
+    if ($CampaignBoundParameters.ContainsKey("SearchMaxNodes")) {
+        $ContinueTargetArgs += @("--search-max-nodes", "$SearchMaxNodes")
+    }
+    if ($CampaignBoundParameters.ContainsKey("CombatRetryWallMs") -and $CombatRetryWallMs -gt 0) {
+        $ContinueTargetArgs += @("--combat-retry-wall-ms", "$CombatRetryWallMs")
+    }
+    if ($CampaignBoundParameters.ContainsKey("BranchExamples")) {
+        $ContinueTargetArgs += @("--branch-examples", "$BranchExamples")
+    }
+    if ($CampaignBoundParameters.ContainsKey("VictoryHpPercent")) {
+        $ContinueTargetArgs += @("--min-acceptable-victory-hp-percent", "$VictoryHpPercent")
+    }
+    if (-not (Test-ExtraCombatOptionKey -Tokens $ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
+        if ($BossSegments) {
+            $ContinueTargetArgs += @("--combat-search-option", "segment=turn")
+        } else {
+            $ContinueTargetArgs += @("--combat-search-option", "segment=non_boss_turn")
+        }
+    }
+    if (-not $NoProgress) {
+        $ContinueTargetArgs += "--progress"
+        if ($VerboseProgress) {
+            $ContinueTargetArgs += @("--progress-detail", "verbose")
+        }
+    }
+    if ($Perf) {
+        $ContinueTargetArgs += @("--report-detail", "perf")
+    } elseif ($Diagnose) {
+        $ContinueTargetArgs += @("--report-detail", "diagnose")
+    }
+    if ($ExtraArgs) {
+        $ContinueTargetArgs += $ExtraArgs
+    }
+
+    function Format-CommandLine {
+        param(
+            [string] $ExePath,
+            [string[]] $Arguments
+        )
+
+        $RenderedExe = if ($ExePath -match '^[A-Za-z0-9_./:=\\-]+$') { $ExePath } else { "'$($ExePath -replace "'", "''")'" }
+        $RenderedArgs = $Arguments | ForEach-Object {
+            if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
+        }
+        return $RenderedExe + " " + ($RenderedArgs -join " ")
+    }
+
+    Write-Host "mode=targeted-continuation latest branch campaign"
+    Write-Host "seed=$Seed"
+    Write-Host "ascension=A$Ascension domain=a$Ascension class=$Class"
+    Write-Host "build=$BuildProfile exe=$DriverExe"
+    if ($NeedsBuild) {
+        Write-Host "build-needed=yes"
+    } else {
+        Write-Host "build-needed=no"
+    }
+    Write-Host "report=$LatestCampaignPath"
+    Write-Host "checkpoint=$LatestCheckpointPath"
+    Write-Host "decision-outcomes=$TargetDecisionOutcomePath"
+    if ($ContinueTargets) {
+        Write-Host "continue-targets=$TargetedContinuationLimit candidates-per-target=$TargetedContinuationCandidatesPerTarget"
+        Write-Host "resume-rounds=$ResumeRoundsCompleted"
+        if ($TargetRounds -ne $null) {
+            Write-Host "round-budget=$ContinuationRoundSource target-rounds=$TargetRounds additional-rounds=$ContinuationRounds"
+        } else {
+            Write-Host "round-budget=$ContinuationRoundSource additional-rounds=$ContinuationRounds"
+        }
+    }
+
+    if ($DryRun) {
+        if ($NeedsBuild) {
+            $RenderedBuildArgs = $BuildArgs | ForEach-Object {
+                if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
+            }
+            Write-Host ("cargo " + ($RenderedBuildArgs -join " "))
+        }
+        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ExportDecisionArgs)
+        if ($PlanTargets) {
+            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $PlanTargetArgs)
+        }
+        if ($ContinueTargets) {
+            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
+        }
+        exit 0
+    }
+
+    if ($ContinueTargets -and $ContinuationRounds -eq 0) {
+        Write-Host "already-at-target-rounds=yes; nothing to run"
+        exit 0
+    }
+
+    Push-Location $RepoRoot
+    try {
+        if ($NeedsBuild) {
+            & cargo @BuildArgs
+            if ($LASTEXITCODE -ne 0) {
+                exit $LASTEXITCODE
+            }
+        }
+        & $DriverExe @ExportDecisionArgs
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+        if ($PlanTargets) {
+            & $DriverExe @PlanTargetArgs
+            if ($LASTEXITCODE -ne 0) {
+                exit $LASTEXITCODE
+            }
+        }
+        if ($ContinueTargets) {
+            & $DriverExe @ContinueTargetArgs
+            $DriverExitCode = $LASTEXITCODE
+            if ($DriverExitCode -eq 0) {
+                Set-Content -LiteralPath $LatestSeedPath -Value $Seed
+                Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
+                Set-Content -LiteralPath $LatestClassPath -Value $Class
+                Set-Content -LiteralPath $LatestModePath -Value $Mode
+                Set-Content -LiteralPath $LatestCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
+            }
+            exit $DriverExitCode
+        }
+        exit 0
+    } finally {
+        Pop-Location
+    }
+}
 
 if ($Inspect) {
     if (-not (Test-Path $LatestCheckpointPath)) {
