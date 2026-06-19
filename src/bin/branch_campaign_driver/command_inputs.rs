@@ -1,15 +1,20 @@
 use std::path::PathBuf;
 
 use sts_simulator::eval::branch_campaign::{
-    BranchCampaignConfigV1, BranchCampaignProgressDetailV1, BranchCampaignReportDetailV1,
+    BranchCampaignCombatRetryPolicyV1, BranchCampaignConfigV1, BranchCampaignProgressDetailV1,
+    BranchCampaignReportDetailV1,
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use sts_simulator::eval::branch_experiment_search_options::parse_branch_experiment_search_options_v1;
-use sts_simulator::eval::run_control::RunControlSearchCombatOptions;
-
-use super::{
-    campaign_config_from_args, campaign_search_options_from_args, parse_hp_loss_limit, Args,
+use sts_simulator::eval::neow_guided_prefix::{
+    neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
 };
+use sts_simulator::eval::run_control::{
+    canonical_player_class, RunControlCombatSegmentMode, RunControlHpLossLimit,
+    RunControlSearchCombatOptions,
+};
+
+use super::cli_args::{Args, BranchCampaignCombatRetryArgV1};
 
 #[derive(Clone, Debug)]
 pub(super) struct RunCommandInput {
@@ -227,4 +232,101 @@ fn inspect_search_options_from_args(args: &Args) -> Result<RunControlSearchComba
     options.wall_ms = options.wall_ms.or(Some(args.search_wall_ms));
     options.max_hp_loss = parse_hp_loss_limit(args.max_hp_loss.as_deref())?.or(options.max_hp_loss);
     Ok(options)
+}
+
+pub(super) fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, String> {
+    let player_class = canonical_player_class(&args.player_class)?;
+    let mut prefix_commands = Vec::new();
+    if !args.no_neow_guidance {
+        prefix_commands.extend(neow_guided_prefix_commands_v1(&NeowGuidedPrefixConfigV1 {
+            seed: args.seed,
+            ascension_level: args.ascension,
+            final_act: args.final_act,
+            player_class,
+            search_max_nodes: args.search_max_nodes,
+            search_wall_ms: Some(args.search_wall_ms),
+        })?);
+    } else {
+        prefix_commands.push("0".to_string());
+    }
+    prefix_commands.extend(args.prefix_commands.iter().cloned());
+
+    let search_max_hp_loss = parse_hp_loss_limit(args.max_hp_loss.as_deref())?
+        .or(Some(RunControlHpLossLimit::Unlimited));
+
+    Ok(BranchCampaignConfigV1 {
+        seed: args.seed,
+        ascension_level: args.ascension,
+        player_class,
+        final_act: args.final_act,
+        max_rounds: args.max_rounds,
+        round_depth: args.round_depth,
+        max_active: args.max_active,
+        max_frozen: args.max_frozen,
+        max_branches_per_active: args.max_branches_per_active,
+        active_lineage_diversity_slots: args.active_lineage_diversity,
+        retention_budget_profile: args
+            .retention_profile
+            .parse::<BranchRetentionBudgetProfileV1>()?,
+        max_reward_options_per_branch: if args.all_reward_options {
+            None
+        } else {
+            Some(args.max_reward_options.unwrap_or(2))
+        },
+        max_campfire_options_per_branch: args.max_campfire_options,
+        auto_max_operations: args.auto_max_ops,
+        experiment_wall_ms: Some(args.experiment_wall_ms),
+        search_max_nodes: args.search_max_nodes,
+        search_wall_ms: Some(args.search_wall_ms),
+        search_max_hp_loss,
+        search_options: campaign_search_options_from_args(args)?,
+        combat_retry_policy: match args.combat_retry {
+            BranchCampaignCombatRetryArgV1::OnStall => BranchCampaignCombatRetryPolicyV1::OnStall,
+            BranchCampaignCombatRetryArgV1::Immediate => {
+                BranchCampaignCombatRetryPolicyV1::Immediate
+            }
+            BranchCampaignCombatRetryArgV1::Disabled => BranchCampaignCombatRetryPolicyV1::Disabled,
+        },
+        combat_retry_wall_ms: args.combat_retry_wall_ms,
+        include_event_reward_skip: false,
+        min_acceptable_victory_hp_percent: args.min_acceptable_victory_hp_percent,
+        prefix_commands,
+    })
+}
+
+pub(super) fn campaign_search_options_from_args(
+    args: &Args,
+) -> Result<RunControlSearchCombatOptions, String> {
+    let mut options = parse_branch_experiment_search_options_v1(&args.combat_search_options)?;
+    if !combat_search_options_include_segment_mode(&args.combat_search_options) {
+        options.segment_mode = Some(RunControlCombatSegmentMode::NonBossTurnBoundary);
+    }
+    Ok(options)
+}
+
+fn combat_search_options_include_segment_mode(tokens: &[String]) -> bool {
+    tokens.iter().any(|token| {
+        token.split_once('=').is_some_and(|(key, _)| {
+            matches!(
+                key.to_ascii_lowercase().as_str(),
+                "segment" | "segment_mode" | "partial" | "partial_mode"
+            )
+        })
+    })
+}
+
+fn parse_hp_loss_limit(value: Option<&str>) -> Result<Option<RunControlHpLossLimit>, String> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    match value.to_ascii_lowercase().as_str() {
+        "off" | "none" | "unlimited" | "no_limit" | "no-limit" => {
+            Ok(Some(RunControlHpLossLimit::Unlimited))
+        }
+        _ => value
+            .parse::<u32>()
+            .map(RunControlHpLossLimit::Limit)
+            .map(Some)
+            .map_err(|err| format!("invalid --max-hp-loss `{value}`: {err}")),
+    }
 }

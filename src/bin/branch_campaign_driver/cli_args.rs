@@ -1,13 +1,526 @@
 use clap::error::ErrorKind;
 use clap::parser::ValueSource;
-use clap::{ArgMatches, Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{
+    ArgMatches, Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum,
+};
 use std::path::PathBuf;
 
-use super::{
-    apply_preset_defaults, Args, BranchCampaignAscensionDomainArgV1,
-    BranchCampaignCombatRetryArgV1, BranchCampaignExplicitCommandV1, BranchCampaignPresetV1,
-    CampaignProgressDetailArg, CampaignReportDetailArg,
+use sts_simulator::eval::branch_campaign::{
+    BranchCampaignProgressDetailV1, BranchCampaignReportDetailV1,
 };
+
+pub(super) const QUICK_PRESET_MAX_ROUNDS: usize = 2;
+pub(super) const QUICK_PRESET_ROUND_DEPTH: usize = 2;
+pub(super) const QUICK_PRESET_MAX_ACTIVE: usize = 2;
+pub(super) const QUICK_PRESET_MAX_FROZEN: usize = 16;
+pub(super) const QUICK_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 8;
+pub(super) const QUICK_PRESET_EXPERIMENT_WALL_MS: u64 = 5_000;
+pub(super) const QUICK_PRESET_SEARCH_WALL_MS: u64 = 300;
+pub(super) const QUICK_PRESET_SEARCH_MAX_NODES: usize = 50_000;
+pub(super) const QUICK_PRESET_BRANCH_EXAMPLES: usize = 3;
+
+const FOCUSED_PRESET_MAX_ROUNDS: usize = 6;
+const FOCUSED_PRESET_ROUND_DEPTH: usize = 2;
+const FOCUSED_PRESET_MAX_ACTIVE: usize = 2;
+const FOCUSED_PRESET_MAX_FROZEN: usize = 16;
+const FOCUSED_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 8;
+const FOCUSED_PRESET_ACTIVE_LINEAGE_DIVERSITY: usize = 2;
+const FOCUSED_PRESET_EXPERIMENT_WALL_MS: u64 = 10_000;
+const FOCUSED_PRESET_SEARCH_WALL_MS: u64 = 300;
+const FOCUSED_PRESET_SEARCH_MAX_NODES: usize = 50_000;
+const FOCUSED_PRESET_BRANCH_EXAMPLES: usize = 4;
+
+const DEEP_PRESET_MAX_ROUNDS: usize = 10;
+const DEEP_PRESET_ROUND_DEPTH: usize = 2;
+const DEEP_PRESET_MAX_ACTIVE: usize = 2;
+const DEEP_PRESET_MAX_FROZEN: usize = 16;
+const DEEP_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 8;
+const DEEP_PRESET_ACTIVE_LINEAGE_DIVERSITY: usize = 2;
+const DEEP_PRESET_EXPERIMENT_WALL_MS: u64 = 30_000;
+const DEEP_PRESET_SEARCH_WALL_MS: u64 = 1_000;
+const DEEP_PRESET_SEARCH_MAX_NODES: usize = 200_000;
+const DEEP_PRESET_BRANCH_EXAMPLES: usize = 6;
+
+const EXPLORE_PRESET_MAX_ROUNDS: usize = 4;
+const EXPLORE_PRESET_ROUND_DEPTH: usize = 1;
+const EXPLORE_PRESET_MAX_ACTIVE: usize = 6;
+const EXPLORE_PRESET_MAX_FROZEN: usize = 48;
+const EXPLORE_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 6;
+const EXPLORE_PRESET_ACTIVE_LINEAGE_DIVERSITY: usize = 4;
+const EXPLORE_PRESET_EXPERIMENT_WALL_MS: u64 = 8_000;
+const EXPLORE_PRESET_SEARCH_WALL_MS: u64 = 200;
+const EXPLORE_PRESET_SEARCH_MAX_NODES: usize = 30_000;
+const EXPLORE_PRESET_BRANCH_EXAMPLES: usize = 8;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(super) enum CampaignReportDetailArg {
+    Human,
+    Diagnose,
+    Perf,
+}
+
+impl From<CampaignReportDetailArg> for BranchCampaignReportDetailV1 {
+    fn from(value: CampaignReportDetailArg) -> Self {
+        match value {
+            CampaignReportDetailArg::Human => BranchCampaignReportDetailV1::Human,
+            CampaignReportDetailArg::Diagnose => BranchCampaignReportDetailV1::Diagnose,
+            CampaignReportDetailArg::Perf => BranchCampaignReportDetailV1::Perf,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(super) enum CampaignProgressDetailArg {
+    Summary,
+    Verbose,
+}
+
+impl From<CampaignProgressDetailArg> for BranchCampaignProgressDetailV1 {
+    fn from(value: CampaignProgressDetailArg) -> Self {
+        match value {
+            CampaignProgressDetailArg::Summary => BranchCampaignProgressDetailV1::Summary,
+            CampaignProgressDetailArg::Verbose => BranchCampaignProgressDetailV1::Verbose,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BranchCampaignExplicitCommandV1 {
+    Run,
+    Inspect,
+    Dataset,
+    Continue,
+    SelfCheck,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(super) enum BranchCampaignPresetV1 {
+    Quick,
+    Focused,
+    Explore,
+    Deep,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(super) enum BranchCampaignAscensionDomainArgV1 {
+    A0,
+    A10,
+    A15,
+    A17,
+    A20,
+}
+
+impl BranchCampaignAscensionDomainArgV1 {
+    fn ascension_level(self) -> u8 {
+        match self {
+            Self::A0 => 0,
+            Self::A10 => 10,
+            Self::A15 => 15,
+            Self::A17 => 17,
+            Self::A20 => 20,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(super) enum BranchCampaignCombatRetryArgV1 {
+    OnStall,
+    Immediate,
+    Disabled,
+}
+
+// Internal compatibility shape used by legacy top-level flags and by the
+// command-specific parsers before they are converted into narrow handler inputs.
+#[derive(Debug, ClapArgs)]
+pub(super) struct Args {
+    #[arg(skip)]
+    pub(crate) explicit_command: Option<BranchCampaignExplicitCommandV1>,
+
+    #[arg(long, value_enum)]
+    pub(super) preset: Option<BranchCampaignPresetV1>,
+
+    #[arg(long, default_value_t = 1)]
+    pub(super) seed: u64,
+
+    #[arg(long, default_value_t = 0)]
+    pub(super) ascension: u8,
+
+    #[arg(
+        long,
+        value_enum,
+        help = "Set ascension from a named curriculum/target domain"
+    )]
+    pub(super) ascension_domain: Option<BranchCampaignAscensionDomainArgV1>,
+
+    #[arg(long = "class", default_value = "ironclad")]
+    pub(super) player_class: String,
+
+    #[arg(long)]
+    pub(super) final_act: bool,
+
+    #[arg(long, default_value_t = 8)]
+    pub(super) max_rounds: usize,
+
+    #[arg(long, default_value_t = 1)]
+    pub(super) round_depth: usize,
+
+    #[arg(long, default_value_t = 8)]
+    pub(super) max_active: usize,
+
+    #[arg(long, default_value_t = 32)]
+    pub(super) max_frozen: usize,
+
+    #[arg(long, default_value_t = 12)]
+    pub(super) max_branches_per_active: usize,
+
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Reserve active slots for distinct first-choice branch lineages; intended for exploration presets"
+    )]
+    pub(super) active_lineage_diversity: usize,
+
+    #[arg(long, default_value = "package")]
+    pub(super) retention_profile: String,
+
+    #[arg(long)]
+    pub(super) max_reward_options: Option<usize>,
+
+    #[arg(long)]
+    pub(super) all_reward_options: bool,
+
+    #[arg(long, default_value_t = 3)]
+    pub(super) max_campfire_options: usize,
+
+    #[arg(long, default_value_t = 128)]
+    pub(super) auto_max_ops: usize,
+
+    #[arg(long, default_value_t = 10_000)]
+    pub(super) experiment_wall_ms: u64,
+
+    #[arg(long)]
+    pub(super) search_max_nodes: Option<usize>,
+
+    #[arg(long, default_value_t = 200)]
+    pub(super) search_wall_ms: u64,
+
+    #[arg(long)]
+    pub(super) max_hp_loss: Option<String>,
+
+    #[arg(
+        long = "combat-search-option",
+        value_name = "KEY=VALUE",
+        help = "Additional run_control search-combat option forwarded to branch experiments"
+    )]
+    pub(super) combat_search_options: Vec<String>,
+
+    #[arg(long, value_enum, default_value_t = BranchCampaignCombatRetryArgV1::OnStall)]
+    pub(super) combat_retry: BranchCampaignCombatRetryArgV1,
+
+    #[arg(
+        long,
+        help = "Override the wall-clock budget used by the one-shot combat retry pass"
+    )]
+    pub(super) combat_retry_wall_ms: Option<u64>,
+
+    #[arg(long, default_value_t = 20)]
+    pub(super) min_acceptable_victory_hp_percent: u8,
+
+    #[arg(long = "prefix", value_name = "COMMAND")]
+    pub(super) prefix_commands: Vec<String>,
+
+    #[arg(long)]
+    pub(super) no_neow_guidance: bool,
+
+    #[arg(long, default_value_t = 4)]
+    pub(super) branch_examples: usize,
+
+    #[arg(long)]
+    pub(super) json: bool,
+
+    #[arg(long, value_enum, default_value_t = CampaignReportDetailArg::Human)]
+    pub(super) report_detail: CampaignReportDetailArg,
+
+    #[arg(long, help = "Print coarse campaign progress to stderr while running")]
+    pub(super) progress: bool,
+
+    #[arg(long, value_enum, default_value_t = CampaignProgressDetailArg::Summary)]
+    pub(super) progress_detail: CampaignProgressDetailArg,
+
+    #[arg(
+        long = "self-check-ancestor-replay",
+        help = "Run a deterministic replay-cache self-check and print machine-readable counters"
+    )]
+    pub(super) self_check_ancestor_replay: bool,
+
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Resume from a previous BranchCampaignV1 JSON report"
+    )]
+    pub(super) resume: Option<PathBuf>,
+
+    #[arg(
+        long = "resume-checkpoint",
+        value_name = "PATH",
+        help = "Resume exact branch sessions from a BranchCampaignCheckpointV2 sidecar"
+    )]
+    pub(super) resume_checkpoint: Option<PathBuf>,
+
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Write the resulting BranchCampaignV1 JSON report"
+    )]
+    pub(super) out: Option<PathBuf>,
+
+    #[arg(
+        long = "checkpoint-out",
+        value_name = "PATH",
+        help = "Write the resulting BranchCampaignCheckpointV2 exact session sidecar"
+    )]
+    pub(super) checkpoint_out: Option<PathBuf>,
+
+    #[arg(
+        long = "inspect-checkpoint",
+        value_name = "PATH",
+        help = "Inspect a saved BranchCampaignCheckpointV2 session instead of running a campaign"
+    )]
+    pub(super) inspect_checkpoint: Option<PathBuf>,
+
+    #[arg(
+        long = "inspect-report",
+        value_name = "PATH",
+        help = "Pair --inspect-checkpoint with a BranchCampaignV1 report for active/frozen/abandoned labels"
+    )]
+    pub(super) inspect_report: Option<PathBuf>,
+
+    #[arg(
+        long = "inspect-summary",
+        help = "Print compact deck/resource/strategy summaries for checkpoint sessions"
+    )]
+    pub(super) inspect_summary: bool,
+
+    #[arg(
+        long = "inspect-act",
+        help = "Filter inspected checkpoint sessions by act"
+    )]
+    pub(super) inspect_act: Option<u8>,
+
+    #[arg(
+        long = "inspect-floor",
+        help = "Filter inspected checkpoint sessions by floor"
+    )]
+    pub(super) inspect_floor: Option<i32>,
+
+    #[arg(
+        long = "inspect-boundary",
+        help = "Filter inspected checkpoint sessions by visible boundary title, e.g. Shop or Card Reward"
+    )]
+    pub(super) inspect_boundary: Option<String>,
+
+    #[arg(
+        long = "inspect-hp",
+        help = "Filter inspected checkpoint sessions by current HP"
+    )]
+    pub(super) inspect_hp: Option<i32>,
+
+    #[arg(
+        long = "inspect-index",
+        help = "Select the Nth matching checkpoint session after filters"
+    )]
+    pub(super) inspect_index: Option<usize>,
+
+    #[arg(
+        long = "inspect-search",
+        help = "Run search-combat from the selected checkpoint session and print the result"
+    )]
+    pub(super) inspect_search: bool,
+
+    #[arg(
+        long = "inspect-last-auto-combat",
+        help = "Print the last stored automated combat trajectory for the selected checkpoint session"
+    )]
+    pub(super) inspect_last_auto_combat: bool,
+
+    #[arg(
+        long = "inspect-combat-lab",
+        help = "Print a report-only CombatLabProbeV1 packet for the selected checkpoint branch"
+    )]
+    pub(super) inspect_combat_lab: bool,
+
+    #[arg(
+        long = "probe-boss",
+        help = "When used with --inspect-combat-lab, run a report-only search preview against the current act boss"
+    )]
+    pub(super) probe_boss: bool,
+
+    #[arg(
+        long = "inspect-shop-evidence",
+        help = "Print current-code shop candidate evidence and strategic deltas for the selected checkpoint session"
+    )]
+    pub(super) inspect_shop_evidence: bool,
+
+    #[arg(
+        long = "challenge-shop-plans",
+        help = "From a selected shop checkpoint, force compiled shop plans and rollout each branch for comparison"
+    )]
+    pub(super) challenge_shop_plans: bool,
+
+    #[arg(
+        long = "challenge-max-plans",
+        default_value_t = 6,
+        help = "Maximum selected+alternative shop plans to challenge"
+    )]
+    pub(super) challenge_max_plans: usize,
+
+    #[arg(
+        long = "challenge-depth",
+        default_value_t = 4,
+        help = "Branch experiment depth after each challenged shop plan"
+    )]
+    pub(super) challenge_depth: usize,
+
+    #[arg(
+        long = "challenge-max-branches",
+        default_value_t = 12,
+        help = "Branch cap for each challenged shop plan rollout"
+    )]
+    pub(super) challenge_max_branches: usize,
+
+    #[arg(
+        long = "inspect-card-reward-evidence",
+        help = "Print current-code card reward candidate evidence and strategic deltas for the selected checkpoint session"
+    )]
+    pub(super) inspect_card_reward_evidence: bool,
+
+    #[arg(
+        long = "inspect-campfire-evidence",
+        help = "Print current-code campfire candidate evidence and selected plan for the selected checkpoint session"
+    )]
+    pub(super) inspect_campfire_evidence: bool,
+
+    #[arg(
+        long = "inspect-deck-mutation",
+        help = "Print current-code DeckMutationCompiler plan groups for the selected checkpoint session"
+    )]
+    pub(super) inspect_deck_mutation: bool,
+
+    #[arg(
+        long = "inspect-route-evidence",
+        help = "Print current-code route planner candidate evidence for the selected map checkpoint session"
+    )]
+    pub(super) inspect_route_evidence: bool,
+
+    #[arg(
+        long = "inspect-final-boss-combat",
+        help = "Print a final boss combat timeline from a BranchCampaignV1 report"
+    )]
+    pub(super) inspect_final_boss_combat: bool,
+
+    #[arg(
+        long = "export-outcome-dataset",
+        value_name = "PATH",
+        help = "Write BranchOutcomeRecordV1 JSONL from a campaign report and optional checkpoint sidecar"
+    )]
+    pub(super) export_outcome_dataset: Option<PathBuf>,
+
+    #[arg(
+        long = "analyze-outcome-dataset",
+        value_name = "PATH",
+        help = "Print structural issue counts from a BranchOutcomeRecordV1 JSONL file"
+    )]
+    pub(super) analyze_outcome_dataset: Option<PathBuf>,
+
+    #[arg(
+        long = "analyze-decision-outcome-dataset",
+        value_name = "PATH",
+        help = "Print sibling decision group coverage and outcome divergence from a LearningDecisionOutcomeSampleV1 JSONL file"
+    )]
+    pub(super) analyze_decision_outcome_dataset: Option<PathBuf>,
+
+    #[arg(
+        long = "probe-learning-readiness",
+        value_name = "PATH",
+        help = "Diagnose whether a LearningDecisionOutcomeSampleV1 JSONL is blocked by censoring, scheduling, combat budget, missing context, or missing siblings"
+    )]
+    pub(super) probe_learning_readiness: Option<PathBuf>,
+
+    #[arg(
+        long = "plan-targeted-continuation",
+        value_name = "PATH",
+        help = "Print targeted sibling continuation groups from a LearningDecisionOutcomeSampleV1 JSONL file"
+    )]
+    pub(super) plan_targeted_continuation: Option<PathBuf>,
+
+    #[arg(
+        long = "execute-targeted-continuation",
+        value_name = "PATH",
+        help = "Resume selected censored sibling branches from a LearningDecisionOutcomeSampleV1 JSONL file"
+    )]
+    pub(super) execute_targeted_continuation: Option<PathBuf>,
+
+    #[arg(
+        long = "continuation-effect-before",
+        value_name = "PATH",
+        help = "Before LearningDecisionOutcomeSampleV1 JSONL for targeted continuation effect comparison"
+    )]
+    pub(super) continuation_effect_before: Option<PathBuf>,
+
+    #[arg(
+        long = "continuation-effect-after",
+        value_name = "PATH",
+        help = "After LearningDecisionOutcomeSampleV1 JSONL for targeted continuation effect comparison"
+    )]
+    pub(super) continuation_effect_after: Option<PathBuf>,
+
+    #[arg(
+        long = "targeted-continuation-limit",
+        default_value_t = 4,
+        help = "Maximum targeted sibling groups to continue"
+    )]
+    pub(super) targeted_continuation_limit: usize,
+
+    #[arg(
+        long = "targeted-continuation-candidates-per-target",
+        default_value_t = 1,
+        help = "Maximum censored candidate branches to continue per targeted sibling group"
+    )]
+    pub(super) targeted_continuation_candidates_per_target: usize,
+
+    #[arg(
+        long = "export-learning-dataset",
+        value_name = "PATH",
+        help = "Write LearningBranchSampleV1 JSONL from a campaign report/run without treating choices as teacher labels"
+    )]
+    pub(super) export_learning_dataset: Option<PathBuf>,
+
+    #[arg(
+        long = "export-decision-outcome-dataset",
+        value_name = "PATH",
+        help = "Write LearningDecisionOutcomeSampleV1 JSONL with observed sibling candidates and later outcomes"
+    )]
+    pub(super) export_decision_outcome_dataset: Option<PathBuf>,
+}
+
+#[cfg(test)]
+impl Args {
+    pub(super) fn parse_from<I, T>(itr: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<std::ffi::OsString> + Clone,
+    {
+        parse_args_from(itr).unwrap_or_else(|err| err.exit())
+    }
+
+    pub(super) fn try_parse_from<I, T>(itr: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<std::ffi::OsString> + Clone,
+    {
+        parse_args_from(itr)
+    }
+}
 
 #[derive(Debug, Parser)]
 #[command(
@@ -872,6 +1385,160 @@ impl ContinuationArgs {
         args.targeted_continuation_limit = self.targeted_continuation_limit;
         args.targeted_continuation_candidates_per_target =
             self.targeted_continuation_candidates_per_target;
+    }
+}
+
+fn apply_preset_defaults<F>(args: &mut Args, was_explicit: F)
+where
+    F: Fn(&'static str) -> bool,
+{
+    match args.preset {
+        Some(BranchCampaignPresetV1::Quick) => apply_quick_preset_defaults(args, was_explicit),
+        Some(BranchCampaignPresetV1::Focused) => apply_focused_preset_defaults(args, was_explicit),
+        Some(BranchCampaignPresetV1::Explore) => apply_explore_preset_defaults(args, was_explicit),
+        Some(BranchCampaignPresetV1::Deep) => apply_deep_preset_defaults(args, was_explicit),
+        None => {}
+    }
+}
+
+fn apply_quick_preset_defaults<F>(args: &mut Args, was_explicit: F)
+where
+    F: Fn(&'static str) -> bool,
+{
+    apply_campaign_preset_defaults(
+        args,
+        was_explicit,
+        CampaignPresetDefaults {
+            max_rounds: QUICK_PRESET_MAX_ROUNDS,
+            round_depth: QUICK_PRESET_ROUND_DEPTH,
+            max_active: QUICK_PRESET_MAX_ACTIVE,
+            max_frozen: QUICK_PRESET_MAX_FROZEN,
+            max_branches_per_active: QUICK_PRESET_MAX_BRANCHES_PER_ACTIVE,
+            active_lineage_diversity: 0,
+            experiment_wall_ms: QUICK_PRESET_EXPERIMENT_WALL_MS,
+            search_wall_ms: QUICK_PRESET_SEARCH_WALL_MS,
+            search_max_nodes: QUICK_PRESET_SEARCH_MAX_NODES,
+            branch_examples: QUICK_PRESET_BRANCH_EXAMPLES,
+        },
+    );
+}
+
+fn apply_focused_preset_defaults<F>(args: &mut Args, was_explicit: F)
+where
+    F: Fn(&'static str) -> bool,
+{
+    apply_campaign_preset_defaults(
+        args,
+        was_explicit,
+        CampaignPresetDefaults {
+            max_rounds: FOCUSED_PRESET_MAX_ROUNDS,
+            round_depth: FOCUSED_PRESET_ROUND_DEPTH,
+            max_active: FOCUSED_PRESET_MAX_ACTIVE,
+            max_frozen: FOCUSED_PRESET_MAX_FROZEN,
+            max_branches_per_active: FOCUSED_PRESET_MAX_BRANCHES_PER_ACTIVE,
+            active_lineage_diversity: FOCUSED_PRESET_ACTIVE_LINEAGE_DIVERSITY,
+            experiment_wall_ms: FOCUSED_PRESET_EXPERIMENT_WALL_MS,
+            search_wall_ms: FOCUSED_PRESET_SEARCH_WALL_MS,
+            search_max_nodes: FOCUSED_PRESET_SEARCH_MAX_NODES,
+            branch_examples: FOCUSED_PRESET_BRANCH_EXAMPLES,
+        },
+    );
+}
+
+fn apply_deep_preset_defaults<F>(args: &mut Args, was_explicit: F)
+where
+    F: Fn(&'static str) -> bool,
+{
+    apply_campaign_preset_defaults(
+        args,
+        was_explicit,
+        CampaignPresetDefaults {
+            max_rounds: DEEP_PRESET_MAX_ROUNDS,
+            round_depth: DEEP_PRESET_ROUND_DEPTH,
+            max_active: DEEP_PRESET_MAX_ACTIVE,
+            max_frozen: DEEP_PRESET_MAX_FROZEN,
+            max_branches_per_active: DEEP_PRESET_MAX_BRANCHES_PER_ACTIVE,
+            active_lineage_diversity: DEEP_PRESET_ACTIVE_LINEAGE_DIVERSITY,
+            experiment_wall_ms: DEEP_PRESET_EXPERIMENT_WALL_MS,
+            search_wall_ms: DEEP_PRESET_SEARCH_WALL_MS,
+            search_max_nodes: DEEP_PRESET_SEARCH_MAX_NODES,
+            branch_examples: DEEP_PRESET_BRANCH_EXAMPLES,
+        },
+    );
+}
+
+fn apply_explore_preset_defaults<F>(args: &mut Args, was_explicit: F)
+where
+    F: Fn(&'static str) -> bool,
+{
+    apply_campaign_preset_defaults(
+        args,
+        was_explicit,
+        CampaignPresetDefaults {
+            max_rounds: EXPLORE_PRESET_MAX_ROUNDS,
+            round_depth: EXPLORE_PRESET_ROUND_DEPTH,
+            max_active: EXPLORE_PRESET_MAX_ACTIVE,
+            max_frozen: EXPLORE_PRESET_MAX_FROZEN,
+            max_branches_per_active: EXPLORE_PRESET_MAX_BRANCHES_PER_ACTIVE,
+            active_lineage_diversity: EXPLORE_PRESET_ACTIVE_LINEAGE_DIVERSITY,
+            experiment_wall_ms: EXPLORE_PRESET_EXPERIMENT_WALL_MS,
+            search_wall_ms: EXPLORE_PRESET_SEARCH_WALL_MS,
+            search_max_nodes: EXPLORE_PRESET_SEARCH_MAX_NODES,
+            branch_examples: EXPLORE_PRESET_BRANCH_EXAMPLES,
+        },
+    );
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CampaignPresetDefaults {
+    max_rounds: usize,
+    round_depth: usize,
+    max_active: usize,
+    max_frozen: usize,
+    max_branches_per_active: usize,
+    active_lineage_diversity: usize,
+    experiment_wall_ms: u64,
+    search_wall_ms: u64,
+    search_max_nodes: usize,
+    branch_examples: usize,
+}
+
+fn apply_campaign_preset_defaults<F>(
+    args: &mut Args,
+    was_explicit: F,
+    defaults: CampaignPresetDefaults,
+) where
+    F: Fn(&'static str) -> bool,
+{
+    if !was_explicit("max_rounds") {
+        args.max_rounds = defaults.max_rounds;
+    }
+    if !was_explicit("round_depth") {
+        args.round_depth = defaults.round_depth;
+    }
+    if !was_explicit("max_active") {
+        args.max_active = defaults.max_active;
+    }
+    if !was_explicit("max_frozen") {
+        args.max_frozen = defaults.max_frozen;
+    }
+    if !was_explicit("max_branches_per_active") {
+        args.max_branches_per_active = defaults.max_branches_per_active;
+    }
+    if !was_explicit("active_lineage_diversity") {
+        args.active_lineage_diversity = defaults.active_lineage_diversity;
+    }
+    if !was_explicit("experiment_wall_ms") {
+        args.experiment_wall_ms = defaults.experiment_wall_ms;
+    }
+    if !was_explicit("search_wall_ms") {
+        args.search_wall_ms = defaults.search_wall_ms;
+    }
+    if !was_explicit("search_max_nodes") {
+        args.search_max_nodes = Some(defaults.search_max_nodes);
+    }
+    if !was_explicit("branch_examples") {
+        args.branch_examples = defaults.branch_examples;
     }
 }
 

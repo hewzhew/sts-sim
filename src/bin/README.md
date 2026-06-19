@@ -19,9 +19,10 @@ Active binaries:
   - legacy top-level flags remain temporarily parseable, but new tooling should
     call a subcommand explicitly; subcommand help is intentionally scoped to
     that command, while the top-level flattened flags are compatibility only
-  - implementation boundary: `cli_args.rs` owns parsing, `driver_command.rs`
-    owns command selection, `command_inputs.rs` converts legacy CLI args into
-    narrow handler inputs, and `main.rs` owns dispatch plus shared
+  - implementation boundary: `cli_args.rs` owns parsing, legacy `Args`, and
+    preset/default application; `driver_command.rs` owns command selection;
+    `command_inputs.rs` converts CLI args into narrow handler inputs plus
+    campaign/search config; `main.rs` owns dispatch plus shared
     report/checkpoint helpers
 - `artifact_doctor`
   - read-only audit over benchmark artifact directories

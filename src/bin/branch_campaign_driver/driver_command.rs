@@ -1,4 +1,4 @@
-use super::{cli_args::BranchCampaignCliInputV1, Args, BranchCampaignExplicitCommandV1};
+use super::cli_args::{Args, BranchCampaignCliInputV1, BranchCampaignExplicitCommandV1};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum BranchCampaignDriverCommandV1 {
