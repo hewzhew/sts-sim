@@ -382,6 +382,7 @@ switch ($BuildProfile) {
 }
 
 $DriverArgs = @(
+    "run",
     "--preset", "$Mode",
     "--seed", "$Seed",
     "--ascension", "$Ascension",
@@ -574,17 +575,20 @@ if ($PlanTargets -or $ContinueTargets) {
         $LatestDecisionOutcomePath
     }
     $ExportDecisionArgs = @(
+        "dataset",
         "--inspect-report", "$LatestCampaignPath",
         "--inspect-checkpoint", "$LatestCheckpointPath",
         "--export-decision-outcome-dataset", "$TargetDecisionOutcomePath"
     )
-    $PlanTargetArgs = @("--plan-targeted-continuation", "$TargetDecisionOutcomePath")
+    $PlanTargetArgs = @("continue", "--plan-targeted-continuation", "$TargetDecisionOutcomePath")
     $ExportDecisionAfterArgs = @(
+        "dataset",
         "--inspect-report", "$LatestCampaignPath",
         "--inspect-checkpoint", "$LatestCheckpointPath",
         "--export-decision-outcome-dataset", "$LatestDecisionOutcomeAfterPath"
     )
     $ContinuationEffectArgs = @(
+        "continue",
         "--continuation-effect-before", "$TargetDecisionOutcomePath",
         "--continuation-effect-after", "$LatestDecisionOutcomeAfterPath"
     )
@@ -609,6 +613,7 @@ if ($PlanTargets -or $ContinueTargets) {
     }
 
     $ContinueTargetArgs = @(
+        "continue",
         "--preset", "$Mode",
         "--seed", "$Seed",
         "--ascension", "$Ascension",
@@ -779,11 +784,21 @@ if ($Inspect) {
         throw "No previous campaign report found at $LatestCampaignPath. Run .\tools\campaign.ps1 first."
     }
 
-    $InspectArgs = @(
-        "--inspect-checkpoint", "$LatestCheckpointPath",
-        "--inspect-report", "$LatestCampaignPath",
-        "--branch-examples", "$BranchExamples"
-    )
+    if ($ExportLearningDataset) {
+        $InspectArgs = @(
+            "dataset",
+            "--inspect-checkpoint", "$LatestCheckpointPath",
+            "--inspect-report", "$LatestCampaignPath",
+            "--export-learning-dataset", "$ExportLearningDataset"
+        )
+    } else {
+        $InspectArgs = @(
+            "inspect",
+            "--inspect-checkpoint", "$LatestCheckpointPath",
+            "--inspect-report", "$LatestCampaignPath",
+            "--branch-examples", "$BranchExamples"
+        )
+    }
     $DetailedInspect =
         $InspectShopEvidence -or
         $InspectShopChallenge -or
@@ -794,13 +809,13 @@ if ($Inspect) {
         $InspectLastAutoCombat -or
         $InspectCombatLab -or
         $InspectFinalBossCombat
-    if (-not $DetailedInspect) {
+    if ((-not $ExportLearningDataset) -and (-not $DetailedInspect)) {
         $InspectArgs += "--inspect-summary"
     }
-    if ($InspectShopEvidence) {
+    if ((-not $ExportLearningDataset) -and $InspectShopEvidence) {
         $InspectArgs += "--inspect-shop-evidence"
     }
-    if ($InspectShopChallenge) {
+    if ((-not $ExportLearningDataset) -and $InspectShopChallenge) {
         $InspectArgs += @(
             "--challenge-shop-plans",
             "--challenge-max-plans", "$ChallengeMaxPlans",
@@ -810,28 +825,25 @@ if ($Inspect) {
             "--search-max-nodes", "$SearchMaxNodes"
         )
     }
-    if ($InspectCardRewardEvidence) {
+    if ((-not $ExportLearningDataset) -and $InspectCardRewardEvidence) {
         $InspectArgs += "--inspect-card-reward-evidence"
     }
-    if ($InspectCampfireEvidence) {
+    if ((-not $ExportLearningDataset) -and $InspectCampfireEvidence) {
         $InspectArgs += "--inspect-campfire-evidence"
     }
-    if ($InspectDeckMutation) {
+    if ((-not $ExportLearningDataset) -and $InspectDeckMutation) {
         $InspectArgs += "--inspect-deck-mutation"
     }
-    if ($InspectRouteEvidence) {
+    if ((-not $ExportLearningDataset) -and $InspectRouteEvidence) {
         $InspectArgs += "--inspect-route-evidence"
     }
-    if ($InspectLastAutoCombat) {
+    if ((-not $ExportLearningDataset) -and $InspectLastAutoCombat) {
         $InspectArgs += "--inspect-last-auto-combat"
     }
-    if ($InspectFinalBossCombat) {
+    if ((-not $ExportLearningDataset) -and $InspectFinalBossCombat) {
         $InspectArgs += "--inspect-final-boss-combat"
     }
-    if ($ExportLearningDataset) {
-        $InspectArgs += @("--export-learning-dataset", "$ExportLearningDataset")
-    }
-    if ($InspectCombatLab) {
+    if ((-not $ExportLearningDataset) -and $InspectCombatLab) {
         $InspectArgs += @(
             "--inspect-combat-lab",
             "--combat-search-option", "wall_ms=$SearchWallMs",
@@ -841,16 +853,16 @@ if ($Inspect) {
             $InspectArgs += "--probe-boss"
         }
     }
-    if ($CampaignBoundParameters.ContainsKey("InspectIndex") -and $InspectIndex -ge 0) {
+    if ((-not $ExportLearningDataset) -and $CampaignBoundParameters.ContainsKey("InspectIndex") -and $InspectIndex -ge 0) {
         $InspectArgs += @("--inspect-index", "$InspectIndex")
     }
-    if ($CampaignBoundParameters.ContainsKey("InspectAct") -and $InspectAct -gt 0) {
+    if ((-not $ExportLearningDataset) -and $CampaignBoundParameters.ContainsKey("InspectAct") -and $InspectAct -gt 0) {
         $InspectArgs += @("--inspect-act", "$InspectAct")
     }
-    if ($CampaignBoundParameters.ContainsKey("InspectFloor") -and $InspectFloor -gt 0) {
+    if ((-not $ExportLearningDataset) -and $CampaignBoundParameters.ContainsKey("InspectFloor") -and $InspectFloor -gt 0) {
         $InspectArgs += @("--inspect-floor", "$InspectFloor")
     }
-    if ($InspectBoundary) {
+    if ((-not $ExportLearningDataset) -and $InspectBoundary) {
         $InspectArgs += @("--inspect-boundary", "$InspectBoundary")
     }
 
@@ -860,7 +872,8 @@ if ($Inspect) {
     $RenderedExe = if ($DriverExe -match '^[A-Za-z0-9_./:=\\-]+$') { $DriverExe } else { "'$($DriverExe -replace "'", "''")'" }
     $RenderedCommand = $RenderedExe + " " + ($RenderedInspectArgs -join " ")
 
-    Write-Host "mode=inspect latest branch campaign"
+    $InspectModeLabel = if ($ExportLearningDataset) { "dataset" } else { "inspect" }
+    Write-Host "mode=$InspectModeLabel latest branch campaign"
     if ($Seed -gt 0) {
         Write-Host "seed=$Seed"
     }

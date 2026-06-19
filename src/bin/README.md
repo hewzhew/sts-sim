@@ -8,15 +8,16 @@ Active binaries:
 
 - `branch_campaign_driver`
   - current automated branch-campaign engine used by `tools/campaign.ps1`
-  - primary roles:
-    - run active/frozen campaign branches from a seed, report, and checkpoint
-    - inspect checkpoint sessions, decks, route/shop/card/campfire evidence,
-      combat lab packets, and final boss timelines
-    - export or analyze branch/outcome/learning JSONL
-    - run targeted sibling continuation experiments
-  - this binary is still being consolidated: those roles are currently selected
-    by flags, but new work should treat them as separate command modes and avoid
-    adding unrelated top-level flags
+  - primary subcommands:
+    - `run`: advance active/frozen campaign branches from a seed, report, and
+      checkpoint
+    - `inspect`: inspect checkpoint sessions, decks, route/shop/card/campfire
+      evidence, combat lab packets, and final boss timelines
+    - `dataset`: export or analyze branch/outcome/learning JSONL
+    - `continue`: run targeted sibling continuation experiments
+    - `self-check`: run internal replay/cache checks
+  - legacy top-level flags remain temporarily parseable, but new tooling should
+    call a subcommand explicitly
 - `artifact_doctor`
   - read-only audit over benchmark artifact directories
   - `--root <path>` scans for `benchmark.json` suites, registered captures,
@@ -146,15 +147,13 @@ Experimental or legacy binaries:
     replay trace
   - current campaign work should prefer `branch_campaign_driver` checkpoint
     inspection or challenge modes unless a focused local experiment is needed
-- `decision_lab_driver`
-  - older seed-batch decision-lab wrapper over branch experiments
-  - retained for archaeology and comparison; not the current learning pipeline
-- `card_reward_value_loop_driver`
-  - older trace-based card reward value-loop utility
-  - retained until useful pieces are migrated into campaign outcome datasets
 
 Removed from the active binary surface:
 
 - JSONL action-env drivers
 - micro/toy RL environment drivers
 - live/workbench/prompt controller entrypoints
+- `decision_lab_driver`, now archived under
+  `tools/_dormant/rust_bins/decision_lab_driver`
+- `card_reward_value_loop_driver`, now archived under
+  `tools/_dormant/rust_bins/card_reward_value_loop_driver`

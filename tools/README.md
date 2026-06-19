@@ -18,8 +18,9 @@
   - experimental LLM controller adapters over public simulator observations and legal actions
 - `live_comm/`
   - legacy Java bridge scripts and fixture-capture helpers
-- `_dormant/ai_micro/`
-  - archived toy RL smoke environments; not an active AI path
+- `_dormant/`
+  - archived toy RL smoke environments and retired Rust binaries; not an
+    active AI path
 - `manual/`
   - hand-run helper scripts
 - `rust_ast_extractor/`
@@ -42,7 +43,9 @@
 ## Primary Campaign Workflow
 
 `tools/campaign.ps1` is the maintained user-facing wrapper for
-`branch_campaign_driver`.
+`branch_campaign_driver`. It calls the driver's `run`, `inspect`, `dataset`,
+and `continue` subcommands rather than relying on legacy top-level flag
+routing.
 
 ```powershell
 .\tools\campaign.ps1 -Mode quick

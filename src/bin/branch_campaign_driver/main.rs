@@ -1,6 +1,8 @@
 use clap::error::ErrorKind;
 use clap::parser::ValueSource;
-use clap::{CommandFactory, FromArgMatches, Parser, ValueEnum};
+use clap::{
+    ArgMatches, Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum,
+};
 use std::fs;
 use std::path::PathBuf;
 
@@ -118,7 +120,45 @@ const EXPLORE_PRESET_BRANCH_EXAMPLES: usize = 8;
     name = "branch_campaign_driver",
     about = "Advance a small campaign of noncombat branches until victory, budget, or strategy boundary"
 )]
+struct CliRootV1 {
+    #[command(subcommand)]
+    command: Option<BranchCampaignCliCommandV1>,
+
+    #[command(flatten)]
+    legacy_args: Args,
+}
+
+#[derive(Debug, Subcommand)]
+enum BranchCampaignCliCommandV1 {
+    #[command(about = "Run or resume a branch campaign")]
+    Run(Args),
+    #[command(about = "Inspect campaign checkpoints and report artifacts")]
+    Inspect(Args),
+    #[command(about = "Export or analyze campaign outcome datasets")]
+    Dataset(Args),
+    #[command(about = "Plan, execute, or compare targeted sibling continuations")]
+    Continue(Args),
+    #[command(
+        name = "self-check",
+        about = "Run internal campaign driver self-checks"
+    )]
+    SelfCheck(Args),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BranchCampaignExplicitCommandV1 {
+    Run,
+    Inspect,
+    Dataset,
+    Continue,
+    SelfCheck,
+}
+
+#[derive(Debug, ClapArgs)]
 struct Args {
+    #[arg(skip)]
+    pub(crate) explicit_command: Option<BranchCampaignExplicitCommandV1>,
+
     #[arg(long, value_enum)]
     preset: Option<BranchCampaignPresetV1>,
 
@@ -486,6 +526,25 @@ struct Args {
     export_decision_outcome_dataset: Option<PathBuf>,
 }
 
+#[cfg(test)]
+impl Args {
+    fn parse_from<I, T>(itr: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<std::ffi::OsString> + Clone,
+    {
+        parse_args_from(itr).unwrap_or_else(|err| err.exit())
+    }
+
+    fn try_parse_from<I, T>(itr: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<std::ffi::OsString> + Clone,
+    {
+        parse_args_from(itr)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum BranchCampaignPresetV1 {
     Quick,
@@ -539,12 +598,31 @@ where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
 {
-    let matches = Args::command().try_get_matches_from(itr)?;
-    let mut args = Args::from_arg_matches(&matches)?;
+    let matches = CliRootV1::command().try_get_matches_from(itr)?;
+    let cli = CliRootV1::from_arg_matches(&matches)?;
+    let (mut args, explicit_command) = match cli.command {
+        Some(BranchCampaignCliCommandV1::Run(args)) => {
+            (args, Some(BranchCampaignExplicitCommandV1::Run))
+        }
+        Some(BranchCampaignCliCommandV1::Inspect(args)) => {
+            (args, Some(BranchCampaignExplicitCommandV1::Inspect))
+        }
+        Some(BranchCampaignCliCommandV1::Dataset(args)) => {
+            (args, Some(BranchCampaignExplicitCommandV1::Dataset))
+        }
+        Some(BranchCampaignCliCommandV1::Continue(args)) => {
+            (args, Some(BranchCampaignExplicitCommandV1::Continue))
+        }
+        Some(BranchCampaignCliCommandV1::SelfCheck(args)) => {
+            (args, Some(BranchCampaignExplicitCommandV1::SelfCheck))
+        }
+        None => (cli.legacy_args, None),
+    };
+    args.explicit_command = explicit_command;
     if let Some(domain) = args.ascension_domain {
         let domain_ascension = domain.ascension_level();
         let ascension_was_explicit =
-            matches.value_source("ascension") == Some(ValueSource::CommandLine);
+            selected_value_source(&matches, "ascension") == Some(ValueSource::CommandLine);
         if ascension_was_explicit && args.ascension != domain_ascension {
             return Err(clap::Error::raw(
                 ErrorKind::ValueValidation,
@@ -559,9 +637,16 @@ where
         }
     }
     apply_preset_defaults(&mut args, |name| {
-        matches.value_source(name) == Some(ValueSource::CommandLine)
+        selected_value_source(&matches, name) == Some(ValueSource::CommandLine)
     });
     Ok(args)
+}
+
+fn selected_value_source(matches: &ArgMatches, name: &'static str) -> Option<ValueSource> {
+    matches
+        .subcommand()
+        .and_then(|(_, sub_matches)| sub_matches.value_source(name))
+        .or_else(|| matches.value_source(name))
 }
 
 fn apply_preset_defaults<F>(args: &mut Args, was_explicit: F)
@@ -1056,6 +1141,63 @@ mod tests {
 
         assert_eq!(
             driver_command_from_args(&args),
+            BranchCampaignDriverCommandV1::SelfCheckAncestorReplay
+        );
+    }
+
+    #[test]
+    fn driver_subcommands_classify_primary_modes() {
+        let run_args = parse_args_from([
+            "branch_campaign_driver",
+            "run",
+            "--preset",
+            "focused",
+            "--seed",
+            "521",
+        ])
+        .expect("run args parse");
+        let inspect_args = parse_args_from([
+            "branch_campaign_driver",
+            "inspect",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+        ])
+        .expect("inspect args parse");
+        let dataset_args = parse_args_from([
+            "branch_campaign_driver",
+            "dataset",
+            "--analyze-decision-outcome-dataset",
+            "decision_outcomes.jsonl",
+        ])
+        .expect("dataset args parse");
+        let continue_args = parse_args_from([
+            "branch_campaign_driver",
+            "continue",
+            "--execute-targeted-continuation",
+            "decision_outcomes.jsonl",
+        ])
+        .expect("continue args parse");
+        let self_check_args =
+            parse_args_from(["branch_campaign_driver", "self-check"]).expect("self-check parse");
+
+        assert_eq!(
+            driver_command_from_args(&run_args),
+            BranchCampaignDriverCommandV1::RunCampaign
+        );
+        assert_eq!(
+            driver_command_from_args(&inspect_args),
+            BranchCampaignDriverCommandV1::InspectCheckpoint
+        );
+        assert_eq!(
+            driver_command_from_args(&dataset_args),
+            BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset
+        );
+        assert_eq!(
+            driver_command_from_args(&continue_args),
+            BranchCampaignDriverCommandV1::ExecuteTargetedContinuation
+        );
+        assert_eq!(
+            driver_command_from_args(&self_check_args),
             BranchCampaignDriverCommandV1::SelfCheckAncestorReplay
         );
     }
