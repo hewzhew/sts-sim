@@ -646,10 +646,13 @@ fn compare_rank(
 ) -> std::cmp::Ordering {
     let left_takes_card = !is_plain_card_reward_skip(&candidates[left]);
     let right_takes_card = !is_plain_card_reward_skip(&candidates[right]);
+    let left_preferred = has_preferred_decision_signal(&candidates[left]);
+    let right_preferred = has_preferred_decision_signal(&candidates[right]);
     branch_retention_order_rank_key_v1(&candidates[left])
         .cmp(&branch_retention_order_rank_key_v1(&candidates[right]))
         .then_with(|| candidates[left].hp.cmp(&candidates[right].hp))
         .then_with(|| candidates[left].gold.cmp(&candidates[right].gold))
+        .then_with(|| left_preferred.cmp(&right_preferred))
         .then_with(|| left_takes_card.cmp(&right_takes_card))
         .then_with(|| {
             candidates[right]
@@ -657,6 +660,13 @@ fn compare_rank(
                 .cmp(&candidates[left].deck_count)
         })
         .then_with(|| candidates[right].index.cmp(&candidates[left].index))
+}
+
+fn has_preferred_decision_signal(candidate: &BranchRetentionCandidateInputV1) -> bool {
+    candidate
+        .decision_signals
+        .iter()
+        .any(|signal| signal.preferred)
 }
 
 pub fn branch_retention_order_rank_key_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
@@ -1650,6 +1660,7 @@ mod tests {
             score: 0,
             confidence_milli: 650,
             component_net_rank: 0,
+            preferred: false,
             acquisition_thesis_rank_adjustment: -800,
             acquisition_thesis_summary: vec![
                 "RedundantCoverage/OverBudget:duplicate_transition_or_mitigation".to_string(),
@@ -1666,6 +1677,39 @@ mod tests {
             reason
                 == "acquisition_thesis:RedundantCoverage/OverBudget:duplicate_transition_or_mitigation"
         }));
+    }
+
+    #[test]
+    fn preferred_decision_signal_breaks_equal_retention_rank_tie() {
+        let profiles = vec![semantic_profile(CardId::DarkEmbrace)];
+        let trajectory = summarize_branch_trajectory_v1(&profiles);
+        let plain = retention_candidate(0, profiles.clone(), trajectory.clone());
+        let mut preferred = retention_candidate(1, profiles, trajectory);
+        preferred.decision_signals = vec![BranchExperimentChoiceDecisionSignalV1 {
+            source: BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1.to_string(),
+            verdict: "ContextTake".to_string(),
+            tier: 2,
+            score: 680,
+            confidence_milli: 650,
+            component_net_rank: 680,
+            preferred: true,
+            acquisition_thesis_rank_adjustment: 0,
+            acquisition_thesis_summary: Vec::new(),
+        }];
+
+        let selection = select_branch_retention_portfolio_v1(
+            &[plain, preferred],
+            BranchRetentionConfigV1 {
+                max_total: 1,
+                max_per_frontier: None,
+                budget_profile: BranchRetentionBudgetProfileV1::Balanced,
+            },
+        );
+
+        assert_eq!(
+            selection.keep_indices.iter().copied().collect::<Vec<_>>(),
+            vec![1]
+        );
     }
 
     fn semantic_profile(card: CardId) -> CardRewardSemanticProfileV1 {

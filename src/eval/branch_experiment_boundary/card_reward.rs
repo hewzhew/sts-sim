@@ -418,6 +418,7 @@ struct RewardOptionStrategicRetentionKey {
     strategic_score_sort_key: i32,
     verdict_label: String,
     score_milli: Option<i32>,
+    preferred: bool,
     acquisition_thesis_rank_adjustment: i32,
     acquisition_thesis_summary: Vec<String>,
 }
@@ -480,11 +481,16 @@ fn reward_option_strategic_retention_keys(
                 .map(|compiled| {
                     let (thesis_adjustment, thesis_summary) =
                         reward_option_acquisition_thesis_signal(&trace, &action);
+                    let preferred = trace
+                        .would_choose
+                        .as_ref()
+                        .is_some_and(|preferred| preferred == &action);
                     RewardOptionStrategicRetentionKey {
                         score_milli: Some((compiled.score * 1000.0).round() as i32),
                         verdict_retention_order: compiled.verdict.retention_order(),
                         strategic_score_sort_key: -((compiled.score * 1000.0).round() as i32),
                         verdict_label: format!("{:?}", compiled.verdict),
+                        preferred,
                         acquisition_thesis_rank_adjustment: thesis_adjustment,
                         acquisition_thesis_summary: thesis_summary,
                     }
@@ -563,6 +569,7 @@ impl RewardOptionStrategicRetentionKey {
             strategic_score_sort_key: 0,
             verdict_label: "strategy_unavailable".to_string(),
             score_milli: None,
+            preferred: false,
             acquisition_thesis_rank_adjustment: 0,
             acquisition_thesis_summary: Vec::new(),
         }
@@ -574,6 +581,7 @@ impl RewardOptionStrategicRetentionKey {
             strategic_score_sort_key: 0,
             verdict_label: "missing_strategic_candidate".to_string(),
             score_milli: None,
+            preferred: false,
             acquisition_thesis_rank_adjustment: 0,
             acquisition_thesis_summary: Vec::new(),
         }
@@ -588,6 +596,7 @@ impl RewardOptionStrategicRetentionKey {
             score,
             confidence_milli: 650,
             component_net_rank: score.clamp(-1_200, 1_200),
+            preferred: self.preferred,
             acquisition_thesis_rank_adjustment: self.acquisition_thesis_rank_adjustment,
             acquisition_thesis_summary: self.acquisition_thesis_summary.clone(),
         })

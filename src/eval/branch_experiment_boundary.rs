@@ -432,6 +432,7 @@ pub(super) fn deck_mutation_decision_signal_v1(
         score: plan.score_hint,
         confidence_milli: (plan.confidence * 1000.0).round() as i32,
         component_net_rank: plan.score_hint,
+        preferred: false,
         acquisition_thesis_rank_adjustment: 0,
         acquisition_thesis_summary: Vec::new(),
     }
@@ -447,6 +448,7 @@ pub(super) fn campfire_plan_decision_signal_v1(
         score: plan.score_hint,
         confidence_milli: (plan.confidence * 1000.0).round() as i32,
         component_net_rank: plan.score_hint,
+        preferred: false,
         acquisition_thesis_rank_adjustment: 0,
         acquisition_thesis_summary: Vec::new(),
     }
@@ -463,6 +465,7 @@ pub(super) fn event_policy_decision_signal_v1(
         score,
         confidence_milli: 0,
         component_net_rank: score,
+        preferred: false,
         acquisition_thesis_rank_adjustment: 0,
         acquisition_thesis_summary: Vec::new(),
     }
