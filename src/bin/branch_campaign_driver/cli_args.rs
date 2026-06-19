@@ -505,14 +505,6 @@ pub(super) struct Args {
 
 #[cfg(test)]
 impl Args {
-    pub(super) fn parse_from<I, T>(itr: I) -> Self
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<std::ffi::OsString> + Clone,
-    {
-        parse_args_from(itr).unwrap_or_else(|err| err.exit())
-    }
-
     pub(super) fn try_parse_from<I, T>(itr: I) -> Result<Self, clap::Error>
     where
         I: IntoIterator<Item = T>,
