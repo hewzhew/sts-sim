@@ -29,6 +29,14 @@ Prints binary-label vs pairwise-utility training comparisons.
 .EXAMPLE
 .\tools\ml\run_turn_plan_baseline.ps1 -ShowTrainingCases 3
 Prints compact binary vs decomposed-utility disagreement case comparisons.
+
+.EXAMPLE
+.\tools\ml\run_turn_plan_baseline.ps1 -TacticalOnly -FeatureGroups tactical-summary
+Runs source-CV using only CombatTacticalEpisodeV1 JSONL expanded at load time.
+
+.EXAMPLE
+.\tools\ml\run_turn_plan_baseline.ps1 -UseTacticalEpisodes
+Runs source-CV over discovered legacy turn-plan probe samples plus tactical episodes.
 #>
 param(
     [string] $ProbeRoot = "tools\artifacts\tmp",
