@@ -202,6 +202,16 @@ if ($RunBaseline) {
                 $BestTarget.avg_hp_regret_to_target, `
                 $BestTarget.target_outcome_match_rate)
         }
+        if ($null -ne $Summary.prior_effect_decision) {
+            $Decision = $Summary.prior_effect_decision
+            $ConstraintText = ($Decision.constraints -join ",")
+            if ([string]::IsNullOrWhiteSpace($ConstraintText)) {
+                $ConstraintText = "-"
+            }
+            Write-Host ("prior effect: recommendation={0} constraints={1}" -f `
+                $Decision.recommendation, `
+                $ConstraintText)
+        }
     } else {
         python @ArgsList
     }

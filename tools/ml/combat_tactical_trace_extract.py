@@ -19,7 +19,7 @@ from typing import Any, Iterable
 
 
 EPISODE_SCHEMA = "CombatTacticalEpisodeV1"
-EPISODE_VERSION = 1
+EPISODE_VERSION = 2
 LABEL_ROLE = "diagnostic_tactical_trace_not_policy_label"
 EXTRACTOR_ID = "combat_tactical_trace_extract_v1"
 PUBLIC_MONSTER_FIELDS = (

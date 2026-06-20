@@ -2759,9 +2759,88 @@ def print_metrics(label: str, metrics: dict[str, float], *, report_mode: str) ->
     )
 
 
+def prior_effect_metric(summary: dict[str, Any]) -> dict[str, Any]:
+    metrics = summary.get("metrics") if isinstance(summary.get("metrics"), dict) else {}
+    for key in ("logistic_source_cv", "logistic_test"):
+        metric = metrics.get(key)
+        if isinstance(metric, dict) and metric.get("groups", 0.0) > 0:
+            return metric
+    return {}
+
+
+def prior_effect_decision(summary: dict[str, Any]) -> dict[str, Any]:
+    """Summarize whether the offline prior signal is ready for search integration."""
+    root_coverage = (
+        summary.get("root_action_mask_coverage")
+        if isinstance(summary.get("root_action_mask_coverage"), dict)
+        else {}
+    )
+    metric = prior_effect_metric(summary)
+    best_target = (
+        summary.get("best_target_mode_by_hp_regret")
+        if isinstance(summary.get("best_target_mode_by_hp_regret"), dict)
+        else {}
+    )
+    groups = numeric_or_zero(metric.get("groups") or summary.get("usable_group_count"))
+    coverage_ratio = numeric_or_zero(
+        root_coverage.get("candidate_first_action_coverage_ratio")
+    )
+    hp_gain = numeric_or_zero(metric.get("avg_hp_gain_vs_ordered"))
+    hp_regret = numeric_or_zero(metric.get("avg_hp_regret_to_target"))
+    outcome_match = numeric_or_zero(metric.get("target_outcome_match_rate"))
+    negative_hp_gain = numeric_or_zero(metric.get("negative_hp_gain"))
+    best_target_mode = best_target.get("target_mode")
+
+    constraints = []
+    evidence = []
+    if groups < 8:
+        constraints.append("too_few_groups_for_prior_effect_claim")
+    if coverage_ratio < 0.5:
+        constraints.append("do_not_prune_low_root_action_coverage")
+    elif coverage_ratio < 0.8:
+        constraints.append("ordering_only_until_action_coverage_improves")
+    if best_target_mode == "equivalent-hp-outcome":
+        evidence.append("equivalent_target_reduces_top1_label_noise")
+    if hp_gain > 0:
+        evidence.append("model_improves_hp_vs_ordered_within_candidate_set")
+    if negative_hp_gain > max(1.0, groups * 0.05):
+        constraints.append("review_negative_hp_gain_cases_before_search_integration")
+
+    if groups < 8:
+        recommendation = "collect_more_groups"
+    elif hp_gain <= 0 or outcome_match <= 0:
+        recommendation = "do_not_integrate_prior_yet"
+    elif coverage_ratio < 0.8:
+        recommendation = "try_root_ordering_only"
+    else:
+        recommendation = "try_ordering_then_measure_no_prune"
+
+    return {
+        "schema_name": "CombatPriorEffectDecisionV0",
+        "recommendation": recommendation,
+        "best_target_mode": best_target_mode,
+        "constraints": constraints,
+        "evidence": evidence,
+        "observed": {
+            "groups": groups,
+            "candidate_first_action_coverage_ratio": coverage_ratio,
+            "model_hp_gain_vs_ordered": hp_gain,
+            "model_hp_regret_to_target": hp_regret,
+            "model_target_outcome_match_rate": outcome_match,
+            "model_negative_hp_gain_cases": negative_hp_gain,
+        },
+        "limitations": [
+            "offline_candidate_set_probe_not_live_search_effect",
+            "recommendation_is_for_ordering_experiments_not_policy_claims",
+        ],
+    }
+
+
 def write_summary_json(path: Path | None, summary: dict[str, Any]) -> None:
     if path is None:
         return
+    if "prior_effect_decision" not in summary:
+        summary["prior_effect_decision"] = prior_effect_decision(summary)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, ensure_ascii=False, indent=2, sort_keys=True)
