@@ -39,6 +39,7 @@ param(
     [ValidateSet("binary", "pairwise-utility", "decomposed-utility")]
     [string] $TrainingMode = "decomposed-utility",
     [switch] $CompareFeatureGroups,
+    [switch] $CompareTargetModes,
     [switch] $CleanOutput
 )
 
@@ -129,6 +130,9 @@ if ($RunBaseline) {
     }
     if ($CompareFeatureGroups) {
         $ArgsList += "--compare-feature-groups"
+    }
+    if ($CompareTargetModes) {
+        $ArgsList += "--compare-target-modes"
     }
     Write-Host "ranking baseline: files=$($EpisodeFiles.Count) split=$SplitMode target=$TargetMode training=$TrainingMode features=$($FeatureGroups -join ',') epochs=$Epochs"
     python @ArgsList
