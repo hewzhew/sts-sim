@@ -33,6 +33,11 @@ def summarize_driver_report_pair(
     frontier_terminal_changed = 0
     best_complete_first_action_changed = 0
     ordering_first_reorder_sample_changed = 0
+    escaped_enemy_delta = 0
+    killed_enemy_delta = 0
+    turn_delta = 0
+    cards_played_delta = 0
+    potions_used_delta = 0
     case_deltas: list[dict[str, Any]] = []
 
     for baseline_case, prior_case in pairs:
@@ -70,6 +75,15 @@ def summarize_driver_report_pair(
         prior_best_complete_first_action = first_trajectory_action_key(
             prior_case.get("best_complete_trajectory")
         )
+        best_complete_trajectory_delta = trajectory_delta(
+            baseline_case.get("best_complete_trajectory"),
+            prior_case.get("best_complete_trajectory"),
+        )
+        escaped_enemy_delta += int(best_complete_trajectory_delta.get("escaped_enemy_delta") or 0)
+        killed_enemy_delta += int(best_complete_trajectory_delta.get("killed_enemy_delta") or 0)
+        turn_delta += int(best_complete_trajectory_delta.get("turn_delta") or 0)
+        cards_played_delta += int(best_complete_trajectory_delta.get("cards_played_delta") or 0)
+        potions_used_delta += int(best_complete_trajectory_delta.get("potions_used_delta") or 0)
         case_deltas.append(
             {
                 "case_id": baseline_case.get("id") or prior_case.get("id"),
@@ -99,6 +113,7 @@ def summarize_driver_report_pair(
                 "prior_ordering_first_reorder_sample": first_ordering_reorder_action_key(
                     prior_ordering
                 ),
+                "best_complete_trajectory_delta": best_complete_trajectory_delta,
             }
         )
 
@@ -122,6 +137,11 @@ def summarize_driver_report_pair(
         "frontier_terminal_changed": frontier_terminal_changed,
         "best_complete_first_action_changed": best_complete_first_action_changed,
         "ordering_first_reorder_sample_changed": ordering_first_reorder_sample_changed,
+        "escaped_enemy_delta": escaped_enemy_delta,
+        "killed_enemy_delta": killed_enemy_delta,
+        "turn_delta": turn_delta,
+        "cards_played_delta": cards_played_delta,
+        "potions_used_delta": potions_used_delta,
         "case_deltas": case_deltas,
     }
 
@@ -143,6 +163,11 @@ def summarize_batch(benchmark_summaries: list[dict[str, Any]]) -> dict[str, Any]
         "frontier_terminal_changed": 0,
         "best_complete_first_action_changed": 0,
         "ordering_first_reorder_sample_changed": 0,
+        "escaped_enemy_delta": 0,
+        "killed_enemy_delta": 0,
+        "turn_delta": 0,
+        "cards_played_delta": 0,
+        "potions_used_delta": 0,
     }
     for summary in benchmark_summaries:
         for key in totals:
@@ -169,6 +194,11 @@ def live_prior_effect_decision(summary: dict[str, Any]) -> dict[str, Any]:
     hp_delta = int(summary.get("frontier_hp_delta") or 0)
     nodes_delta = int(summary.get("nodes_expanded_delta") or 0)
     first_action_changes = int(summary.get("best_complete_first_action_changed") or 0)
+    escaped_delta = int(summary.get("escaped_enemy_delta") or 0)
+    killed_delta = int(summary.get("killed_enemy_delta") or 0)
+    turn_delta_value = int(summary.get("turn_delta") or 0)
+    cards_played_delta_value = int(summary.get("cards_played_delta") or 0)
+    potions_used_delta_value = int(summary.get("potions_used_delta") or 0)
 
     evidence: list[str] = []
     limitations: list[str] = []
@@ -187,8 +217,13 @@ def live_prior_effect_decision(summary: dict[str, Any]) -> dict[str, Any]:
         evidence.append("higher_frontier_hp")
     if nodes_delta < 0:
         evidence.append("fewer_nodes_expanded")
+    if escaped_delta < 0 or killed_delta > 0:
+        evidence.append("non_hp_tactical_outcome_changed")
+    if turn_delta_value < 0:
+        evidence.append("fewer_turns")
 
-    if prior_scored_states > 0 and complete_delta <= 0 and hp_delta <= 0:
+    tactical_gain = escaped_delta < 0 or killed_delta > 0 or turn_delta_value < 0
+    if prior_scored_states > 0 and complete_delta <= 0 and hp_delta <= 0 and not tactical_gain:
         evidence.append("prior_hits_without_outcome_gain")
     if nodes_delta > 0:
         limitations.append("prior_increased_nodes")
@@ -219,7 +254,49 @@ def live_prior_effect_decision(summary: dict[str, Any]) -> dict[str, Any]:
             "frontier_hp_delta": hp_delta,
             "nodes_expanded_delta": nodes_delta,
             "best_complete_first_action_changed": first_action_changes,
+            "escaped_enemy_delta": escaped_delta,
+            "killed_enemy_delta": killed_delta,
+            "turn_delta": turn_delta_value,
+            "cards_played_delta": cards_played_delta_value,
+            "potions_used_delta": potions_used_delta_value,
         },
+    }
+
+
+def trajectory_metrics(trajectory: Any) -> dict[str, int]:
+    if not isinstance(trajectory, dict):
+        return {}
+    enemies = trajectory.get("enemy_final_state") or []
+    escaped = 0
+    killed = 0
+    if isinstance(enemies, list):
+        for enemy in enemies:
+            if not isinstance(enemy, dict):
+                continue
+            if enemy.get("escaped"):
+                escaped += 1
+            elif enemy.get("alive") is False:
+                killed += 1
+    return {
+        "turns": int(trajectory.get("turns") or 0),
+        "cards_played": int(trajectory.get("cards_played") or 0),
+        "potions_used": int(trajectory.get("potions_used") or 0),
+        "escaped_enemies": escaped,
+        "killed_enemies": killed,
+    }
+
+
+def trajectory_delta(baseline_trajectory: Any, prior_trajectory: Any) -> dict[str, int]:
+    baseline = trajectory_metrics(baseline_trajectory)
+    prior = trajectory_metrics(prior_trajectory)
+    if not baseline and not prior:
+        return {}
+    return {
+        "turn_delta": prior.get("turns", 0) - baseline.get("turns", 0),
+        "cards_played_delta": prior.get("cards_played", 0) - baseline.get("cards_played", 0),
+        "potions_used_delta": prior.get("potions_used", 0) - baseline.get("potions_used", 0),
+        "escaped_enemy_delta": prior.get("escaped_enemies", 0) - baseline.get("escaped_enemies", 0),
+        "killed_enemy_delta": prior.get("killed_enemies", 0) - baseline.get("killed_enemies", 0),
     }
 
 

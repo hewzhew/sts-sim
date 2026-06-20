@@ -7,12 +7,21 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default)]
 pub struct CombatSearchV2RootActionPrior {
     scores_by_state: Arc<HashMap<String, HashMap<String, f64>>>,
+    duplicate_hint_count: usize,
 }
 
 impl CombatSearchV2RootActionPrior {
     pub fn from_scores(scores_by_state: HashMap<String, HashMap<String, f64>>) -> Self {
+        Self::from_scores_with_duplicate_count(scores_by_state, 0)
+    }
+
+    pub fn from_scores_with_duplicate_count(
+        scores_by_state: HashMap<String, HashMap<String, f64>>,
+        duplicate_hint_count: usize,
+    ) -> Self {
         Self {
             scores_by_state: Arc::new(scores_by_state),
+            duplicate_hint_count,
         }
     }
 
@@ -25,6 +34,10 @@ impl CombatSearchV2RootActionPrior {
 
     pub fn is_empty(&self) -> bool {
         self.scores_by_state.is_empty()
+    }
+
+    pub fn duplicate_hint_count(&self) -> usize {
+        self.duplicate_hint_count
     }
 }
 

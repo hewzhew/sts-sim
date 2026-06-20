@@ -102,6 +102,66 @@ class CombatRootPriorLiveCompareTests(unittest.TestCase):
         self.assertIn("prior_hits_without_outcome_gain", decision["evidence"])
         self.assertIn("prior_increased_nodes", decision["limitations"])
 
+    def test_trajectory_delta_counts_escape_vs_kill_as_non_hp_effect(self):
+        compare = load_module()
+        baseline = {
+            "cases": [
+                {
+                    "id": "looter",
+                    "outcome": {"complete_trajectory_found": True},
+                    "best_complete_trajectory": {
+                        "actions": [{"action_key": "combat/play_card/strike"}],
+                        "final_hp": 40,
+                        "turns": 5,
+                        "cards_played": 9,
+                        "potions_used": 0,
+                        "enemy_final_state": [
+                            {"alive": False, "escaped": True},
+                        ],
+                    },
+                    "stats": {"nodes_expanded": 10},
+                    "best_frontier_value": {"terminal": "Win", "player_hp": 40},
+                    "diagnostics": {"ordering": {}},
+                }
+            ]
+        }
+        prior = {
+            "cases": [
+                {
+                    "id": "looter",
+                    "outcome": {"complete_trajectory_found": True},
+                    "best_complete_trajectory": {
+                        "actions": [{"action_key": "combat/play_card/defend"}],
+                        "final_hp": 40,
+                        "turns": 4,
+                        "cards_played": 13,
+                        "potions_used": 0,
+                        "enemy_final_state": [
+                            {"alive": False, "escaped": False},
+                        ],
+                    },
+                    "stats": {"nodes_expanded": 12},
+                    "best_frontier_value": {"terminal": "Win", "player_hp": 40},
+                    "diagnostics": {
+                        "ordering": {
+                            "root_action_prior_scored_states": 1,
+                            "root_action_prior_scored_actions": 3,
+                        }
+                    },
+                }
+            ]
+        }
+
+        summary = compare.summarize_driver_report_pair("bench-a", baseline, prior)
+        batch = compare.summarize_batch([summary])
+        decision = compare.live_prior_effect_decision(batch)
+
+        self.assertEqual(summary["escaped_enemy_delta"], -1)
+        self.assertEqual(summary["killed_enemy_delta"], 1)
+        self.assertEqual(summary["case_deltas"][0]["best_complete_trajectory_delta"]["escaped_enemy_delta"], -1)
+        self.assertEqual(summary["case_deltas"][0]["best_complete_trajectory_delta"]["killed_enemy_delta"], 1)
+        self.assertIn("non_hp_tactical_outcome_changed", decision["evidence"])
+
 
 if __name__ == "__main__":
     unittest.main()

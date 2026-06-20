@@ -36,6 +36,7 @@ pub fn parse_combat_root_action_prior_hints_jsonl_v0(
     payload: &str,
 ) -> Result<CombatSearchV2RootActionPrior, String> {
     let mut scores_by_state: HashMap<String, HashMap<String, f64>> = HashMap::new();
+    let mut duplicate_hint_count = 0usize;
     for (line_index, line) in payload.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() {
@@ -64,10 +65,20 @@ pub fn parse_combat_root_action_prior_hints_jsonl_v0(
             if hint.action_key.is_empty() || !hint.score.is_finite() {
                 continue;
             }
-            state_scores.insert(hint.action_key, hint.score);
+            if let Some(existing) = state_scores.get_mut(&hint.action_key) {
+                duplicate_hint_count = duplicate_hint_count.saturating_add(1);
+                if hint.score > *existing {
+                    *existing = hint.score;
+                }
+            } else {
+                state_scores.insert(hint.action_key, hint.score);
+            }
         }
     }
-    Ok(CombatSearchV2RootActionPrior::from_scores(scores_by_state))
+    Ok(CombatSearchV2RootActionPrior::from_scores_with_duplicate_count(
+        scores_by_state,
+        duplicate_hint_count,
+    ))
 }
 
 #[cfg(test)]
@@ -96,5 +107,22 @@ mod tests {
         assert_eq!(prior.score("state-b", "combat/end_turn"), Some(0.5));
         assert_eq!(prior.score("ignored", "combat/end_turn"), None);
         assert_eq!(prior.score("state-a", "missing"), None);
+        assert_eq!(prior.duplicate_hint_count(), 0);
+    }
+
+    #[test]
+    fn duplicate_state_action_hints_keep_highest_score_and_report_count() {
+        let payload = r#"
+{"schema_name":"CombatRootActionPriorHintV0","root_exact_state_hash":"state-a","action_prior_hints":[{"action_key":"combat/end_turn","score":0.25}]}
+{"schema_name":"CombatRootActionPriorHintV0","root_exact_state_hash":"state-a","action_prior_hints":[{"action_key":"combat/end_turn","score":0.10},{"action_key":"combat/play_card/bash","score":0.50}]}
+{"schema_name":"CombatRootActionPriorHintV0","root_exact_state_hash":"state-a","action_prior_hints":[{"action_key":"combat/end_turn","score":0.75}]}
+"#;
+
+        let prior = parse_combat_root_action_prior_hints_jsonl_v0(payload)
+            .expect("prior hints should parse");
+
+        assert_eq!(prior.score("state-a", "combat/end_turn"), Some(0.75));
+        assert_eq!(prior.score("state-a", "combat/play_card/bash"), Some(0.50));
+        assert_eq!(prior.duplicate_hint_count(), 2);
     }
 }
