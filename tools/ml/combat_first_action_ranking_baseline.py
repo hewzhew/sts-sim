@@ -1263,6 +1263,26 @@ def selected_indices_for_scores(
     return ordered_index, model_index, target_index
 
 
+def utility_delta_score(left: dict[str, Any], right: dict[str, Any]) -> float:
+    left_tier, left_hp, left_loss_key = candidate_utility_key(left)
+    right_tier, right_hp, right_loss_key = candidate_utility_key(right)
+    return (
+        (left_tier - right_tier) * 10000.0
+        + (left_hp - right_hp)
+        + (left_loss_key - right_loss_key) * 0.01
+    )
+
+
+def utility_delta_summary(left: dict[str, Any], right: dict[str, Any]) -> str:
+    left_tier, left_hp, left_loss_key = candidate_utility_key(left)
+    right_tier, right_hp, right_loss_key = candidate_utility_key(right)
+    return (
+        f"tier_delta={left_tier - right_tier:+d} "
+        f"hp_delta={left_hp - right_hp:+d} "
+        f"loss_key_delta={left_loss_key - right_loss_key:+d}"
+    )
+
+
 def source_label(sample: dict[str, Any]) -> str:
     source = sample.get("source") if isinstance(sample.get("source"), dict) else {}
     case_id = source.get("case_id") or "-"
@@ -1374,6 +1394,142 @@ def print_case_rows(
     print(f"  cases:{title} count={len(rows)}")
     for _score, body in rows:
         print(body)
+
+
+def training_mode_case_rows(
+    groups: dict[str, list[dict[str, Any]]],
+    reference_scores: dict[str, list[float]],
+    candidate_scores: dict[str, list[float]],
+    *,
+    kind: str,
+    limit: int,
+    target_mode: str,
+    reference_label: str,
+    candidate_label: str,
+) -> list[tuple[float, str]]:
+    rows: list[tuple[float, str]] = []
+    for key, group in groups.items():
+        ref_scores = reference_scores.get(key) or []
+        cand_scores = candidate_scores.get(key) or []
+        if len(ref_scores) != len(group) or len(cand_scores) != len(group):
+            continue
+        positives = set(positive_target_indices(group, target_mode))
+        if not positives:
+            continue
+        ordered_index = min(range(len(group)), key=lambda index: sample_ordered_index(group[index]))
+        reference_index = max(range(len(group)), key=lambda index: ref_scores[index])
+        candidate_index = max(range(len(group)), key=lambda index: cand_scores[index])
+        target_index = primary_target_index(group)
+        if target_index is None or reference_index == candidate_index:
+            continue
+        reference = group[reference_index]
+        candidate_pick = group[candidate_index]
+        target = group[target_index]
+        delta = utility_delta_score(candidate_pick, reference)
+        reference_regret = utility_delta_score(target, reference)
+        candidate_regret = utility_delta_score(target, candidate_pick)
+        if kind == "better" and delta <= 0:
+            continue
+        if kind == "worse" and delta >= 0:
+            continue
+        if kind == "both-bad" and not (
+            reference_index not in positives and candidate_index not in positives
+        ):
+            continue
+        if kind == "disagree" and reference_index == candidate_index:
+            continue
+        sort_key = {
+            "better": delta,
+            "worse": -delta,
+            "both-bad": max(reference_regret, candidate_regret),
+            "disagree": abs(delta),
+        }[kind]
+        body = "\n".join(
+            [
+                f"case={source_label(group[0])} state={state_summary(group[0])}",
+                f"  target_mode={target_mode} positive_targets={len(positives)}",
+                f"  ordered: {plan_summary(group[ordered_index])}",
+                f"  {reference_label}: {plan_summary(reference)}",
+                (
+                    f"  {candidate_label}: {plan_summary(candidate_pick)} "
+                    f"delta_vs_{reference_label}={utility_delta_summary(candidate_pick, reference)}"
+                ),
+                (
+                    f"  target: {plan_summary(target)} "
+                    f"{reference_label}_regret={utility_delta_summary(target, reference)} "
+                    f"{candidate_label}_regret={utility_delta_summary(target, candidate_pick)}"
+                ),
+            ]
+        )
+        rows.append((float(sort_key), body))
+    rows.sort(key=lambda item: item[0], reverse=True)
+    return rows[:limit]
+
+
+def print_training_mode_case_rows(
+    groups: dict[str, list[dict[str, Any]]],
+    *,
+    dim: int,
+    epochs: int,
+    learning_rate: float,
+    l2: float,
+    seed: int,
+    include_order_features: bool,
+    feature_groups: frozenset[str],
+    target_mode: str,
+    report_mode: str,
+    reference_training_mode: str,
+    candidate_training_mode: str,
+    kind: str,
+    limit: int,
+) -> None:
+    reference_metrics, _reference_meta, reference_scores = source_cross_validated_model_metrics(
+        groups,
+        dim=dim,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        l2=l2,
+        seed=seed,
+        include_order_features=include_order_features,
+        feature_groups=feature_groups,
+        target_mode=target_mode,
+        training_mode=reference_training_mode,
+        return_scores=True,
+    )
+    candidate_metrics, _candidate_meta, candidate_scores = source_cross_validated_model_metrics(
+        groups,
+        dim=dim,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        l2=l2,
+        seed=seed,
+        include_order_features=include_order_features,
+        feature_groups=feature_groups,
+        target_mode=target_mode,
+        training_mode=candidate_training_mode,
+        return_scores=True,
+    )
+    print(
+        "  training_mode_case_compare:"
+        f" reference={reference_training_mode} candidate={candidate_training_mode}"
+    )
+    print_metrics(f"reference:{reference_training_mode}", reference_metrics, report_mode=report_mode)
+    print_metrics(f"candidate:{candidate_training_mode}", candidate_metrics, report_mode=report_mode)
+    kinds = ("better", "worse", "both-bad") if kind == "all" else (kind,)
+    for selected_kind in kinds:
+        rows = training_mode_case_rows(
+            groups,
+            reference_scores,
+            candidate_scores,
+            kind=selected_kind,
+            limit=limit,
+            target_mode=target_mode,
+            reference_label=reference_training_mode,
+            candidate_label=candidate_training_mode,
+        )
+        print(f"  cases:training_mode_{selected_kind} count={len(rows)}")
+        for _score, body in rows:
+            print(body)
 
 
 def feature_weight_report(
@@ -1514,6 +1670,33 @@ def main() -> None:
         action="store_true",
         help="For source-cv, compare binary labels vs pairwise diagnostic utility training.",
     )
+    parser.add_argument(
+        "--show-training-cases",
+        type=int,
+        default=0,
+        help=(
+            "For source-cv, print case comparisons between two training modes. "
+            "Defaults compare binary against decomposed-utility."
+        ),
+    )
+    parser.add_argument(
+        "--training-case-kind",
+        choices=("better", "worse", "both-bad", "disagree", "all"),
+        default="all",
+        help="Which training-mode disagreement cases to show.",
+    )
+    parser.add_argument(
+        "--reference-training-mode",
+        choices=TRAINING_MODES,
+        default="binary",
+        help="Reference mode for --show-training-cases.",
+    )
+    parser.add_argument(
+        "--candidate-training-mode",
+        choices=TRAINING_MODES,
+        default="decomposed-utility",
+        help="Candidate mode for --show-training-cases.",
+    )
     parser.add_argument("--top-features", type=int, default=12)
     parser.add_argument(
         "--report-mode",
@@ -1537,6 +1720,8 @@ def main() -> None:
     feature_groups = frozenset(args.feature_groups)
     target_mode = args.target_mode
     training_mode = args.training_mode
+    if args.show_training_cases > 0 and args.split_mode != "source-cv":
+        parser.error("--show-training-cases requires --split-mode source-cv")
 
     input_paths = list(args.inputs)
     if args.discover_turn_plan_probes:
@@ -1647,6 +1832,23 @@ def main() -> None:
                         limit=args.show_cases,
                         target_mode=target_mode,
                     )
+        if args.show_training_cases > 0:
+            print_training_mode_case_rows(
+                groups,
+                dim=args.dim,
+                epochs=args.epochs,
+                learning_rate=args.learning_rate,
+                l2=args.l2,
+                seed=args.seed,
+                include_order_features=args.include_order_features,
+                feature_groups=feature_groups,
+                target_mode=target_mode,
+                report_mode=args.report_mode,
+                reference_training_mode=args.reference_training_mode,
+                candidate_training_mode=args.candidate_training_mode,
+                kind=args.training_case_kind,
+                limit=args.show_training_cases,
+            )
         if training_mode == "decomposed-utility":
             outcome_examples, hp_examples = flatten_decomposed_utility_examples(
                 groups,

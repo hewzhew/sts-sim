@@ -25,6 +25,10 @@ Prints selected-label vs equivalent-outcome target comparisons.
 .EXAMPLE
 .\tools\ml\run_turn_plan_baseline.ps1 -CompareTrainingModes
 Prints binary-label vs pairwise-utility training comparisons.
+
+.EXAMPLE
+.\tools\ml\run_turn_plan_baseline.ps1 -ShowTrainingCases 3
+Prints compact binary vs decomposed-utility disagreement case comparisons.
 #>
 param(
     [string] $ProbeRoot = "tools\artifacts\tmp",
@@ -43,6 +47,13 @@ param(
     [switch] $CompareFeatureGroups,
     [switch] $CompareTargetModes,
     [switch] $CompareTrainingModes,
+    [int] $ShowTrainingCases = 0,
+    [ValidateSet("better", "worse", "both-bad", "disagree", "all")]
+    [string] $TrainingCaseKind = "all",
+    [ValidateSet("binary", "pairwise-utility", "decomposed-utility")]
+    [string] $ReferenceTrainingMode = "binary",
+    [ValidateSet("binary", "pairwise-utility", "decomposed-utility")]
+    [string] $CandidateTrainingMode = "decomposed-utility",
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $ExtraArgs
 )
@@ -85,10 +96,19 @@ if ($CompareTrainingModes) {
     $ArgsList += "--compare-training-modes"
 }
 
+if ($ShowTrainingCases -gt 0) {
+    $ArgsList += @(
+        "--show-training-cases", "$ShowTrainingCases",
+        "--training-case-kind", "$TrainingCaseKind",
+        "--reference-training-mode", "$ReferenceTrainingMode",
+        "--candidate-training-mode", "$CandidateTrainingMode"
+    )
+}
+
 if ($ExtraArgs) {
     $ArgsList += $ExtraArgs
 }
 
 $FeatureText = if ($FeatureGroups.Count -gt 0) { $FeatureGroups -join "," } else { "base" }
-Write-Host "turn-plan baseline: root=$ProbeRoot split=source-cv epochs=$Epochs seed=$Seed target=$TargetMode training=$TrainingMode report=$ReportMode cases=$ShowCases/$CaseKind features=$FeatureText compare_features=$CompareFeatureGroups compare_targets=$CompareTargetModes compare_training=$CompareTrainingModes"
+Write-Host "turn-plan baseline: root=$ProbeRoot split=source-cv epochs=$Epochs seed=$Seed target=$TargetMode training=$TrainingMode report=$ReportMode cases=$ShowCases/$CaseKind training_cases=$ShowTrainingCases/$TrainingCaseKind features=$FeatureText compare_features=$CompareFeatureGroups compare_targets=$CompareTargetModes compare_training=$CompareTrainingModes"
 python @ArgsList
