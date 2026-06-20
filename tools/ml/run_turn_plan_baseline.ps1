@@ -38,7 +38,7 @@ param(
     [string[]] $FeatureGroups = @(),
     [ValidateSet("selected", "equivalent-hp-outcome")]
     [string] $TargetMode = "selected",
-    [ValidateSet("binary", "pairwise-utility")]
+    [ValidateSet("binary", "pairwise-utility", "decomposed-utility")]
     [string] $TrainingMode = "binary",
     [switch] $CompareFeatureGroups,
     [switch] $CompareTargetModes,

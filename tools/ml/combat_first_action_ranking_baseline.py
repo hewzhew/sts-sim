@@ -34,7 +34,9 @@ PROBE_SCHEMA_NAME = "CombatActionProbeSampleV1"
 TURN_PLAN_SCHEMA_NAME = "CombatTurnPlanProbeSampleV1"
 EXPERIMENTAL_FEATURE_GROUPS = ("root-delta", "action-shape")
 TARGET_MODES = ("selected", "equivalent-hp-outcome")
-TRAINING_MODES = ("binary", "pairwise-utility")
+TRAINING_MODES = ("binary", "pairwise-utility", "decomposed-utility")
+DECOMPOSED_OUTCOME_WEIGHT = 1.0
+DECOMPOSED_HP_WEIGHT = 1.0
 
 
 def stable_hash(text: str) -> int:
@@ -731,6 +733,52 @@ def flatten_pairwise_utility_examples(
     return examples
 
 
+def flatten_decomposed_utility_examples(
+    groups: dict[str, list[dict[str, Any]]],
+    *,
+    include_order_features: bool,
+    feature_groups: frozenset[str],
+) -> tuple[list[tuple[int, dict[str, float]]], list[tuple[int, dict[str, float]]]]:
+    outcome_examples: list[tuple[int, dict[str, float]]] = []
+    hp_examples: list[tuple[int, dict[str, float]]] = []
+    for group in groups.values():
+        feature_rows = [
+            extract_features(
+                sample,
+                include_order_features=include_order_features,
+                feature_groups=feature_groups,
+            )
+            for sample in group
+        ]
+        utility_rows = [candidate_utility_key(sample) for sample in group]
+        for left_index in range(len(group)):
+            for right_index in range(left_index + 1, len(group)):
+                left_utility = utility_rows[left_index]
+                right_utility = utility_rows[right_index]
+                if left_utility == right_utility:
+                    continue
+                if left_utility > right_utility:
+                    better_index, worse_index = left_index, right_index
+                else:
+                    better_index, worse_index = right_index, left_index
+                better_minus_worse = diff_features(
+                    feature_rows[better_index],
+                    feature_rows[worse_index],
+                )
+                worse_minus_better = diff_features(
+                    feature_rows[worse_index],
+                    feature_rows[better_index],
+                )
+                target_examples = (
+                    outcome_examples
+                    if left_utility[0] != right_utility[0]
+                    else hp_examples
+                )
+                target_examples.append((1, better_minus_worse))
+                target_examples.append((0, worse_minus_better))
+    return outcome_examples, hp_examples
+
+
 def training_examples_for_groups(
     groups: dict[str, list[dict[str, Any]]],
     *,
@@ -752,6 +800,8 @@ def training_examples_for_groups(
             include_order_features=include_order_features,
             feature_groups=feature_groups,
         )
+    if training_mode == "decomposed-utility":
+        raise ValueError("decomposed-utility trains separate components; use score_groups_with_training")
     raise ValueError(f"unknown training mode: {training_mode}")
 
 
@@ -823,6 +873,140 @@ def evaluate_model(
     return metrics_from_group_scores(groups, group_scores, target_mode=target_mode)
 
 
+def score_group_with_single_model(
+    group: list[dict[str, Any]],
+    weights: dict[int, float],
+    bias: float,
+    *,
+    dim: int,
+    include_order_features: bool,
+    feature_groups: frozenset[str],
+) -> list[float]:
+    scores = []
+    for sample in group:
+        features = extract_features(
+            sample,
+            include_order_features=include_order_features,
+            feature_groups=feature_groups,
+        )
+        scores.append(dot(weights, hashed_features(features, dim), bias))
+    return scores
+
+
+def score_groups_with_training(
+    train_groups: dict[str, list[dict[str, Any]]],
+    eval_groups: dict[str, list[dict[str, Any]]],
+    *,
+    dim: int,
+    epochs: int,
+    learning_rate: float,
+    l2: float,
+    seed: int,
+    include_order_features: bool,
+    feature_groups: frozenset[str],
+    target_mode: str,
+    training_mode: str,
+) -> tuple[dict[str, list[float]], dict[str, Any]]:
+    if not train_groups or not eval_groups:
+        return {}, {"training_mode": training_mode, "examples": 0}
+
+    if training_mode == "decomposed-utility":
+        outcome_examples, hp_examples = flatten_decomposed_utility_examples(
+            train_groups,
+            include_order_features=include_order_features,
+            feature_groups=feature_groups,
+        )
+        if not outcome_examples and not hp_examples:
+            return {}, {
+                "training_mode": training_mode,
+                "examples": 0,
+                "outcome_examples": 0,
+                "hp_examples": 0,
+            }
+        if outcome_examples:
+            outcome_weights, outcome_bias = train_logistic(
+                outcome_examples,
+                dim=dim,
+                epochs=epochs,
+                learning_rate=learning_rate,
+                l2=l2,
+                seed=seed,
+            )
+        else:
+            outcome_weights, outcome_bias = {}, 0.0
+        if hp_examples:
+            hp_weights, hp_bias = train_logistic(
+                hp_examples,
+                dim=dim,
+                epochs=epochs,
+                learning_rate=learning_rate,
+                l2=l2,
+                seed=seed + 1009,
+            )
+        else:
+            hp_weights, hp_bias = {}, 0.0
+
+        group_scores: dict[str, list[float]] = {}
+        for key, group in eval_groups.items():
+            outcome_scores = score_group_with_single_model(
+                group,
+                outcome_weights,
+                outcome_bias,
+                dim=dim,
+                include_order_features=include_order_features,
+                feature_groups=feature_groups,
+            )
+            hp_scores = score_group_with_single_model(
+                group,
+                hp_weights,
+                hp_bias,
+                dim=dim,
+                include_order_features=include_order_features,
+                feature_groups=feature_groups,
+            )
+            group_scores[key] = [
+                DECOMPOSED_OUTCOME_WEIGHT * outcome + DECOMPOSED_HP_WEIGHT * hp
+                for outcome, hp in zip(outcome_scores, hp_scores)
+            ]
+        return group_scores, {
+            "training_mode": training_mode,
+            "examples": len(outcome_examples) + len(hp_examples),
+            "outcome_examples": len(outcome_examples),
+            "hp_examples": len(hp_examples),
+            "outcome_weight": DECOMPOSED_OUTCOME_WEIGHT,
+            "hp_weight": DECOMPOSED_HP_WEIGHT,
+        }
+
+    train_examples = training_examples_for_groups(
+        train_groups,
+        include_order_features=include_order_features,
+        feature_groups=feature_groups,
+        target_mode=target_mode,
+        training_mode=training_mode,
+    )
+    if not train_examples:
+        return {}, {"training_mode": training_mode, "examples": 0}
+    weights, bias = train_logistic(
+        train_examples,
+        dim=dim,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        l2=l2,
+        seed=seed,
+    )
+    return {
+        key: score_group_with_single_model(
+            group,
+            weights,
+            bias,
+            dim=dim,
+            include_order_features=include_order_features,
+            feature_groups=feature_groups,
+        )
+        for key, group in eval_groups.items()
+    }, {"training_mode": training_mode, "examples": len(train_examples)}
+
+
 def source_cross_validated_model_metrics(
     groups: dict[str, list[dict[str, Any]]],
     *,
@@ -861,33 +1045,22 @@ def source_cross_validated_model_metrics(
         test_keys = set(units[held_out_unit])
         train_groups = {key: group for key, group in groups.items() if key not in test_keys}
         test_groups = {key: group for key, group in groups.items() if key in test_keys}
-        train_examples = training_examples_for_groups(
+        fold_scores, meta = score_groups_with_training(
             train_groups,
-            include_order_features=include_order_features,
-            feature_groups=feature_groups,
-            target_mode=target_mode,
-            training_mode=training_mode,
-        )
-        if not train_examples or not test_groups:
-            continue
-        weights, bias = train_logistic(
-            train_examples,
+            test_groups,
             dim=dim,
             epochs=epochs,
             learning_rate=learning_rate,
             l2=l2,
             seed=seed + fold_index,
+            include_order_features=include_order_features,
+            feature_groups=feature_groups,
+            target_mode=target_mode,
+            training_mode=training_mode,
         )
-        for key, group in test_groups.items():
-            scores = []
-            for sample in group:
-                features = extract_features(
-                    sample,
-                    include_order_features=include_order_features,
-                    feature_groups=feature_groups,
-                )
-                scores.append(dot(weights, hashed_features(features, dim), bias))
-            out_of_fold_scores[key] = scores
+        if not fold_scores or not meta.get("examples"):
+            continue
+        out_of_fold_scores.update(fold_scores)
         folds += 1
     scores = out_of_fold_scores if return_scores else {}
     return metrics_from_group_scores(groups, out_of_fold_scores, target_mode=target_mode), {
@@ -1474,6 +1647,59 @@ def main() -> None:
                         limit=args.show_cases,
                         target_mode=target_mode,
                     )
+        if training_mode == "decomposed-utility":
+            outcome_examples, hp_examples = flatten_decomposed_utility_examples(
+                groups,
+                include_order_features=args.include_order_features,
+                feature_groups=feature_groups,
+            )
+            print(
+                "  decomposed_utility_full_data="
+                f"outcome_examples:{len(outcome_examples)} hp_examples:{len(hp_examples)} "
+                f"outcome_weight:{DECOMPOSED_OUTCOME_WEIGHT:.1f} "
+                f"hp_weight:{DECOMPOSED_HP_WEIGHT:.1f}"
+            )
+            if args.report_mode == "full":
+                if outcome_examples:
+                    outcome_weights, _outcome_bias = train_logistic(
+                        outcome_examples,
+                        dim=args.dim,
+                        epochs=args.epochs,
+                        learning_rate=args.learning_rate,
+                        l2=args.l2,
+                        seed=args.seed,
+                    )
+                    print("  top_weighted_features_full_data:outcome_component")
+                    for name, weight in feature_weight_report(
+                        outcome_weights,
+                        groups,
+                        dim=args.dim,
+                        include_order_features=args.include_order_features,
+                        feature_groups=feature_groups,
+                        limit=args.top_features,
+                    ):
+                        print(f"    {weight:+.4f} {name}")
+                if hp_examples:
+                    hp_weights, _hp_bias = train_logistic(
+                        hp_examples,
+                        dim=args.dim,
+                        epochs=args.epochs,
+                        learning_rate=args.learning_rate,
+                        l2=args.l2,
+                        seed=args.seed + 1009,
+                    )
+                    print("  top_weighted_features_full_data:hp_component")
+                    for name, weight in feature_weight_report(
+                        hp_weights,
+                        groups,
+                        dim=args.dim,
+                        include_order_features=args.include_order_features,
+                        feature_groups=feature_groups,
+                        limit=args.top_features,
+                    ):
+                        print(f"    {weight:+.4f} {name}")
+            return
+
         train_examples = training_examples_for_groups(
             groups,
             include_order_features=args.include_order_features,
@@ -1528,61 +1754,77 @@ def main() -> None:
         report_mode=args.report_mode,
     )
 
-    train_examples = training_examples_for_groups(
+    train_scores, train_meta = score_groups_with_training(
         train_groups,
-        include_order_features=args.include_order_features,
-        feature_groups=feature_groups,
-        target_mode=target_mode,
-        training_mode=training_mode,
-    )
-    if not train_examples or not test_groups:
-        print("  logistic=skipped_not_enough_split_data")
-        return
-    weights, bias = train_logistic(
-        train_examples,
+        train_groups,
         dim=args.dim,
         epochs=args.epochs,
         learning_rate=args.learning_rate,
         l2=args.l2,
         seed=args.seed,
+        include_order_features=args.include_order_features,
+        feature_groups=feature_groups,
+        target_mode=target_mode,
+        training_mode=training_mode,
     )
+    test_scores, _test_meta = score_groups_with_training(
+        train_groups,
+        test_groups,
+        dim=args.dim,
+        epochs=args.epochs,
+        learning_rate=args.learning_rate,
+        l2=args.l2,
+        seed=args.seed,
+        include_order_features=args.include_order_features,
+        feature_groups=feature_groups,
+        target_mode=target_mode,
+        training_mode=training_mode,
+    )
+    if not train_meta.get("examples") or not test_scores:
+        print("  logistic=skipped_not_enough_split_data")
+        return
     print_metrics(
         "logistic_train",
-        evaluate_model(
-            train_groups,
-            weights,
-            bias,
-            dim=args.dim,
-            include_order_features=args.include_order_features,
-            feature_groups=feature_groups,
-            target_mode=target_mode,
-        ),
+        metrics_from_group_scores(train_groups, train_scores, target_mode=target_mode),
         report_mode=args.report_mode,
     )
     print_metrics(
         "logistic_test",
-        evaluate_model(
-            test_groups,
-            weights,
-            bias,
-            dim=args.dim,
-            include_order_features=args.include_order_features,
-            feature_groups=feature_groups,
-            target_mode=target_mode,
-        ),
+        metrics_from_group_scores(test_groups, test_scores, target_mode=target_mode),
         report_mode=args.report_mode,
     )
     if args.report_mode == "full":
-        print("  top_weighted_features:")
-        for name, weight in feature_weight_report(
-            weights,
-            train_groups,
-            dim=args.dim,
-            include_order_features=args.include_order_features,
-            feature_groups=feature_groups,
-            limit=args.top_features,
-        ):
-            print(f"    {weight:+.4f} {name}")
+        if training_mode == "decomposed-utility":
+            print(
+                "  top_weighted_features=skipped_decomposed_mode "
+                "use source-cv full report for component feature weights"
+            )
+        else:
+            train_examples = training_examples_for_groups(
+                train_groups,
+                include_order_features=args.include_order_features,
+                feature_groups=feature_groups,
+                target_mode=target_mode,
+                training_mode=training_mode,
+            )
+            weights, _bias = train_logistic(
+                train_examples,
+                dim=args.dim,
+                epochs=args.epochs,
+                learning_rate=args.learning_rate,
+                l2=args.l2,
+                seed=args.seed,
+            )
+            print("  top_weighted_features:")
+            for name, weight in feature_weight_report(
+                weights,
+                train_groups,
+                dim=args.dim,
+                include_order_features=args.include_order_features,
+                feature_groups=feature_groups,
+                limit=args.top_features,
+            ):
+                print(f"    {weight:+.4f} {name}")
 
 
 if __name__ == "__main__":
