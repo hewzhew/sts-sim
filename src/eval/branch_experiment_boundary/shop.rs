@@ -45,7 +45,7 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
     let mut options = Vec::new();
     let mut seen_commands = std::collections::BTreeSet::<String>::new();
 
-    for projection in &compiled.branch_projection {
+    for projection in &compiled.branch_frontier {
         if options.len() >= MAX_SHOP_PURCHASE_OPTIONS_PER_BRANCH {
             break;
         }

@@ -63,7 +63,7 @@ pub struct ShopCandidateEvidenceV1 {
     pub same_card_count: usize,
     pub purchase_target: Option<ShopPurchaseTargetV1>,
     /// Legacy purchase estimate retained as an input signal. This is not a
-    /// final priority; executable behavior must go through ShopPlanEvaluation.
+    /// final priority; rollout/frontier admission must go through ShopPlanEvaluation.
     pub purchase_priority: Option<i32>,
     pub gold_cost: Option<i32>,
     pub support_gate: StrategyPlanSupportV1,
@@ -139,14 +139,14 @@ pub enum ShopPlanKindV1 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompiledShopDecisionV1 {
     pub frontier: ShopPlanFrontierV1,
-    pub execution_projection: Option<ShopPlanProjectionV1>,
-    pub branch_projection: Vec<ShopPlanProjectionV1>,
+    pub rollout_head: Option<ShopPlanProjectionV1>,
+    pub branch_frontier: Vec<ShopPlanProjectionV1>,
     /// Compatibility projection for older single-action consumers. New code
-    /// should read execution_projection/frontier instead of treating this as a
-    /// claim that the plan is globally best.
+    /// should read rollout_head/frontier instead of treating this as a claim
+    /// that the plan is globally best.
     pub selected_plan: ShopPlanV1,
     /// Compatibility projection for older branch consumers. New branch code
-    /// should read branch_projection/frontier instead of assuming everything
+    /// should read branch_frontier/frontier instead of assuming everything
     /// not in selected_plan is merely an alternative.
     pub alternatives: Vec<ShopPlanV1>,
     pub candidate_plans: Vec<ShopPlanCandidateV1>,
@@ -176,7 +176,7 @@ pub struct ShopPlanProjectionV1 {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShopPlanProjectionRoleV1 {
-    ExecutionHead,
+    RolloutHead,
     BranchExplore,
 }
 
@@ -217,9 +217,9 @@ pub enum ShopPlanCandidateRoleV1 {
 pub struct ShopPlanEvaluationV1 {
     /// Legacy compatibility verdict. This is no longer the single source of
     /// truth for both automation and branch exploration; use
-    /// execution_approval and branch_admission at new call sites.
+    /// rollout_admission and branch_admission at new call sites.
     pub verdict: ShopPlanVerdictV1,
-    pub execution_approval: ShopPlanExecutionApprovalV1,
+    pub rollout_admission: ShopPlanRolloutAdmissionV1,
     pub branch_admission: ShopPlanBranchAdmissionV1,
     pub tier: i32,
     pub score: i32,
@@ -240,34 +240,34 @@ pub enum ShopPlanVerdictV1 {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ShopPlanExecutionApprovalV1 {
-    pub status: ShopPlanExecutionStatusV1,
+pub struct ShopPlanRolloutAdmissionV1 {
+    pub status: ShopPlanRolloutAdmissionStatusV1,
     pub reason: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ShopPlanExecutionStatusV1 {
-    Approved,
-    Denied,
+pub enum ShopPlanRolloutAdmissionStatusV1 {
+    Admit,
+    Reject,
 }
 
-impl ShopPlanExecutionApprovalV1 {
-    pub(crate) fn approved(reason: impl Into<String>) -> Self {
+impl ShopPlanRolloutAdmissionV1 {
+    pub(crate) fn admit(reason: impl Into<String>) -> Self {
         Self {
-            status: ShopPlanExecutionStatusV1::Approved,
+            status: ShopPlanRolloutAdmissionStatusV1::Admit,
             reason: reason.into(),
         }
     }
 
-    pub(crate) fn denied(reason: impl Into<String>) -> Self {
+    pub(crate) fn reject(reason: impl Into<String>) -> Self {
         Self {
-            status: ShopPlanExecutionStatusV1::Denied,
+            status: ShopPlanRolloutAdmissionStatusV1::Reject,
             reason: reason.into(),
         }
     }
 
-    pub fn is_approved(&self) -> bool {
-        self.status == ShopPlanExecutionStatusV1::Approved
+    pub fn is_admitted(&self) -> bool {
+        self.status == ShopPlanRolloutAdmissionStatusV1::Admit
     }
 }
 
@@ -336,7 +336,7 @@ impl ShopPlanEvaluationV1 {
     pub(crate) fn pending() -> Self {
         Self {
             verdict: ShopPlanVerdictV1::Block,
-            execution_approval: ShopPlanExecutionApprovalV1::denied("pending shop plan evaluation"),
+            rollout_admission: ShopPlanRolloutAdmissionV1::reject("pending shop plan evaluation"),
             branch_admission: ShopPlanBranchAdmissionV1::reject("pending shop plan evaluation"),
             tier: 0,
             score: 0,
@@ -359,8 +359,8 @@ impl ShopPlanEvaluationV1 {
     ) -> Self {
         Self {
             verdict: ShopPlanVerdictV1::Allow,
-            execution_approval: ShopPlanExecutionApprovalV1::approved(
-                "shop plan approved for behavior execution",
+            rollout_admission: ShopPlanRolloutAdmissionV1::admit(
+                "shop plan admitted as a default rollout candidate",
             ),
             branch_admission: ShopPlanBranchAdmissionV1::admit(
                 "shop plan admitted for branch exploration",
@@ -378,8 +378,8 @@ impl ShopPlanEvaluationV1 {
     pub(crate) fn stop(reason: impl Into<String>) -> Self {
         Self {
             verdict: ShopPlanVerdictV1::Stop,
-            execution_approval: ShopPlanExecutionApprovalV1::approved(
-                "shop stop/leave plan approved for behavior execution",
+            rollout_admission: ShopPlanRolloutAdmissionV1::admit(
+                "shop stop/leave plan admitted as a default rollout candidate",
             ),
             branch_admission: ShopPlanBranchAdmissionV1::admit(
                 "shop stop/leave plan admitted for branch exploration",
@@ -397,8 +397,8 @@ impl ShopPlanEvaluationV1 {
     pub(crate) fn block(legacy_priority: Option<i32>, reason: impl Into<String>) -> Self {
         Self {
             verdict: ShopPlanVerdictV1::Block,
-            execution_approval: ShopPlanExecutionApprovalV1::denied(
-                "shop plan denied for behavior execution",
+            rollout_admission: ShopPlanRolloutAdmissionV1::reject(
+                "shop plan rejected as a default rollout candidate",
             ),
             branch_admission: ShopPlanBranchAdmissionV1::reject(
                 "shop plan rejected for branch exploration",
@@ -441,7 +441,7 @@ pub struct ShopPlanV1 {
     pub candidate_ids: Vec<String>,
     pub source: ShopPlanSourceV1,
     /// Legacy estimate copied from candidate/evaluation for trace continuity.
-    /// It must not be used as a direct execution path.
+    /// It must not be used as a direct rollout path.
     pub legacy_priority: Option<i32>,
     pub legacy_confidence: Option<f32>,
     pub suppressed_count: usize,
@@ -475,8 +475,8 @@ pub enum ShopPlanStepV1 {
 
 impl CompiledShopDecisionV1 {
     pub fn to_noncombat_decision_record_v1(&self) -> NonCombatDecisionRecordV1 {
-        let execution_plan = self
-            .execution_projection
+        let rollout_plan = self
+            .rollout_head
             .as_ref()
             .and_then(|projection| {
                 self.candidate_plans
@@ -485,13 +485,13 @@ impl CompiledShopDecisionV1 {
                     .map(|candidate| &candidate.plan)
             })
             .unwrap_or(&self.selected_plan);
-        let selected_candidate_id = (execution_plan.kind == ShopPlanKindV1::Execute
-            && !execution_plan.steps.is_empty())
-        .then(|| execution_plan.plan_id.clone());
+        let selected_candidate_id = (rollout_plan.kind == ShopPlanKindV1::Execute
+            && !rollout_plan.steps.is_empty())
+        .then(|| rollout_plan.plan_id.clone());
         let selected_evaluation = self
             .candidate_plans
             .iter()
-            .find(|candidate| candidate.plan.plan_id == execution_plan.plan_id)
+            .find(|candidate| candidate.plan.plan_id == rollout_plan.plan_id)
             .map(|candidate| &candidate.evaluation);
 
         NonCombatDecisionRecordV1 {
@@ -522,7 +522,7 @@ impl CompiledShopDecisionV1 {
                 assumptions: vec![
                     "shop compiler evaluates plan candidates before selecting an action"
                         .to_string(),
-                    "legacy priority is retained as estimate evidence, not as an execution entry point"
+                    "legacy priority is retained as estimate evidence, not as a rollout entry point"
                         .to_string(),
                     "shop automation is a behavior policy, not a teacher label".to_string(),
                 ],
@@ -540,12 +540,12 @@ impl CompiledShopDecisionV1 {
                     PolicySelectionStatusV1::Stopped
                 },
                 selected_candidate_id,
-                reason: execution_plan.reason.clone(),
+                reason: rollout_plan.reason.clone(),
                 confidence: selected_evaluation
                     .map(|evaluation| evaluation.confidence)
-                    .or(execution_plan.legacy_confidence)
+                    .or(rollout_plan.legacy_confidence)
                     .unwrap_or(0.0),
-                selection_mode: "compiled_shop_execution_projection_v1".to_string(),
+                selection_mode: "compiled_shop_rollout_head_v1".to_string(),
             },
         }
     }
@@ -574,7 +574,7 @@ fn compiled_shop_evidence_item(candidate: &ShopPlanCandidateV1) -> EvidenceItemV
         ValueComponentV1::new(format!("role_{:?}", candidate.role), 1.0),
         ValueComponentV1::new(format!("verdict_{:?}", evaluation.verdict), 1.0),
         ValueComponentV1::new(
-            format!("execution_{:?}", evaluation.execution_approval.status),
+            format!("rollout_{:?}", evaluation.rollout_admission.status),
             1.0,
         ),
         ValueComponentV1::new(
@@ -594,10 +594,10 @@ fn compiled_shop_evidence_item(candidate: &ShopPlanCandidateV1) -> EvidenceItemV
         kind: EvidenceKindV1::PolicyGate,
         candidate_id: Some(candidate.plan.plan_id.clone()),
         label: format!(
-            "shop plan role={:?} verdict={:?} execution={:?} branch={:?} tier={} score={} source={:?}",
+            "shop plan role={:?} verdict={:?} rollout={:?} branch={:?} tier={} score={} source={:?}",
             candidate.role,
             evaluation.verdict,
-            evaluation.execution_approval.status,
+            evaluation.rollout_admission.status,
             evaluation.branch_admission.status,
             evaluation.tier,
             evaluation.score,

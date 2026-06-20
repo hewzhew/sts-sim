@@ -251,7 +251,7 @@ fn projected_shop_plans_v1(
 ) -> Vec<ShopPlanV1> {
     let mut plans = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
-    for projection in &compiled.branch_projection {
+    for projection in &compiled.branch_frontier {
         let Some(candidate) = compiled
             .candidate_plans
             .iter()
@@ -264,7 +264,7 @@ fn projected_shop_plans_v1(
         }
     }
     if plans.is_empty() {
-        if let Some(projection) = &compiled.execution_projection {
+        if let Some(projection) = &compiled.rollout_head {
             if let Some(candidate) = compiled
                 .candidate_plans
                 .iter()

@@ -245,7 +245,7 @@ fn purge_candidate_evidence(
         DeckMutationPlanRoleV1::InspectOnly | DeckMutationPlanRoleV1::Blocked
     ) {
         risks.push(format!(
-            "deck mutation compiler did not allow this target for automatic execution: {:?}",
+            "deck mutation compiler did not admit this target for shop rollout/frontier use: {:?}",
             plan.role
         ));
     }
@@ -520,5 +520,5 @@ pub(super) fn stop_reason(context: &ShopDecisionContextV1) -> String {
             context.need.gold, context.need.floors_to_boss
         );
     }
-    format!("shop compiler stopped because no executable plan cleared evaluation gates ({classes})")
+    format!("shop compiler stopped because no rollout plan cleared evaluation gates ({classes})")
 }

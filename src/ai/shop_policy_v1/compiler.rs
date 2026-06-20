@@ -49,9 +49,8 @@ pub fn compile_shop_decision_v1(
         candidate_plans.extend(portfolio_candidates);
     }
     let frontier = shop_plan_frontier_v1(&strategic_trace, &candidate_plans);
-    let execution_projection =
-        select_execution_projection_v1(&strategic_trace, &candidate_plans, mode);
-    let selected_plan = execution_projection
+    let rollout_head = select_rollout_head_v1(&strategic_trace, &candidate_plans, mode);
+    let selected_plan = rollout_head
         .as_ref()
         .and_then(|projection| {
             plan_with_evaluation_by_id_v1(&candidate_plans, projection.plan_id.as_str())
@@ -59,13 +58,13 @@ pub fn compile_shop_decision_v1(
         .unwrap_or_else(|| {
             stop_candidate_plan_v1("shop compiler produced no candidates".to_string()).plan
         });
-    let branch_projection = match mode {
+    let branch_frontier = match mode {
         ShopCompileModeV1::ExecuteOne => Vec::new(),
         ShopCompileModeV1::BranchTopK { max_plans } => {
-            branch_exploration_projection_v1(context, &strategic_trace, &candidate_plans, max_plans)
+            branch_frontier_projection_v1(context, &strategic_trace, &candidate_plans, max_plans)
         }
     };
-    let alternatives = branch_projection
+    let alternatives = branch_frontier
         .iter()
         .filter(|projection| projection.plan_id != selected_plan.plan_id)
         .filter_map(|projection| {
@@ -75,8 +74,8 @@ pub fn compile_shop_decision_v1(
 
     CompiledShopDecisionV1 {
         frontier,
-        execution_projection,
-        branch_projection,
+        rollout_head,
+        branch_frontier,
         selected_plan,
         alternatives,
         candidate_plans,
@@ -89,7 +88,7 @@ pub fn compiled_shop_decision_has_executable_conversion_branch_v1(
     decision: &CompiledShopDecisionV1,
 ) -> bool {
     decision
-        .branch_projection
+        .branch_frontier
         .iter()
         .filter_map(|projection| {
             decision
@@ -101,24 +100,24 @@ pub fn compiled_shop_decision_has_executable_conversion_branch_v1(
         .any(shop_plan_has_conversion_step_v1)
 }
 
-fn select_execution_projection_v1(
+fn select_rollout_head_v1(
     strategic_trace: &StrategicDecisionTrace,
     candidates: &[ShopPlanCandidateV1],
     mode: ShopCompileModeV1,
 ) -> Option<ShopPlanProjectionV1> {
     candidates
         .iter()
-        .filter(|candidate| shop_plan_is_selectable_in_mode_v1(candidate, mode))
+        .filter(|candidate| shop_plan_is_rollout_eligible_in_mode_v1(candidate, mode))
         .max_by(|left, right| compare_evaluated_shop_candidates_v1(left, right, mode))
         .map(|candidate| ShopPlanProjectionV1 {
             plan_id: candidate.plan.plan_id.clone(),
             lane: shop_plan_lane_v1(strategic_trace, candidate),
-            role: ShopPlanProjectionRoleV1::ExecutionHead,
-            reason: "execution projection from evaluated shop frontier".to_string(),
+            role: ShopPlanProjectionRoleV1::RolloutHead,
+            reason: "rollout head from evaluated shop frontier".to_string(),
         })
 }
 
-fn branch_exploration_projection_v1(
+fn branch_frontier_projection_v1(
     context: &ShopDecisionContextV1,
     strategic_trace: &StrategicDecisionTrace,
     candidates: &[ShopPlanCandidateV1],
@@ -166,7 +165,7 @@ fn branch_exploration_projection_v1(
             plan_id: candidate.plan.plan_id.clone(),
             lane: shop_plan_lane_v1(strategic_trace, candidate),
             role: ShopPlanProjectionRoleV1::BranchExplore,
-            reason: "branch projection from evaluated shop frontier lane coverage".to_string(),
+            reason: "branch frontier from evaluated shop lane coverage".to_string(),
         })
         .collect()
 }
@@ -195,11 +194,11 @@ fn branch_should_include_leave_with_allowed_candidates_v1(context: &ShopDecision
     !(context.conversion_pressure && context.affordable_purchase_exists)
 }
 
-fn shop_plan_is_selectable_in_mode_v1(
+fn shop_plan_is_rollout_eligible_in_mode_v1(
     candidate: &ShopPlanCandidateV1,
     mode: ShopCompileModeV1,
 ) -> bool {
-    if !candidate.evaluation.execution_approval.is_approved() {
+    if !candidate.evaluation.rollout_admission.is_admitted() {
         return false;
     }
     match mode {
@@ -209,7 +208,7 @@ fn shop_plan_is_selectable_in_mode_v1(
 }
 
 fn shop_plan_is_context_card_purchase_v1(candidate: &ShopPlanCandidateV1) -> bool {
-    candidate.evaluation.execution_approval.is_approved()
+    candidate.evaluation.rollout_admission.is_admitted()
         && candidate.evaluation.tier < 320
         && candidate.plan.steps.len() == 1
         && matches!(
@@ -396,7 +395,7 @@ fn candidate_rank_v1(
     mode: ShopCompileModeV1,
 ) -> (i32, i32, i32, i32, i32, i32, std::cmp::Reverse<String>) {
     (
-        execution_rank_v1(candidate),
+        rollout_rank_v1(candidate),
         candidate.evaluation.tier,
         component_net_rank_v1(candidate),
         (candidate.evaluation.confidence * 1000.0).round() as i32,
@@ -426,8 +425,8 @@ fn verdict_rank_v1(verdict: ShopPlanVerdictV1) -> i32 {
     }
 }
 
-fn execution_rank_v1(candidate: &ShopPlanCandidateV1) -> i32 {
-    if candidate.evaluation.execution_approval.is_approved() {
+fn rollout_rank_v1(candidate: &ShopPlanCandidateV1) -> i32 {
+    if candidate.evaluation.rollout_admission.is_admitted() {
         return verdict_rank_v1(candidate.evaluation.verdict).max(1);
     }
     0

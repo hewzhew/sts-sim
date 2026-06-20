@@ -156,7 +156,7 @@ pub(super) fn render_checkpoint_shop_evidence_v1(
         context.affordable_purchase_exists,
         context.candidates.len()
     ));
-    if let Some(projection) = &compiled.execution_projection {
+    if let Some(projection) = &compiled.rollout_head {
         let rendered = compiled
             .candidate_plans
             .iter()
@@ -166,23 +166,23 @@ pub(super) fn render_checkpoint_shop_evidence_v1(
             })
             .unwrap_or_else(|| format!("missing plan {}", projection.plan_id));
         lines.push(format!(
-            "execution_projection: lane={:?} {}",
+            "rollout_head: lane={:?} {}",
             projection.lane, rendered
         ));
     } else {
-        lines.push("execution_projection: -".to_string());
+        lines.push("rollout_head: -".to_string());
     }
     lines.push(render_shop_plan_candidate_summary_v1(
         &compiled.candidate_plans,
     ));
-    if compiled.branch_projection.is_empty() {
-        lines.push("branch_projection: -".to_string());
+    if compiled.branch_frontier.is_empty() {
+        lines.push("branch_frontier: -".to_string());
     } else {
         lines.push(format!(
-            "branch_projection: {}",
-            compiled.branch_projection.len()
+            "branch_frontier: {}",
+            compiled.branch_frontier.len()
         ));
-        for (idx, projection) in compiled.branch_projection.iter().enumerate() {
+        for (idx, projection) in compiled.branch_frontier.iter().enumerate() {
             let rendered = compiled
                 .candidate_plans
                 .iter()
@@ -406,10 +406,10 @@ fn render_shop_plan_candidate_summary_v1(
         .take(4)
         .map(|candidate| {
             format!(
-                "{:?}:{:?}:exec{:?}:branch{:?}:tier{}:score{}:{}",
+                "{:?}:{:?}:rollout{:?}:branch{:?}:tier{}:score{}:{}",
                 candidate.role,
                 candidate.evaluation.verdict,
-                candidate.evaluation.execution_approval.status,
+                candidate.evaluation.rollout_admission.status,
                 candidate.evaluation.branch_admission.status,
                 candidate.evaluation.tier,
                 candidate.evaluation.score,
@@ -446,9 +446,9 @@ fn render_shop_plan_evaluation_v1(
         .map(|value| value.to_string())
         .unwrap_or_else(|| "-".to_string());
     format!(
-        "evaluation={:?} execution={:?} branch={} tier={} score={} confidence={:.2} legacy_estimate={} component_score=net:{:.1}/pos:{:.1}/neg:{:.1}/conf:{:.2} components=[{}] reasons=[{}]",
+        "evaluation={:?} rollout={:?} branch={} tier={} score={} confidence={:.2} legacy_estimate={} component_score=net:{:.1}/pos:{:.1}/neg:{:.1}/conf:{:.2} components=[{}] reasons=[{}]",
         evaluation.verdict,
-        evaluation.execution_approval.status,
+        evaluation.rollout_admission.status,
         match evaluation.branch_admission.status {
             sts_simulator::ai::shop_policy_v1::ShopPlanBranchAdmissionStatusV1::Admit => {
                 format!("Admit({})", evaluation.branch_admission.reason)

@@ -96,7 +96,7 @@ fn evaluate_single_candidate_v1(
         ShopPolicyClassV1::Leave => ShopPlanEvaluationV1::stop("legacy shop leave candidate"),
         ShopPolicyClassV1::Unknown => ShopPlanEvaluationV1::block(
             candidate.purchase_priority,
-            "shop evaluator does not mark unknown shop candidate executable",
+            "shop evaluator does not mark unknown shop candidate rollout-eligible",
         ),
     }
 }
@@ -145,13 +145,13 @@ fn evaluate_purchase_v1(
             let evaluation = ShopPlanEvaluationV1::block(
                 candidate.purchase_priority,
                 format!(
-                    "strategic trace blocks shop purchase behavior acquisition verdict={:?} score={:.2}",
+                    "strategic trace rejects shop purchase as rollout head verdict={:?} score={:.2}",
                     strategic_decision.verdict, strategic_decision.score
                 ),
             );
             return if shop_purchase_candidate_is_branch_worthy_v1(target, strategic_trace) {
                 evaluation.with_branch_admission(
-                    "shop purchase denied for behavior execution, but admitted for branch exploration by acquisition thesis",
+                    "shop purchase rejected as rollout head, but admitted to branch frontier by acquisition thesis",
                 )
             } else {
                 evaluation
@@ -214,7 +214,7 @@ fn evaluate_starter_purge_v1(
         return ShopPlanEvaluationV1::block(
             None,
             format!(
-                "strategic trace blocks starter purge behavior acquisition verdict={:?} score={:.2}",
+                "strategic trace rejects starter purge as rollout head verdict={:?} score={:.2}",
                 strategic_decision.verdict, strategic_decision.score
             ),
         );
@@ -260,7 +260,7 @@ fn evaluate_portfolio_plan_v1(
             );
         };
         let evaluation = evaluate_single_candidate_v1(config, strategic_trace, candidate);
-        if !evaluation.execution_approval.is_approved() {
+        if !evaluation.rollout_admission.is_admitted() {
             let reason = evaluation
                 .reasons
                 .first()
@@ -587,7 +587,7 @@ fn plan_components_v1(
         components.push(component_v1(
             ShopPlanComponentKindV1::StopReason,
             1.0,
-            "shop plan has no executable purchase component",
+            "shop plan has no rollout/frontier purchase component",
         ));
     }
     components

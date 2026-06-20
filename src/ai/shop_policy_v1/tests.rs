@@ -6,7 +6,7 @@ use crate::ai::decision_tags_v1::{
 use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, compile_shop_decision_v1, shop_card_conversion_priority_v1,
     ShopCompileModeV1, ShopDecisionSourceV1, ShopPlanCandidateRoleV1, ShopPlanComponentKindV1,
-    ShopPlanExecutionStatusV1, ShopPlanKindV1, ShopPlanProjectionRoleV1, ShopPlanSourceV1,
+    ShopPlanKindV1, ShopPlanProjectionRoleV1, ShopPlanRolloutAdmissionStatusV1, ShopPlanSourceV1,
     ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1,
     ShopPurchaseTargetV1,
 };
@@ -593,9 +593,9 @@ fn compiled_shop_branch_topk_returns_plan_alternatives() {
     );
 
     assert!(!compiled.alternatives.is_empty());
-    assert!(!compiled.branch_projection.is_empty());
+    assert!(!compiled.branch_frontier.is_empty());
     assert!(compiled.alternatives.len() <= 3);
-    assert!(compiled.branch_projection.len() <= 3);
+    assert!(compiled.branch_frontier.len() <= 3);
     assert_eq!(
         compiled.frontier.plans.len(),
         compiled.candidate_plans.len(),
@@ -626,7 +626,7 @@ fn compiled_shop_branch_topk_returns_plan_alternatives() {
         .alternatives
         .iter()
         .any(|plan| plan.candidate_ids.iter().any(|id| id.starts_with("shop:"))));
-    assert!(compiled.branch_projection.iter().all(|projection| {
+    assert!(compiled.branch_frontier.iter().all(|projection| {
         candidate_plan_ids.contains(projection.plan_id.as_str())
             && projection.role == ShopPlanProjectionRoleV1::BranchExplore
     }));
@@ -1198,7 +1198,7 @@ fn compiled_shop_branch_alternatives_are_not_limited_to_legacy_portfolio() {
 }
 
 #[test]
-fn compiled_shop_branch_projection_can_admit_non_executable_thesis_candidate() {
+fn compiled_shop_branch_frontier_can_admit_non_rollout_thesis_candidate() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 1;
     run_state.floor_num = 10;
@@ -1241,27 +1241,27 @@ fn compiled_shop_branch_projection_can_admit_non_executable_thesis_candidate() {
 
     assert_eq!(reaper_plan.evaluation.verdict, ShopPlanVerdictV1::Block);
     assert_eq!(
-        reaper_plan.evaluation.execution_approval.status,
-        ShopPlanExecutionStatusV1::Denied,
-        "branch exploration must not imply behavior execution approval"
+        reaper_plan.evaluation.rollout_admission.status,
+        ShopPlanRolloutAdmissionStatusV1::Reject,
+        "branch exploration must not imply rollout admission"
     );
     assert!(
         reaper_plan.evaluation.branch_admission.is_admitted(),
-        "future-sustain acquisition thesis should be admitted to branch exploration without being auto-executable"
+        "future-sustain acquisition thesis should be admitted to branch exploration without becoming the rollout head"
     );
     assert!(
         compiled
-            .branch_projection
+            .branch_frontier
             .iter()
             .any(|projection| projection.plan_id == reaper_plan.plan.plan_id),
         "branch projection should consume branch_admission, not verdict Allow"
     );
     assert!(
         compiled
-            .execution_projection
+            .rollout_head
             .as_ref()
             .is_none_or(|projection| projection.plan_id != reaper_plan.plan.plan_id),
-        "execution projection must consume execution_approval, not branch_admission"
+        "rollout head must consume rollout_admission, not branch_admission"
     );
 }
 
@@ -1358,7 +1358,7 @@ fn compiled_shop_branch_portfolio_excludes_blocked_single_action_candidates() {
 }
 
 #[test]
-fn compiled_shop_selected_plan_can_be_multi_step_cleanup_plus_relic() {
+fn compiled_shop_rollout_plan_can_be_multi_step_cleanup_plus_relic() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 1;
     run_state.floor_num = 5;
@@ -1496,7 +1496,7 @@ fn compiled_shop_portfolio_retains_multiple_multi_step_plans() {
         .filter(|candidate| {
             candidate.role == ShopPlanCandidateRoleV1::PortfolioAlternative
                 && candidate.plan.steps.len() >= 2
-                && candidate.evaluation.execution_approval.is_approved()
+                && candidate.evaluation.rollout_admission.is_admitted()
         })
         .collect::<Vec<_>>();
     let distinct_plan_ids = multi_step_portfolio

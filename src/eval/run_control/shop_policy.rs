@@ -17,8 +17,8 @@ pub(super) fn apply_shop_policy_action(
         &crate::ai::shop_policy_v1::ShopPolicyConfigV1::default(),
         crate::ai::shop_policy_v1::ShopCompileModeV1::ExecuteOne,
     );
-    let execution_plan = compiled
-        .execution_projection
+    let rollout_plan = compiled
+        .rollout_head
         .as_ref()
         .and_then(|projection| {
             compiled
@@ -28,18 +28,18 @@ pub(super) fn apply_shop_policy_action(
                 .map(|candidate| &candidate.plan)
         })
         .unwrap_or(&compiled.selected_plan);
-    let Some(step) = execution_plan.steps.first() else {
+    let Some(step) = rollout_plan.steps.first() else {
         return Ok(None);
     };
     let noncombat_record = compiled.to_noncombat_decision_record_v1();
     let (input, label) = shop_plan_step_input_and_label_v1(step);
-    let confidence = execution_plan.legacy_confidence.unwrap_or(0.0);
+    let confidence = rollout_plan.legacy_confidence.unwrap_or(0.0);
     let summary = format!(
-        "shop policy: {} confidence={confidence:.2} reason={} execution_projection={} source={:?} label_role={}",
+        "shop policy: {} confidence={confidence:.2} reason={} rollout_head={} source={:?} label_role={}",
         label,
-        execution_plan.reason,
-        execution_plan.plan_id,
-        execution_plan.source,
+        rollout_plan.reason,
+        rollout_plan.plan_id,
+        rollout_plan.source,
         "behavior_policy_not_teacher"
     );
 
