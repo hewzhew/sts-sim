@@ -581,13 +581,40 @@ def extract(
 
     counters: Counter[str] = Counter()
     total_candidates = 0
+    total_candidates_with_action_facts = 0
+    total_candidates_with_step_state_summaries = 0
+    total_candidates_with_step_summary_refs = 0
     for episode in episodes:
         candidates = as_list(episode.get("candidate_plans"))
         total_candidates += len(candidates)
         if as_dict(as_dict(episode.get("root")).get("public_view")).get("enemy_slots"):
             counters["episodes_with_enemy_slots"] += 1
-        if any(as_list(plan.get("steps")) and as_dict(as_list(plan.get("steps"))[0]).get("action_facts") for plan in candidates):
+        episode_has_action_facts = False
+        episode_has_step_state_summaries = False
+        episode_has_step_summary_refs = False
+        for plan in candidates:
+            steps = [step for step in as_list(as_dict(plan).get("steps")) if isinstance(step, dict)]
+            if steps and any(as_dict(step).get("action_facts") for step in steps):
+                total_candidates_with_action_facts += 1
+                episode_has_action_facts = True
+            if steps and all(
+                as_dict(step).get("state_before_summary") and as_dict(step).get("state_after_summary")
+                for step in steps
+            ):
+                total_candidates_with_step_state_summaries += 1
+                episode_has_step_state_summaries = True
+            if steps and all(
+                as_dict(step).get("state_before_ref") and as_dict(step).get("state_after_ref")
+                for step in steps
+            ):
+                total_candidates_with_step_summary_refs += 1
+                episode_has_step_summary_refs = True
+        if episode_has_action_facts:
             counters["episodes_with_action_facts"] += 1
+        if episode_has_step_state_summaries:
+            counters["episodes_with_step_state_summaries"] += 1
+        if episode_has_step_summary_refs:
+            counters["episodes_with_step_summary_refs"] += 1
         context = as_dict(episode.get("root_tactical_context"))
         if context.get("no_hp_loss_to_boundary_candidate_exists"):
             counters["episodes_with_no_hp_loss_candidate"] += 1
@@ -596,7 +623,21 @@ def extract(
     print("CombatTacticalTraceExtract")
     print(f"  episodes={len(episodes)} candidates={total_candidates}")
     print(f"  episodes_with_enemy_slots={counters['episodes_with_enemy_slots']}")
-    print(f"  episodes_with_action_facts={counters['episodes_with_action_facts']}")
+    print(
+        "  action_facts_coverage="
+        f"episodes={counters['episodes_with_action_facts']} "
+        f"candidates={total_candidates_with_action_facts}/{total_candidates}"
+    )
+    print(
+        "  step_state_summary_coverage="
+        f"episodes={counters['episodes_with_step_state_summaries']} "
+        f"candidates={total_candidates_with_step_state_summaries}/{total_candidates}"
+    )
+    print(
+        "  step_summary_ref_coverage="
+        f"episodes={counters['episodes_with_step_summary_refs']} "
+        f"candidates={total_candidates_with_step_summary_refs}/{total_candidates}"
+    )
     print(f"  episodes_with_no_hp_loss_candidate={counters['episodes_with_no_hp_loss_candidate']}")
     print(f"  episodes_with_complete_win_label={counters['episodes_with_complete_win_label']}")
     if out_jsonl:
