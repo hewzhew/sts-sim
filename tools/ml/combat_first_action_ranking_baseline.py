@@ -34,6 +34,7 @@ PROBE_SCHEMA_NAME = "CombatActionProbeSampleV1"
 TURN_PLAN_SCHEMA_NAME = "CombatTurnPlanProbeSampleV1"
 EXPERIMENTAL_FEATURE_GROUPS = ("root-delta", "action-shape")
 TARGET_MODES = ("selected", "equivalent-hp-outcome")
+TRAINING_MODES = ("binary", "pairwise-utility")
 
 
 def stable_hash(text: str) -> int:
@@ -249,6 +250,32 @@ def candidate_terminal_signature(sample: dict[str, Any]) -> tuple[bool, Any, int
         bool(target.get("complete_win")),
         target.get("terminal"),
         candidate_final_hp(sample),
+    )
+
+
+def candidate_utility_key(sample: dict[str, Any]) -> tuple[int, int, int]:
+    """Diagnostic utility order for pairwise ranking.
+
+    This deliberately excludes nodes_expanded: two plans with the same terminal
+    and HP result should not become different training targets only because the
+    bounded child search found one with fewer nodes.
+    """
+
+    target = sample.get("target") if isinstance(sample.get("target"), dict) else {}
+    complete_win = bool(target.get("complete_win"))
+    terminal = target.get("terminal")
+    if complete_win and terminal == "win":
+        tier = 3
+    elif terminal == "win":
+        tier = 2
+    elif terminal == "unresolved":
+        tier = 1
+    else:
+        tier = 0
+    return (
+        tier,
+        int_or_min(target.get("final_hp")),
+        -int_or_max(target.get("child_search_hp_loss")),
     )
 
 
@@ -654,6 +681,80 @@ def flatten_training_examples(
     return examples
 
 
+def diff_features(left: dict[str, float], right: dict[str, float]) -> dict[str, float]:
+    out: dict[str, float] = {}
+    keys = set(left) | set(right)
+    for key in keys:
+        value = left.get(key, 0.0) - right.get(key, 0.0)
+        if value:
+            out[key] = value
+    return out
+
+
+def flatten_pairwise_utility_examples(
+    groups: dict[str, list[dict[str, Any]]],
+    *,
+    include_order_features: bool,
+    feature_groups: frozenset[str],
+) -> list[tuple[int, dict[str, float]]]:
+    examples: list[tuple[int, dict[str, float]]] = []
+    for group in groups.values():
+        feature_rows = [
+            extract_features(
+                sample,
+                include_order_features=include_order_features,
+                feature_groups=feature_groups,
+            )
+            for sample in group
+        ]
+        utility_rows = [candidate_utility_key(sample) for sample in group]
+        for left_index in range(len(group)):
+            for right_index in range(left_index + 1, len(group)):
+                left_utility = utility_rows[left_index]
+                right_utility = utility_rows[right_index]
+                if left_utility == right_utility:
+                    continue
+                if left_utility > right_utility:
+                    better_index, worse_index = left_index, right_index
+                else:
+                    better_index, worse_index = right_index, left_index
+                better_minus_worse = diff_features(
+                    feature_rows[better_index],
+                    feature_rows[worse_index],
+                )
+                worse_minus_better = diff_features(
+                    feature_rows[worse_index],
+                    feature_rows[better_index],
+                )
+                examples.append((1, better_minus_worse))
+                examples.append((0, worse_minus_better))
+    return examples
+
+
+def training_examples_for_groups(
+    groups: dict[str, list[dict[str, Any]]],
+    *,
+    include_order_features: bool,
+    feature_groups: frozenset[str],
+    target_mode: str,
+    training_mode: str,
+) -> list[tuple[int, dict[str, float]]]:
+    if training_mode == "binary":
+        return flatten_training_examples(
+            groups,
+            include_order_features=include_order_features,
+            feature_groups=feature_groups,
+            target_mode=target_mode,
+        )
+    if training_mode == "pairwise-utility":
+        return flatten_pairwise_utility_examples(
+            groups,
+            include_order_features=include_order_features,
+            feature_groups=feature_groups,
+        )
+    raise ValueError(f"unknown training mode: {training_mode}")
+
+
 def train_logistic(
     examples: list[tuple[int, dict[str, float]]],
     *,
@@ -733,6 +834,7 @@ def source_cross_validated_model_metrics(
     include_order_features: bool,
     feature_groups: frozenset[str],
     target_mode: str,
+    training_mode: str,
     return_scores: bool = False,
 ) -> tuple[dict[str, float], dict[str, Any], dict[str, list[float]]]:
     units = source_unit_to_group_keys(groups)
@@ -759,11 +861,12 @@ def source_cross_validated_model_metrics(
         test_keys = set(units[held_out_unit])
         train_groups = {key: group for key, group in groups.items() if key not in test_keys}
         test_groups = {key: group for key, group in groups.items() if key in test_keys}
-        train_examples = flatten_training_examples(
+        train_examples = training_examples_for_groups(
             train_groups,
             include_order_features=include_order_features,
             feature_groups=feature_groups,
             target_mode=target_mode,
+            training_mode=training_mode,
         )
         if not train_examples or not test_groups:
             continue
@@ -803,6 +906,7 @@ def print_source_cv_feature_group_comparison(
     seed: int,
     include_order_features: bool,
     target_mode: str,
+    training_mode: str,
     report_mode: str,
 ) -> None:
     print("  feature_group_compare:")
@@ -824,6 +928,7 @@ def print_source_cv_feature_group_comparison(
             include_order_features=include_order_features,
             feature_groups=feature_groups,
             target_mode=target_mode,
+            training_mode=training_mode,
         )
         print_metrics(f"feature_group:{label}", metrics, report_mode=report_mode)
 
@@ -838,6 +943,7 @@ def print_source_cv_target_mode_comparison(
     seed: int,
     include_order_features: bool,
     feature_groups: frozenset[str],
+    training_mode: str,
     report_mode: str,
 ) -> None:
     print("  target_mode_compare:")
@@ -852,8 +958,39 @@ def print_source_cv_target_mode_comparison(
             include_order_features=include_order_features,
             feature_groups=feature_groups,
             target_mode=target_mode,
+            training_mode=training_mode,
         )
         print_metrics(f"target_mode:{target_mode}", metrics, report_mode=report_mode)
+
+
+def print_source_cv_training_mode_comparison(
+    groups: dict[str, list[dict[str, Any]]],
+    *,
+    dim: int,
+    epochs: int,
+    learning_rate: float,
+    l2: float,
+    seed: int,
+    include_order_features: bool,
+    feature_groups: frozenset[str],
+    target_mode: str,
+    report_mode: str,
+) -> None:
+    print("  training_mode_compare:")
+    for training_mode in TRAINING_MODES:
+        metrics, _meta, _scores = source_cross_validated_model_metrics(
+            groups,
+            dim=dim,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            l2=l2,
+            seed=seed,
+            include_order_features=include_order_features,
+            feature_groups=feature_groups,
+            target_mode=target_mode,
+            training_mode=training_mode,
+        )
+        print_metrics(f"training_mode:{training_mode}", metrics, report_mode=report_mode)
 
 
 def metrics_from_group_scores(
@@ -1184,6 +1321,12 @@ def main() -> None:
         help="Training/evaluation target definition. selected preserves the original single oracle label.",
     )
     parser.add_argument(
+        "--training-mode",
+        choices=TRAINING_MODES,
+        default="binary",
+        help="Training sample construction. binary preserves the current baseline.",
+    )
+    parser.add_argument(
         "--compare-feature-groups",
         action="store_true",
         help="For source-cv, print base/+group/all comparisons without changing the selected run.",
@@ -1192,6 +1335,11 @@ def main() -> None:
         "--compare-target-modes",
         action="store_true",
         help="For source-cv, compare selected vs equivalent target definitions.",
+    )
+    parser.add_argument(
+        "--compare-training-modes",
+        action="store_true",
+        help="For source-cv, compare binary labels vs pairwise diagnostic utility training.",
     )
     parser.add_argument("--top-features", type=int, default=12)
     parser.add_argument(
@@ -1215,6 +1363,7 @@ def main() -> None:
     args = parser.parse_args()
     feature_groups = frozenset(args.feature_groups)
     target_mode = args.target_mode
+    training_mode = args.training_mode
 
     input_paths = list(args.inputs)
     if args.discover_turn_plan_probes:
@@ -1257,11 +1406,12 @@ def main() -> None:
             include_order_features=args.include_order_features,
             feature_groups=feature_groups,
             target_mode=target_mode,
+            training_mode=training_mode,
             return_scores=args.show_cases > 0,
         )
         print(
             f"  split=mode:source-cv source_units:{cv_meta['source_units']} "
-            f"folds:{cv_meta['folds']} target_mode:{target_mode}"
+            f"folds:{cv_meta['folds']} target_mode:{target_mode} training_mode:{training_mode}"
         )
         print_metrics(
             "ordered_index_all",
@@ -1279,6 +1429,7 @@ def main() -> None:
                 seed=args.seed,
                 include_order_features=args.include_order_features,
                 target_mode=target_mode,
+                training_mode=training_mode,
                 report_mode=args.report_mode,
             )
         if args.compare_target_modes:
@@ -1291,6 +1442,20 @@ def main() -> None:
                 seed=args.seed,
                 include_order_features=args.include_order_features,
                 feature_groups=feature_groups,
+                training_mode=training_mode,
+                report_mode=args.report_mode,
+            )
+        if args.compare_training_modes:
+            print_source_cv_training_mode_comparison(
+                groups,
+                dim=args.dim,
+                epochs=args.epochs,
+                learning_rate=args.learning_rate,
+                l2=args.l2,
+                seed=args.seed,
+                include_order_features=args.include_order_features,
+                feature_groups=feature_groups,
+                target_mode=target_mode,
                 report_mode=args.report_mode,
             )
         if args.show_cases > 0:
@@ -1309,11 +1474,12 @@ def main() -> None:
                         limit=args.show_cases,
                         target_mode=target_mode,
                     )
-        train_examples = flatten_training_examples(
+        train_examples = training_examples_for_groups(
             groups,
             include_order_features=args.include_order_features,
             feature_groups=feature_groups,
             target_mode=target_mode,
+            training_mode=training_mode,
         )
         if not train_examples:
             print("  logistic=skipped_not_enough_data")
@@ -1362,11 +1528,12 @@ def main() -> None:
         report_mode=args.report_mode,
     )
 
-    train_examples = flatten_training_examples(
+    train_examples = training_examples_for_groups(
         train_groups,
         include_order_features=args.include_order_features,
         feature_groups=feature_groups,
         target_mode=target_mode,
+        training_mode=training_mode,
     )
     if not train_examples or not test_groups:
         print("  logistic=skipped_not_enough_split_data")

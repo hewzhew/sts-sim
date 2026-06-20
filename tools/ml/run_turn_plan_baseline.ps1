@@ -21,6 +21,10 @@ Prints the baseline plus opt-in experimental feature-group comparisons.
 .EXAMPLE
 .\tools\ml\run_turn_plan_baseline.ps1 -CompareTargetModes
 Prints selected-label vs equivalent-outcome target comparisons.
+
+.EXAMPLE
+.\tools\ml\run_turn_plan_baseline.ps1 -CompareTrainingModes
+Prints binary-label vs pairwise-utility training comparisons.
 #>
 param(
     [string] $ProbeRoot = "tools\artifacts\tmp",
@@ -34,8 +38,11 @@ param(
     [string[]] $FeatureGroups = @(),
     [ValidateSet("selected", "equivalent-hp-outcome")]
     [string] $TargetMode = "selected",
+    [ValidateSet("binary", "pairwise-utility")]
+    [string] $TrainingMode = "binary",
     [switch] $CompareFeatureGroups,
     [switch] $CompareTargetModes,
+    [switch] $CompareTrainingModes,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $ExtraArgs
 )
@@ -53,6 +60,7 @@ $ArgsList = @(
     "--epochs", "$Epochs",
     "--seed", "$Seed",
     "--target-mode", "$TargetMode",
+    "--training-mode", "$TrainingMode",
     "--report-mode", "$ReportMode"
 )
 
@@ -73,10 +81,14 @@ if ($CompareTargetModes) {
     $ArgsList += "--compare-target-modes"
 }
 
+if ($CompareTrainingModes) {
+    $ArgsList += "--compare-training-modes"
+}
+
 if ($ExtraArgs) {
     $ArgsList += $ExtraArgs
 }
 
 $FeatureText = if ($FeatureGroups.Count -gt 0) { $FeatureGroups -join "," } else { "base" }
-Write-Host "turn-plan baseline: root=$ProbeRoot split=source-cv epochs=$Epochs seed=$Seed target=$TargetMode report=$ReportMode cases=$ShowCases/$CaseKind features=$FeatureText compare_features=$CompareFeatureGroups compare_targets=$CompareTargetModes"
+Write-Host "turn-plan baseline: root=$ProbeRoot split=source-cv epochs=$Epochs seed=$Seed target=$TargetMode training=$TrainingMode report=$ReportMode cases=$ShowCases/$CaseKind features=$FeatureText compare_features=$CompareFeatureGroups compare_targets=$CompareTargetModes compare_training=$CompareTrainingModes"
 python @ArgsList
