@@ -32,7 +32,7 @@ TARGET_KIND = "initial_decision_candidate_selected_by_best_complete"
 LEGACY_SCHEMA_NAME = "CombatSearchGuidanceSampleV1"
 PROBE_SCHEMA_NAME = "CombatActionProbeSampleV1"
 TURN_PLAN_SCHEMA_NAME = "CombatTurnPlanProbeSampleV1"
-EXPERIMENTAL_FEATURE_GROUPS = ("root-delta", "action-shape")
+EXPERIMENTAL_FEATURE_GROUPS = ("root-delta", "action-shape", "target-detail")
 TARGET_MODES = ("selected", "equivalent-hp-outcome")
 TRAINING_MODES = ("binary", "pairwise-utility", "decomposed-utility")
 DECOMPOSED_OUTCOME_WEIGHT = 1.0
@@ -385,6 +385,16 @@ def display_action_target_suffix(action_key: str) -> str:
     return f"@{target_value}"
 
 
+def monster_slot_from_action_key(action_key: str) -> str | None:
+    target = TARGET_IN_ACTION_RE.search(action_key)
+    if not target:
+        return None
+    target_value = target.group(1)
+    if not target_value.startswith("monster_slot:"):
+        return None
+    return target_value.split(":", 1)[1]
+
+
 def add_turn_plan_root_delta_features(
     features: dict[str, float],
     state: dict[str, Any],
@@ -459,6 +469,45 @@ def add_turn_plan_action_shape_features(
         add_token(features, "plan_has_targeted_play")
 
 
+def add_turn_plan_target_detail_features(
+    features: dict[str, float],
+    action_keys: list[Any],
+) -> None:
+    monster_slots: list[str] = []
+    for position, key in enumerate(action_keys[:8]):
+        text = str(key)
+        if not text.startswith("combat/play_card/"):
+            continue
+        slot = monster_slot_from_action_key(text)
+        if slot is None:
+            continue
+        monster_slots.append(slot)
+        add_token(features, f"plan_target_slot:{slot}")
+        add_token(features, f"plan_action:{position}:target_slot:{slot}")
+        card = normalized_card_from_action_key(text)
+        if card:
+            add_token(features, f"plan_card_target_slot:{card}:{slot}")
+
+    if not monster_slots:
+        return
+    add_token(features, f"plan_first_target_slot:{monster_slots[0]}")
+    add_number(features, "plan_target_slot_count", len(monster_slots), 12.0)
+    unique_slots = set(monster_slots)
+    add_number(features, "plan_unique_target_slots_exact", len(unique_slots), 5.0)
+    slot_switches = sum(
+        1
+        for previous, current in zip(monster_slots, monster_slots[1:])
+        if previous != current
+    )
+    add_number(features, "plan_target_slot_switches", slot_switches, 8.0)
+    add_token(
+        features,
+        "plan_focuses_one_target_slot"
+        if len(unique_slots) == 1
+        else "plan_spreads_target_slots",
+    )
+
+
 def extract_features(
     sample: dict[str, Any],
     *,
@@ -513,6 +562,8 @@ def extract_features(
             add_turn_plan_root_delta_features(features, state, cand)
         if "action-shape" in feature_groups:
             add_turn_plan_action_shape_features(features, action_keys)
+        if "target-detail" in feature_groups:
+            add_turn_plan_target_detail_features(features, action_keys)
         for position, key in enumerate(action_keys[:8]):
             action = str(key)
             if action == "combat/end_turn":
