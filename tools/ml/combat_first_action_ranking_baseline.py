@@ -139,6 +139,11 @@ def samples_from_tactical_episode(episode: dict[str, Any], path: Path) -> list[d
     root = episode.get("root") if isinstance(episode.get("root"), dict) else {}
     public_view = root.get("public_view") if isinstance(root.get("public_view"), dict) else {}
     provenance = episode.get("provenance") if isinstance(episode.get("provenance"), dict) else {}
+    root_tactical_context = (
+        episode.get("root_tactical_context")
+        if isinstance(episode.get("root_tactical_context"), dict)
+        else {}
+    )
     root_context = {
         "config": provenance.get("search_config"),
         "initial_context": {
@@ -151,6 +156,7 @@ def samples_from_tactical_episode(episode: dict[str, Any], path: Path) -> list[d
             "source_schema": episode.get("schema_name"),
             "root_exact_state_hash": root.get("exact_state_hash"),
         },
+        "root_tactical_context": root_tactical_context,
         "enemy_slots": public_view.get("enemy_slots") if isinstance(public_view.get("enemy_slots"), list) else [],
     }
     source = episode.get("source") if isinstance(episode.get("source"), dict) else {}
@@ -162,7 +168,7 @@ def samples_from_tactical_episode(episode: dict[str, Any], path: Path) -> list[d
             if isinstance(plan.get("outcome_attachment"), dict)
             else {}
         )
-        candidate_plan = tactical_plan_as_turn_plan_probe(plan, summary)
+        candidate_plan = tactical_plan_as_turn_plan_probe(plan, summary, root_tactical_context)
         samples.append(
             {
                 "schema_name": TURN_PLAN_SCHEMA_NAME,
@@ -228,7 +234,11 @@ def tactical_target_tier(outcome: dict[str, Any]) -> int:
     return 0
 
 
-def tactical_plan_as_turn_plan_probe(plan: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:
+def tactical_plan_as_turn_plan_probe(
+    plan: dict[str, Any],
+    summary: dict[str, Any],
+    root_tactical_context: dict[str, Any],
+) -> dict[str, Any]:
     generation = plan.get("generation") if isinstance(plan.get("generation"), dict) else {}
     steps = [step for step in plan.get("steps", []) if isinstance(step, dict)]
     actions = [
@@ -253,6 +263,10 @@ def tactical_plan_as_turn_plan_probe(plan: dict[str, Any], summary: dict[str, An
         "end_state": final_state,
         "final_state_hash": plan.get("final_state_hash"),
         "plan_summary": summary,
+        "root_tactical_context": root_tactical_context,
+        "counterfactual": plan.get("counterfactual")
+        if isinstance(plan.get("counterfactual"), dict)
+        else {},
         "eval_final_hp": final_state.get("player_hp"),
         "eval_risk_margin": None,
         "eval_enemy_progress": summary.get("enemy_hp_removed_to_plan_boundary"),
@@ -856,12 +870,21 @@ def add_turn_plan_tactical_summary_features(
         return
 
     add_token(features, "plan_tactical_summary:present")
+    root_context = (
+        plan.get("root_tactical_context")
+        if isinstance(plan.get("root_tactical_context"), dict)
+        else {}
+    )
+    counterfactual = (
+        plan.get("counterfactual") if isinstance(plan.get("counterfactual"), dict) else {}
+    )
     for name, scale in (
         ("cards_played", 12.0),
         ("potion_actions", 4.0),
         ("hp_lost_to_plan_boundary", 80.0),
         ("enemy_hp_removed_to_plan_boundary", 300.0),
         ("enemy_kill_count_to_plan_boundary", 5.0),
+        ("visible_incoming_removed_to_plan_boundary", 120.0),
         ("damage_hint_total", 300.0),
         ("block_hint_total", 120.0),
         ("visible_attack_mitigation_hint_total", 120.0),
@@ -875,6 +898,32 @@ def add_turn_plan_tactical_summary_features(
         add_token(features, "plan_summary_no_hp_loss_to_boundary")
     if numeric_value(summary.get("enemy_hp_removed_to_plan_boundary")) == 0:
         add_token(features, "plan_summary_no_enemy_hp_removed")
+    for name, scale in (
+        ("best_hp_loss_to_boundary", 80.0),
+        ("best_enemy_hp_removed_to_boundary", 300.0),
+        ("best_enemy_kill_count_to_boundary", 5.0),
+        ("best_visible_incoming_removed_to_boundary", 120.0),
+        ("best_final_hp_labeled", 100.0),
+    ):
+        add_number(features, f"root_tactical_context_{name}", root_context.get(name), scale)
+    if root_context.get("no_hp_loss_to_boundary_candidate_exists"):
+        add_token(features, "root_tactical_context_no_hp_loss_candidate_exists")
+    if root_context.get("no_potion_candidate_exists"):
+        add_token(features, "root_tactical_context_no_potion_candidate_exists")
+    if counterfactual.get("is_on_simple_pareto_frontier"):
+        add_token(features, "plan_counterfactual_on_simple_pareto_frontier")
+    if counterfactual.get("missed_no_hp_loss_candidate"):
+        add_token(features, "plan_counterfactual_missed_no_hp_loss_candidate")
+    if counterfactual.get("potion_used_when_no_potion_candidate_exists"):
+        add_token(features, "plan_counterfactual_potion_used_when_no_potion_candidate_exists")
+    for name, scale in (
+        ("hp_loss_regret_vs_best_boundary", 80.0),
+        ("enemy_hp_progress_gap_vs_best_boundary", 300.0),
+        ("kill_count_gap_vs_best_boundary", 5.0),
+        ("incoming_removed_gap_vs_best_boundary", 120.0),
+        ("final_hp_regret_vs_best_labeled", 100.0),
+    ):
+        add_number(features, f"plan_counterfactual_{name}", counterfactual.get(name), scale)
     targets = summary.get("unique_target_slots")
     if isinstance(targets, list):
         add_number(features, "plan_summary_unique_target_slots", len(targets), 5.0)

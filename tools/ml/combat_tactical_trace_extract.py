@@ -348,6 +348,10 @@ def plan_tactical_summary(
         "enemy_hp_removed_to_plan_boundary": max(0, -total_enemy_hp_delta),
         "enemy_kill_count_to_plan_boundary": max(0, -living_enemy_delta),
         "visible_incoming_boundary_delta": root_to_end.get("visible_incoming_damage"),
+        "visible_incoming_removed_to_plan_boundary": max(
+            0,
+            -int_value(root_to_end.get("visible_incoming_damage")),
+        ),
         "damage_hint_total": damage_hint_total,
         "block_hint_total": block_hint_total,
         "visible_attack_mitigation_hint_total": mitigation_hint_total,
@@ -530,6 +534,10 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
     hp_losses = [int_value(summary.get("hp_lost_to_plan_boundary")) for summary in summaries]
     enemy_removed = [int_value(summary.get("enemy_hp_removed_to_plan_boundary")) for summary in summaries]
     kills = [int_value(summary.get("enemy_kill_count_to_plan_boundary")) for summary in summaries]
+    incoming_removed = [
+        int_value(summary.get("visible_incoming_removed_to_plan_boundary")) for summary in summaries
+    ]
+    potion_actions = [int_value(summary.get("potion_actions")) for summary in summaries]
     final_hps = [
         outcome.get("final_hp")
         for outcome in outcomes
@@ -539,20 +547,26 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
     best_hp_loss = min(hp_losses) if hp_losses else None
     best_enemy_removed = max(enemy_removed) if enemy_removed else None
     best_kills = max(kills) if kills else None
+    best_incoming_removed = max(incoming_removed) if incoming_removed else None
     best_final_hp = max(final_hps) if final_hps else None
+    no_hp_loss_candidate_exists = any(loss == 0 for loss in hp_losses)
+    no_potion_candidate_exists = any(actions == 0 for actions in potion_actions)
     for trace in traces:
         summary = as_dict(trace.get("plan_summary"))
         outcome = as_dict(trace.get("outcome_attachment"))
+        hp_loss = int_value(summary.get("hp_lost_to_plan_boundary"))
+        plan_potion_actions = int_value(summary.get("potion_actions"))
         counterfactual = {
             "data_role": "Counterfactual",
             "availability": "PostSearch",
             "candidate_set_scope": "same_root_bounded_turn_plan_candidates",
             "is_on_simple_pareto_frontier": trace.get("plan_id") in pareto,
+            "missed_no_hp_loss_candidate": no_hp_loss_candidate_exists and hp_loss > 0,
+            "potion_used_when_no_potion_candidate_exists": no_potion_candidate_exists
+            and plan_potion_actions > 0,
         }
         if best_hp_loss is not None:
-            counterfactual["hp_loss_regret_vs_best_boundary"] = int_value(
-                summary.get("hp_lost_to_plan_boundary")
-            ) - best_hp_loss
+            counterfactual["hp_loss_regret_vs_best_boundary"] = hp_loss - best_hp_loss
         if best_enemy_removed is not None:
             counterfactual["enemy_hp_progress_gap_vs_best_boundary"] = best_enemy_removed - int_value(
                 summary.get("enemy_hp_removed_to_plan_boundary")
@@ -560,6 +574,11 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
         if best_kills is not None:
             counterfactual["kill_count_gap_vs_best_boundary"] = best_kills - int_value(
                 summary.get("enemy_kill_count_to_plan_boundary")
+            )
+        if best_incoming_removed is not None:
+            counterfactual["incoming_removed_gap_vs_best_boundary"] = (
+                best_incoming_removed
+                - int_value(summary.get("visible_incoming_removed_to_plan_boundary"))
             )
         if best_final_hp is not None and isinstance(outcome.get("final_hp"), int):
             counterfactual["final_hp_regret_vs_best_labeled"] = best_final_hp - outcome["final_hp"]
@@ -573,13 +592,12 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
             for trace in traces
         ),
         "complete_win_label_exists": any(outcome.get("complete_win") for outcome in outcomes),
-        "no_hp_loss_to_boundary_candidate_exists": any(loss == 0 for loss in hp_losses),
-        "no_potion_candidate_exists": any(
-            int_value(summary.get("potion_actions")) == 0 for summary in summaries
-        ),
+        "no_hp_loss_to_boundary_candidate_exists": no_hp_loss_candidate_exists,
+        "no_potion_candidate_exists": no_potion_candidate_exists,
         "best_hp_loss_to_boundary": best_hp_loss,
         "best_enemy_hp_removed_to_boundary": best_enemy_removed,
         "best_enemy_kill_count_to_boundary": best_kills,
+        "best_visible_incoming_removed_to_boundary": best_incoming_removed,
         "best_final_hp_labeled": best_final_hp,
         "pareto_frontier_plan_ids": pareto,
         "limitations": [
