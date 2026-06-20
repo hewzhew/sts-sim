@@ -33,6 +33,7 @@ impl Default for TurnPlannerConfigV1 {
 #[derive(Clone)]
 pub(in crate::ai::combat_search_v2) struct TurnPlanV1 {
     pub(in crate::ai::combat_search_v2) actions: Vec<CombatSearchV2ActionTrace>,
+    pub(in crate::ai::combat_search_v2) action_facts: Vec<CombatSearchV2ActionFacts>,
     pub(in crate::ai::combat_search_v2) end_node: SearchNode,
     pub(in crate::ai::combat_search_v2) stop_reason: TurnPlanStopReason,
     pub(in crate::ai::combat_search_v2) bucket: TurnPlanBucket,

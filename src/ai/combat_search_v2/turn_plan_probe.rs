@@ -55,6 +55,7 @@ pub struct CombatSearchV2TurnPlanProbeCandidateReport {
     pub first_action_key: Option<String>,
     pub action_keys: Vec<String>,
     pub actions: Vec<CombatSearchV2ActionTrace>,
+    pub action_facts: Vec<CombatSearchV2ActionFacts>,
     pub eval_final_hp: i32,
     pub eval_risk_margin: i32,
     pub eval_enemy_progress: i32,
@@ -119,6 +120,7 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
                     .map(|action| action.action_key.clone())
                     .collect(),
                 actions: plan.actions.clone(),
+                action_facts: plan.action_facts.clone(),
                 eval_final_hp: plan.eval.final_hp(),
                 eval_risk_margin: plan.eval.risk_margin(),
                 eval_enemy_progress: plan.eval.enemy_progress(),
