@@ -2414,6 +2414,91 @@ def metrics_from_group_scores(
     }
 
 
+def root_exact_state_hash_for_group(group: list[dict[str, Any]]) -> str | None:
+    if not group:
+        return None
+    root_context = group[0].get("root_context") if isinstance(group[0].get("root_context"), dict) else {}
+    enumeration = (
+        root_context.get("enumeration")
+        if isinstance(root_context.get("enumeration"), dict)
+        else {}
+    )
+    value = enumeration.get("root_exact_state_hash")
+    return value if isinstance(value, str) and value else None
+
+
+def prior_hint_records_from_scores(
+    groups: dict[str, list[dict[str, Any]]],
+    group_scores: dict[str, list[float]],
+    *,
+    target_mode: str,
+    model_id: str,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for group_key, group in sorted(groups.items()):
+        scores = group_scores.get(group_key) or []
+        if len(scores) != len(group) or not group:
+            continue
+        by_action: dict[str, dict[str, Any]] = {}
+        for index, (sample, score) in enumerate(zip(group, scores)):
+            action_key = candidate_action_key(sample)
+            if not action_key:
+                continue
+            plan = candidate(sample)
+            plan_index = plan.get("plan_index")
+            entry = by_action.setdefault(
+                action_key,
+                {
+                    "action_key": action_key,
+                    "score": float(score),
+                    "candidate_count": 0,
+                    "candidate_indices": [],
+                    "plan_indices": [],
+                    "best_candidate_index": index,
+                    "best_final_hp": candidate_final_hp(sample),
+                    "best_terminal": candidate_terminal_signature(sample)[1],
+                    "best_complete_win": candidate_complete_win(sample),
+                },
+            )
+            entry["candidate_count"] += 1
+            entry["candidate_indices"].append(index)
+            if isinstance(plan_index, int):
+                entry["plan_indices"].append(plan_index)
+            if float(score) > entry["score"]:
+                entry["score"] = float(score)
+                entry["best_candidate_index"] = index
+                entry["best_final_hp"] = candidate_final_hp(sample)
+                entry["best_terminal"] = candidate_terminal_signature(sample)[1]
+                entry["best_complete_win"] = candidate_complete_win(sample)
+        hints = sorted(
+            by_action.values(),
+            key=lambda entry: (-entry["score"], entry["action_key"]),
+        )
+        if not hints:
+            continue
+        positives = positive_target_indices(group, target_mode)
+        source = group[0].get("source") if isinstance(group[0].get("source"), dict) else {}
+        records.append(
+            {
+                "schema_name": "CombatRootActionPriorHintV0",
+                "model_id": model_id,
+                "target_mode": target_mode,
+                "group_key": group_key,
+                "source_file": source.get("source_file") or source.get("file"),
+                "root_exact_state_hash": root_exact_state_hash_for_group(group),
+                "candidate_count": len(group),
+                "action_count": len(hints),
+                "positive_target_candidate_indices": positives,
+                "action_prior_hints": hints,
+                "limitations": [
+                    "offline_prior_scores_for_ordering_only_not_pruning",
+                    "scores_are_comparable_only_within_the_same_root_state",
+                ],
+            }
+        )
+    return records
+
+
 def selected_indices_for_scores(
     group: list[dict[str, Any]], scores: list[float]
 ) -> tuple[int, int, int | None]:
@@ -2847,6 +2932,16 @@ def write_summary_json(path: Path | None, summary: dict[str, Any]) -> None:
         handle.write("\n")
 
 
+def write_prior_hints_jsonl(path: Path | None, records: list[dict[str, Any]]) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
+            handle.write("\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -2980,6 +3075,15 @@ def main() -> None:
         type=Path,
         default=None,
         help="Optional path for machine-readable metrics summary JSON.",
+    )
+    parser.add_argument(
+        "--prior-hints-jsonl-out",
+        type=Path,
+        default=None,
+        help=(
+            "Optional JSONL output of per-root action prior hints from the evaluated model. "
+            "These hints are diagnostic ordering inputs only, not pruning decisions."
+        ),
     )
     parser.add_argument(
         "--show-cases",
@@ -3135,7 +3239,7 @@ def main() -> None:
             feature_groups=feature_groups,
             target_mode=target_mode,
             training_mode=training_mode,
-            return_scores=args.show_cases > 0,
+            return_scores=args.show_cases > 0 or args.prior_hints_jsonl_out is not None,
         )
         ordered_metrics = evaluate_ordered_index(groups, target_mode=target_mode)
         summary["split"] = {
@@ -3157,6 +3261,29 @@ def main() -> None:
             report_mode=args.report_mode,
         )
         print_metrics("logistic_source_cv", cv_metrics, report_mode=args.report_mode)
+        if args.prior_hints_jsonl_out is not None:
+            prior_records = prior_hint_records_from_scores(
+                groups,
+                cv_scores,
+                target_mode=target_mode,
+                model_id=(
+                    "source_cv:"
+                    f"training={training_mode}:target={target_mode}:"
+                    f"features={','.join(sorted(feature_groups)) or 'base'}"
+                ),
+            )
+            write_prior_hints_jsonl(args.prior_hints_jsonl_out, prior_records)
+            summary["prior_hints"] = {
+                "schema_name": "CombatRootActionPriorHintBatchV0",
+                "path": str(args.prior_hints_jsonl_out),
+                "record_count": len(prior_records),
+                "action_hint_count": sum(
+                    len(record.get("action_prior_hints", [])) for record in prior_records
+                ),
+                "limitations": [
+                    "offline_out_of_fold_prior_scores_for_ordering_only_not_pruning",
+                ],
+            }
         if args.compare_feature_groups:
             print_source_cv_feature_group_comparison(
                 groups,

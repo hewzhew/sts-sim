@@ -142,6 +142,7 @@ foreach ($Benchmark in $BenchmarkPath) {
 
 if ($RunBaseline) {
     $BaselineSummaryPath = Join-Path $OutputDir "ranking_baseline_summary.json"
+    $PriorHintsPath = Join-Path $OutputDir "root_action_prior_hints.jsonl"
     $ArgsList = @(
         "$Baseline",
         $EpisodeFiles,
@@ -150,6 +151,7 @@ if ($RunBaseline) {
         "--target-mode", "$TargetMode",
         "--training-mode", "$TrainingMode",
         "--summary-json-out", "$BaselineSummaryPath",
+        "--prior-hints-jsonl-out", "$PriorHintsPath",
         "--report-mode", "compact"
     )
     if ($FeatureGroups.Count -gt 0) {
@@ -162,7 +164,7 @@ if ($RunBaseline) {
     if ($CompareTargetModes) {
         $ArgsList += "--compare-target-modes"
     }
-    Write-Host "ranking baseline: files=$($EpisodeFiles.Count) split=$SplitMode target=$TargetMode training=$TrainingMode features=$($FeatureGroups -join ',') epochs=$Epochs summary=$BaselineSummaryPath"
+    Write-Host "ranking baseline: files=$($EpisodeFiles.Count) split=$SplitMode target=$TargetMode training=$TrainingMode features=$($FeatureGroups -join ',') epochs=$Epochs summary=$BaselineSummaryPath prior_hints=$PriorHintsPath"
     if ($CompactOutput) {
         $BaselineOutput = python @ArgsList 2>&1
         if ($LASTEXITCODE -ne 0) {
@@ -211,6 +213,12 @@ if ($RunBaseline) {
             Write-Host ("prior effect: recommendation={0} constraints={1}" -f `
                 $Decision.recommendation, `
                 $ConstraintText)
+        }
+        if ($null -ne $Summary.prior_hints) {
+            Write-Host ("prior hints: records={0} action_hints={1} path={2}" -f `
+                $Summary.prior_hints.record_count, `
+                $Summary.prior_hints.action_hint_count, `
+                $Summary.prior_hints.path)
         }
     } else {
         python @ArgsList

@@ -47,6 +47,77 @@ class CombatFirstActionRankingBaselineTests(unittest.TestCase):
         self.assertEqual(decision["best_target_mode"], "equivalent-hp-outcome")
         self.assertEqual(decision["observed"]["model_hp_gain_vs_ordered"], 1.46)
 
+    def test_prior_hint_records_aggregate_candidate_scores_by_first_action(self):
+        baseline = load_module()
+        groups = {
+            "root-a": [
+                {
+                    "schema_name": "CombatTurnPlanProbeSampleV1",
+                    "source": {"source_file": "case-a.json"},
+                    "root_context": {
+                        "enumeration": {"root_exact_state_hash": "abc123"},
+                    },
+                    "plan": {
+                        "plan_index": 0,
+                        "first_action_key": "combat/play_card/hand:0/card:Strike_R+0#1/target:monster_slot:0",
+                    },
+                    "target": {
+                        "terminal": "win",
+                        "complete_win": True,
+                        "final_hp": 40,
+                    },
+                },
+                {
+                    "schema_name": "CombatTurnPlanProbeSampleV1",
+                    "source": {"source_file": "case-a.json"},
+                    "root_context": {
+                        "enumeration": {"root_exact_state_hash": "abc123"},
+                    },
+                    "plan": {
+                        "plan_index": 1,
+                        "first_action_key": "combat/end_turn",
+                    },
+                    "target": {
+                        "terminal": "win",
+                        "complete_win": True,
+                        "final_hp": 35,
+                    },
+                },
+                {
+                    "schema_name": "CombatTurnPlanProbeSampleV1",
+                    "source": {"source_file": "case-a.json"},
+                    "root_context": {
+                        "enumeration": {"root_exact_state_hash": "abc123"},
+                    },
+                    "plan": {
+                        "plan_index": 2,
+                        "first_action_key": "combat/play_card/hand:0/card:Strike_R+0#1/target:monster_slot:0",
+                    },
+                    "target": {
+                        "terminal": "win",
+                        "complete_win": True,
+                        "final_hp": 42,
+                    },
+                },
+            ]
+        }
+        scores = {"root-a": [0.2, -1.0, 0.7]}
+
+        records = baseline.prior_hint_records_from_scores(
+            groups,
+            scores,
+            target_mode="equivalent-hp-outcome",
+            model_id="unit-test-prior",
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["schema_name"], "CombatRootActionPriorHintV0")
+        self.assertEqual(records[0]["root_exact_state_hash"], "abc123")
+        self.assertEqual(records[0]["action_prior_hints"][0]["action_key"], "combat/play_card/hand:0/card:Strike_R+0#1/target:monster_slot:0")
+        self.assertEqual(records[0]["action_prior_hints"][0]["score"], 0.7)
+        self.assertEqual(records[0]["action_prior_hints"][0]["candidate_count"], 2)
+        self.assertEqual(records[0]["action_prior_hints"][1]["action_key"], "combat/end_turn")
+
 
 if __name__ == "__main__":
     unittest.main()
