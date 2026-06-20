@@ -651,6 +651,33 @@ def numeric_or_zero(value: Any) -> float:
     return number if number is not None else 0.0
 
 
+def low_impact_exhaust_action(facts: dict[str, Any]) -> bool:
+    immediate = facts.get("immediate") if isinstance(facts.get("immediate"), dict) else {}
+    mechanics = facts.get("mechanics") if isinstance(facts.get("mechanics"), dict) else {}
+    exact = (
+        facts.get("exact_one_step_delta")
+        if isinstance(facts.get("exact_one_step_delta"), dict)
+        else {}
+    )
+    return (
+        bool(immediate.get("exhausts_card"))
+        and numeric_or_zero(immediate.get("damage_hint")) <= 0
+        and numeric_or_zero(immediate.get("action_payload_damage_hint")) <= 0
+        and numeric_or_zero(immediate.get("block_hint")) <= 0
+        and numeric_or_zero(immediate.get("target_progress_hint")) <= 0
+        and numeric_or_zero(immediate.get("all_enemy_progress_hint")) <= 0
+        and numeric_or_zero(mechanics.get("visible_attack_mitigation_hint")) <= 0
+        and numeric_or_zero(mechanics.get("persistent_enemy_strength_down")) <= 0
+        and numeric_or_zero(mechanics.get("temporary_enemy_strength_down")) <= 0
+        and numeric_or_zero(mechanics.get("enemy_vulnerable")) <= 0
+        and numeric_or_zero(mechanics.get("enemy_weak")) <= 0
+        and numeric_or_zero(mechanics.get("player_strength_gain")) <= 0
+        and numeric_or_zero(mechanics.get("player_temporary_strength_gain")) <= 0
+        and numeric_or_zero(exact.get("energy_delta")) <= 0
+        and numeric_or_zero(exact.get("hand_delta")) <= 0
+    )
+
+
 CARD_IN_ACTION_RE = re.compile(r"/card:([^/#]+?)(?:#|/)")
 HAND_IN_ACTION_RE = re.compile(r"/hand:(\d+)")
 TARGET_IN_ACTION_RE = re.compile(r"/target:([^/]+)")
@@ -938,6 +965,19 @@ def add_turn_plan_tactical_summary_features(
     targets = summary.get("unique_target_slots")
     if isinstance(targets, list):
         add_number(features, "plan_summary_unique_target_slots", len(targets), 5.0)
+    resource_use = summary.get("resource_use") if isinstance(summary.get("resource_use"), dict) else {}
+    for name, scale in (
+        ("exhaust_action_count", 8.0),
+        ("low_impact_exhaust_action_count", 4.0),
+        ("net_energy_delta", 12.0),
+        ("net_hand_delta", 20.0),
+        ("net_draw_delta", 20.0),
+        ("net_discard_delta", 20.0),
+        ("net_exhaust_delta", 20.0),
+    ):
+        add_number(features, f"plan_resource_use_{name}", resource_use.get(name), scale)
+    if numeric_or_zero(resource_use.get("low_impact_exhaust_action_count")) > 0:
+        add_token(features, "plan_resource_use_has_low_impact_exhaust")
 
 
 def add_turn_plan_action_fact_features(
@@ -968,6 +1008,7 @@ def add_turn_plan_action_fact_features(
     cost_total = 0
     upgraded_cards = 0
     exhaust_cards = 0
+    low_impact_exhaust_cards = 0
     for step in steps:
         facts = step.get("action_facts") if isinstance(step.get("action_facts"), dict) else {}
         kind = str(facts.get("action_kind") or "unknown")
@@ -982,6 +1023,8 @@ def add_turn_plan_action_fact_features(
                 upgraded_cards += 1
             if card.get("exhaust"):
                 exhaust_cards += 1
+                if low_impact_exhaust_action(facts):
+                    low_impact_exhaust_cards += 1
             if card.get("ethereal"):
                 add_token(features, "plan_action_facts_plays_ethereal_card")
             if card.get("innate"):
@@ -1059,6 +1102,14 @@ def add_turn_plan_action_fact_features(
     add_number(features, "plan_action_facts_total_cost", cost_total, 12.0)
     add_number(features, "plan_action_facts_upgraded_cards", upgraded_cards, 12.0)
     add_number(features, "plan_action_facts_exhaust_cards", exhaust_cards, 12.0)
+    add_number(
+        features,
+        "plan_action_facts_low_impact_exhaust_cards",
+        low_impact_exhaust_cards,
+        4.0,
+    )
+    if low_impact_exhaust_cards > 0:
+        add_token(features, "plan_action_facts_has_low_impact_exhaust_card")
     add_number(features, "plan_action_facts_damage_hint_total", damage_hint_total, 300.0)
     add_number(features, "plan_action_facts_block_hint_total", block_hint_total, 120.0)
     add_number(features, "plan_action_facts_mitigation_hint_total", mitigation_hint_total, 120.0)

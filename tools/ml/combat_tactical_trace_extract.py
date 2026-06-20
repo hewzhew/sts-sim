@@ -307,6 +307,29 @@ def action_kind_from_key(action_key: str) -> str:
     return "unknown"
 
 
+def is_low_impact_exhaust_action(facts: dict[str, Any]) -> bool:
+    immediate = as_dict(facts.get("immediate"))
+    mechanics = as_dict(facts.get("mechanics"))
+    exact = as_dict(facts.get("exact_one_step_delta"))
+    return (
+        bool_value(immediate.get("exhausts_card"))
+        and int_value(immediate.get("damage_hint")) <= 0
+        and int_value(immediate.get("action_payload_damage_hint")) <= 0
+        and int_value(immediate.get("block_hint")) <= 0
+        and int_value(immediate.get("target_progress_hint")) <= 0
+        and int_value(immediate.get("all_enemy_progress_hint")) <= 0
+        and int_value(mechanics.get("visible_attack_mitigation_hint")) <= 0
+        and int_value(mechanics.get("persistent_enemy_strength_down")) <= 0
+        and int_value(mechanics.get("temporary_enemy_strength_down")) <= 0
+        and int_value(mechanics.get("enemy_vulnerable")) <= 0
+        and int_value(mechanics.get("enemy_weak")) <= 0
+        and int_value(mechanics.get("player_strength_gain")) <= 0
+        and int_value(mechanics.get("player_temporary_strength_gain")) <= 0
+        and int_value(exact.get("energy_delta")) <= 0
+        and int_value(exact.get("hand_delta")) <= 0
+    )
+
+
 def plan_tactical_summary(
     root_state: dict[str, Any],
     plan: dict[str, Any],
@@ -327,6 +350,9 @@ def plan_tactical_summary(
     damage_hint_total = 0
     block_hint_total = 0
     mitigation_hint_total = 0
+    exhaust_action_count = 0
+    low_impact_exhaust_action_count = 0
+    low_impact_exhaust_cards = []
     for facts in action_facts:
         target = as_dict(facts.get("target"))
         if isinstance(target.get("target_slot"), int):
@@ -336,6 +362,12 @@ def plan_tactical_summary(
         damage_hint_total += int_value(immediate.get("action_payload_damage_hint"))
         block_hint_total += int_value(immediate.get("block_hint"))
         mitigation_hint_total += int_value(mechanics.get("visible_attack_mitigation_hint"))
+        if bool_value(immediate.get("exhausts_card")):
+            exhaust_action_count += 1
+        if is_low_impact_exhaust_action(facts):
+            low_impact_exhaust_action_count += 1
+            card = as_dict(facts.get("card"))
+            low_impact_exhaust_cards.append(card.get("card_id") or card.get("name") or "unknown")
     return {
         "data_role": "DerivedDeterministic",
         "availability": "EndOfPlan",
@@ -355,6 +387,16 @@ def plan_tactical_summary(
         "damage_hint_total": damage_hint_total,
         "block_hint_total": block_hint_total,
         "visible_attack_mitigation_hint_total": mitigation_hint_total,
+        "resource_use": {
+            "exhaust_action_count": exhaust_action_count,
+            "low_impact_exhaust_action_count": low_impact_exhaust_action_count,
+            "low_impact_exhaust_cards": low_impact_exhaust_cards,
+            "net_energy_delta": exact_sums.get("energy_delta", 0),
+            "net_hand_delta": exact_sums.get("hand_delta", 0),
+            "net_draw_delta": exact_sums.get("draw_delta", 0),
+            "net_discard_delta": exact_sums.get("discard_delta", 0),
+            "net_exhaust_delta": exact_sums.get("exhaust_delta", 0),
+        },
         "target_slots": target_slots,
         "unique_target_slots": sorted(set(target_slots)),
         "all_enemies_dead_at_plan_boundary": end_state.get("terminal") == "win"
