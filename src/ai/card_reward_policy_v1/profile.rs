@@ -266,6 +266,8 @@ fn strategy_plan_effects_from_roles(
             | CardRewardSemanticRoleV1::Block
             | CardRewardSemanticRoleV1::CardDraw
             | CardRewardSemanticRoleV1::CycleAccess
+            | CardRewardSemanticRoleV1::DiscardPileTopdeckAccess
+            | CardRewardSemanticRoleV1::HandTopdeckSelection
             | CardRewardSemanticRoleV1::EnergySource
             | CardRewardSemanticRoleV1::Vulnerable
             | CardRewardSemanticRoleV1::TemporaryStrengthBurst

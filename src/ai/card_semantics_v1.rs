@@ -22,6 +22,8 @@ pub struct CardMechanicsProfileV1 {
     pub applies_strength_down_debuff: bool,
     pub applies_no_draw_debuff: bool,
     pub reshuffle_discard_into_draw: bool,
+    pub discard_pile_topdeck_access: bool,
+    pub hand_topdeck_selection: bool,
     pub strength_converter: Option<StrengthConversionMechanicV1>,
     pub strength_payoff: bool,
     pub self_damage_source: bool,
@@ -66,6 +68,15 @@ pub enum PotionAcquisitionTraitV1 {
     ActionAmplifier,
     DeathInsurance,
     DebuffControl,
+    EscapeTool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AcquisitionRequirementV1 {
+    XCostPayoff,
+    DuplicateTarget,
+    LowHpDeathInsurance,
+    RouteEscapeValue,
 }
 
 pub fn card_mechanics_profile_v1(card: CardId) -> CardMechanicsProfileV1 {
@@ -78,6 +89,8 @@ pub fn card_mechanics_profile_v1(card: CardId) -> CardMechanicsProfileV1 {
         applies_strength_down_debuff: matches!(card, CardId::Flex),
         applies_no_draw_debuff: matches!(card, CardId::BattleTrance | CardId::BulletTime),
         reshuffle_discard_into_draw: matches!(card, CardId::DeepBreath),
+        discard_pile_topdeck_access: matches!(card, CardId::Headbutt),
+        hand_topdeck_selection: matches!(card, CardId::Warcry),
         strength_converter: match card {
             CardId::LimitBreak => Some(StrengthConversionMechanicV1::AmplifyCurrentStrength),
             CardId::Panacea | CardId::CoreSurge => {
@@ -212,6 +225,14 @@ pub fn relic_acquisition_traits_v1(relic: RelicId) -> Vec<RelicAcquisitionTraitV
     traits
 }
 
+pub fn relic_acquisition_requirements_v1(relic: RelicId) -> Vec<AcquisitionRequirementV1> {
+    match relic {
+        RelicId::ChemicalX => vec![AcquisitionRequirementV1::XCostPayoff],
+        RelicId::DollysMirror => vec![AcquisitionRequirementV1::DuplicateTarget],
+        _ => Vec::new(),
+    }
+}
+
 pub fn potion_acquisition_traits_v1(potion: PotionId) -> Vec<PotionAcquisitionTraitV1> {
     let mechanics = potion_mechanics_profile_v1(potion);
     let mut traits = Vec::new();
@@ -247,9 +268,20 @@ pub fn potion_acquisition_traits_v1(potion: PotionId) -> Vec<PotionAcquisitionTr
         PotionId::FairyPotion => {
             push_potion_trait(&mut traits, PotionAcquisitionTraitV1::DeathInsurance);
         }
+        PotionId::SmokeBomb => {
+            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::EscapeTool);
+        }
         _ => {}
     }
     traits
+}
+
+pub fn potion_acquisition_requirements_v1(potion: PotionId) -> Vec<AcquisitionRequirementV1> {
+    match potion {
+        PotionId::FairyPotion => vec![AcquisitionRequirementV1::LowHpDeathInsurance],
+        PotionId::SmokeBomb => vec![AcquisitionRequirementV1::RouteEscapeValue],
+        _ => Vec::new(),
+    }
 }
 
 fn push_relic_trait(traits: &mut Vec<RelicAcquisitionTraitV1>, trait_: RelicAcquisitionTraitV1) {
@@ -301,5 +333,25 @@ mod tests {
         assert!(potion_mechanics_profile_v1(PotionId::SteroidPotion).temporary_strength_burst);
         assert!(potion_acquisition_traits_v1(PotionId::StrengthPotion)
             .contains(&PotionAcquisitionTraitV1::StrengthGain));
+    }
+
+    #[test]
+    fn topdeck_control_cards_expose_mechanical_access() {
+        assert!(card_mechanics_profile_v1(CardId::Headbutt).discard_pile_topdeck_access);
+        assert!(card_mechanics_profile_v1(CardId::Warcry).hand_topdeck_selection);
+    }
+
+    #[test]
+    fn conditional_shop_objects_expose_requirements() {
+        assert!(relic_acquisition_requirements_v1(RelicId::ChemicalX)
+            .contains(&AcquisitionRequirementV1::XCostPayoff));
+        assert!(relic_acquisition_requirements_v1(RelicId::DollysMirror)
+            .contains(&AcquisitionRequirementV1::DuplicateTarget));
+        assert!(potion_acquisition_traits_v1(PotionId::SmokeBomb)
+            .contains(&PotionAcquisitionTraitV1::EscapeTool));
+        assert!(potion_acquisition_requirements_v1(PotionId::FairyPotion)
+            .contains(&AcquisitionRequirementV1::LowHpDeathInsurance));
+        assert!(potion_acquisition_requirements_v1(PotionId::SmokeBomb)
+            .contains(&AcquisitionRequirementV1::RouteEscapeValue));
     }
 }

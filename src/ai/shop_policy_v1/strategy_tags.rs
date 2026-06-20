@@ -216,21 +216,16 @@ fn combat_shape_digest_capacity_tags(run_state: &RunState) -> Vec<&'static str> 
     ) {
         tags.push(TAG_DIGEST_CAPACITY_DRAW);
     }
-    if deck_contains_any(run_state, &[CardId::Headbutt, CardId::Warcry]) {
+    if deck_has_any_role(
+        run_state,
+        &[
+            CardRewardSemanticRoleV1::DiscardPileTopdeckAccess,
+            CardRewardSemanticRoleV1::HandTopdeckSelection,
+        ],
+    ) {
         tags.push(TAG_DIGEST_CAPACITY_TOPDECK);
     }
     tags
-}
-
-fn deck_contains(run_state: &RunState, card: CardId) -> bool {
-    run_state
-        .master_deck
-        .iter()
-        .any(|deck_card| deck_card.id == card)
-}
-
-fn deck_contains_any(run_state: &RunState, cards: &[CardId]) -> bool {
-    cards.iter().any(|card| deck_contains(run_state, *card))
 }
 
 fn deck_has_role(run_state: &RunState, role: CardRewardSemanticRoleV1) -> bool {

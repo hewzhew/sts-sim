@@ -1449,6 +1449,8 @@ fn target_loss_signal_for_role(role: CardRewardSemanticRoleV1) -> Option<&'stati
         CardRewardSemanticRoleV1::BlockMultiplier => Some("block_multiplier"),
         CardRewardSemanticRoleV1::CardDraw => Some("card_draw"),
         CardRewardSemanticRoleV1::CycleAccess => Some("cycle_access"),
+        CardRewardSemanticRoleV1::DiscardPileTopdeckAccess => Some("discard_pile_topdeck_access"),
+        CardRewardSemanticRoleV1::HandTopdeckSelection => Some("hand_topdeck_selection"),
         CardRewardSemanticRoleV1::EnergySource => Some("energy_source"),
         CardRewardSemanticRoleV1::Vulnerable => Some("vulnerable"),
         CardRewardSemanticRoleV1::Weak => Some("weak"),

@@ -2,7 +2,11 @@ use crate::ai::card_reward_policy_v1::{
     card_facts, card_reward_semantic_profile_v1, CardRewardSemanticProfileV1,
     CardRewardSemanticRoleV1,
 };
-use crate::ai::card_semantics_v1::{potion_acquisition_traits_v1, relic_acquisition_traits_v1};
+use crate::ai::card_semantics_v1::{
+    potion_acquisition_requirements_v1, potion_acquisition_traits_v1,
+    relic_acquisition_requirements_v1, relic_acquisition_traits_v1, AcquisitionRequirementV1,
+    PotionAcquisitionTraitV1,
+};
 use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
@@ -105,14 +109,10 @@ pub fn legacy_shop_relic_purchase_estimate_v1(relic: RelicId) -> i32 {
 }
 
 pub fn legacy_shop_relic_purchase_estimate_for_v1(relic: RelicId, run_state: &RunState) -> i32 {
-    if relic == RelicId::ChemicalX && !deck_has_x_cost_payoff_v1(run_state) {
-        return 0;
-    }
-    if relic == RelicId::DollysMirror
-        && crate::ai::deck_mutation_compiler_v1::best_duplicate_target_for_shop_v1(run_state)
-            .is_none()
-    {
-        return 0;
+    for requirement in relic_acquisition_requirements_v1(relic) {
+        if !relic_acquisition_requirement_satisfied_v1(requirement, run_state) {
+            return 0;
+        }
     }
     legacy_shop_relic_purchase_estimate_v1(relic)
 }
@@ -134,11 +134,18 @@ pub fn legacy_shop_potion_purchase_estimate_for_v1(potion: PotionId, run_state: 
             priority += 120;
         }
     }
-    if potion == PotionId::FairyPotion && run_state.current_hp * 3 <= run_state.max_hp {
-        priority += 220;
-    }
-    if potion == PotionId::SmokeBomb {
-        priority -= 520;
+    for requirement in potion_acquisition_requirements_v1(potion) {
+        match requirement {
+            AcquisitionRequirementV1::LowHpDeathInsurance => {
+                if run_state.current_hp * 3 <= run_state.max_hp {
+                    priority += 220;
+                }
+            }
+            AcquisitionRequirementV1::RouteEscapeValue => {
+                priority -= 520;
+            }
+            AcquisitionRequirementV1::XCostPayoff | AcquisitionRequirementV1::DuplicateTarget => {}
+        }
     }
     priority
 }
@@ -211,11 +218,28 @@ fn role(profile: &CardRewardSemanticProfileV1, role: CardRewardSemanticRoleV1) -
 }
 
 pub(crate) fn shop_potion_is_combat_patch_v1(potion: PotionId) -> bool {
-    !potion_acquisition_traits_v1(potion).is_empty()
+    potion_acquisition_traits_v1(potion)
+        .iter()
+        .any(|trait_| !matches!(trait_, PotionAcquisitionTraitV1::EscapeTool))
 }
 
 fn high_impact_shop_relic(relic: RelicId) -> bool {
     !relic_acquisition_traits_v1(relic).is_empty()
+}
+
+fn relic_acquisition_requirement_satisfied_v1(
+    requirement: AcquisitionRequirementV1,
+    run_state: &RunState,
+) -> bool {
+    match requirement {
+        AcquisitionRequirementV1::XCostPayoff => deck_has_x_cost_payoff_v1(run_state),
+        AcquisitionRequirementV1::DuplicateTarget => {
+            crate::ai::deck_mutation_compiler_v1::best_duplicate_target_for_shop_v1(run_state)
+                .is_some()
+        }
+        AcquisitionRequirementV1::LowHpDeathInsurance
+        | AcquisitionRequirementV1::RouteEscapeValue => true,
+    }
 }
 
 fn deck_has_x_cost_payoff_v1(run_state: &RunState) -> bool {

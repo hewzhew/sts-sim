@@ -199,6 +199,8 @@ pub enum CardRewardSemanticRoleV1 {
     BlockMultiplier,
     CardDraw,
     CycleAccess,
+    DiscardPileTopdeckAccess,
+    HandTopdeckSelection,
     EnergySource,
     Vulnerable,
     Weak,

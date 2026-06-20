@@ -1649,6 +1649,16 @@ fn shop_card_priority_does_not_apply_champ_flex_bonus_directly() {
 }
 
 #[test]
+fn smoke_bomb_escape_tool_is_not_a_combat_patch_potion() {
+    assert!(!super::conversion::shop_potion_is_combat_patch_v1(
+        PotionId::SmokeBomb
+    ));
+    assert!(super::conversion::shop_potion_is_combat_patch_v1(
+        PotionId::FairyPotion
+    ));
+}
+
+#[test]
 fn shop_chemical_x_priority_requires_existing_x_cost_payoff() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
