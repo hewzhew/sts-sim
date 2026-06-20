@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
@@ -20,6 +21,7 @@ from typing import Any, Iterable
 EPISODE_SCHEMA = "CombatTacticalEpisodeV1"
 EPISODE_VERSION = 1
 LABEL_ROLE = "diagnostic_tactical_trace_not_policy_label"
+EXTRACTOR_ID = "combat_tactical_trace_extract_v1"
 PUBLIC_MONSTER_FIELDS = (
     "slot",
     "enemy_id",
@@ -38,6 +40,21 @@ PUBLIC_MONSTER_FIELDS = (
 def load_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def current_git_commit() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    commit = result.stdout.strip()
+    return commit or None
 
 
 def hash_json(value: Any) -> str:
@@ -888,7 +905,14 @@ def print_diagnostic_cases(episodes: list[dict[str, Any]], case_limit: int) -> N
         print(f"    ... {len(episodes) - case_limit} more episode(s)")
 
 
-def episode_from_lab(meta: dict[str, Any], lab: dict[str, Any]) -> dict[str, Any]:
+def episode_from_lab(
+    meta: dict[str, Any],
+    lab: dict[str, Any],
+    *,
+    sim_commit: str | None,
+    sim_commit_source: str,
+    extractor_commit: str | None,
+) -> dict[str, Any]:
     report_path = Path(str(meta.get("source_file") or ""))
     input_path = resolve_input_path(report_path, meta.get("input_path"))
     enemy_slots = public_enemy_slots_from_capture(input_path)
@@ -920,6 +944,10 @@ def episode_from_lab(meta: dict[str, Any], lab: dict[str, Any]) -> dict[str, Any
         },
         "provenance": {
             "data_role": "ObservedExact",
+            "extractor_id": EXTRACTOR_ID,
+            "extractor_git_commit": extractor_commit,
+            "sim_commit": sim_commit,
+            "sim_commit_source": sim_commit_source,
             "candidate_generator_id": as_dict(root.get("enumeration")).get("planning_policy"),
             "search_config": root.get("config"),
             "root_report_schema": root.get("schema_name"),
@@ -968,11 +996,22 @@ def extract(
     summary_only: bool,
     case_limit: int,
     report_mode: str,
+    sim_commit: str | None,
+    sim_commit_source: str,
+    extractor_commit: str | None,
 ) -> None:
     episodes: list[dict[str, Any]] = []
     for path in inputs:
         for meta, lab in iter_labs(path, load_json(path)):
-            episodes.append(episode_from_lab(meta, lab))
+            episodes.append(
+                episode_from_lab(
+                    meta,
+                    lab,
+                    sim_commit=sim_commit,
+                    sim_commit_source=sim_commit_source,
+                    extractor_commit=extractor_commit,
+                )
+            )
 
     if out_jsonl:
         out_jsonl.parent.mkdir(parents=True, exist_ok=True)
@@ -1087,13 +1126,23 @@ def main() -> None:
     parser.add_argument("--summary-only", action="store_true")
     parser.add_argument("--case-limit", type=int, default=12)
     parser.add_argument("--report-mode", choices=("compact", "diagnostic"), default="compact")
+    parser.add_argument(
+        "--sim-commit",
+        help="Simulator git commit for provenance; defaults to current git HEAD.",
+    )
     args = parser.parse_args()
+    sim_commit = args.sim_commit or current_git_commit()
+    sim_commit_source = "cli" if args.sim_commit else "current_git_head_at_extraction_time"
+    extractor_commit = current_git_commit()
     extract(
         args.inputs,
         args.out_jsonl,
         summary_only=args.summary_only,
         case_limit=max(0, args.case_limit),
         report_mode=args.report_mode,
+        sim_commit=sim_commit,
+        sim_commit_source=sim_commit_source,
+        extractor_commit=extractor_commit,
     )
 
 
