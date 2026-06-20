@@ -1,0 +1,16 @@
+{
+  "schema_name": "CombatSearchV2BenchmarkSuiteV1",
+  "schema_version": 1,
+  "name": "guidance_first_fights",
+  "min_trust_level": "scratch",
+  "cases": [
+    {
+      "id": "starter_jaw_worm",
+      "start_spec": "jaw_worm.start.json"
+    },
+    {
+      "id": "starter_two_louse",
+      "start_spec": "two_louse.start.json"
+    }
+  ]
+}

@@ -26,6 +26,7 @@ pub struct CombatTurnPlanGuidanceLabV1Report {
     pub input_label: String,
     pub root_fingerprints: CombatSearchV2InputFingerprintReport,
     pub baseline_search: CombatSearchGuidanceLabChildSearchV1,
+    pub budgeted_root_search: CombatSearchGuidanceLabChildSearchV1,
     pub root: CombatSearchV2TurnPlanProbeRootReport,
     pub candidates: Vec<CombatTurnPlanGuidanceLabCandidateV1>,
     pub summary: CombatTurnPlanGuidanceLabSummaryV1,
@@ -58,6 +59,10 @@ pub struct CombatTurnPlanGuidanceLabBenchmarkSummaryV1 {
     pub cases_guided_prefix_tied_with_baseline: usize,
     pub cases_guided_prefix_worse_than_baseline: usize,
     pub cases_without_guided_prefix_baseline_comparison: usize,
+    pub cases_guided_prefix_better_than_budgeted_root: usize,
+    pub cases_guided_prefix_tied_with_budgeted_root: usize,
+    pub cases_guided_prefix_worse_than_budgeted_root: usize,
+    pub cases_without_guided_prefix_budgeted_root_comparison: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -88,6 +93,7 @@ pub struct CombatTurnPlanGuidanceLabSummaryV1 {
     pub first_plan_rank_by_target: Option<usize>,
     pub current_first_vs_best_target: Option<CombatTurnPlanGuidanceSelectedComparisonV1>,
     pub baseline_vs_best_guided_prefix: Option<CombatTurnPlanGuidanceBaselineComparisonV1>,
+    pub budgeted_root_vs_best_guided_prefix: Option<CombatTurnPlanGuidanceBaselineComparisonV1>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -166,10 +172,23 @@ pub struct CombatTurnPlanGuidanceOutcomeDeltaV1 {
 pub struct CombatTurnPlanGuidanceBaselineComparisonV1 {
     pub verdict: &'static str,
     pub verdict_basis: &'static str,
+    pub guided_prefix_selection_basis: &'static str,
+    pub reference_turn_prefix_candidate_coverage: CombatTurnPlanGuidanceCandidateCoverageV1,
     pub baseline: CombatTurnPlanGuidanceSearchSnapshotV1,
     pub best_guided_prefix: CombatTurnPlanGuidancePlanSnapshotV1,
     pub delta_guided_minus_baseline: CombatTurnPlanGuidanceOutcomeDeltaV1,
     pub action_sequence_alignment: CombatTurnPlanGuidanceActionSequenceAlignmentV1,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatTurnPlanGuidanceCandidateCoverageV1 {
+    pub comparison_scope: &'static str,
+    pub candidate_count: usize,
+    pub reference_prefix_action_count: usize,
+    pub reference_prefix_action_keys: Vec<String>,
+    pub exact_match_plan_index: Option<usize>,
+    pub longest_prefix_match_plan_index: Option<usize>,
+    pub longest_prefix_match_action_count: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -229,7 +248,7 @@ pub fn run_combat_turn_plan_guidance_lab_benchmark_v1(
     let summary = summarize_benchmark(&cases, loaded.cases.len());
     CombatTurnPlanGuidanceLabBenchmarkV1Report {
         schema_name: "CombatTurnPlanGuidanceLabBenchmarkV1Report",
-        schema_version: 3,
+        schema_version: 5,
         label_role: "oracle_turn_plan_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         benchmark_name: loaded.name.clone(),
@@ -256,6 +275,13 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
         &loaded.position.engine,
         &loaded.position.combat,
         root_config.clone(),
+    ));
+    let budgeted_root_config = child_options
+        .to_search_config_for_position(format!("{}:budgeted-root", loaded.label), &loaded.position);
+    let budgeted_root_search = child_search_report(&run_combat_search_v2(
+        &loaded.position.engine,
+        &loaded.position.combat,
+        budgeted_root_config,
     ));
     let enumeration = enumerate_combat_search_v2_turn_plan_probe_candidates(
         &loaded.position.engine,
@@ -294,11 +320,11 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
             }
         })
         .collect::<Vec<_>>();
-    let summary = summarize_candidates(&candidates, &baseline_search);
+    let summary = summarize_candidates(&candidates, &baseline_search, &budgeted_root_search);
 
     CombatTurnPlanGuidanceLabV1Report {
         schema_name: "CombatTurnPlanGuidanceLabV1Report",
-        schema_version: 7,
+        schema_version: 9,
         label_role: "oracle_turn_plan_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         input_label: loaded.label.clone(),
@@ -308,6 +334,7 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
             .map(CombatSearchV2InputFingerprintReport::from)
             .unwrap_or_else(|| fingerprint_report_for_position(&loaded.position)),
         baseline_search,
+        budgeted_root_search,
         root: enumeration.report,
         candidates,
         summary,
@@ -453,6 +480,7 @@ fn plan_target(
 fn summarize_candidates(
     candidates: &[CombatTurnPlanGuidanceLabCandidateV1],
     baseline_search: &CombatSearchGuidanceLabChildSearchV1,
+    budgeted_root_search: &CombatSearchGuidanceLabChildSearchV1,
 ) -> CombatTurnPlanGuidanceLabSummaryV1 {
     let mut summary = CombatTurnPlanGuidanceLabSummaryV1 {
         candidate_count: candidates.len(),
@@ -469,8 +497,16 @@ fn summarize_candidates(
         .position(|candidate| candidate.plan.plan_index == 0)
         .map(|index| index + 1);
     summary.current_first_vs_best_target = selected_vs_best_target_report(candidates);
-    summary.baseline_vs_best_guided_prefix =
-        baseline_vs_best_guided_prefix_report(baseline_search, candidates);
+    summary.baseline_vs_best_guided_prefix = search_vs_best_guided_prefix_report(
+        baseline_search,
+        "reference_whole_combat_search",
+        candidates,
+    );
+    summary.budgeted_root_vs_best_guided_prefix = search_vs_best_guided_prefix_report(
+        budgeted_root_search,
+        "budgeted_root_same_budget_search",
+        candidates,
+    );
 
     for candidate in candidates {
         if candidate.child_search.is_some() {
@@ -572,22 +608,24 @@ fn selected_vs_best_target_report(
     })
 }
 
-fn baseline_vs_best_guided_prefix_report(
-    baseline_search: &CombatSearchGuidanceLabChildSearchV1,
+fn search_vs_best_guided_prefix_report(
+    search: &CombatSearchGuidanceLabChildSearchV1,
+    search_source: &'static str,
     candidates: &[CombatTurnPlanGuidanceLabCandidateV1],
 ) -> Option<CombatTurnPlanGuidanceBaselineComparisonV1> {
-    let baseline = search_snapshot(baseline_search);
-    let best = candidates.iter().max_by(|left, right| {
-        compare_targets(&left.target, &right.target)
-            .then_with(|| right.plan.plan_index.cmp(&left.plan.plan_index))
-    })?;
+    let baseline = search_snapshot(search, search_source);
+    let best = best_guided_prefix_by_root_objective(candidates)?;
     let best_guided_prefix = plan_snapshot(best);
     let delta = outcome_delta_plan_minus_search(&best_guided_prefix, &baseline);
     let action_sequence_alignment = action_sequence_alignment(&baseline, &best_guided_prefix);
     let (verdict, verdict_basis) = guided_vs_baseline_verdict(&best_guided_prefix, &baseline);
+    let reference_turn_prefix_candidate_coverage =
+        reference_turn_prefix_candidate_coverage(&baseline.action_keys_preview, candidates);
     Some(CombatTurnPlanGuidanceBaselineComparisonV1 {
         verdict,
         verdict_basis,
+        guided_prefix_selection_basis: "root_composed_objective",
+        reference_turn_prefix_candidate_coverage,
         baseline,
         best_guided_prefix,
         delta_guided_minus_baseline: delta,
@@ -595,12 +633,73 @@ fn baseline_vs_best_guided_prefix_report(
     })
 }
 
+fn reference_turn_prefix_candidate_coverage(
+    reference_action_keys: &[String],
+    candidates: &[CombatTurnPlanGuidanceLabCandidateV1],
+) -> CombatTurnPlanGuidanceCandidateCoverageV1 {
+    let reference_prefix = first_turn_prefix_action_keys(reference_action_keys);
+    let mut exact_match_plan_index = None;
+    let mut longest_prefix_match_plan_index = None;
+    let mut longest_prefix_match_action_count = 0usize;
+
+    for candidate in candidates {
+        let common = common_prefix_count(&reference_prefix, &candidate.plan.action_keys);
+        if common > longest_prefix_match_action_count {
+            longest_prefix_match_action_count = common;
+            longest_prefix_match_plan_index = Some(candidate.plan.plan_index);
+        }
+        if exact_match_plan_index.is_none() && candidate.plan.action_keys == reference_prefix {
+            exact_match_plan_index = Some(candidate.plan.plan_index);
+        }
+    }
+
+    CombatTurnPlanGuidanceCandidateCoverageV1 {
+        comparison_scope: "reference_first_turn_prefix_vs_candidate_turn_plans",
+        candidate_count: candidates.len(),
+        reference_prefix_action_count: reference_prefix.len(),
+        reference_prefix_action_keys: reference_prefix,
+        exact_match_plan_index,
+        longest_prefix_match_plan_index,
+        longest_prefix_match_action_count,
+    }
+}
+
+fn first_turn_prefix_action_keys(action_keys: &[String]) -> Vec<String> {
+    let mut prefix = Vec::new();
+    for key in action_keys {
+        prefix.push(key.clone());
+        if key == "combat/end_turn" {
+            break;
+        }
+    }
+    prefix
+}
+
+fn common_prefix_count(left: &[String], right: &[String]) -> usize {
+    left.iter()
+        .zip(right.iter())
+        .take_while(|(left, right)| left == right)
+        .count()
+}
+
+fn best_guided_prefix_by_root_objective(
+    candidates: &[CombatTurnPlanGuidanceLabCandidateV1],
+) -> Option<&CombatTurnPlanGuidanceLabCandidateV1> {
+    candidates.iter().max_by(|left, right| {
+        let left_snapshot = plan_snapshot(left);
+        let right_snapshot = plan_snapshot(right);
+        compare_plan_snapshots_by_root_objective(&left_snapshot, &right_snapshot)
+            .then_with(|| right.plan.plan_index.cmp(&left.plan.plan_index))
+    })
+}
+
 fn search_snapshot(
     search: &CombatSearchGuidanceLabChildSearchV1,
+    source: &'static str,
 ) -> CombatTurnPlanGuidanceSearchSnapshotV1 {
     let best_complete = search.best_complete.as_ref();
     CombatTurnPlanGuidanceSearchSnapshotV1 {
-        source: "baseline_whole_combat_search",
+        source,
         terminal: best_complete
             .map(|trajectory| trajectory.terminal)
             .unwrap_or(SearchTerminalLabel::Unresolved),
@@ -820,6 +919,13 @@ fn compare_plan_snapshot_to_search(
                 .cmp(&guided.cards_played.unwrap_or(u32::MAX)),
         ),
         first_non_equal_ordering(
+            "action_count",
+            baseline
+                .action_count
+                .unwrap_or(usize::MAX)
+                .cmp(&guided.action_count.unwrap_or(usize::MAX)),
+        ),
+        first_non_equal_ordering(
             "nodes_expanded",
             baseline
                 .nodes_expanded
@@ -830,6 +936,56 @@ fn compare_plan_snapshot_to_search(
     .flatten()
     .next()
     .unwrap_or((Ordering::Equal, "tied"))
+}
+
+fn compare_plan_snapshots_by_root_objective(
+    left: &CombatTurnPlanGuidancePlanSnapshotV1,
+    right: &CombatTurnPlanGuidancePlanSnapshotV1,
+) -> Ordering {
+    left.complete_win
+        .cmp(&right.complete_win)
+        .then_with(|| terminal_tier(left.terminal).cmp(&terminal_tier(right.terminal)))
+        .then_with(|| {
+            left.final_hp
+                .unwrap_or(i32::MIN)
+                .cmp(&right.final_hp.unwrap_or(i32::MIN))
+        })
+        .then_with(|| {
+            right
+                .hp_loss
+                .unwrap_or(i32::MAX)
+                .cmp(&left.hp_loss.unwrap_or(i32::MAX))
+        })
+        .then_with(|| {
+            right
+                .potions_used
+                .unwrap_or(u32::MAX)
+                .cmp(&left.potions_used.unwrap_or(u32::MAX))
+        })
+        .then_with(|| {
+            right
+                .turns
+                .unwrap_or(u32::MAX)
+                .cmp(&left.turns.unwrap_or(u32::MAX))
+        })
+        .then_with(|| {
+            right
+                .cards_played
+                .unwrap_or(u32::MAX)
+                .cmp(&left.cards_played.unwrap_or(u32::MAX))
+        })
+        .then_with(|| {
+            right
+                .action_count
+                .unwrap_or(usize::MAX)
+                .cmp(&left.action_count.unwrap_or(usize::MAX))
+        })
+        .then_with(|| {
+            right
+                .nodes_expanded
+                .unwrap_or(u64::MAX)
+                .cmp(&left.nodes_expanded.unwrap_or(u64::MAX))
+        })
 }
 
 fn terminal_tier(terminal: SearchTerminalLabel) -> u8 {
@@ -907,12 +1063,13 @@ fn summarize_benchmark(
         if lab.best_target_plan_index.is_some_and(|index| index != 0) {
             summary.cases_best_target_not_first_plan += 1;
         }
-        record_guided_prefix_verdict_count(&mut summary, lab);
+        record_guided_prefix_baseline_verdict_count(&mut summary, lab);
+        record_guided_prefix_budgeted_root_verdict_count(&mut summary, lab);
     }
     summary
 }
 
-fn record_guided_prefix_verdict_count(
+fn record_guided_prefix_baseline_verdict_count(
     summary: &mut CombatTurnPlanGuidanceLabBenchmarkSummaryV1,
     lab: &CombatTurnPlanGuidanceLabSummaryV1,
 ) {
@@ -925,6 +1082,22 @@ fn record_guided_prefix_verdict_count(
         Some("guided_tied") => summary.cases_guided_prefix_tied_with_baseline += 1,
         Some("guided_worse") => summary.cases_guided_prefix_worse_than_baseline += 1,
         Some(_) | None => summary.cases_without_guided_prefix_baseline_comparison += 1,
+    }
+}
+
+fn record_guided_prefix_budgeted_root_verdict_count(
+    summary: &mut CombatTurnPlanGuidanceLabBenchmarkSummaryV1,
+    lab: &CombatTurnPlanGuidanceLabSummaryV1,
+) {
+    match lab
+        .budgeted_root_vs_best_guided_prefix
+        .as_ref()
+        .map(|comparison| comparison.verdict)
+    {
+        Some("guided_better") => summary.cases_guided_prefix_better_than_budgeted_root += 1,
+        Some("guided_tied") => summary.cases_guided_prefix_tied_with_budgeted_root += 1,
+        Some("guided_worse") => summary.cases_guided_prefix_worse_than_budgeted_root += 1,
+        Some(_) | None => summary.cases_without_guided_prefix_budgeted_root_comparison += 1,
     }
 }
 
@@ -1052,11 +1225,19 @@ mod tests {
         );
         let candidates = vec![weaker, guided];
 
-        let comparison = baseline_vs_best_guided_prefix_report(&baseline, &candidates)
-            .expect("comparison should exist");
+        let comparison = search_vs_best_guided_prefix_report(
+            &baseline,
+            "reference_whole_combat_search",
+            &candidates,
+        )
+        .expect("comparison should exist");
 
         assert_eq!(comparison.verdict, "guided_better");
         assert_eq!(comparison.verdict_basis, "final_hp");
+        assert_eq!(
+            comparison.guided_prefix_selection_basis,
+            "root_composed_objective"
+        );
         assert_eq!(comparison.baseline.final_hp, Some(35));
         assert_eq!(
             comparison.baseline.first_action_key.as_deref(),
@@ -1103,21 +1284,100 @@ mod tests {
     }
 
     #[test]
+    fn baseline_comparison_selects_guided_prefix_by_root_objective_not_child_local_hp_loss() {
+        let baseline =
+            child_search_with_best_complete(target_with_complete_win(40, 10, 5, 0, 12, 12));
+        let root_better = lab_candidate(
+            0,
+            "root-better",
+            tactical_plan_with_damage(0, "Strike", 6),
+            target_with_complete_win(40, 15, 4, 0, 10, 10),
+        );
+        let child_local_bait = lab_candidate(
+            1,
+            "child-local-bait",
+            tactical_plan_with_damage(1, "Defend", 0),
+            target_with_complete_win(40, 1, 8, 0, 18, 18),
+        );
+        let candidates = vec![root_better, child_local_bait];
+
+        assert_eq!(
+            compare_targets(&candidates[1].target, &candidates[0].target),
+            Ordering::Greater,
+            "child-local target ranking should prefer the bait candidate in this fixture"
+        );
+
+        let comparison = search_vs_best_guided_prefix_report(
+            &baseline,
+            "reference_whole_combat_search",
+            &candidates,
+        )
+        .expect("comparison should exist");
+
+        assert_eq!(
+            comparison.guided_prefix_selection_basis,
+            "root_composed_objective"
+        );
+        assert_eq!(comparison.best_guided_prefix.plan_index, 0);
+        assert_eq!(comparison.verdict, "guided_better");
+        assert_eq!(comparison.verdict_basis, "turns");
+    }
+
+    #[test]
+    fn reference_turn_prefix_candidate_coverage_reports_exact_and_partial_matches() {
+        let reference = vec![
+            "defend".to_string(),
+            "bash".to_string(),
+            "combat/end_turn".to_string(),
+            "next-turn-action".to_string(),
+        ];
+        let mut partial = lab_candidate(
+            0,
+            "partial",
+            tactical_plan_with_damage(0, "Strike", 6),
+            target_with_complete_win(40, 10, 5, 0, 12, 12),
+        );
+        partial.plan.action_keys = vec![
+            "defend".to_string(),
+            "strike".to_string(),
+            "combat/end_turn".to_string(),
+        ];
+        let mut exact = lab_candidate(
+            1,
+            "exact",
+            tactical_plan_with_damage(1, "Bash", 9),
+            target_with_complete_win(40, 10, 5, 0, 12, 12),
+        );
+        exact.plan.action_keys = vec![
+            "defend".to_string(),
+            "bash".to_string(),
+            "combat/end_turn".to_string(),
+        ];
+
+        let coverage = reference_turn_prefix_candidate_coverage(&reference, &[partial, exact]);
+
+        assert_eq!(coverage.reference_prefix_action_count, 3);
+        assert_eq!(coverage.exact_match_plan_index, Some(1));
+        assert_eq!(coverage.longest_prefix_match_plan_index, Some(1));
+        assert_eq!(coverage.longest_prefix_match_action_count, 3);
+    }
+
+    #[test]
     fn benchmark_summary_counts_guided_prefix_verdicts() {
         let mut summary = CombatTurnPlanGuidanceLabBenchmarkSummaryV1::default();
-        record_guided_prefix_verdict_count(
+        record_guided_prefix_baseline_verdict_count(
             &mut summary,
             &lab_summary_with_guided_verdict("guided_better"),
         );
-        record_guided_prefix_verdict_count(
+        record_guided_prefix_baseline_verdict_count(
             &mut summary,
             &lab_summary_with_guided_verdict("guided_tied"),
         );
-        record_guided_prefix_verdict_count(
+        record_guided_prefix_baseline_verdict_count(
             &mut summary,
             &lab_summary_with_guided_verdict("guided_worse"),
         );
-        record_guided_prefix_verdict_count(
+        record_guided_prefix_baseline_verdict_count(
             &mut summary,
             &CombatTurnPlanGuidanceLabSummaryV1::default(),
         );
@@ -1194,8 +1454,87 @@ mod tests {
             baseline_vs_best_guided_prefix: Some(CombatTurnPlanGuidanceBaselineComparisonV1 {
                 verdict,
                 verdict_basis: "test",
+                guided_prefix_selection_basis: "root_composed_objective",
+                reference_turn_prefix_candidate_coverage:
+                    CombatTurnPlanGuidanceCandidateCoverageV1 {
+                        comparison_scope: "reference_first_turn_prefix_vs_candidate_turn_plans",
+                        candidate_count: 0,
+                        reference_prefix_action_count: 0,
+                        reference_prefix_action_keys: vec![],
+                        exact_match_plan_index: None,
+                        longest_prefix_match_plan_index: None,
+                        longest_prefix_match_action_count: 0,
+                    },
                 baseline: CombatTurnPlanGuidanceSearchSnapshotV1 {
                     source: "baseline_whole_combat_search",
+                    terminal: SearchTerminalLabel::Win,
+                    complete_win: true,
+                    final_hp: Some(40),
+                    hp_loss: Some(0),
+                    turns: Some(1),
+                    potions_used: Some(0),
+                    cards_played: Some(1),
+                    action_count: Some(1),
+                    first_action_key: None,
+                    action_keys_preview: vec![],
+                    nodes_expanded: 1,
+                    nodes_generated: 1,
+                    terminal_wins: 1,
+                    elapsed_ms: 0,
+                },
+                best_guided_prefix: CombatTurnPlanGuidancePlanSnapshotV1 {
+                    plan_index: 0,
+                    first_action_key: None,
+                    action_keys_preview: vec![],
+                    target_source: "bounded_child_search_best_complete",
+                    terminal: SearchTerminalLabel::Win,
+                    complete_win: true,
+                    final_hp: Some(40),
+                    hp_loss: Some(0),
+                    turns: Some(1),
+                    potions_used: Some(0),
+                    cards_played: Some(1),
+                    action_count: Some(1),
+                    nodes_expanded: Some(1),
+                    tactical: CombatTurnPlanTacticalTraceV1::default(),
+                },
+                delta_guided_minus_baseline: CombatTurnPlanGuidanceOutcomeDeltaV1 {
+                    final_hp_delta: Some(0),
+                    hp_loss_delta: Some(0),
+                    turn_delta: Some(0),
+                    potions_used_delta: Some(0),
+                    cards_played_delta: Some(0),
+                    action_count_delta: Some(0),
+                    nodes_expanded_delta: Some(0),
+                },
+                action_sequence_alignment: CombatTurnPlanGuidanceActionSequenceAlignmentV1 {
+                    comparison_scope: "baseline_best_complete_preview_vs_guided_prefix",
+                    common_prefix_action_count: 0,
+                    baseline_action_count: Some(1),
+                    guided_prefix_action_count: 0,
+                    baseline_next_action_key: None,
+                    guided_next_action_key: None,
+                    first_divergence_kind: "identical_available_preview",
+                    baseline_action_keys_preview: vec![],
+                    guided_prefix_action_keys: vec![],
+                },
+            }),
+            budgeted_root_vs_best_guided_prefix: Some(CombatTurnPlanGuidanceBaselineComparisonV1 {
+                verdict,
+                verdict_basis: "test",
+                guided_prefix_selection_basis: "root_composed_objective",
+                reference_turn_prefix_candidate_coverage:
+                    CombatTurnPlanGuidanceCandidateCoverageV1 {
+                        comparison_scope: "reference_first_turn_prefix_vs_candidate_turn_plans",
+                        candidate_count: 0,
+                        reference_prefix_action_count: 0,
+                        reference_prefix_action_keys: vec![],
+                        exact_match_plan_index: None,
+                        longest_prefix_match_plan_index: None,
+                        longest_prefix_match_action_count: 0,
+                    },
+                baseline: CombatTurnPlanGuidanceSearchSnapshotV1 {
+                    source: "budgeted_root_same_budget_search",
                     terminal: SearchTerminalLabel::Win,
                     complete_win: true,
                     final_hp: Some(40),
