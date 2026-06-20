@@ -54,6 +54,10 @@ pub struct CombatTurnPlanGuidanceLabBenchmarkSummaryV1 {
     pub child_searches_run: usize,
     pub child_complete_wins: usize,
     pub cases_best_target_not_first_plan: usize,
+    pub cases_guided_prefix_better_than_baseline: usize,
+    pub cases_guided_prefix_tied_with_baseline: usize,
+    pub cases_guided_prefix_worse_than_baseline: usize,
+    pub cases_without_guided_prefix_baseline_comparison: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -786,8 +790,25 @@ fn summarize_benchmark(
         if lab.best_target_plan_index.is_some_and(|index| index != 0) {
             summary.cases_best_target_not_first_plan += 1;
         }
+        record_guided_prefix_verdict_count(&mut summary, lab);
     }
     summary
+}
+
+fn record_guided_prefix_verdict_count(
+    summary: &mut CombatTurnPlanGuidanceLabBenchmarkSummaryV1,
+    lab: &CombatTurnPlanGuidanceLabSummaryV1,
+) {
+    match lab
+        .baseline_vs_best_guided_prefix
+        .as_ref()
+        .map(|comparison| comparison.verdict)
+    {
+        Some("guided_better") => summary.cases_guided_prefix_better_than_baseline += 1,
+        Some("guided_tied") => summary.cases_guided_prefix_tied_with_baseline += 1,
+        Some("guided_worse") => summary.cases_guided_prefix_worse_than_baseline += 1,
+        Some(_) | None => summary.cases_without_guided_prefix_baseline_comparison += 1,
+    }
 }
 
 #[cfg(test)]
@@ -935,6 +956,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn benchmark_summary_counts_guided_prefix_verdicts() {
+        let mut summary = CombatTurnPlanGuidanceLabBenchmarkSummaryV1::default();
+        record_guided_prefix_verdict_count(
+            &mut summary,
+            &lab_summary_with_guided_verdict("guided_better"),
+        );
+        record_guided_prefix_verdict_count(
+            &mut summary,
+            &lab_summary_with_guided_verdict("guided_tied"),
+        );
+        record_guided_prefix_verdict_count(
+            &mut summary,
+            &lab_summary_with_guided_verdict("guided_worse"),
+        );
+        record_guided_prefix_verdict_count(
+            &mut summary,
+            &CombatTurnPlanGuidanceLabSummaryV1::default(),
+        );
+
+        assert_eq!(summary.cases_guided_prefix_better_than_baseline, 1);
+        assert_eq!(summary.cases_guided_prefix_tied_with_baseline, 1);
+        assert_eq!(summary.cases_guided_prefix_worse_than_baseline, 1);
+        assert_eq!(summary.cases_without_guided_prefix_baseline_comparison, 1);
+    }
+
     fn lab_candidate(
         plan_index: usize,
         _action_key: &str,
@@ -991,6 +1038,57 @@ mod tests {
             nodes_generated: best_complete.action_count as u64 * 20,
             terminal_wins: 1,
             elapsed_ms: 0,
+        }
+    }
+
+    fn lab_summary_with_guided_verdict(
+        verdict: &'static str,
+    ) -> CombatTurnPlanGuidanceLabSummaryV1 {
+        CombatTurnPlanGuidanceLabSummaryV1 {
+            baseline_vs_best_guided_prefix: Some(CombatTurnPlanGuidanceBaselineComparisonV1 {
+                verdict,
+                baseline: CombatTurnPlanGuidanceSearchSnapshotV1 {
+                    source: "baseline_whole_combat_search",
+                    terminal: SearchTerminalLabel::Win,
+                    complete_win: true,
+                    final_hp: Some(40),
+                    hp_loss: Some(0),
+                    turns: Some(1),
+                    potions_used: Some(0),
+                    cards_played: Some(1),
+                    action_count: Some(1),
+                    first_action_key: None,
+                    nodes_expanded: 1,
+                    nodes_generated: 1,
+                    terminal_wins: 1,
+                    elapsed_ms: 0,
+                },
+                best_guided_prefix: CombatTurnPlanGuidancePlanSnapshotV1 {
+                    plan_index: 0,
+                    first_action_key: None,
+                    target_source: "bounded_child_search_best_complete",
+                    terminal: SearchTerminalLabel::Win,
+                    complete_win: true,
+                    final_hp: Some(40),
+                    hp_loss: Some(0),
+                    turns: Some(1),
+                    potions_used: Some(0),
+                    cards_played: Some(1),
+                    action_count: Some(1),
+                    nodes_expanded: Some(1),
+                    tactical: CombatTurnPlanTacticalTraceV1::default(),
+                },
+                delta_guided_minus_baseline: CombatTurnPlanGuidanceOutcomeDeltaV1 {
+                    final_hp_delta: Some(0),
+                    hp_loss_delta: Some(0),
+                    turn_delta: Some(0),
+                    potions_used_delta: Some(0),
+                    cards_played_delta: Some(0),
+                    action_count_delta: Some(0),
+                    nodes_expanded_delta: Some(0),
+                },
+            }),
+            ..CombatTurnPlanGuidanceLabSummaryV1::default()
         }
     }
 
