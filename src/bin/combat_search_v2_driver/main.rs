@@ -682,6 +682,7 @@ mod tests {
                         "first_plan_rank_by_target": 6,
                         "baseline_vs_best_guided_prefix": {
                             "verdict": "guided_worse",
+                            "verdict_basis": "turns",
                             "delta_guided_minus_baseline": {
                                 "final_hp_delta": 0,
                                 "hp_loss_delta": 0,
@@ -753,6 +754,7 @@ mod tests {
         );
         let comparison = &compact["cases"][0]["summary"]["baseline_vs_best_guided_prefix"];
         assert_eq!(comparison["verdict"], "guided_worse");
+        assert_eq!(comparison["verdict_basis"], "turns");
         assert_eq!(comparison["alignment"]["baseline_next_action_key"], "bash");
         assert_eq!(comparison["alignment"]["guided_next_action_key"], "strike");
         assert_eq!(
@@ -844,7 +846,7 @@ fn compact_turn_plan_guidance_report(report: &serde_json::Value) -> serde_json::
             .collect::<Vec<_>>();
         serde_json::json!({
             "schema_name": "CombatTurnPlanGuidanceHarnessCompactReport",
-            "schema_version": 1,
+            "schema_version": 2,
             "source_schema_name": report.get("schema_name"),
             "source_schema_version": report.get("schema_version"),
             "benchmark_name": report.get("benchmark_name"),
@@ -854,7 +856,7 @@ fn compact_turn_plan_guidance_report(report: &serde_json::Value) -> serde_json::
     } else {
         serde_json::json!({
             "schema_name": "CombatTurnPlanGuidanceHarnessCompactReport",
-            "schema_version": 1,
+            "schema_version": 2,
             "source_schema_name": report.get("schema_name"),
             "source_schema_version": report.get("schema_version"),
             "summary": report.get("summary").map(compact_turn_plan_guidance_lab_summary),
@@ -899,6 +901,7 @@ fn compact_turn_plan_guidance_lab_summary(summary: &serde_json::Value) -> serde_
 fn compact_turn_plan_guidance_comparison(comparison: &serde_json::Value) -> serde_json::Value {
     serde_json::json!({
         "verdict": comparison.get("verdict"),
+        "verdict_basis": comparison.get("verdict_basis"),
         "delta_guided_minus_baseline": comparison.get("delta_guided_minus_baseline"),
         "alignment": comparison.get("action_sequence_alignment"),
         "baseline": comparison.get("baseline").map(compact_guidance_search_snapshot),

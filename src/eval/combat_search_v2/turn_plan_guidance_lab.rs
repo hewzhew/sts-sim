@@ -165,6 +165,7 @@ pub struct CombatTurnPlanGuidanceOutcomeDeltaV1 {
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatTurnPlanGuidanceBaselineComparisonV1 {
     pub verdict: &'static str,
+    pub verdict_basis: &'static str,
     pub baseline: CombatTurnPlanGuidanceSearchSnapshotV1,
     pub best_guided_prefix: CombatTurnPlanGuidancePlanSnapshotV1,
     pub delta_guided_minus_baseline: CombatTurnPlanGuidanceOutcomeDeltaV1,
@@ -297,7 +298,7 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
 
     CombatTurnPlanGuidanceLabV1Report {
         schema_name: "CombatTurnPlanGuidanceLabV1Report",
-        schema_version: 6,
+        schema_version: 7,
         label_role: "oracle_turn_plan_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         input_label: loaded.label.clone(),
@@ -583,8 +584,10 @@ fn baseline_vs_best_guided_prefix_report(
     let best_guided_prefix = plan_snapshot(best);
     let delta = outcome_delta_plan_minus_search(&best_guided_prefix, &baseline);
     let action_sequence_alignment = action_sequence_alignment(&baseline, &best_guided_prefix);
+    let (verdict, verdict_basis) = guided_vs_baseline_verdict(&best_guided_prefix, &baseline);
     Some(CombatTurnPlanGuidanceBaselineComparisonV1 {
-        verdict: guided_vs_baseline_verdict(&best_guided_prefix, &baseline),
+        verdict,
+        verdict_basis,
         baseline,
         best_guided_prefix,
         delta_guided_minus_baseline: delta,
@@ -747,57 +750,86 @@ fn outcome_delta_plan_minus_search(
 fn guided_vs_baseline_verdict(
     guided: &CombatTurnPlanGuidancePlanSnapshotV1,
     baseline: &CombatTurnPlanGuidanceSearchSnapshotV1,
-) -> &'static str {
-    match compare_plan_snapshot_to_search(guided, baseline) {
+) -> (&'static str, &'static str) {
+    let (ordering, basis) = compare_plan_snapshot_to_search(guided, baseline);
+    let verdict = match ordering {
         Ordering::Greater => "guided_better",
         Ordering::Equal => "guided_tied",
         Ordering::Less => "guided_worse",
+    };
+    (verdict, basis)
+}
+
+fn first_non_equal_ordering(
+    basis: &'static str,
+    ordering: Ordering,
+) -> Option<(Ordering, &'static str)> {
+    if ordering == Ordering::Equal {
+        None
+    } else {
+        Some((ordering, basis))
     }
 }
 
 fn compare_plan_snapshot_to_search(
     guided: &CombatTurnPlanGuidancePlanSnapshotV1,
     baseline: &CombatTurnPlanGuidanceSearchSnapshotV1,
-) -> Ordering {
-    guided
-        .complete_win
-        .cmp(&baseline.complete_win)
-        .then_with(|| terminal_tier(guided.terminal).cmp(&terminal_tier(baseline.terminal)))
-        .then_with(|| {
+) -> (Ordering, &'static str) {
+    [
+        first_non_equal_ordering(
+            "complete_win",
+            guided.complete_win.cmp(&baseline.complete_win),
+        ),
+        first_non_equal_ordering(
+            "terminal",
+            terminal_tier(guided.terminal).cmp(&terminal_tier(baseline.terminal)),
+        ),
+        first_non_equal_ordering(
+            "final_hp",
             guided
                 .final_hp
                 .unwrap_or(i32::MIN)
-                .cmp(&baseline.final_hp.unwrap_or(i32::MIN))
-        })
-        .then_with(|| {
+                .cmp(&baseline.final_hp.unwrap_or(i32::MIN)),
+        ),
+        first_non_equal_ordering(
+            "hp_loss",
             baseline
                 .hp_loss
                 .unwrap_or(i32::MAX)
-                .cmp(&guided.hp_loss.unwrap_or(i32::MAX))
-        })
-        .then_with(|| {
+                .cmp(&guided.hp_loss.unwrap_or(i32::MAX)),
+        ),
+        first_non_equal_ordering(
+            "potions_used",
             baseline
                 .potions_used
                 .unwrap_or(u32::MAX)
-                .cmp(&guided.potions_used.unwrap_or(u32::MAX))
-        })
-        .then_with(|| {
+                .cmp(&guided.potions_used.unwrap_or(u32::MAX)),
+        ),
+        first_non_equal_ordering(
+            "turns",
             baseline
                 .turns
                 .unwrap_or(u32::MAX)
-                .cmp(&guided.turns.unwrap_or(u32::MAX))
-        })
-        .then_with(|| {
+                .cmp(&guided.turns.unwrap_or(u32::MAX)),
+        ),
+        first_non_equal_ordering(
+            "cards_played",
             baseline
                 .cards_played
                 .unwrap_or(u32::MAX)
-                .cmp(&guided.cards_played.unwrap_or(u32::MAX))
-        })
-        .then_with(|| {
+                .cmp(&guided.cards_played.unwrap_or(u32::MAX)),
+        ),
+        first_non_equal_ordering(
+            "nodes_expanded",
             baseline
                 .nodes_expanded
-                .cmp(&guided.nodes_expanded.unwrap_or(u64::MAX))
-        })
+                .cmp(&guided.nodes_expanded.unwrap_or(u64::MAX)),
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    .next()
+    .unwrap_or((Ordering::Equal, "tied"))
 }
 
 fn terminal_tier(terminal: SearchTerminalLabel) -> u8 {
@@ -1024,6 +1056,7 @@ mod tests {
             .expect("comparison should exist");
 
         assert_eq!(comparison.verdict, "guided_better");
+        assert_eq!(comparison.verdict_basis, "final_hp");
         assert_eq!(comparison.baseline.final_hp, Some(35));
         assert_eq!(
             comparison.baseline.first_action_key.as_deref(),
@@ -1160,6 +1193,7 @@ mod tests {
         CombatTurnPlanGuidanceLabSummaryV1 {
             baseline_vs_best_guided_prefix: Some(CombatTurnPlanGuidanceBaselineComparisonV1 {
                 verdict,
+                verdict_basis: "test",
                 baseline: CombatTurnPlanGuidanceSearchSnapshotV1 {
                     source: "baseline_whole_combat_search",
                     terminal: SearchTerminalLabel::Win,
