@@ -2,6 +2,7 @@ use crate::ai::card_reward_policy_v1::{
     card_facts, card_reward_semantic_profile_v1, CardRewardSemanticProfileV1,
     CardRewardSemanticRoleV1,
 };
+use crate::ai::card_semantics_v1::{potion_acquisition_traits_v1, relic_acquisition_traits_v1};
 use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
@@ -210,46 +211,11 @@ fn role(profile: &CardRewardSemanticProfileV1, role: CardRewardSemanticRoleV1) -
 }
 
 pub(crate) fn shop_potion_is_combat_patch_v1(potion: PotionId) -> bool {
-    matches!(
-        potion,
-        PotionId::DuplicationPotion
-            | PotionId::FearPotion
-            | PotionId::FirePotion
-            | PotionId::WeakenPotion
-            | PotionId::EssenceOfSteel
-            | PotionId::BlockPotion
-            | PotionId::EnergyPotion
-            | PotionId::StrengthPotion
-            | PotionId::SteroidPotion
-            | PotionId::SpeedPotion
-            | PotionId::AncientPotion
-            | PotionId::GamblersBrew
-            | PotionId::LiquidMemories
-            | PotionId::FairyPotion
-            | PotionId::PowerPotion
-            | PotionId::SkillPotion
-            | PotionId::AttackPotion
-    )
+    !potion_acquisition_traits_v1(potion).is_empty()
 }
 
 fn high_impact_shop_relic(relic: RelicId) -> bool {
-    let mechanics = crate::ai::card_semantics_v1::relic_mechanics_profile_v1(relic);
-    if mechanics.core_defense_or_survival || mechanics.core_card_access {
-        return true;
-    }
-    matches!(
-        relic,
-        RelicId::MembershipCard
-            | RelicId::Courier
-            | RelicId::ClockworkSouvenir
-            | RelicId::MedicalKit
-            | RelicId::OrangePellets
-            | RelicId::FrozenEye
-            | RelicId::ChemicalX
-            | RelicId::Waffle
-            | RelicId::DollysMirror
-            | RelicId::Orrery
-    )
+    !relic_acquisition_traits_v1(relic).is_empty()
 }
 
 fn deck_has_x_cost_payoff_v1(run_state: &RunState) -> bool {

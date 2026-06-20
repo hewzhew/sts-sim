@@ -6,6 +6,7 @@ use crate::ai::card_reward_policy_v1::{
     card_facts, card_reward_semantic_profile_v1, CardRewardSemanticProfileV1,
     CardRewardSemanticRoleV1,
 };
+use crate::ai::card_semantics_v1::{potion_acquisition_traits_v1, PotionAcquisitionTraitV1};
 use crate::ai::decision_tags_v1::{
     combat_shape_change_tags_for_card_v1, TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK,
     TAG_COLLECTOR_ANSWER, TAG_DIGEST_CAPACITY_DRAW, TAG_DIGEST_CAPACITY_EXHAUST,
@@ -133,20 +134,18 @@ fn collector_answer_card(card: CardId, profile: &CardRewardSemanticProfileV1) ->
 }
 
 fn collector_answer_potion(potion: PotionId) -> bool {
-    matches!(
-        potion,
-        PotionId::FirePotion
-            | PotionId::FearPotion
-            | PotionId::WeakenPotion
-            | PotionId::ExplosivePotion
-            | PotionId::EssenceOfSteel
-            | PotionId::BlockPotion
-            | PotionId::EnergyPotion
-            | PotionId::PowerPotion
-            | PotionId::SkillPotion
-            | PotionId::AttackPotion
-            | PotionId::DuplicationPotion
-    )
+    let traits = potion_acquisition_traits_v1(potion);
+    traits.iter().any(|trait_| {
+        matches!(
+            trait_,
+            PotionAcquisitionTraitV1::CombatDamage
+                | PotionAcquisitionTraitV1::CombatBlock
+                | PotionAcquisitionTraitV1::DebuffSetup
+                | PotionAcquisitionTraitV1::EnergyBurst
+                | PotionAcquisitionTraitV1::CardAccess
+                | PotionAcquisitionTraitV1::ActionAmplifier
+        )
+    })
 }
 
 fn closes_or_supports_exhaust_engine(

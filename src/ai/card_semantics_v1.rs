@@ -43,6 +43,31 @@ pub struct PotionMechanicsProfileV1 {
     pub strength_converter: Option<StrengthConversionMechanicV1>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RelicAcquisitionTraitV1 {
+    CoreDefenseOrSurvival,
+    CoreCardAccess,
+    ShopEconomyMultiplier,
+    StatusDigest,
+    DebuffControl,
+    XCostPayoff,
+    ImmediateRecovery,
+    DeckMutation,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PotionAcquisitionTraitV1 {
+    CombatDamage,
+    CombatBlock,
+    DebuffSetup,
+    EnergyBurst,
+    StrengthBurst,
+    CardAccess,
+    ActionAmplifier,
+    DeathInsurance,
+    DebuffControl,
+}
+
 pub fn card_mechanics_profile_v1(card: CardId) -> CardMechanicsProfileV1 {
     CardMechanicsProfileV1 {
         persistent_strength_source: matches!(
@@ -144,13 +169,101 @@ pub fn relic_mechanics_profile_v1(relic: RelicId) -> RelicMechanicsProfileV1 {
 
 pub fn potion_mechanics_profile_v1(potion: PotionId) -> PotionMechanicsProfileV1 {
     PotionMechanicsProfileV1 {
-        temporary_strength_burst: matches!(potion, PotionId::SteroidPotion),
+        temporary_strength_burst: matches!(
+            potion,
+            PotionId::StrengthPotion | PotionId::SteroidPotion
+        ),
         strength_converter: match potion {
             PotionId::AncientPotion => {
                 Some(StrengthConversionMechanicV1::PreventStrengthDownDebuff)
             }
             _ => None,
         },
+    }
+}
+
+pub fn relic_acquisition_traits_v1(relic: RelicId) -> Vec<RelicAcquisitionTraitV1> {
+    let mechanics = relic_mechanics_profile_v1(relic);
+    let mut traits = Vec::new();
+    if mechanics.core_defense_or_survival {
+        push_relic_trait(&mut traits, RelicAcquisitionTraitV1::CoreDefenseOrSurvival);
+    }
+    if mechanics.core_card_access {
+        push_relic_trait(&mut traits, RelicAcquisitionTraitV1::CoreCardAccess);
+    }
+    if mechanics.strength_converter.is_some() {
+        push_relic_trait(&mut traits, RelicAcquisitionTraitV1::DebuffControl);
+    }
+    match relic {
+        RelicId::MembershipCard | RelicId::Courier => {
+            push_relic_trait(&mut traits, RelicAcquisitionTraitV1::ShopEconomyMultiplier);
+        }
+        RelicId::MedicalKit => {
+            push_relic_trait(&mut traits, RelicAcquisitionTraitV1::StatusDigest);
+        }
+        RelicId::ChemicalX => {
+            push_relic_trait(&mut traits, RelicAcquisitionTraitV1::XCostPayoff);
+        }
+        RelicId::Waffle => {
+            push_relic_trait(&mut traits, RelicAcquisitionTraitV1::ImmediateRecovery);
+        }
+        RelicId::DollysMirror | RelicId::Orrery => {
+            push_relic_trait(&mut traits, RelicAcquisitionTraitV1::DeckMutation);
+        }
+        _ => {}
+    }
+    traits
+}
+
+pub fn potion_acquisition_traits_v1(potion: PotionId) -> Vec<PotionAcquisitionTraitV1> {
+    let mechanics = potion_mechanics_profile_v1(potion);
+    let mut traits = Vec::new();
+    if mechanics.temporary_strength_burst {
+        push_potion_trait(&mut traits, PotionAcquisitionTraitV1::StrengthBurst);
+    }
+    if mechanics.strength_converter.is_some() {
+        push_potion_trait(&mut traits, PotionAcquisitionTraitV1::DebuffControl);
+    }
+    match potion {
+        PotionId::FirePotion | PotionId::ExplosivePotion => {
+            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::CombatDamage);
+        }
+        PotionId::BlockPotion | PotionId::EssenceOfSteel | PotionId::SpeedPotion => {
+            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::CombatBlock);
+        }
+        PotionId::FearPotion | PotionId::WeakenPotion => {
+            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::DebuffSetup);
+        }
+        PotionId::EnergyPotion => {
+            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::EnergyBurst);
+        }
+        PotionId::GamblersBrew
+        | PotionId::LiquidMemories
+        | PotionId::PowerPotion
+        | PotionId::SkillPotion
+        | PotionId::AttackPotion => {
+            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::CardAccess);
+        }
+        PotionId::DuplicationPotion => {
+            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::ActionAmplifier);
+        }
+        PotionId::FairyPotion => {
+            push_potion_trait(&mut traits, PotionAcquisitionTraitV1::DeathInsurance);
+        }
+        _ => {}
+    }
+    traits
+}
+
+fn push_relic_trait(traits: &mut Vec<RelicAcquisitionTraitV1>, trait_: RelicAcquisitionTraitV1) {
+    if !traits.contains(&trait_) {
+        traits.push(trait_);
+    }
+}
+
+fn push_potion_trait(traits: &mut Vec<PotionAcquisitionTraitV1>, trait_: PotionAcquisitionTraitV1) {
+    if !traits.contains(&trait_) {
+        traits.push(trait_);
     }
 }
 
