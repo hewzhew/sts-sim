@@ -137,6 +137,7 @@ pub struct CombatTurnPlanGuidanceSelectedComparisonV1 {
 pub struct CombatTurnPlanGuidancePlanSnapshotV1 {
     pub plan_index: usize,
     pub first_action_key: Option<String>,
+    pub action_keys_preview: Vec<String>,
     pub target_source: &'static str,
     pub terminal: SearchTerminalLabel,
     pub complete_win: bool,
@@ -167,6 +168,7 @@ pub struct CombatTurnPlanGuidanceBaselineComparisonV1 {
     pub baseline: CombatTurnPlanGuidanceSearchSnapshotV1,
     pub best_guided_prefix: CombatTurnPlanGuidancePlanSnapshotV1,
     pub delta_guided_minus_baseline: CombatTurnPlanGuidanceOutcomeDeltaV1,
+    pub action_sequence_alignment: CombatTurnPlanGuidanceActionSequenceAlignmentV1,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -181,10 +183,24 @@ pub struct CombatTurnPlanGuidanceSearchSnapshotV1 {
     pub cards_played: Option<u32>,
     pub action_count: Option<usize>,
     pub first_action_key: Option<String>,
+    pub action_keys_preview: Vec<String>,
     pub nodes_expanded: u64,
     pub nodes_generated: u64,
     pub terminal_wins: u64,
     pub elapsed_ms: u128,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatTurnPlanGuidanceActionSequenceAlignmentV1 {
+    pub comparison_scope: &'static str,
+    pub common_prefix_action_count: usize,
+    pub baseline_action_count: Option<usize>,
+    pub guided_prefix_action_count: usize,
+    pub baseline_next_action_key: Option<String>,
+    pub guided_next_action_key: Option<String>,
+    pub first_divergence_kind: &'static str,
+    pub baseline_action_keys_preview: Vec<String>,
+    pub guided_prefix_action_keys: Vec<String>,
 }
 
 pub fn run_combat_turn_plan_guidance_lab_benchmark_v1(
@@ -212,7 +228,7 @@ pub fn run_combat_turn_plan_guidance_lab_benchmark_v1(
     let summary = summarize_benchmark(&cases, loaded.cases.len());
     CombatTurnPlanGuidanceLabBenchmarkV1Report {
         schema_name: "CombatTurnPlanGuidanceLabBenchmarkV1Report",
-        schema_version: 2,
+        schema_version: 3,
         label_role: "oracle_turn_plan_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         benchmark_name: loaded.name.clone(),
@@ -281,7 +297,7 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
 
     CombatTurnPlanGuidanceLabV1Report {
         schema_name: "CombatTurnPlanGuidanceLabV1Report",
-        schema_version: 5,
+        schema_version: 6,
         label_role: "oracle_turn_plan_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         input_label: loaded.label.clone(),
@@ -566,11 +582,13 @@ fn baseline_vs_best_guided_prefix_report(
     })?;
     let best_guided_prefix = plan_snapshot(best);
     let delta = outcome_delta_plan_minus_search(&best_guided_prefix, &baseline);
+    let action_sequence_alignment = action_sequence_alignment(&baseline, &best_guided_prefix);
     Some(CombatTurnPlanGuidanceBaselineComparisonV1 {
         verdict: guided_vs_baseline_verdict(&best_guided_prefix, &baseline),
         baseline,
         best_guided_prefix,
         delta_guided_minus_baseline: delta,
+        action_sequence_alignment,
     })
 }
 
@@ -592,10 +610,66 @@ fn search_snapshot(
         cards_played: best_complete.map(|trajectory| trajectory.cards_played),
         action_count: best_complete.map(|trajectory| trajectory.action_count),
         first_action_key: best_complete.and_then(|trajectory| trajectory.first_action_key.clone()),
+        action_keys_preview: best_complete
+            .map(|trajectory| trajectory.action_keys_preview.clone())
+            .unwrap_or_default(),
         nodes_expanded: search.nodes_expanded,
         nodes_generated: search.nodes_generated,
         terminal_wins: search.terminal_wins,
         elapsed_ms: search.elapsed_ms,
+    }
+}
+
+fn action_sequence_alignment(
+    baseline: &CombatTurnPlanGuidanceSearchSnapshotV1,
+    guided_prefix: &CombatTurnPlanGuidancePlanSnapshotV1,
+) -> CombatTurnPlanGuidanceActionSequenceAlignmentV1 {
+    let common_prefix_action_count = baseline
+        .action_keys_preview
+        .iter()
+        .zip(guided_prefix.action_keys_preview.iter())
+        .take_while(|(left, right)| left == right)
+        .count();
+    let baseline_next_action_key = baseline
+        .action_keys_preview
+        .get(common_prefix_action_count)
+        .cloned();
+    let guided_next_action_key = guided_prefix
+        .action_keys_preview
+        .get(common_prefix_action_count)
+        .cloned();
+    CombatTurnPlanGuidanceActionSequenceAlignmentV1 {
+        comparison_scope: "baseline_best_complete_preview_vs_guided_prefix",
+        common_prefix_action_count,
+        baseline_action_count: baseline.action_count,
+        guided_prefix_action_count: guided_prefix.action_keys_preview.len(),
+        first_divergence_kind: first_divergence_kind(
+            baseline_next_action_key.as_ref(),
+            guided_next_action_key.as_ref(),
+            baseline.action_count,
+            guided_prefix.action_keys_preview.len(),
+        ),
+        baseline_next_action_key,
+        guided_next_action_key,
+        baseline_action_keys_preview: baseline.action_keys_preview.clone(),
+        guided_prefix_action_keys: guided_prefix.action_keys_preview.clone(),
+    }
+}
+
+fn first_divergence_kind(
+    baseline_next_action_key: Option<&String>,
+    guided_next_action_key: Option<&String>,
+    baseline_action_count: Option<usize>,
+    guided_prefix_action_count: usize,
+) -> &'static str {
+    match (baseline_next_action_key, guided_next_action_key) {
+        (Some(_), Some(_)) => "diverged",
+        (Some(_), None) => "guided_prefix_ended_before_baseline_preview",
+        (None, Some(_)) => "baseline_preview_ended_before_guided_prefix",
+        (None, None) if baseline_action_count == Some(guided_prefix_action_count) => {
+            "identical_complete_sequence"
+        }
+        (None, None) => "identical_available_preview",
     }
 }
 
@@ -615,6 +689,7 @@ fn plan_snapshot(
     CombatTurnPlanGuidancePlanSnapshotV1 {
         plan_index: candidate.plan.plan_index,
         first_action_key: candidate.plan.first_action_key.clone(),
+        action_keys_preview: candidate.plan.action_keys.iter().take(8).cloned().collect(),
         target_source: candidate.target.source,
         terminal: candidate.target.terminal,
         complete_win: candidate.target.complete_win,
@@ -968,6 +1043,30 @@ mod tests {
             comparison.delta_guided_minus_baseline.action_count_delta,
             Some(4)
         );
+        assert_eq!(
+            comparison
+                .action_sequence_alignment
+                .common_prefix_action_count,
+            0
+        );
+        assert_eq!(
+            comparison
+                .action_sequence_alignment
+                .baseline_next_action_key
+                .as_deref(),
+            Some("test-first-action-12")
+        );
+        assert_eq!(
+            comparison
+                .action_sequence_alignment
+                .guided_next_action_key
+                .as_deref(),
+            Some("action-0")
+        );
+        assert_eq!(
+            comparison.action_sequence_alignment.first_divergence_kind,
+            "diverged"
+        );
     }
 
     #[test]
@@ -1072,6 +1171,7 @@ mod tests {
                     cards_played: Some(1),
                     action_count: Some(1),
                     first_action_key: None,
+                    action_keys_preview: vec![],
                     nodes_expanded: 1,
                     nodes_generated: 1,
                     terminal_wins: 1,
@@ -1080,6 +1180,7 @@ mod tests {
                 best_guided_prefix: CombatTurnPlanGuidancePlanSnapshotV1 {
                     plan_index: 0,
                     first_action_key: None,
+                    action_keys_preview: vec![],
                     target_source: "bounded_child_search_best_complete",
                     terminal: SearchTerminalLabel::Win,
                     complete_win: true,
@@ -1100,6 +1201,17 @@ mod tests {
                     cards_played_delta: Some(0),
                     action_count_delta: Some(0),
                     nodes_expanded_delta: Some(0),
+                },
+                action_sequence_alignment: CombatTurnPlanGuidanceActionSequenceAlignmentV1 {
+                    comparison_scope: "baseline_best_complete_preview_vs_guided_prefix",
+                    common_prefix_action_count: 0,
+                    baseline_action_count: Some(1),
+                    guided_prefix_action_count: 0,
+                    baseline_next_action_key: None,
+                    guided_next_action_key: None,
+                    first_divergence_kind: "identical_available_preview",
+                    baseline_action_keys_preview: vec![],
+                    guided_prefix_action_keys: vec![],
                 },
             }),
             ..CombatTurnPlanGuidanceLabSummaryV1::default()
