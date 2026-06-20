@@ -447,6 +447,7 @@ def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, float]
     covered_groups = 0
     total_legal_actions = 0.0
     total_candidate_eligible_actions = 0.0
+    total_preselection_first_actions = 0.0
     total_candidate_first_actions = 0.0
     for group in groups.values():
         if not group:
@@ -461,6 +462,9 @@ def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, float]
         total_legal_actions += numeric_or_zero(mask.get("legal_action_count"))
         total_candidate_eligible_actions += numeric_or_zero(
             mask.get("candidate_eligible_action_count")
+        )
+        total_preselection_first_actions += numeric_or_zero(
+            mask.get("preselection_first_action_count")
         )
         coverage = mask.get("candidate_action_coverage")
         if isinstance(coverage, dict):
@@ -480,8 +484,14 @@ def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, float]
         "groups_total": float(len(groups)),
         "legal_actions": total_legal_actions,
         "candidate_eligible_actions": total_candidate_eligible_actions,
+        "preselection_first_actions": total_preselection_first_actions,
         "candidate_first_actions": total_candidate_first_actions,
         "candidate_first_action_coverage_ratio": first_action_ratio,
+        "preselection_first_action_coverage_ratio": (
+            total_preselection_first_actions / total_legal_actions
+            if total_legal_actions
+            else 0.0
+        ),
         "candidate_eligible_action_coverage_ratio": eligible_ratio,
     }
 
@@ -2760,7 +2770,11 @@ def main() -> None:
             f"legal_actions={int(root_mask_coverage['legal_actions'])} "
             f"candidate_eligible_actions="
             f"{int(root_mask_coverage['candidate_eligible_actions'])} "
+            f"preselection_first_actions="
+            f"{int(root_mask_coverage['preselection_first_actions'])} "
             f"candidate_first_actions={int(root_mask_coverage['candidate_first_actions'])} "
+            f"preselection_first_action_ratio="
+            f"{root_mask_coverage['preselection_first_action_coverage_ratio']:.3f} "
             f"candidate_first_action_ratio="
             f"{root_mask_coverage['candidate_first_action_coverage_ratio']:.3f} "
             f"candidate_eligible_ratio="

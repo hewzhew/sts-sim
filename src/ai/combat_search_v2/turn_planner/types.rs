@@ -52,6 +52,8 @@ pub(in crate::ai::combat_search_v2) struct TurnPlanStepStateV1 {
 #[derive(Clone, Default)]
 pub(in crate::ai::combat_search_v2) struct TurnPlanEnumeration {
     pub(in crate::ai::combat_search_v2) plans: Vec<TurnPlanV1>,
+    pub(in crate::ai::combat_search_v2) preselection_plan_count: usize,
+    pub(in crate::ai::combat_search_v2) preselection_first_actions: Vec<CombatSearchV2ActionTrace>,
     pub(in crate::ai::combat_search_v2) nodes_expanded: usize,
     pub(in crate::ai::combat_search_v2) nodes_generated: usize,
     pub(in crate::ai::combat_search_v2) exact_state_skips: usize,

@@ -1108,8 +1108,14 @@ def root_action_coverage_diagnostic(mask: dict[str, Any]) -> dict[str, Any] | No
         for action in as_list(coverage.get("candidate_first_actions"))
         if isinstance(action, dict)
     ]
+    preselection_actions = [
+        action
+        for action in as_list(mask.get("preselection_first_actions"))
+        if isinstance(action, dict)
+    ]
     candidate_keys = action_key_set(candidate_first_actions)
     eligible_keys = action_key_set(eligible_actions)
+    preselection_keys = action_key_set(preselection_actions)
     missing_legal_actions = [
         action
         for action in legal_actions
@@ -1125,35 +1131,66 @@ def root_action_coverage_diagnostic(mask: dict[str, Any]) -> dict[str, Any] | No
         for action in eligible_actions
         if isinstance(action.get("action_key"), str) and action["action_key"] not in candidate_keys
     ]
+    eligible_not_preselected_actions = [
+        action
+        for action in eligible_actions
+        if isinstance(action.get("action_key"), str)
+        and action["action_key"] not in preselection_keys
+    ]
+    preselected_but_unselected_actions = [
+        action
+        for action in preselection_actions
+        if isinstance(action.get("action_key"), str) and action["action_key"] not in candidate_keys
+    ]
     legal_count = len(legal_actions)
     candidate_count = len(candidate_first_actions)
     eligible_count = len(eligible_actions)
+    preselection_count = len(preselection_actions)
     return {
         "data_role": "DerivedDeterministic",
         "availability": "RootOnly",
         "source": "root_legal_action_mask_vs_bounded_candidate_first_actions",
         "legal_action_count": legal_count,
         "candidate_eligible_action_count": eligible_count,
+        "preselection_first_action_count": preselection_count,
         "candidate_first_action_count": candidate_count,
         "missing_legal_action_count": len(missing_legal_actions),
         "ineligible_action_count": len(ineligible_actions),
         "eligible_but_uncovered_action_count": len(eligible_but_uncovered_actions),
+        "eligible_not_preselected_action_count": len(eligible_not_preselected_actions),
+        "preselected_but_unselected_action_count": len(preselected_but_unselected_actions),
         "candidate_first_action_coverage_ratio": (
             candidate_count / legal_count if legal_count else 0.0
         ),
         "candidate_eligible_action_coverage_ratio": (
             eligible_count / legal_count if legal_count else 0.0
         ),
+        "preselection_first_action_coverage_ratio": (
+            preselection_count / legal_count if legal_count else 0.0
+        ),
         "legal_by_kind": root_action_kind_counts(legal_actions),
+        "preselection_first_by_kind": root_action_kind_counts(preselection_actions),
         "candidate_first_by_kind": root_action_kind_counts(candidate_first_actions),
         "missing_legal_by_kind": root_action_kind_counts(missing_legal_actions),
         "eligible_but_uncovered_by_kind": root_action_kind_counts(eligible_but_uncovered_actions),
+        "eligible_not_preselected_by_kind": root_action_kind_counts(
+            eligible_not_preselected_actions
+        ),
+        "preselected_but_unselected_by_kind": root_action_kind_counts(
+            preselected_but_unselected_actions
+        ),
         "ineligible_by_kind": root_action_kind_counts(ineligible_actions),
         "missing_legal_action_examples": [
             action.get("action_key") for action in missing_legal_actions[:5]
         ],
         "eligible_but_uncovered_action_examples": [
             action.get("action_key") for action in eligible_but_uncovered_actions[:5]
+        ],
+        "eligible_not_preselected_action_examples": [
+            action.get("action_key") for action in eligible_not_preselected_actions[:5]
+        ],
+        "preselected_but_unselected_action_examples": [
+            action.get("action_key") for action in preselected_but_unselected_actions[:5]
         ],
         "limitations": [
             "missing means absent from bounded candidate first actions, not proven strategically bad",
@@ -1574,9 +1611,12 @@ def extract(
     total_candidates_with_step_state_summaries = 0
     total_candidates_with_step_summary_refs = 0
     total_root_legal_actions = 0
+    total_root_preselection_first_actions = 0
     total_root_candidate_first_actions = 0
     total_root_missing_legal_by_kind: Counter[str] = Counter()
     total_root_eligible_uncovered_by_kind: Counter[str] = Counter()
+    total_root_eligible_not_preselected_by_kind: Counter[str] = Counter()
+    total_root_preselected_unselected_by_kind: Counter[str] = Counter()
     total_root_ineligible_by_kind: Counter[str] = Counter()
     for episode in episodes:
         candidates = as_list(episode.get("candidate_plans"))
@@ -1595,6 +1635,9 @@ def extract(
         if covered_count is not None:
             total_root_candidate_first_actions += covered_count
         diagnostic = as_dict(mask.get("coverage_diagnostic"))
+        preselection_count = int_or_none(diagnostic.get("preselection_first_action_count"))
+        if preselection_count is not None:
+            total_root_preselection_first_actions += preselection_count
         total_root_missing_legal_by_kind.update(
             {
                 str(key): int_value(value)
@@ -1606,6 +1649,22 @@ def extract(
                 str(key): int_value(value)
                 for key, value in as_dict(
                     diagnostic.get("eligible_but_uncovered_by_kind")
+                ).items()
+            }
+        )
+        total_root_eligible_not_preselected_by_kind.update(
+            {
+                str(key): int_value(value)
+                for key, value in as_dict(
+                    diagnostic.get("eligible_not_preselected_by_kind")
+                ).items()
+            }
+        )
+        total_root_preselected_unselected_by_kind.update(
+            {
+                str(key): int_value(value)
+                for key, value in as_dict(
+                    diagnostic.get("preselected_but_unselected_by_kind")
                 ).items()
             }
         )
@@ -1683,6 +1742,7 @@ def extract(
         "  root_legal_action_mask="
         f"episodes={counters['episodes_with_complete_legal_action_mask']}/{len(episodes)} "
         f"legal_actions={total_root_legal_actions} "
+        f"preselection_first_actions={total_root_preselection_first_actions} "
         f"candidate_first_actions={total_root_candidate_first_actions} "
         f"coverage_ratio={coverage_ratio:.3f}"
     )
@@ -1695,6 +1755,16 @@ def extract(
         print(
             "  root_eligible_but_uncovered_by_kind="
             f"{dict(sorted(total_root_eligible_uncovered_by_kind.items()))}"
+        )
+    if total_root_eligible_not_preselected_by_kind:
+        print(
+            "  root_eligible_not_preselected_by_kind="
+            f"{dict(sorted(total_root_eligible_not_preselected_by_kind.items()))}"
+        )
+    if total_root_preselected_unselected_by_kind:
+        print(
+            "  root_preselected_but_unselected_by_kind="
+            f"{dict(sorted(total_root_preselected_unselected_by_kind.items()))}"
         )
     if total_root_ineligible_by_kind:
         print(

@@ -38,6 +38,8 @@ pub struct CombatSearchV2TurnPlanProbeConfigReport {
 pub struct CombatSearchV2TurnPlanProbeEnumerationReport {
     pub planning_policy: &'static str,
     pub plans: usize,
+    pub preselection_plans: usize,
+    pub preselection_first_action_count: usize,
     pub nodes_expanded: usize,
     pub nodes_generated: usize,
     pub exact_state_skips: usize,
@@ -51,9 +53,11 @@ pub struct CombatSearchV2TurnPlanProbeActionMaskReport {
     pub complete_legal_mask: bool,
     pub legal_action_count: usize,
     pub candidate_eligible_action_count: usize,
+    pub preselection_first_action_count: usize,
     pub potion_policy: &'static str,
     pub legal_actions: Vec<CombatSearchV2TurnPlanProbeActionReport>,
     pub candidate_eligible_actions: Vec<CombatSearchV2TurnPlanProbeActionReport>,
+    pub preselection_first_actions: Vec<CombatSearchV2TurnPlanProbeActionReport>,
     pub notes: Vec<&'static str>,
 }
 
@@ -137,8 +141,12 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
     let enumeration = enumerate_turn_plans(&root, &EngineCombatStepper, &turn_config, None);
     let position = CombatPosition::new(engine.clone(), combat.clone());
     let legal_action_choices = EngineCombatStepper.legal_action_choices(&position);
-    let root_action_mask =
-        root_action_mask_report(combat, turn_config.potion_policy, legal_action_choices);
+    let root_action_mask = root_action_mask_report(
+        combat,
+        turn_config.potion_policy,
+        legal_action_choices,
+        &enumeration.preselection_first_actions,
+    );
     let candidates = enumeration
         .plans
         .iter()
@@ -196,6 +204,8 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
         enumeration: CombatSearchV2TurnPlanProbeEnumerationReport {
             planning_policy: "turn_plan_v1_root_only_bounded_exact_step_enumeration",
             plans: enumeration.plans.len(),
+            preselection_plans: enumeration.preselection_plan_count,
+            preselection_first_action_count: enumeration.preselection_first_actions.len(),
             nodes_expanded: enumeration.nodes_expanded,
             nodes_generated: enumeration.nodes_generated,
             exact_state_skips: enumeration.exact_state_skips,
@@ -221,6 +231,7 @@ fn root_action_mask_report(
     combat: &CombatState,
     potion_policy: CombatSearchV2PotionPolicy,
     legal_actions: Vec<CombatActionChoice>,
+    preselection_first_actions: &[CombatSearchV2ActionTrace],
 ) -> CombatSearchV2TurnPlanProbeActionMaskReport {
     let candidate_eligible = filtered_legal_actions(legal_actions.clone(), potion_policy, combat);
     CombatSearchV2TurnPlanProbeActionMaskReport {
@@ -229,12 +240,15 @@ fn root_action_mask_report(
         complete_legal_mask: true,
         legal_action_count: legal_actions.len(),
         candidate_eligible_action_count: candidate_eligible.len(),
+        preselection_first_action_count: preselection_first_actions.len(),
         potion_policy: potion_policy.label(),
         legal_actions: action_mask_entries(legal_actions),
         candidate_eligible_actions: action_mask_entries(candidate_eligible),
+        preselection_first_actions: action_trace_mask_entries(preselection_first_actions),
         notes: vec![
             "legal_actions is the complete root legal action list from the combat stepper",
             "candidate_eligible_actions applies the current combat search potion policy before turn-plan enumeration",
+            "preselection_first_actions are first actions present before bucket selection truncates turn-plan candidates",
         ],
     }
 }
@@ -253,6 +267,20 @@ fn action_mask_entries(
                 input: action.input,
             },
         )
+        .collect()
+}
+
+fn action_trace_mask_entries(
+    actions: &[CombatSearchV2ActionTrace],
+) -> Vec<CombatSearchV2TurnPlanProbeActionReport> {
+    actions
+        .iter()
+        .map(|action| CombatSearchV2TurnPlanProbeActionReport {
+            action_id: action.action_id,
+            action_key: action.action_key.clone(),
+            action_debug: action.action_debug.clone(),
+            input: action.input.clone(),
+        })
         .collect()
 }
 

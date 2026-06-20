@@ -183,8 +183,23 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
         }
     }
 
+    enumeration.preselection_plan_count = candidates.len();
+    enumeration.preselection_first_actions = unique_first_actions(&candidates);
     enumeration.plans = select_bucketed_plans(candidates, config);
     enumeration
+}
+
+fn unique_first_actions(candidates: &[TurnPlanV1]) -> Vec<CombatSearchV2ActionTrace> {
+    let mut by_key = BTreeMap::<String, CombatSearchV2ActionTrace>::new();
+    for candidate in candidates {
+        let Some(action) = candidate.actions.first() else {
+            continue;
+        };
+        by_key
+            .entry(action.action_key.clone())
+            .or_insert_with(|| action.clone());
+    }
+    by_key.into_values().collect()
 }
 
 fn plan_from_node(
