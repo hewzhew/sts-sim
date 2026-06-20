@@ -441,6 +441,51 @@ def turn_plan_feature_coverage(samples: list[dict[str, Any]]) -> dict[str, int]:
     return dict(coverage)
 
 
+def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, float]:
+    """Summarize root legal-action mask coverage once per decision group."""
+    groups = grouped_samples(samples)
+    covered_groups = 0
+    total_legal_actions = 0.0
+    total_candidate_eligible_actions = 0.0
+    total_candidate_first_actions = 0.0
+    for group in groups.values():
+        if not group:
+            continue
+        root_context = group[0].get("root_context")
+        if not isinstance(root_context, dict):
+            continue
+        mask = root_context.get("legal_action_mask")
+        if not isinstance(mask, dict) or mask.get("complete_legal_mask") is not True:
+            continue
+        covered_groups += 1
+        total_legal_actions += numeric_or_zero(mask.get("legal_action_count"))
+        total_candidate_eligible_actions += numeric_or_zero(
+            mask.get("candidate_eligible_action_count")
+        )
+        coverage = mask.get("candidate_action_coverage")
+        if isinstance(coverage, dict):
+            total_candidate_first_actions += numeric_or_zero(
+                coverage.get("covered_action_count")
+            )
+    first_action_ratio = (
+        total_candidate_first_actions / total_legal_actions if total_legal_actions else 0.0
+    )
+    eligible_ratio = (
+        total_candidate_eligible_actions / total_legal_actions
+        if total_legal_actions
+        else 0.0
+    )
+    return {
+        "groups_with_complete_mask": float(covered_groups),
+        "groups_total": float(len(groups)),
+        "legal_actions": total_legal_actions,
+        "candidate_eligible_actions": total_candidate_eligible_actions,
+        "candidate_first_actions": total_candidate_first_actions,
+        "candidate_first_action_coverage_ratio": first_action_ratio,
+        "candidate_eligible_action_coverage_ratio": eligible_ratio,
+    }
+
+
 def usable_groups(samples: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     groups = {}
     for key, group in grouped_samples(samples).items():
@@ -2694,6 +2739,7 @@ def main() -> None:
     sample_schema_counts = Counter(str(sample.get("schema_name")) for sample in samples)
     source_schema_counts = Counter(str(sample.get("_source_schema_name")) for sample in samples)
     coverage = turn_plan_feature_coverage(samples)
+    root_mask_coverage = root_action_mask_coverage(samples)
     for group in groups.values():
         for sample in group:
             target_counts["selected" if is_selected(sample) else "not_selected"] += 1
@@ -2706,9 +2752,23 @@ def main() -> None:
     print(f"  source_schemas={dict(source_schema_counts)}")
     if coverage.get("turn_plan_samples"):
         print(f"  turn_plan_feature_coverage={coverage}")
+    if root_mask_coverage["groups_with_complete_mask"]:
+        print(
+            "  root_action_mask_coverage="
+            f"groups={int(root_mask_coverage['groups_with_complete_mask'])}/"
+            f"{int(root_mask_coverage['groups_total'])} "
+            f"legal_actions={int(root_mask_coverage['legal_actions'])} "
+            f"candidate_eligible_actions="
+            f"{int(root_mask_coverage['candidate_eligible_actions'])} "
+            f"candidate_first_actions={int(root_mask_coverage['candidate_first_actions'])} "
+            f"candidate_first_action_ratio="
+            f"{root_mask_coverage['candidate_first_action_coverage_ratio']:.3f} "
+            f"candidate_eligible_ratio="
+            f"{root_mask_coverage['candidate_eligible_action_coverage_ratio']:.3f}"
+        )
     print(
         "  label_role=oracle_search_guidance_ranking_not_human_policy "
-        "candidate_coverage=root_legal_candidates_reported_limit"
+        "candidate_coverage=ranked_candidate_subset_with_full_root_legal_mask"
     )
     if len(groups) < 8:
         print("  readiness=too_few_groups_for_meaningful_ml")
