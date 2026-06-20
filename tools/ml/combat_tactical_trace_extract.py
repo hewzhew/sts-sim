@@ -261,6 +261,15 @@ def enemy_slot_deltas(before: dict[str, Any], after: dict[str, Any]) -> list[dic
 
 
 def enemy_slot_delta_summary(deltas: list[dict[str, Any]]) -> dict[str, Any]:
+    if not deltas:
+        return {
+            "enemy_slot_delta_available": False,
+            "killed_enemy_slots": [],
+            "killed_enemy_count": None,
+            "enemy_hp_removed_by_slot": None,
+            "visible_incoming_removed_by_slot": None,
+            "visible_incoming_removed_by_kill": None,
+        }
     killed_slots = [delta["slot"] for delta in deltas if delta.get("killed") is True]
     hp_removed = sum(
         int_value(delta.get("hp_removed")) for delta in deltas if delta.get("hp_removed") is not None
@@ -281,6 +290,139 @@ def enemy_slot_delta_summary(deltas: list[dict[str, Any]]) -> dict[str, Any]:
         "visible_incoming_removed_by_slot": incoming_removed,
         "visible_incoming_removed_by_kill": incoming_removed_by_kill,
     }
+
+
+def tactical_event(
+    *,
+    kind: str,
+    step_index: Any,
+    targets: list[dict[str, Any]] | None = None,
+    magnitude: dict[str, Any] | None = None,
+    evidence: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "data_role": "DerivedDeterministic",
+        "availability": "AfterStep",
+        "kind": kind,
+        "actor_step_index": step_index,
+        "targets": targets or [],
+        "magnitude": magnitude or {},
+        "evidence": evidence or [],
+    }
+
+
+def tactical_events_from_delta(
+    *,
+    step_index: Any,
+    facts: dict[str, Any] | None,
+    delta: dict[str, Any],
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    enemy_delta = as_dict(delta.get("enemy_delta"))
+    threat_delta = as_dict(delta.get("threat_delta"))
+    player_delta = as_dict(delta.get("player_delta"))
+    resource_delta = as_dict(delta.get("resource_delta"))
+    slot_deltas = [item for item in as_list(enemy_delta.get("slot_deltas")) if isinstance(item, dict)]
+    damaged_slots = [
+        item
+        for item in slot_deltas
+        if isinstance(item.get("hp_removed"), int) and item["hp_removed"] > 0
+    ]
+    if damaged_slots:
+        events.append(
+            tactical_event(
+                kind="TargetFocus",
+                step_index=step_index,
+                targets=[{"enemy_slot": item.get("slot")} for item in damaged_slots],
+                magnitude={
+                    "enemy_hp_removed": sum(int_value(item.get("hp_removed")) for item in damaged_slots),
+                    "damaged_enemy_slots": [item.get("slot") for item in damaged_slots],
+                },
+                evidence=["tactical_delta.enemy_delta.slot_deltas"],
+            )
+        )
+    killed_slots = [
+        item.get("slot") for item in slot_deltas if item.get("killed") is True
+    ]
+    if killed_slots:
+        events.append(
+            tactical_event(
+                kind="KillWindow",
+                step_index=step_index,
+                targets=[{"enemy_slot": slot} for slot in killed_slots],
+                magnitude={"killed_enemy_count": len(killed_slots)},
+                evidence=["tactical_delta.enemy_delta.slot_deltas.killed"],
+            )
+        )
+    incoming_removed = int_or_none(threat_delta.get("incoming_removed"))
+    incoming_removed_by_kill = int_or_none(threat_delta.get("incoming_removed_by_kill"))
+    if (incoming_removed and incoming_removed > 0) or (
+        incoming_removed_by_kill and incoming_removed_by_kill > 0
+    ):
+        events.append(
+            tactical_event(
+                kind="ThreatRemoval",
+                step_index=step_index,
+                targets=[{"enemy_slot": slot} for slot in killed_slots],
+                magnitude={
+                    "incoming_removed": incoming_removed,
+                    "incoming_removed_by_kill": incoming_removed_by_kill,
+                },
+                evidence=[
+                    "tactical_delta.threat_delta.incoming_removed",
+                    "tactical_delta.threat_delta.incoming_removed_by_kill",
+                ],
+            )
+        )
+    incoming_before = int_or_none(threat_delta.get("incoming_before"))
+    hp_lost = int_or_none(player_delta.get("hp_lost"))
+    block_delta = int_or_none(player_delta.get("block_delta"))
+    if incoming_before is not None and incoming_before > 0:
+        events.append(
+            tactical_event(
+                kind="DefenseCoverage",
+                step_index=step_index,
+                magnitude={
+                    "incoming_before": incoming_before,
+                    "hp_lost": hp_lost,
+                    "block_delta": block_delta,
+                    "covered_without_hp_loss": hp_lost == 0,
+                },
+                evidence=[
+                    "tactical_delta.threat_delta.incoming_before",
+                    "tactical_delta.player_delta.hp_lost",
+                ],
+            )
+        )
+    if enemy_delta.get("all_enemies_dead_after_step") is True:
+        events.append(
+            tactical_event(
+                kind="LethalWindow",
+                step_index=step_index,
+                magnitude={"all_enemies_dead": True},
+                evidence=["tactical_delta.enemy_delta.living_enemy_count_delta"],
+            )
+        )
+    if isinstance(facts, dict) and facts.get("action_kind") in ("use_potion", "discard_potion"):
+        events.append(
+            tactical_event(
+                kind="ResourceTiming",
+                step_index=step_index,
+                magnitude={"resource_kind": facts.get("action_kind")},
+                evidence=["action_facts.action_kind"],
+            )
+        )
+    energy_delta = int_or_none(resource_delta.get("energy_delta"))
+    if energy_delta is not None and energy_delta < 0:
+        events.append(
+            tactical_event(
+                kind="TempoCost",
+                step_index=step_index,
+                magnitude={"energy_spent_estimate": -energy_delta},
+                evidence=["tactical_delta.resource_delta.energy_delta"],
+            )
+        )
+    return events
 
 
 def step_tactical_delta(
@@ -357,6 +499,9 @@ def step_tactical_delta(
             "living_enemy_count_delta": living_enemy_delta,
             "enemy_kill_count_estimate": max(0, -living_enemy_delta)
             if isinstance(living_enemy_delta, int)
+            else None,
+            "all_enemies_dead_after_step": int_or_none(state_after.get("living_enemy_count")) == 0
+            if isinstance(state_after, dict)
             else None,
             "slot_deltas": slot_deltas or None,
             **slot_summary,
@@ -541,6 +686,7 @@ def step_trace(
     has_state_summary = isinstance(state_before, dict) and isinstance(state_after, dict)
     state_before_summary_hash = hash_json(state_before) if isinstance(state_before, dict) else None
     state_after_summary_hash = hash_json(state_after) if isinstance(state_after, dict) else None
+    tactical_delta = step_tactical_delta(facts, state_before, state_after)
     return {
         "step_index": action.get("step_index"),
         "action": {
@@ -571,7 +717,12 @@ def step_trace(
             else "not_recorded_in_current_turn_plan_report"
         ),
         "action_facts": facts,
-        "tactical_delta": step_tactical_delta(facts, state_before, state_after),
+        "tactical_delta": tactical_delta,
+        "tactical_events": tactical_events_from_delta(
+            step_index=action.get("step_index"),
+            facts=facts,
+            delta=tactical_delta,
+        ),
     }
 
 
@@ -611,6 +762,13 @@ def candidate_trace(
         facts = action_facts[index] if index < len(action_facts) else None
         state_before, state_after = state_pairs[index] if index < len(state_pairs) else (None, None)
         steps.append(step_trace(action, facts, state_before, state_after))
+    event_counts: Counter[str] = Counter()
+    for step in steps:
+        for event in as_list(step.get("tactical_events")):
+            if isinstance(event, dict) and event.get("kind"):
+                event_counts[str(event["kind"])] += 1
+    plan_summary = plan_tactical_summary(root_state, plan, action_facts)
+    plan_summary["tactical_event_counts"] = dict(event_counts)
     return {
         "plan_id": plan_id,
         "plan_index": plan.get("plan_index"),
@@ -623,7 +781,7 @@ def candidate_trace(
             "progress_bucket": plan.get("progress_bucket"),
         },
         "steps": steps,
-        "plan_summary": plan_tactical_summary(root_state, plan, action_facts),
+        "plan_summary": plan_summary,
         "final_state_ref": (
             f"exact_state:{end_exact_state_hash}" if isinstance(end_exact_state_hash, str) else None
         ),
@@ -707,8 +865,9 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
         int_value(summary.get("visible_incoming_removed_to_plan_boundary")) for summary in summaries
     ]
     incoming_removed_by_kill = [
-        int_value(summary.get("visible_incoming_removed_by_kill_to_plan_boundary"))
+        summary.get("visible_incoming_removed_by_kill_to_plan_boundary")
         for summary in summaries
+        if isinstance(summary.get("visible_incoming_removed_by_kill_to_plan_boundary"), int)
     ]
     potion_actions = [int_value(summary.get("potion_actions")) for summary in summaries]
     final_hps = [
@@ -757,10 +916,13 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
                 - int_value(summary.get("visible_incoming_removed_to_plan_boundary"))
             )
         if best_incoming_removed_by_kill is not None:
-            counterfactual["incoming_removed_by_kill_gap_vs_best_boundary"] = (
-                best_incoming_removed_by_kill
-                - int_value(summary.get("visible_incoming_removed_by_kill_to_plan_boundary"))
+            plan_incoming_removed_by_kill = summary.get(
+                "visible_incoming_removed_by_kill_to_plan_boundary"
             )
+            if isinstance(plan_incoming_removed_by_kill, int):
+                counterfactual["incoming_removed_by_kill_gap_vs_best_boundary"] = (
+                    best_incoming_removed_by_kill - plan_incoming_removed_by_kill
+                )
         if best_final_hp is not None and isinstance(outcome.get("final_hp"), int):
             counterfactual["final_hp_regret_vs_best_labeled"] = best_final_hp - outcome["final_hp"]
         trace["counterfactual"] = counterfactual

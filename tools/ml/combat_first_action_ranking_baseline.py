@@ -992,6 +992,16 @@ def add_turn_plan_tactical_summary_features(
         add_number(features, f"plan_resource_use_{name}", resource_use.get(name), scale)
     if numeric_or_zero(resource_use.get("low_impact_exhaust_action_count")) > 0:
         add_token(features, "plan_resource_use_has_low_impact_exhaust")
+    event_counts = (
+        summary.get("tactical_event_counts")
+        if isinstance(summary.get("tactical_event_counts"), dict)
+        else {}
+    )
+    for kind, count in sorted(event_counts.items()):
+        numeric_count = numeric_or_zero(count)
+        add_number(features, f"plan_tactical_event_count:{kind}", numeric_count, 12.0)
+        if numeric_count > 0:
+            add_token(features, f"plan_tactical_event_seen:{kind}")
 
 
 def add_turn_plan_action_fact_features(
