@@ -40,6 +40,7 @@ param(
     [string] $TrainingMode = "decomposed-utility",
     [switch] $CompareFeatureGroups,
     [switch] $CompareTargetModes,
+    [switch] $CompactOutput,
     [switch] $CleanOutput
 )
 
@@ -100,17 +101,42 @@ foreach ($Benchmark in $BenchmarkPath) {
     $EpisodePath = Join-Path $OutputDir "$Name.enriched_tactical_episode.jsonl"
 
     Write-Host "[$Name] turn-plan lab"
-    & $DriverExe `
-        --benchmark-spec $BenchmarkFullPath `
-        --turn-plan-guidance-lab `
-        --guidance-lab-max-cases $GuidanceLabMaxCases `
-        --max-nodes $SearchMaxNodes `
-        --probe-max-nodes $ProbeMaxNodes `
-        @TurnPlanProbeArgs `
-        --output $LabPath
+    $DriverArgs = @(
+        "--benchmark-spec", "$BenchmarkFullPath",
+        "--turn-plan-guidance-lab",
+        "--guidance-lab-max-cases", "$GuidanceLabMaxCases",
+        "--max-nodes", "$SearchMaxNodes",
+        "--probe-max-nodes", "$ProbeMaxNodes"
+    ) + $TurnPlanProbeArgs + @("--output", "$LabPath")
+    if ($CompactOutput) {
+        $DriverOutput = & $DriverExe @DriverArgs 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $DriverOutput | ForEach-Object { Write-Host $_ }
+            throw "turn-plan lab failed for $Name"
+        }
+    } else {
+        & $DriverExe @DriverArgs
+    }
 
     Write-Host "[$Name] tactical episode"
-    python $Extractor $LabPath --out-jsonl $EpisodePath --summary-only
+    $ExtractorArgs = @("$Extractor", "$LabPath", "--out-jsonl", "$EpisodePath", "--summary-only")
+    if ($CompactOutput) {
+        $ExtractorOutput = python @ExtractorArgs 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $ExtractorOutput | ForEach-Object { Write-Host $_ }
+            throw "tactical episode extraction failed for $Name"
+        }
+        $EpisodeLine = $ExtractorOutput | Where-Object { $_ -match "^\s+episodes=" } | Select-Object -First 1
+        $CoverageLine = $ExtractorOutput | Where-Object { $_ -match "^\s+root_legal_action_mask=" } | Select-Object -First 1
+        if ($EpisodeLine) {
+            Write-Host "[$Name] tactical episode done $($EpisodeLine.Trim())"
+        }
+        if ($CoverageLine) {
+            Write-Host "[$Name] $($CoverageLine.Trim())"
+        }
+    } else {
+        python @ExtractorArgs
+    }
     $EpisodeFiles += $EpisodePath
 }
 
@@ -137,5 +163,39 @@ if ($RunBaseline) {
         $ArgsList += "--compare-target-modes"
     }
     Write-Host "ranking baseline: files=$($EpisodeFiles.Count) split=$SplitMode target=$TargetMode training=$TrainingMode features=$($FeatureGroups -join ',') epochs=$Epochs summary=$BaselineSummaryPath"
-    python @ArgsList
+    if ($CompactOutput) {
+        $BaselineOutput = python @ArgsList 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $BaselineOutput | ForEach-Object { Write-Host $_ }
+            throw "ranking baseline failed"
+        }
+        $Summary = Get-Content -LiteralPath $BaselineSummaryPath -Raw | ConvertFrom-Json
+        $CoverageRatio = $Summary.root_action_mask_coverage.candidate_first_action_coverage_ratio
+        $Metric = $Summary.metrics.logistic_source_cv
+        if ($null -eq $Metric) {
+            $Metric = $Summary.metrics.logistic_test
+        }
+        if ($null -ne $Metric) {
+            Write-Host ("ranking summary: groups={0} readiness={1} candidate_first_action_ratio={2:N3} outcome_match={3:N3} hp_regret={4:N2} hp_gain_vs_ordered={5:N2}" -f `
+                $Summary.usable_group_count, `
+                $Summary.readiness, `
+                $CoverageRatio, `
+                $Metric.target_outcome_match_rate, `
+                $Metric.avg_hp_regret_to_target, `
+                $Metric.avg_hp_gain_vs_ordered)
+        }
+        if ($null -ne $Summary.target_mode_compare) {
+            $Selected = $Summary.target_mode_compare.selected
+            $Equivalent = $Summary.target_mode_compare.'equivalent-hp-outcome'
+            if ($null -ne $Selected -and $null -ne $Equivalent) {
+                Write-Host ("target compare: selected_hp_regret={0:N2} equivalent_hp_regret={1:N2} selected_outcome={2:N3} equivalent_outcome={3:N3}" -f `
+                    $Selected.avg_hp_regret_to_target, `
+                    $Equivalent.avg_hp_regret_to_target, `
+                    $Selected.target_outcome_match_rate, `
+                    $Equivalent.target_outcome_match_rate)
+            }
+        }
+    } else {
+        python @ArgsList
+    }
 }
