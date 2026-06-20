@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dependency-free first-action ranking baseline for combat search guidance.
+"""Dependency-free ranking baseline for combat search guidance.
 
 Input is either:
 
@@ -11,9 +11,8 @@ Input is either:
   reports by combat_turn_plan_guidance_lab_extract.py.
 
 This is an offline diagnostic.  It does not train a combat policy and does not
-claim the selected action is human-optimal.  The label is only:
-"the first action of the best complete trajectory found by current search under
-this budget".
+claim the selected action is human-optimal. Targets are oracle-under-budget
+labels produced by the current search/probe pipeline.
 """
 
 from __future__ import annotations
@@ -66,6 +65,31 @@ def load_samples(paths: list[Path]) -> list[dict[str, Any]]:
                         f"{PROBE_SCHEMA_NAME} or {TURN_PLAN_SCHEMA_NAME}, got {schema_name!r}"
                     )
     return samples
+
+
+def discover_turn_plan_probe_paths(roots: list[Path]) -> list[Path]:
+    explicit_files: list[Path] = []
+    discovered_by_key: dict[str, Path] = {}
+    for root in roots:
+        if root.is_file():
+            explicit_files.append(root)
+            continue
+        if not root.exists():
+            raise SystemExit(f"discover root does not exist: {root}")
+        for path in root.rglob("*.turn_plan_probe*.jsonl"):
+            key = turn_plan_probe_discovery_key(path)
+            previous = discovered_by_key.get(key)
+            if previous is None or path.stat().st_mtime > previous.stat().st_mtime:
+                discovered_by_key[key] = path
+    return sorted(set(explicit_files + list(discovered_by_key.values())))
+
+
+def turn_plan_probe_discovery_key(path: Path) -> str:
+    name = path.name
+    for suffix in (".turn_plan_probe_batch.jsonl", ".turn_plan_probe.jsonl"):
+        if name.endswith(suffix):
+            return f"{path.parent}|{name.removesuffix(suffix)}"
+    return str(path)
 
 
 def is_root_context_schema(sample: dict[str, Any]) -> bool:
@@ -708,7 +732,16 @@ def feature_weight_report(
     return out
 
 
-def print_metrics(label: str, metrics: dict[str, float]) -> None:
+def print_metrics(label: str, metrics: dict[str, float], *, report_mode: str) -> None:
+    if report_mode == "compact":
+        print(
+            f"  {label}: groups={metrics['groups']:.0f} "
+            f"outcome_match={metrics.get('target_outcome_match_rate', 0.0):.3f} "
+            f"hp_regret={metrics.get('avg_hp_regret_to_target', 0.0):+.2f} "
+            f"hp_gain_vs_ordered={metrics.get('avg_hp_gain_vs_ordered', 0.0):+.2f} "
+            f"worse_hp={metrics.get('negative_hp_gain', 0.0):.0f}"
+        )
+        return
     print(
         f"  {label}: groups={metrics['groups']:.0f} top1={metrics['top1']:.3f} "
         f"mrr={metrics['mrr']:.3f} avg_rank={metrics['avg_rank']:.2f} "
@@ -727,11 +760,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "inputs",
-        nargs="+",
+        nargs="*",
         type=Path,
         help=(
             "CombatSearchGuidanceSampleV1, CombatActionProbeSampleV1, or "
             "CombatTurnPlanProbeSampleV1 JSONL"
+        ),
+    )
+    parser.add_argument(
+        "--discover-turn-plan-probes",
+        action="append",
+        nargs="+",
+        type=Path,
+        metavar="ROOT",
+        help=(
+            "Discover *.turn_plan_probe*.jsonl under ROOT. When several probes "
+            "for the same suite prefix exist in one directory, the newest is used."
         ),
     )
     parser.add_argument("--dim", type=int, default=4096)
@@ -761,23 +805,36 @@ def main() -> None:
         help="Allow ordered_index/original_action_id/hand_index as features",
     )
     parser.add_argument("--top-features", type=int, default=12)
+    parser.add_argument(
+        "--report-mode",
+        choices=("compact", "full"),
+        default="compact",
+        help="compact prints regret/outcome metrics only; full also prints top1/MRR/features.",
+    )
     args = parser.parse_args()
 
-    samples = load_samples(args.inputs)
+    input_paths = list(args.inputs)
+    if args.discover_turn_plan_probes:
+        roots = [root for group in args.discover_turn_plan_probes for root in group]
+        input_paths.extend(discover_turn_plan_probe_paths(roots))
+    input_paths = sorted(set(input_paths))
+    if not input_paths:
+        parser.error("provide JSONL inputs or --discover-turn-plan-probes ROOT")
+
+    samples = load_samples(input_paths)
     groups = usable_groups(samples)
     target_counts = Counter()
     for group in groups.values():
         for sample in group:
             target_counts["selected" if is_selected(sample) else "not_selected"] += 1
     print("CombatSearchRankingBaseline")
-    print(f"  samples={len(samples)} usable_groups={len(groups)} labels={dict(target_counts)}")
+    print(
+        f"  input_files={len(input_paths)} samples={len(samples)} "
+        f"usable_groups={len(groups)} labels={dict(target_counts)}"
+    )
     print(
         "  label_role=oracle_search_guidance_ranking_not_human_policy "
         "candidate_coverage=root_legal_candidates_reported_limit"
-    )
-    print(
-        "  metric_note=top1 means the oracle target candidate was ranked first; "
-        "it is not human correctness or proof of optimal play"
     )
     if len(groups) < 8:
         print("  readiness=too_few_groups_for_meaningful_ml")
@@ -800,8 +857,12 @@ def main() -> None:
             f"  split=mode:source-cv source_units:{cv_meta['source_units']} "
             f"folds:{cv_meta['folds']}"
         )
-        print_metrics("ordered_index_all", evaluate_ordered_index(groups))
-        print_metrics("logistic_source_cv", cv_metrics)
+        print_metrics(
+            "ordered_index_all",
+            evaluate_ordered_index(groups),
+            report_mode=args.report_mode,
+        )
+        print_metrics("logistic_source_cv", cv_metrics, report_mode=args.report_mode)
         train_examples = flatten_training_examples(
             groups,
             include_order_features=args.include_order_features,
@@ -817,15 +878,16 @@ def main() -> None:
             l2=args.l2,
             seed=args.seed,
         )
-        print("  top_weighted_features_full_data:")
-        for name, weight in feature_weight_report(
-            weights,
-            groups,
-            dim=args.dim,
-            include_order_features=args.include_order_features,
-            limit=args.top_features,
-        ):
-            print(f"    {weight:+.4f} {name}")
+        if args.report_mode == "full":
+            print("  top_weighted_features_full_data:")
+            for name, weight in feature_weight_report(
+                weights,
+                groups,
+                dim=args.dim,
+                include_order_features=args.include_order_features,
+                limit=args.top_features,
+            ):
+                print(f"    {weight:+.4f} {name}")
         return
 
     train_groups, test_groups, split_meta = split_groups(
@@ -840,8 +902,16 @@ def main() -> None:
         f"test_groups:{len(test_groups)} train_units:{split_meta['train_units']} "
         f"test_units:{split_meta['test_units']}"
     )
-    print_metrics("ordered_index_train", evaluate_ordered_index(train_groups))
-    print_metrics("ordered_index_test", evaluate_ordered_index(test_groups))
+    print_metrics(
+        "ordered_index_train",
+        evaluate_ordered_index(train_groups),
+        report_mode=args.report_mode,
+    )
+    print_metrics(
+        "ordered_index_test",
+        evaluate_ordered_index(test_groups),
+        report_mode=args.report_mode,
+    )
 
     train_examples = flatten_training_examples(
         train_groups,
@@ -867,6 +937,7 @@ def main() -> None:
             dim=args.dim,
             include_order_features=args.include_order_features,
         ),
+        report_mode=args.report_mode,
     )
     print_metrics(
         "logistic_test",
@@ -877,16 +948,18 @@ def main() -> None:
             dim=args.dim,
             include_order_features=args.include_order_features,
         ),
+        report_mode=args.report_mode,
     )
-    print("  top_weighted_features:")
-    for name, weight in feature_weight_report(
-        weights,
-        train_groups,
-        dim=args.dim,
-        include_order_features=args.include_order_features,
-        limit=args.top_features,
-    ):
-        print(f"    {weight:+.4f} {name}")
+    if args.report_mode == "full":
+        print("  top_weighted_features:")
+        for name, weight in feature_weight_report(
+            weights,
+            train_groups,
+            dim=args.dim,
+            include_order_features=args.include_order_features,
+            limit=args.top_features,
+        ):
+            print(f"    {weight:+.4f} {name}")
 
 
 if __name__ == "__main__":
