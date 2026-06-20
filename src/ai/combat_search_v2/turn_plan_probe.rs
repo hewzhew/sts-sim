@@ -53,10 +53,12 @@ pub struct CombatSearchV2TurnPlanProbeActionMaskReport {
     pub complete_legal_mask: bool,
     pub legal_action_count: usize,
     pub candidate_eligible_action_count: usize,
+    pub equivalence_representative_action_count: usize,
     pub preselection_first_action_count: usize,
     pub potion_policy: &'static str,
     pub legal_actions: Vec<CombatSearchV2TurnPlanProbeActionReport>,
     pub candidate_eligible_actions: Vec<CombatSearchV2TurnPlanProbeActionReport>,
+    pub equivalence_representative_actions: Vec<CombatSearchV2TurnPlanProbeActionReport>,
     pub preselection_first_actions: Vec<CombatSearchV2TurnPlanProbeActionReport>,
     pub notes: Vec<&'static str>,
 }
@@ -142,6 +144,7 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
     let position = CombatPosition::new(engine.clone(), combat.clone());
     let legal_action_choices = EngineCombatStepper.legal_action_choices(&position);
     let root_action_mask = root_action_mask_report(
+        engine,
         combat,
         turn_config.potion_policy,
         legal_action_choices,
@@ -228,26 +231,31 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
 }
 
 fn root_action_mask_report(
+    engine: &EngineState,
     combat: &CombatState,
     potion_policy: CombatSearchV2PotionPolicy,
     legal_actions: Vec<CombatActionChoice>,
     preselection_first_actions: &[CombatSearchV2ActionTrace],
 ) -> CombatSearchV2TurnPlanProbeActionMaskReport {
     let candidate_eligible = filtered_legal_actions(legal_actions.clone(), potion_policy, combat);
+    let equivalence = compress_equivalent_actions(engine, combat, candidate_eligible.clone());
     CombatSearchV2TurnPlanProbeActionMaskReport {
         data_role: "ObservedExact",
         availability: "RootOnly",
         complete_legal_mask: true,
         legal_action_count: legal_actions.len(),
         candidate_eligible_action_count: candidate_eligible.len(),
+        equivalence_representative_action_count: equivalence.choices.len(),
         preselection_first_action_count: preselection_first_actions.len(),
         potion_policy: potion_policy.label(),
         legal_actions: action_mask_entries(legal_actions),
         candidate_eligible_actions: action_mask_entries(candidate_eligible),
+        equivalence_representative_actions: indexed_action_mask_entries(equivalence.choices),
         preselection_first_actions: action_trace_mask_entries(preselection_first_actions),
         notes: vec![
             "legal_actions is the complete root legal action list from the combat stepper",
             "candidate_eligible_actions applies the current combat search potion policy before turn-plan enumeration",
+            "equivalence_representative_actions applies root action equivalence compression before turn-plan enumeration",
             "preselection_first_actions are first actions present before bucket selection truncates turn-plan candidates",
         ],
     }
@@ -267,6 +275,20 @@ fn action_mask_entries(
                 input: action.input,
             },
         )
+        .collect()
+}
+
+fn indexed_action_mask_entries(
+    actions: Vec<IndexedActionChoice>,
+) -> Vec<CombatSearchV2TurnPlanProbeActionReport> {
+    actions
+        .into_iter()
+        .map(|action| CombatSearchV2TurnPlanProbeActionReport {
+            action_id: action.original_action_id,
+            action_key: action.choice.action_key,
+            action_debug: action.choice.action_debug,
+            input: action.choice.input,
+        })
         .collect()
 }
 
