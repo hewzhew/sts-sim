@@ -5,7 +5,10 @@ use serde::Serialize;
 use crate::sim::combat::CombatPosition;
 
 use super::frontier::SearchNode;
-use super::turn_planner::{enumerate_turn_plans, TurnPlanBucket, TurnPlanV1, TurnPlannerConfigV1};
+use super::turn_planner::{
+    enumerate_turn_plans, TurnPlanBucket, TurnPlanFirstActionSummaryV1, TurnPlanV1,
+    TurnPlannerConfigV1,
+};
 use super::*;
 
 const TURN_PLAN_PROBE_MAX_INNER_NODES: usize = 256;
@@ -64,7 +67,16 @@ pub struct CombatSearchV2TurnPlanProbeActionMaskReport {
     pub candidate_eligible_actions: Vec<CombatSearchV2TurnPlanProbeActionReport>,
     pub equivalence_representative_actions: Vec<CombatSearchV2TurnPlanProbeActionReport>,
     pub preselection_first_actions: Vec<CombatSearchV2TurnPlanProbeActionReport>,
+    pub preselection_first_action_summaries:
+        Vec<CombatSearchV2TurnPlanProbeFirstActionSummaryReport>,
     pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2TurnPlanProbeFirstActionSummaryReport {
+    pub action: CombatSearchV2TurnPlanProbeActionReport,
+    pub plan_count: usize,
+    pub bucket_counts: BTreeMap<&'static str, usize>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -153,6 +165,7 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
         turn_config.potion_policy,
         legal_action_choices,
         &enumeration.preselection_first_actions,
+        &enumeration.preselection_first_action_summaries,
     );
     let candidates = enumeration
         .plans
@@ -259,6 +272,7 @@ fn root_action_mask_report(
     potion_policy: CombatSearchV2PotionPolicy,
     legal_actions: Vec<CombatActionChoice>,
     preselection_first_actions: &[CombatSearchV2ActionTrace],
+    preselection_first_action_summaries: &[TurnPlanFirstActionSummaryV1],
 ) -> CombatSearchV2TurnPlanProbeActionMaskReport {
     let candidate_eligible = filtered_legal_actions(legal_actions.clone(), potion_policy, combat);
     let equivalence = compress_equivalent_actions(engine, combat, candidate_eligible.clone());
@@ -275,6 +289,9 @@ fn root_action_mask_report(
         candidate_eligible_actions: action_mask_entries(candidate_eligible),
         equivalence_representative_actions: indexed_action_mask_entries(equivalence.choices),
         preselection_first_actions: action_trace_mask_entries(preselection_first_actions),
+        preselection_first_action_summaries: first_action_summary_entries(
+            preselection_first_action_summaries,
+        ),
         notes: vec![
             "legal_actions is the complete root legal action list from the combat stepper",
             "candidate_eligible_actions applies the current combat search potion policy before turn-plan enumeration",
@@ -282,6 +299,21 @@ fn root_action_mask_report(
             "preselection_first_actions are first actions present before bucket selection truncates turn-plan candidates",
         ],
     }
+}
+
+fn first_action_summary_entries(
+    summaries: &[TurnPlanFirstActionSummaryV1],
+) -> Vec<CombatSearchV2TurnPlanProbeFirstActionSummaryReport> {
+    summaries
+        .iter()
+        .map(
+            |summary| CombatSearchV2TurnPlanProbeFirstActionSummaryReport {
+                action: action_trace_mask_entry(&summary.action),
+                plan_count: summary.plan_count,
+                bucket_counts: bucket_count_report(&summary.bucket_counts),
+            },
+        )
+        .collect()
 }
 
 fn action_mask_entries(
@@ -318,15 +350,18 @@ fn indexed_action_mask_entries(
 fn action_trace_mask_entries(
     actions: &[CombatSearchV2ActionTrace],
 ) -> Vec<CombatSearchV2TurnPlanProbeActionReport> {
-    actions
-        .iter()
-        .map(|action| CombatSearchV2TurnPlanProbeActionReport {
-            action_id: action.action_id,
-            action_key: action.action_key.clone(),
-            action_debug: action.action_debug.clone(),
-            input: action.input.clone(),
-        })
-        .collect()
+    actions.iter().map(action_trace_mask_entry).collect()
+}
+
+fn action_trace_mask_entry(
+    action: &CombatSearchV2ActionTrace,
+) -> CombatSearchV2TurnPlanProbeActionReport {
+    CombatSearchV2TurnPlanProbeActionReport {
+        action_id: action.action_id,
+        action_key: action.action_key.clone(),
+        action_debug: action.action_debug.clone(),
+        input: action.input.clone(),
+    }
 }
 
 fn turn_plan_step_reports(

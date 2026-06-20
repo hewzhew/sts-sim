@@ -56,11 +56,20 @@ pub(in crate::ai::combat_search_v2) struct TurnPlanEnumeration {
     pub(in crate::ai::combat_search_v2) plans: Vec<TurnPlanV1>,
     pub(in crate::ai::combat_search_v2) preselection_plan_count: usize,
     pub(in crate::ai::combat_search_v2) preselection_first_actions: Vec<CombatSearchV2ActionTrace>,
+    pub(in crate::ai::combat_search_v2) preselection_first_action_summaries:
+        Vec<TurnPlanFirstActionSummaryV1>,
     pub(in crate::ai::combat_search_v2) preselection_bucket_counts: BTreeMap<TurnPlanBucket, usize>,
     pub(in crate::ai::combat_search_v2) nodes_expanded: usize,
     pub(in crate::ai::combat_search_v2) nodes_generated: usize,
     pub(in crate::ai::combat_search_v2) exact_state_skips: usize,
     pub(in crate::ai::combat_search_v2) truncated_children: usize,
+}
+
+#[derive(Clone)]
+pub(in crate::ai::combat_search_v2) struct TurnPlanFirstActionSummaryV1 {
+    pub(in crate::ai::combat_search_v2) action: CombatSearchV2ActionTrace,
+    pub(in crate::ai::combat_search_v2) plan_count: usize,
+    pub(in crate::ai::combat_search_v2) bucket_counts: BTreeMap<TurnPlanBucket, usize>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

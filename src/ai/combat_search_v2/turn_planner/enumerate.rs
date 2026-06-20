@@ -9,8 +9,8 @@ use super::super::value::{
 };
 use super::super::*;
 use super::types::{
-    TurnPlanBucket, TurnPlanEnumeration, TurnPlanStepStateV1, TurnPlanStopReason, TurnPlanV1,
-    TurnPlannerConfigV1,
+    TurnPlanBucket, TurnPlanEnumeration, TurnPlanFirstActionSummaryV1, TurnPlanStepStateV1,
+    TurnPlanStopReason, TurnPlanV1, TurnPlannerConfigV1,
 };
 
 #[derive(Clone)]
@@ -184,21 +184,32 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
     }
 
     enumeration.preselection_plan_count = candidates.len();
-    enumeration.preselection_first_actions = unique_first_actions(&candidates);
+    enumeration.preselection_first_action_summaries = first_action_summaries(&candidates);
+    enumeration.preselection_first_actions = enumeration
+        .preselection_first_action_summaries
+        .iter()
+        .map(|summary| summary.action.clone())
+        .collect();
     enumeration.preselection_bucket_counts = bucket_counts(&candidates);
     enumeration.plans = select_bucketed_plans(candidates, config);
     enumeration
 }
 
-fn unique_first_actions(candidates: &[TurnPlanV1]) -> Vec<CombatSearchV2ActionTrace> {
-    let mut by_key = BTreeMap::<String, CombatSearchV2ActionTrace>::new();
+fn first_action_summaries(candidates: &[TurnPlanV1]) -> Vec<TurnPlanFirstActionSummaryV1> {
+    let mut by_key = BTreeMap::<String, TurnPlanFirstActionSummaryV1>::new();
     for candidate in candidates {
         let Some(action) = candidate.actions.first() else {
             continue;
         };
-        by_key
-            .entry(action.action_key.clone())
-            .or_insert_with(|| action.clone());
+        let entry = by_key.entry(action.action_key.clone()).or_insert_with(|| {
+            TurnPlanFirstActionSummaryV1 {
+                action: action.clone(),
+                plan_count: 0,
+                bucket_counts: BTreeMap::new(),
+            }
+        });
+        entry.plan_count = entry.plan_count.saturating_add(1);
+        *entry.bucket_counts.entry(candidate.bucket).or_default() += 1;
     }
     by_key.into_values().collect()
 }

@@ -1093,6 +1093,20 @@ def root_action_kind_counts(actions: list[dict[str, Any]]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def first_action_summary_key(summary: dict[str, Any]) -> str | None:
+    action = as_dict(summary.get("action"))
+    action_key = action.get("action_key")
+    return action_key if isinstance(action_key, str) and action_key else None
+
+
+def first_action_summary_bucket_counts(summaries: list[dict[str, Any]]) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for summary in summaries:
+        for key, value in as_dict(summary.get("bucket_counts")).items():
+            counts[str(key)] += int_value(value)
+    return dict(sorted(counts.items()))
+
+
 def root_action_coverage_diagnostic(mask: dict[str, Any]) -> dict[str, Any] | None:
     if mask.get("complete_legal_mask") is not True:
         return None
@@ -1112,6 +1126,11 @@ def root_action_coverage_diagnostic(mask: dict[str, Any]) -> dict[str, Any] | No
         action
         for action in as_list(mask.get("preselection_first_actions"))
         if isinstance(action, dict)
+    ]
+    preselection_summaries = [
+        summary
+        for summary in as_list(mask.get("preselection_first_action_summaries"))
+        if isinstance(summary, dict)
     ]
     equivalence_actions = [
         action
@@ -1159,6 +1178,11 @@ def root_action_coverage_diagnostic(mask: dict[str, Any]) -> dict[str, Any] | No
         action
         for action in preselection_actions
         if isinstance(action.get("action_key"), str) and action["action_key"] not in candidate_keys
+    ]
+    preselected_but_unselected_summaries = [
+        summary
+        for summary in preselection_summaries
+        if (key := first_action_summary_key(summary)) is not None and key not in candidate_keys
     ]
     legal_count = len(legal_actions)
     candidate_count = len(candidate_first_actions)
@@ -1208,6 +1232,9 @@ def root_action_coverage_diagnostic(mask: dict[str, Any]) -> dict[str, Any] | No
         ),
         "preselected_but_unselected_by_kind": root_action_kind_counts(
             preselected_but_unselected_actions
+        ),
+        "preselected_but_unselected_bucket_counts": first_action_summary_bucket_counts(
+            preselected_but_unselected_summaries
         ),
         "ineligible_by_kind": root_action_kind_counts(ineligible_actions),
         "missing_legal_action_examples": [
@@ -1657,6 +1684,7 @@ def extract(
     total_root_equivalence_not_preselected_by_kind: Counter[str] = Counter()
     total_root_eligible_not_preselected_by_kind: Counter[str] = Counter()
     total_root_preselected_unselected_by_kind: Counter[str] = Counter()
+    total_root_preselected_unselected_bucket_counts: Counter[str] = Counter()
     total_root_ineligible_by_kind: Counter[str] = Counter()
     total_preselection_bucket_counts: Counter[str] = Counter()
     total_selected_bucket_counts: Counter[str] = Counter()
@@ -1737,6 +1765,14 @@ def extract(
                 str(key): int_value(value)
                 for key, value in as_dict(
                     diagnostic.get("preselected_but_unselected_by_kind")
+                ).items()
+            }
+        )
+        total_root_preselected_unselected_bucket_counts.update(
+            {
+                str(key): int_value(value)
+                for key, value in as_dict(
+                    diagnostic.get("preselected_but_unselected_bucket_counts")
                 ).items()
             }
         )
@@ -1848,6 +1884,11 @@ def extract(
         print(
             "  root_preselected_but_unselected_by_kind="
             f"{dict(sorted(total_root_preselected_unselected_by_kind.items()))}"
+        )
+    if total_root_preselected_unselected_bucket_counts:
+        print(
+            "  root_preselected_but_unselected_bucket_counts="
+            f"{dict(sorted(total_root_preselected_unselected_bucket_counts.items()))}"
         )
     if total_root_ineligible_by_kind:
         print(
