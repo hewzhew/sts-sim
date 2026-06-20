@@ -193,6 +193,96 @@ def state_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def enemy_slots_by_slot(state: dict[str, Any]) -> dict[int, dict[str, Any]]:
+    slots: dict[int, dict[str, Any]] = {}
+    for enemy in as_list(state.get("enemy_slots")):
+        if not isinstance(enemy, dict):
+            continue
+        slot = enemy.get("slot")
+        if isinstance(slot, int):
+            slots[slot] = enemy
+    return slots
+
+
+def enemy_slot_deltas(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, Any]]:
+    before_slots = enemy_slots_by_slot(before)
+    after_slots = enemy_slots_by_slot(after)
+    deltas: list[dict[str, Any]] = []
+    for slot in sorted(set(before_slots) | set(after_slots)):
+        before_enemy = before_slots.get(slot, {})
+        after_enemy = after_slots.get(slot, {})
+        hp_before = int_or_none(before_enemy.get("hp"))
+        hp_after = int_or_none(after_enemy.get("hp"))
+        block_before = int_or_none(before_enemy.get("block"))
+        block_after = int_or_none(after_enemy.get("block"))
+        incoming_before = int_or_none(before_enemy.get("visible_incoming_damage"))
+        incoming_after = int_or_none(after_enemy.get("visible_incoming_damage"))
+        alive_before = before_enemy.get("alive") if isinstance(before_enemy.get("alive"), bool) else None
+        alive_after = after_enemy.get("alive") if isinstance(after_enemy.get("alive"), bool) else None
+        killed = alive_before is True and alive_after is False
+        hp_delta = hp_after - hp_before if hp_before is not None and hp_after is not None else None
+        block_delta = (
+            block_after - block_before
+            if block_before is not None and block_after is not None
+            else None
+        )
+        incoming_delta = (
+            incoming_after - incoming_before
+            if incoming_before is not None and incoming_after is not None
+            else None
+        )
+        deltas.append(
+            {
+                "slot": slot,
+                "enemy_id_before": before_enemy.get("enemy_id"),
+                "enemy_id_after": after_enemy.get("enemy_id"),
+                "alive_before": alive_before,
+                "alive_after": alive_after,
+                "killed": killed,
+                "hp_before": hp_before,
+                "hp_after": hp_after,
+                "hp_delta": hp_delta,
+                "hp_removed": max(0, -hp_delta) if isinstance(hp_delta, int) else None,
+                "block_before": block_before,
+                "block_after": block_after,
+                "block_delta": block_delta,
+                "incoming_before": incoming_before,
+                "incoming_after": incoming_after,
+                "incoming_delta": incoming_delta,
+                "incoming_removed": max(0, -incoming_delta)
+                if isinstance(incoming_delta, int)
+                else None,
+                "incoming_removed_by_kill": incoming_before
+                if killed and isinstance(incoming_before, int)
+                else 0,
+            }
+        )
+    return deltas
+
+
+def enemy_slot_delta_summary(deltas: list[dict[str, Any]]) -> dict[str, Any]:
+    killed_slots = [delta["slot"] for delta in deltas if delta.get("killed") is True]
+    hp_removed = sum(
+        int_value(delta.get("hp_removed")) for delta in deltas if delta.get("hp_removed") is not None
+    )
+    incoming_removed = sum(
+        int_value(delta.get("incoming_removed"))
+        for delta in deltas
+        if delta.get("incoming_removed") is not None
+    )
+    incoming_removed_by_kill = sum(
+        int_value(delta.get("incoming_removed_by_kill")) for delta in deltas
+    )
+    return {
+        "enemy_slot_delta_available": bool(deltas),
+        "killed_enemy_slots": killed_slots,
+        "killed_enemy_count": len(killed_slots),
+        "enemy_hp_removed_by_slot": hp_removed,
+        "visible_incoming_removed_by_slot": incoming_removed,
+        "visible_incoming_removed_by_kill": incoming_removed_by_kill,
+    }
+
+
 def step_tactical_delta(
     facts: dict[str, Any] | None,
     state_before: dict[str, Any] | None,
@@ -223,6 +313,12 @@ def step_tactical_delta(
         else None
     )
     incoming_delta = summary_delta.get("visible_incoming_damage")
+    slot_deltas = (
+        enemy_slot_deltas(state_before, state_after)
+        if isinstance(state_before, dict) and isinstance(state_after, dict)
+        else []
+    )
+    slot_summary = enemy_slot_delta_summary(slot_deltas)
 
     return {
         "data_role": "DerivedDeterministic" if exact or summary_delta else "Unavailable",
@@ -262,12 +358,15 @@ def step_tactical_delta(
             "enemy_kill_count_estimate": max(0, -living_enemy_delta)
             if isinstance(living_enemy_delta, int)
             else None,
+            "slot_deltas": slot_deltas or None,
+            **slot_summary,
         },
         "threat_delta": {
             "incoming_before": incoming_before,
             "incoming_after": incoming_after,
             "incoming_delta": incoming_delta,
             "incoming_removed": max(0, -incoming_delta) if isinstance(incoming_delta, int) else None,
+            "incoming_removed_by_kill": slot_summary.get("visible_incoming_removed_by_kill"),
             "visible_attack_mitigation_hint": int_value(
                 mechanics.get("visible_attack_mitigation_hint")
             ),
@@ -363,6 +462,8 @@ def plan_tactical_summary(
         exact_sums.get("total_enemy_hp_delta", 0),
     )
     living_enemy_delta = root_to_end.get("living_enemy_count", 0)
+    slot_deltas = enemy_slot_deltas(root_state, end_state) if end_state else []
+    slot_summary = enemy_slot_delta_summary(slot_deltas)
     target_slots = []
     damage_hint_total = 0
     block_hint_total = 0
@@ -396,11 +497,20 @@ def plan_tactical_summary(
         "hp_lost_to_plan_boundary": max(0, -player_hp_delta),
         "enemy_hp_removed_to_plan_boundary": max(0, -total_enemy_hp_delta),
         "enemy_kill_count_to_plan_boundary": max(0, -living_enemy_delta),
+        "enemy_slot_deltas_to_plan_boundary": slot_deltas or None,
+        "enemy_slots_killed_to_plan_boundary": slot_summary["killed_enemy_slots"],
+        "enemy_hp_removed_by_slot_to_plan_boundary": slot_summary["enemy_hp_removed_by_slot"],
         "visible_incoming_boundary_delta": root_to_end.get("visible_incoming_damage"),
         "visible_incoming_removed_to_plan_boundary": max(
             0,
             -int_value(root_to_end.get("visible_incoming_damage")),
         ),
+        "visible_incoming_removed_by_slot_to_plan_boundary": slot_summary[
+            "visible_incoming_removed_by_slot"
+        ],
+        "visible_incoming_removed_by_kill_to_plan_boundary": slot_summary[
+            "visible_incoming_removed_by_kill"
+        ],
         "damage_hint_total": damage_hint_total,
         "block_hint_total": block_hint_total,
         "visible_attack_mitigation_hint_total": mitigation_hint_total,
@@ -596,6 +706,10 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
     incoming_removed = [
         int_value(summary.get("visible_incoming_removed_to_plan_boundary")) for summary in summaries
     ]
+    incoming_removed_by_kill = [
+        int_value(summary.get("visible_incoming_removed_by_kill_to_plan_boundary"))
+        for summary in summaries
+    ]
     potion_actions = [int_value(summary.get("potion_actions")) for summary in summaries]
     final_hps = [
         outcome.get("final_hp")
@@ -607,6 +721,9 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
     best_enemy_removed = max(enemy_removed) if enemy_removed else None
     best_kills = max(kills) if kills else None
     best_incoming_removed = max(incoming_removed) if incoming_removed else None
+    best_incoming_removed_by_kill = (
+        max(incoming_removed_by_kill) if incoming_removed_by_kill else None
+    )
     best_final_hp = max(final_hps) if final_hps else None
     no_hp_loss_candidate_exists = any(loss == 0 for loss in hp_losses)
     no_potion_candidate_exists = any(actions == 0 for actions in potion_actions)
@@ -639,6 +756,11 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
                 best_incoming_removed
                 - int_value(summary.get("visible_incoming_removed_to_plan_boundary"))
             )
+        if best_incoming_removed_by_kill is not None:
+            counterfactual["incoming_removed_by_kill_gap_vs_best_boundary"] = (
+                best_incoming_removed_by_kill
+                - int_value(summary.get("visible_incoming_removed_by_kill_to_plan_boundary"))
+            )
         if best_final_hp is not None and isinstance(outcome.get("final_hp"), int):
             counterfactual["final_hp_regret_vs_best_labeled"] = best_final_hp - outcome["final_hp"]
         trace["counterfactual"] = counterfactual
@@ -657,6 +779,7 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
         "best_enemy_hp_removed_to_boundary": best_enemy_removed,
         "best_enemy_kill_count_to_boundary": best_kills,
         "best_visible_incoming_removed_to_boundary": best_incoming_removed,
+        "best_visible_incoming_removed_by_kill_to_boundary": best_incoming_removed_by_kill,
         "best_final_hp_labeled": best_final_hp,
         "pareto_frontier_plan_ids": pareto,
         "limitations": [
@@ -915,10 +1038,13 @@ def episode_from_lab(
 ) -> dict[str, Any]:
     report_path = Path(str(meta.get("source_file") or ""))
     input_path = resolve_input_path(report_path, meta.get("input_path"))
-    enemy_slots = public_enemy_slots_from_capture(input_path)
     root = as_dict(lab.get("root"))
     initial_context = as_dict(root.get("initial_context"))
     root_state = as_dict(initial_context.get("state"))
+    root_state_enemy_slots = [
+        enemy for enemy in as_list(root_state.get("enemy_slots")) if isinstance(enemy, dict)
+    ]
+    enemy_slots = root_state_enemy_slots or public_enemy_slots_from_capture(input_path)
     candidates = [candidate for candidate in as_list(lab.get("candidates")) if isinstance(candidate, dict)]
     traces = [candidate_trace(root_state, candidate) for candidate in candidates]
     context = root_tactical_context(traces)

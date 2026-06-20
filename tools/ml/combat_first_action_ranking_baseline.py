@@ -926,7 +926,10 @@ def add_turn_plan_tactical_summary_features(
         ("hp_lost_to_plan_boundary", 80.0),
         ("enemy_hp_removed_to_plan_boundary", 300.0),
         ("enemy_kill_count_to_plan_boundary", 5.0),
+        ("enemy_hp_removed_by_slot_to_plan_boundary", 300.0),
         ("visible_incoming_removed_to_plan_boundary", 120.0),
+        ("visible_incoming_removed_by_slot_to_plan_boundary", 120.0),
+        ("visible_incoming_removed_by_kill_to_plan_boundary", 120.0),
         ("damage_hint_total", 300.0),
         ("block_hint_total", 120.0),
         ("visible_attack_mitigation_hint_total", 120.0),
@@ -945,6 +948,7 @@ def add_turn_plan_tactical_summary_features(
         ("best_enemy_hp_removed_to_boundary", 300.0),
         ("best_enemy_kill_count_to_boundary", 5.0),
         ("best_visible_incoming_removed_to_boundary", 120.0),
+        ("best_visible_incoming_removed_by_kill_to_boundary", 120.0),
         ("best_final_hp_labeled", 100.0),
     ):
         add_number(features, f"root_tactical_context_{name}", root_context.get(name), scale)
@@ -963,12 +967,18 @@ def add_turn_plan_tactical_summary_features(
         ("enemy_hp_progress_gap_vs_best_boundary", 300.0),
         ("kill_count_gap_vs_best_boundary", 5.0),
         ("incoming_removed_gap_vs_best_boundary", 120.0),
+        ("incoming_removed_by_kill_gap_vs_best_boundary", 120.0),
         ("final_hp_regret_vs_best_labeled", 100.0),
     ):
         add_number(features, f"plan_counterfactual_{name}", counterfactual.get(name), scale)
     targets = summary.get("unique_target_slots")
     if isinstance(targets, list):
         add_number(features, "plan_summary_unique_target_slots", len(targets), 5.0)
+    killed_slots = summary.get("enemy_slots_killed_to_plan_boundary")
+    if isinstance(killed_slots, list):
+        add_number(features, "plan_summary_enemy_slots_killed", len(killed_slots), 5.0)
+        if killed_slots:
+            add_token(features, "plan_summary_kills_enemy_slot")
     resource_use = summary.get("resource_use") if isinstance(summary.get("resource_use"), dict) else {}
     for name, scale in (
         ("exhaust_action_count", 8.0),
@@ -1006,6 +1016,9 @@ def add_turn_plan_action_fact_features(
     tactical_enemy_hp_removed_total = 0
     tactical_enemy_kill_estimate_total = 0
     tactical_incoming_removed_total = 0
+    tactical_slot_hp_removed_total = 0
+    tactical_slot_kill_total = 0
+    tactical_slot_incoming_removed_by_kill_total = 0
     tactical_energy_delta_total = 0
     tactical_draw_delta_total = 0
     tactical_exhaust_delta_total = 0
@@ -1076,6 +1089,11 @@ def add_turn_plan_action_fact_features(
             enemy_delta.get("enemy_kill_count_estimate")
         )
         tactical_incoming_removed_total += numeric_or_zero(threat_delta.get("incoming_removed"))
+        tactical_slot_hp_removed_total += numeric_or_zero(enemy_delta.get("enemy_hp_removed_by_slot"))
+        tactical_slot_kill_total += numeric_or_zero(enemy_delta.get("killed_enemy_count"))
+        tactical_slot_incoming_removed_by_kill_total += numeric_or_zero(
+            enemy_delta.get("visible_incoming_removed_by_kill")
+        )
         tactical_energy_delta_total += numeric_or_zero(resource_delta.get("energy_delta"))
         tactical_draw_delta_total += numeric_or_zero(resource_delta.get("draw_delta"))
         tactical_exhaust_delta_total += numeric_or_zero(resource_delta.get("exhaust_delta"))
@@ -1135,6 +1153,24 @@ def add_turn_plan_action_fact_features(
         features,
         "plan_action_facts_tactical_incoming_removed_total",
         tactical_incoming_removed_total,
+        120.0,
+    )
+    add_number(
+        features,
+        "plan_action_facts_tactical_slot_hp_removed_total",
+        tactical_slot_hp_removed_total,
+        300.0,
+    )
+    add_number(
+        features,
+        "plan_action_facts_tactical_slot_kill_total",
+        tactical_slot_kill_total,
+        5.0,
+    )
+    add_number(
+        features,
+        "plan_action_facts_tactical_slot_incoming_removed_by_kill_total",
+        tactical_slot_incoming_removed_by_kill_total,
         120.0,
     )
     add_number(

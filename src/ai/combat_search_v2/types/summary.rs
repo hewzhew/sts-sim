@@ -57,6 +57,7 @@ pub struct CombatSearchV2StateSummary {
     pub living_enemy_count: usize,
     pub total_enemy_hp: i32,
     pub visible_incoming_damage: i32,
+    pub enemy_slots: Vec<CombatSearchV2EnemySummary>,
     pub hand_count: usize,
     pub draw_count: usize,
     pub discard_count: usize,

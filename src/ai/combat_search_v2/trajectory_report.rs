@@ -68,6 +68,13 @@ pub(super) fn summarize_state(
         living_enemy_count: living_enemy_count(combat),
         total_enemy_hp: total_living_enemy_hp(combat),
         visible_incoming_damage: visible_incoming_damage(combat),
+        enemy_slots: combat
+            .entities
+            .monsters
+            .iter()
+            .enumerate()
+            .map(|(slot, monster)| summarize_enemy(combat, slot, monster))
+            .collect(),
         hand_count: combat.zones.hand.len(),
         draw_count: combat.zones.draw_pile.len(),
         discard_count: combat.zones.discard_pile.len(),
