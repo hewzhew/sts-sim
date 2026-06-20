@@ -1263,6 +1263,43 @@ fn compiled_shop_branch_frontier_can_admit_non_rollout_thesis_candidate() {
             .is_none_or(|projection| projection.plan_id != reaper_plan.plan.plan_id),
         "rollout head must consume rollout_admission, not branch_admission"
     );
+    let reaper_purge_combo = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| {
+            candidate.role == ShopPlanCandidateRoleV1::PortfolioAlternative
+                && candidate.plan.steps.iter().any(|step| {
+                    matches!(
+                        step,
+                        ShopPlanStepV1::BuyCard {
+                            card: CardId::Reaper,
+                            ..
+                        }
+                    )
+                })
+                && candidate
+                    .plan
+                    .steps
+                    .iter()
+                    .any(|step| matches!(step, ShopPlanStepV1::RemoveCard { .. }))
+        })
+        .expect("branch frontier should include a Reaper plus purge combo candidate");
+    assert_eq!(
+        reaper_purge_combo.evaluation.rollout_admission.status,
+        ShopPlanRolloutAdmissionStatusV1::Reject,
+        "combo with a branch-only sustain step should not become rollout head"
+    );
+    assert!(
+        reaper_purge_combo.evaluation.branch_admission.is_admitted(),
+        "combo with branch-admitted steps should remain available to branch frontier"
+    );
+    assert!(
+        compiled
+            .branch_frontier
+            .iter()
+            .any(|projection| projection.plan_id == reaper_purge_combo.plan.plan_id),
+        "branch frontier should expose the Reaper plus purge combo, not only its single-step parts"
+    );
 }
 
 #[test]

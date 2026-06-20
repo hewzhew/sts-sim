@@ -41,7 +41,7 @@ fn evaluated_combo_option_v1(
     candidate: &ShopPlanCandidateV1,
 ) -> Option<EvaluatedShopComboOptionV1> {
     if candidate.role != ShopPlanCandidateRoleV1::SingleAction
-        || !candidate.evaluation.rollout_admission.is_admitted()
+        || !candidate.evaluation.branch_admission.is_admitted()
         || candidate.plan.steps.len() != 1
     {
         return None;

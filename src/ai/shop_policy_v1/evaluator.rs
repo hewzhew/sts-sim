@@ -248,6 +248,7 @@ fn evaluate_portfolio_plan_v1(
     }
 
     let mut step_evaluations = Vec::new();
+    let mut branch_only_step_count = 0usize;
     for candidate_id in &candidate_plan.plan.candidate_ids {
         let Some(candidate) = context
             .candidates
@@ -260,7 +261,7 @@ fn evaluate_portfolio_plan_v1(
             );
         };
         let evaluation = evaluate_single_candidate_v1(config, strategic_trace, candidate);
-        if !evaluation.rollout_admission.is_admitted() {
+        if !evaluation.branch_admission.is_admitted() {
             let reason = evaluation
                 .reasons
                 .first()
@@ -270,13 +271,17 @@ fn evaluate_portfolio_plan_v1(
                 candidate
                     .purchase_priority
                     .or(candidate_plan.plan.legacy_priority),
-                format!("portfolio step {candidate_id} failed unified shop gate: {reason}"),
+                format!("portfolio step {candidate_id} failed shop branch admission: {reason}"),
             );
+        }
+        if !evaluation.rollout_admission.is_admitted() {
+            branch_only_step_count += 1;
         }
         if candidate_plan.plan.steps.len() > 1
             && candidate
                 .purchase_target
                 .is_some_and(|target| matches!(target, ShopPurchaseTargetV1::Card { .. }))
+            && evaluation.rollout_admission.is_admitted()
             && evaluation.tier < 320
         {
             return ShopPlanEvaluationV1::block(
@@ -301,13 +306,25 @@ fn evaluate_portfolio_plan_v1(
         .max()
         .unwrap_or(150);
     let legacy_priority = candidate_plan.plan.legacy_priority.unwrap_or_default();
+    let score = step_evaluations
+        .iter()
+        .map(|evaluation| evaluation.score)
+        .sum::<i32>()
+        .max(legacy_priority);
+    if branch_only_step_count > 0 {
+        return ShopPlanEvaluationV1::block(
+            Some(score),
+            format!(
+                "multi-step shop plan contains {branch_only_step_count} branch-frontier-only step(s); keep as branch frontier, not rollout head"
+            ),
+        )
+        .with_branch_admission(
+            "multi-step shop plan admitted to branch frontier because every step passed branch admission",
+        );
+    }
     ShopPlanEvaluationV1::allow(
         tier,
-        step_evaluations
-            .iter()
-            .map(|evaluation| evaluation.score)
-            .sum::<i32>()
-            .max(legacy_priority),
+        score,
         confidence,
         candidate_plan.plan.legacy_priority,
         "multi-step shop plan passed unified shop gates; strongest step tier retained for plan comparison",
