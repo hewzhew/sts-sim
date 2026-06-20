@@ -33,6 +33,7 @@ def summarize_driver_report_pair(
     frontier_terminal_changed = 0
     best_complete_first_action_changed = 0
     ordering_first_reorder_sample_changed = 0
+    case_deltas: list[dict[str, Any]] = []
 
     for baseline_case, prior_case in pairs:
         baseline_ordering = (baseline_case.get("diagnostics") or {}).get("ordering") or {}
@@ -63,6 +64,43 @@ def summarize_driver_report_pair(
             prior_ordering
         ):
             ordering_first_reorder_sample_changed += 1
+        baseline_best_complete_first_action = first_trajectory_action_key(
+            baseline_case.get("best_complete_trajectory")
+        )
+        prior_best_complete_first_action = first_trajectory_action_key(
+            prior_case.get("best_complete_trajectory")
+        )
+        case_deltas.append(
+            {
+                "case_id": baseline_case.get("id") or prior_case.get("id"),
+                "prior_scored_states": int(
+                    prior_ordering.get("root_action_prior_scored_states") or 0
+                ),
+                "prior_scored_actions": int(
+                    prior_ordering.get("root_action_prior_scored_actions") or 0
+                ),
+                "baseline_complete_found": bool(
+                    (baseline_case.get("outcome") or {}).get("complete_trajectory_found")
+                ),
+                "prior_complete_found": bool(
+                    (prior_case.get("outcome") or {}).get("complete_trajectory_found")
+                ),
+                "nodes_expanded_delta": int((prior_case.get("stats") or {}).get("nodes_expanded") or 0)
+                - int((baseline_case.get("stats") or {}).get("nodes_expanded") or 0),
+                "frontier_hp_delta": int((prior_case.get("best_frontier_value") or {}).get("player_hp") or 0)
+                - int((baseline_case.get("best_frontier_value") or {}).get("player_hp") or 0),
+                "baseline_best_complete_first_action": baseline_best_complete_first_action,
+                "prior_best_complete_first_action": prior_best_complete_first_action,
+                "best_complete_first_action_changed": baseline_best_complete_first_action
+                != prior_best_complete_first_action,
+                "baseline_ordering_first_reorder_sample": first_ordering_reorder_action_key(
+                    baseline_ordering
+                ),
+                "prior_ordering_first_reorder_sample": first_ordering_reorder_action_key(
+                    prior_ordering
+                ),
+            }
+        )
 
     return {
         "schema_name": "CombatRootPriorLiveCompareBenchmarkV0",
@@ -84,6 +122,7 @@ def summarize_driver_report_pair(
         "frontier_terminal_changed": frontier_terminal_changed,
         "best_complete_first_action_changed": best_complete_first_action_changed,
         "ordering_first_reorder_sample_changed": ordering_first_reorder_sample_changed,
+        "case_deltas": case_deltas,
     }
 
 
@@ -112,6 +151,75 @@ def summarize_batch(benchmark_summaries: list[dict[str, Any]]) -> dict[str, Any]
         "schema_name": "CombatRootPriorLiveCompareSummaryV0",
         "benchmark_count": len(benchmark_summaries),
         **totals,
+    }
+
+
+def live_prior_effect_decision(summary: dict[str, Any]) -> dict[str, Any]:
+    """Conservatively decide whether live search should consume this prior.
+
+    The live prior is allowed to affect ordering, so the bar for enabling it in
+    campaign/search defaults is higher than "the hints were loaded."  This
+    helper intentionally reports readiness from search-level evidence only; it
+    does not reinterpret card/game strategy.
+    """
+
+    prior_scored_states = int(summary.get("prior_scored_states") or 0)
+    prior_scored_actions = int(summary.get("prior_scored_actions") or 0)
+    complete_delta = int(summary.get("complete_found_delta") or 0)
+    hp_delta = int(summary.get("frontier_hp_delta") or 0)
+    nodes_delta = int(summary.get("nodes_expanded_delta") or 0)
+    first_action_changes = int(summary.get("best_complete_first_action_changed") or 0)
+
+    evidence: list[str] = []
+    limitations: list[str] = []
+
+    if prior_scored_states > 0 or prior_scored_actions > 0:
+        evidence.append("prior_hits_observed")
+    else:
+        limitations.append("no_prior_hits")
+
+    if first_action_changes > 0:
+        evidence.append("prior_changed_search_path")
+
+    if complete_delta > 0:
+        evidence.append("more_complete_trajectories_found")
+    if hp_delta > 0:
+        evidence.append("higher_frontier_hp")
+    if nodes_delta < 0:
+        evidence.append("fewer_nodes_expanded")
+
+    if prior_scored_states > 0 and complete_delta <= 0 and hp_delta <= 0:
+        evidence.append("prior_hits_without_outcome_gain")
+    if nodes_delta > 0:
+        limitations.append("prior_increased_nodes")
+    if complete_delta < 0:
+        limitations.append("fewer_complete_trajectories_found")
+    if hp_delta < 0:
+        limitations.append("lower_frontier_hp")
+    limitations.append("small_budget_live_ab")
+
+    if prior_scored_states <= 0:
+        recommendation = "no_signal_no_prior_hits"
+    elif complete_delta < 0 or hp_delta < 0:
+        recommendation = "regressed_do_not_enable"
+    elif complete_delta > 0 or hp_delta > 0 or (nodes_delta < 0 and first_action_changes > 0):
+        recommendation = "candidate_for_larger_live_ab"
+    else:
+        recommendation = "do_not_enable_live_prior_yet"
+
+    return {
+        "schema_name": "CombatRootPriorLiveEffectDecisionV0",
+        "recommendation": recommendation,
+        "evidence": evidence,
+        "limitations": limitations,
+        "metrics": {
+            "prior_scored_states": prior_scored_states,
+            "prior_scored_actions": prior_scored_actions,
+            "complete_found_delta": complete_delta,
+            "frontier_hp_delta": hp_delta,
+            "nodes_expanded_delta": nodes_delta,
+            "best_complete_first_action_changed": first_action_changes,
+        },
     }
 
 
@@ -242,13 +350,15 @@ def main() -> int:
                 f"nodes_delta={summary['nodes_expanded_delta']}"
             )
 
+    batch_summary = summarize_batch(benchmark_summaries)
     report = {
         "schema_name": "CombatRootPriorLiveCompareReportV0",
         "driver": str(args.driver),
         "prior_hints": str(args.prior_hints),
         "max_nodes": args.max_nodes,
         "driver_args": args.driver_arg,
-        "summary": summarize_batch(benchmark_summaries),
+        "summary": batch_summary,
+        "live_prior_effect_decision": live_prior_effect_decision(batch_summary),
         "benchmarks": benchmark_summaries,
     }
     out_path = args.summary_json_out or (args.output_root / "summary.json")

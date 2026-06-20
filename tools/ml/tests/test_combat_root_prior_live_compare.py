@@ -72,6 +72,35 @@ class CombatRootPriorLiveCompareTests(unittest.TestCase):
         self.assertEqual(summary["ordering_first_reorder_sample_changed"], 1)
         self.assertEqual(summary["nodes_expanded_delta"], -2)
         self.assertEqual(summary["frontier_hp_delta"], 5)
+        self.assertEqual(len(summary["case_deltas"]), 1)
+        self.assertEqual(summary["case_deltas"][0]["case_id"], "case-a")
+        self.assertEqual(
+            summary["case_deltas"][0]["baseline_best_complete_first_action"],
+            "combat/play_card/bash",
+        )
+        self.assertEqual(
+            summary["case_deltas"][0]["prior_best_complete_first_action"],
+            "combat/play_card/strike",
+        )
+        self.assertEqual(summary["case_deltas"][0]["prior_scored_actions"], 3)
+
+    def test_live_prior_decision_rejects_when_hits_have_no_positive_effect(self):
+        compare = load_module()
+        summary = {
+            "case_count": 30,
+            "prior_scored_states": 30,
+            "prior_scored_actions": 95,
+            "complete_found_delta": 0,
+            "frontier_hp_delta": 0,
+            "nodes_expanded_delta": 13,
+            "best_complete_first_action_changed": 2,
+        }
+
+        decision = compare.live_prior_effect_decision(summary)
+
+        self.assertEqual(decision["recommendation"], "do_not_enable_live_prior_yet")
+        self.assertIn("prior_hits_without_outcome_gain", decision["evidence"])
+        self.assertIn("prior_increased_nodes", decision["limitations"])
 
 
 if __name__ == "__main__":
