@@ -1,7 +1,12 @@
+use crate::ai::card_reward_policy_v1::{
+    card_facts, card_reward_semantic_profile_v1, CardRewardSemanticProfileV1,
+    CardRewardSemanticRoleV1,
+};
 use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
+use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 use crate::state::shop::ShopState;
 
@@ -81,7 +86,7 @@ pub fn shop_conversion_pressure_v1(run_state: &RunState, shop: &ShopState) -> bo
 
 pub fn legacy_shop_card_purchase_estimate_v1(card: CardId, run_state: &RunState) -> i32 {
     let mut priority = 250;
-    if high_impact_shop_card(card) {
+    if shop_card_has_high_impact_semantics_v1(card) {
         priority += 450;
     }
     if run_state.act_num >= 2 && shop_card_is_combat_patch_v1(card) {
@@ -146,7 +151,7 @@ fn affordable_high_impact_shop_purchase(run_state: &RunState, shop: &ShopState) 
     }) || shop.cards.iter().any(|card| {
         card.can_buy
             && card.price <= gold
-            && high_impact_shop_card(card.card_id)
+            && shop_card_has_high_impact_semantics_v1(card.card_id)
             && (run_state.act_num >= 2 || shop_card_is_combat_patch_v1(card.card_id))
     }) || shop.potions.iter().any(|potion| {
         potion.can_buy
@@ -156,42 +161,52 @@ fn affordable_high_impact_shop_purchase(run_state: &RunState, shop: &ShopState) 
     })
 }
 
-fn high_impact_shop_card(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Shockwave
-            | CardId::Disarm
-            | CardId::Uppercut
-            | CardId::ShrugItOff
-            | CardId::FlameBarrier
-            | CardId::Impervious
-            | CardId::Offering
-            | CardId::BattleTrance
-            | CardId::PommelStrike
-            | CardId::TrueGrit
-            | CardId::BurningPact
-            | CardId::PowerThrough
-            | CardId::FeelNoPain
-            | CardId::DarkEmbrace
-            | CardId::Corruption
-            | CardId::SecondWind
-            | CardId::FiendFire
-            | CardId::DemonForm
-    )
+fn shop_card_has_high_impact_semantics_v1(card: CardId) -> bool {
+    let reward_card = RewardCard::new(card, 0);
+    let facts = card_facts(&reward_card);
+    let profile = card_reward_semantic_profile_v1(&reward_card);
+
+    role(&profile, CardRewardSemanticRoleV1::CardDraw)
+        || role(&profile, CardRewardSemanticRoleV1::CycleAccess)
+        || role(&profile, CardRewardSemanticRoleV1::EnergySource)
+        || role(&profile, CardRewardSemanticRoleV1::EnemyStrengthDown)
+        || role(&profile, CardRewardSemanticRoleV1::BlockRetention)
+        || role(&profile, CardRewardSemanticRoleV1::BlockMultiplier)
+        || role(&profile, CardRewardSemanticRoleV1::ExhaustGenerator)
+        || role(&profile, CardRewardSemanticRoleV1::ExhaustReuse)
+        || role(&profile, CardRewardSemanticRoleV1::ExhaustPayoff)
+        || role(&profile, CardRewardSemanticRoleV1::StatusPayoff)
+        || role(&profile, CardRewardSemanticRoleV1::CombatExternalPayoff)
+        || role(&profile, CardRewardSemanticRoleV1::CombatSustain)
+        || shop_card_has_dual_debuff_semantics_v1(&profile)
+        || facts.block >= 12
+        || (role(&profile, CardRewardSemanticRoleV1::ScalingSource)
+            && facts.card_type == CardType::Power
+            && facts.cost >= 2)
 }
 
 pub(crate) fn shop_card_is_combat_patch_v1(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Disarm
-            | CardId::Shockwave
-            | CardId::Uppercut
-            | CardId::FlameBarrier
-            | CardId::Impervious
-            | CardId::DemonForm
-            | CardId::FiendFire
-            | CardId::PowerThrough
-    )
+    let reward_card = RewardCard::new(card, 0);
+    let facts = card_facts(&reward_card);
+    let profile = card_reward_semantic_profile_v1(&reward_card);
+
+    role(&profile, CardRewardSemanticRoleV1::EnemyStrengthDown)
+        || shop_card_has_dual_debuff_semantics_v1(&profile)
+        || facts.block >= 12
+        || (role(&profile, CardRewardSemanticRoleV1::ScalingSource)
+            && facts.card_type == CardType::Power
+            && facts.cost >= 2)
+        || (role(&profile, CardRewardSemanticRoleV1::ExhaustGenerator)
+            && facts.card_type == CardType::Attack)
+}
+
+fn shop_card_has_dual_debuff_semantics_v1(profile: &CardRewardSemanticProfileV1) -> bool {
+    role(profile, CardRewardSemanticRoleV1::Weak)
+        && role(profile, CardRewardSemanticRoleV1::Vulnerable)
+}
+
+fn role(profile: &CardRewardSemanticProfileV1, role: CardRewardSemanticRoleV1) -> bool {
+    profile.roles.contains(&role)
 }
 
 pub(crate) fn shop_potion_is_combat_patch_v1(potion: PotionId) -> bool {

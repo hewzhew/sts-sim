@@ -61,7 +61,7 @@ pub fn card_reward_semantic_profile_v1(card: &RewardCard) -> CardRewardSemanticP
     ) {
         push_role(&mut roles, CardRewardSemanticRoleV1::CombatSustain);
     }
-    if facts.exhausts_other_cards {
+    if facts.exhausts_other_cards || facts.card == CardId::Corruption {
         push_role(&mut roles, CardRewardSemanticRoleV1::ExhaustGenerator);
     }
     if facts.card == CardId::Exhume {

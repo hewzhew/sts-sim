@@ -2,7 +2,10 @@ use crate::ai::boss_mechanics_v1::{
     boss_mechanic_pressure_profile_v1, relic_creates_enemy_strength_pressure_v1,
     BossMechanicRedFlagV1,
 };
-use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
+use crate::ai::card_reward_policy_v1::{
+    card_facts, card_reward_semantic_profile_v1, CardRewardSemanticProfileV1,
+    CardRewardSemanticRoleV1,
+};
 use crate::ai::decision_tags_v1::{
     combat_shape_change_tags_for_card_v1, TAG_BOSS_PRESSURE_ENEMY_STRENGTH_MULTI_HIT_RISK,
     TAG_COLLECTOR_ANSWER, TAG_DIGEST_CAPACITY_DRAW, TAG_DIGEST_CAPACITY_EXHAUST,
@@ -98,7 +101,7 @@ fn analyze_shop_relic(
         push_evidence(analysis, "shop_relic_core_card_access");
     }
     if relic == RelicId::MedicalKit
-        && deck_contains_any(run_state, &[CardId::WildStrike, CardId::PowerThrough])
+        && deck_has_role(run_state, CardRewardSemanticRoleV1::StatusGenerator)
     {
         push_evidence(analysis, TAG_ENGINE_CLOSURE);
         push_evidence(analysis, TAG_DIGEST_CAPACITY_STATUS);
@@ -121,27 +124,12 @@ fn analyze_shop_potion(
     }
 }
 
-fn collector_answer_card(
-    card: CardId,
-    profile: &crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1,
-) -> bool {
-    profile.roles.contains(&CardRewardSemanticRoleV1::AoeDamage)
-        || profile.roles.contains(&CardRewardSemanticRoleV1::Weak)
-        || profile
-            .roles
-            .contains(&CardRewardSemanticRoleV1::EnemyStrengthDown)
-        || matches!(
-            card,
-            CardId::FlameBarrier
-                | CardId::Impervious
-                | CardId::PowerThrough
-                | CardId::Shockwave
-                | CardId::Cleave
-                | CardId::Whirlwind
-                | CardId::Immolate
-                | CardId::Disarm
-                | CardId::Uppercut
-        )
+fn collector_answer_card(card: CardId, profile: &CardRewardSemanticProfileV1) -> bool {
+    let facts = card_facts(&RewardCard::new(card, 0));
+    has_role(profile, CardRewardSemanticRoleV1::AoeDamage)
+        || has_role(profile, CardRewardSemanticRoleV1::Weak)
+        || has_role(profile, CardRewardSemanticRoleV1::EnemyStrengthDown)
+        || facts.block >= 12
 }
 
 fn collector_answer_potion(potion: PotionId) -> bool {
@@ -166,72 +154,42 @@ fn closes_or_supports_exhaust_engine(
     run_state: &RunState,
     strategy: &RunStrategySnapshotV2,
 ) -> bool {
-    let has_corruption = deck_contains(run_state, CardId::Corruption);
-    let has_dark_embrace = deck_contains(run_state, CardId::DarkEmbrace);
-    let has_feel_no_pain = deck_contains(run_state, CardId::FeelNoPain);
-    let has_exhaust_generator = deck_contains_any(
-        run_state,
-        &[
-            CardId::TrueGrit,
-            CardId::SecondWind,
-            CardId::SeverSoul,
-            CardId::BurningPact,
-            CardId::FiendFire,
-            CardId::Corruption,
-        ],
-    );
+    let profile = card_reward_semantic_profile_v1(&RewardCard::new(card, 0));
+    let deck_has_exhaust_generator =
+        deck_has_role(run_state, CardRewardSemanticRoleV1::ExhaustGenerator);
+    let deck_has_exhaust_payoff = deck_has_role(run_state, CardRewardSemanticRoleV1::ExhaustPayoff);
     let committed_exhaust_package = matches!(
         strategy.support(StrategyPackageIdV2::ExhaustEngine),
         StrategyPlanSupportV1::Plausible | StrategyPlanSupportV1::Strong
     );
 
-    match card {
-        CardId::Corruption => has_dark_embrace || has_feel_no_pain || has_exhaust_generator,
-        CardId::DarkEmbrace => has_corruption || has_exhaust_generator || committed_exhaust_package,
-        CardId::FeelNoPain => has_corruption || has_exhaust_generator || committed_exhaust_package,
-        CardId::BurningPact | CardId::TrueGrit | CardId::SecondWind | CardId::SeverSoul => {
-            has_dark_embrace || has_feel_no_pain || committed_exhaust_package
-        }
-        CardId::Sentinel => has_corruption && (has_dark_embrace || has_feel_no_pain),
-        _ => false,
-    }
+    (has_role(&profile, CardRewardSemanticRoleV1::ExhaustPayoff)
+        && (deck_has_exhaust_generator || committed_exhaust_package))
+        || (has_role(&profile, CardRewardSemanticRoleV1::ExhaustGenerator)
+            && (deck_has_exhaust_payoff || committed_exhaust_package))
 }
 
 fn startup_access_card(
     card: CardId,
-    profile: &crate::ai::card_reward_policy_v1::CardRewardSemanticProfileV1,
+    profile: &CardRewardSemanticProfileV1,
     startup: &crate::ai::deck_startup_profile_v1::DeckStartupProfileV1,
 ) -> bool {
     if startup.has_snecko_eye && startup_energy_candidate_discounted_by_snecko_v1(startup, card) {
         return false;
     }
 
-    profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
-        || profile
-            .roles
-            .contains(&CardRewardSemanticRoleV1::CycleAccess)
-        || profile
-            .roles
-            .contains(&CardRewardSemanticRoleV1::EnergySource)
-        || matches!(
-            card,
-            CardId::BattleTrance
-                | CardId::Offering
-                | CardId::BurningPact
-                | CardId::PommelStrike
-                | CardId::ShrugItOff
-        )
+    has_role(profile, CardRewardSemanticRoleV1::CardDraw)
+        || has_role(profile, CardRewardSemanticRoleV1::CycleAccess)
+        || has_role(profile, CardRewardSemanticRoleV1::EnergySource)
 }
 
 fn combat_shape_digest_capacity_tags(run_state: &RunState) -> Vec<&'static str> {
     let mut tags = Vec::new();
-    if deck_contains_any(
+    if deck_has_any_role(
         run_state,
         &[
-            CardId::Evolve,
-            CardId::FireBreathing,
-            CardId::SecondWind,
-            CardId::Corruption,
+            CardRewardSemanticRoleV1::StatusPayoff,
+            CardRewardSemanticRoleV1::ExhaustGenerator,
         ],
     ) || run_state
         .relics
@@ -240,28 +198,21 @@ fn combat_shape_digest_capacity_tags(run_state: &RunState) -> Vec<&'static str> 
     {
         tags.push(TAG_DIGEST_CAPACITY_STATUS);
     }
-    if deck_contains_any(
+    if deck_has_any_role(
         run_state,
         &[
-            CardId::BurningPact,
-            CardId::Corruption,
-            CardId::DarkEmbrace,
-            CardId::FeelNoPain,
-            CardId::FiendFire,
-            CardId::SecondWind,
-            CardId::TrueGrit,
+            CardRewardSemanticRoleV1::ExhaustGenerator,
+            CardRewardSemanticRoleV1::ExhaustPayoff,
         ],
     ) {
         tags.push(TAG_DIGEST_CAPACITY_EXHAUST);
     }
-    if deck_contains_any(
+    if deck_has_any_role(
         run_state,
         &[
-            CardId::BattleTrance,
-            CardId::BurningPact,
-            CardId::Offering,
-            CardId::PommelStrike,
-            CardId::ShrugItOff,
+            CardRewardSemanticRoleV1::CardDraw,
+            CardRewardSemanticRoleV1::CycleAccess,
+            CardRewardSemanticRoleV1::EnergySource,
         ],
     ) {
         tags.push(TAG_DIGEST_CAPACITY_DRAW);
@@ -281,6 +232,21 @@ fn deck_contains(run_state: &RunState, card: CardId) -> bool {
 
 fn deck_contains_any(run_state: &RunState, cards: &[CardId]) -> bool {
     cards.iter().any(|card| deck_contains(run_state, *card))
+}
+
+fn deck_has_role(run_state: &RunState, role: CardRewardSemanticRoleV1) -> bool {
+    run_state.master_deck.iter().any(|deck_card| {
+        let profile = card_reward_semantic_profile_v1(&RewardCard::new(deck_card.id, 0));
+        has_role(&profile, role)
+    })
+}
+
+fn deck_has_any_role(run_state: &RunState, roles: &[CardRewardSemanticRoleV1]) -> bool {
+    roles.iter().any(|role| deck_has_role(run_state, *role))
+}
+
+fn has_role(profile: &CardRewardSemanticProfileV1, role: CardRewardSemanticRoleV1) -> bool {
+    profile.roles.contains(&role)
 }
 
 fn push_evidence(analysis: &mut ShopPurchaseStrategyAnalysisV1, tag: &'static str) {
