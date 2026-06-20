@@ -1492,6 +1492,10 @@ def diagnostic_trace_line(roles: list[str], trace: dict[str, Any]) -> str:
     )
 
 
+def sorted_dict_display(value: Any) -> dict[str, Any]:
+    return dict(sorted(as_dict(value).items()))
+
+
 def print_compact_cases(episodes: list[dict[str, Any]], case_limit: int) -> None:
     print("  cases:")
     for episode in episodes[:case_limit]:
@@ -1518,6 +1522,9 @@ def print_diagnostic_cases(episodes: list[dict[str, Any]], case_limit: int) -> N
         source = as_dict(episode.get("source"))
         context = as_dict(episode.get("root_tactical_context"))
         root_view = as_dict(as_dict(episode.get("root")).get("public_view"))
+        root_mask = as_dict(as_dict(episode.get("root")).get("legal_action_mask"))
+        root_enumeration = as_dict(as_dict(episode.get("root")).get("turn_plan_enumeration"))
+        coverage = as_dict(root_mask.get("coverage_diagnostic"))
         root_state = as_dict(root_view.get("state"))
         traces = [trace for trace in as_list(episode.get("candidate_plans")) if isinstance(trace, dict)]
         trace_by_id = {str(trace.get("plan_id")): trace for trace in traces}
@@ -1531,6 +1538,23 @@ def print_diagnostic_cases(episodes: list[dict[str, Any]], case_limit: int) -> N
             f"enemy_hp={root_state.get('total_enemy_hp')} "
             f"threat_removal={context.get('threat_removal_candidate_exists')} "
             f"kill={context.get('enemy_kill_candidate_exists')}"
+        )
+        print(
+            "      action_coverage: "
+            f"legal={coverage.get('legal_action_count')} "
+            f"eligible={coverage.get('candidate_eligible_action_count')} "
+            f"equiv={coverage.get('equivalence_representative_action_count')} "
+            f"preselect={coverage.get('preselection_first_action_count')} "
+            f"selected={coverage.get('candidate_first_action_count')} "
+            f"compressed={coverage.get('eligible_compressed_by_kind')} "
+            f"preselected_unselected={coverage.get('preselected_but_unselected_by_kind')}"
+        )
+        print(
+            "      bucket_pressure: "
+            f"preselection={sorted_dict_display(root_enumeration.get('preselection_bucket_counts'))} "
+            f"selected={sorted_dict_display(root_enumeration.get('selected_bucket_counts'))} "
+            f"preselected_unselected="
+            f"{sorted_dict_display(coverage.get('preselected_but_unselected_bucket_counts'))}"
         )
         for role_plan in as_list(contrast.get("role_plans")):
             if not isinstance(role_plan, dict):
