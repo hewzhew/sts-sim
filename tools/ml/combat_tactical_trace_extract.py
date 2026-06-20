@@ -1372,6 +1372,98 @@ def selected_diagnostic_traces(
     return list(merged.values())
 
 
+def candidate_target_signature(trace: dict[str, Any]) -> tuple[bool, Any, Any]:
+    outcome = as_dict(trace.get("outcome_attachment"))
+    return (
+        bool(outcome.get("complete_win")),
+        outcome.get("terminal"),
+        outcome.get("final_hp"),
+    )
+
+
+def candidate_search_label_sets(
+    traces: list[dict[str, Any]],
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    selected_plan_index = summary.get("best_target_plan_index")
+    selected_trace = next(
+        (
+            trace
+            for trace in traces
+            if isinstance(trace.get("plan_index"), int)
+            and trace.get("plan_index") == selected_plan_index
+        ),
+        None,
+    )
+    if selected_trace is None and isinstance(selected_plan_index, int):
+        selected_trace = next(
+            (trace for index, trace in enumerate(traces) if index == selected_plan_index),
+            None,
+        )
+    if selected_trace is None:
+        return {
+            "selected_plan_index": selected_plan_index,
+            "selected_plan_id": None,
+            "equivalent_hp_outcome_plan_indices": [],
+            "equivalent_hp_outcome_plan_ids": [],
+            "limitations": ["selected_plan_not_found_in_candidate_traces"],
+        }
+
+    selected_complete_win, selected_terminal, selected_final_hp = candidate_target_signature(
+        selected_trace
+    )
+    same_terminal_indices: list[int] = []
+    same_terminal_ids: list[str] = []
+    exact_hp_indices: list[int] = []
+    exact_hp_ids: list[str] = []
+    hp_within: dict[int, tuple[list[int], list[str]]] = {
+        1: ([], []),
+        3: ([], []),
+        5: ([], []),
+    }
+    for trace in traces:
+        plan_index = trace.get("plan_index")
+        plan_id = str(trace.get("plan_id"))
+        complete_win, terminal, final_hp = candidate_target_signature(trace)
+        if (complete_win, terminal) != (selected_complete_win, selected_terminal):
+            continue
+        if isinstance(plan_index, int):
+            same_terminal_indices.append(plan_index)
+        same_terminal_ids.append(plan_id)
+        if not isinstance(final_hp, int) or not isinstance(selected_final_hp, int):
+            continue
+        hp_delta = abs(final_hp - selected_final_hp)
+        if hp_delta == 0:
+            if isinstance(plan_index, int):
+                exact_hp_indices.append(plan_index)
+            exact_hp_ids.append(plan_id)
+        for threshold, (indices, ids) in hp_within.items():
+            if hp_delta <= threshold:
+                if isinstance(plan_index, int):
+                    indices.append(plan_index)
+                ids.append(plan_id)
+    return {
+        "selected_plan_index": selected_plan_index,
+        "selected_plan_id": selected_trace.get("plan_id"),
+        "selected_terminal": selected_terminal,
+        "selected_complete_win": selected_complete_win,
+        "selected_final_hp": selected_final_hp,
+        "same_terminal_plan_indices": same_terminal_indices,
+        "same_terminal_plan_ids": same_terminal_ids,
+        "equivalent_hp_outcome_plan_indices": exact_hp_indices,
+        "equivalent_hp_outcome_plan_ids": exact_hp_ids,
+        "hp_within_1_plan_indices": hp_within[1][0],
+        "hp_within_1_plan_ids": hp_within[1][1],
+        "hp_within_3_plan_indices": hp_within[3][0],
+        "hp_within_3_plan_ids": hp_within[3][1],
+        "hp_within_5_plan_indices": hp_within[5][0],
+        "hp_within_5_plan_ids": hp_within[5][1],
+        "limitations": [
+            "equivalence_sets_are_relative_to_bounded_candidate_set_not_global_optimum",
+        ],
+    }
+
+
 def candidate_set_contrast(traces: list[dict[str, Any]]) -> dict[str, Any]:
     first = min(traces, key=trace_plan_index) if traces else {}
     first_counterfactual = as_dict(as_dict(first).get("counterfactual"))
@@ -1654,6 +1746,7 @@ def episode_from_lab(
             "availability": "PostSearch",
             "source": "bounded_child_search_targets_in_turn_plan_guidance_lab",
             "summary": lab.get("summary"),
+            "target_sets": candidate_search_label_sets(traces, as_dict(lab.get("summary"))),
             "limitations": [
                 "labels_are_oracle_under_current_simulator_and_budget_not_human_policy",
             ],

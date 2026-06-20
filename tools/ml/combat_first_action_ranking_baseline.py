@@ -135,7 +135,23 @@ def samples_from_tactical_episode(episode: dict[str, Any], path: Path) -> list[d
     plans = [plan for plan in episode.get("candidate_plans", []) if isinstance(plan, dict)]
     if not plans:
         return []
-    best_plan_index = tactical_best_plan_index(plans)
+    label_bundle = episode.get("label_bundle") if isinstance(episode.get("label_bundle"), dict) else {}
+    target_sets = (
+        label_bundle.get("target_sets")
+        if isinstance(label_bundle.get("target_sets"), dict)
+        else {}
+    )
+    target_selected_plan_index = target_sets.get("selected_plan_index")
+    best_plan_index = (
+        target_selected_plan_index
+        if isinstance(target_selected_plan_index, int)
+        else tactical_best_plan_index(plans)
+    )
+    equivalent_hp_outcome_plan_indices = {
+        value
+        for value in target_sets.get("equivalent_hp_outcome_plan_indices", [])
+        if isinstance(value, int)
+    }
     root = episode.get("root") if isinstance(episode.get("root"), dict) else {}
     public_view = root.get("public_view") if isinstance(root.get("public_view"), dict) else {}
     provenance = episode.get("provenance") if isinstance(episode.get("provenance"), dict) else {}
@@ -197,6 +213,8 @@ def samples_from_tactical_episode(episode: dict[str, Any], path: Path) -> list[d
                     "final_hp": outcome.get("final_hp"),
                     "nodes_expanded": outcome.get("nodes_expanded"),
                     "is_best_target_plan": plan.get("plan_index") == best_plan_index,
+                    "is_equivalent_hp_outcome_target_plan": plan.get("plan_index")
+                    in equivalent_hp_outcome_plan_indices,
                     "limitations": outcome.get("limitations") or [],
                 },
                 "child_search": outcome.get("child_search"),
@@ -809,6 +827,17 @@ def positive_target_indices(group: list[dict[str, Any]], target_mode: str) -> li
         return [selected]
     if target_mode != "equivalent-hp-outcome":
         raise ValueError(f"unknown target mode: {target_mode}")
+    marked_equivalent = [
+        index
+        for index, sample in enumerate(group)
+        if bool(
+            (sample.get("target") if isinstance(sample.get("target"), dict) else {}).get(
+                "is_equivalent_hp_outcome_target_plan"
+            )
+        )
+    ]
+    if marked_equivalent:
+        return marked_equivalent
 
     signature = candidate_terminal_signature(group[selected])
     complete_win, terminal, final_hp = signature
