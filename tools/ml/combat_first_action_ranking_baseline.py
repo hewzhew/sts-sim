@@ -2100,8 +2100,9 @@ def print_source_cv_target_mode_comparison(
     feature_groups: frozenset[str],
     training_mode: str,
     report_mode: str,
-) -> None:
+) -> dict[str, dict[str, float]]:
     print("  target_mode_compare:")
+    out: dict[str, dict[str, float]] = {}
     for target_mode in TARGET_MODES:
         metrics, _meta, _scores = source_cross_validated_model_metrics(
             groups,
@@ -2115,7 +2116,9 @@ def print_source_cv_target_mode_comparison(
             target_mode=target_mode,
             training_mode=training_mode,
         )
+        out[target_mode] = metrics
         print_metrics(f"target_mode:{target_mode}", metrics, report_mode=report_mode)
+    return out
 
 
 def print_source_cv_training_mode_comparison(
@@ -2627,6 +2630,15 @@ def print_metrics(label: str, metrics: dict[str, float], *, report_mode: str) ->
     )
 
 
+def write_summary_json(path: Path | None, summary: dict[str, Any]) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(summary, handle, ensure_ascii=False, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -2756,6 +2768,12 @@ def main() -> None:
         help="compact prints regret/outcome metrics only; full also prints top1/MRR/features.",
     )
     parser.add_argument(
+        "--summary-json-out",
+        type=Path,
+        default=None,
+        help="Optional path for machine-readable metrics summary JSON.",
+    )
+    parser.add_argument(
         "--show-cases",
         type=int,
         default=0,
@@ -2856,9 +2874,32 @@ def main() -> None:
     )
     if len(groups) < 8:
         print("  readiness=too_few_groups_for_meaningful_ml")
+        readiness = "too_few_groups_for_meaningful_ml"
     else:
         print("  readiness=small_offline_ranking_probe")
+        readiness = "small_offline_ranking_probe"
+    summary: dict[str, Any] = {
+        "schema_name": "CombatSearchRankingBaselineSummaryV1",
+        "input_files": [str(path) for path in input_paths],
+        "sample_count": len(samples),
+        "usable_group_count": len(groups),
+        "labels": dict(target_counts),
+        "sample_schemas": dict(sample_schema_counts),
+        "source_schemas": dict(source_schema_counts),
+        "turn_plan_feature_coverage": coverage,
+        "root_action_mask_coverage": root_mask_coverage,
+        "target_equivalence_audit": target_audit,
+        "label_role": "oracle_search_guidance_ranking_not_human_policy",
+        "candidate_coverage": "ranked_candidate_subset_with_full_root_legal_mask",
+        "readiness": readiness,
+        "split_mode": args.split_mode,
+        "target_mode": target_mode,
+        "training_mode": training_mode,
+        "feature_groups": sorted(feature_groups),
+        "metrics": {},
+    }
     if not groups:
+        write_summary_json(args.summary_json_out, summary)
         return
 
     if args.split_mode == "source-cv":
@@ -2875,13 +2916,23 @@ def main() -> None:
             training_mode=training_mode,
             return_scores=args.show_cases > 0,
         )
+        ordered_metrics = evaluate_ordered_index(groups, target_mode=target_mode)
+        summary["split"] = {
+            "mode": "source-cv",
+            "source_units": cv_meta["source_units"],
+            "folds": cv_meta["folds"],
+        }
+        summary["metrics"] = {
+            "ordered_index_all": ordered_metrics,
+            "logistic_source_cv": cv_metrics,
+        }
         print(
             f"  split=mode:source-cv source_units:{cv_meta['source_units']} "
             f"folds:{cv_meta['folds']} target_mode:{target_mode} training_mode:{training_mode}"
         )
         print_metrics(
             "ordered_index_all",
-            evaluate_ordered_index(groups, target_mode=target_mode),
+            ordered_metrics,
             report_mode=args.report_mode,
         )
         print_metrics("logistic_source_cv", cv_metrics, report_mode=args.report_mode)
@@ -2899,7 +2950,7 @@ def main() -> None:
                 report_mode=args.report_mode,
             )
         if args.compare_target_modes:
-            print_source_cv_target_mode_comparison(
+            summary["target_mode_compare"] = print_source_cv_target_mode_comparison(
                 groups,
                 dim=args.dim,
                 epochs=args.epochs,
@@ -2979,6 +3030,12 @@ def main() -> None:
                 f"outcome_weight:{DECOMPOSED_OUTCOME_WEIGHT:.1f} "
                 f"hp_weight:{DECOMPOSED_HP_WEIGHT:.1f}"
             )
+            summary["decomposed_utility_full_data"] = {
+                "outcome_examples": len(outcome_examples),
+                "hp_examples": len(hp_examples),
+                "outcome_weight": DECOMPOSED_OUTCOME_WEIGHT,
+                "hp_weight": DECOMPOSED_HP_WEIGHT,
+            }
             if args.report_mode == "full":
                 if outcome_examples:
                     outcome_weights, _outcome_bias = train_logistic(
@@ -3018,6 +3075,7 @@ def main() -> None:
                         limit=args.top_features,
                     ):
                         print(f"    {weight:+.4f} {name}")
+            write_summary_json(args.summary_json_out, summary)
             return
 
         train_examples = training_examples_for_groups(
@@ -3029,6 +3087,8 @@ def main() -> None:
         )
         if not train_examples:
             print("  logistic=skipped_not_enough_data")
+            summary["status"] = "skipped_not_enough_data"
+            write_summary_json(args.summary_json_out, summary)
             return
         weights, _bias = train_logistic(
             train_examples,
@@ -3049,6 +3109,7 @@ def main() -> None:
                 limit=args.top_features,
             ):
                 print(f"    {weight:+.4f} {name}")
+        write_summary_json(args.summary_json_out, summary)
         return
 
     train_groups, test_groups, split_meta = split_groups(
@@ -3057,6 +3118,17 @@ def main() -> None:
         split_mode=args.split_mode,
         split_seed=args.split_seed,
     )
+    summary["split"] = {
+        "mode": split_meta["mode"],
+        "requested_mode": split_meta["requested_mode"],
+        "split_seed": split_meta["seed"],
+        "train_groups": len(train_groups),
+        "test_groups": len(test_groups),
+        "train_units": split_meta["train_units"],
+        "test_units": split_meta["test_units"],
+    }
+    ordered_train_metrics = evaluate_ordered_index(train_groups, target_mode=target_mode)
+    ordered_test_metrics = evaluate_ordered_index(test_groups, target_mode=target_mode)
     print(
         f"  split=mode:{split_meta['mode']} requested:{split_meta['requested_mode']} "
         f"split_seed:{split_meta['seed']} train_groups:{len(train_groups)} "
@@ -3065,12 +3137,12 @@ def main() -> None:
     )
     print_metrics(
         "ordered_index_train",
-        evaluate_ordered_index(train_groups, target_mode=target_mode),
+        ordered_train_metrics,
         report_mode=args.report_mode,
     )
     print_metrics(
         "ordered_index_test",
-        evaluate_ordered_index(test_groups, target_mode=target_mode),
+        ordered_test_metrics,
         report_mode=args.report_mode,
     )
 
@@ -3102,15 +3174,33 @@ def main() -> None:
     )
     if not train_meta.get("examples") or not test_scores:
         print("  logistic=skipped_not_enough_split_data")
+        summary["metrics"] = {
+            "ordered_index_train": ordered_train_metrics,
+            "ordered_index_test": ordered_test_metrics,
+        }
+        summary["status"] = "skipped_not_enough_split_data"
+        write_summary_json(args.summary_json_out, summary)
         return
+    logistic_train_metrics = metrics_from_group_scores(
+        train_groups, train_scores, target_mode=target_mode
+    )
+    logistic_test_metrics = metrics_from_group_scores(
+        test_groups, test_scores, target_mode=target_mode
+    )
+    summary["metrics"] = {
+        "ordered_index_train": ordered_train_metrics,
+        "ordered_index_test": ordered_test_metrics,
+        "logistic_train": logistic_train_metrics,
+        "logistic_test": logistic_test_metrics,
+    }
     print_metrics(
         "logistic_train",
-        metrics_from_group_scores(train_groups, train_scores, target_mode=target_mode),
+        logistic_train_metrics,
         report_mode=args.report_mode,
     )
     print_metrics(
         "logistic_test",
-        metrics_from_group_scores(test_groups, test_scores, target_mode=target_mode),
+        logistic_test_metrics,
         report_mode=args.report_mode,
     )
     if args.compare_feature_groups:
@@ -3159,6 +3249,7 @@ def main() -> None:
                 limit=args.top_features,
             ):
                 print(f"    {weight:+.4f} {name}")
+    write_summary_json(args.summary_json_out, summary)
 
 
 if __name__ == "__main__":

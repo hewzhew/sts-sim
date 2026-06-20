@@ -115,6 +115,7 @@ foreach ($Benchmark in $BenchmarkPath) {
 }
 
 if ($RunBaseline) {
+    $BaselineSummaryPath = Join-Path $OutputDir "ranking_baseline_summary.json"
     $ArgsList = @(
         "$Baseline",
         $EpisodeFiles,
@@ -122,6 +123,7 @@ if ($RunBaseline) {
         "--epochs", "$Epochs",
         "--target-mode", "$TargetMode",
         "--training-mode", "$TrainingMode",
+        "--summary-json-out", "$BaselineSummaryPath",
         "--report-mode", "compact"
     )
     if ($FeatureGroups.Count -gt 0) {
@@ -134,6 +136,6 @@ if ($RunBaseline) {
     if ($CompareTargetModes) {
         $ArgsList += "--compare-target-modes"
     }
-    Write-Host "ranking baseline: files=$($EpisodeFiles.Count) split=$SplitMode target=$TargetMode training=$TrainingMode features=$($FeatureGroups -join ',') epochs=$Epochs"
+    Write-Host "ranking baseline: files=$($EpisodeFiles.Count) split=$SplitMode target=$TargetMode training=$TrainingMode features=$($FeatureGroups -join ',') epochs=$Epochs summary=$BaselineSummaryPath"
     python @ArgsList
 }
