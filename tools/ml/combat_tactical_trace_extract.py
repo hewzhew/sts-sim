@@ -879,6 +879,25 @@ def extract(
             counters["episodes_with_no_hp_loss_candidate"] += 1
         if context.get("complete_win_label_exists"):
             counters["episodes_with_complete_win_label"] += 1
+        contrast = as_dict(episode.get("candidate_set_contrast"))
+        gaps = as_dict(contrast.get("first_plan_gaps"))
+        if int_value(gaps.get("hp_loss_regret_vs_best_boundary")) > 0:
+            counters["first_plan_hp_loss_regret_positive"] += 1
+        if int_value(gaps.get("enemy_hp_progress_gap_vs_best_boundary")) > 0:
+            counters["first_plan_progress_gap_positive"] += 1
+        if int_value(gaps.get("final_hp_regret_vs_best_labeled")) > 0:
+            counters["first_plan_final_hp_regret_positive"] += 1
+        for role_plan in as_list(contrast.get("role_plans")):
+            if not isinstance(role_plan, dict):
+                continue
+            roles = set(str(role) for role in as_list(role_plan.get("roles")))
+            if "first" in roles:
+                if "safety" in roles:
+                    counters["first_plan_is_safety"] += 1
+                if "progress" in roles:
+                    counters["first_plan_is_progress"] += 1
+                if "label" in roles:
+                    counters["first_plan_is_label"] += 1
     print("CombatTacticalTraceExtract")
     print(f"  episodes={len(episodes)} candidates={total_candidates}")
     print(f"  episodes_with_enemy_slots={counters['episodes_with_enemy_slots']}")
@@ -899,6 +918,15 @@ def extract(
     )
     print(f"  episodes_with_no_hp_loss_candidate={counters['episodes_with_no_hp_loss_candidate']}")
     print(f"  episodes_with_complete_win_label={counters['episodes_with_complete_win_label']}")
+    print(
+        "  first_plan_contrast="
+        f"hp_loss_regret_positive={counters['first_plan_hp_loss_regret_positive']} "
+        f"progress_gap_positive={counters['first_plan_progress_gap_positive']} "
+        f"final_hp_regret_positive={counters['first_plan_final_hp_regret_positive']} "
+        f"is_safety={counters['first_plan_is_safety']} "
+        f"is_progress={counters['first_plan_is_progress']} "
+        f"is_label={counters['first_plan_is_label']}"
+    )
     if out_jsonl:
         print(f"  jsonl={out_jsonl}")
     if summary_only:
