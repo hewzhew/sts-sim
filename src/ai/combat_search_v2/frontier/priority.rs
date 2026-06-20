@@ -9,6 +9,7 @@ use std::cmp::Ordering;
 pub(in crate::ai::combat_search_v2::frontier) struct NodePriority {
     terminal_rank: i32,
     rollout_value: CombatSearchRolloutValueV1,
+    action_prior_rank: i32,
     state_value: CombatSearchStateValueV1,
     potion_tactical_priority: i32,
     potion_conservation: i32,
@@ -21,6 +22,7 @@ impl Ord for NodePriority {
         self.terminal_rank
             .cmp(&other.terminal_rank)
             .then_with(|| self.rollout_value.cmp(&other.rollout_value))
+            .then_with(|| self.action_prior_rank.cmp(&other.action_prior_rank))
             .then_with(|| self.state_value.cmp(&other.state_value))
             .then_with(|| {
                 self.potion_tactical_priority
@@ -78,10 +80,18 @@ pub(in crate::ai::combat_search_v2::frontier) fn priority_for_node(
     NodePriority {
         terminal_rank,
         rollout_value: rollout_priority_value(node.rollout_estimate),
+        action_prior_rank: action_prior_rank(node.action_prior_score),
         state_value: combat_search_state_value(node),
         potion_tactical_priority: node.potion_tactical_priority,
         potion_conservation: -((node.potions_used + node.potions_discarded) as i32),
         turn_branch_priority: node.last_turn_branch_priority,
         shorter_line: -(node.actions.len() as i32),
     }
+}
+
+fn action_prior_rank(score: Option<f64>) -> i32 {
+    score
+        .filter(|score| score.is_finite())
+        .map(|score| (score.clamp(0.0, 1.0) * 1_000_000.0).round() as i32)
+        .unwrap_or_default()
 }

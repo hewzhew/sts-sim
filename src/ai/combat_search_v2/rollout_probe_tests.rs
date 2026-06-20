@@ -327,6 +327,7 @@ fn test_node(combat: CombatState) -> SearchNode {
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     }
 }

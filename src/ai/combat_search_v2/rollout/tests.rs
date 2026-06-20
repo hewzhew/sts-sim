@@ -125,6 +125,7 @@ fn conservative_rollout_records_estimated_terminal_win() {
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let config = CombatSearchV2Config::default();
@@ -158,6 +159,7 @@ fn rollout_cache_reuses_exact_state_estimate() {
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let config = CombatSearchV2Config::default();
@@ -186,6 +188,7 @@ fn rollout_report_includes_turn_beam_anchor_attribution() {
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let config = CombatSearchV2Config {
@@ -226,6 +229,7 @@ fn rollout_report_includes_turn_beam_extension_attribution() {
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let config = CombatSearchV2Config {
@@ -273,6 +277,7 @@ fn rollout_estimate_records_phase_adjusted_enemy_effort() {
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
 
@@ -307,6 +312,7 @@ fn conservative_rollout_stops_before_large_pending_choice_branch() {
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let config = CombatSearchV2Config::default();
@@ -353,6 +359,7 @@ fn conservative_rollout_tracks_small_pending_choice_resolution() {
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let config = CombatSearchV2Config::default();
@@ -393,6 +400,7 @@ fn turn_beam_rollout_preserves_conservative_anchor_win() {
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let config = CombatSearchV2Config {
@@ -427,6 +435,7 @@ fn turn_beam_rollout_resolves_small_pending_choice_via_conservative_fallback() {
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let config = CombatSearchV2Config {
@@ -466,6 +475,7 @@ fn turn_beam_rollout_still_stops_before_large_pending_choice_branch() {
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let config = CombatSearchV2Config {

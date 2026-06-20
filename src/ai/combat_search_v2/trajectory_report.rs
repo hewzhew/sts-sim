@@ -22,6 +22,7 @@ pub fn trajectory_from_state(
         cards_played,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     trajectory_report(&node, estimated)

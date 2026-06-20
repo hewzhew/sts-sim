@@ -38,6 +38,16 @@ fn frontier_priority_uses_turn_branch_hint_as_late_tie_break() {
 }
 
 #[test]
+fn frontier_priority_uses_action_prior_score_when_rollout_ties() {
+    let mut low_prior = test_node();
+    low_prior.action_prior_score = Some(0.1);
+    let mut high_prior = test_node();
+    high_prior.action_prior_score = Some(0.9);
+
+    assert!(priority_for_node(&high_prior) > priority_for_node(&low_prior));
+}
+
+#[test]
 fn frontier_priority_uses_sustained_mitigation_after_raw_enemy_progress() {
     let mut better_progress = test_node();
     let mut monster = test_monster(EnemyId::TheGuardian);
@@ -204,6 +214,7 @@ fn test_node() -> SearchNode {
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     }
 }

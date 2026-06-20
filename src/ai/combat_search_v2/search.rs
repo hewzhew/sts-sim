@@ -59,6 +59,7 @@ pub fn run_combat_search_v2_with_stepper(
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     root.rollout_estimate = timed_rollout_estimate(
@@ -254,6 +255,11 @@ pub fn run_combat_search_v2_with_stepper(
         }
         let equivalence = compress_equivalent_actions(&node.engine, &node.combat, legal);
         diagnostics.observe_action_equivalence(&equivalence.summary);
+        let action_prior_state_hash = config
+            .root_action_prior
+            .as_ref()
+            .filter(|prior| !prior.is_empty())
+            .map(|_| combat_exact_state_hash_v1(&node.engine, &node.combat));
         let ordered = order_indexed_action_choices_with_prior(
             &node.engine,
             &node.combat,
@@ -327,6 +333,14 @@ pub fn run_combat_search_v2_with_stepper(
             );
             child.note_turn_prefix(&node.combat, &choice.input, turn_transition);
             child.note_input(&choice.input);
+            child.note_action_prior_score(action_prior_state_hash.as_ref().and_then(
+                |state_hash| {
+                    config
+                        .root_action_prior
+                        .as_ref()
+                        .and_then(|prior| prior.score(state_hash, &choice.action_key))
+                },
+            ));
             child.note_potion_tactical_priority(potion_tactical_priority);
             child.note_turn_branch_priority(turn_transition.frontier_priority_hint());
             turn_branching.observe_child(turn_transition);

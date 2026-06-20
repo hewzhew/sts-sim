@@ -48,6 +48,7 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
         cards_played: 0,
         potion_tactical_priority: 0,
         last_turn_branch_priority: 0,
+        action_prior_score: None,
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let position = CombatPosition::new(engine.clone(), combat.clone());

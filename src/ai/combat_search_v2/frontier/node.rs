@@ -18,6 +18,7 @@ pub(in crate::ai::combat_search_v2) struct SearchNode {
     pub(in crate::ai::combat_search_v2) cards_played: u32,
     pub(in crate::ai::combat_search_v2) potion_tactical_priority: i32,
     pub(in crate::ai::combat_search_v2) last_turn_branch_priority: i32,
+    pub(in crate::ai::combat_search_v2) action_prior_score: Option<f64>,
     pub(in crate::ai::combat_search_v2) rollout_estimate: RolloutNodeEstimate,
 }
 
@@ -38,6 +39,7 @@ impl SearchNode {
             cards_played: self.cards_played,
             potion_tactical_priority: self.potion_tactical_priority,
             last_turn_branch_priority: self.last_turn_branch_priority,
+            action_prior_score: None,
             rollout_estimate: RolloutNodeEstimate::unevaluated(),
         }
     }
@@ -68,6 +70,10 @@ impl SearchNode {
 
     pub(in crate::ai::combat_search_v2) fn note_turn_branch_priority(&mut self, priority: i32) {
         self.last_turn_branch_priority = priority;
+    }
+
+    pub(in crate::ai::combat_search_v2) fn note_action_prior_score(&mut self, score: Option<f64>) {
+        self.action_prior_score = score.filter(|score| score.is_finite());
     }
 
     pub(in crate::ai::combat_search_v2) fn note_turn_prefix(
