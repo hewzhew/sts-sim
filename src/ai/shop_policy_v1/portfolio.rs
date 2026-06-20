@@ -1,6 +1,6 @@
 use super::types::{
     ShopDecisionContextV1, ShopPlanCandidateRoleV1, ShopPlanCandidateV1, ShopPlanKindV1,
-    ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
+    ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1,
 };
 
 pub(super) fn evaluated_shop_portfolio_combo_plans_v1(
@@ -41,7 +41,7 @@ fn evaluated_combo_option_v1(
     candidate: &ShopPlanCandidateV1,
 ) -> Option<EvaluatedShopComboOptionV1> {
     if candidate.role != ShopPlanCandidateRoleV1::SingleAction
-        || candidate.evaluation.verdict != ShopPlanVerdictV1::Allow
+        || !candidate.evaluation.execution_approval.is_approved()
         || candidate.plan.steps.len() != 1
     {
         return None;

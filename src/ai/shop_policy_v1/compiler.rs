@@ -128,11 +128,8 @@ fn branch_exploration_projection_v1(
         .iter()
         .filter(|candidate| {
             !candidate.plan.steps.is_empty()
-                && (candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
-                    || shop_plan_candidate_is_branch_exploration_probe_v1(
-                        strategic_trace,
-                        candidate,
-                    ))
+                && candidate.evaluation.branch_admission.is_admitted()
+                && !plan_has_leave_shop_step_v1(candidate)
         })
         .collect::<Vec<_>>();
     if branch_should_include_leave_with_allowed_candidates_v1(context)
@@ -174,38 +171,6 @@ fn branch_exploration_projection_v1(
         .collect()
 }
 
-fn shop_plan_candidate_is_branch_exploration_probe_v1(
-    strategic_trace: &StrategicDecisionTrace,
-    candidate: &ShopPlanCandidateV1,
-) -> bool {
-    if candidate.evaluation.verdict != ShopPlanVerdictV1::Block {
-        return false;
-    }
-    if candidate.plan.steps.len() != 1 {
-        return false;
-    }
-    if !matches!(
-        candidate.plan.steps.first(),
-        Some(ShopPlanStepV1::BuyCard { .. })
-    ) {
-        return false;
-    }
-    if !candidate
-        .evaluation
-        .reasons
-        .iter()
-        .any(|reason| reason.contains("strategic trace blocks shop purchase behavior acquisition"))
-    {
-        return false;
-    }
-    let Some(delta) = plan_delta_from_strategic_trace_v1(strategic_trace, &candidate.plan) else {
-        return false;
-    };
-    delta
-        .acquisition_thesis_profile_v1()
-        .branch_exploration_worthy()
-}
-
 fn shop_plan_frontier_v1(
     strategic_trace: &StrategicDecisionTrace,
     candidates: &[ShopPlanCandidateV1],
@@ -234,6 +199,9 @@ fn shop_plan_is_selectable_in_mode_v1(
     candidate: &ShopPlanCandidateV1,
     mode: ShopCompileModeV1,
 ) -> bool {
+    if !candidate.evaluation.execution_approval.is_approved() {
+        return false;
+    }
     match mode {
         ShopCompileModeV1::BranchTopK { .. } => true,
         ShopCompileModeV1::ExecuteOne => !shop_plan_is_context_card_purchase_v1(candidate),
@@ -241,7 +209,7 @@ fn shop_plan_is_selectable_in_mode_v1(
 }
 
 fn shop_plan_is_context_card_purchase_v1(candidate: &ShopPlanCandidateV1) -> bool {
-    candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
+    candidate.evaluation.execution_approval.is_approved()
         && candidate.evaluation.tier < 320
         && candidate.plan.steps.len() == 1
         && matches!(
@@ -428,7 +396,7 @@ fn candidate_rank_v1(
     mode: ShopCompileModeV1,
 ) -> (i32, i32, i32, i32, i32, i32, std::cmp::Reverse<String>) {
     (
-        verdict_rank_v1(candidate.evaluation.verdict),
+        execution_rank_v1(candidate),
         candidate.evaluation.tier,
         component_net_rank_v1(candidate),
         (candidate.evaluation.confidence * 1000.0).round() as i32,
@@ -456,6 +424,13 @@ fn verdict_rank_v1(verdict: ShopPlanVerdictV1) -> i32 {
         ShopPlanVerdictV1::Stop => 1,
         ShopPlanVerdictV1::Block => 0,
     }
+}
+
+fn execution_rank_v1(candidate: &ShopPlanCandidateV1) -> i32 {
+    if candidate.evaluation.execution_approval.is_approved() {
+        return verdict_rank_v1(candidate.evaluation.verdict).max(1);
+    }
+    0
 }
 
 fn role_rank_v1(candidate: &ShopPlanCandidateV1, mode: ShopCompileModeV1) -> i32 {

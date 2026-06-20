@@ -142,13 +142,20 @@ fn evaluate_purchase_v1(
             );
         };
         if !strategic_decision.verdict.allows_behavior_acquisition() {
-            return ShopPlanEvaluationV1::block(
+            let evaluation = ShopPlanEvaluationV1::block(
                 candidate.purchase_priority,
                 format!(
                     "strategic trace blocks shop purchase behavior acquisition verdict={:?} score={:.2}",
                     strategic_decision.verdict, strategic_decision.score
                 ),
             );
+            return if shop_purchase_candidate_is_branch_worthy_v1(target, strategic_trace) {
+                evaluation.with_branch_admission(
+                    "shop purchase denied for behavior execution, but admitted for branch exploration by acquisition thesis",
+                )
+            } else {
+                evaluation
+            };
         }
         return strategic_purchase_evaluation_v1(
             candidate.purchase_priority,
@@ -253,7 +260,7 @@ fn evaluate_portfolio_plan_v1(
             );
         };
         let evaluation = evaluate_single_candidate_v1(config, strategic_trace, candidate);
-        if evaluation.verdict != super::types::ShopPlanVerdictV1::Allow {
+        if !evaluation.execution_approval.is_approved() {
             let reason = evaluation
                 .reasons
                 .first()
@@ -328,6 +335,29 @@ fn purchase_strategic_decision(
         gold: 0,
     };
     strategic_trace.compiled_for_action(&action)
+}
+
+fn shop_purchase_candidate_is_branch_worthy_v1(
+    target: ShopPurchaseTargetV1,
+    strategic_trace: &StrategicDecisionTrace,
+) -> bool {
+    let ShopPurchaseTargetV1::Card { index, card } = target else {
+        return false;
+    };
+    let action = CandidateAction::BuyCard {
+        shop_index: index,
+        card,
+        gold: 0,
+    };
+    strategic_trace
+        .candidate_deltas
+        .iter()
+        .find(|delta| delta.action == action)
+        .is_some_and(|delta| {
+            delta
+                .acquisition_thesis_profile_v1()
+                .branch_exploration_worthy()
+        })
 }
 
 fn starter_purge_strategic_decision<'a>(

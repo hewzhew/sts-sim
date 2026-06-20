@@ -215,7 +215,12 @@ pub enum ShopPlanCandidateRoleV1 {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShopPlanEvaluationV1 {
+    /// Legacy compatibility verdict. This is no longer the single source of
+    /// truth for both automation and branch exploration; use
+    /// execution_approval and branch_admission at new call sites.
     pub verdict: ShopPlanVerdictV1,
+    pub execution_approval: ShopPlanExecutionApprovalV1,
+    pub branch_admission: ShopPlanBranchAdmissionV1,
     pub tier: i32,
     pub score: i32,
     pub confidence: f32,
@@ -232,6 +237,70 @@ pub enum ShopPlanVerdictV1 {
     Allow,
     Stop,
     Block,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ShopPlanExecutionApprovalV1 {
+    pub status: ShopPlanExecutionStatusV1,
+    pub reason: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopPlanExecutionStatusV1 {
+    Approved,
+    Denied,
+}
+
+impl ShopPlanExecutionApprovalV1 {
+    pub(crate) fn approved(reason: impl Into<String>) -> Self {
+        Self {
+            status: ShopPlanExecutionStatusV1::Approved,
+            reason: reason.into(),
+        }
+    }
+
+    pub(crate) fn denied(reason: impl Into<String>) -> Self {
+        Self {
+            status: ShopPlanExecutionStatusV1::Denied,
+            reason: reason.into(),
+        }
+    }
+
+    pub fn is_approved(&self) -> bool {
+        self.status == ShopPlanExecutionStatusV1::Approved
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ShopPlanBranchAdmissionV1 {
+    pub status: ShopPlanBranchAdmissionStatusV1,
+    pub reason: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopPlanBranchAdmissionStatusV1 {
+    Admit,
+    Reject,
+}
+
+impl ShopPlanBranchAdmissionV1 {
+    pub(crate) fn admit(reason: impl Into<String>) -> Self {
+        Self {
+            status: ShopPlanBranchAdmissionStatusV1::Admit,
+            reason: reason.into(),
+        }
+    }
+
+    pub(crate) fn reject(reason: impl Into<String>) -> Self {
+        Self {
+            status: ShopPlanBranchAdmissionStatusV1::Reject,
+            reason: reason.into(),
+        }
+    }
+
+    pub fn is_admitted(&self) -> bool {
+        self.status == ShopPlanBranchAdmissionStatusV1::Admit
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -267,6 +336,8 @@ impl ShopPlanEvaluationV1 {
     pub(crate) fn pending() -> Self {
         Self {
             verdict: ShopPlanVerdictV1::Block,
+            execution_approval: ShopPlanExecutionApprovalV1::denied("pending shop plan evaluation"),
+            branch_admission: ShopPlanBranchAdmissionV1::reject("pending shop plan evaluation"),
             tier: 0,
             score: 0,
             confidence: 0.0,
@@ -288,6 +359,12 @@ impl ShopPlanEvaluationV1 {
     ) -> Self {
         Self {
             verdict: ShopPlanVerdictV1::Allow,
+            execution_approval: ShopPlanExecutionApprovalV1::approved(
+                "shop plan approved for behavior execution",
+            ),
+            branch_admission: ShopPlanBranchAdmissionV1::admit(
+                "shop plan admitted for branch exploration",
+            ),
             tier,
             score,
             confidence,
@@ -301,6 +378,12 @@ impl ShopPlanEvaluationV1 {
     pub(crate) fn stop(reason: impl Into<String>) -> Self {
         Self {
             verdict: ShopPlanVerdictV1::Stop,
+            execution_approval: ShopPlanExecutionApprovalV1::approved(
+                "shop stop/leave plan approved for behavior execution",
+            ),
+            branch_admission: ShopPlanBranchAdmissionV1::admit(
+                "shop stop/leave plan admitted for branch exploration",
+            ),
             tier: 0,
             score: 0,
             confidence: 0.0,
@@ -314,6 +397,12 @@ impl ShopPlanEvaluationV1 {
     pub(crate) fn block(legacy_priority: Option<i32>, reason: impl Into<String>) -> Self {
         Self {
             verdict: ShopPlanVerdictV1::Block,
+            execution_approval: ShopPlanExecutionApprovalV1::denied(
+                "shop plan denied for behavior execution",
+            ),
+            branch_admission: ShopPlanBranchAdmissionV1::reject(
+                "shop plan rejected for branch exploration",
+            ),
             tier: 0,
             score: legacy_priority.unwrap_or_default(),
             confidence: 0.0,
@@ -322,6 +411,11 @@ impl ShopPlanEvaluationV1 {
             components: Vec::new(),
             component_score: ShopPlanComponentScoreV1::neutral("component score not attached yet"),
         }
+    }
+
+    pub(crate) fn with_branch_admission(mut self, reason: impl Into<String>) -> Self {
+        self.branch_admission = ShopPlanBranchAdmissionV1::admit(reason);
+        self
     }
 }
 
@@ -479,6 +573,14 @@ fn compiled_shop_evidence_item(candidate: &ShopPlanCandidateV1) -> EvidenceItemV
     let mut components = vec![
         ValueComponentV1::new(format!("role_{:?}", candidate.role), 1.0),
         ValueComponentV1::new(format!("verdict_{:?}", evaluation.verdict), 1.0),
+        ValueComponentV1::new(
+            format!("execution_{:?}", evaluation.execution_approval.status),
+            1.0,
+        ),
+        ValueComponentV1::new(
+            format!("branch_{:?}", evaluation.branch_admission.status),
+            1.0,
+        ),
         ValueComponentV1::new("tier", evaluation.tier as f32),
         ValueComponentV1::new("score", evaluation.score as f32),
         ValueComponentV1::new("confidence", evaluation.confidence),
@@ -492,9 +594,11 @@ fn compiled_shop_evidence_item(candidate: &ShopPlanCandidateV1) -> EvidenceItemV
         kind: EvidenceKindV1::PolicyGate,
         candidate_id: Some(candidate.plan.plan_id.clone()),
         label: format!(
-            "shop plan role={:?} verdict={:?} tier={} score={} source={:?}",
+            "shop plan role={:?} verdict={:?} execution={:?} branch={:?} tier={} score={} source={:?}",
             candidate.role,
             evaluation.verdict,
+            evaluation.execution_approval.status,
+            evaluation.branch_admission.status,
             evaluation.tier,
             evaluation.score,
             candidate.plan.source

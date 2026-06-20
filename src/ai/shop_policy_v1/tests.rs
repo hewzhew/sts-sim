@@ -6,8 +6,9 @@ use crate::ai::decision_tags_v1::{
 use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, compile_shop_decision_v1, shop_card_conversion_priority_v1,
     ShopCompileModeV1, ShopDecisionSourceV1, ShopPlanCandidateRoleV1, ShopPlanComponentKindV1,
-    ShopPlanKindV1, ShopPlanProjectionRoleV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1,
-    ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    ShopPlanExecutionStatusV1, ShopPlanKindV1, ShopPlanProjectionRoleV1, ShopPlanSourceV1,
+    ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1,
+    ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{
     CandidateAction, PressureKind, StrategicBossTax, StrategicDebt, StrategicJob,
@@ -1085,14 +1086,8 @@ fn compiled_shop_branch_alternatives_are_evaluated_plan_candidates() {
             .find(|candidate| candidate.plan.plan_id == alternative.plan_id)
             .expect("alternative must be backed by an evaluated candidate plan");
         assert!(
-            candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
-                || (candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
-                    && candidate
-                        .plan
-                        .steps
-                        .iter()
-                        .any(|step| matches!(step, ShopPlanStepV1::LeaveShop))),
-            "branch alternatives may include executable purchases or an explicit leave-shop branch, got {:?}",
+            candidate.evaluation.branch_admission.is_admitted(),
+            "branch alternatives must come from branch admission, got {:?}",
             candidate
         );
         assert!(
@@ -1199,6 +1194,74 @@ fn compiled_shop_branch_alternatives_are_not_limited_to_legacy_portfolio() {
     assert!(
         alternative_roles.contains(&ShopPlanCandidateRoleV1::SingleAction),
         "branch alternatives should come from the evaluated candidate pool, not only legacy portfolio candidates: {alternative_roles:?}"
+    );
+}
+
+#[test]
+fn compiled_shop_branch_projection_can_admit_non_executable_thesis_candidate() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.act_num = 1;
+    run_state.floor_num = 10;
+    run_state.boss_key = Some(EncounterId::TheGuardian);
+    run_state.gold = 197;
+    run_state.add_card_to_deck(CardId::PowerThrough);
+    run_state.add_card_to_deck_with_upgrades(CardId::Warcry, 1);
+    run_state.add_card_to_deck(CardId::PommelStrike);
+    run_state.add_card_to_deck(CardId::Intimidate);
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Reaper,
+        upgrades: 0,
+        price: 80,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 4 },
+    );
+    let reaper_plan = compiled
+        .candidate_plans
+        .iter()
+        .find(|candidate| {
+            candidate.plan.steps.iter().any(|step| {
+                matches!(
+                    step,
+                    ShopPlanStepV1::BuyCard {
+                        card: CardId::Reaper,
+                        ..
+                    }
+                )
+            })
+        })
+        .expect("Reaper shop plan candidate should exist");
+
+    assert_eq!(reaper_plan.evaluation.verdict, ShopPlanVerdictV1::Block);
+    assert_eq!(
+        reaper_plan.evaluation.execution_approval.status,
+        ShopPlanExecutionStatusV1::Denied,
+        "branch exploration must not imply behavior execution approval"
+    );
+    assert!(
+        reaper_plan.evaluation.branch_admission.is_admitted(),
+        "future-sustain acquisition thesis should be admitted to branch exploration without being auto-executable"
+    );
+    assert!(
+        compiled
+            .branch_projection
+            .iter()
+            .any(|projection| projection.plan_id == reaper_plan.plan.plan_id),
+        "branch projection should consume branch_admission, not verdict Allow"
+    );
+    assert!(
+        compiled
+            .execution_projection
+            .as_ref()
+            .is_none_or(|projection| projection.plan_id != reaper_plan.plan.plan_id),
+        "execution projection must consume execution_approval, not branch_admission"
     );
 }
 
@@ -1433,7 +1496,7 @@ fn compiled_shop_portfolio_retains_multiple_multi_step_plans() {
         .filter(|candidate| {
             candidate.role == ShopPlanCandidateRoleV1::PortfolioAlternative
                 && candidate.plan.steps.len() >= 2
-                && candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
+                && candidate.evaluation.execution_approval.is_approved()
         })
         .collect::<Vec<_>>();
     let distinct_plan_ids = multi_step_portfolio

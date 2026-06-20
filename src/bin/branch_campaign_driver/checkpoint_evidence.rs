@@ -406,9 +406,11 @@ fn render_shop_plan_candidate_summary_v1(
         .take(4)
         .map(|candidate| {
             format!(
-                "{:?}:{:?}:tier{}:score{}:{}",
+                "{:?}:{:?}:exec{:?}:branch{:?}:tier{}:score{}:{}",
                 candidate.role,
                 candidate.evaluation.verdict,
+                candidate.evaluation.execution_approval.status,
+                candidate.evaluation.branch_admission.status,
                 candidate.evaluation.tier,
                 candidate.evaluation.score,
                 candidate.plan.plan_id
@@ -444,8 +446,17 @@ fn render_shop_plan_evaluation_v1(
         .map(|value| value.to_string())
         .unwrap_or_else(|| "-".to_string());
     format!(
-        "evaluation={:?} tier={} score={} confidence={:.2} legacy_estimate={} component_score=net:{:.1}/pos:{:.1}/neg:{:.1}/conf:{:.2} components=[{}] reasons=[{}]",
+        "evaluation={:?} execution={:?} branch={} tier={} score={} confidence={:.2} legacy_estimate={} component_score=net:{:.1}/pos:{:.1}/neg:{:.1}/conf:{:.2} components=[{}] reasons=[{}]",
         evaluation.verdict,
+        evaluation.execution_approval.status,
+        match evaluation.branch_admission.status {
+            sts_simulator::ai::shop_policy_v1::ShopPlanBranchAdmissionStatusV1::Admit => {
+                format!("Admit({})", evaluation.branch_admission.reason)
+            }
+            sts_simulator::ai::shop_policy_v1::ShopPlanBranchAdmissionStatusV1::Reject => {
+                format!("Reject({})", evaluation.branch_admission.reason)
+            }
+        },
         evaluation.tier,
         evaluation.score,
         evaluation.confidence,
