@@ -7,11 +7,14 @@ use crate::ai::combat_search_v2::{
     CombatSearchV2Report, CombatSearchV2TurnPlanProbeCandidateReport,
     CombatSearchV2TurnPlanProbeRootReport, SearchTerminalLabel,
 };
+use crate::eval::fingerprint::combat_state_fingerprint_v1;
+use crate::sim::combat::CombatPosition;
 
 use super::{
     CombatSearchGuidanceLabChildSearchV1, CombatSearchGuidanceLabTargetV1,
     CombatSearchGuidanceLabTrajectoryV1, CombatSearchV2BenchmarkInputKind,
-    CombatSearchV2LoadedBenchmark, CombatSearchV2LoadedStart, CombatSearchV2RunOptions,
+    CombatSearchV2InputFingerprintReport, CombatSearchV2LoadedBenchmark, CombatSearchV2LoadedStart,
+    CombatSearchV2RunOptions,
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -21,6 +24,7 @@ pub struct CombatTurnPlanGuidanceLabV1Report {
     pub label_role: &'static str,
     pub policy_quality_claim: bool,
     pub input_label: String,
+    pub root_fingerprints: CombatSearchV2InputFingerprintReport,
     pub root: CombatSearchV2TurnPlanProbeRootReport,
     pub candidates: Vec<CombatTurnPlanGuidanceLabCandidateV1>,
     pub summary: CombatTurnPlanGuidanceLabSummaryV1,
@@ -62,6 +66,7 @@ pub struct CombatTurnPlanGuidanceLabBenchmarkCaseV1 {
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatTurnPlanGuidanceLabCandidateV1 {
     pub plan: CombatSearchV2TurnPlanProbeCandidateReport,
+    pub end_fingerprints: CombatSearchV2InputFingerprintReport,
     pub child_search: Option<CombatSearchGuidanceLabChildSearchV1>,
     pub target: CombatSearchGuidanceLabTargetV1,
 }
@@ -155,6 +160,7 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
             let target = plan_target(&candidate.report, child_search.as_ref());
             CombatTurnPlanGuidanceLabCandidateV1 {
                 plan: candidate.report.clone(),
+                end_fingerprints: fingerprint_report_for_position(&candidate.position),
                 child_search,
                 target,
             }
@@ -164,10 +170,15 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
 
     CombatTurnPlanGuidanceLabV1Report {
         schema_name: "CombatTurnPlanGuidanceLabV1Report",
-        schema_version: 1,
+        schema_version: 2,
         label_role: "oracle_turn_plan_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         input_label: loaded.label.clone(),
+        root_fingerprints: loaded
+            .fingerprints
+            .as_ref()
+            .map(CombatSearchV2InputFingerprintReport::from)
+            .unwrap_or_else(|| fingerprint_report_for_position(&loaded.position)),
         root: enumeration.report,
         candidates,
         summary,
@@ -177,6 +188,12 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
             "plan candidates are bounded by root turn-plan enumeration limits",
         ],
     }
+}
+
+fn fingerprint_report_for_position(
+    position: &CombatPosition,
+) -> CombatSearchV2InputFingerprintReport {
+    CombatSearchV2InputFingerprintReport::from(&combat_state_fingerprint_v1(position))
 }
 
 fn child_search_report(report: &CombatSearchV2Report) -> CombatSearchGuidanceLabChildSearchV1 {

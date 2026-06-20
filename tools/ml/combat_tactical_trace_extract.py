@@ -324,6 +324,8 @@ def candidate_trace(
     candidate: dict[str, Any],
 ) -> dict[str, Any]:
     plan = as_dict(candidate.get("plan"))
+    end_fingerprints = as_dict(candidate.get("end_fingerprints"))
+    end_exact_state_hash = end_fingerprints.get("exact_state_hash")
     source_steps = [step for step in as_list(plan.get("steps")) if isinstance(step, dict)]
     if source_steps:
         actions = [as_dict(step.get("action")) for step in source_steps]
@@ -366,8 +368,13 @@ def candidate_trace(
         },
         "steps": steps,
         "plan_summary": plan_tactical_summary(root_state, plan, action_facts),
-        "final_state_ref": None,
-        "final_state_hash": None,
+        "final_state_ref": (
+            f"exact_state:{end_exact_state_hash}" if isinstance(end_exact_state_hash, str) else None
+        ),
+        "final_state_hash": end_exact_state_hash if isinstance(end_exact_state_hash, str) else None,
+        "final_state_hash_kind": "eval_combat_state_fingerprint_v1"
+        if isinstance(end_exact_state_hash, str)
+        else None,
         "final_state_summary": plan.get("end_state"),
         "outcome_attachment": {
             "data_role": "SearchLabel",
@@ -748,9 +755,14 @@ def episode_from_lab(meta: dict[str, Any], lab: dict[str, Any]) -> dict[str, Any
     candidates = [candidate for candidate in as_list(lab.get("candidates")) if isinstance(candidate, dict)]
     traces = [candidate_trace(root_state, candidate) for candidate in candidates]
     context = root_tactical_context(traces)
-    limitations = [
-        "exact_state_refs_and_hashes_not_exported_by_current_turn_plan_report",
-    ]
+    root_fingerprints = as_dict(lab.get("root_fingerprints"))
+    root_exact_state_hash = root_fingerprints.get("exact_state_hash")
+    root_exact_state_ref = (
+        f"exact_state:{root_exact_state_hash}" if isinstance(root_exact_state_hash, str) else None
+    )
+    limitations = []
+    if not root_exact_state_ref or any(not trace.get("final_state_hash") for trace in traces):
+        limitations.append("some_exact_state_refs_and_hashes_not_exported_by_source_report")
     if not enemy_slots:
         limitations.append("enemy_slot_public_view_not_available_from_capture")
     if any("action_facts_not_available_in_source_report" in trace["limitations"] for trace in traces):
@@ -773,8 +785,13 @@ def episode_from_lab(meta: dict[str, Any], lab: dict[str, Any]) -> dict[str, Any
             "notes": lab.get("notes") or [],
         },
         "root": {
-            "exact_state_ref": None,
-            "exact_state_hash": None,
+            "exact_state_ref": root_exact_state_ref,
+            "exact_state_hash": root_exact_state_hash
+            if isinstance(root_exact_state_hash, str)
+            else None,
+            "exact_state_hash_kind": "eval_combat_state_fingerprint_v1"
+            if root_exact_state_ref
+            else None,
             "public_view": {
                 "data_role": "ObservedExact",
                 "availability": "RootOnly",
