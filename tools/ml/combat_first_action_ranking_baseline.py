@@ -373,6 +373,18 @@ def display_card_from_normalized(card: str) -> str:
     return f"{base}+" if upgraded else base
 
 
+def display_action_target_suffix(action_key: str) -> str:
+    target = TARGET_IN_ACTION_RE.search(action_key)
+    if not target:
+        return ""
+    target_value = target.group(1)
+    if target_value == "none":
+        return ""
+    if target_value.startswith("monster_slot:"):
+        return f"@m{target_value.split(':', 1)[1]}"
+    return f"@{target_value}"
+
+
 def add_turn_plan_root_delta_features(
     features: dict[str, float],
     state: dict[str, Any],
@@ -1314,7 +1326,7 @@ def plan_summary(sample: dict[str, Any]) -> str:
         text = str(key)
         card = normalized_card_from_action_key(text)
         if card:
-            preview.append(display_card_from_normalized(card))
+            preview.append(f"{display_card_from_normalized(card)}{display_action_target_suffix(text)}")
         elif text == "combat/end_turn":
             preview.append("end")
         else:
