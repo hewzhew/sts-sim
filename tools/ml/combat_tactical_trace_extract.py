@@ -564,6 +564,66 @@ def selected_diagnostic_traces(
     return list(merged.values())
 
 
+def candidate_set_contrast(traces: list[dict[str, Any]]) -> dict[str, Any]:
+    first = min(traces, key=trace_plan_index) if traces else {}
+    first_counterfactual = as_dict(as_dict(first).get("counterfactual"))
+    role_plans = []
+    for roles, trace in selected_diagnostic_traces(traces):
+        summary = as_dict(trace.get("plan_summary"))
+        outcome = as_dict(trace.get("outcome_attachment"))
+        role_plans.append(
+            {
+                "roles": roles,
+                "plan_id": trace.get("plan_id"),
+                "plan_index": trace.get("plan_index"),
+                "selection_scope": "same_root_bounded_candidate_set",
+                "hp_lost_to_plan_boundary": summary.get("hp_lost_to_plan_boundary"),
+                "enemy_hp_removed_to_plan_boundary": summary.get(
+                    "enemy_hp_removed_to_plan_boundary"
+                ),
+                "enemy_kill_count_to_plan_boundary": summary.get(
+                    "enemy_kill_count_to_plan_boundary"
+                ),
+                "potion_actions": summary.get("potion_actions"),
+                "final_hp": outcome.get("final_hp"),
+                "terminal": outcome.get("terminal"),
+                "complete_win": outcome.get("complete_win"),
+            }
+        )
+    return {
+        "data_role": "DiagnosticDerived",
+        "availability": "PostSearch",
+        "selector_set": "first_safety_progress_label_v1",
+        "candidate_set_scope": "same_root_bounded_turn_plan_candidates",
+        "role_plans": role_plans,
+        "first_plan_gaps": {
+            "plan_id": first.get("plan_id") if first else None,
+            "hp_loss_regret_vs_best_boundary": first_counterfactual.get(
+                "hp_loss_regret_vs_best_boundary"
+            ),
+            "enemy_hp_progress_gap_vs_best_boundary": first_counterfactual.get(
+                "enemy_hp_progress_gap_vs_best_boundary"
+            ),
+            "kill_count_gap_vs_best_boundary": first_counterfactual.get(
+                "kill_count_gap_vs_best_boundary"
+            ),
+            "final_hp_regret_vs_best_labeled": first_counterfactual.get(
+                "final_hp_regret_vs_best_labeled"
+            ),
+        },
+        "selector_definitions": {
+            "first": "lowest enumerated plan_index",
+            "safety": "lowest boundary hp loss, then higher labeled final hp",
+            "progress": "highest boundary kills and enemy hp removed, then lower hp loss",
+            "label": "best bounded child-search label, preferring complete wins and final hp",
+        },
+        "limitations": [
+            "diagnostic_only_not_policy_label",
+            "relative_to_bounded_candidate_set_not_global_optimum",
+        ],
+    }
+
+
 def short_action_label(action_key: Any, action_debug: Any = None) -> str:
     key = str(action_key or action_debug or "")
     if not key:
@@ -650,6 +710,8 @@ def print_diagnostic_cases(episodes: list[dict[str, Any]], case_limit: int) -> N
         root_view = as_dict(as_dict(episode.get("root")).get("public_view"))
         root_state = as_dict(root_view.get("state"))
         traces = [trace for trace in as_list(episode.get("candidate_plans")) if isinstance(trace, dict)]
+        trace_by_id = {str(trace.get("plan_id")): trace for trace in traces}
+        contrast = as_dict(episode.get("candidate_set_contrast"))
         case_id = source.get("case_id") or source.get("input_label")
         print(
             f"    case={case_id} "
@@ -658,16 +720,19 @@ def print_diagnostic_cases(episodes: list[dict[str, Any]], case_limit: int) -> N
             f"incoming={root_state.get('visible_incoming_damage')} "
             f"enemy_hp={root_state.get('total_enemy_hp')}"
         )
-        for roles, trace in selected_diagnostic_traces(traces):
-            print(diagnostic_trace_line(roles, trace))
-        first = min(traces, key=trace_plan_index) if traces else {}
-        cf = as_dict(as_dict(first).get("counterfactual"))
+        for role_plan in as_list(contrast.get("role_plans")):
+            if not isinstance(role_plan, dict):
+                continue
+            trace = trace_by_id.get(str(role_plan.get("plan_id")))
+            if trace:
+                print(diagnostic_trace_line(as_list(role_plan.get("roles")), trace))
+        gaps = as_dict(contrast.get("first_plan_gaps"))
         print(
             "      gaps(first_vs_candidate_set): "
-            f"hp_loss_regret={cf.get('hp_loss_regret_vs_best_boundary')} "
-            f"progress_gap={cf.get('enemy_hp_progress_gap_vs_best_boundary')} "
-            f"kill_gap={cf.get('kill_count_gap_vs_best_boundary')} "
-            f"final_hp_regret={cf.get('final_hp_regret_vs_best_labeled')}"
+            f"hp_loss_regret={gaps.get('hp_loss_regret_vs_best_boundary')} "
+            f"progress_gap={gaps.get('enemy_hp_progress_gap_vs_best_boundary')} "
+            f"kill_gap={gaps.get('kill_count_gap_vs_best_boundary')} "
+            f"final_hp_regret={gaps.get('final_hp_regret_vs_best_labeled')}"
         )
     if len(episodes) > case_limit:
         print(f"    ... {len(episodes) - case_limit} more episode(s)")
@@ -722,6 +787,7 @@ def episode_from_lab(meta: dict[str, Any], lab: dict[str, Any]) -> dict[str, Any
         },
         "candidate_plans": traces,
         "root_tactical_context": context,
+        "candidate_set_contrast": candidate_set_contrast(traces),
         "label_bundle": {
             "data_role": "SearchLabel",
             "availability": "PostSearch",
