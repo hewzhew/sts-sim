@@ -25,6 +25,7 @@ pub struct CombatTurnPlanGuidanceLabV1Report {
     pub policy_quality_claim: bool,
     pub input_label: String,
     pub root_fingerprints: CombatSearchV2InputFingerprintReport,
+    pub baseline_search: CombatSearchGuidanceLabChildSearchV1,
     pub root: CombatSearchV2TurnPlanProbeRootReport,
     pub candidates: Vec<CombatTurnPlanGuidanceLabCandidateV1>,
     pub summary: CombatTurnPlanGuidanceLabSummaryV1,
@@ -82,6 +83,7 @@ pub struct CombatTurnPlanGuidanceLabSummaryV1 {
     pub best_target_plan_index: Option<usize>,
     pub first_plan_rank_by_target: Option<usize>,
     pub current_first_vs_best_target: Option<CombatTurnPlanGuidanceSelectedComparisonV1>,
+    pub baseline_vs_best_guided_prefix: Option<CombatTurnPlanGuidanceBaselineComparisonV1>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -155,6 +157,32 @@ pub struct CombatTurnPlanGuidanceOutcomeDeltaV1 {
     pub nodes_expanded_delta: Option<i64>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatTurnPlanGuidanceBaselineComparisonV1 {
+    pub verdict: &'static str,
+    pub baseline: CombatTurnPlanGuidanceSearchSnapshotV1,
+    pub best_guided_prefix: CombatTurnPlanGuidancePlanSnapshotV1,
+    pub delta_guided_minus_baseline: CombatTurnPlanGuidanceOutcomeDeltaV1,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatTurnPlanGuidanceSearchSnapshotV1 {
+    pub source: &'static str,
+    pub terminal: SearchTerminalLabel,
+    pub complete_win: bool,
+    pub final_hp: Option<i32>,
+    pub hp_loss: Option<i32>,
+    pub turns: Option<u32>,
+    pub potions_used: Option<u32>,
+    pub cards_played: Option<u32>,
+    pub action_count: Option<usize>,
+    pub first_action_key: Option<String>,
+    pub nodes_expanded: u64,
+    pub nodes_generated: u64,
+    pub terminal_wins: u64,
+    pub elapsed_ms: u128,
+}
+
 pub fn run_combat_turn_plan_guidance_lab_benchmark_v1(
     loaded: &CombatSearchV2LoadedBenchmark,
     root_options: CombatSearchV2RunOptions,
@@ -203,6 +231,11 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
 ) -> CombatTurnPlanGuidanceLabV1Report {
     let root_config =
         root_options.to_search_config_for_position(loaded.label.clone(), &loaded.position);
+    let baseline_search = child_search_report(&run_combat_search_v2(
+        &loaded.position.engine,
+        &loaded.position.combat,
+        root_config.clone(),
+    ));
     let enumeration = enumerate_combat_search_v2_turn_plan_probe_candidates(
         &loaded.position.engine,
         &loaded.position.combat,
@@ -240,11 +273,11 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
             }
         })
         .collect::<Vec<_>>();
-    let summary = summarize_candidates(&candidates);
+    let summary = summarize_candidates(&candidates, &baseline_search);
 
     CombatTurnPlanGuidanceLabV1Report {
         schema_name: "CombatTurnPlanGuidanceLabV1Report",
-        schema_version: 3,
+        schema_version: 4,
         label_role: "oracle_turn_plan_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         input_label: loaded.label.clone(),
@@ -253,6 +286,7 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
             .as_ref()
             .map(CombatSearchV2InputFingerprintReport::from)
             .unwrap_or_else(|| fingerprint_report_for_position(&loaded.position)),
+        baseline_search,
         root: enumeration.report,
         candidates,
         summary,
@@ -387,6 +421,7 @@ fn plan_target(
 
 fn summarize_candidates(
     candidates: &[CombatTurnPlanGuidanceLabCandidateV1],
+    baseline_search: &CombatSearchGuidanceLabChildSearchV1,
 ) -> CombatTurnPlanGuidanceLabSummaryV1 {
     let mut summary = CombatTurnPlanGuidanceLabSummaryV1 {
         candidate_count: candidates.len(),
@@ -403,6 +438,8 @@ fn summarize_candidates(
         .position(|candidate| candidate.plan.plan_index == 0)
         .map(|index| index + 1);
     summary.current_first_vs_best_target = selected_vs_best_target_report(candidates);
+    summary.baseline_vs_best_guided_prefix =
+        baseline_vs_best_guided_prefix_report(baseline_search, candidates);
 
     for candidate in candidates {
         if candidate.child_search.is_some() {
@@ -504,6 +541,50 @@ fn selected_vs_best_target_report(
     })
 }
 
+fn baseline_vs_best_guided_prefix_report(
+    baseline_search: &CombatSearchGuidanceLabChildSearchV1,
+    candidates: &[CombatTurnPlanGuidanceLabCandidateV1],
+) -> Option<CombatTurnPlanGuidanceBaselineComparisonV1> {
+    let baseline = search_snapshot(baseline_search);
+    let best = candidates.iter().max_by(|left, right| {
+        compare_targets(&left.target, &right.target)
+            .then_with(|| right.plan.plan_index.cmp(&left.plan.plan_index))
+    })?;
+    let best_guided_prefix = plan_snapshot(best);
+    let delta = outcome_delta_plan_minus_search(&best_guided_prefix, &baseline);
+    Some(CombatTurnPlanGuidanceBaselineComparisonV1 {
+        verdict: guided_vs_baseline_verdict(&best_guided_prefix, &baseline),
+        baseline,
+        best_guided_prefix,
+        delta_guided_minus_baseline: delta,
+    })
+}
+
+fn search_snapshot(
+    search: &CombatSearchGuidanceLabChildSearchV1,
+) -> CombatTurnPlanGuidanceSearchSnapshotV1 {
+    let best_complete = search.best_complete.as_ref();
+    CombatTurnPlanGuidanceSearchSnapshotV1 {
+        source: "baseline_whole_combat_search",
+        terminal: best_complete
+            .map(|trajectory| trajectory.terminal)
+            .unwrap_or(SearchTerminalLabel::Unresolved),
+        complete_win: best_complete
+            .is_some_and(|trajectory| trajectory.terminal == SearchTerminalLabel::Win),
+        final_hp: best_complete.map(|trajectory| trajectory.final_hp),
+        hp_loss: best_complete.map(|trajectory| trajectory.hp_loss),
+        turns: best_complete.map(|trajectory| trajectory.turns),
+        potions_used: best_complete.map(|trajectory| trajectory.potions_used),
+        cards_played: best_complete.map(|trajectory| trajectory.cards_played),
+        action_count: best_complete.map(|trajectory| trajectory.action_count),
+        first_action_key: None,
+        nodes_expanded: search.nodes_expanded,
+        nodes_generated: search.nodes_generated,
+        terminal_wins: search.terminal_wins,
+        elapsed_ms: search.elapsed_ms,
+    }
+}
+
 fn plan_snapshot(
     candidate: &CombatTurnPlanGuidanceLabCandidateV1,
 ) -> CombatTurnPlanGuidancePlanSnapshotV1 {
@@ -511,14 +592,20 @@ fn plan_snapshot(
         .child_search
         .as_ref()
         .and_then(|child| child.best_complete.as_ref());
+    let final_hp = candidate.target.final_hp;
+    let root_hp = candidate
+        .plan
+        .steps
+        .first()
+        .map(|step| step.state_before.player_hp);
     CombatTurnPlanGuidancePlanSnapshotV1 {
         plan_index: candidate.plan.plan_index,
         first_action_key: candidate.plan.first_action_key.clone(),
         target_source: candidate.target.source,
         terminal: candidate.target.terminal,
         complete_win: candidate.target.complete_win,
-        final_hp: candidate.target.final_hp,
-        hp_loss: candidate.target.child_search_hp_loss,
+        final_hp,
+        hp_loss: root_total_hp_loss(root_hp, final_hp).or(candidate.target.child_search_hp_loss),
         turns: best_complete.map(|trajectory| trajectory.turns),
         potions_used: best_complete.map(|trajectory| trajectory.potions_used),
         cards_played: best_complete.map(|trajectory| trajectory.cards_played),
@@ -526,6 +613,10 @@ fn plan_snapshot(
         nodes_expanded: candidate.target.nodes_expanded,
         tactical: candidate.tactical.clone(),
     }
+}
+
+fn root_total_hp_loss(root_hp: Option<i32>, final_hp: Option<i32>) -> Option<i32> {
+    Some(root_hp? - final_hp?)
 }
 
 fn outcome_delta(
@@ -543,6 +634,88 @@ fn outcome_delta(
             best.nodes_expanded,
             current_first.nodes_expanded,
         ),
+    }
+}
+
+fn outcome_delta_plan_minus_search(
+    best: &CombatTurnPlanGuidancePlanSnapshotV1,
+    baseline: &CombatTurnPlanGuidanceSearchSnapshotV1,
+) -> CombatTurnPlanGuidanceOutcomeDeltaV1 {
+    CombatTurnPlanGuidanceOutcomeDeltaV1 {
+        final_hp_delta: option_i32_delta(best.final_hp, baseline.final_hp),
+        hp_loss_delta: option_i32_delta(best.hp_loss, baseline.hp_loss),
+        turn_delta: option_u32_i32_delta(best.turns, baseline.turns),
+        potions_used_delta: option_u32_i32_delta(best.potions_used, baseline.potions_used),
+        cards_played_delta: option_u32_i32_delta(best.cards_played, baseline.cards_played),
+        action_count_delta: option_usize_i32_delta(best.action_count, baseline.action_count),
+        nodes_expanded_delta: option_u64_i64_delta(
+            best.nodes_expanded,
+            Some(baseline.nodes_expanded),
+        ),
+    }
+}
+
+fn guided_vs_baseline_verdict(
+    guided: &CombatTurnPlanGuidancePlanSnapshotV1,
+    baseline: &CombatTurnPlanGuidanceSearchSnapshotV1,
+) -> &'static str {
+    match compare_plan_snapshot_to_search(guided, baseline) {
+        Ordering::Greater => "guided_better",
+        Ordering::Equal => "guided_tied",
+        Ordering::Less => "guided_worse",
+    }
+}
+
+fn compare_plan_snapshot_to_search(
+    guided: &CombatTurnPlanGuidancePlanSnapshotV1,
+    baseline: &CombatTurnPlanGuidanceSearchSnapshotV1,
+) -> Ordering {
+    guided
+        .complete_win
+        .cmp(&baseline.complete_win)
+        .then_with(|| terminal_tier(guided.terminal).cmp(&terminal_tier(baseline.terminal)))
+        .then_with(|| {
+            guided
+                .final_hp
+                .unwrap_or(i32::MIN)
+                .cmp(&baseline.final_hp.unwrap_or(i32::MIN))
+        })
+        .then_with(|| {
+            baseline
+                .hp_loss
+                .unwrap_or(i32::MAX)
+                .cmp(&guided.hp_loss.unwrap_or(i32::MAX))
+        })
+        .then_with(|| {
+            baseline
+                .potions_used
+                .unwrap_or(u32::MAX)
+                .cmp(&guided.potions_used.unwrap_or(u32::MAX))
+        })
+        .then_with(|| {
+            baseline
+                .turns
+                .unwrap_or(u32::MAX)
+                .cmp(&guided.turns.unwrap_or(u32::MAX))
+        })
+        .then_with(|| {
+            baseline
+                .cards_played
+                .unwrap_or(u32::MAX)
+                .cmp(&guided.cards_played.unwrap_or(u32::MAX))
+        })
+        .then_with(|| {
+            baseline
+                .nodes_expanded
+                .cmp(&guided.nodes_expanded.unwrap_or(u64::MAX))
+        })
+}
+
+fn terminal_tier(terminal: SearchTerminalLabel) -> u8 {
+    match terminal {
+        SearchTerminalLabel::Win => 2,
+        SearchTerminalLabel::Unresolved => 1,
+        SearchTerminalLabel::Loss => 0,
     }
 }
 
@@ -723,6 +896,45 @@ mod tests {
         assert_eq!(comparison.best_by_child_target.tactical.damage_done, 9);
     }
 
+    #[test]
+    fn baseline_vs_best_guided_prefix_reports_search_outcome_delta() {
+        let baseline =
+            child_search_with_best_complete(target_with_complete_win(35, 8, 5, 0, 12, 12));
+        let weaker = lab_candidate(
+            0,
+            "weaker",
+            tactical_plan_with_damage(0, "Strike", 6),
+            target_with_complete_win(30, 13, 5, 0, 12, 12),
+        );
+        let guided = lab_candidate(
+            1,
+            "guided",
+            tactical_plan_with_damage(1, "Defend", 0),
+            target_with_complete_win(41, 2, 6, 0, 15, 16),
+        );
+        let candidates = vec![weaker, guided];
+
+        let comparison = baseline_vs_best_guided_prefix_report(&baseline, &candidates)
+            .expect("comparison should exist");
+
+        assert_eq!(comparison.verdict, "guided_better");
+        assert_eq!(comparison.baseline.final_hp, Some(35));
+        assert_eq!(comparison.best_guided_prefix.plan_index, 1);
+        assert_eq!(
+            comparison.delta_guided_minus_baseline.final_hp_delta,
+            Some(6)
+        );
+        assert_eq!(
+            comparison.delta_guided_minus_baseline.hp_loss_delta,
+            Some(1)
+        );
+        assert_eq!(comparison.delta_guided_minus_baseline.turn_delta, Some(1));
+        assert_eq!(
+            comparison.delta_guided_minus_baseline.action_count_delta,
+            Some(4)
+        );
+    }
+
     fn lab_candidate(
         plan_index: usize,
         _action_key: &str,
@@ -759,6 +971,26 @@ mod tests {
                 nodes_expanded: Some(child_best.action_count as u64 * 10),
                 limitations: vec![],
             },
+        }
+    }
+
+    fn child_search_with_best_complete(
+        best_complete: CombatSearchGuidanceLabTrajectoryV1,
+    ) -> CombatSearchGuidanceLabChildSearchV1 {
+        CombatSearchGuidanceLabChildSearchV1 {
+            outcome: crate::ai::combat_search_v2::CombatSearchV2OutcomeReport {
+                coverage_status: crate::ai::combat_search_v2::SearchCoverageStatus::Exhaustive,
+                coverage_reason: "test".to_string(),
+                complete_trajectory_found: true,
+                exhaustive: true,
+            },
+            best_complete: Some(best_complete.clone()),
+            best_frontier: Some(best_complete.clone()),
+            final_state: None,
+            nodes_expanded: best_complete.action_count as u64 * 10,
+            nodes_generated: best_complete.action_count as u64 * 20,
+            terminal_wins: 1,
+            elapsed_ms: 0,
         }
     }
 

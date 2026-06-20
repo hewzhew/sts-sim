@@ -53,9 +53,10 @@ pub use start::{
 };
 pub use turn_plan_guidance_lab::{
     run_combat_turn_plan_guidance_lab_benchmark_v1, run_combat_turn_plan_guidance_lab_v1,
-    CombatTurnPlanGuidanceLabBenchmarkCaseV1, CombatTurnPlanGuidanceLabBenchmarkSummaryV1,
-    CombatTurnPlanGuidanceLabBenchmarkV1Report, CombatTurnPlanGuidanceLabCandidateV1,
-    CombatTurnPlanGuidanceLabSummaryV1, CombatTurnPlanGuidanceLabV1Report,
-    CombatTurnPlanGuidanceOutcomeDeltaV1, CombatTurnPlanGuidancePlanSnapshotV1,
+    CombatTurnPlanGuidanceBaselineComparisonV1, CombatTurnPlanGuidanceLabBenchmarkCaseV1,
+    CombatTurnPlanGuidanceLabBenchmarkSummaryV1, CombatTurnPlanGuidanceLabBenchmarkV1Report,
+    CombatTurnPlanGuidanceLabCandidateV1, CombatTurnPlanGuidanceLabSummaryV1,
+    CombatTurnPlanGuidanceLabV1Report, CombatTurnPlanGuidanceOutcomeDeltaV1,
+    CombatTurnPlanGuidancePlanSnapshotV1, CombatTurnPlanGuidanceSearchSnapshotV1,
     CombatTurnPlanGuidanceSelectedComparisonV1, CombatTurnPlanTacticalTraceV1,
 };
