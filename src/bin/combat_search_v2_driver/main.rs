@@ -111,6 +111,15 @@ struct Args {
     probe_wall_ms: Option<u64>,
 
     #[arg(long)]
+    turn_plan_probe_max_inner_nodes: Option<usize>,
+
+    #[arg(long)]
+    turn_plan_probe_max_end_states: Option<usize>,
+
+    #[arg(long)]
+    turn_plan_probe_per_bucket_limit: Option<usize>,
+
+    #[arg(long)]
     output: Option<PathBuf>,
 }
 
@@ -135,9 +144,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         && !args.turn_plan_guidance_lab
         && (args.guidance_lab_max_cases.is_some()
             || args.probe_max_nodes.is_some()
-            || args.probe_wall_ms.is_some())
+            || args.probe_wall_ms.is_some()
+            || args.turn_plan_probe_max_inner_nodes.is_some()
+            || args.turn_plan_probe_max_end_states.is_some()
+            || args.turn_plan_probe_per_bucket_limit.is_some())
     {
-        return Err("--guidance-lab-max-cases and --probe-* require a guidance lab mode".into());
+        return Err(
+            "--guidance-lab-max-cases, --probe-*, and --turn-plan-probe-* require a guidance lab mode"
+                .into(),
+        );
     }
     if (args.guidance_lab || args.turn_plan_guidance_lab)
         && (args.compare_rollout.is_some()
@@ -231,6 +246,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rollout_beam_width: args.rollout_beam_width,
         turn_plan_policy: args.turn_plan_policy,
         frontier_policy: args.frontier_policy,
+        turn_plan_probe_max_inner_nodes: args.turn_plan_probe_max_inner_nodes,
+        turn_plan_probe_max_end_states: args.turn_plan_probe_max_end_states,
+        turn_plan_probe_per_bucket_limit: args.turn_plan_probe_per_bucket_limit,
     };
     let payload = if let Some(path) = args.benchmark_spec.as_ref() {
         let loaded = load_combat_search_v2_benchmark(path)?;

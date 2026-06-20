@@ -22,6 +22,9 @@ param(
     [int] $GuidanceLabMaxCases = 100,
     [int] $SearchMaxNodes = 1000,
     [int] $ProbeMaxNodes = 256,
+    [Nullable[int]] $TurnPlanProbeMaxInnerNodes = $null,
+    [Nullable[int]] $TurnPlanProbeMaxEndStates = $null,
+    [Nullable[int]] $TurnPlanProbePerBucketLimit = $null,
     [switch] $Build,
     [ValidateSet("fast-run", "release-final", "release", "dev-opt", "debug")]
     [string] $BuildProfile = "fast-run",
@@ -66,7 +69,21 @@ if ($BenchmarkPath.Count -eq 0) {
     throw "No benchmark.json files found under $BenchmarkRoot matching $BenchmarkDirectoryPattern."
 }
 
-Write-Host "tactical trace batch: benchmarks=$($BenchmarkPath.Count) output=$OutputRoot max_cases=$GuidanceLabMaxCases max_nodes=$SearchMaxNodes probe_nodes=$ProbeMaxNodes"
+Write-Host "tactical trace batch: benchmarks=$($BenchmarkPath.Count) output=$OutputRoot max_cases=$GuidanceLabMaxCases max_nodes=$SearchMaxNodes probe_nodes=$ProbeMaxNodes turn_plan_probe=max_inner:$TurnPlanProbeMaxInnerNodes max_end:$TurnPlanProbeMaxEndStates per_bucket:$TurnPlanProbePerBucketLimit"
+
+$TurnPlanProbeArgs = @()
+if ($null -ne $TurnPlanProbeMaxInnerNodes) {
+    $TurnPlanProbeArgs += "--turn-plan-probe-max-inner-nodes"
+    $TurnPlanProbeArgs += "$TurnPlanProbeMaxInnerNodes"
+}
+if ($null -ne $TurnPlanProbeMaxEndStates) {
+    $TurnPlanProbeArgs += "--turn-plan-probe-max-end-states"
+    $TurnPlanProbeArgs += "$TurnPlanProbeMaxEndStates"
+}
+if ($null -ne $TurnPlanProbePerBucketLimit) {
+    $TurnPlanProbeArgs += "--turn-plan-probe-per-bucket-limit"
+    $TurnPlanProbeArgs += "$TurnPlanProbePerBucketLimit"
+}
 
 $EpisodeFiles = @()
 foreach ($Benchmark in $BenchmarkPath) {
@@ -86,6 +103,7 @@ foreach ($Benchmark in $BenchmarkPath) {
         --guidance-lab-max-cases $GuidanceLabMaxCases `
         --max-nodes $SearchMaxNodes `
         --probe-max-nodes $ProbeMaxNodes `
+        @TurnPlanProbeArgs `
         --output $LabPath
 
     Write-Host "[$Name] tactical episode"

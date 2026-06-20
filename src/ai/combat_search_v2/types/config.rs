@@ -19,6 +19,9 @@ pub struct CombatSearchV2Config {
     pub rollout_beam_width: usize,
     pub turn_plan_policy: CombatSearchV2TurnPlanPolicy,
     pub frontier_policy: CombatSearchV2FrontierPolicy,
+    pub turn_plan_probe_max_inner_nodes: Option<usize>,
+    pub turn_plan_probe_max_end_states: Option<usize>,
+    pub turn_plan_probe_per_bucket_limit: Option<usize>,
 }
 
 impl Default for CombatSearchV2Config {
@@ -39,6 +42,9 @@ impl Default for CombatSearchV2Config {
             rollout_beam_width: super::super::rollout::DEFAULT_TURN_BEAM_WIDTH,
             turn_plan_policy: CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed,
             frontier_policy: CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets,
+            turn_plan_probe_max_inner_nodes: None,
+            turn_plan_probe_max_end_states: None,
+            turn_plan_probe_per_bucket_limit: None,
         }
     }
 }

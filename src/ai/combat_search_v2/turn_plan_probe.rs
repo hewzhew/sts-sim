@@ -150,9 +150,15 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
         rollout_estimate: RolloutNodeEstimate::unevaluated(),
     };
     let turn_config = TurnPlannerConfigV1 {
-        max_inner_nodes: TURN_PLAN_PROBE_MAX_INNER_NODES,
-        max_end_states: TURN_PLAN_PROBE_MAX_END_STATES,
-        per_bucket_limit: TURN_PLAN_PROBE_PER_BUCKET_LIMIT,
+        max_inner_nodes: config
+            .turn_plan_probe_max_inner_nodes
+            .unwrap_or(TURN_PLAN_PROBE_MAX_INNER_NODES),
+        max_end_states: config
+            .turn_plan_probe_max_end_states
+            .unwrap_or(TURN_PLAN_PROBE_MAX_END_STATES),
+        per_bucket_limit: config
+            .turn_plan_probe_per_bucket_limit
+            .unwrap_or(TURN_PLAN_PROBE_PER_BUCKET_LIMIT),
         potion_policy: config.potion_policy,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
     };

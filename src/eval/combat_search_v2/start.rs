@@ -31,6 +31,9 @@ pub struct CombatSearchV2RunOptions {
     pub rollout_beam_width: Option<usize>,
     pub turn_plan_policy: Option<CombatSearchV2TurnPlanPolicy>,
     pub frontier_policy: Option<CombatSearchV2FrontierPolicy>,
+    pub turn_plan_probe_max_inner_nodes: Option<usize>,
+    pub turn_plan_probe_max_end_states: Option<usize>,
+    pub turn_plan_probe_per_bucket_limit: Option<usize>,
 }
 
 impl CombatSearchV2RunOptions {
@@ -64,6 +67,15 @@ impl CombatSearchV2RunOptions {
                 .unwrap_or(defaults.rollout_beam_width),
             turn_plan_policy: self.turn_plan_policy.unwrap_or(defaults.turn_plan_policy),
             frontier_policy: self.frontier_policy.unwrap_or(defaults.frontier_policy),
+            turn_plan_probe_max_inner_nodes: self
+                .turn_plan_probe_max_inner_nodes
+                .or(defaults.turn_plan_probe_max_inner_nodes),
+            turn_plan_probe_max_end_states: self
+                .turn_plan_probe_max_end_states
+                .or(defaults.turn_plan_probe_max_end_states),
+            turn_plan_probe_per_bucket_limit: self
+                .turn_plan_probe_per_bucket_limit
+                .or(defaults.turn_plan_probe_per_bucket_limit),
         }
     }
 
