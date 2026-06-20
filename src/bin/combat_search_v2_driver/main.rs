@@ -126,6 +126,9 @@ struct Args {
     turn_plan_prior_hints: Option<PathBuf>,
 
     #[arg(long)]
+    compact: bool,
+
+    #[arg(long)]
     output: Option<PathBuf>,
 }
 
@@ -139,6 +142,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if args.guidance_lab && args.turn_plan_guidance_lab {
         return Err("--guidance-lab cannot be combined with --turn-plan-guidance-lab".into());
+    }
+    if args.compact && !args.turn_plan_guidance_lab {
+        return Err("--compact currently requires --turn-plan-guidance-lab".into());
     }
     if (args.guidance_lab || args.turn_plan_guidance_lab) && args.validate_only {
         return Err("--guidance-lab modes cannot be used with --validate-only".into());
@@ -285,7 +291,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     child_options,
                     args.guidance_lab_max_cases,
                 );
-                serde_json::to_string_pretty(&report)?
+                turn_plan_guidance_payload(&report, args.compact)?
             } else {
                 let report = run_combat_search_guidance_lab_benchmark_v1(
                     &loaded,
@@ -369,7 +375,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             if args.turn_plan_guidance_lab {
                 let report = run_combat_turn_plan_guidance_lab_v1(&loaded, options, child_options);
-                serde_json::to_string_pretty(&report)?
+                turn_plan_guidance_payload(&report, args.compact)?
             } else {
                 let report = run_combat_search_guidance_lab_v1(&loaded, options, child_options);
                 serde_json::to_string_pretty(&report)?
@@ -648,6 +654,112 @@ mod tests {
             )
         );
     }
+
+    #[test]
+    fn compact_turn_plan_guidance_report_keeps_harness_verdict_and_divergence() {
+        let full: serde_json::Value = serde_json::from_str(
+            r#"{
+            "schema_name": "CombatTurnPlanGuidanceLabBenchmarkV1Report",
+            "schema_version": 3,
+            "benchmark_name": "smoke",
+            "summary": {
+                "cases_run": 1,
+                "candidate_count": 6,
+                "cases_best_target_not_first_plan": 1,
+                "cases_guided_prefix_better_than_baseline": 0,
+                "cases_guided_prefix_tied_with_baseline": 0,
+                "cases_guided_prefix_worse_than_baseline": 1,
+                "cases_without_guided_prefix_baseline_comparison": 0
+            },
+            "cases": [{
+                "id": "case-a",
+                "input_kind": "start_spec",
+                "input_path": "case.start.json",
+                "lab": {
+                    "summary": {
+                        "candidate_count": 6,
+                        "best_target_plan_index": 4,
+                        "first_plan_rank_by_target": 6,
+                        "baseline_vs_best_guided_prefix": {
+                            "verdict": "guided_worse",
+                            "delta_guided_minus_baseline": {
+                                "final_hp_delta": 0,
+                                "hp_loss_delta": 0,
+                                "turn_delta": 1
+                            },
+                            "action_sequence_alignment": {
+                                "common_prefix_action_count": 1,
+                                "baseline_next_action_key": "bash",
+                                "guided_next_action_key": "strike",
+                                "first_divergence_kind": "diverged"
+                            },
+                            "baseline": {
+                                "terminal": "win",
+                                "complete_win": true,
+                                "final_hp": 73,
+                                "hp_loss": 7,
+                                "turns": 5,
+                                "potions_used": 0,
+                                "cards_played": 16,
+                                "action_count": 21,
+                                "first_action_key": "defend",
+                                "nodes_expanded": 170
+                            },
+                            "best_guided_prefix": {
+                                "plan_index": 4,
+                                "first_action_key": "defend",
+                                "terminal": "win",
+                                "complete_win": true,
+                                "final_hp": 73,
+                                "hp_loss": 7,
+                                "turns": 6,
+                                "potions_used": 0,
+                                "cards_played": 15,
+                                "action_count": 20,
+                                "nodes_expanded": 60,
+                                "tactical": {
+                                    "action_count": 4,
+                                    "cards_played": 3,
+                                    "potions_used": 0,
+                                    "attacks_played": 2,
+                                    "skills_played": 1,
+                                    "powers_played": 0,
+                                    "damage_done": 12,
+                                    "block_gained_proxy": 5,
+                                    "player_hp_lost": 6,
+                                    "energy_spent_proxy": 3,
+                                    "draw_delta": -5,
+                                    "discard_delta": 5,
+                                    "exhaust_delta": 0
+                                }
+                            }
+                        }
+                    }
+                }
+            }]
+        }"#,
+        )
+        .expect("test json should parse");
+
+        let compact = compact_turn_plan_guidance_report(&full);
+
+        assert_eq!(
+            compact["schema_name"],
+            "CombatTurnPlanGuidanceHarnessCompactReport"
+        );
+        assert_eq!(
+            compact["summary"]["cases_guided_prefix_worse_than_baseline"],
+            1
+        );
+        let comparison = &compact["cases"][0]["summary"]["baseline_vs_best_guided_prefix"];
+        assert_eq!(comparison["verdict"], "guided_worse");
+        assert_eq!(comparison["alignment"]["baseline_next_action_key"], "bash");
+        assert_eq!(comparison["alignment"]["guided_next_action_key"], "strike");
+        assert_eq!(
+            comparison["best_guided_prefix"]["tactical"]["block_gained_proxy"],
+            5
+        );
+    }
 }
 
 fn validate_input_payload(args: &Args) -> Result<String, Box<dyn std::error::Error>> {
@@ -710,6 +822,140 @@ fn validate_input_payload(args: &Args) -> Result<String, Box<dyn std::error::Err
         })
     };
     Ok(serde_json::to_string_pretty(&payload)?)
+}
+
+fn turn_plan_guidance_payload<T: serde::Serialize>(
+    report: &T,
+    compact: bool,
+) -> Result<String, serde_json::Error> {
+    if compact {
+        let value = serde_json::to_value(report)?;
+        serde_json::to_string_pretty(&compact_turn_plan_guidance_report(&value))
+    } else {
+        serde_json::to_string_pretty(report)
+    }
+}
+
+fn compact_turn_plan_guidance_report(report: &serde_json::Value) -> serde_json::Value {
+    if let Some(cases) = report.get("cases").and_then(|value| value.as_array()) {
+        let compact_cases = cases
+            .iter()
+            .map(compact_turn_plan_guidance_case)
+            .collect::<Vec<_>>();
+        serde_json::json!({
+            "schema_name": "CombatTurnPlanGuidanceHarnessCompactReport",
+            "schema_version": 1,
+            "source_schema_name": report.get("schema_name"),
+            "source_schema_version": report.get("schema_version"),
+            "benchmark_name": report.get("benchmark_name"),
+            "summary": report.get("summary").map(compact_turn_plan_guidance_summary),
+            "cases": compact_cases,
+        })
+    } else {
+        serde_json::json!({
+            "schema_name": "CombatTurnPlanGuidanceHarnessCompactReport",
+            "schema_version": 1,
+            "source_schema_name": report.get("schema_name"),
+            "source_schema_version": report.get("schema_version"),
+            "summary": report.get("summary").map(compact_turn_plan_guidance_lab_summary),
+        })
+    }
+}
+
+fn compact_turn_plan_guidance_case(case: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "id": case.get("id"),
+        "input_kind": case.get("input_kind"),
+        "input_path": case.get("input_path"),
+        "summary": case
+            .get("lab")
+            .and_then(|lab| lab.get("summary"))
+            .map(compact_turn_plan_guidance_lab_summary),
+    })
+}
+
+fn compact_turn_plan_guidance_summary(summary: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "cases_run": summary.get("cases_run"),
+        "candidate_count": summary.get("candidate_count"),
+        "cases_best_target_not_first_plan": summary.get("cases_best_target_not_first_plan"),
+        "cases_guided_prefix_better_than_baseline": summary.get("cases_guided_prefix_better_than_baseline"),
+        "cases_guided_prefix_tied_with_baseline": summary.get("cases_guided_prefix_tied_with_baseline"),
+        "cases_guided_prefix_worse_than_baseline": summary.get("cases_guided_prefix_worse_than_baseline"),
+        "cases_without_guided_prefix_baseline_comparison": summary.get("cases_without_guided_prefix_baseline_comparison"),
+    })
+}
+
+fn compact_turn_plan_guidance_lab_summary(summary: &serde_json::Value) -> serde_json::Value {
+    let comparison = summary.get("baseline_vs_best_guided_prefix");
+    serde_json::json!({
+        "candidate_count": summary.get("candidate_count"),
+        "best_target_plan_index": summary.get("best_target_plan_index"),
+        "first_plan_rank_by_target": summary.get("first_plan_rank_by_target"),
+        "baseline_vs_best_guided_prefix": comparison.map(compact_turn_plan_guidance_comparison),
+    })
+}
+
+fn compact_turn_plan_guidance_comparison(comparison: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "verdict": comparison.get("verdict"),
+        "delta_guided_minus_baseline": comparison.get("delta_guided_minus_baseline"),
+        "alignment": comparison.get("action_sequence_alignment"),
+        "baseline": comparison.get("baseline").map(compact_guidance_search_snapshot),
+        "best_guided_prefix": comparison
+            .get("best_guided_prefix")
+            .map(compact_guidance_plan_snapshot),
+    })
+}
+
+fn compact_guidance_search_snapshot(snapshot: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "terminal": snapshot.get("terminal"),
+        "complete_win": snapshot.get("complete_win"),
+        "final_hp": snapshot.get("final_hp"),
+        "hp_loss": snapshot.get("hp_loss"),
+        "turns": snapshot.get("turns"),
+        "potions_used": snapshot.get("potions_used"),
+        "cards_played": snapshot.get("cards_played"),
+        "action_count": snapshot.get("action_count"),
+        "first_action_key": snapshot.get("first_action_key"),
+        "nodes_expanded": snapshot.get("nodes_expanded"),
+    })
+}
+
+fn compact_guidance_plan_snapshot(snapshot: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "plan_index": snapshot.get("plan_index"),
+        "first_action_key": snapshot.get("first_action_key"),
+        "terminal": snapshot.get("terminal"),
+        "complete_win": snapshot.get("complete_win"),
+        "final_hp": snapshot.get("final_hp"),
+        "hp_loss": snapshot.get("hp_loss"),
+        "turns": snapshot.get("turns"),
+        "potions_used": snapshot.get("potions_used"),
+        "cards_played": snapshot.get("cards_played"),
+        "action_count": snapshot.get("action_count"),
+        "nodes_expanded": snapshot.get("nodes_expanded"),
+        "tactical": snapshot.get("tactical").map(compact_guidance_tactical_trace),
+    })
+}
+
+fn compact_guidance_tactical_trace(tactical: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "action_count": tactical.get("action_count"),
+        "cards_played": tactical.get("cards_played"),
+        "potions_used": tactical.get("potions_used"),
+        "attacks_played": tactical.get("attacks_played"),
+        "skills_played": tactical.get("skills_played"),
+        "powers_played": tactical.get("powers_played"),
+        "damage_done": tactical.get("damage_done"),
+        "block_gained_proxy": tactical.get("block_gained_proxy"),
+        "player_hp_lost": tactical.get("player_hp_lost"),
+        "energy_spent_proxy": tactical.get("energy_spent_proxy"),
+        "draw_delta": tactical.get("draw_delta"),
+        "discard_delta": tactical.get("discard_delta"),
+        "exhaust_delta": tactical.get("exhaust_delta"),
+    })
 }
 
 fn compact_fingerprint_report(fingerprints: &StateFingerprintV1) -> serde_json::Value {
