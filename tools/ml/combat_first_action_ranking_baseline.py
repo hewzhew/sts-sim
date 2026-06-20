@@ -56,6 +56,7 @@ def stable_hash(text: str) -> int:
 
 def load_samples(paths: list[Path]) -> list[dict[str, Any]]:
     samples: list[dict[str, Any]] = []
+    seen_tactical_candidate_keys: set[str] = set()
     for path in paths:
         with path.open("r", encoding="utf-8") as handle:
             for line_no, line in enumerate(handle, start=1):
@@ -78,7 +79,12 @@ def load_samples(paths: list[Path]) -> list[dict[str, Any]]:
                     sample["_source_jsonl"] = str(path)
                     samples.append(sample)
                 elif schema_name == TACTICAL_EPISODE_SCHEMA_NAME:
-                    samples.extend(samples_from_tactical_episode(sample, path))
+                    for expanded in samples_from_tactical_episode(sample, path):
+                        key = expanded_tactical_candidate_key(expanded)
+                        if key in seen_tactical_candidate_keys:
+                            continue
+                        seen_tactical_candidate_keys.add(key)
+                        samples.append(expanded)
                 else:
                     raise SystemExit(
                         f"{path}:{line_no}: expected {LEGACY_SCHEMA_NAME} or "
@@ -86,6 +92,30 @@ def load_samples(paths: list[Path]) -> list[dict[str, Any]]:
                         f"{TACTICAL_EPISODE_SCHEMA_NAME}, got {schema_name!r}"
                     )
     return samples
+
+
+def stable_json_key(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def expanded_tactical_candidate_key(sample: dict[str, Any]) -> str:
+    source = sample.get("source") if isinstance(sample.get("source"), dict) else {}
+    root_context = sample.get("root_context") if isinstance(sample.get("root_context"), dict) else {}
+    initial = root_context.get("initial_context") if isinstance(root_context.get("initial_context"), dict) else {}
+    plan = sample.get("plan") if isinstance(sample.get("plan"), dict) else {}
+    root_identity = stable_json_key(initial.get("state"))
+    return "|".join(
+        str(part)
+        for part in (
+            source.get("benchmark_name"),
+            source.get("case_id"),
+            source.get("input_kind"),
+            source.get("input_path"),
+            source.get("tactical_episode_input_label"),
+            root_identity,
+            plan.get("plan_index"),
+        )
+    )
 
 
 def samples_from_tactical_episode(episode: dict[str, Any], path: Path) -> list[dict[str, Any]]:

@@ -35,12 +35,18 @@ Prints compact binary vs decomposed-utility disagreement case comparisons.
 Runs source-CV using only CombatTacticalEpisodeV1 JSONL expanded at load time.
 
 .EXAMPLE
+.\tools\ml\run_turn_plan_baseline.ps1 -TacticalOnly -SplitMode group -FeatureGroups action-facts
+Runs a small smoke split when tactical episode artifacts only contain one source unit.
+
+.EXAMPLE
 .\tools\ml\run_turn_plan_baseline.ps1 -UseTacticalEpisodes
 Runs source-CV over discovered legacy turn-plan probe samples plus tactical episodes.
 #>
 param(
     [string] $ProbeRoot = "tools\artifacts\tmp",
     [string] $TacticalEpisodeRoot = "tools\artifacts\tmp",
+    [ValidateSet("source", "group", "source-cv")]
+    [string] $SplitMode = "source-cv",
     [int] $Epochs = 40,
     [int] $Seed = 17,
     [switch] $Full,
@@ -77,7 +83,7 @@ $ReportMode = if ($Full) { "full" } else { "compact" }
 
 $ArgsList = @(
     "$ScriptPath",
-    "--split-mode", "source-cv",
+    "--split-mode", "$SplitMode",
     "--epochs", "$Epochs",
     "--seed", "$Seed",
     "--target-mode", "$TargetMode",
@@ -128,5 +134,5 @@ if ($ExtraArgs) {
 }
 
 $FeatureText = if ($FeatureGroups.Count -gt 0) { $FeatureGroups -join "," } else { "base" }
-Write-Host "turn-plan baseline: root=$ProbeRoot tactical=$UseTacticalEpisodes tactical_only=$TacticalOnly tactical_root=$TacticalEpisodeRoot split=source-cv epochs=$Epochs seed=$Seed target=$TargetMode training=$TrainingMode report=$ReportMode cases=$ShowCases/$CaseKind training_cases=$ShowTrainingCases/$TrainingCaseKind features=$FeatureText compare_features=$CompareFeatureGroups compare_targets=$CompareTargetModes compare_training=$CompareTrainingModes"
+Write-Host "turn-plan baseline: root=$ProbeRoot tactical=$UseTacticalEpisodes tactical_only=$TacticalOnly tactical_root=$TacticalEpisodeRoot split=$SplitMode epochs=$Epochs seed=$Seed target=$TargetMode training=$TrainingMode report=$ReportMode cases=$ShowCases/$CaseKind training_cases=$ShowTrainingCases/$TrainingCaseKind features=$FeatureText compare_features=$CompareFeatureGroups compare_targets=$CompareTargetModes compare_training=$CompareTrainingModes"
 python @ArgsList
