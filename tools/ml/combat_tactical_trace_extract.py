@@ -1054,14 +1054,141 @@ def root_candidate_action_coverage(traces: list[dict[str, Any]]) -> dict[str, An
     }
 
 
+def root_action_kind(action: dict[str, Any]) -> str:
+    action_key = action.get("action_key")
+    if isinstance(action_key, str):
+        if action_key.startswith("combat/end_turn"):
+            return "end_turn"
+        if action_key.startswith("combat/play_card"):
+            return "play_card"
+        if action_key.startswith("combat/use_potion"):
+            return "use_potion"
+        parts = action_key.split("/")
+        if len(parts) >= 2 and parts[0] == "combat":
+            return parts[1] or "combat_other"
+    input_value = action.get("input")
+    if input_value == "EndTurn":
+        return "end_turn"
+    if isinstance(input_value, dict):
+        if "PlayCard" in input_value:
+            return "play_card"
+        if "UsePotion" in input_value:
+            return "use_potion"
+    return "unknown"
+
+
+def action_key_set(actions: list[Any]) -> set[str]:
+    keys = set()
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        action_key = action.get("action_key")
+        if isinstance(action_key, str) and action_key:
+            keys.add(action_key)
+    return keys
+
+
+def root_action_kind_counts(actions: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(root_action_kind(action) for action in actions)
+    return dict(sorted(counts.items()))
+
+
+def root_action_coverage_diagnostic(mask: dict[str, Any]) -> dict[str, Any] | None:
+    if mask.get("complete_legal_mask") is not True:
+        return None
+    legal_actions = [action for action in as_list(mask.get("legal_actions")) if isinstance(action, dict)]
+    eligible_actions = [
+        action
+        for action in as_list(mask.get("candidate_eligible_actions"))
+        if isinstance(action, dict)
+    ]
+    coverage = as_dict(mask.get("candidate_action_coverage"))
+    candidate_first_actions = [
+        action
+        for action in as_list(coverage.get("candidate_first_actions"))
+        if isinstance(action, dict)
+    ]
+    candidate_keys = action_key_set(candidate_first_actions)
+    eligible_keys = action_key_set(eligible_actions)
+    missing_legal_actions = [
+        action
+        for action in legal_actions
+        if isinstance(action.get("action_key"), str) and action["action_key"] not in candidate_keys
+    ]
+    ineligible_actions = [
+        action
+        for action in legal_actions
+        if isinstance(action.get("action_key"), str) and action["action_key"] not in eligible_keys
+    ]
+    eligible_but_uncovered_actions = [
+        action
+        for action in eligible_actions
+        if isinstance(action.get("action_key"), str) and action["action_key"] not in candidate_keys
+    ]
+    legal_count = len(legal_actions)
+    candidate_count = len(candidate_first_actions)
+    eligible_count = len(eligible_actions)
+    return {
+        "data_role": "DerivedDeterministic",
+        "availability": "RootOnly",
+        "source": "root_legal_action_mask_vs_bounded_candidate_first_actions",
+        "legal_action_count": legal_count,
+        "candidate_eligible_action_count": eligible_count,
+        "candidate_first_action_count": candidate_count,
+        "missing_legal_action_count": len(missing_legal_actions),
+        "ineligible_action_count": len(ineligible_actions),
+        "eligible_but_uncovered_action_count": len(eligible_but_uncovered_actions),
+        "candidate_first_action_coverage_ratio": (
+            candidate_count / legal_count if legal_count else 0.0
+        ),
+        "candidate_eligible_action_coverage_ratio": (
+            eligible_count / legal_count if legal_count else 0.0
+        ),
+        "legal_by_kind": root_action_kind_counts(legal_actions),
+        "candidate_first_by_kind": root_action_kind_counts(candidate_first_actions),
+        "missing_legal_by_kind": root_action_kind_counts(missing_legal_actions),
+        "eligible_but_uncovered_by_kind": root_action_kind_counts(eligible_but_uncovered_actions),
+        "ineligible_by_kind": root_action_kind_counts(ineligible_actions),
+        "missing_legal_action_examples": [
+            action.get("action_key") for action in missing_legal_actions[:5]
+        ],
+        "eligible_but_uncovered_action_examples": [
+            action.get("action_key") for action in eligible_but_uncovered_actions[:5]
+        ],
+        "limitations": [
+            "missing means absent from bounded candidate first actions, not proven strategically bad",
+        ],
+    }
+
+
 def root_legal_action_mask(root: dict[str, Any], traces: list[dict[str, Any]]) -> dict[str, Any]:
     mask = as_dict(root.get("root_action_mask"))
     if mask:
-        return {
+        full_mask = {
             **mask,
             "candidate_action_coverage": root_candidate_action_coverage(traces),
         }
+        diagnostic = root_action_coverage_diagnostic(full_mask)
+        if diagnostic is not None:
+            full_mask["coverage_diagnostic"] = diagnostic
+        return full_mask
     fallback = root_candidate_action_coverage(traces)
+    diagnostic = {
+        "data_role": "DerivedDeterministic",
+        "availability": "RootOnly",
+        "source": "root_legal_action_mask_missing",
+        "candidate_first_action_count": fallback.get("covered_action_count"),
+        "candidate_first_by_kind": root_action_kind_counts(
+            [
+                action
+                for action in as_list(fallback.get("candidate_first_actions"))
+                if isinstance(action, dict)
+            ]
+        ),
+        "limitations": [
+            "source report did not include full legal actions, so missing-action diagnostics are unavailable",
+        ],
+    }
     return {
         "data_role": "DerivedDeterministic",
         "availability": "RootOnly",
@@ -1072,6 +1199,7 @@ def root_legal_action_mask(root: dict[str, Any], traces: list[dict[str, Any]]) -
         "legal_actions": None,
         "candidate_eligible_actions": None,
         "candidate_action_coverage": fallback,
+        "coverage_diagnostic": diagnostic,
         "limitations": [
             "source report did not include root_action_mask; only bounded candidate first-action coverage is available",
         ],
@@ -1447,6 +1575,9 @@ def extract(
     total_candidates_with_step_summary_refs = 0
     total_root_legal_actions = 0
     total_root_candidate_first_actions = 0
+    total_root_missing_legal_by_kind: Counter[str] = Counter()
+    total_root_eligible_uncovered_by_kind: Counter[str] = Counter()
+    total_root_ineligible_by_kind: Counter[str] = Counter()
     for episode in episodes:
         candidates = as_list(episode.get("candidate_plans"))
         total_candidates += len(candidates)
@@ -1463,6 +1594,27 @@ def extract(
         covered_count = int_or_none(coverage.get("covered_action_count"))
         if covered_count is not None:
             total_root_candidate_first_actions += covered_count
+        diagnostic = as_dict(mask.get("coverage_diagnostic"))
+        total_root_missing_legal_by_kind.update(
+            {
+                str(key): int_value(value)
+                for key, value in as_dict(diagnostic.get("missing_legal_by_kind")).items()
+            }
+        )
+        total_root_eligible_uncovered_by_kind.update(
+            {
+                str(key): int_value(value)
+                for key, value in as_dict(
+                    diagnostic.get("eligible_but_uncovered_by_kind")
+                ).items()
+            }
+        )
+        total_root_ineligible_by_kind.update(
+            {
+                str(key): int_value(value)
+                for key, value in as_dict(diagnostic.get("ineligible_by_kind")).items()
+            }
+        )
         episode_has_action_facts = False
         episode_has_step_state_summaries = False
         episode_has_step_summary_refs = False
@@ -1534,6 +1686,21 @@ def extract(
         f"candidate_first_actions={total_root_candidate_first_actions} "
         f"coverage_ratio={coverage_ratio:.3f}"
     )
+    if total_root_missing_legal_by_kind:
+        print(
+            "  root_missing_legal_by_kind="
+            f"{dict(sorted(total_root_missing_legal_by_kind.items()))}"
+        )
+    if total_root_eligible_uncovered_by_kind:
+        print(
+            "  root_eligible_but_uncovered_by_kind="
+            f"{dict(sorted(total_root_eligible_uncovered_by_kind.items()))}"
+        )
+    if total_root_ineligible_by_kind:
+        print(
+            "  root_ineligible_by_kind="
+            f"{dict(sorted(total_root_ineligible_by_kind.items()))}"
+        )
     print(
         "  action_facts_coverage="
         f"episodes={counters['episodes_with_action_facts']} "
