@@ -6,6 +6,7 @@ use crate::runtime::combat::{CombatCard, CombatState};
 use crate::runtime::monster_move::{AttackSpec, DamageKind, MonsterMoveSpec};
 use crate::sim::combat::{
     combat_terminal, CombatPosition, CombatStepLimits, CombatStepResult, CombatStepper,
+    EngineCombatStepper,
 };
 use crate::test_support::{blank_test_combat, test_monster};
 
@@ -278,6 +279,101 @@ fn turn_planner_classifies_repaired_danger_as_survival_plan() {
 }
 
 #[test]
+fn turn_planner_selection_audit_reports_bucket_cap_drops() {
+    let root = test_node(test_combat_with_hand(3));
+    let plans = enumerate_turn_plans(
+        &root,
+        &TestTurnStepper {
+            mode: TestTurnMode::EqualNextTurnOutcomes,
+        },
+        &TurnPlannerConfigV1 {
+            max_end_states: 3,
+            per_bucket_limit: 1,
+            ..TurnPlannerConfigV1::default()
+        },
+        None,
+    );
+
+    assert_eq!(plans.preselection_plan_count, 3);
+    assert_eq!(plans.plans.len(), 1);
+    assert_eq!(plans.selection_audit.candidates.len(), 3);
+    assert_eq!(
+        plans
+            .selection_audit
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.outcome == TurnPlanCandidateSelectionOutcomeV1::Dropped)
+            .filter(|candidate| {
+                candidate.drop_reason == Some(TurnPlanCandidateDropReasonV1::BucketCap)
+            })
+            .count(),
+        2
+    );
+    assert_eq!(
+        plans
+            .selection_audit
+            .coverage_groups
+            .iter()
+            .map(|group| group.preselection_count)
+            .sum::<usize>(),
+        3
+    );
+    assert_eq!(
+        plans
+            .selection_audit
+            .coverage_groups
+            .iter()
+            .map(|group| group.selected_count)
+            .sum::<usize>(),
+        1
+    );
+    assert_eq!(
+        plans
+            .selection_audit
+            .coverage_groups
+            .iter()
+            .map(|group| group.bucket_cap_dropped_count)
+            .sum::<usize>(),
+        2
+    );
+}
+
+#[test]
+fn turn_planner_coverage_signature_reports_vulnerable_setup_from_bash() {
+    let mut combat = test_combat_with_cards(&[CardId::Bash]);
+    combat.turn.energy = 2;
+    let root = test_node(combat);
+    let plans = enumerate_turn_plans(
+        &root,
+        &EngineCombatStepper,
+        &TurnPlannerConfigV1 {
+            max_end_states: 4,
+            per_bucket_limit: 4,
+            ..TurnPlannerConfigV1::default()
+        },
+        None,
+    );
+
+    let bash_candidate = plans
+        .selection_audit
+        .candidates
+        .iter()
+        .find(|candidate| {
+            candidate
+                .action_keys
+                .iter()
+                .any(|action| action.contains("card:Bash"))
+        })
+        .expect("Bash turn plan should be audited");
+
+    assert!(
+        bash_candidate.coverage_signature.enemy_vulnerable_added > 0,
+        "coverage signature must expose vulnerable setup from action facts"
+    );
+    assert!(bash_candidate.coverage_signature.damage_done > 0);
+}
+
+#[test]
 fn turn_plan_diagnostics_reports_root_plan_preview_without_behavior_claim() {
     let root = test_node(test_combat_with_hand(3));
     let mut collector = TurnPlanDiagnosticsCollector::default();
@@ -382,6 +478,16 @@ fn test_node(combat: CombatState) -> SearchNode {
 }
 
 fn test_combat_with_hand(hand_size: usize) -> CombatState {
+    let ids = [
+        CardId::Strike,
+        CardId::Bash,
+        CardId::Carnage,
+        CardId::TwinStrike,
+    ];
+    test_combat_with_cards(&ids[..hand_size.min(ids.len())])
+}
+
+fn test_combat_with_cards(ids: &[CardId]) -> CombatState {
     let mut combat = blank_test_combat();
     combat.entities.player.current_hp = 80;
     combat.turn.turn_count = 0;
@@ -392,16 +498,9 @@ fn test_combat_with_hand(hand_size: usize) -> CombatState {
     monster.current_hp = 200;
     monster.max_hp = 200;
     combat.entities.monsters = vec![monster];
-    let ids = [
-        CardId::Strike,
-        CardId::Bash,
-        CardId::Carnage,
-        CardId::TwinStrike,
-    ];
     combat.zones.hand = ids
         .iter()
         .copied()
-        .take(hand_size)
         .enumerate()
         .map(|(idx, card_id)| CombatCard::new(card_id, 10 + idx as u32))
         .collect();

@@ -11,8 +11,10 @@ pub(in crate::ai::combat_search_v2) use diagnostics::TurnPlanDiagnosticsCollecto
 pub(in crate::ai::combat_search_v2) use enumerate::enumerate_turn_plans;
 pub(in crate::ai::combat_search_v2) use frontier_seed::turn_plan_frontier_seed;
 pub(in crate::ai::combat_search_v2) use types::{
-    TurnPlanBucket, TurnPlanEnumeration, TurnPlanFirstActionSummaryV1, TurnPlanStopReason,
-    TurnPlanV1, TurnPlannerConfigV1,
+    TurnPlanBucket, TurnPlanCandidateSelectionAuditV1, TurnPlanCoverageGroupAuditV1,
+    TurnPlanCoverageKeyV1, TurnPlanCoverageSignatureV1, TurnPlanEnumeration,
+    TurnPlanFirstActionSummaryV1, TurnPlanSelectionAuditV1, TurnPlanStopReason, TurnPlanV1,
+    TurnPlannerConfigV1,
 };
 
 #[cfg(test)]

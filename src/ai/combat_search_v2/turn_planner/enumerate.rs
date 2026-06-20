@@ -10,8 +10,11 @@ use super::super::value::{
 };
 use super::super::*;
 use super::types::{
-    TurnPlanBucket, TurnPlanEnumeration, TurnPlanFirstActionSummaryV1, TurnPlanStepStateV1,
-    TurnPlanStopReason, TurnPlanV1, TurnPlannerConfigV1,
+    TurnPlanBucket, TurnPlanCandidateDropReasonV1, TurnPlanCandidateSelectionAuditV1,
+    TurnPlanCandidateSelectionOutcomeV1, TurnPlanCoverageGroupAuditV1, TurnPlanCoverageGroupKeyV1,
+    TurnPlanCoverageSignatureV1, TurnPlanEnumeration, TurnPlanFirstActionSummaryV1,
+    TurnPlanSelectionAuditV1, TurnPlanStepStateV1, TurnPlanStopReason, TurnPlanV1,
+    TurnPlannerConfigV1,
 };
 
 #[derive(Clone)]
@@ -202,7 +205,10 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
         prior_state_hash.as_deref(),
         config.turn_plan_prior.as_ref(),
     );
-    enumeration.plans = select_bucketed_plans(candidates, config, prior_state_hash.as_deref());
+    let (selected_plans, selection_audit) =
+        select_bucketed_plans(candidates, config, prior_state_hash.as_deref());
+    enumeration.plans = selected_plans;
+    enumeration.selection_audit = selection_audit;
     enumeration
 }
 
@@ -312,9 +318,17 @@ fn select_bucketed_plans(
     mut candidates: Vec<TurnPlanV1>,
     config: &TurnPlannerConfigV1,
     prior_state_hash: Option<&str>,
-) -> Vec<TurnPlanV1> {
+) -> (Vec<TurnPlanV1>, TurnPlanSelectionAuditV1) {
     if config.max_end_states == 0 || config.per_bucket_limit == 0 {
-        return Vec::new();
+        let reason = if config.max_end_states == 0 {
+            TurnPlanCandidateDropReasonV1::MaxEndStates
+        } else {
+            TurnPlanCandidateDropReasonV1::SelectionDisabled
+        };
+        return (
+            Vec::new(),
+            selection_audit(&candidates, &[], vec![Some(reason); candidates.len()]),
+        );
     }
 
     candidates.sort_by(|left, right| {
@@ -327,6 +341,8 @@ fn select_bucketed_plans(
     });
     let mut selected = Vec::new();
     let mut selected_indexes = vec![false; candidates.len()];
+    let mut selected_plan_indexes = vec![None; candidates.len()];
+    let mut drop_reasons = vec![None; candidates.len()];
     let mut bucket_counts = BTreeMap::<TurnPlanBucket, usize>::new();
 
     for bucket in TURN_PLAN_BUCKET_DIVERSITY_ORDER {
@@ -340,25 +356,107 @@ fn select_bucketed_plans(
         {
             bucket_counts.insert(candidate.bucket, 1);
             selected_indexes[index] = true;
+            selected_plan_indexes[index] = Some(selected.len());
             selected.push(candidate.clone());
         }
     }
 
-    for (index, candidate) in candidates.into_iter().enumerate() {
+    for (index, candidate) in candidates.iter().enumerate() {
         if selected.len() >= config.max_end_states {
             break;
         }
         if !selected_indexes[index] {
             let count = bucket_counts.entry(candidate.bucket).or_default();
             if *count >= config.per_bucket_limit {
+                drop_reasons[index] = Some(TurnPlanCandidateDropReasonV1::BucketCap);
                 continue;
             }
             *count = count.saturating_add(1);
-            selected.push(candidate);
+            selected_indexes[index] = true;
+            selected_plan_indexes[index] = Some(selected.len());
+            selected.push(candidate.clone());
         }
     }
 
-    selected
+    if selected.len() >= config.max_end_states {
+        for (index, selected) in selected_indexes.iter().enumerate() {
+            if !*selected && drop_reasons[index].is_none() {
+                drop_reasons[index] = Some(TurnPlanCandidateDropReasonV1::MaxEndStates);
+            }
+        }
+    }
+
+    let audit = selection_audit(&candidates, &selected_plan_indexes, drop_reasons);
+    (selected, audit)
+}
+
+fn selection_audit(
+    candidates: &[TurnPlanV1],
+    selected_plan_indexes: &[Option<usize>],
+    drop_reasons: Vec<Option<TurnPlanCandidateDropReasonV1>>,
+) -> TurnPlanSelectionAuditV1 {
+    let mut audits = Vec::with_capacity(candidates.len());
+    let mut groups = BTreeMap::<TurnPlanCoverageGroupKeyV1, TurnPlanCoverageGroupAuditV1>::new();
+    for (index, candidate) in candidates.iter().enumerate() {
+        let coverage_signature = TurnPlanCoverageSignatureV1::from_plan(candidate);
+        let coverage_key = coverage_signature.coverage_key();
+        let group_key = TurnPlanCoverageGroupKeyV1 {
+            bucket: candidate.bucket,
+            coverage: coverage_key,
+        };
+        let selected_plan_index = selected_plan_indexes.get(index).copied().flatten();
+        let drop_reason = drop_reasons.get(index).copied().flatten();
+        let outcome = if selected_plan_index.is_some() {
+            TurnPlanCandidateSelectionOutcomeV1::Selected
+        } else {
+            TurnPlanCandidateSelectionOutcomeV1::Dropped
+        };
+        let group =
+            groups
+                .entry(group_key.clone())
+                .or_insert_with(|| TurnPlanCoverageGroupAuditV1 {
+                    key: group_key,
+                    preselection_count: 0,
+                    selected_count: 0,
+                    bucket_cap_dropped_count: 0,
+                    max_end_states_dropped_count: 0,
+                });
+        group.preselection_count = group.preselection_count.saturating_add(1);
+        match outcome {
+            TurnPlanCandidateSelectionOutcomeV1::Selected => {
+                group.selected_count = group.selected_count.saturating_add(1);
+            }
+            TurnPlanCandidateSelectionOutcomeV1::Dropped => match drop_reason {
+                Some(TurnPlanCandidateDropReasonV1::BucketCap) => {
+                    group.bucket_cap_dropped_count =
+                        group.bucket_cap_dropped_count.saturating_add(1);
+                }
+                Some(TurnPlanCandidateDropReasonV1::MaxEndStates) => {
+                    group.max_end_states_dropped_count =
+                        group.max_end_states_dropped_count.saturating_add(1);
+                }
+                Some(TurnPlanCandidateDropReasonV1::SelectionDisabled) | None => {}
+            },
+        }
+        audits.push(TurnPlanCandidateSelectionAuditV1 {
+            preselection_rank: index,
+            selected_plan_index,
+            outcome,
+            drop_reason,
+            bucket: candidate.bucket,
+            action_keys: candidate
+                .actions
+                .iter()
+                .map(|action| action.action_key.clone())
+                .collect(),
+            coverage_key,
+            coverage_signature,
+        });
+    }
+    TurnPlanSelectionAuditV1 {
+        candidates: audits,
+        coverage_groups: groups.into_values().collect(),
+    }
 }
 
 fn compare_turn_plan_seed_candidate(

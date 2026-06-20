@@ -6,8 +6,9 @@ use crate::sim::combat::CombatPosition;
 
 use super::frontier::SearchNode;
 use super::turn_planner::{
-    enumerate_turn_plans, TurnPlanBucket, TurnPlanFirstActionSummaryV1, TurnPlanV1,
-    TurnPlannerConfigV1,
+    enumerate_turn_plans, TurnPlanBucket, TurnPlanCandidateSelectionAuditV1,
+    TurnPlanCoverageGroupAuditV1, TurnPlanCoverageKeyV1, TurnPlanCoverageSignatureV1,
+    TurnPlanFirstActionSummaryV1, TurnPlanSelectionAuditV1, TurnPlanV1, TurnPlannerConfigV1,
 };
 use super::*;
 
@@ -26,6 +27,7 @@ pub struct CombatSearchV2TurnPlanProbeRootReport {
     pub initial_context: CombatSearchV2DecisionContext,
     pub root_action_mask: CombatSearchV2TurnPlanProbeActionMaskReport,
     pub enumeration: CombatSearchV2TurnPlanProbeEnumerationReport,
+    pub selection_audit: CombatSearchV2TurnPlanProbeSelectionAuditReport,
     pub candidates: Vec<CombatSearchV2TurnPlanProbeCandidateReport>,
     pub notes: Vec<&'static str>,
 }
@@ -51,6 +53,73 @@ pub struct CombatSearchV2TurnPlanProbeEnumerationReport {
     pub nodes_generated: usize,
     pub exact_state_skips: usize,
     pub truncated_children: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2TurnPlanProbeSelectionAuditReport {
+    pub data_role: &'static str,
+    pub behavioral_effect: &'static str,
+    pub candidates: Vec<CombatSearchV2TurnPlanProbeCandidateSelectionAuditReport>,
+    pub coverage_groups: Vec<CombatSearchV2TurnPlanProbeCoverageGroupAuditReport>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2TurnPlanProbeCandidateSelectionAuditReport {
+    pub preselection_rank: usize,
+    pub selected_plan_index: Option<usize>,
+    pub outcome: &'static str,
+    pub drop_reason: Option<&'static str>,
+    pub bucket: &'static str,
+    pub action_keys: Vec<String>,
+    pub coverage_key: CombatSearchV2TurnPlanProbeCoverageKeyReport,
+    pub coverage_signature: CombatSearchV2TurnPlanProbeCoverageSignatureReport,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2TurnPlanProbeCoverageGroupAuditReport {
+    pub bucket: &'static str,
+    pub coverage_key: CombatSearchV2TurnPlanProbeCoverageKeyReport,
+    pub preselection_count: usize,
+    pub selected_count: usize,
+    pub bucket_cap_dropped_count: usize,
+    pub max_end_states_dropped_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2TurnPlanProbeCoverageKeyReport {
+    pub damage: &'static str,
+    pub block: &'static str,
+    pub debuff: &'static str,
+    pub setup: &'static str,
+    pub resource: &'static str,
+    pub risk: &'static str,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2TurnPlanProbeCoverageSignatureReport {
+    pub action_count: usize,
+    pub cards_played: usize,
+    pub attacks_played: usize,
+    pub skills_played: usize,
+    pub powers_played: usize,
+    pub potions_used: usize,
+    pub damage_done: i32,
+    pub block_gained_proxy: i32,
+    pub enemy_vulnerable_added: i32,
+    pub enemy_weak_added: i32,
+    pub enemy_strength_down_added: i32,
+    pub player_strength_gain: i32,
+    pub player_temporary_strength_gain: i32,
+    pub energy_spent_proxy: i32,
+    pub hand_delta: i32,
+    pub draw_delta: i32,
+    pub discard_delta: i32,
+    pub exhaust_delta: i32,
+    pub queued_cards_delta: i32,
+    pub player_hp_lost: i32,
+    pub reactive_player_hp_loss: i32,
+    pub reactive_forced_turn_end_actions: usize,
+    pub pending_choice_steps: usize,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -210,7 +279,7 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
         .collect::<Vec<_>>();
     let root_report = CombatSearchV2TurnPlanProbeRootReport {
         schema_name: "CombatSearchV2TurnPlanProbeRootReport",
-        schema_version: 1,
+        schema_version: 2,
         question: "which_exact_same_turn_plan_should_receive_followup_search_budget",
         behavioral_scope: "diagnostic_only_no_prune_no_policy_change_no_artifact_promotion",
         input_label: config.input_label.clone(),
@@ -243,6 +312,7 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
             exact_state_skips: enumeration.exact_state_skips,
             truncated_children: enumeration.truncated_children,
         },
+        selection_audit: selection_audit_report(&enumeration.selection_audit),
         candidates: candidates
             .iter()
             .map(|candidate| candidate.report.clone())
@@ -256,6 +326,94 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
     CombatSearchV2TurnPlanProbeEnumeration {
         report: root_report,
         candidates,
+    }
+}
+
+fn selection_audit_report(
+    audit: &TurnPlanSelectionAuditV1,
+) -> CombatSearchV2TurnPlanProbeSelectionAuditReport {
+    CombatSearchV2TurnPlanProbeSelectionAuditReport {
+        data_role: "turn_plan_candidate_selection_audit",
+        behavioral_effect: "diagnostic_only_no_candidate_reordering_no_budget_change",
+        candidates: audit
+            .candidates
+            .iter()
+            .map(candidate_selection_audit_report)
+            .collect(),
+        coverage_groups: audit
+            .coverage_groups
+            .iter()
+            .map(coverage_group_audit_report)
+            .collect(),
+    }
+}
+
+fn candidate_selection_audit_report(
+    candidate: &TurnPlanCandidateSelectionAuditV1,
+) -> CombatSearchV2TurnPlanProbeCandidateSelectionAuditReport {
+    CombatSearchV2TurnPlanProbeCandidateSelectionAuditReport {
+        preselection_rank: candidate.preselection_rank,
+        selected_plan_index: candidate.selected_plan_index,
+        outcome: candidate.outcome.label(),
+        drop_reason: candidate.drop_reason.map(|reason| reason.label()),
+        bucket: candidate.bucket.label(),
+        action_keys: candidate.action_keys.clone(),
+        coverage_key: coverage_key_report(candidate.coverage_key),
+        coverage_signature: coverage_signature_report(candidate.coverage_signature),
+    }
+}
+
+fn coverage_group_audit_report(
+    group: &TurnPlanCoverageGroupAuditV1,
+) -> CombatSearchV2TurnPlanProbeCoverageGroupAuditReport {
+    CombatSearchV2TurnPlanProbeCoverageGroupAuditReport {
+        bucket: group.key.bucket.label(),
+        coverage_key: coverage_key_report(group.key.coverage),
+        preselection_count: group.preselection_count,
+        selected_count: group.selected_count,
+        bucket_cap_dropped_count: group.bucket_cap_dropped_count,
+        max_end_states_dropped_count: group.max_end_states_dropped_count,
+    }
+}
+
+fn coverage_key_report(key: TurnPlanCoverageKeyV1) -> CombatSearchV2TurnPlanProbeCoverageKeyReport {
+    CombatSearchV2TurnPlanProbeCoverageKeyReport {
+        damage: key.damage.label(),
+        block: key.block.label(),
+        debuff: key.debuff.label(),
+        setup: key.setup.label(),
+        resource: key.resource.label(),
+        risk: key.risk.label(),
+    }
+}
+
+fn coverage_signature_report(
+    signature: TurnPlanCoverageSignatureV1,
+) -> CombatSearchV2TurnPlanProbeCoverageSignatureReport {
+    CombatSearchV2TurnPlanProbeCoverageSignatureReport {
+        action_count: signature.action_count,
+        cards_played: signature.cards_played,
+        attacks_played: signature.attacks_played,
+        skills_played: signature.skills_played,
+        powers_played: signature.powers_played,
+        potions_used: signature.potions_used,
+        damage_done: signature.damage_done,
+        block_gained_proxy: signature.block_gained_proxy,
+        enemy_vulnerable_added: signature.enemy_vulnerable_added,
+        enemy_weak_added: signature.enemy_weak_added,
+        enemy_strength_down_added: signature.enemy_strength_down_added,
+        player_strength_gain: signature.player_strength_gain,
+        player_temporary_strength_gain: signature.player_temporary_strength_gain,
+        energy_spent_proxy: signature.energy_spent_proxy,
+        hand_delta: signature.hand_delta,
+        draw_delta: signature.draw_delta,
+        discard_delta: signature.discard_delta,
+        exhaust_delta: signature.exhaust_delta,
+        queued_cards_delta: signature.queued_cards_delta,
+        player_hp_lost: signature.player_hp_lost,
+        reactive_player_hp_loss: signature.reactive_player_hp_loss,
+        reactive_forced_turn_end_actions: signature.reactive_forced_turn_end_actions,
+        pending_choice_steps: signature.pending_choice_steps,
     }
 }
 
