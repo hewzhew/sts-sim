@@ -6,8 +6,8 @@ use crate::ai::decision_tags_v1::{
 use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, compile_shop_decision_v1, shop_card_conversion_priority_v1,
     ShopCompileModeV1, ShopDecisionSourceV1, ShopPlanCandidateRoleV1, ShopPlanComponentKindV1,
-    ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
-    ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    ShopPlanKindV1, ShopPlanProjectionRoleV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1,
+    ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{
     CandidateAction, PressureKind, StrategicBossTax, StrategicDebt, StrategicJob,
@@ -592,7 +592,14 @@ fn compiled_shop_branch_topk_returns_plan_alternatives() {
     );
 
     assert!(!compiled.alternatives.is_empty());
+    assert!(!compiled.branch_projection.is_empty());
     assert!(compiled.alternatives.len() <= 3);
+    assert!(compiled.branch_projection.len() <= 3);
+    assert_eq!(
+        compiled.frontier.plans.len(),
+        compiled.candidate_plans.len(),
+        "frontier owns the evaluated candidate pool"
+    );
     let candidate_plan_ids = compiled
         .candidate_plans
         .iter()
@@ -618,6 +625,10 @@ fn compiled_shop_branch_topk_returns_plan_alternatives() {
         .alternatives
         .iter()
         .any(|plan| plan.candidate_ids.iter().any(|id| id.starts_with("shop:"))));
+    assert!(compiled.branch_projection.iter().all(|projection| {
+        candidate_plan_ids.contains(projection.plan_id.as_str())
+            && projection.role == ShopPlanProjectionRoleV1::BranchExplore
+    }));
 }
 
 #[test]

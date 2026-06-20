@@ -2,6 +2,7 @@ use crate::eval::branch_experiment::{
     BranchExperimentChoiceDecisionSignalV1,
     BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1,
     BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1,
+    BRANCH_EXPERIMENT_SHOP_BRANCH_PROJECTION_SIGNAL_SOURCE_V1,
     BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1,
 };
 
@@ -171,6 +172,7 @@ fn branch_shop_plan_rank_adjustment_v1(candidate: &BranchRetentionCandidateInput
             matches!(
                 signal.source.as_str(),
                 BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1
+                    | BRANCH_EXPERIMENT_SHOP_BRANCH_PROJECTION_SIGNAL_SOURCE_V1
                     | BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1
             ) && signal.verdict == "Allow"
         })
@@ -190,6 +192,7 @@ fn shop_plan_signal_rank_adjustment_v1(signal: &BranchExperimentChoiceDecisionSi
         BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1 => {
             evaluation_bonus.saturating_add(600).min(1_000)
         }
+        BRANCH_EXPERIMENT_SHOP_BRANCH_PROJECTION_SIGNAL_SOURCE_V1 => evaluation_bonus.min(1_000),
         BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1 => {
             // Alternative shop plans are coverage probes. Prefer the compiler-
             // selected plan at the same frontier, but keep structurally valuable

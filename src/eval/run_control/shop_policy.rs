@@ -17,18 +17,29 @@ pub(super) fn apply_shop_policy_action(
         &crate::ai::shop_policy_v1::ShopPolicyConfigV1::default(),
         crate::ai::shop_policy_v1::ShopCompileModeV1::ExecuteOne,
     );
-    let Some(step) = compiled.selected_plan.steps.first() else {
+    let execution_plan = compiled
+        .execution_projection
+        .as_ref()
+        .and_then(|projection| {
+            compiled
+                .candidate_plans
+                .iter()
+                .find(|candidate| candidate.plan.plan_id == projection.plan_id)
+                .map(|candidate| &candidate.plan)
+        })
+        .unwrap_or(&compiled.selected_plan);
+    let Some(step) = execution_plan.steps.first() else {
         return Ok(None);
     };
     let noncombat_record = compiled.to_noncombat_decision_record_v1();
     let (input, label) = shop_plan_step_input_and_label_v1(step);
-    let confidence = compiled.selected_plan.legacy_confidence.unwrap_or(0.0);
+    let confidence = execution_plan.legacy_confidence.unwrap_or(0.0);
     let summary = format!(
-        "shop policy: {} confidence={confidence:.2} reason={} plan={} source={:?} label_role={}",
+        "shop policy: {} confidence={confidence:.2} reason={} execution_projection={} source={:?} label_role={}",
         label,
-        compiled.selected_plan.reason,
-        compiled.selected_plan.plan_id,
-        compiled.selected_plan.source,
+        execution_plan.reason,
+        execution_plan.plan_id,
+        execution_plan.source,
         "behavior_policy_not_teacher"
     );
 

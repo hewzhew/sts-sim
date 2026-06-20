@@ -6,8 +6,7 @@ use crate::content::cards::{get_card_definition, CardId};
 use crate::content::potions::get_potion_definition;
 use crate::eval::branch_experiment::{
     BranchExperimentChoiceDecisionSignalV1,
-    BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1,
-    BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1,
+    BRANCH_EXPERIMENT_SHOP_BRANCH_PROJECTION_SIGNAL_SOURCE_V1,
 };
 use crate::eval::run_control::RunControlSession;
 use crate::state::core::EngineState;
@@ -45,57 +44,35 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
     );
     let mut options = Vec::new();
     let mut seen_commands = std::collections::BTreeSet::<String>::new();
-    let mut represented_effects = std::collections::BTreeSet::<String>::new();
 
-    let selected_evaluation = compiled
-        .candidate_plans
-        .iter()
-        .find(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id)
-        .map(|candidate| &candidate.evaluation);
-    if let Some(option) =
-        shop_branch_option_from_plan(&compiled.selected_plan, selected_evaluation, true)
-    {
-        seen_commands.insert(option.command.clone());
-        represented_effects.insert(option.effect_kind.clone());
-        options.push(option);
-    }
-
-    for prefer_new_effect in [true, false] {
-        for plan in &compiled.alternatives {
-            if options.len() >= MAX_SHOP_PURCHASE_OPTIONS_PER_BRANCH {
-                break;
-            }
-            let evaluation = compiled
-                .candidate_plans
-                .iter()
-                .find(|candidate| candidate.plan.plan_id == plan.plan_id)
-                .map(|candidate| &candidate.evaluation);
-            if let Some(option) = shop_branch_option_from_plan(plan, evaluation, false) {
-                let has_effect = represented_effects.contains(&option.effect_kind);
-                if prefer_new_effect && has_effect {
-                    continue;
-                }
-                if seen_commands.insert(option.command.clone()) {
-                    represented_effects.insert(option.effect_kind.clone());
-                    options.push(option);
-                }
-            }
-        }
+    for projection in &compiled.branch_projection {
         if options.len() >= MAX_SHOP_PURCHASE_OPTIONS_PER_BRANCH {
             break;
         }
+        let Some(candidate) = compiled
+            .candidate_plans
+            .iter()
+            .find(|candidate| candidate.plan.plan_id == projection.plan_id)
+        else {
+            continue;
+        };
+        if let Some(option) =
+            shop_branch_option_from_plan(&candidate.plan, Some(&candidate.evaluation))
+        {
+            if seen_commands.insert(option.command.clone()) {
+                options.push(option);
+            }
+        }
     }
     if options.is_empty() {
-        // Defensive fallback for stop-only compiler output. Ordinary executable
-        // shop decisions should already have inserted selected_plan above.
-        options.extend(compiled.alternatives.iter().filter_map(|plan| {
-            let evaluation = compiled
-                .candidate_plans
-                .iter()
-                .find(|candidate| candidate.plan.plan_id == plan.plan_id)
-                .map(|candidate| &candidate.evaluation);
-            shop_branch_option_from_plan(plan, evaluation, false)
-        }));
+        let evaluation = compiled
+            .candidate_plans
+            .iter()
+            .find(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id)
+            .map(|candidate| &candidate.evaluation);
+        if let Some(option) = shop_branch_option_from_plan(&compiled.selected_plan, evaluation) {
+            options.push(option);
+        }
     }
     debug_assert!(
         !options.is_empty(),
@@ -107,7 +84,6 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
 fn shop_branch_option_from_plan(
     plan: &ShopPlanV1,
     evaluation: Option<&ShopPlanEvaluationV1>,
-    selected_plan: bool,
 ) -> Option<ShopBranchOption> {
     if plan.steps.is_empty() {
         return None;
@@ -120,22 +96,15 @@ fn shop_branch_option_from_plan(
         effect_label: shop_plan_effect_label(plan),
         representative_count: plan.steps.len(),
         suppressed_count: plan.suppressed_count,
-        decision_signal: evaluation
-            .map(|evaluation| shop_decision_signal_v1(evaluation, selected_plan)),
+        decision_signal: evaluation.map(shop_decision_signal_v1),
     })
 }
 
 fn shop_decision_signal_v1(
     evaluation: &ShopPlanEvaluationV1,
-    selected_plan: bool,
 ) -> BranchExperimentChoiceDecisionSignalV1 {
     BranchExperimentChoiceDecisionSignalV1 {
-        source: if selected_plan {
-            BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1
-        } else {
-            BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1
-        }
-        .to_string(),
+        source: BRANCH_EXPERIMENT_SHOP_BRANCH_PROJECTION_SIGNAL_SOURCE_V1.to_string(),
         verdict: format!("{:?}", evaluation.verdict),
         tier: evaluation.tier,
         score: evaluation.score,

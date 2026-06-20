@@ -138,11 +138,64 @@ pub enum ShopPlanKindV1 {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompiledShopDecisionV1 {
+    pub frontier: ShopPlanFrontierV1,
+    pub execution_projection: Option<ShopPlanProjectionV1>,
+    pub branch_projection: Vec<ShopPlanProjectionV1>,
+    /// Compatibility projection for older single-action consumers. New code
+    /// should read execution_projection/frontier instead of treating this as a
+    /// claim that the plan is globally best.
     pub selected_plan: ShopPlanV1,
+    /// Compatibility projection for older branch consumers. New branch code
+    /// should read branch_projection/frontier instead of assuming everything
+    /// not in selected_plan is merely an alternative.
     pub alternatives: Vec<ShopPlanV1>,
     pub candidate_plans: Vec<ShopPlanCandidateV1>,
     pub strategic_trace: crate::ai::strategic::StrategicDecisionTrace,
     pub source: ShopDecisionSourceV1,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShopPlanFrontierV1 {
+    pub plans: Vec<ShopPlanCandidateV1>,
+    pub lanes: Vec<ShopPlanLaneGroupV1>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShopPlanLaneGroupV1 {
+    pub lane: ShopPlanLaneV1,
+    pub plan_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShopPlanProjectionV1 {
+    pub plan_id: String,
+    pub lane: ShopPlanLaneV1,
+    pub role: ShopPlanProjectionRoleV1,
+    pub reason: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShopPlanProjectionRoleV1 {
+    ExecutionHead,
+    BranchExplore,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ShopPlanLaneV1 {
+    Purge,
+    BuyRelic,
+    BuyPotion,
+    BuyCardBossAnswer,
+    BuyCardMissingCeiling,
+    BuyCardScalingEngine,
+    BuyCardDrawAccess,
+    BuyCardExhaustAccess,
+    BuyCardDefense,
+    BuyCardFrontload,
+    BuyCardGeneric,
+    BuyCombo,
+    Leave,
+    Stop,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -327,13 +380,23 @@ pub enum ShopPlanStepV1 {
 
 impl CompiledShopDecisionV1 {
     pub fn to_noncombat_decision_record_v1(&self) -> NonCombatDecisionRecordV1 {
-        let selected_candidate_id = (self.selected_plan.kind == ShopPlanKindV1::Execute
-            && !self.selected_plan.steps.is_empty())
-        .then(|| self.selected_plan.plan_id.clone());
+        let execution_plan = self
+            .execution_projection
+            .as_ref()
+            .and_then(|projection| {
+                self.candidate_plans
+                    .iter()
+                    .find(|candidate| candidate.plan.plan_id == projection.plan_id)
+                    .map(|candidate| &candidate.plan)
+            })
+            .unwrap_or(&self.selected_plan);
+        let selected_candidate_id = (execution_plan.kind == ShopPlanKindV1::Execute
+            && !execution_plan.steps.is_empty())
+        .then(|| execution_plan.plan_id.clone());
         let selected_evaluation = self
             .candidate_plans
             .iter()
-            .find(|candidate| candidate.plan.plan_id == self.selected_plan.plan_id)
+            .find(|candidate| candidate.plan.plan_id == execution_plan.plan_id)
             .map(|candidate| &candidate.evaluation);
 
         NonCombatDecisionRecordV1 {
@@ -382,12 +445,12 @@ impl CompiledShopDecisionV1 {
                     PolicySelectionStatusV1::Stopped
                 },
                 selected_candidate_id,
-                reason: self.selected_plan.reason.clone(),
+                reason: execution_plan.reason.clone(),
                 confidence: selected_evaluation
                     .map(|evaluation| evaluation.confidence)
-                    .or(self.selected_plan.legacy_confidence)
+                    .or(execution_plan.legacy_confidence)
                     .unwrap_or(0.0),
-                selection_mode: "compiled_shop_decision_v1".to_string(),
+                selection_mode: "compiled_shop_execution_projection_v1".to_string(),
             },
         }
     }

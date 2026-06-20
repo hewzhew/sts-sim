@@ -35,7 +35,7 @@ pub(super) fn render_checkpoint_shop_plan_challenge_v1(
             max_plans: input.challenge_max_plans,
         },
     );
-    let plans = selected_and_alternative_plans_v1(&compiled.selected_plan, &compiled.alternatives)
+    let plans = projected_shop_plans_v1(&compiled)
         .into_iter()
         .take(input.challenge_max_plans)
         .collect::<Vec<_>>();
@@ -246,15 +246,32 @@ impl ShopPlanChallengeComparisonRowV1 {
     }
 }
 
-fn selected_and_alternative_plans_v1(
-    selected: &ShopPlanV1,
-    alternatives: &[ShopPlanV1],
+fn projected_shop_plans_v1(
+    compiled: &sts_simulator::ai::shop_policy_v1::CompiledShopDecisionV1,
 ) -> Vec<ShopPlanV1> {
     let mut plans = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
-    for plan in std::iter::once(selected).chain(alternatives.iter()) {
-        if seen.insert(plan.plan_id.clone()) {
-            plans.push(plan.clone());
+    for projection in &compiled.branch_projection {
+        let Some(candidate) = compiled
+            .candidate_plans
+            .iter()
+            .find(|candidate| candidate.plan.plan_id == projection.plan_id)
+        else {
+            continue;
+        };
+        if seen.insert(candidate.plan.plan_id.clone()) {
+            plans.push(candidate.plan.clone());
+        }
+    }
+    if plans.is_empty() {
+        if let Some(projection) = &compiled.execution_projection {
+            if let Some(candidate) = compiled
+                .candidate_plans
+                .iter()
+                .find(|candidate| candidate.plan.plan_id == projection.plan_id)
+            {
+                plans.push(candidate.plan.clone());
+            }
         }
     }
     plans

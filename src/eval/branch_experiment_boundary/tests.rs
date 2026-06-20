@@ -511,7 +511,7 @@ fn current_boundary_caps_high_fanout_shop_purchase_choices() {
 }
 
 #[test]
-fn current_boundary_keeps_compiled_selected_shop_plan_first() {
+fn current_boundary_uses_compiled_shop_branch_projection() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.floor_num = 6;
     session.run_state.gold = 631;
@@ -549,13 +549,13 @@ fn current_boundary_keeps_compiled_selected_shop_plan_first() {
 
     assert_eq!(boundary.id, BranchBoundaryIdV1::Shop);
     assert!(boundary.options.len() <= 4);
-    assert_eq!(
-        boundary.options[0]
+    assert!(
+        boundary.options.iter().all(|option| option
             .decision_signal
             .as_ref()
-            .map(|signal| signal.source.as_str()),
-        Some(crate::eval::branch_experiment::BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1),
-        "compiled selected plan should be the first shop branch option"
+            .is_some_and(|signal| signal.source
+                == crate::eval::branch_experiment::BRANCH_EXPERIMENT_SHOP_BRANCH_PROJECTION_SIGNAL_SOURCE_V1)),
+        "shop branch options should come from compiled branch projections"
     );
     assert!(
         boundary

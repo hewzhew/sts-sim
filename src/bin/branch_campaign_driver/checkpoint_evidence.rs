@@ -156,25 +156,42 @@ pub(super) fn render_checkpoint_shop_evidence_v1(
         context.affordable_purchase_exists,
         context.candidates.len()
     ));
-    lines.push(format!(
-        "selected_plan: {}",
-        render_shop_plan_with_evaluation_v1(&compiled.selected_plan, &compiled.candidate_plans)
-    ));
+    if let Some(projection) = &compiled.execution_projection {
+        let rendered = compiled
+            .candidate_plans
+            .iter()
+            .find(|candidate| candidate.plan.plan_id == projection.plan_id)
+            .map(|candidate| {
+                render_shop_plan_with_evaluation_v1(&candidate.plan, &compiled.candidate_plans)
+            })
+            .unwrap_or_else(|| format!("missing plan {}", projection.plan_id));
+        lines.push(format!(
+            "execution_projection: lane={:?} {}",
+            projection.lane, rendered
+        ));
+    } else {
+        lines.push("execution_projection: -".to_string());
+    }
     lines.push(render_shop_plan_candidate_summary_v1(
         &compiled.candidate_plans,
     ));
-    if compiled.alternatives.is_empty() {
-        lines.push("alternative_plans: -".to_string());
+    if compiled.branch_projection.is_empty() {
+        lines.push("branch_projection: -".to_string());
     } else {
         lines.push(format!(
-            "alternative_plans: {}",
-            compiled.alternatives.len()
+            "branch_projection: {}",
+            compiled.branch_projection.len()
         ));
-        for (idx, plan) in compiled.alternatives.iter().enumerate() {
-            lines.push(format!(
-                "  {idx}. {}",
-                render_shop_plan_with_evaluation_v1(plan, &compiled.candidate_plans)
-            ));
+        for (idx, projection) in compiled.branch_projection.iter().enumerate() {
+            let rendered = compiled
+                .candidate_plans
+                .iter()
+                .find(|candidate| candidate.plan.plan_id == projection.plan_id)
+                .map(|candidate| {
+                    render_shop_plan_with_evaluation_v1(&candidate.plan, &compiled.candidate_plans)
+                })
+                .unwrap_or_else(|| format!("missing plan {}", projection.plan_id));
+            lines.push(format!("  {idx}. lane={:?} {}", projection.lane, rendered));
         }
     }
     lines.push("candidate evidence:".to_string());

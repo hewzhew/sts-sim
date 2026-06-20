@@ -4,8 +4,9 @@ use super::portfolio::evaluated_shop_portfolio_combo_plans_v1;
 use super::types::{
     CompiledShopDecisionV1, ShopCandidateEvidenceV1, ShopCompileModeV1, ShopDecisionContextV1,
     ShopDecisionSourceV1, ShopPlanCandidateRoleV1, ShopPlanCandidateV1, ShopPlanEvaluationV1,
-    ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
-    ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
+    ShopPlanFrontierV1, ShopPlanKindV1, ShopPlanLaneGroupV1, ShopPlanLaneV1,
+    ShopPlanProjectionRoleV1, ShopPlanProjectionV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1,
+    ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{
     AcquisitionThesisRole, AcquisitionThesisStatus, CandidateDelta, CandidateRole,
@@ -48,19 +49,35 @@ pub fn compile_shop_decision_v1(
                 });
         candidate_plans.extend(portfolio_candidates);
     }
-    let selected_plan = select_evaluated_shop_plan_v1(&candidate_plans, mode);
-    let alternatives = match mode {
+    let frontier = shop_plan_frontier_v1(&strategic_trace, &candidate_plans);
+    let execution_projection =
+        select_execution_projection_v1(&strategic_trace, &candidate_plans, mode);
+    let selected_plan = execution_projection
+        .as_ref()
+        .and_then(|projection| {
+            plan_with_evaluation_by_id_v1(&candidate_plans, projection.plan_id.as_str())
+        })
+        .unwrap_or_else(|| {
+            stop_candidate_plan_v1("shop compiler produced no candidates".to_string()).plan
+        });
+    let branch_projection = match mode {
         ShopCompileModeV1::ExecuteOne => Vec::new(),
-        ShopCompileModeV1::BranchTopK { max_plans } => evaluated_branch_alternatives_v1(
-            context,
-            &strategic_trace,
-            &candidate_plans,
-            max_plans,
-            &selected_plan,
-        ),
+        ShopCompileModeV1::BranchTopK { max_plans } => {
+            branch_exploration_projection_v1(context, &strategic_trace, &candidate_plans, max_plans)
+        }
     };
+    let alternatives = branch_projection
+        .iter()
+        .filter(|projection| projection.plan_id != selected_plan.plan_id)
+        .filter_map(|projection| {
+            plan_with_evaluation_by_id_v1(&candidate_plans, projection.plan_id.as_str())
+        })
+        .collect();
 
     CompiledShopDecisionV1 {
+        frontier,
+        execution_projection,
+        branch_projection,
         selected_plan,
         alternatives,
         candidate_plans,
@@ -72,38 +89,47 @@ pub fn compile_shop_decision_v1(
 pub fn compiled_shop_decision_has_executable_conversion_branch_v1(
     decision: &CompiledShopDecisionV1,
 ) -> bool {
-    std::iter::once(&decision.selected_plan)
-        .chain(decision.alternatives.iter())
+    decision
+        .branch_projection
+        .iter()
+        .filter_map(|projection| {
+            decision
+                .candidate_plans
+                .iter()
+                .find(|candidate| candidate.plan.plan_id == projection.plan_id)
+                .map(|candidate| &candidate.plan)
+        })
         .any(shop_plan_has_conversion_step_v1)
 }
 
-fn select_evaluated_shop_plan_v1(
+fn select_execution_projection_v1(
+    strategic_trace: &StrategicDecisionTrace,
     candidates: &[ShopPlanCandidateV1],
     mode: ShopCompileModeV1,
-) -> ShopPlanV1 {
+) -> Option<ShopPlanProjectionV1> {
     candidates
         .iter()
         .filter(|candidate| shop_plan_is_selectable_in_mode_v1(candidate, mode))
         .max_by(|left, right| compare_evaluated_shop_candidates_v1(left, right, mode))
-        .map(|candidate| plan_with_evaluation_v1(&candidate.plan, &candidate.evaluation))
-        .unwrap_or_else(|| {
-            stop_candidate_plan_v1("shop compiler produced no candidates".to_string()).plan
+        .map(|candidate| ShopPlanProjectionV1 {
+            plan_id: candidate.plan.plan_id.clone(),
+            lane: shop_plan_lane_v1(strategic_trace, candidate),
+            role: ShopPlanProjectionRoleV1::ExecutionHead,
+            reason: "execution projection from evaluated shop frontier".to_string(),
         })
 }
 
-fn evaluated_branch_alternatives_v1(
+fn branch_exploration_projection_v1(
     context: &ShopDecisionContextV1,
     strategic_trace: &StrategicDecisionTrace,
     candidates: &[ShopPlanCandidateV1],
     max_plans: usize,
-    selected_plan: &ShopPlanV1,
-) -> Vec<ShopPlanV1> {
+) -> Vec<ShopPlanProjectionV1> {
     let mut allow_candidates = candidates
         .iter()
         .filter(|candidate| {
             !candidate.plan.steps.is_empty()
                 && candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
-                && candidate.plan.plan_id != selected_plan.plan_id
         })
         .collect::<Vec<_>>();
     if branch_should_include_leave_with_allowed_candidates_v1(context)
@@ -114,7 +140,6 @@ fn evaluated_branch_alternatives_v1(
         allow_candidates.extend(candidates.iter().filter(|candidate| {
             candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
                 && plan_has_leave_shop_step_v1(candidate)
-                && candidate.plan.plan_id != selected_plan.plan_id
         }));
     }
     let mut alternatives = if allow_candidates.is_empty() {
@@ -124,7 +149,6 @@ fn evaluated_branch_alternatives_v1(
                 !candidate.plan.steps.is_empty()
                     && candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
                     && plan_has_leave_shop_step_v1(candidate)
-                    && candidate.plan.plan_id != selected_plan.plan_id
             })
             .collect::<Vec<_>>()
     } else {
@@ -138,8 +162,33 @@ fn evaluated_branch_alternatives_v1(
     );
     alternatives
         .into_iter()
-        .map(|candidate| plan_with_evaluation_v1(&candidate.plan, &candidate.evaluation))
+        .map(|candidate| ShopPlanProjectionV1 {
+            plan_id: candidate.plan.plan_id.clone(),
+            lane: shop_plan_lane_v1(strategic_trace, candidate),
+            role: ShopPlanProjectionRoleV1::BranchExplore,
+            reason: "branch projection from evaluated shop frontier lane coverage".to_string(),
+        })
         .collect()
+}
+
+fn shop_plan_frontier_v1(
+    strategic_trace: &StrategicDecisionTrace,
+    candidates: &[ShopPlanCandidateV1],
+) -> ShopPlanFrontierV1 {
+    let mut grouped = std::collections::BTreeMap::<ShopPlanLaneV1, Vec<String>>::new();
+    for candidate in candidates {
+        grouped
+            .entry(shop_plan_lane_v1(strategic_trace, candidate))
+            .or_default()
+            .push(candidate.plan.plan_id.clone());
+    }
+    ShopPlanFrontierV1 {
+        plans: candidates.to_vec(),
+        lanes: grouped
+            .into_iter()
+            .map(|(lane, plan_ids)| ShopPlanLaneGroupV1 { lane, plan_ids })
+            .collect(),
+    }
 }
 
 fn branch_should_include_leave_with_allowed_candidates_v1(context: &ShopDecisionContextV1) -> bool {
@@ -181,25 +230,25 @@ fn select_branch_alternatives_with_effect_coverage_v1<'a>(
         // Keep primitive actions ahead of portfolio probes. Multi-step shop
         // combos are useful coverage probes, but they should not consume the
         // fanout budget before a cleanup or single-purchase branch can appear.
-        "shop_purge",
-        "shop_buy_relic",
-        "shop_buy_potion",
-        "shop_buy_card:boss_answer",
-        "shop_buy_card:missing_ceiling",
-        "shop_buy_card:scaling_engine",
-        "shop_buy_card:draw_access",
-        "shop_buy_card:exhaust_access",
-        "shop_buy_card:defense",
-        "shop_buy_card:frontload",
-        "shop_buy_card:generic",
-        "shop_buy_combo",
-        "shop_leave",
+        ShopPlanLaneV1::Purge,
+        ShopPlanLaneV1::BuyRelic,
+        ShopPlanLaneV1::BuyPotion,
+        ShopPlanLaneV1::BuyCardBossAnswer,
+        ShopPlanLaneV1::BuyCardMissingCeiling,
+        ShopPlanLaneV1::BuyCardScalingEngine,
+        ShopPlanLaneV1::BuyCombo,
+        ShopPlanLaneV1::BuyCardDrawAccess,
+        ShopPlanLaneV1::BuyCardExhaustAccess,
+        ShopPlanLaneV1::BuyCardDefense,
+        ShopPlanLaneV1::BuyCardFrontload,
+        ShopPlanLaneV1::BuyCardGeneric,
+        ShopPlanLaneV1::Leave,
     ] {
         if selected.len() >= max_plans {
             break;
         }
         let Some(candidate) = sorted_candidates.iter().copied().find(|candidate| {
-            shop_plan_effect_kind_for_coverage_v1(strategic_trace, candidate) == effect_kind
+            shop_plan_lane_v1(strategic_trace, candidate) == effect_kind
                 && !represented.contains(&candidate.plan.plan_id)
         }) else {
             continue;
@@ -219,23 +268,23 @@ fn select_branch_alternatives_with_effect_coverage_v1<'a>(
     selected
 }
 
-fn shop_plan_effect_kind_for_coverage_v1(
+fn shop_plan_lane_v1(
     strategic_trace: &StrategicDecisionTrace,
     candidate: &ShopPlanCandidateV1,
-) -> &'static str {
+) -> ShopPlanLaneV1 {
     let plan = &candidate.plan;
     if plan.steps.len() > 1 {
-        return "shop_buy_combo";
+        return ShopPlanLaneV1::BuyCombo;
     }
     match plan.steps.first() {
         Some(ShopPlanStepV1::BuyCard { .. }) => shop_card_buy_coverage_lane_v1(
             plan_delta_from_strategic_trace_v1(strategic_trace, plan),
         ),
-        Some(ShopPlanStepV1::BuyRelic { .. }) => "shop_buy_relic",
-        Some(ShopPlanStepV1::BuyPotion { .. }) => "shop_buy_potion",
-        Some(ShopPlanStepV1::RemoveCard { .. }) => "shop_purge",
-        Some(ShopPlanStepV1::LeaveShop) => "shop_leave",
-        None => "shop_stop",
+        Some(ShopPlanStepV1::BuyRelic { .. }) => ShopPlanLaneV1::BuyRelic,
+        Some(ShopPlanStepV1::BuyPotion { .. }) => ShopPlanLaneV1::BuyPotion,
+        Some(ShopPlanStepV1::RemoveCard { .. }) => ShopPlanLaneV1::Purge,
+        Some(ShopPlanStepV1::LeaveShop) => ShopPlanLaneV1::Leave,
+        None => ShopPlanLaneV1::Stop,
     }
 }
 
@@ -280,9 +329,9 @@ fn shop_plan_step_action_candidate_id_v1(step: &ShopPlanStepV1) -> Option<String
     }
 }
 
-fn shop_card_buy_coverage_lane_v1(delta: Option<&CandidateDelta>) -> &'static str {
+fn shop_card_buy_coverage_lane_v1(delta: Option<&CandidateDelta>) -> ShopPlanLaneV1 {
     let Some(delta) = delta else {
-        return "shop_buy_card:generic";
+        return ShopPlanLaneV1::BuyCardGeneric;
     };
     if delta_has_thesis_v1(
         delta,
@@ -292,14 +341,14 @@ fn shop_card_buy_coverage_lane_v1(delta: Option<&CandidateDelta>) -> &'static st
             AcquisitionThesisStatus::Useful,
         ],
     ) {
-        return "shop_buy_card:boss_answer";
+        return ShopPlanLaneV1::BuyCardBossAnswer;
     }
     if delta_has_thesis_v1(
         delta,
         AcquisitionThesisRole::WinConditionOrCeiling,
         &[AcquisitionThesisStatus::Missing],
     ) {
-        return "shop_buy_card:missing_ceiling";
+        return ShopPlanLaneV1::BuyCardMissingCeiling;
     }
     if delta_has_thesis_v1(
         delta,
@@ -309,7 +358,7 @@ fn shop_card_buy_coverage_lane_v1(delta: Option<&CandidateDelta>) -> &'static st
             AcquisitionThesisStatus::Useful,
         ],
     ) {
-        return "shop_buy_card:scaling_engine";
+        return ShopPlanLaneV1::BuyCardScalingEngine;
     }
     if delta_has_thesis_v1(
         delta,
@@ -320,7 +369,7 @@ fn shop_card_buy_coverage_lane_v1(delta: Option<&CandidateDelta>) -> &'static st
         ],
     ) || delta.role == CandidateRole::Lubricant
     {
-        return "shop_buy_card:draw_access";
+        return ShopPlanLaneV1::BuyCardDrawAccess;
     }
     if delta_has_thesis_v1(
         delta,
@@ -330,7 +379,7 @@ fn shop_card_buy_coverage_lane_v1(delta: Option<&CandidateDelta>) -> &'static st
             AcquisitionThesisStatus::Useful,
         ],
     ) {
-        return "shop_buy_card:exhaust_access";
+        return ShopPlanLaneV1::BuyCardExhaustAccess;
     }
     if delta_has_thesis_v1(
         delta,
@@ -348,7 +397,7 @@ fn shop_card_buy_coverage_lane_v1(delta: Option<&CandidateDelta>) -> &'static st
         ],
     ) || matches!(delta.role, CandidateRole::DefensivePatch)
     {
-        return "shop_buy_card:defense";
+        return ShopPlanLaneV1::BuyCardDefense;
     }
     if delta_has_thesis_v1(
         delta,
@@ -359,9 +408,9 @@ fn shop_card_buy_coverage_lane_v1(delta: Option<&CandidateDelta>) -> &'static st
         ],
     ) || matches!(delta.role, CandidateRole::Transition)
     {
-        return "shop_buy_card:frontload";
+        return ShopPlanLaneV1::BuyCardFrontload;
     }
-    "shop_buy_card:generic"
+    ShopPlanLaneV1::BuyCardGeneric
 }
 
 fn delta_has_thesis_v1(
@@ -492,6 +541,16 @@ fn plan_with_evaluation_v1(plan: &ShopPlanV1, evaluation: &ShopPlanEvaluationV1)
         plan.reason = reason.clone();
     }
     plan
+}
+
+fn plan_with_evaluation_by_id_v1(
+    candidates: &[ShopPlanCandidateV1],
+    plan_id: &str,
+) -> Option<ShopPlanV1> {
+    candidates
+        .iter()
+        .find(|candidate| candidate.plan.plan_id == plan_id)
+        .map(|candidate| plan_with_evaluation_v1(&candidate.plan, &candidate.evaluation))
 }
 
 pub(super) fn single_candidate_plan_v1(
