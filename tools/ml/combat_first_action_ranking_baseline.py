@@ -612,10 +612,12 @@ def metrics_from_group_scores(
 ) -> dict[str, float]:
     ranks = []
     hp_gains = []
+    target_hp_regrets = []
     positive_gain = 0
     negative_gain = 0
     target_missed = 0
     target_outcome_missed = 0
+    target_outcome_matched = 0
     for key, group in groups.items():
         scores = group_scores.get(key) or []
         if len(scores) != len(group):
@@ -631,6 +633,8 @@ def metrics_from_group_scores(
         current = group[current_index]
         top_hp = candidate_final_hp(top)
         current_hp = candidate_final_hp(current)
+        target = group[target_index] if target_index is not None else None
+        target_hp = candidate_final_hp(target) if target is not None else None
         if top_hp is not None and current_hp is not None:
             gain = top_hp - current_hp
             hp_gains.append(gain)
@@ -638,9 +642,14 @@ def metrics_from_group_scores(
                 positive_gain += 1
             elif gain < 0:
                 negative_gain += 1
-        if target_index is not None and top_index != target_index:
-            target_missed += 1
-            if candidate_outcome(group[target_index]) != candidate_outcome(top):
+        if target_hp is not None and top_hp is not None:
+            target_hp_regrets.append(target_hp - top_hp)
+        if target_index is not None:
+            if candidate_outcome(group[target_index]) == candidate_outcome(top):
+                target_outcome_matched += 1
+            if top_index != target_index:
+                target_missed += 1
+            if top_index != target_index and candidate_outcome(group[target_index]) != candidate_outcome(top):
                 target_outcome_missed += 1
     if not ranks:
         return {
@@ -653,6 +662,8 @@ def metrics_from_group_scores(
             "negative_hp_gain": 0.0,
             "target_missed": 0.0,
             "target_outcome_missed": 0.0,
+            "target_outcome_match_rate": 0.0,
+            "avg_hp_regret_to_target": 0.0,
         }
     return {
         "groups": float(len(ranks)),
@@ -665,6 +676,10 @@ def metrics_from_group_scores(
         "negative_hp_gain": float(negative_gain),
         "target_missed": float(target_missed),
         "target_outcome_missed": float(target_outcome_missed),
+        "target_outcome_match_rate": target_outcome_matched / len(ranks),
+        "avg_hp_regret_to_target": (
+            sum(target_hp_regrets) / len(target_hp_regrets) if target_hp_regrets else 0.0
+        ),
     }
 
 
@@ -702,7 +717,9 @@ def print_metrics(label: str, metrics: dict[str, float]) -> None:
         f"hp_gain(+/-)={metrics.get('positive_hp_gain', 0.0):.0f}/"
         f"{metrics.get('negative_hp_gain', 0.0):.0f} "
         f"target_missed={metrics.get('target_missed', 0.0):.0f} "
-        f"target_outcome_missed={metrics.get('target_outcome_missed', 0.0):.0f}"
+        f"target_outcome_missed={metrics.get('target_outcome_missed', 0.0):.0f} "
+        f"target_outcome_match={metrics.get('target_outcome_match_rate', 0.0):.3f} "
+        f"avg_hp_regret_to_target={metrics.get('avg_hp_regret_to_target', 0.0):+.2f}"
     )
 
 
