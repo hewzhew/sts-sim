@@ -498,6 +498,181 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def trace_plan_index(trace: dict[str, Any]) -> int:
+    return int_value(trace.get("plan_index"), 10**9)
+
+
+def summary_int(trace: dict[str, Any], key: str, default: int = 0) -> int:
+    return int_value(as_dict(trace.get("plan_summary")).get(key), default)
+
+
+def outcome_int(trace: dict[str, Any], key: str, default: int = -10**9) -> int:
+    return int_value(as_dict(trace.get("outcome_attachment")).get(key), default)
+
+
+def selected_diagnostic_traces(
+    traces: list[dict[str, Any]],
+) -> list[tuple[list[str], dict[str, Any]]]:
+    if not traces:
+        return []
+
+    def safety_key(trace: dict[str, Any]) -> tuple[int, int, int, int, int, int]:
+        return (
+            summary_int(trace, "hp_lost_to_plan_boundary", 10**9),
+            -outcome_int(trace, "final_hp"),
+            -summary_int(trace, "enemy_hp_removed_to_plan_boundary"),
+            -summary_int(trace, "enemy_kill_count_to_plan_boundary"),
+            summary_int(trace, "potion_actions"),
+            trace_plan_index(trace),
+        )
+
+    def progress_key(trace: dict[str, Any]) -> tuple[int, int, int, int, int, int]:
+        return (
+            -summary_int(trace, "enemy_kill_count_to_plan_boundary"),
+            -summary_int(trace, "enemy_hp_removed_to_plan_boundary"),
+            summary_int(trace, "hp_lost_to_plan_boundary", 10**9),
+            summary_int(trace, "potion_actions"),
+            -outcome_int(trace, "final_hp"),
+            trace_plan_index(trace),
+        )
+
+    def label_key(trace: dict[str, Any]) -> tuple[int, int, int, int]:
+        outcome = as_dict(trace.get("outcome_attachment"))
+        terminal = outcome.get("terminal")
+        complete_win = bool_value(outcome.get("complete_win"))
+        tier = 2 if complete_win else 1 if terminal == "win" else 0
+        return (
+            -tier,
+            -outcome_int(trace, "final_hp"),
+            summary_int(trace, "hp_lost_to_plan_boundary", 10**9),
+            trace_plan_index(trace),
+        )
+
+    selections = [
+        ("first", min(traces, key=trace_plan_index)),
+        ("safety", min(traces, key=safety_key)),
+        ("progress", min(traces, key=progress_key)),
+        ("label", min(traces, key=label_key)),
+    ]
+    merged: dict[str, tuple[list[str], dict[str, Any]]] = {}
+    for role, trace in selections:
+        plan_id = str(trace.get("plan_id") or f"plan:{trace_plan_index(trace)}")
+        if plan_id in merged:
+            merged[plan_id][0].append(role)
+        else:
+            merged[plan_id] = ([role], trace)
+    return list(merged.values())
+
+
+def short_action_label(action_key: Any, action_debug: Any = None) -> str:
+    key = str(action_key or action_debug or "")
+    if not key:
+        return "?"
+    if key == "combat/end_turn" or key.endswith("/end_turn"):
+        return "end"
+    if "/card:" in key:
+        card = key.split("/card:", 1)[1].split("/", 1)[0]
+        return display_card_token(card)
+    if key.startswith("combat/play_card"):
+        return "play_card"
+    if "use_potion" in key:
+        return "use_potion"
+    return key.rsplit("/", 1)[-1]
+
+
+def display_card_token(card: str) -> str:
+    token = card.split("#", 1)[0]
+    upgrade_suffix = ""
+    if token.endswith("+0"):
+        token = token[:-2]
+    elif token.endswith("+1"):
+        token = token[:-2]
+        upgrade_suffix = "+"
+    elif "+" in token:
+        token, upgrade_suffix = token.rsplit("+", 1)
+        upgrade_suffix = f"+{upgrade_suffix}"
+    for class_suffix in ("_R", "_G", "_B", "_P"):
+        if token.endswith(class_suffix):
+            token = token[: -len(class_suffix)]
+            break
+    return token.replace("_", " ") + upgrade_suffix
+
+
+def action_preview(trace: dict[str, Any], limit: int = 5) -> str:
+    steps = [step for step in as_list(trace.get("steps")) if isinstance(step, dict)]
+    labels = []
+    for step in steps[:limit]:
+        action = as_dict(step.get("action"))
+        labels.append(short_action_label(action.get("action_key"), action.get("action_debug")))
+    if len(steps) > limit:
+        labels.append(f"+{len(steps) - limit}")
+    return " -> ".join(labels) if labels else "-"
+
+
+def diagnostic_trace_line(roles: list[str], trace: dict[str, Any]) -> str:
+    summary = as_dict(trace.get("plan_summary"))
+    outcome = as_dict(trace.get("outcome_attachment"))
+    return (
+        f"      {'/'.join(roles)}: "
+        f"plan={trace.get('plan_index')} "
+        f"hp_loss={summary.get('hp_lost_to_plan_boundary')} "
+        f"enemy_removed={summary.get('enemy_hp_removed_to_plan_boundary')} "
+        f"kills={summary.get('enemy_kill_count_to_plan_boundary')} "
+        f"final_hp={outcome.get('final_hp')} "
+        f"terminal={outcome.get('terminal')} "
+        f"actions=[{action_preview(trace)}]"
+    )
+
+
+def print_compact_cases(episodes: list[dict[str, Any]], case_limit: int) -> None:
+    print("  cases:")
+    for episode in episodes[:case_limit]:
+        source = as_dict(episode.get("source"))
+        context = as_dict(episode.get("root_tactical_context"))
+        print(f"    case={source.get('case_id') or source.get('input_label')}")
+        print(
+            "      "
+            f"candidates={context.get('candidate_count')} "
+            f"best_hp_loss={context.get('best_hp_loss_to_boundary')} "
+            f"best_enemy_removed={context.get('best_enemy_hp_removed_to_boundary')} "
+            f"best_final_hp={context.get('best_final_hp_labeled')} "
+            f"pareto={len(as_list(context.get('pareto_frontier_plan_ids')))}"
+        )
+    if len(episodes) > case_limit:
+        print(f"    ... {len(episodes) - case_limit} more episode(s)")
+
+
+def print_diagnostic_cases(episodes: list[dict[str, Any]], case_limit: int) -> None:
+    print("  diagnostic_cases:")
+    for episode in episodes[:case_limit]:
+        source = as_dict(episode.get("source"))
+        context = as_dict(episode.get("root_tactical_context"))
+        root_view = as_dict(as_dict(episode.get("root")).get("public_view"))
+        root_state = as_dict(root_view.get("state"))
+        traces = [trace for trace in as_list(episode.get("candidate_plans")) if isinstance(trace, dict)]
+        case_id = source.get("case_id") or source.get("input_label")
+        print(
+            f"    case={case_id} "
+            f"candidates={context.get('candidate_count')} "
+            f"root_hp={root_state.get('player_hp')} "
+            f"incoming={root_state.get('visible_incoming_damage')} "
+            f"enemy_hp={root_state.get('total_enemy_hp')}"
+        )
+        for roles, trace in selected_diagnostic_traces(traces):
+            print(diagnostic_trace_line(roles, trace))
+        first = min(traces, key=trace_plan_index) if traces else {}
+        cf = as_dict(as_dict(first).get("counterfactual"))
+        print(
+            "      gaps(first_vs_candidate_set): "
+            f"hp_loss_regret={cf.get('hp_loss_regret_vs_best_boundary')} "
+            f"progress_gap={cf.get('enemy_hp_progress_gap_vs_best_boundary')} "
+            f"kill_gap={cf.get('kill_count_gap_vs_best_boundary')} "
+            f"final_hp_regret={cf.get('final_hp_regret_vs_best_labeled')}"
+        )
+    if len(episodes) > case_limit:
+        print(f"    ... {len(episodes) - case_limit} more episode(s)")
+
+
 def episode_from_lab(meta: dict[str, Any], lab: dict[str, Any]) -> dict[str, Any]:
     report_path = Path(str(meta.get("source_file") or ""))
     input_path = resolve_input_path(report_path, meta.get("input_path"))
@@ -566,6 +741,7 @@ def extract(
     *,
     summary_only: bool,
     case_limit: int,
+    report_mode: str,
 ) -> None:
     episodes: list[dict[str, Any]] = []
     for path in inputs:
@@ -644,21 +820,10 @@ def extract(
         print(f"  jsonl={out_jsonl}")
     if summary_only:
         return
-    print("  cases:")
-    for episode in episodes[:case_limit]:
-        source = as_dict(episode.get("source"))
-        context = as_dict(episode.get("root_tactical_context"))
-        print(f"    case={source.get('case_id') or source.get('input_label')}")
-        print(
-            "      "
-            f"candidates={context.get('candidate_count')} "
-            f"best_hp_loss={context.get('best_hp_loss_to_boundary')} "
-            f"best_enemy_removed={context.get('best_enemy_hp_removed_to_boundary')} "
-            f"best_final_hp={context.get('best_final_hp_labeled')} "
-            f"pareto={len(as_list(context.get('pareto_frontier_plan_ids')))}"
-        )
-    if len(episodes) > case_limit:
-        print(f"    ... {len(episodes) - case_limit} more episode(s)")
+    if report_mode == "diagnostic":
+        print_diagnostic_cases(episodes, case_limit)
+    else:
+        print_compact_cases(episodes, case_limit)
 
 
 def main() -> None:
@@ -667,12 +832,14 @@ def main() -> None:
     parser.add_argument("--out-jsonl", type=Path)
     parser.add_argument("--summary-only", action="store_true")
     parser.add_argument("--case-limit", type=int, default=12)
+    parser.add_argument("--report-mode", choices=("compact", "diagnostic"), default="compact")
     args = parser.parse_args()
     extract(
         args.inputs,
         args.out_jsonl,
         summary_only=args.summary_only,
         case_limit=max(0, args.case_limit),
+        report_mode=args.report_mode,
     )
 
 

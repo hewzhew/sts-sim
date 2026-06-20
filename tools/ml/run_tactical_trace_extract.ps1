@@ -17,6 +17,8 @@ param(
     [string] $ProbeRoot = "tools\artifacts\tmp",
     [string] $Output = "tools\artifacts\tmp\combat_tactical_episodes.jsonl",
     [int] $CaseLimit = 12,
+    [ValidateSet("compact", "diagnostic")]
+    [string] $ReportMode = "compact",
     [switch] $SummaryOnly,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $ExtraArgs
@@ -39,7 +41,7 @@ if ($LabPath.Count -eq 0) {
 
 $ArgsList = @("$ScriptPath")
 $ArgsList += $LabPath
-$ArgsList += @("--out-jsonl", $Output, "--case-limit", "$CaseLimit")
+$ArgsList += @("--out-jsonl", $Output, "--case-limit", "$CaseLimit", "--report-mode", $ReportMode)
 if ($SummaryOnly) {
     $ArgsList += "--summary-only"
 }
@@ -47,5 +49,5 @@ if ($ExtraArgs) {
     $ArgsList += $ExtraArgs
 }
 
-Write-Host "tactical trace extract: inputs=$($LabPath.Count) output=$Output cases=$CaseLimit summary_only=$SummaryOnly"
+Write-Host "tactical trace extract: inputs=$($LabPath.Count) output=$Output cases=$CaseLimit report=$ReportMode summary_only=$SummaryOnly"
 python @ArgsList
