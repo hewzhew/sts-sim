@@ -1,9 +1,11 @@
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 use crate::sim::combat::CombatPosition;
 
 use super::frontier::SearchNode;
-use super::turn_planner::{enumerate_turn_plans, TurnPlannerConfigV1};
+use super::turn_planner::{enumerate_turn_plans, TurnPlanBucket, TurnPlanV1, TurnPlannerConfigV1};
 use super::*;
 
 const TURN_PLAN_PROBE_MAX_INNER_NODES: usize = 256;
@@ -40,6 +42,8 @@ pub struct CombatSearchV2TurnPlanProbeEnumerationReport {
     pub plans: usize,
     pub preselection_plans: usize,
     pub preselection_first_action_count: usize,
+    pub preselection_bucket_counts: BTreeMap<&'static str, usize>,
+    pub selected_bucket_counts: BTreeMap<&'static str, usize>,
     pub nodes_expanded: usize,
     pub nodes_generated: usize,
     pub exact_state_skips: usize,
@@ -209,6 +213,10 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
             plans: enumeration.plans.len(),
             preselection_plans: enumeration.preselection_plan_count,
             preselection_first_action_count: enumeration.preselection_first_actions.len(),
+            preselection_bucket_counts: bucket_count_report(
+                &enumeration.preselection_bucket_counts,
+            ),
+            selected_bucket_counts: selected_bucket_count_report(&enumeration.plans),
             nodes_expanded: enumeration.nodes_expanded,
             nodes_generated: enumeration.nodes_generated,
             exact_state_skips: enumeration.exact_state_skips,
@@ -228,6 +236,21 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
         report: root_report,
         candidates,
     }
+}
+
+fn bucket_count_report(counts: &BTreeMap<TurnPlanBucket, usize>) -> BTreeMap<&'static str, usize> {
+    counts
+        .iter()
+        .map(|(bucket, count)| (bucket.label(), *count))
+        .collect()
+}
+
+fn selected_bucket_count_report(plans: &[TurnPlanV1]) -> BTreeMap<&'static str, usize> {
+    let mut counts = BTreeMap::<TurnPlanBucket, usize>::new();
+    for plan in plans {
+        *counts.entry(plan.bucket).or_default() += 1;
+    }
+    bucket_count_report(&counts)
 }
 
 fn root_action_mask_report(

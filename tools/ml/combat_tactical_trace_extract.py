@@ -1584,6 +1584,7 @@ def episode_from_lab(
             "exact_state_hash_kind": "eval_combat_state_fingerprint_v1"
             if root_exact_state_ref
             else None,
+            "turn_plan_enumeration": root.get("enumeration"),
             "public_view": {
                 "data_role": "ObservedExact",
                 "availability": "RootOnly",
@@ -1657,6 +1658,8 @@ def extract(
     total_root_eligible_not_preselected_by_kind: Counter[str] = Counter()
     total_root_preselected_unselected_by_kind: Counter[str] = Counter()
     total_root_ineligible_by_kind: Counter[str] = Counter()
+    total_preselection_bucket_counts: Counter[str] = Counter()
+    total_selected_bucket_counts: Counter[str] = Counter()
     for episode in episodes:
         candidates = as_list(episode.get("candidate_plans"))
         total_candidates += len(candidates)
@@ -1664,6 +1667,19 @@ def extract(
         if as_dict(root.get("public_view")).get("enemy_slots"):
             counters["episodes_with_enemy_slots"] += 1
         mask = as_dict(root.get("legal_action_mask"))
+        enumeration = as_dict(root.get("turn_plan_enumeration"))
+        total_preselection_bucket_counts.update(
+            {
+                str(key): int_value(value)
+                for key, value in as_dict(enumeration.get("preselection_bucket_counts")).items()
+            }
+        )
+        total_selected_bucket_counts.update(
+            {
+                str(key): int_value(value)
+                for key, value in as_dict(enumeration.get("selected_bucket_counts")).items()
+            }
+        )
         if mask.get("complete_legal_mask") is True:
             counters["episodes_with_complete_legal_action_mask"] += 1
         legal_count = int_or_none(mask.get("legal_action_count"))
@@ -1837,6 +1853,16 @@ def extract(
         print(
             "  root_ineligible_by_kind="
             f"{dict(sorted(total_root_ineligible_by_kind.items()))}"
+        )
+    if total_preselection_bucket_counts:
+        print(
+            "  turn_plan_preselection_bucket_counts="
+            f"{dict(sorted(total_preselection_bucket_counts.items()))}"
+        )
+    if total_selected_bucket_counts:
+        print(
+            "  turn_plan_selected_bucket_counts="
+            f"{dict(sorted(total_selected_bucket_counts.items()))}"
         )
     print(
         "  action_facts_coverage="
