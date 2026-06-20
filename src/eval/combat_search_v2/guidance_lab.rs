@@ -97,6 +97,8 @@ pub struct CombatSearchGuidanceLabChildSearchV1 {
 pub struct CombatSearchGuidanceLabTrajectoryV1 {
     pub terminal: SearchTerminalLabel,
     pub estimated: bool,
+    pub first_action_key: Option<String>,
+    pub action_keys_preview: Vec<String>,
     pub final_hp: i32,
     pub hp_loss: i32,
     pub turns: u32,
@@ -156,7 +158,7 @@ pub fn run_combat_search_guidance_lab_benchmark_v1(
     let summary = summarize_benchmark(&cases, loaded.cases.len());
     CombatSearchGuidanceLabBenchmarkV1Report {
         schema_name: "CombatSearchGuidanceLabBenchmarkV1Report",
-        schema_version: 1,
+        schema_version: 2,
         label_role: "oracle_search_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         benchmark_name: loaded.name.clone(),
@@ -194,7 +196,7 @@ pub fn run_combat_search_guidance_lab_v1(
 
     CombatSearchGuidanceLabV1Report {
         schema_name: "CombatSearchGuidanceLabV1Report",
-        schema_version: 1,
+        schema_version: 2,
         label_role: "oracle_search_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         input_label: loaded.label.clone(),
@@ -291,6 +293,16 @@ fn trajectory_summary(
     CombatSearchGuidanceLabTrajectoryV1 {
         terminal: trajectory.terminal,
         estimated: trajectory.estimated,
+        first_action_key: trajectory
+            .actions
+            .first()
+            .map(|action| action.action_key.clone()),
+        action_keys_preview: trajectory
+            .actions
+            .iter()
+            .take(8)
+            .map(|action| action.action_key.clone())
+            .collect(),
         final_hp: trajectory.final_hp,
         hp_loss: trajectory.hp_loss,
         turns: trajectory.turns,

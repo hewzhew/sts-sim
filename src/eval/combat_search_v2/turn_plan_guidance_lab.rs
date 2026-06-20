@@ -212,7 +212,7 @@ pub fn run_combat_turn_plan_guidance_lab_benchmark_v1(
     let summary = summarize_benchmark(&cases, loaded.cases.len());
     CombatTurnPlanGuidanceLabBenchmarkV1Report {
         schema_name: "CombatTurnPlanGuidanceLabBenchmarkV1Report",
-        schema_version: 1,
+        schema_version: 2,
         label_role: "oracle_turn_plan_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         benchmark_name: loaded.name.clone(),
@@ -281,7 +281,7 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
 
     CombatTurnPlanGuidanceLabV1Report {
         schema_name: "CombatTurnPlanGuidanceLabV1Report",
-        schema_version: 4,
+        schema_version: 5,
         label_role: "oracle_turn_plan_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         input_label: loaded.label.clone(),
@@ -336,6 +336,16 @@ fn trajectory_summary(
     CombatSearchGuidanceLabTrajectoryV1 {
         terminal: trajectory.terminal,
         estimated: trajectory.estimated,
+        first_action_key: trajectory
+            .actions
+            .first()
+            .map(|action| action.action_key.clone()),
+        action_keys_preview: trajectory
+            .actions
+            .iter()
+            .take(8)
+            .map(|action| action.action_key.clone())
+            .collect(),
         final_hp: trajectory.final_hp,
         hp_loss: trajectory.hp_loss,
         turns: trajectory.turns,
@@ -581,7 +591,7 @@ fn search_snapshot(
         potions_used: best_complete.map(|trajectory| trajectory.potions_used),
         cards_played: best_complete.map(|trajectory| trajectory.cards_played),
         action_count: best_complete.map(|trajectory| trajectory.action_count),
-        first_action_key: None,
+        first_action_key: best_complete.and_then(|trajectory| trajectory.first_action_key.clone()),
         nodes_expanded: search.nodes_expanded,
         nodes_generated: search.nodes_generated,
         terminal_wins: search.terminal_wins,
@@ -940,6 +950,10 @@ mod tests {
 
         assert_eq!(comparison.verdict, "guided_better");
         assert_eq!(comparison.baseline.final_hp, Some(35));
+        assert_eq!(
+            comparison.baseline.first_action_key.as_deref(),
+            Some("test-first-action-12")
+        );
         assert_eq!(comparison.best_guided_prefix.plan_index, 1);
         assert_eq!(
             comparison.delta_guided_minus_baseline.final_hp_delta,
@@ -1123,6 +1137,8 @@ mod tests {
         CombatSearchGuidanceLabTrajectoryV1 {
             terminal: SearchTerminalLabel::Win,
             estimated: false,
+            first_action_key: Some(format!("test-first-action-{action_count}")),
+            action_keys_preview: vec![format!("test-first-action-{action_count}")],
             final_hp,
             hp_loss,
             turns,
