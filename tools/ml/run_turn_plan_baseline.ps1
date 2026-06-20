@@ -42,6 +42,7 @@ Runs a small smoke split when tactical episode artifacts only contain one source
 .\tools\ml\run_turn_plan_baseline.ps1 -UseTacticalEpisodes
 Runs source-CV over discovered legacy turn-plan probe samples plus tactical episodes.
 #>
+[CmdletBinding(PositionalBinding=$false)]
 param(
     [string] $ProbeRoot = "tools\artifacts\tmp",
     [string] $TacticalEpisodeRoot = "tools\artifacts\tmp",

@@ -13,6 +13,7 @@ tools\artifacts\tmp\current_tactical_batch.
 Generates episodes, then runs the compact ranking baseline over the generated
 episode JSONL files.
 #>
+[CmdletBinding(PositionalBinding=$false)]
 param(
     [string] $BenchmarkRoot = "tools\artifacts\tmp",
     [string[]] $BenchmarkPath = @(),
