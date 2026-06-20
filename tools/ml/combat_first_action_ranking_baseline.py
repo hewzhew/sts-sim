@@ -474,6 +474,15 @@ def action_kind_counts(action_keys: set[str]) -> dict[str, int]:
     return dict(sorted(counts.items()))
 
 
+def card_counts_from_action_keys(action_keys: set[str]) -> dict[str, int]:
+    counts = Counter()
+    for key in action_keys:
+        card = normalized_card_from_action_key(key)
+        if card is not None:
+            counts[display_card_from_normalized(card)] += 1
+    return dict(sorted(counts.items()))
+
+
 def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, Any]:
     """Summarize root legal-action mask coverage once per decision group."""
     groups = grouped_samples(samples)
@@ -490,6 +499,8 @@ def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, Any]:
     ineligible_by_kind: Counter[str] = Counter()
     eligible_not_candidate_by_kind: Counter[str] = Counter()
     legal_not_candidate_by_kind: Counter[str] = Counter()
+    preselected_not_candidate_cards: Counter[str] = Counter()
+    preselected_not_candidate_bucket_counts: Counter[str] = Counter()
     for group in groups.values():
         if not group:
             continue
@@ -532,9 +543,21 @@ def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, Any]:
         representative_not_preselected_by_kind.update(
             action_kind_counts(representatives - preselected)
         )
-        preselected_not_candidate_by_kind.update(action_kind_counts(preselected - candidate_first))
+        preselected_not_candidate_keys = preselected - candidate_first
+        preselected_not_candidate_by_kind.update(action_kind_counts(preselected_not_candidate_keys))
+        preselected_not_candidate_cards.update(
+            card_counts_from_action_keys(preselected_not_candidate_keys)
+        )
         eligible_not_candidate_by_kind.update(action_kind_counts(eligible - candidate_first))
         legal_not_candidate_by_kind.update(action_kind_counts(legal - candidate_first))
+        diagnostic = mask.get("coverage_diagnostic")
+        if isinstance(diagnostic, dict):
+            bucket_counts = diagnostic.get("preselected_but_unselected_bucket_counts")
+            if isinstance(bucket_counts, dict):
+                for bucket, count in bucket_counts.items():
+                    preselected_not_candidate_bucket_counts[str(bucket)] += int(
+                        numeric_or_zero(count)
+                    )
     first_action_ratio = (
         total_candidate_first_actions / total_legal_actions if total_legal_actions else 0.0
     )
@@ -574,6 +597,12 @@ def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "eligible_not_candidate_by_kind": dict(sorted(eligible_not_candidate_by_kind.items())),
         "legal_not_candidate_by_kind": dict(sorted(legal_not_candidate_by_kind.items())),
+        "preselected_not_candidate_cards": dict(
+            sorted(preselected_not_candidate_cards.items())
+        ),
+        "preselected_not_candidate_bucket_counts": dict(
+            sorted(preselected_not_candidate_bucket_counts.items())
+        ),
     }
 
 
@@ -2935,7 +2964,11 @@ def main() -> None:
             f"representative_not_preselected="
             f"{root_mask_coverage['representative_not_preselected_by_kind']} "
             f"preselected_not_candidate="
-            f"{root_mask_coverage['preselected_not_candidate_by_kind']}"
+            f"{root_mask_coverage['preselected_not_candidate_by_kind']} "
+            f"preselected_not_candidate_buckets="
+            f"{root_mask_coverage['preselected_not_candidate_bucket_counts']} "
+            f"preselected_not_candidate_cards="
+            f"{root_mask_coverage['preselected_not_candidate_cards']}"
         )
     if target_audit["groups"]:
         print(
