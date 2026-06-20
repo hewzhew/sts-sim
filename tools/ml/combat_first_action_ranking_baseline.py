@@ -32,11 +32,17 @@ TARGET_KIND = "initial_decision_candidate_selected_by_best_complete"
 LEGACY_SCHEMA_NAME = "CombatSearchGuidanceSampleV1"
 PROBE_SCHEMA_NAME = "CombatActionProbeSampleV1"
 TURN_PLAN_SCHEMA_NAME = "CombatTurnPlanProbeSampleV1"
-EXPERIMENTAL_FEATURE_GROUPS = ("root-delta", "action-shape", "target-detail")
+EXPERIMENTAL_FEATURE_GROUPS = (
+    "root-delta",
+    "action-shape",
+    "target-detail",
+    "enemy-slot-context",
+)
 TARGET_MODES = ("selected", "equivalent-hp-outcome")
 TRAINING_MODES = ("binary", "pairwise-utility", "decomposed-utility")
 DECOMPOSED_OUTCOME_WEIGHT = 1.0
 DECOMPOSED_HP_WEIGHT = 1.0
+_CAPTURE_ENEMY_SLOT_CACHE: dict[str, list[dict[str, Any]]] = {}
 
 
 def stable_hash(text: str) -> int:
@@ -70,6 +76,42 @@ def load_samples(paths: list[Path]) -> list[dict[str, Any]]:
                         f"{PROBE_SCHEMA_NAME} or {TURN_PLAN_SCHEMA_NAME}, got {schema_name!r}"
                     )
     return samples
+
+
+def load_enemy_slots_from_capture_path(path_text: str) -> list[dict[str, Any]]:
+    cached = _CAPTURE_ENEMY_SLOT_CACHE.get(path_text)
+    if cached is not None:
+        return cached
+    path = Path(path_text)
+    if not path.exists():
+        _CAPTURE_ENEMY_SLOT_CACHE[path_text] = []
+        return []
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        _CAPTURE_ENEMY_SLOT_CACHE[path_text] = []
+        return []
+    summary = payload.get("summary") if isinstance(payload, dict) else {}
+    monsters = summary.get("monsters") if isinstance(summary, dict) else []
+    if not isinstance(monsters, list):
+        _CAPTURE_ENEMY_SLOT_CACHE[path_text] = []
+        return []
+    slots = [monster for monster in monsters if isinstance(monster, dict)]
+    _CAPTURE_ENEMY_SLOT_CACHE[path_text] = slots
+    return slots
+
+
+def enemy_slots_from_sample(sample: dict[str, Any]) -> list[dict[str, Any]]:
+    root = sample.get("root_context") if isinstance(sample.get("root_context"), dict) else {}
+    slots = root.get("enemy_slots") if isinstance(root.get("enemy_slots"), list) else []
+    if slots:
+        return [slot for slot in slots if isinstance(slot, dict)]
+    source = sample.get("source") if isinstance(sample.get("source"), dict) else {}
+    input_path = source.get("input_path")
+    if isinstance(input_path, str) and input_path:
+        return load_enemy_slots_from_capture_path(input_path)
+    return []
 
 
 def discover_turn_plan_probe_paths(roots: list[Path]) -> list[Path]:
@@ -395,6 +437,12 @@ def monster_slot_from_action_key(action_key: str) -> str | None:
     return target_value.split(":", 1)[1]
 
 
+def intent_kind_from_text(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return "unknown"
+    return value.split("(", 1)[0]
+
+
 def add_turn_plan_root_delta_features(
     features: dict[str, float],
     state: dict[str, Any],
@@ -508,6 +556,64 @@ def add_turn_plan_target_detail_features(
     )
 
 
+def add_turn_plan_enemy_slot_context_features(
+    features: dict[str, float],
+    sample: dict[str, Any],
+    action_keys: list[Any],
+) -> None:
+    slots = enemy_slots_from_sample(sample)
+    by_slot = {str(slot.get("slot")): slot for slot in slots if slot.get("slot") is not None}
+    if not by_slot:
+        add_token(features, "enemy_slot_context:missing")
+        return
+
+    add_number(features, "enemy_slot_context_count", len(by_slot), 5.0)
+    targeted_slots: list[str] = []
+    for position, key in enumerate(action_keys[:8]):
+        text = str(key)
+        if not text.startswith("combat/play_card/"):
+            continue
+        slot_key = monster_slot_from_action_key(text)
+        if slot_key is None:
+            continue
+        enemy = by_slot.get(slot_key)
+        if not enemy:
+            add_token(features, "plan_targets_unknown_enemy_slot")
+            continue
+        targeted_slots.append(slot_key)
+        enemy_id = str(enemy.get("enemy_id") or "unknown")
+        intent_kind = intent_kind_from_text(enemy.get("visible_intent"))
+        add_token(features, f"plan_target_enemy:{enemy_id}")
+        add_token(features, f"plan_action:{position}:target_enemy:{enemy_id}")
+        add_token(features, f"plan_target_intent:{intent_kind}")
+        add_token(features, f"plan_action:{position}:target_intent:{intent_kind}")
+        add_number(features, "plan_target_enemy_hp", enemy.get("hp"), 100.0)
+        add_number(features, "plan_target_enemy_block", enemy.get("block"), 80.0)
+        add_number(
+            features,
+            "plan_target_enemy_preview_damage_per_hit",
+            enemy.get("preview_damage_per_hit"),
+            40.0,
+        )
+        hp = numeric_value(enemy.get("hp"))
+        max_hp = numeric_value(enemy.get("max_hp"))
+        if hp is not None and max_hp and max_hp > 0:
+            add_number(features, "plan_target_enemy_hp_ratio", hp / max_hp, 1.0)
+        if "Attack" in intent_kind:
+            add_token(features, "plan_targets_attacking_enemy")
+        elif intent_kind != "unknown":
+            add_token(features, "plan_targets_non_attacking_enemy")
+
+    if targeted_slots:
+        first_enemy = by_slot.get(targeted_slots[0])
+        if first_enemy:
+            add_token(features, f"plan_first_target_enemy:{first_enemy.get('enemy_id') or 'unknown'}")
+            add_token(
+                features,
+                f"plan_first_target_intent:{intent_kind_from_text(first_enemy.get('visible_intent'))}",
+            )
+
+
 def extract_features(
     sample: dict[str, Any],
     *,
@@ -564,6 +670,8 @@ def extract_features(
             add_turn_plan_action_shape_features(features, action_keys)
         if "target-detail" in feature_groups:
             add_turn_plan_target_detail_features(features, action_keys)
+        if "enemy-slot-context" in feature_groups:
+            add_turn_plan_enemy_slot_context_features(features, sample, action_keys)
         for position, key in enumerate(action_keys[:8]):
             action = str(key)
             if action == "combat/end_turn":

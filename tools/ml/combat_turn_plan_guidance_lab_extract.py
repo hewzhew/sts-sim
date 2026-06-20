@@ -19,6 +19,19 @@ from typing import Any, Iterable
 SAMPLE_SCHEMA = "CombatTurnPlanProbeSampleV1"
 SAMPLE_VERSION = 1
 LABEL_ROLE = "oracle_under_budget_turn_plan_child_search_target_not_human_policy"
+PUBLIC_MONSTER_FIELDS = (
+    "slot",
+    "enemy_id",
+    "hp",
+    "max_hp",
+    "block",
+    "alive",
+    "escaped",
+    "dying",
+    "half_dead",
+    "visible_intent",
+    "preview_damage_per_hit",
+)
 
 
 def load_json(path: Path) -> Any:
@@ -57,6 +70,41 @@ def iter_labs(path: Path, payload: Any) -> Iterable[tuple[dict[str, Any], dict[s
                 },
                 case["lab"],
             )
+
+
+def resolve_input_path(report_path: Path, input_path: Any) -> Path | None:
+    if not isinstance(input_path, str) or not input_path:
+        return None
+    path = Path(input_path)
+    if path.exists():
+        return path
+    if path.is_absolute():
+        return path
+    candidate = report_path.parent / path
+    if candidate.exists():
+        return candidate
+    return path
+
+
+def public_enemy_slots_from_capture(path: Path | None) -> list[dict[str, Any]]:
+    if path is None or not path.exists():
+        return []
+    try:
+        payload = load_json(path)
+    except (OSError, json.JSONDecodeError):
+        return []
+    summary = payload.get("summary") if isinstance(payload, dict) else {}
+    monsters = summary.get("monsters") if isinstance(summary, dict) else []
+    if not isinstance(monsters, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for monster in monsters:
+        if not isinstance(monster, dict):
+            continue
+        public = {field: monster.get(field) for field in PUBLIC_MONSTER_FIELDS if field in monster}
+        if public:
+            out.append(public)
+    return out
 
 
 def int_or_min(value: Any) -> int:
@@ -133,6 +181,7 @@ def sample_from_candidate(
     lab: dict[str, Any],
     candidate: dict[str, Any],
     best_index: Any,
+    enemy_slots: list[dict[str, Any]],
 ) -> dict[str, Any]:
     plan = candidate.get("plan") if isinstance(candidate.get("plan"), dict) else {}
     target = candidate.get("target") if isinstance(candidate.get("target"), dict) else {}
@@ -149,6 +198,7 @@ def sample_from_candidate(
             "config": root.get("config"),
             "initial_context": root.get("initial_context"),
             "enumeration": root.get("enumeration"),
+            "enemy_slots": enemy_slots,
         },
         "plan": plan,
         "target": {
@@ -203,6 +253,8 @@ def summarize(
                 counters["target_diff_current_first"] += 1
             case_rows.append((meta.get("case_id") or lab.get("input_label"), current, best))
             best_index = ordered_index(best)
+            input_path = resolve_input_path(Path(str(meta.get("source_file") or "")), meta.get("input_path"))
+            enemy_slots = public_enemy_slots_from_capture(input_path)
             for candidate in lab.get("candidates", []):
                 if not isinstance(candidate, dict):
                     continue
@@ -210,7 +262,7 @@ def summarize(
                 bucket_counts[str(plan.get("bucket") or "unknown")] += 1
                 stop_counts[str(plan.get("stop_reason") or "unknown")] += 1
                 if handle:
-                    sample = sample_from_candidate(meta, lab, candidate, best_index)
+                    sample = sample_from_candidate(meta, lab, candidate, best_index, enemy_slots)
                     handle.write(json.dumps(sample, ensure_ascii=False, separators=(",", ":")))
                     handle.write("\n")
     finally:
