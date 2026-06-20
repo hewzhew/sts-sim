@@ -41,6 +41,7 @@ EXPERIMENTAL_FEATURE_GROUPS = (
     "target-detail",
     "enemy-slot-context",
     "tactical-summary",
+    "action-facts",
 )
 TARGET_MODES = ("selected", "equivalent-hp-outcome")
 TRAINING_MODES = ("binary", "pairwise-utility", "decomposed-utility")
@@ -205,6 +206,7 @@ def tactical_plan_as_turn_plan_probe(plan: dict[str, Any], summary: dict[str, An
         "first_action_key": action_keys[0] if action_keys else None,
         "action_keys": action_keys,
         "actions": actions,
+        "steps": steps,
         "end_state": final_state,
         "final_state_hash": plan.get("final_state_hash"),
         "plan_summary": summary,
@@ -555,6 +557,11 @@ def numeric_value(value: Any) -> float | None:
     return None
 
 
+def numeric_or_zero(value: Any) -> float:
+    number = numeric_value(value)
+    return number if number is not None else 0.0
+
+
 CARD_IN_ACTION_RE = re.compile(r"/card:([^/#]+?)(?:#|/)")
 HAND_IN_ACTION_RE = re.compile(r"/hand:(\d+)")
 TARGET_IN_ACTION_RE = re.compile(r"/target:([^/]+)")
@@ -809,6 +816,94 @@ def add_turn_plan_tactical_summary_features(
         add_number(features, "plan_summary_unique_target_slots", len(targets), 5.0)
 
 
+def add_turn_plan_action_fact_features(
+    features: dict[str, float],
+    plan: dict[str, Any],
+) -> None:
+    steps = [step for step in plan.get("steps", []) if isinstance(step, dict)]
+    if not steps:
+        add_token(features, "plan_action_facts:missing")
+        return
+
+    add_token(features, "plan_action_facts:present")
+    kind_counts: Counter[str] = Counter()
+    card_type_counts: Counter[str] = Counter()
+    target_enemy_counts: Counter[str] = Counter()
+    exact_delta_sums: Counter[str] = Counter()
+    damage_hint_total = 0
+    block_hint_total = 0
+    mitigation_hint_total = 0
+    reactive_bad_draw_total = 0
+    cost_total = 0
+    upgraded_cards = 0
+    exhaust_cards = 0
+    for step in steps:
+        facts = step.get("action_facts") if isinstance(step.get("action_facts"), dict) else {}
+        kind = str(facts.get("action_kind") or "unknown")
+        kind_counts[kind] += 1
+        card = facts.get("card") if isinstance(facts.get("card"), dict) else {}
+        if card:
+            card_type_counts[str(card.get("card_type") or "unknown")] += 1
+            cost = numeric_value(card.get("cost_for_turn"))
+            if cost is not None:
+                cost_total += cost
+            if card.get("upgraded"):
+                upgraded_cards += 1
+            if card.get("exhaust"):
+                exhaust_cards += 1
+            if card.get("ethereal"):
+                add_token(features, "plan_action_facts_plays_ethereal_card")
+            if card.get("innate"):
+                add_token(features, "plan_action_facts_plays_innate_card")
+        target = facts.get("target") if isinstance(facts.get("target"), dict) else {}
+        if target.get("enemy_id"):
+            target_enemy_counts[str(target.get("enemy_id"))] += 1
+        immediate = facts.get("immediate") if isinstance(facts.get("immediate"), dict) else {}
+        mechanics = facts.get("mechanics") if isinstance(facts.get("mechanics"), dict) else {}
+        exact = (
+            facts.get("exact_one_step_delta")
+            if isinstance(facts.get("exact_one_step_delta"), dict)
+            else {}
+        )
+        damage_hint_total += numeric_or_zero(immediate.get("action_payload_damage_hint"))
+        block_hint_total += numeric_or_zero(immediate.get("block_hint"))
+        mitigation_hint_total += numeric_or_zero(mechanics.get("visible_attack_mitigation_hint"))
+        reactive_bad_draw_total += numeric_or_zero(mechanics.get("reactive_bad_draw_cards"))
+        for name in (
+            "player_hp_delta",
+            "player_block_delta",
+            "energy_delta",
+            "hand_delta",
+            "draw_delta",
+            "discard_delta",
+            "exhaust_delta",
+            "total_enemy_hp_delta",
+            "total_enemy_block_delta",
+        ):
+            exact_delta_sums[name] += numeric_or_zero(exact.get(name))
+        if immediate.get("creates_pending_choice_after_one_step"):
+            add_token(features, "plan_action_facts_creates_pending_choice")
+        if mechanics.get("reactive_forced_turn_end"):
+            add_token(features, "plan_action_facts_reactive_forced_turn_end")
+
+    for kind, count in kind_counts.items():
+        add_number(features, f"plan_action_kind_count:{kind}", count, 12.0)
+        add_token(features, f"plan_action_kind_seen:{kind}")
+    for card_type, count in card_type_counts.items():
+        add_number(features, f"plan_card_type_count:{card_type}", count, 12.0)
+    for enemy_id, count in target_enemy_counts.items():
+        add_number(features, f"plan_target_enemy_count:{enemy_id}", count, 12.0)
+    add_number(features, "plan_action_facts_total_cost", cost_total, 12.0)
+    add_number(features, "plan_action_facts_upgraded_cards", upgraded_cards, 12.0)
+    add_number(features, "plan_action_facts_exhaust_cards", exhaust_cards, 12.0)
+    add_number(features, "plan_action_facts_damage_hint_total", damage_hint_total, 300.0)
+    add_number(features, "plan_action_facts_block_hint_total", block_hint_total, 120.0)
+    add_number(features, "plan_action_facts_mitigation_hint_total", mitigation_hint_total, 120.0)
+    add_number(features, "plan_action_facts_reactive_bad_draw_total", reactive_bad_draw_total, 20.0)
+    for name, value in exact_delta_sums.items():
+        add_number(features, f"plan_action_facts_exact_sum:{name}", value, 300.0)
+
+
 def extract_features(
     sample: dict[str, Any],
     *,
@@ -869,6 +964,8 @@ def extract_features(
             add_turn_plan_enemy_slot_context_features(features, sample, action_keys)
         if "tactical-summary" in feature_groups:
             add_turn_plan_tactical_summary_features(features, cand)
+        if "action-facts" in feature_groups:
+            add_turn_plan_action_fact_features(features, cand)
         for position, key in enumerate(action_keys[:8]):
             action = str(key)
             if action == "combat/end_turn":
