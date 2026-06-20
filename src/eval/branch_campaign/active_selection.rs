@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::active_lineage::rebalance_active_lineage_diversity_v1;
 use super::active_rebalance::{
@@ -7,6 +7,7 @@ use super::active_rebalance::{
 };
 use super::branch_display::render_campaign_discard_example_v1;
 use super::frozen_pool::record_campaign_duplicate_merge_v1;
+use super::lineage::campaign_branch_boss_relic_lineage_key_v1;
 use super::model::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchV1, BranchCampaignSelectionV1,
 };
@@ -78,7 +79,15 @@ pub(super) fn select_campaign_branches_for_config_v1(
     branches: Vec<BranchCampaignBranchV1>,
     config: &BranchCampaignConfigV1,
 ) -> BranchCampaignSelectionV1 {
-    let mut selection = select_campaign_branches_v1(branches, config.max_active, config.max_frozen);
+    let mut selection = if config.boss_relic_axis_isolation {
+        select_campaign_branches_by_boss_relic_axis_v1(
+            branches,
+            config.max_active,
+            config.max_frozen,
+        )
+    } else {
+        select_campaign_branches_v1(branches, config.max_active, config.max_frozen)
+    };
     if config.active_lineage_diversity_slots > 0 {
         rebalance_active_lineage_diversity_v1(
             &mut selection.active,
@@ -87,6 +96,46 @@ pub(super) fn select_campaign_branches_for_config_v1(
         );
     }
     selection
+}
+
+fn select_campaign_branches_by_boss_relic_axis_v1(
+    branches: Vec<BranchCampaignBranchV1>,
+    max_active_per_axis: usize,
+    max_frozen_per_axis: usize,
+) -> BranchCampaignSelectionV1 {
+    let mut grouped = BTreeMap::<String, Vec<BranchCampaignBranchV1>>::new();
+    for branch in branches {
+        let key = campaign_branch_boss_relic_lineage_key_v1(&branch)
+            .unwrap_or_else(|| "__pre_boss_relic_axis__".to_string());
+        grouped.entry(key).or_default().push(branch);
+    }
+
+    let mut combined = BranchCampaignSelectionV1::default();
+    for (_axis, branches) in grouped {
+        let selection =
+            select_campaign_branches_v1(branches, max_active_per_axis, max_frozen_per_axis);
+        combined.active.extend(selection.active);
+        combined.frozen.extend(selection.frozen);
+        combined.victories.extend(selection.victories);
+        combined.dead.extend(selection.dead);
+        combined.abandoned.extend(selection.abandoned);
+        combined.stuck.extend(selection.stuck);
+        combined.discarded_count = combined
+            .discarded_count
+            .saturating_add(selection.discarded_count);
+        append_discarded_examples_v1(
+            &mut combined.discarded_examples,
+            selection.discarded_examples,
+        );
+    }
+
+    combined
+        .active
+        .sort_by(compare_campaign_branches_for_active_v1);
+    combined
+        .frozen
+        .sort_by(compare_campaign_branches_for_active_v1);
+    combined
 }
 
 pub(super) fn campaign_stuck_branch_should_be_abandoned_for_combat_triage_v1(

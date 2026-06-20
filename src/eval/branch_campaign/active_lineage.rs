@@ -36,6 +36,51 @@ pub(super) fn rebalance_active_lineage_diversity_v1(
     swaps
 }
 
+pub(super) fn refill_active_boss_relic_axes_from_frozen_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+    max_active_per_axis: usize,
+) -> usize {
+    if max_active_per_axis == 0 || frozen.is_empty() {
+        return 0;
+    }
+
+    let pool_lineages = campaign_boss_relic_lineage_counts_for_pool_v1(active, frozen);
+    let mut promoted_count = 0usize;
+    for lineage in pool_lineages.keys() {
+        loop {
+            let active_count = active
+                .iter()
+                .filter(|branch| {
+                    campaign_branch_boss_relic_lineage_key_v1(branch).as_ref() == Some(lineage)
+                })
+                .count();
+            if active_count >= max_active_per_axis {
+                break;
+            }
+            let Some((frozen_index, _)) = frozen
+                .iter()
+                .enumerate()
+                .filter(|(_, branch)| {
+                    campaign_branch_boss_relic_lineage_key_v1(branch).as_ref() == Some(lineage)
+                })
+                .min_by(|(_, left), (_, right)| {
+                    compare_campaign_branches_for_active_v1(left, right)
+                })
+            else {
+                break;
+            };
+            let mut promoted = frozen.remove(frozen_index);
+            promoted.status = BranchCampaignBranchStatusV1::Active;
+            active.push(promoted);
+            promoted_count = promoted_count.saturating_add(1);
+        }
+    }
+    active.sort_by(compare_campaign_branches_for_active_v1);
+    frozen.sort_by(compare_campaign_branches_for_promotion_v1);
+    promoted_count
+}
+
 fn rebalance_active_boss_relic_lineage_v1(
     active: &mut Vec<BranchCampaignBranchV1>,
     frozen: &mut Vec<BranchCampaignBranchV1>,

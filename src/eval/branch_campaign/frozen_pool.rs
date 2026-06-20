@@ -57,6 +57,77 @@ pub(super) fn append_limited_frozen_v1(
     added
 }
 
+pub(super) fn append_axis_limited_frozen_v1(
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+    new_frozen: Vec<BranchCampaignBranchV1>,
+    max_frozen_per_axis: usize,
+    discarded_count: &mut usize,
+    discarded_examples: &mut Vec<String>,
+) -> usize {
+    let mut added = 0usize;
+    for branch in new_frozen {
+        if let Some(existing_index) = frozen.iter().position(|existing| {
+            campaign_branch_quality_key_v1(existing) == campaign_branch_quality_key_v1(&branch)
+        }) {
+            if campaign_branch_retention_key_v1(&branch)
+                > campaign_branch_retention_key_v1(&frozen[existing_index])
+            {
+                let displaced = std::mem::replace(&mut frozen[existing_index], branch);
+                record_campaign_duplicate_merge_v1(&displaced, discarded_count, discarded_examples);
+                added = added.saturating_add(1);
+            } else {
+                record_campaign_duplicate_merge_v1(&branch, discarded_count, discarded_examples);
+            }
+            continue;
+        }
+
+        let axis = campaign_frozen_axis_key_v1(&branch);
+        let axis_count = frozen
+            .iter()
+            .filter(|existing| campaign_frozen_axis_key_v1(existing) == axis)
+            .count();
+        if axis_count < max_frozen_per_axis {
+            frozen.push(branch);
+            added = added.saturating_add(1);
+            continue;
+        }
+
+        let Some(worst_index) = frozen_axis_replacement_index_v1(frozen, &axis) else {
+            record_campaign_discard_v1(&branch, discarded_count, discarded_examples);
+            continue;
+        };
+        if campaign_branch_retention_key_v1(&branch)
+            > campaign_branch_retention_key_v1(&frozen[worst_index])
+        {
+            let displaced = std::mem::replace(&mut frozen[worst_index], branch);
+            record_campaign_discard_v1(&displaced, discarded_count, discarded_examples);
+            added = added.saturating_add(1);
+        } else {
+            record_campaign_discard_v1(&branch, discarded_count, discarded_examples);
+        }
+    }
+    added
+}
+
+fn campaign_frozen_axis_key_v1(branch: &BranchCampaignBranchV1) -> String {
+    campaign_branch_boss_relic_lineage_key_v1(branch)
+        .unwrap_or_else(|| "__pre_boss_relic_axis__".to_string())
+}
+
+fn frozen_axis_replacement_index_v1(
+    frozen: &[BranchCampaignBranchV1],
+    axis: &str,
+) -> Option<usize> {
+    frozen
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| campaign_frozen_axis_key_v1(branch) == axis)
+        .min_by(|(_, left), (_, right)| {
+            campaign_branch_retention_key_v1(left).cmp(&campaign_branch_retention_key_v1(right))
+        })
+        .map(|(index, _)| index)
+}
+
 fn frozen_replacement_index_v1(
     frozen: &[BranchCampaignBranchV1],
     incoming: &BranchCampaignBranchV1,

@@ -180,6 +180,12 @@ pub(super) struct Args {
     )]
     pub(super) active_lineage_diversity: usize,
 
+    #[arg(
+        long,
+        help = "Isolate branch campaign active/frozen budgets by boss relic lineage"
+    )]
+    pub(super) boss_relic_axes: bool,
+
     #[arg(long, default_value = "package")]
     pub(super) retention_profile: String,
 
@@ -713,6 +719,12 @@ struct CampaignBranchingArgs {
     )]
     active_lineage_diversity: usize,
 
+    #[arg(
+        long,
+        help = "Isolate branch campaign active/frozen budgets by boss relic lineage"
+    )]
+    boss_relic_axes: bool,
+
     #[arg(long, default_value = "package")]
     retention_profile: String,
 
@@ -1145,6 +1157,7 @@ impl Args {
             max_frozen: 32,
             max_branches_per_active: 12,
             active_lineage_diversity: 0,
+            boss_relic_axes: false,
             retention_profile: "package".to_string(),
             max_reward_options: None,
             all_reward_options: false,
@@ -1284,6 +1297,7 @@ impl CampaignBranchingArgs {
         args.max_frozen = self.max_frozen;
         args.max_branches_per_active = self.max_branches_per_active;
         args.active_lineage_diversity = self.active_lineage_diversity;
+        args.boss_relic_axes = self.boss_relic_axes;
         args.retention_profile = self.retention_profile;
         args.max_reward_options = self.max_reward_options;
         args.all_reward_options = self.all_reward_options;

@@ -37,7 +37,9 @@ mod selection_key;
 mod state_graph;
 mod strategic_signals;
 mod summary;
-use active_lineage::rebalance_active_lineage_diversity_v1;
+use active_lineage::{
+    rebalance_active_lineage_diversity_v1, refill_active_boss_relic_axes_from_frozen_v1,
+};
 use active_rebalance::{
     branch_is_rehydrated_checkpointed_combat_failure_v1, campaign_progress_is_clearly_ahead_v1,
     promote_frozen_to_active_v1, promote_rehydrated_combat_failures_to_active_on_stall_v1,
@@ -46,6 +48,7 @@ use active_rebalance::{
 pub use active_selection::select_campaign_branches_v1;
 use active_selection::{append_discarded_examples_v1, select_campaign_branches_for_config_v1};
 use branch_display::{compact_campaign_choice_label_metadata_v1, render_choice_path};
+use frozen_pool::append_axis_limited_frozen_v1;
 use frozen_pool::append_limited_frozen_v1;
 #[cfg(test)]
 use intervention::campaign_strategy_next_step_v1;
@@ -129,6 +132,7 @@ pub struct BranchCampaignConfigV1 {
     pub max_frozen: usize,
     pub max_branches_per_active: usize,
     pub active_lineage_diversity_slots: usize,
+    pub boss_relic_axis_isolation: bool,
     pub retention_budget_profile: BranchRetentionBudgetProfileV1,
     pub max_reward_options_per_branch: Option<usize>,
     pub max_campfire_options_per_branch: usize,
@@ -159,6 +163,7 @@ impl Default for BranchCampaignConfigV1 {
             max_frozen: 32,
             max_branches_per_active: 12,
             active_lineage_diversity_slots: 0,
+            boss_relic_axis_isolation: false,
             retention_budget_profile: BranchRetentionBudgetProfileV1::Package,
             max_reward_options_per_branch: Some(2),
             max_campfire_options_per_branch: 3,
@@ -597,13 +602,23 @@ where
             merge_campaign_strategy_requests_v1(batch.strategy_requests.clone()),
         );
         merge_campaign_route_evidence_summary_v1(&mut state.route_evidence, batch.route_evidence);
-        let frozen_added = append_limited_frozen_v1(
-            &mut state.frozen,
-            selected.frozen,
-            config.max_frozen,
-            &mut state.discarded_count,
-            &mut state.discarded_examples,
-        );
+        let frozen_added = if config.boss_relic_axis_isolation {
+            append_axis_limited_frozen_v1(
+                &mut state.frozen,
+                selected.frozen,
+                config.max_frozen,
+                &mut state.discarded_count,
+                &mut state.discarded_examples,
+            )
+        } else {
+            append_limited_frozen_v1(
+                &mut state.frozen,
+                selected.frozen,
+                config.max_frozen,
+                &mut state.discarded_count,
+                &mut state.discarded_examples,
+            )
+        };
         state.discarded_count = state
             .discarded_count
             .saturating_add(selected.discarded_count);
@@ -635,6 +650,15 @@ where
                 &mut state.active,
                 &mut state.frozen,
                 config.active_lineage_diversity_slots,
+            )
+        } else {
+            0
+        };
+        let axis_refilled_from_frozen = if config.boss_relic_axis_isolation {
+            refill_active_boss_relic_axes_from_frozen_v1(
+                &mut state.active,
+                &mut state.frozen,
+                config.max_active,
             )
         } else {
             0
@@ -712,6 +736,7 @@ where
         let total_promoted_from_frozen = promoted_from_frozen
             .saturating_add(rebalanced_from_frozen)
             .saturating_add(diversity_rebalanced_from_frozen)
+            .saturating_add(axis_refilled_from_frozen)
             .saturating_add(promoted_rehydrated_from_frozen)
             .saturating_add(recovered_from_abandoned);
         let round_summary = BranchCampaignRoundSummaryV1 {

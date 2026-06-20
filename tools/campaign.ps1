@@ -91,6 +91,10 @@ Runs a high-ascension stress campaign on a random seed.
 Runs the current target-domain high-ascension campaign shortcut.
 
 .EXAMPLE
+.\tools\campaign.ps1 -Domain a20 -Mode explore -BossRelicAxes
+Runs a high-ascension campaign where each boss relic lineage gets separate active/frozen branch budgets.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Mode deep
 Runs a larger random-seed campaign when you want to leave it working longer.
 
@@ -170,6 +174,7 @@ param(
     [switch] $Perf,
     [switch] $NoBossSegments,
     [switch] $BossSegments,
+    [switch] $BossRelicAxes,
     [switch] $AutoCaptureCombat,
     [switch] $DebugBuild,
     [switch] $Build,
@@ -480,6 +485,9 @@ Add-DriverArgIfBound "SearchWallMs" "--search-wall-ms" $SearchWallMs
 Add-DriverArgIfBound "SearchMaxNodes" "--search-max-nodes" $SearchMaxNodes
 if ($CampaignBoundParameters.ContainsKey("ActiveLineageDiversity") -and $ActiveLineageDiversity -ge 0) {
     $DriverArgs += @("--active-lineage-diversity", "$ActiveLineageDiversity")
+}
+if ($BossRelicAxes) {
+    $DriverArgs += "--boss-relic-axes"
 }
 if ($CampaignBoundParameters.ContainsKey("CombatRetryWallMs") -and $CombatRetryWallMs -gt 0) {
     $DriverArgs += @("--combat-retry-wall-ms", "$CombatRetryWallMs")
@@ -945,6 +953,9 @@ if ($NeedsBuild) {
     Write-Host "build-needed=yes"
 } else {
     Write-Host "build-needed=no"
+}
+if ($BossRelicAxes) {
+    Write-Host "boss-relic-axes=on active/frozen budgets are per boss relic lineage"
 }
 Write-Host "rerun-last=.\tools\campaign.ps1 -Last"
 Write-Host "run-more=.\tools\campaign.ps1 -More"

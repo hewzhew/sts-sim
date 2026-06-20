@@ -265,6 +265,7 @@ pub(super) fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignCon
         max_frozen: args.max_frozen,
         max_branches_per_active: args.max_branches_per_active,
         active_lineage_diversity_slots: args.active_lineage_diversity,
+        boss_relic_axis_isolation: args.boss_relic_axes,
         retention_budget_profile: args
             .retention_profile
             .parse::<BranchRetentionBudgetProfileV1>()?,
