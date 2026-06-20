@@ -7,6 +7,7 @@ use crate::ai::deck_startup_profile_v1::{
 };
 use crate::content::cards::CardId;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -62,6 +63,7 @@ pub enum AcquisitionThesisRole {
     ExhaustAccess,
     ScalingOrEngine,
     WinConditionOrCeiling,
+    SustainOrRecovery,
     BossSpecificAnswer,
     RedundantCoverage,
     LiabilityOrDependency,
@@ -84,6 +86,42 @@ pub struct AcquisitionThesisSignal {
     pub amount: f32,
     pub reason: String,
     pub source: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AcquisitionExplorationAxisV1 {
+    TransitionFrontload,
+    DefenseCoverage,
+    DrawAccess,
+    ExhaustAccess,
+    ScalingEngine,
+    FutureCeiling,
+    SustainOrRecovery,
+    BossAnswer,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AcquisitionThesisProfileV1 {
+    pub axes: Vec<AcquisitionExplorationAxisV1>,
+    pub liability_count: usize,
+    pub redundancy_count: usize,
+    pub exploration_milli: i32,
+    pub caution_milli: i32,
+    pub retention_rank_adjustment: i32,
+    pub rendered: Vec<String>,
+}
+
+impl AcquisitionThesisProfileV1 {
+    pub fn has_axis(&self, axis: AcquisitionExplorationAxisV1) -> bool {
+        self.axes.contains(&axis)
+    }
+
+    pub fn branch_exploration_worthy(&self) -> bool {
+        self.has_axis(AcquisitionExplorationAxisV1::BossAnswer)
+            || self.has_axis(AcquisitionExplorationAxisV1::ScalingEngine)
+            || self.has_axis(AcquisitionExplorationAxisV1::FutureCeiling)
+            || self.has_axis(AcquisitionExplorationAxisV1::SustainOrRecovery)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -171,6 +209,117 @@ impl CandidateDelta {
                 .iter()
                 .map(|contraindication| contraindication.severity * 2.0)
                 .sum::<f32>()
+    }
+
+    pub fn acquisition_thesis_profile_v1(&self) -> AcquisitionThesisProfileV1 {
+        let mut axes = BTreeSet::new();
+        let mut liability_count = 0usize;
+        let mut redundancy_count = 0usize;
+        let mut exploration_milli = 0i32;
+        let mut caution_milli = 0i32;
+        let mut retention_rank_adjustment = 0i32;
+        let mut rendered = Vec::new();
+
+        for thesis in &self.acquisition_theses {
+            if let Some(axis) = thesis.exploration_axis_v1() {
+                axes.insert(axis);
+            }
+            if thesis.role == AcquisitionThesisRole::LiabilityOrDependency {
+                liability_count += 1;
+            }
+            if thesis.role == AcquisitionThesisRole::RedundantCoverage {
+                redundancy_count += 1;
+            }
+            exploration_milli =
+                exploration_milli.saturating_add(thesis.branch_exploration_milli_v1());
+            caution_milli = caution_milli.saturating_add(thesis.caution_milli_v1());
+            retention_rank_adjustment = retention_rank_adjustment
+                .saturating_add(thesis.retention_rank_adjustment_milli_v1());
+            rendered.push(thesis.render_v1());
+        }
+
+        AcquisitionThesisProfileV1 {
+            axes: axes.into_iter().collect(),
+            liability_count,
+            redundancy_count,
+            exploration_milli,
+            caution_milli,
+            retention_rank_adjustment,
+            rendered,
+        }
+    }
+}
+
+impl AcquisitionThesisSignal {
+    pub fn render_v1(&self) -> String {
+        format!("{:?}/{:?}:{}", self.role, self.status, self.reason)
+    }
+
+    pub fn exploration_axis_v1(&self) -> Option<AcquisitionExplorationAxisV1> {
+        match (self.role, self.status) {
+            (
+                AcquisitionThesisRole::TransitionFrontload,
+                AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful,
+            ) => Some(AcquisitionExplorationAxisV1::TransitionFrontload),
+            (
+                AcquisitionThesisRole::MitigationCoverage | AcquisitionThesisRole::PlainBlock,
+                AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful,
+            ) => Some(AcquisitionExplorationAxisV1::DefenseCoverage),
+            (
+                AcquisitionThesisRole::DrawAccess,
+                AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful,
+            ) => Some(AcquisitionExplorationAxisV1::DrawAccess),
+            (
+                AcquisitionThesisRole::ExhaustAccess,
+                AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful,
+            ) => Some(AcquisitionExplorationAxisV1::ExhaustAccess),
+            (
+                AcquisitionThesisRole::ScalingOrEngine,
+                AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful,
+            ) => Some(AcquisitionExplorationAxisV1::ScalingEngine),
+            (
+                AcquisitionThesisRole::WinConditionOrCeiling,
+                AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful,
+            ) => Some(AcquisitionExplorationAxisV1::FutureCeiling),
+            (
+                AcquisitionThesisRole::SustainOrRecovery,
+                AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful,
+            ) => Some(AcquisitionExplorationAxisV1::SustainOrRecovery),
+            (
+                AcquisitionThesisRole::BossSpecificAnswer,
+                AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful,
+            ) => Some(AcquisitionExplorationAxisV1::BossAnswer),
+            _ => None,
+        }
+    }
+
+    pub fn branch_exploration_milli_v1(&self) -> i32 {
+        if self.exploration_axis_v1().is_none() {
+            return 0;
+        }
+        (self.amount.clamp(0.0, 1.0) * 1000.0).round() as i32
+    }
+
+    pub fn caution_milli_v1(&self) -> i32 {
+        match self.status {
+            AcquisitionThesisStatus::Saturated => 450,
+            AcquisitionThesisStatus::OverBudget => 800,
+            AcquisitionThesisStatus::Unsupported => 1000,
+            AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful => 0,
+        }
+    }
+
+    pub fn retention_rank_adjustment_milli_v1(&self) -> i32 {
+        match (self.role, self.status) {
+            (AcquisitionThesisRole::WinConditionOrCeiling, AcquisitionThesisStatus::Missing)
+            | (AcquisitionThesisRole::SustainOrRecovery, AcquisitionThesisStatus::Missing) => {
+                (self.amount * 1000.0).round() as i32
+            }
+            (_, AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful) => 0,
+            (_, AcquisitionThesisStatus::Saturated) => -450,
+            (_, AcquisitionThesisStatus::OverBudget) => -800,
+            (_, AcquisitionThesisStatus::Unsupported) => -1000,
+        }
     }
 }
 

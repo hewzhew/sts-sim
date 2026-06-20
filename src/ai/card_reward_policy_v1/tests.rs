@@ -105,6 +105,9 @@ fn semantic_profile_exports_roles_without_card_name_scoring() {
     assert!(!bandage_up
         .roles
         .contains(&CardRewardSemanticRoleV1::CombatExternalPayoff));
+    assert!(bandage_up
+        .roles
+        .contains(&CardRewardSemanticRoleV1::CombatSustain));
     assert_eq!(twin_strike.name, "Twin Strike");
 }
 

@@ -16,9 +16,9 @@ pub use compiler::{
     compile_decision, AcquisitionVerdict, CompiledDecision, StrategicDecisionTrace,
 };
 pub use delta::{
-    add_snecko_cost_conversion_delta_v1, AcquisitionThesisRole, AcquisitionThesisSignal,
-    AcquisitionThesisStatus, CandidateDelta, CandidateRole, LedgerDelta, OpportunityCost,
-    StrategicContraindication, VerdictHint,
+    add_snecko_cost_conversion_delta_v1, AcquisitionExplorationAxisV1, AcquisitionThesisProfileV1,
+    AcquisitionThesisRole, AcquisitionThesisSignal, AcquisitionThesisStatus, CandidateDelta,
+    CandidateRole, LedgerDelta, OpportunityCost, StrategicContraindication, VerdictHint,
 };
 pub use ledger::{
     add_run_debt_candidate_deltas_v1, add_run_debt_pressure_to_ledger,

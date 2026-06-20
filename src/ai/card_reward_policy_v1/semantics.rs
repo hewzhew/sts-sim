@@ -55,6 +55,12 @@ pub fn card_reward_semantic_profile_v1(card: &RewardCard) -> CardRewardSemanticP
     ) {
         push_role(&mut roles, CardRewardSemanticRoleV1::CombatExternalPayoff);
     }
+    if matches!(
+        mechanics.combat_external_payoff,
+        Some(CombatExternalPayoffV1::HealingIfDamaged)
+    ) {
+        push_role(&mut roles, CardRewardSemanticRoleV1::CombatSustain);
+    }
     if facts.exhausts_other_cards {
         push_role(&mut roles, CardRewardSemanticRoleV1::ExhaustGenerator);
     }

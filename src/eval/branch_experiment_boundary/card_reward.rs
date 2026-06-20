@@ -3,10 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
 };
-use crate::ai::strategic::{
-    AcquisitionThesisRole, AcquisitionThesisSignal, AcquisitionThesisStatus, AcquisitionVerdict,
-    CandidateAction, StrategicDecisionTrace,
-};
+use crate::ai::strategic::{AcquisitionVerdict, CandidateAction, StrategicDecisionTrace};
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 use crate::eval::branch_experiment::{
@@ -498,34 +495,11 @@ fn reward_option_acquisition_thesis_signal(
     else {
         return (0, Vec::new());
     };
-    let summary = delta
-        .acquisition_theses
-        .iter()
-        .map(render_acquisition_thesis_signal)
-        .collect::<Vec<_>>();
-    let adjustment = delta
-        .acquisition_theses
-        .iter()
-        .map(acquisition_thesis_rank_adjustment)
-        .sum::<i32>()
-        .clamp(-1_800, 0);
-    (adjustment, summary)
-}
-
-fn acquisition_thesis_rank_adjustment(thesis: &AcquisitionThesisSignal) -> i32 {
-    match (thesis.role, thesis.status) {
-        (AcquisitionThesisRole::WinConditionOrCeiling, AcquisitionThesisStatus::Missing) => {
-            (thesis.amount * 1_000.0).round() as i32
-        }
-        (_, AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful) => 0,
-        (_, AcquisitionThesisStatus::Saturated) => -450,
-        (_, AcquisitionThesisStatus::OverBudget) => -800,
-        (_, AcquisitionThesisStatus::Unsupported) => -1_000,
-    }
-}
-
-fn render_acquisition_thesis_signal(thesis: &AcquisitionThesisSignal) -> String {
-    format!("{:?}/{:?}:{}", thesis.role, thesis.status, thesis.reason)
+    let thesis_profile = delta.acquisition_thesis_profile_v1();
+    (
+        thesis_profile.retention_rank_adjustment.clamp(-1_800, 0),
+        thesis_profile.rendered,
+    )
 }
 
 fn candidate_action_for_reward_option(

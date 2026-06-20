@@ -216,6 +216,7 @@ pub enum CardRewardSemanticRoleV1 {
     StatusPayoff,
     SelfDamagePayoff,
     CombatExternalPayoff,
+    CombatSustain,
     PackagePayoff,
     RandomOutput,
     ConditionalPlayability,

@@ -9,8 +9,7 @@ use super::types::{
     ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{
-    AcquisitionThesisRole, AcquisitionThesisStatus, CandidateDelta, CandidateRole,
-    StrategicDecisionTrace,
+    AcquisitionExplorationAxisV1, CandidateDelta, CandidateRole, StrategicDecisionTrace,
 };
 
 pub fn compile_shop_decision_v1(
@@ -129,7 +128,11 @@ fn branch_exploration_projection_v1(
         .iter()
         .filter(|candidate| {
             !candidate.plan.steps.is_empty()
-                && candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
+                && (candidate.evaluation.verdict == ShopPlanVerdictV1::Allow
+                    || shop_plan_candidate_is_branch_exploration_probe_v1(
+                        strategic_trace,
+                        candidate,
+                    ))
         })
         .collect::<Vec<_>>();
     if branch_should_include_leave_with_allowed_candidates_v1(context)
@@ -169,6 +172,38 @@ fn branch_exploration_projection_v1(
             reason: "branch projection from evaluated shop frontier lane coverage".to_string(),
         })
         .collect()
+}
+
+fn shop_plan_candidate_is_branch_exploration_probe_v1(
+    strategic_trace: &StrategicDecisionTrace,
+    candidate: &ShopPlanCandidateV1,
+) -> bool {
+    if candidate.evaluation.verdict != ShopPlanVerdictV1::Block {
+        return false;
+    }
+    if candidate.plan.steps.len() != 1 {
+        return false;
+    }
+    if !matches!(
+        candidate.plan.steps.first(),
+        Some(ShopPlanStepV1::BuyCard { .. })
+    ) {
+        return false;
+    }
+    if !candidate
+        .evaluation
+        .reasons
+        .iter()
+        .any(|reason| reason.contains("strategic trace blocks shop purchase behavior acquisition"))
+    {
+        return false;
+    }
+    let Some(delta) = plan_delta_from_strategic_trace_v1(strategic_trace, &candidate.plan) else {
+        return false;
+    };
+    delta
+        .acquisition_thesis_profile_v1()
+        .branch_exploration_worthy()
 }
 
 fn shop_plan_frontier_v1(
@@ -235,6 +270,7 @@ fn select_branch_alternatives_with_effect_coverage_v1<'a>(
         ShopPlanLaneV1::BuyPotion,
         ShopPlanLaneV1::BuyCardBossAnswer,
         ShopPlanLaneV1::BuyCardMissingCeiling,
+        ShopPlanLaneV1::BuyCardFutureSustain,
         ShopPlanLaneV1::BuyCardScalingEngine,
         ShopPlanLaneV1::BuyCombo,
         ShopPlanLaneV1::BuyCardDrawAccess,
@@ -333,95 +369,38 @@ fn shop_card_buy_coverage_lane_v1(delta: Option<&CandidateDelta>) -> ShopPlanLan
     let Some(delta) = delta else {
         return ShopPlanLaneV1::BuyCardGeneric;
     };
-    if delta_has_thesis_v1(
-        delta,
-        AcquisitionThesisRole::BossSpecificAnswer,
-        &[
-            AcquisitionThesisStatus::Missing,
-            AcquisitionThesisStatus::Useful,
-        ],
-    ) {
+    let thesis = delta.acquisition_thesis_profile_v1();
+    if thesis.has_axis(AcquisitionExplorationAxisV1::BossAnswer) {
         return ShopPlanLaneV1::BuyCardBossAnswer;
     }
-    if delta_has_thesis_v1(
-        delta,
-        AcquisitionThesisRole::WinConditionOrCeiling,
-        &[AcquisitionThesisStatus::Missing],
-    ) {
+    if thesis.has_axis(AcquisitionExplorationAxisV1::FutureCeiling) {
         return ShopPlanLaneV1::BuyCardMissingCeiling;
     }
-    if delta_has_thesis_v1(
-        delta,
-        AcquisitionThesisRole::ScalingOrEngine,
-        &[
-            AcquisitionThesisStatus::Missing,
-            AcquisitionThesisStatus::Useful,
-        ],
-    ) {
+    if thesis.has_axis(AcquisitionExplorationAxisV1::SustainOrRecovery) {
+        return ShopPlanLaneV1::BuyCardFutureSustain;
+    }
+    if thesis.has_axis(AcquisitionExplorationAxisV1::ScalingEngine) {
         return ShopPlanLaneV1::BuyCardScalingEngine;
     }
-    if delta_has_thesis_v1(
-        delta,
-        AcquisitionThesisRole::DrawAccess,
-        &[
-            AcquisitionThesisStatus::Missing,
-            AcquisitionThesisStatus::Useful,
-        ],
-    ) || delta.role == CandidateRole::Lubricant
+    if thesis.has_axis(AcquisitionExplorationAxisV1::DrawAccess)
+        || delta.role == CandidateRole::Lubricant
     {
         return ShopPlanLaneV1::BuyCardDrawAccess;
     }
-    if delta_has_thesis_v1(
-        delta,
-        AcquisitionThesisRole::ExhaustAccess,
-        &[
-            AcquisitionThesisStatus::Missing,
-            AcquisitionThesisStatus::Useful,
-        ],
-    ) {
+    if thesis.has_axis(AcquisitionExplorationAxisV1::ExhaustAccess) {
         return ShopPlanLaneV1::BuyCardExhaustAccess;
     }
-    if delta_has_thesis_v1(
-        delta,
-        AcquisitionThesisRole::MitigationCoverage,
-        &[
-            AcquisitionThesisStatus::Missing,
-            AcquisitionThesisStatus::Useful,
-        ],
-    ) || delta_has_thesis_v1(
-        delta,
-        AcquisitionThesisRole::PlainBlock,
-        &[
-            AcquisitionThesisStatus::Missing,
-            AcquisitionThesisStatus::Useful,
-        ],
-    ) || matches!(delta.role, CandidateRole::DefensivePatch)
+    if thesis.has_axis(AcquisitionExplorationAxisV1::DefenseCoverage)
+        || matches!(delta.role, CandidateRole::DefensivePatch)
     {
         return ShopPlanLaneV1::BuyCardDefense;
     }
-    if delta_has_thesis_v1(
-        delta,
-        AcquisitionThesisRole::TransitionFrontload,
-        &[
-            AcquisitionThesisStatus::Missing,
-            AcquisitionThesisStatus::Useful,
-        ],
-    ) || matches!(delta.role, CandidateRole::Transition)
+    if thesis.has_axis(AcquisitionExplorationAxisV1::TransitionFrontload)
+        || matches!(delta.role, CandidateRole::Transition)
     {
         return ShopPlanLaneV1::BuyCardFrontload;
     }
     ShopPlanLaneV1::BuyCardGeneric
-}
-
-fn delta_has_thesis_v1(
-    delta: &CandidateDelta,
-    role: AcquisitionThesisRole,
-    statuses: &[AcquisitionThesisStatus],
-) -> bool {
-    delta
-        .acquisition_theses
-        .iter()
-        .any(|thesis| thesis.role == role && statuses.contains(&thesis.status))
 }
 
 fn compare_branch_alternative_candidates_v1(

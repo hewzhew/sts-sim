@@ -13,6 +13,7 @@ pub enum AcquisitionRoleV1 {
     ExhaustAccess,
     ScalingOrEngine,
     WinConditionOrCeiling,
+    SustainOrRecovery,
     BossSpecificAnswer,
     RedundantCoverage,
     LiabilityOrDependency,
@@ -269,6 +270,27 @@ pub fn evaluate_acquisition_saturation_v1(
         );
     }
 
+    if has(profile, CardRewardSemanticRoleV1::CombatSustain) {
+        report.push(
+            AcquisitionRoleV1::SustainOrRecovery,
+            if input.act >= 2 || input.floor >= 8 {
+                AcquisitionSaturationStatusV1::Useful
+            } else {
+                AcquisitionSaturationStatusV1::Missing
+            },
+            if input.act >= 2 || input.floor >= 8 {
+                0.45
+            } else {
+                0.30
+            },
+            if input.act >= 2 || input.floor >= 8 {
+                "candidate_adds_combat_sustain_for_attrition"
+            } else {
+                "candidate_seeds_future_combat_sustain"
+            },
+        );
+    }
+
     if has(profile, CardRewardSemanticRoleV1::StrikePayoff) && input.starter_strikes < 3 {
         report.push(
             AcquisitionRoleV1::LiabilityOrDependency,
@@ -419,6 +441,7 @@ fn thesis_role(role: AcquisitionRoleV1) -> AcquisitionThesisRole {
         AcquisitionRoleV1::ExhaustAccess => AcquisitionThesisRole::ExhaustAccess,
         AcquisitionRoleV1::ScalingOrEngine => AcquisitionThesisRole::ScalingOrEngine,
         AcquisitionRoleV1::WinConditionOrCeiling => AcquisitionThesisRole::WinConditionOrCeiling,
+        AcquisitionRoleV1::SustainOrRecovery => AcquisitionThesisRole::SustainOrRecovery,
         AcquisitionRoleV1::BossSpecificAnswer => AcquisitionThesisRole::BossSpecificAnswer,
         AcquisitionRoleV1::RedundantCoverage => AcquisitionThesisRole::RedundantCoverage,
         AcquisitionRoleV1::LiabilityOrDependency => AcquisitionThesisRole::LiabilityOrDependency,
@@ -450,6 +473,7 @@ fn positive_pressure(role: AcquisitionRoleV1) -> Option<PressureKind> {
         AcquisitionRoleV1::ScalingOrEngine | AcquisitionRoleV1::WinConditionOrCeiling => {
             Some(PressureKind::MissingJob(StrategicJob::Scaling))
         }
+        AcquisitionRoleV1::SustainOrRecovery => None,
         AcquisitionRoleV1::BossSpecificAnswer
         | AcquisitionRoleV1::RedundantCoverage
         | AcquisitionRoleV1::LiabilityOrDependency => None,
@@ -469,6 +493,7 @@ fn negative_pressure(signal: &AcquisitionSaturationSignalV1) -> PressureKind {
         AcquisitionRoleV1::MitigationCoverage
         | AcquisitionRoleV1::ScalingOrEngine
         | AcquisitionRoleV1::WinConditionOrCeiling
+        | AcquisitionRoleV1::SustainOrRecovery
         | AcquisitionRoleV1::BossSpecificAnswer => {
             PressureKind::DeckDebt(StrategicDebt::CombatShapeRisk)
         }
@@ -497,6 +522,7 @@ fn role_tag(role: AcquisitionRoleV1) -> &'static str {
         AcquisitionRoleV1::ExhaustAccess => "exhaust_access",
         AcquisitionRoleV1::ScalingOrEngine => "scaling_or_engine",
         AcquisitionRoleV1::WinConditionOrCeiling => "win_condition_or_ceiling",
+        AcquisitionRoleV1::SustainOrRecovery => "sustain_or_recovery",
         AcquisitionRoleV1::BossSpecificAnswer => "boss_specific_answer",
         AcquisitionRoleV1::RedundantCoverage => "redundant_coverage",
         AcquisitionRoleV1::LiabilityOrDependency => "liability_or_dependency",
@@ -702,6 +728,35 @@ mod tests {
         );
 
         assert!(report.has_signal(
+            AcquisitionRoleV1::WinConditionOrCeiling,
+            AcquisitionSaturationStatusV1::Missing
+        ));
+    }
+
+    #[test]
+    fn combat_sustain_emits_recovery_thesis_without_becoming_ceiling() {
+        let report = evaluate_acquisition_saturation_v1(
+            &AcquisitionSaturationInputV1 {
+                act: 1,
+                floor: 10,
+                deck_size: 14,
+                frontload_cards: 6,
+                block_cards: 5,
+                draw_sources: 1,
+                exhaust_generators: 0,
+                scaling_sources: 0,
+                strength_sources: 0,
+                same_card_count: 0,
+                ..input()
+            },
+            &profile(CardId::Reaper),
+        );
+
+        assert!(report.has_signal(
+            AcquisitionRoleV1::SustainOrRecovery,
+            AcquisitionSaturationStatusV1::Useful
+        ));
+        assert!(!report.has_signal(
             AcquisitionRoleV1::WinConditionOrCeiling,
             AcquisitionSaturationStatusV1::Missing
         ));

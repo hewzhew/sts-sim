@@ -187,6 +187,7 @@ pub enum ShopPlanLaneV1 {
     BuyPotion,
     BuyCardBossAnswer,
     BuyCardMissingCeiling,
+    BuyCardFutureSustain,
     BuyCardScalingEngine,
     BuyCardDrawAccess,
     BuyCardExhaustAccess,
