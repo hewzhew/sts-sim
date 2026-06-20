@@ -294,6 +294,13 @@ def normalized_card_from_action_key(action_key: str) -> str | None:
     return card
 
 
+def display_card_from_normalized(card: str) -> str:
+    upgraded = card.endswith("+")
+    base = card[:-1] if upgraded else card
+    base = re.sub(r"_(R|G|B|P|C)$", "", base)
+    return f"{base}+" if upgraded else base
+
+
 def extract_features(sample: dict[str, Any], *, include_order_features: bool) -> dict[str, float]:
     features: dict[str, float] = defaultdict(float)
     cand = candidate(sample)
@@ -580,24 +587,25 @@ def source_cross_validated_model_metrics(
     l2: float,
     seed: int,
     include_order_features: bool,
-) -> tuple[dict[str, float], dict[str, Any]]:
+    return_scores: bool = False,
+) -> tuple[dict[str, float], dict[str, Any], dict[str, list[float]]]:
     units = source_unit_to_group_keys(groups)
     if len(units) < 2:
-        return (
-            {
-                "groups": 0.0,
-                "top1": 0.0,
-                "mrr": 0.0,
-                "avg_rank": 0.0,
-                "avg_candidates": 0.0,
-                "avg_hp_gain_vs_ordered": 0.0,
-                "positive_hp_gain": 0.0,
-                "negative_hp_gain": 0.0,
-                "target_missed": 0.0,
-                "target_outcome_missed": 0.0,
-            },
-            {"folds": 0, "source_units": len(units)},
-        )
+        metrics = {
+            "groups": 0.0,
+            "top1": 0.0,
+            "mrr": 0.0,
+            "avg_rank": 0.0,
+            "avg_candidates": 0.0,
+            "avg_hp_gain_vs_ordered": 0.0,
+            "positive_hp_gain": 0.0,
+            "negative_hp_gain": 0.0,
+            "target_missed": 0.0,
+            "target_outcome_missed": 0.0,
+            "target_outcome_match_rate": 0.0,
+            "avg_hp_regret_to_target": 0.0,
+        }
+        return metrics, {"folds": 0, "source_units": len(units)}, {}
     out_of_fold_scores: dict[str, list[float]] = {}
     folds = 0
     for fold_index, held_out_unit in enumerate(sorted(units)):
@@ -625,10 +633,11 @@ def source_cross_validated_model_metrics(
                 scores.append(dot(weights, hashed_features(features, dim), bias))
             out_of_fold_scores[key] = scores
         folds += 1
-    return (
-        metrics_from_group_scores(groups, out_of_fold_scores),
-        {"folds": folds, "source_units": len(units)},
-    )
+    scores = out_of_fold_scores if return_scores else {}
+    return metrics_from_group_scores(groups, out_of_fold_scores), {
+        "folds": folds,
+        "source_units": len(units),
+    }, scores
 
 
 def metrics_from_group_scores(
@@ -705,6 +714,124 @@ def metrics_from_group_scores(
             sum(target_hp_regrets) / len(target_hp_regrets) if target_hp_regrets else 0.0
         ),
     }
+
+
+def selected_indices_for_scores(
+    group: list[dict[str, Any]], scores: list[float]
+) -> tuple[int, int, int | None]:
+    model_index = max(range(len(group)), key=lambda index: scores[index])
+    ordered_index = min(range(len(group)), key=lambda index: sample_ordered_index(group[index]))
+    target_index = next((index for index, sample in enumerate(group) if is_selected(sample)), None)
+    return ordered_index, model_index, target_index
+
+
+def source_label(sample: dict[str, Any]) -> str:
+    source = sample.get("source") if isinstance(sample.get("source"), dict) else {}
+    case_id = source.get("case_id") or "-"
+    benchmark = source.get("benchmark_name") or Path(sample_source_key(sample)).stem
+    return f"{benchmark}:{case_id}"
+
+
+def state_summary(sample: dict[str, Any]) -> str:
+    context = initial_context(sample)
+    state = context.get("state") if isinstance(context.get("state"), dict) else {}
+    frontier = context.get("frontier_value") if isinstance(context.get("frontier_value"), dict) else {}
+    return (
+        f"hp={state.get('player_hp')} block={state.get('player_block')} "
+        f"energy={state.get('energy')} incoming={state.get('visible_incoming_damage')} "
+        f"enemies={state.get('living_enemy_count')} enemy_hp={state.get('total_enemy_hp')} "
+        f"hand_dmg={nested_get(frontier, 'hand.damage')} hand_block={nested_get(frontier, 'hand.block')}"
+    )
+
+
+def plan_summary(sample: dict[str, Any]) -> str:
+    cand = candidate(sample)
+    target = sample.get("target") if isinstance(sample.get("target"), dict) else {}
+    action_keys = cand.get("action_keys") if isinstance(cand.get("action_keys"), list) else []
+    if not action_keys:
+        key = candidate_action_key(sample)
+        action_keys = [key] if key else []
+    preview: list[str] = []
+    for key in action_keys[:4]:
+        text = str(key)
+        card = normalized_card_from_action_key(text)
+        if card:
+            preview.append(display_card_from_normalized(card))
+        elif text == "combat/end_turn":
+            preview.append("end")
+        else:
+            preview.append(text.rsplit("/", 1)[-1])
+    if len(action_keys) > 4:
+        preview.append("...")
+    return (
+        f"idx={sample_ordered_index(sample)} hp={candidate_final_hp(sample)} "
+        f"outcome={target.get('terminal')} complete={target.get('complete_win')} "
+        f"seq=[{' -> '.join(preview)}]"
+    )
+
+
+def interesting_case_rows(
+    groups: dict[str, list[dict[str, Any]]],
+    group_scores: dict[str, list[float]],
+    *,
+    kind: str,
+    limit: int,
+) -> list[tuple[float, str]]:
+    rows: list[tuple[float, str]] = []
+    for key, group in groups.items():
+        scores = group_scores.get(key) or []
+        if len(scores) != len(group):
+            continue
+        ordered_index, model_index, target_index = selected_indices_for_scores(group, scores)
+        if target_index is None:
+            continue
+        ordered = group[ordered_index]
+        model = group[model_index]
+        target = group[target_index]
+        ordered_hp = candidate_final_hp(ordered)
+        model_hp = candidate_final_hp(model)
+        target_hp = candidate_final_hp(target)
+        if ordered_hp is None or model_hp is None or target_hp is None:
+            continue
+        model_gain = model_hp - ordered_hp
+        model_regret = target_hp - model_hp
+        ordered_regret = target_hp - ordered_hp
+        if kind == "worse" and model_gain >= 0:
+            continue
+        if kind == "better" and model_gain <= 0:
+            continue
+        if kind == "both-bad" and not (ordered_regret > 0 and model_regret > 0):
+            continue
+        sort_key = {
+            "worse": -model_gain,
+            "better": model_gain,
+            "both-bad": max(ordered_regret, model_regret),
+        }[kind]
+        body = "\n".join(
+            [
+                f"case={source_label(group[0])} state={state_summary(group[0])}",
+                f"  ordered: {plan_summary(ordered)}",
+                f"  model:   {plan_summary(model)} gain_vs_ordered={model_gain:+d} regret={model_regret:+d}",
+                f"  target:  {plan_summary(target)} ordered_regret={ordered_regret:+d}",
+            ]
+        )
+        rows.append((float(sort_key), body))
+    rows.sort(key=lambda item: item[0], reverse=True)
+    return rows[:limit]
+
+
+def print_case_rows(
+    title: str,
+    groups: dict[str, list[dict[str, Any]]],
+    scores: dict[str, list[float]],
+    *,
+    kind: str,
+    limit: int,
+) -> None:
+    rows = interesting_case_rows(groups, scores, kind=kind, limit=limit)
+    print(f"  cases:{title} count={len(rows)}")
+    for _score, body in rows:
+        print(body)
 
 
 def feature_weight_report(
@@ -811,6 +938,18 @@ def main() -> None:
         default="compact",
         help="compact prints regret/outcome metrics only; full also prints top1/MRR/features.",
     )
+    parser.add_argument(
+        "--show-cases",
+        type=int,
+        default=0,
+        help="For source-cv, print compact ordered/model/target case comparisons.",
+    )
+    parser.add_argument(
+        "--case-kind",
+        choices=("worse", "better", "both-bad", "all"),
+        default="worse",
+        help="Which source-cv case comparisons to show when --show-cases is set.",
+    )
     args = parser.parse_args()
 
     input_paths = list(args.inputs)
@@ -844,7 +983,7 @@ def main() -> None:
         return
 
     if args.split_mode == "source-cv":
-        cv_metrics, cv_meta = source_cross_validated_model_metrics(
+        cv_metrics, cv_meta, cv_scores = source_cross_validated_model_metrics(
             groups,
             dim=args.dim,
             epochs=args.epochs,
@@ -852,6 +991,7 @@ def main() -> None:
             l2=args.l2,
             seed=args.seed,
             include_order_features=args.include_order_features,
+            return_scores=args.show_cases > 0,
         )
         print(
             f"  split=mode:source-cv source_units:{cv_meta['source_units']} "
@@ -863,6 +1003,21 @@ def main() -> None:
             report_mode=args.report_mode,
         )
         print_metrics("logistic_source_cv", cv_metrics, report_mode=args.report_mode)
+        if args.show_cases > 0:
+            kinds = (
+                ("worse", "model_worse_than_ordered"),
+                ("better", "model_better_than_ordered"),
+                ("both-bad", "ordered_bad_model_bad"),
+            )
+            for kind, title in kinds:
+                if args.case_kind in (kind, "all"):
+                    print_case_rows(
+                        title,
+                        groups,
+                        cv_scores,
+                        kind=kind,
+                        limit=args.show_cases,
+                    )
         train_examples = flatten_training_examples(
             groups,
             include_order_features=args.include_order_features,
