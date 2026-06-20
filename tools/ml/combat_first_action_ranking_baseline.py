@@ -506,6 +506,50 @@ def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, float]
     }
 
 
+def target_equivalence_audit(groups: dict[str, list[dict[str, Any]]]) -> dict[str, float]:
+    audited_groups = 0
+    total_candidates = 0
+    exact_equivalent = 0
+    same_terminal = 0
+    hp_within_1 = 0
+    hp_within_3 = 0
+    hp_within_5 = 0
+    for group in groups.values():
+        selected = primary_target_index(group)
+        if selected is None:
+            continue
+        selected_signature = candidate_terminal_signature(group[selected])
+        selected_complete_win, selected_terminal, selected_final_hp = selected_signature
+        if selected_terminal is None or selected_final_hp is None:
+            continue
+        audited_groups += 1
+        total_candidates += len(group)
+        for sample in group:
+            complete_win, terminal, final_hp = candidate_terminal_signature(sample)
+            if (complete_win, terminal) == (selected_complete_win, selected_terminal):
+                same_terminal += 1
+                if final_hp is not None:
+                    hp_delta = abs(final_hp - selected_final_hp)
+                    if hp_delta == 0:
+                        exact_equivalent += 1
+                    if hp_delta <= 1:
+                        hp_within_1 += 1
+                    if hp_delta <= 3:
+                        hp_within_3 += 1
+                    if hp_delta <= 5:
+                        hp_within_5 += 1
+    denominator = float(audited_groups or 1)
+    return {
+        "groups": float(audited_groups),
+        "avg_candidates": total_candidates / denominator,
+        "avg_same_terminal": same_terminal / denominator,
+        "avg_exact_final_hp": exact_equivalent / denominator,
+        "avg_hp_within_1": hp_within_1 / denominator,
+        "avg_hp_within_3": hp_within_3 / denominator,
+        "avg_hp_within_5": hp_within_5 / denominator,
+    }
+
+
 def usable_groups(samples: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     groups = {}
     for key, group in grouped_samples(samples).items():
@@ -2760,6 +2804,7 @@ def main() -> None:
     source_schema_counts = Counter(str(sample.get("_source_schema_name")) for sample in samples)
     coverage = turn_plan_feature_coverage(samples)
     root_mask_coverage = root_action_mask_coverage(samples)
+    target_audit = target_equivalence_audit(groups)
     for group in groups.values():
         for sample in group:
             target_counts["selected" if is_selected(sample) else "not_selected"] += 1
@@ -2793,6 +2838,17 @@ def main() -> None:
             f"{root_mask_coverage['candidate_first_action_coverage_ratio']:.3f} "
             f"candidate_eligible_ratio="
             f"{root_mask_coverage['candidate_eligible_action_coverage_ratio']:.3f}"
+        )
+    if target_audit["groups"]:
+        print(
+            "  target_equivalence_audit="
+            f"groups={int(target_audit['groups'])} "
+            f"avg_candidates={target_audit['avg_candidates']:.1f} "
+            f"avg_same_terminal={target_audit['avg_same_terminal']:.1f} "
+            f"avg_exact_final_hp={target_audit['avg_exact_final_hp']:.1f} "
+            f"avg_hp_within_1={target_audit['avg_hp_within_1']:.1f} "
+            f"avg_hp_within_3={target_audit['avg_hp_within_3']:.1f} "
+            f"avg_hp_within_5={target_audit['avg_hp_within_5']:.1f}"
         )
     print(
         "  label_role=oracle_search_guidance_ranking_not_human_policy "
