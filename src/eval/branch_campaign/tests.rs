@@ -341,6 +341,7 @@ fn campaign_round_summary_persists_timing_metrics() {
         combat_retry_elapsed_wall_ms_sum: 3_000,
         combat_retry_elapsed_wall_ms_max: 3_000,
         combat_performance: BranchCampaignCombatPerformanceSummaryV1::default(),
+        decision_observations: Vec::new(),
     };
 
     let value = serde_json::to_value(summary).expect("round summary should serialize");

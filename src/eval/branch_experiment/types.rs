@@ -141,7 +141,7 @@ pub struct BranchExperimentPrunedBranchSummaryV1 {
     pub lineage_flag_counts: BTreeMap<String, usize>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchExperimentRewardOptionPortfolioV1 {
     pub depth: usize,
@@ -154,7 +154,7 @@ pub struct BranchExperimentRewardOptionPortfolioV1 {
     pub pruned_options: Vec<BranchExperimentRewardOptionPortfolioEntryV1>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchExperimentRewardOptionPortfolioEntryV1 {
     pub command: String,

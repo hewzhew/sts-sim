@@ -1,5 +1,7 @@
 use crate::ai::strategic::BranchSignatureCompact;
-use crate::eval::branch_experiment::BranchExperimentBossCombatRecordV1;
+use crate::eval::branch_experiment::{
+    BranchExperimentBossCombatRecordV1, BranchExperimentRewardOptionPortfolioV1,
+};
 use crate::eval::combat_lab_probe_v1::CombatLabProbePacketV1;
 use crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1;
 use crate::eval::reward_boundary_packet_v1::RewardBoundaryPacketV1;
@@ -138,6 +140,29 @@ pub struct BranchCampaignRoundSummaryV1 {
     pub combat_retry_elapsed_wall_ms_max: u64,
     #[serde(default)]
     pub combat_performance: BranchCampaignCombatPerformanceSummaryV1,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decision_observations: Vec<BranchCampaignDecisionObservationV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignDecisionObservationV1 {
+    pub round: usize,
+    pub parent_index: usize,
+    pub parent_branch_id: String,
+    #[serde(default)]
+    pub parent_frontier_title: String,
+    #[serde(default)]
+    pub parent_act: u8,
+    #[serde(default)]
+    pub parent_floor: i32,
+    #[serde(default)]
+    pub parent_choices: Vec<String>,
+    #[serde(default)]
+    pub parent_commands: Vec<String>,
+    #[serde(default)]
+    pub combat_budget_retry_used: bool,
+    pub portfolio: BranchExperimentRewardOptionPortfolioV1,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

@@ -61,10 +61,11 @@ use intervention::{
 use lineage::campaign_branch_boss_relic_lineage_key_v1;
 pub use model::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
-    BranchCampaignCheckpointSessionV1, BranchCampaignCheckpointV1, BranchCampaignReportV1,
-    BranchCampaignRoundSummaryV1, BranchCampaignRouteEvidenceExampleV1,
-    BranchCampaignRouteEvidenceSummaryV1, BranchCampaignRunResultV1, BranchCampaignSelectionV1,
-    BranchCampaignStateStoreSummaryV1, BranchCampaignStrategyRequestV1,
+    BranchCampaignCheckpointSessionV1, BranchCampaignCheckpointV1,
+    BranchCampaignDecisionObservationV1, BranchCampaignReportV1, BranchCampaignRoundSummaryV1,
+    BranchCampaignRouteEvidenceExampleV1, BranchCampaignRouteEvidenceSummaryV1,
+    BranchCampaignRunResultV1, BranchCampaignSelectionV1, BranchCampaignStateStoreSummaryV1,
+    BranchCampaignStrategyRequestV1,
 };
 use parent_batch::run_campaign_parent_batch_v1;
 #[cfg(test)]
@@ -760,6 +761,7 @@ where
             combat_retry_elapsed_wall_ms_sum,
             combat_retry_elapsed_wall_ms_max,
             combat_performance: batch.combat_performance,
+            decision_observations: batch.decision_observations,
         };
         progress(BranchCampaignProgressEventV1::RoundFinished {
             round: round_number,

@@ -19,7 +19,8 @@ use super::summary::campaign_refresh_branch_summary_from_session_v1;
 use super::{
     campaign_branch_from_report_branch_v1, campaign_replay_commands_for_path_v1,
     maybe_attach_campaign_combat_lab_probe_v1, BranchCampaignBranchStatusV1,
-    BranchCampaignBranchV1, BranchCampaignConfigV1, BranchCampaignRouteEvidenceSummaryV1,
+    BranchCampaignBranchV1, BranchCampaignConfigV1, BranchCampaignDecisionObservationV1,
+    BranchCampaignRouteEvidenceSummaryV1,
 };
 
 struct BranchCampaignParentRoundResultV1 {
@@ -48,6 +49,7 @@ pub(super) struct BranchCampaignParentBatchResultV1 {
     pub(super) candidates: Vec<BranchCampaignBranchV1>,
     pub(super) strategy_requests: Vec<BranchExperimentStrategyRequestV1>,
     pub(super) route_evidence: BranchCampaignRouteEvidenceSummaryV1,
+    pub(super) decision_observations: Vec<BranchCampaignDecisionObservationV1>,
     pub(super) explored_branch_points: usize,
     pub(super) wall_limit_hit: bool,
     pub(super) branch_limit_hit: bool,
@@ -79,6 +81,7 @@ where
     let mut branch_limit_hit = false;
     let mut combat_budget_retries = 0usize;
     let mut route_evidence = BranchCampaignRouteEvidenceSummaryV1::default();
+    let mut decision_observations = Vec::new();
     let mut parent_elapsed_wall_ms_sum = 0u64;
     let mut parent_elapsed_wall_ms_max = 0u64;
     let mut combat_retry_elapsed_wall_ms_sum = 0u64;
@@ -168,6 +171,13 @@ where
         );
         let report = result.report;
         let combat_budget_retry_used = round_retry || parent_result.combat_budget_retry_used;
+        decision_observations.extend(campaign_decision_observations_from_report_v1(
+            parent,
+            parent_index,
+            round_number,
+            combat_budget_retry_used,
+            &report,
+        ));
         if combat_budget_retry_used {
             combat_budget_retries = combat_budget_retries.saturating_add(1);
         }
@@ -208,6 +218,7 @@ where
         candidates,
         strategy_requests,
         route_evidence,
+        decision_observations,
         explored_branch_points,
         wall_limit_hit,
         branch_limit_hit,
@@ -218,6 +229,40 @@ where
         combat_retry_elapsed_wall_ms_max,
         combat_performance,
     })
+}
+
+fn campaign_decision_observations_from_report_v1(
+    parent: &BranchCampaignBranchV1,
+    parent_index: usize,
+    round_number: usize,
+    combat_budget_retry_used: bool,
+    report: &crate::eval::branch_experiment::BranchExperimentReportV1,
+) -> Vec<BranchCampaignDecisionObservationV1> {
+    if report.reward_option_portfolios.is_empty() {
+        return Vec::new();
+    }
+    let (parent_act, parent_floor) = parent
+        .summary
+        .as_ref()
+        .map(|summary| (summary.act, summary.floor))
+        .unwrap_or_default();
+    report
+        .reward_option_portfolios
+        .iter()
+        .cloned()
+        .map(|portfolio| BranchCampaignDecisionObservationV1 {
+            round: round_number,
+            parent_index,
+            parent_branch_id: parent.branch_id.clone(),
+            parent_frontier_title: parent.frontier_title.clone(),
+            parent_act,
+            parent_floor,
+            parent_choices: parent.choice_labels.clone(),
+            parent_commands: parent.commands.clone(),
+            combat_budget_retry_used,
+            portfolio,
+        })
+        .collect()
 }
 
 fn run_campaign_parent_base_passes_parallel_v1(
