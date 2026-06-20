@@ -4,7 +4,9 @@ use std::time::Instant;
 use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper};
 
 use super::super::rollout_pending_choice::RolloutPendingChoiceProgress;
-use super::super::value::{combat_eval_from_rollout_estimate, CombatEvalV2};
+use super::super::value::{
+    combat_eval_from_rollout_estimate, CombatEvalSurvivalBucket, CombatEvalV2,
+};
 use super::super::*;
 use super::types::{
     TurnPlanBucket, TurnPlanEnumeration, TurnPlanStepStateV1, TurnPlanStopReason, TurnPlanV1,
@@ -263,7 +265,7 @@ fn select_bucketed_plans(
         return Vec::new();
     }
 
-    candidates.sort_by(|left, right| right.eval.cmp(&left.eval));
+    candidates.sort_by(|left, right| compare_turn_plan_seed_candidate(right, left));
     let mut selected = Vec::new();
     let mut selected_indexes = vec![false; candidates.len()];
     let mut bucket_counts = BTreeMap::<TurnPlanBucket, usize>::new();
@@ -298,6 +300,78 @@ fn select_bucketed_plans(
     }
 
     selected
+}
+
+fn compare_turn_plan_seed_candidate(left: &TurnPlanV1, right: &TurnPlanV1) -> std::cmp::Ordering {
+    left.eval
+        .outcome_class()
+        .cmp(&right.eval.outcome_class())
+        .then_with(|| {
+            left.eval
+                .progress_bucket()
+                .cmp(&right.eval.progress_bucket())
+        })
+        .then_with(|| left.eval.enemy_progress().cmp(&right.eval.enemy_progress()))
+        .then_with(|| {
+            left.eval
+                .survival_bucket()
+                .cmp(&right.eval.survival_bucket())
+        })
+        .then_with(|| {
+            if turn_plan_is_in_danger(left) || turn_plan_is_in_danger(right) {
+                left.eval.risk_margin().cmp(&right.eval.risk_margin())
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .then_with(|| turn_plan_seed_conservation(left).cmp(&turn_plan_seed_conservation(right)))
+        .then_with(|| {
+            if turn_plan_is_in_danger(left) || turn_plan_is_in_danger(right) {
+                std::cmp::Ordering::Equal
+            } else {
+                left.eval.risk_margin().cmp(&right.eval.risk_margin())
+            }
+        })
+        .then_with(|| left.eval.final_hp().cmp(&right.eval.final_hp()))
+        .then_with(|| left.eval.cmp(&right.eval))
+}
+
+fn turn_plan_is_in_danger(plan: &TurnPlanV1) -> bool {
+    matches!(
+        plan.eval.survival_bucket(),
+        CombatEvalSurvivalBucket::DeadOrForcedLoss
+            | CombatEvalSurvivalBucket::LethalVisible
+            | CombatEvalSurvivalBucket::Critical
+    )
+}
+
+fn turn_plan_seed_conservation(plan: &TurnPlanV1) -> (i32, i32) {
+    (
+        -(low_impact_exhaust_action_count(plan) as i32),
+        -(plan.actions.len() as i32),
+    )
+}
+
+fn low_impact_exhaust_action_count(plan: &TurnPlanV1) -> usize {
+    plan.action_facts
+        .iter()
+        .filter(|facts| {
+            facts.immediate.exhausts_card
+                && facts.immediate.damage_hint <= 0
+                && facts.immediate.block_hint <= 0
+                && facts.immediate.target_progress_hint <= 0
+                && facts.immediate.all_enemy_progress_hint <= 0
+                && facts.mechanics.visible_attack_mitigation_hint <= 0
+                && facts.mechanics.persistent_enemy_strength_down <= 0
+                && facts.mechanics.temporary_enemy_strength_down <= 0
+                && facts.mechanics.enemy_vulnerable <= 0
+                && facts.mechanics.enemy_weak <= 0
+                && facts.mechanics.player_strength_gain <= 0
+                && facts.mechanics.player_temporary_strength_gain <= 0
+                && facts.exact_one_step_delta.energy_delta <= 0
+                && facts.exact_one_step_delta.hand_delta <= 0
+        })
+        .count()
 }
 
 const TURN_PLAN_BUCKET_DIVERSITY_ORDER: [TurnPlanBucket; 7] = [
