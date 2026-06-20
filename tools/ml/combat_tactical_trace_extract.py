@@ -10,6 +10,7 @@ in the same root report.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections import Counter
 from pathlib import Path
@@ -37,6 +38,13 @@ PUBLIC_MONSTER_FIELDS = (
 def load_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def hash_json(value: Any) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    return hashlib.blake2b(payload, digest_size=32).hexdigest()
 
 
 def iter_labs(path: Path, payload: Any) -> Iterable[tuple[dict[str, Any], dict[str, Any]]]:
@@ -271,6 +279,8 @@ def step_trace(
 ) -> dict[str, Any]:
     exact = as_dict(facts.get("exact_one_step_delta")) if isinstance(facts, dict) else {}
     has_state_summary = isinstance(state_before, dict) and isinstance(state_after, dict)
+    state_before_summary_hash = hash_json(state_before) if isinstance(state_before, dict) else None
+    state_after_summary_hash = hash_json(state_after) if isinstance(state_after, dict) else None
     return {
         "step_index": action.get("step_index"),
         "action": {
@@ -281,8 +291,18 @@ def step_trace(
             "action_debug": action.get("action_debug"),
             "input": action.get("input"),
         },
-        "state_before_ref": None,
-        "state_after_ref": None,
+        "state_before_ref": (
+            f"state_summary:{state_before_summary_hash}" if state_before_summary_hash else None
+        ),
+        "state_after_ref": (
+            f"state_summary:{state_after_summary_hash}" if state_after_summary_hash else None
+        ),
+        "state_ref_kind": "summary_hash_not_exact_state_hash" if has_state_summary else None,
+        "state_summary_hash_algorithm": (
+            "blake2b_256_canonical_json_of_state_summary_v1" if has_state_summary else None
+        ),
+        "state_before_summary_hash": state_before_summary_hash,
+        "state_after_summary_hash": state_after_summary_hash,
         "state_before_summary": state_before if isinstance(state_before, dict) else None,
         "state_after_summary": state_after if isinstance(state_after, dict) else None,
         "state_snapshot_availability": (
