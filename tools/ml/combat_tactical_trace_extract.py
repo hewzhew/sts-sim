@@ -1019,7 +1019,7 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def root_candidate_action_mask(traces: list[dict[str, Any]]) -> dict[str, Any]:
+def root_candidate_action_coverage(traces: list[dict[str, Any]]) -> dict[str, Any]:
     by_key: dict[str, dict[str, Any]] = {}
     for trace in traces:
         steps = [step for step in as_list(trace.get("steps")) if isinstance(step, dict)]
@@ -1045,12 +1045,35 @@ def root_candidate_action_mask(traces: list[dict[str, Any]]) -> dict[str, Any]:
         "data_role": "DerivedDeterministic",
         "availability": "RootOnly",
         "source": "turn_plan_enumerator_first_actions",
-        "complete_legal_mask": False,
         "coverage_scope": "actions_covered_by_bounded_turn_plan_candidates",
         "covered_action_count": len(actions),
         "candidate_first_actions": actions,
         "limitations": [
             "this is not a full legal action mask; it only covers first actions present in the bounded candidate plans",
+        ],
+    }
+
+
+def root_legal_action_mask(root: dict[str, Any], traces: list[dict[str, Any]]) -> dict[str, Any]:
+    mask = as_dict(root.get("root_action_mask"))
+    if mask:
+        return {
+            **mask,
+            "candidate_action_coverage": root_candidate_action_coverage(traces),
+        }
+    fallback = root_candidate_action_coverage(traces)
+    return {
+        "data_role": "DerivedDeterministic",
+        "availability": "RootOnly",
+        "source": "turn_plan_enumerator_first_actions_fallback",
+        "complete_legal_mask": False,
+        "legal_action_count": None,
+        "candidate_eligible_action_count": fallback.get("covered_action_count"),
+        "legal_actions": None,
+        "candidate_eligible_actions": None,
+        "candidate_action_coverage": fallback,
+        "limitations": [
+            "source report did not include root_action_mask; only bounded candidate first-action coverage is available",
         ],
     }
 
@@ -1368,7 +1391,7 @@ def episode_from_lab(
                 "frontier_value": initial_context.get("frontier_value"),
                 "enemy_slots": enemy_slots,
             },
-            "legal_action_mask": root_candidate_action_mask(traces),
+            "legal_action_mask": root_legal_action_mask(root, traces),
         },
         "candidate_plans": traces,
         "root_tactical_context": context,

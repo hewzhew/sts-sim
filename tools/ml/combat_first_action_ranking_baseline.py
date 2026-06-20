@@ -151,6 +151,9 @@ def samples_from_tactical_episode(episode: dict[str, Any], path: Path) -> list[d
             "phase_profile": public_view.get("phase_profile"),
             "frontier_value": public_view.get("frontier_value"),
         },
+        "legal_action_mask": root.get("legal_action_mask")
+        if isinstance(root.get("legal_action_mask"), dict)
+        else {},
         "enumeration": {
             "planning_policy": provenance.get("candidate_generator_id"),
             "source_schema": episode.get("schema_name"),
@@ -766,6 +769,49 @@ def add_turn_plan_root_delta_features(
         add_token(features, "plan_root_kills_enemy" if enemies_killed > 0 else "plan_root_no_enemy_kill")
 
 
+def add_turn_plan_root_action_mask_features(
+    features: dict[str, float],
+    sample: dict[str, Any],
+) -> None:
+    root = sample.get("root_context") if isinstance(sample.get("root_context"), dict) else {}
+    mask = root.get("legal_action_mask") if isinstance(root.get("legal_action_mask"), dict) else {}
+    if not mask:
+        add_token(features, "root_action_mask:missing")
+        return
+    add_token(features, "root_action_mask:present")
+    if mask.get("complete_legal_mask") is True:
+        add_token(features, "root_action_mask:complete")
+    else:
+        add_token(features, "root_action_mask:incomplete")
+    add_number(features, "root_action_mask_legal_action_count", mask.get("legal_action_count"), 32.0)
+    add_number(
+        features,
+        "root_action_mask_candidate_eligible_action_count",
+        mask.get("candidate_eligible_action_count"),
+        32.0,
+    )
+    coverage = (
+        mask.get("candidate_action_coverage")
+        if isinstance(mask.get("candidate_action_coverage"), dict)
+        else {}
+    )
+    add_number(
+        features,
+        "root_action_mask_candidate_first_action_count",
+        coverage.get("covered_action_count"),
+        32.0,
+    )
+    legal_count = numeric_value(mask.get("legal_action_count"))
+    covered_count = numeric_value(coverage.get("covered_action_count"))
+    if legal_count and legal_count > 0 and covered_count is not None:
+        add_number(
+            features,
+            "root_action_mask_candidate_first_action_coverage_ratio",
+            covered_count / legal_count,
+            1.0,
+        )
+
+
 def add_turn_plan_action_shape_features(
     features: dict[str, float],
     action_keys: list[Any],
@@ -1271,6 +1317,7 @@ def extract_features(
         action_keys = cand.get("action_keys") if isinstance(cand.get("action_keys"), list) else []
         if "root-delta" in feature_groups:
             add_turn_plan_root_delta_features(features, state, cand)
+            add_turn_plan_root_action_mask_features(features, sample)
         if "action-shape" in feature_groups:
             add_turn_plan_action_shape_features(features, action_keys)
         if "target-detail" in feature_groups:

@@ -19,6 +19,7 @@ pub struct CombatSearchV2TurnPlanProbeRootReport {
     pub input_label: Option<String>,
     pub config: CombatSearchV2TurnPlanProbeConfigReport,
     pub initial_context: CombatSearchV2DecisionContext,
+    pub root_action_mask: CombatSearchV2TurnPlanProbeActionMaskReport,
     pub enumeration: CombatSearchV2TurnPlanProbeEnumerationReport,
     pub candidates: Vec<CombatSearchV2TurnPlanProbeCandidateReport>,
     pub notes: Vec<&'static str>,
@@ -41,6 +42,27 @@ pub struct CombatSearchV2TurnPlanProbeEnumerationReport {
     pub nodes_generated: usize,
     pub exact_state_skips: usize,
     pub truncated_children: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2TurnPlanProbeActionMaskReport {
+    pub data_role: &'static str,
+    pub availability: &'static str,
+    pub complete_legal_mask: bool,
+    pub legal_action_count: usize,
+    pub candidate_eligible_action_count: usize,
+    pub potion_policy: &'static str,
+    pub legal_actions: Vec<CombatSearchV2TurnPlanProbeActionReport>,
+    pub candidate_eligible_actions: Vec<CombatSearchV2TurnPlanProbeActionReport>,
+    pub notes: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2TurnPlanProbeActionReport {
+    pub action_id: usize,
+    pub action_key: String,
+    pub action_debug: String,
+    pub input: ClientInput,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -113,6 +135,10 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
         max_engine_steps_per_action: config.max_engine_steps_per_action,
     };
     let enumeration = enumerate_turn_plans(&root, &EngineCombatStepper, &turn_config, None);
+    let position = CombatPosition::new(engine.clone(), combat.clone());
+    let legal_action_choices = EngineCombatStepper.legal_action_choices(&position);
+    let root_action_mask =
+        root_action_mask_report(combat, turn_config.potion_policy, legal_action_choices);
     let candidates = enumeration
         .plans
         .iter()
@@ -166,6 +192,7 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
             )),
             frontier_value: combat_search_frontier_value_report(&root),
         },
+        root_action_mask,
         enumeration: CombatSearchV2TurnPlanProbeEnumerationReport {
             planning_policy: "turn_plan_v1_root_only_bounded_exact_step_enumeration",
             plans: enumeration.plans.len(),
@@ -188,6 +215,45 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
         report: root_report,
         candidates,
     }
+}
+
+fn root_action_mask_report(
+    combat: &CombatState,
+    potion_policy: CombatSearchV2PotionPolicy,
+    legal_actions: Vec<CombatActionChoice>,
+) -> CombatSearchV2TurnPlanProbeActionMaskReport {
+    let candidate_eligible = filtered_legal_actions(legal_actions.clone(), potion_policy, combat);
+    CombatSearchV2TurnPlanProbeActionMaskReport {
+        data_role: "ObservedExact",
+        availability: "RootOnly",
+        complete_legal_mask: true,
+        legal_action_count: legal_actions.len(),
+        candidate_eligible_action_count: candidate_eligible.len(),
+        potion_policy: potion_policy.label(),
+        legal_actions: action_mask_entries(legal_actions),
+        candidate_eligible_actions: action_mask_entries(candidate_eligible),
+        notes: vec![
+            "legal_actions is the complete root legal action list from the combat stepper",
+            "candidate_eligible_actions applies the current combat search potion policy before turn-plan enumeration",
+        ],
+    }
+}
+
+fn action_mask_entries(
+    actions: Vec<CombatActionChoice>,
+) -> Vec<CombatSearchV2TurnPlanProbeActionReport> {
+    actions
+        .into_iter()
+        .enumerate()
+        .map(
+            |(action_id, action)| CombatSearchV2TurnPlanProbeActionReport {
+                action_id,
+                action_key: action.action_key,
+                action_debug: action.action_debug,
+                input: action.input,
+            },
+        )
+        .collect()
 }
 
 fn turn_plan_step_reports(
