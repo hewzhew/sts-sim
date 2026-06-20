@@ -266,8 +266,11 @@ def plan_tactical_summary(
 def step_trace(
     action: dict[str, Any],
     facts: dict[str, Any] | None,
+    state_before: dict[str, Any] | None = None,
+    state_after: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     exact = as_dict(facts.get("exact_one_step_delta")) if isinstance(facts, dict) else {}
+    has_state_summary = isinstance(state_before, dict) and isinstance(state_after, dict)
     return {
         "step_index": action.get("step_index"),
         "action": {
@@ -280,7 +283,13 @@ def step_trace(
         },
         "state_before_ref": None,
         "state_after_ref": None,
-        "state_snapshot_availability": "not_recorded_in_current_turn_plan_report",
+        "state_before_summary": state_before if isinstance(state_before, dict) else None,
+        "state_after_summary": state_after if isinstance(state_after, dict) else None,
+        "state_snapshot_availability": (
+            "summary_recorded_exact_state_ref_not_exported"
+            if has_state_summary
+            else "not_recorded_in_current_turn_plan_report"
+        ),
         "action_facts": facts,
         "tactical_delta": {
             "data_role": "DerivedDeterministic" if exact else "Unavailable",
@@ -295,8 +304,18 @@ def candidate_trace(
     candidate: dict[str, Any],
 ) -> dict[str, Any]:
     plan = as_dict(candidate.get("plan"))
-    actions = [action for action in as_list(plan.get("actions")) if isinstance(action, dict)]
-    action_facts = [facts for facts in as_list(plan.get("action_facts")) if isinstance(facts, dict)]
+    source_steps = [step for step in as_list(plan.get("steps")) if isinstance(step, dict)]
+    if source_steps:
+        actions = [as_dict(step.get("action")) for step in source_steps]
+        action_facts = [as_dict(step.get("action_facts")) for step in source_steps]
+        state_pairs = [
+            (as_dict(step.get("state_before")), as_dict(step.get("state_after")))
+            for step in source_steps
+        ]
+    else:
+        actions = [action for action in as_list(plan.get("actions")) if isinstance(action, dict)]
+        action_facts = [facts for facts in as_list(plan.get("action_facts")) if isinstance(facts, dict)]
+        state_pairs = [(None, None) for _ in actions]
     target = as_dict(candidate.get("target"))
     child_search = as_dict(candidate.get("child_search"))
     limitations = []
@@ -304,12 +323,16 @@ def candidate_trace(
         limitations.append("action_facts_not_available_in_source_report")
     if len(action_facts) != len(actions):
         limitations.append("action_facts_count_does_not_match_action_count")
-    limitations.append("state_before_after_refs_not_available_in_current_turn_plan_report")
+    if source_steps and len(state_pairs) == len(actions):
+        limitations.append("exact_state_refs_hashes_not_available_for_steps")
+    else:
+        limitations.append("state_before_after_refs_not_available_in_current_turn_plan_report")
     plan_id = f"plan:{plan.get('plan_index')}"
     steps = []
     for index, action in enumerate(actions):
         facts = action_facts[index] if index < len(action_facts) else None
-        steps.append(step_trace(action, facts))
+        state_before, state_after = state_pairs[index] if index < len(state_pairs) else (None, None)
+        steps.append(step_trace(action, facts, state_before, state_after))
     return {
         "plan_id": plan_id,
         "plan_index": plan.get("plan_index"),

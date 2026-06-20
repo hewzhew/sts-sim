@@ -34,10 +34,17 @@ impl Default for TurnPlannerConfigV1 {
 pub(in crate::ai::combat_search_v2) struct TurnPlanV1 {
     pub(in crate::ai::combat_search_v2) actions: Vec<CombatSearchV2ActionTrace>,
     pub(in crate::ai::combat_search_v2) action_facts: Vec<CombatSearchV2ActionFacts>,
+    pub(in crate::ai::combat_search_v2) step_states: Vec<TurnPlanStepStateV1>,
     pub(in crate::ai::combat_search_v2) end_node: SearchNode,
     pub(in crate::ai::combat_search_v2) stop_reason: TurnPlanStopReason,
     pub(in crate::ai::combat_search_v2) bucket: TurnPlanBucket,
     pub(in crate::ai::combat_search_v2) eval: CombatEvalV2,
+}
+
+#[derive(Clone)]
+pub(in crate::ai::combat_search_v2) struct TurnPlanStepStateV1 {
+    pub(in crate::ai::combat_search_v2) before: CombatSearchV2StateSummary,
+    pub(in crate::ai::combat_search_v2) after: CombatSearchV2StateSummary,
 }
 
 #[derive(Clone, Default)]

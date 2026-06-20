@@ -56,10 +56,20 @@ pub struct CombatSearchV2TurnPlanProbeCandidateReport {
     pub action_keys: Vec<String>,
     pub actions: Vec<CombatSearchV2ActionTrace>,
     pub action_facts: Vec<CombatSearchV2ActionFacts>,
+    pub steps: Vec<CombatSearchV2TurnPlanProbeStepReport>,
     pub eval_final_hp: i32,
     pub eval_risk_margin: i32,
     pub eval_enemy_progress: i32,
     pub end_state: CombatSearchV2StateSummary,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2TurnPlanProbeStepReport {
+    pub step_index: usize,
+    pub action: CombatSearchV2ActionTrace,
+    pub action_facts: CombatSearchV2ActionFacts,
+    pub state_before: CombatSearchV2StateSummary,
+    pub state_after: CombatSearchV2StateSummary,
 }
 
 #[derive(Clone)]
@@ -121,6 +131,7 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
                     .collect(),
                 actions: plan.actions.clone(),
                 action_facts: plan.action_facts.clone(),
+                steps: turn_plan_step_reports(plan),
                 eval_final_hp: plan.eval.final_hp(),
                 eval_risk_margin: plan.eval.risk_margin(),
                 eval_enemy_progress: plan.eval.enemy_progress(),
@@ -174,4 +185,24 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
         report: root_report,
         candidates,
     }
+}
+
+fn turn_plan_step_reports(
+    plan: &super::turn_planner::TurnPlanV1,
+) -> Vec<CombatSearchV2TurnPlanProbeStepReport> {
+    plan.actions
+        .iter()
+        .zip(plan.action_facts.iter())
+        .zip(plan.step_states.iter())
+        .enumerate()
+        .map(|(step_index, ((action, action_facts), state))| {
+            CombatSearchV2TurnPlanProbeStepReport {
+                step_index,
+                action: action.clone(),
+                action_facts: action_facts.clone(),
+                state_before: state.before.clone(),
+                state_after: state.after.clone(),
+            }
+        })
+        .collect()
 }

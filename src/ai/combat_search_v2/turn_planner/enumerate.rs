@@ -7,13 +7,15 @@ use super::super::rollout_pending_choice::RolloutPendingChoiceProgress;
 use super::super::value::{combat_eval_from_rollout_estimate, CombatEvalV2};
 use super::super::*;
 use super::types::{
-    TurnPlanBucket, TurnPlanEnumeration, TurnPlanStopReason, TurnPlanV1, TurnPlannerConfigV1,
+    TurnPlanBucket, TurnPlanEnumeration, TurnPlanStepStateV1, TurnPlanStopReason, TurnPlanV1,
+    TurnPlannerConfigV1,
 };
 
 #[derive(Clone)]
 struct TurnPlanWorkNode {
     node: SearchNode,
     action_facts: Vec<CombatSearchV2ActionFacts>,
+    step_states: Vec<TurnPlanStepStateV1>,
 }
 
 pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
@@ -35,6 +37,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
     let mut queue = VecDeque::from([TurnPlanWorkNode {
         node: root.clone(),
         action_facts: Vec::new(),
+        step_states: Vec::new(),
     }]);
     let mut candidates = Vec::new();
     while let Some(work) = queue.pop_front() {
@@ -44,11 +47,19 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
         if deadline.is_some_and(|limit| Instant::now() >= limit) {
             break;
         }
-        let TurnPlanWorkNode { node, action_facts } = work;
+        let TurnPlanWorkNode {
+            node,
+            action_facts,
+            step_states,
+        } = work;
 
         if terminal_label(&node.engine, &node.combat) != SearchTerminalLabel::Unresolved {
             candidates.push(plan_from_node(
-                TurnPlanWorkNode { node, action_facts },
+                TurnPlanWorkNode {
+                    node,
+                    action_facts,
+                    step_states,
+                },
                 root_action_len,
                 TurnPlanStopReason::Terminal,
                 root_eval,
@@ -64,7 +75,11 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
         );
         if legal.is_empty() {
             candidates.push(plan_from_node(
-                TurnPlanWorkNode { node, action_facts },
+                TurnPlanWorkNode {
+                    node,
+                    action_facts,
+                    step_states,
+                },
                 root_action_len,
                 TurnPlanStopReason::NoLegalActions,
                 root_eval,
@@ -90,6 +105,8 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
             );
             enumeration.nodes_generated = enumeration.nodes_generated.saturating_add(1);
 
+            let state_before = summarize_state(&node.engine, &node.combat);
+            let state_after = summarize_state(&step.position.engine, &step.position.combat);
             let mut child =
                 node.clone_for_child(step.position.engine.clone(), step.position.combat.clone());
             let mut child_action_facts = action_facts.clone();
@@ -98,6 +115,11 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
                 &ordered_choice.choice.input,
                 &step,
             ));
+            let mut child_step_states = step_states.clone();
+            child_step_states.push(TurnPlanStepStateV1 {
+                before: state_before,
+                after: state_after,
+            });
             let transition = classify_turn_branch_transition(
                 &node.engine,
                 &node.combat,
@@ -122,6 +144,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
                     TurnPlanWorkNode {
                         node: child,
                         action_facts: child_action_facts,
+                        step_states: child_step_states,
                     },
                     root_action_len,
                     TurnPlanStopReason::EngineStepLimit,
@@ -133,6 +156,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
                     queue.push_back(TurnPlanWorkNode {
                         node: child,
                         action_facts: child_action_facts,
+                        step_states: child_step_states,
                     });
                 } else {
                     enumeration.exact_state_skips = enumeration.exact_state_skips.saturating_add(1);
@@ -142,6 +166,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
                     TurnPlanWorkNode {
                         node: child,
                         action_facts: child_action_facts,
+                        step_states: child_step_states,
                     },
                     root_action_len,
                     stop_reason_for_transition(transition),
@@ -156,7 +181,7 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
 }
 
 fn plan_from_node(
-    mut work: TurnPlanWorkNode,
+    work: TurnPlanWorkNode,
     root_action_len: usize,
     stop_reason: TurnPlanStopReason,
     root_eval: CombatEvalV2,
@@ -174,7 +199,8 @@ fn plan_from_node(
     node.rollout_estimate = estimate;
     TurnPlanV1 {
         actions: node.actions[root_action_len..].to_vec(),
-        action_facts: work.action_facts.split_off(root_action_len),
+        action_facts: work.action_facts,
+        step_states: work.step_states,
         end_node: node,
         stop_reason,
         bucket: TurnPlanBucket::from_root_and_eval(root_eval, eval, stop_reason),
