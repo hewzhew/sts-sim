@@ -5,6 +5,8 @@
 //! outcome keys are only for stable frontiers and may ignore runtime noise.
 //! Do not use one key family in place of another.
 
+use blake2::{Blake2b512, Digest};
+
 mod combat;
 mod monster;
 mod pending_choice;
@@ -29,6 +31,10 @@ pub(crate) fn combat_exact_state_key(
     combat: &CombatState,
 ) -> CombatExactStateKey {
     combat_exact_runtime_key(engine, combat)
+}
+
+pub(crate) fn combat_exact_state_hash_v1(engine: &EngineState, combat: &CombatState) -> String {
+    hash_debug(&combat_exact_state_key(engine, combat))
 }
 
 /// In-combat bucket for Combat Search V2 resource dominance. It keeps runtime
@@ -101,4 +107,25 @@ fn stable_frontier_scope(engine: &EngineState, combat: &CombatState) -> StableFr
         | EngineState::BossRelicSelect(_) => StableFrontierScope::PostCombat,
         EngineState::GameOver(_) => StableFrontierScope::GameOver,
     }
+}
+
+fn hash_debug<T: std::fmt::Debug>(value: &T) -> String {
+    hash_bytes(format!("{value:?}").as_bytes())
+}
+
+fn hash_bytes(bytes: &[u8]) -> String {
+    let mut hasher = Blake2b512::new();
+    hasher.update(bytes);
+    let digest = hasher.finalize();
+    hex_lower(&digest[..32])
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
 }

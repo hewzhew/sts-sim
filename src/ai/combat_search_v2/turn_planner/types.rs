@@ -43,7 +43,9 @@ pub(in crate::ai::combat_search_v2) struct TurnPlanV1 {
 
 #[derive(Clone)]
 pub(in crate::ai::combat_search_v2) struct TurnPlanStepStateV1 {
+    pub(in crate::ai::combat_search_v2) before_exact_state_hash: String,
     pub(in crate::ai::combat_search_v2) before: CombatSearchV2StateSummary,
+    pub(in crate::ai::combat_search_v2) after_exact_state_hash: String,
     pub(in crate::ai::combat_search_v2) after: CombatSearchV2StateSummary,
 }
 

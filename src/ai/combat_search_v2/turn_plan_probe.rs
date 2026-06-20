@@ -68,6 +68,9 @@ pub struct CombatSearchV2TurnPlanProbeStepReport {
     pub step_index: usize,
     pub action: CombatSearchV2ActionTrace,
     pub action_facts: CombatSearchV2ActionFacts,
+    pub exact_state_hash_kind: &'static str,
+    pub state_before_exact_state_hash: String,
+    pub state_after_exact_state_hash: String,
     pub state_before: CombatSearchV2StateSummary,
     pub state_after: CombatSearchV2StateSummary,
 }
@@ -200,6 +203,9 @@ fn turn_plan_step_reports(
                 step_index,
                 action: action.clone(),
                 action_facts: action_facts.clone(),
+                exact_state_hash_kind: "combat_exact_state_hash_v1",
+                state_before_exact_state_hash: state.before_exact_state_hash.clone(),
+                state_after_exact_state_hash: state.after_exact_state_hash.clone(),
                 state_before: state.before.clone(),
                 state_after: state.after.clone(),
             }

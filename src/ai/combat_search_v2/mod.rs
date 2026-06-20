@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::ai::combat_state_key::{
-    combat_dominance_key, combat_exact_state_key, CombatDominanceKey, CombatExactStateKey,
+    combat_dominance_key, combat_exact_state_hash_v1, combat_exact_state_key, CombatDominanceKey,
+    CombatExactStateKey,
 };
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::{CombatState, MonsterEntity};

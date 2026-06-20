@@ -107,7 +107,10 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
             );
             enumeration.nodes_generated = enumeration.nodes_generated.saturating_add(1);
 
+            let before_exact_state_hash = combat_exact_state_hash_v1(&node.engine, &node.combat);
             let state_before = summarize_state(&node.engine, &node.combat);
+            let after_exact_state_hash =
+                combat_exact_state_hash_v1(&step.position.engine, &step.position.combat);
             let state_after = summarize_state(&step.position.engine, &step.position.combat);
             let mut child =
                 node.clone_for_child(step.position.engine.clone(), step.position.combat.clone());
@@ -119,7 +122,9 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
             ));
             let mut child_step_states = step_states.clone();
             child_step_states.push(TurnPlanStepStateV1 {
+                before_exact_state_hash,
                 before: state_before,
+                after_exact_state_hash,
                 after: state_after,
             });
             let transition = classify_turn_branch_transition(

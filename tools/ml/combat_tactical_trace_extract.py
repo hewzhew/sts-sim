@@ -682,10 +682,14 @@ def step_trace(
     facts: dict[str, Any] | None,
     state_before: dict[str, Any] | None = None,
     state_after: dict[str, Any] | None = None,
+    state_before_exact_hash: str | None = None,
+    state_after_exact_hash: str | None = None,
+    exact_state_hash_kind: str | None = None,
 ) -> dict[str, Any]:
     has_state_summary = isinstance(state_before, dict) and isinstance(state_after, dict)
     state_before_summary_hash = hash_json(state_before) if isinstance(state_before, dict) else None
     state_after_summary_hash = hash_json(state_after) if isinstance(state_after, dict) else None
+    has_exact_hashes = bool(state_before_exact_hash and state_after_exact_hash)
     tactical_delta = step_tactical_delta(facts, state_before, state_after)
     return {
         "step_index": action.get("step_index"),
@@ -698,12 +702,25 @@ def step_trace(
             "input": action.get("input"),
         },
         "state_before_ref": (
-            f"state_summary:{state_before_summary_hash}" if state_before_summary_hash else None
+            f"exact_state:{state_before_exact_hash}"
+            if state_before_exact_hash
+            else f"state_summary:{state_before_summary_hash}"
+            if state_before_summary_hash
+            else None
         ),
         "state_after_ref": (
-            f"state_summary:{state_after_summary_hash}" if state_after_summary_hash else None
+            f"exact_state:{state_after_exact_hash}"
+            if state_after_exact_hash
+            else f"state_summary:{state_after_summary_hash}"
+            if state_after_summary_hash
+            else None
         ),
-        "state_ref_kind": "summary_hash_not_exact_state_hash" if has_state_summary else None,
+        "state_ref_kind": "exact_state_hash" if has_exact_hashes else "summary_hash_not_exact_state_hash"
+        if has_state_summary
+        else None,
+        "exact_state_hash_kind": exact_state_hash_kind if has_exact_hashes else None,
+        "state_before_exact_state_hash": state_before_exact_hash,
+        "state_after_exact_state_hash": state_after_exact_hash,
         "state_summary_hash_algorithm": (
             "blake2b_256_canonical_json_of_state_summary_v1" if has_state_summary else None
         ),
@@ -712,7 +729,9 @@ def step_trace(
         "state_before_summary": state_before if isinstance(state_before, dict) else None,
         "state_after_summary": state_after if isinstance(state_after, dict) else None,
         "state_snapshot_availability": (
-            "summary_recorded_exact_state_ref_not_exported"
+            "exact_state_hash_and_summary_recorded"
+            if has_exact_hashes
+            else "summary_recorded_exact_state_ref_not_exported"
             if has_state_summary
             else "not_recorded_in_current_turn_plan_report"
         ),
@@ -738,13 +757,25 @@ def candidate_trace(
         actions = [as_dict(step.get("action")) for step in source_steps]
         action_facts = [as_dict(step.get("action_facts")) for step in source_steps]
         state_pairs = [
-            (as_dict(step.get("state_before")), as_dict(step.get("state_after")))
+            (
+                as_dict(step.get("state_before")),
+                as_dict(step.get("state_after")),
+                step.get("state_before_exact_state_hash")
+                if isinstance(step.get("state_before_exact_state_hash"), str)
+                else None,
+                step.get("state_after_exact_state_hash")
+                if isinstance(step.get("state_after_exact_state_hash"), str)
+                else None,
+                step.get("exact_state_hash_kind")
+                if isinstance(step.get("exact_state_hash_kind"), str)
+                else None,
+            )
             for step in source_steps
         ]
     else:
         actions = [action for action in as_list(plan.get("actions")) if isinstance(action, dict)]
         action_facts = [facts for facts in as_list(plan.get("action_facts")) if isinstance(facts, dict)]
-        state_pairs = [(None, None) for _ in actions]
+        state_pairs = [(None, None, None, None, None) for _ in actions]
     target = as_dict(candidate.get("target"))
     child_search = as_dict(candidate.get("child_search"))
     limitations = []
@@ -752,16 +783,35 @@ def candidate_trace(
         limitations.append("action_facts_not_available_in_source_report")
     if len(action_facts) != len(actions):
         limitations.append("action_facts_count_does_not_match_action_count")
-    if source_steps and len(state_pairs) == len(actions):
-        limitations.append("exact_state_refs_hashes_not_available_for_steps")
-    else:
+    has_exact_step_hashes = bool(source_steps) and all(
+        pair[2] and pair[3] for pair in state_pairs
+    )
+    if source_steps and not has_exact_step_hashes:
+        limitations.append("some_exact_state_refs_hashes_not_available_for_steps")
+    if not source_steps:
         limitations.append("state_before_after_refs_not_available_in_current_turn_plan_report")
     plan_id = f"plan:{plan.get('plan_index')}"
     steps = []
     for index, action in enumerate(actions):
         facts = action_facts[index] if index < len(action_facts) else None
-        state_before, state_after = state_pairs[index] if index < len(state_pairs) else (None, None)
-        steps.append(step_trace(action, facts, state_before, state_after))
+        (
+            state_before,
+            state_after,
+            state_before_exact_hash,
+            state_after_exact_hash,
+            exact_state_hash_kind,
+        ) = state_pairs[index] if index < len(state_pairs) else (None, None, None, None, None)
+        steps.append(
+            step_trace(
+                action,
+                facts,
+                state_before,
+                state_after,
+                state_before_exact_hash=state_before_exact_hash,
+                state_after_exact_hash=state_after_exact_hash,
+                exact_state_hash_kind=exact_state_hash_kind,
+            )
+        )
     event_counts: Counter[str] = Counter()
     for step in steps:
         for event in as_list(step.get("tactical_events")):

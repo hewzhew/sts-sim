@@ -2,7 +2,7 @@ use blake2::{Blake2b512, Digest};
 use serde::{Deserialize, Serialize};
 
 use crate::ai::combat_state_key::{
-    combat_exact_state_key, stable_dominance_bucket_key, stable_outcome_key,
+    combat_exact_state_hash_v1, stable_dominance_bucket_key, stable_outcome_key,
 };
 use crate::content::cards::java_id;
 use crate::content::monsters::EnemyId;
@@ -115,7 +115,6 @@ struct CombatPublicObservationFingerprintInputV1 {
 
 pub fn combat_state_fingerprint_v1(position: &CombatPosition) -> StateFingerprintV1 {
     let legal_actions = combat_legal_action_set_fingerprint_v1(&position.engine, &position.combat);
-    let exact = combat_exact_state_key(&position.engine, &position.combat);
     let stable = stable_dominance_bucket_key(&position.engine, &position.combat)
         .map(|_| stable_outcome_key(&position.engine, &position.combat));
     StateFingerprintV1 {
@@ -126,7 +125,7 @@ pub fn combat_state_fingerprint_v1(position: &CombatPosition) -> StateFingerprin
         public_observation_hash: hash_serializable(&public_observation_input(position)),
         legal_candidate_set_hash: legal_actions.candidate_set_hash,
         legal_candidate_order_hash: legal_actions.candidate_order_hash,
-        exact_state_hash: hash_debug(&exact),
+        exact_state_hash: combat_exact_state_hash_v1(&position.engine, &position.combat),
         stable_outcome_hash: stable.as_ref().map(hash_debug),
         rng_boundary: rng_boundary_fingerprint_v1(&position.combat.rng.pool),
     }
