@@ -30,6 +30,8 @@ param(
     [ValidateSet("root-delta", "action-shape", "target-detail", "enemy-slot-context", "tactical-summary", "action-facts")]
     [string[]] $FeatureGroups = @("tactical-summary", "action-facts"),
     [int] $Epochs = 10,
+    [ValidateSet("binary", "pairwise-utility", "decomposed-utility")]
+    [string] $TrainingMode = "decomposed-utility",
     [switch] $CompareFeatureGroups,
     [switch] $CleanOutput
 )
@@ -96,6 +98,7 @@ if ($RunBaseline) {
         $EpisodeFiles,
         "--split-mode", "$SplitMode",
         "--epochs", "$Epochs",
+        "--training-mode", "$TrainingMode",
         "--report-mode", "compact"
     )
     if ($FeatureGroups.Count -gt 0) {
@@ -105,6 +108,6 @@ if ($RunBaseline) {
     if ($CompareFeatureGroups) {
         $ArgsList += "--compare-feature-groups"
     }
-    Write-Host "ranking baseline: files=$($EpisodeFiles.Count) split=$SplitMode features=$($FeatureGroups -join ',') epochs=$Epochs"
+    Write-Host "ranking baseline: files=$($EpisodeFiles.Count) split=$SplitMode training=$TrainingMode features=$($FeatureGroups -join ',') epochs=$Epochs"
     python @ArgsList
 }
