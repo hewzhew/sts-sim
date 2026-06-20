@@ -33,6 +33,7 @@ LEGACY_SCHEMA_NAME = "CombatSearchGuidanceSampleV1"
 PROBE_SCHEMA_NAME = "CombatActionProbeSampleV1"
 TURN_PLAN_SCHEMA_NAME = "CombatTurnPlanProbeSampleV1"
 EXPERIMENTAL_FEATURE_GROUPS = ("root-delta", "action-shape")
+TARGET_MODES = ("selected", "equivalent-hp-outcome")
 
 
 def stable_hash(text: str) -> int:
@@ -242,10 +243,43 @@ def candidate_outcome(sample: dict[str, Any]) -> tuple[int, int, int, int]:
     )
 
 
+def candidate_terminal_signature(sample: dict[str, Any]) -> tuple[bool, Any, int | None]:
+    target = sample.get("target") if isinstance(sample.get("target"), dict) else {}
+    return (
+        bool(target.get("complete_win")),
+        target.get("terminal"),
+        candidate_final_hp(sample),
+    )
+
+
 def candidate_final_hp(sample: dict[str, Any]) -> int | None:
     target = sample.get("target") if isinstance(sample.get("target"), dict) else {}
     value = target.get("final_hp")
     return value if isinstance(value, int) else None
+
+
+def primary_target_index(group: list[dict[str, Any]]) -> int | None:
+    return next((index for index, sample in enumerate(group) if is_selected(sample)), None)
+
+
+def positive_target_indices(group: list[dict[str, Any]], target_mode: str) -> list[int]:
+    selected = primary_target_index(group)
+    if selected is None:
+        return []
+    if target_mode == "selected":
+        return [selected]
+    if target_mode != "equivalent-hp-outcome":
+        raise ValueError(f"unknown target mode: {target_mode}")
+
+    signature = candidate_terminal_signature(group[selected])
+    complete_win, terminal, final_hp = signature
+    if terminal is None or final_hp is None:
+        return [selected]
+    return [
+        index
+        for index, sample in enumerate(group)
+        if candidate_terminal_signature(sample) == (complete_win, terminal, final_hp)
+    ]
 
 
 def nested_get(root: dict[str, Any], path: str) -> Any:
@@ -604,11 +638,13 @@ def flatten_training_examples(
     *,
     include_order_features: bool,
     feature_groups: frozenset[str],
+    target_mode: str,
 ) -> list[tuple[int, dict[str, float]]]:
     examples = []
     for group in groups.values():
-        for sample in group:
-            label = 1 if is_selected(sample) else 0
+        positives = set(positive_target_indices(group, target_mode))
+        for index, sample in enumerate(group):
+            label = 1 if index in positives else 0
             features = extract_features(
                 sample,
                 include_order_features=include_order_features,
@@ -642,19 +678,24 @@ def train_logistic(
     return dict(weights), bias
 
 
-def selected_rank(group: list[dict[str, Any]], scores: list[float]) -> int:
-    ranked = sorted(zip(group, scores), key=lambda item: item[1], reverse=True)
-    for rank, (sample, _) in enumerate(ranked, start=1):
-        if is_selected(sample):
+def selected_rank(group: list[dict[str, Any]], scores: list[float], *, target_mode: str) -> int:
+    positives = set(positive_target_indices(group, target_mode))
+    ranked = sorted(enumerate(zip(group, scores)), key=lambda item: item[1][1], reverse=True)
+    for rank, (index, _item) in enumerate(ranked, start=1):
+        if index in positives:
             return rank
     return len(group) + 1
 
 
-def evaluate_ordered_index(groups: dict[str, list[dict[str, Any]]]) -> dict[str, float]:
+def evaluate_ordered_index(
+    groups: dict[str, list[dict[str, Any]]],
+    *,
+    target_mode: str,
+) -> dict[str, float]:
     group_scores = {}
     for key, group in groups.items():
         group_scores[key] = [-sample_ordered_index(sample) for sample in group]
-    return metrics_from_group_scores(groups, group_scores)
+    return metrics_from_group_scores(groups, group_scores, target_mode=target_mode)
 
 
 def evaluate_model(
@@ -665,6 +706,7 @@ def evaluate_model(
     dim: int,
     include_order_features: bool,
     feature_groups: frozenset[str],
+    target_mode: str,
 ) -> dict[str, float]:
     group_scores = {}
     for key, group in groups.items():
@@ -677,7 +719,7 @@ def evaluate_model(
             )
             scores.append(dot(weights, hashed_features(features, dim), bias))
         group_scores[key] = scores
-    return metrics_from_group_scores(groups, group_scores)
+    return metrics_from_group_scores(groups, group_scores, target_mode=target_mode)
 
 
 def source_cross_validated_model_metrics(
@@ -690,6 +732,7 @@ def source_cross_validated_model_metrics(
     seed: int,
     include_order_features: bool,
     feature_groups: frozenset[str],
+    target_mode: str,
     return_scores: bool = False,
 ) -> tuple[dict[str, float], dict[str, Any], dict[str, list[float]]]:
     units = source_unit_to_group_keys(groups)
@@ -707,6 +750,7 @@ def source_cross_validated_model_metrics(
             "target_outcome_missed": 0.0,
             "target_outcome_match_rate": 0.0,
             "avg_hp_regret_to_target": 0.0,
+            "avg_positive_targets": 0.0,
         }
         return metrics, {"folds": 0, "source_units": len(units)}, {}
     out_of_fold_scores: dict[str, list[float]] = {}
@@ -719,6 +763,7 @@ def source_cross_validated_model_metrics(
             train_groups,
             include_order_features=include_order_features,
             feature_groups=feature_groups,
+            target_mode=target_mode,
         )
         if not train_examples or not test_groups:
             continue
@@ -742,7 +787,7 @@ def source_cross_validated_model_metrics(
             out_of_fold_scores[key] = scores
         folds += 1
     scores = out_of_fold_scores if return_scores else {}
-    return metrics_from_group_scores(groups, out_of_fold_scores), {
+    return metrics_from_group_scores(groups, out_of_fold_scores, target_mode=target_mode), {
         "folds": folds,
         "source_units": len(units),
     }, scores
@@ -757,6 +802,7 @@ def print_source_cv_feature_group_comparison(
     l2: float,
     seed: int,
     include_order_features: bool,
+    target_mode: str,
     report_mode: str,
 ) -> None:
     print("  feature_group_compare:")
@@ -777,12 +823,44 @@ def print_source_cv_feature_group_comparison(
             seed=seed,
             include_order_features=include_order_features,
             feature_groups=feature_groups,
+            target_mode=target_mode,
         )
         print_metrics(f"feature_group:{label}", metrics, report_mode=report_mode)
 
 
+def print_source_cv_target_mode_comparison(
+    groups: dict[str, list[dict[str, Any]]],
+    *,
+    dim: int,
+    epochs: int,
+    learning_rate: float,
+    l2: float,
+    seed: int,
+    include_order_features: bool,
+    feature_groups: frozenset[str],
+    report_mode: str,
+) -> None:
+    print("  target_mode_compare:")
+    for target_mode in TARGET_MODES:
+        metrics, _meta, _scores = source_cross_validated_model_metrics(
+            groups,
+            dim=dim,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            l2=l2,
+            seed=seed,
+            include_order_features=include_order_features,
+            feature_groups=feature_groups,
+            target_mode=target_mode,
+        )
+        print_metrics(f"target_mode:{target_mode}", metrics, report_mode=report_mode)
+
+
 def metrics_from_group_scores(
-    groups: dict[str, list[dict[str, Any]]], group_scores: dict[str, list[float]]
+    groups: dict[str, list[dict[str, Any]]],
+    group_scores: dict[str, list[float]],
+    *,
+    target_mode: str,
 ) -> dict[str, float]:
     ranks = []
     hp_gains = []
@@ -792,17 +870,22 @@ def metrics_from_group_scores(
     target_missed = 0
     target_outcome_missed = 0
     target_outcome_matched = 0
+    positive_target_counts = []
     for key, group in groups.items():
         scores = group_scores.get(key) or []
         if len(scores) != len(group):
             continue
-        ranks.append(selected_rank(group, scores))
+        positives = set(positive_target_indices(group, target_mode))
+        if not positives:
+            continue
+        positive_target_counts.append(len(positives))
+        ranks.append(selected_rank(group, scores, target_mode=target_mode))
         top_index = max(range(len(group)), key=lambda index: scores[index])
         current_index = min(
             range(len(group)),
             key=lambda index: sample_ordered_index(group[index]),
         )
-        target_index = next((index for index, sample in enumerate(group) if is_selected(sample)), None)
+        target_index = primary_target_index(group)
         top = group[top_index]
         current = group[current_index]
         top_hp = candidate_final_hp(top)
@@ -819,11 +902,11 @@ def metrics_from_group_scores(
         if target_hp is not None and top_hp is not None:
             target_hp_regrets.append(target_hp - top_hp)
         if target_index is not None:
-            if candidate_outcome(group[target_index]) == candidate_outcome(top):
+            if candidate_terminal_signature(group[target_index]) == candidate_terminal_signature(top):
                 target_outcome_matched += 1
-            if top_index != target_index:
+            if top_index not in positives:
                 target_missed += 1
-            if top_index != target_index and candidate_outcome(group[target_index]) != candidate_outcome(top):
+            if top_index not in positives and candidate_terminal_signature(group[target_index]) != candidate_terminal_signature(top):
                 target_outcome_missed += 1
     if not ranks:
         return {
@@ -838,6 +921,7 @@ def metrics_from_group_scores(
             "target_outcome_missed": 0.0,
             "target_outcome_match_rate": 0.0,
             "avg_hp_regret_to_target": 0.0,
+            "avg_positive_targets": 0.0,
         }
     return {
         "groups": float(len(ranks)),
@@ -853,6 +937,9 @@ def metrics_from_group_scores(
         "target_outcome_match_rate": target_outcome_matched / len(ranks),
         "avg_hp_regret_to_target": (
             sum(target_hp_regrets) / len(target_hp_regrets) if target_hp_regrets else 0.0
+        ),
+        "avg_positive_targets": (
+            sum(positive_target_counts) / len(positive_target_counts) if positive_target_counts else 0.0
         ),
     }
 
@@ -917,6 +1004,7 @@ def interesting_case_rows(
     *,
     kind: str,
     limit: int,
+    target_mode: str,
 ) -> list[tuple[float, str]]:
     rows: list[tuple[float, str]] = []
     for key, group in groups.items():
@@ -926,6 +1014,7 @@ def interesting_case_rows(
         ordered_index, model_index, target_index = selected_indices_for_scores(group, scores)
         if target_index is None:
             continue
+        positive_count = len(positive_target_indices(group, target_mode))
         ordered = group[ordered_index]
         model = group[model_index]
         target = group[target_index]
@@ -951,6 +1040,7 @@ def interesting_case_rows(
         body = "\n".join(
             [
                 f"case={source_label(group[0])} state={state_summary(group[0])}",
+                f"  target_mode={target_mode} positive_targets={positive_count}",
                 f"  ordered: {plan_summary(ordered)}",
                 f"  model:   {plan_summary(model)} gain_vs_ordered={model_gain:+d} regret={model_regret:+d}",
                 f"  target:  {plan_summary(target)} ordered_regret={ordered_regret:+d}",
@@ -968,8 +1058,9 @@ def print_case_rows(
     *,
     kind: str,
     limit: int,
+    target_mode: str,
 ) -> None:
-    rows = interesting_case_rows(groups, scores, kind=kind, limit=limit)
+    rows = interesting_case_rows(groups, scores, kind=kind, limit=limit, target_mode=target_mode)
     print(f"  cases:{title} count={len(rows)}")
     for _score, body in rows:
         print(body)
@@ -1012,7 +1103,8 @@ def print_metrics(label: str, metrics: dict[str, float], *, report_mode: str) ->
             f"outcome_match={metrics.get('target_outcome_match_rate', 0.0):.3f} "
             f"hp_regret={metrics.get('avg_hp_regret_to_target', 0.0):+.2f} "
             f"hp_gain_vs_ordered={metrics.get('avg_hp_gain_vs_ordered', 0.0):+.2f} "
-            f"worse_hp={metrics.get('negative_hp_gain', 0.0):.0f}"
+            f"worse_hp={metrics.get('negative_hp_gain', 0.0):.0f} "
+            f"pos_avg={metrics.get('avg_positive_targets', 0.0):.2f}"
         )
         return
     print(
@@ -1025,7 +1117,8 @@ def print_metrics(label: str, metrics: dict[str, float], *, report_mode: str) ->
         f"target_missed={metrics.get('target_missed', 0.0):.0f} "
         f"target_outcome_missed={metrics.get('target_outcome_missed', 0.0):.0f} "
         f"target_outcome_match={metrics.get('target_outcome_match_rate', 0.0):.3f} "
-        f"avg_hp_regret_to_target={metrics.get('avg_hp_regret_to_target', 0.0):+.2f}"
+        f"avg_hp_regret_to_target={metrics.get('avg_hp_regret_to_target', 0.0):+.2f} "
+        f"avg_positive_targets={metrics.get('avg_positive_targets', 0.0):.2f}"
     )
 
 
@@ -1085,9 +1178,20 @@ def main() -> None:
         help="Opt-in experimental feature groups. Default keeps the committed baseline unchanged.",
     )
     parser.add_argument(
+        "--target-mode",
+        choices=TARGET_MODES,
+        default="selected",
+        help="Training/evaluation target definition. selected preserves the original single oracle label.",
+    )
+    parser.add_argument(
         "--compare-feature-groups",
         action="store_true",
         help="For source-cv, print base/+group/all comparisons without changing the selected run.",
+    )
+    parser.add_argument(
+        "--compare-target-modes",
+        action="store_true",
+        help="For source-cv, compare selected vs equivalent target definitions.",
     )
     parser.add_argument("--top-features", type=int, default=12)
     parser.add_argument(
@@ -1110,6 +1214,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     feature_groups = frozenset(args.feature_groups)
+    target_mode = args.target_mode
 
     input_paths = list(args.inputs)
     if args.discover_turn_plan_probes:
@@ -1151,15 +1256,16 @@ def main() -> None:
             seed=args.seed,
             include_order_features=args.include_order_features,
             feature_groups=feature_groups,
+            target_mode=target_mode,
             return_scores=args.show_cases > 0,
         )
         print(
             f"  split=mode:source-cv source_units:{cv_meta['source_units']} "
-            f"folds:{cv_meta['folds']}"
+            f"folds:{cv_meta['folds']} target_mode:{target_mode}"
         )
         print_metrics(
             "ordered_index_all",
-            evaluate_ordered_index(groups),
+            evaluate_ordered_index(groups, target_mode=target_mode),
             report_mode=args.report_mode,
         )
         print_metrics("logistic_source_cv", cv_metrics, report_mode=args.report_mode)
@@ -1172,6 +1278,19 @@ def main() -> None:
                 l2=args.l2,
                 seed=args.seed,
                 include_order_features=args.include_order_features,
+                target_mode=target_mode,
+                report_mode=args.report_mode,
+            )
+        if args.compare_target_modes:
+            print_source_cv_target_mode_comparison(
+                groups,
+                dim=args.dim,
+                epochs=args.epochs,
+                learning_rate=args.learning_rate,
+                l2=args.l2,
+                seed=args.seed,
+                include_order_features=args.include_order_features,
+                feature_groups=feature_groups,
                 report_mode=args.report_mode,
             )
         if args.show_cases > 0:
@@ -1188,11 +1307,13 @@ def main() -> None:
                         cv_scores,
                         kind=kind,
                         limit=args.show_cases,
+                        target_mode=target_mode,
                     )
         train_examples = flatten_training_examples(
             groups,
             include_order_features=args.include_order_features,
             feature_groups=feature_groups,
+            target_mode=target_mode,
         )
         if not train_examples:
             print("  logistic=skipped_not_enough_data")
@@ -1232,12 +1353,12 @@ def main() -> None:
     )
     print_metrics(
         "ordered_index_train",
-        evaluate_ordered_index(train_groups),
+        evaluate_ordered_index(train_groups, target_mode=target_mode),
         report_mode=args.report_mode,
     )
     print_metrics(
         "ordered_index_test",
-        evaluate_ordered_index(test_groups),
+        evaluate_ordered_index(test_groups, target_mode=target_mode),
         report_mode=args.report_mode,
     )
 
@@ -1245,6 +1366,7 @@ def main() -> None:
         train_groups,
         include_order_features=args.include_order_features,
         feature_groups=feature_groups,
+        target_mode=target_mode,
     )
     if not train_examples or not test_groups:
         print("  logistic=skipped_not_enough_split_data")
@@ -1266,6 +1388,7 @@ def main() -> None:
             dim=args.dim,
             include_order_features=args.include_order_features,
             feature_groups=feature_groups,
+            target_mode=target_mode,
         ),
         report_mode=args.report_mode,
     )
@@ -1278,6 +1401,7 @@ def main() -> None:
             dim=args.dim,
             include_order_features=args.include_order_features,
             feature_groups=feature_groups,
+            target_mode=target_mode,
         ),
         report_mode=args.report_mode,
     )
