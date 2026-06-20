@@ -210,5 +210,6 @@ fn test_config() -> CombatSearchV2Config {
         turn_plan_probe_max_inner_nodes: None,
         turn_plan_probe_max_end_states: None,
         turn_plan_probe_per_bucket_limit: None,
+        root_action_prior: None,
     }
 }

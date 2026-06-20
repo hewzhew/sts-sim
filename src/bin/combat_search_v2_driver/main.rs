@@ -9,8 +9,8 @@ use sts_simulator::ai::combat_search_v2::{
 use sts_simulator::eval::combat_capture::load_combat_capture_v1;
 use sts_simulator::eval::combat_search_v2::{
     compare_combat_search_v2_frontier_policies, compare_combat_search_v2_rollout_policies,
-    compare_combat_search_v2_turn_plan_policies, load_combat_search_v2_benchmark,
-    load_combat_search_v2_snapshot, load_combat_search_v2_start,
+    compare_combat_search_v2_turn_plan_policies, load_combat_root_action_prior_hints_jsonl_v0,
+    load_combat_search_v2_benchmark, load_combat_search_v2_snapshot, load_combat_search_v2_start,
     run_combat_search_guidance_lab_benchmark_v1, run_combat_search_guidance_lab_v1,
     run_combat_search_v2_benchmark, run_combat_search_v2_loaded_start,
     run_combat_turn_plan_guidance_lab_benchmark_v1, run_combat_turn_plan_guidance_lab_v1,
@@ -118,6 +118,9 @@ struct Args {
 
     #[arg(long)]
     turn_plan_probe_per_bucket_limit: Option<usize>,
+
+    #[arg(long)]
+    root_action_prior_hints: Option<PathBuf>,
 
     #[arg(long)]
     output: Option<PathBuf>,
@@ -230,6 +233,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(DriverPotionPolicy::HighStakesAuto) => (None, true),
         None => (None, false),
     };
+    let root_action_prior = args
+        .root_action_prior_hints
+        .as_ref()
+        .map(|path| load_combat_root_action_prior_hints_jsonl_v0(path))
+        .transpose()?;
 
     let options = CombatSearchV2RunOptions {
         max_nodes: args.max_nodes,
@@ -249,6 +257,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         turn_plan_probe_max_inner_nodes: args.turn_plan_probe_max_inner_nodes,
         turn_plan_probe_max_end_states: args.turn_plan_probe_max_end_states,
         turn_plan_probe_per_bucket_limit: args.turn_plan_probe_per_bucket_limit,
+        root_action_prior,
     };
     let payload = if let Some(path) = args.benchmark_spec.as_ref() {
         let loaded = load_combat_search_v2_benchmark(path)?;

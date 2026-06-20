@@ -1,6 +1,32 @@
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Default)]
+pub struct CombatSearchV2RootActionPrior {
+    scores_by_state: Arc<HashMap<String, HashMap<String, f64>>>,
+}
+
+impl CombatSearchV2RootActionPrior {
+    pub fn from_scores(scores_by_state: HashMap<String, HashMap<String, f64>>) -> Self {
+        Self {
+            scores_by_state: Arc::new(scores_by_state),
+        }
+    }
+
+    pub fn score(&self, exact_state_hash: &str, action_key: &str) -> Option<f64> {
+        self.scores_by_state
+            .get(exact_state_hash)
+            .and_then(|scores| scores.get(action_key))
+            .copied()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.scores_by_state.is_empty()
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct CombatSearchV2Config {
@@ -22,6 +48,7 @@ pub struct CombatSearchV2Config {
     pub turn_plan_probe_max_inner_nodes: Option<usize>,
     pub turn_plan_probe_max_end_states: Option<usize>,
     pub turn_plan_probe_per_bucket_limit: Option<usize>,
+    pub root_action_prior: Option<CombatSearchV2RootActionPrior>,
 }
 
 impl Default for CombatSearchV2Config {
@@ -45,6 +72,7 @@ impl Default for CombatSearchV2Config {
             turn_plan_probe_max_inner_nodes: None,
             turn_plan_probe_max_end_states: None,
             turn_plan_probe_per_bucket_limit: None,
+            root_action_prior: None,
         }
     }
 }

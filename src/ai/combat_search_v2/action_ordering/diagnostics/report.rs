@@ -16,6 +16,8 @@ impl ActionOrderingDiagnosticsCollector {
             total_actions_observed: self.total_actions_observed,
             action_effect_actions: self.action_effect_actions,
             phase_action_hint_actions: self.phase_action_hint_actions,
+            root_action_prior_scored_states: self.root_action_prior_scored_states,
+            root_action_prior_scored_actions: self.root_action_prior_scored_actions,
             max_position_shift: self.max_position_shift,
             avg_position_shift: rounded_ratio(self.total_position_shift, self.states_observed),
             action_role_counts: self.action_role_counts(),
@@ -30,6 +32,7 @@ impl ActionOrderingDiagnosticsCollector {
                 "enemy phase transition hints only reorder children and never suppress phase-triggering actions",
                 "phase action hints reuse phase_profile and only add ordering tiebreaks",
                 "pending choice ordering uses typed selection facts and never drops alternatives",
+                "root action prior hints are opt-in child ordering hints; they never remove legal actions",
             ],
         }
     }

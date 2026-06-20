@@ -3,6 +3,7 @@ mod benchmark_gate;
 mod guidance_lab;
 mod policy_compare;
 mod rollout_compare_attribution;
+mod root_action_prior_hints;
 mod start;
 mod turn_plan_guidance_lab;
 
@@ -41,6 +42,9 @@ pub use policy_compare::{
 };
 pub use rollout_compare_attribution::{
     CombatSearchV2RolloutPolicyFirstActionDiff, CombatSearchV2RolloutPolicyFirstDiffContext,
+};
+pub use root_action_prior_hints::{
+    load_combat_root_action_prior_hints_jsonl_v0, parse_combat_root_action_prior_hints_jsonl_v0,
 };
 pub use start::{
     load_combat_search_v2_snapshot, load_combat_search_v2_start, run_combat_search_v2_loaded_start,

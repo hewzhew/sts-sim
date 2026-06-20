@@ -74,6 +74,8 @@ pub(super) fn ordering() -> CombatSearchV2DiagnosticsOrdering {
         total_actions_observed: 0,
         action_effect_actions: 0,
         phase_action_hint_actions: 0,
+        root_action_prior_scored_states: 0,
+        root_action_prior_scored_actions: 0,
         max_position_shift: 0,
         avg_position_shift: 0.0,
         action_role_counts: Vec::new(),

@@ -93,8 +93,8 @@ use action_equivalence::{
 };
 use action_facts::summarize_action_facts_from_step;
 use action_ordering::{
-    order_indexed_action_choices, ActionOrderingDiagnosticsCollector, ActionOrderingSummary,
-    IndexedActionChoice,
+    order_indexed_action_choices, order_indexed_action_choices_with_prior,
+    ActionOrderingDiagnosticsCollector, ActionOrderingSummary, IndexedActionChoice,
 };
 use card_identity::{
     summarize_card_identity, CardIdentityDiagnosticsCollector, CardIdentitySummary,

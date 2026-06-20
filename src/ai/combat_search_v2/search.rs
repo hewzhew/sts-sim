@@ -254,7 +254,12 @@ pub fn run_combat_search_v2_with_stepper(
         }
         let equivalence = compress_equivalent_actions(&node.engine, &node.combat, legal);
         diagnostics.observe_action_equivalence(&equivalence.summary);
-        let ordered = order_indexed_action_choices(&node.engine, &node.combat, equivalence.choices);
+        let ordered = order_indexed_action_choices_with_prior(
+            &node.engine,
+            &node.combat,
+            equivalence.choices,
+            config.root_action_prior.as_ref(),
+        );
         diagnostics.observe_action_ordering(&ordered.summary);
         diagnostics.observe_pending_choice_ordering(pending_choice.as_ref(), &ordered.summary);
         let mut turn_branching =

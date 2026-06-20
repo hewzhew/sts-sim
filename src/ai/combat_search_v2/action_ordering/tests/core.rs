@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashMap;
 
 #[test]
 fn combat_ordering_keeps_original_action_ids_after_reordering() {
@@ -32,6 +33,118 @@ fn combat_ordering_keeps_original_action_ids_after_reordering() {
         ordered.summary.first_role,
         Some(ActionOrderingRole::LethalCard)
     );
+}
+
+#[test]
+fn root_action_prior_reorders_equal_role_actions_without_pruning() {
+    let mut combat = blank_test_combat();
+    let mut monster = test_monster(EnemyId::JawWorm);
+    monster.id = 1;
+    monster.current_hp = 40;
+    monster.max_hp = 40;
+    combat.entities.monsters = vec![monster];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 10),
+        CombatCard::new(CardId::Strike, 11),
+    ];
+    let choices = vec![
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+        ),
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: Some(1),
+            },
+        ),
+    ];
+    let favored_action_key = choices[1].action_key.clone();
+    let exact_state_hash = combat_exact_state_hash_v1(&EngineState::CombatPlayerTurn, &combat);
+    let prior = CombatSearchV2RootActionPrior::from_scores(HashMap::from([(
+        exact_state_hash,
+        HashMap::from([(favored_action_key, 0.9)]),
+    )]));
+
+    let ordered = order_indexed_action_choices_with_prior(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        choices
+            .into_iter()
+            .enumerate()
+            .map(|(original_action_id, choice)| IndexedActionChoice {
+                original_action_id,
+                choice,
+            })
+            .collect(),
+        Some(&prior),
+    );
+
+    assert_eq!(ordered.choices.len(), 2);
+    assert_eq!(ordered.summary.root_action_prior_scored_actions, 1);
+    assert_eq!(ordered.choices[0].original_action_id, 1);
+    assert_eq!(ordered.choices[1].original_action_id, 0);
+}
+
+#[test]
+fn root_action_prior_can_reorder_within_the_same_semantic_role() {
+    let mut combat = blank_test_combat();
+    let mut monster = test_monster(EnemyId::JawWorm);
+    monster.id = 1;
+    monster.current_hp = 40;
+    monster.max_hp = 40;
+    combat.entities.monsters = vec![monster];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Bash, 10),
+        CombatCard::new(CardId::Strike, 11),
+    ];
+    let choices = vec![
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 0,
+                target: Some(1),
+            },
+        ),
+        CombatActionChoice::from_input(
+            &combat,
+            ClientInput::PlayCard {
+                card_index: 1,
+                target: Some(1),
+            },
+        ),
+    ];
+    let favored_action_key = choices[1].action_key.clone();
+    let exact_state_hash = combat_exact_state_hash_v1(&EngineState::CombatPlayerTurn, &combat);
+    let prior = CombatSearchV2RootActionPrior::from_scores(HashMap::from([(
+        exact_state_hash,
+        HashMap::from([(favored_action_key, 0.9)]),
+    )]));
+
+    let ordered = order_indexed_action_choices_with_prior(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        choices
+            .into_iter()
+            .enumerate()
+            .map(|(original_action_id, choice)| IndexedActionChoice {
+                original_action_id,
+                choice,
+            })
+            .collect(),
+        Some(&prior),
+    );
+
+    assert_eq!(
+        ordered.summary.first_role,
+        Some(ActionOrderingRole::DamageProgress)
+    );
+    assert_eq!(ordered.choices[0].original_action_id, 1);
+    assert_eq!(ordered.choices[1].original_action_id, 0);
 }
 
 #[test]

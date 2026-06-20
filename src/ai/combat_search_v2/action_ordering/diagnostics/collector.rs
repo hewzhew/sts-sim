@@ -18,6 +18,8 @@ pub(in crate::ai::combat_search_v2) struct ActionOrderingDiagnosticsCollector {
     pub(super) largest_reorders: Vec<ActionOrderingObservation>,
     pub(super) action_effect_actions: u64,
     pub(super) phase_action_hint_actions: u64,
+    pub(super) root_action_prior_scored_states: u64,
+    pub(super) root_action_prior_scored_actions: u64,
     pub(super) action_effect_samples: Vec<ActionOrderingActionEffectObservation>,
 }
 
@@ -37,6 +39,13 @@ impl ActionOrderingDiagnosticsCollector {
         self.phase_action_hint_actions = self
             .phase_action_hint_actions
             .saturating_add(summary.phase_signal_actions as u64);
+        if summary.root_action_prior_scored_actions > 0 {
+            self.root_action_prior_scored_states =
+                self.root_action_prior_scored_states.saturating_add(1);
+        }
+        self.root_action_prior_scored_actions = self
+            .root_action_prior_scored_actions
+            .saturating_add(summary.root_action_prior_scored_actions as u64);
 
         for (role, count) in &summary.role_counts {
             let mutable = self.role_counts.entry(*role).or_default();

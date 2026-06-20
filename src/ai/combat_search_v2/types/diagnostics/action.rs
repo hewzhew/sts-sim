@@ -128,6 +128,8 @@ pub struct CombatSearchV2DiagnosticsOrdering {
     pub total_actions_observed: u64,
     pub action_effect_actions: u64,
     pub phase_action_hint_actions: u64,
+    pub root_action_prior_scored_states: u64,
+    pub root_action_prior_scored_actions: u64,
     pub max_position_shift: usize,
     pub avg_position_shift: f64,
     pub action_role_counts: Vec<CombatSearchV2DiagnosticsActionRoleCount>,

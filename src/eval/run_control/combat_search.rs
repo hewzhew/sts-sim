@@ -606,6 +606,7 @@ fn search_config(
         turn_plan_probe_max_inner_nodes: defaults.turn_plan_probe_max_inner_nodes,
         turn_plan_probe_max_end_states: defaults.turn_plan_probe_max_end_states,
         turn_plan_probe_per_bucket_limit: defaults.turn_plan_probe_per_bucket_limit,
+        root_action_prior: None,
     }
 }
 
