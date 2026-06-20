@@ -91,6 +91,12 @@ impl CombatSearchV2TurnPlanPrior {
             .copied()
     }
 
+    pub fn has_hints_for_state(&self, exact_state_hash: &str) -> bool {
+        self.scores_by_state
+            .get(exact_state_hash)
+            .is_some_and(|scores| !scores.is_empty())
+    }
+
     pub fn is_empty(&self) -> bool {
         self.scores_by_state.is_empty()
     }

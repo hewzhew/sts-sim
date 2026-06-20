@@ -599,11 +599,27 @@ fn should_seed_turn_plan_at_node(node: &SearchNode, config: &CombatSearchV2Confi
         return false;
     }
 
+    if turn_plan_prior_has_current_state(node, config) {
+        return true;
+    }
+
     if config.turn_plan_policy.requires_tactical_enemy_gate() {
         return tactical_enemy_turn_plan_seed_gate(node);
     }
 
     true
+}
+
+fn turn_plan_prior_has_current_state(node: &SearchNode, config: &CombatSearchV2Config) -> bool {
+    let Some(prior) = config
+        .turn_plan_prior
+        .as_ref()
+        .filter(|prior| !prior.is_empty())
+    else {
+        return false;
+    };
+    let state_hash = combat_exact_state_hash_v1(&node.engine, &node.combat);
+    prior.has_hints_for_state(&state_hash)
 }
 
 fn tactical_enemy_turn_plan_seed_gate(node: &SearchNode) -> bool {

@@ -894,6 +894,33 @@ fn tactical_enemy_turn_plan_seed_gate_allows_visible_high_pressure() {
     )));
 }
 
+#[test]
+fn tactical_turn_plan_policy_seeds_exact_states_with_turn_plan_prior_hints() {
+    let mut combat = blank_test_combat();
+    combat.entities.player.current_hp = 80;
+    combat.entities.player.block = 0;
+    combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
+    let node = test_search_node(combat);
+    assert!(
+        !tactical_enemy_turn_plan_seed_gate(&node),
+        "fixture should be an ordinary low-pressure fight"
+    );
+    let state_hash = combat_exact_state_hash_v1(&node.engine, &node.combat);
+    let config = CombatSearchV2Config {
+        turn_plan_policy: CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed,
+        turn_plan_prior: Some(CombatSearchV2TurnPlanPrior::from_plan_scores([(
+            state_hash,
+            [(vec!["combat/end_turn".to_string()], 1.0)],
+        )])),
+        ..CombatSearchV2Config::default()
+    };
+
+    assert!(
+        should_seed_turn_plan_at_node(&node, &config),
+        "exact-state turn-plan hints should make tactical policy enumerate known prior states"
+    );
+}
+
 fn test_search_node(combat: CombatState) -> SearchNode {
     SearchNode {
         engine: EngineState::CombatPlayerTurn,
