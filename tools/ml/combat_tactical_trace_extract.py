@@ -1445,11 +1445,24 @@ def extract(
     total_candidates_with_action_facts = 0
     total_candidates_with_step_state_summaries = 0
     total_candidates_with_step_summary_refs = 0
+    total_root_legal_actions = 0
+    total_root_candidate_first_actions = 0
     for episode in episodes:
         candidates = as_list(episode.get("candidate_plans"))
         total_candidates += len(candidates)
-        if as_dict(as_dict(episode.get("root")).get("public_view")).get("enemy_slots"):
+        root = as_dict(episode.get("root"))
+        if as_dict(root.get("public_view")).get("enemy_slots"):
             counters["episodes_with_enemy_slots"] += 1
+        mask = as_dict(root.get("legal_action_mask"))
+        if mask.get("complete_legal_mask") is True:
+            counters["episodes_with_complete_legal_action_mask"] += 1
+        legal_count = int_or_none(mask.get("legal_action_count"))
+        if legal_count is not None:
+            total_root_legal_actions += legal_count
+        coverage = as_dict(mask.get("candidate_action_coverage"))
+        covered_count = int_or_none(coverage.get("covered_action_count"))
+        if covered_count is not None:
+            total_root_candidate_first_actions += covered_count
         episode_has_action_facts = False
         episode_has_step_state_summaries = False
         episode_has_step_summary_refs = False
@@ -1509,6 +1522,18 @@ def extract(
     print("CombatTacticalTraceExtract")
     print(f"  episodes={len(episodes)} candidates={total_candidates}")
     print(f"  episodes_with_enemy_slots={counters['episodes_with_enemy_slots']}")
+    coverage_ratio = (
+        total_root_candidate_first_actions / total_root_legal_actions
+        if total_root_legal_actions > 0
+        else 0.0
+    )
+    print(
+        "  root_legal_action_mask="
+        f"episodes={counters['episodes_with_complete_legal_action_mask']}/{len(episodes)} "
+        f"legal_actions={total_root_legal_actions} "
+        f"candidate_first_actions={total_root_candidate_first_actions} "
+        f"coverage_ratio={coverage_ratio:.3f}"
+    )
     print(
         "  action_facts_coverage="
         f"episodes={counters['episodes_with_action_facts']} "
