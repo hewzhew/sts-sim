@@ -40,6 +40,7 @@ EXPERIMENTAL_FEATURE_GROUPS = (
     "action-shape",
     "target-detail",
     "enemy-slot-context",
+    "tactical-summary",
 )
 TARGET_MODES = ("selected", "equivalent-hp-outcome")
 TRAINING_MODES = ("binary", "pairwise-utility", "decomposed-utility")
@@ -206,6 +207,7 @@ def tactical_plan_as_turn_plan_probe(plan: dict[str, Any], summary: dict[str, An
         "actions": actions,
         "end_state": final_state,
         "final_state_hash": plan.get("final_state_hash"),
+        "plan_summary": summary,
         "eval_final_hp": final_state.get("player_hp"),
         "eval_risk_margin": None,
         "eval_enemy_progress": summary.get("enemy_hp_removed_to_plan_boundary"),
@@ -773,6 +775,40 @@ def add_turn_plan_enemy_slot_context_features(
             )
 
 
+def add_turn_plan_tactical_summary_features(
+    features: dict[str, float],
+    plan: dict[str, Any],
+) -> None:
+    summary = plan.get("plan_summary") if isinstance(plan.get("plan_summary"), dict) else {}
+    if not summary:
+        add_token(features, "plan_tactical_summary:missing")
+        return
+
+    add_token(features, "plan_tactical_summary:present")
+    for name, scale in (
+        ("cards_played", 12.0),
+        ("potion_actions", 4.0),
+        ("hp_lost_to_plan_boundary", 80.0),
+        ("enemy_hp_removed_to_plan_boundary", 300.0),
+        ("enemy_kill_count_to_plan_boundary", 5.0),
+        ("damage_hint_total", 300.0),
+        ("block_hint_total", 120.0),
+        ("visible_attack_mitigation_hint_total", 120.0),
+        ("energy_unspent_at_plan_boundary", 6.0),
+    ):
+        add_number(features, f"plan_summary_{name}", summary.get(name), scale)
+
+    if summary.get("all_enemies_dead_at_plan_boundary"):
+        add_token(features, "plan_summary_terminal_win_boundary")
+    if numeric_value(summary.get("hp_lost_to_plan_boundary")) == 0:
+        add_token(features, "plan_summary_no_hp_loss_to_boundary")
+    if numeric_value(summary.get("enemy_hp_removed_to_plan_boundary")) == 0:
+        add_token(features, "plan_summary_no_enemy_hp_removed")
+    targets = summary.get("unique_target_slots")
+    if isinstance(targets, list):
+        add_number(features, "plan_summary_unique_target_slots", len(targets), 5.0)
+
+
 def extract_features(
     sample: dict[str, Any],
     *,
@@ -831,6 +867,8 @@ def extract_features(
             add_turn_plan_target_detail_features(features, action_keys)
         if "enemy-slot-context" in feature_groups:
             add_turn_plan_enemy_slot_context_features(features, sample, action_keys)
+        if "tactical-summary" in feature_groups:
+            add_turn_plan_tactical_summary_features(features, cand)
         for position, key in enumerate(action_keys[:8]):
             action = str(key)
             if action == "combat/end_turn":

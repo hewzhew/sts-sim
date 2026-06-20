@@ -39,7 +39,7 @@ param(
     [int] $ShowCases = 0,
     [ValidateSet("worse", "better", "both-bad", "all")]
     [string] $CaseKind = "worse",
-    [ValidateSet("root-delta", "action-shape", "target-detail", "enemy-slot-context")]
+    [ValidateSet("root-delta", "action-shape", "target-detail", "enemy-slot-context", "tactical-summary")]
     [string[]] $FeatureGroups = @(),
     [ValidateSet("selected", "equivalent-hp-outcome")]
     [string] $TargetMode = "selected",
