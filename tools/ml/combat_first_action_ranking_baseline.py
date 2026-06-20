@@ -570,6 +570,17 @@ def candidate_final_hp(sample: dict[str, Any]) -> int | None:
     return value if isinstance(value, int) else None
 
 
+def candidate_nodes_expanded(sample: dict[str, Any]) -> int | None:
+    target = sample.get("target") if isinstance(sample.get("target"), dict) else {}
+    value = target.get("nodes_expanded")
+    return value if isinstance(value, int) else None
+
+
+def candidate_complete_win(sample: dict[str, Any]) -> bool:
+    target = sample.get("target") if isinstance(sample.get("target"), dict) else {}
+    return bool(target.get("complete_win") and target.get("terminal") == "win")
+
+
 def primary_target_index(group: list[dict[str, Any]]) -> int | None:
     return next((index for index, sample in enumerate(group) if is_selected(sample)), None)
 
@@ -1875,6 +1886,12 @@ def metrics_from_group_scores(
     ranks = []
     hp_gains = []
     target_hp_regrets = []
+    node_deltas_vs_ordered = []
+    selected_nodes = []
+    ordered_nodes = []
+    node_regrets_on_target_outcome_match = []
+    complete_win_selected = 0
+    complete_win_ordered = 0
     positive_gain = 0
     negative_gain = 0
     target_missed = 0
@@ -1900,8 +1917,15 @@ def metrics_from_group_scores(
         current = group[current_index]
         top_hp = candidate_final_hp(top)
         current_hp = candidate_final_hp(current)
+        top_nodes = candidate_nodes_expanded(top)
+        current_nodes = candidate_nodes_expanded(current)
         target = group[target_index] if target_index is not None else None
         target_hp = candidate_final_hp(target) if target is not None else None
+        target_nodes = candidate_nodes_expanded(target) if target is not None else None
+        if candidate_complete_win(top):
+            complete_win_selected += 1
+        if candidate_complete_win(current):
+            complete_win_ordered += 1
         if top_hp is not None and current_hp is not None:
             gain = top_hp - current_hp
             hp_gains.append(gain)
@@ -1911,6 +1935,19 @@ def metrics_from_group_scores(
                 negative_gain += 1
         if target_hp is not None and top_hp is not None:
             target_hp_regrets.append(target_hp - top_hp)
+        if top_nodes is not None:
+            selected_nodes.append(top_nodes)
+        if current_nodes is not None:
+            ordered_nodes.append(current_nodes)
+        if top_nodes is not None and current_nodes is not None:
+            node_deltas_vs_ordered.append(top_nodes - current_nodes)
+        if (
+            target_nodes is not None
+            and top_nodes is not None
+            and target is not None
+            and candidate_terminal_signature(target) == candidate_terminal_signature(top)
+        ):
+            node_regrets_on_target_outcome_match.append(top_nodes - target_nodes)
         if target_index is not None:
             if candidate_terminal_signature(group[target_index]) == candidate_terminal_signature(top):
                 target_outcome_matched += 1
@@ -1932,6 +1969,12 @@ def metrics_from_group_scores(
             "target_outcome_match_rate": 0.0,
             "avg_hp_regret_to_target": 0.0,
             "avg_positive_targets": 0.0,
+            "complete_win_rate": 0.0,
+            "ordered_complete_win_rate": 0.0,
+            "avg_selected_nodes": 0.0,
+            "avg_ordered_nodes": 0.0,
+            "avg_node_delta_vs_ordered": 0.0,
+            "avg_node_regret_on_target_outcome_match": 0.0,
         }
     return {
         "groups": float(len(ranks)),
@@ -1950,6 +1993,20 @@ def metrics_from_group_scores(
         ),
         "avg_positive_targets": (
             sum(positive_target_counts) / len(positive_target_counts) if positive_target_counts else 0.0
+        ),
+        "complete_win_rate": complete_win_selected / len(ranks),
+        "ordered_complete_win_rate": complete_win_ordered / len(ranks),
+        "avg_selected_nodes": sum(selected_nodes) / len(selected_nodes) if selected_nodes else 0.0,
+        "avg_ordered_nodes": sum(ordered_nodes) / len(ordered_nodes) if ordered_nodes else 0.0,
+        "avg_node_delta_vs_ordered": (
+            sum(node_deltas_vs_ordered) / len(node_deltas_vs_ordered)
+            if node_deltas_vs_ordered
+            else 0.0
+        ),
+        "avg_node_regret_on_target_outcome_match": (
+            sum(node_regrets_on_target_outcome_match) / len(node_regrets_on_target_outcome_match)
+            if node_regrets_on_target_outcome_match
+            else 0.0
         ),
     }
 
@@ -2271,6 +2328,9 @@ def print_metrics(label: str, metrics: dict[str, float], *, report_mode: str) ->
             f"hp_regret={metrics.get('avg_hp_regret_to_target', 0.0):+.2f} "
             f"hp_gain_vs_ordered={metrics.get('avg_hp_gain_vs_ordered', 0.0):+.2f} "
             f"worse_hp={metrics.get('negative_hp_gain', 0.0):.0f} "
+            f"cw={metrics.get('complete_win_rate', 0.0):.3f} "
+            f"nodes_delta={metrics.get('avg_node_delta_vs_ordered', 0.0):+.1f} "
+            f"node_regret_match={metrics.get('avg_node_regret_on_target_outcome_match', 0.0):+.1f} "
             f"pos_avg={metrics.get('avg_positive_targets', 0.0):.2f}"
         )
         return
@@ -2285,6 +2345,13 @@ def print_metrics(label: str, metrics: dict[str, float], *, report_mode: str) ->
         f"target_outcome_missed={metrics.get('target_outcome_missed', 0.0):.0f} "
         f"target_outcome_match={metrics.get('target_outcome_match_rate', 0.0):.3f} "
         f"avg_hp_regret_to_target={metrics.get('avg_hp_regret_to_target', 0.0):+.2f} "
+        f"complete_win={metrics.get('complete_win_rate', 0.0):.3f} "
+        f"ordered_complete_win={metrics.get('ordered_complete_win_rate', 0.0):.3f} "
+        f"avg_selected_nodes={metrics.get('avg_selected_nodes', 0.0):.1f} "
+        f"avg_ordered_nodes={metrics.get('avg_ordered_nodes', 0.0):.1f} "
+        f"avg_node_delta_vs_ordered={metrics.get('avg_node_delta_vs_ordered', 0.0):+.1f} "
+        f"avg_node_regret_on_target_outcome_match="
+        f"{metrics.get('avg_node_regret_on_target_outcome_match', 0.0):+.1f} "
         f"avg_positive_targets={metrics.get('avg_positive_targets', 0.0):.2f}"
     )
 
