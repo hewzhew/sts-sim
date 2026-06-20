@@ -9,6 +9,8 @@ Input is either:
   combat_guidance_lab_extract.py.
 - CombatTurnPlanProbeSampleV1 JSONL produced from turn-plan guidance-lab
   reports by combat_turn_plan_guidance_lab_extract.py.
+- CombatTacticalEpisodeV1 JSONL produced by combat_tactical_trace_extract.py.
+  These are expanded into compatible turn-plan candidate samples at load time.
 
 This is an offline diagnostic.  It does not train a combat policy and does not
 claim the selected action is human-optimal. Targets are oracle-under-budget
@@ -32,6 +34,7 @@ TARGET_KIND = "initial_decision_candidate_selected_by_best_complete"
 LEGACY_SCHEMA_NAME = "CombatSearchGuidanceSampleV1"
 PROBE_SCHEMA_NAME = "CombatActionProbeSampleV1"
 TURN_PLAN_SCHEMA_NAME = "CombatTurnPlanProbeSampleV1"
+TACTICAL_EPISODE_SCHEMA_NAME = "CombatTacticalEpisodeV1"
 EXPERIMENTAL_FEATURE_GROUPS = (
     "root-delta",
     "action-shape",
@@ -65,17 +68,148 @@ def load_samples(paths: list[Path]) -> list[dict[str, Any]]:
                 if schema_name == LEGACY_SCHEMA_NAME:
                     if sample.get("target_kind") != TARGET_KIND:
                         continue
+                    sample["_source_schema_name"] = schema_name
                     sample["_source_jsonl"] = str(path)
                     samples.append(sample)
                 elif schema_name in (PROBE_SCHEMA_NAME, TURN_PLAN_SCHEMA_NAME):
+                    sample["_source_schema_name"] = schema_name
                     sample["_source_jsonl"] = str(path)
                     samples.append(sample)
+                elif schema_name == TACTICAL_EPISODE_SCHEMA_NAME:
+                    samples.extend(samples_from_tactical_episode(sample, path))
                 else:
                     raise SystemExit(
                         f"{path}:{line_no}: expected {LEGACY_SCHEMA_NAME} or "
-                        f"{PROBE_SCHEMA_NAME} or {TURN_PLAN_SCHEMA_NAME}, got {schema_name!r}"
+                        f"{PROBE_SCHEMA_NAME} or {TURN_PLAN_SCHEMA_NAME} or "
+                        f"{TACTICAL_EPISODE_SCHEMA_NAME}, got {schema_name!r}"
                     )
     return samples
+
+
+def samples_from_tactical_episode(episode: dict[str, Any], path: Path) -> list[dict[str, Any]]:
+    plans = [plan for plan in episode.get("candidate_plans", []) if isinstance(plan, dict)]
+    if not plans:
+        return []
+    best_plan_index = tactical_best_plan_index(plans)
+    root = episode.get("root") if isinstance(episode.get("root"), dict) else {}
+    public_view = root.get("public_view") if isinstance(root.get("public_view"), dict) else {}
+    provenance = episode.get("provenance") if isinstance(episode.get("provenance"), dict) else {}
+    root_context = {
+        "config": provenance.get("search_config"),
+        "initial_context": {
+            "state": public_view.get("state"),
+            "phase_profile": public_view.get("phase_profile"),
+            "frontier_value": public_view.get("frontier_value"),
+        },
+        "enumeration": {
+            "planning_policy": provenance.get("candidate_generator_id"),
+            "source_schema": episode.get("schema_name"),
+            "root_exact_state_hash": root.get("exact_state_hash"),
+        },
+        "enemy_slots": public_view.get("enemy_slots") if isinstance(public_view.get("enemy_slots"), list) else [],
+    }
+    source = episode.get("source") if isinstance(episode.get("source"), dict) else {}
+    samples = []
+    for plan in plans:
+        summary = plan.get("plan_summary") if isinstance(plan.get("plan_summary"), dict) else {}
+        outcome = (
+            plan.get("outcome_attachment")
+            if isinstance(plan.get("outcome_attachment"), dict)
+            else {}
+        )
+        candidate_plan = tactical_plan_as_turn_plan_probe(plan, summary)
+        samples.append(
+            {
+                "schema_name": TURN_PLAN_SCHEMA_NAME,
+                "schema_version": 2,
+                "label_role": "expanded_from_tactical_episode_oracle_under_budget_not_human_policy",
+                "_source_schema_name": TACTICAL_EPISODE_SCHEMA_NAME,
+                "_source_jsonl": str(path),
+                "source": {
+                    **source,
+                    "source_file": str(path),
+                    "tactical_episode_input_label": source.get("input_label"),
+                    "tactical_episode_source_file": source.get("source_file"),
+                },
+                "root_context": root_context,
+                "plan": candidate_plan,
+                "target": {
+                    "target_kind": outcome.get("target_kind"),
+                    "source": outcome.get("source"),
+                    "terminal": outcome.get("terminal"),
+                    "complete_win": outcome.get("complete_win"),
+                    "post_root_player_hp": outcome.get("post_root_player_hp"),
+                    "child_search_hp_loss": outcome.get("child_search_hp_loss"),
+                    "final_hp": outcome.get("final_hp"),
+                    "nodes_expanded": outcome.get("nodes_expanded"),
+                    "is_best_target_plan": plan.get("plan_index") == best_plan_index,
+                    "limitations": outcome.get("limitations") or [],
+                },
+                "child_search": outcome.get("child_search"),
+            }
+        )
+    return samples
+
+
+def tactical_best_plan_index(plans: list[dict[str, Any]]) -> Any:
+    best = max(
+        plans,
+        key=lambda plan: (
+            tactical_target_sort_key(plan),
+            -int_or_max(plan.get("plan_index")),
+        ),
+    )
+    return best.get("plan_index")
+
+
+def tactical_target_sort_key(plan: dict[str, Any]) -> tuple[int, int, int, int]:
+    outcome = plan.get("outcome_attachment") if isinstance(plan.get("outcome_attachment"), dict) else {}
+    return (
+        tactical_target_tier(outcome),
+        int_or_min(outcome.get("final_hp")),
+        -int_or_max(outcome.get("child_search_hp_loss")),
+        -int_or_max(outcome.get("nodes_expanded")),
+    )
+
+
+def tactical_target_tier(outcome: dict[str, Any]) -> int:
+    terminal = outcome.get("terminal")
+    if outcome.get("complete_win") and terminal == "win":
+        return 3
+    if terminal == "win":
+        return 2
+    if terminal == "unresolved":
+        return 1
+    return 0
+
+
+def tactical_plan_as_turn_plan_probe(plan: dict[str, Any], summary: dict[str, Any]) -> dict[str, Any]:
+    generation = plan.get("generation") if isinstance(plan.get("generation"), dict) else {}
+    steps = [step for step in plan.get("steps", []) if isinstance(step, dict)]
+    actions = [
+        step.get("action")
+        for step in steps
+        if isinstance(step.get("action"), dict)
+    ]
+    action_keys = [str(action.get("action_key") or "") for action in actions]
+    final_state = plan.get("final_state_summary") if isinstance(plan.get("final_state_summary"), dict) else {}
+    return {
+        "plan_index": plan.get("plan_index"),
+        "bucket": generation.get("bucket"),
+        "stop_reason": generation.get("stop_reason"),
+        "outcome_class": generation.get("outcome_class"),
+        "survival_bucket": generation.get("survival_bucket"),
+        "progress_bucket": generation.get("progress_bucket"),
+        "action_count": len(actions),
+        "first_action_key": action_keys[0] if action_keys else None,
+        "action_keys": action_keys,
+        "actions": actions,
+        "end_state": final_state,
+        "final_state_hash": plan.get("final_state_hash"),
+        "eval_final_hp": final_state.get("player_hp"),
+        "eval_risk_margin": None,
+        "eval_enemy_progress": summary.get("enemy_hp_removed_to_plan_boundary"),
+    }
 
 
 def load_enemy_slots_from_capture_path(path_text: str) -> list[dict[str, Any]]:
@@ -131,9 +265,34 @@ def discover_turn_plan_probe_paths(roots: list[Path]) -> list[Path]:
     return sorted(set(explicit_files + list(discovered_by_key.values())))
 
 
+def discover_tactical_episode_paths(roots: list[Path]) -> list[Path]:
+    explicit_files: list[Path] = []
+    discovered_by_key: dict[str, Path] = {}
+    for root in roots:
+        if root.is_file():
+            explicit_files.append(root)
+            continue
+        if not root.exists():
+            raise SystemExit(f"discover root does not exist: {root}")
+        for path in root.rglob("*.tactical_episode*.jsonl"):
+            key = tactical_episode_discovery_key(path)
+            previous = discovered_by_key.get(key)
+            if previous is None or path.stat().st_mtime > previous.stat().st_mtime:
+                discovered_by_key[key] = path
+    return sorted(set(explicit_files + list(discovered_by_key.values())))
+
+
 def turn_plan_probe_discovery_key(path: Path) -> str:
     name = path.name
     for suffix in (".turn_plan_probe_batch.jsonl", ".turn_plan_probe.jsonl"):
+        if name.endswith(suffix):
+            return f"{path.parent}|{name.removesuffix(suffix)}"
+    return str(path)
+
+
+def tactical_episode_discovery_key(path: Path) -> str:
+    name = path.name
+    for suffix in (".tactical_episode_batch.jsonl", ".tactical_episode.jsonl"):
         if name.endswith(suffix):
             return f"{path.parent}|{name.removesuffix(suffix)}"
     return str(path)
@@ -1767,7 +1926,8 @@ def main() -> None:
         type=Path,
         help=(
             "CombatSearchGuidanceSampleV1, CombatActionProbeSampleV1, or "
-            "CombatTurnPlanProbeSampleV1 JSONL"
+            "CombatTurnPlanProbeSampleV1 JSONL, plus CombatTacticalEpisodeV1 JSONL"
+            " expanded at load time"
         ),
     )
     parser.add_argument(
@@ -1779,6 +1939,17 @@ def main() -> None:
         help=(
             "Discover *.turn_plan_probe*.jsonl under ROOT. When several probes "
             "for the same suite prefix exist in one directory, the newest is used."
+        ),
+    )
+    parser.add_argument(
+        "--discover-tactical-episodes",
+        action="append",
+        nargs="+",
+        type=Path,
+        metavar="ROOT",
+        help=(
+            "Discover *.tactical_episode*.jsonl under ROOT and expand "
+            "CombatTacticalEpisodeV1 records into turn-plan candidate samples."
         ),
     )
     parser.add_argument("--dim", type=int, default=4096)
@@ -1898,6 +2069,9 @@ def main() -> None:
     if args.discover_turn_plan_probes:
         roots = [root for group in args.discover_turn_plan_probes for root in group]
         input_paths.extend(discover_turn_plan_probe_paths(roots))
+    if args.discover_tactical_episodes:
+        roots = [root for group in args.discover_tactical_episodes for root in group]
+        input_paths.extend(discover_tactical_episode_paths(roots))
     input_paths = sorted(set(input_paths))
     if not input_paths:
         parser.error("provide JSONL inputs or --discover-turn-plan-probes ROOT")
@@ -1905,6 +2079,8 @@ def main() -> None:
     samples = load_samples(input_paths)
     groups = usable_groups(samples)
     target_counts = Counter()
+    sample_schema_counts = Counter(str(sample.get("schema_name")) for sample in samples)
+    source_schema_counts = Counter(str(sample.get("_source_schema_name")) for sample in samples)
     for group in groups.values():
         for sample in group:
             target_counts["selected" if is_selected(sample) else "not_selected"] += 1
@@ -1913,6 +2089,8 @@ def main() -> None:
         f"  input_files={len(input_paths)} samples={len(samples)} "
         f"usable_groups={len(groups)} labels={dict(target_counts)}"
     )
+    print(f"  sample_schemas={dict(sample_schema_counts)}")
+    print(f"  source_schemas={dict(source_schema_counts)}")
     print(
         "  label_role=oracle_search_guidance_ranking_not_human_policy "
         "candidate_coverage=root_legal_candidates_reported_limit"
