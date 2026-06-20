@@ -56,7 +56,7 @@ def stable_hash(text: str) -> int:
 
 def load_samples(paths: list[Path]) -> list[dict[str, Any]]:
     samples: list[dict[str, Any]] = []
-    seen_tactical_candidate_keys: set[str] = set()
+    tactical_samples_by_key: dict[str, dict[str, Any]] = {}
     for path in paths:
         with path.open("r", encoding="utf-8") as handle:
             for line_no, line in enumerate(handle, start=1):
@@ -81,17 +81,30 @@ def load_samples(paths: list[Path]) -> list[dict[str, Any]]:
                 elif schema_name == TACTICAL_EPISODE_SCHEMA_NAME:
                     for expanded in samples_from_tactical_episode(sample, path):
                         key = expanded_tactical_candidate_key(expanded)
-                        if key in seen_tactical_candidate_keys:
+                        previous = tactical_samples_by_key.get(key)
+                        if previous is not None and expanded_sample_quality(previous) >= expanded_sample_quality(expanded):
                             continue
-                        seen_tactical_candidate_keys.add(key)
-                        samples.append(expanded)
+                        tactical_samples_by_key[key] = expanded
                 else:
                     raise SystemExit(
                         f"{path}:{line_no}: expected {LEGACY_SCHEMA_NAME} or "
                         f"{PROBE_SCHEMA_NAME} or {TURN_PLAN_SCHEMA_NAME} or "
                         f"{TACTICAL_EPISODE_SCHEMA_NAME}, got {schema_name!r}"
                     )
+    samples.extend(tactical_samples_by_key.values())
     return samples
+
+
+def expanded_sample_quality(sample: dict[str, Any]) -> tuple[int, int, int, int]:
+    plan = sample.get("plan") if isinstance(sample.get("plan"), dict) else {}
+    steps = [step for step in plan.get("steps", []) if isinstance(step, dict)]
+    has_action_facts = any(isinstance(step.get("action_facts"), dict) for step in steps)
+    return (
+        1 if has_action_facts else 0,
+        1 if isinstance(plan.get("plan_summary"), dict) else 0,
+        1 if plan.get("final_state_hash") else 0,
+        len(steps),
+    )
 
 
 def stable_json_key(value: Any) -> str:
@@ -384,6 +397,25 @@ def grouped_samples(samples: list[dict[str, Any]]) -> dict[str, list[dict[str, A
     for sample in samples:
         groups[group_key(sample)].append(sample)
     return dict(groups)
+
+
+def turn_plan_feature_coverage(samples: list[dict[str, Any]]) -> dict[str, int]:
+    coverage: Counter[str] = Counter()
+    for sample in samples:
+        if not is_turn_plan_sample(sample):
+            continue
+        coverage["turn_plan_samples"] += 1
+        plan = candidate(sample)
+        if isinstance(plan.get("plan_summary"), dict):
+            coverage["with_plan_summary"] += 1
+        steps = [step for step in plan.get("steps", []) if isinstance(step, dict)]
+        if steps:
+            coverage["with_steps"] += 1
+        if steps and any(isinstance(step.get("action_facts"), dict) for step in steps):
+            coverage["with_action_facts"] += 1
+        if plan.get("final_state_hash"):
+            coverage["with_final_state_hash"] += 1
+    return dict(coverage)
 
 
 def usable_groups(samples: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -2246,6 +2278,7 @@ def main() -> None:
     target_counts = Counter()
     sample_schema_counts = Counter(str(sample.get("schema_name")) for sample in samples)
     source_schema_counts = Counter(str(sample.get("_source_schema_name")) for sample in samples)
+    coverage = turn_plan_feature_coverage(samples)
     for group in groups.values():
         for sample in group:
             target_counts["selected" if is_selected(sample) else "not_selected"] += 1
@@ -2256,6 +2289,8 @@ def main() -> None:
     )
     print(f"  sample_schemas={dict(sample_schema_counts)}")
     print(f"  source_schemas={dict(source_schema_counts)}")
+    if coverage.get("turn_plan_samples"):
+        print(f"  turn_plan_feature_coverage={coverage}")
     print(
         "  label_role=oracle_search_guidance_ranking_not_human_policy "
         "candidate_coverage=root_legal_candidates_reported_limit"
