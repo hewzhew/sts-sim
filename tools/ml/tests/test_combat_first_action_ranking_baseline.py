@@ -118,6 +118,85 @@ class CombatFirstActionRankingBaselineTests(unittest.TestCase):
         self.assertEqual(records[0]["action_prior_hints"][0]["candidate_count"], 2)
         self.assertEqual(records[0]["action_prior_hints"][1]["action_key"], "combat/end_turn")
 
+    def test_tactical_utility_target_does_not_treat_same_hp_dirty_plan_as_equivalent(self):
+        baseline = load_module()
+        clean_same_hp = {
+            "schema_name": "CombatTurnPlanProbeSampleV1",
+            "plan": {
+                "plan_index": 0,
+                "plan_summary": {
+                    "hp_lost_to_plan_boundary": 0,
+                    "enemy_hp_removed_to_plan_boundary": 18,
+                    "enemy_kill_count_to_plan_boundary": 0,
+                    "potion_actions": 0,
+                    "cards_played": 2,
+                },
+            },
+            "target": {
+                "terminal": "win",
+                "complete_win": True,
+                "final_hp": 40,
+                "child_search_hp_loss": 0,
+                "nodes_expanded": 40,
+                "is_best_target_plan": True,
+                "is_equivalent_hp_outcome_target_plan": True,
+            },
+        }
+        dirty_same_hp = {
+            "schema_name": "CombatTurnPlanProbeSampleV1",
+            "plan": {
+                "plan_index": 1,
+                "plan_summary": {
+                    "hp_lost_to_plan_boundary": 0,
+                    "enemy_hp_removed_to_plan_boundary": 18,
+                    "enemy_kill_count_to_plan_boundary": 0,
+                    "potion_actions": 1,
+                    "cards_played": 5,
+                },
+            },
+            "target": {
+                "terminal": "win",
+                "complete_win": True,
+                "final_hp": 40,
+                "child_search_hp_loss": 0,
+                "nodes_expanded": 200,
+                "is_best_target_plan": False,
+                "is_equivalent_hp_outcome_target_plan": True,
+            },
+        }
+        worse_hp = {
+            "schema_name": "CombatTurnPlanProbeSampleV1",
+            "plan": {
+                "plan_index": 2,
+                "plan_summary": {
+                    "hp_lost_to_plan_boundary": 2,
+                    "enemy_hp_removed_to_plan_boundary": 25,
+                    "enemy_kill_count_to_plan_boundary": 1,
+                    "potion_actions": 0,
+                    "cards_played": 2,
+                },
+            },
+            "target": {
+                "terminal": "win",
+                "complete_win": True,
+                "final_hp": 38,
+                "child_search_hp_loss": 2,
+                "nodes_expanded": 20,
+                "is_best_target_plan": False,
+                "is_equivalent_hp_outcome_target_plan": False,
+            },
+        }
+        group = [clean_same_hp, dirty_same_hp, worse_hp]
+
+        self.assertEqual(
+            baseline.positive_target_indices(group, "equivalent-hp-outcome"),
+            [0, 1],
+        )
+        self.assertEqual(
+            baseline.positive_target_indices(group, "tactical-utility"),
+            [0],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

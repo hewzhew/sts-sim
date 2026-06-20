@@ -43,7 +43,7 @@ EXPERIMENTAL_FEATURE_GROUPS = (
     "tactical-summary",
     "action-facts",
 )
-TARGET_MODES = ("selected", "equivalent-hp-outcome")
+TARGET_MODES = ("selected", "equivalent-hp-outcome", "tactical-utility")
 TRAINING_MODES = ("binary", "pairwise-utility", "decomposed-utility")
 DECOMPOSED_OUTCOME_WEIGHT = 1.0
 DECOMPOSED_HP_WEIGHT = 1.0
@@ -798,6 +798,45 @@ def candidate_utility_key(sample: dict[str, Any]) -> tuple[int, int, int]:
     )
 
 
+def candidate_tactical_summary(sample: dict[str, Any]) -> dict[str, Any]:
+    cand = candidate(sample)
+    summary = cand.get("plan_summary") if isinstance(cand.get("plan_summary"), dict) else {}
+    if summary:
+        return summary
+    summary = sample.get("plan_summary") if isinstance(sample.get("plan_summary"), dict) else {}
+    return summary
+
+
+def candidate_tactical_utility_key(sample: dict[str, Any]) -> tuple[int, ...]:
+    """Utility key for live-search guidance targets.
+
+    Terminal outcome and final HP still matter, but same-HP candidates are not
+    automatically equivalent.  Tactical tie-breakers prefer cleaner, more
+    efficient plans inside the bounded candidate set.
+    """
+
+    tier, final_hp, loss_key = candidate_utility_key(sample)
+    summary = candidate_tactical_summary(sample)
+    return (
+        tier,
+        final_hp,
+        loss_key,
+        -int_or_max(summary.get("hp_lost_to_plan_boundary")),
+        int_or_min(summary.get("enemy_kill_count_to_plan_boundary")),
+        int_or_min(summary.get("enemy_hp_removed_to_plan_boundary")),
+        int_or_min(summary.get("visible_incoming_removed_to_plan_boundary")),
+        -int_or_max(summary.get("potion_actions")),
+        -int_or_max(summary.get("cards_played")),
+        -int_or_max(candidate_nodes_expanded(sample)),
+    )
+
+
+def candidate_utility_key_for_target_mode(sample: dict[str, Any], target_mode: str) -> tuple[int, ...]:
+    if target_mode == "tactical-utility":
+        return candidate_tactical_utility_key(sample)
+    return candidate_utility_key(sample)
+
+
 def candidate_final_hp(sample: dict[str, Any]) -> int | None:
     target = sample.get("target") if isinstance(sample.get("target"), dict) else {}
     value = target.get("final_hp")
@@ -825,6 +864,13 @@ def positive_target_indices(group: list[dict[str, Any]], target_mode: str) -> li
         return []
     if target_mode == "selected":
         return [selected]
+    if target_mode == "tactical-utility":
+        best_key = max(candidate_tactical_utility_key(sample) for sample in group)
+        return [
+            index
+            for index, sample in enumerate(group)
+            if candidate_tactical_utility_key(sample) == best_key
+        ]
     if target_mode != "equivalent-hp-outcome":
         raise ValueError(f"unknown target mode: {target_mode}")
     marked_equivalent = [
@@ -1763,6 +1809,7 @@ def flatten_pairwise_utility_examples(
     *,
     include_order_features: bool,
     feature_groups: frozenset[str],
+    target_mode: str,
 ) -> list[tuple[int, dict[str, float]]]:
     examples: list[tuple[int, dict[str, float]]] = []
     for group in groups.values():
@@ -1774,7 +1821,7 @@ def flatten_pairwise_utility_examples(
             )
             for sample in group
         ]
-        utility_rows = [candidate_utility_key(sample) for sample in group]
+        utility_rows = [candidate_utility_key_for_target_mode(sample, target_mode) for sample in group]
         for left_index in range(len(group)):
             for right_index in range(left_index + 1, len(group)):
                 left_utility = utility_rows[left_index]
@@ -1803,6 +1850,7 @@ def flatten_decomposed_utility_examples(
     *,
     include_order_features: bool,
     feature_groups: frozenset[str],
+    target_mode: str,
 ) -> tuple[list[tuple[int, dict[str, float]]], list[tuple[int, dict[str, float]]]]:
     outcome_examples: list[tuple[int, dict[str, float]]] = []
     hp_examples: list[tuple[int, dict[str, float]]] = []
@@ -1815,7 +1863,7 @@ def flatten_decomposed_utility_examples(
             )
             for sample in group
         ]
-        utility_rows = [candidate_utility_key(sample) for sample in group]
+        utility_rows = [candidate_utility_key_for_target_mode(sample, target_mode) for sample in group]
         for left_index in range(len(group)):
             for right_index in range(left_index + 1, len(group)):
                 left_utility = utility_rows[left_index]
@@ -1864,6 +1912,7 @@ def training_examples_for_groups(
             groups,
             include_order_features=include_order_features,
             feature_groups=feature_groups,
+            target_mode=target_mode,
         )
     if training_mode == "decomposed-utility":
         raise ValueError("decomposed-utility trains separate components; use score_groups_with_training")
@@ -1980,6 +2029,7 @@ def score_groups_with_training(
             train_groups,
             include_order_features=include_order_features,
             feature_groups=feature_groups,
+            target_mode=target_mode,
         )
         if not outcome_examples and not hp_examples:
             return {}, {
@@ -3391,6 +3441,7 @@ def main() -> None:
                 groups,
                 include_order_features=args.include_order_features,
                 feature_groups=feature_groups,
+                target_mode=target_mode,
             )
             print(
                 "  decomposed_utility_full_data="
