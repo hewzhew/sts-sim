@@ -1019,6 +1019,42 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def root_candidate_action_mask(traces: list[dict[str, Any]]) -> dict[str, Any]:
+    by_key: dict[str, dict[str, Any]] = {}
+    for trace in traces:
+        steps = [step for step in as_list(trace.get("steps")) if isinstance(step, dict)]
+        if not steps:
+            continue
+        action = as_dict(steps[0].get("action"))
+        action_key = action.get("action_key")
+        if not isinstance(action_key, str) or not action_key:
+            continue
+        entry = by_key.setdefault(
+            action_key,
+            {
+                "action_key": action_key,
+                "action_id": action.get("action_id"),
+                "action_debug": action.get("action_debug"),
+                "input": action.get("input"),
+                "candidate_plan_ids": [],
+            },
+        )
+        entry["candidate_plan_ids"].append(trace.get("plan_id"))
+    actions = sorted(by_key.values(), key=lambda item: str(item.get("action_key")))
+    return {
+        "data_role": "DerivedDeterministic",
+        "availability": "RootOnly",
+        "source": "turn_plan_enumerator_first_actions",
+        "complete_legal_mask": False,
+        "coverage_scope": "actions_covered_by_bounded_turn_plan_candidates",
+        "covered_action_count": len(actions),
+        "candidate_first_actions": actions,
+        "limitations": [
+            "this is not a full legal action mask; it only covers first actions present in the bounded candidate plans",
+        ],
+    }
+
+
 def trace_plan_index(trace: dict[str, Any]) -> int:
     return int_value(trace.get("plan_index"), 10**9)
 
@@ -1332,7 +1368,7 @@ def episode_from_lab(
                 "frontier_value": initial_context.get("frontier_value"),
                 "enemy_slots": enemy_slots,
             },
-            "legal_action_mask": None,
+            "legal_action_mask": root_candidate_action_mask(traces),
         },
         "candidate_plans": traces,
         "root_tactical_context": context,
