@@ -176,6 +176,94 @@ def state_delta(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def step_tactical_delta(
+    facts: dict[str, Any] | None,
+    state_before: dict[str, Any] | None,
+    state_after: dict[str, Any] | None,
+) -> dict[str, Any]:
+    exact = as_dict(facts.get("exact_one_step_delta")) if isinstance(facts, dict) else {}
+    immediate = as_dict(facts.get("immediate")) if isinstance(facts, dict) else {}
+    mechanics = as_dict(facts.get("mechanics")) if isinstance(facts, dict) else {}
+    has_state_summary = isinstance(state_before, dict) and isinstance(state_after, dict)
+    summary_delta = state_delta(state_before or {}, state_after or {}) if has_state_summary else {}
+
+    hp_delta = summary_delta.get("player_hp", int_or_none(exact.get("player_hp_delta")))
+    block_delta = summary_delta.get("player_block", int_or_none(exact.get("player_block_delta")))
+    energy_delta = summary_delta.get("energy", int_or_none(exact.get("energy_delta")))
+    total_enemy_hp_delta = summary_delta.get(
+        "total_enemy_hp",
+        int_or_none(exact.get("total_enemy_hp_delta")),
+    )
+    living_enemy_delta = summary_delta.get("living_enemy_count")
+    incoming_before = (
+        int_or_none(state_before.get("visible_incoming_damage"))
+        if isinstance(state_before, dict)
+        else None
+    )
+    incoming_after = (
+        int_or_none(state_after.get("visible_incoming_damage"))
+        if isinstance(state_after, dict)
+        else None
+    )
+    incoming_delta = summary_delta.get("visible_incoming_damage")
+
+    return {
+        "data_role": "DerivedDeterministic" if exact or summary_delta else "Unavailable",
+        "availability": "AfterStep" if exact or summary_delta else "not_recorded",
+        "exact_one_step_delta": exact or None,
+        "state_summary_delta": summary_delta or None,
+        "player_delta": {
+            "hp_delta": hp_delta,
+            "hp_lost": max(0, -hp_delta) if isinstance(hp_delta, int) else None,
+            "block_delta": block_delta,
+        },
+        "resource_delta": {
+            "energy_delta": energy_delta,
+            "hand_delta": summary_delta.get("hand_count", int_or_none(exact.get("hand_delta"))),
+            "draw_delta": summary_delta.get("draw_count", int_or_none(exact.get("draw_delta"))),
+            "discard_delta": summary_delta.get(
+                "discard_count",
+                int_or_none(exact.get("discard_delta")),
+            ),
+            "exhaust_delta": summary_delta.get(
+                "exhaust_count",
+                int_or_none(exact.get("exhaust_delta")),
+            ),
+            "limbo_delta": summary_delta.get("limbo_count", int_or_none(exact.get("limbo_delta"))),
+            "queued_cards_delta": summary_delta.get(
+                "queued_cards_count",
+                int_or_none(exact.get("queued_cards_delta")),
+            ),
+        },
+        "enemy_delta": {
+            "total_hp_delta": total_enemy_hp_delta,
+            "total_hp_removed": max(0, -total_enemy_hp_delta)
+            if isinstance(total_enemy_hp_delta, int)
+            else None,
+            "total_block_delta": int_or_none(exact.get("total_enemy_block_delta")),
+            "living_enemy_count_delta": living_enemy_delta,
+            "enemy_kill_count_estimate": max(0, -living_enemy_delta)
+            if isinstance(living_enemy_delta, int)
+            else None,
+        },
+        "threat_delta": {
+            "incoming_before": incoming_before,
+            "incoming_after": incoming_after,
+            "incoming_delta": incoming_delta,
+            "incoming_removed": max(0, -incoming_delta) if isinstance(incoming_delta, int) else None,
+            "visible_attack_mitigation_hint": int_value(
+                mechanics.get("visible_attack_mitigation_hint")
+            ),
+        },
+        "action_effect_hints": {
+            "damage_hint": int_value(immediate.get("action_payload_damage_hint")),
+            "block_hint": int_value(immediate.get("block_hint")),
+            "target_progress_hint": int_value(immediate.get("target_progress_hint")),
+            "all_enemy_progress_hint": int_value(immediate.get("all_enemy_progress_hint")),
+        },
+    }
+
+
 def sum_exact_deltas(action_facts: list[dict[str, Any]]) -> dict[str, int]:
     fields = (
         "player_hp_delta",
@@ -277,7 +365,6 @@ def step_trace(
     state_before: dict[str, Any] | None = None,
     state_after: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    exact = as_dict(facts.get("exact_one_step_delta")) if isinstance(facts, dict) else {}
     has_state_summary = isinstance(state_before, dict) and isinstance(state_after, dict)
     state_before_summary_hash = hash_json(state_before) if isinstance(state_before, dict) else None
     state_after_summary_hash = hash_json(state_after) if isinstance(state_after, dict) else None
@@ -311,11 +398,7 @@ def step_trace(
             else "not_recorded_in_current_turn_plan_report"
         ),
         "action_facts": facts,
-        "tactical_delta": {
-            "data_role": "DerivedDeterministic" if exact else "Unavailable",
-            "availability": "AfterStep" if exact else "not_recorded",
-            "exact_one_step_delta": exact or None,
-        },
+        "tactical_delta": step_tactical_delta(facts, state_before, state_after),
     }
 
 

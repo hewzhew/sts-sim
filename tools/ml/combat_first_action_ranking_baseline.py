@@ -413,6 +413,8 @@ def turn_plan_feature_coverage(samples: list[dict[str, Any]]) -> dict[str, int]:
             coverage["with_steps"] += 1
         if steps and any(isinstance(step.get("action_facts"), dict) for step in steps):
             coverage["with_action_facts"] += 1
+        if steps and any(isinstance(step.get("tactical_delta"), dict) for step in steps):
+            coverage["with_tactical_delta"] += 1
         if plan.get("final_state_hash"):
             coverage["with_final_state_hash"] += 1
     return dict(coverage)
@@ -896,6 +898,13 @@ def add_turn_plan_action_fact_features(
     block_hint_total = 0
     mitigation_hint_total = 0
     reactive_bad_draw_total = 0
+    tactical_hp_lost_total = 0
+    tactical_enemy_hp_removed_total = 0
+    tactical_enemy_kill_estimate_total = 0
+    tactical_incoming_removed_total = 0
+    tactical_energy_delta_total = 0
+    tactical_draw_delta_total = 0
+    tactical_exhaust_delta_total = 0
     cost_total = 0
     upgraded_cards = 0
     exhaust_cards = 0
@@ -931,6 +940,38 @@ def add_turn_plan_action_fact_features(
         block_hint_total += numeric_or_zero(immediate.get("block_hint"))
         mitigation_hint_total += numeric_or_zero(mechanics.get("visible_attack_mitigation_hint"))
         reactive_bad_draw_total += numeric_or_zero(mechanics.get("reactive_bad_draw_cards"))
+        tactical_delta = (
+            step.get("tactical_delta") if isinstance(step.get("tactical_delta"), dict) else {}
+        )
+        player_delta = (
+            tactical_delta.get("player_delta")
+            if isinstance(tactical_delta.get("player_delta"), dict)
+            else {}
+        )
+        enemy_delta = (
+            tactical_delta.get("enemy_delta")
+            if isinstance(tactical_delta.get("enemy_delta"), dict)
+            else {}
+        )
+        threat_delta = (
+            tactical_delta.get("threat_delta")
+            if isinstance(tactical_delta.get("threat_delta"), dict)
+            else {}
+        )
+        resource_delta = (
+            tactical_delta.get("resource_delta")
+            if isinstance(tactical_delta.get("resource_delta"), dict)
+            else {}
+        )
+        tactical_hp_lost_total += numeric_or_zero(player_delta.get("hp_lost"))
+        tactical_enemy_hp_removed_total += numeric_or_zero(enemy_delta.get("total_hp_removed"))
+        tactical_enemy_kill_estimate_total += numeric_or_zero(
+            enemy_delta.get("enemy_kill_count_estimate")
+        )
+        tactical_incoming_removed_total += numeric_or_zero(threat_delta.get("incoming_removed"))
+        tactical_energy_delta_total += numeric_or_zero(resource_delta.get("energy_delta"))
+        tactical_draw_delta_total += numeric_or_zero(resource_delta.get("draw_delta"))
+        tactical_exhaust_delta_total += numeric_or_zero(resource_delta.get("exhaust_delta"))
         for name in (
             "player_hp_delta",
             "player_block_delta",
@@ -962,6 +1003,43 @@ def add_turn_plan_action_fact_features(
     add_number(features, "plan_action_facts_block_hint_total", block_hint_total, 120.0)
     add_number(features, "plan_action_facts_mitigation_hint_total", mitigation_hint_total, 120.0)
     add_number(features, "plan_action_facts_reactive_bad_draw_total", reactive_bad_draw_total, 20.0)
+    add_number(features, "plan_action_facts_tactical_hp_lost_total", tactical_hp_lost_total, 80.0)
+    add_number(
+        features,
+        "plan_action_facts_tactical_enemy_hp_removed_total",
+        tactical_enemy_hp_removed_total,
+        300.0,
+    )
+    add_number(
+        features,
+        "plan_action_facts_tactical_enemy_kill_estimate_total",
+        tactical_enemy_kill_estimate_total,
+        5.0,
+    )
+    add_number(
+        features,
+        "plan_action_facts_tactical_incoming_removed_total",
+        tactical_incoming_removed_total,
+        120.0,
+    )
+    add_number(
+        features,
+        "plan_action_facts_tactical_energy_delta_total",
+        tactical_energy_delta_total,
+        12.0,
+    )
+    add_number(
+        features,
+        "plan_action_facts_tactical_draw_delta_total",
+        tactical_draw_delta_total,
+        20.0,
+    )
+    add_number(
+        features,
+        "plan_action_facts_tactical_exhaust_delta_total",
+        tactical_exhaust_delta_total,
+        20.0,
+    )
     for name, value in exact_delta_sums.items():
         add_number(features, f"plan_action_facts_exact_sum:{name}", value, 300.0)
 
