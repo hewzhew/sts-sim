@@ -956,10 +956,24 @@ def add_turn_plan_tactical_summary_features(
         add_token(features, "root_tactical_context_no_hp_loss_candidate_exists")
     if root_context.get("no_potion_candidate_exists"):
         add_token(features, "root_tactical_context_no_potion_candidate_exists")
+    if root_context.get("lethal_candidate_exists"):
+        add_token(features, "root_tactical_context_lethal_candidate_exists")
+    if root_context.get("enemy_kill_candidate_exists"):
+        add_token(features, "root_tactical_context_enemy_kill_candidate_exists")
+    if root_context.get("threat_removal_candidate_exists"):
+        add_token(features, "root_tactical_context_threat_removal_candidate_exists")
+    if root_context.get("threat_removal_by_kill_candidate_exists"):
+        add_token(features, "root_tactical_context_threat_removal_by_kill_candidate_exists")
     if counterfactual.get("is_on_simple_pareto_frontier"):
         add_token(features, "plan_counterfactual_on_simple_pareto_frontier")
     if counterfactual.get("missed_no_hp_loss_candidate"):
         add_token(features, "plan_counterfactual_missed_no_hp_loss_candidate")
+    if counterfactual.get("missed_enemy_kill_candidate"):
+        add_token(features, "plan_counterfactual_missed_enemy_kill_candidate")
+    if counterfactual.get("missed_threat_removal_candidate"):
+        add_token(features, "plan_counterfactual_missed_threat_removal_candidate")
+    if counterfactual.get("missed_threat_removal_by_kill_candidate"):
+        add_token(features, "plan_counterfactual_missed_threat_removal_by_kill_candidate")
     if counterfactual.get("potion_used_when_no_potion_candidate_exists"):
         add_token(features, "plan_counterfactual_potion_used_when_no_potion_candidate_exists")
     for name, scale in (

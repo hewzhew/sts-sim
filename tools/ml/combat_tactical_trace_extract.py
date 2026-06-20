@@ -886,17 +886,31 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
     best_final_hp = max(final_hps) if final_hps else None
     no_hp_loss_candidate_exists = any(loss == 0 for loss in hp_losses)
     no_potion_candidate_exists = any(actions == 0 for actions in potion_actions)
+    terminal_win_plan_exists = any(
+        as_dict(trace.get("plan_summary")).get("all_enemies_dead_at_plan_boundary")
+        for trace in traces
+    )
+    enemy_kill_candidate_exists = any(kill_count > 0 for kill_count in kills)
+    threat_removal_candidate_exists = any(removed > 0 for removed in incoming_removed)
+    threat_removal_by_kill_candidate_exists = any(
+        removed > 0 for removed in incoming_removed_by_kill
+    )
     for trace in traces:
         summary = as_dict(trace.get("plan_summary"))
         outcome = as_dict(trace.get("outcome_attachment"))
         hp_loss = int_value(summary.get("hp_lost_to_plan_boundary"))
         plan_potion_actions = int_value(summary.get("potion_actions"))
+        plan_kills = int_value(summary.get("enemy_kill_count_to_plan_boundary"))
+        plan_incoming_removed = int_value(summary.get("visible_incoming_removed_to_plan_boundary"))
         counterfactual = {
             "data_role": "Counterfactual",
             "availability": "PostSearch",
             "candidate_set_scope": "same_root_bounded_turn_plan_candidates",
             "is_on_simple_pareto_frontier": trace.get("plan_id") in pareto,
             "missed_no_hp_loss_candidate": no_hp_loss_candidate_exists and hp_loss > 0,
+            "missed_enemy_kill_candidate": enemy_kill_candidate_exists and plan_kills == 0,
+            "missed_threat_removal_candidate": threat_removal_candidate_exists
+            and plan_incoming_removed == 0,
             "potion_used_when_no_potion_candidate_exists": no_potion_candidate_exists
             and plan_potion_actions > 0,
         }
@@ -923,6 +937,10 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
                 counterfactual["incoming_removed_by_kill_gap_vs_best_boundary"] = (
                     best_incoming_removed_by_kill - plan_incoming_removed_by_kill
                 )
+                counterfactual["missed_threat_removal_by_kill_candidate"] = (
+                    threat_removal_by_kill_candidate_exists
+                    and plan_incoming_removed_by_kill == 0
+                )
         if best_final_hp is not None and isinstance(outcome.get("final_hp"), int):
             counterfactual["final_hp_regret_vs_best_labeled"] = best_final_hp - outcome["final_hp"]
         trace["counterfactual"] = counterfactual
@@ -930,10 +948,11 @@ def root_tactical_context(traces: list[dict[str, Any]]) -> dict[str, Any]:
         "data_role": "Counterfactual",
         "availability": "PostSearch",
         "candidate_count": len(traces),
-        "terminal_win_plan_exists": any(
-            as_dict(trace.get("plan_summary")).get("all_enemies_dead_at_plan_boundary")
-            for trace in traces
-        ),
+        "terminal_win_plan_exists": terminal_win_plan_exists,
+        "lethal_candidate_exists": terminal_win_plan_exists,
+        "enemy_kill_candidate_exists": enemy_kill_candidate_exists,
+        "threat_removal_candidate_exists": threat_removal_candidate_exists,
+        "threat_removal_by_kill_candidate_exists": threat_removal_by_kill_candidate_exists,
         "complete_win_label_exists": any(outcome.get("complete_win") for outcome in outcomes),
         "no_hp_loss_to_boundary_candidate_exists": no_hp_loss_candidate_exists,
         "no_potion_candidate_exists": no_potion_candidate_exists,
@@ -1147,6 +1166,8 @@ def print_compact_cases(episodes: list[dict[str, Any]], case_limit: int) -> None
             f"candidates={context.get('candidate_count')} "
             f"best_hp_loss={context.get('best_hp_loss_to_boundary')} "
             f"best_enemy_removed={context.get('best_enemy_hp_removed_to_boundary')} "
+            f"threat_removal={context.get('threat_removal_candidate_exists')} "
+            f"kill={context.get('enemy_kill_candidate_exists')} "
             f"best_final_hp={context.get('best_final_hp_labeled')} "
             f"pareto={len(as_list(context.get('pareto_frontier_plan_ids')))}"
         )
@@ -1170,7 +1191,9 @@ def print_diagnostic_cases(episodes: list[dict[str, Any]], case_limit: int) -> N
             f"candidates={context.get('candidate_count')} "
             f"root_hp={root_state.get('player_hp')} "
             f"incoming={root_state.get('visible_incoming_damage')} "
-            f"enemy_hp={root_state.get('total_enemy_hp')}"
+            f"enemy_hp={root_state.get('total_enemy_hp')} "
+            f"threat_removal={context.get('threat_removal_candidate_exists')} "
+            f"kill={context.get('enemy_kill_candidate_exists')}"
         )
         for role_plan in as_list(contrast.get("role_plans")):
             if not isinstance(role_plan, dict):
@@ -1347,6 +1370,12 @@ def extract(
         context = as_dict(episode.get("root_tactical_context"))
         if context.get("no_hp_loss_to_boundary_candidate_exists"):
             counters["episodes_with_no_hp_loss_candidate"] += 1
+        if context.get("enemy_kill_candidate_exists"):
+            counters["episodes_with_enemy_kill_candidate"] += 1
+        if context.get("threat_removal_candidate_exists"):
+            counters["episodes_with_threat_removal_candidate"] += 1
+        if context.get("threat_removal_by_kill_candidate_exists"):
+            counters["episodes_with_threat_removal_by_kill_candidate"] += 1
         if context.get("complete_win_label_exists"):
             counters["episodes_with_complete_win_label"] += 1
         contrast = as_dict(episode.get("candidate_set_contrast"))
@@ -1387,6 +1416,15 @@ def extract(
         f"candidates={total_candidates_with_step_summary_refs}/{total_candidates}"
     )
     print(f"  episodes_with_no_hp_loss_candidate={counters['episodes_with_no_hp_loss_candidate']}")
+    print(f"  episodes_with_enemy_kill_candidate={counters['episodes_with_enemy_kill_candidate']}")
+    print(
+        "  episodes_with_threat_removal_candidate="
+        f"{counters['episodes_with_threat_removal_candidate']}"
+    )
+    print(
+        "  episodes_with_threat_removal_by_kill_candidate="
+        f"{counters['episodes_with_threat_removal_by_kill_candidate']}"
+    )
     print(f"  episodes_with_complete_win_label={counters['episodes_with_complete_win_label']}")
     print(
         "  first_plan_contrast="
