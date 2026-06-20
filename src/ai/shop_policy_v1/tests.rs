@@ -621,6 +621,54 @@ fn compiled_shop_branch_topk_returns_plan_alternatives() {
 }
 
 #[test]
+fn compiled_shop_branch_topk_preserves_distinct_card_purchase_lanes() {
+    let mut run_state = RunState::new(1, 20, false, "Ironclad");
+    run_state.floor_num = 11;
+    run_state.gold = 500;
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Warcry,
+        upgrades: 0,
+        price: 58,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.cards.push(ShopCard {
+        card_id: CardId::FeelNoPain,
+        upgrades: 0,
+        price: 76,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.relics.push(ShopRelic {
+        relic_id: RelicId::Orichalcum,
+        price: 163,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let compiled = compile_shop_decision_v1(
+        &context,
+        &ShopPolicyConfigV1::default(),
+        ShopCompileModeV1::BranchTopK { max_plans: 4 },
+    );
+    let branch_plan_ids = std::iter::once(&compiled.selected_plan)
+        .chain(compiled.alternatives.iter())
+        .flat_map(|plan| plan.candidate_ids.iter().map(String::as_str))
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert!(
+        branch_plan_ids.contains("shop:card-0"),
+        "draw/access card lane should not consume the only buy-card coverage slot"
+    );
+    assert!(
+        branch_plan_ids.contains("shop:card-1"),
+        "missing-ceiling card lane should remain branch-visible beside draw/access"
+    );
+}
+
+#[test]
 fn compiled_shop_stop_selection_is_also_a_plan_candidate() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 10;

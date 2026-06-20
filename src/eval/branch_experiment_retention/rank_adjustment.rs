@@ -13,7 +13,7 @@ use super::{
     BranchRetentionCandidateInputV1, BranchRetentionRankAdjustmentV1,
 };
 
-const SHOP_COVERAGE_ALTERNATIVE_PRIMARY_ACTIVE_PENALTY: i32 = -20_000;
+const SHOP_COVERAGE_ALTERNATIVE_ACTIVE_BIAS: i32 = -900;
 
 pub fn branch_retention_order_rank_key_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
     branch_retention_adjusted_rank_key_v1(candidate)
@@ -191,10 +191,11 @@ fn shop_plan_signal_rank_adjustment_v1(signal: &BranchExperimentChoiceDecisionSi
             evaluation_bonus.saturating_add(600).min(1_000)
         }
         BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1 => {
-            // Alternative shop plans are coverage probes. Keep them available in
-            // frozen, but do not let a faster auto-leave purchase line become a
-            // primary active branch ahead of the compiler-selected shop line.
-            SHOP_COVERAGE_ALTERNATIVE_PRIMARY_ACTIVE_PENALTY.saturating_add(evaluation_bonus)
+            // Alternative shop plans are coverage probes. Prefer the compiler-
+            // selected plan at the same frontier, but keep structurally valuable
+            // alternatives eligible for active exploration when the rest of the
+            // branch rank supports them.
+            SHOP_COVERAGE_ALTERNATIVE_ACTIVE_BIAS.saturating_add(evaluation_bonus)
         }
         _ => 0,
     }

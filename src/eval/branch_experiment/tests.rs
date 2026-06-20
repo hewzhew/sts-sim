@@ -1417,6 +1417,35 @@ fn branch_retention_consumes_only_unified_shop_plan_signal() {
 }
 
 #[test]
+fn branch_retention_keeps_shop_alternatives_as_soft_exploration_bias() {
+    let mut candidate = retention_candidate(0, BranchTrajectorySignatureV1::default());
+    candidate.rank_key = 1_000;
+    candidate.decision_signals = vec![BranchExperimentChoiceDecisionSignalV1 {
+        source: BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1.to_string(),
+        verdict: "Allow".to_string(),
+        tier: 330,
+        score: 1_879,
+        confidence_milli: 820,
+        component_net_rank: 71,
+        preferred: false,
+        acquisition_thesis_rank_adjustment: 0,
+        acquisition_thesis_summary: Vec::new(),
+    }];
+
+    let adjustment = branch_retention_rank_adjustment_v1(&candidate);
+
+    assert!(adjustment.shop_plan_adjustment < 0);
+    assert!(
+        adjustment.shop_plan_adjustment > -1_000,
+        "shop alternatives should remain active-eligible coverage probes, not be hard-exiled"
+    );
+    assert_eq!(
+        adjustment.effective_rank_key,
+        adjustment.base_rank_key + adjustment.shop_plan_adjustment
+    );
+}
+
+#[test]
 fn branch_retention_consumes_formation_need_match_as_bounded_rank_input() {
     let mut candidate = retention_candidate(0, BranchTrajectorySignatureV1::default());
     candidate.rank_key = 1_000;

@@ -7,6 +7,10 @@ use super::types::{
     ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
     ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
+use crate::ai::strategic::{
+    AcquisitionThesisRole, AcquisitionThesisStatus, CandidateDelta, CandidateRole,
+    StrategicDecisionTrace,
+};
 
 pub fn compile_shop_decision_v1(
     context: &ShopDecisionContextV1,
@@ -47,9 +51,13 @@ pub fn compile_shop_decision_v1(
     let selected_plan = select_evaluated_shop_plan_v1(&candidate_plans, mode);
     let alternatives = match mode {
         ShopCompileModeV1::ExecuteOne => Vec::new(),
-        ShopCompileModeV1::BranchTopK { max_plans } => {
-            evaluated_branch_alternatives_v1(context, &candidate_plans, max_plans, &selected_plan)
-        }
+        ShopCompileModeV1::BranchTopK { max_plans } => evaluated_branch_alternatives_v1(
+            context,
+            &strategic_trace,
+            &candidate_plans,
+            max_plans,
+            &selected_plan,
+        ),
     };
 
     CompiledShopDecisionV1 {
@@ -85,6 +93,7 @@ fn select_evaluated_shop_plan_v1(
 
 fn evaluated_branch_alternatives_v1(
     context: &ShopDecisionContextV1,
+    strategic_trace: &StrategicDecisionTrace,
     candidates: &[ShopPlanCandidateV1],
     max_plans: usize,
     selected_plan: &ShopPlanV1,
@@ -122,7 +131,11 @@ fn evaluated_branch_alternatives_v1(
         allow_candidates
     };
     alternatives.sort_by(|left, right| compare_branch_alternative_candidates_v1(left, right));
-    let alternatives = select_branch_alternatives_with_effect_coverage_v1(&alternatives, max_plans);
+    let alternatives = select_branch_alternatives_with_effect_coverage_v1(
+        strategic_trace,
+        &alternatives,
+        max_plans,
+    );
     alternatives
         .into_iter()
         .map(|candidate| plan_with_evaluation_v1(&candidate.plan, &candidate.evaluation))
@@ -154,6 +167,7 @@ fn shop_plan_is_context_card_purchase_v1(candidate: &ShopPlanCandidateV1) -> boo
 }
 
 fn select_branch_alternatives_with_effect_coverage_v1<'a>(
+    strategic_trace: &StrategicDecisionTrace,
     sorted_candidates: &[&'a ShopPlanCandidateV1],
     max_plans: usize,
 ) -> Vec<&'a ShopPlanCandidateV1> {
@@ -170,7 +184,14 @@ fn select_branch_alternatives_with_effect_coverage_v1<'a>(
         "shop_purge",
         "shop_buy_relic",
         "shop_buy_potion",
-        "shop_buy_card",
+        "shop_buy_card:boss_answer",
+        "shop_buy_card:missing_ceiling",
+        "shop_buy_card:scaling_engine",
+        "shop_buy_card:draw_access",
+        "shop_buy_card:exhaust_access",
+        "shop_buy_card:defense",
+        "shop_buy_card:frontload",
+        "shop_buy_card:generic",
         "shop_buy_combo",
         "shop_leave",
     ] {
@@ -178,7 +199,7 @@ fn select_branch_alternatives_with_effect_coverage_v1<'a>(
             break;
         }
         let Some(candidate) = sorted_candidates.iter().copied().find(|candidate| {
-            shop_plan_effect_kind_for_coverage_v1(&candidate.plan) == effect_kind
+            shop_plan_effect_kind_for_coverage_v1(strategic_trace, candidate) == effect_kind
                 && !represented.contains(&candidate.plan.plan_id)
         }) else {
             continue;
@@ -198,18 +219,160 @@ fn select_branch_alternatives_with_effect_coverage_v1<'a>(
     selected
 }
 
-fn shop_plan_effect_kind_for_coverage_v1(plan: &ShopPlanV1) -> &'static str {
+fn shop_plan_effect_kind_for_coverage_v1(
+    strategic_trace: &StrategicDecisionTrace,
+    candidate: &ShopPlanCandidateV1,
+) -> &'static str {
+    let plan = &candidate.plan;
     if plan.steps.len() > 1 {
         return "shop_buy_combo";
     }
     match plan.steps.first() {
-        Some(ShopPlanStepV1::BuyCard { .. }) => "shop_buy_card",
+        Some(ShopPlanStepV1::BuyCard { .. }) => shop_card_buy_coverage_lane_v1(
+            plan_delta_from_strategic_trace_v1(strategic_trace, plan),
+        ),
         Some(ShopPlanStepV1::BuyRelic { .. }) => "shop_buy_relic",
         Some(ShopPlanStepV1::BuyPotion { .. }) => "shop_buy_potion",
         Some(ShopPlanStepV1::RemoveCard { .. }) => "shop_purge",
         Some(ShopPlanStepV1::LeaveShop) => "shop_leave",
         None => "shop_stop",
     }
+}
+
+fn plan_delta_from_strategic_trace_v1<'a>(
+    strategic_trace: &'a StrategicDecisionTrace,
+    plan: &ShopPlanV1,
+) -> Option<&'a CandidateDelta> {
+    plan.candidate_ids
+        .iter()
+        .find_map(|candidate_id| {
+            strategic_trace
+                .candidate_deltas
+                .iter()
+                .find(|delta| delta.action.candidate_id() == *candidate_id)
+        })
+        .or_else(|| {
+            plan.steps.iter().find_map(|step| {
+                let step_id = shop_plan_step_action_candidate_id_v1(step)?;
+                strategic_trace
+                    .candidate_deltas
+                    .iter()
+                    .find(|delta| delta.action.candidate_id() == step_id)
+            })
+        })
+}
+
+fn shop_plan_step_action_candidate_id_v1(step: &ShopPlanStepV1) -> Option<String> {
+    match *step {
+        ShopPlanStepV1::BuyCard { index, card, .. } => {
+            Some(format!("shop:buy_card:{index}:{card:?}"))
+        }
+        ShopPlanStepV1::BuyRelic { index, relic, .. } => {
+            Some(format!("shop:buy_relic:{index}:{relic:?}"))
+        }
+        ShopPlanStepV1::BuyPotion { index, potion, .. } => {
+            Some(format!("shop:buy_potion:{index}:{potion:?}"))
+        }
+        ShopPlanStepV1::RemoveCard {
+            deck_index, card, ..
+        } => Some(format!("shop:remove:{deck_index}:{card:?}")),
+        ShopPlanStepV1::LeaveShop => Some("shop:leave".to_string()),
+    }
+}
+
+fn shop_card_buy_coverage_lane_v1(delta: Option<&CandidateDelta>) -> &'static str {
+    let Some(delta) = delta else {
+        return "shop_buy_card:generic";
+    };
+    if delta_has_thesis_v1(
+        delta,
+        AcquisitionThesisRole::BossSpecificAnswer,
+        &[
+            AcquisitionThesisStatus::Missing,
+            AcquisitionThesisStatus::Useful,
+        ],
+    ) {
+        return "shop_buy_card:boss_answer";
+    }
+    if delta_has_thesis_v1(
+        delta,
+        AcquisitionThesisRole::WinConditionOrCeiling,
+        &[AcquisitionThesisStatus::Missing],
+    ) {
+        return "shop_buy_card:missing_ceiling";
+    }
+    if delta_has_thesis_v1(
+        delta,
+        AcquisitionThesisRole::ScalingOrEngine,
+        &[
+            AcquisitionThesisStatus::Missing,
+            AcquisitionThesisStatus::Useful,
+        ],
+    ) {
+        return "shop_buy_card:scaling_engine";
+    }
+    if delta_has_thesis_v1(
+        delta,
+        AcquisitionThesisRole::DrawAccess,
+        &[
+            AcquisitionThesisStatus::Missing,
+            AcquisitionThesisStatus::Useful,
+        ],
+    ) || delta.role == CandidateRole::Lubricant
+    {
+        return "shop_buy_card:draw_access";
+    }
+    if delta_has_thesis_v1(
+        delta,
+        AcquisitionThesisRole::ExhaustAccess,
+        &[
+            AcquisitionThesisStatus::Missing,
+            AcquisitionThesisStatus::Useful,
+        ],
+    ) {
+        return "shop_buy_card:exhaust_access";
+    }
+    if delta_has_thesis_v1(
+        delta,
+        AcquisitionThesisRole::MitigationCoverage,
+        &[
+            AcquisitionThesisStatus::Missing,
+            AcquisitionThesisStatus::Useful,
+        ],
+    ) || delta_has_thesis_v1(
+        delta,
+        AcquisitionThesisRole::PlainBlock,
+        &[
+            AcquisitionThesisStatus::Missing,
+            AcquisitionThesisStatus::Useful,
+        ],
+    ) || matches!(delta.role, CandidateRole::DefensivePatch)
+    {
+        return "shop_buy_card:defense";
+    }
+    if delta_has_thesis_v1(
+        delta,
+        AcquisitionThesisRole::TransitionFrontload,
+        &[
+            AcquisitionThesisStatus::Missing,
+            AcquisitionThesisStatus::Useful,
+        ],
+    ) || matches!(delta.role, CandidateRole::Transition)
+    {
+        return "shop_buy_card:frontload";
+    }
+    "shop_buy_card:generic"
+}
+
+fn delta_has_thesis_v1(
+    delta: &CandidateDelta,
+    role: AcquisitionThesisRole,
+    statuses: &[AcquisitionThesisStatus],
+) -> bool {
+    delta
+        .acquisition_theses
+        .iter()
+        .any(|thesis| thesis.role == role && statuses.contains(&thesis.status))
 }
 
 fn compare_branch_alternative_candidates_v1(
