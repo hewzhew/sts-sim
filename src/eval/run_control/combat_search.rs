@@ -5,11 +5,13 @@ use crate::ai::combat_search_v2::{
     SearchTerminalLabel,
 };
 use crate::content::monsters::EnemyId;
+use crate::content::potions::PotionId;
 use crate::content::powers::{store, PowerId};
 use crate::sim::combat::{
     combat_terminal, CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal,
     EngineCombatStepper,
 };
+use crate::sim::combat_legal_actions::engine_local_moves;
 use crate::state::core::{EngineState, RunResult};
 
 use super::commands::{
@@ -69,6 +71,13 @@ pub(super) fn apply_search_combat(
             &config,
             &options,
             &report,
+            saved_evidence.as_deref(),
+            "no_complete_winning_candidate",
+        )? {
+            return Ok(outcome);
+        }
+        if let Some(outcome) = try_apply_smoke_bomb_survival_fallback_after_rejection(
+            session,
             saved_evidence.as_deref(),
             "no_complete_winning_candidate",
         )? {
@@ -251,6 +260,90 @@ fn try_apply_turn_segment_after_rejection(
         ]);
     outcome.search_evidence_path = saved_evidence.map(|path| path.to_path_buf());
     Ok(Some(outcome))
+}
+
+fn try_apply_smoke_bomb_survival_fallback_after_rejection(
+    session: &mut RunControlSession,
+    saved_evidence: Option<&std::path::Path>,
+    rejection_result: &'static str,
+) -> Result<Option<RunControlCommandOutcome>, String> {
+    let Some(active) = session.active_combat.as_ref() else {
+        return Ok(None);
+    };
+    let smoke_input = engine_local_moves(&active.engine_state, &active.combat_state)
+        .into_iter()
+        .find(|input| match input {
+            crate::state::core::ClientInput::UsePotion { potion_index, .. } => active
+                .combat_state
+                .entities
+                .potions
+                .get(*potion_index)
+                .and_then(|potion| potion.as_ref())
+                .is_some_and(|potion| potion.id == PotionId::SmokeBomb),
+            _ => false,
+        });
+    let Some(smoke_input) = smoke_input else {
+        return Ok(None);
+    };
+
+    let before_snapshot = RunVisibleSnapshot::capture(session);
+    let mut automation_actions = Vec::new();
+    let outcome = session.apply_input(smoke_input.clone())?;
+    automation_actions.push(CombatAutomationActionV1 {
+        step_index: 0,
+        action_key: "combat/use_smoke_bomb_survival".to_string(),
+        input: smoke_input,
+        drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
+        combat_after: combat_automation_step_state_v1(session),
+    });
+    if active_combat_is_waiting_for_smoke_escape_turn_end(session) {
+        let end_turn_outcome = session.apply_input(crate::state::core::ClientInput::EndTurn)?;
+        automation_actions.push(CombatAutomationActionV1 {
+            step_index: 1,
+            action_key: "combat/end_turn_after_smoke_bomb".to_string(),
+            input: crate::state::core::ClientInput::EndTurn,
+            drawn_cards: drawn_cards_from_action_result(end_turn_outcome.action_result.as_ref()),
+            combat_after: combat_automation_step_state_v1(session),
+        });
+    }
+    let after_snapshot = RunVisibleSnapshot::capture(session);
+    let status = current_run_apply_status(session);
+    let mut transition_label = format!(
+        "Smoke Bomb survival fallback after {rejection_result} (not a combat victory claim)"
+    );
+    if let Some(path) = saved_evidence.as_ref() {
+        transition_label.push_str(&format!(" saved_search={}", path.display()));
+    }
+    let action_result = action_result_from_transition(
+        TransitionAction {
+            label: transition_label,
+        },
+        &before_snapshot,
+        &after_snapshot,
+        status,
+    );
+    let message = format!(
+        "Search combat did not find a complete win; used Smoke Bomb as a survival fallback after {rejection_result}.{}\n{}\n{}",
+        render_saved_evidence_note(saved_evidence),
+        render_action_result(&action_result),
+        super::render::render_run_control_state(session)
+    );
+    let automation_record = CombatAutomationTrajectoryRecordV1::new(
+        "search_combat_smoke_bomb_survival",
+        automation_actions,
+    );
+    session.remember_combat_automation_trajectory(automation_record.clone());
+    let mut outcome = RunControlCommandOutcome::action(message, action_result)
+        .with_trace_annotations(vec![automation_record.into_annotation()]);
+    outcome.search_evidence_path = saved_evidence.map(|path| path.to_path_buf());
+    Ok(Some(outcome))
+}
+
+fn active_combat_is_waiting_for_smoke_escape_turn_end(session: &RunControlSession) -> bool {
+    session
+        .active_combat
+        .as_ref()
+        .is_some_and(|active| active.combat_state.turn.counters.player_escaping)
 }
 
 fn segment_mode_allows_turn_segment(
@@ -980,6 +1073,7 @@ mod tests {
         next_available_evidence_path, search_config, segment_mode_allows_turn_segment,
     };
     use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
+    use crate::content::potions::{Potion, PotionId};
     use crate::content::powers::{store, PowerId};
     use crate::eval::run_control::trace_annotation::{
         CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1, RunControlTraceAnnotationV1,
@@ -987,10 +1081,12 @@ mod tests {
     use crate::eval::run_control::{
         RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
     };
+    use crate::runtime::combat::CombatCard;
     use crate::state::core::{
         ActiveCombat, ClientInput, CombatContext, EngineState, RoomCombatContext,
     };
     use crate::state::map::node::RoomType;
+    use crate::state::rewards::RewardScreenContext;
 
     fn session_with_active_combat(
         mut combat: crate::runtime::combat::CombatState,
@@ -1094,6 +1190,62 @@ mod tests {
     ) {
         assert_eq!(options.potion_policy, expected_policy);
         assert_eq!(options.max_potions_used, expected_max_used);
+    }
+
+    #[test]
+    fn search_combat_uses_smoke_bomb_as_survival_fallback_when_no_win_exists() {
+        let mut combat = crate::test_support::blank_test_combat();
+        combat.entities.player.current_hp = 1;
+        combat.entities.player.max_hp = 80;
+        combat.turn.energy = 0;
+        combat.meta.is_boss_fight = false;
+        let mut jaw_worm =
+            crate::test_support::test_monster(crate::content::monsters::EnemyId::JawWorm);
+        jaw_worm.current_hp = 40;
+        jaw_worm.max_hp = 40;
+        let attack = crate::runtime::monster_move::MonsterMoveSpec::Attack(
+            crate::runtime::monster_move::AttackSpec {
+                base_damage: 10,
+                hits: 1,
+                damage_kind: crate::runtime::monster_move::DamageKind::Normal,
+            },
+        );
+        jaw_worm.set_planned_steps(attack.to_steps());
+        jaw_worm.set_planned_visible_spec(Some(attack));
+        combat.entities.monsters = vec![jaw_worm];
+        combat.zones.hand = vec![CombatCard::new(crate::content::cards::CardId::Defend, 1)];
+        combat.update_hand_cards();
+        combat.entities.potions = vec![Some(Potion::new(PotionId::SmokeBomb, 1))];
+        let mut session = RunControlSession::new(RunControlConfig::default());
+        session.engine_state = EngineState::CombatPlayerTurn;
+        session.active_combat = Some(ActiveCombat::new(
+            EngineState::CombatPlayerTurn,
+            combat,
+            CombatContext::Room(RoomCombatContext {
+                room_type: RoomType::MonsterRoom,
+            }),
+        ));
+
+        let outcome = super::try_apply_smoke_bomb_survival_fallback_after_rejection(
+            &mut session,
+            None,
+            "no_complete_winning_candidate",
+        )
+        .expect("fallback should not error")
+        .expect("search combat should allow smoke bomb survival fallback");
+
+        let EngineState::RewardScreen(rewards) = &session.engine_state else {
+            panic!(
+                "smoke bomb fallback should leave combat at reward screen, got {:?}",
+                session.engine_state
+            );
+        };
+        assert_eq!(rewards.screen_context, RewardScreenContext::SmokedCombat);
+        assert!(
+            outcome.message.contains("Smoke Bomb"),
+            "fallback outcome should be explicit, got: {}",
+            outcome.message
+        );
     }
 
     #[test]
