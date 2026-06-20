@@ -95,7 +95,7 @@ fn evaluate_single_candidate_v1(
         }
         ShopPolicyClassV1::Leave => ShopPlanEvaluationV1::stop("legacy shop leave candidate"),
         ShopPolicyClassV1::Unknown => ShopPlanEvaluationV1::block(
-            candidate.purchase_priority,
+            candidate.legacy_estimate,
             "shop evaluator does not mark unknown shop candidate rollout-eligible",
         ),
     }
@@ -121,7 +121,7 @@ fn evaluate_purchase_v1(
 ) -> ShopPlanEvaluationV1 {
     if candidate.support_gate != StrategyPlanSupportV1::Strong {
         return ShopPlanEvaluationV1::block(
-            candidate.purchase_priority,
+            candidate.legacy_estimate,
             format!(
                 "purchase support gate {:?} is not Strong",
                 candidate.support_gate
@@ -129,21 +129,21 @@ fn evaluate_purchase_v1(
         );
     }
     let Some(target) = candidate.purchase_target else {
-        return ShopPlanEvaluationV1::block(candidate.purchase_priority, "purchase target missing");
+        return ShopPlanEvaluationV1::block(candidate.legacy_estimate, "purchase target missing");
     };
     if let Some(reason) = blocking_purchase_risk_reason_v1(candidate) {
-        return ShopPlanEvaluationV1::block(candidate.purchase_priority, reason);
+        return ShopPlanEvaluationV1::block(candidate.legacy_estimate, reason);
     }
     if let ShopPurchaseTargetV1::Card { .. } = target {
         let Some(strategic_decision) = purchase_strategic_decision(target, strategic_trace) else {
             return ShopPlanEvaluationV1::block(
-                candidate.purchase_priority,
+                candidate.legacy_estimate,
                 "strategic trace has no shop card purchase decision",
             );
         };
         if !strategic_decision.verdict.allows_behavior_acquisition() {
             let evaluation = ShopPlanEvaluationV1::block(
-                candidate.purchase_priority,
+                candidate.legacy_estimate,
                 format!(
                     "strategic trace rejects shop purchase as rollout head verdict={:?} score={:.2}",
                     strategic_decision.verdict, strategic_decision.score
@@ -158,16 +158,16 @@ fn evaluate_purchase_v1(
             };
         }
         return strategic_purchase_evaluation_v1(
-            candidate.purchase_priority,
+            candidate.legacy_estimate,
             target,
             strategic_decision,
         );
     }
 
-    let Some(priority) = candidate.purchase_priority else {
+    let Some(priority) = candidate.legacy_estimate else {
         return ShopPlanEvaluationV1::block(None, "purchase legacy estimate missing");
     };
-    let threshold = purchase_priority_threshold(target, config);
+    let threshold = legacy_estimate_threshold(target, config);
     if config.allow_high_impact_purchase && priority >= threshold {
         return ShopPlanEvaluationV1::allow(
             300,
@@ -269,7 +269,7 @@ fn evaluate_portfolio_plan_v1(
                 .unwrap_or_else(|| "candidate blocked by unified shop gate".to_string());
             return ShopPlanEvaluationV1::block(
                 candidate
-                    .purchase_priority
+                    .legacy_estimate
                     .or(candidate_plan.plan.legacy_priority),
                 format!("portfolio step {candidate_id} failed shop branch admission: {reason}"),
             );
@@ -286,7 +286,7 @@ fn evaluate_portfolio_plan_v1(
         {
             return ShopPlanEvaluationV1::block(
                 candidate
-                    .purchase_priority
+                    .legacy_estimate
                     .or(candidate_plan.plan.legacy_priority),
                 format!(
                     "portfolio step {candidate_id} is a context card purchase; keep it as a single-step branch probe instead of a multi-buy combo"
@@ -493,13 +493,11 @@ fn purchase_tiebreaker(target: ShopPurchaseTargetV1) -> i32 {
     }
 }
 
-fn purchase_priority_threshold(target: ShopPurchaseTargetV1, config: &ShopPolicyConfigV1) -> i32 {
+fn legacy_estimate_threshold(target: ShopPurchaseTargetV1, config: &ShopPolicyConfigV1) -> i32 {
     match target {
-        ShopPurchaseTargetV1::Card { .. } => config.high_impact_card_purchase_priority_threshold,
-        ShopPurchaseTargetV1::Relic { .. } => config.high_impact_relic_purchase_priority_threshold,
-        ShopPurchaseTargetV1::Potion { .. } => {
-            config.high_impact_potion_purchase_priority_threshold
-        }
+        ShopPurchaseTargetV1::Card { .. } => config.high_impact_card_legacy_estimate_threshold,
+        ShopPurchaseTargetV1::Relic { .. } => config.high_impact_relic_legacy_estimate_threshold,
+        ShopPurchaseTargetV1::Potion { .. } => config.high_impact_potion_legacy_estimate_threshold,
     }
 }
 

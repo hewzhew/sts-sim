@@ -50,7 +50,7 @@ pub fn compile_shop_decision_v1(
     }
     let frontier = shop_plan_frontier_v1(&strategic_trace, &candidate_plans);
     let rollout_head = select_rollout_head_v1(&strategic_trace, &candidate_plans, mode);
-    let selected_plan = rollout_head
+    let compat_selected_plan = rollout_head
         .as_ref()
         .and_then(|projection| {
             plan_with_evaluation_by_id_v1(&candidate_plans, projection.plan_id.as_str())
@@ -64,9 +64,9 @@ pub fn compile_shop_decision_v1(
             branch_frontier_projection_v1(context, &strategic_trace, &candidate_plans, max_plans)
         }
     };
-    let alternatives = branch_frontier
+    let compat_alternatives = branch_frontier
         .iter()
-        .filter(|projection| projection.plan_id != selected_plan.plan_id)
+        .filter(|projection| projection.plan_id != compat_selected_plan.plan_id)
         .filter_map(|projection| {
             plan_with_evaluation_by_id_v1(&candidate_plans, projection.plan_id.as_str())
         })
@@ -76,8 +76,8 @@ pub fn compile_shop_decision_v1(
         frontier,
         rollout_head,
         branch_frontier,
-        selected_plan,
-        alternatives,
+        compat_selected_plan,
+        compat_alternatives,
         candidate_plans,
         strategic_trace,
         source: ShopDecisionSourceV1::PlanEvaluationCompiler,
@@ -141,7 +141,7 @@ fn branch_frontier_projection_v1(
                 && plan_has_leave_shop_step_v1(candidate)
         }));
     }
-    let mut alternatives = if allow_candidates.is_empty() {
+    let mut compat_alternatives = if allow_candidates.is_empty() {
         candidates
             .iter()
             .filter(|candidate| {
@@ -153,13 +153,14 @@ fn branch_frontier_projection_v1(
     } else {
         allow_candidates
     };
-    alternatives.sort_by(|left, right| compare_branch_alternative_candidates_v1(left, right));
-    let alternatives = select_branch_alternatives_with_effect_coverage_v1(
+    compat_alternatives
+        .sort_by(|left, right| compare_branch_alternative_candidates_v1(left, right));
+    let compat_alternatives = select_branch_compat_alternatives_with_effect_coverage_v1(
         strategic_trace,
-        &alternatives,
+        &compat_alternatives,
         max_plans,
     );
-    alternatives
+    compat_alternatives
         .into_iter()
         .map(|candidate| ShopPlanProjectionV1 {
             plan_id: candidate.plan.plan_id.clone(),
@@ -217,7 +218,7 @@ fn shop_plan_is_context_card_purchase_v1(candidate: &ShopPlanCandidateV1) -> boo
         )
 }
 
-fn select_branch_alternatives_with_effect_coverage_v1<'a>(
+fn select_branch_compat_alternatives_with_effect_coverage_v1<'a>(
     strategic_trace: &StrategicDecisionTrace,
     sorted_candidates: &[&'a ShopPlanCandidateV1],
     max_plans: usize,
@@ -553,7 +554,7 @@ pub(super) fn single_candidate_plan_v1(
         total_gold_spent,
         candidate_ids: vec![candidate.candidate_id.clone()],
         source,
-        legacy_priority: candidate.purchase_priority,
+        legacy_priority: candidate.legacy_estimate,
         legacy_confidence: None,
         suppressed_count: 0,
         reason: format!("legacy shop plan from {}", candidate.candidate_id),

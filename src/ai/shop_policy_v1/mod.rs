@@ -14,9 +14,10 @@ pub use compiler::{
     compile_shop_decision_v1, compiled_shop_decision_has_executable_conversion_branch_v1,
 };
 pub use conversion::{
-    build_shop_need_profile_v1, shop_card_conversion_priority_v1, shop_conversion_pressure_v1,
-    shop_potion_conversion_priority_for_v1, shop_potion_conversion_priority_v1,
-    shop_relic_conversion_priority_for_v1, shop_relic_conversion_priority_v1,
+    build_shop_need_profile_v1, legacy_shop_card_purchase_estimate_v1,
+    legacy_shop_potion_purchase_estimate_for_v1, legacy_shop_potion_purchase_estimate_v1,
+    legacy_shop_relic_purchase_estimate_for_v1, legacy_shop_relic_purchase_estimate_v1,
+    shop_conversion_pressure_v1,
 };
 pub use policy::{
     build_shop_decision_context_v1, shop_potion_purchase_block_reason_v1,

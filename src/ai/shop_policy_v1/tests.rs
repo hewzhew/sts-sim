@@ -4,11 +4,11 @@ use crate::ai::decision_tags_v1::{
     TAG_DIGEST_CAPACITY_STATUS, TAG_DIGEST_CAPACITY_TOPDECK,
 };
 use crate::ai::shop_policy_v1::{
-    build_shop_decision_context_v1, compile_shop_decision_v1, shop_card_conversion_priority_v1,
-    ShopCompileModeV1, ShopDecisionSourceV1, ShopPlanCandidateRoleV1, ShopPlanComponentKindV1,
-    ShopPlanKindV1, ShopPlanProjectionRoleV1, ShopPlanRolloutAdmissionStatusV1, ShopPlanSourceV1,
-    ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1,
-    ShopPurchaseTargetV1,
+    build_shop_decision_context_v1, compile_shop_decision_v1,
+    legacy_shop_card_purchase_estimate_v1, ShopCompileModeV1, ShopDecisionSourceV1,
+    ShopPlanCandidateRoleV1, ShopPlanComponentKindV1, ShopPlanKindV1, ShopPlanProjectionRoleV1,
+    ShopPlanRolloutAdmissionStatusV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1,
+    ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
 use crate::ai::strategic::{
     CandidateAction, PressureKind, StrategicBossTax, StrategicDebt, StrategicJob,
@@ -361,7 +361,7 @@ fn shop_policy_does_not_convert_high_gold_into_ordinary_relic_without_high_impac
         "ordinary relic purchases should not pass only because high gold creates conversion pressure"
     );
     assert!(
-        !compiled.selected_plan.steps.iter().any(|step| {
+        !compiled.compat_selected_plan.steps.iter().any(|step| {
             matches!(
                 step,
                 ShopPlanStepV1::BuyRelic {
@@ -371,7 +371,7 @@ fn shop_policy_does_not_convert_high_gold_into_ordinary_relic_without_high_impac
             )
         }),
         "selected shop plan should not buy ordinary Anchor solely under conversion pressure: {:?}",
-        compiled.selected_plan
+        compiled.compat_selected_plan
     );
 }
 
@@ -401,8 +401,8 @@ fn compiled_shop_decision_wraps_selected_relic_purchase_as_plan() {
         compiled.source,
         ShopDecisionSourceV1::PlanEvaluationCompiler
     );
-    assert_eq!(compiled.selected_plan.kind, ShopPlanKindV1::Execute);
-    assert_eq!(compiled.selected_plan.total_gold_spent, 146);
+    assert_eq!(compiled.compat_selected_plan.kind, ShopPlanKindV1::Execute);
+    assert_eq!(compiled.compat_selected_plan.total_gold_spent, 146);
     let relic_candidate_priority = context
         .candidates
         .iter()
@@ -413,13 +413,13 @@ fn compiled_shop_decision_wraps_selected_relic_purchase_as_plan() {
                     relic: RelicId::MedicalKit,
                 })
         })
-        .and_then(|candidate| candidate.purchase_priority);
+        .and_then(|candidate| candidate.legacy_estimate);
     assert_eq!(
-        compiled.selected_plan.legacy_priority,
+        compiled.compat_selected_plan.legacy_priority,
         relic_candidate_priority
     );
     assert_eq!(
-        compiled.selected_plan.steps,
+        compiled.compat_selected_plan.steps,
         vec![ShopPlanStepV1::BuyRelic {
             index: 0,
             relic: RelicId::MedicalKit,
@@ -429,7 +429,7 @@ fn compiled_shop_decision_wraps_selected_relic_purchase_as_plan() {
     assert!(compiled
         .candidate_plans
         .iter()
-        .any(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id));
+        .any(|candidate| candidate.plan.plan_id == compiled.compat_selected_plan.plan_id));
 }
 
 #[test]
@@ -501,7 +501,7 @@ fn shop_compiler_blocks_enemy_strength_relic_when_boss_pressure_flags_multi_hit_
     );
     assert!(
         !matches!(
-            compiled.selected_plan.steps.first(),
+            compiled.compat_selected_plan.steps.first(),
             Some(ShopPlanStepV1::BuyRelic {
                 relic: RelicId::Brimstone,
                 ..
@@ -516,7 +516,7 @@ fn shop_compiler_blocks_enemy_strength_relic_when_boss_pressure_flags_multi_hit_
         ShopCompileModeV1::BranchTopK { max_plans: 4 },
     );
     assert!(
-        branch_compiled.alternatives.iter().all(|plan| {
+        branch_compiled.compat_alternatives.iter().all(|plan| {
             !plan.steps.iter().any(|step| {
                 matches!(
                     step,
@@ -527,7 +527,7 @@ fn shop_compiler_blocks_enemy_strength_relic_when_boss_pressure_flags_multi_hit_
                 )
             })
         }),
-        "branch alternatives must not retain blocked boss-pressure purchases"
+        "branch compat_alternatives must not retain blocked boss-pressure purchases"
     );
 }
 
@@ -549,9 +549,9 @@ fn compiled_shop_decision_wraps_curse_purge_as_plan() {
         ShopCompileModeV1::ExecuteOne,
     );
 
-    assert_eq!(compiled.selected_plan.kind, ShopPlanKindV1::Execute);
+    assert_eq!(compiled.compat_selected_plan.kind, ShopPlanKindV1::Execute);
     assert_eq!(
-        compiled.selected_plan.steps,
+        compiled.compat_selected_plan.steps,
         vec![ShopPlanStepV1::RemoveCard {
             deck_index: 10,
             card: CardId::Doubt,
@@ -561,7 +561,7 @@ fn compiled_shop_decision_wraps_curse_purge_as_plan() {
 }
 
 #[test]
-fn compiled_shop_branch_topk_returns_plan_alternatives() {
+fn compiled_shop_branch_topk_returns_plan_compat_alternatives() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 500;
     let mut shop = ShopState::new();
@@ -592,9 +592,9 @@ fn compiled_shop_branch_topk_returns_plan_alternatives() {
         ShopCompileModeV1::BranchTopK { max_plans: 3 },
     );
 
-    assert!(!compiled.alternatives.is_empty());
+    assert!(!compiled.compat_alternatives.is_empty());
     assert!(!compiled.branch_frontier.is_empty());
-    assert!(compiled.alternatives.len() <= 3);
+    assert!(compiled.compat_alternatives.len() <= 3);
     assert!(compiled.branch_frontier.len() <= 3);
     assert_eq!(
         compiled.frontier.plans.len(),
@@ -606,24 +606,24 @@ fn compiled_shop_branch_topk_returns_plan_alternatives() {
         .iter()
         .map(|candidate| candidate.plan.plan_id.as_str())
         .collect::<std::collections::BTreeSet<_>>();
-    assert!(candidate_plan_ids.contains(compiled.selected_plan.plan_id.as_str()));
+    assert!(candidate_plan_ids.contains(compiled.compat_selected_plan.plan_id.as_str()));
     assert!(compiled
-        .alternatives
+        .compat_alternatives
         .iter()
         .all(|plan| { !plan.steps.is_empty() || matches!(plan.kind, ShopPlanKindV1::Stop) }));
     assert!(compiled
-        .alternatives
+        .compat_alternatives
         .iter()
         .all(|plan| candidate_plan_ids.contains(plan.plan_id.as_str())));
     assert!(
         compiled
-            .alternatives
+            .compat_alternatives
             .iter()
-            .all(|plan| plan.plan_id != compiled.selected_plan.plan_id),
-        "branch alternatives should not duplicate the selected shop plan"
+            .all(|plan| plan.plan_id != compiled.compat_selected_plan.plan_id),
+        "branch compat_alternatives should not duplicate the selected shop plan"
     );
     assert!(compiled
-        .alternatives
+        .compat_alternatives
         .iter()
         .any(|plan| plan.candidate_ids.iter().any(|id| id.starts_with("shop:"))));
     assert!(compiled.branch_frontier.iter().all(|projection| {
@@ -665,8 +665,8 @@ fn compiled_shop_branch_topk_preserves_distinct_card_purchase_lanes() {
         &ShopPolicyConfigV1::default(),
         ShopCompileModeV1::BranchTopK { max_plans: 4 },
     );
-    let branch_plan_ids = std::iter::once(&compiled.selected_plan)
-        .chain(compiled.alternatives.iter())
+    let branch_plan_ids = std::iter::once(&compiled.compat_selected_plan)
+        .chain(compiled.compat_alternatives.iter())
         .flat_map(|plan| plan.candidate_ids.iter().map(String::as_str))
         .collect::<std::collections::BTreeSet<_>>();
 
@@ -693,11 +693,11 @@ fn compiled_shop_stop_selection_is_also_a_plan_candidate() {
         ShopCompileModeV1::ExecuteOne,
     );
 
-    assert_eq!(compiled.selected_plan.kind, ShopPlanKindV1::Stop);
+    assert_eq!(compiled.compat_selected_plan.kind, ShopPlanKindV1::Stop);
     assert!(compiled
         .candidate_plans
         .iter()
-        .any(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id));
+        .any(|candidate| candidate.plan.plan_id == compiled.compat_selected_plan.plan_id));
 }
 
 #[test]
@@ -718,13 +718,13 @@ fn compiled_shop_branch_topk_uses_executable_leave_when_no_purchase_is_selected(
         ShopCompileModeV1::BranchTopK { max_plans: 4 },
     );
 
-    assert_eq!(execute.selected_plan.kind, ShopPlanKindV1::Stop);
+    assert_eq!(execute.compat_selected_plan.kind, ShopPlanKindV1::Stop);
     assert!(
-        execute.selected_plan.steps.is_empty(),
+        execute.compat_selected_plan.steps.is_empty(),
         "ordinary shop automation should remain conservative when no purchase is selected"
     );
     assert!(branch
-        .selected_plan
+        .compat_selected_plan
         .steps
         .iter()
         .any(|step| matches!(step, ShopPlanStepV1::LeaveShop)));
@@ -764,7 +764,7 @@ fn compiled_shop_decision_evaluates_every_candidate_plan() {
     let selected = compiled
         .candidate_plans
         .iter()
-        .find(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id)
+        .find(|candidate| candidate.plan.plan_id == compiled.compat_selected_plan.plan_id)
         .expect("selected plan must come from evaluated candidate plans");
     assert_eq!(selected.evaluation.verdict, ShopPlanVerdictV1::Allow);
     assert!(selected.evaluation.confidence > 0.0);
@@ -899,7 +899,7 @@ fn ordinary_affordable_purchase_does_not_block_starter_purge_plan() {
     );
 
     assert_eq!(
-        compiled.selected_plan.steps,
+        compiled.compat_selected_plan.steps,
         vec![ShopPlanStepV1::RemoveCard {
             deck_index: 0,
             card: CardId::Strike,
@@ -909,7 +909,7 @@ fn ordinary_affordable_purchase_does_not_block_starter_purge_plan() {
     let selected = compiled
         .candidate_plans
         .iter()
-        .find(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id)
+        .find(|candidate| candidate.plan.plan_id == compiled.compat_selected_plan.plan_id)
         .expect("selected plan should be a candidate");
     assert_eq!(selected.evaluation.verdict, ShopPlanVerdictV1::Allow);
     assert_plan_has_component(selected, ShopPlanComponentKindV1::DeckCleanup);
@@ -1047,7 +1047,7 @@ fn compiled_shop_candidate_pool_preserves_effect_coverage() {
 }
 
 #[test]
-fn compiled_shop_branch_alternatives_are_evaluated_plan_candidates() {
+fn compiled_shop_branch_compat_alternatives_are_evaluated_plan_candidates() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 500;
     let mut shop = ShopState::new();
@@ -1078,8 +1078,8 @@ fn compiled_shop_branch_alternatives_are_evaluated_plan_candidates() {
         ShopCompileModeV1::BranchTopK { max_plans: 3 },
     );
 
-    assert!(!compiled.alternatives.is_empty());
-    for alternative in &compiled.alternatives {
+    assert!(!compiled.compat_alternatives.is_empty());
+    for alternative in &compiled.compat_alternatives {
         let candidate = compiled
             .candidate_plans
             .iter()
@@ -1087,19 +1087,19 @@ fn compiled_shop_branch_alternatives_are_evaluated_plan_candidates() {
             .expect("alternative must be backed by an evaluated candidate plan");
         assert!(
             candidate.evaluation.branch_admission.is_admitted(),
-            "branch alternatives must come from branch admission, got {:?}",
+            "branch compat_alternatives must come from branch admission, got {:?}",
             candidate
         );
         assert!(
             candidate.evaluation.verdict == ShopPlanVerdictV1::Stop
                 || candidate.evaluation.score > 0,
-            "purchase branch alternatives should carry evaluator score"
+            "purchase branch compat_alternatives should carry evaluator score"
         );
     }
 }
 
 #[test]
-fn compiled_shop_branch_alternatives_suppress_leave_under_conversion_pressure() {
+fn compiled_shop_branch_compat_alternatives_suppress_leave_under_conversion_pressure() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.act_num = 2;
     run_state.floor_num = 21;
@@ -1138,7 +1138,7 @@ fn compiled_shop_branch_alternatives_suppress_leave_under_conversion_pressure() 
     );
 
     assert!(
-        compiled.alternatives.iter().all(|plan| {
+        compiled.compat_alternatives.iter().all(|plan| {
             !plan
                 .steps
                 .iter()
@@ -1149,7 +1149,7 @@ fn compiled_shop_branch_alternatives_suppress_leave_under_conversion_pressure() 
 }
 
 #[test]
-fn compiled_shop_branch_alternatives_are_not_limited_to_legacy_portfolio() {
+fn compiled_shop_branch_compat_alternatives_are_not_limited_to_legacy_portfolio() {
     let mut run_state = RunState::new(1, 0, false, "Ironclad");
     run_state.gold = 500;
     let mut shop = ShopState::new();
@@ -1180,7 +1180,7 @@ fn compiled_shop_branch_alternatives_are_not_limited_to_legacy_portfolio() {
         ShopCompileModeV1::BranchTopK { max_plans: 8 },
     );
     let alternative_roles = compiled
-        .alternatives
+        .compat_alternatives
         .iter()
         .filter_map(|plan| {
             compiled
@@ -1193,7 +1193,7 @@ fn compiled_shop_branch_alternatives_are_not_limited_to_legacy_portfolio() {
 
     assert!(
         alternative_roles.contains(&ShopPlanCandidateRoleV1::SingleAction),
-        "branch alternatives should come from the evaluated candidate pool, not only legacy portfolio candidates: {alternative_roles:?}"
+        "branch compat_alternatives should come from the evaluated candidate pool, not only legacy portfolio candidates: {alternative_roles:?}"
     );
 }
 
@@ -1254,7 +1254,7 @@ fn compiled_shop_branch_frontier_can_admit_non_rollout_thesis_candidate() {
             .branch_frontier
             .iter()
             .any(|projection| projection.plan_id == reaper_plan.plan.plan_id),
-        "branch projection should consume branch_admission, not verdict Allow"
+        "branch frontier should consume branch_admission, not verdict Allow"
     );
     assert!(
         compiled
@@ -1342,7 +1342,7 @@ fn compiled_shop_branch_candidate_plan_ids_are_unique() {
     assert_eq!(
         unique_ids.len(),
         compiled.candidate_plans.len(),
-        "plan ids must be unique so inspect and branch alternatives attach the correct evaluation"
+        "plan ids must be unique so inspect and branch compat_alternatives attach the correct evaluation"
     );
 }
 
@@ -1390,7 +1390,7 @@ fn compiled_shop_branch_portfolio_excludes_blocked_single_action_candidates() {
     assert_eq!(single.evaluation.verdict, ShopPlanVerdictV1::Block);
     assert!(
         blocked_portfolio.is_none(),
-        "portfolio alternatives are generated from evaluated Allow single-action candidates only"
+        "portfolio compat_alternatives are generated from evaluated Allow single-action candidates only"
     );
 }
 
@@ -1416,7 +1416,7 @@ fn compiled_shop_rollout_plan_can_be_multi_step_cleanup_plus_relic() {
     );
 
     assert!(
-        compiled.selected_plan.steps.iter().any(|step| {
+        compiled.compat_selected_plan.steps.iter().any(|step| {
             matches!(
                 step,
                 ShopPlanStepV1::RemoveCard {
@@ -1426,10 +1426,10 @@ fn compiled_shop_rollout_plan_can_be_multi_step_cleanup_plus_relic() {
             )
         }),
         "selected shop plan should retain the deck-cleaning step, got {:?}",
-        compiled.selected_plan
+        compiled.compat_selected_plan
     );
     assert!(
-        compiled.selected_plan.steps.iter().any(|step| {
+        compiled.compat_selected_plan.steps.iter().any(|step| {
             matches!(
                 step,
                 ShopPlanStepV1::BuyRelic {
@@ -1439,18 +1439,18 @@ fn compiled_shop_rollout_plan_can_be_multi_step_cleanup_plus_relic() {
             )
         }),
         "selected shop plan should include the high-value relic conversion, got {:?}",
-        compiled.selected_plan
+        compiled.compat_selected_plan
     );
     assert!(
-        compiled.selected_plan.steps.len() >= 2,
+        compiled.compat_selected_plan.steps.len() >= 2,
         "shop compiler should compare complete multi-step plans instead of forcing local single-step selection"
     );
     assert!(
         compiled
-            .alternatives
+            .compat_alternatives
             .iter()
-            .all(|plan| plan.plan_id != compiled.selected_plan.plan_id),
-        "branch alternatives should not duplicate the selected multi-step shop plan"
+            .all(|plan| plan.plan_id != compiled.compat_selected_plan.plan_id),
+        "branch compat_alternatives should not duplicate the selected multi-step shop plan"
     );
 }
 
@@ -1478,7 +1478,7 @@ fn compiled_shop_noncombat_record_keeps_complete_multi_step_command() {
     let selected_descriptor = record
         .candidates
         .iter()
-        .find(|candidate| candidate.candidate_id == compiled.selected_plan.plan_id)
+        .find(|candidate| candidate.candidate_id == compiled.compat_selected_plan.plan_id)
         .expect("selected shop plan should have a public candidate descriptor");
     let command = selected_descriptor
         .action_plan
@@ -1624,8 +1624,8 @@ fn shop_card_priority_does_not_apply_champ_boss_bonus_directly() {
     no_boss.boss_key = None;
 
     assert_eq!(
-        shop_card_conversion_priority_v1(CardId::Carnage, &run_state),
-        shop_card_conversion_priority_v1(CardId::Carnage, &no_boss),
+        legacy_shop_card_purchase_estimate_v1(CardId::Carnage, &run_state),
+        legacy_shop_card_purchase_estimate_v1(CardId::Carnage, &no_boss),
         "shop legacy purchase estimate must not encode The Champ transition-burst policy"
     );
 }
@@ -1642,8 +1642,8 @@ fn shop_card_priority_does_not_apply_champ_flex_bonus_directly() {
     no_boss.boss_key = None;
 
     assert_eq!(
-        shop_card_conversion_priority_v1(CardId::Flex, &run_state),
-        shop_card_conversion_priority_v1(CardId::Flex, &no_boss),
+        legacy_shop_card_purchase_estimate_v1(CardId::Flex, &run_state),
+        legacy_shop_card_purchase_estimate_v1(CardId::Flex, &no_boss),
         "Flex conversion potential must be modeled by shared strength/component profiles, not by a shop-local Champ bonus"
     );
 }
@@ -1670,12 +1670,12 @@ fn shop_chemical_x_priority_requires_existing_x_cost_payoff() {
     let chemical_x_with_payoff = shop_relic_candidate(&context_with_payoff, RelicId::ChemicalX);
 
     assert_eq!(
-        chemical_x_without_payoff.purchase_priority,
+        chemical_x_without_payoff.legacy_estimate,
         Some(0),
         "Chemical X should have no purchase estimate until the deck has an X-cost payoff"
     );
     assert_eq!(
-        chemical_x_with_payoff.purchase_priority,
+        chemical_x_with_payoff.legacy_estimate,
         Some(950),
         "Chemical X should keep high-impact shop priority when an X-cost payoff exists"
     );
@@ -1703,12 +1703,12 @@ fn shop_dollys_mirror_priority_requires_premium_duplicate_target() {
     let mirror_with_target = shop_relic_candidate(&context_with_target, RelicId::DollysMirror);
 
     assert_eq!(
-        mirror_without_target.purchase_priority,
+        mirror_without_target.legacy_estimate,
         Some(0),
         "Dolly's Mirror should have no high-impact shop estimate without a premium duplicate target"
     );
     assert_eq!(
-        mirror_with_target.purchase_priority,
+        mirror_with_target.legacy_estimate,
         Some(950),
         "Dolly's Mirror should keep high-impact shop priority when a premium duplicate target exists"
     );

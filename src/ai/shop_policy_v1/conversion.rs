@@ -79,7 +79,7 @@ pub fn shop_conversion_pressure_v1(run_state: &RunState, shop: &ShopState) -> bo
     run_state.act_num >= 2 && gold >= 250
 }
 
-pub fn shop_card_conversion_priority_v1(card: CardId, run_state: &RunState) -> i32 {
+pub fn legacy_shop_card_purchase_estimate_v1(card: CardId, run_state: &RunState) -> i32 {
     let mut priority = 250;
     if high_impact_shop_card(card) {
         priority += 450;
@@ -90,7 +90,7 @@ pub fn shop_card_conversion_priority_v1(card: CardId, run_state: &RunState) -> i
     priority
 }
 
-pub fn shop_relic_conversion_priority_v1(relic: RelicId) -> i32 {
+pub fn legacy_shop_relic_purchase_estimate_v1(relic: RelicId) -> i32 {
     if high_impact_shop_relic(relic) {
         950
     } else {
@@ -98,7 +98,7 @@ pub fn shop_relic_conversion_priority_v1(relic: RelicId) -> i32 {
     }
 }
 
-pub fn shop_relic_conversion_priority_for_v1(relic: RelicId, run_state: &RunState) -> i32 {
+pub fn legacy_shop_relic_purchase_estimate_for_v1(relic: RelicId, run_state: &RunState) -> i32 {
     if relic == RelicId::ChemicalX && !deck_has_x_cost_payoff_v1(run_state) {
         return 0;
     }
@@ -108,10 +108,10 @@ pub fn shop_relic_conversion_priority_for_v1(relic: RelicId, run_state: &RunStat
     {
         return 0;
     }
-    shop_relic_conversion_priority_v1(relic)
+    legacy_shop_relic_purchase_estimate_v1(relic)
 }
 
-pub fn shop_potion_conversion_priority_v1(run_state: &RunState) -> i32 {
+pub fn legacy_shop_potion_purchase_estimate_v1(run_state: &RunState) -> i32 {
     if run_state.act_num >= 2 {
         680
     } else {
@@ -119,8 +119,8 @@ pub fn shop_potion_conversion_priority_v1(run_state: &RunState) -> i32 {
     }
 }
 
-pub fn shop_potion_conversion_priority_for_v1(potion: PotionId, run_state: &RunState) -> i32 {
-    let mut priority = shop_potion_conversion_priority_v1(run_state);
+pub fn legacy_shop_potion_purchase_estimate_for_v1(potion: PotionId, run_state: &RunState) -> i32 {
+    let mut priority = legacy_shop_potion_purchase_estimate_v1(run_state);
     let near_serious_fight = run_state.act_num >= 2 || run_state.floor_num >= 6;
     if near_serious_fight && shop_potion_is_combat_patch_v1(potion) {
         priority += 260;
@@ -142,7 +142,7 @@ fn affordable_high_impact_shop_purchase(run_state: &RunState, shop: &ShopState) 
     shop.relics.iter().any(|relic| {
         relic.can_buy
             && relic.price <= gold
-            && shop_relic_conversion_priority_for_v1(relic.relic_id, run_state) >= 900
+            && legacy_shop_relic_purchase_estimate_for_v1(relic.relic_id, run_state) >= 900
     }) || shop.cards.iter().any(|card| {
         card.can_buy
             && card.price <= gold

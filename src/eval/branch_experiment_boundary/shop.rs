@@ -5,8 +5,7 @@ use crate::ai::shop_policy_v1::{
 use crate::content::cards::{get_card_definition, CardId};
 use crate::content::potions::get_potion_definition;
 use crate::eval::branch_experiment::{
-    BranchExperimentChoiceDecisionSignalV1,
-    BRANCH_EXPERIMENT_SHOP_BRANCH_PROJECTION_SIGNAL_SOURCE_V1,
+    BranchExperimentChoiceDecisionSignalV1, BRANCH_EXPERIMENT_SHOP_BRANCH_FRONTIER_SIGNAL_SOURCE_V1,
 };
 use crate::eval::run_control::RunControlSession;
 use crate::state::core::EngineState;
@@ -68,9 +67,11 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
         let evaluation = compiled
             .candidate_plans
             .iter()
-            .find(|candidate| candidate.plan.plan_id == compiled.selected_plan.plan_id)
+            .find(|candidate| candidate.plan.plan_id == compiled.compat_selected_plan.plan_id)
             .map(|candidate| &candidate.evaluation);
-        if let Some(option) = shop_branch_option_from_plan(&compiled.selected_plan, evaluation) {
+        if let Some(option) =
+            shop_branch_option_from_plan(&compiled.compat_selected_plan, evaluation)
+        {
             options.push(option);
         }
     }
@@ -104,7 +105,7 @@ fn shop_decision_signal_v1(
     evaluation: &ShopPlanEvaluationV1,
 ) -> BranchExperimentChoiceDecisionSignalV1 {
     BranchExperimentChoiceDecisionSignalV1 {
-        source: BRANCH_EXPERIMENT_SHOP_BRANCH_PROJECTION_SIGNAL_SOURCE_V1.to_string(),
+        source: BRANCH_EXPERIMENT_SHOP_BRANCH_FRONTIER_SIGNAL_SOURCE_V1.to_string(),
         verdict: format!("{:?}", evaluation.verdict),
         tier: evaluation.tier,
         score: evaluation.score,

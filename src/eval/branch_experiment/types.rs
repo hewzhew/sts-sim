@@ -294,12 +294,12 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
-pub const BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1: &str =
-    "shop_selected_plan_evaluation_v1";
+pub const BRANCH_EXPERIMENT_SHOP_COMPAT_SELECTED_PLAN_SIGNAL_SOURCE_V1: &str =
+    "shop_compat_selected_plan_evaluation_v1";
 pub const BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1: &str =
     "shop_plan_evaluation_v1";
-pub const BRANCH_EXPERIMENT_SHOP_BRANCH_PROJECTION_SIGNAL_SOURCE_V1: &str =
-    "shop_branch_projection_evaluation_v1";
+pub const BRANCH_EXPERIMENT_SHOP_BRANCH_FRONTIER_SIGNAL_SOURCE_V1: &str =
+    "shop_branch_frontier_evaluation_v1";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]

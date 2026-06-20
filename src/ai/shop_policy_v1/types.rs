@@ -64,7 +64,7 @@ pub struct ShopCandidateEvidenceV1 {
     pub purchase_target: Option<ShopPurchaseTargetV1>,
     /// Legacy purchase estimate retained as an input signal. This is not a
     /// final priority; rollout/frontier admission must go through ShopPlanEvaluation.
-    pub purchase_priority: Option<i32>,
+    pub legacy_estimate: Option<i32>,
     pub gold_cost: Option<i32>,
     pub support_gate: StrategyPlanSupportV1,
     pub evidence: Vec<String>,
@@ -95,9 +95,9 @@ pub struct ShopPolicyConfigV1 {
     pub allow_high_impact_purchase: bool,
     /// Legacy estimate thresholds for non-card purchases that do not yet have
     /// a richer strategic evaluator. These gates should shrink over time.
-    pub high_impact_card_purchase_priority_threshold: i32,
-    pub high_impact_relic_purchase_priority_threshold: i32,
-    pub high_impact_potion_purchase_priority_threshold: i32,
+    pub high_impact_card_legacy_estimate_threshold: i32,
+    pub high_impact_relic_legacy_estimate_threshold: i32,
+    pub high_impact_potion_legacy_estimate_threshold: i32,
 }
 
 impl Default for ShopPolicyConfigV1 {
@@ -106,9 +106,9 @@ impl Default for ShopPolicyConfigV1 {
             allow_curse_purge: true,
             allow_starter_strike_purge_when_core_plan_protected: true,
             allow_high_impact_purchase: true,
-            high_impact_card_purchase_priority_threshold: 650,
-            high_impact_relic_purchase_priority_threshold: 900,
-            high_impact_potion_purchase_priority_threshold: 780,
+            high_impact_card_legacy_estimate_threshold: 650,
+            high_impact_relic_legacy_estimate_threshold: 900,
+            high_impact_potion_legacy_estimate_threshold: 780,
         }
     }
 }
@@ -144,11 +144,11 @@ pub struct CompiledShopDecisionV1 {
     /// Compatibility projection for older single-action consumers. New code
     /// should read rollout_head/frontier instead of treating this as a claim
     /// that the plan is globally best.
-    pub selected_plan: ShopPlanV1,
+    pub compat_selected_plan: ShopPlanV1,
     /// Compatibility projection for older branch consumers. New branch code
     /// should read branch_frontier/frontier instead of assuming everything
-    /// not in selected_plan is merely an alternative.
-    pub alternatives: Vec<ShopPlanV1>,
+    /// not in compat_selected_plan is merely an alternative.
+    pub compat_alternatives: Vec<ShopPlanV1>,
     pub candidate_plans: Vec<ShopPlanCandidateV1>,
     pub strategic_trace: crate::ai::strategic::StrategicDecisionTrace,
     pub source: ShopDecisionSourceV1,
@@ -484,7 +484,7 @@ impl CompiledShopDecisionV1 {
                     .find(|candidate| candidate.plan.plan_id == projection.plan_id)
                     .map(|candidate| &candidate.plan)
             })
-            .unwrap_or(&self.selected_plan);
+            .unwrap_or(&self.compat_selected_plan);
         let selected_candidate_id = (rollout_plan.kind == ShopPlanKindV1::Execute
             && !rollout_plan.steps.is_empty())
         .then(|| rollout_plan.plan_id.clone());

@@ -1390,7 +1390,7 @@ fn branch_retention_consumes_only_unified_shop_plan_signal() {
             acquisition_thesis_summary: Vec::new(),
         },
         BranchExperimentChoiceDecisionSignalV1 {
-            source: BRANCH_EXPERIMENT_SHOP_SELECTED_PLAN_SIGNAL_SOURCE_V1.to_string(),
+            source: BRANCH_EXPERIMENT_SHOP_COMPAT_SELECTED_PLAN_SIGNAL_SOURCE_V1.to_string(),
             verdict: "Allow".to_string(),
             tier: 330,
             score: 1_879,

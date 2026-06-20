@@ -212,7 +212,7 @@ pub(super) fn render_checkpoint_shop_evidence_v1(
             candidate.class,
             candidate.support_gate,
             candidate
-                .purchase_priority
+                .legacy_estimate
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| "-".to_string()),
             compiled

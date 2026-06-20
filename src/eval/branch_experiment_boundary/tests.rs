@@ -511,7 +511,7 @@ fn current_boundary_caps_high_fanout_shop_purchase_choices() {
 }
 
 #[test]
-fn current_boundary_uses_compiled_shop_branch_projection() {
+fn current_boundary_uses_compiled_shop_branch_frontier() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.floor_num = 6;
     session.run_state.gold = 631;
@@ -554,8 +554,8 @@ fn current_boundary_uses_compiled_shop_branch_projection() {
             .decision_signal
             .as_ref()
             .is_some_and(|signal| signal.source
-                == crate::eval::branch_experiment::BRANCH_EXPERIMENT_SHOP_BRANCH_PROJECTION_SIGNAL_SOURCE_V1)),
-        "shop branch options should come from compiled branch projections"
+                == crate::eval::branch_experiment::BRANCH_EXPERIMENT_SHOP_BRANCH_FRONTIER_SIGNAL_SOURCE_V1)),
+        "shop branch options should come from compiled branch frontiers"
     );
     assert!(
         boundary
@@ -1104,7 +1104,7 @@ fn current_boundary_wraps_low_fanout_event_options() {
             .options
             .iter()
             .all(|option| option.effect_kind != "event_gain_curse"),
-        "Avoid-tier curse options should not enter branch campaign when safer alternatives exist"
+        "Avoid-tier curse options should not enter branch campaign when safer compat_alternatives exist"
     );
 }
 
@@ -1228,7 +1228,7 @@ fn current_boundary_classifies_gold_plus_curse_event_as_curse_debt() {
             .options
             .iter()
             .all(|option| !option.label.contains("Normality")),
-        "Avoid-tier curse options should be classified but pruned from branch campaign when alternatives exist"
+        "Avoid-tier curse options should be classified but pruned from branch campaign when compat_alternatives exist"
     );
 }
 

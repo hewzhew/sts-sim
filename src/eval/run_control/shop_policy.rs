@@ -27,7 +27,7 @@ pub(super) fn apply_shop_policy_action(
                 .find(|candidate| candidate.plan.plan_id == projection.plan_id)
                 .map(|candidate| &candidate.plan)
         })
-        .unwrap_or(&compiled.selected_plan);
+        .unwrap_or(&compiled.compat_selected_plan);
     let Some(step) = rollout_plan.steps.first() else {
         return Ok(None);
     };

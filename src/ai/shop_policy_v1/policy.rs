@@ -45,8 +45,10 @@ pub fn build_shop_decision_context_v1(
             index,
             card: card.card_id,
         };
-        let base_priority =
-            crate::ai::shop_policy_v1::shop_card_conversion_priority_v1(card.card_id, run_state);
+        let base_priority = crate::ai::shop_policy_v1::legacy_shop_card_purchase_estimate_v1(
+            card.card_id,
+            run_state,
+        );
         let analysis = shop_purchase_strategy_analysis_v1(target, run_state, &strategy, &strength);
         let priority = legacy_purchase_estimate_with_strategy(target, base_priority, &strategy);
         purchase_candidate_evidence(
@@ -74,7 +76,7 @@ pub fn build_shop_decision_context_v1(
             format!("buy relic {:?} for {} gold", relic.relic_id, relic.price),
             relic.can_buy && relic.price <= run_state.gold,
             target,
-            crate::ai::shop_policy_v1::shop_relic_conversion_priority_for_v1(
+            crate::ai::shop_policy_v1::legacy_shop_relic_purchase_estimate_for_v1(
                 relic.relic_id,
                 run_state,
             ),
@@ -100,7 +102,7 @@ pub fn build_shop_decision_context_v1(
             target,
             legacy_purchase_estimate_with_strategy(
                 target,
-                crate::ai::shop_policy_v1::shop_potion_conversion_priority_for_v1(
+                crate::ai::shop_policy_v1::legacy_shop_potion_purchase_estimate_for_v1(
                     potion.potion_id,
                     run_state,
                 ),
@@ -120,7 +122,7 @@ pub fn build_shop_decision_context_v1(
         card: None,
         same_card_count: 0,
         purchase_target: None,
-        purchase_priority: None,
+        legacy_estimate: None,
         gold_cost: None,
         support_gate: StrategyPlanSupportV1::Strong,
         evidence: leave_shop_evidence(&need, conversion_pressure),
@@ -288,7 +290,7 @@ fn purge_candidate_evidence(
         card: Some(card),
         same_card_count: run_state_same_card_count_from_plan(plan),
         purchase_target: None,
-        purchase_priority: None,
+        legacy_estimate: None,
         gold_cost: Some(purge_cost),
         support_gate,
         evidence,
@@ -329,7 +331,7 @@ fn purchase_candidate_evidence(
         },
         same_card_count,
         purchase_target: Some(target),
-        purchase_priority: Some(priority),
+        legacy_estimate: Some(priority),
         gold_cost: Some(price),
         support_gate: if can_buy {
             StrategyPlanSupportV1::Strong
