@@ -9,11 +9,13 @@ use crate::ai::shop_policy_v1::{
     ShopPlanKindV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1, ShopPlanVerdictV1,
     ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
-use crate::ai::strategic::{CandidateAction, PressureKind, StrategicBossTax, StrategicJob};
+use crate::ai::strategic::{
+    CandidateAction, PressureKind, StrategicBossTax, StrategicDebt, StrategicJob,
+};
 use crate::content::cards::CardId;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::PotionId;
-use crate::content::relics::RelicId;
+use crate::content::relics::{RelicId, RelicState};
 use crate::state::run::RunState;
 use crate::state::shop::{ShopCard, ShopPotion, ShopRelic, ShopState};
 
@@ -169,6 +171,42 @@ fn shop_strategic_trace_maps_buy_cards_by_semantic_jobs() {
     assert_delta_lacks_job(shrug, StrategicJob::Frontload);
     assert_delta_has_job(burning_pact, StrategicJob::DrawEnergy);
     assert_delta_has_job(burning_pact, StrategicJob::ExhaustAccess);
+}
+
+#[test]
+fn shop_snecko_high_cost_candidate_records_cost_conversion_delta() {
+    let mut run_state = RunState::new(1, 0, false, "Ironclad");
+    run_state.gold = 500;
+    run_state.relics.push(RelicState::new(RelicId::SneckoEye));
+    let mut shop = ShopState::new();
+    shop.cards.push(ShopCard {
+        card_id: CardId::Impervious,
+        upgrades: 0,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+    shop.cards.push(ShopCard {
+        card_id: CardId::ShrugItOff,
+        upgrades: 0,
+        price: 50,
+        can_buy: true,
+        blocked_reason: None,
+    });
+
+    let context = build_shop_decision_context_v1(&run_state, &shop);
+    let trace = crate::ai::strategic::strategic_trace_for_shop(&context);
+    let impervious = buy_card_delta(&trace, CardId::Impervious);
+    let shrug = buy_card_delta(&trace, CardId::ShrugItOff);
+
+    assert!(impervious.positive.iter().any(|delta| {
+        delta.reason == "snecko_high_cost_candidate_converts_random_cost_debt"
+            && delta.kind == PressureKind::DeckDebt(StrategicDebt::SetupDebt)
+    }));
+    assert!(!shrug
+        .positive
+        .iter()
+        .any(|delta| delta.reason == "snecko_high_cost_candidate_converts_random_cost_debt"));
 }
 
 #[test]

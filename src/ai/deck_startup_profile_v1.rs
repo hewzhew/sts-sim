@@ -379,6 +379,22 @@ pub fn startup_energy_candidate_discounted_by_snecko_v1(
         )
 }
 
+pub fn startup_snecko_cost_conversion_candidate_v1(
+    startup: &DeckStartupProfileV1,
+    candidate: CardId,
+) -> Option<&'static str> {
+    if !startup.has_snecko_eye || !startup.has_snecko_low_cost_volatility {
+        return None;
+    }
+
+    let cost = get_card_definition(candidate).cost;
+    if cost >= 2 {
+        Some("snecko_high_cost_candidate_converts_random_cost_debt")
+    } else {
+        None
+    }
+}
+
 fn is_setup_debt_card(card: CardId, upgrades: u8) -> bool {
     matches!(
         card,

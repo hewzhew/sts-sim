@@ -1,9 +1,10 @@
 use super::{
     add_run_debt_candidate_deltas_v1, add_run_debt_pressure_to_ledger,
-    add_startup_profile_pressure_to_ledger, compile_decision, ledger_from_snapshot,
-    CandidateAction, CandidateDelta, CandidateRole, LedgerDelta, OpportunityCost, PressureKind,
-    RunDebtCandidateSignalsV1, StrategicBossTax, StrategicDebt, StrategicDecisionSite,
-    StrategicDeckFacts, StrategicJob, StrategicRouteFacts, StrategicSnapshot, VerdictHint,
+    add_snecko_cost_conversion_delta_v1, add_startup_profile_pressure_to_ledger, compile_decision,
+    ledger_from_snapshot, CandidateAction, CandidateDelta, CandidateRole, LedgerDelta,
+    OpportunityCost, PressureKind, RunDebtCandidateSignalsV1, StrategicBossTax, StrategicDebt,
+    StrategicDecisionSite, StrategicDeckFacts, StrategicJob, StrategicRouteFacts,
+    StrategicSnapshot, VerdictHint,
 };
 use crate::ai::acquisition_saturation_v1::{
     apply_acquisition_saturation_to_delta_v1, evaluate_acquisition_saturation_v1,
@@ -355,6 +356,7 @@ fn add_candidate_startup_deltas(
         });
         delta.evidence.push(label.to_string());
     }
+    add_snecko_cost_conversion_delta_v1(delta, &context.startup, candidate.card);
 }
 
 fn startup_liability_kind(label: &str) -> PressureKind {

@@ -40,6 +40,43 @@ fn startup_profile_pressure_records_snecko_low_cost_volatility() {
 }
 
 #[test]
+fn card_reward_snecko_high_cost_candidate_records_cost_conversion_delta() {
+    let mut run_state = RunState::new(521, 0, false, "Ironclad");
+    run_state.relics.push(RelicState::new(RelicId::SneckoEye));
+    let context = build_card_reward_decision_context_v1(
+        &run_state,
+        vec![
+            RewardCard::new(CardId::Impervious, 0),
+            RewardCard::new(CardId::ShrugItOff, 0),
+        ],
+        None,
+    );
+
+    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
+    let impervious_delta = decision
+        .strategic_trace
+        .candidate_deltas
+        .iter()
+        .find(|delta| delta.action.candidate_id().contains("Impervious"))
+        .expect("Impervious candidate should have a strategic delta");
+    let shrug_delta = decision
+        .strategic_trace
+        .candidate_deltas
+        .iter()
+        .find(|delta| delta.action.candidate_id().contains("ShrugItOff"))
+        .expect("Shrug It Off candidate should have a strategic delta");
+
+    assert!(impervious_delta.positive.iter().any(|delta| {
+        delta.reason == "snecko_high_cost_candidate_converts_random_cost_debt"
+            && delta.kind == PressureKind::DeckDebt(StrategicDebt::SetupDebt)
+    }));
+    assert!(!shrug_delta
+        .positive
+        .iter()
+        .any(|delta| delta.reason == "snecko_high_cost_candidate_converts_random_cost_debt"));
+}
+
+#[test]
 fn card_reward_shadow_trace_covers_each_candidate_with_delta() {
     let run_state = RunState::new(521, 0, false, "Ironclad");
     let context = build_card_reward_decision_context_v1(

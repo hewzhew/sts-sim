@@ -1,7 +1,11 @@
-use super::{CandidateAction, PressureKind};
+use super::{CandidateAction, PressureKind, StrategicDebt};
 use crate::ai::card_component_marginal_value_v1::{
     CardComponentMarginalReportV1, CardComponentMarginalVerdictV1,
 };
+use crate::ai::deck_startup_profile_v1::{
+    startup_snecko_cost_conversion_candidate_v1, DeckStartupProfileV1,
+};
+use crate::content::cards::CardId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -168,6 +172,33 @@ impl CandidateDelta {
                 .map(|contraindication| contraindication.severity * 2.0)
                 .sum::<f32>()
     }
+}
+
+pub fn add_snecko_cost_conversion_delta_v1(
+    delta: &mut CandidateDelta,
+    startup: &DeckStartupProfileV1,
+    candidate: CardId,
+) {
+    let Some(reason) = startup_snecko_cost_conversion_candidate_v1(startup, candidate) else {
+        return;
+    };
+
+    if !delta.positive.iter().any(|entry| entry.reason != reason) {
+        delta.notes.push(format!(
+            "{reason}:candidate_has_no_positive_function_signal"
+        ));
+        return;
+    }
+    if delta.positive.iter().any(|entry| entry.reason == reason) {
+        return;
+    }
+
+    delta.positive.push(LedgerDelta {
+        kind: PressureKind::DeckDebt(StrategicDebt::SetupDebt),
+        amount: 0.35,
+        reason: reason.to_string(),
+    });
+    delta.evidence.push(reason.to_string());
 }
 
 fn component_verdict(verdict: CardComponentMarginalVerdictV1) -> VerdictHint {
