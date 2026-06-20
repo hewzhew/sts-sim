@@ -58,6 +58,7 @@ fn plan_combat_turn_segment_with_stepper_v1(
         per_bucket_limit: 4,
         potion_policy: CombatSearchV2PotionPolicy::Never,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
+        turn_plan_prior: config.turn_plan_prior.clone(),
     };
     let enumeration = enumerate_turn_plans(&root, stepper, &turn_config, None);
     let selected = enumeration

@@ -13,6 +13,7 @@ use crate::test_support::{blank_test_combat, test_monster};
 enum TestTurnMode {
     PlayThenEnd,
     DirectNextTurnOutcomes,
+    EqualNextTurnOutcomes,
     DangerRepairOutcomes,
 }
 
@@ -41,6 +42,17 @@ impl CombatStepper for TestTurnStepper {
                 actions
             }
             TestTurnMode::DirectNextTurnOutcomes => position
+                .combat
+                .zones
+                .hand
+                .iter()
+                .enumerate()
+                .map(|(card_index, _)| ClientInput::PlayCard {
+                    card_index,
+                    target: Some(1),
+                })
+                .collect(),
+            TestTurnMode::EqualNextTurnOutcomes => position
                 .combat
                 .zones
                 .hand
@@ -86,6 +98,9 @@ impl CombatStepper for TestTurnStepper {
             }
             (TestTurnMode::DirectNextTurnOutcomes, ClientInput::PlayCard { card_index, .. }) => {
                 apply_direct_outcome(card_index, &mut combat);
+            }
+            (TestTurnMode::EqualNextTurnOutcomes, ClientInput::PlayCard { card_index, .. }) => {
+                apply_equal_outcome(card_index, &mut combat);
             }
             (TestTurnMode::DangerRepairOutcomes, ClientInput::PlayCard { card_index, .. }) => {
                 apply_danger_repair_outcome(card_index, &mut combat);
@@ -155,6 +170,49 @@ fn turn_planner_uses_combat_eval_to_rank_stable_progress_over_hp_stall() {
         best.actions[0].input,
         ClientInput::PlayCard { card_index: 1, .. }
     ));
+}
+
+#[test]
+fn turn_plan_prior_reorders_equal_eval_plans_without_pruning() {
+    let root = test_node(test_combat_with_hand(2));
+    let root_hash = combat_exact_state_hash_v1(&root.engine, &root.combat);
+    let preferred_action_key = "combat/play_card/hand:1/card:Bash+0#11/target:monster_slot:0";
+    let other_action_key = "combat/play_card/hand:0/card:Strike_R+0#10/target:monster_slot:0";
+    let plans = enumerate_turn_plans(
+        &root,
+        &TestTurnStepper {
+            mode: TestTurnMode::EqualNextTurnOutcomes,
+        },
+        &TurnPlannerConfigV1 {
+            turn_plan_prior: Some(CombatSearchV2TurnPlanPrior::from_plan_scores([(
+                root_hash,
+                [
+                    (vec![preferred_action_key.to_string()], 0.9),
+                    (vec![other_action_key.to_string()], 0.1),
+                ],
+            )])),
+            ..TurnPlannerConfigV1::default()
+        },
+        None,
+    );
+
+    assert_eq!(plans.preselection_plan_count, 2);
+    assert_eq!(
+        plans
+            .plans
+            .iter()
+            .map(|plan| plan.actions[0].action_key.as_str())
+            .collect::<Vec<_>>(),
+        vec![preferred_action_key, other_action_key]
+    );
+    assert_eq!(plans.turn_plan_prior_scored_plans, 2);
+    let best = plans.plans.first().expect("plans should be generated");
+    assert_eq!(
+        best.actions
+            .first()
+            .map(|action| action.action_key.as_str()),
+        Some(preferred_action_key)
+    );
 }
 
 #[test]
@@ -270,6 +328,14 @@ fn apply_direct_outcome(card_index: usize, combat: &mut CombatState) {
         }
         _ => {}
     }
+    combat.turn.turn_count = combat.turn.turn_count.saturating_add(1);
+}
+
+fn apply_equal_outcome(card_index: usize, combat: &mut CombatState) {
+    move_hand_card_to_discard(card_index, combat);
+    combat.entities.player.current_hp = 60;
+    combat.entities.player.block = 10;
+    combat.entities.monsters[0].current_hp = 100;
     combat.turn.turn_count = combat.turn.turn_count.saturating_add(1);
 }
 

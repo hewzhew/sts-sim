@@ -555,6 +555,7 @@ fn seed_turn_plan_frontier(
         .turn_plan_frontier_seed_elapsed_us
         .saturating_add(seed_started.elapsed().as_micros());
     diagnostics.observe_turn_plan_frontier_seeded_nodes(seeded_nodes.nodes.len());
+    diagnostics.observe_turn_plan_prior_scored_plans(seeded_nodes.turn_plan_prior_scored_plans);
     for mut seed in seeded_nodes.nodes.drain(..) {
         seed.rollout_estimate =
             if terminal_label(&seed.engine, &seed.combat) == SearchTerminalLabel::Unresolved {

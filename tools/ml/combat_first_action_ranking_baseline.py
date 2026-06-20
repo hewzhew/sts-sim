@@ -731,6 +731,16 @@ def candidate_action_key(sample: dict[str, Any]) -> str:
     return str(cand.get("action_key") or "")
 
 
+def candidate_action_keys(sample: dict[str, Any]) -> list[str]:
+    cand = candidate(sample)
+    action_keys = cand.get("action_keys") if isinstance(cand.get("action_keys"), list) else []
+    keys = [str(key) for key in action_keys if str(key)]
+    if keys:
+        return keys
+    first = candidate_action_key(sample)
+    return [first] if first else []
+
+
 def sample_ordered_index(sample: dict[str, Any]) -> int:
     cand = candidate(sample)
     if is_turn_plan_sample(sample):
@@ -2549,6 +2559,80 @@ def prior_hint_records_from_scores(
     return records
 
 
+def turn_plan_prior_hint_records_from_scores(
+    groups: dict[str, list[dict[str, Any]]],
+    group_scores: dict[str, list[float]],
+    *,
+    target_mode: str,
+    model_id: str,
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for group_key, group in sorted(groups.items()):
+        scores = group_scores.get(group_key) or []
+        if len(scores) != len(group) or not group:
+            continue
+        by_plan: dict[tuple[str, ...], dict[str, Any]] = {}
+        for index, (sample, score) in enumerate(zip(group, scores)):
+            action_keys = candidate_action_keys(sample)
+            if not action_keys:
+                continue
+            plan = candidate(sample)
+            plan_index = plan.get("plan_index")
+            plan_key = tuple(action_keys)
+            entry = by_plan.setdefault(
+                plan_key,
+                {
+                    "action_keys": action_keys,
+                    "score": float(score),
+                    "candidate_count": 0,
+                    "candidate_indices": [],
+                    "plan_indices": [],
+                    "best_candidate_index": index,
+                    "best_final_hp": candidate_final_hp(sample),
+                    "best_terminal": candidate_terminal_signature(sample)[1],
+                    "best_complete_win": candidate_complete_win(sample),
+                },
+            )
+            entry["candidate_count"] += 1
+            entry["candidate_indices"].append(index)
+            if isinstance(plan_index, int):
+                entry["plan_indices"].append(plan_index)
+            if float(score) > entry["score"]:
+                entry["score"] = float(score)
+                entry["best_candidate_index"] = index
+                entry["best_final_hp"] = candidate_final_hp(sample)
+                entry["best_terminal"] = candidate_terminal_signature(sample)[1]
+                entry["best_complete_win"] = candidate_complete_win(sample)
+        hints = sorted(
+            by_plan.values(),
+            key=lambda entry: (-entry["score"], entry["action_keys"]),
+        )
+        if not hints:
+            continue
+        positives = positive_target_indices(group, target_mode)
+        source = group[0].get("source") if isinstance(group[0].get("source"), dict) else {}
+        records.append(
+            {
+                "schema_name": "CombatTurnPlanPriorHintV0",
+                "model_id": model_id,
+                "target_mode": target_mode,
+                "group_key": group_key,
+                "source_file": source.get("source_file") or source.get("file"),
+                "root_exact_state_hash": root_exact_state_hash_for_group(group),
+                "candidate_count": len(group),
+                "turn_plan_hint_count": len(hints),
+                "positive_target_candidate_indices": positives,
+                "turn_plan_prior_hints": hints,
+                "limitations": [
+                    "offline_prior_scores_for_turn_plan_ordering_only_not_pruning",
+                    "scores_are_comparable_only_within_the_same_root_state",
+                    "action_sequence_keys_are_stable_only_for_the_same_exact_root_state",
+                ],
+            }
+        )
+    return records
+
+
 def selected_indices_for_scores(
     group: list[dict[str, Any]], scores: list[float]
 ) -> tuple[int, int, int | None]:
@@ -3136,6 +3220,15 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--turn-plan-prior-hints-jsonl-out",
+        type=Path,
+        default=None,
+        help=(
+            "Optional JSONL output of per-root turn-plan sequence prior hints from the evaluated model. "
+            "These hints reorder bounded turn-plan candidates only; they are not pruning decisions."
+        ),
+    )
+    parser.add_argument(
         "--show-cases",
         type=int,
         default=0,
@@ -3289,7 +3382,11 @@ def main() -> None:
             feature_groups=feature_groups,
             target_mode=target_mode,
             training_mode=training_mode,
-            return_scores=args.show_cases > 0 or args.prior_hints_jsonl_out is not None,
+            return_scores=(
+                args.show_cases > 0
+                or args.prior_hints_jsonl_out is not None
+                or args.turn_plan_prior_hints_jsonl_out is not None
+            ),
         )
         ordered_metrics = evaluate_ordered_index(groups, target_mode=target_mode)
         summary["split"] = {
@@ -3332,6 +3429,30 @@ def main() -> None:
                 ),
                 "limitations": [
                     "offline_out_of_fold_prior_scores_for_ordering_only_not_pruning",
+                ],
+            }
+        if args.turn_plan_prior_hints_jsonl_out is not None:
+            turn_plan_prior_records = turn_plan_prior_hint_records_from_scores(
+                groups,
+                cv_scores,
+                target_mode=target_mode,
+                model_id=(
+                    "source_cv:"
+                    f"training={training_mode}:target={target_mode}:"
+                    f"features={','.join(sorted(feature_groups)) or 'base'}"
+                ),
+            )
+            write_prior_hints_jsonl(args.turn_plan_prior_hints_jsonl_out, turn_plan_prior_records)
+            summary["turn_plan_prior_hints"] = {
+                "schema_name": "CombatTurnPlanPriorHintBatchV0",
+                "path": str(args.turn_plan_prior_hints_jsonl_out),
+                "record_count": len(turn_plan_prior_records),
+                "turn_plan_hint_count": sum(
+                    len(record.get("turn_plan_prior_hints", []))
+                    for record in turn_plan_prior_records
+                ),
+                "limitations": [
+                    "offline_out_of_fold_prior_scores_for_turn_plan_ordering_only_not_pruning",
                 ],
             }
         if args.compare_feature_groups:

@@ -162,6 +162,7 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
             .unwrap_or(TURN_PLAN_PROBE_PER_BUCKET_LIMIT),
         potion_policy: config.potion_policy,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
+        turn_plan_prior: config.turn_plan_prior.clone(),
     };
     let enumeration = enumerate_turn_plans(&root, &EngineCombatStepper, &turn_config, None);
     let position = CombatPosition::new(engine.clone(), combat.clone());

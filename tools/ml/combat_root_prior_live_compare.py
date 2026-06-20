@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-"""Run live A/B comparisons for CombatRootActionPriorHintV0 ordering hints.
+"""Run live A/B comparisons for combat prior ordering hints.
 
 This is intentionally a driver wrapper, not a trainer.  It answers a narrow
-question: when the Rust search consumes root action prior hints, do the hints
-actually hit states, and do search-level outcomes move under the same budget?
+question: when the Rust search consumes offline prior hints, do the hints
+actually hit states/plans, and do search-level outcomes move under the same
+budget?
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ def summarize_driver_report_pair(
 
     prior_scored_states = 0
     prior_scored_actions = 0
+    turn_plan_prior_scored_plans = 0
     baseline_complete = 0
     prior_complete = 0
     baseline_nodes = 0
@@ -43,8 +45,12 @@ def summarize_driver_report_pair(
     for baseline_case, prior_case in pairs:
         baseline_ordering = (baseline_case.get("diagnostics") or {}).get("ordering") or {}
         prior_ordering = (prior_case.get("diagnostics") or {}).get("ordering") or {}
+        prior_turn_plan = (prior_case.get("diagnostics") or {}).get("turn_plan") or {}
         prior_scored_states += int(prior_ordering.get("root_action_prior_scored_states") or 0)
         prior_scored_actions += int(prior_ordering.get("root_action_prior_scored_actions") or 0)
+        turn_plan_prior_scored_plans += int(
+            prior_turn_plan.get("turn_plan_prior_scored_plans") or 0
+        )
 
         baseline_complete += int(
             bool((baseline_case.get("outcome") or {}).get("complete_trajectory_found"))
@@ -93,6 +99,9 @@ def summarize_driver_report_pair(
                 "prior_scored_actions": int(
                     prior_ordering.get("root_action_prior_scored_actions") or 0
                 ),
+                "turn_plan_prior_scored_plans": int(
+                    prior_turn_plan.get("turn_plan_prior_scored_plans") or 0
+                ),
                 "baseline_complete_found": bool(
                     (baseline_case.get("outcome") or {}).get("complete_trajectory_found")
                 ),
@@ -125,6 +134,7 @@ def summarize_driver_report_pair(
         "prior_case_count": len(prior_cases),
         "prior_scored_states": prior_scored_states,
         "prior_scored_actions": prior_scored_actions,
+        "turn_plan_prior_scored_plans": turn_plan_prior_scored_plans,
         "baseline_complete_found": baseline_complete,
         "prior_complete_found": prior_complete,
         "complete_found_delta": prior_complete - baseline_complete,
@@ -151,6 +161,7 @@ def summarize_batch(benchmark_summaries: list[dict[str, Any]]) -> dict[str, Any]
         "case_count": 0,
         "prior_scored_states": 0,
         "prior_scored_actions": 0,
+        "turn_plan_prior_scored_plans": 0,
         "baseline_complete_found": 0,
         "prior_complete_found": 0,
         "complete_found_delta": 0,
@@ -190,6 +201,7 @@ def live_prior_effect_decision(summary: dict[str, Any]) -> dict[str, Any]:
 
     prior_scored_states = int(summary.get("prior_scored_states") or 0)
     prior_scored_actions = int(summary.get("prior_scored_actions") or 0)
+    turn_plan_prior_scored_plans = int(summary.get("turn_plan_prior_scored_plans") or 0)
     complete_delta = int(summary.get("complete_found_delta") or 0)
     hp_delta = int(summary.get("frontier_hp_delta") or 0)
     nodes_delta = int(summary.get("nodes_expanded_delta") or 0)
@@ -203,7 +215,7 @@ def live_prior_effect_decision(summary: dict[str, Any]) -> dict[str, Any]:
     evidence: list[str] = []
     limitations: list[str] = []
 
-    if prior_scored_states > 0 or prior_scored_actions > 0:
+    if prior_scored_states > 0 or prior_scored_actions > 0 or turn_plan_prior_scored_plans > 0:
         evidence.append("prior_hits_observed")
     else:
         limitations.append("no_prior_hits")
@@ -223,7 +235,12 @@ def live_prior_effect_decision(summary: dict[str, Any]) -> dict[str, Any]:
         evidence.append("fewer_turns")
 
     tactical_gain = escaped_delta < 0 or killed_delta > 0 or turn_delta_value < 0
-    if prior_scored_states > 0 and complete_delta <= 0 and hp_delta <= 0 and not tactical_gain:
+    if (
+        (prior_scored_states > 0 or turn_plan_prior_scored_plans > 0)
+        and complete_delta <= 0
+        and hp_delta <= 0
+        and not tactical_gain
+    ):
         evidence.append("prior_hits_without_outcome_gain")
     if nodes_delta > 0:
         limitations.append("prior_increased_nodes")
@@ -233,7 +250,7 @@ def live_prior_effect_decision(summary: dict[str, Any]) -> dict[str, Any]:
         limitations.append("lower_frontier_hp")
     limitations.append("small_budget_live_ab")
 
-    if prior_scored_states <= 0:
+    if prior_scored_states <= 0 and turn_plan_prior_scored_plans <= 0:
         recommendation = "no_signal_no_prior_hits"
     elif complete_delta < 0 or hp_delta < 0:
         recommendation = "regressed_do_not_enable"
@@ -250,6 +267,7 @@ def live_prior_effect_decision(summary: dict[str, Any]) -> dict[str, Any]:
         "metrics": {
             "prior_scored_states": prior_scored_states,
             "prior_scored_actions": prior_scored_actions,
+            "turn_plan_prior_scored_plans": turn_plan_prior_scored_plans,
             "complete_found_delta": complete_delta,
             "frontier_hp_delta": hp_delta,
             "nodes_expanded_delta": nodes_delta,
@@ -333,7 +351,8 @@ def run_driver(
     benchmark: Path,
     max_nodes: int,
     output: Path,
-    prior_hints: Path | None,
+    root_action_prior_hints: Path | None,
+    turn_plan_prior_hints: Path | None,
     extra_driver_args: list[str],
 ) -> None:
     args = [
@@ -345,8 +364,10 @@ def run_driver(
         "--output",
         str(output),
     ] + extra_driver_args
-    if prior_hints is not None:
-        args.extend(["--root-action-prior-hints", str(prior_hints)])
+    if root_action_prior_hints is not None:
+        args.extend(["--root-action-prior-hints", str(root_action_prior_hints)])
+    if turn_plan_prior_hints is not None:
+        args.extend(["--turn-plan-prior-hints", str(turn_plan_prior_hints)])
     subprocess.run(args, check=True)
 
 
@@ -371,7 +392,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--driver", type=Path, default=Path("target/fast-run/combat_search_v2_driver.exe"))
     parser.add_argument("--build", action="store_true")
     parser.add_argument("--build-profile", default="fast-run")
-    parser.add_argument("--prior-hints", type=Path, required=True)
+    parser.add_argument("--prior-hints", type=Path, default=None)
+    parser.add_argument("--turn-plan-prior-hints", type=Path, default=None)
     parser.add_argument("--benchmark", type=Path, action="append", default=[])
     parser.add_argument("--benchmark-root", type=Path, default=Path("tools/artifacts/tmp"))
     parser.add_argument("--benchmark-directory-pattern", default="ml_capture_seed*")
@@ -397,8 +419,12 @@ def main() -> int:
         build_driver(args.build_profile)
     if not args.driver.exists():
         raise SystemExit(f"driver not found: {args.driver}")
-    if not args.prior_hints.exists():
+    if args.prior_hints is None and args.turn_plan_prior_hints is None:
+        raise SystemExit("provide --prior-hints and/or --turn-plan-prior-hints")
+    if args.prior_hints is not None and not args.prior_hints.exists():
         raise SystemExit(f"prior hints not found: {args.prior_hints}")
+    if args.turn_plan_prior_hints is not None and not args.turn_plan_prior_hints.exists():
+        raise SystemExit(f"turn plan prior hints not found: {args.turn_plan_prior_hints}")
 
     benchmark_summaries: list[dict[str, Any]] = []
     for benchmark in benchmarks:
@@ -406,13 +432,14 @@ def main() -> int:
         bench_dir = args.output_root / name
         baseline_out = bench_dir / "baseline.json"
         prior_out = bench_dir / "prior.json"
-        run_driver(args.driver, benchmark, args.max_nodes, baseline_out, None, args.driver_arg)
+        run_driver(args.driver, benchmark, args.max_nodes, baseline_out, None, None, args.driver_arg)
         run_driver(
             args.driver,
             benchmark,
             args.max_nodes,
             prior_out,
             args.prior_hints,
+            args.turn_plan_prior_hints,
             args.driver_arg,
         )
         summary = summarize_driver_report_pair(name, read_json(baseline_out), read_json(prior_out))
@@ -421,7 +448,8 @@ def main() -> int:
         if args.compact:
             print(
                 f"{name}: cases={summary['case_count']} "
-                f"hits={summary['prior_scored_states']}/{summary['prior_scored_actions']} "
+                f"root_hits={summary['prior_scored_states']}/{summary['prior_scored_actions']} "
+                f"plan_hits={summary['turn_plan_prior_scored_plans']} "
                 f"complete_delta={summary['complete_found_delta']} "
                 f"hp_delta={summary['frontier_hp_delta']} "
                 f"nodes_delta={summary['nodes_expanded_delta']}"
@@ -431,7 +459,10 @@ def main() -> int:
     report = {
         "schema_name": "CombatRootPriorLiveCompareReportV0",
         "driver": str(args.driver),
-        "prior_hints": str(args.prior_hints),
+        "prior_hints": str(args.prior_hints) if args.prior_hints is not None else None,
+        "turn_plan_prior_hints": (
+            str(args.turn_plan_prior_hints) if args.turn_plan_prior_hints is not None else None
+        ),
         "max_nodes": args.max_nodes,
         "driver_args": args.driver_arg,
         "summary": batch_summary,

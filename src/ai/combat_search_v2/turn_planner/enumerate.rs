@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::time::Instant;
 
@@ -191,7 +192,17 @@ pub(in crate::ai::combat_search_v2) fn enumerate_turn_plans(
         .map(|summary| summary.action.clone())
         .collect();
     enumeration.preselection_bucket_counts = bucket_counts(&candidates);
-    enumeration.plans = select_bucketed_plans(candidates, config);
+    let prior_state_hash = config
+        .turn_plan_prior
+        .as_ref()
+        .filter(|prior| !prior.is_empty())
+        .map(|_| combat_exact_state_hash_v1(&root.engine, &root.combat));
+    enumeration.turn_plan_prior_scored_plans = count_turn_plan_prior_scored_plans(
+        &candidates,
+        prior_state_hash.as_deref(),
+        config.turn_plan_prior.as_ref(),
+    );
+    enumeration.plans = select_bucketed_plans(candidates, config, prior_state_hash.as_deref());
     enumeration
 }
 
@@ -300,12 +311,20 @@ fn rollout_stop_reason_for_turn_plan(stop_reason: TurnPlanStopReason) -> Rollout
 fn select_bucketed_plans(
     mut candidates: Vec<TurnPlanV1>,
     config: &TurnPlannerConfigV1,
+    prior_state_hash: Option<&str>,
 ) -> Vec<TurnPlanV1> {
     if config.max_end_states == 0 || config.per_bucket_limit == 0 {
         return Vec::new();
     }
 
-    candidates.sort_by(|left, right| compare_turn_plan_seed_candidate(right, left));
+    candidates.sort_by(|left, right| {
+        compare_turn_plan_seed_candidate(
+            right,
+            left,
+            prior_state_hash,
+            config.turn_plan_prior.as_ref(),
+        )
+    });
     let mut selected = Vec::new();
     let mut selected_indexes = vec![false; candidates.len()];
     let mut bucket_counts = BTreeMap::<TurnPlanBucket, usize>::new();
@@ -342,7 +361,12 @@ fn select_bucketed_plans(
     selected
 }
 
-fn compare_turn_plan_seed_candidate(left: &TurnPlanV1, right: &TurnPlanV1) -> std::cmp::Ordering {
+fn compare_turn_plan_seed_candidate(
+    left: &TurnPlanV1,
+    right: &TurnPlanV1,
+    prior_state_hash: Option<&str>,
+    turn_plan_prior: Option<&CombatSearchV2TurnPlanPrior>,
+) -> Ordering {
     left.eval
         .outcome_class()
         .cmp(&right.eval.outcome_class())
@@ -366,14 +390,55 @@ fn compare_turn_plan_seed_candidate(left: &TurnPlanV1, right: &TurnPlanV1) -> st
         })
         .then_with(|| turn_plan_seed_conservation(left).cmp(&turn_plan_seed_conservation(right)))
         .then_with(|| {
+            compare_prior_scores(
+                turn_plan_prior_score(left, prior_state_hash, turn_plan_prior),
+                turn_plan_prior_score(right, prior_state_hash, turn_plan_prior),
+            )
+        })
+        .then_with(|| {
             if turn_plan_is_in_danger(left) || turn_plan_is_in_danger(right) {
-                std::cmp::Ordering::Equal
+                Ordering::Equal
             } else {
                 left.eval.risk_margin().cmp(&right.eval.risk_margin())
             }
         })
         .then_with(|| left.eval.final_hp().cmp(&right.eval.final_hp()))
         .then_with(|| left.eval.cmp(&right.eval))
+}
+
+fn count_turn_plan_prior_scored_plans(
+    plans: &[TurnPlanV1],
+    prior_state_hash: Option<&str>,
+    turn_plan_prior: Option<&CombatSearchV2TurnPlanPrior>,
+) -> usize {
+    plans
+        .iter()
+        .filter(|plan| turn_plan_prior_score(plan, prior_state_hash, turn_plan_prior).is_some())
+        .count()
+}
+
+fn turn_plan_prior_score(
+    plan: &TurnPlanV1,
+    prior_state_hash: Option<&str>,
+    turn_plan_prior: Option<&CombatSearchV2TurnPlanPrior>,
+) -> Option<f64> {
+    let state_hash = prior_state_hash?;
+    let prior = turn_plan_prior?;
+    let action_keys = plan
+        .actions
+        .iter()
+        .map(|action| action.action_key.clone())
+        .collect::<Vec<_>>();
+    prior.score_for_action_keys(state_hash, &action_keys)
+}
+
+fn compare_prior_scores(left: Option<f64>, right: Option<f64>) -> Ordering {
+    match (left, right) {
+        (Some(left), Some(right)) => left.partial_cmp(&right).unwrap_or(Ordering::Equal),
+        (Some(_), None) => Ordering::Greater,
+        (None, Some(_)) => Ordering::Less,
+        (None, None) => Ordering::Equal,
+    }
 }
 
 fn turn_plan_is_in_danger(plan: &TurnPlanV1) -> bool {

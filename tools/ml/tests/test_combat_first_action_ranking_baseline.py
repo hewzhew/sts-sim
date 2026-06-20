@@ -118,6 +118,82 @@ class CombatFirstActionRankingBaselineTests(unittest.TestCase):
         self.assertEqual(records[0]["action_prior_hints"][0]["candidate_count"], 2)
         self.assertEqual(records[0]["action_prior_hints"][1]["action_key"], "combat/end_turn")
 
+    def test_turn_plan_prior_hint_records_keep_full_action_sequences(self):
+        baseline = load_module()
+        groups = {
+            "root-a": [
+                {
+                    "schema_name": "CombatTurnPlanProbeSampleV1",
+                    "source": {"source_file": "case-a.json"},
+                    "root_context": {
+                        "enumeration": {"root_exact_state_hash": "abc123"},
+                    },
+                    "plan": {
+                        "plan_index": 0,
+                        "first_action_key": "combat/play_card/hand:0/card:Strike_R+0#1/target:monster_slot:0",
+                        "action_keys": [
+                            "combat/play_card/hand:0/card:Strike_R+0#1/target:monster_slot:0",
+                            "combat/end_turn",
+                        ],
+                    },
+                    "target": {
+                        "terminal": "win",
+                        "complete_win": True,
+                        "final_hp": 40,
+                    },
+                },
+                {
+                    "schema_name": "CombatTurnPlanProbeSampleV1",
+                    "source": {"source_file": "case-a.json"},
+                    "root_context": {
+                        "enumeration": {"root_exact_state_hash": "abc123"},
+                    },
+                    "plan": {
+                        "plan_index": 1,
+                        "first_action_key": "combat/play_card/hand:0/card:Strike_R+0#1/target:monster_slot:0",
+                        "action_keys": [
+                            "combat/play_card/hand:0/card:Strike_R+0#1/target:monster_slot:0",
+                            "combat/play_card/hand:0/card:Bash+0#2/target:monster_slot:0",
+                        ],
+                    },
+                    "target": {
+                        "terminal": "win",
+                        "complete_win": True,
+                        "final_hp": 35,
+                    },
+                },
+            ]
+        }
+        scores = {"root-a": [0.2, 0.7]}
+
+        records = baseline.turn_plan_prior_hint_records_from_scores(
+            groups,
+            scores,
+            target_mode="tactical-utility",
+            model_id="unit-test-turn-plan-prior",
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["schema_name"], "CombatTurnPlanPriorHintV0")
+        self.assertEqual(records[0]["root_exact_state_hash"], "abc123")
+        hints = records[0]["turn_plan_prior_hints"]
+        self.assertEqual(len(hints), 2)
+        self.assertEqual(
+            hints[0]["action_keys"],
+            [
+                "combat/play_card/hand:0/card:Strike_R+0#1/target:monster_slot:0",
+                "combat/play_card/hand:0/card:Bash+0#2/target:monster_slot:0",
+            ],
+        )
+        self.assertEqual(hints[0]["score"], 0.7)
+        self.assertEqual(
+            hints[1]["action_keys"],
+            [
+                "combat/play_card/hand:0/card:Strike_R+0#1/target:monster_slot:0",
+                "combat/end_turn",
+            ],
+        )
+
     def test_tactical_utility_target_does_not_treat_same_hp_dirty_plan_as_equivalent(self):
         baseline = load_module()
         clean_same_hp = {

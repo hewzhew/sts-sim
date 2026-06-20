@@ -33,7 +33,8 @@ class CombatRootPriorLiveCompareTests(unittest.TestCase):
                             "largest_reorders": [
                                 {"first_action_key": "combat/play_card/bash"}
                             ],
-                        }
+                        },
+                        "turn_plan": {"turn_plan_prior_scored_plans": 0},
                     },
                 }
             ]
@@ -55,7 +56,8 @@ class CombatRootPriorLiveCompareTests(unittest.TestCase):
                             "largest_reorders": [
                                 {"first_action_key": "combat/play_card/strike"}
                             ],
-                        }
+                        },
+                        "turn_plan": {"turn_plan_prior_scored_plans": 2},
                     },
                 }
             ]
@@ -67,6 +69,7 @@ class CombatRootPriorLiveCompareTests(unittest.TestCase):
         self.assertEqual(summary["case_count"], 1)
         self.assertEqual(summary["prior_scored_states"], 1)
         self.assertEqual(summary["prior_scored_actions"], 3)
+        self.assertEqual(summary["turn_plan_prior_scored_plans"], 2)
         self.assertEqual(summary["complete_found_delta"], 1)
         self.assertEqual(summary["best_complete_first_action_changed"], 1)
         self.assertEqual(summary["ordering_first_reorder_sample_changed"], 1)
@@ -83,6 +86,7 @@ class CombatRootPriorLiveCompareTests(unittest.TestCase):
             "combat/play_card/strike",
         )
         self.assertEqual(summary["case_deltas"][0]["prior_scored_actions"], 3)
+        self.assertEqual(summary["case_deltas"][0]["turn_plan_prior_scored_plans"], 2)
 
     def test_live_prior_decision_rejects_when_hits_have_no_positive_effect(self):
         compare = load_module()
@@ -161,6 +165,26 @@ class CombatRootPriorLiveCompareTests(unittest.TestCase):
         self.assertEqual(summary["case_deltas"][0]["best_complete_trajectory_delta"]["escaped_enemy_delta"], -1)
         self.assertEqual(summary["case_deltas"][0]["best_complete_trajectory_delta"]["killed_enemy_delta"], 1)
         self.assertIn("non_hp_tactical_outcome_changed", decision["evidence"])
+
+    def test_live_prior_decision_accepts_turn_plan_prior_hits_as_signal(self):
+        compare = load_module()
+        summary = {
+            "case_count": 4,
+            "prior_scored_states": 0,
+            "prior_scored_actions": 0,
+            "turn_plan_prior_scored_plans": 6,
+            "complete_found_delta": 0,
+            "frontier_hp_delta": 0,
+            "nodes_expanded_delta": 0,
+            "best_complete_first_action_changed": 0,
+        }
+
+        decision = compare.live_prior_effect_decision(summary)
+
+        self.assertEqual(decision["recommendation"], "do_not_enable_live_prior_yet")
+        self.assertIn("prior_hits_observed", decision["evidence"])
+        self.assertNotIn("no_prior_hits", decision["limitations"])
+        self.assertEqual(decision["metrics"]["turn_plan_prior_scored_plans"], 6)
 
 
 if __name__ == "__main__":

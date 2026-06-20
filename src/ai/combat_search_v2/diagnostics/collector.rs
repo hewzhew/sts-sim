@@ -124,6 +124,13 @@ impl SearchDiagnosticsCollector {
         self.turn_plan.observe_frontier_seeded_nodes(nodes);
     }
 
+    pub(in crate::ai::combat_search_v2) fn observe_turn_plan_prior_scored_plans(
+        &mut self,
+        plans: usize,
+    ) {
+        self.turn_plan.observe_prior_scored_plans(plans);
+    }
+
     pub(in crate::ai::combat_search_v2) fn observe_card_identity(
         &mut self,
         summary: &CardIdentitySummary,

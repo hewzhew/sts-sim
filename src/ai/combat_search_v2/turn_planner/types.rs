@@ -17,6 +17,7 @@ pub(in crate::ai::combat_search_v2) struct TurnPlannerConfigV1 {
     pub(in crate::ai::combat_search_v2) per_bucket_limit: usize,
     pub(in crate::ai::combat_search_v2) potion_policy: CombatSearchV2PotionPolicy,
     pub(in crate::ai::combat_search_v2) max_engine_steps_per_action: usize,
+    pub(in crate::ai::combat_search_v2) turn_plan_prior: Option<CombatSearchV2TurnPlanPrior>,
 }
 
 impl Default for TurnPlannerConfigV1 {
@@ -28,6 +29,7 @@ impl Default for TurnPlannerConfigV1 {
             potion_policy: CombatSearchV2PotionPolicy::Never,
             max_engine_steps_per_action: CombatSearchV2Config::default()
                 .max_engine_steps_per_action,
+            turn_plan_prior: None,
         }
     }
 }
@@ -63,6 +65,7 @@ pub(in crate::ai::combat_search_v2) struct TurnPlanEnumeration {
     pub(in crate::ai::combat_search_v2) nodes_generated: usize,
     pub(in crate::ai::combat_search_v2) exact_state_skips: usize,
     pub(in crate::ai::combat_search_v2) truncated_children: usize,
+    pub(in crate::ai::combat_search_v2) turn_plan_prior_scored_plans: usize,
 }
 
 #[derive(Clone)]

@@ -14,6 +14,7 @@ const TURN_PLAN_FRONTIER_SEED_PER_BUCKET_LIMIT: usize = 2;
 #[derive(Default)]
 pub(in crate::ai::combat_search_v2) struct TurnPlanFrontierSeedResult {
     pub(in crate::ai::combat_search_v2) nodes: Vec<SearchNode>,
+    pub(in crate::ai::combat_search_v2) turn_plan_prior_scored_plans: usize,
 }
 
 pub(in crate::ai::combat_search_v2) fn turn_plan_frontier_seed(
@@ -28,8 +29,10 @@ pub(in crate::ai::combat_search_v2) fn turn_plan_frontier_seed(
         per_bucket_limit: TURN_PLAN_FRONTIER_SEED_PER_BUCKET_LIMIT,
         potion_policy: config.potion_policy,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
+        turn_plan_prior: config.turn_plan_prior.clone(),
     };
     let enumeration = enumerate_turn_plans(node, stepper, &turn_config, deadline);
+    let turn_plan_prior_scored_plans = enumeration.turn_plan_prior_scored_plans;
     let nodes = enumeration
         .plans
         .into_iter()
@@ -37,7 +40,10 @@ pub(in crate::ai::combat_search_v2) fn turn_plan_frontier_seed(
         .map(|plan| plan.end_node)
         .collect();
 
-    TurnPlanFrontierSeedResult { nodes }
+    TurnPlanFrontierSeedResult {
+        nodes,
+        turn_plan_prior_scored_plans,
+    }
 }
 
 fn should_seed_frontier(

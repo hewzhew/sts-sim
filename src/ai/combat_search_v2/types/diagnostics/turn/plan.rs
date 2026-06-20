@@ -11,6 +11,7 @@ pub struct CombatSearchV2DiagnosticsTurnPlan {
     pub total_inner_nodes_generated: u64,
     pub total_exact_state_skips: u64,
     pub total_truncated_children: u64,
+    pub turn_plan_prior_scored_plans: u64,
     pub frontier_seeded_nodes: u64,
     pub bucket_counts: Vec<CombatSearchV2DiagnosticsTurnPlanCount>,
     pub stop_reason_counts: Vec<CombatSearchV2DiagnosticsTurnPlanCount>,

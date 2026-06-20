@@ -8,6 +8,7 @@ use crate::ai::combat_search_v2::{
     high_stakes_semantic_potion_budget, run_combat_search_v2, CombatSearchV2Config,
     CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2Report,
     CombatSearchV2RolloutPolicy, CombatSearchV2RootActionPrior, CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2TurnPlanPrior,
 };
 use crate::eval::artifact::ArtifactTrustLevel;
 use crate::eval::combat_capture::load_combat_capture_v1;
@@ -35,6 +36,7 @@ pub struct CombatSearchV2RunOptions {
     pub turn_plan_probe_max_end_states: Option<usize>,
     pub turn_plan_probe_per_bucket_limit: Option<usize>,
     pub root_action_prior: Option<CombatSearchV2RootActionPrior>,
+    pub turn_plan_prior: Option<CombatSearchV2TurnPlanPrior>,
 }
 
 impl CombatSearchV2RunOptions {
@@ -81,6 +83,7 @@ impl CombatSearchV2RunOptions {
                 .root_action_prior
                 .clone()
                 .or(defaults.root_action_prior),
+            turn_plan_prior: self.turn_plan_prior.clone().or(defaults.turn_plan_prior),
         }
     }
 

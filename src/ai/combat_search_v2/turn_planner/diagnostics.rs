@@ -26,6 +26,7 @@ pub(in crate::ai::combat_search_v2) struct TurnPlanDiagnosticsCollector {
     total_inner_nodes_generated: u64,
     total_exact_state_skips: u64,
     total_truncated_children: u64,
+    turn_plan_prior_scored_plans: u64,
     frontier_seeded_nodes: u64,
     bucket_counts: BTreeMap<TurnPlanBucket, u64>,
     stop_reason_counts: BTreeMap<TurnPlanStopReason, u64>,
@@ -93,6 +94,7 @@ impl TurnPlanDiagnosticsCollector {
             total_inner_nodes_generated: self.total_inner_nodes_generated,
             total_exact_state_skips: self.total_exact_state_skips,
             total_truncated_children: self.total_truncated_children,
+            turn_plan_prior_scored_plans: self.turn_plan_prior_scored_plans,
             frontier_seeded_nodes: self.frontier_seeded_nodes,
             bucket_counts: count_reports(&self.bucket_counts, TurnPlanBucket::label),
             stop_reason_counts: count_reports(&self.stop_reason_counts, TurnPlanStopReason::label),
@@ -132,6 +134,9 @@ impl TurnPlanDiagnosticsCollector {
         self.total_truncated_children = self
             .total_truncated_children
             .saturating_add(enumeration.truncated_children as u64);
+        self.turn_plan_prior_scored_plans = self
+            .turn_plan_prior_scored_plans
+            .saturating_add(enumeration.turn_plan_prior_scored_plans as u64);
 
         for plan in &enumeration.plans {
             *self.bucket_counts.entry(plan.bucket).or_default() += 1;
@@ -151,6 +156,12 @@ impl TurnPlanDiagnosticsCollector {
 
     pub(in crate::ai::combat_search_v2) fn observe_frontier_seeded_nodes(&mut self, nodes: usize) {
         self.frontier_seeded_nodes = self.frontier_seeded_nodes.saturating_add(nodes as u64);
+    }
+
+    pub(in crate::ai::combat_search_v2) fn observe_prior_scored_plans(&mut self, plans: usize) {
+        self.turn_plan_prior_scored_plans = self
+            .turn_plan_prior_scored_plans
+            .saturating_add(plans as u64);
     }
 
     fn sample_reports(&self) -> Vec<CombatSearchV2DiagnosticsTurnPlanSample> {
