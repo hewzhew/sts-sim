@@ -4,8 +4,8 @@ use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
 };
 use crate::ai::strategic::{
-    AcquisitionThesisSignal, AcquisitionThesisStatus, AcquisitionVerdict, CandidateAction,
-    StrategicDecisionTrace,
+    AcquisitionThesisRole, AcquisitionThesisSignal, AcquisitionThesisStatus, AcquisitionVerdict,
+    CandidateAction, StrategicDecisionTrace,
 };
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
@@ -513,11 +513,14 @@ fn reward_option_acquisition_thesis_signal(
 }
 
 fn acquisition_thesis_rank_adjustment(thesis: &AcquisitionThesisSignal) -> i32 {
-    match thesis.status {
-        AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful => 0,
-        AcquisitionThesisStatus::Saturated => -450,
-        AcquisitionThesisStatus::OverBudget => -800,
-        AcquisitionThesisStatus::Unsupported => -1_000,
+    match (thesis.role, thesis.status) {
+        (AcquisitionThesisRole::WinConditionOrCeiling, AcquisitionThesisStatus::Missing) => {
+            (thesis.amount * 1_000.0).round() as i32
+        }
+        (_, AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful) => 0,
+        (_, AcquisitionThesisStatus::Saturated) => -450,
+        (_, AcquisitionThesisStatus::OverBudget) => -800,
+        (_, AcquisitionThesisStatus::Unsupported) => -1_000,
     }
 }
 

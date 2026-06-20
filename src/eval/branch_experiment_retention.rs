@@ -1394,6 +1394,39 @@ mod tests {
     }
 
     #[test]
+    fn card_reward_missing_ceiling_thesis_raises_retention_rank() {
+        let profiles = vec![semantic_profile(CardId::FeelNoPain)];
+        let trajectory = summarize_branch_trajectory_v1(&profiles);
+        let plain = retention_candidate(0, profiles.clone(), trajectory.clone());
+        let mut ceiling_seed = retention_candidate(1, profiles, trajectory);
+        ceiling_seed.decision_signals = vec![BranchExperimentChoiceDecisionSignalV1 {
+            source: BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1.to_string(),
+            verdict: "ContextTake".to_string(),
+            tier: 2,
+            score: 0,
+            confidence_milli: 650,
+            component_net_rank: 0,
+            preferred: false,
+            acquisition_thesis_rank_adjustment: 600,
+            acquisition_thesis_summary: vec![
+                "WinConditionOrCeiling/Missing:candidate_opens_missing_win_condition_or_ceiling"
+                    .to_string(),
+            ],
+        }];
+
+        let plain_rank = branch_retention_rank_adjustment_v1(&plain);
+        let ceiling_rank = branch_retention_rank_adjustment_v1(&ceiling_seed);
+
+        assert_eq!(plain_rank.card_reward_plan_adjustment, 0);
+        assert_eq!(ceiling_rank.card_reward_plan_adjustment, 600);
+        assert!(ceiling_rank.effective_rank_key > plain_rank.effective_rank_key);
+        assert!(ceiling_rank.reasons.iter().any(|reason| {
+            reason
+                == "acquisition_thesis:WinConditionOrCeiling/Missing:candidate_opens_missing_win_condition_or_ceiling"
+        }));
+    }
+
+    #[test]
     fn preferred_decision_signal_breaks_equal_retention_rank_tie() {
         let profiles = vec![semantic_profile(CardId::DarkEmbrace)];
         let trajectory = summarize_branch_trajectory_v1(&profiles);

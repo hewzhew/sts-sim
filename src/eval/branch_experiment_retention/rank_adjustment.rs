@@ -144,7 +144,7 @@ fn branch_card_reward_plan_rank_adjustment_v1(candidate: &BranchRetentionCandida
         })
         .map(card_reward_signal_rank_adjustment_v1)
         .sum::<i32>()
-        .clamp(-2_500, 0)
+        .clamp(-2_500, 1_200)
 }
 
 fn card_reward_signal_rank_adjustment_v1(signal: &BranchExperimentChoiceDecisionSignalV1) -> i32 {
@@ -153,9 +153,14 @@ fn card_reward_signal_rank_adjustment_v1(signal: &BranchExperimentChoiceDecision
         "SkipPreferred" => -500 + signal.component_net_rank.min(0) / 2,
         _ => 0,
     };
+    let thesis_adjustment = if verdict_adjustment < 0 {
+        signal.acquisition_thesis_rank_adjustment.min(0)
+    } else {
+        signal.acquisition_thesis_rank_adjustment
+    };
     verdict_adjustment
-        .saturating_add(signal.acquisition_thesis_rank_adjustment.min(0))
-        .clamp(-1_800, 0)
+        .saturating_add(thesis_adjustment)
+        .clamp(-1_800, 900)
 }
 
 fn branch_shop_plan_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
