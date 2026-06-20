@@ -66,6 +66,7 @@ pub struct CombatTurnPlanGuidanceLabBenchmarkCaseV1 {
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatTurnPlanGuidanceLabCandidateV1 {
     pub plan: CombatSearchV2TurnPlanProbeCandidateReport,
+    pub tactical: CombatTurnPlanTacticalTraceV1,
     pub end_fingerprints: CombatSearchV2InputFingerprintReport,
     pub child_search: Option<CombatSearchGuidanceLabChildSearchV1>,
     pub target: CombatSearchGuidanceLabTargetV1,
@@ -80,6 +81,78 @@ pub struct CombatTurnPlanGuidanceLabSummaryV1 {
     pub child_unresolved: usize,
     pub best_target_plan_index: Option<usize>,
     pub first_plan_rank_by_target: Option<usize>,
+    pub current_first_vs_best_target: Option<CombatTurnPlanGuidanceSelectedComparisonV1>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CombatTurnPlanTacticalTraceV1 {
+    pub action_count: usize,
+    pub cards_played: usize,
+    pub potions_used: usize,
+    pub end_turns: usize,
+    pub powers_played: usize,
+    pub attacks_played: usize,
+    pub skills_played: usize,
+    pub zero_cost_cards_played: usize,
+    pub damage_done: i32,
+    pub block_gained_proxy: i32,
+    pub visible_attack_mitigation_hint: i32,
+    pub enemy_debuff_pressure_hint: i32,
+    pub player_hp_delta: i32,
+    pub player_hp_lost: i32,
+    pub energy_delta: i32,
+    pub energy_spent_proxy: i32,
+    pub hand_delta: i32,
+    pub draw_delta: i32,
+    pub discard_delta: i32,
+    pub exhaust_delta: i32,
+    pub limbo_delta: i32,
+    pub queued_cards_delta: i32,
+    pub enemy_block_delta: i32,
+    pub player_strength_gain: i32,
+    pub player_temporary_strength_gain: i32,
+    pub reactive_player_hp_loss: i32,
+    pub reactive_player_block: i32,
+    pub reactive_enemy_damage: i32,
+    pub reactive_bad_draw_cards: i32,
+    pub forced_turn_end_actions: usize,
+    pub pending_choice_steps: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatTurnPlanGuidanceSelectedComparisonV1 {
+    pub same_plan: bool,
+    pub current_first: CombatTurnPlanGuidancePlanSnapshotV1,
+    pub best_by_child_target: CombatTurnPlanGuidancePlanSnapshotV1,
+    pub delta_best_minus_current_first: CombatTurnPlanGuidanceOutcomeDeltaV1,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatTurnPlanGuidancePlanSnapshotV1 {
+    pub plan_index: usize,
+    pub first_action_key: Option<String>,
+    pub target_source: &'static str,
+    pub terminal: SearchTerminalLabel,
+    pub complete_win: bool,
+    pub final_hp: Option<i32>,
+    pub hp_loss: Option<i32>,
+    pub turns: Option<u32>,
+    pub potions_used: Option<u32>,
+    pub cards_played: Option<u32>,
+    pub action_count: Option<usize>,
+    pub nodes_expanded: Option<u64>,
+    pub tactical: CombatTurnPlanTacticalTraceV1,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatTurnPlanGuidanceOutcomeDeltaV1 {
+    pub final_hp_delta: Option<i32>,
+    pub hp_loss_delta: Option<i32>,
+    pub turn_delta: Option<i32>,
+    pub potions_used_delta: Option<i32>,
+    pub cards_played_delta: Option<i32>,
+    pub action_count_delta: Option<i32>,
+    pub nodes_expanded_delta: Option<i64>,
 }
 
 pub fn run_combat_turn_plan_guidance_lab_benchmark_v1(
@@ -159,6 +232,7 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
                 };
             let target = plan_target(&candidate.report, child_search.as_ref());
             CombatTurnPlanGuidanceLabCandidateV1 {
+                tactical: tactical_trace_for_plan_report(&candidate.report),
                 plan: candidate.report.clone(),
                 end_fingerprints: fingerprint_report_for_position(&candidate.position),
                 child_search,
@@ -170,7 +244,7 @@ pub fn run_combat_turn_plan_guidance_lab_v1(
 
     CombatTurnPlanGuidanceLabV1Report {
         schema_name: "CombatTurnPlanGuidanceLabV1Report",
-        schema_version: 2,
+        schema_version: 3,
         label_role: "oracle_turn_plan_guidance_lab_not_human_policy",
         policy_quality_claim: false,
         input_label: loaded.label.clone(),
@@ -328,6 +402,7 @@ fn summarize_candidates(
         .iter()
         .position(|candidate| candidate.plan.plan_index == 0)
         .map(|index| index + 1);
+    summary.current_first_vs_best_target = selected_vs_best_target_report(candidates);
 
     for candidate in candidates {
         if candidate.child_search.is_some() {
@@ -344,6 +419,147 @@ fn summarize_candidates(
         }
     }
     summary
+}
+
+fn tactical_trace_for_plan_report(
+    plan: &CombatSearchV2TurnPlanProbeCandidateReport,
+) -> CombatTurnPlanTacticalTraceV1 {
+    let mut trace = CombatTurnPlanTacticalTraceV1 {
+        action_count: plan.actions.len(),
+        ..CombatTurnPlanTacticalTraceV1::default()
+    };
+    for step in &plan.steps {
+        match &step.action.input {
+            crate::state::core::ClientInput::PlayCard { .. } => trace.cards_played += 1,
+            crate::state::core::ClientInput::UsePotion { .. } => trace.potions_used += 1,
+            crate::state::core::ClientInput::EndTurn => trace.end_turns += 1,
+            _ => {}
+        }
+
+        if let Some(card) = step.action_facts.card.as_ref() {
+            match card.card_type {
+                crate::content::cards::CardType::Attack => trace.attacks_played += 1,
+                crate::content::cards::CardType::Skill => trace.skills_played += 1,
+                crate::content::cards::CardType::Power => trace.powers_played += 1,
+                crate::content::cards::CardType::Status
+                | crate::content::cards::CardType::Curse => {}
+            }
+            if card.cost_for_turn == 0 {
+                trace.zero_cost_cards_played += 1;
+            }
+        }
+
+        let exact = &step.action_facts.exact_one_step_delta;
+        trace.player_hp_delta += exact.player_hp_delta;
+        trace.player_hp_lost += (-exact.player_hp_delta).max(0);
+        trace.energy_delta += exact.energy_delta;
+        trace.energy_spent_proxy += (-exact.energy_delta).max(0);
+        trace.hand_delta += exact.hand_delta;
+        trace.draw_delta += exact.draw_delta;
+        trace.discard_delta += exact.discard_delta;
+        trace.exhaust_delta += exact.exhaust_delta;
+        trace.limbo_delta += exact.limbo_delta;
+        trace.queued_cards_delta += exact.queued_cards_delta;
+        trace.damage_done += (-exact.total_enemy_hp_delta).max(0);
+        trace.enemy_block_delta += exact.total_enemy_block_delta;
+        trace.block_gained_proxy += exact.player_block_delta.max(0);
+        if exact.pending_choice_present {
+            trace.pending_choice_steps += 1;
+        }
+
+        let mechanics = &step.action_facts.mechanics;
+        trace.visible_attack_mitigation_hint += mechanics.visible_attack_mitigation_hint;
+        trace.enemy_debuff_pressure_hint += mechanics.enemy_weak
+            + mechanics.enemy_vulnerable
+            + mechanics.persistent_enemy_strength_down
+            + mechanics.temporary_enemy_strength_down;
+        trace.player_strength_gain += mechanics.player_strength_gain;
+        trace.player_temporary_strength_gain += mechanics.player_temporary_strength_gain;
+        trace.reactive_player_hp_loss += mechanics.reactive_player_hp_loss;
+        trace.reactive_player_block += mechanics.reactive_player_block;
+        trace.reactive_enemy_damage += mechanics.reactive_enemy_damage;
+        trace.reactive_bad_draw_cards += mechanics.reactive_bad_draw_cards;
+        if mechanics.reactive_forced_turn_end {
+            trace.forced_turn_end_actions += 1;
+        }
+    }
+    trace
+}
+
+fn selected_vs_best_target_report(
+    candidates: &[CombatTurnPlanGuidanceLabCandidateV1],
+) -> Option<CombatTurnPlanGuidanceSelectedComparisonV1> {
+    let current_first = candidates.first()?;
+    let best = candidates.iter().max_by(|left, right| {
+        compare_targets(&left.target, &right.target)
+            .then_with(|| right.plan.plan_index.cmp(&left.plan.plan_index))
+    })?;
+    let current_first_snapshot = plan_snapshot(current_first);
+    let best_snapshot = plan_snapshot(best);
+    Some(CombatTurnPlanGuidanceSelectedComparisonV1 {
+        same_plan: current_first.plan.plan_index == best.plan.plan_index,
+        delta_best_minus_current_first: outcome_delta(&best_snapshot, &current_first_snapshot),
+        current_first: current_first_snapshot,
+        best_by_child_target: best_snapshot,
+    })
+}
+
+fn plan_snapshot(
+    candidate: &CombatTurnPlanGuidanceLabCandidateV1,
+) -> CombatTurnPlanGuidancePlanSnapshotV1 {
+    let best_complete = candidate
+        .child_search
+        .as_ref()
+        .and_then(|child| child.best_complete.as_ref());
+    CombatTurnPlanGuidancePlanSnapshotV1 {
+        plan_index: candidate.plan.plan_index,
+        first_action_key: candidate.plan.first_action_key.clone(),
+        target_source: candidate.target.source,
+        terminal: candidate.target.terminal,
+        complete_win: candidate.target.complete_win,
+        final_hp: candidate.target.final_hp,
+        hp_loss: candidate.target.child_search_hp_loss,
+        turns: best_complete.map(|trajectory| trajectory.turns),
+        potions_used: best_complete.map(|trajectory| trajectory.potions_used),
+        cards_played: best_complete.map(|trajectory| trajectory.cards_played),
+        action_count: best_complete.map(|trajectory| trajectory.action_count),
+        nodes_expanded: candidate.target.nodes_expanded,
+        tactical: candidate.tactical.clone(),
+    }
+}
+
+fn outcome_delta(
+    best: &CombatTurnPlanGuidancePlanSnapshotV1,
+    current_first: &CombatTurnPlanGuidancePlanSnapshotV1,
+) -> CombatTurnPlanGuidanceOutcomeDeltaV1 {
+    CombatTurnPlanGuidanceOutcomeDeltaV1 {
+        final_hp_delta: option_i32_delta(best.final_hp, current_first.final_hp),
+        hp_loss_delta: option_i32_delta(best.hp_loss, current_first.hp_loss),
+        turn_delta: option_u32_i32_delta(best.turns, current_first.turns),
+        potions_used_delta: option_u32_i32_delta(best.potions_used, current_first.potions_used),
+        cards_played_delta: option_u32_i32_delta(best.cards_played, current_first.cards_played),
+        action_count_delta: option_usize_i32_delta(best.action_count, current_first.action_count),
+        nodes_expanded_delta: option_u64_i64_delta(
+            best.nodes_expanded,
+            current_first.nodes_expanded,
+        ),
+    }
+}
+
+fn option_i32_delta(left: Option<i32>, right: Option<i32>) -> Option<i32> {
+    Some(left? - right?)
+}
+
+fn option_u32_i32_delta(left: Option<u32>, right: Option<u32>) -> Option<i32> {
+    Some(left? as i32 - right? as i32)
+}
+
+fn option_usize_i32_delta(left: Option<usize>, right: Option<usize>) -> Option<i32> {
+    Some(left? as i32 - right? as i32)
+}
+
+fn option_u64_i64_delta(left: Option<u64>, right: Option<u64>) -> Option<i64> {
+    Some(left? as i64 - right? as i64)
 }
 
 fn compare_targets(
@@ -399,4 +615,400 @@ fn summarize_benchmark(
         }
     }
     summary
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ai::combat_search_v2::{
+        CombatSearchV2ActionCardFacts, CombatSearchV2ActionExactDeltaFacts,
+        CombatSearchV2ActionFacts, CombatSearchV2ActionImmediateFacts,
+        CombatSearchV2ActionMechanicsFacts, CombatSearchV2ActionTargetFacts,
+        CombatSearchV2ActionTrace, CombatSearchV2EnemySummary, CombatSearchV2StateSummary,
+        CombatSearchV2TurnPlanProbeCandidateReport, CombatSearchV2TurnPlanProbeStepReport,
+        SearchTerminalLabel,
+    };
+    use crate::content::cards::{CardTarget, CardType};
+    use crate::state::core::ClientInput;
+
+    use super::*;
+
+    #[test]
+    fn tactical_trace_summarizes_mechanical_turn_plan_deltas() {
+        let plan = probe_plan(vec![
+            probe_step(
+                0,
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(1),
+                },
+                Some(card_facts("Feel No Pain", "FeelNoPain", CardType::Power, 1)),
+                exact_delta(0, 0, -1, -1, 0, 1, 0, -12, 0),
+                mechanics_delta(0, 0, 0, 0, 0),
+            ),
+            probe_step(
+                1,
+                ClientInput::PlayCard {
+                    card_index: 1,
+                    target: Some(1),
+                },
+                Some(card_facts("True Grit", "TrueGrit", CardType::Skill, 1)),
+                exact_delta(0, 9, -1, -1, 0, 0, 1, 0, 0),
+                mechanics_delta(0, 0, 0, 0, 0),
+            ),
+            probe_step(
+                2,
+                ClientInput::UsePotion {
+                    potion_index: 0,
+                    target: Some(1),
+                },
+                None,
+                exact_delta(-5, 0, 0, 0, 0, 0, 0, -20, 0),
+                mechanics_delta(0, 0, 0, 0, 0),
+            ),
+        ]);
+
+        let trace = tactical_trace_for_plan_report(&plan);
+
+        assert_eq!(trace.action_count, 3);
+        assert_eq!(trace.cards_played, 2);
+        assert_eq!(trace.potions_used, 1);
+        assert_eq!(trace.powers_played, 1);
+        assert_eq!(trace.damage_done, 32);
+        assert_eq!(trace.block_gained_proxy, 9);
+        assert_eq!(trace.energy_spent_proxy, 2);
+        assert_eq!(trace.exhaust_delta, 1);
+        assert_eq!(trace.player_hp_lost, 5);
+    }
+
+    #[test]
+    fn selected_vs_best_target_reports_current_ordering_gap() {
+        let first = lab_candidate(
+            0,
+            "first",
+            tactical_plan_with_damage(0, "Strike", 6),
+            target_with_complete_win(30, 10, 7, 0, 12, 10),
+        );
+        let best = lab_candidate(
+            1,
+            "best",
+            tactical_plan_with_damage(1, "Bash", 9),
+            target_with_complete_win(40, 0, 5, 0, 9, 8),
+        );
+        let candidates = vec![first, best];
+
+        let comparison =
+            selected_vs_best_target_report(&candidates).expect("comparison should exist");
+
+        assert!(!comparison.same_plan);
+        assert_eq!(comparison.current_first.plan_index, 0);
+        assert_eq!(comparison.best_by_child_target.plan_index, 1);
+        assert_eq!(
+            comparison.delta_best_minus_current_first.final_hp_delta,
+            Some(10)
+        );
+        assert_eq!(
+            comparison.delta_best_minus_current_first.hp_loss_delta,
+            Some(-10)
+        );
+        assert_eq!(
+            comparison.delta_best_minus_current_first.turn_delta,
+            Some(-2)
+        );
+        assert_eq!(
+            comparison
+                .delta_best_minus_current_first
+                .nodes_expanded_delta,
+            Some(-20)
+        );
+        assert_eq!(comparison.best_by_child_target.tactical.damage_done, 9);
+    }
+
+    fn lab_candidate(
+        plan_index: usize,
+        _action_key: &str,
+        plan: CombatSearchV2TurnPlanProbeCandidateReport,
+        child_best: CombatSearchGuidanceLabTrajectoryV1,
+    ) -> CombatTurnPlanGuidanceLabCandidateV1 {
+        CombatTurnPlanGuidanceLabCandidateV1 {
+            tactical: tactical_trace_for_plan_report(&plan),
+            plan,
+            end_fingerprints: fingerprint_report(plan_index),
+            child_search: Some(CombatSearchGuidanceLabChildSearchV1 {
+                outcome: crate::ai::combat_search_v2::CombatSearchV2OutcomeReport {
+                    coverage_status: crate::ai::combat_search_v2::SearchCoverageStatus::Exhaustive,
+                    coverage_reason: "test".to_string(),
+                    complete_trajectory_found: true,
+                    exhaustive: true,
+                },
+                best_complete: Some(child_best.clone()),
+                best_frontier: Some(child_best.clone()),
+                final_state: None,
+                nodes_expanded: child_best.action_count as u64 * 10,
+                nodes_generated: child_best.action_count as u64 * 20,
+                terminal_wins: 1,
+                elapsed_ms: 0,
+            }),
+            target: CombatSearchGuidanceLabTargetV1 {
+                target_kind: "root_turn_plan_child_search_rank",
+                source: "bounded_child_search_best_complete",
+                terminal: SearchTerminalLabel::Win,
+                complete_win: true,
+                post_root_player_hp: 50,
+                child_search_hp_loss: Some(child_best.hp_loss),
+                final_hp: Some(child_best.final_hp),
+                nodes_expanded: Some(child_best.action_count as u64 * 10),
+                limitations: vec![],
+            },
+        }
+    }
+
+    fn fingerprint_report(plan_index: usize) -> CombatSearchV2InputFingerprintReport {
+        CombatSearchV2InputFingerprintReport {
+            boundary: crate::eval::fingerprint::DecisionBoundaryFingerprintV1 {
+                engine_state: "CombatPlayerTurn".to_string(),
+                decision_kind: "combat".to_string(),
+                terminal: crate::sim::combat::CombatTerminal::Unresolved,
+                stable_boundary: true,
+                turn_count: 1,
+            },
+            public_observation_hash: format!("public-{plan_index}"),
+            legal_candidate_set_hash: format!("set-{plan_index}"),
+            legal_candidate_order_hash: format!("order-{plan_index}"),
+            exact_state_hash: format!("hash-{plan_index}"),
+            stable_outcome_hash: Some(format!("stable-{plan_index}")),
+            rng_boundary_status: crate::eval::fingerprint::RngFingerprintStatus::Complete,
+            rng_boundary_stream_count: 0,
+            rng_boundary_digest: "empty".to_string(),
+        }
+    }
+
+    fn target_with_complete_win(
+        final_hp: i32,
+        hp_loss: i32,
+        turns: u32,
+        potions_used: u32,
+        cards_played: u32,
+        action_count: usize,
+    ) -> CombatSearchGuidanceLabTrajectoryV1 {
+        CombatSearchGuidanceLabTrajectoryV1 {
+            terminal: SearchTerminalLabel::Win,
+            estimated: false,
+            final_hp,
+            hp_loss,
+            turns,
+            potions_used,
+            potions_discarded: 0,
+            cards_played,
+            action_count,
+        }
+    }
+
+    fn tactical_plan_with_damage(
+        plan_index: usize,
+        card_name: &'static str,
+        damage: i32,
+    ) -> CombatSearchV2TurnPlanProbeCandidateReport {
+        probe_plan_with_index(
+            plan_index,
+            vec![probe_step(
+                0,
+                ClientInput::PlayCard {
+                    card_index: 0,
+                    target: Some(1),
+                },
+                Some(card_facts(card_name, card_name, CardType::Attack, 1)),
+                exact_delta(0, 0, -1, -1, 0, 1, 0, -damage, 0),
+                mechanics_delta(0, 0, 0, 0, 0),
+            )],
+        )
+    }
+
+    fn probe_plan(
+        steps: Vec<CombatSearchV2TurnPlanProbeStepReport>,
+    ) -> CombatSearchV2TurnPlanProbeCandidateReport {
+        probe_plan_with_index(0, steps)
+    }
+
+    fn probe_plan_with_index(
+        plan_index: usize,
+        steps: Vec<CombatSearchV2TurnPlanProbeStepReport>,
+    ) -> CombatSearchV2TurnPlanProbeCandidateReport {
+        CombatSearchV2TurnPlanProbeCandidateReport {
+            plan_index,
+            bucket: "balanced",
+            stop_reason: "next_turn",
+            outcome_class: "unresolved",
+            survival_bucket: "safe",
+            progress_bucket: "race_even",
+            action_count: steps.len(),
+            first_action_key: steps.first().map(|step| step.action.action_key.clone()),
+            action_keys: steps
+                .iter()
+                .map(|step| step.action.action_key.clone())
+                .collect(),
+            actions: steps.iter().map(|step| step.action.clone()).collect(),
+            action_facts: steps.iter().map(|step| step.action_facts.clone()).collect(),
+            steps,
+            eval_final_hp: 50,
+            eval_risk_margin: 0,
+            eval_enemy_progress: 0,
+            end_state: state_summary(50, 0, 3, 100),
+        }
+    }
+
+    fn probe_step(
+        step_index: usize,
+        input: ClientInput,
+        card: Option<CombatSearchV2ActionCardFacts>,
+        exact_one_step_delta: CombatSearchV2ActionExactDeltaFacts,
+        mechanics: CombatSearchV2ActionMechanicsFacts,
+    ) -> CombatSearchV2TurnPlanProbeStepReport {
+        CombatSearchV2TurnPlanProbeStepReport {
+            step_index,
+            action: CombatSearchV2ActionTrace {
+                step_index,
+                action_id: step_index,
+                action_key: format!("action-{step_index}"),
+                action_debug: format!("action {step_index}"),
+                input,
+            },
+            action_facts: CombatSearchV2ActionFacts {
+                action_kind: "test",
+                card,
+                target: Some(CombatSearchV2ActionTargetFacts {
+                    target_slot: 0,
+                    entity_id: 1,
+                    enemy_id: "Cultist".to_string(),
+                    hp: 100,
+                    block: 0,
+                    visible_incoming_damage: 6,
+                    vulnerable: 0,
+                    weak: 0,
+                    strength: 0,
+                }),
+                immediate: CombatSearchV2ActionImmediateFacts::default(),
+                mechanics,
+                exact_one_step_delta,
+            },
+            exact_state_hash_kind: "exact",
+            state_before_exact_state_hash: format!("before-{step_index}"),
+            state_after_exact_state_hash: format!("after-{step_index}"),
+            state_before: state_summary(50, 0, 3, 100),
+            state_after: state_summary(50, 0, 2, 100),
+        }
+    }
+
+    fn card_facts(
+        name: &'static str,
+        card_id: &str,
+        card_type: CardType,
+        cost_for_turn: i32,
+    ) -> CombatSearchV2ActionCardFacts {
+        CombatSearchV2ActionCardFacts {
+            hand_index: 0,
+            uuid: 1,
+            card_id: card_id.to_string(),
+            name,
+            upgraded: false,
+            card_type,
+            definition_target: CardTarget::Enemy,
+            effective_target: CardTarget::Enemy,
+            cost_for_turn,
+            base_cost: cost_for_turn as i8,
+            evaluated_damage: 0,
+            evaluated_block: 0,
+            evaluated_magic: 0,
+            exhaust: false,
+            ethereal: false,
+            innate: false,
+        }
+    }
+
+    fn exact_delta(
+        player_hp_delta: i32,
+        player_block_delta: i32,
+        energy_delta: i32,
+        hand_delta: i32,
+        draw_delta: i32,
+        discard_delta: i32,
+        exhaust_delta: i32,
+        total_enemy_hp_delta: i32,
+        total_enemy_block_delta: i32,
+    ) -> CombatSearchV2ActionExactDeltaFacts {
+        CombatSearchV2ActionExactDeltaFacts {
+            status: "ok",
+            terminal: SearchTerminalLabel::Unresolved,
+            engine_steps: 1,
+            player_hp_delta,
+            player_block_delta,
+            energy_delta,
+            hand_delta,
+            draw_delta,
+            discard_delta,
+            exhaust_delta,
+            limbo_delta: 0,
+            queued_cards_delta: 0,
+            total_enemy_hp_delta,
+            total_enemy_block_delta,
+            pending_choice_present: false,
+            pending_choice_estimated_action_fanout: 0,
+        }
+    }
+
+    fn mechanics_delta(
+        visible_attack_mitigation_hint: i32,
+        player_strength_gain: i32,
+        player_temporary_strength_gain: i32,
+        reactive_player_hp_loss: i32,
+        reactive_bad_draw_cards: i32,
+    ) -> CombatSearchV2ActionMechanicsFacts {
+        CombatSearchV2ActionMechanicsFacts {
+            visible_attack_mitigation_hint,
+            player_strength_gain,
+            player_temporary_strength_gain,
+            reactive_player_hp_loss,
+            reactive_bad_draw_cards,
+            ..CombatSearchV2ActionMechanicsFacts::default()
+        }
+    }
+
+    fn state_summary(
+        player_hp: i32,
+        player_block: i32,
+        energy: u8,
+        total_enemy_hp: i32,
+    ) -> CombatSearchV2StateSummary {
+        CombatSearchV2StateSummary {
+            engine_state: "CombatPlayerTurn".to_string(),
+            terminal: SearchTerminalLabel::Unresolved,
+            player_hp,
+            player_block,
+            energy,
+            turn_count: 1,
+            living_enemy_count: 1,
+            total_enemy_hp,
+            visible_incoming_damage: 6,
+            enemy_slots: vec![CombatSearchV2EnemySummary {
+                slot: 0,
+                entity_id: 1,
+                enemy_id: "Cultist".to_string(),
+                hp: total_enemy_hp,
+                max_hp: 100,
+                block: 0,
+                alive: true,
+                escaped: false,
+                dying: false,
+                half_dead: false,
+                planned_move_id: 0,
+                visible_intent: "attack".to_string(),
+                visible_incoming_damage: 6,
+            }],
+            hand_count: 5,
+            draw_count: 5,
+            discard_count: 0,
+            exhaust_count: 0,
+            limbo_count: 0,
+            queued_cards_count: 0,
+        }
+    }
 }

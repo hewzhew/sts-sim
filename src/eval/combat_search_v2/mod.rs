@@ -56,4 +56,6 @@ pub use turn_plan_guidance_lab::{
     CombatTurnPlanGuidanceLabBenchmarkCaseV1, CombatTurnPlanGuidanceLabBenchmarkSummaryV1,
     CombatTurnPlanGuidanceLabBenchmarkV1Report, CombatTurnPlanGuidanceLabCandidateV1,
     CombatTurnPlanGuidanceLabSummaryV1, CombatTurnPlanGuidanceLabV1Report,
+    CombatTurnPlanGuidanceOutcomeDeltaV1, CombatTurnPlanGuidancePlanSnapshotV1,
+    CombatTurnPlanGuidanceSelectedComparisonV1, CombatTurnPlanTacticalTraceV1,
 };
