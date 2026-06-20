@@ -61,7 +61,7 @@ pub enum PotionAcquisitionTraitV1 {
     CombatBlock,
     DebuffSetup,
     EnergyBurst,
-    StrengthBurst,
+    StrengthGain,
     CardAccess,
     ActionAmplifier,
     DeathInsurance,
@@ -169,10 +169,7 @@ pub fn relic_mechanics_profile_v1(relic: RelicId) -> RelicMechanicsProfileV1 {
 
 pub fn potion_mechanics_profile_v1(potion: PotionId) -> PotionMechanicsProfileV1 {
     PotionMechanicsProfileV1 {
-        temporary_strength_burst: matches!(
-            potion,
-            PotionId::StrengthPotion | PotionId::SteroidPotion
-        ),
+        temporary_strength_burst: matches!(potion, PotionId::SteroidPotion),
         strength_converter: match potion {
             PotionId::AncientPotion => {
                 Some(StrengthConversionMechanicV1::PreventStrengthDownDebuff)
@@ -218,8 +215,8 @@ pub fn relic_acquisition_traits_v1(relic: RelicId) -> Vec<RelicAcquisitionTraitV
 pub fn potion_acquisition_traits_v1(potion: PotionId) -> Vec<PotionAcquisitionTraitV1> {
     let mechanics = potion_mechanics_profile_v1(potion);
     let mut traits = Vec::new();
-    if mechanics.temporary_strength_burst {
-        push_potion_trait(&mut traits, PotionAcquisitionTraitV1::StrengthBurst);
+    if mechanics.temporary_strength_burst || potion == PotionId::StrengthPotion {
+        push_potion_trait(&mut traits, PotionAcquisitionTraitV1::StrengthGain);
     }
     if mechanics.strength_converter.is_some() {
         push_potion_trait(&mut traits, PotionAcquisitionTraitV1::DebuffControl);
@@ -296,5 +293,13 @@ mod tests {
         let mechanics = card_mechanics_profile_v1(CardId::DeepBreath);
 
         assert!(mechanics.reshuffle_discard_into_draw);
+    }
+
+    #[test]
+    fn strength_potion_is_not_temporary_strength_burst() {
+        assert!(!potion_mechanics_profile_v1(PotionId::StrengthPotion).temporary_strength_burst);
+        assert!(potion_mechanics_profile_v1(PotionId::SteroidPotion).temporary_strength_burst);
+        assert!(potion_acquisition_traits_v1(PotionId::StrengthPotion)
+            .contains(&PotionAcquisitionTraitV1::StrengthGain));
     }
 }
