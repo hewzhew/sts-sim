@@ -335,7 +335,7 @@ def discover_tactical_episode_paths(roots: list[Path]) -> list[Path]:
             continue
         if not root.exists():
             raise SystemExit(f"discover root does not exist: {root}")
-        for path in root.rglob("*.tactical_episode*.jsonl"):
+        for path in root.rglob("*tactical_episode*.jsonl"):
             key = tactical_episode_discovery_key(path)
             previous = discovered_by_key.get(key)
             if previous is None or path.stat().st_mtime > previous.stat().st_mtime:
@@ -353,7 +353,11 @@ def turn_plan_probe_discovery_key(path: Path) -> str:
 
 def tactical_episode_discovery_key(path: Path) -> str:
     name = path.name
-    for suffix in (".tactical_episode_batch.jsonl", ".tactical_episode.jsonl"):
+    for suffix in (
+        ".enriched_tactical_episode.jsonl",
+        ".tactical_episode_batch.jsonl",
+        ".tactical_episode.jsonl",
+    ):
         if name.endswith(suffix):
             return f"{path.parent}|{name.removesuffix(suffix)}"
     return str(path)
@@ -2572,7 +2576,10 @@ def main() -> None:
         input_paths.extend(discover_tactical_episode_paths(roots))
     input_paths = sorted(set(input_paths))
     if not input_paths:
-        parser.error("provide JSONL inputs or --discover-turn-plan-probes ROOT")
+        parser.error(
+            "provide JSONL inputs, --discover-turn-plan-probes ROOT, "
+            "or --discover-tactical-episodes ROOT"
+        )
 
     samples = load_samples(input_paths)
     groups = usable_groups(samples)
