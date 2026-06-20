@@ -3063,7 +3063,7 @@ def main() -> None:
                 report_mode=args.report_mode,
             )
         if args.compare_target_modes:
-            summary["target_mode_compare"] = print_source_cv_target_mode_comparison(
+            target_mode_compare = print_source_cv_target_mode_comparison(
                 groups,
                 dim=args.dim,
                 epochs=args.epochs,
@@ -3075,6 +3075,26 @@ def main() -> None:
                 training_mode=training_mode,
                 report_mode=args.report_mode,
             )
+            summary["target_mode_compare"] = target_mode_compare
+            comparable_target_modes = {
+                mode: metrics
+                for mode, metrics in target_mode_compare.items()
+                if metrics.get("groups", 0.0) > 0
+            }
+            if comparable_target_modes:
+                best_mode, best_metrics = min(
+                    comparable_target_modes.items(),
+                    key=lambda item: item[1].get("avg_hp_regret_to_target", float("inf")),
+                )
+                summary["best_target_mode_by_hp_regret"] = {
+                    "target_mode": best_mode,
+                    "avg_hp_regret_to_target": best_metrics.get(
+                        "avg_hp_regret_to_target", 0.0
+                    ),
+                    "target_outcome_match_rate": best_metrics.get(
+                        "target_outcome_match_rate", 0.0
+                    ),
+                }
         if args.compare_training_modes:
             print_source_cv_training_mode_comparison(
                 groups,

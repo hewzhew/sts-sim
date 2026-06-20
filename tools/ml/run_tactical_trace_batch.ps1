@@ -195,6 +195,13 @@ if ($RunBaseline) {
                     $Equivalent.target_outcome_match_rate)
             }
         }
+        if ($null -ne $Summary.best_target_mode_by_hp_regret) {
+            $BestTarget = $Summary.best_target_mode_by_hp_regret
+            Write-Host ("best target by hp_regret: mode={0} hp_regret={1:N2} outcome_match={2:N3}" -f `
+                $BestTarget.target_mode, `
+                $BestTarget.avg_hp_regret_to_target, `
+                $BestTarget.target_outcome_match_rate)
+        }
     } else {
         python @ArgsList
     }
