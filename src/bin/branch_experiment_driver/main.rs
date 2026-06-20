@@ -99,7 +99,7 @@ struct Args {
     #[arg(
         long = "combat-search-option",
         value_name = "KEY=VALUE",
-        help = "Additional run_control search-combat option, e.g. rollout=turn_beam, beam=4, turn_plan=root_frontier_seed, frontier=single_queue"
+        help = "Additional run_control search-combat option, e.g. rollout=turn_beam, beam=4, turn_plan=diagnostic_only, frontier=single_queue"
     )]
     combat_search_options: Vec<String>,
 
