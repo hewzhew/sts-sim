@@ -1633,6 +1633,52 @@ def print_source_cv_feature_group_comparison(
         print_metrics(f"feature_group:{label}", metrics, report_mode=report_mode)
 
 
+def print_split_feature_group_comparison(
+    train_groups: dict[str, list[dict[str, Any]]],
+    test_groups: dict[str, list[dict[str, Any]]],
+    *,
+    dim: int,
+    epochs: int,
+    learning_rate: float,
+    l2: float,
+    seed: int,
+    include_order_features: bool,
+    target_mode: str,
+    training_mode: str,
+    report_mode: str,
+) -> None:
+    print("  feature_group_compare=split_smoke")
+    variants: list[tuple[str, frozenset[str]]] = [("base", frozenset())]
+    variants.extend((f"+{name}", frozenset({name})) for name in EXPERIMENTAL_FEATURE_GROUPS)
+    variants.append(("all", frozenset(EXPERIMENTAL_FEATURE_GROUPS)))
+    seen: set[frozenset[str]] = set()
+    for label, feature_groups in variants:
+        if feature_groups in seen:
+            continue
+        seen.add(feature_groups)
+        test_scores, meta = score_groups_with_training(
+            train_groups,
+            test_groups,
+            dim=dim,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            l2=l2,
+            seed=seed,
+            include_order_features=include_order_features,
+            feature_groups=feature_groups,
+            target_mode=target_mode,
+            training_mode=training_mode,
+        )
+        if not meta.get("examples") or not test_scores:
+            print(f"  feature_group:{label}=skipped_not_enough_split_data")
+            continue
+        print_metrics(
+            f"feature_group:{label}_test",
+            metrics_from_group_scores(test_groups, test_scores, target_mode=target_mode),
+            report_mode=report_mode,
+        )
+
+
 def print_source_cv_target_mode_comparison(
     groups: dict[str, list[dict[str, Any]]],
     *,
@@ -1916,11 +1962,12 @@ def print_case_rows(
     kind: str,
     limit: int,
     target_mode: str,
-) -> None:
+) -> int:
     rows = interesting_case_rows(groups, scores, kind=kind, limit=limit, target_mode=target_mode)
     print(f"  cases:{title} count={len(rows)}")
     for _score, body in rows:
         print(body)
+    return len(rows)
 
 
 def training_mode_case_rows(
@@ -2250,6 +2297,15 @@ def main() -> None:
         help="For source-cv, print compact ordered/model/target case comparisons.",
     )
     parser.add_argument(
+        "--show-cases-total",
+        type=int,
+        default=None,
+        help=(
+            "Maximum total source-cv case rows across all requested case kinds. "
+            "Defaults to --show-cases when --case-kind all is used."
+        ),
+    )
+    parser.add_argument(
         "--case-kind",
         choices=("worse", "better", "both-bad", "all"),
         default="worse",
@@ -2371,16 +2427,26 @@ def main() -> None:
                 ("better", "model_better_than_ordered"),
                 ("both-bad", "ordered_bad_model_bad"),
             )
+            remaining_case_rows = args.show_cases_total
+            if remaining_case_rows is None and args.case_kind == "all":
+                remaining_case_rows = args.show_cases
             for kind, title in kinds:
                 if args.case_kind in (kind, "all"):
-                    print_case_rows(
+                    if remaining_case_rows is not None and remaining_case_rows <= 0:
+                        break
+                    limit = args.show_cases
+                    if remaining_case_rows is not None:
+                        limit = min(limit, remaining_case_rows)
+                    printed = print_case_rows(
                         title,
                         groups,
                         cv_scores,
                         kind=kind,
-                        limit=args.show_cases,
+                        limit=limit,
                         target_mode=target_mode,
                     )
+                    if remaining_case_rows is not None:
+                        remaining_case_rows -= printed
         if args.show_training_cases > 0:
             print_training_mode_case_rows(
                 groups,
@@ -2544,6 +2610,20 @@ def main() -> None:
         metrics_from_group_scores(test_groups, test_scores, target_mode=target_mode),
         report_mode=args.report_mode,
     )
+    if args.compare_feature_groups:
+        print_split_feature_group_comparison(
+            train_groups,
+            test_groups,
+            dim=args.dim,
+            epochs=args.epochs,
+            learning_rate=args.learning_rate,
+            l2=args.l2,
+            seed=args.seed,
+            include_order_features=args.include_order_features,
+            target_mode=target_mode,
+            training_mode=training_mode,
+            report_mode=args.report_mode,
+        )
     if args.report_mode == "full":
         if training_mode == "decomposed-utility":
             print(

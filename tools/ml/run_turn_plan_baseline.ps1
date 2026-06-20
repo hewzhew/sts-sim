@@ -51,6 +51,7 @@ param(
     [int] $Seed = 17,
     [switch] $Full,
     [int] $ShowCases = 0,
+    [int] $ShowCasesTotal = -1,
     [ValidateSet("worse", "better", "both-bad", "all")]
     [string] $CaseKind = "worse",
     [ValidateSet("root-delta", "action-shape", "target-detail", "enemy-slot-context", "tactical-summary", "action-facts")]
@@ -101,6 +102,9 @@ if ($UseTacticalEpisodes -or $TacticalOnly) {
 
 if ($ShowCases -gt 0) {
     $ArgsList += @("--show-cases", "$ShowCases", "--case-kind", "$CaseKind")
+    if ($ShowCasesTotal -ge 0) {
+        $ArgsList += @("--show-cases-total", "$ShowCasesTotal")
+    }
 }
 
 if ($FeatureGroups.Count -gt 0) {
