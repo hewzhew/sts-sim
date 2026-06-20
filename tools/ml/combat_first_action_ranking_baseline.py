@@ -441,7 +441,40 @@ def turn_plan_feature_coverage(samples: list[dict[str, Any]]) -> dict[str, int]:
     return dict(coverage)
 
 
-def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, float]:
+def action_kind_from_action_key(action_key: str) -> str:
+    if action_key == "combat/end_turn":
+        return "end_turn"
+    if action_key.startswith("combat/play_card/"):
+        return "play_card"
+    if action_key.startswith("combat/use_potion/"):
+        return "use_potion"
+    if action_key.startswith("combat/discard_potion/"):
+        return "discard_potion"
+    if action_key.startswith("combat/"):
+        remainder = action_key[len("combat/") :]
+        return remainder.split("/", 1)[0] if remainder else "combat_unknown"
+    return "unknown"
+
+
+def action_keys_from_mask_entries(entries: Any) -> set[str]:
+    if not isinstance(entries, list):
+        return set()
+    out = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        key = entry.get("action_key")
+        if isinstance(key, str) and key:
+            out.add(key)
+    return out
+
+
+def action_kind_counts(action_keys: set[str]) -> dict[str, int]:
+    counts = Counter(action_kind_from_action_key(key) for key in action_keys)
+    return dict(sorted(counts.items()))
+
+
+def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, Any]:
     """Summarize root legal-action mask coverage once per decision group."""
     groups = grouped_samples(samples)
     covered_groups = 0
@@ -450,6 +483,13 @@ def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, float]
     total_equivalence_representative_actions = 0.0
     total_preselection_first_actions = 0.0
     total_candidate_first_actions = 0.0
+    missing_legal_by_kind: Counter[str] = Counter()
+    eligible_compressed_by_kind: Counter[str] = Counter()
+    representative_not_preselected_by_kind: Counter[str] = Counter()
+    preselected_not_candidate_by_kind: Counter[str] = Counter()
+    ineligible_by_kind: Counter[str] = Counter()
+    eligible_not_candidate_by_kind: Counter[str] = Counter()
+    legal_not_candidate_by_kind: Counter[str] = Counter()
     for group in groups.values():
         if not group:
             continue
@@ -475,6 +515,26 @@ def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, float]
             total_candidate_first_actions += numeric_or_zero(
                 coverage.get("covered_action_count")
             )
+        legal = action_keys_from_mask_entries(mask.get("legal_actions"))
+        eligible = action_keys_from_mask_entries(mask.get("candidate_eligible_actions"))
+        representatives = action_keys_from_mask_entries(
+            mask.get("equivalence_representative_actions")
+        )
+        preselected = action_keys_from_mask_entries(mask.get("preselection_first_actions"))
+        candidate_first = (
+            action_keys_from_mask_entries(coverage.get("candidate_first_actions"))
+            if isinstance(coverage, dict)
+            else set()
+        )
+        missing_legal_by_kind.update(action_kind_counts(legal - eligible))
+        ineligible_by_kind.update(action_kind_counts(legal - eligible))
+        eligible_compressed_by_kind.update(action_kind_counts(eligible - representatives))
+        representative_not_preselected_by_kind.update(
+            action_kind_counts(representatives - preselected)
+        )
+        preselected_not_candidate_by_kind.update(action_kind_counts(preselected - candidate_first))
+        eligible_not_candidate_by_kind.update(action_kind_counts(eligible - candidate_first))
+        legal_not_candidate_by_kind.update(action_kind_counts(legal - candidate_first))
     first_action_ratio = (
         total_candidate_first_actions / total_legal_actions if total_legal_actions else 0.0
     )
@@ -503,6 +563,17 @@ def root_action_mask_coverage(samples: list[dict[str, Any]]) -> dict[str, float]
             else 0.0
         ),
         "candidate_eligible_action_coverage_ratio": eligible_ratio,
+        "missing_legal_by_kind": dict(sorted(missing_legal_by_kind.items())),
+        "ineligible_by_kind": dict(sorted(ineligible_by_kind.items())),
+        "eligible_compressed_by_kind": dict(sorted(eligible_compressed_by_kind.items())),
+        "representative_not_preselected_by_kind": dict(
+            sorted(representative_not_preselected_by_kind.items())
+        ),
+        "preselected_not_candidate_by_kind": dict(
+            sorted(preselected_not_candidate_by_kind.items())
+        ),
+        "eligible_not_candidate_by_kind": dict(sorted(eligible_not_candidate_by_kind.items())),
+        "legal_not_candidate_by_kind": dict(sorted(legal_not_candidate_by_kind.items())),
     }
 
 
@@ -2856,6 +2927,15 @@ def main() -> None:
             f"{root_mask_coverage['candidate_first_action_coverage_ratio']:.3f} "
             f"candidate_eligible_ratio="
             f"{root_mask_coverage['candidate_eligible_action_coverage_ratio']:.3f}"
+        )
+        print(
+            "  root_action_mask_bottleneck="
+            f"missing_legal={root_mask_coverage['missing_legal_by_kind']} "
+            f"eligible_compressed={root_mask_coverage['eligible_compressed_by_kind']} "
+            f"representative_not_preselected="
+            f"{root_mask_coverage['representative_not_preselected_by_kind']} "
+            f"preselected_not_candidate="
+            f"{root_mask_coverage['preselected_not_candidate_by_kind']}"
         )
     if target_audit["groups"]:
         print(
