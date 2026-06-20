@@ -32,6 +32,7 @@ TARGET_KIND = "initial_decision_candidate_selected_by_best_complete"
 LEGACY_SCHEMA_NAME = "CombatSearchGuidanceSampleV1"
 PROBE_SCHEMA_NAME = "CombatActionProbeSampleV1"
 TURN_PLAN_SCHEMA_NAME = "CombatTurnPlanProbeSampleV1"
+EXPERIMENTAL_FEATURE_GROUPS = ("root-delta", "action-shape")
 
 
 def stable_hash(text: str) -> int:
@@ -280,6 +281,14 @@ def add_number(features: dict[str, float], name: str, value: Any, scale: float) 
     add_token(features, f"bin:{name}:{bucket}")
 
 
+def numeric_value(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
 CARD_IN_ACTION_RE = re.compile(r"/card:([^/#]+?)(?:#|/)")
 HAND_IN_ACTION_RE = re.compile(r"/hand:(\d+)")
 TARGET_IN_ACTION_RE = re.compile(r"/target:([^/]+)")
@@ -301,7 +310,86 @@ def display_card_from_normalized(card: str) -> str:
     return f"{base}+" if upgraded else base
 
 
-def extract_features(sample: dict[str, Any], *, include_order_features: bool) -> dict[str, float]:
+def add_turn_plan_root_delta_features(
+    features: dict[str, float],
+    state: dict[str, Any],
+    plan: dict[str, Any],
+) -> None:
+    end_state = plan.get("end_state") if isinstance(plan.get("end_state"), dict) else {}
+    if not end_state:
+        return
+
+    initial_enemy_hp = numeric_value(state.get("total_enemy_hp"))
+    final_enemy_hp = numeric_value(end_state.get("total_enemy_hp"))
+    if initial_enemy_hp is not None and final_enemy_hp is not None:
+        enemy_hp_removed = initial_enemy_hp - final_enemy_hp
+        add_number(features, "plan_root_enemy_hp_removed", enemy_hp_removed, 300.0)
+        if initial_enemy_hp > 0:
+            add_number(
+                features,
+                "plan_root_enemy_progress_ratio",
+                enemy_hp_removed / initial_enemy_hp,
+                1.0,
+            )
+        add_token(
+            features,
+            "plan_root_enemy_hp_progress" if enemy_hp_removed > 0 else "plan_root_no_enemy_hp_progress",
+        )
+
+    initial_enemies = numeric_value(state.get("living_enemy_count"))
+    final_enemies = numeric_value(end_state.get("living_enemy_count"))
+    if initial_enemies is not None and final_enemies is not None:
+        enemies_killed = initial_enemies - final_enemies
+        add_number(features, "plan_root_enemies_killed", enemies_killed, 5.0)
+        add_number(features, "plan_root_living_enemies_after", final_enemies, 5.0)
+        add_token(features, "plan_root_kills_enemy" if enemies_killed > 0 else "plan_root_no_enemy_kill")
+
+
+def add_turn_plan_action_shape_features(
+    features: dict[str, float],
+    action_keys: list[Any],
+) -> None:
+    play_cards = 0
+    targeted_plays = 0
+    no_target_plays = 0
+    unique_monster_targets: set[str] = set()
+    first_play_target_kind: str | None = None
+    for key in action_keys:
+        text = str(key)
+        if text == "combat/end_turn":
+            continue
+        if not text.startswith("combat/play_card/"):
+            continue
+        play_cards += 1
+        target = TARGET_IN_ACTION_RE.search(text)
+        target_value = target.group(1) if target else "none"
+        target_kind = target_value.split(":", 1)[0]
+        if first_play_target_kind is None:
+            first_play_target_kind = target_kind
+        if target_kind == "monster_slot":
+            targeted_plays += 1
+            unique_monster_targets.add(target_value)
+        elif target_kind == "none":
+            no_target_plays += 1
+
+    add_number(features, "plan_play_card_count", play_cards, 12.0)
+    add_number(features, "plan_targeted_play_count", targeted_plays, 12.0)
+    add_number(features, "plan_no_target_play_count", no_target_plays, 12.0)
+    add_number(features, "plan_unique_monster_targets", len(unique_monster_targets), 5.0)
+    if first_play_target_kind is not None:
+        add_token(features, f"plan_first_play_target:{first_play_target_kind}")
+    if no_target_plays:
+        add_token(features, "plan_has_no_target_play")
+    if targeted_plays:
+        add_token(features, "plan_has_targeted_play")
+
+
+def extract_features(
+    sample: dict[str, Any],
+    *,
+    include_order_features: bool,
+    feature_groups: frozenset[str] = frozenset(),
+) -> dict[str, float]:
     features: dict[str, float] = defaultdict(float)
     cand = candidate(sample)
     context = initial_context(sample)
@@ -346,6 +434,10 @@ def extract_features(sample: dict[str, Any], *, include_order_features: bool) ->
         add_number(features, "plan_eval_risk_margin", cand.get("eval_risk_margin"), 100.0)
         add_number(features, "plan_eval_enemy_progress", cand.get("eval_enemy_progress"), 300.0)
         action_keys = cand.get("action_keys") if isinstance(cand.get("action_keys"), list) else []
+        if "root-delta" in feature_groups:
+            add_turn_plan_root_delta_features(features, state, cand)
+        if "action-shape" in feature_groups:
+            add_turn_plan_action_shape_features(features, action_keys)
         for position, key in enumerate(action_keys[:8]):
             action = str(key)
             if action == "combat/end_turn":
@@ -511,12 +603,17 @@ def flatten_training_examples(
     groups: dict[str, list[dict[str, Any]]],
     *,
     include_order_features: bool,
+    feature_groups: frozenset[str],
 ) -> list[tuple[int, dict[str, float]]]:
     examples = []
     for group in groups.values():
         for sample in group:
             label = 1 if is_selected(sample) else 0
-            features = extract_features(sample, include_order_features=include_order_features)
+            features = extract_features(
+                sample,
+                include_order_features=include_order_features,
+                feature_groups=feature_groups,
+            )
             examples.append((label, features))
     return examples
 
@@ -567,12 +664,17 @@ def evaluate_model(
     *,
     dim: int,
     include_order_features: bool,
+    feature_groups: frozenset[str],
 ) -> dict[str, float]:
     group_scores = {}
     for key, group in groups.items():
         scores = []
         for sample in group:
-            features = extract_features(sample, include_order_features=include_order_features)
+            features = extract_features(
+                sample,
+                include_order_features=include_order_features,
+                feature_groups=feature_groups,
+            )
             scores.append(dot(weights, hashed_features(features, dim), bias))
         group_scores[key] = scores
     return metrics_from_group_scores(groups, group_scores)
@@ -587,6 +689,7 @@ def source_cross_validated_model_metrics(
     l2: float,
     seed: int,
     include_order_features: bool,
+    feature_groups: frozenset[str],
     return_scores: bool = False,
 ) -> tuple[dict[str, float], dict[str, Any], dict[str, list[float]]]:
     units = source_unit_to_group_keys(groups)
@@ -615,6 +718,7 @@ def source_cross_validated_model_metrics(
         train_examples = flatten_training_examples(
             train_groups,
             include_order_features=include_order_features,
+            feature_groups=feature_groups,
         )
         if not train_examples or not test_groups:
             continue
@@ -629,7 +733,11 @@ def source_cross_validated_model_metrics(
         for key, group in test_groups.items():
             scores = []
             for sample in group:
-                features = extract_features(sample, include_order_features=include_order_features)
+                features = extract_features(
+                    sample,
+                    include_order_features=include_order_features,
+                    feature_groups=feature_groups,
+                )
                 scores.append(dot(weights, hashed_features(features, dim), bias))
             out_of_fold_scores[key] = scores
         folds += 1
@@ -638,6 +746,39 @@ def source_cross_validated_model_metrics(
         "folds": folds,
         "source_units": len(units),
     }, scores
+
+
+def print_source_cv_feature_group_comparison(
+    groups: dict[str, list[dict[str, Any]]],
+    *,
+    dim: int,
+    epochs: int,
+    learning_rate: float,
+    l2: float,
+    seed: int,
+    include_order_features: bool,
+    report_mode: str,
+) -> None:
+    print("  feature_group_compare:")
+    variants: list[tuple[str, frozenset[str]]] = [("base", frozenset())]
+    variants.extend((f"+{name}", frozenset({name})) for name in EXPERIMENTAL_FEATURE_GROUPS)
+    variants.append(("all", frozenset(EXPERIMENTAL_FEATURE_GROUPS)))
+    seen: set[frozenset[str]] = set()
+    for label, feature_groups in variants:
+        if feature_groups in seen:
+            continue
+        seen.add(feature_groups)
+        metrics, _meta, _scores = source_cross_validated_model_metrics(
+            groups,
+            dim=dim,
+            epochs=epochs,
+            learning_rate=learning_rate,
+            l2=l2,
+            seed=seed,
+            include_order_features=include_order_features,
+            feature_groups=feature_groups,
+        )
+        print_metrics(f"feature_group:{label}", metrics, report_mode=report_mode)
 
 
 def metrics_from_group_scores(
@@ -840,12 +981,17 @@ def feature_weight_report(
     *,
     dim: int,
     include_order_features: bool,
+    feature_groups: frozenset[str],
     limit: int,
 ) -> list[tuple[str, float]]:
     bucket_to_names: dict[int, Counter[str]] = defaultdict(Counter)
     for group in groups.values():
         for sample in group:
-            features = extract_features(sample, include_order_features=include_order_features)
+            features = extract_features(
+                sample,
+                include_order_features=include_order_features,
+                feature_groups=feature_groups,
+            )
             for name in features:
                 bucket_to_names[stable_hash(name) % dim][name] += 1
     ranked = sorted(weights.items(), key=lambda item: abs(item[1]), reverse=True)
@@ -931,6 +1077,18 @@ def main() -> None:
         action="store_true",
         help="Allow ordered_index/original_action_id/hand_index as features",
     )
+    parser.add_argument(
+        "--feature-groups",
+        nargs="*",
+        choices=EXPERIMENTAL_FEATURE_GROUPS,
+        default=[],
+        help="Opt-in experimental feature groups. Default keeps the committed baseline unchanged.",
+    )
+    parser.add_argument(
+        "--compare-feature-groups",
+        action="store_true",
+        help="For source-cv, print base/+group/all comparisons without changing the selected run.",
+    )
     parser.add_argument("--top-features", type=int, default=12)
     parser.add_argument(
         "--report-mode",
@@ -951,6 +1109,7 @@ def main() -> None:
         help="Which source-cv case comparisons to show when --show-cases is set.",
     )
     args = parser.parse_args()
+    feature_groups = frozenset(args.feature_groups)
 
     input_paths = list(args.inputs)
     if args.discover_turn_plan_probes:
@@ -991,6 +1150,7 @@ def main() -> None:
             l2=args.l2,
             seed=args.seed,
             include_order_features=args.include_order_features,
+            feature_groups=feature_groups,
             return_scores=args.show_cases > 0,
         )
         print(
@@ -1003,6 +1163,17 @@ def main() -> None:
             report_mode=args.report_mode,
         )
         print_metrics("logistic_source_cv", cv_metrics, report_mode=args.report_mode)
+        if args.compare_feature_groups:
+            print_source_cv_feature_group_comparison(
+                groups,
+                dim=args.dim,
+                epochs=args.epochs,
+                learning_rate=args.learning_rate,
+                l2=args.l2,
+                seed=args.seed,
+                include_order_features=args.include_order_features,
+                report_mode=args.report_mode,
+            )
         if args.show_cases > 0:
             kinds = (
                 ("worse", "model_worse_than_ordered"),
@@ -1021,6 +1192,7 @@ def main() -> None:
         train_examples = flatten_training_examples(
             groups,
             include_order_features=args.include_order_features,
+            feature_groups=feature_groups,
         )
         if not train_examples:
             print("  logistic=skipped_not_enough_data")
@@ -1040,6 +1212,7 @@ def main() -> None:
                 groups,
                 dim=args.dim,
                 include_order_features=args.include_order_features,
+                feature_groups=feature_groups,
                 limit=args.top_features,
             ):
                 print(f"    {weight:+.4f} {name}")
@@ -1071,6 +1244,7 @@ def main() -> None:
     train_examples = flatten_training_examples(
         train_groups,
         include_order_features=args.include_order_features,
+        feature_groups=feature_groups,
     )
     if not train_examples or not test_groups:
         print("  logistic=skipped_not_enough_split_data")
@@ -1091,6 +1265,7 @@ def main() -> None:
             bias,
             dim=args.dim,
             include_order_features=args.include_order_features,
+            feature_groups=feature_groups,
         ),
         report_mode=args.report_mode,
     )
@@ -1102,6 +1277,7 @@ def main() -> None:
             bias,
             dim=args.dim,
             include_order_features=args.include_order_features,
+            feature_groups=feature_groups,
         ),
         report_mode=args.report_mode,
     )
@@ -1112,6 +1288,7 @@ def main() -> None:
             train_groups,
             dim=args.dim,
             include_order_features=args.include_order_features,
+            feature_groups=feature_groups,
             limit=args.top_features,
         ):
             print(f"    {weight:+.4f} {name}")
