@@ -252,6 +252,16 @@ pub(super) fn run_coverage_gap_continuation_plan(
         input.coverage_gap_candidates_per_decision,
     );
     println!("{}", render_coverage_gap_continuation_plan_v1(&plan));
+    if let Some(checkpoint) = checkpoint.as_ref() {
+        let replayable_preview = filter_coverage_gap_execution_plan_for_checkpoint_v1(
+            coverage_gap_continuation_execution_plan_v1(&plan, input.coverage_gap_limit),
+            checkpoint,
+        );
+        println!(
+            "Replayable preview from current checkpoint:\n{}",
+            render_coverage_gap_execution_plan_v1(&replayable_preview)
+        );
+    }
     Ok(())
 }
 
