@@ -251,7 +251,45 @@ pub struct CoverageGapContinuationTargetV1 {
     #[serde(default)]
     pub admission: CampaignJournalCandidateAdmissionTraceV1,
     pub disposition: CampaignJournalCandidateDispositionV1,
+    #[serde(
+        default,
+        skip_serializing_if = "CoverageGapContinuationTargetOriginV1::is_empty"
+    )]
+    pub target_origin: CoverageGapContinuationTargetOriginV1,
     pub milestone: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageGapContinuationTargetOriginV1 {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<CoverageGapRouteTargetOriginV1>,
+}
+
+impl CoverageGapContinuationTargetOriginV1 {
+    pub fn is_empty(&self) -> bool {
+        self.source.is_empty() && self.route.is_none()
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageGapRouteTargetOriginV1 {
+    pub legal_candidate_count: usize,
+    pub emitted_candidate_count: usize,
+    pub complete_legal_pool: bool,
+    pub ordering: String,
+    pub target_x: i32,
+    pub target_y: i32,
+    pub room_type: String,
+    pub move_kind: String,
+    pub action_kind: String,
+    pub projection_source: String,
+    pub projection_coverage: String,
+    pub path_budget: usize,
+    pub observed_path_count: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -874,6 +912,7 @@ pub fn plan_coverage_gap_continuations_v1(
                 semantic_class: candidate.semantic_class.clone(),
                 admission: resolved_candidate_admission_v1(candidate),
                 disposition: candidate.disposition,
+                target_origin: coverage_gap_target_origin_v1(event, candidate_index),
                 milestone: coverage_gap_candidate_milestone_v1(event),
             });
             match candidate.disposition {
@@ -961,7 +1000,7 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
         lines.push("Targets:".to_string());
         for (index, target) in plan.targets.iter().take(12).enumerate() {
             lines.push(format!(
-                "  {}. {} {} | parent={} candidate={} {{{}}} admission={} reason_category={} reason_code={} disposition={} milestone={} semantic=[{}]",
+                "  {}. {} {} | parent={} candidate={} {{{}}} admission={} reason_category={} reason_code={} disposition={} milestone={} origin={} semantic=[{}]",
                 index + 1,
                 target.event_type,
                 compact_learning_text_v1(&target.decision_id, 56),
@@ -977,6 +1016,7 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
                 ),
                 render_journal_candidate_disposition_v1(target.disposition),
                 target.milestone,
+                render_coverage_gap_target_origin_v1(&target.target_origin),
                 compact_learning_text_v1(&target.semantic_class, 58)
             ));
         }
@@ -988,6 +1028,29 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
         }
     }
     lines.join("\n")
+}
+
+fn render_coverage_gap_target_origin_v1(origin: &CoverageGapContinuationTargetOriginV1) -> String {
+    let Some(route) = origin.route.as_ref() else {
+        if origin.source.is_empty() {
+            return "-".to_string();
+        }
+        return origin.source.clone();
+    };
+    format!(
+        "{} route=x{}y{} room={} move={} coverage={} paths={}/{} pool={}/{} complete={}",
+        origin.source,
+        route.target_x,
+        route.target_y,
+        route.room_type,
+        route.move_kind,
+        route.projection_coverage,
+        route.observed_path_count,
+        route.path_budget,
+        route.emitted_candidate_count,
+        route.legal_candidate_count,
+        route.complete_legal_pool
+    )
 }
 
 fn candidate_admission_is_scheduled_v1(candidate: &CampaignJournalCandidateV1) -> bool {
@@ -1648,6 +1711,71 @@ fn coverage_gap_candidate_milestone_v1(event: &CampaignJournalEventV1) -> String
             "route_not_candidate_pool".to_string()
         }
     }
+}
+
+fn coverage_gap_target_origin_v1(
+    event: &CampaignJournalEventV1,
+    candidate_index: usize,
+) -> CoverageGapContinuationTargetOriginV1 {
+    match &event.payload {
+        CampaignJournalEventPayloadV1::RouteCandidatePool {
+            candidate_pool_provenance,
+            map_decision_packet,
+            ..
+        } => {
+            let route = map_decision_packet.as_ref().and_then(|packet| {
+                packet.candidates.get(candidate_index).map(|candidate| {
+                    let pool = candidate_pool_provenance
+                        .as_ref()
+                        .unwrap_or(&packet.candidate_pool);
+                    CoverageGapRouteTargetOriginV1 {
+                        legal_candidate_count: pool.legal_candidate_count,
+                        emitted_candidate_count: pool.emitted_candidate_count,
+                        complete_legal_pool: pool.complete_legal_pool,
+                        ordering: format!("{:?}", pool.ordering),
+                        target_x: candidate.target.x,
+                        target_y: candidate.target.y,
+                        room_type: candidate
+                            .target
+                            .room_type
+                            .map(|room| format!("{:?}", room))
+                            .unwrap_or_else(|| "Unknown".to_string()),
+                        move_kind: format!("{:?}", candidate.target.move_kind),
+                        action_kind: coverage_gap_route_action_kind_v1(&candidate.action),
+                        projection_source: format!("{:?}", candidate.projection.metadata.source),
+                        projection_coverage: format!(
+                            "{:?}",
+                            candidate.projection.metadata.coverage
+                        ),
+                        path_budget: candidate.projection.metadata.path_budget,
+                        observed_path_count: candidate.projection.metadata.observed_path_count,
+                    }
+                })
+            });
+            CoverageGapContinuationTargetOriginV1 {
+                source: if route.is_some() {
+                    "map_decision_packet".to_string()
+                } else {
+                    "route_candidate_pool".to_string()
+                },
+                route,
+            }
+        }
+        _ => CoverageGapContinuationTargetOriginV1 {
+            source: "journal_candidate".to_string(),
+            route: None,
+        },
+    }
+}
+
+fn coverage_gap_route_action_kind_v1(
+    action: &crate::ai::route_planner_v1::RouteMapActionV1,
+) -> String {
+    match action {
+        crate::ai::route_planner_v1::RouteMapActionV1::Go { .. } => "go",
+        crate::ai::route_planner_v1::RouteMapActionV1::Fly { .. } => "fly",
+    }
+    .to_string()
 }
 
 fn journal_decision_candidates_v1(event: &CampaignJournalEventV1) -> &[CampaignJournalCandidateV1] {
@@ -2551,10 +2679,22 @@ mod tests {
 
     #[test]
     fn coverage_gap_continuation_plan_targets_unobserved_route_candidates() {
+        let mut run = crate::state::RunState::new(521, 0, false, "Ironclad");
+        run.event_state = None;
+        let trace = crate::ai::route_planner_v1::plan_route_decision_v1(
+            &run,
+            &crate::state::core::EngineState::MapNavigation,
+            crate::ai::route_planner_v1::RoutePlannerConfigV1::default(),
+        );
+        let packet =
+            crate::ai::route_planner_v1::MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+        assert!(packet.candidates.len() >= 2);
+        let observed_route = &packet.candidates[0];
+        let unobserved_route = &packet.candidates[1];
         let mut route_one = sample_branch_outcome_record();
-        route_one.branch_id = "root.go 1".to_string();
-        route_one.commands = vec!["go 1".to_string()];
-        route_one.choice_labels = vec!["x=1 Monster".to_string()];
+        route_one.branch_id = format!("root.{}", observed_route.command);
+        route_one.commands = vec![observed_route.command.clone()];
+        route_one.choice_labels = vec![route_candidate_test_label_v1(observed_route)];
 
         let mut report = sample_campaign_report_with_branches(Vec::new());
         report.journal.events.push(CampaignJournalEventV1 {
@@ -2573,14 +2713,20 @@ mod tests {
                 boundary_title: "Map".to_string(),
                 frontier_key: "map-frontier".to_string(),
                 depth: 0,
-                candidate_count: 2,
+                candidate_count: packet.candidates.len(),
                 selected_index: Some(0),
-                candidate_pool_provenance: None,
-                map_decision_packet: None,
-                candidates: vec![
-                    sample_journal_candidate("go 1", "x=1 Monster"),
-                    sample_journal_candidate("go 2", "x=2 Elite"),
-                ],
+                candidate_pool_provenance: Some(packet.candidate_pool.clone()),
+                map_decision_packet: Some(packet.clone()),
+                candidates: packet
+                    .candidates
+                    .iter()
+                    .map(|candidate| {
+                        sample_journal_candidate(
+                            &candidate.command,
+                            &route_candidate_test_label_v1(candidate),
+                        )
+                    })
+                    .collect(),
             },
         });
 
@@ -2588,13 +2734,31 @@ mod tests {
         let rendered = render_coverage_gap_continuation_plan_v1(&plan);
 
         assert_eq!(plan.total_decisions, 1);
-        assert_eq!(plan.total_candidates, 2);
-        assert_eq!(plan.total_unobserved_candidates, 1);
+        assert_eq!(plan.total_candidates, packet.candidates.len());
+        assert_eq!(
+            plan.total_unobserved_candidates,
+            packet.candidates.len() - 1
+        );
         assert_eq!(plan.targets[0].decision_id, "journal-route-pool0");
-        assert_eq!(plan.targets[0].command, "go 2");
-        assert_eq!(plan.targets[0].label, "x=2 Elite");
+        assert_eq!(plan.targets[0].command, unobserved_route.command);
+        assert_eq!(
+            plan.targets[0].label,
+            route_candidate_test_label_v1(unobserved_route)
+        );
         assert_eq!(plan.targets[0].milestone, "route_frontier");
-        assert!(rendered.contains("x=2 Elite"));
+        assert_eq!(plan.targets[0].target_origin.source, "map_decision_packet");
+        let route_origin = plan.targets[0]
+            .target_origin
+            .route
+            .as_ref()
+            .expect("route candidate should carry typed route origin");
+        assert_eq!(route_origin.target_x, unobserved_route.target.x);
+        assert_eq!(route_origin.target_y, unobserved_route.target.y);
+        assert_eq!(
+            route_origin.observed_path_count,
+            unobserved_route.projection.metadata.observed_path_count
+        );
+        assert!(rendered.contains("origin=map_decision_packet"));
     }
 
     #[test]
@@ -3246,6 +3410,21 @@ mod tests {
             ),
             disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Kept,
         }
+    }
+
+    fn route_candidate_test_label_v1(
+        candidate: &crate::ai::route_planner_v1::RouteMoveCandidateV1,
+    ) -> String {
+        format!(
+            "x={} y={} {}",
+            candidate.target.x,
+            candidate.target.y,
+            candidate
+                .target
+                .room_type
+                .map(|room| format!("{:?}", room))
+                .unwrap_or_else(|| "Unknown".to_string())
+        )
     }
 
     fn sample_pruned_journal_candidate(command: &str, label: &str) -> CampaignJournalCandidateV1 {

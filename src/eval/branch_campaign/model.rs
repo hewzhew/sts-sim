@@ -100,7 +100,29 @@ pub struct BranchCampaignContinuationOriginV1 {
     #[serde(default)]
     pub admission: CampaignJournalCandidateAdmissionTraceV1,
     pub disposition: CampaignJournalCandidateDispositionV1,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub target_origin_source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_origin: Option<BranchCampaignRouteContinuationOriginV1>,
     pub milestone: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignRouteContinuationOriginV1 {
+    pub legal_candidate_count: usize,
+    pub emitted_candidate_count: usize,
+    pub complete_legal_pool: bool,
+    pub ordering: String,
+    pub target_x: i32,
+    pub target_y: i32,
+    pub room_type: String,
+    pub move_kind: String,
+    pub action_kind: String,
+    pub projection_source: String,
+    pub projection_coverage: String,
+    pub path_budget: usize,
+    pub observed_path_count: usize,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

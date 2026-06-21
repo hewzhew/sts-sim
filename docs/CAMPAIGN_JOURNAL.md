@@ -137,6 +137,13 @@ journal parent commands plus the missing candidate command and then uses the
 normal branch campaign runner. This mechanism is for targeted data coverage, not
 for saying that the missing candidate is strategically better.
 
+For route/map candidates, continuation targets carry structured
+`target_origin` provenance from the journal `MapDecisionPacketV1` when it is
+available. That origin records the typed target room, route action, candidate
+pool completeness, and route projection coverage. Coverage-gap tooling should
+use this provenance to explain and schedule missing route candidates; it should
+not parse `go N` commands or display labels to recover map identity.
+
 ## Boundaries
 
 `CampaignJournal` is not a strategy engine. It must not decide what to pick or

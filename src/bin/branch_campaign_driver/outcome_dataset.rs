@@ -6,6 +6,7 @@ use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_with_detail_v1,
     run_branch_campaign_from_report_with_checkpoint_v1, BranchCampaignBranchStatusV1,
     BranchCampaignBranchV1, BranchCampaignContinuationOriginV1, BranchCampaignReportV1,
+    BranchCampaignRouteContinuationOriginV1,
 };
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     analyze_branch_outcome_records_v1, extract_branch_outcome_records_v1,
@@ -411,6 +412,24 @@ fn coverage_gap_branch_from_target_v1(
             semantic_class: target.semantic_class.clone(),
             admission: target.admission.clone(),
             disposition: target.disposition,
+            target_origin_source: target.target_origin.source.clone(),
+            route_origin: target.target_origin.route.as_ref().map(|route| {
+                BranchCampaignRouteContinuationOriginV1 {
+                    legal_candidate_count: route.legal_candidate_count,
+                    emitted_candidate_count: route.emitted_candidate_count,
+                    complete_legal_pool: route.complete_legal_pool,
+                    ordering: route.ordering.clone(),
+                    target_x: route.target_x,
+                    target_y: route.target_y,
+                    room_type: route.room_type.clone(),
+                    move_kind: route.move_kind.clone(),
+                    action_kind: route.action_kind.clone(),
+                    projection_source: route.projection_source.clone(),
+                    projection_coverage: route.projection_coverage.clone(),
+                    path_budget: route.path_budget,
+                    observed_path_count: route.observed_path_count,
+                }
+            }),
             milestone: target.milestone.clone(),
         }),
         lineage_decision_signal_rank_adjustment: 0,
@@ -483,6 +502,7 @@ mod tests {
                 "pruned",
             ),
             disposition: CampaignJournalCandidateDispositionV1::Pruned,
+            target_origin: Default::default(),
             milestone: "next_major_boundary".to_string(),
         };
 
@@ -503,6 +523,8 @@ mod tests {
         assert_eq!(origin.milestone, target.milestone);
         assert_eq!(origin.admission.status, target.admission.status);
         assert_eq!(origin.disposition, target.disposition);
+        assert!(origin.target_origin_source.is_empty());
+        assert!(origin.route_origin.is_none());
     }
 }
 
