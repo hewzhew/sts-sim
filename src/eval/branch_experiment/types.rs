@@ -17,7 +17,7 @@ use crate::eval::run_control::{
 };
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 22;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 23;
 pub const BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1: &str =
     "card_reward_strategic_trace_v1";
 
@@ -107,6 +107,8 @@ pub struct BranchExperimentReportV1 {
     #[serde(default)]
     pub pruned_branch_summary: BranchExperimentPrunedBranchSummaryV1,
     pub reward_option_portfolios: Vec<BranchExperimentRewardOptionPortfolioV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shop_plan_candidate_pools: Vec<BranchExperimentShopPlanCandidatePoolV1>,
     #[serde(default)]
     pub strategy_requests: Vec<BranchExperimentStrategyRequestV1>,
     #[serde(default)]
@@ -160,6 +162,42 @@ pub struct BranchExperimentRewardOptionPortfolioEntryV1 {
     pub command: String,
     pub label: String,
     pub semantic_class: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentShopPlanCandidatePoolV1 {
+    pub depth: usize,
+    pub frontier_key: String,
+    pub boundary_title: String,
+    pub candidate_count: usize,
+    pub branch_frontier_count: usize,
+    pub rollout_head_plan_id: Option<String>,
+    pub candidates: Vec<BranchExperimentShopPlanCandidateEntryV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentShopPlanCandidateEntryV1 {
+    pub plan_id: String,
+    pub command: String,
+    pub label: String,
+    pub role: String,
+    pub source: String,
+    pub kind: String,
+    pub lane: String,
+    pub projection_roles: Vec<String>,
+    pub total_gold_spent: i32,
+    pub legacy_priority: Option<i32>,
+    pub suppressed_count: usize,
+    pub verdict: String,
+    pub rollout_admission: String,
+    pub branch_admission: String,
+    pub tier: i32,
+    pub score: i32,
+    pub confidence_milli: i32,
+    pub component_net_rank: i32,
+    pub reasons: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

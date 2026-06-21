@@ -83,6 +83,16 @@ pub enum CampaignJournalEventPayloadV1 {
         candidate_count: usize,
         candidates: Vec<CampaignJournalCandidateV1>,
     },
+    ShopCandidatePool {
+        decision_id: String,
+        boundary_title: String,
+        frontier_key: String,
+        depth: usize,
+        candidate_count: usize,
+        branch_frontier_count: usize,
+        rollout_head_plan_id: Option<String>,
+        candidates: Vec<CampaignJournalCandidateV1>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

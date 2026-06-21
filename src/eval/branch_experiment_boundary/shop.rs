@@ -5,7 +5,9 @@ use crate::ai::shop_policy_v1::{
 use crate::content::cards::{get_card_definition, CardId};
 use crate::content::potions::get_potion_definition;
 use crate::eval::branch_experiment::{
-    BranchExperimentChoiceDecisionSignalV1, BRANCH_EXPERIMENT_SHOP_BRANCH_FRONTIER_SIGNAL_SOURCE_V1,
+    BranchExperimentChoiceDecisionSignalV1, BranchExperimentShopPlanCandidateEntryV1,
+    BranchExperimentShopPlanCandidatePoolV1,
+    BRANCH_EXPERIMENT_SHOP_BRANCH_FRONTIER_SIGNAL_SOURCE_V1,
 };
 use crate::eval::run_control::RunControlSession;
 use crate::state::core::EngineState;
@@ -25,7 +27,15 @@ pub(crate) struct ShopBranchOption {
     pub(crate) decision_signal: Option<BranchExperimentChoiceDecisionSignalV1>,
 }
 
-pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<ShopBranchOption>> {
+#[derive(Clone, Debug)]
+pub(crate) struct ShopBranchOptionSelection {
+    pub(crate) options: Vec<ShopBranchOption>,
+    pub(crate) candidate_pool: BranchExperimentShopPlanCandidatePoolV1,
+}
+
+pub(crate) fn shop_branch_options(
+    session: &RunControlSession,
+) -> Option<ShopBranchOptionSelection> {
     let EngineState::Shop(shop) = &session.engine_state else {
         return None;
     };
@@ -79,7 +89,100 @@ pub(crate) fn shop_branch_options(session: &RunControlSession) -> Option<Vec<Sho
         !options.is_empty(),
         "shop compiler should expose an executable branch option, usually LeaveShop"
     );
-    Some(options)
+    Some(ShopBranchOptionSelection {
+        options,
+        candidate_pool: shop_candidate_pool_from_compiled_v1(&compiled),
+    })
+}
+
+fn shop_candidate_pool_from_compiled_v1(
+    compiled: &crate::ai::shop_policy_v1::CompiledShopDecisionV1,
+) -> BranchExperimentShopPlanCandidatePoolV1 {
+    let candidates = compiled
+        .candidate_plans
+        .iter()
+        .map(|candidate| shop_candidate_entry_from_plan_v1(compiled, candidate))
+        .collect::<Vec<_>>();
+    BranchExperimentShopPlanCandidatePoolV1 {
+        depth: 0,
+        frontier_key: String::new(),
+        boundary_title: "Shop".to_string(),
+        candidate_count: candidates.len(),
+        branch_frontier_count: compiled.branch_frontier.len(),
+        rollout_head_plan_id: compiled
+            .rollout_head
+            .as_ref()
+            .map(|projection| projection.plan_id.clone()),
+        candidates,
+    }
+}
+
+fn shop_candidate_entry_from_plan_v1(
+    compiled: &crate::ai::shop_policy_v1::CompiledShopDecisionV1,
+    candidate: &crate::ai::shop_policy_v1::ShopPlanCandidateV1,
+) -> BranchExperimentShopPlanCandidateEntryV1 {
+    let evaluation = &candidate.evaluation;
+    BranchExperimentShopPlanCandidateEntryV1 {
+        plan_id: candidate.plan.plan_id.clone(),
+        command: shop_plan_command(&candidate.plan),
+        label: candidate.plan.label.clone(),
+        role: format!("{:?}", candidate.role),
+        source: format!("{:?}", candidate.plan.source),
+        kind: format!("{:?}", candidate.plan.kind),
+        lane: shop_candidate_lane_v1(compiled, candidate.plan.plan_id.as_str()),
+        projection_roles: shop_candidate_projection_roles_v1(
+            compiled,
+            candidate.plan.plan_id.as_str(),
+        ),
+        total_gold_spent: candidate.plan.total_gold_spent,
+        legacy_priority: evaluation
+            .legacy_priority
+            .or(candidate.plan.legacy_priority),
+        suppressed_count: candidate.plan.suppressed_count,
+        verdict: format!("{:?}", evaluation.verdict),
+        rollout_admission: format!("{:?}", evaluation.rollout_admission.status),
+        branch_admission: format!("{:?}", evaluation.branch_admission.status),
+        tier: evaluation.tier,
+        score: evaluation.score,
+        confidence_milli: (evaluation.confidence * 1000.0).round() as i32,
+        component_net_rank: evaluation.component_score.net.round() as i32,
+        reasons: evaluation.reasons.clone(),
+    }
+}
+
+fn shop_candidate_lane_v1(
+    compiled: &crate::ai::shop_policy_v1::CompiledShopDecisionV1,
+    plan_id: &str,
+) -> String {
+    compiled
+        .frontier
+        .lanes
+        .iter()
+        .find(|lane| lane.plan_ids.iter().any(|candidate| candidate == plan_id))
+        .map(|lane| format!("{:?}", lane.lane))
+        .unwrap_or_else(|| "Unknown".to_string())
+}
+
+fn shop_candidate_projection_roles_v1(
+    compiled: &crate::ai::shop_policy_v1::CompiledShopDecisionV1,
+    plan_id: &str,
+) -> Vec<String> {
+    let mut roles = Vec::new();
+    if compiled
+        .rollout_head
+        .as_ref()
+        .is_some_and(|projection| projection.plan_id == plan_id)
+    {
+        roles.push("rollout_head".to_string());
+    }
+    if compiled
+        .branch_frontier
+        .iter()
+        .any(|projection| projection.plan_id == plan_id)
+    {
+        roles.push("branch_frontier".to_string());
+    }
+    roles
 }
 
 fn shop_branch_option_from_plan(

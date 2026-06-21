@@ -43,6 +43,18 @@ CampaignJournalV1
         label
         semantic_class
         disposition: kept
+    shop_candidate_pool
+      decision_id
+      boundary_title
+      frontier_key
+      candidate_count
+      branch_frontier_count
+      rollout_head_plan_id
+      candidates[]
+        command
+        label
+        semantic_class
+        disposition: kept | pruned
 ```
 
 `BranchCampaignReportV1` now carries `journal` as a top-level field. The older
@@ -79,9 +91,10 @@ journal events, not the other way around.
 ## Migration Plan
 
 1. Reward candidate sets are the first event source.
-2. Shop branch frontier candidates are the second event source.
-3. Move full shop compiler candidate pools into journal events when the
-   compiler exposes stable plan identities for all candidates at decision time.
+2. Shop branch frontier candidates were the second event source.
+3. Full shop compiler candidate pools are now captured in
+   `BranchExperimentReportV1.shop_plan_candidate_pools` and surfaced as
+   `shop_candidate_pool` journal events.
 4. Move campfire, event, route, and boss relic decisions after shop.
 5. Link milestone outcomes to prior `decision_id` values.
 6. Gradually remove report-only decision attachments once views read from the
@@ -99,9 +112,11 @@ journal events, not the other way around.
 
 ## Current Caveats
 
-- Shop journal events currently record the branch frontier options that were
-  exposed to branch campaign. They are not yet the full shop inventory or full
-  compiler candidate pool.
+- `shop_branch_candidate_set` exists for reports generated during the first
+  shop-journal migration. New reports should prefer `shop_candidate_pool`.
+- Shop candidate pools are the compiler candidate pool, not a raw shop inventory
+  dump. They include single-action plans, stop/leave plans, and portfolio plans
+  that the compiler generated for the active compile mode.
 - Candidate semantics still include legacy `semantic_class` strings from branch
   retention; these are provenance, not proof of strategic correctness.
 - Outcome links are not implemented yet.

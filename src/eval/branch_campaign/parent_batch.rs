@@ -1,14 +1,10 @@
-use std::collections::BTreeMap;
-
 use crate::eval::branch_experiment::{
     run_branch_experiment_from_session_after_prefix_with_snapshots_v1,
     run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
-    BranchExperimentChoiceV1, BranchExperimentConfigV1,
-    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
-    BranchExperimentRunResultV1, BranchExperimentStrategyRequestV1,
-    BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1,
-    BRANCH_EXPERIMENT_SHOP_BRANCH_FRONTIER_SIGNAL_SOURCE_V1,
-    BRANCH_EXPERIMENT_SHOP_COMPAT_SELECTED_PLAN_SIGNAL_SOURCE_V1,
+    BranchExperimentConfigV1, BranchExperimentRewardOptionPortfolioEntryV1,
+    BranchExperimentRewardOptionPortfolioV1, BranchExperimentRunResultV1,
+    BranchExperimentShopPlanCandidateEntryV1, BranchExperimentShopPlanCandidatePoolV1,
+    BranchExperimentStrategyRequestV1,
 };
 use crate::eval::campaign_journal::{
     reward_portfolio_from_journal_event_v1, CampaignJournalCandidateDispositionV1,
@@ -384,30 +380,15 @@ fn campaign_shop_branch_journal_events_v1(
     parent_floor: i32,
     report: &crate::eval::branch_experiment::BranchExperimentReportV1,
 ) -> Vec<CampaignJournalEventV1> {
-    let mut grouped = BTreeMap::<usize, BTreeMap<String, CampaignJournalCandidateV1>>::new();
-    for branch in &report.branches {
-        for choice in &branch.choices {
-            if !branch_choice_is_shop_candidate_v1(choice) {
-                continue;
-            }
-            let candidate = journal_candidate_from_shop_choice_v1(choice);
-            grouped
-                .entry(choice.depth)
-                .or_default()
-                .entry(candidate.candidate_id.clone())
-                .or_insert(candidate);
-        }
-    }
-
-    grouped
-        .into_iter()
+    report
+        .shop_plan_candidate_pools
+        .iter()
         .enumerate()
-        .map(|(group_index, (depth, candidates))| {
+        .map(|(group_index, pool)| {
             let decision_id = format!(
-                "{}:round{}:shop_branch_frontier{}",
+                "{}:round{}:shop_candidate_pool{}",
                 parent.branch_id, round_number, group_index
             );
-            let candidates = candidates.into_values().collect::<Vec<_>>();
             CampaignJournalEventV1 {
                 event_id: format!("{decision_id}:candidate_set"),
                 round: round_number,
@@ -419,67 +400,74 @@ fn campaign_shop_branch_journal_events_v1(
                 branch_choices: parent.choice_labels.clone(),
                 branch_commands: parent.commands.clone(),
                 combat_budget_retry_used,
-                payload: CampaignJournalEventPayloadV1::ShopBranchCandidateSet {
+                payload: CampaignJournalEventPayloadV1::ShopCandidatePool {
                     decision_id,
-                    boundary_title: "Shop".to_string(),
-                    frontier_key: format!("shop_branch_frontier_depth_{depth}"),
-                    depth,
-                    candidate_count: candidates.len(),
-                    candidates,
+                    boundary_title: pool.boundary_title.clone(),
+                    frontier_key: pool.frontier_key.clone(),
+                    depth: pool.depth,
+                    candidate_count: pool.candidate_count,
+                    branch_frontier_count: pool.branch_frontier_count,
+                    rollout_head_plan_id: pool.rollout_head_plan_id.clone(),
+                    candidates: shop_candidate_pool_candidates_v1(pool),
                 },
             }
         })
         .collect()
 }
 
-fn branch_choice_is_shop_candidate_v1(choice: &BranchExperimentChoiceV1) -> bool {
-    choice.boundary_title == "Shop"
-        || choice.effect_kind.starts_with("shop_")
-        || choice.decision_signal.as_ref().is_some_and(|signal| {
-            matches!(
-                signal.source.as_str(),
-                BRANCH_EXPERIMENT_SHOP_COMPAT_SELECTED_PLAN_SIGNAL_SOURCE_V1
-                    | BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1
-                    | BRANCH_EXPERIMENT_SHOP_BRANCH_FRONTIER_SIGNAL_SOURCE_V1
-            )
-        })
+fn shop_candidate_pool_candidates_v1(
+    pool: &BranchExperimentShopPlanCandidatePoolV1,
+) -> Vec<CampaignJournalCandidateV1> {
+    pool.candidates
+        .iter()
+        .map(journal_candidate_from_shop_candidate_entry_v1)
+        .collect()
 }
 
-fn journal_candidate_from_shop_choice_v1(
-    choice: &BranchExperimentChoiceV1,
+fn journal_candidate_from_shop_candidate_entry_v1(
+    candidate: &BranchExperimentShopPlanCandidateEntryV1,
 ) -> CampaignJournalCandidateV1 {
     CampaignJournalCandidateV1 {
-        candidate_id: format!("depth{}:{}", choice.depth, choice.command),
-        command: choice.command.clone(),
-        label: shop_choice_label_v1(choice),
-        semantic_class: shop_choice_semantic_class_v1(choice),
-        disposition: CampaignJournalCandidateDispositionV1::Kept,
+        candidate_id: candidate.plan_id.clone(),
+        command: candidate.command.clone(),
+        label: candidate.label.clone(),
+        semantic_class: shop_candidate_semantic_class_v1(candidate),
+        disposition: if candidate.branch_admission == "Admit" {
+            CampaignJournalCandidateDispositionV1::Kept
+        } else {
+            CampaignJournalCandidateDispositionV1::Pruned
+        },
     }
 }
 
-fn shop_choice_label_v1(choice: &BranchExperimentChoiceV1) -> String {
-    if !choice.effect_label.is_empty() {
-        choice.effect_label.clone()
-    } else {
-        choice.label.clone()
+fn shop_candidate_semantic_class_v1(
+    candidate: &BranchExperimentShopPlanCandidateEntryV1,
+) -> String {
+    let mut parts = vec![
+        format!("role:{}", candidate.role),
+        format!("source:{}", candidate.source),
+        format!("kind:{}", candidate.kind),
+        format!("lane:{}", candidate.lane),
+        format!("verdict:{}", candidate.verdict),
+        format!("rollout:{}", candidate.rollout_admission),
+        format!("branch:{}", candidate.branch_admission),
+        format!("tier:{}", candidate.tier),
+        format!("score:{}", candidate.score),
+        format!("confidence_milli:{}", candidate.confidence_milli),
+        format!("component_net_rank:{}", candidate.component_net_rank),
+        format!("gold:{}", candidate.total_gold_spent),
+    ];
+    if let Some(priority) = candidate.legacy_priority {
+        parts.push(format!("legacy_priority:{priority}"));
     }
-}
-
-fn shop_choice_semantic_class_v1(choice: &BranchExperimentChoiceV1) -> String {
-    let mut parts = vec![format!("effect:{}", choice.effect_kind)];
-    if choice.representative_count > 1 {
-        parts.push(format!("steps:{}", choice.representative_count));
+    if candidate.suppressed_count > 0 {
+        parts.push(format!("suppressed:{}", candidate.suppressed_count));
     }
-    if choice.suppressed_count > 0 {
-        parts.push(format!("suppressed:{}", choice.suppressed_count));
-    }
-    if let Some(signal) = &choice.decision_signal {
-        parts.push(format!("source:{}", signal.source));
-        parts.push(format!("verdict:{}", signal.verdict));
-        parts.push(format!("tier:{}", signal.tier));
-        parts.push(format!("score:{}", signal.score));
-        parts.push(format!("confidence_milli:{}", signal.confidence_milli));
-        parts.push(format!("component_net_rank:{}", signal.component_net_rank));
+    if !candidate.projection_roles.is_empty() {
+        parts.push(format!(
+            "projection:{}",
+            candidate.projection_roles.join("+")
+        ));
     }
     parts.join(" ")
 }

@@ -4,7 +4,7 @@ use crate::ai::event_policy_v1::EventCandidateTierV1;
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::{
     BranchExperimentChoiceCardV1, BranchExperimentChoiceDecisionSignalV1,
-    BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentRewardOptionPortfolioV1, BranchExperimentShopPlanCandidatePoolV1,
 };
 use crate::eval::run_control::RunControlSession;
 use crate::runtime::combat::CombatCard;
@@ -72,6 +72,7 @@ pub(crate) struct BranchBoundarySelectionV1 {
     pub(crate) id: BranchBoundaryIdV1,
     pub(crate) options: Vec<BranchBoundaryOptionV1>,
     pub(crate) reward_option_portfolio: Option<BranchExperimentRewardOptionPortfolioV1>,
+    pub(crate) shop_plan_candidate_pool: Option<BranchExperimentShopPlanCandidatePoolV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -131,6 +132,7 @@ pub(crate) fn current_branch_boundary(
             id: BranchBoundaryIdV1::CardReward,
             options,
             reward_option_portfolio: selected.portfolio,
+            shop_plan_candidate_pool: None,
         });
     }
 
@@ -145,6 +147,7 @@ pub(crate) fn current_branch_boundary(
                 .map(BranchBoundaryOptionV1::from_campfire)
                 .collect(),
             reward_option_portfolio: None,
+            shop_plan_candidate_pool: None,
         });
     }
 
@@ -156,6 +159,7 @@ pub(crate) fn current_branch_boundary(
                 .map(BranchBoundaryOptionV1::from_boss_relic)
                 .collect(),
             reward_option_portfolio: None,
+            shop_plan_candidate_pool: None,
         });
     }
 
@@ -167,6 +171,7 @@ pub(crate) fn current_branch_boundary(
                 .map(BranchBoundaryOptionV1::from_run_selection)
                 .collect(),
             reward_option_portfolio: None,
+            shop_plan_candidate_pool: None,
         });
     }
 
@@ -178,17 +183,20 @@ pub(crate) fn current_branch_boundary(
                 .map(BranchBoundaryOptionV1::from_reward)
                 .collect(),
             reward_option_portfolio: None,
+            shop_plan_candidate_pool: None,
         });
     }
 
-    if let Some(options) = shop_branch_options(session) {
+    if let Some(selected) = shop_branch_options(session) {
         return Some(BranchBoundarySelectionV1 {
             id: BranchBoundaryIdV1::Shop,
-            options: options
+            options: selected
+                .options
                 .into_iter()
                 .map(BranchBoundaryOptionV1::from_shop)
                 .collect(),
             reward_option_portfolio: None,
+            shop_plan_candidate_pool: Some(selected.candidate_pool),
         });
     }
 
@@ -200,6 +208,7 @@ pub(crate) fn current_branch_boundary(
                 .map(BranchBoundaryOptionV1::from_event)
                 .collect(),
             reward_option_portfolio: None,
+            shop_plan_candidate_pool: None,
         });
     }
 

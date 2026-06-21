@@ -62,6 +62,7 @@ pub use types::{
     BranchExperimentPrunedFirstPickCountV1, BranchExperimentReportV1,
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
     BranchExperimentRouteDecisionV1, BranchExperimentRunSummaryV1,
+    BranchExperimentShopPlanCandidateEntryV1, BranchExperimentShopPlanCandidatePoolV1,
     BranchExperimentStrategyRequestV1, BranchExperimentWallLimitPhaseV1,
     BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1, BRANCH_EXPERIMENT_SCHEMA_NAME,
     BRANCH_EXPERIMENT_SCHEMA_VERSION, BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1,
@@ -402,6 +403,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
     let mut pruned_first_pick_counts = BTreeMap::<String, usize>::new();
     let mut pruned_branch_summary = BranchExperimentPrunedBranchSummaryV1::default();
     let mut reward_option_portfolios = Vec::new();
+    let mut shop_plan_candidate_pools = Vec::new();
     let mut route_decisions = Vec::new();
     let mut combat_performance_samples = Vec::new();
 
@@ -443,19 +445,26 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
                 include_skip: config.include_skip,
                 include_event_reward_skip: config.include_event_reward_skip,
             };
-            let reward_portfolio_context = config.max_reward_options_per_branch.map(|_| {
-                let frontier = branch_frontier(&branch.session);
-                CardRewardPortfolioContext {
-                    depth,
-                    frontier_key: frontier.key,
-                    boundary_title: frontier.boundary_title,
-                }
-            });
+            let frontier_before_boundary = branch_frontier(&branch.session);
+            let reward_portfolio_context =
+                config
+                    .max_reward_options_per_branch
+                    .map(|_| CardRewardPortfolioContext {
+                        depth,
+                        frontier_key: frontier_before_boundary.key.clone(),
+                        boundary_title: frontier_before_boundary.boundary_title.clone(),
+                    });
             if let Some(boundary) =
                 current_branch_boundary(&branch.session, boundary_config, reward_portfolio_context)
             {
                 if let Some(portfolio) = boundary.reward_option_portfolio {
                     reward_option_portfolios.push(portfolio);
+                }
+                if let Some(mut pool) = boundary.shop_plan_candidate_pool {
+                    pool.depth = depth;
+                    pool.frontier_key = frontier_before_boundary.key;
+                    pool.boundary_title = frontier_before_boundary.boundary_title;
+                    shop_plan_candidate_pools.push(pool);
                 }
                 if boundary.options.is_empty() {
                     branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
@@ -585,6 +594,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
         pruned_first_pick_counts: pruned_first_pick_count_reports(pruned_first_pick_counts),
         pruned_branch_summary,
         reward_option_portfolios,
+        shop_plan_candidate_pools,
         strategy_requests: branch_strategy_requests(&branch_reports),
         route_decisions,
         frontier_groups: frontier_groups(&branch_reports),

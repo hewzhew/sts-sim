@@ -67,7 +67,7 @@ fn render_campaign_journal_inspection_v1(
     ));
     for (display_index, event) in selected.iter().enumerate() {
         lines.push(format!(
-            "{}. {} id={} round={} parent={} A{}F{} {} depth={} candidates={} retry={}",
+            "{}. {} id={} round={} parent={} A{}F{} {} depth={} candidates={}{} retry={}",
             display_index + 1,
             journal_event_type_v1(event),
             event.event_id,
@@ -78,6 +78,7 @@ fn render_campaign_journal_inspection_v1(
             journal_event_boundary_title_v1(event),
             journal_event_depth_v1(event),
             journal_event_candidates_v1(event).len(),
+            journal_event_extra_summary_v1(event),
             event.combat_budget_retry_used
         ));
         lines.push(format!(
@@ -98,6 +99,21 @@ fn render_campaign_journal_inspection_v1(
         ));
     }
     Ok(format!("{}\n", lines.join("\n")))
+}
+
+fn journal_event_extra_summary_v1(event: &CampaignJournalEventV1) -> String {
+    match &event.payload {
+        CampaignJournalEventPayloadV1::ShopCandidatePool {
+            branch_frontier_count,
+            rollout_head_plan_id,
+            ..
+        } => format!(
+            " branch_frontier={} rollout_head={}",
+            branch_frontier_count,
+            rollout_head_plan_id.as_deref().unwrap_or("-")
+        ),
+        _ => String::new(),
+    }
 }
 
 fn matching_journal_events_v1<'a>(
@@ -130,38 +146,39 @@ fn journal_event_type_v1(event: &CampaignJournalEventV1) -> &'static str {
     match &event.payload {
         CampaignJournalEventPayloadV1::RewardCandidateSet { .. } => "reward_candidate_set",
         CampaignJournalEventPayloadV1::ShopBranchCandidateSet { .. } => "shop_branch_candidate_set",
+        CampaignJournalEventPayloadV1::ShopCandidatePool { .. } => "shop_candidate_pool",
     }
 }
 
 fn journal_event_boundary_title_v1(event: &CampaignJournalEventV1) -> &str {
     match &event.payload {
         CampaignJournalEventPayloadV1::RewardCandidateSet { boundary_title, .. }
-        | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { boundary_title, .. } => {
-            boundary_title
-        }
+        | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { boundary_title, .. }
+        | CampaignJournalEventPayloadV1::ShopCandidatePool { boundary_title, .. } => boundary_title,
     }
 }
 
 fn journal_event_frontier_key_v1(event: &CampaignJournalEventV1) -> &str {
     match &event.payload {
         CampaignJournalEventPayloadV1::RewardCandidateSet { frontier_key, .. }
-        | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { frontier_key, .. } => {
-            frontier_key
-        }
+        | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { frontier_key, .. }
+        | CampaignJournalEventPayloadV1::ShopCandidatePool { frontier_key, .. } => frontier_key,
     }
 }
 
 fn journal_event_depth_v1(event: &CampaignJournalEventV1) -> usize {
     match &event.payload {
         CampaignJournalEventPayloadV1::RewardCandidateSet { depth, .. }
-        | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { depth, .. } => *depth,
+        | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { depth, .. }
+        | CampaignJournalEventPayloadV1::ShopCandidatePool { depth, .. } => *depth,
     }
 }
 
 fn journal_event_candidates_v1(event: &CampaignJournalEventV1) -> &[CampaignJournalCandidateV1] {
     match &event.payload {
         CampaignJournalEventPayloadV1::RewardCandidateSet { candidates, .. }
-        | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { candidates, .. } => candidates,
+        | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { candidates, .. }
+        | CampaignJournalEventPayloadV1::ShopCandidatePool { candidates, .. } => candidates,
     }
 }
 
