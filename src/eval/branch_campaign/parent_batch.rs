@@ -719,6 +719,10 @@ fn campaign_route_decision_journal_events_v1(
         .iter()
         .enumerate()
         .map(|(route_index, decision)| {
+            let route_branch = report
+                .branches
+                .iter()
+                .find(|branch| branch.branch_id == decision.branch_id);
             campaign_route_decision_journal_event_v1(
                 parent,
                 parent_index,
@@ -728,6 +732,7 @@ fn campaign_route_decision_journal_events_v1(
                 parent_floor,
                 route_index,
                 decision,
+                route_branch,
             )
         })
         .collect()
@@ -879,21 +884,52 @@ fn campaign_route_decision_journal_event_v1(
     parent_floor: i32,
     route_index: usize,
     decision: &BranchExperimentRouteDecisionV1,
+    route_branch: Option<&BranchExperimentBranchReportV1>,
 ) -> CampaignJournalEventV1 {
     let decision_id = format!(
         "{}:round{}:route_decision{}:{}",
         parent.branch_id, round_number, route_index, decision.branch_id
     );
+    let branch_id = campaign_child_branch_id_v1(&parent.branch_id, &decision.branch_id);
+    let branch_frontier_title = route_branch
+        .map(|branch| branch.frontier.boundary_title.clone())
+        .unwrap_or_else(|| parent.frontier_title.clone());
+    let act = route_branch
+        .map(|branch| branch.frontier.act)
+        .unwrap_or(parent_act);
+    let floor = route_branch
+        .map(|branch| branch.frontier.floor)
+        .unwrap_or(parent_floor);
+    let branch_choices = combine_campaign_path_v1(&parent.choice_labels, &decision.branch_choices)
+        .or_else(|| {
+            route_branch.and_then(|branch| {
+                combine_campaign_path_v1(
+                    &parent.choice_labels,
+                    &branch_experiment_choice_labels_v1(branch),
+                )
+            })
+        })
+        .unwrap_or_else(|| parent.choice_labels.clone());
+    let branch_commands = combine_campaign_path_v1(&parent.commands, &decision.branch_commands)
+        .or_else(|| {
+            route_branch.and_then(|branch| {
+                combine_campaign_path_v1(
+                    &parent.commands,
+                    &branch_experiment_choice_commands_v1(branch),
+                )
+            })
+        })
+        .unwrap_or_else(|| parent.commands.clone());
     CampaignJournalEventV1 {
         event_id: format!("{decision_id}:route"),
         round: round_number,
-        branch_id: parent.branch_id.clone(),
+        branch_id,
         branch_index: parent_index,
-        branch_frontier_title: parent.frontier_title.clone(),
-        act: parent_act,
-        floor: parent_floor,
-        branch_choices: parent.choice_labels.clone(),
-        branch_commands: parent.commands.clone(),
+        branch_frontier_title,
+        act,
+        floor,
+        branch_choices,
+        branch_commands,
         combat_budget_retry_used,
         payload: CampaignJournalEventPayloadV1::RouteDecision {
             decision_id,

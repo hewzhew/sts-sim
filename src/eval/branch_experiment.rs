@@ -719,7 +719,7 @@ fn advance_to_experiment_boundary(
     match outcome {
         Ok(outcome) => {
             route_decisions.extend(outcome.trace_annotations.iter().filter_map(|annotation| {
-                branch_route_decision_from_annotation(&branch.id, annotation)
+                branch_route_decision_from_annotation(branch, annotation)
             }));
             route_candidate_pools.extend(outcome.trace_annotations.iter().filter_map(
                 |annotation| branch_route_candidate_pool_from_annotation(branch, annotation),
@@ -773,7 +773,7 @@ fn branch_experiment_search_options(
 }
 
 fn branch_route_decision_from_annotation(
-    branch_id: &str,
+    branch: &BranchWork,
     annotation: &RunControlTraceAnnotationV1,
 ) -> Option<BranchExperimentRouteDecisionV1> {
     let RunControlTraceAnnotationV1::RoutePlannerSelection {
@@ -793,7 +793,9 @@ fn branch_route_decision_from_annotation(
     };
 
     Some(BranchExperimentRouteDecisionV1 {
-        branch_id: branch_id.to_string(),
+        branch_id: branch.id.clone(),
+        branch_choices: branch_choice_labels_v1(&branch.choices),
+        branch_commands: branch_choice_commands_v1(&branch.choices),
         selected_index: *selected_index,
         selected_candidate_id: selected_index.and_then(|index| {
             map_decision_packet
