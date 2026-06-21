@@ -505,6 +505,18 @@ pub(super) struct Args {
     pub(super) execute_targeted_continuation: Option<PathBuf>,
 
     #[arg(
+        long = "plan-coverage-gap-continuation",
+        help = "Print unobserved CampaignJournal candidate branches to continue from a BranchCampaignV1 report"
+    )]
+    pub(super) plan_coverage_gap_continuation: bool,
+
+    #[arg(
+        long = "execute-coverage-gap-continuation",
+        help = "Resume unobserved CampaignJournal candidate branches from --resume and --resume-checkpoint"
+    )]
+    pub(super) execute_coverage_gap_continuation: bool,
+
+    #[arg(
         long = "continuation-effect-before",
         value_name = "PATH",
         help = "Before LearningDecisionOutcomeSampleV1 JSONL for targeted continuation effect comparison"
@@ -531,6 +543,20 @@ pub(super) struct Args {
         help = "Maximum censored candidate branches to continue per targeted sibling group"
     )]
     pub(super) targeted_continuation_candidates_per_target: usize,
+
+    #[arg(
+        long = "coverage-gap-limit",
+        default_value_t = 8,
+        help = "Maximum unobserved journal candidate branches to plan or execute"
+    )]
+    pub(super) coverage_gap_limit: usize,
+
+    #[arg(
+        long = "coverage-gap-candidates-per-decision",
+        default_value_t = 1,
+        help = "Maximum unobserved candidate branches to continue per journal decision"
+    )]
+    pub(super) coverage_gap_candidates_per_decision: usize,
 
     #[arg(
         long = "export-learning-dataset",
@@ -1144,6 +1170,26 @@ struct DatasetPathArgs {
         help = "Write LearningDecisionOutcomeSampleV1 JSONL with observed sibling candidates and later outcomes"
     )]
     export_decision_outcome_dataset: Option<PathBuf>,
+
+    #[arg(
+        long = "plan-coverage-gap-continuation",
+        help = "Print unobserved CampaignJournal candidate branches to continue from a BranchCampaignV1 report"
+    )]
+    plan_coverage_gap_continuation: bool,
+
+    #[arg(
+        long = "coverage-gap-limit",
+        default_value_t = 8,
+        help = "Maximum unobserved journal candidate branches to plan"
+    )]
+    coverage_gap_limit: usize,
+
+    #[arg(
+        long = "coverage-gap-candidates-per-decision",
+        default_value_t = 1,
+        help = "Maximum unobserved candidate branches to continue per journal decision"
+    )]
+    coverage_gap_candidates_per_decision: usize,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -1161,6 +1207,12 @@ struct ContinuationArgs {
         help = "Resume selected censored sibling branches from a LearningDecisionOutcomeSampleV1 JSONL file"
     )]
     execute_targeted_continuation: Option<PathBuf>,
+
+    #[arg(
+        long = "execute-coverage-gap-continuation",
+        help = "Resume unobserved CampaignJournal candidate branches from --resume and --resume-checkpoint"
+    )]
+    execute_coverage_gap_continuation: bool,
 
     #[arg(
         long = "continuation-effect-before",
@@ -1189,6 +1241,20 @@ struct ContinuationArgs {
         help = "Maximum censored candidate branches to continue per targeted sibling group"
     )]
     targeted_continuation_candidates_per_target: usize,
+
+    #[arg(
+        long = "coverage-gap-limit",
+        default_value_t = 8,
+        help = "Maximum unobserved journal candidate branches to execute"
+    )]
+    coverage_gap_limit: usize,
+
+    #[arg(
+        long = "coverage-gap-candidates-per-decision",
+        default_value_t = 1,
+        help = "Maximum unobserved candidate branches to continue per journal decision"
+    )]
+    coverage_gap_candidates_per_decision: usize,
 }
 
 impl Args {
@@ -1267,10 +1333,14 @@ impl Args {
             probe_learning_readiness: None,
             plan_targeted_continuation: None,
             execute_targeted_continuation: None,
+            plan_coverage_gap_continuation: false,
+            execute_coverage_gap_continuation: false,
             continuation_effect_before: None,
             continuation_effect_after: None,
             targeted_continuation_limit: 4,
             targeted_continuation_candidates_per_target: 1,
+            coverage_gap_limit: 8,
+            coverage_gap_candidates_per_decision: 1,
             export_learning_dataset: None,
             export_decision_outcome_dataset: None,
         }
@@ -1467,6 +1537,9 @@ impl DatasetPathArgs {
         args.probe_learning_readiness = self.probe_learning_readiness;
         args.export_learning_dataset = self.export_learning_dataset;
         args.export_decision_outcome_dataset = self.export_decision_outcome_dataset;
+        args.plan_coverage_gap_continuation = self.plan_coverage_gap_continuation;
+        args.coverage_gap_limit = self.coverage_gap_limit;
+        args.coverage_gap_candidates_per_decision = self.coverage_gap_candidates_per_decision;
     }
 }
 
@@ -1474,11 +1547,14 @@ impl ContinuationArgs {
     fn apply_to(self, args: &mut Args) {
         args.plan_targeted_continuation = self.plan_targeted_continuation;
         args.execute_targeted_continuation = self.execute_targeted_continuation;
+        args.execute_coverage_gap_continuation = self.execute_coverage_gap_continuation;
         args.continuation_effect_before = self.continuation_effect_before;
         args.continuation_effect_after = self.continuation_effect_after;
         args.targeted_continuation_limit = self.targeted_continuation_limit;
         args.targeted_continuation_candidates_per_target =
             self.targeted_continuation_candidates_per_target;
+        args.coverage_gap_limit = self.coverage_gap_limit;
+        args.coverage_gap_candidates_per_decision = self.coverage_gap_candidates_per_decision;
     }
 }
 

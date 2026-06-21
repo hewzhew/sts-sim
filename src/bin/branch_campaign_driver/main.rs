@@ -37,7 +37,8 @@ use driver_command::{driver_command_from_cli_input, BranchCampaignDriverCommandV
 use journal_inspection::run_campaign_journal_inspection;
 use outcome_dataset::{
     run_branch_outcome_dataset_analysis, run_branch_outcome_dataset_export,
-    run_continuation_effect_report, run_decision_candidate_coverage_inspection,
+    run_continuation_effect_report, run_coverage_gap_continuation_execution,
+    run_coverage_gap_continuation_plan, run_decision_candidate_coverage_inspection,
     run_decision_outcome_dataset_analysis, run_decision_outcome_dataset_export,
     run_learning_dataset_export, run_learning_readiness_probe, run_targeted_continuation_execution,
     run_targeted_continuation_plan,
@@ -71,6 +72,12 @@ fn run(cli_input: BranchCampaignCliInputV1) -> Result<(), String> {
         }
         BranchCampaignDriverCommandV1::ExecuteTargetedContinuation => {
             run_targeted_continuation_execution(&ContinuationCommandInput::from_args(args)?)
+        }
+        BranchCampaignDriverCommandV1::PlanCoverageGapContinuation => {
+            run_coverage_gap_continuation_plan(&DatasetCommandInput::from_args(args))
+        }
+        BranchCampaignDriverCommandV1::ExecuteCoverageGapContinuation => {
+            run_coverage_gap_continuation_execution(&ContinuationCommandInput::from_args(args)?)
         }
         BranchCampaignDriverCommandV1::ContinuationEffectReport => {
             run_continuation_effect_report(&ContinuationCommandInput::from_args(args)?)
@@ -167,6 +174,12 @@ mod tests {
             "decision_outcomes.jsonl",
         ])
         .expect("continue args parse");
+        let coverage_gap_continue_args = parse_args_from([
+            "branch_campaign_driver",
+            "continue",
+            "--execute-coverage-gap-continuation",
+        ])
+        .expect("coverage gap continuation args parse");
         let self_check_args =
             parse_args_from(["branch_campaign_driver", "self-check"]).expect("self-check parse");
 
@@ -193,6 +206,10 @@ mod tests {
         assert_eq!(
             driver_command_from_args(&continue_args),
             BranchCampaignDriverCommandV1::ExecuteTargetedContinuation
+        );
+        assert_eq!(
+            driver_command_from_args(&coverage_gap_continue_args),
+            BranchCampaignDriverCommandV1::ExecuteCoverageGapContinuation
         );
         assert_eq!(
             driver_command_from_args(&self_check_args),

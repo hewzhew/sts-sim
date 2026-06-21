@@ -8,6 +8,8 @@ pub(super) enum BranchCampaignDriverCommandV1 {
     ProbeLearningReadiness,
     PlanTargetedContinuation,
     ExecuteTargetedContinuation,
+    PlanCoverageGapContinuation,
+    ExecuteCoverageGapContinuation,
     ContinuationEffectReport,
     ExportOutcomeDataset,
     ExportLearningDataset,
@@ -71,6 +73,12 @@ fn legacy_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
     if args.execute_targeted_continuation.is_some() {
         return BranchCampaignDriverCommandV1::ExecuteTargetedContinuation;
     }
+    if args.plan_coverage_gap_continuation {
+        return BranchCampaignDriverCommandV1::PlanCoverageGapContinuation;
+    }
+    if args.execute_coverage_gap_continuation {
+        return BranchCampaignDriverCommandV1::ExecuteCoverageGapContinuation;
+    }
     if args.continuation_effect_before.is_some() || args.continuation_effect_after.is_some() {
         return BranchCampaignDriverCommandV1::ContinuationEffectReport;
     }
@@ -122,6 +130,8 @@ fn dataset_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
         BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset
     } else if args.probe_learning_readiness.is_some() {
         BranchCampaignDriverCommandV1::ProbeLearningReadiness
+    } else if args.plan_coverage_gap_continuation {
+        BranchCampaignDriverCommandV1::PlanCoverageGapContinuation
     } else if args.export_outcome_dataset.is_some() {
         BranchCampaignDriverCommandV1::ExportOutcomeDataset
     } else if args.export_learning_dataset.is_some() {
@@ -138,6 +148,8 @@ fn continuation_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 
         BranchCampaignDriverCommandV1::PlanTargetedContinuation
     } else if args.execute_targeted_continuation.is_some() {
         BranchCampaignDriverCommandV1::ExecuteTargetedContinuation
+    } else if args.execute_coverage_gap_continuation {
+        BranchCampaignDriverCommandV1::ExecuteCoverageGapContinuation
     } else if args.continuation_effect_before.is_some() || args.continuation_effect_after.is_some()
     {
         BranchCampaignDriverCommandV1::ContinuationEffectReport

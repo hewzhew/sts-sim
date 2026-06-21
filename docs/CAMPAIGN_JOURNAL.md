@@ -118,6 +118,14 @@ for how many journal candidates have any observed descendant branch. This is a
 coverage check for campaign scheduling and learning data readiness; it is not a
 candidate value estimate.
 
+Coverage gap continuation builds on that diagnostic. It can plan unobserved
+journal candidates with `--plan-coverage-gap-continuation --inspect-report ...`,
+then execute a bounded set with `--execute-coverage-gap-continuation --resume ...
+--resume-checkpoint ...`. Execution creates temporary active branches from the
+journal parent commands plus the missing candidate command and then uses the
+normal branch campaign runner. This mechanism is for targeted data coverage, not
+for saying that the missing candidate is strategically better.
+
 ## Boundaries
 
 `CampaignJournal` is not a strategy engine. It must not decide what to pick or
@@ -192,7 +200,9 @@ journal events, not the other way around.
   run debt and policy class metadata; all options remain branch candidates.
 - Route decisions are the route planner selections emitted while expanding a
   parent branch. They record the selected target and safety evidence, not the
-  full map option set.
+  full map option set. Because of that, route events are intentionally excluded
+  from coverage gap continuation until map choices are recorded as candidate
+  pools rather than selected actions.
 - Decision-outcome samples only include candidates that have an observed
   descendant branch in the report. A candidate that was recorded in the journal
   but never continued by campaign scheduling is still visible in

@@ -11,7 +11,8 @@ use crate::eval::branch_outcome_dataset_v1::{
     BranchOutcomeSupervisionStatusV1,
 };
 use crate::eval::campaign_journal::{
-    CampaignJournalCandidateV1, CampaignJournalEventPayloadV1, CampaignJournalEventV1,
+    CampaignJournalCandidateDispositionV1, CampaignJournalCandidateV1,
+    CampaignJournalEventPayloadV1, CampaignJournalEventV1,
 };
 
 pub const LEARNING_BRANCH_SAMPLE_SCHEMA_NAME: &str = "LearningBranchSampleV1";
@@ -31,6 +32,11 @@ pub const TARGETED_CONTINUATION_PLAN_SCHEMA_VERSION: u32 = 1;
 pub const TARGETED_CONTINUATION_EXECUTION_PLAN_SCHEMA_NAME: &str =
     "TargetedContinuationExecutionPlanV1";
 pub const TARGETED_CONTINUATION_EXECUTION_PLAN_SCHEMA_VERSION: u32 = 1;
+pub const COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_NAME: &str = "CoverageGapContinuationPlanV1";
+pub const COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_VERSION: u32 = 1;
+pub const COVERAGE_GAP_CONTINUATION_EXECUTION_PLAN_SCHEMA_NAME: &str =
+    "CoverageGapContinuationExecutionPlanV1";
+pub const COVERAGE_GAP_CONTINUATION_EXECUTION_PLAN_SCHEMA_VERSION: u32 = 1;
 pub const CONTINUATION_EFFECT_REPORT_SCHEMA_NAME: &str = "ContinuationEffectReportV1";
 pub const CONTINUATION_EFFECT_REPORT_SCHEMA_VERSION: u32 = 1;
 const CONTINUATION_EFFECT_EXAMPLE_LIMIT: usize = 6;
@@ -192,6 +198,54 @@ pub struct LearningDecisionCandidateCoverageExampleV1 {
     pub candidate_count: usize,
     pub observed_count: usize,
     pub unobserved_candidates: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageGapContinuationPlanV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub label_role: String,
+    pub trainable_as_action_label: bool,
+    pub policy_quality_claim: bool,
+    pub total_decisions: usize,
+    pub total_candidates: usize,
+    pub total_unobserved_candidates: usize,
+    pub selected_target_count: usize,
+    pub targets: Vec<CoverageGapContinuationTargetV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageGapContinuationTargetV1 {
+    pub decision_id: String,
+    pub event_id: String,
+    pub event_type: String,
+    pub parent_branch_id: String,
+    pub parent_frontier_title: String,
+    pub parent_commands: Vec<String>,
+    pub parent_choices: Vec<String>,
+    pub candidate_index: usize,
+    pub candidate_id: String,
+    pub command: String,
+    pub label: String,
+    pub semantic_class: String,
+    pub disposition: CampaignJournalCandidateDispositionV1,
+    pub milestone: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageGapContinuationExecutionPlanV1 {
+    pub schema_name: String,
+    pub schema_version: u32,
+    pub label_role: String,
+    pub trainable_as_action_label: bool,
+    pub policy_quality_claim: bool,
+    pub requested_target_count: usize,
+    pub selected_branch_count: usize,
+    pub skipped_target_count: usize,
+    pub targets: Vec<CoverageGapContinuationTargetV1>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -702,6 +756,139 @@ pub fn render_journal_decision_candidate_coverage_v1(
                 } else {
                     example.unobserved_candidates.join("; ")
                 }
+            ));
+        }
+    }
+    lines.join("\n")
+}
+
+pub fn plan_coverage_gap_continuations_v1(
+    report: &BranchCampaignReportV1,
+    records: &[BranchOutcomeRecordV1],
+    max_targets: usize,
+    max_candidates_per_decision: usize,
+) -> CoverageGapContinuationPlanV1 {
+    let mut total_decisions = 0usize;
+    let mut total_candidates = 0usize;
+    let mut total_unobserved_candidates = 0usize;
+    let mut targets = Vec::new();
+
+    for event in &report.journal.events {
+        let Some(decision_id) = journal_decision_id_v1(event) else {
+            continue;
+        };
+        let candidates = journal_decision_candidates_v1(event);
+        if candidates.is_empty() {
+            continue;
+        }
+
+        total_decisions = total_decisions.saturating_add(1);
+        total_candidates = total_candidates.saturating_add(candidates.len());
+        let parent_commands = event.branch_commands.as_slice();
+        let mut selected_for_decision = 0usize;
+        for (candidate_index, candidate) in candidates.iter().enumerate() {
+            if records.iter().any(|record| {
+                record_commands_start_with_candidate_v1(
+                    &record.commands,
+                    parent_commands,
+                    &candidate.command,
+                )
+            }) {
+                continue;
+            }
+
+            total_unobserved_candidates = total_unobserved_candidates.saturating_add(1);
+            if targets.len() >= max_targets || selected_for_decision >= max_candidates_per_decision
+            {
+                continue;
+            }
+            targets.push(CoverageGapContinuationTargetV1 {
+                decision_id: decision_id.to_string(),
+                event_id: event.event_id.clone(),
+                event_type: journal_decision_event_kind_v1(event).to_string(),
+                parent_branch_id: event.branch_id.clone(),
+                parent_frontier_title: event.branch_frontier_title.clone(),
+                parent_commands: event.branch_commands.clone(),
+                parent_choices: event.branch_choices.clone(),
+                candidate_index,
+                candidate_id: candidate.candidate_id.clone(),
+                command: candidate.command.clone(),
+                label: candidate.label.clone(),
+                semantic_class: candidate.semantic_class.clone(),
+                disposition: candidate.disposition,
+                milestone: coverage_gap_candidate_milestone_v1(event),
+            });
+            selected_for_decision = selected_for_decision.saturating_add(1);
+        }
+    }
+
+    CoverageGapContinuationPlanV1 {
+        schema_name: COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_NAME.to_string(),
+        schema_version: COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_VERSION,
+        label_role: "campaign_observation_not_teacher".to_string(),
+        trainable_as_action_label: false,
+        policy_quality_claim: false,
+        total_decisions,
+        total_candidates,
+        total_unobserved_candidates,
+        selected_target_count: targets.len(),
+        targets,
+    }
+}
+
+pub fn coverage_gap_continuation_execution_plan_v1(
+    plan: &CoverageGapContinuationPlanV1,
+    max_targets: usize,
+) -> CoverageGapContinuationExecutionPlanV1 {
+    let targets = plan
+        .targets
+        .iter()
+        .take(max_targets)
+        .cloned()
+        .collect::<Vec<_>>();
+    CoverageGapContinuationExecutionPlanV1 {
+        schema_name: COVERAGE_GAP_CONTINUATION_EXECUTION_PLAN_SCHEMA_NAME.to_string(),
+        schema_version: COVERAGE_GAP_CONTINUATION_EXECUTION_PLAN_SCHEMA_VERSION,
+        label_role: "campaign_observation_not_teacher".to_string(),
+        trainable_as_action_label: false,
+        policy_quality_claim: false,
+        requested_target_count: max_targets.min(plan.targets.len()),
+        selected_branch_count: targets.len(),
+        skipped_target_count: plan.targets.len().saturating_sub(targets.len()),
+        targets,
+    }
+}
+
+pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPlanV1) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "CoverageGapContinuationPlanV1 decisions={} candidates={} unobserved={} selected={}",
+        plan.total_decisions,
+        plan.total_candidates,
+        plan.total_unobserved_candidates,
+        plan.selected_target_count
+    ));
+    if plan.targets.is_empty() {
+        lines.push("Targets: none".to_string());
+    } else {
+        lines.push("Targets:".to_string());
+        for (index, target) in plan.targets.iter().take(12).enumerate() {
+            lines.push(format!(
+                "  {}. {} {} | parent={} candidate={} {{{}}} milestone={} semantic=[{}]",
+                index + 1,
+                target.event_type,
+                compact_learning_text_v1(&target.decision_id, 56),
+                compact_learning_text_v1(&target.parent_branch_id, 36),
+                compact_learning_text_v1(&target.label, 42),
+                compact_learning_text_v1(&target.command, 28),
+                target.milestone,
+                compact_learning_text_v1(&target.semantic_class, 58)
+            ));
+        }
+        if plan.targets.len() > 12 {
+            lines.push(format!(
+                "  ... {} more target(s)",
+                plan.targets.len().saturating_sub(12)
             ));
         }
     }
@@ -1288,6 +1475,30 @@ fn journal_decision_event_kind_v1(event: &CampaignJournalEventV1) -> &'static st
         CampaignJournalEventPayloadV1::EventCandidatePool { .. } => "event",
         CampaignJournalEventPayloadV1::BossRelicCandidatePool { .. } => "boss_relic",
         CampaignJournalEventPayloadV1::RouteDecision { .. } => "route",
+    }
+}
+
+fn coverage_gap_candidate_milestone_v1(event: &CampaignJournalEventV1) -> String {
+    match &event.payload {
+        CampaignJournalEventPayloadV1::BossRelicCandidatePool { .. } => {
+            "next_act_pressure".to_string()
+        }
+        CampaignJournalEventPayloadV1::ShopBranchCandidateSet { .. }
+        | CampaignJournalEventPayloadV1::ShopCandidatePool { .. } => {
+            "resource_conversion_frontier".to_string()
+        }
+        CampaignJournalEventPayloadV1::CampfireCandidatePool { .. } => {
+            "upgrade_rest_mutation_frontier".to_string()
+        }
+        CampaignJournalEventPayloadV1::EventCandidatePool { .. } => {
+            "event_resolution_frontier".to_string()
+        }
+        CampaignJournalEventPayloadV1::RewardCandidateSet { .. } => {
+            "next_major_boundary".to_string()
+        }
+        CampaignJournalEventPayloadV1::RouteDecision { .. } => {
+            "route_not_candidate_pool".to_string()
+        }
     }
 }
 
@@ -2109,6 +2320,84 @@ mod tests {
         assert_eq!(coverage.unobserved_candidates, 1);
         assert_eq!(coverage.partially_observed_decisions, 1);
         assert!(rendered.contains("Carnage"));
+    }
+
+    #[test]
+    fn coverage_gap_continuation_plan_targets_unobserved_journal_candidates() {
+        let mut clothesline = sample_branch_outcome_record();
+        clothesline.branch_id = "root.rp 0".to_string();
+        clothesline.commands = vec!["rp 0".to_string()];
+        clothesline.choice_labels = vec!["Clothesline".to_string()];
+
+        let mut shrug = sample_branch_outcome_record();
+        shrug.branch_index = 1;
+        shrug.branch_id = "root.rp 1".to_string();
+        shrug.commands = vec!["rp 1".to_string()];
+        shrug.choice_labels = vec!["Shrug It Off".to_string()];
+
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-reward0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Reward Screen".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "journal-reward0".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "reward-frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 3,
+                original_count: 3,
+                selected_count: 2,
+                candidates: vec![
+                    sample_journal_candidate("rp 0", "Clothesline"),
+                    sample_journal_candidate("rp 1", "Shrug It Off"),
+                    sample_journal_candidate("rp 2", "Carnage"),
+                ],
+            },
+        });
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-route0:route".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Map".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RouteDecision {
+                decision_id: "route0".to_string(),
+                route_branch_id: "root:route".to_string(),
+                target: "x=1 Monster".to_string(),
+                move_kind: "Monster".to_string(),
+                safety: "ok".to_string(),
+                command: "go 1".to_string(),
+                elite_prep_bp: 50,
+                first_elite: Default::default(),
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[clothesline, shrug], 8, 2);
+        let rendered = render_coverage_gap_continuation_plan_v1(&plan);
+
+        assert_eq!(plan.total_decisions, 1);
+        assert_eq!(plan.total_unobserved_candidates, 1);
+        assert_eq!(plan.selected_target_count, 1);
+        assert_eq!(plan.targets[0].decision_id, "journal-reward0");
+        assert_eq!(plan.targets[0].command, "rp 2");
+        assert_eq!(plan.targets[0].label, "Carnage");
+        assert_eq!(plan.targets[0].candidate_index, 2);
+        assert_eq!(plan.targets[0].parent_commands, Vec::<String>::new());
+        assert!(rendered.contains("Carnage"));
+        assert!(!rendered.contains("route0"));
     }
 
     #[test]

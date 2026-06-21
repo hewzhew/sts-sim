@@ -15,15 +15,21 @@ use sts_simulator::eval::branch_outcome_dataset_v1::{
 };
 use sts_simulator::eval::learning_dataset_v1::{
     analyze_continuation_effect_v1, analyze_journal_decision_candidate_coverage_v1,
-    analyze_learning_decision_outcome_samples_v1, decision_outcome_samples_from_campaign_report_v1,
-    learning_records_from_branch_outcomes_v1, parse_learning_decision_outcome_samples_jsonl_v1,
+    analyze_learning_decision_outcome_samples_v1, coverage_gap_continuation_execution_plan_v1,
+    decision_outcome_samples_from_campaign_report_v1, learning_records_from_branch_outcomes_v1,
+    parse_learning_decision_outcome_samples_jsonl_v1, plan_coverage_gap_continuations_v1,
     plan_targeted_continuations_v1, probe_learning_readiness_v1,
-    render_continuation_effect_report_v1, render_journal_decision_candidate_coverage_v1,
-    render_learning_decision_outcome_analysis_v1, render_learning_readiness_probe_v1,
-    render_targeted_continuation_plan_v1, serialize_learning_branch_samples_jsonl_v1,
+    render_continuation_effect_report_v1, render_coverage_gap_continuation_plan_v1,
+    render_journal_decision_candidate_coverage_v1, render_learning_decision_outcome_analysis_v1,
+    render_learning_readiness_probe_v1, render_targeted_continuation_plan_v1,
+    serialize_learning_branch_samples_jsonl_v1,
     serialize_learning_decision_outcome_samples_jsonl_v1, targeted_continuation_execution_plan_v1,
+    CoverageGapContinuationExecutionPlanV1, CoverageGapContinuationTargetV1,
     LearningBranchSampleV1, LearningDatasetExportContextV1, LearningDecisionOutcomeSampleV1,
     TargetedContinuationExecutionPlanV1,
+};
+use sts_simulator::eval::neow_guided_prefix::{
+    neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
 };
 use sts_simulator::eval::run_control::canonical_player_class;
 
@@ -221,6 +227,105 @@ pub(super) fn run_targeted_continuation_execution(
     Ok(())
 }
 
+pub(super) fn run_coverage_gap_continuation_plan(
+    input: &DatasetCommandInput,
+) -> Result<(), String> {
+    if !input.plan_coverage_gap_continuation {
+        return Err("--plan-coverage-gap-continuation is not enabled".to_string());
+    }
+    let report_path = input.inspect_report.as_ref().ok_or_else(|| {
+        "--plan-coverage-gap-continuation requires --inspect-report PATH".to_string()
+    })?;
+    let report = read_campaign_report_v1(report_path)?;
+    let checkpoint = input
+        .inspect_checkpoint
+        .as_ref()
+        .map(read_campaign_checkpoint_v1)
+        .transpose()?;
+    let records = extract_branch_outcome_records_v1(&report, checkpoint.as_ref())?;
+    let plan = plan_coverage_gap_continuations_v1(
+        &report,
+        &records,
+        input.coverage_gap_limit,
+        input.coverage_gap_candidates_per_decision,
+    );
+    println!("{}", render_coverage_gap_continuation_plan_v1(&plan));
+    Ok(())
+}
+
+pub(super) fn run_coverage_gap_continuation_execution(
+    input: &ContinuationCommandInput,
+) -> Result<(), String> {
+    if !input.execute_coverage_gap_continuation {
+        return Err("--execute-coverage-gap-continuation is not enabled".to_string());
+    }
+    let report_path = input
+        .resume
+        .as_ref()
+        .ok_or_else(|| "--execute-coverage-gap-continuation requires --resume PATH".to_string())?;
+    let checkpoint_path = input.resume_checkpoint.as_ref().ok_or_else(|| {
+        "--execute-coverage-gap-continuation requires --resume-checkpoint PATH".to_string()
+    })?;
+    let source_report = read_campaign_report_v1(report_path)?;
+    let source_checkpoint = read_campaign_checkpoint_v1(checkpoint_path)?;
+    let records = extract_branch_outcome_records_v1(&source_report, Some(&source_checkpoint))?;
+    let plan = plan_coverage_gap_continuations_v1(
+        &source_report,
+        &records,
+        input.coverage_gap_limit,
+        input.coverage_gap_candidates_per_decision,
+    );
+    let execution = coverage_gap_continuation_execution_plan_v1(&plan, input.coverage_gap_limit);
+    if execution.targets.is_empty() {
+        return Err(format!(
+            "coverage gap continuation selected no candidate branches (decisions={} unobserved={})",
+            plan.total_decisions, plan.total_unobserved_candidates
+        ));
+    }
+
+    let continuation_report =
+        coverage_gap_continuation_source_report_v1(&source_report, &execution);
+    let mut config = input.config.clone();
+    let use_neow_guided_prefix = !config.prefix_commands.is_empty();
+    config.seed = source_report.seed;
+    config.ascension_level = source_report.run_domain.ascension_level;
+    config.player_class = canonical_player_class(&source_report.run_domain.player_class)?;
+    config.prefix_commands = if use_neow_guided_prefix {
+        coverage_gap_source_prefix_commands_v1(&config)?
+    } else {
+        Vec::new()
+    };
+
+    let result = run_branch_campaign_from_report_with_checkpoint_v1(
+        &config,
+        &continuation_report,
+        Some(&source_checkpoint),
+    )?;
+    if let Some(path) = input.out.as_ref() {
+        write_campaign_report_v1(path, &result.report)?;
+    }
+    if let Some(path) = input.checkpoint_out.as_ref() {
+        write_campaign_checkpoint_v1(path, &result.checkpoint)?;
+    }
+
+    println!(
+        "CoverageGapContinuationExecutionV1 requested={} selected={} skipped={}",
+        execution.requested_target_count,
+        execution.selected_branch_count,
+        execution.skipped_target_count
+    );
+    println!("{}", render_coverage_gap_continuation_plan_v1(&plan));
+    println!(
+        "{}",
+        render_branch_campaign_compact_with_detail_v1(
+            &result.report,
+            input.branch_examples,
+            input.report_detail,
+        )
+    );
+    Ok(())
+}
+
 fn continuation_source_report_v1(
     source_report: &BranchCampaignReportV1,
     execution: &TargetedContinuationExecutionPlanV1,
@@ -249,6 +354,71 @@ fn continuation_source_report_v1(
     report.stuck.clear();
     report.strategy_requests.clear();
     Some(report)
+}
+
+fn coverage_gap_continuation_source_report_v1(
+    source_report: &BranchCampaignReportV1,
+    execution: &CoverageGapContinuationExecutionPlanV1,
+) -> BranchCampaignReportV1 {
+    let active = execution
+        .targets
+        .iter()
+        .map(coverage_gap_branch_from_target_v1)
+        .collect::<Vec<_>>();
+    let mut report = source_report.clone();
+    report.stop_reason = "coverage_gap_continuation_seed".to_string();
+    report.active = active;
+    report.frozen.clear();
+    report.victories.clear();
+    report.dead.clear();
+    report.abandoned.clear();
+    report.stuck.clear();
+    report.strategy_requests.clear();
+    report
+}
+
+fn coverage_gap_branch_from_target_v1(
+    target: &CoverageGapContinuationTargetV1,
+) -> BranchCampaignBranchV1 {
+    let mut commands = target.parent_commands.clone();
+    commands.push(target.command.clone());
+    let mut choice_labels = target.parent_choices.clone();
+    choice_labels.push(target.label.clone());
+    BranchCampaignBranchV1 {
+        branch_id: branch_id_from_commands_v1(&commands),
+        commands,
+        choice_labels,
+        summary: None,
+        strategic_summary: Default::default(),
+        frontier_title: format!("Coverage Gap: {}", target.event_type),
+        status: BranchCampaignBranchStatusV1::Active,
+        stop_reason: format!("coverage gap continuation from {}", target.decision_id),
+        lineage_decision_signal_rank_adjustment: 0,
+        rank_key: 0,
+        final_boss_combat_record: None,
+        combat_lab_probes: Vec::new(),
+    }
+}
+
+fn coverage_gap_source_prefix_commands_v1(
+    config: &sts_simulator::eval::branch_campaign::BranchCampaignConfigV1,
+) -> Result<Vec<String>, String> {
+    neow_guided_prefix_commands_v1(&NeowGuidedPrefixConfigV1 {
+        seed: config.seed,
+        ascension_level: config.ascension_level,
+        final_act: config.final_act,
+        player_class: config.player_class,
+        search_max_nodes: config.search_max_nodes,
+        search_wall_ms: config.search_wall_ms,
+    })
+}
+
+fn branch_id_from_commands_v1(commands: &[String]) -> String {
+    if commands.is_empty() {
+        "root".to_string()
+    } else {
+        format!("root.{}", commands.join("."))
+    }
 }
 
 fn find_campaign_branch_by_id_v1<'a>(

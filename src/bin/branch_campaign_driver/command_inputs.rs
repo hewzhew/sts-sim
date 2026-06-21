@@ -173,6 +173,9 @@ pub(super) struct DatasetCommandInput {
     pub(super) probe_learning_readiness: Option<PathBuf>,
     pub(super) export_learning_dataset: Option<PathBuf>,
     pub(super) export_decision_outcome_dataset: Option<PathBuf>,
+    pub(super) plan_coverage_gap_continuation: bool,
+    pub(super) coverage_gap_limit: usize,
+    pub(super) coverage_gap_candidates_per_decision: usize,
 }
 
 impl DatasetCommandInput {
@@ -186,6 +189,9 @@ impl DatasetCommandInput {
             probe_learning_readiness: args.probe_learning_readiness.clone(),
             export_learning_dataset: args.export_learning_dataset.clone(),
             export_decision_outcome_dataset: args.export_decision_outcome_dataset.clone(),
+            plan_coverage_gap_continuation: args.plan_coverage_gap_continuation,
+            coverage_gap_limit: args.coverage_gap_limit,
+            coverage_gap_candidates_per_decision: args.coverage_gap_candidates_per_decision,
         }
     }
 }
@@ -199,10 +205,13 @@ pub(super) struct ContinuationCommandInput {
     pub(super) checkpoint_out: Option<PathBuf>,
     pub(super) plan_targeted_continuation: Option<PathBuf>,
     pub(super) execute_targeted_continuation: Option<PathBuf>,
+    pub(super) execute_coverage_gap_continuation: bool,
     pub(super) continuation_effect_before: Option<PathBuf>,
     pub(super) continuation_effect_after: Option<PathBuf>,
     pub(super) targeted_continuation_limit: usize,
     pub(super) targeted_continuation_candidates_per_target: usize,
+    pub(super) coverage_gap_limit: usize,
+    pub(super) coverage_gap_candidates_per_decision: usize,
     pub(super) branch_examples: usize,
     pub(super) report_detail: BranchCampaignReportDetailV1,
 }
@@ -217,11 +226,14 @@ impl ContinuationCommandInput {
             checkpoint_out: args.checkpoint_out.clone(),
             plan_targeted_continuation: args.plan_targeted_continuation.clone(),
             execute_targeted_continuation: args.execute_targeted_continuation.clone(),
+            execute_coverage_gap_continuation: args.execute_coverage_gap_continuation,
             continuation_effect_before: args.continuation_effect_before.clone(),
             continuation_effect_after: args.continuation_effect_after.clone(),
             targeted_continuation_limit: args.targeted_continuation_limit,
             targeted_continuation_candidates_per_target: args
                 .targeted_continuation_candidates_per_target,
+            coverage_gap_limit: args.coverage_gap_limit,
+            coverage_gap_candidates_per_decision: args.coverage_gap_candidates_per_decision,
             branch_examples: args.branch_examples,
             report_detail: BranchCampaignReportDetailV1::from(args.report_detail),
         })
