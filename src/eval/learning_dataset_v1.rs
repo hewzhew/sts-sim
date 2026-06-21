@@ -290,6 +290,73 @@ pub struct CoverageGapRouteTargetOriginV1 {
     pub projection_coverage: String,
     pub path_budget: usize,
     pub observed_path_count: usize,
+    #[serde(
+        default,
+        skip_serializing_if = "CoverageGapRoutePathOriginV1::is_empty"
+    )]
+    pub path: CoverageGapRoutePathOriginV1,
+    #[serde(
+        default,
+        skip_serializing_if = "CoverageGapRouteFirstEliteOriginV1::is_empty"
+    )]
+    pub first_elite: CoverageGapRouteFirstEliteOriginV1,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageGapRoutePathOriginV1 {
+    pub path_count: usize,
+    pub min_early_pressure: usize,
+    pub max_early_pressure: usize,
+    pub min_elites: usize,
+    pub max_elites: usize,
+    pub min_shops: usize,
+    pub max_shops: usize,
+    pub min_fires: usize,
+    pub max_fires: usize,
+    pub min_unknowns: usize,
+    pub max_unknowns: usize,
+    pub min_treasures: usize,
+    pub max_treasures: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_shop_floor: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_fire_floor: Option<i32>,
+    pub min_damage_rooms_before_recovery: usize,
+    pub max_damage_rooms_before_recovery: usize,
+    pub min_unknowns_before_recovery: usize,
+    pub max_unknowns_before_recovery: usize,
+    pub paths_with_recovery_before_damage: usize,
+}
+
+impl CoverageGapRoutePathOriginV1 {
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageGapRouteFirstEliteOriginV1 {
+    pub paths_with_first_elite: usize,
+    pub forced: bool,
+    pub optional: bool,
+    pub min_hallway_fights_before: usize,
+    pub max_hallway_fights_before: usize,
+    pub min_unknowns_before: usize,
+    pub max_unknowns_before: usize,
+    pub min_fires_before: usize,
+    pub max_fires_before: usize,
+    pub min_shops_before: usize,
+    pub max_shops_before: usize,
+    pub can_bail_to_rest_before: bool,
+    pub can_bail_to_shop_before: bool,
+}
+
+impl CoverageGapRouteFirstEliteOriginV1 {
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1178,8 +1245,9 @@ fn render_coverage_gap_target_origin_v1(origin: &CoverageGapContinuationTargetOr
         }
         return origin.source.clone();
     };
+    let first_elite = render_coverage_gap_route_first_elite_origin_v1(&route.first_elite);
     format!(
-        "{} route=x{}y{} room={} move={} coverage={} paths={}/{} pool={}/{} complete={}",
+        "{} route=x{}y{} room={} move={} coverage={} paths={}/{} pool={}/{} complete={} path=elites:{} fires:{} shops:{} unknowns:{} damage_before_recovery:{} first_shop={} first_fire={} first_elite={}",
         origin.source,
         route.target_x,
         route.target_y,
@@ -1190,8 +1258,70 @@ fn render_coverage_gap_target_origin_v1(origin: &CoverageGapContinuationTargetOr
         route.path_budget,
         route.emitted_candidate_count,
         route.legal_candidate_count,
-        route.complete_legal_pool
+        route.complete_legal_pool,
+        render_usize_range_v1(route.path.min_elites, route.path.max_elites),
+        render_usize_range_v1(route.path.min_fires, route.path.max_fires),
+        render_usize_range_v1(route.path.min_shops, route.path.max_shops),
+        render_usize_range_v1(route.path.min_unknowns, route.path.max_unknowns),
+        render_usize_range_v1(
+            route.path.min_damage_rooms_before_recovery,
+            route.path.max_damage_rooms_before_recovery
+        ),
+        render_optional_floor_v1(route.path.first_shop_floor),
+        render_optional_floor_v1(route.path.first_fire_floor),
+        first_elite
     )
+}
+
+fn render_coverage_gap_route_first_elite_origin_v1(
+    first_elite: &CoverageGapRouteFirstEliteOriginV1,
+) -> String {
+    if first_elite.paths_with_first_elite == 0 {
+        return "none".to_string();
+    }
+    let mode = if first_elite.forced {
+        "forced"
+    } else if first_elite.optional {
+        "optional"
+    } else {
+        "seen"
+    };
+    let mut bailout = Vec::new();
+    if first_elite.can_bail_to_rest_before {
+        bailout.push("rest");
+    }
+    if first_elite.can_bail_to_shop_before {
+        bailout.push("shop");
+    }
+    format!(
+        "{} hallways:{} fires:{} shops:{} bailout:{}",
+        mode,
+        render_usize_range_v1(
+            first_elite.min_hallway_fights_before,
+            first_elite.max_hallway_fights_before
+        ),
+        render_usize_range_v1(first_elite.min_fires_before, first_elite.max_fires_before),
+        render_usize_range_v1(first_elite.min_shops_before, first_elite.max_shops_before),
+        if bailout.is_empty() {
+            "-".to_string()
+        } else {
+            bailout.join("+")
+        }
+    )
+}
+
+fn render_usize_range_v1(min: usize, max: usize) -> String {
+    if min == max {
+        min.to_string()
+    } else {
+        format!("{min}-{max}")
+    }
+}
+
+fn render_optional_floor_v1(floor: Option<i32>) -> String {
+    floor
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "-".to_string())
 }
 
 fn candidate_admission_is_scheduled_v1(candidate: &CampaignJournalCandidateV1) -> bool {
@@ -1869,6 +1999,8 @@ fn coverage_gap_target_origin_v1(
                     let pool = candidate_pool_provenance
                         .as_ref()
                         .unwrap_or(&packet.candidate_pool);
+                    let path = &candidate.projection.path_summary;
+                    let first_elite = &path.first_elite;
                     CoverageGapRouteTargetOriginV1 {
                         legal_candidate_count: pool.legal_candidate_count,
                         emitted_candidate_count: pool.emitted_candidate_count,
@@ -1890,6 +2022,44 @@ fn coverage_gap_target_origin_v1(
                         ),
                         path_budget: candidate.projection.metadata.path_budget,
                         observed_path_count: candidate.projection.metadata.observed_path_count,
+                        path: CoverageGapRoutePathOriginV1 {
+                            path_count: path.path_count,
+                            min_early_pressure: path.min_early_pressure,
+                            max_early_pressure: path.max_early_pressure,
+                            min_elites: path.min_elites,
+                            max_elites: path.max_elites,
+                            min_shops: path.min_shops,
+                            max_shops: path.max_shops,
+                            min_fires: path.min_fires,
+                            max_fires: path.max_fires,
+                            min_unknowns: path.min_unknowns,
+                            max_unknowns: path.max_unknowns,
+                            min_treasures: path.min_treasures,
+                            max_treasures: path.max_treasures,
+                            first_shop_floor: path.first_shop_floor,
+                            first_fire_floor: path.first_fire_floor,
+                            min_damage_rooms_before_recovery: path.min_damage_rooms_before_recovery,
+                            max_damage_rooms_before_recovery: path.max_damage_rooms_before_recovery,
+                            min_unknowns_before_recovery: path.min_unknowns_before_recovery,
+                            max_unknowns_before_recovery: path.max_unknowns_before_recovery,
+                            paths_with_recovery_before_damage: path
+                                .paths_with_recovery_before_damage,
+                        },
+                        first_elite: CoverageGapRouteFirstEliteOriginV1 {
+                            paths_with_first_elite: first_elite.paths_with_first_elite,
+                            forced: first_elite.forced,
+                            optional: first_elite.optional,
+                            min_hallway_fights_before: first_elite.min_hallway_fights_before,
+                            max_hallway_fights_before: first_elite.max_hallway_fights_before,
+                            min_unknowns_before: first_elite.min_unknowns_before,
+                            max_unknowns_before: first_elite.max_unknowns_before,
+                            min_fires_before: first_elite.min_fires_before,
+                            max_fires_before: first_elite.max_fires_before,
+                            min_shops_before: first_elite.min_shops_before,
+                            max_shops_before: first_elite.max_shops_before,
+                            can_bail_to_rest_before: first_elite.can_bail_to_rest_before,
+                            can_bail_to_shop_before: first_elite.can_bail_to_shop_before,
+                        },
                     }
                 })
             });

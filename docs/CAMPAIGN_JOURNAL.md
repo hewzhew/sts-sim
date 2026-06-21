@@ -142,9 +142,10 @@ for saying that the missing candidate is strategically better.
 For route/map candidates, continuation targets carry structured
 `target_origin` provenance from the journal `MapDecisionPacketV1` when it is
 available. That origin records the typed target room, route action, candidate
-pool completeness, and route projection coverage. Coverage-gap tooling should
-use this provenance to explain and schedule missing route candidates; it should
-not parse `go N` commands or display labels to recover map identity.
+pool completeness, route projection coverage, visible path summary, and first
+elite segment. Coverage-gap tooling should use this provenance to explain and
+schedule missing route candidates; it should not parse `go N` commands or
+display labels to recover map identity.
 
 ## Boundaries
 

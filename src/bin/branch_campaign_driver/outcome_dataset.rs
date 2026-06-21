@@ -26,9 +26,9 @@ use sts_simulator::eval::learning_dataset_v1::{
     render_learning_decision_outcome_analysis_v1, render_learning_readiness_probe_v1,
     render_targeted_continuation_plan_v1, serialize_learning_branch_samples_jsonl_v1,
     serialize_learning_decision_outcome_samples_jsonl_v1, targeted_continuation_execution_plan_v1,
-    CoverageGapContinuationExecutionPlanV1, CoverageGapContinuationTargetV1,
-    LearningBranchSampleV1, LearningDatasetExportContextV1, LearningDecisionOutcomeSampleV1,
-    TargetedContinuationExecutionPlanV1,
+    CoverageGapContinuationExecutionPlanV1, CoverageGapContinuationPlanV1,
+    CoverageGapContinuationTargetV1, LearningBranchSampleV1, LearningDatasetExportContextV1,
+    LearningDecisionOutcomeSampleV1, TargetedContinuationExecutionPlanV1,
 };
 use sts_simulator::eval::neow_guided_prefix::{
     neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
@@ -281,19 +281,12 @@ pub(super) fn run_coverage_gap_continuation_execution(
     let source_report = read_campaign_report_v1(report_path)?;
     let source_checkpoint = read_campaign_checkpoint_v1(checkpoint_path)?;
     let records = extract_branch_outcome_records_v1(&source_report, Some(&source_checkpoint))?;
-    let planning_window = coverage_gap_execution_planning_window_v1(input.coverage_gap_limit);
-    let plan = plan_coverage_gap_continuations_v1(
+    let (plan, execution, planning_window) = build_replayable_coverage_gap_execution_plan_v1(
         &source_report,
         &records,
-        planning_window,
-        input.coverage_gap_candidates_per_decision,
-    );
-    let execution = trim_coverage_gap_execution_plan_v1(
-        filter_coverage_gap_execution_plan_for_checkpoint_v1(
-            coverage_gap_continuation_execution_plan_v1(&plan, planning_window),
-            &source_checkpoint,
-        ),
+        &source_checkpoint,
         input.coverage_gap_limit,
+        input.coverage_gap_candidates_per_decision,
     );
     if execution.targets.is_empty() {
         return Err(format!(
@@ -352,6 +345,49 @@ pub(super) fn run_coverage_gap_continuation_execution(
         )
     );
     Ok(())
+}
+
+fn build_replayable_coverage_gap_execution_plan_v1(
+    source_report: &BranchCampaignReportV1,
+    records: &[BranchOutcomeRecordV1],
+    source_checkpoint: &BranchCampaignCheckpointV1,
+    requested_targets: usize,
+    max_candidates_per_decision: usize,
+) -> (
+    CoverageGapContinuationPlanV1,
+    CoverageGapContinuationExecutionPlanV1,
+    usize,
+) {
+    let mut planning_window = requested_targets;
+    let max_planning_window = coverage_gap_execution_planning_window_cap_v1(requested_targets);
+
+    loop {
+        let plan = plan_coverage_gap_continuations_v1(
+            source_report,
+            records,
+            planning_window,
+            max_candidates_per_decision,
+        );
+        let execution = trim_coverage_gap_execution_plan_v1(
+            filter_coverage_gap_execution_plan_for_checkpoint_v1(
+                coverage_gap_continuation_execution_plan_v1(&plan, planning_window),
+                source_checkpoint,
+            ),
+            requested_targets,
+        );
+        let selected_enough = execution.selected_branch_count >= requested_targets;
+        let exhausted_planned_targets = plan.targets.len() < planning_window;
+
+        if requested_targets == 0
+            || selected_enough
+            || exhausted_planned_targets
+            || planning_window >= max_planning_window
+        {
+            break (plan, execution, planning_window);
+        }
+        planning_window =
+            next_coverage_gap_execution_planning_window_v1(planning_window, max_planning_window);
+    }
 }
 
 fn continuation_source_report_v1(
@@ -488,8 +524,18 @@ fn filter_coverage_gap_execution_plan_for_checkpoint_v1(
     execution
 }
 
-fn coverage_gap_execution_planning_window_v1(requested_targets: usize) -> usize {
-    requested_targets.saturating_mul(4).max(requested_targets)
+fn coverage_gap_execution_planning_window_cap_v1(requested_targets: usize) -> usize {
+    requested_targets.saturating_mul(16).max(requested_targets)
+}
+
+fn next_coverage_gap_execution_planning_window_v1(
+    current_window: usize,
+    max_window: usize,
+) -> usize {
+    current_window
+        .saturating_mul(2)
+        .max(current_window.saturating_add(1))
+        .min(max_window)
 }
 
 fn trim_coverage_gap_execution_plan_v1(
