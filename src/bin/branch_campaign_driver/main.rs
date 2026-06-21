@@ -36,7 +36,9 @@ use decision_observations::run_decision_observation_inspection;
 #[cfg(test)]
 use driver_command::driver_command_from_args;
 use driver_command::{driver_command_from_cli_input, BranchCampaignDriverCommandV1};
-use journal_inspection::run_campaign_journal_inspection;
+use journal_inspection::{
+    run_campaign_journal_inspection, run_campaign_lineage_decision_inspection,
+};
 use outcome_dataset::{
     run_branch_outcome_dataset_analysis, run_branch_outcome_dataset_export,
     run_continuation_effect_report, run_coverage_gap_continuation_execution,
@@ -98,6 +100,9 @@ fn run(cli_input: BranchCampaignCliInputV1) -> Result<(), String> {
         }
         BranchCampaignDriverCommandV1::InspectJournal => {
             run_campaign_journal_inspection(&InspectCommandInput::from_args(args)?)
+        }
+        BranchCampaignDriverCommandV1::InspectLineageDecisions => {
+            run_campaign_lineage_decision_inspection(&InspectCommandInput::from_args(args)?)
         }
         BranchCampaignDriverCommandV1::InspectDecisionCoverage => {
             run_decision_candidate_coverage_inspection(&DatasetCommandInput::from_args(args))
@@ -162,6 +167,14 @@ mod tests {
             "--inspect-journal",
         ])
         .expect("journal inspect args parse");
+        let lineage_decision_args = parse_args_from([
+            "branch_campaign_driver",
+            "inspect",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-lineage-decisions",
+        ])
+        .expect("lineage decision inspect args parse");
         let dataset_args = parse_args_from([
             "branch_campaign_driver",
             "dataset",
@@ -200,6 +213,10 @@ mod tests {
         assert_eq!(
             driver_command_from_args(&journal_args),
             BranchCampaignDriverCommandV1::InspectJournal
+        );
+        assert_eq!(
+            driver_command_from_args(&lineage_decision_args),
+            BranchCampaignDriverCommandV1::InspectLineageDecisions
         );
         assert_eq!(
             driver_command_from_args(&dataset_args),

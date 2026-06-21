@@ -460,6 +460,12 @@ pub(super) struct Args {
     pub(super) inspect_journal: bool,
 
     #[arg(
+        long = "inspect-lineage-decisions",
+        help = "Print CampaignJournal candidate pools along a selected report branch lineage"
+    )]
+    pub(super) inspect_lineage_decisions: bool,
+
+    #[arg(
         long = "inspect-decision-coverage",
         help = "Print journal candidate continuation coverage from a BranchCampaignV1 report"
     )]
@@ -1078,6 +1084,12 @@ struct InspectModeArgs {
     inspect_journal: bool,
 
     #[arg(
+        long = "inspect-lineage-decisions",
+        help = "Print CampaignJournal candidate pools along a selected report branch lineage"
+    )]
+    inspect_lineage_decisions: bool,
+
+    #[arg(
         long = "inspect-decision-coverage",
         help = "Print journal candidate continuation coverage from a BranchCampaignV1 report"
     )]
@@ -1358,6 +1370,7 @@ impl Args {
             inspect_route_evidence: false,
             inspect_decision_observations: false,
             inspect_journal: false,
+            inspect_lineage_decisions: false,
             inspect_decision_coverage: false,
             inspect_query: None,
             inspect_final_boss_combat: false,
@@ -1537,6 +1550,7 @@ impl InspectModeArgs {
         args.inspect_route_evidence = self.inspect_route_evidence;
         args.inspect_decision_observations = self.inspect_decision_observations;
         args.inspect_journal = self.inspect_journal;
+        args.inspect_lineage_decisions = self.inspect_lineage_decisions;
         args.inspect_decision_coverage = self.inspect_decision_coverage;
         args.inspect_query = self.inspect_query;
         args.inspect_final_boss_combat = self.inspect_final_boss_combat;

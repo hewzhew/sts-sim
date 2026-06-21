@@ -55,6 +55,10 @@ Prints saved historical reward option portfolios matching a candidate or semanti
 Prints saved CampaignJournal decision events matching a boundary, candidate, or semantic field.
 
 .EXAMPLE
+.\tools\campaign.ps1 -InspectLineageDecisions -InspectIndex 0
+Prints historical CampaignJournal candidate pools along a selected active/frozen branch lineage.
+
+.EXAMPLE
 .\tools\campaign.ps1 -InspectDeckMutation -InspectIndex 0
 Prints DeckMutationCompiler evidence for a selected checkpoint branch.
 
@@ -182,6 +186,7 @@ param(
     [switch] $InspectCardRewardEvidence,
     [switch] $InspectDecisionObservations,
     [switch] $InspectJournal,
+    [switch] $InspectLineageDecisions,
     [switch] $InspectCampfireEvidence,
     [switch] $InspectDeckMutation,
     [switch] $InspectRouteEvidence,
@@ -319,6 +324,7 @@ if (
     $InspectCardRewardEvidence -or
     $InspectDecisionObservations -or
     $InspectJournal -or
+    $InspectLineageDecisions -or
     $InspectCampfireEvidence -or
     $InspectDeckMutation -or
     $InspectRouteEvidence -or
@@ -1162,6 +1168,7 @@ if ($Inspect) {
         $InspectCardRewardEvidence -or
         $InspectDecisionObservations -or
         $InspectJournal -or
+        $InspectLineageDecisions -or
         $InspectCampfireEvidence -or
         $InspectDeckMutation -or
         $InspectRouteEvidence -or
@@ -1192,6 +1199,9 @@ if ($Inspect) {
     }
     if ((-not $ExportLearningDataset) -and $InspectJournal) {
         $InspectArgs += "--inspect-journal"
+    }
+    if ((-not $ExportLearningDataset) -and $InspectLineageDecisions) {
+        $InspectArgs += "--inspect-lineage-decisions"
     }
     if ((-not $ExportLearningDataset) -and $InspectCampfireEvidence) {
         $InspectArgs += "--inspect-campfire-evidence"
