@@ -795,17 +795,13 @@ pub fn analyze_journal_decision_candidate_coverage_v1(
 
         total_decisions += 1;
         total_candidates += candidates.len();
-        let parent_commands = event.branch_commands.as_slice();
         let mut observed = Vec::new();
         let mut unobserved = Vec::new();
         for candidate in candidates {
-            if records.iter().any(|record| {
-                record_commands_start_with_candidate_v1(
-                    &record.commands,
-                    parent_commands,
-                    &candidate.command,
-                )
-            }) {
+            if records
+                .iter()
+                .any(|record| record_observes_journal_candidate_v1(event, candidate, record))
+            {
                 observed.push(candidate);
             } else {
                 unobserved.push(candidate);
@@ -924,16 +920,12 @@ pub fn plan_coverage_gap_continuations_v1(
 
         total_decisions = total_decisions.saturating_add(1);
         total_candidates = total_candidates.saturating_add(candidates.len());
-        let parent_commands = event.branch_commands.as_slice();
         let mut unobserved = Vec::new();
         for (candidate_index, candidate) in candidates.iter().enumerate() {
-            if records.iter().any(|record| {
-                record_commands_start_with_candidate_v1(
-                    &record.commands,
-                    parent_commands,
-                    &candidate.command,
-                )
-            }) {
+            if records
+                .iter()
+                .any(|record| record_observes_journal_candidate_v1(event, candidate, record))
+            {
                 continue;
             }
 
@@ -1911,11 +1903,7 @@ fn journal_decision_candidate_drafts_v1(
         let step_index = parent_commands.len();
         for candidate in candidates {
             for (record_index, record) in records.iter().enumerate() {
-                if !record_commands_start_with_candidate_v1(
-                    &record.commands,
-                    parent_commands,
-                    &candidate.command,
-                ) {
+                if !record_observes_journal_candidate_v1(event, candidate, record) {
                     continue;
                 }
                 drafts.push(LearningDecisionCandidateDraftV1 {
@@ -2241,6 +2229,48 @@ fn record_commands_start_with_candidate_v1(
     record_commands.len() > parent_commands.len()
         && record_commands.starts_with(parent_commands)
         && record_commands[parent_commands.len()] == candidate_command
+}
+
+fn record_observes_journal_candidate_v1(
+    event: &CampaignJournalEventV1,
+    candidate: &CampaignJournalCandidateV1,
+    record: &BranchOutcomeRecordV1,
+) -> bool {
+    if record_commands_start_with_candidate_v1(
+        &record.commands,
+        &event.branch_commands,
+        &candidate.command,
+    ) {
+        return true;
+    }
+
+    route_selected_candidate_observed_by_descendant_branch_v1(event, candidate, record)
+}
+
+fn route_selected_candidate_observed_by_descendant_branch_v1(
+    event: &CampaignJournalEventV1,
+    candidate: &CampaignJournalCandidateV1,
+    record: &BranchOutcomeRecordV1,
+) -> bool {
+    if !matches!(
+        event.payload,
+        CampaignJournalEventPayloadV1::RouteCandidatePool { .. }
+    ) {
+        return false;
+    }
+    if candidate.admission.normalized_reason_code()
+        != CampaignJournalCandidateAdmissionReasonCodeV1::Selected
+    {
+        return false;
+    }
+    branch_id_is_same_or_descendant_v1(&record.branch_id, &event.branch_id)
+}
+
+fn branch_id_is_same_or_descendant_v1(record_branch_id: &str, parent_branch_id: &str) -> bool {
+    record_branch_id == parent_branch_id
+        || record_branch_id
+            .strip_prefix(parent_branch_id)
+            .is_some_and(|suffix| suffix.starts_with('.'))
 }
 
 fn decision_outcome_sample_from_draft_v1(
@@ -3302,6 +3332,82 @@ mod tests {
                 .first_elite
                 .paths_with_first_elite
         );
+    }
+
+    #[test]
+    fn route_selected_candidate_is_observed_by_descendant_branch_without_route_command() {
+        let mut descendant = sample_branch_outcome_record();
+        descendant.branch_id = "root.rp 0".to_string();
+        descendant.commands = vec!["rp 0".to_string()];
+        descendant.choice_labels = vec!["Warcry".to_string()];
+
+        let mut selected_route = sample_journal_candidate_with_admission(
+            "go 2",
+            "x=2 y=0 Monster",
+            CampaignJournalCandidateDispositionV1::Kept,
+            CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+        );
+        selected_route.candidate_id = "route_move:normal_edge:x2:y0".to_string();
+        selected_route.admission = CampaignJournalCandidateAdmissionTraceV1::new(
+            CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+            "route_candidate_pool",
+            "selected",
+        );
+        let mut unselected_route = sample_journal_candidate_with_admission(
+            "go 3",
+            "x=3 y=0 Monster",
+            CampaignJournalCandidateDispositionV1::Pruned,
+            CampaignJournalCandidateAdmissionStatusV1::Deferred,
+        );
+        unselected_route.candidate_id = "route_move:normal_edge:x3:y0".to_string();
+        unselected_route.admission = CampaignJournalCandidateAdmissionTraceV1::new(
+            CampaignJournalCandidateAdmissionStatusV1::Deferred,
+            "route_candidate_pool",
+            "deferred",
+        );
+
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-route-pool0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Map".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: vec!["__route_decision:0:go_2".to_string()],
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                decision_id: "journal-route-pool0".to_string(),
+                boundary_title: "Map".to_string(),
+                frontier_key: "map-frontier".to_string(),
+                depth: 0,
+                candidate_count: 2,
+                selected_index: Some(0),
+                candidate_pool_provenance: None,
+                map_decision_packet: None,
+                route_candidates: Vec::new(),
+                candidates: vec![selected_route, unselected_route],
+            },
+        });
+
+        let records = vec![descendant];
+        let coverage = analyze_journal_decision_candidate_coverage_v1(&report, &records);
+        assert_eq!(coverage.observed_candidates, 1);
+        assert_eq!(coverage.unobserved_candidates, 1);
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &records, 4, 4);
+        assert_eq!(plan.total_unobserved_candidates, 1);
+        assert_eq!(plan.targets[0].command, "go 3");
+
+        let samples = decision_outcome_samples_from_campaign_report_v1(
+            &report,
+            &records,
+            LearningDatasetExportContextV1::default(),
+        );
+        assert_eq!(samples.len(), 1);
+        assert_eq!(samples[0].candidate_command, "go 2");
     }
 
     #[test]
