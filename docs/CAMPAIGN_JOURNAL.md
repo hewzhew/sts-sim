@@ -185,7 +185,9 @@ journal events, not the other way around.
 - Treat candidate `admission` as the structured scheduling trace. Legacy
   `disposition` (`kept`/`pruned`) is still serialized for compatibility, but
   new continuation and replay tooling should prefer `admission.status`,
-  `source`, `reason`, and `lane`.
+  `reason_category`, `reason_code`, `source`, and `lane`. The legacy
+  `admission.reason` string remains compatibility/debug text, not a field to
+  parse for control flow.
 - Interpret branch `commands` relative to the report/checkpoint
   `run_prelude`, not relative to a fresh process start. New reports record the
   replay root and prefix commands explicitly; continuation tools should consume

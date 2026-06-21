@@ -11,9 +11,10 @@ use crate::eval::branch_outcome_dataset_v1::{
     BranchOutcomeSupervisionStatusV1,
 };
 use crate::eval::campaign_journal::{
-    CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateAdmissionTraceV1,
-    CampaignJournalCandidateDispositionV1, CampaignJournalCandidateV1,
-    CampaignJournalEventPayloadV1, CampaignJournalEventV1,
+    CampaignJournalCandidateAdmissionReasonCategoryV1,
+    CampaignJournalCandidateAdmissionReasonCodeV1, CampaignJournalCandidateAdmissionStatusV1,
+    CampaignJournalCandidateAdmissionTraceV1, CampaignJournalCandidateDispositionV1,
+    CampaignJournalCandidateV1, CampaignJournalEventPayloadV1, CampaignJournalEventV1,
 };
 
 pub const LEARNING_BRANCH_SAMPLE_SCHEMA_NAME: &str = "LearningBranchSampleV1";
@@ -960,7 +961,7 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
         lines.push("Targets:".to_string());
         for (index, target) in plan.targets.iter().take(12).enumerate() {
             lines.push(format!(
-                "  {}. {} {} | parent={} candidate={} {{{}}} admission={} disposition={} milestone={} semantic=[{}]",
+                "  {}. {} {} | parent={} candidate={} {{{}}} admission={} reason_category={} reason_code={} disposition={} milestone={} semantic=[{}]",
                 index + 1,
                 target.event_type,
                 compact_learning_text_v1(&target.decision_id, 56),
@@ -968,6 +969,12 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
                 compact_learning_text_v1(&target.label, 42),
                 compact_learning_text_v1(&target.command, 28),
                 render_journal_candidate_admission_status_v1(target.admission.status),
+                render_journal_candidate_admission_reason_category_v1(
+                    target.admission.normalized_reason_category()
+                ),
+                render_journal_candidate_admission_reason_code_v1(
+                    target.admission.normalized_reason_code()
+                ),
                 render_journal_candidate_disposition_v1(target.disposition),
                 target.milestone,
                 compact_learning_text_v1(&target.semantic_class, 58)
@@ -1010,6 +1017,18 @@ fn render_journal_candidate_admission_status_v1(
         CampaignJournalCandidateAdmissionStatusV1::Deferred => "deferred",
         CampaignJournalCandidateAdmissionStatusV1::Rejected => "rejected",
     }
+}
+
+fn render_journal_candidate_admission_reason_category_v1(
+    category: CampaignJournalCandidateAdmissionReasonCategoryV1,
+) -> &'static str {
+    category.as_str()
+}
+
+fn render_journal_candidate_admission_reason_code_v1(
+    code: CampaignJournalCandidateAdmissionReasonCodeV1,
+) -> &'static str {
+    code.as_str()
 }
 
 fn render_journal_candidate_disposition_v1(
@@ -2626,6 +2645,8 @@ mod tests {
             CampaignJournalCandidateAdmissionStatusV1::Scheduled
         );
         assert!(rendered.contains("admission=scheduled"));
+        assert!(rendered.contains("reason_category=unknown"));
+        assert!(rendered.contains("reason_code=unknown"));
     }
 
     #[test]
@@ -3203,14 +3224,7 @@ mod tests {
             label: label.to_string(),
             semantic_class: "test".to_string(),
             disposition,
-            admission: CampaignJournalCandidateAdmissionTraceV1 {
-                status,
-                source: "test".to_string(),
-                reason: "test".to_string(),
-                lane: String::new(),
-                representative_count: 0,
-                suppressed_count: 0,
-            },
+            admission: CampaignJournalCandidateAdmissionTraceV1::new(status, "test", "test"),
         }
     }
 

@@ -155,6 +155,16 @@ pub struct CampaignJournalCandidateV1 {
 #[serde(deny_unknown_fields)]
 pub struct CampaignJournalCandidateAdmissionTraceV1 {
     pub status: CampaignJournalCandidateAdmissionStatusV1,
+    #[serde(
+        default,
+        skip_serializing_if = "CampaignJournalCandidateAdmissionReasonCategoryV1::is_unknown"
+    )]
+    pub reason_category: CampaignJournalCandidateAdmissionReasonCategoryV1,
+    #[serde(
+        default,
+        skip_serializing_if = "CampaignJournalCandidateAdmissionReasonCodeV1::is_unknown"
+    )]
+    pub reason_code: CampaignJournalCandidateAdmissionReasonCodeV1,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub source: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -173,10 +183,14 @@ impl CampaignJournalCandidateAdmissionTraceV1 {
         source: impl Into<String>,
         reason: impl Into<String>,
     ) -> Self {
+        let source = source.into();
+        let reason = reason.into();
         Self {
             status,
-            source: source.into(),
-            reason: reason.into(),
+            reason_category: admission_reason_category_from_source_v1(&source),
+            reason_code: admission_reason_code_from_text_v1(&reason),
+            source,
+            reason,
             lane: String::new(),
             representative_count: 0,
             suppressed_count: 0,
@@ -210,13 +224,99 @@ impl CampaignJournalCandidateAdmissionTraceV1 {
         self
     }
 
+    pub fn normalized_reason_category(&self) -> CampaignJournalCandidateAdmissionReasonCategoryV1 {
+        if self.reason_category != CampaignJournalCandidateAdmissionReasonCategoryV1::Unknown {
+            return self.reason_category;
+        }
+        admission_reason_category_from_source_v1(&self.source)
+    }
+
+    pub fn normalized_reason_code(&self) -> CampaignJournalCandidateAdmissionReasonCodeV1 {
+        if self.reason_code != CampaignJournalCandidateAdmissionReasonCodeV1::Unknown {
+            return self.reason_code;
+        }
+        admission_reason_code_from_text_v1(&self.reason)
+    }
+
     pub fn is_unknown(&self) -> bool {
         self.status == CampaignJournalCandidateAdmissionStatusV1::Unknown
+            && self.reason_category == CampaignJournalCandidateAdmissionReasonCategoryV1::Unknown
+            && self.reason_code == CampaignJournalCandidateAdmissionReasonCodeV1::Unknown
             && self.source.is_empty()
             && self.reason.is_empty()
             && self.lane.is_empty()
             && self.representative_count == 0
             && self.suppressed_count == 0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CampaignJournalCandidateAdmissionReasonCategoryV1 {
+    Unknown,
+    LegacyDisposition,
+    RetentionBucket,
+    BranchAdmission,
+}
+
+impl Default for CampaignJournalCandidateAdmissionReasonCategoryV1 {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+impl CampaignJournalCandidateAdmissionReasonCategoryV1 {
+    pub fn is_unknown(&self) -> bool {
+        *self == Self::Unknown
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::LegacyDisposition => "legacy_disposition",
+            Self::RetentionBucket => "retention_bucket",
+            Self::BranchAdmission => "branch_admission",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CampaignJournalCandidateAdmissionReasonCodeV1 {
+    Unknown,
+    Admit,
+    Blocked,
+    Deferred,
+    Kept,
+    Pruned,
+    Reject,
+    Scheduled,
+    Selected,
+}
+
+impl Default for CampaignJournalCandidateAdmissionReasonCodeV1 {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+impl CampaignJournalCandidateAdmissionReasonCodeV1 {
+    pub fn is_unknown(&self) -> bool {
+        *self == Self::Unknown
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Admit => "admit",
+            Self::Blocked => "blocked",
+            Self::Deferred => "deferred",
+            Self::Kept => "kept",
+            Self::Pruned => "pruned",
+            Self::Reject => "reject",
+            Self::Scheduled => "scheduled",
+            Self::Selected => "selected",
+        }
     }
 }
 
@@ -386,6 +486,37 @@ fn campaign_journal_status_from_branch_admission_v1(
     }
 }
 
+fn admission_reason_category_from_source_v1(
+    source: &str,
+) -> CampaignJournalCandidateAdmissionReasonCategoryV1 {
+    match source {
+        "legacy_disposition" => {
+            CampaignJournalCandidateAdmissionReasonCategoryV1::LegacyDisposition
+        }
+        "reward_portfolio" => CampaignJournalCandidateAdmissionReasonCategoryV1::RetentionBucket,
+        source if source.ends_with("_candidate_pool") => {
+            CampaignJournalCandidateAdmissionReasonCategoryV1::BranchAdmission
+        }
+        _ => CampaignJournalCandidateAdmissionReasonCategoryV1::Unknown,
+    }
+}
+
+fn admission_reason_code_from_text_v1(
+    reason: &str,
+) -> CampaignJournalCandidateAdmissionReasonCodeV1 {
+    match reason.to_ascii_lowercase().as_str() {
+        "admit" => CampaignJournalCandidateAdmissionReasonCodeV1::Admit,
+        "blocked" | "block" => CampaignJournalCandidateAdmissionReasonCodeV1::Blocked,
+        "deferred" | "defer" => CampaignJournalCandidateAdmissionReasonCodeV1::Deferred,
+        "kept" | "keep" => CampaignJournalCandidateAdmissionReasonCodeV1::Kept,
+        "pruned" | "prune" => CampaignJournalCandidateAdmissionReasonCodeV1::Pruned,
+        "reject" | "rejected" => CampaignJournalCandidateAdmissionReasonCodeV1::Reject,
+        "scheduled" => CampaignJournalCandidateAdmissionReasonCodeV1::Scheduled,
+        "selected" => CampaignJournalCandidateAdmissionReasonCodeV1::Selected,
+        _ => CampaignJournalCandidateAdmissionReasonCodeV1::Unknown,
+    }
+}
+
 pub fn reward_portfolio_from_journal_event_v1(
     event: &CampaignJournalEventV1,
 ) -> Option<BranchExperimentRewardOptionPortfolioV1> {
@@ -467,7 +598,36 @@ mod tests {
         );
         assert_eq!(candidate.admission.source, "event_candidate_pool");
         assert_eq!(candidate.admission.reason, "selected");
+        assert_eq!(
+            candidate.admission.reason_category,
+            CampaignJournalCandidateAdmissionReasonCategoryV1::BranchAdmission
+        );
+        assert_eq!(
+            candidate.admission.reason_code,
+            CampaignJournalCandidateAdmissionReasonCodeV1::Selected
+        );
         assert_eq!(candidate.admission.representative_count, 2);
         assert_eq!(candidate.admission.suppressed_count, 1);
+    }
+
+    #[test]
+    fn old_admission_trace_normalizes_reason_from_source_text() {
+        let admission: CampaignJournalCandidateAdmissionTraceV1 = serde_json::from_str(
+            r#"{"status":"scheduled","source":"reward_portfolio","reason":"kept"}"#,
+        )
+        .expect("old admission trace should deserialize");
+
+        assert_eq!(
+            admission.reason_category,
+            CampaignJournalCandidateAdmissionReasonCategoryV1::Unknown
+        );
+        assert_eq!(
+            admission.normalized_reason_category(),
+            CampaignJournalCandidateAdmissionReasonCategoryV1::RetentionBucket
+        );
+        assert_eq!(
+            admission.normalized_reason_code(),
+            CampaignJournalCandidateAdmissionReasonCodeV1::Kept
+        );
     }
 }

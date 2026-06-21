@@ -1,7 +1,9 @@
 use sts_simulator::eval::branch_campaign::BranchCampaignReportV1;
 use sts_simulator::eval::campaign_journal::{
-    CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateDispositionV1,
-    CampaignJournalCandidateV1, CampaignJournalEventPayloadV1, CampaignJournalEventV1,
+    CampaignJournalCandidateAdmissionReasonCategoryV1,
+    CampaignJournalCandidateAdmissionReasonCodeV1, CampaignJournalCandidateAdmissionStatusV1,
+    CampaignJournalCandidateDispositionV1, CampaignJournalCandidateV1,
+    CampaignJournalEventPayloadV1, CampaignJournalEventV1,
 };
 
 use super::campaign_artifacts::read_campaign_report_v1;
@@ -306,8 +308,27 @@ fn journal_event_search_text_v1(event: &CampaignJournalEventV1) -> String {
         text.push(candidate.label.clone());
         text.push(candidate.semantic_class.clone());
         text.push(render_candidate_admission_status_v1(candidate.admission.status).to_string());
+        text.push(format!(
+            "admission={}",
+            render_candidate_admission_status_v1(candidate.admission.status)
+        ));
+        let reason_category = render_candidate_admission_reason_category_v1(
+            candidate.admission.normalized_reason_category(),
+        );
+        text.push(reason_category.to_string());
+        text.push(format!("reason_category={reason_category}"));
+        let reason_code =
+            render_candidate_admission_reason_code_v1(candidate.admission.normalized_reason_code());
+        text.push(reason_code.to_string());
+        text.push(format!("reason_code={reason_code}"));
         text.push(candidate.admission.source.clone());
+        if !candidate.admission.source.is_empty() {
+            text.push(format!("source={}", candidate.admission.source));
+        }
         text.push(candidate.admission.reason.clone());
+        if !candidate.admission.reason.is_empty() {
+            text.push(format!("reason={}", candidate.admission.reason));
+        }
         text.push(candidate.admission.lane.clone());
         if candidate.admission.representative_count > 0 {
             text.push(format!(
@@ -388,6 +409,24 @@ fn render_candidate_admission_v1(candidate: &CampaignJournalCandidateV1) -> Stri
     if !candidate.admission.source.is_empty() {
         parts.push(format!("source={}", candidate.admission.source));
     }
+    if candidate.admission.normalized_reason_category()
+        != CampaignJournalCandidateAdmissionReasonCategoryV1::Unknown
+    {
+        parts.push(format!(
+            "reason_category={}",
+            render_candidate_admission_reason_category_v1(
+                candidate.admission.normalized_reason_category()
+            )
+        ));
+    }
+    if candidate.admission.normalized_reason_code()
+        != CampaignJournalCandidateAdmissionReasonCodeV1::Unknown
+    {
+        parts.push(format!(
+            "reason_code={}",
+            render_candidate_admission_reason_code_v1(candidate.admission.normalized_reason_code())
+        ));
+    }
     if !candidate.admission.reason.is_empty() {
         parts.push(format!("reason={}", candidate.admission.reason));
     }
@@ -418,6 +457,18 @@ fn render_candidate_admission_status_v1(
         CampaignJournalCandidateAdmissionStatusV1::Deferred => "deferred",
         CampaignJournalCandidateAdmissionStatusV1::Rejected => "rejected",
     }
+}
+
+fn render_candidate_admission_reason_category_v1(
+    category: CampaignJournalCandidateAdmissionReasonCategoryV1,
+) -> &'static str {
+    category.as_str()
+}
+
+fn render_candidate_admission_reason_code_v1(
+    code: CampaignJournalCandidateAdmissionReasonCodeV1,
+) -> &'static str {
+    code.as_str()
 }
 
 fn render_candidate_disposition_v1(
@@ -548,6 +599,8 @@ mod tests {
 
         assert!(rendered.contains("admission=scheduled"));
         assert!(rendered.contains("source=reward_portfolio"));
+        assert!(rendered.contains("reason_category=retention_bucket"));
+        assert!(rendered.contains("reason_code=selected"));
     }
 
     #[test]
@@ -577,6 +630,14 @@ mod tests {
         assert!(journal_event_matches_query_v1(
             &reward,
             &normalize_query_v1("reward_portfolio")
+        ));
+        assert!(journal_event_matches_query_v1(
+            &reward,
+            &normalize_query_v1("retention_bucket")
+        ));
+        assert!(journal_event_matches_query_v1(
+            &reward,
+            &normalize_query_v1("reason_code=selected")
         ));
     }
 
