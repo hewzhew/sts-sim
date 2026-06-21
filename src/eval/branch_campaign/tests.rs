@@ -28,6 +28,26 @@ mod selection_tests;
 mod state_store_tests;
 
 #[test]
+fn route_evidence_merge_preserves_candidate_pool_only_batches() {
+    let mut target = BranchCampaignRouteEvidenceSummaryV1::default();
+    let incoming = BranchCampaignRouteEvidenceSummaryV1 {
+        candidate_pools: 1,
+        candidate_pool_candidates: 4,
+        candidate_pool_ok: 3,
+        complete_candidate_pools: 1,
+        ..Default::default()
+    };
+
+    super::route_evidence::merge_campaign_route_evidence_summary_v1(&mut target, incoming);
+
+    assert_eq!(target.decisions, 0);
+    assert_eq!(target.candidate_pools, 1);
+    assert_eq!(target.candidate_pool_candidates, 4);
+    assert_eq!(target.candidate_pool_ok, 3);
+    assert_eq!(target.complete_candidate_pools, 1);
+}
+
+#[test]
 fn campaign_victory_quality_gate_keeps_searching_after_low_hp_win() {
     let config = BranchCampaignConfigV1::default();
     let low_victory = {

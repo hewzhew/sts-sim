@@ -27,16 +27,18 @@ pub(super) fn merge_campaign_route_evidence_summary_v1(
     target: &mut BranchCampaignRouteEvidenceSummaryV1,
     incoming: BranchCampaignRouteEvidenceSummaryV1,
 ) {
-    if incoming.decisions == 0 {
+    if incoming.decisions == 0 && incoming.candidate_pools == 0 {
         return;
     }
-    target.avg_elite_prep_bp = weighted_average_bp(
-        target.avg_elite_prep_bp,
-        target.decisions,
-        incoming.avg_elite_prep_bp,
-        incoming.decisions,
-    );
-    target.decisions = target.decisions.saturating_add(incoming.decisions);
+    if incoming.decisions > 0 {
+        target.avg_elite_prep_bp = weighted_average_bp(
+            target.avg_elite_prep_bp,
+            target.decisions,
+            incoming.avg_elite_prep_bp,
+            incoming.decisions,
+        );
+        target.decisions = target.decisions.saturating_add(incoming.decisions);
+    }
     target.candidate_pools = target
         .candidate_pools
         .saturating_add(incoming.candidate_pools);
