@@ -158,9 +158,54 @@ fn matching_journal_events_v1<'a>(
                 })
                 && normalized_query
                     .as_ref()
-                    .is_none_or(|query| journal_event_search_text_v1(event).contains(query))
+                    .is_none_or(|query| journal_event_matches_query_v1(event, query))
         })
         .collect()
+}
+
+fn journal_event_matches_query_v1(event: &CampaignJournalEventV1, normalized_query: &str) -> bool {
+    match structured_journal_query_match_v1(event, normalized_query) {
+        Some(matches) => matches,
+        None => journal_event_search_text_v1(event).contains(normalized_query),
+    }
+}
+
+fn structured_journal_query_match_v1(
+    event: &CampaignJournalEventV1,
+    normalized_query: &str,
+) -> Option<bool> {
+    let event_type = normalize_query_v1(journal_event_type_v1(event));
+    let matches_type = |expected: &str| event_type == expected;
+    match normalized_query {
+        "reward" | "cardreward" | "cardrewards" => Some(matches!(
+            &event.payload,
+            CampaignJournalEventPayloadV1::RewardCandidateSet { .. }
+        )),
+        "shop" | "shops" => Some(matches!(
+            &event.payload,
+            CampaignJournalEventPayloadV1::ShopBranchCandidateSet { .. }
+                | CampaignJournalEventPayloadV1::ShopCandidatePool { .. }
+        )),
+        "campfire" | "campfires" => Some(matches!(
+            &event.payload,
+            CampaignJournalEventPayloadV1::CampfireCandidatePool { .. }
+        )),
+        "event" | "events" => Some(matches!(
+            &event.payload,
+            CampaignJournalEventPayloadV1::EventCandidatePool { .. }
+        )),
+        "bossrelic" | "bossrelics" => Some(matches!(
+            &event.payload,
+            CampaignJournalEventPayloadV1::BossRelicCandidatePool { .. }
+        )),
+        "rewardcandidateset" => Some(matches_type("rewardcandidateset")),
+        "shopbranchcandidateset" => Some(matches_type("shopbranchcandidateset")),
+        "shopcandidatepool" => Some(matches_type("shopcandidatepool")),
+        "campfirecandidatepool" => Some(matches_type("campfirecandidatepool")),
+        "eventcandidatepool" => Some(matches_type("eventcandidatepool")),
+        "bossreliccandidatepool" => Some(matches_type("bossreliccandidatepool")),
+        _ => None,
+    }
 }
 
 fn journal_event_type_v1(event: &CampaignJournalEventV1) -> &'static str {
@@ -282,4 +327,95 @@ fn render_candidate_disposition_v1(
 
 fn normalize_query_v1(text: &str) -> String {
     text.to_ascii_lowercase().replace([' ', '_', '-'], "")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn structured_event_query_does_not_match_parent_event_text_on_reward() {
+        let reward =
+            journal_event_with_payload(CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "reward0".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 3,
+                original_count: 1,
+                selected_count: 1,
+                candidates: vec![candidate("Carnage", "rp 0", "frontload")],
+            });
+        let event = journal_event_with_payload(CampaignJournalEventPayloadV1::EventCandidatePool {
+            decision_id: "event0".to_string(),
+            boundary_title: "GoldenIdol".to_string(),
+            frontier_key: "frontier".to_string(),
+            depth: 0,
+            game_event_id: "GoldenIdol".to_string(),
+            candidate_count: 2,
+            branch_option_count: 2,
+            candidates: vec![candidate("Leave", "event 1", "effect:event_leave")],
+        });
+
+        assert!(!journal_event_matches_query_v1(
+            &reward,
+            &normalize_query_v1("event")
+        ));
+        assert!(journal_event_matches_query_v1(
+            &event,
+            &normalize_query_v1("event")
+        ));
+    }
+
+    #[test]
+    fn unstructured_journal_query_still_searches_candidate_text() {
+        let reward =
+            journal_event_with_payload(CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "reward0".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 3,
+                original_count: 1,
+                selected_count: 1,
+                candidates: vec![candidate(
+                    "Golden Idol",
+                    "event 0",
+                    "effect:event_gain_relic",
+                )],
+            });
+
+        assert!(journal_event_matches_query_v1(
+            &reward,
+            &normalize_query_v1("Golden Idol")
+        ));
+    }
+
+    fn journal_event_with_payload(
+        payload: CampaignJournalEventPayloadV1,
+    ) -> CampaignJournalEventV1 {
+        CampaignJournalEventV1 {
+            event_id: "journal-event".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Reward Screen".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: vec!["GoldenIdol: [Leave]".to_string()],
+            branch_commands: vec!["event 1".to_string()],
+            combat_budget_retry_used: false,
+            payload,
+        }
+    }
+
+    fn candidate(label: &str, command: &str, semantic_class: &str) -> CampaignJournalCandidateV1 {
+        CampaignJournalCandidateV1 {
+            candidate_id: command.to_string(),
+            command: command.to_string(),
+            label: label.to_string(),
+            semantic_class: semantic_class.to_string(),
+            disposition: CampaignJournalCandidateDispositionV1::Kept,
+        }
+    }
 }
