@@ -7,7 +7,7 @@ use sts_simulator::eval::campaign_journal::{
     CampaignJournalEventPayloadV1, CampaignJournalEventV1, CampaignJournalRouteCandidateV1,
 };
 use sts_simulator::eval::decision_path::{
-    decision_path_command_is_coordinate_v1, decision_path_journal_parent_command_depth_v1,
+    decision_path_command_is_coordinate_v1, DecisionPathEnvelopeV1,
 };
 
 use super::campaign_artifacts::read_campaign_report_v1;
@@ -406,7 +406,9 @@ fn lineage_event_parent_command_count_v1(
     event: &CampaignJournalEventV1,
     commands: &[String],
 ) -> Option<usize> {
-    decision_path_journal_parent_command_depth_v1(&event.branch_commands, commands)
+    let event_path = DecisionPathEnvelopeV1::from_commands(&event.branch_commands);
+    let branch_path = DecisionPathEnvelopeV1::from_commands(commands);
+    event_path.journal_parent_depth_against(&branch_path)
 }
 
 fn journal_event_matches_command_v1(event: &CampaignJournalEventV1, command: &str) -> bool {
