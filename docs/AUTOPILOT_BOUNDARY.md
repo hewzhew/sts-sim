@@ -78,6 +78,10 @@ Do not hide route quality assumptions inside one-off command code.
 If safety gates reject automatic map movement, the declined planner evaluation
 still emits `NonCombatDecisionRecordV1` with `selection.status = Stopped`, so
 candidate evidence remains available without pretending a route was chosen.
+Route records keep candidate evidence split into `NeedVector`, `ValueFactors`,
+and `ScoreTerms`: needs describe current run pressure, value factors describe
+candidate-side opportunities and risks, and score terms are the current weighted
+behavior-policy projection. New tooling should inspect those layers separately.
 
 ## Card Reward Policy
 
