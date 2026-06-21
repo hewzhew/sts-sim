@@ -2,6 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+use crate::ai::route_planner_v1::{
+    MapRouteTargetV1, RouteCandidateOrderingV1, RouteMapActionV1, RouteProjectionCoverageV1,
+    RouteProjectionSourceV1,
+};
 use crate::eval::branch_campaign::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignReportV1,
     BranchCampaignRunDomainV1,
@@ -37,10 +41,10 @@ pub const TARGETED_CONTINUATION_EXECUTION_PLAN_SCHEMA_NAME: &str =
     "TargetedContinuationExecutionPlanV1";
 pub const TARGETED_CONTINUATION_EXECUTION_PLAN_SCHEMA_VERSION: u32 = 1;
 pub const COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_NAME: &str = "CoverageGapContinuationPlanV1";
-pub const COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_VERSION: u32 = 2;
+pub const COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_VERSION: u32 = 3;
 pub const COVERAGE_GAP_CONTINUATION_EXECUTION_PLAN_SCHEMA_NAME: &str =
     "CoverageGapContinuationExecutionPlanV1";
-pub const COVERAGE_GAP_CONTINUATION_EXECUTION_PLAN_SCHEMA_VERSION: u32 = 2;
+pub const COVERAGE_GAP_CONTINUATION_EXECUTION_PLAN_SCHEMA_VERSION: u32 = 3;
 pub const CONTINUATION_EFFECT_REPORT_SCHEMA_NAME: &str = "ContinuationEffectReportV1";
 pub const CONTINUATION_EFFECT_REPORT_SCHEMA_VERSION: u32 = 1;
 const CONTINUATION_EFFECT_EXAMPLE_LIMIT: usize = 6;
@@ -299,13 +303,23 @@ pub struct CoverageGapRouteTargetOriginV1 {
     pub emitted_candidate_count: usize,
     pub complete_legal_pool: bool,
     pub ordering: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ordering_kind: Option<RouteCandidateOrderingV1>,
     pub target_x: i32,
     pub target_y: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_node: Option<MapRouteTargetV1>,
     pub room_type: String,
     pub move_kind: String,
     pub action_kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<RouteMapActionV1>,
     pub projection_source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection_source_kind: Option<RouteProjectionSourceV1>,
     pub projection_coverage: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection_coverage_kind: Option<RouteProjectionCoverageV1>,
     pub path_budget: usize,
     pub observed_path_count: usize,
     #[serde(
@@ -2257,8 +2271,10 @@ fn coverage_gap_route_origin_from_map_packet_candidate_v1(
         emitted_candidate_count: pool.emitted_candidate_count,
         complete_legal_pool: pool.complete_legal_pool,
         ordering: format!("{:?}", pool.ordering),
+        ordering_kind: Some(pool.ordering),
         target_x: candidate.target.x,
         target_y: candidate.target.y,
+        target_node: Some(candidate.target.clone()),
         room_type: candidate
             .target
             .room_type
@@ -2266,8 +2282,11 @@ fn coverage_gap_route_origin_from_map_packet_candidate_v1(
             .unwrap_or_else(|| "Unknown".to_string()),
         move_kind: format!("{:?}", candidate.target.move_kind),
         action_kind: coverage_gap_route_action_kind_v1(&candidate.action),
+        action: Some(candidate.action.clone()),
         projection_source: format!("{:?}", candidate.projection.metadata.source),
+        projection_source_kind: Some(candidate.projection.metadata.source),
         projection_coverage: format!("{:?}", candidate.projection.metadata.coverage),
+        projection_coverage_kind: Some(candidate.projection.metadata.coverage),
         path_budget: candidate.projection.metadata.path_budget,
         observed_path_count: candidate.projection.metadata.observed_path_count,
         path: coverage_gap_route_path_origin_v1(path),
@@ -2300,8 +2319,10 @@ fn coverage_gap_route_origin_from_journal_candidate_v1(
             .as_ref()
             .map(|pool| format!("{:?}", pool.ordering))
             .unwrap_or_else(|| "Unknown".to_string()),
+        ordering_kind: candidate_pool_provenance.as_ref().map(|pool| pool.ordering),
         target_x: target.x,
         target_y: target.y,
+        target_node: Some(target.clone()),
         room_type: target
             .room_type
             .map(|room| format!("{:?}", room))
@@ -2312,14 +2333,17 @@ fn coverage_gap_route_origin_from_journal_candidate_v1(
             .as_ref()
             .map(coverage_gap_route_action_kind_v1)
             .unwrap_or_else(|| "unknown".to_string()),
+        action: candidate.action.clone(),
         projection_source: candidate
             .projection_source
             .map(|source| format!("{:?}", source))
             .unwrap_or_else(|| "Unknown".to_string()),
+        projection_source_kind: candidate.projection_source,
         projection_coverage: candidate
             .projection_coverage
             .map(|coverage| format!("{:?}", coverage))
             .unwrap_or_else(|| "Unknown".to_string()),
+        projection_coverage_kind: candidate.projection_coverage,
         path_budget: candidate.path_budget.unwrap_or(0),
         observed_path_count: candidate.observed_path_count.unwrap_or(path.path_count),
         path: coverage_gap_route_path_origin_v1(path),
@@ -3515,6 +3539,23 @@ mod tests {
         assert_eq!(route_origin.target_x, unobserved_route.target.x);
         assert_eq!(route_origin.target_y, unobserved_route.target.y);
         assert_eq!(
+            route_origin.target_node.as_ref(),
+            Some(&unobserved_route.target)
+        );
+        assert_eq!(route_origin.action.as_ref(), Some(&unobserved_route.action));
+        assert_eq!(
+            route_origin.ordering_kind,
+            Some(packet.candidate_pool.ordering)
+        );
+        assert_eq!(
+            route_origin.projection_source_kind,
+            Some(unobserved_route.projection.metadata.source)
+        );
+        assert_eq!(
+            route_origin.projection_coverage_kind,
+            Some(unobserved_route.projection.metadata.coverage)
+        );
+        assert_eq!(
             route_origin.observed_path_count,
             unobserved_route.projection.metadata.observed_path_count
         );
@@ -3589,6 +3630,23 @@ mod tests {
             .expect("typed route candidates should recover route origin");
         assert_eq!(route_origin.target_x, unobserved_route.target.x);
         assert_eq!(route_origin.target_y, unobserved_route.target.y);
+        assert_eq!(
+            route_origin.target_node.as_ref(),
+            Some(&unobserved_route.target)
+        );
+        assert_eq!(route_origin.action.as_ref(), Some(&unobserved_route.action));
+        assert_eq!(
+            route_origin.ordering_kind,
+            Some(packet.candidate_pool.ordering)
+        );
+        assert_eq!(
+            route_origin.projection_source_kind,
+            Some(unobserved_route.projection.metadata.source)
+        );
+        assert_eq!(
+            route_origin.projection_coverage_kind,
+            Some(unobserved_route.projection.metadata.coverage)
+        );
         assert_eq!(
             route_origin.path.min_elites,
             unobserved_route.projection.path_summary.min_elites
