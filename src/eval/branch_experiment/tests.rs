@@ -26,7 +26,7 @@ use std::path::PathBuf;
 
 #[test]
 fn branch_experiment_schema_version_tracks_lineage_pruned_summary() {
-    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 30);
+    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 31);
 }
 
 #[test]
@@ -105,7 +105,16 @@ fn branch_experiment_records_route_candidate_pool() {
         decision.selected_candidate_id.is_some()
             && decision.selected_candidate_rank.is_some()
             && decision.selected_target_node.is_some()
-            && decision.selected_candidate.is_some()
+            && decision
+                .selected_candidate
+                .as_ref()
+                .is_some_and(|candidate| {
+                    candidate.action.is_some()
+                        && candidate.projection_source.is_some()
+                        && candidate.projection_coverage.is_some()
+                        && candidate.path_budget.is_some()
+                        && candidate.observed_path_count.is_some()
+                })
             && decision.safety_flag.is_some()
             && decision.candidate_pool_provenance.is_some()
     }));
@@ -128,8 +137,13 @@ fn branch_experiment_records_route_candidate_pool() {
         .candidates
         .iter()
         .all(|candidate| candidate.target_node.is_some()
+            && candidate.action.is_some()
             && candidate.node_features.is_some()
             && candidate.path_summary.is_some()
+            && candidate.projection_source.is_some()
+            && candidate.projection_coverage.is_some()
+            && candidate.path_budget.is_some()
+            && candidate.observed_path_count.is_some()
             && candidate.score_terms.is_some()
             && candidate.value_factors.is_some()));
     assert!(pool

@@ -8,7 +8,8 @@ use crate::ai::noncombat_strategy_v1::{
 };
 use crate::ai::route_planner_v1::{
     MapDecisionPacketV1, MapRouteTargetV1, NeedVectorV1, NodeFeaturesV1,
-    RouteCandidatePoolProvenanceV1, RoutePathSummaryV1, RouteSafetyFlagV1, RouteScoreTermsV1,
+    RouteCandidatePoolProvenanceV1, RouteMapActionV1, RoutePathSummaryV1,
+    RouteProjectionCoverageV1, RouteProjectionSourceV1, RouteSafetyFlagV1, RouteScoreTermsV1,
     RouteValueFactorsV1,
 };
 use crate::content::cards::CardId;
@@ -22,7 +23,7 @@ use crate::eval::run_control::{
 };
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 30;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 31;
 pub const BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1: &str =
     "card_reward_strategic_trace_v1";
 
@@ -418,6 +419,8 @@ pub struct BranchExperimentRouteCandidateEntryV1 {
     pub room_type: String,
     pub move_kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<RouteMapActionV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub safety_flag: Option<RouteSafetyFlagV1>,
     pub safety: String,
     pub score: f32,
@@ -432,6 +435,14 @@ pub struct BranchExperimentRouteCandidateEntryV1 {
     pub path_summary: Option<RoutePathSummaryV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs: Option<NeedVectorV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection_source: Option<RouteProjectionSourceV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection_coverage: Option<RouteProjectionCoverageV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_budget: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_path_count: Option<usize>,
     pub elite_prep_bp: i32,
     pub first_elite: BranchExperimentFirstEliteEvidenceV1,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
