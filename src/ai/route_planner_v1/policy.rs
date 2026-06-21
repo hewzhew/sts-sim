@@ -5,7 +5,7 @@ use super::context::build_route_decision_context_v1;
 use super::features::{node_features, summarize_route_from};
 use super::needs::estimate_needs;
 use super::risk::safety_flag;
-use super::scorer::{route_reasons, score_route_candidate};
+use super::scorer::{route_reasons, route_value_factors, score_route_candidate};
 use super::types::{
     NeedVectorV1, RouteCandidateTraceV1, RouteDecisionContextV1, RouteDecisionTraceV1,
     RouteMoveKindV1, RoutePlannerConfigV1, RouteSafetyFlagV1, ROUTE_DECISION_TRACE_SCHEMA_NAME,
@@ -84,15 +84,15 @@ fn build_route_candidate_trace_v1(
         context.relics.has_cursed_key,
         config,
     );
-    let score_terms = score_route_candidate(
+    let value_factors = route_value_factors(
         &features,
         &path_summary,
-        needs,
         target.move_kind,
         context.counters.emerald_key_taken,
         context.relics.has_cursed_key,
         config,
     );
+    let score_terms = score_route_candidate(&value_factors, needs, config);
     let safety = safety_flag(&features, &path_summary, needs);
     let (reasons, cautions) = route_reasons(&features, &path_summary, safety);
     RouteCandidateTraceV1 {
@@ -100,6 +100,7 @@ fn build_route_candidate_trace_v1(
         features,
         path_summary,
         needs: needs.clone(),
+        value_factors,
         total_score: score_terms.total(),
         score_terms,
         safety,

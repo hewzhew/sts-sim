@@ -20,7 +20,7 @@ pub use map_packet::{
     RouteProjectionFrontierV1, RouteProjectionMetadataV1, RouteProjectionSourceV1,
     MAP_DECISION_PACKET_SCHEMA_NAME, MAP_DECISION_PACKET_SCHEMA_VERSION,
 };
-pub use score::{NeedVectorV1, RouteScoreTermsV1};
+pub use score::{NeedVectorV1, RouteScoreTermsV1, RouteValueFactorsV1};
 pub use trace::{
     RouteCandidateTraceV1, RouteDecisionTraceV1, RouteObjectiveV1, RouteSelectionModeV1,
     ROUTE_DECISION_TRACE_SCHEMA_NAME, ROUTE_DECISION_TRACE_SCHEMA_VERSION,

@@ -15,6 +15,27 @@ pub struct NeedVectorV1 {
     pub value_flexibility: f32,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct RouteValueFactorsV1 {
+    pub card_reward_access: f32,
+    pub relic_access: f32,
+    pub remove_access: f32,
+    pub upgrade_access: f32,
+    pub heal_access: f32,
+    pub shop_access: f32,
+    pub event_access: f32,
+    pub potion_gain: f32,
+    #[serde(default)]
+    pub curse_debt: f32,
+    pub hp_loss_p90: f32,
+    pub death_risk: f32,
+    pub flexibility: f32,
+    pub first_elite_prep_signal: f32,
+    pub wing_boots_cost: f32,
+    pub forced_elite_pressure: f32,
+    pub burning_elite_key_value: f32,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RouteScoreTermsV1 {
     pub card_reward: f32,

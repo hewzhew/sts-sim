@@ -62,6 +62,8 @@ fn route_planner_trace_serializes_structured_evidence() {
     assert_eq!(value["schema_name"], ROUTE_DECISION_TRACE_SCHEMA_NAME);
     assert_eq!(value["label_role"], "behavior_policy_not_teacher");
     assert!(value["candidates"][0]["score_terms"].is_object());
+    assert!(value["candidates"][0]["value_factors"].is_object());
+    assert!(value["candidates"][0]["value_factors"]["shop_access"].is_number());
     assert!(value["candidates"][0]["score_terms"]["elite_prep"].is_number());
     assert!(value["candidates"][0]["needs"].is_object());
     assert!(value["candidates"][0]["path_summary"]["first_elite"].is_object());
@@ -124,6 +126,10 @@ fn route_planner_map_packet_preserves_machine_readable_candidate_data() {
         assert_eq!(
             packet_candidate.evaluation.score_terms,
             trace_candidate.score_terms
+        );
+        assert_eq!(
+            packet_candidate.evaluation.value_factors,
+            trace_candidate.value_factors
         );
         assert_eq!(packet_candidate.evaluation.safety, trace_candidate.safety);
     }

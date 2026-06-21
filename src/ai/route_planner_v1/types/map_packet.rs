@@ -4,7 +4,7 @@ use super::context::RouteDecisionContextV1;
 use super::features::{
     MapRouteTargetV1, NodeFeaturesV1, RouteMoveKindV1, RoutePathSummaryV1, RouteSafetyFlagV1,
 };
-use super::score::{NeedVectorV1, RouteScoreTermsV1};
+use super::score::{NeedVectorV1, RouteScoreTermsV1, RouteValueFactorsV1};
 use super::trace::{RouteDecisionTraceV1, RouteObjectiveV1, RouteSelectionModeV1};
 
 pub const MAP_DECISION_PACKET_SCHEMA_NAME: &str = "MapDecisionPacketV1";
@@ -107,6 +107,8 @@ pub enum RouteProjectionCoverageV1 {
 #[serde(deny_unknown_fields)]
 pub struct RouteMoveEvaluationV1 {
     pub safety: RouteSafetyFlagV1,
+    #[serde(default)]
+    pub value_factors: RouteValueFactorsV1,
     pub score_terms: RouteScoreTermsV1,
     pub total_score: f32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -153,6 +155,7 @@ impl MapDecisionPacketV1 {
                         needs: candidate.needs.clone(),
                         evaluation: RouteMoveEvaluationV1 {
                             safety: candidate.safety,
+                            value_factors: candidate.value_factors.clone(),
                             score_terms: candidate.score_terms.clone(),
                             total_score: candidate.total_score,
                             legacy_reasons: candidate.reasons.clone(),

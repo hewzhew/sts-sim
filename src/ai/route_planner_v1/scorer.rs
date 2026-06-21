@@ -3,46 +3,69 @@ use crate::state::map::node::RoomType;
 use super::risk::first_elite_is_underprepared;
 use super::types::{
     NeedVectorV1, NodeFeaturesV1, RouteMoveKindV1, RoutePathSummaryV1, RoutePlannerConfigV1,
-    RouteSafetyFlagV1, RouteScoreTermsV1,
+    RouteSafetyFlagV1, RouteScoreTermsV1, RouteValueFactorsV1,
 };
 
-pub(super) fn score_route_candidate(
+pub(super) fn route_value_factors(
     features: &NodeFeaturesV1,
     path: &RoutePathSummaryV1,
-    needs: &NeedVectorV1,
     move_kind: RouteMoveKindV1,
     emerald_key_taken: bool,
     has_cursed_key: bool,
     config: &RoutePlannerConfigV1,
-) -> RouteScoreTermsV1 {
-    RouteScoreTermsV1 {
-        card_reward: needs.need_card_rewards
-            * (features.expected_card_rewards + path.max_early_pressure as f32 * 0.15),
-        relic: needs.need_relics * (features.expected_relics + path.max_elites as f32 * 0.45),
-        remove: needs.need_remove * needs.need_shop * shop_route_access_value(features, path),
-        upgrade: needs.need_upgrade * (features.upgrade_access + path.max_fires as f32 * 0.10),
-        heal: needs.need_heal * (features.heal_access + path.max_fires as f32 * 0.16),
-        shop: needs.need_shop * shop_route_access_value(features, path),
-        event: needs.need_event * (features.event_access + path.max_unknowns as f32 * 0.08),
-        potion: needs.need_potion * features.expected_potion_gain,
-        curse_debt: -expected_cursed_key_chest_debt(features, path, has_cursed_key)
-            * config.cursed_key_treasure_curse_penalty
-            * (1.0 + needs.need_remove + needs.avoid_damage * 0.5),
-        hp_loss: -needs.avoid_damage * features.expected_hp_loss_p90 / 12.0,
-        death_risk: -features.death_risk * (1.0 + needs.avoid_damage) * 5.0,
-        flexibility: needs.value_flexibility * flexibility_value(path),
-        elite_prep: first_elite_preparation_value(path, needs),
+) -> RouteValueFactorsV1 {
+    RouteValueFactorsV1 {
+        card_reward_access: features.expected_card_rewards + path.max_early_pressure as f32 * 0.15,
+        relic_access: features.expected_relics + path.max_elites as f32 * 0.45,
+        remove_access: shop_route_access_value(features, path),
+        upgrade_access: features.upgrade_access + path.max_fires as f32 * 0.10,
+        heal_access: features.heal_access + path.max_fires as f32 * 0.16,
+        shop_access: shop_route_access_value(features, path),
+        event_access: features.event_access + path.max_unknowns as f32 * 0.08,
+        potion_gain: features.expected_potion_gain,
+        curse_debt: expected_cursed_key_chest_debt(features, path, has_cursed_key),
+        hp_loss_p90: features.expected_hp_loss_p90,
+        death_risk: features.death_risk,
+        flexibility: flexibility_value(path),
+        first_elite_prep_signal: first_elite_preparation_signal(path),
         wing_boots_cost: if move_kind == RouteMoveKindV1::WingBootsJump {
-            -config.wing_boots_charge_cost
+            config.wing_boots_charge_cost
         } else {
             0.0
         },
-        forced_path_penalty: forced_path_penalty(path, needs),
+        forced_elite_pressure: if path.min_elites > 0 { 1.0 } else { 0.0 },
         burning_elite_key_value: if features.is_burning_elite && !emerald_key_taken {
             0.75
         } else {
             0.0
         },
+    }
+}
+
+pub(super) fn score_route_candidate(
+    factors: &RouteValueFactorsV1,
+    needs: &NeedVectorV1,
+    config: &RoutePlannerConfigV1,
+) -> RouteScoreTermsV1 {
+    RouteScoreTermsV1 {
+        card_reward: needs.need_card_rewards * factors.card_reward_access,
+        relic: needs.need_relics * factors.relic_access,
+        remove: needs.need_remove * needs.need_shop * factors.remove_access,
+        upgrade: needs.need_upgrade * factors.upgrade_access,
+        heal: needs.need_heal * factors.heal_access,
+        shop: needs.need_shop * factors.shop_access,
+        event: needs.need_event * factors.event_access,
+        potion: needs.need_potion * factors.potion_gain,
+        curse_debt: -factors.curse_debt
+            * config.cursed_key_treasure_curse_penalty
+            * (1.0 + needs.need_remove + needs.avoid_damage * 0.5),
+        hp_loss: -needs.avoid_damage * factors.hp_loss_p90 / 12.0,
+        death_risk: -factors.death_risk * (1.0 + needs.avoid_damage) * 5.0,
+        flexibility: needs.value_flexibility * factors.flexibility,
+        elite_prep: first_elite_preparation_value(factors, needs),
+        wing_boots_cost: -factors.wing_boots_cost,
+        forced_path_penalty: forced_path_penalty(factors, needs),
+        burning_elite_key_value: factors.burning_elite_key_value,
     }
 }
 
@@ -203,7 +226,7 @@ fn shop_route_access_value(features: &NodeFeaturesV1, path: &RoutePathSummaryV1)
     features.shop_access + guaranteed_shop_value + optional_shop_value + early_shop_value
 }
 
-fn first_elite_preparation_value(path: &RoutePathSummaryV1, needs: &NeedVectorV1) -> f32 {
+fn first_elite_preparation_signal(path: &RoutePathSummaryV1) -> f32 {
     let segment = &path.first_elite;
     if segment.paths_with_first_elite == 0 {
         return 0.0;
@@ -224,12 +247,15 @@ fn first_elite_preparation_value(path: &RoutePathSummaryV1, needs: &NeedVectorV1
     } else {
         0.0
     };
-    let prep_signal = hallway_prep * 0.75 + bailout_prep + optionality + forced_prep_debt;
-    needs.need_relics * (0.50 + needs.can_take_elite * 0.50) * prep_signal
+    hallway_prep * 0.75 + bailout_prep + optionality + forced_prep_debt
 }
 
-fn forced_path_penalty(path: &RoutePathSummaryV1, needs: &NeedVectorV1) -> f32 {
-    if path.min_elites > 0 && needs.can_take_elite < 0.5 {
+fn first_elite_preparation_value(factors: &RouteValueFactorsV1, needs: &NeedVectorV1) -> f32 {
+    needs.need_relics * (0.50 + needs.can_take_elite * 0.50) * factors.first_elite_prep_signal
+}
+
+fn forced_path_penalty(factors: &RouteValueFactorsV1, needs: &NeedVectorV1) -> f32 {
+    if factors.forced_elite_pressure > 0.0 && needs.can_take_elite < 0.5 {
         -1.5
     } else {
         0.0
