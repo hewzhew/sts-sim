@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ai::route_planner_v1::{
-    MapDecisionPacketV1, MapRouteTargetV1, RouteCandidatePoolProvenanceV1, RouteSafetyFlagV1,
+    MapDecisionPacketV1, MapRouteTargetV1, NeedVectorV1, NodeFeaturesV1,
+    RouteCandidatePoolProvenanceV1, RouteMapActionV1, RouteMoveCandidateV1, RoutePathSummaryV1,
+    RouteProjectionCoverageV1, RouteProjectionSourceV1, RouteSafetyFlagV1, RouteScoreTermsV1,
+    RouteValueFactorsV1,
 };
 use crate::eval::branch_experiment::{
     BranchExperimentBossRelicCandidateEntryV1, BranchExperimentCampfirePlanCandidateEntryV1,
@@ -11,7 +14,7 @@ use crate::eval::branch_experiment::{
 };
 
 pub const CAMPAIGN_JOURNAL_SCHEMA_NAME: &str = "CampaignJournal";
-pub const CAMPAIGN_JOURNAL_SCHEMA_VERSION: u32 = 1;
+pub const CAMPAIGN_JOURNAL_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -139,6 +142,8 @@ pub enum CampaignJournalEventPayloadV1 {
         candidate_pool_provenance: Option<RouteCandidatePoolProvenanceV1>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         map_decision_packet: Option<MapDecisionPacketV1>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        route_candidates: Vec<CampaignJournalRouteCandidateV1>,
         candidates: Vec<CampaignJournalCandidateV1>,
     },
     RouteDecision {
@@ -178,6 +183,157 @@ pub struct CampaignJournalCandidateV1 {
     )]
     pub admission: CampaignJournalCandidateAdmissionTraceV1,
     pub disposition: CampaignJournalCandidateDispositionV1,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CampaignJournalRouteCandidateV1 {
+    pub candidate_id: String,
+    pub rank: usize,
+    pub selected: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_node: Option<MapRouteTargetV1>,
+    pub target: String,
+    pub room_type: String,
+    pub move_kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<RouteMapActionV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safety_flag: Option<RouteSafetyFlagV1>,
+    pub safety: String,
+    pub score: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score_terms: Option<RouteScoreTermsV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value_factors: Option<RouteValueFactorsV1>,
+    pub command: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_features: Option<NodeFeaturesV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_summary: Option<RoutePathSummaryV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs: Option<NeedVectorV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection_source: Option<RouteProjectionSourceV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection_coverage: Option<RouteProjectionCoverageV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_budget: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_path_count: Option<usize>,
+    pub elite_prep_bp: i32,
+    pub first_elite: BranchExperimentFirstEliteEvidenceV1,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reasons: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cautions: Vec<String>,
+}
+
+impl CampaignJournalRouteCandidateV1 {
+    pub fn from_route_entry_v1(candidate: &BranchExperimentRouteCandidateEntryV1) -> Self {
+        Self {
+            candidate_id: candidate.candidate_id.clone(),
+            rank: candidate.rank,
+            selected: candidate.selected,
+            target_node: candidate.target_node.clone(),
+            target: candidate.target.clone(),
+            room_type: candidate.room_type.clone(),
+            move_kind: candidate.move_kind.clone(),
+            action: None,
+            safety_flag: candidate.safety_flag,
+            safety: candidate.safety.clone(),
+            score: candidate.score,
+            score_terms: candidate.score_terms.clone(),
+            value_factors: candidate.value_factors.clone(),
+            command: candidate.command.clone(),
+            node_features: candidate.node_features.clone(),
+            path_summary: candidate.path_summary.clone(),
+            needs: candidate.needs.clone(),
+            projection_source: None,
+            projection_coverage: None,
+            path_budget: None,
+            observed_path_count: None,
+            elite_prep_bp: candidate.elite_prep_bp,
+            first_elite: candidate.first_elite.clone(),
+            reasons: candidate.reasons.clone(),
+            cautions: candidate.cautions.clone(),
+        }
+    }
+
+    pub fn from_route_move_candidate_v1(candidate: &RouteMoveCandidateV1) -> Self {
+        let path = &candidate.projection.path_summary;
+        Self {
+            candidate_id: candidate.candidate_id.clone(),
+            rank: candidate.rank,
+            selected: false,
+            target_node: Some(candidate.target.clone()),
+            target: route_target_label_v1(&candidate.target),
+            room_type: route_room_type_label_v1(candidate.target.room_type),
+            move_kind: format!("{:?}", candidate.target.move_kind),
+            action: Some(candidate.action.clone()),
+            safety_flag: Some(candidate.evaluation.safety),
+            safety: format!("{:?}", candidate.evaluation.safety),
+            score: candidate.evaluation.total_score,
+            score_terms: Some(candidate.evaluation.score_terms.clone()),
+            value_factors: Some(candidate.evaluation.value_factors.clone()),
+            command: candidate.command.clone(),
+            node_features: Some(candidate.features.clone()),
+            path_summary: Some(path.clone()),
+            needs: Some(candidate.needs.clone()),
+            projection_source: Some(candidate.projection.metadata.source),
+            projection_coverage: Some(candidate.projection.metadata.coverage),
+            path_budget: Some(candidate.projection.metadata.path_budget),
+            observed_path_count: Some(candidate.projection.metadata.observed_path_count),
+            elite_prep_bp: route_score_to_basis_points_v1(
+                candidate.evaluation.score_terms.elite_prep,
+            ),
+            first_elite: BranchExperimentFirstEliteEvidenceV1 {
+                paths_with_first_elite: path.first_elite.paths_with_first_elite,
+                forced: path.first_elite.forced,
+                optional: path.first_elite.optional,
+                min_hallway_fights_before: path.first_elite.min_hallway_fights_before,
+                max_hallway_fights_before: path.first_elite.max_hallway_fights_before,
+                min_unknowns_before: path.first_elite.min_unknowns_before,
+                max_unknowns_before: path.first_elite.max_unknowns_before,
+                min_fires_before: path.first_elite.min_fires_before,
+                max_fires_before: path.first_elite.max_fires_before,
+                min_shops_before: path.first_elite.min_shops_before,
+                max_shops_before: path.first_elite.max_shops_before,
+                can_bail_to_rest_before: path.first_elite.can_bail_to_rest_before,
+                can_bail_to_shop_before: path.first_elite.can_bail_to_shop_before,
+            },
+            reasons: candidate.evaluation.legacy_reasons.clone(),
+            cautions: candidate.evaluation.legacy_cautions.clone(),
+        }
+    }
+}
+
+fn route_target_label_v1(target: &MapRouteTargetV1) -> String {
+    format!(
+        "x={} y={} {}",
+        target.x,
+        target.y,
+        route_room_type_label_v1(target.room_type)
+    )
+}
+
+fn route_room_type_label_v1(room_type: Option<crate::state::map::node::RoomType>) -> String {
+    match room_type {
+        Some(crate::state::map::node::RoomType::EventRoom) => "Event",
+        Some(crate::state::map::node::RoomType::MonsterRoom) => "Monster",
+        Some(crate::state::map::node::RoomType::MonsterRoomElite) => "Elite",
+        Some(crate::state::map::node::RoomType::MonsterRoomBoss) => "Boss",
+        Some(crate::state::map::node::RoomType::RestRoom) => "Rest",
+        Some(crate::state::map::node::RoomType::ShopRoom) => "Shop",
+        Some(crate::state::map::node::RoomType::TreasureRoom) => "Treasure",
+        Some(crate::state::map::node::RoomType::TrueVictoryRoom) => "Victory",
+        None => "Unknown",
+    }
+    .to_string()
+}
+
+fn route_score_to_basis_points_v1(score: f32) -> i32 {
+    (score * 100.0).round() as i32
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

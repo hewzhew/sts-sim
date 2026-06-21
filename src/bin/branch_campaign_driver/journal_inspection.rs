@@ -4,7 +4,7 @@ use sts_simulator::eval::campaign_journal::{
     CampaignJournalCandidateAdmissionReasonCategoryV1,
     CampaignJournalCandidateAdmissionReasonCodeV1, CampaignJournalCandidateAdmissionStatusV1,
     CampaignJournalCandidateDispositionV1, CampaignJournalCandidateV1,
-    CampaignJournalEventPayloadV1, CampaignJournalEventV1,
+    CampaignJournalEventPayloadV1, CampaignJournalEventV1, CampaignJournalRouteCandidateV1,
 };
 
 use super::campaign_artifacts::read_campaign_report_v1;
@@ -445,6 +445,7 @@ fn journal_event_payload_search_terms_v1(event: &CampaignJournalEventV1) -> Vec<
             candidate_count,
             candidate_pool_provenance,
             map_decision_packet,
+            route_candidates,
             ..
         } => {
             let mut parts = vec![
@@ -471,6 +472,10 @@ fn journal_event_payload_search_terms_v1(event: &CampaignJournalEventV1) -> Vec<
                 for candidate in &packet.candidates {
                     parts.extend(route_candidate_search_terms_v1(candidate));
                 }
+            } else {
+                for candidate in route_candidates {
+                    parts.extend(journal_route_candidate_search_terms_v1(candidate));
+                }
             }
             parts
         }
@@ -496,6 +501,31 @@ fn route_candidate_search_terms_v1(candidate: &RouteMoveCandidateV1) -> Vec<Stri
     ]
 }
 
+fn journal_route_candidate_search_terms_v1(
+    candidate: &CampaignJournalRouteCandidateV1,
+) -> Vec<String> {
+    let mut parts = vec![
+        candidate.candidate_id.clone(),
+        candidate.command.clone(),
+        candidate.target.clone(),
+        candidate.room_type.clone(),
+        candidate.move_kind.clone(),
+        candidate.safety.clone(),
+    ];
+    if let Some(target) = &candidate.target_node {
+        parts.push(format!("x{}", target.x));
+        parts.push(format!("y{}", target.y));
+        parts.push(format!("{:?}", target.move_kind));
+        if let Some(room) = target.room_type {
+            parts.push(format!("{:?}", room));
+        }
+    }
+    if let Some(coverage) = candidate.projection_coverage {
+        parts.push(format!("{:?}", coverage));
+    }
+    parts
+}
+
 fn render_journal_event_candidates_v1(event: &CampaignJournalEventV1, limit: usize) -> String {
     match &event.payload {
         CampaignJournalEventPayloadV1::RouteCandidatePool {
@@ -503,6 +533,13 @@ fn render_journal_event_candidates_v1(event: &CampaignJournalEventV1, limit: usi
             map_decision_packet: Some(packet),
             ..
         } => render_route_journal_candidates_v1(packet, candidates, limit),
+        CampaignJournalEventPayloadV1::RouteCandidatePool {
+            candidates,
+            route_candidates,
+            ..
+        } if !route_candidates.is_empty() => {
+            render_typed_route_journal_candidates_v1(route_candidates, candidates, limit)
+        }
         _ => render_journal_candidates_v1(journal_event_candidates_v1(event), limit),
     }
 }
@@ -549,6 +586,32 @@ fn render_route_journal_candidates_v1(
     parts.join(" | ")
 }
 
+fn render_typed_route_journal_candidates_v1(
+    route_candidates: &[CampaignJournalRouteCandidateV1],
+    candidates: &[CampaignJournalCandidateV1],
+    limit: usize,
+) -> String {
+    if candidates.is_empty() {
+        return "-".to_string();
+    }
+    let shown = limit.max(1).min(candidates.len());
+    let mut parts = candidates
+        .iter()
+        .take(shown)
+        .enumerate()
+        .map(|(index, candidate)| {
+            route_candidates.get(index).map_or_else(
+                || render_journal_candidate_v1(candidate),
+                |route| render_typed_route_journal_candidate_v1(candidate, route),
+            )
+        })
+        .collect::<Vec<_>>();
+    if candidates.len() > shown {
+        parts.push(format!("... {} more", candidates.len() - shown));
+    }
+    parts.join(" | ")
+}
+
 fn render_route_journal_candidate_v1(
     candidate: &CampaignJournalCandidateV1,
     route: &RouteMoveCandidateV1,
@@ -585,8 +648,66 @@ fn render_route_journal_candidate_v1(
     )
 }
 
+fn render_typed_route_journal_candidate_v1(
+    candidate: &CampaignJournalCandidateV1,
+    route: &CampaignJournalRouteCandidateV1,
+) -> String {
+    let path = route.path_summary.as_ref();
+    let target = route.target_node.as_ref();
+    let x = target
+        .map(|target| target.x.to_string())
+        .unwrap_or_else(|| "?".to_string());
+    let y = target
+        .map(|target| target.y.to_string())
+        .unwrap_or_else(|| "?".to_string());
+    let coverage = route
+        .projection_coverage
+        .map(|coverage| format!("{:?}", coverage))
+        .unwrap_or_else(|| "Unknown".to_string());
+    format!(
+        "x{}y{} {} {{{}}} [route rank={} move={} safety={} score={:.2} vf={} coverage={} paths={}/{} elites={}-{} fires={}-{} shops={}-{}; {}; {}]",
+        x,
+        y,
+        route.room_type,
+        route.command,
+        route.rank,
+        route.move_kind,
+        route.safety,
+        route.score,
+        render_typed_route_value_factors_v1(route),
+        coverage,
+        route.observed_path_count.unwrap_or_else(|| path.map(|path| path.path_count).unwrap_or(0)),
+        route.path_budget.unwrap_or(0),
+        path.map(|path| path.min_elites).unwrap_or(0),
+        path.map(|path| path.max_elites).unwrap_or(0),
+        path.map(|path| path.min_fires).unwrap_or(0),
+        path.map(|path| path.max_fires).unwrap_or(0),
+        path.map(|path| path.min_shops).unwrap_or(0),
+        path.map(|path| path.max_shops).unwrap_or(0),
+        render_candidate_admission_v1(candidate),
+        render_candidate_disposition_v1(candidate.disposition)
+    )
+}
+
 fn render_route_value_factors_v1(route: &RouteMoveCandidateV1) -> String {
     let factors = &route.evaluation.value_factors;
+    format!(
+        "card:{:.1}/relic:{:.1}/shop:{:.1}/heal:{:.1}/hp90:{:.1}/risk:{:.2}/flex:{:.1}/elite:{:.1}",
+        factors.card_reward_access,
+        factors.relic_access,
+        factors.shop_access,
+        factors.heal_access,
+        factors.hp_loss_p90,
+        factors.death_risk,
+        factors.flexibility,
+        factors.first_elite_prep_signal
+    )
+}
+
+fn render_typed_route_value_factors_v1(route: &CampaignJournalRouteCandidateV1) -> String {
+    let Some(factors) = route.value_factors.as_ref() else {
+        return "-".to_string();
+    };
     format!(
         "card:{:.1}/relic:{:.1}/shop:{:.1}/heal:{:.1}/hp90:{:.1}/risk:{:.2}/flex:{:.1}/elite:{:.1}",
         factors.card_reward_access,
@@ -882,6 +1003,63 @@ mod tests {
             selected_index: packet.selected_index,
             candidate_pool_provenance: Some(packet.candidate_pool.clone()),
             map_decision_packet: Some(packet.clone()),
+            route_candidates: packet
+                .candidates
+                .iter()
+                .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
+                .collect(),
+            candidates: packet
+                .candidates
+                .iter()
+                .map(|route| candidate("legacy route label", &route.command, "legacy route"))
+                .collect(),
+        });
+
+        let rendered = render_journal_event_candidates_v1(&event, 3);
+
+        assert!(rendered.contains(&format!(
+            "x{}y{}",
+            first_route.target.x, first_route.target.y
+        )));
+        assert!(rendered.contains("coverage="));
+        assert!(rendered.contains("paths="));
+        assert!(!rendered.contains("legacy route label"));
+        assert!(journal_event_matches_query_v1(
+            &event,
+            &normalize_query_v1(&format!("x{}", first_route.target.x))
+        ));
+        assert!(journal_event_matches_query_v1(
+            &event,
+            &normalize_query_v1(&format!("{:?}", first_route.projection.metadata.coverage))
+        ));
+    }
+
+    #[test]
+    fn route_candidate_pool_render_uses_typed_route_candidates_without_map_packet() {
+        let mut run = sts_simulator::state::RunState::new(521, 0, false, "Ironclad");
+        run.event_state = None;
+        let trace = sts_simulator::ai::route_planner_v1::plan_route_decision_v1(
+            &run,
+            &sts_simulator::state::core::EngineState::MapNavigation,
+            sts_simulator::ai::route_planner_v1::RoutePlannerConfigV1::default(),
+        );
+        let packet = MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+        assert!(!packet.candidates.is_empty());
+        let first_route = &packet.candidates[0];
+        let event = journal_event_with_payload(CampaignJournalEventPayloadV1::RouteCandidatePool {
+            decision_id: "route-pool0".to_string(),
+            boundary_title: "Map".to_string(),
+            frontier_key: "map-frontier".to_string(),
+            depth: 0,
+            candidate_count: packet.candidates.len(),
+            selected_index: packet.selected_index,
+            candidate_pool_provenance: Some(packet.candidate_pool.clone()),
+            map_decision_packet: None,
+            route_candidates: packet
+                .candidates
+                .iter()
+                .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
+                .collect(),
             candidates: packet
                 .candidates
                 .iter()

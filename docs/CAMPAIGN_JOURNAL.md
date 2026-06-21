@@ -96,6 +96,17 @@ CampaignJournalV1
       frontier_key
       candidate_count
       selected_index
+      map_decision_packet?
+      route_candidates[]        # typed route/map snapshot
+        candidate_id
+        command
+        target_node
+        action
+        safety_flag
+        score_terms
+        value_factors
+        path_summary
+        projection metadata
       candidates[]
         command
         label
@@ -120,6 +131,12 @@ new inspection should prefer `journal`. The `--inspect-journal` report view
 prints journal events directly; `--inspect-decision-observations` remains a
 reward-only compatibility view.
 
+Schema version 2 adds `route_candidates[]` to `route_candidate_pool`. The generic
+`candidates[]` list remains the cross-decision coverage/scheduling surface; the
+route-specific list preserves typed map target, action, path projection, and
+route value-factor data so route inspection and coverage-gap continuation do not
+depend on flattened `semantic_class` strings.
+
 Decision-outcome dataset export also prefers `journal` when available. It uses
 the journal `decision_id` as the sibling group identity and links an observed
 branch outcome to a candidate when the branch command sequence starts with the
@@ -141,11 +158,12 @@ for saying that the missing candidate is strategically better.
 
 For route/map candidates, continuation targets carry structured
 `target_origin` provenance from the journal `MapDecisionPacketV1` when it is
-available. That origin records the typed target room, route action, candidate
-pool completeness, route projection coverage, visible path summary, and first
-elite segment. Coverage-gap tooling should use this provenance to explain and
-schedule missing route candidates; it should not parse `go N` commands or
-display labels to recover map identity.
+available, and fall back to `route_candidates[]` when a compact or legacy event
+does not have the full packet. That origin records the typed target room, route
+action, candidate pool completeness, route projection coverage, visible path
+summary, and first elite segment. Coverage-gap tooling should use this
+provenance to explain and schedule missing route candidates; it should not parse
+`go N` commands or display labels to recover map identity.
 
 ## Boundaries
 

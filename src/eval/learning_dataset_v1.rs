@@ -15,6 +15,7 @@ use crate::eval::campaign_journal::{
     CampaignJournalCandidateAdmissionReasonCodeV1, CampaignJournalCandidateAdmissionStatusV1,
     CampaignJournalCandidateAdmissionTraceV1, CampaignJournalCandidateDispositionV1,
     CampaignJournalCandidateV1, CampaignJournalEventPayloadV1, CampaignJournalEventV1,
+    CampaignJournalRouteCandidateV1,
 };
 
 pub const LEARNING_BRANCH_SAMPLE_SCHEMA_NAME: &str = "LearningBranchSampleV1";
@@ -1999,84 +2000,32 @@ fn coverage_gap_target_origin_v1(
         CampaignJournalEventPayloadV1::RouteCandidatePool {
             candidate_pool_provenance,
             map_decision_packet,
+            route_candidates,
             ..
         } => {
-            let route = map_decision_packet.as_ref().and_then(|packet| {
-                packet.candidates.get(candidate_index).map(|candidate| {
-                    let pool = candidate_pool_provenance
-                        .as_ref()
-                        .unwrap_or(&packet.candidate_pool);
-                    let path = &candidate.projection.path_summary;
-                    let first_elite = &path.first_elite;
-                    CoverageGapRouteTargetOriginV1 {
-                        legal_candidate_count: pool.legal_candidate_count,
-                        emitted_candidate_count: pool.emitted_candidate_count,
-                        complete_legal_pool: pool.complete_legal_pool,
-                        ordering: format!("{:?}", pool.ordering),
-                        target_x: candidate.target.x,
-                        target_y: candidate.target.y,
-                        room_type: candidate
-                            .target
-                            .room_type
-                            .map(|room| format!("{:?}", room))
-                            .unwrap_or_else(|| "Unknown".to_string()),
-                        move_kind: format!("{:?}", candidate.target.move_kind),
-                        action_kind: coverage_gap_route_action_kind_v1(&candidate.action),
-                        projection_source: format!("{:?}", candidate.projection.metadata.source),
-                        projection_coverage: format!(
-                            "{:?}",
-                            candidate.projection.metadata.coverage
-                        ),
-                        path_budget: candidate.projection.metadata.path_budget,
-                        observed_path_count: candidate.projection.metadata.observed_path_count,
-                        path: CoverageGapRoutePathOriginV1 {
-                            path_count: path.path_count,
-                            path_budget_exhausted: path.path_budget_exhausted,
-                            min_early_pressure: path.min_early_pressure,
-                            max_early_pressure: path.max_early_pressure,
-                            min_elites: path.min_elites,
-                            max_elites: path.max_elites,
-                            min_shops: path.min_shops,
-                            max_shops: path.max_shops,
-                            min_fires: path.min_fires,
-                            max_fires: path.max_fires,
-                            min_unknowns: path.min_unknowns,
-                            max_unknowns: path.max_unknowns,
-                            min_treasures: path.min_treasures,
-                            max_treasures: path.max_treasures,
-                            first_shop_floor: path.first_shop_floor,
-                            first_fire_floor: path.first_fire_floor,
-                            min_damage_rooms_before_recovery: path.min_damage_rooms_before_recovery,
-                            max_damage_rooms_before_recovery: path.max_damage_rooms_before_recovery,
-                            min_unknowns_before_recovery: path.min_unknowns_before_recovery,
-                            max_unknowns_before_recovery: path.max_unknowns_before_recovery,
-                            paths_with_recovery_before_damage: path
-                                .paths_with_recovery_before_damage,
-                        },
-                        first_elite: CoverageGapRouteFirstEliteOriginV1 {
-                            paths_with_first_elite: first_elite.paths_with_first_elite,
-                            forced: first_elite.forced,
-                            optional: first_elite.optional,
-                            min_hallway_fights_before: first_elite.min_hallway_fights_before,
-                            max_hallway_fights_before: first_elite.max_hallway_fights_before,
-                            min_unknowns_before: first_elite.min_unknowns_before,
-                            max_unknowns_before: first_elite.max_unknowns_before,
-                            min_fires_before: first_elite.min_fires_before,
-                            max_fires_before: first_elite.max_fires_before,
-                            min_shops_before: first_elite.min_shops_before,
-                            max_shops_before: first_elite.max_shops_before,
-                            can_bail_to_rest_before: first_elite.can_bail_to_rest_before,
-                            can_bail_to_shop_before: first_elite.can_bail_to_shop_before,
-                        },
-                    }
+            let route = map_decision_packet
+                .as_ref()
+                .and_then(|packet| {
+                    coverage_gap_route_origin_from_map_packet_candidate_v1(
+                        packet,
+                        candidate_pool_provenance,
+                        candidate_index,
+                    )
                 })
-            });
+                .or_else(|| {
+                    coverage_gap_route_origin_from_journal_candidate_v1(
+                        route_candidates,
+                        candidate_pool_provenance,
+                        candidate_index,
+                    )
+                });
             CoverageGapContinuationTargetOriginV1 {
-                source: if route.is_some() {
-                    "map_decision_packet".to_string()
-                } else {
-                    "route_candidate_pool".to_string()
-                },
+                source: coverage_gap_route_origin_source_v1(
+                    map_decision_packet.as_ref(),
+                    route_candidates,
+                    candidate_index,
+                    route.is_some(),
+                ),
                 route,
             }
         }
@@ -2084,6 +2033,180 @@ fn coverage_gap_target_origin_v1(
             source: "journal_candidate".to_string(),
             route: None,
         },
+    }
+}
+
+fn coverage_gap_route_origin_source_v1(
+    map_decision_packet: Option<&crate::ai::route_planner_v1::MapDecisionPacketV1>,
+    route_candidates: &[CampaignJournalRouteCandidateV1],
+    candidate_index: usize,
+    route_available: bool,
+) -> String {
+    if !route_available {
+        return "route_candidate_pool".to_string();
+    }
+    if map_decision_packet
+        .and_then(|packet| packet.candidates.get(candidate_index))
+        .is_some()
+    {
+        "map_decision_packet".to_string()
+    } else if route_candidates.get(candidate_index).is_some() {
+        "route_candidate_pool".to_string()
+    } else {
+        "route_candidate_pool".to_string()
+    }
+}
+
+fn coverage_gap_route_origin_from_map_packet_candidate_v1(
+    packet: &crate::ai::route_planner_v1::MapDecisionPacketV1,
+    candidate_pool_provenance: &Option<crate::ai::route_planner_v1::RouteCandidatePoolProvenanceV1>,
+    candidate_index: usize,
+) -> Option<CoverageGapRouteTargetOriginV1> {
+    let candidate = packet.candidates.get(candidate_index)?;
+    let pool = candidate_pool_provenance
+        .as_ref()
+        .unwrap_or(&packet.candidate_pool);
+    let path = &candidate.projection.path_summary;
+    Some(CoverageGapRouteTargetOriginV1 {
+        legal_candidate_count: pool.legal_candidate_count,
+        emitted_candidate_count: pool.emitted_candidate_count,
+        complete_legal_pool: pool.complete_legal_pool,
+        ordering: format!("{:?}", pool.ordering),
+        target_x: candidate.target.x,
+        target_y: candidate.target.y,
+        room_type: candidate
+            .target
+            .room_type
+            .map(|room| format!("{:?}", room))
+            .unwrap_or_else(|| "Unknown".to_string()),
+        move_kind: format!("{:?}", candidate.target.move_kind),
+        action_kind: coverage_gap_route_action_kind_v1(&candidate.action),
+        projection_source: format!("{:?}", candidate.projection.metadata.source),
+        projection_coverage: format!("{:?}", candidate.projection.metadata.coverage),
+        path_budget: candidate.projection.metadata.path_budget,
+        observed_path_count: candidate.projection.metadata.observed_path_count,
+        path: coverage_gap_route_path_origin_v1(path),
+        first_elite: coverage_gap_route_first_elite_origin_from_segment_v1(&path.first_elite),
+    })
+}
+
+fn coverage_gap_route_origin_from_journal_candidate_v1(
+    route_candidates: &[CampaignJournalRouteCandidateV1],
+    candidate_pool_provenance: &Option<crate::ai::route_planner_v1::RouteCandidatePoolProvenanceV1>,
+    candidate_index: usize,
+) -> Option<CoverageGapRouteTargetOriginV1> {
+    let candidate = route_candidates.get(candidate_index)?;
+    let target = candidate.target_node.as_ref()?;
+    let path = candidate.path_summary.as_ref()?;
+    Some(CoverageGapRouteTargetOriginV1 {
+        legal_candidate_count: candidate_pool_provenance
+            .as_ref()
+            .map(|pool| pool.legal_candidate_count)
+            .unwrap_or(route_candidates.len()),
+        emitted_candidate_count: candidate_pool_provenance
+            .as_ref()
+            .map(|pool| pool.emitted_candidate_count)
+            .unwrap_or(route_candidates.len()),
+        complete_legal_pool: candidate_pool_provenance
+            .as_ref()
+            .map(|pool| pool.complete_legal_pool)
+            .unwrap_or(false),
+        ordering: candidate_pool_provenance
+            .as_ref()
+            .map(|pool| format!("{:?}", pool.ordering))
+            .unwrap_or_else(|| "Unknown".to_string()),
+        target_x: target.x,
+        target_y: target.y,
+        room_type: target
+            .room_type
+            .map(|room| format!("{:?}", room))
+            .unwrap_or_else(|| candidate.room_type.clone()),
+        move_kind: format!("{:?}", target.move_kind),
+        action_kind: candidate
+            .action
+            .as_ref()
+            .map(coverage_gap_route_action_kind_v1)
+            .unwrap_or_else(|| "unknown".to_string()),
+        projection_source: candidate
+            .projection_source
+            .map(|source| format!("{:?}", source))
+            .unwrap_or_else(|| "Unknown".to_string()),
+        projection_coverage: candidate
+            .projection_coverage
+            .map(|coverage| format!("{:?}", coverage))
+            .unwrap_or_else(|| "Unknown".to_string()),
+        path_budget: candidate.path_budget.unwrap_or(0),
+        observed_path_count: candidate.observed_path_count.unwrap_or(path.path_count),
+        path: coverage_gap_route_path_origin_v1(path),
+        first_elite: coverage_gap_route_first_elite_origin_from_evidence_v1(&candidate.first_elite),
+    })
+}
+
+fn coverage_gap_route_path_origin_v1(
+    path: &crate::ai::route_planner_v1::RoutePathSummaryV1,
+) -> CoverageGapRoutePathOriginV1 {
+    CoverageGapRoutePathOriginV1 {
+        path_count: path.path_count,
+        path_budget_exhausted: path.path_budget_exhausted,
+        min_early_pressure: path.min_early_pressure,
+        max_early_pressure: path.max_early_pressure,
+        min_elites: path.min_elites,
+        max_elites: path.max_elites,
+        min_shops: path.min_shops,
+        max_shops: path.max_shops,
+        min_fires: path.min_fires,
+        max_fires: path.max_fires,
+        min_unknowns: path.min_unknowns,
+        max_unknowns: path.max_unknowns,
+        min_treasures: path.min_treasures,
+        max_treasures: path.max_treasures,
+        first_shop_floor: path.first_shop_floor,
+        first_fire_floor: path.first_fire_floor,
+        min_damage_rooms_before_recovery: path.min_damage_rooms_before_recovery,
+        max_damage_rooms_before_recovery: path.max_damage_rooms_before_recovery,
+        min_unknowns_before_recovery: path.min_unknowns_before_recovery,
+        max_unknowns_before_recovery: path.max_unknowns_before_recovery,
+        paths_with_recovery_before_damage: path.paths_with_recovery_before_damage,
+    }
+}
+
+fn coverage_gap_route_first_elite_origin_from_segment_v1(
+    first_elite: &crate::ai::route_planner_v1::RouteFirstEliteSegmentV1,
+) -> CoverageGapRouteFirstEliteOriginV1 {
+    CoverageGapRouteFirstEliteOriginV1 {
+        paths_with_first_elite: first_elite.paths_with_first_elite,
+        forced: first_elite.forced,
+        optional: first_elite.optional,
+        min_hallway_fights_before: first_elite.min_hallway_fights_before,
+        max_hallway_fights_before: first_elite.max_hallway_fights_before,
+        min_unknowns_before: first_elite.min_unknowns_before,
+        max_unknowns_before: first_elite.max_unknowns_before,
+        min_fires_before: first_elite.min_fires_before,
+        max_fires_before: first_elite.max_fires_before,
+        min_shops_before: first_elite.min_shops_before,
+        max_shops_before: first_elite.max_shops_before,
+        can_bail_to_rest_before: first_elite.can_bail_to_rest_before,
+        can_bail_to_shop_before: first_elite.can_bail_to_shop_before,
+    }
+}
+
+fn coverage_gap_route_first_elite_origin_from_evidence_v1(
+    first_elite: &crate::eval::branch_experiment::BranchExperimentFirstEliteEvidenceV1,
+) -> CoverageGapRouteFirstEliteOriginV1 {
+    CoverageGapRouteFirstEliteOriginV1 {
+        paths_with_first_elite: first_elite.paths_with_first_elite,
+        forced: first_elite.forced,
+        optional: first_elite.optional,
+        min_hallway_fights_before: first_elite.min_hallway_fights_before,
+        max_hallway_fights_before: first_elite.max_hallway_fights_before,
+        min_unknowns_before: first_elite.min_unknowns_before,
+        max_unknowns_before: first_elite.max_unknowns_before,
+        min_fires_before: first_elite.min_fires_before,
+        max_fires_before: first_elite.max_fires_before,
+        min_shops_before: first_elite.min_shops_before,
+        max_shops_before: first_elite.max_shops_before,
+        can_bail_to_rest_before: first_elite.can_bail_to_rest_before,
+        can_bail_to_shop_before: first_elite.can_bail_to_shop_before,
     }
 }
 
@@ -3048,6 +3171,11 @@ mod tests {
                 selected_index: Some(0),
                 candidate_pool_provenance: Some(packet.candidate_pool.clone()),
                 map_decision_packet: Some(packet.clone()),
+                route_candidates: packet
+                    .candidates
+                    .iter()
+                    .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
+                    .collect(),
                 candidates: packet
                     .candidates
                     .iter()
@@ -3090,6 +3218,88 @@ mod tests {
             unobserved_route.projection.metadata.observed_path_count
         );
         assert!(rendered.contains("origin=map_decision_packet"));
+    }
+
+    #[test]
+    fn coverage_gap_continuation_uses_typed_route_candidates_without_map_packet() {
+        let mut run = crate::state::RunState::new(521, 0, false, "Ironclad");
+        run.event_state = None;
+        let trace = crate::ai::route_planner_v1::plan_route_decision_v1(
+            &run,
+            &crate::state::core::EngineState::MapNavigation,
+            crate::ai::route_planner_v1::RoutePlannerConfigV1::default(),
+        );
+        let packet =
+            crate::ai::route_planner_v1::MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+        assert!(packet.candidates.len() >= 2);
+        let observed_route = &packet.candidates[0];
+        let unobserved_route = &packet.candidates[1];
+        let mut route_one = sample_branch_outcome_record();
+        route_one.branch_id = format!("root.{}", observed_route.command);
+        route_one.commands = vec![observed_route.command.clone()];
+        route_one.choice_labels = vec![route_candidate_test_label_v1(observed_route)];
+
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-route-pool0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Map".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                decision_id: "journal-route-pool0".to_string(),
+                boundary_title: "Map".to_string(),
+                frontier_key: "map-frontier".to_string(),
+                depth: 0,
+                candidate_count: packet.candidates.len(),
+                selected_index: Some(0),
+                candidate_pool_provenance: Some(packet.candidate_pool.clone()),
+                map_decision_packet: None,
+                route_candidates: packet
+                    .candidates
+                    .iter()
+                    .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
+                    .collect(),
+                candidates: packet
+                    .candidates
+                    .iter()
+                    .map(|candidate| {
+                        sample_journal_candidate(
+                            &candidate.command,
+                            &route_candidate_test_label_v1(candidate),
+                        )
+                    })
+                    .collect(),
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[route_one], 8, 2);
+
+        assert_eq!(plan.targets[0].target_origin.source, "route_candidate_pool");
+        let route_origin = plan.targets[0]
+            .target_origin
+            .route
+            .as_ref()
+            .expect("typed route candidates should recover route origin");
+        assert_eq!(route_origin.target_x, unobserved_route.target.x);
+        assert_eq!(route_origin.target_y, unobserved_route.target.y);
+        assert_eq!(
+            route_origin.path.min_elites,
+            unobserved_route.projection.path_summary.min_elites
+        );
+        assert_eq!(
+            route_origin.first_elite.paths_with_first_elite,
+            unobserved_route
+                .projection
+                .path_summary
+                .first_elite
+                .paths_with_first_elite
+        );
     }
 
     #[test]
@@ -3143,6 +3353,7 @@ mod tests {
                 selected_index: Some(0),
                 candidate_pool_provenance: None,
                 map_decision_packet: None,
+                route_candidates: Vec::new(),
                 candidates: vec![
                     sample_journal_candidate("go 1", "Route selected"),
                     sample_journal_candidate("go 3", "Route alternative"),
@@ -3186,6 +3397,7 @@ mod tests {
                     selected_index: None,
                     candidate_pool_provenance: None,
                     map_decision_packet: None,
+                    route_candidates: Vec::new(),
                     candidates: vec![sample_journal_candidate("go 3", "Route duplicate")],
                 },
             });

@@ -864,9 +864,19 @@ fn campaign_route_candidate_pool_journal_event_v1(
             selected_index: pool.selected_index,
             candidate_pool_provenance: pool.candidate_pool_provenance.clone(),
             map_decision_packet: pool.map_decision_packet.clone(),
+            route_candidates: route_candidate_pool_typed_candidates_v1(pool),
             candidates: route_candidate_pool_candidates_v1(pool),
         },
     }
+}
+
+fn route_candidate_pool_typed_candidates_v1(
+    pool: &BranchExperimentRouteCandidatePoolV1,
+) -> Vec<crate::eval::campaign_journal::CampaignJournalRouteCandidateV1> {
+    pool.candidates
+        .iter()
+        .map(crate::eval::campaign_journal::CampaignJournalRouteCandidateV1::from_route_entry_v1)
+        .collect()
 }
 
 fn route_candidate_pool_candidates_v1(
