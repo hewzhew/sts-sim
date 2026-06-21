@@ -23,7 +23,7 @@ use super::branch_display::render_compact_choice_path;
 use super::performance::{
     add_combat_performance_samples_v1, BranchCampaignCombatPerformanceSummaryV1,
 };
-use super::progress::BranchCampaignProgressEventV1;
+use super::progress::{BranchCampaignProgressEventV1, BranchCampaignReplayStartSourceV1};
 use super::retry::{
     campaign_parent_should_retry_combat_budget_now_v1, combat_retry_campaign_config_v1,
     try_consume_branch_report_act_boss_gate_retry_v1, BranchCampaignCombatRetryLedgerStateV1,
@@ -31,7 +31,9 @@ use super::retry::{
 use super::route_evidence::{
     merge_campaign_route_candidate_pools_v1, merge_campaign_route_decisions_v1,
 };
-use super::state_graph::{BranchStateReplayStartV1, BranchStateStoreV1};
+use super::state_graph::{
+    BranchStateReplayStartSourceV1, BranchStateReplayStartV1, BranchStateStoreV1,
+};
 use super::summary::campaign_refresh_branch_summary_from_session_v1;
 use super::{
     campaign_branch_from_report_branch_v1, campaign_child_branch_id_v1,
@@ -226,6 +228,15 @@ where
             explored_branch_points: report.explored_branch_points,
             elapsed_wall_ms: report.elapsed_wall_ms,
             start_elapsed_wall_ms: result.start_elapsed_wall_ms,
+            replay_start_source: parent_replay_starts
+                .get(parent_index)
+                .and_then(|start| start.as_ref())
+                .map(branch_campaign_progress_replay_start_source_v1),
+            replay_suffix_commands: parent_replay_starts
+                .get(parent_index)
+                .and_then(|start| start.as_ref())
+                .map(|start| start.suffix_commands.len())
+                .unwrap_or_default(),
             combat_budget_retry_used,
             wall_limit_hit: report.wall_limit_hit,
             branch_limit_hit: report.branch_limit_hit || report.frontier_group_limit_hit,
@@ -263,6 +274,15 @@ where
         combat_retry_elapsed_wall_ms_max,
         combat_performance,
     })
+}
+
+fn branch_campaign_progress_replay_start_source_v1(
+    replay_start: &BranchStateReplayStartV1,
+) -> BranchCampaignReplayStartSourceV1 {
+    match replay_start.source {
+        BranchStateReplayStartSourceV1::Exact => BranchCampaignReplayStartSourceV1::Exact,
+        BranchStateReplayStartSourceV1::Ancestor => BranchCampaignReplayStartSourceV1::Ancestor,
+    }
 }
 
 fn campaign_journal_events_from_report_v1(

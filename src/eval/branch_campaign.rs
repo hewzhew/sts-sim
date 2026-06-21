@@ -82,6 +82,7 @@ pub use performance::{
 pub use progress::{
     render_branch_campaign_progress_event_v1, render_branch_campaign_progress_event_with_detail_v1,
     BranchCampaignProgressDetailV1, BranchCampaignProgressEventV1,
+    BranchCampaignReplayStartSourceV1,
 };
 use report_render::boss_approach_floor_v1;
 pub use report_render::{

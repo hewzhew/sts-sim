@@ -57,11 +57,9 @@ pub(super) struct BranchStateStoreV1 {
 pub(super) struct BranchStateReplayStartV1 {
     pub(super) session: RunControlSession,
     pub(super) suffix_commands: Vec<String>,
-    #[cfg(test)]
     pub(super) source: BranchStateReplayStartSourceV1,
 }
 
-#[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum BranchStateReplayStartSourceV1 {
     Exact,
@@ -119,7 +117,6 @@ impl BranchStateStoreV1 {
             return Some(BranchStateReplayStartV1 {
                 session,
                 suffix_commands: Vec::new(),
-                #[cfg(test)]
                 source: BranchStateReplayStartSourceV1::Exact,
             });
         }
@@ -147,7 +144,6 @@ impl BranchStateStoreV1 {
                 return Some(BranchStateReplayStartV1 {
                     session,
                     suffix_commands,
-                    #[cfg(test)]
                     source: BranchStateReplayStartSourceV1::Ancestor,
                 });
             }
@@ -186,7 +182,6 @@ impl BranchStateStoreV1 {
             return Some(BranchStateReplayStartV1 {
                 session,
                 suffix_commands,
-                #[cfg(test)]
                 source: BranchStateReplayStartSourceV1::Ancestor,
             });
         }

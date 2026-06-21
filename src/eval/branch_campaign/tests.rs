@@ -252,6 +252,8 @@ fn campaign_progress_events_render_concrete_stage_information() {
             explored_branch_points: 6,
             elapsed_wall_ms: 1234,
             start_elapsed_wall_ms: 4321,
+            replay_start_source: Some(BranchCampaignReplayStartSourceV1::Ancestor),
+            replay_suffix_commands: 2,
             combat_budget_retry_used: true,
             wall_limit_hit: false,
             branch_limit_hit: true,
@@ -277,7 +279,7 @@ fn campaign_progress_events_render_concrete_stage_information() {
 
     assert_eq!(
         branch_line,
-        "round 2: branch 1/2 done | produced=8 branch_points=6 elapsed_ms=1234 start_ms=4321 retry=combat_budget limits=[branch]"
+        "round 2: branch 1/2 done | produced=8 branch_points=6 elapsed_ms=1234 start_ms=4321 replay=ancestor suffix=2 retry=combat_budget limits=[branch]"
     );
     assert_eq!(
         round_line,
@@ -309,6 +311,8 @@ fn campaign_progress_summary_hides_noisy_branch_events() {
             explored_branch_points: 1,
             elapsed_wall_ms: 900,
             start_elapsed_wall_ms: 0,
+            replay_start_source: None,
+            replay_suffix_commands: 0,
             combat_budget_retry_used: false,
             wall_limit_hit: false,
             branch_limit_hit: false,
@@ -324,6 +328,8 @@ fn campaign_progress_summary_hides_noisy_branch_events() {
             explored_branch_points: 2,
             elapsed_wall_ms: 6_200,
             start_elapsed_wall_ms: 0,
+            replay_start_source: None,
+            replay_suffix_commands: 0,
             combat_budget_retry_used: false,
             wall_limit_hit: true,
             branch_limit_hit: false,

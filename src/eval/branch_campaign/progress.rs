@@ -27,6 +27,8 @@ pub enum BranchCampaignProgressEventV1 {
         explored_branch_points: usize,
         elapsed_wall_ms: u64,
         start_elapsed_wall_ms: u64,
+        replay_start_source: Option<BranchCampaignReplayStartSourceV1>,
+        replay_suffix_commands: usize,
         combat_budget_retry_used: bool,
         wall_limit_hit: bool,
         branch_limit_hit: bool,
@@ -56,6 +58,21 @@ pub enum BranchCampaignProgressEventV1 {
         victories: usize,
         stuck: usize,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BranchCampaignReplayStartSourceV1 {
+    Exact,
+    Ancestor,
+}
+
+impl BranchCampaignReplayStartSourceV1 {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Ancestor => "ancestor",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -235,6 +252,8 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             explored_branch_points,
             elapsed_wall_ms,
             start_elapsed_wall_ms,
+            replay_start_source,
+            replay_suffix_commands,
             combat_budget_retry_used,
             wall_limit_hit,
             branch_limit_hit,
@@ -251,8 +270,11 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             } else {
                 String::new()
             };
+            let replay = replay_start_source
+                .map(|source| format!(" replay={} suffix={replay_suffix_commands}", source.as_str()))
+                .unwrap_or_default();
             format!(
-                "round {round}: branch {branch_index}/{branch_count} done | produced={produced_branches} branch_points={explored_branch_points} elapsed_ms={elapsed_wall_ms}{start}{retry} limits=[{limits}]"
+                "round {round}: branch {branch_index}/{branch_count} done | produced={produced_branches} branch_points={explored_branch_points} elapsed_ms={elapsed_wall_ms}{start}{replay}{retry} limits=[{limits}]"
             )
         }
         BranchCampaignProgressEventV1::RoundFinished {
