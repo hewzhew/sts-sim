@@ -37,7 +37,7 @@ pub const TARGETED_CONTINUATION_EXECUTION_PLAN_SCHEMA_NAME: &str =
     "TargetedContinuationExecutionPlanV1";
 pub const TARGETED_CONTINUATION_EXECUTION_PLAN_SCHEMA_VERSION: u32 = 1;
 pub const COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_NAME: &str = "CoverageGapContinuationPlanV1";
-pub const COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_VERSION: u32 = 1;
+pub const COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_VERSION: u32 = 2;
 pub const COVERAGE_GAP_CONTINUATION_EXECUTION_PLAN_SCHEMA_NAME: &str =
     "CoverageGapContinuationExecutionPlanV1";
 pub const COVERAGE_GAP_CONTINUATION_EXECUTION_PLAN_SCHEMA_VERSION: u32 = 1;
@@ -232,7 +232,23 @@ pub struct CoverageGapContinuationPlanV1 {
     pub selected_scheduled_targets: usize,
     #[serde(default)]
     pub selected_unscheduled_targets: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bucket_summaries: Vec<CoverageGapContinuationBucketSummaryV1>,
     pub targets: Vec<CoverageGapContinuationTargetV1>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageGapContinuationBucketSummaryV1 {
+    pub bucket: String,
+    pub unobserved_candidate_count: usize,
+    pub scheduled_unobserved_candidate_count: usize,
+    pub unscheduled_unobserved_candidate_count: usize,
+    pub kept_unobserved_candidate_count: usize,
+    pub pruned_unobserved_candidate_count: usize,
+    pub eligible_target_count: usize,
+    pub selected_target_count: usize,
+    pub deferred_target_count: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -909,11 +925,14 @@ pub fn plan_coverage_gap_continuations_v1(
     let mut selected_scheduled_targets = 0usize;
     let mut selected_unscheduled_targets = 0usize;
     let mut target_candidates = Vec::new();
+    let mut bucket_counts = BTreeMap::<String, CoverageGapContinuationBucketSummaryV1>::new();
 
     for event in &report.journal.events {
         let Some(decision_id) = journal_decision_id_v1(event) else {
             continue;
         };
+        let event_type = journal_decision_event_kind_v1(event);
+        let bucket = coverage_gap_target_bucket_from_event_type_v1(event_type).to_string();
         let candidates = journal_decision_candidates_v1(event);
         if candidates.is_empty() {
             continue;
@@ -930,6 +949,11 @@ pub fn plan_coverage_gap_continuations_v1(
                 continue;
             }
 
+            record_coverage_gap_bucket_unobserved_candidate_v1(
+                &mut bucket_counts,
+                &bucket,
+                candidate,
+            );
             total_unobserved_candidates = total_unobserved_candidates.saturating_add(1);
             match candidate.disposition {
                 CampaignJournalCandidateDispositionV1::Kept => {
@@ -966,7 +990,7 @@ pub fn plan_coverage_gap_continuations_v1(
             target_candidates.push(CoverageGapContinuationTargetV1 {
                 decision_id: decision_id.to_string(),
                 event_id: event.event_id.clone(),
-                event_type: journal_decision_event_kind_v1(event).to_string(),
+                event_type: event_type.to_string(),
                 parent_branch_id: event.branch_id.clone(),
                 parent_frontier_title: event.branch_frontier_title.clone(),
                 parent_commands: event.branch_commands.clone(),
@@ -985,10 +1009,11 @@ pub fn plan_coverage_gap_continuations_v1(
         }
     }
 
-    let targets = select_coverage_gap_targets_by_type_v1(
-        dedupe_coverage_gap_targets_v1(target_candidates),
-        max_targets,
-    );
+    let deduped_target_candidates = dedupe_coverage_gap_targets_v1(target_candidates);
+    record_coverage_gap_bucket_eligible_targets_v1(&mut bucket_counts, &deduped_target_candidates);
+    let targets = select_coverage_gap_targets_by_type_v1(deduped_target_candidates, max_targets);
+    record_coverage_gap_bucket_selected_targets_v1(&mut bucket_counts, &targets);
+    let bucket_summaries = coverage_gap_bucket_summaries_v1(bucket_counts);
     for target in &targets {
         match target.disposition {
             CampaignJournalCandidateDispositionV1::Kept => {
@@ -1023,8 +1048,96 @@ pub fn plan_coverage_gap_continuations_v1(
         selected_pruned_targets,
         selected_scheduled_targets,
         selected_unscheduled_targets,
+        bucket_summaries,
         targets,
     }
+}
+
+fn record_coverage_gap_bucket_unobserved_candidate_v1(
+    buckets: &mut BTreeMap<String, CoverageGapContinuationBucketSummaryV1>,
+    bucket: &str,
+    candidate: &CampaignJournalCandidateV1,
+) {
+    let summary = buckets.entry(bucket.to_string()).or_insert_with(|| {
+        CoverageGapContinuationBucketSummaryV1 {
+            bucket: bucket.to_string(),
+            ..Default::default()
+        }
+    });
+    summary.unobserved_candidate_count = summary.unobserved_candidate_count.saturating_add(1);
+    if candidate_admission_is_scheduled_v1(candidate) {
+        summary.scheduled_unobserved_candidate_count = summary
+            .scheduled_unobserved_candidate_count
+            .saturating_add(1);
+    } else {
+        summary.unscheduled_unobserved_candidate_count = summary
+            .unscheduled_unobserved_candidate_count
+            .saturating_add(1);
+    }
+    match candidate.disposition {
+        CampaignJournalCandidateDispositionV1::Kept => {
+            summary.kept_unobserved_candidate_count =
+                summary.kept_unobserved_candidate_count.saturating_add(1);
+        }
+        CampaignJournalCandidateDispositionV1::Pruned => {
+            summary.pruned_unobserved_candidate_count =
+                summary.pruned_unobserved_candidate_count.saturating_add(1);
+        }
+    }
+}
+
+fn record_coverage_gap_bucket_eligible_targets_v1(
+    buckets: &mut BTreeMap<String, CoverageGapContinuationBucketSummaryV1>,
+    targets: &[CoverageGapContinuationTargetV1],
+) {
+    for target in targets {
+        let bucket = coverage_gap_target_bucket_v1(target).to_string();
+        let summary = buckets.entry(bucket.clone()).or_insert_with(|| {
+            CoverageGapContinuationBucketSummaryV1 {
+                bucket,
+                ..Default::default()
+            }
+        });
+        summary.eligible_target_count = summary.eligible_target_count.saturating_add(1);
+    }
+}
+
+fn record_coverage_gap_bucket_selected_targets_v1(
+    buckets: &mut BTreeMap<String, CoverageGapContinuationBucketSummaryV1>,
+    targets: &[CoverageGapContinuationTargetV1],
+) {
+    for target in targets {
+        let bucket = coverage_gap_target_bucket_v1(target).to_string();
+        let summary = buckets.entry(bucket.clone()).or_insert_with(|| {
+            CoverageGapContinuationBucketSummaryV1 {
+                bucket,
+                ..Default::default()
+            }
+        });
+        summary.selected_target_count = summary.selected_target_count.saturating_add(1);
+    }
+}
+
+fn coverage_gap_bucket_summaries_v1(
+    buckets: BTreeMap<String, CoverageGapContinuationBucketSummaryV1>,
+) -> Vec<CoverageGapContinuationBucketSummaryV1> {
+    let mut summaries = buckets.into_values().collect::<Vec<_>>();
+    for summary in &mut summaries {
+        summary.deferred_target_count = summary
+            .eligible_target_count
+            .saturating_sub(summary.selected_target_count);
+    }
+    let order = coverage_gap_bucket_name_order_v1();
+    summaries.sort_by_key(|summary| {
+        (
+            order
+                .iter()
+                .position(|bucket| *bucket == summary.bucket)
+                .unwrap_or(order.len()),
+            summary.bucket.clone(),
+        )
+    });
+    summaries
 }
 
 fn select_coverage_gap_targets_by_type_v1(
@@ -1084,16 +1197,7 @@ fn coverage_gap_target_bucket_order_v1(
     buckets: &BTreeMap<String, Vec<CoverageGapContinuationTargetV1>>,
 ) -> Vec<String> {
     let mut order = Vec::new();
-    for bucket in [
-        "route",
-        "boss_relic",
-        "shop",
-        "shop_branch",
-        "event",
-        "campfire",
-        "reward",
-        "other",
-    ] {
+    for bucket in coverage_gap_bucket_name_order_v1() {
         if buckets.contains_key(bucket) {
             order.push(bucket.to_string());
         }
@@ -1106,8 +1210,25 @@ fn coverage_gap_target_bucket_order_v1(
     order
 }
 
+fn coverage_gap_bucket_name_order_v1() -> [&'static str; 8] {
+    [
+        "route",
+        "boss_relic",
+        "shop",
+        "shop_branch",
+        "event",
+        "campfire",
+        "reward",
+        "other",
+    ]
+}
+
 fn coverage_gap_target_bucket_v1(target: &CoverageGapContinuationTargetV1) -> &'static str {
-    match target.event_type.as_str() {
+    coverage_gap_target_bucket_from_event_type_v1(&target.event_type)
+}
+
+fn coverage_gap_target_bucket_from_event_type_v1(event_type: &str) -> &'static str {
+    match event_type {
         "route" => "route",
         "boss_relic" => "boss_relic",
         "shop" => "shop",
@@ -1159,6 +1280,23 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
         plan.selected_kept_targets,
         plan.selected_pruned_targets
     ));
+    if !plan.bucket_summaries.is_empty() {
+        lines.push("Buckets:".to_string());
+        for bucket in &plan.bucket_summaries {
+            lines.push(format!(
+                "  {} selected={}/{} unobserved={} scheduled={} unscheduled={} kept={} pruned={} deferred={}",
+                bucket.bucket,
+                bucket.selected_target_count,
+                bucket.eligible_target_count,
+                bucket.unobserved_candidate_count,
+                bucket.scheduled_unobserved_candidate_count,
+                bucket.unscheduled_unobserved_candidate_count,
+                bucket.kept_unobserved_candidate_count,
+                bucket.pruned_unobserved_candidate_count,
+                bucket.deferred_target_count
+            ));
+        }
+    }
     if plan.targets.is_empty() {
         lines.push("Targets: none".to_string());
     } else {
@@ -3543,6 +3681,7 @@ mod tests {
         });
 
         let plan = plan_coverage_gap_continuations_v1(&report, &[], 2, 2);
+        let rendered = render_coverage_gap_continuation_plan_v1(&plan);
         let event_types = plan
             .targets
             .iter()
@@ -3552,6 +3691,25 @@ mod tests {
         assert_eq!(plan.selected_target_count, 2);
         assert!(event_types.contains(&"route"));
         assert!(event_types.contains(&"reward"));
+        let route_bucket = plan
+            .bucket_summaries
+            .iter()
+            .find(|bucket| bucket.bucket == "route")
+            .expect("route bucket should be summarized");
+        assert_eq!(route_bucket.unobserved_candidate_count, 2);
+        assert_eq!(route_bucket.eligible_target_count, 2);
+        assert_eq!(route_bucket.selected_target_count, 1);
+        let reward_bucket = plan
+            .bucket_summaries
+            .iter()
+            .find(|bucket| bucket.bucket == "reward")
+            .expect("reward bucket should be summarized");
+        assert_eq!(reward_bucket.unobserved_candidate_count, 9);
+        assert_eq!(reward_bucket.eligible_target_count, 2);
+        assert_eq!(reward_bucket.selected_target_count, 1);
+        assert!(rendered.contains("Buckets:"));
+        assert!(rendered.contains("route selected=1/2 unobserved=2"));
+        assert!(rendered.contains("reward selected=1/2 unobserved=9"));
     }
 
     #[test]
