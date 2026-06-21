@@ -27,6 +27,10 @@ Resumes the latest saved campaign report and advances exactly one additional rou
 Resumes the latest saved campaign report and advances until total round 33.
 
 .EXAMPLE
+.\tools\campaign.ps1 -ContinueCoverageGaps -UntilMilestone Act2Start
+Runs coverage-gap branches, then keeps resuming in small round chunks until any branch reaches Act 2 or the milestone round cap is exhausted.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Inspect
 Summarizes the latest saved campaign checkpoint with active/frozen/abandoned deck context.
 
@@ -216,6 +220,15 @@ param(
 
     [ValidateRange(0, 100000)]
     [int] $UntilRound = 0,
+
+    [ValidateSet("", "Act1Boss", "Act2Start")]
+    [string] $UntilMilestone = "",
+
+    [ValidateRange(1, 100000)]
+    [int] $MilestoneStepRounds = 2,
+
+    [ValidateRange(1, 100000)]
+    [int] $MilestoneMaxRounds = 24,
 
     [ValidateRange(0, 20)]
     [int] $Ascension = 0,
@@ -439,14 +452,25 @@ foreach ($ParameterName in $PSBoundParameters.Keys) {
 
 $RoundsBound = $CampaignBoundParameters.ContainsKey("Rounds")
 $UntilRoundBound = $CampaignBoundParameters.ContainsKey("UntilRound")
+$UntilMilestoneBound = $CampaignBoundParameters.ContainsKey("UntilMilestone") -and $UntilMilestone
 $MaxRoundsBound = $CampaignBoundParameters.ContainsKey("MaxRounds")
 if (($RoundsBound -and $UntilRoundBound) -or ($RoundsBound -and $MaxRoundsBound) -or ($UntilRoundBound -and $MaxRoundsBound)) {
     throw "Choose only one round budget: -Rounds N, -UntilRound N, or legacy -MaxRounds N."
 }
+if ($UntilMilestoneBound -and ($RoundsBound -or $UntilRoundBound -or $MaxRoundsBound)) {
+    throw "-UntilMilestone owns the round budget. Use -MilestoneStepRounds and -MilestoneMaxRounds instead of -Rounds, -UntilRound, or -MaxRounds."
+}
+if ($UntilMilestoneBound -and ($PlanTargets -or $PlanCoverageGaps -or $Inspect)) {
+    throw "-UntilMilestone requires an executing command (-More, -ContinueTargets, -ContinueCoverageGaps, or a normal run), not a plan/inspect command."
+}
 
 $DriverRoundBudgetArgs = @()
 $RoundBudgetSource = if ($MaxRoundsBound) { "MaxRounds" } else { "preset" }
-if (-not $More) {
+if ($UntilMilestoneBound) {
+    $MaxRounds = $MilestoneStepRounds
+    $DriverRoundBudgetArgs = @("--rounds", "$MilestoneStepRounds")
+    $RoundBudgetSource = "UntilMilestone"
+} elseif (-not $More) {
     if ($RoundsBound) {
         $DriverRoundBudgetArgs = @("--rounds", "$Rounds")
         $RoundBudgetSource = "Rounds"
@@ -469,7 +493,12 @@ if ($More) {
     $ResumeCampaignPath = $LatestCampaignPath
     $ResumeReport = Get-Content -LiteralPath $ResumeCampaignPath -Raw | ConvertFrom-Json
     $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
-    if ($RoundsBound) {
+    if ($UntilMilestoneBound) {
+        $TargetRounds = $null
+        $MaxRounds = $MilestoneStepRounds
+        $DriverRoundBudgetArgs = @("--rounds", "$MilestoneStepRounds")
+        $RoundBudgetSource = "UntilMilestone"
+    } elseif ($RoundsBound) {
         $TargetRounds = $ResumeRoundsCompleted + $Rounds
         $MaxRounds = $Rounds
         $DriverRoundBudgetArgs = @("--rounds", "$Rounds")
@@ -582,6 +611,172 @@ if ($ExtraArgs) {
     $DriverArgs += $ExtraArgs
 }
 
+function Format-CommandLine {
+    param(
+        [string] $ExePath,
+        [string[]] $Arguments
+    )
+
+    $RenderedExe = if ($ExePath -match '^[A-Za-z0-9_./:=\\-]+$') { $ExePath } else { "'$($ExePath -replace "'", "''")'" }
+    $RenderedArgs = $Arguments | ForEach-Object {
+        if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
+    }
+    return $RenderedExe + " " + ($RenderedArgs -join " ")
+}
+
+function Get-CampaignMilestoneStatus {
+    param(
+        [string] $ReportPath,
+        [string] $Milestone
+    )
+
+    if (-not (Test-Path -LiteralPath $ReportPath)) {
+        return [pscustomobject]@{
+            Reached = $false
+            FurthestAct = 0
+            FurthestFloor = 0
+            HitCount = 0
+            RoundsCompleted = 0
+        }
+    }
+
+    $Report = Get-Content -LiteralPath $ReportPath -Raw | ConvertFrom-Json
+    $Branches = @()
+    foreach ($Bucket in @("active", "frozen", "stuck", "victories", "dead", "abandoned")) {
+        if ($Report.$Bucket) {
+            $Branches += @($Report.$Bucket)
+        }
+    }
+
+    $FurthestAct = 0
+    $FurthestFloor = 0
+    $HitCount = 0
+    foreach ($Branch in $Branches) {
+        if (-not $Branch.summary) {
+            continue
+        }
+        $Act = [int] $Branch.summary.act
+        $Floor = [int] $Branch.summary.floor
+        if (($Act -gt $FurthestAct) -or (($Act -eq $FurthestAct) -and ($Floor -gt $FurthestFloor))) {
+            $FurthestAct = $Act
+            $FurthestFloor = $Floor
+        }
+        $Hit = switch ($Milestone) {
+            "Act1Boss" { ($Act -gt 1) -or (($Act -eq 1) -and ($Floor -ge 16)) }
+            "Act2Start" { $Act -ge 2 }
+            default { $false }
+        }
+        if ($Hit) {
+            $HitCount += 1
+        }
+    }
+
+    return [pscustomobject]@{
+        Reached = $HitCount -gt 0
+        FurthestAct = $FurthestAct
+        FurthestFloor = $FurthestFloor
+        HitCount = $HitCount
+        RoundsCompleted = [int] $Report.rounds_completed
+    }
+}
+
+function New-MilestoneResumeDriverArgs {
+    param(
+        [int] $StepRounds
+    )
+
+    $Args = @(
+        "run",
+        "--preset", "$Mode",
+        "--seed", "$Seed",
+        "--ascension", "$Ascension",
+        "--class", "$Class"
+    )
+    if (@(0, 10, 15, 17, 20) -contains $Ascension) {
+        $Args += @("--ascension-domain", "a$Ascension")
+    }
+    $Args += @(
+        "--resume", "$LatestCampaignPath",
+        "--resume-checkpoint", "$LatestCheckpointPath",
+        "--out", "$LatestCampaignPath",
+        "--checkpoint-out", "$LatestCheckpointPath",
+        "--rounds", "$StepRounds"
+    )
+    if ($CampaignBoundParameters.ContainsKey("ExperimentWallMs")) {
+        $Args += @("--experiment-wall-ms", "$ExperimentWallMs")
+    }
+    if ($CampaignBoundParameters.ContainsKey("SearchWallMs")) {
+        $Args += @("--search-wall-ms", "$SearchWallMs")
+    }
+    if ($CampaignBoundParameters.ContainsKey("SearchMaxNodes")) {
+        $Args += @("--search-max-nodes", "$SearchMaxNodes")
+    }
+    if ($CampaignBoundParameters.ContainsKey("ActiveLineageDiversity") -and $ActiveLineageDiversity -ge 0) {
+        $Args += @("--active-lineage-diversity", "$ActiveLineageDiversity")
+    }
+    if ($BossRelicAxes) {
+        $Args += "--boss-relic-axes"
+    }
+    if ($CampaignBoundParameters.ContainsKey("CombatRetryWallMs") -and $CombatRetryWallMs -gt 0) {
+        $Args += @("--combat-retry-wall-ms", "$CombatRetryWallMs")
+    }
+    if ($CampaignBoundParameters.ContainsKey("BranchExamples")) {
+        $Args += @("--branch-examples", "$BranchExamples")
+    }
+    if ($CampaignBoundParameters.ContainsKey("VictoryHpPercent")) {
+        $Args += @("--min-acceptable-victory-hp-percent", "$VictoryHpPercent")
+    }
+    if (-not (Test-ExtraCombatOptionKey -Tokens $ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
+        if ($BossSegments) {
+            $Args += @("--combat-search-option", "segment=turn")
+        } else {
+            $Args += @("--combat-search-option", "segment=non_boss_turn")
+        }
+    }
+    if (-not $NoProgress) {
+        $Args += "--progress"
+        if ($VerboseProgress) {
+            $Args += @("--progress-detail", "verbose")
+        }
+    }
+    if ($Perf) {
+        $Args += @("--report-detail", "perf")
+    } elseif ($Diagnose) {
+        $Args += @("--report-detail", "diagnose")
+    }
+    if ($ExtraArgs) {
+        $Args += $ExtraArgs
+    }
+    return $Args
+}
+
+function Invoke-CampaignUntilMilestone {
+    param(
+        [int] $AlreadySpentRounds = 0
+    )
+
+    $SpentRounds = $AlreadySpentRounds
+    while ($SpentRounds -lt $MilestoneMaxRounds) {
+        $Status = Get-CampaignMilestoneStatus -ReportPath $LatestCampaignPath -Milestone $UntilMilestone
+        Write-Host "milestone-status target=$UntilMilestone reached=$($Status.Reached) hits=$($Status.HitCount) furthest=A$($Status.FurthestAct)F$($Status.FurthestFloor) report-rounds=$($Status.RoundsCompleted) spent-rounds=$SpentRounds cap=$MilestoneMaxRounds"
+        if ($Status.Reached) {
+            return 0
+        }
+        $StepRounds = [Math]::Min($MilestoneStepRounds, $MilestoneMaxRounds - $SpentRounds)
+        $ResumeArgs = New-MilestoneResumeDriverArgs -StepRounds $StepRounds
+        Write-Host "milestone-step target=$UntilMilestone additional-rounds=$StepRounds"
+        & $DriverExe @ResumeArgs
+        if ($LASTEXITCODE -ne 0) {
+            return $LASTEXITCODE
+        }
+        $SpentRounds += $StepRounds
+    }
+
+    $FinalStatus = Get-CampaignMilestoneStatus -ReportPath $LatestCampaignPath -Milestone $UntilMilestone
+    Write-Host "milestone-status target=$UntilMilestone reached=$($FinalStatus.Reached) hits=$($FinalStatus.HitCount) furthest=A$($FinalStatus.FurthestAct)F$($FinalStatus.FurthestFloor) report-rounds=$($FinalStatus.RoundsCompleted) spent-rounds=$SpentRounds cap=$MilestoneMaxRounds"
+    return 0
+}
+
 function Test-DriverNeedsBuild {
     param(
         [string] $ExePath
@@ -656,7 +851,11 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     $ContinuationRoundBudgetArgs = @("--rounds", "1")
     $TargetRounds = $null
     $ContinuationRoundSource = "default"
-    if ($RoundsBound) {
+    if ($UntilMilestoneBound) {
+        $ContinuationRounds = $MilestoneStepRounds
+        $ContinuationRoundSource = "UntilMilestone"
+        $ContinuationRoundBudgetArgs = @("--rounds", "$MilestoneStepRounds")
+    } elseif ($RoundsBound) {
         $ContinuationRounds = $Rounds
         $ContinuationRoundSource = "Rounds"
         $TargetRounds = $ResumeRoundsCompleted + $Rounds
@@ -812,6 +1011,9 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
             Write-Host "round-budget=$ContinuationRoundSource additional-rounds=$ContinuationRounds"
         }
     }
+    if ($UntilMilestoneBound) {
+        Write-Host "until-milestone=$UntilMilestone step-rounds=$MilestoneStepRounds max-additional-rounds=$MilestoneMaxRounds"
+    }
     if ($PlanCoverageGaps) {
         Write-Host "coverage-gap-plan=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision"
     }
@@ -848,6 +1050,10 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         }
         if ($ContinueCoverageGaps) {
             Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
+        }
+        if ($UntilMilestoneBound) {
+            Write-Host "milestone-loop-command-template:"
+            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds))
         }
         exit 0
     }
@@ -900,6 +1106,9 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                 Set-Content -LiteralPath $LatestClassPath -Value $Class
                 Set-Content -LiteralPath $LatestModePath -Value $Mode
                 Set-Content -LiteralPath $LatestCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
+                if ($UntilMilestoneBound) {
+                    $DriverExitCode = Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds
+                }
             }
             exit $DriverExitCode
         }
@@ -912,6 +1121,9 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                 Set-Content -LiteralPath $LatestClassPath -Value $Class
                 Set-Content -LiteralPath $LatestModePath -Value $Mode
                 Set-Content -LiteralPath $LatestCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
+                if ($UntilMilestoneBound) {
+                    $DriverExitCode = Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds
+                }
             }
             exit $DriverExitCode
         }
@@ -1110,10 +1322,20 @@ if ($ResumeCampaignPath) {
         Write-Host "resume-checkpoint=missing; falling back to replay"
     }
 }
+if ($UntilMilestoneBound) {
+    Write-Host "until-milestone=$UntilMilestone step-rounds=$MilestoneStepRounds max-additional-rounds=$MilestoneMaxRounds"
+}
 
 if ($More -and $TargetRounds -ne $null -and $MaxRounds -eq 0) {
     Write-Host "already-at-target-rounds=yes; nothing to run"
     exit 0
+}
+if ($More -and $UntilMilestoneBound) {
+    $InitialMilestoneStatus = Get-CampaignMilestoneStatus -ReportPath $LatestCampaignPath -Milestone $UntilMilestone
+    if ($InitialMilestoneStatus.Reached) {
+        Write-Host "already-at-milestone=yes target=$UntilMilestone hits=$($InitialMilestoneStatus.HitCount) furthest=A$($InitialMilestoneStatus.FurthestAct)F$($InitialMilestoneStatus.FurthestFloor)"
+        exit 0
+    }
 }
 
 if ($DryRun) {
@@ -1124,6 +1346,10 @@ if ($DryRun) {
         Write-Host ("cargo " + ($RenderedBuildArgs -join " "))
     }
     Write-Host $RenderedCommand
+    if ($UntilMilestoneBound) {
+        Write-Host "milestone-loop-command-template:"
+        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds))
+    }
     exit 0
 }
 
@@ -1143,6 +1369,9 @@ try {
         Set-Content -LiteralPath $LatestClassPath -Value $Class
         Set-Content -LiteralPath $LatestModePath -Value $Mode
         Set-Content -LiteralPath $LatestCommandPath -Value $RenderedCommand
+        if ($UntilMilestoneBound) {
+            $DriverExitCode = Invoke-CampaignUntilMilestone -AlreadySpentRounds $MaxRounds
+        }
     }
     exit $DriverExitCode
 } finally {

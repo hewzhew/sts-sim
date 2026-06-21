@@ -50,12 +50,16 @@ routing.
 ```powershell
 .\tools\campaign.ps1 -Mode quick
 .\tools\campaign.ps1 -More -Rounds 1
+.\tools\campaign.ps1 -More -UntilMilestone Act2Start
 .\tools\campaign.ps1 -Inspect
 ```
 
 The script owns friendly defaults, build-profile selection, last-seed
 bookkeeping, and checkpoint/report paths. It should stay a wrapper over the
 Rust campaign driver; campaign semantics belong in Rust, not in PowerShell.
+Milestone continuation is intentionally a wrapper-level convenience loop: it
+runs small `-Rounds` chunks and checks structured report fields until a branch
+reaches `Act1Boss` or `Act2Start`, or `-MilestoneMaxRounds` is exhausted.
 
 ## Primary Java Analysis Workflow
 
