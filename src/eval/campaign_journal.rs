@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::eval::branch_experiment::{
-    BranchExperimentCampfirePlanCandidateEntryV1, BranchExperimentEventCandidateEntryV1,
-    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentBossRelicCandidateEntryV1, BranchExperimentCampfirePlanCandidateEntryV1,
+    BranchExperimentEventCandidateEntryV1, BranchExperimentRewardOptionPortfolioEntryV1,
+    BranchExperimentRewardOptionPortfolioV1,
 };
 
 pub const CAMPAIGN_JOURNAL_SCHEMA_NAME: &str = "CampaignJournal";
@@ -114,6 +115,15 @@ pub enum CampaignJournalEventPayloadV1 {
         branch_option_count: usize,
         candidates: Vec<CampaignJournalCandidateV1>,
     },
+    BossRelicCandidatePool {
+        decision_id: String,
+        boundary_title: String,
+        frontier_key: String,
+        depth: usize,
+        candidate_count: usize,
+        branch_option_count: usize,
+        candidates: Vec<CampaignJournalCandidateV1>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -175,6 +185,39 @@ fn event_candidate_semantic_class_v1(candidate: &BranchExperimentEventCandidateE
     }
     if candidate.suppressed_count > 0 {
         parts.push(format!("suppressed:{}", candidate.suppressed_count));
+    }
+    parts.join(" ")
+}
+
+pub fn campaign_journal_candidate_from_boss_relic_entry_v1(
+    candidate: &BranchExperimentBossRelicCandidateEntryV1,
+) -> CampaignJournalCandidateV1 {
+    CampaignJournalCandidateV1 {
+        candidate_id: candidate.candidate_id.clone(),
+        command: candidate.command.clone(),
+        label: candidate.label.clone(),
+        semantic_class: boss_relic_candidate_semantic_class_v1(candidate),
+        disposition: CampaignJournalCandidateDispositionV1::Kept,
+    }
+}
+
+fn boss_relic_candidate_semantic_class_v1(
+    candidate: &BranchExperimentBossRelicCandidateEntryV1,
+) -> String {
+    let mut parts = vec![
+        format!("relic:{}", candidate.relic),
+        format!("class:{}", candidate.class),
+        format!("support:{}", candidate.support_gate),
+        format!("branch:{}", candidate.branch_admission),
+    ];
+    if !candidate.added_debt.is_empty() {
+        parts.push(format!("debt:{}", candidate.added_debt.join("+")));
+    }
+    if !candidate.compounding_tags.is_empty() {
+        parts.push(format!(
+            "compounds:{}",
+            candidate.compounding_tags.join("+")
+        ));
     }
     parts.join(" ")
 }

@@ -129,6 +129,10 @@ fn journal_event_extra_summary_v1(event: &CampaignJournalEventV1) -> String {
             " event={} branch_options={}",
             game_event_id, branch_option_count
         ),
+        CampaignJournalEventPayloadV1::BossRelicCandidatePool {
+            branch_option_count,
+            ..
+        } => format!(" branch_options={}", branch_option_count),
         _ => String::new(),
     }
 }
@@ -166,6 +170,7 @@ fn journal_event_type_v1(event: &CampaignJournalEventV1) -> &'static str {
         CampaignJournalEventPayloadV1::ShopCandidatePool { .. } => "shop_candidate_pool",
         CampaignJournalEventPayloadV1::CampfireCandidatePool { .. } => "campfire_candidate_pool",
         CampaignJournalEventPayloadV1::EventCandidatePool { .. } => "event_candidate_pool",
+        CampaignJournalEventPayloadV1::BossRelicCandidatePool { .. } => "boss_relic_candidate_pool",
     }
 }
 
@@ -175,7 +180,8 @@ fn journal_event_boundary_title_v1(event: &CampaignJournalEventV1) -> &str {
         | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { boundary_title, .. }
         | CampaignJournalEventPayloadV1::ShopCandidatePool { boundary_title, .. }
         | CampaignJournalEventPayloadV1::CampfireCandidatePool { boundary_title, .. }
-        | CampaignJournalEventPayloadV1::EventCandidatePool { boundary_title, .. } => {
+        | CampaignJournalEventPayloadV1::EventCandidatePool { boundary_title, .. }
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { boundary_title, .. } => {
             boundary_title
         }
     }
@@ -187,7 +193,10 @@ fn journal_event_frontier_key_v1(event: &CampaignJournalEventV1) -> &str {
         | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { frontier_key, .. }
         | CampaignJournalEventPayloadV1::ShopCandidatePool { frontier_key, .. }
         | CampaignJournalEventPayloadV1::CampfireCandidatePool { frontier_key, .. }
-        | CampaignJournalEventPayloadV1::EventCandidatePool { frontier_key, .. } => frontier_key,
+        | CampaignJournalEventPayloadV1::EventCandidatePool { frontier_key, .. }
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { frontier_key, .. } => {
+            frontier_key
+        }
     }
 }
 
@@ -197,7 +206,8 @@ fn journal_event_depth_v1(event: &CampaignJournalEventV1) -> usize {
         | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { depth, .. }
         | CampaignJournalEventPayloadV1::ShopCandidatePool { depth, .. }
         | CampaignJournalEventPayloadV1::CampfireCandidatePool { depth, .. }
-        | CampaignJournalEventPayloadV1::EventCandidatePool { depth, .. } => *depth,
+        | CampaignJournalEventPayloadV1::EventCandidatePool { depth, .. }
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { depth, .. } => *depth,
     }
 }
 
@@ -207,7 +217,8 @@ fn journal_event_candidates_v1(event: &CampaignJournalEventV1) -> &[CampaignJour
         | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { candidates, .. }
         | CampaignJournalEventPayloadV1::ShopCandidatePool { candidates, .. }
         | CampaignJournalEventPayloadV1::CampfireCandidatePool { candidates, .. }
-        | CampaignJournalEventPayloadV1::EventCandidatePool { candidates, .. } => candidates,
+        | CampaignJournalEventPayloadV1::EventCandidatePool { candidates, .. }
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { candidates, .. } => candidates,
     }
 }
 
