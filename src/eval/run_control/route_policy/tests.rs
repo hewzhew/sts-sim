@@ -109,6 +109,8 @@ fn route_go_attaches_compact_trace_boundary() {
     let outcome = apply_route_go(&mut session).expect("route-go should choose a map node");
 
     assert_eq!(outcome.trace_annotations.len(), 1);
+    assert_eq!(outcome.decision_parent_snapshots.len(), 1);
+    assert_eq!(outcome.decision_parent_snapshots[0].source, "route_planner");
     let RunControlTraceAnnotationV1::RoutePlannerSelection {
         summary,
         selected_index,

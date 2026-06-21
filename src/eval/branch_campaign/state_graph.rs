@@ -120,6 +120,10 @@ impl BranchStateStoreV1 {
             });
         }
 
+        if let Some(replay_start) = self.longest_session_prefix_replay_start(commands) {
+            return Some(replay_start);
+        }
+
         let mut current = self.node_ids_by_commands.get(commands).copied();
         let mut suffix_segments = Vec::<Vec<String>>::new();
         while let Some(id) = current {
@@ -149,6 +153,39 @@ impl BranchStateStoreV1 {
 
         self.lookup_misses = self.lookup_misses.saturating_add(1);
         self.replay_misses = self.replay_misses.saturating_add(1);
+        None
+    }
+
+    fn longest_session_prefix_replay_start(
+        &mut self,
+        commands: &[String],
+    ) -> Option<BranchStateReplayStartV1> {
+        if let Some((prefix_commands, session)) = self
+            .sessions_by_commands
+            .iter()
+            .filter(|(prefix_commands, _)| {
+                !prefix_commands.is_empty()
+                    && prefix_commands.len() < commands.len()
+                    && commands.starts_with(prefix_commands)
+            })
+            .max_by_key(|(prefix_commands, _)| prefix_commands.len())
+            .map(|(prefix_commands, session)| (prefix_commands.clone(), session.clone()))
+        {
+            let suffix_commands = commands[prefix_commands.len()..].to_vec();
+            self.lookup_hits = self.lookup_hits.saturating_add(1);
+            self.replay_ancestor_hits = self.replay_ancestor_hits.saturating_add(1);
+            self.replay_suffix_commands_sum = self
+                .replay_suffix_commands_sum
+                .saturating_add(suffix_commands.len());
+            self.replay_suffix_commands_max =
+                self.replay_suffix_commands_max.max(suffix_commands.len());
+            return Some(BranchStateReplayStartV1 {
+                session,
+                suffix_commands,
+                #[cfg(test)]
+                source: BranchStateReplayStartSourceV1::Ancestor,
+            });
+        }
         None
     }
 

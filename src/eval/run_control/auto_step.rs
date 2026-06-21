@@ -8,7 +8,9 @@ use crate::state::events::EventId;
 use super::commands::{
     RunControlAutoStepOptions, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
 };
-use super::session::{RunControlCommandOutcome, RunControlSession};
+use super::session::{
+    RunControlCommandOutcome, RunControlDecisionParentSnapshotV1, RunControlSession,
+};
 use super::trace_annotation::RunControlTraceAnnotationV1;
 use super::transition_report::{
     action_result_from_transition, render_action_result, RunApplyStatus, RunVisibleSnapshot,
@@ -53,6 +55,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
     let before = RunVisibleSnapshot::capture(session);
     let mut applied = Vec::new();
     let mut trace_annotations = Vec::new();
+    let mut decision_parent_snapshots = Vec::new();
     let mut seen_boundaries = BTreeSet::new();
     let max_operations = options.max_operations.unwrap_or(DEFAULT_MAX_OPERATIONS);
 
@@ -65,6 +68,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 &before,
                 applied,
                 trace_annotations,
+                decision_parent_snapshots,
                 "repeated auto boundary without progress",
                 Some(format!(
                     "boundary={boundary_key}\nstall_key={stall_key}\nThis usually means the selected automatic action did not mutate the visible boundary state."
@@ -94,6 +98,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                     &before,
                     applied,
                     trace_annotations,
+                    decision_parent_snapshots,
                     "high-stakes combat auto-search requires an hp-loss gate",
                     Some(
                         "Use `n max_hp_loss=N` or `nr max_hp_loss=N` for this combat, or `sd max_hp_loss=N` to set a session default. Use `n max_hp_loss=off` only when you deliberately want to accept any winning search line."
@@ -110,10 +115,12 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 if let Some(result) = outcome.action_result.as_ref() {
                     applied.push(format!("combat search(no potion): {}", result.chosen_label));
                     let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+                    decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
                     trace_annotations.extend(outcome.trace_annotations);
                     applied.extend(auto_capture_summaries);
                     continue;
                 }
+                decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
                 trace_annotations.extend(outcome.trace_annotations);
                 no_potion_rejection = Some(trim_search_rejection(&outcome.message));
             }
@@ -130,11 +137,13 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 };
                 applied.push(label);
                 let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+                decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
                 trace_annotations.extend(outcome.trace_annotations);
                 applied.extend(auto_capture_summaries);
                 continue;
             }
             let fallback_rejection = trim_search_rejection(&outcome.message);
+            decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
             trace_annotations.extend(outcome.trace_annotations);
             if let Some(rescue_options) = auto_potion_rescue_options(session, &options.search) {
                 let rescue = super::combat_search::apply_search_combat(session, rescue_options)?;
@@ -144,16 +153,19 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                         result.chosen_label
                     ));
                     let auto_capture_summaries = auto_capture_summaries(&rescue.trace_annotations);
+                    decision_parent_snapshots.extend(rescue.decision_parent_snapshots);
                     trace_annotations.extend(rescue.trace_annotations);
                     applied.extend(auto_capture_summaries);
                     continue;
                 }
+                decision_parent_snapshots.extend(rescue.decision_parent_snapshots);
                 trace_annotations.extend(rescue.trace_annotations);
                 return finish_auto_step(
                     session,
                     &before,
                     applied,
                     trace_annotations,
+                    decision_parent_snapshots,
                     "combat search did not find an executable complete win",
                     Some(combine_three_search_rejections(
                         no_potion_rejection,
@@ -167,6 +179,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 &before,
                 applied,
                 trace_annotations,
+                decision_parent_snapshots,
                 "combat search did not find an executable complete win",
                 Some(combine_search_rejections(
                     no_potion_rejection,
@@ -178,6 +191,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
         if let Some((outcome, summary)) = apply_map_overlay_back_without_route_candidates(session)?
         {
             let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+            decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
             trace_annotations.extend(outcome.trace_annotations);
             applied.push(summary);
             applied.extend(auto_capture_summaries);
@@ -194,17 +208,22 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                     if applied_route.outcome.action_result.is_some() {
                         let auto_capture_summaries =
                             auto_capture_summaries(&applied_route.outcome.trace_annotations);
+                        decision_parent_snapshots
+                            .extend(applied_route.outcome.decision_parent_snapshots);
                         trace_annotations.extend(applied_route.outcome.trace_annotations);
                         applied.push(applied_route.auto_step_summary);
                         applied.extend(auto_capture_summaries);
                         continue;
                     }
+                    decision_parent_snapshots
+                        .extend(applied_route.outcome.decision_parent_snapshots);
                     trace_annotations.extend(applied_route.outcome.trace_annotations);
                     return finish_auto_step(
                         session,
                         &before,
                         applied,
                         trace_annotations,
+                        decision_parent_snapshots,
                         "route planner did not modify state",
                         Some(applied_route.outcome.message),
                     );
@@ -223,6 +242,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                         &before,
                         applied,
                         trace_annotations,
+                        decision_parent_snapshots,
                         "route planner declined automatic map selection",
                         detail,
                     );
@@ -232,6 +252,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
 
         if let Some((outcome, summary)) = apply_pending_shop_reward_overlay(session)? {
             let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+            decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
             trace_annotations.extend(outcome.trace_annotations);
             applied.push(summary);
             applied.extend(auto_capture_summaries);
@@ -242,6 +263,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
             if let Some(application) = apply_noncombat_policy(session, noncombat_mode)? {
                 let auto_capture_summaries =
                     auto_capture_summaries(&application.outcome.trace_annotations);
+                decision_parent_snapshots.extend(application.outcome.decision_parent_snapshots);
                 trace_annotations.extend(application.outcome.trace_annotations);
                 applied.push(application.summary);
                 applied.extend(auto_capture_summaries);
@@ -251,6 +273,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                         &before,
                         applied,
                         trace_annotations,
+                        decision_parent_snapshots,
                         reason,
                         None,
                     );
@@ -269,6 +292,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 &before,
                 applied,
                 trace_annotations,
+                decision_parent_snapshots,
                 human_stop_reason(session),
                 None,
             );
@@ -282,6 +306,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                     &before,
                     applied,
                     trace_annotations,
+                    decision_parent_snapshots,
                     "auto-selected candidate is not executable",
                     None,
                 );
@@ -293,6 +318,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 .map(|result| result.chosen_label.clone())
                 .unwrap_or_else(|| auto_candidate.candidate.label.clone());
             let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+            decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
             trace_annotations.extend(outcome.trace_annotations);
             applied.push(format!(
                 "{}: {label} ({})",
@@ -312,6 +338,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
             &before,
             applied,
             trace_annotations,
+            decision_parent_snapshots,
             human_stop_reason(session),
             detail,
         );
@@ -322,6 +349,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
         &before,
         applied,
         trace_annotations,
+        decision_parent_snapshots,
         format!("operation budget exhausted at {max_operations} automatic operations"),
         None,
     )
@@ -773,6 +801,7 @@ fn finish_auto_step(
     before: &RunVisibleSnapshot,
     applied: Vec<String>,
     mut trace_annotations: Vec<RunControlTraceAnnotationV1>,
+    decision_parent_snapshots: Vec<RunControlDecisionParentSnapshotV1>,
     reason: impl Into<String>,
     detail: Option<String>,
 ) -> Result<RunControlCommandOutcome, String> {
@@ -804,7 +833,8 @@ fn finish_auto_step(
     if applied.is_empty() {
         lines.push(super::render::render_run_control_state(session));
         return Ok(RunControlCommandOutcome::message(lines.join("\n"))
-            .with_trace_annotations(trace_annotations));
+            .with_trace_annotations(trace_annotations)
+            .with_decision_parent_snapshots(decision_parent_snapshots));
     }
 
     let after = RunVisibleSnapshot::capture(session);
@@ -823,7 +853,8 @@ fn finish_auto_step(
     lines.push(super::render::render_run_control_state(session));
     Ok(
         RunControlCommandOutcome::action(lines.join("\n"), action_result)
-            .with_trace_annotations(trace_annotations),
+            .with_trace_annotations(trace_annotations)
+            .with_decision_parent_snapshots(decision_parent_snapshots),
     )
 }
 

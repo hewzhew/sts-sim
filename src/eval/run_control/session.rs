@@ -130,12 +130,20 @@ pub struct RunControlSessionCheckpointV1 {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct RunControlDecisionParentSnapshotV1 {
+    pub source: String,
+    pub command: String,
+    pub snapshot: RunControlSessionCheckpointV1,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct RunControlCommandOutcome {
     pub should_quit: bool,
     pub message: String,
     pub action_result: Option<ActionResult>,
     pub search_evidence_path: Option<PathBuf>,
     pub trace_annotations: Vec<RunControlTraceAnnotationV1>,
+    pub decision_parent_snapshots: Vec<RunControlDecisionParentSnapshotV1>,
 }
 
 impl RunControlCommandOutcome {
@@ -146,6 +154,7 @@ impl RunControlCommandOutcome {
             action_result: None,
             search_evidence_path: None,
             trace_annotations: Vec::new(),
+            decision_parent_snapshots: Vec::new(),
         }
     }
 
@@ -156,6 +165,7 @@ impl RunControlCommandOutcome {
             action_result: None,
             search_evidence_path: None,
             trace_annotations: Vec::new(),
+            decision_parent_snapshots: Vec::new(),
         }
     }
 
@@ -169,6 +179,7 @@ impl RunControlCommandOutcome {
             action_result: Some(action_result),
             search_evidence_path: None,
             trace_annotations: Vec::new(),
+            decision_parent_snapshots: Vec::new(),
         }
     }
 
@@ -177,6 +188,14 @@ impl RunControlCommandOutcome {
         trace_annotations: Vec<RunControlTraceAnnotationV1>,
     ) -> Self {
         self.trace_annotations.extend(trace_annotations);
+        self
+    }
+
+    pub(in crate::eval::run_control) fn with_decision_parent_snapshots(
+        mut self,
+        snapshots: Vec<RunControlDecisionParentSnapshotV1>,
+    ) -> Self {
+        self.decision_parent_snapshots.extend(snapshots);
         self
     }
 }

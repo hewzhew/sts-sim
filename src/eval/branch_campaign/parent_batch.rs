@@ -992,7 +992,16 @@ fn run_campaign_parent_base_passes_parallel_v1(
                 .unwrap_or(None);
             handles.push(scope.spawn(move || BranchCampaignParentBaseResultV1 {
                 parent_index,
-                result: run_campaign_parent_round_once_v1(config, parent, parent_replay_start),
+                result:
+                    run_campaign_parent_round_once_v1(config, parent, parent_replay_start).map_err(
+                        |err| {
+                            format!(
+                                "parent={} commands={} failed: {err}",
+                                parent.branch_id,
+                                render_parent_commands_for_error_v1(&parent.commands)
+                            )
+                        },
+                    ),
             }));
         }
         handles
@@ -1006,6 +1015,14 @@ fn run_campaign_parent_base_passes_parallel_v1(
         .collect::<Result<Vec<_>, _>>()?;
     results.sort_by_key(|result| result.parent_index);
     Ok(results)
+}
+
+fn render_parent_commands_for_error_v1(commands: &[String]) -> String {
+    if commands.is_empty() {
+        "root".to_string()
+    } else {
+        commands.join(" -> ")
+    }
 }
 
 fn campaign_parent_retry_request_or_result_v1(
@@ -1179,7 +1196,10 @@ fn run_campaign_parent_round_once_v1(
             return run_branch_experiment_from_session_after_prefix_with_snapshots_v1(
                 replay_start.session,
                 &experiment_config,
-                &campaign_replay_commands_for_path_v1(&replay_start.suffix_commands),
+                &campaign_replay_commands_for_replay_start_v1(
+                    &parent.commands,
+                    &replay_start.suffix_commands,
+                ),
             );
         }
         return Ok(run_branch_experiment_from_session_with_snapshots_v1(
@@ -1192,6 +1212,19 @@ fn run_campaign_parent_round_once_v1(
         .prefix_commands
         .extend(campaign_replay_commands_for_path_v1(&parent.commands));
     run_branch_experiment_with_snapshots_v1(&experiment_config)
+}
+
+fn campaign_replay_commands_for_replay_start_v1(
+    parent_commands: &[String],
+    suffix_commands: &[String],
+) -> Vec<String> {
+    if parent_commands
+        .iter()
+        .any(|command| command.starts_with("__route_decision:"))
+    {
+        return suffix_commands.to_vec();
+    }
+    campaign_replay_commands_for_path_v1(suffix_commands)
 }
 
 pub(super) fn campaign_branch_experiment_config_v1(

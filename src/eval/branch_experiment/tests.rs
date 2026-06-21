@@ -78,7 +78,8 @@ fn branch_experiment_records_route_candidate_pool() {
     let pool = &report.route_candidate_pools[0];
     assert_eq!(pool.candidate_count, pool.candidates.len());
     assert_eq!(pool.branch_id, "root");
-    assert!(pool.branch_commands.is_empty());
+    assert_eq!(pool.branch_commands.len(), 1);
+    assert!(pool.branch_commands[0].starts_with("__route_decision:"));
     assert!(pool.candidate_count >= 1);
     assert!(pool.map_decision_packet.is_some());
     let provenance = pool

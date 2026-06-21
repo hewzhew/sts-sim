@@ -1,7 +1,10 @@
 use crate::ai::route_planner_v1::{RouteCandidateTraceV1, RouteMoveKindV1, RouteSafetyFlagV1};
 use crate::state::core::ClientInput;
 
-use super::super::session::{RunControlCommandOutcome, RunControlSession};
+use super::super::session::{
+    RunControlCommandOutcome, RunControlDecisionParentSnapshotV1, RunControlSession,
+    RunControlSessionCheckpointV1,
+};
 use super::format::{render_route_go_auto_step_summary, render_route_go_selection};
 use super::planner::plan_route_for_session;
 use super::suggestion::render_route_suggestion;
@@ -69,6 +72,14 @@ fn apply_route_go_with_safety_mode(
     let selection = render_route_go_selection(&candidate);
     let auto_step_summary = render_route_go_auto_step_summary(&candidate);
     let trace_annotation = route_go_trace_annotation(&trace, selected_index, &candidate)?;
+    let parent_snapshot = RunControlDecisionParentSnapshotV1 {
+        source: "route_planner".to_string(),
+        command: candidate
+            .suggested_command
+            .clone()
+            .unwrap_or_else(|| route_candidate_input_label(&candidate)),
+        snapshot: RunControlSessionCheckpointV1::from_session(session),
+    };
     let outcome = session.apply_input(input)?;
     Ok(RouteGoApplied {
         auto_step_summary,
@@ -76,7 +87,8 @@ fn apply_route_go_with_safety_mode(
             message: format!("{selection}\n{}", outcome.message),
             ..outcome
         }
-        .with_trace_annotations(vec![trace_annotation]),
+        .with_trace_annotations(vec![trace_annotation])
+        .with_decision_parent_snapshots(vec![parent_snapshot]),
     })
 }
 
@@ -119,6 +131,15 @@ fn route_candidate_input(candidate: &RouteCandidateTraceV1) -> Result<ClientInpu
     match candidate.target.move_kind {
         RouteMoveKindV1::NormalEdge => Ok(ClientInput::SelectMapNode(x)),
         RouteMoveKindV1::WingBootsJump => Ok(ClientInput::FlyToNode(x, y)),
+    }
+}
+
+fn route_candidate_input_label(candidate: &RouteCandidateTraceV1) -> String {
+    match candidate.target.move_kind {
+        RouteMoveKindV1::NormalEdge => format!("go {}", candidate.target.x),
+        RouteMoveKindV1::WingBootsJump => {
+            format!("fly {} {}", candidate.target.x, candidate.target.y)
+        }
     }
 }
 

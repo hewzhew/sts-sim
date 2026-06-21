@@ -457,7 +457,7 @@ fn filter_coverage_gap_execution_plan_for_checkpoint_v1(
         .into_iter()
         .filter(|target| {
             if coverage_gap_target_requires_exact_route_snapshot_v1(target) {
-                return false;
+                return checkpoint_has_exact_session_v1(checkpoint, &target.parent_commands);
             }
             checkpoint_can_replay_parent_commands_v1(checkpoint, &target.parent_commands)
         })
@@ -476,9 +476,19 @@ fn coverage_gap_target_requires_exact_route_snapshot_v1(
     // Route decisions can happen inside auto-run before the campaign has a stable
     // decision-parent checkpoint. A replayable ancestor at the same command path is
     // not enough: it may point at a later reward/event screen where `go N` is invalid.
-    // Keep route gaps visible in the plan, but execute them only after route-level
-    // parent snapshots are captured explicitly.
+    // Execute route gaps only when the checkpoint contains the exact route parent
+    // snapshot captured at the map surface.
     target.target_origin.source == "map_decision_packet"
+}
+
+fn checkpoint_has_exact_session_v1(
+    checkpoint: &BranchCampaignCheckpointV1,
+    parent_commands: &[String],
+) -> bool {
+    checkpoint
+        .sessions
+        .iter()
+        .any(|session| session.commands == parent_commands)
 }
 
 fn checkpoint_can_replay_parent_commands_v1(

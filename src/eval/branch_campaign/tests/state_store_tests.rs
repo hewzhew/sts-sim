@@ -127,6 +127,69 @@ fn branch_state_store_retain_keeps_decision_parent_anchor_session() {
 }
 
 #[test]
+fn branch_state_store_replays_from_longest_session_prefix_without_child_node() {
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+    let parent_commands = vec!["__route_decision:0:go_1".to_string()];
+    let target_commands = vec!["__route_decision:0:go_1".to_string(), "go 3".to_string()];
+
+    store.insert_session(
+        parent_commands,
+        RunControlSession::new(RunControlConfig::default()),
+    );
+
+    let replay = store
+        .replay_start_for_commands(&target_commands)
+        .expect("synthetic route anchor should replay from exact parent session");
+    assert_eq!(
+        replay.source,
+        super::state_graph::BranchStateReplayStartSourceV1::Ancestor
+    );
+    assert_eq!(replay.suffix_commands, vec!["go 3".to_string()]);
+}
+
+#[test]
+fn branch_state_store_prefers_longest_session_prefix_over_shorter_node_ancestor() {
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+    let root_commands = Vec::<String>::new();
+    let parent_commands = vec!["__route_decision:0:go_1".to_string()];
+    let target_commands = vec!["__route_decision:0:go_1".to_string(), "go 3".to_string()];
+
+    store.insert_session(
+        root_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.insert_session(
+        parent_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store
+        .restore_checkpoint_nodes(&[
+            super::model::BranchCampaignCheckpointNodeV1 {
+                node_id: 0,
+                parent_id: None,
+                commands: root_commands,
+                added_commands: Vec::new(),
+            },
+            super::model::BranchCampaignCheckpointNodeV1 {
+                node_id: 1,
+                parent_id: Some(0),
+                commands: target_commands.clone(),
+                added_commands: target_commands.clone(),
+            },
+        ])
+        .expect("checkpoint nodes should restore");
+
+    let replay = store
+        .replay_start_for_commands(&target_commands)
+        .expect("route target should prefer synthetic parent session");
+    assert_eq!(
+        replay.source,
+        super::state_graph::BranchStateReplayStartSourceV1::Ancestor
+    );
+    assert_eq!(replay.suffix_commands, vec!["go 3".to_string()]);
+}
+
+#[test]
 fn branch_state_store_session_policy_prunes_extra_frozen_exact_sessions_only() {
     let mut store = super::state_graph::BranchStateStoreV1::new();
     let mut active = test_campaign_branch("active", 4, 80);

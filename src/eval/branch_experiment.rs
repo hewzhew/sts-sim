@@ -278,6 +278,7 @@ fn prepare_branch_experiment_start(
             config,
             &mut ignored_route_decisions,
             &mut ignored_route_candidate_pools,
+            &mut BTreeMap::new(),
             &mut ignored_combat_performance,
         );
     }
@@ -447,6 +448,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
                 config,
                 &mut route_decisions,
                 &mut route_candidate_pools,
+                &mut decision_parent_sessions,
                 &mut combat_performance_samples,
             );
             if branch.status != BranchExperimentBranchStatusV1::Active {
@@ -570,6 +572,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
             config,
             &mut route_decisions,
             &mut route_candidate_pools,
+            &mut decision_parent_sessions,
             &mut combat_performance_samples,
         );
     }
@@ -706,6 +709,7 @@ fn advance_to_experiment_boundary(
     config: &BranchExperimentConfigV1,
     route_decisions: &mut Vec<BranchExperimentRouteDecisionV1>,
     route_candidate_pools: &mut Vec<BranchExperimentRouteCandidatePoolV1>,
+    decision_parent_sessions: &mut BTreeMap<Vec<String>, RunControlSession>,
     combat_performance_samples: &mut Vec<CombatSearchPerformanceSnapshotV1>,
 ) {
     if is_terminal(&branch.session) || experiment_branch_options_available(&branch.session) {
@@ -724,11 +728,34 @@ fn advance_to_experiment_boundary(
 
     match outcome {
         Ok(outcome) => {
-            route_decisions.extend(outcome.trace_annotations.iter().filter_map(|annotation| {
-                branch_route_decision_from_annotation(branch, annotation)
-            }));
-            route_candidate_pools.extend(outcome.trace_annotations.iter().filter_map(
-                |annotation| branch_route_candidate_pool_from_annotation(branch, annotation),
+            let route_parent_commands =
+                route_decision_parent_commands_from_snapshots_v1(branch, &outcome);
+            for (commands, session) in route_parent_commands.values() {
+                decision_parent_sessions
+                    .entry(commands.clone())
+                    .or_insert_with(|| session.clone());
+            }
+            route_decisions.extend(outcome.trace_annotations.iter().enumerate().filter_map(
+                |(annotation_index, annotation)| {
+                    branch_route_decision_from_annotation(
+                        branch,
+                        annotation,
+                        route_parent_commands
+                            .get(&annotation_index)
+                            .map(|(commands, _)| commands.as_slice()),
+                    )
+                },
+            ));
+            route_candidate_pools.extend(outcome.trace_annotations.iter().enumerate().filter_map(
+                |(annotation_index, annotation)| {
+                    branch_route_candidate_pool_from_annotation(
+                        branch,
+                        annotation,
+                        route_parent_commands
+                            .get(&annotation_index)
+                            .map(|(commands, _)| commands.as_slice()),
+                    )
+                },
             ));
             combat_performance_samples.extend(
                 outcome
@@ -778,9 +805,58 @@ fn branch_experiment_search_options(
     options
 }
 
+fn route_decision_parent_commands_from_snapshots_v1(
+    branch: &BranchWork,
+    outcome: &RunControlCommandOutcome,
+) -> BTreeMap<usize, (Vec<String>, RunControlSession)> {
+    let mut snapshots = outcome
+        .decision_parent_snapshots
+        .iter()
+        .filter(|snapshot| snapshot.source == "route_planner");
+    let mut route_ordinal = 0usize;
+    let mut result = BTreeMap::new();
+    for (annotation_index, annotation) in outcome.trace_annotations.iter().enumerate() {
+        if !matches!(
+            annotation,
+            RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
+        ) {
+            continue;
+        }
+        let Some(snapshot) = snapshots.next() else {
+            continue;
+        };
+        let Ok(session) = snapshot.snapshot.clone().into_session() else {
+            continue;
+        };
+        let mut commands = branch_choice_commands_v1(&branch.choices);
+        commands.push(route_decision_anchor_command_v1(
+            route_ordinal,
+            &snapshot.command,
+        ));
+        result.insert(annotation_index, (commands, session));
+        route_ordinal = route_ordinal.saturating_add(1);
+    }
+    result
+}
+
+fn route_decision_anchor_command_v1(index: usize, command: &str) -> String {
+    let command_key = command
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    format!("__route_decision:{index}:{command_key}")
+}
+
 fn branch_route_decision_from_annotation(
     branch: &BranchWork,
     annotation: &RunControlTraceAnnotationV1,
+    parent_commands: Option<&[String]>,
 ) -> Option<BranchExperimentRouteDecisionV1> {
     let RunControlTraceAnnotationV1::RoutePlannerSelection {
         selected_index,
@@ -801,7 +877,9 @@ fn branch_route_decision_from_annotation(
     Some(BranchExperimentRouteDecisionV1 {
         branch_id: branch.id.clone(),
         branch_choices: branch_choice_labels_v1(&branch.choices),
-        branch_commands: branch_choice_commands_v1(&branch.choices),
+        branch_commands: parent_commands
+            .map(|commands| commands.to_vec())
+            .unwrap_or_else(|| branch_choice_commands_v1(&branch.choices)),
         selected_index: *selected_index,
         selected_candidate_id: selected_index.and_then(|index| {
             map_decision_packet
@@ -835,6 +913,7 @@ fn branch_route_decision_from_annotation(
 fn branch_route_candidate_pool_from_annotation(
     branch: &BranchWork,
     annotation: &RunControlTraceAnnotationV1,
+    parent_commands: Option<&[String]>,
 ) -> Option<BranchExperimentRouteCandidatePoolV1> {
     let RunControlTraceAnnotationV1::RoutePlannerSelection {
         selected_index,
@@ -851,7 +930,9 @@ fn branch_route_candidate_pool_from_annotation(
             return None;
         }
         return Some(branch_route_candidate_pool_from_map_packet_v1(
-            branch, packet,
+            branch,
+            packet,
+            parent_commands,
         ));
     }
     if candidate_pool.is_empty() {
@@ -861,7 +942,9 @@ fn branch_route_candidate_pool_from_annotation(
     Some(BranchExperimentRouteCandidatePoolV1 {
         branch_id: branch.id.clone(),
         branch_choices: branch_choice_labels_v1(&branch.choices),
-        branch_commands: branch_choice_commands_v1(&branch.choices),
+        branch_commands: parent_commands
+            .map(|commands| commands.to_vec())
+            .unwrap_or_else(|| branch_choice_commands_v1(&branch.choices)),
         decision_id: format!("{}:route_candidate_pool", branch.id),
         boundary_title: "Map".to_string(),
         frontier_key: branch.id.clone(),
@@ -917,11 +1000,14 @@ fn branch_route_candidate_pool_from_annotation(
 fn branch_route_candidate_pool_from_map_packet_v1(
     branch: &BranchWork,
     packet: &MapDecisionPacketV1,
+    parent_commands: Option<&[String]>,
 ) -> BranchExperimentRouteCandidatePoolV1 {
     BranchExperimentRouteCandidatePoolV1 {
         branch_id: branch.id.clone(),
         branch_choices: branch_choice_labels_v1(&branch.choices),
-        branch_commands: branch_choice_commands_v1(&branch.choices),
+        branch_commands: parent_commands
+            .map(|commands| commands.to_vec())
+            .unwrap_or_else(|| branch_choice_commands_v1(&branch.choices)),
         decision_id: format!("{}:route_candidate_pool", branch.id),
         boundary_title: "Map".to_string(),
         frontier_key: branch.id.clone(),
@@ -1088,6 +1174,7 @@ fn settle_branch_to_frontier(
     config: &BranchExperimentConfigV1,
     route_decisions: &mut Vec<BranchExperimentRouteDecisionV1>,
     route_candidate_pools: &mut Vec<BranchExperimentRouteCandidatePoolV1>,
+    decision_parent_sessions: &mut BTreeMap<Vec<String>, RunControlSession>,
     combat_performance_samples: &mut Vec<CombatSearchPerformanceSnapshotV1>,
 ) {
     if branch.status != BranchExperimentBranchStatusV1::Active {
@@ -1098,6 +1185,7 @@ fn settle_branch_to_frontier(
         config,
         route_decisions,
         route_candidate_pools,
+        decision_parent_sessions,
         combat_performance_samples,
     );
     if branch.status != BranchExperimentBranchStatusV1::Active || is_terminal(&branch.session) {
@@ -1214,12 +1302,14 @@ fn expand_branch_choice(
             if !config.defer_branch_settle {
                 let mut ignored_route_decisions = Vec::new();
                 let mut ignored_route_candidate_pools = Vec::new();
+                let mut ignored_decision_parent_sessions = BTreeMap::new();
                 let mut ignored_combat_performance = Vec::new();
                 settle_branch_to_frontier(
                     &mut child,
                     config,
                     &mut ignored_route_decisions,
                     &mut ignored_route_candidate_pools,
+                    &mut ignored_decision_parent_sessions,
                     &mut ignored_combat_performance,
                 );
             }
