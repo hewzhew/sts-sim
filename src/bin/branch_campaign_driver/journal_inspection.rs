@@ -525,7 +525,7 @@ fn render_route_journal_candidate_v1(
     let path = &route.projection.path_summary;
     let projection = &route.projection.metadata;
     format!(
-        "x{}y{} {} {{{}}} [route rank={} move={:?} safety={:?} score={:.2} coverage={:?} paths={}/{} elites={}-{} fires={}-{} shops={}-{}; {}; {}]",
+        "x{}y{} {} {{{}}} [route rank={} move={:?} safety={:?} score={:.2} vf={} coverage={:?} paths={}/{} elites={}-{} fires={}-{} shops={}-{}; {}; {}]",
         route.target.x,
         route.target.y,
         room_type,
@@ -534,6 +534,7 @@ fn render_route_journal_candidate_v1(
         route.target.move_kind,
         route.evaluation.safety,
         route.evaluation.total_score,
+        render_route_value_factors_v1(route),
         projection.coverage,
         projection.observed_path_count,
         projection.path_budget,
@@ -545,6 +546,21 @@ fn render_route_journal_candidate_v1(
         path.max_shops,
         render_candidate_admission_v1(candidate),
         render_candidate_disposition_v1(candidate.disposition)
+    )
+}
+
+fn render_route_value_factors_v1(route: &RouteMoveCandidateV1) -> String {
+    let factors = &route.evaluation.value_factors;
+    format!(
+        "card:{:.1}/relic:{:.1}/shop:{:.1}/heal:{:.1}/hp90:{:.1}/risk:{:.2}/flex:{:.1}/elite:{:.1}",
+        factors.card_reward_access,
+        factors.relic_access,
+        factors.shop_access,
+        factors.heal_access,
+        factors.hp_loss_p90,
+        factors.death_risk,
+        factors.flexibility,
+        factors.first_elite_prep_signal
     )
 }
 
