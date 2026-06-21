@@ -23,10 +23,11 @@ use sts_simulator::eval::learning_dataset_v1::{
     decision_outcome_samples_from_campaign_report_v1, learning_records_from_branch_outcomes_v1,
     parse_learning_decision_outcome_samples_jsonl_v1, plan_coverage_gap_continuations_v1,
     plan_targeted_continuations_v1, probe_learning_readiness_v1,
-    render_continuation_effect_report_v1, render_coverage_gap_continuation_plan_v1,
-    render_coverage_gap_execution_plan_v1, render_journal_decision_candidate_coverage_v1,
-    render_learning_decision_outcome_analysis_v1, render_learning_readiness_probe_v1,
-    render_targeted_continuation_plan_v1, serialize_learning_branch_samples_jsonl_v1,
+    refresh_coverage_gap_execution_bucket_summaries_v1, render_continuation_effect_report_v1,
+    render_coverage_gap_continuation_plan_v1, render_coverage_gap_execution_plan_v1,
+    render_journal_decision_candidate_coverage_v1, render_learning_decision_outcome_analysis_v1,
+    render_learning_readiness_probe_v1, render_targeted_continuation_plan_v1,
+    serialize_learning_branch_samples_jsonl_v1,
     serialize_learning_decision_outcome_samples_jsonl_v1, targeted_continuation_execution_plan_v1,
     CoverageGapContinuationExecutionPlanV1, CoverageGapContinuationPlanV1,
     CoverageGapContinuationTargetV1, LearningBranchSampleV1, LearningDatasetExportContextV1,
@@ -580,6 +581,7 @@ fn filter_coverage_gap_execution_plan_for_checkpoint_v1(
         .skipped_target_count
         .saturating_add(original_selected.saturating_sub(execution.targets.len()));
     execution.requested_target_count = requested;
+    refresh_coverage_gap_execution_bucket_summaries_v1(&mut execution);
     execution
 }
 
@@ -608,6 +610,7 @@ fn trim_coverage_gap_execution_plan_v1(
     }
     execution.requested_target_count = requested_targets;
     execution.selected_branch_count = execution.targets.len();
+    refresh_coverage_gap_execution_bucket_summaries_v1(&mut execution);
     execution
 }
 

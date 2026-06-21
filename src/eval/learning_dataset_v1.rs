@@ -40,7 +40,7 @@ pub const COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_NAME: &str = "CoverageGapContinu
 pub const COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_VERSION: u32 = 2;
 pub const COVERAGE_GAP_CONTINUATION_EXECUTION_PLAN_SCHEMA_NAME: &str =
     "CoverageGapContinuationExecutionPlanV1";
-pub const COVERAGE_GAP_CONTINUATION_EXECUTION_PLAN_SCHEMA_VERSION: u32 = 1;
+pub const COVERAGE_GAP_CONTINUATION_EXECUTION_PLAN_SCHEMA_VERSION: u32 = 2;
 pub const CONTINUATION_EFFECT_REPORT_SCHEMA_NAME: &str = "ContinuationEffectReportV1";
 pub const CONTINUATION_EFFECT_REPORT_SCHEMA_VERSION: u32 = 1;
 const CONTINUATION_EFFECT_EXAMPLE_LIMIT: usize = 6;
@@ -394,6 +394,8 @@ pub struct CoverageGapContinuationExecutionPlanV1 {
     pub requested_target_count: usize,
     pub selected_branch_count: usize,
     pub skipped_target_count: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bucket_summaries: Vec<CoverageGapContinuationBucketSummaryV1>,
     pub targets: Vec<CoverageGapContinuationTargetV1>,
 }
 
@@ -1259,8 +1261,47 @@ pub fn coverage_gap_continuation_execution_plan_v1(
         requested_target_count: max_targets.min(plan.targets.len()),
         selected_branch_count: targets.len(),
         skipped_target_count: plan.targets.len().saturating_sub(targets.len()),
+        bucket_summaries: coverage_gap_execution_bucket_summaries_v1(
+            &plan.bucket_summaries,
+            &targets,
+        ),
         targets,
     }
+}
+
+pub fn refresh_coverage_gap_execution_bucket_summaries_v1(
+    execution: &mut CoverageGapContinuationExecutionPlanV1,
+) {
+    execution.bucket_summaries =
+        coverage_gap_execution_bucket_summaries_v1(&execution.bucket_summaries, &execution.targets);
+}
+
+fn coverage_gap_execution_bucket_summaries_v1(
+    plan_bucket_summaries: &[CoverageGapContinuationBucketSummaryV1],
+    targets: &[CoverageGapContinuationTargetV1],
+) -> Vec<CoverageGapContinuationBucketSummaryV1> {
+    let mut buckets = plan_bucket_summaries
+        .iter()
+        .map(|summary| {
+            let mut summary = summary.clone();
+            summary.selected_target_count = 0;
+            summary.deferred_target_count = summary.eligible_target_count;
+            (summary.bucket.clone(), summary)
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for target in targets {
+        let bucket = coverage_gap_target_bucket_v1(target).to_string();
+        let summary = buckets.entry(bucket.clone()).or_insert_with(|| {
+            CoverageGapContinuationBucketSummaryV1 {
+                bucket,
+                ..Default::default()
+            }
+        });
+        summary.selected_target_count = summary.selected_target_count.saturating_add(1);
+    }
+
+    coverage_gap_bucket_summaries_v1(buckets)
 }
 
 pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPlanV1) -> String {
@@ -1324,6 +1365,23 @@ pub fn render_coverage_gap_execution_plan_v1(
         execution.selected_branch_count,
         execution.skipped_target_count
     ));
+    if !execution.bucket_summaries.is_empty() {
+        lines.push("Buckets:".to_string());
+        for bucket in &execution.bucket_summaries {
+            lines.push(format!(
+                "  {} selected={}/{} unobserved={} scheduled={} unscheduled={} kept={} pruned={} deferred={}",
+                bucket.bucket,
+                bucket.selected_target_count,
+                bucket.eligible_target_count,
+                bucket.unobserved_candidate_count,
+                bucket.scheduled_unobserved_candidate_count,
+                bucket.unscheduled_unobserved_candidate_count,
+                bucket.kept_unobserved_candidate_count,
+                bucket.pruned_unobserved_candidate_count,
+                bucket.deferred_target_count
+            ));
+        }
+    }
     if execution.targets.is_empty() {
         lines.push("Executed targets: none".to_string());
     } else {
@@ -3710,6 +3768,26 @@ mod tests {
         assert!(rendered.contains("Buckets:"));
         assert!(rendered.contains("route selected=1/2 unobserved=2"));
         assert!(rendered.contains("reward selected=1/2 unobserved=9"));
+
+        let execution = coverage_gap_continuation_execution_plan_v1(&plan, 1);
+        let rendered_execution = render_coverage_gap_execution_plan_v1(&execution);
+        let execution_route_bucket = execution
+            .bucket_summaries
+            .iter()
+            .find(|bucket| bucket.bucket == "route")
+            .expect("execution should keep route bucket summary");
+        assert_eq!(execution_route_bucket.eligible_target_count, 2);
+        assert_eq!(execution_route_bucket.selected_target_count, 1);
+        let execution_reward_bucket = execution
+            .bucket_summaries
+            .iter()
+            .find(|bucket| bucket.bucket == "reward")
+            .expect("execution should keep reward bucket summary");
+        assert_eq!(execution_reward_bucket.eligible_target_count, 2);
+        assert_eq!(execution_reward_bucket.selected_target_count, 0);
+        assert!(rendered_execution.contains("Buckets:"));
+        assert!(rendered_execution.contains("route selected=1/2 unobserved=2"));
+        assert!(rendered_execution.contains("reward selected=0/2 unobserved=9"));
     }
 
     #[test]
