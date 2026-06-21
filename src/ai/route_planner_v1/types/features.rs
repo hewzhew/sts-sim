@@ -20,6 +20,8 @@ pub enum RouteMoveKindV1 {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RoutePathSummaryV1 {
     pub path_count: usize,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub path_budget_exhausted: bool,
     pub min_early_pressure: usize,
     pub max_early_pressure: usize,
     pub min_elites: usize,
@@ -45,6 +47,10 @@ pub struct RoutePathSummaryV1 {
     #[serde(default)]
     pub paths_with_recovery_before_damage: usize,
     pub first_elite: RouteFirstEliteSegmentV1,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

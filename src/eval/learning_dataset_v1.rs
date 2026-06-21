@@ -306,6 +306,8 @@ pub struct CoverageGapRouteTargetOriginV1 {
 #[serde(deny_unknown_fields)]
 pub struct CoverageGapRoutePathOriginV1 {
     pub path_count: usize,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub path_budget_exhausted: bool,
     pub min_early_pressure: usize,
     pub max_early_pressure: usize,
     pub min_elites: usize,
@@ -333,6 +335,10 @@ impl CoverageGapRoutePathOriginV1 {
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
     }
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -1247,7 +1253,7 @@ fn render_coverage_gap_target_origin_v1(origin: &CoverageGapContinuationTargetOr
     };
     let first_elite = render_coverage_gap_route_first_elite_origin_v1(&route.first_elite);
     format!(
-        "{} route=x{}y{} room={} move={} coverage={} paths={}/{} pool={}/{} complete={} path=elites:{} fires:{} shops:{} unknowns:{} damage_before_recovery:{} first_shop={} first_fire={} first_elite={}",
+        "{} route=x{}y{} room={} move={} coverage={} paths={}/{} budget_exhausted={} pool={}/{} complete={} path=elites:{} fires:{} shops:{} unknowns:{} damage_before_recovery:{} first_shop={} first_fire={} first_elite={}",
         origin.source,
         route.target_x,
         route.target_y,
@@ -1256,6 +1262,7 @@ fn render_coverage_gap_target_origin_v1(origin: &CoverageGapContinuationTargetOr
         route.projection_coverage,
         route.observed_path_count,
         route.path_budget,
+        route.path.path_budget_exhausted,
         route.emitted_candidate_count,
         route.legal_candidate_count,
         route.complete_legal_pool,
@@ -2024,6 +2031,7 @@ fn coverage_gap_target_origin_v1(
                         observed_path_count: candidate.projection.metadata.observed_path_count,
                         path: CoverageGapRoutePathOriginV1 {
                             path_count: path.path_count,
+                            path_budget_exhausted: path.path_budget_exhausted,
                             min_early_pressure: path.min_early_pressure,
                             max_early_pressure: path.max_early_pressure,
                             min_elites: path.min_elites,

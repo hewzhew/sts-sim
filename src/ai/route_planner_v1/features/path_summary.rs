@@ -35,6 +35,7 @@ pub fn summarize_route_from(
     }
 
     let mut paths = Vec::new();
+    let mut path_budget_exhausted = false;
     collect_path_stats(
         run_state,
         x,
@@ -42,14 +43,19 @@ pub fn summarize_route_from(
         PathStats::default(),
         &mut paths,
         config.path_budget,
+        &mut path_budget_exhausted,
     );
     if paths.is_empty() {
-        return empty_summary();
+        return RoutePathSummaryV1 {
+            path_budget_exhausted,
+            ..empty_summary()
+        };
     }
     let min = |f: fn(&PathStats) -> usize| paths.iter().map(f).min().unwrap_or(0);
     let max = |f: fn(&PathStats) -> usize| paths.iter().map(f).max().unwrap_or(0);
     RoutePathSummaryV1 {
         path_count: paths.len(),
+        path_budget_exhausted,
         min_early_pressure: min(|stats| stats.early_pressure),
         max_early_pressure: max(|stats| stats.early_pressure),
         min_elites: min(|stats| stats.elites),
@@ -92,6 +98,7 @@ fn empty_summary_with_path() -> RoutePathSummaryV1 {
 fn empty_summary() -> RoutePathSummaryV1 {
     RoutePathSummaryV1 {
         path_count: 0,
+        path_budget_exhausted: false,
         min_early_pressure: 0,
         max_early_pressure: 0,
         min_elites: 0,
@@ -155,8 +162,10 @@ fn collect_path_stats(
     current: PathStats,
     paths: &mut Vec<PathStats>,
     budget: usize,
+    path_budget_exhausted: &mut bool,
 ) {
     if paths.len() >= budget {
+        *path_budget_exhausted = true;
         return;
     }
     let Some(node) = run_state
@@ -173,7 +182,15 @@ fn collect_path_stats(
         return;
     }
     for edge in &node.edges {
-        collect_path_stats(run_state, edge.dst_x, edge.dst_y, current, paths, budget);
+        collect_path_stats(
+            run_state,
+            edge.dst_x,
+            edge.dst_y,
+            current,
+            paths,
+            budget,
+            path_budget_exhausted,
+        );
     }
 }
 

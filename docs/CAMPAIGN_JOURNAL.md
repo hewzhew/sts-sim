@@ -196,8 +196,9 @@ journal events, not the other way around.
    include candidate-pool provenance (`legal_candidate_count`,
    `complete_legal_pool`, ordering) and per-candidate projection metadata
    (`path_budget`, `observed_path_count`, coverage). `possibly_truncated`
-   coverage is conservative: it means the visible-map DFS reached its configured
-   path budget, not that a route is good or bad.
+   coverage means the visible-map DFS explicitly exhausted its configured path
+   budget, not merely that the observed path count happened to equal the budget.
+   It is a coverage warning, not evidence that a route is good or bad.
    New route trace annotations keep `top_candidates` as a short display
    summary, but the full candidate pool should live only in
    `MapDecisionPacketV1`. The legacy `candidate_pool` summary field is a

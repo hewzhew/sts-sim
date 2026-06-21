@@ -147,6 +147,7 @@ impl MapDecisionPacketV1 {
                             metadata: route_projection_metadata_v1(
                                 candidate.path_summary.path_count,
                                 trace.path_budget,
+                                candidate.path_summary.path_budget_exhausted,
                             ),
                         },
                         needs: candidate.needs.clone(),
@@ -191,22 +192,23 @@ fn route_candidate_pool_provenance_v1(
 fn route_projection_metadata_v1(
     observed_path_count: usize,
     path_budget: usize,
+    path_budget_exhausted: bool,
 ) -> RouteProjectionMetadataV1 {
     RouteProjectionMetadataV1 {
         source: RouteProjectionSourceV1::VisibleMapDfs,
         path_budget,
         observed_path_count,
-        coverage: route_projection_coverage_v1(observed_path_count, path_budget),
+        coverage: route_projection_coverage_v1(observed_path_count, path_budget_exhausted),
     }
 }
 
 fn route_projection_coverage_v1(
     observed_path_count: usize,
-    path_budget: usize,
+    path_budget_exhausted: bool,
 ) -> RouteProjectionCoverageV1 {
     if observed_path_count == 0 {
         RouteProjectionCoverageV1::NoVisibleContinuation
-    } else if path_budget > 0 && observed_path_count >= path_budget {
+    } else if path_budget_exhausted {
         RouteProjectionCoverageV1::PossiblyTruncatedByPathBudget
     } else {
         RouteProjectionCoverageV1::CompleteWithinBudget

@@ -1,5 +1,6 @@
 use crate::ai::route_planner_v1::{
-    plan_route_decision_v1, RoutePlannerConfigV1, RouteSafetyFlagV1,
+    plan_route_decision_v1, MapDecisionPacketV1, RoutePlannerConfigV1, RouteProjectionCoverageV1,
+    RouteSafetyFlagV1,
 };
 use crate::content::cards::CardId;
 use crate::content::relics::{RelicId, RelicState};
@@ -270,6 +271,57 @@ fn route_path_summary_tracks_recovery_pressure_window() {
             .path_summary
             .paths_with_recovery_before_damage,
         1
+    );
+}
+
+#[test]
+fn route_projection_complete_when_exact_path_count_equals_budget() {
+    let run = run_with_start_paths(&[&[RoomType::MonsterRoom, RoomType::RestRoom]]);
+    let config = RoutePlannerConfigV1 {
+        path_budget: 1,
+        ..RoutePlannerConfigV1::default()
+    };
+
+    let trace = plan_route_decision_v1(&run, &EngineState::MapNavigation, config);
+    let packet = MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+    let candidate = selected_candidate(&trace);
+    let packet_candidate = &packet.candidates[0];
+
+    assert_eq!(candidate.path_summary.path_count, 1);
+    assert!(!candidate.path_summary.path_budget_exhausted);
+    assert_eq!(packet_candidate.projection.metadata.observed_path_count, 1);
+    assert_eq!(
+        packet_candidate.projection.metadata.coverage,
+        RouteProjectionCoverageV1::CompleteWithinBudget
+    );
+}
+
+#[test]
+fn route_projection_records_budget_exhaustion_when_visible_dfs_is_cut() {
+    let mut run = RunState::new(521, 0, false, "Ironclad");
+    run.event_state = None;
+    run.map = MapState::new(vec![
+        vec![linked_node(0, 0, RoomType::MonsterRoom, &[(0, 1), (1, 1)])],
+        vec![
+            linked_node(0, 1, RoomType::RestRoom, &[]),
+            linked_node(1, 1, RoomType::ShopRoom, &[]),
+        ],
+    ]);
+    let config = RoutePlannerConfigV1 {
+        path_budget: 1,
+        ..RoutePlannerConfigV1::default()
+    };
+
+    let trace = plan_route_decision_v1(&run, &EngineState::MapNavigation, config);
+    let packet = MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+    let candidate = selected_candidate(&trace);
+    let packet_candidate = &packet.candidates[0];
+
+    assert_eq!(candidate.path_summary.path_count, 1);
+    assert!(candidate.path_summary.path_budget_exhausted);
+    assert_eq!(
+        packet_candidate.projection.metadata.coverage,
+        RouteProjectionCoverageV1::PossiblyTruncatedByPathBudget
     );
 }
 
