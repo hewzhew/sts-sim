@@ -97,6 +97,14 @@ fn route_planner_map_packet_preserves_machine_readable_candidate_data() {
     );
     for (packet_candidate, trace_candidate) in packet.candidates.iter().zip(&trace.candidates) {
         assert_eq!(packet_candidate.target, trace_candidate.target);
+        assert!(packet_candidate.candidate_id.starts_with("route_move:"));
+        assert!(
+            packet_candidate.candidate_id.contains(":x")
+                && packet_candidate.candidate_id.contains(":y")
+        );
+        assert!(!packet_candidate
+            .candidate_id
+            .starts_with(&format!("route_move:{}:", packet_candidate.rank)));
         assert_eq!(
             packet_candidate.projection.path_summary,
             trace_candidate.path_summary

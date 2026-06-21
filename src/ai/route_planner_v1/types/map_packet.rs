@@ -133,7 +133,7 @@ impl MapDecisionPacketV1 {
                 .map(|(rank, candidate)| {
                     let action = route_action_from_target_v1(&candidate.target);
                     RouteMoveCandidateV1 {
-                        candidate_id: route_move_candidate_id_v1(rank, &candidate.target),
+                        candidate_id: route_move_candidate_id_v1(&candidate.target),
                         rank,
                         target: candidate.target.clone(),
                         command: candidate
@@ -223,9 +223,18 @@ fn route_action_from_target_v1(target: &MapRouteTargetV1) -> RouteMapActionV1 {
     }
 }
 
-fn route_move_candidate_id_v1(rank: usize, target: &MapRouteTargetV1) -> String {
+fn route_move_candidate_id_v1(target: &MapRouteTargetV1) -> String {
     format!(
-        "route_move:{rank}:{:?}:x{}:y{}",
-        target.move_kind, target.x, target.y
+        "route_move:{}:x{}:y{}",
+        route_move_kind_candidate_id_v1(target.move_kind),
+        target.x,
+        target.y
     )
+}
+
+fn route_move_kind_candidate_id_v1(kind: RouteMoveKindV1) -> &'static str {
+    match kind {
+        RouteMoveKindV1::NormalEdge => "normal_edge",
+        RouteMoveKindV1::WingBootsJump => "wing_boots_jump",
+    }
 }

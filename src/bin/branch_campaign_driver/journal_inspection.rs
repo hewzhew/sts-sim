@@ -711,7 +711,7 @@ mod tests {
             decision_id: "route0".to_string(),
             route_branch_id: "root.go1".to_string(),
             selected_index: Some(0),
-            selected_candidate_id: Some("route_move:0:NormalEdge:x1:y0".to_string()),
+            selected_candidate_id: Some("route_move:normal_edge:x1:y0".to_string()),
             target: "x=1 Elite".to_string(),
             move_kind: "Elite".to_string(),
             safety: "ok".to_string(),
@@ -746,7 +746,7 @@ mod tests {
         ));
         assert!(journal_event_matches_query_v1(
             &route,
-            &normalize_query_v1("route_move:0:NormalEdge:x1:y0")
+            &normalize_query_v1("route_move:normal_edge:x1:y0")
         ));
     }
 
