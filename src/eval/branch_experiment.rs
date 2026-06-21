@@ -81,6 +81,31 @@ pub(crate) const BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND: &str =
 pub const BRANCH_EXPERIMENT_DECISION_PARENT_COMMAND_PREFIX_V1: &str = "__decision_parent:";
 pub const BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1: &str = "__route_decision:";
 
+pub fn branch_experiment_command_is_decision_parent_coordinate_v1(command: &str) -> bool {
+    command.starts_with(BRANCH_EXPERIMENT_DECISION_PARENT_COMMAND_PREFIX_V1)
+        || command.starts_with(BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1)
+}
+
+pub fn branch_experiment_commands_include_decision_parent_coordinate_v1(
+    commands: &[String],
+) -> bool {
+    commands
+        .iter()
+        .any(|command| branch_experiment_command_is_decision_parent_coordinate_v1(command))
+}
+
+pub fn branch_experiment_command_is_route_decision_parent_coordinate_v1(command: &str) -> bool {
+    command.starts_with(BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1)
+}
+
+pub fn branch_experiment_commands_include_route_decision_parent_coordinate_v1(
+    commands: &[String],
+) -> bool {
+    commands
+        .iter()
+        .any(|command| branch_experiment_command_is_route_decision_parent_coordinate_v1(command))
+}
+
 #[derive(Clone, Debug)]
 struct BranchWork {
     id: String,

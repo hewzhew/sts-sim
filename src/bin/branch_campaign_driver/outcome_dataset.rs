@@ -9,10 +9,7 @@ use sts_simulator::eval::branch_campaign::{
     BranchCampaignBranchV1, BranchCampaignCheckpointV1, BranchCampaignContinuationOriginV1,
     BranchCampaignReportV1, BranchCampaignRouteContinuationOriginV1,
 };
-use sts_simulator::eval::branch_experiment::{
-    BRANCH_EXPERIMENT_DECISION_PARENT_COMMAND_PREFIX_V1,
-    BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1,
-};
+use sts_simulator::eval::branch_experiment::branch_experiment_commands_include_decision_parent_coordinate_v1;
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     analyze_branch_outcome_records_v1, extract_branch_outcome_records_v1,
     parse_branch_outcome_records_jsonl_v1, render_branch_outcome_dataset_analysis_v1,
@@ -576,10 +573,7 @@ fn coverage_gap_target_requires_exact_parent_snapshot_v1(
 }
 
 fn coverage_gap_parent_commands_have_exact_coordinate_v1(parent_commands: &[String]) -> bool {
-    parent_commands.iter().any(|command| {
-        command.starts_with(BRANCH_EXPERIMENT_DECISION_PARENT_COMMAND_PREFIX_V1)
-            || command.starts_with(BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1)
-    })
+    branch_experiment_commands_include_decision_parent_coordinate_v1(parent_commands)
 }
 
 fn checkpoint_has_exact_session_v1(

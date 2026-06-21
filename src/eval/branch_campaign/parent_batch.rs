@@ -1,4 +1,5 @@
 use crate::eval::branch_experiment::{
+    branch_experiment_commands_include_route_decision_parent_coordinate_v1,
     run_branch_experiment_from_session_after_prefix_with_snapshots_v1,
     run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
     BranchExperimentBossRelicCandidatePoolV1, BranchExperimentBranchReportV1,
@@ -7,7 +8,7 @@ use crate::eval::branch_experiment::{
     BranchExperimentRewardOptionPortfolioV1, BranchExperimentRouteCandidatePoolV1,
     BranchExperimentRouteDecisionV1, BranchExperimentRunResultV1,
     BranchExperimentShopPlanCandidateEntryV1, BranchExperimentShopPlanCandidatePoolV1,
-    BranchExperimentStrategyRequestV1, BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1,
+    BranchExperimentStrategyRequestV1,
 };
 use crate::eval::campaign_journal::{
     campaign_journal_candidate_from_boss_relic_entry_v1,
@@ -1264,9 +1265,7 @@ fn campaign_replay_commands_for_replay_start_v1(
     parent_commands: &[String],
     suffix_commands: &[String],
 ) -> Vec<String> {
-    if parent_commands.iter().any(|command| {
-        command.starts_with(BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1)
-    }) {
+    if branch_experiment_commands_include_route_decision_parent_coordinate_v1(parent_commands) {
         return suffix_commands.to_vec();
     }
     campaign_replay_commands_for_path_v1(suffix_commands)
