@@ -37,9 +37,10 @@ use driver_command::{driver_command_from_cli_input, BranchCampaignDriverCommandV
 use journal_inspection::run_campaign_journal_inspection;
 use outcome_dataset::{
     run_branch_outcome_dataset_analysis, run_branch_outcome_dataset_export,
-    run_continuation_effect_report, run_decision_outcome_dataset_analysis,
-    run_decision_outcome_dataset_export, run_learning_dataset_export, run_learning_readiness_probe,
-    run_targeted_continuation_execution, run_targeted_continuation_plan,
+    run_continuation_effect_report, run_decision_candidate_coverage_inspection,
+    run_decision_outcome_dataset_analysis, run_decision_outcome_dataset_export,
+    run_learning_dataset_export, run_learning_readiness_probe, run_targeted_continuation_execution,
+    run_targeted_continuation_plan,
 };
 #[cfg(test)]
 use sts_simulator::eval::run_control::RunControlCombatSegmentMode;
@@ -88,6 +89,9 @@ fn run(cli_input: BranchCampaignCliInputV1) -> Result<(), String> {
         }
         BranchCampaignDriverCommandV1::InspectJournal => {
             run_campaign_journal_inspection(&InspectCommandInput::from_args(args)?)
+        }
+        BranchCampaignDriverCommandV1::InspectDecisionCoverage => {
+            run_decision_candidate_coverage_inspection(&DatasetCommandInput::from_args(args))
         }
         BranchCampaignDriverCommandV1::InspectDecisionObservations => {
             run_decision_observation_inspection(&InspectCommandInput::from_args(args)?)

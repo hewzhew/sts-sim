@@ -397,6 +397,28 @@ pub(super) fn run_decision_outcome_dataset_export(
     Ok(())
 }
 
+pub(super) fn run_decision_candidate_coverage_inspection(
+    input: &DatasetCommandInput,
+) -> Result<(), String> {
+    let report_path = input
+        .inspect_report
+        .as_ref()
+        .ok_or_else(|| "--inspect-decision-coverage requires --inspect-report PATH".to_string())?;
+    let report = read_campaign_report_v1(report_path)?;
+    let checkpoint = input
+        .inspect_checkpoint
+        .as_ref()
+        .map(read_campaign_checkpoint_v1)
+        .transpose()?;
+    let outcome_records = extract_branch_outcome_records_v1(&report, checkpoint.as_ref())?;
+    let coverage = analyze_journal_decision_candidate_coverage_v1(&report, &outcome_records);
+    println!(
+        "{}",
+        render_journal_decision_candidate_coverage_v1(&coverage)
+    );
+    Ok(())
+}
+
 pub(super) fn learning_dataset_export_context_v1(
     report_path: Option<&PathBuf>,
     checkpoint_path: Option<&PathBuf>,
