@@ -10,7 +10,6 @@ use crate::eval::branch_campaign::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignReportV1,
     BranchCampaignRunDomainV1,
 };
-use crate::eval::branch_experiment::branch_experiment_command_is_decision_parent_coordinate_v1;
 use crate::eval::branch_outcome_dataset_v1::{
     BranchOutcomeClassV1, BranchOutcomeRecordV1, BranchOutcomeStateFeaturesV1,
     BranchOutcomeSupervisionStatusV1,
@@ -22,6 +21,7 @@ use crate::eval::campaign_journal::{
     CampaignJournalCandidateV1, CampaignJournalEventPayloadV1, CampaignJournalEventV1,
     CampaignJournalRouteCandidateV1,
 };
+use crate::eval::decision_path::decision_path_command_is_decision_parent_coordinate_v1;
 
 pub const LEARNING_BRANCH_SAMPLE_SCHEMA_NAME: &str = "LearningBranchSampleV1";
 pub const LEARNING_BRANCH_SAMPLE_SCHEMA_VERSION: u32 = 1;
@@ -2479,7 +2479,7 @@ fn record_commands_start_with_candidate_ignoring_decision_coordinates_v1(
     }
     let normalized_parent_commands = parent_commands
         .iter()
-        .filter(|command| !branch_experiment_command_is_decision_parent_coordinate_v1(command))
+        .filter(|command| !decision_path_command_is_decision_parent_coordinate_v1(command))
         .cloned()
         .collect::<Vec<_>>();
     normalized_parent_commands.len() != parent_commands.len()

@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use crate::eval::branch_experiment::{
-    branch_experiment_commands_include_decision_parent_coordinate_v1,
-    branch_experiment_commands_include_route_decision_parent_coordinate_v1,
+use crate::eval::decision_path::{
+    decision_path_commands_include_decision_parent_coordinate_v1,
+    decision_path_commands_include_route_parent_coordinate_v1,
 };
 use crate::eval::run_control::RunControlSession;
 
@@ -486,30 +486,28 @@ impl BranchStateStoreV1 {
                 .nodes
                 .iter()
                 .filter(|node| {
-                    branch_experiment_commands_include_decision_parent_coordinate_v1(&node.commands)
+                    decision_path_commands_include_decision_parent_coordinate_v1(&node.commands)
                 })
                 .count(),
             route_decision_coordinate_nodes: self
                 .nodes
                 .iter()
                 .filter(|node| {
-                    branch_experiment_commands_include_route_decision_parent_coordinate_v1(
-                        &node.commands,
-                    )
+                    decision_path_commands_include_route_parent_coordinate_v1(&node.commands)
                 })
                 .count(),
             decision_coordinate_sessions: self
                 .sessions_by_commands
                 .keys()
                 .filter(|commands| {
-                    branch_experiment_commands_include_decision_parent_coordinate_v1(commands)
+                    decision_path_commands_include_decision_parent_coordinate_v1(commands)
                 })
                 .count(),
             route_decision_coordinate_sessions: self
                 .sessions_by_commands
                 .keys()
                 .filter(|commands| {
-                    branch_experiment_commands_include_route_decision_parent_coordinate_v1(commands)
+                    decision_path_commands_include_route_parent_coordinate_v1(commands)
                 })
                 .count(),
             inserts: self.inserts,

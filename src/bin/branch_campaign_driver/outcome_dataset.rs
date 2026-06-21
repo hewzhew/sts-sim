@@ -10,13 +10,13 @@ use sts_simulator::eval::branch_campaign::{
     BranchCampaignReportV1, BranchCampaignRouteContinuationOriginV1,
     BranchCampaignRouteFirstEliteContinuationOriginV1, BranchCampaignRoutePathContinuationOriginV1,
 };
-use sts_simulator::eval::branch_experiment::branch_experiment_commands_include_decision_parent_coordinate_v1;
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     analyze_branch_outcome_records_v1, extract_branch_outcome_records_v1,
     parse_branch_outcome_records_jsonl_v1, render_branch_outcome_dataset_analysis_v1,
     serialize_branch_outcome_records_jsonl_v1, summarize_branch_outcome_records_v1,
     BranchOutcomeRecordV1,
 };
+use sts_simulator::eval::decision_path::decision_path_commands_include_decision_parent_coordinate_v1;
 use sts_simulator::eval::learning_dataset_v1::{
     analyze_continuation_effect_v1, analyze_journal_decision_candidate_coverage_v1,
     analyze_learning_decision_outcome_samples_v1, coverage_gap_continuation_execution_plan_v1,
@@ -645,7 +645,7 @@ fn coverage_gap_target_requires_exact_parent_snapshot_v1(
 }
 
 fn coverage_gap_parent_commands_have_exact_coordinate_v1(parent_commands: &[String]) -> bool {
-    branch_experiment_commands_include_decision_parent_coordinate_v1(parent_commands)
+    decision_path_commands_include_decision_parent_coordinate_v1(parent_commands)
 }
 
 fn checkpoint_has_exact_session_v1(

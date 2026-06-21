@@ -29,6 +29,14 @@ use crate::eval::branch_experiment_retention::{
 use crate::eval::branch_experiment_trajectory::{
     summarize_branch_trajectory_v1, BranchTrajectorySignatureV1,
 };
+use crate::eval::decision_path::{
+    decision_path_command_is_decision_parent_coordinate_v1,
+    decision_path_command_is_route_parent_coordinate_v1,
+    decision_path_commands_include_decision_parent_coordinate_v1,
+    decision_path_commands_include_route_parent_coordinate_v1,
+    DECISION_PATH_PARENT_COMMAND_PREFIX_V1, DECISION_PATH_REPLAY_ADVANCE_COMMAND_V1,
+    DECISION_PATH_ROUTE_PARENT_COMMAND_PREFIX_V1,
+};
 use crate::eval::run_control::CombatSearchPerformanceSnapshotV1;
 #[cfg(test)]
 use crate::eval::run_control::RunControlCommand;
@@ -77,37 +85,34 @@ pub use types::{
 };
 
 pub(crate) const BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND: &str =
-    "__branch_experiment_replay_advance";
-pub const BRANCH_EXPERIMENT_DECISION_PARENT_COMMAND_PREFIX_V1: &str = "__decision_parent:";
-pub const BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1: &str = "__route_decision:";
+    DECISION_PATH_REPLAY_ADVANCE_COMMAND_V1;
+pub const BRANCH_EXPERIMENT_DECISION_PARENT_COMMAND_PREFIX_V1: &str =
+    DECISION_PATH_PARENT_COMMAND_PREFIX_V1;
+pub const BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1: &str =
+    DECISION_PATH_ROUTE_PARENT_COMMAND_PREFIX_V1;
 
 pub fn branch_experiment_command_is_replay_advance_v1(command: &str) -> bool {
     command == BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND
 }
 
 pub fn branch_experiment_command_is_decision_parent_coordinate_v1(command: &str) -> bool {
-    command.starts_with(BRANCH_EXPERIMENT_DECISION_PARENT_COMMAND_PREFIX_V1)
-        || command.starts_with(BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1)
+    decision_path_command_is_decision_parent_coordinate_v1(command)
 }
 
 pub fn branch_experiment_commands_include_decision_parent_coordinate_v1(
     commands: &[String],
 ) -> bool {
-    commands
-        .iter()
-        .any(|command| branch_experiment_command_is_decision_parent_coordinate_v1(command))
+    decision_path_commands_include_decision_parent_coordinate_v1(commands)
 }
 
 pub fn branch_experiment_command_is_route_decision_parent_coordinate_v1(command: &str) -> bool {
-    command.starts_with(BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1)
+    decision_path_command_is_route_parent_coordinate_v1(command)
 }
 
 pub fn branch_experiment_commands_include_route_decision_parent_coordinate_v1(
     commands: &[String],
 ) -> bool {
-    commands
-        .iter()
-        .any(|command| branch_experiment_command_is_route_decision_parent_coordinate_v1(command))
+    decision_path_commands_include_route_parent_coordinate_v1(commands)
 }
 
 #[derive(Clone, Debug)]

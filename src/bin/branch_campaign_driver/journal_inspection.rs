@@ -6,6 +6,9 @@ use sts_simulator::eval::campaign_journal::{
     CampaignJournalCandidateDispositionV1, CampaignJournalCandidateV1,
     CampaignJournalEventPayloadV1, CampaignJournalEventV1, CampaignJournalRouteCandidateV1,
 };
+use sts_simulator::eval::decision_path::{
+    decision_path_command_is_coordinate_v1, decision_path_journal_parent_command_depth_v1,
+};
 
 use super::campaign_artifacts::read_campaign_report_v1;
 use super::command_inputs::{InspectCommandInput, InspectFiltersInput};
@@ -387,7 +390,7 @@ fn lineage_missing_decision_commands_v1(
         .iter()
         .enumerate()
         .filter_map(|(index, command)| {
-            if is_lineage_synthetic_command_v1(command) {
+            if decision_path_command_is_coordinate_v1(command) {
                 return None;
             }
             let matched = report.journal.events.iter().any(|event| {
@@ -399,37 +402,11 @@ fn lineage_missing_decision_commands_v1(
         .collect()
 }
 
-fn command_prefix_matches_v1(prefix: &[String], commands: &[String]) -> bool {
-    prefix.len() <= commands.len()
-        && prefix
-            .iter()
-            .zip(commands.iter())
-            .all(|(left, right)| left == right)
-}
-
 fn lineage_event_parent_command_count_v1(
     event: &CampaignJournalEventV1,
     commands: &[String],
 ) -> Option<usize> {
-    if event
-        .branch_commands
-        .last()
-        .is_some_and(|command| is_journal_decision_parent_marker_v1(command))
-    {
-        let parent_commands = &event.branch_commands[..event.branch_commands.len() - 1];
-        return command_prefix_matches_v1(parent_commands, commands)
-            .then_some(parent_commands.len());
-    }
-    command_prefix_matches_v1(&event.branch_commands, commands)
-        .then_some(event.branch_commands.len())
-}
-
-fn is_journal_decision_parent_marker_v1(command: &str) -> bool {
-    command.starts_with("__decision_parent:")
-}
-
-fn is_lineage_synthetic_command_v1(command: &str) -> bool {
-    command.starts_with("__decision_parent:") || command.starts_with("__route_decision:")
+    decision_path_journal_parent_command_depth_v1(&event.branch_commands, commands)
 }
 
 fn journal_event_matches_command_v1(event: &CampaignJournalEventV1, command: &str) -> bool {
