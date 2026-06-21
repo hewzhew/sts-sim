@@ -715,7 +715,7 @@ mod tests {
     fn route_candidates_record_structured_admission_trace() {
         let candidate = campaign_journal_candidate_from_route_entry_v1(
             &crate::eval::branch_experiment::BranchExperimentRouteCandidateEntryV1 {
-                candidate_id: "route:0:go 1".to_string(),
+                candidate_id: "route_move:normal_edge:x1:y1".to_string(),
                 rank: 0,
                 selected: true,
                 target_node: None,
@@ -737,7 +737,7 @@ mod tests {
             },
         );
 
-        assert_eq!(candidate.candidate_id, "route:0:go 1");
+        assert_eq!(candidate.candidate_id, "route_move:normal_edge:x1:y1");
         assert_eq!(candidate.command, "go 1");
         assert_eq!(
             candidate.admission.status,

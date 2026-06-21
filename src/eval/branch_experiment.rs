@@ -979,7 +979,11 @@ fn branch_route_candidate_pool_from_annotation(
         candidates: candidate_pool
             .iter()
             .map(|candidate| BranchExperimentRouteCandidateEntryV1 {
-                candidate_id: format!("route:{}:{}", candidate.rank, candidate.command),
+                candidate_id: legacy_route_candidate_summary_id_v1(
+                    &candidate.move_kind,
+                    candidate.target_x,
+                    candidate.target_y,
+                ),
                 rank: candidate.rank,
                 selected: Some(candidate.rank) == *selected_index,
                 target_node: None,
@@ -1018,6 +1022,27 @@ fn branch_route_candidate_pool_from_annotation(
             })
             .collect(),
     })
+}
+
+fn legacy_route_candidate_summary_id_v1(move_kind: &str, target_x: i32, target_y: i32) -> String {
+    format!(
+        "route_move:{}:x{}:y{}",
+        legacy_route_move_kind_candidate_id_v1(move_kind),
+        target_x,
+        target_y
+    )
+}
+
+fn legacy_route_move_kind_candidate_id_v1(move_kind: &str) -> String {
+    match move_kind {
+        "NormalEdge" | "normal_edge" => "normal_edge".to_string(),
+        "WingBootsJump" | "wing_boots_jump" => "wing_boots_jump".to_string(),
+        _ => move_kind
+            .chars()
+            .flat_map(char::to_lowercase)
+            .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+            .collect(),
+    }
 }
 
 fn branch_route_candidate_pool_from_map_packet_v1(
