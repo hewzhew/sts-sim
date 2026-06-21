@@ -3,6 +3,7 @@ mod features;
 mod needs;
 mod policy;
 mod render;
+mod risk;
 mod scorer;
 mod types;
 

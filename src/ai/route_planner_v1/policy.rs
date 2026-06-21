@@ -4,10 +4,12 @@ use crate::state::RunState;
 use super::context::build_route_decision_context_v1;
 use super::features::{node_features, summarize_route_from};
 use super::needs::estimate_needs;
-use super::scorer::{route_reasons, safety_flag, score_route_candidate};
+use super::risk::safety_flag;
+use super::scorer::{route_reasons, score_route_candidate};
 use super::types::{
-    RouteCandidateTraceV1, RouteDecisionTraceV1, RouteMoveKindV1, RoutePlannerConfigV1,
-    RouteSafetyFlagV1, ROUTE_DECISION_TRACE_SCHEMA_NAME, ROUTE_DECISION_TRACE_SCHEMA_VERSION,
+    NeedVectorV1, RouteCandidateTraceV1, RouteDecisionContextV1, RouteDecisionTraceV1,
+    RouteMoveKindV1, RoutePlannerConfigV1, RouteSafetyFlagV1, ROUTE_DECISION_TRACE_SCHEMA_NAME,
+    ROUTE_DECISION_TRACE_SCHEMA_VERSION,
 };
 
 pub fn plan_route_decision_v1(
@@ -17,59 +19,9 @@ pub fn plan_route_decision_v1(
 ) -> RouteDecisionTraceV1 {
     let context = build_route_decision_context_v1(run_state);
     let needs = estimate_needs(&context, &config);
-    let has_empty_potion_slot = context.potions.filled < context.potions.slots;
-    let mut candidates = context
-        .legal_next_nodes
-        .iter()
-        .map(|target| {
-            let path_summary = summarize_route_from(run_state, target.x, target.y, &config);
-            let features = node_features(
-                target,
-                &context.counters.unknown_belief,
-                context.hp,
-                context.max_hp,
-                has_empty_potion_slot,
-                context.relics.has_cursed_key,
-                &config,
-            );
-            let score_terms = score_route_candidate(
-                &features,
-                &path_summary,
-                &needs,
-                target.move_kind,
-                context.counters.emerald_key_taken,
-                context.relics.has_cursed_key,
-                &config,
-            );
-            let safety = safety_flag(&features, &path_summary, &needs);
-            let (reasons, cautions) = route_reasons(&features, &path_summary, safety);
-            RouteCandidateTraceV1 {
-                target: target.clone(),
-                features,
-                path_summary,
-                needs: needs.clone(),
-                total_score: score_terms.total(),
-                score_terms,
-                safety,
-                reasons,
-                cautions,
-                suggested_command: engine_state
-                    .is_map_surface()
-                    .then(|| route_command_hint(target.move_kind, target.x, target.y)),
-            }
-        })
-        .collect::<Vec<_>>();
-
-    candidates.sort_by(|a, b| {
-        safety_sort_key(b.safety)
-            .cmp(&safety_sort_key(a.safety))
-            .then_with(|| {
-                b.total_score
-                    .partial_cmp(&a.total_score)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .then_with(|| a.target.x.cmp(&b.target.x))
-    });
+    let mut candidates =
+        build_route_candidate_traces_v1(run_state, engine_state, &context, &needs, &config);
+    sort_route_candidates_v1(&mut candidates);
     let selected_index = selected_index(&candidates);
     let mut warnings = Vec::new();
     if !engine_state.is_map_surface() {
@@ -96,6 +48,80 @@ pub fn plan_route_decision_v1(
         selected_index,
         warnings,
     }
+}
+
+fn build_route_candidate_traces_v1(
+    run_state: &RunState,
+    engine_state: &EngineState,
+    context: &RouteDecisionContextV1,
+    needs: &NeedVectorV1,
+    config: &RoutePlannerConfigV1,
+) -> Vec<RouteCandidateTraceV1> {
+    context
+        .legal_next_nodes
+        .iter()
+        .map(|target| {
+            build_route_candidate_trace_v1(run_state, engine_state, context, needs, config, target)
+        })
+        .collect()
+}
+
+fn build_route_candidate_trace_v1(
+    run_state: &RunState,
+    engine_state: &EngineState,
+    context: &RouteDecisionContextV1,
+    needs: &NeedVectorV1,
+    config: &RoutePlannerConfigV1,
+    target: &super::types::MapRouteTargetV1,
+) -> RouteCandidateTraceV1 {
+    let path_summary = summarize_route_from(run_state, target.x, target.y, config);
+    let features = node_features(
+        target,
+        &context.counters.unknown_belief,
+        context.hp,
+        context.max_hp,
+        context.potions.filled < context.potions.slots,
+        context.relics.has_cursed_key,
+        config,
+    );
+    let score_terms = score_route_candidate(
+        &features,
+        &path_summary,
+        needs,
+        target.move_kind,
+        context.counters.emerald_key_taken,
+        context.relics.has_cursed_key,
+        config,
+    );
+    let safety = safety_flag(&features, &path_summary, needs);
+    let (reasons, cautions) = route_reasons(&features, &path_summary, safety);
+    RouteCandidateTraceV1 {
+        target: target.clone(),
+        features,
+        path_summary,
+        needs: needs.clone(),
+        total_score: score_terms.total(),
+        score_terms,
+        safety,
+        reasons,
+        cautions,
+        suggested_command: engine_state
+            .is_map_surface()
+            .then(|| route_command_hint(target.move_kind, target.x, target.y)),
+    }
+}
+
+fn sort_route_candidates_v1(candidates: &mut [RouteCandidateTraceV1]) {
+    candidates.sort_by(|a, b| {
+        safety_sort_key(b.safety)
+            .cmp(&safety_sort_key(a.safety))
+            .then_with(|| {
+                b.total_score
+                    .partial_cmp(&a.total_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| a.target.x.cmp(&b.target.x))
+    });
 }
 
 fn selected_index(candidates: &[RouteCandidateTraceV1]) -> Option<usize> {
