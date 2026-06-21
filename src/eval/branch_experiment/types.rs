@@ -8,9 +8,9 @@ use crate::ai::noncombat_strategy_v1::{
 };
 use crate::ai::route_planner_v1::{
     MapDecisionPacketV1, MapRouteTargetV1, NeedVectorV1, NodeFeaturesV1,
-    RouteCandidatePoolProvenanceV1, RouteMapActionV1, RoutePathSummaryV1,
-    RouteProjectionCoverageV1, RouteProjectionSourceV1, RouteSafetyFlagV1, RouteScoreTermsV1,
-    RouteValueFactorsV1,
+    RouteCandidatePoolProvenanceV1, RouteEvaluationCalibrationStatusV1, RouteEvaluationSourceV1,
+    RouteMapActionV1, RoutePathSummaryV1, RouteProjectionCoverageV1, RouteProjectionSourceV1,
+    RouteSafetyFlagV1, RouteScoreTermsV1, RouteValueFactorsV1,
 };
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment_retention::{
@@ -23,7 +23,7 @@ use crate::eval::run_control::{
 };
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 31;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 32;
 pub const BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1: &str =
     "card_reward_strategic_trace_v1";
 
@@ -428,6 +428,10 @@ pub struct BranchExperimentRouteCandidateEntryV1 {
     pub score_terms: Option<RouteScoreTermsV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value_factors: Option<RouteValueFactorsV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluation_source: Option<RouteEvaluationSourceV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluation_calibration_status: Option<RouteEvaluationCalibrationStatusV1>,
     pub command: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node_features: Option<NodeFeaturesV1>,

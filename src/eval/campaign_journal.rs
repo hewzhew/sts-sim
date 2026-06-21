@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::ai::route_planner_v1::{
     MapDecisionPacketV1, MapRouteTargetV1, NeedVectorV1, NodeFeaturesV1,
-    RouteCandidatePoolProvenanceV1, RouteMapActionV1, RouteMoveCandidateV1, RoutePathSummaryV1,
-    RouteProjectionCoverageV1, RouteProjectionSourceV1, RouteSafetyFlagV1, RouteScoreTermsV1,
-    RouteValueFactorsV1,
+    RouteCandidatePoolProvenanceV1, RouteEvaluationCalibrationStatusV1, RouteEvaluationSourceV1,
+    RouteMapActionV1, RouteMoveCandidateV1, RoutePathSummaryV1, RouteProjectionCoverageV1,
+    RouteProjectionSourceV1, RouteSafetyFlagV1, RouteScoreTermsV1, RouteValueFactorsV1,
 };
 use crate::eval::branch_experiment::{
     BranchExperimentBossRelicCandidateEntryV1, BranchExperimentCampfirePlanCandidateEntryV1,
@@ -14,7 +14,7 @@ use crate::eval::branch_experiment::{
 };
 
 pub const CAMPAIGN_JOURNAL_SCHEMA_NAME: &str = "CampaignJournal";
-pub const CAMPAIGN_JOURNAL_SCHEMA_VERSION: u32 = 3;
+pub const CAMPAIGN_JOURNAL_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -208,6 +208,10 @@ pub struct CampaignJournalRouteCandidateV1 {
     pub score_terms: Option<RouteScoreTermsV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value_factors: Option<RouteValueFactorsV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluation_source: Option<RouteEvaluationSourceV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evaluation_calibration_status: Option<RouteEvaluationCalibrationStatusV1>,
     pub command: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node_features: Option<NodeFeaturesV1>,
@@ -247,6 +251,8 @@ impl CampaignJournalRouteCandidateV1 {
             score: candidate.score,
             score_terms: candidate.score_terms.clone(),
             value_factors: candidate.value_factors.clone(),
+            evaluation_source: candidate.evaluation_source,
+            evaluation_calibration_status: candidate.evaluation_calibration_status,
             command: candidate.command.clone(),
             node_features: candidate.node_features.clone(),
             path_summary: candidate.path_summary.clone(),
@@ -285,6 +291,8 @@ impl CampaignJournalRouteCandidateV1 {
             score: candidate.evaluation.total_score,
             score_terms: Some(candidate.evaluation.score_terms.clone()),
             value_factors: Some(candidate.evaluation.value_factors.clone()),
+            evaluation_source: Some(candidate.evaluation.value_source),
+            evaluation_calibration_status: Some(candidate.evaluation.calibration_status),
             command: candidate.command.clone(),
             node_features: Some(candidate.features.clone()),
             path_summary: Some(path.clone()),
@@ -903,6 +911,8 @@ mod tests {
                 score: 1.25,
                 score_terms: None,
                 value_factors: None,
+                evaluation_source: None,
+                evaluation_calibration_status: None,
                 command: "go 1".to_string(),
                 node_features: None,
                 path_summary: None,

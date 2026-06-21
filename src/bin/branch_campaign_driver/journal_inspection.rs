@@ -501,6 +501,8 @@ fn route_candidate_search_terms_v1(candidate: &RouteMoveCandidateV1) -> Vec<Stri
         room_type,
         format!("{:?}", candidate.target.move_kind),
         format!("{:?}", candidate.evaluation.safety),
+        format!("{:?}", candidate.evaluation.value_source),
+        format!("{:?}", candidate.evaluation.calibration_status),
         format!("{:?}", candidate.projection.metadata.coverage),
     ]
 }
@@ -549,6 +551,12 @@ fn journal_route_candidate_search_terms_v1(
     }
     if let Some(source) = candidate.projection_source {
         parts.push(format!("{:?}", source));
+    }
+    if let Some(source) = candidate.evaluation_source {
+        parts.push(format!("{:?}", source));
+    }
+    if let Some(status) = candidate.evaluation_calibration_status {
+        parts.push(format!("{:?}", status));
     }
     if let Some(path_budget) = candidate.path_budget {
         parts.push(format!("path_budget:{path_budget}"));
@@ -945,6 +953,8 @@ mod tests {
             score: 1.0,
             score_terms: None,
             value_factors: None,
+            evaluation_source: None,
+            evaluation_calibration_status: None,
             command: "go 1".to_string(),
             node_features: None,
             path_summary: None,
@@ -1066,6 +1076,14 @@ mod tests {
                 "{:?}",
                 route_candidate.projection.metadata.coverage
             ))
+        ));
+        assert!(journal_event_matches_query_v1(
+            &route,
+            &normalize_query_v1("heuristic_route_planner_v1")
+        ));
+        assert!(journal_event_matches_query_v1(
+            &route,
+            &normalize_query_v1("uncalibrated_behavior_estimate")
         ));
     }
 

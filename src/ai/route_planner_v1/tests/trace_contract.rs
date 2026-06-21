@@ -1,7 +1,8 @@
 use crate::ai::route_planner_v1::{
     plan_route_decision_v1, render_route_decision_trace_v1, MapDecisionPacketV1,
-    RouteCandidateOrderingV1, RoutePlannerConfigV1, RouteProjectionCoverageV1,
-    MAP_DECISION_PACKET_SCHEMA_NAME, ROUTE_DECISION_TRACE_SCHEMA_NAME,
+    RouteCandidateOrderingV1, RouteEvaluationCalibrationStatusV1, RouteEvaluationSourceV1,
+    RoutePlannerConfigV1, RouteProjectionCoverageV1, MAP_DECISION_PACKET_SCHEMA_NAME,
+    ROUTE_DECISION_TRACE_SCHEMA_NAME,
 };
 use crate::state::core::EngineState;
 use crate::state::RunState;
@@ -132,6 +133,14 @@ fn route_planner_map_packet_preserves_machine_readable_candidate_data() {
             trace_candidate.value_factors
         );
         assert_eq!(packet_candidate.evaluation.safety, trace_candidate.safety);
+        assert_eq!(
+            packet_candidate.evaluation.value_source,
+            RouteEvaluationSourceV1::HeuristicRoutePlannerV1
+        );
+        assert_eq!(
+            packet_candidate.evaluation.calibration_status,
+            RouteEvaluationCalibrationStatusV1::UncalibratedBehaviorEstimate
+        );
     }
 }
 

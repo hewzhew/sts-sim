@@ -106,6 +106,8 @@ pub enum RouteProjectionCoverageV1 {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RouteMoveEvaluationV1 {
+    pub value_source: RouteEvaluationSourceV1,
+    pub calibration_status: RouteEvaluationCalibrationStatusV1,
     pub safety: RouteSafetyFlagV1,
     #[serde(default)]
     pub value_factors: RouteValueFactorsV1,
@@ -115,6 +117,18 @@ pub struct RouteMoveEvaluationV1 {
     pub legacy_reasons: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub legacy_cautions: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteEvaluationSourceV1 {
+    HeuristicRoutePlannerV1,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteEvaluationCalibrationStatusV1 {
+    UncalibratedBehaviorEstimate,
 }
 
 impl MapDecisionPacketV1 {
@@ -154,6 +168,9 @@ impl MapDecisionPacketV1 {
                         },
                         needs: candidate.needs.clone(),
                         evaluation: RouteMoveEvaluationV1 {
+                            value_source: RouteEvaluationSourceV1::HeuristicRoutePlannerV1,
+                            calibration_status:
+                                RouteEvaluationCalibrationStatusV1::UncalibratedBehaviorEstimate,
                             safety: candidate.safety,
                             value_factors: candidate.value_factors.clone(),
                             score_terms: candidate.score_terms.clone(),

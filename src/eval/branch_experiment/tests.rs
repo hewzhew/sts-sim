@@ -26,7 +26,7 @@ use std::path::PathBuf;
 
 #[test]
 fn branch_experiment_schema_version_tracks_lineage_pruned_summary() {
-    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 31);
+    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 32);
 }
 
 #[test]
@@ -145,7 +145,11 @@ fn branch_experiment_records_route_candidate_pool() {
             && candidate.path_budget.is_some()
             && candidate.observed_path_count.is_some()
             && candidate.score_terms.is_some()
-            && candidate.value_factors.is_some()));
+            && candidate.value_factors.is_some()
+            && candidate.evaluation_source
+                == Some(crate::ai::route_planner_v1::RouteEvaluationSourceV1::HeuristicRoutePlannerV1)
+            && candidate.evaluation_calibration_status
+                == Some(crate::ai::route_planner_v1::RouteEvaluationCalibrationStatusV1::UncalibratedBehaviorEstimate)));
     assert!(pool
         .candidates
         .iter()
