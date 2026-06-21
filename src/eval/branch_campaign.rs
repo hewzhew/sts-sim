@@ -66,6 +66,7 @@ pub use model::{
     BranchCampaignContinuationOriginV1, BranchCampaignDecisionObservationV1,
     BranchCampaignReportV1, BranchCampaignRoundSummaryV1, BranchCampaignRouteContinuationOriginV1,
     BranchCampaignRouteEvidenceExampleV1, BranchCampaignRouteEvidenceSummaryV1,
+    BranchCampaignRouteFirstEliteContinuationOriginV1, BranchCampaignRoutePathContinuationOriginV1,
     BranchCampaignRunPreludeV1, BranchCampaignRunResultV1, BranchCampaignSelectionV1,
     BranchCampaignStateStoreSummaryV1, BranchCampaignStrategyRequestV1,
 };

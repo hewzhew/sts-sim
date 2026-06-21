@@ -397,11 +397,73 @@ fn render_campaign_continuation_origin_suffix_v1(branch: &BranchCampaignBranchV1
     let Some(origin) = &branch.continuation_origin else {
         return String::new();
     };
+    let route_suffix = origin
+        .route_origin
+        .as_ref()
+        .map(render_campaign_route_continuation_origin_v1)
+        .unwrap_or_default();
     format!(
-        " | origin={}:{}:{}",
+        " | origin={}:{}:{}{}",
         origin.kind,
         origin.event_type,
-        compact_campaign_choice_label_metadata_v1(&origin.label)
+        compact_campaign_choice_label_metadata_v1(&origin.label),
+        route_suffix
+    )
+}
+
+fn render_campaign_route_continuation_origin_v1(
+    origin: &crate::eval::branch_campaign::BranchCampaignRouteContinuationOriginV1,
+) -> String {
+    let path = origin
+        .path
+        .as_ref()
+        .map(|path| {
+            format!(
+                " paths={}/{} elites={}-{} fires={}-{} shops={}-{}",
+                origin.observed_path_count,
+                origin.path_budget,
+                path.min_elites,
+                path.max_elites,
+                path.min_fires,
+                path.max_fires,
+                path.min_shops,
+                path.max_shops,
+            )
+        })
+        .unwrap_or_else(|| {
+            format!(
+                " paths={}/{}",
+                origin.observed_path_count, origin.path_budget
+            )
+        });
+    let first_elite = origin
+        .first_elite
+        .as_ref()
+        .map(render_campaign_route_first_elite_origin_v1)
+        .unwrap_or_default();
+    format!(
+        " route=x{}y{} coverage={}{}{}",
+        origin.target_x, origin.target_y, origin.projection_coverage, path, first_elite
+    )
+}
+
+fn render_campaign_route_first_elite_origin_v1(
+    first_elite: &crate::eval::branch_campaign::BranchCampaignRouteFirstEliteContinuationOriginV1,
+) -> String {
+    let status = if first_elite.forced {
+        "forced"
+    } else if first_elite.optional {
+        "optional"
+    } else {
+        "none"
+    };
+    format!(
+        " first_elite={} hallways={}-{} rest_bailout={} shop_bailout={}",
+        status,
+        first_elite.min_hallway_fights_before,
+        first_elite.max_hallway_fights_before,
+        first_elite.can_bail_to_rest_before,
+        first_elite.can_bail_to_shop_before
     )
 }
 

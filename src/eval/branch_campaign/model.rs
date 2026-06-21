@@ -123,6 +123,54 @@ pub struct BranchCampaignRouteContinuationOriginV1 {
     pub projection_coverage: String,
     pub path_budget: usize,
     pub observed_path_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<BranchCampaignRoutePathContinuationOriginV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_elite: Option<BranchCampaignRouteFirstEliteContinuationOriginV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignRoutePathContinuationOriginV1 {
+    pub path_count: usize,
+    pub path_budget_exhausted: bool,
+    pub min_early_pressure: usize,
+    pub max_early_pressure: usize,
+    pub min_elites: usize,
+    pub max_elites: usize,
+    pub min_shops: usize,
+    pub max_shops: usize,
+    pub min_fires: usize,
+    pub max_fires: usize,
+    pub min_unknowns: usize,
+    pub max_unknowns: usize,
+    pub min_treasures: usize,
+    pub max_treasures: usize,
+    pub first_shop_floor: Option<i32>,
+    pub first_fire_floor: Option<i32>,
+    pub min_damage_rooms_before_recovery: usize,
+    pub max_damage_rooms_before_recovery: usize,
+    pub min_unknowns_before_recovery: usize,
+    pub max_unknowns_before_recovery: usize,
+    pub paths_with_recovery_before_damage: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignRouteFirstEliteContinuationOriginV1 {
+    pub paths_with_first_elite: usize,
+    pub forced: bool,
+    pub optional: bool,
+    pub min_hallway_fights_before: usize,
+    pub max_hallway_fights_before: usize,
+    pub min_unknowns_before: usize,
+    pub max_unknowns_before: usize,
+    pub min_fires_before: usize,
+    pub max_fires_before: usize,
+    pub min_shops_before: usize,
+    pub max_shops_before: usize,
+    pub can_bail_to_rest_before: bool,
+    pub can_bail_to_shop_before: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

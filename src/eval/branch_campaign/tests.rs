@@ -376,6 +376,93 @@ fn compact_campaign_report_surfaces_timing_summary() {
 }
 
 #[test]
+fn compact_campaign_report_surfaces_route_continuation_origin() {
+    let mut report = test_campaign_report_with_active("route-gap", 6, 70);
+    report.active[0].continuation_origin = Some(BranchCampaignContinuationOriginV1 {
+        kind: "coverage_gap".to_string(),
+        source_event_id: "route-event".to_string(),
+        decision_id: "route-decision".to_string(),
+        event_type: "route".to_string(),
+        parent_branch_id: "root".to_string(),
+        parent_frontier_title: "Map".to_string(),
+        candidate_index: 1,
+        candidate_id: "route_move:normal_edge:x2:y3".to_string(),
+        command: "go 2".to_string(),
+        label: "x=2 y=3 Elite".to_string(),
+        semantic_class: "route".to_string(),
+        admission: Default::default(),
+        disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Pruned,
+        target_origin_source: "route_candidate_pool".to_string(),
+        route_origin: Some(BranchCampaignRouteContinuationOriginV1 {
+            legal_candidate_count: 4,
+            emitted_candidate_count: 4,
+            complete_legal_pool: true,
+            ordering: "SafetyThenScoreThenX".to_string(),
+            target_x: 2,
+            target_y: 3,
+            room_type: "Elite".to_string(),
+            move_kind: "NormalEdge".to_string(),
+            action_kind: "go".to_string(),
+            projection_source: "VisibleMapDfs".to_string(),
+            projection_coverage: "CompleteWithinBudget".to_string(),
+            path_budget: 2000,
+            observed_path_count: 17,
+            path: Some(BranchCampaignRoutePathContinuationOriginV1 {
+                path_count: 17,
+                path_budget_exhausted: false,
+                min_early_pressure: 2,
+                max_early_pressure: 5,
+                min_elites: 1,
+                max_elites: 3,
+                min_shops: 0,
+                max_shops: 2,
+                min_fires: 1,
+                max_fires: 3,
+                min_unknowns: 2,
+                max_unknowns: 6,
+                min_treasures: 1,
+                max_treasures: 1,
+                first_shop_floor: Some(5),
+                first_fire_floor: Some(6),
+                min_damage_rooms_before_recovery: 1,
+                max_damage_rooms_before_recovery: 4,
+                min_unknowns_before_recovery: 1,
+                max_unknowns_before_recovery: 2,
+                paths_with_recovery_before_damage: 3,
+            }),
+            first_elite: Some(BranchCampaignRouteFirstEliteContinuationOriginV1 {
+                paths_with_first_elite: 12,
+                forced: false,
+                optional: true,
+                min_hallway_fights_before: 2,
+                max_hallway_fights_before: 4,
+                min_unknowns_before: 1,
+                max_unknowns_before: 3,
+                min_fires_before: 0,
+                max_fires_before: 1,
+                min_shops_before: 0,
+                max_shops_before: 1,
+                can_bail_to_rest_before: true,
+                can_bail_to_shop_before: true,
+            }),
+        }),
+        milestone: "route_frontier".to_string(),
+    });
+
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
+
+    assert!(rendered.contains("origin=coverage_gap:route:x=2 y=3 Elite"));
+    assert!(rendered.contains("route=x2y3"));
+    assert!(rendered.contains("coverage=CompleteWithinBudget"));
+    assert!(rendered.contains("paths=17/2000"));
+    assert!(rendered.contains("first_elite=optional"));
+}
+
+#[test]
 fn campaign_round_retry_counts_parent_elapsed_as_retry_timing() {
     assert_eq!(
         campaign_retry_timing_for_parent_v1(true, 5_000, 3_000, 0, 0),

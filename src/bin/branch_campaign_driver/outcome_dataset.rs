@@ -8,6 +8,7 @@ use sts_simulator::eval::branch_campaign::{
     run_branch_campaign_from_report_with_checkpoint_v1, BranchCampaignBranchStatusV1,
     BranchCampaignBranchV1, BranchCampaignCheckpointV1, BranchCampaignContinuationOriginV1,
     BranchCampaignReportV1, BranchCampaignRouteContinuationOriginV1,
+    BranchCampaignRouteFirstEliteContinuationOriginV1, BranchCampaignRoutePathContinuationOriginV1,
 };
 use sts_simulator::eval::branch_experiment::branch_experiment_commands_include_decision_parent_coordinate_v1;
 use sts_simulator::eval::branch_outcome_dataset_v1::{
@@ -30,6 +31,11 @@ use sts_simulator::eval::learning_dataset_v1::{
     CoverageGapContinuationExecutionPlanV1, CoverageGapContinuationPlanV1,
     CoverageGapContinuationTargetV1, LearningBranchSampleV1, LearningDatasetExportContextV1,
     LearningDecisionOutcomeSampleV1, TargetedContinuationExecutionPlanV1,
+};
+#[cfg(test)]
+use sts_simulator::eval::learning_dataset_v1::{
+    CoverageGapRouteFirstEliteOriginV1, CoverageGapRoutePathOriginV1,
+    CoverageGapRouteTargetOriginV1,
 };
 use sts_simulator::eval::neow_guided_prefix::{
     neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
@@ -496,6 +502,50 @@ fn coverage_gap_branch_from_target_v1(
                     projection_coverage: route.projection_coverage.clone(),
                     path_budget: route.path_budget,
                     observed_path_count: route.observed_path_count,
+                    path: Some(BranchCampaignRoutePathContinuationOriginV1 {
+                        path_count: route.path.path_count,
+                        path_budget_exhausted: route.path.path_budget_exhausted,
+                        min_early_pressure: route.path.min_early_pressure,
+                        max_early_pressure: route.path.max_early_pressure,
+                        min_elites: route.path.min_elites,
+                        max_elites: route.path.max_elites,
+                        min_shops: route.path.min_shops,
+                        max_shops: route.path.max_shops,
+                        min_fires: route.path.min_fires,
+                        max_fires: route.path.max_fires,
+                        min_unknowns: route.path.min_unknowns,
+                        max_unknowns: route.path.max_unknowns,
+                        min_treasures: route.path.min_treasures,
+                        max_treasures: route.path.max_treasures,
+                        first_shop_floor: route.path.first_shop_floor,
+                        first_fire_floor: route.path.first_fire_floor,
+                        min_damage_rooms_before_recovery: route
+                            .path
+                            .min_damage_rooms_before_recovery,
+                        max_damage_rooms_before_recovery: route
+                            .path
+                            .max_damage_rooms_before_recovery,
+                        min_unknowns_before_recovery: route.path.min_unknowns_before_recovery,
+                        max_unknowns_before_recovery: route.path.max_unknowns_before_recovery,
+                        paths_with_recovery_before_damage: route
+                            .path
+                            .paths_with_recovery_before_damage,
+                    }),
+                    first_elite: Some(BranchCampaignRouteFirstEliteContinuationOriginV1 {
+                        paths_with_first_elite: route.first_elite.paths_with_first_elite,
+                        forced: route.first_elite.forced,
+                        optional: route.first_elite.optional,
+                        min_hallway_fights_before: route.first_elite.min_hallway_fights_before,
+                        max_hallway_fights_before: route.first_elite.max_hallway_fights_before,
+                        min_unknowns_before: route.first_elite.min_unknowns_before,
+                        max_unknowns_before: route.first_elite.max_unknowns_before,
+                        min_fires_before: route.first_elite.min_fires_before,
+                        max_fires_before: route.first_elite.max_fires_before,
+                        min_shops_before: route.first_elite.min_shops_before,
+                        max_shops_before: route.first_elite.max_shops_before,
+                        can_bail_to_rest_before: route.first_elite.can_bail_to_rest_before,
+                        can_bail_to_shop_before: route.first_elite.can_bail_to_shop_before,
+                    }),
                 }
             }),
             milestone: target.milestone.clone(),
@@ -710,6 +760,109 @@ mod tests {
         assert_eq!(origin.disposition, target.disposition);
         assert!(origin.target_origin_source.is_empty());
         assert!(origin.route_origin.is_none());
+    }
+
+    #[test]
+    fn coverage_gap_branch_preserves_route_path_and_first_elite_origin() {
+        let target = CoverageGapContinuationTargetV1 {
+            decision_id: "root:round1:route0".to_string(),
+            event_id: "root:round1:route0:candidate_set".to_string(),
+            event_type: "route".to_string(),
+            parent_branch_id: "root".to_string(),
+            parent_frontier_title: "Map".to_string(),
+            parent_commands: Vec::new(),
+            parent_choices: Vec::new(),
+            candidate_index: 1,
+            candidate_id: "route_move:normal_edge:x2:y3".to_string(),
+            command: "go 2".to_string(),
+            label: "x=2 y=3 Elite".to_string(),
+            semantic_class: "route".to_string(),
+            admission: CampaignJournalCandidateAdmissionTraceV1::new(
+                CampaignJournalCandidateAdmissionStatusV1::Deferred,
+                "route_candidate_pool",
+                "deferred",
+            ),
+            disposition: CampaignJournalCandidateDispositionV1::Pruned,
+            target_origin:
+                sts_simulator::eval::learning_dataset_v1::CoverageGapContinuationTargetOriginV1 {
+                    source: "route_candidate_pool".to_string(),
+                    route: Some(CoverageGapRouteTargetOriginV1 {
+                        legal_candidate_count: 4,
+                        emitted_candidate_count: 4,
+                        complete_legal_pool: true,
+                        ordering: "SafetyThenScoreThenX".to_string(),
+                        target_x: 2,
+                        target_y: 3,
+                        room_type: "Elite".to_string(),
+                        move_kind: "NormalEdge".to_string(),
+                        action_kind: "go".to_string(),
+                        projection_source: "VisibleMapDfs".to_string(),
+                        projection_coverage: "CompleteWithinBudget".to_string(),
+                        path_budget: 2000,
+                        observed_path_count: 17,
+                        path: CoverageGapRoutePathOriginV1 {
+                            path_count: 17,
+                            path_budget_exhausted: false,
+                            min_early_pressure: 2,
+                            max_early_pressure: 5,
+                            min_elites: 1,
+                            max_elites: 3,
+                            min_shops: 0,
+                            max_shops: 2,
+                            min_fires: 1,
+                            max_fires: 3,
+                            min_unknowns: 2,
+                            max_unknowns: 6,
+                            min_treasures: 1,
+                            max_treasures: 1,
+                            first_shop_floor: Some(5),
+                            first_fire_floor: Some(6),
+                            min_damage_rooms_before_recovery: 1,
+                            max_damage_rooms_before_recovery: 4,
+                            min_unknowns_before_recovery: 1,
+                            max_unknowns_before_recovery: 2,
+                            paths_with_recovery_before_damage: 3,
+                        },
+                        first_elite: CoverageGapRouteFirstEliteOriginV1 {
+                            paths_with_first_elite: 12,
+                            forced: false,
+                            optional: true,
+                            min_hallway_fights_before: 2,
+                            max_hallway_fights_before: 4,
+                            min_unknowns_before: 1,
+                            max_unknowns_before: 3,
+                            min_fires_before: 0,
+                            max_fires_before: 1,
+                            min_shops_before: 0,
+                            max_shops_before: 1,
+                            can_bail_to_rest_before: true,
+                            can_bail_to_shop_before: true,
+                        },
+                    }),
+                },
+            milestone: "route_frontier".to_string(),
+        };
+
+        let branch = coverage_gap_branch_from_target_v1(&target);
+        let route = branch
+            .continuation_origin
+            .as_ref()
+            .and_then(|origin| origin.route_origin.as_ref())
+            .expect("route coverage gap branch should preserve route origin");
+
+        assert_eq!(route.target_x, 2);
+        assert_eq!(
+            route.path.as_ref().expect("path should survive").path_count,
+            17
+        );
+        assert_eq!(
+            route
+                .first_elite
+                .as_ref()
+                .expect("first elite should survive")
+                .paths_with_first_elite,
+            12
+        );
     }
 
     #[test]
