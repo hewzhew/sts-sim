@@ -14,10 +14,11 @@ use sts_simulator::eval::branch_outcome_dataset_v1::{
     BranchOutcomeRecordV1,
 };
 use sts_simulator::eval::learning_dataset_v1::{
-    analyze_continuation_effect_v1, analyze_learning_decision_outcome_samples_v1,
-    decision_outcome_samples_from_campaign_report_v1, learning_records_from_branch_outcomes_v1,
-    parse_learning_decision_outcome_samples_jsonl_v1, plan_targeted_continuations_v1,
-    probe_learning_readiness_v1, render_continuation_effect_report_v1,
+    analyze_continuation_effect_v1, analyze_journal_decision_candidate_coverage_v1,
+    analyze_learning_decision_outcome_samples_v1, decision_outcome_samples_from_campaign_report_v1,
+    learning_records_from_branch_outcomes_v1, parse_learning_decision_outcome_samples_jsonl_v1,
+    plan_targeted_continuations_v1, probe_learning_readiness_v1,
+    render_continuation_effect_report_v1, render_journal_decision_candidate_coverage_v1,
     render_learning_decision_outcome_analysis_v1, render_learning_readiness_probe_v1,
     render_targeted_continuation_plan_v1, serialize_learning_branch_samples_jsonl_v1,
     serialize_learning_decision_outcome_samples_jsonl_v1, targeted_continuation_execution_plan_v1,
@@ -387,6 +388,11 @@ pub(super) fn run_decision_outcome_dataset_export(
         samples.len(),
         observed_sibling_samples,
         path.display()
+    );
+    let coverage = analyze_journal_decision_candidate_coverage_v1(&report, &outcome_records);
+    println!(
+        "{}",
+        render_journal_decision_candidate_coverage_v1(&coverage)
     );
     Ok(())
 }

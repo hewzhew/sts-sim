@@ -150,6 +150,17 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
             path.display(),
             observed_sibling_samples
         );
+        let coverage =
+            sts_simulator::eval::learning_dataset_v1::analyze_journal_decision_candidate_coverage_v1(
+                &report,
+                &records,
+            );
+        eprintln!(
+            "{}",
+            sts_simulator::eval::learning_dataset_v1::render_journal_decision_candidate_coverage_v1(
+                &coverage
+            )
+        );
     }
     if input.json {
         println!(

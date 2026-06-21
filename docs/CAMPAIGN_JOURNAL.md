@@ -113,6 +113,11 @@ branch outcome to a candidate when the branch command sequence starts with the
 journal parent commands plus the candidate command. Older command-prefix
 reconstruction remains as a fallback for reports without journal events.
 
+The same export prints `DecisionCandidateCoverageV1`, a report-level diagnostic
+for how many journal candidates have any observed descendant branch. This is a
+coverage check for campaign scheduling and learning data readiness; it is not a
+candidate value estimate.
+
 ## Boundaries
 
 `CampaignJournal` is not a strategy engine. It must not decide what to pick or
