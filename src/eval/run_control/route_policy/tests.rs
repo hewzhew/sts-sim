@@ -223,7 +223,10 @@ fn route_policy_stop_preserves_typed_candidate_pool() {
     let packet = map_decision_packet.expect("route stop should carry typed map packet");
     assert_eq!(packet.selected_index, None);
     assert_eq!(packet.candidates.len(), candidate_count);
-    assert!(packet.warnings.iter().any(|line| line == "test stop reason"));
+    assert!(packet
+        .warnings
+        .iter()
+        .any(|line| line == "test stop reason"));
     assert_eq!(stop_reason, "test stop reason");
     let record = noncombat_record.expect("route stop should carry noncombat record");
     assert_eq!(
