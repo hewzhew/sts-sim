@@ -81,6 +81,10 @@ pub(crate) const BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND: &str =
 pub const BRANCH_EXPERIMENT_DECISION_PARENT_COMMAND_PREFIX_V1: &str = "__decision_parent:";
 pub const BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1: &str = "__route_decision:";
 
+pub fn branch_experiment_command_is_replay_advance_v1(command: &str) -> bool {
+    command == BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND
+}
+
 pub fn branch_experiment_command_is_decision_parent_coordinate_v1(command: &str) -> bool {
     command.starts_with(BRANCH_EXPERIMENT_DECISION_PARENT_COMMAND_PREFIX_V1)
         || command.starts_with(BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1)
@@ -403,7 +407,7 @@ fn apply_branch_experiment_prefix_commands_v1(
 ) -> Result<Option<BranchExperimentBossCombatRecordV1>, String> {
     let mut prefix_final_boss_combat_record = None;
     for command_line in prefix_commands {
-        if command_line == BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND {
+        if branch_experiment_command_is_replay_advance_v1(command_line) {
             let outcome = crate::eval::run_control::apply_branch_experiment_auto_run(
                 session,
                 RunControlAutoStepOptions {

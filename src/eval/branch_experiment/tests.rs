@@ -31,6 +31,12 @@ fn branch_experiment_schema_version_tracks_lineage_pruned_summary() {
 
 #[test]
 fn branch_experiment_command_coordinate_helpers_classify_decision_parent_anchors() {
+    assert!(branch_experiment_command_is_replay_advance_v1(
+        "__branch_experiment_replay_advance"
+    ));
+    assert!(!branch_experiment_command_is_replay_advance_v1(
+        "__route_decision:0:go_1"
+    ));
     assert!(branch_experiment_command_is_decision_parent_coordinate_v1(
         "__decision_parent:1:shop:abcd"
     ));
