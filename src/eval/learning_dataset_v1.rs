@@ -11,6 +11,7 @@ use crate::eval::branch_outcome_dataset_v1::{
     BranchOutcomeSupervisionStatusV1,
 };
 use crate::eval::campaign_journal::{
+    CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateAdmissionTraceV1,
     CampaignJournalCandidateDispositionV1, CampaignJournalCandidateV1,
     CampaignJournalEventPayloadV1, CampaignJournalEventV1,
 };
@@ -215,11 +216,19 @@ pub struct CoverageGapContinuationPlanV1 {
     pub kept_unobserved_candidates: usize,
     #[serde(default)]
     pub pruned_unobserved_candidates: usize,
+    #[serde(default)]
+    pub scheduled_unobserved_candidates: usize,
+    #[serde(default)]
+    pub unscheduled_unobserved_candidates: usize,
     pub selected_target_count: usize,
     #[serde(default)]
     pub selected_kept_targets: usize,
     #[serde(default)]
     pub selected_pruned_targets: usize,
+    #[serde(default)]
+    pub selected_scheduled_targets: usize,
+    #[serde(default)]
+    pub selected_unscheduled_targets: usize,
     pub targets: Vec<CoverageGapContinuationTargetV1>,
 }
 
@@ -238,6 +247,8 @@ pub struct CoverageGapContinuationTargetV1 {
     pub command: String,
     pub label: String,
     pub semantic_class: String,
+    #[serde(default)]
+    pub admission: CampaignJournalCandidateAdmissionTraceV1,
     pub disposition: CampaignJournalCandidateDispositionV1,
     pub milestone: String,
 }
@@ -781,8 +792,12 @@ pub fn plan_coverage_gap_continuations_v1(
     let mut total_unobserved_candidates = 0usize;
     let mut kept_unobserved_candidates = 0usize;
     let mut pruned_unobserved_candidates = 0usize;
+    let mut scheduled_unobserved_candidates = 0usize;
+    let mut unscheduled_unobserved_candidates = 0usize;
     let mut selected_kept_targets = 0usize;
     let mut selected_pruned_targets = 0usize;
+    let mut selected_scheduled_targets = 0usize;
+    let mut selected_unscheduled_targets = 0usize;
     let mut targets = Vec::new();
 
     for event in &report.journal.events {
@@ -818,6 +833,12 @@ pub fn plan_coverage_gap_continuations_v1(
                     pruned_unobserved_candidates = pruned_unobserved_candidates.saturating_add(1)
                 }
             }
+            if candidate_admission_is_scheduled_v1(candidate) {
+                scheduled_unobserved_candidates = scheduled_unobserved_candidates.saturating_add(1);
+            } else {
+                unscheduled_unobserved_candidates =
+                    unscheduled_unobserved_candidates.saturating_add(1);
+            }
             unobserved.push((candidate_index, candidate));
         }
 
@@ -825,12 +846,13 @@ pub fn plan_coverage_gap_continuations_v1(
         let ordered_unobserved = unobserved
             .iter()
             .copied()
-            .filter(|(_, candidate)| {
-                candidate.disposition == CampaignJournalCandidateDispositionV1::Kept
-            })
-            .chain(unobserved.iter().copied().filter(|(_, candidate)| {
-                candidate.disposition == CampaignJournalCandidateDispositionV1::Pruned
-            }));
+            .filter(|(_, candidate)| candidate_admission_is_scheduled_v1(candidate))
+            .chain(
+                unobserved
+                    .iter()
+                    .copied()
+                    .filter(|(_, candidate)| !candidate_admission_is_scheduled_v1(candidate)),
+            );
         for (candidate_index, candidate) in ordered_unobserved {
             if targets.len() >= max_targets || selected_for_decision >= max_candidates_per_decision
             {
@@ -849,6 +871,7 @@ pub fn plan_coverage_gap_continuations_v1(
                 command: candidate.command.clone(),
                 label: candidate.label.clone(),
                 semantic_class: candidate.semantic_class.clone(),
+                admission: resolved_candidate_admission_v1(candidate),
                 disposition: candidate.disposition,
                 milestone: coverage_gap_candidate_milestone_v1(event),
             });
@@ -859,6 +882,11 @@ pub fn plan_coverage_gap_continuations_v1(
                 CampaignJournalCandidateDispositionV1::Pruned => {
                     selected_pruned_targets = selected_pruned_targets.saturating_add(1)
                 }
+            }
+            if candidate_admission_is_scheduled_v1(candidate) {
+                selected_scheduled_targets = selected_scheduled_targets.saturating_add(1);
+            } else {
+                selected_unscheduled_targets = selected_unscheduled_targets.saturating_add(1);
             }
             selected_for_decision = selected_for_decision.saturating_add(1);
         }
@@ -875,9 +903,13 @@ pub fn plan_coverage_gap_continuations_v1(
         total_unobserved_candidates,
         kept_unobserved_candidates,
         pruned_unobserved_candidates,
+        scheduled_unobserved_candidates,
+        unscheduled_unobserved_candidates,
         selected_target_count: targets.len(),
         selected_kept_targets,
         selected_pruned_targets,
+        selected_scheduled_targets,
+        selected_unscheduled_targets,
         targets,
     }
 }
@@ -908,13 +940,17 @@ pub fn coverage_gap_continuation_execution_plan_v1(
 pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPlanV1) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
-        "CoverageGapContinuationPlanV1 decisions={} candidates={} unobserved={} kept_unobserved={} pruned_unobserved={} selected={} kept_selected={} pruned_selected={}",
+        "CoverageGapContinuationPlanV1 decisions={} candidates={} unobserved={} scheduled_unobserved={} unscheduled_unobserved={} kept_unobserved={} pruned_unobserved={} selected={} scheduled_selected={} unscheduled_selected={} kept_selected={} pruned_selected={}",
         plan.total_decisions,
         plan.total_candidates,
         plan.total_unobserved_candidates,
+        plan.scheduled_unobserved_candidates,
+        plan.unscheduled_unobserved_candidates,
         plan.kept_unobserved_candidates,
         plan.pruned_unobserved_candidates,
         plan.selected_target_count,
+        plan.selected_scheduled_targets,
+        plan.selected_unscheduled_targets,
         plan.selected_kept_targets,
         plan.selected_pruned_targets
     ));
@@ -924,13 +960,14 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
         lines.push("Targets:".to_string());
         for (index, target) in plan.targets.iter().take(12).enumerate() {
             lines.push(format!(
-                "  {}. {} {} | parent={} candidate={} {{{}}} disposition={} milestone={} semantic=[{}]",
+                "  {}. {} {} | parent={} candidate={} {{{}}} admission={} disposition={} milestone={} semantic=[{}]",
                 index + 1,
                 target.event_type,
                 compact_learning_text_v1(&target.decision_id, 56),
                 compact_learning_text_v1(&target.parent_branch_id, 36),
                 compact_learning_text_v1(&target.label, 42),
                 compact_learning_text_v1(&target.command, 28),
+                render_journal_candidate_admission_status_v1(target.admission.status),
                 render_journal_candidate_disposition_v1(target.disposition),
                 target.milestone,
                 compact_learning_text_v1(&target.semantic_class, 58)
@@ -944,6 +981,35 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
         }
     }
     lines.join("\n")
+}
+
+fn candidate_admission_is_scheduled_v1(candidate: &CampaignJournalCandidateV1) -> bool {
+    resolved_candidate_admission_v1(candidate).status
+        == CampaignJournalCandidateAdmissionStatusV1::Scheduled
+}
+
+fn resolved_candidate_admission_v1(
+    candidate: &CampaignJournalCandidateV1,
+) -> CampaignJournalCandidateAdmissionTraceV1 {
+    if candidate.admission.status != CampaignJournalCandidateAdmissionStatusV1::Unknown {
+        return candidate.admission.clone();
+    }
+    CampaignJournalCandidateAdmissionTraceV1::from_disposition(
+        candidate.disposition,
+        "legacy_disposition",
+        render_journal_candidate_disposition_v1(candidate.disposition),
+    )
+}
+
+fn render_journal_candidate_admission_status_v1(
+    status: CampaignJournalCandidateAdmissionStatusV1,
+) -> &'static str {
+    match status {
+        CampaignJournalCandidateAdmissionStatusV1::Unknown => "unknown",
+        CampaignJournalCandidateAdmissionStatusV1::Scheduled => "scheduled",
+        CampaignJournalCandidateAdmissionStatusV1::Deferred => "deferred",
+        CampaignJournalCandidateAdmissionStatusV1::Rejected => "rejected",
+    }
 }
 
 fn render_journal_candidate_disposition_v1(
@@ -2509,6 +2575,60 @@ mod tests {
     }
 
     #[test]
+    fn coverage_gap_continuation_uses_admission_trace_before_legacy_disposition() {
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-reward0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Reward Screen".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "journal-reward0".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "reward-frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 3,
+                original_count: 2,
+                selected_count: 1,
+                candidates: vec![
+                    sample_journal_candidate_with_admission(
+                        "rp 0",
+                        "Legacy kept but deferred",
+                        CampaignJournalCandidateDispositionV1::Kept,
+                        CampaignJournalCandidateAdmissionStatusV1::Deferred,
+                    ),
+                    sample_journal_candidate_with_admission(
+                        "rp 1",
+                        "Legacy pruned but scheduled",
+                        CampaignJournalCandidateDispositionV1::Pruned,
+                        CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+                    ),
+                ],
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[], 1, 1);
+        let rendered = render_coverage_gap_continuation_plan_v1(&plan);
+
+        assert_eq!(plan.scheduled_unobserved_candidates, 1);
+        assert_eq!(plan.unscheduled_unobserved_candidates, 1);
+        assert_eq!(plan.selected_scheduled_targets, 1);
+        assert_eq!(plan.selected_unscheduled_targets, 0);
+        assert_eq!(plan.targets[0].command, "rp 1");
+        assert_eq!(
+            plan.targets[0].admission.status,
+            CampaignJournalCandidateAdmissionStatusV1::Scheduled
+        );
+        assert!(rendered.contains("admission=scheduled"));
+    }
+
+    #[test]
     fn decision_outcome_samples_jsonl_round_trips() {
         let mut clothesline = sample_branch_outcome_record();
         clothesline.branch_id = "root.rp 0".to_string();
@@ -3046,6 +3166,11 @@ mod tests {
             command: command.to_string(),
             label: label.to_string(),
             semantic_class: "test".to_string(),
+            admission: CampaignJournalCandidateAdmissionTraceV1::new(
+                CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+                "test",
+                "kept",
+            ),
             disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Kept,
         }
     }
@@ -3056,8 +3181,36 @@ mod tests {
             command: command.to_string(),
             label: label.to_string(),
             semantic_class: "test".to_string(),
+            admission: CampaignJournalCandidateAdmissionTraceV1::new(
+                CampaignJournalCandidateAdmissionStatusV1::Deferred,
+                "test",
+                "pruned",
+            ),
             disposition:
                 crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Pruned,
+        }
+    }
+
+    fn sample_journal_candidate_with_admission(
+        command: &str,
+        label: &str,
+        disposition: CampaignJournalCandidateDispositionV1,
+        status: CampaignJournalCandidateAdmissionStatusV1,
+    ) -> CampaignJournalCandidateV1 {
+        CampaignJournalCandidateV1 {
+            candidate_id: command.to_string(),
+            command: command.to_string(),
+            label: label.to_string(),
+            semantic_class: "test".to_string(),
+            disposition,
+            admission: CampaignJournalCandidateAdmissionTraceV1 {
+                status,
+                source: "test".to_string(),
+                reason: "test".to_string(),
+                lane: String::new(),
+                representative_count: 0,
+                suppressed_count: 0,
+            },
         }
     }
 

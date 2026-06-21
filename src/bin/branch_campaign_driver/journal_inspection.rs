@@ -1,7 +1,7 @@
 use sts_simulator::eval::branch_campaign::BranchCampaignReportV1;
 use sts_simulator::eval::campaign_journal::{
-    CampaignJournalCandidateDispositionV1, CampaignJournalCandidateV1,
-    CampaignJournalEventPayloadV1, CampaignJournalEventV1,
+    CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateDispositionV1,
+    CampaignJournalCandidateV1, CampaignJournalEventPayloadV1, CampaignJournalEventV1,
 };
 
 use super::campaign_artifacts::read_campaign_report_v1;
@@ -288,28 +288,42 @@ fn journal_event_candidates_v1(event: &CampaignJournalEventV1) -> &[CampaignJour
 
 fn journal_event_search_text_v1(event: &CampaignJournalEventV1) -> String {
     let mut text = Vec::new();
-    text.push(event.event_id.as_str());
-    text.push(event.branch_id.as_str());
-    text.push(event.branch_frontier_title.as_str());
-    text.push(journal_event_type_v1(event));
-    text.push(journal_event_boundary_title_v1(event));
-    text.push(journal_event_frontier_key_v1(event));
+    text.push(event.event_id.clone());
+    text.push(event.branch_id.clone());
+    text.push(event.branch_frontier_title.clone());
+    text.push(journal_event_type_v1(event).to_string());
+    text.push(journal_event_boundary_title_v1(event).to_string());
+    text.push(journal_event_frontier_key_v1(event).to_string());
     for choice in &event.branch_choices {
-        text.push(choice.as_str());
+        text.push(choice.clone());
     }
     for command in &event.branch_commands {
-        text.push(command.as_str());
+        text.push(command.clone());
     }
     for candidate in journal_event_candidates_v1(event) {
-        text.push(candidate.candidate_id.as_str());
-        text.push(candidate.command.as_str());
-        text.push(candidate.label.as_str());
-        text.push(candidate.semantic_class.as_str());
+        text.push(candidate.candidate_id.clone());
+        text.push(candidate.command.clone());
+        text.push(candidate.label.clone());
+        text.push(candidate.semantic_class.clone());
+        text.push(render_candidate_admission_status_v1(candidate.admission.status).to_string());
+        text.push(candidate.admission.source.clone());
+        text.push(candidate.admission.reason.clone());
+        text.push(candidate.admission.lane.clone());
+        if candidate.admission.representative_count > 0 {
+            text.push(format!(
+                "representatives:{}",
+                candidate.admission.representative_count
+            ));
+        }
+        if candidate.admission.suppressed_count > 0 {
+            text.push(format!(
+                "suppressed:{}",
+                candidate.admission.suppressed_count
+            ));
+        }
     }
     let payload_terms = journal_event_payload_search_terms_v1(event);
-    for term in &payload_terms {
-        text.push(term.as_str());
-    }
+    text.extend(payload_terms);
     normalize_query_v1(&text.join(" "))
 }
 
@@ -357,12 +371,53 @@ fn render_journal_candidates_v1(candidates: &[CampaignJournalCandidateV1], limit
 
 fn render_journal_candidate_v1(candidate: &CampaignJournalCandidateV1) -> String {
     format!(
-        "{} {{{}}} [{}; {}]",
+        "{} {{{}}} [{}; {}; {}]",
         candidate.label,
         candidate.command,
         candidate.semantic_class,
+        render_candidate_admission_v1(candidate),
         render_candidate_disposition_v1(candidate.disposition)
     )
+}
+
+fn render_candidate_admission_v1(candidate: &CampaignJournalCandidateV1) -> String {
+    let mut parts = vec![format!(
+        "admission={}",
+        render_candidate_admission_status_v1(candidate.admission.status)
+    )];
+    if !candidate.admission.source.is_empty() {
+        parts.push(format!("source={}", candidate.admission.source));
+    }
+    if !candidate.admission.reason.is_empty() {
+        parts.push(format!("reason={}", candidate.admission.reason));
+    }
+    if !candidate.admission.lane.is_empty() {
+        parts.push(format!("lane={}", candidate.admission.lane));
+    }
+    if candidate.admission.representative_count > 0 {
+        parts.push(format!(
+            "representatives={}",
+            candidate.admission.representative_count
+        ));
+    }
+    if candidate.admission.suppressed_count > 0 {
+        parts.push(format!(
+            "suppressed={}",
+            candidate.admission.suppressed_count
+        ));
+    }
+    parts.join(" ")
+}
+
+fn render_candidate_admission_status_v1(
+    status: CampaignJournalCandidateAdmissionStatusV1,
+) -> &'static str {
+    match status {
+        CampaignJournalCandidateAdmissionStatusV1::Unknown => "unknown",
+        CampaignJournalCandidateAdmissionStatusV1::Scheduled => "scheduled",
+        CampaignJournalCandidateAdmissionStatusV1::Deferred => "deferred",
+        CampaignJournalCandidateAdmissionStatusV1::Rejected => "rejected",
+    }
 }
 
 fn render_candidate_disposition_v1(
@@ -381,6 +436,7 @@ fn normalize_query_v1(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sts_simulator::eval::campaign_journal::CampaignJournalCandidateAdmissionTraceV1;
 
     #[test]
     fn structured_event_query_does_not_match_parent_event_text_on_reward() {
@@ -479,6 +535,51 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn journal_candidate_render_shows_admission_trace_status() {
+        let mut candidate = candidate("Armaments", "rp 1", "block");
+        candidate.admission = CampaignJournalCandidateAdmissionTraceV1::new(
+            CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+            "reward_portfolio",
+            "selected",
+        );
+
+        let rendered = render_journal_candidate_v1(&candidate);
+
+        assert!(rendered.contains("admission=scheduled"));
+        assert!(rendered.contains("source=reward_portfolio"));
+    }
+
+    #[test]
+    fn journal_query_searches_candidate_admission_trace() {
+        let mut candidate = candidate("Armaments", "rp 1", "block");
+        candidate.admission = CampaignJournalCandidateAdmissionTraceV1::new(
+            CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+            "reward_portfolio",
+            "selected",
+        );
+        let reward =
+            journal_event_with_payload(CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "reward0".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 3,
+                original_count: 1,
+                selected_count: 1,
+                candidates: vec![candidate],
+            });
+
+        assert!(journal_event_matches_query_v1(
+            &reward,
+            &normalize_query_v1("scheduled")
+        ));
+        assert!(journal_event_matches_query_v1(
+            &reward,
+            &normalize_query_v1("reward_portfolio")
+        ));
+    }
+
     fn journal_event_with_payload(
         payload: CampaignJournalEventPayloadV1,
     ) -> CampaignJournalEventV1 {
@@ -503,6 +604,7 @@ mod tests {
             command: command.to_string(),
             label: label.to_string(),
             semantic_class: semantic_class.to_string(),
+            admission: Default::default(),
             disposition: CampaignJournalCandidateDispositionV1::Kept,
         }
     }

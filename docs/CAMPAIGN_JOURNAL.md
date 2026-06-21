@@ -182,6 +182,10 @@ journal events, not the other way around.
 - Prefer structured fields over parsing strings from rendered reports.
 - Keep old report fields only as compatibility views, not as new sources of
   truth.
+- Treat candidate `admission` as the structured scheduling trace. Legacy
+  `disposition` (`kept`/`pruned`) is still serialized for compatibility, but
+  new continuation and replay tooling should prefer `admission.status`,
+  `source`, `reason`, and `lane`.
 - Interpret branch `commands` relative to the report/checkpoint
   `run_prelude`, not relative to a fresh process start. New reports record the
   replay root and prefix commands explicitly; continuation tools should consume

@@ -12,6 +12,7 @@ use crate::eval::campaign_journal::{
     campaign_journal_candidate_from_boss_relic_entry_v1,
     campaign_journal_candidate_from_campfire_entry_v1,
     campaign_journal_candidate_from_event_entry_v1, reward_portfolio_from_journal_event_v1,
+    CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateAdmissionTraceV1,
     CampaignJournalCandidateDispositionV1, CampaignJournalCandidateV1,
     CampaignJournalEventPayloadV1, CampaignJournalEventV1,
 };
@@ -408,6 +409,12 @@ fn journal_candidate_from_reward_entry_v1(
         command: entry.command.clone(),
         label: entry.label.clone(),
         semantic_class: entry.semantic_class.clone(),
+        admission: CampaignJournalCandidateAdmissionTraceV1::from_disposition(
+            disposition,
+            "reward_portfolio",
+            group,
+        )
+        .with_lane(group),
         disposition,
     }
 }
@@ -473,6 +480,13 @@ fn journal_candidate_from_shop_candidate_entry_v1(
         command: candidate.command.clone(),
         label: candidate.label.clone(),
         semantic_class: shop_candidate_semantic_class_v1(candidate),
+        admission: CampaignJournalCandidateAdmissionTraceV1::new(
+            shop_candidate_admission_status_v1(&candidate.branch_admission),
+            "shop_candidate_pool",
+            candidate.branch_admission.clone(),
+        )
+        .with_lane(candidate.lane.clone())
+        .with_counts(0, candidate.suppressed_count),
         disposition: if candidate.branch_admission == "Admit" {
             CampaignJournalCandidateDispositionV1::Kept
         } else {
@@ -511,6 +525,16 @@ fn shop_candidate_semantic_class_v1(
         ));
     }
     parts.join(" ")
+}
+
+fn shop_candidate_admission_status_v1(
+    branch_admission: &str,
+) -> CampaignJournalCandidateAdmissionStatusV1 {
+    match branch_admission.to_ascii_lowercase().as_str() {
+        "admit" => CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+        "reject" => CampaignJournalCandidateAdmissionStatusV1::Rejected,
+        _ => CampaignJournalCandidateAdmissionStatusV1::Deferred,
+    }
 }
 
 fn campaign_campfire_branch_journal_events_v1(

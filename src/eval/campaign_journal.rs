@@ -143,38 +143,143 @@ pub struct CampaignJournalCandidateV1 {
     pub command: String,
     pub label: String,
     pub semantic_class: String,
+    #[serde(
+        default,
+        skip_serializing_if = "CampaignJournalCandidateAdmissionTraceV1::is_unknown"
+    )]
+    pub admission: CampaignJournalCandidateAdmissionTraceV1,
     pub disposition: CampaignJournalCandidateDispositionV1,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CampaignJournalCandidateAdmissionTraceV1 {
+    pub status: CampaignJournalCandidateAdmissionStatusV1,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub source: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub lane: String,
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    pub representative_count: usize,
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    pub suppressed_count: usize,
+}
+
+impl CampaignJournalCandidateAdmissionTraceV1 {
+    pub fn new(
+        status: CampaignJournalCandidateAdmissionStatusV1,
+        source: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            status,
+            source: source.into(),
+            reason: reason.into(),
+            lane: String::new(),
+            representative_count: 0,
+            suppressed_count: 0,
+        }
+    }
+
+    pub fn from_disposition(
+        disposition: CampaignJournalCandidateDispositionV1,
+        source: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        let status = match disposition {
+            CampaignJournalCandidateDispositionV1::Kept => {
+                CampaignJournalCandidateAdmissionStatusV1::Scheduled
+            }
+            CampaignJournalCandidateDispositionV1::Pruned => {
+                CampaignJournalCandidateAdmissionStatusV1::Deferred
+            }
+        };
+        Self::new(status, source, reason)
+    }
+
+    pub fn with_lane(mut self, lane: impl Into<String>) -> Self {
+        self.lane = lane.into();
+        self
+    }
+
+    pub fn with_counts(mut self, representative_count: usize, suppressed_count: usize) -> Self {
+        self.representative_count = representative_count;
+        self.suppressed_count = suppressed_count;
+        self
+    }
+
+    pub fn is_unknown(&self) -> bool {
+        self.status == CampaignJournalCandidateAdmissionStatusV1::Unknown
+            && self.source.is_empty()
+            && self.reason.is_empty()
+            && self.lane.is_empty()
+            && self.representative_count == 0
+            && self.suppressed_count == 0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CampaignJournalCandidateAdmissionStatusV1 {
+    Unknown,
+    Scheduled,
+    Deferred,
+    Rejected,
+}
+
+impl Default for CampaignJournalCandidateAdmissionStatusV1 {
+    fn default() -> Self {
+        Self::Unknown
+    }
 }
 
 pub fn campaign_journal_candidate_from_campfire_entry_v1(
     candidate: &BranchExperimentCampfirePlanCandidateEntryV1,
 ) -> CampaignJournalCandidateV1 {
+    let disposition = if candidate.branch_admission == "selected" {
+        CampaignJournalCandidateDispositionV1::Kept
+    } else {
+        CampaignJournalCandidateDispositionV1::Pruned
+    };
     CampaignJournalCandidateV1 {
         candidate_id: candidate.plan_id.clone(),
         command: candidate.command.clone(),
         label: candidate.label.clone(),
         semantic_class: campfire_candidate_semantic_class_v1(candidate),
-        disposition: if candidate.branch_admission == "selected" {
-            CampaignJournalCandidateDispositionV1::Kept
-        } else {
-            CampaignJournalCandidateDispositionV1::Pruned
-        },
+        admission: CampaignJournalCandidateAdmissionTraceV1::new(
+            campaign_journal_status_from_branch_admission_v1(&candidate.branch_admission),
+            "campfire_candidate_pool",
+            candidate.branch_admission.clone(),
+        )
+        .with_lane(candidate.role.clone())
+        .with_counts(candidate.representative_count, candidate.suppressed_count),
+        disposition,
     }
 }
 
 pub fn campaign_journal_candidate_from_event_entry_v1(
     candidate: &BranchExperimentEventCandidateEntryV1,
 ) -> CampaignJournalCandidateV1 {
+    let disposition = if candidate.branch_admission == "selected" {
+        CampaignJournalCandidateDispositionV1::Kept
+    } else {
+        CampaignJournalCandidateDispositionV1::Pruned
+    };
     CampaignJournalCandidateV1 {
         candidate_id: candidate.candidate_id.clone(),
         command: candidate.command.clone(),
         label: candidate.label.clone(),
         semantic_class: event_candidate_semantic_class_v1(candidate),
-        disposition: if candidate.branch_admission == "selected" {
-            CampaignJournalCandidateDispositionV1::Kept
-        } else {
-            CampaignJournalCandidateDispositionV1::Pruned
-        },
+        admission: CampaignJournalCandidateAdmissionTraceV1::new(
+            campaign_journal_status_from_branch_admission_v1(&candidate.branch_admission),
+            "event_candidate_pool",
+            candidate.branch_admission.clone(),
+        )
+        .with_lane(candidate.effect_kind.clone())
+        .with_counts(candidate.representative_count, candidate.suppressed_count),
+        disposition,
     }
 }
 
@@ -207,6 +312,12 @@ pub fn campaign_journal_candidate_from_boss_relic_entry_v1(
         command: candidate.command.clone(),
         label: candidate.label.clone(),
         semantic_class: boss_relic_candidate_semantic_class_v1(candidate),
+        admission: CampaignJournalCandidateAdmissionTraceV1::new(
+            campaign_journal_status_from_branch_admission_v1(&candidate.branch_admission),
+            "boss_relic_candidate_pool",
+            candidate.branch_admission.clone(),
+        )
+        .with_lane(candidate.class.clone()),
         disposition: CampaignJournalCandidateDispositionV1::Kept,
     }
 }
@@ -261,6 +372,20 @@ pub enum CampaignJournalCandidateDispositionV1 {
     Pruned,
 }
 
+fn campaign_journal_status_from_branch_admission_v1(
+    admission: &str,
+) -> CampaignJournalCandidateAdmissionStatusV1 {
+    match admission.to_ascii_lowercase().as_str() {
+        "admit" | "selected" | "scheduled" | "kept" => {
+            CampaignJournalCandidateAdmissionStatusV1::Scheduled
+        }
+        "reject" | "rejected" | "blocked" | "block" => {
+            CampaignJournalCandidateAdmissionStatusV1::Rejected
+        }
+        _ => CampaignJournalCandidateAdmissionStatusV1::Deferred,
+    }
+}
+
 pub fn reward_portfolio_from_journal_event_v1(
     event: &CampaignJournalEventV1,
 ) -> Option<BranchExperimentRewardOptionPortfolioV1> {
@@ -306,4 +431,43 @@ pub fn reward_portfolio_from_journal_event_v1(
 
 fn is_false(value: &bool) -> bool {
     !*value
+}
+
+fn is_zero_usize(value: &usize) -> bool {
+    *value == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_candidates_record_structured_admission_trace() {
+        let candidate = campaign_journal_candidate_from_event_entry_v1(
+            &BranchExperimentEventCandidateEntryV1 {
+                candidate_id: "event:0".to_string(),
+                command: "event 0".to_string(),
+                label: "Take event option".to_string(),
+                event_index: Some(0),
+                effect_kind: "gain_relic".to_string(),
+                effect_key: "golden_idol".to_string(),
+                event_policy_class: Some("valuable_event".to_string()),
+                event_policy_tier: Some("strong".to_string()),
+                event_policy_score: Some(100),
+                branch_admission: "selected".to_string(),
+                representative_count: 2,
+                suppressed_count: 1,
+                reasons: vec!["event policy kept representative".to_string()],
+            },
+        );
+
+        assert_eq!(
+            candidate.admission.status,
+            CampaignJournalCandidateAdmissionStatusV1::Scheduled
+        );
+        assert_eq!(candidate.admission.source, "event_candidate_pool");
+        assert_eq!(candidate.admission.reason, "selected");
+        assert_eq!(candidate.admission.representative_count, 2);
+        assert_eq!(candidate.admission.suppressed_count, 1);
+    }
 }
