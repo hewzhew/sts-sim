@@ -6,7 +6,8 @@ use crate::ai::deck_mutation_compiler_v1::{
     CompiledDeckMutationDecisionV1, DeckMutationPlanCandidateV1,
 };
 use crate::ai::route_planner_v1::{
-    NeedVectorV1, RouteCandidateTraceV1, RouteDecisionTraceV1, RouteSafetyFlagV1, RouteScoreTermsV1,
+    NeedVectorV1, RouteCandidateTraceV1, RouteDecisionTraceV1, RouteSafetyFlagV1,
+    RouteScoreTermsV1, RouteValueFactorsV1,
 };
 
 use super::types::{
@@ -41,7 +42,7 @@ impl RouteDecisionTraceV1 {
             .iter()
             .zip(candidate_ids.iter())
             .enumerate()
-            .map(|(idx, (candidate, id))| route_value_estimate(candidate, id, idx * 2))
+            .map(|(idx, (candidate, id))| route_value_estimate(candidate, id, idx * 3))
             .collect::<Vec<_>>();
         let selected_candidate_id = self
             .selected_index
@@ -356,6 +357,13 @@ fn route_evidence_items(candidate: &RouteCandidateTraceV1, id: &str) -> Vec<Evid
             components: need_components(&candidate.needs),
         },
         EvidenceItemV1 {
+            kind: EvidenceKindV1::ValueFactors,
+            candidate_id: Some(id.to_string()),
+            label: "route value factors".to_string(),
+            information_class: InformationClassV1::Belief,
+            components: route_value_factor_components(&candidate.value_factors),
+        },
+        EvidenceItemV1 {
             kind: EvidenceKindV1::ScoreTerms,
             candidate_id: Some(id.to_string()),
             label: "route score terms".to_string(),
@@ -381,7 +389,11 @@ fn route_value_estimate(
         risk_adjusted_utility: candidate.total_score,
         confidence,
         components: route_score_components(&candidate.score_terms),
-        evidence_refs: vec![first_evidence_ref, first_evidence_ref + 1],
+        evidence_refs: vec![
+            first_evidence_ref,
+            first_evidence_ref + 1,
+            first_evidence_ref + 2,
+        ],
     }
 }
 
@@ -424,6 +436,27 @@ fn need_components(needs: &NeedVectorV1) -> Vec<ValueComponentV1> {
     ]
 }
 
+fn route_value_factor_components(factors: &RouteValueFactorsV1) -> Vec<ValueComponentV1> {
+    vec![
+        ValueComponentV1::new("card_reward_access", factors.card_reward_access),
+        ValueComponentV1::new("relic_access", factors.relic_access),
+        ValueComponentV1::new("remove_access", factors.remove_access),
+        ValueComponentV1::new("upgrade_access", factors.upgrade_access),
+        ValueComponentV1::new("heal_access", factors.heal_access),
+        ValueComponentV1::new("shop_access", factors.shop_access),
+        ValueComponentV1::new("event_access", factors.event_access),
+        ValueComponentV1::new("potion_gain", factors.potion_gain),
+        ValueComponentV1::new("curse_debt", factors.curse_debt),
+        ValueComponentV1::new("hp_loss_p90", factors.hp_loss_p90),
+        ValueComponentV1::new("death_risk", factors.death_risk),
+        ValueComponentV1::new("flexibility", factors.flexibility),
+        ValueComponentV1::new("first_elite_prep_signal", factors.first_elite_prep_signal),
+        ValueComponentV1::new("wing_boots_cost", factors.wing_boots_cost),
+        ValueComponentV1::new("forced_elite_pressure", factors.forced_elite_pressure),
+        ValueComponentV1::new("burning_elite_key_value", factors.burning_elite_key_value),
+    ]
+}
+
 fn route_score_components(terms: &RouteScoreTermsV1) -> Vec<ValueComponentV1> {
     vec![
         ValueComponentV1::new("card_reward", terms.card_reward),
@@ -434,9 +467,11 @@ fn route_score_components(terms: &RouteScoreTermsV1) -> Vec<ValueComponentV1> {
         ValueComponentV1::new("shop", terms.shop),
         ValueComponentV1::new("event", terms.event),
         ValueComponentV1::new("potion", terms.potion),
+        ValueComponentV1::new("curse_debt", terms.curse_debt),
         ValueComponentV1::new("hp_loss", terms.hp_loss),
         ValueComponentV1::new("death_risk", terms.death_risk),
         ValueComponentV1::new("flexibility", terms.flexibility),
+        ValueComponentV1::new("elite_prep", terms.elite_prep),
         ValueComponentV1::new("wing_boots_cost", terms.wing_boots_cost),
         ValueComponentV1::new("forced_path_penalty", terms.forced_path_penalty),
         ValueComponentV1::new("burning_elite_key_value", terms.burning_elite_key_value),

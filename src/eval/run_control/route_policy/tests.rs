@@ -165,4 +165,26 @@ fn route_go_attaches_compact_trace_boundary() {
         record.data_role,
         crate::ai::noncombat_decision_v1::DataRoleV1::BehaviorPolicyNotTeacher
     );
+    assert_eq!(record.evidence.items.len(), *candidate_count * 3);
+    assert!(record.evidence.items.iter().any(|item| {
+        item.kind == crate::ai::noncombat_decision_v1::EvidenceKindV1::ValueFactors
+    }));
+    let score_terms = record
+        .evidence
+        .items
+        .iter()
+        .find(|item| item.kind == crate::ai::noncombat_decision_v1::EvidenceKindV1::ScoreTerms)
+        .expect("route record should carry score terms evidence");
+    assert!(score_terms
+        .components
+        .iter()
+        .any(|component| component.name == "elite_prep"));
+    assert!(score_terms
+        .components
+        .iter()
+        .any(|component| component.name == "curse_debt"));
+    assert!(record
+        .values
+        .iter()
+        .all(|value| value.evidence_refs.len() == 3));
 }

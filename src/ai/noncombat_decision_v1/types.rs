@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 pub const NONCOMBAT_DECISION_RECORD_SCHEMA_NAME: &str = "NonCombatDecisionRecordV1";
-pub const NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION: u32 = 1;
+pub const NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum DecisionSiteKindV1 {
@@ -104,6 +104,7 @@ pub struct EvidenceItemV1 {
 pub enum EvidenceKindV1 {
     CandidateFacts,
     NeedVector,
+    ValueFactors,
     ScoreTerms,
     PolicyGate,
 }
