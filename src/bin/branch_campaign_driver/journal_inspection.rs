@@ -1,3 +1,4 @@
+use sts_simulator::ai::route_planner_v1::{MapDecisionPacketV1, RouteMoveCandidateV1};
 use sts_simulator::eval::branch_campaign::BranchCampaignReportV1;
 use sts_simulator::eval::campaign_journal::{
     CampaignJournalCandidateAdmissionReasonCategoryV1,
@@ -97,7 +98,7 @@ fn render_campaign_journal_inspection_v1(
         ));
         lines.push(format!(
             "   candidates: {}",
-            render_journal_candidates_v1(journal_event_candidates_v1(event), limit)
+            render_journal_event_candidates_v1(event, limit)
         ));
     }
     Ok(format!("{}\n", lines.join("\n")))
@@ -390,6 +391,7 @@ fn journal_event_payload_search_terms_v1(event: &CampaignJournalEventV1) -> Vec<
             selected_index,
             candidate_count,
             candidate_pool_provenance,
+            map_decision_packet,
             ..
         } => {
             let mut parts = vec![
@@ -412,9 +414,43 @@ fn journal_event_payload_search_terms_v1(event: &CampaignJournalEventV1) -> Vec<
                 ));
                 parts.push(format!("ordering:{:?}", provenance.ordering));
             }
+            if let Some(packet) = map_decision_packet {
+                for candidate in &packet.candidates {
+                    parts.extend(route_candidate_search_terms_v1(candidate));
+                }
+            }
             parts
         }
         _ => Vec::new(),
+    }
+}
+
+fn route_candidate_search_terms_v1(candidate: &RouteMoveCandidateV1) -> Vec<String> {
+    let room_type = candidate
+        .target
+        .room_type
+        .map(|room| format!("{:?}", room))
+        .unwrap_or_else(|| "Unknown".to_string());
+    vec![
+        candidate.candidate_id.clone(),
+        candidate.command.clone(),
+        format!("x{}", candidate.target.x),
+        format!("y{}", candidate.target.y),
+        room_type,
+        format!("{:?}", candidate.target.move_kind),
+        format!("{:?}", candidate.evaluation.safety),
+        format!("{:?}", candidate.projection.metadata.coverage),
+    ]
+}
+
+fn render_journal_event_candidates_v1(event: &CampaignJournalEventV1, limit: usize) -> String {
+    match &event.payload {
+        CampaignJournalEventPayloadV1::RouteCandidatePool {
+            candidates,
+            map_decision_packet: Some(packet),
+            ..
+        } => render_route_journal_candidates_v1(packet, candidates, limit),
+        _ => render_journal_candidates_v1(journal_event_candidates_v1(event), limit),
     }
 }
 
@@ -432,6 +468,67 @@ fn render_journal_candidates_v1(candidates: &[CampaignJournalCandidateV1], limit
         parts.push(format!("... {} more", candidates.len() - shown));
     }
     parts.join(" | ")
+}
+
+fn render_route_journal_candidates_v1(
+    packet: &MapDecisionPacketV1,
+    candidates: &[CampaignJournalCandidateV1],
+    limit: usize,
+) -> String {
+    if candidates.is_empty() {
+        return "-".to_string();
+    }
+    let shown = limit.max(1).min(candidates.len());
+    let mut parts = candidates
+        .iter()
+        .take(shown)
+        .enumerate()
+        .map(|(index, candidate)| {
+            packet.candidates.get(index).map_or_else(
+                || render_journal_candidate_v1(candidate),
+                |route| render_route_journal_candidate_v1(candidate, route),
+            )
+        })
+        .collect::<Vec<_>>();
+    if candidates.len() > shown {
+        parts.push(format!("... {} more", candidates.len() - shown));
+    }
+    parts.join(" | ")
+}
+
+fn render_route_journal_candidate_v1(
+    candidate: &CampaignJournalCandidateV1,
+    route: &RouteMoveCandidateV1,
+) -> String {
+    let room_type = route
+        .target
+        .room_type
+        .map(|room| format!("{:?}", room))
+        .unwrap_or_else(|| "Unknown".to_string());
+    let path = &route.projection.path_summary;
+    let projection = &route.projection.metadata;
+    format!(
+        "x{}y{} {} {{{}}} [route rank={} move={:?} safety={:?} score={:.2} coverage={:?} paths={}/{} elites={}-{} fires={}-{} shops={}-{}; {}; {}]",
+        route.target.x,
+        route.target.y,
+        room_type,
+        route.command,
+        route.rank,
+        route.target.move_kind,
+        route.evaluation.safety,
+        route.evaluation.total_score,
+        projection.coverage,
+        projection.observed_path_count,
+        projection.path_budget,
+        path.min_elites,
+        path.max_elites,
+        path.min_fires,
+        path.max_fires,
+        path.min_shops,
+        path.max_shops,
+        render_candidate_admission_v1(candidate),
+        render_candidate_disposition_v1(candidate.disposition)
+    )
 }
 
 fn render_journal_candidate_v1(candidate: &CampaignJournalCandidateV1) -> String {
@@ -682,6 +779,53 @@ mod tests {
         assert!(journal_event_matches_query_v1(
             &reward,
             &normalize_query_v1("reason_code=selected")
+        ));
+    }
+
+    #[test]
+    fn route_candidate_pool_render_prefers_typed_map_packet() {
+        let mut run = sts_simulator::state::RunState::new(521, 0, false, "Ironclad");
+        run.event_state = None;
+        let trace = sts_simulator::ai::route_planner_v1::plan_route_decision_v1(
+            &run,
+            &sts_simulator::state::core::EngineState::MapNavigation,
+            sts_simulator::ai::route_planner_v1::RoutePlannerConfigV1::default(),
+        );
+        let packet = MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+        assert!(!packet.candidates.is_empty());
+        let first_route = &packet.candidates[0];
+        let event = journal_event_with_payload(CampaignJournalEventPayloadV1::RouteCandidatePool {
+            decision_id: "route-pool0".to_string(),
+            boundary_title: "Map".to_string(),
+            frontier_key: "map-frontier".to_string(),
+            depth: 0,
+            candidate_count: packet.candidates.len(),
+            selected_index: packet.selected_index,
+            candidate_pool_provenance: Some(packet.candidate_pool.clone()),
+            map_decision_packet: Some(packet.clone()),
+            candidates: packet
+                .candidates
+                .iter()
+                .map(|route| candidate("legacy route label", &route.command, "legacy route"))
+                .collect(),
+        });
+
+        let rendered = render_journal_event_candidates_v1(&event, 3);
+
+        assert!(rendered.contains(&format!(
+            "x{}y{}",
+            first_route.target.x, first_route.target.y
+        )));
+        assert!(rendered.contains("coverage="));
+        assert!(rendered.contains("paths="));
+        assert!(!rendered.contains("legacy route label"));
+        assert!(journal_event_matches_query_v1(
+            &event,
+            &normalize_query_v1(&format!("x{}", first_route.target.x))
+        ));
+        assert!(journal_event_matches_query_v1(
+            &event,
+            &normalize_query_v1(&format!("{:?}", first_route.projection.metadata.coverage))
         ));
     }
 
