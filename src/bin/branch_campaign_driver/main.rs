@@ -8,6 +8,7 @@ mod checkpoint_inspection;
 mod cli_args;
 mod combat_lab;
 mod command_inputs;
+mod decision_observations;
 mod driver_command;
 mod final_boss_combat;
 mod inspect_summary;
@@ -28,6 +29,7 @@ use command_inputs::campaign_config_from_args;
 use command_inputs::{
     ContinuationCommandInput, DatasetCommandInput, InspectCommandInput, RunCommandInput,
 };
+use decision_observations::run_decision_observation_inspection;
 #[cfg(test)]
 use driver_command::driver_command_from_args;
 use driver_command::{driver_command_from_cli_input, BranchCampaignDriverCommandV1};
@@ -82,6 +84,9 @@ fn run(cli_input: BranchCampaignCliInputV1) -> Result<(), String> {
         BranchCampaignDriverCommandV1::InspectFinalBossCombat => {
             run_final_boss_combat_report_inspection(&InspectCommandInput::from_args(args)?)
         }
+        BranchCampaignDriverCommandV1::InspectDecisionObservations => {
+            run_decision_observation_inspection(&InspectCommandInput::from_args(args)?)
+        }
         BranchCampaignDriverCommandV1::InspectCheckpoint => {
             run_checkpoint_inspection(&InspectCommandInput::from_args(args)?)
         }
@@ -123,6 +128,14 @@ mod tests {
             "latest.checkpoint.json",
         ])
         .expect("inspect args parse");
+        let decision_observation_args = parse_args_from([
+            "branch_campaign_driver",
+            "inspect",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-decision-observations",
+        ])
+        .expect("decision observation inspect args parse");
         let dataset_args = parse_args_from([
             "branch_campaign_driver",
             "dataset",
@@ -147,6 +160,10 @@ mod tests {
         assert_eq!(
             driver_command_from_args(&inspect_args),
             BranchCampaignDriverCommandV1::InspectCheckpoint
+        );
+        assert_eq!(
+            driver_command_from_args(&decision_observation_args),
+            BranchCampaignDriverCommandV1::InspectDecisionObservations
         );
         assert_eq!(
             driver_command_from_args(&dataset_args),

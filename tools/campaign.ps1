@@ -43,6 +43,10 @@ Runs selected and alternative shop plans from a selected checkpoint branch, then
 Prints card reward compiler evidence for a selected checkpoint branch.
 
 .EXAMPLE
+.\tools\campaign.ps1 -InspectDecisionObservations -InspectQuery "Iron Wave"
+Prints saved historical reward option portfolios matching a candidate or semantic class.
+
+.EXAMPLE
 .\tools\campaign.ps1 -InspectDeckMutation -InspectIndex 0
 Prints DeckMutationCompiler evidence for a selected checkpoint branch.
 
@@ -160,6 +164,7 @@ param(
     [switch] $InspectShopEvidence,
     [switch] $InspectShopChallenge,
     [switch] $InspectCardRewardEvidence,
+    [switch] $InspectDecisionObservations,
     [switch] $InspectCampfireEvidence,
     [switch] $InspectDeckMutation,
     [switch] $InspectRouteEvidence,
@@ -217,6 +222,7 @@ param(
     [int] $InspectAct = 0,
     [int] $InspectFloor = 0,
     [string] $InspectBoundary = "",
+    [string] $InspectQuery = "",
     [int] $ChallengeMaxPlans = 6,
     [int] $ChallengeDepth = 3,
     [int] $ChallengeMaxBranches = 10,
@@ -281,6 +287,7 @@ if (
     $InspectShopEvidence -or
     $InspectShopChallenge -or
     $InspectCardRewardEvidence -or
+    $InspectDecisionObservations -or
     $InspectCampfireEvidence -or
     $InspectDeckMutation -or
     $InspectRouteEvidence -or
@@ -829,6 +836,7 @@ if ($Inspect) {
         $InspectShopEvidence -or
         $InspectShopChallenge -or
         $InspectCardRewardEvidence -or
+        $InspectDecisionObservations -or
         $InspectCampfireEvidence -or
         $InspectDeckMutation -or
         $InspectRouteEvidence -or
@@ -853,6 +861,9 @@ if ($Inspect) {
     }
     if ((-not $ExportLearningDataset) -and $InspectCardRewardEvidence) {
         $InspectArgs += "--inspect-card-reward-evidence"
+    }
+    if ((-not $ExportLearningDataset) -and $InspectDecisionObservations) {
+        $InspectArgs += "--inspect-decision-observations"
     }
     if ((-not $ExportLearningDataset) -and $InspectCampfireEvidence) {
         $InspectArgs += "--inspect-campfire-evidence"
@@ -890,6 +901,9 @@ if ($Inspect) {
     }
     if ((-not $ExportLearningDataset) -and $InspectBoundary) {
         $InspectArgs += @("--inspect-boundary", "$InspectBoundary")
+    }
+    if ((-not $ExportLearningDataset) -and $InspectQuery) {
+        $InspectArgs += @("--inspect-query", "$InspectQuery")
     }
 
     $RenderedInspectArgs = $InspectArgs | ForEach-Object {

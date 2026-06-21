@@ -432,6 +432,19 @@ pub(super) struct Args {
     pub(super) inspect_route_evidence: bool,
 
     #[arg(
+        long = "inspect-decision-observations",
+        help = "Print historical branch decision observations stored in a BranchCampaignV1 report"
+    )]
+    pub(super) inspect_decision_observations: bool,
+
+    #[arg(
+        long = "inspect-query",
+        value_name = "TEXT",
+        help = "Filter decision observations by candidate label, semantic class, frontier key, or parent choices"
+    )]
+    pub(super) inspect_query: Option<String>,
+
+    #[arg(
         long = "inspect-final-boss-combat",
         help = "Print a final boss combat timeline from a BranchCampaignV1 report"
     )]
@@ -983,6 +996,19 @@ struct InspectModeArgs {
     inspect_route_evidence: bool,
 
     #[arg(
+        long = "inspect-decision-observations",
+        help = "Print historical branch decision observations stored in a BranchCampaignV1 report"
+    )]
+    inspect_decision_observations: bool,
+
+    #[arg(
+        long = "inspect-query",
+        value_name = "TEXT",
+        help = "Filter decision observations by candidate label, semantic class, frontier key, or parent choices"
+    )]
+    inspect_query: Option<String>,
+
+    #[arg(
         long = "inspect-final-boss-combat",
         help = "Print a final boss combat timeline from a BranchCampaignV1 report"
     )]
@@ -1206,6 +1232,8 @@ impl Args {
             inspect_campfire_evidence: false,
             inspect_deck_mutation: false,
             inspect_route_evidence: false,
+            inspect_decision_observations: false,
+            inspect_query: None,
             inspect_final_boss_combat: false,
             export_outcome_dataset: None,
             analyze_outcome_dataset: None,
@@ -1375,6 +1403,8 @@ impl InspectModeArgs {
         args.inspect_campfire_evidence = self.inspect_campfire_evidence;
         args.inspect_deck_mutation = self.inspect_deck_mutation;
         args.inspect_route_evidence = self.inspect_route_evidence;
+        args.inspect_decision_observations = self.inspect_decision_observations;
+        args.inspect_query = self.inspect_query;
         args.inspect_final_boss_combat = self.inspect_final_boss_combat;
     }
 }

@@ -12,6 +12,7 @@ pub(super) enum BranchCampaignDriverCommandV1 {
     ExportOutcomeDataset,
     ExportLearningDataset,
     ExportDecisionOutcomeDataset,
+    InspectDecisionObservations,
     InspectFinalBossCombat,
     InspectCheckpoint,
     RunCampaign,
@@ -83,6 +84,9 @@ fn legacy_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
     if args.inspect_final_boss_combat {
         return BranchCampaignDriverCommandV1::InspectFinalBossCombat;
     }
+    if args.inspect_decision_observations {
+        return BranchCampaignDriverCommandV1::InspectDecisionObservations;
+    }
     if args.inspect_checkpoint.is_some() {
         return BranchCampaignDriverCommandV1::InspectCheckpoint;
     }
@@ -90,7 +94,9 @@ fn legacy_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
 }
 
 fn inspect_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
-    if args.inspect_final_boss_combat {
+    if args.inspect_decision_observations {
+        BranchCampaignDriverCommandV1::InspectDecisionObservations
+    } else if args.inspect_final_boss_combat {
         BranchCampaignDriverCommandV1::InspectFinalBossCombat
     } else {
         BranchCampaignDriverCommandV1::InspectCheckpoint

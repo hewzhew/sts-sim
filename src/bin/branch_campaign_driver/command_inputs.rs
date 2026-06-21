@@ -58,6 +58,7 @@ pub(super) struct InspectCommandInput {
     pub(super) checkpoint_path: Option<PathBuf>,
     pub(super) report_path: Option<PathBuf>,
     pub(super) summary: bool,
+    pub(super) query: Option<String>,
     pub(super) filters: InspectFiltersInput,
     pub(super) modes: InspectModesInput,
     pub(super) search_options: RunControlSearchCombatOptions,
@@ -71,6 +72,7 @@ impl InspectCommandInput {
             checkpoint_path: args.inspect_checkpoint.clone(),
             report_path: args.inspect_report.clone(),
             summary: args.inspect_summary,
+            query: args.inspect_query.clone(),
             filters: InspectFiltersInput {
                 act: args.inspect_act,
                 floor: args.inspect_floor,
