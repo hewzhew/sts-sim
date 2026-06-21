@@ -278,6 +278,29 @@ mod tests {
     }
 
     #[test]
+    fn coverage_gap_plan_accepts_resume_checkpoint_preview_source() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--resume-checkpoint",
+            "latest.checkpoint.json",
+            "--plan-coverage-gap-continuation",
+        ])
+        .expect("coverage gap plan args parse");
+
+        assert_eq!(
+            driver_command_from_args(&args),
+            BranchCampaignDriverCommandV1::PlanCoverageGapContinuation
+        );
+        let input = DatasetCommandInput::from_args(&args);
+        assert_eq!(
+            input.resume_checkpoint,
+            Some(PathBuf::from("latest.checkpoint.json"))
+        );
+    }
+
+    #[test]
     fn run_subcommand_applies_quick_preset_smoke() {
         let args = parse_args_from(["branch_campaign_driver", "run", "--preset", "quick"])
             .expect("run args parse");

@@ -247,9 +247,11 @@ pub(super) fn run_coverage_gap_continuation_plan(
         "--plan-coverage-gap-continuation requires --inspect-report PATH".to_string()
     })?;
     let report = read_campaign_report_v1(report_path)?;
-    let checkpoint = input
+    let checkpoint_path = input
         .inspect_checkpoint
         .as_ref()
+        .or(input.resume_checkpoint.as_ref());
+    let checkpoint = checkpoint_path
         .map(read_campaign_checkpoint_v1)
         .transpose()?;
     let records = extract_branch_outcome_records_v1(&report, checkpoint.as_ref())?;

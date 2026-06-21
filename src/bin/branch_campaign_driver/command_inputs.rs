@@ -166,6 +166,7 @@ impl ShopChallengeInput {
 #[derive(Clone, Debug)]
 pub(super) struct DatasetCommandInput {
     pub(super) inspect_checkpoint: Option<PathBuf>,
+    pub(super) resume_checkpoint: Option<PathBuf>,
     pub(super) inspect_report: Option<PathBuf>,
     pub(super) export_outcome_dataset: Option<PathBuf>,
     pub(super) analyze_outcome_dataset: Option<PathBuf>,
@@ -182,6 +183,7 @@ impl DatasetCommandInput {
     pub(super) fn from_args(args: &Args) -> Self {
         Self {
             inspect_checkpoint: args.inspect_checkpoint.clone(),
+            resume_checkpoint: args.resume_checkpoint.clone(),
             inspect_report: args.inspect_report.clone(),
             export_outcome_dataset: args.export_outcome_dataset.clone(),
             analyze_outcome_dataset: args.analyze_outcome_dataset.clone(),
