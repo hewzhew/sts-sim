@@ -2,6 +2,7 @@ use crate::ai::strategic::BranchSignatureCompact;
 use crate::eval::branch_experiment::{
     BranchExperimentBossCombatRecordV1, BranchExperimentRewardOptionPortfolioV1,
 };
+use crate::eval::campaign_journal::CampaignJournalV1;
 use crate::eval::combat_lab_probe_v1::CombatLabProbePacketV1;
 use crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1;
 use crate::eval::reward_boundary_packet_v1::RewardBoundaryPacketV1;
@@ -226,6 +227,8 @@ pub struct BranchCampaignReportV1 {
         skip_serializing_if = "BranchCampaignStateStoreSummaryV1::is_empty"
     )]
     pub state_store: BranchCampaignStateStoreSummaryV1,
+    #[serde(default, skip_serializing_if = "CampaignJournalV1::is_empty")]
+    pub journal: CampaignJournalV1,
     pub rounds: Vec<BranchCampaignRoundSummaryV1>,
 }
 

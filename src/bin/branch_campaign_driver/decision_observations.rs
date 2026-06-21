@@ -1,6 +1,7 @@
 use sts_simulator::eval::branch_campaign::{
     BranchCampaignDecisionObservationV1, BranchCampaignReportV1,
 };
+use sts_simulator::eval::campaign_journal::reward_portfolio_from_journal_event_v1;
 
 use super::campaign_artifacts::read_campaign_report_v1;
 use super::command_inputs::{InspectCommandInput, InspectFiltersInput};
@@ -31,6 +32,7 @@ fn render_decision_observation_inspection_v1(
     limit: usize,
 ) -> Result<String, String> {
     let observations = matching_decision_observations_v1(report, filters, query);
+    let match_count = observations.len();
     if observations.is_empty() {
         return Err(format!(
             "no decision observations matched filters act={:?} floor={:?} boundary={:?} query={:?}",
@@ -38,7 +40,7 @@ fn render_decision_observation_inspection_v1(
         ));
     }
     let selected = if let Some(index) = filters.index {
-        vec![observations.get(index).copied().ok_or_else(|| {
+        vec![observations.get(index).cloned().ok_or_else(|| {
             format!(
                 "--inspect-index {} is out of range for {} matching decision observation(s)",
                 index,
@@ -52,9 +54,14 @@ fn render_decision_observation_inspection_v1(
 
     let mut lines = Vec::new();
     lines.push(format!(
-        "Decision observations: seed={} matches={} shown={} query={}",
+        "Decision observations: seed={} source={} matches={} shown={} query={}",
         report.seed,
-        matching_decision_observations_v1(report, filters, query).len(),
+        if report.journal.is_empty() {
+            "round_compat"
+        } else {
+            "journal"
+        },
+        match_count,
         selected.len(),
         query.unwrap_or("-")
     ));
@@ -90,18 +97,16 @@ fn render_decision_observation_inspection_v1(
     Ok(format!("{}\n", lines.join("\n")))
 }
 
-fn matching_decision_observations_v1<'a>(
-    report: &'a BranchCampaignReportV1,
+fn matching_decision_observations_v1(
+    report: &BranchCampaignReportV1,
     filters: &InspectFiltersInput,
     query: Option<&str>,
-) -> Vec<&'a BranchCampaignDecisionObservationV1> {
+) -> Vec<BranchCampaignDecisionObservationV1> {
     let normalized_query = query
         .map(normalize_query_v1)
         .filter(|query| !query.is_empty());
-    report
-        .rounds
-        .iter()
-        .flat_map(|round| round.decision_observations.iter())
+    decision_observations_for_report_v1(report)
+        .into_iter()
         .filter(|observation| {
             filters.act.is_none_or(|act| observation.parent_act == act)
                 && filters
@@ -115,6 +120,38 @@ fn matching_decision_observations_v1<'a>(
                     .as_ref()
                     .is_none_or(|query| observation_search_text_v1(observation).contains(query))
         })
+        .collect()
+}
+
+fn decision_observations_for_report_v1(
+    report: &BranchCampaignReportV1,
+) -> Vec<BranchCampaignDecisionObservationV1> {
+    if !report.journal.is_empty() {
+        return report
+            .journal
+            .events
+            .iter()
+            .filter_map(|event| {
+                let portfolio = reward_portfolio_from_journal_event_v1(event)?;
+                Some(BranchCampaignDecisionObservationV1 {
+                    round: event.round,
+                    parent_index: event.branch_index,
+                    parent_branch_id: event.branch_id.clone(),
+                    parent_frontier_title: event.branch_frontier_title.clone(),
+                    parent_act: event.act,
+                    parent_floor: event.floor,
+                    parent_choices: event.branch_choices.clone(),
+                    parent_commands: event.branch_commands.clone(),
+                    combat_budget_retry_used: event.combat_budget_retry_used,
+                    portfolio,
+                })
+            })
+            .collect();
+    }
+    report
+        .rounds
+        .iter()
+        .flat_map(|round| round.decision_observations.iter().cloned())
         .collect()
 }
 

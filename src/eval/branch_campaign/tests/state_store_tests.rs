@@ -446,6 +446,7 @@ fn campaign_checkpoint_writes_v2_state_graph_nodes() {
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),
         rounds: Vec::new(),
+        journal: Default::default(),
         state_store,
         recovered_checkpoint_failure_commands: BTreeSet::new(),
     };

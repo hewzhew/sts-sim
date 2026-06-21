@@ -33,6 +33,7 @@ fn compact_campaign_report_renders_strategy_prompt() {
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
 
@@ -85,6 +86,7 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: vec![BranchCampaignRoundSummaryV1 {
             round: 5,
             started_active: 2,
@@ -146,6 +148,7 @@ fn compact_campaign_report_suppresses_deferred_strategy_notes_while_active_conti
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
 
@@ -568,6 +571,7 @@ fn compact_campaign_report_renders_budget_stop_hint() {
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
 
@@ -609,6 +613,7 @@ fn compact_campaign_report_labels_nonfatal_requests_as_deferred_notes() {
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
 
@@ -659,6 +664,7 @@ fn compact_campaign_report_renders_context_only_strategy_packet() {
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
 

@@ -6,6 +6,7 @@ use crate::eval::branch_experiment::{
 };
 use crate::eval::branch_experiment_boundary::branch_boundary_available;
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
+use crate::eval::campaign_journal::CampaignJournalV1;
 use crate::eval::combat_lab_probe_v1::current_act_boss_preview_probe_v1;
 use crate::eval::run_control::{
     apply_branch_experiment_auto_run, build_decision_surface, AutoCombatCaptureConfig,
@@ -201,6 +202,7 @@ struct BranchCampaignRunStateV1 {
     route_evidence: BranchCampaignRouteEvidenceSummaryV1,
     combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1,
     rounds: Vec<BranchCampaignRoundSummaryV1>,
+    journal: CampaignJournalV1,
     state_store: BranchStateStoreV1,
     recovered_checkpoint_failure_commands: BTreeSet<Vec<String>>,
 }
@@ -763,6 +765,7 @@ where
             combat_performance: batch.combat_performance,
             decision_observations: batch.decision_observations,
         };
+        state.journal.extend(batch.journal_events);
         progress(BranchCampaignProgressEventV1::RoundFinished {
             round: round_number,
             started_active,
@@ -862,6 +865,7 @@ where
         combat_retry_ledger: state.combat_retry_ledger.to_report_v1(),
         strategic_signals,
         state_store: state.state_store.summary(),
+        journal: state.journal,
         rounds: state.rounds,
     };
     Ok(BranchCampaignRunResultV1 { report, checkpoint })
@@ -882,6 +886,7 @@ fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),
         rounds: Vec::new(),
+        journal: CampaignJournalV1::new(),
         state_store: BranchStateStoreV1::new(),
         recovered_checkpoint_failure_commands: BTreeSet::new(),
     }
@@ -904,6 +909,7 @@ fn campaign_state_from_report_v1(report: &BranchCampaignReportV1) -> BranchCampa
             &report.combat_retry_ledger,
         ),
         rounds: report.rounds.clone(),
+        journal: report.journal.clone(),
         state_store: BranchStateStoreV1::new(),
         recovered_checkpoint_failure_commands: BTreeSet::new(),
     }

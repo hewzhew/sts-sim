@@ -275,6 +275,7 @@ mod tests {
             combat_retry_ledger: Default::default(),
             strategic_signals: Default::default(),
             state_store: Default::default(),
+            journal: Default::default(),
             rounds: Vec::new(),
         };
 

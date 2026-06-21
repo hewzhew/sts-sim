@@ -7,6 +7,7 @@ pub mod branch_experiment_retention;
 pub mod branch_experiment_search_options;
 pub mod branch_experiment_trajectory;
 pub mod branch_outcome_dataset_v1;
+pub mod campaign_journal;
 pub mod card_reward_value_loop;
 pub mod combat_capture;
 pub mod combat_lab_probe_v1;

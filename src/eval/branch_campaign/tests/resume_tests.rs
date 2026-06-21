@@ -72,6 +72,7 @@ fn campaign_state_uses_snapshot_without_replaying_parent_commands() {
             route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
             combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),
             rounds: Vec::new(),
+            journal: Default::default(),
             state_store: {
                 let mut store = super::state_graph::BranchStateStoreV1::new();
                 store.insert_session(parent.commands.clone(), session);
@@ -129,6 +130,7 @@ fn campaign_checkpoint_preserves_abandoned_and_stuck_snapshots_for_diagnostics()
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),
         rounds: Vec::new(),
+        journal: Default::default(),
         state_store: {
             let mut store = super::state_graph::BranchStateStoreV1::new();
             store.insert_session(abandoned.commands.clone(), abandoned_session);
@@ -193,6 +195,7 @@ fn campaign_resume_checkpoint_drops_unrestorable_stuck_branches_and_requests() {
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
     let checkpoint = BranchCampaignCheckpointV1 {
@@ -252,6 +255,7 @@ fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_command
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
     let checkpoint = BranchCampaignCheckpointV1 {
@@ -344,6 +348,7 @@ fn campaign_resume_rehydrates_checkpointed_combat_failures() {
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
     let mut restored_session = RunControlSession::new(RunControlConfig::default());
@@ -441,6 +446,7 @@ fn campaign_resume_does_not_promote_stale_combat_failure_over_later_active_branc
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
     let mut restored_session = RunControlSession::new(RunControlConfig::default());
@@ -531,6 +537,7 @@ fn campaign_resume_rehydrates_auto_advanceable_map_overlay_stuck() {
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
     let mut reward = RewardState::new();
@@ -625,6 +632,7 @@ fn campaign_resume_rehydrates_stale_map_preview_to_checkpoint_card_reward_fronti
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
     let mut reward = RewardState::new();
@@ -718,6 +726,7 @@ fn campaign_resume_drops_resolved_map_overlay_stuck_when_no_branch_slot_remains(
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
     let mut restored_session = RunControlSession::new(RunControlConfig::default());
@@ -813,6 +822,7 @@ fn campaign_resume_rehydrates_combat_failures_as_frozen_diagnostics_only() {
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
     let checkpoint = BranchCampaignCheckpointV1 {
@@ -911,6 +921,7 @@ fn campaign_resume_rehydrates_later_combat_failure_before_stale_early_failure() 
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: Vec::new(),
     };
 

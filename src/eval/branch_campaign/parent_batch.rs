@@ -1,7 +1,13 @@
 use crate::eval::branch_experiment::{
     run_branch_experiment_from_session_after_prefix_with_snapshots_v1,
     run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
-    BranchExperimentConfigV1, BranchExperimentRunResultV1, BranchExperimentStrategyRequestV1,
+    BranchExperimentConfigV1, BranchExperimentRewardOptionPortfolioEntryV1,
+    BranchExperimentRewardOptionPortfolioV1, BranchExperimentRunResultV1,
+    BranchExperimentStrategyRequestV1,
+};
+use crate::eval::campaign_journal::{
+    reward_portfolio_from_journal_event_v1, CampaignJournalCandidateDispositionV1,
+    CampaignJournalCandidateV1, CampaignJournalEventPayloadV1, CampaignJournalEventV1,
 };
 
 use super::branch_display::render_compact_choice_path;
@@ -50,6 +56,7 @@ pub(super) struct BranchCampaignParentBatchResultV1 {
     pub(super) strategy_requests: Vec<BranchExperimentStrategyRequestV1>,
     pub(super) route_evidence: BranchCampaignRouteEvidenceSummaryV1,
     pub(super) decision_observations: Vec<BranchCampaignDecisionObservationV1>,
+    pub(super) journal_events: Vec<CampaignJournalEventV1>,
     pub(super) explored_branch_points: usize,
     pub(super) wall_limit_hit: bool,
     pub(super) branch_limit_hit: bool,
@@ -82,6 +89,7 @@ where
     let mut combat_budget_retries = 0usize;
     let mut route_evidence = BranchCampaignRouteEvidenceSummaryV1::default();
     let mut decision_observations = Vec::new();
+    let mut journal_events = Vec::new();
     let mut parent_elapsed_wall_ms_sum = 0u64;
     let mut parent_elapsed_wall_ms_max = 0u64;
     let mut combat_retry_elapsed_wall_ms_sum = 0u64;
@@ -171,13 +179,17 @@ where
         );
         let report = result.report;
         let combat_budget_retry_used = round_retry || parent_result.combat_budget_retry_used;
-        decision_observations.extend(campaign_decision_observations_from_report_v1(
+        let parent_journal_events = campaign_journal_events_from_report_v1(
             parent,
             parent_index,
             round_number,
             combat_budget_retry_used,
             &report,
+        );
+        decision_observations.extend(campaign_decision_observations_from_journal_events_v1(
+            &parent_journal_events,
         ));
+        journal_events.extend(parent_journal_events);
         if combat_budget_retry_used {
             combat_budget_retries = combat_budget_retries.saturating_add(1);
         }
@@ -219,6 +231,7 @@ where
         strategy_requests,
         route_evidence,
         decision_observations,
+        journal_events,
         explored_branch_points,
         wall_limit_hit,
         branch_limit_hit,
@@ -231,13 +244,13 @@ where
     })
 }
 
-fn campaign_decision_observations_from_report_v1(
+fn campaign_journal_events_from_report_v1(
     parent: &BranchCampaignBranchV1,
     parent_index: usize,
     round_number: usize,
     combat_budget_retry_used: bool,
     report: &crate::eval::branch_experiment::BranchExperimentReportV1,
-) -> Vec<BranchCampaignDecisionObservationV1> {
+) -> Vec<CampaignJournalEventV1> {
     if report.reward_option_portfolios.is_empty() {
         return Vec::new();
     }
@@ -249,18 +262,126 @@ fn campaign_decision_observations_from_report_v1(
     report
         .reward_option_portfolios
         .iter()
-        .cloned()
-        .map(|portfolio| BranchCampaignDecisionObservationV1 {
-            round: round_number,
-            parent_index,
-            parent_branch_id: parent.branch_id.clone(),
-            parent_frontier_title: parent.frontier_title.clone(),
-            parent_act,
-            parent_floor,
-            parent_choices: parent.choice_labels.clone(),
-            parent_commands: parent.commands.clone(),
-            combat_budget_retry_used,
-            portfolio,
+        .enumerate()
+        .map(|(portfolio_index, portfolio)| {
+            campaign_reward_portfolio_journal_event_v1(
+                parent,
+                parent_index,
+                round_number,
+                combat_budget_retry_used,
+                parent_act,
+                parent_floor,
+                portfolio_index,
+                portfolio,
+            )
+        })
+        .collect()
+}
+
+fn campaign_reward_portfolio_journal_event_v1(
+    parent: &BranchCampaignBranchV1,
+    parent_index: usize,
+    round_number: usize,
+    combat_budget_retry_used: bool,
+    parent_act: u8,
+    parent_floor: i32,
+    portfolio_index: usize,
+    portfolio: &BranchExperimentRewardOptionPortfolioV1,
+) -> CampaignJournalEventV1 {
+    let decision_id = format!(
+        "{}:round{}:reward_portfolio{}",
+        parent.branch_id, round_number, portfolio_index
+    );
+    CampaignJournalEventV1 {
+        event_id: format!("{decision_id}:candidate_set"),
+        round: round_number,
+        branch_id: parent.branch_id.clone(),
+        branch_index: parent_index,
+        branch_frontier_title: parent.frontier_title.clone(),
+        act: parent_act,
+        floor: parent_floor,
+        branch_choices: parent.choice_labels.clone(),
+        branch_commands: parent.commands.clone(),
+        combat_budget_retry_used,
+        payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
+            decision_id,
+            boundary_title: portfolio.boundary_title.clone(),
+            frontier_key: portfolio.frontier_key.clone(),
+            depth: portfolio.depth,
+            max_reward_options_per_branch: portfolio.max_reward_options_per_branch,
+            original_count: portfolio.original_count,
+            selected_count: portfolio.selected_count,
+            candidates: reward_portfolio_candidates_v1(portfolio),
+        },
+    }
+}
+
+fn reward_portfolio_candidates_v1(
+    portfolio: &BranchExperimentRewardOptionPortfolioV1,
+) -> Vec<CampaignJournalCandidateV1> {
+    portfolio
+        .selected_options
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            journal_candidate_from_reward_entry_v1(
+                "kept",
+                index,
+                entry,
+                CampaignJournalCandidateDispositionV1::Kept,
+            )
+        })
+        .chain(
+            portfolio
+                .pruned_options
+                .iter()
+                .enumerate()
+                .map(|(index, entry)| {
+                    journal_candidate_from_reward_entry_v1(
+                        "pruned",
+                        index,
+                        entry,
+                        CampaignJournalCandidateDispositionV1::Pruned,
+                    )
+                }),
+        )
+        .collect()
+}
+
+fn journal_candidate_from_reward_entry_v1(
+    group: &str,
+    index: usize,
+    entry: &BranchExperimentRewardOptionPortfolioEntryV1,
+    disposition: CampaignJournalCandidateDispositionV1,
+) -> CampaignJournalCandidateV1 {
+    CampaignJournalCandidateV1 {
+        candidate_id: format!("{group}:{index}:{}", entry.command),
+        command: entry.command.clone(),
+        label: entry.label.clone(),
+        semantic_class: entry.semantic_class.clone(),
+        disposition,
+    }
+}
+
+fn campaign_decision_observations_from_journal_events_v1(
+    events: &[CampaignJournalEventV1],
+) -> Vec<BranchCampaignDecisionObservationV1> {
+    events
+        .iter()
+        .filter_map(|event| {
+            let portfolio = reward_portfolio_from_journal_event_v1(event)?;
+            Some(BranchCampaignDecisionObservationV1 {
+                round: event.round,
+                parent_index: event.branch_index,
+                parent_branch_id: event.branch_id.clone(),
+                parent_frontier_title: event.branch_frontier_title.clone(),
+                parent_act: event.act,
+                parent_floor: event.floor,
+                parent_choices: event.branch_choices.clone(),
+                parent_commands: event.branch_commands.clone(),
+                combat_budget_retry_used: event.combat_budget_retry_used,
+                portfolio,
+            })
         })
         .collect()
 }

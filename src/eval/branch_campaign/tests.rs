@@ -451,6 +451,7 @@ fn test_campaign_report_with_active(id: &str, floor: i32, hp: i32) -> BranchCamp
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
         strategic_signals: Default::default(),
         state_store: BranchCampaignStateStoreSummaryV1::default(),
+        journal: Default::default(),
         rounds: vec![BranchCampaignRoundSummaryV1 {
             round: 1,
             started_active: 1,
