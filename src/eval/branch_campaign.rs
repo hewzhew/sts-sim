@@ -44,7 +44,7 @@ use active_lineage::{
 use active_rebalance::{
     branch_is_rehydrated_checkpointed_combat_failure_v1, campaign_progress_is_clearly_ahead_v1,
     promote_frozen_to_active_v1, promote_rehydrated_combat_failures_to_active_on_stall_v1,
-    rebalance_active_with_stronger_frozen_v1,
+    rebalance_active_coverage_probe_v1, rebalance_active_with_stronger_frozen_v1,
 };
 pub use active_selection::select_campaign_branches_v1;
 use active_selection::{append_discarded_examples_v1, select_campaign_branches_for_config_v1};
@@ -443,6 +443,7 @@ where
                     filled_active: 0,
                     stronger_rebalanced: promoted,
                     diversity_rebalanced: 0,
+                    coverage_rebalanced: 0,
                     rehydrated_recovered: 0,
                     checkpoint_recovered: 0,
                 });
@@ -470,6 +471,7 @@ where
                     filled_active: promoted,
                     stronger_rebalanced: 0,
                     diversity_rebalanced: 0,
+                    coverage_rebalanced: 0,
                     rehydrated_recovered: 0,
                     checkpoint_recovered: 0,
                 });
@@ -496,6 +498,7 @@ where
                     filled_active: 0,
                     stronger_rebalanced: 0,
                     diversity_rebalanced: 0,
+                    coverage_rebalanced: 0,
                     rehydrated_recovered: promoted,
                     checkpoint_recovered: 0,
                 });
@@ -527,6 +530,7 @@ where
                     filled_active: 0,
                     stronger_rebalanced: 0,
                     diversity_rebalanced: 0,
+                    coverage_rebalanced: 0,
                     rehydrated_recovered: 0,
                     checkpoint_recovered: recovered,
                 });
@@ -674,6 +678,10 @@ where
         } else {
             0
         };
+        let coverage_rebalanced_from_frozen = usize::from(rebalance_active_coverage_probe_v1(
+            &mut state.active,
+            &mut state.frozen,
+        ));
         state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
             state.strategy_requests,
             &state.active,
@@ -751,6 +759,7 @@ where
             .saturating_add(rebalanced_from_frozen)
             .saturating_add(diversity_rebalanced_from_frozen)
             .saturating_add(axis_refilled_from_frozen)
+            .saturating_add(coverage_rebalanced_from_frozen)
             .saturating_add(promoted_rehydrated_from_frozen)
             .saturating_add(recovered_from_abandoned);
         let round_summary = BranchCampaignRoundSummaryV1 {
@@ -793,6 +802,7 @@ where
                 filled_active: promoted_from_frozen,
                 stronger_rebalanced: rebalanced_from_frozen,
                 diversity_rebalanced: diversity_rebalanced_from_frozen,
+                coverage_rebalanced: coverage_rebalanced_from_frozen,
                 rehydrated_recovered: promoted_rehydrated_from_frozen,
                 checkpoint_recovered: recovered_from_abandoned,
             });

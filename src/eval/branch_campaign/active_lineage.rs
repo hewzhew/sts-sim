@@ -139,12 +139,6 @@ fn rebalance_active_boss_relic_lineage_v1(
         else {
             break;
         };
-        if !campaign_lineage_diversity_rank_close_enough_v1(
-            &frozen[frozen_index],
-            &active[replace_index],
-        ) {
-            break;
-        }
         let mut promoted = frozen.remove(frozen_index);
         promoted.status = BranchCampaignBranchStatusV1::Active;
         let mut demoted = std::mem::replace(&mut active[replace_index], promoted);

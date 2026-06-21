@@ -173,6 +173,59 @@ pub(super) fn rebalance_active_survival_anchor_v1(
     true
 }
 
+pub(super) fn rebalance_active_coverage_probe_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
+) -> bool {
+    if active.len() < 2 || frozen.is_empty() {
+        return false;
+    }
+    if active.iter().any(branch_is_coverage_gap_probe_v1) {
+        return false;
+    }
+
+    let Some((frozen_index, frozen_branch)) = frozen
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| {
+            branch_is_coverage_gap_probe_v1(branch)
+                && campaign_branch_primary_active_eligible_v1(branch)
+        })
+        .min_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
+    else {
+        return false;
+    };
+
+    let Some((replace_index, _)) = active
+        .iter()
+        .enumerate()
+        .filter(|(_, branch)| !branch_is_coverage_gap_probe_v1(branch))
+        .max_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
+    else {
+        return false;
+    };
+
+    if !campaign_active_swap_respects_survival_v1(frozen_branch, &active[replace_index]) {
+        return false;
+    }
+
+    let mut promoted = frozen.remove(frozen_index);
+    promoted.status = BranchCampaignBranchStatusV1::Active;
+    let mut demoted = std::mem::replace(&mut active[replace_index], promoted);
+    demoted.status = BranchCampaignBranchStatusV1::Frozen;
+    frozen.push(demoted);
+    active.sort_by(compare_campaign_branches_for_active_v1);
+    frozen.sort_by(compare_campaign_branches_for_promotion_v1);
+    true
+}
+
+fn branch_is_coverage_gap_probe_v1(branch: &BranchCampaignBranchV1) -> bool {
+    branch
+        .continuation_origin
+        .as_ref()
+        .is_some_and(|origin| origin.kind == "coverage_gap")
+}
+
 fn campaign_branch_is_survival_salvage_v1(candidate_hp: i32, replaced_hp: i32) -> bool {
     let healthy_salvage = candidate_hp >= SURVIVAL_ANCHOR_HEALTHY_SALVAGE_HP_PERCENT
         && candidate_hp >= replaced_hp.saturating_add(SURVIVAL_ANCHOR_HEALTHY_SALVAGE_HP_GAIN);

@@ -559,3 +559,83 @@ fn campaign_lineage_diversity_promotes_distinct_boss_relic_axis() {
         BTreeSet::from(["CursedKey".to_string(), "FusionHammer".to_string()])
     );
 }
+
+#[test]
+fn campaign_lineage_diversity_preserves_boss_relic_axis_even_with_rank_lag() {
+    let mut active = vec![
+        test_campaign_branch("key-a", 21, 70),
+        test_campaign_branch("key-b", 21, 69),
+    ];
+    active[0].choice_labels = vec!["CursedKey".to_string(), "Clothesline".to_string()];
+    active[1].choice_labels = vec!["CursedKey".to_string(), "Iron Wave".to_string()];
+    for branch in &mut active {
+        branch.status = BranchCampaignBranchStatusV1::Active;
+        branch.rank_key = 25_000;
+    }
+    let mut frozen = vec![{
+        let mut branch = test_campaign_branch("pyramid", 20, 75);
+        branch.status = BranchCampaignBranchStatusV1::Frozen;
+        branch.choice_labels = vec!["RunicPyramid".to_string(), "Remove Strike".to_string()];
+        branch.rank_key = 18_000;
+        branch
+    }];
+
+    let promoted = rebalance_active_lineage_diversity_v1(&mut active, &mut frozen, 2);
+
+    assert_eq!(promoted, 1);
+    assert!(
+        active.iter().any(|branch| branch.branch_id == "pyramid"),
+        "boss relic lineage slots are exploration axes, not ordinary rank-close swaps"
+    );
+    assert_eq!(
+        active
+            .iter()
+            .filter_map(campaign_branch_boss_relic_lineage_key_v1)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["CursedKey".to_string(), "RunicPyramid".to_string()])
+    );
+}
+
+#[test]
+fn campaign_selection_preserves_one_coverage_gap_probe_active_slot() {
+    let mut ranked_a = test_campaign_branch("ranked-a", 12, 80);
+    ranked_a.rank_key = 30_000;
+    ranked_a.summary.as_mut().unwrap().trajectory_key = "ranked-a".to_string();
+    let mut ranked_b = test_campaign_branch("ranked-b", 12, 79);
+    ranked_b.rank_key = 29_000;
+    ranked_b.summary.as_mut().unwrap().trajectory_key = "ranked-b".to_string();
+    let mut coverage = test_campaign_branch("coverage-probe", 11, 78);
+    coverage.rank_key = 20_000;
+    coverage.summary.as_mut().unwrap().trajectory_key = "coverage-probe".to_string();
+    coverage.continuation_origin = Some(BranchCampaignContinuationOriginV1 {
+        kind: "coverage_gap".to_string(),
+        source_event_id: "decision-1".to_string(),
+        decision_id: "decision-1".to_string(),
+        event_type: "card_reward".to_string(),
+        parent_branch_id: "parent".to_string(),
+        parent_frontier_title: "Card Reward".to_string(),
+        candidate_index: 1,
+        candidate_id: "candidate-1".to_string(),
+        command: "rp 1".to_string(),
+        label: "Shrug It Off".to_string(),
+        semantic_class: "test".to_string(),
+        admission: crate::eval::campaign_journal::CampaignJournalCandidateAdmissionTraceV1::default(
+        ),
+        disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Pruned,
+        target_origin_source: "journal_coverage_gap".to_string(),
+        route_origin: None,
+        milestone: String::new(),
+    });
+
+    let selected = select_campaign_branches_v1(vec![ranked_a, ranked_b, coverage], 2, 4);
+
+    let active_ids = selected
+        .active
+        .iter()
+        .map(|branch| branch.branch_id.as_str())
+        .collect::<Vec<_>>();
+    assert!(
+        active_ids.contains(&"coverage-probe"),
+        "coverage-gap continuation should receive one active probe slot instead of being immediately frozen by legacy rank"
+    );
+}

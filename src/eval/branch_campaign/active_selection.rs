@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::active_lineage::rebalance_active_lineage_diversity_v1;
 use super::active_rebalance::{
-    campaign_branch_primary_active_eligible_v1, rebalance_active_progress_anchor_v1,
-    rebalance_active_survival_anchor_v1,
+    campaign_branch_primary_active_eligible_v1, rebalance_active_coverage_probe_v1,
+    rebalance_active_progress_anchor_v1, rebalance_active_survival_anchor_v1,
 };
 use super::branch_display::render_campaign_discard_example_v1;
 use super::frozen_pool::record_campaign_duplicate_merge_v1;
@@ -72,6 +72,7 @@ pub fn select_campaign_branches_v1(
     }
     rebalance_active_progress_anchor_v1(&mut selection.active, &mut selection.frozen);
     rebalance_active_survival_anchor_v1(&mut selection.active, &mut selection.frozen);
+    rebalance_active_coverage_probe_v1(&mut selection.active, &mut selection.frozen);
     selection
 }
 

@@ -273,6 +273,7 @@ fn campaign_progress_events_render_concrete_stage_information() {
             filled_active: 0,
             stronger_rebalanced: 1,
             diversity_rebalanced: 1,
+            coverage_rebalanced: 0,
             rehydrated_recovered: 0,
             checkpoint_recovered: 0,
         });

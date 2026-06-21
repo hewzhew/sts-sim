@@ -48,6 +48,7 @@ pub enum BranchCampaignProgressEventV1 {
         filled_active: usize,
         stronger_rebalanced: usize,
         diversity_rebalanced: usize,
+        coverage_rebalanced: usize,
         rehydrated_recovered: usize,
         checkpoint_recovered: usize,
     },
@@ -188,6 +189,7 @@ fn render_branch_campaign_progress_summary_v1(
             filled_active,
             stronger_rebalanced,
             diversity_rebalanced,
+            coverage_rebalanced,
             rehydrated_recovered,
             checkpoint_recovered,
         } => {
@@ -198,6 +200,7 @@ fn render_branch_campaign_progress_summary_v1(
                 *filled_active,
                 *stronger_rebalanced,
                 *diversity_rebalanced,
+                *coverage_rebalanced,
                 *rehydrated_recovered,
                 *checkpoint_recovered,
             );
@@ -294,6 +297,7 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             filled_active,
             stronger_rebalanced,
             diversity_rebalanced,
+            coverage_rebalanced,
             rehydrated_recovered,
             checkpoint_recovered,
         } => {
@@ -301,6 +305,7 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
                 *filled_active,
                 *stronger_rebalanced,
                 *diversity_rebalanced,
+                *coverage_rebalanced,
                 *rehydrated_recovered,
                 *checkpoint_recovered,
             );
@@ -335,6 +340,7 @@ fn render_progress_promotion_sources_v1(
     filled_active: usize,
     stronger_rebalanced: usize,
     diversity_rebalanced: usize,
+    coverage_rebalanced: usize,
     rehydrated_recovered: usize,
     checkpoint_recovered: usize,
 ) -> String {
@@ -347,6 +353,9 @@ fn render_progress_promotion_sources_v1(
     }
     if diversity_rebalanced > 0 {
         sources.push(format!("diversity={diversity_rebalanced}"));
+    }
+    if coverage_rebalanced > 0 {
+        sources.push(format!("coverage={coverage_rebalanced}"));
     }
     if rehydrated_recovered > 0 {
         sources.push(format!("rehydrated={rehydrated_recovered}"));
