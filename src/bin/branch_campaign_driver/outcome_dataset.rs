@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -5,8 +6,8 @@ use std::process::Command;
 use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_with_detail_v1,
     run_branch_campaign_from_report_with_checkpoint_v1, BranchCampaignBranchStatusV1,
-    BranchCampaignBranchV1, BranchCampaignContinuationOriginV1, BranchCampaignReportV1,
-    BranchCampaignRouteContinuationOriginV1,
+    BranchCampaignBranchV1, BranchCampaignCheckpointV1, BranchCampaignContinuationOriginV1,
+    BranchCampaignReportV1, BranchCampaignRouteContinuationOriginV1,
 };
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     analyze_branch_outcome_records_v1, extract_branch_outcome_records_v1,
@@ -276,11 +277,17 @@ pub(super) fn run_coverage_gap_continuation_execution(
         input.coverage_gap_limit,
         input.coverage_gap_candidates_per_decision,
     );
-    let execution = coverage_gap_continuation_execution_plan_v1(&plan, input.coverage_gap_limit);
+    let execution = filter_coverage_gap_execution_plan_for_checkpoint_v1(
+        coverage_gap_continuation_execution_plan_v1(&plan, input.coverage_gap_limit),
+        &source_checkpoint,
+    );
     if execution.targets.is_empty() {
         return Err(format!(
-            "coverage gap continuation selected no candidate branches (decisions={} unobserved={})",
-            plan.total_decisions, plan.total_unobserved_candidates
+            "coverage gap continuation selected no replayable candidate branches (decisions={} unobserved={} requested={} skipped={}); run a campaign/checkpoint that preserves decision-parent snapshots before continuing these targets",
+            plan.total_decisions,
+            plan.total_unobserved_candidates,
+            execution.requested_target_count,
+            execution.skipped_target_count
         ));
     }
 
@@ -437,6 +444,65 @@ fn coverage_gap_branch_from_target_v1(
         final_boss_combat_record: None,
         combat_lab_probes: Vec::new(),
     }
+}
+
+fn filter_coverage_gap_execution_plan_for_checkpoint_v1(
+    mut execution: CoverageGapContinuationExecutionPlanV1,
+    checkpoint: &BranchCampaignCheckpointV1,
+) -> CoverageGapContinuationExecutionPlanV1 {
+    let requested = execution.requested_target_count;
+    let original_selected = execution.targets.len();
+    execution.targets = execution
+        .targets
+        .into_iter()
+        .filter(|target| {
+            checkpoint_can_replay_parent_commands_v1(checkpoint, &target.parent_commands)
+        })
+        .collect();
+    execution.selected_branch_count = execution.targets.len();
+    execution.skipped_target_count = execution
+        .skipped_target_count
+        .saturating_add(original_selected.saturating_sub(execution.targets.len()));
+    execution.requested_target_count = requested;
+    execution
+}
+
+fn checkpoint_can_replay_parent_commands_v1(
+    checkpoint: &BranchCampaignCheckpointV1,
+    parent_commands: &[String],
+) -> bool {
+    let session_commands = checkpoint
+        .sessions
+        .iter()
+        .map(|session| session.commands.clone())
+        .collect::<BTreeSet<_>>();
+    if session_commands.contains(parent_commands) {
+        return true;
+    }
+
+    let nodes_by_commands = checkpoint
+        .nodes
+        .iter()
+        .map(|node| (node.commands.clone(), node.node_id))
+        .collect::<BTreeMap<_, _>>();
+    let nodes_by_id = checkpoint
+        .nodes
+        .iter()
+        .map(|node| (node.node_id, node))
+        .collect::<BTreeMap<_, _>>();
+    let Some(mut current_id) = nodes_by_commands.get(parent_commands).copied() else {
+        return false;
+    };
+    while let Some(node) = nodes_by_id.get(&current_id) {
+        if session_commands.contains(&node.commands) {
+            return true;
+        }
+        let Some(parent_id) = node.parent_id else {
+            return false;
+        };
+        current_id = parent_id;
+    }
+    false
 }
 
 fn coverage_gap_source_prefix_commands_v1(
