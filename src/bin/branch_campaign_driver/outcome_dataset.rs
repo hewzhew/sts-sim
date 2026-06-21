@@ -245,22 +245,30 @@ pub(super) fn run_coverage_gap_continuation_plan(
         .map(read_campaign_checkpoint_v1)
         .transpose()?;
     let records = extract_branch_outcome_records_v1(&report, checkpoint.as_ref())?;
-    let plan = plan_coverage_gap_continuations_v1(
-        &report,
-        &records,
-        input.coverage_gap_limit,
-        input.coverage_gap_candidates_per_decision,
-    );
-    println!("{}", render_coverage_gap_continuation_plan_v1(&plan));
     if let Some(checkpoint) = checkpoint.as_ref() {
-        let replayable_preview = filter_coverage_gap_execution_plan_for_checkpoint_v1(
-            coverage_gap_continuation_execution_plan_v1(&plan, input.coverage_gap_limit),
-            checkpoint,
-        );
+        let (plan, replayable_preview, planning_window) =
+            build_replayable_coverage_gap_execution_plan_v1(
+                &report,
+                &records,
+                checkpoint,
+                input.coverage_gap_limit,
+                input.coverage_gap_candidates_per_decision,
+            );
         println!(
-            "Replayable preview from current checkpoint:\n{}",
+            "Replayable preview from current checkpoint (requested={} planning_window={}):\n{}",
+            input.coverage_gap_limit,
+            planning_window,
             render_coverage_gap_execution_plan_v1(&replayable_preview)
         );
+        println!("{}", render_coverage_gap_continuation_plan_v1(&plan));
+    } else {
+        let plan = plan_coverage_gap_continuations_v1(
+            &report,
+            &records,
+            input.coverage_gap_limit,
+            input.coverage_gap_candidates_per_decision,
+        );
+        println!("{}", render_coverage_gap_continuation_plan_v1(&plan));
     }
     Ok(())
 }
