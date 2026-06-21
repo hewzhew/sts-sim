@@ -104,6 +104,8 @@ CampaignJournalV1
     route_decision
       decision_id
       route_branch_id
+      selected_index
+      selected_candidate_id
       target
       move_kind
       safety
@@ -196,7 +198,10 @@ journal events, not the other way around.
    coverage is conservative: it means the visible-map DFS reached its configured
    path budget, not that a route is good or bad.
 8. Route planner selections remain surfaced as `route_decision` journal events
-   for compatibility and selected-action evidence.
+   for compatibility and selected-action evidence. New route decisions also
+   carry `selected_index` and `selected_candidate_id` so the selected move can
+   be linked back to the surrounding `route_candidate_pool` without parsing the
+   display label or `go N` command.
 9. Link milestone outcomes to prior `decision_id` values.
 10. Gradually remove report-only decision attachments once views read from the
    journal directly.

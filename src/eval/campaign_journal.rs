@@ -142,6 +142,10 @@ pub enum CampaignJournalEventPayloadV1 {
     RouteDecision {
         decision_id: String,
         route_branch_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        selected_index: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        selected_candidate_id: Option<String>,
         target: String,
         move_kind: String,
         safety: String,

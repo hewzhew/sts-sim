@@ -151,10 +151,18 @@ fn journal_event_extra_summary_v1(event: &CampaignJournalEventV1) -> String {
             target,
             safety,
             elite_prep_bp,
+            selected_index,
+            selected_candidate_id,
             ..
         } => format!(
-            " target={} safety={} elite_prep_bp={}",
-            target, safety, elite_prep_bp
+            " target={} safety={} selected_index={} selected_candidate={} elite_prep_bp={}",
+            target,
+            safety,
+            selected_index
+                .map(|index| index.to_string())
+                .unwrap_or_else(|| "-".to_string()),
+            selected_candidate_id.as_deref().unwrap_or("-"),
+            elite_prep_bp
         ),
         _ => String::new(),
     }
@@ -369,6 +377,8 @@ fn journal_event_payload_search_terms_v1(event: &CampaignJournalEventV1) -> Vec<
     match &event.payload {
         CampaignJournalEventPayloadV1::RouteDecision {
             route_branch_id,
+            selected_index,
+            selected_candidate_id,
             target,
             move_kind,
             safety,
@@ -382,6 +392,13 @@ fn journal_event_payload_search_terms_v1(event: &CampaignJournalEventV1) -> Vec<
             move_kind.clone(),
             safety.clone(),
             command.clone(),
+            format!(
+                "selected_index:{}",
+                selected_index
+                    .map(|index| index.to_string())
+                    .unwrap_or_else(|| "-".to_string())
+            ),
+            selected_candidate_id.clone().unwrap_or_default(),
             format!("elite_prep_bp:{elite_prep_bp}"),
             format!("first_elite_paths:{}", first_elite.paths_with_first_elite),
             format!("first_elite_forced:{}", first_elite.forced),
@@ -693,6 +710,8 @@ mod tests {
         let route = journal_event_with_payload(CampaignJournalEventPayloadV1::RouteDecision {
             decision_id: "route0".to_string(),
             route_branch_id: "root.go1".to_string(),
+            selected_index: Some(0),
+            selected_candidate_id: Some("route_move:0:NormalEdge:x1:y0".to_string()),
             target: "x=1 Elite".to_string(),
             move_kind: "Elite".to_string(),
             safety: "ok".to_string(),
@@ -724,6 +743,10 @@ mod tests {
         assert!(journal_event_matches_query_v1(
             &route,
             &normalize_query_v1("x=1 Elite")
+        ));
+        assert!(journal_event_matches_query_v1(
+            &route,
+            &normalize_query_v1("route_move:0:NormalEdge:x1:y0")
         ));
     }
 

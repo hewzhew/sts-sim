@@ -2578,6 +2578,8 @@ mod tests {
             payload: CampaignJournalEventPayloadV1::RouteDecision {
                 decision_id: "route0".to_string(),
                 route_branch_id: "root:route".to_string(),
+                selected_index: None,
+                selected_candidate_id: None,
                 target: "x=1 Monster".to_string(),
                 move_kind: "Monster".to_string(),
                 safety: "ok".to_string(),
@@ -2653,6 +2655,8 @@ mod tests {
             payload: CampaignJournalEventPayloadV1::RouteDecision {
                 decision_id: "route0".to_string(),
                 route_branch_id: "root:route".to_string(),
+                selected_index: None,
+                selected_candidate_id: None,
                 target: "x=1 Monster".to_string(),
                 move_kind: "Monster".to_string(),
                 safety: "ok".to_string(),

@@ -898,6 +898,8 @@ fn campaign_route_decision_journal_event_v1(
         payload: CampaignJournalEventPayloadV1::RouteDecision {
             decision_id,
             route_branch_id: decision.branch_id.clone(),
+            selected_index: decision.selected_index,
+            selected_candidate_id: decision.selected_candidate_id.clone(),
             target: decision.target.clone(),
             move_kind: decision.move_kind.clone(),
             safety: decision.safety.clone(),

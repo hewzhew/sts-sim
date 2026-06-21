@@ -777,12 +777,14 @@ fn branch_route_decision_from_annotation(
     annotation: &RunControlTraceAnnotationV1,
 ) -> Option<BranchExperimentRouteDecisionV1> {
     let RunControlTraceAnnotationV1::RoutePlannerSelection {
+        selected_index,
         target_x,
         target_y,
         room_type,
         move_kind,
         safety,
         command,
+        map_decision_packet,
         route_evidence: Some(evidence),
         ..
     } = annotation
@@ -792,6 +794,13 @@ fn branch_route_decision_from_annotation(
 
     Some(BranchExperimentRouteDecisionV1 {
         branch_id: branch_id.to_string(),
+        selected_index: *selected_index,
+        selected_candidate_id: selected_index.and_then(|index| {
+            map_decision_packet
+                .as_ref()
+                .and_then(|packet| packet.candidates.get(index))
+                .map(|candidate| candidate.candidate_id.clone())
+        }),
         target: format!("x={target_x} y={target_y} {room_type}"),
         move_kind: move_kind.clone(),
         safety: safety.clone(),

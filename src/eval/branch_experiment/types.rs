@@ -321,6 +321,10 @@ pub struct BranchExperimentStrategyRequestV1 {
 #[serde(deny_unknown_fields)]
 pub struct BranchExperimentRouteDecisionV1 {
     pub branch_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_candidate_id: Option<String>,
     pub target: String,
     pub move_kind: String,
     pub safety: String,
