@@ -61,6 +61,7 @@ struct BranchCampaignParentRetryRequestV1 {
 
 pub(super) struct BranchCampaignParentBatchResultV1 {
     pub(super) candidates: Vec<BranchCampaignBranchV1>,
+    pub(super) decision_parent_anchor_commands: Vec<Vec<String>>,
     pub(super) strategy_requests: Vec<BranchExperimentStrategyRequestV1>,
     pub(super) route_evidence: BranchCampaignRouteEvidenceSummaryV1,
     pub(super) decision_observations: Vec<BranchCampaignDecisionObservationV1>,
@@ -90,6 +91,7 @@ where
 {
     let parent_count = parents.len();
     let mut candidates = Vec::new();
+    let mut decision_parent_anchor_commands = Vec::new();
     let mut strategy_requests = Vec::new();
     let mut explored_branch_points = 0usize;
     let mut wall_limit_hit = false;
@@ -186,6 +188,12 @@ where
             &result.combat_performance_samples,
         );
         let report = result.report;
+        for (local_commands, snapshot) in result.decision_parent_sessions {
+            let mut full_commands = parent.commands.clone();
+            full_commands.extend(local_commands);
+            state_store.insert_child_session(&parent.commands, full_commands.clone(), snapshot);
+            decision_parent_anchor_commands.push(full_commands);
+        }
         let combat_budget_retry_used = round_retry || parent_result.combat_budget_retry_used;
         let parent_journal_events = campaign_journal_events_from_report_v1(
             parent,
@@ -236,6 +244,7 @@ where
 
     Ok(BranchCampaignParentBatchResultV1 {
         candidates,
+        decision_parent_anchor_commands,
         strategy_requests,
         route_evidence,
         decision_observations,

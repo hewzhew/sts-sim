@@ -101,6 +101,7 @@ struct BranchExperimentPreparedStart {
 pub struct BranchExperimentRunResultV1 {
     pub report: BranchExperimentReportV1,
     pub branch_sessions: BTreeMap<String, RunControlSession>,
+    pub decision_parent_sessions: BTreeMap<Vec<String>, RunControlSession>,
     pub start_elapsed_wall_ms: u64,
     pub combat_performance_samples: Vec<CombatSearchPerformanceSnapshotV1>,
 }
@@ -417,6 +418,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
     let mut boss_relic_candidate_pools = Vec::new();
     let mut route_decisions = Vec::new();
     let mut route_candidate_pools = Vec::new();
+    let mut decision_parent_sessions = BTreeMap::<Vec<String>, RunControlSession>::new();
     let mut combat_performance_samples = Vec::new();
 
     for depth in 0..config.max_depth {
@@ -470,6 +472,9 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
             if let Some(boundary) =
                 current_branch_boundary(&branch.session, boundary_config, reward_portfolio_context)
             {
+                decision_parent_sessions
+                    .entry(branch_choice_commands_v1(&branch.choices))
+                    .or_insert_with(|| branch.session.clone());
                 if let Some(portfolio) = boundary.reward_option_portfolio {
                     reward_option_portfolios.push(portfolio);
                 }
@@ -645,6 +650,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
     BranchExperimentRunResultV1 {
         report,
         branch_sessions,
+        decision_parent_sessions,
         start_elapsed_wall_ms: 0,
         combat_performance_samples,
     }

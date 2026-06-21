@@ -253,17 +253,38 @@ impl BranchStateStoreV1 {
         stuck: &[BranchCampaignBranchV1],
         policy: BranchStateSessionRetentionPolicyV1,
     ) {
+        self.retain_for_branches_with_session_policy_and_anchors(
+            active,
+            frozen,
+            abandoned,
+            stuck,
+            &BTreeSet::new(),
+            policy,
+        );
+    }
+
+    pub(super) fn retain_for_branches_with_session_policy_and_anchors(
+        &mut self,
+        active: &[BranchCampaignBranchV1],
+        frozen: &[BranchCampaignBranchV1],
+        abandoned: &[BranchCampaignBranchV1],
+        stuck: &[BranchCampaignBranchV1],
+        anchor_commands: &BTreeSet<Vec<String>>,
+        policy: BranchStateSessionRetentionPolicyV1,
+    ) {
         let keep = active
             .iter()
             .chain(frozen.iter())
             .chain(abandoned.iter())
             .chain(stuck.iter())
             .map(|branch| branch.commands.clone())
+            .chain(anchor_commands.iter().cloned())
             .collect::<BTreeSet<_>>();
         let mut keep_sessions = active
             .iter()
             .map(|branch| branch.commands.clone())
             .collect::<BTreeSet<_>>();
+        keep_sessions.extend(anchor_commands.iter().cloned());
         keep_sessions.extend(
             frozen
                 .iter()

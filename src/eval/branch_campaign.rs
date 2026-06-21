@@ -205,6 +205,7 @@ struct BranchCampaignRunStateV1 {
     rounds: Vec<BranchCampaignRoundSummaryV1>,
     journal: CampaignJournalV1,
     state_store: BranchStateStoreV1,
+    decision_parent_anchor_commands: BTreeSet<Vec<String>>,
     recovered_checkpoint_failure_commands: BTreeSet<Vec<String>>,
 }
 
@@ -602,6 +603,9 @@ where
                 }
             }
         }
+        state
+            .decision_parent_anchor_commands
+            .extend(batch.decision_parent_anchor_commands);
         state.strategy_requests = merge_campaign_strategy_request_queue_v1(
             state.strategy_requests,
             merge_campaign_strategy_requests_v1(batch.strategy_requests.clone()),
@@ -675,13 +679,16 @@ where
             &state.stuck,
             &state.abandoned,
         );
-        state.state_store.retain_for_branches_with_session_policy(
-            &state.active,
-            &state.frozen,
-            &state.abandoned,
-            &state.stuck,
-            campaign_state_session_retention_policy_v1(config),
-        );
+        state
+            .state_store
+            .retain_for_branches_with_session_policy_and_anchors(
+                &state.active,
+                &state.frozen,
+                &state.abandoned,
+                &state.stuck,
+                &state.decision_parent_anchor_commands,
+                campaign_state_session_retention_policy_v1(config),
+            );
         let leading_abandoned_request = if state.active.is_empty() && state.victories.is_empty() {
             leading_abandoned_combat_intervention_request_v1(&state.frozen, &state.abandoned)
         } else {
@@ -891,6 +898,7 @@ fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
         rounds: Vec::new(),
         journal: CampaignJournalV1::new(),
         state_store: BranchStateStoreV1::new(),
+        decision_parent_anchor_commands: BTreeSet::new(),
         recovered_checkpoint_failure_commands: BTreeSet::new(),
     }
 }
@@ -914,6 +922,7 @@ fn campaign_state_from_report_v1(report: &BranchCampaignReportV1) -> BranchCampa
         rounds: report.rounds.clone(),
         journal: report.journal.clone(),
         state_store: BranchStateStoreV1::new(),
+        decision_parent_anchor_commands: BTreeSet::new(),
         recovered_checkpoint_failure_commands: BTreeSet::new(),
     }
 }
@@ -936,13 +945,18 @@ fn campaign_state_from_report_and_checkpoint_v1(
         .map(|branch| branch.commands.clone())
         .collect::<std::collections::BTreeSet<_>>();
     for entry in &checkpoint.sessions {
-        if keep.contains(&entry.commands) {
-            state.state_store.insert_session(
-                entry.commands.clone(),
-                entry.session.clone().into_session().map_err(|err| {
-                    format!("failed to restore campaign checkpoint session: {err}")
-                })?,
-            );
+        state.state_store.insert_session(
+            entry.commands.clone(),
+            entry
+                .session
+                .clone()
+                .into_session()
+                .map_err(|err| format!("failed to restore campaign checkpoint session: {err}"))?,
+        );
+        if !keep.contains(&entry.commands) {
+            state
+                .decision_parent_anchor_commands
+                .insert(entry.commands.clone());
         }
     }
     state
@@ -963,6 +977,7 @@ fn campaign_checkpoint_from_state_v1(
     state: &BranchCampaignRunStateV1,
 ) -> BranchCampaignCheckpointV1 {
     let mut sessions = Vec::new();
+    let mut exported_commands = BTreeSet::new();
     for branch in state
         .active
         .iter()
@@ -970,9 +985,23 @@ fn campaign_checkpoint_from_state_v1(
         .chain(state.abandoned.iter())
         .chain(state.stuck.iter())
     {
+        if !exported_commands.insert(branch.commands.clone()) {
+            continue;
+        }
         if let Some(session) = state.state_store.get_session(&branch.commands) {
             sessions.push(BranchCampaignCheckpointSessionV1 {
                 commands: branch.commands.clone(),
+                session: RunControlSessionCheckpointV1::from_session(session),
+            });
+        }
+    }
+    for commands in &state.decision_parent_anchor_commands {
+        if !exported_commands.insert(commands.clone()) {
+            continue;
+        }
+        if let Some(session) = state.state_store.get_session(commands) {
+            sessions.push(BranchCampaignCheckpointSessionV1 {
+                commands: commands.clone(),
                 session: RunControlSessionCheckpointV1::from_session(session),
             });
         }

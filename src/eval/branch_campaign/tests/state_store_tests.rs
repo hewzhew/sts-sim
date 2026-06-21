@@ -88,6 +88,45 @@ fn branch_state_store_retain_keeps_child_ancestor_nodes_without_parent_session()
 }
 
 #[test]
+fn branch_state_store_retain_keeps_decision_parent_anchor_session() {
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+    let parent_commands = vec!["rp 0".to_string()];
+    let child_commands = vec!["rp 0".to_string(), "go 2".to_string()];
+    let mut child_branch = test_campaign_branch("child", 6, 80);
+    child_branch.commands = child_commands.clone();
+    let mut anchors = BTreeSet::new();
+    anchors.insert(parent_commands.clone());
+
+    store.insert_session(
+        parent_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.insert_child_session(
+        &parent_commands,
+        child_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.retain_for_branches_with_session_policy_and_anchors(
+        &[child_branch],
+        &[],
+        &[],
+        &[],
+        &anchors,
+        super::state_graph::BranchStateSessionRetentionPolicyV1 {
+            max_frozen_exact_sessions: 0,
+            max_stuck_exact_sessions: 0,
+            max_abandoned_exact_sessions: 0,
+            max_suffix_commands_without_session: 0,
+        },
+    );
+
+    let summary = store.summary();
+    assert_eq!(summary.sessions, 2);
+    assert!(store.contains_commands(&parent_commands));
+    assert!(store.contains_commands(&child_commands));
+}
+
+#[test]
 fn branch_state_store_session_policy_prunes_extra_frozen_exact_sessions_only() {
     let mut store = super::state_graph::BranchStateStoreV1::new();
     let mut active = test_campaign_branch("active", 4, 80);
@@ -448,6 +487,7 @@ fn campaign_checkpoint_writes_v2_state_graph_nodes() {
         rounds: Vec::new(),
         journal: Default::default(),
         state_store,
+        decision_parent_anchor_commands: BTreeSet::from([parent_commands.clone()]),
         recovered_checkpoint_failure_commands: BTreeSet::new(),
     };
 
@@ -458,6 +498,12 @@ fn campaign_checkpoint_writes_v2_state_graph_nodes() {
     assert_eq!(checkpoint.nodes.len(), 2);
     assert_eq!(checkpoint.nodes[1].parent_id, Some(0));
     assert_eq!(checkpoint.nodes[1].added_commands, vec!["go 2".to_string()]);
-    assert_eq!(checkpoint.sessions.len(), 1);
-    assert_eq!(checkpoint.sessions[0].commands, child_commands);
+    let session_commands = checkpoint
+        .sessions
+        .iter()
+        .map(|session| session.commands.clone())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(checkpoint.sessions.len(), 2);
+    assert!(session_commands.contains(&child_commands));
+    assert!(session_commands.contains(&parent_commands));
 }

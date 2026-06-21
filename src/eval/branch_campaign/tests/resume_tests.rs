@@ -126,6 +126,7 @@ fn campaign_state_uses_snapshot_without_replaying_parent_commands() {
                 store.insert_session(parent.commands.clone(), session);
                 store
             },
+            decision_parent_anchor_commands: BTreeSet::new(),
             recovered_checkpoint_failure_commands: BTreeSet::new(),
         },
         |_| {},
@@ -185,6 +186,7 @@ fn campaign_checkpoint_preserves_abandoned_and_stuck_snapshots_for_diagnostics()
             store.insert_session(stuck.commands.clone(), stuck_session);
             store
         },
+        decision_parent_anchor_commands: BTreeSet::new(),
         recovered_checkpoint_failure_commands: BTreeSet::new(),
     };
 
