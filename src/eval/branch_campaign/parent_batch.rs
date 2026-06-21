@@ -873,6 +873,18 @@ fn campaign_route_candidate_pool_journal_event_v1(
 fn route_candidate_pool_typed_candidates_v1(
     pool: &BranchExperimentRouteCandidatePoolV1,
 ) -> Vec<crate::eval::campaign_journal::CampaignJournalRouteCandidateV1> {
+    if let Some(packet) = &pool.map_decision_packet {
+        return packet
+            .candidates
+            .iter()
+            .map(|candidate| {
+                crate::eval::campaign_journal::CampaignJournalRouteCandidateV1::from_route_move_candidate_with_selected_v1(
+                    candidate,
+                    Some(candidate.rank) == packet.selected_index,
+                )
+            })
+            .collect();
+    }
     pool.candidates
         .iter()
         .map(crate::eval::campaign_journal::CampaignJournalRouteCandidateV1::from_route_entry_v1)

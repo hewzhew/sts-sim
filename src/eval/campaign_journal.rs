@@ -261,11 +261,18 @@ impl CampaignJournalRouteCandidateV1 {
     }
 
     pub fn from_route_move_candidate_v1(candidate: &RouteMoveCandidateV1) -> Self {
+        Self::from_route_move_candidate_with_selected_v1(candidate, false)
+    }
+
+    pub fn from_route_move_candidate_with_selected_v1(
+        candidate: &RouteMoveCandidateV1,
+        selected: bool,
+    ) -> Self {
         let path = &candidate.projection.path_summary;
         Self {
             candidate_id: candidate.candidate_id.clone(),
             rank: candidate.rank,
-            selected: false,
+            selected,
             target_node: Some(candidate.target.clone()),
             target: route_target_label_v1(&candidate.target),
             room_type: route_room_type_label_v1(candidate.target.room_type),
