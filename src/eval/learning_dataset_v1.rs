@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -918,7 +918,10 @@ pub fn plan_coverage_gap_continuations_v1(
         }
     }
 
-    let targets = select_coverage_gap_targets_by_type_v1(target_candidates, max_targets);
+    let targets = select_coverage_gap_targets_by_type_v1(
+        dedupe_coverage_gap_targets_v1(target_candidates),
+        max_targets,
+    );
     for target in &targets {
         match target.disposition {
             CampaignJournalCandidateDispositionV1::Kept => {
@@ -991,6 +994,23 @@ fn select_coverage_gap_targets_by_type_v1(
         bucket_order = retained_order;
     }
     selected
+}
+
+fn dedupe_coverage_gap_targets_v1(
+    targets: Vec<CoverageGapContinuationTargetV1>,
+) -> Vec<CoverageGapContinuationTargetV1> {
+    let mut seen = BTreeSet::<(String, Vec<String>, String, String)>::new();
+    targets
+        .into_iter()
+        .filter(|target| {
+            seen.insert((
+                target.event_type.clone(),
+                target.parent_commands.clone(),
+                target.command.clone(),
+                target.candidate_id.clone(),
+            ))
+        })
+        .collect()
 }
 
 fn coverage_gap_target_bucket_order_v1(
@@ -2954,6 +2974,46 @@ mod tests {
         assert_eq!(plan.selected_target_count, 2);
         assert!(event_types.contains(&"route"));
         assert!(event_types.contains(&"reward"));
+    }
+
+    #[test]
+    fn coverage_gap_continuation_dedupes_repeated_target_coordinates() {
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        for event_index in 0..2 {
+            report.journal.events.push(CampaignJournalEventV1 {
+                event_id: format!("journal-route-pool{event_index}:candidate_set"),
+                round: 1,
+                branch_id: "root.rp 1".to_string(),
+                branch_index: 0,
+                branch_frontier_title: "Map".to_string(),
+                act: 1,
+                floor: 2,
+                branch_choices: vec!["Seeing Red".to_string()],
+                branch_commands: vec!["rp 1".to_string(), "__route_decision:0:go_2".to_string()],
+                combat_budget_retry_used: false,
+                payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                    decision_id: format!("journal-route-pool{event_index}"),
+                    boundary_title: "Map".to_string(),
+                    frontier_key: "map-frontier".to_string(),
+                    depth: 0,
+                    candidate_count: 1,
+                    selected_index: None,
+                    candidate_pool_provenance: None,
+                    map_decision_packet: None,
+                    candidates: vec![sample_journal_candidate("go 3", "Route duplicate")],
+                },
+            });
+        }
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[], 8, 2);
+
+        assert_eq!(plan.total_unobserved_candidates, 2);
+        assert_eq!(plan.selected_target_count, 1);
+        assert_eq!(plan.targets[0].command, "go 3");
+        assert_eq!(
+            plan.targets[0].parent_commands,
+            vec!["rp 1".to_string(), "__route_decision:0:go_2".to_string()]
+        );
     }
 
     #[test]
