@@ -2962,6 +2962,7 @@ mod tests {
             schema_version: 1,
             seed: 521,
             run_domain: BranchCampaignRunDomainV1::default(),
+            run_prelude: Default::default(),
             rounds_completed: 3,
             stop_reason: "max_rounds".to_string(),
             active,

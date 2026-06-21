@@ -286,14 +286,18 @@ pub(super) fn run_coverage_gap_continuation_execution(
     let continuation_report =
         coverage_gap_continuation_source_report_v1(&source_report, &execution);
     let mut config = input.config.clone();
-    let use_neow_guided_prefix = !config.prefix_commands.is_empty();
+    let use_neow_guided_prefix =
+        source_report.run_prelude.is_empty() && !config.prefix_commands.is_empty();
     config.seed = source_report.seed;
     config.ascension_level = source_report.run_domain.ascension_level;
     config.player_class = canonical_player_class(&source_report.run_domain.player_class)?;
     config.prefix_commands = if use_neow_guided_prefix {
+        // Backward compatibility for reports written before BranchCampaignRunPreludeV1.
         coverage_gap_source_prefix_commands_v1(&config)?
-    } else {
+    } else if source_report.run_prelude.is_empty() {
         Vec::new()
+    } else {
+        source_report.run_prelude.prefix_commands.clone()
     };
 
     let result = run_branch_campaign_from_report_with_checkpoint_v1(

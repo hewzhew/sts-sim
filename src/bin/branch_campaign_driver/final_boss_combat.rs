@@ -222,6 +222,7 @@ mod tests {
             schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
             seed: 521,
             run_domain: BranchCampaignRunDomainV1::default(),
+            run_prelude: Default::default(),
             rounds_completed: 1,
             stop_reason: "victory".to_string(),
             active: Vec::new(),

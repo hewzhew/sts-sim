@@ -65,8 +65,8 @@ pub use model::{
     BranchCampaignCheckpointSessionV1, BranchCampaignCheckpointV1,
     BranchCampaignDecisionObservationV1, BranchCampaignReportV1, BranchCampaignRoundSummaryV1,
     BranchCampaignRouteEvidenceExampleV1, BranchCampaignRouteEvidenceSummaryV1,
-    BranchCampaignRunResultV1, BranchCampaignSelectionV1, BranchCampaignStateStoreSummaryV1,
-    BranchCampaignStrategyRequestV1,
+    BranchCampaignRunPreludeV1, BranchCampaignRunResultV1, BranchCampaignSelectionV1,
+    BranchCampaignStateStoreSummaryV1, BranchCampaignStrategyRequestV1,
 };
 use parent_batch::run_campaign_parent_batch_v1;
 #[cfg(test)]
@@ -365,6 +365,7 @@ where
     F: FnMut(BranchCampaignProgressEventV1),
 {
     validate_campaign_resume_report_v1(config, previous)?;
+    let effective_config = campaign_config_with_report_prelude_v1(config, previous);
     let mut state = match checkpoint {
         Some(checkpoint) => campaign_state_from_report_and_checkpoint_v1(previous, checkpoint)?,
         None => campaign_state_from_report_v1(previous),
@@ -385,7 +386,7 @@ where
             );
         }
     }
-    run_branch_campaign_from_state_with_progress_v1(config, state, progress)
+    run_branch_campaign_from_state_with_progress_v1(&effective_config, state, progress)
 }
 
 fn run_branch_campaign_from_state_with_progress_v1<F>(
@@ -850,6 +851,7 @@ where
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: config.seed,
         run_domain: branch_campaign_run_domain_v1(config.ascension_level, config.player_class),
+        run_prelude: branch_campaign_run_prelude_v1(config),
         rounds_completed: state.rounds_completed,
         stop_reason,
         active: state.active,
@@ -979,10 +981,31 @@ fn campaign_checkpoint_from_state_v1(
         schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
         seed: config.seed,
         run_domain: branch_campaign_run_domain_v1(config.ascension_level, config.player_class),
+        run_prelude: branch_campaign_run_prelude_v1(config),
         rounds_completed: state.rounds_completed,
         nodes: state.state_store.checkpoint_nodes(),
         sessions,
     }
+}
+
+fn branch_campaign_run_prelude_v1(config: &BranchCampaignConfigV1) -> BranchCampaignRunPreludeV1 {
+    BranchCampaignRunPreludeV1 {
+        replay_root_id: "campaign_root_after_prelude".to_string(),
+        branch_command_coordinate: "relative_to_run_prelude".to_string(),
+        prefix_commands: config.prefix_commands.clone(),
+    }
+}
+
+fn campaign_config_with_report_prelude_v1(
+    config: &BranchCampaignConfigV1,
+    report: &BranchCampaignReportV1,
+) -> BranchCampaignConfigV1 {
+    if report.run_prelude.is_empty() {
+        return config.clone();
+    }
+    let mut effective = config.clone();
+    effective.prefix_commands = report.run_prelude.prefix_commands.clone();
+    effective
 }
 
 fn validate_campaign_resume_checkpoint_v1(

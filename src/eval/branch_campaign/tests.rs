@@ -436,6 +436,7 @@ fn test_campaign_report_with_active(id: &str, floor: i32, hp: i32) -> BranchCamp
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
         seed: 521,
         run_domain: BranchCampaignRunDomainV1::default(),
+        run_prelude: Default::default(),
         rounds_completed: 3,
         stop_reason: "max_rounds".to_string(),
         active: vec![test_campaign_branch(id, floor, hp)],

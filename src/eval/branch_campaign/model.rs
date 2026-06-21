@@ -190,6 +190,25 @@ pub struct BranchCampaignRouteEvidenceExampleV1 {
     pub elite_prep_bp: i32,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignRunPreludeV1 {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub replay_root_id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub branch_command_coordinate: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub prefix_commands: Vec<String>,
+}
+
+impl BranchCampaignRunPreludeV1 {
+    pub fn is_empty(&self) -> bool {
+        self.replay_root_id.is_empty()
+            && self.branch_command_coordinate.is_empty()
+            && self.prefix_commands.is_empty()
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchCampaignReportV1 {
@@ -198,6 +217,8 @@ pub struct BranchCampaignReportV1 {
     pub seed: u64,
     #[serde(default)]
     pub run_domain: BranchCampaignRunDomainV1,
+    #[serde(default, skip_serializing_if = "BranchCampaignRunPreludeV1::is_empty")]
+    pub run_prelude: BranchCampaignRunPreludeV1,
     pub rounds_completed: usize,
     pub stop_reason: String,
     pub active: Vec<BranchCampaignBranchV1>,
@@ -302,6 +323,8 @@ pub struct BranchCampaignCheckpointV1 {
     pub seed: u64,
     #[serde(default)]
     pub run_domain: BranchCampaignRunDomainV1,
+    #[serde(default, skip_serializing_if = "BranchCampaignRunPreludeV1::is_empty")]
+    pub run_prelude: BranchCampaignRunPreludeV1,
     pub rounds_completed: usize,
     #[serde(default)]
     pub nodes: Vec<BranchCampaignCheckpointNodeV1>,

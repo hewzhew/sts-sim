@@ -60,6 +60,14 @@ pub fn render_branch_campaign_compact_with_detail_v1(
         report.rounds_completed,
         report.stop_reason
     ));
+    if !report.run_prelude.is_empty() {
+        lines.push(format!(
+            "Replay root: id={} coordinate={} prefix_commands={}",
+            report.run_prelude.replay_root_id,
+            report.run_prelude.branch_command_coordinate,
+            report.run_prelude.prefix_commands.len()
+        ));
+    }
     lines.push(format!(
         "Active {} | Frozen {} | Dead {} | Abandoned {} | Victories {} | Stuck {} | Discarded {}",
         report.active.len(),

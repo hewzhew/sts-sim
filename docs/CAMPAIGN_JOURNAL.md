@@ -182,6 +182,10 @@ journal events, not the other way around.
 - Prefer structured fields over parsing strings from rendered reports.
 - Keep old report fields only as compatibility views, not as new sources of
   truth.
+- Interpret branch `commands` relative to the report/checkpoint
+  `run_prelude`, not relative to a fresh process start. New reports record the
+  replay root and prefix commands explicitly; continuation tools should consume
+  that prelude instead of reconstructing Neow or CLI prefix state.
 
 ## Current Caveats
 
@@ -213,5 +217,8 @@ journal events, not the other way around.
 - Decision-outcome dataset export now links observed branch outcomes back to
   journal decision ids. Milestone outcome events are not yet stored directly in
   the journal.
+- Reports written before `run_prelude` still need compatibility fallback when
+  running continuation tools. New reports/checkpoints should not infer replay
+  prefix from CLI arguments.
 - Existing `decision observations` output is still reward-compatible legacy
   terminology. Prefer `--inspect-journal` for new debugging.
