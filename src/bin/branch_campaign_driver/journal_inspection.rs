@@ -524,6 +524,26 @@ fn journal_route_candidate_search_terms_v1(
             parts.push(format!("{:?}", room));
         }
     }
+    if let Some(action) = &candidate.action {
+        match action {
+            sts_simulator::ai::route_planner_v1::RouteMapActionV1::Go { x } => {
+                parts.push("action:go".to_string());
+                parts.push(format!("action_x:{x}"));
+            }
+            sts_simulator::ai::route_planner_v1::RouteMapActionV1::Fly { x, y } => {
+                parts.push("action:fly".to_string());
+                parts.push(format!("action_x:{x}"));
+                parts.push(format!("action_y:{y}"));
+            }
+        }
+    }
+    if let Some(path) = &candidate.path_summary {
+        parts.push(format!("path_count:{}", path.path_count));
+        parts.push(format!("min_elites:{}", path.min_elites));
+        parts.push(format!("max_elites:{}", path.max_elites));
+        parts.push(format!("min_fires:{}", path.min_fires));
+        parts.push(format!("max_fires:{}", path.max_fires));
+    }
     if let Some(coverage) = candidate.projection_coverage {
         parts.push(format!("{:?}", coverage));
     }
@@ -988,6 +1008,64 @@ mod tests {
         assert!(journal_event_matches_query_v1(
             &route,
             &normalize_query_v1("route planner selected")
+        ));
+    }
+
+    #[test]
+    fn structured_route_query_matches_selected_route_candidate_projection() {
+        let mut run = sts_simulator::state::RunState::new(521, 0, false, "Ironclad");
+        run.event_state = None;
+        let trace = sts_simulator::ai::route_planner_v1::plan_route_decision_v1(
+            &run,
+            &sts_simulator::state::core::EngineState::MapNavigation,
+            sts_simulator::ai::route_planner_v1::RoutePlannerConfigV1::default(),
+        );
+        let packet = MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+        let route_candidate = packet
+            .candidates
+            .first()
+            .expect("route packet should have a candidate");
+        let route = journal_event_with_payload(CampaignJournalEventPayloadV1::RouteDecision {
+            decision_id: "route0".to_string(),
+            route_branch_id: "root.go".to_string(),
+            selected_index: Some(route_candidate.rank),
+            selected_candidate_id: Some(route_candidate.candidate_id.clone()),
+            selected_candidate_rank: Some(route_candidate.rank),
+            selected_target_node: Some(route_candidate.target.clone()),
+            selected_route_candidate: Some(
+                CampaignJournalRouteCandidateV1::from_route_move_candidate_with_selected_v1(
+                    route_candidate,
+                    true,
+                ),
+            ),
+            target: format!("x={} y={}", route_candidate.target.x, route_candidate.target.y),
+            move_kind: format!("{:?}", route_candidate.target.move_kind),
+            safety_flag: Some(route_candidate.evaluation.safety),
+            safety: format!("{:?}", route_candidate.evaluation.safety),
+            candidate_pool_provenance: Some(packet.candidate_pool.clone()),
+            command: route_candidate.command.clone(),
+            elite_prep_bp: 0,
+            first_elite:
+                sts_simulator::eval::branch_experiment::BranchExperimentFirstEliteEvidenceV1::default(),
+        });
+
+        assert!(journal_event_matches_query_v1(
+            &route,
+            &normalize_query_v1("action:go")
+        ));
+        assert!(journal_event_matches_query_v1(
+            &route,
+            &normalize_query_v1(&format!(
+                "path_count:{}",
+                route_candidate.projection.path_summary.path_count
+            ))
+        ));
+        assert!(journal_event_matches_query_v1(
+            &route,
+            &normalize_query_v1(&format!(
+                "{:?}",
+                route_candidate.projection.metadata.coverage
+            ))
         ));
     }
 
