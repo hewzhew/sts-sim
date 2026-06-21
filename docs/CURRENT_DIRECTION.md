@@ -31,6 +31,10 @@ a full typed `MapDecisionPacketV1`; `CampaignJournal` records both the selected
 route decision and the route candidate pool. Coverage-gap continuation can then
 target unobserved route candidates deliberately.
 
+Planner stops are still route/map decisions. They should record a typed route
+candidate pool with `selected_index = None`, not fall back to a generic
+non-combat record that loses map alternatives.
+
 This split is intentional for now: default campaign runs stay bounded, while
 route/map alternatives remain inspectable and replayable from journal data.
 Route labels, `go N` commands, and top-candidate summaries are display or
