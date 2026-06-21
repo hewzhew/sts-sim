@@ -1077,27 +1077,7 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
     } else {
         lines.push("Targets:".to_string());
         for (index, target) in plan.targets.iter().take(12).enumerate() {
-            lines.push(format!(
-                "  {}. {} {} | parent={} coord={} candidate={} {{{}}} admission={} reason_category={} reason_code={} disposition={} milestone={} origin={} semantic=[{}]",
-                index + 1,
-                target.event_type,
-                compact_learning_text_v1(&target.decision_id, 56),
-                compact_learning_text_v1(&target.parent_branch_id, 36),
-                compact_learning_text_v1(&render_coverage_gap_parent_coordinate_v1(target), 48),
-                compact_learning_text_v1(&target.label, 42),
-                compact_learning_text_v1(&target.command, 28),
-                render_journal_candidate_admission_status_v1(target.admission.status),
-                render_journal_candidate_admission_reason_category_v1(
-                    target.admission.normalized_reason_category()
-                ),
-                render_journal_candidate_admission_reason_code_v1(
-                    target.admission.normalized_reason_code()
-                ),
-                render_journal_candidate_disposition_v1(target.disposition),
-                target.milestone,
-                render_coverage_gap_target_origin_v1(&target.target_origin),
-                compact_learning_text_v1(&target.semantic_class, 58)
-            ));
+            lines.push(render_coverage_gap_target_line_v1(index, target));
         }
         if plan.targets.len() > 12 {
             lines.push(format!(
@@ -1107,6 +1087,60 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
         }
     }
     lines.join("\n")
+}
+
+pub fn render_coverage_gap_execution_plan_v1(
+    execution: &CoverageGapContinuationExecutionPlanV1,
+) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "CoverageGapContinuationExecutionPlanV1 requested={} selected={} skipped={}",
+        execution.requested_target_count,
+        execution.selected_branch_count,
+        execution.skipped_target_count
+    ));
+    if execution.targets.is_empty() {
+        lines.push("Executed targets: none".to_string());
+    } else {
+        lines.push("Executed targets:".to_string());
+        for (index, target) in execution.targets.iter().take(12).enumerate() {
+            lines.push(render_coverage_gap_target_line_v1(index, target));
+        }
+        if execution.targets.len() > 12 {
+            lines.push(format!(
+                "  ... {} more target(s)",
+                execution.targets.len().saturating_sub(12)
+            ));
+        }
+    }
+    lines.join("\n")
+}
+
+fn render_coverage_gap_target_line_v1(
+    index: usize,
+    target: &CoverageGapContinuationTargetV1,
+) -> String {
+    format!(
+        "  {}. {} {} | parent={} coord={} candidate={} {{{}}} admission={} reason_category={} reason_code={} disposition={} milestone={} origin={} semantic=[{}]",
+        index + 1,
+        target.event_type,
+        compact_learning_text_v1(&target.decision_id, 56),
+        compact_learning_text_v1(&target.parent_branch_id, 36),
+        compact_learning_text_v1(&render_coverage_gap_parent_coordinate_v1(target), 48),
+        compact_learning_text_v1(&target.label, 42),
+        compact_learning_text_v1(&target.command, 28),
+        render_journal_candidate_admission_status_v1(target.admission.status),
+        render_journal_candidate_admission_reason_category_v1(
+            target.admission.normalized_reason_category()
+        ),
+        render_journal_candidate_admission_reason_code_v1(
+            target.admission.normalized_reason_code()
+        ),
+        render_journal_candidate_disposition_v1(target.disposition),
+        target.milestone,
+        render_coverage_gap_target_origin_v1(&target.target_origin),
+        compact_learning_text_v1(&target.semantic_class, 58)
+    )
 }
 
 fn render_coverage_gap_parent_coordinate_v1(target: &CoverageGapContinuationTargetV1) -> String {
