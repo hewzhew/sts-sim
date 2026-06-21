@@ -22,7 +22,7 @@ use crate::eval::run_control::{
 };
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 29;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 30;
 pub const BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1: &str =
     "card_reward_strategic_trace_v1";
 
@@ -348,7 +348,7 @@ pub struct BranchExperimentStrategyRequestV1 {
     pub suggested_action: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchExperimentRouteDecisionV1 {
     pub branch_id: String,
@@ -364,6 +364,8 @@ pub struct BranchExperimentRouteDecisionV1 {
     pub selected_candidate_rank: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_target_node: Option<MapRouteTargetV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_candidate: Option<BranchExperimentRouteCandidateEntryV1>,
     pub target: String,
     pub move_kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

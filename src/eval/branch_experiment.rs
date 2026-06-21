@@ -931,6 +931,9 @@ fn branch_route_decision_from_annotation(
             .as_ref()
             .and_then(|packet| packet.candidates.get(index))
     });
+    let selected_candidate_entry = selected_candidate.map(|candidate| {
+        branch_route_candidate_entry_from_map_packet_candidate_v1(*selected_index, candidate)
+    });
 
     Some(BranchExperimentRouteDecisionV1 {
         branch_id: branch.id.clone(),
@@ -942,6 +945,7 @@ fn branch_route_decision_from_annotation(
         selected_candidate_id: selected_candidate.map(|candidate| candidate.candidate_id.clone()),
         selected_candidate_rank: selected_candidate.map(|candidate| candidate.rank),
         selected_target_node: selected_candidate.map(|candidate| candidate.target.clone()),
+        selected_candidate: selected_candidate_entry,
         target: format!("x={target_x} y={target_y} {room_type}"),
         move_kind: move_kind.clone(),
         safety_flag: selected_candidate.map(|candidate| candidate.evaluation.safety),

@@ -389,6 +389,7 @@ fn journal_event_payload_search_terms_v1(event: &CampaignJournalEventV1) -> Vec<
             command,
             elite_prep_bp,
             first_elite,
+            selected_route_candidate,
             ..
         } => {
             let mut parts = vec![
@@ -437,6 +438,9 @@ fn journal_event_payload_search_terms_v1(event: &CampaignJournalEventV1) -> Vec<
                     "emitted_candidates:{}",
                     provenance.emitted_candidate_count
                 ));
+            }
+            if let Some(candidate) = selected_route_candidate {
+                parts.extend(journal_route_candidate_search_terms_v1(candidate));
             }
             parts
         }
@@ -523,6 +527,33 @@ fn journal_route_candidate_search_terms_v1(
     if let Some(coverage) = candidate.projection_coverage {
         parts.push(format!("{:?}", coverage));
     }
+    if let Some(source) = candidate.projection_source {
+        parts.push(format!("{:?}", source));
+    }
+    if let Some(path_budget) = candidate.path_budget {
+        parts.push(format!("path_budget:{path_budget}"));
+    }
+    if let Some(observed_path_count) = candidate.observed_path_count {
+        parts.push(format!("observed_paths:{observed_path_count}"));
+    }
+    parts.push(format!("route_rank:{}", candidate.rank));
+    parts.push(format!("route_selected:{}", candidate.selected));
+    parts.push(format!("route_score:{:.2}", candidate.score));
+    parts.push(format!("elite_prep_bp:{}", candidate.elite_prep_bp));
+    parts.push(format!(
+        "first_elite_paths:{}",
+        candidate.first_elite.paths_with_first_elite
+    ));
+    parts.push(format!(
+        "first_elite_forced:{}",
+        candidate.first_elite.forced
+    ));
+    parts.push(format!(
+        "first_elite_optional:{}",
+        candidate.first_elite.optional
+    ));
+    parts.extend(candidate.reasons.iter().cloned());
+    parts.extend(candidate.cautions.iter().cloned());
     parts
 }
 
@@ -880,6 +911,34 @@ mod tests {
 
     #[test]
     fn structured_route_query_matches_route_decision_only() {
+        let selected_route_candidate = CampaignJournalRouteCandidateV1 {
+            candidate_id: "route_move:normal_edge:x1:y0".to_string(),
+            rank: 0,
+            selected: true,
+            target_node: None,
+            target: "x=1 Elite".to_string(),
+            room_type: "Elite".to_string(),
+            move_kind: "NormalEdge".to_string(),
+            action: None,
+            safety_flag: None,
+            safety: "ok".to_string(),
+            score: 1.0,
+            score_terms: None,
+            value_factors: None,
+            command: "go 1".to_string(),
+            node_features: None,
+            path_summary: None,
+            needs: None,
+            projection_source: None,
+            projection_coverage: None,
+            path_budget: None,
+            observed_path_count: None,
+            elite_prep_bp: 42,
+            first_elite:
+                sts_simulator::eval::branch_experiment::BranchExperimentFirstEliteEvidenceV1::default(),
+            reasons: vec!["route planner selected".to_string()],
+            cautions: Vec::new(),
+        };
         let route = journal_event_with_payload(CampaignJournalEventPayloadV1::RouteDecision {
             decision_id: "route0".to_string(),
             route_branch_id: "root.go1".to_string(),
@@ -887,6 +946,7 @@ mod tests {
             selected_candidate_id: Some("route_move:normal_edge:x1:y0".to_string()),
             selected_candidate_rank: Some(0),
             selected_target_node: None,
+            selected_route_candidate: Some(selected_route_candidate),
             target: "x=1 Elite".to_string(),
             move_kind: "Elite".to_string(),
             safety_flag: None,
@@ -924,6 +984,10 @@ mod tests {
         assert!(journal_event_matches_query_v1(
             &route,
             &normalize_query_v1("route_move:normal_edge:x1:y0")
+        ));
+        assert!(journal_event_matches_query_v1(
+            &route,
+            &normalize_query_v1("route planner selected")
         ));
     }
 

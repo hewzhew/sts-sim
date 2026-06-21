@@ -117,6 +117,7 @@ CampaignJournalV1
       route_branch_id
       selected_index
       selected_candidate_id
+      selected_route_candidate? # typed selected route/map snapshot
       target
       move_kind
       safety
@@ -136,6 +137,11 @@ Schema version 2 adds `route_candidates[]` to `route_candidate_pool`. The generi
 route-specific list preserves typed map target, action, path projection, and
 route value-factor data so route inspection and coverage-gap continuation do not
 depend on flattened `semantic_class` strings.
+
+Schema version 3 adds `selected_route_candidate` to `route_decision`. This makes
+the selected move self-contained for inspection and learning export; consumers no
+longer need to rejoin against a route candidate pool or parse `target`/`command`
+strings just to recover selected route path, projection, and evaluation fields.
 
 Decision-outcome dataset export also prefers `journal` when available. It uses
 the journal `decision_id` as the sibling group identity and links an observed
@@ -229,10 +235,10 @@ journal events, not the other way around.
 8. Route planner selections remain surfaced as `route_decision` journal events
    for compatibility and selected-action evidence. New route decisions also
    carry `selected_index`, `selected_candidate_id`, selected candidate rank,
-   typed target node, typed safety flag, and route candidate-pool provenance so
-   the selected move can be linked back to the surrounding
-   `route_candidate_pool` without parsing the display label, legacy safety
-   string, or `go N` command.
+   typed target node, typed safety flag, route candidate-pool provenance, and a
+   typed `selected_route_candidate` snapshot so the selected move can be
+   inspected without parsing the display label, legacy safety string, or `go N`
+   command.
 9. Campaign route evidence summaries aggregate both selected route decisions
    and the surrounding route candidate pools. The summary is a report diagnostic
    about visible route coverage and safety distribution, not a route policy

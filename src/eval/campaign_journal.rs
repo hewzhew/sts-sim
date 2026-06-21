@@ -14,7 +14,7 @@ use crate::eval::branch_experiment::{
 };
 
 pub const CAMPAIGN_JOURNAL_SCHEMA_NAME: &str = "CampaignJournal";
-pub const CAMPAIGN_JOURNAL_SCHEMA_VERSION: u32 = 2;
+pub const CAMPAIGN_JOURNAL_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -157,6 +157,8 @@ pub enum CampaignJournalEventPayloadV1 {
         selected_candidate_rank: Option<usize>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         selected_target_node: Option<MapRouteTargetV1>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        selected_route_candidate: Option<CampaignJournalRouteCandidateV1>,
         target: String,
         move_kind: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -1012,6 +1012,9 @@ fn campaign_route_decision_journal_event_v1(
             selected_candidate_id: decision.selected_candidate_id.clone(),
             selected_candidate_rank: decision.selected_candidate_rank,
             selected_target_node: decision.selected_target_node.clone(),
+            selected_route_candidate: decision.selected_candidate.as_ref().map(
+                crate::eval::campaign_journal::CampaignJournalRouteCandidateV1::from_route_entry_v1,
+            ),
             target: decision.target.clone(),
             move_kind: decision.move_kind.clone(),
             safety_flag: decision.safety_flag,

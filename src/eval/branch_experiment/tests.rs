@@ -26,7 +26,7 @@ use std::path::PathBuf;
 
 #[test]
 fn branch_experiment_schema_version_tracks_lineage_pruned_summary() {
-    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 29);
+    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 30);
 }
 
 #[test]
@@ -105,6 +105,7 @@ fn branch_experiment_records_route_candidate_pool() {
         decision.selected_candidate_id.is_some()
             && decision.selected_candidate_rank.is_some()
             && decision.selected_target_node.is_some()
+            && decision.selected_candidate.is_some()
             && decision.safety_flag.is_some()
             && decision.candidate_pool_provenance.is_some()
     }));
