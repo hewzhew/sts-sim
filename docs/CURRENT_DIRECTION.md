@@ -40,6 +40,9 @@ route/map alternatives remain inspectable and replayable from journal data.
 Route labels, `go N` commands, and top-candidate summaries are display or
 compatibility surfaces; new analysis should consume typed route candidates
 (`target`, `action`, `features`, `projection`, `needs`, `evaluation`).
+Coverage-gap targets and continuation branches should preserve typed route
+origin fields as well, so replay and learning tools do not need to parse route
+display strings.
 
 ## Closed Foundation
 
