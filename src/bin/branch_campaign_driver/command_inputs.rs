@@ -19,6 +19,7 @@ use super::cli_args::{Args, BranchCampaignCombatRetryArgV1};
 #[derive(Clone, Debug)]
 pub(super) struct RunCommandInput {
     pub(super) config: BranchCampaignConfigV1,
+    pub(super) round_budget: RoundBudgetRequestV1,
     pub(super) progress: bool,
     pub(super) progress_detail: BranchCampaignProgressDetailV1,
     pub(super) json: bool,
@@ -37,6 +38,7 @@ impl RunCommandInput {
     pub(super) fn from_args(args: &Args) -> Result<Self, String> {
         Ok(Self {
             config: campaign_config_from_args(args)?,
+            round_budget: RoundBudgetRequestV1::from_args(args),
             progress: args.progress,
             progress_detail: BranchCampaignProgressDetailV1::from(args.progress_detail),
             json: args.json,
@@ -201,6 +203,7 @@ impl DatasetCommandInput {
 #[derive(Clone, Debug)]
 pub(super) struct ContinuationCommandInput {
     pub(super) config: BranchCampaignConfigV1,
+    pub(super) round_budget: RoundBudgetRequestV1,
     pub(super) resume: Option<PathBuf>,
     pub(super) resume_checkpoint: Option<PathBuf>,
     pub(super) out: Option<PathBuf>,
@@ -222,6 +225,7 @@ impl ContinuationCommandInput {
     pub(super) fn from_args(args: &Args) -> Result<Self, String> {
         Ok(Self {
             config: campaign_config_from_args(args)?,
+            round_budget: RoundBudgetRequestV1::from_args(args),
             resume: args.resume.clone(),
             resume_checkpoint: args.resume_checkpoint.clone(),
             out: args.out.clone(),
@@ -240,6 +244,91 @@ impl ContinuationCommandInput {
             report_detail: BranchCampaignReportDetailV1::from(args.report_detail),
         })
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum RoundBudgetModeV1 {
+    LegacyMaxRounds,
+    Rounds,
+    UntilRound,
+}
+
+impl RoundBudgetModeV1 {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::LegacyMaxRounds => "legacy_max_rounds",
+            Self::Rounds => "rounds",
+            Self::UntilRound => "until_round",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct RoundBudgetResolutionV1 {
+    pub(super) mode: RoundBudgetModeV1,
+    pub(super) source_rounds: usize,
+    pub(super) round_budget: usize,
+    pub(super) target_total_rounds: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct RoundBudgetRequestV1 {
+    legacy_max_rounds: usize,
+    rounds: Option<usize>,
+    until_round: Option<usize>,
+}
+
+impl RoundBudgetRequestV1 {
+    fn from_args(args: &Args) -> Self {
+        Self {
+            legacy_max_rounds: args.max_rounds,
+            rounds: args.rounds,
+            until_round: args.until_round,
+        }
+    }
+
+    pub(super) fn resolve_for_source_rounds(
+        self,
+        source_rounds: usize,
+    ) -> Result<RoundBudgetResolutionV1, String> {
+        if self.rounds.is_some() && self.until_round.is_some() {
+            return Err("--rounds conflicts with --until-round".to_string());
+        }
+        let (mode, round_budget) = if let Some(rounds) = self.rounds {
+            (RoundBudgetModeV1::Rounds, rounds)
+        } else if let Some(until_round) = self.until_round {
+            (
+                RoundBudgetModeV1::UntilRound,
+                until_round.saturating_sub(source_rounds),
+            )
+        } else {
+            (RoundBudgetModeV1::LegacyMaxRounds, self.legacy_max_rounds)
+        };
+        Ok(RoundBudgetResolutionV1 {
+            mode,
+            source_rounds,
+            round_budget,
+            target_total_rounds: source_rounds.saturating_add(round_budget),
+        })
+    }
+}
+
+#[cfg(test)]
+pub(super) fn round_budget_for_source_from_args(
+    args: &Args,
+    source_rounds: usize,
+) -> Result<RoundBudgetResolutionV1, String> {
+    RoundBudgetRequestV1::from_args(args).resolve_for_source_rounds(source_rounds)
+}
+
+pub(super) fn render_round_budget_resolution_v1(resolution: RoundBudgetResolutionV1) -> String {
+    format!(
+        "RoundBudgetV1 mode={} source_rounds={} round_budget={} target_total_rounds={}",
+        resolution.mode.as_str(),
+        resolution.source_rounds,
+        resolution.round_budget,
+        resolution.target_total_rounds
+    )
 }
 
 fn inspect_search_options_from_args(args: &Args) -> Result<RunControlSearchCombatOptions, String> {
@@ -275,7 +364,7 @@ pub(super) fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignCon
         ascension_level: args.ascension,
         player_class,
         final_act: args.final_act,
-        max_rounds: args.max_rounds,
+        max_rounds: args.rounds.unwrap_or(args.max_rounds),
         round_depth: args.round_depth,
         max_active: args.max_active,
         max_frozen: args.max_frozen,

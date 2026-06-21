@@ -26,7 +26,9 @@ use cli_args::{
 };
 use cli_args::{parse_cli, BranchCampaignCliInputV1};
 #[cfg(test)]
-use command_inputs::campaign_config_from_args;
+use command_inputs::{
+    campaign_config_from_args, round_budget_for_source_from_args, RoundBudgetModeV1,
+};
 use command_inputs::{
     ContinuationCommandInput, DatasetCommandInput, InspectCommandInput, RunCommandInput,
 };
@@ -315,6 +317,45 @@ mod tests {
         assert_eq!(config.max_active, QUICK_PRESET_MAX_ACTIVE);
         assert_eq!(config.search_wall_ms, Some(QUICK_PRESET_SEARCH_WALL_MS));
         assert_eq!(config.search_max_nodes, Some(QUICK_PRESET_SEARCH_MAX_NODES));
+    }
+
+    #[test]
+    fn rounds_alias_sets_per_invocation_round_budget() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "run",
+            "--preset",
+            "quick",
+            "--rounds",
+            "3",
+        ])
+        .expect("run args parse");
+        let config = campaign_config_from_args(&args).expect("config builds");
+        let budget = round_budget_for_source_from_args(&args, 7).expect("budget resolves");
+
+        assert_eq!(config.max_rounds, 3);
+        assert_eq!(budget.mode, RoundBudgetModeV1::Rounds);
+        assert_eq!(budget.source_rounds, 7);
+        assert_eq!(budget.round_budget, 3);
+        assert_eq!(budget.target_total_rounds, 10);
+    }
+
+    #[test]
+    fn until_round_sets_remaining_round_budget_from_source_rounds() {
+        let args = parse_args_from([
+            "branch_campaign_driver",
+            "continue",
+            "--execute-coverage-gap-continuation",
+            "--until-round",
+            "9",
+        ])
+        .expect("continuation args parse");
+        let budget = round_budget_for_source_from_args(&args, 6).expect("budget resolves");
+
+        assert_eq!(budget.mode, RoundBudgetModeV1::UntilRound);
+        assert_eq!(budget.source_rounds, 6);
+        assert_eq!(budget.round_budget, 3);
+        assert_eq!(budget.target_total_rounds, 9);
     }
 
     #[test]

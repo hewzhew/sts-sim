@@ -47,7 +47,9 @@ use super::campaign_artifacts::{
     read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
     write_campaign_report_v1,
 };
-use super::command_inputs::{ContinuationCommandInput, DatasetCommandInput};
+use super::command_inputs::{
+    render_round_budget_resolution_v1, ContinuationCommandInput, DatasetCommandInput,
+};
 
 pub(super) fn run_branch_outcome_dataset_analysis(
     input: &DatasetCommandInput,
@@ -202,6 +204,10 @@ pub(super) fn run_targeted_continuation_execution(
                 .to_string()
         })?;
     let mut config = input.config.clone();
+    let round_budget = input
+        .round_budget
+        .resolve_for_source_rounds(source_report.rounds_completed)?;
+    config.max_rounds = round_budget.round_budget;
     config.seed = source_report.seed;
     config.ascension_level = source_report.run_domain.ascension_level;
     config.player_class = canonical_player_class(&source_report.run_domain.player_class)?;
@@ -226,6 +232,7 @@ pub(super) fn run_targeted_continuation_execution(
         execution.missing_branch_count,
         execution.skipped_candidate_count
     );
+    println!("{}", render_round_budget_resolution_v1(round_budget));
     println!(
         "{}",
         render_branch_campaign_compact_with_detail_v1(
@@ -319,6 +326,10 @@ pub(super) fn run_coverage_gap_continuation_execution(
     let continuation_report =
         coverage_gap_continuation_source_report_v1(&source_report, &execution);
     let mut config = input.config.clone();
+    let round_budget = input
+        .round_budget
+        .resolve_for_source_rounds(source_report.rounds_completed)?;
+    config.max_rounds = round_budget.round_budget;
     let use_neow_guided_prefix =
         source_report.run_prelude.is_empty() && !config.prefix_commands.is_empty();
     config.seed = source_report.seed;
@@ -352,6 +363,7 @@ pub(super) fn run_coverage_gap_continuation_execution(
         execution.selected_branch_count,
         execution.skipped_target_count
     );
+    println!("{}", render_round_budget_resolution_v1(round_budget));
     println!("{}", render_coverage_gap_execution_plan_v1(&execution));
     println!("{}", render_coverage_gap_continuation_plan_v1(&plan));
     println!(

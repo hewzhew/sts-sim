@@ -161,6 +161,22 @@ pub(super) struct Args {
     #[arg(long, default_value_t = 8)]
     pub(super) max_rounds: usize,
 
+    #[arg(
+        long,
+        value_name = "N",
+        conflicts_with = "until_round",
+        help = "Run N additional campaign rounds in this invocation; clearer alias for the legacy per-call --max-rounds budget"
+    )]
+    pub(super) rounds: Option<usize>,
+
+    #[arg(
+        long = "until-round",
+        value_name = "N",
+        conflicts_with = "rounds",
+        help = "When resuming, run only enough additional rounds to reach total completed round N"
+    )]
+    pub(super) until_round: Option<usize>,
+
     #[arg(long, default_value_t = 1)]
     pub(super) round_depth: usize,
 
@@ -751,6 +767,22 @@ struct CampaignBranchingArgs {
     #[arg(long, default_value_t = 8)]
     max_rounds: usize,
 
+    #[arg(
+        long,
+        value_name = "N",
+        conflicts_with = "until_round",
+        help = "Run N additional campaign rounds in this invocation; clearer alias for the legacy per-call --max-rounds budget"
+    )]
+    rounds: Option<usize>,
+
+    #[arg(
+        long = "until-round",
+        value_name = "N",
+        conflicts_with = "rounds",
+        help = "When resuming, run only enough additional rounds to reach total completed round N"
+    )]
+    until_round: Option<usize>,
+
     #[arg(long, default_value_t = 1)]
     round_depth: usize,
 
@@ -1268,6 +1300,8 @@ impl Args {
             player_class: "ironclad".to_string(),
             final_act: false,
             max_rounds: 8,
+            rounds: None,
+            until_round: None,
             round_depth: 1,
             max_active: 8,
             max_frozen: 32,
@@ -1416,6 +1450,8 @@ impl CampaignDomainArgs {
 impl CampaignBranchingArgs {
     fn apply_to(self, args: &mut Args) {
         args.max_rounds = self.max_rounds;
+        args.rounds = self.rounds;
+        args.until_round = self.until_round;
         args.round_depth = self.round_depth;
         args.max_active = self.max_active;
         args.max_frozen = self.max_frozen;

@@ -17,7 +17,7 @@ use super::campaign_artifacts::{
     read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
     write_campaign_report_v1,
 };
-use super::command_inputs::RunCommandInput;
+use super::command_inputs::{render_round_budget_resolution_v1, RunCommandInput};
 use super::outcome_dataset::{
     learning_dataset_export_context_v1, write_branch_outcome_dataset_jsonl_v1,
     write_decision_outcome_dataset_jsonl_v1, write_learning_dataset_jsonl_v1,
@@ -54,6 +54,14 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
         .as_ref()
         .map(read_campaign_checkpoint_v1)
         .transpose()?;
+    let source_rounds = previous
+        .as_ref()
+        .map_or(0, |report| report.rounds_completed);
+    let round_budget = input
+        .round_budget
+        .resolve_for_source_rounds(source_rounds)?;
+    let mut config = input.config.clone();
+    config.max_rounds = round_budget.round_budget;
     let result = if input.progress && !input.json {
         let started_at = Instant::now();
         let progress_detail = input.progress_detail;
@@ -72,25 +80,22 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
         };
         if let Some(previous) = previous.as_ref() {
             run_branch_campaign_from_report_with_checkpoint_and_progress_v1(
-                &input.config,
+                &config,
                 previous,
                 checkpoint.as_ref(),
                 progress,
             )?
         } else {
-            run_branch_campaign_with_checkpoint_and_progress_v1(&input.config, progress)?
+            run_branch_campaign_with_checkpoint_and_progress_v1(&config, progress)?
         }
     } else if let Some(previous) = previous.as_ref() {
-        run_branch_campaign_from_report_with_checkpoint_v1(
-            &input.config,
-            previous,
-            checkpoint.as_ref(),
-        )?
+        run_branch_campaign_from_report_with_checkpoint_v1(&config, previous, checkpoint.as_ref())?
     } else {
-        run_branch_campaign_with_checkpoint_v1(&input.config)?
+        run_branch_campaign_with_checkpoint_v1(&config)?
     };
     let report = result.report;
     if !input.json {
+        println!("{}", render_round_budget_resolution_v1(round_budget));
         eprintln!(
             "run-domain: ascension=A{} label={} class={}",
             report.run_domain.ascension_level,

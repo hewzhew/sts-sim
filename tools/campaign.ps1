@@ -444,17 +444,17 @@ if (($RoundsBound -and $UntilRoundBound) -or ($RoundsBound -and $MaxRoundsBound)
     throw "Choose only one round budget: -Rounds N, -UntilRound N, or legacy -MaxRounds N."
 }
 
-$PassMaxRoundsToDriver = $MaxRoundsBound
+$DriverRoundBudgetArgs = @()
 $RoundBudgetSource = if ($MaxRoundsBound) { "MaxRounds" } else { "preset" }
 if (-not $More) {
     if ($RoundsBound) {
-        $MaxRounds = $Rounds
-        $PassMaxRoundsToDriver = $true
+        $DriverRoundBudgetArgs = @("--rounds", "$Rounds")
         $RoundBudgetSource = "Rounds"
     } elseif ($UntilRoundBound) {
-        $MaxRounds = $UntilRound
-        $PassMaxRoundsToDriver = $true
+        $DriverRoundBudgetArgs = @("--until-round", "$UntilRound")
         $RoundBudgetSource = "UntilRound"
+    } elseif ($MaxRoundsBound) {
+        $DriverRoundBudgetArgs = @("--max-rounds", "$MaxRounds")
     }
 }
 
@@ -472,17 +472,17 @@ if ($More) {
     if ($RoundsBound) {
         $TargetRounds = $ResumeRoundsCompleted + $Rounds
         $MaxRounds = $Rounds
-        $PassMaxRoundsToDriver = $true
+        $DriverRoundBudgetArgs = @("--rounds", "$Rounds")
         $RoundBudgetSource = "Rounds"
     } elseif ($UntilRoundBound) {
         $TargetRounds = $UntilRound
         $MaxRounds = [Math]::Max(0, $TargetRounds - $ResumeRoundsCompleted)
-        $PassMaxRoundsToDriver = $true
+        $DriverRoundBudgetArgs = @("--until-round", "$UntilRound")
         $RoundBudgetSource = "UntilRound"
     } elseif ($MaxRoundsBound) {
         $TargetRounds = $MaxRounds
         $MaxRounds = [Math]::Max(0, $TargetRounds - $ResumeRoundsCompleted)
-        $PassMaxRoundsToDriver = $true
+        $DriverRoundBudgetArgs = @("--until-round", "$TargetRounds")
         $RoundBudgetSource = "LegacyMaxRounds"
     }
     $DriverArgs += @("--resume", "$ResumeCampaignPath")
@@ -506,8 +506,8 @@ function Add-DriverArgIfBound {
     }
 }
 
-if ($PassMaxRoundsToDriver) {
-    $DriverArgs += @("--max-rounds", "$MaxRounds")
+if ($DriverRoundBudgetArgs.Count -gt 0) {
+    $DriverArgs += $DriverRoundBudgetArgs
 }
 Add-DriverArgIfBound "ExperimentWallMs" "--experiment-wall-ms" $ExperimentWallMs
 Add-DriverArgIfBound "SearchWallMs" "--search-wall-ms" $SearchWallMs
@@ -653,20 +653,24 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     $ResumeReport = Get-Content -LiteralPath $LatestCampaignPath -Raw | ConvertFrom-Json
     $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
     $ContinuationRounds = 1
+    $ContinuationRoundBudgetArgs = @("--rounds", "1")
     $TargetRounds = $null
     $ContinuationRoundSource = "default"
     if ($RoundsBound) {
         $ContinuationRounds = $Rounds
         $ContinuationRoundSource = "Rounds"
         $TargetRounds = $ResumeRoundsCompleted + $Rounds
+        $ContinuationRoundBudgetArgs = @("--rounds", "$Rounds")
     } elseif ($UntilRoundBound) {
         $TargetRounds = $UntilRound
         $ContinuationRounds = [Math]::Max(0, $TargetRounds - $ResumeRoundsCompleted)
         $ContinuationRoundSource = "UntilRound"
+        $ContinuationRoundBudgetArgs = @("--until-round", "$UntilRound")
     } elseif ($MaxRoundsBound) {
         $ContinuationRounds = $MaxRounds
         $ContinuationRoundSource = "MaxRounds"
         $TargetRounds = $ResumeRoundsCompleted + $MaxRounds
+        $ContinuationRoundBudgetArgs = @("--max-rounds", "$ContinuationRounds")
     }
 
     $ContinueTargetArgs = @(
@@ -686,9 +690,9 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         "--targeted-continuation-limit", "$TargetedContinuationLimit",
         "--targeted-continuation-candidates-per-target", "$TargetedContinuationCandidatesPerTarget",
         "--out", "$LatestCampaignPath",
-        "--checkpoint-out", "$LatestCheckpointPath",
-        "--max-rounds", "$ContinuationRounds"
+        "--checkpoint-out", "$LatestCheckpointPath"
     )
+    $ContinueTargetArgs += $ContinuationRoundBudgetArgs
     $ContinueCoverageGapArgs = @(
         "continue",
         "--preset", "$Mode",
@@ -706,9 +710,9 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         "--coverage-gap-limit", "$CoverageGapLimit",
         "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision",
         "--out", "$LatestCampaignPath",
-        "--checkpoint-out", "$LatestCheckpointPath",
-        "--max-rounds", "$ContinuationRounds"
+        "--checkpoint-out", "$LatestCheckpointPath"
     )
+    $ContinueCoverageGapArgs += $ContinuationRoundBudgetArgs
     if ($CampaignBoundParameters.ContainsKey("ExperimentWallMs")) {
         $ContinueTargetArgs += @("--experiment-wall-ms", "$ExperimentWallMs")
         $ContinueCoverageGapArgs += @("--experiment-wall-ms", "$ExperimentWallMs")
