@@ -2,9 +2,7 @@ use crate::ai::route_planner_v1::{
     MapDecisionPacketV1, RouteCandidateTraceV1, RouteDecisionTraceV1,
 };
 
-use super::super::noncombat_policy_annotation::{
-    noncombat_policy_annotation, validate_noncombat_policy_record,
-};
+use super::super::noncombat_policy_annotation::validate_noncombat_policy_record;
 use super::super::trace_annotation::{
     RoutePlannerCandidateSummaryV1, RoutePlannerFirstEliteEvidenceV1,
     RoutePlannerSelectionEvidenceV1, RunControlTraceAnnotationV1,
@@ -54,7 +52,21 @@ pub(super) fn route_policy_stop_annotation(
     let mut noncombat_record = stopped_trace.to_noncombat_decision_record_v1();
     noncombat_record.selection.reason = reason.to_string();
     noncombat_record.selection.selection_mode = "route_policy_stop".to_string();
-    noncombat_policy_annotation("route planner stop", noncombat_record)
+    validate_noncombat_policy_record("route planner stop", &noncombat_record)?;
+
+    Ok(RunControlTraceAnnotationV1::RoutePlannerCandidatePool {
+        summary: format!("route planner stopped: {}", first_line(reason)),
+        selected_index: None,
+        candidate_count: stopped_trace.candidates.len(),
+        top_candidates: route_go_top_candidate_summaries(&stopped_trace),
+        candidate_pool: Vec::new(),
+        label_role: "behavior_policy_not_teacher".to_string(),
+        map_decision_packet: Some(MapDecisionPacketV1::from_route_decision_trace_v1(
+            &stopped_trace,
+        )),
+        stop_reason: reason.to_string(),
+        noncombat_record: Some(noncombat_record),
+    })
 }
 
 fn route_go_top_candidate_summaries(
@@ -126,4 +138,8 @@ fn route_go_selection_evidence(
 
 fn score_to_basis_points(score: f32) -> i32 {
     (score * 100.0).round() as i32
+}
+
+fn first_line(text: &str) -> &str {
+    text.lines().next().unwrap_or(text)
 }

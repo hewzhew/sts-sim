@@ -978,15 +978,27 @@ fn branch_route_candidate_pool_from_annotation(
     annotation: &RunControlTraceAnnotationV1,
     parent_commands: Option<&[String]>,
 ) -> Option<BranchExperimentRouteCandidatePoolV1> {
-    let RunControlTraceAnnotationV1::RoutePlannerSelection {
-        selected_index,
-        candidate_count,
-        candidate_pool,
-        map_decision_packet,
-        ..
-    } = annotation
-    else {
-        return None;
+    let (selected_index, candidate_count, candidate_pool, map_decision_packet) = match annotation {
+        RunControlTraceAnnotationV1::RoutePlannerSelection {
+            selected_index,
+            candidate_count,
+            candidate_pool,
+            map_decision_packet,
+            ..
+        }
+        | RunControlTraceAnnotationV1::RoutePlannerCandidatePool {
+            selected_index,
+            candidate_count,
+            candidate_pool,
+            map_decision_packet,
+            ..
+        } => (
+            selected_index,
+            candidate_count,
+            candidate_pool,
+            map_decision_packet,
+        ),
+        _ => return None,
     };
     if let Some(packet) = map_decision_packet {
         if packet.candidates.is_empty() {

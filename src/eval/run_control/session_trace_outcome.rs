@@ -243,12 +243,20 @@ fn selected_noncombat_records(
                 noncombat_record: Some(record),
                 ..
             }
+            | RunControlTraceAnnotationV1::RoutePlannerCandidatePool {
+                noncombat_record: Some(record),
+                ..
+            }
             | RunControlTraceAnnotationV1::NonCombatPolicyDecision { record, .. }
             | RunControlTraceAnnotationV1::NonCombatHumanBoundary { record } => {
                 (record.selection.status == PolicySelectionStatusV1::Selected)
                     .then(|| record.clone())
             }
             RunControlTraceAnnotationV1::RoutePlannerSelection {
+                noncombat_record: None,
+                ..
+            }
+            | RunControlTraceAnnotationV1::RoutePlannerCandidatePool {
                 noncombat_record: None,
                 ..
             }

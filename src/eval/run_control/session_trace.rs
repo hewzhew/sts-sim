@@ -618,7 +618,19 @@ fn is_boundary_record_annotation(annotation: &RunControlTraceAnnotationV1) -> bo
             crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
                 | crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::NoCandidates
         ),
+        RunControlTraceAnnotationV1::RoutePlannerCandidatePool {
+            noncombat_record: Some(record),
+            ..
+        } => matches!(
+            record.selection.status,
+            crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+                | crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::NoCandidates
+        ),
         RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
+        | RunControlTraceAnnotationV1::RoutePlannerCandidatePool {
+            noncombat_record: None,
+            ..
+        }
         | RunControlTraceAnnotationV1::AutoCombatCapture { .. }
         | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }
         | RunControlTraceAnnotationV1::CombatSearchPerformance { .. } => false,
@@ -647,6 +659,7 @@ fn annotation_artifact_refs(
                 benchmark_manifest_path: Some(benchmark_manifest_path.clone()),
             }),
             RunControlTraceAnnotationV1::RoutePlannerSelection { .. }
+            | RunControlTraceAnnotationV1::RoutePlannerCandidatePool { .. }
             | RunControlTraceAnnotationV1::NonCombatPolicyDecision { .. }
             | RunControlTraceAnnotationV1::NonCombatHumanBoundary { .. }
             | RunControlTraceAnnotationV1::CombatAutomationTrajectory { .. }

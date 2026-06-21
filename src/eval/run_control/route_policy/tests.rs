@@ -188,3 +188,47 @@ fn route_go_attaches_compact_trace_boundary() {
         .iter()
         .all(|value| value.evidence_refs.len() == 3));
 }
+
+#[test]
+fn route_policy_stop_preserves_typed_candidate_pool() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = None;
+    session.engine_state = EngineState::MapNavigation;
+
+    let (annotation, summary) = route_policy_stop_for_session(&session, "test stop reason")
+        .expect("route policy stop should build")
+        .expect("map should have route candidates");
+
+    assert!(summary.contains("route planner policy stopped"));
+    let RunControlTraceAnnotationV1::RoutePlannerCandidatePool {
+        selected_index,
+        candidate_count,
+        top_candidates,
+        candidate_pool,
+        map_decision_packet,
+        stop_reason,
+        noncombat_record,
+        ..
+    } = annotation
+    else {
+        panic!("expected route candidate pool annotation");
+    };
+    assert_eq!(selected_index, None);
+    assert!(candidate_count >= 1);
+    assert!(!top_candidates.is_empty());
+    assert!(
+        candidate_pool.is_empty(),
+        "new route stop traces should store full candidates in map_decision_packet"
+    );
+    let packet = map_decision_packet.expect("route stop should carry typed map packet");
+    assert_eq!(packet.selected_index, None);
+    assert_eq!(packet.candidates.len(), candidate_count);
+    assert!(packet.warnings.iter().any(|line| line == "test stop reason"));
+    assert_eq!(stop_reason, "test stop reason");
+    let record = noncombat_record.expect("route stop should carry noncombat record");
+    assert_eq!(
+        record.selection.status,
+        crate::ai::noncombat_decision_v1::PolicySelectionStatusV1::Stopped
+    );
+    assert_eq!(record.selection.reason, "test stop reason");
+}

@@ -202,6 +202,26 @@ pub enum RunControlTraceAnnotationV1 {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         noncombat_record: Option<NonCombatDecisionRecordV1>,
     },
+    RoutePlannerCandidatePool {
+        summary: String,
+        selected_index: Option<usize>,
+        candidate_count: usize,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        /// Compatibility top-3 display view. New consumers should read the
+        /// typed `map_decision_packet`.
+        top_candidates: Vec<RoutePlannerCandidateSummaryV1>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        /// Compatibility full display view. Branch experiment and journal
+        /// conversion should prefer `map_decision_packet` and only fall back to
+        /// this field for old traces.
+        candidate_pool: Vec<RoutePlannerCandidateSummaryV1>,
+        label_role: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        map_decision_packet: Option<MapDecisionPacketV1>,
+        stop_reason: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        noncombat_record: Option<NonCombatDecisionRecordV1>,
+    },
     NonCombatPolicyDecision {
         record: NonCombatDecisionRecordV1,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -320,6 +340,10 @@ fn validate_run_control_trace_annotation_v1(
             noncombat_record: Some(record),
             ..
         } => validate_noncombat_record_annotation(idx, "route_planner_selection", record),
+        RunControlTraceAnnotationV1::RoutePlannerCandidatePool {
+            noncombat_record: Some(record),
+            ..
+        } => validate_noncombat_record_annotation(idx, "route_planner_candidate_pool", record),
         RunControlTraceAnnotationV1::NonCombatPolicyDecision { record, .. } => {
             validate_noncombat_record_annotation(idx, "noncombat_policy_decision", record)
         }
@@ -327,6 +351,10 @@ fn validate_run_control_trace_annotation_v1(
             validate_noncombat_record_annotation(idx, "noncombat_human_boundary", record)
         }
         RunControlTraceAnnotationV1::RoutePlannerSelection {
+            noncombat_record: None,
+            ..
+        }
+        | RunControlTraceAnnotationV1::RoutePlannerCandidatePool {
             noncombat_record: None,
             ..
         }
