@@ -133,6 +133,15 @@ fn journal_event_extra_summary_v1(event: &CampaignJournalEventV1) -> String {
             branch_option_count,
             ..
         } => format!(" branch_options={}", branch_option_count),
+        CampaignJournalEventPayloadV1::RouteDecision {
+            target,
+            safety,
+            elite_prep_bp,
+            ..
+        } => format!(
+            " target={} safety={} elite_prep_bp={}",
+            target, safety, elite_prep_bp
+        ),
         _ => String::new(),
     }
 }
@@ -198,12 +207,17 @@ fn structured_journal_query_match_v1(
             &event.payload,
             CampaignJournalEventPayloadV1::BossRelicCandidatePool { .. }
         )),
+        "route" | "routes" | "map" => Some(matches!(
+            &event.payload,
+            CampaignJournalEventPayloadV1::RouteDecision { .. }
+        )),
         "rewardcandidateset" => Some(matches_type("rewardcandidateset")),
         "shopbranchcandidateset" => Some(matches_type("shopbranchcandidateset")),
         "shopcandidatepool" => Some(matches_type("shopcandidatepool")),
         "campfirecandidatepool" => Some(matches_type("campfirecandidatepool")),
         "eventcandidatepool" => Some(matches_type("eventcandidatepool")),
         "bossreliccandidatepool" => Some(matches_type("bossreliccandidatepool")),
+        "routedecision" => Some(matches_type("routedecision")),
         _ => None,
     }
 }
@@ -216,6 +230,7 @@ fn journal_event_type_v1(event: &CampaignJournalEventV1) -> &'static str {
         CampaignJournalEventPayloadV1::CampfireCandidatePool { .. } => "campfire_candidate_pool",
         CampaignJournalEventPayloadV1::EventCandidatePool { .. } => "event_candidate_pool",
         CampaignJournalEventPayloadV1::BossRelicCandidatePool { .. } => "boss_relic_candidate_pool",
+        CampaignJournalEventPayloadV1::RouteDecision { .. } => "route_decision",
     }
 }
 
@@ -229,6 +244,7 @@ fn journal_event_boundary_title_v1(event: &CampaignJournalEventV1) -> &str {
         | CampaignJournalEventPayloadV1::BossRelicCandidatePool { boundary_title, .. } => {
             boundary_title
         }
+        CampaignJournalEventPayloadV1::RouteDecision { .. } => "Map",
     }
 }
 
@@ -242,6 +258,7 @@ fn journal_event_frontier_key_v1(event: &CampaignJournalEventV1) -> &str {
         | CampaignJournalEventPayloadV1::BossRelicCandidatePool { frontier_key, .. } => {
             frontier_key
         }
+        CampaignJournalEventPayloadV1::RouteDecision { target, .. } => target,
     }
 }
 
@@ -253,6 +270,7 @@ fn journal_event_depth_v1(event: &CampaignJournalEventV1) -> usize {
         | CampaignJournalEventPayloadV1::CampfireCandidatePool { depth, .. }
         | CampaignJournalEventPayloadV1::EventCandidatePool { depth, .. }
         | CampaignJournalEventPayloadV1::BossRelicCandidatePool { depth, .. } => *depth,
+        CampaignJournalEventPayloadV1::RouteDecision { .. } => 0,
     }
 }
 
@@ -264,6 +282,7 @@ fn journal_event_candidates_v1(event: &CampaignJournalEventV1) -> &[CampaignJour
         | CampaignJournalEventPayloadV1::CampfireCandidatePool { candidates, .. }
         | CampaignJournalEventPayloadV1::EventCandidatePool { candidates, .. }
         | CampaignJournalEventPayloadV1::BossRelicCandidatePool { candidates, .. } => candidates,
+        CampaignJournalEventPayloadV1::RouteDecision { .. } => &[],
     }
 }
 
@@ -287,7 +306,37 @@ fn journal_event_search_text_v1(event: &CampaignJournalEventV1) -> String {
         text.push(candidate.label.as_str());
         text.push(candidate.semantic_class.as_str());
     }
+    let payload_terms = journal_event_payload_search_terms_v1(event);
+    for term in &payload_terms {
+        text.push(term.as_str());
+    }
     normalize_query_v1(&text.join(" "))
+}
+
+fn journal_event_payload_search_terms_v1(event: &CampaignJournalEventV1) -> Vec<String> {
+    match &event.payload {
+        CampaignJournalEventPayloadV1::RouteDecision {
+            route_branch_id,
+            target,
+            move_kind,
+            safety,
+            command,
+            elite_prep_bp,
+            first_elite,
+            ..
+        } => vec![
+            route_branch_id.clone(),
+            target.clone(),
+            move_kind.clone(),
+            safety.clone(),
+            command.clone(),
+            format!("elite_prep_bp:{elite_prep_bp}"),
+            format!("first_elite_paths:{}", first_elite.paths_with_first_elite),
+            format!("first_elite_forced:{}", first_elite.forced),
+            format!("first_elite_optional:{}", first_elite.optional),
+        ],
+        _ => Vec::new(),
+    }
 }
 
 fn render_journal_candidates_v1(candidates: &[CampaignJournalCandidateV1], limit: usize) -> String {
@@ -388,6 +437,45 @@ mod tests {
         assert!(journal_event_matches_query_v1(
             &reward,
             &normalize_query_v1("Golden Idol")
+        ));
+    }
+
+    #[test]
+    fn structured_route_query_matches_route_decision_only() {
+        let route = journal_event_with_payload(CampaignJournalEventPayloadV1::RouteDecision {
+            decision_id: "route0".to_string(),
+            route_branch_id: "root.go1".to_string(),
+            target: "x=1 Elite".to_string(),
+            move_kind: "Elite".to_string(),
+            safety: "ok".to_string(),
+            command: "go 1".to_string(),
+            elite_prep_bp: 42,
+            first_elite:
+                sts_simulator::eval::branch_experiment::BranchExperimentFirstEliteEvidenceV1::default(),
+        });
+        let reward =
+            journal_event_with_payload(CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "reward0".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 3,
+                original_count: 1,
+                selected_count: 1,
+                candidates: vec![candidate("Route Sense", "rp 0", "route_like_text")],
+            });
+
+        assert!(journal_event_matches_query_v1(
+            &route,
+            &normalize_query_v1("route")
+        ));
+        assert!(!journal_event_matches_query_v1(
+            &reward,
+            &normalize_query_v1("route")
+        ));
+        assert!(journal_event_matches_query_v1(
+            &route,
+            &normalize_query_v1("x=1 Elite")
         ));
     }
 

@@ -4,8 +4,9 @@ use crate::eval::branch_experiment::{
     BranchExperimentBossRelicCandidatePoolV1, BranchExperimentCampfirePlanCandidatePoolV1,
     BranchExperimentConfigV1, BranchExperimentEventCandidatePoolV1,
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
-    BranchExperimentRunResultV1, BranchExperimentShopPlanCandidateEntryV1,
-    BranchExperimentShopPlanCandidatePoolV1, BranchExperimentStrategyRequestV1,
+    BranchExperimentRouteDecisionV1, BranchExperimentRunResultV1,
+    BranchExperimentShopPlanCandidateEntryV1, BranchExperimentShopPlanCandidatePoolV1,
+    BranchExperimentStrategyRequestV1,
 };
 use crate::eval::campaign_journal::{
     campaign_journal_candidate_from_boss_relic_entry_v1,
@@ -306,6 +307,15 @@ fn campaign_journal_events_from_report_v1(
         report,
     ));
     events.extend(campaign_boss_relic_branch_journal_events_v1(
+        parent,
+        parent_index,
+        round_number,
+        combat_budget_retry_used,
+        parent_act,
+        parent_floor,
+        report,
+    ));
+    events.extend(campaign_route_decision_journal_events_v1(
         parent,
         parent_index,
         round_number,
@@ -659,6 +669,72 @@ fn boss_relic_candidate_pool_candidates_v1(
         .iter()
         .map(campaign_journal_candidate_from_boss_relic_entry_v1)
         .collect()
+}
+
+fn campaign_route_decision_journal_events_v1(
+    parent: &BranchCampaignBranchV1,
+    parent_index: usize,
+    round_number: usize,
+    combat_budget_retry_used: bool,
+    parent_act: u8,
+    parent_floor: i32,
+    report: &crate::eval::branch_experiment::BranchExperimentReportV1,
+) -> Vec<CampaignJournalEventV1> {
+    report
+        .route_decisions
+        .iter()
+        .enumerate()
+        .map(|(route_index, decision)| {
+            campaign_route_decision_journal_event_v1(
+                parent,
+                parent_index,
+                round_number,
+                combat_budget_retry_used,
+                parent_act,
+                parent_floor,
+                route_index,
+                decision,
+            )
+        })
+        .collect()
+}
+
+fn campaign_route_decision_journal_event_v1(
+    parent: &BranchCampaignBranchV1,
+    parent_index: usize,
+    round_number: usize,
+    combat_budget_retry_used: bool,
+    parent_act: u8,
+    parent_floor: i32,
+    route_index: usize,
+    decision: &BranchExperimentRouteDecisionV1,
+) -> CampaignJournalEventV1 {
+    let decision_id = format!(
+        "{}:round{}:route_decision{}:{}",
+        parent.branch_id, round_number, route_index, decision.branch_id
+    );
+    CampaignJournalEventV1 {
+        event_id: format!("{decision_id}:route"),
+        round: round_number,
+        branch_id: parent.branch_id.clone(),
+        branch_index: parent_index,
+        branch_frontier_title: parent.frontier_title.clone(),
+        act: parent_act,
+        floor: parent_floor,
+        branch_choices: parent.choice_labels.clone(),
+        branch_commands: parent.commands.clone(),
+        combat_budget_retry_used,
+        payload: CampaignJournalEventPayloadV1::RouteDecision {
+            decision_id,
+            route_branch_id: decision.branch_id.clone(),
+            target: decision.target.clone(),
+            move_kind: decision.move_kind.clone(),
+            safety: decision.safety.clone(),
+            command: decision.command.clone(),
+            elite_prep_bp: decision.elite_prep_bp,
+            first_elite: decision.first_elite.clone(),
+        },
+    }
 }
 
 fn campaign_decision_observations_from_journal_events_v1(

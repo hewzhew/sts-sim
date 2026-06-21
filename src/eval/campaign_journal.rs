@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::eval::branch_experiment::{
     BranchExperimentBossRelicCandidateEntryV1, BranchExperimentCampfirePlanCandidateEntryV1,
-    BranchExperimentEventCandidateEntryV1, BranchExperimentRewardOptionPortfolioEntryV1,
-    BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentEventCandidateEntryV1, BranchExperimentFirstEliteEvidenceV1,
+    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
 };
 
 pub const CAMPAIGN_JOURNAL_SCHEMA_NAME: &str = "CampaignJournal";
@@ -123,6 +123,16 @@ pub enum CampaignJournalEventPayloadV1 {
         candidate_count: usize,
         branch_option_count: usize,
         candidates: Vec<CampaignJournalCandidateV1>,
+    },
+    RouteDecision {
+        decision_id: String,
+        route_branch_id: String,
+        target: String,
+        move_kind: String,
+        safety: String,
+        command: String,
+        elite_prep_bp: i32,
+        first_elite: BranchExperimentFirstEliteEvidenceV1,
     },
 }
 

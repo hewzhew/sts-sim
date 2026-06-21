@@ -19,8 +19,8 @@ They should not become independent places that reconstruct decision history.
 
 ## Current Scope
 
-The current implementation records two decision event shapes produced by branch
-campaign parent expansion:
+The current implementation records these decision event shapes produced by
+branch campaign parent expansion:
 
 ```text
 CampaignJournalV1
@@ -90,6 +90,15 @@ CampaignJournalV1
         label
         semantic_class
         disposition: kept | pruned
+    route_decision
+      decision_id
+      route_branch_id
+      target
+      move_kind
+      safety
+      command
+      elite_prep_bp
+      first_elite
 ```
 
 `BranchCampaignReportV1` now carries `journal` as a top-level field. The older
@@ -139,7 +148,8 @@ journal events, not the other way around.
 6. Boss relic candidate pools are now captured in
    `BranchExperimentReportV1.boss_relic_candidate_pools` and surfaced as
    `boss_relic_candidate_pool` journal events.
-7. Move route decisions after boss relic.
+7. Route planner selections are now surfaced as `route_decision` journal
+   events.
 8. Link milestone outcomes to prior `decision_id` values.
 9. Gradually remove report-only decision attachments once views read from the
    journal directly.
@@ -169,6 +179,9 @@ journal events, not the other way around.
   admission marked separately.
 - Boss relic candidate pools are complete boss relic choice sets with projected
   run debt and policy class metadata; all options remain branch candidates.
+- Route decisions are the route planner selections emitted while expanding a
+  parent branch. They record the selected target and safety evidence, not the
+  full map option set.
 - Candidate semantics still include legacy `semantic_class` strings from branch
   retention; these are provenance, not proof of strategic correctness.
 - Outcome links are not implemented yet.
