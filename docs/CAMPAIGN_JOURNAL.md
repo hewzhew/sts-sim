@@ -67,6 +67,18 @@ CampaignJournalV1
         label
         semantic_class
         disposition: kept | pruned
+    event_candidate_pool
+      decision_id
+      boundary_title
+      frontier_key
+      game_event_id
+      candidate_count
+      branch_option_count
+      candidates[]
+        command
+        label
+        semantic_class
+        disposition: kept | pruned
 ```
 
 `BranchCampaignReportV1` now carries `journal` as a top-level field. The older
@@ -110,9 +122,12 @@ journal events, not the other way around.
 4. Campfire compiler candidate pools are now captured in
    `BranchExperimentReportV1.campfire_plan_candidate_pools` and surfaced as
    `campfire_candidate_pool` journal events.
-5. Move event, route, and boss relic decisions after campfire.
-6. Link milestone outcomes to prior `decision_id` values.
-7. Gradually remove report-only decision attachments once views read from the
+5. Event branch candidate pools are now captured in
+   `BranchExperimentReportV1.event_candidate_pools` and surfaced as
+   `event_candidate_pool` journal events.
+6. Move route and boss relic decisions after event.
+7. Link milestone outcomes to prior `decision_id` values.
+8. Gradually remove report-only decision attachments once views read from the
    journal directly.
 
 ## Design Rules
@@ -135,6 +150,9 @@ journal events, not the other way around.
 - Campfire candidate pools are the campfire compiler candidate pool, including
   rest/smith/stop plans and deck-mutation-derived target metadata where
   available.
+- Event candidate pools are generated event branch candidates after public event
+  semantics and policy/deck-mutation annotations are attached, with final branch
+  admission marked separately.
 - Candidate semantics still include legacy `semantic_class` strings from branch
   retention; these are provenance, not proof of strategic correctness.
 - Outcome links are not implemented yet.

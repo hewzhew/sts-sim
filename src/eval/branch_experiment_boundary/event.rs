@@ -13,7 +13,10 @@ use crate::ai::event_policy_v1::{
     EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
 };
 use crate::content::cards::CardId;
-use crate::eval::branch_experiment::BranchExperimentChoiceDecisionSignalV1;
+use crate::eval::branch_experiment::{
+    BranchExperimentChoiceDecisionSignalV1, BranchExperimentEventCandidateEntryV1,
+    BranchExperimentEventCandidatePoolV1,
+};
 use crate::eval::event_boundary_classifier_v1::classify_event_option_boundary_v1;
 use crate::eval::run_control::{build_decision_surface, RunControlSession};
 use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason, RunPendingChoiceState};
@@ -41,6 +44,10 @@ pub(crate) struct EventBranchOption {
     event_index: Option<usize>,
     deck_mutation_order_key: Option<(u8, i32)>,
     event_policy_order_key: Option<(u8, i32)>,
+    event_policy_class: Option<EventPolicyClassV1>,
+    event_policy_tier: Option<EventCandidateTierV1>,
+    event_policy_score: Option<i32>,
+    event_policy_reasons: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -50,10 +57,23 @@ struct EventOptionBranchSemantics {
     effect_label: String,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct EventBranchOptionSelection {
+    pub(crate) options: Vec<EventBranchOption>,
+    pub(crate) candidate_pool: BranchExperimentEventCandidatePoolV1,
+}
+
 pub(crate) fn event_branch_options(
     session: &RunControlSession,
     max_card_offer_options: Option<usize>,
 ) -> Option<Vec<EventBranchOption>> {
+    event_branch_selection(session, max_card_offer_options).map(|selection| selection.options)
+}
+
+pub(crate) fn event_branch_selection(
+    session: &RunControlSession,
+    max_card_offer_options: Option<usize>,
+) -> Option<EventBranchOptionSelection> {
     if !matches!(session.engine_state, EngineState::EventRoom) {
         return None;
     }
@@ -115,6 +135,12 @@ pub(crate) fn event_branch_options(
                 candidate.evaluation.score,
             )
         });
+        let event_policy_class = policy_candidate.map(|candidate| candidate.class);
+        let event_policy_tier = policy_candidate.map(|candidate| candidate.evaluation.tier);
+        let event_policy_score = policy_candidate.map(|candidate| candidate.evaluation.score);
+        let event_policy_reasons = policy_candidate
+            .map(|candidate| candidate.evaluation.reasons.clone())
+            .unwrap_or_default();
         let mut branch_option = EventBranchOption {
             label: candidate.label.clone(),
             command: candidate.action.command_hint(),
@@ -130,6 +156,10 @@ pub(crate) fn event_branch_options(
             event_index: Some(index),
             deck_mutation_order_key: None,
             event_policy_order_key,
+            event_policy_class,
+            event_policy_tier,
+            event_policy_score,
+            event_policy_reasons,
         };
         if let Some(plan) = compile_direct_event_remove_card_plan(
             session,
@@ -156,13 +186,18 @@ pub(crate) fn event_branch_options(
     if branch_options.is_empty() {
         return None;
     }
+    let candidate_pool_options = branch_options.clone();
     sort_all_direct_deck_mutation_options(&mut branch_options);
     sort_event_options_by_policy(&mut branch_options);
     prune_avoidable_event_options_when_alternatives_exist(&mut branch_options);
     if let Some(policy_options) =
         event_policy_safe_exit_branch_options(session, &event_options, &branch_options)
     {
-        return Some(policy_options);
+        return Some(event_branch_selection_from_options(
+            event_id,
+            candidate_pool_options,
+            policy_options,
+        ));
     }
     if branch_options.len() > MAX_EVENT_OPTIONS_PER_BRANCH {
         if branch_options
@@ -172,11 +207,20 @@ pub(crate) fn event_branch_options(
             let limit = max_card_offer_options
                 .unwrap_or(MAX_EVENT_OPTIONS_PER_BRANCH)
                 .min(branch_options.len());
-            return select_event_card_reward_branch_options(session, branch_options, limit);
+            let selected = select_event_card_reward_branch_options(session, branch_options, limit)?;
+            return Some(event_branch_selection_from_options(
+                event_id,
+                candidate_pool_options,
+                selected,
+            ));
         }
         return None;
     }
-    Some(branch_options)
+    Some(event_branch_selection_from_options(
+        event_id,
+        candidate_pool_options,
+        branch_options,
+    ))
 }
 
 fn open_selection_deck_mutation_option_count(
@@ -363,6 +407,10 @@ fn open_selection_deck_mutation_event_branch_option(
             -plan.score_hint,
         )),
         event_policy_order_key: base_option.event_policy_order_key,
+        event_policy_class: base_option.event_policy_class,
+        event_policy_tier: base_option.event_policy_tier,
+        event_policy_score: base_option.event_policy_score,
+        event_policy_reasons: base_option.event_policy_reasons.clone(),
     }
 }
 
@@ -672,6 +720,84 @@ fn select_event_card_reward_branch_options(
         }
     }
     Some(selected_options)
+}
+
+fn event_branch_selection_from_options(
+    event_id: EventId,
+    candidate_pool_options: Vec<EventBranchOption>,
+    options: Vec<EventBranchOption>,
+) -> EventBranchOptionSelection {
+    EventBranchOptionSelection {
+        candidate_pool: event_candidate_pool_from_options(
+            event_id,
+            &candidate_pool_options,
+            &options,
+        ),
+        options,
+    }
+}
+
+fn event_candidate_pool_from_options(
+    event_id: EventId,
+    candidate_pool_options: &[EventBranchOption],
+    selected_options: &[EventBranchOption],
+) -> BranchExperimentEventCandidatePoolV1 {
+    BranchExperimentEventCandidatePoolV1 {
+        depth: 0,
+        frontier_key: String::new(),
+        boundary_title: String::new(),
+        event_id: format!("{:?}", event_id),
+        candidate_count: candidate_pool_options.len(),
+        branch_option_count: selected_options.len(),
+        candidates: candidate_pool_options
+            .iter()
+            .map(|option| event_candidate_entry_from_option(option, selected_options))
+            .collect(),
+    }
+}
+
+fn event_candidate_entry_from_option(
+    option: &EventBranchOption,
+    selected_options: &[EventBranchOption],
+) -> BranchExperimentEventCandidateEntryV1 {
+    BranchExperimentEventCandidateEntryV1 {
+        candidate_id: event_candidate_id_v1(option),
+        command: option.command.clone(),
+        label: option.label.clone(),
+        event_index: option.event_index,
+        effect_kind: option.effect_kind.clone(),
+        effect_key: option.effect_key.clone(),
+        event_policy_class: option
+            .event_policy_class
+            .map(|class| format!("{:?}", class)),
+        event_policy_tier: option.event_policy_tier.map(|tier| format!("{:?}", tier)),
+        event_policy_score: option.event_policy_score,
+        branch_admission: event_candidate_branch_admission_v1(option, selected_options),
+        representative_count: option.representative_count,
+        suppressed_count: option.suppressed_count,
+        reasons: option.event_policy_reasons.clone(),
+    }
+}
+
+fn event_candidate_id_v1(option: &EventBranchOption) -> String {
+    option
+        .event_index
+        .map(|index| format!("event:{index}:{}", option.command))
+        .unwrap_or_else(|| format!("event:unknown:{}", option.command))
+}
+
+fn event_candidate_branch_admission_v1(
+    option: &EventBranchOption,
+    selected_options: &[EventBranchOption],
+) -> String {
+    if selected_options
+        .iter()
+        .any(|selected| selected.command == option.command)
+    {
+        "selected".to_string()
+    } else {
+        "generated_unselected".to_string()
+    }
 }
 
 fn event_option_specific_card(option: &EventOption) -> Option<CardId> {

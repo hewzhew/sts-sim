@@ -4,8 +4,8 @@ use crate::ai::event_policy_v1::EventCandidateTierV1;
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::{
     BranchExperimentCampfirePlanCandidatePoolV1, BranchExperimentChoiceCardV1,
-    BranchExperimentChoiceDecisionSignalV1, BranchExperimentRewardOptionPortfolioV1,
-    BranchExperimentShopPlanCandidatePoolV1,
+    BranchExperimentChoiceDecisionSignalV1, BranchExperimentEventCandidatePoolV1,
+    BranchExperimentRewardOptionPortfolioV1, BranchExperimentShopPlanCandidatePoolV1,
 };
 use crate::eval::run_control::RunControlSession;
 use crate::runtime::combat::CombatCard;
@@ -32,7 +32,7 @@ use card_reward::{
     card_reward_branch_options, card_reward_decline_branch_options,
     select_card_reward_branch_options_for_session, CardRewardBranchOption,
 };
-use event::{event_branch_options, EventBranchOption};
+use event::{event_branch_options, event_branch_selection, EventBranchOption};
 use reward::{reward_branch_options, RewardBranchOption};
 use run_selection::{run_selection_branch_options, RunSelectionBranchOption};
 use shop::{shop_branch_options, ShopBranchOption};
@@ -77,6 +77,7 @@ pub(crate) struct BranchBoundarySelectionV1 {
     pub(crate) reward_option_portfolio: Option<BranchExperimentRewardOptionPortfolioV1>,
     pub(crate) shop_plan_candidate_pool: Option<BranchExperimentShopPlanCandidatePoolV1>,
     pub(crate) campfire_plan_candidate_pool: Option<BranchExperimentCampfirePlanCandidatePoolV1>,
+    pub(crate) event_candidate_pool: Option<BranchExperimentEventCandidatePoolV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -138,6 +139,7 @@ pub(crate) fn current_branch_boundary(
             reward_option_portfolio: selected.portfolio,
             shop_plan_candidate_pool: None,
             campfire_plan_candidate_pool: None,
+            event_candidate_pool: None,
         });
     }
 
@@ -154,6 +156,7 @@ pub(crate) fn current_branch_boundary(
             reward_option_portfolio: None,
             shop_plan_candidate_pool: None,
             campfire_plan_candidate_pool: Some(selected.candidate_pool),
+            event_candidate_pool: None,
         });
     }
 
@@ -167,6 +170,7 @@ pub(crate) fn current_branch_boundary(
             reward_option_portfolio: None,
             shop_plan_candidate_pool: None,
             campfire_plan_candidate_pool: None,
+            event_candidate_pool: None,
         });
     }
 
@@ -180,6 +184,7 @@ pub(crate) fn current_branch_boundary(
             reward_option_portfolio: None,
             shop_plan_candidate_pool: None,
             campfire_plan_candidate_pool: None,
+            event_candidate_pool: None,
         });
     }
 
@@ -193,6 +198,7 @@ pub(crate) fn current_branch_boundary(
             reward_option_portfolio: None,
             shop_plan_candidate_pool: None,
             campfire_plan_candidate_pool: None,
+            event_candidate_pool: None,
         });
     }
 
@@ -207,19 +213,22 @@ pub(crate) fn current_branch_boundary(
             reward_option_portfolio: None,
             shop_plan_candidate_pool: Some(selected.candidate_pool),
             campfire_plan_candidate_pool: None,
+            event_candidate_pool: None,
         });
     }
 
-    if let Some(options) = event_branch_options(session, config.max_reward_options_per_branch) {
+    if let Some(selected) = event_branch_selection(session, config.max_reward_options_per_branch) {
         return Some(BranchBoundarySelectionV1 {
             id: BranchBoundaryIdV1::Event,
-            options: options
+            options: selected
+                .options
                 .into_iter()
                 .map(BranchBoundaryOptionV1::from_event)
                 .collect(),
             reward_option_portfolio: None,
             shop_plan_candidate_pool: None,
             campfire_plan_candidate_pool: None,
+            event_candidate_pool: Some(selected.candidate_pool),
         });
     }
 

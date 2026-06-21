@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::eval::branch_experiment::{
-    BranchExperimentCampfirePlanCandidateEntryV1, BranchExperimentRewardOptionPortfolioEntryV1,
-    BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentCampfirePlanCandidateEntryV1, BranchExperimentEventCandidateEntryV1,
+    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
 };
 
 pub const CAMPAIGN_JOURNAL_SCHEMA_NAME: &str = "CampaignJournal";
@@ -104,6 +104,16 @@ pub enum CampaignJournalEventPayloadV1 {
         selected_plan_id: Option<String>,
         candidates: Vec<CampaignJournalCandidateV1>,
     },
+    EventCandidatePool {
+        decision_id: String,
+        boundary_title: String,
+        frontier_key: String,
+        depth: usize,
+        game_event_id: String,
+        candidate_count: usize,
+        branch_option_count: usize,
+        candidates: Vec<CampaignJournalCandidateV1>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -130,6 +140,43 @@ pub fn campaign_journal_candidate_from_campfire_entry_v1(
             CampaignJournalCandidateDispositionV1::Pruned
         },
     }
+}
+
+pub fn campaign_journal_candidate_from_event_entry_v1(
+    candidate: &BranchExperimentEventCandidateEntryV1,
+) -> CampaignJournalCandidateV1 {
+    CampaignJournalCandidateV1 {
+        candidate_id: candidate.candidate_id.clone(),
+        command: candidate.command.clone(),
+        label: candidate.label.clone(),
+        semantic_class: event_candidate_semantic_class_v1(candidate),
+        disposition: if candidate.branch_admission == "selected" {
+            CampaignJournalCandidateDispositionV1::Kept
+        } else {
+            CampaignJournalCandidateDispositionV1::Pruned
+        },
+    }
+}
+
+fn event_candidate_semantic_class_v1(candidate: &BranchExperimentEventCandidateEntryV1) -> String {
+    let mut parts = vec![
+        format!("effect:{}", candidate.effect_kind),
+        format!("branch:{}", candidate.branch_admission),
+        format!("representatives:{}", candidate.representative_count),
+    ];
+    if let Some(class) = &candidate.event_policy_class {
+        parts.push(format!("class:{class}"));
+    }
+    if let Some(tier) = &candidate.event_policy_tier {
+        parts.push(format!("tier:{tier}"));
+    }
+    if let Some(score) = candidate.event_policy_score {
+        parts.push(format!("score:{score}"));
+    }
+    if candidate.suppressed_count > 0 {
+        parts.push(format!("suppressed:{}", candidate.suppressed_count));
+    }
+    parts.join(" ")
 }
 
 fn campfire_candidate_semantic_class_v1(

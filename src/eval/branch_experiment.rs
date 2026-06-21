@@ -58,6 +58,7 @@ pub use types::{
     BranchExperimentBranchStatusV1, BranchExperimentCampfirePlanCandidateEntryV1,
     BranchExperimentCampfirePlanCandidatePoolV1, BranchExperimentChoiceCardV1,
     BranchExperimentChoiceDecisionSignalV1, BranchExperimentChoiceV1, BranchExperimentConfigV1,
+    BranchExperimentEventCandidateEntryV1, BranchExperimentEventCandidatePoolV1,
     BranchExperimentFirstEliteEvidenceV1, BranchExperimentFrontierGroupV1,
     BranchExperimentFrontierV1, BranchExperimentLineageV1, BranchExperimentPrunedBranchSummaryV1,
     BranchExperimentPrunedFirstPickCountV1, BranchExperimentReportV1,
@@ -406,6 +407,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
     let mut reward_option_portfolios = Vec::new();
     let mut shop_plan_candidate_pools = Vec::new();
     let mut campfire_plan_candidate_pools = Vec::new();
+    let mut event_candidate_pools = Vec::new();
     let mut route_decisions = Vec::new();
     let mut combat_performance_samples = Vec::new();
 
@@ -473,6 +475,12 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
                     pool.frontier_key = frontier_before_boundary.key.clone();
                     pool.boundary_title = frontier_before_boundary.boundary_title.clone();
                     campfire_plan_candidate_pools.push(pool);
+                }
+                if let Some(mut pool) = boundary.event_candidate_pool {
+                    pool.depth = depth;
+                    pool.frontier_key = frontier_before_boundary.key.clone();
+                    pool.boundary_title = frontier_before_boundary.boundary_title.clone();
+                    event_candidate_pools.push(pool);
                 }
                 if boundary.options.is_empty() {
                     branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
@@ -604,6 +612,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
         reward_option_portfolios,
         shop_plan_candidate_pools,
         campfire_plan_candidate_pools,
+        event_candidate_pools,
         strategy_requests: branch_strategy_requests(&branch_reports),
         route_decisions,
         frontier_groups: frontier_groups(&branch_reports),

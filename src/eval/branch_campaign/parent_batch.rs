@@ -2,12 +2,14 @@ use crate::eval::branch_experiment::{
     run_branch_experiment_from_session_after_prefix_with_snapshots_v1,
     run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
     BranchExperimentCampfirePlanCandidatePoolV1, BranchExperimentConfigV1,
-    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
-    BranchExperimentRunResultV1, BranchExperimentShopPlanCandidateEntryV1,
-    BranchExperimentShopPlanCandidatePoolV1, BranchExperimentStrategyRequestV1,
+    BranchExperimentEventCandidatePoolV1, BranchExperimentRewardOptionPortfolioEntryV1,
+    BranchExperimentRewardOptionPortfolioV1, BranchExperimentRunResultV1,
+    BranchExperimentShopPlanCandidateEntryV1, BranchExperimentShopPlanCandidatePoolV1,
+    BranchExperimentStrategyRequestV1,
 };
 use crate::eval::campaign_journal::{
-    campaign_journal_candidate_from_campfire_entry_v1, reward_portfolio_from_journal_event_v1,
+    campaign_journal_candidate_from_campfire_entry_v1,
+    campaign_journal_candidate_from_event_entry_v1, reward_portfolio_from_journal_event_v1,
     CampaignJournalCandidateDispositionV1, CampaignJournalCandidateV1,
     CampaignJournalEventPayloadV1, CampaignJournalEventV1,
 };
@@ -293,6 +295,15 @@ fn campaign_journal_events_from_report_v1(
         parent_floor,
         report,
     ));
+    events.extend(campaign_event_branch_journal_events_v1(
+        parent,
+        parent_index,
+        round_number,
+        combat_budget_retry_used,
+        parent_act,
+        parent_floor,
+        report,
+    ));
     events
 }
 
@@ -532,6 +543,59 @@ fn campfire_candidate_pool_candidates_v1(
     pool.candidates
         .iter()
         .map(campaign_journal_candidate_from_campfire_entry_v1)
+        .collect()
+}
+
+fn campaign_event_branch_journal_events_v1(
+    parent: &BranchCampaignBranchV1,
+    parent_index: usize,
+    round_number: usize,
+    combat_budget_retry_used: bool,
+    parent_act: u8,
+    parent_floor: i32,
+    report: &crate::eval::branch_experiment::BranchExperimentReportV1,
+) -> Vec<CampaignJournalEventV1> {
+    report
+        .event_candidate_pools
+        .iter()
+        .enumerate()
+        .map(|(group_index, pool)| {
+            let decision_id = format!(
+                "{}:round{}:event_candidate_pool{}",
+                parent.branch_id, round_number, group_index
+            );
+            CampaignJournalEventV1 {
+                event_id: format!("{decision_id}:candidate_set"),
+                round: round_number,
+                branch_id: parent.branch_id.clone(),
+                branch_index: parent_index,
+                branch_frontier_title: parent.frontier_title.clone(),
+                act: parent_act,
+                floor: parent_floor,
+                branch_choices: parent.choice_labels.clone(),
+                branch_commands: parent.commands.clone(),
+                combat_budget_retry_used,
+                payload: CampaignJournalEventPayloadV1::EventCandidatePool {
+                    decision_id,
+                    boundary_title: pool.boundary_title.clone(),
+                    frontier_key: pool.frontier_key.clone(),
+                    depth: pool.depth,
+                    game_event_id: pool.event_id.clone(),
+                    candidate_count: pool.candidate_count,
+                    branch_option_count: pool.branch_option_count,
+                    candidates: event_candidate_pool_candidates_v1(pool),
+                },
+            }
+        })
+        .collect()
+}
+
+fn event_candidate_pool_candidates_v1(
+    pool: &BranchExperimentEventCandidatePoolV1,
+) -> Vec<CampaignJournalCandidateV1> {
+    pool.candidates
+        .iter()
+        .map(campaign_journal_candidate_from_event_entry_v1)
         .collect()
 }
 
