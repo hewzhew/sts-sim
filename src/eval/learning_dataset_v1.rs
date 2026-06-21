@@ -6,6 +6,7 @@ use crate::eval::branch_campaign::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignReportV1,
     BranchCampaignRunDomainV1,
 };
+use crate::eval::branch_experiment::branch_experiment_command_is_decision_parent_coordinate_v1;
 use crate::eval::branch_outcome_dataset_v1::{
     BranchOutcomeClassV1, BranchOutcomeRecordV1, BranchOutcomeStateFeaturesV1,
     BranchOutcomeSupervisionStatusV1,
@@ -2236,7 +2237,7 @@ fn record_observes_journal_candidate_v1(
     candidate: &CampaignJournalCandidateV1,
     record: &BranchOutcomeRecordV1,
 ) -> bool {
-    if record_commands_start_with_candidate_v1(
+    if record_commands_start_with_candidate_ignoring_decision_coordinates_v1(
         &record.commands,
         &event.branch_commands,
         &candidate.command,
@@ -2245,6 +2246,28 @@ fn record_observes_journal_candidate_v1(
     }
 
     route_selected_candidate_observed_by_descendant_branch_v1(event, candidate, record)
+}
+
+fn record_commands_start_with_candidate_ignoring_decision_coordinates_v1(
+    record_commands: &[String],
+    parent_commands: &[String],
+    candidate_command: &str,
+) -> bool {
+    if record_commands_start_with_candidate_v1(record_commands, parent_commands, candidate_command)
+    {
+        return true;
+    }
+    let normalized_parent_commands = parent_commands
+        .iter()
+        .filter(|command| !branch_experiment_command_is_decision_parent_coordinate_v1(command))
+        .cloned()
+        .collect::<Vec<_>>();
+    normalized_parent_commands.len() != parent_commands.len()
+        && record_commands_start_with_candidate_v1(
+            record_commands,
+            &normalized_parent_commands,
+            candidate_command,
+        )
 }
 
 fn route_selected_candidate_observed_by_descendant_branch_v1(
@@ -3076,6 +3099,56 @@ mod tests {
         assert_eq!(coverage.unobserved_candidates, 1);
         assert_eq!(coverage.partially_observed_decisions, 1);
         assert!(rendered.contains("Carnage"));
+    }
+
+    #[test]
+    fn coverage_matching_ignores_decision_parent_coordinate_commands() {
+        let mut clothesline = sample_branch_outcome_record();
+        clothesline.branch_id = "root.rp 1".to_string();
+        clothesline.commands = vec!["rp 1".to_string()];
+        clothesline.choice_labels = vec!["Clothesline".to_string()];
+
+        let mut carnage = sample_branch_outcome_record();
+        carnage.branch_id = "root.rp 2".to_string();
+        carnage.commands = vec!["rp 2".to_string()];
+        carnage.choice_labels = vec!["Carnage".to_string()];
+
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-reward0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Reward Screen".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: vec!["__decision_parent:0:reward:abcd".to_string()],
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "journal-reward0".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "reward-frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 3,
+                original_count: 3,
+                selected_count: 2,
+                candidates: vec![
+                    sample_journal_candidate("rp 1", "Clothesline"),
+                    sample_journal_candidate("rp 2", "Carnage"),
+                    sample_journal_candidate("rp 0", "Wild Strike"),
+                ],
+            },
+        });
+
+        let records = vec![clothesline, carnage];
+        let coverage = analyze_journal_decision_candidate_coverage_v1(&report, &records);
+        assert_eq!(coverage.observed_candidates, 2);
+        assert_eq!(coverage.unobserved_candidates, 1);
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &records, 4, 4);
+        assert_eq!(plan.total_unobserved_candidates, 1);
+        assert_eq!(plan.targets[0].command, "rp 0");
     }
 
     #[test]
