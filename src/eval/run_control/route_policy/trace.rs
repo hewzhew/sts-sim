@@ -1,4 +1,6 @@
-use crate::ai::route_planner_v1::{RouteCandidateTraceV1, RouteDecisionTraceV1};
+use crate::ai::route_planner_v1::{
+    MapDecisionPacketV1, RouteCandidateTraceV1, RouteDecisionTraceV1,
+};
 
 use super::super::noncombat_policy_annotation::{
     noncombat_policy_annotation, validate_noncombat_policy_record,
@@ -36,6 +38,7 @@ pub(super) fn route_go_trace_annotation(
         top_candidates: route_go_top_candidate_summaries(trace),
         candidate_pool: route_go_candidate_summaries(trace, None),
         label_role: "behavior_policy_not_teacher".to_string(),
+        map_decision_packet: Some(MapDecisionPacketV1::from_route_decision_trace_v1(trace)),
         route_evidence: Some(route_go_selection_evidence(candidate)),
         noncombat_record: Some(noncombat_record),
     })

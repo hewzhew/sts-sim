@@ -8,6 +8,7 @@ use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyFormationSummaryV2,
 };
 use crate::ai::opening_hand_target_plan_v1::opening_hand_target_debt_tags_v1;
+use crate::ai::route_planner_v1::{MapDecisionPacketV1, RouteMoveCandidateV1, RouteSafetyFlagV1};
 use crate::ai::shop_policy_v1::{
     build_shop_decision_context_v1, compile_shop_decision_v1,
     compiled_shop_decision_has_executable_conversion_branch_v1, ShopCompileModeV1,
@@ -42,6 +43,7 @@ use crate::eval::run_control::{
 use crate::state::core::{
     master_deck_card_is_bottled, master_deck_card_is_purgeable, EngineState, RunResult,
 };
+use crate::state::map::node::RoomType;
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 
@@ -821,11 +823,20 @@ fn branch_route_candidate_pool_from_annotation(
         selected_index,
         candidate_count,
         candidate_pool,
+        map_decision_packet,
         ..
     } = annotation
     else {
         return None;
     };
+    if let Some(packet) = map_decision_packet {
+        if packet.candidates.is_empty() {
+            return None;
+        }
+        return Some(branch_route_candidate_pool_from_map_packet_v1(
+            branch, packet,
+        ));
+    }
     if candidate_pool.is_empty() {
         return None;
     }
@@ -840,21 +851,28 @@ fn branch_route_candidate_pool_from_annotation(
         depth: 0,
         candidate_count: *candidate_count,
         selected_index: *selected_index,
+        map_decision_packet: None,
         candidates: candidate_pool
             .iter()
             .map(|candidate| BranchExperimentRouteCandidateEntryV1 {
                 candidate_id: format!("route:{}:{}", candidate.rank, candidate.command),
                 rank: candidate.rank,
                 selected: Some(candidate.rank) == *selected_index,
+                target_node: None,
                 target: format!(
                     "x={} y={} {}",
                     candidate.target_x, candidate.target_y, candidate.room_type
                 ),
                 room_type: candidate.room_type.clone(),
                 move_kind: candidate.move_kind.clone(),
+                safety_flag: None,
                 safety: candidate.safety.clone(),
                 score: candidate.score,
+                score_terms: None,
                 command: candidate.command.clone(),
+                node_features: None,
+                path_summary: None,
+                needs: None,
                 elite_prep_bp: candidate.elite_prep_bp,
                 first_elite: BranchExperimentFirstEliteEvidenceV1 {
                     paths_with_first_elite: candidate.first_elite.paths_with_first_elite,
@@ -876,6 +894,112 @@ fn branch_route_candidate_pool_from_annotation(
             })
             .collect(),
     })
+}
+
+fn branch_route_candidate_pool_from_map_packet_v1(
+    branch: &BranchWork,
+    packet: &MapDecisionPacketV1,
+) -> BranchExperimentRouteCandidatePoolV1 {
+    BranchExperimentRouteCandidatePoolV1 {
+        branch_id: branch.id.clone(),
+        branch_choices: branch_choice_labels_v1(&branch.choices),
+        branch_commands: branch_choice_commands_v1(&branch.choices),
+        decision_id: format!("{}:route_candidate_pool", branch.id),
+        boundary_title: "Map".to_string(),
+        frontier_key: branch.id.clone(),
+        depth: 0,
+        candidate_count: packet.candidates.len(),
+        selected_index: packet.selected_index,
+        map_decision_packet: Some(packet.clone()),
+        candidates: packet
+            .candidates
+            .iter()
+            .map(|candidate| {
+                branch_route_candidate_entry_from_map_packet_candidate_v1(
+                    packet.selected_index,
+                    candidate,
+                )
+            })
+            .collect(),
+    }
+}
+
+fn branch_route_candidate_entry_from_map_packet_candidate_v1(
+    selected_index: Option<usize>,
+    candidate: &RouteMoveCandidateV1,
+) -> BranchExperimentRouteCandidateEntryV1 {
+    let elite = &candidate.projection.path_summary.first_elite;
+    BranchExperimentRouteCandidateEntryV1 {
+        candidate_id: candidate.candidate_id.clone(),
+        rank: candidate.rank,
+        selected: Some(candidate.rank) == selected_index,
+        target_node: Some(candidate.target.clone()),
+        target: branch_route_target_label_v1(&candidate.target),
+        room_type: branch_route_room_type_label_v1(candidate.target.room_type),
+        move_kind: format!("{:?}", candidate.target.move_kind),
+        safety_flag: Some(candidate.evaluation.safety),
+        safety: branch_route_safety_label_v1(candidate.evaluation.safety).to_string(),
+        score: candidate.evaluation.total_score,
+        score_terms: Some(candidate.evaluation.score_terms.clone()),
+        command: candidate.command.clone(),
+        node_features: Some(candidate.features.clone()),
+        path_summary: Some(candidate.projection.path_summary.clone()),
+        needs: Some(candidate.needs.clone()),
+        elite_prep_bp: score_to_basis_points(candidate.evaluation.score_terms.elite_prep),
+        first_elite: BranchExperimentFirstEliteEvidenceV1 {
+            paths_with_first_elite: elite.paths_with_first_elite,
+            forced: elite.forced,
+            optional: elite.optional,
+            min_hallway_fights_before: elite.min_hallway_fights_before,
+            max_hallway_fights_before: elite.max_hallway_fights_before,
+            min_unknowns_before: elite.min_unknowns_before,
+            max_unknowns_before: elite.max_unknowns_before,
+            min_fires_before: elite.min_fires_before,
+            max_fires_before: elite.max_fires_before,
+            min_shops_before: elite.min_shops_before,
+            max_shops_before: elite.max_shops_before,
+            can_bail_to_rest_before: elite.can_bail_to_rest_before,
+            can_bail_to_shop_before: elite.can_bail_to_shop_before,
+        },
+        reasons: candidate.evaluation.legacy_reasons.clone(),
+        cautions: candidate.evaluation.legacy_cautions.clone(),
+    }
+}
+
+fn branch_route_target_label_v1(target: &crate::ai::route_planner_v1::MapRouteTargetV1) -> String {
+    format!(
+        "x={} y={} {}",
+        target.x,
+        target.y,
+        branch_route_room_type_label_v1(target.room_type)
+    )
+}
+
+fn branch_route_room_type_label_v1(room_type: Option<RoomType>) -> String {
+    match room_type {
+        Some(RoomType::EventRoom) => "Event",
+        Some(RoomType::MonsterRoom) => "Monster",
+        Some(RoomType::MonsterRoomElite) => "Elite",
+        Some(RoomType::MonsterRoomBoss) => "Boss",
+        Some(RoomType::RestRoom) => "Rest",
+        Some(RoomType::ShopRoom) => "Shop",
+        Some(RoomType::TreasureRoom) => "Treasure",
+        Some(RoomType::TrueVictoryRoom) => "Victory",
+        None => "Unknown",
+    }
+    .to_string()
+}
+
+fn branch_route_safety_label_v1(safety: RouteSafetyFlagV1) -> &'static str {
+    match safety {
+        RouteSafetyFlagV1::Ok => "ok",
+        RouteSafetyFlagV1::RiskyButAllowed => "risky_but_allowed",
+        RouteSafetyFlagV1::RejectUnlessNoAlternative => "reject_unless_forced",
+    }
+}
+
+fn score_to_basis_points(score: f32) -> i32 {
+    (score * 100.0).round() as i32
 }
 
 fn branch_choice_labels_v1(choices: &[BranchExperimentChoiceV1]) -> Vec<String> {

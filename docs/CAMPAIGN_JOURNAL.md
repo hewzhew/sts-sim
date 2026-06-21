@@ -180,7 +180,9 @@ journal events, not the other way around.
    `boss_relic_candidate_pool` journal events.
 7. Route planner candidate pools are now captured in
    `BranchExperimentReportV1.route_candidate_pools` and surfaced as
-   `route_candidate_pool` journal events.
+   `route_candidate_pool` journal events. New route pools carry a typed
+   `MapDecisionPacketV1` with `RouteMoveCandidateV1` entries; legacy candidate
+   labels and summaries are compatibility/display views only.
 8. Route planner selections remain surfaced as `route_decision` journal events
    for compatibility and selected-action evidence.
 9. Link milestone outcomes to prior `decision_id` values.
@@ -194,6 +196,9 @@ journal events, not the other way around.
 - Keep display labels separate from machine identity.
 - Store public boundary identity and candidate structure at decision time.
 - Prefer structured fields over parsing strings from rendered reports.
+- For map choices, consume `MapDecisionPacketV1` / `RouteMoveCandidateV1`
+  (`target`, `action`, `features`, `projection`, `needs`, `evaluation`) rather
+  than `RoutePlannerCandidateSummaryV1` strings.
 - Keep old report fields only as compatibility views, not as new sources of
   truth.
 - Treat candidate `admission` as the structured scheduling trace. Legacy

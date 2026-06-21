@@ -234,7 +234,7 @@ impl BranchCampaignRunPreludeV1 {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchCampaignReportV1 {
     pub schema_name: String,

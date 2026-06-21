@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 use crate::ai::noncombat_strategy_v1::{
     StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1, StrategyPackageIdV2,
 };
+use crate::ai::route_planner_v1::{
+    MapDecisionPacketV1, MapRouteTargetV1, NeedVectorV1, NodeFeaturesV1, RoutePathSummaryV1,
+    RouteSafetyFlagV1, RouteScoreTermsV1,
+};
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment_retention::{
     BranchRetentionBudgetProfileV1, BranchRetentionDecisionV1, BranchRetentionSlotV1,
@@ -17,7 +21,7 @@ use crate::eval::run_control::{
 };
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 27;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 28;
 pub const BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1: &str =
     "card_reward_strategic_trace_v1";
 
@@ -339,6 +343,8 @@ pub struct BranchExperimentRouteCandidatePoolV1 {
     pub depth: usize,
     pub candidate_count: usize,
     pub selected_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub map_decision_packet: Option<MapDecisionPacketV1>,
     pub candidates: Vec<BranchExperimentRouteCandidateEntryV1>,
 }
 
@@ -348,12 +354,24 @@ pub struct BranchExperimentRouteCandidateEntryV1 {
     pub candidate_id: String,
     pub rank: usize,
     pub selected: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_node: Option<MapRouteTargetV1>,
     pub target: String,
     pub room_type: String,
     pub move_kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safety_flag: Option<RouteSafetyFlagV1>,
     pub safety: String,
     pub score: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score_terms: Option<RouteScoreTermsV1>,
     pub command: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_features: Option<NodeFeaturesV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_summary: Option<RoutePathSummaryV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs: Option<NeedVectorV1>,
     pub elite_prep_bp: i32,
     pub first_elite: BranchExperimentFirstEliteEvidenceV1,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

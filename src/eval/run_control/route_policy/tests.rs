@@ -116,6 +116,7 @@ fn route_go_attaches_compact_trace_boundary() {
         command,
         top_candidates,
         candidate_pool,
+        map_decision_packet,
         label_role,
         noncombat_record,
         ..
@@ -130,6 +131,16 @@ fn route_go_attaches_compact_trace_boundary() {
     assert!(!top_candidates.is_empty());
     assert!(top_candidates.len() <= 3);
     assert_eq!(candidate_pool.len(), *candidate_count);
+    let packet = map_decision_packet
+        .as_ref()
+        .expect("route planner annotation should carry a typed map packet");
+    assert_eq!(packet.candidates.len(), *candidate_count);
+    assert_eq!(packet.selected_index, *selected_index);
+    assert!(packet
+        .candidates
+        .iter()
+        .all(|candidate| candidate.command.starts_with("go ")
+            || candidate.command.starts_with("fly ")));
     assert!(candidate_pool.iter().all(|candidate| {
         candidate.command.starts_with("go ") || candidate.command.starts_with("fly ")
     }));

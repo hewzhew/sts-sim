@@ -1,6 +1,7 @@
 mod config;
 mod context;
 mod features;
+mod map_packet;
 mod score;
 mod trace;
 
@@ -12,6 +13,10 @@ pub use context::{
 pub use features::{
     MapRouteTargetV1, NodeFeaturesV1, RouteFirstEliteSegmentV1, RouteMoveKindV1,
     RoutePathSummaryV1, RouteSafetyFlagV1,
+};
+pub use map_packet::{
+    MapDecisionPacketV1, RouteMapActionV1, RouteMoveCandidateV1, RouteMoveEvaluationV1,
+    RouteProjectionFrontierV1, MAP_DECISION_PACKET_SCHEMA_NAME, MAP_DECISION_PACKET_SCHEMA_VERSION,
 };
 pub use score::{NeedVectorV1, RouteScoreTermsV1};
 pub use trace::{

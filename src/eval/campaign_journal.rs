@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::ai::route_planner_v1::MapDecisionPacketV1;
 use crate::eval::branch_experiment::{
     BranchExperimentBossRelicCandidateEntryV1, BranchExperimentCampfirePlanCandidateEntryV1,
     BranchExperimentEventCandidateEntryV1, BranchExperimentFirstEliteEvidenceV1,
@@ -10,7 +11,7 @@ use crate::eval::branch_experiment::{
 pub const CAMPAIGN_JOURNAL_SCHEMA_NAME: &str = "CampaignJournal";
 pub const CAMPAIGN_JOURNAL_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CampaignJournalV1 {
     pub schema_name: String,
@@ -43,7 +44,7 @@ impl CampaignJournalV1 {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct CampaignJournalEventV1 {
     pub event_id: String,
     pub round: usize,
@@ -65,7 +66,7 @@ pub struct CampaignJournalEventV1 {
     pub payload: CampaignJournalEventPayloadV1,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "event_type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CampaignJournalEventPayloadV1 {
     RewardCandidateSet {
@@ -132,6 +133,8 @@ pub enum CampaignJournalEventPayloadV1 {
         depth: usize,
         candidate_count: usize,
         selected_index: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        map_decision_packet: Option<MapDecisionPacketV1>,
         candidates: Vec<CampaignJournalCandidateV1>,
     },
     RouteDecision {
@@ -706,12 +709,18 @@ mod tests {
                 candidate_id: "route:0:go 1".to_string(),
                 rank: 0,
                 selected: true,
+                target_node: None,
                 target: "x=1 y=1 Monster".to_string(),
                 room_type: "Monster".to_string(),
                 move_kind: "NormalEdge".to_string(),
+                safety_flag: None,
                 safety: "ok".to_string(),
                 score: 1.25,
+                score_terms: None,
                 command: "go 1".to_string(),
+                node_features: None,
+                path_summary: None,
+                needs: None,
                 elite_prep_bp: 42,
                 first_elite: BranchExperimentFirstEliteEvidenceV1::default(),
                 reasons: vec!["route planner selected".to_string()],

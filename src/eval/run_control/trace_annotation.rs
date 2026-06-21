@@ -5,6 +5,7 @@ use crate::ai::noncombat_decision_v1::{
     render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
     NonCombatDecisionRecordV1,
 };
+use crate::ai::route_planner_v1::MapDecisionPacketV1;
 use crate::state::core::ClientInput;
 
 use super::transition_report::CardSnapshot;
@@ -185,6 +186,8 @@ pub enum RunControlTraceAnnotationV1 {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         candidate_pool: Vec<RoutePlannerCandidateSummaryV1>,
         label_role: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        map_decision_packet: Option<MapDecisionPacketV1>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         route_evidence: Option<RoutePlannerSelectionEvidenceV1>,
         #[serde(default, skip_serializing_if = "Option::is_none")]

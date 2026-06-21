@@ -26,7 +26,7 @@ use std::path::PathBuf;
 
 #[test]
 fn branch_experiment_schema_version_tracks_lineage_pruned_summary() {
-    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 27);
+    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 28);
 }
 
 #[test]
@@ -80,7 +80,15 @@ fn branch_experiment_records_route_candidate_pool() {
     assert_eq!(pool.branch_id, "root");
     assert!(pool.branch_commands.is_empty());
     assert!(pool.candidate_count >= 1);
+    assert!(pool.map_decision_packet.is_some());
     assert!(pool.candidates.iter().any(|candidate| candidate.selected));
+    assert!(pool
+        .candidates
+        .iter()
+        .all(|candidate| candidate.target_node.is_some()
+            && candidate.node_features.is_some()
+            && candidate.path_summary.is_some()
+            && candidate.score_terms.is_some()));
     assert!(pool
         .candidates
         .iter()
