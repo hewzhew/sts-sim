@@ -210,9 +210,11 @@ journal events, not the other way around.
    separately instead of treating the final score as the only explanation.
 8. Route planner selections remain surfaced as `route_decision` journal events
    for compatibility and selected-action evidence. New route decisions also
-   carry `selected_index` and `selected_candidate_id` so the selected move can
-   be linked back to the surrounding `route_candidate_pool` without parsing the
-   display label or `go N` command.
+   carry `selected_index`, `selected_candidate_id`, selected candidate rank,
+   typed target node, typed safety flag, and route candidate-pool provenance so
+   the selected move can be linked back to the surrounding
+   `route_candidate_pool` without parsing the display label, legacy safety
+   string, or `go N` command.
 9. Campaign route evidence summaries aggregate both selected route decisions
    and the surrounding route candidate pools. The summary is a report diagnostic
    about visible route coverage and safety distribution, not a route policy
@@ -264,9 +266,12 @@ journal events, not the other way around.
   expanding a parent branch. They are eligible for journal coverage diagnostics
   and targeted coverage-gap continuation.
 - Route decisions are the selected route planner actions emitted while
-  expanding a parent branch. They record selected target and safety evidence
-  for compatibility; new continuation and learning paths should prefer
-  `route_candidate_pool`.
+  expanding a parent branch. They record typed selected-action identity
+  (`selected_candidate_id`, candidate rank, typed target, typed safety) plus
+  candidate-pool provenance. The legacy target/safety strings are display and
+  old-report compatibility only. New continuation and learning paths should
+  use route decisions for selected-action provenance and `route_candidate_pool`
+  for full candidate analysis.
 - Decision-outcome samples only include candidates that have an observed
   descendant branch in the report. A candidate that was recorded in the journal
   but never continued by campaign scheduling is still visible in
