@@ -491,6 +491,40 @@ fn branch_state_store_summary_tracks_replay_start_sources_and_suffixes() {
 }
 
 #[test]
+fn branch_state_store_summary_tracks_decision_coordinate_usage() {
+    let decision_commands = vec![
+        "__decision_parent:card_reward:floor=3:index=0".to_string(),
+        "rp 1".to_string(),
+    ];
+    let route_commands = vec![
+        "__route_decision:map:act=1:floor=4".to_string(),
+        "go 2".to_string(),
+    ];
+    let ordinary_commands = vec!["rp 0".to_string()];
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+
+    store.insert_session(
+        decision_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.insert_session(
+        ordinary_commands,
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.insert_child_session(
+        &decision_commands,
+        route_commands,
+        RunControlSession::new(RunControlConfig::default()),
+    );
+
+    let summary = store.summary();
+    assert_eq!(summary.decision_coordinate_sessions, 2);
+    assert_eq!(summary.route_decision_coordinate_sessions, 1);
+    assert_eq!(summary.decision_coordinate_nodes, 2);
+    assert_eq!(summary.route_decision_coordinate_nodes, 1);
+}
+
+#[test]
 fn campaign_parent_batch_can_force_ancestor_replay_after_exact_session_pruned() {
     let mut parent_session = RunControlSession::new(RunControlConfig::default());
     let mut reward = RewardState::new();

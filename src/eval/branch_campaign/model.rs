@@ -334,6 +334,14 @@ pub struct BranchCampaignStateStoreSummaryV1 {
     pub sessions_pruned: usize,
     #[serde(default)]
     pub anchor_sessions_kept: usize,
+    #[serde(default)]
+    pub decision_coordinate_nodes: usize,
+    #[serde(default)]
+    pub route_decision_coordinate_nodes: usize,
+    #[serde(default)]
+    pub decision_coordinate_sessions: usize,
+    #[serde(default)]
+    pub route_decision_coordinate_sessions: usize,
     pub inserts: usize,
     pub retains: usize,
 }
@@ -352,6 +360,10 @@ impl BranchCampaignStateStoreSummaryV1 {
             && self.replay_suffix_commands_max == 0
             && self.sessions_pruned == 0
             && self.anchor_sessions_kept == 0
+            && self.decision_coordinate_nodes == 0
+            && self.route_decision_coordinate_nodes == 0
+            && self.decision_coordinate_sessions == 0
+            && self.route_decision_coordinate_sessions == 0
             && self.inserts == 0
             && self.retains == 0
     }
