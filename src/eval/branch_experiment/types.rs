@@ -9,6 +9,7 @@ use crate::ai::noncombat_strategy_v1::{
 use crate::ai::route_planner_v1::{
     MapDecisionPacketV1, MapRouteTargetV1, NeedVectorV1, NodeFeaturesV1,
     RouteCandidatePoolProvenanceV1, RoutePathSummaryV1, RouteSafetyFlagV1, RouteScoreTermsV1,
+    RouteValueFactorsV1,
 };
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment_retention::{
@@ -405,6 +406,8 @@ pub struct BranchExperimentRouteCandidateEntryV1 {
     pub score: f32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub score_terms: Option<RouteScoreTermsV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value_factors: Option<RouteValueFactorsV1>,
     pub command: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node_features: Option<NodeFeaturesV1>,

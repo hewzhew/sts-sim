@@ -728,6 +728,7 @@ mod tests {
                 safety: "ok".to_string(),
                 score: 1.25,
                 score_terms: None,
+                value_factors: None,
                 command: "go 1".to_string(),
                 node_features: None,
                 path_summary: None,

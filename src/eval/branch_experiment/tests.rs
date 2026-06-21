@@ -95,7 +95,8 @@ fn branch_experiment_records_route_candidate_pool() {
         .all(|candidate| candidate.target_node.is_some()
             && candidate.node_features.is_some()
             && candidate.path_summary.is_some()
-            && candidate.score_terms.is_some()));
+            && candidate.score_terms.is_some()
+            && candidate.value_factors.is_some()));
     assert!(pool
         .candidates
         .iter()
