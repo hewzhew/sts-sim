@@ -896,6 +896,11 @@ fn branch_route_decision_from_annotation(
     else {
         return None;
     };
+    let selected_candidate = selected_index.and_then(|index| {
+        map_decision_packet
+            .as_ref()
+            .and_then(|packet| packet.candidates.get(index))
+    });
 
     Some(BranchExperimentRouteDecisionV1 {
         branch_id: branch.id.clone(),
@@ -904,15 +909,16 @@ fn branch_route_decision_from_annotation(
             .map(|commands| commands.to_vec())
             .unwrap_or_else(|| branch_choice_commands_v1(&branch.choices)),
         selected_index: *selected_index,
-        selected_candidate_id: selected_index.and_then(|index| {
-            map_decision_packet
-                .as_ref()
-                .and_then(|packet| packet.candidates.get(index))
-                .map(|candidate| candidate.candidate_id.clone())
-        }),
+        selected_candidate_id: selected_candidate.map(|candidate| candidate.candidate_id.clone()),
+        selected_candidate_rank: selected_candidate.map(|candidate| candidate.rank),
+        selected_target_node: selected_candidate.map(|candidate| candidate.target.clone()),
         target: format!("x={target_x} y={target_y} {room_type}"),
         move_kind: move_kind.clone(),
+        safety_flag: selected_candidate.map(|candidate| candidate.evaluation.safety),
         safety: safety.clone(),
+        candidate_pool_provenance: map_decision_packet
+            .as_ref()
+            .map(|packet| packet.candidate_pool.clone()),
         command: command.clone(),
         elite_prep_bp: evidence.elite_prep_bp,
         first_elite: BranchExperimentFirstEliteEvidenceV1 {

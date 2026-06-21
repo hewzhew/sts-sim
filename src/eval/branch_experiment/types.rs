@@ -22,7 +22,7 @@ use crate::eval::run_control::{
 };
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 28;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 29;
 pub const BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1: &str =
     "card_reward_strategic_trace_v1";
 
@@ -360,12 +360,27 @@ pub struct BranchExperimentRouteDecisionV1 {
     pub selected_index: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selected_candidate_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_candidate_rank: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_target_node: Option<MapRouteTargetV1>,
     pub target: String,
     pub move_kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safety_flag: Option<RouteSafetyFlagV1>,
     pub safety: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidate_pool_provenance: Option<RouteCandidatePoolProvenanceV1>,
     pub command: String,
     pub elite_prep_bp: i32,
     pub first_elite: BranchExperimentFirstEliteEvidenceV1,
+}
+
+impl BranchExperimentRouteDecisionV1 {
+    pub fn resolved_safety_flag(&self) -> RouteSafetyFlagV1 {
+        self.safety_flag
+            .unwrap_or_else(|| legacy_route_safety_flag_v1(&self.safety))
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

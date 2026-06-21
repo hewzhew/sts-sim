@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ai::route_planner_v1::{
-    MapDecisionPacketV1, RouteCandidatePoolProvenanceV1, RouteSafetyFlagV1,
+    MapDecisionPacketV1, MapRouteTargetV1, RouteCandidatePoolProvenanceV1, RouteSafetyFlagV1,
 };
 use crate::eval::branch_experiment::{
     BranchExperimentBossRelicCandidateEntryV1, BranchExperimentCampfirePlanCandidateEntryV1,
@@ -148,9 +148,17 @@ pub enum CampaignJournalEventPayloadV1 {
         selected_index: Option<usize>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         selected_candidate_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        selected_candidate_rank: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        selected_target_node: Option<MapRouteTargetV1>,
         target: String,
         move_kind: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        safety_flag: Option<RouteSafetyFlagV1>,
         safety: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        candidate_pool_provenance: Option<RouteCandidatePoolProvenanceV1>,
         command: String,
         elite_prep_bp: i32,
         first_elite: BranchExperimentFirstEliteEvidenceV1,

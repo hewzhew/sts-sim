@@ -379,31 +379,67 @@ fn journal_event_payload_search_terms_v1(event: &CampaignJournalEventV1) -> Vec<
             route_branch_id,
             selected_index,
             selected_candidate_id,
+            selected_candidate_rank,
+            selected_target_node,
             target,
             move_kind,
+            safety_flag,
             safety,
+            candidate_pool_provenance,
             command,
             elite_prep_bp,
             first_elite,
             ..
-        } => vec![
-            route_branch_id.clone(),
-            target.clone(),
-            move_kind.clone(),
-            safety.clone(),
-            command.clone(),
-            format!(
-                "selected_index:{}",
-                selected_index
-                    .map(|index| index.to_string())
-                    .unwrap_or_else(|| "-".to_string())
-            ),
-            selected_candidate_id.clone().unwrap_or_default(),
-            format!("elite_prep_bp:{elite_prep_bp}"),
-            format!("first_elite_paths:{}", first_elite.paths_with_first_elite),
-            format!("first_elite_forced:{}", first_elite.forced),
-            format!("first_elite_optional:{}", first_elite.optional),
-        ],
+        } => {
+            let mut parts = vec![
+                route_branch_id.clone(),
+                target.clone(),
+                move_kind.clone(),
+                safety.clone(),
+                command.clone(),
+                format!(
+                    "selected_index:{}",
+                    selected_index
+                        .map(|index| index.to_string())
+                        .unwrap_or_else(|| "-".to_string())
+                ),
+                selected_candidate_id.clone().unwrap_or_default(),
+                format!(
+                    "selected_candidate_rank:{}",
+                    selected_candidate_rank
+                        .map(|rank| rank.to_string())
+                        .unwrap_or_else(|| "-".to_string())
+                ),
+                format!("elite_prep_bp:{elite_prep_bp}"),
+                format!("first_elite_paths:{}", first_elite.paths_with_first_elite),
+                format!("first_elite_forced:{}", first_elite.forced),
+                format!("first_elite_optional:{}", first_elite.optional),
+            ];
+            if let Some(target) = selected_target_node {
+                parts.push(format!("typed_x:{}", target.x));
+                parts.push(format!("typed_y:{}", target.y));
+                parts.push(format!("typed_room:{:?}", target.room_type));
+                parts.push(format!("typed_move:{:?}", target.move_kind));
+            }
+            if let Some(safety) = safety_flag {
+                parts.push(format!("typed_safety:{:?}", safety));
+            }
+            if let Some(provenance) = candidate_pool_provenance {
+                parts.push(format!(
+                    "complete_legal_pool:{}",
+                    provenance.complete_legal_pool
+                ));
+                parts.push(format!(
+                    "legal_candidates:{}",
+                    provenance.legal_candidate_count
+                ));
+                parts.push(format!(
+                    "emitted_candidates:{}",
+                    provenance.emitted_candidate_count
+                ));
+            }
+            parts
+        }
         CampaignJournalEventPayloadV1::RouteCandidatePool {
             selected_index,
             candidate_count,
@@ -728,9 +764,13 @@ mod tests {
             route_branch_id: "root.go1".to_string(),
             selected_index: Some(0),
             selected_candidate_id: Some("route_move:normal_edge:x1:y0".to_string()),
+            selected_candidate_rank: Some(0),
+            selected_target_node: None,
             target: "x=1 Elite".to_string(),
             move_kind: "Elite".to_string(),
+            safety_flag: None,
             safety: "ok".to_string(),
+            candidate_pool_provenance: None,
             command: "go 1".to_string(),
             elite_prep_bp: 42,
             first_elite:
