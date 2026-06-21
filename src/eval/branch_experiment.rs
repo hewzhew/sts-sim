@@ -19,7 +19,7 @@ use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::content::relics::RelicId;
 use crate::eval::branch_experiment_boundary::{
     branch_boundary_available, current_branch_boundary, BranchBoundaryActionV1,
-    BranchBoundaryConfigV1, CardRewardPortfolioContext,
+    BranchBoundaryConfigV1, BranchBoundaryIdV1, CardRewardPortfolioContext,
 };
 use crate::eval::branch_experiment_retention::{
     branch_retention_order_rank_key_v1, default_branch_retention_decision_v1,
@@ -78,6 +78,7 @@ pub use types::{
 
 pub(crate) const BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND: &str =
     "__branch_experiment_replay_advance";
+pub const BRANCH_EXPERIMENT_DECISION_PARENT_COMMAND_PREFIX_V1: &str = "__decision_parent:";
 
 #[derive(Clone, Debug)]
 struct BranchWork {
@@ -474,31 +475,53 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
             if let Some(boundary) =
                 current_branch_boundary(&branch.session, boundary_config, reward_portfolio_context)
             {
+                let decision_parent_commands = branch_decision_parent_commands_v1(
+                    &branch,
+                    depth,
+                    boundary.id,
+                    &frontier_before_boundary.key,
+                );
+                let decision_parent_choices = branch_choice_labels_v1(&branch.choices);
                 decision_parent_sessions
-                    .entry(branch_choice_commands_v1(&branch.choices))
+                    .entry(decision_parent_commands.clone())
                     .or_insert_with(|| branch.session.clone());
-                if let Some(portfolio) = boundary.reward_option_portfolio {
+                if let Some(mut portfolio) = boundary.reward_option_portfolio {
+                    portfolio.branch_id = branch.id.clone();
+                    portfolio.branch_choices = decision_parent_choices.clone();
+                    portfolio.branch_commands = decision_parent_commands.clone();
                     reward_option_portfolios.push(portfolio);
                 }
                 if let Some(mut pool) = boundary.shop_plan_candidate_pool {
+                    pool.branch_id = branch.id.clone();
+                    pool.branch_choices = decision_parent_choices.clone();
+                    pool.branch_commands = decision_parent_commands.clone();
                     pool.depth = depth;
                     pool.frontier_key = frontier_before_boundary.key.clone();
                     pool.boundary_title = frontier_before_boundary.boundary_title.clone();
                     shop_plan_candidate_pools.push(pool);
                 }
                 if let Some(mut pool) = boundary.campfire_plan_candidate_pool {
+                    pool.branch_id = branch.id.clone();
+                    pool.branch_choices = decision_parent_choices.clone();
+                    pool.branch_commands = decision_parent_commands.clone();
                     pool.depth = depth;
                     pool.frontier_key = frontier_before_boundary.key.clone();
                     pool.boundary_title = frontier_before_boundary.boundary_title.clone();
                     campfire_plan_candidate_pools.push(pool);
                 }
                 if let Some(mut pool) = boundary.event_candidate_pool {
+                    pool.branch_id = branch.id.clone();
+                    pool.branch_choices = decision_parent_choices.clone();
+                    pool.branch_commands = decision_parent_commands.clone();
                     pool.depth = depth;
                     pool.frontier_key = frontier_before_boundary.key.clone();
                     pool.boundary_title = frontier_before_boundary.boundary_title.clone();
                     event_candidate_pools.push(pool);
                 }
                 if let Some(mut pool) = boundary.boss_relic_candidate_pool {
+                    pool.branch_id = branch.id.clone();
+                    pool.branch_choices = decision_parent_choices.clone();
+                    pool.branch_commands = decision_parent_commands.clone();
                     pool.depth = depth;
                     pool.frontier_key = frontier_before_boundary.key.clone();
                     pool.boundary_title = frontier_before_boundary.boundary_title.clone();
@@ -1116,6 +1139,44 @@ fn branch_choice_commands_v1(choices: &[BranchExperimentChoiceV1]) -> Vec<String
         .iter()
         .map(|choice| choice.command.clone())
         .collect()
+}
+
+fn branch_decision_parent_commands_v1(
+    branch: &BranchWork,
+    depth: usize,
+    boundary_id: BranchBoundaryIdV1,
+    frontier_key: &str,
+) -> Vec<String> {
+    let mut commands = branch_choice_commands_v1(&branch.choices);
+    commands.push(format!(
+        "{}{}:{}:{}",
+        BRANCH_EXPERIMENT_DECISION_PARENT_COMMAND_PREFIX_V1,
+        depth,
+        branch_boundary_id_label_v1(boundary_id),
+        stable_text_hash_hex_v1(frontier_key)
+    ));
+    commands
+}
+
+fn branch_boundary_id_label_v1(boundary_id: BranchBoundaryIdV1) -> &'static str {
+    match boundary_id {
+        BranchBoundaryIdV1::CardReward => "reward",
+        BranchBoundaryIdV1::Campfire => "campfire",
+        BranchBoundaryIdV1::BossRelic => "boss_relic",
+        BranchBoundaryIdV1::RunSelection => "run_selection",
+        BranchBoundaryIdV1::Reward => "reward_claim",
+        BranchBoundaryIdV1::Shop => "shop",
+        BranchBoundaryIdV1::Event => "event",
+    }
+}
+
+fn stable_text_hash_hex_v1(value: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
 }
 
 fn combat_performance_snapshot_from_annotation(

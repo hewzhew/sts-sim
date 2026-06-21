@@ -289,6 +289,9 @@ fn empty_campfire_candidate_pool(
     branch_option_count: usize,
 ) -> BranchExperimentCampfirePlanCandidatePoolV1 {
     BranchExperimentCampfirePlanCandidatePoolV1 {
+        branch_id: String::new(),
+        branch_choices: Vec::new(),
+        branch_commands: Vec::new(),
         depth: 0,
         frontier_key: String::new(),
         boundary_title: String::new(),
@@ -305,6 +308,9 @@ fn campfire_candidate_pool_from_decision(
     selected_options: &[CampfireBranchOption],
 ) -> BranchExperimentCampfirePlanCandidatePoolV1 {
     BranchExperimentCampfirePlanCandidatePoolV1 {
+        branch_id: String::new(),
+        branch_choices: Vec::new(),
+        branch_commands: Vec::new(),
         depth: 0,
         frontier_key: String::new(),
         boundary_title: String::new(),

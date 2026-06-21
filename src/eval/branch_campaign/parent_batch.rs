@@ -361,16 +361,19 @@ fn campaign_reward_portfolio_journal_event_v1(
         "{}:round{}:reward_portfolio{}",
         parent.branch_id, round_number, portfolio_index
     );
+    let branch_id = campaign_pool_branch_id_v1(parent, &portfolio.branch_id);
+    let branch_choices = campaign_pool_branch_choices_v1(parent, &portfolio.branch_choices);
+    let branch_commands = campaign_pool_branch_commands_v1(parent, &portfolio.branch_commands);
     CampaignJournalEventV1 {
         event_id: format!("{decision_id}:candidate_set"),
         round: round_number,
-        branch_id: parent.branch_id.clone(),
+        branch_id,
         branch_index: parent_index,
         branch_frontier_title: parent.frontier_title.clone(),
         act: parent_act,
         floor: parent_floor,
-        branch_choices: parent.choice_labels.clone(),
-        branch_commands: parent.commands.clone(),
+        branch_choices,
+        branch_commands,
         combat_budget_retry_used,
         payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
             decision_id,
@@ -456,16 +459,19 @@ fn campaign_shop_branch_journal_events_v1(
                 "{}:round{}:shop_candidate_pool{}",
                 parent.branch_id, round_number, group_index
             );
+            let branch_id = campaign_pool_branch_id_v1(parent, &pool.branch_id);
+            let branch_choices = campaign_pool_branch_choices_v1(parent, &pool.branch_choices);
+            let branch_commands = campaign_pool_branch_commands_v1(parent, &pool.branch_commands);
             CampaignJournalEventV1 {
                 event_id: format!("{decision_id}:candidate_set"),
                 round: round_number,
-                branch_id: parent.branch_id.clone(),
+                branch_id,
                 branch_index: parent_index,
                 branch_frontier_title: parent.frontier_title.clone(),
                 act: parent_act,
                 floor: parent_floor,
-                branch_choices: parent.choice_labels.clone(),
-                branch_commands: parent.commands.clone(),
+                branch_choices,
+                branch_commands,
                 combat_budget_retry_used,
                 payload: CampaignJournalEventPayloadV1::ShopCandidatePool {
                     decision_id,
@@ -574,16 +580,19 @@ fn campaign_campfire_branch_journal_events_v1(
                 "{}:round{}:campfire_candidate_pool{}",
                 parent.branch_id, round_number, group_index
             );
+            let branch_id = campaign_pool_branch_id_v1(parent, &pool.branch_id);
+            let branch_choices = campaign_pool_branch_choices_v1(parent, &pool.branch_choices);
+            let branch_commands = campaign_pool_branch_commands_v1(parent, &pool.branch_commands);
             CampaignJournalEventV1 {
                 event_id: format!("{decision_id}:candidate_set"),
                 round: round_number,
-                branch_id: parent.branch_id.clone(),
+                branch_id,
                 branch_index: parent_index,
                 branch_frontier_title: parent.frontier_title.clone(),
                 act: parent_act,
                 floor: parent_floor,
-                branch_choices: parent.choice_labels.clone(),
-                branch_commands: parent.commands.clone(),
+                branch_choices,
+                branch_commands,
                 combat_budget_retry_used,
                 payload: CampaignJournalEventPayloadV1::CampfireCandidatePool {
                     decision_id,
@@ -627,16 +636,19 @@ fn campaign_event_branch_journal_events_v1(
                 "{}:round{}:event_candidate_pool{}",
                 parent.branch_id, round_number, group_index
             );
+            let branch_id = campaign_pool_branch_id_v1(parent, &pool.branch_id);
+            let branch_choices = campaign_pool_branch_choices_v1(parent, &pool.branch_choices);
+            let branch_commands = campaign_pool_branch_commands_v1(parent, &pool.branch_commands);
             CampaignJournalEventV1 {
                 event_id: format!("{decision_id}:candidate_set"),
                 round: round_number,
-                branch_id: parent.branch_id.clone(),
+                branch_id,
                 branch_index: parent_index,
                 branch_frontier_title: parent.frontier_title.clone(),
                 act: parent_act,
                 floor: parent_floor,
-                branch_choices: parent.choice_labels.clone(),
-                branch_commands: parent.commands.clone(),
+                branch_choices,
+                branch_commands,
                 combat_budget_retry_used,
                 payload: CampaignJournalEventPayloadV1::EventCandidatePool {
                     decision_id,
@@ -680,16 +692,19 @@ fn campaign_boss_relic_branch_journal_events_v1(
                 "{}:round{}:boss_relic_candidate_pool{}",
                 parent.branch_id, round_number, group_index
             );
+            let branch_id = campaign_pool_branch_id_v1(parent, &pool.branch_id);
+            let branch_choices = campaign_pool_branch_choices_v1(parent, &pool.branch_choices);
+            let branch_commands = campaign_pool_branch_commands_v1(parent, &pool.branch_commands);
             CampaignJournalEventV1 {
                 event_id: format!("{decision_id}:candidate_set"),
                 round: round_number,
-                branch_id: parent.branch_id.clone(),
+                branch_id,
                 branch_index: parent_index,
                 branch_frontier_title: parent.frontier_title.clone(),
                 act: parent_act,
                 floor: parent_floor,
-                branch_choices: parent.choice_labels.clone(),
-                branch_commands: parent.commands.clone(),
+                branch_choices,
+                branch_commands,
                 combat_budget_retry_used,
                 payload: CampaignJournalEventPayloadV1::BossRelicCandidatePool {
                     decision_id,
@@ -866,6 +881,30 @@ fn combine_campaign_path_v1(parent_path: &[String], local_path: &[String]) -> Op
     let mut combined = parent_path.to_vec();
     combined.extend(local_path.iter().cloned());
     Some(combined)
+}
+
+fn campaign_pool_branch_id_v1(parent: &BranchCampaignBranchV1, local_branch_id: &str) -> String {
+    if local_branch_id.is_empty() {
+        parent.branch_id.clone()
+    } else {
+        campaign_child_branch_id_v1(&parent.branch_id, local_branch_id)
+    }
+}
+
+fn campaign_pool_branch_choices_v1(
+    parent: &BranchCampaignBranchV1,
+    local_choices: &[String],
+) -> Vec<String> {
+    combine_campaign_path_v1(&parent.choice_labels, local_choices)
+        .unwrap_or_else(|| parent.choice_labels.clone())
+}
+
+fn campaign_pool_branch_commands_v1(
+    parent: &BranchCampaignBranchV1,
+    local_commands: &[String],
+) -> Vec<String> {
+    combine_campaign_path_v1(&parent.commands, local_commands)
+        .unwrap_or_else(|| parent.commands.clone())
 }
 
 fn branch_experiment_choice_labels_v1(branch: &BranchExperimentBranchReportV1) -> Vec<String> {

@@ -384,6 +384,9 @@ fn reward_option_portfolio_report(
     }
 
     BranchExperimentRewardOptionPortfolioV1 {
+        branch_id: String::new(),
+        branch_choices: Vec::new(),
+        branch_commands: Vec::new(),
         depth,
         frontier_key,
         boundary_title,

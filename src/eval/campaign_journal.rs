@@ -626,6 +626,9 @@ pub fn reward_portfolio_from_journal_event_v1(
     }
 
     Some(BranchExperimentRewardOptionPortfolioV1 {
+        branch_id: event.branch_id.clone(),
+        branch_choices: event.branch_choices.clone(),
+        branch_commands: event.branch_commands.clone(),
         depth: *depth,
         frontier_key: frontier_key.clone(),
         boundary_title: boundary_title.clone(),

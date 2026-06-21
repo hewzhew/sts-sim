@@ -743,6 +743,9 @@ fn event_candidate_pool_from_options(
     selected_options: &[EventBranchOption],
 ) -> BranchExperimentEventCandidatePoolV1 {
     BranchExperimentEventCandidatePoolV1 {
+        branch_id: String::new(),
+        branch_choices: Vec::new(),
+        branch_commands: Vec::new(),
         depth: 0,
         frontier_key: String::new(),
         boundary_title: String::new(),

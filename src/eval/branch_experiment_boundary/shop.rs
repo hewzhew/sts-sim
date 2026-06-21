@@ -104,6 +104,9 @@ fn shop_candidate_pool_from_compiled_v1(
         .map(|candidate| shop_candidate_entry_from_plan_v1(compiled, candidate))
         .collect::<Vec<_>>();
     BranchExperimentShopPlanCandidatePoolV1 {
+        branch_id: String::new(),
+        branch_choices: Vec::new(),
+        branch_commands: Vec::new(),
         depth: 0,
         frontier_key: String::new(),
         boundary_title: "Shop".to_string(),

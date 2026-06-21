@@ -190,6 +190,50 @@ fn branch_state_store_prefers_longest_session_prefix_over_shorter_node_ancestor(
 }
 
 #[test]
+fn branch_state_store_does_not_self_parent_existing_node() {
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+    let commands = vec!["rp 0".to_string()];
+
+    store.insert_session(
+        commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.insert_child_session(
+        &commands,
+        commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+
+    let node = store
+        .node_for_commands(&commands)
+        .expect("node should still exist");
+    assert_eq!(node.parent_id(), None);
+    assert!(store
+        .checkpoint_nodes()
+        .iter()
+        .all(|node| node.parent_id != Some(node.node_id)));
+}
+
+#[test]
+fn branch_state_store_repairs_legacy_self_parent_checkpoint_nodes() {
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+
+    store
+        .restore_checkpoint_nodes(&[super::model::BranchCampaignCheckpointNodeV1 {
+            node_id: 0,
+            parent_id: Some(0),
+            commands: vec!["rp 0".to_string()],
+            added_commands: Vec::new(),
+        }])
+        .expect("legacy self-parent node should be repaired");
+
+    let node = store
+        .node_for_commands(&["rp 0".to_string()])
+        .expect("node should restore");
+    assert_eq!(node.parent_id(), None);
+}
+
+#[test]
 fn branch_state_store_session_policy_prunes_extra_frozen_exact_sessions_only() {
     let mut store = super::state_graph::BranchStateStoreV1::new();
     let mut active = test_campaign_branch("active", 4, 80);

@@ -456,8 +456,10 @@ fn filter_coverage_gap_execution_plan_for_checkpoint_v1(
         .targets
         .into_iter()
         .filter(|target| {
-            if coverage_gap_target_requires_exact_route_snapshot_v1(target) {
-                return checkpoint_has_exact_session_v1(checkpoint, &target.parent_commands);
+            if coverage_gap_target_requires_exact_parent_snapshot_v1(target) {
+                return coverage_gap_parent_commands_have_exact_coordinate_v1(
+                    &target.parent_commands,
+                ) && checkpoint_has_exact_session_v1(checkpoint, &target.parent_commands);
             }
             checkpoint_can_replay_parent_commands_v1(checkpoint, &target.parent_commands)
         })
@@ -470,15 +472,21 @@ fn filter_coverage_gap_execution_plan_for_checkpoint_v1(
     execution
 }
 
-fn coverage_gap_target_requires_exact_route_snapshot_v1(
+fn coverage_gap_target_requires_exact_parent_snapshot_v1(
     target: &CoverageGapContinuationTargetV1,
 ) -> bool {
-    // Route decisions can happen inside auto-run before the campaign has a stable
-    // decision-parent checkpoint. A replayable ancestor at the same command path is
-    // not enough: it may point at a later reward/event screen where `go N` is invalid.
-    // Execute route gaps only when the checkpoint contains the exact route parent
-    // snapshot captured at the map surface.
-    target.target_origin.source == "map_decision_packet"
+    // Coverage gap targets describe a specific decision surface, not merely a
+    // command prefix. Auto-run may route and fight between recorded choices, so a
+    // replayable ancestor can land on the wrong screen even when the command path
+    // exists. Root decisions are safe to replay from a fresh seed; all later
+    // decision surfaces need an exact parent snapshot.
+    !target.parent_commands.is_empty()
+}
+
+fn coverage_gap_parent_commands_have_exact_coordinate_v1(parent_commands: &[String]) -> bool {
+    parent_commands.iter().any(|command| {
+        command.starts_with("__decision_parent:") || command.starts_with("__route_decision:")
+    })
 }
 
 fn checkpoint_has_exact_session_v1(
@@ -615,6 +623,49 @@ mod tests {
         assert_eq!(origin.disposition, target.disposition);
         assert!(origin.target_origin_source.is_empty());
         assert!(origin.route_origin.is_none());
+    }
+
+    #[test]
+    fn coverage_gap_non_root_targets_require_exact_parent_snapshot() {
+        let mut target = CoverageGapContinuationTargetV1 {
+            decision_id: "root:round1:shop0".to_string(),
+            event_id: "root:round1:shop0:candidate_set".to_string(),
+            event_type: "shop".to_string(),
+            parent_branch_id: "root.rp 0".to_string(),
+            parent_frontier_title: "Shop".to_string(),
+            parent_commands: vec!["rp 0".to_string()],
+            parent_choices: vec!["Pommel Strike".to_string()],
+            candidate_index: 0,
+            candidate_id: "legacy:shop:purge:0".to_string(),
+            command: "purge 0".to_string(),
+            label: "purge Strike".to_string(),
+            semantic_class: "purge".to_string(),
+            admission: CampaignJournalCandidateAdmissionTraceV1::new(
+                CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+                "shop_candidate_pool",
+                "admit",
+            ),
+            disposition: CampaignJournalCandidateDispositionV1::Kept,
+            target_origin: Default::default(),
+            milestone: "resource_conversion_frontier".to_string(),
+        };
+
+        assert!(coverage_gap_target_requires_exact_parent_snapshot_v1(
+            &target
+        ));
+        assert!(!coverage_gap_parent_commands_have_exact_coordinate_v1(
+            &target.parent_commands
+        ));
+        target
+            .parent_commands
+            .push("__decision_parent:1:shop:abcd".to_string());
+        assert!(coverage_gap_parent_commands_have_exact_coordinate_v1(
+            &target.parent_commands
+        ));
+        target.parent_commands.clear();
+        assert!(!coverage_gap_target_requires_exact_parent_snapshot_v1(
+            &target
+        ));
     }
 }
 

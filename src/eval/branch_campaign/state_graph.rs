@@ -237,7 +237,7 @@ impl BranchStateStoreV1 {
                 ));
             }
             if let Some(parent_id) = node.parent_id {
-                if parent_id >= node.node_id {
+                if parent_id > node.node_id {
                     return Err(format!(
                         "campaign checkpoint node {} has invalid parent {}",
                         node.node_id, parent_id
@@ -248,7 +248,10 @@ impl BranchStateStoreV1 {
 
         for node in records {
             let id = BranchStateNodeIdV1(node.node_id);
-            let parent_id = node.parent_id.map(BranchStateNodeIdV1);
+            let parent_id = node
+                .parent_id
+                .filter(|parent_id| *parent_id != node.node_id)
+                .map(BranchStateNodeIdV1);
             self.nodes.push(BranchStateNodeV1 {
                 id,
                 parent_id,
@@ -402,7 +405,7 @@ impl BranchStateStoreV1 {
     ) -> BranchStateNodeIdV1 {
         if let Some(id) = self.node_ids_by_commands.get(&commands).copied() {
             if let Some(node) = self.nodes.get_mut(id.0) {
-                if node.parent_id.is_none() && parent_id.is_some() {
+                if node.parent_id.is_none() && parent_id.is_some_and(|parent_id| parent_id != id) {
                     node.parent_id = parent_id;
                     node.added_commands = added_commands;
                 }

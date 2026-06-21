@@ -837,7 +837,7 @@ pub fn plan_coverage_gap_continuations_v1(
     let mut selected_pruned_targets = 0usize;
     let mut selected_scheduled_targets = 0usize;
     let mut selected_unscheduled_targets = 0usize;
-    let mut targets = Vec::new();
+    let mut target_candidates = Vec::new();
 
     for event in &report.journal.events {
         let Some(decision_id) = journal_decision_id_v1(event) else {
@@ -893,11 +893,10 @@ pub fn plan_coverage_gap_continuations_v1(
                     .filter(|(_, candidate)| !candidate_admission_is_scheduled_v1(candidate)),
             );
         for (candidate_index, candidate) in ordered_unobserved {
-            if targets.len() >= max_targets || selected_for_decision >= max_candidates_per_decision
-            {
+            if selected_for_decision >= max_candidates_per_decision {
                 continue;
             }
-            targets.push(CoverageGapContinuationTargetV1 {
+            target_candidates.push(CoverageGapContinuationTargetV1 {
                 decision_id: decision_id.to_string(),
                 event_id: event.event_id.clone(),
                 event_type: journal_decision_event_kind_v1(event).to_string(),
@@ -915,20 +914,24 @@ pub fn plan_coverage_gap_continuations_v1(
                 target_origin: coverage_gap_target_origin_v1(event, candidate_index),
                 milestone: coverage_gap_candidate_milestone_v1(event),
             });
-            match candidate.disposition {
-                CampaignJournalCandidateDispositionV1::Kept => {
-                    selected_kept_targets = selected_kept_targets.saturating_add(1)
-                }
-                CampaignJournalCandidateDispositionV1::Pruned => {
-                    selected_pruned_targets = selected_pruned_targets.saturating_add(1)
-                }
-            }
-            if candidate_admission_is_scheduled_v1(candidate) {
-                selected_scheduled_targets = selected_scheduled_targets.saturating_add(1);
-            } else {
-                selected_unscheduled_targets = selected_unscheduled_targets.saturating_add(1);
-            }
             selected_for_decision = selected_for_decision.saturating_add(1);
+        }
+    }
+
+    let targets = select_coverage_gap_targets_by_type_v1(target_candidates, max_targets);
+    for target in &targets {
+        match target.disposition {
+            CampaignJournalCandidateDispositionV1::Kept => {
+                selected_kept_targets = selected_kept_targets.saturating_add(1)
+            }
+            CampaignJournalCandidateDispositionV1::Pruned => {
+                selected_pruned_targets = selected_pruned_targets.saturating_add(1)
+            }
+        }
+        if target.admission.status == CampaignJournalCandidateAdmissionStatusV1::Scheduled {
+            selected_scheduled_targets = selected_scheduled_targets.saturating_add(1);
+        } else {
+            selected_unscheduled_targets = selected_unscheduled_targets.saturating_add(1);
         }
     }
 
@@ -951,6 +954,81 @@ pub fn plan_coverage_gap_continuations_v1(
         selected_scheduled_targets,
         selected_unscheduled_targets,
         targets,
+    }
+}
+
+fn select_coverage_gap_targets_by_type_v1(
+    targets: Vec<CoverageGapContinuationTargetV1>,
+    max_targets: usize,
+) -> Vec<CoverageGapContinuationTargetV1> {
+    if max_targets == 0 || targets.is_empty() {
+        return Vec::new();
+    }
+
+    let mut buckets = BTreeMap::<String, Vec<CoverageGapContinuationTargetV1>>::new();
+    for target in targets {
+        buckets
+            .entry(coverage_gap_target_bucket_v1(&target).to_string())
+            .or_default()
+            .push(target);
+    }
+
+    let mut bucket_order = coverage_gap_target_bucket_order_v1(&buckets);
+    let mut selected = Vec::new();
+    while selected.len() < max_targets && !bucket_order.is_empty() {
+        let mut retained_order = Vec::new();
+        for bucket in bucket_order {
+            let Some(items) = buckets.get_mut(&bucket) else {
+                continue;
+            };
+            if !items.is_empty() && selected.len() < max_targets {
+                selected.push(items.remove(0));
+            }
+            if !items.is_empty() {
+                retained_order.push(bucket);
+            }
+        }
+        bucket_order = retained_order;
+    }
+    selected
+}
+
+fn coverage_gap_target_bucket_order_v1(
+    buckets: &BTreeMap<String, Vec<CoverageGapContinuationTargetV1>>,
+) -> Vec<String> {
+    let mut order = Vec::new();
+    for bucket in [
+        "route",
+        "boss_relic",
+        "shop",
+        "shop_branch",
+        "event",
+        "campfire",
+        "reward",
+        "other",
+    ] {
+        if buckets.contains_key(bucket) {
+            order.push(bucket.to_string());
+        }
+    }
+    for bucket in buckets.keys() {
+        if !order.iter().any(|existing| existing == bucket) {
+            order.push(bucket.clone());
+        }
+    }
+    order
+}
+
+fn coverage_gap_target_bucket_v1(target: &CoverageGapContinuationTargetV1) -> &'static str {
+    match target.event_type.as_str() {
+        "route" => "route",
+        "boss_relic" => "boss_relic",
+        "shop" => "shop",
+        "shop_branch" => "shop_branch",
+        "event" => "event",
+        "campfire" => "campfire",
+        "reward" => "reward",
+        _ => "other",
     }
 }
 
@@ -2772,6 +2850,76 @@ mod tests {
             unobserved_route.projection.metadata.observed_path_count
         );
         assert!(rendered.contains("origin=map_decision_packet"));
+    }
+
+    #[test]
+    fn coverage_gap_continuation_balances_targets_across_decision_types() {
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        for reward_index in 0..3 {
+            report.journal.events.push(CampaignJournalEventV1 {
+                event_id: format!("journal-reward{reward_index}:candidate_set"),
+                round: 1,
+                branch_id: "root".to_string(),
+                branch_index: 0,
+                branch_frontier_title: "Reward Screen".to_string(),
+                act: 1,
+                floor: 1,
+                branch_choices: Vec::new(),
+                branch_commands: Vec::new(),
+                combat_budget_retry_used: false,
+                payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
+                    decision_id: format!("journal-reward{reward_index}"),
+                    boundary_title: "Reward Screen".to_string(),
+                    frontier_key: "reward-frontier".to_string(),
+                    depth: 0,
+                    max_reward_options_per_branch: 3,
+                    original_count: 3,
+                    selected_count: 2,
+                    candidates: vec![
+                        sample_journal_candidate("rp 0", "Reward A"),
+                        sample_journal_candidate("rp 1", "Reward B"),
+                        sample_journal_candidate("rp 2", "Reward C"),
+                    ],
+                },
+            });
+        }
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-route-pool0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Map".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: vec!["__route_decision:0:go_1".to_string()],
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                decision_id: "journal-route-pool0".to_string(),
+                boundary_title: "Map".to_string(),
+                frontier_key: "map-frontier".to_string(),
+                depth: 0,
+                candidate_count: 2,
+                selected_index: Some(0),
+                candidate_pool_provenance: None,
+                map_decision_packet: None,
+                candidates: vec![
+                    sample_journal_candidate("go 1", "Route selected"),
+                    sample_journal_candidate("go 3", "Route alternative"),
+                ],
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[], 2, 2);
+        let event_types = plan
+            .targets
+            .iter()
+            .map(|target| target.event_type.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(plan.selected_target_count, 2);
+        assert!(event_types.contains(&"route"));
+        assert!(event_types.contains(&"reward"));
     }
 
     #[test]

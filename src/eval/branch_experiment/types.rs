@@ -158,6 +158,12 @@ pub struct BranchExperimentPrunedBranchSummaryV1 {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchExperimentRewardOptionPortfolioV1 {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub branch_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_choices: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_commands: Vec<String>,
     pub depth: usize,
     pub frontier_key: String,
     pub boundary_title: String,
@@ -179,6 +185,12 @@ pub struct BranchExperimentRewardOptionPortfolioEntryV1 {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchExperimentShopPlanCandidatePoolV1 {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub branch_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_choices: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_commands: Vec<String>,
     pub depth: usize,
     pub frontier_key: String,
     pub boundary_title: String,
@@ -215,6 +227,12 @@ pub struct BranchExperimentShopPlanCandidateEntryV1 {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchExperimentCampfirePlanCandidatePoolV1 {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub branch_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_choices: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_commands: Vec<String>,
     pub depth: usize,
     pub frontier_key: String,
     pub boundary_title: String,
@@ -246,6 +264,12 @@ pub struct BranchExperimentCampfirePlanCandidateEntryV1 {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchExperimentEventCandidatePoolV1 {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub branch_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_choices: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_commands: Vec<String>,
     pub depth: usize,
     pub frontier_key: String,
     pub boundary_title: String,
@@ -276,6 +300,12 @@ pub struct BranchExperimentEventCandidateEntryV1 {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchExperimentBossRelicCandidatePoolV1 {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub branch_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_choices: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_commands: Vec<String>,
     pub depth: usize,
     pub frontier_key: String,
     pub boundary_title: String,

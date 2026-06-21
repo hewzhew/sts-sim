@@ -54,6 +54,9 @@ fn boss_relic_candidate_pool_from_context(
     candidates: &[BossRelicCandidateEvidenceV1],
 ) -> BranchExperimentBossRelicCandidatePoolV1 {
     BranchExperimentBossRelicCandidatePoolV1 {
+        branch_id: String::new(),
+        branch_choices: Vec::new(),
+        branch_commands: Vec::new(),
         depth: 0,
         frontier_key: String::new(),
         boundary_title: String::new(),
