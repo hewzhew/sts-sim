@@ -30,6 +30,27 @@ fn branch_experiment_schema_version_tracks_lineage_pruned_summary() {
 }
 
 #[test]
+fn branch_experiment_command_coordinate_helpers_classify_decision_parent_anchors() {
+    assert!(branch_experiment_command_is_decision_parent_coordinate_v1(
+        "__decision_parent:1:shop:abcd"
+    ));
+    assert!(branch_experiment_command_is_decision_parent_coordinate_v1(
+        "__route_decision:0:go_1"
+    ));
+    assert!(
+        branch_experiment_command_is_route_decision_parent_coordinate_v1("__route_decision:0:go_1")
+    );
+    assert!(
+        !branch_experiment_command_is_route_decision_parent_coordinate_v1(
+            "__decision_parent:1:shop:abcd"
+        )
+    );
+    assert!(!branch_experiment_command_is_decision_parent_coordinate_v1(
+        "go 1"
+    ));
+}
+
+#[test]
 fn branch_experiment_expands_pending_card_reward_choices() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     let mut reward = RewardState::new();
