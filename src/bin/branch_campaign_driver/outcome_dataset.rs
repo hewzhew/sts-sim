@@ -271,15 +271,19 @@ pub(super) fn run_coverage_gap_continuation_execution(
     let source_report = read_campaign_report_v1(report_path)?;
     let source_checkpoint = read_campaign_checkpoint_v1(checkpoint_path)?;
     let records = extract_branch_outcome_records_v1(&source_report, Some(&source_checkpoint))?;
+    let planning_window = coverage_gap_execution_planning_window_v1(input.coverage_gap_limit);
     let plan = plan_coverage_gap_continuations_v1(
         &source_report,
         &records,
-        input.coverage_gap_limit,
+        planning_window,
         input.coverage_gap_candidates_per_decision,
     );
-    let execution = filter_coverage_gap_execution_plan_for_checkpoint_v1(
-        coverage_gap_continuation_execution_plan_v1(&plan, input.coverage_gap_limit),
-        &source_checkpoint,
+    let execution = trim_coverage_gap_execution_plan_v1(
+        filter_coverage_gap_execution_plan_for_checkpoint_v1(
+            coverage_gap_continuation_execution_plan_v1(&plan, planning_window),
+            &source_checkpoint,
+        ),
+        input.coverage_gap_limit,
     );
     if execution.targets.is_empty() {
         return Err(format!(
@@ -321,8 +325,9 @@ pub(super) fn run_coverage_gap_continuation_execution(
     }
 
     println!(
-        "CoverageGapContinuationExecutionV1 requested={} selected={} skipped={}",
+        "CoverageGapContinuationExecutionV1 requested={} planning_window={} selected={} skipped={}",
         execution.requested_target_count,
+        planning_window,
         execution.selected_branch_count,
         execution.skipped_target_count
     );
@@ -470,6 +475,24 @@ fn filter_coverage_gap_execution_plan_for_checkpoint_v1(
         .skipped_target_count
         .saturating_add(original_selected.saturating_sub(execution.targets.len()));
     execution.requested_target_count = requested;
+    execution
+}
+
+fn coverage_gap_execution_planning_window_v1(requested_targets: usize) -> usize {
+    requested_targets.saturating_mul(4).max(requested_targets)
+}
+
+fn trim_coverage_gap_execution_plan_v1(
+    mut execution: CoverageGapContinuationExecutionPlanV1,
+    requested_targets: usize,
+) -> CoverageGapContinuationExecutionPlanV1 {
+    let overflow = execution.targets.len().saturating_sub(requested_targets);
+    if overflow > 0 {
+        execution.targets.truncate(requested_targets);
+        execution.skipped_target_count = execution.skipped_target_count.saturating_add(overflow);
+    }
+    execution.requested_target_count = requested_targets;
+    execution.selected_branch_count = execution.targets.len();
     execution
 }
 
