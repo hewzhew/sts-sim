@@ -36,7 +36,7 @@ pub(super) fn route_go_trace_annotation(
             .unwrap_or("unknown-command")
             .to_string(),
         top_candidates: route_go_top_candidate_summaries(trace),
-        candidate_pool: route_go_candidate_summaries(trace, None),
+        candidate_pool: Vec::new(),
         label_role: "behavior_policy_not_teacher".to_string(),
         map_decision_packet: Some(MapDecisionPacketV1::from_route_decision_trace_v1(trace)),
         route_evidence: Some(route_go_selection_evidence(candidate)),
