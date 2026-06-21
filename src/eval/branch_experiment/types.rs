@@ -420,6 +420,22 @@ pub struct BranchExperimentRouteCandidateEntryV1 {
     pub cautions: Vec<String>,
 }
 
+impl BranchExperimentRouteCandidateEntryV1 {
+    pub fn resolved_safety_flag(&self) -> RouteSafetyFlagV1 {
+        self.safety_flag
+            .unwrap_or_else(|| legacy_route_safety_flag_v1(&self.safety))
+    }
+}
+
+fn legacy_route_safety_flag_v1(safety: &str) -> RouteSafetyFlagV1 {
+    match safety {
+        "ok" => RouteSafetyFlagV1::Ok,
+        "risky" | "risky_but_allowed" => RouteSafetyFlagV1::RiskyButAllowed,
+        "reject_unless_forced" | "reject" => RouteSafetyFlagV1::RejectUnlessNoAlternative,
+        _ => RouteSafetyFlagV1::RiskyButAllowed,
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchExperimentFirstEliteEvidenceV1 {

@@ -1,3 +1,4 @@
+use crate::ai::route_planner_v1::RouteSafetyFlagV1;
 use crate::eval::branch_experiment::{
     BranchExperimentRouteCandidatePoolV1, BranchExperimentRouteDecisionV1,
 };
@@ -98,15 +99,16 @@ fn add_campaign_route_candidate_pool_v1(
         summary.complete_candidate_pools = summary.complete_candidate_pools.saturating_add(1);
     }
     for candidate in &pool.candidates {
-        match candidate.safety.as_str() {
-            "ok" => summary.candidate_pool_ok = summary.candidate_pool_ok.saturating_add(1),
-            "risky" | "risky_but_allowed" => {
+        match candidate.resolved_safety_flag() {
+            RouteSafetyFlagV1::Ok => {
+                summary.candidate_pool_ok = summary.candidate_pool_ok.saturating_add(1)
+            }
+            RouteSafetyFlagV1::RiskyButAllowed => {
                 summary.candidate_pool_risky = summary.candidate_pool_risky.saturating_add(1)
             }
-            "reject_unless_forced" | "reject" => {
+            RouteSafetyFlagV1::RejectUnlessNoAlternative => {
                 summary.candidate_pool_rejected = summary.candidate_pool_rejected.saturating_add(1)
             }
-            _ => {}
         }
     }
 }

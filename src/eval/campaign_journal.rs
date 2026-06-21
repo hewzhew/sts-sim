@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ai::route_planner_v1::{MapDecisionPacketV1, RouteCandidatePoolProvenanceV1};
+use crate::ai::route_planner_v1::{
+    MapDecisionPacketV1, RouteCandidatePoolProvenanceV1, RouteSafetyFlagV1,
+};
 use crate::eval::branch_experiment::{
     BranchExperimentBossRelicCandidateEntryV1, BranchExperimentCampfirePlanCandidateEntryV1,
     BranchExperimentEventCandidateEntryV1, BranchExperimentFirstEliteEvidenceV1,
@@ -471,7 +473,7 @@ pub fn campaign_journal_candidate_from_route_entry_v1(
             "selected",
             CampaignJournalCandidateDispositionV1::Kept,
         )
-    } else if candidate.safety == "reject_unless_forced" {
+    } else if candidate.resolved_safety_flag() == RouteSafetyFlagV1::RejectUnlessNoAlternative {
         (
             CampaignJournalCandidateAdmissionStatusV1::Rejected,
             "rejected",
