@@ -79,6 +79,7 @@ pub use types::{
 pub(crate) const BRANCH_EXPERIMENT_REPLAY_ADVANCE_COMMAND: &str =
     "__branch_experiment_replay_advance";
 pub const BRANCH_EXPERIMENT_DECISION_PARENT_COMMAND_PREFIX_V1: &str = "__decision_parent:";
+pub const BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1: &str = "__route_decision:";
 
 #[derive(Clone, Debug)]
 struct BranchWork {
@@ -873,7 +874,7 @@ fn route_decision_anchor_command_v1(index: usize, command: &str) -> String {
             }
         })
         .collect::<String>();
-    format!("__route_decision:{index}:{command_key}")
+    format!("{BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1}{index}:{command_key}")
 }
 
 fn branch_route_decision_from_annotation(

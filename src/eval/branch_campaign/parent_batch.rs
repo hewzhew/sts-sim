@@ -7,7 +7,7 @@ use crate::eval::branch_experiment::{
     BranchExperimentRewardOptionPortfolioV1, BranchExperimentRouteCandidatePoolV1,
     BranchExperimentRouteDecisionV1, BranchExperimentRunResultV1,
     BranchExperimentShopPlanCandidateEntryV1, BranchExperimentShopPlanCandidatePoolV1,
-    BranchExperimentStrategyRequestV1,
+    BranchExperimentStrategyRequestV1, BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1,
 };
 use crate::eval::campaign_journal::{
     campaign_journal_candidate_from_boss_relic_entry_v1,
@@ -1264,10 +1264,9 @@ fn campaign_replay_commands_for_replay_start_v1(
     parent_commands: &[String],
     suffix_commands: &[String],
 ) -> Vec<String> {
-    if parent_commands
-        .iter()
-        .any(|command| command.starts_with("__route_decision:"))
-    {
+    if parent_commands.iter().any(|command| {
+        command.starts_with(BRANCH_EXPERIMENT_ROUTE_DECISION_PARENT_COMMAND_PREFIX_V1)
+    }) {
         return suffix_commands.to_vec();
     }
     campaign_replay_commands_for_path_v1(suffix_commands)
