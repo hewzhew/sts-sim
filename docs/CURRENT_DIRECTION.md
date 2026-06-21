@@ -23,6 +23,20 @@ stack for Slay the Spire. The most important loop is:
 - Phase 1 non-combat policy quality: route, deck, card reward, shop, campfire,
   event, and boss relic decisions under explicit boundaries
 
+## Route/Map Handling
+
+Route choices currently use an auto-run planner as the default campaign path,
+not a normal `BranchBoundary` expansion at every map screen. The planner emits
+a full typed `MapDecisionPacketV1`; `CampaignJournal` records both the selected
+route decision and the route candidate pool. Coverage-gap continuation can then
+target unobserved route candidates deliberately.
+
+This split is intentional for now: default campaign runs stay bounded, while
+route/map alternatives remain inspectable and replayable from journal data.
+Route labels, `go N` commands, and top-candidate summaries are display or
+compatibility surfaces; new analysis should consume typed route candidates
+(`target`, `action`, `features`, `projection`, `needs`, `evaluation`).
+
 ## Closed Foundation
 
 Phase 0 run-control automation and provenance boundaries are closed. Keep
