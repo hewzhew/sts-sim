@@ -1000,11 +1000,12 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
         lines.push("Targets:".to_string());
         for (index, target) in plan.targets.iter().take(12).enumerate() {
             lines.push(format!(
-                "  {}. {} {} | parent={} candidate={} {{{}}} admission={} reason_category={} reason_code={} disposition={} milestone={} origin={} semantic=[{}]",
+                "  {}. {} {} | parent={} coord={} candidate={} {{{}}} admission={} reason_category={} reason_code={} disposition={} milestone={} origin={} semantic=[{}]",
                 index + 1,
                 target.event_type,
                 compact_learning_text_v1(&target.decision_id, 56),
                 compact_learning_text_v1(&target.parent_branch_id, 36),
+                compact_learning_text_v1(&render_coverage_gap_parent_coordinate_v1(target), 48),
                 compact_learning_text_v1(&target.label, 42),
                 compact_learning_text_v1(&target.command, 28),
                 render_journal_candidate_admission_status_v1(target.admission.status),
@@ -1028,6 +1029,14 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
         }
     }
     lines.join("\n")
+}
+
+fn render_coverage_gap_parent_coordinate_v1(target: &CoverageGapContinuationTargetV1) -> String {
+    if target.parent_commands.is_empty() {
+        "root".to_string()
+    } else {
+        target.parent_commands.join(" -> ")
+    }
 }
 
 fn render_coverage_gap_target_origin_v1(origin: &CoverageGapContinuationTargetOriginV1) -> String {
