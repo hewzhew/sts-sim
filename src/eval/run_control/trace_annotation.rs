@@ -131,6 +131,14 @@ pub struct RoutePlannerCandidateSummaryV1 {
     pub move_kind: String,
     pub safety: String,
     pub score: f32,
+    #[serde(default)]
+    pub elite_prep_bp: i32,
+    #[serde(default)]
+    pub first_elite: RoutePlannerFirstEliteEvidenceV1,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reasons: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cautions: Vec<String>,
     pub command: String,
 }
 
@@ -174,6 +182,8 @@ pub enum RunControlTraceAnnotationV1 {
         score: f32,
         command: String,
         top_candidates: Vec<RoutePlannerCandidateSummaryV1>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        candidate_pool: Vec<RoutePlannerCandidateSummaryV1>,
         label_role: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         route_evidence: Option<RoutePlannerSelectionEvidenceV1>,

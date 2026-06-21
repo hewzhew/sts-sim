@@ -64,6 +64,7 @@ pub use types::{
     BranchExperimentFrontierV1, BranchExperimentLineageV1, BranchExperimentPrunedBranchSummaryV1,
     BranchExperimentPrunedFirstPickCountV1, BranchExperimentReportV1,
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentRouteCandidateEntryV1, BranchExperimentRouteCandidatePoolV1,
     BranchExperimentRouteDecisionV1, BranchExperimentRunSummaryV1,
     BranchExperimentShopPlanCandidateEntryV1, BranchExperimentShopPlanCandidatePoolV1,
     BranchExperimentStrategyRequestV1, BranchExperimentWallLimitPhaseV1,
@@ -267,11 +268,13 @@ fn prepare_branch_experiment_start(
     };
     if settle_to_first_boundary {
         let mut ignored_route_decisions = Vec::new();
+        let mut ignored_route_candidate_pools = Vec::new();
         let mut ignored_combat_performance = Vec::new();
         settle_branch_to_frontier(
             &mut branch,
             config,
             &mut ignored_route_decisions,
+            &mut ignored_route_candidate_pools,
             &mut ignored_combat_performance,
         );
     }
@@ -411,6 +414,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
     let mut event_candidate_pools = Vec::new();
     let mut boss_relic_candidate_pools = Vec::new();
     let mut route_decisions = Vec::new();
+    let mut route_candidate_pools = Vec::new();
     let mut combat_performance_samples = Vec::new();
 
     for depth in 0..config.max_depth {
@@ -438,6 +442,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
                 &mut branch,
                 config,
                 &mut route_decisions,
+                &mut route_candidate_pools,
                 &mut combat_performance_samples,
             );
             if branch.status != BranchExperimentBranchStatusV1::Active {
@@ -557,6 +562,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
             branch,
             config,
             &mut route_decisions,
+            &mut route_candidate_pools,
             &mut combat_performance_samples,
         );
     }
@@ -624,6 +630,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
         boss_relic_candidate_pools,
         strategy_requests: branch_strategy_requests(&branch_reports),
         route_decisions,
+        route_candidate_pools,
         frontier_groups: frontier_groups(&branch_reports),
         branches: branch_reports,
     };
@@ -690,6 +697,7 @@ fn advance_to_experiment_boundary(
     branch: &mut BranchWork,
     config: &BranchExperimentConfigV1,
     route_decisions: &mut Vec<BranchExperimentRouteDecisionV1>,
+    route_candidate_pools: &mut Vec<BranchExperimentRouteCandidatePoolV1>,
     combat_performance_samples: &mut Vec<CombatSearchPerformanceSnapshotV1>,
 ) {
     if is_terminal(&branch.session) || experiment_branch_options_available(&branch.session) {
@@ -711,6 +719,9 @@ fn advance_to_experiment_boundary(
             route_decisions.extend(outcome.trace_annotations.iter().filter_map(|annotation| {
                 branch_route_decision_from_annotation(&branch.id, annotation)
             }));
+            route_candidate_pools.extend(outcome.trace_annotations.iter().filter_map(
+                |annotation| branch_route_candidate_pool_from_annotation(branch, annotation),
+            ));
             combat_performance_samples.extend(
                 outcome
                     .trace_annotations
@@ -802,6 +813,82 @@ fn branch_route_decision_from_annotation(
     })
 }
 
+fn branch_route_candidate_pool_from_annotation(
+    branch: &BranchWork,
+    annotation: &RunControlTraceAnnotationV1,
+) -> Option<BranchExperimentRouteCandidatePoolV1> {
+    let RunControlTraceAnnotationV1::RoutePlannerSelection {
+        selected_index,
+        candidate_count,
+        candidate_pool,
+        ..
+    } = annotation
+    else {
+        return None;
+    };
+    if candidate_pool.is_empty() {
+        return None;
+    }
+
+    Some(BranchExperimentRouteCandidatePoolV1 {
+        branch_id: branch.id.clone(),
+        branch_choices: branch_choice_labels_v1(&branch.choices),
+        branch_commands: branch_choice_commands_v1(&branch.choices),
+        decision_id: format!("{}:route_candidate_pool", branch.id),
+        boundary_title: "Map".to_string(),
+        frontier_key: branch.id.clone(),
+        depth: 0,
+        candidate_count: *candidate_count,
+        selected_index: *selected_index,
+        candidates: candidate_pool
+            .iter()
+            .map(|candidate| BranchExperimentRouteCandidateEntryV1 {
+                candidate_id: format!("route:{}:{}", candidate.rank, candidate.command),
+                rank: candidate.rank,
+                selected: Some(candidate.rank) == *selected_index,
+                target: format!(
+                    "x={} y={} {}",
+                    candidate.target_x, candidate.target_y, candidate.room_type
+                ),
+                room_type: candidate.room_type.clone(),
+                move_kind: candidate.move_kind.clone(),
+                safety: candidate.safety.clone(),
+                score: candidate.score,
+                command: candidate.command.clone(),
+                elite_prep_bp: candidate.elite_prep_bp,
+                first_elite: BranchExperimentFirstEliteEvidenceV1 {
+                    paths_with_first_elite: candidate.first_elite.paths_with_first_elite,
+                    forced: candidate.first_elite.forced,
+                    optional: candidate.first_elite.optional,
+                    min_hallway_fights_before: candidate.first_elite.min_hallway_fights_before,
+                    max_hallway_fights_before: candidate.first_elite.max_hallway_fights_before,
+                    min_unknowns_before: candidate.first_elite.min_unknowns_before,
+                    max_unknowns_before: candidate.first_elite.max_unknowns_before,
+                    min_fires_before: candidate.first_elite.min_fires_before,
+                    max_fires_before: candidate.first_elite.max_fires_before,
+                    min_shops_before: candidate.first_elite.min_shops_before,
+                    max_shops_before: candidate.first_elite.max_shops_before,
+                    can_bail_to_rest_before: candidate.first_elite.can_bail_to_rest_before,
+                    can_bail_to_shop_before: candidate.first_elite.can_bail_to_shop_before,
+                },
+                reasons: candidate.reasons.clone(),
+                cautions: candidate.cautions.clone(),
+            })
+            .collect(),
+    })
+}
+
+fn branch_choice_labels_v1(choices: &[BranchExperimentChoiceV1]) -> Vec<String> {
+    choices.iter().map(|choice| choice.label.clone()).collect()
+}
+
+fn branch_choice_commands_v1(choices: &[BranchExperimentChoiceV1]) -> Vec<String> {
+    choices
+        .iter()
+        .map(|choice| choice.command.clone())
+        .collect()
+}
+
 fn combat_performance_snapshot_from_annotation(
     annotation: &RunControlTraceAnnotationV1,
 ) -> Option<CombatSearchPerformanceSnapshotV1> {
@@ -857,12 +944,19 @@ fn settle_branch_to_frontier(
     branch: &mut BranchWork,
     config: &BranchExperimentConfigV1,
     route_decisions: &mut Vec<BranchExperimentRouteDecisionV1>,
+    route_candidate_pools: &mut Vec<BranchExperimentRouteCandidatePoolV1>,
     combat_performance_samples: &mut Vec<CombatSearchPerformanceSnapshotV1>,
 ) {
     if branch.status != BranchExperimentBranchStatusV1::Active {
         return;
     }
-    advance_to_experiment_boundary(branch, config, route_decisions, combat_performance_samples);
+    advance_to_experiment_boundary(
+        branch,
+        config,
+        route_decisions,
+        route_candidate_pools,
+        combat_performance_samples,
+    );
     if branch.status != BranchExperimentBranchStatusV1::Active || is_terminal(&branch.session) {
         return;
     }
@@ -976,11 +1070,13 @@ fn expand_branch_choice(
             update_terminal_status(&mut child);
             if !config.defer_branch_settle {
                 let mut ignored_route_decisions = Vec::new();
+                let mut ignored_route_candidate_pools = Vec::new();
                 let mut ignored_combat_performance = Vec::new();
                 settle_branch_to_frontier(
                     &mut child,
                     config,
                     &mut ignored_route_decisions,
+                    &mut ignored_route_candidate_pools,
                     &mut ignored_combat_performance,
                 );
             }

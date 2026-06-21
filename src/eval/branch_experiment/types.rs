@@ -17,7 +17,7 @@ use crate::eval::run_control::{
 };
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 26;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 27;
 pub const BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1: &str =
     "card_reward_strategic_trace_v1";
 
@@ -119,6 +119,8 @@ pub struct BranchExperimentReportV1 {
     pub strategy_requests: Vec<BranchExperimentStrategyRequestV1>,
     #[serde(default)]
     pub route_decisions: Vec<BranchExperimentRouteDecisionV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub route_candidate_pools: Vec<BranchExperimentRouteCandidatePoolV1>,
     pub frontier_groups: Vec<BranchExperimentFrontierGroupV1>,
     pub branches: Vec<BranchExperimentBranchReportV1>,
 }
@@ -321,6 +323,43 @@ pub struct BranchExperimentRouteDecisionV1 {
     pub command: String,
     pub elite_prep_bp: i32,
     pub first_elite: BranchExperimentFirstEliteEvidenceV1,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentRouteCandidatePoolV1 {
+    pub branch_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_choices: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub branch_commands: Vec<String>,
+    pub decision_id: String,
+    pub boundary_title: String,
+    pub frontier_key: String,
+    pub depth: usize,
+    pub candidate_count: usize,
+    pub selected_index: Option<usize>,
+    pub candidates: Vec<BranchExperimentRouteCandidateEntryV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentRouteCandidateEntryV1 {
+    pub candidate_id: String,
+    pub rank: usize,
+    pub selected: bool,
+    pub target: String,
+    pub room_type: String,
+    pub move_kind: String,
+    pub safety: String,
+    pub score: f32,
+    pub command: String,
+    pub elite_prep_bp: i32,
+    pub first_elite: BranchExperimentFirstEliteEvidenceV1,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reasons: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cautions: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

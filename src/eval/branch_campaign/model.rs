@@ -2,7 +2,10 @@ use crate::ai::strategic::BranchSignatureCompact;
 use crate::eval::branch_experiment::{
     BranchExperimentBossCombatRecordV1, BranchExperimentRewardOptionPortfolioV1,
 };
-use crate::eval::campaign_journal::CampaignJournalV1;
+use crate::eval::campaign_journal::{
+    CampaignJournalCandidateAdmissionTraceV1, CampaignJournalCandidateDispositionV1,
+    CampaignJournalV1,
+};
 use crate::eval::combat_lab_probe_v1::CombatLabProbePacketV1;
 use crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1;
 use crate::eval::reward_boundary_packet_v1::RewardBoundaryPacketV1;
@@ -66,6 +69,8 @@ pub struct BranchCampaignBranchV1 {
     pub status: BranchCampaignBranchStatusV1,
     #[serde(default)]
     pub stop_reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub continuation_origin: Option<BranchCampaignContinuationOriginV1>,
     /// Deprecated compatibility field. Older campaign checkpoints may contain
     /// this, but campaign selection no longer carries local decision signals
     /// across rounds.
@@ -76,6 +81,26 @@ pub struct BranchCampaignBranchV1 {
     pub final_boss_combat_record: Option<BranchExperimentBossCombatRecordV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub combat_lab_probes: Vec<CombatLabProbePacketV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignContinuationOriginV1 {
+    pub kind: String,
+    pub source_event_id: String,
+    pub decision_id: String,
+    pub event_type: String,
+    pub parent_branch_id: String,
+    pub parent_frontier_title: String,
+    pub candidate_index: usize,
+    pub candidate_id: String,
+    pub command: String,
+    pub label: String,
+    pub semantic_class: String,
+    #[serde(default)]
+    pub admission: CampaignJournalCandidateAdmissionTraceV1,
+    pub disposition: CampaignJournalCandidateDispositionV1,
+    pub milestone: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

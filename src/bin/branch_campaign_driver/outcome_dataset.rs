@@ -5,7 +5,7 @@ use std::process::Command;
 use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_with_detail_v1,
     run_branch_campaign_from_report_with_checkpoint_v1, BranchCampaignBranchStatusV1,
-    BranchCampaignBranchV1, BranchCampaignReportV1,
+    BranchCampaignBranchV1, BranchCampaignContinuationOriginV1, BranchCampaignReportV1,
 };
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     analyze_branch_outcome_records_v1, extract_branch_outcome_records_v1,
@@ -397,6 +397,22 @@ fn coverage_gap_branch_from_target_v1(
         frontier_title: format!("Coverage Gap: {}", target.event_type),
         status: BranchCampaignBranchStatusV1::Active,
         stop_reason: format!("coverage gap continuation from {}", target.decision_id),
+        continuation_origin: Some(BranchCampaignContinuationOriginV1 {
+            kind: "coverage_gap".to_string(),
+            source_event_id: target.event_id.clone(),
+            decision_id: target.decision_id.clone(),
+            event_type: target.event_type.clone(),
+            parent_branch_id: target.parent_branch_id.clone(),
+            parent_frontier_title: target.parent_frontier_title.clone(),
+            candidate_index: target.candidate_index,
+            candidate_id: target.candidate_id.clone(),
+            command: target.command.clone(),
+            label: target.label.clone(),
+            semantic_class: target.semantic_class.clone(),
+            admission: target.admission.clone(),
+            disposition: target.disposition,
+            milestone: target.milestone.clone(),
+        }),
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
         final_boss_combat_record: None,
@@ -436,6 +452,58 @@ fn find_campaign_branch_by_id_v1<'a>(
         .chain(report.abandoned.iter())
         .chain(report.stuck.iter())
         .find(|branch| branch.branch_id == branch_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_simulator::eval::campaign_journal::{
+        CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateAdmissionTraceV1,
+        CampaignJournalCandidateDispositionV1,
+    };
+
+    #[test]
+    fn coverage_gap_branch_records_structured_target_origin() {
+        let target = CoverageGapContinuationTargetV1 {
+            decision_id: "root:round1:reward0".to_string(),
+            event_id: "root:round1:reward0:candidate_set".to_string(),
+            event_type: "reward".to_string(),
+            parent_branch_id: "root".to_string(),
+            parent_frontier_title: "Card Reward".to_string(),
+            parent_commands: vec!["rp 0".to_string()],
+            parent_choices: vec!["Pommel Strike".to_string()],
+            candidate_index: 2,
+            candidate_id: "pruned:2:rp 2".to_string(),
+            command: "rp 2".to_string(),
+            label: "Shrug It Off".to_string(),
+            semantic_class: "block".to_string(),
+            admission: CampaignJournalCandidateAdmissionTraceV1::new(
+                CampaignJournalCandidateAdmissionStatusV1::Deferred,
+                "reward_portfolio",
+                "pruned",
+            ),
+            disposition: CampaignJournalCandidateDispositionV1::Pruned,
+            milestone: "next_major_boundary".to_string(),
+        };
+
+        let branch = coverage_gap_branch_from_target_v1(&target);
+        let origin = branch
+            .continuation_origin
+            .as_ref()
+            .expect("coverage-gap branch should carry target origin");
+
+        assert_eq!(origin.kind, "coverage_gap");
+        assert_eq!(origin.decision_id, target.decision_id);
+        assert_eq!(origin.source_event_id, target.event_id);
+        assert_eq!(origin.event_type, target.event_type);
+        assert_eq!(origin.candidate_id, target.candidate_id);
+        assert_eq!(origin.candidate_index, target.candidate_index);
+        assert_eq!(origin.command, target.command);
+        assert_eq!(origin.label, target.label);
+        assert_eq!(origin.milestone, target.milestone);
+        assert_eq!(origin.admission.status, target.admission.status);
+        assert_eq!(origin.disposition, target.disposition);
+    }
 }
 
 pub(super) fn run_branch_outcome_dataset_export(input: &DatasetCommandInput) -> Result<(), String> {

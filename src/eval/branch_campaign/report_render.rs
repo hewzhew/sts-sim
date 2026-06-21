@@ -346,11 +346,12 @@ pub fn render_branch_campaign_compact_with_detail_v1(
         let baseline = shown.first().copied();
         for (index, branch) in shown.into_iter().enumerate() {
             lines.push(format!(
-                "  {}. {} | {} | choices: {}{}",
+                "  {}. {} | {} | choices: {}{}{}",
                 index + 1,
                 render_campaign_branch_state(branch),
                 branch.frontier_title,
                 render_compact_choice_path(&branch.choice_labels),
+                render_campaign_continuation_origin_suffix_v1(branch),
                 render_campaign_branch_diff_suffix_v1(branch, baseline, index)
             ));
         }
@@ -369,16 +370,29 @@ pub fn render_branch_campaign_compact_with_detail_v1(
         let baseline = shown.first().copied();
         for (index, branch) in shown.into_iter().enumerate() {
             lines.push(format!(
-                "  {}. {} | {} | choices: {}{}",
+                "  {}. {} | {} | choices: {}{}{}",
                 index + 1,
                 render_campaign_branch_state(branch),
                 branch.frontier_title,
                 render_compact_choice_path(&branch.choice_labels),
+                render_campaign_continuation_origin_suffix_v1(branch),
                 render_campaign_branch_diff_suffix_v1(branch, baseline, index)
             ));
         }
     }
     lines.join("\n")
+}
+
+fn render_campaign_continuation_origin_suffix_v1(branch: &BranchCampaignBranchV1) -> String {
+    let Some(origin) = &branch.continuation_origin else {
+        return String::new();
+    };
+    format!(
+        " | origin={}:{}:{}",
+        origin.kind,
+        origin.event_type,
+        compact_campaign_choice_label_metadata_v1(&origin.label)
+    )
 }
 
 fn render_round_limits_v1(branch_limit_hit: bool, wall_limit_hit: bool) -> String {

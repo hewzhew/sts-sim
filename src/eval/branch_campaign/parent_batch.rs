@@ -1,9 +1,10 @@
 use crate::eval::branch_experiment::{
     run_branch_experiment_from_session_after_prefix_with_snapshots_v1,
     run_branch_experiment_from_session_with_snapshots_v1, run_branch_experiment_with_snapshots_v1,
-    BranchExperimentBossRelicCandidatePoolV1, BranchExperimentCampfirePlanCandidatePoolV1,
-    BranchExperimentConfigV1, BranchExperimentEventCandidatePoolV1,
-    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentBossRelicCandidatePoolV1, BranchExperimentBranchReportV1,
+    BranchExperimentCampfirePlanCandidatePoolV1, BranchExperimentConfigV1,
+    BranchExperimentEventCandidatePoolV1, BranchExperimentRewardOptionPortfolioEntryV1,
+    BranchExperimentRewardOptionPortfolioV1, BranchExperimentRouteCandidatePoolV1,
     BranchExperimentRouteDecisionV1, BranchExperimentRunResultV1,
     BranchExperimentShopPlanCandidateEntryV1, BranchExperimentShopPlanCandidatePoolV1,
     BranchExperimentStrategyRequestV1,
@@ -11,10 +12,10 @@ use crate::eval::branch_experiment::{
 use crate::eval::campaign_journal::{
     campaign_journal_candidate_from_boss_relic_entry_v1,
     campaign_journal_candidate_from_campfire_entry_v1,
-    campaign_journal_candidate_from_event_entry_v1, reward_portfolio_from_journal_event_v1,
-    CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateAdmissionTraceV1,
-    CampaignJournalCandidateDispositionV1, CampaignJournalCandidateV1,
-    CampaignJournalEventPayloadV1, CampaignJournalEventV1,
+    campaign_journal_candidate_from_event_entry_v1, campaign_journal_candidate_from_route_entry_v1,
+    reward_portfolio_from_journal_event_v1, CampaignJournalCandidateAdmissionStatusV1,
+    CampaignJournalCandidateAdmissionTraceV1, CampaignJournalCandidateDispositionV1,
+    CampaignJournalCandidateV1, CampaignJournalEventPayloadV1, CampaignJournalEventV1,
 };
 
 use super::branch_display::render_compact_choice_path;
@@ -30,10 +31,10 @@ use super::route_evidence::merge_campaign_route_decisions_v1;
 use super::state_graph::{BranchStateReplayStartV1, BranchStateStoreV1};
 use super::summary::campaign_refresh_branch_summary_from_session_v1;
 use super::{
-    campaign_branch_from_report_branch_v1, campaign_replay_commands_for_path_v1,
-    maybe_attach_campaign_combat_lab_probe_v1, BranchCampaignBranchStatusV1,
-    BranchCampaignBranchV1, BranchCampaignConfigV1, BranchCampaignDecisionObservationV1,
-    BranchCampaignRouteEvidenceSummaryV1,
+    campaign_branch_from_report_branch_v1, campaign_child_branch_id_v1,
+    campaign_replay_commands_for_path_v1, maybe_attach_campaign_combat_lab_probe_v1,
+    BranchCampaignBranchStatusV1, BranchCampaignBranchV1, BranchCampaignConfigV1,
+    BranchCampaignDecisionObservationV1, BranchCampaignRouteEvidenceSummaryV1,
 };
 
 struct BranchCampaignParentRoundResultV1 {
@@ -308,6 +309,15 @@ fn campaign_journal_events_from_report_v1(
         report,
     ));
     events.extend(campaign_boss_relic_branch_journal_events_v1(
+        parent,
+        parent_index,
+        round_number,
+        combat_budget_retry_used,
+        parent_act,
+        parent_floor,
+        report,
+    ));
+    events.extend(campaign_route_candidate_pool_journal_events_v1(
         parent,
         parent_index,
         round_number,
@@ -720,6 +730,141 @@ fn campaign_route_decision_journal_events_v1(
                 decision,
             )
         })
+        .collect()
+}
+
+fn campaign_route_candidate_pool_journal_events_v1(
+    parent: &BranchCampaignBranchV1,
+    parent_index: usize,
+    round_number: usize,
+    combat_budget_retry_used: bool,
+    parent_act: u8,
+    parent_floor: i32,
+    report: &crate::eval::branch_experiment::BranchExperimentReportV1,
+) -> Vec<CampaignJournalEventV1> {
+    report
+        .route_candidate_pools
+        .iter()
+        .enumerate()
+        .map(|(pool_index, pool)| {
+            let route_branch = report
+                .branches
+                .iter()
+                .find(|branch| branch.branch_id == pool.branch_id);
+            campaign_route_candidate_pool_journal_event_v1(
+                parent,
+                parent_index,
+                round_number,
+                combat_budget_retry_used,
+                parent_act,
+                parent_floor,
+                pool_index,
+                pool,
+                route_branch,
+            )
+        })
+        .collect()
+}
+
+fn campaign_route_candidate_pool_journal_event_v1(
+    parent: &BranchCampaignBranchV1,
+    parent_index: usize,
+    round_number: usize,
+    combat_budget_retry_used: bool,
+    parent_act: u8,
+    parent_floor: i32,
+    pool_index: usize,
+    pool: &BranchExperimentRouteCandidatePoolV1,
+    route_branch: Option<&BranchExperimentBranchReportV1>,
+) -> CampaignJournalEventV1 {
+    let decision_id = format!(
+        "{}:round{}:route_candidate_pool{}:{}",
+        parent.branch_id, round_number, pool_index, pool.branch_id
+    );
+    let branch_id = campaign_child_branch_id_v1(&parent.branch_id, &pool.branch_id);
+    let branch_frontier_title = route_branch
+        .map(|branch| branch.frontier.boundary_title.clone())
+        .unwrap_or_else(|| pool.boundary_title.clone());
+    let act = route_branch
+        .map(|branch| branch.frontier.act)
+        .unwrap_or(parent_act);
+    let floor = route_branch
+        .map(|branch| branch.frontier.floor)
+        .unwrap_or(parent_floor);
+    let branch_choices = combine_campaign_path_v1(&parent.choice_labels, &pool.branch_choices)
+        .or_else(|| {
+            route_branch.and_then(|branch| {
+                combine_campaign_path_v1(
+                    &parent.choice_labels,
+                    &branch_experiment_choice_labels_v1(branch),
+                )
+            })
+        })
+        .unwrap_or_else(|| parent.choice_labels.clone());
+    let branch_commands = combine_campaign_path_v1(&parent.commands, &pool.branch_commands)
+        .or_else(|| {
+            route_branch.and_then(|branch| {
+                combine_campaign_path_v1(
+                    &parent.commands,
+                    &branch_experiment_choice_commands_v1(branch),
+                )
+            })
+        })
+        .unwrap_or_else(|| parent.commands.clone());
+    CampaignJournalEventV1 {
+        event_id: format!("{decision_id}:candidate_set"),
+        round: round_number,
+        branch_id,
+        branch_index: parent_index,
+        branch_frontier_title,
+        act,
+        floor,
+        branch_choices,
+        branch_commands,
+        combat_budget_retry_used,
+        payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+            decision_id,
+            boundary_title: pool.boundary_title.clone(),
+            frontier_key: pool.frontier_key.clone(),
+            depth: pool.depth,
+            candidate_count: pool.candidate_count,
+            selected_index: pool.selected_index,
+            candidates: route_candidate_pool_candidates_v1(pool),
+        },
+    }
+}
+
+fn route_candidate_pool_candidates_v1(
+    pool: &BranchExperimentRouteCandidatePoolV1,
+) -> Vec<CampaignJournalCandidateV1> {
+    pool.candidates
+        .iter()
+        .map(campaign_journal_candidate_from_route_entry_v1)
+        .collect()
+}
+
+fn combine_campaign_path_v1(parent_path: &[String], local_path: &[String]) -> Option<Vec<String>> {
+    if local_path.is_empty() {
+        return None;
+    }
+    let mut combined = parent_path.to_vec();
+    combined.extend(local_path.iter().cloned());
+    Some(combined)
+}
+
+fn branch_experiment_choice_labels_v1(branch: &BranchExperimentBranchReportV1) -> Vec<String> {
+    branch
+        .choices
+        .iter()
+        .map(|choice| choice.label.clone())
+        .collect()
+}
+
+fn branch_experiment_choice_commands_v1(branch: &BranchExperimentBranchReportV1) -> Vec<String> {
+    branch
+        .choices
+        .iter()
+        .map(|choice| choice.command.clone())
         .collect()
 }
 

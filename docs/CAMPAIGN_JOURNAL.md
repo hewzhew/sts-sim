@@ -90,6 +90,17 @@ CampaignJournalV1
         label
         semantic_class
         disposition: kept | pruned
+    route_candidate_pool
+      decision_id
+      boundary_title
+      frontier_key
+      candidate_count
+      selected_index
+      candidates[]
+        command
+        label
+        semantic_class
+        disposition: kept | pruned
     route_decision
       decision_id
       route_branch_id
@@ -167,10 +178,13 @@ journal events, not the other way around.
 6. Boss relic candidate pools are now captured in
    `BranchExperimentReportV1.boss_relic_candidate_pools` and surfaced as
    `boss_relic_candidate_pool` journal events.
-7. Route planner selections are now surfaced as `route_decision` journal
-   events.
-8. Link milestone outcomes to prior `decision_id` values.
-9. Gradually remove report-only decision attachments once views read from the
+7. Route planner candidate pools are now captured in
+   `BranchExperimentReportV1.route_candidate_pools` and surfaced as
+   `route_candidate_pool` journal events.
+8. Route planner selections remain surfaced as `route_decision` journal events
+   for compatibility and selected-action evidence.
+9. Link milestone outcomes to prior `decision_id` values.
+10. Gradually remove report-only decision attachments once views read from the
    journal directly.
 
 ## Design Rules
@@ -208,11 +222,13 @@ journal events, not the other way around.
   admission marked separately.
 - Boss relic candidate pools are complete boss relic choice sets with projected
   run debt and policy class metadata; all options remain branch candidates.
-- Route decisions are the route planner selections emitted while expanding a
-  parent branch. They record the selected target and safety evidence, not the
-  full map option set. Because of that, route events are intentionally excluded
-  from coverage gap continuation until map choices are recorded as candidate
-  pools rather than selected actions.
+- Route candidate pools are full route planner option sets emitted while
+  expanding a parent branch. They are eligible for journal coverage diagnostics
+  and targeted coverage-gap continuation.
+- Route decisions are the selected route planner actions emitted while
+  expanding a parent branch. They record selected target and safety evidence
+  for compatibility; new continuation and learning paths should prefer
+  `route_candidate_pool`.
 - Decision-outcome samples only include candidates that have an observed
   descendant branch in the report. A candidate that was recorded in the journal
   but never continued by campaign scheduling is still visible in

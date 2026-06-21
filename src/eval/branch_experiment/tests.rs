@@ -26,7 +26,7 @@ use std::path::PathBuf;
 
 #[test]
 fn branch_experiment_schema_version_tracks_lineage_pruned_summary() {
-    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 22);
+    assert_eq!(BRANCH_EXPERIMENT_SCHEMA_VERSION, 27);
 }
 
 #[test]
@@ -56,6 +56,36 @@ fn branch_experiment_expands_pending_card_reward_choices() {
     assert!(report.branches.iter().any(|branch| {
         branch.choices[0].command == "rp 1" && branch.choices[0].label == "Cleave"
     }));
+}
+
+#[test]
+fn branch_experiment_records_route_candidate_pool() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.event_state = None;
+    session.engine_state = EngineState::MapNavigation;
+
+    let report = run_branch_experiment_from_session(
+        session,
+        &BranchExperimentConfigV1 {
+            max_depth: 1,
+            max_branches: 4,
+            ..BranchExperimentConfigV1::default()
+        },
+    );
+
+    assert!(!report.route_decisions.is_empty());
+    assert!(!report.route_candidate_pools.is_empty());
+    let pool = &report.route_candidate_pools[0];
+    assert_eq!(pool.candidate_count, pool.candidates.len());
+    assert_eq!(pool.branch_id, "root");
+    assert!(pool.branch_commands.is_empty());
+    assert!(pool.candidate_count >= 1);
+    assert!(pool.candidates.iter().any(|candidate| candidate.selected));
+    assert!(pool
+        .candidates
+        .iter()
+        .all(|candidate| candidate.command.starts_with("go ")
+            || candidate.command.starts_with("fly ")));
 }
 
 #[test]

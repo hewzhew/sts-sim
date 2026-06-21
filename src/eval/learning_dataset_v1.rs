@@ -1604,7 +1604,8 @@ fn journal_decision_id_v1(event: &CampaignJournalEventV1) -> Option<&str> {
         | CampaignJournalEventPayloadV1::ShopCandidatePool { decision_id, .. }
         | CampaignJournalEventPayloadV1::CampfireCandidatePool { decision_id, .. }
         | CampaignJournalEventPayloadV1::EventCandidatePool { decision_id, .. }
-        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { decision_id, .. } => {
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { decision_id, .. }
+        | CampaignJournalEventPayloadV1::RouteCandidatePool { decision_id, .. } => {
             Some(decision_id)
         }
         CampaignJournalEventPayloadV1::RouteDecision { .. } => None,
@@ -1619,6 +1620,7 @@ fn journal_decision_event_kind_v1(event: &CampaignJournalEventV1) -> &'static st
         CampaignJournalEventPayloadV1::CampfireCandidatePool { .. } => "campfire",
         CampaignJournalEventPayloadV1::EventCandidatePool { .. } => "event",
         CampaignJournalEventPayloadV1::BossRelicCandidatePool { .. } => "boss_relic",
+        CampaignJournalEventPayloadV1::RouteCandidatePool { .. } => "route",
         CampaignJournalEventPayloadV1::RouteDecision { .. } => "route",
     }
 }
@@ -1641,6 +1643,7 @@ fn coverage_gap_candidate_milestone_v1(event: &CampaignJournalEventV1) -> String
         CampaignJournalEventPayloadV1::RewardCandidateSet { .. } => {
             "next_major_boundary".to_string()
         }
+        CampaignJournalEventPayloadV1::RouteCandidatePool { .. } => "route_frontier".to_string(),
         CampaignJournalEventPayloadV1::RouteDecision { .. } => {
             "route_not_candidate_pool".to_string()
         }
@@ -1654,7 +1657,8 @@ fn journal_decision_candidates_v1(event: &CampaignJournalEventV1) -> &[CampaignJ
         | CampaignJournalEventPayloadV1::ShopCandidatePool { candidates, .. }
         | CampaignJournalEventPayloadV1::CampfireCandidatePool { candidates, .. }
         | CampaignJournalEventPayloadV1::EventCandidatePool { candidates, .. }
-        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { candidates, .. } => candidates,
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { candidates, .. }
+        | CampaignJournalEventPayloadV1::RouteCandidatePool { candidates, .. } => candidates,
         CampaignJournalEventPayloadV1::RouteDecision { .. } => &[],
     }
 }
@@ -2546,6 +2550,52 @@ mod tests {
     }
 
     #[test]
+    fn coverage_gap_continuation_plan_targets_unobserved_route_candidates() {
+        let mut route_one = sample_branch_outcome_record();
+        route_one.branch_id = "root.go 1".to_string();
+        route_one.commands = vec!["go 1".to_string()];
+        route_one.choice_labels = vec!["x=1 Monster".to_string()];
+
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-route-pool0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Map".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                decision_id: "journal-route-pool0".to_string(),
+                boundary_title: "Map".to_string(),
+                frontier_key: "map-frontier".to_string(),
+                depth: 0,
+                candidate_count: 2,
+                selected_index: Some(0),
+                candidates: vec![
+                    sample_journal_candidate("go 1", "x=1 Monster"),
+                    sample_journal_candidate("go 2", "x=2 Elite"),
+                ],
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[route_one], 8, 2);
+        let rendered = render_coverage_gap_continuation_plan_v1(&plan);
+
+        assert_eq!(plan.total_decisions, 1);
+        assert_eq!(plan.total_candidates, 2);
+        assert_eq!(plan.total_unobserved_candidates, 1);
+        assert_eq!(plan.targets[0].decision_id, "journal-route-pool0");
+        assert_eq!(plan.targets[0].command, "go 2");
+        assert_eq!(plan.targets[0].label, "x=2 Elite");
+        assert_eq!(plan.targets[0].milestone, "route_frontier");
+        assert!(rendered.contains("x=2 Elite"));
+    }
+
+    #[test]
     fn coverage_gap_continuation_prioritizes_kept_candidates_before_pruned_candidates() {
         let mut report = sample_campaign_report_with_branches(Vec::new());
         report.journal.events.push(CampaignJournalEventV1 {
@@ -3285,6 +3335,7 @@ mod tests {
             frontier_title: "Card Reward".to_string(),
             status,
             stop_reason: String::new(),
+            continuation_origin: None,
             lineage_decision_signal_rank_adjustment: 0,
             rank_key: 42,
             final_boss_combat_record: None,

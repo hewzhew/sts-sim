@@ -135,6 +135,17 @@ fn journal_event_extra_summary_v1(event: &CampaignJournalEventV1) -> String {
             branch_option_count,
             ..
         } => format!(" branch_options={}", branch_option_count),
+        CampaignJournalEventPayloadV1::RouteCandidatePool {
+            candidate_count,
+            selected_index,
+            ..
+        } => format!(
+            " candidates={} selected_index={}",
+            candidate_count,
+            selected_index
+                .map(|index| index.to_string())
+                .unwrap_or_else(|| "-".to_string())
+        ),
         CampaignJournalEventPayloadV1::RouteDecision {
             target,
             safety,
@@ -211,7 +222,8 @@ fn structured_journal_query_match_v1(
         )),
         "route" | "routes" | "map" => Some(matches!(
             &event.payload,
-            CampaignJournalEventPayloadV1::RouteDecision { .. }
+            CampaignJournalEventPayloadV1::RouteCandidatePool { .. }
+                | CampaignJournalEventPayloadV1::RouteDecision { .. }
         )),
         "rewardcandidateset" => Some(matches_type("rewardcandidateset")),
         "shopbranchcandidateset" => Some(matches_type("shopbranchcandidateset")),
@@ -219,6 +231,7 @@ fn structured_journal_query_match_v1(
         "campfirecandidatepool" => Some(matches_type("campfirecandidatepool")),
         "eventcandidatepool" => Some(matches_type("eventcandidatepool")),
         "bossreliccandidatepool" => Some(matches_type("bossreliccandidatepool")),
+        "routecandidatepool" => Some(matches_type("routecandidatepool")),
         "routedecision" => Some(matches_type("routedecision")),
         _ => None,
     }
@@ -232,6 +245,7 @@ fn journal_event_type_v1(event: &CampaignJournalEventV1) -> &'static str {
         CampaignJournalEventPayloadV1::CampfireCandidatePool { .. } => "campfire_candidate_pool",
         CampaignJournalEventPayloadV1::EventCandidatePool { .. } => "event_candidate_pool",
         CampaignJournalEventPayloadV1::BossRelicCandidatePool { .. } => "boss_relic_candidate_pool",
+        CampaignJournalEventPayloadV1::RouteCandidatePool { .. } => "route_candidate_pool",
         CampaignJournalEventPayloadV1::RouteDecision { .. } => "route_decision",
     }
 }
@@ -243,7 +257,8 @@ fn journal_event_boundary_title_v1(event: &CampaignJournalEventV1) -> &str {
         | CampaignJournalEventPayloadV1::ShopCandidatePool { boundary_title, .. }
         | CampaignJournalEventPayloadV1::CampfireCandidatePool { boundary_title, .. }
         | CampaignJournalEventPayloadV1::EventCandidatePool { boundary_title, .. }
-        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { boundary_title, .. } => {
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { boundary_title, .. }
+        | CampaignJournalEventPayloadV1::RouteCandidatePool { boundary_title, .. } => {
             boundary_title
         }
         CampaignJournalEventPayloadV1::RouteDecision { .. } => "Map",
@@ -257,9 +272,8 @@ fn journal_event_frontier_key_v1(event: &CampaignJournalEventV1) -> &str {
         | CampaignJournalEventPayloadV1::ShopCandidatePool { frontier_key, .. }
         | CampaignJournalEventPayloadV1::CampfireCandidatePool { frontier_key, .. }
         | CampaignJournalEventPayloadV1::EventCandidatePool { frontier_key, .. }
-        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { frontier_key, .. } => {
-            frontier_key
-        }
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { frontier_key, .. }
+        | CampaignJournalEventPayloadV1::RouteCandidatePool { frontier_key, .. } => frontier_key,
         CampaignJournalEventPayloadV1::RouteDecision { target, .. } => target,
     }
 }
@@ -271,7 +285,8 @@ fn journal_event_depth_v1(event: &CampaignJournalEventV1) -> usize {
         | CampaignJournalEventPayloadV1::ShopCandidatePool { depth, .. }
         | CampaignJournalEventPayloadV1::CampfireCandidatePool { depth, .. }
         | CampaignJournalEventPayloadV1::EventCandidatePool { depth, .. }
-        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { depth, .. } => *depth,
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { depth, .. }
+        | CampaignJournalEventPayloadV1::RouteCandidatePool { depth, .. } => *depth,
         CampaignJournalEventPayloadV1::RouteDecision { .. } => 0,
     }
 }
@@ -283,7 +298,8 @@ fn journal_event_candidates_v1(event: &CampaignJournalEventV1) -> &[CampaignJour
         | CampaignJournalEventPayloadV1::ShopCandidatePool { candidates, .. }
         | CampaignJournalEventPayloadV1::CampfireCandidatePool { candidates, .. }
         | CampaignJournalEventPayloadV1::EventCandidatePool { candidates, .. }
-        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { candidates, .. } => candidates,
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { candidates, .. }
+        | CampaignJournalEventPayloadV1::RouteCandidatePool { candidates, .. } => candidates,
         CampaignJournalEventPayloadV1::RouteDecision { .. } => &[],
     }
 }
@@ -369,6 +385,19 @@ fn journal_event_payload_search_terms_v1(event: &CampaignJournalEventV1) -> Vec<
             format!("first_elite_paths:{}", first_elite.paths_with_first_elite),
             format!("first_elite_forced:{}", first_elite.forced),
             format!("first_elite_optional:{}", first_elite.optional),
+        ],
+        CampaignJournalEventPayloadV1::RouteCandidatePool {
+            selected_index,
+            candidate_count,
+            ..
+        } => vec![
+            format!("candidate_count:{candidate_count}"),
+            format!(
+                "selected_index:{}",
+                selected_index
+                    .map(|index| index.to_string())
+                    .unwrap_or_else(|| "-".to_string())
+            ),
         ],
         _ => Vec::new(),
     }

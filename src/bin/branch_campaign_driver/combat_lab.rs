@@ -433,6 +433,7 @@ mod tests {
             frontier_title: "Shop".to_string(),
             status: BranchCampaignBranchStatusV1::Active,
             stop_reason: String::new(),
+            continuation_origin: None,
             lineage_decision_signal_rank_adjustment: 0,
             rank_key: 22_100,
             final_boss_combat_record: None,

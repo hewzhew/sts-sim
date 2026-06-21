@@ -63,10 +63,10 @@ use lineage::campaign_branch_boss_relic_lineage_key_v1;
 pub use model::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
     BranchCampaignCheckpointSessionV1, BranchCampaignCheckpointV1,
-    BranchCampaignDecisionObservationV1, BranchCampaignReportV1, BranchCampaignRoundSummaryV1,
-    BranchCampaignRouteEvidenceExampleV1, BranchCampaignRouteEvidenceSummaryV1,
-    BranchCampaignRunPreludeV1, BranchCampaignRunResultV1, BranchCampaignSelectionV1,
-    BranchCampaignStateStoreSummaryV1, BranchCampaignStrategyRequestV1,
+    BranchCampaignContinuationOriginV1, BranchCampaignDecisionObservationV1,
+    BranchCampaignReportV1, BranchCampaignRoundSummaryV1, BranchCampaignRouteEvidenceExampleV1,
+    BranchCampaignRouteEvidenceSummaryV1, BranchCampaignRunPreludeV1, BranchCampaignRunResultV1,
+    BranchCampaignSelectionV1, BranchCampaignStateStoreSummaryV1, BranchCampaignStrategyRequestV1,
 };
 use parent_batch::run_campaign_parent_batch_v1;
 #[cfg(test)]
@@ -1074,6 +1074,7 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
         frontier_title: "start".to_string(),
         status: BranchCampaignBranchStatusV1::Active,
         stop_reason: "initial".to_string(),
+        continuation_origin: None,
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
         final_boss_combat_record: None,
@@ -1584,6 +1585,7 @@ pub fn campaign_branch_from_report_branch_v1(
         frontier_title: branch.summary.boundary_title.clone(),
         status: campaign_status_from_report_status(branch.status),
         stop_reason: branch.stop_reason.clone(),
+        continuation_origin: parent.continuation_origin.clone(),
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: branch.rank_key,
         final_boss_combat_record: branch.final_boss_combat_record.clone(),
@@ -1591,7 +1593,7 @@ pub fn campaign_branch_from_report_branch_v1(
     }
 }
 
-fn campaign_child_branch_id_v1(parent_id: &str, child_id: &str) -> String {
+pub(super) fn campaign_child_branch_id_v1(parent_id: &str, child_id: &str) -> String {
     if parent_id.trim().is_empty() || parent_id == "root" {
         if child_id.starts_with("root") {
             return child_id.to_string();

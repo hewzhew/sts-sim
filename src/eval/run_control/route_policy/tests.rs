@@ -115,6 +115,7 @@ fn route_go_attaches_compact_trace_boundary() {
         candidate_count,
         command,
         top_candidates,
+        candidate_pool,
         label_role,
         noncombat_record,
         ..
@@ -128,6 +129,10 @@ fn route_go_attaches_compact_trace_boundary() {
     assert!(command.starts_with("go ") || command.starts_with("fly "));
     assert!(!top_candidates.is_empty());
     assert!(top_candidates.len() <= 3);
+    assert_eq!(candidate_pool.len(), *candidate_count);
+    assert!(candidate_pool.iter().all(|candidate| {
+        candidate.command.starts_with("go ") || candidate.command.starts_with("fly ")
+    }));
     assert_eq!(label_role, "behavior_policy_not_teacher");
     let record = noncombat_record
         .as_ref()

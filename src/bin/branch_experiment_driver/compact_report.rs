@@ -1524,6 +1524,7 @@ mod tests {
             boss_relic_candidate_pools: Vec::new(),
             strategy_requests: Vec::new(),
             route_decisions: Vec::new(),
+            route_candidate_pools: Vec::new(),
             frontier_groups: Vec::new(),
             branches: Vec::new(),
         }

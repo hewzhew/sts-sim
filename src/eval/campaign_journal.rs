@@ -4,6 +4,7 @@ use crate::eval::branch_experiment::{
     BranchExperimentBossRelicCandidateEntryV1, BranchExperimentCampfirePlanCandidateEntryV1,
     BranchExperimentEventCandidateEntryV1, BranchExperimentFirstEliteEvidenceV1,
     BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentRouteCandidateEntryV1,
 };
 
 pub const CAMPAIGN_JOURNAL_SCHEMA_NAME: &str = "CampaignJournal";
@@ -122,6 +123,15 @@ pub enum CampaignJournalEventPayloadV1 {
         depth: usize,
         candidate_count: usize,
         branch_option_count: usize,
+        candidates: Vec<CampaignJournalCandidateV1>,
+    },
+    RouteCandidatePool {
+        decision_id: String,
+        boundary_title: String,
+        frontier_key: String,
+        depth: usize,
+        candidate_count: usize,
+        selected_index: Option<usize>,
         candidates: Vec<CampaignJournalCandidateV1>,
     },
     RouteDecision {
@@ -443,6 +453,64 @@ fn boss_relic_candidate_semantic_class_v1(
     parts.join(" ")
 }
 
+pub fn campaign_journal_candidate_from_route_entry_v1(
+    candidate: &BranchExperimentRouteCandidateEntryV1,
+) -> CampaignJournalCandidateV1 {
+    let (status, reason, disposition) = if candidate.selected {
+        (
+            CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+            "selected",
+            CampaignJournalCandidateDispositionV1::Kept,
+        )
+    } else if candidate.safety == "reject_unless_forced" {
+        (
+            CampaignJournalCandidateAdmissionStatusV1::Rejected,
+            "rejected",
+            CampaignJournalCandidateDispositionV1::Pruned,
+        )
+    } else {
+        (
+            CampaignJournalCandidateAdmissionStatusV1::Deferred,
+            "deferred",
+            CampaignJournalCandidateDispositionV1::Pruned,
+        )
+    };
+    CampaignJournalCandidateV1 {
+        candidate_id: candidate.candidate_id.clone(),
+        command: candidate.command.clone(),
+        label: candidate.target.clone(),
+        semantic_class: route_candidate_semantic_class_v1(candidate),
+        admission: CampaignJournalCandidateAdmissionTraceV1::new(
+            status,
+            "route_candidate_pool",
+            reason,
+        )
+        .with_lane(candidate.room_type.clone()),
+        disposition,
+    }
+}
+
+fn route_candidate_semantic_class_v1(candidate: &BranchExperimentRouteCandidateEntryV1) -> String {
+    let mut parts = vec![
+        format!("room:{}", candidate.room_type),
+        format!("move:{}", candidate.move_kind),
+        format!("safety:{}", candidate.safety),
+        format!("rank:{}", candidate.rank),
+        format!("score:{}", candidate.score),
+        format!("elite_prep_bp:{}", candidate.elite_prep_bp),
+    ];
+    if candidate.selected {
+        parts.push("selected:true".to_string());
+    }
+    if !candidate.reasons.is_empty() {
+        parts.push(format!("reasons:{}", candidate.reasons.join("+")));
+    }
+    if !candidate.cautions.is_empty() {
+        parts.push(format!("cautions:{}", candidate.cautions.join("+")));
+    }
+    parts.join(" ")
+}
+
 fn campfire_candidate_semantic_class_v1(
     candidate: &BranchExperimentCampfirePlanCandidateEntryV1,
 ) -> String {
@@ -628,6 +696,43 @@ mod tests {
         assert_eq!(
             admission.normalized_reason_code(),
             CampaignJournalCandidateAdmissionReasonCodeV1::Kept
+        );
+    }
+
+    #[test]
+    fn route_candidates_record_structured_admission_trace() {
+        let candidate = campaign_journal_candidate_from_route_entry_v1(
+            &crate::eval::branch_experiment::BranchExperimentRouteCandidateEntryV1 {
+                candidate_id: "route:0:go 1".to_string(),
+                rank: 0,
+                selected: true,
+                target: "x=1 y=1 Monster".to_string(),
+                room_type: "Monster".to_string(),
+                move_kind: "NormalEdge".to_string(),
+                safety: "ok".to_string(),
+                score: 1.25,
+                command: "go 1".to_string(),
+                elite_prep_bp: 42,
+                first_elite: BranchExperimentFirstEliteEvidenceV1::default(),
+                reasons: vec!["route planner selected".to_string()],
+                cautions: Vec::new(),
+            },
+        );
+
+        assert_eq!(candidate.candidate_id, "route:0:go 1");
+        assert_eq!(candidate.command, "go 1");
+        assert_eq!(
+            candidate.admission.status,
+            CampaignJournalCandidateAdmissionStatusV1::Scheduled
+        );
+        assert_eq!(candidate.admission.source, "route_candidate_pool");
+        assert_eq!(
+            candidate.admission.normalized_reason_category(),
+            CampaignJournalCandidateAdmissionReasonCategoryV1::BranchAdmission
+        );
+        assert_eq!(
+            candidate.admission.normalized_reason_code(),
+            CampaignJournalCandidateAdmissionReasonCodeV1::Selected
         );
     }
 }

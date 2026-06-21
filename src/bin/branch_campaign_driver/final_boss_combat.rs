@@ -253,6 +253,7 @@ mod tests {
                 frontier_title: "Game Over Victory".to_string(),
                 status: BranchCampaignBranchStatusV1::TerminalVictory,
                 stop_reason: "victory".to_string(),
+                continuation_origin: None,
                 lineage_decision_signal_rank_adjustment: 0,
                 rank_key: 0,
                 final_boss_combat_record: Some(BranchExperimentBossCombatRecordV1 {

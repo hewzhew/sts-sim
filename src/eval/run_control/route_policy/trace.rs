@@ -34,6 +34,7 @@ pub(super) fn route_go_trace_annotation(
             .unwrap_or("unknown-command")
             .to_string(),
         top_candidates: route_go_top_candidate_summaries(trace),
+        candidate_pool: route_go_candidate_summaries(trace, None),
         label_role: "behavior_policy_not_teacher".to_string(),
         route_evidence: Some(route_go_selection_evidence(candidate)),
         noncombat_record: Some(noncombat_record),
@@ -56,26 +57,44 @@ pub(super) fn route_policy_stop_annotation(
 fn route_go_top_candidate_summaries(
     trace: &RouteDecisionTraceV1,
 ) -> Vec<RoutePlannerCandidateSummaryV1> {
+    route_go_candidate_summaries(trace, Some(3))
+}
+
+fn route_go_candidate_summaries(
+    trace: &RouteDecisionTraceV1,
+    limit: Option<usize>,
+) -> Vec<RoutePlannerCandidateSummaryV1> {
     trace
         .candidates
         .iter()
-        .take(3)
+        .take(limit.unwrap_or(usize::MAX))
         .enumerate()
-        .map(|(rank, candidate)| RoutePlannerCandidateSummaryV1 {
-            rank,
-            target_x: candidate.target.x,
-            target_y: candidate.target.y,
-            room_type: room_type_label(candidate.target.room_type).to_string(),
-            move_kind: format!("{:?}", candidate.target.move_kind),
-            safety: safety_label(candidate.safety).to_string(),
-            score: candidate.total_score,
-            command: candidate
-                .suggested_command
-                .as_deref()
-                .unwrap_or("unknown-command")
-                .to_string(),
-        })
+        .map(route_go_candidate_summary)
         .collect()
+}
+
+fn route_go_candidate_summary(
+    (rank, candidate): (usize, &RouteCandidateTraceV1),
+) -> RoutePlannerCandidateSummaryV1 {
+    let evidence = route_go_selection_evidence(candidate);
+    RoutePlannerCandidateSummaryV1 {
+        rank,
+        target_x: candidate.target.x,
+        target_y: candidate.target.y,
+        room_type: room_type_label(candidate.target.room_type).to_string(),
+        move_kind: format!("{:?}", candidate.target.move_kind),
+        safety: safety_label(candidate.safety).to_string(),
+        score: candidate.total_score,
+        elite_prep_bp: evidence.elite_prep_bp,
+        first_elite: evidence.first_elite,
+        reasons: candidate.reasons.clone(),
+        cautions: candidate.cautions.clone(),
+        command: candidate
+            .suggested_command
+            .as_deref()
+            .unwrap_or("unknown-command")
+            .to_string(),
+    }
 }
 
 fn route_go_selection_evidence(
