@@ -7,8 +7,8 @@ use crate::ai::noncombat_strategy_v1::{
     StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1, StrategyPackageIdV2,
 };
 use crate::ai::route_planner_v1::{
-    MapDecisionPacketV1, MapRouteTargetV1, NeedVectorV1, NodeFeaturesV1, RoutePathSummaryV1,
-    RouteSafetyFlagV1, RouteScoreTermsV1,
+    MapDecisionPacketV1, MapRouteTargetV1, NeedVectorV1, NodeFeaturesV1,
+    RouteCandidatePoolProvenanceV1, RoutePathSummaryV1, RouteSafetyFlagV1, RouteScoreTermsV1,
 };
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment_retention::{
@@ -343,6 +343,8 @@ pub struct BranchExperimentRouteCandidatePoolV1 {
     pub depth: usize,
     pub candidate_count: usize,
     pub selected_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidate_pool_provenance: Option<RouteCandidatePoolProvenanceV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub map_decision_packet: Option<MapDecisionPacketV1>,
     pub candidates: Vec<BranchExperimentRouteCandidateEntryV1>,

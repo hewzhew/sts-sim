@@ -5,7 +5,7 @@ use super::features::{MapRouteTargetV1, NodeFeaturesV1, RoutePathSummaryV1, Rout
 use super::score::{NeedVectorV1, RouteScoreTermsV1};
 
 pub const ROUTE_DECISION_TRACE_SCHEMA_NAME: &str = "RouteDecisionTraceV1";
-pub const ROUTE_DECISION_TRACE_SCHEMA_VERSION: u32 = 1;
+pub const ROUTE_DECISION_TRACE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RouteDecisionTraceV1 {
@@ -15,6 +15,8 @@ pub struct RouteDecisionTraceV1 {
     pub selection_mode: RouteSelectionModeV1,
     pub label_role: String,
     pub context: RouteDecisionContextV1,
+    #[serde(default)]
+    pub path_budget: usize,
     pub candidates: Vec<RouteCandidateTraceV1>,
     pub selected_index: Option<usize>,
     pub warnings: Vec<String>,

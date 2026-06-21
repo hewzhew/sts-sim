@@ -851,6 +851,7 @@ fn branch_route_candidate_pool_from_annotation(
         depth: 0,
         candidate_count: *candidate_count,
         selected_index: *selected_index,
+        candidate_pool_provenance: None,
         map_decision_packet: None,
         candidates: candidate_pool
             .iter()
@@ -910,6 +911,7 @@ fn branch_route_candidate_pool_from_map_packet_v1(
         depth: 0,
         candidate_count: packet.candidates.len(),
         selected_index: packet.selected_index,
+        candidate_pool_provenance: Some(packet.candidate_pool.clone()),
         map_decision_packet: Some(packet.clone()),
         candidates: packet
             .candidates

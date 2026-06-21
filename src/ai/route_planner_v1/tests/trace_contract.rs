@@ -1,6 +1,7 @@
 use crate::ai::route_planner_v1::{
     plan_route_decision_v1, render_route_decision_trace_v1, MapDecisionPacketV1,
-    RoutePlannerConfigV1, MAP_DECISION_PACKET_SCHEMA_NAME, ROUTE_DECISION_TRACE_SCHEMA_NAME,
+    RouteCandidateOrderingV1, RoutePlannerConfigV1, RouteProjectionCoverageV1,
+    MAP_DECISION_PACKET_SCHEMA_NAME, ROUTE_DECISION_TRACE_SCHEMA_NAME,
 };
 use crate::state::core::EngineState;
 use crate::state::RunState;
@@ -81,11 +82,36 @@ fn route_planner_map_packet_preserves_machine_readable_candidate_data() {
     assert_eq!(packet.schema_name, MAP_DECISION_PACKET_SCHEMA_NAME);
     assert_eq!(packet.selected_index, trace.selected_index);
     assert_eq!(packet.candidates.len(), trace.candidates.len());
+    assert_eq!(
+        packet.candidate_pool.legal_candidate_count,
+        trace.context.legal_next_nodes.len()
+    );
+    assert_eq!(
+        packet.candidate_pool.emitted_candidate_count,
+        trace.candidates.len()
+    );
+    assert!(packet.candidate_pool.complete_legal_pool);
+    assert_eq!(
+        packet.candidate_pool.ordering,
+        RouteCandidateOrderingV1::SafetyThenScoreThenX
+    );
     for (packet_candidate, trace_candidate) in packet.candidates.iter().zip(&trace.candidates) {
         assert_eq!(packet_candidate.target, trace_candidate.target);
         assert_eq!(
             packet_candidate.projection.path_summary,
             trace_candidate.path_summary
+        );
+        assert_eq!(
+            packet_candidate.projection.metadata.path_budget,
+            trace.path_budget
+        );
+        assert_eq!(
+            packet_candidate.projection.metadata.observed_path_count,
+            trace_candidate.path_summary.path_count
+        );
+        assert_ne!(
+            packet_candidate.projection.metadata.coverage,
+            RouteProjectionCoverageV1::NoVisibleContinuation
         );
         assert_eq!(
             packet_candidate.evaluation.score_terms,

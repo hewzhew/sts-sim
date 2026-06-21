@@ -389,16 +389,31 @@ fn journal_event_payload_search_terms_v1(event: &CampaignJournalEventV1) -> Vec<
         CampaignJournalEventPayloadV1::RouteCandidatePool {
             selected_index,
             candidate_count,
+            candidate_pool_provenance,
             ..
-        } => vec![
-            format!("candidate_count:{candidate_count}"),
-            format!(
-                "selected_index:{}",
-                selected_index
-                    .map(|index| index.to_string())
-                    .unwrap_or_else(|| "-".to_string())
-            ),
-        ],
+        } => {
+            let mut parts = vec![
+                format!("candidate_count:{candidate_count}"),
+                format!(
+                    "selected_index:{}",
+                    selected_index
+                        .map(|index| index.to_string())
+                        .unwrap_or_else(|| "-".to_string())
+                ),
+            ];
+            if let Some(provenance) = candidate_pool_provenance {
+                parts.push(format!(
+                    "legal_candidates:{}",
+                    provenance.legal_candidate_count
+                ));
+                parts.push(format!(
+                    "complete_legal_pool:{}",
+                    provenance.complete_legal_pool
+                ));
+                parts.push(format!("ordering:{:?}", provenance.ordering));
+            }
+            parts
+        }
         _ => Vec::new(),
     }
 }

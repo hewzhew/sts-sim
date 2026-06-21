@@ -81,6 +81,12 @@ fn branch_experiment_records_route_candidate_pool() {
     assert!(pool.branch_commands.is_empty());
     assert!(pool.candidate_count >= 1);
     assert!(pool.map_decision_packet.is_some());
+    let provenance = pool
+        .candidate_pool_provenance
+        .as_ref()
+        .expect("route pool should keep typed candidate pool provenance");
+    assert_eq!(provenance.emitted_candidate_count, pool.candidate_count);
+    assert!(provenance.complete_legal_pool);
     assert!(pool.candidates.iter().any(|candidate| candidate.selected));
     assert!(pool
         .candidates

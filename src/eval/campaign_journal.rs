@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ai::route_planner_v1::MapDecisionPacketV1;
+use crate::ai::route_planner_v1::{MapDecisionPacketV1, RouteCandidatePoolProvenanceV1};
 use crate::eval::branch_experiment::{
     BranchExperimentBossRelicCandidateEntryV1, BranchExperimentCampfirePlanCandidateEntryV1,
     BranchExperimentEventCandidateEntryV1, BranchExperimentFirstEliteEvidenceV1,
@@ -133,6 +133,8 @@ pub enum CampaignJournalEventPayloadV1 {
         depth: usize,
         candidate_count: usize,
         selected_index: Option<usize>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        candidate_pool_provenance: Option<RouteCandidatePoolProvenanceV1>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         map_decision_packet: Option<MapDecisionPacketV1>,
         candidates: Vec<CampaignJournalCandidateV1>,

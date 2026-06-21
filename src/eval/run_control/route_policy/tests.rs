@@ -136,6 +136,11 @@ fn route_go_attaches_compact_trace_boundary() {
         .expect("route planner annotation should carry a typed map packet");
     assert_eq!(packet.candidates.len(), *candidate_count);
     assert_eq!(packet.selected_index, *selected_index);
+    assert_eq!(
+        packet.candidate_pool.emitted_candidate_count,
+        *candidate_count
+    );
+    assert!(packet.candidate_pool.complete_legal_pool);
     assert!(packet
         .candidates
         .iter()

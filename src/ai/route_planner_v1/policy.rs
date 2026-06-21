@@ -91,6 +91,7 @@ pub fn plan_route_decision_v1(
         selection_mode: config.selection_mode,
         label_role: "behavior_policy_not_teacher".to_string(),
         context,
+        path_budget: config.path_budget,
         candidates,
         selected_index,
         warnings,

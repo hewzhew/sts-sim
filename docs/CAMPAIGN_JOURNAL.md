@@ -182,7 +182,12 @@ journal events, not the other way around.
    `BranchExperimentReportV1.route_candidate_pools` and surfaced as
    `route_candidate_pool` journal events. New route pools carry a typed
    `MapDecisionPacketV1` with `RouteMoveCandidateV1` entries; legacy candidate
-   labels and summaries are compatibility/display views only.
+   labels and summaries are compatibility/display views only. Route packets
+   include candidate-pool provenance (`legal_candidate_count`,
+   `complete_legal_pool`, ordering) and per-candidate projection metadata
+   (`path_budget`, `observed_path_count`, coverage). `possibly_truncated`
+   coverage is conservative: it means the visible-map DFS reached its configured
+   path budget, not that a route is good or bad.
 8. Route planner selections remain surfaced as `route_decision` journal events
    for compatibility and selected-action evidence.
 9. Link milestone outcomes to prior `decision_id` values.
@@ -198,7 +203,8 @@ journal events, not the other way around.
 - Prefer structured fields over parsing strings from rendered reports.
 - For map choices, consume `MapDecisionPacketV1` / `RouteMoveCandidateV1`
   (`target`, `action`, `features`, `projection`, `needs`, `evaluation`) rather
-  than `RoutePlannerCandidateSummaryV1` strings.
+  than `RoutePlannerCandidateSummaryV1` strings. Use route projection coverage
+  to distinguish complete visible projections from budget-limited projections.
 - Keep old report fields only as compatibility views, not as new sources of
   truth.
 - Treat candidate `admission` as the structured scheduling trace. Legacy

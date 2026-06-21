@@ -15,8 +15,10 @@ pub use features::{
     RoutePathSummaryV1, RouteSafetyFlagV1,
 };
 pub use map_packet::{
-    MapDecisionPacketV1, RouteMapActionV1, RouteMoveCandidateV1, RouteMoveEvaluationV1,
-    RouteProjectionFrontierV1, MAP_DECISION_PACKET_SCHEMA_NAME, MAP_DECISION_PACKET_SCHEMA_VERSION,
+    MapDecisionPacketV1, RouteCandidateOrderingV1, RouteCandidatePoolProvenanceV1,
+    RouteMapActionV1, RouteMoveCandidateV1, RouteMoveEvaluationV1, RouteProjectionCoverageV1,
+    RouteProjectionFrontierV1, RouteProjectionMetadataV1, RouteProjectionSourceV1,
+    MAP_DECISION_PACKET_SCHEMA_NAME, MAP_DECISION_PACKET_SCHEMA_VERSION,
 };
 pub use score::{NeedVectorV1, RouteScoreTermsV1};
 pub use trace::{

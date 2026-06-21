@@ -829,6 +829,7 @@ fn campaign_route_candidate_pool_journal_event_v1(
             depth: pool.depth,
             candidate_count: pool.candidate_count,
             selected_index: pool.selected_index,
+            candidate_pool_provenance: pool.candidate_pool_provenance.clone(),
             map_decision_packet: pool.map_decision_packet.clone(),
             candidates: route_candidate_pool_candidates_v1(pool),
         },

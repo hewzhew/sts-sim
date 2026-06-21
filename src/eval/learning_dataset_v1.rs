@@ -2575,6 +2575,7 @@ mod tests {
                 depth: 0,
                 candidate_count: 2,
                 selected_index: Some(0),
+                candidate_pool_provenance: None,
                 map_decision_packet: None,
                 candidates: vec![
                     sample_journal_candidate("go 1", "x=1 Monster"),
