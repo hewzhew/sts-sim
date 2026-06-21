@@ -496,13 +496,18 @@ fn coverage_gap_branch_from_target_v1(
                     emitted_candidate_count: route.emitted_candidate_count,
                     complete_legal_pool: route.complete_legal_pool,
                     ordering: route.ordering.clone(),
+                    ordering_kind: route.ordering_kind,
                     target_x: route.target_x,
                     target_y: route.target_y,
+                    target_node: route.target_node.clone(),
                     room_type: route.room_type.clone(),
                     move_kind: route.move_kind.clone(),
                     action_kind: route.action_kind.clone(),
+                    action: route.action.clone(),
                     projection_source: route.projection_source.clone(),
+                    projection_source_kind: route.projection_source_kind,
                     projection_coverage: route.projection_coverage.clone(),
+                    projection_coverage_kind: route.projection_coverage_kind,
                     path_budget: route.path_budget,
                     observed_path_count: route.observed_path_count,
                     path: Some(BranchCampaignRoutePathContinuationOriginV1 {
@@ -796,18 +801,32 @@ mod tests {
                         emitted_candidate_count: 4,
                         complete_legal_pool: true,
                         ordering: "SafetyThenScoreThenX".to_string(),
-                        ordering_kind: None,
+                        ordering_kind: Some(
+                            sts_simulator::ai::route_planner_v1::RouteCandidateOrderingV1::SafetyThenScoreThenX,
+                        ),
                         target_x: 2,
                         target_y: 3,
-                        target_node: None,
+                        target_node: Some(sts_simulator::ai::route_planner_v1::MapRouteTargetV1 {
+                            x: 2,
+                            y: 3,
+                            room_type: Some(sts_simulator::state::map::node::RoomType::MonsterRoomElite),
+                            has_emerald_key: false,
+                            move_kind: sts_simulator::ai::route_planner_v1::RouteMoveKindV1::NormalEdge,
+                        }),
                         room_type: "Elite".to_string(),
                         move_kind: "NormalEdge".to_string(),
                         action_kind: "go".to_string(),
-                        action: None,
+                        action: Some(sts_simulator::ai::route_planner_v1::RouteMapActionV1::Go {
+                            x: 2,
+                        }),
                         projection_source: "VisibleMapDfs".to_string(),
-                        projection_source_kind: None,
+                        projection_source_kind: Some(
+                            sts_simulator::ai::route_planner_v1::RouteProjectionSourceV1::VisibleMapDfs,
+                        ),
                         projection_coverage: "CompleteWithinBudget".to_string(),
-                        projection_coverage_kind: None,
+                        projection_coverage_kind: Some(
+                            sts_simulator::ai::route_planner_v1::RouteProjectionCoverageV1::CompleteWithinBudget,
+                        ),
                         path_budget: 2000,
                         observed_path_count: 17,
                         path: CoverageGapRoutePathOriginV1 {
@@ -861,6 +880,37 @@ mod tests {
             .expect("route coverage gap branch should preserve route origin");
 
         assert_eq!(route.target_x, 2);
+        assert_eq!(
+            route.ordering_kind,
+            Some(
+                sts_simulator::ai::route_planner_v1::RouteCandidateOrderingV1::SafetyThenScoreThenX
+            )
+        );
+        assert_eq!(
+            route
+                .target_node
+                .as_ref()
+                .map(|target| (target.x, target.y, target.room_type)),
+            Some((
+                2,
+                3,
+                Some(sts_simulator::state::map::node::RoomType::MonsterRoomElite)
+            ))
+        );
+        assert_eq!(
+            route.action.as_ref(),
+            Some(&sts_simulator::ai::route_planner_v1::RouteMapActionV1::Go { x: 2 })
+        );
+        assert_eq!(
+            route.projection_source_kind,
+            Some(sts_simulator::ai::route_planner_v1::RouteProjectionSourceV1::VisibleMapDfs)
+        );
+        assert_eq!(
+            route.projection_coverage_kind,
+            Some(
+                sts_simulator::ai::route_planner_v1::RouteProjectionCoverageV1::CompleteWithinBudget
+            )
+        );
         assert_eq!(
             route.path.as_ref().expect("path should survive").path_count,
             17

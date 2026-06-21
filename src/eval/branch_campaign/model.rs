@@ -1,3 +1,7 @@
+use crate::ai::route_planner_v1::{
+    MapRouteTargetV1, RouteCandidateOrderingV1, RouteMapActionV1, RouteProjectionCoverageV1,
+    RouteProjectionSourceV1,
+};
 use crate::ai::strategic::BranchSignatureCompact;
 use crate::eval::branch_experiment::{
     BranchExperimentBossCombatRecordV1, BranchExperimentRewardOptionPortfolioV1,
@@ -114,13 +118,23 @@ pub struct BranchCampaignRouteContinuationOriginV1 {
     pub emitted_candidate_count: usize,
     pub complete_legal_pool: bool,
     pub ordering: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ordering_kind: Option<RouteCandidateOrderingV1>,
     pub target_x: i32,
     pub target_y: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_node: Option<MapRouteTargetV1>,
     pub room_type: String,
     pub move_kind: String,
     pub action_kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<RouteMapActionV1>,
     pub projection_source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection_source_kind: Option<RouteProjectionSourceV1>,
     pub projection_coverage: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection_coverage_kind: Option<RouteProjectionCoverageV1>,
     pub path_budget: usize,
     pub observed_path_count: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
