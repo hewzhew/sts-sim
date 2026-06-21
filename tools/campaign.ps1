@@ -87,6 +87,14 @@ Exports latest decision outcomes and prints targeted sibling continuation groups
 Exports latest decision outcomes, resumes selected censored sibling branches, and advances one round.
 
 .EXAMPLE
+.\tools\campaign.ps1 -PlanCoverageGaps
+Prints unobserved journal candidate coverage-gap continuation targets.
+
+.EXAMPLE
+.\tools\campaign.ps1 -ContinueCoverageGaps -Rounds 1
+Resumes selected unobserved journal candidate branches and advances one round.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Mode quick
 Runs a shorter random-seed campaign for fast smoke testing.
 
@@ -190,6 +198,8 @@ param(
     [switch] $Build,
     [switch] $PlanTargets,
     [switch] $ContinueTargets,
+    [switch] $PlanCoverageGaps,
+    [switch] $ContinueCoverageGaps,
 
     [string] $ExportLearningDataset = "",
     [string] $DecisionOutcomeDataset = "",
@@ -233,6 +243,8 @@ param(
     [int] $ChallengeMaxBranches = 10,
     [int] $TargetedContinuationLimit = 4,
     [int] $TargetedContinuationCandidatesPerTarget = 1,
+    [int] $CoverageGapLimit = 8,
+    [int] $CoverageGapCandidatesPerDecision = 1,
     [ValidateRange(0, 100)]
     [int] $VictoryHpPercent = 20,
 
@@ -307,7 +319,11 @@ if ($InspectShopChallenge -and -not $PSBoundParameters.ContainsKey("InspectBound
     $InspectBoundary = "Shop"
 }
 
-if ($PlanTargets -or $ContinueTargets) {
+if (($PlanTargets -or $ContinueTargets) -and ($PlanCoverageGaps -or $ContinueCoverageGaps)) {
+    throw "Choose either targeted continuation (-PlanTargets/-ContinueTargets) or coverage-gap continuation (-PlanCoverageGaps/-ContinueCoverageGaps), not both."
+}
+
+if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps) {
     $Last = $true
     if (-not $PSBoundParameters.ContainsKey("Mode")) {
         $SavedMode = Read-LatestCampaignMode
@@ -592,7 +608,7 @@ function Test-DriverNeedsBuild {
 
 $NeedsBuild = $Build -or (Test-DriverNeedsBuild $DriverExe)
 
-if ($PlanTargets -or $ContinueTargets) {
+if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps) {
     if (-not (Test-Path $LatestCampaignPath)) {
         throw "No previous campaign report found at $LatestCampaignPath. Run .\tools\campaign.ps1 first."
     }
@@ -607,6 +623,14 @@ if ($PlanTargets -or $ContinueTargets) {
     } else {
         $LatestDecisionOutcomePath
     }
+    $CoveragePlanArgs = @(
+        "dataset",
+        "--inspect-report", "$LatestCampaignPath",
+        "--inspect-checkpoint", "$LatestCheckpointPath",
+        "--plan-coverage-gap-continuation",
+        "--coverage-gap-limit", "$CoverageGapLimit",
+        "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision"
+    )
     $ExportDecisionArgs = @(
         "dataset",
         "--inspect-report", "$LatestCampaignPath",
@@ -665,50 +689,85 @@ if ($PlanTargets -or $ContinueTargets) {
         "--checkpoint-out", "$LatestCheckpointPath",
         "--max-rounds", "$ContinuationRounds"
     )
+    $ContinueCoverageGapArgs = @(
+        "continue",
+        "--preset", "$Mode",
+        "--seed", "$Seed",
+        "--ascension", "$Ascension",
+        "--class", "$Class"
+    )
+    if (@(0, 10, 15, 17, 20) -contains $Ascension) {
+        $ContinueCoverageGapArgs += @("--ascension-domain", "a$Ascension")
+    }
+    $ContinueCoverageGapArgs += @(
+        "--resume", "$LatestCampaignPath",
+        "--resume-checkpoint", "$LatestCheckpointPath",
+        "--execute-coverage-gap-continuation",
+        "--coverage-gap-limit", "$CoverageGapLimit",
+        "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision",
+        "--out", "$LatestCampaignPath",
+        "--checkpoint-out", "$LatestCheckpointPath",
+        "--max-rounds", "$ContinuationRounds"
+    )
     if ($CampaignBoundParameters.ContainsKey("ExperimentWallMs")) {
         $ContinueTargetArgs += @("--experiment-wall-ms", "$ExperimentWallMs")
+        $ContinueCoverageGapArgs += @("--experiment-wall-ms", "$ExperimentWallMs")
     }
     if ($CampaignBoundParameters.ContainsKey("SearchWallMs")) {
         $ContinueTargetArgs += @("--search-wall-ms", "$SearchWallMs")
+        $ContinueCoverageGapArgs += @("--search-wall-ms", "$SearchWallMs")
     }
     if ($CampaignBoundParameters.ContainsKey("SearchMaxNodes")) {
         $ContinueTargetArgs += @("--search-max-nodes", "$SearchMaxNodes")
+        $ContinueCoverageGapArgs += @("--search-max-nodes", "$SearchMaxNodes")
     }
     if ($CampaignBoundParameters.ContainsKey("CombatRetryWallMs") -and $CombatRetryWallMs -gt 0) {
         $ContinueTargetArgs += @("--combat-retry-wall-ms", "$CombatRetryWallMs")
+        $ContinueCoverageGapArgs += @("--combat-retry-wall-ms", "$CombatRetryWallMs")
     }
     if ($CampaignBoundParameters.ContainsKey("BranchExamples")) {
         $ContinueTargetArgs += @("--branch-examples", "$BranchExamples")
+        $ContinueCoverageGapArgs += @("--branch-examples", "$BranchExamples")
     }
     if ($CampaignBoundParameters.ContainsKey("VictoryHpPercent")) {
         $ContinueTargetArgs += @("--min-acceptable-victory-hp-percent", "$VictoryHpPercent")
+        $ContinueCoverageGapArgs += @("--min-acceptable-victory-hp-percent", "$VictoryHpPercent")
     }
     if (-not (Test-ExtraCombatOptionKey -Tokens $ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
         if ($BossSegments) {
             $ContinueTargetArgs += @("--combat-search-option", "segment=turn")
+            $ContinueCoverageGapArgs += @("--combat-search-option", "segment=turn")
         } else {
             $ContinueTargetArgs += @("--combat-search-option", "segment=non_boss_turn")
+            $ContinueCoverageGapArgs += @("--combat-search-option", "segment=non_boss_turn")
         }
     }
     if (-not $NoProgress) {
         $ContinueTargetArgs += "--progress"
+        $ContinueCoverageGapArgs += "--progress"
         if ($VerboseProgress) {
             $ContinueTargetArgs += @("--progress-detail", "verbose")
+            $ContinueCoverageGapArgs += @("--progress-detail", "verbose")
         }
     }
     if ($Perf) {
         $ContinueTargetArgs += @("--report-detail", "perf")
+        $ContinueCoverageGapArgs += @("--report-detail", "perf")
     } elseif ($Diagnose) {
         $ContinueTargetArgs += @("--report-detail", "diagnose")
+        $ContinueCoverageGapArgs += @("--report-detail", "diagnose")
     }
     if ($AutoCaptureCombat) {
         $ContinueTargetArgs += "--auto-capture-combat"
+        $ContinueCoverageGapArgs += "--auto-capture-combat"
         if ($AutoCaptureRoot) {
             $ContinueTargetArgs += @("--auto-capture-root", "$AutoCaptureRoot")
+            $ContinueCoverageGapArgs += @("--auto-capture-root", "$AutoCaptureRoot")
         }
     }
     if ($ExtraArgs) {
         $ContinueTargetArgs += $ExtraArgs
+        $ContinueCoverageGapArgs += $ExtraArgs
     }
 
     function Format-CommandLine {
@@ -724,7 +783,8 @@ if ($PlanTargets -or $ContinueTargets) {
         return $RenderedExe + " " + ($RenderedArgs -join " ")
     }
 
-    Write-Host "mode=targeted-continuation latest branch campaign"
+    $ContinuationModeLabel = if ($PlanCoverageGaps -or $ContinueCoverageGaps) { "coverage-gap-continuation" } else { "targeted-continuation" }
+    Write-Host "mode=$ContinuationModeLabel latest branch campaign"
     Write-Host "seed=$Seed"
     Write-Host "ascension=A$Ascension domain=a$Ascension class=$Class"
     Write-Host "build=$BuildProfile exe=$DriverExe"
@@ -735,10 +795,24 @@ if ($PlanTargets -or $ContinueTargets) {
     }
     Write-Host "report=$LatestCampaignPath"
     Write-Host "checkpoint=$LatestCheckpointPath"
-    Write-Host "decision-outcomes=$TargetDecisionOutcomePath"
+    if ($PlanTargets -or $ContinueTargets) {
+        Write-Host "decision-outcomes=$TargetDecisionOutcomePath"
+    }
     if ($ContinueTargets) {
         Write-Host "decision-outcomes-after=$LatestDecisionOutcomeAfterPath"
         Write-Host "continue-targets=$TargetedContinuationLimit candidates-per-target=$TargetedContinuationCandidatesPerTarget"
+        Write-Host "resume-rounds=$ResumeRoundsCompleted"
+        if ($TargetRounds -ne $null) {
+            Write-Host "round-budget=$ContinuationRoundSource target-rounds=$TargetRounds additional-rounds=$ContinuationRounds"
+        } else {
+            Write-Host "round-budget=$ContinuationRoundSource additional-rounds=$ContinuationRounds"
+        }
+    }
+    if ($PlanCoverageGaps) {
+        Write-Host "coverage-gap-plan=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision"
+    }
+    if ($ContinueCoverageGaps) {
+        Write-Host "coverage-gap-continue=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision"
         Write-Host "resume-rounds=$ResumeRoundsCompleted"
         if ($TargetRounds -ne $null) {
             Write-Host "round-budget=$ContinuationRoundSource target-rounds=$TargetRounds additional-rounds=$ContinuationRounds"
@@ -754,19 +828,27 @@ if ($PlanTargets -or $ContinueTargets) {
             }
             Write-Host ("cargo " + ($RenderedBuildArgs -join " "))
         }
-        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ExportDecisionArgs)
+        if ($PlanTargets -or $ContinueTargets) {
+            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ExportDecisionArgs)
+        }
         if ($PlanTargets) {
             Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $PlanTargetArgs)
+        }
+        if ($PlanCoverageGaps) {
+            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $CoveragePlanArgs)
         }
         if ($ContinueTargets) {
             Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
             Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ExportDecisionAfterArgs)
             Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinuationEffectArgs)
         }
+        if ($ContinueCoverageGaps) {
+            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
+        }
         exit 0
     }
 
-    if ($ContinueTargets -and $ContinuationRounds -eq 0) {
+    if (($ContinueTargets -or $ContinueCoverageGaps) -and $ContinuationRounds -eq 0) {
         Write-Host "already-at-target-rounds=yes; nothing to run"
         exit 0
     }
@@ -779,12 +861,20 @@ if ($PlanTargets -or $ContinueTargets) {
                 exit $LASTEXITCODE
             }
         }
-        & $DriverExe @ExportDecisionArgs
-        if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
+        if ($PlanTargets -or $ContinueTargets) {
+            & $DriverExe @ExportDecisionArgs
+            if ($LASTEXITCODE -ne 0) {
+                exit $LASTEXITCODE
+            }
         }
         if ($PlanTargets) {
             & $DriverExe @PlanTargetArgs
+            if ($LASTEXITCODE -ne 0) {
+                exit $LASTEXITCODE
+            }
+        }
+        if ($PlanCoverageGaps) {
+            & $DriverExe @CoveragePlanArgs
             if ($LASTEXITCODE -ne 0) {
                 exit $LASTEXITCODE
             }
@@ -806,6 +896,18 @@ if ($PlanTargets -or $ContinueTargets) {
                 Set-Content -LiteralPath $LatestClassPath -Value $Class
                 Set-Content -LiteralPath $LatestModePath -Value $Mode
                 Set-Content -LiteralPath $LatestCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
+            }
+            exit $DriverExitCode
+        }
+        if ($ContinueCoverageGaps) {
+            & $DriverExe @ContinueCoverageGapArgs
+            $DriverExitCode = $LASTEXITCODE
+            if ($DriverExitCode -eq 0) {
+                Set-Content -LiteralPath $LatestSeedPath -Value $Seed
+                Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
+                Set-Content -LiteralPath $LatestClassPath -Value $Class
+                Set-Content -LiteralPath $LatestModePath -Value $Mode
+                Set-Content -LiteralPath $LatestCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
             }
             exit $DriverExitCode
         }
