@@ -74,6 +74,13 @@ fn branch_experiment_records_route_candidate_pool() {
     );
 
     assert!(!report.route_decisions.is_empty());
+    assert!(report.route_decisions.iter().any(|decision| {
+        decision.selected_candidate_id.is_some()
+            && decision.selected_candidate_rank.is_some()
+            && decision.selected_target_node.is_some()
+            && decision.safety_flag.is_some()
+            && decision.candidate_pool_provenance.is_some()
+    }));
     assert!(!report.route_candidate_pools.is_empty());
     let pool = &report.route_candidate_pools[0];
     assert_eq!(pool.candidate_count, pool.candidates.len());
