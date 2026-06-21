@@ -15,7 +15,7 @@ use sts_simulator::eval::branch_outcome_dataset_v1::{
 };
 use sts_simulator::eval::learning_dataset_v1::{
     analyze_continuation_effect_v1, analyze_learning_decision_outcome_samples_v1,
-    decision_outcome_samples_from_branch_outcomes_v1, learning_records_from_branch_outcomes_v1,
+    decision_outcome_samples_from_campaign_report_v1, learning_records_from_branch_outcomes_v1,
     parse_learning_decision_outcome_samples_jsonl_v1, plan_targeted_continuations_v1,
     probe_learning_readiness_v1, render_continuation_effect_report_v1,
     render_learning_decision_outcome_analysis_v1, render_learning_readiness_probe_v1,
@@ -372,7 +372,8 @@ pub(super) fn run_decision_outcome_dataset_export(
         .map(read_campaign_checkpoint_v1)
         .transpose()?;
     let outcome_records = extract_branch_outcome_records_v1(&report, checkpoint.as_ref())?;
-    let samples = decision_outcome_samples_from_branch_outcomes_v1(
+    let samples = decision_outcome_samples_from_campaign_report_v1(
+        &report,
         &outcome_records,
         learning_dataset_export_context_v1(Some(report_path), input.inspect_checkpoint.as_ref()),
     );

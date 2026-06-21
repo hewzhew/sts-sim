@@ -10,6 +10,9 @@ use crate::eval::branch_outcome_dataset_v1::{
     BranchOutcomeClassV1, BranchOutcomeRecordV1, BranchOutcomeStateFeaturesV1,
     BranchOutcomeSupervisionStatusV1,
 };
+use crate::eval::campaign_journal::{
+    CampaignJournalCandidateV1, CampaignJournalEventPayloadV1, CampaignJournalEventV1,
+};
 
 pub const LEARNING_BRANCH_SAMPLE_SCHEMA_NAME: &str = "LearningBranchSampleV1";
 pub const LEARNING_BRANCH_SAMPLE_SCHEMA_VERSION: u32 = 1;
@@ -359,7 +362,6 @@ pub fn decision_outcome_samples_from_branch_outcomes_v1(
     context: LearningDatasetExportContextV1,
 ) -> Vec<LearningDecisionOutcomeSampleV1> {
     let mut drafts = Vec::new();
-    let mut groups = BTreeMap::<String, Vec<usize>>::new();
 
     for (record_index, record) in records.iter().enumerate() {
         for step_index in 0..record.commands.len() {
@@ -368,6 +370,7 @@ pub fn decision_outcome_samples_from_branch_outcomes_v1(
             let draft = LearningDecisionCandidateDraftV1 {
                 record_index,
                 step_index,
+                candidate_id: record.commands[step_index].clone(),
                 sibling_group_id: sibling_group_id.clone(),
                 parent_branch_id,
                 candidate_command: record.commands[step_index].clone(),
@@ -377,28 +380,23 @@ pub fn decision_outcome_samples_from_branch_outcomes_v1(
                     .cloned()
                     .unwrap_or_default(),
             };
-            groups
-                .entry(sibling_group_id)
-                .or_default()
-                .push(drafts.len());
             drafts.push(draft);
         }
     }
 
-    drafts
-        .iter()
-        .enumerate()
-        .map(|(draft_index, draft)| {
-            decision_outcome_sample_from_draft_v1(
-                records,
-                &context,
-                &drafts,
-                &groups,
-                draft_index,
-                draft,
-            )
-        })
-        .collect()
+    decision_outcome_samples_from_drafts_v1(records, &context, drafts)
+}
+
+pub fn decision_outcome_samples_from_campaign_report_v1(
+    report: &BranchCampaignReportV1,
+    records: &[BranchOutcomeRecordV1],
+    context: LearningDatasetExportContextV1,
+) -> Vec<LearningDecisionOutcomeSampleV1> {
+    let drafts = journal_decision_candidate_drafts_v1(report, records);
+    if drafts.is_empty() {
+        return decision_outcome_samples_from_branch_outcomes_v1(records, context);
+    }
+    decision_outcome_samples_from_drafts_v1(records, &context, drafts)
 }
 
 pub fn serialize_learning_branch_samples_jsonl_v1(
@@ -1029,10 +1027,121 @@ pub fn render_continuation_effect_report_v1(report: &ContinuationEffectReportV1)
 struct LearningDecisionCandidateDraftV1 {
     record_index: usize,
     step_index: usize,
+    candidate_id: String,
     sibling_group_id: String,
     parent_branch_id: String,
     candidate_command: String,
     candidate_choice_label: String,
+}
+
+fn decision_outcome_samples_from_drafts_v1(
+    records: &[BranchOutcomeRecordV1],
+    context: &LearningDatasetExportContextV1,
+    drafts: Vec<LearningDecisionCandidateDraftV1>,
+) -> Vec<LearningDecisionOutcomeSampleV1> {
+    let mut groups = BTreeMap::<String, Vec<usize>>::new();
+    for (draft_index, draft) in drafts.iter().enumerate() {
+        groups
+            .entry(draft.sibling_group_id.clone())
+            .or_default()
+            .push(draft_index);
+    }
+
+    drafts
+        .iter()
+        .enumerate()
+        .map(|(draft_index, draft)| {
+            decision_outcome_sample_from_draft_v1(
+                records,
+                context,
+                &drafts,
+                &groups,
+                draft_index,
+                draft,
+            )
+        })
+        .collect()
+}
+
+fn journal_decision_candidate_drafts_v1(
+    report: &BranchCampaignReportV1,
+    records: &[BranchOutcomeRecordV1],
+) -> Vec<LearningDecisionCandidateDraftV1> {
+    let mut drafts = Vec::new();
+    for event in &report.journal.events {
+        let Some(decision_id) = journal_decision_id_v1(event) else {
+            continue;
+        };
+        let candidates = journal_decision_candidates_v1(event);
+        if candidates.is_empty() {
+            continue;
+        }
+        let parent_commands = event.branch_commands.as_slice();
+        let step_index = parent_commands.len();
+        for candidate in candidates {
+            for (record_index, record) in records.iter().enumerate() {
+                if !record_commands_start_with_candidate_v1(
+                    &record.commands,
+                    parent_commands,
+                    &candidate.command,
+                ) {
+                    continue;
+                }
+                drafts.push(LearningDecisionCandidateDraftV1 {
+                    record_index,
+                    step_index,
+                    candidate_id: candidate.candidate_id.clone(),
+                    sibling_group_id: format!(
+                        "seed={}|domain={}:{}|decision={}",
+                        report.seed,
+                        report.run_domain.label,
+                        report.run_domain.ascension_level,
+                        decision_id
+                    ),
+                    parent_branch_id: event.branch_id.clone(),
+                    candidate_command: candidate.command.clone(),
+                    candidate_choice_label: candidate.label.clone(),
+                });
+            }
+        }
+    }
+    drafts
+}
+
+fn journal_decision_id_v1(event: &CampaignJournalEventV1) -> Option<&str> {
+    match &event.payload {
+        CampaignJournalEventPayloadV1::RewardCandidateSet { decision_id, .. }
+        | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { decision_id, .. }
+        | CampaignJournalEventPayloadV1::ShopCandidatePool { decision_id, .. }
+        | CampaignJournalEventPayloadV1::CampfireCandidatePool { decision_id, .. }
+        | CampaignJournalEventPayloadV1::EventCandidatePool { decision_id, .. }
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { decision_id, .. } => {
+            Some(decision_id)
+        }
+        CampaignJournalEventPayloadV1::RouteDecision { .. } => None,
+    }
+}
+
+fn journal_decision_candidates_v1(event: &CampaignJournalEventV1) -> &[CampaignJournalCandidateV1] {
+    match &event.payload {
+        CampaignJournalEventPayloadV1::RewardCandidateSet { candidates, .. }
+        | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { candidates, .. }
+        | CampaignJournalEventPayloadV1::ShopCandidatePool { candidates, .. }
+        | CampaignJournalEventPayloadV1::CampfireCandidatePool { candidates, .. }
+        | CampaignJournalEventPayloadV1::EventCandidatePool { candidates, .. }
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { candidates, .. } => candidates,
+        CampaignJournalEventPayloadV1::RouteDecision { .. } => &[],
+    }
+}
+
+fn record_commands_start_with_candidate_v1(
+    record_commands: &[String],
+    parent_commands: &[String],
+    candidate_command: &str,
+) -> bool {
+    record_commands.len() > parent_commands.len()
+        && record_commands.starts_with(parent_commands)
+        && record_commands[parent_commands.len()] == candidate_command
 }
 
 fn decision_outcome_sample_from_draft_v1(
@@ -1076,7 +1185,7 @@ fn decision_outcome_sample_from_draft_v1(
         report_rounds_completed: record.report_rounds_completed,
         decision_id: format!(
             "{}|candidate={}|branch={}",
-            draft.sibling_group_id, draft.candidate_command, record.branch_id
+            draft.sibling_group_id, draft.candidate_id, record.branch_id
         ),
         sibling_group_id: draft.sibling_group_id.clone(),
         parent_branch_id: draft.parent_branch_id.clone(),
@@ -1132,7 +1241,8 @@ fn sibling_candidate_groups_v1(
         if let Some(group) = candidate_groups.iter_mut().find(|group| {
             group.first().is_some_and(|first_index| {
                 let first = &drafts[*first_index];
-                first.candidate_command == draft.candidate_command
+                first.candidate_id == draft.candidate_id
+                    && first.candidate_command == draft.candidate_command
                     && first.candidate_choice_label == draft.candidate_choice_label
             })
         }) {
@@ -1697,6 +1807,67 @@ mod tests {
     }
 
     #[test]
+    fn decision_outcome_samples_use_journal_decision_identity_when_available() {
+        let mut clothesline = sample_branch_outcome_record();
+        clothesline.branch_id = "root.rp 0".to_string();
+        clothesline.commands = vec!["rp 0".to_string()];
+        clothesline.choice_labels = vec!["Clothesline".to_string()];
+        clothesline.rank_key = 20;
+
+        let mut shrug = sample_branch_outcome_record();
+        shrug.branch_index = 1;
+        shrug.branch_id = "root.rp 1".to_string();
+        shrug.commands = vec!["rp 1".to_string()];
+        shrug.choice_labels = vec!["Shrug It Off".to_string()];
+        shrug.rank_key = 35;
+
+        let records = vec![clothesline, shrug];
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-reward0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Reward Screen".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "journal-reward0".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "reward-frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 3,
+                original_count: 2,
+                selected_count: 2,
+                candidates: vec![
+                    sample_journal_candidate("rp 0", "Clothesline"),
+                    sample_journal_candidate("rp 1", "Shrug It Off"),
+                ],
+            },
+        });
+
+        let samples = decision_outcome_samples_from_campaign_report_v1(
+            &report,
+            &records,
+            LearningDatasetExportContextV1::default(),
+        );
+
+        assert_eq!(samples.len(), 2);
+        assert!(samples
+            .iter()
+            .all(|sample| sample.sibling_group_id.contains("decision=journal-reward0")));
+        assert_eq!(samples[0].parent_branch_id, "root");
+        assert_eq!(
+            samples[0].candidate_set_status,
+            LearningCandidateSetStatusV1::ObservedSiblings
+        );
+        assert_eq!(samples[0].observed_sibling_count, 2);
+    }
+
+    #[test]
     fn decision_outcome_samples_jsonl_round_trips() {
         let mut clothesline = sample_branch_outcome_record();
         clothesline.branch_id = "root.rp 0".to_string();
@@ -2225,6 +2396,16 @@ mod tests {
                 outcome_class,
                 count: 1,
             }],
+        }
+    }
+
+    fn sample_journal_candidate(command: &str, label: &str) -> CampaignJournalCandidateV1 {
+        CampaignJournalCandidateV1 {
+            candidate_id: command.to_string(),
+            command: command.to_string(),
+            label: label.to_string(),
+            semantic_class: "test".to_string(),
+            disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Kept,
         }
     }
 

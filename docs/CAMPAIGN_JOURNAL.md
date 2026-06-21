@@ -107,6 +107,12 @@ new inspection should prefer `journal`. The `--inspect-journal` report view
 prints journal events directly; `--inspect-decision-observations` remains a
 reward-only compatibility view.
 
+Decision-outcome dataset export also prefers `journal` when available. It uses
+the journal `decision_id` as the sibling group identity and links an observed
+branch outcome to a candidate when the branch command sequence starts with the
+journal parent commands plus the candidate command. Older command-prefix
+reconstruction remains as a fallback for reports without journal events.
+
 ## Boundaries
 
 `CampaignJournal` is not a strategy engine. It must not decide what to pick or
@@ -182,8 +188,15 @@ journal events, not the other way around.
 - Route decisions are the route planner selections emitted while expanding a
   parent branch. They record the selected target and safety evidence, not the
   full map option set.
+- Decision-outcome samples only include candidates that have an observed
+  descendant branch in the report. A candidate that was recorded in the journal
+  but never continued by campaign scheduling is still visible in
+  `--inspect-journal`, but it does not yet get a synthetic zero-observation
+  outcome row.
 - Candidate semantics still include legacy `semantic_class` strings from branch
   retention; these are provenance, not proof of strategic correctness.
-- Outcome links are not implemented yet.
+- Decision-outcome dataset export now links observed branch outcomes back to
+  journal decision ids. Milestone outcome events are not yet stored directly in
+  the journal.
 - Existing `decision observations` output is still reward-compatible legacy
   terminology. Prefer `--inspect-journal` for new debugging.

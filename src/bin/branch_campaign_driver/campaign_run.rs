@@ -134,7 +134,8 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
     }
     if let Some(path) = input.export_decision_outcome_dataset.as_ref() {
         let records = extract_branch_outcome_records_v1(&report, Some(&result.checkpoint))?;
-        let samples = sts_simulator::eval::learning_dataset_v1::decision_outcome_samples_from_branch_outcomes_v1(
+        let samples = sts_simulator::eval::learning_dataset_v1::decision_outcome_samples_from_campaign_report_v1(
+            &report,
             &records,
             learning_dataset_export_context_v1(input.out.as_ref(), input.checkpoint_out.as_ref()),
         );
