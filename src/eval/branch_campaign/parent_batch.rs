@@ -27,7 +27,9 @@ use super::retry::{
     campaign_parent_should_retry_combat_budget_now_v1, combat_retry_campaign_config_v1,
     try_consume_branch_report_act_boss_gate_retry_v1, BranchCampaignCombatRetryLedgerStateV1,
 };
-use super::route_evidence::merge_campaign_route_decisions_v1;
+use super::route_evidence::{
+    merge_campaign_route_candidate_pools_v1, merge_campaign_route_decisions_v1,
+};
 use super::state_graph::{BranchStateReplayStartV1, BranchStateStoreV1};
 use super::summary::campaign_refresh_branch_summary_from_session_v1;
 use super::{
@@ -214,6 +216,7 @@ where
         wall_limit_hit |= report.wall_limit_hit;
         branch_limit_hit |= report.branch_limit_hit || report.frontier_group_limit_hit;
         merge_campaign_route_decisions_v1(&mut route_evidence, &report.route_decisions);
+        merge_campaign_route_candidate_pools_v1(&mut route_evidence, &report.route_candidate_pools);
         progress(BranchCampaignProgressEventV1::BranchFinished {
             round: round_number,
             branch_index: parent_index + 1,

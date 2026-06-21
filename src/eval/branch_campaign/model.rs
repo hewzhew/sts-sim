@@ -217,6 +217,18 @@ pub struct BranchCampaignDecisionObservationV1 {
 #[serde(deny_unknown_fields)]
 pub struct BranchCampaignRouteEvidenceSummaryV1 {
     pub decisions: usize,
+    #[serde(default)]
+    pub candidate_pools: usize,
+    #[serde(default)]
+    pub candidate_pool_candidates: usize,
+    #[serde(default)]
+    pub candidate_pool_ok: usize,
+    #[serde(default)]
+    pub candidate_pool_risky: usize,
+    #[serde(default)]
+    pub candidate_pool_rejected: usize,
+    #[serde(default)]
+    pub complete_candidate_pools: usize,
     pub first_elite_forced: usize,
     pub first_elite_optional: usize,
     pub first_elite_none: usize,

@@ -203,8 +203,12 @@ journal events, not the other way around.
    carry `selected_index` and `selected_candidate_id` so the selected move can
    be linked back to the surrounding `route_candidate_pool` without parsing the
    display label or `go N` command.
-9. Link milestone outcomes to prior `decision_id` values.
-10. Gradually remove report-only decision attachments once views read from the
+9. Campaign route evidence summaries aggregate both selected route decisions
+   and the surrounding route candidate pools. The summary is a report diagnostic
+   about visible route coverage and safety distribution, not a route policy
+   score.
+10. Link milestone outcomes to prior `decision_id` values.
+11. Gradually remove report-only decision attachments once views read from the
    journal directly.
 
 ## Design Rules

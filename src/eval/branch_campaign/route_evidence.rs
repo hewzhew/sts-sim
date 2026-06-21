@@ -1,4 +1,6 @@
-use crate::eval::branch_experiment::BranchExperimentRouteDecisionV1;
+use crate::eval::branch_experiment::{
+    BranchExperimentRouteCandidatePoolV1, BranchExperimentRouteDecisionV1,
+};
 
 use super::model::{BranchCampaignRouteEvidenceExampleV1, BranchCampaignRouteEvidenceSummaryV1};
 
@@ -8,6 +10,15 @@ pub(super) fn merge_campaign_route_decisions_v1(
 ) {
     for decision in decisions {
         add_campaign_route_decision_v1(summary, decision);
+    }
+}
+
+pub(super) fn merge_campaign_route_candidate_pools_v1(
+    summary: &mut BranchCampaignRouteEvidenceSummaryV1,
+    pools: &[BranchExperimentRouteCandidatePoolV1],
+) {
+    for pool in pools {
+        add_campaign_route_candidate_pool_v1(summary, pool);
     }
 }
 
@@ -25,6 +36,24 @@ pub(super) fn merge_campaign_route_evidence_summary_v1(
         incoming.decisions,
     );
     target.decisions = target.decisions.saturating_add(incoming.decisions);
+    target.candidate_pools = target
+        .candidate_pools
+        .saturating_add(incoming.candidate_pools);
+    target.candidate_pool_candidates = target
+        .candidate_pool_candidates
+        .saturating_add(incoming.candidate_pool_candidates);
+    target.candidate_pool_ok = target
+        .candidate_pool_ok
+        .saturating_add(incoming.candidate_pool_ok);
+    target.candidate_pool_risky = target
+        .candidate_pool_risky
+        .saturating_add(incoming.candidate_pool_risky);
+    target.candidate_pool_rejected = target
+        .candidate_pool_rejected
+        .saturating_add(incoming.candidate_pool_rejected);
+    target.complete_candidate_pools = target
+        .complete_candidate_pools
+        .saturating_add(incoming.complete_candidate_pools);
     target.first_elite_forced = target
         .first_elite_forced
         .saturating_add(incoming.first_elite_forced);
@@ -50,6 +79,35 @@ pub(super) fn merge_campaign_route_evidence_summary_v1(
             break;
         }
         target.underprepared_examples.push(example);
+    }
+}
+
+fn add_campaign_route_candidate_pool_v1(
+    summary: &mut BranchCampaignRouteEvidenceSummaryV1,
+    pool: &BranchExperimentRouteCandidatePoolV1,
+) {
+    summary.candidate_pools = summary.candidate_pools.saturating_add(1);
+    summary.candidate_pool_candidates = summary
+        .candidate_pool_candidates
+        .saturating_add(pool.candidates.len());
+    if pool
+        .candidate_pool_provenance
+        .as_ref()
+        .is_some_and(|provenance| provenance.complete_legal_pool)
+    {
+        summary.complete_candidate_pools = summary.complete_candidate_pools.saturating_add(1);
+    }
+    for candidate in &pool.candidates {
+        match candidate.safety.as_str() {
+            "ok" => summary.candidate_pool_ok = summary.candidate_pool_ok.saturating_add(1),
+            "risky" | "risky_but_allowed" => {
+                summary.candidate_pool_risky = summary.candidate_pool_risky.saturating_add(1)
+            }
+            "reject_unless_forced" | "reject" => {
+                summary.candidate_pool_rejected = summary.candidate_pool_rejected.saturating_add(1)
+            }
+            _ => {}
+        }
     }
 }
 

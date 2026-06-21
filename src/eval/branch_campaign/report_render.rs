@@ -208,11 +208,17 @@ pub fn render_branch_campaign_compact_with_detail_v1(
     if let Some(boss_relic_coverage) = render_campaign_boss_relic_coverage_v1(report) {
         lines.push(boss_relic_coverage);
     }
-    if report.route_evidence.decisions > 0 {
+    if report.route_evidence.decisions > 0 || report.route_evidence.candidate_pools > 0 {
         if detail != BranchCampaignReportDetailV1::Human {
             lines.push(format!(
-                "Route evidence: decisions={} first_elite optional={} forced={} none={} avg_elite_prep={} underprepared={} bailouts=rest:{} shop:{}",
+                "Route evidence: decisions={} candidate_pools={} pool_candidates={} pool_safety=ok:{} risky:{} rejected:{} complete_pools={} first_elite optional={} forced={} none={} avg_elite_prep={} underprepared={} bailouts=rest:{} shop:{}",
                 report.route_evidence.decisions,
+                report.route_evidence.candidate_pools,
+                report.route_evidence.candidate_pool_candidates,
+                report.route_evidence.candidate_pool_ok,
+                report.route_evidence.candidate_pool_risky,
+                report.route_evidence.candidate_pool_rejected,
+                report.route_evidence.complete_candidate_pools,
                 report.route_evidence.first_elite_optional,
                 report.route_evidence.first_elite_forced,
                 report.route_evidence.first_elite_none,
