@@ -211,7 +211,15 @@ pub struct CoverageGapContinuationPlanV1 {
     pub total_decisions: usize,
     pub total_candidates: usize,
     pub total_unobserved_candidates: usize,
+    #[serde(default)]
+    pub kept_unobserved_candidates: usize,
+    #[serde(default)]
+    pub pruned_unobserved_candidates: usize,
     pub selected_target_count: usize,
+    #[serde(default)]
+    pub selected_kept_targets: usize,
+    #[serde(default)]
+    pub selected_pruned_targets: usize,
     pub targets: Vec<CoverageGapContinuationTargetV1>,
 }
 
@@ -771,6 +779,10 @@ pub fn plan_coverage_gap_continuations_v1(
     let mut total_decisions = 0usize;
     let mut total_candidates = 0usize;
     let mut total_unobserved_candidates = 0usize;
+    let mut kept_unobserved_candidates = 0usize;
+    let mut pruned_unobserved_candidates = 0usize;
+    let mut selected_kept_targets = 0usize;
+    let mut selected_pruned_targets = 0usize;
     let mut targets = Vec::new();
 
     for event in &report.journal.events {
@@ -785,7 +797,7 @@ pub fn plan_coverage_gap_continuations_v1(
         total_decisions = total_decisions.saturating_add(1);
         total_candidates = total_candidates.saturating_add(candidates.len());
         let parent_commands = event.branch_commands.as_slice();
-        let mut selected_for_decision = 0usize;
+        let mut unobserved = Vec::new();
         for (candidate_index, candidate) in candidates.iter().enumerate() {
             if records.iter().any(|record| {
                 record_commands_start_with_candidate_v1(
@@ -798,6 +810,28 @@ pub fn plan_coverage_gap_continuations_v1(
             }
 
             total_unobserved_candidates = total_unobserved_candidates.saturating_add(1);
+            match candidate.disposition {
+                CampaignJournalCandidateDispositionV1::Kept => {
+                    kept_unobserved_candidates = kept_unobserved_candidates.saturating_add(1)
+                }
+                CampaignJournalCandidateDispositionV1::Pruned => {
+                    pruned_unobserved_candidates = pruned_unobserved_candidates.saturating_add(1)
+                }
+            }
+            unobserved.push((candidate_index, candidate));
+        }
+
+        let mut selected_for_decision = 0usize;
+        let ordered_unobserved = unobserved
+            .iter()
+            .copied()
+            .filter(|(_, candidate)| {
+                candidate.disposition == CampaignJournalCandidateDispositionV1::Kept
+            })
+            .chain(unobserved.iter().copied().filter(|(_, candidate)| {
+                candidate.disposition == CampaignJournalCandidateDispositionV1::Pruned
+            }));
+        for (candidate_index, candidate) in ordered_unobserved {
             if targets.len() >= max_targets || selected_for_decision >= max_candidates_per_decision
             {
                 continue;
@@ -818,6 +852,14 @@ pub fn plan_coverage_gap_continuations_v1(
                 disposition: candidate.disposition,
                 milestone: coverage_gap_candidate_milestone_v1(event),
             });
+            match candidate.disposition {
+                CampaignJournalCandidateDispositionV1::Kept => {
+                    selected_kept_targets = selected_kept_targets.saturating_add(1)
+                }
+                CampaignJournalCandidateDispositionV1::Pruned => {
+                    selected_pruned_targets = selected_pruned_targets.saturating_add(1)
+                }
+            }
             selected_for_decision = selected_for_decision.saturating_add(1);
         }
     }
@@ -831,7 +873,11 @@ pub fn plan_coverage_gap_continuations_v1(
         total_decisions,
         total_candidates,
         total_unobserved_candidates,
+        kept_unobserved_candidates,
+        pruned_unobserved_candidates,
         selected_target_count: targets.len(),
+        selected_kept_targets,
+        selected_pruned_targets,
         targets,
     }
 }
@@ -862,11 +908,15 @@ pub fn coverage_gap_continuation_execution_plan_v1(
 pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPlanV1) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
-        "CoverageGapContinuationPlanV1 decisions={} candidates={} unobserved={} selected={}",
+        "CoverageGapContinuationPlanV1 decisions={} candidates={} unobserved={} kept_unobserved={} pruned_unobserved={} selected={} kept_selected={} pruned_selected={}",
         plan.total_decisions,
         plan.total_candidates,
         plan.total_unobserved_candidates,
-        plan.selected_target_count
+        plan.kept_unobserved_candidates,
+        plan.pruned_unobserved_candidates,
+        plan.selected_target_count,
+        plan.selected_kept_targets,
+        plan.selected_pruned_targets
     ));
     if plan.targets.is_empty() {
         lines.push("Targets: none".to_string());
@@ -874,13 +924,14 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
         lines.push("Targets:".to_string());
         for (index, target) in plan.targets.iter().take(12).enumerate() {
             lines.push(format!(
-                "  {}. {} {} | parent={} candidate={} {{{}}} milestone={} semantic=[{}]",
+                "  {}. {} {} | parent={} candidate={} {{{}}} disposition={} milestone={} semantic=[{}]",
                 index + 1,
                 target.event_type,
                 compact_learning_text_v1(&target.decision_id, 56),
                 compact_learning_text_v1(&target.parent_branch_id, 36),
                 compact_learning_text_v1(&target.label, 42),
                 compact_learning_text_v1(&target.command, 28),
+                render_journal_candidate_disposition_v1(target.disposition),
                 target.milestone,
                 compact_learning_text_v1(&target.semantic_class, 58)
             ));
@@ -893,6 +944,15 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
         }
     }
     lines.join("\n")
+}
+
+fn render_journal_candidate_disposition_v1(
+    disposition: CampaignJournalCandidateDispositionV1,
+) -> &'static str {
+    match disposition {
+        CampaignJournalCandidateDispositionV1::Kept => "kept",
+        CampaignJournalCandidateDispositionV1::Pruned => "pruned",
+    }
 }
 
 pub fn render_learning_decision_outcome_analysis_v1(
@@ -2401,6 +2461,54 @@ mod tests {
     }
 
     #[test]
+    fn coverage_gap_continuation_prioritizes_kept_candidates_before_pruned_candidates() {
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-reward0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Reward Screen".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "journal-reward0".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "reward-frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 3,
+                original_count: 3,
+                selected_count: 1,
+                candidates: vec![
+                    sample_pruned_journal_candidate("rp 0", "Pruned first"),
+                    sample_journal_candidate("rp 1", "Kept second"),
+                    sample_pruned_journal_candidate("rp 2", "Pruned third"),
+                ],
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[], 1, 1);
+        let rendered = render_coverage_gap_continuation_plan_v1(&plan);
+
+        assert_eq!(plan.total_unobserved_candidates, 3);
+        assert_eq!(plan.kept_unobserved_candidates, 1);
+        assert_eq!(plan.pruned_unobserved_candidates, 2);
+        assert_eq!(plan.selected_kept_targets, 1);
+        assert_eq!(plan.selected_pruned_targets, 0);
+        assert_eq!(plan.targets[0].command, "rp 1");
+        assert_eq!(
+            plan.targets[0].disposition,
+            CampaignJournalCandidateDispositionV1::Kept
+        );
+        assert!(rendered.contains("kept_unobserved=1"));
+        assert!(rendered.contains("pruned_unobserved=2"));
+        assert!(rendered.contains("disposition=kept"));
+    }
+
+    #[test]
     fn decision_outcome_samples_jsonl_round_trips() {
         let mut clothesline = sample_branch_outcome_record();
         clothesline.branch_id = "root.rp 0".to_string();
@@ -2939,6 +3047,17 @@ mod tests {
             label: label.to_string(),
             semantic_class: "test".to_string(),
             disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Kept,
+        }
+    }
+
+    fn sample_pruned_journal_candidate(command: &str, label: &str) -> CampaignJournalCandidateV1 {
+        CampaignJournalCandidateV1 {
+            candidate_id: command.to_string(),
+            command: command.to_string(),
+            label: label.to_string(),
+            semantic_class: "test".to_string(),
+            disposition:
+                crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Pruned,
         }
     }
 
