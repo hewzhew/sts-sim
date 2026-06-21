@@ -125,6 +125,10 @@ pub struct CombatSearchPerformanceSnapshotV1 {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RoutePlannerCandidateSummaryV1 {
+    /// Compatibility display view for old session traces and compact route
+    /// snippets. New route/map tooling should consume `MapDecisionPacketV1`
+    /// from `RoutePlannerSelection::map_decision_packet` instead of treating
+    /// this summary as a source of truth.
     pub rank: usize,
     pub target_x: i32,
     pub target_y: i32,
@@ -182,8 +186,13 @@ pub enum RunControlTraceAnnotationV1 {
         safety: String,
         score: f32,
         command: String,
+        /// Compatibility top-3 display view. New consumers should read the
+        /// typed `map_decision_packet`.
         top_candidates: Vec<RoutePlannerCandidateSummaryV1>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        /// Compatibility full display view. Branch experiment and journal
+        /// conversion should prefer `map_decision_packet` and only fall back to
+        /// this field for old traces.
         candidate_pool: Vec<RoutePlannerCandidateSummaryV1>,
         label_role: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
