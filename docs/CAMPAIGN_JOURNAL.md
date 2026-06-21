@@ -55,6 +55,18 @@ CampaignJournalV1
         label
         semantic_class
         disposition: kept | pruned
+    campfire_candidate_pool
+      decision_id
+      boundary_title
+      frontier_key
+      candidate_count
+      branch_option_count
+      selected_plan_id
+      candidates[]
+        command
+        label
+        semantic_class
+        disposition: kept | pruned
 ```
 
 `BranchCampaignReportV1` now carries `journal` as a top-level field. The older
@@ -95,9 +107,12 @@ journal events, not the other way around.
 3. Full shop compiler candidate pools are now captured in
    `BranchExperimentReportV1.shop_plan_candidate_pools` and surfaced as
    `shop_candidate_pool` journal events.
-4. Move campfire, event, route, and boss relic decisions after shop.
-5. Link milestone outcomes to prior `decision_id` values.
-6. Gradually remove report-only decision attachments once views read from the
+4. Campfire compiler candidate pools are now captured in
+   `BranchExperimentReportV1.campfire_plan_candidate_pools` and surfaced as
+   `campfire_candidate_pool` journal events.
+5. Move event, route, and boss relic decisions after campfire.
+6. Link milestone outcomes to prior `decision_id` values.
+7. Gradually remove report-only decision attachments once views read from the
    journal directly.
 
 ## Design Rules
@@ -117,6 +132,9 @@ journal events, not the other way around.
 - Shop candidate pools are the compiler candidate pool, not a raw shop inventory
   dump. They include single-action plans, stop/leave plans, and portfolio plans
   that the compiler generated for the active compile mode.
+- Campfire candidate pools are the campfire compiler candidate pool, including
+  rest/smith/stop plans and deck-mutation-derived target metadata where
+  available.
 - Candidate semantics still include legacy `semantic_class` strings from branch
   retention; these are provenance, not proof of strategic correctness.
 - Outcome links are not implemented yet.

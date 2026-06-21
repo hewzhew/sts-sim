@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::eval::branch_experiment::{
-    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentCampfirePlanCandidateEntryV1, BranchExperimentRewardOptionPortfolioEntryV1,
+    BranchExperimentRewardOptionPortfolioV1,
 };
 
 pub const CAMPAIGN_JOURNAL_SCHEMA_NAME: &str = "CampaignJournal";
@@ -93,6 +94,16 @@ pub enum CampaignJournalEventPayloadV1 {
         rollout_head_plan_id: Option<String>,
         candidates: Vec<CampaignJournalCandidateV1>,
     },
+    CampfireCandidatePool {
+        decision_id: String,
+        boundary_title: String,
+        frontier_key: String,
+        depth: usize,
+        candidate_count: usize,
+        branch_option_count: usize,
+        selected_plan_id: Option<String>,
+        candidates: Vec<CampaignJournalCandidateV1>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -103,6 +114,44 @@ pub struct CampaignJournalCandidateV1 {
     pub label: String,
     pub semantic_class: String,
     pub disposition: CampaignJournalCandidateDispositionV1,
+}
+
+pub fn campaign_journal_candidate_from_campfire_entry_v1(
+    candidate: &BranchExperimentCampfirePlanCandidateEntryV1,
+) -> CampaignJournalCandidateV1 {
+    CampaignJournalCandidateV1 {
+        candidate_id: candidate.plan_id.clone(),
+        command: candidate.command.clone(),
+        label: candidate.label.clone(),
+        semantic_class: campfire_candidate_semantic_class_v1(candidate),
+        disposition: if candidate.branch_admission == "selected" {
+            CampaignJournalCandidateDispositionV1::Kept
+        } else {
+            CampaignJournalCandidateDispositionV1::Pruned
+        },
+    }
+}
+
+fn campfire_candidate_semantic_class_v1(
+    candidate: &BranchExperimentCampfirePlanCandidateEntryV1,
+) -> String {
+    let mut parts = vec![
+        format!("role:{}", candidate.role),
+        format!("effect:{}", candidate.effect_kind),
+        format!("score_hint:{}", candidate.score_hint),
+        format!("confidence_milli:{}", candidate.confidence_milli),
+        format!("execute:{}", candidate.execute_autopilot),
+        format!("branch_active:{}", candidate.branch_active),
+        format!("branch:{}", candidate.branch_admission),
+        format!("representatives:{}", candidate.representative_count),
+    ];
+    if let Some(tag) = &candidate.strategy_tag {
+        parts.push(format!("strategy_tag:{tag}"));
+    }
+    if candidate.suppressed_count > 0 {
+        parts.push(format!("suppressed:{}", candidate.suppressed_count));
+    }
+    parts.join(" ")
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

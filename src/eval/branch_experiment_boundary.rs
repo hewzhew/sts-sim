@@ -3,8 +3,9 @@ use crate::ai::deck_mutation_compiler_v1::{DeckMutationPlanCandidateV1, DeckMuta
 use crate::ai::event_policy_v1::EventCandidateTierV1;
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::{
-    BranchExperimentChoiceCardV1, BranchExperimentChoiceDecisionSignalV1,
-    BranchExperimentRewardOptionPortfolioV1, BranchExperimentShopPlanCandidatePoolV1,
+    BranchExperimentCampfirePlanCandidatePoolV1, BranchExperimentChoiceCardV1,
+    BranchExperimentChoiceDecisionSignalV1, BranchExperimentRewardOptionPortfolioV1,
+    BranchExperimentShopPlanCandidatePoolV1,
 };
 use crate::eval::run_control::RunControlSession;
 use crate::runtime::combat::CombatCard;
@@ -19,7 +20,9 @@ mod run_selection;
 mod shop;
 
 use boss_relic::{boss_relic_branch_options, BossRelicBranchOption};
-use campfire::{campfire_branch_options, select_campfire_branch_options, CampfireBranchOption};
+#[cfg(test)]
+use campfire::select_campfire_branch_options;
+use campfire::{campfire_branch_options, campfire_branch_selection, CampfireBranchOption};
 #[cfg(test)]
 use card_reward::reward_option_semantic_class;
 pub(crate) use card_reward::{
@@ -73,6 +76,7 @@ pub(crate) struct BranchBoundarySelectionV1 {
     pub(crate) options: Vec<BranchBoundaryOptionV1>,
     pub(crate) reward_option_portfolio: Option<BranchExperimentRewardOptionPortfolioV1>,
     pub(crate) shop_plan_candidate_pool: Option<BranchExperimentShopPlanCandidatePoolV1>,
+    pub(crate) campfire_plan_candidate_pool: Option<BranchExperimentCampfirePlanCandidatePoolV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -133,12 +137,13 @@ pub(crate) fn current_branch_boundary(
             options,
             reward_option_portfolio: selected.portfolio,
             shop_plan_candidate_pool: None,
+            campfire_plan_candidate_pool: None,
         });
     }
 
-    if let Some(options) = campfire_branch_options(session) {
-        let selected =
-            select_campfire_branch_options(options, config.max_campfire_options_per_branch);
+    if let Some(selected) =
+        campfire_branch_selection(session, config.max_campfire_options_per_branch)
+    {
         return Some(BranchBoundarySelectionV1 {
             id: BranchBoundaryIdV1::Campfire,
             options: selected
@@ -148,6 +153,7 @@ pub(crate) fn current_branch_boundary(
                 .collect(),
             reward_option_portfolio: None,
             shop_plan_candidate_pool: None,
+            campfire_plan_candidate_pool: Some(selected.candidate_pool),
         });
     }
 
@@ -160,6 +166,7 @@ pub(crate) fn current_branch_boundary(
                 .collect(),
             reward_option_portfolio: None,
             shop_plan_candidate_pool: None,
+            campfire_plan_candidate_pool: None,
         });
     }
 
@@ -172,6 +179,7 @@ pub(crate) fn current_branch_boundary(
                 .collect(),
             reward_option_portfolio: None,
             shop_plan_candidate_pool: None,
+            campfire_plan_candidate_pool: None,
         });
     }
 
@@ -184,6 +192,7 @@ pub(crate) fn current_branch_boundary(
                 .collect(),
             reward_option_portfolio: None,
             shop_plan_candidate_pool: None,
+            campfire_plan_candidate_pool: None,
         });
     }
 
@@ -197,6 +206,7 @@ pub(crate) fn current_branch_boundary(
                 .collect(),
             reward_option_portfolio: None,
             shop_plan_candidate_pool: Some(selected.candidate_pool),
+            campfire_plan_candidate_pool: None,
         });
     }
 
@@ -209,6 +219,7 @@ pub(crate) fn current_branch_boundary(
                 .collect(),
             reward_option_portfolio: None,
             shop_plan_candidate_pool: None,
+            campfire_plan_candidate_pool: None,
         });
     }
 

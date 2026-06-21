@@ -55,7 +55,8 @@ const COMBAT_TURN_SEGMENT_PROGRESS_STOP_REASON: &str =
 
 pub use types::{
     BranchExperimentBossCombatRecordV1, BranchExperimentBranchReportV1,
-    BranchExperimentBranchStatusV1, BranchExperimentChoiceCardV1,
+    BranchExperimentBranchStatusV1, BranchExperimentCampfirePlanCandidateEntryV1,
+    BranchExperimentCampfirePlanCandidatePoolV1, BranchExperimentChoiceCardV1,
     BranchExperimentChoiceDecisionSignalV1, BranchExperimentChoiceV1, BranchExperimentConfigV1,
     BranchExperimentFirstEliteEvidenceV1, BranchExperimentFrontierGroupV1,
     BranchExperimentFrontierV1, BranchExperimentLineageV1, BranchExperimentPrunedBranchSummaryV1,
@@ -404,6 +405,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
     let mut pruned_branch_summary = BranchExperimentPrunedBranchSummaryV1::default();
     let mut reward_option_portfolios = Vec::new();
     let mut shop_plan_candidate_pools = Vec::new();
+    let mut campfire_plan_candidate_pools = Vec::new();
     let mut route_decisions = Vec::new();
     let mut combat_performance_samples = Vec::new();
 
@@ -462,9 +464,15 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
                 }
                 if let Some(mut pool) = boundary.shop_plan_candidate_pool {
                     pool.depth = depth;
-                    pool.frontier_key = frontier_before_boundary.key;
-                    pool.boundary_title = frontier_before_boundary.boundary_title;
+                    pool.frontier_key = frontier_before_boundary.key.clone();
+                    pool.boundary_title = frontier_before_boundary.boundary_title.clone();
                     shop_plan_candidate_pools.push(pool);
+                }
+                if let Some(mut pool) = boundary.campfire_plan_candidate_pool {
+                    pool.depth = depth;
+                    pool.frontier_key = frontier_before_boundary.key.clone();
+                    pool.boundary_title = frontier_before_boundary.boundary_title.clone();
+                    campfire_plan_candidate_pools.push(pool);
                 }
                 if boundary.options.is_empty() {
                     branch.status = BranchExperimentBranchStatusV1::NeedsHumanBoundary;
@@ -595,6 +603,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
         pruned_branch_summary,
         reward_option_portfolios,
         shop_plan_candidate_pools,
+        campfire_plan_candidate_pools,
         strategy_requests: branch_strategy_requests(&branch_reports),
         route_decisions,
         frontier_groups: frontier_groups(&branch_reports),

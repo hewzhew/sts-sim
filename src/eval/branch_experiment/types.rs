@@ -17,7 +17,7 @@ use crate::eval::run_control::{
 };
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
-pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 23;
+pub const BRANCH_EXPERIMENT_SCHEMA_VERSION: u32 = 24;
 pub const BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1: &str =
     "card_reward_strategic_trace_v1";
 
@@ -109,6 +109,8 @@ pub struct BranchExperimentReportV1 {
     pub reward_option_portfolios: Vec<BranchExperimentRewardOptionPortfolioV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shop_plan_candidate_pools: Vec<BranchExperimentShopPlanCandidatePoolV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub campfire_plan_candidate_pools: Vec<BranchExperimentCampfirePlanCandidatePoolV1>,
     #[serde(default)]
     pub strategy_requests: Vec<BranchExperimentStrategyRequestV1>,
     #[serde(default)]
@@ -197,6 +199,37 @@ pub struct BranchExperimentShopPlanCandidateEntryV1 {
     pub score: i32,
     pub confidence_milli: i32,
     pub component_net_rank: i32,
+    pub reasons: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentCampfirePlanCandidatePoolV1 {
+    pub depth: usize,
+    pub frontier_key: String,
+    pub boundary_title: String,
+    pub candidate_count: usize,
+    pub branch_option_count: usize,
+    pub selected_plan_id: Option<String>,
+    pub candidates: Vec<BranchExperimentCampfirePlanCandidateEntryV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchExperimentCampfirePlanCandidateEntryV1 {
+    pub plan_id: String,
+    pub command: String,
+    pub label: String,
+    pub role: String,
+    pub effect_kind: String,
+    pub strategy_tag: Option<String>,
+    pub score_hint: i32,
+    pub confidence_milli: i32,
+    pub execute_autopilot: bool,
+    pub branch_active: bool,
+    pub branch_admission: String,
+    pub representative_count: usize,
+    pub suppressed_count: usize,
     pub reasons: Vec<String>,
 }
 

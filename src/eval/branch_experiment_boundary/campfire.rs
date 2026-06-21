@@ -1,9 +1,12 @@
 use crate::ai::campfire_policy_v1::{
-    build_campfire_decision_context_v1, plan_campfire_decision_v1, CampfirePlanCandidateV1,
-    CampfirePlanRoleV1, CampfirePolicyConfigV1,
+    build_campfire_decision_context_v1, plan_campfire_decision_v1, CampfireDecisionV1,
+    CampfirePlanCandidateV1, CampfirePlanRoleV1, CampfirePolicyConfigV1,
 };
 use crate::content::cards::CardId;
-use crate::eval::branch_experiment::BranchExperimentChoiceDecisionSignalV1;
+use crate::eval::branch_experiment::{
+    BranchExperimentCampfirePlanCandidateEntryV1, BranchExperimentCampfirePlanCandidatePoolV1,
+    BranchExperimentChoiceDecisionSignalV1,
+};
 use crate::eval::run_control::RunControlSession;
 use crate::state::core::{CampfireChoice, EngineState};
 use std::collections::BTreeSet;
@@ -29,11 +32,19 @@ pub(super) struct CampfireBranchOption {
 #[derive(Clone, Debug)]
 pub(super) struct CampfireBranchOptionSelection {
     pub(super) options: Vec<CampfireBranchOption>,
+    pub(super) candidate_pool: BranchExperimentCampfirePlanCandidatePoolV1,
 }
 
 pub(super) fn campfire_branch_options(
     session: &RunControlSession,
 ) -> Option<Vec<CampfireBranchOption>> {
+    campfire_branch_selection(session, None).map(|selection| selection.options)
+}
+
+pub(super) fn campfire_branch_selection(
+    session: &RunControlSession,
+    max_campfire_options_per_branch: Option<usize>,
+) -> Option<CampfireBranchOptionSelection> {
     if !matches!(session.engine_state, EngineState::Campfire) {
         return None;
     }
@@ -46,7 +57,18 @@ pub(super) fn campfire_branch_options(
         .filter_map(|plan| campfire_branch_option_from_plan(session, plan))
         .collect();
     let options = compressed_campfire_branch_options(options);
-    (!options.is_empty()).then_some(options)
+    let selected = select_campfire_branch_options(options, max_campfire_options_per_branch);
+    if selected.options.is_empty() {
+        return None;
+    }
+    Some(CampfireBranchOptionSelection {
+        candidate_pool: campfire_candidate_pool_from_decision(
+            session,
+            &decision,
+            &selected.options,
+        ),
+        options: selected.options,
+    })
 }
 
 fn campfire_branch_option_from_plan(
@@ -104,7 +126,10 @@ pub(super) fn select_campfire_branch_options(
     max_campfire_options_per_branch: Option<usize>,
 ) -> CampfireBranchOptionSelection {
     let Some(limit) = max_campfire_options_per_branch else {
-        return CampfireBranchOptionSelection { options };
+        return CampfireBranchOptionSelection {
+            candidate_pool: empty_campfire_candidate_pool(options.len()),
+            options,
+        };
     };
     select_campfire_branch_options_with_limit(options, limit)
 }
@@ -138,7 +163,10 @@ fn select_campfire_branch_options_with_limit(
     };
     let capped_limit = limit.min(options.len());
     if capped_limit == 0 || options.len() <= capped_limit {
-        return CampfireBranchOptionSelection { options };
+        return CampfireBranchOptionSelection {
+            candidate_pool: empty_campfire_candidate_pool(options.len()),
+            options,
+        };
     }
 
     let mut selected_indices = Vec::<usize>::new();
@@ -247,11 +275,101 @@ fn select_campfire_branch_options_with_limit(
         );
     }
 
-    let options = selected_indices
+    let options: Vec<CampfireBranchOption> = selected_indices
         .into_iter()
         .filter_map(|index| options.get(index).cloned())
         .collect();
-    CampfireBranchOptionSelection { options }
+    CampfireBranchOptionSelection {
+        candidate_pool: empty_campfire_candidate_pool(options.len()),
+        options,
+    }
+}
+
+fn empty_campfire_candidate_pool(
+    branch_option_count: usize,
+) -> BranchExperimentCampfirePlanCandidatePoolV1 {
+    BranchExperimentCampfirePlanCandidatePoolV1 {
+        depth: 0,
+        frontier_key: String::new(),
+        boundary_title: String::new(),
+        candidate_count: 0,
+        branch_option_count,
+        selected_plan_id: None,
+        candidates: Vec::new(),
+    }
+}
+
+fn campfire_candidate_pool_from_decision(
+    session: &RunControlSession,
+    decision: &CampfireDecisionV1,
+    selected_options: &[CampfireBranchOption],
+) -> BranchExperimentCampfirePlanCandidatePoolV1 {
+    BranchExperimentCampfirePlanCandidatePoolV1 {
+        depth: 0,
+        frontier_key: String::new(),
+        boundary_title: String::new(),
+        candidate_count: decision.candidate_plans.len(),
+        branch_option_count: selected_options.len(),
+        selected_plan_id: Some(decision.selected_plan.plan_id.clone()),
+        candidates: decision
+            .candidate_plans
+            .iter()
+            .map(|plan| campfire_candidate_entry_from_plan(session, plan, selected_options))
+            .collect(),
+    }
+}
+
+fn campfire_candidate_entry_from_plan(
+    session: &RunControlSession,
+    plan: &CampfirePlanCandidateV1,
+    selected_options: &[CampfireBranchOption],
+) -> BranchExperimentCampfirePlanCandidateEntryV1 {
+    let (command, label, effect_kind) = match plan.choice {
+        Some(choice) => (
+            campfire_option_command(choice),
+            campfire_option_label(session, choice).unwrap_or_else(|| plan.plan_id.clone()),
+            campfire_option_metadata(session, choice).effect_kind,
+        ),
+        None => (
+            "stop".to_string(),
+            "Stop campfire automation".to_string(),
+            "stop".to_string(),
+        ),
+    };
+    BranchExperimentCampfirePlanCandidateEntryV1 {
+        plan_id: plan.plan_id.clone(),
+        command: command.clone(),
+        label,
+        role: format!("{:?}", plan.role),
+        effect_kind,
+        strategy_tag: plan.strategy_tag.clone(),
+        score_hint: plan.score_hint,
+        confidence_milli: (plan.confidence * 1000.0).round() as i32,
+        execute_autopilot: plan.execute_autopilot,
+        branch_active: plan.branch_active,
+        branch_admission: campfire_candidate_branch_admission_v1(plan, &command, selected_options),
+        representative_count: plan.representative_count,
+        suppressed_count: plan.suppressed_count,
+        reasons: plan.reasons.clone(),
+    }
+}
+
+fn campfire_candidate_branch_admission_v1(
+    plan: &CampfirePlanCandidateV1,
+    command: &str,
+    selected_options: &[CampfireBranchOption],
+) -> String {
+    if selected_options
+        .iter()
+        .any(|option| option.command == command)
+    {
+        return "selected".to_string();
+    }
+    if plan.branch_active {
+        "branch_active_unselected".to_string()
+    } else {
+        "not_branch_active".to_string()
+    }
 }
 
 fn push_campfire_option_index(
