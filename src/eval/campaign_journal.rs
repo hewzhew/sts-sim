@@ -75,6 +75,14 @@ pub enum CampaignJournalEventPayloadV1 {
         selected_count: usize,
         candidates: Vec<CampaignJournalCandidateV1>,
     },
+    ShopBranchCandidateSet {
+        decision_id: String,
+        boundary_title: String,
+        frontier_key: String,
+        depth: usize,
+        candidate_count: usize,
+        candidates: Vec<CampaignJournalCandidateV1>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -106,7 +114,10 @@ pub fn reward_portfolio_from_journal_event_v1(
         selected_count,
         candidates,
         ..
-    } = &event.payload;
+    } = &event.payload
+    else {
+        return None;
+    };
 
     let mut selected_options = Vec::new();
     let mut pruned_options = Vec::new();

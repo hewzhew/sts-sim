@@ -19,7 +19,7 @@ They should not become independent places that reconstruct decision history.
 
 ## Current Scope
 
-The current implementation records reward candidate sets produced by branch
+The current implementation records two decision event shapes produced by branch
 campaign parent expansion:
 
 ```text
@@ -34,11 +34,22 @@ CampaignJournalV1
         label
         semantic_class
         disposition: kept | pruned
+    shop_branch_candidate_set
+      decision_id
+      boundary_title
+      frontier_key
+      candidates[]
+        command
+        label
+        semantic_class
+        disposition: kept
 ```
 
 `BranchCampaignReportV1` now carries `journal` as a top-level field. The older
 `rounds[].decision_observations` field remains as a compatibility summary, but
-new inspection should prefer `journal`.
+new inspection should prefer `journal`. The `--inspect-journal` report view
+prints journal events directly; `--inspect-decision-observations` remains a
+reward-only compatibility view.
 
 ## Boundaries
 
@@ -68,10 +79,12 @@ journal events, not the other way around.
 ## Migration Plan
 
 1. Reward candidate sets are the first event source.
-2. Move shop plans into journal events next.
-3. Move campfire, event, route, and boss relic decisions after shop.
-4. Link milestone outcomes to prior `decision_id` values.
-5. Gradually remove report-only decision attachments once views read from the
+2. Shop branch frontier candidates are the second event source.
+3. Move full shop compiler candidate pools into journal events when the
+   compiler exposes stable plan identities for all candidates at decision time.
+4. Move campfire, event, route, and boss relic decisions after shop.
+5. Link milestone outcomes to prior `decision_id` values.
+6. Gradually remove report-only decision attachments once views read from the
    journal directly.
 
 ## Design Rules
@@ -86,9 +99,11 @@ journal events, not the other way around.
 
 ## Current Caveats
 
-- Only reward candidate sets are journaled today.
+- Shop journal events currently record the branch frontier options that were
+  exposed to branch campaign. They are not yet the full shop inventory or full
+  compiler candidate pool.
 - Candidate semantics still include legacy `semantic_class` strings from branch
   retention; these are provenance, not proof of strategic correctness.
 - Outcome links are not implemented yet.
-- Existing inspect output still uses the old name `decision observations`, but
-  it now reports whether the source is `journal` or `round_compat`.
+- Existing `decision observations` output is still reward-compatible legacy
+  terminology. Prefer `--inspect-journal` for new debugging.

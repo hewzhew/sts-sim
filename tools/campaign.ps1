@@ -47,6 +47,10 @@ Prints card reward compiler evidence for a selected checkpoint branch.
 Prints saved historical reward option portfolios matching a candidate or semantic class.
 
 .EXAMPLE
+.\tools\campaign.ps1 -InspectJournal -InspectQuery "shop"
+Prints saved CampaignJournal decision events matching a boundary, candidate, or semantic field.
+
+.EXAMPLE
 .\tools\campaign.ps1 -InspectDeckMutation -InspectIndex 0
 Prints DeckMutationCompiler evidence for a selected checkpoint branch.
 
@@ -165,6 +169,7 @@ param(
     [switch] $InspectShopChallenge,
     [switch] $InspectCardRewardEvidence,
     [switch] $InspectDecisionObservations,
+    [switch] $InspectJournal,
     [switch] $InspectCampfireEvidence,
     [switch] $InspectDeckMutation,
     [switch] $InspectRouteEvidence,
@@ -288,6 +293,7 @@ if (
     $InspectShopChallenge -or
     $InspectCardRewardEvidence -or
     $InspectDecisionObservations -or
+    $InspectJournal -or
     $InspectCampfireEvidence -or
     $InspectDeckMutation -or
     $InspectRouteEvidence -or
@@ -837,6 +843,7 @@ if ($Inspect) {
         $InspectShopChallenge -or
         $InspectCardRewardEvidence -or
         $InspectDecisionObservations -or
+        $InspectJournal -or
         $InspectCampfireEvidence -or
         $InspectDeckMutation -or
         $InspectRouteEvidence -or
@@ -864,6 +871,9 @@ if ($Inspect) {
     }
     if ((-not $ExportLearningDataset) -and $InspectDecisionObservations) {
         $InspectArgs += "--inspect-decision-observations"
+    }
+    if ((-not $ExportLearningDataset) -and $InspectJournal) {
+        $InspectArgs += "--inspect-journal"
     }
     if ((-not $ExportLearningDataset) -and $InspectCampfireEvidence) {
         $InspectArgs += "--inspect-campfire-evidence"

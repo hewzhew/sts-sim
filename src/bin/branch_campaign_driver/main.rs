@@ -12,6 +12,7 @@ mod decision_observations;
 mod driver_command;
 mod final_boss_combat;
 mod inspect_summary;
+mod journal_inspection;
 mod outcome_dataset;
 mod shop_challenge;
 
@@ -33,6 +34,7 @@ use decision_observations::run_decision_observation_inspection;
 #[cfg(test)]
 use driver_command::driver_command_from_args;
 use driver_command::{driver_command_from_cli_input, BranchCampaignDriverCommandV1};
+use journal_inspection::run_campaign_journal_inspection;
 use outcome_dataset::{
     run_branch_outcome_dataset_analysis, run_branch_outcome_dataset_export,
     run_continuation_effect_report, run_decision_outcome_dataset_analysis,
@@ -83,6 +85,9 @@ fn run(cli_input: BranchCampaignCliInputV1) -> Result<(), String> {
         }
         BranchCampaignDriverCommandV1::InspectFinalBossCombat => {
             run_final_boss_combat_report_inspection(&InspectCommandInput::from_args(args)?)
+        }
+        BranchCampaignDriverCommandV1::InspectJournal => {
+            run_campaign_journal_inspection(&InspectCommandInput::from_args(args)?)
         }
         BranchCampaignDriverCommandV1::InspectDecisionObservations => {
             run_decision_observation_inspection(&InspectCommandInput::from_args(args)?)
@@ -136,6 +141,14 @@ mod tests {
             "--inspect-decision-observations",
         ])
         .expect("decision observation inspect args parse");
+        let journal_args = parse_args_from([
+            "branch_campaign_driver",
+            "inspect",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-journal",
+        ])
+        .expect("journal inspect args parse");
         let dataset_args = parse_args_from([
             "branch_campaign_driver",
             "dataset",
@@ -164,6 +177,10 @@ mod tests {
         assert_eq!(
             driver_command_from_args(&decision_observation_args),
             BranchCampaignDriverCommandV1::InspectDecisionObservations
+        );
+        assert_eq!(
+            driver_command_from_args(&journal_args),
+            BranchCampaignDriverCommandV1::InspectJournal
         );
         assert_eq!(
             driver_command_from_args(&dataset_args),

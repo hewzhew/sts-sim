@@ -438,6 +438,12 @@ pub(super) struct Args {
     pub(super) inspect_decision_observations: bool,
 
     #[arg(
+        long = "inspect-journal",
+        help = "Print CampaignJournal decision events stored in a BranchCampaignV1 report"
+    )]
+    pub(super) inspect_journal: bool,
+
+    #[arg(
         long = "inspect-query",
         value_name = "TEXT",
         help = "Filter decision observations by candidate label, semantic class, frontier key, or parent choices"
@@ -1002,6 +1008,12 @@ struct InspectModeArgs {
     inspect_decision_observations: bool,
 
     #[arg(
+        long = "inspect-journal",
+        help = "Print CampaignJournal decision events stored in a BranchCampaignV1 report"
+    )]
+    inspect_journal: bool,
+
+    #[arg(
         long = "inspect-query",
         value_name = "TEXT",
         help = "Filter decision observations by candidate label, semantic class, frontier key, or parent choices"
@@ -1233,6 +1245,7 @@ impl Args {
             inspect_deck_mutation: false,
             inspect_route_evidence: false,
             inspect_decision_observations: false,
+            inspect_journal: false,
             inspect_query: None,
             inspect_final_boss_combat: false,
             export_outcome_dataset: None,
@@ -1404,6 +1417,7 @@ impl InspectModeArgs {
         args.inspect_deck_mutation = self.inspect_deck_mutation;
         args.inspect_route_evidence = self.inspect_route_evidence;
         args.inspect_decision_observations = self.inspect_decision_observations;
+        args.inspect_journal = self.inspect_journal;
         args.inspect_query = self.inspect_query;
         args.inspect_final_boss_combat = self.inspect_final_boss_combat;
     }
