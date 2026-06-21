@@ -198,6 +198,10 @@ journal events, not the other way around.
    (`path_budget`, `observed_path_count`, coverage). `possibly_truncated`
    coverage is conservative: it means the visible-map DFS reached its configured
    path budget, not that a route is good or bad.
+   New route trace annotations keep `top_candidates` as a short display
+   summary, but the full candidate pool should live only in
+   `MapDecisionPacketV1`. The legacy `candidate_pool` summary field is a
+   fallback for older traces that do not have a typed packet.
 8. Route planner selections remain surfaced as `route_decision` journal events
    for compatibility and selected-action evidence. New route decisions also
    carry `selected_index` and `selected_candidate_id` so the selected move can
