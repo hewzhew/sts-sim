@@ -13,19 +13,19 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 509 lines
-- `tools/campaign_artifacts.ps1`: 520 lines
-- `tools/campaign_invocation.ps1`: 457 lines
-- `tools/campaign_coverage_gaps.ps1`: 391 lines
-- `tools/campaign_preflight.ps1`: 191 lines
-- `tools/campaign_continuation.ps1`: 239 lines
-- `tools/campaign_inspect.ps1`: 184 lines
-- `tools/campaign_targets.ps1`: 144 lines
-- `tools/campaign_source.ps1`: 118 lines
-- `tools/campaign_rounds.ps1`: 114 lines
-- `tools/campaign_milestones.ps1`: 101 lines
-- `tools/campaign_request.ps1`: 68 lines
-- `tools/campaign_build.ps1`: 63 lines
+- `tools/campaign.ps1`: 570 lines
+- `tools/campaign_artifacts.ps1`: 582 lines
+- `tools/campaign_invocation.ps1`: 496 lines
+- `tools/campaign_coverage_gaps.ps1`: 428 lines
+- `tools/campaign_preflight.ps1`: 196 lines
+- `tools/campaign_continuation.ps1`: 294 lines
+- `tools/campaign_inspect.ps1`: 194 lines
+- `tools/campaign_targets.ps1`: 162 lines
+- `tools/campaign_source.ps1`: 132 lines
+- `tools/campaign_rounds.ps1`: 122 lines
+- `tools/campaign_milestones.ps1`: 110 lines
+- `tools/campaign_request.ps1`: 76 lines
+- `tools/campaign_build.ps1`: 71 lines
 
 Major regions:
 
@@ -213,6 +213,7 @@ This helper owns:
 - continuation preflight context handoff
 - continuation dry-run dispatch
 - continuation execution dispatch
+- explicit record/manifest context handoff for continuation helpers
 
 Round-budget helpers now live in:
 
@@ -256,6 +257,8 @@ This helper owns:
 - coverage-gap continuation execution orchestration
 - coverage-gap milestone summary commands
 - coverage-gap wrapper manifest shape
+- coverage-gap command/manifest recording from explicit contexts, not outer
+  wrapper globals
 
 Inspect argument helpers now live in:
 
@@ -282,6 +285,8 @@ This helper owns:
 - targeted continuation plan/execute/effect command rendering
 - targeted continuation dry-run command rendering
 - targeted continuation execution orchestration
+- targeted continuation primary-driver command recording from an explicit
+  record context
 
 Build freshness helpers now live in:
 
@@ -333,6 +338,9 @@ These pieces are useful but should not live in the main script long term:
 
 - residual compatibility switches that may no longer earn wrapper-level
   visibility after the latest/source/output cleanup
+- targeted continuation scratch safety: `-Scratch` is still disabled for this
+  path because before/after decision-outcome datasets still use shared
+  `latest.decision_outcomes.*` paths instead of artifact-local paths
 
 ## Candidates To Delete Or Degrade
 

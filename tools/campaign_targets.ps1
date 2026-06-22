@@ -119,7 +119,8 @@ function Invoke-TargetedContinuationCommands {
         [bool] $UntilMilestoneBound,
         [int] $ContinuationRounds,
         [string[]] $RunIdentityArgs,
-        [object] $OptionContext
+        [object] $OptionContext,
+        [object] $RecordContext
     )
 
     if ($PlanTargets -or $ContinueTargets) {
@@ -150,7 +151,9 @@ function Invoke-TargetedContinuationCommands {
     if ($LASTEXITCODE -ne 0) {
         return $LASTEXITCODE
     }
-    Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
+    Write-CampaignPrimaryDriverCommandRecord `
+        -PrimaryDriverCommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs) `
+        -Context $RecordContext
     if ($UntilMilestoneBound) {
         Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext
         $DriverExitCode = $script:CampaignMilestoneExitCode

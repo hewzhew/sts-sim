@@ -103,6 +103,14 @@ function New-CampaignContinuationCommandContext {
         -RoundBudgetArgs $RoundBudgetArgs `
         -DriverExecution $CoverageExecutionContext.DriverExecution `
         -OptionContext $Context.CampaignSharedDriverOptionContext
+    $CoverageGapMilestoneSummaryArgs = @(
+        "inspect",
+        "--inspect-report", "$($Context.RunOutputCampaignPath)",
+        "--inspect-checkpoint", "$($Context.RunOutputCheckpointPath)",
+        "--inspect-coverage-gap-milestone-summary",
+        "--coverage-gap-milestone-target", "$($Context.UntilMilestone)"
+    )
+    $CoverageGapMilestoneSummaryArgs += @($Context.CoverageGapResultFilterArgs)
 
     $PreflightContext = New-CampaignContinuationPreflightContext `
         -PlanTargets ([bool] $Context.PlanTargets) `
@@ -155,6 +163,28 @@ function New-CampaignContinuationCommandContext {
         ContinueCoverageGapArgs = @($ContinueCoverageGapArgs)
         ContinuationRounds = [int] $RoundBudget.AdditionalRounds
         CoverageGapInitialSpentRounds = [int] $CoverageExecutionContext.InitialSpentRounds
+        CoverageGapMilestoneSummaryArgs = @($CoverageGapMilestoneSummaryArgs)
+        CoverageGapManifestContext = [pscustomobject]@{
+            SourceLabel = $SourceContext.Label
+            SourceCampaignPath = $SourceContext.CampaignPath
+            SourceCheckpointPath = $SourceContext.CheckpointPath
+            CoverageGapLimit = $Context.CoverageGapLimit
+            CoverageGapCandidatesPerDecision = $Context.CoverageGapCandidatesPerDecision
+            CoverageGapIntent = $Context.CoverageGapIntent
+            CoverageGapExecutionLabel = $CoverageExecutionContext.Label
+            CoverageGapDriverExecution = $CoverageExecutionContext.DriverExecution
+            CoverageGapFilterLabel = $Context.CoverageGapFilterLabel
+            CoverageGapResultFilterLabel = $Context.CoverageGapResultFilterLabel
+            ContinueCoverageGapArgs = @($ContinueCoverageGapArgs)
+            DriverExe = $Context.DriverExe
+            UntilMilestoneBound = [bool] $Context.UntilMilestoneBound
+            UntilMilestone = $Context.UntilMilestone
+            ResolvedMilestoneStop = $Context.ResolvedMilestoneStop
+            MilestoneStepRounds = $Context.MilestoneStepRounds
+            MilestoneMaxRounds = $Context.MilestoneMaxRounds
+            CoverageGapInitialSpentRounds = [int] $CoverageExecutionContext.InitialSpentRounds
+            CoverageGapMilestoneSummaryArgs = @($CoverageGapMilestoneSummaryArgs)
+        }
         PreflightContext = $PreflightContext
     }
 }
@@ -186,7 +216,8 @@ function Write-CampaignContinuationDryRunCommandSet {
         -ContinueCoverageGapArgs $CommandContext.ContinueCoverageGapArgs `
         -RunIdentityArgs $Context.CampaignRunIdentityArgs `
         -MilestoneStepRounds $Context.MilestoneStepRounds `
-        -OptionContext $Context.CampaignSharedDriverOptionContext
+        -OptionContext $Context.CampaignSharedDriverOptionContext `
+        -CoverageGapMilestoneSummaryArgs $CommandContext.CoverageGapMilestoneSummaryArgs
 }
 
 function Invoke-CampaignContinuationCommandSet {
@@ -221,7 +252,8 @@ function Invoke-CampaignContinuationCommandSet {
                 -UntilMilestoneBound $Context.UntilMilestoneBound `
                 -ContinuationRounds $CommandContext.ContinuationRounds `
                 -RunIdentityArgs $Context.CampaignRunIdentityArgs `
-                -OptionContext $Context.CampaignSharedDriverOptionContext
+                -OptionContext $Context.CampaignSharedDriverOptionContext `
+                -RecordContext $Context
         }
         if ($Context.PlanCoverageGaps -or $Context.ContinueCoverageGaps) {
             return Invoke-CoverageGapContinuationCommands `
@@ -233,7 +265,10 @@ function Invoke-CampaignContinuationCommandSet {
                 -UntilMilestoneBound $Context.UntilMilestoneBound `
                 -CoverageGapInitialSpentRounds $CommandContext.CoverageGapInitialSpentRounds `
                 -RunIdentityArgs $Context.CampaignRunIdentityArgs `
-                -OptionContext $Context.CampaignSharedDriverOptionContext
+                -OptionContext $Context.CampaignSharedDriverOptionContext `
+                -RecordContext $Context `
+                -ManifestContext $CommandContext.CoverageGapManifestContext `
+                -CoverageGapMilestoneSummaryArgs $CommandContext.CoverageGapMilestoneSummaryArgs
         }
         return 0
     } finally {

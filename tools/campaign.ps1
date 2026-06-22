@@ -401,6 +401,18 @@ $NeedsBuild = $Build -or (Test-DriverNeedsBuild $DriverExe)
 
 if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps) {
     $ContinuationEntryContext = [pscustomobject]@{
+        WrapperScript = $PSCommandPath
+        Mode = $Mode
+        OutputArtifact = $RunOutputArtifact
+        RunCommandPath = $RunCommandPath
+        RunManifestPath = $RunManifestPath
+        WrapperInvocationLine = $CampaignWrapperInvocationLine
+        WrapperBoundParameters = $CampaignWrapperBoundParameters
+        LatestSeedPath = $LatestSeedPath
+        LatestAscensionPath = $LatestAscensionPath
+        LatestClassPath = $LatestClassPath
+        LatestModePath = $LatestModePath
+        LatestCommandPath = $LatestCommandPath
         InspectScratchLatest = [bool] $InspectScratchLatest
         PlanTargets = [bool] $PlanTargets
         ContinueTargets = [bool] $ContinueTargets
@@ -441,6 +453,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         CoverageGapLimit = $CoverageGapLimit
         CoverageGapCandidatesPerDecision = $CoverageGapCandidatesPerDecision
         CoverageGapFilterLabel = $CoverageGapFilterLabel
+        CoverageGapResultFilterArgs = @($CoverageGapResultFilterArgs)
         CoverageGapResultFilterLabel = $CoverageGapResultFilterLabel
         DryRun = [bool] $DryRun
         BuildArgs = @($BuildArgs)
