@@ -1,4 +1,5 @@
 use sts_simulator::eval::branch_campaign::BranchCampaignReportV1;
+use sts_simulator::eval::decision_path::render_decision_path_commands_compact_v1;
 use sts_simulator::eval::run_control::{
     build_decision_surface, render_run_control_details, render_run_control_state,
     RunControlCommand, RunControlSession,
@@ -250,15 +251,25 @@ fn inspect_visible_player_hp(session: &RunControlSession) -> (i32, i32) {
 fn render_inspect_command_path(commands: &[String]) -> String {
     const HEAD: usize = 4;
     const TAIL: usize = 6;
-    if commands.is_empty() {
-        return "-".to_string();
+    render_decision_path_commands_compact_v1(commands, HEAD, TAIL)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checkpoint_command_path_display_hides_raw_decision_path_markers() {
+        let rendered = render_inspect_command_path(&[
+            "rp 0".to_string(),
+            "__route_decision:0:go_2".to_string(),
+            "__decision_parent:1:event:abcd".to_string(),
+            "event 0".to_string(),
+        ]);
+
+        assert!(rendered.contains("[route-decision:go_2]"));
+        assert!(rendered.contains("[decision-parent:event:abcd]"));
+        assert!(!rendered.contains("__route_decision"));
+        assert!(!rendered.contains("__decision_parent"));
     }
-    if commands.len() <= HEAD + TAIL + 1 {
-        return commands.join(" -> ");
-    }
-    let mut parts = Vec::new();
-    parts.extend(commands.iter().take(HEAD).cloned());
-    parts.push(format!("... {} more ...", commands.len() - HEAD - TAIL));
-    parts.extend(commands.iter().skip(commands.len() - TAIL).cloned());
-    parts.join(" -> ")
 }

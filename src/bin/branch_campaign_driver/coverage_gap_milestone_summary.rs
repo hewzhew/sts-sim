@@ -5,6 +5,7 @@ use sts_simulator::eval::branch_campaign::{
     BranchCampaignBranchSummaryV1, BranchCampaignBranchV1, BranchCampaignCheckpointV1,
     BranchCampaignDiscardedBranchV1, BranchCampaignReportV1,
 };
+use sts_simulator::eval::decision_path::render_decision_path_commands_compact_v1;
 use sts_simulator::eval::learning_dataset_v1::CoverageGapContinuationFilterV1;
 
 use super::campaign_artifacts::{read_campaign_checkpoint_v1, read_campaign_report_v1};
@@ -1068,12 +1069,7 @@ fn render_recent_choice_path_v1(choice_labels: &[String]) -> String {
 
 fn render_recent_command_path_v1(commands: &[String]) -> String {
     const MAX_COMMANDS: usize = 10;
-    if commands.len() <= MAX_COMMANDS {
-        return commands.join(" -> ");
-    }
-    let skipped = commands.len() - MAX_COMMANDS;
-    let suffix = commands[skipped..].join(" -> ");
-    format!("... {skipped} earlier -> {suffix}")
+    render_decision_path_commands_compact_v1(commands, 0, MAX_COMMANDS)
 }
 
 fn target_origin_source_counts_v1<'a>(
@@ -1430,6 +1426,30 @@ mod tests {
             );
 
         assert!(text.contains("checkpoint_match_index: 1"));
+    }
+
+    #[test]
+    fn milestone_summary_command_drilldown_hides_raw_decision_path_markers() {
+        let mut route = row("active", "route", 1, 12, "x=2 y=8 Treasure");
+        route.target_key = "route:treasure".to_string();
+        route.commands = vec![
+            "rp 0".to_string(),
+            "__route_decision:0:go_2".to_string(),
+            "__decision_parent:1:event:abcd".to_string(),
+            "event 0".to_string(),
+        ];
+
+        let text = render_coverage_gap_milestone_summary_from_rows_with_filter_and_group_index_v1(
+            &[route],
+            CoverageGapMilestoneTargetV1::Act2Start,
+            &CoverageGapContinuationFilterV1::default(),
+            Some(0),
+        );
+
+        assert!(text.contains("commands: rp 0 -> [route-decision:go_2]"));
+        assert!(text.contains("[decision-parent:event:abcd]"));
+        assert!(!text.contains("__route_decision"));
+        assert!(!text.contains("__decision_parent"));
     }
 
     #[test]

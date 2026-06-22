@@ -253,6 +253,53 @@ pub fn decision_path_executable_commands_v1(commands: &[String]) -> Vec<&str> {
         .collect()
 }
 
+pub fn render_decision_path_commands_compact_v1(
+    commands: &[String],
+    head: usize,
+    tail: usize,
+) -> String {
+    if commands.is_empty() {
+        return "-".to_string();
+    }
+    let rendered = commands
+        .iter()
+        .map(|command| {
+            render_decision_path_step_for_display_v1(&parse_decision_path_step_v1(command))
+        })
+        .collect::<Vec<_>>();
+    if rendered.len() <= head + tail + 1 {
+        return rendered.join(" -> ");
+    }
+    let mut parts = Vec::new();
+    parts.extend(rendered.iter().take(head).cloned());
+    parts.push(format!("... {} more ...", rendered.len() - head - tail));
+    parts.extend(rendered.iter().skip(rendered.len() - tail).cloned());
+    parts.join(" -> ")
+}
+
+pub fn render_decision_path_step_for_display_v1(step: &DecisionPathStepV1) -> String {
+    match step {
+        DecisionPathStepV1::Command { command } => command.clone(),
+        DecisionPathStepV1::DecisionParentCoordinate {
+            decision_kind,
+            coordinate_id,
+            ..
+        } => match (decision_kind.as_deref(), coordinate_id.as_deref()) {
+            (Some(kind), Some(id)) if !id.is_empty() => {
+                format!("[decision-parent:{kind}:{id}]")
+            }
+            (Some(kind), _) => format!("[decision-parent:{kind}]"),
+            _ => "[decision-parent]".to_string(),
+        },
+        DecisionPathStepV1::RouteDecisionParentCoordinate { command_key, .. } => command_key
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .map(|key| format!("[route-decision:{key}]"))
+            .unwrap_or_else(|| "[route-decision]".to_string()),
+        DecisionPathStepV1::ReplayAdvanceCoordinate => "[replay-advance]".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -371,5 +418,25 @@ mod tests {
             parent_envelope.journal_parent_depth_against(&branch),
             Some(1)
         );
+    }
+
+    #[test]
+    fn compact_display_renders_coordinate_markers_without_raw_internal_prefixes() {
+        let commands = vec![
+            "rp 1".to_string(),
+            "__decision_parent:1:reward:abcd".to_string(),
+            "__route_decision:0:go_1".to_string(),
+            "__branch_experiment_replay_advance".to_string(),
+            "go 1".to_string(),
+        ];
+
+        let rendered = render_decision_path_commands_compact_v1(&commands, 3, 2);
+
+        assert_eq!(
+            rendered,
+            "rp 1 -> [decision-parent:reward:abcd] -> [route-decision:go_1] -> [replay-advance] -> go 1"
+        );
+        assert!(!rendered.contains("__decision_parent"));
+        assert!(!rendered.contains("__route_decision"));
     }
 }
