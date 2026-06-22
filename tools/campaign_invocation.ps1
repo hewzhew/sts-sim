@@ -53,13 +53,19 @@ function Write-CampaignPrimaryDriverCommandRecord {
         [string] $PrimaryDriverCommandLine
     )
 
-    if ($Scratch) {
+    if ($RunOutputArtifact) {
         Set-Content -LiteralPath $RunCommandPath -Value $PrimaryDriverCommandLine
-        Write-Host "scratch-primary-driver-command=$RunCommandPath"
-        Write-Host "scratch-manifest=$RunManifestPath"
+        if ($RunOutputArtifact.Kind -eq "run") {
+            Write-CampaignLatestPointer -Artifact $RunOutputArtifact
+            Write-Host "latest-pointer=$(Get-CampaignLatestPointerPath)"
+        }
+        Write-Host "primary-driver-command=$RunCommandPath"
+        Write-Host "manifest=$RunManifestPath"
         return
     }
 
+    # Legacy fallback for pre-artifact callers. New wrapper paths should set
+    # $RunOutputArtifact and should not write sidecar state.
     Set-Content -LiteralPath $LatestSeedPath -Value $Seed
     Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
     Set-Content -LiteralPath $LatestClassPath -Value $Class
@@ -127,6 +133,7 @@ function New-CampaignWrapperManifestBase {
         driver_exe = "$DriverExe"
         scratch = [bool] $Scratch
         scratch_label = $ScratchLabel
+        output_artifact = if ($RunOutputArtifact) { "$($RunOutputArtifact.Label)" } else { "" }
         output_report = "$RunOutputCampaignPath"
         output_checkpoint = "$RunOutputCheckpointPath"
         command_file_semantics = "primary_driver_command"

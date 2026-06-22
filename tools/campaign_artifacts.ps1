@@ -10,6 +10,148 @@ function Convert-ToCampaignArtifactSlug {
     return $Slug
 }
 
+function New-CampaignArtifactId {
+    param(
+        [string] $BaseLabel
+    )
+
+    $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $Slug = Convert-ToCampaignArtifactSlug $BaseLabel
+    $Suffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
+    return "$Slug-$Stamp-$Suffix"
+}
+
+function Get-CampaignRunsDir {
+    return (Join-Path $CampaignDir "runs")
+}
+
+function Get-CampaignLatestPointerPath {
+    return (Join-Path $CampaignDir "latest.json")
+}
+
+function New-CampaignRunArtifact {
+    param(
+        [string] $BaseLabel,
+        [string] $ArtifactId = ""
+    )
+
+    $Id = if ($ArtifactId) { Convert-ToCampaignArtifactSlug $ArtifactId } else { New-CampaignArtifactId -BaseLabel $BaseLabel }
+    $Dir = Join-Path (Get-CampaignRunsDir) $Id
+    return [pscustomobject]@{
+        Kind = "run"
+        Id = $Id
+        Label = "run:$Id"
+        Dir = $Dir
+        ReportPath = Join-Path $Dir "campaign.json"
+        CheckpointPath = Join-Path $Dir "checkpoint.json"
+        ManifestPath = Join-Path $Dir "manifest.json"
+        LogPath = Join-Path $Dir "log.txt"
+        CommandPath = Join-Path $Dir "command.txt"
+    }
+}
+
+function New-CampaignScratchArtifact {
+    param(
+        [string] $BaseLabel
+    )
+
+    $Id = New-CampaignArtifactId -BaseLabel $BaseLabel
+    return [pscustomobject]@{
+        Kind = "scratch"
+        Id = $Id
+        Label = "scratch:$Id"
+        Dir = $ScratchCampaignDir
+        ReportPath = Join-Path $ScratchCampaignDir "$Id.campaign.json"
+        CheckpointPath = Join-Path $ScratchCampaignDir "$Id.checkpoint.json"
+        ManifestPath = Join-Path $ScratchCampaignDir "$Id.manifest.json"
+        LogPath = Join-Path $ScratchCampaignDir "$Id.log"
+        CommandPath = Join-Path $ScratchCampaignDir "$Id.command.txt"
+    }
+}
+
+function New-CampaignLegacyLatestArtifact {
+    return [pscustomobject]@{
+        Kind = "legacy_latest"
+        Id = "legacy-latest"
+        Label = "legacy-latest"
+        Dir = $CampaignDir
+        ReportPath = $LatestCampaignPath
+        CheckpointPath = $LatestCheckpointPath
+        ManifestPath = $LatestManifestPath
+        LogPath = $LatestLogPath
+        CommandPath = $LatestCommandPath
+    }
+}
+
+function Read-CampaignLatestPointer {
+    $PointerPath = Get-CampaignLatestPointerPath
+    if (-not (Test-Path -LiteralPath $PointerPath)) {
+        return $null
+    }
+    try {
+        $Pointer = Get-Content -LiteralPath $PointerPath -Raw | ConvertFrom-Json
+        if ($Pointer.schema_name -ne "CampaignLatestPointerV1") {
+            return $null
+        }
+        if (-not $Pointer.artifact_id) {
+            return $null
+        }
+        return $Pointer
+    } catch {
+        return $null
+    }
+}
+
+function Write-CampaignLatestPointer {
+    param(
+        [object] $Artifact
+    )
+
+    if (-not $Artifact -or $Artifact.Kind -ne "run") {
+        return
+    }
+    $PointerPath = Get-CampaignLatestPointerPath
+    $Pointer = [ordered]@{
+        schema_name = "CampaignLatestPointerV1"
+        schema_version = 1
+        updated_at = (Get-Date).ToString("o")
+        artifact_id = $Artifact.Id
+        report = $Artifact.ReportPath
+        checkpoint = $Artifact.CheckpointPath
+        manifest = $Artifact.ManifestPath
+        command = $Artifact.CommandPath
+        log = $Artifact.LogPath
+    }
+    $Pointer | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $PointerPath
+}
+
+function Get-CampaignArtifactMode {
+    param(
+        [object] $Artifact
+    )
+
+    if ($Artifact -and $Artifact.ManifestPath -and (Test-Path -LiteralPath $Artifact.ManifestPath)) {
+        try {
+            $Manifest = Get-Content -LiteralPath $Artifact.ManifestPath -Raw | ConvertFrom-Json
+            if ($Manifest.mode) {
+                return ([string] $Manifest.mode).ToLowerInvariant()
+            }
+        } catch {
+            # Keep falling back to the command text.
+        }
+    }
+    if ($Artifact -and $Artifact.CommandPath -and (Test-Path -LiteralPath $Artifact.CommandPath)) {
+        $CommandText = Get-Content -LiteralPath $Artifact.CommandPath -Raw
+        if ($CommandText -match "--preset\s+('?)(quick|focused|explore|deep)\1") {
+            return $Matches[2].ToLowerInvariant()
+        }
+    }
+    if ($Artifact -and $Artifact.Kind -eq "legacy_latest") {
+        return Read-LatestCampaignMode
+    }
+    return $null
+}
+
 function Read-LatestCheckpointRunConfig {
     if (-not (Test-Path -LiteralPath $LatestCheckpointPath)) {
         return $null
@@ -96,6 +238,15 @@ function Get-CampaignArtifactRunConfig {
     if ($ManifestPath -and (Test-Path -LiteralPath $ManifestPath)) {
         try {
             $Manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+            if ($Config.Seed -eq $null -and $Manifest.seed -ne $null) {
+                $Config.Seed = [long] $Manifest.seed
+            }
+            if ($Config.Ascension -eq $null -and $Manifest.ascension -ne $null) {
+                $Config.Ascension = [int] $Manifest.ascension
+            }
+            if (-not $Config.Class -and $Manifest.class) {
+                $Config.Class = ([string] $Manifest.class).ToLowerInvariant()
+            }
             if ($Manifest.mode) { $Config.Mode = ([string] $Manifest.mode).ToLowerInvariant() }
         } catch {
             # Latest artifacts can lack a manifest; existing sidecar mode fallback remains in effect.
@@ -107,12 +258,17 @@ function Get-CampaignArtifactRunConfig {
 
 function Get-CampaignSourceArtifact {
     param(
+        [string] $Selector = "",
         [bool] $UseScratchLatest
     )
 
-    if ($UseScratchLatest) {
+    $ResolvedSelector = if ($Selector) { $Selector.Trim() } elseif ($UseScratchLatest) { "scratch:latest" } else { "latest" }
+
+    if ($ResolvedSelector -eq "scratch:latest") {
         $ScratchArtifact = Get-LatestScratchCampaignArtifact
         return [pscustomobject]@{
+            Kind = "scratch"
+            Id = $ScratchArtifact.Label
             ReportPath = $ScratchArtifact.ReportPath
             CheckpointPath = $ScratchArtifact.CheckpointPath
             ManifestPath = $ScratchArtifact.ManifestPath
@@ -122,14 +278,34 @@ function Get-CampaignSourceArtifact {
         }
     }
 
-    return [pscustomobject]@{
-        ReportPath = $LatestCampaignPath
-        CheckpointPath = $LatestCheckpointPath
-        ManifestPath = $LatestManifestPath
-        LogPath = $LatestLogPath
-        CommandPath = $LatestCommandPath
-        Label = "latest"
+    if ($ResolvedSelector -eq "latest") {
+        $Pointer = Read-CampaignLatestPointer
+        if ($Pointer) {
+            return New-CampaignRunArtifact -ArtifactId ([string] $Pointer.artifact_id) -BaseLabel ([string] $Pointer.artifact_id)
+        }
+        return New-CampaignLegacyLatestArtifact
     }
+
+    if ($ResolvedSelector -eq "legacy-latest") {
+        return New-CampaignLegacyLatestArtifact
+    }
+
+    if ($ResolvedSelector -match '^run:(.+)$') {
+        return New-CampaignRunArtifact -ArtifactId $Matches[1] -BaseLabel $Matches[1]
+    }
+
+    throw "Unknown campaign artifact selector '$ResolvedSelector'. Use 'latest', 'legacy-latest', 'scratch:latest', or 'run:<id>'."
+}
+
+function Get-CampaignArtifactShortLabel {
+    param(
+        [object] $Artifact
+    )
+
+    if (-not $Artifact) {
+        return "-"
+    }
+    return $Artifact.Label
 }
 
 function Format-CampaignArtifactSize {

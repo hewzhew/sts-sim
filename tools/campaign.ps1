@@ -15,16 +15,16 @@ Runs the same explore campaign on seed 521.
 Reuses the last non-dry-run campaign seed.
 
 .EXAMPLE
-.\tools\campaign.ps1 -More
-Resumes the latest saved campaign report with the previous mode.
+.\tools\campaign.ps1 -From latest -Continue
+Continues the latest campaign artifact into a new run artifact.
 
 .EXAMPLE
-.\tools\campaign.ps1 -More -Rounds 1
-Resumes the latest saved campaign report and advances exactly one additional round.
+.\tools\campaign.ps1 -From latest -Continue -Rounds 1
+Continues the latest campaign artifact by exactly one additional round.
 
 .EXAMPLE
-.\tools\campaign.ps1 -More -UntilRound 33
-Resumes the latest saved campaign report and advances until total round 33.
+.\tools\campaign.ps1 -From latest -Continue -UntilRound 33
+Continues the latest campaign artifact until total round 33.
 
 .EXAMPLE
 .\tools\campaign.ps1 -ContinueCoverageGaps -UntilMilestone Act2Start
@@ -175,8 +175,8 @@ Runs a larger random-seed campaign when you want to leave it working longer.
 Runs a wider, shallower campaign for branch comparison and strategy diagnosis.
 
 .EXAMPLE
-.\tools\campaign.ps1 -More -VictoryHpPercent 50
-Resumes the latest campaign but keeps exploring until it finds a victory at 50% HP or better.
+.\tools\campaign.ps1 -From latest -Continue -VictoryHpPercent 50
+Continues the latest campaign but keeps exploring until it finds a victory at 50% HP or better.
 
 .EXAMPLE
 .\tools\campaign.ps1 -DryRun
@@ -232,6 +232,8 @@ param(
 
     [switch] $Last,
     [switch] $More,
+    [Alias("Continue")]
+    [switch] $ContinueRun,
     [switch] $Inspect,
     [switch] $InspectArtifacts,
     [switch] $InspectState,
@@ -279,6 +281,7 @@ param(
     [string] $DecisionOutcomeDataset = "",
     [string] $AutoCaptureRoot = "",
     [string] $RunLabel = "",
+    [string] $From = "",
 
     [ValidateSet("fast-run", "release-final", "release", "dev-opt", "debug")]
     [string] $BuildProfile = "fast-run",
@@ -374,6 +377,11 @@ New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 
 . (Join-Path $PSScriptRoot "campaign_artifacts.ps1")
 . (Join-Path $PSScriptRoot "campaign_invocation.ps1")
+
+$ContinueCampaign = [bool] $ContinueRun
+if ($More) {
+    throw "-More has been retired because it silently mixed latest source, output, and round semantics. Use '.\tools\campaign.ps1 -From latest -Continue' or '.\tools\campaign.ps1 -From run:<id> -Continue'."
+}
 
 function Assert-CoverageGapPresetCompatible {
     param(
@@ -486,16 +494,25 @@ if (
     $Scratch -and
     -not (
         $ContinueCoverageGaps -or
-        ((-not $More) -and (-not $Inspect) -and (-not $PlanTargets) -and (-not $ContinueTargets) -and (-not $PlanCoverageGaps))
+        ((-not $ContinueCampaign) -and (-not $Inspect) -and (-not $PlanTargets) -and (-not $ContinueTargets) -and (-not $PlanCoverageGaps))
     )
 ) {
     throw "-Scratch currently supports normal campaign runs and -ContinueCoverageGaps only."
 }
 
+$ReadsCampaignSource = $Inspect -or $ContinueCampaign -or $PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps
+$CampaignSourceArtifact = $null
+$CampaignSourceRunConfig = $null
+if ($ReadsCampaignSource -or $Last) {
+    $CampaignSourceArtifact = Get-CampaignSourceArtifact -Selector $From -UseScratchLatest $InspectScratchLatest
+    $CampaignSourceRunConfig = Get-CampaignArtifactRunConfig `
+        -CheckpointPath $CampaignSourceArtifact.CheckpointPath `
+        -ManifestPath $CampaignSourceArtifact.ManifestPath
+}
+
 if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps) {
-    $Last = $true
     if (-not $PSBoundParameters.ContainsKey("Mode")) {
-        $SavedMode = Read-LatestCampaignMode
+        $SavedMode = Get-CampaignArtifactMode -Artifact $CampaignSourceArtifact
         if ($SavedMode) {
             $Mode = $SavedMode
         } else {
@@ -504,10 +521,9 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     }
 }
 
-if ($More) {
-    $Last = $true
+if ($ContinueCampaign) {
     if (-not $PSBoundParameters.ContainsKey("Mode")) {
-        $SavedMode = Read-LatestCampaignMode
+        $SavedMode = Get-CampaignArtifactMode -Artifact $CampaignSourceArtifact
         if ($SavedMode) {
             $Mode = $SavedMode
         } else {
@@ -516,19 +532,10 @@ if ($More) {
     }
 }
 
-if ($Inspect) {
-    if ($Seed -le 0 -and (Test-Path $LatestSeedPath)) {
-        $SeedText = (Get-Content -LiteralPath $LatestSeedPath -Raw).Trim()
-        [void] [long]::TryParse($SeedText, [ref] $Seed)
-    }
-} elseif ($Last) {
-    if (-not (Test-Path $LatestSeedPath)) {
-        throw "No previous campaign seed found at $LatestSeedPath. Run .\tools\campaign.ps1 first."
-    }
-    $SeedText = (Get-Content -LiteralPath $LatestSeedPath -Raw).Trim()
-    if (-not [long]::TryParse($SeedText, [ref] $Seed)) {
-        throw "Invalid previous campaign seed in $LatestSeedPath`: $SeedText"
-    }
+if (($ReadsCampaignSource -or $Last) -and $Seed -le 0 -and $CampaignSourceRunConfig -and $CampaignSourceRunConfig.Seed -ne $null) {
+    $Seed = [long] $CampaignSourceRunConfig.Seed
+} elseif ($Last -and $Seed -le 0) {
+    throw "No reusable campaign seed found in source artifact '$($CampaignSourceArtifact.Label)'. Use -Seed or a source with checkpoint run_state."
 } elseif ($Seed -le 0) {
     $Seed = Get-Random -Minimum 1 -Maximum 2147483647
 }
@@ -544,11 +551,10 @@ if ($DomainBound) {
     $Ascension = $DomainAscension
     $AscensionBound = $true
 }
-if ($Last -or $Inspect) {
+if ($Last -or $Inspect -or $ReadsCampaignSource) {
     if (-not $AscensionBound) {
-        if (Test-Path -LiteralPath $LatestAscensionPath) {
-            $AscensionText = (Get-Content -LiteralPath $LatestAscensionPath -Raw).Trim()
-            [void] [int]::TryParse($AscensionText, [ref] $Ascension)
+        if ($CampaignSourceRunConfig -and $CampaignSourceRunConfig.Ascension -ne $null) {
+            $Ascension = [int] $CampaignSourceRunConfig.Ascension
         } else {
             $SavedConfig = Read-LatestCheckpointRunConfig
             if ($SavedConfig -and $SavedConfig.ascension_level -ne $null) {
@@ -557,8 +563,8 @@ if ($Last -or $Inspect) {
         }
     }
     if (-not $ClassBound) {
-        if (Test-Path -LiteralPath $LatestClassPath) {
-            $Class = (Get-Content -LiteralPath $LatestClassPath -Raw).Trim().ToLowerInvariant()
+        if ($CampaignSourceRunConfig -and $CampaignSourceRunConfig.Class) {
+            $Class = ([string] $CampaignSourceRunConfig.Class).ToLowerInvariant()
         } else {
             $SavedConfig = Read-LatestCheckpointRunConfig
             if ($SavedConfig -and $SavedConfig.player_class) {
@@ -601,28 +607,41 @@ if (@(0, 10, 15, 17, 20) -contains $Ascension) {
     $DriverArgs += @("--ascension-domain", "a$Ascension")
 }
 
+$WritesCampaignOutput = (-not $Inspect) -and (-not $PlanTargets) -and (-not $PlanCoverageGaps)
+$RunOutputArtifact = $null
 $ScratchLabel = ""
-$ScratchCampaignPath = $LatestCampaignPath
-$ScratchCheckpointPath = $LatestCheckpointPath
-$ScratchCommandPath = $LatestCommandPath
-$ScratchManifestPath = $LatestManifestPath
-$ScratchLogPath = $LatestLogPath
-if ($Scratch) {
-    $ScratchStamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $BaseLabel = if ($RunLabel) { $RunLabel } elseif ($PlanCoverageGaps -or $ContinueCoverageGaps) { "coverage-gap-seed$Seed" } else { "campaign-seed$Seed" }
-    $ScratchLabel = "$(Convert-ToCampaignArtifactSlug $BaseLabel)-$ScratchStamp"
-    New-Item -ItemType Directory -Force -Path $ScratchCampaignDir | Out-Null
-    $ScratchCampaignPath = Join-Path $ScratchCampaignDir "$ScratchLabel.campaign.json"
-    $ScratchCheckpointPath = Join-Path $ScratchCampaignDir "$ScratchLabel.checkpoint.json"
-    $ScratchCommandPath = Join-Path $ScratchCampaignDir "$ScratchLabel.command.txt"
-    $ScratchManifestPath = Join-Path $ScratchCampaignDir "$ScratchLabel.manifest.json"
-    $ScratchLogPath = Join-Path $ScratchCampaignDir "$ScratchLabel.log"
+$RunOutputCampaignPath = ""
+$RunOutputCheckpointPath = ""
+$RunCommandPath = ""
+$RunManifestPath = ""
+$RunLogPath = ""
+if ($WritesCampaignOutput) {
+    $OutputBaseLabel = if ($RunLabel) {
+        $RunLabel
+    } elseif ($ContinueCoverageGaps) {
+        "coverage-gap-seed$Seed"
+    } elseif ($ContinueTargets) {
+        "targeted-continuation-seed$Seed"
+    } elseif ($ContinueCampaign) {
+        "continue-seed$Seed"
+    } else {
+        "campaign-seed$Seed"
+    }
+    $RunOutputArtifact = if ($Scratch) {
+        New-CampaignScratchArtifact -BaseLabel $OutputBaseLabel
+    } else {
+        New-CampaignRunArtifact -BaseLabel $OutputBaseLabel
+    }
+    $ScratchLabel = if ($Scratch) { $RunOutputArtifact.Id } else { "" }
+    $RunOutputCampaignPath = $RunOutputArtifact.ReportPath
+    $RunOutputCheckpointPath = $RunOutputArtifact.CheckpointPath
+    $RunCommandPath = $RunOutputArtifact.CommandPath
+    $RunManifestPath = $RunOutputArtifact.ManifestPath
+    $RunLogPath = $RunOutputArtifact.LogPath
+    if (-not $DryRun) {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $RunOutputCampaignPath) | Out-Null
+    }
 }
-$RunOutputCampaignPath = $ScratchCampaignPath
-$RunOutputCheckpointPath = $ScratchCheckpointPath
-$RunCommandPath = $ScratchCommandPath
-$RunManifestPath = $ScratchManifestPath
-$RunLogPath = $ScratchLogPath
 
 $CampaignBoundParameters = @{}
 foreach ($ParameterName in $PSBoundParameters.Keys) {
@@ -711,7 +730,7 @@ if ($UntilMilestoneBound -and ($RoundsBound -or $UntilRoundBound -or $MaxRoundsB
     throw "-UntilMilestone owns the round budget. Use -MilestoneStepRounds and -MilestoneMaxRounds instead of -Rounds, -UntilRound, or -MaxRounds."
 }
 if ($UntilMilestoneBound -and ($PlanTargets -or $PlanCoverageGaps -or $Inspect)) {
-    throw "-UntilMilestone requires an executing command (-More, -ContinueTargets, -ContinueCoverageGaps, or a normal run), not a plan/inspect command."
+    throw "-UntilMilestone requires an executing command (-Continue, -ContinueTargets, -ContinueCoverageGaps, or a normal run), not a plan/inspect command."
 }
 $ResolvedMilestoneStop = $MilestoneStop
 if ($ResolvedMilestoneStop -eq "auto") {
@@ -728,7 +747,7 @@ if ($UntilMilestoneBound) {
     $MaxRounds = $MilestoneStepRounds
     $DriverRoundBudgetArgs = @("--rounds", "$MilestoneStepRounds")
     $RoundBudgetSource = "UntilMilestone"
-} elseif (-not $More) {
+} elseif (-not $ContinueCampaign) {
     if ($RoundsBound) {
         $DriverRoundBudgetArgs = @("--rounds", "$Rounds")
         $RoundBudgetSource = "Rounds"
@@ -744,11 +763,14 @@ $ResumeCampaignPath = $null
 $ResumeCheckpointPath = $null
 $ResumeRoundsCompleted = $null
 $TargetRounds = $null
-if ($More) {
-    if (-not (Test-Path $LatestCampaignPath)) {
-        throw "No previous campaign report found at $LatestCampaignPath. Run .\tools\campaign.ps1 first, or use -Last to rerun the previous seed from the start."
+if ($ContinueCampaign) {
+    if (-not $CampaignSourceArtifact) {
+        $CampaignSourceArtifact = Get-CampaignSourceArtifact -Selector $From -UseScratchLatest $false
     }
-    $ResumeCampaignPath = $LatestCampaignPath
+    if (-not (Test-Path $CampaignSourceArtifact.ReportPath)) {
+        throw "No campaign report found for source '$($CampaignSourceArtifact.Label)' at $($CampaignSourceArtifact.ReportPath)."
+    }
+    $ResumeCampaignPath = $CampaignSourceArtifact.ReportPath
     $ResumeReport = Get-Content -LiteralPath $ResumeCampaignPath -Raw | ConvertFrom-Json
     $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
     if ($UntilMilestoneBound) {
@@ -767,14 +789,13 @@ if ($More) {
         $DriverRoundBudgetArgs = @("--until-round", "$UntilRound")
         $RoundBudgetSource = "UntilRound"
     } elseif ($MaxRoundsBound) {
-        $TargetRounds = $MaxRounds
-        $MaxRounds = [Math]::Max(0, $TargetRounds - $ResumeRoundsCompleted)
-        $DriverRoundBudgetArgs = @("--until-round", "$TargetRounds")
-        $RoundBudgetSource = "LegacyMaxRounds"
+        $TargetRounds = $ResumeRoundsCompleted + $MaxRounds
+        $DriverRoundBudgetArgs = @("--rounds", "$MaxRounds")
+        $RoundBudgetSource = "MaxRounds"
     }
     $DriverArgs += @("--resume", "$ResumeCampaignPath")
-    if (Test-Path $LatestCheckpointPath) {
-        $ResumeCheckpointPath = $LatestCheckpointPath
+    if (Test-Path $CampaignSourceArtifact.CheckpointPath) {
+        $ResumeCheckpointPath = $CampaignSourceArtifact.CheckpointPath
         $DriverArgs += @("--resume-checkpoint", "$ResumeCheckpointPath")
     }
 }
@@ -1082,11 +1103,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     if ($InspectScratchLatest -and ($PlanTargets -or $ContinueTargets)) {
         throw "-InspectScratchLatest is not supported for targeted continuation yet; use inspect or coverage-gap continuation."
     }
-    if ($InspectScratchLatest -and $ContinueCoverageGaps -and -not $Scratch) {
-        throw "-InspectScratchLatest with -ContinueCoverageGaps requires -Scratch so scratch source data is not written back to latest."
-    }
-
-    $ContinuationSource = Get-CampaignSourceArtifact -UseScratchLatest $InspectScratchLatest
+    $ContinuationSource = Get-CampaignSourceArtifact -Selector $From -UseScratchLatest $InspectScratchLatest
     $SourceCampaignPath = $ContinuationSource.ReportPath
     $SourceCheckpointPath = $ContinuationSource.CheckpointPath
     $SourceManifestPath = $ContinuationSource.ManifestPath
@@ -1221,8 +1238,8 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         "--execute-targeted-continuation", "$TargetDecisionOutcomePath",
         "--targeted-continuation-limit", "$TargetedContinuationLimit",
         "--targeted-continuation-candidates-per-target", "$TargetedContinuationCandidatesPerTarget",
-        "--out", "$LatestCampaignPath",
-        "--checkpoint-out", "$LatestCheckpointPath"
+        "--out", "$RunOutputCampaignPath",
+        "--checkpoint-out", "$RunOutputCheckpointPath"
     )
     $ContinueTargetArgs += $ContinuationRoundBudgetArgs
     $ContinueCoverageGapArgs = @(
@@ -1554,7 +1571,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
 }
 
 if ($Inspect) {
-    $InspectSource = Get-CampaignSourceArtifact -UseScratchLatest $InspectScratchLatest
+    $InspectSource = Get-CampaignSourceArtifact -Selector $From -UseScratchLatest $InspectScratchLatest
     $InspectCampaignPath = $InspectSource.ReportPath
     $InspectCheckpointPath = $InspectSource.CheckpointPath
     $InspectManifestPath = $InspectSource.ManifestPath
@@ -1763,8 +1780,8 @@ if ($BossRelicAxes) {
     Write-Host "boss-relic-axes=on active/frozen budgets are per boss relic lineage"
 }
 Write-Host "rerun-last=.\tools\campaign.ps1 -Last"
-Write-Host "run-more=.\tools\campaign.ps1 -More"
-Write-Host "run-one-more=.\tools\campaign.ps1 -More -Rounds 1"
+Write-Host "continue-latest=.\tools\campaign.ps1 -From latest -Continue"
+Write-Host "continue-one-round=.\tools\campaign.ps1 -From latest -Continue -Rounds 1"
 Write-Host "report=$RunOutputCampaignPath"
 Write-Host "checkpoint=$RunOutputCheckpointPath"
 Write-Host "manifest=$RunManifestPath"
@@ -1775,9 +1792,6 @@ Write-Host "combat-segment=$CombatSegmentMode"
 if ($ResumeCampaignPath) {
     Write-Host "resume=$ResumeCampaignPath"
     Write-Host "resume-rounds=$ResumeRoundsCompleted"
-    if ($RoundBudgetSource -eq "LegacyMaxRounds") {
-        Write-Warning "-MaxRounds with -More uses legacy target-total semantics. Prefer -Rounds N for additional rounds or -UntilRound N for a total-round target."
-    }
     if ($TargetRounds -ne $null) {
         Write-Host "round-budget=$RoundBudgetSource target-rounds=$TargetRounds additional-rounds=$MaxRounds"
     } else {
@@ -1793,11 +1807,11 @@ if ($UntilMilestoneBound) {
     Write-Host "until-milestone=$UntilMilestone step-rounds=$MilestoneStepRounds max-additional-rounds=$MilestoneMaxRounds"
 }
 
-if ($More -and $TargetRounds -ne $null -and $MaxRounds -eq 0) {
+if ($ContinueCampaign -and $TargetRounds -ne $null -and $MaxRounds -eq 0) {
     Write-Host "already-at-target-rounds=yes; nothing to run"
     exit 0
 }
-if ($More -and $UntilMilestoneBound) {
+if ($ContinueCampaign -and $UntilMilestoneBound) {
     $InitialMilestoneStatus = Get-CampaignMilestoneStatus -ReportPath $ResumeCampaignPath -Milestone $UntilMilestone
     if ($InitialMilestoneStatus.Reached) {
         Write-Host "already-at-milestone=yes target=$UntilMilestone hits=$($InitialMilestoneStatus.HitCount) furthest=A$($InitialMilestoneStatus.FurthestAct)F$($InitialMilestoneStatus.FurthestFloor)"

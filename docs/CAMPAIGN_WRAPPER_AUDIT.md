@@ -58,7 +58,8 @@ These names are now the boundary:
 
 ```text
 latest:
-  The default saved campaign line.
+  A pointer to the current default campaign artifact. It is not the artifact
+  itself and must not be inferred from scattered sidecar files.
 
 scratch:
   A side artifact for experiments. It must not overwrite latest.
@@ -95,6 +96,32 @@ Use clear aliases for new user-facing commands:
 
 The old names can remain as compatibility aliases, but new docs and examples
 should prefer the clearer names.
+
+`-More` is retired. It used one mutable `latest` location as source, output,
+and round-budget context at the same time. That was the root cause behind
+ambiguous "continue latest", "scratch", and "coverage-gap" behavior. New
+continuation commands must spell out their source:
+
+```powershell
+.\tools\campaign.ps1 -From latest -Continue
+.\tools\campaign.ps1 -From run:<id> -Continue -Rounds 1
+```
+
+Normal campaign runs now write to:
+
+```text
+tools/artifacts/campaigns/runs/<run-id>/
+  campaign.json
+  checkpoint.json
+  manifest.json
+  command.txt
+  log.txt
+```
+
+`tools/artifacts/campaigns/latest.json` is the only mutable latest pointer.
+The older `latest.campaign.json`, `latest.checkpoint.json`, and sidecar text
+files are fallback inputs for old artifacts only; new code should not write
+them as source of truth.
 
 ## Keep In Wrapper
 

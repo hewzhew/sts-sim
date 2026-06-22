@@ -308,7 +308,7 @@ pub fn render_branch_campaign_compact_with_detail_v1(
         && (!report.active.is_empty() || !report.frozen.is_empty())
     {
         lines.push(
-            "Next: budget ended; use .\\tools\\campaign.ps1 -More, or .\\tools\\campaign.ps1 -More -Rounds N to add a small fixed number of rounds"
+            "Next: budget ended; use .\\tools\\campaign.ps1 -From latest -Continue, or .\\tools\\campaign.ps1 -From latest -Continue -Rounds N to add a small fixed number of rounds"
                 .to_string(),
         );
     }
