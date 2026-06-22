@@ -175,6 +175,10 @@ Prints the cargo command without updating the last seed or running it.
 Runs without coarse campaign progress messages.
 
 .EXAMPLE
+.\tools\campaign.ps1 -Mode quick -Scratch -Log
+Runs a scratch campaign and tees the full driver output into a sibling .log file.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Perf
 Prints campaign performance diagnostics in the final report.
 
@@ -235,6 +239,7 @@ param(
     [switch] $InspectScratchLatest,
     [switch] $ProbeBoss,
     [switch] $DryRun,
+    [switch] $Log,
     [switch] $NoProgress,
     [switch] $VerboseProgress,
     [switch] $Diagnose,
@@ -343,6 +348,7 @@ $LatestClassPath = Join-Path $CampaignDir "latest.class.txt"
 $LatestModePath = Join-Path $CampaignDir "latest.mode.txt"
 $LatestCommandPath = Join-Path $CampaignDir "latest.command.txt"
 $LatestManifestPath = Join-Path $CampaignDir "latest.manifest.json"
+$LatestLogPath = Join-Path $CampaignDir "latest.log"
 $LatestCampaignPath = Join-Path $CampaignDir "latest.campaign.json"
 $LatestCheckpointPath = Join-Path $CampaignDir "latest.checkpoint.json"
 $LatestDecisionOutcomePath = Join-Path $CampaignDir "latest.decision_outcomes.jsonl"
@@ -637,6 +643,7 @@ $ScratchCampaignPath = $LatestCampaignPath
 $ScratchCheckpointPath = $LatestCheckpointPath
 $ScratchCommandPath = $LatestCommandPath
 $ScratchManifestPath = $LatestManifestPath
+$ScratchLogPath = $LatestLogPath
 if ($Scratch) {
     $ScratchStamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $BaseLabel = if ($RunLabel) { $RunLabel } elseif ($PlanCoverageGaps -or $ContinueCoverageGaps) { "coverage-gap-seed$Seed" } else { "campaign-seed$Seed" }
@@ -646,11 +653,13 @@ if ($Scratch) {
     $ScratchCheckpointPath = Join-Path $ScratchCampaignDir "$ScratchLabel.checkpoint.json"
     $ScratchCommandPath = Join-Path $ScratchCampaignDir "$ScratchLabel.command.txt"
     $ScratchManifestPath = Join-Path $ScratchCampaignDir "$ScratchLabel.manifest.json"
+    $ScratchLogPath = Join-Path $ScratchCampaignDir "$ScratchLabel.log"
 }
 $RunOutputCampaignPath = $ScratchCampaignPath
 $RunOutputCheckpointPath = $ScratchCheckpointPath
 $RunCommandPath = $ScratchCommandPath
 $RunManifestPath = $ScratchManifestPath
+$RunLogPath = $ScratchLogPath
 
 $CampaignBoundParameters = @{}
 foreach ($ParameterName in $PSBoundParameters.Keys) {
@@ -1823,6 +1832,9 @@ Write-Host "run-one-more=.\tools\campaign.ps1 -More -Rounds 1"
 Write-Host "report=$RunOutputCampaignPath"
 Write-Host "checkpoint=$RunOutputCheckpointPath"
 Write-Host "manifest=$RunManifestPath"
+if ($Log) {
+    Write-Host "log=$RunLogPath"
+}
 Write-Host "combat-segment=$CombatSegmentMode"
 if ($ResumeCampaignPath) {
     Write-Host "resume=$ResumeCampaignPath"
@@ -1900,6 +1912,7 @@ function New-CampaignRunWrapperManifest {
         output_checkpoint = "$RunOutputCheckpointPath"
         command_file = "$RunCommandPath"
         manifest_file = "$RunManifestPath"
+        log_file = if ($Log) { "$RunLogPath" } else { "" }
         round_budget = [ordered]@{
             source = $RoundBudgetSource
             target_rounds = $TargetRounds
@@ -1934,8 +1947,34 @@ try {
             exit $LASTEXITCODE
         }
     }
-    & $DriverExe @DriverArgs
-    $DriverExitCode = $LASTEXITCODE
+    if ($Log) {
+        $LogParent = Split-Path -Parent $RunLogPath
+        if ($LogParent) {
+            New-Item -ItemType Directory -Force -Path $LogParent | Out-Null
+        }
+        $DriverStderrLogPath = "$RunLogPath.stderr.tmp"
+        Remove-Item -LiteralPath $RunLogPath, $DriverStderrLogPath -Force -ErrorAction SilentlyContinue
+        $PreviousErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = "Continue"
+            & $DriverExe @DriverArgs 2> $DriverStderrLogPath | Tee-Object -FilePath $RunLogPath
+            $DriverExitCode = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $PreviousErrorActionPreference
+        }
+        if (Test-Path -LiteralPath $DriverStderrLogPath) {
+            $DriverStderrText = Get-Content -LiteralPath $DriverStderrLogPath -Raw
+            if ($DriverStderrText) {
+                Add-Content -LiteralPath $RunLogPath -Value ""
+                Add-Content -LiteralPath $RunLogPath -Value "[stderr]"
+                Add-Content -LiteralPath $RunLogPath -Value $DriverStderrText
+            }
+            Remove-Item -LiteralPath $DriverStderrLogPath -Force -ErrorAction SilentlyContinue
+        }
+    } else {
+        & $DriverExe @DriverArgs
+        $DriverExitCode = $LASTEXITCODE
+    }
     if ($DriverExitCode -eq 0) {
         if ($Scratch) {
             Set-Content -LiteralPath $RunCommandPath -Value $RenderedCommand
