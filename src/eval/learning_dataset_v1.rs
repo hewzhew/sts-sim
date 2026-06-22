@@ -3188,6 +3188,24 @@ fn branch_observes_journal_candidate_v1(
         return false;
     };
     coverage_gap_origin_observes_journal_candidate_v1(origin, event, candidate)
+        && coverage_gap_final_branch_origin_is_observed_v1(branch, origin)
+}
+
+fn coverage_gap_final_branch_origin_is_observed_v1(
+    branch: &BranchCampaignBranchV1,
+    origin: &BranchCampaignContinuationOriginV1,
+) -> bool {
+    if matches!(
+        branch.status,
+        BranchCampaignBranchStatusV1::Active | BranchCampaignBranchStatusV1::Frozen
+    ) && branch
+        .commands
+        .last()
+        .is_some_and(|command| command == &origin.command)
+    {
+        return false;
+    }
+    true
 }
 
 fn coverage_gap_origin_observes_journal_candidate_v1(
@@ -5009,9 +5027,9 @@ mod tests {
     }
 
     #[test]
-    fn coverage_gap_continuation_treats_final_bucket_coverage_gap_origin_as_observed() {
+    fn coverage_gap_continuation_treats_extended_final_bucket_coverage_gap_origin_as_observed() {
         let mut observed_branch =
-            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
+            sample_report_branch("root.rp 0.rp 1", BranchCampaignBranchStatusV1::Active);
         observed_branch.continuation_origin =
             Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
         let mut report = sample_campaign_report_with_branches(vec![observed_branch]);
@@ -5050,6 +5068,45 @@ mod tests {
 
         assert_eq!(labels, vec!["Reward B"]);
         assert_eq!(plan.total_unobserved_candidates, 1);
+    }
+
+    #[test]
+    fn coverage_gap_continuation_keeps_target_only_active_origin_eligible() {
+        let mut target_only_branch =
+            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
+        target_only_branch.continuation_origin =
+            Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
+        let mut report = sample_campaign_report_with_branches(vec![target_only_branch]);
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-reward0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Reward Screen".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "journal-reward0".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "reward-frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 3,
+                original_count: 2,
+                selected_count: 1,
+                candidates: vec![
+                    sample_journal_candidate("rp 0", "Reward A"),
+                    sample_journal_candidate("rp 1", "Reward B"),
+                ],
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[], 1, 2);
+
+        assert_eq!(plan.targets[0].label, "Reward A");
+        assert_eq!(plan.total_unobserved_candidates, 2);
     }
 
     #[test]
