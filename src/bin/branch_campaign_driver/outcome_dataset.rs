@@ -2260,6 +2260,7 @@ mod tests {
             selected_unscheduled_targets: 0,
             bucket_summaries,
             lane_summaries: Vec::new(),
+            target_progress_summaries: Vec::new(),
             targets: Vec::new(),
         }
     }

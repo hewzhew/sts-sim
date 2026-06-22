@@ -241,6 +241,8 @@ pub struct CoverageGapContinuationPlanV1 {
     pub bucket_summaries: Vec<CoverageGapContinuationBucketSummaryV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lane_summaries: Vec<CoverageGapContinuationLaneSummaryV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub target_progress_summaries: Vec<CoverageGapContinuationProgressSummaryV1>,
     pub targets: Vec<CoverageGapContinuationTargetV1>,
 }
 
@@ -265,6 +267,40 @@ pub struct CoverageGapContinuationLaneSummaryV1 {
     pub eligible_target_count: usize,
     pub selected_target_count: usize,
     pub deferred_target_count: usize,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageGapContinuationProgressSummaryV1 {
+    pub target_progress: CoverageGapContinuationTargetProgressV1,
+    pub branch_count: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageGapContinuationTargetProgressV1 {
+    #[default]
+    TargetOnly,
+    Extended,
+    Abandoned,
+    Stuck,
+    TerminalVictory,
+    TerminalDefeat,
+    Discarded,
+}
+
+impl CoverageGapContinuationTargetProgressV1 {
+    fn as_str(self) -> &'static str {
+        match self {
+            CoverageGapContinuationTargetProgressV1::TargetOnly => "target_only",
+            CoverageGapContinuationTargetProgressV1::Extended => "extended",
+            CoverageGapContinuationTargetProgressV1::Abandoned => "abandoned",
+            CoverageGapContinuationTargetProgressV1::Stuck => "stuck",
+            CoverageGapContinuationTargetProgressV1::TerminalVictory => "terminal_victory",
+            CoverageGapContinuationTargetProgressV1::TerminalDefeat => "terminal_defeat",
+            CoverageGapContinuationTargetProgressV1::Discarded => "discarded",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1178,6 +1214,7 @@ pub fn plan_coverage_gap_continuations_v1(
     record_coverage_gap_bucket_selected_targets_v1(&mut bucket_counts, &targets);
     let bucket_summaries = coverage_gap_bucket_summaries_v1(bucket_counts);
     let lane_summaries = coverage_gap_lane_summaries_v1(&deduped_target_candidates, &targets);
+    let target_progress_summaries = coverage_gap_target_progress_summaries_v1(report);
     for target in &targets {
         match target.disposition {
             CampaignJournalCandidateDispositionV1::Kept => {
@@ -1214,6 +1251,7 @@ pub fn plan_coverage_gap_continuations_v1(
         selected_unscheduled_targets,
         bucket_summaries,
         lane_summaries,
+        target_progress_summaries,
         targets,
     }
 }
@@ -1346,6 +1384,78 @@ fn coverage_gap_lane_summaries_v1(
             .then_with(|| left.lane.cmp(&right.lane))
     });
     summaries
+}
+
+fn coverage_gap_target_progress_summaries_v1(
+    report: &BranchCampaignReportV1,
+) -> Vec<CoverageGapContinuationProgressSummaryV1> {
+    let mut counts = BTreeMap::<CoverageGapContinuationTargetProgressV1, usize>::new();
+    for branch in report
+        .active
+        .iter()
+        .chain(report.frozen.iter())
+        .chain(report.victories.iter())
+        .chain(report.dead.iter())
+        .chain(report.abandoned.iter())
+        .chain(report.stuck.iter())
+    {
+        if let Some(progress) = coverage_gap_final_branch_target_progress_v1(branch) {
+            *counts.entry(progress).or_default() += 1;
+        }
+    }
+    for branch in &report.discarded_branches {
+        if branch
+            .continuation_origin
+            .as_ref()
+            .is_some_and(|origin| origin.kind == "coverage_gap")
+        {
+            *counts
+                .entry(CoverageGapContinuationTargetProgressV1::Discarded)
+                .or_default() += 1;
+        }
+    }
+
+    counts
+        .into_iter()
+        .map(
+            |(target_progress, branch_count)| CoverageGapContinuationProgressSummaryV1 {
+                target_progress,
+                branch_count,
+            },
+        )
+        .collect()
+}
+
+fn coverage_gap_final_branch_target_progress_v1(
+    branch: &BranchCampaignBranchV1,
+) -> Option<CoverageGapContinuationTargetProgressV1> {
+    let origin = branch
+        .continuation_origin
+        .as_ref()
+        .filter(|origin| origin.kind == "coverage_gap")?;
+    Some(match branch.status {
+        BranchCampaignBranchStatusV1::Active | BranchCampaignBranchStatusV1::Frozen => {
+            if branch
+                .commands
+                .last()
+                .is_some_and(|command| command == &origin.command)
+            {
+                CoverageGapContinuationTargetProgressV1::TargetOnly
+            } else {
+                CoverageGapContinuationTargetProgressV1::Extended
+            }
+        }
+        BranchCampaignBranchStatusV1::TerminalVictory => {
+            CoverageGapContinuationTargetProgressV1::TerminalVictory
+        }
+        BranchCampaignBranchStatusV1::TerminalDefeat => {
+            CoverageGapContinuationTargetProgressV1::TerminalDefeat
+        }
+        BranchCampaignBranchStatusV1::Abandoned => {
+            CoverageGapContinuationTargetProgressV1::Abandoned
+        }
+        BranchCampaignBranchStatusV1::Stuck => CoverageGapContinuationTargetProgressV1::Stuck,
+    })
 }
 
 fn select_coverage_gap_targets_by_type_v1(
@@ -1977,6 +2087,10 @@ pub fn render_coverage_gap_continuation_plan_summary_v1(
         }
     }
     extend_coverage_gap_lane_summary_lines_v1(&mut lines, &plan.lane_summaries);
+    extend_coverage_gap_target_progress_summary_lines_v1(
+        &mut lines,
+        &plan.target_progress_summaries,
+    );
     extend_coverage_gap_selected_target_lane_counts_v1(&mut lines, &plan.targets);
     lines.join("\n")
 }
@@ -2089,6 +2203,23 @@ fn extend_coverage_gap_selected_target_lane_counts_v1(
         lines.push(format!(
             "  {} selected={count}",
             compact_learning_text_v1(&lane, 96)
+        ));
+    }
+}
+
+fn extend_coverage_gap_target_progress_summary_lines_v1(
+    lines: &mut Vec<String>,
+    summaries: &[CoverageGapContinuationProgressSummaryV1],
+) {
+    if summaries.is_empty() {
+        return;
+    }
+    lines.push("Existing target progress:".to_string());
+    for summary in summaries {
+        lines.push(format!(
+            "  {} count={}",
+            summary.target_progress.as_str(),
+            summary.branch_count
         ));
     }
 }
@@ -4817,6 +4948,7 @@ mod tests {
                 ..Default::default()
             }],
             lane_summaries: Vec::new(),
+            target_progress_summaries: Vec::new(),
             targets: vec![sample_route_coverage_gap_target(
                 "go 0",
                 "x=0 Monster",
@@ -4833,6 +4965,77 @@ mod tests {
         assert!(rendered.contains("route:go:MonsterRoom:CompleteWithinBudget"));
         assert!(!rendered.contains("Targets:"));
         assert!(!rendered.contains("x=0 Monster"));
+    }
+
+    #[test]
+    fn coverage_gap_plan_summary_reports_existing_target_progress() {
+        let mut target_only =
+            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
+        target_only.continuation_origin =
+            Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
+        let mut extended =
+            sample_report_branch("root.rp 1.rp 0", BranchCampaignBranchStatusV1::Frozen);
+        extended.continuation_origin =
+            Some(sample_coverage_gap_reward_origin("rp 1", "Reward B", 1));
+        let mut abandoned =
+            sample_report_branch("root.rp 2", BranchCampaignBranchStatusV1::Abandoned);
+        abandoned.continuation_origin =
+            Some(sample_coverage_gap_reward_origin("rp 2", "Reward C", 2));
+        let mut discarded = sample_report_branch("root.rp 3", BranchCampaignBranchStatusV1::Frozen);
+        discarded.continuation_origin =
+            Some(sample_coverage_gap_reward_origin("rp 3", "Reward D", 3));
+
+        let mut report =
+            sample_campaign_report_with_branches(vec![target_only, extended, abandoned]);
+        report.discarded_count = 1;
+        report.discarded_branches = vec![BranchCampaignDiscardedBranchV1::from_branch_v1(
+            &discarded,
+            "duplicate_merge",
+        )];
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-reward0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Reward Screen".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "journal-reward0".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "reward-frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 4,
+                original_count: 4,
+                selected_count: 4,
+                candidates: vec![
+                    sample_journal_candidate("rp 0", "Reward A"),
+                    sample_journal_candidate("rp 1", "Reward B"),
+                    sample_journal_candidate("rp 2", "Reward C"),
+                    sample_journal_candidate("rp 3", "Reward D"),
+                ],
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[], 4, 4);
+        let rendered = render_coverage_gap_continuation_plan_summary_v1(&plan);
+
+        assert!(plan.target_progress_summaries.iter().any(|summary| {
+            summary.target_progress == CoverageGapContinuationTargetProgressV1::TargetOnly
+                && summary.branch_count == 1
+        }));
+        assert!(plan.target_progress_summaries.iter().any(|summary| {
+            summary.target_progress == CoverageGapContinuationTargetProgressV1::Extended
+                && summary.branch_count == 1
+        }));
+        assert!(rendered.contains("Existing target progress:"));
+        assert!(rendered.contains("target_only count=1"));
+        assert!(rendered.contains("extended count=1"));
+        assert!(rendered.contains("abandoned count=1"));
+        assert!(rendered.contains("discarded count=1"));
     }
 
     #[test]
