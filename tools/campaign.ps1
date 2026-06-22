@@ -43,6 +43,10 @@ Summarizes the latest saved campaign checkpoint with active/frozen/abandoned dec
 Prints the full checkpoint state for a selected latest scratch session.
 
 .EXAMPLE
+.\tools\campaign.ps1 -InspectArtifacts
+Prints artifact sizes and top-level shape for the latest campaign manifest/report/checkpoint/log bundle.
+
+.EXAMPLE
 .\tools\campaign.ps1 -InspectShopEvidence -InspectIndex 0
 Prints shop compiler evidence for a selected checkpoint branch.
 
@@ -221,6 +225,7 @@ param(
     [switch] $Last,
     [switch] $More,
     [switch] $Inspect,
+    [switch] $InspectArtifacts,
     [switch] $InspectState,
     [switch] $InspectShopEvidence,
     [switch] $InspectShopChallenge,
@@ -437,7 +442,159 @@ function Get-LatestScratchCampaignArtifact {
     return [pscustomobject]@{
         ReportPath = $ScratchReport.FullName
         CheckpointPath = $ScratchCheckpointPath
+        ManifestPath = $ScratchReport.FullName -replace '\.campaign\.json$', '.manifest.json'
+        LogPath = $ScratchReport.FullName -replace '\.campaign\.json$', '.log'
+        CommandPath = $ScratchReport.FullName -replace '\.campaign\.json$', '.command.txt'
         Label = $ScratchReport.BaseName -replace '\.campaign$', ''
+    }
+}
+
+function Format-CampaignArtifactSize {
+    param(
+        [long] $Bytes
+    )
+
+    if ($Bytes -ge 1048576) {
+        return "{0:n1} MiB" -f ($Bytes / 1048576.0)
+    }
+    if ($Bytes -ge 1024) {
+        return "{0:n1} KiB" -f ($Bytes / 1024.0)
+    }
+    return "$Bytes B"
+}
+
+function Get-CampaignValueCount {
+    param(
+        [object] $Value
+    )
+
+    if ($null -eq $Value) {
+        return 0
+    }
+    if ($Value -is [System.Array]) {
+        return $Value.Count
+    }
+    if ($Value -is [System.Collections.ICollection]) {
+        return $Value.Count
+    }
+    return 1
+}
+
+function Get-CampaignJsonTopFields {
+    param(
+        [object] $Json,
+        [int] $Limit = 10
+    )
+
+    if ($null -eq $Json) {
+        return "-"
+    }
+    $Names = @($Json.PSObject.Properties.Name)
+    if ($Names.Count -eq 0) {
+        return "-"
+    }
+    $Shown = @($Names | Select-Object -First $Limit)
+    $Suffix = if ($Names.Count -gt $Limit) { ", ..." } else { "" }
+    return ($Shown -join ", ") + $Suffix
+}
+
+function Read-CampaignJsonArtifact {
+    param(
+        [string] $Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+    try {
+        return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    } catch {
+        return $null
+    }
+}
+
+function Get-CampaignArtifactShape {
+    param(
+        [string] $Kind,
+        [string] $Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return "missing"
+    }
+
+    if ($Kind -eq "log") {
+        return "text log"
+    }
+    if ($Kind -eq "command") {
+        return "primary_driver_command"
+    }
+
+    $Json = Read-CampaignJsonArtifact -Path $Path
+    if ($null -eq $Json) {
+        return "unreadable_json"
+    }
+
+    if ($Kind -eq "manifest") {
+        $WrapperParams = 0
+        if ($Json.wrapper_invocation -and $Json.wrapper_invocation.bound_parameters) {
+            $WrapperParams = @($Json.wrapper_invocation.bound_parameters.PSObject.Properties).Count
+        }
+        $DriverArgs = Get-CampaignValueCount -Value $Json.primary_driver.args
+        return "stage=$($Json.stage) kind=$($Json.command_kind) wrapper_params=$WrapperParams driver_args=$DriverArgs"
+    }
+
+    if ($Kind -eq "report") {
+        $Active = Get-CampaignValueCount -Value $Json.active
+        $Frozen = Get-CampaignValueCount -Value $Json.frozen
+        $Journal = Get-CampaignValueCount -Value $Json.journal
+        $Rounds = Get-CampaignValueCount -Value $Json.rounds
+        return "rounds=$($Json.rounds_completed) stop=$($Json.stop_reason) active=$Active frozen=$Frozen journal=$Journal round_entries=$Rounds"
+    }
+
+    if ($Kind -eq "checkpoint") {
+        $Nodes = Get-CampaignValueCount -Value $Json.nodes
+        $Sessions = Get-CampaignValueCount -Value $Json.sessions
+        $PreludeCommands = 0
+        if ($Json.run_prelude -and $Json.run_prelude.commands) {
+            $PreludeCommands = Get-CampaignValueCount -Value $Json.run_prelude.commands
+        }
+        return "rounds=$($Json.rounds_completed) nodes=$Nodes sessions=$Sessions prelude_commands=$PreludeCommands"
+    }
+
+    return "json_fields=$(Get-CampaignJsonTopFields -Json $Json -Limit 6)"
+}
+
+function Write-CampaignArtifactSummary {
+    param(
+        [string] $SourceLabel,
+        [string] $ReportPath,
+        [string] $CheckpointPath,
+        [string] $ManifestPath,
+        [string] $LogPath,
+        [string] $CommandPath
+    )
+
+    Write-Host "CampaignArtifactContractV1 source=$SourceLabel"
+    $Artifacts = @(
+        [pscustomobject]@{ Kind = "manifest"; Path = $ManifestPath; Contract = "run provenance" },
+        [pscustomobject]@{ Kind = "report"; Path = $ReportPath; Contract = "campaign summary" },
+        [pscustomobject]@{ Kind = "checkpoint"; Path = $CheckpointPath; Contract = "continuation state" },
+        [pscustomobject]@{ Kind = "log"; Path = $LogPath; Contract = "optional stream log" },
+        [pscustomobject]@{ Kind = "command"; Path = $CommandPath; Contract = "primary driver command" }
+    )
+
+    foreach ($Artifact in $Artifacts) {
+        if (Test-Path -LiteralPath $Artifact.Path) {
+            $Item = Get-Item -LiteralPath $Artifact.Path
+            $Size = Format-CampaignArtifactSize -Bytes $Item.Length
+            $Shape = Get-CampaignArtifactShape -Kind $Artifact.Kind -Path $Artifact.Path
+            Write-Host ("  {0,-10} {1,10} | {2,-22} | {3}" -f $Artifact.Kind, $Size, $Artifact.Contract, $Shape)
+            Write-Host "    path=$($Artifact.Path)"
+        } else {
+            Write-Host ("  {0,-10} {1,10} | {2,-22} | missing" -f $Artifact.Kind, "-", $Artifact.Contract)
+            Write-Host "    path=$($Artifact.Path)"
+        }
     }
 }
 
@@ -514,6 +671,7 @@ function Format-CoverageGapFilterLabel {
 }
 
 if (
+    $InspectArtifacts -or
     $InspectState -or
     $InspectShopEvidence -or
     $InspectShopChallenge -or
@@ -1706,12 +1864,29 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
 if ($Inspect) {
     $InspectCampaignPath = $LatestCampaignPath
     $InspectCheckpointPath = $LatestCheckpointPath
+    $InspectManifestPath = $LatestManifestPath
+    $InspectLogPath = $LatestLogPath
+    $InspectCommandPath = $LatestCommandPath
     $InspectSourceLabel = "latest"
     if ($InspectScratchLatest) {
         $ScratchArtifact = Get-LatestScratchCampaignArtifact
         $InspectCampaignPath = $ScratchArtifact.ReportPath
         $InspectCheckpointPath = $ScratchArtifact.CheckpointPath
+        $InspectManifestPath = $ScratchArtifact.ManifestPath
+        $InspectLogPath = $ScratchArtifact.LogPath
+        $InspectCommandPath = $ScratchArtifact.CommandPath
         $InspectSourceLabel = "scratch:$($ScratchArtifact.Label)"
+    }
+
+    if ($InspectArtifacts) {
+        Write-CampaignArtifactSummary `
+            -SourceLabel $InspectSourceLabel `
+            -ReportPath $InspectCampaignPath `
+            -CheckpointPath $InspectCheckpointPath `
+            -ManifestPath $InspectManifestPath `
+            -LogPath $InspectLogPath `
+            -CommandPath $InspectCommandPath
+        exit 0
     }
 
     if (-not (Test-Path $InspectCheckpointPath)) {
