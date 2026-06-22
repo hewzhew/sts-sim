@@ -267,6 +267,8 @@ param(
     [int] $TargetedContinuationCandidatesPerTarget = 1,
     [int] $CoverageGapLimit = 8,
     [int] $CoverageGapCandidatesPerDecision = 1,
+    [ValidateSet("gap_closure", "frontier_expansion")]
+    [string] $CoverageGapIntent = "gap_closure",
     [ValidateRange(0, 100)]
     [int] $VictoryHpPercent = 20,
 
@@ -918,6 +920,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         "--execute-coverage-gap-continuation",
         "--coverage-gap-limit", "$CoverageGapLimit",
         "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision",
+        "--coverage-gap-budget-intent", "$CoverageGapIntent",
         "--out", "$LatestCampaignPath",
         "--checkpoint-out", "$LatestCheckpointPath"
     )
@@ -1028,7 +1031,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         Write-Host "coverage-gap-plan=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision"
     }
     if ($ContinueCoverageGaps) {
-        Write-Host "coverage-gap-continue=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision"
+        Write-Host "coverage-gap-continue=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision intent=$CoverageGapIntent"
         Write-Host "resume-rounds=$ResumeRoundsCompleted"
         if ($TargetRounds -ne $null) {
             Write-Host "round-budget=$ContinuationRoundSource target-rounds=$TargetRounds additional-rounds=$ContinuationRounds"

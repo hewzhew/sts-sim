@@ -581,6 +581,13 @@ pub(super) struct Args {
     pub(super) coverage_gap_candidates_per_decision: usize,
 
     #[arg(
+        long = "coverage-gap-budget-intent",
+        default_value = "gap_closure",
+        help = "Interpret coverage-gap continuation rounds as gap_closure or frontier_expansion in the result report"
+    )]
+    pub(super) coverage_gap_budget_intent: String,
+
+    #[arg(
         long = "export-learning-dataset",
         value_name = "PATH",
         help = "Write LearningBranchSampleV1 JSONL from a campaign report/run without treating choices as teacher labels"
@@ -1299,6 +1306,13 @@ struct ContinuationArgs {
         help = "Maximum unobserved candidate branches to continue per journal decision"
     )]
     coverage_gap_candidates_per_decision: usize,
+
+    #[arg(
+        long = "coverage-gap-budget-intent",
+        default_value = "gap_closure",
+        help = "Interpret coverage-gap continuation rounds as gap_closure or frontier_expansion in the result report"
+    )]
+    coverage_gap_budget_intent: String,
 }
 
 impl Args {
@@ -1388,6 +1402,7 @@ impl Args {
             targeted_continuation_candidates_per_target: 1,
             coverage_gap_limit: 8,
             coverage_gap_candidates_per_decision: 1,
+            coverage_gap_budget_intent: "gap_closure".to_string(),
             export_learning_dataset: None,
             export_decision_outcome_dataset: None,
         }
@@ -1605,6 +1620,7 @@ impl ContinuationArgs {
             self.targeted_continuation_candidates_per_target;
         args.coverage_gap_limit = self.coverage_gap_limit;
         args.coverage_gap_candidates_per_decision = self.coverage_gap_candidates_per_decision;
+        args.coverage_gap_budget_intent = self.coverage_gap_budget_intent;
     }
 }
 

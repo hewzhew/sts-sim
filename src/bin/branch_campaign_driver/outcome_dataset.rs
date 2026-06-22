@@ -48,7 +48,8 @@ use super::campaign_artifacts::{
     write_campaign_report_v1,
 };
 use super::command_inputs::{
-    render_round_budget_resolution_v1, ContinuationCommandInput, DatasetCommandInput,
+    render_round_budget_resolution_v1, ContinuationCommandInput, CoverageGapBudgetIntentV1,
+    DatasetCommandInput,
 };
 
 pub(super) fn run_branch_outcome_dataset_analysis(
@@ -349,7 +350,8 @@ pub(super) fn run_coverage_gap_continuation_execution(
         &continuation_report,
         Some(&source_checkpoint),
     )?;
-    let result_records = extract_branch_outcome_records_v1(&result.report, Some(&result.checkpoint))?;
+    let result_records =
+        extract_branch_outcome_records_v1(&result.report, Some(&result.checkpoint))?;
     let result_plan = plan_coverage_gap_continuations_v1(
         &result.report,
         &result_records,
@@ -375,7 +377,11 @@ pub(super) fn run_coverage_gap_continuation_execution(
     println!("{}", render_coverage_gap_continuation_plan_v1(&plan));
     println!(
         "{}",
-        render_coverage_gap_continuation_delta_v1(&plan, &result_plan)
+        render_coverage_gap_continuation_delta_v1(
+            input.coverage_gap_budget_intent,
+            &plan,
+            &result_plan,
+        )
     );
     println!(
         "{}",
@@ -854,6 +860,7 @@ fn render_coverage_gap_result_audit_v1(
 }
 
 fn render_coverage_gap_continuation_delta_v1(
+    intent: CoverageGapBudgetIntentV1,
     before: &CoverageGapContinuationPlanV1,
     after: &CoverageGapContinuationPlanV1,
 ) -> String {
@@ -861,13 +868,16 @@ fn render_coverage_gap_continuation_delta_v1(
         before.total_unobserved_candidates,
         after.total_unobserved_candidates,
     );
+    let trend = coverage_gap_delta_trend_v1(reduced, increased);
     let mut lines = vec![format!(
-        "CoverageGapContinuationDeltaV1 before_unobserved={} after_unobserved={} reduced={} increased={} trend={}",
+        "CoverageGapContinuationDeltaV1 intent={} before_unobserved={} after_unobserved={} reduced={} increased={} trend={} intent_alignment={}",
+        intent.as_str(),
         before.total_unobserved_candidates,
         after.total_unobserved_candidates,
         reduced,
         increased,
-        coverage_gap_delta_trend_v1(reduced, increased)
+        trend,
+        coverage_gap_budget_intent_alignment_v1(intent, trend)
     )];
 
     let before_buckets = before
@@ -922,6 +932,19 @@ fn coverage_gap_delta_trend_v1(reduced: usize, increased: usize) -> &'static str
         "frontier_expanded"
     } else {
         "unchanged"
+    }
+}
+
+fn coverage_gap_budget_intent_alignment_v1(
+    intent: CoverageGapBudgetIntentV1,
+    trend: &str,
+) -> &'static str {
+    match (intent, trend) {
+        (CoverageGapBudgetIntentV1::GapClosure, "coverage_reduced") => "matches",
+        (CoverageGapBudgetIntentV1::GapClosure, "frontier_expanded") => "does_not_match",
+        (CoverageGapBudgetIntentV1::FrontierExpansion, "frontier_expanded") => "matches",
+        (CoverageGapBudgetIntentV1::FrontierExpansion, "coverage_reduced") => "does_not_match",
+        _ => "neutral",
     }
 }
 
@@ -1317,14 +1340,62 @@ mod tests {
             ],
         );
 
-        let rendered = render_coverage_gap_continuation_delta_v1(&before, &after);
+        let rendered = render_coverage_gap_continuation_delta_v1(
+            CoverageGapBudgetIntentV1::GapClosure,
+            &before,
+            &after,
+        );
 
         assert!(rendered.contains(
-            "CoverageGapContinuationDeltaV1 before_unobserved=100 after_unobserved=85 reduced=15 increased=0 trend=coverage_reduced"
+            "CoverageGapContinuationDeltaV1 intent=gap_closure before_unobserved=100 after_unobserved=85 reduced=15 increased=0 trend=coverage_reduced intent_alignment=matches"
         ));
         assert!(rendered.contains("route before_unobserved=60 after_unobserved=50 reduced=10 increased=0 trend=coverage_reduced"));
         assert!(rendered.contains("reward before_unobserved=40 after_unobserved=35 reduced=5 increased=0 trend=coverage_reduced"));
         assert!(rendered.contains("event before_unobserved=0 after_unobserved=5 reduced=0 increased=5 trend=frontier_expanded"));
+    }
+
+    #[test]
+    fn coverage_gap_continuation_delta_marks_expansion_mismatch_for_gap_closure() {
+        let before = coverage_gap_test_plan_with_buckets(
+            10,
+            vec![coverage_gap_test_bucket("reward", 10, 1)],
+        );
+        let after = coverage_gap_test_plan_with_buckets(
+            14,
+            vec![coverage_gap_test_bucket("reward", 14, 2)],
+        );
+
+        let rendered = render_coverage_gap_continuation_delta_v1(
+            CoverageGapBudgetIntentV1::GapClosure,
+            &before,
+            &after,
+        );
+
+        assert!(rendered.contains(
+            "CoverageGapContinuationDeltaV1 intent=gap_closure before_unobserved=10 after_unobserved=14 reduced=0 increased=4 trend=frontier_expanded intent_alignment=does_not_match"
+        ));
+    }
+
+    #[test]
+    fn coverage_gap_continuation_delta_matches_frontier_expansion_intent() {
+        let before = coverage_gap_test_plan_with_buckets(
+            10,
+            vec![coverage_gap_test_bucket("reward", 10, 1)],
+        );
+        let after = coverage_gap_test_plan_with_buckets(
+            14,
+            vec![coverage_gap_test_bucket("reward", 14, 2)],
+        );
+
+        let rendered = render_coverage_gap_continuation_delta_v1(
+            CoverageGapBudgetIntentV1::FrontierExpansion,
+            &before,
+            &after,
+        );
+
+        assert!(rendered.contains(
+            "CoverageGapContinuationDeltaV1 intent=frontier_expansion before_unobserved=10 after_unobserved=14 reduced=0 increased=4 trend=frontier_expanded intent_alignment=matches"
+        ));
     }
 
     #[test]

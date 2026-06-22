@@ -217,6 +217,7 @@ pub(super) struct ContinuationCommandInput {
     pub(super) targeted_continuation_candidates_per_target: usize,
     pub(super) coverage_gap_limit: usize,
     pub(super) coverage_gap_candidates_per_decision: usize,
+    pub(super) coverage_gap_budget_intent: CoverageGapBudgetIntentV1,
     pub(super) branch_examples: usize,
     pub(super) report_detail: BranchCampaignReportDetailV1,
 }
@@ -240,9 +241,37 @@ impl ContinuationCommandInput {
                 .targeted_continuation_candidates_per_target,
             coverage_gap_limit: args.coverage_gap_limit,
             coverage_gap_candidates_per_decision: args.coverage_gap_candidates_per_decision,
+            coverage_gap_budget_intent: CoverageGapBudgetIntentV1::parse(
+                &args.coverage_gap_budget_intent,
+            )?,
             branch_examples: args.branch_examples,
             report_detail: BranchCampaignReportDetailV1::from(args.report_detail),
         })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CoverageGapBudgetIntentV1 {
+    GapClosure,
+    FrontierExpansion,
+}
+
+impl CoverageGapBudgetIntentV1 {
+    pub(super) fn parse(value: &str) -> Result<Self, String> {
+        match value.to_ascii_lowercase().replace('-', "_").as_str() {
+            "gap_closure" => Ok(Self::GapClosure),
+            "frontier_expansion" => Ok(Self::FrontierExpansion),
+            _ => Err(format!(
+                "invalid --coverage-gap-budget-intent `{value}`; expected gap_closure or frontier_expansion"
+            )),
+        }
+    }
+
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::GapClosure => "gap_closure",
+            Self::FrontierExpansion => "frontier_expansion",
+        }
     }
 }
 
@@ -438,5 +467,30 @@ fn parse_hp_loss_limit(value: Option<&str>) -> Result<Option<RunControlHpLossLim
             .map(RunControlHpLossLimit::Limit)
             .map(Some)
             .map_err(|err| format!("invalid --max-hp-loss `{value}`: {err}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli_args::Args;
+
+    #[test]
+    fn continuation_input_parses_coverage_gap_budget_intent() {
+        let args = Args::try_parse_from([
+            "branch_campaign_driver",
+            "continue",
+            "--execute-coverage-gap-continuation",
+            "--coverage-gap-budget-intent",
+            "frontier-expansion",
+        ])
+        .expect("coverage gap budget intent should parse");
+
+        let input = ContinuationCommandInput::from_args(&args).expect("input should build");
+
+        assert_eq!(
+            input.coverage_gap_budget_intent,
+            CoverageGapBudgetIntentV1::FrontierExpansion
+        );
     }
 }
