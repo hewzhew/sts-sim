@@ -978,9 +978,13 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     $CoverageGapDriverExecution = $CoverageGapExecution
     $CoverageGapExecutionLabel = $CoverageGapExecution
     if ($CoverageGapExecution -eq "auto") {
+        $HasExplicitRoundBudget = $RoundsBound -or $UntilRoundBound -or $MaxRoundsBound
         if ($UntilMilestoneBound -and $ContinueCoverageGaps) {
             $CoverageGapExecutionLabel = "milestone_continuation"
             $CoverageGapDriverExecution = "target_only"
+        } elseif ($HasExplicitRoundBudget) {
+            $CoverageGapExecutionLabel = "advance_rounds"
+            $CoverageGapDriverExecution = "advance_rounds"
         } elseif ($CoverageGapIntent -eq "gap_closure") {
             $CoverageGapExecutionLabel = "target_only"
             $CoverageGapDriverExecution = "target_only"
