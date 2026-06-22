@@ -1288,7 +1288,9 @@ fn coverage_gap_route_selection_lane_v1(target: &CoverageGapContinuationTargetV1
     )
 }
 
-fn coverage_gap_target_selection_lane_v1(target: &CoverageGapContinuationTargetV1) -> String {
+pub fn coverage_gap_continuation_target_lane_v1(
+    target: &CoverageGapContinuationTargetV1,
+) -> String {
     if coverage_gap_target_bucket_v1(target) == "route" {
         return coverage_gap_route_selection_lane_v1(target);
     }
@@ -1543,7 +1545,7 @@ fn render_coverage_gap_target_line_v1(
         ),
         render_journal_candidate_disposition_v1(target.disposition),
         target.milestone,
-        compact_learning_text_v1(&coverage_gap_target_selection_lane_v1(target), 96),
+        compact_learning_text_v1(&coverage_gap_continuation_target_lane_v1(target), 96),
         render_coverage_gap_target_origin_v1(&target.target_origin),
         compact_learning_text_v1(&target.semantic_class, 58)
     )

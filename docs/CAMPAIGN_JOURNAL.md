@@ -164,6 +164,9 @@ for saying that the missing candidate is strategically better. The planner
 balances decision buckets, and route/map gaps are further interleaved by typed
 route lane (action, room, projection coverage, first-elite shape) so a small
 budget does not only replay same-looking map alternatives.
+Execution output includes `CoverageGapResultAuditV1`, which joins each executed
+target back to its resulting branch and reports the outcome bucket, frontier,
+run progress, HP, deck size, and stop reason.
 
 For route/map candidates, continuation targets carry structured
 `target_origin` provenance from the journal `MapDecisionPacketV1` when it is

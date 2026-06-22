@@ -20,14 +20,14 @@ use sts_simulator::eval::decision_path::decision_path_commands_include_decision_
 use sts_simulator::eval::learning_dataset_v1::{
     analyze_continuation_effect_v1, analyze_journal_decision_candidate_coverage_v1,
     analyze_learning_decision_outcome_samples_v1, coverage_gap_continuation_execution_plan_v1,
-    decision_outcome_samples_from_campaign_report_v1, learning_records_from_branch_outcomes_v1,
-    parse_learning_decision_outcome_samples_jsonl_v1, plan_coverage_gap_continuations_v1,
-    plan_targeted_continuations_v1, probe_learning_readiness_v1,
-    refresh_coverage_gap_execution_bucket_summaries_v1, render_continuation_effect_report_v1,
-    render_coverage_gap_continuation_plan_v1, render_coverage_gap_execution_plan_v1,
-    render_journal_decision_candidate_coverage_v1, render_learning_decision_outcome_analysis_v1,
-    render_learning_readiness_probe_v1, render_targeted_continuation_plan_v1,
-    serialize_learning_branch_samples_jsonl_v1,
+    coverage_gap_continuation_target_lane_v1, decision_outcome_samples_from_campaign_report_v1,
+    learning_records_from_branch_outcomes_v1, parse_learning_decision_outcome_samples_jsonl_v1,
+    plan_coverage_gap_continuations_v1, plan_targeted_continuations_v1,
+    probe_learning_readiness_v1, refresh_coverage_gap_execution_bucket_summaries_v1,
+    render_continuation_effect_report_v1, render_coverage_gap_continuation_plan_v1,
+    render_coverage_gap_execution_plan_v1, render_journal_decision_candidate_coverage_v1,
+    render_learning_decision_outcome_analysis_v1, render_learning_readiness_probe_v1,
+    render_targeted_continuation_plan_v1, serialize_learning_branch_samples_jsonl_v1,
     serialize_learning_decision_outcome_samples_jsonl_v1, targeted_continuation_execution_plan_v1,
     CoverageGapContinuationExecutionPlanV1, CoverageGapContinuationPlanV1,
     CoverageGapContinuationTargetV1, LearningBranchSampleV1, LearningDatasetExportContextV1,
@@ -368,6 +368,10 @@ pub(super) fn run_coverage_gap_continuation_execution(
     println!("{}", render_coverage_gap_continuation_plan_v1(&plan));
     println!(
         "{}",
+        render_coverage_gap_result_audit_v1(&execution, &result.report)
+    );
+    println!(
+        "{}",
         render_branch_campaign_compact_with_detail_v1(
             &result.report,
             input.branch_examples,
@@ -696,6 +700,187 @@ fn checkpoint_can_replay_parent_commands_v1(
     false
 }
 
+fn render_coverage_gap_result_audit_v1(
+    execution: &CoverageGapContinuationExecutionPlanV1,
+    report: &BranchCampaignReportV1,
+) -> String {
+    let branches = coverage_gap_result_branches_v1(report);
+    let mut matched = 0usize;
+    let mut missing = 0usize;
+    let mut outcome_counts = BTreeMap::<(String, String, String), usize>::new();
+    let mut target_lines = Vec::new();
+
+    for (index, target) in execution.targets.iter().enumerate() {
+        let lane = coverage_gap_continuation_target_lane_v1(target);
+        if let Some(result) = branches
+            .iter()
+            .find(|result| coverage_gap_result_branch_matches_target_v1(result.branch, target))
+        {
+            matched = matched.saturating_add(1);
+            *outcome_counts
+                .entry((
+                    target.event_type.clone(),
+                    lane.clone(),
+                    result.outcome.to_string(),
+                ))
+                .or_default() += 1;
+            target_lines.push(format!(
+                "  {}. {} {} {{{}}} lane={} -> {} frontier={} {} stop={}",
+                index + 1,
+                target.event_type,
+                compact_coverage_gap_audit_text_v1(&target.label, 40),
+                compact_coverage_gap_audit_text_v1(&target.command, 24),
+                compact_coverage_gap_audit_text_v1(&lane, 72),
+                result.outcome,
+                result.branch.frontier_title,
+                render_coverage_gap_branch_progress_v1(result.branch),
+                compact_coverage_gap_audit_text_v1(&result.branch.stop_reason, 92)
+            ));
+        } else {
+            missing = missing.saturating_add(1);
+            target_lines.push(format!(
+                "  {}. missing target {} {} {{{}}} lane={} parent={}",
+                index + 1,
+                target.event_type,
+                compact_coverage_gap_audit_text_v1(&target.label, 40),
+                compact_coverage_gap_audit_text_v1(&target.command, 24),
+                compact_coverage_gap_audit_text_v1(&lane, 72),
+                compact_coverage_gap_audit_text_v1(&target.parent_branch_id, 48)
+            ));
+        }
+    }
+
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "CoverageGapResultAuditV1 targets={} matched={} missing={}",
+        execution.targets.len(),
+        matched,
+        missing
+    ));
+    if !outcome_counts.is_empty() {
+        lines.push("Outcomes:".to_string());
+        for ((event_type, lane, outcome), count) in outcome_counts {
+            lines.push(format!(
+                "  {} lane={} outcome={} count={}",
+                event_type,
+                compact_coverage_gap_audit_text_v1(&lane, 72),
+                outcome,
+                count
+            ));
+        }
+    }
+    if target_lines.is_empty() {
+        lines.push("Targets: none".to_string());
+    } else {
+        lines.push("Targets:".to_string());
+        lines.extend(target_lines);
+    }
+    lines.join("\n")
+}
+
+struct CoverageGapResultBranchRefV1<'a> {
+    outcome: &'static str,
+    branch: &'a BranchCampaignBranchV1,
+}
+
+fn coverage_gap_result_branches_v1(
+    report: &BranchCampaignReportV1,
+) -> Vec<CoverageGapResultBranchRefV1<'_>> {
+    let mut branches = Vec::new();
+    branches.extend(
+        report
+            .active
+            .iter()
+            .map(|branch| CoverageGapResultBranchRefV1 {
+                outcome: "active",
+                branch,
+            }),
+    );
+    branches.extend(
+        report
+            .frozen
+            .iter()
+            .map(|branch| CoverageGapResultBranchRefV1 {
+                outcome: "frozen",
+                branch,
+            }),
+    );
+    branches.extend(
+        report
+            .victories
+            .iter()
+            .map(|branch| CoverageGapResultBranchRefV1 {
+                outcome: "victory",
+                branch,
+            }),
+    );
+    branches.extend(
+        report
+            .dead
+            .iter()
+            .map(|branch| CoverageGapResultBranchRefV1 {
+                outcome: "dead",
+                branch,
+            }),
+    );
+    branches.extend(
+        report
+            .abandoned
+            .iter()
+            .map(|branch| CoverageGapResultBranchRefV1 {
+                outcome: "abandoned",
+                branch,
+            }),
+    );
+    branches.extend(
+        report
+            .stuck
+            .iter()
+            .map(|branch| CoverageGapResultBranchRefV1 {
+                outcome: "stuck",
+                branch,
+            }),
+    );
+    branches
+}
+
+fn coverage_gap_result_branch_matches_target_v1(
+    branch: &BranchCampaignBranchV1,
+    target: &CoverageGapContinuationTargetV1,
+) -> bool {
+    let Some(origin) = branch.continuation_origin.as_ref() else {
+        return false;
+    };
+    origin.kind == "coverage_gap"
+        && origin.decision_id == target.decision_id
+        && origin.source_event_id == target.event_id
+        && origin.candidate_id == target.candidate_id
+        && origin.candidate_index == target.candidate_index
+        && origin.command == target.command
+}
+
+fn render_coverage_gap_branch_progress_v1(branch: &BranchCampaignBranchV1) -> String {
+    let Some(summary) = branch.summary.as_ref() else {
+        return "A?F? HP ?/? deck ?".to_string();
+    };
+    format!(
+        "A{}F{} HP {}/{} deck {}",
+        summary.act, summary.floor, summary.hp, summary.max_hp, summary.deck_count
+    )
+}
+
+fn compact_coverage_gap_audit_text_v1(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    let mut compact = value
+        .chars()
+        .take(max_chars.saturating_sub(4))
+        .collect::<String>();
+    compact.push_str(" ...");
+    compact
+}
+
 fn coverage_gap_source_prefix_commands_v1(
     config: &sts_simulator::eval::branch_campaign::BranchCampaignConfigV1,
 ) -> Result<Vec<String>, String> {
@@ -733,10 +918,86 @@ fn find_campaign_branch_by_id_v1<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sts_simulator::eval::branch_campaign::BranchCampaignBranchSummaryV1;
     use sts_simulator::eval::campaign_journal::{
         CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateAdmissionTraceV1,
         CampaignJournalCandidateDispositionV1,
     };
+
+    #[test]
+    fn coverage_gap_result_audit_links_targets_to_result_branches() {
+        let reward_target = coverage_gap_test_target("reward", "rp 2", "Shrug It Off", 0);
+        let route_target = coverage_gap_test_target("route", "go 1", "x=1 y=2 Shop", 1);
+        let execution = CoverageGapContinuationExecutionPlanV1 {
+            schema_name: "CoverageGapContinuationExecutionPlanV1".to_string(),
+            schema_version: 3,
+            label_role: "campaign_observation_not_teacher".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            requested_target_count: 2,
+            selected_branch_count: 2,
+            skipped_target_count: 0,
+            bucket_summaries: Vec::new(),
+            targets: vec![reward_target.clone(), route_target.clone()],
+        };
+        let mut report = BranchCampaignReportV1 {
+            schema_name: "BranchCampaignV1".to_string(),
+            schema_version: 1,
+            seed: 1,
+            run_domain: Default::default(),
+            run_prelude: Default::default(),
+            rounds_completed: 2,
+            stop_reason: "max_rounds".to_string(),
+            active: vec![coverage_gap_test_result_branch(
+                &reward_target,
+                BranchCampaignBranchStatusV1::Active,
+                "Reward Screen",
+                "advanced to reward",
+                1,
+                7,
+                61,
+                80,
+            )],
+            frozen: Vec::new(),
+            victories: Vec::new(),
+            dead: Vec::new(),
+            abandoned: vec![coverage_gap_test_result_branch(
+                &route_target,
+                BranchCampaignBranchStatusV1::Abandoned,
+                "Combat",
+                "combat search did not find an executable complete win",
+                1,
+                6,
+                44,
+                80,
+            )],
+            stuck: Vec::new(),
+            discarded_count: 0,
+            discarded_examples: Vec::new(),
+            strategy_requests: Vec::new(),
+            route_evidence: Default::default(),
+            combat_retry_ledger: Default::default(),
+            strategic_signals: Default::default(),
+            state_store: Default::default(),
+            journal: Default::default(),
+            rounds: Vec::new(),
+        };
+
+        let rendered = render_coverage_gap_result_audit_v1(&execution, &report);
+
+        assert!(rendered.contains("CoverageGapResultAuditV1 targets=2 matched=2 missing=0"));
+        assert!(rendered.contains("reward:scheduled:kept"));
+        assert!(rendered.contains("frontier=Reward Screen"));
+        assert!(rendered.contains("A1F7 HP 61/80"));
+        assert!(rendered.contains("route:legacy:x=1 y=2 Shop"));
+        assert!(rendered.contains("frontier=Combat"));
+        assert!(rendered.contains("combat search did not find an executable complete win"));
+
+        report.abandoned.clear();
+        let rendered = render_coverage_gap_result_audit_v1(&execution, &report);
+        assert!(rendered.contains("matched=1 missing=1"));
+        assert!(rendered.contains("missing target route x=1 y=2 Shop {go 1}"));
+    }
 
     #[test]
     fn coverage_gap_branch_records_structured_target_origin() {
@@ -978,6 +1239,71 @@ mod tests {
         assert!(!coverage_gap_target_requires_exact_parent_snapshot_v1(
             &target
         ));
+    }
+
+    fn coverage_gap_test_target(
+        event_type: &str,
+        command: &str,
+        label: &str,
+        candidate_index: usize,
+    ) -> CoverageGapContinuationTargetV1 {
+        CoverageGapContinuationTargetV1 {
+            decision_id: format!("{event_type}:decision"),
+            event_id: format!("{event_type}:event"),
+            event_type: event_type.to_string(),
+            parent_branch_id: "root".to_string(),
+            parent_frontier_title: "Map".to_string(),
+            parent_commands: Vec::new(),
+            parent_choices: Vec::new(),
+            candidate_index,
+            candidate_id: format!("{event_type}:candidate:{candidate_index}"),
+            command: command.to_string(),
+            label: label.to_string(),
+            semantic_class: event_type.to_string(),
+            admission: CampaignJournalCandidateAdmissionTraceV1::new(
+                CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+                format!("{event_type}_candidate_pool"),
+                "selected",
+            ),
+            disposition: CampaignJournalCandidateDispositionV1::Kept,
+            target_origin: Default::default(),
+            milestone: format!("{event_type}_milestone"),
+        }
+    }
+
+    fn coverage_gap_test_result_branch(
+        target: &CoverageGapContinuationTargetV1,
+        status: BranchCampaignBranchStatusV1,
+        frontier_title: &str,
+        stop_reason: &str,
+        act: u8,
+        floor: i32,
+        hp: i32,
+        max_hp: i32,
+    ) -> BranchCampaignBranchV1 {
+        let mut branch = coverage_gap_branch_from_target_v1(target);
+        branch.status = status;
+        branch.frontier_title = frontier_title.to_string();
+        branch.stop_reason = stop_reason.to_string();
+        branch.summary = Some(BranchCampaignBranchSummaryV1 {
+            act,
+            floor,
+            hp,
+            max_hp,
+            gold: 99,
+            deck_count: 12,
+            deck_key: String::new(),
+            formation_stage: "test".to_string(),
+            formation_strengths: Vec::new(),
+            formation_needs: Vec::new(),
+            trajectory_key: String::new(),
+            boss: String::new(),
+            boss_pressure: Vec::new(),
+            run_debt: Vec::new(),
+            event_boundary: None,
+            reward_boundary: None,
+        });
+        branch
     }
 }
 
