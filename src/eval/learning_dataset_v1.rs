@@ -2633,6 +2633,7 @@ pub fn render_coverage_gap_continuation_plan_summary_v1(
         &plan.target_progress_summaries,
     );
     extend_coverage_gap_selected_target_lane_counts_v1(&mut lines, &plan.targets);
+    extend_coverage_gap_selected_target_origin_counts_v1(&mut lines, &plan.targets);
     lines.join("\n")
 }
 
@@ -2711,6 +2712,7 @@ pub fn render_coverage_gap_execution_plan_v1(
     }
     extend_coverage_gap_lane_summary_lines_v1(&mut lines, &execution.lane_summaries);
     extend_coverage_gap_selected_target_lane_counts_v1(&mut lines, &execution.targets);
+    extend_coverage_gap_selected_target_origin_counts_v1(&mut lines, &execution.targets);
     if execution.targets.is_empty() {
         lines.push("Executed targets: none".to_string());
     } else {
@@ -2772,6 +2774,28 @@ fn extend_coverage_gap_selected_target_lane_counts_v1(
             "  {} selected={count}",
             compact_learning_text_v1(&lane, 96)
         ));
+    }
+}
+
+fn extend_coverage_gap_selected_target_origin_counts_v1(
+    lines: &mut Vec<String>,
+    targets: &[CoverageGapContinuationTargetV1],
+) {
+    if targets.is_empty() {
+        return;
+    }
+    let mut counts = BTreeMap::<String, usize>::new();
+    for target in targets {
+        let source = if target.target_origin.source.is_empty() {
+            "unknown".to_string()
+        } else {
+            target.target_origin.source.clone()
+        };
+        *counts.entry(source).or_default() += 1;
+    }
+    lines.push("Selected target origins:".to_string());
+    for (source, count) in counts {
+        lines.push(format!("  {} selected={count}", source));
     }
 }
 
@@ -5291,6 +5315,8 @@ mod tests {
         assert!(rendered.contains("reward selected=1/2 unobserved=9"));
         assert!(rendered.contains("Selected target lanes:"));
         assert!(rendered.contains("route:"));
+        assert!(rendered.contains("Selected target origins:"));
+        assert!(rendered.contains("route_candidate_pool selected=1"));
 
         let execution = coverage_gap_continuation_execution_plan_v1(&plan, 1);
         let rendered_execution = render_coverage_gap_execution_plan_v1(&execution);
@@ -5313,6 +5339,8 @@ mod tests {
         assert!(rendered_execution.contains("reward selected=0/2 unobserved=9"));
         assert!(rendered_execution.contains("Selected target lanes:"));
         assert!(rendered_execution.contains("route:"));
+        assert!(rendered_execution.contains("Selected target origins:"));
+        assert!(rendered_execution.contains("route_candidate_pool selected=1"));
     }
 
     #[test]
