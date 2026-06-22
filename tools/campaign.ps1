@@ -71,7 +71,6 @@ param(
     [switch] $VerboseProgress,
     [switch] $Diagnose,
     [switch] $Perf,
-    [switch] $NoBossSegments,
     [switch] $BossSegments,
     [switch] $BossRelicAxes,
     [switch] $AutoCaptureCombat,
@@ -548,10 +547,6 @@ $DriverArgs += @("--out", "$RunOutputCampaignPath", "--checkpoint-out", "$RunOut
 
 if ($DriverRoundBudgetArgs.Count -gt 0) {
     $DriverArgs += $DriverRoundBudgetArgs
-}
-
-if ($BossSegments -and $NoBossSegments) {
-    throw "-BossSegments and -NoBossSegments conflict; choose one segment policy."
 }
 
 $CombatSegmentMode = "custom"

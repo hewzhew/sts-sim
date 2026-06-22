@@ -136,7 +136,6 @@ budgets and is useful when comparing high-impact relic choices.
 ## Combat Segment Compatibility
 
 ```powershell
-.\tools\campaign.ps1 -NoBossSegments
 .\tools\campaign.ps1 -BossSegments
 ```
 
