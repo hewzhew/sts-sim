@@ -532,69 +532,46 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         -DriverExecution $CoverageGapDriverExecution `
         -OptionContext $CampaignSharedDriverOptionContext
 
-    $ContinuationModeLabel = if ($PlanCoverageGaps -or $ContinueCoverageGaps) { "coverage-gap-continuation" } else { "targeted-continuation" }
-    Write-Host "mode=$ContinuationModeLabel branch campaign"
-    Write-Host "seed=$Seed"
-    Write-Host "ascension=A$Ascension domain=a$Ascension class=$Class"
-    Write-Host "build=$BuildProfile exe=$DriverExe"
-    if ($NeedsBuild) {
-        Write-Host "build-needed=yes"
-    } else {
-        Write-Host "build-needed=no"
-    }
-    Write-Host "source=$SourceLabel"
-    Write-Host "source-report=$SourceCampaignPath"
-    Write-Host "source-checkpoint=$SourceCheckpointPath"
-    if ($Scratch) {
-        Write-Host "scratch=yes label=$ScratchLabel"
-        Write-Host "report=$RunOutputCampaignPath"
-        Write-Host "checkpoint=$RunOutputCheckpointPath"
-    } else {
-        if ($ContinueTargets -or $ContinueCoverageGaps) {
-            Write-Host "report=$RunOutputCampaignPath"
-            Write-Host "checkpoint=$RunOutputCheckpointPath"
-        }
-    }
-    if ($PlanTargets -or $ContinueTargets) {
-        Write-Host "decision-outcomes=$TargetDecisionOutcomePath"
-    }
-    if ($ContinueTargets) {
-        Write-Host "decision-outcomes-after=$LatestDecisionOutcomeAfterPath"
-        Write-Host "continue-targets=$TargetedContinuationLimit candidates-per-target=$TargetedContinuationCandidatesPerTarget"
-        Write-Host "resume-rounds=$ResumeRoundsCompleted"
-        if ($TargetRounds -ne $null) {
-            Write-Host "round-budget=$ContinuationRoundSource target-rounds=$TargetRounds additional-rounds=$ContinuationRounds"
-        } else {
-            Write-Host "round-budget=$ContinuationRoundSource additional-rounds=$ContinuationRounds"
-        }
-    }
-    if ($UntilMilestoneBound) {
-        Write-Host "until-milestone=$UntilMilestone step-rounds=$MilestoneStepRounds max-additional-rounds=$MilestoneMaxRounds stop=$ResolvedMilestoneStop"
-    }
-    if ($PlanCoverageGaps) {
-        Write-Host "coverage-gap-plan=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision"
-        Write-Host "coverage-gap-filter=$CoverageGapFilterLabel"
-    }
-    if ($ContinueCoverageGaps) {
-        if ($CoverageGapExecutionLabel -eq $CoverageGapDriverExecution) {
-            Write-Host "coverage-gap-continue=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision intent=$CoverageGapIntent execution=$CoverageGapExecutionLabel"
-        } else {
-            Write-Host "coverage-gap-continue=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision intent=$CoverageGapIntent execution=$CoverageGapExecutionLabel seed-execution=$CoverageGapDriverExecution"
-        }
-        Write-Host "coverage-gap-filter=$CoverageGapFilterLabel"
-        Write-Host "resume-rounds=$ResumeRoundsCompleted"
-        if ($TargetRounds -ne $null) {
-            Write-Host "round-budget=$ContinuationRoundSource target-rounds=$TargetRounds additional-rounds=$ContinuationRounds"
-        } else {
-            Write-Host "round-budget=$ContinuationRoundSource additional-rounds=$ContinuationRounds"
-        }
-        if ($UntilMilestoneBound) {
-            Write-Host "milestone-initial-spent-rounds=$CoverageGapInitialSpentRounds"
-            if ($CoverageGapResultFilterLabel -ne $CoverageGapFilterLabel) {
-                Write-Host "coverage-gap-result-filter=$CoverageGapResultFilterLabel"
-            }
-        }
-    }
+    $ContinuationPreflightContext = New-CampaignContinuationPreflightContext `
+        -PlanTargets ([bool] $PlanTargets) `
+        -ContinueTargets ([bool] $ContinueTargets) `
+        -PlanCoverageGaps ([bool] $PlanCoverageGaps) `
+        -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
+        -Seed $Seed `
+        -Ascension $Ascension `
+        -Class $Class `
+        -BuildProfile $BuildProfile `
+        -DriverExe $DriverExe `
+        -NeedsBuild ([bool] $NeedsBuild) `
+        -SourceLabel $SourceLabel `
+        -SourceCampaignPath $SourceCampaignPath `
+        -SourceCheckpointPath $SourceCheckpointPath `
+        -Scratch ([bool] $Scratch) `
+        -ScratchLabel $ScratchLabel `
+        -RunOutputCampaignPath $RunOutputCampaignPath `
+        -RunOutputCheckpointPath $RunOutputCheckpointPath `
+        -TargetDecisionOutcomePath $TargetDecisionOutcomePath `
+        -LatestDecisionOutcomeAfterPath $LatestDecisionOutcomeAfterPath `
+        -TargetedContinuationLimit $TargetedContinuationLimit `
+        -TargetedContinuationCandidatesPerTarget $TargetedContinuationCandidatesPerTarget `
+        -ResumeRoundsCompleted $ResumeRoundsCompleted `
+        -TargetRounds $TargetRounds `
+        -ContinuationRoundSource $ContinuationRoundSource `
+        -ContinuationRounds $ContinuationRounds `
+        -UntilMilestoneBound $UntilMilestoneBound `
+        -UntilMilestone $UntilMilestone `
+        -MilestoneStepRounds $MilestoneStepRounds `
+        -MilestoneMaxRounds $MilestoneMaxRounds `
+        -ResolvedMilestoneStop $ResolvedMilestoneStop `
+        -CoverageGapLimit $CoverageGapLimit `
+        -CoverageGapCandidatesPerDecision $CoverageGapCandidatesPerDecision `
+        -CoverageGapIntent $CoverageGapIntent `
+        -CoverageGapExecutionLabel $CoverageGapExecutionLabel `
+        -CoverageGapDriverExecution $CoverageGapDriverExecution `
+        -CoverageGapFilterLabel $CoverageGapFilterLabel `
+        -CoverageGapInitialSpentRounds $CoverageGapInitialSpentRounds `
+        -CoverageGapResultFilterLabel $CoverageGapResultFilterLabel
+    Write-CampaignContinuationPreflight -Context $ContinuationPreflightContext
 
     if ($DryRun) {
         if ($NeedsBuild) {

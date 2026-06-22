@@ -13,9 +13,9 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 676 lines
+- `tools/campaign.ps1`: 653 lines
 - `tools/campaign_artifacts.ps1`: 520 lines
-- `tools/campaign_invocation.ps1`: 496 lines
+- `tools/campaign_invocation.ps1`: 644 lines
 - `tools/campaign_coverage_gaps.ps1`: 391 lines
 - `tools/campaign_inspect.ps1`: 184 lines
 - `tools/campaign_targets.ps1`: 144 lines
@@ -32,7 +32,7 @@ Major regions:
 | Parameter block | 180 | Too many feature flags in one entrypoint |
 | Path globals and helper import | 20 | Fine |
 | Source/build/output resolution | 130 | Narrower, but still in the wrapper |
-| Continuation dispatch | 180 | Uses helpers, still has too much preflight text |
+| Continuation dispatch | 110 | Uses helpers; preflight text is delegated |
 | Inspect dispatch | 20 | Delegated to inspect helper |
 | Normal run dispatch | 25 | Delegated to invocation helper |
 
@@ -178,6 +178,7 @@ This helper owns:
 - shared driver option context is passed explicitly to campaign, targeted,
   coverage-gap, and milestone driver command builders
 - continuation round-budget argument rendering
+- continuation preflight context and output rendering
 - normal campaign run preflight and command execution
 - manifest writing
 - primary driver command-file recording
