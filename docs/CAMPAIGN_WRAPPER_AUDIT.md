@@ -227,6 +227,18 @@ This helper owns:
 
 - deciding whether the Rust driver binary needs rebuilding
 
+Source/run identity helpers now live in:
+
+```text
+tools/campaign_source.ps1
+```
+
+This helper owns:
+
+- resolving a wrapper source selector into a campaign artifact and run config
+- inheriting mode from source artifacts for continuation-style commands
+- resolving seed, ascension, class, and domain defaults
+
 ## Still Move Out Of Wrapper
 
 These pieces are useful but should not live in the main script long term:

@@ -192,6 +192,7 @@ New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 . (Join-Path $PSScriptRoot "campaign_inspect.ps1")
 . (Join-Path $PSScriptRoot "campaign_targets.ps1")
 . (Join-Path $PSScriptRoot "campaign_build.ps1")
+. (Join-Path $PSScriptRoot "campaign_source.ps1")
 
 $ContinueCampaign = [bool] $ContinueRun
 if ($More) {
@@ -244,78 +245,44 @@ if (
 }
 
 $ReadsCampaignSource = $Inspect -or $ContinueCampaign -or $PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps
-$CampaignSourceArtifact = $null
-$CampaignSourceRunConfig = $null
-if ($ReadsCampaignSource -or $Last) {
-    $CampaignSourceArtifact = Get-CampaignSourceArtifact -Selector $From -UseScratchLatest $InspectScratchLatest
-    $CampaignSourceRunConfig = Get-CampaignArtifactRunConfig `
-        -CheckpointPath $CampaignSourceArtifact.CheckpointPath `
-        -ManifestPath $CampaignSourceArtifact.ManifestPath
-}
-
-if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps) {
-    if (-not $PSBoundParameters.ContainsKey("Mode")) {
-        $SavedMode = Get-CampaignArtifactMode -Artifact $CampaignSourceArtifact
-        if ($SavedMode) {
-            $Mode = $SavedMode
-        } else {
-            $Mode = "focused"
-        }
-    }
-}
-
-if ($ContinueCampaign) {
-    if (-not $PSBoundParameters.ContainsKey("Mode")) {
-        $SavedMode = Get-CampaignArtifactMode -Artifact $CampaignSourceArtifact
-        if ($SavedMode) {
-            $Mode = $SavedMode
-        } else {
-            $Mode = "deep"
-        }
-    }
-}
-
-if (($ReadsCampaignSource -or $Last) -and $Seed -le 0 -and $CampaignSourceRunConfig -and $CampaignSourceRunConfig.Seed -ne $null) {
-    $Seed = [long] $CampaignSourceRunConfig.Seed
-} elseif ($Last -and $Seed -le 0) {
-    throw "No reusable campaign seed found in source artifact '$($CampaignSourceArtifact.Label)'. Use -Seed or a source with checkpoint run_state."
-} elseif ($Seed -le 0) {
-    $Seed = Get-Random -Minimum 1 -Maximum 2147483647
-}
+$CampaignSourceContext = Get-CampaignSourceContext `
+    -ReadsCampaignSource $ReadsCampaignSource `
+    -Last $Last `
+    -From $From `
+    -UseScratchLatest $InspectScratchLatest
+$CampaignSourceArtifact = $CampaignSourceContext.Artifact
+$CampaignSourceRunConfig = $CampaignSourceContext.RunConfig
+$Mode = Resolve-CampaignMode `
+    -Mode $Mode `
+    -ModeBound ($PSBoundParameters.ContainsKey("Mode")) `
+    -IsContinuationFamily ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps) `
+    -ContinueCampaign $ContinueCampaign `
+    -SourceArtifact $CampaignSourceArtifact
+$Seed = Resolve-CampaignSeed `
+    -Seed $Seed `
+    -ReadsCampaignSource $ReadsCampaignSource `
+    -Last $Last `
+    -SourceArtifact $CampaignSourceArtifact `
+    -SourceRunConfig $CampaignSourceRunConfig
 
 $AscensionBound = $PSBoundParameters.ContainsKey("Ascension")
 $ClassBound = $PSBoundParameters.ContainsKey("Class")
 $DomainBound = $PSBoundParameters.ContainsKey("Domain") -and $Domain
-if ($DomainBound) {
-    $DomainAscension = [int] $Domain.Substring(1)
-    if ($AscensionBound -and $Ascension -ne $DomainAscension) {
-        throw "-Domain $Domain conflicts with -Ascension $Ascension."
-    }
-    $Ascension = $DomainAscension
-    $AscensionBound = $true
-}
-if ($Last -or $Inspect -or $ReadsCampaignSource) {
-    if (-not $AscensionBound) {
-        if ($CampaignSourceRunConfig -and $CampaignSourceRunConfig.Ascension -ne $null) {
-            $Ascension = [int] $CampaignSourceRunConfig.Ascension
-        } else {
-            $SavedConfig = Read-LatestCheckpointRunConfig
-            if ($SavedConfig -and $SavedConfig.ascension_level -ne $null) {
-                $Ascension = [int] $SavedConfig.ascension_level
-            }
-        }
-    }
-    if (-not $ClassBound) {
-        if ($CampaignSourceRunConfig -and $CampaignSourceRunConfig.Class) {
-            $Class = ([string] $CampaignSourceRunConfig.Class).ToLowerInvariant()
-        } else {
-            $SavedConfig = Read-LatestCheckpointRunConfig
-            if ($SavedConfig -and $SavedConfig.player_class) {
-                $Class = ([string] $SavedConfig.player_class).ToLowerInvariant()
-            }
-        }
-    }
-}
+$RunIdentity = Resolve-CampaignRunIdentity `
+    -Ascension $Ascension `
+    -Class $Class `
+    -Domain $Domain `
+    -AscensionBound $AscensionBound `
+    -ClassBound $ClassBound `
+    -DomainBound $DomainBound `
+    -Last $Last `
+    -Inspect $Inspect `
+    -ReadsCampaignSource $ReadsCampaignSource `
+    -SourceRunConfig $CampaignSourceRunConfig
+$Ascension = $RunIdentity.Ascension
+$Class = $RunIdentity.Class
+$AscensionBound = $RunIdentity.AscensionBound
+$ClassBound = $RunIdentity.ClassBound
 
 $ExplicitBuildProfile = $PSBoundParameters.ContainsKey("BuildProfile")
 if ($DebugBuild) {
