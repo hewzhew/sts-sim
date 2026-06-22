@@ -1230,10 +1230,13 @@ fn order_coverage_gap_non_route_targets_by_lane_v1(
     targets: Vec<CoverageGapContinuationTargetV1>,
 ) -> Vec<CoverageGapContinuationTargetV1> {
     let mut ordered = Vec::with_capacity(targets.len());
-    let mut by_priority = BTreeMap::<usize, Vec<CoverageGapContinuationTargetV1>>::new();
+    let mut by_priority = BTreeMap::<(usize, usize), Vec<CoverageGapContinuationTargetV1>>::new();
     for target in targets {
         by_priority
-            .entry(coverage_gap_target_admission_priority_v1(&target))
+            .entry((
+                coverage_gap_target_admission_priority_v1(&target),
+                coverage_gap_target_information_priority_v1(&target),
+            ))
             .or_default()
             .push(target);
     }
@@ -1245,6 +1248,39 @@ fn order_coverage_gap_non_route_targets_by_lane_v1(
         ));
     }
     ordered
+}
+
+fn coverage_gap_target_information_priority_v1(target: &CoverageGapContinuationTargetV1) -> usize {
+    if coverage_gap_target_is_decline_like_v1(target) {
+        1
+    } else {
+        0
+    }
+}
+
+fn coverage_gap_target_is_decline_like_v1(target: &CoverageGapContinuationTargetV1) -> bool {
+    let semantic_tokens = coverage_gap_semantic_tokens_v1(&target.semantic_class)
+        .into_iter()
+        .map(|token| token.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    if semantic_tokens.iter().any(|token| {
+        token == "role:stopfallback"
+            || token == "effect:event_leave"
+            || token == "effect:event_decline"
+            || token.starts_with("decline:")
+            || token.contains("skip_card_reward")
+    }) {
+        return true;
+    }
+
+    let command = target.command.to_ascii_lowercase();
+    let label = target.label.to_ascii_lowercase();
+    command.starts_with("branch-skip-card-reward")
+        || command == "leave"
+        || command == "back"
+        || label.starts_with("skip card reward")
+        || label.starts_with("stop shop automation")
+        || label == "leave"
 }
 
 fn coverage_gap_target_admission_priority_v1(target: &CoverageGapContinuationTargetV1) -> usize {
@@ -4065,6 +4101,27 @@ mod tests {
             .contains("lane=reward:scheduled:kept:role:frontload"));
         assert!(render_coverage_gap_target_line_v1(1, &selected[1])
             .contains("lane=reward:scheduled:kept:role:engine"));
+    }
+
+    #[test]
+    fn coverage_gap_prioritizes_actionful_targets_before_decline_targets() {
+        let targets = vec![
+            sample_reward_coverage_gap_target(
+                "branch-skip-card-reward 0",
+                "Skip card reward",
+                "decline:skip_card_reward",
+                0,
+            ),
+            sample_reward_coverage_gap_target("rp 1", "Engine", "role:engine", 1),
+        ];
+
+        let selected = select_coverage_gap_targets_by_type_v1(targets, 1);
+
+        assert_eq!(selected[0].label, "Engine");
+        assert_eq!(
+            coverage_gap_continuation_target_lane_v1(&selected[0]),
+            "reward:scheduled:kept:role:engine"
+        );
     }
 
     #[test]
