@@ -445,7 +445,53 @@ $DriverArgs = Add-CampaignSharedDriverOptions `
 $NeedsBuild = $Build -or (Test-DriverNeedsBuild $DriverExe)
 
 if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps) {
-    $ContinuationExitCode = Invoke-CampaignContinuationEntry
+    $ContinuationEntryContext = [pscustomobject]@{
+        InspectScratchLatest = [bool] $InspectScratchLatest
+        PlanTargets = [bool] $PlanTargets
+        ContinueTargets = [bool] $ContinueTargets
+        PlanCoverageGaps = [bool] $PlanCoverageGaps
+        ContinueCoverageGaps = [bool] $ContinueCoverageGaps
+        CampaignSourceArtifact = $CampaignSourceArtifact
+        DecisionOutcomeDataset = $DecisionOutcomeDataset
+        LatestDecisionOutcomeBeforePath = $LatestDecisionOutcomeBeforePath
+        LatestDecisionOutcomePath = $LatestDecisionOutcomePath
+        LatestDecisionOutcomeAfterPath = $LatestDecisionOutcomeAfterPath
+        RunOutputCampaignPath = $RunOutputCampaignPath
+        RunOutputCheckpointPath = $RunOutputCheckpointPath
+        UntilMilestoneBound = $UntilMilestoneBound
+        MilestoneStepRounds = $MilestoneStepRounds
+        RoundsBound = $RoundsBound
+        Rounds = $Rounds
+        UntilRoundBound = $UntilRoundBound
+        UntilRound = $UntilRound
+        MaxRoundsBound = $MaxRoundsBound
+        MaxRounds = $MaxRounds
+        CoverageGapExecution = $CoverageGapExecution
+        CoverageGapIntent = $CoverageGapIntent
+        CampaignRunIdentityArgs = @($CampaignRunIdentityArgs)
+        CampaignSharedDriverOptionContext = $CampaignSharedDriverOptionContext
+        Seed = $Seed
+        Ascension = $Ascension
+        Class = $Class
+        BuildProfile = $BuildProfile
+        DriverExe = $DriverExe
+        NeedsBuild = [bool] $NeedsBuild
+        Scratch = [bool] $Scratch
+        ScratchLabel = $ScratchLabel
+        TargetedContinuationLimit = $TargetedContinuationLimit
+        TargetedContinuationCandidatesPerTarget = $TargetedContinuationCandidatesPerTarget
+        UntilMilestone = $UntilMilestone
+        MilestoneMaxRounds = $MilestoneMaxRounds
+        ResolvedMilestoneStop = $ResolvedMilestoneStop
+        CoverageGapLimit = $CoverageGapLimit
+        CoverageGapCandidatesPerDecision = $CoverageGapCandidatesPerDecision
+        CoverageGapFilterLabel = $CoverageGapFilterLabel
+        CoverageGapResultFilterLabel = $CoverageGapResultFilterLabel
+        DryRun = [bool] $DryRun
+        BuildArgs = @($BuildArgs)
+        RepoRoot = $RepoRoot
+    }
+    $ContinuationExitCode = Invoke-CampaignContinuationEntry -Context $ContinuationEntryContext
     exit $ContinuationExitCode
 }
 

@@ -1,4 +1,53 @@
 function Invoke-CampaignContinuationEntry {
+    param(
+        [object] $Context
+    )
+
+    $InspectScratchLatest = [bool] $Context.InspectScratchLatest
+    $PlanTargets = [bool] $Context.PlanTargets
+    $ContinueTargets = [bool] $Context.ContinueTargets
+    $PlanCoverageGaps = [bool] $Context.PlanCoverageGaps
+    $ContinueCoverageGaps = [bool] $Context.ContinueCoverageGaps
+    $CampaignSourceArtifact = $Context.CampaignSourceArtifact
+    $DecisionOutcomeDataset = $Context.DecisionOutcomeDataset
+    $LatestDecisionOutcomeBeforePath = $Context.LatestDecisionOutcomeBeforePath
+    $LatestDecisionOutcomePath = $Context.LatestDecisionOutcomePath
+    $LatestDecisionOutcomeAfterPath = $Context.LatestDecisionOutcomeAfterPath
+    $RunOutputCampaignPath = $Context.RunOutputCampaignPath
+    $RunOutputCheckpointPath = $Context.RunOutputCheckpointPath
+    $UntilMilestoneBound = [bool] $Context.UntilMilestoneBound
+    $MilestoneStepRounds = $Context.MilestoneStepRounds
+    $RoundsBound = [bool] $Context.RoundsBound
+    $Rounds = $Context.Rounds
+    $UntilRoundBound = [bool] $Context.UntilRoundBound
+    $UntilRound = $Context.UntilRound
+    $MaxRoundsBound = [bool] $Context.MaxRoundsBound
+    $MaxRounds = $Context.MaxRounds
+    $CoverageGapExecution = $Context.CoverageGapExecution
+    $CoverageGapIntent = $Context.CoverageGapIntent
+    $CampaignRunIdentityArgs = @($Context.CampaignRunIdentityArgs)
+    $CampaignSharedDriverOptionContext = $Context.CampaignSharedDriverOptionContext
+    $Seed = $Context.Seed
+    $Ascension = $Context.Ascension
+    $Class = $Context.Class
+    $BuildProfile = $Context.BuildProfile
+    $DriverExe = $Context.DriverExe
+    $NeedsBuild = [bool] $Context.NeedsBuild
+    $Scratch = [bool] $Context.Scratch
+    $ScratchLabel = $Context.ScratchLabel
+    $TargetedContinuationLimit = $Context.TargetedContinuationLimit
+    $TargetedContinuationCandidatesPerTarget = $Context.TargetedContinuationCandidatesPerTarget
+    $UntilMilestone = $Context.UntilMilestone
+    $MilestoneMaxRounds = $Context.MilestoneMaxRounds
+    $ResolvedMilestoneStop = $Context.ResolvedMilestoneStop
+    $CoverageGapLimit = $Context.CoverageGapLimit
+    $CoverageGapCandidatesPerDecision = $Context.CoverageGapCandidatesPerDecision
+    $CoverageGapFilterLabel = $Context.CoverageGapFilterLabel
+    $CoverageGapResultFilterLabel = $Context.CoverageGapResultFilterLabel
+    $DryRun = [bool] $Context.DryRun
+    $BuildArgs = @($Context.BuildArgs)
+    $RepoRoot = $Context.RepoRoot
+
     if ($InspectScratchLatest -and ($PlanTargets -or $ContinueTargets)) {
         throw "-InspectScratchLatest is not supported for targeted continuation yet; use inspect or coverage-gap continuation."
     }

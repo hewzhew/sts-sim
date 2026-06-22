@@ -13,12 +13,12 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 463 lines
+- `tools/campaign.ps1`: 509 lines
 - `tools/campaign_artifacts.ps1`: 520 lines
 - `tools/campaign_invocation.ps1`: 453 lines
 - `tools/campaign_coverage_gaps.ps1`: 391 lines
 - `tools/campaign_preflight.ps1`: 191 lines
-- `tools/campaign_continuation.ps1`: 194 lines
+- `tools/campaign_continuation.ps1`: 241 lines
 - `tools/campaign_inspect.ps1`: 184 lines
 - `tools/campaign_targets.ps1`: 144 lines
 - `tools/campaign_source.ps1`: 118 lines
@@ -206,6 +206,7 @@ tools/campaign_continuation.ps1
 
 This helper owns:
 
+- an explicit continuation entry context boundary
 - continuation source validation
 - targeted/coverage-gap continuation command context assembly
 - continuation dry-run dispatch
