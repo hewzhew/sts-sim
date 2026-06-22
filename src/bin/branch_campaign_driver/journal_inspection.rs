@@ -136,6 +136,13 @@ fn render_campaign_lineage_decision_audit_v1(
     if report.journal.is_empty() {
         return Err("campaign report has no CampaignJournal events".to_string());
     }
+    if let Some(query) = query.filter(|query| !normalize_query_v1(query).is_empty()) {
+        if let Some(rendered) =
+            render_campaign_lineage_candidate_query_v1(report, filters, query, limit)
+        {
+            return Ok(rendered);
+        }
+    }
     let branches = matching_lineage_audit_branches_v1(report, filters, query);
     if branches.is_empty() {
         return Err(format!(
@@ -237,6 +244,145 @@ fn render_campaign_lineage_decision_audit_v1(
         ));
     }
     Ok(format!("{}\n", lines.join("\n")))
+}
+
+fn render_campaign_lineage_candidate_query_v1(
+    report: &BranchCampaignReportV1,
+    filters: &InspectFiltersInput,
+    query: &str,
+    limit: usize,
+) -> Option<String> {
+    let normalized_query = normalize_query_v1(query);
+    let branches = matching_lineage_audit_branches_v1(report, filters, None);
+    let mut matches = Vec::new();
+    'branch_loop: for branch_ref in branches {
+        for event in lineage_candidate_pool_events_v1(report, branch_ref.branch) {
+            let matching_candidates = journal_event_candidates_v1(event)
+                .iter()
+                .filter(|candidate| {
+                    lineage_candidate_matches_query_v1(candidate, &normalized_query)
+                })
+                .collect::<Vec<_>>();
+            if matching_candidates.is_empty() {
+                continue;
+            }
+            let parent_depth =
+                lineage_event_parent_command_count_v1(event, &branch_ref.branch.commands)
+                    .unwrap_or(0);
+            let chosen_command =
+                lineage_event_chosen_command_v1(event, &branch_ref.branch.commands);
+            matches.push(LineageCandidateQueryMatchV1 {
+                branch_label: branch_ref.label.clone(),
+                branch_summary: render_lineage_query_branch_summary_v1(branch_ref.branch),
+                branch_choices: render_lineage_query_branch_choices_v1(branch_ref.branch),
+                event,
+                parent_depth,
+                chosen: render_lineage_chosen_candidate_v1(event, chosen_command),
+                matching_candidates: matching_candidates
+                    .into_iter()
+                    .map(render_lineage_candidate_query_match_v1)
+                    .collect(),
+            });
+            if matches.len() >= limit.max(1) {
+                break 'branch_loop;
+            }
+        }
+    }
+    if matches.is_empty() {
+        return None;
+    }
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Branch lineage candidate query: seed={} query={} shown={} limit={}",
+        report.seed,
+        query,
+        matches.len(),
+        limit.max(1)
+    ));
+    for (index, matched) in matches.iter().enumerate() {
+        lines.push(format!(
+            "{}. branch={} {} | {} round={} A{}F{} parent_depth={} chosen={}",
+            index + 1,
+            matched.branch_label,
+            matched.branch_summary,
+            journal_event_type_v1(matched.event),
+            matched.event.round,
+            matched.event.act,
+            matched.event.floor,
+            matched.parent_depth,
+            matched.chosen,
+        ));
+        if !matched.branch_choices.is_empty() {
+            lines.push(format!("   choices: {}", matched.branch_choices));
+        }
+        lines.push(format!(
+            "   parent: {}",
+            if matched.event.branch_choices.is_empty() {
+                "-".to_string()
+            } else {
+                matched.event.branch_choices.join(" -> ")
+            }
+        ));
+        lines.push(format!(
+            "   match={}",
+            matched.matching_candidates.join(" | match=")
+        ));
+    }
+    Some(format!("{}\n", lines.join("\n")))
+}
+
+struct LineageCandidateQueryMatchV1<'a> {
+    branch_label: String,
+    branch_summary: String,
+    branch_choices: String,
+    event: &'a CampaignJournalEventV1,
+    parent_depth: usize,
+    chosen: String,
+    matching_candidates: Vec<String>,
+}
+
+fn lineage_candidate_matches_query_v1(
+    candidate: &CampaignJournalCandidateV1,
+    normalized_query: &str,
+) -> bool {
+    normalize_query_v1(&candidate.label).contains(normalized_query)
+        || normalize_query_v1(&candidate.command).contains(normalized_query)
+        || normalize_query_v1(&candidate.semantic_class).contains(normalized_query)
+        || normalize_query_v1(&render_journal_candidate_v1(candidate)).contains(normalized_query)
+}
+
+fn render_lineage_candidate_query_match_v1(candidate: &CampaignJournalCandidateV1) -> String {
+    format!("{} {{{}}}", candidate.label, candidate.command)
+}
+
+fn render_lineage_query_branch_summary_v1(branch: &BranchCampaignBranchV1) -> String {
+    if let Some(summary) = branch.summary.as_ref() {
+        format!(
+            "A{}F{} HP {}/{} | {}",
+            summary.act, summary.floor, summary.hp, summary.max_hp, branch.frontier_title
+        )
+    } else {
+        branch.frontier_title.clone()
+    }
+}
+
+fn render_lineage_query_branch_choices_v1(branch: &BranchCampaignBranchV1) -> String {
+    if branch.choice_labels.is_empty() {
+        return String::new();
+    }
+    truncate_lineage_text_v1(&branch.choice_labels.join(" -> "), 180)
+}
+
+fn truncate_lineage_text_v1(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let mut truncated = text
+        .chars()
+        .take(max_chars.saturating_sub(4))
+        .collect::<String>();
+    truncated.push_str(" ...");
+    truncated
 }
 
 struct LineageAuditBranchRef<'a> {
@@ -1709,6 +1855,62 @@ mod tests {
         assert!(!rendered.contains("Feel No Pain"));
     }
 
+    #[test]
+    fn lineage_query_summarizes_matching_candidates_across_branch_lineages() {
+        let report = report_with_branches_and_journal(
+            vec![
+                branch("picked-iron-wave", vec!["rp 2"], vec!["Iron Wave"]),
+                branch(
+                    "skipped-iron-wave",
+                    vec!["branch-skip-card-reward 0"],
+                    vec!["Skip card reward"],
+                ),
+            ],
+            Vec::new(),
+            vec![journal_event_at(
+                "reward-root",
+                vec!["__decision_parent:0:reward:test"],
+                CampaignJournalEventPayloadV1::RewardCandidateSet {
+                    decision_id: "reward-root".to_string(),
+                    boundary_title: "Reward Screen".to_string(),
+                    frontier_key: "reward-frontier".to_string(),
+                    depth: 0,
+                    max_reward_options_per_branch: 3,
+                    original_count: 3,
+                    selected_count: 3,
+                    candidates: vec![
+                        candidate("Burning Pact", "rp 1", "setup:exhaust_engine"),
+                        candidate("Iron Wave+", "rp 2", "stabilizer:Block"),
+                        candidate("Skip card reward", "branch-skip-card-reward 0", "decline"),
+                    ],
+                },
+            )],
+        );
+
+        let rendered = render_campaign_lineage_decision_audit_v1(
+            &report,
+            &InspectFiltersInput {
+                act: None,
+                floor: None,
+                boundary: None,
+                hp: None,
+                index: None,
+            },
+            Some("Iron Wave"),
+            8,
+        )
+        .expect("lineage query should render");
+
+        assert!(rendered.contains("Branch lineage candidate query"));
+        assert!(rendered.contains("query=Iron Wave"));
+        assert!(rendered.contains("branch=active[0] A1F3 HP 70/80 | Reward Screen"));
+        assert!(rendered.contains("chosen=Iron Wave+ {rp 2}"));
+        assert!(rendered.contains("match=Iron Wave+ {rp 2}"));
+        assert!(rendered.contains("branch=active[1] A1F3 HP 70/80 | Reward Screen"));
+        assert!(rendered.contains("chosen=Skip card reward {branch-skip-card-reward 0}"));
+        assert!(!rendered.contains("match=Burning Pact"));
+    }
+
     fn journal_event_with_payload(
         payload: CampaignJournalEventPayloadV1,
     ) -> CampaignJournalEventV1 {
@@ -1800,6 +2002,14 @@ mod tests {
         branch: BranchCampaignBranchV1,
         events: Vec<CampaignJournalEventV1>,
     ) -> BranchCampaignReportV1 {
+        report_with_branches_and_journal(vec![branch], Vec::new(), events)
+    }
+
+    fn report_with_branches_and_journal(
+        active: Vec<BranchCampaignBranchV1>,
+        frozen: Vec<BranchCampaignBranchV1>,
+        events: Vec<CampaignJournalEventV1>,
+    ) -> BranchCampaignReportV1 {
         BranchCampaignReportV1 {
             schema_name: "BranchCampaignV1".to_string(),
             schema_version: 1,
@@ -1808,8 +2018,8 @@ mod tests {
             run_prelude: Default::default(),
             rounds_completed: 1,
             stop_reason: "test".to_string(),
-            active: vec![branch],
-            frozen: Vec::new(),
+            active,
+            frozen,
             victories: Vec::new(),
             dead: Vec::new(),
             abandoned: Vec::new(),
