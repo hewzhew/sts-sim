@@ -53,6 +53,7 @@ pub(super) struct CoverageGapMilestoneBranchRowV1 {
     pub(super) max_hp: i32,
     pub(super) deck_count: usize,
     pub(super) target_origin_source: String,
+    pub(super) target_lane: String,
     pub(super) target_progress: String,
     pub(super) frontier_title: String,
     pub(super) stop_reason: String,
@@ -192,6 +193,32 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_v1(
         ));
     }
 
+    let mut by_lane_progress = BTreeMap::<&str, BTreeMap<&str, usize>>::new();
+    for row in rows {
+        if row.target_lane.is_empty() {
+            continue;
+        }
+        *by_lane_progress
+            .entry(&row.target_lane)
+            .or_default()
+            .entry(&row.target_progress)
+            .or_default() += 1;
+    }
+    if !by_lane_progress.is_empty() {
+        lines.push("Target progress by lane:".to_string());
+        for (lane, counts) in by_lane_progress {
+            lines.push(format!(
+                "  {lane} extended={} target_only={} discarded={} missing={} incomplete={} unknown={}",
+                count_for_key_v1(&counts, "extended"),
+                count_for_key_v1(&counts, "target_only"),
+                count_for_key_v1(&counts, "discarded"),
+                count_for_key_v1(&counts, "missing"),
+                count_for_key_v1(&counts, "incomplete"),
+                count_for_key_v1(&counts, "unknown")
+            ));
+        }
+    }
+
     let source_counts = target_origin_source_counts_v1(rows.iter());
     if !source_counts.is_empty() {
         lines.push(format!(
@@ -258,6 +285,7 @@ fn collect_branch_rows_v1(
             &origin.label,
             &origin.command,
             &origin.target_origin_source,
+            render_target_lane_v1(origin.target_lane.as_ref()),
             target_progress_for_branch_v1(&branch.commands, &origin.command),
             branch.summary.as_ref(),
             &branch.frontier_title,
@@ -285,6 +313,7 @@ fn collect_discarded_rows_v1(
             &origin.label,
             &origin.command,
             &origin.target_origin_source,
+            render_target_lane_v1(origin.target_lane.as_ref()),
             "discarded".to_string(),
             branch.summary.as_ref(),
             &branch.frontier_title,
@@ -300,6 +329,7 @@ fn row_from_parts_v1(
     label: &str,
     command: &str,
     target_origin_source: &str,
+    target_lane: String,
     target_progress: String,
     summary: Option<&BranchCampaignBranchSummaryV1>,
     frontier_title: &str,
@@ -317,10 +347,58 @@ fn row_from_parts_v1(
         max_hp: summary.map_or(0, |summary| summary.max_hp),
         deck_count: summary.map_or(0, |summary| summary.deck_count),
         target_origin_source: target_origin_source.to_string(),
+        target_lane,
         target_progress,
         frontier_title: frontier_title.to_string(),
         stop_reason: stop_reason.to_string(),
         choice_labels: choice_labels.to_vec(),
+    }
+}
+
+fn render_target_lane_v1(
+    lane: Option<&sts_simulator::eval::branch_campaign::BranchCampaignContinuationTargetLaneV1>,
+) -> String {
+    let Some(lane) = lane else {
+        return String::new();
+    };
+    format!(
+        "{}:{}:{}:{}",
+        lane.bucket,
+        render_admission_status_v1(lane.admission_status),
+        render_disposition_v1(lane.disposition),
+        lane.semantic_lane
+    )
+}
+
+fn render_admission_status_v1(
+    status: sts_simulator::eval::campaign_journal::CampaignJournalCandidateAdmissionStatusV1,
+) -> &'static str {
+    match status {
+        sts_simulator::eval::campaign_journal::CampaignJournalCandidateAdmissionStatusV1::Unknown => {
+            "unknown"
+        }
+        sts_simulator::eval::campaign_journal::CampaignJournalCandidateAdmissionStatusV1::Scheduled => {
+            "scheduled"
+        }
+        sts_simulator::eval::campaign_journal::CampaignJournalCandidateAdmissionStatusV1::Deferred => {
+            "deferred"
+        }
+        sts_simulator::eval::campaign_journal::CampaignJournalCandidateAdmissionStatusV1::Rejected => {
+            "rejected"
+        }
+    }
+}
+
+fn render_disposition_v1(
+    disposition: sts_simulator::eval::campaign_journal::CampaignJournalCandidateDispositionV1,
+) -> &'static str {
+    match disposition {
+        sts_simulator::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Kept => {
+            "kept"
+        }
+        sts_simulator::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Pruned => {
+            "pruned"
+        }
     }
 }
 
@@ -431,6 +509,7 @@ mod tests {
             max_hp: 80,
             deck_count: 12,
             target_origin_source: "journal_coverage_gap".to_string(),
+            target_lane: format!("{event_type}:scheduled:kept:test"),
             target_progress: "extended".to_string(),
             frontier_title: "Reward Screen".to_string(),
             stop_reason: String::new(),
@@ -467,9 +546,12 @@ mod tests {
         extended.target_origin_source = "shop_plan_frontier".to_string();
         let mut target_only = row("frozen", "reward", 1, 5, "Shockwave");
         target_only.target_progress = "target_only".to_string();
+        target_only.target_lane = "reward:scheduled:kept:role:scaling".to_string();
         let mut discarded = row("discarded", "route", 1, 6, "x=1 Elite");
         discarded.target_progress = "discarded".to_string();
         discarded.target_origin_source = "map_decision_packet".to_string();
+        discarded.target_lane =
+            "route:go:MonsterRoom:CompleteWithinBudget:optional_elite".to_string();
 
         let text = render_coverage_gap_milestone_summary_from_rows_v1(
             &[extended, target_only, discarded],
@@ -483,5 +565,9 @@ mod tests {
         assert!(text.contains("Target origin sources:"));
         assert!(text.contains("map_decision_packet=1"));
         assert!(text.contains("shop_plan_frontier=1"));
+        assert!(text.contains("Target progress by lane:"));
+        assert!(text.contains("shop:scheduled:kept:test extended=1 target_only=0 discarded=0"));
+        assert!(text
+            .contains("reward:scheduled:kept:role:scaling extended=0 target_only=1 discarded=0"));
     }
 }
