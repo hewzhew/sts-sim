@@ -1342,6 +1342,15 @@ fn coverage_gap_target_semantic_lane_v1(target: &CoverageGapContinuationTargetV1
         return "unknown".to_string();
     }
 
+    if matches!(
+        coverage_gap_target_bucket_v1(target),
+        "shop" | "shop_branch"
+    ) {
+        if let Some(lane) = coverage_gap_shop_action_lane_v1(target) {
+            return lane;
+        }
+    }
+
     let prefixes = match coverage_gap_target_bucket_v1(target) {
         "boss_relic" => &["relic:", "role:", "effect:", "class:", "card:"][..],
         "shop" | "shop_branch" => &["role:", "effect:", "relic:", "potion:", "card:", "class:"],
@@ -1375,6 +1384,35 @@ fn coverage_gap_semantic_tokens_v1(semantic: &str) -> Vec<String> {
         .filter(|token| !token.is_empty())
         .map(str::to_string)
         .collect()
+}
+
+fn coverage_gap_shop_action_lane_v1(target: &CoverageGapContinuationTargetV1) -> Option<String> {
+    let command = target.command.to_ascii_lowercase();
+    let label = target.label.to_ascii_lowercase();
+    let kind = if command.starts_with("purge ")
+        || command.starts_with("remove ")
+        || label.starts_with("purge ")
+        || label.starts_with("remove ")
+    {
+        "purge"
+    } else if command.starts_with("buy card ") || label.starts_with("buy card ") {
+        "buy_card"
+    } else if command.starts_with("buy relic ") || label.starts_with("buy relic ") {
+        "buy_relic"
+    } else if command.starts_with("buy potion ") || label.starts_with("buy potion ") {
+        "buy_potion"
+    } else if command.starts_with("leave")
+        || command == "back"
+        || label.starts_with("leave shop")
+        || label.starts_with("stop shop automation")
+    {
+        "leave"
+    } else if command.contains("portfolio") || label.contains("portfolio") {
+        "portfolio"
+    } else {
+        return None;
+    };
+    Some(format!("shop_action:{kind}"))
 }
 
 fn coverage_gap_route_selection_lane_v1(target: &CoverageGapContinuationTargetV1) -> String {
@@ -4125,6 +4163,36 @@ mod tests {
     }
 
     #[test]
+    fn coverage_gap_shop_single_actions_round_robin_by_action_kind() {
+        let targets = vec![
+            sample_shop_coverage_gap_target("purge 5", "purge Defend", "role:SingleAction", 0),
+            sample_shop_coverage_gap_target("purge 0", "purge Strike", "role:SingleAction", 1),
+            sample_shop_coverage_gap_target(
+                "buy card 1",
+                "buy card Reaper for 75 gold",
+                "role:SingleAction",
+                2,
+            ),
+        ];
+
+        let selected = select_coverage_gap_targets_by_type_v1(targets, 2);
+        let labels = selected
+            .iter()
+            .map(|target| target.label.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(labels, vec!["purge Defend", "buy card Reaper for 75 gold"]);
+        assert_eq!(
+            coverage_gap_continuation_target_lane_v1(&selected[0]),
+            "shop:scheduled:kept:shop_action:purge"
+        );
+        assert_eq!(
+            coverage_gap_continuation_target_lane_v1(&selected[1]),
+            "shop:scheduled:kept:shop_action:buy_card"
+        );
+    }
+
+    #[test]
     fn coverage_gap_continuation_dedupes_repeated_target_coordinates() {
         let mut report = sample_campaign_report_with_branches(Vec::new());
         for event_index in 0..2 {
@@ -4874,6 +4942,36 @@ mod tests {
             disposition: CampaignJournalCandidateDispositionV1::Kept,
             target_origin: CoverageGapContinuationTargetOriginV1::default(),
             milestone: "reward_frontier".to_string(),
+        }
+    }
+
+    fn sample_shop_coverage_gap_target(
+        command: &str,
+        label: &str,
+        semantic_class: &str,
+        candidate_index: usize,
+    ) -> CoverageGapContinuationTargetV1 {
+        CoverageGapContinuationTargetV1 {
+            decision_id: "shop-decision".to_string(),
+            event_id: "shop-event".to_string(),
+            event_type: "shop".to_string(),
+            parent_branch_id: "root".to_string(),
+            parent_frontier_title: "Shop".to_string(),
+            parent_commands: Vec::new(),
+            parent_choices: Vec::new(),
+            candidate_index,
+            candidate_id: format!("shop:{candidate_index}"),
+            command: command.to_string(),
+            label: label.to_string(),
+            semantic_class: semantic_class.to_string(),
+            admission: CampaignJournalCandidateAdmissionTraceV1::new(
+                CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+                "shop_candidate_pool",
+                "selected",
+            ),
+            disposition: CampaignJournalCandidateDispositionV1::Kept,
+            target_origin: CoverageGapContinuationTargetOriginV1::default(),
+            milestone: "resource_conversion_frontier".to_string(),
         }
     }
 
