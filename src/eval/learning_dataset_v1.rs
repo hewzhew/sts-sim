@@ -7,8 +7,9 @@ use crate::ai::route_planner_v1::{
     RouteProjectionSourceV1,
 };
 use crate::eval::branch_campaign::{
-    BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignDiscardedBranchV1,
-    BranchCampaignReportV1, BranchCampaignRunDomainV1,
+    BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
+    BranchCampaignContinuationOriginV1, BranchCampaignDiscardedBranchV1, BranchCampaignReportV1,
+    BranchCampaignRunDomainV1,
 };
 use crate::eval::branch_outcome_dataset_v1::{
     BranchOutcomeClassV1, BranchOutcomeRecordV1, BranchOutcomeStateFeaturesV1,
@@ -1099,6 +1100,7 @@ pub fn plan_coverage_gap_continuations_v1(
             if records
                 .iter()
                 .any(|record| record_observes_journal_candidate_v1(event, candidate, record))
+                || report_final_branch_observes_journal_candidate_v1(report, event, candidate)
                 || report.discarded_branches.iter().any(|branch| {
                     discarded_branch_observes_journal_candidate_v1(event, candidate, branch)
                 })
@@ -3158,6 +3160,41 @@ fn discarded_branch_observes_journal_candidate_v1(
     let Some(origin) = branch.continuation_origin.as_ref() else {
         return false;
     };
+    coverage_gap_origin_observes_journal_candidate_v1(origin, event, candidate)
+}
+
+fn report_final_branch_observes_journal_candidate_v1(
+    report: &BranchCampaignReportV1,
+    event: &CampaignJournalEventV1,
+    candidate: &CampaignJournalCandidateV1,
+) -> bool {
+    report
+        .active
+        .iter()
+        .chain(report.frozen.iter())
+        .chain(report.victories.iter())
+        .chain(report.dead.iter())
+        .chain(report.abandoned.iter())
+        .chain(report.stuck.iter())
+        .any(|branch| branch_observes_journal_candidate_v1(branch, event, candidate))
+}
+
+fn branch_observes_journal_candidate_v1(
+    branch: &BranchCampaignBranchV1,
+    event: &CampaignJournalEventV1,
+    candidate: &CampaignJournalCandidateV1,
+) -> bool {
+    let Some(origin) = branch.continuation_origin.as_ref() else {
+        return false;
+    };
+    coverage_gap_origin_observes_journal_candidate_v1(origin, event, candidate)
+}
+
+fn coverage_gap_origin_observes_journal_candidate_v1(
+    origin: &BranchCampaignContinuationOriginV1,
+    event: &CampaignJournalEventV1,
+    candidate: &CampaignJournalCandidateV1,
+) -> bool {
     origin.kind == "coverage_gap"
         && origin.source_event_id == event.event_id
         && Some(origin.decision_id.as_str()) == journal_decision_id_v1(event)
@@ -4952,34 +4989,57 @@ mod tests {
         });
         let mut discarded_branch =
             sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Frozen);
-        discarded_branch.continuation_origin = Some(BranchCampaignContinuationOriginV1 {
-            kind: "coverage_gap".to_string(),
-            source_event_id: "journal-reward0:candidate_set".to_string(),
-            decision_id: "journal-reward0".to_string(),
-            event_type: "reward".to_string(),
-            parent_branch_id: "root".to_string(),
-            parent_frontier_title: "Reward Screen".to_string(),
-            candidate_index: 0,
-            candidate_id: "rp 0".to_string(),
-            command: "rp 0".to_string(),
-            label: "Reward A".to_string(),
-            semantic_class: "test".to_string(),
-            admission: CampaignJournalCandidateAdmissionTraceV1::new(
-                CampaignJournalCandidateAdmissionStatusV1::Scheduled,
-                "test",
-                "kept",
-            ),
-            disposition: CampaignJournalCandidateDispositionV1::Kept,
-            target_lane: None,
-            target_origin_source: String::new(),
-            route_origin: None,
-            milestone: "next_major_boundary".to_string(),
-        });
+        discarded_branch.continuation_origin =
+            Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
         report.discarded_count = 1;
         report.discarded_branches = vec![BranchCampaignDiscardedBranchV1::from_branch_v1(
             &discarded_branch,
             "duplicate_merge",
         )];
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[], 4, 2);
+        let labels = plan
+            .targets
+            .iter()
+            .map(|target| target.label.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(labels, vec!["Reward B"]);
+        assert_eq!(plan.total_unobserved_candidates, 1);
+    }
+
+    #[test]
+    fn coverage_gap_continuation_treats_final_bucket_coverage_gap_origin_as_observed() {
+        let mut observed_branch =
+            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
+        observed_branch.continuation_origin =
+            Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
+        let mut report = sample_campaign_report_with_branches(vec![observed_branch]);
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-reward0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Reward Screen".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "journal-reward0".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "reward-frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 3,
+                original_count: 2,
+                selected_count: 1,
+                candidates: vec![
+                    sample_journal_candidate("rp 0", "Reward A"),
+                    sample_journal_candidate("rp 1", "Reward B"),
+                ],
+            },
+        });
 
         let plan = plan_coverage_gap_continuations_v1(&report, &[], 4, 2);
         let labels = plan
@@ -5903,6 +5963,36 @@ mod tests {
             rank_key: 42,
             final_boss_combat_record: None,
             combat_lab_probes: Vec::new(),
+        }
+    }
+
+    fn sample_coverage_gap_reward_origin(
+        command: &str,
+        label: &str,
+        candidate_index: usize,
+    ) -> BranchCampaignContinuationOriginV1 {
+        BranchCampaignContinuationOriginV1 {
+            kind: "coverage_gap".to_string(),
+            source_event_id: "journal-reward0:candidate_set".to_string(),
+            decision_id: "journal-reward0".to_string(),
+            event_type: "reward".to_string(),
+            parent_branch_id: "root".to_string(),
+            parent_frontier_title: "Reward Screen".to_string(),
+            candidate_index,
+            candidate_id: command.to_string(),
+            command: command.to_string(),
+            label: label.to_string(),
+            semantic_class: "test".to_string(),
+            admission: CampaignJournalCandidateAdmissionTraceV1::new(
+                CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+                "test",
+                "kept",
+            ),
+            disposition: CampaignJournalCandidateDispositionV1::Kept,
+            target_lane: None,
+            target_origin_source: String::new(),
+            route_origin: None,
+            milestone: "next_major_boundary".to_string(),
         }
     }
 
