@@ -710,6 +710,7 @@ fn render_coverage_gap_result_audit_v1(
     let mut final_bucket_matched = 0usize;
     let mut discarded_matched = 0usize;
     let mut outcome_counts = BTreeMap::<(String, String, String), usize>::new();
+    let mut target_progress_counts = BTreeMap::<String, usize>::new();
     let mut target_lines = Vec::new();
 
     for (index, target) in execution.targets.iter().enumerate() {
@@ -731,6 +732,10 @@ fn render_coverage_gap_result_audit_v1(
                     result.outcome.to_string(),
                 ))
                 .or_default() += 1;
+            let target_progress = coverage_gap_result_target_progress_v1(result, target);
+            *target_progress_counts
+                .entry(target_progress.to_string())
+                .or_default() += 1;
             target_lines.push(format!(
                 "  {}. {} {} {{{}}} lane={} seeded=yes final_bucket={} target_progress={}{} -> frontier={} {} stop={}",
                 index + 1,
@@ -739,7 +744,7 @@ fn render_coverage_gap_result_audit_v1(
                 compact_coverage_gap_audit_text_v1(&target.command, 24),
                 compact_coverage_gap_audit_text_v1(&lane, 72),
                 result.outcome,
-                coverage_gap_result_target_progress_v1(result, target),
+                target_progress,
                 render_coverage_gap_discard_reason_suffix_v1(result),
                 result.frontier_title,
                 render_coverage_gap_branch_progress_v1(result.summary),
@@ -747,6 +752,9 @@ fn render_coverage_gap_result_audit_v1(
             ));
         } else {
             missing = missing.saturating_add(1);
+            *target_progress_counts
+                .entry("missing".to_string())
+                .or_default() += 1;
             let discarded_tracking = if report.discarded_count > 0 {
                 " discarded_tracking=aggregate_only"
             } else {
@@ -789,6 +797,15 @@ fn render_coverage_gap_result_audit_v1(
                 compact_coverage_gap_audit_text_v1(&lane, 72),
                 outcome,
                 count
+            ));
+        }
+    }
+    if !target_progress_counts.is_empty() {
+        lines.push("TargetProgress:".to_string());
+        for (target_progress, count) in target_progress_counts {
+            lines.push(format!(
+                "  target_progress={} count={}",
+                target_progress, count
             ));
         }
     }
@@ -1163,6 +1180,9 @@ mod tests {
         let rendered = render_coverage_gap_result_audit_v1(&execution, &report);
 
         assert!(rendered.contains("reward Pommel Strike {rp 1}"));
+        assert!(rendered.contains("TargetProgress:"));
+        assert!(rendered.contains("target_progress=extended count=1"));
+        assert!(rendered.contains("target_progress=target_only count=1"));
         assert!(rendered.contains("final_bucket=active target_progress=extended"));
         assert!(rendered.contains("event Leave {event 2}"));
         assert!(rendered.contains("final_bucket=frozen target_progress=target_only"));
