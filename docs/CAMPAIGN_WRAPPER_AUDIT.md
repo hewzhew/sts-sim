@@ -189,6 +189,7 @@ tools/campaign_coverage_gaps.ps1
 This helper owns:
 
 - coverage-gap preset compatibility checks
+- coverage-gap preset normalization into filter context
 - coverage-gap filter argument rendering
 - coverage-gap plan/continue driver argument rendering
 - coverage-gap milestone summary commands

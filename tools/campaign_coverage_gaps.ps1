@@ -70,6 +70,97 @@ function Format-CoverageGapFilterLabel {
     return $Parts -join " "
 }
 
+function Resolve-CoverageGapFilterContext {
+    param(
+        [bool] $Route,
+        [bool] $RouteMissing,
+        [bool] $EventBoundary,
+        [bool] $EventBoundaryMissing,
+        [string] $Bucket,
+        [string] $EventId,
+        [string] $Lane,
+        [string] $OriginSource,
+        [string] $Progress
+    )
+
+    $RoutePreset = $Route -or $RouteMissing
+    $EventBoundaryPreset = $EventBoundary -or $EventBoundaryMissing
+    if ($RoutePreset -and $EventBoundaryPreset) {
+        throw "Choose a route coverage-gap preset or an event-boundary coverage-gap preset, not both."
+    }
+    if ($RoutePreset) {
+        $PresetName = if ($RouteMissing) { "-CoverageGapRouteMissing" } else { "-CoverageGapRoute" }
+        Assert-CoverageGapPresetCompatible -Preset $PresetName -Name "CoverageGapBucket" -Actual $Bucket -Expected "route"
+        Assert-CoverageGapPresetCompatible -Preset $PresetName -Name "CoverageGapOriginSource" -Actual $OriginSource -Expected "map_decision_packet"
+        if (-not $Bucket) {
+            $Bucket = "route"
+        }
+        if (-not $OriginSource) {
+            $OriginSource = "map_decision_packet"
+        }
+    }
+    if ($RouteMissing) {
+        Assert-CoverageGapPresetCompatible -Preset "-CoverageGapRouteMissing" -Name "CoverageGapProgress" -Actual $Progress -Expected "missing"
+        if (-not $Progress) {
+            $Progress = "missing"
+        }
+    }
+    if ($EventBoundaryPreset) {
+        $PresetName = if ($EventBoundaryMissing) { "-CoverageGapEventBoundaryMissing" } else { "-CoverageGapEventBoundary" }
+        Assert-CoverageGapPresetCompatible -Preset $PresetName -Name "CoverageGapBucket" -Actual $Bucket -Expected "event"
+        Assert-CoverageGapPresetCompatible -Preset $PresetName -Name "CoverageGapOriginSource" -Actual $OriginSource -Expected "event_boundary_packet"
+        if (-not $Bucket) {
+            $Bucket = "event"
+        }
+        if (-not $OriginSource) {
+            $OriginSource = "event_boundary_packet"
+        }
+    }
+    if ($EventBoundaryMissing) {
+        Assert-CoverageGapPresetCompatible -Preset "-CoverageGapEventBoundaryMissing" -Name "CoverageGapProgress" -Actual $Progress -Expected "missing"
+        if (-not $Progress) {
+            $Progress = "missing"
+        }
+    }
+
+    $FilterArgs = @(New-CoverageGapFilterArgs `
+        -Bucket $Bucket `
+        -EventId $EventId `
+        -Lane $Lane `
+        -OriginSource $OriginSource `
+        -Progress $Progress)
+    $FilterLabel = Format-CoverageGapFilterLabel `
+        -Bucket $Bucket `
+        -EventId $EventId `
+        -Lane $Lane `
+        -OriginSource $OriginSource `
+        -Progress $Progress
+    $ResultFilterArgs = @(New-CoverageGapFilterArgs `
+        -Bucket $Bucket `
+        -EventId $EventId `
+        -Lane $Lane `
+        -OriginSource $OriginSource `
+        -Progress "")
+    $ResultFilterLabel = Format-CoverageGapFilterLabel `
+        -Bucket $Bucket `
+        -EventId $EventId `
+        -Lane $Lane `
+        -OriginSource $OriginSource `
+        -Progress ""
+
+    return [pscustomobject]@{
+        Bucket = $Bucket
+        EventId = $EventId
+        Lane = $Lane
+        OriginSource = $OriginSource
+        Progress = $Progress
+        FilterArgs = @($FilterArgs)
+        FilterLabel = $FilterLabel
+        ResultFilterArgs = @($ResultFilterArgs)
+        ResultFilterLabel = $ResultFilterLabel
+    }
+}
+
 function New-CoverageGapPlanDriverArgs {
     param(
         [string] $SourceCampaignPath,

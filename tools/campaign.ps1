@@ -368,70 +368,25 @@ $RoundsBound = $CampaignBoundParameters.ContainsKey("Rounds")
 $UntilRoundBound = $CampaignBoundParameters.ContainsKey("UntilRound")
 $UntilMilestoneBound = $CampaignBoundParameters.ContainsKey("UntilMilestone") -and $UntilMilestone
 $MaxRoundsBound = $CampaignBoundParameters.ContainsKey("MaxRounds")
-$CoverageGapRoutePreset = $CoverageGapRoute -or $CoverageGapRouteMissing
-$CoverageGapEventBoundaryPreset = $CoverageGapEventBoundary -or $CoverageGapEventBoundaryMissing
-if ($CoverageGapRoutePreset -and $CoverageGapEventBoundaryPreset) {
-    throw "Choose a route coverage-gap preset or an event-boundary coverage-gap preset, not both."
-}
-if ($CoverageGapRoutePreset) {
-    $PresetName = if ($CoverageGapRouteMissing) { "-CoverageGapRouteMissing" } else { "-CoverageGapRoute" }
-    Assert-CoverageGapPresetCompatible -Preset $PresetName -Name "CoverageGapBucket" -Actual $CoverageGapBucket -Expected "route"
-    Assert-CoverageGapPresetCompatible -Preset $PresetName -Name "CoverageGapOriginSource" -Actual $CoverageGapOriginSource -Expected "map_decision_packet"
-    if (-not $CoverageGapBucket) {
-        $CoverageGapBucket = "route"
-    }
-    if (-not $CoverageGapOriginSource) {
-        $CoverageGapOriginSource = "map_decision_packet"
-    }
-}
-if ($CoverageGapRouteMissing) {
-    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapRouteMissing" -Name "CoverageGapProgress" -Actual $CoverageGapProgress -Expected "missing"
-    if (-not $CoverageGapProgress) {
-        $CoverageGapProgress = "missing"
-    }
-}
-if ($CoverageGapEventBoundaryPreset) {
-    $PresetName = if ($CoverageGapEventBoundaryMissing) { "-CoverageGapEventBoundaryMissing" } else { "-CoverageGapEventBoundary" }
-    Assert-CoverageGapPresetCompatible -Preset $PresetName -Name "CoverageGapBucket" -Actual $CoverageGapBucket -Expected "event"
-    Assert-CoverageGapPresetCompatible -Preset $PresetName -Name "CoverageGapOriginSource" -Actual $CoverageGapOriginSource -Expected "event_boundary_packet"
-    if (-not $CoverageGapBucket) {
-        $CoverageGapBucket = "event"
-    }
-    if (-not $CoverageGapOriginSource) {
-        $CoverageGapOriginSource = "event_boundary_packet"
-    }
-}
-if ($CoverageGapEventBoundaryMissing) {
-    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapEventBoundaryMissing" -Name "CoverageGapProgress" -Actual $CoverageGapProgress -Expected "missing"
-    if (-not $CoverageGapProgress) {
-        $CoverageGapProgress = "missing"
-    }
-}
-
-$CoverageGapFilterArgs = @(New-CoverageGapFilterArgs `
-    -Bucket $CoverageGapBucket `
-    -EventId $CoverageGapEventId `
-    -Lane $CoverageGapLane `
-    -OriginSource $CoverageGapOriginSource `
-    -Progress $CoverageGapProgress)
-$CoverageGapFilterLabel = Format-CoverageGapFilterLabel `
+$CoverageGapFilterContext = Resolve-CoverageGapFilterContext `
+    -Route ([bool] $CoverageGapRoute) `
+    -RouteMissing ([bool] $CoverageGapRouteMissing) `
+    -EventBoundary ([bool] $CoverageGapEventBoundary) `
+    -EventBoundaryMissing ([bool] $CoverageGapEventBoundaryMissing) `
     -Bucket $CoverageGapBucket `
     -EventId $CoverageGapEventId `
     -Lane $CoverageGapLane `
     -OriginSource $CoverageGapOriginSource `
     -Progress $CoverageGapProgress
-$CoverageGapResultFilterArgs = @(New-CoverageGapFilterArgs `
-    -Bucket $CoverageGapBucket `
-    -EventId $CoverageGapEventId `
-    -Lane $CoverageGapLane `
-    -OriginSource $CoverageGapOriginSource `
-    -Progress "")
-$CoverageGapResultFilterLabel = Format-CoverageGapFilterLabel `
-    -Bucket $CoverageGapBucket `
-    -EventId $CoverageGapEventId `
-    -Lane $CoverageGapLane `
-    -OriginSource $CoverageGapOriginSource `
-    -Progress ""
+$CoverageGapBucket = $CoverageGapFilterContext.Bucket
+$CoverageGapEventId = $CoverageGapFilterContext.EventId
+$CoverageGapLane = $CoverageGapFilterContext.Lane
+$CoverageGapOriginSource = $CoverageGapFilterContext.OriginSource
+$CoverageGapProgress = $CoverageGapFilterContext.Progress
+$CoverageGapFilterArgs = @($CoverageGapFilterContext.FilterArgs)
+$CoverageGapFilterLabel = $CoverageGapFilterContext.FilterLabel
+$CoverageGapResultFilterArgs = @($CoverageGapFilterContext.ResultFilterArgs)
+$CoverageGapResultFilterLabel = $CoverageGapFilterContext.ResultFilterLabel
 
 if (($RoundsBound -and $UntilRoundBound) -or ($RoundsBound -and $MaxRoundsBound) -or ($UntilRoundBound -and $MaxRoundsBound)) {
     throw "Choose only one round budget: -Rounds N, -UntilRound N, or legacy -MaxRounds N."
