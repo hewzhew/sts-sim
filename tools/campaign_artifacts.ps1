@@ -42,6 +42,10 @@ function Get-CampaignLatestPointerPath {
     return (Join-Path $CampaignDir "latest.json")
 }
 
+function Get-CampaignScratchLatestPointerPath {
+    return (Join-Path $ScratchCampaignDir "latest.json")
+}
+
 function New-CampaignRunArtifact {
     param(
         [string] $BaseLabel,
@@ -66,12 +70,12 @@ function New-CampaignRunArtifact {
     }
 }
 
-function New-CampaignScratchArtifact {
+function New-CampaignScratchArtifactRef {
     param(
-        [string] $BaseLabel
+        [string] $ArtifactId
     )
 
-    $Id = New-CampaignArtifactId -BaseLabel $BaseLabel
+    $Id = Convert-ToCampaignArtifactSlug $ArtifactId
     return [pscustomobject]@{
         Kind = "scratch"
         Id = $Id
@@ -86,6 +90,15 @@ function New-CampaignScratchArtifact {
         DecisionOutcomeBeforePath = Join-Path $ScratchCampaignDir "$Id.decision_outcomes.before.jsonl"
         DecisionOutcomeAfterPath = Join-Path $ScratchCampaignDir "$Id.decision_outcomes.after.jsonl"
     }
+}
+
+function New-CampaignScratchArtifact {
+    param(
+        [string] $BaseLabel
+    )
+
+    $Id = New-CampaignArtifactId -BaseLabel $BaseLabel
+    return New-CampaignScratchArtifactRef -ArtifactId $Id
 }
 
 function New-CampaignScratchDecisionOutcomePath {
@@ -255,6 +268,52 @@ function Write-CampaignLatestPointer {
     $Pointer | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $PointerPath
 }
 
+function Read-CampaignScratchLatestPointer {
+    $PointerPath = Get-CampaignScratchLatestPointerPath
+    if (-not (Test-Path -LiteralPath $PointerPath)) {
+        return $null
+    }
+    try {
+        $Pointer = Get-Content -LiteralPath $PointerPath -Raw | ConvertFrom-Json
+        if ($Pointer.schema_name -ne "CampaignScratchLatestPointerV1") {
+            return $null
+        }
+        if (-not $Pointer.artifact_id) {
+            return $null
+        }
+        return $Pointer
+    } catch {
+        return $null
+    }
+}
+
+function Write-CampaignScratchLatestPointer {
+    param(
+        [object] $Artifact
+    )
+
+    if (-not $Artifact -or $Artifact.Kind -ne "scratch") {
+        return
+    }
+    $PointerPath = Get-CampaignScratchLatestPointerPath
+    $Parent = Split-Path -Parent $PointerPath
+    if ($Parent) {
+        New-Item -ItemType Directory -Force -Path $Parent | Out-Null
+    }
+    $Pointer = [ordered]@{
+        schema_name = "CampaignScratchLatestPointerV1"
+        schema_version = 1
+        updated_at = (Get-Date).ToString("o")
+        artifact_id = $Artifact.Id
+        report = $Artifact.ReportPath
+        checkpoint = $Artifact.CheckpointPath
+        manifest = $Artifact.ManifestPath
+        command = $Artifact.CommandPath
+        log = $Artifact.LogPath
+    }
+    $Pointer | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $PointerPath
+}
+
 function Get-CampaignArtifactMode {
     param(
         [object] $Artifact
@@ -299,26 +358,12 @@ function Read-LatestCampaignMode {
 }
 
 function Get-LatestScratchCampaignArtifact {
-    $ScratchReport = Get-ChildItem -LiteralPath $ScratchCampaignDir -Filter "*.campaign.json" -File -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending |
-        Select-Object -First 1
-    if (-not $ScratchReport) {
-        throw "No scratch campaign report found under $ScratchCampaignDir."
+    $Pointer = Read-CampaignScratchLatestPointer
+    if (-not $Pointer) {
+        throw "No scratch latest pointer found at $(Get-CampaignScratchLatestPointerPath). Run .\tools\campaign.ps1 -Scratch to create one, or use -From scratch:<id>."
     }
 
-    $ScratchCheckpointPath = $ScratchReport.FullName -replace '\.campaign\.json$', '.checkpoint.json'
-    if (-not (Test-Path -LiteralPath $ScratchCheckpointPath)) {
-        throw "Latest scratch report has no matching checkpoint: $ScratchCheckpointPath"
-    }
-
-    return [pscustomobject]@{
-        ReportPath = $ScratchReport.FullName
-        CheckpointPath = $ScratchCheckpointPath
-        ManifestPath = $ScratchReport.FullName -replace '\.campaign\.json$', '.manifest.json'
-        LogPath = $ScratchReport.FullName -replace '\.campaign\.json$', '.log'
-        CommandPath = $ScratchReport.FullName -replace '\.campaign\.json$', '.command.txt'
-        Label = $ScratchReport.BaseName -replace '\.campaign$', ''
-    }
+    return New-CampaignScratchArtifactRef -ArtifactId ([string] $Pointer.artifact_id)
 }
 
 function Get-CampaignArtifactRunConfig {
@@ -380,17 +425,7 @@ function Get-CampaignSourceArtifact {
     $ResolvedSelector = if ($Selector) { $Selector.Trim() } elseif ($UseScratchLatest) { "scratch:latest" } else { "latest" }
 
     if ($ResolvedSelector -eq "scratch:latest") {
-        $ScratchArtifact = Get-LatestScratchCampaignArtifact
-        return [pscustomobject]@{
-            Kind = "scratch"
-            Id = $ScratchArtifact.Label
-            ReportPath = $ScratchArtifact.ReportPath
-            CheckpointPath = $ScratchArtifact.CheckpointPath
-            ManifestPath = $ScratchArtifact.ManifestPath
-            LogPath = $ScratchArtifact.LogPath
-            CommandPath = $ScratchArtifact.CommandPath
-            Label = "scratch:$($ScratchArtifact.Label)"
-        }
+        return Get-LatestScratchCampaignArtifact
     }
 
     if ($ResolvedSelector -eq "latest") {
@@ -409,7 +444,11 @@ function Get-CampaignSourceArtifact {
         return New-CampaignRunArtifact -ArtifactId $Matches[1] -BaseLabel $Matches[1]
     }
 
-    throw "Unknown campaign artifact selector '$ResolvedSelector'. Use 'latest', 'legacy-latest', 'scratch:latest', or 'run:<id>'."
+    if ($ResolvedSelector -match '^scratch:(.+)$') {
+        return New-CampaignScratchArtifactRef -ArtifactId $Matches[1]
+    }
+
+    throw "Unknown campaign artifact selector '$ResolvedSelector'. Use 'latest', 'legacy-latest', 'scratch:latest', 'scratch:<id>', or 'run:<id>'."
 }
 
 function Get-CampaignArtifactShortLabel {

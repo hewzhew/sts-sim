@@ -299,6 +299,9 @@ function Write-CampaignPrimaryDriverCommandRecord {
     if ($Context.OutputArtifact.Kind -eq "run") {
         Write-CampaignLatestPointer -Artifact $Context.OutputArtifact
         Write-Host "latest-pointer=$(Get-CampaignLatestPointerPath)"
+    } elseif ($Context.OutputArtifact.Kind -eq "scratch") {
+        Write-CampaignScratchLatestPointer -Artifact $Context.OutputArtifact
+        Write-Host "scratch-latest-pointer=$(Get-CampaignScratchLatestPointerPath)"
     }
     Write-Host "primary-driver-command=$($Context.RunCommandPath)"
     Write-Host "manifest=$($Context.RunManifestPath)"

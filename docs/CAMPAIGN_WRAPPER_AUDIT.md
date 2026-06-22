@@ -72,7 +72,8 @@ latest:
   itself and must not be inferred from scattered sidecar files.
 
 scratch:
-  A side artifact for experiments. It must not overwrite latest.
+  A side artifact for experiments. It must not overwrite latest. Scratch has
+  its own pointer at tools/artifacts/campaigns/scratch/latest.json.
 
 source:
   The artifact a command reads from.
@@ -132,6 +133,9 @@ tools/artifacts/campaigns/runs/<run-id>/
 `-From latest`. The older `latest.campaign.json`, `latest.checkpoint.json`, and
 sidecar text files are available only through explicit `-From legacy-latest`;
 new code should not silently fall back to them or write them as source of truth.
+`tools/artifacts/campaigns/scratch/latest.json` is the corresponding pointer
+for `-FromScratchLatest`; scratch source selection no longer guesses by newest
+file modification time.
 
 ## Keep In Wrapper
 
@@ -159,6 +163,7 @@ This helper owns:
 
 - latest/scratch artifact refs
 - legacy latest sidecar path compatibility
+- run latest and scratch latest pointer files
 - run source artifact selection
 - run/scratch output artifact selection
 - artifact size and shape summaries

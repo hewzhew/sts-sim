@@ -30,10 +30,11 @@ defaults. Campaign semantics belong in the Rust driver and compiler layers.
 
 Continuation must explicitly state its source with `-From latest` or
 `-From run:<id>`. `-From latest` reads the `latest.json` pointer written by new
-campaign runs. Old `latest.campaign.json` / `latest.checkpoint.json` sidecars
-must be selected explicitly with `-From legacy-latest`. The retired `-More`
-shortcut mixed source, output, and round budget semantics and should not be
-used.
+campaign runs. Scratch experiments have their own `scratch/latest.json` pointer
+and can be selected with `-FromScratchLatest` or `-From scratch:<id>`. Old
+`latest.campaign.json` / `latest.checkpoint.json` sidecars must be selected
+explicitly with `-From legacy-latest`. The retired `-More` shortcut mixed
+source, output, and round budget semantics and should not be used.
 
 ## Coverage-Gap Continuation
 
