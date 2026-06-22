@@ -188,6 +188,12 @@ mod tests {
             "--inspect-coverage-gap-milestone-summary",
             "--coverage-gap-milestone-target",
             "Act2Start",
+            "--coverage-gap-bucket",
+            "route",
+            "--coverage-gap-origin-source",
+            "map_decision_packet",
+            "--coverage-gap-progress",
+            "missing",
         ])
         .expect("coverage gap milestone summary inspect args parse");
         let dataset_args = parse_args_from([

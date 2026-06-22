@@ -1166,6 +1166,36 @@ struct InspectModeArgs {
     coverage_gap_milestone_target: String,
 
     #[arg(
+        long = "coverage-gap-bucket",
+        help = "Only inspect coverage-gap milestone rows from this bucket, e.g. event, route, shop, reward"
+    )]
+    coverage_gap_bucket: Option<String>,
+
+    #[arg(
+        long = "coverage-gap-event-id",
+        help = "Only inspect coverage-gap milestone rows whose target key/label/command matches this event id"
+    )]
+    coverage_gap_event_id: Option<String>,
+
+    #[arg(
+        long = "coverage-gap-lane",
+        help = "Only inspect coverage-gap milestone rows whose target lane matches this text"
+    )]
+    coverage_gap_lane: Option<String>,
+
+    #[arg(
+        long = "coverage-gap-origin-source",
+        help = "Only inspect coverage-gap milestone rows from this target_origin source"
+    )]
+    coverage_gap_origin_source: Option<String>,
+
+    #[arg(
+        long = "coverage-gap-progress",
+        help = "Only inspect coverage-gap milestone rows with this target progress"
+    )]
+    coverage_gap_progress: Option<String>,
+
+    #[arg(
         long = "inspect-query",
         value_name = "TEXT",
         help = "Filter decision observations by candidate label, semantic class, frontier key, or parent choices"
@@ -1707,6 +1737,11 @@ impl InspectModeArgs {
         args.inspect_decision_coverage = self.inspect_decision_coverage;
         args.inspect_coverage_gap_milestone_summary = self.inspect_coverage_gap_milestone_summary;
         args.coverage_gap_milestone_target = self.coverage_gap_milestone_target;
+        args.coverage_gap_bucket = self.coverage_gap_bucket;
+        args.coverage_gap_event_id = self.coverage_gap_event_id;
+        args.coverage_gap_lane = self.coverage_gap_lane;
+        args.coverage_gap_origin_source = self.coverage_gap_origin_source;
+        args.coverage_gap_progress = self.coverage_gap_progress;
         args.inspect_query = self.inspect_query;
         args.inspect_final_boss_combat = self.inspect_final_boss_combat;
     }

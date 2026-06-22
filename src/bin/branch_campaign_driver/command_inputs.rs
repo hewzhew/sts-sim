@@ -63,6 +63,7 @@ pub(super) struct InspectCommandInput {
     pub(super) summary: bool,
     pub(super) query: Option<String>,
     pub(super) coverage_gap_milestone_target: String,
+    pub(super) coverage_gap_filter: CoverageGapContinuationFilterV1,
     pub(super) filters: InspectFiltersInput,
     pub(super) modes: InspectModesInput,
     pub(super) search_options: RunControlSearchCombatOptions,
@@ -78,6 +79,7 @@ impl InspectCommandInput {
             summary: args.inspect_summary,
             query: args.inspect_query.clone(),
             coverage_gap_milestone_target: args.coverage_gap_milestone_target.clone(),
+            coverage_gap_filter: coverage_gap_filter_from_args(args),
             filters: InspectFiltersInput {
                 act: args.inspect_act,
                 floor: args.inspect_floor,

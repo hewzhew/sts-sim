@@ -5,6 +5,7 @@ use sts_simulator::eval::branch_campaign::{
     BranchCampaignBranchSummaryV1, BranchCampaignBranchV1, BranchCampaignDiscardedBranchV1,
     BranchCampaignReportV1,
 };
+use sts_simulator::eval::learning_dataset_v1::CoverageGapContinuationFilterV1;
 
 use super::campaign_artifacts::read_campaign_report_v1;
 use super::command_inputs::InspectCommandInput;
@@ -103,23 +104,35 @@ pub(super) fn run_coverage_gap_milestone_summary_inspection(
     let report = read_campaign_report_v1(report_path)?;
     println!(
         "{}",
-        render_coverage_gap_milestone_summary_v1(&report, target)
+        render_coverage_gap_milestone_summary_with_filter_v1(
+            &report,
+            target,
+            &input.coverage_gap_filter,
+        )
     );
     Ok(())
 }
 
-pub(super) fn render_coverage_gap_milestone_summary_v1(
+pub(super) fn render_coverage_gap_milestone_summary_with_filter_v1(
     report: &BranchCampaignReportV1,
     target: CoverageGapMilestoneTargetV1,
+    filter: &CoverageGapContinuationFilterV1,
 ) -> String {
     let rows = coverage_gap_milestone_rows_from_report_v1(report);
-    render_coverage_gap_milestone_summary_from_rows_v1(&rows, target)
+    render_coverage_gap_milestone_summary_from_rows_with_filter_v1(&rows, target, filter)
 }
 
-pub(super) fn render_coverage_gap_milestone_summary_from_rows_v1(
+pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
     rows: &[CoverageGapMilestoneBranchRowV1],
     target: CoverageGapMilestoneTargetV1,
+    filter: &CoverageGapContinuationFilterV1,
 ) -> String {
+    let filtered_rows = rows
+        .iter()
+        .filter(|row| coverage_gap_milestone_row_matches_filter_v1(row, filter))
+        .cloned()
+        .collect::<Vec<_>>();
+    let rows = filtered_rows.as_slice();
     let reached = rows.iter().filter(|row| target.is_reached_by(row)).count();
     let (target_groups, reached_target_groups) = target_group_counts_v1(rows, target);
     let mut lines = Vec::new();
@@ -345,6 +358,74 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_v1(
         .filter(|line| !line.trim_end().is_empty())
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn coverage_gap_milestone_row_matches_filter_v1(
+    row: &CoverageGapMilestoneBranchRowV1,
+    filter: &CoverageGapContinuationFilterV1,
+) -> bool {
+    if let Some(bucket) = filter.bucket.as_deref().filter(|value| !value.is_empty()) {
+        let bucket = normalize_filter_text_v1(bucket);
+        let event_type = normalize_filter_text_v1(&row.event_type);
+        if event_type != bucket && !event_type.contains(&bucket) {
+            return false;
+        }
+    }
+    if let Some(event_id) = filter.event_id.as_deref().filter(|value| !value.is_empty()) {
+        let event_id = normalize_filter_text_v1(event_id);
+        let fields = [
+            row.target_key.as_str(),
+            row.event_type.as_str(),
+            row.label.as_str(),
+            row.command.as_str(),
+            row.frontier_title.as_str(),
+            row.stop_reason.as_str(),
+        ];
+        if !fields
+            .iter()
+            .any(|field| normalize_filter_text_v1(field).contains(&event_id))
+            && !row
+                .choice_labels
+                .iter()
+                .any(|field| normalize_filter_text_v1(field).contains(&event_id))
+        {
+            return false;
+        }
+    }
+    if let Some(lane) = filter.lane.as_deref().filter(|value| !value.is_empty()) {
+        let lane = normalize_filter_text_v1(lane);
+        let row_lane = normalize_filter_text_v1(&row.target_lane);
+        if !row_lane.contains(&lane) {
+            return false;
+        }
+    }
+    if let Some(origin_source) = filter
+        .origin_source
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        let origin_source = normalize_filter_text_v1(origin_source);
+        let row_origin = normalize_filter_text_v1(&row.target_origin_source);
+        if row_origin != origin_source && !row_origin.contains(&origin_source) {
+            return false;
+        }
+    }
+    if let Some(progress) = filter.progress.as_deref().filter(|value| !value.is_empty()) {
+        let progress = normalize_filter_text_v1(progress);
+        let row_progress = normalize_filter_text_v1(&row.target_progress);
+        if row_progress != progress && !row_progress.contains(&progress) {
+            return false;
+        }
+    }
+    true
+}
+
+fn normalize_filter_text_v1(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 pub(super) fn coverage_gap_milestone_rows_from_report_v1(
@@ -829,9 +910,10 @@ mod tests {
             row("frozen", "shop", 1, 8, "Buy Reaper"),
         ];
 
-        let text = render_coverage_gap_milestone_summary_from_rows_v1(
+        let text = render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
             &rows,
             CoverageGapMilestoneTargetV1::Act2Start,
+            &CoverageGapContinuationFilterV1::default(),
         );
 
         assert!(text.contains("CoverageGapMilestoneSummaryV1 target=Act2Start total=4 reached=2"));
@@ -850,9 +932,10 @@ mod tests {
         reached_b.target_key = "boss_relic:runic_pyramid".to_string();
         let unreached = row("frozen", "reward", 1, 8, "True Grit");
 
-        let text = render_coverage_gap_milestone_summary_from_rows_v1(
+        let text = render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
             &[reached_a, reached_b, unreached],
             CoverageGapMilestoneTargetV1::Act2Start,
+            &CoverageGapContinuationFilterV1::default(),
         );
 
         assert!(text.contains("CoverageGapMilestoneSummaryV1 target=Act2Start total=3 reached=2"));
@@ -873,9 +956,10 @@ mod tests {
         abandoned.target_lane = "route:go:RestRoom:CompleteWithinBudget:no_first_elite".to_string();
         abandoned.stop_reason = "combat search did not find an executable complete win".to_string();
 
-        let text = render_coverage_gap_milestone_summary_from_rows_v1(
+        let text = render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
             &[reached_a, reached_b, abandoned],
             CoverageGapMilestoneTargetV1::Act2Start,
+            &CoverageGapContinuationFilterV1::default(),
         );
 
         assert!(text.contains("Target group audit:"));
@@ -902,9 +986,10 @@ mod tests {
         discarded.target_lane =
             "route:go:MonsterRoom:CompleteWithinBudget:optional_elite".to_string();
 
-        let text = render_coverage_gap_milestone_summary_from_rows_v1(
+        let text = render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
             &[extended, target_only, discarded],
             CoverageGapMilestoneTargetV1::Act2Start,
+            &CoverageGapContinuationFilterV1::default(),
         );
 
         assert!(text.contains("Target progress: extended=1 target_only=1 discarded=1"));
@@ -924,6 +1009,37 @@ mod tests {
         assert!(text.contains(
             "route:go:MonsterRoom:CompleteWithinBudget:optional_elite discarded=1 extended=0"
         ));
+    }
+
+    #[test]
+    fn milestone_summary_can_filter_by_coverage_gap_target_metadata() {
+        let mut route_missing = row("active", "route", 1, 8, "x=1 Monster");
+        route_missing.target_origin_source = "map_decision_packet".to_string();
+        route_missing.target_progress = "missing".to_string();
+        route_missing.target_lane =
+            "route:go:MonsterRoom:CompleteWithinBudget:no_first_elite".to_string();
+        let mut route_target_only = row("frozen", "route", 1, 8, "x=2 Shop");
+        route_target_only.target_origin_source = "map_decision_packet".to_string();
+        route_target_only.target_progress = "target_only".to_string();
+        let mut event_missing = row("active", "event", 1, 8, "Mushrooms Eat");
+        event_missing.target_origin_source = "event_boundary_packet".to_string();
+        event_missing.target_progress = "missing".to_string();
+
+        let text = render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
+            &[route_missing, route_target_only, event_missing],
+            CoverageGapMilestoneTargetV1::Act2Start,
+            &sts_simulator::eval::learning_dataset_v1::CoverageGapContinuationFilterV1 {
+                origin_source: Some("map_decision_packet".to_string()),
+                progress: Some("missing".to_string()),
+                ..Default::default()
+            },
+        );
+
+        assert!(text.contains("CoverageGapMilestoneSummaryV1 target=Act2Start total=1"));
+        assert!(text.contains("route total=1"));
+        assert!(!text.contains("event total=1"));
+        assert!(text.contains("Target progress: extended=0 target_only=0 discarded=0 missing=1"));
+        assert!(text.contains("Target origin sources: map_decision_packet=1"));
     }
 
     #[test]
