@@ -21,6 +21,7 @@ Approximate physical line count after the wrapper split:
 - `tools/campaign_targets.ps1`: 147 lines
 - `tools/campaign_source.ps1`: 118 lines
 - `tools/campaign_milestones.ps1`: 105 lines
+- `tools/campaign_request.ps1`: 68 lines
 - `tools/campaign_build.ps1`: 30 lines
 
 Major regions:
@@ -260,6 +261,21 @@ This helper owns:
 It should not call artifact/run-config source lookup helpers directly in
 continuation or inspect branches; otherwise `latest`, `scratch`, and `source`
 semantics will drift again.
+
+Request helpers now live in:
+
+```text
+tools/campaign_request.ps1
+```
+
+This helper owns:
+
+- retired `-More` rejection
+- inspect flag folding
+- `-InspectScratchLatest` source/read interpretation
+- targeted-vs-coverage-gap mutual exclusion
+- scratch output eligibility
+- the derived `ReadsCampaignSource` flag
 
 ## Still Move Out Of Wrapper
 

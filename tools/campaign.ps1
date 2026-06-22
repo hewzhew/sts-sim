@@ -181,58 +181,45 @@ New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 . (Join-Path $PSScriptRoot "campaign_targets.ps1")
 . (Join-Path $PSScriptRoot "campaign_build.ps1")
 . (Join-Path $PSScriptRoot "campaign_source.ps1")
+. (Join-Path $PSScriptRoot "campaign_request.ps1")
 
-$ContinueCampaign = [bool] $ContinueRun
-if ($More) {
-    throw "-More has been retired because it silently mixed latest source, output, and round semantics. Use '.\tools\campaign.ps1 -From latest -Continue' or '.\tools\campaign.ps1 -From run:<id> -Continue'."
-}
-
-$ScratchLatestIsContinuationSource = $InspectScratchLatest -and (
-    $PlanTargets -or
-    $ContinueTargets -or
-    $PlanCoverageGaps -or
-    $ContinueCoverageGaps
+$InspectSelectorFlags = @(
+    [bool] $InspectArtifacts,
+    [bool] $InspectState,
+    [bool] $InspectShopEvidence,
+    [bool] $InspectShopChallenge,
+    [bool] $InspectCardRewardEvidence,
+    [bool] $InspectDecisionObservations,
+    [bool] $InspectJournal,
+    [bool] $InspectLineageDecisions,
+    [bool] $InspectCampfireEvidence,
+    [bool] $InspectDeckMutation,
+    [bool] $InspectRouteEvidence,
+    [bool] $InspectLastAutoCombat,
+    [bool] $InspectCombatLab,
+    [bool] $InspectFinalBossCombat,
+    [bool] $InspectCoverageGapMilestoneSummary,
+    [bool] $InspectCoverageGapTargetState
 )
-
-if (
-    $InspectArtifacts -or
-    $InspectState -or
-    $InspectShopEvidence -or
-    $InspectShopChallenge -or
-    $InspectCardRewardEvidence -or
-    $InspectDecisionObservations -or
-    $InspectJournal -or
-    $InspectLineageDecisions -or
-    $InspectCampfireEvidence -or
-    $InspectDeckMutation -or
-    $InspectRouteEvidence -or
-    $InspectLastAutoCombat -or
-    $InspectCombatLab -or
-    $InspectFinalBossCombat -or
-    $InspectCoverageGapMilestoneSummary -or
-    $InspectCoverageGapTargetState -or
-    ($InspectScratchLatest -and -not $ScratchLatestIsContinuationSource)
-) {
-    $Inspect = $true
-}
-if ($InspectShopChallenge -and -not $PSBoundParameters.ContainsKey("InspectBoundary")) {
-    $InspectBoundary = "Shop"
-}
-
-if (($PlanTargets -or $ContinueTargets) -and ($PlanCoverageGaps -or $ContinueCoverageGaps)) {
-    throw "Choose either targeted continuation (-PlanTargets/-ContinueTargets) or coverage-gap continuation (-PlanCoverageGaps/-ContinueCoverageGaps), not both."
-}
-if (
-    $Scratch -and
-    -not (
-        $ContinueCoverageGaps -or
-        ((-not $ContinueCampaign) -and (-not $Inspect) -and (-not $PlanTargets) -and (-not $ContinueTargets) -and (-not $PlanCoverageGaps))
-    )
-) {
-    throw "-Scratch currently supports normal campaign runs and -ContinueCoverageGaps only."
-}
-
-$ReadsCampaignSource = $Inspect -or $ContinueCampaign -or $PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps
+$CampaignRequest = Resolve-CampaignEntryRequest `
+    -ContinueRun ([bool] $ContinueRun) `
+    -More ([bool] $More) `
+    -Inspect ([bool] $Inspect) `
+    -InspectSelectorFlags $InspectSelectorFlags `
+    -InspectScratchLatest ([bool] $InspectScratchLatest) `
+    -InspectShopChallenge ([bool] $InspectShopChallenge) `
+    -InspectBoundaryBound ($PSBoundParameters.ContainsKey("InspectBoundary")) `
+    -InspectBoundary $InspectBoundary `
+    -PlanTargets ([bool] $PlanTargets) `
+    -ContinueTargets ([bool] $ContinueTargets) `
+    -PlanCoverageGaps ([bool] $PlanCoverageGaps) `
+    -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
+    -Scratch ([bool] $Scratch)
+$ContinueCampaign = $CampaignRequest.ContinueCampaign
+$Inspect = $CampaignRequest.Inspect
+$InspectBoundary = $CampaignRequest.InspectBoundary
+$ScratchLatestIsContinuationSource = $CampaignRequest.ScratchLatestIsContinuationSource
+$ReadsCampaignSource = $CampaignRequest.ReadsCampaignSource
 $CampaignSourceContext = Get-CampaignSourceContext `
     -ReadsCampaignSource $ReadsCampaignSource `
     -Last $Last `
