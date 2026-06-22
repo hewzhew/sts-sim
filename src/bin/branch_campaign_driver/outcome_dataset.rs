@@ -965,10 +965,12 @@ fn render_coverage_gap_result_audit_v1(
     let mut target_progress_counts = BTreeMap::<String, usize>::new();
     let mut target_progress_by_type_counts = BTreeMap::<(String, String, String), usize>::new();
     let mut target_progress_by_lane_counts = BTreeMap::<(String, String, String), usize>::new();
+    let mut target_origin_source_counts = BTreeMap::<(String, String), usize>::new();
     let mut target_lines = Vec::new();
 
     for (index, target) in execution.targets.iter().enumerate() {
         let lane = coverage_gap_continuation_target_lane_v1(target);
+        let origin_source_key = coverage_gap_target_origin_source_key_v1(target);
         if let Some(result) = branches
             .iter()
             .find(|result| coverage_gap_result_branch_matches_target_v1(result, target))
@@ -1004,6 +1006,9 @@ fn render_coverage_gap_result_audit_v1(
                     target_progress.to_string(),
                 ))
                 .or_default() += 1;
+            *target_origin_source_counts
+                .entry((origin_source_key, result.outcome.to_string()))
+                .or_default() += 1;
             let origin_source = render_coverage_gap_target_origin_source_suffix_v1(target);
             target_lines.push(format!(
                 "  {}. {} {} {{{}}} lane={}{} seeded=yes final_bucket={} target_progress={}{} -> frontier={} {} stop={}",
@@ -1034,6 +1039,9 @@ fn render_coverage_gap_result_audit_v1(
                 .or_default() += 1;
             *target_progress_by_lane_counts
                 .entry((lane.clone(), "missing".to_string(), "missing".to_string()))
+                .or_default() += 1;
+            *target_origin_source_counts
+                .entry((origin_source_key, "missing".to_string()))
                 .or_default() += 1;
             let discarded_tracking = if report.discarded_count > 0 {
                 " discarded_tracking=aggregate_only"
@@ -1123,6 +1131,15 @@ fn render_coverage_gap_result_audit_v1(
             ));
         }
     }
+    if !target_origin_source_counts.is_empty() {
+        lines.push("TargetOriginSources:".to_string());
+        for ((source, outcome), count) in target_origin_source_counts {
+            lines.push(format!(
+                "  source={} outcome={} count={}",
+                source, outcome, count
+            ));
+        }
+    }
     if target_lines.is_empty() {
         lines.push("Targets: none".to_string());
     } else {
@@ -1130,6 +1147,14 @@ fn render_coverage_gap_result_audit_v1(
         lines.extend(target_lines);
     }
     lines.join("\n")
+}
+
+fn coverage_gap_target_origin_source_key_v1(target: &CoverageGapContinuationTargetV1) -> String {
+    if target.target_origin.source.is_empty() {
+        "unknown".to_string()
+    } else {
+        target.target_origin.source.clone()
+    }
 }
 
 fn render_coverage_gap_target_origin_source_suffix_v1(
@@ -1718,6 +1743,76 @@ mod tests {
 
         assert!(rendered.contains("route x=1 y=2 Shop {go 1}"));
         assert!(rendered.contains("source=map_decision_packet"));
+    }
+
+    #[test]
+    fn coverage_gap_result_audit_summarizes_target_origin_sources() {
+        let mut route_target = coverage_gap_test_target("route", "go 1", "x=1 y=2 Shop", 0);
+        route_target.target_origin.source = "map_decision_packet".to_string();
+        let mut reward_target = coverage_gap_test_target("reward", "rp 1", "Pommel Strike", 1);
+        reward_target.target_origin.source = "journal_coverage_gap".to_string();
+        let execution = CoverageGapContinuationExecutionPlanV1 {
+            schema_name: "CoverageGapContinuationExecutionPlanV1".to_string(),
+            schema_version: 3,
+            label_role: "campaign_observation_not_teacher".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            requested_target_count: 2,
+            selected_branch_count: 2,
+            skipped_target_count: 0,
+            bucket_summaries: Vec::new(),
+            lane_summaries: Vec::new(),
+            targets: vec![route_target.clone(), reward_target.clone()],
+        };
+        let report = BranchCampaignReportV1 {
+            schema_name: "BranchCampaignV1".to_string(),
+            schema_version: 1,
+            seed: 1,
+            run_domain: Default::default(),
+            run_prelude: Default::default(),
+            rounds_completed: 1,
+            stop_reason: "max_rounds".to_string(),
+            active: vec![coverage_gap_test_result_branch(
+                &route_target,
+                BranchCampaignBranchStatusV1::Active,
+                "Combat",
+                "advanced after target",
+                1,
+                5,
+                72,
+                80,
+            )],
+            frozen: vec![coverage_gap_test_result_branch(
+                &reward_target,
+                BranchCampaignBranchStatusV1::Frozen,
+                "Reward Screen",
+                "same boundary after applying target",
+                1,
+                4,
+                80,
+                80,
+            )],
+            victories: Vec::new(),
+            dead: Vec::new(),
+            abandoned: Vec::new(),
+            stuck: Vec::new(),
+            discarded_count: 0,
+            discarded_examples: Vec::new(),
+            discarded_branches: Vec::new(),
+            strategy_requests: Vec::new(),
+            route_evidence: Default::default(),
+            combat_retry_ledger: Default::default(),
+            strategic_signals: Default::default(),
+            state_store: Default::default(),
+            journal: Default::default(),
+            rounds: Vec::new(),
+        };
+
+        let rendered = render_coverage_gap_result_audit_v1(&execution, &report);
+
+        assert!(rendered.contains("TargetOriginSources:"));
+        assert!(rendered.contains("source=map_decision_packet outcome=active count=1"));
+        assert!(rendered.contains("source=journal_coverage_gap outcome=frozen count=1"));
     }
 
     #[test]
