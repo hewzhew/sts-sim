@@ -334,8 +334,12 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
     let target_group_audit = target_group_audit_summaries_v1(rows, target);
     if !target_group_audit.is_empty() {
         lines.push("Target group audit:".to_string());
-        for summary in target_group_audit.into_iter().take(12) {
+        for summary in target_group_audit.iter().take(12) {
             lines.push(format_target_group_audit_line_v1(&summary));
+        }
+        lines.push("Target group details:".to_string());
+        for summary in target_group_audit.iter().take(6) {
+            lines.extend(format_target_group_detail_lines_v1(summary));
         }
     }
 
@@ -809,6 +813,53 @@ fn format_target_group_audit_line_v1(
     )
 }
 
+fn format_target_group_detail_lines_v1(
+    summary: &CoverageGapMilestoneTargetGroupSummaryV1<'_>,
+) -> Vec<String> {
+    let first = summary.first.expect("target group should have a first row");
+    let furthest = summary
+        .furthest
+        .expect("target group should have a furthest row");
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "  {} | {} {{{}}}",
+        first.event_type, first.label, first.command
+    ));
+    lines.push(format!(
+        "    furthest: {}",
+        format_milestone_row_v1(furthest)
+    ));
+    if !furthest.target_progress.is_empty() {
+        lines.push(format!("    target_progress: {}", furthest.target_progress));
+    }
+    if !furthest.target_origin_source.is_empty() {
+        lines.push(format!(
+            "    target_origin_source: {}",
+            furthest.target_origin_source
+        ));
+    }
+    if !furthest.target_lane.is_empty() {
+        lines.push(format!("    lane: {}", furthest.target_lane));
+    }
+    if !furthest.choice_labels.is_empty() {
+        lines.push(format!(
+            "    choices: {}",
+            render_recent_choice_path_v1(&furthest.choice_labels)
+        ));
+    }
+    lines
+}
+
+fn render_recent_choice_path_v1(choice_labels: &[String]) -> String {
+    const MAX_CHOICES: usize = 8;
+    if choice_labels.len() <= MAX_CHOICES {
+        return choice_labels.join(" -> ");
+    }
+    let skipped = choice_labels.len() - MAX_CHOICES;
+    let suffix = choice_labels[skipped..].join(" -> ");
+    format!("... {skipped} earlier -> {suffix}")
+}
+
 fn target_origin_source_counts_v1<'a>(
     rows: impl Iterator<Item = &'a CoverageGapMilestoneBranchRowV1>,
 ) -> BTreeMap<&'a str, usize> {
@@ -970,6 +1021,36 @@ mod tests {
             "route | x=6 y=12 Rest {choose x=6 y=12 Rest} | reached=no rows=1 active=0 frozen=0 abandoned=1"
         ));
         assert!(text.contains("stop=combat search did not find an executable complete win"));
+    }
+
+    #[test]
+    fn milestone_summary_includes_target_group_drilldown_details() {
+        let mut abandoned = row("abandoned", "route", 1, 16, "x=6 y=12 Rest");
+        abandoned.target_key = "route:rest".to_string();
+        abandoned.target_lane = "route:go:RestRoom:CompleteWithinBudget:no_first_elite".to_string();
+        abandoned.frontier_title = "Combat".to_string();
+        abandoned.stop_reason = "combat search did not find an executable complete win".to_string();
+        abandoned.choice_labels = vec![
+            "Skip card reward".to_string(),
+            "Smith Bash".to_string(),
+            "x=6 y=12 Rest".to_string(),
+            "Battle Trance".to_string(),
+        ];
+        let mut frozen = row("frozen", "route", 1, 10, "x=6 y=12 Rest");
+        frozen.target_key = "route:rest".to_string();
+        frozen.target_lane = abandoned.target_lane.clone();
+
+        let text = render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
+            &[abandoned, frozen],
+            CoverageGapMilestoneTargetV1::Act2Start,
+            &CoverageGapContinuationFilterV1::default(),
+        );
+
+        assert!(text.contains("Target group details:"));
+        assert!(text.contains("route | x=6 y=12 Rest {choose x=6 y=12 Rest}"));
+        assert!(text.contains("furthest: A1F16 HP 80/80 deck 12 | abandoned | route"));
+        assert!(text
+            .contains("choices: Skip card reward -> Smith Bash -> x=6 y=12 Rest -> Battle Trance"));
     }
 
     #[test]
