@@ -175,6 +175,7 @@ New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 
 . (Join-Path $PSScriptRoot "campaign_artifacts.ps1")
 . (Join-Path $PSScriptRoot "campaign_invocation.ps1")
+. (Join-Path $PSScriptRoot "campaign_preflight.ps1")
 . (Join-Path $PSScriptRoot "campaign_milestones.ps1")
 . (Join-Path $PSScriptRoot "campaign_coverage_gaps.ps1")
 . (Join-Path $PSScriptRoot "campaign_inspect.ps1")
