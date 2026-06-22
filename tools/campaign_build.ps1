@@ -21,3 +21,14 @@ function Test-DriverNeedsBuild {
     }
     return $false
 }
+
+function Write-CampaignBuildCommandPreview {
+    param(
+        [string[]] $BuildArgs
+    )
+
+    $RenderedBuildArgs = $BuildArgs | ForEach-Object {
+        if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
+    }
+    Write-Host ("cargo " + ($RenderedBuildArgs -join " "))
+}

@@ -762,10 +762,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
 
     if ($DryRun) {
         if ($NeedsBuild) {
-            $RenderedBuildArgs = $BuildArgs | ForEach-Object {
-                if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
-            }
-            Write-Host ("cargo " + ($RenderedBuildArgs -join " "))
+            Write-CampaignBuildCommandPreview -BuildArgs $BuildArgs
         }
         if ($PlanTargets -or $ContinueTargets) {
             Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ExportDecisionArgs)
@@ -936,10 +933,7 @@ if ($Inspect) {
 
     if ($DryRun) {
         if ($NeedsBuild) {
-            $RenderedBuildArgs = $BuildArgs | ForEach-Object {
-                if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
-            }
-            Write-Host ("cargo " + ($RenderedBuildArgs -join " "))
+            Write-CampaignBuildCommandPreview -BuildArgs $BuildArgs
         }
         Write-Host $RenderedCommand
         exit 0
@@ -1020,10 +1014,7 @@ if ($ContinueCampaign -and $UntilMilestoneBound) {
 
 if ($DryRun) {
     if ($NeedsBuild) {
-        $RenderedBuildArgs = $BuildArgs | ForEach-Object {
-            if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
-        }
-        Write-Host ("cargo " + ($RenderedBuildArgs -join " "))
+        Write-CampaignBuildCommandPreview -BuildArgs $BuildArgs
     }
     Write-Host $RenderedCommand
     if ($UntilMilestoneBound) {
