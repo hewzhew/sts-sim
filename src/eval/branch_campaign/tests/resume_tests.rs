@@ -260,6 +260,7 @@ fn campaign_resume_checkpoint_drops_unrestorable_stuck_branches_and_requests() {
         run_prelude: Default::default(),
         rounds_completed: 0,
         nodes: Vec::new(),
+        decision_parent_anchor_commands: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: restorable.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&RunControlSession::new(
@@ -323,6 +324,7 @@ fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_command
         run_prelude: Default::default(),
         rounds_completed: 0,
         nodes: Vec::new(),
+        decision_parent_anchor_commands: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: parent.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&session),
@@ -425,6 +427,7 @@ fn campaign_resume_rehydrates_checkpointed_combat_failures() {
         run_prelude: Default::default(),
         rounds_completed: 8,
         nodes: Vec::new(),
+        decision_parent_anchor_commands: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: combat_failure.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&restored_session),
@@ -526,6 +529,7 @@ fn campaign_resume_does_not_promote_stale_combat_failure_over_later_active_branc
         run_prelude: Default::default(),
         rounds_completed: 48,
         nodes: Vec::new(),
+        decision_parent_anchor_commands: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: stale_combat_failure.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&restored_session),
@@ -627,6 +631,7 @@ fn campaign_resume_rehydrates_auto_advanceable_map_overlay_stuck() {
         run_prelude: Default::default(),
         rounds_completed: 8,
         nodes: Vec::new(),
+        decision_parent_anchor_commands: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: map_overlay_stuck.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&restored_session),
@@ -727,6 +732,7 @@ fn campaign_resume_rehydrates_stale_map_preview_to_checkpoint_card_reward_fronti
         run_prelude: Default::default(),
         rounds_completed: 8,
         nodes: Vec::new(),
+        decision_parent_anchor_commands: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: map_overlay_stuck.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&restored_session),
@@ -817,6 +823,7 @@ fn campaign_resume_drops_resolved_map_overlay_stuck_when_no_branch_slot_remains(
         run_prelude: Default::default(),
         rounds_completed: 8,
         nodes: Vec::new(),
+        decision_parent_anchor_commands: Vec::new(),
         sessions: vec![BranchCampaignCheckpointSessionV1 {
             commands: map_overlay_stuck.commands.clone(),
             session: RunControlSessionCheckpointV1::from_session(&restored_session),
@@ -908,6 +915,7 @@ fn campaign_resume_rehydrates_combat_failures_as_frozen_diagnostics_only() {
         run_prelude: Default::default(),
         rounds_completed: 8,
         nodes: Vec::new(),
+        decision_parent_anchor_commands: Vec::new(),
         sessions: checkpoint_sessions,
     };
 
@@ -973,6 +981,7 @@ fn campaign_resume_rehydrates_later_combat_failure_before_stale_early_failure() 
         run_prelude: Default::default(),
         rounds_completed: 8,
         nodes: Vec::new(),
+        decision_parent_anchor_commands: Vec::new(),
         sessions: vec![
             test_combat_checkpoint_session(&early_failure, 2, 32, 80),
             test_combat_checkpoint_session(&final_boss_failure, 3, 48, 80),

@@ -88,7 +88,7 @@ fn branch_state_store_retain_keeps_child_ancestor_nodes_without_parent_session()
 }
 
 #[test]
-fn branch_state_store_retain_keeps_decision_parent_anchor_session() {
+fn branch_state_store_retain_prunes_decision_parent_exact_session_when_not_needed() {
     let mut store = super::state_graph::BranchStateStoreV1::new();
     let parent_commands = vec!["rp 0".to_string()];
     let child_commands = vec!["rp 0".to_string(), "go 2".to_string()];
@@ -116,6 +116,48 @@ fn branch_state_store_retain_keeps_decision_parent_anchor_session() {
             max_frozen_exact_sessions: 0,
             max_stuck_exact_sessions: 0,
             max_abandoned_exact_sessions: 0,
+            max_anchor_exact_sessions: 0,
+            max_suffix_commands_without_session: usize::MAX,
+        },
+    );
+
+    let summary = store.summary();
+    assert_eq!(summary.sessions, 1);
+    assert!(!store.contains_commands(&parent_commands));
+    assert!(store.contains_commands(&child_commands));
+    assert!(store.node_id_for_commands(&parent_commands).is_some());
+}
+
+#[test]
+fn branch_state_store_retain_keeps_decision_parent_anchor_session_for_long_suffix() {
+    let mut store = super::state_graph::BranchStateStoreV1::new();
+    let parent_commands = vec!["rp 0".to_string()];
+    let child_commands = vec!["rp 0".to_string(), "go 2".to_string()];
+    let mut child_branch = test_campaign_branch("child", 6, 80);
+    child_branch.commands = child_commands.clone();
+    let mut anchors = BTreeSet::new();
+    anchors.insert(parent_commands.clone());
+
+    store.insert_session(
+        parent_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.insert_child_session(
+        &parent_commands,
+        child_commands.clone(),
+        RunControlSession::new(RunControlConfig::default()),
+    );
+    store.retain_for_branches_with_session_policy_and_anchors(
+        &[child_branch],
+        &[],
+        &[],
+        &[],
+        &anchors,
+        super::state_graph::BranchStateSessionRetentionPolicyV1 {
+            max_frozen_exact_sessions: 0,
+            max_stuck_exact_sessions: 0,
+            max_abandoned_exact_sessions: 0,
+            max_anchor_exact_sessions: 0,
             max_suffix_commands_without_session: 0,
         },
     );
@@ -259,6 +301,7 @@ fn branch_state_store_session_policy_prunes_extra_frozen_exact_sessions_only() {
             max_frozen_exact_sessions: 1,
             max_stuck_exact_sessions: 0,
             max_abandoned_exact_sessions: 0,
+            max_anchor_exact_sessions: 0,
             max_suffix_commands_without_session: usize::MAX,
         },
     );
@@ -303,6 +346,7 @@ fn branch_state_store_session_policy_keeps_long_suffix_frozen_anchor() {
             max_frozen_exact_sessions: 0,
             max_stuck_exact_sessions: 0,
             max_abandoned_exact_sessions: 0,
+            max_anchor_exact_sessions: 0,
             max_suffix_commands_without_session: 2,
         },
     );
@@ -328,6 +372,7 @@ fn campaign_session_retention_policy_keeps_all_frozen_exact_sessions() {
     assert_eq!(policy.max_frozen_exact_sessions, 11);
     assert_eq!(policy.max_stuck_exact_sessions, 3);
     assert_eq!(policy.max_abandoned_exact_sessions, 0);
+    assert_eq!(policy.max_anchor_exact_sessions, 14);
     assert_eq!(policy.max_suffix_commands_without_session, 6);
 }
 
@@ -469,6 +514,7 @@ fn branch_state_store_summary_tracks_replay_start_sources_and_suffixes() {
             max_frozen_exact_sessions: 0,
             max_stuck_exact_sessions: 0,
             max_abandoned_exact_sessions: 0,
+            max_anchor_exact_sessions: 0,
             max_suffix_commands_without_session: usize::MAX,
         },
     );
@@ -557,6 +603,7 @@ fn campaign_parent_batch_can_force_ancestor_replay_after_exact_session_pruned() 
             max_frozen_exact_sessions: 0,
             max_stuck_exact_sessions: 0,
             max_abandoned_exact_sessions: 0,
+            max_anchor_exact_sessions: 0,
             max_suffix_commands_without_session: usize::MAX,
         },
     );

@@ -280,6 +280,7 @@ pub fn run_branch_campaign_ancestor_replay_self_check_v1(
             max_frozen_exact_sessions: 0,
             max_stuck_exact_sessions: 0,
             max_abandoned_exact_sessions: 0,
+            max_anchor_exact_sessions: 0,
             max_suffix_commands_without_session: usize::MAX,
         },
     );
@@ -978,6 +979,9 @@ fn campaign_state_from_report_and_checkpoint_v1(
         }
     }
     state
+        .decision_parent_anchor_commands
+        .extend(checkpoint.decision_parent_anchor_commands.iter().cloned());
+    state
         .stuck
         .retain(|branch| state.state_store.contains_commands(&branch.commands));
     state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
@@ -1032,6 +1036,11 @@ fn campaign_checkpoint_from_state_v1(
         run_prelude: branch_campaign_run_prelude_v1(config),
         rounds_completed: state.rounds_completed,
         nodes: state.state_store.checkpoint_nodes(),
+        decision_parent_anchor_commands: state
+            .decision_parent_anchor_commands
+            .iter()
+            .cloned()
+            .collect(),
         sessions,
     }
 }
@@ -1154,6 +1163,7 @@ fn campaign_state_session_retention_policy_v1(
         max_frozen_exact_sessions: config.max_frozen,
         max_stuck_exact_sessions: config.max_active,
         max_abandoned_exact_sessions: 0,
+        max_anchor_exact_sessions: config.max_active.saturating_add(config.max_frozen),
         max_suffix_commands_without_session: 6,
     }
 }

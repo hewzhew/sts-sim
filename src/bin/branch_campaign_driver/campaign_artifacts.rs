@@ -154,6 +154,7 @@ mod tests {
             run_prelude: BranchCampaignRunPreludeV1::default(),
             rounds_completed: 0,
             nodes: Vec::new(),
+            decision_parent_anchor_commands: Vec::new(),
             sessions: Vec::new(),
         };
 

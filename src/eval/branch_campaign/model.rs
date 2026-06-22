@@ -507,6 +507,8 @@ pub struct BranchCampaignCheckpointV1 {
     pub rounds_completed: usize,
     #[serde(default)]
     pub nodes: Vec<BranchCampaignCheckpointNodeV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decision_parent_anchor_commands: Vec<Vec<String>>,
     pub sessions: Vec<BranchCampaignCheckpointSessionV1>,
 }
 

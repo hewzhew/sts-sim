@@ -71,6 +71,7 @@ pub(super) struct BranchStateSessionRetentionPolicyV1 {
     pub(super) max_frozen_exact_sessions: usize,
     pub(super) max_stuck_exact_sessions: usize,
     pub(super) max_abandoned_exact_sessions: usize,
+    pub(super) max_anchor_exact_sessions: usize,
     pub(super) max_suffix_commands_without_session: usize,
 }
 
@@ -279,6 +280,7 @@ impl BranchStateStoreV1 {
                 max_frozen_exact_sessions: usize::MAX,
                 max_stuck_exact_sessions: usize::MAX,
                 max_abandoned_exact_sessions: usize::MAX,
+                max_anchor_exact_sessions: usize::MAX,
                 max_suffix_commands_without_session: usize::MAX,
             },
         );
@@ -323,7 +325,6 @@ impl BranchStateStoreV1 {
             .iter()
             .map(|branch| branch.commands.clone())
             .collect::<BTreeSet<_>>();
-        keep_sessions.extend(anchor_commands.iter().cloned());
         keep_sessions.extend(
             frozen
                 .iter()
@@ -341,6 +342,12 @@ impl BranchStateStoreV1 {
                 .iter()
                 .take(policy.max_abandoned_exact_sessions)
                 .map(|branch| branch.commands.clone()),
+        );
+        keep_sessions.extend(
+            anchor_commands
+                .iter()
+                .take(policy.max_anchor_exact_sessions)
+                .cloned(),
         );
         self.add_long_suffix_session_anchors(&keep, &mut keep_sessions, policy);
         let before_sessions = self.sessions_by_commands.len();

@@ -549,17 +549,35 @@ function Get-CampaignArtifactShape {
         $Frozen = Get-CampaignValueCount -Value $Json.frozen
         $Journal = Get-CampaignValueCount -Value $Json.journal
         $Rounds = Get-CampaignValueCount -Value $Json.rounds
-        return "rounds=$($Json.rounds_completed) stop=$($Json.stop_reason) active=$Active frozen=$Frozen journal=$Journal round_entries=$Rounds"
+        $StateSessions = 0
+        $StateNodes = 0
+        $DecisionSessions = 0
+        $RouteDecisionSessions = 0
+        $SessionsPruned = 0
+        if ($Json.state_store) {
+            $StateSessions = $Json.state_store.sessions
+            $StateNodes = $Json.state_store.nodes
+            $DecisionSessions = $Json.state_store.decision_coordinate_sessions
+            $RouteDecisionSessions = $Json.state_store.route_decision_coordinate_sessions
+            $SessionsPruned = $Json.state_store.sessions_pruned
+        }
+        return "rounds=$($Json.rounds_completed) stop=$($Json.stop_reason) active=$Active frozen=$Frozen journal=$Journal round_entries=$Rounds state_sessions=$StateSessions state_nodes=$StateNodes decision_sessions=$DecisionSessions route_decision_sessions=$RouteDecisionSessions pruned=$SessionsPruned"
     }
 
     if ($Kind -eq "checkpoint") {
         $Nodes = Get-CampaignValueCount -Value $Json.nodes
         $Sessions = Get-CampaignValueCount -Value $Json.sessions
+        $AnchorPaths = Get-CampaignValueCount -Value $Json.decision_parent_anchor_commands
         $PreludeCommands = 0
         if ($Json.run_prelude -and $Json.run_prelude.commands) {
             $PreludeCommands = Get-CampaignValueCount -Value $Json.run_prelude.commands
         }
-        return "rounds=$($Json.rounds_completed) nodes=$Nodes sessions=$Sessions prelude_commands=$PreludeCommands"
+        $ApproxSessionBytes = "-"
+        if ($Sessions -gt 0) {
+            $CheckpointBytes = (Get-Item -LiteralPath $Path).Length
+            $ApproxSessionBytes = Format-CampaignArtifactSize -Bytes ([long]($CheckpointBytes / $Sessions))
+        }
+        return "rounds=$($Json.rounds_completed) nodes=$Nodes sessions=$Sessions anchor_paths=$AnchorPaths approx_bytes_per_session=$ApproxSessionBytes prelude_commands=$PreludeCommands"
     }
 
     return "json_fields=$(Get-CampaignJsonTopFields -Json $Json -Limit 6)"
