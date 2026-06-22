@@ -725,7 +725,7 @@ fn render_coverage_gap_result_audit_v1(
                 ))
                 .or_default() += 1;
             target_lines.push(format!(
-                "  {}. {} {} {{{}}} lane={} -> {} frontier={} {} stop={}",
+                "  {}. {} {} {{{}}} lane={} seeded=yes final_bucket={} -> frontier={} {} stop={}",
                 index + 1,
                 target.event_type,
                 compact_coverage_gap_audit_text_v1(&target.label, 40),
@@ -738,13 +738,19 @@ fn render_coverage_gap_result_audit_v1(
             ));
         } else {
             missing = missing.saturating_add(1);
+            let discarded_tracking = if report.discarded_count > 0 {
+                " discarded_tracking=aggregate_only"
+            } else {
+                ""
+            };
             target_lines.push(format!(
-                "  {}. missing target {} {} {{{}}} lane={} parent={}",
+                "  {}. missing target {} {} {{{}}} lane={} seeded=yes final_bucket=missing diagnostic=not_in_final_buckets{} parent={}",
                 index + 1,
                 target.event_type,
                 compact_coverage_gap_audit_text_v1(&target.label, 40),
                 compact_coverage_gap_audit_text_v1(&target.command, 24),
                 compact_coverage_gap_audit_text_v1(&lane, 72),
+                discarded_tracking,
                 compact_coverage_gap_audit_text_v1(&target.parent_branch_id, 48)
             ));
         }
@@ -756,6 +762,13 @@ fn render_coverage_gap_result_audit_v1(
         execution.targets.len(),
         matched,
         missing
+    ));
+    lines.push(format!(
+        "Lifecycle: seeded={} final_bucket_matched={} final_bucket_missing={} report_discarded={}",
+        execution.targets.len(),
+        matched,
+        missing,
+        report.discarded_count
     ));
     if !outcome_counts.is_empty() {
         lines.push("Outcomes:".to_string());
@@ -986,17 +999,30 @@ mod tests {
         let rendered = render_coverage_gap_result_audit_v1(&execution, &report);
 
         assert!(rendered.contains("CoverageGapResultAuditV1 targets=2 matched=2 missing=0"));
+        assert!(
+            rendered.contains("Lifecycle: seeded=2 final_bucket_matched=2 final_bucket_missing=0")
+        );
         assert!(rendered.contains("reward:scheduled:kept"));
+        assert!(rendered.contains("seeded=yes final_bucket=active"));
         assert!(rendered.contains("frontier=Reward Screen"));
         assert!(rendered.contains("A1F7 HP 61/80"));
         assert!(rendered.contains("route:legacy:x=1 y=2 Shop"));
+        assert!(rendered.contains("seeded=yes final_bucket=abandoned"));
         assert!(rendered.contains("frontier=Combat"));
         assert!(rendered.contains("combat search did not find an executable complete win"));
 
         report.abandoned.clear();
+        report.discarded_count = 3;
+        report.discarded_examples = vec!["some other branch".to_string()];
         let rendered = render_coverage_gap_result_audit_v1(&execution, &report);
         assert!(rendered.contains("matched=1 missing=1"));
+        assert!(
+            rendered.contains("Lifecycle: seeded=2 final_bucket_matched=1 final_bucket_missing=1")
+        );
         assert!(rendered.contains("missing target route x=1 y=2 Shop {go 1}"));
+        assert!(rendered.contains("seeded=yes final_bucket=missing"));
+        assert!(rendered.contains("diagnostic=not_in_final_buckets"));
+        assert!(rendered.contains("discarded_tracking=aggregate_only"));
     }
 
     #[test]
