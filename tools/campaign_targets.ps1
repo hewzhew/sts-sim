@@ -25,27 +25,27 @@ function New-TargetedContinuationExportAfterArgs {
     param(
         [string] $RunOutputCampaignPath,
         [string] $RunOutputCheckpointPath,
-        [string] $LatestDecisionOutcomeAfterPath
+        [string] $DecisionOutcomeAfterPath
     )
 
     return @(
         "dataset",
         "--inspect-report", "$RunOutputCampaignPath",
         "--inspect-checkpoint", "$RunOutputCheckpointPath",
-        "--export-decision-outcome-dataset", "$LatestDecisionOutcomeAfterPath"
+        "--export-decision-outcome-dataset", "$DecisionOutcomeAfterPath"
     )
 }
 
 function New-TargetedContinuationEffectArgs {
     param(
         [string] $TargetDecisionOutcomePath,
-        [string] $LatestDecisionOutcomeAfterPath
+        [string] $DecisionOutcomeAfterPath
     )
 
     return @(
         "continue",
         "--continuation-effect-before", "$TargetDecisionOutcomePath",
-        "--continuation-effect-after", "$LatestDecisionOutcomeAfterPath"
+        "--continuation-effect-after", "$DecisionOutcomeAfterPath"
     )
 }
 
@@ -120,7 +120,8 @@ function Invoke-TargetedContinuationCommands {
         [int] $ContinuationRounds,
         [string[]] $RunIdentityArgs,
         [object] $OptionContext,
-        [object] $RecordContext
+        [object] $RecordContext,
+        [object] $ManifestContext
     )
 
     if ($PlanTargets -or $ContinueTargets) {
@@ -154,9 +155,82 @@ function Invoke-TargetedContinuationCommands {
     Write-CampaignPrimaryDriverCommandRecord `
         -PrimaryDriverCommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs) `
         -Context $RecordContext
+    Write-CampaignWrapperManifest `
+        -Path $RecordContext.RunManifestPath `
+        -Manifest (New-TargetedContinuationWrapperManifest `
+            -ExitCode $DriverExitCode `
+            -Stage "initial_driver_completed" `
+            -RunIdentityArgs $RunIdentityArgs `
+            -OptionContext $OptionContext `
+            -RecordContext $RecordContext `
+            -ManifestContext $ManifestContext)
     if ($UntilMilestoneBound) {
         Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext
         $DriverExitCode = $script:CampaignMilestoneExitCode
     }
+    $ManifestStage = if ($UntilMilestoneBound) { "completed_with_milestone_loop" } else { "completed" }
+    Write-CampaignWrapperManifest `
+        -Path $RecordContext.RunManifestPath `
+        -Manifest (New-TargetedContinuationWrapperManifest `
+            -ExitCode $DriverExitCode `
+            -Stage $ManifestStage `
+            -RunIdentityArgs $RunIdentityArgs `
+            -OptionContext $OptionContext `
+            -RecordContext $RecordContext `
+            -ManifestContext $ManifestContext)
     return $DriverExitCode
+}
+
+function New-TargetedContinuationWrapperManifest {
+    param(
+        [int] $ExitCode,
+        [string] $Stage,
+        [string[]] $RunIdentityArgs,
+        [object] $OptionContext,
+        [object] $RecordContext,
+        [object] $ManifestContext
+    )
+
+    $Manifest = New-CampaignWrapperManifestBase `
+        -ExitCode $ExitCode `
+        -Stage $Stage `
+        -CommandKind "targeted_continuation" `
+        -PrimaryDriverArgs $ManifestContext.ContinueTargetArgs `
+        -PrimaryDriverCommand (Format-CommandLine -ExePath $ManifestContext.DriverExe -Arguments $ManifestContext.ContinueTargetArgs) `
+        -Context $RecordContext
+    $Manifest["source"] = [ordered]@{
+        label = $ManifestContext.SourceLabel
+        report = "$($ManifestContext.SourceCampaignPath)"
+        checkpoint = "$($ManifestContext.SourceCheckpointPath)"
+    }
+    $Manifest["targeted_continuation"] = [ordered]@{
+        limit = $ManifestContext.TargetedContinuationLimit
+        candidates_per_target = $ManifestContext.TargetedContinuationCandidatesPerTarget
+        decision_outcomes_before = "$($ManifestContext.TargetDecisionOutcomePath)"
+        decision_outcomes_after = "$($ManifestContext.DecisionOutcomeAfterPath)"
+        export_before_args = @($ManifestContext.ExportDecisionArgs)
+        export_before_command = (Format-CommandLine -ExePath $ManifestContext.DriverExe -Arguments $ManifestContext.ExportDecisionArgs)
+        export_after_args = @($ManifestContext.ExportDecisionAfterArgs)
+        export_after_command = (Format-CommandLine -ExePath $ManifestContext.DriverExe -Arguments $ManifestContext.ExportDecisionAfterArgs)
+        effect_args = @($ManifestContext.ContinuationEffectArgs)
+        effect_command = (Format-CommandLine -ExePath $ManifestContext.DriverExe -Arguments $ManifestContext.ContinuationEffectArgs)
+    }
+
+    if ($ManifestContext.UntilMilestoneBound) {
+        $MilestoneResumeArgs = New-MilestoneResumeDriverArgs `
+            -RunIdentityArgs $RunIdentityArgs `
+            -StepRounds $ManifestContext.MilestoneStepRounds `
+            -OptionContext $OptionContext
+        $Manifest["milestone"] = [ordered]@{
+            target = $ManifestContext.UntilMilestone
+            stop = $ManifestContext.ResolvedMilestoneStop
+            step_rounds = $ManifestContext.MilestoneStepRounds
+            max_additional_rounds = $ManifestContext.MilestoneMaxRounds
+            initial_spent_rounds = $ManifestContext.ContinuationRounds
+            resume_driver_args_template = @($MilestoneResumeArgs)
+            resume_driver_command_template = (Format-CommandLine -ExePath $ManifestContext.DriverExe -Arguments $MilestoneResumeArgs)
+        }
+    }
+
+    return $Manifest
 }

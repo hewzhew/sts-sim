@@ -60,10 +60,11 @@ function Resolve-CampaignEntryRequest {
         $Scratch -and
         -not (
             $ContinueCoverageGaps -or
+            $ContinueTargets -or
             ((-not $ContinueCampaign) -and (-not $ResolvedInspect) -and (-not $PlanTargets) -and (-not $ContinueTargets) -and (-not $PlanCoverageGaps))
         )
     ) {
-        throw "-Scratch currently supports normal campaign runs and -ContinueCoverageGaps only."
+        throw "-Scratch currently supports normal campaign runs, -ContinueTargets, and -ContinueCoverageGaps only."
     }
 
     return [pscustomobject]@{

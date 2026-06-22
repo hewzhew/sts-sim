@@ -98,11 +98,15 @@ inputs and candidate structure, not create new policy behavior in PowerShell.
 
 ```powershell
 .\tools\campaign.ps1 -PlanTargets
-.\tools\campaign.ps1 -ContinueTargets -Rounds 1
+.\tools\campaign.ps1 -From latest -ContinueTargets -Rounds 1
+.\tools\campaign.ps1 -From latest -ContinueTargets -Scratch -Rounds 1
 ```
 
 This is an older sibling-continuation workflow. Prefer coverage-gap
 continuation unless specifically investigating the legacy targeted path.
+Execution-style targeted continuation writes before/after decision-outcome
+datasets into the selected output artifact. Use `-Scratch` for experiments that
+should not update latest.
 
 ## Build And Diagnostics
 

@@ -37,9 +37,9 @@ function Resolve-CampaignContinuationDecisionOutcomePath {
         return $Context.DecisionOutcomeDataset
     }
     if ($Context.ContinueTargets) {
-        return $Context.LatestDecisionOutcomeBeforePath
+        return $Context.DecisionOutcomeBeforePath
     }
-    return $Context.LatestDecisionOutcomePath
+    return $Context.DecisionOutcomePath
 }
 
 function New-CampaignContinuationCommandContext {
@@ -81,10 +81,10 @@ function New-CampaignContinuationCommandContext {
     $ExportDecisionAfterArgs = New-TargetedContinuationExportAfterArgs `
         -RunOutputCampaignPath $Context.RunOutputCampaignPath `
         -RunOutputCheckpointPath $Context.RunOutputCheckpointPath `
-        -LatestDecisionOutcomeAfterPath $Context.LatestDecisionOutcomeAfterPath
+        -DecisionOutcomeAfterPath $Context.DecisionOutcomeAfterPath
     $ContinuationEffectArgs = New-TargetedContinuationEffectArgs `
         -TargetDecisionOutcomePath $TargetDecisionOutcomePath `
-        -LatestDecisionOutcomeAfterPath $Context.LatestDecisionOutcomeAfterPath
+        -DecisionOutcomeAfterPath $Context.DecisionOutcomeAfterPath
     $ContinueTargetArgs = New-TargetedContinuationContinueDriverArgs `
         -RunIdentityArgs $Context.CampaignRunIdentityArgs `
         -SourceCampaignPath $SourceContext.CampaignPath `
@@ -131,7 +131,7 @@ function New-CampaignContinuationCommandContext {
         -RunOutputCampaignPath $Context.RunOutputCampaignPath `
         -RunOutputCheckpointPath $Context.RunOutputCheckpointPath `
         -TargetDecisionOutcomePath $TargetDecisionOutcomePath `
-        -LatestDecisionOutcomeAfterPath $Context.LatestDecisionOutcomeAfterPath `
+        -DecisionOutcomeAfterPath $Context.DecisionOutcomeAfterPath `
         -TargetedContinuationLimit $Context.TargetedContinuationLimit `
         -TargetedContinuationCandidatesPerTarget $Context.TargetedContinuationCandidatesPerTarget `
         -ResumeRoundsCompleted $SourceContext.RoundsCompleted `
@@ -154,6 +154,27 @@ function New-CampaignContinuationCommandContext {
 
     return [pscustomobject]@{
         TargetDecisionOutcomePath = $TargetDecisionOutcomePath
+        TargetedManifestContext = [pscustomobject]@{
+            SourceLabel = $SourceContext.Label
+            SourceCampaignPath = $SourceContext.CampaignPath
+            SourceCheckpointPath = $SourceContext.CheckpointPath
+            TargetDecisionOutcomePath = $TargetDecisionOutcomePath
+            DecisionOutcomeAfterPath = $Context.DecisionOutcomeAfterPath
+            ExportDecisionArgs = @($ExportDecisionArgs)
+            PlanTargetArgs = @($PlanTargetArgs)
+            ContinueTargetArgs = @($ContinueTargetArgs)
+            ExportDecisionAfterArgs = @($ExportDecisionAfterArgs)
+            ContinuationEffectArgs = @($ContinuationEffectArgs)
+            TargetedContinuationLimit = $Context.TargetedContinuationLimit
+            TargetedContinuationCandidatesPerTarget = $Context.TargetedContinuationCandidatesPerTarget
+            DriverExe = $Context.DriverExe
+            UntilMilestoneBound = [bool] $Context.UntilMilestoneBound
+            UntilMilestone = $Context.UntilMilestone
+            ResolvedMilestoneStop = $Context.ResolvedMilestoneStop
+            MilestoneStepRounds = $Context.MilestoneStepRounds
+            MilestoneMaxRounds = $Context.MilestoneMaxRounds
+            ContinuationRounds = [int] $RoundBudget.AdditionalRounds
+        }
         CoveragePlanArgs = @($CoveragePlanArgs)
         ExportDecisionArgs = @($ExportDecisionArgs)
         PlanTargetArgs = @($PlanTargetArgs)
@@ -253,7 +274,8 @@ function Invoke-CampaignContinuationCommandSet {
                 -ContinuationRounds $CommandContext.ContinuationRounds `
                 -RunIdentityArgs $Context.CampaignRunIdentityArgs `
                 -OptionContext $Context.CampaignSharedDriverOptionContext `
-                -RecordContext $Context
+                -RecordContext $Context `
+                -ManifestContext $CommandContext.TargetedManifestContext
         }
         if ($Context.PlanCoverageGaps -or $Context.ContinueCoverageGaps) {
             return Invoke-CoverageGapContinuationCommands `

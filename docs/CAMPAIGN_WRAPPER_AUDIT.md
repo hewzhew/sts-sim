@@ -13,18 +13,18 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 570 lines
-- `tools/campaign_artifacts.ps1`: 582 lines
+- `tools/campaign.ps1`: 573 lines
+- `tools/campaign_artifacts.ps1`: 597 lines
 - `tools/campaign_invocation.ps1`: 496 lines
 - `tools/campaign_coverage_gaps.ps1`: 428 lines
 - `tools/campaign_preflight.ps1`: 196 lines
-- `tools/campaign_continuation.ps1`: 294 lines
+- `tools/campaign_continuation.ps1`: 316 lines
 - `tools/campaign_inspect.ps1`: 194 lines
-- `tools/campaign_targets.ps1`: 162 lines
+- `tools/campaign_targets.ps1`: 236 lines
 - `tools/campaign_source.ps1`: 132 lines
 - `tools/campaign_rounds.ps1`: 122 lines
 - `tools/campaign_milestones.ps1`: 110 lines
-- `tools/campaign_request.ps1`: 76 lines
+- `tools/campaign_request.ps1`: 77 lines
 - `tools/campaign_build.ps1`: 71 lines
 
 Major regions:
@@ -287,6 +287,9 @@ This helper owns:
 - targeted continuation execution orchestration
 - targeted continuation primary-driver command recording from an explicit
   record context
+- targeted continuation wrapper manifest shape
+- targeted continuation before/after decision-outcome paths as artifact-local
+  files, not shared `latest.decision_outcomes.*` files
 
 Build freshness helpers now live in:
 
@@ -338,9 +341,9 @@ These pieces are useful but should not live in the main script long term:
 
 - residual compatibility switches that may no longer earn wrapper-level
   visibility after the latest/source/output cleanup
-- targeted continuation scratch safety: `-Scratch` is still disabled for this
-  path because before/after decision-outcome datasets still use shared
-  `latest.decision_outcomes.*` paths instead of artifact-local paths
+- plan-only targeted continuation still writes its dataset to the legacy latest
+  dataset path by default; execution-style targeted continuation now uses
+  artifact-local before/after datasets
 
 ## Candidates To Delete Or Degrade
 

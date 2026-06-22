@@ -292,6 +292,9 @@ $RunOutputCheckpointPath = $RunOutputContext.CheckpointPath
 $RunCommandPath = $RunOutputContext.CommandPath
 $RunManifestPath = $RunOutputContext.ManifestPath
 $RunLogPath = $RunOutputContext.LogPath
+$RunDecisionOutcomePath = $RunOutputContext.DecisionOutcomePath
+$RunDecisionOutcomeBeforePath = $RunOutputContext.DecisionOutcomeBeforePath
+$RunDecisionOutcomeAfterPath = $RunOutputContext.DecisionOutcomeAfterPath
 Ensure-CampaignOutputArtifactDirectory -OutputContext $RunOutputContext -DryRun ([bool] $DryRun)
 
 $BoundParameterContext = Resolve-CampaignBoundParameterContext `
@@ -420,9 +423,9 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         ContinueCoverageGaps = [bool] $ContinueCoverageGaps
         CampaignSourceArtifact = $CampaignSourceArtifact
         DecisionOutcomeDataset = $DecisionOutcomeDataset
-        LatestDecisionOutcomeBeforePath = $LatestDecisionOutcomeBeforePath
-        LatestDecisionOutcomePath = $LatestDecisionOutcomePath
-        LatestDecisionOutcomeAfterPath = $LatestDecisionOutcomeAfterPath
+        DecisionOutcomeBeforePath = $(if ($RunDecisionOutcomeBeforePath) { $RunDecisionOutcomeBeforePath } else { $LatestDecisionOutcomeBeforePath })
+        DecisionOutcomePath = $(if ($RunDecisionOutcomePath) { $RunDecisionOutcomePath } else { $LatestDecisionOutcomePath })
+        DecisionOutcomeAfterPath = $(if ($RunDecisionOutcomeAfterPath) { $RunDecisionOutcomeAfterPath } else { $LatestDecisionOutcomeAfterPath })
         RunOutputCampaignPath = $RunOutputCampaignPath
         RunOutputCheckpointPath = $RunOutputCheckpointPath
         UntilMilestoneBound = $UntilMilestoneBound

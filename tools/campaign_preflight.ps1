@@ -62,7 +62,7 @@ function New-CampaignContinuationPreflightContext {
         [string] $RunOutputCampaignPath,
         [string] $RunOutputCheckpointPath,
         [string] $TargetDecisionOutcomePath,
-        [string] $LatestDecisionOutcomeAfterPath,
+        [string] $DecisionOutcomeAfterPath,
         [int] $TargetedContinuationLimit,
         [int] $TargetedContinuationCandidatesPerTarget,
         [int] $ResumeRoundsCompleted,
@@ -104,7 +104,7 @@ function New-CampaignContinuationPreflightContext {
         RunOutputCampaignPath = $RunOutputCampaignPath
         RunOutputCheckpointPath = $RunOutputCheckpointPath
         TargetDecisionOutcomePath = $TargetDecisionOutcomePath
-        LatestDecisionOutcomeAfterPath = $LatestDecisionOutcomeAfterPath
+        DecisionOutcomeAfterPath = $DecisionOutcomeAfterPath
         TargetedContinuationLimit = $TargetedContinuationLimit
         TargetedContinuationCandidatesPerTarget = $TargetedContinuationCandidatesPerTarget
         ResumeRoundsCompleted = $ResumeRoundsCompleted
@@ -157,7 +157,7 @@ function Write-CampaignContinuationPreflight {
         Write-Host "decision-outcomes=$($Context.TargetDecisionOutcomePath)"
     }
     if ($Context.ContinueTargets) {
-        Write-Host "decision-outcomes-after=$($Context.LatestDecisionOutcomeAfterPath)"
+        Write-Host "decision-outcomes-after=$($Context.DecisionOutcomeAfterPath)"
         Write-Host "continue-targets=$($Context.TargetedContinuationLimit) candidates-per-target=$($Context.TargetedContinuationCandidatesPerTarget)"
         Write-Host "resume-rounds=$($Context.ResumeRoundsCompleted)"
         if ($Context.TargetRounds -ne $null) {

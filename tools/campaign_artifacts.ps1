@@ -60,6 +60,9 @@ function New-CampaignRunArtifact {
         ManifestPath = Join-Path $Dir "manifest.json"
         LogPath = Join-Path $Dir "log.txt"
         CommandPath = Join-Path $Dir "command.txt"
+        DecisionOutcomePath = Join-Path $Dir "decision_outcomes.jsonl"
+        DecisionOutcomeBeforePath = Join-Path $Dir "decision_outcomes.before.jsonl"
+        DecisionOutcomeAfterPath = Join-Path $Dir "decision_outcomes.after.jsonl"
     }
 }
 
@@ -79,6 +82,9 @@ function New-CampaignScratchArtifact {
         ManifestPath = Join-Path $ScratchCampaignDir "$Id.manifest.json"
         LogPath = Join-Path $ScratchCampaignDir "$Id.log"
         CommandPath = Join-Path $ScratchCampaignDir "$Id.command.txt"
+        DecisionOutcomePath = Join-Path $ScratchCampaignDir "$Id.decision_outcomes.jsonl"
+        DecisionOutcomeBeforePath = Join-Path $ScratchCampaignDir "$Id.decision_outcomes.before.jsonl"
+        DecisionOutcomeAfterPath = Join-Path $ScratchCampaignDir "$Id.decision_outcomes.after.jsonl"
     }
 }
 
@@ -127,6 +133,9 @@ function Resolve-CampaignOutputArtifactContext {
     $RunCommandPath = ""
     $RunManifestPath = ""
     $RunLogPath = ""
+    $RunDecisionOutcomePath = ""
+    $RunDecisionOutcomeBeforePath = ""
+    $RunDecisionOutcomeAfterPath = ""
 
     if ($WritesCampaignOutput) {
         $OutputBaseLabel = Get-CampaignOutputBaseLabel `
@@ -146,6 +155,9 @@ function Resolve-CampaignOutputArtifactContext {
         $RunCommandPath = $RunOutputArtifact.CommandPath
         $RunManifestPath = $RunOutputArtifact.ManifestPath
         $RunLogPath = $RunOutputArtifact.LogPath
+        $RunDecisionOutcomePath = $RunOutputArtifact.DecisionOutcomePath
+        $RunDecisionOutcomeBeforePath = $RunOutputArtifact.DecisionOutcomeBeforePath
+        $RunDecisionOutcomeAfterPath = $RunOutputArtifact.DecisionOutcomeAfterPath
     }
 
     return [pscustomobject]@{
@@ -157,6 +169,9 @@ function Resolve-CampaignOutputArtifactContext {
         CommandPath = $RunCommandPath
         ManifestPath = $RunManifestPath
         LogPath = $RunLogPath
+        DecisionOutcomePath = $RunDecisionOutcomePath
+        DecisionOutcomeBeforePath = $RunDecisionOutcomeBeforePath
+        DecisionOutcomeAfterPath = $RunDecisionOutcomeAfterPath
     }
 }
 
