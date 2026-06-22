@@ -28,7 +28,7 @@ use sts_simulator::eval::learning_dataset_v1::{
     analyze_learning_decision_outcome_samples_v1, coverage_gap_continuation_execution_plan_v1,
     coverage_gap_continuation_target_lane_v1, decision_outcome_samples_from_campaign_report_v1,
     learning_records_from_branch_outcomes_v1, parse_learning_decision_outcome_samples_jsonl_v1,
-    plan_coverage_gap_continuations_v1, plan_targeted_continuations_v1,
+    plan_coverage_gap_continuations_with_filter_v1, plan_targeted_continuations_v1,
     probe_learning_readiness_v1, refresh_coverage_gap_execution_bucket_summaries_v1,
     render_continuation_effect_report_v1, render_coverage_gap_continuation_plan_summary_v1,
     render_coverage_gap_continuation_plan_v1, render_coverage_gap_execution_plan_v1,
@@ -36,10 +36,10 @@ use sts_simulator::eval::learning_dataset_v1::{
     render_learning_readiness_probe_v1, render_targeted_continuation_plan_v1,
     serialize_learning_branch_samples_jsonl_v1,
     serialize_learning_decision_outcome_samples_jsonl_v1, targeted_continuation_execution_plan_v1,
-    CoverageGapContinuationExecutionPlanV1, CoverageGapContinuationPlanV1,
-    CoverageGapContinuationTargetProgressV1, CoverageGapContinuationTargetV1,
-    LearningBranchSampleV1, LearningDatasetExportContextV1, LearningDecisionOutcomeSampleV1,
-    TargetedContinuationExecutionPlanV1,
+    CoverageGapContinuationExecutionPlanV1, CoverageGapContinuationFilterV1,
+    CoverageGapContinuationPlanV1, CoverageGapContinuationTargetProgressV1,
+    CoverageGapContinuationTargetV1, LearningBranchSampleV1, LearningDatasetExportContextV1,
+    LearningDecisionOutcomeSampleV1, TargetedContinuationExecutionPlanV1,
 };
 #[cfg(test)]
 use sts_simulator::eval::learning_dataset_v1::{
@@ -285,6 +285,7 @@ pub(super) fn run_coverage_gap_continuation_plan(
                 checkpoint,
                 input.coverage_gap_limit,
                 input.coverage_gap_candidates_per_decision,
+                &input.coverage_gap_filter,
             );
         println!(
             "Replayable preview from current checkpoint (requested={} planning_window={}):\n{}",
@@ -297,11 +298,12 @@ pub(super) fn run_coverage_gap_continuation_plan(
             render_coverage_gap_continuation_plan_summary_v1(&plan)
         );
     } else {
-        let plan = plan_coverage_gap_continuations_v1(
+        let plan = plan_coverage_gap_continuations_with_filter_v1(
             &report,
             &records,
             input.coverage_gap_limit,
             input.coverage_gap_candidates_per_decision,
+            &input.coverage_gap_filter,
         );
         println!("{}", render_coverage_gap_continuation_plan_v1(&plan));
     }
@@ -330,6 +332,7 @@ pub(super) fn run_coverage_gap_continuation_execution(
         &source_checkpoint,
         input.coverage_gap_limit,
         input.coverage_gap_candidates_per_decision,
+        &input.coverage_gap_filter,
     );
     if execution.targets.is_empty() {
         return Err(format!(
@@ -378,11 +381,12 @@ pub(super) fn run_coverage_gap_continuation_execution(
         CoverageGapExecutionModeV1::AdvanceRounds => {
             let result_records =
                 extract_branch_outcome_records_v1(&result.report, Some(&result.checkpoint))?;
-            plan_coverage_gap_continuations_v1(
+            plan_coverage_gap_continuations_with_filter_v1(
                 &result.report,
                 &result_records,
                 planning_window,
                 input.coverage_gap_candidates_per_decision,
+                &input.coverage_gap_filter,
             )
         }
     };
@@ -561,6 +565,7 @@ fn build_replayable_coverage_gap_execution_plan_v1(
     source_checkpoint: &BranchCampaignCheckpointV1,
     requested_targets: usize,
     max_candidates_per_decision: usize,
+    filter: &CoverageGapContinuationFilterV1,
 ) -> (
     CoverageGapContinuationPlanV1,
     CoverageGapContinuationExecutionPlanV1,
@@ -570,11 +575,12 @@ fn build_replayable_coverage_gap_execution_plan_v1(
     let max_planning_window = coverage_gap_execution_planning_window_cap_v1(requested_targets);
 
     loop {
-        let plan = plan_coverage_gap_continuations_v1(
+        let plan = plan_coverage_gap_continuations_with_filter_v1(
             source_report,
             records,
             planning_window,
             max_candidates_per_decision,
+            filter,
         );
         let execution = trim_coverage_gap_execution_plan_v1(
             filter_coverage_gap_execution_plan_for_checkpoint_v1(

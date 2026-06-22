@@ -249,6 +249,22 @@ pub struct CoverageGapContinuationPlanV1 {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct CoverageGapContinuationFilterV1 {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bucket: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
+}
+
+impl CoverageGapContinuationFilterV1 {
+    fn is_empty(&self) -> bool {
+        self.bucket.as_deref().is_none_or(str::is_empty)
+            && self.event_id.as_deref().is_none_or(str::is_empty)
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CoverageGapContinuationBucketSummaryV1 {
     pub bucket: String,
     pub unobserved_candidate_count: usize,
@@ -1107,6 +1123,22 @@ pub fn plan_coverage_gap_continuations_v1(
     max_targets: usize,
     max_candidates_per_decision: usize,
 ) -> CoverageGapContinuationPlanV1 {
+    plan_coverage_gap_continuations_with_filter_v1(
+        report,
+        records,
+        max_targets,
+        max_candidates_per_decision,
+        &CoverageGapContinuationFilterV1::default(),
+    )
+}
+
+pub fn plan_coverage_gap_continuations_with_filter_v1(
+    report: &BranchCampaignReportV1,
+    records: &[BranchOutcomeRecordV1],
+    max_targets: usize,
+    max_candidates_per_decision: usize,
+    filter: &CoverageGapContinuationFilterV1,
+) -> CoverageGapContinuationPlanV1 {
     let mut total_decisions = 0usize;
     let mut total_candidates = 0usize;
     let mut total_unobserved_candidates = 0usize;
@@ -1214,6 +1246,7 @@ pub fn plan_coverage_gap_continuations_v1(
         }
     }
 
+    let target_candidates = filter_coverage_gap_targets_v1(target_candidates, filter);
     let deduped_target_candidates = dedupe_coverage_gap_targets_v1(target_candidates);
     record_coverage_gap_bucket_eligible_targets_v1(&mut bucket_counts, &deduped_target_candidates);
     let targets =
@@ -1261,6 +1294,60 @@ pub fn plan_coverage_gap_continuations_v1(
         target_progress_summaries,
         targets,
     }
+}
+
+fn filter_coverage_gap_targets_v1(
+    targets: Vec<CoverageGapContinuationTargetV1>,
+    filter: &CoverageGapContinuationFilterV1,
+) -> Vec<CoverageGapContinuationTargetV1> {
+    if filter.is_empty() {
+        return targets;
+    }
+    targets
+        .into_iter()
+        .filter(|target| coverage_gap_target_matches_filter_v1(target, filter))
+        .collect()
+}
+
+fn coverage_gap_target_matches_filter_v1(
+    target: &CoverageGapContinuationTargetV1,
+    filter: &CoverageGapContinuationFilterV1,
+) -> bool {
+    if let Some(bucket) = filter.bucket.as_deref().filter(|value| !value.is_empty()) {
+        let normalized_filter = coverage_gap_normalize_filter_text_v1(bucket);
+        let target_bucket =
+            coverage_gap_normalize_filter_text_v1(coverage_gap_target_bucket_v1(target));
+        let target_type = coverage_gap_normalize_filter_text_v1(&target.event_type);
+        if normalized_filter != target_bucket && normalized_filter != target_type {
+            return false;
+        }
+    }
+    if let Some(event_id) = filter.event_id.as_deref().filter(|value| !value.is_empty()) {
+        let normalized_filter = coverage_gap_normalize_filter_text_v1(event_id);
+        let fields = [
+            target.event_id.as_str(),
+            target.decision_id.as_str(),
+            target.candidate_id.as_str(),
+            target.parent_frontier_title.as_str(),
+            target.label.as_str(),
+            target.semantic_class.as_str(),
+        ];
+        if !fields
+            .iter()
+            .any(|field| coverage_gap_normalize_filter_text_v1(field).contains(&normalized_filter))
+        {
+            return false;
+        }
+    }
+    true
+}
+
+fn coverage_gap_normalize_filter_text_v1(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 fn record_coverage_gap_bucket_unobserved_candidate_v1(
@@ -5786,79 +5873,26 @@ mod tests {
 
     #[test]
     fn coverage_gap_continuation_targets_current_event_boundary_candidates() {
-        let mut branch = sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
-        branch.frontier_title = "TheLibrary".to_string();
-        branch.summary = Some(BranchCampaignBranchSummaryV1 {
-            act: 1,
-            floor: 9,
-            hp: 54,
-            max_hp: 80,
-            gold: 120,
-            deck_count: 14,
-            deck_key: String::new(),
-            formation_stage: String::new(),
-            formation_strengths: Vec::new(),
-            formation_needs: Vec::new(),
-            trajectory_key: String::new(),
-            boss: String::new(),
-            boss_pressure: Vec::new(),
-            run_debt: Vec::new(),
-            event_boundary: Some(
-                crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1 {
-                    schema_name: "EventBoundaryPacketV1".to_string(),
-                    schema_version: 1,
-                    event_id: "TheLibrary".to_string(),
-                    current_screen: 0,
-                    completed: false,
-                    boundary_class: "strategic_choice".to_string(),
-                    candidates: vec![
-                        crate::eval::event_boundary_packet_v1::EventCandidateSnapshotV1 {
-                            candidate_id: "event:TheLibrary:screen0:choice0".to_string(),
-                            command: "event 0".to_string(),
-                            display_label: "[Read] Choose a card from 20 offerings.".to_string(),
-                            disabled: false,
-                            disabled_reason: None,
-                            action_kind: "gain".to_string(),
-                            transition: "advance_screen".to_string(),
-                            selection_kind: None,
-                            terminal: false,
-                            repeatable: false,
-                            role: "strategic_choice".to_string(),
-                            information_tags: vec!["public_structured".to_string()],
-                            effects: vec![
-                                crate::eval::event_boundary_packet_v1::EventEffectSnapshotV1 {
-                                    kind: "offer_cards".to_string(),
-                                    params: BTreeMap::new(),
-                                },
-                            ],
-                            constraints: Vec::new(),
-                        },
-                        crate::eval::event_boundary_packet_v1::EventCandidateSnapshotV1 {
-                            candidate_id: "event:TheLibrary:screen0:choice1".to_string(),
-                            command: "event 1".to_string(),
-                            display_label: "[Sleep] Heal 30% of your Max HP.".to_string(),
-                            disabled: false,
-                            disabled_reason: None,
-                            action_kind: "heal".to_string(),
-                            transition: "advance_screen".to_string(),
-                            selection_kind: None,
-                            terminal: false,
-                            repeatable: false,
-                            role: "strategic_choice".to_string(),
-                            information_tags: vec!["public_structured".to_string()],
-                            effects: vec![
-                                crate::eval::event_boundary_packet_v1::EventEffectSnapshotV1 {
-                                    kind: "heal".to_string(),
-                                    params: BTreeMap::new(),
-                                },
-                            ],
-                            constraints: Vec::new(),
-                        },
-                    ],
-                },
-            ),
-            reward_boundary: None,
-        });
+        let branch = sample_event_boundary_branch(
+            "root.rp 0",
+            "TheLibrary",
+            vec![
+                sample_event_candidate_snapshot(
+                    "TheLibrary",
+                    0,
+                    "[Read] Choose a card from 20 offerings.",
+                    "gain",
+                    &["offer_cards"],
+                ),
+                sample_event_candidate_snapshot(
+                    "TheLibrary",
+                    1,
+                    "[Sleep] Heal 30% of your Max HP.",
+                    "heal",
+                    &["heal"],
+                ),
+            ],
+        );
         let report = sample_campaign_report_with_branches(vec![branch]);
 
         let plan = plan_coverage_gap_continuations_v1(&report, &[], 4, 2);
@@ -5873,6 +5907,123 @@ mod tests {
                 && target.milestone == "event_resolution_frontier"
                 && target.semantic_class.contains("effect:event_card_reward")
         }));
+    }
+
+    #[test]
+    fn coverage_gap_filter_limits_selected_targets_to_bucket() {
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-reward0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Reward Screen".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "journal-reward0".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "reward-frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 3,
+                original_count: 1,
+                selected_count: 1,
+                candidates: vec![sample_journal_candidate("rp 0", "Reward A")],
+            },
+        });
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-event0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Mushrooms".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::EventCandidatePool {
+                decision_id: "journal-event0".to_string(),
+                boundary_title: "Mushrooms".to_string(),
+                frontier_key: "event-frontier".to_string(),
+                depth: 0,
+                game_event_id: "Mushrooms".to_string(),
+                candidate_count: 1,
+                branch_option_count: 1,
+                candidates: vec![sample_journal_candidate("event 0", "Fight")],
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_with_filter_v1(
+            &report,
+            &[],
+            4,
+            2,
+            &CoverageGapContinuationFilterV1 {
+                bucket: Some("event".to_string()),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(plan.selected_target_count, 1);
+        assert_eq!(plan.targets[0].event_type, "event");
+        assert_eq!(plan.targets[0].label, "Fight");
+    }
+
+    #[test]
+    fn coverage_gap_filter_limits_selected_targets_to_event_id() {
+        let branch = sample_event_boundary_branch(
+            "root.rp 0",
+            "TheLibrary",
+            vec![
+                sample_event_candidate_snapshot(
+                    "TheLibrary",
+                    0,
+                    "[Read] Choose a card from 20 offerings.",
+                    "gain",
+                    &["offer_cards"],
+                ),
+                sample_event_candidate_snapshot(
+                    "TheLibrary",
+                    1,
+                    "[Sleep] Heal 30% of your Max HP.",
+                    "heal",
+                    &["heal"],
+                ),
+            ],
+        );
+        let other_branch = sample_event_boundary_branch(
+            "root.rp 1",
+            "Mushrooms",
+            vec![sample_event_candidate_snapshot(
+                "Mushrooms",
+                0,
+                "[Stomp] Fight the mushrooms!",
+                "fight",
+                &[],
+            )],
+        );
+        let report = sample_campaign_report_with_branches(vec![branch, other_branch]);
+
+        let plan = plan_coverage_gap_continuations_with_filter_v1(
+            &report,
+            &[],
+            4,
+            2,
+            &CoverageGapContinuationFilterV1 {
+                event_id: Some("TheLibrary".to_string()),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(plan.selected_target_count, 2);
+        assert!(plan
+            .targets
+            .iter()
+            .all(|target| target.event_id.contains("TheLibrary")));
     }
 
     #[test]
@@ -6789,6 +6940,77 @@ mod tests {
             rank_key: 42,
             final_boss_combat_record: None,
             combat_lab_probes: Vec::new(),
+        }
+    }
+
+    fn sample_event_boundary_branch(
+        branch_id: &str,
+        event_id: &str,
+        candidates: Vec<EventCandidateSnapshotV1>,
+    ) -> BranchCampaignBranchV1 {
+        let mut branch = sample_report_branch(branch_id, BranchCampaignBranchStatusV1::Active);
+        branch.frontier_title = event_id.to_string();
+        branch.summary = Some(BranchCampaignBranchSummaryV1 {
+            act: 1,
+            floor: 9,
+            hp: 54,
+            max_hp: 80,
+            gold: 120,
+            deck_count: 14,
+            deck_key: String::new(),
+            formation_stage: String::new(),
+            formation_strengths: Vec::new(),
+            formation_needs: Vec::new(),
+            trajectory_key: String::new(),
+            boss: String::new(),
+            boss_pressure: Vec::new(),
+            run_debt: Vec::new(),
+            event_boundary: Some(
+                crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1 {
+                    schema_name: "EventBoundaryPacketV1".to_string(),
+                    schema_version: 1,
+                    event_id: event_id.to_string(),
+                    current_screen: 0,
+                    completed: false,
+                    boundary_class: "strategic_choice".to_string(),
+                    candidates,
+                },
+            ),
+            reward_boundary: None,
+        });
+        branch
+    }
+
+    fn sample_event_candidate_snapshot(
+        event_id: &str,
+        index: usize,
+        label: &str,
+        action_kind: &str,
+        effects: &[&str],
+    ) -> EventCandidateSnapshotV1 {
+        EventCandidateSnapshotV1 {
+            candidate_id: format!("event:{event_id}:screen0:choice{index}"),
+            command: format!("event {index}"),
+            display_label: label.to_string(),
+            disabled: false,
+            disabled_reason: None,
+            action_kind: action_kind.to_string(),
+            transition: "advance_screen".to_string(),
+            selection_kind: None,
+            terminal: false,
+            repeatable: false,
+            role: "strategic_choice".to_string(),
+            information_tags: vec!["public_structured".to_string()],
+            effects: effects
+                .iter()
+                .map(
+                    |effect| crate::eval::event_boundary_packet_v1::EventEffectSnapshotV1 {
+                        kind: (*effect).to_string(),
+                        params: BTreeMap::new(),
+                    },
+                )
+                .collect(),
+            constraints: Vec::new(),
         }
     }
 

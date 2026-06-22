@@ -6,6 +6,7 @@ use sts_simulator::eval::branch_campaign::{
 };
 use sts_simulator::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use sts_simulator::eval::branch_experiment_search_options::parse_branch_experiment_search_options_v1;
+use sts_simulator::eval::learning_dataset_v1::CoverageGapContinuationFilterV1;
 use sts_simulator::eval::neow_guided_prefix::{
     neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
 };
@@ -181,6 +182,7 @@ pub(super) struct DatasetCommandInput {
     pub(super) plan_coverage_gap_continuation: bool,
     pub(super) coverage_gap_limit: usize,
     pub(super) coverage_gap_candidates_per_decision: usize,
+    pub(super) coverage_gap_filter: CoverageGapContinuationFilterV1,
 }
 
 impl DatasetCommandInput {
@@ -198,6 +200,7 @@ impl DatasetCommandInput {
             plan_coverage_gap_continuation: args.plan_coverage_gap_continuation,
             coverage_gap_limit: args.coverage_gap_limit,
             coverage_gap_candidates_per_decision: args.coverage_gap_candidates_per_decision,
+            coverage_gap_filter: coverage_gap_filter_from_args(args),
         }
     }
 }
@@ -219,6 +222,7 @@ pub(super) struct ContinuationCommandInput {
     pub(super) targeted_continuation_candidates_per_target: usize,
     pub(super) coverage_gap_limit: usize,
     pub(super) coverage_gap_candidates_per_decision: usize,
+    pub(super) coverage_gap_filter: CoverageGapContinuationFilterV1,
     pub(super) coverage_gap_budget_intent: CoverageGapBudgetIntentV1,
     pub(super) coverage_gap_execution_mode: CoverageGapExecutionModeV1,
     pub(super) branch_examples: usize,
@@ -244,6 +248,7 @@ impl ContinuationCommandInput {
                 .targeted_continuation_candidates_per_target,
             coverage_gap_limit: args.coverage_gap_limit,
             coverage_gap_candidates_per_decision: args.coverage_gap_candidates_per_decision,
+            coverage_gap_filter: coverage_gap_filter_from_args(args),
             coverage_gap_budget_intent: CoverageGapBudgetIntentV1::parse(
                 &args.coverage_gap_budget_intent,
             )?,
@@ -253,6 +258,13 @@ impl ContinuationCommandInput {
             branch_examples: args.branch_examples,
             report_detail: BranchCampaignReportDetailV1::from(args.report_detail),
         })
+    }
+}
+
+fn coverage_gap_filter_from_args(args: &Args) -> CoverageGapContinuationFilterV1 {
+    CoverageGapContinuationFilterV1 {
+        bucket: args.coverage_gap_bucket.clone(),
+        event_id: args.coverage_gap_event_id.clone(),
     }
 }
 
@@ -541,6 +553,50 @@ mod tests {
         assert_eq!(
             input.coverage_gap_execution_mode,
             CoverageGapExecutionModeV1::TargetOnly
+        );
+    }
+
+    #[test]
+    fn dataset_input_parses_coverage_gap_filter() {
+        let args = Args::try_parse_from([
+            "branch_campaign_driver",
+            "dataset",
+            "--plan-coverage-gap-continuation",
+            "--coverage-gap-bucket",
+            "event",
+            "--coverage-gap-event-id",
+            "TheLibrary",
+        ])
+        .expect("coverage gap filter should parse");
+
+        let input = DatasetCommandInput::from_args(&args);
+
+        assert_eq!(input.coverage_gap_filter.bucket.as_deref(), Some("event"));
+        assert_eq!(
+            input.coverage_gap_filter.event_id.as_deref(),
+            Some("TheLibrary")
+        );
+    }
+
+    #[test]
+    fn continuation_input_parses_coverage_gap_filter() {
+        let args = Args::try_parse_from([
+            "branch_campaign_driver",
+            "continue",
+            "--execute-coverage-gap-continuation",
+            "--coverage-gap-bucket",
+            "event",
+            "--coverage-gap-event-id",
+            "TheLibrary",
+        ])
+        .expect("coverage gap filter should parse");
+
+        let input = ContinuationCommandInput::from_args(&args).expect("input should build");
+
+        assert_eq!(input.coverage_gap_filter.bucket.as_deref(), Some("event"));
+        assert_eq!(
+            input.coverage_gap_filter.event_id.as_deref(),
+            Some("TheLibrary")
         );
     }
 }
