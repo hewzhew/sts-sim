@@ -1175,24 +1175,62 @@ fn select_coverage_gap_targets_by_type_v1(
         *targets = order_coverage_gap_bucket_targets_v1(bucket, std::mem::take(targets));
     }
 
-    let mut bucket_order = coverage_gap_target_bucket_order_v1(&buckets);
+    let bucket_order = coverage_gap_target_bucket_order_v1(&buckets);
+    let bucket_totals = buckets
+        .iter()
+        .map(|(bucket, targets)| (bucket.clone(), targets.len()))
+        .collect::<BTreeMap<_, _>>();
+    let mut selected_by_bucket = BTreeMap::<String, usize>::new();
     let mut selected = Vec::new();
-    while selected.len() < max_targets && !bucket_order.is_empty() {
-        let mut retained_order = Vec::new();
-        for bucket in bucket_order {
-            let Some(items) = buckets.get_mut(&bucket) else {
-                continue;
-            };
-            if !items.is_empty() && selected.len() < max_targets {
-                selected.push(items.remove(0));
-            }
-            if !items.is_empty() {
-                retained_order.push(bucket);
-            }
+    while selected.len() < max_targets {
+        let Some(bucket) = choose_coverage_gap_target_bucket_v1(
+            &bucket_order,
+            &buckets,
+            &bucket_totals,
+            &selected_by_bucket,
+        ) else {
+            break;
+        };
+        let Some(items) = buckets.get_mut(&bucket) else {
+            break;
+        };
+        if items.is_empty() {
+            break;
         }
-        bucket_order = retained_order;
+        selected.push(items.remove(0));
+        *selected_by_bucket.entry(bucket).or_default() += 1;
     }
     selected
+}
+
+fn choose_coverage_gap_target_bucket_v1(
+    bucket_order: &[String],
+    buckets: &BTreeMap<String, Vec<CoverageGapContinuationTargetV1>>,
+    bucket_totals: &BTreeMap<String, usize>,
+    selected_by_bucket: &BTreeMap<String, usize>,
+) -> Option<String> {
+    let mut best = None::<(&String, usize, usize, usize)>;
+    for (order_index, bucket) in bucket_order.iter().enumerate() {
+        let remaining = buckets.get(bucket).map_or(0, Vec::len);
+        if remaining == 0 {
+            continue;
+        }
+        let selected = selected_by_bucket.get(bucket).copied().unwrap_or(0);
+        let total = bucket_totals
+            .get(bucket)
+            .copied()
+            .unwrap_or(remaining)
+            .max(1);
+        let should_replace = best.is_none_or(|(_, best_order, best_selected, best_total)| {
+            let lhs = (selected as u128) * (best_total as u128);
+            let rhs = (best_selected as u128) * (total as u128);
+            lhs < rhs || (lhs == rhs && order_index < best_order)
+        });
+        if should_replace {
+            best = Some((bucket, order_index, selected, total));
+        }
+    }
+    best.map(|(bucket, _, _, _)| bucket.clone())
 }
 
 fn order_coverage_gap_bucket_targets_v1(
@@ -4168,6 +4206,40 @@ mod tests {
             .contains("early_shop:early_fire:low_pre_recovery_damage"));
         assert!(coverage_gap_continuation_target_lane_v1(&selected[1])
             .contains("no_shop:late_fire:high_pre_recovery_damage"));
+    }
+
+    #[test]
+    fn coverage_gap_selection_allocates_remaining_slots_by_bucket_gap_ratio() {
+        let mut targets = Vec::new();
+        for index in 0..8 {
+            targets.push(sample_route_coverage_gap_target(
+                &format!("go {index}"),
+                &format!("Route {index}"),
+                "MonsterRoom",
+                index,
+            ));
+        }
+        for index in 0..4 {
+            targets.push(sample_reward_coverage_gap_target(
+                &format!("rp {index}"),
+                &format!("Reward {index}"),
+                "role:frontload",
+                index,
+            ));
+        }
+
+        let selected = select_coverage_gap_targets_by_type_v1(targets, 6);
+        let route_count = selected
+            .iter()
+            .filter(|target| target.event_type == "route")
+            .count();
+        let reward_count = selected
+            .iter()
+            .filter(|target| target.event_type == "reward")
+            .count();
+
+        assert_eq!(route_count, 4);
+        assert_eq!(reward_count, 2);
     }
 
     #[test]
