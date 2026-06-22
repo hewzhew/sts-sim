@@ -104,21 +104,11 @@ function Resolve-CampaignRunIdentity {
         if (-not $AscensionBound) {
             if ($SourceRunConfig -and $SourceRunConfig.Ascension -ne $null) {
                 $Ascension = [int] $SourceRunConfig.Ascension
-            } else {
-                $SavedConfig = Read-LatestCheckpointRunConfig
-                if ($SavedConfig -and $SavedConfig.ascension_level -ne $null) {
-                    $Ascension = [int] $SavedConfig.ascension_level
-                }
             }
         }
         if (-not $ClassBound) {
             if ($SourceRunConfig -and $SourceRunConfig.Class) {
                 $Class = ([string] $SourceRunConfig.Class).ToLowerInvariant()
-            } else {
-                $SavedConfig = Read-LatestCheckpointRunConfig
-                if ($SavedConfig -and $SavedConfig.player_class) {
-                    $Class = ([string] $SavedConfig.player_class).ToLowerInvariant()
-                }
             }
         }
     }

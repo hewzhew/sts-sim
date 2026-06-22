@@ -282,21 +282,6 @@ function Get-CampaignArtifactMode {
     return $null
 }
 
-function Read-LatestCheckpointRunConfig {
-    if (-not (Test-Path -LiteralPath $LatestCheckpointPath)) {
-        return $null
-    }
-    try {
-        $Checkpoint = Get-Content -LiteralPath $LatestCheckpointPath -Raw | ConvertFrom-Json
-        if ($Checkpoint.sessions -and $Checkpoint.sessions.Count -gt 0) {
-            return $Checkpoint.sessions[0].session.run_state
-        }
-    } catch {
-        return $null
-    }
-    return $null
-}
-
 function Read-LatestCampaignMode {
     if (Test-Path -LiteralPath $LatestModePath) {
         $ModeText = (Get-Content -LiteralPath $LatestModePath -Raw).Trim().ToLowerInvariant()

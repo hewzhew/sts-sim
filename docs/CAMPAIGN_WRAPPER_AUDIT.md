@@ -14,14 +14,14 @@ many concepts.
 Approximate physical line count after the wrapper split:
 
 - `tools/campaign.ps1`: 571 lines
-- `tools/campaign_artifacts.ps1`: 606 lines
+- `tools/campaign_artifacts.ps1`: 591 lines
 - `tools/campaign_invocation.ps1`: 489 lines
 - `tools/campaign_coverage_gaps.ps1`: 428 lines
 - `tools/campaign_preflight.ps1`: 196 lines
 - `tools/campaign_continuation.ps1`: 316 lines
 - `tools/campaign_inspect.ps1`: 194 lines
 - `tools/campaign_targets.ps1`: 236 lines
-- `tools/campaign_source.ps1`: 132 lines
+- `tools/campaign_source.ps1`: 122 lines
 - `tools/campaign_rounds.ps1`: 122 lines
 - `tools/campaign_milestones.ps1`: 110 lines
 - `tools/campaign_request.ps1`: 77 lines
@@ -318,6 +318,8 @@ This helper owns:
 - resolving a wrapper source selector into a campaign artifact and run config
 - inheriting mode from source artifacts for continuation-style commands
 - resolving seed, ascension, class, and domain defaults
+- run identity inheritance only reads the selected source artifact; it no longer
+  falls back to unrelated global `latest.checkpoint.json`
 
 `tools/campaign.ps1` should consume the resolved source context from this helper.
 It should not call artifact/run-config source lookup helpers directly in
