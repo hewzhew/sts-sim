@@ -18,7 +18,7 @@ Approximate physical line count after the wrapper split:
 - `tools/campaign_invocation.ps1`: 453 lines
 - `tools/campaign_coverage_gaps.ps1`: 391 lines
 - `tools/campaign_preflight.ps1`: 191 lines
-- `tools/campaign_continuation.ps1`: 241 lines
+- `tools/campaign_continuation.ps1`: 239 lines
 - `tools/campaign_inspect.ps1`: 184 lines
 - `tools/campaign_targets.ps1`: 144 lines
 - `tools/campaign_source.ps1`: 118 lines
@@ -207,8 +207,9 @@ tools/campaign_continuation.ps1
 This helper owns:
 
 - an explicit continuation entry context boundary
-- continuation source validation
+- continuation source context validation
 - targeted/coverage-gap continuation command context assembly
+- continuation preflight context handoff
 - continuation dry-run dispatch
 - continuation execution dispatch
 
