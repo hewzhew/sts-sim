@@ -104,9 +104,10 @@ inputs and candidate structure, not create new policy behavior in PowerShell.
 
 This is an older sibling-continuation workflow. Prefer coverage-gap
 continuation unless specifically investigating the legacy targeted path.
-Execution-style targeted continuation writes before/after decision-outcome
-datasets into the selected output artifact. Use `-Scratch` for experiments that
-should not update latest.
+Plan-only targeted continuation writes its temporary decision-outcome dataset to
+scratch by default. Execution-style targeted continuation writes before/after
+decision-outcome datasets into the selected output artifact. Use `-Scratch` for
+experiments that should not update latest.
 
 ## Build And Diagnostics
 

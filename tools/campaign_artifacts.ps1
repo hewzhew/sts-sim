@@ -88,6 +88,15 @@ function New-CampaignScratchArtifact {
     }
 }
 
+function New-CampaignScratchDecisionOutcomePath {
+    param(
+        [string] $BaseLabel
+    )
+
+    $Id = New-CampaignArtifactId -BaseLabel $BaseLabel
+    return (Join-Path $ScratchCampaignDir "$Id.decision_outcomes.jsonl")
+}
+
 function Get-CampaignOutputBaseLabel {
     param(
         [string] $RunLabel,

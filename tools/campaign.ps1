@@ -297,6 +297,14 @@ $RunDecisionOutcomeBeforePath = $RunOutputContext.DecisionOutcomeBeforePath
 $RunDecisionOutcomeAfterPath = $RunOutputContext.DecisionOutcomeAfterPath
 Ensure-CampaignOutputArtifactDirectory -OutputContext $RunOutputContext -DryRun ([bool] $DryRun)
 
+$PlanDecisionOutcomePath = ""
+if ($PlanTargets -and -not $DecisionOutcomeDataset) {
+    $PlanDecisionOutcomePath = New-CampaignScratchDecisionOutcomePath -BaseLabel "plan-targets-seed$Seed"
+    if (-not $DryRun) {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $PlanDecisionOutcomePath) | Out-Null
+    }
+}
+
 $BoundParameterContext = Resolve-CampaignBoundParameterContext `
     -BoundParameters $PSBoundParameters `
     -InvocationLine $MyInvocation.Line `
@@ -424,7 +432,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         CampaignSourceArtifact = $CampaignSourceArtifact
         DecisionOutcomeDataset = $DecisionOutcomeDataset
         DecisionOutcomeBeforePath = $(if ($RunDecisionOutcomeBeforePath) { $RunDecisionOutcomeBeforePath } else { $LatestDecisionOutcomeBeforePath })
-        DecisionOutcomePath = $(if ($RunDecisionOutcomePath) { $RunDecisionOutcomePath } else { $LatestDecisionOutcomePath })
+        DecisionOutcomePath = $(if ($RunDecisionOutcomePath) { $RunDecisionOutcomePath } elseif ($PlanDecisionOutcomePath) { $PlanDecisionOutcomePath } else { $LatestDecisionOutcomePath })
         DecisionOutcomeAfterPath = $(if ($RunDecisionOutcomeAfterPath) { $RunDecisionOutcomeAfterPath } else { $LatestDecisionOutcomeAfterPath })
         RunOutputCampaignPath = $RunOutputCampaignPath
         RunOutputCheckpointPath = $RunOutputCheckpointPath

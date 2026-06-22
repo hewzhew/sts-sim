@@ -13,8 +13,8 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 573 lines
-- `tools/campaign_artifacts.ps1`: 597 lines
+- `tools/campaign.ps1`: 581 lines
+- `tools/campaign_artifacts.ps1`: 606 lines
 - `tools/campaign_invocation.ps1`: 496 lines
 - `tools/campaign_coverage_gaps.ps1`: 428 lines
 - `tools/campaign_preflight.ps1`: 196 lines
@@ -290,6 +290,8 @@ This helper owns:
 - targeted continuation wrapper manifest shape
 - targeted continuation before/after decision-outcome paths as artifact-local
   files, not shared `latest.decision_outcomes.*` files
+- plan-only targeted continuation default decision-outcome path as a scratch
+  file, not shared `latest.decision_outcomes.jsonl`
 
 Build freshness helpers now live in:
 
@@ -341,9 +343,8 @@ These pieces are useful but should not live in the main script long term:
 
 - residual compatibility switches that may no longer earn wrapper-level
   visibility after the latest/source/output cleanup
-- plan-only targeted continuation still writes its dataset to the legacy latest
-  dataset path by default; execution-style targeted continuation now uses
-  artifact-local before/after datasets
+- legacy `latest.decision_outcomes.*` paths remain only as compatibility
+  fallbacks or explicit user-selected paths, not as new wrapper defaults
 
 ## Candidates To Delete Or Degrade
 
