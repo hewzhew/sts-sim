@@ -285,7 +285,7 @@ fn collect_branch_rows_v1(
             &origin.label,
             &origin.command,
             &origin.target_origin_source,
-            render_target_lane_v1(origin.target_lane.as_ref()),
+            render_origin_target_lane_v1(origin),
             target_progress_for_branch_v1(&branch.commands, &origin.command),
             branch.summary.as_ref(),
             &branch.frontier_title,
@@ -313,7 +313,7 @@ fn collect_discarded_rows_v1(
             &origin.label,
             &origin.command,
             &origin.target_origin_source,
-            render_target_lane_v1(origin.target_lane.as_ref()),
+            render_origin_target_lane_v1(origin),
             "discarded".to_string(),
             branch.summary.as_ref(),
             &branch.frontier_title,
@@ -352,6 +352,68 @@ fn row_from_parts_v1(
         frontier_title: frontier_title.to_string(),
         stop_reason: stop_reason.to_string(),
         choice_labels: choice_labels.to_vec(),
+    }
+}
+
+fn render_origin_target_lane_v1(
+    origin: &sts_simulator::eval::branch_campaign::BranchCampaignContinuationOriginV1,
+) -> String {
+    if origin.event_type == "route" {
+        if let Some(route) = origin.route_origin.as_ref() {
+            return render_route_origin_target_lane_v1(route);
+        }
+    }
+    render_target_lane_v1(origin.target_lane.as_ref())
+}
+
+fn render_route_origin_target_lane_v1(
+    route: &sts_simulator::eval::branch_campaign::BranchCampaignRouteContinuationOriginV1,
+) -> String {
+    let path = route
+        .path
+        .as_ref()
+        .map(render_route_path_lane_v1)
+        .unwrap_or_else(|| "unknown_path".to_string());
+    format!(
+        "route:{}:{}:{}:{}",
+        route.action_kind, route.room_type, route.projection_coverage, path
+    )
+}
+
+fn render_route_path_lane_v1(
+    path: &sts_simulator::eval::branch_campaign::BranchCampaignRoutePathContinuationOriginV1,
+) -> String {
+    format!(
+        "{}:{}:{}",
+        route_shop_timing_lane_v1(path.first_shop_floor),
+        route_fire_timing_lane_v1(path.first_fire_floor),
+        route_pre_recovery_pressure_lane_v1(path.max_damage_rooms_before_recovery)
+    )
+}
+
+fn route_shop_timing_lane_v1(first_shop_floor: Option<i32>) -> &'static str {
+    match first_shop_floor {
+        Some(floor) if floor <= 5 => "early_shop",
+        Some(_) => "late_shop",
+        None => "no_shop",
+    }
+}
+
+fn route_fire_timing_lane_v1(first_fire_floor: Option<i32>) -> &'static str {
+    match first_fire_floor {
+        Some(floor) if floor <= 6 => "early_fire",
+        Some(_) => "late_fire",
+        None => "no_fire",
+    }
+}
+
+fn route_pre_recovery_pressure_lane_v1(max_damage_rooms_before_recovery: usize) -> &'static str {
+    if max_damage_rooms_before_recovery <= 1 {
+        "low_pre_recovery_damage"
+    } else if max_damage_rooms_before_recovery <= 3 {
+        "medium_pre_recovery_damage"
+    } else {
+        "high_pre_recovery_damage"
     }
 }
 
@@ -569,5 +631,91 @@ mod tests {
         assert!(text.contains("shop:scheduled:kept:test extended=1 target_only=0 discarded=0"));
         assert!(text
             .contains("reward:scheduled:kept:role:scaling extended=0 target_only=1 discarded=0"));
+    }
+
+    #[test]
+    fn milestone_summary_prefers_route_origin_lane_over_generic_target_lane() {
+        use sts_simulator::eval::branch_campaign::{
+            BranchCampaignContinuationOriginV1, BranchCampaignContinuationTargetLaneV1,
+            BranchCampaignRouteContinuationOriginV1, BranchCampaignRoutePathContinuationOriginV1,
+        };
+        use sts_simulator::eval::campaign_journal::{
+            CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateDispositionV1,
+        };
+
+        let origin = BranchCampaignContinuationOriginV1 {
+            kind: "coverage_gap".to_string(),
+            source_event_id: "route:event".to_string(),
+            decision_id: "route:decision".to_string(),
+            event_type: "route".to_string(),
+            parent_branch_id: "root".to_string(),
+            parent_frontier_title: "Map".to_string(),
+            candidate_index: 0,
+            candidate_id: "route:0".to_string(),
+            command: "go 0".to_string(),
+            label: "x=0 y=2 Monster".to_string(),
+            semantic_class: "room:Monster".to_string(),
+            admission: Default::default(),
+            disposition: CampaignJournalCandidateDispositionV1::Kept,
+            target_lane: Some(BranchCampaignContinuationTargetLaneV1 {
+                bucket: "route".to_string(),
+                admission_status: CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+                disposition: CampaignJournalCandidateDispositionV1::Kept,
+                semantic_lane: "room:Monster".to_string(),
+                shop_action_kind: None,
+            }),
+            target_origin_source: "map_decision_packet".to_string(),
+            route_origin: Some(BranchCampaignRouteContinuationOriginV1 {
+                legal_candidate_count: 4,
+                emitted_candidate_count: 4,
+                complete_legal_pool: true,
+                ordering: "planner".to_string(),
+                ordering_kind: None,
+                target_x: 0,
+                target_y: 2,
+                target_node: None,
+                room_type: "MonsterRoom".to_string(),
+                move_kind: "normal_edge".to_string(),
+                action_kind: "go".to_string(),
+                action: None,
+                projection_source: "Complete".to_string(),
+                projection_source_kind: None,
+                projection_coverage: "CompleteWithinBudget".to_string(),
+                projection_coverage_kind: None,
+                path_budget: 16,
+                observed_path_count: 4,
+                path: Some(BranchCampaignRoutePathContinuationOriginV1 {
+                    path_count: 4,
+                    path_budget_exhausted: false,
+                    min_early_pressure: 1,
+                    max_early_pressure: 3,
+                    min_elites: 0,
+                    max_elites: 1,
+                    min_shops: 0,
+                    max_shops: 1,
+                    min_fires: 0,
+                    max_fires: 1,
+                    min_unknowns: 0,
+                    max_unknowns: 2,
+                    min_treasures: 0,
+                    max_treasures: 1,
+                    first_shop_floor: Some(8),
+                    first_fire_floor: Some(5),
+                    min_damage_rooms_before_recovery: 1,
+                    max_damage_rooms_before_recovery: 3,
+                    min_unknowns_before_recovery: 0,
+                    max_unknowns_before_recovery: 1,
+                    paths_with_recovery_before_damage: 1,
+                }),
+                first_elite: None,
+            }),
+            milestone: "route_frontier".to_string(),
+        };
+
+        let lane = render_origin_target_lane_v1(&origin);
+
+        assert!(lane.contains("route:go:MonsterRoom:CompleteWithinBudget"));
+        assert!(lane.contains("early_fire"));
+        assert!(!lane.ends_with("room:Monster"));
     }
 }
