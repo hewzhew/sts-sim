@@ -39,6 +39,10 @@ Seeds selected coverage-gap targets without spending a campaign round, then cont
 Summarizes the latest saved campaign checkpoint with active/frozen/abandoned deck context.
 
 .EXAMPLE
+.\tools\campaign.ps1 -FromScratchLatest -PlanCoverageGaps -CoverageGapRouteMissing
+Plans missing route/map coverage-gap targets from the latest scratch campaign artifact.
+
+.EXAMPLE
 .\tools\campaign.ps1 -InspectScratchLatest -InspectState -InspectIndex 0
 Prints the full checkpoint state for a selected latest scratch session.
 
@@ -143,6 +147,10 @@ Resumes selected unobserved journal candidate branches and advances one round.
 Runs coverage-gap continuation into a scratch report/checkpoint without overwriting latest.
 
 .EXAMPLE
+.\tools\campaign.ps1 -FromScratchLatest -ContinueCoverageGaps -OutScratch -RunLabel gap-probe -CoverageGapExecution target_only
+Runs coverage-gap continuation from the latest scratch campaign artifact into a new scratch report/checkpoint.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Mode quick
 Runs a shorter random-seed campaign for fast smoke testing.
 
@@ -241,6 +249,7 @@ param(
     [switch] $InspectFinalBossCombat,
     [switch] $InspectCoverageGapMilestoneSummary,
     [switch] $InspectCoverageGapTargetState,
+    [Alias("FromScratchLatest")]
     [switch] $InspectScratchLatest,
     [switch] $ProbeBoss,
     [switch] $DryRun,
@@ -263,6 +272,7 @@ param(
     [switch] $CoverageGapRouteMissing,
     [switch] $CoverageGapEventBoundary,
     [switch] $CoverageGapEventBoundaryMissing,
+    [Alias("OutScratch")]
     [switch] $Scratch,
 
     [string] $ExportLearningDataset = "",
@@ -451,7 +461,6 @@ function Get-LatestScratchCampaignArtifact {
 
 function Get-CampaignArtifactRunConfig {
     param(
-        [string] $ReportPath,
         [string] $CheckpointPath,
         [string] $ManifestPath
     )
@@ -463,40 +472,28 @@ function Get-CampaignArtifactRunConfig {
         Mode = $null
     }
 
-    if ($ManifestPath -and (Test-Path -LiteralPath $ManifestPath)) {
-        try {
-            $Manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
-            if ($Manifest.seed -ne $null) { $Config.Seed = [long] $Manifest.seed }
-            if ($Manifest.ascension -ne $null) { $Config.Ascension = [int] $Manifest.ascension }
-            if ($Manifest.class) { $Config.Class = ([string] $Manifest.class).ToLowerInvariant() }
-            if ($Manifest.mode) { $Config.Mode = ([string] $Manifest.mode).ToLowerInvariant() }
-        } catch {
-            # Manifest is advisory; fall back to checkpoint/report fields below.
-        }
-    }
-
     if ($CheckpointPath -and (Test-Path -LiteralPath $CheckpointPath)) {
         try {
             $Checkpoint = Get-Content -LiteralPath $CheckpointPath -Raw | ConvertFrom-Json
             if ($Checkpoint.sessions -and $Checkpoint.sessions.Count -gt 0) {
                 $RunState = $Checkpoint.sessions[0].session.run_state
                 if ($RunState) {
-                    if ($Config.Seed -eq $null -and $RunState.seed -ne $null) { $Config.Seed = [long] $RunState.seed }
-                    if ($Config.Ascension -eq $null -and $RunState.ascension_level -ne $null) { $Config.Ascension = [int] $RunState.ascension_level }
-                    if ($Config.Class -eq $null -and $RunState.player_class) { $Config.Class = ([string] $RunState.player_class).ToLowerInvariant() }
+                    if ($RunState.seed -ne $null) { $Config.Seed = [long] $RunState.seed }
+                    if ($RunState.ascension_level -ne $null) { $Config.Ascension = [int] $RunState.ascension_level }
+                    if ($RunState.player_class) { $Config.Class = ([string] $RunState.player_class).ToLowerInvariant() }
                 }
             }
         } catch {
-            # Checkpoint may be absent or from an older schema; report remains a fallback.
+            # Older checkpoints may not expose run_state; leave fields unset.
         }
     }
 
-    if ($ReportPath -and (Test-Path -LiteralPath $ReportPath)) {
+    if ($ManifestPath -and (Test-Path -LiteralPath $ManifestPath)) {
         try {
-            $Report = Get-Content -LiteralPath $ReportPath -Raw | ConvertFrom-Json
-            if ($Config.Seed -eq $null -and $Report.seed -ne $null) { $Config.Seed = [long] $Report.seed }
+            $Manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+            if ($Manifest.mode) { $Config.Mode = ([string] $Manifest.mode).ToLowerInvariant() }
         } catch {
-            # Older reports can still be useful for inspect paths; keep missing fields unset.
+            # Latest artifacts can lack a manifest; existing sidecar mode fallback remains in effect.
         }
     }
 
@@ -1547,7 +1544,6 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     }
 
     $SourceRunConfig = Get-CampaignArtifactRunConfig `
-        -ReportPath $SourceCampaignPath `
         -CheckpointPath $SourceCheckpointPath `
         -ManifestPath $SourceManifestPath
     if ((-not $PSBoundParameters.ContainsKey("Seed") -or $Seed -le 0) -and $SourceRunConfig.Seed -ne $null) {
