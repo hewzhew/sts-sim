@@ -929,6 +929,25 @@ function Write-CampaignWrapperManifest {
     $Manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $Path
 }
 
+function Write-CampaignCommandRecord {
+    param(
+        [string] $CommandLine
+    )
+
+    if ($Scratch) {
+        Set-Content -LiteralPath $RunCommandPath -Value $CommandLine
+        Write-Host "scratch-command=$RunCommandPath"
+        Write-Host "scratch-manifest=$RunManifestPath"
+        return
+    }
+
+    Set-Content -LiteralPath $LatestSeedPath -Value $Seed
+    Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
+    Set-Content -LiteralPath $LatestClassPath -Value $Class
+    Set-Content -LiteralPath $LatestModePath -Value $Mode
+    Set-Content -LiteralPath $LatestCommandPath -Value $CommandLine
+}
+
 function New-CampaignWrapperManifestBase {
     param(
         [int] $ExitCode,
@@ -1580,11 +1599,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                 if ($LASTEXITCODE -ne 0) {
                     exit $LASTEXITCODE
                 }
-                Set-Content -LiteralPath $LatestSeedPath -Value $Seed
-                Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
-                Set-Content -LiteralPath $LatestClassPath -Value $Class
-                Set-Content -LiteralPath $LatestModePath -Value $Mode
-                Set-Content -LiteralPath $LatestCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
+                Write-CampaignCommandRecord -CommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
                 if ($UntilMilestoneBound) {
                     Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds
                     $DriverExitCode = $script:CampaignMilestoneExitCode
@@ -1596,17 +1611,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
             & $DriverExe @ContinueCoverageGapArgs
             $DriverExitCode = $LASTEXITCODE
             if ($DriverExitCode -eq 0) {
-                if ($Scratch) {
-                    Set-Content -LiteralPath $RunCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
-                    Write-Host "scratch-command=$RunCommandPath"
-                    Write-Host "scratch-manifest=$RunManifestPath"
-                } else {
-                    Set-Content -LiteralPath $LatestSeedPath -Value $Seed
-                    Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
-                    Set-Content -LiteralPath $LatestClassPath -Value $Class
-                    Set-Content -LiteralPath $LatestModePath -Value $Mode
-                    Set-Content -LiteralPath $LatestCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
-                }
+                Write-CampaignCommandRecord -CommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
                 Write-CampaignWrapperManifest `
                     -Path $RunManifestPath `
                     -Manifest (New-CoverageGapWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed")
@@ -1961,17 +1966,7 @@ try {
         $DriverExitCode = $LASTEXITCODE
     }
     if ($DriverExitCode -eq 0) {
-        if ($Scratch) {
-            Set-Content -LiteralPath $RunCommandPath -Value $RenderedCommand
-            Write-Host "scratch-command=$RunCommandPath"
-            Write-Host "scratch-manifest=$RunManifestPath"
-        } else {
-            Set-Content -LiteralPath $LatestSeedPath -Value $Seed
-            Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
-            Set-Content -LiteralPath $LatestClassPath -Value $Class
-            Set-Content -LiteralPath $LatestModePath -Value $Mode
-            Set-Content -LiteralPath $LatestCommandPath -Value $RenderedCommand
-        }
+        Write-CampaignCommandRecord -CommandLine $RenderedCommand
         Write-CampaignWrapperManifest `
             -Path $RunManifestPath `
             -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed")
