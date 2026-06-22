@@ -2,12 +2,12 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use sts_simulator::eval::branch_campaign::{
-    BranchCampaignBranchSummaryV1, BranchCampaignBranchV1, BranchCampaignDiscardedBranchV1,
-    BranchCampaignReportV1,
+    BranchCampaignBranchSummaryV1, BranchCampaignBranchV1, BranchCampaignCheckpointV1,
+    BranchCampaignDiscardedBranchV1, BranchCampaignReportV1,
 };
 use sts_simulator::eval::learning_dataset_v1::CoverageGapContinuationFilterV1;
 
-use super::campaign_artifacts::read_campaign_report_v1;
+use super::campaign_artifacts::{read_campaign_checkpoint_v1, read_campaign_report_v1};
 use super::command_inputs::InspectCommandInput;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -69,6 +69,38 @@ pub(super) struct CoverageGapMilestoneBranchRowV1 {
 }
 
 #[derive(Default)]
+pub(super) struct CoverageGapMilestoneSummaryContextV1 {
+    checkpoint_match_index_by_commands: BTreeMap<Vec<String>, usize>,
+}
+
+impl CoverageGapMilestoneSummaryContextV1 {
+    fn from_checkpoint_v1(checkpoint: &BranchCampaignCheckpointV1) -> Self {
+        Self::from_session_commands_v1(
+            checkpoint
+                .sessions
+                .iter()
+                .map(|session| session.commands.clone()),
+        )
+    }
+
+    fn from_session_commands_v1(commands: impl IntoIterator<Item = Vec<String>>) -> Self {
+        Self {
+            checkpoint_match_index_by_commands: commands
+                .into_iter()
+                .enumerate()
+                .map(|(index, commands)| (commands, index))
+                .collect(),
+        }
+    }
+
+    fn checkpoint_match_index_for(&self, row: &CoverageGapMilestoneBranchRowV1) -> Option<usize> {
+        self.checkpoint_match_index_by_commands
+            .get(&row.commands)
+            .copied()
+    }
+}
+
+#[derive(Default)]
 struct CoverageGapMilestoneOriginSummaryV1<'a> {
     total: usize,
     reached: usize,
@@ -108,6 +140,14 @@ pub(super) fn run_coverage_gap_milestone_summary_inspection(
     })?;
     let target = CoverageGapMilestoneTargetV1::parse(&input.coverage_gap_milestone_target)?;
     let report = read_campaign_report_v1(report_path)?;
+    let context = input
+        .checkpoint_path
+        .as_ref()
+        .map(read_campaign_checkpoint_v1)
+        .transpose()?
+        .as_ref()
+        .map(CoverageGapMilestoneSummaryContextV1::from_checkpoint_v1)
+        .unwrap_or_default();
     println!(
         "{}",
         render_coverage_gap_milestone_summary_with_filter_and_group_index_v1(
@@ -115,6 +155,7 @@ pub(super) fn run_coverage_gap_milestone_summary_inspection(
             target,
             &input.coverage_gap_filter,
             input.filters.index,
+            &context,
         )
     );
     Ok(())
@@ -125,13 +166,15 @@ pub(super) fn render_coverage_gap_milestone_summary_with_filter_and_group_index_
     target: CoverageGapMilestoneTargetV1,
     filter: &CoverageGapContinuationFilterV1,
     group_index: Option<usize>,
+    context: &CoverageGapMilestoneSummaryContextV1,
 ) -> String {
     let rows = coverage_gap_milestone_rows_from_report_v1(report);
-    render_coverage_gap_milestone_summary_from_rows_with_filter_and_group_index_v1(
+    render_coverage_gap_milestone_summary_from_rows_with_filter_group_index_and_context_v1(
         &rows,
         target,
         filter,
         group_index,
+        context,
     )
 }
 
@@ -141,16 +184,37 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
     target: CoverageGapMilestoneTargetV1,
     filter: &CoverageGapContinuationFilterV1,
 ) -> String {
-    render_coverage_gap_milestone_summary_from_rows_with_filter_and_group_index_v1(
-        rows, target, filter, None,
+    render_coverage_gap_milestone_summary_from_rows_with_filter_group_index_and_context_v1(
+        rows,
+        target,
+        filter,
+        None,
+        &CoverageGapMilestoneSummaryContextV1::default(),
     )
 }
 
+#[cfg(test)]
 pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_and_group_index_v1(
     rows: &[CoverageGapMilestoneBranchRowV1],
     target: CoverageGapMilestoneTargetV1,
     filter: &CoverageGapContinuationFilterV1,
     group_index: Option<usize>,
+) -> String {
+    render_coverage_gap_milestone_summary_from_rows_with_filter_group_index_and_context_v1(
+        rows,
+        target,
+        filter,
+        group_index,
+        &CoverageGapMilestoneSummaryContextV1::default(),
+    )
+}
+
+pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_group_index_and_context_v1(
+    rows: &[CoverageGapMilestoneBranchRowV1],
+    target: CoverageGapMilestoneTargetV1,
+    filter: &CoverageGapContinuationFilterV1,
+    group_index: Option<usize>,
+    context: &CoverageGapMilestoneSummaryContextV1,
 ) -> String {
     let filtered_rows = rows
         .iter()
@@ -377,7 +441,7 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_and_gr
         }
         lines.push("Target group details:".to_string());
         for summary in focused_target_group_audit.into_iter().take(6) {
-            lines.extend(format_target_group_detail_lines_v1(summary));
+            lines.extend(format_target_group_detail_lines_v1(summary, context));
         }
     }
 
@@ -873,6 +937,7 @@ fn format_target_group_audit_line_v1(
 
 fn format_target_group_detail_lines_v1(
     summary: &CoverageGapMilestoneTargetGroupSummaryV1<'_>,
+    context: &CoverageGapMilestoneSummaryContextV1,
 ) -> Vec<String> {
     let first = summary.first.expect("target group should have a first row");
     let furthest = summary
@@ -898,6 +963,9 @@ fn format_target_group_detail_lines_v1(
             "    commands: {}",
             render_recent_command_path_v1(&furthest.commands)
         ));
+    }
+    if let Some(index) = context.checkpoint_match_index_for(furthest) {
+        lines.push(format!("    checkpoint_match_index: {index}"));
     }
     if !furthest.deck_key.is_empty() {
         lines.push(format!("    deck_key: {}", furthest.deck_key));
@@ -1284,6 +1352,28 @@ mod tests {
             .0;
         assert!(target_group_section.contains("route | x=1 y=5 Rest {choose x=1 y=5 Rest}"));
         assert!(!target_group_section.contains("route | x=6 y=12 Rest {choose x=6 y=12 Rest}"));
+    }
+
+    #[test]
+    fn milestone_summary_drilldown_shows_checkpoint_match_index_when_available() {
+        let mut route = row("active", "route", 1, 12, "x=2 y=8 Treasure");
+        route.target_key = "route:treasure".to_string();
+        route.commands = vec!["rp 0".to_string(), "go 2".to_string()];
+        let context = CoverageGapMilestoneSummaryContextV1::from_session_commands_v1([
+            vec!["rp 1".to_string()],
+            vec!["rp 0".to_string(), "go 2".to_string()],
+        ]);
+
+        let text =
+            render_coverage_gap_milestone_summary_from_rows_with_filter_group_index_and_context_v1(
+                &[route],
+                CoverageGapMilestoneTargetV1::Act2Start,
+                &CoverageGapContinuationFilterV1::default(),
+                Some(0),
+                &context,
+            );
+
+        assert!(text.contains("checkpoint_match_index: 1"));
     }
 
     #[test]
