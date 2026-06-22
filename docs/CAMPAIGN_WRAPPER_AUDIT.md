@@ -165,6 +165,7 @@ This helper owns:
 - command-line rendering
 - shared campaign driver option rendering
 - continuation round-budget argument rendering
+- normal campaign run preflight and command execution
 - manifest writing
 - primary driver command-file recording
 - logged driver invocation
