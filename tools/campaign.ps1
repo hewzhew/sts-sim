@@ -651,6 +651,18 @@ $CoverageGapFilterLabel = Format-CoverageGapFilterLabel `
     -Lane $CoverageGapLane `
     -OriginSource $CoverageGapOriginSource `
     -Progress $CoverageGapProgress
+$CoverageGapResultFilterArgs = @(New-CoverageGapFilterArgs `
+    -Bucket $CoverageGapBucket `
+    -EventId $CoverageGapEventId `
+    -Lane $CoverageGapLane `
+    -OriginSource $CoverageGapOriginSource `
+    -Progress "")
+$CoverageGapResultFilterLabel = Format-CoverageGapFilterLabel `
+    -Bucket $CoverageGapBucket `
+    -EventId $CoverageGapEventId `
+    -Lane $CoverageGapLane `
+    -OriginSource $CoverageGapOriginSource `
+    -Progress ""
 
 if (($RoundsBound -and $UntilRoundBound) -or ($RoundsBound -and $MaxRoundsBound) -or ($UntilRoundBound -and $MaxRoundsBound)) {
     throw "Choose only one round budget: -Rounds N, -UntilRound N, or legacy -MaxRounds N."
@@ -1003,7 +1015,7 @@ function Invoke-CoverageGapMilestoneSummary {
         "--inspect-coverage-gap-milestone-summary",
         "--coverage-gap-milestone-target", "$Target"
     )
-    $SummaryArgs += $CoverageGapFilterArgs
+    $SummaryArgs += $CoverageGapResultFilterArgs
     if (Test-Path -LiteralPath $RunOutputCheckpointPath) {
         $SummaryArgs += @("--inspect-checkpoint", "$RunOutputCheckpointPath")
     }
@@ -1308,6 +1320,9 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         }
         if ($UntilMilestoneBound) {
             Write-Host "milestone-initial-spent-rounds=$CoverageGapInitialSpentRounds"
+            if ($CoverageGapResultFilterLabel -ne $CoverageGapFilterLabel) {
+                Write-Host "coverage-gap-result-filter=$CoverageGapResultFilterLabel"
+            }
         }
     }
 
@@ -1345,7 +1360,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                     "--inspect-coverage-gap-milestone-summary",
                     "--coverage-gap-milestone-target", "$UntilMilestone"
                 )
-                $SummaryArgs += $CoverageGapFilterArgs
+                $SummaryArgs += $CoverageGapResultFilterArgs
                 if (Test-Path -LiteralPath $RunOutputCheckpointPath) {
                     $SummaryArgs += @("--inspect-checkpoint", "$RunOutputCheckpointPath")
                 }
