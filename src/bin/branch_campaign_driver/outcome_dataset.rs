@@ -820,6 +820,17 @@ fn render_coverage_gap_result_audit_v1(
         missing,
         report.discarded_count
     ));
+    lines.push(format!(
+        "ScheduledTargetProgressV1 requested={} observed={} extended={} target_only={} discarded={} missing={} incomplete={} unknown={}",
+        execution.targets.len(),
+        matched,
+        coverage_gap_target_progress_count_v1(&target_progress_counts, "extended"),
+        coverage_gap_target_progress_count_v1(&target_progress_counts, "target_only"),
+        coverage_gap_target_progress_count_v1(&target_progress_counts, "discarded"),
+        coverage_gap_target_progress_count_v1(&target_progress_counts, "missing"),
+        coverage_gap_target_progress_count_v1(&target_progress_counts, "incomplete"),
+        coverage_gap_target_progress_count_v1(&target_progress_counts, "unknown")
+    ));
     if !outcome_counts.is_empty() {
         lines.push("Outcomes:".to_string());
         for ((event_type, lane, outcome), count) in outcome_counts {
@@ -869,16 +880,21 @@ fn render_coverage_gap_continuation_delta_v1(
         after.total_unobserved_candidates,
     );
     let trend = coverage_gap_delta_trend_v1(reduced, increased);
-    let mut lines = vec![format!(
-        "CoverageGapContinuationDeltaV1 intent={} before_unobserved={} after_unobserved={} reduced={} increased={} trend={} intent_alignment={}",
-        intent.as_str(),
-        before.total_unobserved_candidates,
-        after.total_unobserved_candidates,
-        reduced,
-        increased,
-        trend,
-        coverage_gap_budget_intent_alignment_v1(intent, trend)
-    )];
+    let mut lines = vec![
+        format!(
+            "CoverageGapContinuationDeltaV1 intent={} intent_alignment={}",
+            intent.as_str(),
+            coverage_gap_budget_intent_alignment_v1(intent, trend)
+        ),
+        format!(
+            "FrontierDeltaV1 before_unobserved={} after_unobserved={} reduced={} increased={} trend={}",
+            before.total_unobserved_candidates,
+            after.total_unobserved_candidates,
+            reduced,
+            increased,
+            trend
+        ),
+    ];
 
     let before_buckets = before
         .bucket_summaries
@@ -923,6 +939,13 @@ fn coverage_gap_count_delta_v1(before: usize, after: usize) -> (usize, usize) {
     } else {
         (0, after - before)
     }
+}
+
+fn coverage_gap_target_progress_count_v1(
+    counts: &BTreeMap<String, usize>,
+    target_progress: &str,
+) -> usize {
+    counts.get(target_progress).copied().unwrap_or(0)
 }
 
 fn coverage_gap_delta_trend_v1(reduced: usize, increased: usize) -> &'static str {
@@ -1311,6 +1334,9 @@ mod tests {
         let rendered = render_coverage_gap_result_audit_v1(&execution, &report);
 
         assert!(rendered.contains("reward Pommel Strike {rp 1}"));
+        assert!(rendered.contains(
+            "ScheduledTargetProgressV1 requested=2 observed=2 extended=1 target_only=1 discarded=0 missing=0 incomplete=0 unknown=0"
+        ));
         assert!(rendered.contains("TargetProgress:"));
         assert!(rendered.contains("target_progress=extended count=1"));
         assert!(rendered.contains("target_progress=target_only count=1"));
@@ -1347,7 +1373,10 @@ mod tests {
         );
 
         assert!(rendered.contains(
-            "CoverageGapContinuationDeltaV1 intent=gap_closure before_unobserved=100 after_unobserved=85 reduced=15 increased=0 trend=coverage_reduced intent_alignment=matches"
+            "CoverageGapContinuationDeltaV1 intent=gap_closure intent_alignment=matches"
+        ));
+        assert!(rendered.contains(
+            "FrontierDeltaV1 before_unobserved=100 after_unobserved=85 reduced=15 increased=0 trend=coverage_reduced"
         ));
         assert!(rendered.contains("route before_unobserved=60 after_unobserved=50 reduced=10 increased=0 trend=coverage_reduced"));
         assert!(rendered.contains("reward before_unobserved=40 after_unobserved=35 reduced=5 increased=0 trend=coverage_reduced"));
@@ -1372,7 +1401,10 @@ mod tests {
         );
 
         assert!(rendered.contains(
-            "CoverageGapContinuationDeltaV1 intent=gap_closure before_unobserved=10 after_unobserved=14 reduced=0 increased=4 trend=frontier_expanded intent_alignment=does_not_match"
+            "CoverageGapContinuationDeltaV1 intent=gap_closure intent_alignment=does_not_match"
+        ));
+        assert!(rendered.contains(
+            "FrontierDeltaV1 before_unobserved=10 after_unobserved=14 reduced=0 increased=4 trend=frontier_expanded"
         ));
     }
 
@@ -1394,7 +1426,10 @@ mod tests {
         );
 
         assert!(rendered.contains(
-            "CoverageGapContinuationDeltaV1 intent=frontier_expansion before_unobserved=10 after_unobserved=14 reduced=0 increased=4 trend=frontier_expanded intent_alignment=matches"
+            "CoverageGapContinuationDeltaV1 intent=frontier_expansion intent_alignment=matches"
+        ));
+        assert!(rendered.contains(
+            "FrontierDeltaV1 before_unobserved=10 after_unobserved=14 reduced=0 increased=4 trend=frontier_expanded"
         ));
     }
 
