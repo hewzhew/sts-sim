@@ -192,11 +192,22 @@ This helper owns:
 - coverage-gap milestone summary commands
 - coverage-gap wrapper manifest shape
 
+Inspect argument helpers now live in:
+
+```text
+tools/campaign_inspect.ps1
+```
+
+This helper owns:
+
+- deciding whether an inspect command should use summary mode
+- mapping wrapper inspect switches to Rust driver flags
+- rendering dataset export inspect arguments
+
 ## Still Move Out Of Wrapper
 
 These pieces are useful but should not live in the main script long term:
 
-- inspect flag to driver flag mapping
 - coverage-gap continuation command assembly; the helper now owns filters and
   manifests, but the main wrapper still assembles the long driver argument list
 
@@ -236,8 +247,9 @@ If the answer is no, do not add it to `tools/campaign.ps1`.
 
 ## Next Cleanup Order
 
-1. Move inspect flag-to-driver-flag mapping out of the main wrapper.
-2. Continue shrinking coverage-gap command assembly into a typed helper input.
+1. Continue shrinking coverage-gap command assembly into a typed helper input.
+2. Extract common campaign driver option rendering shared by normal runs,
+   targeted continuation, coverage-gap continuation, and milestone resumes.
 3. Reassess whether targeted continuation still earns its wrapper surface.
 
 This sequence reduces cognitive load without changing campaign strategy.

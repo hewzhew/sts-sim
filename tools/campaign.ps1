@@ -379,6 +379,7 @@ New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 . (Join-Path $PSScriptRoot "campaign_invocation.ps1")
 . (Join-Path $PSScriptRoot "campaign_milestones.ps1")
 . (Join-Path $PSScriptRoot "campaign_coverage_gaps.ps1")
+. (Join-Path $PSScriptRoot "campaign_inspect.ps1")
 
 $ContinueCampaign = [bool] $ContinueRun
 if ($More) {
@@ -1272,125 +1273,10 @@ if ($Inspect) {
         throw "No previous campaign report found at $InspectCampaignPath. Run .\tools\campaign.ps1 first."
     }
 
-    if ($ExportLearningDataset) {
-        $InspectArgs = @(
-            "dataset",
-            "--inspect-checkpoint", "$InspectCheckpointPath",
-            "--inspect-report", "$InspectCampaignPath",
-            "--export-learning-dataset", "$ExportLearningDataset"
-        )
-    } else {
-        $InspectArgs = @(
-            "inspect",
-            "--inspect-checkpoint", "$InspectCheckpointPath",
-            "--inspect-report", "$InspectCampaignPath",
-            "--branch-examples", "$BranchExamples"
-        )
-    }
-    $DetailedInspect =
-        $InspectState -or
-        $InspectShopEvidence -or
-        $InspectShopChallenge -or
-        $InspectCardRewardEvidence -or
-        $InspectDecisionObservations -or
-        $InspectJournal -or
-        $InspectLineageDecisions -or
-        $InspectCampfireEvidence -or
-        $InspectDeckMutation -or
-        $InspectRouteEvidence -or
-        $InspectLastAutoCombat -or
-        $InspectCombatLab -or
-        $InspectFinalBossCombat -or
-        $InspectCoverageGapMilestoneSummary -or
-        $InspectCoverageGapTargetState
-    if ((-not $ExportLearningDataset) -and (-not $DetailedInspect)) {
-        $InspectArgs += "--inspect-summary"
-    }
-    if ((-not $ExportLearningDataset) -and $InspectShopEvidence) {
-        $InspectArgs += "--inspect-shop-evidence"
-    }
-    if ((-not $ExportLearningDataset) -and $InspectShopChallenge) {
-        $InspectArgs += @(
-            "--challenge-shop-plans",
-            "--challenge-max-plans", "$ChallengeMaxPlans",
-            "--challenge-depth", "$ChallengeDepth",
-            "--challenge-max-branches", "$ChallengeMaxBranches",
-            "--search-wall-ms", "$SearchWallMs",
-            "--search-max-nodes", "$SearchMaxNodes"
-        )
-    }
-    if ((-not $ExportLearningDataset) -and $InspectCardRewardEvidence) {
-        $InspectArgs += "--inspect-card-reward-evidence"
-    }
-    if ((-not $ExportLearningDataset) -and $InspectDecisionObservations) {
-        $InspectArgs += "--inspect-decision-observations"
-    }
-    if ((-not $ExportLearningDataset) -and $InspectJournal) {
-        $InspectArgs += "--inspect-journal"
-    }
-    if ((-not $ExportLearningDataset) -and $InspectLineageDecisions) {
-        $InspectArgs += "--inspect-lineage-decisions"
-    }
-    if ((-not $ExportLearningDataset) -and $InspectCampfireEvidence) {
-        $InspectArgs += "--inspect-campfire-evidence"
-    }
-    if ((-not $ExportLearningDataset) -and $InspectDeckMutation) {
-        $InspectArgs += "--inspect-deck-mutation"
-    }
-    if ((-not $ExportLearningDataset) -and $InspectRouteEvidence) {
-        $InspectArgs += "--inspect-route-evidence"
-    }
-    if ((-not $ExportLearningDataset) -and $InspectLastAutoCombat) {
-        $InspectArgs += "--inspect-last-auto-combat"
-    }
-    if ((-not $ExportLearningDataset) -and $InspectFinalBossCombat) {
-        $InspectArgs += "--inspect-final-boss-combat"
-    }
-    if ((-not $ExportLearningDataset) -and $InspectCoverageGapMilestoneSummary) {
-        $InspectArgs += @(
-            "--inspect-coverage-gap-milestone-summary",
-            "--coverage-gap-milestone-target", "$CoverageGapMilestoneTarget"
-        )
-        $InspectArgs += $CoverageGapFilterArgs
-    }
-    if ((-not $ExportLearningDataset) -and $InspectCoverageGapTargetState) {
-        $InspectArgs += @(
-            "--inspect-coverage-gap-target-state",
-            "--coverage-gap-milestone-target", "$CoverageGapMilestoneTarget"
-        )
-        $InspectArgs += $CoverageGapFilterArgs
-    }
-    if ((-not $ExportLearningDataset) -and $InspectCombatLab) {
-        $InspectArgs += @(
-            "--inspect-combat-lab",
-            "--combat-search-option", "wall_ms=$SearchWallMs",
-            "--combat-search-option", "max_nodes=$SearchMaxNodes"
-        )
-        if ($ProbeBoss) {
-            $InspectArgs += "--probe-boss"
-        }
-    }
-    if ((-not $ExportLearningDataset) -and $CampaignBoundParameters.ContainsKey("InspectIndex") -and $InspectIndex -ge 0) {
-        $InspectArgs += @("--inspect-index", "$InspectIndex")
-    }
-    if ((-not $ExportLearningDataset) -and $CampaignBoundParameters.ContainsKey("InspectAct") -and $InspectAct -gt 0) {
-        $InspectArgs += @("--inspect-act", "$InspectAct")
-    }
-    if ((-not $ExportLearningDataset) -and $CampaignBoundParameters.ContainsKey("InspectFloor") -and $InspectFloor -gt 0) {
-        $InspectArgs += @("--inspect-floor", "$InspectFloor")
-    }
-    if ((-not $ExportLearningDataset) -and $InspectBoundary) {
-        $InspectArgs += @("--inspect-boundary", "$InspectBoundary")
-    }
-    if ((-not $ExportLearningDataset) -and $InspectQuery) {
-        $InspectArgs += @("--inspect-query", "$InspectQuery")
-    }
-
-    $RenderedInspectArgs = $InspectArgs | ForEach-Object {
-        if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
-    }
-    $RenderedExe = if ($DriverExe -match '^[A-Za-z0-9_./:=\\-]+$') { $DriverExe } else { "'$($DriverExe -replace "'", "''")'" }
-    $RenderedCommand = $RenderedExe + " " + ($RenderedInspectArgs -join " ")
+    $InspectArgs = New-CampaignInspectDriverArgs `
+        -InspectCheckpointPath $InspectCheckpointPath `
+        -InspectCampaignPath $InspectCampaignPath
+    $RenderedCommand = Format-CommandLine -ExePath $DriverExe -Arguments $InspectArgs
 
     $InspectModeLabel = if ($ExportLearningDataset) { "dataset" } else { "inspect" }
     Write-Host "mode=$InspectModeLabel $InspectSourceLabel branch campaign"
