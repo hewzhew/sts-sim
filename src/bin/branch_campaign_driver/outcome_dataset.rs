@@ -914,6 +914,7 @@ fn render_coverage_gap_result_audit_v1(
     let mut outcome_counts = BTreeMap::<(String, String, String), usize>::new();
     let mut target_progress_counts = BTreeMap::<String, usize>::new();
     let mut target_progress_by_type_counts = BTreeMap::<(String, String, String), usize>::new();
+    let mut target_progress_by_lane_counts = BTreeMap::<(String, String, String), usize>::new();
     let mut target_lines = Vec::new();
 
     for (index, target) in execution.targets.iter().enumerate() {
@@ -946,6 +947,13 @@ fn render_coverage_gap_result_audit_v1(
                     target_progress.to_string(),
                 ))
                 .or_default() += 1;
+            *target_progress_by_lane_counts
+                .entry((
+                    lane.clone(),
+                    result.outcome.to_string(),
+                    target_progress.to_string(),
+                ))
+                .or_default() += 1;
             target_lines.push(format!(
                 "  {}. {} {} {{{}}} lane={} seeded=yes final_bucket={} target_progress={}{} -> frontier={} {} stop={}",
                 index + 1,
@@ -971,6 +979,9 @@ fn render_coverage_gap_result_audit_v1(
                     "missing".to_string(),
                     "missing".to_string(),
                 ))
+                .or_default() += 1;
+            *target_progress_by_lane_counts
+                .entry((lane.clone(), "missing".to_string(), "missing".to_string()))
                 .or_default() += 1;
             let discarded_tracking = if report.discarded_count > 0 {
                 " discarded_tracking=aggregate_only"
@@ -1043,6 +1054,18 @@ fn render_coverage_gap_result_audit_v1(
             lines.push(format!(
                 "  {} outcome={} target_progress={} count={}",
                 event_type, outcome, target_progress, count
+            ));
+        }
+    }
+    if !target_progress_by_lane_counts.is_empty() {
+        lines.push("TargetProgressByLane:".to_string());
+        for ((lane, outcome, target_progress), count) in target_progress_by_lane_counts {
+            lines.push(format!(
+                "  lane={} outcome={} target_progress={} count={}",
+                compact_coverage_gap_audit_text_v1(&lane, 96),
+                outcome,
+                target_progress,
+                count
             ));
         }
     }
@@ -1532,6 +1555,10 @@ mod tests {
         assert!(rendered.contains("TargetProgressByType:"));
         assert!(rendered.contains("reward outcome=active target_progress=extended count=1"));
         assert!(rendered.contains("event outcome=frozen target_progress=target_only count=1"));
+        assert!(rendered.contains("TargetProgressByLane:"));
+        assert!(rendered.contains(
+            "lane=reward:scheduled:kept:reward outcome=active target_progress=extended count=1"
+        ));
         assert!(rendered.contains("final_bucket=active target_progress=extended"));
         assert!(rendered.contains("event Leave {event 2}"));
         assert!(rendered.contains("final_bucket=frozen target_progress=target_only"));
