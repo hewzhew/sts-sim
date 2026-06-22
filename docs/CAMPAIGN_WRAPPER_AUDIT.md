@@ -13,7 +13,7 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 682 lines
+- `tools/campaign.ps1`: 661 lines
 - `tools/campaign_artifacts.ps1`: 520 lines
 - `tools/campaign_invocation.ps1`: 391 lines
 - `tools/campaign_coverage_gaps.ps1`: 390 lines
@@ -22,7 +22,7 @@ Approximate physical line count after the wrapper split:
 - `tools/campaign_source.ps1`: 118 lines
 - `tools/campaign_milestones.ps1`: 105 lines
 - `tools/campaign_request.ps1`: 68 lines
-- `tools/campaign_build.ps1`: 30 lines
+- `tools/campaign_build.ps1`: 63 lines
 
 Major regions:
 
@@ -243,6 +243,8 @@ tools/campaign_build.ps1
 
 This helper owns:
 
+- resolving wrapper build profile selectors
+- rendering the driver executable path and cargo build args
 - deciding whether the Rust driver binary needs rebuilding
 
 Source/run identity helpers now live in:

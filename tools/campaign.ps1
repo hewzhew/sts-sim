@@ -259,27 +259,14 @@ $Class = $RunIdentity.Class
 $AscensionBound = $RunIdentity.AscensionBound
 $ClassBound = $RunIdentity.ClassBound
 
-$ExplicitBuildProfile = $PSBoundParameters.ContainsKey("BuildProfile")
-if ($DebugBuild) {
-    if ($ExplicitBuildProfile -and $BuildProfile -ne "debug") {
-        throw "-DebugBuild conflicts with -BuildProfile $BuildProfile. Use only one build profile selector."
-    }
-    $BuildProfile = "debug"
-}
-
-$DriverExe = Join-Path $RepoRoot "target\$BuildProfile\branch_campaign_driver.exe"
-$BuildArgs = @("build", "--quiet", "--bin", "branch_campaign_driver")
-switch ($BuildProfile) {
-    "debug" {
-        # Default cargo dev profile.
-    }
-    "release" {
-        $BuildArgs += "--release"
-    }
-    default {
-        $BuildArgs += @("--profile", "$BuildProfile")
-    }
-}
+$BuildContext = Resolve-CampaignBuildContext `
+    -RepoRoot $RepoRoot `
+    -BuildProfile $BuildProfile `
+    -DebugBuild ([bool] $DebugBuild) `
+    -BuildProfileBound ($PSBoundParameters.ContainsKey("BuildProfile"))
+$BuildProfile = $BuildContext.BuildProfile
+$DriverExe = $BuildContext.DriverExe
+$BuildArgs = @($BuildContext.BuildArgs)
 
 $DriverArgs = @(
     "run",

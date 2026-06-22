@@ -1,3 +1,40 @@
+function Resolve-CampaignBuildContext {
+    param(
+        [string] $RepoRoot,
+        [string] $BuildProfile,
+        [bool] $DebugBuild,
+        [bool] $BuildProfileBound
+    )
+
+    $ResolvedBuildProfile = $BuildProfile
+    if ($DebugBuild) {
+        if ($BuildProfileBound -and $BuildProfile -ne "debug") {
+            throw "-DebugBuild conflicts with -BuildProfile $BuildProfile. Use only one build profile selector."
+        }
+        $ResolvedBuildProfile = "debug"
+    }
+
+    $DriverExe = Join-Path $RepoRoot "target\$ResolvedBuildProfile\branch_campaign_driver.exe"
+    $BuildArgs = @("build", "--quiet", "--bin", "branch_campaign_driver")
+    switch ($ResolvedBuildProfile) {
+        "debug" {
+            # Default cargo dev profile.
+        }
+        "release" {
+            $BuildArgs += "--release"
+        }
+        default {
+            $BuildArgs += @("--profile", "$ResolvedBuildProfile")
+        }
+    }
+
+    return [pscustomobject]@{
+        BuildProfile = $ResolvedBuildProfile
+        DriverExe = $DriverExe
+        BuildArgs = $BuildArgs
+    }
+}
+
 function Test-DriverNeedsBuild {
     param(
         [string] $ExePath
