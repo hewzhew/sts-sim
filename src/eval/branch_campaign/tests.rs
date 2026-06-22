@@ -489,6 +489,7 @@ fn compact_campaign_report_surfaces_route_continuation_origin() {
     );
 
     assert!(rendered.contains("origin=coverage_gap:route:x=2 y=3 Elite"));
+    assert!(rendered.contains("source=route_candidate_pool"));
     assert!(rendered.contains("route=x2y3"));
     assert!(rendered.contains("coverage=CompleteWithinBudget"));
     assert!(rendered.contains("paths=17/2000"));

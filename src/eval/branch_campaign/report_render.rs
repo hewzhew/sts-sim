@@ -407,11 +407,17 @@ fn render_campaign_continuation_origin_suffix_v1(branch: &BranchCampaignBranchV1
         .as_ref()
         .map(render_campaign_continuation_target_lane_v1)
         .unwrap_or_default();
+    let source_suffix = if origin.target_origin_source.is_empty() {
+        String::new()
+    } else {
+        format!(" source={}", origin.target_origin_source)
+    };
     format!(
-        " | origin={}:{}:{}{}{}",
+        " | origin={}:{}:{}{}{}{}",
         origin.kind,
         origin.event_type,
         compact_campaign_choice_label_metadata_v1(&origin.label),
+        source_suffix,
         lane_suffix,
         route_suffix
     )
