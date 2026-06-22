@@ -638,6 +638,9 @@ fn coverage_gap_continuation_source_report_v1(
     report.dead.clear();
     report.abandoned.clear();
     report.stuck.clear();
+    report.discarded_count = 0;
+    report.discarded_examples.clear();
+    report.discarded_branches.clear();
     report.strategy_requests.clear();
     report
 }
@@ -1878,6 +1881,71 @@ mod tests {
         assert_eq!(origin.disposition, target.disposition);
         assert!(origin.target_origin_source.is_empty());
         assert!(origin.route_origin.is_none());
+    }
+
+    #[test]
+    fn coverage_gap_source_report_starts_from_selected_targets_without_inherited_discards() {
+        let target = coverage_gap_test_target("route", "go 1", "x=1 y=2 Shop", 0);
+        let execution = CoverageGapContinuationExecutionPlanV1 {
+            schema_name: "CoverageGapContinuationExecutionPlanV1".to_string(),
+            schema_version: 3,
+            label_role: "campaign_observation_not_teacher".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            requested_target_count: 1,
+            selected_branch_count: 1,
+            skipped_target_count: 0,
+            bucket_summaries: Vec::new(),
+            lane_summaries: Vec::new(),
+            targets: vec![target],
+        };
+        let discarded_target =
+            coverage_gap_test_target("reward", "rp 2", "Old discarded target", 1);
+        let discarded_branch = coverage_gap_test_result_branch(
+            &discarded_target,
+            BranchCampaignBranchStatusV1::Frozen,
+            "Reward Screen",
+            "old selection capacity",
+            1,
+            5,
+            70,
+            80,
+        );
+        let source_report = BranchCampaignReportV1 {
+            schema_name: "BranchCampaignV1".to_string(),
+            schema_version: 1,
+            seed: 1,
+            run_domain: Default::default(),
+            run_prelude: Default::default(),
+            rounds_completed: 7,
+            stop_reason: "max_rounds".to_string(),
+            active: Vec::new(),
+            frozen: Vec::new(),
+            victories: Vec::new(),
+            dead: Vec::new(),
+            abandoned: Vec::new(),
+            stuck: Vec::new(),
+            discarded_count: 3,
+            discarded_examples: vec!["old discarded branch".to_string()],
+            discarded_branches: vec![BranchCampaignDiscardedBranchV1::from_branch_v1(
+                &discarded_branch,
+                "selection_capacity",
+            )],
+            strategy_requests: Vec::new(),
+            route_evidence: Default::default(),
+            combat_retry_ledger: Default::default(),
+            strategic_signals: Default::default(),
+            state_store: Default::default(),
+            journal: Default::default(),
+            rounds: Vec::new(),
+        };
+
+        let seeded = coverage_gap_continuation_source_report_v1(&source_report, &execution);
+
+        assert_eq!(seeded.active.len(), 1);
+        assert_eq!(seeded.discarded_count, 0);
+        assert!(seeded.discarded_examples.is_empty());
+        assert!(seeded.discarded_branches.is_empty());
     }
 
     #[test]
