@@ -270,6 +270,8 @@ pub struct CoverageGapContinuationTargetV1 {
     pub command: String,
     pub label: String,
     pub semantic_class: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_lane: Option<CoverageGapTargetLaneV1>,
     #[serde(default)]
     pub admission: CampaignJournalCandidateAdmissionTraceV1,
     pub disposition: CampaignJournalCandidateDispositionV1,
@@ -279,6 +281,41 @@ pub struct CoverageGapContinuationTargetV1 {
     )]
     pub target_origin: CoverageGapContinuationTargetOriginV1,
     pub milestone: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageGapTargetLaneV1 {
+    pub bucket: String,
+    pub admission_status: CampaignJournalCandidateAdmissionStatusV1,
+    pub disposition: CampaignJournalCandidateDispositionV1,
+    pub semantic_lane: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shop_action_kind: Option<CoverageGapShopActionLaneV1>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageGapShopActionLaneV1 {
+    Purge,
+    BuyCard,
+    BuyRelic,
+    BuyPotion,
+    Leave,
+    Portfolio,
+}
+
+impl CoverageGapShopActionLaneV1 {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Purge => "purge",
+            Self::BuyCard => "buy_card",
+            Self::BuyRelic => "buy_relic",
+            Self::BuyPotion => "buy_potion",
+            Self::Leave => "leave",
+            Self::Portfolio => "portfolio",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -1094,7 +1131,7 @@ pub fn plan_coverage_gap_continuations_v1(
             if selected_for_decision >= max_candidates_per_decision {
                 continue;
             }
-            target_candidates.push(CoverageGapContinuationTargetV1 {
+            let mut target = CoverageGapContinuationTargetV1 {
                 decision_id: decision_id.to_string(),
                 event_id: event.event_id.clone(),
                 event_type: event_type.to_string(),
@@ -1107,11 +1144,14 @@ pub fn plan_coverage_gap_continuations_v1(
                 command: candidate.command.clone(),
                 label: candidate.label.clone(),
                 semantic_class: candidate.semantic_class.clone(),
+                target_lane: None,
                 admission: resolved_candidate_admission_v1(candidate),
                 disposition: candidate.disposition,
                 target_origin: coverage_gap_target_origin_v1(event, candidate_index),
                 milestone: coverage_gap_candidate_milestone_v1(event),
-            });
+            };
+            target.target_lane = Some(coverage_gap_target_lane_from_target_v1(&target));
+            target_candidates.push(target);
             selected_for_decision = selected_for_decision.saturating_add(1);
         }
     }
@@ -1456,13 +1496,29 @@ fn round_robin_coverage_gap_targets_by_lane_v1(
 }
 
 fn coverage_gap_non_route_selection_lane_v1(target: &CoverageGapContinuationTargetV1) -> String {
+    let lane = target
+        .target_lane
+        .clone()
+        .unwrap_or_else(|| coverage_gap_target_lane_from_target_v1(target));
     format!(
         "{}:{}:{}:{}",
-        coverage_gap_target_bucket_v1(target),
-        render_journal_candidate_admission_status_v1(target.admission.status),
-        render_journal_candidate_disposition_v1(target.disposition),
-        coverage_gap_target_semantic_lane_v1(target)
+        lane.bucket,
+        render_journal_candidate_admission_status_v1(lane.admission_status),
+        render_journal_candidate_disposition_v1(lane.disposition),
+        lane.semantic_lane
     )
+}
+
+fn coverage_gap_target_lane_from_target_v1(
+    target: &CoverageGapContinuationTargetV1,
+) -> CoverageGapTargetLaneV1 {
+    CoverageGapTargetLaneV1 {
+        bucket: coverage_gap_target_bucket_v1(target).to_string(),
+        admission_status: target.admission.status,
+        disposition: target.disposition,
+        semantic_lane: coverage_gap_target_semantic_lane_v1(target),
+        shop_action_kind: coverage_gap_shop_action_kind_v1(target),
+    }
 }
 
 fn coverage_gap_target_semantic_lane_v1(target: &CoverageGapContinuationTargetV1) -> String {
@@ -1475,7 +1531,8 @@ fn coverage_gap_target_semantic_lane_v1(target: &CoverageGapContinuationTargetV1
         coverage_gap_target_bucket_v1(target),
         "shop" | "shop_branch"
     ) {
-        if let Some(lane) = coverage_gap_shop_action_lane_v1(target) {
+        if let Some(kind) = coverage_gap_shop_action_kind_v1(target) {
+            let lane = format!("shop_action:{}", kind.as_str());
             return lane;
         }
     }
@@ -1515,33 +1572,34 @@ fn coverage_gap_semantic_tokens_v1(semantic: &str) -> Vec<String> {
         .collect()
 }
 
-fn coverage_gap_shop_action_lane_v1(target: &CoverageGapContinuationTargetV1) -> Option<String> {
+fn coverage_gap_shop_action_kind_v1(
+    target: &CoverageGapContinuationTargetV1,
+) -> Option<CoverageGapShopActionLaneV1> {
     let command = target.command.to_ascii_lowercase();
     let label = target.label.to_ascii_lowercase();
-    let kind = if command.starts_with("purge ")
+    if command.starts_with("purge ")
         || command.starts_with("remove ")
         || label.starts_with("purge ")
         || label.starts_with("remove ")
     {
-        "purge"
+        Some(CoverageGapShopActionLaneV1::Purge)
     } else if command.starts_with("buy card ") || label.starts_with("buy card ") {
-        "buy_card"
+        Some(CoverageGapShopActionLaneV1::BuyCard)
     } else if command.starts_with("buy relic ") || label.starts_with("buy relic ") {
-        "buy_relic"
+        Some(CoverageGapShopActionLaneV1::BuyRelic)
     } else if command.starts_with("buy potion ") || label.starts_with("buy potion ") {
-        "buy_potion"
+        Some(CoverageGapShopActionLaneV1::BuyPotion)
     } else if command.starts_with("leave")
         || command == "back"
         || label.starts_with("leave shop")
         || label.starts_with("stop shop automation")
     {
-        "leave"
+        Some(CoverageGapShopActionLaneV1::Leave)
     } else if command.contains("portfolio") || label.contains("portfolio") {
-        "portfolio"
+        Some(CoverageGapShopActionLaneV1::Portfolio)
     } else {
-        return None;
-    };
-    Some(format!("shop_action:{kind}"))
+        None
+    }
 }
 
 fn coverage_gap_route_selection_lane_v1(target: &CoverageGapContinuationTargetV1) -> String {
@@ -3932,6 +3990,12 @@ mod tests {
         assert_eq!(plan.targets[0].label, "Carnage");
         assert_eq!(plan.targets[0].candidate_index, 2);
         assert_eq!(plan.targets[0].parent_commands, Vec::<String>::new());
+        let lane = plan.targets[0]
+            .target_lane
+            .as_ref()
+            .expect("planned coverage-gap target should carry typed lane");
+        assert_eq!(lane.bucket, "reward");
+        assert_eq!(lane.semantic_lane, "test");
         assert!(rendered.contains("Carnage"));
         assert!(!rendered.contains("route0"));
     }
@@ -4542,6 +4606,35 @@ mod tests {
         assert_eq!(
             coverage_gap_continuation_target_lane_v1(&selected[1]),
             "shop:scheduled:kept:shop_action:buy_card"
+        );
+    }
+
+    #[test]
+    fn coverage_gap_shop_targets_expose_typed_target_lane() {
+        let target = sample_shop_coverage_gap_target(
+            "buy relic 3",
+            "buy relic Orange Pellets for 150 gold",
+            "role:SingleAction",
+            0,
+        );
+        let lane = target
+            .target_lane
+            .as_ref()
+            .expect("coverage gap targets should carry typed scheduler lane");
+
+        assert_eq!(lane.bucket, "shop");
+        assert_eq!(
+            lane.admission_status,
+            CampaignJournalCandidateAdmissionStatusV1::Scheduled
+        );
+        assert_eq!(
+            lane.disposition,
+            CampaignJournalCandidateDispositionV1::Kept
+        );
+        assert_eq!(lane.semantic_lane, "shop_action:buy_relic");
+        assert_eq!(
+            lane.shop_action_kind,
+            Some(CoverageGapShopActionLaneV1::BuyRelic)
         );
     }
 
@@ -5343,7 +5436,7 @@ mod tests {
         semantic_class: &str,
         candidate_index: usize,
     ) -> CoverageGapContinuationTargetV1 {
-        CoverageGapContinuationTargetV1 {
+        let mut target = CoverageGapContinuationTargetV1 {
             decision_id: "reward-decision".to_string(),
             event_id: "reward-event".to_string(),
             event_type: "reward".to_string(),
@@ -5356,6 +5449,7 @@ mod tests {
             command: command.to_string(),
             label: label.to_string(),
             semantic_class: semantic_class.to_string(),
+            target_lane: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Scheduled,
                 "reward_candidate_pool",
@@ -5364,7 +5458,9 @@ mod tests {
             disposition: CampaignJournalCandidateDispositionV1::Kept,
             target_origin: CoverageGapContinuationTargetOriginV1::default(),
             milestone: "reward_frontier".to_string(),
-        }
+        };
+        target.target_lane = Some(coverage_gap_target_lane_from_target_v1(&target));
+        target
     }
 
     fn sample_shop_coverage_gap_target(
@@ -5373,7 +5469,7 @@ mod tests {
         semantic_class: &str,
         candidate_index: usize,
     ) -> CoverageGapContinuationTargetV1 {
-        CoverageGapContinuationTargetV1 {
+        let mut target = CoverageGapContinuationTargetV1 {
             decision_id: "shop-decision".to_string(),
             event_id: "shop-event".to_string(),
             event_type: "shop".to_string(),
@@ -5386,6 +5482,7 @@ mod tests {
             command: command.to_string(),
             label: label.to_string(),
             semantic_class: semantic_class.to_string(),
+            target_lane: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Scheduled,
                 "shop_candidate_pool",
@@ -5394,7 +5491,9 @@ mod tests {
             disposition: CampaignJournalCandidateDispositionV1::Kept,
             target_origin: CoverageGapContinuationTargetOriginV1::default(),
             milestone: "resource_conversion_frontier".to_string(),
-        }
+        };
+        target.target_lane = Some(coverage_gap_target_lane_from_target_v1(&target));
+        target
     }
 
     fn sample_journal_candidate_with_admission(
@@ -5419,7 +5518,7 @@ mod tests {
         room_type: &str,
         candidate_index: usize,
     ) -> CoverageGapContinuationTargetV1 {
-        CoverageGapContinuationTargetV1 {
+        let mut target = CoverageGapContinuationTargetV1 {
             decision_id: "route-decision".to_string(),
             event_id: "route-event".to_string(),
             event_type: "route".to_string(),
@@ -5432,6 +5531,7 @@ mod tests {
             command: command.to_string(),
             label: label.to_string(),
             semantic_class: "route".to_string(),
+            target_lane: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Scheduled,
                 "route_candidate_pool",
@@ -5476,7 +5576,9 @@ mod tests {
                 }),
             },
             milestone: "route_frontier".to_string(),
-        }
+        };
+        target.target_lane = Some(coverage_gap_target_lane_from_target_v1(&target));
+        target
     }
 
     fn set_route_path_pressure_for_test(

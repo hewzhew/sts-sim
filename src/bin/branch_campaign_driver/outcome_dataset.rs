@@ -1660,6 +1660,7 @@ mod tests {
             command: "rp 2".to_string(),
             label: "Shrug It Off".to_string(),
             semantic_class: "block".to_string(),
+            target_lane: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Deferred,
                 "reward_portfolio",
@@ -1706,6 +1707,7 @@ mod tests {
             command: "go 2".to_string(),
             label: "x=2 y=3 Elite".to_string(),
             semantic_class: "route".to_string(),
+            target_lane: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Deferred,
                 "route_candidate_pool",
@@ -1860,6 +1862,7 @@ mod tests {
             command: "purge 0".to_string(),
             label: "purge Strike".to_string(),
             semantic_class: "purge".to_string(),
+            target_lane: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Scheduled,
                 "shop_candidate_pool",
@@ -1907,6 +1910,7 @@ mod tests {
             command: command.to_string(),
             label: label.to_string(),
             semantic_class: event_type.to_string(),
+            target_lane: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Scheduled,
                 format!("{event_type}_candidate_pool"),
