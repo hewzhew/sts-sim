@@ -55,6 +55,9 @@ pub(super) struct CoverageGapMilestoneBranchRowV1 {
     pub(super) max_hp: i32,
     pub(super) deck_count: usize,
     pub(super) deck_key: String,
+    pub(super) boss: String,
+    pub(super) boss_pressure: Vec<String>,
+    pub(super) run_debt: Vec<String>,
     pub(super) target_origin_source: String,
     pub(super) target_lane: String,
     pub(super) target_progress: String,
@@ -534,6 +537,15 @@ fn row_from_parts_v1(
         deck_key: summary
             .map(|summary| summary.deck_key.clone())
             .unwrap_or_default(),
+        boss: summary
+            .map(|summary| summary.boss.clone())
+            .unwrap_or_default(),
+        boss_pressure: summary
+            .map(|summary| summary.boss_pressure.clone())
+            .unwrap_or_default(),
+        run_debt: summary
+            .map(|summary| summary.run_debt.clone())
+            .unwrap_or_default(),
         target_origin_source: target_origin_source.to_string(),
         target_lane,
         target_progress,
@@ -839,6 +851,18 @@ fn format_target_group_detail_lines_v1(
     if !furthest.deck_key.is_empty() {
         lines.push(format!("    deck_key: {}", furthest.deck_key));
     }
+    if !furthest.boss.is_empty() {
+        lines.push(format!("    boss: {}", furthest.boss));
+    }
+    if !furthest.boss_pressure.is_empty() {
+        lines.push(format!(
+            "    boss_pressure: {}",
+            furthest.boss_pressure.join(", ")
+        ));
+    }
+    if !furthest.run_debt.is_empty() {
+        lines.push(format!("    run_debt: {}", furthest.run_debt.join(", ")));
+    }
     if !furthest.target_origin_source.is_empty() {
         lines.push(format!(
             "    target_origin_source: {}",
@@ -951,6 +975,9 @@ mod tests {
             max_hp: 80,
             deck_count: 12,
             deck_key: String::new(),
+            boss: String::new(),
+            boss_pressure: Vec::new(),
+            run_debt: Vec::new(),
             target_origin_source: "journal_coverage_gap".to_string(),
             target_lane: format!("{event_type}:scheduled:kept:test"),
             target_progress: "extended".to_string(),
@@ -1104,6 +1131,57 @@ mod tests {
         );
 
         assert!(text.contains("deck_key: Bash+1x1;Feed+0x1;Strike+0x4"));
+    }
+
+    #[test]
+    fn milestone_summary_drilldown_shows_boss_pressure_and_debt_when_available() {
+        let summary = BranchCampaignBranchSummaryV1 {
+            act: 2,
+            floor: 33,
+            hp: 41,
+            max_hp: 90,
+            gold: 250,
+            deck_count: 24,
+            deck_key: String::new(),
+            formation_stage: "PlanCommitted".to_string(),
+            formation_strengths: Vec::new(),
+            formation_needs: Vec::new(),
+            trajectory_key: String::new(),
+            boss: "Automaton".to_string(),
+            boss_pressure: vec![
+                "missing:block50_or_kill_before_beam".to_string(),
+                "pressure:stasis_key_card_access".to_string(),
+            ],
+            run_debt: vec!["CoffeeDripper=rest_lock".to_string()],
+            event_boundary: None,
+            reward_boundary: None,
+        };
+        let route = row_from_parts_v1(
+            "abandoned",
+            "route:automaton".to_string(),
+            "route",
+            "x=4 y=10 Shop",
+            "go 4",
+            "map_decision_packet",
+            "route:go:ShopRoom:CompleteWithinBudget".to_string(),
+            "extended".to_string(),
+            Some(&summary),
+            "Combat",
+            "combat search did not find an executable complete win",
+            &["Buy Flame Barrier".to_string()],
+        );
+
+        let text = render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
+            &[route],
+            CoverageGapMilestoneTargetV1::Act2Start,
+            &CoverageGapContinuationFilterV1::default(),
+        );
+
+        assert!(text.contains("boss: Automaton"));
+        assert!(text.contains(
+            "boss_pressure: missing:block50_or_kill_before_beam, pressure:stasis_key_card_access"
+        ));
+        assert!(text.contains("run_debt: CoffeeDripper=rest_lock"));
     }
 
     #[test]
