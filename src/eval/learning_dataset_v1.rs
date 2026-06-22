@@ -2622,6 +2622,26 @@ pub fn render_coverage_gap_continuation_plan_summary_v1(
     lines.join("\n")
 }
 
+pub fn render_coverage_gap_continuation_filter_v1(
+    filter: &CoverageGapContinuationFilterV1,
+) -> String {
+    if filter.is_empty() {
+        return "CoverageGapFilterV1 filter=-".to_string();
+    }
+
+    let mut parts = Vec::new();
+    if let Some(bucket) = filter.bucket.as_deref().filter(|value| !value.is_empty()) {
+        parts.push(format!("bucket={bucket}"));
+    }
+    if let Some(event_id) = filter.event_id.as_deref().filter(|value| !value.is_empty()) {
+        parts.push(format!("event_id={event_id}"));
+    }
+    if let Some(lane) = filter.lane.as_deref().filter(|value| !value.is_empty()) {
+        parts.push(format!("lane={lane}"));
+    }
+    format!("CoverageGapFilterV1 {}", parts.join(" "))
+}
+
 pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPlanV1) -> String {
     let mut lines = vec![render_coverage_gap_continuation_plan_summary_v1(plan)];
     if plan.targets.is_empty() {
@@ -6087,6 +6107,21 @@ mod tests {
         assert_eq!(
             coverage_gap_continuation_target_lane_v1(&plan.targets[0]),
             "event:scheduled:kept:effect:event_card_reward"
+        );
+    }
+
+    #[test]
+    fn coverage_gap_filter_renderer_shows_active_constraints() {
+        let rendered =
+            render_coverage_gap_continuation_filter_v1(&CoverageGapContinuationFilterV1 {
+                bucket: Some("event".to_string()),
+                event_id: Some("Mushrooms".to_string()),
+                lane: Some("effect:event_gain_curse".to_string()),
+            });
+
+        assert_eq!(
+            rendered,
+            "CoverageGapFilterV1 bucket=event event_id=Mushrooms lane=effect:event_gain_curse"
         );
     }
 

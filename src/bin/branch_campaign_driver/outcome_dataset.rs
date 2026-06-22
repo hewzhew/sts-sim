@@ -30,11 +30,11 @@ use sts_simulator::eval::learning_dataset_v1::{
     learning_records_from_branch_outcomes_v1, parse_learning_decision_outcome_samples_jsonl_v1,
     plan_coverage_gap_continuations_with_filter_v1, plan_targeted_continuations_v1,
     probe_learning_readiness_v1, refresh_coverage_gap_execution_bucket_summaries_v1,
-    render_continuation_effect_report_v1, render_coverage_gap_continuation_plan_summary_v1,
-    render_coverage_gap_continuation_plan_v1, render_coverage_gap_execution_plan_v1,
-    render_journal_decision_candidate_coverage_v1, render_learning_decision_outcome_analysis_v1,
-    render_learning_readiness_probe_v1, render_targeted_continuation_plan_v1,
-    serialize_learning_branch_samples_jsonl_v1,
+    render_continuation_effect_report_v1, render_coverage_gap_continuation_filter_v1,
+    render_coverage_gap_continuation_plan_summary_v1, render_coverage_gap_continuation_plan_v1,
+    render_coverage_gap_execution_plan_v1, render_journal_decision_candidate_coverage_v1,
+    render_learning_decision_outcome_analysis_v1, render_learning_readiness_probe_v1,
+    render_targeted_continuation_plan_v1, serialize_learning_branch_samples_jsonl_v1,
     serialize_learning_decision_outcome_samples_jsonl_v1, targeted_continuation_execution_plan_v1,
     CoverageGapContinuationExecutionPlanV1, CoverageGapContinuationFilterV1,
     CoverageGapContinuationPlanV1, CoverageGapContinuationTargetProgressV1,
@@ -277,6 +277,10 @@ pub(super) fn run_coverage_gap_continuation_plan(
         .map(read_campaign_checkpoint_v1)
         .transpose()?;
     let records = extract_branch_outcome_records_v1(&report, checkpoint.as_ref())?;
+    println!(
+        "{}",
+        render_coverage_gap_continuation_filter_v1(&input.coverage_gap_filter)
+    );
     if let Some(checkpoint) = checkpoint.as_ref() {
         let (plan, replayable_preview, planning_window) =
             build_replayable_coverage_gap_execution_plan_v1(
@@ -403,6 +407,10 @@ pub(super) fn run_coverage_gap_continuation_execution(
         planning_window,
         execution.selected_branch_count,
         execution.skipped_target_count
+    );
+    println!(
+        "{}",
+        render_coverage_gap_continuation_filter_v1(&input.coverage_gap_filter)
     );
     println!(
         "{}",
