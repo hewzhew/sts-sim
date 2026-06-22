@@ -85,3 +85,28 @@ function New-TargetedContinuationContinueDriverArgs {
         -IncludeBossRelicAxes $false `
         -IncludeAutoCaptureCombat $true
 }
+
+function Write-TargetedContinuationDryRunCommands {
+    param(
+        [bool] $PlanTargets,
+        [bool] $ContinueTargets,
+        [string] $DriverExe,
+        [string[]] $ExportDecisionArgs,
+        [string[]] $PlanTargetArgs,
+        [string[]] $ContinueTargetArgs,
+        [string[]] $ExportDecisionAfterArgs,
+        [string[]] $ContinuationEffectArgs
+    )
+
+    if ($PlanTargets -or $ContinueTargets) {
+        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ExportDecisionArgs)
+    }
+    if ($PlanTargets) {
+        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $PlanTargetArgs)
+    }
+    if ($ContinueTargets) {
+        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
+        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ExportDecisionAfterArgs)
+        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinuationEffectArgs)
+    }
+}

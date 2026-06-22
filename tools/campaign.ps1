@@ -634,31 +634,23 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         if ($NeedsBuild) {
             Write-CampaignBuildCommandPreview -BuildArgs $BuildArgs
         }
-        if ($PlanTargets -or $ContinueTargets) {
-            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ExportDecisionArgs)
-        }
-        if ($PlanTargets) {
-            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $PlanTargetArgs)
-        }
-        if ($PlanCoverageGaps) {
-            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $CoveragePlanArgs)
-        }
-        if ($ContinueTargets) {
-            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
-            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ExportDecisionAfterArgs)
-            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinuationEffectArgs)
-        }
-        if ($ContinueCoverageGaps) {
-            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
-        }
-        if ($UntilMilestoneBound) {
-            Write-Host "milestone-loop-command-template:"
-            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds))
-            if ($ContinueCoverageGaps) {
-                Write-Host "milestone-summary-command:"
-                Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-CoverageGapMilestoneSummaryArgs))
-            }
-        }
+        Write-TargetedContinuationDryRunCommands `
+            -PlanTargets ([bool] $PlanTargets) `
+            -ContinueTargets ([bool] $ContinueTargets) `
+            -DriverExe $DriverExe `
+            -ExportDecisionArgs $ExportDecisionArgs `
+            -PlanTargetArgs $PlanTargetArgs `
+            -ContinueTargetArgs $ContinueTargetArgs `
+            -ExportDecisionAfterArgs $ExportDecisionAfterArgs `
+            -ContinuationEffectArgs $ContinuationEffectArgs
+        Write-CoverageGapContinuationDryRunCommands `
+            -PlanCoverageGaps ([bool] $PlanCoverageGaps) `
+            -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
+            -UntilMilestoneBound $UntilMilestoneBound `
+            -DriverExe $DriverExe `
+            -CoveragePlanArgs $CoveragePlanArgs `
+            -ContinueCoverageGapArgs $ContinueCoverageGapArgs `
+            -MilestoneStepRounds $MilestoneStepRounds
         exit 0
     }
 

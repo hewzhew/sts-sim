@@ -280,6 +280,33 @@ function New-CoverageGapMilestoneSummaryArgs {
     return $Args
 }
 
+function Write-CoverageGapContinuationDryRunCommands {
+    param(
+        [bool] $PlanCoverageGaps,
+        [bool] $ContinueCoverageGaps,
+        [bool] $UntilMilestoneBound,
+        [string] $DriverExe,
+        [string[]] $CoveragePlanArgs,
+        [string[]] $ContinueCoverageGapArgs,
+        [int] $MilestoneStepRounds
+    )
+
+    if ($PlanCoverageGaps) {
+        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $CoveragePlanArgs)
+    }
+    if ($ContinueCoverageGaps) {
+        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
+    }
+    if ($UntilMilestoneBound) {
+        Write-Host "milestone-loop-command-template:"
+        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds))
+        if ($ContinueCoverageGaps) {
+            Write-Host "milestone-summary-command:"
+            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-CoverageGapMilestoneSummaryArgs))
+        }
+    }
+}
+
 function Invoke-CoverageGapMilestoneSummary {
     param(
         [string] $Target
