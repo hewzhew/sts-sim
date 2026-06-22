@@ -44,6 +44,7 @@ impl CoverageGapMilestoneTargetV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CoverageGapMilestoneBranchRowV1 {
     pub(super) bucket: String,
+    pub(super) target_key: String,
     pub(super) event_type: String,
     pub(super) label: String,
     pub(super) command: String,
@@ -103,6 +104,7 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_v1(
     target: CoverageGapMilestoneTargetV1,
 ) -> String {
     let reached = rows.iter().filter(|row| target.is_reached_by(row)).count();
+    let (target_groups, reached_target_groups) = target_group_counts_v1(rows, target);
     let mut lines = Vec::new();
     lines.push(format!(
         "CoverageGapMilestoneSummaryV1 target={} total={} reached={} not_reached={}",
@@ -110,6 +112,12 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_v1(
         rows.len(),
         reached,
         rows.len().saturating_sub(reached)
+    ));
+    lines.push(format!(
+        "Target groups: total={} reached={} not_reached={}",
+        target_groups,
+        reached_target_groups,
+        target_groups.saturating_sub(reached_target_groups)
     ));
     if rows.is_empty() {
         return lines.join("\n");
@@ -343,6 +351,7 @@ fn collect_branch_rows_v1(
         };
         rows.push(row_from_parts_v1(
             bucket,
+            target_key_from_origin_v1(origin),
             &origin.event_type,
             &origin.label,
             &origin.command,
@@ -371,6 +380,7 @@ fn collect_discarded_rows_v1(
         };
         rows.push(row_from_parts_v1(
             "discarded",
+            target_key_from_origin_v1(origin),
             &origin.event_type,
             &origin.label,
             &origin.command,
@@ -387,6 +397,7 @@ fn collect_discarded_rows_v1(
 
 fn row_from_parts_v1(
     bucket: &str,
+    target_key: String,
     event_type: &str,
     label: &str,
     command: &str,
@@ -400,6 +411,7 @@ fn row_from_parts_v1(
 ) -> CoverageGapMilestoneBranchRowV1 {
     CoverageGapMilestoneBranchRowV1 {
         bucket: bucket.to_string(),
+        target_key,
         event_type: event_type.to_string(),
         label: label.to_string(),
         command: command.to_string(),
@@ -415,6 +427,19 @@ fn row_from_parts_v1(
         stop_reason: stop_reason.to_string(),
         choice_labels: choice_labels.to_vec(),
     }
+}
+
+fn target_key_from_origin_v1(
+    origin: &sts_simulator::eval::branch_campaign::BranchCampaignContinuationOriginV1,
+) -> String {
+    format!(
+        "{}|{}|{}|{}|{}",
+        origin.event_type,
+        origin.decision_id,
+        origin.candidate_id,
+        origin.candidate_index,
+        origin.command
+    )
 }
 
 fn render_origin_target_lane_v1(
@@ -569,6 +594,22 @@ fn target_progress_counts_v1<'a>(
     counts
 }
 
+fn target_group_counts_v1(
+    rows: &[CoverageGapMilestoneBranchRowV1],
+    target: CoverageGapMilestoneTargetV1,
+) -> (usize, usize) {
+    let mut groups = BTreeMap::<&str, bool>::new();
+    for row in rows {
+        let reached = target.is_reached_by(row);
+        groups
+            .entry(row.target_key.as_str())
+            .and_modify(|existing| *existing |= reached)
+            .or_insert(reached);
+    }
+    let reached = groups.values().filter(|is_reached| **is_reached).count();
+    (groups.len(), reached)
+}
+
 fn target_origin_source_counts_v1<'a>(
     rows: impl Iterator<Item = &'a CoverageGapMilestoneBranchRowV1>,
 ) -> BTreeMap<&'a str, usize> {
@@ -643,6 +684,7 @@ mod tests {
     ) -> CoverageGapMilestoneBranchRowV1 {
         CoverageGapMilestoneBranchRowV1 {
             bucket: bucket.to_string(),
+            target_key: format!("{event_type}:{label}"),
             event_type: event_type.to_string(),
             label: label.to_string(),
             command: format!("choose {label}"),
@@ -680,6 +722,23 @@ mod tests {
         assert!(text.contains("route total=1 reached=0 active=0 frozen=1"));
         assert!(text.contains("Reached target examples:"));
         assert!(text.contains("A2F19 HP 80/80 deck 12 | active | boss_relic | RunicPyramid"));
+    }
+
+    #[test]
+    fn milestone_summary_reports_target_groups_separately_from_branch_rows() {
+        let mut reached_a = row("active", "boss_relic", 2, 18, "RunicPyramid");
+        reached_a.target_key = "boss_relic:runic_pyramid".to_string();
+        let mut reached_b = row("active", "boss_relic", 2, 18, "RunicPyramid");
+        reached_b.target_key = "boss_relic:runic_pyramid".to_string();
+        let unreached = row("frozen", "reward", 1, 8, "True Grit");
+
+        let text = render_coverage_gap_milestone_summary_from_rows_v1(
+            &[reached_a, reached_b, unreached],
+            CoverageGapMilestoneTargetV1::Act2Start,
+        );
+
+        assert!(text.contains("CoverageGapMilestoneSummaryV1 target=Act2Start total=3 reached=2"));
+        assert!(text.contains("Target groups: total=2 reached=1 not_reached=1"));
     }
 
     #[test]
