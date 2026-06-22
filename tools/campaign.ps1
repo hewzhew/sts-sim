@@ -513,8 +513,14 @@ if ($InspectShopChallenge -and -not $PSBoundParameters.ContainsKey("InspectBound
 if (($PlanTargets -or $ContinueTargets) -and ($PlanCoverageGaps -or $ContinueCoverageGaps)) {
     throw "Choose either targeted continuation (-PlanTargets/-ContinueTargets) or coverage-gap continuation (-PlanCoverageGaps/-ContinueCoverageGaps), not both."
 }
-if ($Scratch -and -not $ContinueCoverageGaps) {
-    throw "-Scratch currently supports -ContinueCoverageGaps only."
+if (
+    $Scratch -and
+    -not (
+        $ContinueCoverageGaps -or
+        ((-not $More) -and (-not $Inspect) -and (-not $PlanTargets) -and (-not $ContinueTargets) -and (-not $PlanCoverageGaps))
+    )
+) {
+    throw "-Scratch currently supports normal campaign runs and -ContinueCoverageGaps only."
 }
 
 if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps) {
@@ -633,7 +639,7 @@ $ScratchCommandPath = $LatestCommandPath
 $ScratchManifestPath = $LatestManifestPath
 if ($Scratch) {
     $ScratchStamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $BaseLabel = if ($RunLabel) { $RunLabel } else { "coverage-gap-seed$Seed" }
+    $BaseLabel = if ($RunLabel) { $RunLabel } elseif ($PlanCoverageGaps -or $ContinueCoverageGaps) { "coverage-gap-seed$Seed" } else { "campaign-seed$Seed" }
     $ScratchLabel = "$(Convert-ToCampaignArtifactSlug $BaseLabel)-$ScratchStamp"
     New-Item -ItemType Directory -Force -Path $ScratchCampaignDir | Out-Null
     $ScratchCampaignPath = Join-Path $ScratchCampaignDir "$ScratchLabel.campaign.json"
@@ -795,7 +801,7 @@ if ($More) {
     }
 }
 
-$DriverArgs += @("--out", "$LatestCampaignPath", "--checkpoint-out", "$LatestCheckpointPath")
+$DriverArgs += @("--out", "$RunOutputCampaignPath", "--checkpoint-out", "$RunOutputCheckpointPath")
 
 function Add-DriverArgIfBound {
     param(
@@ -1814,8 +1820,9 @@ if ($BossRelicAxes) {
 Write-Host "rerun-last=.\tools\campaign.ps1 -Last"
 Write-Host "run-more=.\tools\campaign.ps1 -More"
 Write-Host "run-one-more=.\tools\campaign.ps1 -More -Rounds 1"
-Write-Host "report=$LatestCampaignPath"
-Write-Host "checkpoint=$LatestCheckpointPath"
+Write-Host "report=$RunOutputCampaignPath"
+Write-Host "checkpoint=$RunOutputCheckpointPath"
+Write-Host "manifest=$RunManifestPath"
 Write-Host "combat-segment=$CombatSegmentMode"
 if ($ResumeCampaignPath) {
     Write-Host "resume=$ResumeCampaignPath"
@@ -1865,6 +1872,60 @@ if ($DryRun) {
     exit 0
 }
 
+function New-CampaignRunWrapperManifest {
+    param(
+        [int] $ExitCode,
+        [string] $Stage
+    )
+
+    $Manifest = [ordered]@{
+        schema_name = "CampaignWrapperManifestV1"
+        schema_version = 1
+        created_at = (Get-Date).ToString("o")
+        stage = $Stage
+        exit_code = $ExitCode
+        wrapper_script = $PSCommandPath
+        command_kind = "campaign_run"
+        mode = $Mode
+        seed = $Seed
+        ascension = $Ascension
+        class = $Class
+        build_profile = $BuildProfile
+        driver_exe = "$DriverExe"
+        scratch = [bool] $Scratch
+        scratch_label = $ScratchLabel
+        resume_report = if ($ResumeCampaignPath) { "$ResumeCampaignPath" } else { "" }
+        resume_checkpoint = if ($ResumeCheckpointPath) { "$ResumeCheckpointPath" } else { "" }
+        output_report = "$RunOutputCampaignPath"
+        output_checkpoint = "$RunOutputCheckpointPath"
+        command_file = "$RunCommandPath"
+        manifest_file = "$RunManifestPath"
+        round_budget = [ordered]@{
+            source = $RoundBudgetSource
+            target_rounds = $TargetRounds
+            additional_rounds = $MaxRounds
+        }
+        primary_driver = [ordered]@{
+            args = @($DriverArgs)
+            command = $RenderedCommand
+        }
+    }
+
+    if ($UntilMilestoneBound) {
+        $MilestoneResumeArgs = New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds
+        $Manifest["milestone"] = [ordered]@{
+            target = $UntilMilestone
+            stop = $ResolvedMilestoneStop
+            step_rounds = $MilestoneStepRounds
+            max_additional_rounds = $MilestoneMaxRounds
+            resume_driver_args_template = @($MilestoneResumeArgs)
+            resume_driver_command_template = (Format-CommandLine -ExePath $DriverExe -Arguments $MilestoneResumeArgs)
+        }
+    }
+
+    return $Manifest
+}
+
 Push-Location $RepoRoot
 try {
     if ($NeedsBuild) {
@@ -1876,15 +1937,28 @@ try {
     & $DriverExe @DriverArgs
     $DriverExitCode = $LASTEXITCODE
     if ($DriverExitCode -eq 0) {
-        Set-Content -LiteralPath $LatestSeedPath -Value $Seed
-        Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
-        Set-Content -LiteralPath $LatestClassPath -Value $Class
-        Set-Content -LiteralPath $LatestModePath -Value $Mode
-        Set-Content -LiteralPath $LatestCommandPath -Value $RenderedCommand
+        if ($Scratch) {
+            Set-Content -LiteralPath $RunCommandPath -Value $RenderedCommand
+            Write-Host "scratch-command=$RunCommandPath"
+            Write-Host "scratch-manifest=$RunManifestPath"
+        } else {
+            Set-Content -LiteralPath $LatestSeedPath -Value $Seed
+            Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
+            Set-Content -LiteralPath $LatestClassPath -Value $Class
+            Set-Content -LiteralPath $LatestModePath -Value $Mode
+            Set-Content -LiteralPath $LatestCommandPath -Value $RenderedCommand
+        }
+        Write-CampaignWrapperManifest `
+            -Path $RunManifestPath `
+            -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed")
         if ($UntilMilestoneBound) {
             Invoke-CampaignUntilMilestone -AlreadySpentRounds $MaxRounds
             $DriverExitCode = $script:CampaignMilestoneExitCode
         }
+        $ManifestStage = if ($UntilMilestoneBound) { "completed_with_milestone_loop" } else { "completed" }
+        Write-CampaignWrapperManifest `
+            -Path $RunManifestPath `
+            -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage $ManifestStage)
     }
     exit $DriverExitCode
 } finally {
