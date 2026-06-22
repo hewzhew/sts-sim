@@ -13,9 +13,9 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 465 lines
+- `tools/campaign.ps1`: 488 lines
 - `tools/campaign_artifacts.ps1`: 520 lines
-- `tools/campaign_invocation.ps1`: 453 lines
+- `tools/campaign_invocation.ps1`: 454 lines
 - `tools/campaign_coverage_gaps.ps1`: 391 lines
 - `tools/campaign_preflight.ps1`: 191 lines
 - `tools/campaign_continuation.ps1`: 239 lines
@@ -181,7 +181,7 @@ This helper owns:
 - shared driver option context is passed explicitly to campaign, targeted,
   coverage-gap, and milestone driver command builders
 - continuation round-budget argument rendering
-- normal campaign run command execution
+- normal campaign run command execution through an explicit run context
 - manifest writing
 - primary driver command-file recording
 - logged driver invocation

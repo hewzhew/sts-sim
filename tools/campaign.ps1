@@ -509,5 +509,28 @@ if ($Inspect) {
 
 $RenderedCommand = Format-CommandLine -ExePath $DriverExe -Arguments $DriverArgs
 Write-CampaignRunPreflight
-$DriverExitCode = Invoke-CampaignRunCommand -DryRun ([bool] $DryRun) -RunIdentityArgs $CampaignRunIdentityArgs -OptionContext $CampaignSharedDriverOptionContext
+$RunCommandContext = [pscustomobject]@{
+    ContinueCampaign = [bool] $ContinueCampaign
+    TargetRounds = $TargetRounds
+    MaxRounds = $MaxRounds
+    UntilMilestoneBound = $UntilMilestoneBound
+    ResumeCampaignPath = $ResumeCampaignPath
+    ResumeCheckpointPath = $ResumeCheckpointPath
+    UntilMilestone = $UntilMilestone
+    MilestoneStepRounds = $MilestoneStepRounds
+    MilestoneMaxRounds = $MilestoneMaxRounds
+    ResolvedMilestoneStop = $ResolvedMilestoneStop
+    NeedsBuild = [bool] $NeedsBuild
+    BuildArgs = @($BuildArgs)
+    DryRun = [bool] $DryRun
+    RepoRoot = $RepoRoot
+    DriverExe = $DriverExe
+    DriverArgs = @($DriverArgs)
+    RenderedCommand = $RenderedCommand
+    Log = [bool] $Log
+    RunLogPath = $RunLogPath
+    RunManifestPath = $RunManifestPath
+    RoundBudgetSource = $RoundBudgetSource
+}
+$DriverExitCode = Invoke-CampaignRunCommand -Context $RunCommandContext -RunIdentityArgs $CampaignRunIdentityArgs -OptionContext $CampaignSharedDriverOptionContext
 exit $DriverExitCode
