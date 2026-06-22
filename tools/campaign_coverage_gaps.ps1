@@ -161,6 +161,53 @@ function Resolve-CoverageGapFilterContext {
     }
 }
 
+function Resolve-CoverageGapExecutionContext {
+    param(
+        [string] $Execution,
+        [bool] $UntilMilestoneBound,
+        [bool] $ContinueCoverageGaps,
+        [bool] $HasExplicitRoundBudget,
+        [string] $Intent,
+        [int] $ContinuationRounds
+    )
+
+    if ($Execution -eq "milestone" -and -not $UntilMilestoneBound) {
+        throw "-CoverageGapExecution milestone requires -UntilMilestone."
+    }
+
+    $DriverExecution = $Execution
+    $Label = $Execution
+    if ($Execution -eq "auto") {
+        if ($UntilMilestoneBound -and $ContinueCoverageGaps) {
+            $Label = "milestone_continuation"
+            $DriverExecution = "target_only"
+        } elseif ($HasExplicitRoundBudget) {
+            $Label = "advance_rounds"
+            $DriverExecution = "advance_rounds"
+        } elseif ($Intent -eq "gap_closure") {
+            $Label = "target_only"
+            $DriverExecution = "target_only"
+        } else {
+            $Label = "advance_rounds"
+            $DriverExecution = "advance_rounds"
+        }
+    } elseif ($Execution -eq "milestone") {
+        $Label = "milestone_continuation"
+        $DriverExecution = "target_only"
+    }
+
+    $InitialSpentRounds = $ContinuationRounds
+    if ($DriverExecution -eq "target_only") {
+        $InitialSpentRounds = 0
+    }
+
+    return [pscustomobject]@{
+        Label = $Label
+        DriverExecution = $DriverExecution
+        InitialSpentRounds = $InitialSpentRounds
+    }
+}
+
 function New-CoverageGapPlanDriverArgs {
     param(
         [string] $SourceCampaignPath,

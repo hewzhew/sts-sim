@@ -190,6 +190,7 @@ This helper owns:
 
 - coverage-gap preset compatibility checks
 - coverage-gap preset normalization into filter context
+- coverage-gap execution-mode normalization
 - coverage-gap filter argument rendering
 - coverage-gap plan/continue driver argument rendering
 - coverage-gap milestone summary commands

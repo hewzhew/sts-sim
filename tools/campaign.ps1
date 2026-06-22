@@ -561,34 +561,16 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         $TargetRounds = $ResumeRoundsCompleted + $MaxRounds
         $ContinuationRoundBudgetArgs = @("--max-rounds", "$ContinuationRounds")
     }
-    if ($CoverageGapExecution -eq "milestone" -and -not $UntilMilestoneBound) {
-        throw "-CoverageGapExecution milestone requires -UntilMilestone."
-    }
-    $CoverageGapDriverExecution = $CoverageGapExecution
-    $CoverageGapExecutionLabel = $CoverageGapExecution
-    if ($CoverageGapExecution -eq "auto") {
-        $HasExplicitRoundBudget = $RoundsBound -or $UntilRoundBound -or $MaxRoundsBound
-        if ($UntilMilestoneBound -and $ContinueCoverageGaps) {
-            $CoverageGapExecutionLabel = "milestone_continuation"
-            $CoverageGapDriverExecution = "target_only"
-        } elseif ($HasExplicitRoundBudget) {
-            $CoverageGapExecutionLabel = "advance_rounds"
-            $CoverageGapDriverExecution = "advance_rounds"
-        } elseif ($CoverageGapIntent -eq "gap_closure") {
-            $CoverageGapExecutionLabel = "target_only"
-            $CoverageGapDriverExecution = "target_only"
-        } else {
-            $CoverageGapExecutionLabel = "advance_rounds"
-            $CoverageGapDriverExecution = "advance_rounds"
-        }
-    } elseif ($CoverageGapExecution -eq "milestone") {
-        $CoverageGapExecutionLabel = "milestone_continuation"
-        $CoverageGapDriverExecution = "target_only"
-    }
-    $CoverageGapInitialSpentRounds = $ContinuationRounds
-    if ($CoverageGapDriverExecution -eq "target_only") {
-        $CoverageGapInitialSpentRounds = 0
-    }
+    $CoverageGapExecutionContext = Resolve-CoverageGapExecutionContext `
+        -Execution $CoverageGapExecution `
+        -UntilMilestoneBound $UntilMilestoneBound `
+        -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
+        -HasExplicitRoundBudget ($RoundsBound -or $UntilRoundBound -or $MaxRoundsBound) `
+        -Intent $CoverageGapIntent `
+        -ContinuationRounds $ContinuationRounds
+    $CoverageGapExecutionLabel = $CoverageGapExecutionContext.Label
+    $CoverageGapDriverExecution = $CoverageGapExecutionContext.DriverExecution
+    $CoverageGapInitialSpentRounds = $CoverageGapExecutionContext.InitialSpentRounds
 
     $ContinueTargetArgs = New-TargetedContinuationContinueDriverArgs `
         -SourceCampaignPath $SourceCampaignPath `
