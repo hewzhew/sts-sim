@@ -1,3 +1,16 @@
+$LatestSeedPath = Join-Path $CampaignDir "latest.seed.txt"
+$LatestAscensionPath = Join-Path $CampaignDir "latest.ascension.txt"
+$LatestClassPath = Join-Path $CampaignDir "latest.class.txt"
+$LatestModePath = Join-Path $CampaignDir "latest.mode.txt"
+$LatestCommandPath = Join-Path $CampaignDir "latest.command.txt"
+$LatestManifestPath = Join-Path $CampaignDir "latest.manifest.json"
+$LatestLogPath = Join-Path $CampaignDir "latest.log"
+$LatestCampaignPath = Join-Path $CampaignDir "latest.campaign.json"
+$LatestCheckpointPath = Join-Path $CampaignDir "latest.checkpoint.json"
+$LatestDecisionOutcomePath = Join-Path $CampaignDir "latest.decision_outcomes.jsonl"
+$LatestDecisionOutcomeBeforePath = Join-Path $CampaignDir "latest.decision_outcomes.before.jsonl"
+$LatestDecisionOutcomeAfterPath = Join-Path $CampaignDir "latest.decision_outcomes.after.jsonl"
+
 function Convert-ToCampaignArtifactSlug {
     param(
         [string] $Value

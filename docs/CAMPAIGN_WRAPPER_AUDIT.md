@@ -148,6 +148,7 @@ tools/campaign_artifacts.ps1
 This helper owns:
 
 - latest/scratch artifact refs
+- legacy latest sidecar path compatibility
 - run source artifact selection
 - artifact size and shape summaries
 - latest campaign mode/config reads
