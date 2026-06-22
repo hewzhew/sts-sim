@@ -162,6 +162,7 @@ This helper owns:
 
 - wrapper parameter value normalization for manifests
 - command-line rendering
+- shared campaign driver option rendering
 - manifest writing
 - primary driver command-file recording
 - logged driver invocation
@@ -210,6 +211,8 @@ These pieces are useful but should not live in the main script long term:
 
 - coverage-gap continuation command assembly; the helper now owns filters and
   manifests, but the main wrapper still assembles the long driver argument list
+- targeted continuation command assembly; this older path still expands several
+  dataset/continuation commands inline
 
 ## Candidates To Delete Or Degrade
 
@@ -248,8 +251,8 @@ If the answer is no, do not add it to `tools/campaign.ps1`.
 ## Next Cleanup Order
 
 1. Continue shrinking coverage-gap command assembly into a typed helper input.
-2. Extract common campaign driver option rendering shared by normal runs,
-   targeted continuation, coverage-gap continuation, and milestone resumes.
-3. Reassess whether targeted continuation still earns its wrapper surface.
+2. Reassess whether targeted continuation still earns its wrapper surface.
+3. Move build freshness detection out of the main wrapper if the wrapper remains
+   too large after continuation cleanup.
 
 This sequence reduces cognitive load without changing campaign strategy.

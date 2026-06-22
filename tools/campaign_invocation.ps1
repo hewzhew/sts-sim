@@ -48,6 +48,69 @@ function Test-ExtraCombatOptionKey {
     return $false
 }
 
+function Add-CampaignSharedDriverOptions {
+    param(
+        [string[]] $Arguments,
+        [bool] $IncludeActiveLineageDiversity = $false,
+        [bool] $IncludeBossRelicAxes = $false,
+        [bool] $IncludeAutoCaptureCombat = $true
+    )
+
+    $Args = @($Arguments)
+    if ($CampaignBoundParameters.ContainsKey("ExperimentWallMs")) {
+        $Args += @("--experiment-wall-ms", "$ExperimentWallMs")
+    }
+    if ($CampaignBoundParameters.ContainsKey("SearchWallMs")) {
+        $Args += @("--search-wall-ms", "$SearchWallMs")
+    }
+    if ($CampaignBoundParameters.ContainsKey("SearchMaxNodes")) {
+        $Args += @("--search-max-nodes", "$SearchMaxNodes")
+    }
+    if ($IncludeActiveLineageDiversity -and $CampaignBoundParameters.ContainsKey("ActiveLineageDiversity") -and $ActiveLineageDiversity -ge 0) {
+        $Args += @("--active-lineage-diversity", "$ActiveLineageDiversity")
+    }
+    if ($IncludeBossRelicAxes -and $BossRelicAxes) {
+        $Args += "--boss-relic-axes"
+    }
+    if ($CampaignBoundParameters.ContainsKey("CombatRetryWallMs") -and $CombatRetryWallMs -gt 0) {
+        $Args += @("--combat-retry-wall-ms", "$CombatRetryWallMs")
+    }
+    if ($CampaignBoundParameters.ContainsKey("BranchExamples")) {
+        $Args += @("--branch-examples", "$BranchExamples")
+    }
+    if ($CampaignBoundParameters.ContainsKey("VictoryHpPercent")) {
+        $Args += @("--min-acceptable-victory-hp-percent", "$VictoryHpPercent")
+    }
+    if ($IncludeAutoCaptureCombat -and $AutoCaptureCombat) {
+        $Args += "--auto-capture-combat"
+        if ($AutoCaptureRoot) {
+            $Args += @("--auto-capture-root", "$AutoCaptureRoot")
+        }
+    }
+    if (-not (Test-ExtraCombatOptionKey -Tokens $ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
+        if ($BossSegments) {
+            $Args += @("--combat-search-option", "segment=turn")
+        } else {
+            $Args += @("--combat-search-option", "segment=non_boss_turn")
+        }
+    }
+    if (-not $NoProgress) {
+        $Args += "--progress"
+        if ($VerboseProgress) {
+            $Args += @("--progress-detail", "verbose")
+        }
+    }
+    if ($Perf) {
+        $Args += @("--report-detail", "perf")
+    } elseif ($Diagnose) {
+        $Args += @("--report-detail", "diagnose")
+    }
+    if ($ExtraArgs) {
+        $Args += $ExtraArgs
+    }
+    return $Args
+}
+
 function Write-CampaignWrapperManifest {
     param(
         [string] $Path,

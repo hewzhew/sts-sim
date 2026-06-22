@@ -733,40 +733,8 @@ if ($ContinueCampaign) {
 
 $DriverArgs += @("--out", "$RunOutputCampaignPath", "--checkpoint-out", "$RunOutputCheckpointPath")
 
-function Add-DriverArgIfBound {
-    param(
-        [string] $ParameterName,
-        [string] $Flag,
-        [object] $Value
-    )
-
-    if ($CampaignBoundParameters.ContainsKey($ParameterName)) {
-        $script:DriverArgs += @($Flag, "$Value")
-    }
-}
-
 if ($DriverRoundBudgetArgs.Count -gt 0) {
     $DriverArgs += $DriverRoundBudgetArgs
-}
-Add-DriverArgIfBound "ExperimentWallMs" "--experiment-wall-ms" $ExperimentWallMs
-Add-DriverArgIfBound "SearchWallMs" "--search-wall-ms" $SearchWallMs
-Add-DriverArgIfBound "SearchMaxNodes" "--search-max-nodes" $SearchMaxNodes
-if ($CampaignBoundParameters.ContainsKey("ActiveLineageDiversity") -and $ActiveLineageDiversity -ge 0) {
-    $DriverArgs += @("--active-lineage-diversity", "$ActiveLineageDiversity")
-}
-if ($BossRelicAxes) {
-    $DriverArgs += "--boss-relic-axes"
-}
-if ($CampaignBoundParameters.ContainsKey("CombatRetryWallMs") -and $CombatRetryWallMs -gt 0) {
-    $DriverArgs += @("--combat-retry-wall-ms", "$CombatRetryWallMs")
-}
-Add-DriverArgIfBound "BranchExamples" "--branch-examples" $BranchExamples
-Add-DriverArgIfBound "VictoryHpPercent" "--min-acceptable-victory-hp-percent" $VictoryHpPercent
-if ($AutoCaptureCombat) {
-    $DriverArgs += "--auto-capture-combat"
-    if ($AutoCaptureRoot) {
-        $DriverArgs += @("--auto-capture-root", "$AutoCaptureRoot")
-    }
 }
 
 if ($BossSegments -and $NoBossSegments) {
@@ -776,34 +744,20 @@ if ($BossSegments -and $NoBossSegments) {
 $CombatSegmentMode = "custom"
 if (-not (Test-ExtraCombatOptionKey -Tokens $ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
     if ($BossSegments) {
-        $DriverArgs += @("--combat-search-option", "segment=turn")
         $CombatSegmentMode = "turn"
     } else {
-        $DriverArgs += @("--combat-search-option", "segment=non_boss_turn")
         $CombatSegmentMode = "non_boss_turn"
     }
-}
-
-if (-not $NoProgress) {
-    $DriverArgs += "--progress"
-    if ($VerboseProgress) {
-        $DriverArgs += @("--progress-detail", "verbose")
-    }
-}
-
-if ($Perf) {
-    $DriverArgs += @("--report-detail", "perf")
-} elseif ($Diagnose) {
-    $DriverArgs += @("--report-detail", "diagnose")
 }
 
 if ($ExportLearningDataset -and -not $Inspect) {
     $DriverArgs += @("--export-learning-dataset", "$ExportLearningDataset")
 }
-
-if ($ExtraArgs) {
-    $DriverArgs += $ExtraArgs
-}
+$DriverArgs = Add-CampaignSharedDriverOptions `
+    -Arguments $DriverArgs `
+    -IncludeActiveLineageDiversity $true `
+    -IncludeBossRelicAxes $true `
+    -IncludeAutoCaptureCombat $true
 
 function Test-DriverNeedsBuild {
     param(
@@ -997,66 +951,16 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     )
     $ContinueCoverageGapArgs += $CoverageGapFilterArgs
     $ContinueCoverageGapArgs += $ContinuationRoundBudgetArgs
-    if ($CampaignBoundParameters.ContainsKey("ExperimentWallMs")) {
-        $ContinueTargetArgs += @("--experiment-wall-ms", "$ExperimentWallMs")
-        $ContinueCoverageGapArgs += @("--experiment-wall-ms", "$ExperimentWallMs")
-    }
-    if ($CampaignBoundParameters.ContainsKey("SearchWallMs")) {
-        $ContinueTargetArgs += @("--search-wall-ms", "$SearchWallMs")
-        $ContinueCoverageGapArgs += @("--search-wall-ms", "$SearchWallMs")
-    }
-    if ($CampaignBoundParameters.ContainsKey("SearchMaxNodes")) {
-        $ContinueTargetArgs += @("--search-max-nodes", "$SearchMaxNodes")
-        $ContinueCoverageGapArgs += @("--search-max-nodes", "$SearchMaxNodes")
-    }
-    if ($CampaignBoundParameters.ContainsKey("CombatRetryWallMs") -and $CombatRetryWallMs -gt 0) {
-        $ContinueTargetArgs += @("--combat-retry-wall-ms", "$CombatRetryWallMs")
-        $ContinueCoverageGapArgs += @("--combat-retry-wall-ms", "$CombatRetryWallMs")
-    }
-    if ($CampaignBoundParameters.ContainsKey("BranchExamples")) {
-        $ContinueTargetArgs += @("--branch-examples", "$BranchExamples")
-        $ContinueCoverageGapArgs += @("--branch-examples", "$BranchExamples")
-    }
-    if ($CampaignBoundParameters.ContainsKey("VictoryHpPercent")) {
-        $ContinueTargetArgs += @("--min-acceptable-victory-hp-percent", "$VictoryHpPercent")
-        $ContinueCoverageGapArgs += @("--min-acceptable-victory-hp-percent", "$VictoryHpPercent")
-    }
-    if (-not (Test-ExtraCombatOptionKey -Tokens $ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
-        if ($BossSegments) {
-            $ContinueTargetArgs += @("--combat-search-option", "segment=turn")
-            $ContinueCoverageGapArgs += @("--combat-search-option", "segment=turn")
-        } else {
-            $ContinueTargetArgs += @("--combat-search-option", "segment=non_boss_turn")
-            $ContinueCoverageGapArgs += @("--combat-search-option", "segment=non_boss_turn")
-        }
-    }
-    if (-not $NoProgress) {
-        $ContinueTargetArgs += "--progress"
-        $ContinueCoverageGapArgs += "--progress"
-        if ($VerboseProgress) {
-            $ContinueTargetArgs += @("--progress-detail", "verbose")
-            $ContinueCoverageGapArgs += @("--progress-detail", "verbose")
-        }
-    }
-    if ($Perf) {
-        $ContinueTargetArgs += @("--report-detail", "perf")
-        $ContinueCoverageGapArgs += @("--report-detail", "perf")
-    } elseif ($Diagnose) {
-        $ContinueTargetArgs += @("--report-detail", "diagnose")
-        $ContinueCoverageGapArgs += @("--report-detail", "diagnose")
-    }
-    if ($AutoCaptureCombat) {
-        $ContinueTargetArgs += "--auto-capture-combat"
-        $ContinueCoverageGapArgs += "--auto-capture-combat"
-        if ($AutoCaptureRoot) {
-            $ContinueTargetArgs += @("--auto-capture-root", "$AutoCaptureRoot")
-            $ContinueCoverageGapArgs += @("--auto-capture-root", "$AutoCaptureRoot")
-        }
-    }
-    if ($ExtraArgs) {
-        $ContinueTargetArgs += $ExtraArgs
-        $ContinueCoverageGapArgs += $ExtraArgs
-    }
+    $ContinueTargetArgs = Add-CampaignSharedDriverOptions `
+        -Arguments $ContinueTargetArgs `
+        -IncludeActiveLineageDiversity $false `
+        -IncludeBossRelicAxes $false `
+        -IncludeAutoCaptureCombat $true
+    $ContinueCoverageGapArgs = Add-CampaignSharedDriverOptions `
+        -Arguments $ContinueCoverageGapArgs `
+        -IncludeActiveLineageDiversity $false `
+        -IncludeBossRelicAxes $false `
+        -IncludeAutoCaptureCombat $true
 
     $ContinuationModeLabel = if ($PlanCoverageGaps -or $ContinueCoverageGaps) { "coverage-gap-continuation" } else { "targeted-continuation" }
     Write-Host "mode=$ContinuationModeLabel branch campaign"
