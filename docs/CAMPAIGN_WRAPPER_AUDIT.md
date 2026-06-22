@@ -13,9 +13,9 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 661 lines
+- `tools/campaign.ps1`: 658 lines
 - `tools/campaign_artifacts.ps1`: 520 lines
-- `tools/campaign_invocation.ps1`: 391 lines
+- `tools/campaign_invocation.ps1`: 416 lines
 - `tools/campaign_coverage_gaps.ps1`: 390 lines
 - `tools/campaign_inspect.ps1`: 184 lines
 - `tools/campaign_targets.ps1`: 147 lines
@@ -170,6 +170,7 @@ tools/campaign_invocation.ps1
 This helper owns:
 
 - wrapper parameter value normalization for manifests
+- wrapper bound-parameter context extraction
 - command-line rendering
 - shared campaign driver option rendering
 - continuation round-budget argument rendering

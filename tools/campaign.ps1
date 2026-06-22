@@ -299,21 +299,17 @@ $RunManifestPath = $RunOutputContext.ManifestPath
 $RunLogPath = $RunOutputContext.LogPath
 Ensure-CampaignOutputArtifactDirectory -OutputContext $RunOutputContext -DryRun ([bool] $DryRun)
 
-$CampaignBoundParameters = @{}
-foreach ($ParameterName in $PSBoundParameters.Keys) {
-    $CampaignBoundParameters[$ParameterName] = $true
-}
-$CampaignWrapperInvocationLine = if ($MyInvocation.Line) { $MyInvocation.Line.Trim() } else { "" }
-$CampaignWrapperBoundParameters = [ordered]@{}
-foreach ($ParameterName in ($PSBoundParameters.Keys | Sort-Object)) {
-    $CampaignWrapperBoundParameters[$ParameterName] =
-        Convert-CampaignWrapperParameterValue -Value $PSBoundParameters[$ParameterName]
-}
-
-$RoundsBound = $CampaignBoundParameters.ContainsKey("Rounds")
-$UntilRoundBound = $CampaignBoundParameters.ContainsKey("UntilRound")
-$UntilMilestoneBound = $CampaignBoundParameters.ContainsKey("UntilMilestone") -and $UntilMilestone
-$MaxRoundsBound = $CampaignBoundParameters.ContainsKey("MaxRounds")
+$BoundParameterContext = Resolve-CampaignBoundParameterContext `
+    -BoundParameters $PSBoundParameters `
+    -InvocationLine $MyInvocation.Line `
+    -UntilMilestone $UntilMilestone
+$CampaignBoundParameters = $BoundParameterContext.CampaignBoundParameters
+$CampaignWrapperInvocationLine = $BoundParameterContext.WrapperInvocationLine
+$CampaignWrapperBoundParameters = $BoundParameterContext.WrapperBoundParameters
+$RoundsBound = $BoundParameterContext.RoundsBound
+$UntilRoundBound = $BoundParameterContext.UntilRoundBound
+$UntilMilestoneBound = $BoundParameterContext.UntilMilestoneBound
+$MaxRoundsBound = $BoundParameterContext.MaxRoundsBound
 $CoverageGapFilterContext = Resolve-CoverageGapFilterContext `
     -Route ([bool] $CoverageGapRoute) `
     -RouteMissing ([bool] $CoverageGapRouteMissing) `
