@@ -6337,6 +6337,7 @@ mod tests {
         let report = sample_campaign_report_with_branches(vec![branch]);
 
         let plan = plan_coverage_gap_continuations_v1(&report, &[], 4, 2);
+        let rendered = render_coverage_gap_continuation_plan_v1(&plan);
 
         assert_eq!(plan.selected_target_count, 2);
         assert!(plan.targets.iter().any(|target| {
@@ -6348,6 +6349,8 @@ mod tests {
                 && target.milestone == "event_resolution_frontier"
                 && target.semantic_class.contains("effect:event_card_reward")
         }));
+        assert!(rendered.contains("reason_category=event_boundary"));
+        assert!(rendered.contains("reason_code=current_event_boundary_candidate"));
     }
 
     #[test]

@@ -459,6 +459,7 @@ pub enum CampaignJournalCandidateAdmissionReasonCategoryV1 {
     LegacyDisposition,
     RetentionBucket,
     BranchAdmission,
+    EventBoundary,
 }
 
 impl Default for CampaignJournalCandidateAdmissionReasonCategoryV1 {
@@ -478,6 +479,7 @@ impl CampaignJournalCandidateAdmissionReasonCategoryV1 {
             Self::LegacyDisposition => "legacy_disposition",
             Self::RetentionBucket => "retention_bucket",
             Self::BranchAdmission => "branch_admission",
+            Self::EventBoundary => "event_boundary",
         }
     }
 }
@@ -488,6 +490,7 @@ pub enum CampaignJournalCandidateAdmissionReasonCodeV1 {
     Unknown,
     Admit,
     Blocked,
+    CurrentEventBoundaryCandidate,
     Deferred,
     Kept,
     Pruned,
@@ -512,6 +515,7 @@ impl CampaignJournalCandidateAdmissionReasonCodeV1 {
             Self::Unknown => "unknown",
             Self::Admit => "admit",
             Self::Blocked => "blocked",
+            Self::CurrentEventBoundaryCandidate => "current_event_boundary_candidate",
             Self::Deferred => "deferred",
             Self::Kept => "kept",
             Self::Pruned => "pruned",
@@ -754,6 +758,7 @@ fn admission_reason_category_from_source_v1(
             CampaignJournalCandidateAdmissionReasonCategoryV1::LegacyDisposition
         }
         "reward_portfolio" => CampaignJournalCandidateAdmissionReasonCategoryV1::RetentionBucket,
+        "event_boundary_packet" => CampaignJournalCandidateAdmissionReasonCategoryV1::EventBoundary,
         source if source.ends_with("_candidate_pool") => {
             CampaignJournalCandidateAdmissionReasonCategoryV1::BranchAdmission
         }
@@ -767,6 +772,9 @@ fn admission_reason_code_from_text_v1(
     match reason.to_ascii_lowercase().as_str() {
         "admit" => CampaignJournalCandidateAdmissionReasonCodeV1::Admit,
         "blocked" | "block" => CampaignJournalCandidateAdmissionReasonCodeV1::Blocked,
+        "current_event_boundary_candidate" => {
+            CampaignJournalCandidateAdmissionReasonCodeV1::CurrentEventBoundaryCandidate
+        }
         "deferred" | "defer" => CampaignJournalCandidateAdmissionReasonCodeV1::Deferred,
         "kept" | "keep" => CampaignJournalCandidateAdmissionReasonCodeV1::Kept,
         "pruned" | "prune" => CampaignJournalCandidateAdmissionReasonCodeV1::Pruned,
