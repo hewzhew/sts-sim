@@ -291,24 +291,17 @@ function Write-CampaignPrimaryDriverCommandRecord {
         [object] $Context
     )
 
-    if ($Context.OutputArtifact) {
-        Set-Content -LiteralPath $Context.RunCommandPath -Value $PrimaryDriverCommandLine
-        if ($Context.OutputArtifact.Kind -eq "run") {
-            Write-CampaignLatestPointer -Artifact $Context.OutputArtifact
-            Write-Host "latest-pointer=$(Get-CampaignLatestPointerPath)"
-        }
-        Write-Host "primary-driver-command=$($Context.RunCommandPath)"
-        Write-Host "manifest=$($Context.RunManifestPath)"
-        return
+    if (-not $Context.OutputArtifact) {
+        throw "Primary driver command recording requires an output artifact. Plan-only commands should not call this writer."
     }
 
-    # Legacy fallback for pre-artifact callers. New wrapper paths should set
-    # OutputArtifact and should not write sidecar state.
-    Set-Content -LiteralPath $Context.LatestSeedPath -Value $Context.Seed
-    Set-Content -LiteralPath $Context.LatestAscensionPath -Value $Context.Ascension
-    Set-Content -LiteralPath $Context.LatestClassPath -Value $Context.Class
-    Set-Content -LiteralPath $Context.LatestModePath -Value $Context.Mode
-    Set-Content -LiteralPath $Context.LatestCommandPath -Value $PrimaryDriverCommandLine
+    Set-Content -LiteralPath $Context.RunCommandPath -Value $PrimaryDriverCommandLine
+    if ($Context.OutputArtifact.Kind -eq "run") {
+        Write-CampaignLatestPointer -Artifact $Context.OutputArtifact
+        Write-Host "latest-pointer=$(Get-CampaignLatestPointerPath)"
+    }
+    Write-Host "primary-driver-command=$($Context.RunCommandPath)"
+    Write-Host "manifest=$($Context.RunManifestPath)"
 }
 
 function Invoke-CampaignLoggedDriverCommand {

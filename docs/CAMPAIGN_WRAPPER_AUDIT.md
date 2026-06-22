@@ -13,9 +13,9 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 581 lines
+- `tools/campaign.ps1`: 571 lines
 - `tools/campaign_artifacts.ps1`: 606 lines
-- `tools/campaign_invocation.ps1`: 496 lines
+- `tools/campaign_invocation.ps1`: 489 lines
 - `tools/campaign_coverage_gaps.ps1`: 428 lines
 - `tools/campaign_preflight.ps1`: 196 lines
 - `tools/campaign_continuation.ps1`: 316 lines
@@ -184,6 +184,8 @@ This helper owns:
 - normal campaign run command execution through an explicit run context
 - campaign run manifest writing through an explicit run context
 - primary driver command-file recording through an explicit run context
+- primary driver command-file recording now requires an output artifact; the old
+  `latest.seed.txt` / `latest.command.txt` sidecar write fallback is gone
 - logged driver invocation
 - common wrapper manifest fields
 
