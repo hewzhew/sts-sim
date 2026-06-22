@@ -2634,6 +2634,7 @@ pub fn render_coverage_gap_continuation_plan_summary_v1(
     );
     extend_coverage_gap_selected_target_lane_counts_v1(&mut lines, &plan.targets);
     extend_coverage_gap_selected_target_origin_counts_v1(&mut lines, &plan.targets);
+    extend_coverage_gap_selected_target_progress_counts_v1(&mut lines, &plan.targets);
     lines.join("\n")
 }
 
@@ -2713,6 +2714,7 @@ pub fn render_coverage_gap_execution_plan_v1(
     extend_coverage_gap_lane_summary_lines_v1(&mut lines, &execution.lane_summaries);
     extend_coverage_gap_selected_target_lane_counts_v1(&mut lines, &execution.targets);
     extend_coverage_gap_selected_target_origin_counts_v1(&mut lines, &execution.targets);
+    extend_coverage_gap_selected_target_progress_counts_v1(&mut lines, &execution.targets);
     if execution.targets.is_empty() {
         lines.push("Executed targets: none".to_string());
     } else {
@@ -2796,6 +2798,28 @@ fn extend_coverage_gap_selected_target_origin_counts_v1(
     lines.push("Selected target origins:".to_string());
     for (source, count) in counts {
         lines.push(format!("  {} selected={count}", source));
+    }
+}
+
+fn extend_coverage_gap_selected_target_progress_counts_v1(
+    lines: &mut Vec<String>,
+    targets: &[CoverageGapContinuationTargetV1],
+) {
+    if targets.is_empty() {
+        return;
+    }
+    let mut counts = BTreeMap::<String, usize>::new();
+    for target in targets {
+        let progress = target
+            .existing_progress
+            .map(CoverageGapContinuationTargetProgressV1::as_str)
+            .unwrap_or("missing")
+            .to_string();
+        *counts.entry(progress).or_default() += 1;
+    }
+    lines.push("Selected target progress:".to_string());
+    for (progress, count) in counts {
+        lines.push(format!("  {} selected={count}", progress));
     }
 }
 
@@ -5361,6 +5385,43 @@ mod tests {
         assert_eq!(labels, vec!["Monster A", "Shop", "Rest"]);
         assert!(render_coverage_gap_target_line_v1(0, &selected[0])
             .contains("lane=route:go:MonsterRoom:CompleteWithinBudget:no_first_elite"));
+    }
+
+    #[test]
+    fn coverage_gap_summary_counts_selected_target_progress() {
+        let mut target_only =
+            sample_reward_coverage_gap_target("rp 0", "Pommel Strike", "frontload", 0);
+        target_only.existing_progress = Some(CoverageGapContinuationTargetProgressV1::TargetOnly);
+        let missing = sample_reward_coverage_gap_target("rp 1", "Shrug It Off", "block", 1);
+        let plan = CoverageGapContinuationPlanV1 {
+            schema_name: COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_NAME.to_string(),
+            schema_version: COVERAGE_GAP_CONTINUATION_PLAN_SCHEMA_VERSION,
+            label_role: "campaign_observation_not_teacher".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            total_decisions: 1,
+            total_candidates: 2,
+            total_unobserved_candidates: 2,
+            kept_unobserved_candidates: 2,
+            pruned_unobserved_candidates: 0,
+            scheduled_unobserved_candidates: 2,
+            unscheduled_unobserved_candidates: 0,
+            selected_target_count: 2,
+            selected_kept_targets: 2,
+            selected_pruned_targets: 0,
+            selected_scheduled_targets: 2,
+            selected_unscheduled_targets: 0,
+            bucket_summaries: Vec::new(),
+            lane_summaries: Vec::new(),
+            target_progress_summaries: Vec::new(),
+            targets: vec![target_only, missing],
+        };
+
+        let rendered = render_coverage_gap_continuation_plan_summary_v1(&plan);
+
+        assert!(rendered.contains("Selected target progress:"));
+        assert!(rendered.contains("target_only selected=1"));
+        assert!(rendered.contains("missing selected=1"));
     }
 
     #[test]
