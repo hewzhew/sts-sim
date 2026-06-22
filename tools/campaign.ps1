@@ -537,30 +537,21 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
 
     $ResumeReport = Get-Content -LiteralPath $SourceCampaignPath -Raw | ConvertFrom-Json
     $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
-    $ContinuationRounds = 1
-    $ContinuationRoundBudgetArgs = @("--rounds", "1")
-    $TargetRounds = $null
-    $ContinuationRoundSource = "default"
-    if ($UntilMilestoneBound) {
-        $ContinuationRounds = $MilestoneStepRounds
-        $ContinuationRoundSource = "UntilMilestone"
-        $ContinuationRoundBudgetArgs = @("--rounds", "$MilestoneStepRounds")
-    } elseif ($RoundsBound) {
-        $ContinuationRounds = $Rounds
-        $ContinuationRoundSource = "Rounds"
-        $TargetRounds = $ResumeRoundsCompleted + $Rounds
-        $ContinuationRoundBudgetArgs = @("--rounds", "$Rounds")
-    } elseif ($UntilRoundBound) {
-        $TargetRounds = $UntilRound
-        $ContinuationRounds = [Math]::Max(0, $TargetRounds - $ResumeRoundsCompleted)
-        $ContinuationRoundSource = "UntilRound"
-        $ContinuationRoundBudgetArgs = @("--until-round", "$UntilRound")
-    } elseif ($MaxRoundsBound) {
-        $ContinuationRounds = $MaxRounds
-        $ContinuationRoundSource = "MaxRounds"
-        $TargetRounds = $ResumeRoundsCompleted + $MaxRounds
-        $ContinuationRoundBudgetArgs = @("--max-rounds", "$ContinuationRounds")
-    }
+    $ContinuationRoundBudget = Resolve-CampaignAdditionalRoundBudget `
+        -ResumeRoundsCompleted $ResumeRoundsCompleted `
+        -UntilMilestoneBound $UntilMilestoneBound `
+        -MilestoneStepRounds $MilestoneStepRounds `
+        -RoundsBound $RoundsBound `
+        -Rounds $Rounds `
+        -UntilRoundBound $UntilRoundBound `
+        -UntilRound $UntilRound `
+        -MaxRoundsBound $MaxRoundsBound `
+        -MaxRounds $MaxRounds `
+        -MaxRoundsDriverFlag "--max-rounds"
+    $ContinuationRounds = $ContinuationRoundBudget.AdditionalRounds
+    $ContinuationRoundBudgetArgs = @($ContinuationRoundBudget.Args)
+    $TargetRounds = $ContinuationRoundBudget.TargetRounds
+    $ContinuationRoundSource = $ContinuationRoundBudget.Source
     $CoverageGapExecutionContext = Resolve-CoverageGapExecutionContext `
         -Execution $CoverageGapExecution `
         -UntilMilestoneBound $UntilMilestoneBound `

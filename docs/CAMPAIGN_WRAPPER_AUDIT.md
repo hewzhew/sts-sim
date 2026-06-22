@@ -163,6 +163,7 @@ This helper owns:
 - wrapper parameter value normalization for manifests
 - command-line rendering
 - shared campaign driver option rendering
+- continuation round-budget argument rendering
 - manifest writing
 - primary driver command-file recording
 - logged driver invocation
