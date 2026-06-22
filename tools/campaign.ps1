@@ -731,47 +731,29 @@ if ($Inspect) {
     $InspectArgs = New-CampaignInspectDriverArgs `
         -InspectCheckpointPath $InspectCheckpointPath `
         -InspectCampaignPath $InspectCampaignPath
-    $RenderedCommand = Format-CommandLine -ExePath $DriverExe -Arguments $InspectArgs
 
     $InspectModeLabel = if ($ExportLearningDataset) { "dataset" } else { "inspect" }
-    Write-Host "mode=$InspectModeLabel $InspectSourceLabel branch campaign"
-    if ($Seed -gt 0) {
-        Write-Host "seed=$Seed"
-    }
-    Write-Host "ascension=A$Ascension domain=a$Ascension class=$Class"
-    Write-Host "build=$BuildProfile exe=$DriverExe"
-    if ($NeedsBuild) {
-        Write-Host "build-needed=yes"
-    } else {
-        Write-Host "build-needed=no"
-    }
-    if ($InspectCoverageGapMilestoneSummary) {
-        Write-Host "coverage-gap-filter=$CoverageGapFilterLabel"
-    }
-    Write-Host "report=$InspectCampaignPath"
-    Write-Host "checkpoint=$InspectCheckpointPath"
-
-    if ($DryRun) {
-        if ($NeedsBuild) {
-            Write-CampaignBuildCommandPreview -BuildArgs $BuildArgs
-        }
-        Write-Host $RenderedCommand
-        exit 0
-    }
-
-    Push-Location $RepoRoot
-    try {
-        if ($NeedsBuild) {
-            & cargo @BuildArgs
-            if ($LASTEXITCODE -ne 0) {
-                exit $LASTEXITCODE
-            }
-        }
-        & $DriverExe @InspectArgs
-        exit $LASTEXITCODE
-    } finally {
-        Pop-Location
-    }
+    Write-CampaignInspectPreflight `
+        -ModeLabel $InspectModeLabel `
+        -SourceLabel $InspectSourceLabel `
+        -Seed $Seed `
+        -Ascension $Ascension `
+        -Class $Class `
+        -BuildProfile $BuildProfile `
+        -DriverExe $DriverExe `
+        -NeedsBuild $NeedsBuild `
+        -CoverageGapMilestoneSummary ([bool] $InspectCoverageGapMilestoneSummary) `
+        -CoverageGapFilterLabel $CoverageGapFilterLabel `
+        -InspectCampaignPath $InspectCampaignPath `
+        -InspectCheckpointPath $InspectCheckpointPath
+    $DriverExitCode = Invoke-CampaignInspectCommand `
+        -DryRun ([bool] $DryRun) `
+        -NeedsBuild $NeedsBuild `
+        -BuildArgs $BuildArgs `
+        -RepoRoot $RepoRoot `
+        -DriverExe $DriverExe `
+        -InspectArgs $InspectArgs
+    exit $DriverExitCode
 }
 
 Write-Host "seed=$Seed"

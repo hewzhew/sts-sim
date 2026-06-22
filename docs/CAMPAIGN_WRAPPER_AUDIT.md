@@ -208,6 +208,7 @@ tools/campaign_inspect.ps1
 
 This helper owns:
 
+- inspect preflight and command execution
 - deciding whether an inspect command should use summary mode
 - mapping wrapper inspect switches to Rust driver flags
 - rendering dataset export inspect arguments

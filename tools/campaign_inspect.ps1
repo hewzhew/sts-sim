@@ -125,3 +125,70 @@ function New-CampaignInspectDriverArgs {
 
     return $Args
 }
+
+function Write-CampaignInspectPreflight {
+    param(
+        [string] $ModeLabel,
+        [string] $SourceLabel,
+        [long] $Seed,
+        [int] $Ascension,
+        [string] $Class,
+        [string] $BuildProfile,
+        [string] $DriverExe,
+        [bool] $NeedsBuild,
+        [bool] $CoverageGapMilestoneSummary,
+        [string] $CoverageGapFilterLabel,
+        [string] $InspectCampaignPath,
+        [string] $InspectCheckpointPath
+    )
+
+    Write-Host "mode=$ModeLabel $SourceLabel branch campaign"
+    if ($Seed -gt 0) {
+        Write-Host "seed=$Seed"
+    }
+    Write-Host "ascension=A$Ascension domain=a$Ascension class=$Class"
+    Write-Host "build=$BuildProfile exe=$DriverExe"
+    if ($NeedsBuild) {
+        Write-Host "build-needed=yes"
+    } else {
+        Write-Host "build-needed=no"
+    }
+    if ($CoverageGapMilestoneSummary) {
+        Write-Host "coverage-gap-filter=$CoverageGapFilterLabel"
+    }
+    Write-Host "report=$InspectCampaignPath"
+    Write-Host "checkpoint=$InspectCheckpointPath"
+}
+
+function Invoke-CampaignInspectCommand {
+    param(
+        [bool] $DryRun,
+        [bool] $NeedsBuild,
+        [string[]] $BuildArgs,
+        [string] $RepoRoot,
+        [string] $DriverExe,
+        [string[]] $InspectArgs
+    )
+
+    if ($DryRun) {
+        if ($NeedsBuild) {
+            Write-CampaignBuildCommandPreview -BuildArgs $BuildArgs
+        }
+        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $InspectArgs)
+        return 0
+    }
+
+    Push-Location $RepoRoot
+    try {
+        if ($NeedsBuild) {
+            & cargo @BuildArgs
+            if ($LASTEXITCODE -ne 0) {
+                return $LASTEXITCODE
+            }
+        }
+        & $DriverExe @InspectArgs
+        return $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+}
