@@ -342,6 +342,7 @@ $LatestAscensionPath = Join-Path $CampaignDir "latest.ascension.txt"
 $LatestClassPath = Join-Path $CampaignDir "latest.class.txt"
 $LatestModePath = Join-Path $CampaignDir "latest.mode.txt"
 $LatestCommandPath = Join-Path $CampaignDir "latest.command.txt"
+$LatestManifestPath = Join-Path $CampaignDir "latest.manifest.json"
 $LatestCampaignPath = Join-Path $CampaignDir "latest.campaign.json"
 $LatestCheckpointPath = Join-Path $CampaignDir "latest.checkpoint.json"
 $LatestDecisionOutcomePath = Join-Path $CampaignDir "latest.decision_outcomes.jsonl"
@@ -629,6 +630,7 @@ $ScratchLabel = ""
 $ScratchCampaignPath = $LatestCampaignPath
 $ScratchCheckpointPath = $LatestCheckpointPath
 $ScratchCommandPath = $LatestCommandPath
+$ScratchManifestPath = $LatestManifestPath
 if ($Scratch) {
     $ScratchStamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $BaseLabel = if ($RunLabel) { $RunLabel } else { "coverage-gap-seed$Seed" }
@@ -637,10 +639,12 @@ if ($Scratch) {
     $ScratchCampaignPath = Join-Path $ScratchCampaignDir "$ScratchLabel.campaign.json"
     $ScratchCheckpointPath = Join-Path $ScratchCampaignDir "$ScratchLabel.checkpoint.json"
     $ScratchCommandPath = Join-Path $ScratchCampaignDir "$ScratchLabel.command.txt"
+    $ScratchManifestPath = Join-Path $ScratchCampaignDir "$ScratchLabel.manifest.json"
 }
 $RunOutputCampaignPath = $ScratchCampaignPath
 $RunOutputCheckpointPath = $ScratchCheckpointPath
 $RunCommandPath = $ScratchCommandPath
+$RunManifestPath = $ScratchManifestPath
 
 $CampaignBoundParameters = @{}
 foreach ($ParameterName in $PSBoundParameters.Keys) {
@@ -894,6 +898,22 @@ function Format-CommandLine {
     return $RenderedExe + " " + ($RenderedArgs -join " ")
 }
 
+function Write-CampaignWrapperManifest {
+    param(
+        [string] $Path,
+        [object] $Manifest
+    )
+
+    if (-not $Path) {
+        return
+    }
+    $Parent = Split-Path -Parent $Path
+    if ($Parent) {
+        New-Item -ItemType Directory -Force -Path $Parent | Out-Null
+    }
+    $Manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $Path
+}
+
 function Get-CampaignMilestoneStatus {
     param(
         [string] $ReportPath,
@@ -1072,8 +1092,9 @@ function Invoke-CoverageGapMilestoneSummary {
         $SummaryArgs += @("--inspect-checkpoint", "$RunOutputCheckpointPath")
     }
     Write-Host "coverage-gap-milestone-summary:"
-    & $DriverExe @SummaryArgs
-    return $LASTEXITCODE
+    & $DriverExe @SummaryArgs | ForEach-Object { Write-Host $_ }
+    $SummaryExitCode = $LASTEXITCODE
+    return $SummaryExitCode
 }
 
 function Test-DriverNeedsBuild {
@@ -1317,6 +1338,80 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         return $RenderedExe + " " + ($RenderedArgs -join " ")
     }
 
+    function New-CoverageGapMilestoneSummaryArgs {
+        $Args = @(
+            "inspect",
+            "--inspect-report", "$RunOutputCampaignPath",
+            "--inspect-checkpoint", "$RunOutputCheckpointPath",
+            "--inspect-coverage-gap-milestone-summary",
+            "--coverage-gap-milestone-target", "$UntilMilestone"
+        )
+        $Args += $CoverageGapResultFilterArgs
+        return $Args
+    }
+
+    function New-CoverageGapWrapperManifest {
+        param(
+            [int] $ExitCode,
+            [string] $Stage
+        )
+
+        $Manifest = [ordered]@{
+            schema_name = "CampaignWrapperManifestV1"
+            schema_version = 1
+            created_at = (Get-Date).ToString("o")
+            stage = $Stage
+            exit_code = $ExitCode
+            wrapper_script = $PSCommandPath
+            command_kind = "coverage_gap_continuation"
+            mode = $Mode
+            seed = $Seed
+            ascension = $Ascension
+            class = $Class
+            build_profile = $BuildProfile
+            driver_exe = "$DriverExe"
+            scratch = [bool] $Scratch
+            scratch_label = $ScratchLabel
+            source_report = "$LatestCampaignPath"
+            source_checkpoint = "$LatestCheckpointPath"
+            output_report = "$RunOutputCampaignPath"
+            output_checkpoint = "$RunOutputCheckpointPath"
+            command_file = "$RunCommandPath"
+            manifest_file = "$RunManifestPath"
+            coverage_gap = [ordered]@{
+                limit = $CoverageGapLimit
+                candidates_per_decision = $CoverageGapCandidatesPerDecision
+                intent = $CoverageGapIntent
+                execution = $CoverageGapExecutionLabel
+                seed_execution = $CoverageGapDriverExecution
+                filter = $CoverageGapFilterLabel
+                result_filter = $CoverageGapResultFilterLabel
+            }
+            primary_driver = [ordered]@{
+                args = @($ContinueCoverageGapArgs)
+                command = (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
+            }
+        }
+
+        if ($UntilMilestoneBound) {
+            $MilestoneResumeArgs = New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds
+            $MilestoneSummaryArgs = New-CoverageGapMilestoneSummaryArgs
+            $Manifest["milestone"] = [ordered]@{
+                target = $UntilMilestone
+                stop = $ResolvedMilestoneStop
+                step_rounds = $MilestoneStepRounds
+                max_additional_rounds = $MilestoneMaxRounds
+                initial_spent_rounds = $CoverageGapInitialSpentRounds
+                resume_driver_args_template = @($MilestoneResumeArgs)
+                resume_driver_command_template = (Format-CommandLine -ExePath $DriverExe -Arguments $MilestoneResumeArgs)
+                summary_driver_args = @($MilestoneSummaryArgs)
+                summary_driver_command = (Format-CommandLine -ExePath $DriverExe -Arguments $MilestoneSummaryArgs)
+            }
+        }
+
+        return $Manifest
+    }
+
     $ContinuationModeLabel = if ($PlanCoverageGaps -or $ContinueCoverageGaps) { "coverage-gap-continuation" } else { "targeted-continuation" }
     Write-Host "mode=$ContinuationModeLabel latest branch campaign"
     Write-Host "seed=$Seed"
@@ -1485,6 +1580,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                 if ($Scratch) {
                     Set-Content -LiteralPath $RunCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
                     Write-Host "scratch-command=$RunCommandPath"
+                    Write-Host "scratch-manifest=$RunManifestPath"
                 } else {
                     Set-Content -LiteralPath $LatestSeedPath -Value $Seed
                     Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
@@ -1492,6 +1588,9 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                     Set-Content -LiteralPath $LatestModePath -Value $Mode
                     Set-Content -LiteralPath $LatestCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
                 }
+                Write-CampaignWrapperManifest `
+                    -Path $RunManifestPath `
+                    -Manifest (New-CoverageGapWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed")
                 if ($UntilMilestoneBound) {
                     Invoke-CampaignUntilMilestone -AlreadySpentRounds $CoverageGapInitialSpentRounds
                     $DriverExitCode = $script:CampaignMilestoneExitCode
@@ -1499,6 +1598,10 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                         $DriverExitCode = Invoke-CoverageGapMilestoneSummary -Target $UntilMilestone
                     }
                 }
+                $ManifestStage = if ($UntilMilestoneBound) { "completed_with_milestone_loop" } else { "completed" }
+                Write-CampaignWrapperManifest `
+                    -Path $RunManifestPath `
+                    -Manifest (New-CoverageGapWrapperManifest -ExitCode $DriverExitCode -Stage $ManifestStage)
             }
             exit $DriverExitCode
         }
