@@ -398,7 +398,7 @@ function Get-CampaignSourceArtifact {
         if ($Pointer) {
             return New-CampaignRunArtifact -ArtifactId ([string] $Pointer.artifact_id) -BaseLabel ([string] $Pointer.artifact_id)
         }
-        return New-CampaignLegacyLatestArtifact
+        throw "No latest campaign pointer found at $(Get-CampaignLatestPointerPath). Run .\tools\campaign.ps1 to create one, or use -From legacy-latest to read old latest.campaign/checkpoint sidecars explicitly."
     }
 
     if ($ResolvedSelector -eq "legacy-latest") {

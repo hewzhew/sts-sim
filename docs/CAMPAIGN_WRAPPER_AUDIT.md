@@ -128,10 +128,10 @@ tools/artifacts/campaigns/runs/<run-id>/
   log.txt
 ```
 
-`tools/artifacts/campaigns/latest.json` is the only mutable latest pointer.
-The older `latest.campaign.json`, `latest.checkpoint.json`, and sidecar text
-files are fallback inputs for old artifacts only; new code should not write
-them as source of truth.
+`tools/artifacts/campaigns/latest.json` is the only mutable latest pointer for
+`-From latest`. The older `latest.campaign.json`, `latest.checkpoint.json`, and
+sidecar text files are available only through explicit `-From legacy-latest`;
+new code should not silently fall back to them or write them as source of truth.
 
 ## Keep In Wrapper
 
