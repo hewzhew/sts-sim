@@ -1787,6 +1787,7 @@ mod tests {
                             can_bail_to_shop_before: true,
                         },
                     }),
+                    route_lane: None,
                 },
             milestone: "route_frontier".to_string(),
         };

@@ -288,11 +288,99 @@ pub struct CoverageGapContinuationTargetOriginV1 {
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route: Option<CoverageGapRouteTargetOriginV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_lane: Option<CoverageGapRouteLaneV1>,
 }
 
 impl CoverageGapContinuationTargetOriginV1 {
     pub fn is_empty(&self) -> bool {
-        self.source.is_empty() && self.route.is_none()
+        self.source.is_empty() && self.route.is_none() && self.route_lane.is_none()
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageGapRouteLaneV1 {
+    pub action_kind: String,
+    pub room_type: String,
+    pub projection_coverage: String,
+    pub first_elite: CoverageGapRouteFirstEliteLaneV1,
+    pub shop_timing: CoverageGapRouteShopTimingLaneV1,
+    pub fire_timing: CoverageGapRouteFireTimingLaneV1,
+    pub pre_recovery_pressure: CoverageGapRoutePreRecoveryPressureLaneV1,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageGapRouteFirstEliteLaneV1 {
+    ForcedElite,
+    OptionalElite,
+    EliteAccess,
+    NoFirstElite,
+}
+
+impl CoverageGapRouteFirstEliteLaneV1 {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ForcedElite => "forced_elite",
+            Self::OptionalElite => "optional_elite",
+            Self::EliteAccess => "elite_access",
+            Self::NoFirstElite => "no_first_elite",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageGapRouteShopTimingLaneV1 {
+    EarlyShop,
+    LateShop,
+    NoShop,
+}
+
+impl CoverageGapRouteShopTimingLaneV1 {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::EarlyShop => "early_shop",
+            Self::LateShop => "late_shop",
+            Self::NoShop => "no_shop",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageGapRouteFireTimingLaneV1 {
+    EarlyFire,
+    LateFire,
+    NoFire,
+}
+
+impl CoverageGapRouteFireTimingLaneV1 {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::EarlyFire => "early_fire",
+            Self::LateFire => "late_fire",
+            Self::NoFire => "no_fire",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageGapRoutePreRecoveryPressureLaneV1 {
+    Low,
+    Medium,
+    High,
+}
+
+impl CoverageGapRoutePreRecoveryPressureLaneV1 {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low_pre_recovery_damage",
+            Self::Medium => "medium_pre_recovery_damage",
+            Self::High => "high_pre_recovery_damage",
+        }
     }
 }
 
@@ -1457,47 +1545,95 @@ fn coverage_gap_shop_action_lane_v1(target: &CoverageGapContinuationTargetV1) ->
 }
 
 fn coverage_gap_route_selection_lane_v1(target: &CoverageGapContinuationTargetV1) -> String {
-    let Some(route) = target.target_origin.route.as_ref() else {
+    let route_lane = target.target_origin.route_lane.clone().or_else(|| {
+        target
+            .target_origin
+            .route
+            .as_ref()
+            .map(coverage_gap_route_lane_from_origin_v1)
+    });
+    let Some(route_lane) = route_lane else {
         return format!("route:legacy:{}", target.label);
-    };
-    let elite_lane = if route.first_elite.forced {
-        "forced_elite"
-    } else if route.first_elite.optional {
-        "optional_elite"
-    } else if route.first_elite.paths_with_first_elite > 0 {
-        "elite_access"
-    } else {
-        "no_first_elite"
     };
     format!(
         "route:{}:{}:{}:{}:{}",
-        route.action_kind,
-        route.room_type,
-        route.projection_coverage,
-        elite_lane,
-        coverage_gap_route_path_pressure_lane_v1(route)
+        route_lane.action_kind,
+        route_lane.room_type,
+        route_lane.projection_coverage,
+        route_lane.first_elite.as_str(),
+        coverage_gap_route_path_pressure_lane_v1(&route_lane)
     )
 }
 
-fn coverage_gap_route_path_pressure_lane_v1(route: &CoverageGapRouteTargetOriginV1) -> String {
-    let shop_lane = match route.path.first_shop_floor {
-        Some(floor) if floor <= 5 => "early_shop",
-        Some(_) => "late_shop",
-        None => "no_shop",
-    };
-    let fire_lane = match route.path.first_fire_floor {
-        Some(floor) if floor <= 6 => "early_fire",
-        Some(_) => "late_fire",
-        None => "no_fire",
-    };
-    let pressure_lane = if route.path.max_damage_rooms_before_recovery <= 1 {
-        "low_pre_recovery_damage"
-    } else if route.path.max_damage_rooms_before_recovery <= 3 {
-        "medium_pre_recovery_damage"
+fn coverage_gap_route_lane_from_origin_v1(
+    route: &CoverageGapRouteTargetOriginV1,
+) -> CoverageGapRouteLaneV1 {
+    CoverageGapRouteLaneV1 {
+        action_kind: route.action_kind.clone(),
+        room_type: route.room_type.clone(),
+        projection_coverage: route.projection_coverage.clone(),
+        first_elite: coverage_gap_route_first_elite_lane_v1(&route.first_elite),
+        shop_timing: coverage_gap_route_shop_timing_lane_v1(route.path.first_shop_floor),
+        fire_timing: coverage_gap_route_fire_timing_lane_v1(route.path.first_fire_floor),
+        pre_recovery_pressure: coverage_gap_route_pre_recovery_pressure_lane_v1(
+            route.path.max_damage_rooms_before_recovery,
+        ),
+    }
+}
+
+fn coverage_gap_route_first_elite_lane_v1(
+    first_elite: &CoverageGapRouteFirstEliteOriginV1,
+) -> CoverageGapRouteFirstEliteLaneV1 {
+    if first_elite.forced {
+        CoverageGapRouteFirstEliteLaneV1::ForcedElite
+    } else if first_elite.optional {
+        CoverageGapRouteFirstEliteLaneV1::OptionalElite
+    } else if first_elite.paths_with_first_elite > 0 {
+        CoverageGapRouteFirstEliteLaneV1::EliteAccess
     } else {
-        "high_pre_recovery_damage"
-    };
-    format!("{shop_lane}:{fire_lane}:{pressure_lane}")
+        CoverageGapRouteFirstEliteLaneV1::NoFirstElite
+    }
+}
+
+fn coverage_gap_route_shop_timing_lane_v1(
+    first_shop_floor: Option<i32>,
+) -> CoverageGapRouteShopTimingLaneV1 {
+    match first_shop_floor {
+        Some(floor) if floor <= 5 => CoverageGapRouteShopTimingLaneV1::EarlyShop,
+        Some(_) => CoverageGapRouteShopTimingLaneV1::LateShop,
+        None => CoverageGapRouteShopTimingLaneV1::NoShop,
+    }
+}
+
+fn coverage_gap_route_fire_timing_lane_v1(
+    first_fire_floor: Option<i32>,
+) -> CoverageGapRouteFireTimingLaneV1 {
+    match first_fire_floor {
+        Some(floor) if floor <= 6 => CoverageGapRouteFireTimingLaneV1::EarlyFire,
+        Some(_) => CoverageGapRouteFireTimingLaneV1::LateFire,
+        None => CoverageGapRouteFireTimingLaneV1::NoFire,
+    }
+}
+
+fn coverage_gap_route_pre_recovery_pressure_lane_v1(
+    max_damage_rooms_before_recovery: usize,
+) -> CoverageGapRoutePreRecoveryPressureLaneV1 {
+    if max_damage_rooms_before_recovery <= 1 {
+        CoverageGapRoutePreRecoveryPressureLaneV1::Low
+    } else if max_damage_rooms_before_recovery <= 3 {
+        CoverageGapRoutePreRecoveryPressureLaneV1::Medium
+    } else {
+        CoverageGapRoutePreRecoveryPressureLaneV1::High
+    }
+}
+
+fn coverage_gap_route_path_pressure_lane_v1(route_lane: &CoverageGapRouteLaneV1) -> String {
+    format!(
+        "{}:{}:{}",
+        route_lane.shop_timing.as_str(),
+        route_lane.fire_timing.as_str(),
+        route_lane.pre_recovery_pressure.as_str()
+    )
 }
 
 pub fn coverage_gap_continuation_target_lane_v1(
@@ -2543,6 +2679,7 @@ fn coverage_gap_target_origin_v1(
                         candidate_index,
                     )
                 });
+            let route_lane = route.as_ref().map(coverage_gap_route_lane_from_origin_v1);
             CoverageGapContinuationTargetOriginV1 {
                 source: coverage_gap_route_origin_source_v1(
                     map_decision_packet.as_ref(),
@@ -2551,11 +2688,13 @@ fn coverage_gap_target_origin_v1(
                     route.is_some(),
                 ),
                 route,
+                route_lane,
             }
         }
         _ => CoverageGapContinuationTargetOriginV1 {
             source: "journal_candidate".to_string(),
             route: None,
+            route_lane: None,
         },
     }
 }
@@ -4210,6 +4349,30 @@ mod tests {
     }
 
     #[test]
+    fn coverage_gap_route_targets_expose_typed_route_lane() {
+        let target = sample_route_coverage_gap_target("go 0", "Monster A", "MonsterRoom", 0);
+        let lane = target
+            .target_origin
+            .route_lane
+            .as_ref()
+            .expect("route targets should carry typed lane metadata");
+
+        assert_eq!(lane.action_kind, "go");
+        assert_eq!(lane.room_type, "MonsterRoom");
+        assert_eq!(lane.projection_coverage, "CompleteWithinBudget");
+        assert_eq!(
+            lane.first_elite,
+            CoverageGapRouteFirstEliteLaneV1::NoFirstElite
+        );
+        assert_eq!(lane.shop_timing, CoverageGapRouteShopTimingLaneV1::NoShop);
+        assert_eq!(lane.fire_timing, CoverageGapRouteFireTimingLaneV1::NoFire);
+        assert_eq!(
+            lane.pre_recovery_pressure,
+            CoverageGapRoutePreRecoveryPressureLaneV1::Low
+        );
+    }
+
+    #[test]
     fn coverage_gap_route_targets_round_robin_by_path_pressure_lane() {
         let mut safe_a =
             sample_route_coverage_gap_target("go 0", "Safe Monster A", "MonsterRoom", 0);
@@ -5302,6 +5465,15 @@ mod tests {
                     },
                     first_elite: CoverageGapRouteFirstEliteOriginV1::default(),
                 }),
+                route_lane: Some(CoverageGapRouteLaneV1 {
+                    action_kind: "go".to_string(),
+                    room_type: room_type.to_string(),
+                    projection_coverage: "CompleteWithinBudget".to_string(),
+                    first_elite: CoverageGapRouteFirstEliteLaneV1::NoFirstElite,
+                    shop_timing: CoverageGapRouteShopTimingLaneV1::NoShop,
+                    fire_timing: CoverageGapRouteFireTimingLaneV1::NoFire,
+                    pre_recovery_pressure: CoverageGapRoutePreRecoveryPressureLaneV1::Low,
+                }),
             },
             milestone: "route_frontier".to_string(),
         }
@@ -5319,6 +5491,7 @@ mod tests {
         route.path.first_fire_floor = first_fire_floor;
         route.path.min_damage_rooms_before_recovery = min_damage_rooms_before_recovery;
         route.path.max_damage_rooms_before_recovery = max_damage_rooms_before_recovery;
+        target.target_origin.route_lane = Some(coverage_gap_route_lane_from_origin_v1(route));
     }
 
     fn sample_campaign_report_with_branches(
