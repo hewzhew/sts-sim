@@ -363,6 +363,7 @@ $RunRoundContext = Resolve-CampaignRunRoundContext `
     -Inspect ([bool] $Inspect)
 $DriverRoundBudgetArgs = @($RunRoundContext.DriverRoundBudgetArgs)
 $RoundBudgetSource = $RunRoundContext.RoundBudgetSource
+$RoundBudgetAdditionalRounds = $RunRoundContext.RoundBudgetAdditionalRounds
 $MaxRounds = $RunRoundContext.MaxRounds
 $ResolvedMilestoneStop = $RunRoundContext.ResolvedMilestoneStop
 $ResumeCampaignPath = $RunRoundContext.ResumeCampaignPath
@@ -510,6 +511,26 @@ if ($Inspect) {
 $RenderedCommand = Format-CommandLine -ExePath $DriverExe -Arguments $DriverArgs
 Write-CampaignRunPreflight
 $RunCommandContext = [pscustomobject]@{
+    WrapperScript = $PSCommandPath
+    Mode = $Mode
+    Seed = $Seed
+    Ascension = $Ascension
+    Class = $Class
+    BuildProfile = $BuildProfile
+    Scratch = [bool] $Scratch
+    ScratchLabel = $ScratchLabel
+    OutputArtifact = $RunOutputArtifact
+    RunOutputCampaignPath = $RunOutputCampaignPath
+    RunOutputCheckpointPath = $RunOutputCheckpointPath
+    RunCommandPath = $RunCommandPath
+    RunManifestPath = $RunManifestPath
+    WrapperInvocationLine = $CampaignWrapperInvocationLine
+    WrapperBoundParameters = $CampaignWrapperBoundParameters
+    LatestSeedPath = $LatestSeedPath
+    LatestAscensionPath = $LatestAscensionPath
+    LatestClassPath = $LatestClassPath
+    LatestModePath = $LatestModePath
+    LatestCommandPath = $LatestCommandPath
     ContinueCampaign = [bool] $ContinueCampaign
     TargetRounds = $TargetRounds
     MaxRounds = $MaxRounds
@@ -529,8 +550,8 @@ $RunCommandContext = [pscustomobject]@{
     RenderedCommand = $RenderedCommand
     Log = [bool] $Log
     RunLogPath = $RunLogPath
-    RunManifestPath = $RunManifestPath
     RoundBudgetSource = $RoundBudgetSource
+    RoundBudgetAdditionalRounds = $RoundBudgetAdditionalRounds
 }
 $DriverExitCode = Invoke-CampaignRunCommand -Context $RunCommandContext -RunIdentityArgs $CampaignRunIdentityArgs -OptionContext $CampaignSharedDriverOptionContext
 exit $DriverExitCode

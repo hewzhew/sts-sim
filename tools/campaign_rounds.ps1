@@ -46,20 +46,26 @@ function Resolve-CampaignRunRoundContext {
     $ResumeRoundsCompleted = $null
     $TargetRounds = $null
     $ResumeDriverArgs = @()
+    $RoundBudgetAdditionalRounds = $MaxRounds
 
     if ($UntilMilestoneBound) {
         $ResolvedMaxRounds = $MilestoneStepRounds
+        $RoundBudgetAdditionalRounds = $MilestoneStepRounds
         $DriverRoundBudgetArgs = @("--rounds", "$MilestoneStepRounds")
         $RoundBudgetSource = "UntilMilestone"
     } elseif (-not $ContinueCampaign) {
         if ($RoundsBound) {
             $DriverRoundBudgetArgs = @("--rounds", "$Rounds")
             $RoundBudgetSource = "Rounds"
+            $RoundBudgetAdditionalRounds = $Rounds
         } elseif ($UntilRoundBound) {
             $DriverRoundBudgetArgs = @("--until-round", "$UntilRound")
             $RoundBudgetSource = "UntilRound"
+            $TargetRounds = $UntilRound
+            $RoundBudgetAdditionalRounds = $UntilRound
         } elseif ($MaxRoundsBound) {
             $DriverRoundBudgetArgs = @("--max-rounds", "$MaxRounds")
+            $RoundBudgetAdditionalRounds = $MaxRounds
         }
     }
 
@@ -90,6 +96,7 @@ function Resolve-CampaignRunRoundContext {
             $DriverRoundBudgetArgs = @($RunContinuationRoundBudget.Args)
             $TargetRounds = $RunContinuationRoundBudget.TargetRounds
             $ResolvedMaxRounds = $RunContinuationRoundBudget.AdditionalRounds
+            $RoundBudgetAdditionalRounds = $RunContinuationRoundBudget.AdditionalRounds
             $RoundBudgetSource = $RunContinuationRoundBudget.Source
         }
 
@@ -103,6 +110,7 @@ function Resolve-CampaignRunRoundContext {
     return [pscustomobject]@{
         DriverRoundBudgetArgs = @($DriverRoundBudgetArgs)
         RoundBudgetSource = $RoundBudgetSource
+        RoundBudgetAdditionalRounds = $RoundBudgetAdditionalRounds
         MaxRounds = $ResolvedMaxRounds
         ResolvedMilestoneStop = $ResolvedMilestoneStop
         ResumeCampaignPath = $ResumeCampaignPath

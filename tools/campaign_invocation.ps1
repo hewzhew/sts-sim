@@ -287,27 +287,28 @@ function Write-CampaignWrapperManifest {
 
 function Write-CampaignPrimaryDriverCommandRecord {
     param(
-        [string] $PrimaryDriverCommandLine
+        [string] $PrimaryDriverCommandLine,
+        [object] $Context
     )
 
-    if ($RunOutputArtifact) {
-        Set-Content -LiteralPath $RunCommandPath -Value $PrimaryDriverCommandLine
-        if ($RunOutputArtifact.Kind -eq "run") {
-            Write-CampaignLatestPointer -Artifact $RunOutputArtifact
+    if ($Context.OutputArtifact) {
+        Set-Content -LiteralPath $Context.RunCommandPath -Value $PrimaryDriverCommandLine
+        if ($Context.OutputArtifact.Kind -eq "run") {
+            Write-CampaignLatestPointer -Artifact $Context.OutputArtifact
             Write-Host "latest-pointer=$(Get-CampaignLatestPointerPath)"
         }
-        Write-Host "primary-driver-command=$RunCommandPath"
-        Write-Host "manifest=$RunManifestPath"
+        Write-Host "primary-driver-command=$($Context.RunCommandPath)"
+        Write-Host "manifest=$($Context.RunManifestPath)"
         return
     }
 
     # Legacy fallback for pre-artifact callers. New wrapper paths should set
-    # $RunOutputArtifact and should not write sidecar state.
-    Set-Content -LiteralPath $LatestSeedPath -Value $Seed
-    Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
-    Set-Content -LiteralPath $LatestClassPath -Value $Class
-    Set-Content -LiteralPath $LatestModePath -Value $Mode
-    Set-Content -LiteralPath $LatestCommandPath -Value $PrimaryDriverCommandLine
+    # OutputArtifact and should not write sidecar state.
+    Set-Content -LiteralPath $Context.LatestSeedPath -Value $Context.Seed
+    Set-Content -LiteralPath $Context.LatestAscensionPath -Value $Context.Ascension
+    Set-Content -LiteralPath $Context.LatestClassPath -Value $Context.Class
+    Set-Content -LiteralPath $Context.LatestModePath -Value $Context.Mode
+    Set-Content -LiteralPath $Context.LatestCommandPath -Value $PrimaryDriverCommandLine
 }
 
 function Invoke-CampaignLoggedDriverCommand {
@@ -351,7 +352,8 @@ function New-CampaignWrapperManifestBase {
         [string] $Stage,
         [string] $CommandKind,
         [string[]] $PrimaryDriverArgs,
-        [string] $PrimaryDriverCommand
+        [string] $PrimaryDriverCommand,
+        [object] $Context
     )
 
     return [ordered]@{
@@ -360,30 +362,30 @@ function New-CampaignWrapperManifestBase {
         created_at = (Get-Date).ToString("o")
         stage = $Stage
         exit_code = $ExitCode
-        wrapper_script = $PSCommandPath
+        wrapper_script = $Context.WrapperScript
         command_kind = $CommandKind
-        mode = $Mode
-        seed = $Seed
-        ascension = $Ascension
-        class = $Class
-        build_profile = $BuildProfile
-        driver_exe = "$DriverExe"
-        scratch = [bool] $Scratch
-        scratch_label = $ScratchLabel
-        output_artifact = if ($RunOutputArtifact) { "$($RunOutputArtifact.Label)" } else { "" }
-        output_report = "$RunOutputCampaignPath"
-        output_checkpoint = "$RunOutputCheckpointPath"
+        mode = $Context.Mode
+        seed = $Context.Seed
+        ascension = $Context.Ascension
+        class = $Context.Class
+        build_profile = $Context.BuildProfile
+        driver_exe = "$($Context.DriverExe)"
+        scratch = [bool] $Context.Scratch
+        scratch_label = $Context.ScratchLabel
+        output_artifact = if ($Context.OutputArtifact) { "$($Context.OutputArtifact.Label)" } else { "" }
+        output_report = "$($Context.RunOutputCampaignPath)"
+        output_checkpoint = "$($Context.RunOutputCheckpointPath)"
         command_file_semantics = "primary_driver_command"
-        command_file = "$RunCommandPath"
-        manifest_file = "$RunManifestPath"
+        command_file = "$($Context.RunCommandPath)"
+        manifest_file = "$($Context.RunManifestPath)"
         wrapper_invocation = [ordered]@{
-            line = $CampaignWrapperInvocationLine
-            bound_parameters = $CampaignWrapperBoundParameters
+            line = $Context.WrapperInvocationLine
+            bound_parameters = $Context.WrapperBoundParameters
         }
         primary_driver = [ordered]@{
             args = @($PrimaryDriverArgs)
             command = $PrimaryDriverCommand
-            command_file = "$RunCommandPath"
+            command_file = "$($Context.RunCommandPath)"
         }
     }
 }
@@ -402,14 +404,15 @@ function New-CampaignRunWrapperManifest {
         -Stage $Stage `
         -CommandKind "campaign_run" `
         -PrimaryDriverArgs $Context.DriverArgs `
-        -PrimaryDriverCommand $Context.RenderedCommand
+        -PrimaryDriverCommand $Context.RenderedCommand `
+        -Context $Context
     $Manifest["resume_report"] = if ($Context.ResumeCampaignPath) { "$($Context.ResumeCampaignPath)" } else { "" }
     $Manifest["resume_checkpoint"] = if ($Context.ResumeCheckpointPath) { "$($Context.ResumeCheckpointPath)" } else { "" }
     $Manifest["log_file"] = if ($Context.Log) { "$($Context.RunLogPath)" } else { "" }
     $Manifest["round_budget"] = [ordered]@{
         source = $Context.RoundBudgetSource
         target_rounds = $Context.TargetRounds
-        additional_rounds = $Context.MaxRounds
+        additional_rounds = $Context.RoundBudgetAdditionalRounds
     }
 
     if ($Context.UntilMilestoneBound) {
@@ -473,7 +476,7 @@ function Invoke-CampaignRunCommand {
             $DriverExitCode = $LASTEXITCODE
         }
         if ($DriverExitCode -eq 0) {
-            Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine $Context.RenderedCommand
+            Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine $Context.RenderedCommand -Context $Context
             Write-CampaignWrapperManifest `
                 -Path $Context.RunManifestPath `
                 -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed" -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext -Context $Context)
