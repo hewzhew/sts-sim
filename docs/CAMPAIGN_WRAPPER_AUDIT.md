@@ -13,11 +13,12 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 654 lines
+- `tools/campaign.ps1`: 463 lines
 - `tools/campaign_artifacts.ps1`: 520 lines
 - `tools/campaign_invocation.ps1`: 453 lines
 - `tools/campaign_coverage_gaps.ps1`: 391 lines
 - `tools/campaign_preflight.ps1`: 191 lines
+- `tools/campaign_continuation.ps1`: 194 lines
 - `tools/campaign_inspect.ps1`: 184 lines
 - `tools/campaign_targets.ps1`: 144 lines
 - `tools/campaign_source.ps1`: 118 lines
@@ -33,7 +34,7 @@ Major regions:
 | Parameter block | 180 | Too many feature flags in one entrypoint |
 | Path globals and helper import | 20 | Fine |
 | Source/build/output resolution | 130 | Narrower, but still in the wrapper |
-| Continuation dispatch | 110 | Uses helpers; preflight text is delegated |
+| Continuation dispatch | 5 | Delegated to continuation helper |
 | Inspect dispatch | 20 | Delegated to inspect helper |
 | Normal run dispatch | 25 | Delegated to invocation helper |
 
@@ -196,6 +197,19 @@ This helper owns:
 - normal campaign run preflight output
 - continuation preflight context shape
 - targeted/coverage-gap continuation preflight output rendering
+
+Continuation entry helpers now live in:
+
+```text
+tools/campaign_continuation.ps1
+```
+
+This helper owns:
+
+- continuation source validation
+- targeted/coverage-gap continuation command context assembly
+- continuation dry-run dispatch
+- continuation execution dispatch
 
 Milestone helpers now live in:
 
