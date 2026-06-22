@@ -11,220 +11,31 @@ Runs an explore campaign on a random seed.
 Runs the same explore campaign on seed 521.
 
 .EXAMPLE
-.\tools\campaign.ps1 -Last
-Reuses the last non-dry-run campaign seed.
-
-.EXAMPLE
 .\tools\campaign.ps1 -From latest -Continue
 Continues the latest campaign artifact into a new run artifact.
-
-.EXAMPLE
-.\tools\campaign.ps1 -From latest -Continue -Rounds 1
-Continues the latest campaign artifact by exactly one additional round.
-
-.EXAMPLE
-.\tools\campaign.ps1 -From latest -Continue -UntilRound 33
-Continues the latest campaign artifact until total round 33.
-
-.EXAMPLE
-.\tools\campaign.ps1 -ContinueCoverageGaps -UntilMilestone Act2Start
-Runs coverage-gap branches, then keeps resuming in small round chunks until the milestone round cap is exhausted by default.
-
-.EXAMPLE
-.\tools\campaign.ps1 -ContinueCoverageGaps -CoverageGapExecution milestone -UntilMilestone Act2Start -Scratch
-Seeds selected coverage-gap targets without spending a campaign round, then continues those branches to the requested milestone in a scratch report.
 
 .EXAMPLE
 .\tools\campaign.ps1 -Inspect
 Summarizes the latest saved campaign checkpoint with active/frozen/abandoned deck context.
 
 .EXAMPLE
-.\tools\campaign.ps1 -FromScratchLatest -PlanCoverageGaps -CoverageGapRouteMissing
-Plans missing route/map coverage-gap targets from the latest scratch campaign artifact.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectScratchLatest -InspectState -InspectIndex 0
-Prints the full checkpoint state for a selected latest scratch session.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectArtifacts
-Prints artifact sizes and top-level shape for the latest campaign manifest/report/checkpoint/log bundle.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectShopEvidence -InspectIndex 0
-Prints shop compiler evidence for a selected checkpoint branch.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectShopChallenge -InspectIndex 0
-Runs selected and alternative shop plans from a selected checkpoint branch, then rolls each forward briefly.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectCardRewardEvidence -InspectIndex 0
-Prints card reward compiler evidence for a selected checkpoint branch.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectDecisionObservations -InspectQuery "Iron Wave"
-Prints saved historical reward option portfolios matching a candidate or semantic class.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectJournal -InspectQuery "shop"
-Prints saved CampaignJournal decision events matching a boundary, candidate, or semantic field.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectLineageDecisions -InspectIndex 0
-Prints historical CampaignJournal candidate pools along a selected active/frozen branch lineage.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectLineageDecisions -InspectQuery "CompleteWithinBudget"
-Prints current branch lineages where historical candidates match a typed route/reward/shop/event query.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectDeckMutation -InspectIndex 0
-Prints DeckMutationCompiler evidence for a selected checkpoint branch.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectCampfireEvidence -InspectIndex 0
-Prints campfire compiler evidence for a selected checkpoint branch.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectRouteEvidence -InspectIndex 0
-Prints route planner evidence for a selected checkpoint branch.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectLastAutoCombat -InspectIndex 0
-Prints the last saved automated combat trajectory for a selected checkpoint branch.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectCombatLab -InspectIndex 0
-Prints a report-only combat lab packet for a selected checkpoint branch.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectCombatLab -ProbeBoss -InspectIndex 0
-Runs a report-only current-act boss preview for a selected checkpoint branch.
-
-.EXAMPLE
-.\tools\campaign.ps1 -Inspect -ExportLearningDataset tools\artifacts\learning\latest.learning.jsonl
-Exports LearningBranchSampleV1 JSONL from the latest campaign report/checkpoint.
-
-.EXAMPLE
-.\tools\campaign.ps1 -PlanTargets
-Exports latest decision outcomes and prints targeted sibling continuation groups.
-
-.EXAMPLE
-.\tools\campaign.ps1 -ContinueTargets -Rounds 1
-Exports latest decision outcomes, resumes selected censored sibling branches, and advances one round.
-
-.EXAMPLE
 .\tools\campaign.ps1 -PlanCoverageGaps
 Prints unobserved journal candidate coverage-gap continuation targets.
-
-.EXAMPLE
-.\tools\campaign.ps1 -PlanCoverageGaps -CoverageGapRouteMissing
-Prints only missing route/map coverage-gap continuation targets.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectCoverageGapMilestoneSummary -CoverageGapRouteMissing
-Summarizes milestone progress for only missing route/map coverage-gap targets.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectScratchLatest -InspectCoverageGapMilestoneSummary -CoverageGapRouteMissing
-Summarizes milestone progress for the latest scratch campaign artifact.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectScratchLatest -InspectCoverageGapMilestoneSummary -CoverageGapRoute
-Summarizes route/map coverage-gap progress for the latest scratch campaign artifact without filtering by current progress.
-
-.EXAMPLE
-.\tools\campaign.ps1 -InspectScratchLatest -InspectCoverageGapTargetState -CoverageGapRoute -InspectIndex 1
-Prints the full checkpoint state for a selected coverage-gap target group from the latest scratch campaign artifact.
 
 .EXAMPLE
 .\tools\campaign.ps1 -ContinueCoverageGaps -Rounds 1
 Resumes selected unobserved journal candidate branches and advances one round.
 
 .EXAMPLE
-.\tools\campaign.ps1 -ContinueCoverageGaps -Scratch -RunLabel gap-probe -Rounds 1
-Runs coverage-gap continuation into a scratch report/checkpoint without overwriting latest.
-
-.EXAMPLE
-.\tools\campaign.ps1 -FromScratchLatest -ContinueCoverageGaps -OutScratch -RunLabel gap-probe -CoverageGapExecution target_only
-Runs coverage-gap continuation from the latest scratch campaign artifact into a new scratch report/checkpoint.
-
-.EXAMPLE
 .\tools\campaign.ps1 -Mode quick
 Runs a shorter random-seed campaign for fast smoke testing.
-
-.EXAMPLE
-.\tools\campaign.ps1 -Ascension 20 -Mode quick
-Runs a high-ascension stress campaign on a random seed.
-
-.EXAMPLE
-.\tools\campaign.ps1 -Domain a20 -Mode quick
-Runs the current target-domain high-ascension campaign shortcut.
-
-.EXAMPLE
-.\tools\campaign.ps1 -Domain a20 -Mode explore -BossRelicAxes
-Runs a high-ascension campaign where each boss relic lineage gets separate active/frozen branch budgets.
-
-.EXAMPLE
-.\tools\campaign.ps1 -Mode deep
-Runs a larger random-seed campaign when you want to leave it working longer.
-
-.EXAMPLE
-.\tools\campaign.ps1 -Mode explore
-Runs a wider, shallower campaign for branch comparison and strategy diagnosis.
-
-.EXAMPLE
-.\tools\campaign.ps1 -From latest -Continue -VictoryHpPercent 50
-Continues the latest campaign but keeps exploring until it finds a victory at 50% HP or better.
 
 .EXAMPLE
 .\tools\campaign.ps1 -DryRun
 Prints the cargo command without updating the last seed or running it.
 
-.EXAMPLE
-.\tools\campaign.ps1 -NoProgress
-Runs without coarse campaign progress messages.
-
-.EXAMPLE
-.\tools\campaign.ps1 -Mode quick -Scratch -Log
-Runs a scratch campaign and tees the full driver output into a sibling .log file.
-
-.EXAMPLE
-.\tools\campaign.ps1 -Perf
-Prints campaign performance diagnostics in the final report.
-
-.EXAMPLE
-.\tools\campaign.ps1 -Diagnose
-Prints strategy and branch diagnostics in the final report.
-
-.EXAMPLE
-.\tools\campaign.ps1 -VerboseProgress
-Prints branch-by-branch progress messages while running.
-
-.EXAMPLE
-.\tools\campaign.ps1 -NoBossSegments
-Compatibility switch; boss combats already stay on complete-win search by default.
-
-.EXAMPLE
-.\tools\campaign.ps1 -BossSegments
-Allows turn-segment continuation inside boss combats. This is slower, but can push through bosses while debugging combat strategy.
-
-.EXAMPLE
-.\tools\campaign.ps1 -DebugBuild
-Runs the slower debug build when you are debugging compilation or assertions.
-
-.EXAMPLE
-.\tools\campaign.ps1 -BuildProfile release-final
-Runs with the slow-to-build final-performance profile.
-
-.EXAMPLE
-.\tools\campaign.ps1 -Build
-Rebuilds the branch campaign driver before running it.
-
-.EXAMPLE
-.\tools\campaign.ps1 -Mode quick -AutoCaptureCombat -AutoCaptureRoot tools\artifacts\tmp\ml_capture_seed123
-Runs a campaign and registers fresh combat captures under the selected benchmark root.
+.NOTES
+Detailed examples live in docs/CAMPAIGN_WRAPPER_USAGE.md.
 #>
 param(
     [Parameter(Position = 0)]

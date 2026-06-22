@@ -66,6 +66,7 @@ semantics belong in Rust, not in PowerShell.
 Milestone continuation is intentionally a wrapper-level convenience loop: it
 runs small `-Rounds` chunks and checks structured report fields until a branch
 reaches `Act1Boss` or `Act2Start`, or `-MilestoneMaxRounds` is exhausted.
+See `docs/CAMPAIGN_WRAPPER_USAGE.md` for the longer command cookbook.
 
 ## Primary Java Analysis Workflow
 

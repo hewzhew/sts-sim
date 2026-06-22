@@ -231,8 +231,8 @@ This helper owns:
 
 These pieces are useful but should not live in the main script long term:
 
-- the long wrapper comment-help block; active examples should move to docs if
-  the header keeps growing
+- residual compatibility switches that may no longer earn wrapper-level
+  visibility after the latest/source/output cleanup
 
 ## Candidates To Delete Or Degrade
 
@@ -271,8 +271,9 @@ If the answer is no, do not add it to `tools/campaign.ps1`.
 ## Next Cleanup Order
 
 1. Reassess whether targeted continuation still earns its wrapper surface.
-2. Review whether the large comment-help block should become docs-only examples.
-3. Consider replacing many specific inspect switches with a smaller typed
+2. Consider replacing many specific inspect switches with a smaller typed
    inspect adapter only after current callers are audited.
+3. Review residual compatibility switches and remove any that belong only in
+   direct driver commands.
 
 This sequence reduces cognitive load without changing campaign strategy.
