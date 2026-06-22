@@ -948,6 +948,41 @@ function Write-CampaignCommandRecord {
     Set-Content -LiteralPath $LatestCommandPath -Value $CommandLine
 }
 
+function Invoke-CampaignLoggedDriverCommand {
+    param(
+        [string] $ExePath,
+        [string[]] $Arguments,
+        [string] $LogPath
+    )
+
+    $LogParent = Split-Path -Parent $LogPath
+    if ($LogParent) {
+        New-Item -ItemType Directory -Force -Path $LogParent | Out-Null
+    }
+    $DriverStderrLogPath = "$LogPath.stderr.tmp"
+    Remove-Item -LiteralPath $LogPath, $DriverStderrLogPath -Force -ErrorAction SilentlyContinue
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $ExePath @Arguments 2> $DriverStderrLogPath |
+            Tee-Object -FilePath $LogPath |
+            ForEach-Object { Write-Host $_ }
+        $ExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $PreviousErrorActionPreference
+    }
+    if (Test-Path -LiteralPath $DriverStderrLogPath) {
+        $DriverStderrText = Get-Content -LiteralPath $DriverStderrLogPath -Raw
+        if ($DriverStderrText) {
+            Add-Content -LiteralPath $LogPath -Value ""
+            Add-Content -LiteralPath $LogPath -Value "[stderr]"
+            Add-Content -LiteralPath $LogPath -Value $DriverStderrText
+        }
+        Remove-Item -LiteralPath $DriverStderrLogPath -Force -ErrorAction SilentlyContinue
+    }
+    return $ExitCode
+}
+
 function New-CampaignWrapperManifestBase {
     param(
         [int] $ExitCode,
@@ -1938,29 +1973,7 @@ try {
         }
     }
     if ($Log) {
-        $LogParent = Split-Path -Parent $RunLogPath
-        if ($LogParent) {
-            New-Item -ItemType Directory -Force -Path $LogParent | Out-Null
-        }
-        $DriverStderrLogPath = "$RunLogPath.stderr.tmp"
-        Remove-Item -LiteralPath $RunLogPath, $DriverStderrLogPath -Force -ErrorAction SilentlyContinue
-        $PreviousErrorActionPreference = $ErrorActionPreference
-        try {
-            $ErrorActionPreference = "Continue"
-            & $DriverExe @DriverArgs 2> $DriverStderrLogPath | Tee-Object -FilePath $RunLogPath
-            $DriverExitCode = $LASTEXITCODE
-        } finally {
-            $ErrorActionPreference = $PreviousErrorActionPreference
-        }
-        if (Test-Path -LiteralPath $DriverStderrLogPath) {
-            $DriverStderrText = Get-Content -LiteralPath $DriverStderrLogPath -Raw
-            if ($DriverStderrText) {
-                Add-Content -LiteralPath $RunLogPath -Value ""
-                Add-Content -LiteralPath $RunLogPath -Value "[stderr]"
-                Add-Content -LiteralPath $RunLogPath -Value $DriverStderrText
-            }
-            Remove-Item -LiteralPath $DriverStderrLogPath -Force -ErrorAction SilentlyContinue
-        }
+        $DriverExitCode = Invoke-CampaignLoggedDriverCommand -ExePath $DriverExe -Arguments $DriverArgs -LogPath $RunLogPath
     } else {
         & $DriverExe @DriverArgs
         $DriverExitCode = $LASTEXITCODE
