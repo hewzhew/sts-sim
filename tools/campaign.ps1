@@ -107,6 +107,14 @@ Exports latest decision outcomes, resumes selected censored sibling branches, an
 Prints unobserved journal candidate coverage-gap continuation targets.
 
 .EXAMPLE
+.\tools\campaign.ps1 -PlanCoverageGaps -CoverageGapRouteMissing
+Prints only missing route/map coverage-gap continuation targets.
+
+.EXAMPLE
+.\tools\campaign.ps1 -InspectCoverageGapMilestoneSummary -CoverageGapRouteMissing
+Summarizes milestone progress for only missing route/map coverage-gap targets.
+
+.EXAMPLE
 .\tools\campaign.ps1 -ContinueCoverageGaps -Rounds 1
 Resumes selected unobserved journal candidate branches and advances one round.
 
@@ -222,6 +230,8 @@ param(
     [switch] $ContinueTargets,
     [switch] $PlanCoverageGaps,
     [switch] $ContinueCoverageGaps,
+    [switch] $CoverageGapRouteMissing,
+    [switch] $CoverageGapEventBoundaryMissing,
     [switch] $Scratch,
 
     [string] $ExportLearningDataset = "",
@@ -284,6 +294,12 @@ param(
     [int] $TargetedContinuationCandidatesPerTarget = 1,
     [int] $CoverageGapLimit = 8,
     [int] $CoverageGapCandidatesPerDecision = 1,
+    [string] $CoverageGapBucket = "",
+    [string] $CoverageGapEventId = "",
+    [string] $CoverageGapLane = "",
+    [string] $CoverageGapOriginSource = "",
+    [ValidateSet("", "missing", "target_only", "extended")]
+    [string] $CoverageGapProgress = "",
     [ValidateSet("gap_closure", "frontier_expansion")]
     [string] $CoverageGapIntent = "gap_closure",
     [ValidateSet("auto", "target_only", "advance_rounds", "milestone")]
@@ -354,6 +370,78 @@ function Read-LatestCampaignMode {
         }
     }
     return $null
+}
+
+function Assert-CoverageGapPresetCompatible {
+    param(
+        [string] $Preset,
+        [string] $Name,
+        [string] $Actual,
+        [string] $Expected
+    )
+
+    if ($Actual -and $Actual -ne $Expected) {
+        throw "$Preset conflicts with -$Name $Actual; expected $Expected."
+    }
+}
+
+function New-CoverageGapFilterArgs {
+    param(
+        [string] $Bucket,
+        [string] $EventId,
+        [string] $Lane,
+        [string] $OriginSource,
+        [string] $Progress
+    )
+
+    $Args = @()
+    if ($Bucket) {
+        $Args += @("--coverage-gap-bucket", "$Bucket")
+    }
+    if ($EventId) {
+        $Args += @("--coverage-gap-event-id", "$EventId")
+    }
+    if ($Lane) {
+        $Args += @("--coverage-gap-lane", "$Lane")
+    }
+    if ($OriginSource) {
+        $Args += @("--coverage-gap-origin-source", "$OriginSource")
+    }
+    if ($Progress) {
+        $Args += @("--coverage-gap-progress", "$Progress")
+    }
+    return $Args
+}
+
+function Format-CoverageGapFilterLabel {
+    param(
+        [string] $Bucket,
+        [string] $EventId,
+        [string] $Lane,
+        [string] $OriginSource,
+        [string] $Progress
+    )
+
+    $Parts = @()
+    if ($Bucket) {
+        $Parts += "bucket=$Bucket"
+    }
+    if ($EventId) {
+        $Parts += "event_id=$EventId"
+    }
+    if ($Lane) {
+        $Parts += "lane=$Lane"
+    }
+    if ($OriginSource) {
+        $Parts += "origin_source=$OriginSource"
+    }
+    if ($Progress) {
+        $Parts += "progress=$Progress"
+    }
+    if ($Parts.Count -eq 0) {
+        return "-"
+    }
+    return $Parts -join " "
 }
 
 if (
@@ -519,6 +607,51 @@ $RoundsBound = $CampaignBoundParameters.ContainsKey("Rounds")
 $UntilRoundBound = $CampaignBoundParameters.ContainsKey("UntilRound")
 $UntilMilestoneBound = $CampaignBoundParameters.ContainsKey("UntilMilestone") -and $UntilMilestone
 $MaxRoundsBound = $CampaignBoundParameters.ContainsKey("MaxRounds")
+if ($CoverageGapRouteMissing -and $CoverageGapEventBoundaryMissing) {
+    throw "Choose either -CoverageGapRouteMissing or -CoverageGapEventBoundaryMissing, not both."
+}
+if ($CoverageGapRouteMissing) {
+    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapRouteMissing" -Name "CoverageGapBucket" -Actual $CoverageGapBucket -Expected "route"
+    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapRouteMissing" -Name "CoverageGapOriginSource" -Actual $CoverageGapOriginSource -Expected "map_decision_packet"
+    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapRouteMissing" -Name "CoverageGapProgress" -Actual $CoverageGapProgress -Expected "missing"
+    if (-not $CoverageGapBucket) {
+        $CoverageGapBucket = "route"
+    }
+    if (-not $CoverageGapOriginSource) {
+        $CoverageGapOriginSource = "map_decision_packet"
+    }
+    if (-not $CoverageGapProgress) {
+        $CoverageGapProgress = "missing"
+    }
+}
+if ($CoverageGapEventBoundaryMissing) {
+    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapEventBoundaryMissing" -Name "CoverageGapBucket" -Actual $CoverageGapBucket -Expected "event"
+    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapEventBoundaryMissing" -Name "CoverageGapOriginSource" -Actual $CoverageGapOriginSource -Expected "event_boundary_packet"
+    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapEventBoundaryMissing" -Name "CoverageGapProgress" -Actual $CoverageGapProgress -Expected "missing"
+    if (-not $CoverageGapBucket) {
+        $CoverageGapBucket = "event"
+    }
+    if (-not $CoverageGapOriginSource) {
+        $CoverageGapOriginSource = "event_boundary_packet"
+    }
+    if (-not $CoverageGapProgress) {
+        $CoverageGapProgress = "missing"
+    }
+}
+
+$CoverageGapFilterArgs = @(New-CoverageGapFilterArgs `
+    -Bucket $CoverageGapBucket `
+    -EventId $CoverageGapEventId `
+    -Lane $CoverageGapLane `
+    -OriginSource $CoverageGapOriginSource `
+    -Progress $CoverageGapProgress)
+$CoverageGapFilterLabel = Format-CoverageGapFilterLabel `
+    -Bucket $CoverageGapBucket `
+    -EventId $CoverageGapEventId `
+    -Lane $CoverageGapLane `
+    -OriginSource $CoverageGapOriginSource `
+    -Progress $CoverageGapProgress
+
 if (($RoundsBound -and $UntilRoundBound) -or ($RoundsBound -and $MaxRoundsBound) -or ($UntilRoundBound -and $MaxRoundsBound)) {
     throw "Choose only one round budget: -Rounds N, -UntilRound N, or legacy -MaxRounds N."
 }
@@ -870,6 +1003,7 @@ function Invoke-CoverageGapMilestoneSummary {
         "--inspect-coverage-gap-milestone-summary",
         "--coverage-gap-milestone-target", "$Target"
     )
+    $SummaryArgs += $CoverageGapFilterArgs
     if (Test-Path -LiteralPath $RunOutputCheckpointPath) {
         $SummaryArgs += @("--inspect-checkpoint", "$RunOutputCheckpointPath")
     }
@@ -927,6 +1061,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         "--coverage-gap-limit", "$CoverageGapLimit",
         "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision"
     )
+    $CoveragePlanArgs += $CoverageGapFilterArgs
     $ExportDecisionArgs = @(
         "dataset",
         "--inspect-report", "$LatestCampaignPath",
@@ -1042,6 +1177,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         "--out", "$RunOutputCampaignPath",
         "--checkpoint-out", "$RunOutputCheckpointPath"
     )
+    $ContinueCoverageGapArgs += $CoverageGapFilterArgs
     $ContinueCoverageGapArgs += $ContinuationRoundBudgetArgs
     if ($CampaignBoundParameters.ContainsKey("ExperimentWallMs")) {
         $ContinueTargetArgs += @("--experiment-wall-ms", "$ExperimentWallMs")
@@ -1155,6 +1291,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     }
     if ($PlanCoverageGaps) {
         Write-Host "coverage-gap-plan=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision"
+        Write-Host "coverage-gap-filter=$CoverageGapFilterLabel"
     }
     if ($ContinueCoverageGaps) {
         if ($CoverageGapExecutionLabel -eq $CoverageGapDriverExecution) {
@@ -1162,6 +1299,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         } else {
             Write-Host "coverage-gap-continue=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision intent=$CoverageGapIntent execution=$CoverageGapExecutionLabel seed-execution=$CoverageGapDriverExecution"
         }
+        Write-Host "coverage-gap-filter=$CoverageGapFilterLabel"
         Write-Host "resume-rounds=$ResumeRoundsCompleted"
         if ($TargetRounds -ne $null) {
             Write-Host "round-budget=$ContinuationRoundSource target-rounds=$TargetRounds additional-rounds=$ContinuationRounds"
@@ -1207,6 +1345,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                     "--inspect-coverage-gap-milestone-summary",
                     "--coverage-gap-milestone-target", "$UntilMilestone"
                 )
+                $SummaryArgs += $CoverageGapFilterArgs
                 if (Test-Path -LiteralPath $RunOutputCheckpointPath) {
                     $SummaryArgs += @("--inspect-checkpoint", "$RunOutputCheckpointPath")
                 }
@@ -1387,6 +1526,7 @@ if ($Inspect) {
             "--inspect-coverage-gap-milestone-summary",
             "--coverage-gap-milestone-target", "$CoverageGapMilestoneTarget"
         )
+        $InspectArgs += $CoverageGapFilterArgs
     }
     if ((-not $ExportLearningDataset) -and $InspectCombatLab) {
         $InspectArgs += @(
@@ -1431,6 +1571,9 @@ if ($Inspect) {
         Write-Host "build-needed=yes"
     } else {
         Write-Host "build-needed=no"
+    }
+    if ($InspectCoverageGapMilestoneSummary) {
+        Write-Host "coverage-gap-filter=$CoverageGapFilterLabel"
     }
     Write-Host "report=$LatestCampaignPath"
     Write-Host "checkpoint=$LatestCheckpointPath"
