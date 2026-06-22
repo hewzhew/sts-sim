@@ -1138,6 +1138,40 @@ fn render_coverage_gap_continuation_delta_v1(
             ));
         }
     }
+    let before_lanes = before
+        .lane_summaries
+        .iter()
+        .map(|summary| (summary.lane.clone(), summary))
+        .collect::<BTreeMap<_, _>>();
+    let after_lanes = after
+        .lane_summaries
+        .iter()
+        .map(|summary| (summary.lane.clone(), summary))
+        .collect::<BTreeMap<_, _>>();
+    let mut lanes = before_lanes.keys().cloned().collect::<BTreeSet<_>>();
+    lanes.extend(after_lanes.keys().cloned());
+    if !lanes.is_empty() {
+        lines.push("Lanes:".to_string());
+        for lane in lanes {
+            let before_eligible = before_lanes
+                .get(&lane)
+                .map_or(0, |summary| summary.eligible_target_count);
+            let after_eligible = after_lanes
+                .get(&lane)
+                .map_or(0, |summary| summary.eligible_target_count);
+            let (lane_reduced, lane_increased) =
+                coverage_gap_count_delta_v1(before_eligible, after_eligible);
+            lines.push(format!(
+                "  {} before_eligible={} after_eligible={} reduced={} increased={} trend={}",
+                compact_coverage_gap_audit_text_v1(&lane, 96),
+                before_eligible,
+                after_eligible,
+                lane_reduced,
+                lane_increased,
+                coverage_gap_delta_trend_v1(lane_reduced, lane_increased)
+            ));
+        }
+    }
     lines.join("\n")
 }
 
@@ -1566,14 +1600,28 @@ mod tests {
 
     #[test]
     fn coverage_gap_continuation_delta_reports_gap_change_by_bucket() {
-        let before = coverage_gap_test_plan_with_buckets(
+        let mut before = coverage_gap_test_plan_with_buckets(
             100,
             vec![
                 coverage_gap_test_bucket("route", 60, 4),
                 coverage_gap_test_bucket("reward", 40, 2),
             ],
         );
-        let after = coverage_gap_test_plan_with_buckets(
+        before.lane_summaries = vec![
+            CoverageGapContinuationLaneSummaryV1 {
+                lane: "route:late_shop".to_string(),
+                eligible_target_count: 20,
+                selected_target_count: 2,
+                deferred_target_count: 18,
+            },
+            CoverageGapContinuationLaneSummaryV1 {
+                lane: "reward:engine".to_string(),
+                eligible_target_count: 10,
+                selected_target_count: 1,
+                deferred_target_count: 9,
+            },
+        ];
+        let mut after = coverage_gap_test_plan_with_buckets(
             85,
             vec![
                 coverage_gap_test_bucket("route", 50, 3),
@@ -1581,6 +1629,26 @@ mod tests {
                 coverage_gap_test_bucket("event", 5, 1),
             ],
         );
+        after.lane_summaries = vec![
+            CoverageGapContinuationLaneSummaryV1 {
+                lane: "route:late_shop".to_string(),
+                eligible_target_count: 15,
+                selected_target_count: 1,
+                deferred_target_count: 14,
+            },
+            CoverageGapContinuationLaneSummaryV1 {
+                lane: "reward:engine".to_string(),
+                eligible_target_count: 8,
+                selected_target_count: 1,
+                deferred_target_count: 7,
+            },
+            CoverageGapContinuationLaneSummaryV1 {
+                lane: "event:gain_relic".to_string(),
+                eligible_target_count: 5,
+                selected_target_count: 1,
+                deferred_target_count: 4,
+            },
+        ];
 
         let rendered = render_coverage_gap_continuation_delta_v1(
             CoverageGapBudgetIntentV1::GapClosure,
@@ -1597,6 +1665,9 @@ mod tests {
         assert!(rendered.contains("route before_unobserved=60 after_unobserved=50 reduced=10 increased=0 trend=coverage_reduced"));
         assert!(rendered.contains("reward before_unobserved=40 after_unobserved=35 reduced=5 increased=0 trend=coverage_reduced"));
         assert!(rendered.contains("event before_unobserved=0 after_unobserved=5 reduced=0 increased=5 trend=frontier_expanded"));
+        assert!(rendered.contains("Lanes:"));
+        assert!(rendered.contains("route:late_shop before_eligible=20 after_eligible=15 reduced=5 increased=0 trend=coverage_reduced"));
+        assert!(rendered.contains("event:gain_relic before_eligible=0 after_eligible=5 reduced=0 increased=5 trend=frontier_expanded"));
     }
 
     #[test]
