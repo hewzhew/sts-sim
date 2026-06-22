@@ -402,13 +402,59 @@ fn render_campaign_continuation_origin_suffix_v1(branch: &BranchCampaignBranchV1
         .as_ref()
         .map(render_campaign_route_continuation_origin_v1)
         .unwrap_or_default();
+    let lane_suffix = origin
+        .target_lane
+        .as_ref()
+        .map(render_campaign_continuation_target_lane_v1)
+        .unwrap_or_default();
     format!(
-        " | origin={}:{}:{}{}",
+        " | origin={}:{}:{}{}{}",
         origin.kind,
         origin.event_type,
         compact_campaign_choice_label_metadata_v1(&origin.label),
+        lane_suffix,
         route_suffix
     )
+}
+
+fn render_campaign_continuation_target_lane_v1(
+    lane: &crate::eval::branch_campaign::BranchCampaignContinuationTargetLaneV1,
+) -> String {
+    format!(
+        " lane={}:{}:{}:{}",
+        lane.bucket,
+        render_campaign_continuation_admission_status_v1(lane.admission_status),
+        render_campaign_continuation_disposition_v1(lane.disposition),
+        lane.semantic_lane
+    )
+}
+
+fn render_campaign_continuation_admission_status_v1(
+    status: crate::eval::campaign_journal::CampaignJournalCandidateAdmissionStatusV1,
+) -> &'static str {
+    match status {
+        crate::eval::campaign_journal::CampaignJournalCandidateAdmissionStatusV1::Unknown => {
+            "unknown"
+        }
+        crate::eval::campaign_journal::CampaignJournalCandidateAdmissionStatusV1::Scheduled => {
+            "scheduled"
+        }
+        crate::eval::campaign_journal::CampaignJournalCandidateAdmissionStatusV1::Deferred => {
+            "deferred"
+        }
+        crate::eval::campaign_journal::CampaignJournalCandidateAdmissionStatusV1::Rejected => {
+            "rejected"
+        }
+    }
+}
+
+fn render_campaign_continuation_disposition_v1(
+    disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1,
+) -> &'static str {
+    match disposition {
+        crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Kept => "kept",
+        crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Pruned => "pruned",
+    }
 }
 
 fn render_campaign_route_continuation_origin_v1(

@@ -496,6 +496,45 @@ fn compact_campaign_report_surfaces_route_continuation_origin() {
 }
 
 #[test]
+fn compact_campaign_report_surfaces_coverage_gap_target_lane() {
+    let mut report = test_campaign_report_with_active("shop-gap", 6, 70);
+    report.active[0].continuation_origin = Some(BranchCampaignContinuationOriginV1 {
+        kind: "coverage_gap".to_string(),
+        source_event_id: "shop-event".to_string(),
+        decision_id: "shop-decision".to_string(),
+        event_type: "shop".to_string(),
+        parent_branch_id: "root".to_string(),
+        parent_frontier_title: "Shop".to_string(),
+        candidate_index: 3,
+        candidate_id: "shop:buy_relic:3".to_string(),
+        command: "buy relic 3".to_string(),
+        label: "Buy Orange Pellets".to_string(),
+        semantic_class: "role:SingleAction".to_string(),
+        admission: Default::default(),
+        disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Kept,
+        target_lane: Some(BranchCampaignContinuationTargetLaneV1 {
+            bucket: "shop".to_string(),
+            admission_status:
+                crate::eval::campaign_journal::CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+            disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Kept,
+            semantic_lane: "shop_action:buy_relic".to_string(),
+            shop_action_kind: Some("buy_relic".to_string()),
+        }),
+        target_origin_source: String::new(),
+        route_origin: None,
+        milestone: "resource_conversion_frontier".to_string(),
+    });
+
+    let rendered = render_branch_campaign_compact_with_detail_v1(
+        &report,
+        1,
+        BranchCampaignReportDetailV1::Diagnose,
+    );
+
+    assert!(rendered.contains("lane=shop:scheduled:kept:shop_action:buy_relic"));
+}
+
+#[test]
 fn campaign_round_retry_counts_parent_elapsed_as_retry_timing() {
     assert_eq!(
         campaign_retry_timing_for_parent_v1(true, 5_000, 3_000, 0, 0),
