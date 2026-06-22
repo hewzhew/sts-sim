@@ -110,28 +110,47 @@ pub(super) fn run_coverage_gap_milestone_summary_inspection(
     let report = read_campaign_report_v1(report_path)?;
     println!(
         "{}",
-        render_coverage_gap_milestone_summary_with_filter_v1(
+        render_coverage_gap_milestone_summary_with_filter_and_group_index_v1(
             &report,
             target,
             &input.coverage_gap_filter,
+            input.filters.index,
         )
     );
     Ok(())
 }
 
-pub(super) fn render_coverage_gap_milestone_summary_with_filter_v1(
+pub(super) fn render_coverage_gap_milestone_summary_with_filter_and_group_index_v1(
     report: &BranchCampaignReportV1,
     target: CoverageGapMilestoneTargetV1,
     filter: &CoverageGapContinuationFilterV1,
+    group_index: Option<usize>,
 ) -> String {
     let rows = coverage_gap_milestone_rows_from_report_v1(report);
-    render_coverage_gap_milestone_summary_from_rows_with_filter_v1(&rows, target, filter)
+    render_coverage_gap_milestone_summary_from_rows_with_filter_and_group_index_v1(
+        &rows,
+        target,
+        filter,
+        group_index,
+    )
 }
 
+#[cfg(test)]
 pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
     rows: &[CoverageGapMilestoneBranchRowV1],
     target: CoverageGapMilestoneTargetV1,
     filter: &CoverageGapContinuationFilterV1,
+) -> String {
+    render_coverage_gap_milestone_summary_from_rows_with_filter_and_group_index_v1(
+        rows, target, filter, None,
+    )
+}
+
+pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_and_group_index_v1(
+    rows: &[CoverageGapMilestoneBranchRowV1],
+    target: CoverageGapMilestoneTargetV1,
+    filter: &CoverageGapContinuationFilterV1,
+    group_index: Option<usize>,
 ) -> String {
     let filtered_rows = rows
         .iter()
@@ -339,12 +358,25 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
 
     let target_group_audit = target_group_audit_summaries_v1(rows, target);
     if !target_group_audit.is_empty() {
+        let focused_target_group_audit = if let Some(index) = group_index {
+            lines.push(format!(
+                "Target group focus: index={} total={}",
+                index,
+                target_group_audit.len()
+            ));
+            target_group_audit
+                .get(index)
+                .into_iter()
+                .collect::<Vec<_>>()
+        } else {
+            target_group_audit.iter().take(12).collect::<Vec<_>>()
+        };
         lines.push("Target group audit:".to_string());
-        for summary in target_group_audit.iter().take(12) {
-            lines.push(format_target_group_audit_line_v1(&summary));
+        for summary in &focused_target_group_audit {
+            lines.push(format_target_group_audit_line_v1(summary));
         }
         lines.push("Target group details:".to_string());
-        for summary in target_group_audit.iter().take(6) {
+        for summary in focused_target_group_audit.into_iter().take(6) {
             lines.extend(format_target_group_detail_lines_v1(summary));
         }
     }
@@ -1226,6 +1258,32 @@ mod tests {
             "boss_pressure: missing:block50_or_kill_before_beam, pressure:stasis_key_card_access"
         ));
         assert!(text.contains("run_debt: CoffeeDripper=rest_lock"));
+    }
+
+    #[test]
+    fn milestone_summary_can_focus_one_target_group_by_index() {
+        let mut furthest = row("abandoned", "route", 1, 16, "x=6 y=12 Rest");
+        furthest.target_key = "route:rest".to_string();
+        let mut earlier = row("active", "route", 1, 10, "x=1 y=5 Rest");
+        earlier.target_key = "route:early_rest".to_string();
+
+        let text = render_coverage_gap_milestone_summary_from_rows_with_filter_and_group_index_v1(
+            &[furthest, earlier],
+            CoverageGapMilestoneTargetV1::Act2Start,
+            &CoverageGapContinuationFilterV1::default(),
+            Some(1),
+        );
+
+        assert!(text.contains("Target group focus: index=1 total=2"));
+        let target_group_section = text
+            .split_once("Target group audit:")
+            .expect("summary should contain target group audit")
+            .1
+            .split_once("Reached target examples:")
+            .expect("summary should contain reached examples after target groups")
+            .0;
+        assert!(target_group_section.contains("route | x=1 y=5 Rest {choose x=1 y=5 Rest}"));
+        assert!(!target_group_section.contains("route | x=6 y=12 Rest {choose x=6 y=12 Rest}"));
     }
 
     #[test]
