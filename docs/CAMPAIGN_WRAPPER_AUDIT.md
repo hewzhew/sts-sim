@@ -11,7 +11,10 @@ many concepts.
 
 ## Current Size
 
-Approximate physical line count: 2300 lines.
+Approximate physical line count after the first extraction:
+
+- `tools/campaign.ps1`: 2035 lines
+- `tools/campaign_artifacts.ps1`: 300 lines
 
 Major regions:
 
@@ -19,8 +22,8 @@ Major regions:
 | --- | ---: | --- |
 | Help examples and synopsis | 170 | Too long, but useful as a quick reference |
 | Parameter block | 180 | Too many feature flags in one entrypoint |
-| Path globals | 20 | Fine |
-| Helpers plus pre-main setup | 1150 | Too broad; mixes helpers, normalization, build/run state, milestone support |
+| Path globals and helper import | 20 | Fine |
+| Remaining helpers plus pre-main setup | 850 | Still too broad; mixes normalization, build/run state, milestone support |
 | Continuation plan/execute | 470 | Too much logic in the wrapper |
 | Inspect execution | 190 | Useful, but dispatch is growing by flag count |
 | Normal run execution | 145 | This is the core wrapper responsibility |
@@ -106,26 +109,30 @@ These are the wrapper's real job:
 
 If a feature does not fit this list, it needs a strong reason to remain here.
 
-## Move Out Of Wrapper
+## Moved Out Of Wrapper
+
+Artifact helpers now live in:
+
+```text
+tools/campaign_artifacts.ps1
+```
+
+This helper owns:
+
+- latest/scratch artifact refs
+- run source artifact selection
+- artifact size and shape summaries
+- latest campaign mode/config reads
+
+## Still Move Out Of Wrapper
 
 These pieces are useful but should not live in the main script long term:
 
-- artifact shape inspection
 - manifest and command-file helpers
 - milestone loop helpers
 - coverage-gap filter construction
 - coverage-gap continuation orchestration
 - inspect flag to driver flag mapping
-
-The first extraction target should be artifact helpers because they are already
-shared by normal run, inspect, and continuation:
-
-```text
-tools/campaign_artifacts.ps1
-  latest/scratch artifact refs
-  artifact size and shape summaries
-  source/output validation
-```
 
 The second extraction target should be invocation helpers:
 
@@ -172,10 +179,9 @@ If the answer is no, do not add it to `tools/campaign.ps1`.
 
 ## Next Cleanup Order
 
-1. Extract artifact helpers into `tools/campaign_artifacts.ps1`.
-2. Update `tools/campaign.ps1` to dot-source that helper.
-3. Re-run normal latest, scratch inspect, and coverage-gap dry-run checks.
-4. Extract manifest/command rendering helpers into `tools/campaign_invocation.ps1`.
-5. Reassess whether targeted continuation still earns its wrapper surface.
+1. Extract manifest/command rendering helpers into `tools/campaign_invocation.ps1`.
+2. Re-run normal latest, scratch inspect, and coverage-gap dry-run checks.
+3. Move milestone loop helpers out of the main wrapper.
+4. Reassess whether targeted continuation still earns its wrapper surface.
 
 This sequence reduces cognitive load without changing campaign strategy.
