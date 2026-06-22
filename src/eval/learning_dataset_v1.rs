@@ -1537,6 +1537,11 @@ fn round_robin_coverage_gap_targets_by_lane_v1(
 
     let mut ordered = Vec::new();
     while !lane_order.is_empty() {
+        lane_order.sort_by(|left, right| {
+            let left_len = lanes.get(left).map_or(0, Vec::len);
+            let right_len = lanes.get(right).map_or(0, Vec::len);
+            right_len.cmp(&left_len)
+        });
         let mut retained_order = Vec::new();
         for lane in lane_order {
             let Some(items) = lanes.get_mut(&lane) else {
@@ -4670,6 +4675,30 @@ mod tests {
             .contains("early_shop:early_fire:low_pre_recovery_damage"));
         assert!(coverage_gap_continuation_target_lane_v1(&selected[1])
             .contains("no_shop:late_fire:high_pre_recovery_damage"));
+    }
+
+    #[test]
+    fn coverage_gap_route_targets_prioritize_lanes_with_larger_uncovered_gap() {
+        let mut small_gap = sample_route_coverage_gap_target("go 0", "Small Gap", "RestRoom", 0);
+        set_route_path_pressure_for_test(&mut small_gap, Some(3), Some(6), 0, 1);
+
+        let mut targets = vec![small_gap];
+        for index in 1..=4 {
+            let mut target = sample_route_coverage_gap_target(
+                &format!("go {index}"),
+                &format!("Large Gap {index}"),
+                "EventRoom",
+                index,
+            );
+            set_route_path_pressure_for_test(&mut target, Some(8), Some(9), 4, 5);
+            targets.push(target);
+        }
+
+        let selected = select_coverage_gap_targets_by_type_v1(targets, 1);
+
+        assert_eq!(selected[0].label, "Large Gap 1");
+        assert!(coverage_gap_continuation_target_lane_v1(&selected[0])
+            .contains("late_shop:late_fire:high_pre_recovery_damage"));
     }
 
     #[test]
