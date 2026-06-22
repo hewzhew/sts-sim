@@ -11,10 +11,11 @@ many concepts.
 
 ## Current Size
 
-Approximate physical line count after the first extraction:
+Approximate physical line count after the first extractions:
 
-- `tools/campaign.ps1`: 2035 lines
+- `tools/campaign.ps1`: 1890 lines
 - `tools/campaign_artifacts.ps1`: 300 lines
+- `tools/campaign_invocation.ps1`: 145 lines
 
 Major regions:
 
@@ -23,7 +24,7 @@ Major regions:
 | Help examples and synopsis | 170 | Too long, but useful as a quick reference |
 | Parameter block | 180 | Too many feature flags in one entrypoint |
 | Path globals and helper import | 20 | Fine |
-| Remaining helpers plus pre-main setup | 850 | Still too broad; mixes normalization, build/run state, milestone support |
+| Remaining helpers plus pre-main setup | 700 | Still broad; mixes normalization, build/run state, milestone support |
 | Continuation plan/execute | 470 | Too much logic in the wrapper |
 | Inspect execution | 190 | Useful, but dispatch is growing by flag count |
 | Normal run execution | 145 | This is the core wrapper responsibility |
@@ -124,24 +125,29 @@ This helper owns:
 - artifact size and shape summaries
 - latest campaign mode/config reads
 
+Invocation helpers now live in:
+
+```text
+tools/campaign_invocation.ps1
+```
+
+This helper owns:
+
+- wrapper parameter value normalization for manifests
+- command-line rendering
+- manifest writing
+- primary driver command-file recording
+- logged driver invocation
+- common wrapper manifest fields
+
 ## Still Move Out Of Wrapper
 
 These pieces are useful but should not live in the main script long term:
 
-- manifest and command-file helpers
 - milestone loop helpers
 - coverage-gap filter construction
 - coverage-gap continuation orchestration
 - inspect flag to driver flag mapping
-
-The second extraction target should be invocation helpers:
-
-```text
-tools/campaign_invocation.ps1
-  command rendering
-  manifest writing
-  logged driver command files
-```
 
 ## Candidates To Delete Or Degrade
 
@@ -179,9 +185,8 @@ If the answer is no, do not add it to `tools/campaign.ps1`.
 
 ## Next Cleanup Order
 
-1. Extract manifest/command rendering helpers into `tools/campaign_invocation.ps1`.
-2. Re-run normal latest, scratch inspect, and coverage-gap dry-run checks.
-3. Move milestone loop helpers out of the main wrapper.
-4. Reassess whether targeted continuation still earns its wrapper surface.
+1. Move milestone loop helpers out of the main wrapper.
+2. Move coverage-gap filter construction and wrapper orchestration out of the main wrapper.
+3. Reassess whether targeted continuation still earns its wrapper surface.
 
 This sequence reduces cognitive load without changing campaign strategy.
