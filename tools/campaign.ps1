@@ -391,25 +391,22 @@ if ($ContinueCampaign) {
     $ResumeCampaignPath = $ResumeSource.ReportPath
     $ResumeReport = Get-Content -LiteralPath $ResumeCampaignPath -Raw | ConvertFrom-Json
     $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
-    if ($UntilMilestoneBound) {
-        $TargetRounds = $null
-        $MaxRounds = $MilestoneStepRounds
-        $DriverRoundBudgetArgs = @("--rounds", "$MilestoneStepRounds")
-        $RoundBudgetSource = "UntilMilestone"
-    } elseif ($RoundsBound) {
-        $TargetRounds = $ResumeRoundsCompleted + $Rounds
-        $MaxRounds = $Rounds
-        $DriverRoundBudgetArgs = @("--rounds", "$Rounds")
-        $RoundBudgetSource = "Rounds"
-    } elseif ($UntilRoundBound) {
-        $TargetRounds = $UntilRound
-        $MaxRounds = [Math]::Max(0, $TargetRounds - $ResumeRoundsCompleted)
-        $DriverRoundBudgetArgs = @("--until-round", "$UntilRound")
-        $RoundBudgetSource = "UntilRound"
-    } elseif ($MaxRoundsBound) {
-        $TargetRounds = $ResumeRoundsCompleted + $MaxRounds
-        $DriverRoundBudgetArgs = @("--rounds", "$MaxRounds")
-        $RoundBudgetSource = "MaxRounds"
+    if ($UntilMilestoneBound -or $RoundsBound -or $UntilRoundBound -or $MaxRoundsBound) {
+        $RunContinuationRoundBudget = Resolve-CampaignAdditionalRoundBudget `
+            -ResumeRoundsCompleted $ResumeRoundsCompleted `
+            -UntilMilestoneBound $UntilMilestoneBound `
+            -MilestoneStepRounds $MilestoneStepRounds `
+            -RoundsBound $RoundsBound `
+            -Rounds $Rounds `
+            -UntilRoundBound $UntilRoundBound `
+            -UntilRound $UntilRound `
+            -MaxRoundsBound $MaxRoundsBound `
+            -MaxRounds $MaxRounds `
+            -MaxRoundsDriverFlag "--rounds"
+        $DriverRoundBudgetArgs = @($RunContinuationRoundBudget.Args)
+        $TargetRounds = $RunContinuationRoundBudget.TargetRounds
+        $MaxRounds = $RunContinuationRoundBudget.AdditionalRounds
+        $RoundBudgetSource = $RunContinuationRoundBudget.Source
     }
     $DriverArgs += @("--resume", "$ResumeCampaignPath")
     if (Test-Path $CampaignSourceArtifact.CheckpointPath) {

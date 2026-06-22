@@ -13,9 +13,9 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 679 lines
+- `tools/campaign.ps1`: 676 lines
 - `tools/campaign_artifacts.ps1`: 520 lines
-- `tools/campaign_invocation.ps1`: 494 lines
+- `tools/campaign_invocation.ps1`: 496 lines
 - `tools/campaign_coverage_gaps.ps1`: 391 lines
 - `tools/campaign_inspect.ps1`: 184 lines
 - `tools/campaign_targets.ps1`: 144 lines

@@ -416,6 +416,8 @@ function Write-CampaignRunPreflight {
         Write-Host "resume-rounds=$ResumeRoundsCompleted"
         if ($TargetRounds -ne $null) {
             Write-Host "round-budget=$RoundBudgetSource target-rounds=$TargetRounds additional-rounds=$MaxRounds"
+        } elseif ($RoundBudgetSource -ne "preset") {
+            Write-Host "round-budget=$RoundBudgetSource additional-rounds=$MaxRounds"
         } else {
             Write-Host "round-budget=preset additional-rounds=mode-default"
         }
