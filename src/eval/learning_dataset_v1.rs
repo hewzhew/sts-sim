@@ -1865,6 +1865,7 @@ pub fn render_coverage_gap_continuation_plan_summary_v1(
             ));
         }
     }
+    extend_coverage_gap_selected_target_lane_counts_v1(&mut lines, &plan.targets);
     lines.join("\n")
 }
 
@@ -1914,6 +1915,7 @@ pub fn render_coverage_gap_execution_plan_v1(
             ));
         }
     }
+    extend_coverage_gap_selected_target_lane_counts_v1(&mut lines, &execution.targets);
     if execution.targets.is_empty() {
         lines.push("Executed targets: none".to_string());
     } else {
@@ -1929,6 +1931,25 @@ pub fn render_coverage_gap_execution_plan_v1(
         }
     }
     lines.join("\n")
+}
+
+fn extend_coverage_gap_selected_target_lane_counts_v1(
+    lines: &mut Vec<String>,
+    targets: &[CoverageGapContinuationTargetV1],
+) {
+    if targets.is_empty() {
+        return;
+    }
+    let mut counts = BTreeMap::<String, usize>::new();
+    for target in targets {
+        *counts
+            .entry(coverage_gap_continuation_target_lane_v1(target))
+            .or_default() += 1;
+    }
+    lines.push("Selected target lanes:".to_string());
+    for (lane, count) in counts {
+        lines.push(format!("  {lane} selected={count}"));
+    }
 }
 
 fn render_coverage_gap_target_line_v1(
@@ -4370,6 +4391,8 @@ mod tests {
         assert!(rendered.contains("Buckets:"));
         assert!(rendered.contains("route selected=1/2 unobserved=2"));
         assert!(rendered.contains("reward selected=1/2 unobserved=9"));
+        assert!(rendered.contains("Selected target lanes:"));
+        assert!(rendered.contains("route:"));
 
         let execution = coverage_gap_continuation_execution_plan_v1(&plan, 1);
         let rendered_execution = render_coverage_gap_execution_plan_v1(&execution);
@@ -4390,6 +4413,8 @@ mod tests {
         assert!(rendered_execution.contains("Buckets:"));
         assert!(rendered_execution.contains("route selected=1/2 unobserved=2"));
         assert!(rendered_execution.contains("reward selected=0/2 unobserved=9"));
+        assert!(rendered_execution.contains("Selected target lanes:"));
+        assert!(rendered_execution.contains("route:"));
     }
 
     #[test]
@@ -4533,6 +4558,8 @@ mod tests {
 
         assert!(rendered.contains("CoverageGapContinuationPlanV1 decisions=1"));
         assert!(rendered.contains("route selected=1/0 unobserved=4"));
+        assert!(rendered.contains("Selected target lanes:"));
+        assert!(rendered.contains("route:go:MonsterRoom:CompleteWithinBudget"));
         assert!(!rendered.contains("Targets:"));
         assert!(!rendered.contains("x=0 Monster"));
     }
