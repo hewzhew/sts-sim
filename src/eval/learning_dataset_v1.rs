@@ -1202,7 +1202,7 @@ fn order_coverage_gap_bucket_targets_v1(
     if bucket == "route" {
         return order_coverage_gap_route_targets_by_lane_v1(targets);
     }
-    targets
+    order_coverage_gap_non_route_targets_by_lane_v1(targets)
 }
 
 fn order_coverage_gap_route_targets_by_lane_v1(
@@ -1221,6 +1221,27 @@ fn order_coverage_gap_route_targets_by_lane_v1(
         ordered.extend(round_robin_coverage_gap_targets_by_lane_v1(
             priority_targets,
             coverage_gap_route_selection_lane_v1,
+        ));
+    }
+    ordered
+}
+
+fn order_coverage_gap_non_route_targets_by_lane_v1(
+    targets: Vec<CoverageGapContinuationTargetV1>,
+) -> Vec<CoverageGapContinuationTargetV1> {
+    let mut ordered = Vec::with_capacity(targets.len());
+    let mut by_priority = BTreeMap::<usize, Vec<CoverageGapContinuationTargetV1>>::new();
+    for target in targets {
+        by_priority
+            .entry(coverage_gap_target_admission_priority_v1(&target))
+            .or_default()
+            .push(target);
+    }
+
+    for (_, priority_targets) in by_priority {
+        ordered.extend(round_robin_coverage_gap_targets_by_lane_v1(
+            priority_targets,
+            coverage_gap_non_route_selection_lane_v1,
         ));
     }
     ordered
@@ -1269,6 +1290,57 @@ fn round_robin_coverage_gap_targets_by_lane_v1(
     ordered
 }
 
+fn coverage_gap_non_route_selection_lane_v1(target: &CoverageGapContinuationTargetV1) -> String {
+    format!(
+        "{}:{}:{}:{}",
+        coverage_gap_target_bucket_v1(target),
+        render_journal_candidate_admission_status_v1(target.admission.status),
+        render_journal_candidate_disposition_v1(target.disposition),
+        coverage_gap_target_semantic_lane_v1(target)
+    )
+}
+
+fn coverage_gap_target_semantic_lane_v1(target: &CoverageGapContinuationTargetV1) -> String {
+    let semantic = target.semantic_class.trim();
+    if semantic.is_empty() {
+        return "unknown".to_string();
+    }
+
+    let prefixes = match coverage_gap_target_bucket_v1(target) {
+        "boss_relic" => &["relic:", "role:", "effect:", "class:", "card:"][..],
+        "shop" | "shop_branch" => &["role:", "effect:", "relic:", "potion:", "card:", "class:"],
+        "event" => &["effect:", "role:", "class:", "card:", "relic:"],
+        "reward" => &["role:", "effect:", "class:", "card:", "relic:"],
+        _ => &["role:", "effect:", "class:", "card:", "relic:", "potion:"],
+    };
+    for prefix in prefixes {
+        if let Some(token) = coverage_gap_semantic_token_with_prefix_v1(semantic, prefix) {
+            return compact_learning_text_v1(&token, 64);
+        }
+    }
+
+    coverage_gap_semantic_tokens_v1(semantic)
+        .into_iter()
+        .next()
+        .map(|token| compact_learning_text_v1(&token, 64))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn coverage_gap_semantic_token_with_prefix_v1(semantic: &str, prefix: &str) -> Option<String> {
+    coverage_gap_semantic_tokens_v1(semantic)
+        .into_iter()
+        .find(|token| token.starts_with(prefix))
+}
+
+fn coverage_gap_semantic_tokens_v1(semantic: &str) -> Vec<String> {
+    semantic
+        .split(|ch: char| ch.is_whitespace() || matches!(ch, '[' | ']' | ',' | ';' | '|'))
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 fn coverage_gap_route_selection_lane_v1(target: &CoverageGapContinuationTargetV1) -> String {
     let Some(route) = target.target_origin.route.as_ref() else {
         return format!("route:legacy:{}", target.label);
@@ -1294,12 +1366,7 @@ pub fn coverage_gap_continuation_target_lane_v1(
     if coverage_gap_target_bucket_v1(target) == "route" {
         return coverage_gap_route_selection_lane_v1(target);
     }
-    format!(
-        "{}:{}:{}",
-        coverage_gap_target_bucket_v1(target),
-        render_journal_candidate_admission_status_v1(target.admission.status),
-        render_journal_candidate_disposition_v1(target.disposition)
-    )
+    coverage_gap_non_route_selection_lane_v1(target)
 }
 
 fn dedupe_coverage_gap_targets_v1(
@@ -3980,6 +4047,27 @@ mod tests {
     }
 
     #[test]
+    fn coverage_gap_reward_targets_round_robin_by_semantic_lane() {
+        let targets = vec![
+            sample_reward_coverage_gap_target("rp 0", "Frontload A", "role:frontload", 0),
+            sample_reward_coverage_gap_target("rp 1", "Frontload B", "role:frontload", 1),
+            sample_reward_coverage_gap_target("rp 2", "Engine", "role:engine", 2),
+        ];
+
+        let selected = select_coverage_gap_targets_by_type_v1(targets, 2);
+        let labels = selected
+            .iter()
+            .map(|target| target.label.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(labels, vec!["Frontload A", "Engine"]);
+        assert!(render_coverage_gap_target_line_v1(0, &selected[0])
+            .contains("lane=reward:scheduled:kept:role:frontload"));
+        assert!(render_coverage_gap_target_line_v1(1, &selected[1])
+            .contains("lane=reward:scheduled:kept:role:engine"));
+    }
+
+    #[test]
     fn coverage_gap_continuation_dedupes_repeated_target_coordinates() {
         let mut report = sample_campaign_report_with_branches(Vec::new());
         for event_index in 0..2 {
@@ -4699,6 +4787,36 @@ mod tests {
             ),
             disposition:
                 crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Pruned,
+        }
+    }
+
+    fn sample_reward_coverage_gap_target(
+        command: &str,
+        label: &str,
+        semantic_class: &str,
+        candidate_index: usize,
+    ) -> CoverageGapContinuationTargetV1 {
+        CoverageGapContinuationTargetV1 {
+            decision_id: "reward-decision".to_string(),
+            event_id: "reward-event".to_string(),
+            event_type: "reward".to_string(),
+            parent_branch_id: "root".to_string(),
+            parent_frontier_title: "Reward Screen".to_string(),
+            parent_commands: Vec::new(),
+            parent_choices: Vec::new(),
+            candidate_index,
+            candidate_id: format!("reward:{candidate_index}"),
+            command: command.to_string(),
+            label: label.to_string(),
+            semantic_class: semantic_class.to_string(),
+            admission: CampaignJournalCandidateAdmissionTraceV1::new(
+                CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+                "reward_candidate_pool",
+                "selected",
+            ),
+            disposition: CampaignJournalCandidateDispositionV1::Kept,
+            target_origin: CoverageGapContinuationTargetOriginV1::default(),
+            milestone: "reward_frontier".to_string(),
         }
     }
 
