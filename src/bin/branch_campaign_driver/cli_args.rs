@@ -588,6 +588,13 @@ pub(super) struct Args {
     pub(super) coverage_gap_budget_intent: String,
 
     #[arg(
+        long = "coverage-gap-execution-mode",
+        default_value = "advance_rounds",
+        help = "Execute coverage-gap targets as target_only or advance_rounds"
+    )]
+    pub(super) coverage_gap_execution_mode: String,
+
+    #[arg(
         long = "export-learning-dataset",
         value_name = "PATH",
         help = "Write LearningBranchSampleV1 JSONL from a campaign report/run without treating choices as teacher labels"
@@ -1313,6 +1320,13 @@ struct ContinuationArgs {
         help = "Interpret coverage-gap continuation rounds as gap_closure or frontier_expansion in the result report"
     )]
     coverage_gap_budget_intent: String,
+
+    #[arg(
+        long = "coverage-gap-execution-mode",
+        default_value = "advance_rounds",
+        help = "Execute coverage-gap targets as target_only or advance_rounds"
+    )]
+    coverage_gap_execution_mode: String,
 }
 
 impl Args {
@@ -1403,6 +1417,7 @@ impl Args {
             coverage_gap_limit: 8,
             coverage_gap_candidates_per_decision: 1,
             coverage_gap_budget_intent: "gap_closure".to_string(),
+            coverage_gap_execution_mode: "advance_rounds".to_string(),
             export_learning_dataset: None,
             export_decision_outcome_dataset: None,
         }
@@ -1621,6 +1636,7 @@ impl ContinuationArgs {
         args.coverage_gap_limit = self.coverage_gap_limit;
         args.coverage_gap_candidates_per_decision = self.coverage_gap_candidates_per_decision;
         args.coverage_gap_budget_intent = self.coverage_gap_budget_intent;
+        args.coverage_gap_execution_mode = self.coverage_gap_execution_mode;
     }
 }
 

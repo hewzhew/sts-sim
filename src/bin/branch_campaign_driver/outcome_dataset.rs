@@ -16,6 +16,9 @@ use sts_simulator::eval::branch_outcome_dataset_v1::{
     serialize_branch_outcome_records_jsonl_v1, summarize_branch_outcome_records_v1,
     BranchOutcomeRecordV1,
 };
+use sts_simulator::eval::campaign_journal::{
+    CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateDispositionV1,
+};
 use sts_simulator::eval::decision_path::decision_path_commands_include_decision_parent_coordinate_v1;
 use sts_simulator::eval::learning_dataset_v1::{
     analyze_continuation_effect_v1, analyze_journal_decision_candidate_coverage_v1,
@@ -47,9 +50,11 @@ use super::campaign_artifacts::{
     read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
     write_campaign_report_v1,
 };
+#[cfg(test)]
+use super::command_inputs::RoundBudgetModeV1;
 use super::command_inputs::{
     render_round_budget_resolution_v1, ContinuationCommandInput, CoverageGapBudgetIntentV1,
-    DatasetCommandInput,
+    CoverageGapExecutionModeV1, DatasetCommandInput, RoundBudgetResolutionV1,
 };
 
 pub(super) fn run_branch_outcome_dataset_analysis(
@@ -327,10 +332,14 @@ pub(super) fn run_coverage_gap_continuation_execution(
     let continuation_report =
         coverage_gap_continuation_source_report_v1(&source_report, &execution);
     let mut config = input.config.clone();
-    let round_budget = input
+    let requested_round_budget = input
         .round_budget
         .resolve_for_source_rounds(source_report.rounds_completed)?;
-    config.max_rounds = round_budget.round_budget;
+    let effective_round_budget = coverage_gap_effective_round_budget_v1(
+        input.coverage_gap_execution_mode,
+        requested_round_budget,
+    );
+    config.max_rounds = effective_round_budget.round_budget;
     let use_neow_guided_prefix =
         source_report.run_prelude.is_empty() && !config.prefix_commands.is_empty();
     config.seed = source_report.seed;
@@ -350,14 +359,21 @@ pub(super) fn run_coverage_gap_continuation_execution(
         &continuation_report,
         Some(&source_checkpoint),
     )?;
-    let result_records =
-        extract_branch_outcome_records_v1(&result.report, Some(&result.checkpoint))?;
-    let result_plan = plan_coverage_gap_continuations_v1(
-        &result.report,
-        &result_records,
-        planning_window,
-        input.coverage_gap_candidates_per_decision,
-    );
+    let result_plan = match input.coverage_gap_execution_mode {
+        CoverageGapExecutionModeV1::TargetOnly => {
+            coverage_gap_target_only_result_plan_v1(&plan, &execution)
+        }
+        CoverageGapExecutionModeV1::AdvanceRounds => {
+            let result_records =
+                extract_branch_outcome_records_v1(&result.report, Some(&result.checkpoint))?;
+            plan_coverage_gap_continuations_v1(
+                &result.report,
+                &result_records,
+                planning_window,
+                input.coverage_gap_candidates_per_decision,
+            )
+        }
+    };
     if let Some(path) = input.out.as_ref() {
         write_campaign_report_v1(path, &result.report)?;
     }
@@ -372,7 +388,18 @@ pub(super) fn run_coverage_gap_continuation_execution(
         execution.selected_branch_count,
         execution.skipped_target_count
     );
-    println!("{}", render_round_budget_resolution_v1(round_budget));
+    println!(
+        "{}",
+        render_round_budget_resolution_v1(requested_round_budget)
+    );
+    println!(
+        "{}",
+        render_coverage_gap_execution_mode_v1(
+            input.coverage_gap_execution_mode,
+            requested_round_budget,
+            effective_round_budget,
+        )
+    );
     println!("{}", render_coverage_gap_execution_plan_v1(&execution));
     println!("{}", render_coverage_gap_continuation_plan_v1(&plan));
     println!(
@@ -396,6 +423,101 @@ pub(super) fn run_coverage_gap_continuation_execution(
         )
     );
     Ok(())
+}
+
+fn coverage_gap_effective_round_budget_v1(
+    mode: CoverageGapExecutionModeV1,
+    requested: RoundBudgetResolutionV1,
+) -> RoundBudgetResolutionV1 {
+    match mode {
+        CoverageGapExecutionModeV1::AdvanceRounds => requested,
+        CoverageGapExecutionModeV1::TargetOnly => RoundBudgetResolutionV1 {
+            round_budget: 0,
+            target_total_rounds: requested.source_rounds,
+            ..requested
+        },
+    }
+}
+
+fn render_coverage_gap_execution_mode_v1(
+    mode: CoverageGapExecutionModeV1,
+    requested: RoundBudgetResolutionV1,
+    effective: RoundBudgetResolutionV1,
+) -> String {
+    format!(
+        "CoverageGapExecutionModeV1 mode={} requested_round_budget={} effective_round_budget={}",
+        mode.as_str(),
+        requested.round_budget,
+        effective.round_budget
+    )
+}
+
+fn coverage_gap_target_only_result_plan_v1(
+    before: &CoverageGapContinuationPlanV1,
+    execution: &CoverageGapContinuationExecutionPlanV1,
+) -> CoverageGapContinuationPlanV1 {
+    let mut after = before.clone();
+    for target in &execution.targets {
+        after.total_unobserved_candidates = after.total_unobserved_candidates.saturating_sub(1);
+        after.selected_target_count = after.selected_target_count.saturating_sub(1);
+        match target.admission.status {
+            CampaignJournalCandidateAdmissionStatusV1::Scheduled => {
+                after.scheduled_unobserved_candidates =
+                    after.scheduled_unobserved_candidates.saturating_sub(1);
+                after.selected_scheduled_targets =
+                    after.selected_scheduled_targets.saturating_sub(1);
+            }
+            _ => {
+                after.unscheduled_unobserved_candidates =
+                    after.unscheduled_unobserved_candidates.saturating_sub(1);
+                after.selected_unscheduled_targets =
+                    after.selected_unscheduled_targets.saturating_sub(1);
+            }
+        }
+        match target.disposition {
+            CampaignJournalCandidateDispositionV1::Kept => {
+                after.kept_unobserved_candidates =
+                    after.kept_unobserved_candidates.saturating_sub(1);
+                after.selected_kept_targets = after.selected_kept_targets.saturating_sub(1);
+            }
+            CampaignJournalCandidateDispositionV1::Pruned => {
+                after.pruned_unobserved_candidates =
+                    after.pruned_unobserved_candidates.saturating_sub(1);
+                after.selected_pruned_targets = after.selected_pruned_targets.saturating_sub(1);
+            }
+        }
+        if let Some(bucket) = after
+            .bucket_summaries
+            .iter_mut()
+            .find(|bucket| bucket.bucket == target.event_type)
+        {
+            bucket.unobserved_candidate_count = bucket.unobserved_candidate_count.saturating_sub(1);
+            bucket.selected_target_count = bucket.selected_target_count.saturating_sub(1);
+            match target.admission.status {
+                CampaignJournalCandidateAdmissionStatusV1::Scheduled => {
+                    bucket.scheduled_unobserved_candidate_count = bucket
+                        .scheduled_unobserved_candidate_count
+                        .saturating_sub(1);
+                }
+                _ => {
+                    bucket.unscheduled_unobserved_candidate_count = bucket
+                        .unscheduled_unobserved_candidate_count
+                        .saturating_sub(1);
+                }
+            }
+            match target.disposition {
+                CampaignJournalCandidateDispositionV1::Kept => {
+                    bucket.kept_unobserved_candidate_count =
+                        bucket.kept_unobserved_candidate_count.saturating_sub(1);
+                }
+                CampaignJournalCandidateDispositionV1::Pruned => {
+                    bucket.pruned_unobserved_candidate_count =
+                        bucket.pruned_unobserved_candidate_count.saturating_sub(1);
+                }
+            }
+        }
+    }
+    after
 }
 
 fn build_replayable_coverage_gap_execution_plan_v1(
@@ -1431,6 +1553,89 @@ mod tests {
         assert!(rendered.contains(
             "FrontierDeltaV1 before_unobserved=10 after_unobserved=14 reduced=0 increased=4 trend=frontier_expanded"
         ));
+    }
+
+    #[test]
+    fn coverage_gap_target_only_execution_uses_zero_extra_rounds() {
+        let requested = RoundBudgetResolutionV1 {
+            mode: RoundBudgetModeV1::Rounds,
+            source_rounds: 6,
+            round_budget: 3,
+            target_total_rounds: 9,
+        };
+
+        let effective = coverage_gap_effective_round_budget_v1(
+            CoverageGapExecutionModeV1::TargetOnly,
+            requested,
+        );
+
+        assert_eq!(effective.round_budget, 0);
+        assert_eq!(effective.target_total_rounds, requested.source_rounds);
+    }
+
+    #[test]
+    fn coverage_gap_target_only_result_plan_marks_selected_targets_observed() {
+        let reward_target = coverage_gap_test_target("reward", "rp 1", "Cleave", 0);
+        let route_target = coverage_gap_test_target("route", "go 0", "x=0 Monster", 1);
+        let mut plan = coverage_gap_test_plan_with_buckets(
+            10,
+            vec![
+                CoverageGapContinuationBucketSummaryV1 {
+                    bucket: "reward".to_string(),
+                    unobserved_candidate_count: 4,
+                    scheduled_unobserved_candidate_count: 3,
+                    kept_unobserved_candidate_count: 3,
+                    selected_target_count: 1,
+                    ..Default::default()
+                },
+                CoverageGapContinuationBucketSummaryV1 {
+                    bucket: "route".to_string(),
+                    unobserved_candidate_count: 6,
+                    scheduled_unobserved_candidate_count: 5,
+                    kept_unobserved_candidate_count: 5,
+                    selected_target_count: 1,
+                    ..Default::default()
+                },
+            ],
+        );
+        plan.scheduled_unobserved_candidates = 8;
+        plan.kept_unobserved_candidates = 8;
+        let execution = CoverageGapContinuationExecutionPlanV1 {
+            schema_name: "CoverageGapContinuationExecutionPlanV1".to_string(),
+            schema_version: 3,
+            label_role: "campaign_observation_not_teacher".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            requested_target_count: 2,
+            selected_branch_count: 2,
+            skipped_target_count: 0,
+            bucket_summaries: Vec::new(),
+            targets: vec![reward_target, route_target],
+        };
+
+        let after = coverage_gap_target_only_result_plan_v1(&plan, &execution);
+
+        assert_eq!(after.total_unobserved_candidates, 8);
+        assert_eq!(after.scheduled_unobserved_candidates, 6);
+        assert_eq!(after.kept_unobserved_candidates, 6);
+        assert_eq!(
+            after
+                .bucket_summaries
+                .iter()
+                .find(|bucket| bucket.bucket == "reward")
+                .expect("reward bucket")
+                .unobserved_candidate_count,
+            3
+        );
+        assert_eq!(
+            after
+                .bucket_summaries
+                .iter()
+                .find(|bucket| bucket.bucket == "route")
+                .expect("route bucket")
+                .unobserved_candidate_count,
+            5
+        );
     }
 
     #[test]

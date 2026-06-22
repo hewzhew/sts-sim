@@ -218,6 +218,7 @@ pub(super) struct ContinuationCommandInput {
     pub(super) coverage_gap_limit: usize,
     pub(super) coverage_gap_candidates_per_decision: usize,
     pub(super) coverage_gap_budget_intent: CoverageGapBudgetIntentV1,
+    pub(super) coverage_gap_execution_mode: CoverageGapExecutionModeV1,
     pub(super) branch_examples: usize,
     pub(super) report_detail: BranchCampaignReportDetailV1,
 }
@@ -243,6 +244,9 @@ impl ContinuationCommandInput {
             coverage_gap_candidates_per_decision: args.coverage_gap_candidates_per_decision,
             coverage_gap_budget_intent: CoverageGapBudgetIntentV1::parse(
                 &args.coverage_gap_budget_intent,
+            )?,
+            coverage_gap_execution_mode: CoverageGapExecutionModeV1::parse(
+                &args.coverage_gap_execution_mode,
             )?,
             branch_examples: args.branch_examples,
             report_detail: BranchCampaignReportDetailV1::from(args.report_detail),
@@ -271,6 +275,31 @@ impl CoverageGapBudgetIntentV1 {
         match self {
             Self::GapClosure => "gap_closure",
             Self::FrontierExpansion => "frontier_expansion",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CoverageGapExecutionModeV1 {
+    AdvanceRounds,
+    TargetOnly,
+}
+
+impl CoverageGapExecutionModeV1 {
+    pub(super) fn parse(value: &str) -> Result<Self, String> {
+        match value.to_ascii_lowercase().replace('-', "_").as_str() {
+            "advance_rounds" => Ok(Self::AdvanceRounds),
+            "target_only" => Ok(Self::TargetOnly),
+            _ => Err(format!(
+                "invalid --coverage-gap-execution-mode `{value}`; expected advance_rounds or target_only"
+            )),
+        }
+    }
+
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::AdvanceRounds => "advance_rounds",
+            Self::TargetOnly => "target_only",
         }
     }
 }
@@ -491,6 +520,25 @@ mod tests {
         assert_eq!(
             input.coverage_gap_budget_intent,
             CoverageGapBudgetIntentV1::FrontierExpansion
+        );
+    }
+
+    #[test]
+    fn continuation_input_parses_coverage_gap_execution_mode() {
+        let args = Args::try_parse_from([
+            "branch_campaign_driver",
+            "continue",
+            "--execute-coverage-gap-continuation",
+            "--coverage-gap-execution-mode",
+            "target-only",
+        ])
+        .expect("coverage gap execution mode should parse");
+
+        let input = ContinuationCommandInput::from_args(&args).expect("input should build");
+
+        assert_eq!(
+            input.coverage_gap_execution_mode,
+            CoverageGapExecutionModeV1::TargetOnly
         );
     }
 }

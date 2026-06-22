@@ -275,6 +275,8 @@ param(
     [int] $CoverageGapCandidatesPerDecision = 1,
     [ValidateSet("gap_closure", "frontier_expansion")]
     [string] $CoverageGapIntent = "gap_closure",
+    [ValidateSet("auto", "target_only", "advance_rounds")]
+    [string] $CoverageGapExecution = "auto",
     [ValidateRange(0, 100)]
     [int] $VictoryHpPercent = 20,
 
@@ -922,6 +924,14 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         $TargetRounds = $ResumeRoundsCompleted + $MaxRounds
         $ContinuationRoundBudgetArgs = @("--max-rounds", "$ContinuationRounds")
     }
+    $ResolvedCoverageGapExecution = $CoverageGapExecution
+    if ($ResolvedCoverageGapExecution -eq "auto") {
+        if ($CoverageGapIntent -eq "gap_closure") {
+            $ResolvedCoverageGapExecution = "target_only"
+        } else {
+            $ResolvedCoverageGapExecution = "advance_rounds"
+        }
+    }
 
     $ContinueTargetArgs = @(
         "continue",
@@ -960,6 +970,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         "--coverage-gap-limit", "$CoverageGapLimit",
         "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision",
         "--coverage-gap-budget-intent", "$CoverageGapIntent",
+        "--coverage-gap-execution-mode", "$ResolvedCoverageGapExecution",
         "--out", "$RunOutputCampaignPath",
         "--checkpoint-out", "$RunOutputCheckpointPath"
     )
@@ -1078,7 +1089,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         Write-Host "coverage-gap-plan=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision"
     }
     if ($ContinueCoverageGaps) {
-        Write-Host "coverage-gap-continue=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision intent=$CoverageGapIntent"
+        Write-Host "coverage-gap-continue=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision intent=$CoverageGapIntent execution=$ResolvedCoverageGapExecution"
         Write-Host "resume-rounds=$ResumeRoundsCompleted"
         if ($TargetRounds -ne $null) {
             Write-Host "round-budget=$ContinuationRoundSource target-rounds=$TargetRounds additional-rounds=$ContinuationRounds"
