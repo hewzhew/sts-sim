@@ -107,6 +107,10 @@ Prints unobserved journal candidate coverage-gap continuation targets.
 Resumes selected unobserved journal candidate branches and advances one round.
 
 .EXAMPLE
+.\tools\campaign.ps1 -ContinueCoverageGaps -Scratch -RunLabel gap-probe -Rounds 1
+Runs coverage-gap continuation into a scratch report/checkpoint without overwriting latest.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Mode quick
 Runs a shorter random-seed campaign for fast smoke testing.
 
@@ -213,10 +217,12 @@ param(
     [switch] $ContinueTargets,
     [switch] $PlanCoverageGaps,
     [switch] $ContinueCoverageGaps,
+    [switch] $Scratch,
 
     [string] $ExportLearningDataset = "",
     [string] $DecisionOutcomeDataset = "",
     [string] $AutoCaptureRoot = "",
+    [string] $RunLabel = "",
 
     [ValidateSet("fast-run", "release-final", "release", "dev-opt", "debug")]
     [string] $BuildProfile = "fast-run",
@@ -280,6 +286,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $CampaignDir = Join-Path $RepoRoot "tools\artifacts\campaigns"
+$ScratchCampaignDir = Join-Path $CampaignDir "scratch"
 $LatestSeedPath = Join-Path $CampaignDir "latest.seed.txt"
 $LatestAscensionPath = Join-Path $CampaignDir "latest.ascension.txt"
 $LatestClassPath = Join-Path $CampaignDir "latest.class.txt"
@@ -292,6 +299,18 @@ $LatestDecisionOutcomeBeforePath = Join-Path $CampaignDir "latest.decision_outco
 $LatestDecisionOutcomeAfterPath = Join-Path $CampaignDir "latest.decision_outcomes.after.jsonl"
 
 New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
+
+function Convert-ToCampaignArtifactSlug {
+    param(
+        [string] $Value
+    )
+
+    $Slug = ($Value.Trim() -replace '[^A-Za-z0-9_.-]+', '-').Trim('-')
+    if (-not $Slug) {
+        return "scratch"
+    }
+    return $Slug
+}
 
 function Read-LatestCheckpointRunConfig {
     if (-not (Test-Path -LiteralPath $LatestCheckpointPath)) {
@@ -346,6 +365,9 @@ if ($InspectShopChallenge -and -not $PSBoundParameters.ContainsKey("InspectBound
 
 if (($PlanTargets -or $ContinueTargets) -and ($PlanCoverageGaps -or $ContinueCoverageGaps)) {
     throw "Choose either targeted continuation (-PlanTargets/-ContinueTargets) or coverage-gap continuation (-PlanCoverageGaps/-ContinueCoverageGaps), not both."
+}
+if ($Scratch -and -not $ContinueCoverageGaps) {
+    throw "-Scratch currently supports -ContinueCoverageGaps only."
 }
 
 if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps) {
@@ -456,6 +478,23 @@ $DriverArgs = @(
 if (@(0, 10, 15, 17, 20) -contains $Ascension) {
     $DriverArgs += @("--ascension-domain", "a$Ascension")
 }
+
+$ScratchLabel = ""
+$ScratchCampaignPath = $LatestCampaignPath
+$ScratchCheckpointPath = $LatestCheckpointPath
+$ScratchCommandPath = $LatestCommandPath
+if ($Scratch) {
+    $ScratchStamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $BaseLabel = if ($RunLabel) { $RunLabel } else { "coverage-gap-seed$Seed" }
+    $ScratchLabel = "$(Convert-ToCampaignArtifactSlug $BaseLabel)-$ScratchStamp"
+    New-Item -ItemType Directory -Force -Path $ScratchCampaignDir | Out-Null
+    $ScratchCampaignPath = Join-Path $ScratchCampaignDir "$ScratchLabel.campaign.json"
+    $ScratchCheckpointPath = Join-Path $ScratchCampaignDir "$ScratchLabel.checkpoint.json"
+    $ScratchCommandPath = Join-Path $ScratchCampaignDir "$ScratchLabel.command.txt"
+}
+$RunOutputCampaignPath = $ScratchCampaignPath
+$RunOutputCheckpointPath = $ScratchCheckpointPath
+$RunCommandPath = $ScratchCommandPath
 
 $CampaignBoundParameters = @{}
 foreach ($ParameterName in $PSBoundParameters.Keys) {
@@ -708,10 +747,10 @@ function New-MilestoneResumeDriverArgs {
         $Args += @("--ascension-domain", "a$Ascension")
     }
     $Args += @(
-        "--resume", "$LatestCampaignPath",
-        "--resume-checkpoint", "$LatestCheckpointPath",
-        "--out", "$LatestCampaignPath",
-        "--checkpoint-out", "$LatestCheckpointPath",
+        "--resume", "$RunOutputCampaignPath",
+        "--resume-checkpoint", "$RunOutputCheckpointPath",
+        "--out", "$RunOutputCampaignPath",
+        "--checkpoint-out", "$RunOutputCheckpointPath",
         "--rounds", "$StepRounds"
     )
     if ($CampaignBoundParameters.ContainsKey("ExperimentWallMs")) {
@@ -769,7 +808,7 @@ function Invoke-CampaignUntilMilestone {
 
     $SpentRounds = $AlreadySpentRounds
     while ($SpentRounds -lt $MilestoneMaxRounds) {
-        $Status = Get-CampaignMilestoneStatus -ReportPath $LatestCampaignPath -Milestone $UntilMilestone
+        $Status = Get-CampaignMilestoneStatus -ReportPath $RunOutputCampaignPath -Milestone $UntilMilestone
         Write-Host "milestone-status target=$UntilMilestone reached=$($Status.Reached) hits=$($Status.HitCount) furthest=A$($Status.FurthestAct)F$($Status.FurthestFloor) report-rounds=$($Status.RoundsCompleted) spent-rounds=$SpentRounds cap=$MilestoneMaxRounds"
         if ($Status.Reached) {
             return 0
@@ -784,7 +823,7 @@ function Invoke-CampaignUntilMilestone {
         $SpentRounds += $StepRounds
     }
 
-    $FinalStatus = Get-CampaignMilestoneStatus -ReportPath $LatestCampaignPath -Milestone $UntilMilestone
+    $FinalStatus = Get-CampaignMilestoneStatus -ReportPath $RunOutputCampaignPath -Milestone $UntilMilestone
     Write-Host "milestone-status target=$UntilMilestone reached=$($FinalStatus.Reached) hits=$($FinalStatus.HitCount) furthest=A$($FinalStatus.FurthestAct)F$($FinalStatus.FurthestFloor) report-rounds=$($FinalStatus.RoundsCompleted) spent-rounds=$SpentRounds cap=$MilestoneMaxRounds"
     return 0
 }
@@ -921,8 +960,8 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         "--coverage-gap-limit", "$CoverageGapLimit",
         "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision",
         "--coverage-gap-budget-intent", "$CoverageGapIntent",
-        "--out", "$LatestCampaignPath",
-        "--checkpoint-out", "$LatestCheckpointPath"
+        "--out", "$RunOutputCampaignPath",
+        "--checkpoint-out", "$RunOutputCheckpointPath"
     )
     $ContinueCoverageGapArgs += $ContinuationRoundBudgetArgs
     if ($CampaignBoundParameters.ContainsKey("ExperimentWallMs")) {
@@ -1009,8 +1048,16 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     } else {
         Write-Host "build-needed=no"
     }
-    Write-Host "report=$LatestCampaignPath"
-    Write-Host "checkpoint=$LatestCheckpointPath"
+    if ($Scratch) {
+        Write-Host "scratch=yes label=$ScratchLabel"
+        Write-Host "source-report=$LatestCampaignPath"
+        Write-Host "source-checkpoint=$LatestCheckpointPath"
+        Write-Host "report=$RunOutputCampaignPath"
+        Write-Host "checkpoint=$RunOutputCheckpointPath"
+    } else {
+        Write-Host "report=$LatestCampaignPath"
+        Write-Host "checkpoint=$LatestCheckpointPath"
+    }
     if ($PlanTargets -or $ContinueTargets) {
         Write-Host "decision-outcomes=$TargetDecisionOutcomePath"
     }
@@ -1129,11 +1176,16 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
             & $DriverExe @ContinueCoverageGapArgs
             $DriverExitCode = $LASTEXITCODE
             if ($DriverExitCode -eq 0) {
-                Set-Content -LiteralPath $LatestSeedPath -Value $Seed
-                Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
-                Set-Content -LiteralPath $LatestClassPath -Value $Class
-                Set-Content -LiteralPath $LatestModePath -Value $Mode
-                Set-Content -LiteralPath $LatestCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
+                if ($Scratch) {
+                    Set-Content -LiteralPath $RunCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
+                    Write-Host "scratch-command=$RunCommandPath"
+                } else {
+                    Set-Content -LiteralPath $LatestSeedPath -Value $Seed
+                    Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
+                    Set-Content -LiteralPath $LatestClassPath -Value $Class
+                    Set-Content -LiteralPath $LatestModePath -Value $Mode
+                    Set-Content -LiteralPath $LatestCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
+                }
                 if ($UntilMilestoneBound) {
                     $DriverExitCode = Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds
                 }
