@@ -76,6 +76,23 @@ struct CoverageGapMilestoneOriginSummaryV1<'a> {
     furthest: Option<&'a CoverageGapMilestoneBranchRowV1>,
 }
 
+#[derive(Default)]
+struct CoverageGapMilestoneTargetGroupSummaryV1<'a> {
+    rows: usize,
+    reached: bool,
+    active: usize,
+    frozen: usize,
+    stuck: usize,
+    abandoned: usize,
+    dead: usize,
+    victories: usize,
+    discarded: usize,
+    other: usize,
+    first: Option<&'a CoverageGapMilestoneBranchRowV1>,
+    furthest: Option<&'a CoverageGapMilestoneBranchRowV1>,
+    stop_reason: Option<&'a str>,
+}
+
 pub(super) fn run_coverage_gap_milestone_summary_inspection(
     input: &InspectCommandInput,
 ) -> Result<(), String> {
@@ -299,6 +316,14 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_v1(
                 .collect::<Vec<_>>()
                 .join(" ")
         ));
+    }
+
+    let target_group_audit = target_group_audit_summaries_v1(rows, target);
+    if !target_group_audit.is_empty() {
+        lines.push("Target group audit:".to_string());
+        for summary in target_group_audit.into_iter().take(12) {
+            lines.push(format_target_group_audit_line_v1(&summary));
+        }
     }
 
     lines.push("Reached target examples:".to_string());
@@ -610,6 +635,99 @@ fn target_group_counts_v1(
     (groups.len(), reached)
 }
 
+fn target_group_audit_summaries_v1<'a>(
+    rows: &'a [CoverageGapMilestoneBranchRowV1],
+    target: CoverageGapMilestoneTargetV1,
+) -> Vec<CoverageGapMilestoneTargetGroupSummaryV1<'a>> {
+    let mut groups = BTreeMap::<&str, CoverageGapMilestoneTargetGroupSummaryV1<'a>>::new();
+    for row in rows {
+        let summary = groups.entry(row.target_key.as_str()).or_default();
+        summary.rows += 1;
+        summary.reached |= target.is_reached_by(row);
+        match row.bucket.as_str() {
+            "active" => summary.active += 1,
+            "frozen" => summary.frozen += 1,
+            "stuck" => summary.stuck += 1,
+            "abandoned" => summary.abandoned += 1,
+            "dead" => summary.dead += 1,
+            "victories" => summary.victories += 1,
+            "discarded" => summary.discarded += 1,
+            _ => summary.other += 1,
+        }
+        if summary.first.is_none() {
+            summary.first = Some(row);
+        }
+        if summary
+            .furthest
+            .is_none_or(|current| compare_milestone_rows(row, current) == Ordering::Greater)
+        {
+            summary.furthest = Some(row);
+            summary.stop_reason = (!row.stop_reason.is_empty()).then_some(row.stop_reason.as_str());
+        }
+    }
+
+    let mut summaries = groups.into_values().collect::<Vec<_>>();
+    summaries.sort_by(|left, right| compare_target_group_audit_summary_v1(right, left));
+    summaries
+}
+
+fn compare_target_group_audit_summary_v1(
+    left: &CoverageGapMilestoneTargetGroupSummaryV1<'_>,
+    right: &CoverageGapMilestoneTargetGroupSummaryV1<'_>,
+) -> Ordering {
+    left.reached
+        .cmp(&right.reached)
+        .then_with(|| {
+            compare_milestone_rows(
+                left.furthest
+                    .expect("target group should have a furthest row"),
+                right
+                    .furthest
+                    .expect("target group should have a furthest row"),
+            )
+        })
+        .then_with(|| left.rows.cmp(&right.rows))
+}
+
+fn format_target_group_audit_line_v1(
+    summary: &CoverageGapMilestoneTargetGroupSummaryV1<'_>,
+) -> String {
+    let first = summary.first.expect("target group should have a first row");
+    let furthest = summary
+        .furthest
+        .expect("target group should have a furthest row");
+    let reached = if summary.reached { "yes" } else { "no" };
+    let lane = if first.target_lane.is_empty() {
+        String::new()
+    } else {
+        format!(" lane={}", first.target_lane)
+    };
+    let stop = summary
+        .stop_reason
+        .map(|reason| format!(" stop={reason}"))
+        .unwrap_or_default();
+    format!(
+        "  {} | {} {{{}}} | reached={} rows={} active={} frozen={} abandoned={} stuck={} dead={} victories={} discarded={} other={} furthest=A{}F{}{}{}",
+        first.event_type,
+        first.label,
+        first.command,
+        reached,
+        summary.rows,
+        summary.active,
+        summary.frozen,
+        summary.abandoned,
+        summary.stuck,
+        summary.dead,
+        summary.victories,
+        summary.discarded,
+        summary.other,
+        furthest.act,
+        furthest.floor,
+        lane,
+        stop
+    )
+}
+
 fn target_origin_source_counts_v1<'a>(
     rows: impl Iterator<Item = &'a CoverageGapMilestoneBranchRowV1>,
 ) -> BTreeMap<&'a str, usize> {
@@ -739,6 +857,35 @@ mod tests {
 
         assert!(text.contains("CoverageGapMilestoneSummaryV1 target=Act2Start total=3 reached=2"));
         assert!(text.contains("Target groups: total=2 reached=1 not_reached=1"));
+    }
+
+    #[test]
+    fn milestone_summary_reports_target_group_audit() {
+        let mut reached_a = row("active", "boss_relic", 2, 18, "RunicPyramid");
+        reached_a.target_key = "boss_relic:runic_pyramid".to_string();
+        reached_a.target_lane = "boss_relic:scheduled:kept:relic:RunicPyramid".to_string();
+        let mut reached_b = row("frozen", "boss_relic", 2, 19, "RunicPyramid");
+        reached_b.target_key = "boss_relic:runic_pyramid".to_string();
+        reached_b.target_lane = "boss_relic:scheduled:kept:relic:RunicPyramid".to_string();
+        reached_b.frontier_title = "Reward Screen".to_string();
+        let mut abandoned = row("abandoned", "route", 1, 16, "x=6 y=12 Rest");
+        abandoned.target_key = "route:rest".to_string();
+        abandoned.target_lane = "route:go:RestRoom:CompleteWithinBudget:no_first_elite".to_string();
+        abandoned.stop_reason = "combat search did not find an executable complete win".to_string();
+
+        let text = render_coverage_gap_milestone_summary_from_rows_v1(
+            &[reached_a, reached_b, abandoned],
+            CoverageGapMilestoneTargetV1::Act2Start,
+        );
+
+        assert!(text.contains("Target group audit:"));
+        assert!(text.contains(
+            "boss_relic | RunicPyramid {choose RunicPyramid} | reached=yes rows=2 active=1 frozen=1"
+        ));
+        assert!(text.contains(
+            "route | x=6 y=12 Rest {choose x=6 y=12 Rest} | reached=no rows=1 active=0 frozen=0 abandoned=1"
+        ));
+        assert!(text.contains("stop=combat search did not find an executable complete win"));
     }
 
     #[test]
