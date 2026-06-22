@@ -39,6 +39,10 @@ Seeds selected coverage-gap targets without spending a campaign round, then cont
 Summarizes the latest saved campaign checkpoint with active/frozen/abandoned deck context.
 
 .EXAMPLE
+.\tools\campaign.ps1 -InspectScratchLatest -InspectState -InspectIndex 0
+Prints the full checkpoint state for a selected latest scratch session.
+
+.EXAMPLE
 .\tools\campaign.ps1 -InspectShopEvidence -InspectIndex 0
 Prints shop compiler evidence for a selected checkpoint branch.
 
@@ -209,6 +213,7 @@ param(
     [switch] $Last,
     [switch] $More,
     [switch] $Inspect,
+    [switch] $InspectState,
     [switch] $InspectShopEvidence,
     [switch] $InspectShopChallenge,
     [switch] $InspectCardRewardEvidence,
@@ -476,6 +481,7 @@ function Format-CoverageGapFilterLabel {
 }
 
 if (
+    $InspectState -or
     $InspectShopEvidence -or
     $InspectShopChallenge -or
     $InspectCardRewardEvidence -or
@@ -1530,6 +1536,7 @@ if ($Inspect) {
         )
     }
     $DetailedInspect =
+        $InspectState -or
         $InspectShopEvidence -or
         $InspectShopChallenge -or
         $InspectCardRewardEvidence -or
