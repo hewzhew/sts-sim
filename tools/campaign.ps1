@@ -474,13 +474,14 @@ $ResumeCheckpointPath = $null
 $ResumeRoundsCompleted = $null
 $TargetRounds = $null
 if ($ContinueCampaign) {
-    if (-not $CampaignSourceArtifact) {
-        $CampaignSourceArtifact = Get-CampaignSourceArtifact -Selector $From -UseScratchLatest $false
+    $ResumeSource = $CampaignSourceArtifact
+    if (-not $ResumeSource) {
+        throw "Internal error: campaign continuation did not resolve a source artifact."
     }
-    if (-not (Test-Path $CampaignSourceArtifact.ReportPath)) {
-        throw "No campaign report found for source '$($CampaignSourceArtifact.Label)' at $($CampaignSourceArtifact.ReportPath)."
+    if (-not (Test-Path $ResumeSource.ReportPath)) {
+        throw "No campaign report found for source '$($ResumeSource.Label)' at $($ResumeSource.ReportPath)."
     }
-    $ResumeCampaignPath = $CampaignSourceArtifact.ReportPath
+    $ResumeCampaignPath = $ResumeSource.ReportPath
     $ResumeReport = Get-Content -LiteralPath $ResumeCampaignPath -Raw | ConvertFrom-Json
     $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
     if ($UntilMilestoneBound) {
@@ -540,10 +541,12 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     if ($InspectScratchLatest -and ($PlanTargets -or $ContinueTargets)) {
         throw "-InspectScratchLatest is not supported for targeted continuation yet; use inspect or coverage-gap continuation."
     }
-    $ContinuationSource = Get-CampaignSourceArtifact -Selector $From -UseScratchLatest $InspectScratchLatest
+    $ContinuationSource = $CampaignSourceArtifact
+    if (-not $ContinuationSource) {
+        throw "Internal error: campaign continuation did not resolve a source artifact."
+    }
     $SourceCampaignPath = $ContinuationSource.ReportPath
     $SourceCheckpointPath = $ContinuationSource.CheckpointPath
-    $SourceManifestPath = $ContinuationSource.ManifestPath
     $SourceLabel = $ContinuationSource.Label
 
     if (-not (Test-Path $SourceCampaignPath)) {
@@ -551,22 +554,6 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     }
     if (-not (Test-Path $SourceCheckpointPath)) {
         throw "No previous campaign checkpoint found at $SourceCheckpointPath. Run .\tools\campaign.ps1 first."
-    }
-
-    $SourceRunConfig = Get-CampaignArtifactRunConfig `
-        -CheckpointPath $SourceCheckpointPath `
-        -ManifestPath $SourceManifestPath
-    if ((-not $PSBoundParameters.ContainsKey("Seed") -or $Seed -le 0) -and $SourceRunConfig.Seed -ne $null) {
-        $Seed = [long] $SourceRunConfig.Seed
-    }
-    if (-not $AscensionBound -and $SourceRunConfig.Ascension -ne $null) {
-        $Ascension = [int] $SourceRunConfig.Ascension
-    }
-    if (-not $ClassBound -and $SourceRunConfig.Class) {
-        $Class = [string] $SourceRunConfig.Class
-    }
-    if (-not $CampaignBoundParameters.ContainsKey("Mode") -and $SourceRunConfig.Mode) {
-        $Mode = [string] $SourceRunConfig.Mode
     }
 
     $TargetDecisionOutcomePath = if ($DecisionOutcomeDataset) {
@@ -849,7 +836,10 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
 }
 
 if ($Inspect) {
-    $InspectSource = Get-CampaignSourceArtifact -Selector $From -UseScratchLatest $InspectScratchLatest
+    $InspectSource = $CampaignSourceArtifact
+    if (-not $InspectSource) {
+        throw "Internal error: campaign inspect did not resolve a source artifact."
+    }
     $InspectCampaignPath = $InspectSource.ReportPath
     $InspectCheckpointPath = $InspectSource.CheckpointPath
     $InspectManifestPath = $InspectSource.ManifestPath

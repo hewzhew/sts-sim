@@ -239,6 +239,11 @@ This helper owns:
 - inheriting mode from source artifacts for continuation-style commands
 - resolving seed, ascension, class, and domain defaults
 
+`tools/campaign.ps1` should consume the resolved source context from this helper.
+It should not call artifact/run-config source lookup helpers directly in
+continuation or inspect branches; otherwise `latest`, `scratch`, and `source`
+semantics will drift again.
+
 ## Still Move Out Of Wrapper
 
 These pieces are useful but should not live in the main script long term:
