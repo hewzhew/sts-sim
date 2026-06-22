@@ -7,8 +7,8 @@ use crate::ai::route_planner_v1::{
     RouteProjectionSourceV1,
 };
 use crate::eval::branch_campaign::{
-    BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1,
-    BranchCampaignDiscardedBranchV1, BranchCampaignReportV1, BranchCampaignRunDomainV1,
+    BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignDiscardedBranchV1,
+    BranchCampaignReportV1, BranchCampaignRunDomainV1,
 };
 use crate::eval::branch_outcome_dataset_v1::{
     BranchOutcomeClassV1, BranchOutcomeRecordV1, BranchOutcomeStateFeaturesV1,
@@ -961,12 +961,9 @@ pub fn plan_coverage_gap_continuations_v1(
             if records
                 .iter()
                 .any(|record| record_observes_journal_candidate_v1(event, candidate, record))
-                || report
-                    .discarded_branches
-                    .iter()
-                    .any(|branch| discarded_branch_observes_journal_candidate_v1(
-                        event, candidate, branch,
-                    ))
+                || report.discarded_branches.iter().any(|branch| {
+                    discarded_branch_observes_journal_candidate_v1(event, candidate, branch)
+                })
             {
                 continue;
             }
@@ -1638,7 +1635,9 @@ fn coverage_gap_execution_bucket_summaries_v1(
     coverage_gap_bucket_summaries_v1(buckets)
 }
 
-pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPlanV1) -> String {
+pub fn render_coverage_gap_continuation_plan_summary_v1(
+    plan: &CoverageGapContinuationPlanV1,
+) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
         "CoverageGapContinuationPlanV1 decisions={} candidates={} unobserved={} scheduled_unobserved={} unscheduled_unobserved={} kept_unobserved={} pruned_unobserved={} selected={} scheduled_selected={} unscheduled_selected={} kept_selected={} pruned_selected={}",
@@ -1672,6 +1671,11 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
             ));
         }
     }
+    lines.join("\n")
+}
+
+pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPlanV1) -> String {
+    let mut lines = vec![render_coverage_gap_continuation_plan_summary_v1(plan)];
     if plan.targets.is_empty() {
         lines.push("Targets: none".to_string());
     } else {
@@ -4262,6 +4266,48 @@ mod tests {
 
         assert_eq!(route_count, 4);
         assert_eq!(reward_count, 2);
+    }
+
+    #[test]
+    fn coverage_gap_plan_summary_renderer_omits_target_details() {
+        let plan = CoverageGapContinuationPlanV1 {
+            schema_name: "CoverageGapContinuationPlanV1".to_string(),
+            schema_version: 3,
+            label_role: "campaign_observation_not_teacher".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            total_decisions: 1,
+            total_candidates: 4,
+            total_unobserved_candidates: 4,
+            kept_unobserved_candidates: 0,
+            pruned_unobserved_candidates: 0,
+            scheduled_unobserved_candidates: 0,
+            unscheduled_unobserved_candidates: 0,
+            selected_target_count: 1,
+            selected_kept_targets: 0,
+            selected_pruned_targets: 0,
+            selected_scheduled_targets: 0,
+            selected_unscheduled_targets: 0,
+            bucket_summaries: vec![CoverageGapContinuationBucketSummaryV1 {
+                bucket: "route".to_string(),
+                unobserved_candidate_count: 4,
+                selected_target_count: 1,
+                ..Default::default()
+            }],
+            targets: vec![sample_route_coverage_gap_target(
+                "go 0",
+                "x=0 Monster",
+                "MonsterRoom",
+                0,
+            )],
+        };
+
+        let rendered = render_coverage_gap_continuation_plan_summary_v1(&plan);
+
+        assert!(rendered.contains("CoverageGapContinuationPlanV1 decisions=1"));
+        assert!(rendered.contains("route selected=1/0 unobserved=4"));
+        assert!(!rendered.contains("Targets:"));
+        assert!(!rendered.contains("x=0 Monster"));
     }
 
     #[test]
