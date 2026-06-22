@@ -667,18 +667,8 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
             Write-Host "milestone-loop-command-template:"
             Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds))
             if ($ContinueCoverageGaps) {
-                $SummaryArgs = @(
-                    "inspect",
-                    "--inspect-report", "$RunOutputCampaignPath",
-                    "--inspect-coverage-gap-milestone-summary",
-                    "--coverage-gap-milestone-target", "$UntilMilestone"
-                )
-                $SummaryArgs += $CoverageGapResultFilterArgs
-                if (Test-Path -LiteralPath $RunOutputCheckpointPath) {
-                    $SummaryArgs += @("--inspect-checkpoint", "$RunOutputCheckpointPath")
-                }
                 Write-Host "milestone-summary-command:"
-                Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $SummaryArgs)
+                Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-CoverageGapMilestoneSummaryArgs))
             }
         }
         exit 0
