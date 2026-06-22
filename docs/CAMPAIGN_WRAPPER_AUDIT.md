@@ -217,12 +217,22 @@ This helper owns:
 - targeted continuation dataset export command rendering
 - targeted continuation plan/execute/effect command rendering
 
+Build freshness helpers now live in:
+
+```text
+tools/campaign_build.ps1
+```
+
+This helper owns:
+
+- deciding whether the Rust driver binary needs rebuilding
+
 ## Still Move Out Of Wrapper
 
 These pieces are useful but should not live in the main script long term:
 
-- build freshness detection; the main wrapper still knows how to scan Rust
-  source timestamps
+- the long wrapper comment-help block; active examples should move to docs if
+  the header keeps growing
 
 ## Candidates To Delete Or Degrade
 
@@ -261,8 +271,8 @@ If the answer is no, do not add it to `tools/campaign.ps1`.
 ## Next Cleanup Order
 
 1. Reassess whether targeted continuation still earns its wrapper surface.
-2. Move build freshness detection out of the main wrapper if the wrapper remains
-   too large after continuation cleanup.
-3. Review whether the large comment-help block should become docs-only examples.
+2. Review whether the large comment-help block should become docs-only examples.
+3. Consider replacing many specific inspect switches with a smaller typed
+   inspect adapter only after current callers are audited.
 
 This sequence reduces cognitive load without changing campaign strategy.
