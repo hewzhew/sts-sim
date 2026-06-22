@@ -956,14 +956,14 @@ function Write-CampaignWrapperManifest {
     $Manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $Path
 }
 
-function Write-CampaignCommandRecord {
+function Write-CampaignPrimaryDriverCommandRecord {
     param(
-        [string] $CommandLine
+        [string] $PrimaryDriverCommandLine
     )
 
     if ($Scratch) {
-        Set-Content -LiteralPath $RunCommandPath -Value $CommandLine
-        Write-Host "scratch-command=$RunCommandPath"
+        Set-Content -LiteralPath $RunCommandPath -Value $PrimaryDriverCommandLine
+        Write-Host "scratch-primary-driver-command=$RunCommandPath"
         Write-Host "scratch-manifest=$RunManifestPath"
         return
     }
@@ -972,7 +972,7 @@ function Write-CampaignCommandRecord {
     Set-Content -LiteralPath $LatestAscensionPath -Value $Ascension
     Set-Content -LiteralPath $LatestClassPath -Value $Class
     Set-Content -LiteralPath $LatestModePath -Value $Mode
-    Set-Content -LiteralPath $LatestCommandPath -Value $CommandLine
+    Set-Content -LiteralPath $LatestCommandPath -Value $PrimaryDriverCommandLine
 }
 
 function Invoke-CampaignLoggedDriverCommand {
@@ -1037,6 +1037,7 @@ function New-CampaignWrapperManifestBase {
         scratch_label = $ScratchLabel
         output_report = "$RunOutputCampaignPath"
         output_checkpoint = "$RunOutputCheckpointPath"
+        command_file_semantics = "primary_driver_command"
         command_file = "$RunCommandPath"
         manifest_file = "$RunManifestPath"
         wrapper_invocation = [ordered]@{
@@ -1046,6 +1047,7 @@ function New-CampaignWrapperManifestBase {
         primary_driver = [ordered]@{
             args = @($PrimaryDriverArgs)
             command = $PrimaryDriverCommand
+            command_file = "$RunCommandPath"
         }
     }
 }
@@ -1665,7 +1667,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                 if ($LASTEXITCODE -ne 0) {
                     exit $LASTEXITCODE
                 }
-                Write-CampaignCommandRecord -CommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
+                Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
                 if ($UntilMilestoneBound) {
                     Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds
                     $DriverExitCode = $script:CampaignMilestoneExitCode
@@ -1677,7 +1679,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
             & $DriverExe @ContinueCoverageGapArgs
             $DriverExitCode = $LASTEXITCODE
             if ($DriverExitCode -eq 0) {
-                Write-CampaignCommandRecord -CommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
+                Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
                 Write-CampaignWrapperManifest `
                     -Path $RunManifestPath `
                     -Manifest (New-CoverageGapWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed")
@@ -2010,7 +2012,7 @@ try {
         $DriverExitCode = $LASTEXITCODE
     }
     if ($DriverExitCode -eq 0) {
-        Write-CampaignCommandRecord -CommandLine $RenderedCommand
+        Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine $RenderedCommand
         Write-CampaignWrapperManifest `
             -Path $RunManifestPath `
             -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed")
