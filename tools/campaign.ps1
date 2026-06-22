@@ -31,6 +31,10 @@ Resumes the latest saved campaign report and advances until total round 33.
 Runs coverage-gap branches, then keeps resuming in small round chunks until any branch reaches Act 2 or the milestone round cap is exhausted.
 
 .EXAMPLE
+.\tools\campaign.ps1 -ContinueCoverageGaps -CoverageGapExecution milestone -UntilMilestone Act2Start -Scratch
+Seeds selected coverage-gap targets without spending a campaign round, then continues those branches to the requested milestone in a scratch report.
+
+.EXAMPLE
 .\tools\campaign.ps1 -Inspect
 Summarizes the latest saved campaign checkpoint with active/frozen/abandoned deck context.
 
@@ -275,7 +279,7 @@ param(
     [int] $CoverageGapCandidatesPerDecision = 1,
     [ValidateSet("gap_closure", "frontier_expansion")]
     [string] $CoverageGapIntent = "gap_closure",
-    [ValidateSet("auto", "target_only", "advance_rounds")]
+    [ValidateSet("auto", "target_only", "advance_rounds", "milestone")]
     [string] $CoverageGapExecution = "auto",
     [ValidateRange(0, 100)]
     [int] $VictoryHpPercent = 20,
@@ -924,13 +928,29 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         $TargetRounds = $ResumeRoundsCompleted + $MaxRounds
         $ContinuationRoundBudgetArgs = @("--max-rounds", "$ContinuationRounds")
     }
-    $ResolvedCoverageGapExecution = $CoverageGapExecution
-    if ($ResolvedCoverageGapExecution -eq "auto") {
-        if ($CoverageGapIntent -eq "gap_closure") {
-            $ResolvedCoverageGapExecution = "target_only"
+    if ($CoverageGapExecution -eq "milestone" -and -not $UntilMilestoneBound) {
+        throw "-CoverageGapExecution milestone requires -UntilMilestone."
+    }
+    $CoverageGapDriverExecution = $CoverageGapExecution
+    $CoverageGapExecutionLabel = $CoverageGapExecution
+    if ($CoverageGapExecution -eq "auto") {
+        if ($UntilMilestoneBound -and $ContinueCoverageGaps) {
+            $CoverageGapExecutionLabel = "milestone_continuation"
+            $CoverageGapDriverExecution = "target_only"
+        } elseif ($CoverageGapIntent -eq "gap_closure") {
+            $CoverageGapExecutionLabel = "target_only"
+            $CoverageGapDriverExecution = "target_only"
         } else {
-            $ResolvedCoverageGapExecution = "advance_rounds"
+            $CoverageGapExecutionLabel = "advance_rounds"
+            $CoverageGapDriverExecution = "advance_rounds"
         }
+    } elseif ($CoverageGapExecution -eq "milestone") {
+        $CoverageGapExecutionLabel = "milestone_continuation"
+        $CoverageGapDriverExecution = "target_only"
+    }
+    $CoverageGapInitialSpentRounds = $ContinuationRounds
+    if ($CoverageGapDriverExecution -eq "target_only") {
+        $CoverageGapInitialSpentRounds = 0
     }
 
     $ContinueTargetArgs = @(
@@ -970,7 +990,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         "--coverage-gap-limit", "$CoverageGapLimit",
         "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision",
         "--coverage-gap-budget-intent", "$CoverageGapIntent",
-        "--coverage-gap-execution-mode", "$ResolvedCoverageGapExecution",
+        "--coverage-gap-execution-mode", "$CoverageGapDriverExecution",
         "--out", "$RunOutputCampaignPath",
         "--checkpoint-out", "$RunOutputCheckpointPath"
     )
@@ -1089,12 +1109,19 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         Write-Host "coverage-gap-plan=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision"
     }
     if ($ContinueCoverageGaps) {
-        Write-Host "coverage-gap-continue=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision intent=$CoverageGapIntent execution=$ResolvedCoverageGapExecution"
+        if ($CoverageGapExecutionLabel -eq $CoverageGapDriverExecution) {
+            Write-Host "coverage-gap-continue=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision intent=$CoverageGapIntent execution=$CoverageGapExecutionLabel"
+        } else {
+            Write-Host "coverage-gap-continue=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision intent=$CoverageGapIntent execution=$CoverageGapExecutionLabel seed-execution=$CoverageGapDriverExecution"
+        }
         Write-Host "resume-rounds=$ResumeRoundsCompleted"
         if ($TargetRounds -ne $null) {
             Write-Host "round-budget=$ContinuationRoundSource target-rounds=$TargetRounds additional-rounds=$ContinuationRounds"
         } else {
             Write-Host "round-budget=$ContinuationRoundSource additional-rounds=$ContinuationRounds"
+        }
+        if ($UntilMilestoneBound) {
+            Write-Host "milestone-initial-spent-rounds=$CoverageGapInitialSpentRounds"
         }
     }
 
@@ -1198,7 +1225,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                     Set-Content -LiteralPath $LatestCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
                 }
                 if ($UntilMilestoneBound) {
-                    $DriverExitCode = Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds
+                    $DriverExitCode = Invoke-CampaignUntilMilestone -AlreadySpentRounds $CoverageGapInitialSpentRounds
                 }
             }
             exit $DriverExitCode
