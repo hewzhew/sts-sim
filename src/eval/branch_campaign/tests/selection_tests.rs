@@ -622,6 +622,7 @@ fn campaign_selection_preserves_one_coverage_gap_probe_active_slot() {
         admission: crate::eval::campaign_journal::CampaignJournalCandidateAdmissionTraceV1::default(
         ),
         disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Pruned,
+        target_lane: None,
         target_origin_source: "journal_coverage_gap".to_string(),
         route_origin: None,
         milestone: String::new(),

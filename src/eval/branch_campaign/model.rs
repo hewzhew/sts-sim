@@ -7,8 +7,8 @@ use crate::eval::branch_experiment::{
     BranchExperimentBossCombatRecordV1, BranchExperimentRewardOptionPortfolioV1,
 };
 use crate::eval::campaign_journal::{
-    CampaignJournalCandidateAdmissionTraceV1, CampaignJournalCandidateDispositionV1,
-    CampaignJournalV1,
+    CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateAdmissionTraceV1,
+    CampaignJournalCandidateDispositionV1, CampaignJournalV1,
 };
 use crate::eval::combat_lab_probe_v1::CombatLabProbePacketV1;
 use crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1;
@@ -133,11 +133,24 @@ pub struct BranchCampaignContinuationOriginV1 {
     #[serde(default)]
     pub admission: CampaignJournalCandidateAdmissionTraceV1,
     pub disposition: CampaignJournalCandidateDispositionV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_lane: Option<BranchCampaignContinuationTargetLaneV1>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub target_origin_source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route_origin: Option<BranchCampaignRouteContinuationOriginV1>,
     pub milestone: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignContinuationTargetLaneV1 {
+    pub bucket: String,
+    pub admission_status: CampaignJournalCandidateAdmissionStatusV1,
+    pub disposition: CampaignJournalCandidateDispositionV1,
+    pub semantic_lane: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shop_action_kind: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -4727,6 +4727,7 @@ mod tests {
                 "kept",
             ),
             disposition: CampaignJournalCandidateDispositionV1::Kept,
+            target_lane: None,
             target_origin_source: String::new(),
             route_origin: None,
             milestone: "next_major_boundary".to_string(),

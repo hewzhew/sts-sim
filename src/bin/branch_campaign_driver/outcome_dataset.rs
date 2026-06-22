@@ -7,8 +7,9 @@ use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_with_detail_v1,
     run_branch_campaign_from_report_with_checkpoint_v1, BranchCampaignBranchStatusV1,
     BranchCampaignBranchV1, BranchCampaignCheckpointV1, BranchCampaignContinuationOriginV1,
-    BranchCampaignReportV1, BranchCampaignRouteContinuationOriginV1,
-    BranchCampaignRouteFirstEliteContinuationOriginV1, BranchCampaignRoutePathContinuationOriginV1,
+    BranchCampaignContinuationTargetLaneV1, BranchCampaignReportV1,
+    BranchCampaignRouteContinuationOriginV1, BranchCampaignRouteFirstEliteContinuationOriginV1,
+    BranchCampaignRoutePathContinuationOriginV1,
 };
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     analyze_branch_outcome_records_v1, extract_branch_outcome_records_v1,
@@ -40,7 +41,7 @@ use sts_simulator::eval::learning_dataset_v1::{
 #[cfg(test)]
 use sts_simulator::eval::learning_dataset_v1::{
     CoverageGapRouteFirstEliteOriginV1, CoverageGapRoutePathOriginV1,
-    CoverageGapRouteTargetOriginV1,
+    CoverageGapRouteTargetOriginV1, CoverageGapShopActionLaneV1, CoverageGapTargetLaneV1,
 };
 use sts_simulator::eval::neow_guided_prefix::{
     neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
@@ -651,6 +652,10 @@ fn coverage_gap_branch_from_target_v1(
             semantic_class: target.semantic_class.clone(),
             admission: target.admission.clone(),
             disposition: target.disposition,
+            target_lane: target
+                .target_lane
+                .as_ref()
+                .map(branch_campaign_target_lane_from_coverage_gap_v1),
             target_origin_source: target.target_origin.source.clone(),
             route_origin: target.target_origin.route.as_ref().map(|route| {
                 BranchCampaignRouteContinuationOriginV1 {
@@ -724,6 +729,37 @@ fn coverage_gap_branch_from_target_v1(
         rank_key: 0,
         final_boss_combat_record: None,
         combat_lab_probes: Vec::new(),
+    }
+}
+
+fn branch_campaign_target_lane_from_coverage_gap_v1(
+    lane: &sts_simulator::eval::learning_dataset_v1::CoverageGapTargetLaneV1,
+) -> BranchCampaignContinuationTargetLaneV1 {
+    BranchCampaignContinuationTargetLaneV1 {
+        bucket: lane.bucket.clone(),
+        admission_status: lane.admission_status,
+        disposition: lane.disposition,
+        semantic_lane: lane.semantic_lane.clone(),
+        shop_action_kind: lane.shop_action_kind.map(|kind| match kind {
+            sts_simulator::eval::learning_dataset_v1::CoverageGapShopActionLaneV1::Purge => {
+                "purge".to_string()
+            }
+            sts_simulator::eval::learning_dataset_v1::CoverageGapShopActionLaneV1::BuyCard => {
+                "buy_card".to_string()
+            }
+            sts_simulator::eval::learning_dataset_v1::CoverageGapShopActionLaneV1::BuyRelic => {
+                "buy_relic".to_string()
+            }
+            sts_simulator::eval::learning_dataset_v1::CoverageGapShopActionLaneV1::BuyPotion => {
+                "buy_potion".to_string()
+            }
+            sts_simulator::eval::learning_dataset_v1::CoverageGapShopActionLaneV1::Leave => {
+                "leave".to_string()
+            }
+            sts_simulator::eval::learning_dataset_v1::CoverageGapShopActionLaneV1::Portfolio => {
+                "portfolio".to_string()
+            }
+        }),
     }
 }
 
@@ -1690,6 +1726,29 @@ mod tests {
         assert_eq!(origin.disposition, target.disposition);
         assert!(origin.target_origin_source.is_empty());
         assert!(origin.route_origin.is_none());
+    }
+
+    #[test]
+    fn coverage_gap_branch_preserves_typed_target_lane() {
+        let mut target = coverage_gap_test_target("shop", "buy relic 3", "Buy Orange Pellets", 0);
+        target.target_lane = Some(CoverageGapTargetLaneV1 {
+            bucket: "shop".to_string(),
+            admission_status: CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+            disposition: CampaignJournalCandidateDispositionV1::Kept,
+            semantic_lane: "shop_action:buy_relic".to_string(),
+            shop_action_kind: Some(CoverageGapShopActionLaneV1::BuyRelic),
+        });
+
+        let branch = coverage_gap_branch_from_target_v1(&target);
+        let lane = branch
+            .continuation_origin
+            .as_ref()
+            .and_then(|origin| origin.target_lane.as_ref())
+            .expect("coverage-gap branch origin should preserve typed target lane");
+
+        assert_eq!(lane.bucket, "shop");
+        assert_eq!(lane.semantic_lane, "shop_action:buy_relic");
+        assert_eq!(lane.shop_action_kind.as_deref(), Some("buy_relic"));
     }
 
     #[test]

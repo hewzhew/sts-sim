@@ -419,6 +419,7 @@ fn compact_campaign_report_surfaces_route_continuation_origin() {
         semantic_class: "route".to_string(),
         admission: Default::default(),
         disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Pruned,
+        target_lane: None,
         target_origin_source: "route_candidate_pool".to_string(),
         route_origin: Some(BranchCampaignRouteContinuationOriginV1 {
             legal_candidate_count: 4,

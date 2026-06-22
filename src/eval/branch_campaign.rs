@@ -63,13 +63,13 @@ use lineage::campaign_branch_boss_relic_lineage_key_v1;
 pub use model::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
     BranchCampaignCheckpointSessionV1, BranchCampaignCheckpointV1,
-    BranchCampaignContinuationOriginV1, BranchCampaignDecisionObservationV1,
-    BranchCampaignDiscardedBranchV1, BranchCampaignReportV1, BranchCampaignRoundSummaryV1,
-    BranchCampaignRouteContinuationOriginV1, BranchCampaignRouteEvidenceExampleV1,
-    BranchCampaignRouteEvidenceSummaryV1, BranchCampaignRouteFirstEliteContinuationOriginV1,
-    BranchCampaignRoutePathContinuationOriginV1, BranchCampaignRunPreludeV1,
-    BranchCampaignRunResultV1, BranchCampaignSelectionV1, BranchCampaignStateStoreSummaryV1,
-    BranchCampaignStrategyRequestV1,
+    BranchCampaignContinuationOriginV1, BranchCampaignContinuationTargetLaneV1,
+    BranchCampaignDecisionObservationV1, BranchCampaignDiscardedBranchV1, BranchCampaignReportV1,
+    BranchCampaignRoundSummaryV1, BranchCampaignRouteContinuationOriginV1,
+    BranchCampaignRouteEvidenceExampleV1, BranchCampaignRouteEvidenceSummaryV1,
+    BranchCampaignRouteFirstEliteContinuationOriginV1, BranchCampaignRoutePathContinuationOriginV1,
+    BranchCampaignRunPreludeV1, BranchCampaignRunResultV1, BranchCampaignSelectionV1,
+    BranchCampaignStateStoreSummaryV1, BranchCampaignStrategyRequestV1,
 };
 use parent_batch::run_campaign_parent_batch_v1;
 #[cfg(test)]
