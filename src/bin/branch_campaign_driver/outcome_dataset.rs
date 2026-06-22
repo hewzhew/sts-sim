@@ -524,7 +524,27 @@ fn coverage_gap_target_only_result_plan_v1(
                 }
             }
         }
+        let lane =
+            sts_simulator::eval::learning_dataset_v1::coverage_gap_continuation_target_lane_v1(
+                target,
+            );
+        if let Some(summary) = after
+            .lane_summaries
+            .iter_mut()
+            .find(|summary| summary.lane == lane)
+        {
+            summary.eligible_target_count = summary.eligible_target_count.saturating_sub(1);
+            summary.selected_target_count = summary.selected_target_count.saturating_sub(1);
+            summary.deferred_target_count = summary
+                .eligible_target_count
+                .saturating_sub(summary.selected_target_count);
+        }
     }
+    after.lane_summaries.retain(|summary| {
+        summary.eligible_target_count > 0
+            || summary.selected_target_count > 0
+            || summary.deferred_target_count > 0
+    });
     after
 }
 
@@ -1330,7 +1350,9 @@ mod tests {
         CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateAdmissionTraceV1,
         CampaignJournalCandidateDispositionV1,
     };
-    use sts_simulator::eval::learning_dataset_v1::CoverageGapContinuationBucketSummaryV1;
+    use sts_simulator::eval::learning_dataset_v1::{
+        CoverageGapContinuationBucketSummaryV1, CoverageGapContinuationLaneSummaryV1,
+    };
 
     #[test]
     fn coverage_gap_result_audit_links_targets_to_result_branches() {
@@ -1346,6 +1368,7 @@ mod tests {
             selected_branch_count: 2,
             skipped_target_count: 0,
             bucket_summaries: Vec::new(),
+            lane_summaries: Vec::new(),
             targets: vec![reward_target.clone(), route_target.clone()],
         };
         let mut report = BranchCampaignReportV1 {
@@ -1448,6 +1471,7 @@ mod tests {
             selected_branch_count: 2,
             skipped_target_count: 0,
             bucket_summaries: Vec::new(),
+            lane_summaries: Vec::new(),
             targets: vec![extended_target.clone(), target_only_target.clone()],
         };
         let mut extended_branch = coverage_gap_test_result_branch(
@@ -1643,6 +1667,20 @@ mod tests {
         );
         plan.scheduled_unobserved_candidates = 8;
         plan.kept_unobserved_candidates = 8;
+        plan.lane_summaries = vec![
+            CoverageGapContinuationLaneSummaryV1 {
+                lane: "reward:scheduled:kept:reward".to_string(),
+                eligible_target_count: 3,
+                selected_target_count: 1,
+                deferred_target_count: 2,
+            },
+            CoverageGapContinuationLaneSummaryV1 {
+                lane: "route:legacy:x=0 Monster".to_string(),
+                eligible_target_count: 1,
+                selected_target_count: 1,
+                deferred_target_count: 0,
+            },
+        ];
         let execution = CoverageGapContinuationExecutionPlanV1 {
             schema_name: "CoverageGapContinuationExecutionPlanV1".to_string(),
             schema_version: 3,
@@ -1653,6 +1691,7 @@ mod tests {
             selected_branch_count: 2,
             skipped_target_count: 0,
             bucket_summaries: Vec::new(),
+            lane_summaries: Vec::new(),
             targets: vec![reward_target, route_target],
         };
 
@@ -1678,6 +1717,21 @@ mod tests {
                 .expect("route bucket")
                 .unobserved_candidate_count,
             5
+        );
+        let reward_lane = after
+            .lane_summaries
+            .iter()
+            .find(|summary| summary.lane == "reward:scheduled:kept:reward")
+            .expect("remaining reward lane should be summarized");
+        assert_eq!(reward_lane.eligible_target_count, 2);
+        assert_eq!(reward_lane.selected_target_count, 0);
+        assert_eq!(reward_lane.deferred_target_count, 2);
+        assert!(
+            after
+                .lane_summaries
+                .iter()
+                .all(|summary| summary.lane != "route:legacy:x=0 Monster"),
+            "fully consumed route lane should be removed from the follow-up plan"
         );
     }
 
@@ -2039,6 +2093,7 @@ mod tests {
             selected_scheduled_targets: 0,
             selected_unscheduled_targets: 0,
             bucket_summaries,
+            lane_summaries: Vec::new(),
             targets: Vec::new(),
         }
     }
