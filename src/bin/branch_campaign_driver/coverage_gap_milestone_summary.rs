@@ -54,6 +54,7 @@ pub(super) struct CoverageGapMilestoneBranchRowV1 {
     pub(super) hp: i32,
     pub(super) max_hp: i32,
     pub(super) deck_count: usize,
+    pub(super) deck_key: String,
     pub(super) target_origin_source: String,
     pub(super) target_lane: String,
     pub(super) target_progress: String,
@@ -530,6 +531,9 @@ fn row_from_parts_v1(
         hp: summary.map_or(0, |summary| summary.hp),
         max_hp: summary.map_or(0, |summary| summary.max_hp),
         deck_count: summary.map_or(0, |summary| summary.deck_count),
+        deck_key: summary
+            .map(|summary| summary.deck_key.clone())
+            .unwrap_or_default(),
         target_origin_source: target_origin_source.to_string(),
         target_lane,
         target_progress,
@@ -832,6 +836,9 @@ fn format_target_group_detail_lines_v1(
     if !furthest.target_progress.is_empty() {
         lines.push(format!("    target_progress: {}", furthest.target_progress));
     }
+    if !furthest.deck_key.is_empty() {
+        lines.push(format!("    deck_key: {}", furthest.deck_key));
+    }
     if !furthest.target_origin_source.is_empty() {
         lines.push(format!(
             "    target_origin_source: {}",
@@ -943,6 +950,7 @@ mod tests {
             hp: 80,
             max_hp: 80,
             deck_count: 12,
+            deck_key: String::new(),
             target_origin_source: "journal_coverage_gap".to_string(),
             target_lane: format!("{event_type}:scheduled:kept:test"),
             target_progress: "extended".to_string(),
@@ -1051,6 +1059,51 @@ mod tests {
         assert!(text.contains("furthest: A1F16 HP 80/80 deck 12 | abandoned | route"));
         assert!(text
             .contains("choices: Skip card reward -> Smith Bash -> x=6 y=12 Rest -> Battle Trance"));
+    }
+
+    #[test]
+    fn milestone_summary_drilldown_shows_deck_key_when_available() {
+        let summary = BranchCampaignBranchSummaryV1 {
+            act: 1,
+            floor: 16,
+            hp: 72,
+            max_hp: 80,
+            gold: 120,
+            deck_count: 13,
+            deck_key: "Bash+1x1;Feed+0x1;Strike+0x4".to_string(),
+            formation_stage: "Transitional".to_string(),
+            formation_strengths: Vec::new(),
+            formation_needs: Vec::new(),
+            trajectory_key: String::new(),
+            boss: "Hexaghost".to_string(),
+            boss_pressure: Vec::new(),
+            run_debt: Vec::new(),
+            event_boundary: None,
+            reward_boundary: None,
+        };
+        let mut route = row_from_parts_v1(
+            "abandoned",
+            "route:rest".to_string(),
+            "route",
+            "x=6 y=12 Rest",
+            "go 6",
+            "map_decision_packet",
+            "route:go:RestRoom:CompleteWithinBudget:no_first_elite".to_string(),
+            "extended".to_string(),
+            Some(&summary),
+            "Combat",
+            "combat search did not find an executable complete win",
+            &["Smith Bash".to_string(), "Battle Trance".to_string()],
+        );
+        route.target_key = "route:rest".to_string();
+
+        let text = render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
+            &[route],
+            CoverageGapMilestoneTargetV1::Act2Start,
+            &CoverageGapContinuationFilterV1::default(),
+        );
+
+        assert!(text.contains("deck_key: Bash+1x1;Feed+0x1;Strike+0x4"));
     }
 
     #[test]
