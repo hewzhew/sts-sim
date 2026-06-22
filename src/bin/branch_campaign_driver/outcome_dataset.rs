@@ -3,6 +3,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+#[cfg(test)]
+use sts_simulator::eval::branch_campaign::BranchCampaignCheckpointSessionV1;
 use sts_simulator::eval::branch_campaign::{
     render_branch_campaign_compact_with_detail_v1,
     run_branch_campaign_from_report_with_checkpoint_v1, BranchCampaignBranchStatusV1,
@@ -35,8 +37,9 @@ use sts_simulator::eval::learning_dataset_v1::{
     serialize_learning_branch_samples_jsonl_v1,
     serialize_learning_decision_outcome_samples_jsonl_v1, targeted_continuation_execution_plan_v1,
     CoverageGapContinuationExecutionPlanV1, CoverageGapContinuationPlanV1,
-    CoverageGapContinuationTargetV1, LearningBranchSampleV1, LearningDatasetExportContextV1,
-    LearningDecisionOutcomeSampleV1, TargetedContinuationExecutionPlanV1,
+    CoverageGapContinuationTargetProgressV1, CoverageGapContinuationTargetV1,
+    LearningBranchSampleV1, LearningDatasetExportContextV1, LearningDecisionOutcomeSampleV1,
+    TargetedContinuationExecutionPlanV1,
 };
 #[cfg(test)]
 use sts_simulator::eval::learning_dataset_v1::{
@@ -47,6 +50,10 @@ use sts_simulator::eval::neow_guided_prefix::{
     neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
 };
 use sts_simulator::eval::run_control::canonical_player_class;
+#[cfg(test)]
+use sts_simulator::eval::run_control::{
+    RunControlConfig, RunControlSession, RunControlSessionCheckpointV1,
+};
 
 use super::campaign_artifacts::{
     read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
@@ -648,8 +655,7 @@ fn coverage_gap_continuation_source_report_v1(
 fn coverage_gap_branch_from_target_v1(
     target: &CoverageGapContinuationTargetV1,
 ) -> BranchCampaignBranchV1 {
-    let mut commands = target.parent_commands.clone();
-    commands.push(target.command.clone());
+    let commands = coverage_gap_target_commands_v1(target);
     let mut choice_labels = target.parent_choices.clone();
     choice_labels.push(target.label.clone());
     BranchCampaignBranchV1 {
@@ -755,6 +761,12 @@ fn coverage_gap_branch_from_target_v1(
     }
 }
 
+fn coverage_gap_target_commands_v1(target: &CoverageGapContinuationTargetV1) -> Vec<String> {
+    let mut commands = target.parent_commands.clone();
+    commands.push(target.command.clone());
+    commands
+}
+
 fn branch_campaign_target_lane_from_coverage_gap_v1(
     lane: &sts_simulator::eval::learning_dataset_v1::CoverageGapTargetLaneV1,
 ) -> BranchCampaignContinuationTargetLaneV1 {
@@ -796,6 +808,11 @@ fn filter_coverage_gap_execution_plan_for_checkpoint_v1(
         .targets
         .into_iter()
         .filter(|target| {
+            if target.existing_progress == Some(CoverageGapContinuationTargetProgressV1::TargetOnly)
+            {
+                let target_commands = coverage_gap_target_commands_v1(target);
+                return checkpoint_can_replay_parent_commands_v1(checkpoint, &target_commands);
+            }
             if coverage_gap_target_requires_exact_parent_snapshot_v1(target) {
                 return coverage_gap_parent_commands_have_exact_coordinate_v1(
                     &target.parent_commands,
@@ -1852,6 +1869,7 @@ mod tests {
             label: "Shrug It Off".to_string(),
             semantic_class: "block".to_string(),
             target_lane: None,
+            existing_progress: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Deferred,
                 "reward_portfolio",
@@ -1987,6 +2005,7 @@ mod tests {
             label: "x=2 y=3 Elite".to_string(),
             semantic_class: "route".to_string(),
             target_lane: None,
+            existing_progress: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Deferred,
                 "route_candidate_pool",
@@ -2142,6 +2161,7 @@ mod tests {
             label: "purge Strike".to_string(),
             semantic_class: "purge".to_string(),
             target_lane: None,
+            existing_progress: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Scheduled,
                 "shop_candidate_pool",
@@ -2170,6 +2190,42 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn coverage_gap_checkpoint_filter_replays_target_only_from_target_session() {
+        let mut target_only = coverage_gap_test_target("reward", "rp 1", "True Grit", 0);
+        target_only.parent_commands = vec!["rp 0".to_string()];
+        target_only.existing_progress = Some(CoverageGapContinuationTargetProgressV1::TargetOnly);
+        let mut missing = target_only.clone();
+        missing.existing_progress = None;
+        missing.candidate_id = "reward:candidate:missing".to_string();
+        let checkpoint = coverage_gap_test_checkpoint_with_session(
+            coverage_gap_target_commands_v1(&target_only),
+        );
+        let execution = CoverageGapContinuationExecutionPlanV1 {
+            schema_name: "CoverageGapContinuationExecutionPlanV1".to_string(),
+            schema_version: 1,
+            label_role: "campaign_observation_not_teacher".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            requested_target_count: 2,
+            selected_branch_count: 2,
+            skipped_target_count: 0,
+            bucket_summaries: Vec::new(),
+            lane_summaries: Vec::new(),
+            targets: vec![target_only.clone(), missing],
+        };
+
+        let filtered = filter_coverage_gap_execution_plan_for_checkpoint_v1(execution, &checkpoint);
+
+        assert_eq!(filtered.selected_branch_count, 1);
+        assert_eq!(filtered.skipped_target_count, 1);
+        assert_eq!(filtered.targets[0].candidate_id, target_only.candidate_id);
+        assert_eq!(
+            filtered.targets[0].existing_progress,
+            Some(CoverageGapContinuationTargetProgressV1::TargetOnly)
+        );
+    }
+
     fn coverage_gap_test_target(
         event_type: &str,
         command: &str,
@@ -2190,6 +2246,7 @@ mod tests {
             label: label.to_string(),
             semantic_class: event_type.to_string(),
             target_lane: None,
+            existing_progress: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Scheduled,
                 format!("{event_type}_candidate_pool"),
@@ -2198,6 +2255,26 @@ mod tests {
             disposition: CampaignJournalCandidateDispositionV1::Kept,
             target_origin: Default::default(),
             milestone: format!("{event_type}_milestone"),
+        }
+    }
+
+    fn coverage_gap_test_checkpoint_with_session(
+        session_commands: Vec<String>,
+    ) -> BranchCampaignCheckpointV1 {
+        BranchCampaignCheckpointV1 {
+            schema_name: "BranchCampaignCheckpointV1".to_string(),
+            schema_version: 1,
+            seed: 1,
+            run_domain: Default::default(),
+            run_prelude: Default::default(),
+            rounds_completed: 0,
+            nodes: Vec::new(),
+            sessions: vec![BranchCampaignCheckpointSessionV1 {
+                commands: session_commands,
+                session: RunControlSessionCheckpointV1::from_session(&RunControlSession::new(
+                    RunControlConfig::default(),
+                )),
+            }],
         }
     }
 

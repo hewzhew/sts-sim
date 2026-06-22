@@ -8,8 +8,8 @@ use crate::ai::route_planner_v1::{
 };
 use crate::eval::branch_campaign::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
-    BranchCampaignContinuationOriginV1, BranchCampaignDiscardedBranchV1, BranchCampaignReportV1,
-    BranchCampaignRunDomainV1,
+    BranchCampaignContinuationOriginV1, BranchCampaignContinuationTargetLaneV1,
+    BranchCampaignDiscardedBranchV1, BranchCampaignReportV1, BranchCampaignRunDomainV1,
 };
 use crate::eval::branch_outcome_dataset_v1::{
     BranchOutcomeClassV1, BranchOutcomeRecordV1, BranchOutcomeStateFeaturesV1,
@@ -320,6 +320,8 @@ pub struct CoverageGapContinuationTargetV1 {
     pub semantic_class: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_lane: Option<CoverageGapTargetLaneV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub existing_progress: Option<CoverageGapContinuationTargetProgressV1>,
     #[serde(default)]
     pub admission: CampaignJournalCandidateAdmissionTraceV1,
     pub disposition: CampaignJournalCandidateDispositionV1,
@@ -1115,7 +1117,7 @@ pub fn plan_coverage_gap_continuations_v1(
     let mut selected_pruned_targets = 0usize;
     let mut selected_scheduled_targets = 0usize;
     let mut selected_unscheduled_targets = 0usize;
-    let mut target_candidates = Vec::new();
+    let mut target_candidates = coverage_gap_target_only_continuation_targets_v1(report);
     let mut bucket_counts = BTreeMap::<String, CoverageGapContinuationBucketSummaryV1>::new();
 
     for event in &report.journal.events {
@@ -1196,6 +1198,9 @@ pub fn plan_coverage_gap_continuations_v1(
                 label: candidate.label.clone(),
                 semantic_class: candidate.semantic_class.clone(),
                 target_lane: None,
+                existing_progress: coverage_gap_existing_target_progress_v1(
+                    report, event, candidate,
+                ),
                 admission: resolved_candidate_admission_v1(candidate),
                 disposition: candidate.disposition,
                 target_origin: coverage_gap_target_origin_v1(event, candidate_index),
@@ -1426,6 +1431,213 @@ fn coverage_gap_target_progress_summaries_v1(
         .collect()
 }
 
+fn coverage_gap_existing_target_progress_v1(
+    report: &BranchCampaignReportV1,
+    event: &CampaignJournalEventV1,
+    candidate: &CampaignJournalCandidateV1,
+) -> Option<CoverageGapContinuationTargetProgressV1> {
+    report
+        .active
+        .iter()
+        .chain(report.frozen.iter())
+        .chain(report.victories.iter())
+        .chain(report.dead.iter())
+        .chain(report.abandoned.iter())
+        .chain(report.stuck.iter())
+        .find_map(|branch| {
+            let origin = branch.continuation_origin.as_ref()?;
+            coverage_gap_origin_observes_journal_candidate_v1(origin, event, candidate)
+                .then(|| coverage_gap_final_branch_target_progress_v1(branch))
+                .flatten()
+        })
+        .or_else(|| {
+            report.discarded_branches.iter().find_map(|branch| {
+                let origin = branch.continuation_origin.as_ref()?;
+                coverage_gap_origin_observes_journal_candidate_v1(origin, event, candidate)
+                    .then_some(CoverageGapContinuationTargetProgressV1::Discarded)
+            })
+        })
+}
+
+fn coverage_gap_target_only_continuation_targets_v1(
+    report: &BranchCampaignReportV1,
+) -> Vec<CoverageGapContinuationTargetV1> {
+    report
+        .active
+        .iter()
+        .chain(report.frozen.iter())
+        .filter_map(|branch| {
+            let origin = branch.continuation_origin.as_ref()?;
+            (coverage_gap_final_branch_target_progress_v1(branch)
+                == Some(CoverageGapContinuationTargetProgressV1::TargetOnly))
+            .then(|| coverage_gap_target_from_continuation_origin_v1(branch, origin))
+        })
+        .collect()
+}
+
+fn coverage_gap_target_from_continuation_origin_v1(
+    branch: &BranchCampaignBranchV1,
+    origin: &BranchCampaignContinuationOriginV1,
+) -> CoverageGapContinuationTargetV1 {
+    let mut parent_commands = branch.commands.clone();
+    if parent_commands
+        .last()
+        .is_some_and(|command| command == &origin.command)
+    {
+        parent_commands.pop();
+    }
+    let mut parent_choices = branch.choice_labels.clone();
+    if !parent_choices.is_empty() {
+        parent_choices.pop();
+    }
+    let target_origin = coverage_gap_target_origin_from_branch_origin_v1(origin);
+    let target_lane = origin
+        .target_lane
+        .as_ref()
+        .map(coverage_gap_target_lane_from_branch_origin_v1)
+        .or_else(|| {
+            target_origin
+                .route_lane
+                .as_ref()
+                .map(|route_lane| CoverageGapTargetLaneV1 {
+                    bucket: "route".to_string(),
+                    admission_status: origin.admission.status,
+                    disposition: origin.disposition,
+                    semantic_lane: coverage_gap_route_selection_lane_from_route_lane_v1(route_lane),
+                    shop_action_kind: None,
+                })
+        });
+
+    let mut target = CoverageGapContinuationTargetV1 {
+        decision_id: origin.decision_id.clone(),
+        event_id: origin.source_event_id.clone(),
+        event_type: origin.event_type.clone(),
+        parent_branch_id: origin.parent_branch_id.clone(),
+        parent_frontier_title: origin.parent_frontier_title.clone(),
+        parent_commands,
+        parent_choices,
+        candidate_index: origin.candidate_index,
+        candidate_id: origin.candidate_id.clone(),
+        command: origin.command.clone(),
+        label: origin.label.clone(),
+        semantic_class: origin.semantic_class.clone(),
+        target_lane,
+        existing_progress: Some(CoverageGapContinuationTargetProgressV1::TargetOnly),
+        admission: origin.admission.clone(),
+        disposition: origin.disposition,
+        target_origin,
+        milestone: origin.milestone.clone(),
+    };
+    if target.target_lane.is_none() {
+        target.target_lane = Some(coverage_gap_target_lane_from_target_v1(&target));
+    }
+    target
+}
+
+fn coverage_gap_target_lane_from_branch_origin_v1(
+    lane: &BranchCampaignContinuationTargetLaneV1,
+) -> CoverageGapTargetLaneV1 {
+    CoverageGapTargetLaneV1 {
+        bucket: lane.bucket.clone(),
+        admission_status: lane.admission_status,
+        disposition: lane.disposition,
+        semantic_lane: lane.semantic_lane.clone(),
+        shop_action_kind: lane
+            .shop_action_kind
+            .as_deref()
+            .and_then(|kind| match kind {
+                "purge" => Some(CoverageGapShopActionLaneV1::Purge),
+                "buy_card" => Some(CoverageGapShopActionLaneV1::BuyCard),
+                "buy_relic" => Some(CoverageGapShopActionLaneV1::BuyRelic),
+                "buy_potion" => Some(CoverageGapShopActionLaneV1::BuyPotion),
+                "leave" => Some(CoverageGapShopActionLaneV1::Leave),
+                "portfolio" => Some(CoverageGapShopActionLaneV1::Portfolio),
+                _ => None,
+            }),
+    }
+}
+
+fn coverage_gap_target_origin_from_branch_origin_v1(
+    origin: &BranchCampaignContinuationOriginV1,
+) -> CoverageGapContinuationTargetOriginV1 {
+    let route = origin.route_origin.as_ref().map(|route| {
+        let path = route
+            .path
+            .as_ref()
+            .map(|path| CoverageGapRoutePathOriginV1 {
+                path_count: path.path_count,
+                path_budget_exhausted: path.path_budget_exhausted,
+                min_early_pressure: path.min_early_pressure,
+                max_early_pressure: path.max_early_pressure,
+                min_elites: path.min_elites,
+                max_elites: path.max_elites,
+                min_shops: path.min_shops,
+                max_shops: path.max_shops,
+                min_fires: path.min_fires,
+                max_fires: path.max_fires,
+                min_unknowns: path.min_unknowns,
+                max_unknowns: path.max_unknowns,
+                min_treasures: path.min_treasures,
+                max_treasures: path.max_treasures,
+                first_shop_floor: path.first_shop_floor,
+                first_fire_floor: path.first_fire_floor,
+                min_damage_rooms_before_recovery: path.min_damage_rooms_before_recovery,
+                max_damage_rooms_before_recovery: path.max_damage_rooms_before_recovery,
+                min_unknowns_before_recovery: path.min_unknowns_before_recovery,
+                max_unknowns_before_recovery: path.max_unknowns_before_recovery,
+                paths_with_recovery_before_damage: path.paths_with_recovery_before_damage,
+            })
+            .unwrap_or_default();
+        let first_elite = route
+            .first_elite
+            .as_ref()
+            .map(|first_elite| CoverageGapRouteFirstEliteOriginV1 {
+                paths_with_first_elite: first_elite.paths_with_first_elite,
+                forced: first_elite.forced,
+                optional: first_elite.optional,
+                min_hallway_fights_before: first_elite.min_hallway_fights_before,
+                max_hallway_fights_before: first_elite.max_hallway_fights_before,
+                min_unknowns_before: first_elite.min_unknowns_before,
+                max_unknowns_before: first_elite.max_unknowns_before,
+                min_fires_before: first_elite.min_fires_before,
+                max_fires_before: first_elite.max_fires_before,
+                min_shops_before: first_elite.min_shops_before,
+                max_shops_before: first_elite.max_shops_before,
+                can_bail_to_rest_before: first_elite.can_bail_to_rest_before,
+                can_bail_to_shop_before: first_elite.can_bail_to_shop_before,
+            })
+            .unwrap_or_default();
+        CoverageGapRouteTargetOriginV1 {
+            legal_candidate_count: route.legal_candidate_count,
+            emitted_candidate_count: route.emitted_candidate_count,
+            complete_legal_pool: route.complete_legal_pool,
+            ordering: route.ordering.clone(),
+            ordering_kind: route.ordering_kind,
+            target_x: route.target_x,
+            target_y: route.target_y,
+            target_node: route.target_node.clone(),
+            room_type: route.room_type.clone(),
+            move_kind: route.move_kind.clone(),
+            action_kind: route.action_kind.clone(),
+            action: route.action.clone(),
+            projection_source: route.projection_source.clone(),
+            projection_source_kind: route.projection_source_kind,
+            projection_coverage: route.projection_coverage.clone(),
+            projection_coverage_kind: route.projection_coverage_kind,
+            path_budget: route.path_budget,
+            observed_path_count: route.observed_path_count,
+            path,
+            first_elite,
+        }
+    });
+    let route_lane = route.as_ref().map(coverage_gap_route_lane_from_origin_v1);
+    CoverageGapContinuationTargetOriginV1 {
+        source: origin.target_origin_source.clone(),
+        route,
+        route_lane,
+    }
+}
+
 fn coverage_gap_final_branch_target_progress_v1(
     branch: &BranchCampaignBranchV1,
 ) -> Option<CoverageGapContinuationTargetProgressV1> {
@@ -1459,6 +1671,30 @@ fn coverage_gap_final_branch_target_progress_v1(
 }
 
 fn select_coverage_gap_targets_by_type_v1(
+    targets: Vec<CoverageGapContinuationTargetV1>,
+    max_targets: usize,
+) -> Vec<CoverageGapContinuationTargetV1> {
+    let mut target_only = Vec::new();
+    let mut missing = Vec::new();
+    for target in targets {
+        if target.existing_progress == Some(CoverageGapContinuationTargetProgressV1::TargetOnly) {
+            target_only.push(target);
+        } else {
+            missing.push(target);
+        }
+    }
+
+    let mut selected = select_coverage_gap_targets_by_type_inner_v1(target_only, max_targets);
+    let remaining = max_targets.saturating_sub(selected.len());
+    if remaining > 0 {
+        selected.extend(select_coverage_gap_targets_by_type_inner_v1(
+            missing, remaining,
+        ));
+    }
+    selected
+}
+
+fn select_coverage_gap_targets_by_type_inner_v1(
     targets: Vec<CoverageGapContinuationTargetV1>,
     max_targets: usize,
 ) -> Vec<CoverageGapContinuationTargetV1> {
@@ -1789,13 +2025,19 @@ fn coverage_gap_route_selection_lane_v1(target: &CoverageGapContinuationTargetV1
     let Some(route_lane) = route_lane else {
         return format!("route:legacy:{}", target.label);
     };
+    coverage_gap_route_selection_lane_from_route_lane_v1(&route_lane)
+}
+
+fn coverage_gap_route_selection_lane_from_route_lane_v1(
+    route_lane: &CoverageGapRouteLaneV1,
+) -> String {
     format!(
         "route:{}:{}:{}:{}:{}",
         route_lane.action_kind,
         route_lane.room_type,
         route_lane.projection_coverage,
         route_lane.first_elite.as_str(),
-        coverage_gap_route_path_pressure_lane_v1(&route_lane)
+        coverage_gap_route_path_pressure_lane_v1(route_lane)
     )
 }
 
@@ -2228,8 +2470,12 @@ fn render_coverage_gap_target_line_v1(
     index: usize,
     target: &CoverageGapContinuationTargetV1,
 ) -> String {
+    let existing_progress = target
+        .existing_progress
+        .map(|progress| format!(" existing_progress={}", progress.as_str()))
+        .unwrap_or_default();
     format!(
-        "  {}. {} {} | parent={} coord={} candidate={} {{{}}} admission={} reason_category={} reason_code={} disposition={} milestone={} lane={} origin={} semantic=[{}]",
+        "  {}. {} {} | parent={} coord={} candidate={} {{{}}} admission={} reason_category={} reason_code={} disposition={} milestone={}{} lane={} origin={} semantic=[{}]",
         index + 1,
         target.event_type,
         compact_learning_text_v1(&target.decision_id, 56),
@@ -2246,6 +2492,7 @@ fn render_coverage_gap_target_line_v1(
         ),
         render_journal_candidate_disposition_v1(target.disposition),
         target.milestone,
+        existing_progress,
         compact_learning_text_v1(&coverage_gap_continuation_target_lane_v1(target), 96),
         render_coverage_gap_target_origin_v1(&target.target_origin),
         compact_learning_text_v1(&target.semantic_class, 58)
@@ -5039,6 +5286,50 @@ mod tests {
     }
 
     #[test]
+    fn coverage_gap_plan_continues_target_only_origins_before_missing_targets() {
+        let mut target_only =
+            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
+        target_only.continuation_origin =
+            Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
+        let mut report = sample_campaign_report_with_branches(vec![target_only]);
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-route-pool0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Map".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                decision_id: "journal-route-pool0".to_string(),
+                boundary_title: "Map".to_string(),
+                frontier_key: "map-frontier".to_string(),
+                depth: 0,
+                candidate_count: 1,
+                selected_index: Some(0),
+                candidate_pool_provenance: None,
+                map_decision_packet: None,
+                route_candidates: Vec::new(),
+                candidates: vec![sample_journal_candidate("go 1", "Route missing")],
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[], 1, 1);
+
+        assert_eq!(plan.targets[0].event_type, "reward");
+        assert_eq!(plan.targets[0].label, "Reward A");
+        assert_eq!(
+            plan.targets[0].existing_progress,
+            Some(CoverageGapContinuationTargetProgressV1::TargetOnly)
+        );
+        assert!(render_coverage_gap_continuation_plan_v1(&plan)
+            .contains("existing_progress=target_only"));
+    }
+
+    #[test]
     fn coverage_gap_reward_targets_round_robin_by_semantic_lane() {
         let targets = vec![
             sample_reward_coverage_gap_target("rp 0", "Frontload A", "role:frontload", 0),
@@ -6014,6 +6305,7 @@ mod tests {
             label: label.to_string(),
             semantic_class: semantic_class.to_string(),
             target_lane: None,
+            existing_progress: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Scheduled,
                 "reward_candidate_pool",
@@ -6047,6 +6339,7 @@ mod tests {
             label: label.to_string(),
             semantic_class: semantic_class.to_string(),
             target_lane: None,
+            existing_progress: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Scheduled,
                 "shop_candidate_pool",
@@ -6096,6 +6389,7 @@ mod tests {
             label: label.to_string(),
             semantic_class: "route".to_string(),
             target_lane: None,
+            existing_progress: None,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(
                 CampaignJournalCandidateAdmissionStatusV1::Scheduled,
                 "route_candidate_pool",
