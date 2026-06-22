@@ -310,6 +310,24 @@ $RoundsBound = $BoundParameterContext.RoundsBound
 $UntilRoundBound = $BoundParameterContext.UntilRoundBound
 $UntilMilestoneBound = $BoundParameterContext.UntilMilestoneBound
 $MaxRoundsBound = $BoundParameterContext.MaxRoundsBound
+$CampaignSharedDriverOptionContext = New-CampaignSharedDriverOptionContext `
+    -CampaignBoundParameters $CampaignBoundParameters `
+    -ExperimentWallMs $ExperimentWallMs `
+    -SearchWallMs $SearchWallMs `
+    -SearchMaxNodes $SearchMaxNodes `
+    -ActiveLineageDiversity $ActiveLineageDiversity `
+    -BossRelicAxes ([bool] $BossRelicAxes) `
+    -CombatRetryWallMs $CombatRetryWallMs `
+    -BranchExamples $BranchExamples `
+    -VictoryHpPercent $VictoryHpPercent `
+    -AutoCaptureCombat ([bool] $AutoCaptureCombat) `
+    -AutoCaptureRoot $AutoCaptureRoot `
+    -ExtraArgs $ExtraArgs `
+    -BossSegments ([bool] $BossSegments) `
+    -NoProgress ([bool] $NoProgress) `
+    -VerboseProgress ([bool] $VerboseProgress) `
+    -Perf ([bool] $Perf) `
+    -Diagnose ([bool] $Diagnose)
 $CoverageGapFilterContext = Resolve-CoverageGapFilterContext `
     -Route ([bool] $CoverageGapRoute) `
     -RouteMissing ([bool] $CoverageGapRouteMissing) `

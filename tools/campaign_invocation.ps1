@@ -77,65 +77,126 @@ function Test-ExtraCombatOptionKey {
     return $false
 }
 
+function New-CampaignSharedDriverOptionContext {
+    param(
+        [System.Collections.IDictionary] $CampaignBoundParameters,
+        [int] $ExperimentWallMs,
+        [int] $SearchWallMs,
+        [int] $SearchMaxNodes,
+        [int] $ActiveLineageDiversity,
+        [bool] $BossRelicAxes,
+        [int] $CombatRetryWallMs,
+        [int] $BranchExamples,
+        [int] $VictoryHpPercent,
+        [bool] $AutoCaptureCombat,
+        [string] $AutoCaptureRoot,
+        [string[]] $ExtraArgs,
+        [bool] $BossSegments,
+        [bool] $NoProgress,
+        [bool] $VerboseProgress,
+        [bool] $Perf,
+        [bool] $Diagnose
+    )
+
+    $ResolvedExtraArgs = @()
+    if ($ExtraArgs) {
+        $ResolvedExtraArgs = @($ExtraArgs)
+    }
+
+    return [pscustomobject]@{
+        BoundParameters = $CampaignBoundParameters
+        ExperimentWallMs = $ExperimentWallMs
+        SearchWallMs = $SearchWallMs
+        SearchMaxNodes = $SearchMaxNodes
+        ActiveLineageDiversity = $ActiveLineageDiversity
+        BossRelicAxes = [bool] $BossRelicAxes
+        CombatRetryWallMs = $CombatRetryWallMs
+        BranchExamples = $BranchExamples
+        VictoryHpPercent = $VictoryHpPercent
+        AutoCaptureCombat = [bool] $AutoCaptureCombat
+        AutoCaptureRoot = $AutoCaptureRoot
+        ExtraArgs = $ResolvedExtraArgs
+        BossSegments = [bool] $BossSegments
+        NoProgress = [bool] $NoProgress
+        VerboseProgress = [bool] $VerboseProgress
+        Perf = [bool] $Perf
+        Diagnose = [bool] $Diagnose
+    }
+}
+
+function Test-CampaignSharedDriverOptionBound {
+    param(
+        [object] $OptionContext,
+        [string] $Name
+    )
+
+    return $OptionContext.BoundParameters -and $OptionContext.BoundParameters.ContainsKey($Name)
+}
+
 function Add-CampaignSharedDriverOptions {
     param(
         [string[]] $Arguments,
         [bool] $IncludeActiveLineageDiversity = $false,
         [bool] $IncludeBossRelicAxes = $false,
-        [bool] $IncludeAutoCaptureCombat = $true
+        [bool] $IncludeAutoCaptureCombat = $true,
+        [object] $OptionContext = $CampaignSharedDriverOptionContext
     )
 
+    if ($null -eq $OptionContext) {
+        throw "Internal error: campaign shared driver option context was not initialized."
+    }
+
     $Args = @($Arguments)
-    if ($CampaignBoundParameters.ContainsKey("ExperimentWallMs")) {
-        $Args += @("--experiment-wall-ms", "$ExperimentWallMs")
+    if (Test-CampaignSharedDriverOptionBound -OptionContext $OptionContext -Name "ExperimentWallMs") {
+        $Args += @("--experiment-wall-ms", "$($OptionContext.ExperimentWallMs)")
     }
-    if ($CampaignBoundParameters.ContainsKey("SearchWallMs")) {
-        $Args += @("--search-wall-ms", "$SearchWallMs")
+    if (Test-CampaignSharedDriverOptionBound -OptionContext $OptionContext -Name "SearchWallMs") {
+        $Args += @("--search-wall-ms", "$($OptionContext.SearchWallMs)")
     }
-    if ($CampaignBoundParameters.ContainsKey("SearchMaxNodes")) {
-        $Args += @("--search-max-nodes", "$SearchMaxNodes")
+    if (Test-CampaignSharedDriverOptionBound -OptionContext $OptionContext -Name "SearchMaxNodes") {
+        $Args += @("--search-max-nodes", "$($OptionContext.SearchMaxNodes)")
     }
-    if ($IncludeActiveLineageDiversity -and $CampaignBoundParameters.ContainsKey("ActiveLineageDiversity") -and $ActiveLineageDiversity -ge 0) {
-        $Args += @("--active-lineage-diversity", "$ActiveLineageDiversity")
+    if ($IncludeActiveLineageDiversity -and (Test-CampaignSharedDriverOptionBound -OptionContext $OptionContext -Name "ActiveLineageDiversity") -and $OptionContext.ActiveLineageDiversity -ge 0) {
+        $Args += @("--active-lineage-diversity", "$($OptionContext.ActiveLineageDiversity)")
     }
-    if ($IncludeBossRelicAxes -and $BossRelicAxes) {
+    if ($IncludeBossRelicAxes -and $OptionContext.BossRelicAxes) {
         $Args += "--boss-relic-axes"
     }
-    if ($CampaignBoundParameters.ContainsKey("CombatRetryWallMs") -and $CombatRetryWallMs -gt 0) {
-        $Args += @("--combat-retry-wall-ms", "$CombatRetryWallMs")
+    if ((Test-CampaignSharedDriverOptionBound -OptionContext $OptionContext -Name "CombatRetryWallMs") -and $OptionContext.CombatRetryWallMs -gt 0) {
+        $Args += @("--combat-retry-wall-ms", "$($OptionContext.CombatRetryWallMs)")
     }
-    if ($CampaignBoundParameters.ContainsKey("BranchExamples")) {
-        $Args += @("--branch-examples", "$BranchExamples")
+    if (Test-CampaignSharedDriverOptionBound -OptionContext $OptionContext -Name "BranchExamples") {
+        $Args += @("--branch-examples", "$($OptionContext.BranchExamples)")
     }
-    if ($CampaignBoundParameters.ContainsKey("VictoryHpPercent")) {
-        $Args += @("--min-acceptable-victory-hp-percent", "$VictoryHpPercent")
+    if (Test-CampaignSharedDriverOptionBound -OptionContext $OptionContext -Name "VictoryHpPercent") {
+        $Args += @("--min-acceptable-victory-hp-percent", "$($OptionContext.VictoryHpPercent)")
     }
-    if ($IncludeAutoCaptureCombat -and $AutoCaptureCombat) {
+    if ($IncludeAutoCaptureCombat -and $OptionContext.AutoCaptureCombat) {
         $Args += "--auto-capture-combat"
-        if ($AutoCaptureRoot) {
-            $Args += @("--auto-capture-root", "$AutoCaptureRoot")
+        if ($OptionContext.AutoCaptureRoot) {
+            $Args += @("--auto-capture-root", "$($OptionContext.AutoCaptureRoot)")
         }
     }
-    if (-not (Test-ExtraCombatOptionKey -Tokens $ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
-        if ($BossSegments) {
+    if (-not (Test-ExtraCombatOptionKey -Tokens $OptionContext.ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
+        if ($OptionContext.BossSegments) {
             $Args += @("--combat-search-option", "segment=turn")
         } else {
             $Args += @("--combat-search-option", "segment=non_boss_turn")
         }
     }
-    if (-not $NoProgress) {
+    if (-not $OptionContext.NoProgress) {
         $Args += "--progress"
-        if ($VerboseProgress) {
+        if ($OptionContext.VerboseProgress) {
             $Args += @("--progress-detail", "verbose")
         }
     }
-    if ($Perf) {
+    if ($OptionContext.Perf) {
         $Args += @("--report-detail", "perf")
-    } elseif ($Diagnose) {
+    } elseif ($OptionContext.Diagnose) {
         $Args += @("--report-detail", "diagnose")
     }
-    if ($ExtraArgs) {
-        $Args += $ExtraArgs
+    if ($OptionContext.ExtraArgs) {
+        $Args += $OptionContext.ExtraArgs
     }
     return $Args
 }
