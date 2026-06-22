@@ -929,6 +929,42 @@ function Write-CampaignWrapperManifest {
     $Manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $Path
 }
 
+function New-CampaignWrapperManifestBase {
+    param(
+        [int] $ExitCode,
+        [string] $Stage,
+        [string] $CommandKind,
+        [string[]] $PrimaryDriverArgs,
+        [string] $PrimaryDriverCommand
+    )
+
+    return [ordered]@{
+        schema_name = "CampaignWrapperManifestV1"
+        schema_version = 1
+        created_at = (Get-Date).ToString("o")
+        stage = $Stage
+        exit_code = $ExitCode
+        wrapper_script = $PSCommandPath
+        command_kind = $CommandKind
+        mode = $Mode
+        seed = $Seed
+        ascension = $Ascension
+        class = $Class
+        build_profile = $BuildProfile
+        driver_exe = "$DriverExe"
+        scratch = [bool] $Scratch
+        scratch_label = $ScratchLabel
+        output_report = "$RunOutputCampaignPath"
+        output_checkpoint = "$RunOutputCheckpointPath"
+        command_file = "$RunCommandPath"
+        manifest_file = "$RunManifestPath"
+        primary_driver = [ordered]@{
+            args = @($PrimaryDriverArgs)
+            command = $PrimaryDriverCommand
+        }
+    }
+}
+
 function Get-CampaignMilestoneStatus {
     param(
         [string] $ReportPath,
@@ -1340,19 +1376,6 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         $ContinueCoverageGapArgs += $ExtraArgs
     }
 
-    function Format-CommandLine {
-        param(
-            [string] $ExePath,
-            [string[]] $Arguments
-        )
-
-        $RenderedExe = if ($ExePath -match '^[A-Za-z0-9_./:=\\-]+$') { $ExePath } else { "'$($ExePath -replace "'", "''")'" }
-        $RenderedArgs = $Arguments | ForEach-Object {
-            if ($_ -match '^[A-Za-z0-9_./:=\\-]+$') { $_ } else { "'$($_ -replace "'", "''")'" }
-        }
-        return $RenderedExe + " " + ($RenderedArgs -join " ")
-    }
-
     function New-CoverageGapMilestoneSummaryArgs {
         $Args = @(
             "inspect",
@@ -1371,41 +1394,22 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
             [string] $Stage
         )
 
-        $Manifest = [ordered]@{
-            schema_name = "CampaignWrapperManifestV1"
-            schema_version = 1
-            created_at = (Get-Date).ToString("o")
-            stage = $Stage
-            exit_code = $ExitCode
-            wrapper_script = $PSCommandPath
-            command_kind = "coverage_gap_continuation"
-            mode = $Mode
-            seed = $Seed
-            ascension = $Ascension
-            class = $Class
-            build_profile = $BuildProfile
-            driver_exe = "$DriverExe"
-            scratch = [bool] $Scratch
-            scratch_label = $ScratchLabel
-            source_report = "$LatestCampaignPath"
-            source_checkpoint = "$LatestCheckpointPath"
-            output_report = "$RunOutputCampaignPath"
-            output_checkpoint = "$RunOutputCheckpointPath"
-            command_file = "$RunCommandPath"
-            manifest_file = "$RunManifestPath"
-            coverage_gap = [ordered]@{
-                limit = $CoverageGapLimit
-                candidates_per_decision = $CoverageGapCandidatesPerDecision
-                intent = $CoverageGapIntent
-                execution = $CoverageGapExecutionLabel
-                seed_execution = $CoverageGapDriverExecution
-                filter = $CoverageGapFilterLabel
-                result_filter = $CoverageGapResultFilterLabel
-            }
-            primary_driver = [ordered]@{
-                args = @($ContinueCoverageGapArgs)
-                command = (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
-            }
+        $Manifest = New-CampaignWrapperManifestBase `
+            -ExitCode $ExitCode `
+            -Stage $Stage `
+            -CommandKind "coverage_gap_continuation" `
+            -PrimaryDriverArgs $ContinueCoverageGapArgs `
+            -PrimaryDriverCommand (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
+        $Manifest["source_report"] = "$LatestCampaignPath"
+        $Manifest["source_checkpoint"] = "$LatestCheckpointPath"
+        $Manifest["coverage_gap"] = [ordered]@{
+            limit = $CoverageGapLimit
+            candidates_per_decision = $CoverageGapCandidatesPerDecision
+            intent = $CoverageGapIntent
+            execution = $CoverageGapExecutionLabel
+            seed_execution = $CoverageGapDriverExecution
+            filter = $CoverageGapFilterLabel
+            result_filter = $CoverageGapResultFilterLabel
         }
 
         if ($UntilMilestoneBound) {
@@ -1890,38 +1894,19 @@ function New-CampaignRunWrapperManifest {
         [string] $Stage
     )
 
-    $Manifest = [ordered]@{
-        schema_name = "CampaignWrapperManifestV1"
-        schema_version = 1
-        created_at = (Get-Date).ToString("o")
-        stage = $Stage
-        exit_code = $ExitCode
-        wrapper_script = $PSCommandPath
-        command_kind = "campaign_run"
-        mode = $Mode
-        seed = $Seed
-        ascension = $Ascension
-        class = $Class
-        build_profile = $BuildProfile
-        driver_exe = "$DriverExe"
-        scratch = [bool] $Scratch
-        scratch_label = $ScratchLabel
-        resume_report = if ($ResumeCampaignPath) { "$ResumeCampaignPath" } else { "" }
-        resume_checkpoint = if ($ResumeCheckpointPath) { "$ResumeCheckpointPath" } else { "" }
-        output_report = "$RunOutputCampaignPath"
-        output_checkpoint = "$RunOutputCheckpointPath"
-        command_file = "$RunCommandPath"
-        manifest_file = "$RunManifestPath"
-        log_file = if ($Log) { "$RunLogPath" } else { "" }
-        round_budget = [ordered]@{
-            source = $RoundBudgetSource
-            target_rounds = $TargetRounds
-            additional_rounds = $MaxRounds
-        }
-        primary_driver = [ordered]@{
-            args = @($DriverArgs)
-            command = $RenderedCommand
-        }
+    $Manifest = New-CampaignWrapperManifestBase `
+        -ExitCode $ExitCode `
+        -Stage $Stage `
+        -CommandKind "campaign_run" `
+        -PrimaryDriverArgs $DriverArgs `
+        -PrimaryDriverCommand $RenderedCommand
+    $Manifest["resume_report"] = if ($ResumeCampaignPath) { "$ResumeCampaignPath" } else { "" }
+    $Manifest["resume_checkpoint"] = if ($ResumeCheckpointPath) { "$ResumeCheckpointPath" } else { "" }
+    $Manifest["log_file"] = if ($Log) { "$RunLogPath" } else { "" }
+    $Manifest["round_budget"] = [ordered]@{
+        source = $RoundBudgetSource
+        target_rounds = $TargetRounds
+        additional_rounds = $MaxRounds
     }
 
     if ($UntilMilestoneBound) {
