@@ -171,6 +171,12 @@ summary, and first elite segment. Coverage-gap tooling should use this
 provenance to explain and schedule missing route candidates; it should not parse
 `go N` commands or display labels to recover map identity.
 
+Lineage inspection also uses the typed route snapshot. For example,
+`--inspect-lineage-decisions --inspect-query CompleteWithinBudget` searches
+route projection coverage and renders route candidates with target, action,
+path coverage, visible path count, and elite/fire/shop ranges. This is an audit
+view over recorded candidates, not a route scoring rule.
+
 ## Boundaries
 
 `CampaignJournal` is not a strategy engine. It must not decide what to pick or

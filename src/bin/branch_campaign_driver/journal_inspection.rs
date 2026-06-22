@@ -257,12 +257,8 @@ fn render_campaign_lineage_candidate_query_v1(
     let mut matches = Vec::new();
     'branch_loop: for branch_ref in branches {
         for event in lineage_candidate_pool_events_v1(report, branch_ref.branch) {
-            let matching_candidates = journal_event_candidates_v1(event)
-                .iter()
-                .filter(|candidate| {
-                    lineage_candidate_matches_query_v1(candidate, &normalized_query)
-                })
-                .collect::<Vec<_>>();
+            let matching_candidates =
+                lineage_query_matching_candidate_renders_v1(event, &normalized_query);
             if matching_candidates.is_empty() {
                 continue;
             }
@@ -278,10 +274,7 @@ fn render_campaign_lineage_candidate_query_v1(
                 event,
                 parent_depth,
                 chosen: render_lineage_chosen_candidate_v1(event, chosen_command),
-                matching_candidates: matching_candidates
-                    .into_iter()
-                    .map(render_lineage_candidate_query_match_v1)
-                    .collect(),
+                matching_candidates,
             });
             if matches.len() >= limit.max(1) {
                 break 'branch_loop;
@@ -342,6 +335,8 @@ struct LineageCandidateQueryMatchV1<'a> {
 }
 
 fn lineage_candidate_matches_query_v1(
+    event: &CampaignJournalEventV1,
+    candidate_index: usize,
     candidate: &CampaignJournalCandidateV1,
     normalized_query: &str,
 ) -> bool {
@@ -349,10 +344,73 @@ fn lineage_candidate_matches_query_v1(
         || normalize_query_v1(&candidate.command).contains(normalized_query)
         || normalize_query_v1(&candidate.semantic_class).contains(normalized_query)
         || normalize_query_v1(&render_journal_candidate_v1(candidate)).contains(normalized_query)
+        || render_journal_event_candidate_at_v1(event, candidate_index)
+            .is_some_and(|rendered| normalize_query_v1(&rendered).contains(normalized_query))
+        || route_candidate_search_text_at_v1(event, candidate_index)
+            .is_some_and(|text| normalize_query_v1(&text).contains(normalized_query))
 }
 
-fn render_lineage_candidate_query_match_v1(candidate: &CampaignJournalCandidateV1) -> String {
-    format!("{} {{{}}}", candidate.label, candidate.command)
+fn lineage_query_matching_candidate_renders_v1(
+    event: &CampaignJournalEventV1,
+    normalized_query: &str,
+) -> Vec<String> {
+    journal_event_candidates_v1(event)
+        .iter()
+        .enumerate()
+        .filter(|(index, candidate)| {
+            lineage_candidate_matches_query_v1(event, *index, candidate, normalized_query)
+        })
+        .filter_map(|(index, candidate)| {
+            render_journal_event_candidate_at_v1(event, index)
+                .or_else(|| Some(format!("{} {{{}}}", candidate.label, candidate.command)))
+        })
+        .collect()
+}
+
+fn route_candidate_search_text_at_v1(
+    event: &CampaignJournalEventV1,
+    candidate_index: usize,
+) -> Option<String> {
+    match &event.payload {
+        CampaignJournalEventPayloadV1::RouteCandidatePool {
+            map_decision_packet: Some(packet),
+            ..
+        } => packet
+            .candidates
+            .get(candidate_index)
+            .map(route_candidate_search_terms_v1),
+        CampaignJournalEventPayloadV1::RouteCandidatePool {
+            route_candidates, ..
+        } => route_candidates
+            .get(candidate_index)
+            .map(journal_route_candidate_search_terms_v1),
+        _ => None,
+    }
+    .map(|terms| terms.join(" "))
+}
+
+fn render_journal_event_candidate_at_v1(
+    event: &CampaignJournalEventV1,
+    candidate_index: usize,
+) -> Option<String> {
+    let candidate = journal_event_candidates_v1(event).get(candidate_index)?;
+    match &event.payload {
+        CampaignJournalEventPayloadV1::RouteCandidatePool {
+            map_decision_packet: Some(packet),
+            ..
+        } => packet
+            .candidates
+            .get(candidate_index)
+            .map(|route| render_route_journal_candidate_v1(candidate, route))
+            .or_else(|| Some(render_journal_candidate_v1(candidate))),
+        CampaignJournalEventPayloadV1::RouteCandidatePool {
+            route_candidates, ..
+        } if !route_candidates.is_empty() => route_candidates
+            .get(candidate_index)
+            .map(|route| render_typed_route_journal_candidate_v1(candidate, route))
+            .or_else(|| Some(render_journal_candidate_v1(candidate))),
+        _ => Some(render_journal_candidate_v1(candidate)),
+    }
 }
 
 fn render_lineage_query_branch_summary_v1(branch: &BranchCampaignBranchV1) -> String {
@@ -607,14 +665,17 @@ fn render_lineage_journal_candidates_v1(
     let shown = limit.max(1).min(candidates.len());
     let mut parts = candidates
         .iter()
+        .enumerate()
         .take(shown)
-        .map(|candidate| {
+        .map(|(index, candidate)| {
             let marker = if chosen_command == Some(candidate.command.as_str()) {
                 "* "
             } else {
                 "  "
             };
-            format!("{marker}{}", render_journal_candidate_v1(candidate))
+            let rendered = render_journal_event_candidate_at_v1(event, index)
+                .unwrap_or_else(|| render_journal_candidate_v1(candidate));
+            format!("{marker}{rendered}")
         })
         .collect::<Vec<_>>();
     if candidates.len() > shown {
@@ -1909,6 +1970,79 @@ mod tests {
         assert!(rendered.contains("branch=active[1] A1F3 HP 70/80 | Reward Screen"));
         assert!(rendered.contains("chosen=Skip card reward {branch-skip-card-reward 0}"));
         assert!(!rendered.contains("match=Burning Pact"));
+    }
+
+    #[test]
+    fn lineage_query_matches_and_renders_typed_route_candidates() {
+        let mut run = sts_simulator::state::RunState::new(521, 0, false, "Ironclad");
+        run.event_state = None;
+        let trace = sts_simulator::ai::route_planner_v1::plan_route_decision_v1(
+            &run,
+            &sts_simulator::state::core::EngineState::MapNavigation,
+            sts_simulator::ai::route_planner_v1::RoutePlannerConfigV1::default(),
+        );
+        let packet = MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+        assert!(!packet.candidates.is_empty());
+        let first_route = &packet.candidates[0];
+        let route_command = first_route.command.clone();
+        let route_x_query = format!("x{}", first_route.target.x);
+        let report = report_with_branches_and_journal(
+            vec![branch(
+                "route-branch",
+                vec![route_command.as_str()],
+                vec!["Take route"],
+            )],
+            Vec::new(),
+            vec![journal_event_at(
+                "route-root",
+                Vec::new(),
+                CampaignJournalEventPayloadV1::RouteCandidatePool {
+                    decision_id: "route-root".to_string(),
+                    boundary_title: "Map".to_string(),
+                    frontier_key: "map-frontier".to_string(),
+                    depth: 0,
+                    candidate_count: packet.candidates.len(),
+                    selected_index: packet.selected_index,
+                    candidate_pool_provenance: Some(packet.candidate_pool.clone()),
+                    map_decision_packet: Some(packet.clone()),
+                    route_candidates: packet
+                        .candidates
+                        .iter()
+                        .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
+                        .collect(),
+                    candidates: packet
+                        .candidates
+                        .iter()
+                        .map(|route| {
+                            candidate("legacy route label", &route.command, "legacy route")
+                        })
+                        .collect(),
+                },
+            )],
+        );
+
+        let rendered = render_campaign_lineage_decision_audit_v1(
+            &report,
+            &InspectFiltersInput {
+                act: None,
+                floor: None,
+                boundary: None,
+                hp: None,
+                index: None,
+            },
+            Some(&route_x_query),
+            8,
+        )
+        .expect("typed route candidate query should render");
+
+        assert!(rendered.contains("Branch lineage candidate query"));
+        assert!(rendered.contains(&format!("query={route_x_query}")));
+        assert!(rendered.contains("route_candidate_pool"));
+        assert!(rendered.contains("match=x"));
+        assert!(rendered.contains("coverage="));
+        assert!(rendered.contains("paths="));
+        assert!(rendered.contains("elites="));
+        assert!(!rendered.contains("match=legacy route label"));
     }
 
     fn journal_event_with_payload(

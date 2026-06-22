@@ -59,6 +59,10 @@ Prints saved CampaignJournal decision events matching a boundary, candidate, or 
 Prints historical CampaignJournal candidate pools along a selected active/frozen branch lineage.
 
 .EXAMPLE
+.\tools\campaign.ps1 -InspectLineageDecisions -InspectQuery "CompleteWithinBudget"
+Prints current branch lineages where historical candidates match a typed route/reward/shop/event query.
+
+.EXAMPLE
 .\tools\campaign.ps1 -InspectDeckMutation -InspectIndex 0
 Prints DeckMutationCompiler evidence for a selected checkpoint branch.
 
