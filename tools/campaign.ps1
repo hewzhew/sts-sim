@@ -369,6 +369,27 @@ function Convert-ToCampaignArtifactSlug {
     return $Slug
 }
 
+function Convert-CampaignWrapperParameterValue {
+    param(
+        [object] $Value
+    )
+
+    if ($null -eq $Value) {
+        return $null
+    }
+    if ($Value -is [System.Management.Automation.SwitchParameter]) {
+        return [bool] $Value
+    }
+    if ($Value -is [System.Array]) {
+        $Converted = @()
+        foreach ($Item in $Value) {
+            $Converted += (Convert-CampaignWrapperParameterValue -Value $Item)
+        }
+        return ,$Converted
+    }
+    return $Value
+}
+
 function Read-LatestCheckpointRunConfig {
     if (-not (Test-Path -LiteralPath $LatestCheckpointPath)) {
         return $null
@@ -664,6 +685,12 @@ $RunLogPath = $ScratchLogPath
 $CampaignBoundParameters = @{}
 foreach ($ParameterName in $PSBoundParameters.Keys) {
     $CampaignBoundParameters[$ParameterName] = $true
+}
+$CampaignWrapperInvocationLine = if ($MyInvocation.Line) { $MyInvocation.Line.Trim() } else { "" }
+$CampaignWrapperBoundParameters = [ordered]@{}
+foreach ($ParameterName in ($PSBoundParameters.Keys | Sort-Object)) {
+    $CampaignWrapperBoundParameters[$ParameterName] =
+        Convert-CampaignWrapperParameterValue -Value $PSBoundParameters[$ParameterName]
 }
 
 $RoundsBound = $CampaignBoundParameters.ContainsKey("Rounds")
@@ -1012,6 +1039,10 @@ function New-CampaignWrapperManifestBase {
         output_checkpoint = "$RunOutputCheckpointPath"
         command_file = "$RunCommandPath"
         manifest_file = "$RunManifestPath"
+        wrapper_invocation = [ordered]@{
+            line = $CampaignWrapperInvocationLine
+            bound_parameters = $CampaignWrapperBoundParameters
+        }
         primary_driver = [ordered]@{
             args = @($PrimaryDriverArgs)
             command = $PrimaryDriverCommand
