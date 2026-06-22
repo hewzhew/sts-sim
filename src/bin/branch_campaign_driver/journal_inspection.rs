@@ -2160,6 +2160,7 @@ mod tests {
             stuck: Vec::new(),
             discarded_count: 0,
             discarded_examples: Vec::new(),
+            discarded_branches: Vec::new(),
             strategy_requests: Vec::new(),
             route_evidence: Default::default(),
             combat_retry_ledger: Default::default(),

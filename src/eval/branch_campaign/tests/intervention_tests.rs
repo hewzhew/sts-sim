@@ -18,6 +18,7 @@ fn compact_campaign_report_renders_strategy_prompt() {
         stuck: Vec::new(),
         discarded_count: 3,
         discarded_examples: Vec::new(),
+        discarded_branches: Vec::new(),
         strategy_requests: vec![BranchCampaignStrategyRequestV1 {
             kind: "event_strategy".to_string(),
             boundary_title: "Falling".to_string(),
@@ -72,6 +73,7 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
         stuck: Vec::new(),
         discarded_count: 0,
         discarded_examples: Vec::new(),
+        discarded_branches: Vec::new(),
         strategy_requests: vec![BranchCampaignStrategyRequestV1 {
             kind: "combat_manual_or_budget".to_string(),
             boundary_title: "Combat".to_string(),
@@ -135,6 +137,7 @@ fn compact_campaign_report_suppresses_deferred_strategy_notes_while_active_conti
         stuck: vec![test_campaign_branch("s", 6, 70)],
         discarded_count: 0,
         discarded_examples: Vec::new(),
+        discarded_branches: Vec::new(),
         strategy_requests: vec![BranchCampaignStrategyRequestV1 {
             kind: "combat_manual_or_budget".to_string(),
             boundary_title: "Combat".to_string(),
@@ -570,6 +573,7 @@ fn compact_campaign_report_renders_budget_stop_hint() {
         stuck: Vec::new(),
         discarded_count: 0,
         discarded_examples: Vec::new(),
+        discarded_branches: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),
@@ -602,6 +606,7 @@ fn compact_campaign_report_labels_nonfatal_requests_as_deferred_notes() {
         stuck: Vec::new(),
         discarded_count: 0,
         discarded_examples: Vec::new(),
+        discarded_branches: Vec::new(),
         strategy_requests: vec![BranchCampaignStrategyRequestV1 {
             kind: "route_policy_gap".to_string(),
             boundary_title: "Map".to_string(),
@@ -647,6 +652,7 @@ fn compact_campaign_report_renders_context_only_strategy_packet() {
         stuck: Vec::new(),
         discarded_count: 0,
         discarded_examples: Vec::new(),
+        discarded_branches: Vec::new(),
         strategy_requests: vec![BranchCampaignStrategyRequestV1 {
             kind: "event_strategy".to_string(),
             boundary_title: "GoldenIdol".to_string(),

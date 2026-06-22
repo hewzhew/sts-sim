@@ -5,8 +5,7 @@ use super::active_rebalance::{
     campaign_branch_primary_active_eligible_v1, rebalance_active_coverage_probe_v1,
     rebalance_active_progress_anchor_v1, rebalance_active_survival_anchor_v1,
 };
-use super::branch_display::render_campaign_discard_example_v1;
-use super::frozen_pool::record_campaign_duplicate_merge_v1;
+use super::frozen_pool::{record_campaign_discard_v1, record_campaign_duplicate_merge_v1};
 use super::lineage::campaign_branch_boss_relic_lineage_key_v1;
 use super::model::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchV1, BranchCampaignSelectionV1,
@@ -49,6 +48,7 @@ pub fn select_campaign_branches_v1(
                 &branch,
                 &mut selection.discarded_count,
                 &mut selection.discarded_examples,
+                &mut selection.discarded_branches,
             );
             continue;
         }
@@ -62,12 +62,13 @@ pub fn select_campaign_branches_v1(
             branch.status = BranchCampaignBranchStatusV1::Frozen;
             selection.frozen.push(branch);
         } else {
-            selection.discarded_count = selection.discarded_count.saturating_add(1);
-            if selection.discarded_examples.len() < 6 {
-                selection
-                    .discarded_examples
-                    .push(render_campaign_discard_example_v1(&branch));
-            }
+            record_campaign_discard_v1(
+                &branch,
+                &mut selection.discarded_count,
+                &mut selection.discarded_examples,
+                &mut selection.discarded_branches,
+                "selection_capacity",
+            );
         }
     }
     rebalance_active_progress_anchor_v1(&mut selection.active, &mut selection.frozen);
@@ -128,6 +129,9 @@ fn select_campaign_branches_by_boss_relic_axis_v1(
             &mut combined.discarded_examples,
             selection.discarded_examples,
         );
+        combined
+            .discarded_branches
+            .extend(selection.discarded_branches);
     }
 
     combined

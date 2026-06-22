@@ -5,7 +5,9 @@ use super::campaign_branch_quality_key_v1;
 use super::lineage::{
     campaign_boss_relic_lineage_counts_v1, campaign_branch_boss_relic_lineage_key_v1,
 };
-use super::model::BranchCampaignBranchV1;
+use super::model::{BranchCampaignBranchV1, BranchCampaignDiscardedBranchV1};
+
+const STRUCTURED_DISCARDED_BRANCH_LIMIT: usize = 256;
 use super::selection_key::campaign_branch_retention_key_v1;
 
 pub(super) fn append_limited_frozen_v1(
@@ -14,6 +16,7 @@ pub(super) fn append_limited_frozen_v1(
     max_frozen: usize,
     discarded_count: &mut usize,
     discarded_examples: &mut Vec<String>,
+    discarded_branches: &mut Vec<BranchCampaignDiscardedBranchV1>,
 ) -> usize {
     let mut added = 0usize;
     for branch in new_frozen {
@@ -24,10 +27,20 @@ pub(super) fn append_limited_frozen_v1(
                 > campaign_branch_retention_key_v1(&frozen[existing_index])
             {
                 let displaced = std::mem::replace(&mut frozen[existing_index], branch);
-                record_campaign_duplicate_merge_v1(&displaced, discarded_count, discarded_examples);
+                record_campaign_duplicate_merge_v1(
+                    &displaced,
+                    discarded_count,
+                    discarded_examples,
+                    discarded_branches,
+                );
                 added = added.saturating_add(1);
             } else {
-                record_campaign_duplicate_merge_v1(&branch, discarded_count, discarded_examples);
+                record_campaign_duplicate_merge_v1(
+                    &branch,
+                    discarded_count,
+                    discarded_examples,
+                    discarded_branches,
+                );
             }
             continue;
         }
@@ -39,7 +52,13 @@ pub(super) fn append_limited_frozen_v1(
         }
 
         let Some(worst_index) = frozen_replacement_index_v1(frozen, &branch) else {
-            record_campaign_discard_v1(&branch, discarded_count, discarded_examples);
+            record_campaign_discard_v1(
+                &branch,
+                discarded_count,
+                discarded_examples,
+                discarded_branches,
+                "frozen_capacity_rejected",
+            );
             continue;
         };
         let worst_branch = &frozen[worst_index];
@@ -48,10 +67,22 @@ pub(super) fn append_limited_frozen_v1(
             || branch_introduces_new_boss_relic_lineage_v1(frozen, &branch)
         {
             let displaced = std::mem::replace(&mut frozen[worst_index], branch);
-            record_campaign_discard_v1(&displaced, discarded_count, discarded_examples);
+            record_campaign_discard_v1(
+                &displaced,
+                discarded_count,
+                discarded_examples,
+                discarded_branches,
+                "frozen_replaced",
+            );
             added = added.saturating_add(1);
         } else {
-            record_campaign_discard_v1(&branch, discarded_count, discarded_examples);
+            record_campaign_discard_v1(
+                &branch,
+                discarded_count,
+                discarded_examples,
+                discarded_branches,
+                "frozen_capacity_rejected",
+            );
         }
     }
     added
@@ -63,6 +94,7 @@ pub(super) fn append_axis_limited_frozen_v1(
     max_frozen_per_axis: usize,
     discarded_count: &mut usize,
     discarded_examples: &mut Vec<String>,
+    discarded_branches: &mut Vec<BranchCampaignDiscardedBranchV1>,
 ) -> usize {
     let mut added = 0usize;
     for branch in new_frozen {
@@ -73,10 +105,20 @@ pub(super) fn append_axis_limited_frozen_v1(
                 > campaign_branch_retention_key_v1(&frozen[existing_index])
             {
                 let displaced = std::mem::replace(&mut frozen[existing_index], branch);
-                record_campaign_duplicate_merge_v1(&displaced, discarded_count, discarded_examples);
+                record_campaign_duplicate_merge_v1(
+                    &displaced,
+                    discarded_count,
+                    discarded_examples,
+                    discarded_branches,
+                );
                 added = added.saturating_add(1);
             } else {
-                record_campaign_duplicate_merge_v1(&branch, discarded_count, discarded_examples);
+                record_campaign_duplicate_merge_v1(
+                    &branch,
+                    discarded_count,
+                    discarded_examples,
+                    discarded_branches,
+                );
             }
             continue;
         }
@@ -93,17 +135,35 @@ pub(super) fn append_axis_limited_frozen_v1(
         }
 
         let Some(worst_index) = frozen_axis_replacement_index_v1(frozen, &axis) else {
-            record_campaign_discard_v1(&branch, discarded_count, discarded_examples);
+            record_campaign_discard_v1(
+                &branch,
+                discarded_count,
+                discarded_examples,
+                discarded_branches,
+                "frozen_axis_capacity_rejected",
+            );
             continue;
         };
         if campaign_branch_retention_key_v1(&branch)
             > campaign_branch_retention_key_v1(&frozen[worst_index])
         {
             let displaced = std::mem::replace(&mut frozen[worst_index], branch);
-            record_campaign_discard_v1(&displaced, discarded_count, discarded_examples);
+            record_campaign_discard_v1(
+                &displaced,
+                discarded_count,
+                discarded_examples,
+                discarded_branches,
+                "frozen_axis_replaced",
+            );
             added = added.saturating_add(1);
         } else {
-            record_campaign_discard_v1(&branch, discarded_count, discarded_examples);
+            record_campaign_discard_v1(
+                &branch,
+                discarded_count,
+                discarded_examples,
+                discarded_branches,
+                "frozen_axis_capacity_rejected",
+            );
         }
     }
     added
@@ -183,27 +243,48 @@ fn branch_introduces_new_boss_relic_lineage_v1(
         .any(|branch| campaign_branch_boss_relic_lineage_key_v1(branch).as_ref() == Some(&lineage))
 }
 
-fn record_campaign_discard_v1(
+pub(super) fn record_campaign_discard_v1(
     branch: &BranchCampaignBranchV1,
     discarded_count: &mut usize,
     discarded_examples: &mut Vec<String>,
+    discarded_branches: &mut Vec<BranchCampaignDiscardedBranchV1>,
+    reason: &str,
 ) {
     *discarded_count = discarded_count.saturating_add(1);
     if discarded_examples.len() < 6 {
         discarded_examples.push(render_campaign_discard_example_v1(branch));
     }
+    record_campaign_discarded_branch_trace_v1(branch, discarded_branches, reason);
 }
 
 pub(super) fn record_campaign_duplicate_merge_v1(
     branch: &BranchCampaignBranchV1,
     discarded_count: &mut usize,
     discarded_examples: &mut Vec<String>,
+    discarded_branches: &mut Vec<BranchCampaignDiscardedBranchV1>,
 ) {
     *discarded_count = discarded_count.saturating_add(1);
     if discarded_examples.len() < 6 {
         discarded_examples.push(format!(
             "merged duplicate: {}",
             render_campaign_discard_example_v1(branch)
+        ));
+    }
+    record_campaign_discarded_branch_trace_v1(branch, discarded_branches, "duplicate_merge");
+}
+
+fn record_campaign_discarded_branch_trace_v1(
+    branch: &BranchCampaignBranchV1,
+    discarded_branches: &mut Vec<BranchCampaignDiscardedBranchV1>,
+    reason: &str,
+) {
+    let is_coverage_gap = branch
+        .continuation_origin
+        .as_ref()
+        .is_some_and(|origin| origin.kind == "coverage_gap");
+    if discarded_branches.len() < STRUCTURED_DISCARDED_BRANCH_LIMIT || is_coverage_gap {
+        discarded_branches.push(BranchCampaignDiscardedBranchV1::from_branch_v1(
+            branch, reason,
         ));
     }
 }

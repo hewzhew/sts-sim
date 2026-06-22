@@ -568,6 +568,7 @@ fn test_campaign_report_with_active(id: &str, floor: i32, hp: i32) -> BranchCamp
         stuck: Vec::new(),
         discarded_count: 4,
         discarded_examples: Vec::new(),
+        discarded_branches: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         combat_retry_ledger: BranchCampaignCombatRetryLedgerV1::default(),

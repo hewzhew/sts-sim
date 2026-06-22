@@ -89,6 +89,35 @@ pub struct BranchCampaignBranchV1 {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct BranchCampaignDiscardedBranchV1 {
+    pub reason: String,
+    pub branch_id: String,
+    pub choice_labels: Vec<String>,
+    pub frontier_title: String,
+    #[serde(default)]
+    pub stop_reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<BranchCampaignBranchSummaryV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub continuation_origin: Option<BranchCampaignContinuationOriginV1>,
+}
+
+impl BranchCampaignDiscardedBranchV1 {
+    pub fn from_branch_v1(branch: &BranchCampaignBranchV1, reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+            branch_id: branch.branch_id.clone(),
+            choice_labels: branch.choice_labels.clone(),
+            frontier_title: branch.frontier_title.clone(),
+            stop_reason: branch.stop_reason.clone(),
+            summary: branch.summary.clone(),
+            continuation_origin: branch.continuation_origin.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BranchCampaignContinuationOriginV1 {
     pub kind: String,
     pub source_event_id: String,
@@ -199,6 +228,8 @@ pub struct BranchCampaignSelectionV1 {
     pub discarded_count: usize,
     #[serde(default)]
     pub discarded_examples: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub discarded_branches: Vec<BranchCampaignDiscardedBranchV1>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -351,6 +382,8 @@ pub struct BranchCampaignReportV1 {
     pub discarded_count: usize,
     #[serde(default)]
     pub discarded_examples: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub discarded_branches: Vec<BranchCampaignDiscardedBranchV1>,
     pub strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
     #[serde(default)]
     pub route_evidence: BranchCampaignRouteEvidenceSummaryV1,

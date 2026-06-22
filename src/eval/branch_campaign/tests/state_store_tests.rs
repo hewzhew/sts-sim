@@ -622,6 +622,7 @@ fn campaign_checkpoint_writes_v2_state_graph_nodes() {
         stuck: Vec::new(),
         discarded_count: 0,
         discarded_examples: Vec::new(),
+        discarded_branches: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),

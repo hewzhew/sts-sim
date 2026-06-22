@@ -64,11 +64,12 @@ pub use model::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
     BranchCampaignCheckpointSessionV1, BranchCampaignCheckpointV1,
     BranchCampaignContinuationOriginV1, BranchCampaignDecisionObservationV1,
-    BranchCampaignReportV1, BranchCampaignRoundSummaryV1, BranchCampaignRouteContinuationOriginV1,
-    BranchCampaignRouteEvidenceExampleV1, BranchCampaignRouteEvidenceSummaryV1,
-    BranchCampaignRouteFirstEliteContinuationOriginV1, BranchCampaignRoutePathContinuationOriginV1,
-    BranchCampaignRunPreludeV1, BranchCampaignRunResultV1, BranchCampaignSelectionV1,
-    BranchCampaignStateStoreSummaryV1, BranchCampaignStrategyRequestV1,
+    BranchCampaignDiscardedBranchV1, BranchCampaignReportV1, BranchCampaignRoundSummaryV1,
+    BranchCampaignRouteContinuationOriginV1, BranchCampaignRouteEvidenceExampleV1,
+    BranchCampaignRouteEvidenceSummaryV1, BranchCampaignRouteFirstEliteContinuationOriginV1,
+    BranchCampaignRoutePathContinuationOriginV1, BranchCampaignRunPreludeV1,
+    BranchCampaignRunResultV1, BranchCampaignSelectionV1, BranchCampaignStateStoreSummaryV1,
+    BranchCampaignStrategyRequestV1,
 };
 use parent_batch::run_campaign_parent_batch_v1;
 #[cfg(test)]
@@ -201,6 +202,7 @@ struct BranchCampaignRunStateV1 {
     stuck: Vec<BranchCampaignBranchV1>,
     discarded_count: usize,
     discarded_examples: Vec<String>,
+    discarded_branches: Vec<BranchCampaignDiscardedBranchV1>,
     strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
     route_evidence: BranchCampaignRouteEvidenceSummaryV1,
     combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1,
@@ -624,6 +626,7 @@ where
                 config.max_frozen,
                 &mut state.discarded_count,
                 &mut state.discarded_examples,
+                &mut state.discarded_branches,
             )
         } else {
             append_limited_frozen_v1(
@@ -632,12 +635,14 @@ where
                 config.max_frozen,
                 &mut state.discarded_count,
                 &mut state.discarded_examples,
+                &mut state.discarded_branches,
             )
         };
         state.discarded_count = state
             .discarded_count
             .saturating_add(selected.discarded_count);
         append_discarded_examples_v1(&mut state.discarded_examples, selected.discarded_examples);
+        state.discarded_branches.extend(selected.discarded_branches);
         let dead_added = selected.dead.len();
         let abandoned_added = selected.abandoned.len();
         let victories_added = selected.victories.len();
@@ -882,6 +887,7 @@ where
         stuck: state.stuck,
         discarded_count: state.discarded_count,
         discarded_examples: state.discarded_examples,
+        discarded_branches: state.discarded_branches,
         strategy_requests: state.strategy_requests,
         route_evidence: state.route_evidence,
         combat_retry_ledger: state.combat_retry_ledger.to_report_v1(),
@@ -904,6 +910,7 @@ fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
         stuck: Vec::new(),
         discarded_count: 0,
         discarded_examples: Vec::new(),
+        discarded_branches: Vec::new(),
         strategy_requests: Vec::new(),
         route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
         combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),
@@ -926,6 +933,7 @@ fn campaign_state_from_report_v1(report: &BranchCampaignReportV1) -> BranchCampa
         stuck: report.stuck.clone(),
         discarded_count: report.discarded_count,
         discarded_examples: report.discarded_examples.clone(),
+        discarded_branches: report.discarded_branches.clone(),
         strategy_requests: report.strategy_requests.clone(),
         route_evidence: report.route_evidence.clone(),
         combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::from_report_v1(

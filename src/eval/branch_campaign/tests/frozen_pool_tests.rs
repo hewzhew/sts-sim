@@ -7,6 +7,7 @@ fn campaign_frozen_overflow_replaces_weaker_existing_branch() {
     let mut frozen = vec![existing];
     let mut discarded_count = 0usize;
     let mut discarded_examples = Vec::new();
+    let mut discarded_branches = Vec::new();
     let mut deeper = test_campaign_branch("deeper", 4, 75);
     deeper.choice_labels = vec!["Wild Strike".to_string(), "Skip card reward".to_string()];
 
@@ -16,6 +17,7 @@ fn campaign_frozen_overflow_replaces_weaker_existing_branch() {
         1,
         &mut discarded_count,
         &mut discarded_examples,
+        &mut discarded_branches,
     );
 
     assert_eq!(added, 1);
@@ -23,6 +25,7 @@ fn campaign_frozen_overflow_replaces_weaker_existing_branch() {
     assert_eq!(frozen[0].branch_id, "deeper");
     assert_eq!(discarded_count, 1);
     assert_eq!(discarded_examples, vec!["Body Slam"]);
+    assert_eq!(discarded_branches[0].reason, "frozen_replaced");
 }
 
 #[test]
@@ -30,6 +33,7 @@ fn campaign_frozen_overflow_discards_weaker_incoming_branch() {
     let mut frozen = vec![test_campaign_branch("existing", 4, 80)];
     let mut discarded_count = 0usize;
     let mut discarded_examples = Vec::new();
+    let mut discarded_branches = Vec::new();
     let mut shallow = test_campaign_branch("shallow", 3, 75);
     shallow.choice_labels = vec!["Wild Strike".to_string(), "Skip card reward".to_string()];
 
@@ -39,6 +43,7 @@ fn campaign_frozen_overflow_discards_weaker_incoming_branch() {
         1,
         &mut discarded_count,
         &mut discarded_examples,
+        &mut discarded_branches,
     );
 
     assert_eq!(added, 0);
@@ -46,6 +51,7 @@ fn campaign_frozen_overflow_discards_weaker_incoming_branch() {
     assert_eq!(frozen[0].branch_id, "existing");
     assert_eq!(discarded_count, 1);
     assert_eq!(discarded_examples, vec!["Wild Strike -> Skip card reward"]);
+    assert_eq!(discarded_branches[0].reason, "frozen_capacity_rejected");
 }
 
 #[test]
@@ -71,6 +77,7 @@ fn campaign_frozen_overflow_preserves_new_boss_relic_lineage() {
     let mut frozen = vec![coffee_high, coffee_low];
     let mut discarded_count = 0usize;
     let mut discarded_examples = Vec::new();
+    let mut discarded_branches = Vec::new();
 
     let added = append_limited_frozen_v1(
         &mut frozen,
@@ -78,6 +85,7 @@ fn campaign_frozen_overflow_preserves_new_boss_relic_lineage() {
         2,
         &mut discarded_count,
         &mut discarded_examples,
+        &mut discarded_branches,
     );
 
     assert_eq!(added, 1);
@@ -118,6 +126,7 @@ fn campaign_frozen_overflow_does_not_evict_unique_boss_relic_lineage_for_duplica
     let mut frozen = vec![coffee, hammer];
     let mut discarded_count = 0usize;
     let mut discarded_examples = Vec::new();
+    let mut discarded_branches = Vec::new();
 
     let added = append_limited_frozen_v1(
         &mut frozen,
@@ -125,6 +134,7 @@ fn campaign_frozen_overflow_does_not_evict_unique_boss_relic_lineage_for_duplica
         2,
         &mut discarded_count,
         &mut discarded_examples,
+        &mut discarded_branches,
     );
 
     assert_eq!(added, 0);
@@ -140,6 +150,7 @@ fn campaign_frozen_overflow_does_not_replace_branch_by_unspent_gold_pressure() {
     let mut frozen = vec![rich];
     let mut discarded_count = 0usize;
     let mut discarded_examples = Vec::new();
+    let mut discarded_branches = Vec::new();
     let mut converted = test_campaign_branch("converted", 16, 30);
     converted.summary.as_mut().unwrap().gold = 120;
 
@@ -149,6 +160,7 @@ fn campaign_frozen_overflow_does_not_replace_branch_by_unspent_gold_pressure() {
         1,
         &mut discarded_count,
         &mut discarded_examples,
+        &mut discarded_branches,
     );
 
     assert_eq!(added, 0);
@@ -175,6 +187,7 @@ fn campaign_frozen_overflow_does_not_replace_branch_by_strategic_summary_tie_bre
     };
     let mut discarded_count = 0usize;
     let mut discarded_examples = Vec::new();
+    let mut discarded_branches = Vec::new();
 
     let added = append_limited_frozen_v1(
         &mut frozen,
@@ -182,6 +195,7 @@ fn campaign_frozen_overflow_does_not_replace_branch_by_strategic_summary_tie_bre
         1,
         &mut discarded_count,
         &mut discarded_examples,
+        &mut discarded_branches,
     );
 
     assert_eq!(added, 0);
@@ -200,6 +214,7 @@ fn campaign_frozen_merge_replaces_duplicate_with_better_branch() {
     let mut frozen = vec![existing];
     let mut discarded_count = 0usize;
     let mut discarded_examples = Vec::new();
+    let mut discarded_branches = Vec::new();
 
     let added = append_limited_frozen_v1(
         &mut frozen,
@@ -207,6 +222,7 @@ fn campaign_frozen_merge_replaces_duplicate_with_better_branch() {
         4,
         &mut discarded_count,
         &mut discarded_examples,
+        &mut discarded_branches,
     );
 
     assert_eq!(added, 1);
@@ -214,4 +230,5 @@ fn campaign_frozen_merge_replaces_duplicate_with_better_branch() {
     assert_eq!(frozen[0].branch_id, "incoming");
     assert_eq!(discarded_count, 1);
     assert_eq!(discarded_examples, vec!["merged duplicate: old line"]);
+    assert_eq!(discarded_branches[0].reason, "duplicate_merge");
 }

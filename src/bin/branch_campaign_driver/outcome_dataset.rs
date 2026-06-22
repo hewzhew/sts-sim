@@ -707,6 +707,8 @@ fn render_coverage_gap_result_audit_v1(
     let branches = coverage_gap_result_branches_v1(report);
     let mut matched = 0usize;
     let mut missing = 0usize;
+    let mut final_bucket_matched = 0usize;
+    let mut discarded_matched = 0usize;
     let mut outcome_counts = BTreeMap::<(String, String, String), usize>::new();
     let mut target_lines = Vec::new();
 
@@ -714,9 +716,14 @@ fn render_coverage_gap_result_audit_v1(
         let lane = coverage_gap_continuation_target_lane_v1(target);
         if let Some(result) = branches
             .iter()
-            .find(|result| coverage_gap_result_branch_matches_target_v1(result.branch, target))
+            .find(|result| coverage_gap_result_branch_matches_target_v1(result, target))
         {
             matched = matched.saturating_add(1);
+            if result.outcome == "discarded" {
+                discarded_matched = discarded_matched.saturating_add(1);
+            } else {
+                final_bucket_matched = final_bucket_matched.saturating_add(1);
+            }
             *outcome_counts
                 .entry((
                     target.event_type.clone(),
@@ -725,16 +732,17 @@ fn render_coverage_gap_result_audit_v1(
                 ))
                 .or_default() += 1;
             target_lines.push(format!(
-                "  {}. {} {} {{{}}} lane={} seeded=yes final_bucket={} -> frontier={} {} stop={}",
+                "  {}. {} {} {{{}}} lane={} seeded=yes final_bucket={}{} -> frontier={} {} stop={}",
                 index + 1,
                 target.event_type,
                 compact_coverage_gap_audit_text_v1(&target.label, 40),
                 compact_coverage_gap_audit_text_v1(&target.command, 24),
                 compact_coverage_gap_audit_text_v1(&lane, 72),
                 result.outcome,
-                result.branch.frontier_title,
-                render_coverage_gap_branch_progress_v1(result.branch),
-                compact_coverage_gap_audit_text_v1(&result.branch.stop_reason, 92)
+                render_coverage_gap_discard_reason_suffix_v1(result),
+                result.frontier_title,
+                render_coverage_gap_branch_progress_v1(result.summary),
+                compact_coverage_gap_audit_text_v1(result.stop_reason, 92)
             ));
         } else {
             missing = missing.saturating_add(1);
@@ -764,9 +772,10 @@ fn render_coverage_gap_result_audit_v1(
         missing
     ));
     lines.push(format!(
-        "Lifecycle: seeded={} final_bucket_matched={} final_bucket_missing={} report_discarded={}",
+        "Lifecycle: seeded={} final_bucket_matched={} discarded_matched={} final_bucket_missing={} report_discarded={}",
         execution.targets.len(),
-        matched,
+        final_bucket_matched,
+        discarded_matched,
         missing,
         report.discarded_count
     ));
@@ -793,7 +802,11 @@ fn render_coverage_gap_result_audit_v1(
 
 struct CoverageGapResultBranchRefV1<'a> {
     outcome: &'static str,
-    branch: &'a BranchCampaignBranchV1,
+    frontier_title: &'a str,
+    stop_reason: &'a str,
+    summary: Option<&'a sts_simulator::eval::branch_campaign::BranchCampaignBranchSummaryV1>,
+    continuation_origin: Option<&'a BranchCampaignContinuationOriginV1>,
+    discard_reason: Option<&'a str>,
 }
 
 fn coverage_gap_result_branches_v1(
@@ -804,64 +817,73 @@ fn coverage_gap_result_branches_v1(
         report
             .active
             .iter()
-            .map(|branch| CoverageGapResultBranchRefV1 {
-                outcome: "active",
-                branch,
-            }),
+            .map(|branch| coverage_gap_result_branch_ref_from_branch_v1("active", branch)),
     );
     branches.extend(
         report
             .frozen
             .iter()
-            .map(|branch| CoverageGapResultBranchRefV1 {
-                outcome: "frozen",
-                branch,
-            }),
+            .map(|branch| coverage_gap_result_branch_ref_from_branch_v1("frozen", branch)),
     );
     branches.extend(
         report
             .victories
             .iter()
-            .map(|branch| CoverageGapResultBranchRefV1 {
-                outcome: "victory",
-                branch,
-            }),
+            .map(|branch| coverage_gap_result_branch_ref_from_branch_v1("victory", branch)),
     );
     branches.extend(
         report
             .dead
             .iter()
-            .map(|branch| CoverageGapResultBranchRefV1 {
-                outcome: "dead",
-                branch,
-            }),
+            .map(|branch| coverage_gap_result_branch_ref_from_branch_v1("dead", branch)),
     );
     branches.extend(
         report
             .abandoned
             .iter()
-            .map(|branch| CoverageGapResultBranchRefV1 {
-                outcome: "abandoned",
-                branch,
-            }),
+            .map(|branch| coverage_gap_result_branch_ref_from_branch_v1("abandoned", branch)),
     );
     branches.extend(
         report
             .stuck
             .iter()
+            .map(|branch| coverage_gap_result_branch_ref_from_branch_v1("stuck", branch)),
+    );
+    branches.extend(
+        report
+            .discarded_branches
+            .iter()
             .map(|branch| CoverageGapResultBranchRefV1 {
-                outcome: "stuck",
-                branch,
+                outcome: "discarded",
+                frontier_title: &branch.frontier_title,
+                stop_reason: &branch.stop_reason,
+                summary: branch.summary.as_ref(),
+                continuation_origin: branch.continuation_origin.as_ref(),
+                discard_reason: Some(&branch.reason),
             }),
     );
     branches
 }
 
+fn coverage_gap_result_branch_ref_from_branch_v1<'a>(
+    outcome: &'static str,
+    branch: &'a BranchCampaignBranchV1,
+) -> CoverageGapResultBranchRefV1<'a> {
+    CoverageGapResultBranchRefV1 {
+        outcome,
+        frontier_title: &branch.frontier_title,
+        stop_reason: &branch.stop_reason,
+        summary: branch.summary.as_ref(),
+        continuation_origin: branch.continuation_origin.as_ref(),
+        discard_reason: None,
+    }
+}
+
 fn coverage_gap_result_branch_matches_target_v1(
-    branch: &BranchCampaignBranchV1,
+    branch: &CoverageGapResultBranchRefV1<'_>,
     target: &CoverageGapContinuationTargetV1,
 ) -> bool {
-    let Some(origin) = branch.continuation_origin.as_ref() else {
+    let Some(origin) = branch.continuation_origin else {
         return false;
     };
     origin.kind == "coverage_gap"
@@ -872,14 +894,25 @@ fn coverage_gap_result_branch_matches_target_v1(
         && origin.command == target.command
 }
 
-fn render_coverage_gap_branch_progress_v1(branch: &BranchCampaignBranchV1) -> String {
-    let Some(summary) = branch.summary.as_ref() else {
+fn render_coverage_gap_branch_progress_v1(
+    summary: Option<&sts_simulator::eval::branch_campaign::BranchCampaignBranchSummaryV1>,
+) -> String {
+    let Some(summary) = summary else {
         return "A?F? HP ?/? deck ?".to_string();
     };
     format!(
         "A{}F{} HP {}/{} deck {}",
         summary.act, summary.floor, summary.hp, summary.max_hp, summary.deck_count
     )
+}
+
+fn render_coverage_gap_discard_reason_suffix_v1(
+    branch: &CoverageGapResultBranchRefV1<'_>,
+) -> String {
+    branch
+        .discard_reason
+        .map(|reason| format!(" discard_reason={reason}"))
+        .unwrap_or_default()
 }
 
 fn compact_coverage_gap_audit_text_v1(value: &str, max_chars: usize) -> String {
@@ -931,7 +964,9 @@ fn find_campaign_branch_by_id_v1<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sts_simulator::eval::branch_campaign::BranchCampaignBranchSummaryV1;
+    use sts_simulator::eval::branch_campaign::{
+        BranchCampaignBranchSummaryV1, BranchCampaignDiscardedBranchV1,
+    };
     use sts_simulator::eval::campaign_journal::{
         CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateAdmissionTraceV1,
         CampaignJournalCandidateDispositionV1,
@@ -987,6 +1022,7 @@ mod tests {
             stuck: Vec::new(),
             discarded_count: 0,
             discarded_examples: Vec::new(),
+            discarded_branches: Vec::new(),
             strategy_requests: Vec::new(),
             route_evidence: Default::default(),
             combat_retry_ledger: Default::default(),
@@ -999,9 +1035,9 @@ mod tests {
         let rendered = render_coverage_gap_result_audit_v1(&execution, &report);
 
         assert!(rendered.contains("CoverageGapResultAuditV1 targets=2 matched=2 missing=0"));
-        assert!(
-            rendered.contains("Lifecycle: seeded=2 final_bucket_matched=2 final_bucket_missing=0")
-        );
+        assert!(rendered.contains(
+            "Lifecycle: seeded=2 final_bucket_matched=2 discarded_matched=0 final_bucket_missing=0"
+        ));
         assert!(rendered.contains("reward:scheduled:kept"));
         assert!(rendered.contains("seeded=yes final_bucket=active"));
         assert!(rendered.contains("frontier=Reward Screen"));
@@ -1014,15 +1050,28 @@ mod tests {
         report.abandoned.clear();
         report.discarded_count = 3;
         report.discarded_examples = vec!["some other branch".to_string()];
-        let rendered = render_coverage_gap_result_audit_v1(&execution, &report);
-        assert!(rendered.contains("matched=1 missing=1"));
-        assert!(
-            rendered.contains("Lifecycle: seeded=2 final_bucket_matched=1 final_bucket_missing=1")
+        let discarded_branch = coverage_gap_test_result_branch(
+            &route_target,
+            BranchCampaignBranchStatusV1::Frozen,
+            "Map",
+            "discarded by retention cap",
+            1,
+            6,
+            44,
+            80,
         );
-        assert!(rendered.contains("missing target route x=1 y=2 Shop {go 1}"));
-        assert!(rendered.contains("seeded=yes final_bucket=missing"));
-        assert!(rendered.contains("diagnostic=not_in_final_buckets"));
-        assert!(rendered.contains("discarded_tracking=aggregate_only"));
+        report.discarded_branches = vec![BranchCampaignDiscardedBranchV1::from_branch_v1(
+            &discarded_branch,
+            "selection_capacity",
+        )];
+        let rendered = render_coverage_gap_result_audit_v1(&execution, &report);
+        assert!(rendered.contains("matched=2 missing=0"));
+        assert!(rendered.contains(
+            "Lifecycle: seeded=2 final_bucket_matched=1 discarded_matched=1 final_bucket_missing=0"
+        ));
+        assert!(rendered.contains("route x=1 y=2 Shop {go 1}"));
+        assert!(rendered.contains("seeded=yes final_bucket=discarded"));
+        assert!(rendered.contains("discard_reason=selection_capacity"));
     }
 
     #[test]

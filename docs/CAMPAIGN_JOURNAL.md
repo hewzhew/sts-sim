@@ -169,6 +169,10 @@ target back to its resulting branch and reports the outcome bucket, frontier,
 run progress, HP, deck size, and stop reason. Missing targets are reported as
 final-bucket misses rather than execution failures; if the report only has
 aggregate discarded tracking, the audit says so explicitly.
+New reports also carry lightweight structured `discarded_branches` records for
+selection/frozen-pool discards, preserving continuation origin and discard
+reason without storing full checkpoint state. Coverage-gap result audit uses
+those records to classify a target as `final_bucket=discarded` when possible.
 
 For route/map candidates, continuation targets carry structured
 `target_origin` provenance from the journal `MapDecisionPacketV1` when it is
