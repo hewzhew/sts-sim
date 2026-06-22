@@ -349,6 +349,13 @@ pub(super) fn run_coverage_gap_continuation_execution(
         &continuation_report,
         Some(&source_checkpoint),
     )?;
+    let result_records = extract_branch_outcome_records_v1(&result.report, Some(&result.checkpoint))?;
+    let result_plan = plan_coverage_gap_continuations_v1(
+        &result.report,
+        &result_records,
+        planning_window,
+        input.coverage_gap_candidates_per_decision,
+    );
     if let Some(path) = input.out.as_ref() {
         write_campaign_report_v1(path, &result.report)?;
     }
@@ -366,6 +373,10 @@ pub(super) fn run_coverage_gap_continuation_execution(
     println!("{}", render_round_budget_resolution_v1(round_budget));
     println!("{}", render_coverage_gap_execution_plan_v1(&execution));
     println!("{}", render_coverage_gap_continuation_plan_v1(&plan));
+    println!(
+        "{}",
+        render_coverage_gap_continuation_delta_v1(&plan, &result_plan)
+    );
     println!(
         "{}",
         render_coverage_gap_result_audit_v1(&execution, &result.report)
@@ -842,6 +853,62 @@ fn render_coverage_gap_result_audit_v1(
     lines.join("\n")
 }
 
+fn render_coverage_gap_continuation_delta_v1(
+    before: &CoverageGapContinuationPlanV1,
+    after: &CoverageGapContinuationPlanV1,
+) -> String {
+    let (reduced, increased) = coverage_gap_count_delta_v1(
+        before.total_unobserved_candidates,
+        after.total_unobserved_candidates,
+    );
+    let mut lines = vec![format!(
+        "CoverageGapContinuationDeltaV1 before_unobserved={} after_unobserved={} reduced={} increased={}",
+        before.total_unobserved_candidates,
+        after.total_unobserved_candidates,
+        reduced,
+        increased
+    )];
+
+    let before_buckets = before
+        .bucket_summaries
+        .iter()
+        .map(|summary| (summary.bucket.clone(), summary))
+        .collect::<BTreeMap<_, _>>();
+    let after_buckets = after
+        .bucket_summaries
+        .iter()
+        .map(|summary| (summary.bucket.clone(), summary))
+        .collect::<BTreeMap<_, _>>();
+    let mut buckets = before_buckets.keys().cloned().collect::<BTreeSet<_>>();
+    buckets.extend(after_buckets.keys().cloned());
+    if !buckets.is_empty() {
+        lines.push("Buckets:".to_string());
+        for bucket in buckets {
+            let before_unobserved = before_buckets
+                .get(&bucket)
+                .map_or(0, |summary| summary.unobserved_candidate_count);
+            let after_unobserved = after_buckets
+                .get(&bucket)
+                .map_or(0, |summary| summary.unobserved_candidate_count);
+            let (bucket_reduced, bucket_increased) =
+                coverage_gap_count_delta_v1(before_unobserved, after_unobserved);
+            lines.push(format!(
+                "  {} before_unobserved={} after_unobserved={} reduced={} increased={}",
+                bucket, before_unobserved, after_unobserved, bucket_reduced, bucket_increased
+            ));
+        }
+    }
+    lines.join("\n")
+}
+
+fn coverage_gap_count_delta_v1(before: usize, after: usize) -> (usize, usize) {
+    if before >= after {
+        (before - after, 0)
+    } else {
+        (0, after - before)
+    }
+}
+
 struct CoverageGapResultBranchRefV1<'a> {
     outcome: &'static str,
     frontier_title: &'a str,
@@ -1036,6 +1103,7 @@ mod tests {
         CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateAdmissionTraceV1,
         CampaignJournalCandidateDispositionV1,
     };
+    use sts_simulator::eval::learning_dataset_v1::CoverageGapContinuationBucketSummaryV1;
 
     #[test]
     fn coverage_gap_result_audit_links_targets_to_result_branches() {
@@ -1213,6 +1281,34 @@ mod tests {
         assert!(rendered.contains("final_bucket=active target_progress=extended"));
         assert!(rendered.contains("event Leave {event 2}"));
         assert!(rendered.contains("final_bucket=frozen target_progress=target_only"));
+    }
+
+    #[test]
+    fn coverage_gap_continuation_delta_reports_gap_change_by_bucket() {
+        let before = coverage_gap_test_plan_with_buckets(
+            100,
+            vec![
+                coverage_gap_test_bucket("route", 60, 4),
+                coverage_gap_test_bucket("reward", 40, 2),
+            ],
+        );
+        let after = coverage_gap_test_plan_with_buckets(
+            85,
+            vec![
+                coverage_gap_test_bucket("route", 50, 3),
+                coverage_gap_test_bucket("reward", 35, 2),
+                coverage_gap_test_bucket("event", 5, 1),
+            ],
+        );
+
+        let rendered = render_coverage_gap_continuation_delta_v1(&before, &after);
+
+        assert!(rendered.contains(
+            "CoverageGapContinuationDeltaV1 before_unobserved=100 after_unobserved=85 reduced=15 increased=0"
+        ));
+        assert!(rendered.contains("route before_unobserved=60 after_unobserved=50 reduced=10 increased=0"));
+        assert!(rendered.contains("reward before_unobserved=40 after_unobserved=35 reduced=5 increased=0"));
+        assert!(rendered.contains("event before_unobserved=0 after_unobserved=5 reduced=0 increased=5"));
     }
 
     #[test]
@@ -1520,6 +1616,46 @@ mod tests {
             reward_boundary: None,
         });
         branch
+    }
+
+    fn coverage_gap_test_plan_with_buckets(
+        total_unobserved_candidates: usize,
+        bucket_summaries: Vec<CoverageGapContinuationBucketSummaryV1>,
+    ) -> CoverageGapContinuationPlanV1 {
+        CoverageGapContinuationPlanV1 {
+            schema_name: "CoverageGapContinuationPlanV1".to_string(),
+            schema_version: 3,
+            label_role: "campaign_observation_not_teacher".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            total_decisions: 0,
+            total_candidates: 0,
+            total_unobserved_candidates,
+            kept_unobserved_candidates: 0,
+            pruned_unobserved_candidates: 0,
+            scheduled_unobserved_candidates: 0,
+            unscheduled_unobserved_candidates: 0,
+            selected_target_count: 0,
+            selected_kept_targets: 0,
+            selected_pruned_targets: 0,
+            selected_scheduled_targets: 0,
+            selected_unscheduled_targets: 0,
+            bucket_summaries,
+            targets: Vec::new(),
+        }
+    }
+
+    fn coverage_gap_test_bucket(
+        bucket: &str,
+        unobserved_candidate_count: usize,
+        selected_target_count: usize,
+    ) -> CoverageGapContinuationBucketSummaryV1 {
+        CoverageGapContinuationBucketSummaryV1 {
+            bucket: bucket.to_string(),
+            unobserved_candidate_count,
+            selected_target_count,
+            ..Default::default()
+        }
     }
 }
 
