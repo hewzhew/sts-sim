@@ -139,7 +139,7 @@ function Add-CampaignSharedDriverOptions {
         [bool] $IncludeActiveLineageDiversity = $false,
         [bool] $IncludeBossRelicAxes = $false,
         [bool] $IncludeAutoCaptureCombat = $true,
-        [object] $OptionContext = $CampaignSharedDriverOptionContext
+        [object] $OptionContext
     )
 
     if ($null -eq $OptionContext) {
@@ -412,7 +412,8 @@ function Write-CampaignRunPreflight {
 function New-CampaignRunWrapperManifest {
     param(
         [int] $ExitCode,
-        [string] $Stage
+        [string] $Stage,
+        [object] $OptionContext
     )
 
     $Manifest = New-CampaignWrapperManifestBase `
@@ -431,7 +432,7 @@ function New-CampaignRunWrapperManifest {
     }
 
     if ($UntilMilestoneBound) {
-        $MilestoneResumeArgs = New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds
+        $MilestoneResumeArgs = New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds -OptionContext $OptionContext
         $Manifest["milestone"] = [ordered]@{
             target = $UntilMilestone
             stop = $ResolvedMilestoneStop
@@ -447,7 +448,8 @@ function New-CampaignRunWrapperManifest {
 
 function Invoke-CampaignRunCommand {
     param(
-        [bool] $DryRun
+        [bool] $DryRun,
+        [object] $OptionContext
     )
 
     if ($ContinueCampaign -and $TargetRounds -ne $null -and $MaxRounds -eq 0) {
@@ -469,7 +471,7 @@ function Invoke-CampaignRunCommand {
         Write-Host $RenderedCommand
         if ($UntilMilestoneBound) {
             Write-Host "milestone-loop-command-template:"
-            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds))
+            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds -OptionContext $OptionContext))
         }
         return 0
     }
@@ -492,15 +494,15 @@ function Invoke-CampaignRunCommand {
             Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine $RenderedCommand
             Write-CampaignWrapperManifest `
                 -Path $RunManifestPath `
-                -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed")
+                -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed" -OptionContext $OptionContext)
             if ($UntilMilestoneBound) {
-                Invoke-CampaignUntilMilestone -AlreadySpentRounds $MaxRounds
+                Invoke-CampaignUntilMilestone -AlreadySpentRounds $MaxRounds -OptionContext $OptionContext
                 $DriverExitCode = $script:CampaignMilestoneExitCode
             }
             $ManifestStage = if ($UntilMilestoneBound) { "completed_with_milestone_loop" } else { "completed" }
             Write-CampaignWrapperManifest `
                 -Path $RunManifestPath `
-                -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage $ManifestStage)
+                -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage $ManifestStage -OptionContext $OptionContext)
         }
         return $DriverExitCode
     } finally {

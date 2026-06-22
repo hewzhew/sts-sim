@@ -56,7 +56,8 @@ function Get-CampaignMilestoneStatus {
 
 function New-MilestoneResumeDriverArgs {
     param(
-        [int] $StepRounds
+        [int] $StepRounds,
+        [object] $OptionContext
     )
 
     $Args = @(
@@ -80,12 +81,14 @@ function New-MilestoneResumeDriverArgs {
         -Arguments $Args `
         -IncludeActiveLineageDiversity $false `
         -IncludeBossRelicAxes $false `
-        -IncludeAutoCaptureCombat $false
+        -IncludeAutoCaptureCombat $false `
+        -OptionContext $OptionContext
 }
 
 function Invoke-CampaignUntilMilestone {
     param(
-        [int] $AlreadySpentRounds = 0
+        [int] $AlreadySpentRounds = 0,
+        [object] $OptionContext
     )
 
     $script:CampaignMilestoneExitCode = 0
@@ -98,7 +101,7 @@ function Invoke-CampaignUntilMilestone {
             return
         }
         $StepRounds = [Math]::Min($MilestoneStepRounds, $MilestoneMaxRounds - $SpentRounds)
-        $ResumeArgs = New-MilestoneResumeDriverArgs -StepRounds $StepRounds
+        $ResumeArgs = New-MilestoneResumeDriverArgs -StepRounds $StepRounds -OptionContext $OptionContext
         Write-Host "milestone-step target=$UntilMilestone additional-rounds=$StepRounds"
         & $DriverExe @ResumeArgs
         if ($LASTEXITCODE -ne 0) {

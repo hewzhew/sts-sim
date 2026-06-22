@@ -56,7 +56,8 @@ function New-TargetedContinuationContinueDriverArgs {
         [string] $RunOutputCampaignPath,
         [string] $RunOutputCheckpointPath,
         [string] $TargetDecisionOutcomePath,
-        [string[]] $RoundBudgetArgs
+        [string[]] $RoundBudgetArgs,
+        [object] $OptionContext
     )
 
     $Args = @(
@@ -83,7 +84,8 @@ function New-TargetedContinuationContinueDriverArgs {
         -Arguments $Args `
         -IncludeActiveLineageDiversity $false `
         -IncludeBossRelicAxes $false `
-        -IncludeAutoCaptureCombat $true
+        -IncludeAutoCaptureCombat $true `
+        -OptionContext $OptionContext
 }
 
 function Write-TargetedContinuationDryRunCommands {
@@ -122,7 +124,8 @@ function Invoke-TargetedContinuationCommands {
         [string[]] $ExportDecisionAfterArgs,
         [string[]] $ContinuationEffectArgs,
         [bool] $UntilMilestoneBound,
-        [int] $ContinuationRounds
+        [int] $ContinuationRounds,
+        [object] $OptionContext
     )
 
     if ($PlanTargets -or $ContinueTargets) {
@@ -155,7 +158,7 @@ function Invoke-TargetedContinuationCommands {
     }
     Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
     if ($UntilMilestoneBound) {
-        Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds
+        Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds -OptionContext $OptionContext
         $DriverExitCode = $script:CampaignMilestoneExitCode
     }
     return $DriverExitCode
