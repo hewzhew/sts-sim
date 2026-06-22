@@ -205,6 +205,7 @@ param(
     [switch] $InspectLastAutoCombat,
     [switch] $InspectCombatLab,
     [switch] $InspectFinalBossCombat,
+    [switch] $InspectCoverageGapMilestoneSummary,
     [switch] $ProbeBoss,
     [switch] $DryRun,
     [switch] $NoProgress,
@@ -242,6 +243,9 @@ param(
 
     [ValidateSet("", "Act1Boss", "Act2Start")]
     [string] $UntilMilestone = "",
+
+    [ValidateSet("Act1Boss", "Act2Start")]
+    [string] $CoverageGapMilestoneTarget = "Act2Start",
 
     [ValidateRange(1, 100000)]
     [int] $MilestoneStepRounds = 2,
@@ -361,7 +365,8 @@ if (
     $InspectRouteEvidence -or
     $InspectLastAutoCombat -or
     $InspectCombatLab -or
-    $InspectFinalBossCombat
+    $InspectFinalBossCombat -or
+    $InspectCoverageGapMilestoneSummary
 ) {
     $Inspect = $true
 }
@@ -834,6 +839,30 @@ function Invoke-CampaignUntilMilestone {
     return 0
 }
 
+function Invoke-CoverageGapMilestoneSummary {
+    param(
+        [string] $Target
+    )
+
+    if (-not (Test-Path -LiteralPath $RunOutputCampaignPath)) {
+        Write-Host "coverage-gap-milestone-summary=skipped missing-report=$RunOutputCampaignPath"
+        return 0
+    }
+
+    $SummaryArgs = @(
+        "inspect",
+        "--inspect-report", "$RunOutputCampaignPath",
+        "--inspect-coverage-gap-milestone-summary",
+        "--coverage-gap-milestone-target", "$Target"
+    )
+    if (Test-Path -LiteralPath $RunOutputCheckpointPath) {
+        $SummaryArgs += @("--inspect-checkpoint", "$RunOutputCheckpointPath")
+    }
+    Write-Host "coverage-gap-milestone-summary:"
+    & $DriverExe @SummaryArgs
+    return $LASTEXITCODE
+}
+
 function Test-DriverNeedsBuild {
     param(
         [string] $ExePath
@@ -1152,6 +1181,19 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         if ($UntilMilestoneBound) {
             Write-Host "milestone-loop-command-template:"
             Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds))
+            if ($ContinueCoverageGaps) {
+                $SummaryArgs = @(
+                    "inspect",
+                    "--inspect-report", "$RunOutputCampaignPath",
+                    "--inspect-coverage-gap-milestone-summary",
+                    "--coverage-gap-milestone-target", "$UntilMilestone"
+                )
+                if (Test-Path -LiteralPath $RunOutputCheckpointPath) {
+                    $SummaryArgs += @("--inspect-checkpoint", "$RunOutputCheckpointPath")
+                }
+                Write-Host "milestone-summary-command:"
+                Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $SummaryArgs)
+            }
         }
         exit 0
     }
@@ -1226,6 +1268,9 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                 }
                 if ($UntilMilestoneBound) {
                     $DriverExitCode = Invoke-CampaignUntilMilestone -AlreadySpentRounds $CoverageGapInitialSpentRounds
+                    if ($DriverExitCode -eq 0) {
+                        $DriverExitCode = Invoke-CoverageGapMilestoneSummary -Target $UntilMilestone
+                    }
                 }
             }
             exit $DriverExitCode
@@ -1271,7 +1316,8 @@ if ($Inspect) {
         $InspectRouteEvidence -or
         $InspectLastAutoCombat -or
         $InspectCombatLab -or
-        $InspectFinalBossCombat
+        $InspectFinalBossCombat -or
+        $InspectCoverageGapMilestoneSummary
     if ((-not $ExportLearningDataset) -and (-not $DetailedInspect)) {
         $InspectArgs += "--inspect-summary"
     }
@@ -1314,6 +1360,12 @@ if ($Inspect) {
     }
     if ((-not $ExportLearningDataset) -and $InspectFinalBossCombat) {
         $InspectArgs += "--inspect-final-boss-combat"
+    }
+    if ((-not $ExportLearningDataset) -and $InspectCoverageGapMilestoneSummary) {
+        $InspectArgs += @(
+            "--inspect-coverage-gap-milestone-summary",
+            "--coverage-gap-milestone-target", "$CoverageGapMilestoneTarget"
+        )
     }
     if ((-not $ExportLearningDataset) -and $InspectCombatLab) {
         $InspectArgs += @(

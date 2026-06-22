@@ -8,6 +8,7 @@ mod checkpoint_inspection;
 mod cli_args;
 mod combat_lab;
 mod command_inputs;
+mod coverage_gap_milestone_summary;
 mod decision_observations;
 mod driver_command;
 mod final_boss_combat;
@@ -32,6 +33,7 @@ use command_inputs::{
 use command_inputs::{
     ContinuationCommandInput, DatasetCommandInput, InspectCommandInput, RunCommandInput,
 };
+use coverage_gap_milestone_summary::run_coverage_gap_milestone_summary_inspection;
 use decision_observations::run_decision_observation_inspection;
 #[cfg(test)]
 use driver_command::driver_command_from_args;
@@ -107,6 +109,9 @@ fn run(cli_input: BranchCampaignCliInputV1) -> Result<(), String> {
         BranchCampaignDriverCommandV1::InspectDecisionCoverage => {
             run_decision_candidate_coverage_inspection(&DatasetCommandInput::from_args(args))
         }
+        BranchCampaignDriverCommandV1::InspectCoverageGapMilestoneSummary => {
+            run_coverage_gap_milestone_summary_inspection(&InspectCommandInput::from_args(args)?)
+        }
         BranchCampaignDriverCommandV1::InspectDecisionObservations => {
             run_decision_observation_inspection(&InspectCommandInput::from_args(args)?)
         }
@@ -175,6 +180,16 @@ mod tests {
             "--inspect-lineage-decisions",
         ])
         .expect("lineage decision inspect args parse");
+        let coverage_gap_milestone_args = parse_args_from([
+            "branch_campaign_driver",
+            "inspect",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-coverage-gap-milestone-summary",
+            "--coverage-gap-milestone-target",
+            "Act2Start",
+        ])
+        .expect("coverage gap milestone summary inspect args parse");
         let dataset_args = parse_args_from([
             "branch_campaign_driver",
             "dataset",
@@ -217,6 +232,10 @@ mod tests {
         assert_eq!(
             driver_command_from_args(&lineage_decision_args),
             BranchCampaignDriverCommandV1::InspectLineageDecisions
+        );
+        assert_eq!(
+            driver_command_from_args(&coverage_gap_milestone_args),
+            BranchCampaignDriverCommandV1::InspectCoverageGapMilestoneSummary
         );
         assert_eq!(
             driver_command_from_args(&dataset_args),

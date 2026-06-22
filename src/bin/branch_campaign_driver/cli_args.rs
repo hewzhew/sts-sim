@@ -472,6 +472,19 @@ pub(super) struct Args {
     pub(super) inspect_decision_coverage: bool,
 
     #[arg(
+        long = "inspect-coverage-gap-milestone-summary",
+        help = "Print milestone progress for coverage-gap continuation result branches"
+    )]
+    pub(super) inspect_coverage_gap_milestone_summary: bool,
+
+    #[arg(
+        long = "coverage-gap-milestone-target",
+        default_value = "Act2Start",
+        help = "Milestone target for --inspect-coverage-gap-milestone-summary: Act1Boss or Act2Start"
+    )]
+    pub(super) coverage_gap_milestone_target: String,
+
+    #[arg(
         long = "inspect-query",
         value_name = "TEXT",
         help = "Filter decision observations by candidate label, semantic class, frontier key, or parent choices"
@@ -1110,6 +1123,19 @@ struct InspectModeArgs {
     inspect_decision_coverage: bool,
 
     #[arg(
+        long = "inspect-coverage-gap-milestone-summary",
+        help = "Print milestone progress for coverage-gap continuation result branches"
+    )]
+    inspect_coverage_gap_milestone_summary: bool,
+
+    #[arg(
+        long = "coverage-gap-milestone-target",
+        default_value = "Act2Start",
+        help = "Milestone target for --inspect-coverage-gap-milestone-summary: Act1Boss or Act2Start"
+    )]
+    coverage_gap_milestone_target: String,
+
+    #[arg(
         long = "inspect-query",
         value_name = "TEXT",
         help = "Filter decision observations by candidate label, semantic class, frontier key, or parent choices"
@@ -1400,6 +1426,8 @@ impl Args {
             inspect_journal: false,
             inspect_lineage_decisions: false,
             inspect_decision_coverage: false,
+            inspect_coverage_gap_milestone_summary: false,
+            coverage_gap_milestone_target: "Act2Start".to_string(),
             inspect_query: None,
             inspect_final_boss_combat: false,
             export_outcome_dataset: None,
@@ -1582,6 +1610,8 @@ impl InspectModeArgs {
         args.inspect_journal = self.inspect_journal;
         args.inspect_lineage_decisions = self.inspect_lineage_decisions;
         args.inspect_decision_coverage = self.inspect_decision_coverage;
+        args.inspect_coverage_gap_milestone_summary = self.inspect_coverage_gap_milestone_summary;
+        args.coverage_gap_milestone_target = self.coverage_gap_milestone_target;
         args.inspect_query = self.inspect_query;
         args.inspect_final_boss_combat = self.inspect_final_boss_combat;
     }

@@ -61,6 +61,7 @@ pub(super) struct InspectCommandInput {
     pub(super) report_path: Option<PathBuf>,
     pub(super) summary: bool,
     pub(super) query: Option<String>,
+    pub(super) coverage_gap_milestone_target: String,
     pub(super) filters: InspectFiltersInput,
     pub(super) modes: InspectModesInput,
     pub(super) search_options: RunControlSearchCombatOptions,
@@ -75,6 +76,7 @@ impl InspectCommandInput {
             report_path: args.inspect_report.clone(),
             summary: args.inspect_summary,
             query: args.inspect_query.clone(),
+            coverage_gap_milestone_target: args.coverage_gap_milestone_target.clone(),
             filters: InspectFiltersInput {
                 act: args.inspect_act,
                 floor: args.inspect_floor,
