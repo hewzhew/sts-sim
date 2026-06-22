@@ -680,7 +680,7 @@ fn coverage_gap_branch_from_target_v1(
         strategic_summary: Default::default(),
         frontier_title: format!("Coverage Gap: {}", target.event_type),
         status: BranchCampaignBranchStatusV1::Active,
-        stop_reason: format!("coverage gap continuation from {}", target.decision_id),
+        stop_reason: coverage_gap_branch_stop_reason_v1(target),
         continuation_origin: Some(BranchCampaignContinuationOriginV1 {
             kind: "coverage_gap".to_string(),
             source_event_id: target.event_id.clone(),
@@ -773,6 +773,13 @@ fn coverage_gap_branch_from_target_v1(
         final_boss_combat_record: None,
         combat_lab_probes: Vec::new(),
     }
+}
+
+fn coverage_gap_branch_stop_reason_v1(target: &CoverageGapContinuationTargetV1) -> String {
+    format!(
+        "coverage gap continuation from {} candidate {}",
+        target.event_type, target.candidate_index
+    )
 }
 
 fn coverage_gap_target_commands_v1(target: &CoverageGapContinuationTargetV1) -> Vec<String> {
@@ -1994,6 +2001,20 @@ mod tests {
         assert_eq!(origin.disposition, target.disposition);
         assert!(origin.target_origin_source.is_empty());
         assert!(origin.route_origin.is_none());
+    }
+
+    #[test]
+    fn coverage_gap_branch_stop_reason_hides_raw_decision_path_markers() {
+        let mut target = coverage_gap_test_target("route", "go 2", "x=2 y=6 Event", 0);
+        target.decision_id = "root.__route_decision:0:go_2:route_candidate_pool0".to_string();
+        target.event_id = "route-event:candidate_set".to_string();
+
+        let branch = coverage_gap_branch_from_target_v1(&target);
+
+        assert!(!branch.stop_reason.contains("__route_decision"));
+        assert!(branch.stop_reason.contains("coverage gap continuation"));
+        assert!(branch.stop_reason.contains("route"));
+        assert!(branch.stop_reason.contains("candidate 0"));
     }
 
     #[test]
