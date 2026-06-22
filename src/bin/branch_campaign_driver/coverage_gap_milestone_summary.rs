@@ -52,6 +52,8 @@ pub(super) struct CoverageGapMilestoneBranchRowV1 {
     pub(super) hp: i32,
     pub(super) max_hp: i32,
     pub(super) deck_count: usize,
+    pub(super) target_origin_source: String,
+    pub(super) target_progress: String,
     pub(super) frontier_title: String,
     pub(super) stop_reason: String,
     pub(super) choice_labels: Vec<String>,
@@ -159,6 +161,49 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_v1(
         ));
     }
 
+    let progress_counts = target_progress_counts_v1(rows.iter());
+    lines.push(format!(
+        "Target progress: extended={} target_only={} discarded={} missing={} incomplete={} unknown={}",
+        count_for_key_v1(&progress_counts, "extended"),
+        count_for_key_v1(&progress_counts, "target_only"),
+        count_for_key_v1(&progress_counts, "discarded"),
+        count_for_key_v1(&progress_counts, "missing"),
+        count_for_key_v1(&progress_counts, "incomplete"),
+        count_for_key_v1(&progress_counts, "unknown")
+    ));
+    let mut by_origin_progress = BTreeMap::<&str, BTreeMap<&str, usize>>::new();
+    for row in rows {
+        *by_origin_progress
+            .entry(&row.event_type)
+            .or_default()
+            .entry(&row.target_progress)
+            .or_default() += 1;
+    }
+    lines.push("Target progress by origin:".to_string());
+    for (event_type, counts) in by_origin_progress {
+        lines.push(format!(
+            "  {event_type} extended={} target_only={} discarded={} missing={} incomplete={} unknown={}",
+            count_for_key_v1(&counts, "extended"),
+            count_for_key_v1(&counts, "target_only"),
+            count_for_key_v1(&counts, "discarded"),
+            count_for_key_v1(&counts, "missing"),
+            count_for_key_v1(&counts, "incomplete"),
+            count_for_key_v1(&counts, "unknown")
+        ));
+    }
+
+    let source_counts = target_origin_source_counts_v1(rows.iter());
+    if !source_counts.is_empty() {
+        lines.push(format!(
+            "Target origin sources: {}",
+            source_counts
+                .iter()
+                .map(|(source, count)| format!("{source}={count}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+    }
+
     lines.push("Reached target examples:".to_string());
     let mut reached_rows: Vec<_> = rows
         .iter()
@@ -212,6 +257,8 @@ fn collect_branch_rows_v1(
             &origin.event_type,
             &origin.label,
             &origin.command,
+            &origin.target_origin_source,
+            target_progress_for_branch_v1(&branch.commands, &origin.command),
             branch.summary.as_ref(),
             &branch.frontier_title,
             &branch.stop_reason,
@@ -237,6 +284,8 @@ fn collect_discarded_rows_v1(
             &origin.event_type,
             &origin.label,
             &origin.command,
+            &origin.target_origin_source,
+            "discarded".to_string(),
             branch.summary.as_ref(),
             &branch.frontier_title,
             &branch.stop_reason,
@@ -250,6 +299,8 @@ fn row_from_parts_v1(
     event_type: &str,
     label: &str,
     command: &str,
+    target_origin_source: &str,
+    target_progress: String,
     summary: Option<&BranchCampaignBranchSummaryV1>,
     frontier_title: &str,
     stop_reason: &str,
@@ -265,10 +316,53 @@ fn row_from_parts_v1(
         hp: summary.map_or(0, |summary| summary.hp),
         max_hp: summary.map_or(0, |summary| summary.max_hp),
         deck_count: summary.map_or(0, |summary| summary.deck_count),
+        target_origin_source: target_origin_source.to_string(),
+        target_progress,
         frontier_title: frontier_title.to_string(),
         stop_reason: stop_reason.to_string(),
         choice_labels: choice_labels.to_vec(),
     }
+}
+
+fn target_progress_for_branch_v1(commands: &[String], target_command: &str) -> String {
+    let Some(index) = commands
+        .iter()
+        .position(|command| command == target_command)
+    else {
+        return "unknown".to_string();
+    };
+    if index + 1 < commands.len() {
+        "extended".to_string()
+    } else {
+        "target_only".to_string()
+    }
+}
+
+fn target_progress_counts_v1<'a>(
+    rows: impl Iterator<Item = &'a CoverageGapMilestoneBranchRowV1>,
+) -> BTreeMap<&'a str, usize> {
+    let mut counts = BTreeMap::new();
+    for row in rows {
+        *counts.entry(row.target_progress.as_str()).or_default() += 1;
+    }
+    counts
+}
+
+fn target_origin_source_counts_v1<'a>(
+    rows: impl Iterator<Item = &'a CoverageGapMilestoneBranchRowV1>,
+) -> BTreeMap<&'a str, usize> {
+    let mut counts = BTreeMap::new();
+    for row in rows {
+        if row.target_origin_source.is_empty() {
+            continue;
+        }
+        *counts.entry(row.target_origin_source.as_str()).or_default() += 1;
+    }
+    counts
+}
+
+fn count_for_key_v1(counts: &BTreeMap<&str, usize>, key: &str) -> usize {
+    counts.get(key).copied().unwrap_or(0)
 }
 
 fn compare_milestone_rows(
@@ -336,6 +430,8 @@ mod tests {
             hp: 80,
             max_hp: 80,
             deck_count: 12,
+            target_origin_source: "journal_coverage_gap".to_string(),
+            target_progress: "extended".to_string(),
             frontier_title: "Reward Screen".to_string(),
             stop_reason: String::new(),
             choice_labels: vec![label.to_string()],
@@ -362,5 +458,30 @@ mod tests {
         assert!(text.contains("route total=1 reached=0 active=0 frozen=1"));
         assert!(text.contains("Reached target examples:"));
         assert!(text.contains("A2F19 HP 80/80 deck 12 | active | boss_relic | RunicPyramid"));
+    }
+
+    #[test]
+    fn milestone_summary_reports_target_progress_counts() {
+        let mut extended = row("active", "shop", 2, 17, "Buy Reaper");
+        extended.target_progress = "extended".to_string();
+        extended.target_origin_source = "shop_plan_frontier".to_string();
+        let mut target_only = row("frozen", "reward", 1, 5, "Shockwave");
+        target_only.target_progress = "target_only".to_string();
+        let mut discarded = row("discarded", "route", 1, 6, "x=1 Elite");
+        discarded.target_progress = "discarded".to_string();
+        discarded.target_origin_source = "map_decision_packet".to_string();
+
+        let text = render_coverage_gap_milestone_summary_from_rows_v1(
+            &[extended, target_only, discarded],
+            CoverageGapMilestoneTargetV1::Act2Start,
+        );
+
+        assert!(text.contains("Target progress: extended=1 target_only=1 discarded=1"));
+        assert!(text.contains("shop extended=1 target_only=0 discarded=0"));
+        assert!(text.contains("reward extended=0 target_only=1 discarded=0"));
+        assert!(text.contains("route extended=0 target_only=0 discarded=1"));
+        assert!(text.contains("Target origin sources:"));
+        assert!(text.contains("map_decision_packet=1"));
+        assert!(text.contains("shop_plan_frontier=1"));
     }
 }
