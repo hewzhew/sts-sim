@@ -177,6 +177,7 @@ New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 . (Join-Path $PSScriptRoot "campaign_invocation.ps1")
 . (Join-Path $PSScriptRoot "campaign_preflight.ps1")
 . (Join-Path $PSScriptRoot "campaign_milestones.ps1")
+. (Join-Path $PSScriptRoot "campaign_rounds.ps1")
 . (Join-Path $PSScriptRoot "campaign_coverage_gaps.ps1")
 . (Join-Path $PSScriptRoot "campaign_continuation.ps1")
 . (Join-Path $PSScriptRoot "campaign_inspect.ps1")
@@ -342,80 +343,33 @@ $CoverageGapFilterLabel = $CoverageGapFilterContext.FilterLabel
 $CoverageGapResultFilterArgs = @($CoverageGapFilterContext.ResultFilterArgs)
 $CoverageGapResultFilterLabel = $CoverageGapFilterContext.ResultFilterLabel
 
-if (($RoundsBound -and $UntilRoundBound) -or ($RoundsBound -and $MaxRoundsBound) -or ($UntilRoundBound -and $MaxRoundsBound)) {
-    throw "Choose only one round budget: -Rounds N, -UntilRound N, or legacy -MaxRounds N."
-}
-if ($UntilMilestoneBound -and ($RoundsBound -or $UntilRoundBound -or $MaxRoundsBound)) {
-    throw "-UntilMilestone owns the round budget. Use -MilestoneStepRounds and -MilestoneMaxRounds instead of -Rounds, -UntilRound, or -MaxRounds."
-}
-if ($UntilMilestoneBound -and ($PlanTargets -or $PlanCoverageGaps -or $Inspect)) {
-    throw "-UntilMilestone requires an executing command (-Continue, -ContinueTargets, -ContinueCoverageGaps, or a normal run), not a plan/inspect command."
-}
-$ResolvedMilestoneStop = $MilestoneStop
-if ($ResolvedMilestoneStop -eq "auto") {
-    if ($ContinueCoverageGaps) {
-        $ResolvedMilestoneStop = "round_cap"
-    } else {
-        $ResolvedMilestoneStop = "first_hit"
-    }
-}
-
-$DriverRoundBudgetArgs = @()
-$RoundBudgetSource = if ($MaxRoundsBound) { "MaxRounds" } else { "preset" }
-if ($UntilMilestoneBound) {
-    $MaxRounds = $MilestoneStepRounds
-    $DriverRoundBudgetArgs = @("--rounds", "$MilestoneStepRounds")
-    $RoundBudgetSource = "UntilMilestone"
-} elseif (-not $ContinueCampaign) {
-    if ($RoundsBound) {
-        $DriverRoundBudgetArgs = @("--rounds", "$Rounds")
-        $RoundBudgetSource = "Rounds"
-    } elseif ($UntilRoundBound) {
-        $DriverRoundBudgetArgs = @("--until-round", "$UntilRound")
-        $RoundBudgetSource = "UntilRound"
-    } elseif ($MaxRoundsBound) {
-        $DriverRoundBudgetArgs = @("--max-rounds", "$MaxRounds")
-    }
-}
-
-$ResumeCampaignPath = $null
-$ResumeCheckpointPath = $null
-$ResumeRoundsCompleted = $null
-$TargetRounds = $null
-if ($ContinueCampaign) {
-    $ResumeSource = $CampaignSourceArtifact
-    if (-not $ResumeSource) {
-        throw "Internal error: campaign continuation did not resolve a source artifact."
-    }
-    if (-not (Test-Path $ResumeSource.ReportPath)) {
-        throw "No campaign report found for source '$($ResumeSource.Label)' at $($ResumeSource.ReportPath)."
-    }
-    $ResumeCampaignPath = $ResumeSource.ReportPath
-    $ResumeReport = Get-Content -LiteralPath $ResumeCampaignPath -Raw | ConvertFrom-Json
-    $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
-    if ($UntilMilestoneBound -or $RoundsBound -or $UntilRoundBound -or $MaxRoundsBound) {
-        $RunContinuationRoundBudget = Resolve-CampaignAdditionalRoundBudget `
-            -ResumeRoundsCompleted $ResumeRoundsCompleted `
-            -UntilMilestoneBound $UntilMilestoneBound `
-            -MilestoneStepRounds $MilestoneStepRounds `
-            -RoundsBound $RoundsBound `
-            -Rounds $Rounds `
-            -UntilRoundBound $UntilRoundBound `
-            -UntilRound $UntilRound `
-            -MaxRoundsBound $MaxRoundsBound `
-            -MaxRounds $MaxRounds `
-            -MaxRoundsDriverFlag "--rounds"
-        $DriverRoundBudgetArgs = @($RunContinuationRoundBudget.Args)
-        $TargetRounds = $RunContinuationRoundBudget.TargetRounds
-        $MaxRounds = $RunContinuationRoundBudget.AdditionalRounds
-        $RoundBudgetSource = $RunContinuationRoundBudget.Source
-    }
-    $DriverArgs += @("--resume", "$ResumeCampaignPath")
-    if (Test-Path $CampaignSourceArtifact.CheckpointPath) {
-        $ResumeCheckpointPath = $CampaignSourceArtifact.CheckpointPath
-        $DriverArgs += @("--resume-checkpoint", "$ResumeCheckpointPath")
-    }
-}
+$RunRoundContext = Resolve-CampaignRunRoundContext `
+    -ContinueCampaign ([bool] $ContinueCampaign) `
+    -CampaignSourceArtifact $CampaignSourceArtifact `
+    -RoundsBound $RoundsBound `
+    -Rounds $Rounds `
+    -UntilRoundBound $UntilRoundBound `
+    -UntilRound $UntilRound `
+    -UntilMilestoneBound $UntilMilestoneBound `
+    -UntilMilestone $UntilMilestone `
+    -MilestoneStepRounds $MilestoneStepRounds `
+    -MilestoneMaxRounds $MilestoneMaxRounds `
+    -MilestoneStop $MilestoneStop `
+    -MaxRoundsBound $MaxRoundsBound `
+    -MaxRounds $MaxRounds `
+    -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
+    -PlanTargets ([bool] $PlanTargets) `
+    -PlanCoverageGaps ([bool] $PlanCoverageGaps) `
+    -Inspect ([bool] $Inspect)
+$DriverRoundBudgetArgs = @($RunRoundContext.DriverRoundBudgetArgs)
+$RoundBudgetSource = $RunRoundContext.RoundBudgetSource
+$MaxRounds = $RunRoundContext.MaxRounds
+$ResolvedMilestoneStop = $RunRoundContext.ResolvedMilestoneStop
+$ResumeCampaignPath = $RunRoundContext.ResumeCampaignPath
+$ResumeCheckpointPath = $RunRoundContext.ResumeCheckpointPath
+$ResumeRoundsCompleted = $RunRoundContext.ResumeRoundsCompleted
+$TargetRounds = $RunRoundContext.TargetRounds
+$DriverArgs += @($RunRoundContext.ResumeDriverArgs)
 
 $DriverArgs += @("--out", "$RunOutputCampaignPath", "--checkpoint-out", "$RunOutputCheckpointPath")
 

@@ -13,7 +13,7 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 509 lines
+- `tools/campaign.ps1`: 465 lines
 - `tools/campaign_artifacts.ps1`: 520 lines
 - `tools/campaign_invocation.ps1`: 453 lines
 - `tools/campaign_coverage_gaps.ps1`: 391 lines
@@ -22,6 +22,7 @@ Approximate physical line count after the wrapper split:
 - `tools/campaign_inspect.ps1`: 184 lines
 - `tools/campaign_targets.ps1`: 144 lines
 - `tools/campaign_source.ps1`: 118 lines
+- `tools/campaign_rounds.ps1`: 106 lines
 - `tools/campaign_milestones.ps1`: 101 lines
 - `tools/campaign_request.ps1`: 68 lines
 - `tools/campaign_build.ps1`: 63 lines
@@ -212,6 +213,19 @@ This helper owns:
 - continuation preflight context handoff
 - continuation dry-run dispatch
 - continuation execution dispatch
+
+Round-budget helpers now live in:
+
+```text
+tools/campaign_rounds.ps1
+```
+
+This helper owns:
+
+- mutual exclusion validation for `-Rounds`, `-UntilRound`, and legacy `-MaxRounds`
+- `-UntilMilestone` round-budget validation and stop-mode normalization
+- normal campaign resume source validation
+- normal campaign resume and round-budget driver argument rendering
 
 Milestone helpers now live in:
 
