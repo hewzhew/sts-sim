@@ -862,11 +862,12 @@ fn render_coverage_gap_continuation_delta_v1(
         after.total_unobserved_candidates,
     );
     let mut lines = vec![format!(
-        "CoverageGapContinuationDeltaV1 before_unobserved={} after_unobserved={} reduced={} increased={}",
+        "CoverageGapContinuationDeltaV1 before_unobserved={} after_unobserved={} reduced={} increased={} trend={}",
         before.total_unobserved_candidates,
         after.total_unobserved_candidates,
         reduced,
-        increased
+        increased,
+        coverage_gap_delta_trend_v1(reduced, increased)
     )];
 
     let before_buckets = before
@@ -893,8 +894,13 @@ fn render_coverage_gap_continuation_delta_v1(
             let (bucket_reduced, bucket_increased) =
                 coverage_gap_count_delta_v1(before_unobserved, after_unobserved);
             lines.push(format!(
-                "  {} before_unobserved={} after_unobserved={} reduced={} increased={}",
-                bucket, before_unobserved, after_unobserved, bucket_reduced, bucket_increased
+                "  {} before_unobserved={} after_unobserved={} reduced={} increased={} trend={}",
+                bucket,
+                before_unobserved,
+                after_unobserved,
+                bucket_reduced,
+                bucket_increased,
+                coverage_gap_delta_trend_v1(bucket_reduced, bucket_increased)
             ));
         }
     }
@@ -906,6 +912,16 @@ fn coverage_gap_count_delta_v1(before: usize, after: usize) -> (usize, usize) {
         (before - after, 0)
     } else {
         (0, after - before)
+    }
+}
+
+fn coverage_gap_delta_trend_v1(reduced: usize, increased: usize) -> &'static str {
+    if reduced > 0 {
+        "coverage_reduced"
+    } else if increased > 0 {
+        "frontier_expanded"
+    } else {
+        "unchanged"
     }
 }
 
@@ -1304,11 +1320,11 @@ mod tests {
         let rendered = render_coverage_gap_continuation_delta_v1(&before, &after);
 
         assert!(rendered.contains(
-            "CoverageGapContinuationDeltaV1 before_unobserved=100 after_unobserved=85 reduced=15 increased=0"
+            "CoverageGapContinuationDeltaV1 before_unobserved=100 after_unobserved=85 reduced=15 increased=0 trend=coverage_reduced"
         ));
-        assert!(rendered.contains("route before_unobserved=60 after_unobserved=50 reduced=10 increased=0"));
-        assert!(rendered.contains("reward before_unobserved=40 after_unobserved=35 reduced=5 increased=0"));
-        assert!(rendered.contains("event before_unobserved=0 after_unobserved=5 reduced=0 increased=5"));
+        assert!(rendered.contains("route before_unobserved=60 after_unobserved=50 reduced=10 increased=0 trend=coverage_reduced"));
+        assert!(rendered.contains("reward before_unobserved=40 after_unobserved=35 reduced=5 increased=0 trend=coverage_reduced"));
+        assert!(rendered.contains("event before_unobserved=0 after_unobserved=5 reduced=0 increased=5 trend=frontier_expanded"));
     }
 
     #[test]
