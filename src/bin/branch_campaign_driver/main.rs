@@ -33,7 +33,10 @@ use command_inputs::{
 use command_inputs::{
     ContinuationCommandInput, DatasetCommandInput, InspectCommandInput, RunCommandInput,
 };
-use coverage_gap_milestone_summary::run_coverage_gap_milestone_summary_inspection;
+use coverage_gap_milestone_summary::{
+    resolve_coverage_gap_target_group_checkpoint_index_from_input_v1,
+    run_coverage_gap_milestone_summary_inspection,
+};
 use decision_observations::run_decision_observation_inspection;
 #[cfg(test)]
 use driver_command::driver_command_from_args;
@@ -111,6 +114,14 @@ fn run(cli_input: BranchCampaignCliInputV1) -> Result<(), String> {
         }
         BranchCampaignDriverCommandV1::InspectCoverageGapMilestoneSummary => {
             run_coverage_gap_milestone_summary_inspection(&InspectCommandInput::from_args(args)?)
+        }
+        BranchCampaignDriverCommandV1::InspectCoverageGapTargetState => {
+            let mut input = InspectCommandInput::from_args(args)?;
+            let checkpoint_index =
+                resolve_coverage_gap_target_group_checkpoint_index_from_input_v1(&input)?;
+            input.filters.index = Some(checkpoint_index);
+            input.summary = false;
+            run_checkpoint_inspection(&input)
         }
         BranchCampaignDriverCommandV1::InspectDecisionObservations => {
             run_decision_observation_inspection(&InspectCommandInput::from_args(args)?)
@@ -196,6 +207,20 @@ mod tests {
             "missing",
         ])
         .expect("coverage gap milestone summary inspect args parse");
+        let coverage_gap_target_state_args = parse_args_from([
+            "branch_campaign_driver",
+            "inspect",
+            "--inspect-checkpoint",
+            "latest.checkpoint.json",
+            "--inspect-report",
+            "latest.campaign.json",
+            "--inspect-coverage-gap-target-state",
+            "--coverage-gap-milestone-target",
+            "Act2Start",
+            "--inspect-index",
+            "1",
+        ])
+        .expect("coverage gap target state inspect args parse");
         let dataset_args = parse_args_from([
             "branch_campaign_driver",
             "dataset",
@@ -242,6 +267,10 @@ mod tests {
         assert_eq!(
             driver_command_from_args(&coverage_gap_milestone_args),
             BranchCampaignDriverCommandV1::InspectCoverageGapMilestoneSummary
+        );
+        assert_eq!(
+            driver_command_from_args(&coverage_gap_target_state_args),
+            BranchCampaignDriverCommandV1::InspectCoverageGapTargetState
         );
         assert_eq!(
             driver_command_from_args(&dataset_args),

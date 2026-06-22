@@ -18,6 +18,7 @@ pub(super) enum BranchCampaignDriverCommandV1 {
     InspectLineageDecisions,
     InspectDecisionCoverage,
     InspectCoverageGapMilestoneSummary,
+    InspectCoverageGapTargetState,
     InspectDecisionObservations,
     InspectFinalBossCombat,
     InspectCheckpoint,
@@ -105,6 +106,9 @@ fn legacy_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
     if args.inspect_decision_coverage {
         return BranchCampaignDriverCommandV1::InspectDecisionCoverage;
     }
+    if args.inspect_coverage_gap_target_state {
+        return BranchCampaignDriverCommandV1::InspectCoverageGapTargetState;
+    }
     if args.inspect_coverage_gap_milestone_summary {
         return BranchCampaignDriverCommandV1::InspectCoverageGapMilestoneSummary;
     }
@@ -124,6 +128,8 @@ fn inspect_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
         BranchCampaignDriverCommandV1::InspectLineageDecisions
     } else if args.inspect_decision_coverage {
         BranchCampaignDriverCommandV1::InspectDecisionCoverage
+    } else if args.inspect_coverage_gap_target_state {
+        BranchCampaignDriverCommandV1::InspectCoverageGapTargetState
     } else if args.inspect_coverage_gap_milestone_summary {
         BranchCampaignDriverCommandV1::InspectCoverageGapMilestoneSummary
     } else if args.inspect_decision_observations {

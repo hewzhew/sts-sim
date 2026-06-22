@@ -161,6 +161,29 @@ pub(super) fn run_coverage_gap_milestone_summary_inspection(
     Ok(())
 }
 
+pub(super) fn resolve_coverage_gap_target_group_checkpoint_index_from_input_v1(
+    input: &InspectCommandInput,
+) -> Result<usize, String> {
+    let report_path = input.report_path.as_ref().ok_or_else(|| {
+        "--inspect-coverage-gap-target-state requires --inspect-report PATH".to_string()
+    })?;
+    let checkpoint_path = input.checkpoint_path.as_ref().ok_or_else(|| {
+        "--inspect-coverage-gap-target-state requires --inspect-checkpoint PATH".to_string()
+    })?;
+    let target = CoverageGapMilestoneTargetV1::parse(&input.coverage_gap_milestone_target)?;
+    let report = read_campaign_report_v1(report_path)?;
+    let checkpoint = read_campaign_checkpoint_v1(checkpoint_path)?;
+    let rows = coverage_gap_milestone_rows_from_report_v1(&report);
+    let context = CoverageGapMilestoneSummaryContextV1::from_checkpoint_v1(&checkpoint);
+    resolve_coverage_gap_target_group_checkpoint_index_v1(
+        &rows,
+        target,
+        &input.coverage_gap_filter,
+        input.filters.index.unwrap_or(0),
+        &context,
+    )
+}
+
 pub(super) fn render_coverage_gap_milestone_summary_with_filter_and_group_index_v1(
     report: &BranchCampaignReportV1,
     target: CoverageGapMilestoneTargetV1,
@@ -464,6 +487,39 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_group_
         .filter(|line| !line.trim_end().is_empty())
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+pub(super) fn resolve_coverage_gap_target_group_checkpoint_index_v1(
+    rows: &[CoverageGapMilestoneBranchRowV1],
+    target: CoverageGapMilestoneTargetV1,
+    filter: &CoverageGapContinuationFilterV1,
+    group_index: usize,
+    context: &CoverageGapMilestoneSummaryContextV1,
+) -> Result<usize, String> {
+    let filtered_rows = rows
+        .iter()
+        .filter(|row| coverage_gap_milestone_row_matches_filter_v1(row, filter))
+        .cloned()
+        .collect::<Vec<_>>();
+    let target_group_audit = target_group_audit_summaries_v1(&filtered_rows, target);
+    let summary = target_group_audit.get(group_index).ok_or_else(|| {
+        format!(
+            "--inspect-index {} is out of range for {} coverage-gap target group(s)",
+            group_index,
+            target_group_audit.len()
+        )
+    })?;
+    let furthest = summary
+        .furthest
+        .expect("target group summary should have a furthest row");
+    context.checkpoint_match_index_for(furthest).ok_or_else(|| {
+        format!(
+            "coverage-gap target group {} has no matching checkpoint session for branch_id={} command_path={}",
+            group_index,
+            furthest.branch_id,
+            render_recent_command_path_v1(&furthest.commands)
+        )
+    })
 }
 
 fn coverage_gap_milestone_row_matches_filter_v1(
@@ -1374,6 +1430,31 @@ mod tests {
             );
 
         assert!(text.contains("checkpoint_match_index: 1"));
+    }
+
+    #[test]
+    fn target_group_checkpoint_index_resolves_from_focused_group_furthest_row() {
+        let mut furthest = row("abandoned", "route", 1, 16, "x=6 y=12 Rest");
+        furthest.target_key = "route:rest".to_string();
+        furthest.commands = vec!["rp 0".to_string(), "go 6".to_string()];
+        let mut earlier = row("active", "route", 1, 10, "x=1 y=5 Rest");
+        earlier.target_key = "route:early_rest".to_string();
+        earlier.commands = vec!["rp 1".to_string(), "go 1".to_string()];
+        let context = CoverageGapMilestoneSummaryContextV1::from_session_commands_v1([
+            vec!["rp 0".to_string(), "go 6".to_string()],
+            vec!["rp 1".to_string(), "go 1".to_string()],
+        ]);
+
+        let match_index = resolve_coverage_gap_target_group_checkpoint_index_v1(
+            &[furthest, earlier],
+            CoverageGapMilestoneTargetV1::Act2Start,
+            &CoverageGapContinuationFilterV1::default(),
+            1,
+            &context,
+        )
+        .expect("target group should resolve to checkpoint index");
+
+        assert_eq!(match_index, 1);
     }
 
     #[test]

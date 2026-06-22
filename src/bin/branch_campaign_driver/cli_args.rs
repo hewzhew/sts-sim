@@ -478,6 +478,12 @@ pub(super) struct Args {
     pub(super) inspect_coverage_gap_milestone_summary: bool,
 
     #[arg(
+        long = "inspect-coverage-gap-target-state",
+        help = "Inspect the checkpoint state for the selected coverage-gap milestone target group"
+    )]
+    pub(super) inspect_coverage_gap_target_state: bool,
+
+    #[arg(
         long = "coverage-gap-milestone-target",
         default_value = "Act2Start",
         help = "Milestone target for --inspect-coverage-gap-milestone-summary: Act1Boss or Act2Start"
@@ -1159,6 +1165,12 @@ struct InspectModeArgs {
     inspect_coverage_gap_milestone_summary: bool,
 
     #[arg(
+        long = "inspect-coverage-gap-target-state",
+        help = "Inspect the checkpoint state for the selected coverage-gap milestone target group"
+    )]
+    inspect_coverage_gap_target_state: bool,
+
+    #[arg(
         long = "coverage-gap-milestone-target",
         default_value = "Act2Start",
         help = "Milestone target for --inspect-coverage-gap-milestone-summary: Act1Boss or Act2Start"
@@ -1547,6 +1559,7 @@ impl Args {
             inspect_lineage_decisions: false,
             inspect_decision_coverage: false,
             inspect_coverage_gap_milestone_summary: false,
+            inspect_coverage_gap_target_state: false,
             coverage_gap_milestone_target: "Act2Start".to_string(),
             inspect_query: None,
             inspect_final_boss_combat: false,
@@ -1736,6 +1749,7 @@ impl InspectModeArgs {
         args.inspect_lineage_decisions = self.inspect_lineage_decisions;
         args.inspect_decision_coverage = self.inspect_decision_coverage;
         args.inspect_coverage_gap_milestone_summary = self.inspect_coverage_gap_milestone_summary;
+        args.inspect_coverage_gap_target_state = self.inspect_coverage_gap_target_state;
         args.coverage_gap_milestone_target = self.coverage_gap_milestone_target;
         args.coverage_gap_bucket = self.coverage_gap_bucket;
         args.coverage_gap_event_id = self.coverage_gap_event_id;

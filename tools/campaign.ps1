@@ -127,6 +127,10 @@ Summarizes milestone progress for the latest scratch campaign artifact.
 Summarizes route/map coverage-gap progress for the latest scratch campaign artifact without filtering by current progress.
 
 .EXAMPLE
+.\tools\campaign.ps1 -InspectScratchLatest -InspectCoverageGapTargetState -CoverageGapRoute -InspectIndex 1
+Prints the full checkpoint state for a selected coverage-gap target group from the latest scratch campaign artifact.
+
+.EXAMPLE
 .\tools\campaign.ps1 -ContinueCoverageGaps -Rounds 1
 Resumes selected unobserved journal candidate branches and advances one round.
 
@@ -227,6 +231,7 @@ param(
     [switch] $InspectCombatLab,
     [switch] $InspectFinalBossCombat,
     [switch] $InspectCoverageGapMilestoneSummary,
+    [switch] $InspectCoverageGapTargetState,
     [switch] $InspectScratchLatest,
     [switch] $ProbeBoss,
     [switch] $DryRun,
@@ -495,6 +500,7 @@ if (
     $InspectCombatLab -or
     $InspectFinalBossCombat -or
     $InspectCoverageGapMilestoneSummary -or
+    $InspectCoverageGapTargetState -or
     $InspectScratchLatest
 ) {
     $Inspect = $true
@@ -1549,7 +1555,8 @@ if ($Inspect) {
         $InspectLastAutoCombat -or
         $InspectCombatLab -or
         $InspectFinalBossCombat -or
-        $InspectCoverageGapMilestoneSummary
+        $InspectCoverageGapMilestoneSummary -or
+        $InspectCoverageGapTargetState
     if ((-not $ExportLearningDataset) -and (-not $DetailedInspect)) {
         $InspectArgs += "--inspect-summary"
     }
@@ -1596,6 +1603,13 @@ if ($Inspect) {
     if ((-not $ExportLearningDataset) -and $InspectCoverageGapMilestoneSummary) {
         $InspectArgs += @(
             "--inspect-coverage-gap-milestone-summary",
+            "--coverage-gap-milestone-target", "$CoverageGapMilestoneTarget"
+        )
+        $InspectArgs += $CoverageGapFilterArgs
+    }
+    if ((-not $ExportLearningDataset) -and $InspectCoverageGapTargetState) {
+        $InspectArgs += @(
+            "--inspect-coverage-gap-target-state",
             "--coverage-gap-milestone-target", "$CoverageGapMilestoneTarget"
         )
         $InspectArgs += $CoverageGapFilterArgs
