@@ -405,7 +405,10 @@ pub(super) fn run_coverage_gap_continuation_execution(
         )
     );
     println!("{}", render_coverage_gap_execution_plan_v1(&execution));
-    println!("{}", render_coverage_gap_continuation_plan_v1(&plan));
+    println!(
+        "{}",
+        render_coverage_gap_continuation_plan_summary_v1(&plan)
+    );
     println!(
         "{}",
         render_coverage_gap_continuation_delta_v1(

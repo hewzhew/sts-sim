@@ -817,26 +817,30 @@ function Invoke-CampaignUntilMilestone {
         [int] $AlreadySpentRounds = 0
     )
 
+    $script:CampaignMilestoneExitCode = 0
     $SpentRounds = $AlreadySpentRounds
     while ($SpentRounds -lt $MilestoneMaxRounds) {
         $Status = Get-CampaignMilestoneStatus -ReportPath $RunOutputCampaignPath -Milestone $UntilMilestone
         Write-Host "milestone-status target=$UntilMilestone reached=$($Status.Reached) hits=$($Status.HitCount) furthest=A$($Status.FurthestAct)F$($Status.FurthestFloor) report-rounds=$($Status.RoundsCompleted) spent-rounds=$SpentRounds cap=$MilestoneMaxRounds"
         if ($Status.Reached) {
-            return 0
+            $script:CampaignMilestoneExitCode = 0
+            return
         }
         $StepRounds = [Math]::Min($MilestoneStepRounds, $MilestoneMaxRounds - $SpentRounds)
         $ResumeArgs = New-MilestoneResumeDriverArgs -StepRounds $StepRounds
         Write-Host "milestone-step target=$UntilMilestone additional-rounds=$StepRounds"
         & $DriverExe @ResumeArgs
         if ($LASTEXITCODE -ne 0) {
-            return $LASTEXITCODE
+            $script:CampaignMilestoneExitCode = $LASTEXITCODE
+            return
         }
         $SpentRounds += $StepRounds
     }
 
     $FinalStatus = Get-CampaignMilestoneStatus -ReportPath $RunOutputCampaignPath -Milestone $UntilMilestone
     Write-Host "milestone-status target=$UntilMilestone reached=$($FinalStatus.Reached) hits=$($FinalStatus.HitCount) furthest=A$($FinalStatus.FurthestAct)F$($FinalStatus.FurthestFloor) report-rounds=$($FinalStatus.RoundsCompleted) spent-rounds=$SpentRounds cap=$MilestoneMaxRounds"
-    return 0
+    $script:CampaignMilestoneExitCode = 0
+    return
 }
 
 function Invoke-CoverageGapMilestoneSummary {
@@ -1247,7 +1251,8 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                 Set-Content -LiteralPath $LatestModePath -Value $Mode
                 Set-Content -LiteralPath $LatestCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
                 if ($UntilMilestoneBound) {
-                    $DriverExitCode = Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds
+                    Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds
+                    $DriverExitCode = $script:CampaignMilestoneExitCode
                 }
             }
             exit $DriverExitCode
@@ -1267,7 +1272,8 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                     Set-Content -LiteralPath $LatestCommandPath -Value (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
                 }
                 if ($UntilMilestoneBound) {
-                    $DriverExitCode = Invoke-CampaignUntilMilestone -AlreadySpentRounds $CoverageGapInitialSpentRounds
+                    Invoke-CampaignUntilMilestone -AlreadySpentRounds $CoverageGapInitialSpentRounds
+                    $DriverExitCode = $script:CampaignMilestoneExitCode
                     if ($DriverExitCode -eq 0) {
                         $DriverExitCode = Invoke-CoverageGapMilestoneSummary -Target $UntilMilestone
                     }
@@ -1529,7 +1535,8 @@ try {
         Set-Content -LiteralPath $LatestModePath -Value $Mode
         Set-Content -LiteralPath $LatestCommandPath -Value $RenderedCommand
         if ($UntilMilestoneBound) {
-            $DriverExitCode = Invoke-CampaignUntilMilestone -AlreadySpentRounds $MaxRounds
+            Invoke-CampaignUntilMilestone -AlreadySpentRounds $MaxRounds
+            $DriverExitCode = $script:CampaignMilestoneExitCode
         }
     }
     exit $DriverExitCode
