@@ -1998,21 +1998,13 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
 }
 
 if ($Inspect) {
-    $InspectCampaignPath = $LatestCampaignPath
-    $InspectCheckpointPath = $LatestCheckpointPath
-    $InspectManifestPath = $LatestManifestPath
-    $InspectLogPath = $LatestLogPath
-    $InspectCommandPath = $LatestCommandPath
-    $InspectSourceLabel = "latest"
-    if ($InspectScratchLatest) {
-        $ScratchArtifact = Get-LatestScratchCampaignArtifact
-        $InspectCampaignPath = $ScratchArtifact.ReportPath
-        $InspectCheckpointPath = $ScratchArtifact.CheckpointPath
-        $InspectManifestPath = $ScratchArtifact.ManifestPath
-        $InspectLogPath = $ScratchArtifact.LogPath
-        $InspectCommandPath = $ScratchArtifact.CommandPath
-        $InspectSourceLabel = "scratch:$($ScratchArtifact.Label)"
-    }
+    $InspectSource = Get-CampaignSourceArtifact -UseScratchLatest $InspectScratchLatest
+    $InspectCampaignPath = $InspectSource.ReportPath
+    $InspectCheckpointPath = $InspectSource.CheckpointPath
+    $InspectManifestPath = $InspectSource.ManifestPath
+    $InspectLogPath = $InspectSource.LogPath
+    $InspectCommandPath = $InspectSource.CommandPath
+    $InspectSourceLabel = $InspectSource.Label
 
     if ($InspectArtifacts) {
         Write-CampaignArtifactSummary `
@@ -2250,7 +2242,7 @@ if ($More -and $TargetRounds -ne $null -and $MaxRounds -eq 0) {
     exit 0
 }
 if ($More -and $UntilMilestoneBound) {
-    $InitialMilestoneStatus = Get-CampaignMilestoneStatus -ReportPath $LatestCampaignPath -Milestone $UntilMilestone
+    $InitialMilestoneStatus = Get-CampaignMilestoneStatus -ReportPath $ResumeCampaignPath -Milestone $UntilMilestone
     if ($InitialMilestoneStatus.Reached) {
         Write-Host "already-at-milestone=yes target=$UntilMilestone hits=$($InitialMilestoneStatus.HitCount) furthest=A$($InitialMilestoneStatus.FurthestAct)F$($InitialMilestoneStatus.FurthestFloor)"
         exit 0
