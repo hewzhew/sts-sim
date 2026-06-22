@@ -22,7 +22,10 @@ use crate::eval::campaign_journal::{
     CampaignJournalCandidateV1, CampaignJournalEventPayloadV1, CampaignJournalEventV1,
     CampaignJournalRouteCandidateV1,
 };
-use crate::eval::decision_path::decision_path_command_is_decision_parent_coordinate_v1;
+use crate::eval::decision_path::{
+    decision_path_command_is_decision_parent_coordinate_v1,
+    render_decision_path_commands_compact_v1,
+};
 use crate::eval::event_boundary_packet_v1::EventCandidateSnapshotV1;
 
 pub const LEARNING_BRANCH_SAMPLE_SCHEMA_NAME: &str = "LearningBranchSampleV1";
@@ -2898,7 +2901,7 @@ fn render_coverage_gap_parent_coordinate_v1(target: &CoverageGapContinuationTarg
     if target.parent_commands.is_empty() {
         "root".to_string()
     } else {
-        target.parent_commands.join(" -> ")
+        render_decision_path_commands_compact_v1(&target.parent_commands, 0, 8)
     }
 }
 
@@ -5925,6 +5928,41 @@ mod tests {
             plan.targets[0].parent_commands,
             vec!["rp 1".to_string(), "__route_decision:0:go_2".to_string()]
         );
+    }
+
+    #[test]
+    fn coverage_gap_plan_render_hides_raw_decision_path_markers() {
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-route-pool:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root.rp 1".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Map".to_string(),
+            act: 1,
+            floor: 2,
+            branch_choices: vec!["Seeing Red".to_string()],
+            branch_commands: vec!["rp 1".to_string(), "__route_decision:0:go_2".to_string()],
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                decision_id: "journal-route-pool".to_string(),
+                boundary_title: "Map".to_string(),
+                frontier_key: "map-frontier".to_string(),
+                depth: 0,
+                candidate_count: 1,
+                selected_index: None,
+                candidate_pool_provenance: None,
+                map_decision_packet: None,
+                route_candidates: Vec::new(),
+                candidates: vec![sample_journal_candidate("go 3", "Route duplicate")],
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[], 8, 2);
+        let rendered = render_coverage_gap_continuation_plan_v1(&plan);
+
+        assert!(!rendered.contains("__route_decision"));
+        assert!(rendered.contains("[route-decision:go_2]"));
     }
 
     #[test]
