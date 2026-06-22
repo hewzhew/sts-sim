@@ -82,6 +82,99 @@ function New-CampaignScratchArtifact {
     }
 }
 
+function Get-CampaignOutputBaseLabel {
+    param(
+        [string] $RunLabel,
+        [bool] $ContinueCoverageGaps,
+        [bool] $ContinueTargets,
+        [bool] $ContinueCampaign,
+        [long] $Seed
+    )
+
+    if ($RunLabel) {
+        return $RunLabel
+    }
+    if ($ContinueCoverageGaps) {
+        return "coverage-gap-seed$Seed"
+    }
+    if ($ContinueTargets) {
+        return "targeted-continuation-seed$Seed"
+    }
+    if ($ContinueCampaign) {
+        return "continue-seed$Seed"
+    }
+    return "campaign-seed$Seed"
+}
+
+function Resolve-CampaignOutputArtifactContext {
+    param(
+        [bool] $Inspect,
+        [bool] $PlanTargets,
+        [bool] $PlanCoverageGaps,
+        [bool] $Scratch,
+        [string] $RunLabel,
+        [bool] $ContinueCoverageGaps,
+        [bool] $ContinueTargets,
+        [bool] $ContinueCampaign,
+        [long] $Seed
+    )
+
+    $WritesCampaignOutput = (-not $Inspect) -and (-not $PlanTargets) -and (-not $PlanCoverageGaps)
+    $RunOutputArtifact = $null
+    $ScratchLabel = ""
+    $RunOutputCampaignPath = ""
+    $RunOutputCheckpointPath = ""
+    $RunCommandPath = ""
+    $RunManifestPath = ""
+    $RunLogPath = ""
+
+    if ($WritesCampaignOutput) {
+        $OutputBaseLabel = Get-CampaignOutputBaseLabel `
+            -RunLabel $RunLabel `
+            -ContinueCoverageGaps $ContinueCoverageGaps `
+            -ContinueTargets $ContinueTargets `
+            -ContinueCampaign $ContinueCampaign `
+            -Seed $Seed
+        $RunOutputArtifact = if ($Scratch) {
+            New-CampaignScratchArtifact -BaseLabel $OutputBaseLabel
+        } else {
+            New-CampaignRunArtifact -BaseLabel $OutputBaseLabel
+        }
+        $ScratchLabel = if ($Scratch) { $RunOutputArtifact.Id } else { "" }
+        $RunOutputCampaignPath = $RunOutputArtifact.ReportPath
+        $RunOutputCheckpointPath = $RunOutputArtifact.CheckpointPath
+        $RunCommandPath = $RunOutputArtifact.CommandPath
+        $RunManifestPath = $RunOutputArtifact.ManifestPath
+        $RunLogPath = $RunOutputArtifact.LogPath
+    }
+
+    return [pscustomobject]@{
+        WritesCampaignOutput = [bool] $WritesCampaignOutput
+        Artifact = $RunOutputArtifact
+        ScratchLabel = $ScratchLabel
+        CampaignPath = $RunOutputCampaignPath
+        CheckpointPath = $RunOutputCheckpointPath
+        CommandPath = $RunCommandPath
+        ManifestPath = $RunManifestPath
+        LogPath = $RunLogPath
+    }
+}
+
+function Ensure-CampaignOutputArtifactDirectory {
+    param(
+        [object] $OutputContext,
+        [bool] $DryRun
+    )
+
+    if (-not $OutputContext.WritesCampaignOutput) {
+        return
+    }
+    if ($DryRun) {
+        return
+    }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputContext.CampaignPath) | Out-Null
+}
+
 function New-CampaignLegacyLatestArtifact {
     return [pscustomobject]@{
         Kind = "legacy_latest"

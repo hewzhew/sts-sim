@@ -305,41 +305,25 @@ if (@(0, 10, 15, 17, 20) -contains $Ascension) {
     $DriverArgs += @("--ascension-domain", "a$Ascension")
 }
 
-$WritesCampaignOutput = (-not $Inspect) -and (-not $PlanTargets) -and (-not $PlanCoverageGaps)
-$RunOutputArtifact = $null
-$ScratchLabel = ""
-$RunOutputCampaignPath = ""
-$RunOutputCheckpointPath = ""
-$RunCommandPath = ""
-$RunManifestPath = ""
-$RunLogPath = ""
-if ($WritesCampaignOutput) {
-    $OutputBaseLabel = if ($RunLabel) {
-        $RunLabel
-    } elseif ($ContinueCoverageGaps) {
-        "coverage-gap-seed$Seed"
-    } elseif ($ContinueTargets) {
-        "targeted-continuation-seed$Seed"
-    } elseif ($ContinueCampaign) {
-        "continue-seed$Seed"
-    } else {
-        "campaign-seed$Seed"
-    }
-    $RunOutputArtifact = if ($Scratch) {
-        New-CampaignScratchArtifact -BaseLabel $OutputBaseLabel
-    } else {
-        New-CampaignRunArtifact -BaseLabel $OutputBaseLabel
-    }
-    $ScratchLabel = if ($Scratch) { $RunOutputArtifact.Id } else { "" }
-    $RunOutputCampaignPath = $RunOutputArtifact.ReportPath
-    $RunOutputCheckpointPath = $RunOutputArtifact.CheckpointPath
-    $RunCommandPath = $RunOutputArtifact.CommandPath
-    $RunManifestPath = $RunOutputArtifact.ManifestPath
-    $RunLogPath = $RunOutputArtifact.LogPath
-    if (-not $DryRun) {
-        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $RunOutputCampaignPath) | Out-Null
-    }
-}
+$RunOutputContext = Resolve-CampaignOutputArtifactContext `
+    -Inspect ([bool] $Inspect) `
+    -PlanTargets ([bool] $PlanTargets) `
+    -PlanCoverageGaps ([bool] $PlanCoverageGaps) `
+    -Scratch ([bool] $Scratch) `
+    -RunLabel $RunLabel `
+    -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
+    -ContinueTargets ([bool] $ContinueTargets) `
+    -ContinueCampaign ([bool] $ContinueCampaign) `
+    -Seed $Seed
+$WritesCampaignOutput = $RunOutputContext.WritesCampaignOutput
+$RunOutputArtifact = $RunOutputContext.Artifact
+$ScratchLabel = $RunOutputContext.ScratchLabel
+$RunOutputCampaignPath = $RunOutputContext.CampaignPath
+$RunOutputCheckpointPath = $RunOutputContext.CheckpointPath
+$RunCommandPath = $RunOutputContext.CommandPath
+$RunManifestPath = $RunOutputContext.ManifestPath
+$RunLogPath = $RunOutputContext.LogPath
+Ensure-CampaignOutputArtifactDirectory -OutputContext $RunOutputContext -DryRun ([bool] $DryRun)
 
 $CampaignBoundParameters = @{}
 foreach ($ParameterName in $PSBoundParameters.Keys) {

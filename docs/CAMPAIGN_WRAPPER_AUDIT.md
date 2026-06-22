@@ -11,23 +11,29 @@ many concepts.
 
 ## Current Size
 
-Approximate physical line count after the first extractions:
+Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 1890 lines
-- `tools/campaign_artifacts.ps1`: 300 lines
-- `tools/campaign_invocation.ps1`: 145 lines
+- `tools/campaign.ps1`: 682 lines
+- `tools/campaign_artifacts.ps1`: 520 lines
+- `tools/campaign_invocation.ps1`: 391 lines
+- `tools/campaign_coverage_gaps.ps1`: 390 lines
+- `tools/campaign_inspect.ps1`: 184 lines
+- `tools/campaign_targets.ps1`: 147 lines
+- `tools/campaign_source.ps1`: 118 lines
+- `tools/campaign_milestones.ps1`: 105 lines
+- `tools/campaign_build.ps1`: 30 lines
 
 Major regions:
 
 | Region | Approx lines | Status |
 | --- | ---: | --- |
-| Help examples and synopsis | 170 | Too long, but useful as a quick reference |
+| Help examples and synopsis | 35 | Useful as a quick reference |
 | Parameter block | 180 | Too many feature flags in one entrypoint |
 | Path globals and helper import | 20 | Fine |
-| Remaining helpers plus pre-main setup | 700 | Still broad; mixes normalization, build/run state, milestone support |
-| Continuation plan/execute | 470 | Too much logic in the wrapper |
-| Inspect execution | 190 | Useful, but dispatch is growing by flag count |
-| Normal run execution | 145 | This is the core wrapper responsibility |
+| Source/build/output resolution | 130 | Narrower, but still in the wrapper |
+| Continuation dispatch | 180 | Uses helpers, still has too much preflight text |
+| Inspect dispatch | 20 | Delegated to inspect helper |
+| Normal run dispatch | 25 | Delegated to invocation helper |
 
 ## Why It Got This Large
 
@@ -150,6 +156,7 @@ This helper owns:
 - latest/scratch artifact refs
 - legacy latest sidecar path compatibility
 - run source artifact selection
+- run/scratch output artifact selection
 - artifact size and shape summaries
 - latest campaign mode/config reads
 
