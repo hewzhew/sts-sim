@@ -883,7 +883,7 @@ fn campaign_route_candidate_pool_journal_event_v1(
             candidate_count: pool.candidate_count,
             selected_index: pool.selected_index,
             candidate_pool_provenance: pool.candidate_pool_provenance.clone(),
-            map_decision_packet: pool.map_decision_packet.clone(),
+            map_decision_packet: None,
             route_candidates: route_candidate_pool_typed_candidates_v1(pool),
             candidates: route_candidate_pool_candidates_v1(pool),
         },
@@ -1365,4 +1365,73 @@ fn campaign_branch_from_parent_replay_error_v1(
     branch.final_boss_combat_record = None;
     branch.combat_lab_probes.clear();
     branch
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::route_planner_v1::{
+        plan_route_decision_v1, MapDecisionPacketV1, RoutePlannerConfigV1,
+    };
+    use crate::ai::strategic::BranchSignatureCompact;
+    use crate::eval::branch_experiment::BranchExperimentRouteCandidatePoolV1;
+    use crate::state::core::EngineState;
+
+    #[test]
+    fn route_candidate_pool_journal_omits_full_map_packet() {
+        let mut run = crate::state::RunState::new(521, 0, false, "Ironclad");
+        run.event_state = None;
+        let trace = plan_route_decision_v1(
+            &run,
+            &EngineState::MapNavigation,
+            RoutePlannerConfigV1::default(),
+        );
+        let packet = MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+        assert!(!packet.candidates.is_empty());
+        let pool = BranchExperimentRouteCandidatePoolV1 {
+            branch_id: "route0".to_string(),
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            decision_id: "route0:route_candidate_pool".to_string(),
+            boundary_title: "Map".to_string(),
+            frontier_key: "route0".to_string(),
+            depth: 0,
+            candidate_count: packet.candidates.len(),
+            selected_index: packet.selected_index,
+            candidate_pool_provenance: Some(packet.candidate_pool.clone()),
+            map_decision_packet: Some(packet),
+            candidates: Vec::new(),
+        };
+        let parent = BranchCampaignBranchV1 {
+            branch_id: "root".to_string(),
+            commands: Vec::new(),
+            choice_labels: Vec::new(),
+            summary: None,
+            strategic_summary: BranchSignatureCompact::default(),
+            frontier_title: "Map".to_string(),
+            status: BranchCampaignBranchStatusV1::Active,
+            stop_reason: String::new(),
+            continuation_origin: None,
+            lineage_decision_signal_rank_adjustment: 0,
+            rank_key: 0,
+            final_boss_combat_record: None,
+            combat_lab_probes: Vec::new(),
+        };
+
+        let event = campaign_route_candidate_pool_journal_event_v1(
+            &parent, 0, 1, false, 1, 1, 0, &pool, None,
+        );
+
+        match event.payload {
+            CampaignJournalEventPayloadV1::RouteCandidatePool {
+                map_decision_packet,
+                route_candidates,
+                ..
+            } => {
+                assert!(map_decision_packet.is_none());
+                assert!(!route_candidates.is_empty());
+            }
+            _ => panic!("expected route candidate pool journal event"),
+        }
+    }
 }
