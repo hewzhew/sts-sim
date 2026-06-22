@@ -380,6 +380,7 @@ New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 . (Join-Path $PSScriptRoot "campaign_milestones.ps1")
 . (Join-Path $PSScriptRoot "campaign_coverage_gaps.ps1")
 . (Join-Path $PSScriptRoot "campaign_inspect.ps1")
+. (Join-Path $PSScriptRoot "campaign_targets.ps1")
 
 $ContinueCampaign = [bool] $ContinueRun
 if ($More) {
@@ -828,24 +829,19 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     $CoveragePlanArgs = New-CoverageGapPlanDriverArgs `
         -SourceCampaignPath $SourceCampaignPath `
         -SourceCheckpointPath $SourceCheckpointPath
-    $ExportDecisionArgs = @(
-        "dataset",
-        "--inspect-report", "$SourceCampaignPath",
-        "--inspect-checkpoint", "$SourceCheckpointPath",
-        "--export-decision-outcome-dataset", "$TargetDecisionOutcomePath"
-    )
-    $PlanTargetArgs = @("continue", "--plan-targeted-continuation", "$TargetDecisionOutcomePath")
-    $ExportDecisionAfterArgs = @(
-        "dataset",
-        "--inspect-report", "$RunOutputCampaignPath",
-        "--inspect-checkpoint", "$RunOutputCheckpointPath",
-        "--export-decision-outcome-dataset", "$LatestDecisionOutcomeAfterPath"
-    )
-    $ContinuationEffectArgs = @(
-        "continue",
-        "--continuation-effect-before", "$TargetDecisionOutcomePath",
-        "--continuation-effect-after", "$LatestDecisionOutcomeAfterPath"
-    )
+    $ExportDecisionArgs = New-TargetedContinuationExportBeforeArgs `
+        -SourceCampaignPath $SourceCampaignPath `
+        -SourceCheckpointPath $SourceCheckpointPath `
+        -TargetDecisionOutcomePath $TargetDecisionOutcomePath
+    $PlanTargetArgs = New-TargetedContinuationPlanDriverArgs `
+        -TargetDecisionOutcomePath $TargetDecisionOutcomePath
+    $ExportDecisionAfterArgs = New-TargetedContinuationExportAfterArgs `
+        -RunOutputCampaignPath $RunOutputCampaignPath `
+        -RunOutputCheckpointPath $RunOutputCheckpointPath `
+        -LatestDecisionOutcomeAfterPath $LatestDecisionOutcomeAfterPath
+    $ContinuationEffectArgs = New-TargetedContinuationEffectArgs `
+        -TargetDecisionOutcomePath $TargetDecisionOutcomePath `
+        -LatestDecisionOutcomeAfterPath $LatestDecisionOutcomeAfterPath
 
     $ResumeReport = Get-Content -LiteralPath $SourceCampaignPath -Raw | ConvertFrom-Json
     $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
@@ -902,31 +898,13 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         $CoverageGapInitialSpentRounds = 0
     }
 
-    $ContinueTargetArgs = @(
-        "continue",
-        "--preset", "$Mode",
-        "--seed", "$Seed",
-        "--ascension", "$Ascension",
-        "--class", "$Class"
-    )
-    if (@(0, 10, 15, 17, 20) -contains $Ascension) {
-        $ContinueTargetArgs += @("--ascension-domain", "a$Ascension")
-    }
-    $ContinueTargetArgs += @(
-        "--resume", "$SourceCampaignPath",
-        "--resume-checkpoint", "$SourceCheckpointPath",
-        "--execute-targeted-continuation", "$TargetDecisionOutcomePath",
-        "--targeted-continuation-limit", "$TargetedContinuationLimit",
-        "--targeted-continuation-candidates-per-target", "$TargetedContinuationCandidatesPerTarget",
-        "--out", "$RunOutputCampaignPath",
-        "--checkpoint-out", "$RunOutputCheckpointPath"
-    )
-    $ContinueTargetArgs += $ContinuationRoundBudgetArgs
-    $ContinueTargetArgs = Add-CampaignSharedDriverOptions `
-        -Arguments $ContinueTargetArgs `
-        -IncludeActiveLineageDiversity $false `
-        -IncludeBossRelicAxes $false `
-        -IncludeAutoCaptureCombat $true
+    $ContinueTargetArgs = New-TargetedContinuationContinueDriverArgs `
+        -SourceCampaignPath $SourceCampaignPath `
+        -SourceCheckpointPath $SourceCheckpointPath `
+        -RunOutputCampaignPath $RunOutputCampaignPath `
+        -RunOutputCheckpointPath $RunOutputCheckpointPath `
+        -TargetDecisionOutcomePath $TargetDecisionOutcomePath `
+        -RoundBudgetArgs $ContinuationRoundBudgetArgs
     $ContinueCoverageGapArgs = New-CoverageGapContinueDriverArgs `
         -SourceCampaignPath $SourceCampaignPath `
         -SourceCheckpointPath $SourceCheckpointPath `

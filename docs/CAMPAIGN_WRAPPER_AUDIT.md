@@ -206,12 +206,23 @@ This helper owns:
 - mapping wrapper inspect switches to Rust driver flags
 - rendering dataset export inspect arguments
 
+Targeted continuation helpers now live in:
+
+```text
+tools/campaign_targets.ps1
+```
+
+This helper owns:
+
+- targeted continuation dataset export command rendering
+- targeted continuation plan/execute/effect command rendering
+
 ## Still Move Out Of Wrapper
 
 These pieces are useful but should not live in the main script long term:
 
-- targeted continuation command assembly; this older path still expands several
-  dataset/continuation commands inline
+- build freshness detection; the main wrapper still knows how to scan Rust
+  source timestamps
 
 ## Candidates To Delete Or Degrade
 
@@ -250,9 +261,8 @@ If the answer is no, do not add it to `tools/campaign.ps1`.
 ## Next Cleanup Order
 
 1. Reassess whether targeted continuation still earns its wrapper surface.
-2. Move targeted continuation command assembly into a helper or delete/degrade
-   the wrapper surface if coverage-gap continuation supersedes it.
-3. Move build freshness detection out of the main wrapper if the wrapper remains
+2. Move build freshness detection out of the main wrapper if the wrapper remains
    too large after continuation cleanup.
+3. Review whether the large comment-help block should become docs-only examples.
 
 This sequence reduces cognitive load without changing campaign strategy.
