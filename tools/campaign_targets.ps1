@@ -110,3 +110,53 @@ function Write-TargetedContinuationDryRunCommands {
         Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinuationEffectArgs)
     }
 }
+
+function Invoke-TargetedContinuationCommands {
+    param(
+        [bool] $PlanTargets,
+        [bool] $ContinueTargets,
+        [string] $DriverExe,
+        [string[]] $ExportDecisionArgs,
+        [string[]] $PlanTargetArgs,
+        [string[]] $ContinueTargetArgs,
+        [string[]] $ExportDecisionAfterArgs,
+        [string[]] $ContinuationEffectArgs,
+        [bool] $UntilMilestoneBound,
+        [int] $ContinuationRounds
+    )
+
+    if ($PlanTargets -or $ContinueTargets) {
+        & $DriverExe @ExportDecisionArgs
+        if ($LASTEXITCODE -ne 0) {
+            return $LASTEXITCODE
+        }
+    }
+    if ($PlanTargets) {
+        & $DriverExe @PlanTargetArgs
+        return $LASTEXITCODE
+    }
+    if (-not $ContinueTargets) {
+        return 0
+    }
+
+    & $DriverExe @ContinueTargetArgs
+    $DriverExitCode = $LASTEXITCODE
+    if ($DriverExitCode -ne 0) {
+        return $DriverExitCode
+    }
+
+    & $DriverExe @ExportDecisionAfterArgs
+    if ($LASTEXITCODE -ne 0) {
+        return $LASTEXITCODE
+    }
+    & $DriverExe @ContinuationEffectArgs
+    if ($LASTEXITCODE -ne 0) {
+        return $LASTEXITCODE
+    }
+    Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
+    if ($UntilMilestoneBound) {
+        Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds
+        $DriverExitCode = $script:CampaignMilestoneExitCode
+    }
+    return $DriverExitCode
+}

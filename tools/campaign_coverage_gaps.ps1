@@ -332,6 +332,49 @@ function Invoke-CoverageGapMilestoneSummary {
     return $LASTEXITCODE
 }
 
+function Invoke-CoverageGapContinuationCommands {
+    param(
+        [bool] $PlanCoverageGaps,
+        [bool] $ContinueCoverageGaps,
+        [string] $DriverExe,
+        [string[]] $CoveragePlanArgs,
+        [string[]] $ContinueCoverageGapArgs,
+        [bool] $UntilMilestoneBound,
+        [int] $CoverageGapInitialSpentRounds
+    )
+
+    if ($PlanCoverageGaps) {
+        & $DriverExe @CoveragePlanArgs
+        return $LASTEXITCODE
+    }
+    if (-not $ContinueCoverageGaps) {
+        return 0
+    }
+
+    & $DriverExe @ContinueCoverageGapArgs
+    $DriverExitCode = $LASTEXITCODE
+    if ($DriverExitCode -ne 0) {
+        return $DriverExitCode
+    }
+
+    Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
+    Write-CampaignWrapperManifest `
+        -Path $RunManifestPath `
+        -Manifest (New-CoverageGapWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed")
+    if ($UntilMilestoneBound) {
+        Invoke-CampaignUntilMilestone -AlreadySpentRounds $CoverageGapInitialSpentRounds
+        $DriverExitCode = $script:CampaignMilestoneExitCode
+        if ($DriverExitCode -eq 0) {
+            $DriverExitCode = Invoke-CoverageGapMilestoneSummary -Target $UntilMilestone
+        }
+    }
+    $ManifestStage = if ($UntilMilestoneBound) { "completed_with_milestone_loop" } else { "completed" }
+    Write-CampaignWrapperManifest `
+        -Path $RunManifestPath `
+        -Manifest (New-CoverageGapWrapperManifest -ExitCode $DriverExitCode -Stage $ManifestStage)
+    return $DriverExitCode
+}
+
 function New-CoverageGapWrapperManifest {
     param(
         [int] $ExitCode,

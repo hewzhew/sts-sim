@@ -196,6 +196,7 @@ This helper owns:
 - coverage-gap filter argument rendering
 - coverage-gap plan/continue driver argument rendering
 - coverage-gap continuation dry-run command rendering
+- coverage-gap continuation execution orchestration
 - coverage-gap milestone summary commands
 - coverage-gap wrapper manifest shape
 
@@ -222,6 +223,7 @@ This helper owns:
 - targeted continuation dataset export command rendering
 - targeted continuation plan/execute/effect command rendering
 - targeted continuation dry-run command rendering
+- targeted continuation execution orchestration
 
 Build freshness helpers now live in:
 

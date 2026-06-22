@@ -668,63 +668,28 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
             }
         }
         if ($PlanTargets -or $ContinueTargets) {
-            & $DriverExe @ExportDecisionArgs
-            if ($LASTEXITCODE -ne 0) {
-                exit $LASTEXITCODE
-            }
-        }
-        if ($PlanTargets) {
-            & $DriverExe @PlanTargetArgs
-            if ($LASTEXITCODE -ne 0) {
-                exit $LASTEXITCODE
-            }
-        }
-        if ($PlanCoverageGaps) {
-            & $DriverExe @CoveragePlanArgs
-            if ($LASTEXITCODE -ne 0) {
-                exit $LASTEXITCODE
-            }
-        }
-        if ($ContinueTargets) {
-            & $DriverExe @ContinueTargetArgs
-            $DriverExitCode = $LASTEXITCODE
-            if ($DriverExitCode -eq 0) {
-                & $DriverExe @ExportDecisionAfterArgs
-                if ($LASTEXITCODE -ne 0) {
-                    exit $LASTEXITCODE
-                }
-                & $DriverExe @ContinuationEffectArgs
-                if ($LASTEXITCODE -ne 0) {
-                    exit $LASTEXITCODE
-                }
-                Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
-                if ($UntilMilestoneBound) {
-                    Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds
-                    $DriverExitCode = $script:CampaignMilestoneExitCode
-                }
-            }
+            $DriverExitCode = Invoke-TargetedContinuationCommands `
+                -PlanTargets ([bool] $PlanTargets) `
+                -ContinueTargets ([bool] $ContinueTargets) `
+                -DriverExe $DriverExe `
+                -ExportDecisionArgs $ExportDecisionArgs `
+                -PlanTargetArgs $PlanTargetArgs `
+                -ContinueTargetArgs $ContinueTargetArgs `
+                -ExportDecisionAfterArgs $ExportDecisionAfterArgs `
+                -ContinuationEffectArgs $ContinuationEffectArgs `
+                -UntilMilestoneBound $UntilMilestoneBound `
+                -ContinuationRounds $ContinuationRounds
             exit $DriverExitCode
         }
-        if ($ContinueCoverageGaps) {
-            & $DriverExe @ContinueCoverageGapArgs
-            $DriverExitCode = $LASTEXITCODE
-            if ($DriverExitCode -eq 0) {
-                Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
-                Write-CampaignWrapperManifest `
-                    -Path $RunManifestPath `
-                    -Manifest (New-CoverageGapWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed")
-                if ($UntilMilestoneBound) {
-                    Invoke-CampaignUntilMilestone -AlreadySpentRounds $CoverageGapInitialSpentRounds
-                    $DriverExitCode = $script:CampaignMilestoneExitCode
-                    if ($DriverExitCode -eq 0) {
-                        $DriverExitCode = Invoke-CoverageGapMilestoneSummary -Target $UntilMilestone
-                    }
-                }
-                $ManifestStage = if ($UntilMilestoneBound) { "completed_with_milestone_loop" } else { "completed" }
-                Write-CampaignWrapperManifest `
-                    -Path $RunManifestPath `
-                    -Manifest (New-CoverageGapWrapperManifest -ExitCode $DriverExitCode -Stage $ManifestStage)
-            }
+        if ($PlanCoverageGaps -or $ContinueCoverageGaps) {
+            $DriverExitCode = Invoke-CoverageGapContinuationCommands `
+                -PlanCoverageGaps ([bool] $PlanCoverageGaps) `
+                -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
+                -DriverExe $DriverExe `
+                -CoveragePlanArgs $CoveragePlanArgs `
+                -ContinueCoverageGapArgs $ContinueCoverageGapArgs `
+                -UntilMilestoneBound $UntilMilestoneBound `
+                -CoverageGapInitialSpentRounds $CoverageGapInitialSpentRounds
             exit $DriverExitCode
         }
         exit 0
