@@ -612,6 +612,12 @@ pub(super) struct Args {
     pub(super) coverage_gap_lane: Option<String>,
 
     #[arg(
+        long = "coverage-gap-origin-source",
+        help = "Only plan or execute coverage-gap targets from this target_origin source, e.g. route_candidate_pool, map_decision_packet, event_boundary_packet"
+    )]
+    pub(super) coverage_gap_origin_source: Option<String>,
+
+    #[arg(
         long = "coverage-gap-budget-intent",
         default_value = "gap_closure",
         help = "Interpret coverage-gap continuation rounds as gap_closure or frontier_expansion in the result report"
@@ -1310,6 +1316,12 @@ struct DatasetPathArgs {
         help = "Only plan coverage-gap targets whose lane matches this text, e.g. effect:event_card_reward"
     )]
     coverage_gap_lane: Option<String>,
+
+    #[arg(
+        long = "coverage-gap-origin-source",
+        help = "Only plan coverage-gap targets from this target_origin source, e.g. route_candidate_pool, map_decision_packet, event_boundary_packet"
+    )]
+    coverage_gap_origin_source: Option<String>,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -1393,6 +1405,12 @@ struct ContinuationArgs {
         help = "Only execute coverage-gap targets whose lane matches this text, e.g. effect:event_card_reward"
     )]
     coverage_gap_lane: Option<String>,
+
+    #[arg(
+        long = "coverage-gap-origin-source",
+        help = "Only execute coverage-gap targets from this target_origin source, e.g. route_candidate_pool, map_decision_packet, event_boundary_packet"
+    )]
+    coverage_gap_origin_source: Option<String>,
 
     #[arg(
         long = "coverage-gap-budget-intent",
@@ -1501,6 +1519,7 @@ impl Args {
             coverage_gap_bucket: None,
             coverage_gap_event_id: None,
             coverage_gap_lane: None,
+            coverage_gap_origin_source: None,
             coverage_gap_budget_intent: "gap_closure".to_string(),
             coverage_gap_execution_mode: "advance_rounds".to_string(),
             export_learning_dataset: None,
@@ -1710,6 +1729,7 @@ impl DatasetPathArgs {
         args.coverage_gap_bucket = self.coverage_gap_bucket;
         args.coverage_gap_event_id = self.coverage_gap_event_id;
         args.coverage_gap_lane = self.coverage_gap_lane;
+        args.coverage_gap_origin_source = self.coverage_gap_origin_source;
     }
 }
 
@@ -1728,6 +1748,7 @@ impl ContinuationArgs {
         args.coverage_gap_bucket = self.coverage_gap_bucket;
         args.coverage_gap_event_id = self.coverage_gap_event_id;
         args.coverage_gap_lane = self.coverage_gap_lane;
+        args.coverage_gap_origin_source = self.coverage_gap_origin_source;
         args.coverage_gap_budget_intent = self.coverage_gap_budget_intent;
         args.coverage_gap_execution_mode = self.coverage_gap_execution_mode;
     }

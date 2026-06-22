@@ -256,6 +256,8 @@ pub struct CoverageGapContinuationFilterV1 {
     pub event_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lane: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_source: Option<String>,
 }
 
 impl CoverageGapContinuationFilterV1 {
@@ -263,6 +265,7 @@ impl CoverageGapContinuationFilterV1 {
         self.bucket.as_deref().is_none_or(str::is_empty)
             && self.event_id.as_deref().is_none_or(str::is_empty)
             && self.lane.as_deref().is_none_or(str::is_empty)
+            && self.origin_source.as_deref().is_none_or(str::is_empty)
     }
 }
 
@@ -1353,6 +1356,17 @@ fn coverage_gap_target_matches_filter_v1(
             &coverage_gap_continuation_target_lane_v1(target),
         );
         if !semantic_lane.contains(&normalized_filter) && !full_lane.contains(&normalized_filter) {
+            return false;
+        }
+    }
+    if let Some(origin_source) = filter
+        .origin_source
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        let normalized_filter = coverage_gap_normalize_filter_text_v1(origin_source);
+        let source = coverage_gap_normalize_filter_text_v1(&target.target_origin.source);
+        if source != normalized_filter && !source.contains(&normalized_filter) {
             return false;
         }
     }
@@ -2638,6 +2652,13 @@ pub fn render_coverage_gap_continuation_filter_v1(
     }
     if let Some(lane) = filter.lane.as_deref().filter(|value| !value.is_empty()) {
         parts.push(format!("lane={lane}"));
+    }
+    if let Some(origin_source) = filter
+        .origin_source
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    {
+        parts.push(format!("origin_source={origin_source}"));
     }
     format!("CoverageGapFilterV1 {}", parts.join(" "))
 }
@@ -6111,17 +6132,90 @@ mod tests {
     }
 
     #[test]
+    fn coverage_gap_filter_limits_selected_targets_to_origin_source() {
+        let mut run = crate::state::RunState::new(521, 0, false, "Ironclad");
+        run.event_state = None;
+        let trace = crate::ai::route_planner_v1::plan_route_decision_v1(
+            &run,
+            &crate::state::core::EngineState::MapNavigation,
+            crate::ai::route_planner_v1::RoutePlannerConfigV1::default(),
+        );
+        let packet =
+            crate::ai::route_planner_v1::MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+        assert!(packet.candidates.len() >= 2);
+
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-route-pool0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Map".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                decision_id: "journal-route-pool0".to_string(),
+                boundary_title: "Map".to_string(),
+                frontier_key: "map-frontier".to_string(),
+                depth: 0,
+                candidate_count: packet.candidates.len(),
+                selected_index: Some(0),
+                candidate_pool_provenance: Some(packet.candidate_pool.clone()),
+                map_decision_packet: None,
+                route_candidates: packet
+                    .candidates
+                    .iter()
+                    .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
+                    .collect(),
+                candidates: packet
+                    .candidates
+                    .iter()
+                    .map(|candidate| {
+                        sample_journal_candidate(
+                            &candidate.command,
+                            &route_candidate_test_label_v1(candidate),
+                        )
+                    })
+                    .collect(),
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_with_filter_v1(
+            &report,
+            &[],
+            4,
+            2,
+            &CoverageGapContinuationFilterV1 {
+                bucket: Some("route".to_string()),
+                origin_source: Some("route_candidate_pool".to_string()),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(plan.selected_target_count, 2);
+        assert!(plan
+            .targets
+            .iter()
+            .all(|target| target.target_origin.source == "route_candidate_pool"));
+    }
+
+    #[test]
     fn coverage_gap_filter_renderer_shows_active_constraints() {
         let rendered =
             render_coverage_gap_continuation_filter_v1(&CoverageGapContinuationFilterV1 {
                 bucket: Some("event".to_string()),
                 event_id: Some("Mushrooms".to_string()),
                 lane: Some("effect:event_gain_curse".to_string()),
+                origin_source: Some("event_boundary_packet".to_string()),
+                ..Default::default()
             });
 
         assert_eq!(
             rendered,
-            "CoverageGapFilterV1 bucket=event event_id=Mushrooms lane=effect:event_gain_curse"
+            "CoverageGapFilterV1 bucket=event event_id=Mushrooms lane=effect:event_gain_curse origin_source=event_boundary_packet"
         );
     }
 
