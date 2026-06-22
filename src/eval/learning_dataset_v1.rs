@@ -246,6 +246,8 @@ pub struct CoverageGapContinuationPlanV1 {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lane_summaries: Vec<CoverageGapContinuationLaneSummaryV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub origin_summaries: Vec<CoverageGapContinuationOriginSummaryV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub target_progress_summaries: Vec<CoverageGapContinuationProgressSummaryV1>,
     pub targets: Vec<CoverageGapContinuationTargetV1>,
 }
@@ -293,6 +295,15 @@ pub struct CoverageGapContinuationBucketSummaryV1 {
 #[serde(deny_unknown_fields)]
 pub struct CoverageGapContinuationLaneSummaryV1 {
     pub lane: String,
+    pub eligible_target_count: usize,
+    pub selected_target_count: usize,
+    pub deferred_target_count: usize,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageGapContinuationOriginSummaryV1 {
+    pub source: String,
     pub eligible_target_count: usize,
     pub selected_target_count: usize,
     pub deferred_target_count: usize,
@@ -1266,6 +1277,7 @@ pub fn plan_coverage_gap_continuations_with_filter_v1(
     record_coverage_gap_bucket_selected_targets_v1(&mut bucket_counts, &targets);
     let bucket_summaries = coverage_gap_bucket_summaries_v1(bucket_counts);
     let lane_summaries = coverage_gap_lane_summaries_v1(&deduped_target_candidates, &targets);
+    let origin_summaries = coverage_gap_origin_summaries_v1(&deduped_target_candidates, &targets);
     let target_progress_summaries = coverage_gap_target_progress_summaries_v1(report);
     for target in &targets {
         match target.disposition {
@@ -1303,6 +1315,7 @@ pub fn plan_coverage_gap_continuations_with_filter_v1(
         selected_unscheduled_targets,
         bucket_summaries,
         lane_summaries,
+        origin_summaries,
         target_progress_summaries,
         targets,
     }
@@ -1522,6 +1535,47 @@ fn coverage_gap_lane_summaries_v1(
             .cmp(&left.selected_target_count)
             .then_with(|| right.eligible_target_count.cmp(&left.eligible_target_count))
             .then_with(|| left.lane.cmp(&right.lane))
+    });
+    summaries
+}
+
+fn coverage_gap_origin_summaries_v1(
+    eligible_targets: &[CoverageGapContinuationTargetV1],
+    selected_targets: &[CoverageGapContinuationTargetV1],
+) -> Vec<CoverageGapContinuationOriginSummaryV1> {
+    let mut origins = BTreeMap::<String, CoverageGapContinuationOriginSummaryV1>::new();
+    for target in eligible_targets {
+        let source = coverage_gap_target_origin_source_label_v1(target);
+        let summary = origins.entry(source.clone()).or_insert_with(|| {
+            CoverageGapContinuationOriginSummaryV1 {
+                source,
+                ..Default::default()
+            }
+        });
+        summary.eligible_target_count = summary.eligible_target_count.saturating_add(1);
+    }
+    for target in selected_targets {
+        let source = coverage_gap_target_origin_source_label_v1(target);
+        let summary = origins.entry(source.clone()).or_insert_with(|| {
+            CoverageGapContinuationOriginSummaryV1 {
+                source,
+                ..Default::default()
+            }
+        });
+        summary.selected_target_count = summary.selected_target_count.saturating_add(1);
+    }
+    let mut summaries = origins.into_values().collect::<Vec<_>>();
+    for summary in &mut summaries {
+        summary.deferred_target_count = summary
+            .eligible_target_count
+            .saturating_sub(summary.selected_target_count);
+    }
+    summaries.sort_by(|left, right| {
+        right
+            .selected_target_count
+            .cmp(&left.selected_target_count)
+            .then_with(|| right.eligible_target_count.cmp(&left.eligible_target_count))
+            .then_with(|| left.source.cmp(&right.source))
     });
     summaries
 }
@@ -2643,6 +2697,7 @@ pub fn render_coverage_gap_continuation_plan_summary_v1(
         }
     }
     extend_coverage_gap_lane_summary_lines_v1(&mut lines, &plan.lane_summaries);
+    extend_coverage_gap_origin_summary_lines_v1(&mut lines, &plan.origin_summaries);
     extend_coverage_gap_target_progress_summary_lines_v1(
         &mut lines,
         &plan.target_progress_summaries,
@@ -2819,6 +2874,31 @@ fn extend_coverage_gap_selected_target_origin_counts_v1(
     }
 }
 
+fn extend_coverage_gap_origin_summary_lines_v1(
+    lines: &mut Vec<String>,
+    origin_summaries: &[CoverageGapContinuationOriginSummaryV1],
+) {
+    if origin_summaries.is_empty() {
+        return;
+    }
+    lines.push("Target origin coverage:".to_string());
+    for summary in origin_summaries.iter().take(12) {
+        lines.push(format!(
+            "  {} selected={}/{} deferred={}",
+            summary.source,
+            summary.selected_target_count,
+            summary.eligible_target_count,
+            summary.deferred_target_count
+        ));
+    }
+    if origin_summaries.len() > 12 {
+        lines.push(format!(
+            "  ... {} more origin source(s)",
+            origin_summaries.len().saturating_sub(12)
+        ));
+    }
+}
+
 fn extend_coverage_gap_selected_target_progress_counts_v1(
     lines: &mut Vec<String>,
     targets: &[CoverageGapContinuationTargetV1],
@@ -2902,6 +2982,14 @@ fn render_coverage_gap_parent_coordinate_v1(target: &CoverageGapContinuationTarg
         "root".to_string()
     } else {
         render_decision_path_commands_compact_v1(&target.parent_commands, 0, 8)
+    }
+}
+
+fn coverage_gap_target_origin_source_label_v1(target: &CoverageGapContinuationTargetV1) -> String {
+    if target.target_origin.source.is_empty() {
+        "unknown".to_string()
+    } else {
+        target.target_origin.source.clone()
     }
 }
 
@@ -5437,6 +5525,7 @@ mod tests {
             selected_unscheduled_targets: 0,
             bucket_summaries: Vec::new(),
             lane_summaries: Vec::new(),
+            origin_summaries: Vec::new(),
             target_progress_summaries: Vec::new(),
             targets: vec![target_only, missing],
         };
@@ -5654,6 +5743,7 @@ mod tests {
                 ..Default::default()
             }],
             lane_summaries: Vec::new(),
+            origin_summaries: Vec::new(),
             target_progress_summaries: Vec::new(),
             targets: vec![sample_route_coverage_gap_target(
                 "go 0",
@@ -5671,6 +5761,78 @@ mod tests {
         assert!(rendered.contains("route:go:MonsterRoom:CompleteWithinBudget"));
         assert!(!rendered.contains("Targets:"));
         assert!(!rendered.contains("x=0 Monster"));
+    }
+
+    #[test]
+    fn coverage_gap_plan_summary_reports_target_origin_coverage() {
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        let mut run = sts_simulator::state::RunState::new(521, 0, false, "Ironclad");
+        run.event_state = None;
+        let trace = sts_simulator::ai::route_planner_v1::plan_route_decision_v1(
+            &run,
+            &sts_simulator::state::core::EngineState::MapNavigation,
+            sts_simulator::ai::route_planner_v1::RoutePlannerConfigV1::default(),
+        );
+        let packet =
+            crate::ai::route_planner_v1::MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+        assert!(!packet.candidates.is_empty());
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "route-pool:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Map".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                decision_id: "route-pool".to_string(),
+                boundary_title: "Map".to_string(),
+                frontier_key: "map-frontier".to_string(),
+                depth: 0,
+                candidate_count: packet.candidates.len(),
+                selected_index: packet.selected_index,
+                candidate_pool_provenance: Some(packet.candidate_pool.clone()),
+                map_decision_packet: Some(packet.clone()),
+                route_candidates: Vec::new(),
+                candidates: packet
+                    .candidates
+                    .iter()
+                    .map(|route| sample_journal_candidate(&route.command, &route.command))
+                    .collect(),
+            },
+        });
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "reward-pool:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Reward Screen".to_string(),
+            act: 1,
+            floor: 2,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
+                decision_id: "reward-pool".to_string(),
+                boundary_title: "Reward Screen".to_string(),
+                frontier_key: "reward-frontier".to_string(),
+                depth: 0,
+                max_reward_options_per_branch: 3,
+                original_count: 1,
+                selected_count: 1,
+                candidates: vec![sample_journal_candidate("rp 0", "Pommel Strike")],
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[], 1, 8);
+        let rendered = render_coverage_gap_continuation_plan_summary_v1(&plan);
+
+        assert!(rendered.contains("Target origin coverage:"));
+        assert!(rendered.contains("map_decision_packet selected=1/"));
+        assert!(rendered.contains("journal_candidate selected=0/1"));
     }
 
     #[test]

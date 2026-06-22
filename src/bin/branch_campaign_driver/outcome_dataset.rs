@@ -43,8 +43,9 @@ use sts_simulator::eval::learning_dataset_v1::{
 };
 #[cfg(test)]
 use sts_simulator::eval::learning_dataset_v1::{
-    CoverageGapRouteFirstEliteOriginV1, CoverageGapRoutePathOriginV1,
-    CoverageGapRouteTargetOriginV1, CoverageGapShopActionLaneV1, CoverageGapTargetLaneV1,
+    CoverageGapContinuationOriginSummaryV1, CoverageGapRouteFirstEliteOriginV1,
+    CoverageGapRoutePathOriginV1, CoverageGapRouteTargetOriginV1, CoverageGapShopActionLaneV1,
+    CoverageGapTargetLaneV1,
 };
 use sts_simulator::eval::neow_guided_prefix::{
     neow_guided_prefix_commands_v1, NeowGuidedPrefixConfigV1,
@@ -558,8 +559,25 @@ fn coverage_gap_target_only_result_plan_v1(
                 .eligible_target_count
                 .saturating_sub(summary.selected_target_count);
         }
+        let origin_source = coverage_gap_target_origin_source_key_v1(target);
+        if let Some(summary) = after
+            .origin_summaries
+            .iter_mut()
+            .find(|summary| summary.source == origin_source)
+        {
+            summary.eligible_target_count = summary.eligible_target_count.saturating_sub(1);
+            summary.selected_target_count = summary.selected_target_count.saturating_sub(1);
+            summary.deferred_target_count = summary
+                .eligible_target_count
+                .saturating_sub(summary.selected_target_count);
+        }
     }
     after.lane_summaries.retain(|summary| {
+        summary.eligible_target_count > 0
+            || summary.selected_target_count > 0
+            || summary.deferred_target_count > 0
+    });
+    after.origin_summaries.retain(|summary| {
         summary.eligible_target_count > 0
             || summary.selected_target_count > 0
             || summary.deferred_target_count > 0
@@ -1996,6 +2014,12 @@ mod tests {
                 deferred_target_count: 0,
             },
         ];
+        plan.origin_summaries = vec![CoverageGapContinuationOriginSummaryV1 {
+            source: "unknown".to_string(),
+            eligible_target_count: 2,
+            selected_target_count: 2,
+            deferred_target_count: 0,
+        }];
         let execution = CoverageGapContinuationExecutionPlanV1 {
             schema_name: "CoverageGapContinuationExecutionPlanV1".to_string(),
             schema_version: 3,
@@ -2047,6 +2071,10 @@ mod tests {
                 .iter()
                 .all(|summary| summary.lane != "route:legacy:x=0 Monster"),
             "fully consumed route lane should be removed from the follow-up plan"
+        );
+        assert!(
+            after.origin_summaries.is_empty(),
+            "fully consumed target origin source should be removed from the follow-up plan"
         );
     }
 
@@ -2575,6 +2603,7 @@ mod tests {
             selected_unscheduled_targets: 0,
             bucket_summaries,
             lane_summaries: Vec::new(),
+            origin_summaries: Vec::new(),
             target_progress_summaries: Vec::new(),
             targets: Vec::new(),
         }
