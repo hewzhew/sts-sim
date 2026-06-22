@@ -190,6 +190,7 @@ This helper owns:
 
 - coverage-gap preset compatibility checks
 - coverage-gap filter argument rendering
+- coverage-gap plan/continue driver argument rendering
 - coverage-gap milestone summary commands
 - coverage-gap wrapper manifest shape
 
@@ -209,8 +210,6 @@ This helper owns:
 
 These pieces are useful but should not live in the main script long term:
 
-- coverage-gap continuation command assembly; the helper now owns filters and
-  manifests, but the main wrapper still assembles the long driver argument list
 - targeted continuation command assembly; this older path still expands several
   dataset/continuation commands inline
 
@@ -250,8 +249,9 @@ If the answer is no, do not add it to `tools/campaign.ps1`.
 
 ## Next Cleanup Order
 
-1. Continue shrinking coverage-gap command assembly into a typed helper input.
-2. Reassess whether targeted continuation still earns its wrapper surface.
+1. Reassess whether targeted continuation still earns its wrapper surface.
+2. Move targeted continuation command assembly into a helper or delete/degrade
+   the wrapper surface if coverage-gap continuation supersedes it.
 3. Move build freshness detection out of the main wrapper if the wrapper remains
    too large after continuation cleanup.
 

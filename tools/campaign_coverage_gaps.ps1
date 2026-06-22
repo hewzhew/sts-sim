@@ -70,6 +70,64 @@ function Format-CoverageGapFilterLabel {
     return $Parts -join " "
 }
 
+function New-CoverageGapPlanDriverArgs {
+    param(
+        [string] $SourceCampaignPath,
+        [string] $SourceCheckpointPath
+    )
+
+    $Args = @(
+        "dataset",
+        "--inspect-report", "$SourceCampaignPath",
+        "--inspect-checkpoint", "$SourceCheckpointPath",
+        "--plan-coverage-gap-continuation",
+        "--coverage-gap-limit", "$CoverageGapLimit",
+        "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision"
+    )
+    $Args += $CoverageGapFilterArgs
+    return $Args
+}
+
+function New-CoverageGapContinueDriverArgs {
+    param(
+        [string] $SourceCampaignPath,
+        [string] $SourceCheckpointPath,
+        [string] $RunOutputCampaignPath,
+        [string] $RunOutputCheckpointPath,
+        [string[]] $RoundBudgetArgs,
+        [string] $DriverExecution
+    )
+
+    $Args = @(
+        "continue",
+        "--preset", "$Mode",
+        "--seed", "$Seed",
+        "--ascension", "$Ascension",
+        "--class", "$Class"
+    )
+    if (@(0, 10, 15, 17, 20) -contains $Ascension) {
+        $Args += @("--ascension-domain", "a$Ascension")
+    }
+    $Args += @(
+        "--resume", "$SourceCampaignPath",
+        "--resume-checkpoint", "$SourceCheckpointPath",
+        "--execute-coverage-gap-continuation",
+        "--coverage-gap-limit", "$CoverageGapLimit",
+        "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision",
+        "--coverage-gap-budget-intent", "$CoverageGapIntent",
+        "--coverage-gap-execution-mode", "$DriverExecution",
+        "--out", "$RunOutputCampaignPath",
+        "--checkpoint-out", "$RunOutputCheckpointPath"
+    )
+    $Args += $CoverageGapFilterArgs
+    $Args += $RoundBudgetArgs
+    return Add-CampaignSharedDriverOptions `
+        -Arguments $Args `
+        -IncludeActiveLineageDiversity $false `
+        -IncludeBossRelicAxes $false `
+        -IncludeAutoCaptureCombat $true
+}
+
 function New-CoverageGapMilestoneSummaryArgs {
     $Args = @(
         "inspect",

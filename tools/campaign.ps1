@@ -825,15 +825,9 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     } else {
         $LatestDecisionOutcomePath
     }
-    $CoveragePlanArgs = @(
-        "dataset",
-        "--inspect-report", "$SourceCampaignPath",
-        "--inspect-checkpoint", "$SourceCheckpointPath",
-        "--plan-coverage-gap-continuation",
-        "--coverage-gap-limit", "$CoverageGapLimit",
-        "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision"
-    )
-    $CoveragePlanArgs += $CoverageGapFilterArgs
+    $CoveragePlanArgs = New-CoverageGapPlanDriverArgs `
+        -SourceCampaignPath $SourceCampaignPath `
+        -SourceCheckpointPath $SourceCheckpointPath
     $ExportDecisionArgs = @(
         "dataset",
         "--inspect-report", "$SourceCampaignPath",
@@ -928,39 +922,18 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         "--checkpoint-out", "$RunOutputCheckpointPath"
     )
     $ContinueTargetArgs += $ContinuationRoundBudgetArgs
-    $ContinueCoverageGapArgs = @(
-        "continue",
-        "--preset", "$Mode",
-        "--seed", "$Seed",
-        "--ascension", "$Ascension",
-        "--class", "$Class"
-    )
-    if (@(0, 10, 15, 17, 20) -contains $Ascension) {
-        $ContinueCoverageGapArgs += @("--ascension-domain", "a$Ascension")
-    }
-    $ContinueCoverageGapArgs += @(
-        "--resume", "$SourceCampaignPath",
-        "--resume-checkpoint", "$SourceCheckpointPath",
-        "--execute-coverage-gap-continuation",
-        "--coverage-gap-limit", "$CoverageGapLimit",
-        "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision",
-        "--coverage-gap-budget-intent", "$CoverageGapIntent",
-        "--coverage-gap-execution-mode", "$CoverageGapDriverExecution",
-        "--out", "$RunOutputCampaignPath",
-        "--checkpoint-out", "$RunOutputCheckpointPath"
-    )
-    $ContinueCoverageGapArgs += $CoverageGapFilterArgs
-    $ContinueCoverageGapArgs += $ContinuationRoundBudgetArgs
     $ContinueTargetArgs = Add-CampaignSharedDriverOptions `
         -Arguments $ContinueTargetArgs `
         -IncludeActiveLineageDiversity $false `
         -IncludeBossRelicAxes $false `
         -IncludeAutoCaptureCombat $true
-    $ContinueCoverageGapArgs = Add-CampaignSharedDriverOptions `
-        -Arguments $ContinueCoverageGapArgs `
-        -IncludeActiveLineageDiversity $false `
-        -IncludeBossRelicAxes $false `
-        -IncludeAutoCaptureCombat $true
+    $ContinueCoverageGapArgs = New-CoverageGapContinueDriverArgs `
+        -SourceCampaignPath $SourceCampaignPath `
+        -SourceCheckpointPath $SourceCheckpointPath `
+        -RunOutputCampaignPath $RunOutputCampaignPath `
+        -RunOutputCheckpointPath $RunOutputCheckpointPath `
+        -RoundBudgetArgs $ContinuationRoundBudgetArgs `
+        -DriverExecution $CoverageGapDriverExecution
 
     $ContinuationModeLabel = if ($PlanCoverageGaps -or $ContinueCoverageGaps) { "coverage-gap-continuation" } else { "targeted-continuation" }
     Write-Host "mode=$ContinuationModeLabel branch campaign"
