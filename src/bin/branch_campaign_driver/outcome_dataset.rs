@@ -732,13 +732,14 @@ fn render_coverage_gap_result_audit_v1(
                 ))
                 .or_default() += 1;
             target_lines.push(format!(
-                "  {}. {} {} {{{}}} lane={} seeded=yes final_bucket={}{} -> frontier={} {} stop={}",
+                "  {}. {} {} {{{}}} lane={} seeded=yes final_bucket={} target_progress={}{} -> frontier={} {} stop={}",
                 index + 1,
                 target.event_type,
                 compact_coverage_gap_audit_text_v1(&target.label, 40),
                 compact_coverage_gap_audit_text_v1(&target.command, 24),
                 compact_coverage_gap_audit_text_v1(&lane, 72),
                 result.outcome,
+                coverage_gap_result_target_progress_v1(result, target),
                 render_coverage_gap_discard_reason_suffix_v1(result),
                 result.frontier_title,
                 render_coverage_gap_branch_progress_v1(result.summary),
@@ -805,6 +806,7 @@ struct CoverageGapResultBranchRefV1<'a> {
     frontier_title: &'a str,
     stop_reason: &'a str,
     summary: Option<&'a sts_simulator::eval::branch_campaign::BranchCampaignBranchSummaryV1>,
+    commands: Option<&'a [String]>,
     continuation_origin: Option<&'a BranchCampaignContinuationOriginV1>,
     discard_reason: Option<&'a str>,
 }
@@ -858,6 +860,7 @@ fn coverage_gap_result_branches_v1(
                 frontier_title: &branch.frontier_title,
                 stop_reason: &branch.stop_reason,
                 summary: branch.summary.as_ref(),
+                commands: None,
                 continuation_origin: branch.continuation_origin.as_ref(),
                 discard_reason: Some(&branch.reason),
             }),
@@ -874,6 +877,7 @@ fn coverage_gap_result_branch_ref_from_branch_v1<'a>(
         frontier_title: &branch.frontier_title,
         stop_reason: &branch.stop_reason,
         summary: branch.summary.as_ref(),
+        commands: Some(&branch.commands),
         continuation_origin: branch.continuation_origin.as_ref(),
         discard_reason: None,
     }
@@ -892,6 +896,26 @@ fn coverage_gap_result_branch_matches_target_v1(
         && origin.candidate_id == target.candidate_id
         && origin.candidate_index == target.candidate_index
         && origin.command == target.command
+}
+
+fn coverage_gap_result_target_progress_v1(
+    branch: &CoverageGapResultBranchRefV1<'_>,
+    target: &CoverageGapContinuationTargetV1,
+) -> &'static str {
+    if branch.outcome == "discarded" {
+        return "discarded";
+    }
+    let Some(commands) = branch.commands else {
+        return "unknown";
+    };
+    let target_applied_len = target.parent_commands.len().saturating_add(1);
+    if commands.len() > target_applied_len {
+        "extended"
+    } else if commands.len() < target_applied_len {
+        "incomplete"
+    } else {
+        "target_only"
+    }
 }
 
 fn render_coverage_gap_branch_progress_v1(
@@ -1072,6 +1096,76 @@ mod tests {
         assert!(rendered.contains("route x=1 y=2 Shop {go 1}"));
         assert!(rendered.contains("seeded=yes final_bucket=discarded"));
         assert!(rendered.contains("discard_reason=selection_capacity"));
+    }
+
+    #[test]
+    fn coverage_gap_result_audit_reports_target_progress() {
+        let extended_target = coverage_gap_test_target("reward", "rp 1", "Pommel Strike", 0);
+        let target_only_target = coverage_gap_test_target("event", "event 2", "Leave", 1);
+        let execution = CoverageGapContinuationExecutionPlanV1 {
+            schema_name: "CoverageGapContinuationExecutionPlanV1".to_string(),
+            schema_version: 3,
+            label_role: "campaign_observation_not_teacher".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            requested_target_count: 2,
+            selected_branch_count: 2,
+            skipped_target_count: 0,
+            bucket_summaries: Vec::new(),
+            targets: vec![extended_target.clone(), target_only_target.clone()],
+        };
+        let mut extended_branch = coverage_gap_test_result_branch(
+            &extended_target,
+            BranchCampaignBranchStatusV1::Active,
+            "Combat",
+            "advanced after target",
+            1,
+            5,
+            72,
+            80,
+        );
+        extended_branch.commands.push("go 1".to_string());
+        let report = BranchCampaignReportV1 {
+            schema_name: "BranchCampaignV1".to_string(),
+            schema_version: 1,
+            seed: 1,
+            run_domain: Default::default(),
+            run_prelude: Default::default(),
+            rounds_completed: 1,
+            stop_reason: "max_rounds".to_string(),
+            active: vec![extended_branch],
+            frozen: vec![coverage_gap_test_result_branch(
+                &target_only_target,
+                BranchCampaignBranchStatusV1::Frozen,
+                "Event",
+                "same boundary after applying target",
+                1,
+                4,
+                80,
+                80,
+            )],
+            victories: Vec::new(),
+            dead: Vec::new(),
+            abandoned: Vec::new(),
+            stuck: Vec::new(),
+            discarded_count: 0,
+            discarded_examples: Vec::new(),
+            discarded_branches: Vec::new(),
+            strategy_requests: Vec::new(),
+            route_evidence: Default::default(),
+            combat_retry_ledger: Default::default(),
+            strategic_signals: Default::default(),
+            state_store: Default::default(),
+            journal: Default::default(),
+            rounds: Vec::new(),
+        };
+
+        let rendered = render_coverage_gap_result_audit_v1(&execution, &report);
+
+        assert!(rendered.contains("reward Pommel Strike {rp 1}"));
+        assert!(rendered.contains("final_bucket=active target_progress=extended"));
+        assert!(rendered.contains("event Leave {event 2}"));
+        assert!(rendered.contains("final_bucket=frozen target_progress=target_only"));
     }
 
     #[test]
