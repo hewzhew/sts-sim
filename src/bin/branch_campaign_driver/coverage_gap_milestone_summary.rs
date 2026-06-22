@@ -206,7 +206,7 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_v1(
     }
     if !by_lane_progress.is_empty() {
         lines.push("Target progress by lane:".to_string());
-        for (lane, counts) in by_lane_progress {
+        for (lane, counts) in &by_lane_progress {
             lines.push(format!(
                 "  {lane} extended={} target_only={} discarded={} missing={} incomplete={} unknown={}",
                 count_for_key_v1(&counts, "extended"),
@@ -216,6 +216,38 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_v1(
                 count_for_key_v1(&counts, "incomplete"),
                 count_for_key_v1(&counts, "unknown")
             ));
+        }
+        let mut discarded_heavy_lanes = by_lane_progress
+            .iter()
+            .filter_map(|(lane, counts)| {
+                let discarded = count_for_key_v1(counts, "discarded");
+                if discarded == 0 {
+                    return None;
+                }
+                Some((
+                    *lane,
+                    discarded,
+                    count_for_key_v1(counts, "extended"),
+                    count_for_key_v1(counts, "target_only"),
+                ))
+            })
+            .collect::<Vec<_>>();
+        discarded_heavy_lanes.sort_by(|left, right| {
+            right
+                .1
+                .cmp(&left.1)
+                .then_with(|| left.2.cmp(&right.2))
+                .then_with(|| left.0.cmp(right.0))
+        });
+        if !discarded_heavy_lanes.is_empty() {
+            lines.push("Discarded-heavy lanes:".to_string());
+            for (lane, discarded, extended, target_only) in
+                discarded_heavy_lanes.into_iter().take(8)
+            {
+                lines.push(format!(
+                    "  {lane} discarded={discarded} extended={extended} target_only={target_only}"
+                ));
+            }
         }
     }
 
@@ -650,6 +682,10 @@ mod tests {
         assert!(text.contains("shop:scheduled:kept:test extended=1 target_only=0 discarded=0"));
         assert!(text
             .contains("reward:scheduled:kept:role:scaling extended=0 target_only=1 discarded=0"));
+        assert!(text.contains("Discarded-heavy lanes:"));
+        assert!(text.contains(
+            "route:go:MonsterRoom:CompleteWithinBudget:optional_elite discarded=1 extended=0"
+        ));
     }
 
     #[test]
