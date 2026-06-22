@@ -254,12 +254,15 @@ pub struct CoverageGapContinuationFilterV1 {
     pub bucket: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub event_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane: Option<String>,
 }
 
 impl CoverageGapContinuationFilterV1 {
     fn is_empty(&self) -> bool {
         self.bucket.as_deref().is_none_or(str::is_empty)
             && self.event_id.as_deref().is_none_or(str::is_empty)
+            && self.lane.as_deref().is_none_or(str::is_empty)
     }
 }
 
@@ -1336,6 +1339,20 @@ fn coverage_gap_target_matches_filter_v1(
             .iter()
             .any(|field| coverage_gap_normalize_filter_text_v1(field).contains(&normalized_filter))
         {
+            return false;
+        }
+    }
+    if let Some(lane) = filter.lane.as_deref().filter(|value| !value.is_empty()) {
+        let normalized_filter = coverage_gap_normalize_filter_text_v1(lane);
+        let target_lane = target
+            .target_lane
+            .clone()
+            .unwrap_or_else(|| coverage_gap_target_lane_from_target_v1(target));
+        let semantic_lane = coverage_gap_normalize_filter_text_v1(&target_lane.semantic_lane);
+        let full_lane = coverage_gap_normalize_filter_text_v1(
+            &coverage_gap_continuation_target_lane_v1(target),
+        );
+        if !semantic_lane.contains(&normalized_filter) && !full_lane.contains(&normalized_filter) {
             return false;
         }
     }
@@ -6024,6 +6041,53 @@ mod tests {
             .targets
             .iter()
             .all(|target| target.event_id.contains("TheLibrary")));
+    }
+
+    #[test]
+    fn coverage_gap_filter_limits_selected_targets_to_lane() {
+        let branch = sample_event_boundary_branch(
+            "root.rp 0",
+            "TheLibrary",
+            vec![
+                sample_event_candidate_snapshot(
+                    "TheLibrary",
+                    0,
+                    "[Read] Choose a card from 20 offerings.",
+                    "gain",
+                    &["offer_cards"],
+                ),
+                sample_event_candidate_snapshot(
+                    "TheLibrary",
+                    1,
+                    "[Sleep] Heal 30% of your Max HP.",
+                    "heal",
+                    &["heal"],
+                ),
+            ],
+        );
+        let report = sample_campaign_report_with_branches(vec![branch]);
+
+        let plan = plan_coverage_gap_continuations_with_filter_v1(
+            &report,
+            &[],
+            4,
+            2,
+            &CoverageGapContinuationFilterV1 {
+                bucket: Some("event".to_string()),
+                lane: Some("effect:event_card_reward".to_string()),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(plan.selected_target_count, 1);
+        assert_eq!(
+            plan.targets[0].label,
+            "[Read] Choose a card from 20 offerings."
+        );
+        assert_eq!(
+            coverage_gap_continuation_target_lane_v1(&plan.targets[0]),
+            "event:scheduled:kept:effect:event_card_reward"
+        );
     }
 
     #[test]

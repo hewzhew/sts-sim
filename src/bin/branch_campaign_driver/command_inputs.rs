@@ -265,6 +265,7 @@ fn coverage_gap_filter_from_args(args: &Args) -> CoverageGapContinuationFilterV1
     CoverageGapContinuationFilterV1 {
         bucket: args.coverage_gap_bucket.clone(),
         event_id: args.coverage_gap_event_id.clone(),
+        lane: args.coverage_gap_lane.clone(),
     }
 }
 
@@ -566,6 +567,8 @@ mod tests {
             "event",
             "--coverage-gap-event-id",
             "TheLibrary",
+            "--coverage-gap-lane",
+            "effect:event_card_reward",
         ])
         .expect("coverage gap filter should parse");
 
@@ -575,6 +578,10 @@ mod tests {
         assert_eq!(
             input.coverage_gap_filter.event_id.as_deref(),
             Some("TheLibrary")
+        );
+        assert_eq!(
+            input.coverage_gap_filter.lane.as_deref(),
+            Some("effect:event_card_reward")
         );
     }
 
@@ -588,6 +595,8 @@ mod tests {
             "event",
             "--coverage-gap-event-id",
             "TheLibrary",
+            "--coverage-gap-lane",
+            "effect:event_card_reward",
         ])
         .expect("coverage gap filter should parse");
 
@@ -597,6 +606,10 @@ mod tests {
         assert_eq!(
             input.coverage_gap_filter.event_id.as_deref(),
             Some("TheLibrary")
+        );
+        assert_eq!(
+            input.coverage_gap_filter.lane.as_deref(),
+            Some("effect:event_card_reward")
         );
     }
 }
