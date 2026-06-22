@@ -28,7 +28,7 @@ Resumes the latest saved campaign report and advances until total round 33.
 
 .EXAMPLE
 .\tools\campaign.ps1 -ContinueCoverageGaps -UntilMilestone Act2Start
-Runs coverage-gap branches, then keeps resuming in small round chunks until any branch reaches Act 2 or the milestone round cap is exhausted.
+Runs coverage-gap branches, then keeps resuming in small round chunks until the milestone round cap is exhausted by default.
 
 .EXAMPLE
 .\tools\campaign.ps1 -ContinueCoverageGaps -CoverageGapExecution milestone -UntilMilestone Act2Start -Scratch
@@ -252,6 +252,9 @@ param(
 
     [ValidateRange(1, 100000)]
     [int] $MilestoneMaxRounds = 24,
+
+    [ValidateSet("auto", "first_hit", "round_cap")]
+    [string] $MilestoneStop = "auto",
 
     [ValidateRange(0, 20)]
     [int] $Ascension = 0,
@@ -524,6 +527,14 @@ if ($UntilMilestoneBound -and ($RoundsBound -or $UntilRoundBound -or $MaxRoundsB
 }
 if ($UntilMilestoneBound -and ($PlanTargets -or $PlanCoverageGaps -or $Inspect)) {
     throw "-UntilMilestone requires an executing command (-More, -ContinueTargets, -ContinueCoverageGaps, or a normal run), not a plan/inspect command."
+}
+$ResolvedMilestoneStop = $MilestoneStop
+if ($ResolvedMilestoneStop -eq "auto") {
+    if ($ContinueCoverageGaps) {
+        $ResolvedMilestoneStop = "round_cap"
+    } else {
+        $ResolvedMilestoneStop = "first_hit"
+    }
 }
 
 $DriverRoundBudgetArgs = @()
@@ -821,8 +832,8 @@ function Invoke-CampaignUntilMilestone {
     $SpentRounds = $AlreadySpentRounds
     while ($SpentRounds -lt $MilestoneMaxRounds) {
         $Status = Get-CampaignMilestoneStatus -ReportPath $RunOutputCampaignPath -Milestone $UntilMilestone
-        Write-Host "milestone-status target=$UntilMilestone reached=$($Status.Reached) hits=$($Status.HitCount) furthest=A$($Status.FurthestAct)F$($Status.FurthestFloor) report-rounds=$($Status.RoundsCompleted) spent-rounds=$SpentRounds cap=$MilestoneMaxRounds"
-        if ($Status.Reached) {
+        Write-Host "milestone-status target=$UntilMilestone stop=$ResolvedMilestoneStop reached=$($Status.Reached) hits=$($Status.HitCount) furthest=A$($Status.FurthestAct)F$($Status.FurthestFloor) report-rounds=$($Status.RoundsCompleted) spent-rounds=$SpentRounds cap=$MilestoneMaxRounds"
+        if ($Status.Reached -and $ResolvedMilestoneStop -eq "first_hit") {
             $script:CampaignMilestoneExitCode = 0
             return
         }
@@ -838,7 +849,7 @@ function Invoke-CampaignUntilMilestone {
     }
 
     $FinalStatus = Get-CampaignMilestoneStatus -ReportPath $RunOutputCampaignPath -Milestone $UntilMilestone
-    Write-Host "milestone-status target=$UntilMilestone reached=$($FinalStatus.Reached) hits=$($FinalStatus.HitCount) furthest=A$($FinalStatus.FurthestAct)F$($FinalStatus.FurthestFloor) report-rounds=$($FinalStatus.RoundsCompleted) spent-rounds=$SpentRounds cap=$MilestoneMaxRounds"
+    Write-Host "milestone-status target=$UntilMilestone stop=$ResolvedMilestoneStop reached=$($FinalStatus.Reached) hits=$($FinalStatus.HitCount) furthest=A$($FinalStatus.FurthestAct)F$($FinalStatus.FurthestFloor) report-rounds=$($FinalStatus.RoundsCompleted) spent-rounds=$SpentRounds cap=$MilestoneMaxRounds"
     $script:CampaignMilestoneExitCode = 0
     return
 }
@@ -1136,7 +1147,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         }
     }
     if ($UntilMilestoneBound) {
-        Write-Host "until-milestone=$UntilMilestone step-rounds=$MilestoneStepRounds max-additional-rounds=$MilestoneMaxRounds"
+        Write-Host "until-milestone=$UntilMilestone step-rounds=$MilestoneStepRounds max-additional-rounds=$MilestoneMaxRounds stop=$ResolvedMilestoneStop"
     }
     if ($PlanCoverageGaps) {
         Write-Host "coverage-gap-plan=$CoverageGapLimit candidates-per-decision=$CoverageGapCandidatesPerDecision"
