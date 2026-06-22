@@ -176,13 +176,32 @@ pub(super) fn rebalance_active_survival_anchor_v1(
 pub(super) fn rebalance_active_coverage_probe_v1(
     active: &mut Vec<BranchCampaignBranchV1>,
     frozen: &mut Vec<BranchCampaignBranchV1>,
+) -> usize {
+    let mut promoted = 0usize;
+    let max_iterations = active.len().saturating_add(frozen.len()).saturating_add(1);
+    for _ in 0..max_iterations {
+        if !rebalance_active_coverage_probe_once_v1(active, frozen) {
+            break;
+        }
+        promoted = promoted.saturating_add(1);
+    }
+    promoted
+}
+
+fn rebalance_active_coverage_probe_once_v1(
+    active: &mut Vec<BranchCampaignBranchV1>,
+    frozen: &mut Vec<BranchCampaignBranchV1>,
 ) -> bool {
     if active.len() < 2 || frozen.is_empty() {
         return false;
     }
-    if active.iter().any(branch_is_coverage_gap_probe_v1) {
-        return false;
-    }
+    let active_target_counts = active
+        .iter()
+        .filter_map(branch_coverage_gap_target_key_v1)
+        .fold(BTreeMap::<String, usize>::new(), |mut counts, key| {
+            *counts.entry(key).or_default() += 1;
+            counts
+        });
 
     let Some((frozen_index, frozen_branch)) = frozen
         .iter()
@@ -190,6 +209,8 @@ pub(super) fn rebalance_active_coverage_probe_v1(
         .filter(|(_, branch)| {
             branch_is_coverage_gap_probe_v1(branch)
                 && campaign_branch_primary_active_eligible_v1(branch)
+                && branch_coverage_gap_target_key_v1(branch)
+                    .is_some_and(|key| !active_target_counts.contains_key(&key))
         })
         .min_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
     else {
@@ -199,7 +220,12 @@ pub(super) fn rebalance_active_coverage_probe_v1(
     let Some((replace_index, _)) = active
         .iter()
         .enumerate()
-        .filter(|(_, branch)| !branch_is_coverage_gap_probe_v1(branch))
+        .filter(|(_, branch)| {
+            if let Some(key) = branch_coverage_gap_target_key_v1(branch) {
+                return active_target_counts.get(&key).copied().unwrap_or(0) > 1;
+            }
+            !branch_is_coverage_gap_probe_v1(branch)
+        })
         .max_by(|(_, left), (_, right)| compare_campaign_branches_for_active_v1(left, right))
     else {
         return false;
@@ -224,6 +250,21 @@ fn branch_is_coverage_gap_probe_v1(branch: &BranchCampaignBranchV1) -> bool {
         .continuation_origin
         .as_ref()
         .is_some_and(|origin| origin.kind == "coverage_gap")
+}
+
+fn branch_coverage_gap_target_key_v1(branch: &BranchCampaignBranchV1) -> Option<String> {
+    let origin = branch
+        .continuation_origin
+        .as_ref()
+        .filter(|origin| origin.kind == "coverage_gap")?;
+    Some(format!(
+        "{}|{}|{}|{}|{}",
+        origin.event_type,
+        origin.decision_id,
+        origin.candidate_id,
+        origin.candidate_index,
+        origin.command
+    ))
 }
 
 fn campaign_branch_is_survival_salvage_v1(candidate_hp: i32, replaced_hp: i32) -> bool {

@@ -640,3 +640,88 @@ fn campaign_selection_preserves_one_coverage_gap_probe_active_slot() {
         "coverage-gap continuation should receive one active probe slot instead of being immediately frozen by legacy rank"
     );
 }
+
+#[test]
+fn campaign_selection_preserves_coverage_gap_target_group_diversity() {
+    let mut duplicate_a = test_campaign_branch("duplicate-a", 18, 80);
+    duplicate_a.rank_key = 40_000;
+    duplicate_a.summary.as_mut().unwrap().trajectory_key = "duplicate-a".to_string();
+    duplicate_a.continuation_origin = Some(coverage_gap_test_origin(
+        "boss_relic",
+        "boss:decision",
+        "boss:same",
+        "RunicPyramid",
+        "relic 0",
+        0,
+    ));
+
+    let mut duplicate_b = test_campaign_branch("duplicate-b", 18, 79);
+    duplicate_b.rank_key = 39_000;
+    duplicate_b.summary.as_mut().unwrap().trajectory_key = "duplicate-b".to_string();
+    duplicate_b.continuation_origin = Some(coverage_gap_test_origin(
+        "boss_relic",
+        "boss:decision",
+        "boss:same",
+        "RunicPyramid",
+        "relic 0",
+        0,
+    ));
+
+    let mut unique = test_campaign_branch("unique-target", 13, 78);
+    unique.rank_key = 20_000;
+    unique.summary.as_mut().unwrap().trajectory_key = "unique-target".to_string();
+    unique.continuation_origin = Some(coverage_gap_test_origin(
+        "route",
+        "route:decision",
+        "route:unique",
+        "x=2 y=6 Event",
+        "go 2",
+        1,
+    ));
+
+    let selected = select_campaign_branches_v1(vec![duplicate_a, duplicate_b, unique], 2, 4);
+    let active_ids = selected
+        .active
+        .iter()
+        .map(|branch| branch.branch_id.as_str())
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(selected.active.len(), 2);
+    assert!(
+        active_ids.contains("unique-target"),
+        "coverage-gap active slots should not be monopolized by one target group"
+    );
+    assert!(
+        active_ids.contains("duplicate-a") || active_ids.contains("duplicate-b"),
+        "one branch from the stronger duplicate target group should remain active"
+    );
+}
+
+fn coverage_gap_test_origin(
+    event_type: &str,
+    decision_id: &str,
+    candidate_id: &str,
+    label: &str,
+    command: &str,
+    candidate_index: usize,
+) -> BranchCampaignContinuationOriginV1 {
+    BranchCampaignContinuationOriginV1 {
+        kind: "coverage_gap".to_string(),
+        source_event_id: format!("{decision_id}:event"),
+        decision_id: decision_id.to_string(),
+        event_type: event_type.to_string(),
+        parent_branch_id: "parent".to_string(),
+        parent_frontier_title: "Coverage Gap".to_string(),
+        candidate_index,
+        candidate_id: candidate_id.to_string(),
+        command: command.to_string(),
+        label: label.to_string(),
+        semantic_class: "test".to_string(),
+        admission: Default::default(),
+        disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Kept,
+        target_lane: None,
+        target_origin_source: "journal_coverage_gap".to_string(),
+        route_origin: None,
+        milestone: String::new(),
+    }
+}

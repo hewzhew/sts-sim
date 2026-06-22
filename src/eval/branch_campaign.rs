@@ -683,10 +683,8 @@ where
         } else {
             0
         };
-        let coverage_rebalanced_from_frozen = usize::from(rebalance_active_coverage_probe_v1(
-            &mut state.active,
-            &mut state.frozen,
-        ));
+        let coverage_rebalanced_from_frozen =
+            rebalance_active_coverage_probe_v1(&mut state.active, &mut state.frozen);
         state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
             state.strategy_requests,
             &state.active,
