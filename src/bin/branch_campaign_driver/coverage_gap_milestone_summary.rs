@@ -45,6 +45,8 @@ impl CoverageGapMilestoneTargetV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CoverageGapMilestoneBranchRowV1 {
     pub(super) bucket: String,
+    pub(super) branch_id: String,
+    pub(super) commands: Vec<String>,
     pub(super) target_key: String,
     pub(super) event_type: String,
     pub(super) label: String,
@@ -465,6 +467,8 @@ fn collect_branch_rows_v1(
         };
         rows.push(row_from_parts_v1(
             bucket,
+            &branch.branch_id,
+            &branch.commands,
             target_key_from_origin_v1(origin),
             &origin.event_type,
             &origin.label,
@@ -494,6 +498,8 @@ fn collect_discarded_rows_v1(
         };
         rows.push(row_from_parts_v1(
             "discarded",
+            &branch.branch_id,
+            &[],
             target_key_from_origin_v1(origin),
             &origin.event_type,
             &origin.label,
@@ -511,6 +517,8 @@ fn collect_discarded_rows_v1(
 
 fn row_from_parts_v1(
     bucket: &str,
+    branch_id: &str,
+    commands: &[String],
     target_key: String,
     event_type: &str,
     label: &str,
@@ -525,6 +533,8 @@ fn row_from_parts_v1(
 ) -> CoverageGapMilestoneBranchRowV1 {
     CoverageGapMilestoneBranchRowV1 {
         bucket: bucket.to_string(),
+        branch_id: branch_id.to_string(),
+        commands: commands.to_vec(),
         target_key,
         event_type: event_type.to_string(),
         label: label.to_string(),
@@ -848,6 +858,15 @@ fn format_target_group_detail_lines_v1(
     if !furthest.target_progress.is_empty() {
         lines.push(format!("    target_progress: {}", furthest.target_progress));
     }
+    if !furthest.branch_id.is_empty() {
+        lines.push(format!("    branch_id: {}", furthest.branch_id));
+    }
+    if !furthest.commands.is_empty() {
+        lines.push(format!(
+            "    commands: {}",
+            render_recent_command_path_v1(&furthest.commands)
+        ));
+    }
     if !furthest.deck_key.is_empty() {
         lines.push(format!("    deck_key: {}", furthest.deck_key));
     }
@@ -888,6 +907,16 @@ fn render_recent_choice_path_v1(choice_labels: &[String]) -> String {
     }
     let skipped = choice_labels.len() - MAX_CHOICES;
     let suffix = choice_labels[skipped..].join(" -> ");
+    format!("... {skipped} earlier -> {suffix}")
+}
+
+fn render_recent_command_path_v1(commands: &[String]) -> String {
+    const MAX_COMMANDS: usize = 10;
+    if commands.len() <= MAX_COMMANDS {
+        return commands.join(" -> ");
+    }
+    let skipped = commands.len() - MAX_COMMANDS;
+    let suffix = commands[skipped..].join(" -> ");
     format!("... {skipped} earlier -> {suffix}")
 }
 
@@ -965,6 +994,8 @@ mod tests {
     ) -> CoverageGapMilestoneBranchRowV1 {
         CoverageGapMilestoneBranchRowV1 {
             bucket: bucket.to_string(),
+            branch_id: format!("branch:{event_type}:{label}"),
+            commands: vec![format!("choose {label}")],
             target_key: format!("{event_type}:{label}"),
             event_type: event_type.to_string(),
             label: label.to_string(),
@@ -1065,6 +1096,13 @@ mod tests {
         abandoned.target_lane = "route:go:RestRoom:CompleteWithinBudget:no_first_elite".to_string();
         abandoned.frontier_title = "Combat".to_string();
         abandoned.stop_reason = "combat search did not find an executable complete win".to_string();
+        abandoned.branch_id = "branch-route-rest".to_string();
+        abandoned.commands = vec![
+            "rp 0".to_string(),
+            "smith 1".to_string(),
+            "go 6".to_string(),
+            "rp 1".to_string(),
+        ];
         abandoned.choice_labels = vec![
             "Skip card reward".to_string(),
             "Smith Bash".to_string(),
@@ -1084,6 +1122,8 @@ mod tests {
         assert!(text.contains("Target group details:"));
         assert!(text.contains("route | x=6 y=12 Rest {choose x=6 y=12 Rest}"));
         assert!(text.contains("furthest: A1F16 HP 80/80 deck 12 | abandoned | route"));
+        assert!(text.contains("branch_id: branch-route-rest"));
+        assert!(text.contains("commands: rp 0 -> smith 1 -> go 6 -> rp 1"));
         assert!(text
             .contains("choices: Skip card reward -> Smith Bash -> x=6 y=12 Rest -> Battle Trance"));
     }
@@ -1110,6 +1150,8 @@ mod tests {
         };
         let mut route = row_from_parts_v1(
             "abandoned",
+            "branch-route-rest",
+            &["smith 1".to_string(), "go 6".to_string()],
             "route:rest".to_string(),
             "route",
             "x=6 y=12 Rest",
@@ -1158,6 +1200,8 @@ mod tests {
         };
         let route = row_from_parts_v1(
             "abandoned",
+            "branch-route-automaton",
+            &["go 4".to_string()],
             "route:automaton".to_string(),
             "route",
             "x=4 y=10 Shop",
