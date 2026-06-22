@@ -115,6 +115,14 @@ Prints only missing route/map coverage-gap continuation targets.
 Summarizes milestone progress for only missing route/map coverage-gap targets.
 
 .EXAMPLE
+.\tools\campaign.ps1 -InspectScratchLatest -InspectCoverageGapMilestoneSummary -CoverageGapRouteMissing
+Summarizes milestone progress for the latest scratch campaign artifact.
+
+.EXAMPLE
+.\tools\campaign.ps1 -InspectScratchLatest -InspectCoverageGapMilestoneSummary -CoverageGapRoute
+Summarizes route/map coverage-gap progress for the latest scratch campaign artifact without filtering by current progress.
+
+.EXAMPLE
 .\tools\campaign.ps1 -ContinueCoverageGaps -Rounds 1
 Resumes selected unobserved journal candidate branches and advances one round.
 
@@ -214,6 +222,7 @@ param(
     [switch] $InspectCombatLab,
     [switch] $InspectFinalBossCombat,
     [switch] $InspectCoverageGapMilestoneSummary,
+    [switch] $InspectScratchLatest,
     [switch] $ProbeBoss,
     [switch] $DryRun,
     [switch] $NoProgress,
@@ -230,7 +239,9 @@ param(
     [switch] $ContinueTargets,
     [switch] $PlanCoverageGaps,
     [switch] $ContinueCoverageGaps,
+    [switch] $CoverageGapRoute,
     [switch] $CoverageGapRouteMissing,
+    [switch] $CoverageGapEventBoundary,
     [switch] $CoverageGapEventBoundaryMissing,
     [switch] $Scratch,
 
@@ -372,6 +383,26 @@ function Read-LatestCampaignMode {
     return $null
 }
 
+function Get-LatestScratchCampaignArtifact {
+    $ScratchReport = Get-ChildItem -LiteralPath $ScratchCampaignDir -Filter "*.campaign.json" -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if (-not $ScratchReport) {
+        throw "No scratch campaign report found under $ScratchCampaignDir."
+    }
+
+    $ScratchCheckpointPath = $ScratchReport.FullName -replace '\.campaign\.json$', '.checkpoint.json'
+    if (-not (Test-Path -LiteralPath $ScratchCheckpointPath)) {
+        throw "Latest scratch report has no matching checkpoint: $ScratchCheckpointPath"
+    }
+
+    return [pscustomobject]@{
+        ReportPath = $ScratchReport.FullName
+        CheckpointPath = $ScratchCheckpointPath
+        Label = $ScratchReport.BaseName -replace '\.campaign$', ''
+    }
+}
+
 function Assert-CoverageGapPresetCompatible {
     param(
         [string] $Preset,
@@ -457,7 +488,8 @@ if (
     $InspectLastAutoCombat -or
     $InspectCombatLab -or
     $InspectFinalBossCombat -or
-    $InspectCoverageGapMilestoneSummary
+    $InspectCoverageGapMilestoneSummary -or
+    $InspectScratchLatest
 ) {
     $Inspect = $true
 }
@@ -607,33 +639,41 @@ $RoundsBound = $CampaignBoundParameters.ContainsKey("Rounds")
 $UntilRoundBound = $CampaignBoundParameters.ContainsKey("UntilRound")
 $UntilMilestoneBound = $CampaignBoundParameters.ContainsKey("UntilMilestone") -and $UntilMilestone
 $MaxRoundsBound = $CampaignBoundParameters.ContainsKey("MaxRounds")
-if ($CoverageGapRouteMissing -and $CoverageGapEventBoundaryMissing) {
-    throw "Choose either -CoverageGapRouteMissing or -CoverageGapEventBoundaryMissing, not both."
+$CoverageGapRoutePreset = $CoverageGapRoute -or $CoverageGapRouteMissing
+$CoverageGapEventBoundaryPreset = $CoverageGapEventBoundary -or $CoverageGapEventBoundaryMissing
+if ($CoverageGapRoutePreset -and $CoverageGapEventBoundaryPreset) {
+    throw "Choose a route coverage-gap preset or an event-boundary coverage-gap preset, not both."
 }
-if ($CoverageGapRouteMissing) {
-    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapRouteMissing" -Name "CoverageGapBucket" -Actual $CoverageGapBucket -Expected "route"
-    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapRouteMissing" -Name "CoverageGapOriginSource" -Actual $CoverageGapOriginSource -Expected "map_decision_packet"
-    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapRouteMissing" -Name "CoverageGapProgress" -Actual $CoverageGapProgress -Expected "missing"
+if ($CoverageGapRoutePreset) {
+    $PresetName = if ($CoverageGapRouteMissing) { "-CoverageGapRouteMissing" } else { "-CoverageGapRoute" }
+    Assert-CoverageGapPresetCompatible -Preset $PresetName -Name "CoverageGapBucket" -Actual $CoverageGapBucket -Expected "route"
+    Assert-CoverageGapPresetCompatible -Preset $PresetName -Name "CoverageGapOriginSource" -Actual $CoverageGapOriginSource -Expected "map_decision_packet"
     if (-not $CoverageGapBucket) {
         $CoverageGapBucket = "route"
     }
     if (-not $CoverageGapOriginSource) {
         $CoverageGapOriginSource = "map_decision_packet"
     }
+}
+if ($CoverageGapRouteMissing) {
+    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapRouteMissing" -Name "CoverageGapProgress" -Actual $CoverageGapProgress -Expected "missing"
     if (-not $CoverageGapProgress) {
         $CoverageGapProgress = "missing"
     }
 }
-if ($CoverageGapEventBoundaryMissing) {
-    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapEventBoundaryMissing" -Name "CoverageGapBucket" -Actual $CoverageGapBucket -Expected "event"
-    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapEventBoundaryMissing" -Name "CoverageGapOriginSource" -Actual $CoverageGapOriginSource -Expected "event_boundary_packet"
-    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapEventBoundaryMissing" -Name "CoverageGapProgress" -Actual $CoverageGapProgress -Expected "missing"
+if ($CoverageGapEventBoundaryPreset) {
+    $PresetName = if ($CoverageGapEventBoundaryMissing) { "-CoverageGapEventBoundaryMissing" } else { "-CoverageGapEventBoundary" }
+    Assert-CoverageGapPresetCompatible -Preset $PresetName -Name "CoverageGapBucket" -Actual $CoverageGapBucket -Expected "event"
+    Assert-CoverageGapPresetCompatible -Preset $PresetName -Name "CoverageGapOriginSource" -Actual $CoverageGapOriginSource -Expected "event_boundary_packet"
     if (-not $CoverageGapBucket) {
         $CoverageGapBucket = "event"
     }
     if (-not $CoverageGapOriginSource) {
         $CoverageGapOriginSource = "event_boundary_packet"
     }
+}
+if ($CoverageGapEventBoundaryMissing) {
+    Assert-CoverageGapPresetCompatible -Preset "-CoverageGapEventBoundaryMissing" -Name "CoverageGapProgress" -Actual $CoverageGapProgress -Expected "missing"
     if (-not $CoverageGapProgress) {
         $CoverageGapProgress = "missing"
     }
@@ -1457,25 +1497,35 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
 }
 
 if ($Inspect) {
-    if (-not (Test-Path $LatestCheckpointPath)) {
-        throw "No previous campaign checkpoint found at $LatestCheckpointPath. Run .\tools\campaign.ps1 first."
+    $InspectCampaignPath = $LatestCampaignPath
+    $InspectCheckpointPath = $LatestCheckpointPath
+    $InspectSourceLabel = "latest"
+    if ($InspectScratchLatest) {
+        $ScratchArtifact = Get-LatestScratchCampaignArtifact
+        $InspectCampaignPath = $ScratchArtifact.ReportPath
+        $InspectCheckpointPath = $ScratchArtifact.CheckpointPath
+        $InspectSourceLabel = "scratch:$($ScratchArtifact.Label)"
     }
-    if (-not (Test-Path $LatestCampaignPath)) {
-        throw "No previous campaign report found at $LatestCampaignPath. Run .\tools\campaign.ps1 first."
+
+    if (-not (Test-Path $InspectCheckpointPath)) {
+        throw "No previous campaign checkpoint found at $InspectCheckpointPath. Run .\tools\campaign.ps1 first."
+    }
+    if (-not (Test-Path $InspectCampaignPath)) {
+        throw "No previous campaign report found at $InspectCampaignPath. Run .\tools\campaign.ps1 first."
     }
 
     if ($ExportLearningDataset) {
         $InspectArgs = @(
             "dataset",
-            "--inspect-checkpoint", "$LatestCheckpointPath",
-            "--inspect-report", "$LatestCampaignPath",
+            "--inspect-checkpoint", "$InspectCheckpointPath",
+            "--inspect-report", "$InspectCampaignPath",
             "--export-learning-dataset", "$ExportLearningDataset"
         )
     } else {
         $InspectArgs = @(
             "inspect",
-            "--inspect-checkpoint", "$LatestCheckpointPath",
-            "--inspect-report", "$LatestCampaignPath",
+            "--inspect-checkpoint", "$InspectCheckpointPath",
+            "--inspect-report", "$InspectCampaignPath",
             "--branch-examples", "$BranchExamples"
         )
     }
@@ -1576,7 +1626,7 @@ if ($Inspect) {
     $RenderedCommand = $RenderedExe + " " + ($RenderedInspectArgs -join " ")
 
     $InspectModeLabel = if ($ExportLearningDataset) { "dataset" } else { "inspect" }
-    Write-Host "mode=$InspectModeLabel latest branch campaign"
+    Write-Host "mode=$InspectModeLabel $InspectSourceLabel branch campaign"
     if ($Seed -gt 0) {
         Write-Host "seed=$Seed"
     }
@@ -1590,8 +1640,8 @@ if ($Inspect) {
     if ($InspectCoverageGapMilestoneSummary) {
         Write-Host "coverage-gap-filter=$CoverageGapFilterLabel"
     }
-    Write-Host "report=$LatestCampaignPath"
-    Write-Host "checkpoint=$LatestCheckpointPath"
+    Write-Host "report=$InspectCampaignPath"
+    Write-Host "checkpoint=$InspectCheckpointPath"
 
     if ($DryRun) {
         if ($NeedsBuild) {
