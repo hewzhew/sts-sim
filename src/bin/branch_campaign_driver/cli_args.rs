@@ -618,6 +618,12 @@ pub(super) struct Args {
     pub(super) coverage_gap_origin_source: Option<String>,
 
     #[arg(
+        long = "coverage-gap-progress",
+        help = "Only plan or execute coverage-gap targets with this existing progress, e.g. missing, target_only, extended"
+    )]
+    pub(super) coverage_gap_progress: Option<String>,
+
+    #[arg(
         long = "coverage-gap-budget-intent",
         default_value = "gap_closure",
         help = "Interpret coverage-gap continuation rounds as gap_closure or frontier_expansion in the result report"
@@ -1322,6 +1328,12 @@ struct DatasetPathArgs {
         help = "Only plan coverage-gap targets from this target_origin source, e.g. route_candidate_pool, map_decision_packet, event_boundary_packet"
     )]
     coverage_gap_origin_source: Option<String>,
+
+    #[arg(
+        long = "coverage-gap-progress",
+        help = "Only plan coverage-gap targets with this existing progress, e.g. missing, target_only, extended"
+    )]
+    coverage_gap_progress: Option<String>,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -1411,6 +1423,12 @@ struct ContinuationArgs {
         help = "Only execute coverage-gap targets from this target_origin source, e.g. route_candidate_pool, map_decision_packet, event_boundary_packet"
     )]
     coverage_gap_origin_source: Option<String>,
+
+    #[arg(
+        long = "coverage-gap-progress",
+        help = "Only execute coverage-gap targets with this existing progress, e.g. missing, target_only, extended"
+    )]
+    coverage_gap_progress: Option<String>,
 
     #[arg(
         long = "coverage-gap-budget-intent",
@@ -1520,6 +1538,7 @@ impl Args {
             coverage_gap_event_id: None,
             coverage_gap_lane: None,
             coverage_gap_origin_source: None,
+            coverage_gap_progress: None,
             coverage_gap_budget_intent: "gap_closure".to_string(),
             coverage_gap_execution_mode: "advance_rounds".to_string(),
             export_learning_dataset: None,
@@ -1730,6 +1749,7 @@ impl DatasetPathArgs {
         args.coverage_gap_event_id = self.coverage_gap_event_id;
         args.coverage_gap_lane = self.coverage_gap_lane;
         args.coverage_gap_origin_source = self.coverage_gap_origin_source;
+        args.coverage_gap_progress = self.coverage_gap_progress;
     }
 }
 
@@ -1749,6 +1769,7 @@ impl ContinuationArgs {
         args.coverage_gap_event_id = self.coverage_gap_event_id;
         args.coverage_gap_lane = self.coverage_gap_lane;
         args.coverage_gap_origin_source = self.coverage_gap_origin_source;
+        args.coverage_gap_progress = self.coverage_gap_progress;
         args.coverage_gap_budget_intent = self.coverage_gap_budget_intent;
         args.coverage_gap_execution_mode = self.coverage_gap_execution_mode;
     }

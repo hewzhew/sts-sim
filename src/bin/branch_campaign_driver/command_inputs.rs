@@ -267,6 +267,7 @@ fn coverage_gap_filter_from_args(args: &Args) -> CoverageGapContinuationFilterV1
         event_id: args.coverage_gap_event_id.clone(),
         lane: args.coverage_gap_lane.clone(),
         origin_source: args.coverage_gap_origin_source.clone(),
+        progress: args.coverage_gap_progress.clone(),
     }
 }
 
@@ -572,6 +573,8 @@ mod tests {
             "effect:event_card_reward",
             "--coverage-gap-origin-source",
             "event_boundary_packet",
+            "--coverage-gap-progress",
+            "missing",
         ])
         .expect("coverage gap filter should parse");
 
@@ -590,6 +593,10 @@ mod tests {
             input.coverage_gap_filter.origin_source.as_deref(),
             Some("event_boundary_packet")
         );
+        assert_eq!(
+            input.coverage_gap_filter.progress.as_deref(),
+            Some("missing")
+        );
     }
 
     #[test]
@@ -606,6 +613,8 @@ mod tests {
             "effect:event_card_reward",
             "--coverage-gap-origin-source",
             "event_boundary_packet",
+            "--coverage-gap-progress",
+            "missing",
         ])
         .expect("coverage gap filter should parse");
 
@@ -623,6 +632,10 @@ mod tests {
         assert_eq!(
             input.coverage_gap_filter.origin_source.as_deref(),
             Some("event_boundary_packet")
+        );
+        assert_eq!(
+            input.coverage_gap_filter.progress.as_deref(),
+            Some("missing")
         );
     }
 }

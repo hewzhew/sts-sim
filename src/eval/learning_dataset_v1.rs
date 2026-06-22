@@ -258,6 +258,8 @@ pub struct CoverageGapContinuationFilterV1 {
     pub lane: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<String>,
 }
 
 impl CoverageGapContinuationFilterV1 {
@@ -266,6 +268,7 @@ impl CoverageGapContinuationFilterV1 {
             && self.event_id.as_deref().is_none_or(str::is_empty)
             && self.lane.as_deref().is_none_or(str::is_empty)
             && self.origin_source.as_deref().is_none_or(str::is_empty)
+            && self.progress.as_deref().is_none_or(str::is_empty)
     }
 }
 
@@ -1367,6 +1370,15 @@ fn coverage_gap_target_matches_filter_v1(
         let normalized_filter = coverage_gap_normalize_filter_text_v1(origin_source);
         let source = coverage_gap_normalize_filter_text_v1(&target.target_origin.source);
         if source != normalized_filter && !source.contains(&normalized_filter) {
+            return false;
+        }
+    }
+    if let Some(progress) = filter.progress.as_deref().filter(|value| !value.is_empty()) {
+        let normalized_filter = coverage_gap_normalize_filter_text_v1(progress);
+        let progress = coverage_gap_normalize_filter_text_v1(
+            &coverage_gap_selected_target_progress_label_v1(target),
+        );
+        if progress != normalized_filter && !progress.contains(&normalized_filter) {
             return false;
         }
     }
@@ -2662,6 +2674,9 @@ pub fn render_coverage_gap_continuation_filter_v1(
     {
         parts.push(format!("origin_source={origin_source}"));
     }
+    if let Some(progress) = filter.progress.as_deref().filter(|value| !value.is_empty()) {
+        parts.push(format!("progress={progress}"));
+    }
     format!("CoverageGapFilterV1 {}", parts.join(" "))
 }
 
@@ -2810,17 +2825,23 @@ fn extend_coverage_gap_selected_target_progress_counts_v1(
     }
     let mut counts = BTreeMap::<String, usize>::new();
     for target in targets {
-        let progress = target
-            .existing_progress
-            .map(CoverageGapContinuationTargetProgressV1::as_str)
-            .unwrap_or("missing")
-            .to_string();
+        let progress = coverage_gap_selected_target_progress_label_v1(target);
         *counts.entry(progress).or_default() += 1;
     }
     lines.push("Selected target progress:".to_string());
     for (progress, count) in counts {
         lines.push(format!("  {} selected={count}", progress));
     }
+}
+
+fn coverage_gap_selected_target_progress_label_v1(
+    target: &CoverageGapContinuationTargetV1,
+) -> String {
+    target
+        .existing_progress
+        .map(CoverageGapContinuationTargetProgressV1::as_str)
+        .unwrap_or("missing")
+        .to_string()
 }
 
 fn extend_coverage_gap_target_progress_summary_lines_v1(
@@ -5422,6 +5443,26 @@ mod tests {
         assert!(rendered.contains("Selected target progress:"));
         assert!(rendered.contains("target_only selected=1"));
         assert!(rendered.contains("missing selected=1"));
+    }
+
+    #[test]
+    fn coverage_gap_filter_limits_selected_targets_to_progress() {
+        let mut target_only =
+            sample_reward_coverage_gap_target("rp 0", "Pommel Strike", "frontload", 0);
+        target_only.existing_progress = Some(CoverageGapContinuationTargetProgressV1::TargetOnly);
+        let missing = sample_reward_coverage_gap_target("rp 1", "Shrug It Off", "block", 1);
+
+        let filtered = filter_coverage_gap_targets_v1(
+            vec![target_only, missing],
+            &CoverageGapContinuationFilterV1 {
+                progress: Some("missing".to_string()),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].label, "Shrug It Off");
+        assert_eq!(filtered[0].existing_progress, None);
     }
 
     #[test]
