@@ -997,13 +997,15 @@ fn render_coverage_gap_result_audit_v1(
                     target_progress.to_string(),
                 ))
                 .or_default() += 1;
+            let origin_source = render_coverage_gap_target_origin_source_suffix_v1(target);
             target_lines.push(format!(
-                "  {}. {} {} {{{}}} lane={} seeded=yes final_bucket={} target_progress={}{} -> frontier={} {} stop={}",
+                "  {}. {} {} {{{}}} lane={}{} seeded=yes final_bucket={} target_progress={}{} -> frontier={} {} stop={}",
                 index + 1,
                 target.event_type,
                 compact_coverage_gap_audit_text_v1(&target.label, 40),
                 compact_coverage_gap_audit_text_v1(&target.command, 24),
                 compact_coverage_gap_audit_text_v1(&lane, 72),
+                origin_source,
                 result.outcome,
                 target_progress,
                 render_coverage_gap_discard_reason_suffix_v1(result),
@@ -1031,13 +1033,15 @@ fn render_coverage_gap_result_audit_v1(
             } else {
                 ""
             };
+            let origin_source = render_coverage_gap_target_origin_source_suffix_v1(target);
             target_lines.push(format!(
-                "  {}. missing target {} {} {{{}}} lane={} seeded=yes final_bucket=missing diagnostic=not_in_final_buckets{} parent={}",
+                "  {}. missing target {} {} {{{}}} lane={}{} seeded=yes final_bucket=missing diagnostic=not_in_final_buckets{} parent={}",
                 index + 1,
                 target.event_type,
                 compact_coverage_gap_audit_text_v1(&target.label, 40),
                 compact_coverage_gap_audit_text_v1(&target.command, 24),
                 compact_coverage_gap_audit_text_v1(&lane, 72),
+                origin_source,
                 discarded_tracking,
                 compact_coverage_gap_audit_text_v1(&target.parent_branch_id, 48)
             ));
@@ -1119,6 +1123,16 @@ fn render_coverage_gap_result_audit_v1(
         lines.extend(target_lines);
     }
     lines.join("\n")
+}
+
+fn render_coverage_gap_target_origin_source_suffix_v1(
+    target: &CoverageGapContinuationTargetV1,
+) -> String {
+    if target.target_origin.source.is_empty() {
+        String::new()
+    } else {
+        format!(" source={}", target.target_origin.source)
+    }
 }
 
 fn render_coverage_gap_continuation_delta_v1(
@@ -1639,6 +1653,64 @@ mod tests {
         assert!(rendered.contains("final_bucket=active target_progress=extended"));
         assert!(rendered.contains("event Leave {event 2}"));
         assert!(rendered.contains("final_bucket=frozen target_progress=target_only"));
+    }
+
+    #[test]
+    fn coverage_gap_result_audit_reports_target_origin_source() {
+        let mut target = coverage_gap_test_target("route", "go 1", "x=1 y=2 Shop", 0);
+        target.target_origin.source = "map_decision_packet".to_string();
+        let execution = CoverageGapContinuationExecutionPlanV1 {
+            schema_name: "CoverageGapContinuationExecutionPlanV1".to_string(),
+            schema_version: 3,
+            label_role: "campaign_observation_not_teacher".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            requested_target_count: 1,
+            selected_branch_count: 1,
+            skipped_target_count: 0,
+            bucket_summaries: Vec::new(),
+            lane_summaries: Vec::new(),
+            targets: vec![target.clone()],
+        };
+        let report = BranchCampaignReportV1 {
+            schema_name: "BranchCampaignV1".to_string(),
+            schema_version: 1,
+            seed: 1,
+            run_domain: Default::default(),
+            run_prelude: Default::default(),
+            rounds_completed: 1,
+            stop_reason: "max_rounds".to_string(),
+            active: vec![coverage_gap_test_result_branch(
+                &target,
+                BranchCampaignBranchStatusV1::Active,
+                "Combat",
+                "advanced after target",
+                1,
+                5,
+                72,
+                80,
+            )],
+            frozen: Vec::new(),
+            victories: Vec::new(),
+            dead: Vec::new(),
+            abandoned: Vec::new(),
+            stuck: Vec::new(),
+            discarded_count: 0,
+            discarded_examples: Vec::new(),
+            discarded_branches: Vec::new(),
+            strategy_requests: Vec::new(),
+            route_evidence: Default::default(),
+            combat_retry_ledger: Default::default(),
+            strategic_signals: Default::default(),
+            state_store: Default::default(),
+            journal: Default::default(),
+            rounds: Vec::new(),
+        };
+
+        let rendered = render_coverage_gap_result_audit_v1(&execution, &report);
+
+        assert!(rendered.contains("route x=1 y=2 Shop {go 1}"));
+        assert!(rendered.contains("source=map_decision_packet"));
     }
 
     #[test]
