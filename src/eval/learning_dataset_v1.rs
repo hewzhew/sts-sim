@@ -1429,9 +1429,34 @@ fn coverage_gap_route_selection_lane_v1(target: &CoverageGapContinuationTargetV1
         "no_first_elite"
     };
     format!(
-        "route:{}:{}:{}:{}",
-        route.action_kind, route.room_type, route.projection_coverage, elite_lane
+        "route:{}:{}:{}:{}:{}",
+        route.action_kind,
+        route.room_type,
+        route.projection_coverage,
+        elite_lane,
+        coverage_gap_route_path_pressure_lane_v1(route)
     )
+}
+
+fn coverage_gap_route_path_pressure_lane_v1(route: &CoverageGapRouteTargetOriginV1) -> String {
+    let shop_lane = match route.path.first_shop_floor {
+        Some(floor) if floor <= 5 => "early_shop",
+        Some(_) => "late_shop",
+        None => "no_shop",
+    };
+    let fire_lane = match route.path.first_fire_floor {
+        Some(floor) if floor <= 6 => "early_fire",
+        Some(_) => "late_fire",
+        None => "no_fire",
+    };
+    let pressure_lane = if route.path.max_damage_rooms_before_recovery <= 1 {
+        "low_pre_recovery_damage"
+    } else if route.path.max_damage_rooms_before_recovery <= 3 {
+        "medium_pre_recovery_damage"
+    } else {
+        "high_pre_recovery_damage"
+    };
+    format!("{shop_lane}:{fire_lane}:{pressure_lane}")
 }
 
 pub fn coverage_gap_continuation_target_lane_v1(
@@ -4121,6 +4146,31 @@ mod tests {
     }
 
     #[test]
+    fn coverage_gap_route_targets_round_robin_by_path_pressure_lane() {
+        let mut safe_a =
+            sample_route_coverage_gap_target("go 0", "Safe Monster A", "MonsterRoom", 0);
+        set_route_path_pressure_for_test(&mut safe_a, Some(3), Some(6), 0, 1);
+        let mut safe_b =
+            sample_route_coverage_gap_target("go 1", "Safe Monster B", "MonsterRoom", 1);
+        set_route_path_pressure_for_test(&mut safe_b, Some(3), Some(6), 0, 1);
+        let mut risky =
+            sample_route_coverage_gap_target("go 2", "Pressure Monster", "MonsterRoom", 2);
+        set_route_path_pressure_for_test(&mut risky, None, Some(8), 3, 5);
+
+        let selected = select_coverage_gap_targets_by_type_v1(vec![safe_a, safe_b, risky], 2);
+        let labels = selected
+            .iter()
+            .map(|target| target.label.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(labels, vec!["Safe Monster A", "Pressure Monster"]);
+        assert!(coverage_gap_continuation_target_lane_v1(&selected[0])
+            .contains("early_shop:early_fire:low_pre_recovery_damage"));
+        assert!(coverage_gap_continuation_target_lane_v1(&selected[1])
+            .contains("no_shop:late_fire:high_pre_recovery_damage"));
+    }
+
+    #[test]
     fn coverage_gap_reward_targets_round_robin_by_semantic_lane() {
         let targets = vec![
             sample_reward_coverage_gap_target("rp 0", "Frontload A", "role:frontload", 0),
@@ -5046,6 +5096,20 @@ mod tests {
             },
             milestone: "route_frontier".to_string(),
         }
+    }
+
+    fn set_route_path_pressure_for_test(
+        target: &mut CoverageGapContinuationTargetV1,
+        first_shop_floor: Option<i32>,
+        first_fire_floor: Option<i32>,
+        min_damage_rooms_before_recovery: usize,
+        max_damage_rooms_before_recovery: usize,
+    ) {
+        let route = target.target_origin.route.as_mut().expect("route target");
+        route.path.first_shop_floor = first_shop_floor;
+        route.path.first_fire_floor = first_fire_floor;
+        route.path.min_damage_rooms_before_recovery = min_damage_rooms_before_recovery;
+        route.path.max_damage_rooms_before_recovery = max_damage_rooms_before_recovery;
     }
 
     fn sample_campaign_report_with_branches(
