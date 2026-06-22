@@ -4750,8 +4750,8 @@ mod tests {
         let context = LearningDatasetExportContextV1 {
             exporter_git_commit: Some("abc123".to_string()),
             exporter_git_dirty: Some(true),
-            source_report_path: Some("latest.campaign.json".to_string()),
-            source_checkpoint_path: Some("latest.checkpoint.json".to_string()),
+            source_report_path: Some("artifact.campaign.json".to_string()),
+            source_checkpoint_path: Some("artifact.checkpoint.json".to_string()),
         };
 
         let samples = learning_records_from_branch_outcomes_v1(&records, context);

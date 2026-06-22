@@ -32,6 +32,22 @@ function Format-CommandLine {
     return $RenderedExe + " " + ($RenderedArgs -join " ")
 }
 
+function Test-ExtraCombatOptionKey {
+    param(
+        [string[]] $Tokens,
+        [string[]] $Keys
+    )
+
+    foreach ($Arg in $Tokens) {
+        foreach ($Key in $Keys) {
+            if ($Arg -match "(^|\s|=)$([regex]::Escape($Key))=") {
+                return $true
+            }
+        }
+    }
+    return $false
+}
+
 function Write-CampaignWrapperManifest {
     param(
         [string] $Path,

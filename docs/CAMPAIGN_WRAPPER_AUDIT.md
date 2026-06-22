@@ -167,14 +167,38 @@ This helper owns:
 - logged driver invocation
 - common wrapper manifest fields
 
+Milestone helpers now live in:
+
+```text
+tools/campaign_milestones.ps1
+```
+
+This helper owns:
+
+- milestone status extraction from a report
+- milestone resume driver argument rendering
+- the wrapper-level milestone continuation loop
+
+Coverage-gap wrapper helpers now live in:
+
+```text
+tools/campaign_coverage_gaps.ps1
+```
+
+This helper owns:
+
+- coverage-gap preset compatibility checks
+- coverage-gap filter argument rendering
+- coverage-gap milestone summary commands
+- coverage-gap wrapper manifest shape
+
 ## Still Move Out Of Wrapper
 
 These pieces are useful but should not live in the main script long term:
 
-- milestone loop helpers
-- coverage-gap filter construction
-- coverage-gap continuation orchestration
 - inspect flag to driver flag mapping
+- coverage-gap continuation command assembly; the helper now owns filters and
+  manifests, but the main wrapper still assembles the long driver argument list
 
 ## Candidates To Delete Or Degrade
 
@@ -212,8 +236,8 @@ If the answer is no, do not add it to `tools/campaign.ps1`.
 
 ## Next Cleanup Order
 
-1. Move milestone loop helpers out of the main wrapper.
-2. Move coverage-gap filter construction and wrapper orchestration out of the main wrapper.
+1. Move inspect flag-to-driver-flag mapping out of the main wrapper.
+2. Continue shrinking coverage-gap command assembly into a typed helper input.
 3. Reassess whether targeted continuation still earns its wrapper surface.
 
 This sequence reduces cognitive load without changing campaign strategy.

@@ -164,14 +164,14 @@ mod tests {
             "branch_campaign_driver",
             "inspect",
             "--inspect-checkpoint",
-            "latest.checkpoint.json",
+            "artifact.checkpoint.json",
         ])
         .expect("inspect args parse");
         let decision_observation_args = parse_args_from([
             "branch_campaign_driver",
             "inspect",
             "--inspect-report",
-            "latest.campaign.json",
+            "artifact.campaign.json",
             "--inspect-decision-observations",
         ])
         .expect("decision observation inspect args parse");
@@ -179,7 +179,7 @@ mod tests {
             "branch_campaign_driver",
             "inspect",
             "--inspect-report",
-            "latest.campaign.json",
+            "artifact.campaign.json",
             "--inspect-journal",
         ])
         .expect("journal inspect args parse");
@@ -187,7 +187,7 @@ mod tests {
             "branch_campaign_driver",
             "inspect",
             "--inspect-report",
-            "latest.campaign.json",
+            "artifact.campaign.json",
             "--inspect-lineage-decisions",
         ])
         .expect("lineage decision inspect args parse");
@@ -195,7 +195,7 @@ mod tests {
             "branch_campaign_driver",
             "inspect",
             "--inspect-report",
-            "latest.campaign.json",
+            "artifact.campaign.json",
             "--inspect-coverage-gap-milestone-summary",
             "--coverage-gap-milestone-target",
             "Act2Start",
@@ -211,9 +211,9 @@ mod tests {
             "branch_campaign_driver",
             "inspect",
             "--inspect-checkpoint",
-            "latest.checkpoint.json",
+            "artifact.checkpoint.json",
             "--inspect-report",
-            "latest.campaign.json",
+            "artifact.campaign.json",
             "--inspect-coverage-gap-target-state",
             "--coverage-gap-milestone-target",
             "Act2Start",
@@ -319,7 +319,7 @@ mod tests {
             "branch_campaign_driver",
             "run",
             "--inspect-checkpoint",
-            "latest.checkpoint.json",
+            "artifact.checkpoint.json",
         ])
         .expect_err("run should not expose inspection flags");
         let inspect_err =
@@ -336,7 +336,7 @@ mod tests {
         let args = parse_args_from([
             "branch_campaign_driver",
             "--inspect-checkpoint",
-            "latest.checkpoint.json",
+            "artifact.checkpoint.json",
             "--preset",
             "quick",
         ])
@@ -344,7 +344,7 @@ mod tests {
 
         assert_eq!(
             args.inspect_checkpoint,
-            Some(PathBuf::from("latest.checkpoint.json"))
+            Some(PathBuf::from("artifact.checkpoint.json"))
         );
         assert_eq!(args.preset, Some(BranchCampaignPresetV1::Quick));
         assert_eq!(args.explicit_command, None);
@@ -355,9 +355,9 @@ mod tests {
         let args = parse_args_from([
             "branch_campaign_driver",
             "--inspect-report",
-            "latest.campaign.json",
+            "artifact.campaign.json",
             "--resume-checkpoint",
-            "latest.checkpoint.json",
+            "artifact.checkpoint.json",
             "--plan-coverage-gap-continuation",
         ])
         .expect("coverage gap plan args parse");
@@ -369,7 +369,7 @@ mod tests {
         let input = DatasetCommandInput::from_args(&args);
         assert_eq!(
             input.resume_checkpoint,
-            Some(PathBuf::from("latest.checkpoint.json"))
+            Some(PathBuf::from("artifact.checkpoint.json"))
         );
     }
 
@@ -447,9 +447,9 @@ mod tests {
         let args = parse_args_from([
             "branch_campaign_driver",
             "--inspect-checkpoint",
-            "latest.checkpoint.json",
+            "artifact.checkpoint.json",
             "--inspect-report",
-            "latest.campaign.json",
+            "artifact.campaign.json",
             "--inspect-search",
             "--combat-search-option",
             "wall_ms=5000",
