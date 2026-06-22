@@ -449,6 +449,87 @@ function Get-LatestScratchCampaignArtifact {
     }
 }
 
+function Get-CampaignArtifactRunConfig {
+    param(
+        [string] $ReportPath,
+        [string] $CheckpointPath,
+        [string] $ManifestPath
+    )
+
+    $Config = [ordered]@{
+        Seed = $null
+        Ascension = $null
+        Class = $null
+        Mode = $null
+    }
+
+    if ($ManifestPath -and (Test-Path -LiteralPath $ManifestPath)) {
+        try {
+            $Manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+            if ($Manifest.seed -ne $null) { $Config.Seed = [long] $Manifest.seed }
+            if ($Manifest.ascension -ne $null) { $Config.Ascension = [int] $Manifest.ascension }
+            if ($Manifest.class) { $Config.Class = ([string] $Manifest.class).ToLowerInvariant() }
+            if ($Manifest.mode) { $Config.Mode = ([string] $Manifest.mode).ToLowerInvariant() }
+        } catch {
+            # Manifest is advisory; fall back to checkpoint/report fields below.
+        }
+    }
+
+    if ($CheckpointPath -and (Test-Path -LiteralPath $CheckpointPath)) {
+        try {
+            $Checkpoint = Get-Content -LiteralPath $CheckpointPath -Raw | ConvertFrom-Json
+            if ($Checkpoint.sessions -and $Checkpoint.sessions.Count -gt 0) {
+                $RunState = $Checkpoint.sessions[0].session.run_state
+                if ($RunState) {
+                    if ($Config.Seed -eq $null -and $RunState.seed -ne $null) { $Config.Seed = [long] $RunState.seed }
+                    if ($Config.Ascension -eq $null -and $RunState.ascension_level -ne $null) { $Config.Ascension = [int] $RunState.ascension_level }
+                    if ($Config.Class -eq $null -and $RunState.player_class) { $Config.Class = ([string] $RunState.player_class).ToLowerInvariant() }
+                }
+            }
+        } catch {
+            # Checkpoint may be absent or from an older schema; report remains a fallback.
+        }
+    }
+
+    if ($ReportPath -and (Test-Path -LiteralPath $ReportPath)) {
+        try {
+            $Report = Get-Content -LiteralPath $ReportPath -Raw | ConvertFrom-Json
+            if ($Config.Seed -eq $null -and $Report.seed -ne $null) { $Config.Seed = [long] $Report.seed }
+        } catch {
+            # Older reports can still be useful for inspect paths; keep missing fields unset.
+        }
+    }
+
+    return [pscustomobject] $Config
+}
+
+function Get-CampaignSourceArtifact {
+    param(
+        [bool] $UseScratchLatest
+    )
+
+    if ($UseScratchLatest) {
+        $ScratchArtifact = Get-LatestScratchCampaignArtifact
+        return [pscustomobject]@{
+            ReportPath = $ScratchArtifact.ReportPath
+            CheckpointPath = $ScratchArtifact.CheckpointPath
+            ManifestPath = $ScratchArtifact.ManifestPath
+            LogPath = $ScratchArtifact.LogPath
+            CommandPath = $ScratchArtifact.CommandPath
+            Label = "scratch:$($ScratchArtifact.Label)"
+        }
+    }
+
+    return [pscustomobject]@{
+        ReportPath = $LatestCampaignPath
+        CheckpointPath = $LatestCheckpointPath
+        ManifestPath = $LatestManifestPath
+        LogPath = $LatestLogPath
+        CommandPath = $LatestCommandPath
+        Label = "latest"
+    }
+}
+
 function Format-CampaignArtifactSize {
     param(
         [long] $Bytes
@@ -688,6 +769,13 @@ function Format-CoverageGapFilterLabel {
     return $Parts -join " "
 }
 
+$ScratchLatestIsContinuationSource = $InspectScratchLatest -and (
+    $PlanTargets -or
+    $ContinueTargets -or
+    $PlanCoverageGaps -or
+    $ContinueCoverageGaps
+)
+
 if (
     $InspectArtifacts -or
     $InspectState -or
@@ -705,7 +793,7 @@ if (
     $InspectFinalBossCombat -or
     $InspectCoverageGapMilestoneSummary -or
     $InspectCoverageGapTargetState -or
-    $InspectScratchLatest
+    ($InspectScratchLatest -and -not $ScratchLatestIsContinuationSource)
 ) {
     $Inspect = $true
 }
@@ -1438,11 +1526,41 @@ function Test-DriverNeedsBuild {
 $NeedsBuild = $Build -or (Test-DriverNeedsBuild $DriverExe)
 
 if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps) {
-    if (-not (Test-Path $LatestCampaignPath)) {
-        throw "No previous campaign report found at $LatestCampaignPath. Run .\tools\campaign.ps1 first."
+    if ($InspectScratchLatest -and ($PlanTargets -or $ContinueTargets)) {
+        throw "-InspectScratchLatest is not supported for targeted continuation yet; use inspect or coverage-gap continuation."
     }
-    if (-not (Test-Path $LatestCheckpointPath)) {
-        throw "No previous campaign checkpoint found at $LatestCheckpointPath. Run .\tools\campaign.ps1 first."
+    if ($InspectScratchLatest -and $ContinueCoverageGaps -and -not $Scratch) {
+        throw "-InspectScratchLatest with -ContinueCoverageGaps requires -Scratch so scratch source data is not written back to latest."
+    }
+
+    $ContinuationSource = Get-CampaignSourceArtifact -UseScratchLatest $InspectScratchLatest
+    $SourceCampaignPath = $ContinuationSource.ReportPath
+    $SourceCheckpointPath = $ContinuationSource.CheckpointPath
+    $SourceManifestPath = $ContinuationSource.ManifestPath
+    $SourceLabel = $ContinuationSource.Label
+
+    if (-not (Test-Path $SourceCampaignPath)) {
+        throw "No previous campaign report found at $SourceCampaignPath. Run .\tools\campaign.ps1 first."
+    }
+    if (-not (Test-Path $SourceCheckpointPath)) {
+        throw "No previous campaign checkpoint found at $SourceCheckpointPath. Run .\tools\campaign.ps1 first."
+    }
+
+    $SourceRunConfig = Get-CampaignArtifactRunConfig `
+        -ReportPath $SourceCampaignPath `
+        -CheckpointPath $SourceCheckpointPath `
+        -ManifestPath $SourceManifestPath
+    if ((-not $PSBoundParameters.ContainsKey("Seed") -or $Seed -le 0) -and $SourceRunConfig.Seed -ne $null) {
+        $Seed = [long] $SourceRunConfig.Seed
+    }
+    if (-not $AscensionBound -and $SourceRunConfig.Ascension -ne $null) {
+        $Ascension = [int] $SourceRunConfig.Ascension
+    }
+    if (-not $ClassBound -and $SourceRunConfig.Class) {
+        $Class = [string] $SourceRunConfig.Class
+    }
+    if (-not $CampaignBoundParameters.ContainsKey("Mode") -and $SourceRunConfig.Mode) {
+        $Mode = [string] $SourceRunConfig.Mode
     }
 
     $TargetDecisionOutcomePath = if ($DecisionOutcomeDataset) {
@@ -1454,8 +1572,8 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     }
     $CoveragePlanArgs = @(
         "dataset",
-        "--inspect-report", "$LatestCampaignPath",
-        "--inspect-checkpoint", "$LatestCheckpointPath",
+        "--inspect-report", "$SourceCampaignPath",
+        "--inspect-checkpoint", "$SourceCheckpointPath",
         "--plan-coverage-gap-continuation",
         "--coverage-gap-limit", "$CoverageGapLimit",
         "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision"
@@ -1463,15 +1581,15 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     $CoveragePlanArgs += $CoverageGapFilterArgs
     $ExportDecisionArgs = @(
         "dataset",
-        "--inspect-report", "$LatestCampaignPath",
-        "--inspect-checkpoint", "$LatestCheckpointPath",
+        "--inspect-report", "$SourceCampaignPath",
+        "--inspect-checkpoint", "$SourceCheckpointPath",
         "--export-decision-outcome-dataset", "$TargetDecisionOutcomePath"
     )
     $PlanTargetArgs = @("continue", "--plan-targeted-continuation", "$TargetDecisionOutcomePath")
     $ExportDecisionAfterArgs = @(
         "dataset",
-        "--inspect-report", "$LatestCampaignPath",
-        "--inspect-checkpoint", "$LatestCheckpointPath",
+        "--inspect-report", "$RunOutputCampaignPath",
+        "--inspect-checkpoint", "$RunOutputCheckpointPath",
         "--export-decision-outcome-dataset", "$LatestDecisionOutcomeAfterPath"
     )
     $ContinuationEffectArgs = @(
@@ -1480,7 +1598,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         "--continuation-effect-after", "$LatestDecisionOutcomeAfterPath"
     )
 
-    $ResumeReport = Get-Content -LiteralPath $LatestCampaignPath -Raw | ConvertFrom-Json
+    $ResumeReport = Get-Content -LiteralPath $SourceCampaignPath -Raw | ConvertFrom-Json
     $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
     $ContinuationRounds = 1
     $ContinuationRoundBudgetArgs = @("--rounds", "1")
@@ -1546,8 +1664,8 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         $ContinueTargetArgs += @("--ascension-domain", "a$Ascension")
     }
     $ContinueTargetArgs += @(
-        "--resume", "$LatestCampaignPath",
-        "--resume-checkpoint", "$LatestCheckpointPath",
+        "--resume", "$SourceCampaignPath",
+        "--resume-checkpoint", "$SourceCheckpointPath",
         "--execute-targeted-continuation", "$TargetDecisionOutcomePath",
         "--targeted-continuation-limit", "$TargetedContinuationLimit",
         "--targeted-continuation-candidates-per-target", "$TargetedContinuationCandidatesPerTarget",
@@ -1566,8 +1684,8 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         $ContinueCoverageGapArgs += @("--ascension-domain", "a$Ascension")
     }
     $ContinueCoverageGapArgs += @(
-        "--resume", "$LatestCampaignPath",
-        "--resume-checkpoint", "$LatestCheckpointPath",
+        "--resume", "$SourceCampaignPath",
+        "--resume-checkpoint", "$SourceCheckpointPath",
         "--execute-coverage-gap-continuation",
         "--coverage-gap-limit", "$CoverageGapLimit",
         "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision",
@@ -1663,8 +1781,9 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
             -CommandKind "coverage_gap_continuation" `
             -PrimaryDriverArgs $ContinueCoverageGapArgs `
             -PrimaryDriverCommand (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
-        $Manifest["source_report"] = "$LatestCampaignPath"
-        $Manifest["source_checkpoint"] = "$LatestCheckpointPath"
+        $Manifest["source_label"] = "$SourceLabel"
+        $Manifest["source_report"] = "$SourceCampaignPath"
+        $Manifest["source_checkpoint"] = "$SourceCheckpointPath"
         $Manifest["coverage_gap"] = [ordered]@{
             limit = $CoverageGapLimit
             candidates_per_decision = $CoverageGapCandidatesPerDecision
@@ -1695,7 +1814,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     }
 
     $ContinuationModeLabel = if ($PlanCoverageGaps -or $ContinueCoverageGaps) { "coverage-gap-continuation" } else { "targeted-continuation" }
-    Write-Host "mode=$ContinuationModeLabel latest branch campaign"
+    Write-Host "mode=$ContinuationModeLabel branch campaign"
     Write-Host "seed=$Seed"
     Write-Host "ascension=A$Ascension domain=a$Ascension class=$Class"
     Write-Host "build=$BuildProfile exe=$DriverExe"
@@ -1704,15 +1823,18 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     } else {
         Write-Host "build-needed=no"
     }
+    Write-Host "source=$SourceLabel"
+    Write-Host "source-report=$SourceCampaignPath"
+    Write-Host "source-checkpoint=$SourceCheckpointPath"
     if ($Scratch) {
         Write-Host "scratch=yes label=$ScratchLabel"
-        Write-Host "source-report=$LatestCampaignPath"
-        Write-Host "source-checkpoint=$LatestCheckpointPath"
         Write-Host "report=$RunOutputCampaignPath"
         Write-Host "checkpoint=$RunOutputCheckpointPath"
     } else {
-        Write-Host "report=$LatestCampaignPath"
-        Write-Host "checkpoint=$LatestCheckpointPath"
+        if ($ContinueTargets -or $ContinueCoverageGaps) {
+            Write-Host "report=$RunOutputCampaignPath"
+            Write-Host "checkpoint=$RunOutputCheckpointPath"
+        }
     }
     if ($PlanTargets -or $ContinueTargets) {
         Write-Host "decision-outcomes=$TargetDecisionOutcomePath"
