@@ -627,6 +627,8 @@ pub struct CoverageGapContinuationExecutionPlanV1 {
     pub bucket_summaries: Vec<CoverageGapContinuationBucketSummaryV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lane_summaries: Vec<CoverageGapContinuationLaneSummaryV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub origin_summaries: Vec<CoverageGapContinuationOriginSummaryV1>,
     pub targets: Vec<CoverageGapContinuationTargetV1>,
 }
 
@@ -2577,6 +2579,10 @@ pub fn coverage_gap_continuation_execution_plan_v1(
             &targets,
         ),
         lane_summaries: coverage_gap_execution_lane_summaries_v1(&plan.lane_summaries, &targets),
+        origin_summaries: coverage_gap_execution_origin_summaries_v1(
+            &plan.origin_summaries,
+            &targets,
+        ),
         targets,
     }
 }
@@ -2588,6 +2594,8 @@ pub fn refresh_coverage_gap_execution_bucket_summaries_v1(
         coverage_gap_execution_bucket_summaries_v1(&execution.bucket_summaries, &execution.targets);
     execution.lane_summaries =
         coverage_gap_execution_lane_summaries_v1(&execution.lane_summaries, &execution.targets);
+    execution.origin_summaries =
+        coverage_gap_execution_origin_summaries_v1(&execution.origin_summaries, &execution.targets);
 }
 
 fn coverage_gap_execution_bucket_summaries_v1(
@@ -2656,6 +2664,47 @@ fn coverage_gap_execution_lane_summaries_v1(
             .cmp(&left.selected_target_count)
             .then_with(|| right.eligible_target_count.cmp(&left.eligible_target_count))
             .then_with(|| left.lane.cmp(&right.lane))
+    });
+    summaries
+}
+
+fn coverage_gap_execution_origin_summaries_v1(
+    plan_origin_summaries: &[CoverageGapContinuationOriginSummaryV1],
+    targets: &[CoverageGapContinuationTargetV1],
+) -> Vec<CoverageGapContinuationOriginSummaryV1> {
+    let mut origins = plan_origin_summaries
+        .iter()
+        .map(|summary| {
+            let mut summary = summary.clone();
+            summary.selected_target_count = 0;
+            summary.deferred_target_count = summary.eligible_target_count;
+            (summary.source.clone(), summary)
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for target in targets {
+        let source = coverage_gap_target_origin_source_label_v1(target);
+        let summary = origins.entry(source.clone()).or_insert_with(|| {
+            CoverageGapContinuationOriginSummaryV1 {
+                source,
+                ..Default::default()
+            }
+        });
+        summary.selected_target_count = summary.selected_target_count.saturating_add(1);
+    }
+
+    let mut summaries = origins.into_values().collect::<Vec<_>>();
+    for summary in &mut summaries {
+        summary.deferred_target_count = summary
+            .eligible_target_count
+            .saturating_sub(summary.selected_target_count);
+    }
+    summaries.sort_by(|left, right| {
+        right
+            .selected_target_count
+            .cmp(&left.selected_target_count)
+            .then_with(|| right.eligible_target_count.cmp(&left.eligible_target_count))
+            .then_with(|| left.source.cmp(&right.source))
     });
     summaries
 }
@@ -2785,6 +2834,7 @@ pub fn render_coverage_gap_execution_plan_v1(
         }
     }
     extend_coverage_gap_lane_summary_lines_v1(&mut lines, &execution.lane_summaries);
+    extend_coverage_gap_origin_summary_lines_v1(&mut lines, &execution.origin_summaries);
     extend_coverage_gap_selected_target_lane_counts_v1(&mut lines, &execution.targets);
     extend_coverage_gap_selected_target_origin_counts_v1(&mut lines, &execution.targets);
     extend_coverage_gap_selected_target_progress_counts_v1(&mut lines, &execution.targets);
@@ -5475,6 +5525,9 @@ mod tests {
         assert!(rendered_execution.contains("reward selected=0/2 unobserved=9"));
         assert!(rendered_execution.contains("Selected target lanes:"));
         assert!(rendered_execution.contains("route:"));
+        assert!(rendered_execution.contains("Target origin coverage:"));
+        assert!(rendered_execution.contains("route_candidate_pool selected=1/2"));
+        assert!(rendered_execution.contains("journal_candidate selected=0/2"));
         assert!(rendered_execution.contains("Selected target origins:"));
         assert!(rendered_execution.contains("route_candidate_pool selected=1"));
     }

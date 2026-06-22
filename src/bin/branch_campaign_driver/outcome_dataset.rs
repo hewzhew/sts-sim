@@ -1533,6 +1533,7 @@ mod tests {
             skipped_target_count: 0,
             bucket_summaries: Vec::new(),
             lane_summaries: Vec::new(),
+            origin_summaries: Vec::new(),
             targets: vec![reward_target.clone(), route_target.clone()],
         };
         let mut report = BranchCampaignReportV1 {
@@ -1636,6 +1637,7 @@ mod tests {
             skipped_target_count: 0,
             bucket_summaries: Vec::new(),
             lane_summaries: Vec::new(),
+            origin_summaries: Vec::new(),
             targets: vec![extended_target.clone(), target_only_target.clone()],
         };
         let mut extended_branch = coverage_gap_test_result_branch(
@@ -1720,6 +1722,7 @@ mod tests {
             skipped_target_count: 0,
             bucket_summaries: Vec::new(),
             lane_summaries: Vec::new(),
+            origin_summaries: Vec::new(),
             targets: vec![target.clone()],
         };
         let report = BranchCampaignReportV1 {
@@ -1780,6 +1783,7 @@ mod tests {
             skipped_target_count: 0,
             bucket_summaries: Vec::new(),
             lane_summaries: Vec::new(),
+            origin_summaries: Vec::new(),
             targets: vec![route_target.clone(), reward_target.clone()],
         };
         let report = BranchCampaignReportV1 {
@@ -2031,6 +2035,7 @@ mod tests {
             skipped_target_count: 0,
             bucket_summaries: Vec::new(),
             lane_summaries: Vec::new(),
+            origin_summaries: Vec::new(),
             targets: vec![reward_target, route_target],
         };
 
@@ -2154,6 +2159,7 @@ mod tests {
             skipped_target_count: 0,
             bucket_summaries: Vec::new(),
             lane_summaries: Vec::new(),
+            origin_summaries: Vec::new(),
             targets: vec![target],
         };
         let discarded_target =
@@ -2451,6 +2457,7 @@ mod tests {
             skipped_target_count: 0,
             bucket_summaries: Vec::new(),
             lane_summaries: Vec::new(),
+            origin_summaries: Vec::new(),
             targets: vec![target_only.clone(), missing],
         };
 
@@ -2483,6 +2490,7 @@ mod tests {
             skipped_target_count: 0,
             bucket_summaries: Vec::new(),
             lane_summaries: Vec::new(),
+            origin_summaries: Vec::new(),
             targets: vec![event_target.clone()],
         };
 
