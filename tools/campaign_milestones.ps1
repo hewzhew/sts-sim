@@ -56,20 +56,12 @@ function Get-CampaignMilestoneStatus {
 
 function New-MilestoneResumeDriverArgs {
     param(
+        [string[]] $RunIdentityArgs,
         [int] $StepRounds,
         [object] $OptionContext
     )
 
-    $Args = @(
-        "run",
-        "--preset", "$Mode",
-        "--seed", "$Seed",
-        "--ascension", "$Ascension",
-        "--class", "$Class"
-    )
-    if (@(0, 10, 15, 17, 20) -contains $Ascension) {
-        $Args += @("--ascension-domain", "a$Ascension")
-    }
+    $Args = @($RunIdentityArgs)
     $Args += @(
         "--resume", "$RunOutputCampaignPath",
         "--resume-checkpoint", "$RunOutputCheckpointPath",
@@ -88,6 +80,7 @@ function New-MilestoneResumeDriverArgs {
 function Invoke-CampaignUntilMilestone {
     param(
         [int] $AlreadySpentRounds = 0,
+        [string[]] $RunIdentityArgs,
         [object] $OptionContext
     )
 
@@ -101,7 +94,7 @@ function Invoke-CampaignUntilMilestone {
             return
         }
         $StepRounds = [Math]::Min($MilestoneStepRounds, $MilestoneMaxRounds - $SpentRounds)
-        $ResumeArgs = New-MilestoneResumeDriverArgs -StepRounds $StepRounds -OptionContext $OptionContext
+        $ResumeArgs = New-MilestoneResumeDriverArgs -RunIdentityArgs $RunIdentityArgs -StepRounds $StepRounds -OptionContext $OptionContext
         Write-Host "milestone-step target=$UntilMilestone additional-rounds=$StepRounds"
         & $DriverExe @ResumeArgs
         if ($LASTEXITCODE -ne 0) {

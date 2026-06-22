@@ -268,16 +268,8 @@ $BuildProfile = $BuildContext.BuildProfile
 $DriverExe = $BuildContext.DriverExe
 $BuildArgs = @($BuildContext.BuildArgs)
 
-$DriverArgs = @(
-    "run",
-    "--preset", "$Mode",
-    "--seed", "$Seed",
-    "--ascension", "$Ascension",
-    "--class", "$Class"
-)
-if (@(0, 10, 15, 17, 20) -contains $Ascension) {
-    $DriverArgs += @("--ascension-domain", "a$Ascension")
-}
+$CampaignRunIdentityArgs = New-CampaignRunDriverIdentityArgs -Mode $Mode -Seed $Seed -Ascension $Ascension -Class $Class
+$DriverArgs = @($CampaignRunIdentityArgs)
 
 $RunOutputContext = Resolve-CampaignOutputArtifactContext `
     -Inspect ([bool] $Inspect) `
@@ -525,6 +517,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
     $CoverageGapInitialSpentRounds = $CoverageGapExecutionContext.InitialSpentRounds
 
     $ContinueTargetArgs = New-TargetedContinuationContinueDriverArgs `
+        -RunIdentityArgs $CampaignRunIdentityArgs `
         -SourceCampaignPath $SourceCampaignPath `
         -SourceCheckpointPath $SourceCheckpointPath `
         -RunOutputCampaignPath $RunOutputCampaignPath `
@@ -533,6 +526,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
         -RoundBudgetArgs $ContinuationRoundBudgetArgs `
         -OptionContext $CampaignSharedDriverOptionContext
     $ContinueCoverageGapArgs = New-CoverageGapContinueDriverArgs `
+        -RunIdentityArgs $CampaignRunIdentityArgs `
         -SourceCampaignPath $SourceCampaignPath `
         -SourceCheckpointPath $SourceCheckpointPath `
         -RunOutputCampaignPath $RunOutputCampaignPath `
@@ -625,6 +619,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
             -DriverExe $DriverExe `
             -CoveragePlanArgs $CoveragePlanArgs `
             -ContinueCoverageGapArgs $ContinueCoverageGapArgs `
+            -RunIdentityArgs $CampaignRunIdentityArgs `
             -MilestoneStepRounds $MilestoneStepRounds `
             -OptionContext $CampaignSharedDriverOptionContext
         exit 0
@@ -655,6 +650,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                 -ContinuationEffectArgs $ContinuationEffectArgs `
                 -UntilMilestoneBound $UntilMilestoneBound `
                 -ContinuationRounds $ContinuationRounds `
+                -RunIdentityArgs $CampaignRunIdentityArgs `
                 -OptionContext $CampaignSharedDriverOptionContext
             exit $DriverExitCode
         }
@@ -667,6 +663,7 @@ if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverag
                 -ContinueCoverageGapArgs $ContinueCoverageGapArgs `
                 -UntilMilestoneBound $UntilMilestoneBound `
                 -CoverageGapInitialSpentRounds $CoverageGapInitialSpentRounds `
+                -RunIdentityArgs $CampaignRunIdentityArgs `
                 -OptionContext $CampaignSharedDriverOptionContext
             exit $DriverExitCode
         }
@@ -736,5 +733,5 @@ if ($Inspect) {
 
 $RenderedCommand = Format-CommandLine -ExePath $DriverExe -Arguments $DriverArgs
 Write-CampaignRunPreflight
-$DriverExitCode = Invoke-CampaignRunCommand -DryRun ([bool] $DryRun) -OptionContext $CampaignSharedDriverOptionContext
+$DriverExitCode = Invoke-CampaignRunCommand -DryRun ([bool] $DryRun) -RunIdentityArgs $CampaignRunIdentityArgs -OptionContext $CampaignSharedDriverOptionContext
 exit $DriverExitCode

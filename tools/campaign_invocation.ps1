@@ -61,6 +61,27 @@ function Format-CommandLine {
     return $RenderedExe + " " + ($RenderedArgs -join " ")
 }
 
+function New-CampaignRunDriverIdentityArgs {
+    param(
+        [string] $Mode,
+        [long] $Seed,
+        [int] $Ascension,
+        [string] $Class
+    )
+
+    $Args = @(
+        "run",
+        "--preset", "$Mode",
+        "--seed", "$Seed",
+        "--ascension", "$Ascension",
+        "--class", "$Class"
+    )
+    if (@(0, 10, 15, 17, 20) -contains $Ascension) {
+        $Args += @("--ascension-domain", "a$Ascension")
+    }
+    return $Args
+}
+
 function Test-ExtraCombatOptionKey {
     param(
         [string[]] $Tokens,
@@ -413,6 +434,7 @@ function New-CampaignRunWrapperManifest {
     param(
         [int] $ExitCode,
         [string] $Stage,
+        [string[]] $RunIdentityArgs,
         [object] $OptionContext
     )
 
@@ -432,7 +454,7 @@ function New-CampaignRunWrapperManifest {
     }
 
     if ($UntilMilestoneBound) {
-        $MilestoneResumeArgs = New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds -OptionContext $OptionContext
+        $MilestoneResumeArgs = New-MilestoneResumeDriverArgs -RunIdentityArgs $RunIdentityArgs -StepRounds $MilestoneStepRounds -OptionContext $OptionContext
         $Manifest["milestone"] = [ordered]@{
             target = $UntilMilestone
             stop = $ResolvedMilestoneStop
@@ -449,6 +471,7 @@ function New-CampaignRunWrapperManifest {
 function Invoke-CampaignRunCommand {
     param(
         [bool] $DryRun,
+        [string[]] $RunIdentityArgs,
         [object] $OptionContext
     )
 
@@ -471,7 +494,7 @@ function Invoke-CampaignRunCommand {
         Write-Host $RenderedCommand
         if ($UntilMilestoneBound) {
             Write-Host "milestone-loop-command-template:"
-            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-MilestoneResumeDriverArgs -StepRounds $MilestoneStepRounds -OptionContext $OptionContext))
+            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-MilestoneResumeDriverArgs -RunIdentityArgs $RunIdentityArgs -StepRounds $MilestoneStepRounds -OptionContext $OptionContext))
         }
         return 0
     }
@@ -494,15 +517,15 @@ function Invoke-CampaignRunCommand {
             Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine $RenderedCommand
             Write-CampaignWrapperManifest `
                 -Path $RunManifestPath `
-                -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed" -OptionContext $OptionContext)
+                -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed" -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext)
             if ($UntilMilestoneBound) {
-                Invoke-CampaignUntilMilestone -AlreadySpentRounds $MaxRounds -OptionContext $OptionContext
+                Invoke-CampaignUntilMilestone -AlreadySpentRounds $MaxRounds -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext
                 $DriverExitCode = $script:CampaignMilestoneExitCode
             }
             $ManifestStage = if ($UntilMilestoneBound) { "completed_with_milestone_loop" } else { "completed" }
             Write-CampaignWrapperManifest `
                 -Path $RunManifestPath `
-                -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage $ManifestStage -OptionContext $OptionContext)
+                -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage $ManifestStage -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext)
         }
         return $DriverExitCode
     } finally {

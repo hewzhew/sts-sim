@@ -51,6 +51,7 @@ function New-TargetedContinuationEffectArgs {
 
 function New-TargetedContinuationContinueDriverArgs {
     param(
+        [string[]] $RunIdentityArgs,
         [string] $SourceCampaignPath,
         [string] $SourceCheckpointPath,
         [string] $RunOutputCampaignPath,
@@ -60,16 +61,8 @@ function New-TargetedContinuationContinueDriverArgs {
         [object] $OptionContext
     )
 
-    $Args = @(
-        "continue",
-        "--preset", "$Mode",
-        "--seed", "$Seed",
-        "--ascension", "$Ascension",
-        "--class", "$Class"
-    )
-    if (@(0, 10, 15, 17, 20) -contains $Ascension) {
-        $Args += @("--ascension-domain", "a$Ascension")
-    }
+    $Args = @($RunIdentityArgs)
+    $Args[0] = "continue"
     $Args += @(
         "--resume", "$SourceCampaignPath",
         "--resume-checkpoint", "$SourceCheckpointPath",
@@ -125,6 +118,7 @@ function Invoke-TargetedContinuationCommands {
         [string[]] $ContinuationEffectArgs,
         [bool] $UntilMilestoneBound,
         [int] $ContinuationRounds,
+        [string[]] $RunIdentityArgs,
         [object] $OptionContext
     )
 
@@ -158,7 +152,7 @@ function Invoke-TargetedContinuationCommands {
     }
     Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueTargetArgs)
     if ($UntilMilestoneBound) {
-        Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds -OptionContext $OptionContext
+        Invoke-CampaignUntilMilestone -AlreadySpentRounds $ContinuationRounds -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext
         $DriverExitCode = $script:CampaignMilestoneExitCode
     }
     return $DriverExitCode
