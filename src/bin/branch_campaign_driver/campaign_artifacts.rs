@@ -62,7 +62,7 @@ pub(super) fn write_campaign_report_v1(
             )
         })?;
     }
-    let text = serde_json::to_string_pretty(report)
+    let text = serde_json::to_string(report)
         .map_err(|err| format!("failed to serialize BranchCampaignV1 report: {err}"))?;
     fs::write(path, text).map_err(|err| format!("failed to write --out {}: {err}", path.display()))
 }
@@ -92,8 +92,53 @@ pub(super) fn write_campaign_checkpoint_v1(
 mod tests {
     use super::*;
     use sts_simulator::eval::branch_campaign::{
-        BranchCampaignRunDomainV1, BranchCampaignRunPreludeV1,
+        BranchCampaignRunDomainV1, BranchCampaignRunPreludeV1, BRANCH_CAMPAIGN_SCHEMA_NAME,
+        BRANCH_CAMPAIGN_SCHEMA_VERSION,
     };
+
+    #[test]
+    fn writes_report_as_compact_json() {
+        let path = std::env::temp_dir().join(format!(
+            "sts_campaign_report_compact_{}.json",
+            std::process::id()
+        ));
+        let report = BranchCampaignReportV1 {
+            schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
+            schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
+            seed: 7,
+            run_domain: BranchCampaignRunDomainV1::default(),
+            run_prelude: BranchCampaignRunPreludeV1::default(),
+            rounds_completed: 0,
+            stop_reason: "test".to_string(),
+            active: Vec::new(),
+            frozen: Vec::new(),
+            victories: Vec::new(),
+            dead: Vec::new(),
+            abandoned: Vec::new(),
+            stuck: Vec::new(),
+            discarded_count: 0,
+            discarded_examples: Vec::new(),
+            discarded_branches: Vec::new(),
+            strategy_requests: Vec::new(),
+            route_evidence: Default::default(),
+            combat_retry_ledger: Default::default(),
+            strategic_signals: Default::default(),
+            state_store: Default::default(),
+            journal: Default::default(),
+            rounds: Vec::new(),
+        };
+
+        write_campaign_report_v1(&path, &report).expect("report should write");
+        let text = fs::read_to_string(&path).expect("report readable");
+        let parsed = read_campaign_report_v1(&path).expect("compact report should parse");
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(parsed.seed, 7);
+        assert!(
+            !text.contains("\n  "),
+            "campaign report artifacts should avoid pretty JSON indentation"
+        );
+    }
 
     #[test]
     fn writes_checkpoint_as_compact_json() {
