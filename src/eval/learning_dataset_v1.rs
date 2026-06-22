@@ -1171,6 +1171,9 @@ fn select_coverage_gap_targets_by_type_v1(
             .or_default()
             .push(target);
     }
+    for (bucket, targets) in &mut buckets {
+        *targets = order_coverage_gap_bucket_targets_v1(bucket, std::mem::take(targets));
+    }
 
     let mut bucket_order = coverage_gap_target_bucket_order_v1(&buckets);
     let mut selected = Vec::new();
@@ -1190,6 +1193,111 @@ fn select_coverage_gap_targets_by_type_v1(
         bucket_order = retained_order;
     }
     selected
+}
+
+fn order_coverage_gap_bucket_targets_v1(
+    bucket: &str,
+    targets: Vec<CoverageGapContinuationTargetV1>,
+) -> Vec<CoverageGapContinuationTargetV1> {
+    if bucket == "route" {
+        return order_coverage_gap_route_targets_by_lane_v1(targets);
+    }
+    targets
+}
+
+fn order_coverage_gap_route_targets_by_lane_v1(
+    targets: Vec<CoverageGapContinuationTargetV1>,
+) -> Vec<CoverageGapContinuationTargetV1> {
+    let mut ordered = Vec::with_capacity(targets.len());
+    let mut by_priority = BTreeMap::<usize, Vec<CoverageGapContinuationTargetV1>>::new();
+    for target in targets {
+        by_priority
+            .entry(coverage_gap_target_admission_priority_v1(&target))
+            .or_default()
+            .push(target);
+    }
+
+    for (_, priority_targets) in by_priority {
+        ordered.extend(round_robin_coverage_gap_targets_by_lane_v1(
+            priority_targets,
+            coverage_gap_route_selection_lane_v1,
+        ));
+    }
+    ordered
+}
+
+fn coverage_gap_target_admission_priority_v1(target: &CoverageGapContinuationTargetV1) -> usize {
+    if target.admission.status == CampaignJournalCandidateAdmissionStatusV1::Scheduled {
+        0
+    } else if target.disposition == CampaignJournalCandidateDispositionV1::Kept {
+        1
+    } else {
+        2
+    }
+}
+
+fn round_robin_coverage_gap_targets_by_lane_v1(
+    targets: Vec<CoverageGapContinuationTargetV1>,
+    lane_fn: fn(&CoverageGapContinuationTargetV1) -> String,
+) -> Vec<CoverageGapContinuationTargetV1> {
+    let mut lane_order = Vec::<String>::new();
+    let mut lanes = BTreeMap::<String, Vec<CoverageGapContinuationTargetV1>>::new();
+    for target in targets {
+        let lane = lane_fn(&target);
+        if !lanes.contains_key(&lane) {
+            lane_order.push(lane.clone());
+        }
+        lanes.entry(lane).or_default().push(target);
+    }
+
+    let mut ordered = Vec::new();
+    while !lane_order.is_empty() {
+        let mut retained_order = Vec::new();
+        for lane in lane_order {
+            let Some(items) = lanes.get_mut(&lane) else {
+                continue;
+            };
+            if !items.is_empty() {
+                ordered.push(items.remove(0));
+            }
+            if !items.is_empty() {
+                retained_order.push(lane);
+            }
+        }
+        lane_order = retained_order;
+    }
+    ordered
+}
+
+fn coverage_gap_route_selection_lane_v1(target: &CoverageGapContinuationTargetV1) -> String {
+    let Some(route) = target.target_origin.route.as_ref() else {
+        return format!("route:legacy:{}", target.label);
+    };
+    let elite_lane = if route.first_elite.forced {
+        "forced_elite"
+    } else if route.first_elite.optional {
+        "optional_elite"
+    } else if route.first_elite.paths_with_first_elite > 0 {
+        "elite_access"
+    } else {
+        "no_first_elite"
+    };
+    format!(
+        "route:{}:{}:{}:{}",
+        route.action_kind, route.room_type, route.projection_coverage, elite_lane
+    )
+}
+
+fn coverage_gap_target_selection_lane_v1(target: &CoverageGapContinuationTargetV1) -> String {
+    if coverage_gap_target_bucket_v1(target) == "route" {
+        return coverage_gap_route_selection_lane_v1(target);
+    }
+    format!(
+        "{}:{}:{}",
+        coverage_gap_target_bucket_v1(target),
+        render_journal_candidate_admission_status_v1(target.admission.status),
+        render_journal_candidate_disposition_v1(target.disposition)
+    )
 }
 
 fn dedupe_coverage_gap_targets_v1(
@@ -1418,7 +1526,7 @@ fn render_coverage_gap_target_line_v1(
     target: &CoverageGapContinuationTargetV1,
 ) -> String {
     format!(
-        "  {}. {} {} | parent={} coord={} candidate={} {{{}}} admission={} reason_category={} reason_code={} disposition={} milestone={} origin={} semantic=[{}]",
+        "  {}. {} {} | parent={} coord={} candidate={} {{{}}} admission={} reason_category={} reason_code={} disposition={} milestone={} lane={} origin={} semantic=[{}]",
         index + 1,
         target.event_type,
         compact_learning_text_v1(&target.decision_id, 56),
@@ -1435,6 +1543,7 @@ fn render_coverage_gap_target_line_v1(
         ),
         render_journal_candidate_disposition_v1(target.disposition),
         target.milestone,
+        compact_learning_text_v1(&coverage_gap_target_selection_lane_v1(target), 96),
         render_coverage_gap_target_origin_v1(&target.target_origin),
         compact_learning_text_v1(&target.semantic_class, 58)
     )
@@ -3849,6 +3958,26 @@ mod tests {
     }
 
     #[test]
+    fn coverage_gap_route_targets_round_robin_by_route_lane() {
+        let targets = vec![
+            sample_route_coverage_gap_target("go 0", "Monster A", "MonsterRoom", 0),
+            sample_route_coverage_gap_target("go 1", "Monster B", "MonsterRoom", 1),
+            sample_route_coverage_gap_target("go 2", "Shop", "ShopRoom", 2),
+            sample_route_coverage_gap_target("go 3", "Rest", "RestRoom", 3),
+        ];
+
+        let selected = select_coverage_gap_targets_by_type_v1(targets, 3);
+        let labels = selected
+            .iter()
+            .map(|target| target.label.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(labels, vec!["Monster A", "Shop", "Rest"]);
+        assert!(render_coverage_gap_target_line_v1(0, &selected[0])
+            .contains("lane=route:go:MonsterRoom:CompleteWithinBudget:no_first_elite"));
+    }
+
+    #[test]
     fn coverage_gap_continuation_dedupes_repeated_target_coordinates() {
         let mut report = sample_campaign_report_with_branches(Vec::new());
         for event_index in 0..2 {
@@ -4584,6 +4713,63 @@ mod tests {
             semantic_class: "test".to_string(),
             disposition,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(status, "test", "test"),
+        }
+    }
+
+    fn sample_route_coverage_gap_target(
+        command: &str,
+        label: &str,
+        room_type: &str,
+        candidate_index: usize,
+    ) -> CoverageGapContinuationTargetV1 {
+        CoverageGapContinuationTargetV1 {
+            decision_id: "route-decision".to_string(),
+            event_id: "route-event".to_string(),
+            event_type: "route".to_string(),
+            parent_branch_id: "root".to_string(),
+            parent_frontier_title: "Map".to_string(),
+            parent_commands: Vec::new(),
+            parent_choices: Vec::new(),
+            candidate_index,
+            candidate_id: format!("route:{candidate_index}"),
+            command: command.to_string(),
+            label: label.to_string(),
+            semantic_class: "route".to_string(),
+            admission: CampaignJournalCandidateAdmissionTraceV1::new(
+                CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+                "route_candidate_pool",
+                "selected",
+            ),
+            disposition: CampaignJournalCandidateDispositionV1::Kept,
+            target_origin: CoverageGapContinuationTargetOriginV1 {
+                source: "route_candidate_pool".to_string(),
+                route: Some(CoverageGapRouteTargetOriginV1 {
+                    legal_candidate_count: 4,
+                    emitted_candidate_count: 4,
+                    complete_legal_pool: true,
+                    ordering: "SafetyThenScoreThenX".to_string(),
+                    ordering_kind: Some(RouteCandidateOrderingV1::SafetyThenScoreThenX),
+                    target_x: candidate_index as i32,
+                    target_y: 2,
+                    target_node: None,
+                    room_type: room_type.to_string(),
+                    move_kind: "NormalEdge".to_string(),
+                    action_kind: "go".to_string(),
+                    action: None,
+                    projection_source: "VisibleMapDfs".to_string(),
+                    projection_source_kind: Some(RouteProjectionSourceV1::VisibleMapDfs),
+                    projection_coverage: "CompleteWithinBudget".to_string(),
+                    projection_coverage_kind: Some(RouteProjectionCoverageV1::CompleteWithinBudget),
+                    path_budget: 100,
+                    observed_path_count: 4,
+                    path: CoverageGapRoutePathOriginV1 {
+                        path_count: 4,
+                        ..Default::default()
+                    },
+                    first_elite: CoverageGapRouteFirstEliteOriginV1::default(),
+                }),
+            },
+            milestone: "route_frontier".to_string(),
         }
     }
 

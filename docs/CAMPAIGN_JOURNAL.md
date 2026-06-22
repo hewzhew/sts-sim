@@ -160,7 +160,10 @@ then execute a bounded set with `--execute-coverage-gap-continuation --resume ..
 --resume-checkpoint ...`. Execution creates temporary active branches from the
 journal parent commands plus the missing candidate command and then uses the
 normal branch campaign runner. This mechanism is for targeted data coverage, not
-for saying that the missing candidate is strategically better.
+for saying that the missing candidate is strategically better. The planner
+balances decision buckets, and route/map gaps are further interleaved by typed
+route lane (action, room, projection coverage, first-elite shape) so a small
+budget does not only replay same-looking map alternatives.
 
 For route/map candidates, continuation targets carry structured
 `target_origin` provenance from the journal `MapDecisionPacketV1` when it is
