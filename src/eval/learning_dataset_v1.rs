@@ -23,6 +23,7 @@ use crate::eval::campaign_journal::{
     CampaignJournalRouteCandidateV1,
 };
 use crate::eval::decision_path::decision_path_command_is_decision_parent_coordinate_v1;
+use crate::eval::event_boundary_packet_v1::EventCandidateSnapshotV1;
 
 pub const LEARNING_BRANCH_SAMPLE_SCHEMA_NAME: &str = "LearningBranchSampleV1";
 pub const LEARNING_BRANCH_SAMPLE_SCHEMA_VERSION: u32 = 1;
@@ -1118,6 +1119,7 @@ pub fn plan_coverage_gap_continuations_v1(
     let mut selected_scheduled_targets = 0usize;
     let mut selected_unscheduled_targets = 0usize;
     let mut target_candidates = coverage_gap_target_only_continuation_targets_v1(report);
+    target_candidates.extend(coverage_gap_current_event_boundary_targets_v1(report));
     let mut bucket_counts = BTreeMap::<String, CoverageGapContinuationBucketSummaryV1>::new();
 
     for event in &report.journal.events {
@@ -1473,6 +1475,185 @@ fn coverage_gap_target_only_continuation_targets_v1(
             .then(|| coverage_gap_target_from_continuation_origin_v1(branch, origin))
         })
         .collect()
+}
+
+fn coverage_gap_current_event_boundary_targets_v1(
+    report: &BranchCampaignReportV1,
+) -> Vec<CoverageGapContinuationTargetV1> {
+    report
+        .active
+        .iter()
+        .chain(report.frozen.iter())
+        .flat_map(|branch| {
+            let Some(packet) = branch
+                .summary
+                .as_ref()
+                .and_then(|summary| summary.event_boundary.as_ref())
+            else {
+                return Vec::new();
+            };
+            packet
+                .candidates
+                .iter()
+                .enumerate()
+                .filter(|(_, candidate)| !candidate.disabled)
+                .map(|(candidate_index, candidate)| {
+                    coverage_gap_target_from_event_boundary_candidate_v1(
+                        branch,
+                        packet.event_id.as_str(),
+                        packet.current_screen,
+                        candidate_index,
+                        candidate,
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn coverage_gap_target_from_event_boundary_candidate_v1(
+    branch: &BranchCampaignBranchV1,
+    event_id: &str,
+    current_screen: usize,
+    candidate_index: usize,
+    candidate: &EventCandidateSnapshotV1,
+) -> CoverageGapContinuationTargetV1 {
+    let effect_kind = coverage_gap_event_boundary_candidate_effect_kind_v1(candidate);
+    let semantic_class =
+        coverage_gap_event_boundary_candidate_semantic_class_v1(candidate, effect_kind);
+    let admission = CampaignJournalCandidateAdmissionTraceV1::new(
+        CampaignJournalCandidateAdmissionStatusV1::Scheduled,
+        "event_boundary_packet",
+        "current_event_boundary_candidate",
+    )
+    .with_lane(effect_kind);
+    let mut target = CoverageGapContinuationTargetV1 {
+        decision_id: format!(
+            "{}:event_boundary:{}:screen{}",
+            branch.branch_id, event_id, current_screen
+        ),
+        event_id: format!("event-boundary:{event_id}:screen{current_screen}"),
+        event_type: "event".to_string(),
+        parent_branch_id: branch.branch_id.clone(),
+        parent_frontier_title: branch.frontier_title.clone(),
+        parent_commands: branch.commands.clone(),
+        parent_choices: branch.choice_labels.clone(),
+        candidate_index,
+        candidate_id: candidate.candidate_id.clone(),
+        command: candidate.command.clone(),
+        label: candidate.display_label.clone(),
+        semantic_class,
+        target_lane: None,
+        existing_progress: None,
+        admission,
+        disposition: CampaignJournalCandidateDispositionV1::Kept,
+        target_origin: CoverageGapContinuationTargetOriginV1 {
+            source: "event_boundary_packet".to_string(),
+            route: None,
+            route_lane: None,
+        },
+        milestone: "event_resolution_frontier".to_string(),
+    };
+    target.target_lane = Some(coverage_gap_target_lane_from_target_v1(&target));
+    target
+}
+
+fn coverage_gap_event_boundary_candidate_semantic_class_v1(
+    candidate: &EventCandidateSnapshotV1,
+    effect_kind: &str,
+) -> String {
+    let mut tokens = vec![
+        format!("effect:{effect_kind}"),
+        format!("role:{}", candidate.role),
+        format!("action:{}", candidate.action_kind),
+        format!("transition:{}", candidate.transition),
+    ];
+    if let Some(selection_kind) = candidate.selection_kind.as_deref() {
+        tokens.push(format!("selection:{selection_kind}"));
+    }
+    for effect in &candidate.effects {
+        tokens.push(format!("event_effect:{}", effect.kind));
+    }
+    tokens.join(" ")
+}
+
+fn coverage_gap_event_boundary_candidate_effect_kind_v1(
+    candidate: &EventCandidateSnapshotV1,
+) -> &'static str {
+    if candidate.role == "combat_branch"
+        || candidate.action_kind == "fight"
+        || candidate.transition == "start_combat"
+        || coverage_gap_event_boundary_candidate_has_effect_v1(candidate, "start_combat")
+    {
+        return "event_start_combat";
+    }
+    if candidate.role == "forced_leave" || candidate.role == "safe_exit" {
+        return "event_leave";
+    }
+    if candidate.action_kind == "decline" {
+        return "event_decline";
+    }
+    if matches!(
+        candidate.selection_kind.as_deref(),
+        Some("remove_card") | Some("remove")
+    ) {
+        return "event_remove_card";
+    }
+    if matches!(
+        candidate.selection_kind.as_deref(),
+        Some("upgrade_card") | Some("upgrade")
+    ) {
+        return "event_upgrade_card";
+    }
+    if matches!(
+        candidate.selection_kind.as_deref(),
+        Some("transform_card") | Some("transform")
+    ) {
+        return "event_transform_card";
+    }
+    if matches!(
+        candidate.selection_kind.as_deref(),
+        Some("duplicate_card") | Some("duplicate")
+    ) {
+        return "event_duplicate_card";
+    }
+    if coverage_gap_event_boundary_candidate_has_any_effect_v1(
+        candidate,
+        &["offer_cards", "obtain_card", "obtain_colorless_card"],
+    ) {
+        return "event_card_reward";
+    }
+    if coverage_gap_event_boundary_candidate_has_effect_v1(candidate, "obtain_curse") {
+        return "event_gain_curse";
+    }
+    if coverage_gap_event_boundary_candidate_has_effect_v1(candidate, "obtain_relic") {
+        return "event_gain_relic";
+    }
+    if candidate.action_kind == "heal"
+        || coverage_gap_event_boundary_candidate_has_effect_v1(candidate, "heal")
+    {
+        return "event_heal";
+    }
+    "event_choice"
+}
+
+fn coverage_gap_event_boundary_candidate_has_any_effect_v1(
+    candidate: &EventCandidateSnapshotV1,
+    effect_kinds: &[&str],
+) -> bool {
+    effect_kinds.iter().any(|effect_kind| {
+        coverage_gap_event_boundary_candidate_has_effect_v1(candidate, effect_kind)
+    })
+}
+
+fn coverage_gap_event_boundary_candidate_has_effect_v1(
+    candidate: &EventCandidateSnapshotV1,
+    effect_kind: &str,
+) -> bool {
+    candidate
+        .effects
+        .iter()
+        .any(|effect| effect.kind == effect_kind)
 }
 
 fn coverage_gap_target_from_continuation_origin_v1(
@@ -5601,6 +5782,97 @@ mod tests {
 
         assert_eq!(plan.targets[0].label, "Reward A");
         assert_eq!(plan.total_unobserved_candidates, 2);
+    }
+
+    #[test]
+    fn coverage_gap_continuation_targets_current_event_boundary_candidates() {
+        let mut branch = sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
+        branch.frontier_title = "TheLibrary".to_string();
+        branch.summary = Some(BranchCampaignBranchSummaryV1 {
+            act: 1,
+            floor: 9,
+            hp: 54,
+            max_hp: 80,
+            gold: 120,
+            deck_count: 14,
+            deck_key: String::new(),
+            formation_stage: String::new(),
+            formation_strengths: Vec::new(),
+            formation_needs: Vec::new(),
+            trajectory_key: String::new(),
+            boss: String::new(),
+            boss_pressure: Vec::new(),
+            run_debt: Vec::new(),
+            event_boundary: Some(
+                crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1 {
+                    schema_name: "EventBoundaryPacketV1".to_string(),
+                    schema_version: 1,
+                    event_id: "TheLibrary".to_string(),
+                    current_screen: 0,
+                    completed: false,
+                    boundary_class: "strategic_choice".to_string(),
+                    candidates: vec![
+                        crate::eval::event_boundary_packet_v1::EventCandidateSnapshotV1 {
+                            candidate_id: "event:TheLibrary:screen0:choice0".to_string(),
+                            command: "event 0".to_string(),
+                            display_label: "[Read] Choose a card from 20 offerings.".to_string(),
+                            disabled: false,
+                            disabled_reason: None,
+                            action_kind: "gain".to_string(),
+                            transition: "advance_screen".to_string(),
+                            selection_kind: None,
+                            terminal: false,
+                            repeatable: false,
+                            role: "strategic_choice".to_string(),
+                            information_tags: vec!["public_structured".to_string()],
+                            effects: vec![
+                                crate::eval::event_boundary_packet_v1::EventEffectSnapshotV1 {
+                                    kind: "offer_cards".to_string(),
+                                    params: BTreeMap::new(),
+                                },
+                            ],
+                            constraints: Vec::new(),
+                        },
+                        crate::eval::event_boundary_packet_v1::EventCandidateSnapshotV1 {
+                            candidate_id: "event:TheLibrary:screen0:choice1".to_string(),
+                            command: "event 1".to_string(),
+                            display_label: "[Sleep] Heal 30% of your Max HP.".to_string(),
+                            disabled: false,
+                            disabled_reason: None,
+                            action_kind: "heal".to_string(),
+                            transition: "advance_screen".to_string(),
+                            selection_kind: None,
+                            terminal: false,
+                            repeatable: false,
+                            role: "strategic_choice".to_string(),
+                            information_tags: vec!["public_structured".to_string()],
+                            effects: vec![
+                                crate::eval::event_boundary_packet_v1::EventEffectSnapshotV1 {
+                                    kind: "heal".to_string(),
+                                    params: BTreeMap::new(),
+                                },
+                            ],
+                            constraints: Vec::new(),
+                        },
+                    ],
+                },
+            ),
+            reward_boundary: None,
+        });
+        let report = sample_campaign_report_with_branches(vec![branch]);
+
+        let plan = plan_coverage_gap_continuations_v1(&report, &[], 4, 2);
+
+        assert_eq!(plan.selected_target_count, 2);
+        assert!(plan.targets.iter().any(|target| {
+            target.candidate_id == "event:TheLibrary:screen0:choice0"
+                && target.command == "event 0"
+                && target.parent_commands == vec!["rp 0".to_string()]
+                && target.event_type == "event"
+                && target.target_origin.source == "event_boundary_packet"
+                && target.milestone == "event_resolution_frontier"
+                && target.semantic_class.contains("effect:event_card_reward")
+        }));
     }
 
     #[test]

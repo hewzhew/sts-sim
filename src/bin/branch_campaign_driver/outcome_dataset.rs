@@ -813,6 +813,9 @@ fn filter_coverage_gap_execution_plan_for_checkpoint_v1(
                 let target_commands = coverage_gap_target_commands_v1(target);
                 return checkpoint_can_replay_parent_commands_v1(checkpoint, &target_commands);
             }
+            if coverage_gap_target_from_current_event_boundary_v1(target) {
+                return checkpoint_has_exact_session_v1(checkpoint, &target.parent_commands);
+            }
             if coverage_gap_target_requires_exact_parent_snapshot_v1(target) {
                 return coverage_gap_parent_commands_have_exact_coordinate_v1(
                     &target.parent_commands,
@@ -828,6 +831,12 @@ fn filter_coverage_gap_execution_plan_for_checkpoint_v1(
     execution.requested_target_count = requested;
     refresh_coverage_gap_execution_bucket_summaries_v1(&mut execution);
     execution
+}
+
+fn coverage_gap_target_from_current_event_boundary_v1(
+    target: &CoverageGapContinuationTargetV1,
+) -> bool {
+    target.target_origin.source == "event_boundary_packet"
 }
 
 fn coverage_gap_execution_planning_window_cap_v1(requested_targets: usize) -> usize {
@@ -2224,6 +2233,33 @@ mod tests {
             filtered.targets[0].existing_progress,
             Some(CoverageGapContinuationTargetProgressV1::TargetOnly)
         );
+    }
+
+    #[test]
+    fn coverage_gap_checkpoint_filter_replays_current_event_boundary_from_parent_session() {
+        let mut event_target = coverage_gap_test_target("event", "event 0", "[Read]", 0);
+        event_target.parent_commands = vec!["rp 0".to_string()];
+        event_target.target_origin.source = "event_boundary_packet".to_string();
+        let checkpoint =
+            coverage_gap_test_checkpoint_with_session(event_target.parent_commands.clone());
+        let execution = CoverageGapContinuationExecutionPlanV1 {
+            schema_name: "CoverageGapContinuationExecutionPlanV1".to_string(),
+            schema_version: 3,
+            label_role: "campaign_observation_not_teacher".to_string(),
+            trainable_as_action_label: false,
+            policy_quality_claim: false,
+            requested_target_count: 1,
+            selected_branch_count: 1,
+            skipped_target_count: 0,
+            bucket_summaries: Vec::new(),
+            lane_summaries: Vec::new(),
+            targets: vec![event_target.clone()],
+        };
+
+        let filtered = filter_coverage_gap_execution_plan_for_checkpoint_v1(execution, &checkpoint);
+
+        assert_eq!(filtered.selected_branch_count, 1);
+        assert_eq!(filtered.targets[0].candidate_id, event_target.candidate_id);
     }
 
     fn coverage_gap_test_target(
