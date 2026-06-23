@@ -104,7 +104,10 @@ impl CoverageGapMilestoneSummaryContextV1 {
 #[derive(Default)]
 struct CoverageGapMilestoneOriginSummaryV1<'a> {
     total: usize,
+    evaluated: usize,
     reached: usize,
+    target_only: usize,
+    no_state: usize,
     active: usize,
     frozen: usize,
     stuck: usize,
@@ -119,7 +122,10 @@ struct CoverageGapMilestoneOriginSummaryV1<'a> {
 #[derive(Default)]
 struct CoverageGapMilestoneTargetGroupSummaryV1<'a> {
     rows: usize,
+    evaluated: usize,
     reached: bool,
+    target_only: usize,
+    no_state: usize,
     active: usize,
     frozen: usize,
     stuck: usize,
@@ -253,21 +259,41 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_group_
         .cloned()
         .collect::<Vec<_>>();
     let rows = filtered_rows.as_slice();
-    let reached = rows.iter().filter(|row| target.is_reached_by(row)).count();
-    let (target_groups, reached_target_groups) = target_group_counts_v1(rows, target);
+    let target_only = rows.iter().filter(|row| row_is_target_only_v1(row)).count();
+    let no_state = rows
+        .iter()
+        .filter(|row| !row_has_state_summary_v1(row))
+        .count();
+    let evaluated = rows
+        .iter()
+        .filter(|row| row_is_milestone_evaluated_v1(row))
+        .count();
+    let reached = rows
+        .iter()
+        .filter(|row| row_is_milestone_evaluated_v1(row))
+        .filter(|row| target.is_reached_by(row))
+        .count();
+    let (target_groups, evaluated_target_groups, reached_target_groups, target_only_groups) =
+        target_group_counts_v1(rows, target);
     let mut lines = Vec::new();
     lines.push(format!(
-        "CoverageGapMilestoneSummaryV1 target={} total={} reached={} not_reached={}",
+        "CoverageGapMilestoneSummaryV1 target={} total={} reached={} not_reached={} evaluated={} target_only={} no_state={}",
         target.as_str(),
         rows.len(),
         reached,
-        rows.len().saturating_sub(reached)
+        evaluated.saturating_sub(reached),
+        evaluated,
+        target_only,
+        no_state
     ));
     lines.push(format!(
-        "Target groups: total={} reached={} not_reached={}",
+        "Target groups: total={} reached={} not_reached={} evaluated={} target_only={} no_state={}",
         target_groups,
         reached_target_groups,
-        target_groups.saturating_sub(reached_target_groups)
+        evaluated_target_groups.saturating_sub(reached_target_groups),
+        evaluated_target_groups,
+        target_only_groups,
+        target_groups.saturating_sub(evaluated_target_groups)
     ));
     if rows.is_empty() {
         return lines.join("\n");
@@ -277,7 +303,16 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_group_
     for row in rows {
         let summary = by_origin.entry(&row.event_type).or_default();
         summary.total += 1;
-        if target.is_reached_by(row) {
+        if row_is_target_only_v1(row) {
+            summary.target_only += 1;
+        }
+        if !row_has_state_summary_v1(row) {
+            summary.no_state += 1;
+        }
+        if row_is_milestone_evaluated_v1(row) {
+            summary.evaluated += 1;
+        }
+        if row_is_milestone_evaluated_v1(row) && target.is_reached_by(row) {
             summary.reached += 1;
         }
         match row.bucket.as_str() {
@@ -290,11 +325,13 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_group_
             "discarded" => summary.discarded += 1,
             _ => summary.other += 1,
         }
-        if summary
-            .furthest
-            .is_none_or(|current| compare_milestone_rows(row, current) == Ordering::Greater)
-        {
-            summary.furthest = Some(row);
+        if row_is_milestone_evaluated_v1(row) {
+            if summary
+                .furthest
+                .is_none_or(|current| compare_milestone_rows(row, current) == Ordering::Greater)
+            {
+                summary.furthest = Some(row);
+            }
         }
     }
 
@@ -305,7 +342,7 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_group_
             .map(format_milestone_row_v1)
             .unwrap_or_else(|| "-".to_string());
         lines.push(format!(
-            "  {event_type} total={} reached={} active={} frozen={} stuck={} abandoned={} dead={} victories={} discarded={} other={} furthest={}",
+            "  {event_type} total={} reached={} active={} frozen={} stuck={} abandoned={} dead={} victories={} discarded={} other={} evaluated={} target_only={} no_state={} furthest={}",
             summary.total,
             summary.reached,
             summary.active,
@@ -316,6 +353,9 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_group_
             summary.victories,
             summary.discarded,
             summary.other,
+            summary.evaluated,
+            summary.target_only,
+            summary.no_state,
             furthest
         ));
     }
@@ -907,17 +947,51 @@ fn target_progress_counts_v1<'a>(
 fn target_group_counts_v1(
     rows: &[CoverageGapMilestoneBranchRowV1],
     target: CoverageGapMilestoneTargetV1,
-) -> (usize, usize) {
+) -> (usize, usize, usize, usize) {
     let mut groups = BTreeMap::<&str, bool>::new();
+    let mut evaluated_groups = BTreeMap::<&str, bool>::new();
+    let mut target_only_groups = BTreeMap::<&str, bool>::new();
     for row in rows {
+        groups.entry(row.target_key.as_str()).or_insert(false);
+        if row_is_target_only_v1(row) {
+            target_only_groups
+                .entry(row.target_key.as_str())
+                .or_insert(true);
+        }
+        if !row_has_state_summary_v1(row) {
+            continue;
+        }
         let reached = target.is_reached_by(row);
-        groups
+        evaluated_groups
             .entry(row.target_key.as_str())
             .and_modify(|existing| *existing |= reached)
             .or_insert(reached);
+        groups
+            .entry(row.target_key.as_str())
+            .and_modify(|existing| *existing |= reached);
     }
-    let reached = groups.values().filter(|is_reached| **is_reached).count();
-    (groups.len(), reached)
+    let reached = evaluated_groups
+        .values()
+        .filter(|is_reached| **is_reached)
+        .count();
+    (
+        groups.len(),
+        evaluated_groups.len(),
+        reached,
+        target_only_groups.len(),
+    )
+}
+
+fn row_is_target_only_v1(row: &CoverageGapMilestoneBranchRowV1) -> bool {
+    row.target_progress == "target_only"
+}
+
+fn row_has_state_summary_v1(row: &CoverageGapMilestoneBranchRowV1) -> bool {
+    row.act > 0 || row.floor > 0 || row.max_hp > 0 || row.deck_count > 0
+}
+
+fn row_is_milestone_evaluated_v1(row: &CoverageGapMilestoneBranchRowV1) -> bool {
+    row_has_state_summary_v1(row)
 }
 
 fn target_group_audit_summaries_v1<'a>(
@@ -928,7 +1002,16 @@ fn target_group_audit_summaries_v1<'a>(
     for row in rows {
         let summary = groups.entry(row.target_key.as_str()).or_default();
         summary.rows += 1;
-        summary.reached |= target.is_reached_by(row);
+        if row_is_target_only_v1(row) {
+            summary.target_only += 1;
+        }
+        if !row_has_state_summary_v1(row) {
+            summary.no_state += 1;
+        }
+        if row_is_milestone_evaluated_v1(row) {
+            summary.evaluated += 1;
+            summary.reached |= target.is_reached_by(row);
+        }
         match row.bucket.as_str() {
             "active" => summary.active += 1,
             "frozen" => summary.frozen += 1,
@@ -942,12 +1025,15 @@ fn target_group_audit_summaries_v1<'a>(
         if summary.first.is_none() {
             summary.first = Some(row);
         }
-        if summary
-            .furthest
-            .is_none_or(|current| compare_milestone_rows(row, current) == Ordering::Greater)
-        {
-            summary.furthest = Some(row);
-            summary.stop_reason = (!row.stop_reason.is_empty()).then_some(row.stop_reason.as_str());
+        if row_is_milestone_evaluated_v1(row) {
+            if summary
+                .furthest
+                .is_none_or(|current| compare_milestone_rows(row, current) == Ordering::Greater)
+            {
+                summary.furthest = Some(row);
+                summary.stop_reason =
+                    (!row.stop_reason.is_empty()).then_some(row.stop_reason.as_str());
+            }
         }
     }
 
@@ -962,14 +1048,11 @@ fn compare_target_group_audit_summary_v1(
 ) -> Ordering {
     left.reached
         .cmp(&right.reached)
-        .then_with(|| {
-            compare_milestone_rows(
-                left.furthest
-                    .expect("target group should have a furthest row"),
-                right
-                    .furthest
-                    .expect("target group should have a furthest row"),
-            )
+        .then_with(|| match (left.furthest, right.furthest) {
+            (Some(left), Some(right)) => compare_milestone_rows(left, right),
+            (Some(_), None) => Ordering::Greater,
+            (None, Some(_)) => Ordering::Less,
+            (None, None) => Ordering::Equal,
         })
         .then_with(|| left.rows.cmp(&right.rows))
 }
@@ -978,10 +1061,15 @@ fn format_target_group_audit_line_v1(
     summary: &CoverageGapMilestoneTargetGroupSummaryV1<'_>,
 ) -> String {
     let first = summary.first.expect("target group should have a first row");
-    let furthest = summary
-        .furthest
-        .expect("target group should have a furthest row");
-    let reached = if summary.reached { "yes" } else { "no" };
+    let status = if summary.reached {
+        "reached"
+    } else if summary.evaluated == 0 && summary.no_state > 0 && summary.target_only < summary.rows {
+        "not_evaluated"
+    } else if summary.evaluated == 0 && summary.target_only > 0 {
+        "target_only"
+    } else {
+        "not_reached"
+    };
     let lane = if first.target_lane.is_empty() {
         String::new()
     } else {
@@ -991,12 +1079,16 @@ fn format_target_group_audit_line_v1(
         .stop_reason
         .map(|reason| format!(" stop={reason}"))
         .unwrap_or_default();
+    let furthest = summary
+        .furthest
+        .map(|row| format!("A{}F{}", row.act, row.floor))
+        .unwrap_or_else(|| "-".to_string());
     format!(
-        "  {} | {} {{{}}} | reached={} rows={} active={} frozen={} abandoned={} stuck={} dead={} victories={} discarded={} other={} furthest=A{}F{}{}{}",
+        "  {} | {} {{{}}} | status={} rows={} active={} frozen={} abandoned={} stuck={} dead={} victories={} discarded={} other={} evaluated={} target_only={} no_state={} furthest={}{}{}",
         first.event_type,
         first.label,
         first.command,
-        reached,
+        status,
         summary.rows,
         summary.active,
         summary.frozen,
@@ -1006,8 +1098,10 @@ fn format_target_group_audit_line_v1(
         summary.victories,
         summary.discarded,
         summary.other,
-        furthest.act,
-        furthest.floor,
+        summary.evaluated,
+        summary.target_only,
+        summary.no_state,
+        furthest,
         lane,
         stop
     )
@@ -1018,61 +1112,65 @@ fn format_target_group_detail_lines_v1(
     context: &CoverageGapMilestoneSummaryContextV1,
 ) -> Vec<String> {
     let first = summary.first.expect("target group should have a first row");
-    let furthest = summary
-        .furthest
-        .expect("target group should have a furthest row");
     let mut lines = Vec::new();
     lines.push(format!(
         "  {} | {} {{{}}}",
         first.event_type, first.label, first.command
     ));
-    lines.push(format!(
-        "    furthest: {}",
-        format_milestone_row_v1(furthest)
-    ));
-    if !furthest.target_progress.is_empty() {
-        lines.push(format!("    target_progress: {}", furthest.target_progress));
+    if let Some(furthest) = summary.furthest {
+        lines.push(format!(
+            "    furthest: {}",
+            format_milestone_row_v1(furthest)
+        ));
+    } else if summary.no_state > 0 && summary.target_only < summary.rows {
+        lines.push("    state: not_evaluated (no branch state summary)".to_string());
+    } else {
+        lines.push("    state: target_only (not advanced to a milestone result)".to_string());
     }
-    if !furthest.branch_id.is_empty() {
-        lines.push(format!("    branch_id: {}", furthest.branch_id));
+    let detail = summary.furthest.unwrap_or(first);
+    if !detail.target_progress.is_empty() {
+        lines.push(format!("    target_progress: {}", detail.target_progress));
     }
-    if !furthest.commands.is_empty() {
+    if !detail.branch_id.is_empty() {
+        lines.push(format!("    branch_id: {}", detail.branch_id));
+    }
+    if !detail.commands.is_empty() {
         lines.push(format!(
             "    commands: {}",
-            render_recent_command_path_v1(&furthest.commands)
+            render_recent_command_path_v1(&detail.commands)
         ));
     }
-    if let Some(index) = context.checkpoint_match_index_for(furthest) {
+    if let Some(index) = context.checkpoint_match_index_for(detail) {
         lines.push(format!("    checkpoint_match_index: {index}"));
     }
-    if !furthest.deck_key.is_empty() {
-        lines.push(format!("    deck_key: {}", furthest.deck_key));
+    if !detail.deck_key.is_empty() {
+        lines.push(format!("    deck_key: {}", detail.deck_key));
     }
-    if !furthest.boss.is_empty() {
-        lines.push(format!("    boss: {}", furthest.boss));
+    if !detail.boss.is_empty() {
+        lines.push(format!("    boss: {}", detail.boss));
     }
-    if !furthest.boss_pressure.is_empty() {
+    if !detail.boss_pressure.is_empty() {
         lines.push(format!(
             "    boss_pressure: {}",
-            furthest.boss_pressure.join(", ")
+            detail.boss_pressure.join(", ")
         ));
     }
-    if !furthest.run_debt.is_empty() {
-        lines.push(format!("    run_debt: {}", furthest.run_debt.join(", ")));
+    if !detail.run_debt.is_empty() {
+        lines.push(format!("    run_debt: {}", detail.run_debt.join(", ")));
     }
-    if !furthest.target_origin_source.is_empty() {
+    if !detail.target_origin_source.is_empty() {
         lines.push(format!(
             "    target_origin_source: {}",
-            furthest.target_origin_source
+            detail.target_origin_source
         ));
     }
-    if !furthest.target_lane.is_empty() {
-        lines.push(format!("    lane: {}", furthest.target_lane));
+    if !detail.target_lane.is_empty() {
+        lines.push(format!("    lane: {}", detail.target_lane));
     }
-    if !furthest.choice_labels.is_empty() {
+    if !detail.choice_labels.is_empty() {
         lines.push(format!(
             "    choices: {}",
-            render_recent_choice_path_v1(&furthest.choice_labels)
+            render_recent_choice_path_v1(&detail.choice_labels)
         ));
     }
     lines
@@ -1383,6 +1481,29 @@ mod tests {
     }
 
     #[test]
+    fn milestone_summary_does_not_count_target_only_rows_as_evaluated_failures() {
+        let mut target_only = row("active", "reward", 0, 0, "Headbutt");
+        target_only.target_progress = "target_only".to_string();
+        target_only.hp = 0;
+        target_only.max_hp = 0;
+        target_only.deck_count = 0;
+
+        let text = render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
+            &[target_only],
+            CoverageGapMilestoneTargetV1::Act2Start,
+            &CoverageGapContinuationFilterV1::default(),
+        );
+
+        assert!(text.contains(
+            "CoverageGapMilestoneSummaryV1 target=Act2Start total=1 reached=0 not_reached=0 evaluated=0 target_only=1"
+        ));
+        assert!(text
+            .contains("Target groups: total=1 reached=0 not_reached=0 evaluated=0 target_only=1"));
+        assert!(!text.contains("furthest=A0F0"));
+        assert!(!text.contains("A0F0 HP 0/0"));
+    }
+
+    #[test]
     fn milestone_summary_reports_target_group_audit() {
         let mut reached_a = row("active", "boss_relic", 2, 18, "RunicPyramid");
         reached_a.target_key = "boss_relic:runic_pyramid".to_string();
@@ -1404,10 +1525,10 @@ mod tests {
 
         assert!(text.contains("Target group audit:"));
         assert!(text.contains(
-            "boss_relic | RunicPyramid {choose RunicPyramid} | reached=yes rows=2 active=1 frozen=1"
+            "boss_relic | RunicPyramid {choose RunicPyramid} | status=reached rows=2 active=1 frozen=1"
         ));
         assert!(text.contains(
-            "route | x=6 y=12 Rest {choose x=6 y=12 Rest} | reached=no rows=1 active=0 frozen=0 abandoned=1"
+            "route | x=6 y=12 Rest {choose x=6 y=12 Rest} | status=not_reached rows=1 active=0 frozen=0 abandoned=1"
         ));
         assert!(text.contains("stop=combat search did not find an executable complete win"));
     }
