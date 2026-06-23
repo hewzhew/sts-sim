@@ -80,7 +80,7 @@ impl CoverageGapMilestoneSummaryContextV1 {
             checkpoint
                 .sessions
                 .iter()
-                .map(|session| session.commands.clone()),
+                .filter_map(|session| checkpoint.session_commands_v1(session).ok()),
         )
     }
 

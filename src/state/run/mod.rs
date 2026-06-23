@@ -10,6 +10,7 @@ use crate::state::relic_pool::{
     RelicSpawnContext,
 };
 use crate::state::selection::{DomainCardSnapshot, DomainEvent, DomainEventSource};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cell::Cell;
 
 thread_local! {
@@ -111,8 +112,7 @@ pub struct RunState {
     pub emitted_events: Vec<DomainEvent>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RunStateCheckpointV1 {
     pub seed: u64,
     pub ascension_level: u8,
@@ -122,20 +122,8 @@ pub struct RunStateCheckpointV1 {
     pub floor_num: i32,
     pub playtime_seconds: f32,
     pub player_class: String,
-    #[serde(
-        default,
-        skip_serializing_if = "MapState::is_checkpoint_externalized_placeholder"
-    )]
     pub map: MapState,
-    #[serde(
-        default,
-        skip_serializing_if = "rng_pool_is_checkpoint_externalized_placeholder"
-    )]
     pub rng_pool: RngPool,
-    #[serde(
-        default,
-        skip_serializing_if = "sts_rng_is_checkpoint_externalized_placeholder"
-    )]
     pub neow_rng: StsRng,
     pub current_hp: i32,
     pub max_hp: i32,
@@ -145,7 +133,6 @@ pub struct RunStateCheckpointV1 {
     pub potions: Vec<Option<crate::content::potions::Potion>>,
     pub keys: [bool; 3],
     pub is_final_act_available: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub master_deck: Vec<CombatCard>,
     pub potion_drop_chance_mod: i32,
     pub card_blizz_randomizer: i32,
@@ -155,35 +142,417 @@ pub struct RunStateCheckpointV1 {
     pub event_state: Option<crate::state::events::EventState>,
     pub note_for_yourself_card: crate::content::cards::CardId,
     pub note_for_yourself_upgrades: u8,
-    #[serde(
-        default = "event_generator_checkpoint_externalized_placeholder",
-        skip_serializing_if = "EventGenerator::is_checkpoint_externalized_placeholder"
-    )]
     pub event_generator: EventGenerator,
     pub room_mugged: bool,
     pub room_smoked: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub common_relic_pool: Vec<RelicId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub uncommon_relic_pool: Vec<RelicId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rare_relic_pool: Vec<RelicId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shop_relic_pool: Vec<RelicId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boss_relic_pool: Vec<RelicId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub monster_list: Vec<EncounterId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub elite_monster_list: Vec<EncounterId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub boss_key: Option<EncounterId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boss_list: Vec<EncounterId>,
     pub pending_boss_reward: bool,
     pub pending_boss_act_transition: bool,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emitted_events: Vec<DomainEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+struct RunStateCheckpointExtrasV1 {
+    #[serde(skip_serializing_if = "is_false")]
+    is_daily_run: bool,
+    #[serde(skip_serializing_if = "is_zero_u8")]
+    highest_unlocked_ascension_level: u8,
+    #[serde(skip_serializing_if = "is_zero_f32")]
+    playtime_seconds: f32,
+    #[serde(skip_serializing_if = "player_class_is_default_checkpoint_v1")]
+    player_class: String,
+    #[serde(skip_serializing_if = "MapState::is_checkpoint_externalized_placeholder")]
+    map: MapState,
+    #[serde(skip_serializing_if = "rng_pool_is_checkpoint_externalized_placeholder")]
+    rng_pool: RngPool,
+    #[serde(skip_serializing_if = "sts_rng_is_checkpoint_externalized_placeholder")]
+    neow_rng: StsRng,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    relics: Vec<RelicState>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    potions: Vec<Option<crate::content::potions::Potion>>,
+    #[serde(skip_serializing_if = "keys_are_empty_v1")]
+    keys: [bool; 3],
+    #[serde(skip_serializing_if = "is_false")]
+    is_final_act_available: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    master_deck: Vec<CombatCard>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reward_state: Option<crate::state::rewards::RewardState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shop_state: Option<crate::state::shop::ShopState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    event_state: Option<crate::state::events::EventState>,
+    #[serde(skip_serializing_if = "note_for_yourself_card_is_default_v1")]
+    note_for_yourself_card: crate::content::cards::CardId,
+    #[serde(skip_serializing_if = "is_zero_u8")]
+    note_for_yourself_upgrades: u8,
+    #[serde(skip_serializing_if = "EventGenerator::is_checkpoint_externalized_placeholder")]
+    event_generator: EventGenerator,
+    #[serde(skip_serializing_if = "is_false")]
+    room_mugged: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    room_smoked: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    common_relic_pool: Vec<RelicId>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    uncommon_relic_pool: Vec<RelicId>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    rare_relic_pool: Vec<RelicId>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    shop_relic_pool: Vec<RelicId>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    boss_relic_pool: Vec<RelicId>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    monster_list: Vec<EncounterId>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    elite_monster_list: Vec<EncounterId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    boss_key: Option<EncounterId>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    boss_list: Vec<EncounterId>,
+    #[serde(skip_serializing_if = "is_false")]
+    pending_boss_reward: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    pending_boss_act_transition: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    emitted_events: Vec<DomainEvent>,
+}
+
+impl Default for RunStateCheckpointExtrasV1 {
+    fn default() -> Self {
+        Self {
+            is_daily_run: false,
+            highest_unlocked_ascension_level: 0,
+            playtime_seconds: 0.0,
+            player_class: default_player_class_checkpoint_v1(),
+            map: MapState::default(),
+            rng_pool: RngPool::default(),
+            neow_rng: StsRng::default(),
+            relics: Vec::new(),
+            potions: Vec::new(),
+            keys: [false; 3],
+            is_final_act_available: false,
+            master_deck: Vec::new(),
+            reward_state: None,
+            shop_state: None,
+            event_state: None,
+            note_for_yourself_card: default_note_for_yourself_card_v1(),
+            note_for_yourself_upgrades: 0,
+            event_generator: event_generator_checkpoint_externalized_placeholder(),
+            room_mugged: false,
+            room_smoked: false,
+            common_relic_pool: Vec::new(),
+            uncommon_relic_pool: Vec::new(),
+            rare_relic_pool: Vec::new(),
+            shop_relic_pool: Vec::new(),
+            boss_relic_pool: Vec::new(),
+            monster_list: Vec::new(),
+            elite_monster_list: Vec::new(),
+            boss_key: None,
+            boss_list: Vec::new(),
+            pending_boss_reward: false,
+            pending_boss_act_transition: false,
+            emitted_events: Vec::new(),
+        }
+    }
+}
+
+impl RunStateCheckpointExtrasV1 {
+    fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+impl Serialize for RunStateCheckpointV1 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let extras = RunStateCheckpointExtrasV1 {
+            is_daily_run: self.is_daily_run,
+            highest_unlocked_ascension_level: self.highest_unlocked_ascension_level,
+            playtime_seconds: self.playtime_seconds,
+            player_class: self.player_class.clone(),
+            map: self.map.clone(),
+            rng_pool: self.rng_pool.clone(),
+            neow_rng: self.neow_rng.clone(),
+            relics: self.relics.clone(),
+            potions: self.potions.clone(),
+            keys: self.keys,
+            is_final_act_available: self.is_final_act_available,
+            master_deck: self.master_deck.clone(),
+            reward_state: self.reward_state.clone(),
+            shop_state: self.shop_state.clone(),
+            event_state: self.event_state.clone(),
+            note_for_yourself_card: self.note_for_yourself_card,
+            note_for_yourself_upgrades: self.note_for_yourself_upgrades,
+            event_generator: self.event_generator.clone(),
+            room_mugged: self.room_mugged,
+            room_smoked: self.room_smoked,
+            common_relic_pool: self.common_relic_pool.clone(),
+            uncommon_relic_pool: self.uncommon_relic_pool.clone(),
+            rare_relic_pool: self.rare_relic_pool.clone(),
+            shop_relic_pool: self.shop_relic_pool.clone(),
+            boss_relic_pool: self.boss_relic_pool.clone(),
+            monster_list: self.monster_list.clone(),
+            elite_monster_list: self.elite_monster_list.clone(),
+            boss_key: self.boss_key,
+            boss_list: self.boss_list.clone(),
+            pending_boss_reward: self.pending_boss_reward,
+            pending_boss_act_transition: self.pending_boss_act_transition,
+            emitted_events: self.emitted_events.clone(),
+        };
+        let extras = (!extras.is_empty()).then_some(extras);
+        (
+            self.seed,
+            self.ascension_level,
+            self.act_num,
+            self.floor_num,
+            self.current_hp,
+            self.max_hp,
+            self.gold,
+            self.shop_purge_count,
+            self.potion_drop_chance_mod,
+            self.card_blizz_randomizer,
+            self.card_upgraded_chance,
+            extras,
+        )
+            .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for RunStateCheckpointV1 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Wire {
+            Compact(
+                u64,
+                u8,
+                u8,
+                i32,
+                i32,
+                i32,
+                i32,
+                i32,
+                i32,
+                i32,
+                f32,
+                Option<RunStateCheckpointExtrasV1>,
+            ),
+            Legacy(RunStateCheckpointLegacyV1),
+        }
+
+        match Wire::deserialize(deserializer)? {
+            Wire::Compact(
+                seed,
+                ascension_level,
+                act_num,
+                floor_num,
+                current_hp,
+                max_hp,
+                gold,
+                shop_purge_count,
+                potion_drop_chance_mod,
+                card_blizz_randomizer,
+                card_upgraded_chance,
+                extras,
+            ) => {
+                let extras = extras.unwrap_or_default();
+                Ok(Self {
+                    seed,
+                    ascension_level,
+                    is_daily_run: extras.is_daily_run,
+                    highest_unlocked_ascension_level: extras.highest_unlocked_ascension_level,
+                    act_num,
+                    floor_num,
+                    playtime_seconds: extras.playtime_seconds,
+                    player_class: extras.player_class,
+                    map: extras.map,
+                    rng_pool: extras.rng_pool,
+                    neow_rng: extras.neow_rng,
+                    current_hp,
+                    max_hp,
+                    gold,
+                    shop_purge_count,
+                    relics: extras.relics,
+                    potions: extras.potions,
+                    keys: extras.keys,
+                    is_final_act_available: extras.is_final_act_available,
+                    master_deck: extras.master_deck,
+                    potion_drop_chance_mod,
+                    card_blizz_randomizer,
+                    card_upgraded_chance,
+                    reward_state: extras.reward_state,
+                    shop_state: extras.shop_state,
+                    event_state: extras.event_state,
+                    note_for_yourself_card: extras.note_for_yourself_card,
+                    note_for_yourself_upgrades: extras.note_for_yourself_upgrades,
+                    event_generator: extras.event_generator,
+                    room_mugged: extras.room_mugged,
+                    room_smoked: extras.room_smoked,
+                    common_relic_pool: extras.common_relic_pool,
+                    uncommon_relic_pool: extras.uncommon_relic_pool,
+                    rare_relic_pool: extras.rare_relic_pool,
+                    shop_relic_pool: extras.shop_relic_pool,
+                    boss_relic_pool: extras.boss_relic_pool,
+                    monster_list: extras.monster_list,
+                    elite_monster_list: extras.elite_monster_list,
+                    boss_key: extras.boss_key,
+                    boss_list: extras.boss_list,
+                    pending_boss_reward: extras.pending_boss_reward,
+                    pending_boss_act_transition: extras.pending_boss_act_transition,
+                    emitted_events: extras.emitted_events,
+                })
+            }
+            Wire::Legacy(legacy) => Ok(legacy.into_checkpoint()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RunStateCheckpointLegacyV1 {
+    pub seed: u64,
+    #[serde(default)]
+    pub ascension_level: u8,
+    #[serde(default)]
+    pub is_daily_run: bool,
+    #[serde(default)]
+    pub highest_unlocked_ascension_level: u8,
+    pub act_num: u8,
+    pub floor_num: i32,
+    #[serde(default)]
+    pub playtime_seconds: f32,
+    #[serde(default = "default_player_class_checkpoint_v1")]
+    pub player_class: String,
+    #[serde(default)]
+    pub map: MapState,
+    #[serde(default)]
+    pub rng_pool: RngPool,
+    #[serde(default)]
+    pub neow_rng: StsRng,
+    pub current_hp: i32,
+    pub max_hp: i32,
+    pub gold: i32,
+    #[serde(default)]
+    pub shop_purge_count: i32,
+    #[serde(default)]
+    pub relics: Vec<RelicState>,
+    #[serde(default)]
+    pub potions: Vec<Option<crate::content::potions::Potion>>,
+    #[serde(default)]
+    pub keys: [bool; 3],
+    #[serde(default)]
+    pub is_final_act_available: bool,
+    #[serde(default)]
+    pub master_deck: Vec<CombatCard>,
+    pub potion_drop_chance_mod: i32,
+    pub card_blizz_randomizer: i32,
+    pub card_upgraded_chance: f32,
+    #[serde(default)]
+    pub reward_state: Option<crate::state::rewards::RewardState>,
+    #[serde(default)]
+    pub shop_state: Option<crate::state::shop::ShopState>,
+    #[serde(default)]
+    pub event_state: Option<crate::state::events::EventState>,
+    #[serde(default = "default_note_for_yourself_card_v1")]
+    pub note_for_yourself_card: crate::content::cards::CardId,
+    #[serde(default)]
+    pub note_for_yourself_upgrades: u8,
+    #[serde(default = "event_generator_checkpoint_externalized_placeholder")]
+    pub event_generator: EventGenerator,
+    #[serde(default)]
+    pub room_mugged: bool,
+    #[serde(default)]
+    pub room_smoked: bool,
+    #[serde(default)]
+    pub common_relic_pool: Vec<RelicId>,
+    #[serde(default)]
+    pub uncommon_relic_pool: Vec<RelicId>,
+    #[serde(default)]
+    pub rare_relic_pool: Vec<RelicId>,
+    #[serde(default)]
+    pub shop_relic_pool: Vec<RelicId>,
+    #[serde(default)]
+    pub boss_relic_pool: Vec<RelicId>,
+    #[serde(default)]
+    pub monster_list: Vec<EncounterId>,
+    #[serde(default)]
+    pub elite_monster_list: Vec<EncounterId>,
+    #[serde(default)]
+    pub boss_key: Option<EncounterId>,
+    #[serde(default)]
+    pub boss_list: Vec<EncounterId>,
+    #[serde(default)]
+    pub pending_boss_reward: bool,
+    #[serde(default)]
+    pub pending_boss_act_transition: bool,
+    #[serde(default)]
+    pub emitted_events: Vec<DomainEvent>,
+}
+
+impl RunStateCheckpointLegacyV1 {
+    fn into_checkpoint(self) -> RunStateCheckpointV1 {
+        RunStateCheckpointV1 {
+            seed: self.seed,
+            ascension_level: self.ascension_level,
+            is_daily_run: self.is_daily_run,
+            highest_unlocked_ascension_level: self.highest_unlocked_ascension_level,
+            act_num: self.act_num,
+            floor_num: self.floor_num,
+            playtime_seconds: self.playtime_seconds,
+            player_class: self.player_class,
+            map: self.map,
+            rng_pool: self.rng_pool,
+            neow_rng: self.neow_rng,
+            current_hp: self.current_hp,
+            max_hp: self.max_hp,
+            gold: self.gold,
+            shop_purge_count: self.shop_purge_count,
+            relics: self.relics,
+            potions: self.potions,
+            keys: self.keys,
+            is_final_act_available: self.is_final_act_available,
+            master_deck: self.master_deck,
+            potion_drop_chance_mod: self.potion_drop_chance_mod,
+            card_blizz_randomizer: self.card_blizz_randomizer,
+            card_upgraded_chance: self.card_upgraded_chance,
+            reward_state: self.reward_state,
+            shop_state: self.shop_state,
+            event_state: self.event_state,
+            note_for_yourself_card: self.note_for_yourself_card,
+            note_for_yourself_upgrades: self.note_for_yourself_upgrades,
+            event_generator: self.event_generator,
+            room_mugged: self.room_mugged,
+            room_smoked: self.room_smoked,
+            common_relic_pool: self.common_relic_pool,
+            uncommon_relic_pool: self.uncommon_relic_pool,
+            rare_relic_pool: self.rare_relic_pool,
+            shop_relic_pool: self.shop_relic_pool,
+            boss_relic_pool: self.boss_relic_pool,
+            monster_list: self.monster_list,
+            elite_monster_list: self.elite_monster_list,
+            boss_key: self.boss_key,
+            boss_list: self.boss_list,
+            pending_boss_reward: self.pending_boss_reward,
+            pending_boss_act_transition: self.pending_boss_act_transition,
+            emitted_events: self.emitted_events,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -628,6 +997,38 @@ fn sts_rng_is_checkpoint_externalized_placeholder(value: &StsRng) -> bool {
 
 fn event_generator_checkpoint_externalized_placeholder() -> EventGenerator {
     EventGenerator::checkpoint_externalized_placeholder()
+}
+
+fn is_zero_u8(value: &u8) -> bool {
+    *value == 0
+}
+
+fn is_zero_f32(value: &f32) -> bool {
+    *value == 0.0
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+fn keys_are_empty_v1(value: &[bool; 3]) -> bool {
+    !value.iter().any(|key| *key)
+}
+
+fn default_player_class_checkpoint_v1() -> String {
+    "Ironclad".to_string()
+}
+
+fn player_class_is_default_checkpoint_v1(value: &String) -> bool {
+    value == "Ironclad"
+}
+
+fn default_note_for_yourself_card_v1() -> crate::content::cards::CardId {
+    crate::content::cards::CardId::IronWave
+}
+
+fn note_for_yourself_card_is_default_v1(value: &crate::content::cards::CardId) -> bool {
+    *value == default_note_for_yourself_card_v1()
 }
 
 fn checkpoint_player_class(raw: &str) -> Result<&'static str, String> {

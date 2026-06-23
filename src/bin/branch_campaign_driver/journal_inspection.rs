@@ -1333,6 +1333,7 @@ fn render_typed_route_journal_candidate_with_tail_v1(
     tail: &str,
 ) -> String {
     let path = route.path_summary.as_ref();
+    let path_facts = route.path_facts.as_ref();
     let target = route.target_node.as_ref();
     let x = target
         .map(|target| target.x.to_string())
@@ -1340,6 +1341,40 @@ fn render_typed_route_journal_candidate_with_tail_v1(
     let y = target
         .map(|target| target.y.to_string())
         .unwrap_or_else(|| "?".to_string());
+    let room_type = target
+        .and_then(|target| target.room_type)
+        .map(|room| format!("{:?}", room))
+        .unwrap_or_else(|| {
+            if route.room_type.is_empty() {
+                "Unknown".to_string()
+            } else {
+                route.room_type.clone()
+            }
+        });
+    let move_kind = target
+        .map(|target| format!("{:?}", target.move_kind))
+        .unwrap_or_else(|| {
+            if route.move_kind.is_empty() {
+                "Unknown".to_string()
+            } else {
+                route.move_kind.clone()
+            }
+        });
+    let safety = route
+        .safety_flag
+        .map(|safety| format!("{:?}", safety))
+        .unwrap_or_else(|| {
+            if route.safety.is_empty() {
+                "Unknown".to_string()
+            } else {
+                route.safety.clone()
+            }
+        });
+    let command = route
+        .action
+        .as_ref()
+        .map(|action| action.command())
+        .unwrap_or_else(|| route.command.clone());
     let coverage = route
         .projection_coverage
         .map(|coverage| format!("{:?}", coverage))
@@ -1348,22 +1383,44 @@ fn render_typed_route_journal_candidate_with_tail_v1(
         "x{}y{} {} {{{}}} [route rank={} move={} safety={} score={:.2} vf={} coverage={} paths={}/{} elites={}-{} fires={}-{} shops={}-{}; {}]",
         x,
         y,
-        route.room_type,
-        route.command,
+        room_type,
+        command,
         route.rank,
-        route.move_kind,
-        route.safety,
+        move_kind,
+        safety,
         route.score,
         render_typed_route_value_factors_v1(route),
         coverage,
-        route.observed_path_count.unwrap_or_else(|| path.map(|path| path.path_count).unwrap_or(0)),
+        route.observed_path_count.unwrap_or_else(|| {
+            path.map(|path| path.path_count)
+                .or_else(|| path_facts.map(|path| path.path_count))
+                .unwrap_or(0)
+        }),
         route.path_budget.unwrap_or(0),
-        path.map(|path| path.min_elites).unwrap_or(0),
-        path.map(|path| path.max_elites).unwrap_or(0),
-        path.map(|path| path.min_fires).unwrap_or(0),
-        path.map(|path| path.max_fires).unwrap_or(0),
-        path.map(|path| path.min_shops).unwrap_or(0),
-        path.map(|path| path.max_shops).unwrap_or(0),
+        path
+            .map(|path| path.min_elites)
+            .or_else(|| path_facts.map(|path| path.min_elites))
+            .unwrap_or(0),
+        path
+            .map(|path| path.max_elites)
+            .or_else(|| path_facts.map(|path| path.max_elites))
+            .unwrap_or(0),
+        path
+            .map(|path| path.min_fires)
+            .or_else(|| path_facts.map(|path| path.min_fires))
+            .unwrap_or(0),
+        path
+            .map(|path| path.max_fires)
+            .or_else(|| path_facts.map(|path| path.max_fires))
+            .unwrap_or(0),
+        path
+            .map(|path| path.min_shops)
+            .or_else(|| path_facts.map(|path| path.min_shops))
+            .unwrap_or(0),
+        path
+            .map(|path| path.max_shops)
+            .or_else(|| path_facts.map(|path| path.max_shops))
+            .unwrap_or(0),
         tail
     )
 }
@@ -1582,6 +1639,7 @@ mod tests {
             evaluation_calibration_status: None,
             command: "go 1".to_string(),
             node_features: None,
+            path_facts: None,
             path_summary: None,
             needs: None,
             projection_source: None,
@@ -1793,6 +1851,7 @@ mod tests {
                 .iter()
                 .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
                 .collect(),
+            route_candidate_pool_ref: None,
             candidates: packet
                 .candidates
                 .iter()
@@ -1845,6 +1904,7 @@ mod tests {
                 .iter()
                 .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
                 .collect(),
+            route_candidate_pool_ref: None,
             candidates: packet
                 .candidates
                 .iter()
@@ -2050,6 +2110,7 @@ mod tests {
                         .iter()
                         .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
                         .collect(),
+                    route_candidate_pool_ref: None,
                     candidates: packet
                         .candidates
                         .iter()
@@ -2209,6 +2270,10 @@ mod tests {
             journal: CampaignJournalV1 {
                 schema_name: "CampaignJournal".to_string(),
                 schema_version: 4,
+                route_candidate_pools: Vec::new(),
+                branch_paths: Vec::new(),
+                branch_path_nodes: Vec::new(),
+                event_branch_paths: Vec::new(),
                 events,
             },
             rounds: Vec::new(),

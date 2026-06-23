@@ -163,6 +163,29 @@ Use a sidecar when:
 - the payload explains a decision but does not define the decision fact
 - the payload is useful only for one inspect command or offline analysis
 
+## Lifecycle And Retention
+
+Campaign artifacts are not a permanent database. The maintained lifecycle is:
+
+```text
+runs/<run-id>/        normal campaign history, latest points to one run
+scratch/<artifact-id> temporary experiments, scratch/latest points to one group
+loose root files      legacy/debug debris, not a maintained storage surface
+perf/diagnostics      opt-in analysis buckets, prunable unless pinned elsewhere
+```
+
+The wrapper provides `-PruneArtifacts` as the normal retention tool. It is
+dry-run by default and requires `-PruneApply` before deleting files. The default
+policy keeps the current latest run, current scratch latest, the newest five
+run directories, and the newest one scratch artifact group. This is deliberate:
+scratch is for disposable probes and should not become a hidden campaign
+database.
+
+New code should avoid writing raw campaign artifacts into the root campaign
+directory. Write normal runs under `runs/<run-id>/`, scratch experiments under
+`scratch/<artifact-id>`, and large optional diagnostics under an explicit
+diagnostic sidecar or a dedicated analysis directory.
+
 ## Object References
 
 Prefer typed references over command-string markers.

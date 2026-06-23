@@ -62,19 +62,23 @@ use intervention::{
 use lineage::campaign_branch_boss_relic_lineage_key_v1;
 pub use model::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
-    BranchCampaignCheckpointCombatTrajectoryRecordV1,
+    BranchCampaignCheckpointActiveCombatRecordV1, BranchCampaignCheckpointCombatTrajectoryRecordV1,
+    BranchCampaignCheckpointComponentRecordV1,
     BranchCampaignCheckpointRunStateEmittedEventsRecordV1,
     BranchCampaignCheckpointRunStateMapGraphRecordV1, BranchCampaignCheckpointRunStateMapRecordV1,
     BranchCampaignCheckpointRunStateMasterDeckRecordV1,
-    BranchCampaignCheckpointRunStateScheduleRecordV1, BranchCampaignCheckpointSessionV1,
-    BranchCampaignCheckpointV1, BranchCampaignContinuationOriginV1,
-    BranchCampaignContinuationTargetLaneV1, BranchCampaignDecisionObservationV1,
-    BranchCampaignDiscardedBranchV1, BranchCampaignReportV1, BranchCampaignRoundSummaryV1,
-    BranchCampaignRouteContinuationOriginV1, BranchCampaignRouteEvidenceExampleV1,
-    BranchCampaignRouteEvidenceSummaryV1, BranchCampaignRouteFirstEliteContinuationOriginV1,
-    BranchCampaignRoutePathContinuationOriginV1, BranchCampaignRunPreludeV1,
-    BranchCampaignRunResultV1, BranchCampaignSelectionV1, BranchCampaignStateStoreSummaryV1,
-    BranchCampaignStrategyRequestV1,
+    BranchCampaignCheckpointRunStatePotionsRecordV1,
+    BranchCampaignCheckpointRunStateRelicsRecordV1,
+    BranchCampaignCheckpointRunStateScheduleRecordV1,
+    BranchCampaignCheckpointRunStateScheduleRefsV1, BranchCampaignCheckpointScheduleComponentsV1,
+    BranchCampaignCheckpointSessionV1, BranchCampaignCheckpointV1,
+    BranchCampaignContinuationOriginV1, BranchCampaignContinuationTargetLaneV1,
+    BranchCampaignDecisionObservationV1, BranchCampaignDiscardedBranchV1, BranchCampaignReportV1,
+    BranchCampaignRoundSummaryV1, BranchCampaignRouteContinuationOriginV1,
+    BranchCampaignRouteEvidenceExampleV1, BranchCampaignRouteEvidenceSummaryV1,
+    BranchCampaignRouteFirstEliteContinuationOriginV1, BranchCampaignRoutePathContinuationOriginV1,
+    BranchCampaignRunPreludeV1, BranchCampaignRunResultV1, BranchCampaignSelectionV1,
+    BranchCampaignStateStoreSummaryV1, BranchCampaignStrategyRequestV1,
 };
 use parent_batch::run_campaign_parent_batch_v1;
 #[cfg(test)]
@@ -971,22 +975,23 @@ fn campaign_state_from_report_and_checkpoint_v1(
         .map(|branch| branch.commands.clone())
         .collect::<std::collections::BTreeSet<_>>();
     for entry in &checkpoint.sessions {
+        let entry_commands = checkpoint.session_commands_v1(entry)?;
         state.state_store.insert_session(
-            entry.commands.clone(),
+            entry_commands.clone(),
             checkpoint
                 .hydrated_session_checkpoint_v1(entry)?
                 .into_session()
                 .map_err(|err| format!("failed to restore campaign checkpoint session: {err}"))?,
         );
-        if !keep.contains(&entry.commands) {
-            state
-                .decision_parent_anchor_commands
-                .insert(entry.commands.clone());
+        if !keep.contains(&entry_commands) {
+            state.decision_parent_anchor_commands.insert(entry_commands);
         }
     }
-    state
-        .decision_parent_anchor_commands
-        .extend(checkpoint.decision_parent_anchor_commands.iter().cloned());
+    state.decision_parent_anchor_commands.extend(
+        checkpoint
+            .resolved_decision_parent_anchor_commands_v1()?
+            .into_iter(),
+    );
     state
         .stuck
         .retain(|branch| state.state_store.contains_commands(&branch.commands));
@@ -1012,14 +1017,21 @@ fn campaign_checkpoint_from_state_v1(
     let mut run_state_master_decks =
         Vec::<BranchCampaignCheckpointRunStateMasterDeckRecordV1>::new();
     let mut run_state_master_deck_indexes = BTreeMap::<String, usize>::new();
+    let mut run_state_relics = Vec::<BranchCampaignCheckpointRunStateRelicsRecordV1>::new();
+    let mut run_state_relic_indexes = BTreeMap::<String, usize>::new();
+    let mut run_state_potions = Vec::<BranchCampaignCheckpointRunStatePotionsRecordV1>::new();
+    let mut run_state_potion_indexes = BTreeMap::<String, usize>::new();
     let mut run_state_schedules = Vec::<BranchCampaignCheckpointRunStateScheduleRecordV1>::new();
     let mut run_state_schedule_indexes = BTreeMap::<String, usize>::new();
+    let mut run_state_schedule_components = BranchCampaignCheckpointScheduleComponentsV1::default();
     let mut run_state_emitted_events =
         Vec::<BranchCampaignCheckpointRunStateEmittedEventsRecordV1>::new();
     let mut run_state_emitted_events_indexes = BTreeMap::<String, usize>::new();
     let mut combat_automation_trajectories =
         Vec::<BranchCampaignCheckpointCombatTrajectoryRecordV1>::new();
     let mut combat_automation_trajectory_indexes = BTreeMap::<String, usize>::new();
+    let mut active_combats = Vec::<BranchCampaignCheckpointActiveCombatRecordV1>::new();
+    let mut active_combat_indexes = BTreeMap::<String, usize>::new();
     let mut exported_commands = BTreeSet::new();
     for branch in state
         .active
@@ -1041,19 +1053,38 @@ fn campaign_checkpoint_from_state_v1(
                 &mut run_state_map_indexes,
                 &mut run_state_master_decks,
                 &mut run_state_master_deck_indexes,
+                &mut run_state_relics,
+                &mut run_state_relic_indexes,
+                &mut run_state_potions,
+                &mut run_state_potion_indexes,
                 &mut run_state_schedules,
                 &mut run_state_schedule_indexes,
+                &mut run_state_schedule_components,
                 &mut run_state_emitted_events,
                 &mut run_state_emitted_events_indexes,
                 &mut combat_automation_trajectories,
                 &mut combat_automation_trajectory_indexes,
+                &mut active_combats,
+                &mut active_combat_indexes,
             );
+            let node_id = state
+                .state_store
+                .node_id_for_commands(&branch.commands)
+                .map(|id| id.as_usize());
             sessions.push(BranchCampaignCheckpointSessionV1 {
-                commands: branch.commands.clone(),
+                node_id,
+                commands: if node_id.is_some() {
+                    Vec::new()
+                } else {
+                    branch.commands.clone()
+                },
                 run_state_map_id: externalized.run_state_map_id,
                 run_state_master_deck_id: externalized.run_state_master_deck_id,
+                run_state_relics_id: externalized.run_state_relics_id,
+                run_state_potions_id: externalized.run_state_potions_id,
                 run_state_schedule_id: externalized.run_state_schedule_id,
                 run_state_emitted_events_id: externalized.run_state_emitted_events_id,
+                active_combat_id: externalized.active_combat_id,
                 session: externalized.session,
             });
         }
@@ -1072,19 +1103,38 @@ fn campaign_checkpoint_from_state_v1(
                 &mut run_state_map_indexes,
                 &mut run_state_master_decks,
                 &mut run_state_master_deck_indexes,
+                &mut run_state_relics,
+                &mut run_state_relic_indexes,
+                &mut run_state_potions,
+                &mut run_state_potion_indexes,
                 &mut run_state_schedules,
                 &mut run_state_schedule_indexes,
+                &mut run_state_schedule_components,
                 &mut run_state_emitted_events,
                 &mut run_state_emitted_events_indexes,
                 &mut combat_automation_trajectories,
                 &mut combat_automation_trajectory_indexes,
+                &mut active_combats,
+                &mut active_combat_indexes,
             );
+            let node_id = state
+                .state_store
+                .node_id_for_commands(commands)
+                .map(|id| id.as_usize());
             sessions.push(BranchCampaignCheckpointSessionV1 {
-                commands: commands.clone(),
+                node_id,
+                commands: if node_id.is_some() {
+                    Vec::new()
+                } else {
+                    commands.clone()
+                },
                 run_state_map_id: externalized.run_state_map_id,
                 run_state_master_deck_id: externalized.run_state_master_deck_id,
+                run_state_relics_id: externalized.run_state_relics_id,
+                run_state_potions_id: externalized.run_state_potions_id,
                 run_state_schedule_id: externalized.run_state_schedule_id,
                 run_state_emitted_events_id: externalized.run_state_emitted_events_id,
+                active_combat_id: externalized.active_combat_id,
                 session: externalized.session,
             });
         }
@@ -1100,14 +1150,29 @@ fn campaign_checkpoint_from_state_v1(
         decision_parent_anchor_commands: state
             .decision_parent_anchor_commands
             .iter()
+            .filter(|commands| state.state_store.node_id_for_commands(commands).is_none())
             .cloned()
+            .collect(),
+        decision_parent_anchor_node_ids: state
+            .decision_parent_anchor_commands
+            .iter()
+            .filter_map(|commands| {
+                state
+                    .state_store
+                    .node_id_for_commands(commands)
+                    .map(|id| id.as_usize())
+            })
             .collect(),
         run_state_map_graphs,
         run_state_maps,
         run_state_master_decks,
+        run_state_relics,
+        run_state_potions,
         run_state_schedules,
+        run_state_schedule_components,
         run_state_emitted_events,
         combat_automation_trajectories,
+        active_combats,
         sessions,
     }
 }
@@ -1116,12 +1181,15 @@ struct CampaignCheckpointExternalizedSessionV1 {
     session: RunControlSessionCheckpointV1,
     run_state_map_id: Option<String>,
     run_state_master_deck_id: Option<String>,
+    run_state_relics_id: Option<String>,
+    run_state_potions_id: Option<String>,
     run_state_schedule_id: Option<String>,
     run_state_emitted_events_id: Option<String>,
+    active_combat_id: Option<String>,
 }
 
 fn campaign_checkpoint_session_with_external_refs_v1(
-    commands: &[String],
+    _commands: &[String],
     session: &RunControlSession,
     run_state_map_graphs: &mut Vec<BranchCampaignCheckpointRunStateMapGraphRecordV1>,
     run_state_map_graph_indexes: &mut BTreeMap<String, usize>,
@@ -1129,12 +1197,19 @@ fn campaign_checkpoint_session_with_external_refs_v1(
     run_state_map_indexes: &mut BTreeMap<String, usize>,
     run_state_master_decks: &mut Vec<BranchCampaignCheckpointRunStateMasterDeckRecordV1>,
     run_state_master_deck_indexes: &mut BTreeMap<String, usize>,
+    run_state_relics: &mut Vec<BranchCampaignCheckpointRunStateRelicsRecordV1>,
+    run_state_relic_indexes: &mut BTreeMap<String, usize>,
+    run_state_potions: &mut Vec<BranchCampaignCheckpointRunStatePotionsRecordV1>,
+    run_state_potion_indexes: &mut BTreeMap<String, usize>,
     run_state_schedules: &mut Vec<BranchCampaignCheckpointRunStateScheduleRecordV1>,
     run_state_schedule_indexes: &mut BTreeMap<String, usize>,
-    run_state_emitted_events: &mut Vec<BranchCampaignCheckpointRunStateEmittedEventsRecordV1>,
-    run_state_emitted_events_indexes: &mut BTreeMap<String, usize>,
-    combat_automation_trajectories: &mut Vec<BranchCampaignCheckpointCombatTrajectoryRecordV1>,
-    combat_automation_trajectory_indexes: &mut BTreeMap<String, usize>,
+    run_state_schedule_components: &mut BranchCampaignCheckpointScheduleComponentsV1,
+    _run_state_emitted_events: &mut Vec<BranchCampaignCheckpointRunStateEmittedEventsRecordV1>,
+    _run_state_emitted_events_indexes: &mut BTreeMap<String, usize>,
+    _combat_automation_trajectories: &mut Vec<BranchCampaignCheckpointCombatTrajectoryRecordV1>,
+    _combat_automation_trajectory_indexes: &mut BTreeMap<String, usize>,
+    active_combats: &mut Vec<BranchCampaignCheckpointActiveCombatRecordV1>,
+    active_combat_indexes: &mut BTreeMap<String, usize>,
 ) -> CampaignCheckpointExternalizedSessionV1 {
     let mut checkpoint = RunControlSessionCheckpointV1::from_session(session);
     let mut map = checkpoint.take_run_state_map_for_external_ref();
@@ -1198,6 +1273,49 @@ fn campaign_checkpoint_session_with_external_refs_v1(
             .map(|record| record.deck_id.clone())
     };
 
+    let relics = checkpoint.take_run_state_relics_for_external_ref();
+    let run_state_relics_id = if relics.is_empty() {
+        None
+    } else {
+        let relics_key = campaign_checkpoint_run_state_relics_key_v1(&relics);
+        let relics_index = if let Some(index) = run_state_relic_indexes.get(&relics_key).copied() {
+            index
+        } else {
+            let index = run_state_relics.len();
+            run_state_relic_indexes.insert(relics_key, index);
+            run_state_relics.push(BranchCampaignCheckpointRunStateRelicsRecordV1 {
+                relics_id: format!("run_state_relics:{index}"),
+                relics,
+            });
+            index
+        };
+        run_state_relics
+            .get(relics_index)
+            .map(|record| record.relics_id.clone())
+    };
+
+    let potions = checkpoint.take_run_state_potions_for_external_ref();
+    let run_state_potions_id = if potions.is_empty() {
+        None
+    } else {
+        let potions_key = campaign_checkpoint_run_state_potions_key_v1(&potions);
+        let potions_index = if let Some(index) = run_state_potion_indexes.get(&potions_key).copied()
+        {
+            index
+        } else {
+            let index = run_state_potions.len();
+            run_state_potion_indexes.insert(potions_key, index);
+            run_state_potions.push(BranchCampaignCheckpointRunStatePotionsRecordV1 {
+                potions_id: format!("run_state_potions:{index}"),
+                potions,
+            });
+            index
+        };
+        run_state_potions
+            .get(potions_index)
+            .map(|record| record.potions_id.clone())
+    };
+
     let schedule = checkpoint.take_run_state_schedule_for_external_ref();
     let schedule_key = campaign_checkpoint_run_state_schedule_key_v1(&schedule);
     let schedule_index = if let Some(index) = run_state_schedule_indexes.get(&schedule_key).copied()
@@ -1206,9 +1324,14 @@ fn campaign_checkpoint_session_with_external_refs_v1(
     } else {
         let index = run_state_schedules.len();
         run_state_schedule_indexes.insert(schedule_key, index);
+        let schedule_refs = campaign_checkpoint_run_state_schedule_refs_v1(
+            run_state_schedule_components,
+            &schedule,
+        );
         run_state_schedules.push(BranchCampaignCheckpointRunStateScheduleRecordV1 {
             schedule_id: format!("run_state_schedule:{index}"),
-            schedule,
+            schedule: None,
+            schedule_refs: Some(schedule_refs),
         });
         index
     };
@@ -1216,62 +1339,42 @@ fn campaign_checkpoint_session_with_external_refs_v1(
         .get(schedule_index)
         .map(|record| record.schedule_id.clone());
 
-    let emitted_events = checkpoint.take_run_state_emitted_events_for_external_ref();
-    let run_state_emitted_events_id = if emitted_events.is_empty() {
-        None
+    let _ = checkpoint.take_run_state_emitted_events_for_external_ref();
+    let run_state_emitted_events_id = None;
+    checkpoint.clear_combat_diagnostics_for_external_checkpoint();
+
+    let active_combat = checkpoint.take_active_combat_for_external_ref();
+    let active_combat_id = if let Some(active_combat) = active_combat {
+        let active_combat_key = campaign_checkpoint_active_combat_key_v1(&active_combat);
+        let active_combat_index =
+            if let Some(index) = active_combat_indexes.get(&active_combat_key).copied() {
+                index
+            } else {
+                let index = active_combats.len();
+                active_combat_indexes.insert(active_combat_key, index);
+                active_combats.push(BranchCampaignCheckpointActiveCombatRecordV1 {
+                    active_combat_id: format!("active_combat:{index}"),
+                    active_combat,
+                });
+                index
+            };
+        active_combats
+            .get(active_combat_index)
+            .map(|record| record.active_combat_id.clone())
     } else {
-        let emitted_events_key =
-            campaign_checkpoint_run_state_emitted_events_key_v1(&emitted_events);
-        let emitted_events_index = if let Some(index) = run_state_emitted_events_indexes
-            .get(&emitted_events_key)
-            .copied()
-        {
-            index
-        } else {
-            let index = run_state_emitted_events.len();
-            run_state_emitted_events_indexes.insert(emitted_events_key, index);
-            run_state_emitted_events.push(BranchCampaignCheckpointRunStateEmittedEventsRecordV1 {
-                emitted_events_id: format!("run_state_emitted_events:{index}"),
-                emitted_events,
-            });
-            index
-        };
-        run_state_emitted_events
-            .get(emitted_events_index)
-            .map(|record| record.emitted_events_id.clone())
+        None
     };
 
-    let Some(trajectory) = checkpoint.take_last_combat_automation_trajectory_record() else {
-        return CampaignCheckpointExternalizedSessionV1 {
-            session: checkpoint,
-            run_state_map_id,
-            run_state_master_deck_id,
-            run_state_schedule_id,
-            run_state_emitted_events_id,
-        };
-    };
-    let key = campaign_checkpoint_combat_trajectory_key_v1(&trajectory);
-    let index = if let Some(index) = combat_automation_trajectory_indexes.get(&key).copied() {
-        index
-    } else {
-        let index = combat_automation_trajectories.len();
-        combat_automation_trajectory_indexes.insert(key, index);
-        combat_automation_trajectories.push(BranchCampaignCheckpointCombatTrajectoryRecordV1 {
-            trajectory_id: format!("combat_trajectory:{index}"),
-            commands: Vec::new(),
-            trajectory,
-        });
-        index
-    };
-    if let Some(record) = combat_automation_trajectories.get_mut(index) {
-        record.commands.push(commands.to_vec());
-    }
+    let _ = checkpoint.take_last_combat_automation_trajectory_record();
     CampaignCheckpointExternalizedSessionV1 {
         session: checkpoint,
         run_state_map_id,
         run_state_master_deck_id,
+        run_state_relics_id,
+        run_state_potions_id,
         run_state_schedule_id,
         run_state_emitted_events_id,
+        active_combat_id,
     }
 }
 
@@ -1289,22 +1392,104 @@ fn campaign_checkpoint_run_state_master_deck_key_v1(
     serde_json::to_string(master_deck).unwrap_or_else(|_| format!("{master_deck:?}"))
 }
 
+fn campaign_checkpoint_run_state_relics_key_v1(
+    relics: &[crate::content::relics::RelicState],
+) -> String {
+    serde_json::to_string(relics).unwrap_or_else(|_| format!("{relics:?}"))
+}
+
+fn campaign_checkpoint_run_state_potions_key_v1(
+    potions: &[Option<crate::content::potions::Potion>],
+) -> String {
+    serde_json::to_string(potions).unwrap_or_else(|_| format!("{potions:?}"))
+}
+
+fn campaign_checkpoint_run_state_schedule_refs_v1(
+    components: &mut BranchCampaignCheckpointScheduleComponentsV1,
+    schedule: &crate::state::run::RunStateScheduleCheckpointV1,
+) -> BranchCampaignCheckpointRunStateScheduleRefsV1 {
+    BranchCampaignCheckpointRunStateScheduleRefsV1 {
+        rng_pool: schedule.rng_pool.clone(),
+        neow_rng_id: campaign_checkpoint_component_id_v1(
+            &mut components.neow_rngs,
+            "schedule_neow_rng",
+            &schedule.neow_rng,
+        ),
+        event_generator_id: campaign_checkpoint_component_id_v1(
+            &mut components.event_generators,
+            "schedule_event_generator",
+            &schedule.event_generator,
+        ),
+        common_relic_pool_id: campaign_checkpoint_component_id_v1(
+            &mut components.common_relic_pools,
+            "schedule_common_relic_pool",
+            &schedule.common_relic_pool,
+        ),
+        uncommon_relic_pool_id: campaign_checkpoint_component_id_v1(
+            &mut components.uncommon_relic_pools,
+            "schedule_uncommon_relic_pool",
+            &schedule.uncommon_relic_pool,
+        ),
+        rare_relic_pool_id: campaign_checkpoint_component_id_v1(
+            &mut components.rare_relic_pools,
+            "schedule_rare_relic_pool",
+            &schedule.rare_relic_pool,
+        ),
+        shop_relic_pool_id: campaign_checkpoint_component_id_v1(
+            &mut components.shop_relic_pools,
+            "schedule_shop_relic_pool",
+            &schedule.shop_relic_pool,
+        ),
+        boss_relic_pool_id: campaign_checkpoint_component_id_v1(
+            &mut components.boss_relic_pools,
+            "schedule_boss_relic_pool",
+            &schedule.boss_relic_pool,
+        ),
+        monster_list_id: campaign_checkpoint_component_id_v1(
+            &mut components.monster_lists,
+            "schedule_monster_list",
+            &schedule.monster_list,
+        ),
+        elite_monster_list_id: campaign_checkpoint_component_id_v1(
+            &mut components.elite_monster_lists,
+            "schedule_elite_monster_list",
+            &schedule.elite_monster_list,
+        ),
+        boss_key: schedule.boss_key,
+        boss_list_id: campaign_checkpoint_component_id_v1(
+            &mut components.boss_lists,
+            "schedule_boss_list",
+            &schedule.boss_list,
+        ),
+    }
+}
+
+fn campaign_checkpoint_component_id_v1<T: Clone + PartialEq>(
+    records: &mut Vec<BranchCampaignCheckpointComponentRecordV1<T>>,
+    prefix: &str,
+    value: &T,
+) -> String {
+    if let Some(record) = records.iter().find(|record| record.value == *value) {
+        return record.component_id.clone();
+    }
+    let component_id = format!("{prefix}:{}", records.len());
+    records.push(BranchCampaignCheckpointComponentRecordV1 {
+        component_id: component_id.clone(),
+        value: value.clone(),
+    });
+    component_id
+}
+
 fn campaign_checkpoint_run_state_schedule_key_v1(
     schedule: &crate::state::run::RunStateScheduleCheckpointV1,
 ) -> String {
     serde_json::to_string(schedule).unwrap_or_else(|_| format!("{schedule:?}"))
 }
 
-fn campaign_checkpoint_run_state_emitted_events_key_v1(
-    emitted_events: &[crate::state::selection::DomainEvent],
+fn campaign_checkpoint_active_combat_key_v1(
+    active_combat: &crate::state::core::ActiveCombat,
 ) -> String {
-    serde_json::to_string(emitted_events).unwrap_or_else(|_| format!("{emitted_events:?}"))
-}
-
-fn campaign_checkpoint_combat_trajectory_key_v1(
-    trajectory: &crate::eval::run_control::CombatAutomationTrajectoryRecordV1,
-) -> String {
-    serde_json::to_string(trajectory).unwrap_or_else(|_| format!("{trajectory:?}"))
+    serde_json::to_string(active_combat).unwrap_or_else(|_| format!("{active_combat:?}"))
 }
 
 fn branch_campaign_run_prelude_v1(config: &BranchCampaignConfigV1) -> BranchCampaignRunPreludeV1 {

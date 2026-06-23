@@ -3997,7 +3997,16 @@ fn coverage_gap_route_origin_from_journal_candidate_v1(
 ) -> Option<CoverageGapRouteTargetOriginV1> {
     let candidate = route_candidates.get(candidate_index)?;
     let target = candidate.target_node.as_ref()?;
-    let path = candidate.path_summary.as_ref()?;
+    let path = candidate
+        .path_summary
+        .as_ref()
+        .map(coverage_gap_route_path_origin_v1)
+        .or_else(|| {
+            candidate
+                .path_facts
+                .as_ref()
+                .map(coverage_gap_route_path_origin_from_journal_facts_v1)
+        })?;
     Some(CoverageGapRouteTargetOriginV1 {
         legal_candidate_count: candidate_pool_provenance
             .as_ref()
@@ -4042,9 +4051,37 @@ fn coverage_gap_route_origin_from_journal_candidate_v1(
         projection_coverage_kind: candidate.projection_coverage,
         path_budget: candidate.path_budget.unwrap_or(0),
         observed_path_count: candidate.observed_path_count.unwrap_or(path.path_count),
-        path: coverage_gap_route_path_origin_v1(path),
+        path,
         first_elite: coverage_gap_route_first_elite_origin_from_evidence_v1(&candidate.first_elite),
     })
+}
+
+fn coverage_gap_route_path_origin_from_journal_facts_v1(
+    path: &crate::eval::campaign_journal::CampaignJournalRoutePathFactsV1,
+) -> CoverageGapRoutePathOriginV1 {
+    CoverageGapRoutePathOriginV1 {
+        path_count: path.path_count,
+        path_budget_exhausted: path.path_budget_exhausted,
+        min_early_pressure: path.min_early_pressure,
+        max_early_pressure: path.max_early_pressure,
+        min_elites: path.min_elites,
+        max_elites: path.max_elites,
+        min_shops: path.min_shops,
+        max_shops: path.max_shops,
+        min_fires: path.min_fires,
+        max_fires: path.max_fires,
+        min_unknowns: path.min_unknowns,
+        max_unknowns: path.max_unknowns,
+        min_treasures: path.min_treasures,
+        max_treasures: path.max_treasures,
+        first_shop_floor: path.first_shop_floor,
+        first_fire_floor: path.first_fire_floor,
+        min_damage_rooms_before_recovery: path.min_damage_rooms_before_recovery,
+        max_damage_rooms_before_recovery: path.max_damage_rooms_before_recovery,
+        min_unknowns_before_recovery: path.min_unknowns_before_recovery,
+        max_unknowns_before_recovery: path.max_unknowns_before_recovery,
+        paths_with_recovery_before_damage: path.paths_with_recovery_before_damage,
+    }
 }
 
 fn coverage_gap_route_path_origin_v1(
@@ -5448,6 +5485,7 @@ mod tests {
                 candidate_pool_provenance: None,
                 map_decision_packet: None,
                 route_candidates: Vec::new(),
+                route_candidate_pool_ref: None,
                 candidates: vec![selected_route, unselected_route],
             },
         });
@@ -5522,6 +5560,7 @@ mod tests {
                 candidate_pool_provenance: None,
                 map_decision_packet: None,
                 route_candidates: Vec::new(),
+                route_candidate_pool_ref: None,
                 candidates: vec![
                     sample_journal_candidate("go 1", "Route selected"),
                     sample_journal_candidate("go 3", "Route alternative"),
@@ -5698,6 +5737,7 @@ mod tests {
                 candidate_pool_provenance: None,
                 map_decision_packet: None,
                 route_candidates: Vec::new(),
+                route_candidate_pool_ref: None,
                 candidates: vec![
                     sample_journal_candidate("go 0", "Monster A"),
                     sample_journal_candidate("go 1", "Shop"),
@@ -6034,6 +6074,7 @@ mod tests {
                 candidate_pool_provenance: None,
                 map_decision_packet: None,
                 route_candidates: Vec::new(),
+                route_candidate_pool_ref: None,
                 candidates: vec![sample_journal_candidate("go 1", "Route missing")],
             },
         });
@@ -6073,6 +6114,7 @@ mod tests {
                 candidate_pool_provenance: None,
                 map_decision_packet: None,
                 route_candidates: Vec::new(),
+                route_candidate_pool_ref: None,
                 candidates: vec![sample_journal_candidate("go 1", "Route missing")],
             },
         });
@@ -6124,6 +6166,7 @@ mod tests {
                 candidate_pool_provenance: None,
                 map_decision_packet: None,
                 route_candidates: Vec::new(),
+                route_candidate_pool_ref: None,
                 candidates: vec![sample_journal_candidate("go 1", "Route missing")],
             },
         });
@@ -6283,6 +6326,7 @@ mod tests {
                     candidate_pool_provenance: None,
                     map_decision_packet: None,
                     route_candidates: Vec::new(),
+                    route_candidate_pool_ref: None,
                     candidates: vec![sample_journal_candidate("go 3", "Route duplicate")],
                 },
             });
@@ -6323,6 +6367,7 @@ mod tests {
                 candidate_pool_provenance: None,
                 map_decision_packet: None,
                 route_candidates: Vec::new(),
+                route_candidate_pool_ref: None,
                 candidates: vec![sample_journal_candidate("go 3", "Route duplicate")],
             },
         });
@@ -6714,6 +6759,7 @@ mod tests {
                     .iter()
                     .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
                     .collect(),
+                route_candidate_pool_ref: None,
                 candidates: packet
                     .candidates
                     .iter()
@@ -7572,6 +7618,7 @@ mod tests {
                     .iter()
                     .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
                     .collect(),
+                route_candidate_pool_ref: None,
                 candidates: packet
                     .candidates
                     .iter()

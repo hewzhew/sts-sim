@@ -34,6 +34,10 @@ Runs a shorter random-seed campaign for fast smoke testing.
 .\tools\campaign.ps1 -DryRun
 Prints the cargo command without updating the last seed or running it.
 
+.EXAMPLE
+.\tools\campaign.ps1 -PruneArtifacts
+Shows campaign artifacts that are outside the current retention window.
+
 .NOTES
 Detailed examples live in docs/CAMPAIGN_WRAPPER_USAGE.md.
 #>
@@ -76,6 +80,8 @@ param(
     [switch] $FromScratchLatest,
     [switch] $ProbeBoss,
     [switch] $DryRun,
+    [switch] $PruneArtifacts,
+    [switch] $PruneApply,
     [switch] $Log,
     [switch] $NoProgress,
     [switch] $VerboseProgress,
@@ -182,6 +188,10 @@ param(
     [string] $CoverageGapExecution = "auto",
     [ValidateRange(0, 100)]
     [int] $VictoryHpPercent = 20,
+    [ValidateRange(0, 1000)]
+    [int] $KeepArtifactRuns = 5,
+    [ValidateRange(0, 1000)]
+    [int] $KeepArtifactScratch = 1,
 
     [Alias("Passthrough")]
     [string[]] $DriverArgs = @(),
@@ -200,6 +210,7 @@ Initialize-CampaignArtifactPaths -PathContext $CampaignPathContext
 New-Item -ItemType Directory -Force -Path $CampaignPathContext.CampaignDir | Out-Null
 
 . (Join-Path $PSScriptRoot "campaign_artifact_summary.ps1")
+. (Join-Path $PSScriptRoot "campaign_artifact_prune.ps1")
 . (Join-Path $PSScriptRoot "campaign_invocation.ps1")
 . (Join-Path $PSScriptRoot "campaign_preflight.ps1")
 . (Join-Path $PSScriptRoot "campaign_milestones.ps1")
@@ -215,6 +226,13 @@ New-Item -ItemType Directory -Force -Path $CampaignPathContext.CampaignDir | Out
 . (Join-Path $PSScriptRoot "campaign_source.ps1")
 . (Join-Path $PSScriptRoot "campaign_request.ps1")
 . (Join-Path $PSScriptRoot "campaign_entry_dispatch.ps1")
+
+if ($PruneArtifacts) {
+    exit (Invoke-CampaignArtifactPrune `
+        -KeepRuns $KeepArtifactRuns `
+        -KeepScratch $KeepArtifactScratch `
+        -Apply ([bool] $PruneApply))
+}
 
 $DriverPassthroughContext = Resolve-CampaignDriverPassthroughContext `
     -DriverArgs $DriverArgs `

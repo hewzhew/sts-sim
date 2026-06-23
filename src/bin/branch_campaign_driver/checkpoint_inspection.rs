@@ -58,7 +58,7 @@ pub(super) fn run_checkpoint_inspection(input: &InspectCommandInput) -> Result<(
         if !checkpoint_session_matches_probe_requirement(probe_requirement, &session) {
             continue;
         }
-        matches.push((entry.commands.clone(), session));
+        matches.push((checkpoint.session_commands_v1(entry)?, session));
     }
     if matches.is_empty() {
         let probe_requirement = probe_requirement

@@ -610,9 +610,24 @@ pub const ALL_POTIONS: &[PotionId] = &[
 pub struct Potion {
     pub id: PotionId,
     pub uuid: u32,
+    #[serde(default = "serde_true", skip_serializing_if = "is_true")]
     pub can_use: bool,
+    #[serde(default = "serde_true", skip_serializing_if = "is_true")]
     pub can_discard: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
     pub requires_target: bool,
+}
+
+fn serde_true() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl Potion {

@@ -379,9 +379,31 @@ pub enum RelicId {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct RelicState {
     pub id: RelicId,
+    #[serde(
+        default = "default_relic_counter",
+        skip_serializing_if = "is_default_relic_counter"
+    )]
     pub counter: i32,
+    #[serde(default, skip_serializing_if = "is_false")]
     pub used_up: bool,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
     pub amount: i32,
+}
+
+fn default_relic_counter() -> i32 {
+    -1
+}
+
+fn is_default_relic_counter(value: &i32) -> bool {
+    *value == default_relic_counter()
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+fn is_zero_i32(value: &i32) -> bool {
+    *value == 0
 }
 
 impl RelicState {

@@ -6,15 +6,19 @@ use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sts_simulator::eval::branch_campaign::{
-    BranchCampaignBranchV1, BranchCampaignCheckpointV1, BranchCampaignCombatRetryLedgerV1,
-    BranchCampaignDiscardedBranchV1, BranchCampaignReportV1, BranchCampaignRoundSummaryV1,
-    BranchCampaignRouteEvidenceSummaryV1, BranchCampaignStrategyRequestV1,
-    BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME, BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+    BranchCampaignBranchV1, BranchCampaignCheckpointActiveCombatRecordV1,
+    BranchCampaignCheckpointV1, BranchCampaignCombatRetryLedgerV1, BranchCampaignDiscardedBranchV1,
+    BranchCampaignReportV1, BranchCampaignRoundSummaryV1, BranchCampaignRouteEvidenceSummaryV1,
+    BranchCampaignStrategyRequestV1, BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME,
+    BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
 };
 use sts_simulator::eval::campaign_journal::CampaignJournalV1;
 
 const CAMPAIGN_REPORT_STATE_SIDECAR_SCHEMA_NAME: &str = "BranchCampaignStateSidecarV1";
 const CAMPAIGN_REPORT_STATE_SIDECAR_SCHEMA_VERSION: u32 = 1;
+const CAMPAIGN_CHECKPOINT_ACTIVE_COMBAT_SIDECAR_SCHEMA_NAME: &str =
+    "BranchCampaignCheckpointActiveCombatSidecarV1";
+const CAMPAIGN_CHECKPOINT_ACTIVE_COMBAT_SIDECAR_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -34,6 +38,14 @@ struct CampaignReportStateSidecarV1 {
     route_evidence: BranchCampaignRouteEvidenceSummaryV1,
     combat_retry_ledger: BranchCampaignCombatRetryLedgerV1,
     rounds: Vec<BranchCampaignRoundSummaryV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignCheckpointActiveCombatSidecarV1 {
+    schema_name: String,
+    schema_version: u32,
+    active_combats: Vec<BranchCampaignCheckpointActiveCombatRecordV1>,
 }
 
 pub(super) fn read_campaign_report_v1(path: &PathBuf) -> Result<BranchCampaignReportV1, String> {
@@ -80,12 +92,25 @@ pub(super) fn read_campaign_checkpoint_v1(
     path: &PathBuf,
 ) -> Result<BranchCampaignCheckpointV1, String> {
     let text = read_campaign_artifact_text_v1(path, "--resume-checkpoint")?;
-    let checkpoint: BranchCampaignCheckpointV1 = serde_json::from_str(&text).map_err(|err| {
+    let mut value: Value = serde_json::from_str(&text).map_err(|err| {
         format!(
             "failed to parse --resume-checkpoint {} as {BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME}: {err}",
             path.display()
         )
     })?;
+    let active_combat_artifact = value
+        .as_object_mut()
+        .and_then(|object| remove_string_field_v1(object, "active_combat_artifact"));
+    if let Some(object) = value.as_object_mut() {
+        object.remove("active_combat_count");
+    }
+    let mut checkpoint: BranchCampaignCheckpointV1 =
+        serde_json::from_value(value).map_err(|err| {
+            format!(
+                "failed to decode --resume-checkpoint {} as {BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME}: {err}",
+                path.display()
+            )
+        })?;
     if checkpoint.schema_name != BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME
         || checkpoint.schema_version != BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION
     {
@@ -97,6 +122,13 @@ pub(super) fn read_campaign_checkpoint_v1(
             BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME,
             BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION
         ));
+    }
+    if checkpoint.active_combats.is_empty() {
+        if let Some(artifact) = active_combat_artifact {
+            let active_combat_path = resolve_campaign_artifact_ref_path_v1(path, &artifact);
+            let sidecar = read_campaign_checkpoint_active_combats_v1(&active_combat_path)?;
+            checkpoint.active_combats = sidecar.active_combats;
+        }
     }
     Ok(checkpoint)
 }
@@ -187,12 +219,16 @@ fn write_campaign_report_state_v1(
 
 fn read_campaign_journal_v1(path: &PathBuf) -> Result<CampaignJournalV1, String> {
     let text = read_campaign_artifact_text_v1(path, "--journal")?;
-    serde_json::from_str(&text).map_err(|err| {
+    let mut journal: CampaignJournalV1 = serde_json::from_str(&text).map_err(|err| {
         format!(
             "failed to parse campaign journal sidecar {}: {err}",
             path.display()
         )
-    })
+    })?;
+    journal.hydrate_event_ids_v1();
+    journal.hydrate_branch_paths_v1();
+    journal.hydrate_route_candidate_pools_v1();
+    Ok(journal)
 }
 
 fn write_campaign_journal_v1(path: &PathBuf, journal: &CampaignJournalV1) -> Result<(), String> {
@@ -205,9 +241,67 @@ pub(super) fn write_campaign_checkpoint_v1(
     path: &PathBuf,
     checkpoint: &BranchCampaignCheckpointV1,
 ) -> Result<(), String> {
-    let text = serde_json::to_string(checkpoint)
+    let mut value = serde_json::to_value(checkpoint)
+        .map_err(|err| format!("failed to serialize BranchCampaignCheckpointV2: {err}"))?;
+    if !checkpoint.active_combats.is_empty() {
+        let active_combat_path = campaign_checkpoint_active_combat_sidecar_path_v1(path);
+        let sidecar = CampaignCheckpointActiveCombatSidecarV1 {
+            schema_name: CAMPAIGN_CHECKPOINT_ACTIVE_COMBAT_SIDECAR_SCHEMA_NAME.to_string(),
+            schema_version: CAMPAIGN_CHECKPOINT_ACTIVE_COMBAT_SIDECAR_SCHEMA_VERSION,
+            active_combats: checkpoint.active_combats.clone(),
+        };
+        write_campaign_checkpoint_active_combats_v1(&active_combat_path, &sidecar)?;
+        let object = value.as_object_mut().ok_or_else(|| {
+            "BranchCampaignCheckpointV2 did not serialize as an object".to_string()
+        })?;
+        object.remove("active_combats");
+        object.insert(
+            "active_combat_artifact".to_string(),
+            Value::String(campaign_artifact_relative_ref_v1(path, &active_combat_path)),
+        );
+        object.insert(
+            "active_combat_count".to_string(),
+            Value::Number(checkpoint.active_combats.len().into()),
+        );
+    }
+    let text = serde_json::to_string(&value)
         .map_err(|err| format!("failed to serialize BranchCampaignCheckpointV2: {err}"))?;
     write_campaign_artifact_text_v1(path, &text, "--checkpoint-out")
+}
+
+fn read_campaign_checkpoint_active_combats_v1(
+    path: &PathBuf,
+) -> Result<CampaignCheckpointActiveCombatSidecarV1, String> {
+    let text = read_campaign_artifact_text_v1(path, "--active-combat")?;
+    let sidecar: CampaignCheckpointActiveCombatSidecarV1 =
+        serde_json::from_str(&text).map_err(|err| {
+            format!(
+                "failed to parse campaign active combat sidecar {}: {err}",
+                path.display()
+            )
+        })?;
+    if sidecar.schema_name != CAMPAIGN_CHECKPOINT_ACTIVE_COMBAT_SIDECAR_SCHEMA_NAME
+        || sidecar.schema_version != CAMPAIGN_CHECKPOINT_ACTIVE_COMBAT_SIDECAR_SCHEMA_VERSION
+    {
+        return Err(format!(
+            "active combat sidecar {} uses {} v{}; expected {} v{}",
+            path.display(),
+            sidecar.schema_name,
+            sidecar.schema_version,
+            CAMPAIGN_CHECKPOINT_ACTIVE_COMBAT_SIDECAR_SCHEMA_NAME,
+            CAMPAIGN_CHECKPOINT_ACTIVE_COMBAT_SIDECAR_SCHEMA_VERSION
+        ));
+    }
+    Ok(sidecar)
+}
+
+fn write_campaign_checkpoint_active_combats_v1(
+    path: &PathBuf,
+    sidecar: &CampaignCheckpointActiveCombatSidecarV1,
+) -> Result<(), String> {
+    let text = serde_json::to_string(sidecar)
+        .map_err(|err| format!("failed to serialize campaign active combat sidecar: {err}"))?;
+    write_campaign_artifact_text_v1(path, &text, "--active-combat-out")
 }
 
 fn read_campaign_artifact_text_v1(path: &PathBuf, role: &str) -> Result<String, String> {
@@ -281,6 +375,10 @@ fn campaign_journal_sidecar_path_v1(report_path: &PathBuf) -> PathBuf {
     campaign_sidecar_path_v1(report_path, "journal")
 }
 
+fn campaign_checkpoint_active_combat_sidecar_path_v1(checkpoint_path: &PathBuf) -> PathBuf {
+    campaign_sidecar_path_v1(checkpoint_path, "active-combats")
+}
+
 fn campaign_sidecar_path_v1(report_path: &PathBuf, sidecar: &str) -> PathBuf {
     let Some(file_name) = report_path.file_name().and_then(|name| name.to_str()) else {
         return report_path.with_extension(format!("{sidecar}.json.gz"));
@@ -330,23 +428,65 @@ fn remove_string_field_v1(object: &mut Map<String, Value>, key: &str) -> Option<
 fn campaign_report_state_sidecar_from_report_v1(
     report: &BranchCampaignReportV1,
 ) -> CampaignReportStateSidecarV1 {
+    let mut rounds = report.rounds.clone();
+    if !report.journal.is_empty() {
+        for round in &mut rounds {
+            round.decision_observations.clear();
+            round.combat_performance = Default::default();
+        }
+    }
+    let mut active = report.active.clone();
+    let mut frozen = report.frozen.clone();
+    let mut victories = report.victories.clone();
+    let mut dead = report.dead.clone();
+    let mut abandoned = report.abandoned.clone();
+    let mut stuck = report.stuck.clone();
+    compact_campaign_state_branches_v1(&mut active);
+    compact_campaign_state_branches_v1(&mut frozen);
+    compact_campaign_state_branches_v1(&mut victories);
+    compact_campaign_state_branches_v1(&mut dead);
+    compact_campaign_state_branches_v1(&mut abandoned);
+    compact_campaign_state_branches_v1(&mut stuck);
     CampaignReportStateSidecarV1 {
         schema_name: CAMPAIGN_REPORT_STATE_SIDECAR_SCHEMA_NAME.to_string(),
         schema_version: CAMPAIGN_REPORT_STATE_SIDECAR_SCHEMA_VERSION,
-        active: report.active.clone(),
-        frozen: report.frozen.clone(),
-        victories: report.victories.clone(),
-        dead: report.dead.clone(),
-        abandoned: report.abandoned.clone(),
-        stuck: report.stuck.clone(),
+        active,
+        frozen,
+        victories,
+        dead,
+        abandoned,
+        stuck,
         discarded_count: report.discarded_count,
         discarded_examples: report.discarded_examples.clone(),
-        discarded_branches: report.discarded_branches.clone(),
+        discarded_branches: Vec::new(),
         strategy_requests: report.strategy_requests.clone(),
         route_evidence: report.route_evidence.clone(),
         combat_retry_ledger: report.combat_retry_ledger.clone(),
-        rounds: report.rounds.clone(),
+        rounds,
     }
+}
+
+fn compact_campaign_state_branches_v1(branches: &mut [BranchCampaignBranchV1]) {
+    for branch in branches {
+        branch.choice_labels.clear();
+        if let Some(summary) = branch.summary.as_mut() {
+            compact_campaign_state_branch_summary_v1(summary);
+        }
+    }
+}
+
+fn compact_campaign_state_branch_summary_v1(
+    summary: &mut sts_simulator::eval::branch_campaign::BranchCampaignBranchSummaryV1,
+) {
+    summary.deck_key.clear();
+    summary.formation_stage.clear();
+    summary.formation_strengths.clear();
+    summary.formation_needs.clear();
+    summary.trajectory_key.clear();
+    summary.boss_pressure.clear();
+    summary.run_debt.clear();
+    summary.event_boundary = None;
+    summary.reward_boundary = None;
 }
 
 fn report_has_campaign_state_payload_v1(report: &BranchCampaignReportV1) -> bool {
@@ -425,8 +565,10 @@ fn remove_campaign_state_projection_fields_v1(object: &mut Map<String, Value>) {
 mod tests {
     use super::*;
     use sts_simulator::ai::strategic::BranchSignatureCompact;
+    use sts_simulator::content::monsters::EnemyId;
     use sts_simulator::eval::branch_campaign::{
         BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
+        BranchCampaignCheckpointActiveCombatRecordV1, BranchCampaignCheckpointSessionV1,
         BranchCampaignRoundSummaryV1, BranchCampaignRunDomainV1, BranchCampaignRunPreludeV1,
         BRANCH_CAMPAIGN_SCHEMA_NAME, BRANCH_CAMPAIGN_SCHEMA_VERSION,
     };
@@ -493,12 +635,17 @@ mod tests {
             rounds_completed: 0,
             nodes: Vec::new(),
             decision_parent_anchor_commands: Vec::new(),
+            decision_parent_anchor_node_ids: Vec::new(),
             run_state_map_graphs: Vec::new(),
             run_state_maps: Vec::new(),
             run_state_master_decks: Vec::new(),
+            run_state_relics: Vec::new(),
+            run_state_potions: Vec::new(),
             run_state_schedules: Vec::new(),
+            run_state_schedule_components: Default::default(),
             run_state_emitted_events: Vec::new(),
             combat_automation_trajectories: Vec::new(),
+            active_combats: Vec::new(),
             sessions: Vec::new(),
         };
 
@@ -682,12 +829,17 @@ mod tests {
             rounds_completed: 0,
             nodes: Vec::new(),
             decision_parent_anchor_commands: Vec::new(),
+            decision_parent_anchor_node_ids: Vec::new(),
             run_state_map_graphs: Vec::new(),
             run_state_maps: Vec::new(),
             run_state_master_decks: Vec::new(),
+            run_state_relics: Vec::new(),
+            run_state_potions: Vec::new(),
             run_state_schedules: Vec::new(),
+            run_state_schedule_components: Default::default(),
             run_state_emitted_events: Vec::new(),
             combat_automation_trajectories: Vec::new(),
+            active_combats: Vec::new(),
             sessions: Vec::new(),
         };
 
@@ -700,6 +852,84 @@ mod tests {
 
         assert_eq!(bytes.get(0..2), Some(&[0x1f, 0x8b][..]));
         assert_eq!(parsed.seed, 11);
+    }
+
+    #[test]
+    fn writes_checkpoint_active_combats_as_sidecar_and_hydrates_on_read() {
+        let path = std::env::temp_dir().join(format!(
+            "sts_campaign_checkpoint_active_combat_sidecar_{}.json.gz",
+            std::process::id()
+        ));
+        let active_combat_path = campaign_checkpoint_active_combat_sidecar_path_v1(&path);
+        let active_combat = sts_simulator::state::core::ActiveCombat::new(
+            sts_simulator::state::core::EngineState::CombatPlayerTurn,
+            sts_simulator::test_support::combat_with_monsters(vec![
+                sts_simulator::test_support::test_monster(EnemyId::Cultist),
+            ]),
+            sts_simulator::state::core::CombatContext::Room(
+                sts_simulator::state::core::RoomCombatContext {
+                    room_type: sts_simulator::state::map::node::RoomType::MonsterRoom,
+                },
+            ),
+        );
+        let checkpoint = BranchCampaignCheckpointV1 {
+            schema_name: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME.to_string(),
+            schema_version: BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+            seed: 23,
+            run_domain: BranchCampaignRunDomainV1::default(),
+            run_prelude: BranchCampaignRunPreludeV1::default(),
+            rounds_completed: 1,
+            nodes: Vec::new(),
+            decision_parent_anchor_commands: Vec::new(),
+            decision_parent_anchor_node_ids: Vec::new(),
+            run_state_map_graphs: Vec::new(),
+            run_state_maps: Vec::new(),
+            run_state_master_decks: Vec::new(),
+            run_state_relics: Vec::new(),
+            run_state_potions: Vec::new(),
+            run_state_schedules: Vec::new(),
+            run_state_schedule_components: Default::default(),
+            run_state_emitted_events: Vec::new(),
+            combat_automation_trajectories: Vec::new(),
+            active_combats: vec![BranchCampaignCheckpointActiveCombatRecordV1 {
+                active_combat_id: "active_combat:0".to_string(),
+                active_combat: active_combat.clone(),
+            }],
+            sessions: vec![BranchCampaignCheckpointSessionV1 {
+                node_id: None,
+                commands: vec!["combat".to_string()],
+                run_state_map_id: None,
+                run_state_master_deck_id: None,
+                run_state_relics_id: None,
+                run_state_potions_id: None,
+                run_state_schedule_id: None,
+                run_state_emitted_events_id: None,
+                active_combat_id: Some("active_combat:0".to_string()),
+                session:
+                    sts_simulator::eval::run_control::RunControlSessionCheckpointV1::from_session(
+                        &sts_simulator::eval::run_control::RunControlSession::new(
+                            Default::default(),
+                        ),
+                    ),
+            }],
+        };
+
+        write_campaign_checkpoint_v1(&path, &checkpoint).expect("checkpoint should write");
+        let checkpoint_text = read_campaign_artifact_text_v1(&path, "--checkpoint-out")
+            .expect("checkpoint text should read");
+        let active_combat_text =
+            read_campaign_artifact_text_v1(&active_combat_path, "--active-combat-out")
+                .expect("active combat sidecar should read");
+        let parsed = read_campaign_checkpoint_v1(&path).expect("checkpoint should hydrate sidecar");
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(&active_combat_path);
+
+        assert!(checkpoint_text.contains("\"active_combat_artifact\""));
+        assert!(checkpoint_text.contains("\"active_combat_count\":1"));
+        assert!(!checkpoint_text.contains("\"active_combats\""));
+        assert!(active_combat_text.contains("\"active_combats\""));
+        assert_eq!(parsed.active_combats.len(), 1);
+        assert_eq!(parsed.active_combats[0].active_combat, active_combat);
     }
 
     fn empty_report_v1(seed: u64) -> BranchCampaignReportV1 {

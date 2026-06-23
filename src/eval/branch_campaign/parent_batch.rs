@@ -885,6 +885,7 @@ fn campaign_route_candidate_pool_journal_event_v1(
             candidate_pool_provenance: pool.candidate_pool_provenance.clone(),
             map_decision_packet: None,
             route_candidates: route_candidate_pool_typed_candidates_v1(pool),
+            route_candidate_pool_ref: None,
             candidates: route_candidate_pool_candidates_v1(pool),
         },
     }

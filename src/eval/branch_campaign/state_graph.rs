@@ -14,6 +14,12 @@ use super::model::{
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct BranchStateNodeIdV1(usize);
 
+impl BranchStateNodeIdV1 {
+    pub(super) fn as_usize(self) -> usize {
+        self.0
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct BranchStateNodeV1 {
@@ -193,7 +199,6 @@ impl BranchStateStoreV1 {
         self.sessions_by_commands.contains_key(commands)
     }
 
-    #[cfg(test)]
     pub(super) fn node_id_for_commands(&self, commands: &[String]) -> Option<BranchStateNodeIdV1> {
         self.node_ids_by_commands.get(commands).copied()
     }
@@ -214,7 +219,7 @@ impl BranchStateStoreV1 {
             .map(|node| BranchCampaignCheckpointNodeV1 {
                 node_id: node.id.0,
                 parent_id: node.parent_id.map(|parent_id| parent_id.0),
-                commands: node.commands.clone(),
+                commands: Vec::new(),
                 added_commands: node.added_commands.clone(),
             })
             .collect()
@@ -252,13 +257,31 @@ impl BranchStateStoreV1 {
                 .parent_id
                 .filter(|parent_id| *parent_id != node.node_id)
                 .map(BranchStateNodeIdV1);
+            let commands = if !node.commands.is_empty() {
+                node.commands.clone()
+            } else if let Some(parent_id) = parent_id {
+                let mut commands = self
+                    .nodes
+                    .get(parent_id.0)
+                    .map(|parent| parent.commands.clone())
+                    .ok_or_else(|| {
+                        format!(
+                            "campaign checkpoint node {} references missing parent {}",
+                            node.node_id, parent_id.0
+                        )
+                    })?;
+                commands.extend(node.added_commands.clone());
+                commands
+            } else {
+                node.added_commands.clone()
+            };
+            self.node_ids_by_commands.insert(commands.clone(), id);
             self.nodes.push(BranchStateNodeV1 {
                 id,
                 parent_id,
-                commands: node.commands.clone(),
+                commands,
                 added_commands: node.added_commands.clone(),
             });
-            self.node_ids_by_commands.insert(node.commands, id);
         }
         Ok(())
     }

@@ -15,10 +15,28 @@ function Get-CampaignMilestoneStatus {
     }
 
     $Report = Read-CampaignJsonArtifactOrThrow -Path $ReportPath -Role "campaign report"
+    $State = $null
+    if ($Report.state_artifact) {
+        $StateRef = [string] $Report.state_artifact
+        $StatePath = if ([System.IO.Path]::IsPathRooted($StateRef)) {
+            $StateRef
+        } else {
+            Join-Path ([System.IO.Path]::GetDirectoryName($ReportPath)) $StateRef
+        }
+        if (Test-Path -LiteralPath $StatePath) {
+            $State = Read-CampaignJsonArtifactOrThrow -Path $StatePath -Role "campaign state sidecar"
+        }
+    } else {
+        $StatePath = Get-CampaignStateSidecarPath -ReportPath $ReportPath
+        if ($StatePath -and (Test-Path -LiteralPath $StatePath)) {
+            $State = Read-CampaignJsonArtifactOrThrow -Path $StatePath -Role "campaign state sidecar"
+        }
+    }
+    $BranchSource = if ($State) { $State } else { $Report }
     $Branches = @()
     foreach ($Bucket in @("active", "frozen", "stuck", "victories", "dead", "abandoned")) {
-        if ($Report.$Bucket) {
-            $Branches += @($Report.$Bucket)
+        if ($BranchSource.$Bucket) {
+            $Branches += @($BranchSource.$Bucket)
         }
     }
 

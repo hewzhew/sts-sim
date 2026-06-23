@@ -935,7 +935,8 @@ fn checkpoint_has_exact_session_v1(
     checkpoint
         .sessions
         .iter()
-        .any(|session| session.commands == parent_commands)
+        .filter_map(|session| checkpoint.session_commands_v1(session).ok())
+        .any(|commands| commands == parent_commands)
 }
 
 fn checkpoint_can_replay_parent_commands_v1(
@@ -945,19 +946,20 @@ fn checkpoint_can_replay_parent_commands_v1(
     let session_commands = checkpoint
         .sessions
         .iter()
-        .map(|session| session.commands.clone())
+        .filter_map(|session| checkpoint.session_commands_v1(session).ok())
         .collect::<BTreeSet<_>>();
     if session_commands.contains(parent_commands) {
         return true;
     }
 
-    let nodes_by_commands = checkpoint
-        .nodes
+    let Ok(nodes) = checkpoint.resolved_checkpoint_nodes_v1() else {
+        return false;
+    };
+    let nodes_by_commands = nodes
         .iter()
         .map(|node| (node.commands.clone(), node.node_id))
         .collect::<BTreeMap<_, _>>();
-    let nodes_by_id = checkpoint
-        .nodes
+    let nodes_by_id = nodes
         .iter()
         .map(|node| (node.node_id, node))
         .collect::<BTreeMap<_, _>>();
@@ -2550,18 +2552,27 @@ mod tests {
             rounds_completed: 0,
             nodes: Vec::new(),
             decision_parent_anchor_commands: Vec::new(),
+            decision_parent_anchor_node_ids: Vec::new(),
             run_state_map_graphs: Vec::new(),
             run_state_maps: Vec::new(),
             run_state_master_decks: Vec::new(),
+            run_state_relics: Vec::new(),
+            run_state_potions: Vec::new(),
             run_state_schedules: Vec::new(),
+            run_state_schedule_components: Default::default(),
             run_state_emitted_events: Vec::new(),
             combat_automation_trajectories: Vec::new(),
+            active_combats: Vec::new(),
             sessions: vec![BranchCampaignCheckpointSessionV1 {
+                node_id: None,
                 commands: session_commands,
                 run_state_map_id: None,
                 run_state_master_deck_id: None,
+                run_state_relics_id: None,
+                run_state_potions_id: None,
                 run_state_schedule_id: None,
                 run_state_emitted_events_id: None,
+                active_combat_id: None,
                 session: RunControlSessionCheckpointV1::from_session(&RunControlSession::new(
                     RunControlConfig::default(),
                 )),

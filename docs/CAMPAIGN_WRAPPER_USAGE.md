@@ -91,6 +91,25 @@ coverage-gap continuation.
 Inspect commands read an artifact and render a report; they should not mutate
 campaign state.
 
+## Artifact Retention
+
+```powershell
+.\tools\campaign.ps1 -PruneArtifacts
+.\tools\campaign.ps1 -PruneArtifacts -PruneApply
+.\tools\campaign.ps1 -PruneArtifacts -KeepArtifactRuns 10 -KeepArtifactScratch 1
+```
+
+`-PruneArtifacts` is dry-run by default. It reports files outside the current
+retention window and groups them by lifecycle class: old run, old scratch,
+loose root, perf, diagnostic, and sample. `-PruneApply` deletes only those
+candidates after protecting the current latest run pointer, current scratch
+latest pointer, newest retained run artifacts, and newest retained scratch
+artifact groups.
+
+Scratch is intentionally retained narrowly by default (`-KeepArtifactScratch
+1`). Scratch artifacts are experiments, not the campaign history. If a scratch
+run matters, continue it into a normal run or pin it externally before pruning.
+
 ## Strategy Evidence Inspectors
 
 ```powershell

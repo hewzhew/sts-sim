@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use crate::eval::card_reward_value_loop::{
     CardRewardOutcomeCalibrationV1, CardRewardRouteRiskCalibrationV1,
@@ -102,8 +104,7 @@ pub(in crate::eval::run_control) enum CombatCompletionSource {
     SearchCombat,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RunControlSessionCheckpointV1 {
     engine_state: EngineState,
     run_state: RunStateCheckpointV1,
@@ -125,11 +126,246 @@ pub struct RunControlSessionCheckpointV1 {
     last_completed_combat_sequence: Option<u64>,
     last_completed_combat_source: Option<CombatCompletionSource>,
     current_combat_source: Option<CombatCompletionSource>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     last_combat_automation_sequence: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     last_combat_automation_trajectory: Option<CombatAutomationTrajectoryRecordV1>,
     last_capture_case: Option<LastBenchmarkCaptureCase>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+struct RunControlSessionCheckpointExtrasV1 {
+    #[serde(skip_serializing_if = "reward_automation_config_is_default")]
+    reward_automation: RewardAutomationConfig,
+    #[serde(skip_serializing_if = "auto_capture_config_is_default")]
+    auto_capture: AutoCombatCaptureConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    card_reward_outcome_calibration: Option<CardRewardOutcomeCalibrationV1>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    card_reward_route_risk_calibration: Option<CardRewardRouteRiskCalibrationV1>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    card_reward_strategy_package_calibration: Option<CardRewardStrategyPackageCalibrationV1>,
+    #[serde(skip_serializing_if = "combat_outcome_tracker_is_default")]
+    combat_outcomes: CombatOutcomeTracker,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    auto_capture_last_combat_sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_completed_combat_sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_completed_combat_source: Option<CombatCompletionSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    current_combat_source: Option<CombatCompletionSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_combat_automation_sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_combat_automation_trajectory: Option<CombatAutomationTrajectoryRecordV1>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_capture_case: Option<LastBenchmarkCaptureCase>,
+}
+
+impl RunControlSessionCheckpointExtrasV1 {
+    fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+impl Serialize for RunControlSessionCheckpointV1 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let extras = RunControlSessionCheckpointExtrasV1 {
+            reward_automation: self.reward_automation.clone(),
+            auto_capture: self.auto_capture.clone(),
+            card_reward_outcome_calibration: self.card_reward_outcome_calibration.clone(),
+            card_reward_route_risk_calibration: self.card_reward_route_risk_calibration.clone(),
+            card_reward_strategy_package_calibration: self
+                .card_reward_strategy_package_calibration
+                .clone(),
+            combat_outcomes: self.combat_outcomes.clone(),
+            auto_capture_last_combat_sequence: self.auto_capture_last_combat_sequence,
+            last_completed_combat_sequence: self.last_completed_combat_sequence,
+            last_completed_combat_source: self.last_completed_combat_source,
+            current_combat_source: self.current_combat_source,
+            last_combat_automation_sequence: self.last_combat_automation_sequence,
+            last_combat_automation_trajectory: self.last_combat_automation_trajectory.clone(),
+            last_capture_case: self.last_capture_case.clone(),
+        };
+        let extras = (!extras.is_empty()).then_some(extras);
+        (
+            &self.engine_state,
+            &self.run_state,
+            &self.active_combat,
+            self.decision_step,
+            &self.search_max_nodes,
+            &self.search_wall_ms,
+            &self.search_max_hp_loss,
+            &self.search_potion_policy,
+            &self.search_max_potions_used,
+            self.combat_sequence,
+            extras,
+        )
+            .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for RunControlSessionCheckpointV1 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Wire {
+            Compact(
+                EngineState,
+                RunStateCheckpointV1,
+                Option<ActiveCombat>,
+                u64,
+                Option<usize>,
+                Option<u64>,
+                Option<u32>,
+                Option<CombatSearchV2PotionPolicy>,
+                Option<u32>,
+                u64,
+                Option<RunControlSessionCheckpointExtrasV1>,
+            ),
+            Legacy(RunControlSessionCheckpointLegacyV1),
+        }
+
+        match Wire::deserialize(deserializer)? {
+            Wire::Compact(
+                engine_state,
+                run_state,
+                active_combat,
+                decision_step,
+                search_max_nodes,
+                search_wall_ms,
+                search_max_hp_loss,
+                search_potion_policy,
+                search_max_potions_used,
+                combat_sequence,
+                extras,
+            ) => {
+                let extras = extras.unwrap_or_default();
+                Ok(Self {
+                    engine_state,
+                    run_state,
+                    active_combat,
+                    decision_step,
+                    reward_automation: extras.reward_automation,
+                    auto_capture: extras.auto_capture,
+                    search_max_nodes,
+                    search_wall_ms,
+                    search_max_hp_loss,
+                    search_potion_policy,
+                    search_max_potions_used,
+                    card_reward_outcome_calibration: extras.card_reward_outcome_calibration,
+                    card_reward_route_risk_calibration: extras.card_reward_route_risk_calibration,
+                    card_reward_strategy_package_calibration: extras
+                        .card_reward_strategy_package_calibration,
+                    combat_outcomes: extras.combat_outcomes,
+                    combat_sequence,
+                    auto_capture_last_combat_sequence: extras.auto_capture_last_combat_sequence,
+                    last_completed_combat_sequence: extras.last_completed_combat_sequence,
+                    last_completed_combat_source: extras.last_completed_combat_source,
+                    current_combat_source: extras.current_combat_source,
+                    last_combat_automation_sequence: extras.last_combat_automation_sequence,
+                    last_combat_automation_trajectory: extras.last_combat_automation_trajectory,
+                    last_capture_case: extras.last_capture_case,
+                })
+            }
+            Wire::Legacy(legacy) => Ok(legacy.into_checkpoint()),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RunControlSessionCheckpointLegacyV1 {
+    engine_state: EngineState,
+    run_state: RunStateCheckpointV1,
+    #[serde(default)]
+    active_combat: Option<ActiveCombat>,
+    decision_step: u64,
+    #[serde(default)]
+    reward_automation: RewardAutomationConfig,
+    #[serde(default)]
+    auto_capture: AutoCombatCaptureConfig,
+    #[serde(default)]
+    search_max_nodes: Option<usize>,
+    #[serde(default)]
+    search_wall_ms: Option<u64>,
+    #[serde(default)]
+    search_max_hp_loss: Option<u32>,
+    #[serde(default)]
+    search_potion_policy: Option<CombatSearchV2PotionPolicy>,
+    #[serde(default)]
+    search_max_potions_used: Option<u32>,
+    #[serde(default)]
+    card_reward_outcome_calibration: Option<CardRewardOutcomeCalibrationV1>,
+    #[serde(default)]
+    card_reward_route_risk_calibration: Option<CardRewardRouteRiskCalibrationV1>,
+    #[serde(default)]
+    card_reward_strategy_package_calibration: Option<CardRewardStrategyPackageCalibrationV1>,
+    #[serde(default)]
+    combat_outcomes: CombatOutcomeTracker,
+    combat_sequence: u64,
+    #[serde(default)]
+    auto_capture_last_combat_sequence: Option<u64>,
+    #[serde(default)]
+    last_completed_combat_sequence: Option<u64>,
+    #[serde(default)]
+    last_completed_combat_source: Option<CombatCompletionSource>,
+    #[serde(default)]
+    current_combat_source: Option<CombatCompletionSource>,
+    #[serde(default)]
+    last_combat_automation_sequence: Option<u64>,
+    #[serde(default)]
+    last_combat_automation_trajectory: Option<CombatAutomationTrajectoryRecordV1>,
+    #[serde(default)]
+    last_capture_case: Option<LastBenchmarkCaptureCase>,
+}
+
+impl RunControlSessionCheckpointLegacyV1 {
+    fn into_checkpoint(self) -> RunControlSessionCheckpointV1 {
+        RunControlSessionCheckpointV1 {
+            engine_state: self.engine_state,
+            run_state: self.run_state,
+            active_combat: self.active_combat,
+            decision_step: self.decision_step,
+            reward_automation: self.reward_automation,
+            auto_capture: self.auto_capture,
+            search_max_nodes: self.search_max_nodes,
+            search_wall_ms: self.search_wall_ms,
+            search_max_hp_loss: self.search_max_hp_loss,
+            search_potion_policy: self.search_potion_policy,
+            search_max_potions_used: self.search_max_potions_used,
+            card_reward_outcome_calibration: self.card_reward_outcome_calibration,
+            card_reward_route_risk_calibration: self.card_reward_route_risk_calibration,
+            card_reward_strategy_package_calibration: self.card_reward_strategy_package_calibration,
+            combat_outcomes: self.combat_outcomes,
+            combat_sequence: self.combat_sequence,
+            auto_capture_last_combat_sequence: self.auto_capture_last_combat_sequence,
+            last_completed_combat_sequence: self.last_completed_combat_sequence,
+            last_completed_combat_source: self.last_completed_combat_source,
+            current_combat_source: self.current_combat_source,
+            last_combat_automation_sequence: self.last_combat_automation_sequence,
+            last_combat_automation_trajectory: self.last_combat_automation_trajectory,
+            last_capture_case: self.last_capture_case,
+        }
+    }
+}
+
+fn reward_automation_config_is_default(value: &RewardAutomationConfig) -> bool {
+    value == &RewardAutomationConfig::default()
+}
+
+fn auto_capture_config_is_default(value: &AutoCombatCaptureConfig) -> bool {
+    value == &AutoCombatCaptureConfig::default()
+}
+
+fn combat_outcome_tracker_is_default(value: &CombatOutcomeTracker) -> bool {
+    value == &CombatOutcomeTracker::default()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -316,6 +552,32 @@ impl RunControlSessionCheckpointV1 {
         self.run_state.master_deck = master_deck;
     }
 
+    pub fn take_run_state_relics_for_external_ref(
+        &mut self,
+    ) -> Vec<crate::content::relics::RelicState> {
+        std::mem::take(&mut self.run_state.relics)
+    }
+
+    pub fn restore_run_state_relics_from_external_ref(
+        &mut self,
+        relics: Vec<crate::content::relics::RelicState>,
+    ) {
+        self.run_state.relics = relics;
+    }
+
+    pub fn take_run_state_potions_for_external_ref(
+        &mut self,
+    ) -> Vec<Option<crate::content::potions::Potion>> {
+        std::mem::take(&mut self.run_state.potions)
+    }
+
+    pub fn restore_run_state_potions_from_external_ref(
+        &mut self,
+        potions: Vec<Option<crate::content::potions::Potion>>,
+    ) {
+        self.run_state.potions = potions;
+    }
+
     pub fn take_run_state_schedule_for_external_ref(&mut self) -> RunStateScheduleCheckpointV1 {
         self.run_state.take_schedule_for_external_ref()
     }
@@ -337,6 +599,24 @@ impl RunControlSessionCheckpointV1 {
     ) {
         self.run_state
             .restore_emitted_events_from_external_ref(emitted_events);
+    }
+
+    pub fn clear_combat_diagnostics_for_external_checkpoint(&mut self) {
+        self.combat_outcomes = CombatOutcomeTracker::default();
+        self.last_completed_combat_sequence = None;
+        self.last_completed_combat_source = None;
+        self.current_combat_source = None;
+        self.last_combat_automation_sequence = None;
+        self.last_combat_automation_trajectory = None;
+        self.last_capture_case = None;
+    }
+
+    pub fn take_active_combat_for_external_ref(&mut self) -> Option<ActiveCombat> {
+        self.active_combat.take()
+    }
+
+    pub fn restore_active_combat_from_external_ref(&mut self, active_combat: ActiveCombat) {
+        self.active_combat = Some(active_combat);
     }
 
     pub fn into_session(self) -> Result<RunControlSession, String> {

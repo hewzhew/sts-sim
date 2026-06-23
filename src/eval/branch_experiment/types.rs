@@ -474,19 +474,40 @@ fn legacy_route_safety_flag_v1(safety: &str) -> RouteSafetyFlagV1 {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchExperimentFirstEliteEvidenceV1 {
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub paths_with_first_elite: usize,
+    #[serde(default, skip_serializing_if = "is_false")]
     pub forced: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
     pub optional: bool,
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub min_hallway_fights_before: usize,
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub max_hallway_fights_before: usize,
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub min_unknowns_before: usize,
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub max_unknowns_before: usize,
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub min_fires_before: usize,
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub max_fires_before: usize,
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub min_shops_before: usize,
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub max_shops_before: usize,
+    #[serde(default, skip_serializing_if = "is_false")]
     pub can_bail_to_rest_before: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
     pub can_bail_to_shop_before: bool,
+}
+
+fn is_zero_usize(value: &usize) -> bool {
+    *value == 0
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -568,10 +589,6 @@ pub struct BranchExperimentChoiceDecisionSignalV1 {
     pub acquisition_thesis_rank_adjustment: i32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub acquisition_thesis_summary: Vec<String>,
-}
-
-fn is_false(value: &bool) -> bool {
-    !*value
 }
 
 pub const BRANCH_EXPERIMENT_SHOP_COMPAT_SELECTED_PLAN_SIGNAL_SOURCE_V1: &str =

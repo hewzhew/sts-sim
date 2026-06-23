@@ -47,6 +47,40 @@ function Get-CampaignJsonTopFields {
     return ($Shown -join ", ") + $Suffix
 }
 
+function Get-CampaignArtifactRawSize {
+    param(
+        [string] $Path
+    )
+
+    try {
+        $Text = Read-CampaignArtifactText -Path $Path
+        if ($null -eq $Text) {
+            return $null
+        }
+        return [System.Text.Encoding]::UTF8.GetByteCount($Text)
+    } catch {
+        return $null
+    }
+}
+
+function Format-CampaignArtifactStorageSize {
+    param(
+        [string] $Path
+    )
+
+    $CompressedBytes = (Get-Item -LiteralPath $Path).Length
+    $Compressed = Format-CampaignArtifactSize -Bytes $CompressedBytes
+    if ($Path.EndsWith(".gz", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $RawBytes = Get-CampaignArtifactRawSize -Path $Path
+        if ($null -ne $RawBytes -and $RawBytes -gt 0) {
+            $Raw = Format-CampaignArtifactSize -Bytes $RawBytes
+            $Ratio = [Math]::Round($RawBytes / [double] $CompressedBytes, 1)
+            return "$Compressed raw=$Raw ratio=${Ratio}x"
+        }
+    }
+    return $Compressed
+}
+
 function Get-CampaignArtifactShape {
     param(
         [string] $Kind,
@@ -177,8 +211,7 @@ function Write-CampaignArtifactSummary {
 
     foreach ($Artifact in $Artifacts) {
         if (Test-Path -LiteralPath $Artifact.Path) {
-            $Item = Get-Item -LiteralPath $Artifact.Path
-            $Size = Format-CampaignArtifactSize -Bytes $Item.Length
+            $Size = Format-CampaignArtifactStorageSize -Path $Artifact.Path
             $Shape = Get-CampaignArtifactShape -Kind $Artifact.Kind -Path $Artifact.Path
             Write-Host ("  {0,-10} {1,10} | {2,-22} | {3}" -f $Artifact.Kind, $Size, $Artifact.Contract, $Shape)
             Write-Host "    path=$($Artifact.Path)"

@@ -397,11 +397,15 @@ fn branch_state_store_exports_checkpoint_node_records() {
     assert_eq!(nodes.len(), 2);
     assert_eq!(nodes[0].node_id, 0);
     assert_eq!(nodes[0].parent_id, None);
-    assert_eq!(nodes[0].commands, parent_commands);
+    assert!(nodes[0].commands.is_empty());
+    assert_eq!(nodes[0].added_commands, parent_commands);
     assert_eq!(nodes[1].node_id, 1);
     assert_eq!(nodes[1].parent_id, Some(0));
-    assert_eq!(nodes[1].commands, child_commands);
+    assert!(nodes[1].commands.is_empty());
     assert_eq!(nodes[1].added_commands, vec!["go 2".to_string()]);
+    let mut restored = super::state_graph::BranchStateStoreV1::new();
+    restored.restore_checkpoint_nodes(&nodes).unwrap();
+    assert!(restored.node_id_for_commands(&child_commands).is_some());
 }
 
 #[test]
@@ -690,7 +694,7 @@ fn campaign_checkpoint_writes_v2_state_graph_nodes() {
     let session_commands = checkpoint
         .sessions
         .iter()
-        .map(|session| session.commands.clone())
+        .map(|session| checkpoint.session_commands_v1(session).unwrap())
         .collect::<BTreeSet<_>>();
     assert_eq!(checkpoint.sessions.len(), 2);
     assert!(session_commands.contains(&child_commands));
@@ -698,7 +702,7 @@ fn campaign_checkpoint_writes_v2_state_graph_nodes() {
 }
 
 #[test]
-fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
+fn campaign_checkpoint_drops_combat_automation_trajectories_from_resume_state() {
     let config = BranchCampaignConfigV1::default();
     let parent_commands = vec!["rp 0".to_string()];
     let child_commands = vec!["rp 0".to_string(), "go 2".to_string()];
@@ -765,15 +769,13 @@ fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
         1,
         "campaign checkpoint should keep repeated run schedules in a top-level pool"
     );
-    assert_eq!(
-        checkpoint.run_state_emitted_events.len(),
-        1,
-        "campaign checkpoint should keep repeated emitted events in a top-level pool"
+    assert!(
+        checkpoint.run_state_emitted_events.is_empty(),
+        "campaign checkpoint should not store diagnostic emitted event logs in resume state"
     );
-    assert_eq!(checkpoint.combat_automation_trajectories.len(), 1);
-    assert_eq!(
-        checkpoint.combat_automation_trajectories[0].commands.len(),
-        2
+    assert!(
+        checkpoint.combat_automation_trajectories.is_empty(),
+        "campaign checkpoint should not store diagnostic combat trajectories in resume state"
     );
     for entry in &checkpoint.sessions {
         let session_json =
@@ -821,12 +823,12 @@ fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
         );
         let restored = checkpoint
             .hydrated_session_checkpoint_v1(entry)
-            .expect("trajectory reference should hydrate")
+            .expect("checkpoint references should hydrate")
             .into_session()
             .expect("hydrated checkpoint should restore");
         assert!(
-            restored.last_combat_automation_trajectory().is_some(),
-            "checkpoint-level trajectory records should preserve diagnostic inspect data"
+            restored.last_combat_automation_trajectory().is_none(),
+            "diagnostic combat trajectory records should not be part of default resume state"
         );
         assert_eq!(
             restored.run_state.master_deck.len(),
@@ -843,8 +845,8 @@ fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
         );
         assert_eq!(
             restored.run_state.emitted_events.len(),
-            1,
-            "checkpoint-level emitted event records should preserve domain event logs"
+            0,
+            "domain event logs are diagnostics and should not be part of default resume state"
         );
     }
 }

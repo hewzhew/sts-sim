@@ -3,6 +3,9 @@ use crate::ai::route_planner_v1::{
     RouteProjectionSourceV1,
 };
 use crate::ai::strategic::BranchSignatureCompact;
+use crate::content::monsters::factory::EncounterId;
+use crate::content::potions::Potion;
+use crate::content::relics::{RelicId, RelicState};
 use crate::eval::branch_experiment::{
     BranchExperimentBossCombatRecordV1, BranchExperimentRewardOptionPortfolioV1,
 };
@@ -15,11 +18,14 @@ use crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1;
 use crate::eval::reward_boundary_packet_v1::RewardBoundaryPacketV1;
 use crate::eval::run_control::{CombatAutomationTrajectoryRecordV1, RunControlSessionCheckpointV1};
 use crate::runtime::combat::CombatCard;
+use crate::runtime::rng::{RngPool, StsRng};
+use crate::state::core::ActiveCombat;
+use crate::state::events::generator::EventGenerator;
 use crate::state::map::node::Map;
 use crate::state::map::state::MapState;
 use crate::state::run::RunStateScheduleCheckpointV1;
 use crate::state::selection::DomainEvent;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::performance::BranchCampaignCombatPerformanceSummaryV1;
 use super::retry::BranchCampaignCombatRetryLedgerV1;
@@ -48,6 +54,7 @@ pub struct BranchCampaignBranchSummaryV1 {
     pub deck_count: usize,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub deck_key: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub formation_stage: String,
     pub formation_strengths: Vec<String>,
     pub formation_needs: Vec<String>,
@@ -70,6 +77,7 @@ pub struct BranchCampaignBranchSummaryV1 {
 pub struct BranchCampaignBranchV1 {
     pub branch_id: String,
     pub commands: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub choice_labels: Vec<String>,
     pub summary: Option<BranchCampaignBranchSummaryV1>,
     #[serde(default, skip_serializing_if = "BranchSignatureCompact::is_empty")]
@@ -297,7 +305,10 @@ pub struct BranchCampaignRoundSummaryV1 {
     pub combat_retry_elapsed_wall_ms_sum: u64,
     #[serde(default)]
     pub combat_retry_elapsed_wall_ms_max: u64,
-    #[serde(default)]
+    #[serde(
+        default,
+        skip_serializing_if = "branch_campaign_combat_performance_summary_is_default_v1"
+    )]
     pub combat_performance: BranchCampaignCombatPerformanceSummaryV1,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decision_observations: Vec<BranchCampaignDecisionObservationV1>,
@@ -482,29 +493,198 @@ impl BranchCampaignStateStoreSummaryV1 {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BranchCampaignCheckpointNodeV1 {
     pub node_id: usize,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<usize>,
     pub commands: Vec<String>,
     pub added_commands: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
+impl Serialize for BranchCampaignCheckpointNodeV1 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (
+            self.node_id,
+            self.parent_id,
+            &self.commands,
+            &self.added_commands,
+        )
+            .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for BranchCampaignCheckpointNodeV1 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Wire {
+            Compact(usize, Option<usize>, Vec<String>, Vec<String>),
+            Map {
+                node_id: usize,
+                #[serde(default)]
+                parent_id: Option<usize>,
+                #[serde(default)]
+                commands: Vec<String>,
+                #[serde(default)]
+                added_commands: Vec<String>,
+            },
+        }
+
+        match Wire::deserialize(deserializer)? {
+            Wire::Compact(node_id, parent_id, commands, added_commands) => Ok(Self {
+                node_id,
+                parent_id,
+                commands,
+                added_commands,
+            }),
+            Wire::Map {
+                node_id,
+                parent_id,
+                commands,
+                added_commands,
+            } => Ok(Self {
+                node_id,
+                parent_id,
+                commands,
+                added_commands,
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct BranchCampaignCheckpointSessionV1 {
+    pub node_id: Option<usize>,
     pub commands: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_state_map_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_state_master_deck_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_state_relics_id: Option<String>,
+    pub run_state_potions_id: Option<String>,
     pub run_state_schedule_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_state_emitted_events_id: Option<String>,
+    pub active_combat_id: Option<String>,
     pub session: RunControlSessionCheckpointV1,
+}
+
+impl Serialize for BranchCampaignCheckpointSessionV1 {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (
+            self.node_id,
+            &self.commands,
+            &self.run_state_map_id,
+            &self.run_state_master_deck_id,
+            &self.run_state_relics_id,
+            &self.run_state_potions_id,
+            &self.run_state_schedule_id,
+            &self.run_state_emitted_events_id,
+            &self.active_combat_id,
+            &self.session,
+        )
+            .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for BranchCampaignCheckpointSessionV1 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Wire {
+            Compact(
+                Option<usize>,
+                Vec<String>,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+                Option<String>,
+                RunControlSessionCheckpointV1,
+            ),
+            Map {
+                #[serde(default)]
+                node_id: Option<usize>,
+                #[serde(default)]
+                commands: Vec<String>,
+                #[serde(default)]
+                run_state_map_id: Option<String>,
+                #[serde(default)]
+                run_state_master_deck_id: Option<String>,
+                #[serde(default)]
+                run_state_relics_id: Option<String>,
+                #[serde(default)]
+                run_state_potions_id: Option<String>,
+                #[serde(default)]
+                run_state_schedule_id: Option<String>,
+                #[serde(default)]
+                run_state_emitted_events_id: Option<String>,
+                #[serde(default)]
+                active_combat_id: Option<String>,
+                session: RunControlSessionCheckpointV1,
+            },
+        }
+
+        match Wire::deserialize(deserializer)? {
+            Wire::Compact(
+                node_id,
+                commands,
+                run_state_map_id,
+                run_state_master_deck_id,
+                run_state_relics_id,
+                run_state_potions_id,
+                run_state_schedule_id,
+                run_state_emitted_events_id,
+                active_combat_id,
+                session,
+            ) => Ok(Self {
+                node_id,
+                commands,
+                run_state_map_id,
+                run_state_master_deck_id,
+                run_state_relics_id,
+                run_state_potions_id,
+                run_state_schedule_id,
+                run_state_emitted_events_id,
+                active_combat_id,
+                session,
+            }),
+            Wire::Map {
+                node_id,
+                commands,
+                run_state_map_id,
+                run_state_master_deck_id,
+                run_state_relics_id,
+                run_state_potions_id,
+                run_state_schedule_id,
+                run_state_emitted_events_id,
+                active_combat_id,
+                session,
+            } => Ok(Self {
+                node_id,
+                commands,
+                run_state_map_id,
+                run_state_master_deck_id,
+                run_state_relics_id,
+                run_state_potions_id,
+                run_state_schedule_id,
+                run_state_emitted_events_id,
+                active_combat_id,
+                session,
+            }),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -532,9 +712,245 @@ pub struct BranchCampaignCheckpointRunStateMasterDeckRecordV1 {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointRunStateRelicsRecordV1 {
+    pub relics_id: String,
+    pub relics: Vec<RelicState>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointRunStatePotionsRecordV1 {
+    pub potions_id: String,
+    pub potions: Vec<Option<Potion>>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BranchCampaignCheckpointRunStateScheduleRecordV1 {
     pub schedule_id: String,
-    pub schedule: RunStateScheduleCheckpointV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<RunStateScheduleCheckpointV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule_refs: Option<BranchCampaignCheckpointRunStateScheduleRefsV1>,
+}
+
+impl BranchCampaignCheckpointRunStateScheduleRecordV1 {
+    pub fn resolved_schedule_v1(
+        &self,
+        components: &BranchCampaignCheckpointScheduleComponentsV1,
+    ) -> Result<RunStateScheduleCheckpointV1, String> {
+        if let Some(schedule) = self.schedule.clone() {
+            return Ok(schedule);
+        }
+        let refs = self
+            .schedule_refs
+            .as_ref()
+            .ok_or_else(|| format!("schedule {} has no schedule body or refs", self.schedule_id))?;
+        refs.resolved_schedule_v1(components)
+            .map_err(|err| format!("schedule {}: {err}", self.schedule_id))
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointRunStateScheduleRefsV1 {
+    #[serde(with = "compact_rng_pool_checkpoint_wire_v1")]
+    pub rng_pool: RngPool,
+    pub neow_rng_id: String,
+    pub event_generator_id: String,
+    pub common_relic_pool_id: String,
+    pub uncommon_relic_pool_id: String,
+    pub rare_relic_pool_id: String,
+    pub shop_relic_pool_id: String,
+    pub boss_relic_pool_id: String,
+    pub monster_list_id: String,
+    pub elite_monster_list_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boss_key: Option<EncounterId>,
+    pub boss_list_id: String,
+}
+
+mod compact_rng_pool_checkpoint_wire_v1 {
+    use crate::runtime::rng::{RngPool, StsRng};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Clone, Debug, Deserialize, Serialize)]
+    struct StsRngTuple(u64, u64, u32);
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum RngPoolWire {
+        Compact(Vec<StsRngTuple>),
+        Legacy(RngPool),
+    }
+
+    pub fn serialize<S>(rng_pool: &RngPool, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        vec![
+            tuple_from_rng(&rng_pool.monster_rng),
+            tuple_from_rng(&rng_pool.event_rng),
+            tuple_from_rng(&rng_pool.merchant_rng),
+            tuple_from_rng(&rng_pool.card_rng),
+            tuple_from_rng(&rng_pool.treasure_rng),
+            tuple_from_rng(&rng_pool.relic_rng),
+            tuple_from_rng(&rng_pool.potion_rng),
+            tuple_from_rng(&rng_pool.monster_hp_rng),
+            tuple_from_rng(&rng_pool.ai_rng),
+            tuple_from_rng(&rng_pool.shuffle_rng),
+            tuple_from_rng(&rng_pool.card_random_rng),
+            tuple_from_rng(&rng_pool.misc_rng),
+            tuple_from_rng(&rng_pool.math_rng),
+        ]
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<RngPool, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match RngPoolWire::deserialize(deserializer)? {
+            RngPoolWire::Legacy(rng_pool) => Ok(rng_pool),
+            RngPoolWire::Compact(entries) => {
+                if entries.len() != 13 {
+                    return Err(serde::de::Error::custom(format!(
+                        "compact rng pool must contain 13 streams, found {}",
+                        entries.len()
+                    )));
+                }
+                let mut entries = entries.into_iter().map(rng_from_tuple);
+                Ok(RngPool {
+                    monster_rng: entries.next().expect("validated stream count"),
+                    event_rng: entries.next().expect("validated stream count"),
+                    merchant_rng: entries.next().expect("validated stream count"),
+                    card_rng: entries.next().expect("validated stream count"),
+                    treasure_rng: entries.next().expect("validated stream count"),
+                    relic_rng: entries.next().expect("validated stream count"),
+                    potion_rng: entries.next().expect("validated stream count"),
+                    monster_hp_rng: entries.next().expect("validated stream count"),
+                    ai_rng: entries.next().expect("validated stream count"),
+                    shuffle_rng: entries.next().expect("validated stream count"),
+                    card_random_rng: entries.next().expect("validated stream count"),
+                    misc_rng: entries.next().expect("validated stream count"),
+                    math_rng: entries.next().expect("validated stream count"),
+                })
+            }
+        }
+    }
+
+    fn tuple_from_rng(rng: &StsRng) -> StsRngTuple {
+        StsRngTuple(rng.seed0, rng.seed1, rng.counter)
+    }
+
+    fn rng_from_tuple(tuple: StsRngTuple) -> StsRng {
+        StsRng {
+            seed0: tuple.0,
+            seed1: tuple.1,
+            counter: tuple.2,
+        }
+    }
+}
+
+impl BranchCampaignCheckpointRunStateScheduleRefsV1 {
+    fn resolved_schedule_v1(
+        &self,
+        components: &BranchCampaignCheckpointScheduleComponentsV1,
+    ) -> Result<RunStateScheduleCheckpointV1, String> {
+        Ok(RunStateScheduleCheckpointV1 {
+            rng_pool: self.rng_pool.clone(),
+            neow_rng: component_value_v1(&components.neow_rngs, &self.neow_rng_id)?,
+            event_generator: component_value_v1(
+                &components.event_generators,
+                &self.event_generator_id,
+            )?,
+            common_relic_pool: component_value_v1(
+                &components.common_relic_pools,
+                &self.common_relic_pool_id,
+            )?,
+            uncommon_relic_pool: component_value_v1(
+                &components.uncommon_relic_pools,
+                &self.uncommon_relic_pool_id,
+            )?,
+            rare_relic_pool: component_value_v1(
+                &components.rare_relic_pools,
+                &self.rare_relic_pool_id,
+            )?,
+            shop_relic_pool: component_value_v1(
+                &components.shop_relic_pools,
+                &self.shop_relic_pool_id,
+            )?,
+            boss_relic_pool: component_value_v1(
+                &components.boss_relic_pools,
+                &self.boss_relic_pool_id,
+            )?,
+            monster_list: component_value_v1(&components.monster_lists, &self.monster_list_id)?,
+            elite_monster_list: component_value_v1(
+                &components.elite_monster_lists,
+                &self.elite_monster_list_id,
+            )?,
+            boss_key: self.boss_key,
+            boss_list: component_value_v1(&components.boss_lists, &self.boss_list_id)?,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointScheduleComponentsV1 {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub neow_rngs: Vec<BranchCampaignCheckpointComponentRecordV1<StsRng>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub event_generators: Vec<BranchCampaignCheckpointComponentRecordV1<EventGenerator>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub common_relic_pools: Vec<BranchCampaignCheckpointComponentRecordV1<Vec<RelicId>>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uncommon_relic_pools: Vec<BranchCampaignCheckpointComponentRecordV1<Vec<RelicId>>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rare_relic_pools: Vec<BranchCampaignCheckpointComponentRecordV1<Vec<RelicId>>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shop_relic_pools: Vec<BranchCampaignCheckpointComponentRecordV1<Vec<RelicId>>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub boss_relic_pools: Vec<BranchCampaignCheckpointComponentRecordV1<Vec<RelicId>>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub monster_lists: Vec<BranchCampaignCheckpointComponentRecordV1<Vec<EncounterId>>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub elite_monster_lists: Vec<BranchCampaignCheckpointComponentRecordV1<Vec<EncounterId>>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub boss_lists: Vec<BranchCampaignCheckpointComponentRecordV1<Vec<EncounterId>>>,
+}
+
+impl BranchCampaignCheckpointScheduleComponentsV1 {
+    pub fn is_empty(&self) -> bool {
+        self.neow_rngs.is_empty()
+            && self.event_generators.is_empty()
+            && self.common_relic_pools.is_empty()
+            && self.uncommon_relic_pools.is_empty()
+            && self.rare_relic_pools.is_empty()
+            && self.shop_relic_pools.is_empty()
+            && self.boss_relic_pools.is_empty()
+            && self.monster_lists.is_empty()
+            && self.elite_monster_lists.is_empty()
+            && self.boss_lists.is_empty()
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointComponentRecordV1<T> {
+    pub component_id: String,
+    pub value: T,
+}
+
+fn component_value_v1<T: Clone>(
+    records: &[BranchCampaignCheckpointComponentRecordV1<T>],
+    component_id: &str,
+) -> Result<T, String> {
+    records
+        .iter()
+        .find(|record| record.component_id == component_id)
+        .map(|record| record.value.clone())
+        .ok_or_else(|| format!("missing schedule component {component_id}"))
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -554,6 +970,13 @@ pub struct BranchCampaignCheckpointCombatTrajectoryRecordV1 {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointActiveCombatRecordV1 {
+    pub active_combat_id: String,
+    pub active_combat: ActiveCombat,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BranchCampaignCheckpointV1 {
     pub schema_name: String,
     pub schema_version: u32,
@@ -568,21 +991,109 @@ pub struct BranchCampaignCheckpointV1 {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decision_parent_anchor_commands: Vec<Vec<String>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decision_parent_anchor_node_ids: Vec<usize>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub run_state_map_graphs: Vec<BranchCampaignCheckpointRunStateMapGraphRecordV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub run_state_maps: Vec<BranchCampaignCheckpointRunStateMapRecordV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub run_state_master_decks: Vec<BranchCampaignCheckpointRunStateMasterDeckRecordV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub run_state_relics: Vec<BranchCampaignCheckpointRunStateRelicsRecordV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub run_state_potions: Vec<BranchCampaignCheckpointRunStatePotionsRecordV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub run_state_schedules: Vec<BranchCampaignCheckpointRunStateScheduleRecordV1>,
+    #[serde(
+        default,
+        skip_serializing_if = "BranchCampaignCheckpointScheduleComponentsV1::is_empty"
+    )]
+    pub run_state_schedule_components: BranchCampaignCheckpointScheduleComponentsV1,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub run_state_emitted_events: Vec<BranchCampaignCheckpointRunStateEmittedEventsRecordV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub combat_automation_trajectories: Vec<BranchCampaignCheckpointCombatTrajectoryRecordV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub active_combats: Vec<BranchCampaignCheckpointActiveCombatRecordV1>,
     pub sessions: Vec<BranchCampaignCheckpointSessionV1>,
 }
 
 impl BranchCampaignCheckpointV1 {
+    pub fn checkpoint_node_commands_v1(&self, node_id: usize) -> Result<Vec<String>, String> {
+        let records = self.resolved_checkpoint_nodes_v1()?;
+        records
+            .into_iter()
+            .find(|node| node.node_id == node_id)
+            .map(|node| node.commands)
+            .ok_or_else(|| format!("missing checkpoint node {node_id}"))
+    }
+
+    pub fn session_commands_v1(
+        &self,
+        entry: &BranchCampaignCheckpointSessionV1,
+    ) -> Result<Vec<String>, String> {
+        if !entry.commands.is_empty() {
+            return Ok(entry.commands.clone());
+        }
+        let node_id = entry
+            .node_id
+            .ok_or_else(|| "checkpoint session has no commands or node_id".to_string())?;
+        self.checkpoint_node_commands_v1(node_id)
+    }
+
+    pub fn resolved_decision_parent_anchor_commands_v1(&self) -> Result<Vec<Vec<String>>, String> {
+        let mut commands = self.decision_parent_anchor_commands.clone();
+        for node_id in &self.decision_parent_anchor_node_ids {
+            commands.push(self.checkpoint_node_commands_v1(*node_id)?);
+        }
+        commands.sort();
+        commands.dedup();
+        Ok(commands)
+    }
+
+    pub fn resolved_checkpoint_nodes_v1(
+        &self,
+    ) -> Result<Vec<BranchCampaignCheckpointNodeV1>, String> {
+        let mut records = self.nodes.clone();
+        records.sort_by_key(|node| node.node_id);
+        let mut resolved = Vec::with_capacity(records.len());
+        for (expected_id, node) in records.into_iter().enumerate() {
+            if node.node_id != expected_id {
+                return Err(format!(
+                    "campaign checkpoint node ids must be contiguous: expected {}, found {}",
+                    expected_id, node.node_id
+                ));
+            }
+            if let Some(parent_id) = node.parent_id {
+                if parent_id > node.node_id {
+                    return Err(format!(
+                        "campaign checkpoint node {} has invalid parent {}",
+                        node.node_id, parent_id
+                    ));
+                }
+            }
+            let commands = if !node.commands.is_empty() {
+                node.commands.clone()
+            } else if let Some(parent_id) = node.parent_id {
+                let mut commands = resolved
+                    .get(parent_id)
+                    .map(|parent: &BranchCampaignCheckpointNodeV1| parent.commands.clone())
+                    .ok_or_else(|| {
+                        format!(
+                            "campaign checkpoint node {} references missing parent {}",
+                            node.node_id, parent_id
+                        )
+                    })?;
+                commands.extend(node.added_commands.clone());
+                commands
+            } else {
+                node.added_commands.clone()
+            };
+            resolved.push(BranchCampaignCheckpointNodeV1 { commands, ..node });
+        }
+        Ok(resolved)
+    }
+
     pub fn hydrated_session_checkpoint_v1(
         &self,
         entry: &BranchCampaignCheckpointSessionV1,
@@ -613,13 +1124,31 @@ impl BranchCampaignCheckpointV1 {
                 .ok_or_else(|| format!("missing checkpoint run_state master deck {deck_id}"))?;
             session.restore_run_state_master_deck_from_external_ref(record.master_deck.clone());
         }
+        if let Some(relics_id) = entry.run_state_relics_id.as_deref() {
+            let record = self
+                .run_state_relics
+                .iter()
+                .find(|record| record.relics_id == relics_id)
+                .ok_or_else(|| format!("missing checkpoint run_state relics {relics_id}"))?;
+            session.restore_run_state_relics_from_external_ref(record.relics.clone());
+        }
+        if let Some(potions_id) = entry.run_state_potions_id.as_deref() {
+            let record = self
+                .run_state_potions
+                .iter()
+                .find(|record| record.potions_id == potions_id)
+                .ok_or_else(|| format!("missing checkpoint run_state potions {potions_id}"))?;
+            session.restore_run_state_potions_from_external_ref(record.potions.clone());
+        }
         if let Some(schedule_id) = entry.run_state_schedule_id.as_deref() {
             let record = self
                 .run_state_schedules
                 .iter()
                 .find(|record| record.schedule_id == schedule_id)
                 .ok_or_else(|| format!("missing checkpoint run_state schedule {schedule_id}"))?;
-            session.restore_run_state_schedule_from_external_ref(record.schedule.clone());
+            session.restore_run_state_schedule_from_external_ref(
+                record.resolved_schedule_v1(&self.run_state_schedule_components)?,
+            );
         }
         if let Some(emitted_events_id) = entry.run_state_emitted_events_id.as_deref() {
             let record = self
@@ -632,14 +1161,23 @@ impl BranchCampaignCheckpointV1 {
             session
                 .restore_run_state_emitted_events_from_external_ref(record.emitted_events.clone());
         }
+        if let Some(active_combat_id) = entry.active_combat_id.as_deref() {
+            let record = self
+                .active_combats
+                .iter()
+                .find(|record| record.active_combat_id == active_combat_id)
+                .ok_or_else(|| format!("missing checkpoint active combat {active_combat_id}"))?;
+            session.restore_active_combat_from_external_ref(record.active_combat.clone());
+        }
         if session.last_combat_automation_trajectory_record().is_some() {
             return Ok(session);
         }
+        let entry_commands = self.session_commands_v1(entry)?;
         let Some(record) = self.combat_automation_trajectories.iter().find(|record| {
             record
                 .commands
                 .iter()
-                .any(|commands| commands == &entry.commands)
+                .any(|commands| commands == &entry_commands)
         }) else {
             return Ok(session);
         };
@@ -656,4 +1194,10 @@ pub struct BranchCampaignRunResultV1 {
 
 fn is_zero_i32(value: &i32) -> bool {
     *value == 0
+}
+
+fn branch_campaign_combat_performance_summary_is_default_v1(
+    value: &BranchCampaignCombatPerformanceSummaryV1,
+) -> bool {
+    value == &BranchCampaignCombatPerformanceSummaryV1::default()
 }

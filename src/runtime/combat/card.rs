@@ -4,20 +4,50 @@ use super::*;
 pub struct CombatCard {
     pub id: CardId,
     pub uuid: u32,
+    #[serde(default, skip_serializing_if = "is_zero_u8")]
     pub upgrades: u8,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
     pub misc_value: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_damage_override: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_block_override: Option<i32>,
+    #[serde(default, skip_serializing_if = "is_zero_i8")]
     pub cost_modifier: i8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost_for_turn: Option<u8>,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
     pub base_damage_mut: i32,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
     pub base_block_mut: i32,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
     pub base_magic_num_mut: i32,
+    #[serde(default, skip_serializing_if = "smallvec::SmallVec::is_empty")]
     pub multi_damage: smallvec::SmallVec<[i32; 5]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exhaust_override: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retain_override: Option<bool>,
+    #[serde(default, skip_serializing_if = "is_false")]
     pub free_to_play_once: bool,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
     pub energy_on_use: i32,
+}
+
+fn is_zero_u8(value: &u8) -> bool {
+    *value == 0
+}
+
+fn is_zero_i8(value: &i8) -> bool {
+    *value == 0
+}
+
+fn is_zero_i32(value: &i32) -> bool {
+    *value == 0
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl CombatCard {
