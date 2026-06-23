@@ -140,7 +140,7 @@ function Invoke-CampaignUntilMilestone {
             -MilestoneContext $MilestoneContext `
             -StepRounds $StepRounds
         Write-Host "$Label-step target=$($MilestoneContext.UntilMilestone) additional-rounds=$StepRounds"
-        & $MilestoneContext.DriverExe @ResumeArgs
+        & $MilestoneContext.DriverExe @ResumeArgs | ForEach-Object { Write-Host $_ }
         if ($LASTEXITCODE -ne 0) {
             return $LASTEXITCODE
         }
