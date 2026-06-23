@@ -47,6 +47,7 @@ function New-CampaignRunCommandContext {
         [object] $RunOutputContext,
         [object] $BoundParameterContext,
         [object] $RunRoundContext,
+        [object] $DriverPassthroughContext,
         [string[]] $DriverArgs,
         [bool] $NeedsBuild,
         [bool] $DryRun,
@@ -81,6 +82,7 @@ function New-CampaignRunCommandContext {
         RunManifestPath = $RunOutputContext.ManifestPath
         WrapperInvocationLine = $BoundParameterContext.WrapperInvocationLine
         WrapperBoundParameters = $BoundParameterContext.WrapperBoundParameters
+        DriverPassthroughContext = $DriverPassthroughContext
         ContinueCampaign = [bool] $CampaignRequest.ContinueCampaign
         TargetRounds = $RunRoundContext.TargetRounds
         MaxRounds = $RunRoundContext.MaxRounds

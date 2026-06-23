@@ -165,30 +165,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$DriverPassthroughArgs = @()
-if ($DriverArgs) {
-    $DriverPassthroughArgs += @($DriverArgs)
-}
-if ($ExtraArgs) {
-    $DriverPassthroughArgs += @($ExtraArgs)
-}
-
-$RetiredWrapperArgs = @(
-    "-PlanTargets",
-    "-ContinueTargets",
-    "-DecisionOutcomeDataset",
-    "-TargetedContinuationLimit",
-    "-TargetedContinuationCandidatesPerTarget"
-)
-foreach ($arg in $DriverPassthroughArgs) {
-    if ($RetiredWrapperArgs -contains $arg) {
-        throw "$arg was removed from tools/campaign.ps1. Use coverage-gap continuation, or call branch_campaign_driver directly for targeted-continuation archaeology."
-    }
-    if ($arg -match '^-[A-Za-z][A-Za-z0-9_-]*(=.*)?$') {
-        throw "Unknown wrapper-style argument '$arg'. Driver passthrough arguments must use Rust-style '--flag' syntax; wrapper switches use declared campaign.ps1 parameters."
-    }
-}
-
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
 . (Join-Path $PSScriptRoot "campaign_artifacts.ps1")
@@ -211,6 +187,10 @@ New-Item -ItemType Directory -Force -Path $CampaignPathContext.CampaignDir | Out
 . (Join-Path $PSScriptRoot "campaign_build.ps1")
 . (Join-Path $PSScriptRoot "campaign_source.ps1")
 . (Join-Path $PSScriptRoot "campaign_request.ps1")
+
+$DriverPassthroughContext = Resolve-CampaignDriverPassthroughContext `
+    -DriverArgs $DriverArgs `
+    -CompatibilityExtraArgs $ExtraArgs
 
 $CampaignRequest = Resolve-CampaignEntryRequest `
     -ContinueRun ([bool] $ContinueRun) `
@@ -266,7 +246,7 @@ $CampaignSharedDriverOptionContext = New-CampaignSharedDriverOptionContext `
     -VictoryHpPercent $VictoryHpPercent `
     -AutoCaptureCombat ([bool] $AutoCaptureCombat) `
     -AutoCaptureRoot $AutoCaptureRoot `
-    -ExtraArgs $DriverPassthroughArgs `
+    -DriverPassthroughContext $DriverPassthroughContext `
     -BossSegments ([bool] $BossSegments) `
     -NoProgress ([bool] $NoProgress) `
     -VerboseProgress ([bool] $VerboseProgress) `
@@ -413,6 +393,7 @@ switch ($CampaignRequest.Kind) {
             -RunOutputContext $RunOutputContext `
             -BoundParameterContext $BoundParameterContext `
             -RunRoundContext $RunRoundContext `
+            -DriverPassthroughContext $DriverPassthroughContext `
             -DriverArgs $RunDriverArgsContext.DriverArgs `
             -NeedsBuild ([bool] $NeedsBuild) `
             -DryRun ([bool] $DryRun) `

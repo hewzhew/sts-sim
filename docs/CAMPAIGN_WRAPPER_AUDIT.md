@@ -13,12 +13,12 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 434 lines
+- `tools/campaign.ps1`: 415 lines
 - `tools/campaign_artifacts.ps1`: 468 lines
 - `tools/campaign_artifact_summary.ps1`: 170 lines
-- `tools/campaign_invocation.ps1`: 318 lines
-- `tools/campaign_manifest.ps1`: 166 lines
-- `tools/campaign_run_execution.ps1`: 194 lines
+- `tools/campaign_invocation.ps1`: 364 lines
+- `tools/campaign_manifest.ps1`: 198 lines
+- `tools/campaign_run_execution.ps1`: 196 lines
 - `tools/campaign_coverage_gaps.ps1`: 269 lines
 - `tools/campaign_coverage_gap_execution.ps1`: 111 lines
 - `tools/campaign_coverage_gap_manifest.ps1`: 52 lines
@@ -229,6 +229,7 @@ This helper owns:
 - wrapper manifest JSON writing
 - common wrapper manifest fields
 - normal campaign run manifest shape
+- structured driver passthrough provenance in manifests
 - primary driver command-file recording through an explicit run context
 - primary driver command-file recording now requires an output artifact; the old
   `latest.seed.txt` / `latest.command.txt` sidecar write fallback is gone
@@ -431,6 +432,17 @@ This helper owns:
 Run-only driver argument construction now happens only inside the `run` /
 `continue_run` dispatch branch. Plan-only and inspect-only commands do not build
 normal-run driver args as incidental state.
+
+Invocation helpers now also own driver passthrough normalization. The main
+wrapper only declares `-DriverArgs` and the compatibility remaining-argument
+capture; `tools/campaign_invocation.ps1` combines, validates, and records the
+effective passthrough args. Manifests write the split explicitly:
+
+```text
+driver_passthrough.explicit_driver_args
+driver_passthrough.compatibility_extra_args
+driver_passthrough.effective_args
+```
 
 Output artifact allocation happens after typed round/request validation. For
 example, invalid `-UntilMilestone` use on a plan-only command now fails before

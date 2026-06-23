@@ -124,7 +124,9 @@ Use `-DryRun` first when checking source/output semantics. Use `-Scratch` for
 experiments that should not update latest. Use `-DriverArgs` only for explicit
 Rust driver passthrough. Driver passthrough flags should use Rust-style
 `--flag` syntax; new common workflows should become typed wrapper parameters
-instead of accumulating raw passthrough examples.
+instead of accumulating raw passthrough examples. Wrapper manifests record
+driver passthrough provenance under `driver_passthrough`, split into explicit
+`-DriverArgs`, compatibility remaining args, and the effective forwarded args.
 
 ## High Ascension Presets
 

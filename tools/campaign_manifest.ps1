@@ -46,6 +46,37 @@ function Convert-CampaignRequestForManifest {
     }
 }
 
+function Convert-CampaignDriverPassthroughForManifest {
+    param(
+        [object] $Context
+    )
+
+    $OptionContext = $null
+    if ($Context) {
+        if ($Context.PSObject.Properties.Name -contains "CampaignSharedDriverOptionContext") {
+            $OptionContext = $Context.CampaignSharedDriverOptionContext
+        } elseif ($Context.PSObject.Properties.Name -contains "DriverPassthroughContext") {
+            $OptionContext = $Context.DriverPassthroughContext
+        }
+    }
+
+    if ($null -eq $OptionContext) {
+        return [ordered]@{
+            explicit_driver_args = @()
+            compatibility_extra_args = @()
+            effective_args = @()
+            compatibility_capture_used = $false
+        }
+    }
+
+    return [ordered]@{
+        explicit_driver_args = @($OptionContext.ExplicitDriverArgs)
+        compatibility_extra_args = @($OptionContext.CompatibilityExtraArgs)
+        effective_args = @($OptionContext.DriverPassthroughArgs)
+        compatibility_capture_used = [bool] $OptionContext.HasCompatibilityExtraArgs
+    }
+}
+
 function Write-CampaignPrimaryDriverCommandRecord {
     param(
         [string] $PrimaryDriverCommandLine,
@@ -105,6 +136,7 @@ function New-CampaignWrapperManifestBase {
             line = $Context.WrapperInvocationLine
             bound_parameters = $Context.WrapperBoundParameters
         }
+        driver_passthrough = Convert-CampaignDriverPassthroughForManifest -Context $Context
         primary_driver = [ordered]@{
             args = @($PrimaryDriverArgs)
             command = $PrimaryDriverCommand

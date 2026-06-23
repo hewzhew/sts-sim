@@ -98,6 +98,50 @@ function Test-ExtraCombatOptionKey {
     return $false
 }
 
+function Resolve-CampaignDriverPassthroughContext {
+    param(
+        [string[]] $DriverArgs,
+        [string[]] $CompatibilityExtraArgs
+    )
+
+    $ResolvedDriverArgs = @()
+    if ($DriverArgs) {
+        $ResolvedDriverArgs = @($DriverArgs)
+    }
+
+    $ResolvedCompatibilityExtraArgs = @()
+    if ($CompatibilityExtraArgs) {
+        $ResolvedCompatibilityExtraArgs = @($CompatibilityExtraArgs)
+    }
+
+    $ResolvedPassthroughArgs = @()
+    $ResolvedPassthroughArgs += @($ResolvedDriverArgs)
+    $ResolvedPassthroughArgs += @($ResolvedCompatibilityExtraArgs)
+
+    $RetiredWrapperArgs = @(
+        "-PlanTargets",
+        "-ContinueTargets",
+        "-DecisionOutcomeDataset",
+        "-TargetedContinuationLimit",
+        "-TargetedContinuationCandidatesPerTarget"
+    )
+    foreach ($Arg in $ResolvedPassthroughArgs) {
+        if ($RetiredWrapperArgs -contains $Arg) {
+            throw "$Arg was removed from tools/campaign.ps1. Use coverage-gap continuation, or call branch_campaign_driver directly for targeted-continuation archaeology."
+        }
+        if ($Arg -match '^-[A-Za-z][A-Za-z0-9_-]*(=.*)?$') {
+            throw "Unknown wrapper-style argument '$Arg'. Driver passthrough arguments must use Rust-style '--flag' syntax; wrapper switches use declared campaign.ps1 parameters."
+        }
+    }
+
+    return [pscustomobject]@{
+        ExplicitDriverArgs = @($ResolvedDriverArgs)
+        CompatibilityExtraArgs = @($ResolvedCompatibilityExtraArgs)
+        DriverPassthroughArgs = @($ResolvedPassthroughArgs)
+        HasCompatibilityExtraArgs = ($ResolvedCompatibilityExtraArgs.Count -gt 0)
+    }
+}
+
 function New-CampaignSharedDriverOptionContext {
     param(
         [System.Collections.IDictionary] $CampaignBoundParameters,
@@ -111,7 +155,7 @@ function New-CampaignSharedDriverOptionContext {
         [int] $VictoryHpPercent,
         [bool] $AutoCaptureCombat,
         [string] $AutoCaptureRoot,
-        [string[]] $ExtraArgs,
+        [object] $DriverPassthroughContext,
         [bool] $BossSegments,
         [bool] $NoProgress,
         [bool] $VerboseProgress,
@@ -119,9 +163,8 @@ function New-CampaignSharedDriverOptionContext {
         [bool] $Diagnose
     )
 
-    $ResolvedExtraArgs = @()
-    if ($ExtraArgs) {
-        $ResolvedExtraArgs = @($ExtraArgs)
+    if ($null -eq $DriverPassthroughContext) {
+        $DriverPassthroughContext = Resolve-CampaignDriverPassthroughContext
     }
 
     return [pscustomobject]@{
@@ -136,7 +179,10 @@ function New-CampaignSharedDriverOptionContext {
         VictoryHpPercent = $VictoryHpPercent
         AutoCaptureCombat = [bool] $AutoCaptureCombat
         AutoCaptureRoot = $AutoCaptureRoot
-        ExtraArgs = $ResolvedExtraArgs
+        ExplicitDriverArgs = @($DriverPassthroughContext.ExplicitDriverArgs)
+        CompatibilityExtraArgs = @($DriverPassthroughContext.CompatibilityExtraArgs)
+        DriverPassthroughArgs = @($DriverPassthroughContext.DriverPassthroughArgs)
+        HasCompatibilityExtraArgs = [bool] $DriverPassthroughContext.HasCompatibilityExtraArgs
         BossSegments = [bool] $BossSegments
         NoProgress = [bool] $NoProgress
         VerboseProgress = [bool] $VerboseProgress
@@ -198,7 +244,7 @@ function Add-CampaignSharedDriverOptions {
             $Args += @("--auto-capture-root", "$($OptionContext.AutoCaptureRoot)")
         }
     }
-    if (-not (Test-ExtraCombatOptionKey -Tokens $OptionContext.ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
+    if (-not (Test-ExtraCombatOptionKey -Tokens $OptionContext.DriverPassthroughArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
         if ($OptionContext.BossSegments) {
             $Args += @("--combat-search-option", "segment=turn")
         } else {
@@ -216,8 +262,8 @@ function Add-CampaignSharedDriverOptions {
     } elseif ($OptionContext.Diagnose) {
         $Args += @("--report-detail", "diagnose")
     }
-    if ($OptionContext.ExtraArgs) {
-        $Args += $OptionContext.ExtraArgs
+    if ($OptionContext.DriverPassthroughArgs) {
+        $Args += $OptionContext.DriverPassthroughArgs
     }
     return $Args
 }
@@ -227,7 +273,7 @@ function Resolve-CampaignCombatSegmentMode {
         [object] $OptionContext
     )
 
-    if (Test-ExtraCombatOptionKey -Tokens $OptionContext.ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode")) {
+    if (Test-ExtraCombatOptionKey -Tokens $OptionContext.DriverPassthroughArgs -Keys @("segment", "segment_mode", "partial", "partial_mode")) {
         return "custom"
     }
     if ($OptionContext.BossSegments) {
