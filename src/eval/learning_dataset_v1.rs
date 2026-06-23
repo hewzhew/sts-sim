@@ -1229,6 +1229,11 @@ pub fn plan_coverage_gap_continuations_with_filter_v1(
         }
 
         let mut selected_for_decision = 0usize;
+        let candidate_limit_for_decision = coverage_gap_candidate_limit_for_decision_v1(
+            event_type,
+            max_candidates_per_decision,
+            candidates.len(),
+        );
         let ordered_unobserved = unobserved
             .iter()
             .copied()
@@ -1240,7 +1245,7 @@ pub fn plan_coverage_gap_continuations_with_filter_v1(
                     .filter(|(_, candidate)| !candidate_admission_is_scheduled_v1(candidate)),
             );
         for (candidate_index, candidate) in ordered_unobserved {
-            if selected_for_decision >= max_candidates_per_decision {
+            if selected_for_decision >= candidate_limit_for_decision {
                 continue;
             }
             let mut target = CoverageGapContinuationTargetV1 {
@@ -1320,6 +1325,18 @@ pub fn plan_coverage_gap_continuations_with_filter_v1(
         origin_summaries,
         target_progress_summaries,
         targets,
+    }
+}
+
+fn coverage_gap_candidate_limit_for_decision_v1(
+    event_type: &str,
+    max_candidates_per_decision: usize,
+    candidate_count: usize,
+) -> usize {
+    if event_type == "route" {
+        candidate_count
+    } else {
+        max_candidates_per_decision
     }
 }
 
@@ -5131,15 +5148,7 @@ mod tests {
 
     #[test]
     fn coverage_gap_continuation_plan_targets_unobserved_route_candidates() {
-        let mut run = crate::state::RunState::new(521, 0, false, "Ironclad");
-        run.event_state = None;
-        let trace = crate::ai::route_planner_v1::plan_route_decision_v1(
-            &run,
-            &crate::state::core::EngineState::MapNavigation,
-            crate::ai::route_planner_v1::RoutePlannerConfigV1::default(),
-        );
-        let packet =
-            crate::ai::route_planner_v1::MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+        let packet = sample_route_map_packet_for_test();
         assert!(packet.candidates.len() >= 2);
         let observed_route = &packet.candidates[0];
         let unobserved_route = &packet.candidates[1];
@@ -5149,43 +5158,13 @@ mod tests {
         route_one.choice_labels = vec![route_candidate_test_label_v1(observed_route)];
 
         let mut report = sample_campaign_report_with_branches(Vec::new());
-        report.journal.events.push(CampaignJournalEventV1 {
-            event_id: "journal-route-pool0:candidate_set".to_string(),
-            round: 1,
-            branch_id: "root".to_string(),
-            branch_index: 0,
-            branch_frontier_title: "Map".to_string(),
-            act: 1,
-            floor: 1,
-            branch_choices: Vec::new(),
-            branch_commands: Vec::new(),
-            combat_budget_retry_used: false,
-            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
-                decision_id: "journal-route-pool0".to_string(),
-                boundary_title: "Map".to_string(),
-                frontier_key: "map-frontier".to_string(),
-                depth: 0,
-                candidate_count: packet.candidates.len(),
-                selected_index: Some(0),
-                candidate_pool_provenance: Some(packet.candidate_pool.clone()),
-                map_decision_packet: Some(packet.clone()),
-                route_candidates: packet
-                    .candidates
-                    .iter()
-                    .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
-                    .collect(),
-                candidates: packet
-                    .candidates
-                    .iter()
-                    .map(|candidate| {
-                        sample_journal_candidate(
-                            &candidate.command,
-                            &route_candidate_test_label_v1(candidate),
-                        )
-                    })
-                    .collect(),
-            },
-        });
+        push_route_candidate_pool_event_for_test(
+            &mut report,
+            "journal-route-pool0",
+            &packet,
+            true,
+            Some(0),
+        );
 
         let plan = plan_coverage_gap_continuations_v1(&report, &[route_one], 8, 2);
         let rendered = render_coverage_gap_continuation_plan_v1(&plan);
@@ -5236,16 +5215,46 @@ mod tests {
     }
 
     #[test]
-    fn coverage_gap_continuation_uses_typed_route_candidates_without_map_packet() {
-        let mut run = crate::state::RunState::new(521, 0, false, "Ironclad");
-        run.event_state = None;
-        let trace = crate::ai::route_planner_v1::plan_route_decision_v1(
-            &run,
-            &crate::state::core::EngineState::MapNavigation,
-            crate::ai::route_planner_v1::RoutePlannerConfigV1::default(),
+    fn coverage_gap_route_candidate_pool_exposes_full_unobserved_pool_before_global_selection() {
+        let packet = sample_route_map_packet_for_test();
+        assert!(packet.candidates.len() >= 3);
+
+        let mut report = sample_campaign_report_with_branches(Vec::new());
+        push_route_candidate_pool_event_for_test(
+            &mut report,
+            "journal-route-pool0",
+            &packet,
+            true,
+            packet.selected_index,
         );
-        let packet =
-            crate::ai::route_planner_v1::MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+
+        let plan = plan_coverage_gap_continuations_with_filter_v1(
+            &report,
+            &[],
+            packet.candidates.len(),
+            1,
+            &CoverageGapContinuationFilterV1 {
+                bucket: Some("route".to_string()),
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(plan.total_decisions, 1);
+        assert_eq!(plan.total_unobserved_candidates, packet.candidates.len());
+        assert_eq!(
+            plan.selected_target_count,
+            packet.candidates.len(),
+            "route coverage-gap planning should let the global route budget choose across the full map candidate pool, not pre-truncate each route decision to one candidate"
+        );
+        assert!(plan
+            .targets
+            .iter()
+            .all(|target| target.target_origin.source == "map_decision_packet"));
+    }
+
+    #[test]
+    fn coverage_gap_continuation_uses_typed_route_candidates_without_map_packet() {
+        let packet = sample_route_map_packet_for_test();
         assert!(packet.candidates.len() >= 2);
         let observed_route = &packet.candidates[0];
         let unobserved_route = &packet.candidates[1];
@@ -5255,43 +5264,13 @@ mod tests {
         route_one.choice_labels = vec![route_candidate_test_label_v1(observed_route)];
 
         let mut report = sample_campaign_report_with_branches(Vec::new());
-        report.journal.events.push(CampaignJournalEventV1 {
-            event_id: "journal-route-pool0:candidate_set".to_string(),
-            round: 1,
-            branch_id: "root".to_string(),
-            branch_index: 0,
-            branch_frontier_title: "Map".to_string(),
-            act: 1,
-            floor: 1,
-            branch_choices: Vec::new(),
-            branch_commands: Vec::new(),
-            combat_budget_retry_used: false,
-            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
-                decision_id: "journal-route-pool0".to_string(),
-                boundary_title: "Map".to_string(),
-                frontier_key: "map-frontier".to_string(),
-                depth: 0,
-                candidate_count: packet.candidates.len(),
-                selected_index: Some(0),
-                candidate_pool_provenance: Some(packet.candidate_pool.clone()),
-                map_decision_packet: None,
-                route_candidates: packet
-                    .candidates
-                    .iter()
-                    .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
-                    .collect(),
-                candidates: packet
-                    .candidates
-                    .iter()
-                    .map(|candidate| {
-                        sample_journal_candidate(
-                            &candidate.command,
-                            &route_candidate_test_label_v1(candidate),
-                        )
-                    })
-                    .collect(),
-            },
-        });
+        push_route_candidate_pool_event_for_test(
+            &mut report,
+            "journal-route-pool0",
+            &packet,
+            false,
+            Some(0),
+        );
 
         let plan = plan_coverage_gap_continuations_v1(&report, &[route_one], 8, 2);
 
@@ -5819,44 +5798,15 @@ mod tests {
     #[test]
     fn coverage_gap_plan_summary_reports_target_origin_coverage() {
         let mut report = sample_campaign_report_with_branches(Vec::new());
-        let mut run = sts_simulator::state::RunState::new(521, 0, false, "Ironclad");
-        run.event_state = None;
-        let trace = sts_simulator::ai::route_planner_v1::plan_route_decision_v1(
-            &run,
-            &sts_simulator::state::core::EngineState::MapNavigation,
-            sts_simulator::ai::route_planner_v1::RoutePlannerConfigV1::default(),
-        );
-        let packet =
-            crate::ai::route_planner_v1::MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+        let packet = sample_route_map_packet_for_test();
         assert!(!packet.candidates.is_empty());
-        report.journal.events.push(CampaignJournalEventV1 {
-            event_id: "route-pool:candidate_set".to_string(),
-            round: 1,
-            branch_id: "root".to_string(),
-            branch_index: 0,
-            branch_frontier_title: "Map".to_string(),
-            act: 1,
-            floor: 1,
-            branch_choices: Vec::new(),
-            branch_commands: Vec::new(),
-            combat_budget_retry_used: false,
-            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
-                decision_id: "route-pool".to_string(),
-                boundary_title: "Map".to_string(),
-                frontier_key: "map-frontier".to_string(),
-                depth: 0,
-                candidate_count: packet.candidates.len(),
-                selected_index: packet.selected_index,
-                candidate_pool_provenance: Some(packet.candidate_pool.clone()),
-                map_decision_packet: Some(packet.clone()),
-                route_candidates: Vec::new(),
-                candidates: packet
-                    .candidates
-                    .iter()
-                    .map(|route| sample_journal_candidate(&route.command, &route.command))
-                    .collect(),
-            },
-        });
+        push_route_candidate_pool_event_for_test(
+            &mut report,
+            "route-pool",
+            &packet,
+            true,
+            packet.selected_index,
+        );
         report.journal.events.push(CampaignJournalEventV1 {
             event_id: "reward-pool:candidate_set".to_string(),
             round: 1,
@@ -7369,6 +7319,63 @@ mod tests {
             disposition,
             admission: CampaignJournalCandidateAdmissionTraceV1::new(status, "test", "test"),
         }
+    }
+
+    fn sample_route_map_packet_for_test() -> crate::ai::route_planner_v1::MapDecisionPacketV1 {
+        let mut run = crate::state::RunState::new(521, 0, false, "Ironclad");
+        run.event_state = None;
+        let trace = crate::ai::route_planner_v1::plan_route_decision_v1(
+            &run,
+            &crate::state::core::EngineState::MapNavigation,
+            crate::ai::route_planner_v1::RoutePlannerConfigV1::default(),
+        );
+        crate::ai::route_planner_v1::MapDecisionPacketV1::from_route_decision_trace_v1(&trace)
+    }
+
+    fn push_route_candidate_pool_event_for_test(
+        report: &mut BranchCampaignReportV1,
+        decision_id: &str,
+        packet: &crate::ai::route_planner_v1::MapDecisionPacketV1,
+        include_map_packet: bool,
+        selected_index: Option<usize>,
+    ) {
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: format!("{decision_id}:candidate_set"),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Map".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                decision_id: decision_id.to_string(),
+                boundary_title: "Map".to_string(),
+                frontier_key: "map-frontier".to_string(),
+                depth: 0,
+                candidate_count: packet.candidates.len(),
+                selected_index,
+                candidate_pool_provenance: Some(packet.candidate_pool.clone()),
+                map_decision_packet: include_map_packet.then(|| packet.clone()),
+                route_candidates: packet
+                    .candidates
+                    .iter()
+                    .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
+                    .collect(),
+                candidates: packet
+                    .candidates
+                    .iter()
+                    .map(|candidate| {
+                        sample_journal_candidate(
+                            &candidate.command,
+                            &route_candidate_test_label_v1(candidate),
+                        )
+                    })
+                    .collect(),
+            },
+        });
     }
 
     fn sample_route_coverage_gap_target(
