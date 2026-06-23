@@ -11,27 +11,6 @@ function Format-CommandLine {
     return $RenderedExe + " " + ($RenderedArgs -join " ")
 }
 
-function New-CampaignRunDriverIdentityArgs {
-    param(
-        [string] $Mode,
-        [long] $Seed,
-        [int] $Ascension,
-        [string] $Class
-    )
-
-    $Args = @(
-        "run",
-        "--preset", "$Mode",
-        "--seed", "$Seed",
-        "--ascension", "$Ascension",
-        "--class", "$Class"
-    )
-    if (@(0, 10, 15, 17, 20) -contains $Ascension) {
-        $Args += @("--ascension-domain", "a$Ascension")
-    }
-    return $Args
-}
-
 function Test-ExtraCombatOptionKey {
     param(
         [string[]] $Tokens,

@@ -231,7 +231,6 @@ tools/campaign_invocation.ps1
 This helper owns:
 
 - command-line rendering
-- run driver identity argument rendering
 - shared campaign driver option context extraction
 - shared campaign driver option rendering
 - shared driver option context is passed explicitly to campaign, coverage-gap,
@@ -246,6 +245,7 @@ tools/campaign_run_execution.ps1
 
 This helper owns:
 
+- run driver identity argument rendering
 - normal run driver argument context construction, including resume/output,
   round budget, learning export, shared options, and combat segment labeling
 - normal campaign run command context construction
