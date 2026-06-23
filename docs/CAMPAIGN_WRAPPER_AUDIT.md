@@ -42,7 +42,7 @@ Approximate physical line count after the request/source/output cleanup and
 inspect probe consolidation:
 
 - `tools/campaign_inspect.ps1`: 395 lines
-- `tools/campaign.ps1`: 374 lines
+- `tools/campaign.ps1`: 385 lines
 - `tools/campaign_request.ps1`: 329 lines
 - `tools/campaign_continuation.ps1`: 318 lines
 - `tools/campaign_run_execution.ps1`: 298 lines
@@ -63,12 +63,13 @@ Major regions:
 | Region | Approx lines | Status |
 | --- | ---: | --- |
 | Help examples and synopsis | 35 | Useful as a quick reference |
-| Parameter block | 180 | Too many feature flags in one entrypoint |
-| Path globals and helper import | 20 | Fine |
-| Source/build/output resolution | 130 | Narrower, but still in the wrapper |
-| Entry dispatch | 130 | Moved out of main wrapper; switch fields are grouped, but still dynamic |
-| Inspect helpers | 348 | Biggest remaining module; likely needs semantic pruning, not just splitting |
-| Invocation helpers | 331 | Shared option and driver argument construction are still mixed |
+| Main parameter block | 150 | Still broad, but legacy/probe aliases are now hidden where possible |
+| Main source/build/output orchestration | 200 | Still the largest visible wrapper surface |
+| Inspect helpers | 395 | Biggest remaining helper; needs workflow pruning more than splitting |
+| Request helpers | 329 | Owns request classification and compatibility folding |
+| Continuation helpers | 318 | Large but mostly owns one workflow family |
+| Run execution helpers | 298 | Owns normal run command construction and execution |
+| Invocation helpers | 212 | Now closer to shared command rendering and shared driver options |
 
 ## Why It Got This Large
 
