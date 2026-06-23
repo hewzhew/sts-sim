@@ -187,6 +187,7 @@ New-Item -ItemType Directory -Force -Path $CampaignPathContext.CampaignDir | Out
 . (Join-Path $PSScriptRoot "campaign_build.ps1")
 . (Join-Path $PSScriptRoot "campaign_source.ps1")
 . (Join-Path $PSScriptRoot "campaign_request.ps1")
+. (Join-Path $PSScriptRoot "campaign_entry_dispatch.ps1")
 
 $DriverPassthroughContext = Resolve-CampaignDriverPassthroughContext `
     -DriverArgs $DriverArgs `
@@ -287,129 +288,66 @@ Ensure-CampaignOutputArtifactDirectory -OutputContext $RunOutputContext -DryRun 
 
 $NeedsBuild = $Build -or (Test-DriverNeedsBuild $BuildContext.DriverExe)
 
-switch ($CampaignRequest.Kind) {
-    { @("plan_coverage_gaps", "continue_coverage_gaps") -contains $_ } {
-        $ContinuationEntryContext = New-CampaignContinuationEntryContext `
-            -CampaignRequest $CampaignRequest `
-            -WrapperScript $PSCommandPath `
-            -Mode $Mode `
-            -RunOutputContext $RunOutputContext `
-            -BoundParameterContext $BoundParameterContext `
-            -CampaignSourceArtifact $CampaignSourceArtifact `
-            -InspectScratchLatest ([bool] $InspectScratchLatest) `
-            -CoverageGapExecution $CoverageGapExecution `
-            -CoverageGapIntent $CoverageGapIntent `
-            -CoverageGapFilterLabel $CoverageGapFilterContext.FilterLabel `
-            -CoverageGapFilterArgs $CoverageGapFilterContext.FilterArgs `
-            -CoverageGapResultFilterArgs $CoverageGapFilterContext.ResultFilterArgs `
-            -CoverageGapResultFilterLabel $CoverageGapFilterContext.ResultFilterLabel `
-            -CampaignRunIdentityArgs $CampaignRunIdentityArgs `
-            -CampaignSharedDriverOptionContext $CampaignSharedDriverOptionContext `
-            -Seed $Seed `
-            -Ascension $Ascension `
-            -Class $Class `
-            -BuildContext $BuildContext `
-            -NeedsBuild ([bool] $NeedsBuild) `
-            -Scratch ([bool] $Scratch) `
-            -RunRoundContext $RunRoundContext `
-            -CoverageGapLimit $CoverageGapLimit `
-            -CoverageGapCandidatesPerDecision $CoverageGapCandidatesPerDecision `
-            -DryRun ([bool] $DryRun) `
-            -RepoRoot $RepoRoot
-        $ContinuationExitCode = Invoke-CampaignContinuationEntry -Context $ContinuationEntryContext
-        exit $ContinuationExitCode
-    }
-
-    "inspect" {
-        $InspectOptionContext = New-CampaignInspectOptionContext `
-            -BoundParameters $BoundParameterContext.CampaignBoundParameters `
-            -InspectState ([bool] $InspectState) `
-            -InspectShopEvidence ([bool] $InspectShopEvidence) `
-            -InspectShopChallenge ([bool] $InspectShopChallenge) `
-            -InspectCardRewardEvidence ([bool] $InspectCardRewardEvidence) `
-            -InspectDecisionObservations ([bool] $InspectDecisionObservations) `
-            -InspectJournal ([bool] $InspectJournal) `
-            -InspectLineageDecisions ([bool] $InspectLineageDecisions) `
-            -InspectCampfireEvidence ([bool] $InspectCampfireEvidence) `
-            -InspectDeckMutation ([bool] $InspectDeckMutation) `
-            -InspectRouteEvidence ([bool] $InspectRouteEvidence) `
-            -InspectLastAutoCombat ([bool] $InspectLastAutoCombat) `
-            -InspectCombatLab ([bool] $InspectCombatLab) `
-            -InspectFinalBossCombat ([bool] $InspectFinalBossCombat) `
-            -InspectCoverageGapMilestoneSummary ([bool] $InspectCoverageGapMilestoneSummary) `
-            -InspectCoverageGapTargetState ([bool] $InspectCoverageGapTargetState) `
-            -ExportLearningDataset $ExportLearningDataset `
-            -BranchExamples $BranchExamples `
-            -ChallengeMaxPlans $ChallengeMaxPlans `
-            -ChallengeDepth $ChallengeDepth `
-            -ChallengeMaxBranches $ChallengeMaxBranches `
-            -SearchWallMs $SearchWallMs `
-            -SearchMaxNodes $SearchMaxNodes `
-            -CoverageGapMilestoneTarget $CoverageGapMilestoneTarget `
-            -CoverageGapFilterArgs $CoverageGapFilterContext.FilterArgs `
-            -InspectIndex $InspectIndex `
-            -InspectAct $InspectAct `
-            -InspectFloor $InspectFloor `
-            -InspectBoundary $CampaignRequest.InspectBoundary `
-            -InspectQuery $InspectQuery `
-            -ProbeBoss ([bool] $ProbeBoss)
-        $InspectEntryContext = New-CampaignInspectEntryContext `
-            -CampaignRequest $CampaignRequest `
-            -CampaignSourceArtifact $CampaignSourceArtifact `
-            -InspectOptionContext $InspectOptionContext `
-            -InspectArtifacts ([bool] $InspectArtifacts) `
-            -ExportLearningDataset $ExportLearningDataset `
-            -Seed $Seed `
-            -Ascension $Ascension `
-            -Class $Class `
-            -BuildContext $BuildContext `
-            -NeedsBuild ([bool] $NeedsBuild) `
-            -InspectCoverageGapMilestoneSummary ([bool] $InspectCoverageGapMilestoneSummary) `
-            -CoverageGapFilterLabel $CoverageGapFilterContext.FilterLabel `
-            -DryRun ([bool] $DryRun) `
-            -RepoRoot $RepoRoot
-        $DriverExitCode = Invoke-CampaignInspectEntry -Context $InspectEntryContext
-        exit $DriverExitCode
-    }
-
-    { @("run", "continue_run") -contains $_ } {
-        $RunDriverArgsContext = New-CampaignRunDriverArgsContext `
-            -RunIdentityArgs $CampaignRunIdentityArgs `
-            -Request $CampaignRequest `
-            -RunOutputContext $RunOutputContext `
-            -RunRoundContext $RunRoundContext `
-            -OptionContext $CampaignSharedDriverOptionContext `
-            -ExportLearningDataset $ExportLearningDataset
-        $RunCommandContext = New-CampaignRunCommandContext `
-            -CampaignRequest $CampaignRequest `
-            -WrapperScript $PSCommandPath `
-            -RepoRoot $RepoRoot `
-            -Mode $Mode `
-            -Seed $Seed `
-            -Ascension $Ascension `
-            -Class $Class `
-            -Scratch ([bool] $Scratch) `
-            -BuildContext $BuildContext `
-            -RunOutputContext $RunOutputContext `
-            -BoundParameterContext $BoundParameterContext `
-            -RunRoundContext $RunRoundContext `
-            -DriverPassthroughContext $DriverPassthroughContext `
-            -DriverArgs $RunDriverArgsContext.DriverArgs `
-            -NeedsBuild ([bool] $NeedsBuild) `
-            -DryRun ([bool] $DryRun) `
-            -Log ([bool] $Log) `
-            -BossRelicAxes ([bool] $BossRelicAxes) `
-            -CombatSegmentMode $RunDriverArgsContext.CombatSegmentMode `
-            -UntilMilestone $UntilMilestone `
-            -MilestoneStepRounds $MilestoneStepRounds `
-            -MilestoneMaxRounds $MilestoneMaxRounds `
-            -ResolvedMilestoneStop $RunRoundContext.ResolvedMilestoneStop
-        Write-CampaignRunPreflight -Context $RunCommandContext
-        $DriverExitCode = Invoke-CampaignRunCommand -Context $RunCommandContext -RunIdentityArgs $CampaignRunIdentityArgs -OptionContext $CampaignSharedDriverOptionContext
-        exit $DriverExitCode
-    }
-
-    default {
-        throw "Unknown campaign command kind: $($CampaignRequest.Kind)"
-    }
+$EntryDispatchContext = [pscustomobject]@{
+    CampaignRequest = $CampaignRequest
+    WrapperScript = $PSCommandPath
+    RepoRoot = $RepoRoot
+    Mode = $Mode
+    Seed = $Seed
+    Ascension = $Ascension
+    Class = $Class
+    CampaignSourceArtifact = $CampaignSourceArtifact
+    BuildContext = $BuildContext
+    NeedsBuild = [bool] $NeedsBuild
+    BoundParameterContext = $BoundParameterContext
+    DriverPassthroughContext = $DriverPassthroughContext
+    CampaignRunIdentityArgs = @($CampaignRunIdentityArgs)
+    CampaignSharedDriverOptionContext = $CampaignSharedDriverOptionContext
+    CoverageGapFilterContext = $CoverageGapFilterContext
+    RunRoundContext = $RunRoundContext
+    RunOutputContext = $RunOutputContext
+    InspectScratchLatest = [bool] $InspectScratchLatest
+    CoverageGapExecution = $CoverageGapExecution
+    CoverageGapIntent = $CoverageGapIntent
+    CoverageGapLimit = $CoverageGapLimit
+    CoverageGapCandidatesPerDecision = $CoverageGapCandidatesPerDecision
+    Scratch = [bool] $Scratch
+    DryRun = [bool] $DryRun
+    Log = [bool] $Log
+    BossRelicAxes = [bool] $BossRelicAxes
+    UntilMilestone = $UntilMilestone
+    MilestoneStepRounds = $MilestoneStepRounds
+    MilestoneMaxRounds = $MilestoneMaxRounds
+    ExportLearningDataset = $ExportLearningDataset
+    InspectArtifacts = [bool] $InspectArtifacts
+    InspectState = [bool] $InspectState
+    InspectShopEvidence = [bool] $InspectShopEvidence
+    InspectShopChallenge = [bool] $InspectShopChallenge
+    InspectCardRewardEvidence = [bool] $InspectCardRewardEvidence
+    InspectDecisionObservations = [bool] $InspectDecisionObservations
+    InspectJournal = [bool] $InspectJournal
+    InspectLineageDecisions = [bool] $InspectLineageDecisions
+    InspectCampfireEvidence = [bool] $InspectCampfireEvidence
+    InspectDeckMutation = [bool] $InspectDeckMutation
+    InspectRouteEvidence = [bool] $InspectRouteEvidence
+    InspectLastAutoCombat = [bool] $InspectLastAutoCombat
+    InspectCombatLab = [bool] $InspectCombatLab
+    InspectFinalBossCombat = [bool] $InspectFinalBossCombat
+    InspectCoverageGapMilestoneSummary = [bool] $InspectCoverageGapMilestoneSummary
+    InspectCoverageGapTargetState = [bool] $InspectCoverageGapTargetState
+    BranchExamples = $BranchExamples
+    ChallengeMaxPlans = $ChallengeMaxPlans
+    ChallengeDepth = $ChallengeDepth
+    ChallengeMaxBranches = $ChallengeMaxBranches
+    SearchWallMs = $SearchWallMs
+    SearchMaxNodes = $SearchMaxNodes
+    CoverageGapMilestoneTarget = $CoverageGapMilestoneTarget
+    InspectIndex = $InspectIndex
+    InspectAct = $InspectAct
+    InspectFloor = $InspectFloor
+    InspectQuery = $InspectQuery
+    ProbeBoss = [bool] $ProbeBoss
 }
+
+$DriverExitCode = Invoke-CampaignEntryDispatch -Context $EntryDispatchContext
+exit $DriverExitCode
