@@ -43,15 +43,16 @@ inspect probe consolidation:
 
 - `tools/campaign_inspect.ps1`: 395 lines
 - `tools/campaign.ps1`: 374 lines
-- `tools/campaign_invocation.ps1`: 364 lines
+- `tools/campaign_request.ps1`: 329 lines
 - `tools/campaign_continuation.ps1`: 318 lines
+- `tools/campaign_run_execution.ps1`: 298 lines
 - `tools/campaign_wrapper_smoke.ps1`: 289 lines
-- `tools/campaign_request.ps1`: 279 lines
 - `tools/campaign_coverage_gaps.ps1`: 269 lines
-- `tools/campaign_run_execution.ps1`: 243 lines
+- `tools/campaign_invocation.ps1`: 212 lines
 - `tools/campaign_manifest.ps1`: 198 lines
 - `tools/campaign_preflight.ps1`: 197 lines
 - `tools/campaign_source.ps1`: 190 lines
+- `tools/campaign_rounds.ps1`: 181 lines
 - `tools/campaign_artifact_summary.ps1`: 170 lines
 - `tools/campaign_milestones.ps1`: 165 lines
 - `tools/campaign_artifact_refs.ps1`: 156 lines
