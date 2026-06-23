@@ -459,17 +459,6 @@ function Get-CampaignSourceArtifact {
     throw "Unknown campaign artifact selector '$ResolvedSelector'. Use 'latest', 'legacy-latest', 'scratch:latest', 'scratch:<id>', or 'run:<id>'."
 }
 
-function Get-CampaignArtifactShortLabel {
-    param(
-        [object] $Artifact
-    )
-
-    if (-not $Artifact) {
-        return "-"
-    }
-    return $Artifact.Label
-}
-
 function Format-CampaignArtifactSize {
     param(
         [long] $Bytes
