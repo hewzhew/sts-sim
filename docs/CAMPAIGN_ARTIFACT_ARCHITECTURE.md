@@ -1,9 +1,10 @@
 # Campaign Artifact Architecture
 
-Campaign artifacts must keep four responsibilities separate:
+Campaign artifacts must keep five responsibilities separate:
 
 ```text
-checkpoint  = authoritative state needed to resume execution
+checkpoint  = exact simulator sessions needed to resume branch execution
+state       = campaign scheduler state used to resume active/frozen rounds
 journal     = append-only decision facts and candidate pools
 report      = compact projection for humans, audits, and scripts
 diagnostic  = optional sidecar for large explanation data
@@ -32,7 +33,8 @@ These are design constraints, not external dependencies.
 
 ## Checkpoint
 
-The checkpoint is the only campaign artifact that must restore execution.
+The checkpoint is the only campaign artifact that must restore exact simulator
+sessions.
 
 Allowed:
 
@@ -65,6 +67,25 @@ Normal `RunControlSessionCheckpointV1` remains a complete checkpoint when used
 outside campaign export. Campaign export may externalize fields into pools, but
 must hydrate them before `into_session()`.
 
+## State
+
+The state sidecar records campaign scheduler state: active/frozen/victory/dead
+branch sets, abandoned/stuck branches, round summaries, discard accounting,
+strategy requests, route evidence, and combat retry ledger.
+
+Allowed:
+
+- branch command coordinates and compact branch metadata needed to continue
+  campaign scheduling
+- round summaries needed to continue round-budget accounting
+- retry/intervention bookkeeping required by the next campaign round
+
+Forbidden:
+
+- exact simulator sessions, which belong in checkpoint
+- candidate pools and decision facts, which belong in journal
+- human-only render text that can be regenerated from state or journal
+
 ## Journal
 
 The journal records decision facts. It is the source for coverage-gap,
@@ -95,9 +116,10 @@ facts.
 The report is a projection. It should be cheap to regenerate from checkpoint
 and journal when possible.
 
-Default report artifacts must not inline the full journal. They should carry a
-small `journal_artifact` reference plus `journal_event_count`; artifact readers
-may hydrate the sidecar back into the in-memory report for compatibility.
+Default report artifacts must not inline the full state or journal. They should
+carry small `state_artifact` / `journal_artifact` references plus bounded
+counts; artifact readers may hydrate sidecars back into the in-memory report for
+compatibility.
 
 Allowed:
 

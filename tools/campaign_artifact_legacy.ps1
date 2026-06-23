@@ -6,6 +6,7 @@ function New-CampaignLegacyLatestArtifact {
         Label = "legacy-latest"
         Dir = $CampaignDir
         ReportPath = $LegacyLatestCampaignPath
+        StatePath = Get-CampaignStateSidecarPath -ReportPath $LegacyLatestCampaignPath
         JournalPath = Get-CampaignJournalSidecarPath -ReportPath $LegacyLatestCampaignPath
         CheckpointPath = $LegacyLatestCheckpointPath
         ManifestPath = $LegacyLatestManifestPath

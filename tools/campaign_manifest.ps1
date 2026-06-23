@@ -128,6 +128,7 @@ function New-CampaignWrapperManifestBase {
         scratch_label = $Context.ScratchLabel
         output_artifact = if ($Context.OutputArtifact) { "$($Context.OutputArtifact.Label)" } else { "" }
         output_report = "$($Context.RunOutputCampaignPath)"
+        output_state = if ($Context.OutputArtifact -and $Context.OutputArtifact.StatePath) { "$($Context.OutputArtifact.StatePath)" } elseif ($Context.RunOutputCampaignPath) { "$(Get-CampaignStateSidecarPath -ReportPath $Context.RunOutputCampaignPath)" } else { "" }
         output_journal = if ($Context.OutputArtifact -and $Context.OutputArtifact.JournalPath) { "$($Context.OutputArtifact.JournalPath)" } elseif ($Context.RunOutputCampaignPath) { "$(Get-CampaignJournalSidecarPath -ReportPath $Context.RunOutputCampaignPath)" } else { "" }
         output_checkpoint = "$($Context.RunOutputCheckpointPath)"
         command_file_semantics = "primary_driver_command"
@@ -163,6 +164,7 @@ function New-CampaignRunWrapperManifest {
         -PrimaryDriverCommand $Context.RenderedCommand `
         -Context $Context
     $Manifest["resume_report"] = if ($Context.ResumeCampaignPath) { "$($Context.ResumeCampaignPath)" } else { "" }
+    $Manifest["resume_state"] = if ($Context.ResumeCampaignPath) { "$(Get-CampaignStateSidecarPath -ReportPath $Context.ResumeCampaignPath)" } else { "" }
     $Manifest["resume_journal"] = if ($Context.ResumeCampaignPath) { "$(Get-CampaignJournalSidecarPath -ReportPath $Context.ResumeCampaignPath)" } else { "" }
     $Manifest["resume_checkpoint"] = if ($Context.ResumeCheckpointPath) { "$($Context.ResumeCheckpointPath)" } else { "" }
     $Manifest["log_file"] = if ($Context.Log) { "$($Context.RunLogPath)" } else { "" }

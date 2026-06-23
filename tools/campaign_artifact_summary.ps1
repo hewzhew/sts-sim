@@ -85,11 +85,22 @@ function Get-CampaignArtifactShape {
     if ($Kind -eq "report") {
         $Active = Get-CampaignValueCount -Value $Json.active
         $Frozen = Get-CampaignValueCount -Value $Json.frozen
+        $StateRounds = Get-CampaignValueCount -Value $Json.rounds
+        $StateRef = "-"
+        if ($Json.state_artifact) {
+            $StateRef = $Json.state_artifact
+            $StatePath = Get-CampaignStateSidecarPath -ReportPath $Path
+            $StateJson = Read-CampaignJsonArtifact -Path $StatePath
+            if ($StateJson) {
+                $Active = Get-CampaignValueCount -Value $StateJson.active
+                $Frozen = Get-CampaignValueCount -Value $StateJson.frozen
+                $StateRounds = Get-CampaignValueCount -Value $StateJson.rounds
+            }
+        }
         $Journal = Get-CampaignValueCount -Value $Json.journal
         if ($Json.journal_event_count) {
             $Journal = $Json.journal_event_count
         }
-        $Rounds = Get-CampaignValueCount -Value $Json.rounds
         $StateSessions = 0
         $StateNodes = 0
         $DecisionSessions = 0
@@ -106,7 +117,17 @@ function Get-CampaignArtifactShape {
         if ($Json.journal_artifact) {
             $JournalRef = $Json.journal_artifact
         }
-        return "rounds=$($Json.rounds_completed) stop=$($Json.stop_reason) active=$Active frozen=$Frozen journal_events=$Journal journal_ref=$JournalRef round_entries=$Rounds state_sessions=$StateSessions state_nodes=$StateNodes decision_sessions=$DecisionSessions route_decision_sessions=$RouteDecisionSessions pruned=$SessionsPruned"
+        return "rounds=$($Json.rounds_completed) stop=$($Json.stop_reason) active=$Active frozen=$Frozen state_ref=$StateRef state_round_entries=$StateRounds journal_events=$Journal journal_ref=$JournalRef state_sessions=$StateSessions state_nodes=$StateNodes decision_sessions=$DecisionSessions route_decision_sessions=$RouteDecisionSessions pruned=$SessionsPruned"
+    }
+
+    if ($Kind -eq "state") {
+        $Active = Get-CampaignValueCount -Value $Json.active
+        $Frozen = Get-CampaignValueCount -Value $Json.frozen
+        $Victories = Get-CampaignValueCount -Value $Json.victories
+        $Abandoned = Get-CampaignValueCount -Value $Json.abandoned
+        $Stuck = Get-CampaignValueCount -Value $Json.stuck
+        $Rounds = Get-CampaignValueCount -Value $Json.rounds
+        return "schema=$($Json.schema_name) version=$($Json.schema_version) active=$Active frozen=$Frozen victories=$Victories abandoned=$Abandoned stuck=$Stuck rounds=$Rounds discarded=$($Json.discarded_count)"
     }
 
     if ($Kind -eq "journal") {
@@ -147,6 +168,7 @@ function Write-CampaignArtifactSummary {
     $Artifacts = @(
         [pscustomobject]@{ Kind = "manifest"; Path = $ManifestPath; Contract = "run provenance" },
         [pscustomobject]@{ Kind = "report"; Path = $ReportPath; Contract = "campaign summary" },
+        [pscustomobject]@{ Kind = "state"; Path = (Get-CampaignStateSidecarPath -ReportPath $ReportPath); Contract = "campaign resume state" },
         [pscustomobject]@{ Kind = "journal"; Path = (Get-CampaignJournalSidecarPath -ReportPath $ReportPath); Contract = "decision facts" },
         [pscustomobject]@{ Kind = "checkpoint"; Path = $CheckpointPath; Contract = "continuation state" },
         [pscustomobject]@{ Kind = "log"; Path = $LogPath; Contract = "optional stream log" },

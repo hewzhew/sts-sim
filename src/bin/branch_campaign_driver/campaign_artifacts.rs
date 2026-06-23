@@ -3,12 +3,38 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sts_simulator::eval::branch_campaign::{
-    BranchCampaignCheckpointV1, BranchCampaignReportV1, BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME,
-    BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
+    BranchCampaignBranchV1, BranchCampaignCheckpointV1, BranchCampaignCombatRetryLedgerV1,
+    BranchCampaignDiscardedBranchV1, BranchCampaignReportV1, BranchCampaignRoundSummaryV1,
+    BranchCampaignRouteEvidenceSummaryV1, BranchCampaignStrategyRequestV1,
+    BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME, BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION,
 };
 use sts_simulator::eval::campaign_journal::CampaignJournalV1;
+
+const CAMPAIGN_REPORT_STATE_SIDECAR_SCHEMA_NAME: &str = "BranchCampaignStateSidecarV1";
+const CAMPAIGN_REPORT_STATE_SIDECAR_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignReportStateSidecarV1 {
+    schema_name: String,
+    schema_version: u32,
+    active: Vec<BranchCampaignBranchV1>,
+    frozen: Vec<BranchCampaignBranchV1>,
+    victories: Vec<BranchCampaignBranchV1>,
+    dead: Vec<BranchCampaignBranchV1>,
+    abandoned: Vec<BranchCampaignBranchV1>,
+    stuck: Vec<BranchCampaignBranchV1>,
+    discarded_count: usize,
+    discarded_examples: Vec<String>,
+    discarded_branches: Vec<BranchCampaignDiscardedBranchV1>,
+    strategy_requests: Vec<BranchCampaignStrategyRequestV1>,
+    route_evidence: BranchCampaignRouteEvidenceSummaryV1,
+    combat_retry_ledger: BranchCampaignCombatRetryLedgerV1,
+    rounds: Vec<BranchCampaignRoundSummaryV1>,
+}
 
 pub(super) fn read_campaign_report_v1(path: &PathBuf) -> Result<BranchCampaignReportV1, String> {
     let text = read_campaign_artifact_text_v1(path, "--resume")?;
@@ -23,6 +49,17 @@ pub(super) fn read_campaign_report_v1(path: &PathBuf) -> Result<BranchCampaignRe
         .and_then(|object| remove_string_field_v1(object, "journal_artifact"));
     if let Some(object) = value.as_object_mut() {
         object.remove("journal_event_count");
+    }
+    let state_artifact = value
+        .as_object_mut()
+        .and_then(|object| remove_string_field_v1(object, "state_artifact"));
+    if let Some(object) = value.as_object_mut() {
+        remove_campaign_state_projection_fields_v1(object);
+    }
+    if let Some(artifact) = state_artifact {
+        let state_path = resolve_campaign_artifact_ref_path_v1(path, &artifact);
+        let state = read_campaign_report_state_v1(&state_path)?;
+        hydrate_campaign_report_state_value_v1(&mut value, state)?;
     }
     let mut report: BranchCampaignReportV1 = serde_json::from_value(value).map_err(|err| {
         format!(
@@ -70,6 +107,31 @@ pub(super) fn write_campaign_report_v1(
 ) -> Result<(), String> {
     let mut value = serde_json::to_value(report)
         .map_err(|err| format!("failed to serialize BranchCampaignV1 report: {err}"))?;
+    if report_has_campaign_state_payload_v1(report) {
+        let state_path = campaign_state_sidecar_path_v1(path);
+        let state = campaign_report_state_sidecar_from_report_v1(report);
+        write_campaign_report_state_v1(&state_path, &state)?;
+        let object = value
+            .as_object_mut()
+            .ok_or_else(|| "BranchCampaignV1 report did not serialize as an object".to_string())?;
+        remove_campaign_state_payload_fields_v1(object);
+        object.insert(
+            "state_artifact".to_string(),
+            Value::String(campaign_artifact_relative_ref_v1(path, &state_path)),
+        );
+        object.insert(
+            "state_active_count".to_string(),
+            Value::Number(report.active.len().into()),
+        );
+        object.insert(
+            "state_frozen_count".to_string(),
+            Value::Number(report.frozen.len().into()),
+        );
+        object.insert(
+            "state_round_count".to_string(),
+            Value::Number(report.rounds.len().into()),
+        );
+    }
     if !report.journal.is_empty() {
         let journal_path = campaign_journal_sidecar_path_v1(path);
         write_campaign_journal_v1(&journal_path, &report.journal)?;
@@ -89,6 +151,38 @@ pub(super) fn write_campaign_report_v1(
     let text = serde_json::to_string(&value)
         .map_err(|err| format!("failed to serialize BranchCampaignV1 report: {err}"))?;
     write_campaign_artifact_text_v1(path, &text, "--out")
+}
+
+fn read_campaign_report_state_v1(path: &PathBuf) -> Result<CampaignReportStateSidecarV1, String> {
+    let text = read_campaign_artifact_text_v1(path, "--state")?;
+    let state: CampaignReportStateSidecarV1 = serde_json::from_str(&text).map_err(|err| {
+        format!(
+            "failed to parse campaign state sidecar {}: {err}",
+            path.display()
+        )
+    })?;
+    if state.schema_name != CAMPAIGN_REPORT_STATE_SIDECAR_SCHEMA_NAME
+        || state.schema_version != CAMPAIGN_REPORT_STATE_SIDECAR_SCHEMA_VERSION
+    {
+        return Err(format!(
+            "campaign state sidecar {} uses {} v{}; expected {} v{}",
+            path.display(),
+            state.schema_name,
+            state.schema_version,
+            CAMPAIGN_REPORT_STATE_SIDECAR_SCHEMA_NAME,
+            CAMPAIGN_REPORT_STATE_SIDECAR_SCHEMA_VERSION
+        ));
+    }
+    Ok(state)
+}
+
+fn write_campaign_report_state_v1(
+    path: &PathBuf,
+    state: &CampaignReportStateSidecarV1,
+) -> Result<(), String> {
+    let text = serde_json::to_string(state)
+        .map_err(|err| format!("failed to serialize campaign state sidecar: {err}"))?;
+    write_campaign_artifact_text_v1(path, &text, "--state-out")
 }
 
 fn read_campaign_journal_v1(path: &PathBuf) -> Result<CampaignJournalV1, String> {
@@ -179,22 +273,30 @@ fn has_gzip_magic_v1(bytes: &[u8]) -> bool {
     bytes.get(0..2) == Some(&[0x1f, 0x8b][..])
 }
 
+fn campaign_state_sidecar_path_v1(report_path: &PathBuf) -> PathBuf {
+    campaign_sidecar_path_v1(report_path, "state")
+}
+
 fn campaign_journal_sidecar_path_v1(report_path: &PathBuf) -> PathBuf {
+    campaign_sidecar_path_v1(report_path, "journal")
+}
+
+fn campaign_sidecar_path_v1(report_path: &PathBuf, sidecar: &str) -> PathBuf {
     let Some(file_name) = report_path.file_name().and_then(|name| name.to_str()) else {
-        return report_path.with_extension("journal.json.gz");
+        return report_path.with_extension(format!("{sidecar}.json.gz"));
     };
     let journal_name = if let Some(prefix) = file_name.strip_suffix(".campaign.json.gz") {
-        format!("{prefix}.journal.json.gz")
+        format!("{prefix}.{sidecar}.json.gz")
     } else if let Some(prefix) = file_name.strip_suffix(".campaign.json") {
-        format!("{prefix}.journal.json")
+        format!("{prefix}.{sidecar}.json")
     } else if let Some(prefix) = file_name.strip_suffix(".json.gz") {
-        format!("{prefix}.journal.json.gz")
+        format!("{prefix}.{sidecar}.json.gz")
     } else if let Some(prefix) = file_name.strip_suffix(".json") {
-        format!("{prefix}.journal.json")
+        format!("{prefix}.{sidecar}.json")
     } else if let Some(prefix) = file_name.strip_suffix(".gz") {
-        format!("{prefix}.journal.json.gz")
+        format!("{prefix}.{sidecar}.json.gz")
     } else {
-        format!("{file_name}.journal.json.gz")
+        format!("{file_name}.{sidecar}.json.gz")
     };
     report_path.with_file_name(journal_name)
 }
@@ -225,12 +327,108 @@ fn remove_string_field_v1(object: &mut Map<String, Value>, key: &str) -> Option<
         .and_then(|value| value.as_str().map(str::to_string))
 }
 
+fn campaign_report_state_sidecar_from_report_v1(
+    report: &BranchCampaignReportV1,
+) -> CampaignReportStateSidecarV1 {
+    CampaignReportStateSidecarV1 {
+        schema_name: CAMPAIGN_REPORT_STATE_SIDECAR_SCHEMA_NAME.to_string(),
+        schema_version: CAMPAIGN_REPORT_STATE_SIDECAR_SCHEMA_VERSION,
+        active: report.active.clone(),
+        frozen: report.frozen.clone(),
+        victories: report.victories.clone(),
+        dead: report.dead.clone(),
+        abandoned: report.abandoned.clone(),
+        stuck: report.stuck.clone(),
+        discarded_count: report.discarded_count,
+        discarded_examples: report.discarded_examples.clone(),
+        discarded_branches: report.discarded_branches.clone(),
+        strategy_requests: report.strategy_requests.clone(),
+        route_evidence: report.route_evidence.clone(),
+        combat_retry_ledger: report.combat_retry_ledger.clone(),
+        rounds: report.rounds.clone(),
+    }
+}
+
+fn report_has_campaign_state_payload_v1(report: &BranchCampaignReportV1) -> bool {
+    !report.active.is_empty()
+        || !report.frozen.is_empty()
+        || !report.victories.is_empty()
+        || !report.dead.is_empty()
+        || !report.abandoned.is_empty()
+        || !report.stuck.is_empty()
+        || report.discarded_count != 0
+        || !report.discarded_examples.is_empty()
+        || !report.discarded_branches.is_empty()
+        || !report.strategy_requests.is_empty()
+        || report.route_evidence != BranchCampaignRouteEvidenceSummaryV1::default()
+        || report.combat_retry_ledger != BranchCampaignCombatRetryLedgerV1::default()
+        || !report.rounds.is_empty()
+}
+
+fn hydrate_campaign_report_state_value_v1(
+    report_value: &mut Value,
+    state: CampaignReportStateSidecarV1,
+) -> Result<(), String> {
+    let object = report_value
+        .as_object_mut()
+        .ok_or_else(|| "BranchCampaignV1 report did not parse as an object".to_string())?;
+    let state_value = serde_json::to_value(state)
+        .map_err(|err| format!("failed to convert campaign state sidecar to JSON: {err}"))?;
+    let mut state_object = state_value
+        .as_object()
+        .ok_or_else(|| "campaign state sidecar did not serialize as an object".to_string())?
+        .clone();
+    state_object.remove("schema_name");
+    state_object.remove("schema_version");
+    for (key, value) in state_object {
+        object.insert(key, value);
+    }
+    Ok(())
+}
+
+fn remove_campaign_state_payload_fields_v1(object: &mut Map<String, Value>) {
+    for key in [
+        "active",
+        "frozen",
+        "victories",
+        "dead",
+        "abandoned",
+        "stuck",
+        "discarded_count",
+        "discarded_examples",
+        "discarded_branches",
+        "strategy_requests",
+        "route_evidence",
+        "combat_retry_ledger",
+        "rounds",
+    ] {
+        object.remove(key);
+    }
+}
+
+fn remove_campaign_state_projection_fields_v1(object: &mut Map<String, Value>) {
+    for key in [
+        "state_active_count",
+        "state_frozen_count",
+        "state_victory_count",
+        "state_dead_count",
+        "state_abandoned_count",
+        "state_stuck_count",
+        "state_discarded_count",
+        "state_round_count",
+    ] {
+        object.remove(key);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sts_simulator::ai::strategic::BranchSignatureCompact;
     use sts_simulator::eval::branch_campaign::{
-        BranchCampaignRunDomainV1, BranchCampaignRunPreludeV1, BRANCH_CAMPAIGN_SCHEMA_NAME,
-        BRANCH_CAMPAIGN_SCHEMA_VERSION,
+        BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
+        BranchCampaignRoundSummaryV1, BranchCampaignRunDomainV1, BranchCampaignRunPreludeV1,
+        BRANCH_CAMPAIGN_SCHEMA_NAME, BRANCH_CAMPAIGN_SCHEMA_VERSION,
     };
     use sts_simulator::eval::campaign_journal::{
         CampaignJournalEventPayloadV1, CampaignJournalEventV1, CampaignJournalV1,
@@ -430,6 +628,46 @@ mod tests {
     }
 
     #[test]
+    fn writes_report_state_as_sidecar_and_hydrates_on_read() {
+        let path = std::env::temp_dir().join(format!(
+            "sts_campaign_report_with_state_{}.campaign.json.gz",
+            std::process::id()
+        ));
+        let state_path = campaign_state_sidecar_path_v1(&path);
+        let mut report = empty_report_v1(23);
+        report.rounds_completed = 1;
+        report.active = vec![test_branch_v1(
+            "active-1",
+            BranchCampaignBranchStatusV1::Active,
+        )];
+        report.rounds = vec![BranchCampaignRoundSummaryV1 {
+            round: 1,
+            started_active: 1,
+            produced_branches: 2,
+            active_after: 1,
+            ..BranchCampaignRoundSummaryV1::default()
+        }];
+
+        write_campaign_report_v1(&path, &report).expect("report should write");
+        let report_text = read_campaign_artifact_text_v1(&path, "--out").expect("report text");
+        let state_text =
+            read_campaign_artifact_text_v1(&state_path, "--state-out").expect("state text");
+        let parsed = read_campaign_report_v1(&path).expect("report should hydrate sidecar state");
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(&state_path);
+
+        assert!(report_text.contains("\"state_artifact\""));
+        assert!(report_text.contains("\"state_active_count\":1"));
+        assert!(!report_text.contains("\"active\""));
+        assert!(!report_text.contains("\"rounds\""));
+        assert!(state_text.contains("\"active\""));
+        assert!(state_text.contains("\"rounds\""));
+        assert_eq!(parsed.active.len(), 1);
+        assert_eq!(parsed.active[0].branch_id, "active-1");
+        assert_eq!(parsed.rounds.len(), 1);
+    }
+
+    #[test]
     fn writes_and_reads_gzip_checkpoint_artifact() {
         let path = std::env::temp_dir().join(format!(
             "sts_campaign_checkpoint_compressed_{}.json.gz",
@@ -462,5 +700,68 @@ mod tests {
 
         assert_eq!(bytes.get(0..2), Some(&[0x1f, 0x8b][..]));
         assert_eq!(parsed.seed, 11);
+    }
+
+    fn empty_report_v1(seed: u64) -> BranchCampaignReportV1 {
+        BranchCampaignReportV1 {
+            schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
+            schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
+            seed,
+            run_domain: BranchCampaignRunDomainV1::default(),
+            run_prelude: BranchCampaignRunPreludeV1::default(),
+            rounds_completed: 0,
+            stop_reason: "test".to_string(),
+            active: Vec::new(),
+            frozen: Vec::new(),
+            victories: Vec::new(),
+            dead: Vec::new(),
+            abandoned: Vec::new(),
+            stuck: Vec::new(),
+            discarded_count: 0,
+            discarded_examples: Vec::new(),
+            discarded_branches: Vec::new(),
+            strategy_requests: Vec::new(),
+            route_evidence: Default::default(),
+            combat_retry_ledger: Default::default(),
+            strategic_signals: Default::default(),
+            state_store: Default::default(),
+            journal: Default::default(),
+            rounds: Vec::new(),
+        }
+    }
+
+    fn test_branch_v1(id: &str, status: BranchCampaignBranchStatusV1) -> BranchCampaignBranchV1 {
+        BranchCampaignBranchV1 {
+            branch_id: id.to_string(),
+            commands: vec!["rp 0".to_string()],
+            choice_labels: vec!["Test card".to_string()],
+            summary: Some(BranchCampaignBranchSummaryV1 {
+                act: 1,
+                floor: 1,
+                hp: 80,
+                max_hp: 80,
+                gold: 99,
+                deck_count: 10,
+                deck_key: String::new(),
+                formation_stage: "PlanSeeded".to_string(),
+                formation_strengths: Vec::new(),
+                formation_needs: Vec::new(),
+                trajectory_key: String::new(),
+                boss: "TheGuardian".to_string(),
+                boss_pressure: Vec::new(),
+                run_debt: Vec::new(),
+                event_boundary: None,
+                reward_boundary: None,
+            }),
+            strategic_summary: BranchSignatureCompact::default(),
+            frontier_title: "Reward Screen".to_string(),
+            status,
+            stop_reason: "test".to_string(),
+            continuation_origin: None,
+            lineage_decision_signal_rank_adjustment: 0,
+            rank_key: 0,
+            final_boss_combat_record: None,
+            combat_lab_probes: Vec::new(),
+        }
     }
 }
