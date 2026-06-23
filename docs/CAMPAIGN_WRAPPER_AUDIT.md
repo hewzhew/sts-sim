@@ -13,7 +13,7 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 435 lines
+- `tools/campaign.ps1`: 443 lines
 - `tools/campaign_artifacts.ps1`: 460 lines
 - `tools/campaign_artifact_summary.ps1`: 170 lines
 - `tools/campaign_invocation.ps1`: 318 lines
@@ -380,6 +380,22 @@ It should not call artifact/run-config source lookup helpers directly in
 continuation or inspect branches; otherwise `latest`, `scratch`, and `source`
 semantics will drift again.
 
+Main wrapper dispatch now consumes the typed request kind directly:
+
+```text
+legacy_plan_targets / legacy_continue_targets / plan_coverage_gaps / continue_coverage_gaps
+  -> continuation entry
+
+inspect
+  -> inspect entry
+
+new_run / continue_run
+  -> normal campaign run entry
+```
+
+Unknown request kinds fail closed. The old implicit fall-through to a normal
+campaign run is gone.
+
 Request helpers now live in:
 
 ```text
@@ -401,6 +417,15 @@ This helper owns:
 - targeted-vs-coverage-gap mutual exclusion
 - scratch output eligibility
 - the derived `ReadsCampaignSource` flag
+
+Run-only driver argument construction now happens only inside the `new_run` /
+`continue_run` dispatch branch. Plan-only and inspect-only commands do not build
+normal-run driver args as incidental state.
+
+Output artifact allocation happens after typed round/request validation. For
+example, invalid `-UntilMilestone` use on a plan-only command now fails before
+the wrapper creates scratch output directories or renders continuation
+preflight.
 
 ## Still Move Out Of Wrapper
 
