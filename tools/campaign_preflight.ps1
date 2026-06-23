@@ -1,3 +1,20 @@
+function Get-CampaignContinueSuggestion {
+    param(
+        [object] $Context,
+        [bool] $OneRound
+    )
+
+    $Command = if ($Context.Scratch) {
+        ".\tools\campaign.ps1 -FromScratchLatest -Continue -Scratch"
+    } else {
+        ".\tools\campaign.ps1 -From latest -Continue"
+    }
+    if ($OneRound) {
+        return "$Command -Rounds 1"
+    }
+    return $Command
+}
+
 function Write-CampaignRunPreflight {
     param(
         [object] $Context
@@ -16,8 +33,13 @@ function Write-CampaignRunPreflight {
         Write-Host "boss-relic-axes=on active/frozen budgets are per boss relic lineage"
     }
     Write-Host "rerun-last=.\tools\campaign.ps1 -Last"
-    Write-Host "continue-latest=.\tools\campaign.ps1 -From latest -Continue"
-    Write-Host "continue-one-round=.\tools\campaign.ps1 -From latest -Continue -Rounds 1"
+    if ($Context.Scratch) {
+        Write-Host "continue-scratch-latest=$(Get-CampaignContinueSuggestion -Context $Context -OneRound $false)"
+        Write-Host "continue-scratch-one-round=$(Get-CampaignContinueSuggestion -Context $Context -OneRound $true)"
+    } else {
+        Write-Host "continue-latest=$(Get-CampaignContinueSuggestion -Context $Context -OneRound $false)"
+        Write-Host "continue-one-round=$(Get-CampaignContinueSuggestion -Context $Context -OneRound $true)"
+    }
     Write-Host "report=$($Context.RunOutputCampaignPath)"
     Write-Host "checkpoint=$($Context.RunOutputCheckpointPath)"
     Write-Host "manifest=$($Context.RunManifestPath)"

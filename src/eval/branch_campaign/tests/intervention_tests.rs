@@ -585,9 +585,7 @@ fn compact_campaign_report_renders_budget_stop_hint() {
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
 
-    assert!(
-        rendered.contains("Next: budget ended; use .\\tools\\campaign.ps1 -From latest -Continue")
-    );
+    assert!(rendered.contains("Next: budget ended; continue with an explicit source"));
 }
 
 #[test]

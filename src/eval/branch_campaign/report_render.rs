@@ -308,7 +308,7 @@ pub fn render_branch_campaign_compact_with_detail_v1(
         && (!report.active.is_empty() || !report.frozen.is_empty())
     {
         lines.push(
-            "Next: budget ended; use .\\tools\\campaign.ps1 -From latest -Continue, or .\\tools\\campaign.ps1 -From latest -Continue -Rounds N to add a small fixed number of rounds"
+            "Next: budget ended; continue with an explicit source, e.g. .\\tools\\campaign.ps1 -From <source> -Continue, or add -Rounds N for a small fixed continuation"
                 .to_string(),
         );
     }
