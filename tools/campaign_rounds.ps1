@@ -1,5 +1,6 @@
 function Resolve-CampaignRunRoundContext {
     param(
+        [object] $Request,
         [bool] $ContinueCampaign,
         [object] $CampaignSourceArtifact,
         [bool] $RoundsBound,
@@ -18,6 +19,14 @@ function Resolve-CampaignRunRoundContext {
         [bool] $PlanCoverageGaps,
         [bool] $Inspect
     )
+
+    if ($Request) {
+        $ContinueCampaign = [bool] $Request.ContinueCampaign
+        $ContinueCoverageGaps = [bool] $Request.ContinueCoverageGaps
+        $PlanTargets = [bool] $Request.PlanTargets
+        $PlanCoverageGaps = [bool] $Request.PlanCoverageGaps
+        $Inspect = [bool] $Request.Inspect
+    }
 
     if (($RoundsBound -and $UntilRoundBound) -or ($RoundsBound -and $MaxRoundsBound) -or ($UntilRoundBound -and $MaxRoundsBound)) {
         throw "Choose only one round budget: -Rounds N, -UntilRound N, or legacy -MaxRounds N."

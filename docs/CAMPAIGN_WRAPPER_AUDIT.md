@@ -232,6 +232,7 @@ tools/campaign_rounds.ps1
 
 This helper owns:
 
+- round-budget role checks from typed request kind when available
 - mutual exclusion validation for `-Rounds`, `-UntilRound`, and legacy `-MaxRounds`
 - `-UntilMilestone` round-budget validation and stop-mode normalization
 - normal campaign resume source validation

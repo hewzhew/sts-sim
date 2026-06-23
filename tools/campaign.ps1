@@ -362,6 +362,7 @@ $CoverageGapResultFilterArgs = @($CoverageGapFilterContext.ResultFilterArgs)
 $CoverageGapResultFilterLabel = $CoverageGapFilterContext.ResultFilterLabel
 
 $RunRoundContext = Resolve-CampaignRunRoundContext `
+    -Request $CampaignRequest `
     -ContinueCampaign ([bool] $ContinueCampaign) `
     -CampaignSourceArtifact $CampaignSourceArtifact `
     -RoundsBound $RoundsBound `
