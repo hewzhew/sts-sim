@@ -62,7 +62,9 @@ use intervention::{
 use lineage::campaign_branch_boss_relic_lineage_key_v1;
 pub use model::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
-    BranchCampaignCheckpointCombatTrajectoryRecordV1, BranchCampaignCheckpointRunStateMapRecordV1,
+    BranchCampaignCheckpointCombatTrajectoryRecordV1,
+    BranchCampaignCheckpointRunStateEmittedEventsRecordV1,
+    BranchCampaignCheckpointRunStateMapRecordV1,
     BranchCampaignCheckpointRunStateMasterDeckRecordV1,
     BranchCampaignCheckpointRunStateScheduleRecordV1, BranchCampaignCheckpointSessionV1,
     BranchCampaignCheckpointV1, BranchCampaignContinuationOriginV1,
@@ -1010,6 +1012,9 @@ fn campaign_checkpoint_from_state_v1(
     let mut run_state_master_deck_indexes = BTreeMap::<String, usize>::new();
     let mut run_state_schedules = Vec::<BranchCampaignCheckpointRunStateScheduleRecordV1>::new();
     let mut run_state_schedule_indexes = BTreeMap::<String, usize>::new();
+    let mut run_state_emitted_events =
+        Vec::<BranchCampaignCheckpointRunStateEmittedEventsRecordV1>::new();
+    let mut run_state_emitted_events_indexes = BTreeMap::<String, usize>::new();
     let mut combat_automation_trajectories =
         Vec::<BranchCampaignCheckpointCombatTrajectoryRecordV1>::new();
     let mut combat_automation_trajectory_indexes = BTreeMap::<String, usize>::new();
@@ -1034,6 +1039,8 @@ fn campaign_checkpoint_from_state_v1(
                 &mut run_state_master_deck_indexes,
                 &mut run_state_schedules,
                 &mut run_state_schedule_indexes,
+                &mut run_state_emitted_events,
+                &mut run_state_emitted_events_indexes,
                 &mut combat_automation_trajectories,
                 &mut combat_automation_trajectory_indexes,
             );
@@ -1042,6 +1049,7 @@ fn campaign_checkpoint_from_state_v1(
                 run_state_map_id: externalized.run_state_map_id,
                 run_state_master_deck_id: externalized.run_state_master_deck_id,
                 run_state_schedule_id: externalized.run_state_schedule_id,
+                run_state_emitted_events_id: externalized.run_state_emitted_events_id,
                 session: externalized.session,
             });
         }
@@ -1060,6 +1068,8 @@ fn campaign_checkpoint_from_state_v1(
                 &mut run_state_master_deck_indexes,
                 &mut run_state_schedules,
                 &mut run_state_schedule_indexes,
+                &mut run_state_emitted_events,
+                &mut run_state_emitted_events_indexes,
                 &mut combat_automation_trajectories,
                 &mut combat_automation_trajectory_indexes,
             );
@@ -1068,6 +1078,7 @@ fn campaign_checkpoint_from_state_v1(
                 run_state_map_id: externalized.run_state_map_id,
                 run_state_master_deck_id: externalized.run_state_master_deck_id,
                 run_state_schedule_id: externalized.run_state_schedule_id,
+                run_state_emitted_events_id: externalized.run_state_emitted_events_id,
                 session: externalized.session,
             });
         }
@@ -1088,6 +1099,7 @@ fn campaign_checkpoint_from_state_v1(
         run_state_maps,
         run_state_master_decks,
         run_state_schedules,
+        run_state_emitted_events,
         combat_automation_trajectories,
         sessions,
     }
@@ -1098,6 +1110,7 @@ struct CampaignCheckpointExternalizedSessionV1 {
     run_state_map_id: Option<String>,
     run_state_master_deck_id: Option<String>,
     run_state_schedule_id: Option<String>,
+    run_state_emitted_events_id: Option<String>,
 }
 
 fn campaign_checkpoint_session_with_external_refs_v1(
@@ -1109,6 +1122,8 @@ fn campaign_checkpoint_session_with_external_refs_v1(
     run_state_master_deck_indexes: &mut BTreeMap<String, usize>,
     run_state_schedules: &mut Vec<BranchCampaignCheckpointRunStateScheduleRecordV1>,
     run_state_schedule_indexes: &mut BTreeMap<String, usize>,
+    run_state_emitted_events: &mut Vec<BranchCampaignCheckpointRunStateEmittedEventsRecordV1>,
+    run_state_emitted_events_indexes: &mut BTreeMap<String, usize>,
     combat_automation_trajectories: &mut Vec<BranchCampaignCheckpointCombatTrajectoryRecordV1>,
     combat_automation_trajectory_indexes: &mut BTreeMap<String, usize>,
 ) -> CampaignCheckpointExternalizedSessionV1 {
@@ -1170,12 +1185,38 @@ fn campaign_checkpoint_session_with_external_refs_v1(
         .get(schedule_index)
         .map(|record| record.schedule_id.clone());
 
+    let emitted_events = checkpoint.take_run_state_emitted_events_for_external_ref();
+    let run_state_emitted_events_id = if emitted_events.is_empty() {
+        None
+    } else {
+        let emitted_events_key =
+            campaign_checkpoint_run_state_emitted_events_key_v1(&emitted_events);
+        let emitted_events_index = if let Some(index) = run_state_emitted_events_indexes
+            .get(&emitted_events_key)
+            .copied()
+        {
+            index
+        } else {
+            let index = run_state_emitted_events.len();
+            run_state_emitted_events_indexes.insert(emitted_events_key, index);
+            run_state_emitted_events.push(BranchCampaignCheckpointRunStateEmittedEventsRecordV1 {
+                emitted_events_id: format!("run_state_emitted_events:{index}"),
+                emitted_events,
+            });
+            index
+        };
+        run_state_emitted_events
+            .get(emitted_events_index)
+            .map(|record| record.emitted_events_id.clone())
+    };
+
     let Some(trajectory) = checkpoint.take_last_combat_automation_trajectory_record() else {
         return CampaignCheckpointExternalizedSessionV1 {
             session: checkpoint,
             run_state_map_id,
             run_state_master_deck_id,
             run_state_schedule_id,
+            run_state_emitted_events_id,
         };
     };
     let key = campaign_checkpoint_combat_trajectory_key_v1(&trajectory);
@@ -1199,6 +1240,7 @@ fn campaign_checkpoint_session_with_external_refs_v1(
         run_state_map_id,
         run_state_master_deck_id,
         run_state_schedule_id,
+        run_state_emitted_events_id,
     }
 }
 
@@ -1216,6 +1258,12 @@ fn campaign_checkpoint_run_state_schedule_key_v1(
     schedule: &crate::state::run::RunStateScheduleCheckpointV1,
 ) -> String {
     serde_json::to_string(schedule).unwrap_or_else(|_| format!("{schedule:?}"))
+}
+
+fn campaign_checkpoint_run_state_emitted_events_key_v1(
+    emitted_events: &[crate::state::selection::DomainEvent],
+) -> String {
+    serde_json::to_string(emitted_events).unwrap_or_else(|_| format!("{emitted_events:?}"))
 }
 
 fn campaign_checkpoint_combat_trajectory_key_v1(

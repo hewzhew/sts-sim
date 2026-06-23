@@ -689,6 +689,7 @@ fn test_combat_checkpoint_session(
         run_state_map_id: None,
         run_state_master_deck_id: None,
         run_state_schedule_id: None,
+        run_state_emitted_events_id: None,
         session: RunControlSessionCheckpointV1::from_session(&session),
     }
 }
@@ -717,9 +718,18 @@ fn test_run_control_session_with_last_combat_trajectory(source: &str) -> RunCont
         );
     let checkpoint: RunControlSessionCheckpointV1 =
         serde_json::from_value(value).expect("checkpoint with trajectory should deserialize");
-    checkpoint
+    let mut session = checkpoint
         .into_session()
-        .expect("checkpoint with trajectory should restore")
+        .expect("checkpoint with trajectory should restore");
+    session
+        .run_state
+        .emitted_events
+        .push(crate::state::selection::DomainEvent::GoldChanged {
+            delta: 1,
+            new_total: 100,
+            source: crate::state::selection::DomainEventSource::RewardScreen,
+        });
+    session
 }
 
 fn test_report_branch(

@@ -182,6 +182,7 @@ pub struct RunStateCheckpointV1 {
     pub boss_list: Vec<EncounterId>,
     pub pending_boss_reward: bool,
     pub pending_boss_act_transition: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub emitted_events: Vec<DomainEvent>,
 }
 
@@ -606,6 +607,14 @@ impl RunStateCheckpointV1 {
         self.elite_monster_list = schedule.elite_monster_list;
         self.boss_key = schedule.boss_key;
         self.boss_list = schedule.boss_list;
+    }
+
+    pub fn take_emitted_events_for_external_ref(&mut self) -> Vec<DomainEvent> {
+        std::mem::take(&mut self.emitted_events)
+    }
+
+    pub fn restore_emitted_events_from_external_ref(&mut self, emitted_events: Vec<DomainEvent>) {
+        self.emitted_events = emitted_events;
     }
 }
 

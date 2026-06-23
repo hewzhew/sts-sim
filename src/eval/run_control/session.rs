@@ -9,6 +9,7 @@ use crate::runtime::combat::CombatCard;
 use crate::state::core::{ActiveCombat, EngineState};
 use crate::state::map::state::MapState;
 use crate::state::run::{RunState, RunStateCheckpointV1, RunStateScheduleCheckpointV1};
+use crate::state::selection::DomainEvent;
 
 use super::auto_capture::AutoCombatCaptureConfig;
 use super::outcome::CombatOutcomeTracker;
@@ -324,6 +325,18 @@ impl RunControlSessionCheckpointV1 {
         schedule: RunStateScheduleCheckpointV1,
     ) {
         self.run_state.restore_schedule_from_external_ref(schedule);
+    }
+
+    pub fn take_run_state_emitted_events_for_external_ref(&mut self) -> Vec<DomainEvent> {
+        self.run_state.take_emitted_events_for_external_ref()
+    }
+
+    pub fn restore_run_state_emitted_events_from_external_ref(
+        &mut self,
+        emitted_events: Vec<DomainEvent>,
+    ) {
+        self.run_state
+            .restore_emitted_events_from_external_ref(emitted_events);
     }
 
     pub fn into_session(self) -> Result<RunControlSession, String> {

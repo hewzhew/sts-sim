@@ -17,6 +17,7 @@ use crate::eval::run_control::{CombatAutomationTrajectoryRecordV1, RunControlSes
 use crate::runtime::combat::CombatCard;
 use crate::state::map::state::MapState;
 use crate::state::run::RunStateScheduleCheckpointV1;
+use crate::state::selection::DomainEvent;
 use serde::{Deserialize, Serialize};
 
 use super::performance::BranchCampaignCombatPerformanceSummaryV1;
@@ -500,6 +501,8 @@ pub struct BranchCampaignCheckpointSessionV1 {
     pub run_state_master_deck_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_state_schedule_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_state_emitted_events_id: Option<String>,
     pub session: RunControlSessionCheckpointV1,
 }
 
@@ -522,6 +525,13 @@ pub struct BranchCampaignCheckpointRunStateMasterDeckRecordV1 {
 pub struct BranchCampaignCheckpointRunStateScheduleRecordV1 {
     pub schedule_id: String,
     pub schedule: RunStateScheduleCheckpointV1,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointRunStateEmittedEventsRecordV1 {
+    pub emitted_events_id: String,
+    pub emitted_events: Vec<DomainEvent>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -553,6 +563,8 @@ pub struct BranchCampaignCheckpointV1 {
     pub run_state_master_decks: Vec<BranchCampaignCheckpointRunStateMasterDeckRecordV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub run_state_schedules: Vec<BranchCampaignCheckpointRunStateScheduleRecordV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub run_state_emitted_events: Vec<BranchCampaignCheckpointRunStateEmittedEventsRecordV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub combat_automation_trajectories: Vec<BranchCampaignCheckpointCombatTrajectoryRecordV1>,
     pub sessions: Vec<BranchCampaignCheckpointSessionV1>,
@@ -587,6 +599,17 @@ impl BranchCampaignCheckpointV1 {
                 .find(|record| record.schedule_id == schedule_id)
                 .ok_or_else(|| format!("missing checkpoint run_state schedule {schedule_id}"))?;
             session.restore_run_state_schedule_from_external_ref(record.schedule.clone());
+        }
+        if let Some(emitted_events_id) = entry.run_state_emitted_events_id.as_deref() {
+            let record = self
+                .run_state_emitted_events
+                .iter()
+                .find(|record| record.emitted_events_id == emitted_events_id)
+                .ok_or_else(|| {
+                    format!("missing checkpoint run_state emitted events {emitted_events_id}")
+                })?;
+            session
+                .restore_run_state_emitted_events_from_external_ref(record.emitted_events.clone());
         }
         if session.last_combat_automation_trajectory_record().is_some() {
             return Ok(session);

@@ -756,6 +756,11 @@ fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
         1,
         "campaign checkpoint should keep repeated run schedules in a top-level pool"
     );
+    assert_eq!(
+        checkpoint.run_state_emitted_events.len(),
+        1,
+        "campaign checkpoint should keep repeated emitted events in a top-level pool"
+    );
     assert_eq!(checkpoint.combat_automation_trajectories.len(), 1);
     assert_eq!(
         checkpoint.combat_automation_trajectories[0].commands.len(),
@@ -794,6 +799,13 @@ fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
         );
         assert!(
             session_json
+                .get("run_state")
+                .and_then(|run_state| run_state.get("emitted_events"))
+                .is_none(),
+            "campaign checkpoint sessions should reference pooled emitted events instead of embedding domain event logs"
+        );
+        assert!(
+            session_json
                 .get("last_combat_automation_trajectory")
                 .is_none(),
             "campaign checkpoint sessions should keep replay state slim"
@@ -815,6 +827,11 @@ fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
         assert!(
             !restored.run_state.common_relic_pool.is_empty(),
             "checkpoint-level schedule records should preserve relic pools"
+        );
+        assert_eq!(
+            restored.run_state.emitted_events.len(),
+            1,
+            "checkpoint-level emitted event records should preserve domain event logs"
         );
     }
 }
