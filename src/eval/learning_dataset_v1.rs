@@ -2777,23 +2777,7 @@ pub fn render_coverage_gap_continuation_plan_summary_v1(
 ) -> String {
     let mut lines = Vec::new();
     lines.push(render_coverage_gap_continuation_plan_counts_v1(plan));
-    if !plan.bucket_summaries.is_empty() {
-        lines.push("Buckets:".to_string());
-        for bucket in &plan.bucket_summaries {
-            lines.push(format!(
-                "  {} selected={}/{} unobserved={} scheduled={} unscheduled={} kept={} pruned={} deferred={}",
-                bucket.bucket,
-                bucket.selected_target_count,
-                bucket.eligible_target_count,
-                bucket.unobserved_candidate_count,
-                bucket.scheduled_unobserved_candidate_count,
-                bucket.unscheduled_unobserved_candidate_count,
-                bucket.kept_unobserved_candidate_count,
-                bucket.pruned_unobserved_candidate_count,
-                bucket.deferred_target_count
-            ));
-        }
-    }
+    extend_coverage_gap_bucket_summary_lines_v1(&mut lines, &plan.bucket_summaries);
     extend_coverage_gap_lane_summary_lines_v1(&mut lines, &plan.lane_summaries);
     extend_coverage_gap_origin_summary_lines_v1(&mut lines, &plan.origin_summaries);
     extend_coverage_gap_target_progress_summary_lines_v1(
@@ -2911,21 +2895,7 @@ pub fn render_coverage_gap_execution_plan_with_target_list_label_v1(
         execution.skipped_target_count
     ));
     if !execution.bucket_summaries.is_empty() {
-        lines.push("Buckets:".to_string());
-        for bucket in &execution.bucket_summaries {
-            lines.push(format!(
-                "  {} selected={}/{} unobserved={} scheduled={} unscheduled={} kept={} pruned={} deferred={}",
-                bucket.bucket,
-                bucket.selected_target_count,
-                bucket.eligible_target_count,
-                bucket.unobserved_candidate_count,
-                bucket.scheduled_unobserved_candidate_count,
-                bucket.unscheduled_unobserved_candidate_count,
-                bucket.kept_unobserved_candidate_count,
-                bucket.pruned_unobserved_candidate_count,
-                bucket.deferred_target_count
-            ));
-        }
+        extend_coverage_gap_bucket_summary_lines_v1(&mut lines, &execution.bucket_summaries);
     }
     extend_coverage_gap_lane_summary_lines_v1(&mut lines, &execution.lane_summaries);
     extend_coverage_gap_origin_summary_lines_v1(&mut lines, &execution.origin_summaries);
@@ -2951,6 +2921,56 @@ pub fn render_coverage_gap_execution_plan_with_target_list_label_v1(
         }
     }
     lines.join("\n")
+}
+
+fn extend_coverage_gap_bucket_summary_lines_v1(
+    lines: &mut Vec<String>,
+    bucket_summaries: &[CoverageGapContinuationBucketSummaryV1],
+) {
+    let global_unobserved = bucket_summaries
+        .iter()
+        .filter(|summary| summary.unobserved_candidate_count > 0)
+        .collect::<Vec<_>>();
+    if !global_unobserved.is_empty() {
+        lines.push("Global unobserved pool by bucket:".to_string());
+        for bucket in global_unobserved {
+            lines.push(format!(
+                "  {} unobserved={} scheduled={} unscheduled={} kept={} pruned={}",
+                bucket.bucket,
+                bucket.unobserved_candidate_count,
+                bucket.scheduled_unobserved_candidate_count,
+                bucket.unscheduled_unobserved_candidate_count,
+                bucket.kept_unobserved_candidate_count,
+                bucket.pruned_unobserved_candidate_count
+            ));
+        }
+    }
+
+    let eligible = bucket_summaries
+        .iter()
+        .filter(|summary| {
+            summary.eligible_target_count > 0
+                || summary.selected_target_count > 0
+                || summary.deferred_target_count > 0
+        })
+        .collect::<Vec<_>>();
+    if eligible.is_empty() {
+        if !bucket_summaries.is_empty() {
+            lines.push("Eligible targets by bucket: none after current filter".to_string());
+        }
+        return;
+    }
+
+    lines.push("Eligible targets by bucket:".to_string());
+    for bucket in eligible {
+        lines.push(format!(
+            "  {} selected={}/{} deferred={}",
+            bucket.bucket,
+            bucket.selected_target_count,
+            bucket.eligible_target_count,
+            bucket.deferred_target_count
+        ));
+    }
 }
 
 fn extend_coverage_gap_lane_summary_lines_v1(
@@ -5595,9 +5615,12 @@ mod tests {
         assert_eq!(reward_bucket.unobserved_candidate_count, 9);
         assert_eq!(reward_bucket.eligible_target_count, 2);
         assert_eq!(reward_bucket.selected_target_count, 1);
-        assert!(rendered.contains("Buckets:"));
-        assert!(rendered.contains("route selected=1/2 unobserved=2"));
-        assert!(rendered.contains("reward selected=1/2 unobserved=9"));
+        assert!(rendered.contains("Global unobserved pool by bucket:"));
+        assert!(rendered.contains("route unobserved=2"));
+        assert!(rendered.contains("reward unobserved=9"));
+        assert!(rendered.contains("Eligible targets by bucket:"));
+        assert!(rendered.contains("route selected=1/2 deferred=1"));
+        assert!(rendered.contains("reward selected=1/2 deferred=1"));
         assert!(rendered.contains("Selected target lanes:"));
         assert!(rendered.contains("route:"));
         assert!(rendered.contains("Selected target origins:"));
@@ -5619,9 +5642,12 @@ mod tests {
             .expect("execution should keep reward bucket summary");
         assert_eq!(execution_reward_bucket.eligible_target_count, 2);
         assert_eq!(execution_reward_bucket.selected_target_count, 0);
-        assert!(rendered_execution.contains("Buckets:"));
-        assert!(rendered_execution.contains("route selected=1/2 unobserved=2"));
-        assert!(rendered_execution.contains("reward selected=0/2 unobserved=9"));
+        assert!(rendered_execution.contains("Global unobserved pool by bucket:"));
+        assert!(rendered_execution.contains("route unobserved=2"));
+        assert!(rendered_execution.contains("reward unobserved=9"));
+        assert!(rendered_execution.contains("Eligible targets by bucket:"));
+        assert!(rendered_execution.contains("route selected=1/2 deferred=1"));
+        assert!(rendered_execution.contains("reward selected=0/2 deferred=2"));
         assert!(rendered_execution.contains("Selected target lanes:"));
         assert!(rendered_execution.contains("route:"));
         assert!(rendered_execution.contains("Target origin coverage:"));
@@ -5925,11 +5951,45 @@ mod tests {
         let rendered = render_coverage_gap_continuation_plan_summary_v1(&plan);
 
         assert!(rendered.contains("CoverageGapContinuationPlanV1 decisions=1"));
-        assert!(rendered.contains("route selected=1/0 unobserved=4"));
+        assert!(rendered.contains("Global unobserved pool by bucket:"));
+        assert!(rendered.contains("route unobserved=4"));
+        assert!(rendered.contains("Eligible targets by bucket:"));
+        assert!(rendered.contains("route selected=1/0 deferred=0"));
         assert!(rendered.contains("Selected target lanes:"));
         assert!(rendered.contains("route:go:MonsterRoom:CompleteWithinBudget"));
         assert!(!rendered.contains("Targets:"));
         assert!(!rendered.contains("x=0 Monster"));
+    }
+
+    #[test]
+    fn coverage_gap_bucket_summary_separates_global_pool_from_eligible_targets() {
+        let mut lines = Vec::new();
+        extend_coverage_gap_bucket_summary_lines_v1(
+            &mut lines,
+            &[
+                CoverageGapContinuationBucketSummaryV1 {
+                    bucket: "event".to_string(),
+                    unobserved_candidate_count: 2,
+                    pruned_unobserved_candidate_count: 2,
+                    ..Default::default()
+                },
+                CoverageGapContinuationBucketSummaryV1 {
+                    bucket: "route".to_string(),
+                    unobserved_candidate_count: 1,
+                    kept_unobserved_candidate_count: 1,
+                    eligible_target_count: 1,
+                    selected_target_count: 1,
+                    ..Default::default()
+                },
+            ],
+        );
+        let rendered = lines.join("\n");
+
+        assert!(rendered.contains("Global unobserved pool by bucket:"));
+        assert!(rendered.contains("event unobserved=2"));
+        assert!(rendered.contains("Eligible targets by bucket:"));
+        assert!(rendered.contains("route selected=1/1 deferred=0"));
+        assert!(!rendered.contains("event selected=0/0 unobserved=2"));
     }
 
     #[test]
