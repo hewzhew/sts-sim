@@ -9,11 +9,8 @@ function Resolve-CampaignContinuationOperation {
 
     return [pscustomobject]@{
         Kind = $Context.CampaignRequest.Kind
-        PlanTargets = [bool] $Context.CampaignRequest.PlanTargets
-        ContinueTargets = [bool] $Context.CampaignRequest.ContinueTargets
         PlanCoverageGaps = [bool] $Context.CampaignRequest.PlanCoverageGaps
         ContinueCoverageGaps = [bool] $Context.CampaignRequest.ContinueCoverageGaps
-        UsesTargetedContinuation = [bool] $Context.CampaignRequest.UsesTargetedContinuation
         UsesCoverageGap = [bool] $Context.CampaignRequest.UsesCoverageGap
     }
 }
@@ -26,8 +23,6 @@ function New-CampaignContinuationEntryContext {
         [object] $RunOutputContext,
         [object] $BoundParameterContext,
         [object] $CampaignSourceArtifact,
-        [string] $DecisionOutcomeDataset,
-        [object] $DecisionOutcomePathContext,
         [bool] $InspectScratchLatest,
         [string] $CoverageGapExecution,
         [string] $CoverageGapIntent,
@@ -43,8 +38,6 @@ function New-CampaignContinuationEntryContext {
         [object] $BuildContext,
         [bool] $NeedsBuild,
         [bool] $Scratch,
-        [int] $TargetedContinuationLimit,
-        [int] $TargetedContinuationCandidatesPerTarget,
         [int] $Rounds,
         [int] $UntilRound,
         [string] $UntilMilestone,
@@ -69,10 +62,6 @@ function New-CampaignContinuationEntryContext {
         WrapperBoundParameters = $BoundParameterContext.WrapperBoundParameters
         InspectScratchLatest = $InspectScratchLatest
         CampaignSourceArtifact = $CampaignSourceArtifact
-        DecisionOutcomeDataset = $DecisionOutcomeDataset
-        DecisionOutcomeBeforePath = $DecisionOutcomePathContext.BeforePath
-        DecisionOutcomePath = $DecisionOutcomePathContext.Path
-        DecisionOutcomeAfterPath = $DecisionOutcomePathContext.AfterPath
         RunOutputCampaignPath = $RunOutputContext.CampaignPath
         RunOutputCheckpointPath = $RunOutputContext.CheckpointPath
         UntilMilestoneBound = $BoundParameterContext.UntilMilestoneBound
@@ -95,8 +84,6 @@ function New-CampaignContinuationEntryContext {
         NeedsBuild = $NeedsBuild
         Scratch = $Scratch
         ScratchLabel = $RunOutputContext.ScratchLabel
-        TargetedContinuationLimit = $TargetedContinuationLimit
-        TargetedContinuationCandidatesPerTarget = $TargetedContinuationCandidatesPerTarget
         UntilMilestone = $UntilMilestone
         MilestoneMaxRounds = $MilestoneMaxRounds
         ResolvedMilestoneStop = $ResolvedMilestoneStop
@@ -116,12 +103,6 @@ function Resolve-CampaignContinuationSourceContext {
     param(
         [object] $Context
     )
-
-    $Operation = Resolve-CampaignContinuationOperation -Context $Context
-
-    if ($Context.InspectScratchLatest -and $Operation.UsesTargetedContinuation) {
-        throw "-InspectScratchLatest is not supported for targeted continuation yet; use inspect or coverage-gap continuation."
-    }
 
     $Source = $Context.CampaignSourceArtifact
     if (-not $Source) {
@@ -144,21 +125,6 @@ function Resolve-CampaignContinuationSourceContext {
     }
 }
 
-function Resolve-CampaignContinuationDecisionOutcomePath {
-    param(
-        [object] $Context
-    )
-
-    $Operation = Resolve-CampaignContinuationOperation -Context $Context
-    if ($Context.DecisionOutcomeDataset) {
-        return $Context.DecisionOutcomeDataset
-    }
-    if ($Operation.ContinueTargets) {
-        return $Context.DecisionOutcomeBeforePath
-    }
-    return $Context.DecisionOutcomePath
-}
-
 function New-CampaignContinuationCommandContext {
     param(
         [object] $Context,
@@ -166,7 +132,6 @@ function New-CampaignContinuationCommandContext {
     )
 
     $Operation = Resolve-CampaignContinuationOperation -Context $Context
-    $TargetDecisionOutcomePath = Resolve-CampaignContinuationDecisionOutcomePath -Context $Context
     $RoundBudget = Resolve-CampaignAdditionalRoundBudget `
         -ResumeRoundsCompleted $SourceContext.RoundsCompleted `
         -UntilMilestoneBound $Context.UntilMilestoneBound `
@@ -193,28 +158,6 @@ function New-CampaignContinuationCommandContext {
         -CoverageGapLimit $Context.CoverageGapLimit `
         -CoverageGapCandidatesPerDecision $Context.CoverageGapCandidatesPerDecision `
         -CoverageGapFilterArgs $Context.CoverageGapFilterArgs
-    $ExportDecisionArgs = New-TargetedContinuationExportBeforeArgs `
-        -SourceCampaignPath $SourceContext.CampaignPath `
-        -SourceCheckpointPath $SourceContext.CheckpointPath `
-        -TargetDecisionOutcomePath $TargetDecisionOutcomePath
-    $PlanTargetArgs = New-TargetedContinuationPlanDriverArgs `
-        -TargetDecisionOutcomePath $TargetDecisionOutcomePath
-    $ExportDecisionAfterArgs = New-TargetedContinuationExportAfterArgs `
-        -RunOutputCampaignPath $Context.RunOutputCampaignPath `
-        -RunOutputCheckpointPath $Context.RunOutputCheckpointPath `
-        -DecisionOutcomeAfterPath $Context.DecisionOutcomeAfterPath
-    $ContinuationEffectArgs = New-TargetedContinuationEffectArgs `
-        -TargetDecisionOutcomePath $TargetDecisionOutcomePath `
-        -DecisionOutcomeAfterPath $Context.DecisionOutcomeAfterPath
-    $ContinueTargetArgs = New-TargetedContinuationContinueDriverArgs `
-        -RunIdentityArgs $Context.CampaignRunIdentityArgs `
-        -SourceCampaignPath $SourceContext.CampaignPath `
-        -SourceCheckpointPath $SourceContext.CheckpointPath `
-        -RunOutputCampaignPath $Context.RunOutputCampaignPath `
-        -RunOutputCheckpointPath $Context.RunOutputCheckpointPath `
-        -TargetDecisionOutcomePath $TargetDecisionOutcomePath `
-        -RoundBudgetArgs $RoundBudgetArgs `
-        -OptionContext $Context.CampaignSharedDriverOptionContext
     $ContinueCoverageGapArgs = New-CoverageGapContinueDriverArgs `
         -RunIdentityArgs $Context.CampaignRunIdentityArgs `
         -SourceCampaignPath $SourceContext.CampaignPath `
@@ -238,8 +181,6 @@ function New-CampaignContinuationCommandContext {
     $CoverageGapMilestoneSummaryArgs += @($Context.CoverageGapResultFilterArgs)
 
     $PreflightContext = New-CampaignContinuationPreflightContext `
-        -PlanTargets $Operation.PlanTargets `
-        -ContinueTargets $Operation.ContinueTargets `
         -PlanCoverageGaps $Operation.PlanCoverageGaps `
         -ContinueCoverageGaps $Operation.ContinueCoverageGaps `
         -Seed $Context.Seed `
@@ -255,10 +196,6 @@ function New-CampaignContinuationCommandContext {
         -ScratchLabel $Context.ScratchLabel `
         -RunOutputCampaignPath $Context.RunOutputCampaignPath `
         -RunOutputCheckpointPath $Context.RunOutputCheckpointPath `
-        -TargetDecisionOutcomePath $TargetDecisionOutcomePath `
-        -DecisionOutcomeAfterPath $Context.DecisionOutcomeAfterPath `
-        -TargetedContinuationLimit $Context.TargetedContinuationLimit `
-        -TargetedContinuationCandidatesPerTarget $Context.TargetedContinuationCandidatesPerTarget `
         -ResumeRoundsCompleted $SourceContext.RoundsCompleted `
         -TargetRounds $RoundBudget.TargetRounds `
         -ContinuationRoundSource $RoundBudget.Source `
@@ -278,34 +215,7 @@ function New-CampaignContinuationCommandContext {
         -CoverageGapResultFilterLabel $Context.CoverageGapResultFilterLabel
 
     return [pscustomobject]@{
-        TargetDecisionOutcomePath = $TargetDecisionOutcomePath
-        TargetedManifestContext = [pscustomobject]@{
-            SourceLabel = $SourceContext.Label
-            SourceCampaignPath = $SourceContext.CampaignPath
-            SourceCheckpointPath = $SourceContext.CheckpointPath
-            TargetDecisionOutcomePath = $TargetDecisionOutcomePath
-            DecisionOutcomeAfterPath = $Context.DecisionOutcomeAfterPath
-            ExportDecisionArgs = @($ExportDecisionArgs)
-            PlanTargetArgs = @($PlanTargetArgs)
-            ContinueTargetArgs = @($ContinueTargetArgs)
-            ExportDecisionAfterArgs = @($ExportDecisionAfterArgs)
-            ContinuationEffectArgs = @($ContinuationEffectArgs)
-            TargetedContinuationLimit = $Context.TargetedContinuationLimit
-            TargetedContinuationCandidatesPerTarget = $Context.TargetedContinuationCandidatesPerTarget
-            DriverExe = $Context.DriverExe
-            UntilMilestoneBound = [bool] $Context.UntilMilestoneBound
-            UntilMilestone = $Context.UntilMilestone
-            ResolvedMilestoneStop = $Context.ResolvedMilestoneStop
-            MilestoneStepRounds = $Context.MilestoneStepRounds
-            MilestoneMaxRounds = $Context.MilestoneMaxRounds
-            ContinuationRounds = [int] $RoundBudget.AdditionalRounds
-        }
         CoveragePlanArgs = @($CoveragePlanArgs)
-        ExportDecisionArgs = @($ExportDecisionArgs)
-        PlanTargetArgs = @($PlanTargetArgs)
-        ExportDecisionAfterArgs = @($ExportDecisionAfterArgs)
-        ContinuationEffectArgs = @($ContinuationEffectArgs)
-        ContinueTargetArgs = @($ContinueTargetArgs)
         ContinueCoverageGapArgs = @($ContinueCoverageGapArgs)
         ContinuationRounds = [int] $RoundBudget.AdditionalRounds
         CoverageGapInitialSpentRounds = [int] $CoverageExecutionContext.InitialSpentRounds
@@ -345,15 +255,6 @@ function Write-CampaignContinuationDryRunCommandSet {
     if ($Context.NeedsBuild) {
         Write-CampaignBuildCommandPreview -BuildArgs $Context.BuildArgs
     }
-    Write-TargetedContinuationDryRunCommands `
-        -PlanTargets $Operation.PlanTargets `
-        -ContinueTargets $Operation.ContinueTargets `
-        -DriverExe $Context.DriverExe `
-        -ExportDecisionArgs $CommandContext.ExportDecisionArgs `
-        -PlanTargetArgs $CommandContext.PlanTargetArgs `
-        -ContinueTargetArgs $CommandContext.ContinueTargetArgs `
-        -ExportDecisionAfterArgs $CommandContext.ExportDecisionAfterArgs `
-        -ContinuationEffectArgs $CommandContext.ContinuationEffectArgs
     Write-CoverageGapContinuationDryRunCommands `
         -PlanCoverageGaps $Operation.PlanCoverageGaps `
         -ContinueCoverageGaps $Operation.ContinueCoverageGaps `
@@ -375,7 +276,7 @@ function Invoke-CampaignContinuationCommandSet {
 
     $Operation = Resolve-CampaignContinuationOperation -Context $Context
 
-    if (($Operation.ContinueTargets -or $Operation.ContinueCoverageGaps) -and $CommandContext.ContinuationRounds -eq 0) {
+    if ($Operation.ContinueCoverageGaps -and $CommandContext.ContinuationRounds -eq 0) {
         Write-Host "already-at-target-rounds=yes; nothing to run"
         return 0
     }
@@ -387,23 +288,6 @@ function Invoke-CampaignContinuationCommandSet {
             if ($LASTEXITCODE -ne 0) {
                 return $LASTEXITCODE
             }
-        }
-        if ($Operation.UsesTargetedContinuation) {
-            return Invoke-TargetedContinuationCommands `
-                -PlanTargets $Operation.PlanTargets `
-                -ContinueTargets $Operation.ContinueTargets `
-                -DriverExe $Context.DriverExe `
-                -ExportDecisionArgs $CommandContext.ExportDecisionArgs `
-                -PlanTargetArgs $CommandContext.PlanTargetArgs `
-                -ContinueTargetArgs $CommandContext.ContinueTargetArgs `
-                -ExportDecisionAfterArgs $CommandContext.ExportDecisionAfterArgs `
-                -ContinuationEffectArgs $CommandContext.ContinuationEffectArgs `
-                -UntilMilestoneBound $Context.UntilMilestoneBound `
-                -ContinuationRounds $CommandContext.ContinuationRounds `
-                -RunIdentityArgs $Context.CampaignRunIdentityArgs `
-                -OptionContext $Context.CampaignSharedDriverOptionContext `
-                -RecordContext $Context `
-                -ManifestContext $CommandContext.TargetedManifestContext
         }
         if ($Operation.UsesCoverageGap) {
             return Invoke-CoverageGapContinuationCommands `

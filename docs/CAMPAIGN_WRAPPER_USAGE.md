@@ -50,6 +50,12 @@ source, output, and round budget semantics and should not be used.
 Coverage-gap continuation is the preferred way to revisit unobserved journal
 candidates. Use scratch output when probing without updating latest.
 
+Older targeted continuation wrapper switches (`-PlanTargets` and
+`-ContinueTargets`) were removed from `tools/campaign.ps1`. The Rust driver
+still has `--plan-targeted-continuation` and `--execute-targeted-continuation`
+for direct archaeology, but maintained wrapper workflows should use
+coverage-gap continuation.
+
 ## Inspect
 
 ```powershell
@@ -97,21 +103,6 @@ inputs and candidate structure, not create new policy behavior in PowerShell.
 .\tools\campaign.ps1 -InspectScratchLatest -InspectCoverageGapMilestoneSummary -CoverageGapRoute
 .\tools\campaign.ps1 -InspectScratchLatest -InspectCoverageGapTargetState -CoverageGapRoute -InspectIndex 1
 ```
-
-## Targeted Continuation
-
-```powershell
-.\tools\campaign.ps1 -PlanTargets
-.\tools\campaign.ps1 -From latest -ContinueTargets -Rounds 1
-.\tools\campaign.ps1 -From latest -ContinueTargets -Scratch -Rounds 1
-```
-
-This is an older sibling-continuation workflow. Prefer coverage-gap
-continuation unless specifically investigating the legacy targeted path.
-Plan-only targeted continuation writes its temporary decision-outcome dataset to
-scratch by default. Execution-style targeted continuation writes before/after
-decision-outcome datasets into the selected output artifact. Use `-Scratch` for
-experiments that should not update latest.
 
 ## Build And Diagnostics
 

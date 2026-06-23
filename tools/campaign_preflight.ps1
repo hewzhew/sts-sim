@@ -48,8 +48,6 @@ function Write-CampaignRunPreflight {
 
 function New-CampaignContinuationPreflightContext {
     param(
-        [bool] $PlanTargets,
-        [bool] $ContinueTargets,
         [bool] $PlanCoverageGaps,
         [bool] $ContinueCoverageGaps,
         [long] $Seed,
@@ -65,10 +63,6 @@ function New-CampaignContinuationPreflightContext {
         [string] $ScratchLabel,
         [string] $RunOutputCampaignPath,
         [string] $RunOutputCheckpointPath,
-        [string] $TargetDecisionOutcomePath,
-        [string] $DecisionOutcomeAfterPath,
-        [int] $TargetedContinuationLimit,
-        [int] $TargetedContinuationCandidatesPerTarget,
         [int] $ResumeRoundsCompleted,
         [object] $TargetRounds,
         [string] $ContinuationRoundSource,
@@ -89,11 +83,9 @@ function New-CampaignContinuationPreflightContext {
     )
 
     return [pscustomobject]@{
-        PlanTargets = [bool] $PlanTargets
-        ContinueTargets = [bool] $ContinueTargets
         PlanCoverageGaps = [bool] $PlanCoverageGaps
         ContinueCoverageGaps = [bool] $ContinueCoverageGaps
-        ModeLabel = if ($PlanCoverageGaps -or $ContinueCoverageGaps) { "coverage-gap-continuation" } else { "targeted-continuation" }
+        ModeLabel = "coverage-gap-continuation"
         Seed = $Seed
         Ascension = $Ascension
         Class = $Class
@@ -107,10 +99,6 @@ function New-CampaignContinuationPreflightContext {
         ScratchLabel = $ScratchLabel
         RunOutputCampaignPath = $RunOutputCampaignPath
         RunOutputCheckpointPath = $RunOutputCheckpointPath
-        TargetDecisionOutcomePath = $TargetDecisionOutcomePath
-        DecisionOutcomeAfterPath = $DecisionOutcomeAfterPath
-        TargetedContinuationLimit = $TargetedContinuationLimit
-        TargetedContinuationCandidatesPerTarget = $TargetedContinuationCandidatesPerTarget
         ResumeRoundsCompleted = $ResumeRoundsCompleted
         TargetRounds = $TargetRounds
         ContinuationRoundSource = $ContinuationRoundSource
@@ -152,24 +140,11 @@ function Write-CampaignContinuationPreflight {
         Write-Host "scratch=yes label=$($Context.ScratchLabel)"
         Write-Host "report=$($Context.RunOutputCampaignPath)"
         Write-Host "checkpoint=$($Context.RunOutputCheckpointPath)"
-    } elseif ($Context.ContinueTargets -or $Context.ContinueCoverageGaps) {
+    } elseif ($Context.ContinueCoverageGaps) {
         Write-Host "report=$($Context.RunOutputCampaignPath)"
         Write-Host "checkpoint=$($Context.RunOutputCheckpointPath)"
     }
 
-    if ($Context.PlanTargets -or $Context.ContinueTargets) {
-        Write-Host "decision-outcomes=$($Context.TargetDecisionOutcomePath)"
-    }
-    if ($Context.ContinueTargets) {
-        Write-Host "decision-outcomes-after=$($Context.DecisionOutcomeAfterPath)"
-        Write-Host "continue-targets=$($Context.TargetedContinuationLimit) candidates-per-target=$($Context.TargetedContinuationCandidatesPerTarget)"
-        Write-Host "resume-rounds=$($Context.ResumeRoundsCompleted)"
-        if ($Context.TargetRounds -ne $null) {
-            Write-Host "round-budget=$($Context.ContinuationRoundSource) target-rounds=$($Context.TargetRounds) additional-rounds=$($Context.ContinuationRounds)"
-        } else {
-            Write-Host "round-budget=$($Context.ContinuationRoundSource) additional-rounds=$($Context.ContinuationRounds)"
-        }
-    }
     if ($Context.UntilMilestoneBound) {
         Write-Host "until-milestone=$($Context.UntilMilestone) step-rounds=$($Context.MilestoneStepRounds) max-additional-rounds=$($Context.MilestoneMaxRounds) stop=$($Context.ResolvedMilestoneStop)"
     }

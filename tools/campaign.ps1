@@ -76,8 +76,6 @@ param(
     [switch] $AutoCaptureCombat,
     [switch] $DebugBuild,
     [switch] $Build,
-    [switch] $PlanTargets,
-    [switch] $ContinueTargets,
     [switch] $PlanCoverageGaps,
     [switch] $ContinueCoverageGaps,
     [switch] $CoverageGapRoute,
@@ -88,7 +86,6 @@ param(
     [switch] $Scratch,
 
     [string] $ExportLearningDataset = "",
-    [string] $DecisionOutcomeDataset = "",
     [string] $AutoCaptureRoot = "",
     [string] $RunLabel = "",
     [string] $From = "",
@@ -144,8 +141,6 @@ param(
     [int] $ChallengeMaxPlans = 6,
     [int] $ChallengeDepth = 3,
     [int] $ChallengeMaxBranches = 10,
-    [int] $TargetedContinuationLimit = 4,
-    [int] $TargetedContinuationCandidatesPerTarget = 1,
     [int] $CoverageGapLimit = 8,
     [int] $CoverageGapCandidatesPerDecision = 1,
     [string] $CoverageGapBucket = "",
@@ -167,6 +162,19 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$RetiredWrapperArgs = @(
+    "-PlanTargets",
+    "-ContinueTargets",
+    "-DecisionOutcomeDataset",
+    "-TargetedContinuationLimit",
+    "-TargetedContinuationCandidatesPerTarget"
+)
+foreach ($arg in $ExtraArgs) {
+    if ($RetiredWrapperArgs -contains $arg) {
+        throw "$arg was removed from tools/campaign.ps1. Use coverage-gap continuation, or call branch_campaign_driver directly for targeted-continuation archaeology."
+    }
+}
+
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $CampaignDir = Join-Path $RepoRoot "tools\artifacts\campaigns"
 $ScratchCampaignDir = Join-Path $CampaignDir "scratch"
@@ -184,7 +192,6 @@ New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 . (Join-Path $PSScriptRoot "campaign_coverage_gaps.ps1")
 . (Join-Path $PSScriptRoot "campaign_continuation.ps1")
 . (Join-Path $PSScriptRoot "campaign_inspect.ps1")
-. (Join-Path $PSScriptRoot "campaign_targets.ps1")
 . (Join-Path $PSScriptRoot "campaign_build.ps1")
 . (Join-Path $PSScriptRoot "campaign_source.ps1")
 . (Join-Path $PSScriptRoot "campaign_request.ps1")
@@ -198,8 +205,6 @@ $CampaignRequest = Resolve-CampaignEntryRequest `
     -InspectShopChallenge ([bool] $InspectShopChallenge) `
     -InspectBoundaryBound ($PSBoundParameters.ContainsKey("InspectBoundary")) `
     -InspectBoundary $InspectBoundary `
-    -PlanTargets ([bool] $PlanTargets) `
-    -ContinueTargets ([bool] $ContinueTargets) `
     -PlanCoverageGaps ([bool] $PlanCoverageGaps) `
     -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
     -Scratch ([bool] $Scratch)
@@ -287,13 +292,7 @@ Ensure-CampaignOutputArtifactDirectory -OutputContext $RunOutputContext -DryRun 
 $NeedsBuild = $Build -or (Test-DriverNeedsBuild $BuildContext.DriverExe)
 
 switch ($CampaignRequest.Kind) {
-    { @("plan_targets", "continue_targets", "plan_coverage_gaps", "continue_coverage_gaps") -contains $_ } {
-        $DecisionOutcomePathContext = Resolve-TargetedContinuationDecisionOutcomePathContext `
-            -Request $CampaignRequest `
-            -RunOutputContext $RunOutputContext `
-            -DecisionOutcomeDataset $DecisionOutcomeDataset `
-            -Seed $Seed `
-            -DryRun ([bool] $DryRun)
+    { @("plan_coverage_gaps", "continue_coverage_gaps") -contains $_ } {
         $ContinuationEntryContext = New-CampaignContinuationEntryContext `
             -CampaignRequest $CampaignRequest `
             -WrapperScript $PSCommandPath `
@@ -301,8 +300,6 @@ switch ($CampaignRequest.Kind) {
             -RunOutputContext $RunOutputContext `
             -BoundParameterContext $BoundParameterContext `
             -CampaignSourceArtifact $CampaignSourceArtifact `
-            -DecisionOutcomeDataset $DecisionOutcomeDataset `
-            -DecisionOutcomePathContext $DecisionOutcomePathContext `
             -InspectScratchLatest ([bool] $InspectScratchLatest) `
             -CoverageGapExecution $CoverageGapExecution `
             -CoverageGapIntent $CoverageGapIntent `
@@ -318,8 +315,6 @@ switch ($CampaignRequest.Kind) {
             -BuildContext $BuildContext `
             -NeedsBuild ([bool] $NeedsBuild) `
             -Scratch ([bool] $Scratch) `
-            -TargetedContinuationLimit $TargetedContinuationLimit `
-            -TargetedContinuationCandidatesPerTarget $TargetedContinuationCandidatesPerTarget `
             -Rounds $Rounds `
             -UntilRound $UntilRound `
             -UntilMilestone $UntilMilestone `

@@ -20,7 +20,6 @@ function Resolve-CampaignRunRoundContext {
     }
     $ContinueCampaign = [bool] $Request.ContinueCampaign
     $ContinueCoverageGaps = [bool] $Request.ContinueCoverageGaps
-    $PlanTargets = [bool] $Request.PlanTargets
     $PlanCoverageGaps = [bool] $Request.PlanCoverageGaps
     $Inspect = [bool] $Request.Inspect
 
@@ -30,8 +29,8 @@ function Resolve-CampaignRunRoundContext {
     if ($UntilMilestoneBound -and ($RoundsBound -or $UntilRoundBound -or $MaxRoundsBound)) {
         throw "-UntilMilestone owns the round budget. Use -MilestoneStepRounds and -MilestoneMaxRounds instead of -Rounds, -UntilRound, or -MaxRounds."
     }
-    if ($UntilMilestoneBound -and ($PlanTargets -or $PlanCoverageGaps -or $Inspect)) {
-        throw "-UntilMilestone requires an executing command (-Continue, -ContinueTargets, -ContinueCoverageGaps, or a normal run), not a plan/inspect command."
+    if ($UntilMilestoneBound -and ($PlanCoverageGaps -or $Inspect)) {
+        throw "-UntilMilestone requires an executing command (-Continue, -ContinueCoverageGaps, or a normal run), not a plan/inspect command."
     }
 
     $ResolvedMilestoneStop = $MilestoneStop

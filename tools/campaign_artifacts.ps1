@@ -7,9 +7,6 @@ $LatestManifestPath = Join-Path $CampaignDir "latest.manifest.json"
 $LatestLogPath = Join-Path $CampaignDir "latest.log"
 $LatestCampaignPath = Join-Path $CampaignDir "latest.campaign.json"
 $LatestCheckpointPath = Join-Path $CampaignDir "latest.checkpoint.json"
-$LatestDecisionOutcomePath = Join-Path $CampaignDir "latest.decision_outcomes.jsonl"
-$LatestDecisionOutcomeBeforePath = Join-Path $CampaignDir "latest.decision_outcomes.before.jsonl"
-$LatestDecisionOutcomeAfterPath = Join-Path $CampaignDir "latest.decision_outcomes.after.jsonl"
 
 function Convert-ToCampaignArtifactSlug {
     param(
@@ -46,14 +43,6 @@ function Get-CampaignScratchLatestPointerPath {
     return (Join-Path $ScratchCampaignDir "latest.json")
 }
 
-function Get-CampaignLatestDecisionOutcomePathContext {
-    return [pscustomobject]@{
-        Path = $LatestDecisionOutcomePath
-        BeforePath = $LatestDecisionOutcomeBeforePath
-        AfterPath = $LatestDecisionOutcomeAfterPath
-    }
-}
-
 function New-CampaignRunArtifact {
     param(
         [string] $BaseLabel,
@@ -72,9 +61,6 @@ function New-CampaignRunArtifact {
         ManifestPath = Join-Path $Dir "manifest.json"
         LogPath = Join-Path $Dir "log.txt"
         CommandPath = Join-Path $Dir "command.txt"
-        DecisionOutcomePath = Join-Path $Dir "decision_outcomes.jsonl"
-        DecisionOutcomeBeforePath = Join-Path $Dir "decision_outcomes.before.jsonl"
-        DecisionOutcomeAfterPath = Join-Path $Dir "decision_outcomes.after.jsonl"
     }
 }
 
@@ -94,9 +80,6 @@ function New-CampaignScratchArtifactRef {
         ManifestPath = Join-Path $ScratchCampaignDir "$Id.manifest.json"
         LogPath = Join-Path $ScratchCampaignDir "$Id.log"
         CommandPath = Join-Path $ScratchCampaignDir "$Id.command.txt"
-        DecisionOutcomePath = Join-Path $ScratchCampaignDir "$Id.decision_outcomes.jsonl"
-        DecisionOutcomeBeforePath = Join-Path $ScratchCampaignDir "$Id.decision_outcomes.before.jsonl"
-        DecisionOutcomeAfterPath = Join-Path $ScratchCampaignDir "$Id.decision_outcomes.after.jsonl"
     }
 }
 
@@ -107,15 +90,6 @@ function New-CampaignScratchArtifact {
 
     $Id = New-CampaignArtifactId -BaseLabel $BaseLabel
     return New-CampaignScratchArtifactRef -ArtifactId $Id
-}
-
-function New-CampaignScratchDecisionOutcomePath {
-    param(
-        [string] $BaseLabel
-    )
-
-    $Id = New-CampaignArtifactId -BaseLabel $BaseLabel
-    return (Join-Path $ScratchCampaignDir "$Id.decision_outcomes.jsonl")
 }
 
 function Get-CampaignOutputBaseLabel {
@@ -130,9 +104,6 @@ function Get-CampaignOutputBaseLabel {
     }
     if ($RequestKind -eq "continue_coverage_gaps") {
         return "coverage-gap-seed$Seed"
-    }
-    if ($RequestKind -eq "continue_targets") {
-        return "targeted-continuation-seed$Seed"
     }
     if ($RequestKind -eq "continue_run") {
         return "continue-seed$Seed"
@@ -160,9 +131,6 @@ function Resolve-CampaignOutputArtifactContext {
     $RunCommandPath = ""
     $RunManifestPath = ""
     $RunLogPath = ""
-    $RunDecisionOutcomePath = ""
-    $RunDecisionOutcomeBeforePath = ""
-    $RunDecisionOutcomeAfterPath = ""
 
     if ($WritesCampaignOutput) {
         $OutputBaseLabel = Get-CampaignOutputBaseLabel `
@@ -180,9 +148,6 @@ function Resolve-CampaignOutputArtifactContext {
         $RunCommandPath = $RunOutputArtifact.CommandPath
         $RunManifestPath = $RunOutputArtifact.ManifestPath
         $RunLogPath = $RunOutputArtifact.LogPath
-        $RunDecisionOutcomePath = $RunOutputArtifact.DecisionOutcomePath
-        $RunDecisionOutcomeBeforePath = $RunOutputArtifact.DecisionOutcomeBeforePath
-        $RunDecisionOutcomeAfterPath = $RunOutputArtifact.DecisionOutcomeAfterPath
     }
 
     return [pscustomobject]@{
@@ -194,9 +159,6 @@ function Resolve-CampaignOutputArtifactContext {
         CommandPath = $RunCommandPath
         ManifestPath = $RunManifestPath
         LogPath = $RunLogPath
-        DecisionOutcomePath = $RunDecisionOutcomePath
-        DecisionOutcomeBeforePath = $RunDecisionOutcomeBeforePath
-        DecisionOutcomeAfterPath = $RunDecisionOutcomeAfterPath
     }
 }
 

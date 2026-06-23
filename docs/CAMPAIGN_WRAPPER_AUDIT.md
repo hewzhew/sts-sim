@@ -13,21 +13,20 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 429 lines
-- `tools/campaign_artifacts.ps1`: 460 lines
+- `tools/campaign.ps1`: 424 lines
+- `tools/campaign_artifacts.ps1`: 417 lines
 - `tools/campaign_artifact_summary.ps1`: 170 lines
 - `tools/campaign_invocation.ps1`: 318 lines
-- `tools/campaign_manifest.ps1`: 160 lines
+- `tools/campaign_manifest.ps1`: 154 lines
 - `tools/campaign_run_execution.ps1`: 173 lines
 - `tools/campaign_coverage_gaps.ps1`: 435 lines
-- `tools/campaign_preflight.ps1`: 200 lines
-- `tools/campaign_continuation.ps1`: 447 lines
+- `tools/campaign_preflight.ps1`: 175 lines
+- `tools/campaign_continuation.ps1`: 328 lines
 - `tools/campaign_inspect.ps1`: 369 lines
-- `tools/campaign_targets.ps1`: 255 lines
 - `tools/campaign_source.ps1`: 190 lines
 - `tools/campaign_rounds.ps1`: 131 lines
 - `tools/campaign_milestones.ps1`: 110 lines
-- `tools/campaign_request.ps1`: 205 lines
+- `tools/campaign_request.ps1`: 180 lines
 - `tools/campaign_build.ps1`: 71 lines
 
 Major regions:
@@ -54,7 +53,6 @@ The wrapper currently does all of these jobs:
 - output target selector
 - resume and round-budget normalizer
 - normal campaign runner
-- targeted continuation planner/executor
 - coverage-gap planner/executor
 - milestone continuation loop
 - manifest writer
@@ -199,8 +197,8 @@ This helper owns:
   round budget, learning export, shared options, and combat segment labeling
 - shared campaign driver option context extraction
 - shared campaign driver option rendering
-- shared driver option context is passed explicitly to campaign, targeted,
-  coverage-gap, and milestone driver command builders
+- shared driver option context is passed explicitly to campaign, coverage-gap,
+  and milestone driver command builders
 - continuation round-budget argument rendering
 
 Normal run execution helpers now live in:
@@ -240,7 +238,7 @@ This helper owns:
 
 - normal campaign run preflight output through an explicit run context
 - continuation preflight context shape
-- targeted/coverage-gap continuation preflight output rendering
+- coverage-gap continuation preflight output rendering
 
 Continuation entry helpers now live in:
 
@@ -255,7 +253,7 @@ This helper owns:
 - continuation operation dispatch through `CampaignEntryRequestV1`, with old
   context boolean fallback removed
 - continuation source context validation
-- targeted/coverage-gap continuation command context assembly
+- coverage-gap continuation command context assembly
 - continuation preflight context handoff
 - continuation dry-run dispatch
 - continuation execution dispatch
@@ -327,26 +325,6 @@ This helper owns:
 - mapping wrapper inspect switches to Rust driver flags
 - rendering dataset export inspect arguments
 
-Targeted continuation helpers now live in:
-
-```text
-tools/campaign_targets.ps1
-```
-
-This helper owns:
-
-- targeted continuation dataset export command rendering
-- targeted continuation plan/execute/effect command rendering
-- targeted continuation dry-run command rendering
-- targeted continuation execution orchestration
-- targeted continuation primary-driver command recording from an explicit
-  record context
-- targeted continuation wrapper manifest shape
-- targeted continuation before/after decision-outcome paths as artifact-local
-  files, not shared `latest.decision_outcomes.*` files
-- plan-only targeted continuation default decision-outcome path as a scratch
-  file, not shared `latest.decision_outcomes.jsonl`
-
 Build freshness helpers now live in:
 
 ```text
@@ -383,7 +361,7 @@ semantics will drift again.
 Main wrapper dispatch now consumes the typed request kind directly:
 
 ```text
-plan_targets / continue_targets / plan_coverage_gaps / continue_coverage_gaps
+plan_coverage_gaps / continue_coverage_gaps
   -> continuation entry
 
 inspect
@@ -405,8 +383,7 @@ tools/campaign_request.ps1
 This helper owns:
 
 - typed entry request classification (`run`, `continue_run`, `inspect`,
-  `plan_targets`, `continue_targets`, `plan_coverage_gaps`, and
-  `continue_coverage_gaps`)
+  `plan_coverage_gaps`, and `continue_coverage_gaps`)
 - main-wrapper dispatch consumes the resolved request object directly instead
   of rebinding request switches into a second set of mutable variables
 - source/output intent derivation for wrapper manifests
@@ -415,7 +392,6 @@ This helper owns:
 - inspect flag folding
 - inspect selector switch classification
 - `-InspectScratchLatest` source/read interpretation
-- targeted-vs-coverage-gap mutual exclusion
 - scratch output eligibility
 - the derived `ReadsCampaignSource` flag
 
@@ -429,10 +405,10 @@ the wrapper creates scratch output directories or renders continuation
 preflight. Output artifact resolution also consumes the request object directly
 instead of receiving a second set of request-derived booleans.
 
-Decision-outcome paths for targeted continuation are resolved through an
-explicit path context in the continuation branch. The main wrapper no longer
-passes dot-sourced `LatestDecisionOutcome*` variables into continuation entry
-construction.
+The wrapper no longer exposes targeted continuation. The Rust driver still
+supports `--plan-targeted-continuation` / `--execute-targeted-continuation` for
+manual archaeology, but `tools/campaign.ps1` is now centered on the current
+journal/coverage-gap continuation path.
 
 ## Still Move Out Of Wrapper
 
@@ -440,8 +416,8 @@ These pieces are useful but should not live in the main script long term:
 
 - residual compatibility switches that may no longer earn wrapper-level
   visibility after the latest/source/output cleanup
-- legacy `latest.decision_outcomes.*` paths remain only as compatibility
-  fallbacks or explicit user-selected paths, not as new wrapper defaults
+- targeted continuation remains available only through direct Rust driver flags
+  if old data archaeology needs it; it is not a maintained wrapper workflow
 
 ## Candidates To Delete Or Degrade
 
@@ -449,8 +425,6 @@ Do not preserve every old feature just because it exists.
 
 Review these before adding more wrapper logic:
 
-- `-PlanTargets` / `-ContinueTargets`: older sibling-continuation path; may be
-  superseded by journal/coverage-gap continuation.
 - very specific inspect flags that only forward one driver flag; they may be
   better as direct driver examples or a single `-InspectKind` style adapter.
 - long comment-help examples; active docs can carry examples instead of the
@@ -479,10 +453,9 @@ If the answer is no, do not add it to `tools/campaign.ps1`.
 
 ## Next Cleanup Order
 
-1. Reassess whether targeted continuation still earns its wrapper surface.
-2. Consider replacing many specific inspect switches with a smaller typed
+1. Consider replacing many specific inspect switches with a smaller typed
    inspect adapter only after current callers are audited.
-3. Review residual compatibility switches and remove any that belong only in
+2. Review residual compatibility switches and remove any that belong only in
    direct driver commands.
 
 This sequence reduces cognitive load without changing campaign strategy.
