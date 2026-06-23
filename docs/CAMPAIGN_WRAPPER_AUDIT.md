@@ -13,7 +13,7 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 443 lines
+- `tools/campaign.ps1`: 429 lines
 - `tools/campaign_artifacts.ps1`: 460 lines
 - `tools/campaign_artifact_summary.ps1`: 170 lines
 - `tools/campaign_invocation.ps1`: 318 lines
@@ -383,13 +383,13 @@ semantics will drift again.
 Main wrapper dispatch now consumes the typed request kind directly:
 
 ```text
-legacy_plan_targets / legacy_continue_targets / plan_coverage_gaps / continue_coverage_gaps
+plan_targets / continue_targets / plan_coverage_gaps / continue_coverage_gaps
   -> continuation entry
 
 inspect
   -> inspect entry
 
-new_run / continue_run
+run / continue_run
   -> normal campaign run entry
 ```
 
@@ -404,8 +404,9 @@ tools/campaign_request.ps1
 
 This helper owns:
 
-- typed entry request classification (`new_run`, `continue_run`, `inspect`,
-  `plan_coverage_gaps`, `continue_coverage_gaps`, and legacy targeted modes)
+- typed entry request classification (`run`, `continue_run`, `inspect`,
+  `plan_targets`, `continue_targets`, `plan_coverage_gaps`, and
+  `continue_coverage_gaps`)
 - main-wrapper dispatch consumes the resolved request object directly instead
   of rebinding request switches into a second set of mutable variables
 - source/output intent derivation for wrapper manifests
@@ -418,14 +419,20 @@ This helper owns:
 - scratch output eligibility
 - the derived `ReadsCampaignSource` flag
 
-Run-only driver argument construction now happens only inside the `new_run` /
+Run-only driver argument construction now happens only inside the `run` /
 `continue_run` dispatch branch. Plan-only and inspect-only commands do not build
 normal-run driver args as incidental state.
 
 Output artifact allocation happens after typed round/request validation. For
 example, invalid `-UntilMilestone` use on a plan-only command now fails before
 the wrapper creates scratch output directories or renders continuation
-preflight.
+preflight. Output artifact resolution also consumes the request object directly
+instead of receiving a second set of request-derived booleans.
+
+Decision-outcome paths for targeted continuation are resolved through an
+explicit path context in the continuation branch. The main wrapper no longer
+passes dot-sourced `LatestDecisionOutcome*` variables into continuation entry
+construction.
 
 ## Still Move Out Of Wrapper
 

@@ -13,7 +13,7 @@ function Resolve-CampaignContinuationOperation {
         ContinueTargets = [bool] $Context.CampaignRequest.ContinueTargets
         PlanCoverageGaps = [bool] $Context.CampaignRequest.PlanCoverageGaps
         ContinueCoverageGaps = [bool] $Context.CampaignRequest.ContinueCoverageGaps
-        UsesLegacyTargeted = [bool] $Context.CampaignRequest.UsesLegacyTargeted
+        UsesTargetedContinuation = [bool] $Context.CampaignRequest.UsesTargetedContinuation
         UsesCoverageGap = [bool] $Context.CampaignRequest.UsesCoverageGap
     }
 }
@@ -27,10 +27,7 @@ function New-CampaignContinuationEntryContext {
         [object] $BoundParameterContext,
         [object] $CampaignSourceArtifact,
         [string] $DecisionOutcomeDataset,
-        [string] $LatestDecisionOutcomeBeforePath,
-        [string] $LatestDecisionOutcomePath,
-        [string] $LatestDecisionOutcomeAfterPath,
-        [string] $PlanDecisionOutcomePath,
+        [object] $DecisionOutcomePathContext,
         [bool] $InspectScratchLatest,
         [string] $CoverageGapExecution,
         [string] $CoverageGapIntent,
@@ -73,9 +70,9 @@ function New-CampaignContinuationEntryContext {
         InspectScratchLatest = $InspectScratchLatest
         CampaignSourceArtifact = $CampaignSourceArtifact
         DecisionOutcomeDataset = $DecisionOutcomeDataset
-        DecisionOutcomeBeforePath = $(if ($RunOutputContext.DecisionOutcomeBeforePath) { $RunOutputContext.DecisionOutcomeBeforePath } else { $LatestDecisionOutcomeBeforePath })
-        DecisionOutcomePath = $(if ($RunOutputContext.DecisionOutcomePath) { $RunOutputContext.DecisionOutcomePath } elseif ($PlanDecisionOutcomePath) { $PlanDecisionOutcomePath } else { $LatestDecisionOutcomePath })
-        DecisionOutcomeAfterPath = $(if ($RunOutputContext.DecisionOutcomeAfterPath) { $RunOutputContext.DecisionOutcomeAfterPath } else { $LatestDecisionOutcomeAfterPath })
+        DecisionOutcomeBeforePath = $DecisionOutcomePathContext.BeforePath
+        DecisionOutcomePath = $DecisionOutcomePathContext.Path
+        DecisionOutcomeAfterPath = $DecisionOutcomePathContext.AfterPath
         RunOutputCampaignPath = $RunOutputContext.CampaignPath
         RunOutputCheckpointPath = $RunOutputContext.CheckpointPath
         UntilMilestoneBound = $BoundParameterContext.UntilMilestoneBound
@@ -122,7 +119,7 @@ function Resolve-CampaignContinuationSourceContext {
 
     $Operation = Resolve-CampaignContinuationOperation -Context $Context
 
-    if ($Context.InspectScratchLatest -and $Operation.UsesLegacyTargeted) {
+    if ($Context.InspectScratchLatest -and $Operation.UsesTargetedContinuation) {
         throw "-InspectScratchLatest is not supported for targeted continuation yet; use inspect or coverage-gap continuation."
     }
 
@@ -391,7 +388,7 @@ function Invoke-CampaignContinuationCommandSet {
                 return $LASTEXITCODE
             }
         }
-        if ($Operation.UsesLegacyTargeted) {
+        if ($Operation.UsesTargetedContinuation) {
             return Invoke-TargetedContinuationCommands `
                 -PlanTargets $Operation.PlanTargets `
                 -ContinueTargets $Operation.ContinueTargets `

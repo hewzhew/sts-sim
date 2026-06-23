@@ -1,7 +1,6 @@
 function Resolve-CampaignRunRoundContext {
     param(
         [object] $Request,
-        [bool] $ContinueCampaign,
         [object] $CampaignSourceArtifact,
         [bool] $RoundsBound,
         [int] $Rounds,
@@ -13,20 +12,17 @@ function Resolve-CampaignRunRoundContext {
         [int] $MilestoneMaxRounds,
         [string] $MilestoneStop,
         [bool] $MaxRoundsBound,
-        [int] $MaxRounds,
-        [bool] $ContinueCoverageGaps,
-        [bool] $PlanTargets,
-        [bool] $PlanCoverageGaps,
-        [bool] $Inspect
+        [int] $MaxRounds
     )
 
-    if ($Request) {
-        $ContinueCampaign = [bool] $Request.ContinueCampaign
-        $ContinueCoverageGaps = [bool] $Request.ContinueCoverageGaps
-        $PlanTargets = [bool] $Request.PlanTargets
-        $PlanCoverageGaps = [bool] $Request.PlanCoverageGaps
-        $Inspect = [bool] $Request.Inspect
+    if (-not $Request) {
+        throw "Internal error: round context requires CampaignEntryRequestV1."
     }
+    $ContinueCampaign = [bool] $Request.ContinueCampaign
+    $ContinueCoverageGaps = [bool] $Request.ContinueCoverageGaps
+    $PlanTargets = [bool] $Request.PlanTargets
+    $PlanCoverageGaps = [bool] $Request.PlanCoverageGaps
+    $Inspect = [bool] $Request.Inspect
 
     if (($RoundsBound -and $UntilRoundBound) -or ($RoundsBound -and $MaxRoundsBound) -or ($UntilRoundBound -and $MaxRoundsBound)) {
         throw "Choose only one round budget: -Rounds N, -UntilRound N, or legacy -MaxRounds N."

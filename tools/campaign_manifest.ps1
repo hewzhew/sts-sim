@@ -32,7 +32,7 @@ function Convert-CampaignRequestForManifest {
             reads_campaign_source = $false
             is_continuation_family = $false
             uses_coverage_gap = $false
-            uses_legacy_targeted = $false
+            uses_targeted_continuation = $false
         }
     }
 
@@ -48,7 +48,7 @@ function Convert-CampaignRequestForManifest {
         reads_campaign_source = [bool] $Request.ReadsCampaignSource
         is_continuation_family = [bool] $Request.IsContinuationFamily
         uses_coverage_gap = [bool] $Request.UsesCoverageGap
-        uses_legacy_targeted = [bool] $Request.UsesLegacyTargeted
+        uses_targeted_continuation = [bool] $Request.UsesTargetedContinuation
     }
 }
 

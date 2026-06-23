@@ -44,7 +44,7 @@ function New-CampaignEntryRequestDescriptor {
         [bool] $ReadsCampaignSource,
         [bool] $IsContinuationFamily,
         [bool] $UsesCoverageGap,
-        [bool] $UsesLegacyTargeted
+        [bool] $UsesTargetedContinuation
     )
 
     return [pscustomobject]@{
@@ -52,8 +52,8 @@ function New-CampaignEntryRequestDescriptor {
         Kind = $Kind
         SourceIntent = $SourceIntent
         OutputIntent = $OutputIntent
-        PlanTargets = [bool] ($Kind -eq "legacy_plan_targets")
-        ContinueTargets = [bool] ($Kind -eq "legacy_continue_targets")
+        PlanTargets = [bool] ($Kind -eq "plan_targets")
+        ContinueTargets = [bool] ($Kind -eq "continue_targets")
         PlanCoverageGaps = [bool] ($Kind -eq "plan_coverage_gaps")
         ContinueCoverageGaps = [bool] ($Kind -eq "continue_coverage_gaps")
         ContinueCampaign = [bool] $ContinueCampaign
@@ -63,7 +63,7 @@ function New-CampaignEntryRequestDescriptor {
         ReadsCampaignSource = [bool] $ReadsCampaignSource
         IsContinuationFamily = [bool] $IsContinuationFamily
         UsesCoverageGap = [bool] $UsesCoverageGap
-        UsesLegacyTargeted = [bool] $UsesLegacyTargeted
+        UsesTargetedContinuation = [bool] $UsesTargetedContinuation
     }
 }
 
@@ -85,10 +85,10 @@ function Get-CampaignEntryRequestKind {
         $Kinds += "inspect"
     }
     if ($PlanTargets) {
-        $Kinds += "legacy_plan_targets"
+        $Kinds += "plan_targets"
     }
     if ($ContinueTargets) {
-        $Kinds += "legacy_continue_targets"
+        $Kinds += "continue_targets"
     }
     if ($PlanCoverageGaps) {
         $Kinds += "plan_coverage_gaps"
@@ -103,7 +103,7 @@ function Get-CampaignEntryRequestKind {
     if ($Kinds.Count -eq 1) {
         return $Kinds[0]
     }
-    return "new_run"
+    return "run"
 }
 
 function Resolve-CampaignEntryRequest {
@@ -172,9 +172,9 @@ function Resolve-CampaignEntryRequest {
         "none"
     }
     $OutputIntent = switch ($Kind) {
-        "new_run" { "campaign_output" }
+        "run" { "campaign_output" }
         "continue_run" { "campaign_output" }
-        "legacy_continue_targets" { "campaign_output" }
+        "continue_targets" { "campaign_output" }
         "continue_coverage_gaps" { "campaign_output" }
         default { "none" }
     }
@@ -201,5 +201,5 @@ function Resolve-CampaignEntryRequest {
         -ReadsCampaignSource $ReadsCampaignSource `
         -IsContinuationFamily $IsContinuationFamily `
         -UsesCoverageGap ($PlanCoverageGaps -or $ContinueCoverageGaps) `
-        -UsesLegacyTargeted ($PlanTargets -or $ContinueTargets)
+        -UsesTargetedContinuation ($PlanTargets -or $ContinueTargets)
 }

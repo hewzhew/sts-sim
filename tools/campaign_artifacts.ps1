@@ -46,6 +46,14 @@ function Get-CampaignScratchLatestPointerPath {
     return (Join-Path $ScratchCampaignDir "latest.json")
 }
 
+function Get-CampaignLatestDecisionOutcomePathContext {
+    return [pscustomobject]@{
+        Path = $LatestDecisionOutcomePath
+        BeforePath = $LatestDecisionOutcomeBeforePath
+        AfterPath = $LatestDecisionOutcomeAfterPath
+    }
+}
+
 function New-CampaignRunArtifact {
     param(
         [string] $BaseLabel,
@@ -114,22 +122,19 @@ function Get-CampaignOutputBaseLabel {
     param(
         [string] $RequestKind = "",
         [string] $RunLabel,
-        [bool] $ContinueCoverageGaps,
-        [bool] $ContinueTargets,
-        [bool] $ContinueCampaign,
         [long] $Seed
     )
 
     if ($RunLabel) {
         return $RunLabel
     }
-    if ($RequestKind -eq "continue_coverage_gaps" -or $ContinueCoverageGaps) {
+    if ($RequestKind -eq "continue_coverage_gaps") {
         return "coverage-gap-seed$Seed"
     }
-    if ($RequestKind -eq "legacy_continue_targets" -or $ContinueTargets) {
+    if ($RequestKind -eq "continue_targets") {
         return "targeted-continuation-seed$Seed"
     }
-    if ($RequestKind -eq "continue_run" -or $ContinueCampaign) {
+    if ($RequestKind -eq "continue_run") {
         return "continue-seed$Seed"
     }
     return "campaign-seed$Seed"
@@ -138,23 +143,16 @@ function Get-CampaignOutputBaseLabel {
 function Resolve-CampaignOutputArtifactContext {
     param(
         [object] $Request,
-        [bool] $Inspect,
-        [bool] $PlanTargets,
-        [bool] $PlanCoverageGaps,
         [bool] $Scratch,
         [string] $RunLabel,
-        [bool] $ContinueCoverageGaps,
-        [bool] $ContinueTargets,
-        [bool] $ContinueCampaign,
         [long] $Seed
     )
 
-    $RequestKind = ""
-    $WritesCampaignOutput = (-not $Inspect) -and (-not $PlanTargets) -and (-not $PlanCoverageGaps)
-    if ($Request) {
-        $RequestKind = $Request.Kind
-        $WritesCampaignOutput = ($Request.OutputIntent -eq "campaign_output")
+    if (-not $Request) {
+        throw "Internal error: output artifact context requires CampaignEntryRequestV1."
     }
+    $RequestKind = $Request.Kind
+    $WritesCampaignOutput = ($Request.OutputIntent -eq "campaign_output")
     $RunOutputArtifact = $null
     $ScratchLabel = ""
     $RunOutputCampaignPath = ""
@@ -170,9 +168,6 @@ function Resolve-CampaignOutputArtifactContext {
         $OutputBaseLabel = Get-CampaignOutputBaseLabel `
             -RequestKind $RequestKind `
             -RunLabel $RunLabel `
-            -ContinueCoverageGaps $ContinueCoverageGaps `
-            -ContinueTargets $ContinueTargets `
-            -ContinueCampaign $ContinueCampaign `
             -Seed $Seed
         $RunOutputArtifact = if ($Scratch) {
             New-CampaignScratchArtifact -BaseLabel $OutputBaseLabel

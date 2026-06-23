@@ -32,6 +32,33 @@ function Resolve-TargetedContinuationPlanOutcomePath {
     return $Path
 }
 
+function Resolve-TargetedContinuationDecisionOutcomePathContext {
+    param(
+        [object] $Request,
+        [object] $RunOutputContext,
+        [string] $DecisionOutcomeDataset,
+        [long] $Seed,
+        [bool] $DryRun
+    )
+
+    $LatestPathContext = Get-CampaignLatestDecisionOutcomePathContext
+    $PlanDecisionOutcomePath = Resolve-TargetedContinuationPlanOutcomePath `
+        -Request $Request `
+        -DecisionOutcomeDataset $DecisionOutcomeDataset `
+        -Seed $Seed `
+        -DryRun $DryRun
+
+    return [pscustomobject]@{
+        BeforePath = $(if ($RunOutputContext.DecisionOutcomeBeforePath) { $RunOutputContext.DecisionOutcomeBeforePath } else { $LatestPathContext.BeforePath })
+        Path = $(if ($RunOutputContext.DecisionOutcomePath) { $RunOutputContext.DecisionOutcomePath } elseif ($PlanDecisionOutcomePath) { $PlanDecisionOutcomePath } else { $LatestPathContext.Path })
+        AfterPath = $(if ($RunOutputContext.DecisionOutcomeAfterPath) { $RunOutputContext.DecisionOutcomeAfterPath } else { $LatestPathContext.AfterPath })
+        PlanPath = $PlanDecisionOutcomePath
+        LatestPath = $LatestPathContext.Path
+        LatestBeforePath = $LatestPathContext.BeforePath
+        LatestAfterPath = $LatestPathContext.AfterPath
+    }
+}
+
 function New-TargetedContinuationPlanDriverArgs {
     param(
         [string] $TargetDecisionOutcomePath

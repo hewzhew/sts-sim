@@ -264,7 +264,6 @@ $CoverageGapFilterContext = Resolve-CoverageGapFilterContext `
 
 $RunRoundContext = Resolve-CampaignRunRoundContext `
     -Request $CampaignRequest `
-    -ContinueCampaign ([bool] $CampaignRequest.ContinueCampaign) `
     -CampaignSourceArtifact $CampaignSourceArtifact `
     -RoundsBound $BoundParameterContext.RoundsBound `
     -Rounds $Rounds `
@@ -276,35 +275,25 @@ $RunRoundContext = Resolve-CampaignRunRoundContext `
     -MilestoneMaxRounds $MilestoneMaxRounds `
     -MilestoneStop $MilestoneStop `
     -MaxRoundsBound $BoundParameterContext.MaxRoundsBound `
-    -MaxRounds $MaxRounds `
-    -ContinueCoverageGaps ([bool] $CampaignRequest.ContinueCoverageGaps) `
-    -PlanTargets ([bool] $CampaignRequest.PlanTargets) `
-    -PlanCoverageGaps ([bool] $CampaignRequest.PlanCoverageGaps) `
-    -Inspect ([bool] $CampaignRequest.Inspect)
+    -MaxRounds $MaxRounds
 
 $RunOutputContext = Resolve-CampaignOutputArtifactContext `
     -Request $CampaignRequest `
-    -Inspect ([bool] $CampaignRequest.Inspect) `
-    -PlanTargets ([bool] $CampaignRequest.PlanTargets) `
-    -PlanCoverageGaps ([bool] $CampaignRequest.PlanCoverageGaps) `
     -Scratch ([bool] $Scratch) `
     -RunLabel $RunLabel `
-    -ContinueCoverageGaps ([bool] $CampaignRequest.ContinueCoverageGaps) `
-    -ContinueTargets ([bool] $CampaignRequest.ContinueTargets) `
-    -ContinueCampaign ([bool] $CampaignRequest.ContinueCampaign) `
     -Seed $Seed
 Ensure-CampaignOutputArtifactDirectory -OutputContext $RunOutputContext -DryRun ([bool] $DryRun)
-
-$PlanDecisionOutcomePath = Resolve-TargetedContinuationPlanOutcomePath `
-    -Request $CampaignRequest `
-    -DecisionOutcomeDataset $DecisionOutcomeDataset `
-    -Seed $Seed `
-    -DryRun ([bool] $DryRun)
 
 $NeedsBuild = $Build -or (Test-DriverNeedsBuild $BuildContext.DriverExe)
 
 switch ($CampaignRequest.Kind) {
-    { @("legacy_plan_targets", "legacy_continue_targets", "plan_coverage_gaps", "continue_coverage_gaps") -contains $_ } {
+    { @("plan_targets", "continue_targets", "plan_coverage_gaps", "continue_coverage_gaps") -contains $_ } {
+        $DecisionOutcomePathContext = Resolve-TargetedContinuationDecisionOutcomePathContext `
+            -Request $CampaignRequest `
+            -RunOutputContext $RunOutputContext `
+            -DecisionOutcomeDataset $DecisionOutcomeDataset `
+            -Seed $Seed `
+            -DryRun ([bool] $DryRun)
         $ContinuationEntryContext = New-CampaignContinuationEntryContext `
             -CampaignRequest $CampaignRequest `
             -WrapperScript $PSCommandPath `
@@ -313,10 +302,7 @@ switch ($CampaignRequest.Kind) {
             -BoundParameterContext $BoundParameterContext `
             -CampaignSourceArtifact $CampaignSourceArtifact `
             -DecisionOutcomeDataset $DecisionOutcomeDataset `
-            -LatestDecisionOutcomeBeforePath $LatestDecisionOutcomeBeforePath `
-            -LatestDecisionOutcomePath $LatestDecisionOutcomePath `
-            -LatestDecisionOutcomeAfterPath $LatestDecisionOutcomeAfterPath `
-            -PlanDecisionOutcomePath $PlanDecisionOutcomePath `
+            -DecisionOutcomePathContext $DecisionOutcomePathContext `
             -InspectScratchLatest ([bool] $InspectScratchLatest) `
             -CoverageGapExecution $CoverageGapExecution `
             -CoverageGapIntent $CoverageGapIntent `
@@ -401,7 +387,7 @@ switch ($CampaignRequest.Kind) {
         exit $DriverExitCode
     }
 
-    { @("new_run", "continue_run") -contains $_ } {
+    { @("run", "continue_run") -contains $_ } {
         $RunDriverArgsContext = New-CampaignRunDriverArgsContext `
             -RunIdentityArgs $CampaignRunIdentityArgs `
             -Request $CampaignRequest `
