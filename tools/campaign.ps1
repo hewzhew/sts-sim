@@ -219,6 +219,35 @@ $CampaignRequest = Resolve-CampaignEntryRequest `
     -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
     -Scratch ([bool] $Scratch)
 $InspectProbeContext = New-CampaignInspectProbeContext -Probe $Probe
+$InspectSwitchContext = New-CampaignInspectSwitchContext `
+    -InspectArtifacts ([bool] $InspectArtifacts) `
+    -InspectState ([bool] $InspectState) `
+    -InspectShopEvidence ([bool] $InspectShopEvidence) `
+    -InspectShopChallenge ([bool] $InspectShopChallenge) `
+    -InspectCardRewardEvidence ([bool] $InspectCardRewardEvidence) `
+    -InspectDecisionObservations ([bool] $InspectDecisionObservations) `
+    -InspectJournal ([bool] $InspectJournal) `
+    -InspectLineageDecisions ([bool] $InspectLineageDecisions) `
+    -InspectCampfireEvidence ([bool] $InspectCampfireEvidence) `
+    -InspectDeckMutation ([bool] $InspectDeckMutation) `
+    -InspectRouteEvidence ([bool] $InspectRouteEvidence) `
+    -InspectLastAutoCombat ([bool] $InspectLastAutoCombat) `
+    -InspectCombatLab ([bool] $InspectCombatLab) `
+    -InspectFinalBossCombat ([bool] $InspectFinalBossCombat) `
+    -InspectCoverageGapMilestoneSummary ([bool] $InspectCoverageGapMilestoneSummary) `
+    -InspectCoverageGapTargetState ([bool] $InspectCoverageGapTargetState) `
+    -ProbeContext $InspectProbeContext `
+    -BranchExamples $BranchExamples `
+    -ChallengeMaxPlans $ChallengeMaxPlans `
+    -ChallengeDepth $ChallengeDepth `
+    -ChallengeMaxBranches $ChallengeMaxBranches `
+    -SearchWallMs $SearchWallMs `
+    -SearchMaxNodes $SearchMaxNodes `
+    -InspectIndex $InspectIndex `
+    -InspectAct $InspectAct `
+    -InspectFloor $InspectFloor `
+    -InspectQuery $InspectQuery `
+    -ProbeBoss ([bool] $ProbeBoss)
 $CampaignSourceRunContext = Resolve-CampaignSourceRunContext `
     -Request $CampaignRequest `
     -Last ([bool] $Last) `
@@ -338,35 +367,7 @@ $EntryDispatchContext = [pscustomobject]@{
         MilestoneTarget = $CoverageGapMilestoneTarget
         FilterContext = $CoverageGapFilterContext
     }
-    InspectSwitchContext = [pscustomobject]@{
-        Artifacts = [bool] $InspectArtifacts
-        State = [bool] $InspectState
-        ShopEvidence = [bool] ($InspectShopEvidence -or $InspectProbeContext.ShopEvidence)
-        ShopChallenge = [bool] ($InspectShopChallenge -or $InspectProbeContext.ShopChallenge)
-        CardRewardEvidence = [bool] ($InspectCardRewardEvidence -or $InspectProbeContext.CardRewardEvidence)
-        DecisionObservations = [bool] $InspectDecisionObservations
-        Journal = [bool] $InspectJournal
-        LineageDecisions = [bool] $InspectLineageDecisions
-        CampfireEvidence = [bool] ($InspectCampfireEvidence -or $InspectProbeContext.CampfireEvidence)
-        DeckMutation = [bool] ($InspectDeckMutation -or $InspectProbeContext.DeckMutation)
-        RouteEvidence = [bool] ($InspectRouteEvidence -or $InspectProbeContext.RouteEvidence)
-        LastAutoCombat = [bool] ($InspectLastAutoCombat -or $InspectProbeContext.LastAutoCombat)
-        CombatLab = [bool] ($InspectCombatLab -or $InspectProbeContext.CombatLab)
-        FinalBossCombat = [bool] ($InspectFinalBossCombat -or $InspectProbeContext.FinalBossCombat)
-        CoverageGapMilestoneSummary = [bool] $InspectCoverageGapMilestoneSummary
-        CoverageGapTargetState = [bool] $InspectCoverageGapTargetState
-        BranchExamples = $BranchExamples
-        ChallengeMaxPlans = $ChallengeMaxPlans
-        ChallengeDepth = $ChallengeDepth
-        ChallengeMaxBranches = $ChallengeMaxBranches
-        SearchWallMs = $SearchWallMs
-        SearchMaxNodes = $SearchMaxNodes
-        Index = $InspectIndex
-        Act = $InspectAct
-        Floor = $InspectFloor
-        Query = $InspectQuery
-        ProbeBoss = [bool] $ProbeBoss
-    }
+    InspectSwitchContext = $InspectSwitchContext
 }
 
 $DriverExitCode = Invoke-CampaignEntryDispatch -Context $EntryDispatchContext

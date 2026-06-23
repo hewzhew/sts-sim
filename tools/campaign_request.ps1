@@ -66,6 +66,69 @@ function New-CampaignInspectProbeContext {
     }
 }
 
+function New-CampaignInspectSwitchContext {
+    param(
+        [bool] $InspectArtifacts,
+        [bool] $InspectState,
+        [bool] $InspectShopEvidence,
+        [bool] $InspectShopChallenge,
+        [bool] $InspectCardRewardEvidence,
+        [bool] $InspectDecisionObservations,
+        [bool] $InspectJournal,
+        [bool] $InspectLineageDecisions,
+        [bool] $InspectCampfireEvidence,
+        [bool] $InspectDeckMutation,
+        [bool] $InspectRouteEvidence,
+        [bool] $InspectLastAutoCombat,
+        [bool] $InspectCombatLab,
+        [bool] $InspectFinalBossCombat,
+        [bool] $InspectCoverageGapMilestoneSummary,
+        [bool] $InspectCoverageGapTargetState,
+        [object] $ProbeContext,
+        [int] $BranchExamples,
+        [int] $ChallengeMaxPlans,
+        [int] $ChallengeDepth,
+        [int] $ChallengeMaxBranches,
+        [int] $SearchWallMs,
+        [int] $SearchMaxNodes,
+        [int] $InspectIndex,
+        [int] $InspectAct,
+        [int] $InspectFloor,
+        [string] $InspectQuery,
+        [bool] $ProbeBoss
+    )
+
+    return [pscustomobject]@{
+        Artifacts = [bool] $InspectArtifacts
+        State = [bool] $InspectState
+        ShopEvidence = [bool] ($InspectShopEvidence -or $ProbeContext.ShopEvidence)
+        ShopChallenge = [bool] ($InspectShopChallenge -or $ProbeContext.ShopChallenge)
+        CardRewardEvidence = [bool] ($InspectCardRewardEvidence -or $ProbeContext.CardRewardEvidence)
+        DecisionObservations = [bool] $InspectDecisionObservations
+        Journal = [bool] $InspectJournal
+        LineageDecisions = [bool] $InspectLineageDecisions
+        CampfireEvidence = [bool] ($InspectCampfireEvidence -or $ProbeContext.CampfireEvidence)
+        DeckMutation = [bool] ($InspectDeckMutation -or $ProbeContext.DeckMutation)
+        RouteEvidence = [bool] ($InspectRouteEvidence -or $ProbeContext.RouteEvidence)
+        LastAutoCombat = [bool] ($InspectLastAutoCombat -or $ProbeContext.LastAutoCombat)
+        CombatLab = [bool] ($InspectCombatLab -or $ProbeContext.CombatLab)
+        FinalBossCombat = [bool] ($InspectFinalBossCombat -or $ProbeContext.FinalBossCombat)
+        CoverageGapMilestoneSummary = [bool] $InspectCoverageGapMilestoneSummary
+        CoverageGapTargetState = [bool] $InspectCoverageGapTargetState
+        BranchExamples = $BranchExamples
+        ChallengeMaxPlans = $ChallengeMaxPlans
+        ChallengeDepth = $ChallengeDepth
+        ChallengeMaxBranches = $ChallengeMaxBranches
+        SearchWallMs = $SearchWallMs
+        SearchMaxNodes = $SearchMaxNodes
+        Index = $InspectIndex
+        Act = $InspectAct
+        Floor = $InspectFloor
+        Query = $InspectQuery
+        ProbeBoss = [bool] $ProbeBoss
+    }
+}
+
 function New-CampaignEntryRequestDescriptor {
     param(
         [string] $Kind,
