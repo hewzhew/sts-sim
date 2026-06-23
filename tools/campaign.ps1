@@ -421,61 +421,45 @@ $DriverArgs = Add-CampaignSharedDriverOptions `
 $NeedsBuild = $Build -or (Test-DriverNeedsBuild $DriverExe)
 
 if ($IsContinuationFamily) {
-    $ContinuationEntryContext = [pscustomobject]@{
-        CampaignRequest = $CampaignRequest
-        WrapperScript = $PSCommandPath
-        Mode = $Mode
-        OutputArtifact = $RunOutputArtifact
-        RunCommandPath = $RunCommandPath
-        RunManifestPath = $RunManifestPath
-        WrapperInvocationLine = $CampaignWrapperInvocationLine
-        WrapperBoundParameters = $CampaignWrapperBoundParameters
-        InspectScratchLatest = [bool] $InspectScratchLatest
-        PlanTargets = [bool] $PlanTargets
-        ContinueTargets = [bool] $ContinueTargets
-        PlanCoverageGaps = [bool] $PlanCoverageGaps
-        ContinueCoverageGaps = [bool] $ContinueCoverageGaps
-        CampaignSourceArtifact = $CampaignSourceArtifact
-        DecisionOutcomeDataset = $DecisionOutcomeDataset
-        DecisionOutcomeBeforePath = $(if ($RunDecisionOutcomeBeforePath) { $RunDecisionOutcomeBeforePath } else { $LatestDecisionOutcomeBeforePath })
-        DecisionOutcomePath = $(if ($RunDecisionOutcomePath) { $RunDecisionOutcomePath } elseif ($PlanDecisionOutcomePath) { $PlanDecisionOutcomePath } else { $LatestDecisionOutcomePath })
-        DecisionOutcomeAfterPath = $(if ($RunDecisionOutcomeAfterPath) { $RunDecisionOutcomeAfterPath } else { $LatestDecisionOutcomeAfterPath })
-        RunOutputCampaignPath = $RunOutputCampaignPath
-        RunOutputCheckpointPath = $RunOutputCheckpointPath
-        UntilMilestoneBound = $UntilMilestoneBound
-        MilestoneStepRounds = $MilestoneStepRounds
-        RoundsBound = $RoundsBound
-        Rounds = $Rounds
-        UntilRoundBound = $UntilRoundBound
-        UntilRound = $UntilRound
-        MaxRoundsBound = $MaxRoundsBound
-        MaxRounds = $MaxRounds
-        CoverageGapExecution = $CoverageGapExecution
-        CoverageGapIntent = $CoverageGapIntent
-        CampaignRunIdentityArgs = @($CampaignRunIdentityArgs)
-        CampaignSharedDriverOptionContext = $CampaignSharedDriverOptionContext
-        Seed = $Seed
-        Ascension = $Ascension
-        Class = $Class
-        BuildProfile = $BuildProfile
-        DriverExe = $DriverExe
-        NeedsBuild = [bool] $NeedsBuild
-        Scratch = [bool] $Scratch
-        ScratchLabel = $ScratchLabel
-        TargetedContinuationLimit = $TargetedContinuationLimit
-        TargetedContinuationCandidatesPerTarget = $TargetedContinuationCandidatesPerTarget
-        UntilMilestone = $UntilMilestone
-        MilestoneMaxRounds = $MilestoneMaxRounds
-        ResolvedMilestoneStop = $ResolvedMilestoneStop
-        CoverageGapLimit = $CoverageGapLimit
-        CoverageGapCandidatesPerDecision = $CoverageGapCandidatesPerDecision
-        CoverageGapFilterLabel = $CoverageGapFilterLabel
-        CoverageGapResultFilterArgs = @($CoverageGapResultFilterArgs)
-        CoverageGapResultFilterLabel = $CoverageGapResultFilterLabel
-        DryRun = [bool] $DryRun
-        BuildArgs = @($BuildArgs)
-        RepoRoot = $RepoRoot
-    }
+    $ContinuationEntryContext = New-CampaignContinuationEntryContext `
+        -CampaignRequest $CampaignRequest `
+        -WrapperScript $PSCommandPath `
+        -Mode $Mode `
+        -RunOutputContext $RunOutputContext `
+        -BoundParameterContext $BoundParameterContext `
+        -CampaignSourceArtifact $CampaignSourceArtifact `
+        -DecisionOutcomeDataset $DecisionOutcomeDataset `
+        -LatestDecisionOutcomeBeforePath $LatestDecisionOutcomeBeforePath `
+        -LatestDecisionOutcomePath $LatestDecisionOutcomePath `
+        -LatestDecisionOutcomeAfterPath $LatestDecisionOutcomeAfterPath `
+        -PlanDecisionOutcomePath $PlanDecisionOutcomePath `
+        -InspectScratchLatest ([bool] $InspectScratchLatest) `
+        -CoverageGapExecution $CoverageGapExecution `
+        -CoverageGapIntent $CoverageGapIntent `
+        -CoverageGapFilterLabel $CoverageGapFilterLabel `
+        -CoverageGapResultFilterArgs $CoverageGapResultFilterArgs `
+        -CoverageGapResultFilterLabel $CoverageGapResultFilterLabel `
+        -CampaignRunIdentityArgs $CampaignRunIdentityArgs `
+        -CampaignSharedDriverOptionContext $CampaignSharedDriverOptionContext `
+        -Seed $Seed `
+        -Ascension $Ascension `
+        -Class $Class `
+        -BuildContext $BuildContext `
+        -NeedsBuild ([bool] $NeedsBuild) `
+        -Scratch ([bool] $Scratch) `
+        -TargetedContinuationLimit $TargetedContinuationLimit `
+        -TargetedContinuationCandidatesPerTarget $TargetedContinuationCandidatesPerTarget `
+        -Rounds $Rounds `
+        -UntilRound $UntilRound `
+        -UntilMilestone $UntilMilestone `
+        -MilestoneStepRounds $MilestoneStepRounds `
+        -MilestoneMaxRounds $MilestoneMaxRounds `
+        -ResolvedMilestoneStop $ResolvedMilestoneStop `
+        -MaxRounds $MaxRounds `
+        -CoverageGapLimit $CoverageGapLimit `
+        -CoverageGapCandidatesPerDecision $CoverageGapCandidatesPerDecision `
+        -DryRun ([bool] $DryRun) `
+        -RepoRoot $RepoRoot
     $ContinuationExitCode = Invoke-CampaignContinuationEntry -Context $ContinuationEntryContext
     exit $ContinuationExitCode
 }

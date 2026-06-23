@@ -26,6 +26,105 @@ function Resolve-CampaignContinuationOperation {
     }
 }
 
+function New-CampaignContinuationEntryContext {
+    param(
+        [object] $CampaignRequest,
+        [string] $WrapperScript,
+        [string] $Mode,
+        [object] $RunOutputContext,
+        [object] $BoundParameterContext,
+        [object] $CampaignSourceArtifact,
+        [string] $DecisionOutcomeDataset,
+        [string] $LatestDecisionOutcomeBeforePath,
+        [string] $LatestDecisionOutcomePath,
+        [string] $LatestDecisionOutcomeAfterPath,
+        [string] $PlanDecisionOutcomePath,
+        [bool] $InspectScratchLatest,
+        [string] $CoverageGapExecution,
+        [string] $CoverageGapIntent,
+        [string] $CoverageGapFilterLabel,
+        [string[]] $CoverageGapResultFilterArgs,
+        [string] $CoverageGapResultFilterLabel,
+        [string[]] $CampaignRunIdentityArgs,
+        [object] $CampaignSharedDriverOptionContext,
+        [long] $Seed,
+        [int] $Ascension,
+        [string] $Class,
+        [object] $BuildContext,
+        [bool] $NeedsBuild,
+        [bool] $Scratch,
+        [int] $TargetedContinuationLimit,
+        [int] $TargetedContinuationCandidatesPerTarget,
+        [int] $Rounds,
+        [int] $UntilRound,
+        [string] $UntilMilestone,
+        [int] $MilestoneStepRounds,
+        [int] $MilestoneMaxRounds,
+        [string] $ResolvedMilestoneStop,
+        [int] $MaxRounds,
+        [int] $CoverageGapLimit,
+        [int] $CoverageGapCandidatesPerDecision,
+        [bool] $DryRun,
+        [string] $RepoRoot
+    )
+
+    return [pscustomobject]@{
+        CampaignRequest = $CampaignRequest
+        WrapperScript = $WrapperScript
+        Mode = $Mode
+        OutputArtifact = $RunOutputContext.Artifact
+        RunCommandPath = $RunOutputContext.CommandPath
+        RunManifestPath = $RunOutputContext.ManifestPath
+        WrapperInvocationLine = $BoundParameterContext.WrapperInvocationLine
+        WrapperBoundParameters = $BoundParameterContext.WrapperBoundParameters
+        InspectScratchLatest = $InspectScratchLatest
+        PlanTargets = [bool] $CampaignRequest.PlanTargets
+        ContinueTargets = [bool] $CampaignRequest.ContinueTargets
+        PlanCoverageGaps = [bool] $CampaignRequest.PlanCoverageGaps
+        ContinueCoverageGaps = [bool] $CampaignRequest.ContinueCoverageGaps
+        CampaignSourceArtifact = $CampaignSourceArtifact
+        DecisionOutcomeDataset = $DecisionOutcomeDataset
+        DecisionOutcomeBeforePath = $(if ($RunOutputContext.DecisionOutcomeBeforePath) { $RunOutputContext.DecisionOutcomeBeforePath } else { $LatestDecisionOutcomeBeforePath })
+        DecisionOutcomePath = $(if ($RunOutputContext.DecisionOutcomePath) { $RunOutputContext.DecisionOutcomePath } elseif ($PlanDecisionOutcomePath) { $PlanDecisionOutcomePath } else { $LatestDecisionOutcomePath })
+        DecisionOutcomeAfterPath = $(if ($RunOutputContext.DecisionOutcomeAfterPath) { $RunOutputContext.DecisionOutcomeAfterPath } else { $LatestDecisionOutcomeAfterPath })
+        RunOutputCampaignPath = $RunOutputContext.CampaignPath
+        RunOutputCheckpointPath = $RunOutputContext.CheckpointPath
+        UntilMilestoneBound = $BoundParameterContext.UntilMilestoneBound
+        MilestoneStepRounds = $MilestoneStepRounds
+        RoundsBound = $BoundParameterContext.RoundsBound
+        Rounds = $Rounds
+        UntilRoundBound = $BoundParameterContext.UntilRoundBound
+        UntilRound = $UntilRound
+        MaxRoundsBound = $BoundParameterContext.MaxRoundsBound
+        MaxRounds = $MaxRounds
+        CoverageGapExecution = $CoverageGapExecution
+        CoverageGapIntent = $CoverageGapIntent
+        CampaignRunIdentityArgs = @($CampaignRunIdentityArgs)
+        CampaignSharedDriverOptionContext = $CampaignSharedDriverOptionContext
+        Seed = $Seed
+        Ascension = $Ascension
+        Class = $Class
+        BuildProfile = $BuildContext.BuildProfile
+        DriverExe = $BuildContext.DriverExe
+        NeedsBuild = $NeedsBuild
+        Scratch = $Scratch
+        ScratchLabel = $RunOutputContext.ScratchLabel
+        TargetedContinuationLimit = $TargetedContinuationLimit
+        TargetedContinuationCandidatesPerTarget = $TargetedContinuationCandidatesPerTarget
+        UntilMilestone = $UntilMilestone
+        MilestoneMaxRounds = $MilestoneMaxRounds
+        ResolvedMilestoneStop = $ResolvedMilestoneStop
+        CoverageGapLimit = $CoverageGapLimit
+        CoverageGapCandidatesPerDecision = $CoverageGapCandidatesPerDecision
+        CoverageGapFilterLabel = $CoverageGapFilterLabel
+        CoverageGapResultFilterArgs = @($CoverageGapResultFilterArgs)
+        CoverageGapResultFilterLabel = $CoverageGapResultFilterLabel
+        DryRun = $DryRun
+        BuildArgs = @($BuildContext.BuildArgs)
+        RepoRoot = $RepoRoot
+    }
+}
+
 function Resolve-CampaignContinuationSourceContext {
     param(
         [object] $Context

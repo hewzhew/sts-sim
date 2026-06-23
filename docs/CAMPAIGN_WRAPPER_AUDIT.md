@@ -13,13 +13,12 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 574 lines
-- `tools/campaign.ps1`: 530 lines
+- `tools/campaign.ps1`: 514 lines
 - `tools/campaign_artifacts.ps1`: 642 lines
 - `tools/campaign_invocation.ps1`: 605 lines
 - `tools/campaign_coverage_gaps.ps1`: 428 lines
 - `tools/campaign_preflight.ps1`: 200 lines
-- `tools/campaign_continuation.ps1`: 351 lines
+- `tools/campaign_continuation.ps1`: 450 lines
 - `tools/campaign_inspect.ps1`: 255 lines
 - `tools/campaign_targets.ps1`: 236 lines
 - `tools/campaign_source.ps1`: 128 lines
@@ -36,7 +35,7 @@ Major regions:
 | Parameter block | 180 | Too many feature flags in one entrypoint |
 | Path globals and helper import | 20 | Fine |
 | Source/build/output resolution | 130 | Narrower, but still in the wrapper |
-| Continuation dispatch | 5 | Delegated to continuation helper |
+| Continuation dispatch | 45 | Delegated to continuation helper, but still parameter-heavy |
 | Inspect dispatch | 20 | Delegated to inspect helper |
 | Normal run dispatch | 10 | Delegated to invocation helper |
 
@@ -217,6 +216,7 @@ tools/campaign_continuation.ps1
 This helper owns:
 
 - an explicit continuation entry context boundary
+- continuation entry context construction
 - continuation operation dispatch through `CampaignEntryRequestV1`, with old
   context booleans only as compatibility fallback
 - continuation source context validation
