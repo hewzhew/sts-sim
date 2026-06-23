@@ -137,9 +137,7 @@ struct CoverageGapMilestoneRouteDecisionComparisonV1<'a> {
     decision_key: String,
     candidates: usize,
     reached: usize,
-    furthest: Option<&'a CoverageGapMilestoneBranchRowV1>,
-    best_hp: Option<&'a CoverageGapMilestoneBranchRowV1>,
-    cleanest: Option<&'a CoverageGapMilestoneBranchRowV1>,
+    candidate_rows: Vec<&'a CoverageGapMilestoneBranchRowV1>,
 }
 
 pub(super) fn run_coverage_gap_milestone_summary_inspection(
@@ -457,7 +455,7 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_group_
     if !route_decision_comparisons.is_empty() {
         lines.push("Route decision comparison:".to_string());
         for comparison in route_decision_comparisons.iter().take(8) {
-            lines.push(format_route_decision_comparison_line_v1(comparison));
+            lines.extend(format_route_decision_comparison_lines_v1(comparison));
         }
         if route_decision_comparisons.len() > 8 {
             lines.push(format!(
@@ -1104,33 +1102,22 @@ fn route_decision_comparison_summaries_v1<'a>(
                 decision_key,
                 candidates: 0,
                 reached: 0,
-                furthest: None,
-                best_hp: None,
-                cleanest: None,
+                candidate_rows: Vec::new(),
             },
         );
         comparison.candidates += 1;
         if target_summary.reached {
             comparison.reached += 1;
         }
-        if comparison.furthest.is_none_or(|current| {
-            compare_milestone_rows(representative, current) == Ordering::Greater
-        }) {
-            comparison.furthest = Some(representative);
-        }
-        if comparison.best_hp.is_none_or(|current| {
-            compare_best_hp_route_candidate_v1(representative, current) == Ordering::Greater
-        }) {
-            comparison.best_hp = Some(representative);
-        }
-        if comparison.cleanest.is_none_or(|current| {
-            compare_cleanest_route_candidate_v1(representative, current) == Ordering::Greater
-        }) {
-            comparison.cleanest = Some(representative);
-        }
+        comparison.candidate_rows.push(representative);
     }
 
     let mut comparisons = by_decision.into_values().collect::<Vec<_>>();
+    for comparison in &mut comparisons {
+        comparison
+            .candidate_rows
+            .sort_by(|left, right| compare_milestone_rows(right, left));
+    }
     comparisons.sort_by(|left, right| compare_route_decision_comparison_v1(right, left));
     comparisons
 }
@@ -1152,58 +1139,40 @@ fn compare_route_decision_comparison_v1(
         .cmp(&right.reached)
         .then_with(|| {
             compare_milestone_rows(
-                left.furthest
-                    .expect("route decision comparison should have a furthest row"),
+                left.candidate_rows
+                    .first()
+                    .copied()
+                    .expect("route decision comparison should have candidate rows"),
                 right
-                    .furthest
-                    .expect("route decision comparison should have a furthest row"),
+                    .candidate_rows
+                    .first()
+                    .copied()
+                    .expect("route decision comparison should have candidate rows"),
             )
         })
         .then_with(|| left.candidates.cmp(&right.candidates))
         .then_with(|| right.decision_key.cmp(&left.decision_key))
 }
 
-fn compare_best_hp_route_candidate_v1(
-    left: &CoverageGapMilestoneBranchRowV1,
-    right: &CoverageGapMilestoneBranchRowV1,
-) -> Ordering {
-    left.hp
-        .cmp(&right.hp)
-        .then_with(|| left.max_hp.cmp(&right.max_hp))
-        .then_with(|| compare_milestone_rows(left, right))
-}
-
-fn compare_cleanest_route_candidate_v1(
-    left: &CoverageGapMilestoneBranchRowV1,
-    right: &CoverageGapMilestoneBranchRowV1,
-) -> Ordering {
-    right
-        .deck_count
-        .cmp(&left.deck_count)
-        .then_with(|| compare_milestone_rows(left, right))
-}
-
-fn format_route_decision_comparison_line_v1(
+fn format_route_decision_comparison_lines_v1(
     comparison: &CoverageGapMilestoneRouteDecisionComparisonV1<'_>,
-) -> String {
-    format!(
-        "  decision={} candidates={} reached={} furthest={} best_hp={} cleanest={}",
+) -> Vec<String> {
+    let mut lines = vec![format!(
+        "  decision={} candidates={} reached={} verdict=insufficient_evidence",
         route_decision_label_v1(&comparison.decision_key),
         comparison.candidates,
-        comparison.reached,
-        comparison
-            .furthest
-            .map(format_route_candidate_compact_v1)
-            .unwrap_or_else(|| "-".to_string()),
-        comparison
-            .best_hp
-            .map(format_route_candidate_compact_v1)
-            .unwrap_or_else(|| "-".to_string()),
-        comparison
-            .cleanest
-            .map(format_route_candidate_compact_v1)
-            .unwrap_or_else(|| "-".to_string())
-    )
+        comparison.reached
+    )];
+    for row in comparison.candidate_rows.iter().take(6) {
+        lines.push(format!("    {}", format_route_candidate_fact_v1(row)));
+    }
+    if comparison.candidate_rows.len() > 6 {
+        lines.push(format!(
+            "    ... {} more candidate(s)",
+            comparison.candidate_rows.len().saturating_sub(6)
+        ));
+    }
+    lines
 }
 
 fn route_decision_label_v1(decision_key: &str) -> String {
@@ -1247,10 +1216,15 @@ fn compact_route_decision_label_part_v1(value: &str, max_chars: usize) -> String
     format!("{head}...{tail}")
 }
 
-fn format_route_candidate_compact_v1(row: &CoverageGapMilestoneBranchRowV1) -> String {
+fn format_route_candidate_fact_v1(row: &CoverageGapMilestoneBranchRowV1) -> String {
+    let stop = if row.stop_reason.is_empty() {
+        "-"
+    } else {
+        row.stop_reason.as_str()
+    };
     format!(
-        "{} A{}F{} HP {}/{} deck {}",
-        row.label, row.act, row.floor, row.hp, row.max_hp, row.deck_count
+        "candidate={} progress=A{}F{} hp={}/{} deck={} bucket={} stop={}",
+        row.label, row.act, row.floor, row.hp, row.max_hp, row.deck_count, row.bucket, stop
     )
 }
 
@@ -1439,7 +1413,7 @@ mod tests {
     }
 
     #[test]
-    fn milestone_summary_compares_route_candidates_by_source_decision() {
+    fn milestone_summary_reports_route_candidate_facts_without_pseudo_winners() {
         let mut furthest = row("active", "route", 2, 1, "x=3 Monster");
         furthest.target_key =
             "route|root:round1:route_candidate_pool0:root|candidate:monster|1|go 3".to_string();
@@ -1447,32 +1421,42 @@ mod tests {
         furthest.max_hp = 80;
         furthest.deck_count = 14;
         furthest.frontier_title = "Reward Screen".to_string();
-        let mut best_hp = row("frozen", "route", 1, 15, "x=2 Event");
-        best_hp.target_key =
+        let mut event_row = row("frozen", "route", 1, 15, "x=2 Event");
+        event_row.target_key =
             "route|root:round1:route_candidate_pool0:root|candidate:event|0|go 2".to_string();
-        best_hp.hp = 80;
-        best_hp.max_hp = 80;
-        best_hp.deck_count = 13;
-        best_hp.stop_reason = "card reward requires human choice".to_string();
-        let mut cleanest = row("discarded", "route", 1, 14, "x=1 Shop");
-        cleanest.target_key =
+        event_row.hp = 80;
+        event_row.max_hp = 80;
+        event_row.deck_count = 13;
+        event_row.stop_reason = "card reward requires human choice".to_string();
+        let mut shop_row = row("discarded", "route", 1, 14, "x=1 Shop");
+        shop_row.target_key =
             "route|root:round1:route_candidate_pool0:root|candidate:shop|2|go 1".to_string();
-        cleanest.hp = 70;
-        cleanest.max_hp = 80;
-        cleanest.deck_count = 11;
+        shop_row.hp = 70;
+        shop_row.max_hp = 80;
+        shop_row.deck_count = 11;
 
         let text = render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
-            &[furthest, best_hp, cleanest],
+            &[furthest, event_row, shop_row],
             CoverageGapMilestoneTargetV1::Act2Start,
             &CoverageGapContinuationFilterV1::default(),
         );
 
         assert!(text.contains("Route decision comparison:"));
-        assert!(text.contains("decision=route_pool0@root candidates=3 reached=1"));
+        assert!(text.contains(
+            "decision=route_pool0@root candidates=3 reached=1 verdict=insufficient_evidence"
+        ));
         assert!(!text.contains("root:round1:route_candidate_pool0:root candidates=3"));
-        assert!(text.contains("furthest=x=3 Monster A2F1 HP 60/80 deck 14"));
-        assert!(text.contains("best_hp=x=2 Event A1F15 HP 80/80 deck 13"));
-        assert!(text.contains("cleanest=x=1 Shop A1F14 HP 70/80 deck 11"));
+        assert!(!text.contains("furthest=x=3 Monster"));
+        assert!(!text.contains("best_hp="));
+        assert!(!text.contains("cleanest="));
+        assert!(text
+            .contains("candidate=x=3 Monster progress=A2F1 hp=60/80 deck=14 bucket=active stop=-"));
+        assert!(text.contains(
+            "candidate=x=2 Event progress=A1F15 hp=80/80 deck=13 bucket=frozen stop=card reward requires human choice"
+        ));
+        assert!(text.contains(
+            "candidate=x=1 Shop progress=A1F14 hp=70/80 deck=11 bucket=discarded stop=-"
+        ));
     }
 
     #[test]
