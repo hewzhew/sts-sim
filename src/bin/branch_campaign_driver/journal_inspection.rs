@@ -103,7 +103,7 @@ fn render_campaign_journal_inspection_v1(
             event.floor,
             journal_event_boundary_title_v1(event),
             journal_event_depth_v1(event),
-            journal_event_candidates_v1(event).len(),
+            journal_event_display_candidate_count_v1(event),
             journal_event_extra_summary_v1(event),
             event.combat_budget_retry_used
         ));
@@ -393,23 +393,33 @@ fn render_journal_event_candidate_at_v1(
     event: &CampaignJournalEventV1,
     candidate_index: usize,
 ) -> Option<String> {
-    let candidate = journal_event_candidates_v1(event).get(candidate_index)?;
     match &event.payload {
         CampaignJournalEventPayloadV1::RouteCandidatePool {
             map_decision_packet: Some(packet),
+            candidates,
             ..
-        } => packet
-            .candidates
-            .get(candidate_index)
-            .map(|route| render_route_journal_candidate_v1(candidate, route))
-            .or_else(|| Some(render_journal_candidate_v1(candidate))),
+        } => {
+            let candidate = candidates.get(candidate_index)?;
+            packet
+                .candidates
+                .get(candidate_index)
+                .map(|route| render_route_journal_candidate_v1(candidate, route))
+                .or_else(|| Some(render_journal_candidate_v1(candidate)))
+        }
         CampaignJournalEventPayloadV1::RouteCandidatePool {
-            route_candidates, ..
-        } if !route_candidates.is_empty() => route_candidates
-            .get(candidate_index)
-            .map(|route| render_typed_route_journal_candidate_v1(candidate, route))
-            .or_else(|| Some(render_journal_candidate_v1(candidate))),
-        _ => Some(render_journal_candidate_v1(candidate)),
+            candidates,
+            route_candidates,
+            ..
+        } if !route_candidates.is_empty() => route_candidates.get(candidate_index).map(|route| {
+            match candidates.get(candidate_index) {
+                Some(candidate) => render_typed_route_journal_candidate_v1(candidate, route),
+                None => render_typed_route_journal_candidate_without_generic_v1(route),
+            }
+        }),
+        _ => {
+            let candidate = journal_event_candidates_v1(event).get(candidate_index)?;
+            Some(render_journal_candidate_v1(candidate))
+        }
     }
 }
 
@@ -721,7 +731,7 @@ fn journal_event_extra_summary_v1(event: &CampaignJournalEventV1) -> String {
             selected_index,
             ..
         } => format!(
-            " candidates={} selected_index={}",
+            " route_candidates={} selected_index={}",
             candidate_count,
             selected_index
                 .map(|index| index.to_string())
@@ -890,6 +900,17 @@ fn journal_event_candidates_v1(event: &CampaignJournalEventV1) -> &[CampaignJour
         | CampaignJournalEventPayloadV1::BossRelicCandidatePool { candidates, .. }
         | CampaignJournalEventPayloadV1::RouteCandidatePool { candidates, .. } => candidates,
         CampaignJournalEventPayloadV1::RouteDecision { .. } => &[],
+    }
+}
+
+fn journal_event_display_candidate_count_v1(event: &CampaignJournalEventV1) -> usize {
+    match &event.payload {
+        CampaignJournalEventPayloadV1::RouteCandidatePool {
+            route_candidates,
+            candidates,
+            ..
+        } if !route_candidates.is_empty() => route_candidates.len().max(candidates.len()),
+        _ => journal_event_candidates_v1(event).len(),
     }
 }
 
@@ -1230,23 +1251,23 @@ fn render_typed_route_journal_candidates_v1(
     candidates: &[CampaignJournalCandidateV1],
     limit: usize,
 ) -> String {
-    if candidates.is_empty() {
+    if route_candidates.is_empty() {
         return "-".to_string();
     }
-    let shown = limit.max(1).min(candidates.len());
-    let mut parts = candidates
+    let shown = limit.max(1).min(route_candidates.len());
+    let mut parts = route_candidates
         .iter()
         .take(shown)
         .enumerate()
-        .map(|(index, candidate)| {
-            route_candidates.get(index).map_or_else(
-                || render_journal_candidate_v1(candidate),
-                |route| render_typed_route_journal_candidate_v1(candidate, route),
+        .map(|(index, route)| {
+            candidates.get(index).map_or_else(
+                || render_typed_route_journal_candidate_without_generic_v1(route),
+                |candidate| render_typed_route_journal_candidate_v1(candidate, route),
             )
         })
         .collect::<Vec<_>>();
-    if candidates.len() > shown {
-        parts.push(format!("... {} more", candidates.len() - shown));
+    if route_candidates.len() > shown {
+        parts.push(format!("... {} more", route_candidates.len() - shown));
     }
     parts.join(" | ")
 }
@@ -1291,6 +1312,26 @@ fn render_typed_route_journal_candidate_v1(
     candidate: &CampaignJournalCandidateV1,
     route: &CampaignJournalRouteCandidateV1,
 ) -> String {
+    render_typed_route_journal_candidate_with_tail_v1(
+        route,
+        &format!(
+            "{}; {}",
+            render_candidate_admission_v1(candidate),
+            render_candidate_disposition_v1(candidate.disposition)
+        ),
+    )
+}
+
+fn render_typed_route_journal_candidate_without_generic_v1(
+    route: &CampaignJournalRouteCandidateV1,
+) -> String {
+    render_typed_route_journal_candidate_with_tail_v1(route, "route_candidate")
+}
+
+fn render_typed_route_journal_candidate_with_tail_v1(
+    route: &CampaignJournalRouteCandidateV1,
+    tail: &str,
+) -> String {
     let path = route.path_summary.as_ref();
     let target = route.target_node.as_ref();
     let x = target
@@ -1304,7 +1345,7 @@ fn render_typed_route_journal_candidate_v1(
         .map(|coverage| format!("{:?}", coverage))
         .unwrap_or_else(|| "Unknown".to_string());
     format!(
-        "x{}y{} {} {{{}}} [route rank={} move={} safety={} score={:.2} vf={} coverage={} paths={}/{} elites={}-{} fires={}-{} shops={}-{}; {}; {}]",
+        "x{}y{} {} {{{}}} [route rank={} move={} safety={} score={:.2} vf={} coverage={} paths={}/{} elites={}-{} fires={}-{} shops={}-{}; {}]",
         x,
         y,
         route.room_type,
@@ -1323,8 +1364,7 @@ fn render_typed_route_journal_candidate_v1(
         path.map(|path| path.max_fires).unwrap_or(0),
         path.map(|path| path.min_shops).unwrap_or(0),
         path.map(|path| path.max_shops).unwrap_or(0),
-        render_candidate_admission_v1(candidate),
-        render_candidate_disposition_v1(candidate.disposition)
+        tail
     )
 }
 

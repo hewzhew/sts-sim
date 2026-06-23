@@ -54,9 +54,13 @@ impl CampaignJournalV1 {
                 CampaignJournalEventPayloadV1::RouteCandidatePool {
                     map_decision_packet,
                     route_candidates,
+                    candidates,
                     ..
                 } => {
                     let Some(packet) = map_decision_packet.take() else {
+                        if !route_candidates.is_empty() {
+                            candidates.clear();
+                        }
                         continue;
                     };
                     if route_candidates.is_empty() {
@@ -69,6 +73,7 @@ impl CampaignJournalV1 {
                     for candidate in route_candidates {
                         candidate.compact_for_campaign_artifact_v1();
                     }
+                    candidates.clear();
                 }
                 CampaignJournalEventPayloadV1::RouteDecision {
                     selected_route_candidate,
@@ -177,6 +182,7 @@ pub enum CampaignJournalEventPayloadV1 {
         map_decision_packet: Option<MapDecisionPacketV1>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         route_candidates: Vec<CampaignJournalRouteCandidateV1>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         candidates: Vec<CampaignJournalCandidateV1>,
     },
     RouteDecision {
