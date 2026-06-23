@@ -1,44 +1,48 @@
 function Write-CampaignRunPreflight {
-    Write-Host "seed=$Seed"
-    Write-Host "ascension=A$Ascension domain=a$Ascension class=$Class"
-    Write-Host "mode=$Mode branch campaign"
-    Write-Host "build=$BuildProfile exe=$DriverExe"
-    if ($NeedsBuild) {
+    param(
+        [object] $Context
+    )
+
+    Write-Host "seed=$($Context.Seed)"
+    Write-Host "ascension=A$($Context.Ascension) domain=a$($Context.Ascension) class=$($Context.Class)"
+    Write-Host "mode=$($Context.Mode) branch campaign"
+    Write-Host "build=$($Context.BuildProfile) exe=$($Context.DriverExe)"
+    if ($Context.NeedsBuild) {
         Write-Host "build-needed=yes"
     } else {
         Write-Host "build-needed=no"
     }
-    if ($BossRelicAxes) {
+    if ($Context.BossRelicAxes) {
         Write-Host "boss-relic-axes=on active/frozen budgets are per boss relic lineage"
     }
     Write-Host "rerun-last=.\tools\campaign.ps1 -Last"
     Write-Host "continue-latest=.\tools\campaign.ps1 -From latest -Continue"
     Write-Host "continue-one-round=.\tools\campaign.ps1 -From latest -Continue -Rounds 1"
-    Write-Host "report=$RunOutputCampaignPath"
-    Write-Host "checkpoint=$RunOutputCheckpointPath"
-    Write-Host "manifest=$RunManifestPath"
-    if ($Log) {
-        Write-Host "log=$RunLogPath"
+    Write-Host "report=$($Context.RunOutputCampaignPath)"
+    Write-Host "checkpoint=$($Context.RunOutputCheckpointPath)"
+    Write-Host "manifest=$($Context.RunManifestPath)"
+    if ($Context.Log) {
+        Write-Host "log=$($Context.RunLogPath)"
     }
-    Write-Host "combat-segment=$CombatSegmentMode"
-    if ($ResumeCampaignPath) {
-        Write-Host "resume=$ResumeCampaignPath"
-        Write-Host "resume-rounds=$ResumeRoundsCompleted"
-        if ($TargetRounds -ne $null) {
-            Write-Host "round-budget=$RoundBudgetSource target-rounds=$TargetRounds additional-rounds=$MaxRounds"
-        } elseif ($RoundBudgetSource -ne "preset") {
-            Write-Host "round-budget=$RoundBudgetSource additional-rounds=$MaxRounds"
+    Write-Host "combat-segment=$($Context.CombatSegmentMode)"
+    if ($Context.ResumeCampaignPath) {
+        Write-Host "resume=$($Context.ResumeCampaignPath)"
+        Write-Host "resume-rounds=$($Context.ResumeRoundsCompleted)"
+        if ($Context.TargetRounds -ne $null) {
+            Write-Host "round-budget=$($Context.RoundBudgetSource) target-rounds=$($Context.TargetRounds) additional-rounds=$($Context.MaxRounds)"
+        } elseif ($Context.RoundBudgetSource -ne "preset") {
+            Write-Host "round-budget=$($Context.RoundBudgetSource) additional-rounds=$($Context.MaxRounds)"
         } else {
             Write-Host "round-budget=preset additional-rounds=mode-default"
         }
-        if ($ResumeCheckpointPath) {
-            Write-Host "resume-checkpoint=$ResumeCheckpointPath"
+        if ($Context.ResumeCheckpointPath) {
+            Write-Host "resume-checkpoint=$($Context.ResumeCheckpointPath)"
         } else {
             Write-Host "resume-checkpoint=missing; falling back to replay"
         }
     }
-    if ($UntilMilestoneBound) {
-        Write-Host "until-milestone=$UntilMilestone step-rounds=$MilestoneStepRounds max-additional-rounds=$MilestoneMaxRounds"
+    if ($Context.UntilMilestoneBound) {
+        Write-Host "until-milestone=$($Context.UntilMilestone) step-rounds=$($Context.MilestoneStepRounds) max-additional-rounds=$($Context.MilestoneMaxRounds)"
     }
 }
 

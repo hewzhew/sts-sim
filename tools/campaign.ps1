@@ -502,7 +502,6 @@ if ($CampaignRequest.Kind -eq "inspect") {
     exit $DriverExitCode
 }
 
-Write-CampaignRunPreflight
 $RunCommandContext = New-CampaignRunCommandContext `
     -CampaignRequest $CampaignRequest `
     -WrapperScript $PSCommandPath `
@@ -520,9 +519,12 @@ $RunCommandContext = New-CampaignRunCommandContext `
     -NeedsBuild ([bool] $NeedsBuild) `
     -DryRun ([bool] $DryRun) `
     -Log ([bool] $Log) `
+    -BossRelicAxes ([bool] $BossRelicAxes) `
+    -CombatSegmentMode $CombatSegmentMode `
     -UntilMilestone $UntilMilestone `
     -MilestoneStepRounds $MilestoneStepRounds `
     -MilestoneMaxRounds $MilestoneMaxRounds `
     -ResolvedMilestoneStop $ResolvedMilestoneStop
+Write-CampaignRunPreflight -Context $RunCommandContext
 $DriverExitCode = Invoke-CampaignRunCommand -Context $RunCommandContext -RunIdentityArgs $CampaignRunIdentityArgs -OptionContext $CampaignSharedDriverOptionContext
 exit $DriverExitCode

@@ -483,6 +483,8 @@ function New-CampaignRunCommandContext {
         [bool] $NeedsBuild,
         [bool] $DryRun,
         [bool] $Log,
+        [bool] $BossRelicAxes,
+        [string] $CombatSegmentMode,
         [string] $UntilMilestone,
         [int] $MilestoneStepRounds,
         [int] $MilestoneMaxRounds,
@@ -501,6 +503,7 @@ function New-CampaignRunCommandContext {
         Ascension = $Ascension
         Class = $Class
         BuildProfile = $BuildContext.BuildProfile
+        BossRelicAxes = $BossRelicAxes
         Scratch = $Scratch
         ScratchLabel = $RunOutputContext.ScratchLabel
         OutputArtifact = $RunOutputContext.Artifact
@@ -513,6 +516,7 @@ function New-CampaignRunCommandContext {
         ContinueCampaign = [bool] $CampaignRequest.ContinueCampaign
         TargetRounds = $RunRoundContext.TargetRounds
         MaxRounds = $RunRoundContext.MaxRounds
+        ResumeRoundsCompleted = $RunRoundContext.ResumeRoundsCompleted
         UntilMilestoneBound = $BoundParameterContext.UntilMilestoneBound
         ResumeCampaignPath = $RunRoundContext.ResumeCampaignPath
         ResumeCheckpointPath = $RunRoundContext.ResumeCheckpointPath
@@ -529,6 +533,7 @@ function New-CampaignRunCommandContext {
         RenderedCommand = Format-CommandLine -ExePath $BuildContext.DriverExe -Arguments $DriverArgs
         Log = $Log
         RunLogPath = $RunOutputContext.LogPath
+        CombatSegmentMode = $CombatSegmentMode
         RoundBudgetSource = $RunRoundContext.RoundBudgetSource
         RoundBudgetAdditionalRounds = $RunRoundContext.RoundBudgetAdditionalRounds
     }

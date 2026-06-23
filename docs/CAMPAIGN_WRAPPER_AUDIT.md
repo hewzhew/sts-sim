@@ -14,11 +14,11 @@ many concepts.
 Approximate physical line count after the wrapper split:
 
 - `tools/campaign.ps1`: 574 lines
-- `tools/campaign.ps1`: 528 lines
+- `tools/campaign.ps1`: 530 lines
 - `tools/campaign_artifacts.ps1`: 642 lines
-- `tools/campaign_invocation.ps1`: 600 lines
+- `tools/campaign_invocation.ps1`: 605 lines
 - `tools/campaign_coverage_gaps.ps1`: 428 lines
-- `tools/campaign_preflight.ps1`: 196 lines
+- `tools/campaign_preflight.ps1`: 200 lines
 - `tools/campaign_continuation.ps1`: 351 lines
 - `tools/campaign_inspect.ps1`: 255 lines
 - `tools/campaign_targets.ps1`: 236 lines
@@ -38,7 +38,7 @@ Major regions:
 | Source/build/output resolution | 130 | Narrower, but still in the wrapper |
 | Continuation dispatch | 5 | Delegated to continuation helper |
 | Inspect dispatch | 20 | Delegated to inspect helper |
-| Normal run dispatch | 8 | Delegated to invocation helper |
+| Normal run dispatch | 10 | Delegated to invocation helper |
 
 ## Why It Got This Large
 
@@ -204,7 +204,7 @@ tools/campaign_preflight.ps1
 
 This helper owns:
 
-- normal campaign run preflight output
+- normal campaign run preflight output through an explicit run context
 - continuation preflight context shape
 - targeted/coverage-gap continuation preflight output rendering
 
@@ -361,8 +361,6 @@ This helper owns:
 
 These pieces are useful but should not live in the main script long term:
 
-- normal run preflight output still reads globals; it should accept an explicit
-  context before it grows further
 - residual compatibility switches that may no longer earn wrapper-level
   visibility after the latest/source/output cleanup
 - legacy `latest.decision_outcomes.*` paths remain only as compatibility
