@@ -688,6 +688,7 @@ fn test_combat_checkpoint_session(
         commands: branch.commands.clone(),
         run_state_map_id: None,
         run_state_master_deck_id: None,
+        run_state_schedule_id: None,
         session: RunControlSessionCheckpointV1::from_session(&session),
     }
 }

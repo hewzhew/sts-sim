@@ -22,6 +22,12 @@ pub struct StsRng {
     pub counter: u32,
 }
 
+impl Default for StsRng {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
 impl StsRng {
     /// Create a new RNG from a game seed, matching Java's `new Random(seed)`.
     pub fn new(seed: u64) -> Self {

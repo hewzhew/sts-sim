@@ -751,6 +751,11 @@ fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
         1,
         "campaign checkpoint should keep repeated master decks in a top-level pool"
     );
+    assert_eq!(
+        checkpoint.run_state_schedules.len(),
+        1,
+        "campaign checkpoint should keep repeated run schedules in a top-level pool"
+    );
     assert_eq!(checkpoint.combat_automation_trajectories.len(), 1);
     assert_eq!(
         checkpoint.combat_automation_trajectories[0].commands.len(),
@@ -775,6 +780,20 @@ fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
         );
         assert!(
             session_json
+                .get("run_state")
+                .and_then(|run_state| run_state.get("rng_pool"))
+                .is_none(),
+            "campaign checkpoint sessions should reference pooled schedules instead of embedding RNG state"
+        );
+        assert!(
+            session_json
+                .get("run_state")
+                .and_then(|run_state| run_state.get("event_generator"))
+                .is_none(),
+            "campaign checkpoint sessions should reference pooled schedules instead of embedding event scheduling state"
+        );
+        assert!(
+            session_json
                 .get("last_combat_automation_trajectory")
                 .is_none(),
             "campaign checkpoint sessions should keep replay state slim"
@@ -792,6 +811,10 @@ fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
             restored.run_state.master_deck.len(),
             10,
             "checkpoint-level master deck records should preserve exact run state"
+        );
+        assert!(
+            !restored.run_state.common_relic_pool.is_empty(),
+            "checkpoint-level schedule records should preserve relic pools"
         );
     }
 }

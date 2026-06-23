@@ -8,7 +8,7 @@ use crate::eval::card_reward_value_loop::{
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{ActiveCombat, EngineState};
 use crate::state::map::state::MapState;
-use crate::state::run::{RunState, RunStateCheckpointV1};
+use crate::state::run::{RunState, RunStateCheckpointV1, RunStateScheduleCheckpointV1};
 
 use super::auto_capture::AutoCombatCaptureConfig;
 use super::outcome::CombatOutcomeTracker;
@@ -313,6 +313,17 @@ impl RunControlSessionCheckpointV1 {
         master_deck: Vec<CombatCard>,
     ) {
         self.run_state.master_deck = master_deck;
+    }
+
+    pub fn take_run_state_schedule_for_external_ref(&mut self) -> RunStateScheduleCheckpointV1 {
+        self.run_state.take_schedule_for_external_ref()
+    }
+
+    pub fn restore_run_state_schedule_from_external_ref(
+        &mut self,
+        schedule: RunStateScheduleCheckpointV1,
+    ) {
+        self.run_state.restore_schedule_from_external_ref(schedule);
     }
 
     pub fn into_session(self) -> Result<RunControlSession, String> {

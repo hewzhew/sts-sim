@@ -2552,11 +2552,13 @@ mod tests {
             decision_parent_anchor_commands: Vec::new(),
             run_state_maps: Vec::new(),
             run_state_master_decks: Vec::new(),
+            run_state_schedules: Vec::new(),
             combat_automation_trajectories: Vec::new(),
             sessions: vec![BranchCampaignCheckpointSessionV1 {
                 commands: session_commands,
                 run_state_map_id: None,
                 run_state_master_deck_id: None,
+                run_state_schedule_id: None,
                 session: RunControlSessionCheckpointV1::from_session(&RunControlSession::new(
                     RunControlConfig::default(),
                 )),

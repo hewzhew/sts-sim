@@ -71,6 +71,30 @@ pub struct EventGenerator {
 }
 
 impl EventGenerator {
+    pub fn checkpoint_externalized_placeholder() -> Self {
+        Self {
+            event_pool: Vec::new(),
+            shrine_pool: Vec::new(),
+            one_time_event_pool: Vec::new(),
+            one_time_event_pool_initialized: false,
+            monster_chance: 0.0,
+            shop_chance: 0.0,
+            treasure_chance: 0.0,
+            shrine_chance: 0.0,
+        }
+    }
+
+    pub fn is_checkpoint_externalized_placeholder(&self) -> bool {
+        self.event_pool.is_empty()
+            && self.shrine_pool.is_empty()
+            && self.one_time_event_pool.is_empty()
+            && !self.one_time_event_pool_initialized
+            && self.monster_chance == 0.0
+            && self.shop_chance == 0.0
+            && self.treasure_chance == 0.0
+            && self.shrine_chance == 0.0
+    }
+
     pub fn new(act_num: u8) -> Self {
         Self::new_with_note_for_yourself(act_num, true)
     }

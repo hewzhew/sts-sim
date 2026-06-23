@@ -1,6 +1,9 @@
+use crate::content::monsters::factory::EncounterId;
+use crate::content::relics::RelicId;
 use crate::content::relics::RelicState;
 use crate::runtime::combat::{CombatCard, PlayerEntity};
 use crate::runtime::rng::{RngPool, StsRng};
+use crate::state::events::generator::EventGenerator;
 use crate::state::map::state::MapState;
 use crate::state::relic_pool::{
     random_relic_by_tier_from_pools, random_relic_end_by_tier_from_pools, RelicPoolsMut,
@@ -124,7 +127,15 @@ pub struct RunStateCheckpointV1 {
         skip_serializing_if = "MapState::is_checkpoint_externalized_placeholder"
     )]
     pub map: MapState,
+    #[serde(
+        default,
+        skip_serializing_if = "rng_pool_is_checkpoint_externalized_placeholder"
+    )]
     pub rng_pool: RngPool,
+    #[serde(
+        default,
+        skip_serializing_if = "sts_rng_is_checkpoint_externalized_placeholder"
+    )]
     pub neow_rng: StsRng,
     pub current_hp: i32,
     pub max_hp: i32,
@@ -144,21 +155,51 @@ pub struct RunStateCheckpointV1 {
     pub event_state: Option<crate::state::events::EventState>,
     pub note_for_yourself_card: crate::content::cards::CardId,
     pub note_for_yourself_upgrades: u8,
-    pub event_generator: crate::state::events::generator::EventGenerator,
+    #[serde(
+        default = "event_generator_checkpoint_externalized_placeholder",
+        skip_serializing_if = "EventGenerator::is_checkpoint_externalized_placeholder"
+    )]
+    pub event_generator: EventGenerator,
     pub room_mugged: bool,
     pub room_smoked: bool,
-    pub common_relic_pool: Vec<crate::content::relics::RelicId>,
-    pub uncommon_relic_pool: Vec<crate::content::relics::RelicId>,
-    pub rare_relic_pool: Vec<crate::content::relics::RelicId>,
-    pub shop_relic_pool: Vec<crate::content::relics::RelicId>,
-    pub boss_relic_pool: Vec<crate::content::relics::RelicId>,
-    pub monster_list: Vec<crate::content::monsters::factory::EncounterId>,
-    pub elite_monster_list: Vec<crate::content::monsters::factory::EncounterId>,
-    pub boss_key: Option<crate::content::monsters::factory::EncounterId>,
-    pub boss_list: Vec<crate::content::monsters::factory::EncounterId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub common_relic_pool: Vec<RelicId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uncommon_relic_pool: Vec<RelicId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rare_relic_pool: Vec<RelicId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shop_relic_pool: Vec<RelicId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub boss_relic_pool: Vec<RelicId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub monster_list: Vec<EncounterId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub elite_monster_list: Vec<EncounterId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boss_key: Option<EncounterId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub boss_list: Vec<EncounterId>,
     pub pending_boss_reward: bool,
     pub pending_boss_act_transition: bool,
     pub emitted_events: Vec<DomainEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunStateScheduleCheckpointV1 {
+    pub rng_pool: RngPool,
+    pub neow_rng: StsRng,
+    pub event_generator: EventGenerator,
+    pub common_relic_pool: Vec<RelicId>,
+    pub uncommon_relic_pool: Vec<RelicId>,
+    pub rare_relic_pool: Vec<RelicId>,
+    pub shop_relic_pool: Vec<RelicId>,
+    pub boss_relic_pool: Vec<RelicId>,
+    pub monster_list: Vec<EncounterId>,
+    pub elite_monster_list: Vec<EncounterId>,
+    pub boss_key: Option<EncounterId>,
+    pub boss_list: Vec<EncounterId>,
 }
 
 mod act_transition;
@@ -531,6 +572,53 @@ impl RunStateCheckpointV1 {
             emitted_events: self.emitted_events,
         })
     }
+
+    pub fn take_schedule_for_external_ref(&mut self) -> RunStateScheduleCheckpointV1 {
+        RunStateScheduleCheckpointV1 {
+            rng_pool: std::mem::take(&mut self.rng_pool),
+            neow_rng: std::mem::take(&mut self.neow_rng),
+            event_generator: std::mem::replace(
+                &mut self.event_generator,
+                EventGenerator::checkpoint_externalized_placeholder(),
+            ),
+            common_relic_pool: std::mem::take(&mut self.common_relic_pool),
+            uncommon_relic_pool: std::mem::take(&mut self.uncommon_relic_pool),
+            rare_relic_pool: std::mem::take(&mut self.rare_relic_pool),
+            shop_relic_pool: std::mem::take(&mut self.shop_relic_pool),
+            boss_relic_pool: std::mem::take(&mut self.boss_relic_pool),
+            monster_list: std::mem::take(&mut self.monster_list),
+            elite_monster_list: std::mem::take(&mut self.elite_monster_list),
+            boss_key: self.boss_key.take(),
+            boss_list: std::mem::take(&mut self.boss_list),
+        }
+    }
+
+    pub fn restore_schedule_from_external_ref(&mut self, schedule: RunStateScheduleCheckpointV1) {
+        self.rng_pool = schedule.rng_pool;
+        self.neow_rng = schedule.neow_rng;
+        self.event_generator = schedule.event_generator;
+        self.common_relic_pool = schedule.common_relic_pool;
+        self.uncommon_relic_pool = schedule.uncommon_relic_pool;
+        self.rare_relic_pool = schedule.rare_relic_pool;
+        self.shop_relic_pool = schedule.shop_relic_pool;
+        self.boss_relic_pool = schedule.boss_relic_pool;
+        self.monster_list = schedule.monster_list;
+        self.elite_monster_list = schedule.elite_monster_list;
+        self.boss_key = schedule.boss_key;
+        self.boss_list = schedule.boss_list;
+    }
+}
+
+fn rng_pool_is_checkpoint_externalized_placeholder(value: &RngPool) -> bool {
+    value == &RngPool::default()
+}
+
+fn sts_rng_is_checkpoint_externalized_placeholder(value: &StsRng) -> bool {
+    value == &StsRng::default()
+}
+
+fn event_generator_checkpoint_externalized_placeholder() -> EventGenerator {
+    EventGenerator::checkpoint_externalized_placeholder()
 }
 
 fn checkpoint_player_class(raw: &str) -> Result<&'static str, String> {
