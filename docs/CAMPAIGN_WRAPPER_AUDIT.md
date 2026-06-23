@@ -13,13 +13,15 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 424 lines
+- `tools/campaign.ps1`: 426 lines
 - `tools/campaign_artifacts.ps1`: 417 lines
 - `tools/campaign_artifact_summary.ps1`: 170 lines
 - `tools/campaign_invocation.ps1`: 318 lines
 - `tools/campaign_manifest.ps1`: 166 lines
 - `tools/campaign_run_execution.ps1`: 194 lines
-- `tools/campaign_coverage_gaps.ps1`: 434 lines
+- `tools/campaign_coverage_gaps.ps1`: 269 lines
+- `tools/campaign_coverage_gap_execution.ps1`: 111 lines
+- `tools/campaign_coverage_gap_manifest.ps1`: 52 lines
 - `tools/campaign_preflight.ps1`: 175 lines
 - `tools/campaign_continuation.ps1`: 339 lines
 - `tools/campaign_inspect.ps1`: 369 lines
@@ -305,12 +307,31 @@ This helper owns:
 - coverage-gap plan/continue driver argument builders take explicit limit,
   candidate, intent, and filter inputs; they no longer read outer wrapper
   globals
+
+Coverage-gap execution helpers now live in:
+
+```text
+tools/campaign_coverage_gap_execution.ps1
+```
+
+This helper owns:
+
 - coverage-gap continuation dry-run command rendering
 - coverage-gap continuation execution orchestration
 - coverage-gap milestone summary commands
+- coverage-gap command recording and manifest write handoff from explicit
+  contexts, not outer wrapper globals
+
+Coverage-gap manifest helpers now live in:
+
+```text
+tools/campaign_coverage_gap_manifest.ps1
+```
+
+This helper owns:
+
 - coverage-gap wrapper manifest shape
-- coverage-gap command/manifest recording from explicit contexts, not outer
-  wrapper globals
+- coverage-gap source, filter, execution, and milestone metadata in manifests
 
 Inspect argument helpers now live in:
 

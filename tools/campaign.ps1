@@ -190,6 +190,8 @@ New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 . (Join-Path $PSScriptRoot "campaign_run_execution.ps1")
 . (Join-Path $PSScriptRoot "campaign_rounds.ps1")
 . (Join-Path $PSScriptRoot "campaign_coverage_gaps.ps1")
+. (Join-Path $PSScriptRoot "campaign_coverage_gap_manifest.ps1")
+. (Join-Path $PSScriptRoot "campaign_coverage_gap_execution.ps1")
 . (Join-Path $PSScriptRoot "campaign_continuation.ps1")
 . (Join-Path $PSScriptRoot "campaign_inspect.ps1")
 . (Join-Path $PSScriptRoot "campaign_build.ps1")
