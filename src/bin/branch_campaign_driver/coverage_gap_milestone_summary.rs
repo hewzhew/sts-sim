@@ -1188,7 +1188,7 @@ fn format_route_decision_comparison_line_v1(
 ) -> String {
     format!(
         "  decision={} candidates={} reached={} furthest={} best_hp={} cleanest={}",
-        comparison.decision_key,
+        route_decision_label_v1(&comparison.decision_key),
         comparison.candidates,
         comparison.reached,
         comparison
@@ -1204,6 +1204,47 @@ fn format_route_decision_comparison_line_v1(
             .map(format_route_candidate_compact_v1)
             .unwrap_or_else(|| "-".to_string())
     )
+}
+
+fn route_decision_label_v1(decision_key: &str) -> String {
+    let Some(marker_index) = decision_key.rfind(":route_candidate_pool") else {
+        return decision_key.to_string();
+    };
+    let after_marker = &decision_key[marker_index + ":route_candidate_pool".len()..];
+    let Some((pool_index, branch_id)) = after_marker.split_once(':') else {
+        return decision_key.to_string();
+    };
+    if pool_index.is_empty() || !pool_index.chars().all(|ch| ch.is_ascii_digit()) {
+        return decision_key.to_string();
+    }
+    let branch = compact_route_decision_label_part_v1(branch_id.trim(), 44);
+    if branch.is_empty() {
+        format!("route_pool{pool_index}")
+    } else {
+        format!("route_pool{pool_index}@{branch}")
+    }
+}
+
+fn compact_route_decision_label_part_v1(value: &str, max_chars: usize) -> String {
+    let char_count = value.chars().count();
+    if char_count <= max_chars {
+        return value.to_string();
+    }
+    if max_chars <= 5 {
+        return value.chars().take(max_chars).collect();
+    }
+    let head_len = (max_chars - 3) / 2;
+    let tail_len = max_chars - 3 - head_len;
+    let head = value.chars().take(head_len).collect::<String>();
+    let tail = value
+        .chars()
+        .rev()
+        .take(tail_len)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<String>();
+    format!("{head}...{tail}")
 }
 
 fn format_route_candidate_compact_v1(row: &CoverageGapMilestoneBranchRowV1) -> String {
@@ -1400,19 +1441,22 @@ mod tests {
     #[test]
     fn milestone_summary_compares_route_candidates_by_source_decision() {
         let mut furthest = row("active", "route", 2, 1, "x=3 Monster");
-        furthest.target_key = "route|decision:floor0|candidate:monster|1|go 3".to_string();
+        furthest.target_key =
+            "route|root:round1:route_candidate_pool0:root|candidate:monster|1|go 3".to_string();
         furthest.hp = 60;
         furthest.max_hp = 80;
         furthest.deck_count = 14;
         furthest.frontier_title = "Reward Screen".to_string();
         let mut best_hp = row("frozen", "route", 1, 15, "x=2 Event");
-        best_hp.target_key = "route|decision:floor0|candidate:event|0|go 2".to_string();
+        best_hp.target_key =
+            "route|root:round1:route_candidate_pool0:root|candidate:event|0|go 2".to_string();
         best_hp.hp = 80;
         best_hp.max_hp = 80;
         best_hp.deck_count = 13;
         best_hp.stop_reason = "card reward requires human choice".to_string();
         let mut cleanest = row("discarded", "route", 1, 14, "x=1 Shop");
-        cleanest.target_key = "route|decision:floor0|candidate:shop|2|go 1".to_string();
+        cleanest.target_key =
+            "route|root:round1:route_candidate_pool0:root|candidate:shop|2|go 1".to_string();
         cleanest.hp = 70;
         cleanest.max_hp = 80;
         cleanest.deck_count = 11;
@@ -1424,10 +1468,19 @@ mod tests {
         );
 
         assert!(text.contains("Route decision comparison:"));
-        assert!(text.contains("decision=decision:floor0 candidates=3 reached=1"));
+        assert!(text.contains("decision=route_pool0@root candidates=3 reached=1"));
+        assert!(!text.contains("root:round1:route_candidate_pool0:root candidates=3"));
         assert!(text.contains("furthest=x=3 Monster A2F1 HP 60/80 deck 14"));
         assert!(text.contains("best_hp=x=2 Event A1F15 HP 80/80 deck 13"));
         assert!(text.contains("cleanest=x=1 Shop A1F14 HP 70/80 deck 11"));
+    }
+
+    #[test]
+    fn route_decision_label_falls_back_to_legacy_decision_key() {
+        assert_eq!(
+            route_decision_label_v1("decision:floor0"),
+            "decision:floor0"
+        );
     }
 
     #[test]
