@@ -126,3 +126,65 @@ function Resolve-CampaignRunIdentity {
         ClassBound = $ClassBound
     }
 }
+
+function Resolve-CampaignSourceRunContext {
+    param(
+        [object] $Request,
+        [bool] $Last,
+        [string] $From,
+        [string] $Mode,
+        [bool] $ModeBound,
+        [long] $Seed,
+        [int] $Ascension,
+        [string] $Class,
+        [string] $Domain,
+        [System.Collections.IDictionary] $BoundParameters
+    )
+
+    $SourceContext = Get-CampaignSourceContext `
+        -Request $Request `
+        -ReadsCampaignSource $Request.ReadsCampaignSource `
+        -Last $Last `
+        -From $From `
+        -UseScratchLatest $false
+    $SourceArtifact = $SourceContext.Artifact
+    $SourceRunConfig = $SourceContext.RunConfig
+
+    $ResolvedMode = Resolve-CampaignMode `
+        -Mode $Mode `
+        -ModeBound $ModeBound `
+        -IsContinuationFamily $Request.IsContinuationFamily `
+        -ContinueCampaign $Request.ContinueCampaign `
+        -SourceArtifact $SourceArtifact
+    $ResolvedSeed = Resolve-CampaignSeed `
+        -Seed $Seed `
+        -ReadsCampaignSource $Request.ReadsCampaignSource `
+        -Last $Last `
+        -SourceArtifact $SourceArtifact `
+        -SourceRunConfig $SourceRunConfig
+
+    $RunIdentity = Resolve-CampaignRunIdentity `
+        -Ascension $Ascension `
+        -Class $Class `
+        -Domain $Domain `
+        -AscensionBound ($BoundParameters.ContainsKey("Ascension")) `
+        -ClassBound ($BoundParameters.ContainsKey("Class")) `
+        -DomainBound ($BoundParameters.ContainsKey("Domain") -and $Domain) `
+        -Last $Last `
+        -Inspect $Request.Inspect `
+        -ReadsCampaignSource $Request.ReadsCampaignSource `
+        -SourceRunConfig $SourceRunConfig
+
+    return [pscustomobject]@{
+        SourceContext = $SourceContext
+        SourceArtifact = $SourceArtifact
+        SourceRunConfig = $SourceRunConfig
+        Mode = $ResolvedMode
+        Seed = $ResolvedSeed
+        Ascension = $RunIdentity.Ascension
+        Class = $RunIdentity.Class
+        AscensionBound = $RunIdentity.AscensionBound
+        ClassBound = $RunIdentity.ClassBound
+        RunIdentity = $RunIdentity
+    }
+}

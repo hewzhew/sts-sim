@@ -13,7 +13,7 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 454 lines
+- `tools/campaign.ps1`: 432 lines
 - `tools/campaign_artifacts.ps1`: 642 lines
 - `tools/campaign_invocation.ps1`: 653 lines
 - `tools/campaign_coverage_gaps.ps1`: 435 lines
@@ -21,7 +21,7 @@ Approximate physical line count after the wrapper split:
 - `tools/campaign_continuation.ps1`: 459 lines
 - `tools/campaign_inspect.ps1`: 369 lines
 - `tools/campaign_targets.ps1`: 255 lines
-- `tools/campaign_source.ps1`: 128 lines
+- `tools/campaign_source.ps1`: 190 lines
 - `tools/campaign_rounds.ps1`: 131 lines
 - `tools/campaign_milestones.ps1`: 110 lines
 - `tools/campaign_request.ps1`: 205 lines
@@ -335,6 +335,7 @@ tools/campaign_source.ps1
 This helper owns:
 
 - resolving a wrapper source selector into a campaign artifact and run config
+- resolving the source/mode/seed/ascension/class run context as one boundary
 - source-read behavior from typed request source intent
 - inheriting mode from source artifacts for continuation-style commands
 - resolving seed, ascension, class, and domain defaults

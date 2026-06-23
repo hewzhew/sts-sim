@@ -200,45 +200,23 @@ $CampaignRequest = Resolve-CampaignEntryRequest `
     -PlanCoverageGaps ([bool] $PlanCoverageGaps) `
     -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
     -Scratch ([bool] $Scratch)
-$CampaignSourceContext = Get-CampaignSourceContext `
+$CampaignSourceRunContext = Resolve-CampaignSourceRunContext `
     -Request $CampaignRequest `
-    -ReadsCampaignSource $CampaignRequest.ReadsCampaignSource `
-    -Last $Last `
+    -Last ([bool] $Last) `
     -From $From `
-    -UseScratchLatest $InspectScratchLatest
-$CampaignSourceArtifact = $CampaignSourceContext.Artifact
-$CampaignSourceRunConfig = $CampaignSourceContext.RunConfig
-$Mode = Resolve-CampaignMode `
     -Mode $Mode `
     -ModeBound ($PSBoundParameters.ContainsKey("Mode")) `
-    -IsContinuationFamily $CampaignRequest.IsContinuationFamily `
-    -ContinueCampaign $CampaignRequest.ContinueCampaign `
-    -SourceArtifact $CampaignSourceArtifact
-$Seed = Resolve-CampaignSeed `
     -Seed $Seed `
-    -ReadsCampaignSource $CampaignRequest.ReadsCampaignSource `
-    -Last $Last `
-    -SourceArtifact $CampaignSourceArtifact `
-    -SourceRunConfig $CampaignSourceRunConfig
-
-$AscensionBound = $PSBoundParameters.ContainsKey("Ascension")
-$ClassBound = $PSBoundParameters.ContainsKey("Class")
-$DomainBound = $PSBoundParameters.ContainsKey("Domain") -and $Domain
-$RunIdentity = Resolve-CampaignRunIdentity `
     -Ascension $Ascension `
     -Class $Class `
     -Domain $Domain `
-    -AscensionBound $AscensionBound `
-    -ClassBound $ClassBound `
-    -DomainBound $DomainBound `
-    -Last $Last `
-    -Inspect $CampaignRequest.Inspect `
-    -ReadsCampaignSource $CampaignRequest.ReadsCampaignSource `
-    -SourceRunConfig $CampaignSourceRunConfig
-$Ascension = $RunIdentity.Ascension
-$Class = $RunIdentity.Class
-$AscensionBound = $RunIdentity.AscensionBound
-$ClassBound = $RunIdentity.ClassBound
+    -BoundParameters $PSBoundParameters
+$CampaignSourceContext = $CampaignSourceRunContext.SourceContext
+$CampaignSourceArtifact = $CampaignSourceRunContext.SourceArtifact
+$Mode = $CampaignSourceRunContext.Mode
+$Seed = $CampaignSourceRunContext.Seed
+$Ascension = $CampaignSourceRunContext.Ascension
+$Class = $CampaignSourceRunContext.Class
 
 $BuildContext = Resolve-CampaignBuildContext `
     -RepoRoot $RepoRoot `
