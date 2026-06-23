@@ -502,50 +502,27 @@ if ($CampaignRequest.Kind -eq "inspect") {
     exit $DriverExitCode
 }
 
-if (-not $WritesCampaignOutput) {
-    throw "Internal error: campaign request '$($CampaignRequest.Kind)' reached run execution without an output artifact."
-}
-
-$RenderedCommand = Format-CommandLine -ExePath $DriverExe -Arguments $DriverArgs
 Write-CampaignRunPreflight
-$RunCommandContext = [pscustomobject]@{
-    CampaignRequest = $CampaignRequest
-    WrapperScript = $PSCommandPath
-    Mode = $Mode
-    Seed = $Seed
-    Ascension = $Ascension
-    Class = $Class
-    BuildProfile = $BuildProfile
-    Scratch = [bool] $Scratch
-    ScratchLabel = $ScratchLabel
-    OutputArtifact = $RunOutputArtifact
-    RunOutputCampaignPath = $RunOutputCampaignPath
-    RunOutputCheckpointPath = $RunOutputCheckpointPath
-    RunCommandPath = $RunCommandPath
-    RunManifestPath = $RunManifestPath
-    WrapperInvocationLine = $CampaignWrapperInvocationLine
-    WrapperBoundParameters = $CampaignWrapperBoundParameters
-    ContinueCampaign = [bool] $ContinueCampaign
-    TargetRounds = $TargetRounds
-    MaxRounds = $MaxRounds
-    UntilMilestoneBound = $UntilMilestoneBound
-    ResumeCampaignPath = $ResumeCampaignPath
-    ResumeCheckpointPath = $ResumeCheckpointPath
-    UntilMilestone = $UntilMilestone
-    MilestoneStepRounds = $MilestoneStepRounds
-    MilestoneMaxRounds = $MilestoneMaxRounds
-    ResolvedMilestoneStop = $ResolvedMilestoneStop
-    NeedsBuild = [bool] $NeedsBuild
-    BuildArgs = @($BuildArgs)
-    DryRun = [bool] $DryRun
-    RepoRoot = $RepoRoot
-    DriverExe = $DriverExe
-    DriverArgs = @($DriverArgs)
-    RenderedCommand = $RenderedCommand
-    Log = [bool] $Log
-    RunLogPath = $RunLogPath
-    RoundBudgetSource = $RoundBudgetSource
-    RoundBudgetAdditionalRounds = $RoundBudgetAdditionalRounds
-}
+$RunCommandContext = New-CampaignRunCommandContext `
+    -CampaignRequest $CampaignRequest `
+    -WrapperScript $PSCommandPath `
+    -RepoRoot $RepoRoot `
+    -Mode $Mode `
+    -Seed $Seed `
+    -Ascension $Ascension `
+    -Class $Class `
+    -Scratch ([bool] $Scratch) `
+    -BuildContext $BuildContext `
+    -RunOutputContext $RunOutputContext `
+    -BoundParameterContext $BoundParameterContext `
+    -RunRoundContext $RunRoundContext `
+    -DriverArgs $DriverArgs `
+    -NeedsBuild ([bool] $NeedsBuild) `
+    -DryRun ([bool] $DryRun) `
+    -Log ([bool] $Log) `
+    -UntilMilestone $UntilMilestone `
+    -MilestoneStepRounds $MilestoneStepRounds `
+    -MilestoneMaxRounds $MilestoneMaxRounds `
+    -ResolvedMilestoneStop $ResolvedMilestoneStop
 $DriverExitCode = Invoke-CampaignRunCommand -Context $RunCommandContext -RunIdentityArgs $CampaignRunIdentityArgs -OptionContext $CampaignSharedDriverOptionContext
 exit $DriverExitCode

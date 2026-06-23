@@ -465,6 +465,75 @@ function New-CampaignRunWrapperManifest {
     return $Manifest
 }
 
+function New-CampaignRunCommandContext {
+    param(
+        [object] $CampaignRequest,
+        [string] $WrapperScript,
+        [string] $RepoRoot,
+        [string] $Mode,
+        [long] $Seed,
+        [int] $Ascension,
+        [string] $Class,
+        [bool] $Scratch,
+        [object] $BuildContext,
+        [object] $RunOutputContext,
+        [object] $BoundParameterContext,
+        [object] $RunRoundContext,
+        [string[]] $DriverArgs,
+        [bool] $NeedsBuild,
+        [bool] $DryRun,
+        [bool] $Log,
+        [string] $UntilMilestone,
+        [int] $MilestoneStepRounds,
+        [int] $MilestoneMaxRounds,
+        [string] $ResolvedMilestoneStop
+    )
+
+    if (-not $RunOutputContext.WritesCampaignOutput) {
+        throw "Internal error: campaign request '$($CampaignRequest.Kind)' reached run execution without an output artifact."
+    }
+
+    return [pscustomobject]@{
+        CampaignRequest = $CampaignRequest
+        WrapperScript = $WrapperScript
+        Mode = $Mode
+        Seed = $Seed
+        Ascension = $Ascension
+        Class = $Class
+        BuildProfile = $BuildContext.BuildProfile
+        Scratch = $Scratch
+        ScratchLabel = $RunOutputContext.ScratchLabel
+        OutputArtifact = $RunOutputContext.Artifact
+        RunOutputCampaignPath = $RunOutputContext.CampaignPath
+        RunOutputCheckpointPath = $RunOutputContext.CheckpointPath
+        RunCommandPath = $RunOutputContext.CommandPath
+        RunManifestPath = $RunOutputContext.ManifestPath
+        WrapperInvocationLine = $BoundParameterContext.WrapperInvocationLine
+        WrapperBoundParameters = $BoundParameterContext.WrapperBoundParameters
+        ContinueCampaign = [bool] $CampaignRequest.ContinueCampaign
+        TargetRounds = $RunRoundContext.TargetRounds
+        MaxRounds = $RunRoundContext.MaxRounds
+        UntilMilestoneBound = $BoundParameterContext.UntilMilestoneBound
+        ResumeCampaignPath = $RunRoundContext.ResumeCampaignPath
+        ResumeCheckpointPath = $RunRoundContext.ResumeCheckpointPath
+        UntilMilestone = $UntilMilestone
+        MilestoneStepRounds = $MilestoneStepRounds
+        MilestoneMaxRounds = $MilestoneMaxRounds
+        ResolvedMilestoneStop = $ResolvedMilestoneStop
+        NeedsBuild = $NeedsBuild
+        BuildArgs = @($BuildContext.BuildArgs)
+        DryRun = $DryRun
+        RepoRoot = $RepoRoot
+        DriverExe = $BuildContext.DriverExe
+        DriverArgs = @($DriverArgs)
+        RenderedCommand = Format-CommandLine -ExePath $BuildContext.DriverExe -Arguments $DriverArgs
+        Log = $Log
+        RunLogPath = $RunOutputContext.LogPath
+        RoundBudgetSource = $RunRoundContext.RoundBudgetSource
+        RoundBudgetAdditionalRounds = $RunRoundContext.RoundBudgetAdditionalRounds
+    }
+}
+
 function Invoke-CampaignRunCommand {
     param(
         [object] $Context,

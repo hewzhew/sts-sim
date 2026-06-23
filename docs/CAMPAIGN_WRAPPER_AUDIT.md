@@ -14,17 +14,18 @@ many concepts.
 Approximate physical line count after the wrapper split:
 
 - `tools/campaign.ps1`: 574 lines
-- `tools/campaign_artifacts.ps1`: 630 lines
-- `tools/campaign_invocation.ps1`: 523 lines
+- `tools/campaign.ps1`: 528 lines
+- `tools/campaign_artifacts.ps1`: 642 lines
+- `tools/campaign_invocation.ps1`: 600 lines
 - `tools/campaign_coverage_gaps.ps1`: 428 lines
 - `tools/campaign_preflight.ps1`: 196 lines
-- `tools/campaign_continuation.ps1`: 316 lines
-- `tools/campaign_inspect.ps1`: 194 lines
+- `tools/campaign_continuation.ps1`: 351 lines
+- `tools/campaign_inspect.ps1`: 255 lines
 - `tools/campaign_targets.ps1`: 236 lines
-- `tools/campaign_source.ps1`: 122 lines
-- `tools/campaign_rounds.ps1`: 122 lines
+- `tools/campaign_source.ps1`: 128 lines
+- `tools/campaign_rounds.ps1`: 131 lines
 - `tools/campaign_milestones.ps1`: 110 lines
-- `tools/campaign_request.ps1`: 180 lines
+- `tools/campaign_request.ps1`: 184 lines
 - `tools/campaign_build.ps1`: 71 lines
 
 Major regions:
@@ -37,7 +38,7 @@ Major regions:
 | Source/build/output resolution | 130 | Narrower, but still in the wrapper |
 | Continuation dispatch | 5 | Delegated to continuation helper |
 | Inspect dispatch | 20 | Delegated to inspect helper |
-| Normal run dispatch | 25 | Delegated to invocation helper |
+| Normal run dispatch | 8 | Delegated to invocation helper |
 
 ## Why It Got This Large
 
@@ -186,6 +187,7 @@ This helper owns:
 - shared driver option context is passed explicitly to campaign, targeted,
   coverage-gap, and milestone driver command builders
 - continuation round-budget argument rendering
+- normal campaign run command context construction
 - normal campaign run command execution through an explicit run context
 - campaign run manifest writing through an explicit run context
 - primary driver command-file recording through an explicit run context
@@ -359,6 +361,8 @@ This helper owns:
 
 These pieces are useful but should not live in the main script long term:
 
+- normal run preflight output still reads globals; it should accept an explicit
+  context before it grows further
 - residual compatibility switches that may no longer earn wrapper-level
   visibility after the latest/source/output cleanup
 - legacy `latest.decision_outcomes.*` paths remain only as compatibility
