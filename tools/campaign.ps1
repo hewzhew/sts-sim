@@ -263,9 +263,6 @@ $BuildContext = Resolve-CampaignBuildContext `
     -BuildProfile $BuildProfile `
     -DebugBuild ([bool] $DebugBuild) `
     -BuildProfileBound ($PSBoundParameters.ContainsKey("BuildProfile"))
-$BuildProfile = $BuildContext.BuildProfile
-$DriverExe = $BuildContext.DriverExe
-$BuildArgs = @($BuildContext.BuildArgs)
 
 $CampaignRunIdentityArgs = New-CampaignRunDriverIdentityArgs -Mode $Mode -Seed $Seed -Ascension $Ascension -Class $Class
 
@@ -294,15 +291,8 @@ $BoundParameterContext = Resolve-CampaignBoundParameterContext `
     -BoundParameters $PSBoundParameters `
     -InvocationLine $MyInvocation.Line `
     -UntilMilestone $UntilMilestone
-$CampaignBoundParameters = $BoundParameterContext.CampaignBoundParameters
-$CampaignWrapperInvocationLine = $BoundParameterContext.WrapperInvocationLine
-$CampaignWrapperBoundParameters = $BoundParameterContext.WrapperBoundParameters
-$RoundsBound = $BoundParameterContext.RoundsBound
-$UntilRoundBound = $BoundParameterContext.UntilRoundBound
-$UntilMilestoneBound = $BoundParameterContext.UntilMilestoneBound
-$MaxRoundsBound = $BoundParameterContext.MaxRoundsBound
 $CampaignSharedDriverOptionContext = New-CampaignSharedDriverOptionContext `
-    -CampaignBoundParameters $CampaignBoundParameters `
+    -CampaignBoundParameters $BoundParameterContext.CampaignBoundParameters `
     -ExperimentWallMs $ExperimentWallMs `
     -SearchWallMs $SearchWallMs `
     -SearchMaxNodes $SearchMaxNodes `
@@ -329,30 +319,21 @@ $CoverageGapFilterContext = Resolve-CoverageGapFilterContext `
     -Lane $CoverageGapLane `
     -OriginSource $CoverageGapOriginSource `
     -Progress $CoverageGapProgress
-$CoverageGapBucket = $CoverageGapFilterContext.Bucket
-$CoverageGapEventId = $CoverageGapFilterContext.EventId
-$CoverageGapLane = $CoverageGapFilterContext.Lane
-$CoverageGapOriginSource = $CoverageGapFilterContext.OriginSource
-$CoverageGapProgress = $CoverageGapFilterContext.Progress
-$CoverageGapFilterArgs = @($CoverageGapFilterContext.FilterArgs)
-$CoverageGapFilterLabel = $CoverageGapFilterContext.FilterLabel
-$CoverageGapResultFilterArgs = @($CoverageGapFilterContext.ResultFilterArgs)
-$CoverageGapResultFilterLabel = $CoverageGapFilterContext.ResultFilterLabel
 
 $RunRoundContext = Resolve-CampaignRunRoundContext `
     -Request $CampaignRequest `
     -ContinueCampaign ([bool] $CampaignRequest.ContinueCampaign) `
     -CampaignSourceArtifact $CampaignSourceArtifact `
-    -RoundsBound $RoundsBound `
+    -RoundsBound $BoundParameterContext.RoundsBound `
     -Rounds $Rounds `
-    -UntilRoundBound $UntilRoundBound `
+    -UntilRoundBound $BoundParameterContext.UntilRoundBound `
     -UntilRound $UntilRound `
-    -UntilMilestoneBound $UntilMilestoneBound `
+    -UntilMilestoneBound $BoundParameterContext.UntilMilestoneBound `
     -UntilMilestone $UntilMilestone `
     -MilestoneStepRounds $MilestoneStepRounds `
     -MilestoneMaxRounds $MilestoneMaxRounds `
     -MilestoneStop $MilestoneStop `
-    -MaxRoundsBound $MaxRoundsBound `
+    -MaxRoundsBound $BoundParameterContext.MaxRoundsBound `
     -MaxRounds $MaxRounds `
     -ContinueCoverageGaps ([bool] $CampaignRequest.ContinueCoverageGaps) `
     -PlanTargets ([bool] $CampaignRequest.PlanTargets) `
@@ -366,7 +347,7 @@ $RunDriverArgsContext = New-CampaignRunDriverArgsContext `
     -OptionContext $CampaignSharedDriverOptionContext `
     -ExportLearningDataset $ExportLearningDataset
 
-$NeedsBuild = $Build -or (Test-DriverNeedsBuild $DriverExe)
+$NeedsBuild = $Build -or (Test-DriverNeedsBuild $BuildContext.DriverExe)
 
 if ($CampaignRequest.IsContinuationFamily) {
     $ContinuationEntryContext = New-CampaignContinuationEntryContext `
@@ -384,9 +365,10 @@ if ($CampaignRequest.IsContinuationFamily) {
         -InspectScratchLatest ([bool] $InspectScratchLatest) `
         -CoverageGapExecution $CoverageGapExecution `
         -CoverageGapIntent $CoverageGapIntent `
-        -CoverageGapFilterLabel $CoverageGapFilterLabel `
-        -CoverageGapResultFilterArgs $CoverageGapResultFilterArgs `
-        -CoverageGapResultFilterLabel $CoverageGapResultFilterLabel `
+        -CoverageGapFilterLabel $CoverageGapFilterContext.FilterLabel `
+        -CoverageGapFilterArgs $CoverageGapFilterContext.FilterArgs `
+        -CoverageGapResultFilterArgs $CoverageGapFilterContext.ResultFilterArgs `
+        -CoverageGapResultFilterLabel $CoverageGapFilterContext.ResultFilterLabel `
         -CampaignRunIdentityArgs $CampaignRunIdentityArgs `
         -CampaignSharedDriverOptionContext $CampaignSharedDriverOptionContext `
         -Seed $Seed `
@@ -414,7 +396,7 @@ if ($CampaignRequest.IsContinuationFamily) {
 
 if ($CampaignRequest.Kind -eq "inspect") {
     $InspectOptionContext = New-CampaignInspectOptionContext `
-        -BoundParameters $CampaignBoundParameters `
+        -BoundParameters $BoundParameterContext.CampaignBoundParameters `
         -InspectState ([bool] $InspectState) `
         -InspectShopEvidence ([bool] $InspectShopEvidence) `
         -InspectShopChallenge ([bool] $InspectShopChallenge) `
@@ -438,7 +420,7 @@ if ($CampaignRequest.Kind -eq "inspect") {
         -SearchWallMs $SearchWallMs `
         -SearchMaxNodes $SearchMaxNodes `
         -CoverageGapMilestoneTarget $CoverageGapMilestoneTarget `
-        -CoverageGapFilterArgs $CoverageGapFilterArgs `
+        -CoverageGapFilterArgs $CoverageGapFilterContext.FilterArgs `
         -InspectIndex $InspectIndex `
         -InspectAct $InspectAct `
         -InspectFloor $InspectFloor `
@@ -457,7 +439,7 @@ if ($CampaignRequest.Kind -eq "inspect") {
         -BuildContext $BuildContext `
         -NeedsBuild ([bool] $NeedsBuild) `
         -InspectCoverageGapMilestoneSummary ([bool] $InspectCoverageGapMilestoneSummary) `
-        -CoverageGapFilterLabel $CoverageGapFilterLabel `
+        -CoverageGapFilterLabel $CoverageGapFilterContext.FilterLabel `
         -DryRun ([bool] $DryRun) `
         -RepoRoot $RepoRoot
     $DriverExitCode = Invoke-CampaignInspectEntry -Context $InspectEntryContext

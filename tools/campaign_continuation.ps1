@@ -43,6 +43,7 @@ function New-CampaignContinuationEntryContext {
         [string] $CoverageGapExecution,
         [string] $CoverageGapIntent,
         [string] $CoverageGapFilterLabel,
+        [string[]] $CoverageGapFilterArgs,
         [string[]] $CoverageGapResultFilterArgs,
         [string] $CoverageGapResultFilterLabel,
         [string[]] $CampaignRunIdentityArgs,
@@ -117,7 +118,8 @@ function New-CampaignContinuationEntryContext {
         CoverageGapLimit = $CoverageGapLimit
         CoverageGapCandidatesPerDecision = $CoverageGapCandidatesPerDecision
         CoverageGapFilterLabel = $CoverageGapFilterLabel
-        CoverageGapResultFilterArgs = @($CoverageGapResultFilterArgs)
+        CoverageGapFilterArgs = @($CoverageGapFilterArgs | Where-Object { $_ })
+        CoverageGapResultFilterArgs = @($CoverageGapResultFilterArgs | Where-Object { $_ })
         CoverageGapResultFilterLabel = $CoverageGapResultFilterLabel
         DryRun = $DryRun
         BuildArgs = @($BuildContext.BuildArgs)
@@ -202,7 +204,10 @@ function New-CampaignContinuationCommandContext {
 
     $CoveragePlanArgs = New-CoverageGapPlanDriverArgs `
         -SourceCampaignPath $SourceContext.CampaignPath `
-        -SourceCheckpointPath $SourceContext.CheckpointPath
+        -SourceCheckpointPath $SourceContext.CheckpointPath `
+        -CoverageGapLimit $Context.CoverageGapLimit `
+        -CoverageGapCandidatesPerDecision $Context.CoverageGapCandidatesPerDecision `
+        -CoverageGapFilterArgs $Context.CoverageGapFilterArgs
     $ExportDecisionArgs = New-TargetedContinuationExportBeforeArgs `
         -SourceCampaignPath $SourceContext.CampaignPath `
         -SourceCheckpointPath $SourceContext.CheckpointPath `
@@ -233,6 +238,10 @@ function New-CampaignContinuationCommandContext {
         -RunOutputCheckpointPath $Context.RunOutputCheckpointPath `
         -RoundBudgetArgs $RoundBudgetArgs `
         -DriverExecution $CoverageExecutionContext.DriverExecution `
+        -CoverageGapLimit $Context.CoverageGapLimit `
+        -CoverageGapCandidatesPerDecision $Context.CoverageGapCandidatesPerDecision `
+        -CoverageGapIntent $Context.CoverageGapIntent `
+        -CoverageGapFilterArgs $Context.CoverageGapFilterArgs `
         -OptionContext $Context.CampaignSharedDriverOptionContext
     $CoverageGapMilestoneSummaryArgs = @(
         "inspect",

@@ -211,7 +211,10 @@ function Resolve-CoverageGapExecutionContext {
 function New-CoverageGapPlanDriverArgs {
     param(
         [string] $SourceCampaignPath,
-        [string] $SourceCheckpointPath
+        [string] $SourceCheckpointPath,
+        [int] $CoverageGapLimit,
+        [int] $CoverageGapCandidatesPerDecision,
+        [string[]] $CoverageGapFilterArgs
     )
 
     $Args = @(
@@ -222,7 +225,7 @@ function New-CoverageGapPlanDriverArgs {
         "--coverage-gap-limit", "$CoverageGapLimit",
         "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision"
     )
-    $Args += $CoverageGapFilterArgs
+    $Args += @($CoverageGapFilterArgs | Where-Object { $_ })
     return $Args
 }
 
@@ -235,6 +238,10 @@ function New-CoverageGapContinueDriverArgs {
         [string] $RunOutputCheckpointPath,
         [string[]] $RoundBudgetArgs,
         [string] $DriverExecution,
+        [int] $CoverageGapLimit,
+        [int] $CoverageGapCandidatesPerDecision,
+        [string] $CoverageGapIntent,
+        [string[]] $CoverageGapFilterArgs,
         [object] $OptionContext
     )
 
@@ -251,7 +258,7 @@ function New-CoverageGapContinueDriverArgs {
         "--out", "$RunOutputCampaignPath",
         "--checkpoint-out", "$RunOutputCheckpointPath"
     )
-    $Args += $CoverageGapFilterArgs
+    $Args += @($CoverageGapFilterArgs | Where-Object { $_ })
     $Args += $RoundBudgetArgs
     return Add-CampaignSharedDriverOptions `
         -Arguments $Args `

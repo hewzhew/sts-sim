@@ -82,7 +82,7 @@ function New-CampaignInspectOptionContext {
         SearchWallMs = $SearchWallMs
         SearchMaxNodes = $SearchMaxNodes
         CoverageGapMilestoneTarget = $CoverageGapMilestoneTarget
-        CoverageGapFilterArgs = @($CoverageGapFilterArgs)
+        CoverageGapFilterArgs = @($CoverageGapFilterArgs | Where-Object { $_ })
         InspectIndex = $InspectIndex
         InspectAct = $InspectAct
         InspectFloor = $InspectFloor
