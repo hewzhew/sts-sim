@@ -155,7 +155,10 @@ pub(super) fn run_checkpoint_inspection(input: &InspectCommandInput) -> Result<(
     } else if input.modes.deck_mutation {
         println!("{}", render_checkpoint_deck_mutation_v1(&session)?);
     } else if input.modes.route_evidence {
-        println!("{}", render_checkpoint_route_evidence_v1(&session)?);
+        println!(
+            "{}",
+            render_checkpoint_route_evidence_v1(&session, input.modes.evidence_detail)?
+        );
     } else if input.modes.last_auto_combat {
         print!(
             "{}",

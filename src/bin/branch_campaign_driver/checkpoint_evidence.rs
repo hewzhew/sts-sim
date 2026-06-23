@@ -303,6 +303,7 @@ fn render_campfire_action_label_v1(
 
 pub(super) fn render_checkpoint_route_evidence_v1(
     session: &RunControlSession,
+    detail: InspectEvidenceDetailV1,
 ) -> Result<String, String> {
     if !session.engine_state.is_map_surface() {
         return Err(format!(
@@ -315,7 +316,206 @@ pub(super) fn render_checkpoint_route_evidence_v1(
         &session.engine_state,
         sts_simulator::ai::route_planner_v1::RoutePlannerConfigV1::default(),
     );
-    Ok(sts_simulator::ai::route_planner_v1::render_route_decision_trace_v1(&trace))
+    Ok(match detail {
+        InspectEvidenceDetailV1::Compact => render_route_evidence_compact_v1(&trace).join("\n"),
+        InspectEvidenceDetailV1::Full => {
+            sts_simulator::ai::route_planner_v1::render_route_decision_trace_v1(&trace)
+        }
+    })
+}
+
+fn render_route_evidence_compact_v1(
+    trace: &sts_simulator::ai::route_planner_v1::RouteDecisionTraceV1,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Route compiled decision: act={} boss={} objective={:?} mode={:?}",
+        trace.context.act,
+        trace.context.boss.as_deref().unwrap_or("unknown"),
+        trace.objective,
+        trace.selection_mode
+    ));
+    lines.push(format!(
+        "context: candidates={} path_budget={} label_role={}",
+        trace.candidates.len(),
+        trace.path_budget,
+        trace.label_role
+    ));
+    if !trace.warnings.is_empty() {
+        lines.push(format!("warnings: {}", render_short_list(&trace.warnings)));
+    }
+    lines.push(render_route_candidate_summary_v1(trace));
+    if let Some(idx) = trace.selected_index {
+        if let Some(candidate) = trace.candidates.get(idx) {
+            lines.push(format!(
+                "selected: rank={} x={} room={} safety={:?} score={:.2} command={}",
+                idx,
+                candidate.target.x,
+                route_room_label_for_compact_v1(candidate.target.room_type),
+                candidate.safety,
+                candidate.total_score,
+                candidate
+                    .suggested_command
+                    .clone()
+                    .unwrap_or_else(|| "-".to_string())
+            ));
+        }
+    } else {
+        lines.push("selected: -".to_string());
+    }
+
+    let highlights = compact_route_notable_candidates_v1(trace);
+    if highlights.is_empty() {
+        lines.push("candidate_highlights: -".to_string());
+    } else {
+        lines.push(format!("candidate_highlights: {}", highlights.len()));
+        for (idx, line) in highlights.into_iter().enumerate() {
+            lines.push(format!("  {idx}. {line}"));
+        }
+    }
+    lines.push(
+        "route_candidate_detail: hidden; rerun with --inspect-evidence-detail full for full route evidence"
+            .to_string(),
+    );
+    lines
+}
+
+fn render_route_candidate_summary_v1(
+    trace: &sts_simulator::ai::route_planner_v1::RouteDecisionTraceV1,
+) -> String {
+    let mut by_room = std::collections::BTreeMap::<String, usize>::new();
+    let mut by_safety = std::collections::BTreeMap::<String, usize>::new();
+    let mut by_move = std::collections::BTreeMap::<String, usize>::new();
+    let mut truncated = 0usize;
+    for candidate in &trace.candidates {
+        *by_room
+            .entry(route_room_label_for_compact_v1(candidate.target.room_type).to_string())
+            .or_insert(0) += 1;
+        *by_safety
+            .entry(format!("{:?}", candidate.safety))
+            .or_insert(0) += 1;
+        *by_move
+            .entry(format!("{:?}", candidate.target.move_kind))
+            .or_insert(0) += 1;
+        if candidate.path_summary.path_budget_exhausted {
+            truncated += 1;
+        }
+    }
+    format!(
+        "candidate_routes: compact total={} by_room=[{}] by_safety=[{}] by_move=[{}] path_budget_exhausted={}",
+        trace.candidates.len(),
+        render_count_map_v1(&by_room),
+        render_count_map_v1(&by_safety),
+        render_count_map_v1(&by_move),
+        truncated
+    )
+}
+
+fn compact_route_notable_candidates_v1(
+    trace: &sts_simulator::ai::route_planner_v1::RouteDecisionTraceV1,
+) -> Vec<String> {
+    trace
+        .candidates
+        .iter()
+        .enumerate()
+        .take(6)
+        .map(|(idx, candidate)| {
+            let selected = if trace.selected_index == Some(idx) {
+                " selected"
+            } else {
+                ""
+            };
+            format!(
+                "rank={}{} x={} room={} safety={:?} score={:.2} command={} path=[{}] terms=[card={:.2} relic={:.2} shop={:.2} heal={:.2} hp={:.2} risk={:.2}]",
+                idx,
+                selected,
+                candidate.target.x,
+                route_room_label_for_compact_v1(candidate.target.room_type),
+                candidate.safety,
+                candidate.total_score,
+                candidate
+                    .suggested_command
+                    .clone()
+                    .unwrap_or_else(|| "-".to_string()),
+                route_path_compact_v1(&candidate.path_summary),
+                candidate.score_terms.card_reward,
+                candidate.score_terms.relic,
+                candidate.score_terms.shop,
+                candidate.score_terms.heal,
+                candidate.score_terms.hp_loss,
+                candidate.score_terms.death_risk,
+            )
+        })
+        .collect()
+}
+
+fn route_path_compact_v1(path: &sts_simulator::ai::route_planner_v1::RoutePathSummaryV1) -> String {
+    format!(
+        "paths={} elites={} fires={} shops={} unknowns={} pressure={} first_elite={}",
+        path.path_count,
+        route_range_compact_v1(path.min_elites, path.max_elites),
+        route_range_compact_v1(path.min_fires, path.max_fires),
+        route_range_compact_v1(path.min_shops, path.max_shops),
+        route_range_compact_v1(path.min_unknowns, path.max_unknowns),
+        route_range_compact_v1(path.min_early_pressure, path.max_early_pressure),
+        route_first_elite_compact_v1(&path.first_elite),
+    )
+}
+
+fn route_first_elite_compact_v1(
+    segment: &sts_simulator::ai::route_planner_v1::RouteFirstEliteSegmentV1,
+) -> String {
+    if segment.paths_with_first_elite == 0 {
+        "none".to_string()
+    } else if segment.forced {
+        format!(
+            "forced prep={}",
+            route_range_compact_v1(
+                segment.min_hallway_fights_before,
+                segment.max_hallway_fights_before
+            )
+        )
+    } else if segment.optional {
+        format!(
+            "optional prep={}",
+            route_range_compact_v1(
+                segment.min_hallway_fights_before,
+                segment.max_hallway_fights_before
+            )
+        )
+    } else {
+        format!(
+            "seen prep={}",
+            route_range_compact_v1(
+                segment.min_hallway_fights_before,
+                segment.max_hallway_fights_before
+            )
+        )
+    }
+}
+
+fn route_room_label_for_compact_v1(
+    room_type: Option<sts_simulator::state::map::node::RoomType>,
+) -> &'static str {
+    match room_type {
+        Some(sts_simulator::state::map::node::RoomType::EventRoom) => "?",
+        Some(sts_simulator::state::map::node::RoomType::MonsterRoom) => "Monster",
+        Some(sts_simulator::state::map::node::RoomType::MonsterRoomElite) => "Elite",
+        Some(sts_simulator::state::map::node::RoomType::MonsterRoomBoss) => "Boss",
+        Some(sts_simulator::state::map::node::RoomType::RestRoom) => "Rest",
+        Some(sts_simulator::state::map::node::RoomType::ShopRoom) => "Shop",
+        Some(sts_simulator::state::map::node::RoomType::TreasureRoom) => "Treasure",
+        Some(sts_simulator::state::map::node::RoomType::TrueVictoryRoom) => "TrueVictory",
+        None => "Unknown",
+    }
+}
+
+fn route_range_compact_v1(min: usize, max: usize) -> String {
+    if min == max {
+        min.to_string()
+    } else {
+        format!("{min}-{max}")
+    }
 }
 
 pub(super) fn render_checkpoint_deck_mutation_v1(
