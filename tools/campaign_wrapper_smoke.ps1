@@ -10,6 +10,9 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptDir
 $CampaignScript = Join-Path $ScriptDir "campaign.ps1"
 $ScratchLatestPointer = Join-Path (Join-Path (Join-Path $ScriptDir "artifacts") "campaigns\scratch") "latest.json"
+$CampaignArtifactDir = Join-Path (Join-Path $ScriptDir "artifacts") "campaigns"
+$LegacyLatestCampaignPath = Join-Path $CampaignArtifactDir "latest.campaign.json"
+$LegacyLatestCheckpointPath = Join-Path $CampaignArtifactDir "latest.checkpoint.json"
 
 function Get-SmokePowerShellExe {
     $Pwsh = Get-Command pwsh -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -185,6 +188,29 @@ try {
             )
     } else {
         Write-Host "campaign-wrapper-smoke: SKIP scratch-latest cases; no pointer at $ScratchLatestPointer"
+    }
+
+    if ((Test-Path -LiteralPath $LegacyLatestCampaignPath) -and (Test-Path -LiteralPath $LegacyLatestCheckpointPath)) {
+        Invoke-CampaignSmokeCase `
+            -Name "LegacyLatestInspectDryRun" `
+            -Arguments @(
+                "-From",
+                "legacy-latest",
+                "-Inspect",
+                "-DebugBuild",
+                "-NoProgress",
+                "-DryRun"
+            ) `
+            -Contains @(
+                "mode=inspect legacy-latest",
+                "\tools\artifacts\campaigns\latest.campaign.json",
+                "\tools\artifacts\campaigns\latest.checkpoint.json"
+            ) `
+            -NotContains @(
+                "Choose one campaign request kind"
+            )
+    } else {
+        Write-Host "campaign-wrapper-smoke: SKIP legacy-latest case; missing legacy latest sidecars"
     }
 
     Invoke-CampaignSmokeCase `

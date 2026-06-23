@@ -1,15 +1,12 @@
 $script:CampaignPathContext = $null
 $script:CampaignDir = ""
 $script:ScratchCampaignDir = ""
-$script:LatestSeedPath = ""
-$script:LatestAscensionPath = ""
-$script:LatestClassPath = ""
-$script:LatestModePath = ""
-$script:LatestCommandPath = ""
-$script:LatestManifestPath = ""
-$script:LatestLogPath = ""
-$script:LatestCampaignPath = ""
-$script:LatestCheckpointPath = ""
+$script:LegacyLatestModePath = ""
+$script:LegacyLatestCommandPath = ""
+$script:LegacyLatestManifestPath = ""
+$script:LegacyLatestLogPath = ""
+$script:LegacyLatestCampaignPath = ""
+$script:LegacyLatestCheckpointPath = ""
 
 function New-CampaignPathContext {
     param(
@@ -36,20 +33,33 @@ function Initialize-CampaignArtifactPaths {
     $script:CampaignPathContext = $PathContext
     $script:CampaignDir = $PathContext.CampaignDir
     $script:ScratchCampaignDir = $PathContext.ScratchCampaignDir
-    $script:LatestSeedPath = Join-Path $script:CampaignDir "latest.seed.txt"
-    $script:LatestAscensionPath = Join-Path $script:CampaignDir "latest.ascension.txt"
-    $script:LatestClassPath = Join-Path $script:CampaignDir "latest.class.txt"
-    $script:LatestModePath = Join-Path $script:CampaignDir "latest.mode.txt"
-    $script:LatestCommandPath = Join-Path $script:CampaignDir "latest.command.txt"
-    $script:LatestManifestPath = Join-Path $script:CampaignDir "latest.manifest.json"
-    $script:LatestLogPath = Join-Path $script:CampaignDir "latest.log"
-    $script:LatestCampaignPath = Join-Path $script:CampaignDir "latest.campaign.json"
-    $script:LatestCheckpointPath = Join-Path $script:CampaignDir "latest.checkpoint.json"
+    $LegacySidecarPaths = New-CampaignLegacyLatestSidecarPathContext -CampaignDir $script:CampaignDir
+    $script:LegacyLatestModePath = $LegacySidecarPaths.ModePath
+    $script:LegacyLatestCommandPath = $LegacySidecarPaths.CommandPath
+    $script:LegacyLatestManifestPath = $LegacySidecarPaths.ManifestPath
+    $script:LegacyLatestLogPath = $LegacySidecarPaths.LogPath
+    $script:LegacyLatestCampaignPath = $LegacySidecarPaths.CampaignPath
+    $script:LegacyLatestCheckpointPath = $LegacySidecarPaths.CheckpointPath
 }
 
 function Assert-CampaignArtifactPathsInitialized {
     if (-not $script:CampaignPathContext) {
         throw "Internal error: campaign artifact paths are not initialized."
+    }
+}
+
+function New-CampaignLegacyLatestSidecarPathContext {
+    param(
+        [string] $CampaignDir
+    )
+
+    return [pscustomobject]@{
+        ModePath = Join-Path $CampaignDir "latest.mode.txt"
+        CommandPath = Join-Path $CampaignDir "latest.command.txt"
+        ManifestPath = Join-Path $CampaignDir "latest.manifest.json"
+        LogPath = Join-Path $CampaignDir "latest.log"
+        CampaignPath = Join-Path $CampaignDir "latest.campaign.json"
+        CheckpointPath = Join-Path $CampaignDir "latest.checkpoint.json"
     }
 }
 
@@ -232,11 +242,11 @@ function New-CampaignLegacyLatestArtifact {
         Id = "legacy-latest"
         Label = "legacy-latest"
         Dir = $CampaignDir
-        ReportPath = $LatestCampaignPath
-        CheckpointPath = $LatestCheckpointPath
-        ManifestPath = $LatestManifestPath
-        LogPath = $LatestLogPath
-        CommandPath = $LatestCommandPath
+        ReportPath = $LegacyLatestCampaignPath
+        CheckpointPath = $LegacyLatestCheckpointPath
+        ManifestPath = $LegacyLatestManifestPath
+        LogPath = $LegacyLatestLogPath
+        CommandPath = $LegacyLatestCommandPath
     }
 }
 
@@ -350,21 +360,21 @@ function Get-CampaignArtifactMode {
         }
     }
     if ($Artifact -and $Artifact.Kind -eq "legacy_latest") {
-        return Read-LatestCampaignMode
+        return Read-LegacyLatestCampaignMode
     }
     return $null
 }
 
-function Read-LatestCampaignMode {
+function Read-LegacyLatestCampaignMode {
     Assert-CampaignArtifactPathsInitialized
-    if (Test-Path -LiteralPath $LatestModePath) {
-        $ModeText = (Get-Content -LiteralPath $LatestModePath -Raw).Trim().ToLowerInvariant()
+    if (Test-Path -LiteralPath $LegacyLatestModePath) {
+        $ModeText = (Get-Content -LiteralPath $LegacyLatestModePath -Raw).Trim().ToLowerInvariant()
         if (@("quick", "focused", "explore", "deep") -contains $ModeText) {
             return $ModeText
         }
     }
-    if (Test-Path -LiteralPath $LatestCommandPath) {
-        $CommandText = Get-Content -LiteralPath $LatestCommandPath -Raw
+    if (Test-Path -LiteralPath $LegacyLatestCommandPath) {
+        $CommandText = Get-Content -LiteralPath $LegacyLatestCommandPath -Raw
         if ($CommandText -match "--preset\s+('?)(quick|focused|explore|deep)\1") {
             return $Matches[2].ToLowerInvariant()
         }
