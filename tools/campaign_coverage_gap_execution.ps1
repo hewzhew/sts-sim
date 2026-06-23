@@ -61,14 +61,14 @@ function Invoke-CoverageGapContinuationCommands {
     )
 
     if ($PlanCoverageGaps) {
-        & $DriverExe @CoveragePlanArgs
+        & $DriverExe @CoveragePlanArgs | ForEach-Object { Write-Host $_ }
         return $LASTEXITCODE
     }
     if (-not $ContinueCoverageGaps) {
         return 0
     }
 
-    & $DriverExe @ContinueCoverageGapArgs
+    & $DriverExe @ContinueCoverageGapArgs | ForEach-Object { Write-Host $_ }
     $DriverExitCode = $LASTEXITCODE
     if ($DriverExitCode -ne 0) {
         return $DriverExitCode

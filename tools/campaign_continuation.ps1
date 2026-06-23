@@ -273,7 +273,7 @@ function Invoke-CampaignContinuationCommandSet {
     Push-Location $Context.RepoRoot
     try {
         if ($Context.NeedsBuild) {
-            & cargo @($Context.BuildArgs)
+            & cargo @($Context.BuildArgs) | ForEach-Object { Write-Host $_ }
             if ($LASTEXITCODE -ne 0) {
                 return $LASTEXITCODE
             }

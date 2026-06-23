@@ -294,12 +294,12 @@ function Invoke-CampaignInspectCommand {
     Push-Location $RepoRoot
     try {
         if ($NeedsBuild) {
-            & cargo @BuildArgs
+            & cargo @BuildArgs | ForEach-Object { Write-Host $_ }
             if ($LASTEXITCODE -ne 0) {
                 return $LASTEXITCODE
             }
         }
-        & $DriverExe @InspectArgs
+        & $DriverExe @InspectArgs | ForEach-Object { Write-Host $_ }
         return $LASTEXITCODE
     } finally {
         Pop-Location

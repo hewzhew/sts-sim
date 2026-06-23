@@ -153,7 +153,7 @@ function Invoke-CampaignRunCommand {
     Push-Location $Context.RepoRoot
     try {
         if ($Context.NeedsBuild) {
-            & cargo @($Context.BuildArgs)
+            & cargo @($Context.BuildArgs) | ForEach-Object { Write-Host $_ }
             if ($LASTEXITCODE -ne 0) {
                 return $LASTEXITCODE
             }
@@ -161,7 +161,7 @@ function Invoke-CampaignRunCommand {
         if ($Context.Log) {
             $DriverExitCode = Invoke-CampaignLoggedDriverCommand -ExePath $Context.DriverExe -Arguments $Context.DriverArgs -LogPath $Context.RunLogPath
         } else {
-            & $Context.DriverExe @($Context.DriverArgs)
+            & $Context.DriverExe @($Context.DriverArgs) | ForEach-Object { Write-Host $_ }
             $DriverExitCode = $LASTEXITCODE
         }
         if ($DriverExitCode -eq 0) {
