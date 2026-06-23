@@ -95,6 +95,7 @@ campaign state.
 
 ```powershell
 .\tools\campaign.ps1 -Probe shop-evidence -InspectIndex 0
+.\tools\campaign.ps1 -Probe shop-evidence -ProbeDetail full -InspectIndex 0
 .\tools\campaign.ps1 -Probe shop-challenge -InspectIndex 0
 .\tools\campaign.ps1 -Probe card-reward-evidence -InspectIndex 0
 .\tools\campaign.ps1 -Probe deck-mutation -InspectIndex 0
@@ -104,6 +105,8 @@ campaign state.
 
 These are debugging tools for compiler/evidence layers. They should explain
 inputs and candidate structure, not create new policy behavior in PowerShell.
+Evidence probes default to compact output; use `-ProbeDetail full` only when a
+full candidate table is worth the noise.
 The older `-InspectShopEvidence`-style switches remain compatibility aliases,
 but new examples should prefer `-Probe <kind>` so the wrapper does not keep
 adding one top-level switch per Rust driver probe.

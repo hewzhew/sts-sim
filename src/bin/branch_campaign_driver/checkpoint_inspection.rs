@@ -9,8 +9,8 @@ use super::campaign_artifacts::{read_campaign_checkpoint_v1, read_campaign_repor
 use super::checkpoint_evidence::{
     render_checkpoint_campfire_evidence_v1, render_checkpoint_card_reward_evidence_v1,
     render_checkpoint_deck_mutation_v1, render_checkpoint_route_evidence_v1,
-    render_checkpoint_shop_evidence_v1,
 };
+use super::checkpoint_shop_evidence::render_checkpoint_shop_evidence_v1;
 use super::command_inputs::{InspectCommandInput, InspectFiltersInput};
 use super::final_boss_combat::{
     render_final_boss_combat_report_inspection_v1, render_last_auto_combat_checkpoint_inspection_v1,
@@ -120,7 +120,10 @@ pub(super) fn run_checkpoint_inspection(input: &InspectCommandInput) -> Result<(
     );
     println!("commands: {}", render_inspect_command_path(&commands));
     if input.modes.shop_evidence {
-        println!("{}", render_checkpoint_shop_evidence_v1(&session)?);
+        println!(
+            "{}",
+            render_checkpoint_shop_evidence_v1(&session, input.modes.evidence_detail)?
+        );
     } else if input.modes.shop_challenge {
         println!(
             "{}",

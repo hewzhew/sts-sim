@@ -84,6 +84,12 @@ impl From<CampaignProgressDetailArg> for BranchCampaignProgressDetailV1 {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(super) enum InspectEvidenceDetailArg {
+    Compact,
+    Full,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BranchCampaignExplicitCommandV1 {
     Run,
@@ -395,6 +401,14 @@ pub(super) struct Args {
         help = "Print current-code shop candidate evidence and strategic deltas for the selected checkpoint session"
     )]
     pub(super) inspect_shop_evidence: bool,
+
+    #[arg(
+        long = "inspect-evidence-detail",
+        value_enum,
+        default_value_t = InspectEvidenceDetailArg::Compact,
+        help = "Detail level for evidence inspect probes; compact hides full candidate tables"
+    )]
+    pub(super) inspect_evidence_detail: InspectEvidenceDetailArg,
 
     #[arg(
         long = "challenge-shop-plans",
@@ -1105,6 +1119,14 @@ struct InspectModeArgs {
     inspect_shop_evidence: bool,
 
     #[arg(
+        long = "inspect-evidence-detail",
+        value_enum,
+        default_value_t = InspectEvidenceDetailArg::Compact,
+        help = "Detail level for evidence inspect probes; compact hides full candidate tables"
+    )]
+    inspect_evidence_detail: InspectEvidenceDetailArg,
+
+    #[arg(
         long = "challenge-shop-plans",
         help = "From a selected shop checkpoint, force compiled shop plans and rollout each branch for comparison"
     )]
@@ -1546,6 +1568,7 @@ impl Args {
             inspect_combat_lab: false,
             probe_boss: false,
             inspect_shop_evidence: false,
+            inspect_evidence_detail: InspectEvidenceDetailArg::Compact,
             challenge_shop_plans: false,
             challenge_max_plans: 6,
             challenge_depth: 4,
@@ -1739,6 +1762,7 @@ impl InspectModeArgs {
         args.inspect_combat_lab = self.inspect_combat_lab;
         args.probe_boss = self.probe_boss;
         args.inspect_shop_evidence = self.inspect_shop_evidence;
+        args.inspect_evidence_detail = self.inspect_evidence_detail;
         args.challenge_shop_plans = self.challenge_shop_plans;
         args.inspect_card_reward_evidence = self.inspect_card_reward_evidence;
         args.inspect_campfire_evidence = self.inspect_campfire_evidence;

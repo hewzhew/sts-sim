@@ -145,6 +145,7 @@ function New-CampaignInspectSwitchContext {
         [int] $InspectAct,
         [int] $InspectFloor,
         [string] $InspectQuery,
+        [string] $ProbeDetail,
         [bool] $ProbeBoss
     )
 
@@ -175,6 +176,7 @@ function New-CampaignInspectSwitchContext {
         Act = $InspectAct
         Floor = $InspectFloor
         Query = $InspectQuery
+        ProbeDetail = $ProbeDetail
         ProbeBoss = [bool] $ProbeBoss
     }
 }

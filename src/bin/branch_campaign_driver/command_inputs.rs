@@ -15,7 +15,7 @@ use sts_simulator::eval::run_control::{
     RunControlHpLossLimit, RunControlSearchCombatOptions,
 };
 
-use super::cli_args::{Args, BranchCampaignCombatRetryArgV1};
+use super::cli_args::{Args, BranchCampaignCombatRetryArgV1, InspectEvidenceDetailArg};
 
 #[derive(Clone, Debug)]
 pub(super) struct RunCommandInput {
@@ -93,6 +93,7 @@ impl InspectCommandInput {
                 combat_lab: args.inspect_combat_lab,
                 probe_boss: args.probe_boss,
                 shop_evidence: args.inspect_shop_evidence,
+                evidence_detail: InspectEvidenceDetailV1::from(args.inspect_evidence_detail),
                 shop_challenge: args.challenge_shop_plans,
                 card_reward_evidence: args.inspect_card_reward_evidence,
                 campfire_evidence: args.inspect_campfire_evidence,
@@ -122,11 +123,27 @@ pub(super) struct InspectModesInput {
     pub(super) combat_lab: bool,
     pub(super) probe_boss: bool,
     pub(super) shop_evidence: bool,
+    pub(super) evidence_detail: InspectEvidenceDetailV1,
     pub(super) shop_challenge: bool,
     pub(super) card_reward_evidence: bool,
     pub(super) campfire_evidence: bool,
     pub(super) deck_mutation: bool,
     pub(super) route_evidence: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum InspectEvidenceDetailV1 {
+    Compact,
+    Full,
+}
+
+impl From<InspectEvidenceDetailArg> for InspectEvidenceDetailV1 {
+    fn from(value: InspectEvidenceDetailArg) -> Self {
+        match value {
+            InspectEvidenceDetailArg::Compact => Self::Compact,
+            InspectEvidenceDetailArg::Full => Self::Full,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

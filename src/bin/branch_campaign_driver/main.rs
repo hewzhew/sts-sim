@@ -5,6 +5,7 @@ mod campaign_artifacts;
 mod campaign_run;
 mod checkpoint_evidence;
 mod checkpoint_inspection;
+mod checkpoint_shop_evidence;
 mod cli_args;
 mod combat_lab;
 mod command_inputs;

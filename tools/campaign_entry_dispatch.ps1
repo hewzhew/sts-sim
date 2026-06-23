@@ -71,6 +71,7 @@ function Invoke-CampaignEntryDispatch {
                 -InspectFloor $Inspect.Floor `
                 -InspectBoundary $Context.CampaignRequest.InspectBoundary `
                 -InspectQuery $Inspect.Query `
+                -ProbeDetail $Inspect.ProbeDetail `
                 -ProbeBoss ([bool] $Inspect.ProbeBoss)
             $InspectEntryContext = New-CampaignInspectEntryContext `
                 -CampaignRequest $Context.CampaignRequest `

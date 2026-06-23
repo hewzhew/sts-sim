@@ -209,9 +209,10 @@ Maintained workflow surface:
   `-InspectCoverageGapTargetState`, `-ExportLearningDataset`, and inspect
   filters `-InspectIndex`, `-InspectAct`, `-InspectFloor`,
   `-InspectBoundary`, `-InspectQuery`.
-- **Driver probes:** `-Probe` and `-ProbeBoss`. These are debugging entrypoints,
-  but `-Probe` is the maintained way to reach thin Rust inspect probes without
-  growing the top-level switch list.
+- **Driver probes:** `-Probe`, `-ProbeDetail`, and `-ProbeBoss`. These are
+  debugging entrypoints, but `-Probe` is the maintained way to reach thin Rust
+  inspect probes without growing the top-level switch list. `-ProbeDetail`
+  keeps default probe output compact and makes full candidate tables explicit.
 - **Operational controls:** `-DryRun`, `-Log`, `-NoProgress`,
   `-VerboseProgress`, `-Diagnose`, `-Perf`, `-DebugBuild`, `-Build`,
   `-BuildProfile`, and `-DriverArgs`.

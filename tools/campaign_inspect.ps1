@@ -96,6 +96,7 @@ function New-CampaignInspectOptionContext {
         [int] $InspectFloor,
         [string] $InspectBoundary,
         [string] $InspectQuery,
+        [string] $ProbeDetail,
         [bool] $ProbeBoss
     )
 
@@ -130,6 +131,7 @@ function New-CampaignInspectOptionContext {
         InspectFloor = $InspectFloor
         InspectBoundary = $InspectBoundary
         InspectQuery = $InspectQuery
+        ProbeDetail = $ProbeDetail
         ProbeBoss = $ProbeBoss
     }
 }
@@ -221,6 +223,9 @@ function New-CampaignInspectDriverArgs {
         if (Test-CampaignInspectOptionEnabled -Options $Options -Name $Descriptor.OptionName) {
             $Args += $Descriptor.DriverFlag
         }
+    }
+    if ($Options.ProbeDetail -and $Options.ProbeDetail -ne "compact") {
+        $Args += @("--inspect-evidence-detail", "$($Options.ProbeDetail)")
     }
     if ($Options.InspectCoverageGapMilestoneSummary) {
         $Args += @(

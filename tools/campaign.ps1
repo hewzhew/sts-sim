@@ -113,6 +113,9 @@ param(
     )]
     [string[]] $Probe = @(),
 
+    [ValidateSet("compact", "full")]
+    [string] $ProbeDetail = "compact",
+
     [ValidateSet("fast-run", "release-final", "release", "dev-opt", "debug")]
     [string] $BuildProfile = "fast-run",
 
@@ -258,6 +261,7 @@ $InspectSwitchContext = New-CampaignInspectSwitchContext `
     -InspectAct $InspectAct `
     -InspectFloor $InspectFloor `
     -InspectQuery $InspectQuery `
+    -ProbeDetail $ProbeDetail `
     -ProbeBoss ([bool] $ProbeBoss)
 $CampaignSourceRunContext = Resolve-CampaignSourceRunContext `
     -Request $CampaignRequest `
