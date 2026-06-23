@@ -1,3 +1,53 @@
+function Convert-CampaignWrapperParameterValue {
+    param(
+        [object] $Value
+    )
+
+    if ($null -eq $Value) {
+        return $null
+    }
+    if ($Value -is [System.Management.Automation.SwitchParameter]) {
+        return [bool] $Value
+    }
+    if ($Value -is [System.Array]) {
+        $Converted = @()
+        foreach ($Item in $Value) {
+            $Converted += (Convert-CampaignWrapperParameterValue -Value $Item)
+        }
+        return ,$Converted
+    }
+    return $Value
+}
+
+function Resolve-CampaignBoundParameterContext {
+    param(
+        [System.Collections.IDictionary] $BoundParameters,
+        [string] $InvocationLine,
+        [string] $UntilMilestone
+    )
+
+    $CampaignBoundParameters = @{}
+    foreach ($ParameterName in $BoundParameters.Keys) {
+        $CampaignBoundParameters[$ParameterName] = $true
+    }
+
+    $CampaignWrapperBoundParameters = [ordered]@{}
+    foreach ($ParameterName in ($BoundParameters.Keys | Sort-Object)) {
+        $CampaignWrapperBoundParameters[$ParameterName] =
+            Convert-CampaignWrapperParameterValue -Value $BoundParameters[$ParameterName]
+    }
+
+    return [pscustomobject]@{
+        CampaignBoundParameters = $CampaignBoundParameters
+        WrapperInvocationLine = if ($InvocationLine) { $InvocationLine.Trim() } else { "" }
+        WrapperBoundParameters = $CampaignWrapperBoundParameters
+        RoundsBound = $CampaignBoundParameters.ContainsKey("Rounds")
+        UntilRoundBound = $CampaignBoundParameters.ContainsKey("UntilRound")
+        UntilMilestoneBound = $CampaignBoundParameters.ContainsKey("UntilMilestone") -and $UntilMilestone
+        MaxRoundsBound = $CampaignBoundParameters.ContainsKey("MaxRounds")
+    }
+}
+
 function Get-CampaignInspectSelectorParameterNames {
     return @(
         "InspectArtifacts",

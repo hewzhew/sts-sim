@@ -230,8 +230,6 @@ tools/campaign_invocation.ps1
 
 This helper owns:
 
-- wrapper parameter value normalization for manifests and command records
-- wrapper bound-parameter context extraction
 - command-line rendering
 - run driver identity argument rendering
 - normal run driver argument context construction, including resume/output,
@@ -459,6 +457,8 @@ This helper owns:
 - source/output intent derivation for wrapper manifests
 - derived operation switches used by the main wrapper after request resolution
 - retired `-More` rejection
+- wrapper parameter value normalization for manifests and command records
+- wrapper bound-parameter context extraction
 - inspect flag folding
 - inspect selector switch classification
 - `-InspectScratchLatest` source/read interpretation
