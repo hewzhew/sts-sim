@@ -61,8 +61,8 @@ coverage-gap continuation.
 ```powershell
 .\tools\campaign.ps1 -Inspect
 .\tools\campaign.ps1 -InspectArtifacts
-.\tools\campaign.ps1 -Probe state -InspectIndex 0
-.\tools\campaign.ps1 -InspectScratchLatest -Probe state -InspectIndex 0
+.\tools\campaign.ps1 -InspectState -InspectIndex 0
+.\tools\campaign.ps1 -InspectScratchLatest -InspectState -InspectIndex 0
 .\tools\campaign.ps1 -InspectDecisionObservations -InspectQuery "Iron Wave"
 .\tools\campaign.ps1 -InspectJournal -InspectQuery "shop"
 .\tools\campaign.ps1 -InspectLineageDecisions -InspectIndex 0

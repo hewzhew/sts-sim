@@ -1,22 +1,64 @@
+function Test-CampaignInspectOptionEnabled {
+    param(
+        [object] $Options,
+        [string] $Name
+    )
+
+    $Property = $Options.PSObject.Properties[$Name]
+    return [bool] ($Property -and [bool] $Property.Value)
+}
+
+function Get-CampaignSimpleInspectDriverFlagDescriptors {
+    return @(
+        [pscustomobject]@{
+            OptionName = "InspectShopEvidence"
+            DriverFlag = "--inspect-shop-evidence"
+        },
+        [pscustomobject]@{
+            OptionName = "InspectCardRewardEvidence"
+            DriverFlag = "--inspect-card-reward-evidence"
+        },
+        [pscustomobject]@{
+            OptionName = "InspectCampfireEvidence"
+            DriverFlag = "--inspect-campfire-evidence"
+        },
+        [pscustomobject]@{
+            OptionName = "InspectDeckMutation"
+            DriverFlag = "--inspect-deck-mutation"
+        },
+        [pscustomobject]@{
+            OptionName = "InspectRouteEvidence"
+            DriverFlag = "--inspect-route-evidence"
+        },
+        [pscustomobject]@{
+            OptionName = "InspectLastAutoCombat"
+            DriverFlag = "--inspect-last-auto-combat"
+        },
+        [pscustomobject]@{
+            OptionName = "InspectFinalBossCombat"
+            DriverFlag = "--inspect-final-boss-combat"
+        }
+    )
+}
+
 function Test-CampaignDetailedInspect {
     param(
         [object] $Options
     )
 
+    foreach ($Descriptor in (Get-CampaignSimpleInspectDriverFlagDescriptors)) {
+        if (Test-CampaignInspectOptionEnabled -Options $Options -Name $Descriptor.OptionName) {
+            return $true
+        }
+    }
+
     return (
         $Options.InspectState -or
-        $Options.InspectShopEvidence -or
         $Options.InspectShopChallenge -or
-        $Options.InspectCardRewardEvidence -or
         $Options.InspectDecisionObservations -or
         $Options.InspectJournal -or
         $Options.InspectLineageDecisions -or
-        $Options.InspectCampfireEvidence -or
-        $Options.InspectDeckMutation -or
-        $Options.InspectRouteEvidence -or
-        $Options.InspectLastAutoCombat -or
         $Options.InspectCombatLab -or
-        $Options.InspectFinalBossCombat -or
         $Options.InspectCoverageGapMilestoneSummary -or
         $Options.InspectCoverageGapTargetState
     )
@@ -156,9 +198,6 @@ function New-CampaignInspectDriverArgs {
     if (-not (Test-CampaignDetailedInspect -Options $Options)) {
         $Args += "--inspect-summary"
     }
-    if ($Options.InspectShopEvidence) {
-        $Args += "--inspect-shop-evidence"
-    }
     if ($Options.InspectShopChallenge) {
         $Args += @(
             "--challenge-shop-plans",
@@ -169,9 +208,6 @@ function New-CampaignInspectDriverArgs {
             "--search-max-nodes", "$($Options.SearchMaxNodes)"
         )
     }
-    if ($Options.InspectCardRewardEvidence) {
-        $Args += "--inspect-card-reward-evidence"
-    }
     if ($Options.InspectDecisionObservations) {
         $Args += "--inspect-decision-observations"
     }
@@ -181,20 +217,10 @@ function New-CampaignInspectDriverArgs {
     if ($Options.InspectLineageDecisions) {
         $Args += "--inspect-lineage-decisions"
     }
-    if ($Options.InspectCampfireEvidence) {
-        $Args += "--inspect-campfire-evidence"
-    }
-    if ($Options.InspectDeckMutation) {
-        $Args += "--inspect-deck-mutation"
-    }
-    if ($Options.InspectRouteEvidence) {
-        $Args += "--inspect-route-evidence"
-    }
-    if ($Options.InspectLastAutoCombat) {
-        $Args += "--inspect-last-auto-combat"
-    }
-    if ($Options.InspectFinalBossCombat) {
-        $Args += "--inspect-final-boss-combat"
+    foreach ($Descriptor in (Get-CampaignSimpleInspectDriverFlagDescriptors)) {
+        if (Test-CampaignInspectOptionEnabled -Options $Options -Name $Descriptor.OptionName) {
+            $Args += $Descriptor.DriverFlag
+        }
     }
     if ($Options.InspectCoverageGapMilestoneSummary) {
         $Args += @(

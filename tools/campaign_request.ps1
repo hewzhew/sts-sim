@@ -54,7 +54,6 @@ function New-CampaignInspectProbeContext {
     }
 
     return [pscustomobject]@{
-        State = $Selected.ContainsKey("state")
         ShopEvidence = $Selected.ContainsKey("shop-evidence")
         ShopChallenge = $Selected.ContainsKey("shop-challenge")
         CardRewardEvidence = $Selected.ContainsKey("card-reward-evidence")

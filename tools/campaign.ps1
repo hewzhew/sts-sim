@@ -91,7 +91,6 @@ param(
     [string] $From = "",
 
     [ValidateSet(
-        "state",
         "shop-evidence",
         "shop-challenge",
         "card-reward-evidence",
@@ -341,7 +340,7 @@ $EntryDispatchContext = [pscustomobject]@{
     }
     InspectSwitchContext = [pscustomobject]@{
         Artifacts = [bool] $InspectArtifacts
-        State = [bool] ($InspectState -or $InspectProbeContext.State)
+        State = [bool] $InspectState
         ShopEvidence = [bool] ($InspectShopEvidence -or $InspectProbeContext.ShopEvidence)
         ShopChallenge = [bool] ($InspectShopChallenge -or $InspectProbeContext.ShopChallenge)
         CardRewardEvidence = [bool] ($InspectCardRewardEvidence -or $InspectProbeContext.CardRewardEvidence)

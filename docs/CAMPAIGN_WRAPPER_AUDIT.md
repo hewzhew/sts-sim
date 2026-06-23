@@ -549,7 +549,6 @@ Thin driver probes:
 - `-InspectCampfireEvidence`
 - `-InspectDeckMutation`
 - `-InspectRouteEvidence`
-- `-InspectState`
 - `-InspectLastAutoCombat`
 - `-InspectCombatLab`
 - `-InspectFinalBossCombat`
@@ -565,6 +564,10 @@ They are now available through a typed probe selector, for example:
 
 The older `-InspectShopEvidence`-style switches remain compatibility aliases
 for now. Do not add more of them.
+
+`-InspectState` is different: the Rust driver has no `--inspect-state` flag.
+It means "run checkpoint inspect without summary mode", so it should stay with
+the core inspect surface unless the driver grows a real typed state subcommand.
 
 `-InspectShopChallenge` is mixed. It is currently a driver rollout probe with
 several wrapper-exposed tuning knobs. It should not grow further as a public
