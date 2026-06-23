@@ -267,7 +267,7 @@ fn render_shop_notable_candidate_line_v1(
         .map(|decision| format!("{:.2}", decision.score))
         .unwrap_or_else(|| "-".to_string());
     format!(
-        "{} | class={:?} gate={:?} legacy={} verdict={} score={}",
+        "{} | class={:?} gate={:?} diagnostics=[legacy_estimate={} verdict={} score={}]",
         candidate.label, candidate.class, candidate.support_gate, legacy, verdict, score
     )
 }
