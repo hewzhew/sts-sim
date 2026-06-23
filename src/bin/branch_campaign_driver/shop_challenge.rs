@@ -86,17 +86,17 @@ pub(super) fn render_checkpoint_shop_plan_challenge_v1(
                     "  statuses: {}",
                     render_status_counts_v1(&result.report.branches)
                 ));
-                if let Some(best) = best_challenge_branch_v1(&result.report.branches) {
+                if let Some(observed) = observed_challenge_branch_v1(&result.report.branches) {
                     lines.push(format!(
-                        "  best: {}",
-                        render_challenge_branch_summary_v1(best)
+                        "  observed: {}",
+                        render_challenge_branch_summary_v1(observed)
                     ));
-                    comparison_rows.push(ShopPlanChallengeComparisonRowV1::from_best_branch(
+                    comparison_rows.push(ShopPlanChallengeComparisonRowV1::from_observed_branch(
                         idx,
                         plan,
                         &applied,
                         &result.report.branches,
-                        best,
+                        observed,
                     ));
                 } else {
                     comparison_rows.push(ShopPlanChallengeComparisonRowV1::empty_result(
@@ -145,23 +145,23 @@ struct ShopPlanChallengeComparisonRowV1 {
     applied: String,
     branches: usize,
     status_counts: String,
-    best_act: u8,
-    best_floor: i32,
-    best_hp: i32,
-    best_max_hp: i32,
-    best_gold: i32,
-    best_deck_count: usize,
-    best_frontier: String,
+    observed_act: u8,
+    observed_floor: i32,
+    observed_hp: i32,
+    observed_max_hp: i32,
+    observed_gold: i32,
+    observed_deck_count: usize,
+    observed_frontier: String,
     note: String,
 }
 
 impl ShopPlanChallengeComparisonRowV1 {
-    fn from_best_branch(
+    fn from_observed_branch(
         plan_index: usize,
         plan: &ShopPlanV1,
         applied: &[String],
         branches: &[BranchExperimentBranchReportV1],
-        best: &BranchExperimentBranchReportV1,
+        observed: &BranchExperimentBranchReportV1,
     ) -> Self {
         Self {
             plan_index,
@@ -169,14 +169,14 @@ impl ShopPlanChallengeComparisonRowV1 {
             applied: applied.join(" -> "),
             branches: branches.len(),
             status_counts: render_status_counts_v1(branches),
-            best_act: best.summary.act,
-            best_floor: best.summary.floor,
-            best_hp: best.summary.hp,
-            best_max_hp: best.summary.max_hp,
-            best_gold: best.summary.gold,
-            best_deck_count: best.summary.deck_count,
-            best_frontier: best.frontier.boundary_title.clone(),
-            note: best.stop_reason.clone(),
+            observed_act: observed.summary.act,
+            observed_floor: observed.summary.floor,
+            observed_hp: observed.summary.hp,
+            observed_max_hp: observed.summary.max_hp,
+            observed_gold: observed.summary.gold,
+            observed_deck_count: observed.summary.deck_count,
+            observed_frontier: observed.frontier.boundary_title.clone(),
+            note: observed.stop_reason.clone(),
         }
     }
 
@@ -187,13 +187,13 @@ impl ShopPlanChallengeComparisonRowV1 {
             applied: applied.join(" -> "),
             branches: 0,
             status_counts: "-".to_string(),
-            best_act: 0,
-            best_floor: 0,
-            best_hp: 0,
-            best_max_hp: 0,
-            best_gold: 0,
-            best_deck_count: 0,
-            best_frontier: "-".to_string(),
+            observed_act: 0,
+            observed_floor: 0,
+            observed_hp: 0,
+            observed_max_hp: 0,
+            observed_gold: 0,
+            observed_deck_count: 0,
+            observed_frontier: "-".to_string(),
             note: "no rollout branches".to_string(),
         }
     }
@@ -205,39 +205,39 @@ impl ShopPlanChallengeComparisonRowV1 {
             applied: "-".to_string(),
             branches: 0,
             status_counts: "ApplyError=1".to_string(),
-            best_act: 0,
-            best_floor: 0,
-            best_hp: 0,
-            best_max_hp: 0,
-            best_gold: 0,
-            best_deck_count: 0,
-            best_frontier: "-".to_string(),
+            observed_act: 0,
+            observed_floor: 0,
+            observed_hp: 0,
+            observed_max_hp: 0,
+            observed_gold: 0,
+            observed_deck_count: 0,
+            observed_frontier: "-".to_string(),
             note: error.to_string(),
         }
     }
 
     fn sort_key(&self) -> (u8, i32, i32, i32, i32) {
         (
-            self.best_act,
-            self.best_floor,
-            self.best_hp,
-            self.best_gold,
-            -(self.best_deck_count as i32),
+            self.observed_act,
+            self.observed_floor,
+            self.observed_hp,
+            self.observed_gold,
+            -(self.observed_deck_count as i32),
         )
     }
 
     fn render(&self) -> String {
         format!(
-            "plan {} | {} | best=A{}F{} HP {}/{} gold {} deck {} {} | branches={} statuses={} | applied={} | note={}",
+            "plan {} | {} | observed=A{}F{} HP {}/{} gold {} deck {} {} | branches={} statuses={} | applied={} | note={}",
             self.plan_index,
             self.label,
-            self.best_act,
-            self.best_floor,
-            self.best_hp,
-            self.best_max_hp,
-            self.best_gold,
-            self.best_deck_count,
-            self.best_frontier,
+            self.observed_act,
+            self.observed_floor,
+            self.observed_hp,
+            self.observed_max_hp,
+            self.observed_gold,
+            self.observed_deck_count,
+            self.observed_frontier,
             self.branches,
             self.status_counts,
             self.applied,
@@ -365,7 +365,7 @@ fn render_status_counts_v1(branches: &[BranchExperimentBranchReportV1]) -> Strin
         .join(" ")
 }
 
-fn best_challenge_branch_v1(
+fn observed_challenge_branch_v1(
     branches: &[BranchExperimentBranchReportV1],
 ) -> Option<&BranchExperimentBranchReportV1> {
     branches.iter().max_by_key(|branch| {
@@ -403,4 +403,33 @@ fn render_challenge_branch_summary_v1(branch: &BranchExperimentBranchReportV1) -
         branch.frontier.boundary_title,
         branch.stop_reason
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn comparison_row_renders_observed_outcome_not_best_winner() {
+        let row = ShopPlanChallengeComparisonRowV1 {
+            plan_index: 2,
+            label: "Buy Reaper".to_string(),
+            applied: "Buy Reaper 80g -> Leave shop".to_string(),
+            branches: 4,
+            status_counts: "Active=4".to_string(),
+            observed_act: 2,
+            observed_floor: 1,
+            observed_hp: 60,
+            observed_max_hp: 80,
+            observed_gold: 120,
+            observed_deck_count: 14,
+            observed_frontier: "Reward Screen".to_string(),
+            note: "card reward requires human choice".to_string(),
+        };
+
+        let rendered = row.render();
+
+        assert!(rendered.contains("observed=A2F1 HP 60/80 gold 120 deck 14 Reward Screen"));
+        assert!(!rendered.contains("best="));
+    }
 }
