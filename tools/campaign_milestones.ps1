@@ -119,6 +119,16 @@ function New-CampaignMilestoneResumeDriverArgs {
         -OptionContext $MilestoneContext.OptionContext
 }
 
+function Write-CampaignMilestoneLoopCommandPreview {
+    param(
+        [string] $DriverExe,
+        [object] $MilestoneContext
+    )
+
+    Write-Host "milestone-loop-command-template:"
+    Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-CampaignMilestoneResumeDriverArgs -MilestoneContext $MilestoneContext -StepRounds $MilestoneContext.MilestoneStepRounds))
+}
+
 function Invoke-CampaignUntilMilestone {
     param(
         [object] $MilestoneContext,

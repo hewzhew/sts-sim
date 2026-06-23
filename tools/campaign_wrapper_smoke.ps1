@@ -140,6 +140,36 @@ try {
             )
 
         Invoke-CampaignSmokeCase `
+            -Name "FromScratchLatestCoverageGapMilestoneDryRun" `
+            -Arguments @(
+                "-FromScratchLatest",
+                "-ContinueCoverageGaps",
+                "-CoverageGapRoute",
+                "-CoverageGapLimit",
+                "2",
+                "-Scratch",
+                "-UntilMilestone",
+                "Act1Boss",
+                "-MilestoneStepRounds",
+                "1",
+                "-MilestoneMaxRounds",
+                "2",
+                "-DebugBuild",
+                "-NoProgress",
+                "-DryRun"
+            ) `
+            -Contains @(
+                "coverage-gap-continue=2",
+                "execution=milestone_continuation",
+                "milestone-loop-command-template:",
+                "milestone-summary-command:",
+                "\tools\artifacts\campaigns\scratch\"
+            ) `
+            -NotContains @(
+                "Choose one campaign request kind"
+            )
+
+        Invoke-CampaignSmokeCase `
             -Name "FromScratchLatestInspectDryRun" `
             -Arguments @(
                 "-FromScratchLatest",
@@ -176,6 +206,31 @@ try {
         ) `
         -NotContains @(
             "continue-latest=.\tools\campaign.ps1 -From latest -Continue",
+            "Choose one campaign request kind"
+        )
+
+    Invoke-CampaignSmokeCase `
+        -Name "NormalScratchMilestoneDryRun" `
+        -Arguments @(
+            "-Mode",
+            "quick",
+            "-Scratch",
+            "-UntilMilestone",
+            "Act1Boss",
+            "-MilestoneStepRounds",
+            "1",
+            "-MilestoneMaxRounds",
+            "2",
+            "-DebugBuild",
+            "-NoProgress",
+            "-DryRun"
+        ) `
+        -Contains @(
+            "until-milestone=Act1Boss step-rounds=1 max-additional-rounds=2",
+            "milestone-loop-command-template:",
+            "\tools\artifacts\campaigns\scratch\"
+        ) `
+        -NotContains @(
             "Choose one campaign request kind"
         )
 

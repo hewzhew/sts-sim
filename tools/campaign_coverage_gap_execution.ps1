@@ -17,8 +17,9 @@ function Write-CoverageGapContinuationDryRunCommands {
         Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
     }
     if ($UntilMilestoneBound) {
-        Write-Host "milestone-loop-command-template:"
-        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-CampaignMilestoneResumeDriverArgs -MilestoneContext $MilestoneContext -StepRounds $MilestoneContext.MilestoneStepRounds))
+        Write-CampaignMilestoneLoopCommandPreview `
+            -DriverExe $DriverExe `
+            -MilestoneContext $MilestoneContext
         if ($ContinueCoverageGaps) {
             Write-Host "milestone-summary-command:"
             Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $CoverageGapMilestoneSummaryArgs)

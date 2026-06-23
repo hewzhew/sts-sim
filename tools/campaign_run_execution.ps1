@@ -109,6 +109,80 @@ function New-CampaignRunCommandContext {
     }
 }
 
+function New-CampaignRunMilestoneContext {
+    param(
+        [object] $Context,
+        [string[]] $RunIdentityArgs,
+        [object] $OptionContext
+    )
+
+    return New-CampaignMilestoneContext `
+        -ReportPath $Context.RunOutputCampaignPath `
+        -CheckpointPath $Context.RunOutputCheckpointPath `
+        -DriverExe $Context.DriverExe `
+        -UntilMilestone $Context.UntilMilestone `
+        -ResolvedMilestoneStop $Context.ResolvedMilestoneStop `
+        -MilestoneStepRounds $Context.MilestoneStepRounds `
+        -MilestoneMaxRounds $Context.MilestoneMaxRounds `
+        -RunIdentityArgs $RunIdentityArgs `
+        -OptionContext $OptionContext
+}
+
+function Write-CampaignRunDryRunCommandSet {
+    param(
+        [object] $Context,
+        [string[]] $RunIdentityArgs,
+        [object] $OptionContext
+    )
+
+    if ($Context.NeedsBuild) {
+        Write-CampaignBuildCommandPreview -BuildArgs $Context.BuildArgs
+    }
+    Write-Host $Context.RenderedCommand
+    if ($Context.UntilMilestoneBound) {
+        $MilestoneContext = New-CampaignRunMilestoneContext `
+            -Context $Context `
+            -RunIdentityArgs $RunIdentityArgs `
+            -OptionContext $OptionContext
+        Write-CampaignMilestoneLoopCommandPreview `
+            -DriverExe $Context.DriverExe `
+            -MilestoneContext $MilestoneContext
+    }
+}
+
+function Invoke-CampaignInitialDriverCommand {
+    param(
+        [object] $Context
+    )
+
+    if ($Context.Log) {
+        return Invoke-CampaignLoggedDriverCommand -ExePath $Context.DriverExe -Arguments $Context.DriverArgs -LogPath $Context.RunLogPath
+    }
+
+    & $Context.DriverExe @($Context.DriverArgs) | ForEach-Object { Write-Host $_ }
+    return $LASTEXITCODE
+}
+
+function Invoke-CampaignRunMilestoneLoop {
+    param(
+        [object] $Context,
+        [string[]] $RunIdentityArgs,
+        [object] $OptionContext
+    )
+
+    if (-not $Context.UntilMilestoneBound) {
+        return 0
+    }
+
+    $MilestoneContext = New-CampaignRunMilestoneContext `
+        -Context $Context `
+        -RunIdentityArgs $RunIdentityArgs `
+        -OptionContext $OptionContext
+    return Invoke-CampaignUntilMilestone `
+        -MilestoneContext $MilestoneContext `
+        -AlreadySpentRounds $Context.MaxRounds
+}
+
 function Invoke-CampaignRunCommand {
     param(
         [object] $Context,
@@ -129,24 +203,10 @@ function Invoke-CampaignRunCommand {
     }
 
     if ($Context.DryRun) {
-        if ($Context.NeedsBuild) {
-            Write-CampaignBuildCommandPreview -BuildArgs $Context.BuildArgs
-        }
-        Write-Host $Context.RenderedCommand
-        if ($Context.UntilMilestoneBound) {
-            $MilestoneContext = New-CampaignMilestoneContext `
-                -ReportPath $Context.RunOutputCampaignPath `
-                -CheckpointPath $Context.RunOutputCheckpointPath `
-                -DriverExe $Context.DriverExe `
-                -UntilMilestone $Context.UntilMilestone `
-                -ResolvedMilestoneStop $Context.ResolvedMilestoneStop `
-                -MilestoneStepRounds $Context.MilestoneStepRounds `
-                -MilestoneMaxRounds $Context.MilestoneMaxRounds `
-                -RunIdentityArgs $RunIdentityArgs `
-                -OptionContext $OptionContext
-            Write-Host "milestone-loop-command-template:"
-            Write-Host (Format-CommandLine -ExePath $Context.DriverExe -Arguments (New-CampaignMilestoneResumeDriverArgs -MilestoneContext $MilestoneContext -StepRounds $Context.MilestoneStepRounds))
-        }
+        Write-CampaignRunDryRunCommandSet `
+            -Context $Context `
+            -RunIdentityArgs $RunIdentityArgs `
+            -OptionContext $OptionContext
         return 0
     }
 
@@ -158,31 +218,18 @@ function Invoke-CampaignRunCommand {
                 return $LASTEXITCODE
             }
         }
-        if ($Context.Log) {
-            $DriverExitCode = Invoke-CampaignLoggedDriverCommand -ExePath $Context.DriverExe -Arguments $Context.DriverArgs -LogPath $Context.RunLogPath
-        } else {
-            & $Context.DriverExe @($Context.DriverArgs) | ForEach-Object { Write-Host $_ }
-            $DriverExitCode = $LASTEXITCODE
-        }
+        $DriverExitCode = Invoke-CampaignInitialDriverCommand -Context $Context
         if ($DriverExitCode -eq 0) {
             Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine $Context.RenderedCommand -Context $Context
             Write-CampaignWrapperManifest `
                 -Path $Context.RunManifestPath `
                 -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed" -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext -Context $Context)
+            $MilestoneExitCode = Invoke-CampaignRunMilestoneLoop `
+                -Context $Context `
+                -RunIdentityArgs $RunIdentityArgs `
+                -OptionContext $OptionContext
             if ($Context.UntilMilestoneBound) {
-                $MilestoneContext = New-CampaignMilestoneContext `
-                    -ReportPath $Context.RunOutputCampaignPath `
-                    -CheckpointPath $Context.RunOutputCheckpointPath `
-                    -DriverExe $Context.DriverExe `
-                    -UntilMilestone $Context.UntilMilestone `
-                    -ResolvedMilestoneStop $Context.ResolvedMilestoneStop `
-                    -MilestoneStepRounds $Context.MilestoneStepRounds `
-                    -MilestoneMaxRounds $Context.MilestoneMaxRounds `
-                    -RunIdentityArgs $RunIdentityArgs `
-                    -OptionContext $OptionContext
-                $DriverExitCode = Invoke-CampaignUntilMilestone `
-                    -MilestoneContext $MilestoneContext `
-                    -AlreadySpentRounds $Context.MaxRounds
+                $DriverExitCode = $MilestoneExitCode
             }
             $ManifestStage = if ($Context.UntilMilestoneBound) { "completed_with_milestone_loop" } else { "completed" }
             Write-CampaignWrapperManifest `
