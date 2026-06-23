@@ -225,6 +225,7 @@ $ScratchLatestIsContinuationSource = $CampaignRequest.ScratchLatestIsContinuatio
 $ReadsCampaignSource = $CampaignRequest.ReadsCampaignSource
 $IsContinuationFamily = $CampaignRequest.IsContinuationFamily
 $CampaignSourceContext = Get-CampaignSourceContext `
+    -Request $CampaignRequest `
     -ReadsCampaignSource $ReadsCampaignSource `
     -Last $Last `
     -From $From `

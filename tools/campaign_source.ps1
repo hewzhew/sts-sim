@@ -1,10 +1,16 @@
 function Get-CampaignSourceContext {
     param(
+        [object] $Request,
         [bool] $ReadsCampaignSource,
         [bool] $Last,
         [string] $From,
         [bool] $UseScratchLatest
     )
+
+    if ($Request) {
+        $ReadsCampaignSource = [bool] $Request.ReadsCampaignSource
+        $UseScratchLatest = ($Request.SourceIntent -eq "scratch_latest")
+    }
 
     if (-not ($ReadsCampaignSource -or $Last)) {
         return [pscustomobject]@{

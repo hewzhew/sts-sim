@@ -321,6 +321,7 @@ tools/campaign_source.ps1
 This helper owns:
 
 - resolving a wrapper source selector into a campaign artifact and run config
+- source-read behavior from typed request source intent
 - inheriting mode from source artifacts for continuation-style commands
 - resolving seed, ascension, class, and domain defaults
 - run identity inheritance only reads the selected source artifact; it no longer
