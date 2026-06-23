@@ -133,6 +133,15 @@ struct CoverageGapMilestoneTargetGroupSummaryV1<'a> {
     stop_reason: Option<&'a str>,
 }
 
+struct CoverageGapMilestoneRouteDecisionComparisonV1<'a> {
+    decision_key: String,
+    candidates: usize,
+    reached: usize,
+    furthest: Option<&'a CoverageGapMilestoneBranchRowV1>,
+    best_hp: Option<&'a CoverageGapMilestoneBranchRowV1>,
+    cleanest: Option<&'a CoverageGapMilestoneBranchRowV1>,
+}
+
 pub(super) fn run_coverage_gap_milestone_summary_inspection(
     input: &InspectCommandInput,
 ) -> Result<(), String> {
@@ -442,6 +451,20 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_group_
                 .collect::<Vec<_>>()
                 .join(" ")
         ));
+    }
+
+    let route_decision_comparisons = route_decision_comparison_summaries_v1(rows, target);
+    if !route_decision_comparisons.is_empty() {
+        lines.push("Route decision comparison:".to_string());
+        for comparison in route_decision_comparisons.iter().take(8) {
+            lines.push(format_route_decision_comparison_line_v1(comparison));
+        }
+        if route_decision_comparisons.len() > 8 {
+            lines.push(format!(
+                "  ... {} more route decision(s)",
+                route_decision_comparisons.len().saturating_sub(8)
+            ));
+        }
     }
 
     let target_group_audit = target_group_audit_summaries_v1(rows, target);
@@ -1057,6 +1080,139 @@ fn format_target_group_detail_lines_v1(
     lines
 }
 
+fn route_decision_comparison_summaries_v1<'a>(
+    rows: &'a [CoverageGapMilestoneBranchRowV1],
+    target: CoverageGapMilestoneTargetV1,
+) -> Vec<CoverageGapMilestoneRouteDecisionComparisonV1<'a>> {
+    let mut by_decision =
+        BTreeMap::<String, CoverageGapMilestoneRouteDecisionComparisonV1<'a>>::new();
+    for target_summary in target_group_audit_summaries_v1(rows, target) {
+        let Some(first) = target_summary.first else {
+            continue;
+        };
+        if first.event_type != "route" {
+            continue;
+        }
+        let Some(decision_key) = route_decision_key_from_target_key_v1(&first.target_key) else {
+            continue;
+        };
+        let representative = target_summary
+            .furthest
+            .expect("target group should have a furthest row");
+        let comparison = by_decision.entry(decision_key.clone()).or_insert(
+            CoverageGapMilestoneRouteDecisionComparisonV1 {
+                decision_key,
+                candidates: 0,
+                reached: 0,
+                furthest: None,
+                best_hp: None,
+                cleanest: None,
+            },
+        );
+        comparison.candidates += 1;
+        if target_summary.reached {
+            comparison.reached += 1;
+        }
+        if comparison.furthest.is_none_or(|current| {
+            compare_milestone_rows(representative, current) == Ordering::Greater
+        }) {
+            comparison.furthest = Some(representative);
+        }
+        if comparison.best_hp.is_none_or(|current| {
+            compare_best_hp_route_candidate_v1(representative, current) == Ordering::Greater
+        }) {
+            comparison.best_hp = Some(representative);
+        }
+        if comparison.cleanest.is_none_or(|current| {
+            compare_cleanest_route_candidate_v1(representative, current) == Ordering::Greater
+        }) {
+            comparison.cleanest = Some(representative);
+        }
+    }
+
+    let mut comparisons = by_decision.into_values().collect::<Vec<_>>();
+    comparisons.sort_by(|left, right| compare_route_decision_comparison_v1(right, left));
+    comparisons
+}
+
+fn route_decision_key_from_target_key_v1(target_key: &str) -> Option<String> {
+    let mut parts = target_key.split('|');
+    let event_type = parts.next()?;
+    if event_type != "route" {
+        return None;
+    }
+    parts.next().map(str::to_string)
+}
+
+fn compare_route_decision_comparison_v1(
+    left: &CoverageGapMilestoneRouteDecisionComparisonV1<'_>,
+    right: &CoverageGapMilestoneRouteDecisionComparisonV1<'_>,
+) -> Ordering {
+    left.reached
+        .cmp(&right.reached)
+        .then_with(|| {
+            compare_milestone_rows(
+                left.furthest
+                    .expect("route decision comparison should have a furthest row"),
+                right
+                    .furthest
+                    .expect("route decision comparison should have a furthest row"),
+            )
+        })
+        .then_with(|| left.candidates.cmp(&right.candidates))
+        .then_with(|| right.decision_key.cmp(&left.decision_key))
+}
+
+fn compare_best_hp_route_candidate_v1(
+    left: &CoverageGapMilestoneBranchRowV1,
+    right: &CoverageGapMilestoneBranchRowV1,
+) -> Ordering {
+    left.hp
+        .cmp(&right.hp)
+        .then_with(|| left.max_hp.cmp(&right.max_hp))
+        .then_with(|| compare_milestone_rows(left, right))
+}
+
+fn compare_cleanest_route_candidate_v1(
+    left: &CoverageGapMilestoneBranchRowV1,
+    right: &CoverageGapMilestoneBranchRowV1,
+) -> Ordering {
+    right
+        .deck_count
+        .cmp(&left.deck_count)
+        .then_with(|| compare_milestone_rows(left, right))
+}
+
+fn format_route_decision_comparison_line_v1(
+    comparison: &CoverageGapMilestoneRouteDecisionComparisonV1<'_>,
+) -> String {
+    format!(
+        "  decision={} candidates={} reached={} furthest={} best_hp={} cleanest={}",
+        comparison.decision_key,
+        comparison.candidates,
+        comparison.reached,
+        comparison
+            .furthest
+            .map(format_route_candidate_compact_v1)
+            .unwrap_or_else(|| "-".to_string()),
+        comparison
+            .best_hp
+            .map(format_route_candidate_compact_v1)
+            .unwrap_or_else(|| "-".to_string()),
+        comparison
+            .cleanest
+            .map(format_route_candidate_compact_v1)
+            .unwrap_or_else(|| "-".to_string())
+    )
+}
+
+fn format_route_candidate_compact_v1(row: &CoverageGapMilestoneBranchRowV1) -> String {
+    format!(
+        "{} A{}F{} HP {}/{} deck {}",
+        row.label, row.act, row.floor, row.hp, row.max_hp, row.deck_count
+    )
+}
+
 fn render_recent_choice_path_v1(choice_labels: &[String]) -> String {
     const MAX_CHOICES: usize = 8;
     if choice_labels.len() <= MAX_CHOICES {
@@ -1239,6 +1395,39 @@ mod tests {
             "route | x=6 y=12 Rest {choose x=6 y=12 Rest} | reached=no rows=1 active=0 frozen=0 abandoned=1"
         ));
         assert!(text.contains("stop=combat search did not find an executable complete win"));
+    }
+
+    #[test]
+    fn milestone_summary_compares_route_candidates_by_source_decision() {
+        let mut furthest = row("active", "route", 2, 1, "x=3 Monster");
+        furthest.target_key = "route|decision:floor0|candidate:monster|1|go 3".to_string();
+        furthest.hp = 60;
+        furthest.max_hp = 80;
+        furthest.deck_count = 14;
+        furthest.frontier_title = "Reward Screen".to_string();
+        let mut best_hp = row("frozen", "route", 1, 15, "x=2 Event");
+        best_hp.target_key = "route|decision:floor0|candidate:event|0|go 2".to_string();
+        best_hp.hp = 80;
+        best_hp.max_hp = 80;
+        best_hp.deck_count = 13;
+        best_hp.stop_reason = "card reward requires human choice".to_string();
+        let mut cleanest = row("discarded", "route", 1, 14, "x=1 Shop");
+        cleanest.target_key = "route|decision:floor0|candidate:shop|2|go 1".to_string();
+        cleanest.hp = 70;
+        cleanest.max_hp = 80;
+        cleanest.deck_count = 11;
+
+        let text = render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
+            &[furthest, best_hp, cleanest],
+            CoverageGapMilestoneTargetV1::Act2Start,
+            &CoverageGapContinuationFilterV1::default(),
+        );
+
+        assert!(text.contains("Route decision comparison:"));
+        assert!(text.contains("decision=decision:floor0 candidates=3 reached=1"));
+        assert!(text.contains("furthest=x=3 Monster A2F1 HP 60/80 deck 14"));
+        assert!(text.contains("best_hp=x=2 Event A1F15 HP 80/80 deck 13"));
+        assert!(text.contains("cleanest=x=1 Shop A1F14 HP 70/80 deck 11"));
     }
 
     #[test]
