@@ -16,7 +16,7 @@ function Invoke-CampaignEntryDispatch {
                 -RunOutputContext $Context.RunOutputContext `
                 -BoundParameterContext $Context.BoundParameterContext `
                 -CampaignSourceArtifact $Context.CampaignSourceArtifact `
-                -InspectScratchLatest ([bool] $Context.InspectScratchLatest) `
+                -FromScratchLatest ([bool] $Context.FromScratchLatest) `
                 -CoverageGapExecution $CoverageGap.Execution `
                 -CoverageGapIntent $CoverageGap.Intent `
                 -CoverageGapFilterLabel $CoverageGap.FilterContext.FilterLabel `

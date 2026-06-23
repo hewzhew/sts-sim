@@ -247,7 +247,7 @@ function Resolve-CampaignEntryRequest {
         [bool] $More,
         [bool] $Inspect,
         [bool] $AnyInspectSelector,
-        [bool] $InspectScratchLatest,
+        [bool] $FromScratchLatest,
         [bool] $InspectShopChallenge,
         [bool] $InspectBoundaryBound,
         [string] $InspectBoundary,
@@ -261,7 +261,7 @@ function Resolve-CampaignEntryRequest {
         throw "-More has been retired because it silently mixed latest source, output, and round semantics. Use '.\tools\campaign.ps1 -From latest -Continue' or '.\tools\campaign.ps1 -From run:<id> -Continue'."
     }
 
-    $ScratchLatestIsContinuationSource = $InspectScratchLatest -and (
+    $ScratchLatestIsContinuationSource = $FromScratchLatest -and (
         $ContinueCampaign -or
         $PlanCoverageGaps -or
         $ContinueCoverageGaps
@@ -270,7 +270,7 @@ function Resolve-CampaignEntryRequest {
     $ResolvedInspect = $Inspect
     if (
         $AnyInspectSelector -or
-        ($InspectScratchLatest -and -not $ScratchLatestIsContinuationSource)
+        ($FromScratchLatest -and -not $ScratchLatestIsContinuationSource)
     ) {
         $ResolvedInspect = $true
     }
@@ -289,7 +289,7 @@ function Resolve-CampaignEntryRequest {
     $IsContinuationFamily = [bool] ($PlanCoverageGaps -or $ContinueCoverageGaps)
     $ReadsCampaignSource = [bool] ($ResolvedInspect -or $ContinueCampaign -or $IsContinuationFamily)
     $SourceIntent = if ($ReadsCampaignSource) {
-        if ($InspectScratchLatest) {
+        if ($FromScratchLatest) {
             "scratch_latest"
         } else {
             "campaign_source_selector"

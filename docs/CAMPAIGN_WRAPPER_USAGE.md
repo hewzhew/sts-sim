@@ -62,7 +62,7 @@ coverage-gap continuation.
 .\tools\campaign.ps1 -Inspect
 .\tools\campaign.ps1 -InspectArtifacts
 .\tools\campaign.ps1 -InspectState -InspectIndex 0
-.\tools\campaign.ps1 -InspectScratchLatest -InspectState -InspectIndex 0
+.\tools\campaign.ps1 -FromScratchLatest -InspectState -InspectIndex 0
 .\tools\campaign.ps1 -InspectDecisionObservations -InspectQuery "Iron Wave"
 .\tools\campaign.ps1 -InspectJournal -InspectQuery "shop"
 .\tools\campaign.ps1 -InspectLineageDecisions -InspectIndex 0
@@ -102,9 +102,9 @@ adding one top-level switch per Rust driver probe.
 
 ```powershell
 .\tools\campaign.ps1 -InspectCoverageGapMilestoneSummary -CoverageGapRouteMissing
-.\tools\campaign.ps1 -InspectScratchLatest -InspectCoverageGapMilestoneSummary -CoverageGapRouteMissing
-.\tools\campaign.ps1 -InspectScratchLatest -InspectCoverageGapMilestoneSummary -CoverageGapRoute
-.\tools\campaign.ps1 -InspectScratchLatest -InspectCoverageGapTargetState -CoverageGapRoute -InspectIndex 1
+.\tools\campaign.ps1 -FromScratchLatest -InspectCoverageGapMilestoneSummary -CoverageGapRouteMissing
+.\tools\campaign.ps1 -FromScratchLatest -InspectCoverageGapMilestoneSummary -CoverageGapRoute
+.\tools\campaign.ps1 -FromScratchLatest -InspectCoverageGapTargetState -CoverageGapRoute -InspectIndex 1
 ```
 
 ## Build And Diagnostics

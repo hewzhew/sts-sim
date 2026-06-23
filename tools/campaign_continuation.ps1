@@ -23,7 +23,7 @@ function New-CampaignContinuationEntryContext {
         [object] $RunOutputContext,
         [object] $BoundParameterContext,
         [object] $CampaignSourceArtifact,
-        [bool] $InspectScratchLatest,
+        [bool] $FromScratchLatest,
         [string] $CoverageGapExecution,
         [string] $CoverageGapIntent,
         [string] $CoverageGapFilterLabel,
@@ -54,7 +54,7 @@ function New-CampaignContinuationEntryContext {
         RunManifestPath = $RunOutputContext.ManifestPath
         WrapperInvocationLine = $BoundParameterContext.WrapperInvocationLine
         WrapperBoundParameters = $BoundParameterContext.WrapperBoundParameters
-        InspectScratchLatest = $InspectScratchLatest
+        FromScratchLatest = $FromScratchLatest
         CampaignSourceArtifact = $CampaignSourceArtifact
         RunOutputCampaignPath = $RunOutputContext.CampaignPath
         RunOutputCheckpointPath = $RunOutputContext.CheckpointPath

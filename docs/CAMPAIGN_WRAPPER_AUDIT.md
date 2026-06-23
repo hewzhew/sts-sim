@@ -462,7 +462,8 @@ This helper owns:
 - wrapper bound-parameter context extraction
 - inspect flag folding
 - inspect selector switch classification
-- `-InspectScratchLatest` source/read interpretation
+- `-FromScratchLatest` source/read interpretation; the old
+  `-InspectScratchLatest` name remains only as a compatibility alias
 - scratch output eligibility
 - the derived `ReadsCampaignSource` flag
 

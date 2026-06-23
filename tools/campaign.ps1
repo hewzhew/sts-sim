@@ -62,8 +62,8 @@ param(
     [switch] $InspectFinalBossCombat,
     [switch] $InspectCoverageGapMilestoneSummary,
     [switch] $InspectCoverageGapTargetState,
-    [Alias("FromScratchLatest")]
-    [switch] $InspectScratchLatest,
+    [Alias("InspectScratchLatest")]
+    [switch] $FromScratchLatest,
     [switch] $ProbeBoss,
     [switch] $DryRun,
     [switch] $Log,
@@ -211,7 +211,7 @@ $CampaignRequest = Resolve-CampaignEntryRequest `
     -More ([bool] $More) `
     -Inspect ([bool] $Inspect) `
     -AnyInspectSelector (Test-CampaignAnyInspectSelectorSwitch -BoundParameters $PSBoundParameters) `
-    -InspectScratchLatest ([bool] $InspectScratchLatest) `
+    -FromScratchLatest ([bool] $FromScratchLatest) `
     -InspectShopChallenge ([bool] $InspectShopChallenge) `
     -InspectBoundaryBound ($PSBoundParameters.ContainsKey("InspectBoundary")) `
     -InspectBoundary $InspectBoundary `
@@ -348,7 +348,7 @@ $EntryDispatchContext = [pscustomobject]@{
     CampaignSharedDriverOptionContext = $CampaignSharedDriverOptionContext
     RunRoundContext = $RunRoundContext
     RunOutputContext = $RunOutputContext
-    InspectScratchLatest = [bool] $InspectScratchLatest
+    FromScratchLatest = [bool] $FromScratchLatest
     ExportLearningDataset = $ExportLearningDataset
     RunSwitchContext = [pscustomobject]@{
         Scratch = [bool] $Scratch
