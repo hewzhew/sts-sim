@@ -14,6 +14,7 @@ use crate::eval::combat_lab_probe_v1::CombatLabProbePacketV1;
 use crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1;
 use crate::eval::reward_boundary_packet_v1::RewardBoundaryPacketV1;
 use crate::eval::run_control::{CombatAutomationTrajectoryRecordV1, RunControlSessionCheckpointV1};
+use crate::state::map::state::MapState;
 use serde::{Deserialize, Serialize};
 
 use super::performance::BranchCampaignCombatPerformanceSummaryV1;
@@ -491,7 +492,16 @@ pub struct BranchCampaignCheckpointNodeV1 {
 #[serde(deny_unknown_fields)]
 pub struct BranchCampaignCheckpointSessionV1 {
     pub commands: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_state_map_id: Option<String>,
     pub session: RunControlSessionCheckpointV1,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointRunStateMapRecordV1 {
+    pub map_id: String,
+    pub map: MapState,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -518,6 +528,8 @@ pub struct BranchCampaignCheckpointV1 {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decision_parent_anchor_commands: Vec<Vec<String>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub run_state_maps: Vec<BranchCampaignCheckpointRunStateMapRecordV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub combat_automation_trajectories: Vec<BranchCampaignCheckpointCombatTrajectoryRecordV1>,
     pub sessions: Vec<BranchCampaignCheckpointSessionV1>,
 }
@@ -528,6 +540,14 @@ impl BranchCampaignCheckpointV1 {
         entry: &BranchCampaignCheckpointSessionV1,
     ) -> Result<RunControlSessionCheckpointV1, String> {
         let mut session = entry.session.clone();
+        if let Some(map_id) = entry.run_state_map_id.as_deref() {
+            let record = self
+                .run_state_maps
+                .iter()
+                .find(|record| record.map_id == map_id)
+                .ok_or_else(|| format!("missing checkpoint run_state map {map_id}"))?;
+            session.restore_run_state_map_from_external_ref(record.map.clone());
+        }
         if session.last_combat_automation_trajectory_record().is_some() {
             return Ok(session);
         }

@@ -741,6 +741,11 @@ fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
 
     let checkpoint = campaign_checkpoint_from_state_v1(&config, &state);
 
+    assert_eq!(
+        checkpoint.run_state_maps.len(),
+        1,
+        "campaign checkpoint should keep repeated run maps in a top-level pool"
+    );
     assert_eq!(checkpoint.combat_automation_trajectories.len(), 1);
     assert_eq!(
         checkpoint.combat_automation_trajectories[0].commands.len(),
@@ -749,6 +754,13 @@ fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
     for entry in &checkpoint.sessions {
         let session_json =
             serde_json::to_value(&entry.session).expect("session checkpoint should serialize");
+        assert!(
+            session_json
+                .get("run_state")
+                .and_then(|run_state| run_state.get("map"))
+                .is_none(),
+            "campaign checkpoint sessions should reference pooled maps instead of embedding them"
+        );
         assert!(
             session_json
                 .get("last_combat_automation_trajectory")

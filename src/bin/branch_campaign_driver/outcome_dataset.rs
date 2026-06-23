@@ -2550,9 +2550,11 @@ mod tests {
             rounds_completed: 0,
             nodes: Vec::new(),
             decision_parent_anchor_commands: Vec::new(),
+            run_state_maps: Vec::new(),
             combat_automation_trajectories: Vec::new(),
             sessions: vec![BranchCampaignCheckpointSessionV1 {
                 commands: session_commands,
+                run_state_map_id: None,
                 session: RunControlSessionCheckpointV1::from_session(&RunControlSession::new(
                     RunControlConfig::default(),
                 )),

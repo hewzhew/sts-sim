@@ -62,15 +62,15 @@ use intervention::{
 use lineage::campaign_branch_boss_relic_lineage_key_v1;
 pub use model::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
-    BranchCampaignCheckpointCombatTrajectoryRecordV1, BranchCampaignCheckpointSessionV1,
-    BranchCampaignCheckpointV1, BranchCampaignContinuationOriginV1,
-    BranchCampaignContinuationTargetLaneV1, BranchCampaignDecisionObservationV1,
-    BranchCampaignDiscardedBranchV1, BranchCampaignReportV1, BranchCampaignRoundSummaryV1,
-    BranchCampaignRouteContinuationOriginV1, BranchCampaignRouteEvidenceExampleV1,
-    BranchCampaignRouteEvidenceSummaryV1, BranchCampaignRouteFirstEliteContinuationOriginV1,
-    BranchCampaignRoutePathContinuationOriginV1, BranchCampaignRunPreludeV1,
-    BranchCampaignRunResultV1, BranchCampaignSelectionV1, BranchCampaignStateStoreSummaryV1,
-    BranchCampaignStrategyRequestV1,
+    BranchCampaignCheckpointCombatTrajectoryRecordV1, BranchCampaignCheckpointRunStateMapRecordV1,
+    BranchCampaignCheckpointSessionV1, BranchCampaignCheckpointV1,
+    BranchCampaignContinuationOriginV1, BranchCampaignContinuationTargetLaneV1,
+    BranchCampaignDecisionObservationV1, BranchCampaignDiscardedBranchV1, BranchCampaignReportV1,
+    BranchCampaignRoundSummaryV1, BranchCampaignRouteContinuationOriginV1,
+    BranchCampaignRouteEvidenceExampleV1, BranchCampaignRouteEvidenceSummaryV1,
+    BranchCampaignRouteFirstEliteContinuationOriginV1, BranchCampaignRoutePathContinuationOriginV1,
+    BranchCampaignRunPreludeV1, BranchCampaignRunResultV1, BranchCampaignSelectionV1,
+    BranchCampaignStateStoreSummaryV1, BranchCampaignStrategyRequestV1,
 };
 use parent_batch::run_campaign_parent_batch_v1;
 #[cfg(test)]
@@ -1001,6 +1001,8 @@ fn campaign_checkpoint_from_state_v1(
     state: &BranchCampaignRunStateV1,
 ) -> BranchCampaignCheckpointV1 {
     let mut sessions = Vec::new();
+    let mut run_state_maps = Vec::<BranchCampaignCheckpointRunStateMapRecordV1>::new();
+    let mut run_state_map_indexes = BTreeMap::<String, usize>::new();
     let mut combat_automation_trajectories =
         Vec::<BranchCampaignCheckpointCombatTrajectoryRecordV1>::new();
     let mut combat_automation_trajectory_indexes = BTreeMap::<String, usize>::new();
@@ -1016,14 +1018,17 @@ fn campaign_checkpoint_from_state_v1(
             continue;
         }
         if let Some(session) = state.state_store.get_session(&branch.commands) {
-            let session = campaign_checkpoint_session_with_trajectory_ref_v1(
+            let (session, run_state_map_id) = campaign_checkpoint_session_with_external_refs_v1(
                 &branch.commands,
                 session,
+                &mut run_state_maps,
+                &mut run_state_map_indexes,
                 &mut combat_automation_trajectories,
                 &mut combat_automation_trajectory_indexes,
             );
             sessions.push(BranchCampaignCheckpointSessionV1 {
                 commands: branch.commands.clone(),
+                run_state_map_id,
                 session,
             });
         }
@@ -1033,14 +1038,17 @@ fn campaign_checkpoint_from_state_v1(
             continue;
         }
         if let Some(session) = state.state_store.get_session(commands) {
-            let session = campaign_checkpoint_session_with_trajectory_ref_v1(
+            let (session, run_state_map_id) = campaign_checkpoint_session_with_external_refs_v1(
                 commands,
                 session,
+                &mut run_state_maps,
+                &mut run_state_map_indexes,
                 &mut combat_automation_trajectories,
                 &mut combat_automation_trajectory_indexes,
             );
             sessions.push(BranchCampaignCheckpointSessionV1 {
                 commands: commands.clone(),
+                run_state_map_id,
                 session,
             });
         }
@@ -1058,20 +1066,40 @@ fn campaign_checkpoint_from_state_v1(
             .iter()
             .cloned()
             .collect(),
+        run_state_maps,
         combat_automation_trajectories,
         sessions,
     }
 }
 
-fn campaign_checkpoint_session_with_trajectory_ref_v1(
+fn campaign_checkpoint_session_with_external_refs_v1(
     commands: &[String],
     session: &RunControlSession,
+    run_state_maps: &mut Vec<BranchCampaignCheckpointRunStateMapRecordV1>,
+    run_state_map_indexes: &mut BTreeMap<String, usize>,
     combat_automation_trajectories: &mut Vec<BranchCampaignCheckpointCombatTrajectoryRecordV1>,
     combat_automation_trajectory_indexes: &mut BTreeMap<String, usize>,
-) -> RunControlSessionCheckpointV1 {
+) -> (RunControlSessionCheckpointV1, Option<String>) {
     let mut checkpoint = RunControlSessionCheckpointV1::from_session(session);
+    let map = checkpoint.take_run_state_map_for_external_ref();
+    let map_key = campaign_checkpoint_run_state_map_key_v1(&map);
+    let map_index = if let Some(index) = run_state_map_indexes.get(&map_key).copied() {
+        index
+    } else {
+        let index = run_state_maps.len();
+        run_state_map_indexes.insert(map_key, index);
+        run_state_maps.push(BranchCampaignCheckpointRunStateMapRecordV1 {
+            map_id: format!("run_state_map:{index}"),
+            map,
+        });
+        index
+    };
+    let run_state_map_id = run_state_maps
+        .get(map_index)
+        .map(|record| record.map_id.clone());
+
     let Some(trajectory) = checkpoint.take_last_combat_automation_trajectory_record() else {
-        return checkpoint;
+        return (checkpoint, run_state_map_id);
     };
     let key = campaign_checkpoint_combat_trajectory_key_v1(&trajectory);
     let index = if let Some(index) = combat_automation_trajectory_indexes.get(&key).copied() {
@@ -1089,7 +1117,11 @@ fn campaign_checkpoint_session_with_trajectory_ref_v1(
     if let Some(record) = combat_automation_trajectories.get_mut(index) {
         record.commands.push(commands.to_vec());
     }
-    checkpoint
+    (checkpoint, run_state_map_id)
+}
+
+fn campaign_checkpoint_run_state_map_key_v1(map: &crate::state::map::state::MapState) -> String {
+    serde_json::to_string(map).unwrap_or_else(|_| format!("{map:?}"))
 }
 
 fn campaign_checkpoint_combat_trajectory_key_v1(

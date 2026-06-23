@@ -119,6 +119,10 @@ pub struct RunStateCheckpointV1 {
     pub floor_num: i32,
     pub playtime_seconds: f32,
     pub player_class: String,
+    #[serde(
+        default,
+        skip_serializing_if = "MapState::is_checkpoint_externalized_placeholder"
+    )]
     pub map: MapState,
     pub rng_pool: RngPool,
     pub neow_rng: StsRng,

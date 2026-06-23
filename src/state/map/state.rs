@@ -13,6 +13,24 @@ pub struct MapState {
 }
 
 impl MapState {
+    pub fn checkpoint_externalized_placeholder() -> Self {
+        Self {
+            graph: Vec::new(),
+            current_y: -1,
+            current_x: -1,
+            boss_node_available: false,
+            has_emerald_key: false,
+        }
+    }
+
+    pub fn is_checkpoint_externalized_placeholder(&self) -> bool {
+        self.graph.is_empty()
+            && self.current_y == -1
+            && self.current_x == -1
+            && !self.boss_node_available
+            && !self.has_emerald_key
+    }
+
     pub fn new(graph: Map) -> Self {
         Self {
             graph,
@@ -141,6 +159,12 @@ impl MapState {
             }
         }
         Err("No current map node")
+    }
+}
+
+impl Default for MapState {
+    fn default() -> Self {
+        Self::checkpoint_externalized_placeholder()
     }
 }
 

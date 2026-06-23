@@ -686,6 +686,7 @@ fn test_combat_checkpoint_session(
     session.run_state.max_hp = 80;
     BranchCampaignCheckpointSessionV1 {
         commands: branch.commands.clone(),
+        run_state_map_id: None,
         session: RunControlSessionCheckpointV1::from_session(&session),
     }
 }

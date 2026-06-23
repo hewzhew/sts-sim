@@ -50,23 +50,33 @@ impl CampaignJournalV1 {
 
     pub fn compact_for_campaign_artifact_v1(&mut self) {
         for event in &mut self.events {
-            let CampaignJournalEventPayloadV1::RouteCandidatePool {
-                map_decision_packet,
-                route_candidates,
-                ..
-            } = &mut event.payload
-            else {
-                continue;
-            };
-            let Some(packet) = map_decision_packet.take() else {
-                continue;
-            };
-            if route_candidates.is_empty() {
-                *route_candidates = packet
-                    .candidates
-                    .iter()
-                    .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
-                    .collect();
+            match &mut event.payload {
+                CampaignJournalEventPayloadV1::RouteCandidatePool {
+                    map_decision_packet,
+                    route_candidates,
+                    ..
+                } => {
+                    let Some(packet) = map_decision_packet.take() else {
+                        continue;
+                    };
+                    if route_candidates.is_empty() {
+                        *route_candidates = packet
+                            .candidates
+                            .iter()
+                            .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
+                            .collect();
+                    }
+                    for candidate in route_candidates {
+                        candidate.compact_for_campaign_artifact_v1();
+                    }
+                }
+                CampaignJournalEventPayloadV1::RouteDecision {
+                    selected_route_candidate,
+                    ..
+                } => {
+                    *selected_route_candidate = None;
+                }
+                _ => {}
             }
         }
     }
@@ -259,6 +269,15 @@ pub struct CampaignJournalRouteCandidateV1 {
 }
 
 impl CampaignJournalRouteCandidateV1 {
+    pub fn compact_for_campaign_artifact_v1(&mut self) {
+        self.score_terms = None;
+        self.value_factors = None;
+        self.node_features = None;
+        self.needs = None;
+        self.reasons.clear();
+        self.cautions.clear();
+    }
+
     pub fn from_route_entry_v1(candidate: &BranchExperimentRouteCandidateEntryV1) -> Self {
         Self {
             candidate_id: candidate.candidate_id.clone(),
@@ -989,33 +1008,66 @@ mod tests {
             crate::ai::route_planner_v1::MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
         assert!(!packet.candidates.is_empty());
         let expected_candidate_count = packet.candidates.len();
+        let selected_route_candidate =
+            CampaignJournalRouteCandidateV1::from_route_move_candidate_v1(&packet.candidates[0]);
         let mut journal = CampaignJournalV1 {
             schema_name: CAMPAIGN_JOURNAL_SCHEMA_NAME.to_string(),
             schema_version: CAMPAIGN_JOURNAL_SCHEMA_VERSION,
-            events: vec![CampaignJournalEventV1 {
-                event_id: "route-pool:candidate_set".to_string(),
-                round: 1,
-                branch_id: "root".to_string(),
-                branch_index: 0,
-                branch_frontier_title: "Map".to_string(),
-                act: 1,
-                floor: 1,
-                branch_choices: Vec::new(),
-                branch_commands: Vec::new(),
-                combat_budget_retry_used: false,
-                payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
-                    decision_id: "route-pool".to_string(),
-                    boundary_title: "Map".to_string(),
-                    frontier_key: "map".to_string(),
-                    depth: 0,
-                    candidate_count: expected_candidate_count,
-                    selected_index: Some(0),
-                    candidate_pool_provenance: None,
-                    map_decision_packet: Some(packet),
-                    route_candidates: Vec::new(),
-                    candidates: Vec::new(),
+            events: vec![
+                CampaignJournalEventV1 {
+                    event_id: "route-pool:candidate_set".to_string(),
+                    round: 1,
+                    branch_id: "root".to_string(),
+                    branch_index: 0,
+                    branch_frontier_title: "Map".to_string(),
+                    act: 1,
+                    floor: 1,
+                    branch_choices: Vec::new(),
+                    branch_commands: Vec::new(),
+                    combat_budget_retry_used: false,
+                    payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                        decision_id: "route-pool".to_string(),
+                        boundary_title: "Map".to_string(),
+                        frontier_key: "map".to_string(),
+                        depth: 0,
+                        candidate_count: expected_candidate_count,
+                        selected_index: Some(0),
+                        candidate_pool_provenance: None,
+                        map_decision_packet: Some(packet),
+                        route_candidates: Vec::new(),
+                        candidates: Vec::new(),
+                    },
                 },
-            }],
+                CampaignJournalEventV1 {
+                    event_id: "route-decision".to_string(),
+                    round: 1,
+                    branch_id: "root".to_string(),
+                    branch_index: 0,
+                    branch_frontier_title: "Map".to_string(),
+                    act: 1,
+                    floor: 1,
+                    branch_choices: Vec::new(),
+                    branch_commands: Vec::new(),
+                    combat_budget_retry_used: false,
+                    payload: CampaignJournalEventPayloadV1::RouteDecision {
+                        decision_id: "route-decision".to_string(),
+                        route_branch_id: "route-branch".to_string(),
+                        selected_index: Some(0),
+                        selected_candidate_id: Some(selected_route_candidate.candidate_id.clone()),
+                        selected_candidate_rank: Some(selected_route_candidate.rank),
+                        selected_target_node: selected_route_candidate.target_node.clone(),
+                        selected_route_candidate: Some(selected_route_candidate),
+                        target: "x=1 y=0".to_string(),
+                        move_kind: "normal_edge".to_string(),
+                        safety_flag: None,
+                        safety: "ok".to_string(),
+                        candidate_pool_provenance: None,
+                        command: "go 1".to_string(),
+                        elite_prep_bp: 0,
+                        first_elite: BranchExperimentFirstEliteEvidenceV1::default(),
+                    },
+                },
+            ],
         };
 
         journal.compact_for_campaign_artifact_v1();
@@ -1028,8 +1080,27 @@ mod tests {
             } => {
                 assert!(map_decision_packet.is_none());
                 assert_eq!(route_candidates.len(), expected_candidate_count);
+                assert!(route_candidates[0].path_summary.is_some());
+                assert!(route_candidates[0].score_terms.is_none());
+                assert!(route_candidates[0].value_factors.is_none());
+                assert!(route_candidates[0].node_features.is_none());
+                assert!(route_candidates[0].needs.is_none());
+                assert!(route_candidates[0].reasons.is_empty());
             }
             _ => panic!("expected route candidate pool"),
+        }
+        match &journal.events[1].payload {
+            CampaignJournalEventPayloadV1::RouteDecision {
+                selected_route_candidate,
+                selected_candidate_id,
+                selected_target_node,
+                ..
+            } => {
+                assert!(selected_route_candidate.is_none());
+                assert!(selected_candidate_id.is_some());
+                assert!(selected_target_node.is_some());
+            }
+            _ => panic!("expected route decision"),
         }
     }
 }

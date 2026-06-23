@@ -6,6 +6,7 @@ use crate::eval::card_reward_value_loop::{
     CardRewardStrategyPackageCalibrationV1,
 };
 use crate::state::core::{ActiveCombat, EngineState};
+use crate::state::map::state::MapState;
 use crate::state::run::{RunState, RunStateCheckpointV1};
 
 use super::auto_capture::AutoCombatCaptureConfig;
@@ -292,6 +293,14 @@ impl RunControlSessionCheckpointV1 {
         record: CombatAutomationTrajectoryRecordV1,
     ) {
         self.last_combat_automation_trajectory = Some(record);
+    }
+
+    pub fn take_run_state_map_for_external_ref(&mut self) -> MapState {
+        std::mem::take(&mut self.run_state.map)
+    }
+
+    pub fn restore_run_state_map_from_external_ref(&mut self, map: MapState) {
+        self.run_state.map = map;
     }
 
     pub fn into_session(self) -> Result<RunControlSession, String> {
