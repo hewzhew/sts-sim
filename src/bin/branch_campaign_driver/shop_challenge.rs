@@ -404,32 +404,3 @@ fn render_challenge_branch_summary_v1(branch: &BranchExperimentBranchReportV1) -
         branch.stop_reason
     )
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn comparison_row_renders_observed_outcome_not_best_winner() {
-        let row = ShopPlanChallengeComparisonRowV1 {
-            plan_index: 2,
-            label: "Buy Reaper".to_string(),
-            applied: "Buy Reaper 80g -> Leave shop".to_string(),
-            branches: 4,
-            status_counts: "Active=4".to_string(),
-            observed_act: 2,
-            observed_floor: 1,
-            observed_hp: 60,
-            observed_max_hp: 80,
-            observed_gold: 120,
-            observed_deck_count: 14,
-            observed_frontier: "Reward Screen".to_string(),
-            note: "card reward requires human choice".to_string(),
-        };
-
-        let rendered = row.render();
-
-        assert!(rendered.contains("observed=A2F1 HP 60/80 gold 120 deck 14 Reward Screen"));
-        assert!(!rendered.contains("best="));
-    }
-}

@@ -29,6 +29,14 @@ If a field does not fit one of those classes, do not add it yet.
 - Before adding a default field, write one counterexample where it would mislead
   a human or downstream learner.
 
+## Testing Rule
+
+Tests should protect stable structure, not prose. Good report tests check schema
+shape, candidate grouping, provenance, field class, or machine-readable records.
+Avoid tests whose main assertion is that a human-facing line contains or omits a
+particular adjective. Naming and wording are reviewed through this document and
+focused code review unless they expose a real structural contract.
+
 ## Practical Checklist
 
 - Is this field a fact, diagnostic, verdict, or label?
@@ -36,4 +44,3 @@ If a field does not fit one of those classes, do not add it yet.
 - Can it be mistaken for a strategy recommendation?
 - Does it duplicate an existing field with a different name?
 - Should this live in a focused inspect command instead of the default report?
-

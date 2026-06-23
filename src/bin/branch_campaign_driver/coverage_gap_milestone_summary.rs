@@ -1413,7 +1413,7 @@ mod tests {
     }
 
     #[test]
-    fn milestone_summary_reports_route_candidate_facts_without_pseudo_winners() {
+    fn route_decision_comparison_collects_candidate_rows_by_source_decision() {
         let mut furthest = row("active", "route", 2, 1, "x=3 Monster");
         furthest.target_key =
             "route|root:round1:route_candidate_pool0:root|candidate:monster|1|go 3".to_string();
@@ -1435,28 +1435,24 @@ mod tests {
         shop_row.max_hp = 80;
         shop_row.deck_count = 11;
 
-        let text = render_coverage_gap_milestone_summary_from_rows_with_filter_v1(
-            &[furthest, event_row, shop_row],
-            CoverageGapMilestoneTargetV1::Act2Start,
-            &CoverageGapContinuationFilterV1::default(),
-        );
+        let rows = vec![furthest, event_row, shop_row];
+        let comparisons =
+            route_decision_comparison_summaries_v1(&rows, CoverageGapMilestoneTargetV1::Act2Start);
 
-        assert!(text.contains("Route decision comparison:"));
-        assert!(text.contains(
-            "decision=route_pool0@root candidates=3 reached=1 verdict=insufficient_evidence"
-        ));
-        assert!(!text.contains("root:round1:route_candidate_pool0:root candidates=3"));
-        assert!(!text.contains("furthest=x=3 Monster"));
-        assert!(!text.contains("best_hp="));
-        assert!(!text.contains("cleanest="));
-        assert!(text
-            .contains("candidate=x=3 Monster progress=A2F1 hp=60/80 deck=14 bucket=active stop=-"));
-        assert!(text.contains(
-            "candidate=x=2 Event progress=A1F15 hp=80/80 deck=13 bucket=frozen stop=card reward requires human choice"
-        ));
-        assert!(text.contains(
-            "candidate=x=1 Shop progress=A1F14 hp=70/80 deck=11 bucket=discarded stop=-"
-        ));
+        assert_eq!(comparisons.len(), 1);
+        let comparison = &comparisons[0];
+        assert_eq!(
+            comparison.decision_key,
+            "root:round1:route_candidate_pool0:root"
+        );
+        assert_eq!(comparison.candidates, 3);
+        assert_eq!(comparison.reached, 1);
+        let labels = comparison
+            .candidate_rows
+            .iter()
+            .map(|row| row.label.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(labels, ["x=3 Monster", "x=2 Event", "x=1 Shop"]);
     }
 
     #[test]

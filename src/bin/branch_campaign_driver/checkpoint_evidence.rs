@@ -520,23 +520,6 @@ fn route_range_compact_v1(min: usize, max: usize) -> String {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn route_candidate_position_label_names_execution_head_without_rank_or_selected() {
-        assert_eq!(
-            route_candidate_position_label_v1(0, true),
-            "candidate_index=0 execution_head"
-        );
-        assert_eq!(
-            route_candidate_position_label_v1(1, false),
-            "candidate_index=1"
-        );
-    }
-}
-
 pub(super) fn render_checkpoint_deck_mutation_v1(
     session: &RunControlSession,
 ) -> Result<String, String> {
