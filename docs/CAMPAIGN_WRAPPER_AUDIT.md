@@ -13,7 +13,7 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 544 lines
+- `tools/campaign.ps1`: 534 lines
 - `tools/campaign_artifacts.ps1`: 642 lines
 - `tools/campaign_invocation.ps1`: 605 lines
 - `tools/campaign_coverage_gaps.ps1`: 428 lines
@@ -351,6 +351,8 @@ This helper owns:
 
 - typed entry request classification (`new_run`, `continue_run`, `inspect`,
   `plan_coverage_gaps`, `continue_coverage_gaps`, and legacy targeted modes)
+- main-wrapper dispatch consumes the resolved request object directly instead
+  of rebinding request switches into a second set of mutable variables
 - source/output intent derivation for wrapper manifests
 - derived operation switches used by the main wrapper after request resolution
 - retired `-More` rejection

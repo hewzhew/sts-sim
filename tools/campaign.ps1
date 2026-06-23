@@ -218,19 +218,9 @@ $CampaignRequest = Resolve-CampaignEntryRequest `
     -PlanCoverageGaps ([bool] $PlanCoverageGaps) `
     -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
     -Scratch ([bool] $Scratch)
-$ContinueCampaign = $CampaignRequest.ContinueCampaign
-$Inspect = $CampaignRequest.Inspect
-$InspectBoundary = $CampaignRequest.InspectBoundary
-$ScratchLatestIsContinuationSource = $CampaignRequest.ScratchLatestIsContinuationSource
-$ReadsCampaignSource = $CampaignRequest.ReadsCampaignSource
-$IsContinuationFamily = $CampaignRequest.IsContinuationFamily
-$PlanTargets = $CampaignRequest.PlanTargets
-$ContinueTargets = $CampaignRequest.ContinueTargets
-$PlanCoverageGaps = $CampaignRequest.PlanCoverageGaps
-$ContinueCoverageGaps = $CampaignRequest.ContinueCoverageGaps
 $CampaignSourceContext = Get-CampaignSourceContext `
     -Request $CampaignRequest `
-    -ReadsCampaignSource $ReadsCampaignSource `
+    -ReadsCampaignSource $CampaignRequest.ReadsCampaignSource `
     -Last $Last `
     -From $From `
     -UseScratchLatest $InspectScratchLatest
@@ -239,12 +229,12 @@ $CampaignSourceRunConfig = $CampaignSourceContext.RunConfig
 $Mode = Resolve-CampaignMode `
     -Mode $Mode `
     -ModeBound ($PSBoundParameters.ContainsKey("Mode")) `
-    -IsContinuationFamily $IsContinuationFamily `
-    -ContinueCampaign $ContinueCampaign `
+    -IsContinuationFamily $CampaignRequest.IsContinuationFamily `
+    -ContinueCampaign $CampaignRequest.ContinueCampaign `
     -SourceArtifact $CampaignSourceArtifact
 $Seed = Resolve-CampaignSeed `
     -Seed $Seed `
-    -ReadsCampaignSource $ReadsCampaignSource `
+    -ReadsCampaignSource $CampaignRequest.ReadsCampaignSource `
     -Last $Last `
     -SourceArtifact $CampaignSourceArtifact `
     -SourceRunConfig $CampaignSourceRunConfig
@@ -260,8 +250,8 @@ $RunIdentity = Resolve-CampaignRunIdentity `
     -ClassBound $ClassBound `
     -DomainBound $DomainBound `
     -Last $Last `
-    -Inspect $Inspect `
-    -ReadsCampaignSource $ReadsCampaignSource `
+    -Inspect $CampaignRequest.Inspect `
+    -ReadsCampaignSource $CampaignRequest.ReadsCampaignSource `
     -SourceRunConfig $CampaignSourceRunConfig
 $Ascension = $RunIdentity.Ascension
 $Class = $RunIdentity.Class
@@ -282,14 +272,14 @@ $DriverArgs = @($CampaignRunIdentityArgs)
 
 $RunOutputContext = Resolve-CampaignOutputArtifactContext `
     -Request $CampaignRequest `
-    -Inspect ([bool] $Inspect) `
-    -PlanTargets ([bool] $PlanTargets) `
-    -PlanCoverageGaps ([bool] $PlanCoverageGaps) `
+    -Inspect ([bool] $CampaignRequest.Inspect) `
+    -PlanTargets ([bool] $CampaignRequest.PlanTargets) `
+    -PlanCoverageGaps ([bool] $CampaignRequest.PlanCoverageGaps) `
     -Scratch ([bool] $Scratch) `
     -RunLabel $RunLabel `
-    -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
-    -ContinueTargets ([bool] $ContinueTargets) `
-    -ContinueCampaign ([bool] $ContinueCampaign) `
+    -ContinueCoverageGaps ([bool] $CampaignRequest.ContinueCoverageGaps) `
+    -ContinueTargets ([bool] $CampaignRequest.ContinueTargets) `
+    -ContinueCampaign ([bool] $CampaignRequest.ContinueCampaign) `
     -Seed $Seed
 $WritesCampaignOutput = $RunOutputContext.WritesCampaignOutput
 $RunOutputArtifact = $RunOutputContext.Artifact
@@ -305,7 +295,7 @@ $RunDecisionOutcomeAfterPath = $RunOutputContext.DecisionOutcomeAfterPath
 Ensure-CampaignOutputArtifactDirectory -OutputContext $RunOutputContext -DryRun ([bool] $DryRun)
 
 $PlanDecisionOutcomePath = ""
-if ($PlanTargets -and -not $DecisionOutcomeDataset) {
+if ($CampaignRequest.PlanTargets -and -not $DecisionOutcomeDataset) {
     $PlanDecisionOutcomePath = New-CampaignScratchDecisionOutcomePath -BaseLabel "plan-targets-seed$Seed"
     if (-not $DryRun) {
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $PlanDecisionOutcomePath) | Out-Null
@@ -363,7 +353,7 @@ $CoverageGapResultFilterLabel = $CoverageGapFilterContext.ResultFilterLabel
 
 $RunRoundContext = Resolve-CampaignRunRoundContext `
     -Request $CampaignRequest `
-    -ContinueCampaign ([bool] $ContinueCampaign) `
+    -ContinueCampaign ([bool] $CampaignRequest.ContinueCampaign) `
     -CampaignSourceArtifact $CampaignSourceArtifact `
     -RoundsBound $RoundsBound `
     -Rounds $Rounds `
@@ -376,10 +366,10 @@ $RunRoundContext = Resolve-CampaignRunRoundContext `
     -MilestoneStop $MilestoneStop `
     -MaxRoundsBound $MaxRoundsBound `
     -MaxRounds $MaxRounds `
-    -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
-    -PlanTargets ([bool] $PlanTargets) `
-    -PlanCoverageGaps ([bool] $PlanCoverageGaps) `
-    -Inspect ([bool] $Inspect)
+    -ContinueCoverageGaps ([bool] $CampaignRequest.ContinueCoverageGaps) `
+    -PlanTargets ([bool] $CampaignRequest.PlanTargets) `
+    -PlanCoverageGaps ([bool] $CampaignRequest.PlanCoverageGaps) `
+    -Inspect ([bool] $CampaignRequest.Inspect)
 $DriverRoundBudgetArgs = @($RunRoundContext.DriverRoundBudgetArgs)
 $RoundBudgetSource = $RunRoundContext.RoundBudgetSource
 $RoundBudgetAdditionalRounds = $RunRoundContext.RoundBudgetAdditionalRounds
@@ -408,7 +398,7 @@ if (-not (Test-ExtraCombatOptionKey -Tokens $ExtraArgs -Keys @("segment", "segme
     }
 }
 
-if ($ExportLearningDataset -and -not $Inspect) {
+if ($ExportLearningDataset -and -not $CampaignRequest.Inspect) {
     $DriverArgs += @("--export-learning-dataset", "$ExportLearningDataset")
 }
 $DriverArgs = Add-CampaignSharedDriverOptions `
@@ -420,7 +410,7 @@ $DriverArgs = Add-CampaignSharedDriverOptions `
 
 $NeedsBuild = $Build -or (Test-DriverNeedsBuild $DriverExe)
 
-if ($IsContinuationFamily) {
+if ($CampaignRequest.IsContinuationFamily) {
     $ContinuationEntryContext = New-CampaignContinuationEntryContext `
         -CampaignRequest $CampaignRequest `
         -WrapperScript $PSCommandPath `
@@ -494,7 +484,7 @@ if ($CampaignRequest.Kind -eq "inspect") {
         -InspectIndex $InspectIndex `
         -InspectAct $InspectAct `
         -InspectFloor $InspectFloor `
-        -InspectBoundary $InspectBoundary `
+        -InspectBoundary $CampaignRequest.InspectBoundary `
         -InspectQuery $InspectQuery `
         -ProbeBoss ([bool] $ProbeBoss)
     $InspectEntryContext = New-CampaignInspectEntryContext `
