@@ -38,23 +38,24 @@ field passing where it causes confusion.
 
 ## Current Size
 
-Approximate physical line count after the artifact and entry-dispatch split:
+Approximate physical line count after the request/source/output cleanup and
+inspect probe consolidation:
 
-- `tools/campaign_inspect.ps1`: 348 lines
-- `tools/campaign_invocation.ps1`: 331 lines
-- `tools/campaign.ps1`: 313 lines
-- `tools/campaign_continuation.ps1`: 295 lines
-- `tools/campaign_coverage_gaps.ps1`: 251 lines
-- `tools/campaign_wrapper_smoke.ps1`: 244 lines
-- `tools/campaign_run_execution.ps1`: 225 lines
-- `tools/campaign_preflight.ps1`: 189 lines
-- `tools/campaign_manifest.ps1`: 181 lines
-- `tools/campaign_source.ps1`: 170 lines
-- `tools/campaign_request.ps1`: 166 lines
-- `tools/campaign_artifact_summary.ps1`: 152 lines
-- `tools/campaign_milestones.ps1`: 150 lines
-- `tools/campaign_artifact_refs.ps1`: 139 lines
-- `tools/campaign_entry_dispatch.ps1`: 128 lines
+- `tools/campaign_inspect.ps1`: 395 lines
+- `tools/campaign.ps1`: 374 lines
+- `tools/campaign_invocation.ps1`: 364 lines
+- `tools/campaign_continuation.ps1`: 318 lines
+- `tools/campaign_wrapper_smoke.ps1`: 289 lines
+- `tools/campaign_request.ps1`: 279 lines
+- `tools/campaign_coverage_gaps.ps1`: 269 lines
+- `tools/campaign_run_execution.ps1`: 243 lines
+- `tools/campaign_manifest.ps1`: 198 lines
+- `tools/campaign_preflight.ps1`: 197 lines
+- `tools/campaign_source.ps1`: 190 lines
+- `tools/campaign_artifact_summary.ps1`: 170 lines
+- `tools/campaign_milestones.ps1`: 165 lines
+- `tools/campaign_artifact_refs.ps1`: 156 lines
+- `tools/campaign_entry_dispatch.ps1`: 136 lines
 
 Major regions:
 
