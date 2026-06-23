@@ -1,3 +1,50 @@
+function Resolve-CampaignAdditionalRoundBudget {
+    param(
+        [int] $ResumeRoundsCompleted,
+        [bool] $UntilMilestoneBound,
+        [int] $MilestoneStepRounds,
+        [bool] $RoundsBound,
+        [int] $Rounds,
+        [bool] $UntilRoundBound,
+        [int] $UntilRound,
+        [bool] $MaxRoundsBound,
+        [int] $MaxRounds,
+        [string] $MaxRoundsDriverFlag = "--max-rounds"
+    )
+
+    $ContinuationRounds = 1
+    $RoundBudgetArgs = @("--rounds", "1")
+    $TargetRounds = $null
+    $Source = "default"
+    if ($UntilMilestoneBound) {
+        $ContinuationRounds = $MilestoneStepRounds
+        $Source = "UntilMilestone"
+        $RoundBudgetArgs = @("--rounds", "$MilestoneStepRounds")
+    } elseif ($RoundsBound) {
+        $ContinuationRounds = $Rounds
+        $Source = "Rounds"
+        $TargetRounds = $ResumeRoundsCompleted + $Rounds
+        $RoundBudgetArgs = @("--rounds", "$Rounds")
+    } elseif ($UntilRoundBound) {
+        $TargetRounds = $UntilRound
+        $ContinuationRounds = [Math]::Max(0, $TargetRounds - $ResumeRoundsCompleted)
+        $Source = "UntilRound"
+        $RoundBudgetArgs = @("--until-round", "$UntilRound")
+    } elseif ($MaxRoundsBound) {
+        $ContinuationRounds = $MaxRounds
+        $Source = "MaxRounds"
+        $TargetRounds = $ResumeRoundsCompleted + $MaxRounds
+        $RoundBudgetArgs = @($MaxRoundsDriverFlag, "$ContinuationRounds")
+    }
+
+    return [pscustomobject]@{
+        AdditionalRounds = $ContinuationRounds
+        Args = @($RoundBudgetArgs)
+        TargetRounds = $TargetRounds
+        Source = $Source
+    }
+}
+
 function Resolve-CampaignRunRoundContext {
     param(
         [object] $Request,
