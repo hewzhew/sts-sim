@@ -181,6 +181,72 @@ These are the wrapper's real job:
 
 If a feature does not fit this list, it needs a strong reason to remain here.
 
+## Public Command Surface
+
+The wrapper should expose a small set of workflows, not every Rust driver flag.
+Current parameters fall into these groups.
+
+Maintained workflow surface:
+
+- **Run selection:** positional `Seed`, `-Last`, `-Mode`, `-Ascension`,
+  `-Domain`, and `-Class`.
+- **Source and output:** `-From`, `-FromScratchLatest`, `-Scratch` /
+  `-OutScratch`, and `-RunLabel`.
+- **Continuation:** `-Continue`, `-Rounds`, `-UntilRound`, `-UntilMilestone`,
+  `-MilestoneStepRounds`, `-MilestoneMaxRounds`, and `-MilestoneStop`.
+- **Coverage-gap workflow:** `-PlanCoverageGaps`, `-ContinueCoverageGaps`,
+  `-CoverageGapRoute`, `-CoverageGapRouteMissing`,
+  `-CoverageGapEventBoundary`, `-CoverageGapEventBoundaryMissing`,
+  `-CoverageGapLimit`, `-CoverageGapCandidatesPerDecision`,
+  `-CoverageGapBucket`, `-CoverageGapEventId`, `-CoverageGapLane`,
+  `-CoverageGapOriginSource`, `-CoverageGapProgress`,
+  `-CoverageGapIntent`, `-CoverageGapExecution`, and
+  `-CoverageGapMilestoneTarget`.
+- **Inspect workflow:** `-Inspect`, `-InspectArtifacts`, `-InspectState`,
+  `-InspectDecisionObservations`, `-InspectJournal`,
+  `-InspectLineageDecisions`, `-InspectCoverageGapMilestoneSummary`,
+  `-InspectCoverageGapTargetState`, `-ExportLearningDataset`, and inspect
+  filters `-InspectIndex`, `-InspectAct`, `-InspectFloor`,
+  `-InspectBoundary`, `-InspectQuery`.
+- **Driver probes:** `-Probe` and `-ProbeBoss`. These are debugging entrypoints,
+  but `-Probe` is the maintained way to reach thin Rust inspect probes without
+  growing the top-level switch list.
+- **Operational controls:** `-DryRun`, `-Log`, `-NoProgress`,
+  `-VerboseProgress`, `-Diagnose`, `-Perf`, `-DebugBuild`, `-Build`,
+  `-BuildProfile`, and `-DriverArgs`.
+
+Advanced campaign knobs:
+
+- `-ExperimentWallMs`, `-SearchWallMs`, `-SearchMaxNodes`,
+  `-CombatRetryWallMs`, `-ActiveLineageDiversity`, `-BranchExamples`,
+  `-VictoryHpPercent`, `-BossRelicAxes`, `-BossSegments`,
+  `-AutoCaptureCombat`, and `-AutoCaptureRoot`.
+
+These are still wrapper-visible because they are frequently used to shape a
+campaign run. They should not multiply into many strategy-specific switches;
+if a setting is only for one driver experiment, prefer `-DriverArgs` or a Rust
+driver command.
+
+Compatibility or retiring surface:
+
+- `-More`: retired; kept only to emit a clear error.
+- `-InspectScratchLatest`: compatibility alias for `-FromScratchLatest`.
+- `-InspectShopEvidence`, `-InspectCardRewardEvidence`,
+  `-InspectCampfireEvidence`, `-InspectDeckMutation`,
+  `-InspectRouteEvidence`, `-InspectLastAutoCombat`, `-InspectCombatLab`, and
+  `-InspectFinalBossCombat`: compatibility aliases for `-Probe <kind>`.
+- `-MaxRounds`: legacy round-budget spelling. Prefer `-Rounds` or
+  `-UntilRound` for continuation-style commands.
+- positional remaining `ExtraArgs`: compatibility capture only. New usage
+  should use explicit `-DriverArgs`.
+
+Mixed surface:
+
+- `-InspectShopChallenge` and `-ChallengeMaxPlans` / `-ChallengeDepth` /
+  `-ChallengeMaxBranches`: currently useful, but still shaped like a one-off
+  probe. It should either become a named shop experiment or move to direct
+  driver usage; do not copy this pattern for new probes.
+
 ## Moved Out Of Wrapper
 
 Artifact helpers are now loaded through a facade:

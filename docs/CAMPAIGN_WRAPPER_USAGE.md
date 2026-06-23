@@ -5,6 +5,22 @@
 selection, build profile selection, dry-run rendering, and common convenience
 defaults. Campaign semantics belong in the Rust driver and compiler layers.
 
+## Surface Rule
+
+Prefer these public shapes:
+
+- campaign workflow: `run`, `-Continue`, coverage-gap, inspect
+- source/output: `-From ...`, `-FromScratchLatest`, `-Scratch` / `-OutScratch`
+- thin driver diagnostics: `-Probe <kind>`
+- temporary raw driver flags: `-DriverArgs @("--flag", "value")`
+
+Avoid old compatibility names in new notes or scripts:
+
+- `-More`
+- `-InspectScratchLatest`
+- `-InspectShopEvidence`-style probe switches
+- explicit `-MaxRounds` for continuation-style commands
+
 ## Primary Commands
 
 ```powershell
