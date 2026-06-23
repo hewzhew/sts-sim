@@ -47,21 +47,6 @@ function Get-CampaignJsonTopFields {
     return ($Shown -join ", ") + $Suffix
 }
 
-function Read-CampaignJsonArtifact {
-    param(
-        [string] $Path
-    )
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        return $null
-    }
-    try {
-        return Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
-    } catch {
-        return $null
-    }
-}
-
 function Get-CampaignArtifactShape {
     param(
         [string] $Kind,

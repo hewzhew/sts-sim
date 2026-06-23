@@ -106,7 +106,7 @@ function Resolve-CampaignContinuationSourceContext {
         throw "No previous campaign checkpoint found at $($Source.CheckpointPath). Run .\tools\campaign.ps1 first."
     }
 
-    $Report = Get-Content -LiteralPath $Source.ReportPath -Raw | ConvertFrom-Json
+    $Report = Read-CampaignJsonArtifactOrThrow -Path $Source.ReportPath -Role "campaign report"
     return [pscustomobject]@{
         Label = $Source.Label
         CampaignPath = $Source.ReportPath

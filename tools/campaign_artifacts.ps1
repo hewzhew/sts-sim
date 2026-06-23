@@ -9,6 +9,7 @@ $script:LegacyLatestCampaignPath = ""
 $script:LegacyLatestCheckpointPath = ""
 
 . (Join-Path $PSScriptRoot "campaign_artifact_paths.ps1")
+. (Join-Path $PSScriptRoot "campaign_artifact_io.ps1")
 . (Join-Path $PSScriptRoot "campaign_artifact_refs.ps1")
 . (Join-Path $PSScriptRoot "campaign_artifact_legacy.ps1")
 . (Join-Path $PSScriptRoot "campaign_artifact_pointers.ps1")

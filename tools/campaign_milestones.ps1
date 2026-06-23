@@ -14,7 +14,7 @@ function Get-CampaignMilestoneStatus {
         }
     }
 
-    $Report = Get-Content -LiteralPath $ReportPath -Raw | ConvertFrom-Json
+    $Report = Read-CampaignJsonArtifactOrThrow -Path $ReportPath -Role "campaign report"
     $Branches = @()
     foreach ($Bucket in @("active", "frozen", "stuck", "victories", "dead", "abandoned")) {
         if ($Report.$Bucket) {

@@ -281,6 +281,8 @@ try {
         -Contains @(
             "continue-scratch-latest=.\tools\campaign.ps1 -FromScratchLatest -Continue -Scratch",
             "\tools\artifacts\campaigns\scratch\",
+            ".campaign.json.gz",
+            ".checkpoint.json.gz",
             "branch_campaign_driver.exe run"
         ) `
         -NotContains @(

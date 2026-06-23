@@ -40,7 +40,7 @@ function Get-CampaignArtifactRunConfig {
 
     if ($CheckpointPath -and (Test-Path -LiteralPath $CheckpointPath)) {
         try {
-            $Checkpoint = Get-Content -LiteralPath $CheckpointPath -Raw | ConvertFrom-Json
+            $Checkpoint = Read-CampaignJsonArtifact -Path $CheckpointPath
             if ($Checkpoint.sessions -and $Checkpoint.sessions.Count -gt 0) {
                 $RunState = $Checkpoint.sessions[0].session.run_state
                 if ($RunState) {

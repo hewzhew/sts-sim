@@ -21,6 +21,25 @@ function New-CampaignArtifactId {
     return "$Slug-$Stamp-$Suffix"
 }
 
+function Resolve-CampaignMainArtifactPath {
+    param(
+        [string] $CompressedPath,
+        [string] $LegacyPath,
+        [bool] $PreferCompressed
+    )
+
+    if ($PreferCompressed) {
+        return $CompressedPath
+    }
+    if (Test-Path -LiteralPath $CompressedPath) {
+        return $CompressedPath
+    }
+    if (Test-Path -LiteralPath $LegacyPath) {
+        return $LegacyPath
+    }
+    return $CompressedPath
+}
+
 function New-CampaignRunArtifact {
     param(
         [string] $BaseLabel,
@@ -29,13 +48,22 @@ function New-CampaignRunArtifact {
 
     $Id = if ($ArtifactId) { Convert-ToCampaignArtifactSlug $ArtifactId } else { New-CampaignArtifactId -BaseLabel $BaseLabel }
     $Dir = Join-Path (Get-CampaignRunsDir) $Id
+    $PreferCompressed = -not $ArtifactId
+    $ReportPath = Resolve-CampaignMainArtifactPath `
+        -CompressedPath (Join-Path $Dir "campaign.json.gz") `
+        -LegacyPath (Join-Path $Dir "campaign.json") `
+        -PreferCompressed $PreferCompressed
+    $CheckpointPath = Resolve-CampaignMainArtifactPath `
+        -CompressedPath (Join-Path $Dir "checkpoint.json.gz") `
+        -LegacyPath (Join-Path $Dir "checkpoint.json") `
+        -PreferCompressed $PreferCompressed
     return [pscustomobject]@{
         Kind = "run"
         Id = $Id
         Label = "run:$Id"
         Dir = $Dir
-        ReportPath = Join-Path $Dir "campaign.json"
-        CheckpointPath = Join-Path $Dir "checkpoint.json"
+        ReportPath = $ReportPath
+        CheckpointPath = $CheckpointPath
         ManifestPath = Join-Path $Dir "manifest.json"
         LogPath = Join-Path $Dir "log.txt"
         CommandPath = Join-Path $Dir "command.txt"
@@ -44,17 +72,26 @@ function New-CampaignRunArtifact {
 
 function New-CampaignScratchArtifactRef {
     param(
-        [string] $ArtifactId
+        [string] $ArtifactId,
+        [bool] $PreferCompressed = $false
     )
 
     $Id = Convert-ToCampaignArtifactSlug $ArtifactId
+    $ReportPath = Resolve-CampaignMainArtifactPath `
+        -CompressedPath (Join-Path $ScratchCampaignDir "$Id.campaign.json.gz") `
+        -LegacyPath (Join-Path $ScratchCampaignDir "$Id.campaign.json") `
+        -PreferCompressed $PreferCompressed
+    $CheckpointPath = Resolve-CampaignMainArtifactPath `
+        -CompressedPath (Join-Path $ScratchCampaignDir "$Id.checkpoint.json.gz") `
+        -LegacyPath (Join-Path $ScratchCampaignDir "$Id.checkpoint.json") `
+        -PreferCompressed $PreferCompressed
     return [pscustomobject]@{
         Kind = "scratch"
         Id = $Id
         Label = "scratch:$Id"
         Dir = $ScratchCampaignDir
-        ReportPath = Join-Path $ScratchCampaignDir "$Id.campaign.json"
-        CheckpointPath = Join-Path $ScratchCampaignDir "$Id.checkpoint.json"
+        ReportPath = $ReportPath
+        CheckpointPath = $CheckpointPath
         ManifestPath = Join-Path $ScratchCampaignDir "$Id.manifest.json"
         LogPath = Join-Path $ScratchCampaignDir "$Id.log"
         CommandPath = Join-Path $ScratchCampaignDir "$Id.command.txt"
@@ -67,7 +104,7 @@ function New-CampaignScratchArtifact {
     )
 
     $Id = New-CampaignArtifactId -BaseLabel $BaseLabel
-    return New-CampaignScratchArtifactRef -ArtifactId $Id
+    return New-CampaignScratchArtifactRef -ArtifactId $Id -PreferCompressed $true
 }
 
 function Get-CampaignOutputBaseLabel {

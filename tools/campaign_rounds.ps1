@@ -132,7 +132,7 @@ function Resolve-CampaignRunRoundContext {
         }
 
         $ResumeCampaignPath = $ResumeSource.ReportPath
-        $ResumeReport = Get-Content -LiteralPath $ResumeCampaignPath -Raw | ConvertFrom-Json
+        $ResumeReport = Read-CampaignJsonArtifactOrThrow -Path $ResumeCampaignPath -Role "campaign report"
         $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
         if ($UntilMilestoneBound -or $HasExplicitRoundBudget -or $ContinueCoverageGaps) {
             $ContinuationMaxRoundsDriverFlag = if ($ContinueCoverageGaps) { "--max-rounds" } else { "--rounds" }
