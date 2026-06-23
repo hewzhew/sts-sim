@@ -13,6 +13,25 @@ function New-TargetedContinuationExportBeforeArgs {
     )
 }
 
+function Resolve-TargetedContinuationPlanOutcomePath {
+    param(
+        [object] $Request,
+        [string] $DecisionOutcomeDataset,
+        [long] $Seed,
+        [bool] $DryRun
+    )
+
+    if ((-not $Request.PlanTargets) -or $DecisionOutcomeDataset) {
+        return ""
+    }
+
+    $Path = New-CampaignScratchDecisionOutcomePath -BaseLabel "plan-targets-seed$Seed"
+    if (-not $DryRun) {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
+    }
+    return $Path
+}
+
 function New-TargetedContinuationPlanDriverArgs {
     param(
         [string] $TargetDecisionOutcomePath

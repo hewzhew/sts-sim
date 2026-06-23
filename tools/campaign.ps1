@@ -279,13 +279,11 @@ $RunOutputContext = Resolve-CampaignOutputArtifactContext `
     -Seed $Seed
 Ensure-CampaignOutputArtifactDirectory -OutputContext $RunOutputContext -DryRun ([bool] $DryRun)
 
-$PlanDecisionOutcomePath = ""
-if ($CampaignRequest.PlanTargets -and -not $DecisionOutcomeDataset) {
-    $PlanDecisionOutcomePath = New-CampaignScratchDecisionOutcomePath -BaseLabel "plan-targets-seed$Seed"
-    if (-not $DryRun) {
-        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $PlanDecisionOutcomePath) | Out-Null
-    }
-}
+$PlanDecisionOutcomePath = Resolve-TargetedContinuationPlanOutcomePath `
+    -Request $CampaignRequest `
+    -DecisionOutcomeDataset $DecisionOutcomeDataset `
+    -Seed $Seed `
+    -DryRun ([bool] $DryRun)
 
 $BoundParameterContext = Resolve-CampaignBoundParameterContext `
     -BoundParameters $PSBoundParameters `
