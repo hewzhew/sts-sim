@@ -13,10 +13,11 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 433 lines
+- `tools/campaign.ps1`: 434 lines
 - `tools/campaign_artifacts.ps1`: 460 lines
 - `tools/campaign_artifact_summary.ps1`: 170 lines
-- `tools/campaign_invocation.ps1`: 653 lines
+- `tools/campaign_invocation.ps1`: 492 lines
+- `tools/campaign_manifest.ps1`: 160 lines
 - `tools/campaign_coverage_gaps.ps1`: 435 lines
 - `tools/campaign_preflight.ps1`: 200 lines
 - `tools/campaign_continuation.ps1`: 459 lines
@@ -189,7 +190,7 @@ tools/campaign_invocation.ps1
 
 This helper owns:
 
-- wrapper parameter value normalization for manifests
+- wrapper parameter value normalization for manifests and command records
 - wrapper bound-parameter context extraction
 - command-line rendering
 - run driver identity argument rendering
@@ -202,12 +203,22 @@ This helper owns:
 - continuation round-budget argument rendering
 - normal campaign run command context construction
 - normal campaign run command execution through an explicit run context
-- campaign run manifest writing through an explicit run context
+- logged driver invocation
+
+Manifest helpers now live in:
+
+```text
+tools/campaign_manifest.ps1
+```
+
+This helper owns:
+
+- wrapper manifest JSON writing
+- common wrapper manifest fields
+- normal campaign run manifest shape
 - primary driver command-file recording through an explicit run context
 - primary driver command-file recording now requires an output artifact; the old
   `latest.seed.txt` / `latest.command.txt` sidecar write fallback is gone
-- logged driver invocation
-- common wrapper manifest fields
 
 Preflight helpers now live in:
 
