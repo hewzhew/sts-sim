@@ -240,6 +240,10 @@ Compatibility or retiring surface:
 - positional remaining `ExtraArgs`: compatibility capture only. New usage
   should use explicit `-DriverArgs`.
 
+Where PowerShell supports it, compatibility-only parameters are marked with
+`DontShow` so normal discovery favors the maintained surface while old commands
+continue to fail clearly or map to the new path.
+
 Mixed surface:
 
 - `-InspectShopChallenge` and `-ChallengeMaxPlans` / `-ChallengeDepth` /
@@ -632,7 +636,8 @@ They are now available through a typed probe selector, for example:
 ```
 
 The older `-InspectShopEvidence`-style switches remain compatibility aliases
-for now. Do not add more of them.
+for now. They are hidden from normal parameter discovery with `DontShow`; do
+not add more of them.
 
 `-InspectState` is different: the Rust driver has no `--inspect-state` flag.
 It means "run checkpoint inspect without summary mode", so it should stay with

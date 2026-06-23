@@ -21,6 +21,9 @@ Avoid old compatibility names in new notes or scripts:
 - `-InspectShopEvidence`-style probe switches
 - explicit `-MaxRounds` for continuation-style commands
 
+These compatibility names may still parse for old commands, but they are not
+the maintained surface and may be hidden from normal PowerShell discovery.
+
 ## Primary Commands
 
 ```powershell

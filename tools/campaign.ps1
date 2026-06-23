@@ -42,23 +42,33 @@ param(
     [long] $Seed = 0,
 
     [switch] $Last,
+    [Parameter(DontShow = $true)]
     [switch] $More,
     [Alias("Continue")]
     [switch] $ContinueRun,
     [switch] $Inspect,
     [switch] $InspectArtifacts,
     [switch] $InspectState,
+    [Parameter(DontShow = $true)]
     [switch] $InspectShopEvidence,
+    [Parameter(DontShow = $true)]
     [switch] $InspectShopChallenge,
+    [Parameter(DontShow = $true)]
     [switch] $InspectCardRewardEvidence,
     [switch] $InspectDecisionObservations,
     [switch] $InspectJournal,
     [switch] $InspectLineageDecisions,
+    [Parameter(DontShow = $true)]
     [switch] $InspectCampfireEvidence,
+    [Parameter(DontShow = $true)]
     [switch] $InspectDeckMutation,
+    [Parameter(DontShow = $true)]
     [switch] $InspectRouteEvidence,
+    [Parameter(DontShow = $true)]
     [switch] $InspectLastAutoCombat,
+    [Parameter(DontShow = $true)]
     [switch] $InspectCombatLab,
+    [Parameter(DontShow = $true)]
     [switch] $InspectFinalBossCombat,
     [switch] $InspectCoverageGapMilestoneSummary,
     [switch] $InspectCoverageGapTargetState,
@@ -139,6 +149,7 @@ param(
     [ValidateSet("ironclad", "silent", "defect", "watcher")]
     [string] $Class = "ironclad",
 
+    [Parameter(DontShow = $true)]
     [int] $MaxRounds = 6,
     [int] $ExperimentWallMs = 10000,
     [int] $SearchWallMs = 300,
@@ -172,7 +183,7 @@ param(
     [Alias("Passthrough")]
     [string[]] $DriverArgs = @(),
 
-    [Parameter(ValueFromRemainingArguments = $true)]
+    [Parameter(ValueFromRemainingArguments = $true, DontShow = $true)]
     [string[]] $ExtraArgs
 )
 
