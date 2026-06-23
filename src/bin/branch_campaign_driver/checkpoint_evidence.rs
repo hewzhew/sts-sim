@@ -49,13 +49,11 @@ fn render_campfire_evidence_full_v1(
         session.run_state.boss_key
     ));
     lines.push(format!(
-        "selected: plan_id={} role={:?} score={} execute={} confidence={:.2} action={:?}",
-        decision.selected_plan.plan_id,
-        decision.selected_plan.role,
-        decision.selected_plan.score_hint,
-        decision.selected_plan.execute_autopilot,
-        decision.selected_plan.confidence,
-        decision.selected_plan.action
+        "execution_head: {}",
+        render_campfire_plan_execution_head_v1(
+            &decision.selected_plan,
+            &render_campfire_action_debug_v1(&decision.selected_plan.action)
+        )
     ));
     lines.push(format!(
         "context: candidates={} formation={:?} needs={:?}",
@@ -66,14 +64,11 @@ fn render_campfire_evidence_full_v1(
     lines.push("candidate plans:".to_string());
     for plan in &decision.candidate_plans {
         lines.push(format!(
-            "  - {} role={:?} score={} execute={} branch_active={} confidence={:.2} action={:?}",
-            plan.plan_id,
-            plan.role,
-            plan.score_hint,
-            plan.execute_autopilot,
-            plan.branch_active,
-            plan.confidence,
-            plan.action
+            "  - {}",
+            render_campfire_plan_candidate_line_v1(
+                plan,
+                &render_campfire_action_debug_v1(&plan.action)
+            )
         ));
         if let Some(tag) = &plan.strategy_tag {
             lines.push(format!("      strategy_tag={tag}"));
@@ -121,13 +116,11 @@ fn render_campfire_evidence_compact_v1(
         session.run_state.boss_key
     ));
     lines.push(format!(
-        "selected: {} role={:?} score={} execute={} confidence={:.2} action={}",
-        decision.selected_plan.plan_id,
-        decision.selected_plan.role,
-        decision.selected_plan.score_hint,
-        decision.selected_plan.execute_autopilot,
-        decision.selected_plan.confidence,
-        render_campfire_action_label_v1(&decision.selected_plan.action)
+        "execution_head: {}",
+        render_campfire_plan_execution_head_v1(
+            &decision.selected_plan,
+            &render_campfire_action_label_v1(&decision.selected_plan.action)
+        )
     ));
     lines.push(format!(
         "context: candidates={} formation={:?} needs={:?} rest_vs_smith={:?}",
@@ -248,13 +241,13 @@ fn render_campfire_notable_plan_line_v1(
     candidate: Option<&sts_simulator::ai::campfire_policy_v1::CampfireCandidateEvidenceV1>,
 ) -> String {
     let mut parts = vec![format!(
-        "{} role={:?} score={} execute={} branch_active={} action={}",
+        "{} action={} role={:?} diagnostics=[score={} execute={} branch_active={}]",
         plan.plan_id,
+        render_campfire_action_label_v1(&plan.action),
         plan.role,
         plan.score_hint,
         plan.execute_autopilot,
-        plan.branch_active,
-        render_campfire_action_label_v1(&plan.action)
+        plan.branch_active
     )];
     if let Some(tag) = &plan.strategy_tag {
         parts.push(format!("tag={tag}"));
@@ -283,6 +276,43 @@ fn render_campfire_notable_plan_line_v1(
         ));
     }
     parts.join(" | ")
+}
+
+fn render_campfire_plan_execution_head_v1(
+    plan: &sts_simulator::ai::campfire_policy_v1::CampfirePlanCandidateV1,
+    action_label: &str,
+) -> String {
+    format!(
+        "plan_id={} action={} role={:?} diagnostics=[score={} execute={} confidence={:.2}]",
+        plan.plan_id,
+        action_label,
+        plan.role,
+        plan.score_hint,
+        plan.execute_autopilot,
+        plan.confidence
+    )
+}
+
+fn render_campfire_plan_candidate_line_v1(
+    plan: &sts_simulator::ai::campfire_policy_v1::CampfirePlanCandidateV1,
+    action_label: &str,
+) -> String {
+    format!(
+        "{} action={} role={:?} diagnostics=[score={} execute={} branch_active={} confidence={:.2}]",
+        plan.plan_id,
+        action_label,
+        plan.role,
+        plan.score_hint,
+        plan.execute_autopilot,
+        plan.branch_active,
+        plan.confidence
+    )
+}
+
+fn render_campfire_action_debug_v1(
+    action: &sts_simulator::ai::campfire_policy_v1::CampfirePolicyActionV1,
+) -> String {
+    format!("{action:?}")
 }
 
 fn render_campfire_action_label_v1(
