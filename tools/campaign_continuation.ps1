@@ -1,9 +1,39 @@
+function Resolve-CampaignContinuationOperation {
+    param(
+        [object] $Context
+    )
+
+    if ($Context.CampaignRequest) {
+        return [pscustomobject]@{
+            Kind = $Context.CampaignRequest.Kind
+            PlanTargets = [bool] $Context.CampaignRequest.PlanTargets
+            ContinueTargets = [bool] $Context.CampaignRequest.ContinueTargets
+            PlanCoverageGaps = [bool] $Context.CampaignRequest.PlanCoverageGaps
+            ContinueCoverageGaps = [bool] $Context.CampaignRequest.ContinueCoverageGaps
+            UsesLegacyTargeted = [bool] $Context.CampaignRequest.UsesLegacyTargeted
+            UsesCoverageGap = [bool] $Context.CampaignRequest.UsesCoverageGap
+        }
+    }
+
+    return [pscustomobject]@{
+        Kind = ""
+        PlanTargets = [bool] $Context.PlanTargets
+        ContinueTargets = [bool] $Context.ContinueTargets
+        PlanCoverageGaps = [bool] $Context.PlanCoverageGaps
+        ContinueCoverageGaps = [bool] $Context.ContinueCoverageGaps
+        UsesLegacyTargeted = [bool] ($Context.PlanTargets -or $Context.ContinueTargets)
+        UsesCoverageGap = [bool] ($Context.PlanCoverageGaps -or $Context.ContinueCoverageGaps)
+    }
+}
+
 function Resolve-CampaignContinuationSourceContext {
     param(
         [object] $Context
     )
 
-    if ($Context.InspectScratchLatest -and ($Context.PlanTargets -or $Context.ContinueTargets)) {
+    $Operation = Resolve-CampaignContinuationOperation -Context $Context
+
+    if ($Context.InspectScratchLatest -and $Operation.UsesLegacyTargeted) {
         throw "-InspectScratchLatest is not supported for targeted continuation yet; use inspect or coverage-gap continuation."
     }
 
@@ -33,10 +63,11 @@ function Resolve-CampaignContinuationDecisionOutcomePath {
         [object] $Context
     )
 
+    $Operation = Resolve-CampaignContinuationOperation -Context $Context
     if ($Context.DecisionOutcomeDataset) {
         return $Context.DecisionOutcomeDataset
     }
-    if ($Context.ContinueTargets) {
+    if ($Operation.ContinueTargets) {
         return $Context.DecisionOutcomeBeforePath
     }
     return $Context.DecisionOutcomePath
@@ -48,6 +79,7 @@ function New-CampaignContinuationCommandContext {
         [object] $SourceContext
     )
 
+    $Operation = Resolve-CampaignContinuationOperation -Context $Context
     $TargetDecisionOutcomePath = Resolve-CampaignContinuationDecisionOutcomePath -Context $Context
     $RoundBudget = Resolve-CampaignAdditionalRoundBudget `
         -ResumeRoundsCompleted $SourceContext.RoundsCompleted `
@@ -64,7 +96,7 @@ function New-CampaignContinuationCommandContext {
     $CoverageExecutionContext = Resolve-CoverageGapExecutionContext `
         -Execution $Context.CoverageGapExecution `
         -UntilMilestoneBound $Context.UntilMilestoneBound `
-        -ContinueCoverageGaps ([bool] $Context.ContinueCoverageGaps) `
+        -ContinueCoverageGaps $Operation.ContinueCoverageGaps `
         -HasExplicitRoundBudget ($Context.RoundsBound -or $Context.UntilRoundBound -or $Context.MaxRoundsBound) `
         -Intent $Context.CoverageGapIntent `
         -ContinuationRounds $RoundBudget.AdditionalRounds
@@ -113,10 +145,10 @@ function New-CampaignContinuationCommandContext {
     $CoverageGapMilestoneSummaryArgs += @($Context.CoverageGapResultFilterArgs)
 
     $PreflightContext = New-CampaignContinuationPreflightContext `
-        -PlanTargets ([bool] $Context.PlanTargets) `
-        -ContinueTargets ([bool] $Context.ContinueTargets) `
-        -PlanCoverageGaps ([bool] $Context.PlanCoverageGaps) `
-        -ContinueCoverageGaps ([bool] $Context.ContinueCoverageGaps) `
+        -PlanTargets $Operation.PlanTargets `
+        -ContinueTargets $Operation.ContinueTargets `
+        -PlanCoverageGaps $Operation.PlanCoverageGaps `
+        -ContinueCoverageGaps $Operation.ContinueCoverageGaps `
         -Seed $Context.Seed `
         -Ascension $Context.Ascension `
         -Class $Context.Class `
@@ -216,12 +248,13 @@ function Write-CampaignContinuationDryRunCommandSet {
         [object] $CommandContext
     )
 
+    $Operation = Resolve-CampaignContinuationOperation -Context $Context
     if ($Context.NeedsBuild) {
         Write-CampaignBuildCommandPreview -BuildArgs $Context.BuildArgs
     }
     Write-TargetedContinuationDryRunCommands `
-        -PlanTargets ([bool] $Context.PlanTargets) `
-        -ContinueTargets ([bool] $Context.ContinueTargets) `
+        -PlanTargets $Operation.PlanTargets `
+        -ContinueTargets $Operation.ContinueTargets `
         -DriverExe $Context.DriverExe `
         -ExportDecisionArgs $CommandContext.ExportDecisionArgs `
         -PlanTargetArgs $CommandContext.PlanTargetArgs `
@@ -229,8 +262,8 @@ function Write-CampaignContinuationDryRunCommandSet {
         -ExportDecisionAfterArgs $CommandContext.ExportDecisionAfterArgs `
         -ContinuationEffectArgs $CommandContext.ContinuationEffectArgs
     Write-CoverageGapContinuationDryRunCommands `
-        -PlanCoverageGaps ([bool] $Context.PlanCoverageGaps) `
-        -ContinueCoverageGaps ([bool] $Context.ContinueCoverageGaps) `
+        -PlanCoverageGaps $Operation.PlanCoverageGaps `
+        -ContinueCoverageGaps $Operation.ContinueCoverageGaps `
         -UntilMilestoneBound $Context.UntilMilestoneBound `
         -DriverExe $Context.DriverExe `
         -CoveragePlanArgs $CommandContext.CoveragePlanArgs `
@@ -247,7 +280,9 @@ function Invoke-CampaignContinuationCommandSet {
         [object] $CommandContext
     )
 
-    if (($Context.ContinueTargets -or $Context.ContinueCoverageGaps) -and $CommandContext.ContinuationRounds -eq 0) {
+    $Operation = Resolve-CampaignContinuationOperation -Context $Context
+
+    if (($Operation.ContinueTargets -or $Operation.ContinueCoverageGaps) -and $CommandContext.ContinuationRounds -eq 0) {
         Write-Host "already-at-target-rounds=yes; nothing to run"
         return 0
     }
@@ -260,10 +295,10 @@ function Invoke-CampaignContinuationCommandSet {
                 return $LASTEXITCODE
             }
         }
-        if ($Context.PlanTargets -or $Context.ContinueTargets) {
+        if ($Operation.UsesLegacyTargeted) {
             return Invoke-TargetedContinuationCommands `
-                -PlanTargets ([bool] $Context.PlanTargets) `
-                -ContinueTargets ([bool] $Context.ContinueTargets) `
+                -PlanTargets $Operation.PlanTargets `
+                -ContinueTargets $Operation.ContinueTargets `
                 -DriverExe $Context.DriverExe `
                 -ExportDecisionArgs $CommandContext.ExportDecisionArgs `
                 -PlanTargetArgs $CommandContext.PlanTargetArgs `
@@ -277,10 +312,10 @@ function Invoke-CampaignContinuationCommandSet {
                 -RecordContext $Context `
                 -ManifestContext $CommandContext.TargetedManifestContext
         }
-        if ($Context.PlanCoverageGaps -or $Context.ContinueCoverageGaps) {
+        if ($Operation.UsesCoverageGap) {
             return Invoke-CoverageGapContinuationCommands `
-                -PlanCoverageGaps ([bool] $Context.PlanCoverageGaps) `
-                -ContinueCoverageGaps ([bool] $Context.ContinueCoverageGaps) `
+                -PlanCoverageGaps $Operation.PlanCoverageGaps `
+                -ContinueCoverageGaps $Operation.ContinueCoverageGaps `
                 -DriverExe $Context.DriverExe `
                 -CoveragePlanArgs $CommandContext.CoveragePlanArgs `
                 -ContinueCoverageGapArgs $CommandContext.ContinueCoverageGapArgs `

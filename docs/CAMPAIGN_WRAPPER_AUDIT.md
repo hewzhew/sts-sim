@@ -215,6 +215,8 @@ tools/campaign_continuation.ps1
 This helper owns:
 
 - an explicit continuation entry context boundary
+- continuation operation dispatch through `CampaignEntryRequestV1`, with old
+  context booleans only as compatibility fallback
 - continuation source context validation
 - targeted/coverage-gap continuation command context assembly
 - continuation preflight context handoff
