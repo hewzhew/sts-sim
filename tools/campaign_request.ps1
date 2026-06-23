@@ -115,6 +115,7 @@ function Resolve-CampaignEntryRequest {
     }
 
     $ScratchLatestIsContinuationSource = $InspectScratchLatest -and (
+        $ContinueCampaign -or
         $PlanCoverageGaps -or
         $ContinueCoverageGaps
     )
