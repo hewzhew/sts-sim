@@ -21,7 +21,7 @@ Approximate physical line count after the wrapper split:
 - `tools/campaign_run_execution.ps1`: 173 lines
 - `tools/campaign_coverage_gaps.ps1`: 435 lines
 - `tools/campaign_preflight.ps1`: 200 lines
-- `tools/campaign_continuation.ps1`: 459 lines
+- `tools/campaign_continuation.ps1`: 447 lines
 - `tools/campaign_inspect.ps1`: 369 lines
 - `tools/campaign_targets.ps1`: 255 lines
 - `tools/campaign_source.ps1`: 190 lines
@@ -253,7 +253,7 @@ This helper owns:
 - an explicit continuation entry context boundary
 - continuation entry context construction
 - continuation operation dispatch through `CampaignEntryRequestV1`, with old
-  context booleans only as compatibility fallback
+  context boolean fallback removed
 - continuation source context validation
 - targeted/coverage-gap continuation command context assembly
 - continuation preflight context handoff

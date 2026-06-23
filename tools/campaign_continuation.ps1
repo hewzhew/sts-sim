@@ -3,26 +3,18 @@ function Resolve-CampaignContinuationOperation {
         [object] $Context
     )
 
-    if ($Context.CampaignRequest) {
-        return [pscustomobject]@{
-            Kind = $Context.CampaignRequest.Kind
-            PlanTargets = [bool] $Context.CampaignRequest.PlanTargets
-            ContinueTargets = [bool] $Context.CampaignRequest.ContinueTargets
-            PlanCoverageGaps = [bool] $Context.CampaignRequest.PlanCoverageGaps
-            ContinueCoverageGaps = [bool] $Context.CampaignRequest.ContinueCoverageGaps
-            UsesLegacyTargeted = [bool] $Context.CampaignRequest.UsesLegacyTargeted
-            UsesCoverageGap = [bool] $Context.CampaignRequest.UsesCoverageGap
-        }
+    if (-not $Context.CampaignRequest) {
+        throw "Internal error: continuation operation requires CampaignEntryRequestV1."
     }
 
     return [pscustomobject]@{
-        Kind = ""
-        PlanTargets = [bool] $Context.PlanTargets
-        ContinueTargets = [bool] $Context.ContinueTargets
-        PlanCoverageGaps = [bool] $Context.PlanCoverageGaps
-        ContinueCoverageGaps = [bool] $Context.ContinueCoverageGaps
-        UsesLegacyTargeted = [bool] ($Context.PlanTargets -or $Context.ContinueTargets)
-        UsesCoverageGap = [bool] ($Context.PlanCoverageGaps -or $Context.ContinueCoverageGaps)
+        Kind = $Context.CampaignRequest.Kind
+        PlanTargets = [bool] $Context.CampaignRequest.PlanTargets
+        ContinueTargets = [bool] $Context.CampaignRequest.ContinueTargets
+        PlanCoverageGaps = [bool] $Context.CampaignRequest.PlanCoverageGaps
+        ContinueCoverageGaps = [bool] $Context.CampaignRequest.ContinueCoverageGaps
+        UsesLegacyTargeted = [bool] $Context.CampaignRequest.UsesLegacyTargeted
+        UsesCoverageGap = [bool] $Context.CampaignRequest.UsesCoverageGap
     }
 }
 
@@ -79,10 +71,6 @@ function New-CampaignContinuationEntryContext {
         WrapperInvocationLine = $BoundParameterContext.WrapperInvocationLine
         WrapperBoundParameters = $BoundParameterContext.WrapperBoundParameters
         InspectScratchLatest = $InspectScratchLatest
-        PlanTargets = [bool] $CampaignRequest.PlanTargets
-        ContinueTargets = [bool] $CampaignRequest.ContinueTargets
-        PlanCoverageGaps = [bool] $CampaignRequest.PlanCoverageGaps
-        ContinueCoverageGaps = [bool] $CampaignRequest.ContinueCoverageGaps
         CampaignSourceArtifact = $CampaignSourceArtifact
         DecisionOutcomeDataset = $DecisionOutcomeDataset
         DecisionOutcomeBeforePath = $(if ($RunOutputContext.DecisionOutcomeBeforePath) { $RunOutputContext.DecisionOutcomeBeforePath } else { $LatestDecisionOutcomeBeforePath })
