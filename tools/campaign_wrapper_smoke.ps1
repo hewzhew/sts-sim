@@ -135,6 +135,7 @@ try {
             ) `
             -Contains @(
                 "source=scratch:",
+                "source-pin=-From scratch:",
                 "coverage-gap-plan=2",
                 "--plan-coverage-gap-continuation"
             ) `
@@ -162,6 +163,8 @@ try {
                 "-DryRun"
             ) `
             -Contains @(
+                "source=scratch:",
+                "source-pin=-From scratch:",
                 "coverage-gap-continue=2",
                 "execution=milestone_continuation",
                 "milestone-loop-command-template:",
@@ -180,6 +183,8 @@ try {
             ) `
             -Contains @(
                 "mode=inspect scratch:",
+                "source=scratch:",
+                "source-pin=-From scratch:",
                 "\tools\artifacts\campaigns\scratch\",
                 " inspect "
             ) `

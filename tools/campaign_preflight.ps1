@@ -15,6 +15,17 @@ function Get-CampaignContinueSuggestion {
     return $Command
 }
 
+function Format-CampaignSourcePinArgument {
+    param(
+        [string] $SourceLabel
+    )
+
+    if (-not $SourceLabel) {
+        return ""
+    }
+    return "-From $SourceLabel"
+}
+
 function Write-CampaignRunPreflight {
     param(
         [object] $Context
@@ -156,6 +167,10 @@ function Write-CampaignContinuationPreflight {
         Write-Host "build-needed=no"
     }
     Write-Host "source=$($Context.SourceLabel)"
+    $SourcePin = Format-CampaignSourcePinArgument -SourceLabel $Context.SourceLabel
+    if ($SourcePin) {
+        Write-Host "source-pin=$SourcePin"
+    }
     Write-Host "source-report=$($Context.SourceCampaignPath)"
     Write-Host "source-checkpoint=$($Context.SourceCheckpointPath)"
     if ($Context.Scratch) {

@@ -297,6 +297,11 @@ function Write-CampaignInspectPreflight {
     } else {
         Write-Host "build-needed=no"
     }
+    Write-Host "source=$SourceLabel"
+    $SourcePin = Format-CampaignSourcePinArgument -SourceLabel $SourceLabel
+    if ($SourcePin) {
+        Write-Host "source-pin=$SourcePin"
+    }
     if ($CoverageGapMilestoneSummary) {
         Write-Host "coverage-gap-filter=$CoverageGapFilterLabel"
     }
