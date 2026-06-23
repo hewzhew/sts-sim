@@ -61,8 +61,8 @@ coverage-gap continuation.
 ```powershell
 .\tools\campaign.ps1 -Inspect
 .\tools\campaign.ps1 -InspectArtifacts
-.\tools\campaign.ps1 -InspectState -InspectIndex 0
-.\tools\campaign.ps1 -InspectScratchLatest -InspectState -InspectIndex 0
+.\tools\campaign.ps1 -Probe state -InspectIndex 0
+.\tools\campaign.ps1 -InspectScratchLatest -Probe state -InspectIndex 0
 .\tools\campaign.ps1 -InspectDecisionObservations -InspectQuery "Iron Wave"
 .\tools\campaign.ps1 -InspectJournal -InspectQuery "shop"
 .\tools\campaign.ps1 -InspectLineageDecisions -InspectIndex 0
@@ -75,23 +75,26 @@ campaign state.
 ## Strategy Evidence Inspectors
 
 ```powershell
-.\tools\campaign.ps1 -InspectShopEvidence -InspectIndex 0
-.\tools\campaign.ps1 -InspectShopChallenge -InspectIndex 0
-.\tools\campaign.ps1 -InspectCardRewardEvidence -InspectIndex 0
-.\tools\campaign.ps1 -InspectDeckMutation -InspectIndex 0
-.\tools\campaign.ps1 -InspectCampfireEvidence -InspectIndex 0
-.\tools\campaign.ps1 -InspectRouteEvidence -InspectIndex 0
+.\tools\campaign.ps1 -Probe shop-evidence -InspectIndex 0
+.\tools\campaign.ps1 -Probe shop-challenge -InspectIndex 0
+.\tools\campaign.ps1 -Probe card-reward-evidence -InspectIndex 0
+.\tools\campaign.ps1 -Probe deck-mutation -InspectIndex 0
+.\tools\campaign.ps1 -Probe campfire-evidence -InspectIndex 0
+.\tools\campaign.ps1 -Probe route-evidence -InspectIndex 0
 ```
 
 These are debugging tools for compiler/evidence layers. They should explain
 inputs and candidate structure, not create new policy behavior in PowerShell.
+The older `-InspectShopEvidence`-style switches remain compatibility aliases,
+but new examples should prefer `-Probe <kind>` so the wrapper does not keep
+adding one top-level switch per Rust driver probe.
 
 ## Combat And Learning Inspectors
 
 ```powershell
-.\tools\campaign.ps1 -InspectLastAutoCombat -InspectIndex 0
-.\tools\campaign.ps1 -InspectCombatLab -InspectIndex 0
-.\tools\campaign.ps1 -InspectCombatLab -ProbeBoss -InspectIndex 0
+.\tools\campaign.ps1 -Probe last-auto-combat -InspectIndex 0
+.\tools\campaign.ps1 -Probe combat-lab -InspectIndex 0
+.\tools\campaign.ps1 -Probe combat-lab -ProbeBoss -InspectIndex 0
 .\tools\campaign.ps1 -Inspect -ExportLearningDataset tools\artifacts\learning\latest.learning.jsonl
 ```
 

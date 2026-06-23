@@ -520,6 +520,68 @@ Review these before adding more wrapper logic:
 - long comment-help examples; active docs can carry examples instead of the
   wrapper header carrying every workflow.
 
+### Inspect Surface Audit
+
+`tools/campaign_inspect.ps1` is now structurally separate from the main
+wrapper, but its public switch surface is still too broad. The important
+boundary is not the file split; it is whether an inspect command is a wrapper
+workflow or only a thin Rust-driver probe.
+
+Wrapper-owned inspect workflows:
+
+- `-Inspect`: the normal saved-artifact summary. It selects the resolved source
+  artifact, prints wrapper preflight, and asks the driver for a compact report.
+- `-InspectArtifacts`: the artifact contract view. This is entirely wrapper
+  owned because it explains report/checkpoint/manifest/log/command paths.
+- `-InspectCoverageGapMilestoneSummary` and
+  `-InspectCoverageGapTargetState`: these belong with coverage-gap
+  continuation and milestone orchestration. They are not generic driver probes.
+- `-InspectJournal`, `-InspectLineageDecisions`,
+  `-InspectDecisionObservations`, and `-ExportLearningDataset`: these are
+  current campaign-learning and journal workflows. They should stay visible
+  while the journal/coverage-gap loop is active, but they should converge toward
+  one journal/learning inspect surface instead of accumulating flags forever.
+
+Thin driver probes:
+
+- `-InspectShopEvidence`
+- `-InspectCardRewardEvidence`
+- `-InspectCampfireEvidence`
+- `-InspectDeckMutation`
+- `-InspectRouteEvidence`
+- `-InspectState`
+- `-InspectLastAutoCombat`
+- `-InspectCombatLab`
+- `-InspectFinalBossCombat`
+- `-ProbeBoss`
+
+These are useful while debugging, but they are not separate wrapper concepts.
+They are now available through a typed probe selector, for example:
+
+```powershell
+.\tools\campaign.ps1 -Inspect -Probe shop-evidence
+.\tools\campaign.ps1 -Inspect -Probe combat-lab -ProbeBoss
+```
+
+The older `-InspectShopEvidence`-style switches remain compatibility aliases
+for now. Do not add more of them.
+
+`-InspectShopChallenge` is mixed. It is currently a driver rollout probe with
+several wrapper-exposed tuning knobs. It should not grow further as a public
+wrapper workflow; either the driver owns it directly, or the wrapper exposes a
+small named experiment preset.
+
+Near-term rule:
+
+```text
+Do not add another top-level inspect switch unless it is wrapper-owned.
+For driver-only diagnostics, prefer a typed probe selector or a direct driver
+command in docs.
+```
+
+This keeps `campaign.ps1` from becoming an index of every temporary Rust
+debugging flag.
+
 Deletion rule:
 
 ```text

@@ -15,7 +15,8 @@ function Get-CampaignInspectSelectorParameterNames {
         "InspectCombatLab",
         "InspectFinalBossCombat",
         "InspectCoverageGapMilestoneSummary",
-        "InspectCoverageGapTargetState"
+        "InspectCoverageGapTargetState",
+        "Probe"
     )
 }
 
@@ -25,11 +26,45 @@ function Test-CampaignAnyInspectSelectorSwitch {
     )
 
     foreach ($Name in (Get-CampaignInspectSelectorParameterNames)) {
-        if ($BoundParameters.ContainsKey($Name) -and [bool] $BoundParameters[$Name]) {
+        if (-not $BoundParameters.ContainsKey($Name)) {
+            continue
+        }
+        $Value = $BoundParameters[$Name]
+        if ($Value -is [array]) {
+            if ($Value.Count -gt 0) {
+                return $true
+            }
+            continue
+        }
+        if ([bool] $Value) {
             return $true
         }
     }
     return $false
+}
+
+function New-CampaignInspectProbeContext {
+    param(
+        [string[]] $Probe
+    )
+
+    $Selected = @{}
+    foreach ($Name in @($Probe | Where-Object { $_ })) {
+        $Selected[$Name] = $true
+    }
+
+    return [pscustomobject]@{
+        State = $Selected.ContainsKey("state")
+        ShopEvidence = $Selected.ContainsKey("shop-evidence")
+        ShopChallenge = $Selected.ContainsKey("shop-challenge")
+        CardRewardEvidence = $Selected.ContainsKey("card-reward-evidence")
+        CampfireEvidence = $Selected.ContainsKey("campfire-evidence")
+        DeckMutation = $Selected.ContainsKey("deck-mutation")
+        RouteEvidence = $Selected.ContainsKey("route-evidence")
+        LastAutoCombat = $Selected.ContainsKey("last-auto-combat")
+        CombatLab = $Selected.ContainsKey("combat-lab")
+        FinalBossCombat = $Selected.ContainsKey("final-boss-combat")
+    }
 }
 
 function New-CampaignEntryRequestDescriptor {

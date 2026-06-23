@@ -90,6 +90,20 @@ param(
     [string] $RunLabel = "",
     [string] $From = "",
 
+    [ValidateSet(
+        "state",
+        "shop-evidence",
+        "shop-challenge",
+        "card-reward-evidence",
+        "campfire-evidence",
+        "deck-mutation",
+        "route-evidence",
+        "last-auto-combat",
+        "combat-lab",
+        "final-boss-combat"
+    )]
+    [string[]] $Probe = @(),
+
     [ValidateSet("fast-run", "release-final", "release", "dev-opt", "debug")]
     [string] $BuildProfile = "fast-run",
 
@@ -205,6 +219,7 @@ $CampaignRequest = Resolve-CampaignEntryRequest `
     -PlanCoverageGaps ([bool] $PlanCoverageGaps) `
     -ContinueCoverageGaps ([bool] $ContinueCoverageGaps) `
     -Scratch ([bool] $Scratch)
+$InspectProbeContext = New-CampaignInspectProbeContext -Probe $Probe
 $CampaignSourceRunContext = Resolve-CampaignSourceRunContext `
     -Request $CampaignRequest `
     -Last ([bool] $Last) `
@@ -326,19 +341,19 @@ $EntryDispatchContext = [pscustomobject]@{
     }
     InspectSwitchContext = [pscustomobject]@{
         Artifacts = [bool] $InspectArtifacts
-        State = [bool] $InspectState
-        ShopEvidence = [bool] $InspectShopEvidence
-        ShopChallenge = [bool] $InspectShopChallenge
-        CardRewardEvidence = [bool] $InspectCardRewardEvidence
+        State = [bool] ($InspectState -or $InspectProbeContext.State)
+        ShopEvidence = [bool] ($InspectShopEvidence -or $InspectProbeContext.ShopEvidence)
+        ShopChallenge = [bool] ($InspectShopChallenge -or $InspectProbeContext.ShopChallenge)
+        CardRewardEvidence = [bool] ($InspectCardRewardEvidence -or $InspectProbeContext.CardRewardEvidence)
         DecisionObservations = [bool] $InspectDecisionObservations
         Journal = [bool] $InspectJournal
         LineageDecisions = [bool] $InspectLineageDecisions
-        CampfireEvidence = [bool] $InspectCampfireEvidence
-        DeckMutation = [bool] $InspectDeckMutation
-        RouteEvidence = [bool] $InspectRouteEvidence
-        LastAutoCombat = [bool] $InspectLastAutoCombat
-        CombatLab = [bool] $InspectCombatLab
-        FinalBossCombat = [bool] $InspectFinalBossCombat
+        CampfireEvidence = [bool] ($InspectCampfireEvidence -or $InspectProbeContext.CampfireEvidence)
+        DeckMutation = [bool] ($InspectDeckMutation -or $InspectProbeContext.DeckMutation)
+        RouteEvidence = [bool] ($InspectRouteEvidence -or $InspectProbeContext.RouteEvidence)
+        LastAutoCombat = [bool] ($InspectLastAutoCombat -or $InspectProbeContext.LastAutoCombat)
+        CombatLab = [bool] ($InspectCombatLab -or $InspectProbeContext.CombatLab)
+        FinalBossCombat = [bool] ($InspectFinalBossCombat -or $InspectProbeContext.FinalBossCombat)
         CoverageGapMilestoneSummary = [bool] $InspectCoverageGapMilestoneSummary
         CoverageGapTargetState = [bool] $InspectCoverageGapTargetState
         BranchExamples = $BranchExamples

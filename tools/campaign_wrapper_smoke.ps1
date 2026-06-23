@@ -186,6 +186,29 @@ try {
             -NotContains @(
                 "Choose one campaign request kind"
             )
+
+        Invoke-CampaignSmokeCase `
+            -Name "FromScratchLatestProbeDryRun" `
+            -Arguments @(
+                "-FromScratchLatest",
+                "-Probe",
+                "shop-evidence",
+                "-InspectIndex",
+                "0",
+                "-DebugBuild",
+                "-NoProgress",
+                "-DryRun"
+            ) `
+            -Contains @(
+                "mode=inspect scratch:",
+                "--inspect-shop-evidence",
+                "--inspect-index 0"
+            ) `
+            -NotContains @(
+                "--inspect-summary",
+                "branch_campaign_driver.exe run",
+                "Choose one campaign request kind"
+            )
     } else {
         Write-Host "campaign-wrapper-smoke: SKIP scratch-latest cases; no pointer at $ScratchLatestPointer"
     }
