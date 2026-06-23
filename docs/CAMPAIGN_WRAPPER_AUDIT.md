@@ -13,7 +13,7 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 472 lines
+- `tools/campaign.ps1`: 454 lines
 - `tools/campaign_artifacts.ps1`: 642 lines
 - `tools/campaign_invocation.ps1`: 653 lines
 - `tools/campaign_coverage_gaps.ps1`: 435 lines
@@ -24,7 +24,7 @@ Approximate physical line count after the wrapper split:
 - `tools/campaign_source.ps1`: 128 lines
 - `tools/campaign_rounds.ps1`: 131 lines
 - `tools/campaign_milestones.ps1`: 110 lines
-- `tools/campaign_request.ps1`: 184 lines
+- `tools/campaign_request.ps1`: 205 lines
 - `tools/campaign_build.ps1`: 71 lines
 
 Major regions:
@@ -362,6 +362,7 @@ This helper owns:
 - derived operation switches used by the main wrapper after request resolution
 - retired `-More` rejection
 - inspect flag folding
+- inspect selector switch classification
 - `-InspectScratchLatest` source/read interpretation
 - targeted-vs-coverage-gap mutual exclusion
 - scratch output eligibility

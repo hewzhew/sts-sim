@@ -186,29 +186,11 @@ New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 . (Join-Path $PSScriptRoot "campaign_source.ps1")
 . (Join-Path $PSScriptRoot "campaign_request.ps1")
 
-$InspectSelectorFlags = @(
-    [bool] $InspectArtifacts,
-    [bool] $InspectState,
-    [bool] $InspectShopEvidence,
-    [bool] $InspectShopChallenge,
-    [bool] $InspectCardRewardEvidence,
-    [bool] $InspectDecisionObservations,
-    [bool] $InspectJournal,
-    [bool] $InspectLineageDecisions,
-    [bool] $InspectCampfireEvidence,
-    [bool] $InspectDeckMutation,
-    [bool] $InspectRouteEvidence,
-    [bool] $InspectLastAutoCombat,
-    [bool] $InspectCombatLab,
-    [bool] $InspectFinalBossCombat,
-    [bool] $InspectCoverageGapMilestoneSummary,
-    [bool] $InspectCoverageGapTargetState
-)
 $CampaignRequest = Resolve-CampaignEntryRequest `
     -ContinueRun ([bool] $ContinueRun) `
     -More ([bool] $More) `
     -Inspect ([bool] $Inspect) `
-    -InspectSelectorFlags $InspectSelectorFlags `
+    -AnyInspectSelector (Test-CampaignAnyInspectSelectorSwitch -BoundParameters $PSBoundParameters) `
     -InspectScratchLatest ([bool] $InspectScratchLatest) `
     -InspectShopChallenge ([bool] $InspectShopChallenge) `
     -InspectBoundaryBound ($PSBoundParameters.ContainsKey("InspectBoundary")) `

@@ -1,10 +1,31 @@
-function Test-AnyCampaignFlag {
+function Get-CampaignInspectSelectorParameterNames {
+    return @(
+        "InspectArtifacts",
+        "InspectState",
+        "InspectShopEvidence",
+        "InspectShopChallenge",
+        "InspectCardRewardEvidence",
+        "InspectDecisionObservations",
+        "InspectJournal",
+        "InspectLineageDecisions",
+        "InspectCampfireEvidence",
+        "InspectDeckMutation",
+        "InspectRouteEvidence",
+        "InspectLastAutoCombat",
+        "InspectCombatLab",
+        "InspectFinalBossCombat",
+        "InspectCoverageGapMilestoneSummary",
+        "InspectCoverageGapTargetState"
+    )
+}
+
+function Test-CampaignAnyInspectSelectorSwitch {
     param(
-        [bool[]] $Flags
+        [System.Collections.IDictionary] $BoundParameters
     )
 
-    foreach ($Flag in $Flags) {
-        if ($Flag) {
+    foreach ($Name in (Get-CampaignInspectSelectorParameterNames)) {
+        if ($BoundParameters.ContainsKey($Name) -and [bool] $BoundParameters[$Name]) {
             return $true
         }
     }
@@ -90,7 +111,7 @@ function Resolve-CampaignEntryRequest {
         [bool] $ContinueRun,
         [bool] $More,
         [bool] $Inspect,
-        [bool[]] $InspectSelectorFlags,
+        [bool] $AnyInspectSelector,
         [bool] $InspectScratchLatest,
         [bool] $InspectShopChallenge,
         [bool] $InspectBoundaryBound,
@@ -116,7 +137,7 @@ function Resolve-CampaignEntryRequest {
 
     $ResolvedInspect = $Inspect
     if (
-        (Test-AnyCampaignFlag -Flags $InspectSelectorFlags) -or
+        $AnyInspectSelector -or
         ($InspectScratchLatest -and -not $ScratchLatestIsContinuationSource)
     ) {
         $ResolvedInspect = $true
