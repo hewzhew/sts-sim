@@ -1,8 +1,11 @@
 use sts_simulator::eval::run_control::RunControlSession;
 use sts_simulator::state::core::EngineState;
 
+use super::command_inputs::InspectEvidenceDetailV1;
+
 pub(super) fn render_checkpoint_campfire_evidence_v1(
     session: &RunControlSession,
+    detail: InspectEvidenceDetailV1,
 ) -> Result<String, String> {
     if !matches!(session.engine_state, EngineState::Campfire) {
         return Err(format!(
@@ -18,6 +21,22 @@ pub(super) fn render_checkpoint_campfire_evidence_v1(
         &context,
         &sts_simulator::ai::campfire_policy_v1::CampfirePolicyConfigV1::default(),
     );
+    Ok(match detail {
+        InspectEvidenceDetailV1::Compact => {
+            render_campfire_evidence_compact_v1(session, &context, &decision)
+        }
+        InspectEvidenceDetailV1::Full => {
+            render_campfire_evidence_full_v1(session, &context, &decision)
+        }
+    }
+    .join("\n"))
+}
+
+fn render_campfire_evidence_full_v1(
+    session: &RunControlSession,
+    context: &sts_simulator::ai::campfire_policy_v1::CampfireDecisionContextV1,
+    decision: &sts_simulator::ai::campfire_policy_v1::CampfireDecisionV1,
+) -> Vec<String> {
     let mut lines = Vec::new();
     let formation = context.strategy.formation_summary();
     lines.push(format!(
@@ -82,7 +101,204 @@ pub(super) fn render_checkpoint_campfire_evidence_v1(
             }
         }
     }
-    Ok(lines.join("\n"))
+    lines
+}
+
+fn render_campfire_evidence_compact_v1(
+    session: &RunControlSession,
+    context: &sts_simulator::ai::campfire_policy_v1::CampfireDecisionContextV1,
+    decision: &sts_simulator::ai::campfire_policy_v1::CampfireDecisionV1,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    let formation = context.strategy.formation_summary();
+    lines.push(format!(
+        "Campfire compiled decision: act={} floor={} hp={}/{} gold={} boss={:?}",
+        session.run_state.act_num,
+        session.run_state.floor_num,
+        session.run_state.current_hp,
+        session.run_state.max_hp,
+        session.run_state.gold,
+        session.run_state.boss_key
+    ));
+    lines.push(format!(
+        "selected: {} role={:?} score={} execute={} confidence={:.2} action={}",
+        decision.selected_plan.plan_id,
+        decision.selected_plan.role,
+        decision.selected_plan.score_hint,
+        decision.selected_plan.execute_autopilot,
+        decision.selected_plan.confidence,
+        render_campfire_action_label_v1(&decision.selected_plan.action)
+    ));
+    lines.push(format!(
+        "context: candidates={} formation={:?} needs={:?} rest_vs_smith={:?}",
+        context.candidates.len(),
+        formation.stage,
+        formation.needs,
+        context.rest_vs_smith.verdict
+    ));
+    lines.push(render_campfire_plan_candidate_summary_v1(decision, context));
+
+    let highlights = compact_campfire_notable_plans_v1(decision, context);
+    if highlights.is_empty() {
+        lines.push("plan_highlights: -".to_string());
+    } else {
+        lines.push(format!("plan_highlights: {}", highlights.len()));
+        for (idx, line) in highlights.into_iter().enumerate() {
+            lines.push(format!("  {idx}. {line}"));
+        }
+    }
+    lines.push(
+        "candidate_plan_detail: hidden; rerun with --inspect-evidence-detail full for full campfire evidence"
+            .to_string(),
+    );
+    lines
+}
+
+fn render_campfire_plan_candidate_summary_v1(
+    decision: &sts_simulator::ai::campfire_policy_v1::CampfireDecisionV1,
+    context: &sts_simulator::ai::campfire_policy_v1::CampfireDecisionContextV1,
+) -> String {
+    let mut by_role = std::collections::BTreeMap::<String, usize>::new();
+    let mut by_class = std::collections::BTreeMap::<String, usize>::new();
+    let mut by_gate = std::collections::BTreeMap::<String, usize>::new();
+    let mut executable = 0usize;
+    let mut branch_active = 0usize;
+    for plan in &decision.candidate_plans {
+        *by_role.entry(format!("{:?}", plan.role)).or_insert(0) += 1;
+        if plan.execute_autopilot {
+            executable += 1;
+        }
+        if plan.branch_active {
+            branch_active += 1;
+        }
+        if let Some(candidate) = context
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate_id == plan.plan_id)
+        {
+            *by_class
+                .entry(format!("{:?}", candidate.class))
+                .or_insert(0) += 1;
+            *by_gate
+                .entry(format!("{:?}", candidate.support_gate))
+                .or_insert(0) += 1;
+        }
+    }
+    format!(
+        "candidate_plans: compact total={} executable={} branch_active={} by_role=[{}] by_class=[{}] by_gate=[{}]",
+        decision.candidate_plans.len(),
+        executable,
+        branch_active,
+        render_count_map_v1(&by_role),
+        render_count_map_v1(&by_class),
+        render_count_map_v1(&by_gate)
+    )
+}
+
+fn compact_campfire_notable_plans_v1(
+    decision: &sts_simulator::ai::campfire_policy_v1::CampfireDecisionV1,
+    context: &sts_simulator::ai::campfire_policy_v1::CampfireDecisionContextV1,
+) -> Vec<String> {
+    let mut ranked = decision
+        .candidate_plans
+        .iter()
+        .filter_map(|plan| {
+            let candidate = context
+                .candidates
+                .iter()
+                .find(|candidate| candidate.candidate_id == plan.plan_id);
+            let is_selected = plan.plan_id == decision.selected_plan.plan_id;
+            let has_risk = candidate.is_some_and(|candidate| !candidate.risks.is_empty());
+            let has_debt_score = candidate
+                .and_then(|candidate| candidate.upgrade_plan_score_hint)
+                .is_some_and(|score| score >= 180);
+            let notable = is_selected
+                || plan.execute_autopilot
+                || plan.branch_active
+                || plan.score_hint >= 180
+                || has_debt_score
+                || has_risk;
+            if !notable {
+                return None;
+            }
+            Some((
+                compact_campfire_notable_rank_v1(plan, is_selected, has_risk),
+                render_campfire_notable_plan_line_v1(plan, candidate),
+            ))
+        })
+        .collect::<Vec<_>>();
+    ranked.sort_by(|left, right| right.0.cmp(&left.0));
+    ranked.into_iter().take(6).map(|(_, line)| line).collect()
+}
+
+fn compact_campfire_notable_rank_v1(
+    plan: &sts_simulator::ai::campfire_policy_v1::CampfirePlanCandidateV1,
+    is_selected: bool,
+    has_risk: bool,
+) -> i32 {
+    let selected_bonus = if is_selected { 100_000 } else { 0 };
+    let execute_bonus = if plan.execute_autopilot { 20_000 } else { 0 };
+    let active_bonus = if plan.branch_active { 10_000 } else { 0 };
+    let risk_bonus = if has_risk { 1_000 } else { 0 };
+    selected_bonus + execute_bonus + active_bonus + risk_bonus + plan.score_hint
+}
+
+fn render_campfire_notable_plan_line_v1(
+    plan: &sts_simulator::ai::campfire_policy_v1::CampfirePlanCandidateV1,
+    candidate: Option<&sts_simulator::ai::campfire_policy_v1::CampfireCandidateEvidenceV1>,
+) -> String {
+    let mut parts = vec![format!(
+        "{} role={:?} score={} execute={} branch_active={} action={}",
+        plan.plan_id,
+        plan.role,
+        plan.score_hint,
+        plan.execute_autopilot,
+        plan.branch_active,
+        render_campfire_action_label_v1(&plan.action)
+    )];
+    if let Some(tag) = &plan.strategy_tag {
+        parts.push(format!("tag={tag}"));
+    }
+    if let Some(candidate) = candidate {
+        parts.push(format!(
+            "class={:?} gate={:?} upgrade_score={}",
+            candidate.class,
+            candidate.support_gate,
+            candidate
+                .upgrade_plan_score_hint
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".to_string())
+        ));
+        if !candidate.risks.is_empty() {
+            parts.push(format!(
+                "risks=[{}]",
+                render_short_list(&candidate.risks.iter().take(2).cloned().collect::<Vec<_>>())
+            ));
+        }
+    }
+    if !plan.reasons.is_empty() {
+        parts.push(format!(
+            "reasons=[{}]",
+            render_short_list(&plan.reasons.iter().take(2).cloned().collect::<Vec<_>>())
+        ));
+    }
+    parts.join(" | ")
+}
+
+fn render_campfire_action_label_v1(
+    action: &sts_simulator::ai::campfire_policy_v1::CampfirePolicyActionV1,
+) -> String {
+    match action {
+        sts_simulator::ai::campfire_policy_v1::CampfirePolicyActionV1::Rest { .. } => {
+            "Rest".to_string()
+        }
+        sts_simulator::ai::campfire_policy_v1::CampfirePolicyActionV1::Smith {
+            deck_index, ..
+        } => format!("Smith({deck_index})"),
+        sts_simulator::ai::campfire_policy_v1::CampfirePolicyActionV1::Stop { .. } => {
+            "Stop".to_string()
+        }
+    }
 }
 
 pub(super) fn render_checkpoint_route_evidence_v1(
@@ -266,6 +482,16 @@ fn render_short_list(items: &[String]) -> String {
     } else {
         items.join(", ")
     }
+}
+
+fn render_count_map_v1(map: &std::collections::BTreeMap<String, usize>) -> String {
+    if map.is_empty() {
+        return "-".to_string();
+    }
+    map.iter()
+        .map(|(key, count)| format!("{key}={count}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn render_ledger_deltas(items: &[sts_simulator::ai::strategic::LedgerDelta]) -> String {
