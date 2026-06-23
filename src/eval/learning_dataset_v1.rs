@@ -2071,11 +2071,12 @@ fn select_coverage_gap_targets_by_type_v1(
         }
     }
 
-    let mut selected = select_coverage_gap_targets_by_type_inner_v1(target_only, max_targets);
+    let mut selected = select_coverage_gap_targets_by_type_inner_v1(missing, max_targets);
     let remaining = max_targets.saturating_sub(selected.len());
     if remaining > 0 {
         selected.extend(select_coverage_gap_targets_by_type_inner_v1(
-            missing, remaining,
+            target_only,
+            remaining,
         ));
     }
     selected
@@ -5945,7 +5946,7 @@ mod tests {
     }
 
     #[test]
-    fn coverage_gap_plan_continues_target_only_origins_before_missing_targets() {
+    fn coverage_gap_plan_prefers_missing_targets_before_target_only_origins() {
         let mut target_only =
             sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
         target_only.continuation_origin =
@@ -5978,14 +5979,60 @@ mod tests {
 
         let plan = plan_coverage_gap_continuations_v1(&report, &[], 1, 1);
 
+        assert_eq!(plan.targets[0].event_type, "route");
+        assert_eq!(plan.targets[0].label, "Route missing");
+        assert_eq!(plan.targets[0].existing_progress, None);
+    }
+
+    #[test]
+    fn coverage_gap_progress_filter_can_continue_target_only_origins() {
+        let mut target_only =
+            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
+        target_only.continuation_origin =
+            Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
+        let mut report = sample_campaign_report_with_branches(vec![target_only]);
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-route-pool0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Map".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                decision_id: "journal-route-pool0".to_string(),
+                boundary_title: "Map".to_string(),
+                frontier_key: "map-frontier".to_string(),
+                depth: 0,
+                candidate_count: 1,
+                selected_index: Some(0),
+                candidate_pool_provenance: None,
+                map_decision_packet: None,
+                route_candidates: Vec::new(),
+                candidates: vec![sample_journal_candidate("go 1", "Route missing")],
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_with_filter_v1(
+            &report,
+            &[],
+            1,
+            1,
+            &CoverageGapContinuationFilterV1 {
+                progress: Some("target_only".to_string()),
+                ..Default::default()
+            },
+        );
+
         assert_eq!(plan.targets[0].event_type, "reward");
         assert_eq!(plan.targets[0].label, "Reward A");
         assert_eq!(
             plan.targets[0].existing_progress,
             Some(CoverageGapContinuationTargetProgressV1::TargetOnly)
         );
-        assert!(render_coverage_gap_continuation_plan_v1(&plan)
-            .contains("existing_progress=target_only"));
     }
 
     #[test]

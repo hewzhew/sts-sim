@@ -44,6 +44,11 @@ Coverage-gap targets and continuation branches should preserve typed route
 origin fields as well, so replay and learning tools do not need to parse route
 display strings.
 
+Coverage-gap continuation defaults to filling missing historical candidate
+coverage before extending branches that only executed the target action. Use an
+explicit progress filter such as `--coverage-gap-progress target_only` when the
+goal is frontier expansion for already-started coverage targets.
+
 ## Closed Foundation
 
 Phase 0 run-control automation and provenance boundaries are closed. Keep
@@ -71,3 +76,7 @@ search quality.
   exact replay and a benchmark context.
 - Human baseline comparison is whole-combat outcome comparison, not stepwise
   action agreement.
+- New report, journal, and learning-sample fields should pass
+  [Report Field Admission](REPORT_FIELD_ADMISSION.md): classify the field as a
+  fact, diagnostic, verdict, or label; do not add winner-like summary fields
+  when the evidence only supports candidate facts or diagnostics.
