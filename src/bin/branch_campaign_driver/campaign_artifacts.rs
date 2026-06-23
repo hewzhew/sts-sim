@@ -155,6 +155,7 @@ mod tests {
             rounds_completed: 0,
             nodes: Vec::new(),
             decision_parent_anchor_commands: Vec::new(),
+            run_state_map_graphs: Vec::new(),
             run_state_maps: Vec::new(),
             run_state_master_decks: Vec::new(),
             run_state_schedules: Vec::new(),

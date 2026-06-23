@@ -15,6 +15,7 @@ use crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1;
 use crate::eval::reward_boundary_packet_v1::RewardBoundaryPacketV1;
 use crate::eval::run_control::{CombatAutomationTrajectoryRecordV1, RunControlSessionCheckpointV1};
 use crate::runtime::combat::CombatCard;
+use crate::state::map::node::Map;
 use crate::state::map::state::MapState;
 use crate::state::run::RunStateScheduleCheckpointV1;
 use crate::state::selection::DomainEvent;
@@ -510,7 +511,16 @@ pub struct BranchCampaignCheckpointSessionV1 {
 #[serde(deny_unknown_fields)]
 pub struct BranchCampaignCheckpointRunStateMapRecordV1 {
     pub map_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_state_map_graph_id: Option<String>,
     pub map: MapState,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointRunStateMapGraphRecordV1 {
+    pub graph_id: String,
+    pub graph: Map,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -558,6 +568,8 @@ pub struct BranchCampaignCheckpointV1 {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decision_parent_anchor_commands: Vec<Vec<String>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub run_state_map_graphs: Vec<BranchCampaignCheckpointRunStateMapGraphRecordV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub run_state_maps: Vec<BranchCampaignCheckpointRunStateMapRecordV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub run_state_master_decks: Vec<BranchCampaignCheckpointRunStateMasterDeckRecordV1>,
@@ -582,7 +594,16 @@ impl BranchCampaignCheckpointV1 {
                 .iter()
                 .find(|record| record.map_id == map_id)
                 .ok_or_else(|| format!("missing checkpoint run_state map {map_id}"))?;
-            session.restore_run_state_map_from_external_ref(record.map.clone());
+            let mut map = record.map.clone();
+            if let Some(graph_id) = record.run_state_map_graph_id.as_deref() {
+                let graph = self
+                    .run_state_map_graphs
+                    .iter()
+                    .find(|record| record.graph_id == graph_id)
+                    .ok_or_else(|| format!("missing checkpoint run_state map graph {graph_id}"))?;
+                map.graph = graph.graph.clone();
+            }
+            session.restore_run_state_map_from_external_ref(map);
         }
         if let Some(deck_id) = entry.run_state_master_deck_id.as_deref() {
             let record = self

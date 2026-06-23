@@ -64,7 +64,7 @@ pub use model::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
     BranchCampaignCheckpointCombatTrajectoryRecordV1,
     BranchCampaignCheckpointRunStateEmittedEventsRecordV1,
-    BranchCampaignCheckpointRunStateMapRecordV1,
+    BranchCampaignCheckpointRunStateMapGraphRecordV1, BranchCampaignCheckpointRunStateMapRecordV1,
     BranchCampaignCheckpointRunStateMasterDeckRecordV1,
     BranchCampaignCheckpointRunStateScheduleRecordV1, BranchCampaignCheckpointSessionV1,
     BranchCampaignCheckpointV1, BranchCampaignContinuationOriginV1,
@@ -1005,6 +1005,8 @@ fn campaign_checkpoint_from_state_v1(
     state: &BranchCampaignRunStateV1,
 ) -> BranchCampaignCheckpointV1 {
     let mut sessions = Vec::new();
+    let mut run_state_map_graphs = Vec::<BranchCampaignCheckpointRunStateMapGraphRecordV1>::new();
+    let mut run_state_map_graph_indexes = BTreeMap::<String, usize>::new();
     let mut run_state_maps = Vec::<BranchCampaignCheckpointRunStateMapRecordV1>::new();
     let mut run_state_map_indexes = BTreeMap::<String, usize>::new();
     let mut run_state_master_decks =
@@ -1033,6 +1035,8 @@ fn campaign_checkpoint_from_state_v1(
             let externalized = campaign_checkpoint_session_with_external_refs_v1(
                 &branch.commands,
                 session,
+                &mut run_state_map_graphs,
+                &mut run_state_map_graph_indexes,
                 &mut run_state_maps,
                 &mut run_state_map_indexes,
                 &mut run_state_master_decks,
@@ -1062,6 +1066,8 @@ fn campaign_checkpoint_from_state_v1(
             let externalized = campaign_checkpoint_session_with_external_refs_v1(
                 commands,
                 session,
+                &mut run_state_map_graphs,
+                &mut run_state_map_graph_indexes,
                 &mut run_state_maps,
                 &mut run_state_map_indexes,
                 &mut run_state_master_decks,
@@ -1096,6 +1102,7 @@ fn campaign_checkpoint_from_state_v1(
             .iter()
             .cloned()
             .collect(),
+        run_state_map_graphs,
         run_state_maps,
         run_state_master_decks,
         run_state_schedules,
@@ -1116,6 +1123,8 @@ struct CampaignCheckpointExternalizedSessionV1 {
 fn campaign_checkpoint_session_with_external_refs_v1(
     commands: &[String],
     session: &RunControlSession,
+    run_state_map_graphs: &mut Vec<BranchCampaignCheckpointRunStateMapGraphRecordV1>,
+    run_state_map_graph_indexes: &mut BTreeMap<String, usize>,
     run_state_maps: &mut Vec<BranchCampaignCheckpointRunStateMapRecordV1>,
     run_state_map_indexes: &mut BTreeMap<String, usize>,
     run_state_master_decks: &mut Vec<BranchCampaignCheckpointRunStateMasterDeckRecordV1>,
@@ -1128,15 +1137,37 @@ fn campaign_checkpoint_session_with_external_refs_v1(
     combat_automation_trajectory_indexes: &mut BTreeMap<String, usize>,
 ) -> CampaignCheckpointExternalizedSessionV1 {
     let mut checkpoint = RunControlSessionCheckpointV1::from_session(session);
-    let map = checkpoint.take_run_state_map_for_external_ref();
+    let mut map = checkpoint.take_run_state_map_for_external_ref();
     let map_key = campaign_checkpoint_run_state_map_key_v1(&map);
     let map_index = if let Some(index) = run_state_map_indexes.get(&map_key).copied() {
         index
     } else {
         let index = run_state_maps.len();
         run_state_map_indexes.insert(map_key, index);
+        let graph = std::mem::take(&mut map.graph);
+        let run_state_map_graph_id = if graph.is_empty() {
+            None
+        } else {
+            let graph_key = campaign_checkpoint_run_state_map_graph_key_v1(&graph);
+            let graph_index =
+                if let Some(index) = run_state_map_graph_indexes.get(&graph_key).copied() {
+                    index
+                } else {
+                    let index = run_state_map_graphs.len();
+                    run_state_map_graph_indexes.insert(graph_key, index);
+                    run_state_map_graphs.push(BranchCampaignCheckpointRunStateMapGraphRecordV1 {
+                        graph_id: format!("run_state_map_graph:{index}"),
+                        graph,
+                    });
+                    index
+                };
+            run_state_map_graphs
+                .get(graph_index)
+                .map(|record| record.graph_id.clone())
+        };
         run_state_maps.push(BranchCampaignCheckpointRunStateMapRecordV1 {
             map_id: format!("run_state_map:{index}"),
+            run_state_map_graph_id,
             map,
         });
         index
@@ -1246,6 +1277,10 @@ fn campaign_checkpoint_session_with_external_refs_v1(
 
 fn campaign_checkpoint_run_state_map_key_v1(map: &crate::state::map::state::MapState) -> String {
     serde_json::to_string(map).unwrap_or_else(|_| format!("{map:?}"))
+}
+
+fn campaign_checkpoint_run_state_map_graph_key_v1(graph: &crate::state::map::node::Map) -> String {
+    serde_json::to_string(graph).unwrap_or_else(|_| format!("{graph:?}"))
 }
 
 fn campaign_checkpoint_run_state_master_deck_key_v1(

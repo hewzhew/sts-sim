@@ -747,6 +747,15 @@ fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
         "campaign checkpoint should keep repeated run maps in a top-level pool"
     );
     assert_eq!(
+        checkpoint.run_state_map_graphs.len(),
+        1,
+        "campaign checkpoint should keep repeated map graphs in a top-level pool"
+    );
+    assert!(
+        checkpoint.run_state_maps[0].map.graph.is_empty(),
+        "campaign checkpoint map records should reference pooled graph topology"
+    );
+    assert_eq!(
         checkpoint.run_state_master_decks.len(),
         1,
         "campaign checkpoint should keep repeated master decks in a top-level pool"
@@ -823,6 +832,10 @@ fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
             restored.run_state.master_deck.len(),
             10,
             "checkpoint-level master deck records should preserve exact run state"
+        );
+        assert!(
+            !restored.run_state.map.graph.is_empty(),
+            "checkpoint-level map graph records should hydrate exact map topology"
         );
         assert!(
             !restored.run_state.common_relic_pool.is_empty(),
