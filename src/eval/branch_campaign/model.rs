@@ -14,6 +14,7 @@ use crate::eval::combat_lab_probe_v1::CombatLabProbePacketV1;
 use crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1;
 use crate::eval::reward_boundary_packet_v1::RewardBoundaryPacketV1;
 use crate::eval::run_control::{CombatAutomationTrajectoryRecordV1, RunControlSessionCheckpointV1};
+use crate::runtime::combat::CombatCard;
 use crate::state::map::state::MapState;
 use serde::{Deserialize, Serialize};
 
@@ -494,6 +495,8 @@ pub struct BranchCampaignCheckpointSessionV1 {
     pub commands: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_state_map_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_state_master_deck_id: Option<String>,
     pub session: RunControlSessionCheckpointV1,
 }
 
@@ -502,6 +505,13 @@ pub struct BranchCampaignCheckpointSessionV1 {
 pub struct BranchCampaignCheckpointRunStateMapRecordV1 {
     pub map_id: String,
     pub map: MapState,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointRunStateMasterDeckRecordV1 {
+    pub deck_id: String,
+    pub master_deck: Vec<CombatCard>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -530,6 +540,8 @@ pub struct BranchCampaignCheckpointV1 {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub run_state_maps: Vec<BranchCampaignCheckpointRunStateMapRecordV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub run_state_master_decks: Vec<BranchCampaignCheckpointRunStateMasterDeckRecordV1>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub combat_automation_trajectories: Vec<BranchCampaignCheckpointCombatTrajectoryRecordV1>,
     pub sessions: Vec<BranchCampaignCheckpointSessionV1>,
 }
@@ -547,6 +559,14 @@ impl BranchCampaignCheckpointV1 {
                 .find(|record| record.map_id == map_id)
                 .ok_or_else(|| format!("missing checkpoint run_state map {map_id}"))?;
             session.restore_run_state_map_from_external_ref(record.map.clone());
+        }
+        if let Some(deck_id) = entry.run_state_master_deck_id.as_deref() {
+            let record = self
+                .run_state_master_decks
+                .iter()
+                .find(|record| record.deck_id == deck_id)
+                .ok_or_else(|| format!("missing checkpoint run_state master deck {deck_id}"))?;
+            session.restore_run_state_master_deck_from_external_ref(record.master_deck.clone());
         }
         if session.last_combat_automation_trajectory_record().is_some() {
             return Ok(session);

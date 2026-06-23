@@ -5,6 +5,7 @@ use crate::eval::card_reward_value_loop::{
     CardRewardOutcomeCalibrationV1, CardRewardRouteRiskCalibrationV1,
     CardRewardStrategyPackageCalibrationV1,
 };
+use crate::runtime::combat::CombatCard;
 use crate::state::core::{ActiveCombat, EngineState};
 use crate::state::map::state::MapState;
 use crate::state::run::{RunState, RunStateCheckpointV1};
@@ -301,6 +302,17 @@ impl RunControlSessionCheckpointV1 {
 
     pub fn restore_run_state_map_from_external_ref(&mut self, map: MapState) {
         self.run_state.map = map;
+    }
+
+    pub fn take_run_state_master_deck_for_external_ref(&mut self) -> Vec<CombatCard> {
+        std::mem::take(&mut self.run_state.master_deck)
+    }
+
+    pub fn restore_run_state_master_deck_from_external_ref(
+        &mut self,
+        master_deck: Vec<CombatCard>,
+    ) {
+        self.run_state.master_deck = master_deck;
     }
 
     pub fn into_session(self) -> Result<RunControlSession, String> {

@@ -156,6 +156,7 @@ mod tests {
             nodes: Vec::new(),
             decision_parent_anchor_commands: Vec::new(),
             run_state_maps: Vec::new(),
+            run_state_master_decks: Vec::new(),
             combat_automation_trajectories: Vec::new(),
             sessions: Vec::new(),
         };

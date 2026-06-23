@@ -134,6 +134,7 @@ pub struct RunStateCheckpointV1 {
     pub potions: Vec<Option<crate::content::potions::Potion>>,
     pub keys: [bool; 3],
     pub is_final_act_available: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub master_deck: Vec<CombatCard>,
     pub potion_drop_chance_mod: i32,
     pub card_blizz_randomizer: i32,
