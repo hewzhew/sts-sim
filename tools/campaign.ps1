@@ -156,11 +156,22 @@ param(
     [ValidateRange(0, 100)]
     [int] $VictoryHpPercent = 20,
 
+    [Alias("Passthrough")]
+    [string[]] $DriverArgs = @(),
+
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]] $ExtraArgs
 )
 
 $ErrorActionPreference = "Stop"
+
+$DriverPassthroughArgs = @()
+if ($DriverArgs) {
+    $DriverPassthroughArgs += @($DriverArgs)
+}
+if ($ExtraArgs) {
+    $DriverPassthroughArgs += @($ExtraArgs)
+}
 
 $RetiredWrapperArgs = @(
     "-PlanTargets",
@@ -169,7 +180,7 @@ $RetiredWrapperArgs = @(
     "-TargetedContinuationLimit",
     "-TargetedContinuationCandidatesPerTarget"
 )
-foreach ($arg in $ExtraArgs) {
+foreach ($arg in $DriverPassthroughArgs) {
     if ($RetiredWrapperArgs -contains $arg) {
         throw "$arg was removed from tools/campaign.ps1. Use coverage-gap continuation, or call branch_campaign_driver directly for targeted-continuation archaeology."
     }
@@ -255,7 +266,7 @@ $CampaignSharedDriverOptionContext = New-CampaignSharedDriverOptionContext `
     -VictoryHpPercent $VictoryHpPercent `
     -AutoCaptureCombat ([bool] $AutoCaptureCombat) `
     -AutoCaptureRoot $AutoCaptureRoot `
-    -ExtraArgs $ExtraArgs `
+    -ExtraArgs $DriverPassthroughArgs `
     -BossSegments ([bool] $BossSegments) `
     -NoProgress ([bool] $NoProgress) `
     -VerboseProgress ([bool] $VerboseProgress) `

@@ -13,7 +13,7 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 423 lines
+- `tools/campaign.ps1`: 434 lines
 - `tools/campaign_artifacts.ps1`: 468 lines
 - `tools/campaign_artifact_summary.ps1`: 170 lines
 - `tools/campaign_invocation.ps1`: 318 lines
@@ -443,12 +443,15 @@ supports `--plan-targeted-continuation` / `--execute-targeted-continuation` for
 manual archaeology, but `tools/campaign.ps1` is now centered on the current
 journal/coverage-gap continuation path.
 
-Raw driver passthrough is intentionally narrow. Unknown single-dash arguments
-such as `-SomeWrapperTypo` fail at the wrapper boundary instead of being
-silently forwarded through `ExtraArgs`. Direct driver passthrough should use
-Rust-style `--flag` syntax. PowerShell still accepts unambiguous abbreviations
-for declared wrapper parameters, so this is not a full replacement for a future
-typed subcommand surface.
+Raw driver passthrough is intentionally narrow. Prefer the explicit
+`-DriverArgs @("--driver-flag", "value")` parameter for temporary direct Rust
+driver flags. The remaining positional `ExtraArgs` capture exists only as
+compatibility for older ad-hoc invocations and should not be documented as a
+primary interface. Unknown single-dash arguments such as `-SomeWrapperTypo`
+fail at the wrapper boundary instead of being silently forwarded. Driver
+passthrough should use Rust-style `--flag` syntax. PowerShell still accepts
+unambiguous abbreviations for declared wrapper parameters, so this is not a
+full replacement for a future typed subcommand surface.
 
 ## Still Move Out Of Wrapper
 

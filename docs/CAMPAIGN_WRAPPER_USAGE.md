@@ -117,10 +117,14 @@ inputs and candidate structure, not create new policy behavior in PowerShell.
 .\tools\campaign.ps1 -BuildProfile release-final
 .\tools\campaign.ps1 -Mode quick -Scratch -Log
 .\tools\campaign.ps1 -Mode quick -AutoCaptureCombat -AutoCaptureRoot tools\artifacts\tmp\ml_capture_seed123
+.\tools\campaign.ps1 -Mode quick -DriverArgs @("--combat-search-option", "segment=turn")
 ```
 
 Use `-DryRun` first when checking source/output semantics. Use `-Scratch` for
-experiments that should not update latest.
+experiments that should not update latest. Use `-DriverArgs` only for explicit
+Rust driver passthrough. Driver passthrough flags should use Rust-style
+`--flag` syntax; new common workflows should become typed wrapper parameters
+instead of accumulating raw passthrough examples.
 
 ## High Ascension Presets
 
