@@ -33,6 +33,40 @@ function Invoke-CampaignLoggedDriverCommand {
     return $ExitCode
 }
 
+function New-CampaignRunDriverArgsContext {
+    param(
+        [string[]] $RunIdentityArgs,
+        [object] $Request,
+        [object] $RunOutputContext,
+        [object] $RunRoundContext,
+        [object] $OptionContext,
+        [string] $ExportLearningDataset
+    )
+
+    $Args = @($RunIdentityArgs)
+    $Args += @($RunRoundContext.ResumeDriverArgs)
+    if ($RunOutputContext.WritesCampaignOutput) {
+        $Args += @("--out", "$($RunOutputContext.CampaignPath)", "--checkpoint-out", "$($RunOutputContext.CheckpointPath)")
+    }
+    if ($RunRoundContext.DriverRoundBudgetArgs.Count -gt 0) {
+        $Args += @($RunRoundContext.DriverRoundBudgetArgs)
+    }
+    if ($ExportLearningDataset -and -not $Request.Inspect) {
+        $Args += @("--export-learning-dataset", "$ExportLearningDataset")
+    }
+    $Args = Add-CampaignSharedDriverOptions `
+        -Arguments $Args `
+        -IncludeActiveLineageDiversity $true `
+        -IncludeBossRelicAxes $true `
+        -IncludeAutoCaptureCombat $true `
+        -OptionContext $OptionContext
+
+    return [pscustomobject]@{
+        DriverArgs = @($Args)
+        CombatSegmentMode = Resolve-CampaignCombatSegmentMode -OptionContext $OptionContext
+    }
+}
+
 function New-CampaignRunCommandContext {
     param(
         [object] $CampaignRequest,
