@@ -18,6 +18,42 @@ function Test-CampaignDetailedInspect {
     )
 }
 
+function New-CampaignInspectEntryContext {
+    param(
+        [object] $CampaignRequest,
+        [object] $CampaignSourceArtifact,
+        [bool] $InspectArtifacts,
+        [string] $ExportLearningDataset,
+        [long] $Seed,
+        [int] $Ascension,
+        [string] $Class,
+        [object] $BuildContext,
+        [bool] $NeedsBuild,
+        [bool] $InspectCoverageGapMilestoneSummary,
+        [string] $CoverageGapFilterLabel,
+        [bool] $DryRun,
+        [string] $RepoRoot
+    )
+
+    return [pscustomobject]@{
+        CampaignRequest = $CampaignRequest
+        CampaignSourceArtifact = $CampaignSourceArtifact
+        InspectArtifacts = $InspectArtifacts
+        ExportLearningDataset = $ExportLearningDataset
+        Seed = $Seed
+        Ascension = $Ascension
+        Class = $Class
+        BuildProfile = $BuildContext.BuildProfile
+        DriverExe = $BuildContext.DriverExe
+        NeedsBuild = $NeedsBuild
+        InspectCoverageGapMilestoneSummary = $InspectCoverageGapMilestoneSummary
+        CoverageGapFilterLabel = $CoverageGapFilterLabel
+        DryRun = $DryRun
+        BuildArgs = @($BuildContext.BuildArgs)
+        RepoRoot = $RepoRoot
+    }
+}
+
 function New-CampaignInspectDriverArgs {
     param(
         [string] $InspectCheckpointPath,

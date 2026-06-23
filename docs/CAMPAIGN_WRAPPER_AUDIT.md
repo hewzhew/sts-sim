@@ -13,13 +13,13 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 514 lines
+- `tools/campaign.ps1`: 511 lines
 - `tools/campaign_artifacts.ps1`: 642 lines
 - `tools/campaign_invocation.ps1`: 605 lines
 - `tools/campaign_coverage_gaps.ps1`: 428 lines
 - `tools/campaign_preflight.ps1`: 200 lines
 - `tools/campaign_continuation.ps1`: 450 lines
-- `tools/campaign_inspect.ps1`: 255 lines
+- `tools/campaign_inspect.ps1`: 291 lines
 - `tools/campaign_targets.ps1`: 236 lines
 - `tools/campaign_source.ps1`: 128 lines
 - `tools/campaign_rounds.ps1`: 131 lines
@@ -36,7 +36,7 @@ Major regions:
 | Path globals and helper import | 20 | Fine |
 | Source/build/output resolution | 130 | Narrower, but still in the wrapper |
 | Continuation dispatch | 45 | Delegated to continuation helper, but still parameter-heavy |
-| Inspect dispatch | 20 | Delegated to inspect helper |
+| Inspect dispatch | 15 | Delegated to inspect helper |
 | Normal run dispatch | 10 | Delegated to invocation helper |
 
 ## Why It Got This Large
@@ -280,6 +280,7 @@ tools/campaign_inspect.ps1
 
 This helper owns:
 
+- inspect entry context construction
 - inspect entry dispatch from a resolved campaign source context
 - inspect preflight and command execution
 - deciding whether an inspect command should use summary mode

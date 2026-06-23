@@ -465,23 +465,20 @@ if ($IsContinuationFamily) {
 }
 
 if ($CampaignRequest.Kind -eq "inspect") {
-    $InspectEntryContext = [pscustomobject]@{
-        CampaignRequest = $CampaignRequest
-        CampaignSourceArtifact = $CampaignSourceArtifact
-        InspectArtifacts = [bool] $InspectArtifacts
-        ExportLearningDataset = $ExportLearningDataset
-        Seed = $Seed
-        Ascension = $Ascension
-        Class = $Class
-        BuildProfile = $BuildProfile
-        DriverExe = $DriverExe
-        NeedsBuild = [bool] $NeedsBuild
-        InspectCoverageGapMilestoneSummary = [bool] $InspectCoverageGapMilestoneSummary
-        CoverageGapFilterLabel = $CoverageGapFilterLabel
-        DryRun = [bool] $DryRun
-        BuildArgs = @($BuildArgs)
-        RepoRoot = $RepoRoot
-    }
+    $InspectEntryContext = New-CampaignInspectEntryContext `
+        -CampaignRequest $CampaignRequest `
+        -CampaignSourceArtifact $CampaignSourceArtifact `
+        -InspectArtifacts ([bool] $InspectArtifacts) `
+        -ExportLearningDataset $ExportLearningDataset `
+        -Seed $Seed `
+        -Ascension $Ascension `
+        -Class $Class `
+        -BuildContext $BuildContext `
+        -NeedsBuild ([bool] $NeedsBuild) `
+        -InspectCoverageGapMilestoneSummary ([bool] $InspectCoverageGapMilestoneSummary) `
+        -CoverageGapFilterLabel $CoverageGapFilterLabel `
+        -DryRun ([bool] $DryRun) `
+        -RepoRoot $RepoRoot
     $DriverExitCode = Invoke-CampaignInspectEntry -Context $InspectEntryContext
     exit $DriverExitCode
 }
