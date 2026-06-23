@@ -391,7 +391,9 @@ $ResumeRoundsCompleted = $RunRoundContext.ResumeRoundsCompleted
 $TargetRounds = $RunRoundContext.TargetRounds
 $DriverArgs += @($RunRoundContext.ResumeDriverArgs)
 
-$DriverArgs += @("--out", "$RunOutputCampaignPath", "--checkpoint-out", "$RunOutputCheckpointPath")
+if ($WritesCampaignOutput) {
+    $DriverArgs += @("--out", "$RunOutputCampaignPath", "--checkpoint-out", "$RunOutputCheckpointPath")
+}
 
 if ($DriverRoundBudgetArgs.Count -gt 0) {
     $DriverArgs += $DriverRoundBudgetArgs
@@ -498,6 +500,10 @@ if ($CampaignRequest.Kind -eq "inspect") {
     }
     $DriverExitCode = Invoke-CampaignInspectEntry -Context $InspectEntryContext
     exit $DriverExitCode
+}
+
+if (-not $WritesCampaignOutput) {
+    throw "Internal error: campaign request '$($CampaignRequest.Kind)' reached run execution without an output artifact."
 }
 
 $RenderedCommand = Format-CommandLine -ExePath $DriverExe -Arguments $DriverArgs
