@@ -165,7 +165,7 @@ This helper owns:
 - legacy latest sidecar path compatibility
 - run latest and scratch latest pointer files
 - run source artifact selection
-- run/scratch output artifact selection
+- run/scratch output artifact selection from typed request output intent
 - artifact size and shape summaries
 - latest campaign mode/config reads
 

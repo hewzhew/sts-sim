@@ -112,6 +112,7 @@ function New-CampaignScratchDecisionOutcomePath {
 
 function Get-CampaignOutputBaseLabel {
     param(
+        [string] $RequestKind = "",
         [string] $RunLabel,
         [bool] $ContinueCoverageGaps,
         [bool] $ContinueTargets,
@@ -122,13 +123,13 @@ function Get-CampaignOutputBaseLabel {
     if ($RunLabel) {
         return $RunLabel
     }
-    if ($ContinueCoverageGaps) {
+    if ($RequestKind -eq "continue_coverage_gaps" -or $ContinueCoverageGaps) {
         return "coverage-gap-seed$Seed"
     }
-    if ($ContinueTargets) {
+    if ($RequestKind -eq "legacy_continue_targets" -or $ContinueTargets) {
         return "targeted-continuation-seed$Seed"
     }
-    if ($ContinueCampaign) {
+    if ($RequestKind -eq "continue_run" -or $ContinueCampaign) {
         return "continue-seed$Seed"
     }
     return "campaign-seed$Seed"
@@ -136,6 +137,7 @@ function Get-CampaignOutputBaseLabel {
 
 function Resolve-CampaignOutputArtifactContext {
     param(
+        [object] $Request,
         [bool] $Inspect,
         [bool] $PlanTargets,
         [bool] $PlanCoverageGaps,
@@ -147,7 +149,12 @@ function Resolve-CampaignOutputArtifactContext {
         [long] $Seed
     )
 
+    $RequestKind = ""
     $WritesCampaignOutput = (-not $Inspect) -and (-not $PlanTargets) -and (-not $PlanCoverageGaps)
+    if ($Request) {
+        $RequestKind = $Request.Kind
+        $WritesCampaignOutput = ($Request.OutputIntent -eq "campaign_output")
+    }
     $RunOutputArtifact = $null
     $ScratchLabel = ""
     $RunOutputCampaignPath = ""
@@ -161,6 +168,7 @@ function Resolve-CampaignOutputArtifactContext {
 
     if ($WritesCampaignOutput) {
         $OutputBaseLabel = Get-CampaignOutputBaseLabel `
+            -RequestKind $RequestKind `
             -RunLabel $RunLabel `
             -ContinueCoverageGaps $ContinueCoverageGaps `
             -ContinueTargets $ContinueTargets `

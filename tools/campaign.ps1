@@ -276,6 +276,7 @@ $CampaignRunIdentityArgs = New-CampaignRunDriverIdentityArgs -Mode $Mode -Seed $
 $DriverArgs = @($CampaignRunIdentityArgs)
 
 $RunOutputContext = Resolve-CampaignOutputArtifactContext `
+    -Request $CampaignRequest `
     -Inspect ([bool] $Inspect) `
     -PlanTargets ([bool] $PlanTargets) `
     -PlanCoverageGaps ([bool] $PlanCoverageGaps) `
