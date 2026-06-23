@@ -32,6 +32,7 @@ function Write-CampaignLatestPointer {
         updated_at = (Get-Date).ToString("o")
         artifact_id = $Artifact.Id
         report = $Artifact.ReportPath
+        journal = $Artifact.JournalPath
         checkpoint = $Artifact.CheckpointPath
         manifest = $Artifact.ManifestPath
         command = $Artifact.CommandPath
@@ -78,6 +79,7 @@ function Write-CampaignScratchLatestPointer {
         updated_at = (Get-Date).ToString("o")
         artifact_id = $Artifact.Id
         report = $Artifact.ReportPath
+        journal = $Artifact.JournalPath
         checkpoint = $Artifact.CheckpointPath
         manifest = $Artifact.ManifestPath
         command = $Artifact.CommandPath

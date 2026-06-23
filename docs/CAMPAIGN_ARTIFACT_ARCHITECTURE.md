@@ -95,6 +95,10 @@ facts.
 The report is a projection. It should be cheap to regenerate from checkpoint
 and journal when possible.
 
+Default report artifacts must not inline the full journal. They should carry a
+small `journal_artifact` reference plus `journal_event_count`; artifact readers
+may hydrate the sidecar back into the in-memory report for compatibility.
+
 Allowed:
 
 - compact branch summaries

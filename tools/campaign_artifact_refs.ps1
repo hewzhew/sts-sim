@@ -40,6 +40,31 @@ function Resolve-CampaignMainArtifactPath {
     return $CompressedPath
 }
 
+function Get-CampaignJournalSidecarPath {
+    param(
+        [string] $ReportPath
+    )
+
+    if (-not $ReportPath) {
+        return ""
+    }
+
+    $Directory = [System.IO.Path]::GetDirectoryName($ReportPath)
+    $Name = [System.IO.Path]::GetFileName($ReportPath)
+    if ($Name.EndsWith(".campaign.json.gz", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $JournalName = $Name.Substring(0, $Name.Length - ".campaign.json.gz".Length) + ".journal.json.gz"
+    } elseif ($Name.EndsWith(".campaign.json", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $JournalName = $Name.Substring(0, $Name.Length - ".campaign.json".Length) + ".journal.json"
+    } elseif ($Name.EndsWith(".json.gz", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $JournalName = $Name.Substring(0, $Name.Length - ".json.gz".Length) + ".journal.json.gz"
+    } elseif ($Name.EndsWith(".json", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $JournalName = $Name.Substring(0, $Name.Length - ".json".Length) + ".journal.json"
+    } else {
+        $JournalName = "$Name.journal.json.gz"
+    }
+    return Join-Path $Directory $JournalName
+}
+
 function New-CampaignRunArtifact {
     param(
         [string] $BaseLabel,
@@ -63,6 +88,7 @@ function New-CampaignRunArtifact {
         Label = "run:$Id"
         Dir = $Dir
         ReportPath = $ReportPath
+        JournalPath = Get-CampaignJournalSidecarPath -ReportPath $ReportPath
         CheckpointPath = $CheckpointPath
         ManifestPath = Join-Path $Dir "manifest.json"
         LogPath = Join-Path $Dir "log.txt"
@@ -91,6 +117,7 @@ function New-CampaignScratchArtifactRef {
         Label = "scratch:$Id"
         Dir = $ScratchCampaignDir
         ReportPath = $ReportPath
+        JournalPath = Get-CampaignJournalSidecarPath -ReportPath $ReportPath
         CheckpointPath = $CheckpointPath
         ManifestPath = Join-Path $ScratchCampaignDir "$Id.manifest.json"
         LogPath = Join-Path $ScratchCampaignDir "$Id.log"

@@ -126,11 +126,14 @@ CampaignJournalV1
       first_elite
 ```
 
-`BranchCampaignReportV1` now carries `journal` as a top-level field. The older
+Campaign report artifacts now store the journal as a sidecar and keep only a
+`journal_artifact` reference plus `journal_event_count` in the default report
+JSON. Rust artifact readers hydrate the sidecar back into
+`BranchCampaignReportV1.journal` for compatibility. The older
 `rounds[].decision_observations` field remains as a compatibility summary, but
-new inspection should prefer `journal`. The `--inspect-journal` report view
-prints journal events directly; `--inspect-decision-observations` remains a
-reward-only compatibility view.
+new inspection should prefer hydrated journal data. The `--inspect-journal`
+report view prints journal events directly; `--inspect-decision-observations`
+remains a reward-only compatibility view.
 
 Schema version 2 adds `route_candidates[]` to `route_candidate_pool`. The generic
 `candidates[]` list remains the cross-decision coverage/scheduling surface; the

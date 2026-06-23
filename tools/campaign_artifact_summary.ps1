@@ -86,6 +86,9 @@ function Get-CampaignArtifactShape {
         $Active = Get-CampaignValueCount -Value $Json.active
         $Frozen = Get-CampaignValueCount -Value $Json.frozen
         $Journal = Get-CampaignValueCount -Value $Json.journal
+        if ($Json.journal_event_count) {
+            $Journal = $Json.journal_event_count
+        }
         $Rounds = Get-CampaignValueCount -Value $Json.rounds
         $StateSessions = 0
         $StateNodes = 0
@@ -99,7 +102,16 @@ function Get-CampaignArtifactShape {
             $RouteDecisionSessions = $Json.state_store.route_decision_coordinate_sessions
             $SessionsPruned = $Json.state_store.sessions_pruned
         }
-        return "rounds=$($Json.rounds_completed) stop=$($Json.stop_reason) active=$Active frozen=$Frozen journal=$Journal round_entries=$Rounds state_sessions=$StateSessions state_nodes=$StateNodes decision_sessions=$DecisionSessions route_decision_sessions=$RouteDecisionSessions pruned=$SessionsPruned"
+        $JournalRef = "-"
+        if ($Json.journal_artifact) {
+            $JournalRef = $Json.journal_artifact
+        }
+        return "rounds=$($Json.rounds_completed) stop=$($Json.stop_reason) active=$Active frozen=$Frozen journal_events=$Journal journal_ref=$JournalRef round_entries=$Rounds state_sessions=$StateSessions state_nodes=$StateNodes decision_sessions=$DecisionSessions route_decision_sessions=$RouteDecisionSessions pruned=$SessionsPruned"
+    }
+
+    if ($Kind -eq "journal") {
+        $Events = Get-CampaignValueCount -Value $Json.events
+        return "schema=$($Json.schema_name) version=$($Json.schema_version) events=$Events"
     }
 
     if ($Kind -eq "checkpoint") {
@@ -135,6 +147,7 @@ function Write-CampaignArtifactSummary {
     $Artifacts = @(
         [pscustomobject]@{ Kind = "manifest"; Path = $ManifestPath; Contract = "run provenance" },
         [pscustomobject]@{ Kind = "report"; Path = $ReportPath; Contract = "campaign summary" },
+        [pscustomobject]@{ Kind = "journal"; Path = (Get-CampaignJournalSidecarPath -ReportPath $ReportPath); Contract = "decision facts" },
         [pscustomobject]@{ Kind = "checkpoint"; Path = $CheckpointPath; Contract = "continuation state" },
         [pscustomobject]@{ Kind = "log"; Path = $LogPath; Contract = "optional stream log" },
         [pscustomobject]@{ Kind = "command"; Path = $CommandPath; Contract = "primary driver command" }
