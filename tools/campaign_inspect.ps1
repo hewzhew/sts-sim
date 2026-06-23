@@ -192,3 +192,64 @@ function Invoke-CampaignInspectCommand {
         Pop-Location
     }
 }
+
+function Invoke-CampaignInspectEntry {
+    param(
+        [object] $Context
+    )
+
+    $InspectSource = $Context.CampaignSourceArtifact
+    if (-not $InspectSource) {
+        throw "Internal error: campaign inspect did not resolve a source artifact."
+    }
+    $InspectCampaignPath = $InspectSource.ReportPath
+    $InspectCheckpointPath = $InspectSource.CheckpointPath
+    $InspectManifestPath = $InspectSource.ManifestPath
+    $InspectLogPath = $InspectSource.LogPath
+    $InspectCommandPath = $InspectSource.CommandPath
+    $InspectSourceLabel = $InspectSource.Label
+
+    if ($Context.InspectArtifacts) {
+        Write-CampaignArtifactSummary `
+            -SourceLabel $InspectSourceLabel `
+            -ReportPath $InspectCampaignPath `
+            -CheckpointPath $InspectCheckpointPath `
+            -ManifestPath $InspectManifestPath `
+            -LogPath $InspectLogPath `
+            -CommandPath $InspectCommandPath
+        return 0
+    }
+
+    if (-not (Test-Path $InspectCheckpointPath)) {
+        throw "No previous campaign checkpoint found at $InspectCheckpointPath. Run .\tools\campaign.ps1 first."
+    }
+    if (-not (Test-Path $InspectCampaignPath)) {
+        throw "No previous campaign report found at $InspectCampaignPath. Run .\tools\campaign.ps1 first."
+    }
+
+    $InspectArgs = New-CampaignInspectDriverArgs `
+        -InspectCheckpointPath $InspectCheckpointPath `
+        -InspectCampaignPath $InspectCampaignPath
+
+    $InspectModeLabel = if ($Context.ExportLearningDataset) { "dataset" } else { "inspect" }
+    Write-CampaignInspectPreflight `
+        -ModeLabel $InspectModeLabel `
+        -SourceLabel $InspectSourceLabel `
+        -Seed $Context.Seed `
+        -Ascension $Context.Ascension `
+        -Class $Context.Class `
+        -BuildProfile $Context.BuildProfile `
+        -DriverExe $Context.DriverExe `
+        -NeedsBuild $Context.NeedsBuild `
+        -CoverageGapMilestoneSummary $Context.InspectCoverageGapMilestoneSummary `
+        -CoverageGapFilterLabel $Context.CoverageGapFilterLabel `
+        -InspectCampaignPath $InspectCampaignPath `
+        -InspectCheckpointPath $InspectCheckpointPath
+    return Invoke-CampaignInspectCommand `
+        -DryRun $Context.DryRun `
+        -NeedsBuild $Context.NeedsBuild `
+        -BuildArgs $Context.BuildArgs `
+        -RepoRoot $Context.RepoRoot `
+        -DriverExe $Context.DriverExe `
+        -InspectArgs $InspectArgs
+}

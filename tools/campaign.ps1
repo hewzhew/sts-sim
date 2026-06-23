@@ -477,61 +477,25 @@ if ($IsContinuationFamily) {
     exit $ContinuationExitCode
 }
 
-if ($Inspect) {
-    $InspectSource = $CampaignSourceArtifact
-    if (-not $InspectSource) {
-        throw "Internal error: campaign inspect did not resolve a source artifact."
+if ($CampaignRequest.Kind -eq "inspect") {
+    $InspectEntryContext = [pscustomobject]@{
+        CampaignRequest = $CampaignRequest
+        CampaignSourceArtifact = $CampaignSourceArtifact
+        InspectArtifacts = [bool] $InspectArtifacts
+        ExportLearningDataset = $ExportLearningDataset
+        Seed = $Seed
+        Ascension = $Ascension
+        Class = $Class
+        BuildProfile = $BuildProfile
+        DriverExe = $DriverExe
+        NeedsBuild = [bool] $NeedsBuild
+        InspectCoverageGapMilestoneSummary = [bool] $InspectCoverageGapMilestoneSummary
+        CoverageGapFilterLabel = $CoverageGapFilterLabel
+        DryRun = [bool] $DryRun
+        BuildArgs = @($BuildArgs)
+        RepoRoot = $RepoRoot
     }
-    $InspectCampaignPath = $InspectSource.ReportPath
-    $InspectCheckpointPath = $InspectSource.CheckpointPath
-    $InspectManifestPath = $InspectSource.ManifestPath
-    $InspectLogPath = $InspectSource.LogPath
-    $InspectCommandPath = $InspectSource.CommandPath
-    $InspectSourceLabel = $InspectSource.Label
-
-    if ($InspectArtifacts) {
-        Write-CampaignArtifactSummary `
-            -SourceLabel $InspectSourceLabel `
-            -ReportPath $InspectCampaignPath `
-            -CheckpointPath $InspectCheckpointPath `
-            -ManifestPath $InspectManifestPath `
-            -LogPath $InspectLogPath `
-            -CommandPath $InspectCommandPath
-        exit 0
-    }
-
-    if (-not (Test-Path $InspectCheckpointPath)) {
-        throw "No previous campaign checkpoint found at $InspectCheckpointPath. Run .\tools\campaign.ps1 first."
-    }
-    if (-not (Test-Path $InspectCampaignPath)) {
-        throw "No previous campaign report found at $InspectCampaignPath. Run .\tools\campaign.ps1 first."
-    }
-
-    $InspectArgs = New-CampaignInspectDriverArgs `
-        -InspectCheckpointPath $InspectCheckpointPath `
-        -InspectCampaignPath $InspectCampaignPath
-
-    $InspectModeLabel = if ($ExportLearningDataset) { "dataset" } else { "inspect" }
-    Write-CampaignInspectPreflight `
-        -ModeLabel $InspectModeLabel `
-        -SourceLabel $InspectSourceLabel `
-        -Seed $Seed `
-        -Ascension $Ascension `
-        -Class $Class `
-        -BuildProfile $BuildProfile `
-        -DriverExe $DriverExe `
-        -NeedsBuild $NeedsBuild `
-        -CoverageGapMilestoneSummary ([bool] $InspectCoverageGapMilestoneSummary) `
-        -CoverageGapFilterLabel $CoverageGapFilterLabel `
-        -InspectCampaignPath $InspectCampaignPath `
-        -InspectCheckpointPath $InspectCheckpointPath
-    $DriverExitCode = Invoke-CampaignInspectCommand `
-        -DryRun ([bool] $DryRun) `
-        -NeedsBuild $NeedsBuild `
-        -BuildArgs $BuildArgs `
-        -RepoRoot $RepoRoot `
-        -DriverExe $DriverExe `
-        -InspectArgs $InspectArgs
+    $DriverExitCode = Invoke-CampaignInspectEntry -Context $InspectEntryContext
     exit $DriverExitCode
 }
 
