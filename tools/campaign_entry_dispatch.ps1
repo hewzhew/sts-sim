@@ -3,6 +3,10 @@ function Invoke-CampaignEntryDispatch {
         [object] $Context
     )
 
+    $CoverageGap = $Context.CoverageGapSwitchContext
+    $Inspect = $Context.InspectSwitchContext
+    $RunSwitch = $Context.RunSwitchContext
+
     switch ($Context.CampaignRequest.Kind) {
         { @("plan_coverage_gaps", "continue_coverage_gaps") -contains $_ } {
             $ContinuationEntryContext = New-CampaignContinuationEntryContext `
@@ -13,12 +17,12 @@ function Invoke-CampaignEntryDispatch {
                 -BoundParameterContext $Context.BoundParameterContext `
                 -CampaignSourceArtifact $Context.CampaignSourceArtifact `
                 -InspectScratchLatest ([bool] $Context.InspectScratchLatest) `
-                -CoverageGapExecution $Context.CoverageGapExecution `
-                -CoverageGapIntent $Context.CoverageGapIntent `
-                -CoverageGapFilterLabel $Context.CoverageGapFilterContext.FilterLabel `
-                -CoverageGapFilterArgs $Context.CoverageGapFilterContext.FilterArgs `
-                -CoverageGapResultFilterArgs $Context.CoverageGapFilterContext.ResultFilterArgs `
-                -CoverageGapResultFilterLabel $Context.CoverageGapFilterContext.ResultFilterLabel `
+                -CoverageGapExecution $CoverageGap.Execution `
+                -CoverageGapIntent $CoverageGap.Intent `
+                -CoverageGapFilterLabel $CoverageGap.FilterContext.FilterLabel `
+                -CoverageGapFilterArgs $CoverageGap.FilterContext.FilterArgs `
+                -CoverageGapResultFilterArgs $CoverageGap.FilterContext.ResultFilterArgs `
+                -CoverageGapResultFilterLabel $CoverageGap.FilterContext.ResultFilterLabel `
                 -CampaignRunIdentityArgs $Context.CampaignRunIdentityArgs `
                 -CampaignSharedDriverOptionContext $Context.CampaignSharedDriverOptionContext `
                 -Seed $Context.Seed `
@@ -26,11 +30,11 @@ function Invoke-CampaignEntryDispatch {
                 -Class $Context.Class `
                 -BuildContext $Context.BuildContext `
                 -NeedsBuild ([bool] $Context.NeedsBuild) `
-                -Scratch ([bool] $Context.Scratch) `
+                -Scratch ([bool] $RunSwitch.Scratch) `
                 -RunRoundContext $Context.RunRoundContext `
-                -CoverageGapLimit $Context.CoverageGapLimit `
-                -CoverageGapCandidatesPerDecision $Context.CoverageGapCandidatesPerDecision `
-                -DryRun ([bool] $Context.DryRun) `
+                -CoverageGapLimit $CoverageGap.Limit `
+                -CoverageGapCandidatesPerDecision $CoverageGap.CandidatesPerDecision `
+                -DryRun ([bool] $RunSwitch.DryRun) `
                 -RepoRoot $Context.RepoRoot
             return Invoke-CampaignContinuationEntry -Context $ContinuationEntryContext
         }
@@ -38,50 +42,50 @@ function Invoke-CampaignEntryDispatch {
         "inspect" {
             $InspectOptionContext = New-CampaignInspectOptionContext `
                 -BoundParameters $Context.BoundParameterContext.CampaignBoundParameters `
-                -InspectState ([bool] $Context.InspectState) `
-                -InspectShopEvidence ([bool] $Context.InspectShopEvidence) `
-                -InspectShopChallenge ([bool] $Context.InspectShopChallenge) `
-                -InspectCardRewardEvidence ([bool] $Context.InspectCardRewardEvidence) `
-                -InspectDecisionObservations ([bool] $Context.InspectDecisionObservations) `
-                -InspectJournal ([bool] $Context.InspectJournal) `
-                -InspectLineageDecisions ([bool] $Context.InspectLineageDecisions) `
-                -InspectCampfireEvidence ([bool] $Context.InspectCampfireEvidence) `
-                -InspectDeckMutation ([bool] $Context.InspectDeckMutation) `
-                -InspectRouteEvidence ([bool] $Context.InspectRouteEvidence) `
-                -InspectLastAutoCombat ([bool] $Context.InspectLastAutoCombat) `
-                -InspectCombatLab ([bool] $Context.InspectCombatLab) `
-                -InspectFinalBossCombat ([bool] $Context.InspectFinalBossCombat) `
-                -InspectCoverageGapMilestoneSummary ([bool] $Context.InspectCoverageGapMilestoneSummary) `
-                -InspectCoverageGapTargetState ([bool] $Context.InspectCoverageGapTargetState) `
+                -InspectState ([bool] $Inspect.State) `
+                -InspectShopEvidence ([bool] $Inspect.ShopEvidence) `
+                -InspectShopChallenge ([bool] $Inspect.ShopChallenge) `
+                -InspectCardRewardEvidence ([bool] $Inspect.CardRewardEvidence) `
+                -InspectDecisionObservations ([bool] $Inspect.DecisionObservations) `
+                -InspectJournal ([bool] $Inspect.Journal) `
+                -InspectLineageDecisions ([bool] $Inspect.LineageDecisions) `
+                -InspectCampfireEvidence ([bool] $Inspect.CampfireEvidence) `
+                -InspectDeckMutation ([bool] $Inspect.DeckMutation) `
+                -InspectRouteEvidence ([bool] $Inspect.RouteEvidence) `
+                -InspectLastAutoCombat ([bool] $Inspect.LastAutoCombat) `
+                -InspectCombatLab ([bool] $Inspect.CombatLab) `
+                -InspectFinalBossCombat ([bool] $Inspect.FinalBossCombat) `
+                -InspectCoverageGapMilestoneSummary ([bool] $Inspect.CoverageGapMilestoneSummary) `
+                -InspectCoverageGapTargetState ([bool] $Inspect.CoverageGapTargetState) `
                 -ExportLearningDataset $Context.ExportLearningDataset `
-                -BranchExamples $Context.BranchExamples `
-                -ChallengeMaxPlans $Context.ChallengeMaxPlans `
-                -ChallengeDepth $Context.ChallengeDepth `
-                -ChallengeMaxBranches $Context.ChallengeMaxBranches `
-                -SearchWallMs $Context.SearchWallMs `
-                -SearchMaxNodes $Context.SearchMaxNodes `
-                -CoverageGapMilestoneTarget $Context.CoverageGapMilestoneTarget `
-                -CoverageGapFilterArgs $Context.CoverageGapFilterContext.FilterArgs `
-                -InspectIndex $Context.InspectIndex `
-                -InspectAct $Context.InspectAct `
-                -InspectFloor $Context.InspectFloor `
+                -BranchExamples $Inspect.BranchExamples `
+                -ChallengeMaxPlans $Inspect.ChallengeMaxPlans `
+                -ChallengeDepth $Inspect.ChallengeDepth `
+                -ChallengeMaxBranches $Inspect.ChallengeMaxBranches `
+                -SearchWallMs $Inspect.SearchWallMs `
+                -SearchMaxNodes $Inspect.SearchMaxNodes `
+                -CoverageGapMilestoneTarget $CoverageGap.MilestoneTarget `
+                -CoverageGapFilterArgs $CoverageGap.FilterContext.FilterArgs `
+                -InspectIndex $Inspect.Index `
+                -InspectAct $Inspect.Act `
+                -InspectFloor $Inspect.Floor `
                 -InspectBoundary $Context.CampaignRequest.InspectBoundary `
-                -InspectQuery $Context.InspectQuery `
-                -ProbeBoss ([bool] $Context.ProbeBoss)
+                -InspectQuery $Inspect.Query `
+                -ProbeBoss ([bool] $Inspect.ProbeBoss)
             $InspectEntryContext = New-CampaignInspectEntryContext `
                 -CampaignRequest $Context.CampaignRequest `
                 -CampaignSourceArtifact $Context.CampaignSourceArtifact `
                 -InspectOptionContext $InspectOptionContext `
-                -InspectArtifacts ([bool] $Context.InspectArtifacts) `
+                -InspectArtifacts ([bool] $Inspect.Artifacts) `
                 -ExportLearningDataset $Context.ExportLearningDataset `
                 -Seed $Context.Seed `
                 -Ascension $Context.Ascension `
                 -Class $Context.Class `
                 -BuildContext $Context.BuildContext `
                 -NeedsBuild ([bool] $Context.NeedsBuild) `
-                -InspectCoverageGapMilestoneSummary ([bool] $Context.InspectCoverageGapMilestoneSummary) `
-                -CoverageGapFilterLabel $Context.CoverageGapFilterContext.FilterLabel `
-                -DryRun ([bool] $Context.DryRun) `
+                -InspectCoverageGapMilestoneSummary ([bool] $Inspect.CoverageGapMilestoneSummary) `
+                -CoverageGapFilterLabel $CoverageGap.FilterContext.FilterLabel `
+                -DryRun ([bool] $RunSwitch.DryRun) `
                 -RepoRoot $Context.RepoRoot
             return Invoke-CampaignInspectEntry -Context $InspectEntryContext
         }
@@ -102,7 +106,7 @@ function Invoke-CampaignEntryDispatch {
                 -Seed $Context.Seed `
                 -Ascension $Context.Ascension `
                 -Class $Context.Class `
-                -Scratch ([bool] $Context.Scratch) `
+                -Scratch ([bool] $RunSwitch.Scratch) `
                 -BuildContext $Context.BuildContext `
                 -RunOutputContext $Context.RunOutputContext `
                 -BoundParameterContext $Context.BoundParameterContext `
@@ -110,13 +114,13 @@ function Invoke-CampaignEntryDispatch {
                 -DriverPassthroughContext $Context.DriverPassthroughContext `
                 -DriverArgs $RunDriverArgsContext.DriverArgs `
                 -NeedsBuild ([bool] $Context.NeedsBuild) `
-                -DryRun ([bool] $Context.DryRun) `
-                -Log ([bool] $Context.Log) `
-                -BossRelicAxes ([bool] $Context.BossRelicAxes) `
+                -DryRun ([bool] $RunSwitch.DryRun) `
+                -Log ([bool] $RunSwitch.Log) `
+                -BossRelicAxes ([bool] $RunSwitch.BossRelicAxes) `
                 -CombatSegmentMode $RunDriverArgsContext.CombatSegmentMode `
-                -UntilMilestone $Context.UntilMilestone `
-                -MilestoneStepRounds $Context.MilestoneStepRounds `
-                -MilestoneMaxRounds $Context.MilestoneMaxRounds `
+                -UntilMilestone $RunSwitch.UntilMilestone `
+                -MilestoneStepRounds $RunSwitch.MilestoneStepRounds `
+                -MilestoneMaxRounds $RunSwitch.MilestoneMaxRounds `
                 -ResolvedMilestoneStop $Context.RunRoundContext.ResolvedMilestoneStop
             Write-CampaignRunPreflight -Context $RunCommandContext
             return Invoke-CampaignRunCommand `

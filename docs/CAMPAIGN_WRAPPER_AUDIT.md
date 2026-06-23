@@ -9,27 +9,52 @@ This file is the cleanup contract. The goal is not to make the wrapper smaller
 by moving code around blindly. The goal is to stop one script from owning too
 many concepts.
 
+## Post-Split Diagnosis
+
+The recent split reduced local reading cost, but it is not sufficient by
+itself. A split is healthy only when it also makes ownership clearer. The next
+cleanup work should therefore be judged by these boundaries, not by line count:
+
+- **Public command surface:** `campaign.ps1` still exposes many switches. Some
+  are real user workflows; others are thin driver adapters or historical
+  debugging affordances. The wrapper needs an explicit decision about which
+  workflows it owns.
+- **Entry context shape:** dispatch now groups wrapper switches into
+  `RunSwitchContext`, `CoverageGapSwitchContext`, and `InspectSwitchContext`.
+  That is better than one flat field bag, but the boundary is still dynamic
+  `pscustomobject` plumbing. Future changes should favor smaller
+  request-specific contexts instead of adding more generic fields.
+- **Side-effect boundaries:** building, driver execution, manifest writes,
+  latest pointer writes, and artifact inspection are now in separate files, but
+  they still communicate mostly by convention. Any new behavior should define
+  which function owns the side effect.
+- **Smoke coverage:** wrapper smoke tests now protect source/output/milestone
+  routing. They do not prove strategic correctness, and they should not grow
+  into a second driver test suite.
+
+In short: file splitting was a scaffold, not the architecture goal. The next
+phase is to shrink or classify the wrapper API and replace loose cross-module
+field passing where it causes confusion.
+
 ## Current Size
 
-Approximate physical line count after the wrapper split:
+Approximate physical line count after the artifact and entry-dispatch split:
 
-- `tools/campaign.ps1`: 415 lines
-- `tools/campaign_artifacts.ps1`: 468 lines
-- `tools/campaign_artifact_summary.ps1`: 170 lines
-- `tools/campaign_invocation.ps1`: 364 lines
-- `tools/campaign_manifest.ps1`: 198 lines
-- `tools/campaign_run_execution.ps1`: 196 lines
-- `tools/campaign_coverage_gaps.ps1`: 269 lines
-- `tools/campaign_coverage_gap_execution.ps1`: 111 lines
-- `tools/campaign_coverage_gap_manifest.ps1`: 52 lines
-- `tools/campaign_preflight.ps1`: 175 lines
-- `tools/campaign_continuation.ps1`: 318 lines
-- `tools/campaign_inspect.ps1`: 369 lines
-- `tools/campaign_source.ps1`: 190 lines
-- `tools/campaign_rounds.ps1`: 134 lines
-- `tools/campaign_milestones.ps1`: 155 lines
-- `tools/campaign_request.ps1`: 180 lines
-- `tools/campaign_build.ps1`: 71 lines
+- `tools/campaign_inspect.ps1`: 348 lines
+- `tools/campaign_invocation.ps1`: 331 lines
+- `tools/campaign.ps1`: 313 lines
+- `tools/campaign_continuation.ps1`: 295 lines
+- `tools/campaign_coverage_gaps.ps1`: 251 lines
+- `tools/campaign_wrapper_smoke.ps1`: 244 lines
+- `tools/campaign_run_execution.ps1`: 225 lines
+- `tools/campaign_preflight.ps1`: 189 lines
+- `tools/campaign_manifest.ps1`: 181 lines
+- `tools/campaign_source.ps1`: 170 lines
+- `tools/campaign_request.ps1`: 166 lines
+- `tools/campaign_artifact_summary.ps1`: 152 lines
+- `tools/campaign_milestones.ps1`: 150 lines
+- `tools/campaign_artifact_refs.ps1`: 139 lines
+- `tools/campaign_entry_dispatch.ps1`: 128 lines
 
 Major regions:
 
@@ -39,9 +64,9 @@ Major regions:
 | Parameter block | 180 | Too many feature flags in one entrypoint |
 | Path globals and helper import | 20 | Fine |
 | Source/build/output resolution | 130 | Narrower, but still in the wrapper |
-| Continuation dispatch | 45 | Delegated to continuation helper, but still parameter-heavy |
-| Inspect dispatch | 50 | Delegated to inspect helper, with explicit inspect option context |
-| Normal run dispatch | 10 | Delegated to invocation helper |
+| Entry dispatch | 130 | Moved out of main wrapper; switch fields are grouped, but still dynamic |
+| Inspect helpers | 348 | Biggest remaining module; likely needs semantic pruning, not just splitting |
+| Invocation helpers | 331 | Shared option and driver argument construction are still mixed |
 
 ## Why It Got This Large
 
@@ -156,13 +181,23 @@ If a feature does not fit this list, it needs a strong reason to remain here.
 
 ## Moved Out Of Wrapper
 
-Artifact helpers now live in:
+Artifact helpers are now loaded through a facade:
 
 ```text
 tools/campaign_artifacts.ps1
 ```
 
-This helper owns:
+The facade owns only shared artifact state and imports smaller helpers:
+
+```text
+tools/campaign_artifact_paths.ps1
+tools/campaign_artifact_refs.ps1
+tools/campaign_artifact_pointers.ps1
+tools/campaign_artifact_legacy.ps1
+tools/campaign_artifact_source.ps1
+```
+
+These helpers own:
 
 - latest/scratch artifact refs
 - legacy latest sidecar path compatibility
