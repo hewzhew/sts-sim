@@ -1,27 +1,102 @@
 function Test-CampaignDetailedInspect {
-    return (
-        $InspectState -or
-        $InspectShopEvidence -or
-        $InspectShopChallenge -or
-        $InspectCardRewardEvidence -or
-        $InspectDecisionObservations -or
-        $InspectJournal -or
-        $InspectLineageDecisions -or
-        $InspectCampfireEvidence -or
-        $InspectDeckMutation -or
-        $InspectRouteEvidence -or
-        $InspectLastAutoCombat -or
-        $InspectCombatLab -or
-        $InspectFinalBossCombat -or
-        $InspectCoverageGapMilestoneSummary -or
-        $InspectCoverageGapTargetState
+    param(
+        [object] $Options
     )
+
+    return (
+        $Options.InspectState -or
+        $Options.InspectShopEvidence -or
+        $Options.InspectShopChallenge -or
+        $Options.InspectCardRewardEvidence -or
+        $Options.InspectDecisionObservations -or
+        $Options.InspectJournal -or
+        $Options.InspectLineageDecisions -or
+        $Options.InspectCampfireEvidence -or
+        $Options.InspectDeckMutation -or
+        $Options.InspectRouteEvidence -or
+        $Options.InspectLastAutoCombat -or
+        $Options.InspectCombatLab -or
+        $Options.InspectFinalBossCombat -or
+        $Options.InspectCoverageGapMilestoneSummary -or
+        $Options.InspectCoverageGapTargetState
+    )
+}
+
+function New-CampaignInspectOptionContext {
+    param(
+        [System.Collections.IDictionary] $BoundParameters,
+        [bool] $InspectState,
+        [bool] $InspectShopEvidence,
+        [bool] $InspectShopChallenge,
+        [bool] $InspectCardRewardEvidence,
+        [bool] $InspectDecisionObservations,
+        [bool] $InspectJournal,
+        [bool] $InspectLineageDecisions,
+        [bool] $InspectCampfireEvidence,
+        [bool] $InspectDeckMutation,
+        [bool] $InspectRouteEvidence,
+        [bool] $InspectLastAutoCombat,
+        [bool] $InspectCombatLab,
+        [bool] $InspectFinalBossCombat,
+        [bool] $InspectCoverageGapMilestoneSummary,
+        [bool] $InspectCoverageGapTargetState,
+        [string] $ExportLearningDataset,
+        [int] $BranchExamples,
+        [int] $ChallengeMaxPlans,
+        [int] $ChallengeDepth,
+        [int] $ChallengeMaxBranches,
+        [int] $SearchWallMs,
+        [int] $SearchMaxNodes,
+        [string] $CoverageGapMilestoneTarget,
+        [string[]] $CoverageGapFilterArgs,
+        [int] $InspectIndex,
+        [int] $InspectAct,
+        [int] $InspectFloor,
+        [string] $InspectBoundary,
+        [string] $InspectQuery,
+        [bool] $ProbeBoss
+    )
+
+    return [pscustomobject]@{
+        BoundParameters = $BoundParameters
+        InspectState = $InspectState
+        InspectShopEvidence = $InspectShopEvidence
+        InspectShopChallenge = $InspectShopChallenge
+        InspectCardRewardEvidence = $InspectCardRewardEvidence
+        InspectDecisionObservations = $InspectDecisionObservations
+        InspectJournal = $InspectJournal
+        InspectLineageDecisions = $InspectLineageDecisions
+        InspectCampfireEvidence = $InspectCampfireEvidence
+        InspectDeckMutation = $InspectDeckMutation
+        InspectRouteEvidence = $InspectRouteEvidence
+        InspectLastAutoCombat = $InspectLastAutoCombat
+        InspectCombatLab = $InspectCombatLab
+        InspectFinalBossCombat = $InspectFinalBossCombat
+        InspectCoverageGapMilestoneSummary = $InspectCoverageGapMilestoneSummary
+        InspectCoverageGapTargetState = $InspectCoverageGapTargetState
+        ExportLearningDataset = $ExportLearningDataset
+        BranchExamples = $BranchExamples
+        ChallengeMaxPlans = $ChallengeMaxPlans
+        ChallengeDepth = $ChallengeDepth
+        ChallengeMaxBranches = $ChallengeMaxBranches
+        SearchWallMs = $SearchWallMs
+        SearchMaxNodes = $SearchMaxNodes
+        CoverageGapMilestoneTarget = $CoverageGapMilestoneTarget
+        CoverageGapFilterArgs = @($CoverageGapFilterArgs)
+        InspectIndex = $InspectIndex
+        InspectAct = $InspectAct
+        InspectFloor = $InspectFloor
+        InspectBoundary = $InspectBoundary
+        InspectQuery = $InspectQuery
+        ProbeBoss = $ProbeBoss
+    }
 }
 
 function New-CampaignInspectEntryContext {
     param(
         [object] $CampaignRequest,
         [object] $CampaignSourceArtifact,
+        [object] $InspectOptionContext,
         [bool] $InspectArtifacts,
         [string] $ExportLearningDataset,
         [long] $Seed,
@@ -38,6 +113,7 @@ function New-CampaignInspectEntryContext {
     return [pscustomobject]@{
         CampaignRequest = $CampaignRequest
         CampaignSourceArtifact = $CampaignSourceArtifact
+        InspectOptionContext = $InspectOptionContext
         InspectArtifacts = $InspectArtifacts
         ExportLearningDataset = $ExportLearningDataset
         Seed = $Seed
@@ -57,15 +133,16 @@ function New-CampaignInspectEntryContext {
 function New-CampaignInspectDriverArgs {
     param(
         [string] $InspectCheckpointPath,
-        [string] $InspectCampaignPath
+        [string] $InspectCampaignPath,
+        [object] $Options
     )
 
-    if ($ExportLearningDataset) {
+    if ($Options.ExportLearningDataset) {
         return @(
             "dataset",
             "--inspect-checkpoint", "$InspectCheckpointPath",
             "--inspect-report", "$InspectCampaignPath",
-            "--export-learning-dataset", "$ExportLearningDataset"
+            "--export-learning-dataset", "$($Options.ExportLearningDataset)"
         )
     }
 
@@ -73,90 +150,90 @@ function New-CampaignInspectDriverArgs {
         "inspect",
         "--inspect-checkpoint", "$InspectCheckpointPath",
         "--inspect-report", "$InspectCampaignPath",
-        "--branch-examples", "$BranchExamples"
+        "--branch-examples", "$($Options.BranchExamples)"
     )
 
-    if (-not (Test-CampaignDetailedInspect)) {
+    if (-not (Test-CampaignDetailedInspect -Options $Options)) {
         $Args += "--inspect-summary"
     }
-    if ($InspectShopEvidence) {
+    if ($Options.InspectShopEvidence) {
         $Args += "--inspect-shop-evidence"
     }
-    if ($InspectShopChallenge) {
+    if ($Options.InspectShopChallenge) {
         $Args += @(
             "--challenge-shop-plans",
-            "--challenge-max-plans", "$ChallengeMaxPlans",
-            "--challenge-depth", "$ChallengeDepth",
-            "--challenge-max-branches", "$ChallengeMaxBranches",
-            "--search-wall-ms", "$SearchWallMs",
-            "--search-max-nodes", "$SearchMaxNodes"
+            "--challenge-max-plans", "$($Options.ChallengeMaxPlans)",
+            "--challenge-depth", "$($Options.ChallengeDepth)",
+            "--challenge-max-branches", "$($Options.ChallengeMaxBranches)",
+            "--search-wall-ms", "$($Options.SearchWallMs)",
+            "--search-max-nodes", "$($Options.SearchMaxNodes)"
         )
     }
-    if ($InspectCardRewardEvidence) {
+    if ($Options.InspectCardRewardEvidence) {
         $Args += "--inspect-card-reward-evidence"
     }
-    if ($InspectDecisionObservations) {
+    if ($Options.InspectDecisionObservations) {
         $Args += "--inspect-decision-observations"
     }
-    if ($InspectJournal) {
+    if ($Options.InspectJournal) {
         $Args += "--inspect-journal"
     }
-    if ($InspectLineageDecisions) {
+    if ($Options.InspectLineageDecisions) {
         $Args += "--inspect-lineage-decisions"
     }
-    if ($InspectCampfireEvidence) {
+    if ($Options.InspectCampfireEvidence) {
         $Args += "--inspect-campfire-evidence"
     }
-    if ($InspectDeckMutation) {
+    if ($Options.InspectDeckMutation) {
         $Args += "--inspect-deck-mutation"
     }
-    if ($InspectRouteEvidence) {
+    if ($Options.InspectRouteEvidence) {
         $Args += "--inspect-route-evidence"
     }
-    if ($InspectLastAutoCombat) {
+    if ($Options.InspectLastAutoCombat) {
         $Args += "--inspect-last-auto-combat"
     }
-    if ($InspectFinalBossCombat) {
+    if ($Options.InspectFinalBossCombat) {
         $Args += "--inspect-final-boss-combat"
     }
-    if ($InspectCoverageGapMilestoneSummary) {
+    if ($Options.InspectCoverageGapMilestoneSummary) {
         $Args += @(
             "--inspect-coverage-gap-milestone-summary",
-            "--coverage-gap-milestone-target", "$CoverageGapMilestoneTarget"
+            "--coverage-gap-milestone-target", "$($Options.CoverageGapMilestoneTarget)"
         )
-        $Args += $CoverageGapFilterArgs
+        $Args += $Options.CoverageGapFilterArgs
     }
-    if ($InspectCoverageGapTargetState) {
+    if ($Options.InspectCoverageGapTargetState) {
         $Args += @(
             "--inspect-coverage-gap-target-state",
-            "--coverage-gap-milestone-target", "$CoverageGapMilestoneTarget"
+            "--coverage-gap-milestone-target", "$($Options.CoverageGapMilestoneTarget)"
         )
-        $Args += $CoverageGapFilterArgs
+        $Args += $Options.CoverageGapFilterArgs
     }
-    if ($InspectCombatLab) {
+    if ($Options.InspectCombatLab) {
         $Args += @(
             "--inspect-combat-lab",
-            "--combat-search-option", "wall_ms=$SearchWallMs",
-            "--combat-search-option", "max_nodes=$SearchMaxNodes"
+            "--combat-search-option", "wall_ms=$($Options.SearchWallMs)",
+            "--combat-search-option", "max_nodes=$($Options.SearchMaxNodes)"
         )
-        if ($ProbeBoss) {
+        if ($Options.ProbeBoss) {
             $Args += "--probe-boss"
         }
     }
-    if ($CampaignBoundParameters.ContainsKey("InspectIndex") -and $InspectIndex -ge 0) {
-        $Args += @("--inspect-index", "$InspectIndex")
+    if ($Options.BoundParameters.ContainsKey("InspectIndex") -and $Options.InspectIndex -ge 0) {
+        $Args += @("--inspect-index", "$($Options.InspectIndex)")
     }
-    if ($CampaignBoundParameters.ContainsKey("InspectAct") -and $InspectAct -gt 0) {
-        $Args += @("--inspect-act", "$InspectAct")
+    if ($Options.BoundParameters.ContainsKey("InspectAct") -and $Options.InspectAct -gt 0) {
+        $Args += @("--inspect-act", "$($Options.InspectAct)")
     }
-    if ($CampaignBoundParameters.ContainsKey("InspectFloor") -and $InspectFloor -gt 0) {
-        $Args += @("--inspect-floor", "$InspectFloor")
+    if ($Options.BoundParameters.ContainsKey("InspectFloor") -and $Options.InspectFloor -gt 0) {
+        $Args += @("--inspect-floor", "$($Options.InspectFloor)")
     }
-    if ($InspectBoundary) {
-        $Args += @("--inspect-boundary", "$InspectBoundary")
+    if ($Options.InspectBoundary) {
+        $Args += @("--inspect-boundary", "$($Options.InspectBoundary)")
     }
-    if ($InspectQuery) {
-        $Args += @("--inspect-query", "$InspectQuery")
+    if ($Options.InspectQuery) {
+        $Args += @("--inspect-query", "$($Options.InspectQuery)")
     }
 
     return $Args
@@ -265,7 +342,8 @@ function Invoke-CampaignInspectEntry {
 
     $InspectArgs = New-CampaignInspectDriverArgs `
         -InspectCheckpointPath $InspectCheckpointPath `
-        -InspectCampaignPath $InspectCampaignPath
+        -InspectCampaignPath $InspectCampaignPath `
+        -Options $Context.InspectOptionContext
 
     $InspectModeLabel = if ($Context.ExportLearningDataset) { "dataset" } else { "inspect" }
     Write-CampaignInspectPreflight `

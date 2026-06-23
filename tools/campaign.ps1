@@ -465,9 +465,42 @@ if ($IsContinuationFamily) {
 }
 
 if ($CampaignRequest.Kind -eq "inspect") {
+    $InspectOptionContext = New-CampaignInspectOptionContext `
+        -BoundParameters $CampaignBoundParameters `
+        -InspectState ([bool] $InspectState) `
+        -InspectShopEvidence ([bool] $InspectShopEvidence) `
+        -InspectShopChallenge ([bool] $InspectShopChallenge) `
+        -InspectCardRewardEvidence ([bool] $InspectCardRewardEvidence) `
+        -InspectDecisionObservations ([bool] $InspectDecisionObservations) `
+        -InspectJournal ([bool] $InspectJournal) `
+        -InspectLineageDecisions ([bool] $InspectLineageDecisions) `
+        -InspectCampfireEvidence ([bool] $InspectCampfireEvidence) `
+        -InspectDeckMutation ([bool] $InspectDeckMutation) `
+        -InspectRouteEvidence ([bool] $InspectRouteEvidence) `
+        -InspectLastAutoCombat ([bool] $InspectLastAutoCombat) `
+        -InspectCombatLab ([bool] $InspectCombatLab) `
+        -InspectFinalBossCombat ([bool] $InspectFinalBossCombat) `
+        -InspectCoverageGapMilestoneSummary ([bool] $InspectCoverageGapMilestoneSummary) `
+        -InspectCoverageGapTargetState ([bool] $InspectCoverageGapTargetState) `
+        -ExportLearningDataset $ExportLearningDataset `
+        -BranchExamples $BranchExamples `
+        -ChallengeMaxPlans $ChallengeMaxPlans `
+        -ChallengeDepth $ChallengeDepth `
+        -ChallengeMaxBranches $ChallengeMaxBranches `
+        -SearchWallMs $SearchWallMs `
+        -SearchMaxNodes $SearchMaxNodes `
+        -CoverageGapMilestoneTarget $CoverageGapMilestoneTarget `
+        -CoverageGapFilterArgs $CoverageGapFilterArgs `
+        -InspectIndex $InspectIndex `
+        -InspectAct $InspectAct `
+        -InspectFloor $InspectFloor `
+        -InspectBoundary $InspectBoundary `
+        -InspectQuery $InspectQuery `
+        -ProbeBoss ([bool] $ProbeBoss)
     $InspectEntryContext = New-CampaignInspectEntryContext `
         -CampaignRequest $CampaignRequest `
         -CampaignSourceArtifact $CampaignSourceArtifact `
+        -InspectOptionContext $InspectOptionContext `
         -InspectArtifacts ([bool] $InspectArtifacts) `
         -ExportLearningDataset $ExportLearningDataset `
         -Seed $Seed `
