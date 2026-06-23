@@ -22,11 +22,13 @@ function Resolve-CampaignRunRoundContext {
     $ContinueCoverageGaps = [bool] $Request.ContinueCoverageGaps
     $PlanCoverageGaps = [bool] $Request.PlanCoverageGaps
     $Inspect = [bool] $Request.Inspect
+    $IsContinuationRoundCommand = $ContinueCampaign -or $ContinueCoverageGaps
+    $HasExplicitRoundBudget = $RoundsBound -or $UntilRoundBound -or $MaxRoundsBound
 
     if (($RoundsBound -and $UntilRoundBound) -or ($RoundsBound -and $MaxRoundsBound) -or ($UntilRoundBound -and $MaxRoundsBound)) {
         throw "Choose only one round budget: -Rounds N, -UntilRound N, or legacy -MaxRounds N."
     }
-    if ($UntilMilestoneBound -and ($RoundsBound -or $UntilRoundBound -or $MaxRoundsBound)) {
+    if ($UntilMilestoneBound -and $HasExplicitRoundBudget) {
         throw "-UntilMilestone owns the round budget. Use -MilestoneStepRounds and -MilestoneMaxRounds instead of -Rounds, -UntilRound, or -MaxRounds."
     }
     if ($UntilMilestoneBound -and ($PlanCoverageGaps -or $Inspect)) {
@@ -73,7 +75,7 @@ function Resolve-CampaignRunRoundContext {
         }
     }
 
-    if ($ContinueCampaign) {
+    if ($IsContinuationRoundCommand) {
         $ResumeSource = $CampaignSourceArtifact
         if (-not $ResumeSource) {
             throw "Internal error: campaign continuation did not resolve a source artifact."
@@ -85,7 +87,8 @@ function Resolve-CampaignRunRoundContext {
         $ResumeCampaignPath = $ResumeSource.ReportPath
         $ResumeReport = Get-Content -LiteralPath $ResumeCampaignPath -Raw | ConvertFrom-Json
         $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
-        if ($UntilMilestoneBound -or $RoundsBound -or $UntilRoundBound -or $MaxRoundsBound) {
+        if ($UntilMilestoneBound -or $HasExplicitRoundBudget -or $ContinueCoverageGaps) {
+            $ContinuationMaxRoundsDriverFlag = if ($ContinueCoverageGaps) { "--max-rounds" } else { "--rounds" }
             $RunContinuationRoundBudget = Resolve-CampaignAdditionalRoundBudget `
                 -ResumeRoundsCompleted $ResumeRoundsCompleted `
                 -UntilMilestoneBound $UntilMilestoneBound `
@@ -96,7 +99,7 @@ function Resolve-CampaignRunRoundContext {
                 -UntilRound $UntilRound `
                 -MaxRoundsBound $MaxRoundsBound `
                 -MaxRounds $MaxRounds `
-                -MaxRoundsDriverFlag "--rounds"
+                -MaxRoundsDriverFlag $ContinuationMaxRoundsDriverFlag
             $DriverRoundBudgetArgs = @($RunContinuationRoundBudget.Args)
             $TargetRounds = $RunContinuationRoundBudget.TargetRounds
             $ResolvedMaxRounds = $RunContinuationRoundBudget.AdditionalRounds
@@ -115,6 +118,11 @@ function Resolve-CampaignRunRoundContext {
         DriverRoundBudgetArgs = @($DriverRoundBudgetArgs)
         RoundBudgetSource = $RoundBudgetSource
         RoundBudgetAdditionalRounds = $RoundBudgetAdditionalRounds
+        HasExplicitRoundBudget = [bool] $HasExplicitRoundBudget
+        UntilMilestoneBound = [bool] $UntilMilestoneBound
+        UntilMilestone = $UntilMilestone
+        MilestoneStepRounds = $MilestoneStepRounds
+        MilestoneMaxRounds = $MilestoneMaxRounds
         MaxRounds = $ResolvedMaxRounds
         ResolvedMilestoneStop = $ResolvedMilestoneStop
         ResumeCampaignPath = $ResumeCampaignPath

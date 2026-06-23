@@ -173,15 +173,18 @@ foreach ($arg in $ExtraArgs) {
     if ($RetiredWrapperArgs -contains $arg) {
         throw "$arg was removed from tools/campaign.ps1. Use coverage-gap continuation, or call branch_campaign_driver directly for targeted-continuation archaeology."
     }
+    if ($arg -match '^-[A-Za-z][A-Za-z0-9_-]*(=.*)?$') {
+        throw "Unknown wrapper-style argument '$arg'. Driver passthrough arguments must use Rust-style '--flag' syntax; wrapper switches use declared campaign.ps1 parameters."
+    }
 }
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$CampaignDir = Join-Path $RepoRoot "tools\artifacts\campaigns"
-$ScratchCampaignDir = Join-Path $CampaignDir "scratch"
-
-New-Item -ItemType Directory -Force -Path $CampaignDir | Out-Null
 
 . (Join-Path $PSScriptRoot "campaign_artifacts.ps1")
+$CampaignPathContext = New-CampaignPathContext -RepoRoot $RepoRoot
+Initialize-CampaignArtifactPaths -PathContext $CampaignPathContext
+New-Item -ItemType Directory -Force -Path $CampaignPathContext.CampaignDir | Out-Null
+
 . (Join-Path $PSScriptRoot "campaign_artifact_summary.ps1")
 . (Join-Path $PSScriptRoot "campaign_invocation.ps1")
 . (Join-Path $PSScriptRoot "campaign_preflight.ps1")
@@ -317,13 +320,7 @@ switch ($CampaignRequest.Kind) {
             -BuildContext $BuildContext `
             -NeedsBuild ([bool] $NeedsBuild) `
             -Scratch ([bool] $Scratch) `
-            -Rounds $Rounds `
-            -UntilRound $UntilRound `
-            -UntilMilestone $UntilMilestone `
-            -MilestoneStepRounds $MilestoneStepRounds `
-            -MilestoneMaxRounds $MilestoneMaxRounds `
-            -ResolvedMilestoneStop $RunRoundContext.ResolvedMilestoneStop `
-            -MaxRounds $RunRoundContext.MaxRounds `
+            -RunRoundContext $RunRoundContext `
             -CoverageGapLimit $CoverageGapLimit `
             -CoverageGapCandidatesPerDecision $CoverageGapCandidatesPerDecision `
             -DryRun ([bool] $DryRun) `

@@ -38,13 +38,7 @@ function New-CampaignContinuationEntryContext {
         [object] $BuildContext,
         [bool] $NeedsBuild,
         [bool] $Scratch,
-        [int] $Rounds,
-        [int] $UntilRound,
-        [string] $UntilMilestone,
-        [int] $MilestoneStepRounds,
-        [int] $MilestoneMaxRounds,
-        [string] $ResolvedMilestoneStop,
-        [int] $MaxRounds,
+        [object] $RunRoundContext,
         [int] $CoverageGapLimit,
         [int] $CoverageGapCandidatesPerDecision,
         [bool] $DryRun,
@@ -64,14 +58,10 @@ function New-CampaignContinuationEntryContext {
         CampaignSourceArtifact = $CampaignSourceArtifact
         RunOutputCampaignPath = $RunOutputContext.CampaignPath
         RunOutputCheckpointPath = $RunOutputContext.CheckpointPath
-        UntilMilestoneBound = $BoundParameterContext.UntilMilestoneBound
-        MilestoneStepRounds = $MilestoneStepRounds
-        RoundsBound = $BoundParameterContext.RoundsBound
-        Rounds = $Rounds
-        UntilRoundBound = $BoundParameterContext.UntilRoundBound
-        UntilRound = $UntilRound
-        MaxRoundsBound = $BoundParameterContext.MaxRoundsBound
-        MaxRounds = $MaxRounds
+        RunRoundContext = $RunRoundContext
+        UntilMilestoneBound = [bool] $RunRoundContext.UntilMilestoneBound
+        MilestoneStepRounds = $RunRoundContext.MilestoneStepRounds
+        MaxRounds = $RunRoundContext.MaxRounds
         CoverageGapExecution = $CoverageGapExecution
         CoverageGapIntent = $CoverageGapIntent
         CampaignRunIdentityArgs = @($CampaignRunIdentityArgs)
@@ -84,9 +74,9 @@ function New-CampaignContinuationEntryContext {
         NeedsBuild = $NeedsBuild
         Scratch = $Scratch
         ScratchLabel = $RunOutputContext.ScratchLabel
-        UntilMilestone = $UntilMilestone
-        MilestoneMaxRounds = $MilestoneMaxRounds
-        ResolvedMilestoneStop = $ResolvedMilestoneStop
+        UntilMilestone = $RunRoundContext.UntilMilestone
+        MilestoneMaxRounds = $RunRoundContext.MilestoneMaxRounds
+        ResolvedMilestoneStop = $RunRoundContext.ResolvedMilestoneStop
         CoverageGapLimit = $CoverageGapLimit
         CoverageGapCandidatesPerDecision = $CoverageGapCandidatesPerDecision
         CoverageGapFilterLabel = $CoverageGapFilterLabel
@@ -132,25 +122,14 @@ function New-CampaignContinuationCommandContext {
     )
 
     $Operation = Resolve-CampaignContinuationOperation -Context $Context
-    $RoundBudget = Resolve-CampaignAdditionalRoundBudget `
-        -ResumeRoundsCompleted $SourceContext.RoundsCompleted `
-        -UntilMilestoneBound $Context.UntilMilestoneBound `
-        -MilestoneStepRounds $Context.MilestoneStepRounds `
-        -RoundsBound $Context.RoundsBound `
-        -Rounds $Context.Rounds `
-        -UntilRoundBound $Context.UntilRoundBound `
-        -UntilRound $Context.UntilRound `
-        -MaxRoundsBound $Context.MaxRoundsBound `
-        -MaxRounds $Context.MaxRounds `
-        -MaxRoundsDriverFlag "--max-rounds"
-    $RoundBudgetArgs = @($RoundBudget.Args)
+    $RoundBudgetArgs = @($Context.RunRoundContext.DriverRoundBudgetArgs)
     $CoverageExecutionContext = Resolve-CoverageGapExecutionContext `
         -Execution $Context.CoverageGapExecution `
         -UntilMilestoneBound $Context.UntilMilestoneBound `
         -ContinueCoverageGaps $Operation.ContinueCoverageGaps `
-        -HasExplicitRoundBudget ($Context.RoundsBound -or $Context.UntilRoundBound -or $Context.MaxRoundsBound) `
+        -HasExplicitRoundBudget ([bool] $Context.RunRoundContext.HasExplicitRoundBudget) `
         -Intent $Context.CoverageGapIntent `
-        -ContinuationRounds $RoundBudget.AdditionalRounds
+        -ContinuationRounds $Context.RunRoundContext.RoundBudgetAdditionalRounds
 
     $CoveragePlanArgs = New-CoverageGapPlanDriverArgs `
         -SourceCampaignPath $SourceContext.CampaignPath `
@@ -207,9 +186,9 @@ function New-CampaignContinuationCommandContext {
         -RunOutputCampaignPath $Context.RunOutputCampaignPath `
         -RunOutputCheckpointPath $Context.RunOutputCheckpointPath `
         -ResumeRoundsCompleted $SourceContext.RoundsCompleted `
-        -TargetRounds $RoundBudget.TargetRounds `
-        -ContinuationRoundSource $RoundBudget.Source `
-        -ContinuationRounds $RoundBudget.AdditionalRounds `
+        -TargetRounds $Context.RunRoundContext.TargetRounds `
+        -ContinuationRoundSource $Context.RunRoundContext.RoundBudgetSource `
+        -ContinuationRounds $Context.RunRoundContext.RoundBudgetAdditionalRounds `
         -UntilMilestoneBound $Context.UntilMilestoneBound `
         -UntilMilestone $Context.UntilMilestone `
         -MilestoneStepRounds $Context.MilestoneStepRounds `
@@ -227,7 +206,7 @@ function New-CampaignContinuationCommandContext {
     return [pscustomobject]@{
         CoveragePlanArgs = @($CoveragePlanArgs)
         ContinueCoverageGapArgs = @($ContinueCoverageGapArgs)
-        ContinuationRounds = [int] $RoundBudget.AdditionalRounds
+        ContinuationRounds = [int] $Context.RunRoundContext.RoundBudgetAdditionalRounds
         CoverageGapInitialSpentRounds = [int] $CoverageExecutionContext.InitialSpentRounds
         CoverageGapMilestoneSummaryArgs = @($CoverageGapMilestoneSummaryArgs)
         MilestoneContext = $MilestoneContext

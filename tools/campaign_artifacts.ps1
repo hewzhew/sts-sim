@@ -1,12 +1,57 @@
-$LatestSeedPath = Join-Path $CampaignDir "latest.seed.txt"
-$LatestAscensionPath = Join-Path $CampaignDir "latest.ascension.txt"
-$LatestClassPath = Join-Path $CampaignDir "latest.class.txt"
-$LatestModePath = Join-Path $CampaignDir "latest.mode.txt"
-$LatestCommandPath = Join-Path $CampaignDir "latest.command.txt"
-$LatestManifestPath = Join-Path $CampaignDir "latest.manifest.json"
-$LatestLogPath = Join-Path $CampaignDir "latest.log"
-$LatestCampaignPath = Join-Path $CampaignDir "latest.campaign.json"
-$LatestCheckpointPath = Join-Path $CampaignDir "latest.checkpoint.json"
+$script:CampaignPathContext = $null
+$script:CampaignDir = ""
+$script:ScratchCampaignDir = ""
+$script:LatestSeedPath = ""
+$script:LatestAscensionPath = ""
+$script:LatestClassPath = ""
+$script:LatestModePath = ""
+$script:LatestCommandPath = ""
+$script:LatestManifestPath = ""
+$script:LatestLogPath = ""
+$script:LatestCampaignPath = ""
+$script:LatestCheckpointPath = ""
+
+function New-CampaignPathContext {
+    param(
+        [string] $RepoRoot
+    )
+
+    $CampaignDir = Join-Path $RepoRoot "tools\artifacts\campaigns"
+    return [pscustomobject]@{
+        RepoRoot = $RepoRoot
+        CampaignDir = $CampaignDir
+        ScratchCampaignDir = Join-Path $CampaignDir "scratch"
+    }
+}
+
+function Initialize-CampaignArtifactPaths {
+    param(
+        [object] $PathContext
+    )
+
+    if (-not $PathContext -or -not $PathContext.CampaignDir -or -not $PathContext.ScratchCampaignDir) {
+        throw "Internal error: campaign artifact path initialization requires CampaignPathContext."
+    }
+
+    $script:CampaignPathContext = $PathContext
+    $script:CampaignDir = $PathContext.CampaignDir
+    $script:ScratchCampaignDir = $PathContext.ScratchCampaignDir
+    $script:LatestSeedPath = Join-Path $script:CampaignDir "latest.seed.txt"
+    $script:LatestAscensionPath = Join-Path $script:CampaignDir "latest.ascension.txt"
+    $script:LatestClassPath = Join-Path $script:CampaignDir "latest.class.txt"
+    $script:LatestModePath = Join-Path $script:CampaignDir "latest.mode.txt"
+    $script:LatestCommandPath = Join-Path $script:CampaignDir "latest.command.txt"
+    $script:LatestManifestPath = Join-Path $script:CampaignDir "latest.manifest.json"
+    $script:LatestLogPath = Join-Path $script:CampaignDir "latest.log"
+    $script:LatestCampaignPath = Join-Path $script:CampaignDir "latest.campaign.json"
+    $script:LatestCheckpointPath = Join-Path $script:CampaignDir "latest.checkpoint.json"
+}
+
+function Assert-CampaignArtifactPathsInitialized {
+    if (-not $script:CampaignPathContext) {
+        throw "Internal error: campaign artifact paths are not initialized."
+    }
+}
 
 function Convert-ToCampaignArtifactSlug {
     param(
@@ -32,14 +77,17 @@ function New-CampaignArtifactId {
 }
 
 function Get-CampaignRunsDir {
+    Assert-CampaignArtifactPathsInitialized
     return (Join-Path $CampaignDir "runs")
 }
 
 function Get-CampaignLatestPointerPath {
+    Assert-CampaignArtifactPathsInitialized
     return (Join-Path $CampaignDir "latest.json")
 }
 
 function Get-CampaignScratchLatestPointerPath {
+    Assert-CampaignArtifactPathsInitialized
     return (Join-Path $ScratchCampaignDir "latest.json")
 }
 
@@ -178,6 +226,7 @@ function Ensure-CampaignOutputArtifactDirectory {
 }
 
 function New-CampaignLegacyLatestArtifact {
+    Assert-CampaignArtifactPathsInitialized
     return [pscustomobject]@{
         Kind = "legacy_latest"
         Id = "legacy-latest"
@@ -307,6 +356,7 @@ function Get-CampaignArtifactMode {
 }
 
 function Read-LatestCampaignMode {
+    Assert-CampaignArtifactPathsInitialized
     if (Test-Path -LiteralPath $LatestModePath) {
         $ModeText = (Get-Content -LiteralPath $LatestModePath -Raw).Trim().ToLowerInvariant()
         if (@("quick", "focused", "explore", "deep") -contains $ModeText) {
@@ -387,6 +437,7 @@ function Get-CampaignSourceArtifact {
         [bool] $UseScratchLatest
     )
 
+    Assert-CampaignArtifactPathsInitialized
     $ResolvedSelector = if ($Selector) { $Selector.Trim() } elseif ($UseScratchLatest) { "scratch:latest" } else { "latest" }
 
     if ($ResolvedSelector -eq "scratch:latest") {

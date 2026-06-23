@@ -13,8 +13,8 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 426 lines
-- `tools/campaign_artifacts.ps1`: 417 lines
+- `tools/campaign.ps1`: 423 lines
+- `tools/campaign_artifacts.ps1`: 468 lines
 - `tools/campaign_artifact_summary.ps1`: 170 lines
 - `tools/campaign_invocation.ps1`: 318 lines
 - `tools/campaign_manifest.ps1`: 166 lines
@@ -23,10 +23,10 @@ Approximate physical line count after the wrapper split:
 - `tools/campaign_coverage_gap_execution.ps1`: 111 lines
 - `tools/campaign_coverage_gap_manifest.ps1`: 52 lines
 - `tools/campaign_preflight.ps1`: 175 lines
-- `tools/campaign_continuation.ps1`: 339 lines
+- `tools/campaign_continuation.ps1`: 318 lines
 - `tools/campaign_inspect.ps1`: 369 lines
 - `tools/campaign_source.ps1`: 190 lines
-- `tools/campaign_rounds.ps1`: 131 lines
+- `tools/campaign_rounds.ps1`: 134 lines
 - `tools/campaign_milestones.ps1`: 155 lines
 - `tools/campaign_request.ps1`: 180 lines
 - `tools/campaign_build.ps1`: 71 lines
@@ -170,6 +170,9 @@ This helper owns:
 - run source artifact selection
 - run/scratch output artifact selection from typed request output intent
 - latest campaign mode/config reads
+- explicit `CampaignPathContext` initialization; artifact helpers no longer
+  depend on `$CampaignDir` / `$ScratchCampaignDir` being present in the parent
+  dot-source scope
 
 Artifact summary helpers now live in:
 
@@ -260,6 +263,8 @@ This helper owns:
 - continuation dry-run dispatch
 - continuation execution dispatch
 - explicit record/manifest context handoff for continuation helpers
+- continuation round-budget consumption from `RunRoundContext`; continuation
+  no longer reinterprets raw `-Rounds` / `-UntilRound` / `-MaxRounds` inputs
 
 Round-budget helpers now live in:
 
@@ -274,6 +279,9 @@ This helper owns:
 - `-UntilMilestone` round-budget validation and stop-mode normalization
 - normal campaign resume source validation
 - normal campaign resume and round-budget driver argument rendering
+- coverage-gap continuation default/additional round-budget rendering, so
+  continuation commands share the same round-budget context instead of
+  re-running round interpretation
 
 Milestone helpers now live in:
 
@@ -434,6 +442,13 @@ The wrapper no longer exposes targeted continuation. The Rust driver still
 supports `--plan-targeted-continuation` / `--execute-targeted-continuation` for
 manual archaeology, but `tools/campaign.ps1` is now centered on the current
 journal/coverage-gap continuation path.
+
+Raw driver passthrough is intentionally narrow. Unknown single-dash arguments
+such as `-SomeWrapperTypo` fail at the wrapper boundary instead of being
+silently forwarded through `ExtraArgs`. Direct driver passthrough should use
+Rust-style `--flag` syntax. PowerShell still accepts unambiguous abbreviations
+for declared wrapper parameters, so this is not a full replacement for a future
+typed subcommand surface.
 
 ## Still Move Out Of Wrapper
 
