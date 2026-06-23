@@ -31,10 +31,12 @@ use sts_simulator::eval::learning_dataset_v1::{
     plan_coverage_gap_continuations_with_filter_v1, plan_targeted_continuations_v1,
     probe_learning_readiness_v1, refresh_coverage_gap_execution_bucket_summaries_v1,
     render_continuation_effect_report_v1, render_coverage_gap_continuation_filter_v1,
+    render_coverage_gap_continuation_plan_counts_v1,
     render_coverage_gap_continuation_plan_summary_v1, render_coverage_gap_continuation_plan_v1,
-    render_coverage_gap_execution_plan_v1, render_journal_decision_candidate_coverage_v1,
-    render_learning_decision_outcome_analysis_v1, render_learning_readiness_probe_v1,
-    render_targeted_continuation_plan_v1, serialize_learning_branch_samples_jsonl_v1,
+    render_coverage_gap_execution_plan_preview_v1, render_coverage_gap_execution_plan_v1,
+    render_journal_decision_candidate_coverage_v1, render_learning_decision_outcome_analysis_v1,
+    render_learning_readiness_probe_v1, render_targeted_continuation_plan_v1,
+    serialize_learning_branch_samples_jsonl_v1,
     serialize_learning_decision_outcome_samples_jsonl_v1, targeted_continuation_execution_plan_v1,
     CoverageGapContinuationExecutionPlanV1, CoverageGapContinuationFilterV1,
     CoverageGapContinuationPlanV1, CoverageGapContinuationTargetProgressV1,
@@ -296,12 +298,9 @@ pub(super) fn run_coverage_gap_continuation_plan(
             "Replayable preview from current checkpoint (requested={} planning_window={}):\n{}",
             input.coverage_gap_limit,
             planning_window,
-            render_coverage_gap_execution_plan_v1(&replayable_preview)
+            render_coverage_gap_execution_plan_preview_v1(&replayable_preview)
         );
-        println!(
-            "{}",
-            render_coverage_gap_continuation_plan_summary_v1(&plan)
-        );
+        println!("{}", render_coverage_gap_continuation_plan_counts_v1(&plan));
     } else {
         let plan = plan_coverage_gap_continuations_with_filter_v1(
             &report,

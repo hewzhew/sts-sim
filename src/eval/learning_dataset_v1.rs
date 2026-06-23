@@ -2730,21 +2730,7 @@ pub fn render_coverage_gap_continuation_plan_summary_v1(
     plan: &CoverageGapContinuationPlanV1,
 ) -> String {
     let mut lines = Vec::new();
-    lines.push(format!(
-        "CoverageGapContinuationPlanV1 decisions={} candidates={} unobserved={} scheduled_unobserved={} unscheduled_unobserved={} kept_unobserved={} pruned_unobserved={} selected={} scheduled_selected={} unscheduled_selected={} kept_selected={} pruned_selected={}",
-        plan.total_decisions,
-        plan.total_candidates,
-        plan.total_unobserved_candidates,
-        plan.scheduled_unobserved_candidates,
-        plan.unscheduled_unobserved_candidates,
-        plan.kept_unobserved_candidates,
-        plan.pruned_unobserved_candidates,
-        plan.selected_target_count,
-        plan.selected_scheduled_targets,
-        plan.selected_unscheduled_targets,
-        plan.selected_kept_targets,
-        plan.selected_pruned_targets
-    ));
+    lines.push(render_coverage_gap_continuation_plan_counts_v1(plan));
     if !plan.bucket_summaries.is_empty() {
         lines.push("Buckets:".to_string());
         for bucket in &plan.bucket_summaries {
@@ -2772,6 +2758,26 @@ pub fn render_coverage_gap_continuation_plan_summary_v1(
     extend_coverage_gap_selected_target_origin_counts_v1(&mut lines, &plan.targets);
     extend_coverage_gap_selected_target_progress_counts_v1(&mut lines, &plan.targets);
     lines.join("\n")
+}
+
+pub fn render_coverage_gap_continuation_plan_counts_v1(
+    plan: &CoverageGapContinuationPlanV1,
+) -> String {
+    format!(
+        "CoverageGapContinuationPlanV1 decisions={} candidates={} unobserved={} scheduled_unobserved={} unscheduled_unobserved={} kept_unobserved={} pruned_unobserved={} selected={} scheduled_selected={} unscheduled_selected={} kept_selected={} pruned_selected={}",
+        plan.total_decisions,
+        plan.total_candidates,
+        plan.total_unobserved_candidates,
+        plan.scheduled_unobserved_candidates,
+        plan.unscheduled_unobserved_candidates,
+        plan.kept_unobserved_candidates,
+        plan.pruned_unobserved_candidates,
+        plan.selected_target_count,
+        plan.selected_scheduled_targets,
+        plan.selected_unscheduled_targets,
+        plan.selected_kept_targets,
+        plan.selected_pruned_targets
+    )
 }
 
 pub fn render_coverage_gap_continuation_filter_v1(
@@ -2826,6 +2832,31 @@ pub fn render_coverage_gap_continuation_plan_v1(plan: &CoverageGapContinuationPl
 pub fn render_coverage_gap_execution_plan_v1(
     execution: &CoverageGapContinuationExecutionPlanV1,
 ) -> String {
+    render_coverage_gap_execution_plan_with_target_list_label_v1(
+        execution,
+        CoverageGapExecutionTargetListLabelV1::Executed,
+    )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CoverageGapExecutionTargetListLabelV1 {
+    SelectedPreview,
+    Executed,
+}
+
+pub fn render_coverage_gap_execution_plan_preview_v1(
+    execution: &CoverageGapContinuationExecutionPlanV1,
+) -> String {
+    render_coverage_gap_execution_plan_with_target_list_label_v1(
+        execution,
+        CoverageGapExecutionTargetListLabelV1::SelectedPreview,
+    )
+}
+
+pub fn render_coverage_gap_execution_plan_with_target_list_label_v1(
+    execution: &CoverageGapContinuationExecutionPlanV1,
+    target_list_label: CoverageGapExecutionTargetListLabelV1,
+) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
         "CoverageGapContinuationExecutionPlanV1 requested={} selected={} skipped={}",
@@ -2855,10 +2886,14 @@ pub fn render_coverage_gap_execution_plan_v1(
     extend_coverage_gap_selected_target_lane_counts_v1(&mut lines, &execution.targets);
     extend_coverage_gap_selected_target_origin_counts_v1(&mut lines, &execution.targets);
     extend_coverage_gap_selected_target_progress_counts_v1(&mut lines, &execution.targets);
+    let target_heading = match target_list_label {
+        CoverageGapExecutionTargetListLabelV1::SelectedPreview => "Selected preview targets",
+        CoverageGapExecutionTargetListLabelV1::Executed => "Executed targets",
+    };
     if execution.targets.is_empty() {
-        lines.push("Executed targets: none".to_string());
+        lines.push(format!("{target_heading}: none"));
     } else {
-        lines.push("Executed targets:".to_string());
+        lines.push(format!("{target_heading}:"));
         for (index, target) in execution.targets.iter().take(12).enumerate() {
             lines.push(render_coverage_gap_target_line_v1(index, target));
         }
