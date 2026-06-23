@@ -223,6 +223,7 @@ $Inspect = $CampaignRequest.Inspect
 $InspectBoundary = $CampaignRequest.InspectBoundary
 $ScratchLatestIsContinuationSource = $CampaignRequest.ScratchLatestIsContinuationSource
 $ReadsCampaignSource = $CampaignRequest.ReadsCampaignSource
+$IsContinuationFamily = $CampaignRequest.IsContinuationFamily
 $CampaignSourceContext = Get-CampaignSourceContext `
     -ReadsCampaignSource $ReadsCampaignSource `
     -Last $Last `
@@ -233,7 +234,7 @@ $CampaignSourceRunConfig = $CampaignSourceContext.RunConfig
 $Mode = Resolve-CampaignMode `
     -Mode $Mode `
     -ModeBound ($PSBoundParameters.ContainsKey("Mode")) `
-    -IsContinuationFamily ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps) `
+    -IsContinuationFamily $IsContinuationFamily `
     -ContinueCampaign $ContinueCampaign `
     -SourceArtifact $CampaignSourceArtifact
 $Seed = Resolve-CampaignSeed `
@@ -410,8 +411,9 @@ $DriverArgs = Add-CampaignSharedDriverOptions `
 
 $NeedsBuild = $Build -or (Test-DriverNeedsBuild $DriverExe)
 
-if ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps) {
+if ($IsContinuationFamily) {
     $ContinuationEntryContext = [pscustomobject]@{
+        CampaignRequest = $CampaignRequest
         WrapperScript = $PSCommandPath
         Mode = $Mode
         OutputArtifact = $RunOutputArtifact
@@ -530,6 +532,7 @@ if ($Inspect) {
 $RenderedCommand = Format-CommandLine -ExePath $DriverExe -Arguments $DriverArgs
 Write-CampaignRunPreflight
 $RunCommandContext = [pscustomobject]@{
+    CampaignRequest = $CampaignRequest
     WrapperScript = $PSCommandPath
     Mode = $Mode
     Seed = $Seed

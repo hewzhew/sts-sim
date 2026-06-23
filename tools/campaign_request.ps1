@@ -11,6 +11,76 @@ function Test-AnyCampaignFlag {
     return $false
 }
 
+function New-CampaignEntryRequestDescriptor {
+    param(
+        [string] $Kind,
+        [string] $SourceIntent,
+        [string] $OutputIntent,
+        [bool] $ContinueCampaign,
+        [bool] $Inspect,
+        [string] $InspectBoundary,
+        [bool] $ScratchLatestIsContinuationSource,
+        [bool] $ReadsCampaignSource,
+        [bool] $IsContinuationFamily,
+        [bool] $UsesCoverageGap,
+        [bool] $UsesLegacyTargeted
+    )
+
+    return [pscustomobject]@{
+        SchemaName = "CampaignEntryRequestV1"
+        Kind = $Kind
+        SourceIntent = $SourceIntent
+        OutputIntent = $OutputIntent
+        ContinueCampaign = [bool] $ContinueCampaign
+        Inspect = [bool] $Inspect
+        InspectBoundary = $InspectBoundary
+        ScratchLatestIsContinuationSource = [bool] $ScratchLatestIsContinuationSource
+        ReadsCampaignSource = [bool] $ReadsCampaignSource
+        IsContinuationFamily = [bool] $IsContinuationFamily
+        UsesCoverageGap = [bool] $UsesCoverageGap
+        UsesLegacyTargeted = [bool] $UsesLegacyTargeted
+    }
+}
+
+function Get-CampaignEntryRequestKind {
+    param(
+        [bool] $ContinueCampaign,
+        [bool] $Inspect,
+        [bool] $PlanTargets,
+        [bool] $ContinueTargets,
+        [bool] $PlanCoverageGaps,
+        [bool] $ContinueCoverageGaps
+    )
+
+    $Kinds = @()
+    if ($ContinueCampaign) {
+        $Kinds += "continue_run"
+    }
+    if ($Inspect) {
+        $Kinds += "inspect"
+    }
+    if ($PlanTargets) {
+        $Kinds += "legacy_plan_targets"
+    }
+    if ($ContinueTargets) {
+        $Kinds += "legacy_continue_targets"
+    }
+    if ($PlanCoverageGaps) {
+        $Kinds += "plan_coverage_gaps"
+    }
+    if ($ContinueCoverageGaps) {
+        $Kinds += "continue_coverage_gaps"
+    }
+
+    if ($Kinds.Count -gt 1) {
+        throw "Choose one campaign request kind, not: $($Kinds -join ', ')."
+    }
+    if ($Kinds.Count -eq 1) {
+        return $Kinds[0]
+    }
+    return "new_run"
+}
+
 function Resolve-CampaignEntryRequest {
     param(
         [bool] $ContinueRun,
@@ -56,6 +126,34 @@ function Resolve-CampaignEntryRequest {
     if (($PlanTargets -or $ContinueTargets) -and ($PlanCoverageGaps -or $ContinueCoverageGaps)) {
         throw "Choose either targeted continuation (-PlanTargets/-ContinueTargets) or coverage-gap continuation (-PlanCoverageGaps/-ContinueCoverageGaps), not both."
     }
+
+    $Kind = Get-CampaignEntryRequestKind `
+        -ContinueCampaign $ContinueCampaign `
+        -Inspect $ResolvedInspect `
+        -PlanTargets $PlanTargets `
+        -ContinueTargets $ContinueTargets `
+        -PlanCoverageGaps $PlanCoverageGaps `
+        -ContinueCoverageGaps $ContinueCoverageGaps
+
+    $IsContinuationFamily = [bool] ($PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps)
+    $ReadsCampaignSource = [bool] ($ResolvedInspect -or $ContinueCampaign -or $IsContinuationFamily)
+    $SourceIntent = if ($ReadsCampaignSource) {
+        if ($InspectScratchLatest) {
+            "scratch_latest"
+        } else {
+            "campaign_source_selector"
+        }
+    } else {
+        "none"
+    }
+    $OutputIntent = switch ($Kind) {
+        "new_run" { "campaign_output" }
+        "continue_run" { "campaign_output" }
+        "legacy_continue_targets" { "campaign_output" }
+        "continue_coverage_gaps" { "campaign_output" }
+        default { "none" }
+    }
+
     if (
         $Scratch -and
         -not (
@@ -67,11 +165,16 @@ function Resolve-CampaignEntryRequest {
         throw "-Scratch currently supports normal campaign runs, -ContinueTargets, and -ContinueCoverageGaps only."
     }
 
-    return [pscustomobject]@{
-        ContinueCampaign = [bool] $ContinueCampaign
-        Inspect = [bool] $ResolvedInspect
-        InspectBoundary = $ResolvedInspectBoundary
-        ScratchLatestIsContinuationSource = [bool] $ScratchLatestIsContinuationSource
-        ReadsCampaignSource = [bool] ($ResolvedInspect -or $ContinueCampaign -or $PlanTargets -or $ContinueTargets -or $PlanCoverageGaps -or $ContinueCoverageGaps)
-    }
+    return New-CampaignEntryRequestDescriptor `
+        -Kind $Kind `
+        -SourceIntent $SourceIntent `
+        -OutputIntent $OutputIntent `
+        -ContinueCampaign $ContinueCampaign `
+        -Inspect $ResolvedInspect `
+        -InspectBoundary $ResolvedInspectBoundary `
+        -ScratchLatestIsContinuationSource $ScratchLatestIsContinuationSource `
+        -ReadsCampaignSource $ReadsCampaignSource `
+        -IsContinuationFamily $IsContinuationFamily `
+        -UsesCoverageGap ($PlanCoverageGaps -or $ContinueCoverageGaps) `
+        -UsesLegacyTargeted ($PlanTargets -or $ContinueTargets)
 }

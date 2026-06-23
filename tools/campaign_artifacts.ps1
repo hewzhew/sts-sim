@@ -554,7 +554,11 @@ function Get-CampaignArtifactShape {
             $WrapperParams = @($Json.wrapper_invocation.bound_parameters.PSObject.Properties).Count
         }
         $DriverArgs = Get-CampaignValueCount -Value $Json.primary_driver.args
-        return "stage=$($Json.stage) kind=$($Json.command_kind) wrapper_params=$WrapperParams driver_args=$DriverArgs"
+        $RequestKind = "-"
+        if ($Json.request -and $Json.request.kind) {
+            $RequestKind = $Json.request.kind
+        }
+        return "stage=$($Json.stage) kind=$($Json.command_kind) request=$RequestKind wrapper_params=$WrapperParams driver_args=$DriverArgs"
     }
 
     if ($Kind -eq "report") {

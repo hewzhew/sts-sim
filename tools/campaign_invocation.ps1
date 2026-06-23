@@ -285,6 +285,36 @@ function Write-CampaignWrapperManifest {
     $Manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $Path
 }
 
+function Convert-CampaignRequestForManifest {
+    param(
+        [object] $Request
+    )
+
+    if (-not $Request) {
+        return [ordered]@{
+            schema_name = ""
+            kind = ""
+            source_intent = ""
+            output_intent = ""
+            reads_campaign_source = $false
+            is_continuation_family = $false
+            uses_coverage_gap = $false
+            uses_legacy_targeted = $false
+        }
+    }
+
+    return [ordered]@{
+        schema_name = $Request.SchemaName
+        kind = $Request.Kind
+        source_intent = $Request.SourceIntent
+        output_intent = $Request.OutputIntent
+        reads_campaign_source = [bool] $Request.ReadsCampaignSource
+        is_continuation_family = [bool] $Request.IsContinuationFamily
+        uses_coverage_gap = [bool] $Request.UsesCoverageGap
+        uses_legacy_targeted = [bool] $Request.UsesLegacyTargeted
+    }
+}
+
 function Write-CampaignPrimaryDriverCommandRecord {
     param(
         [string] $PrimaryDriverCommandLine,
@@ -360,6 +390,7 @@ function New-CampaignWrapperManifestBase {
         exit_code = $ExitCode
         wrapper_script = $Context.WrapperScript
         command_kind = $CommandKind
+        request = Convert-CampaignRequestForManifest -Request $Context.CampaignRequest
         mode = $Context.Mode
         seed = $Context.Seed
         ascension = $Context.Ascension

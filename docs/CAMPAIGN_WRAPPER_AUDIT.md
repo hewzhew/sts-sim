@@ -13,9 +13,9 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 571 lines
-- `tools/campaign_artifacts.ps1`: 591 lines
-- `tools/campaign_invocation.ps1`: 489 lines
+- `tools/campaign.ps1`: 574 lines
+- `tools/campaign_artifacts.ps1`: 630 lines
+- `tools/campaign_invocation.ps1`: 523 lines
 - `tools/campaign_coverage_gaps.ps1`: 428 lines
 - `tools/campaign_preflight.ps1`: 196 lines
 - `tools/campaign_continuation.ps1`: 316 lines
@@ -24,7 +24,7 @@ Approximate physical line count after the wrapper split:
 - `tools/campaign_source.ps1`: 122 lines
 - `tools/campaign_rounds.ps1`: 122 lines
 - `tools/campaign_milestones.ps1`: 110 lines
-- `tools/campaign_request.ps1`: 77 lines
+- `tools/campaign_request.ps1`: 180 lines
 - `tools/campaign_build.ps1`: 71 lines
 
 Major regions:
@@ -339,6 +339,9 @@ tools/campaign_request.ps1
 
 This helper owns:
 
+- typed entry request classification (`new_run`, `continue_run`, `inspect`,
+  `plan_coverage_gaps`, `continue_coverage_gaps`, and legacy targeted modes)
+- source/output intent derivation for wrapper manifests
 - retired `-More` rejection
 - inspect flag folding
 - `-InspectScratchLatest` source/read interpretation
