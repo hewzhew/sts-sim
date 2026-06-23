@@ -276,9 +276,7 @@ function Write-CoverageGapContinuationDryRunCommands {
         [string] $DriverExe,
         [string[]] $CoveragePlanArgs,
         [string[]] $ContinueCoverageGapArgs,
-        [string[]] $RunIdentityArgs,
-        [int] $MilestoneStepRounds,
-        [object] $OptionContext,
+        [object] $MilestoneContext,
         [string[]] $CoverageGapMilestoneSummaryArgs
     )
 
@@ -290,7 +288,7 @@ function Write-CoverageGapContinuationDryRunCommands {
     }
     if ($UntilMilestoneBound) {
         Write-Host "milestone-loop-command-template:"
-        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-MilestoneResumeDriverArgs -RunIdentityArgs $RunIdentityArgs -StepRounds $MilestoneStepRounds -OptionContext $OptionContext))
+        Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments (New-CampaignMilestoneResumeDriverArgs -MilestoneContext $MilestoneContext -StepRounds $MilestoneContext.MilestoneStepRounds))
         if ($ContinueCoverageGaps) {
             Write-Host "milestone-summary-command:"
             Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $CoverageGapMilestoneSummaryArgs)
@@ -326,6 +324,7 @@ function Invoke-CoverageGapContinuationCommands {
         [int] $CoverageGapInitialSpentRounds,
         [string[]] $RunIdentityArgs,
         [object] $OptionContext,
+        [object] $MilestoneContext,
         [object] $RecordContext,
         [object] $ManifestContext,
         [string[]] $CoverageGapMilestoneSummaryArgs
@@ -358,8 +357,9 @@ function Invoke-CoverageGapContinuationCommands {
             -RecordContext $RecordContext `
             -ManifestContext $ManifestContext)
     if ($UntilMilestoneBound) {
-        Invoke-CampaignUntilMilestone -AlreadySpentRounds $CoverageGapInitialSpentRounds -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext
-        $DriverExitCode = $script:CampaignMilestoneExitCode
+        $DriverExitCode = Invoke-CampaignUntilMilestone `
+            -MilestoneContext $MilestoneContext `
+            -AlreadySpentRounds $CoverageGapInitialSpentRounds
         if ($DriverExitCode -eq 0) {
             $DriverExitCode = Invoke-CoverageGapMilestoneSummary `
                 -RunOutputCampaignPath $RecordContext.RunOutputCampaignPath `
@@ -413,10 +413,9 @@ function New-CoverageGapWrapperManifest {
     }
 
     if ($ManifestContext.UntilMilestoneBound) {
-        $MilestoneResumeArgs = New-MilestoneResumeDriverArgs `
-            -RunIdentityArgs $RunIdentityArgs `
-            -StepRounds $ManifestContext.MilestoneStepRounds `
-            -OptionContext $OptionContext
+        $MilestoneResumeArgs = New-CampaignMilestoneResumeDriverArgs `
+            -MilestoneContext $ManifestContext.MilestoneContext `
+            -StepRounds $ManifestContext.MilestoneStepRounds
         $MilestoneSummaryArgs = @($ManifestContext.CoverageGapMilestoneSummaryArgs)
         $Manifest["milestone"] = [ordered]@{
             target = $ManifestContext.UntilMilestone

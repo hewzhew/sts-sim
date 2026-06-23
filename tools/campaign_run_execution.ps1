@@ -132,8 +132,18 @@ function Invoke-CampaignRunCommand {
         }
         Write-Host $Context.RenderedCommand
         if ($Context.UntilMilestoneBound) {
+            $MilestoneContext = New-CampaignMilestoneContext `
+                -ReportPath $Context.RunOutputCampaignPath `
+                -CheckpointPath $Context.RunOutputCheckpointPath `
+                -DriverExe $Context.DriverExe `
+                -UntilMilestone $Context.UntilMilestone `
+                -ResolvedMilestoneStop $Context.ResolvedMilestoneStop `
+                -MilestoneStepRounds $Context.MilestoneStepRounds `
+                -MilestoneMaxRounds $Context.MilestoneMaxRounds `
+                -RunIdentityArgs $RunIdentityArgs `
+                -OptionContext $OptionContext
             Write-Host "milestone-loop-command-template:"
-            Write-Host (Format-CommandLine -ExePath $Context.DriverExe -Arguments (New-MilestoneResumeDriverArgs -RunIdentityArgs $RunIdentityArgs -StepRounds $Context.MilestoneStepRounds -OptionContext $OptionContext))
+            Write-Host (Format-CommandLine -ExePath $Context.DriverExe -Arguments (New-CampaignMilestoneResumeDriverArgs -MilestoneContext $MilestoneContext -StepRounds $Context.MilestoneStepRounds))
         }
         return 0
     }
@@ -158,8 +168,19 @@ function Invoke-CampaignRunCommand {
                 -Path $Context.RunManifestPath `
                 -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed" -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext -Context $Context)
             if ($Context.UntilMilestoneBound) {
-                Invoke-CampaignUntilMilestone -AlreadySpentRounds $Context.MaxRounds -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext
-                $DriverExitCode = $script:CampaignMilestoneExitCode
+                $MilestoneContext = New-CampaignMilestoneContext `
+                    -ReportPath $Context.RunOutputCampaignPath `
+                    -CheckpointPath $Context.RunOutputCheckpointPath `
+                    -DriverExe $Context.DriverExe `
+                    -UntilMilestone $Context.UntilMilestone `
+                    -ResolvedMilestoneStop $Context.ResolvedMilestoneStop `
+                    -MilestoneStepRounds $Context.MilestoneStepRounds `
+                    -MilestoneMaxRounds $Context.MilestoneMaxRounds `
+                    -RunIdentityArgs $RunIdentityArgs `
+                    -OptionContext $OptionContext
+                $DriverExitCode = Invoke-CampaignUntilMilestone `
+                    -MilestoneContext $MilestoneContext `
+                    -AlreadySpentRounds $Context.MaxRounds
             }
             $ManifestStage = if ($Context.UntilMilestoneBound) { "completed_with_milestone_loop" } else { "completed" }
             Write-CampaignWrapperManifest `

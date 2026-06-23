@@ -139,7 +139,19 @@ function New-CampaignRunWrapperManifest {
     }
 
     if ($Context.UntilMilestoneBound) {
-        $MilestoneResumeArgs = New-MilestoneResumeDriverArgs -RunIdentityArgs $RunIdentityArgs -StepRounds $Context.MilestoneStepRounds -OptionContext $OptionContext
+        $MilestoneContext = New-CampaignMilestoneContext `
+            -ReportPath $Context.RunOutputCampaignPath `
+            -CheckpointPath $Context.RunOutputCheckpointPath `
+            -DriverExe $Context.DriverExe `
+            -UntilMilestone $Context.UntilMilestone `
+            -ResolvedMilestoneStop $Context.ResolvedMilestoneStop `
+            -MilestoneStepRounds $Context.MilestoneStepRounds `
+            -MilestoneMaxRounds $Context.MilestoneMaxRounds `
+            -RunIdentityArgs $RunIdentityArgs `
+            -OptionContext $OptionContext
+        $MilestoneResumeArgs = New-CampaignMilestoneResumeDriverArgs `
+            -MilestoneContext $MilestoneContext `
+            -StepRounds $Context.MilestoneStepRounds
         $Manifest["milestone"] = [ordered]@{
             target = $Context.UntilMilestone
             stop = $Context.ResolvedMilestoneStop

@@ -17,15 +17,15 @@ Approximate physical line count after the wrapper split:
 - `tools/campaign_artifacts.ps1`: 417 lines
 - `tools/campaign_artifact_summary.ps1`: 170 lines
 - `tools/campaign_invocation.ps1`: 318 lines
-- `tools/campaign_manifest.ps1`: 154 lines
-- `tools/campaign_run_execution.ps1`: 173 lines
-- `tools/campaign_coverage_gaps.ps1`: 435 lines
+- `tools/campaign_manifest.ps1`: 166 lines
+- `tools/campaign_run_execution.ps1`: 194 lines
+- `tools/campaign_coverage_gaps.ps1`: 434 lines
 - `tools/campaign_preflight.ps1`: 175 lines
-- `tools/campaign_continuation.ps1`: 328 lines
+- `tools/campaign_continuation.ps1`: 339 lines
 - `tools/campaign_inspect.ps1`: 369 lines
 - `tools/campaign_source.ps1`: 190 lines
 - `tools/campaign_rounds.ps1`: 131 lines
-- `tools/campaign_milestones.ps1`: 110 lines
+- `tools/campaign_milestones.ps1`: 155 lines
 - `tools/campaign_request.ps1`: 180 lines
 - `tools/campaign_build.ps1`: 71 lines
 
@@ -284,6 +284,10 @@ This helper owns:
 - milestone status extraction from a report
 - milestone resume driver argument rendering
 - the wrapper-level milestone continuation loop
+- milestone loop execution through an explicit context containing report,
+  checkpoint, driver, target, stop mode, and step/max round settings; milestone
+  helpers no longer read outer wrapper globals such as `$RunOutputCampaignPath`
+  or `$DriverExe`
 
 Coverage-gap wrapper helpers now live in:
 

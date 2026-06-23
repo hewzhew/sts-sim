@@ -179,6 +179,16 @@ function New-CampaignContinuationCommandContext {
         "--coverage-gap-milestone-target", "$($Context.UntilMilestone)"
     )
     $CoverageGapMilestoneSummaryArgs += @($Context.CoverageGapResultFilterArgs)
+    $MilestoneContext = New-CampaignMilestoneContext `
+        -ReportPath $Context.RunOutputCampaignPath `
+        -CheckpointPath $Context.RunOutputCheckpointPath `
+        -DriverExe $Context.DriverExe `
+        -UntilMilestone $Context.UntilMilestone `
+        -ResolvedMilestoneStop $Context.ResolvedMilestoneStop `
+        -MilestoneStepRounds $Context.MilestoneStepRounds `
+        -MilestoneMaxRounds $Context.MilestoneMaxRounds `
+        -RunIdentityArgs $Context.CampaignRunIdentityArgs `
+        -OptionContext $Context.CampaignSharedDriverOptionContext
 
     $PreflightContext = New-CampaignContinuationPreflightContext `
         -PlanCoverageGaps $Operation.PlanCoverageGaps `
@@ -220,6 +230,7 @@ function New-CampaignContinuationCommandContext {
         ContinuationRounds = [int] $RoundBudget.AdditionalRounds
         CoverageGapInitialSpentRounds = [int] $CoverageExecutionContext.InitialSpentRounds
         CoverageGapMilestoneSummaryArgs = @($CoverageGapMilestoneSummaryArgs)
+        MilestoneContext = $MilestoneContext
         CoverageGapManifestContext = [pscustomobject]@{
             SourceLabel = $SourceContext.Label
             SourceCampaignPath = $SourceContext.CampaignPath
@@ -240,6 +251,7 @@ function New-CampaignContinuationCommandContext {
             MilestoneMaxRounds = $Context.MilestoneMaxRounds
             CoverageGapInitialSpentRounds = [int] $CoverageExecutionContext.InitialSpentRounds
             CoverageGapMilestoneSummaryArgs = @($CoverageGapMilestoneSummaryArgs)
+            MilestoneContext = $MilestoneContext
         }
         PreflightContext = $PreflightContext
     }
@@ -262,9 +274,7 @@ function Write-CampaignContinuationDryRunCommandSet {
         -DriverExe $Context.DriverExe `
         -CoveragePlanArgs $CommandContext.CoveragePlanArgs `
         -ContinueCoverageGapArgs $CommandContext.ContinueCoverageGapArgs `
-        -RunIdentityArgs $Context.CampaignRunIdentityArgs `
-        -MilestoneStepRounds $Context.MilestoneStepRounds `
-        -OptionContext $Context.CampaignSharedDriverOptionContext `
+        -MilestoneContext $CommandContext.MilestoneContext `
         -CoverageGapMilestoneSummaryArgs $CommandContext.CoverageGapMilestoneSummaryArgs
 }
 
@@ -300,6 +310,7 @@ function Invoke-CampaignContinuationCommandSet {
                 -CoverageGapInitialSpentRounds $CommandContext.CoverageGapInitialSpentRounds `
                 -RunIdentityArgs $Context.CampaignRunIdentityArgs `
                 -OptionContext $Context.CampaignSharedDriverOptionContext `
+                -MilestoneContext $CommandContext.MilestoneContext `
                 -RecordContext $Context `
                 -ManifestContext $CommandContext.CoverageGapManifestContext `
                 -CoverageGapMilestoneSummaryArgs $CommandContext.CoverageGapMilestoneSummaryArgs

@@ -57,16 +57,18 @@ function Get-CampaignMilestoneStatus {
 function New-MilestoneResumeDriverArgs {
     param(
         [string[]] $RunIdentityArgs,
+        [string] $CampaignPath,
+        [string] $CheckpointPath,
         [int] $StepRounds,
         [object] $OptionContext
     )
 
     $Args = @($RunIdentityArgs)
     $Args += @(
-        "--resume", "$RunOutputCampaignPath",
-        "--resume-checkpoint", "$RunOutputCheckpointPath",
-        "--out", "$RunOutputCampaignPath",
-        "--checkpoint-out", "$RunOutputCheckpointPath",
+        "--resume", "$CampaignPath",
+        "--resume-checkpoint", "$CheckpointPath",
+        "--out", "$CampaignPath",
+        "--checkpoint-out", "$CheckpointPath",
         "--rounds", "$StepRounds"
     )
     return Add-CampaignSharedDriverOptions `
@@ -77,34 +79,77 @@ function New-MilestoneResumeDriverArgs {
         -OptionContext $OptionContext
 }
 
-function Invoke-CampaignUntilMilestone {
+function New-CampaignMilestoneContext {
     param(
-        [int] $AlreadySpentRounds = 0,
+        [string] $ReportPath,
+        [string] $CheckpointPath,
+        [string] $DriverExe,
+        [string] $UntilMilestone,
+        [string] $ResolvedMilestoneStop,
+        [int] $MilestoneStepRounds,
+        [int] $MilestoneMaxRounds,
         [string[]] $RunIdentityArgs,
         [object] $OptionContext
     )
 
-    $script:CampaignMilestoneExitCode = 0
+    return [pscustomobject]@{
+        ReportPath = $ReportPath
+        CheckpointPath = $CheckpointPath
+        DriverExe = $DriverExe
+        UntilMilestone = $UntilMilestone
+        ResolvedMilestoneStop = $ResolvedMilestoneStop
+        MilestoneStepRounds = $MilestoneStepRounds
+        MilestoneMaxRounds = $MilestoneMaxRounds
+        RunIdentityArgs = @($RunIdentityArgs)
+        OptionContext = $OptionContext
+    }
+}
+
+function New-CampaignMilestoneResumeDriverArgs {
+    param(
+        [object] $MilestoneContext,
+        [int] $StepRounds
+    )
+
+    return New-MilestoneResumeDriverArgs `
+        -RunIdentityArgs $MilestoneContext.RunIdentityArgs `
+        -CampaignPath $MilestoneContext.ReportPath `
+        -CheckpointPath $MilestoneContext.CheckpointPath `
+        -StepRounds $StepRounds `
+        -OptionContext $MilestoneContext.OptionContext
+}
+
+function Invoke-CampaignUntilMilestone {
+    param(
+        [object] $MilestoneContext,
+        [int] $AlreadySpentRounds = 0,
+        [string] $Label = "milestone"
+    )
+
     $SpentRounds = $AlreadySpentRounds
-    while ($SpentRounds -lt $MilestoneMaxRounds) {
-        $Status = Get-CampaignMilestoneStatus -ReportPath $RunOutputCampaignPath -Milestone $UntilMilestone
-        Write-Host "milestone-status target=$UntilMilestone stop=$ResolvedMilestoneStop reached=$($Status.Reached) hits=$($Status.HitCount) furthest=A$($Status.FurthestAct)F$($Status.FurthestFloor) report-rounds=$($Status.RoundsCompleted) spent-rounds=$SpentRounds cap=$MilestoneMaxRounds"
-        if ($Status.Reached -and $ResolvedMilestoneStop -eq "first_hit") {
-            $script:CampaignMilestoneExitCode = 0
-            return
+    while ($SpentRounds -lt $MilestoneContext.MilestoneMaxRounds) {
+        $Status = Get-CampaignMilestoneStatus `
+            -ReportPath $MilestoneContext.ReportPath `
+            -Milestone $MilestoneContext.UntilMilestone
+        Write-Host "$Label-status target=$($MilestoneContext.UntilMilestone) stop=$($MilestoneContext.ResolvedMilestoneStop) reached=$($Status.Reached) hits=$($Status.HitCount) furthest=A$($Status.FurthestAct)F$($Status.FurthestFloor) report-rounds=$($Status.RoundsCompleted) spent-rounds=$SpentRounds cap=$($MilestoneContext.MilestoneMaxRounds)"
+        if ($Status.Reached -and $MilestoneContext.ResolvedMilestoneStop -eq "first_hit") {
+            return 0
         }
-        $StepRounds = [Math]::Min($MilestoneStepRounds, $MilestoneMaxRounds - $SpentRounds)
-        $ResumeArgs = New-MilestoneResumeDriverArgs -RunIdentityArgs $RunIdentityArgs -StepRounds $StepRounds -OptionContext $OptionContext
-        Write-Host "milestone-step target=$UntilMilestone additional-rounds=$StepRounds"
-        & $DriverExe @ResumeArgs
+        $StepRounds = [Math]::Min($MilestoneContext.MilestoneStepRounds, $MilestoneContext.MilestoneMaxRounds - $SpentRounds)
+        $ResumeArgs = New-CampaignMilestoneResumeDriverArgs `
+            -MilestoneContext $MilestoneContext `
+            -StepRounds $StepRounds
+        Write-Host "$Label-step target=$($MilestoneContext.UntilMilestone) additional-rounds=$StepRounds"
+        & $MilestoneContext.DriverExe @ResumeArgs
         if ($LASTEXITCODE -ne 0) {
-            $script:CampaignMilestoneExitCode = $LASTEXITCODE
-            return
+            return $LASTEXITCODE
         }
         $SpentRounds += $StepRounds
     }
 
-    $FinalStatus = Get-CampaignMilestoneStatus -ReportPath $RunOutputCampaignPath -Milestone $UntilMilestone
-    Write-Host "milestone-status target=$UntilMilestone stop=$ResolvedMilestoneStop reached=$($FinalStatus.Reached) hits=$($FinalStatus.HitCount) furthest=A$($FinalStatus.FurthestAct)F$($FinalStatus.FurthestFloor) report-rounds=$($FinalStatus.RoundsCompleted) spent-rounds=$SpentRounds cap=$MilestoneMaxRounds"
-    $script:CampaignMilestoneExitCode = 0
+    $FinalStatus = Get-CampaignMilestoneStatus `
+        -ReportPath $MilestoneContext.ReportPath `
+        -Milestone $MilestoneContext.UntilMilestone
+    Write-Host "$Label-status target=$($MilestoneContext.UntilMilestone) stop=$($MilestoneContext.ResolvedMilestoneStop) reached=$($FinalStatus.Reached) hits=$($FinalStatus.HitCount) furthest=A$($FinalStatus.FurthestAct)F$($FinalStatus.FurthestFloor) report-rounds=$($FinalStatus.RoundsCompleted) spent-rounds=$SpentRounds cap=$($MilestoneContext.MilestoneMaxRounds)"
+    return 0
 }
