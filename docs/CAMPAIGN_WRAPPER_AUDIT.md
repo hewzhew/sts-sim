@@ -13,8 +13,9 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 432 lines
-- `tools/campaign_artifacts.ps1`: 631 lines
+- `tools/campaign.ps1`: 433 lines
+- `tools/campaign_artifacts.ps1`: 460 lines
+- `tools/campaign_artifact_summary.ps1`: 170 lines
 - `tools/campaign_invocation.ps1`: 653 lines
 - `tools/campaign_coverage_gaps.ps1`: 435 lines
 - `tools/campaign_preflight.ps1`: 200 lines
@@ -166,8 +167,19 @@ This helper owns:
 - run latest and scratch latest pointer files
 - run source artifact selection
 - run/scratch output artifact selection from typed request output intent
-- artifact size and shape summaries
 - latest campaign mode/config reads
+
+Artifact summary helpers now live in:
+
+```text
+tools/campaign_artifact_summary.ps1
+```
+
+This helper owns:
+
+- artifact size rendering
+- artifact JSON shape summaries
+- `-InspectArtifacts` contract output formatting
 
 Invocation helpers now live in:
 
