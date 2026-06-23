@@ -31,7 +31,25 @@ pub fn neow_followup_selection_v1(
         choice,
         DeckMutationCompilerModeV1::ExecuteOne,
     );
-    let selected = decision.selected_plan?;
+    let selected = decision.selected_plan.or_else(|| {
+        if matches!(
+            choice.reason,
+            RunPendingChoiceReason::Transform
+                | RunPendingChoiceReason::TransformNonBottled
+                | RunPendingChoiceReason::TransformUpgraded
+        ) {
+            compile_deck_mutation_decision_v1(
+                run_state,
+                choice,
+                DeckMutationCompilerModeV1::BranchTopK { max_active: 1 },
+            )
+            .branch_active_plans
+            .into_iter()
+            .next()
+        } else {
+            None
+        }
+    })?;
     if selected.step.deck_indices.len() != choice.min_choices
         || selected.step.cards.len() != choice.min_choices
     {

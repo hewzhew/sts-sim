@@ -883,7 +883,7 @@ fn campaign_route_candidate_pool_journal_event_v1(
             candidate_count: pool.candidate_count,
             selected_index: pool.selected_index,
             candidate_pool_provenance: pool.candidate_pool_provenance.clone(),
-            map_decision_packet: pool.map_decision_packet.clone(),
+            map_decision_packet: None,
             route_candidates: route_candidate_pool_typed_candidates_v1(pool),
             candidates: route_candidate_pool_candidates_v1(pool),
         },
@@ -1378,7 +1378,7 @@ mod tests {
     use crate::state::core::EngineState;
 
     #[test]
-    fn route_candidate_pool_journal_preserves_full_map_packet() {
+    fn route_candidate_pool_journal_preserves_typed_route_candidates_without_map_packet() {
         let mut run = crate::state::RunState::new(521, 0, false, "Ironclad");
         run.event_state = None;
         let trace = plan_route_decision_v1(
@@ -1399,7 +1399,7 @@ mod tests {
             candidate_count: packet.candidates.len(),
             selected_index: packet.selected_index,
             candidate_pool_provenance: Some(packet.candidate_pool.clone()),
-            map_decision_packet: Some(packet),
+            map_decision_packet: Some(packet.clone()),
             candidates: Vec::new(),
         };
         let parent = BranchCampaignBranchV1 {
@@ -1428,9 +1428,11 @@ mod tests {
                 route_candidates,
                 ..
             } => {
-                let map_decision_packet =
-                    map_decision_packet.expect("route candidate pool should preserve map packet");
-                assert_eq!(map_decision_packet.candidates.len(), route_candidates.len());
+                assert!(
+                    map_decision_packet.is_none(),
+                    "journal should avoid embedding the full route trace packet in every route pool"
+                );
+                assert_eq!(packet.candidates.len(), route_candidates.len());
                 assert!(!route_candidates.is_empty());
             }
             _ => panic!("expected route candidate pool journal event"),

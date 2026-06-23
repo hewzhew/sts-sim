@@ -16,7 +16,7 @@ use crate::eval::run_control::{
 };
 use crate::state::core::EngineState;
 use crate::state::rewards::{RewardCard, RewardState};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 mod active_lineage;
@@ -62,14 +62,15 @@ use intervention::{
 use lineage::campaign_branch_boss_relic_lineage_key_v1;
 pub use model::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
-    BranchCampaignCheckpointSessionV1, BranchCampaignCheckpointV1,
-    BranchCampaignContinuationOriginV1, BranchCampaignContinuationTargetLaneV1,
-    BranchCampaignDecisionObservationV1, BranchCampaignDiscardedBranchV1, BranchCampaignReportV1,
-    BranchCampaignRoundSummaryV1, BranchCampaignRouteContinuationOriginV1,
-    BranchCampaignRouteEvidenceExampleV1, BranchCampaignRouteEvidenceSummaryV1,
-    BranchCampaignRouteFirstEliteContinuationOriginV1, BranchCampaignRoutePathContinuationOriginV1,
-    BranchCampaignRunPreludeV1, BranchCampaignRunResultV1, BranchCampaignSelectionV1,
-    BranchCampaignStateStoreSummaryV1, BranchCampaignStrategyRequestV1,
+    BranchCampaignCheckpointCombatTrajectoryRecordV1, BranchCampaignCheckpointSessionV1,
+    BranchCampaignCheckpointV1, BranchCampaignContinuationOriginV1,
+    BranchCampaignContinuationTargetLaneV1, BranchCampaignDecisionObservationV1,
+    BranchCampaignDiscardedBranchV1, BranchCampaignReportV1, BranchCampaignRoundSummaryV1,
+    BranchCampaignRouteContinuationOriginV1, BranchCampaignRouteEvidenceExampleV1,
+    BranchCampaignRouteEvidenceSummaryV1, BranchCampaignRouteFirstEliteContinuationOriginV1,
+    BranchCampaignRoutePathContinuationOriginV1, BranchCampaignRunPreludeV1,
+    BranchCampaignRunResultV1, BranchCampaignSelectionV1, BranchCampaignStateStoreSummaryV1,
+    BranchCampaignStrategyRequestV1,
 };
 use parent_batch::run_campaign_parent_batch_v1;
 #[cfg(test)]
@@ -870,6 +871,8 @@ where
         &state.stuck,
     );
     let checkpoint = campaign_checkpoint_from_state_v1(config, &state);
+    let mut journal = state.journal;
+    journal.compact_for_campaign_artifact_v1();
     let report = BranchCampaignReportV1 {
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
         schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
@@ -892,7 +895,7 @@ where
         combat_retry_ledger: state.combat_retry_ledger.to_report_v1(),
         strategic_signals,
         state_store: state.state_store.summary(),
-        journal: state.journal,
+        journal,
         rounds: state.rounds,
     };
     Ok(BranchCampaignRunResultV1 { report, checkpoint })
@@ -966,9 +969,8 @@ fn campaign_state_from_report_and_checkpoint_v1(
     for entry in &checkpoint.sessions {
         state.state_store.insert_session(
             entry.commands.clone(),
-            entry
-                .session
-                .clone()
+            checkpoint
+                .hydrated_session_checkpoint_v1(entry)?
                 .into_session()
                 .map_err(|err| format!("failed to restore campaign checkpoint session: {err}"))?,
         );
@@ -999,6 +1001,9 @@ fn campaign_checkpoint_from_state_v1(
     state: &BranchCampaignRunStateV1,
 ) -> BranchCampaignCheckpointV1 {
     let mut sessions = Vec::new();
+    let mut combat_automation_trajectories =
+        Vec::<BranchCampaignCheckpointCombatTrajectoryRecordV1>::new();
+    let mut combat_automation_trajectory_indexes = BTreeMap::<String, usize>::new();
     let mut exported_commands = BTreeSet::new();
     for branch in state
         .active
@@ -1011,9 +1016,15 @@ fn campaign_checkpoint_from_state_v1(
             continue;
         }
         if let Some(session) = state.state_store.get_session(&branch.commands) {
+            let session = campaign_checkpoint_session_with_trajectory_ref_v1(
+                &branch.commands,
+                session,
+                &mut combat_automation_trajectories,
+                &mut combat_automation_trajectory_indexes,
+            );
             sessions.push(BranchCampaignCheckpointSessionV1 {
                 commands: branch.commands.clone(),
-                session: RunControlSessionCheckpointV1::from_session(session),
+                session,
             });
         }
     }
@@ -1022,9 +1033,15 @@ fn campaign_checkpoint_from_state_v1(
             continue;
         }
         if let Some(session) = state.state_store.get_session(commands) {
+            let session = campaign_checkpoint_session_with_trajectory_ref_v1(
+                commands,
+                session,
+                &mut combat_automation_trajectories,
+                &mut combat_automation_trajectory_indexes,
+            );
             sessions.push(BranchCampaignCheckpointSessionV1 {
                 commands: commands.clone(),
-                session: RunControlSessionCheckpointV1::from_session(session),
+                session,
             });
         }
     }
@@ -1041,8 +1058,44 @@ fn campaign_checkpoint_from_state_v1(
             .iter()
             .cloned()
             .collect(),
+        combat_automation_trajectories,
         sessions,
     }
+}
+
+fn campaign_checkpoint_session_with_trajectory_ref_v1(
+    commands: &[String],
+    session: &RunControlSession,
+    combat_automation_trajectories: &mut Vec<BranchCampaignCheckpointCombatTrajectoryRecordV1>,
+    combat_automation_trajectory_indexes: &mut BTreeMap<String, usize>,
+) -> RunControlSessionCheckpointV1 {
+    let mut checkpoint = RunControlSessionCheckpointV1::from_session(session);
+    let Some(trajectory) = checkpoint.take_last_combat_automation_trajectory_record() else {
+        return checkpoint;
+    };
+    let key = campaign_checkpoint_combat_trajectory_key_v1(&trajectory);
+    let index = if let Some(index) = combat_automation_trajectory_indexes.get(&key).copied() {
+        index
+    } else {
+        let index = combat_automation_trajectories.len();
+        combat_automation_trajectory_indexes.insert(key, index);
+        combat_automation_trajectories.push(BranchCampaignCheckpointCombatTrajectoryRecordV1 {
+            trajectory_id: format!("combat_trajectory:{index}"),
+            commands: Vec::new(),
+            trajectory,
+        });
+        index
+    };
+    if let Some(record) = combat_automation_trajectories.get_mut(index) {
+        record.commands.push(commands.to_vec());
+    }
+    checkpoint
+}
+
+fn campaign_checkpoint_combat_trajectory_key_v1(
+    trajectory: &crate::eval::run_control::CombatAutomationTrajectoryRecordV1,
+) -> String {
+    serde_json::to_string(trajectory).unwrap_or_else(|_| format!("{trajectory:?}"))
 }
 
 fn branch_campaign_run_prelude_v1(config: &BranchCampaignConfigV1) -> BranchCampaignRunPreludeV1 {

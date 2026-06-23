@@ -47,6 +47,29 @@ impl CampaignJournalV1 {
             self.schema_version = CAMPAIGN_JOURNAL_SCHEMA_VERSION;
         }
     }
+
+    pub fn compact_for_campaign_artifact_v1(&mut self) {
+        for event in &mut self.events {
+            let CampaignJournalEventPayloadV1::RouteCandidatePool {
+                map_decision_packet,
+                route_candidates,
+                ..
+            } = &mut event.payload
+            else {
+                continue;
+            };
+            let Some(packet) = map_decision_packet.take() else {
+                continue;
+            };
+            if route_candidates.is_empty() {
+                *route_candidates = packet
+                    .candidates
+                    .iter()
+                    .map(CampaignJournalRouteCandidateV1::from_route_move_candidate_v1)
+                    .collect();
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -951,5 +974,62 @@ mod tests {
             candidate.admission.normalized_reason_code(),
             CampaignJournalCandidateAdmissionReasonCodeV1::Selected
         );
+    }
+
+    #[test]
+    fn journal_compaction_moves_route_map_packets_to_typed_candidates() {
+        let mut run = crate::state::RunState::new(521, 0, false, "Ironclad");
+        run.event_state = None;
+        let trace = crate::ai::route_planner_v1::plan_route_decision_v1(
+            &run,
+            &crate::state::core::EngineState::MapNavigation,
+            crate::ai::route_planner_v1::RoutePlannerConfigV1::default(),
+        );
+        let packet =
+            crate::ai::route_planner_v1::MapDecisionPacketV1::from_route_decision_trace_v1(&trace);
+        assert!(!packet.candidates.is_empty());
+        let expected_candidate_count = packet.candidates.len();
+        let mut journal = CampaignJournalV1 {
+            schema_name: CAMPAIGN_JOURNAL_SCHEMA_NAME.to_string(),
+            schema_version: CAMPAIGN_JOURNAL_SCHEMA_VERSION,
+            events: vec![CampaignJournalEventV1 {
+                event_id: "route-pool:candidate_set".to_string(),
+                round: 1,
+                branch_id: "root".to_string(),
+                branch_index: 0,
+                branch_frontier_title: "Map".to_string(),
+                act: 1,
+                floor: 1,
+                branch_choices: Vec::new(),
+                branch_commands: Vec::new(),
+                combat_budget_retry_used: false,
+                payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                    decision_id: "route-pool".to_string(),
+                    boundary_title: "Map".to_string(),
+                    frontier_key: "map".to_string(),
+                    depth: 0,
+                    candidate_count: expected_candidate_count,
+                    selected_index: Some(0),
+                    candidate_pool_provenance: None,
+                    map_decision_packet: Some(packet),
+                    route_candidates: Vec::new(),
+                    candidates: Vec::new(),
+                },
+            }],
+        };
+
+        journal.compact_for_campaign_artifact_v1();
+
+        match &journal.events[0].payload {
+            CampaignJournalEventPayloadV1::RouteCandidatePool {
+                map_decision_packet,
+                route_candidates,
+                ..
+            } => {
+                assert!(map_decision_packet.is_none());
+                assert_eq!(route_candidates.len(), expected_candidate_count);
+            }
+            _ => panic!("expected route candidate pool"),
+        }
     }
 }

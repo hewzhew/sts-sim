@@ -155,6 +155,7 @@ mod tests {
             rounds_completed: 0,
             nodes: Vec::new(),
             decision_parent_anchor_commands: Vec::new(),
+            combat_automation_trajectories: Vec::new(),
             sessions: Vec::new(),
         };
 

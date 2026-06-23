@@ -696,3 +696,73 @@ fn campaign_checkpoint_writes_v2_state_graph_nodes() {
     assert!(session_commands.contains(&child_commands));
     assert!(session_commands.contains(&parent_commands));
 }
+
+#[test]
+fn campaign_checkpoint_deduplicates_last_combat_automation_trajectories() {
+    let config = BranchCampaignConfigV1::default();
+    let parent_commands = vec!["rp 0".to_string()];
+    let child_commands = vec!["rp 0".to_string(), "go 2".to_string()];
+    let mut parent = test_campaign_branch("parent", 6, 80);
+    parent.commands = parent_commands.clone();
+    let mut child = test_campaign_branch("child", 7, 80);
+    child.commands = child_commands.clone();
+
+    let mut state_store = super::state_graph::BranchStateStoreV1::new();
+    state_store.insert_session(
+        parent_commands.clone(),
+        super::test_run_control_session_with_last_combat_trajectory("search_combat"),
+    );
+    state_store.insert_child_session(
+        &parent_commands,
+        child_commands.clone(),
+        super::test_run_control_session_with_last_combat_trajectory("search_combat"),
+    );
+
+    let state = BranchCampaignRunStateV1 {
+        rounds_completed: 1,
+        active: vec![parent, child],
+        frozen: Vec::new(),
+        victories: Vec::new(),
+        dead: Vec::new(),
+        abandoned: Vec::new(),
+        stuck: Vec::new(),
+        discarded_count: 0,
+        discarded_examples: Vec::new(),
+        discarded_branches: Vec::new(),
+        strategy_requests: Vec::new(),
+        route_evidence: BranchCampaignRouteEvidenceSummaryV1::default(),
+        combat_retry_ledger: BranchCampaignCombatRetryLedgerStateV1::default(),
+        rounds: Vec::new(),
+        journal: Default::default(),
+        state_store,
+        decision_parent_anchor_commands: BTreeSet::new(),
+        recovered_checkpoint_failure_commands: BTreeSet::new(),
+    };
+
+    let checkpoint = campaign_checkpoint_from_state_v1(&config, &state);
+
+    assert_eq!(checkpoint.combat_automation_trajectories.len(), 1);
+    assert_eq!(
+        checkpoint.combat_automation_trajectories[0].commands.len(),
+        2
+    );
+    for entry in &checkpoint.sessions {
+        let session_json =
+            serde_json::to_value(&entry.session).expect("session checkpoint should serialize");
+        assert!(
+            session_json
+                .get("last_combat_automation_trajectory")
+                .is_none(),
+            "campaign checkpoint sessions should keep replay state slim"
+        );
+        let restored = checkpoint
+            .hydrated_session_checkpoint_v1(entry)
+            .expect("trajectory reference should hydrate")
+            .into_session()
+            .expect("hydrated checkpoint should restore");
+        assert!(
+            restored.last_combat_automation_trajectory().is_some(),
+            "checkpoint-level trajectory records should preserve diagnostic inspect data"
+        );
+    }
+}

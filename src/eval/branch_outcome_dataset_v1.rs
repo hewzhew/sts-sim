@@ -645,9 +645,8 @@ fn restored_checkpoint_sessions_by_commands(
 ) -> Result<BTreeMap<Vec<String>, RunControlSession>, String> {
     let mut sessions_by_commands = BTreeMap::new();
     for entry in &checkpoint.sessions {
-        let session = entry
-            .session
-            .clone()
+        let session = checkpoint
+            .hydrated_session_checkpoint_v1(entry)?
             .into_session()
             .map_err(|err| format!("failed to restore checkpoint session: {err}"))?;
         sessions_by_commands.insert(entry.commands.clone(), session);

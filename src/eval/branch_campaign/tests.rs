@@ -11,7 +11,8 @@ use crate::eval::branch_experiment_retention::{
 };
 use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
 use crate::eval::run_control::{
-    RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
+    CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1, RunControlConfig,
+    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
     RunControlSessionCheckpointV1,
 };
 use crate::state::core::EngineState;
@@ -687,6 +688,35 @@ fn test_combat_checkpoint_session(
         commands: branch.commands.clone(),
         session: RunControlSessionCheckpointV1::from_session(&session),
     }
+}
+
+fn test_run_control_session_with_last_combat_trajectory(source: &str) -> RunControlSession {
+    let checkpoint = RunControlSessionCheckpointV1::from_session(&RunControlSession::new(
+        RunControlConfig::default(),
+    ));
+    let mut value = serde_json::to_value(checkpoint).expect("checkpoint should serialize");
+    value
+        .as_object_mut()
+        .expect("checkpoint should serialize as object")
+        .insert(
+            "last_combat_automation_trajectory".to_string(),
+            serde_json::to_value(CombatAutomationTrajectoryRecordV1::new(
+                source,
+                vec![CombatAutomationActionV1 {
+                    step_index: 0,
+                    action_key: "combat/end_turn".to_string(),
+                    input: crate::state::core::ClientInput::EndTurn,
+                    drawn_cards: Vec::new(),
+                    combat_after: None,
+                }],
+            ))
+            .expect("trajectory should serialize"),
+        );
+    let checkpoint: RunControlSessionCheckpointV1 =
+        serde_json::from_value(value).expect("checkpoint with trajectory should deserialize");
+    checkpoint
+        .into_session()
+        .expect("checkpoint with trajectory should restore")
 }
 
 fn test_report_branch(

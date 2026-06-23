@@ -47,10 +47,9 @@ pub(super) fn run_checkpoint_inspection(input: &InspectCommandInput) -> Result<(
         .transpose()?;
     let probe_requirement = inspect_probe_requirement_v1(&input.modes);
     let mut matches = Vec::new();
-    for entry in checkpoint.sessions {
-        let session = entry
-            .session
-            .clone()
+    for entry in &checkpoint.sessions {
+        let session = checkpoint
+            .hydrated_session_checkpoint_v1(entry)?
             .into_session()
             .map_err(|err| format!("failed to restore checkpoint session: {err}"))?;
         if !checkpoint_session_matches_filters(&input.filters, &session) {
@@ -59,7 +58,7 @@ pub(super) fn run_checkpoint_inspection(input: &InspectCommandInput) -> Result<(
         if !checkpoint_session_matches_probe_requirement(probe_requirement, &session) {
             continue;
         }
-        matches.push((entry.commands, session));
+        matches.push((entry.commands.clone(), session));
     }
     if matches.is_empty() {
         let probe_requirement = probe_requirement

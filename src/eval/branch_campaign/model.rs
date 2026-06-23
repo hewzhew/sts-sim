@@ -13,7 +13,7 @@ use crate::eval::campaign_journal::{
 use crate::eval::combat_lab_probe_v1::CombatLabProbePacketV1;
 use crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1;
 use crate::eval::reward_boundary_packet_v1::RewardBoundaryPacketV1;
-use crate::eval::run_control::RunControlSessionCheckpointV1;
+use crate::eval::run_control::{CombatAutomationTrajectoryRecordV1, RunControlSessionCheckpointV1};
 use serde::{Deserialize, Serialize};
 
 use super::performance::BranchCampaignCombatPerformanceSummaryV1;
@@ -496,6 +496,14 @@ pub struct BranchCampaignCheckpointSessionV1 {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct BranchCampaignCheckpointCombatTrajectoryRecordV1 {
+    pub trajectory_id: String,
+    pub commands: Vec<Vec<String>>,
+    pub trajectory: CombatAutomationTrajectoryRecordV1,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BranchCampaignCheckpointV1 {
     pub schema_name: String,
     pub schema_version: u32,
@@ -509,7 +517,31 @@ pub struct BranchCampaignCheckpointV1 {
     pub nodes: Vec<BranchCampaignCheckpointNodeV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decision_parent_anchor_commands: Vec<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub combat_automation_trajectories: Vec<BranchCampaignCheckpointCombatTrajectoryRecordV1>,
     pub sessions: Vec<BranchCampaignCheckpointSessionV1>,
+}
+
+impl BranchCampaignCheckpointV1 {
+    pub fn hydrated_session_checkpoint_v1(
+        &self,
+        entry: &BranchCampaignCheckpointSessionV1,
+    ) -> Result<RunControlSessionCheckpointV1, String> {
+        let mut session = entry.session.clone();
+        if session.last_combat_automation_trajectory_record().is_some() {
+            return Ok(session);
+        }
+        let Some(record) = self.combat_automation_trajectories.iter().find(|record| {
+            record
+                .commands
+                .iter()
+                .any(|commands| commands == &entry.commands)
+        }) else {
+            return Ok(session);
+        };
+        session.restore_last_combat_automation_trajectory_record(record.trajectory.clone());
+        Ok(session)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -275,6 +275,25 @@ impl RunControlSessionCheckpointV1 {
         }
     }
 
+    pub fn last_combat_automation_trajectory_record(
+        &self,
+    ) -> Option<&CombatAutomationTrajectoryRecordV1> {
+        self.last_combat_automation_trajectory.as_ref()
+    }
+
+    pub fn take_last_combat_automation_trajectory_record(
+        &mut self,
+    ) -> Option<CombatAutomationTrajectoryRecordV1> {
+        self.last_combat_automation_trajectory.take()
+    }
+
+    pub fn restore_last_combat_automation_trajectory_record(
+        &mut self,
+        record: CombatAutomationTrajectoryRecordV1,
+    ) {
+        self.last_combat_automation_trajectory = Some(record);
+    }
+
     pub fn into_session(self) -> Result<RunControlSession, String> {
         Ok(RunControlSession {
             engine_state: self.engine_state,

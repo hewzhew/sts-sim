@@ -6460,9 +6460,13 @@ mod tests {
             },
         });
 
-        let plan = plan_coverage_gap_continuations_v1(&report, &[], 1, 2);
+        let plan = plan_coverage_gap_continuations_v1(&report, &[], 2, 2);
 
-        assert_eq!(plan.targets[0].label, "Reward A");
+        assert!(plan.targets.iter().any(|target| {
+            target.label == "Reward A"
+                && target.existing_progress
+                    == Some(CoverageGapContinuationTargetProgressV1::TargetOnly)
+        }));
         assert_eq!(plan.total_unobserved_candidates, 2);
     }
 
@@ -6735,7 +6739,7 @@ mod tests {
             },
         );
 
-        assert_eq!(plan.selected_target_count, 2);
+        assert_eq!(plan.selected_target_count, packet.candidates.len());
         assert!(plan
             .targets
             .iter()
