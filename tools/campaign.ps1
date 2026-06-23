@@ -268,7 +268,6 @@ $DriverExe = $BuildContext.DriverExe
 $BuildArgs = @($BuildContext.BuildArgs)
 
 $CampaignRunIdentityArgs = New-CampaignRunDriverIdentityArgs -Mode $Mode -Seed $Seed -Ascension $Ascension -Class $Class
-$DriverArgs = @($CampaignRunIdentityArgs)
 
 $RunOutputContext = Resolve-CampaignOutputArtifactContext `
     -Request $CampaignRequest `
@@ -281,17 +280,6 @@ $RunOutputContext = Resolve-CampaignOutputArtifactContext `
     -ContinueTargets ([bool] $CampaignRequest.ContinueTargets) `
     -ContinueCampaign ([bool] $CampaignRequest.ContinueCampaign) `
     -Seed $Seed
-$WritesCampaignOutput = $RunOutputContext.WritesCampaignOutput
-$RunOutputArtifact = $RunOutputContext.Artifact
-$ScratchLabel = $RunOutputContext.ScratchLabel
-$RunOutputCampaignPath = $RunOutputContext.CampaignPath
-$RunOutputCheckpointPath = $RunOutputContext.CheckpointPath
-$RunCommandPath = $RunOutputContext.CommandPath
-$RunManifestPath = $RunOutputContext.ManifestPath
-$RunLogPath = $RunOutputContext.LogPath
-$RunDecisionOutcomePath = $RunOutputContext.DecisionOutcomePath
-$RunDecisionOutcomeBeforePath = $RunOutputContext.DecisionOutcomeBeforePath
-$RunDecisionOutcomeAfterPath = $RunOutputContext.DecisionOutcomeAfterPath
 Ensure-CampaignOutputArtifactDirectory -OutputContext $RunOutputContext -DryRun ([bool] $DryRun)
 
 $PlanDecisionOutcomePath = ""
@@ -370,43 +358,13 @@ $RunRoundContext = Resolve-CampaignRunRoundContext `
     -PlanTargets ([bool] $CampaignRequest.PlanTargets) `
     -PlanCoverageGaps ([bool] $CampaignRequest.PlanCoverageGaps) `
     -Inspect ([bool] $CampaignRequest.Inspect)
-$DriverRoundBudgetArgs = @($RunRoundContext.DriverRoundBudgetArgs)
-$RoundBudgetSource = $RunRoundContext.RoundBudgetSource
-$RoundBudgetAdditionalRounds = $RunRoundContext.RoundBudgetAdditionalRounds
-$MaxRounds = $RunRoundContext.MaxRounds
-$ResolvedMilestoneStop = $RunRoundContext.ResolvedMilestoneStop
-$ResumeCampaignPath = $RunRoundContext.ResumeCampaignPath
-$ResumeCheckpointPath = $RunRoundContext.ResumeCheckpointPath
-$ResumeRoundsCompleted = $RunRoundContext.ResumeRoundsCompleted
-$TargetRounds = $RunRoundContext.TargetRounds
-$DriverArgs += @($RunRoundContext.ResumeDriverArgs)
-
-if ($WritesCampaignOutput) {
-    $DriverArgs += @("--out", "$RunOutputCampaignPath", "--checkpoint-out", "$RunOutputCheckpointPath")
-}
-
-if ($DriverRoundBudgetArgs.Count -gt 0) {
-    $DriverArgs += $DriverRoundBudgetArgs
-}
-
-$CombatSegmentMode = "custom"
-if (-not (Test-ExtraCombatOptionKey -Tokens $ExtraArgs -Keys @("segment", "segment_mode", "partial", "partial_mode"))) {
-    if ($BossSegments) {
-        $CombatSegmentMode = "turn"
-    } else {
-        $CombatSegmentMode = "non_boss_turn"
-    }
-}
-
-if ($ExportLearningDataset -and -not $CampaignRequest.Inspect) {
-    $DriverArgs += @("--export-learning-dataset", "$ExportLearningDataset")
-}
-$DriverArgs = Add-CampaignSharedDriverOptions `
-    -Arguments $DriverArgs `
-    -IncludeActiveLineageDiversity $true `
-    -IncludeBossRelicAxes $true `
-    -IncludeAutoCaptureCombat $true `
-    -OptionContext $CampaignSharedDriverOptionContext
+$RunDriverArgsContext = New-CampaignRunDriverArgsContext `
+    -RunIdentityArgs $CampaignRunIdentityArgs `
+    -Request $CampaignRequest `
+    -RunOutputContext $RunOutputContext `
+    -RunRoundContext $RunRoundContext `
+    -OptionContext $CampaignSharedDriverOptionContext `
+    -ExportLearningDataset $ExportLearningDataset
 
 $NeedsBuild = $Build -or (Test-DriverNeedsBuild $DriverExe)
 
@@ -444,8 +402,8 @@ if ($CampaignRequest.IsContinuationFamily) {
         -UntilMilestone $UntilMilestone `
         -MilestoneStepRounds $MilestoneStepRounds `
         -MilestoneMaxRounds $MilestoneMaxRounds `
-        -ResolvedMilestoneStop $ResolvedMilestoneStop `
-        -MaxRounds $MaxRounds `
+        -ResolvedMilestoneStop $RunRoundContext.ResolvedMilestoneStop `
+        -MaxRounds $RunRoundContext.MaxRounds `
         -CoverageGapLimit $CoverageGapLimit `
         -CoverageGapCandidatesPerDecision $CoverageGapCandidatesPerDecision `
         -DryRun ([bool] $DryRun) `
@@ -519,16 +477,16 @@ $RunCommandContext = New-CampaignRunCommandContext `
     -RunOutputContext $RunOutputContext `
     -BoundParameterContext $BoundParameterContext `
     -RunRoundContext $RunRoundContext `
-    -DriverArgs $DriverArgs `
+    -DriverArgs $RunDriverArgsContext.DriverArgs `
     -NeedsBuild ([bool] $NeedsBuild) `
     -DryRun ([bool] $DryRun) `
     -Log ([bool] $Log) `
     -BossRelicAxes ([bool] $BossRelicAxes) `
-    -CombatSegmentMode $CombatSegmentMode `
+    -CombatSegmentMode $RunDriverArgsContext.CombatSegmentMode `
     -UntilMilestone $UntilMilestone `
     -MilestoneStepRounds $MilestoneStepRounds `
     -MilestoneMaxRounds $MilestoneMaxRounds `
-    -ResolvedMilestoneStop $ResolvedMilestoneStop
+    -ResolvedMilestoneStop $RunRoundContext.ResolvedMilestoneStop
 Write-CampaignRunPreflight -Context $RunCommandContext
 $DriverExitCode = Invoke-CampaignRunCommand -Context $RunCommandContext -RunIdentityArgs $CampaignRunIdentityArgs -OptionContext $CampaignSharedDriverOptionContext
 exit $DriverExitCode

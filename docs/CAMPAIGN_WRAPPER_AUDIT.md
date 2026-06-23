@@ -13,9 +13,9 @@ many concepts.
 
 Approximate physical line count after the wrapper split:
 
-- `tools/campaign.ps1`: 534 lines
+- `tools/campaign.ps1`: 492 lines
 - `tools/campaign_artifacts.ps1`: 642 lines
-- `tools/campaign_invocation.ps1`: 605 lines
+- `tools/campaign_invocation.ps1`: 653 lines
 - `tools/campaign_coverage_gaps.ps1`: 428 lines
 - `tools/campaign_preflight.ps1`: 200 lines
 - `tools/campaign_continuation.ps1`: 450 lines
@@ -181,6 +181,8 @@ This helper owns:
 - wrapper bound-parameter context extraction
 - command-line rendering
 - run driver identity argument rendering
+- normal run driver argument context construction, including resume/output,
+  round budget, learning export, shared options, and combat segment labeling
 - shared campaign driver option context extraction
 - shared campaign driver option rendering
 - shared driver option context is passed explicitly to campaign, targeted,
