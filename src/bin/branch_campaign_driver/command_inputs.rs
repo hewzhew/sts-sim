@@ -202,6 +202,7 @@ pub(super) struct DatasetCommandInput {
     pub(super) coverage_gap_limit: usize,
     pub(super) coverage_gap_candidates_per_decision: usize,
     pub(super) coverage_gap_filter: CoverageGapContinuationFilterV1,
+    pub(super) coverage_gap_budget_intent: CoverageGapBudgetIntentV1,
 }
 
 impl DatasetCommandInput {
@@ -220,6 +221,10 @@ impl DatasetCommandInput {
             coverage_gap_limit: args.coverage_gap_limit,
             coverage_gap_candidates_per_decision: args.coverage_gap_candidates_per_decision,
             coverage_gap_filter: coverage_gap_filter_from_args(args),
+            coverage_gap_budget_intent: CoverageGapBudgetIntentV1::parse(
+                &args.coverage_gap_budget_intent,
+            )
+            .expect("coverage-gap budget intent is validated by CLI parsing"),
         }
     }
 }
@@ -594,6 +599,8 @@ mod tests {
             "event_boundary_packet",
             "--coverage-gap-progress",
             "missing",
+            "--coverage-gap-budget-intent",
+            "frontier-expansion",
         ])
         .expect("coverage gap filter should parse");
 
@@ -615,6 +622,10 @@ mod tests {
         assert_eq!(
             input.coverage_gap_filter.progress.as_deref(),
             Some("missing")
+        );
+        assert_eq!(
+            input.coverage_gap_budget_intent,
+            CoverageGapBudgetIntentV1::FrontierExpansion
         );
     }
 

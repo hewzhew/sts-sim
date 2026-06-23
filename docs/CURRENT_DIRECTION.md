@@ -44,10 +44,13 @@ Coverage-gap targets and continuation branches should preserve typed route
 origin fields as well, so replay and learning tools do not need to parse route
 display strings.
 
-Coverage-gap continuation defaults to filling missing historical candidate
-coverage before extending branches that only executed the target action. Use an
-explicit progress filter such as `--coverage-gap-progress target_only` when the
-goal is frontier expansion for already-started coverage targets.
+Coverage-gap continuation uses the declared intent to choose targets:
+`gap_closure` fills missing historical candidate coverage before extending
+branches that only executed the target action, while `frontier_expansion`
+continues already-started coverage targets before spending leftover budget on
+new missing targets. Use an explicit progress filter such as
+`--coverage-gap-progress target_only` only when a run needs a narrower slice
+than the intent already describes.
 
 ## Closed Foundation
 

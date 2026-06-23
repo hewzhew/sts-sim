@@ -646,7 +646,7 @@ pub(super) struct Args {
     #[arg(
         long = "coverage-gap-budget-intent",
         default_value = "gap_closure",
-        help = "Interpret coverage-gap continuation rounds as gap_closure or frontier_expansion in the result report"
+        help = "Select and interpret coverage-gap continuation targets as gap_closure or frontier_expansion"
     )]
     pub(super) coverage_gap_budget_intent: String,
 
@@ -1398,6 +1398,13 @@ struct DatasetPathArgs {
         help = "Only plan coverage-gap targets with this existing progress, e.g. missing, target_only, extended"
     )]
     coverage_gap_progress: Option<String>,
+
+    #[arg(
+        long = "coverage-gap-budget-intent",
+        default_value = "gap_closure",
+        help = "Select and interpret coverage-gap continuation targets as gap_closure or frontier_expansion"
+    )]
+    coverage_gap_budget_intent: String,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -1497,7 +1504,7 @@ struct ContinuationArgs {
     #[arg(
         long = "coverage-gap-budget-intent",
         default_value = "gap_closure",
-        help = "Interpret coverage-gap continuation rounds as gap_closure or frontier_expansion in the result report"
+        help = "Select and interpret coverage-gap continuation targets as gap_closure or frontier_expansion"
     )]
     coverage_gap_budget_intent: String,
 
@@ -1823,6 +1830,7 @@ impl DatasetPathArgs {
         args.coverage_gap_lane = self.coverage_gap_lane;
         args.coverage_gap_origin_source = self.coverage_gap_origin_source;
         args.coverage_gap_progress = self.coverage_gap_progress;
+        args.coverage_gap_budget_intent = self.coverage_gap_budget_intent;
     }
 }
 

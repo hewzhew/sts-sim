@@ -316,6 +316,14 @@ pub struct CoverageGapContinuationProgressSummaryV1 {
     pub branch_count: usize,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoverageGapContinuationSelectionIntentV1 {
+    #[default]
+    GapClosure,
+    FrontierExpansion,
+}
+
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CoverageGapContinuationTargetProgressV1 {
@@ -1164,6 +1172,24 @@ pub fn plan_coverage_gap_continuations_with_filter_v1(
     max_candidates_per_decision: usize,
     filter: &CoverageGapContinuationFilterV1,
 ) -> CoverageGapContinuationPlanV1 {
+    plan_coverage_gap_continuations_with_filter_and_intent_v1(
+        report,
+        records,
+        max_targets,
+        max_candidates_per_decision,
+        filter,
+        CoverageGapContinuationSelectionIntentV1::GapClosure,
+    )
+}
+
+pub fn plan_coverage_gap_continuations_with_filter_and_intent_v1(
+    report: &BranchCampaignReportV1,
+    records: &[BranchOutcomeRecordV1],
+    max_targets: usize,
+    max_candidates_per_decision: usize,
+    filter: &CoverageGapContinuationFilterV1,
+    intent: CoverageGapContinuationSelectionIntentV1,
+) -> CoverageGapContinuationPlanV1 {
     let mut total_decisions = 0usize;
     let mut total_candidates = 0usize;
     let mut total_unobserved_candidates = 0usize;
@@ -1279,8 +1305,11 @@ pub fn plan_coverage_gap_continuations_with_filter_v1(
     let target_candidates = filter_coverage_gap_targets_v1(target_candidates, filter);
     let deduped_target_candidates = dedupe_coverage_gap_targets_v1(target_candidates);
     record_coverage_gap_bucket_eligible_targets_v1(&mut bucket_counts, &deduped_target_candidates);
-    let targets =
-        select_coverage_gap_targets_by_type_v1(deduped_target_candidates.clone(), max_targets);
+    let targets = select_coverage_gap_targets_by_type_v1(
+        deduped_target_candidates.clone(),
+        max_targets,
+        intent,
+    );
     record_coverage_gap_bucket_selected_targets_v1(&mut bucket_counts, &targets);
     let bucket_summaries = coverage_gap_bucket_summaries_v1(bucket_counts);
     let lane_summaries = coverage_gap_lane_summaries_v1(&deduped_target_candidates, &targets);
@@ -2060,6 +2089,7 @@ fn coverage_gap_final_branch_target_progress_v1(
 fn select_coverage_gap_targets_by_type_v1(
     targets: Vec<CoverageGapContinuationTargetV1>,
     max_targets: usize,
+    intent: CoverageGapContinuationSelectionIntentV1,
 ) -> Vec<CoverageGapContinuationTargetV1> {
     let mut target_only = Vec::new();
     let mut missing = Vec::new();
@@ -2071,15 +2101,30 @@ fn select_coverage_gap_targets_by_type_v1(
         }
     }
 
-    let mut selected = select_coverage_gap_targets_by_type_inner_v1(missing, max_targets);
-    let remaining = max_targets.saturating_sub(selected.len());
-    if remaining > 0 {
-        selected.extend(select_coverage_gap_targets_by_type_inner_v1(
-            target_only,
-            remaining,
-        ));
+    match intent {
+        CoverageGapContinuationSelectionIntentV1::GapClosure => {
+            let mut selected = select_coverage_gap_targets_by_type_inner_v1(missing, max_targets);
+            let remaining = max_targets.saturating_sub(selected.len());
+            if remaining > 0 {
+                selected.extend(select_coverage_gap_targets_by_type_inner_v1(
+                    target_only,
+                    remaining,
+                ));
+            }
+            selected
+        }
+        CoverageGapContinuationSelectionIntentV1::FrontierExpansion => {
+            let mut selected =
+                select_coverage_gap_targets_by_type_inner_v1(target_only, max_targets);
+            let remaining = max_targets.saturating_sub(selected.len());
+            if remaining > 0 {
+                selected.extend(select_coverage_gap_targets_by_type_inner_v1(
+                    missing, remaining,
+                ));
+            }
+            selected
+        }
     }
-    selected
 }
 
 fn select_coverage_gap_targets_by_type_inner_v1(
@@ -5556,7 +5601,11 @@ mod tests {
             sample_route_coverage_gap_target("go 3", "Rest", "RestRoom", 3),
         ];
 
-        let selected = select_coverage_gap_targets_by_type_v1(targets, 3);
+        let selected = select_coverage_gap_targets_by_type_v1(
+            targets,
+            3,
+            CoverageGapContinuationSelectionIntentV1::GapClosure,
+        );
         let labels = selected
             .iter()
             .map(|target| target.label.as_str())
@@ -5713,7 +5762,11 @@ mod tests {
             sample_route_coverage_gap_target("go 2", "Pressure Monster", "MonsterRoom", 2);
         set_route_path_pressure_for_test(&mut risky, None, Some(8), 3, 5);
 
-        let selected = select_coverage_gap_targets_by_type_v1(vec![safe_a, safe_b, risky], 2);
+        let selected = select_coverage_gap_targets_by_type_v1(
+            vec![safe_a, safe_b, risky],
+            2,
+            CoverageGapContinuationSelectionIntentV1::GapClosure,
+        );
         let labels = selected
             .iter()
             .map(|target| target.label.as_str())
@@ -5743,7 +5796,11 @@ mod tests {
             targets.push(target);
         }
 
-        let selected = select_coverage_gap_targets_by_type_v1(targets, 1);
+        let selected = select_coverage_gap_targets_by_type_v1(
+            targets,
+            1,
+            CoverageGapContinuationSelectionIntentV1::GapClosure,
+        );
 
         assert_eq!(selected[0].label, "Large Gap 1");
         assert!(coverage_gap_continuation_target_lane_v1(&selected[0])
@@ -5770,7 +5827,11 @@ mod tests {
             ));
         }
 
-        let selected = select_coverage_gap_targets_by_type_v1(targets, 6);
+        let selected = select_coverage_gap_targets_by_type_v1(
+            targets,
+            6,
+            CoverageGapContinuationSelectionIntentV1::GapClosure,
+        );
         let route_count = selected
             .iter()
             .filter(|target| target.event_type == "route")
@@ -6036,6 +6097,55 @@ mod tests {
     }
 
     #[test]
+    fn coverage_gap_frontier_expansion_intent_prefers_target_only_origins() {
+        let mut target_only =
+            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
+        target_only.continuation_origin =
+            Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
+        let mut report = sample_campaign_report_with_branches(vec![target_only]);
+        report.journal.events.push(CampaignJournalEventV1 {
+            event_id: "journal-route-pool0:candidate_set".to_string(),
+            round: 1,
+            branch_id: "root".to_string(),
+            branch_index: 0,
+            branch_frontier_title: "Map".to_string(),
+            act: 1,
+            floor: 1,
+            branch_choices: Vec::new(),
+            branch_commands: Vec::new(),
+            combat_budget_retry_used: false,
+            payload: CampaignJournalEventPayloadV1::RouteCandidatePool {
+                decision_id: "journal-route-pool0".to_string(),
+                boundary_title: "Map".to_string(),
+                frontier_key: "map-frontier".to_string(),
+                depth: 0,
+                candidate_count: 1,
+                selected_index: Some(0),
+                candidate_pool_provenance: None,
+                map_decision_packet: None,
+                route_candidates: Vec::new(),
+                candidates: vec![sample_journal_candidate("go 1", "Route missing")],
+            },
+        });
+
+        let plan = plan_coverage_gap_continuations_with_filter_and_intent_v1(
+            &report,
+            &[],
+            1,
+            1,
+            &CoverageGapContinuationFilterV1::default(),
+            CoverageGapContinuationSelectionIntentV1::FrontierExpansion,
+        );
+
+        assert_eq!(plan.targets[0].event_type, "reward");
+        assert_eq!(plan.targets[0].label, "Reward A");
+        assert_eq!(
+            plan.targets[0].existing_progress,
+            Some(CoverageGapContinuationTargetProgressV1::TargetOnly)
+        );
+    }
+
+    #[test]
     fn coverage_gap_reward_targets_round_robin_by_semantic_lane() {
         let targets = vec![
             sample_reward_coverage_gap_target("rp 0", "Frontload A", "role:frontload", 0),
@@ -6043,7 +6153,11 @@ mod tests {
             sample_reward_coverage_gap_target("rp 2", "Engine", "role:engine", 2),
         ];
 
-        let selected = select_coverage_gap_targets_by_type_v1(targets, 2);
+        let selected = select_coverage_gap_targets_by_type_v1(
+            targets,
+            2,
+            CoverageGapContinuationSelectionIntentV1::GapClosure,
+        );
         let labels = selected
             .iter()
             .map(|target| target.label.as_str())
@@ -6068,7 +6182,11 @@ mod tests {
             sample_reward_coverage_gap_target("rp 1", "Engine", "role:engine", 1),
         ];
 
-        let selected = select_coverage_gap_targets_by_type_v1(targets, 1);
+        let selected = select_coverage_gap_targets_by_type_v1(
+            targets,
+            1,
+            CoverageGapContinuationSelectionIntentV1::GapClosure,
+        );
 
         assert_eq!(selected[0].label, "Engine");
         assert_eq!(
@@ -6090,7 +6208,11 @@ mod tests {
             ),
         ];
 
-        let selected = select_coverage_gap_targets_by_type_v1(targets, 2);
+        let selected = select_coverage_gap_targets_by_type_v1(
+            targets,
+            2,
+            CoverageGapContinuationSelectionIntentV1::GapClosure,
+        );
         let labels = selected
             .iter()
             .map(|target| target.label.as_str())
