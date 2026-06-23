@@ -343,6 +343,7 @@ This helper owns:
 - typed entry request classification (`new_run`, `continue_run`, `inspect`,
   `plan_coverage_gaps`, `continue_coverage_gaps`, and legacy targeted modes)
 - source/output intent derivation for wrapper manifests
+- derived operation switches used by the main wrapper after request resolution
 - retired `-More` rejection
 - inspect flag folding
 - `-InspectScratchLatest` source/read interpretation

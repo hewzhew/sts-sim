@@ -224,6 +224,10 @@ $InspectBoundary = $CampaignRequest.InspectBoundary
 $ScratchLatestIsContinuationSource = $CampaignRequest.ScratchLatestIsContinuationSource
 $ReadsCampaignSource = $CampaignRequest.ReadsCampaignSource
 $IsContinuationFamily = $CampaignRequest.IsContinuationFamily
+$PlanTargets = $CampaignRequest.PlanTargets
+$ContinueTargets = $CampaignRequest.ContinueTargets
+$PlanCoverageGaps = $CampaignRequest.PlanCoverageGaps
+$ContinueCoverageGaps = $CampaignRequest.ContinueCoverageGaps
 $CampaignSourceContext = Get-CampaignSourceContext `
     -Request $CampaignRequest `
     -ReadsCampaignSource $ReadsCampaignSource `

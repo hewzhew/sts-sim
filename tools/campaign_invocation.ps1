@@ -296,6 +296,10 @@ function Convert-CampaignRequestForManifest {
             kind = ""
             source_intent = ""
             output_intent = ""
+            plan_targets = $false
+            continue_targets = $false
+            plan_coverage_gaps = $false
+            continue_coverage_gaps = $false
             reads_campaign_source = $false
             is_continuation_family = $false
             uses_coverage_gap = $false
@@ -308,6 +312,10 @@ function Convert-CampaignRequestForManifest {
         kind = $Request.Kind
         source_intent = $Request.SourceIntent
         output_intent = $Request.OutputIntent
+        plan_targets = [bool] $Request.PlanTargets
+        continue_targets = [bool] $Request.ContinueTargets
+        plan_coverage_gaps = [bool] $Request.PlanCoverageGaps
+        continue_coverage_gaps = [bool] $Request.ContinueCoverageGaps
         reads_campaign_source = [bool] $Request.ReadsCampaignSource
         is_continuation_family = [bool] $Request.IsContinuationFamily
         uses_coverage_gap = [bool] $Request.UsesCoverageGap

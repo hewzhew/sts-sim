@@ -31,6 +31,10 @@ function New-CampaignEntryRequestDescriptor {
         Kind = $Kind
         SourceIntent = $SourceIntent
         OutputIntent = $OutputIntent
+        PlanTargets = [bool] ($Kind -eq "legacy_plan_targets")
+        ContinueTargets = [bool] ($Kind -eq "legacy_continue_targets")
+        PlanCoverageGaps = [bool] ($Kind -eq "plan_coverage_gaps")
+        ContinueCoverageGaps = [bool] ($Kind -eq "continue_coverage_gaps")
         ContinueCampaign = [bool] $ContinueCampaign
         Inspect = [bool] $Inspect
         InspectBoundary = $InspectBoundary
