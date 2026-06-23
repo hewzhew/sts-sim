@@ -348,7 +348,7 @@ fn render_route_evidence_compact_v1(
     if let Some(idx) = trace.selected_index {
         if let Some(candidate) = trace.candidates.get(idx) {
             lines.push(format!(
-                "selected: rank={} x={} room={} safety={:?} score={:.2} command={}",
+                "execution_head: candidate_index={} x={} room={} safety={:?} score={:.2} command={}",
                 idx,
                 candidate.target.x,
                 route_room_label_for_compact_v1(candidate.target.room_type),
@@ -361,7 +361,7 @@ fn render_route_evidence_compact_v1(
             ));
         }
     } else {
-        lines.push("selected: -".to_string());
+        lines.push("execution_head: -".to_string());
     }
 
     let highlights = compact_route_notable_candidates_v1(trace);
@@ -420,15 +420,9 @@ fn compact_route_notable_candidates_v1(
         .enumerate()
         .take(6)
         .map(|(idx, candidate)| {
-            let selected = if trace.selected_index == Some(idx) {
-                " selected"
-            } else {
-                ""
-            };
             format!(
-                "rank={}{} x={} room={} safety={:?} score={:.2} command={} path=[{}] terms=[card={:.2} relic={:.2} shop={:.2} heal={:.2} hp={:.2} risk={:.2}]",
-                idx,
-                selected,
+                "{} x={} room={} safety={:?} score={:.2} command={} path=[{}] terms=[card={:.2} relic={:.2} shop={:.2} heal={:.2} hp={:.2} risk={:.2}]",
+                route_candidate_position_label_v1(idx, trace.selected_index == Some(idx)),
                 candidate.target.x,
                 route_room_label_for_compact_v1(candidate.target.room_type),
                 candidate.safety,
@@ -447,6 +441,14 @@ fn compact_route_notable_candidates_v1(
             )
         })
         .collect()
+}
+
+fn route_candidate_position_label_v1(index: usize, is_execution_head: bool) -> String {
+    if is_execution_head {
+        format!("candidate_index={index} execution_head")
+    } else {
+        format!("candidate_index={index}")
+    }
 }
 
 fn route_path_compact_v1(path: &sts_simulator::ai::route_planner_v1::RoutePathSummaryV1) -> String {
@@ -515,6 +517,23 @@ fn route_range_compact_v1(min: usize, max: usize) -> String {
         min.to_string()
     } else {
         format!("{min}-{max}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn route_candidate_position_label_names_execution_head_without_rank_or_selected() {
+        assert_eq!(
+            route_candidate_position_label_v1(0, true),
+            "candidate_index=0 execution_head"
+        );
+        assert_eq!(
+            route_candidate_position_label_v1(1, false),
+            "candidate_index=1"
+        );
     }
 }
 
