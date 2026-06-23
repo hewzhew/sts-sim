@@ -161,10 +161,11 @@ function Resolve-CampaignEntryRequest {
         $Scratch -and
         -not (
             $ContinueCoverageGaps -or
+            $ContinueCampaign -or
             ((-not $ContinueCampaign) -and (-not $ResolvedInspect) -and (-not $PlanCoverageGaps))
         )
     ) {
-        throw "-Scratch currently supports normal campaign runs and -ContinueCoverageGaps only."
+        throw "-Scratch currently supports normal campaign runs, -Continue, and -ContinueCoverageGaps only."
     }
 
     return New-CampaignEntryRequestDescriptor `
