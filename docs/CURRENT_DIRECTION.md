@@ -83,3 +83,7 @@ search quality.
   [Report Field Admission](REPORT_FIELD_ADMISSION.md): classify the field as a
   fact, diagnostic, verdict, or label; do not add winner-like summary fields
   when the evidence only supports candidate facts or diagnostics.
+- Campaign artifacts should follow
+  [Campaign Artifact Architecture](CAMPAIGN_ARTIFACT_ARCHITECTURE.md):
+  checkpoint, journal, report, and diagnostic sidecar data have separate
+  ownership and should not be collapsed into one growing JSON object.
