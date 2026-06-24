@@ -17,31 +17,6 @@ function Read-CampaignLatestPointer {
     }
 }
 
-function Write-CampaignLatestPointer {
-    param(
-        [object] $Artifact
-    )
-
-    if (-not $Artifact -or $Artifact.Kind -ne "run") {
-        return
-    }
-    $PointerPath = Get-CampaignLatestPointerPath
-    $Pointer = [ordered]@{
-        schema_name = "CampaignLatestPointerV1"
-        schema_version = 1
-        updated_at = (Get-Date).ToString("o")
-        artifact_id = $Artifact.Id
-        report = $Artifact.ReportPath
-        state = $Artifact.StatePath
-        journal = $Artifact.JournalPath
-        checkpoint = $Artifact.CheckpointPath
-        manifest = $Artifact.ManifestPath
-        command = $Artifact.CommandPath
-        log = $Artifact.LogPath
-    }
-    Write-CampaignJsonArtifact -Path $PointerPath -Value $Pointer -Depth 6
-}
-
 function Read-CampaignScratchLatestPointer {
     $PointerPath = Get-CampaignScratchLatestPointerPath
     if (-not (Test-Path -LiteralPath $PointerPath)) {
@@ -59,35 +34,6 @@ function Read-CampaignScratchLatestPointer {
     } catch {
         return $null
     }
-}
-
-function Write-CampaignScratchLatestPointer {
-    param(
-        [object] $Artifact
-    )
-
-    if (-not $Artifact -or $Artifact.Kind -ne "scratch") {
-        return
-    }
-    $PointerPath = Get-CampaignScratchLatestPointerPath
-    $Parent = Split-Path -Parent $PointerPath
-    if ($Parent) {
-        New-Item -ItemType Directory -Force -Path $Parent | Out-Null
-    }
-    $Pointer = [ordered]@{
-        schema_name = "CampaignScratchLatestPointerV1"
-        schema_version = 1
-        updated_at = (Get-Date).ToString("o")
-        artifact_id = $Artifact.Id
-        report = $Artifact.ReportPath
-        state = $Artifact.StatePath
-        journal = $Artifact.JournalPath
-        checkpoint = $Artifact.CheckpointPath
-        manifest = $Artifact.ManifestPath
-        command = $Artifact.CommandPath
-        log = $Artifact.LogPath
-    }
-    Write-CampaignJsonArtifact -Path $PointerPath -Value $Pointer -Depth 6
 }
 
 function Get-LatestScratchCampaignArtifact {
