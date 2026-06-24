@@ -16,9 +16,26 @@ Slay the Spire. The current maintained loop is:
 5. use Combat Search V2 for complete combat trajectories inside branches
 6. compare whole-run, milestone, combat, and sibling outcomes
 
+## Campaign Architecture Direction
+
+The campaign workflow is migrating to a Rust-owned campaign application:
+
+```text
+Campaign CLI -> CampaignApp -> ArtifactStore / ExperimentPlanner / CampaignEngine
+```
+
+`tools/campaign.ps1` should become a launcher. It should not own
+source/latest/scratch semantics, milestone loops, coverage-gap orchestration, or
+manifest writing. The target architecture is defined in
+[Campaign System Architecture](CAMPAIGN_SYSTEM_ARCHITECTURE.md), the stable CLI
+surface in [Campaign CLI Contract](CAMPAIGN_CLI_CONTRACT.md), and the migration
+sequence in [Campaign Migration Plan](CAMPAIGN_MIGRATION_PLAN.md).
+
 ## Active Work
 
 - simulator correctness and Java-mechanics parity when real runs expose bugs
+- migrating campaign source/output, continuation, coverage, inspect, and
+  artifact lifecycle ownership out of PowerShell and into Rust
 - campaign lifecycle, checkpoint, journal, report, and sidecar boundaries
 - route/map candidate pools and coverage-gap continuation
 - Combat Search V2 quality, performance, and special-phase handling
