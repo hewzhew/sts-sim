@@ -14,6 +14,7 @@ pub(super) enum BranchCampaignDriverCommandV1 {
     ProbeLearningReadiness,
     PlanTargetedContinuation,
     ExecuteTargetedContinuation,
+    ContinueCampaign,
     PlanCoverageGapContinuation,
     ExecuteCoverageGapContinuation,
     ContinuationEffectReport,
@@ -39,6 +40,7 @@ pub(super) enum BranchCampaignDriverRequestV1 {
     ProbeLearningReadiness(DatasetCommandInput),
     PlanTargetedContinuation(ContinuationCommandInput),
     ExecuteTargetedContinuation(ContinuationCommandInput),
+    ContinueCampaign(RunCommandInput),
     ResolveCampaignArtifact(ArtifactCommandInput),
     PlanCoverageGapContinuation(CoverageGapPlanCommandInput),
     ExecuteCoverageGapContinuation(CoverageGapExecutionCommandInput),
@@ -127,26 +129,38 @@ fn continuation_request_from_continue_args(
             ),
         );
     }
-    Ok(continuation_request_from_input(
-        ContinuationCommandInput::from_continue_args(args)?,
+    if has_targeted_continuation_intent(&args.continuation) {
+        return continuation_request_from_input(ContinuationCommandInput::from_continue_args(
+            args,
+        )?);
+    }
+    Ok(BranchCampaignDriverRequestV1::ContinueCampaign(
+        RunCommandInput::from_continue_args(args)?,
     ))
 }
 
 fn continuation_request_from_input(
     input: ContinuationCommandInput,
-) -> BranchCampaignDriverRequestV1 {
+) -> Result<BranchCampaignDriverRequestV1, String> {
     match continuation_command_from_input(&input) {
-        BranchCampaignDriverCommandV1::PlanTargetedContinuation => {
-            BranchCampaignDriverRequestV1::PlanTargetedContinuation(input)
-        }
-        BranchCampaignDriverCommandV1::ExecuteTargetedContinuation => {
-            BranchCampaignDriverRequestV1::ExecuteTargetedContinuation(input)
-        }
-        BranchCampaignDriverCommandV1::ContinuationEffectReport => {
-            BranchCampaignDriverRequestV1::ContinuationEffectReport(input)
-        }
-        _ => BranchCampaignDriverRequestV1::ExecuteTargetedContinuation(input),
+        BranchCampaignDriverCommandV1::PlanTargetedContinuation => Ok(
+            BranchCampaignDriverRequestV1::PlanTargetedContinuation(input),
+        ),
+        BranchCampaignDriverCommandV1::ExecuteTargetedContinuation => Ok(
+            BranchCampaignDriverRequestV1::ExecuteTargetedContinuation(input),
+        ),
+        BranchCampaignDriverCommandV1::ContinuationEffectReport => Ok(
+            BranchCampaignDriverRequestV1::ContinuationEffectReport(input),
+        ),
+        _ => Err("ordinary campaign continue must be built from ContinueCommandArgs".to_string()),
     }
+}
+
+fn has_targeted_continuation_intent(args: &super::cli_args::ContinuationArgs) -> bool {
+    args.plan_targeted_continuation.is_some()
+        || args.execute_targeted_continuation.is_some()
+        || args.continuation_effect_before.is_some()
+        || args.continuation_effect_after.is_some()
 }
 
 fn inspect_request_from_inspect_args(
@@ -234,6 +248,9 @@ fn driver_request_for_command(
             BranchCampaignDriverRequestV1::ExecuteTargetedContinuation(
                 ContinuationCommandInput::from_args(args)?,
             )
+        }
+        BranchCampaignDriverCommandV1::ContinueCampaign => {
+            BranchCampaignDriverRequestV1::ContinueCampaign(RunCommandInput::from_args(args)?)
         }
         BranchCampaignDriverCommandV1::PlanCoverageGapContinuation => {
             BranchCampaignDriverRequestV1::PlanCoverageGapContinuation(
@@ -329,7 +346,10 @@ pub(super) fn driver_command_from_cli_input(
         if args.continuation.plan_targeted_continuation.is_some() {
             return BranchCampaignDriverCommandV1::PlanTargetedContinuation;
         }
-        return BranchCampaignDriverCommandV1::ExecuteTargetedContinuation;
+        if args.continuation.execute_targeted_continuation.is_some() {
+            return BranchCampaignDriverCommandV1::ExecuteTargetedContinuation;
+        }
+        return BranchCampaignDriverCommandV1::ContinueCampaign;
     }
     if matches!(input, BranchCampaignCliInputV1::CampaignCoveragePlan(_)) {
         return BranchCampaignDriverCommandV1::PlanCoverageGapContinuation;
@@ -484,6 +504,6 @@ fn continuation_command_from_input(
     {
         BranchCampaignDriverCommandV1::ContinuationEffectReport
     } else {
-        BranchCampaignDriverCommandV1::ExecuteTargetedContinuation
+        BranchCampaignDriverCommandV1::ContinueCampaign
     }
 }

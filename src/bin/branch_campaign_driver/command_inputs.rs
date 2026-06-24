@@ -75,6 +75,37 @@ impl RunCommandInput {
         })
     }
 
+    pub(super) fn from_continue_args(args: ContinueCommandArgs) -> Result<Self, String> {
+        let config = campaign_config_from_cli_parts(
+            &args.domain,
+            &args.branching,
+            &args.search,
+            &args.retry,
+            &args.prefix,
+            AutoCaptureInputParts {
+                enabled: args.output.auto_capture_combat,
+                root: args.output.auto_capture_root.clone(),
+            },
+        )?;
+        Ok(Self {
+            config,
+            round_budget: RoundBudgetRequestV1::from_branching_args(&args.branching),
+            milestone: MilestoneContinuationRequestV1::from_branching_args(&args.branching)?,
+            progress: args.output.progress,
+            progress_detail: BranchCampaignProgressDetailV1::from(args.output.progress_detail),
+            json: args.output.json,
+            resume: args.output.resume,
+            resume_checkpoint: args.output.resume_checkpoint,
+            out: args.output.out,
+            checkpoint_out: args.output.checkpoint_out,
+            export_outcome_dataset: args.output.export_outcome_dataset,
+            export_learning_dataset: args.output.export_learning_dataset,
+            export_decision_outcome_dataset: args.output.export_decision_outcome_dataset,
+            branch_examples: args.output.branch_examples,
+            report_detail: BranchCampaignReportDetailV1::from(args.output.report_detail),
+        })
+    }
+
     pub(super) fn from_args(args: &Args) -> Result<Self, String> {
         Ok(Self {
             config: campaign_config_from_args(args)?,

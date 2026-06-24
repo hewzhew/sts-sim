@@ -48,6 +48,13 @@ pub(super) fn run_ancestor_replay_self_check() -> Result<(), String> {
     Ok(())
 }
 
+pub(super) fn run_continue_campaign_command(input: &RunCommandInput) -> Result<(), String> {
+    if input.resume.is_none() {
+        return Err("campaign continue requires --resume".to_string());
+    }
+    run_campaign_command(input)
+}
+
 pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String> {
     if input.resume_checkpoint.is_some() && input.resume.is_none() {
         return Err("--resume-checkpoint requires --resume".to_string());

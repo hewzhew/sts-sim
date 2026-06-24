@@ -8,7 +8,9 @@ use super::campaign_artifact_store::{
     render_campaign_artifact_ref_v1, write_campaign_artifact_manifest_from_payload_text_v1,
     CampaignArtifactKindV1, CampaignArtifactStoreV1,
 };
-use super::campaign_run::{run_ancestor_replay_self_check, run_campaign_command};
+use super::campaign_run::{
+    run_ancestor_replay_self_check, run_campaign_command, run_continue_campaign_command,
+};
 use super::checkpoint_inspection::{
     run_checkpoint_inspection, run_final_boss_combat_report_inspection,
 };
@@ -62,6 +64,9 @@ impl CampaignAppV1 {
             }
             BranchCampaignDriverRequestV1::ExecuteTargetedContinuation(input) => {
                 run_targeted_continuation_execution(&input)
+            }
+            BranchCampaignDriverRequestV1::ContinueCampaign(input) => {
+                run_continue_campaign_command(&input)
             }
             BranchCampaignDriverRequestV1::ResolveCampaignArtifact(input) => {
                 self.run_artifact_command(input)

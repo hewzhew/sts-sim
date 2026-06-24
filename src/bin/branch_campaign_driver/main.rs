@@ -207,17 +207,45 @@ mod tests {
 
     #[test]
     fn typed_cli_input_drives_subcommand_dispatch() {
-        let input = cli_args::parse_cli_from([
+        let dataset_input = cli_args::parse_cli_from([
             "branch_campaign_driver",
             "dataset",
             "--analyze-decision-outcome-dataset",
             "decision_outcomes.jsonl",
         ])
         .expect("typed cli input parse");
+        let continue_input = cli_args::parse_cli_from([
+            "branch_campaign_driver",
+            "campaign",
+            "continue",
+            "--resume",
+            "run.json.gz",
+            "--resume-checkpoint",
+            "checkpoint.json.gz",
+            "--rounds",
+            "1",
+        ])
+        .expect("typed campaign continue input parse");
+        let targeted_continue_input = cli_args::parse_cli_from([
+            "branch_campaign_driver",
+            "campaign",
+            "continue",
+            "--execute-targeted-continuation",
+            "decision_outcomes.jsonl",
+        ])
+        .expect("typed targeted continuation input parse");
 
         assert_eq!(
-            driver_command_from_cli_input(&input),
+            driver_command_from_cli_input(&dataset_input),
             BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset
+        );
+        assert_eq!(
+            driver_command_from_cli_input(&continue_input),
+            BranchCampaignDriverCommandV1::ContinueCampaign
+        );
+        assert_eq!(
+            driver_command_from_cli_input(&targeted_continue_input),
+            BranchCampaignDriverCommandV1::ExecuteTargetedContinuation
         );
     }
 
