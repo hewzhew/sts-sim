@@ -42,6 +42,7 @@ function New-CampaignRunDriverIdentityArgs {
     )
 
     $Args = @(
+        "campaign",
         "run",
         "--preset", "$Mode",
         "--seed", "$Seed",

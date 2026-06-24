@@ -11,7 +11,8 @@ function Invoke-CampaignArtifactPrune {
     )
 
     $Args = @(
-        "artifact",
+        "campaign",
+        "artifacts",
         "prune",
         "--campaign-dir",
         $CampaignDir,

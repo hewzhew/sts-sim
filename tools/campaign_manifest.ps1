@@ -15,7 +15,8 @@ function Write-CampaignWrapperManifest {
 
     $PayloadJson = $Payload | ConvertTo-Json -Depth 24 -Compress
     $ManifestArgs = @(
-        "artifact",
+        "campaign",
+        "artifacts",
         "write-manifest",
         "--manifest-path", "$Path",
         "--payload-schema-name", "CampaignWrapperManifestPayloadV1",
@@ -130,7 +131,8 @@ function Write-CampaignLatestPointerViaDriver {
     }
 
     $PointerArgs = @(
-        "artifact",
+        "campaign",
+        "artifacts",
         "write-latest",
         "--kind", $Kind,
         "$($Context.OutputArtifact.Id)",

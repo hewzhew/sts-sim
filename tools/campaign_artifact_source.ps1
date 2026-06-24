@@ -68,7 +68,8 @@ function Get-CampaignSourceArtifactInfoViaDriver {
     }
 
     $Args = @(
-        "artifact",
+        "campaign",
+        "artifacts",
         "source-info",
         "$Selector",
         "--campaign-dir", "$script:CampaignDir",

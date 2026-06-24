@@ -183,7 +183,8 @@ function New-CampaignInspectDriverArgs {
 
     if ($Options.ExportLearningDataset) {
         return @(
-            "dataset",
+            "campaign",
+            "export",
             "--inspect-checkpoint", "$InspectCheckpointPath",
             "--inspect-report", "$InspectCampaignPath",
             "--export-learning-dataset", "$($Options.ExportLearningDataset)"
@@ -191,6 +192,7 @@ function New-CampaignInspectDriverArgs {
     }
 
     $Args = @(
+        "campaign",
         "inspect",
         "--inspect-checkpoint", "$InspectCheckpointPath",
         "--inspect-report", "$InspectCampaignPath",

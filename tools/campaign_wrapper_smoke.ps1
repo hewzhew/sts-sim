@@ -172,7 +172,7 @@ try {
             "-DryRun"
         ) `
         -Contains @(
-            "branch_campaign_driver.exe artifact prune",
+            "branch_campaign_driver.exe campaign artifacts prune",
             "--campaign-dir",
             "--keep-runs 5",
             "--keep-scratch 1"
@@ -220,7 +220,7 @@ try {
                 "source=scratch:",
                 "source-pin=-From scratch:",
                 "coverage-gap-plan=2",
-                "--plan-coverage-gap-continuation"
+                "campaign coverage plan"
             ) `
             -NotContains @(
                 "Choose one campaign request kind"
@@ -298,7 +298,7 @@ try {
             ) `
             -NotContains @(
                 "--inspect-summary",
-                "branch_campaign_driver.exe run",
+                "branch_campaign_driver.exe campaign run",
                 "Choose one campaign request kind"
             )
 
@@ -370,7 +370,7 @@ try {
             "\tools\artifacts\campaigns\scratch\",
             ".campaign.json.gz",
             ".checkpoint.json.gz",
-            "branch_campaign_driver.exe run"
+            "branch_campaign_driver.exe campaign run"
         ) `
         -NotContains @(
             "continue-latest=.\tools\campaign.ps1 -From latest -Continue",

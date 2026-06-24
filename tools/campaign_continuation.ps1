@@ -152,6 +152,7 @@ function New-CampaignContinuationCommandContext {
         -CoverageGapFilterArgs $Context.CoverageGapFilterArgs `
         -OptionContext $Context.CampaignSharedDriverOptionContext
     $CoverageGapMilestoneSummaryArgs = @(
+        "campaign",
         "inspect",
         "--inspect-report", "$($Context.RunOutputCampaignPath)",
         "--inspect-checkpoint", "$($Context.RunOutputCheckpointPath)",

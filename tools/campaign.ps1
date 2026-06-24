@@ -291,7 +291,8 @@ if ($PruneArtifacts) {
     }
 
     $PruneDriverArgs = @(
-        "artifact",
+        "campaign",
+        "artifacts",
         "prune",
         "--campaign-dir",
         $CampaignPathContext.CampaignDir,

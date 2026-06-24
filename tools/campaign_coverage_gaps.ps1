@@ -218,10 +218,11 @@ function New-CoverageGapPlanDriverArgs {
     )
 
     $Args = @(
-        "dataset",
+        "campaign",
+        "coverage",
+        "plan",
         "--inspect-report", "$SourceCampaignPath",
         "--inspect-checkpoint", "$SourceCheckpointPath",
-        "--plan-coverage-gap-continuation",
         "--coverage-gap-limit", "$CoverageGapLimit",
         "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision"
     )
@@ -245,12 +246,15 @@ function New-CoverageGapContinueDriverArgs {
         [object] $OptionContext
     )
 
-    $Args = @($RunIdentityArgs)
-    $Args[0] = "continue"
+    $Args = @("campaign", "coverage", "execute")
+    if ($RunIdentityArgs.Count -ge 2 -and $RunIdentityArgs[0] -eq "campaign" -and $RunIdentityArgs[1] -eq "run") {
+        $Args += @($RunIdentityArgs | Select-Object -Skip 2)
+    } else {
+        $Args += @($RunIdentityArgs | Select-Object -Skip 1)
+    }
     $Args += @(
         "--resume", "$SourceCampaignPath",
         "--resume-checkpoint", "$SourceCheckpointPath",
-        "--execute-coverage-gap-continuation",
         "--coverage-gap-limit", "$CoverageGapLimit",
         "--coverage-gap-candidates-per-decision", "$CoverageGapCandidatesPerDecision",
         "--coverage-gap-budget-intent", "$CoverageGapIntent",

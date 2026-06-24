@@ -36,7 +36,8 @@ function New-CampaignOutputArtifactViaDriver {
 
     $Kind = if ($Scratch) { "scratch" } else { "run" }
     $Args = @(
-        "artifact",
+        "campaign",
+        "artifacts",
         "allocate",
         "--kind", $Kind,
         "--label", "$BaseLabel",
