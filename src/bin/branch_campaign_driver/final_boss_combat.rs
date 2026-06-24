@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use sts_simulator::eval::branch_campaign::{BranchCampaignBranchV1, BranchCampaignReportV1};
 use sts_simulator::eval::campaign_journal::{
-    CampaignJournalCandidateV1, CampaignJournalEventPayloadV1,
+    CampaignJournalCandidateV1, CampaignJournalEventPayloadV1, CampaignJournalEventV1,
 };
 use sts_simulator::eval::decision_path::DecisionPathEnvelopeV1;
 use sts_simulator::eval::run_control::CombatAutomationTrajectoryRecordV1;
@@ -143,7 +143,7 @@ fn render_final_boss_boundary_failure_inspection_v1(
             render_count_summary_v1(&debt_counts, 8)
         ));
     }
-    let boundary_groups = final_boss_boundary_groups_v1(failures);
+    let boundary_groups = final_boss_boundary_groups_v1(report, failures);
     lines.push("  boundary groups:".to_string());
     for (index, group) in boundary_groups.iter().take(6).enumerate() {
         lines.push(format!(
@@ -168,6 +168,19 @@ fn render_final_boss_boundary_failure_inspection_v1(
             lines.push(format!(
                 "       example: {}",
                 render_final_boss_branch_brief_v1(branch)
+            ));
+        }
+        lines.push(format!(
+            "       journal_lineage=events:{} distinct_decisions:{} missing_steps:{} frequent_decisions=[{}]",
+            group.lineage_event_count,
+            group.frequent_decision_counts.len(),
+            group.missing_step_count,
+            render_count_summary_or_dash_v1(&group.frequent_decision_counts, 4)
+        ));
+        if !group.missing_command_counts.is_empty() {
+            lines.push(format!(
+                "       missing_commands=[{}]",
+                render_count_summary_v1(&group.missing_command_counts, 4)
             ));
         }
     }
@@ -222,10 +235,15 @@ struct FinalBossBoundaryGroupV1<'a> {
     gold_max: i32,
     compacted_count: usize,
     last_choice_counts: BTreeMap<String, usize>,
+    lineage_event_count: usize,
+    missing_step_count: usize,
+    frequent_decision_counts: BTreeMap<String, usize>,
+    missing_command_counts: BTreeMap<String, usize>,
     examples: Vec<&'a BranchCampaignBranchV1>,
 }
 
 fn final_boss_boundary_groups_v1<'a>(
+    report: &'a BranchCampaignReportV1,
     failures: &'a [&'a BranchCampaignBranchV1],
 ) -> Vec<FinalBossBoundaryGroupV1<'a>> {
     let mut groups = BTreeMap::<String, FinalBossBoundaryGroupV1<'a>>::new();
@@ -254,6 +272,10 @@ fn final_boss_boundary_groups_v1<'a>(
                 gold_max: summary.gold,
                 compacted_count: 0,
                 last_choice_counts: BTreeMap::new(),
+                lineage_event_count: 0,
+                missing_step_count: 0,
+                frequent_decision_counts: BTreeMap::new(),
+                missing_command_counts: BTreeMap::new(),
                 examples: Vec::new(),
             });
         entry.count += 1;
@@ -270,6 +292,25 @@ fn final_boss_boundary_groups_v1<'a>(
             .last_choice_counts
             .entry(final_boss_boundary_last_choice_key_v1(branch))
             .or_default() += 1;
+        let lineage_events = final_boss_lineage_candidate_pool_events_v1(report, branch);
+        entry.lineage_event_count += lineage_events.len();
+        for event in lineage_events {
+            let chosen_command =
+                final_boss_lineage_event_chosen_command_v1(event, &branch.commands);
+            if let Some(label) =
+                render_final_boss_lineage_chosen_candidate_label_v1(event, chosen_command)
+            {
+                *entry.frequent_decision_counts.entry(label).or_default() += 1;
+            }
+        }
+        let missing_commands = final_boss_lineage_missing_decision_commands_v1(report, branch);
+        entry.missing_step_count += missing_commands.len();
+        for command in missing_commands {
+            *entry
+                .missing_command_counts
+                .entry(render_truncated_text(command.as_str(), 72))
+                .or_default() += 1;
+        }
         if entry.examples.len() < 2 {
             entry.examples.push(*branch);
         }
@@ -286,6 +327,115 @@ fn final_boss_boundary_groups_v1<'a>(
             .then_with(|| left.stop_reason.cmp(&right.stop_reason))
     });
     groups
+}
+
+fn final_boss_lineage_candidate_pool_events_v1<'a>(
+    report: &'a BranchCampaignReportV1,
+    branch: &BranchCampaignBranchV1,
+) -> Vec<&'a CampaignJournalEventV1> {
+    report
+        .journal
+        .events
+        .iter()
+        .filter(|event| {
+            final_boss_lineage_event_parent_command_count_v1(event, &branch.commands).is_some()
+        })
+        .filter(|event| !journal_event_candidates_from_payload_v1(&event.payload).is_empty())
+        .collect()
+}
+
+fn final_boss_lineage_missing_decision_commands_v1(
+    report: &BranchCampaignReportV1,
+    branch: &BranchCampaignBranchV1,
+) -> Vec<String> {
+    branch
+        .commands
+        .iter()
+        .enumerate()
+        .filter_map(|(index, command)| {
+            if sts_simulator::eval::decision_path::decision_path_command_is_coordinate_v1(command) {
+                return None;
+            }
+            let matched = report.journal.events.iter().any(|event| {
+                final_boss_lineage_event_parent_command_count_v1(event, &branch.commands)
+                    == Some(index)
+                    && final_boss_journal_event_matches_command_v1(event, command.as_str())
+            });
+            (!matched).then(|| command.clone())
+        })
+        .collect()
+}
+
+fn final_boss_lineage_event_parent_command_count_v1(
+    event: &CampaignJournalEventV1,
+    commands: &[String],
+) -> Option<usize> {
+    let event_path = DecisionPathEnvelopeV1::from_commands(&event.branch_commands);
+    let branch_path = DecisionPathEnvelopeV1::from_commands(commands);
+    event_path.journal_parent_depth_against(&branch_path)
+}
+
+fn final_boss_journal_event_matches_command_v1(
+    event: &CampaignJournalEventV1,
+    command: &str,
+) -> bool {
+    journal_event_candidates_from_payload_v1(&event.payload)
+        .iter()
+        .any(|candidate| candidate.command == command)
+}
+
+fn final_boss_lineage_event_chosen_command_v1<'a>(
+    event: &CampaignJournalEventV1,
+    commands: &'a [String],
+) -> Option<&'a str> {
+    let parent_count = final_boss_lineage_event_parent_command_count_v1(event, commands)?;
+    commands.get(parent_count).map(|command| command.as_str())
+}
+
+fn render_final_boss_lineage_chosen_candidate_label_v1(
+    event: &CampaignJournalEventV1,
+    chosen_command: Option<&str>,
+) -> Option<String> {
+    let chosen_command = chosen_command?;
+    let candidate = journal_event_candidates_from_payload_v1(&event.payload)
+        .iter()
+        .find(|candidate| candidate.command == chosen_command)?;
+    Some(format!(
+        "A{}F{} {} {} -> {}",
+        event.act,
+        event.floor,
+        final_boss_journal_event_type_v1(event),
+        final_boss_journal_event_boundary_title_v1(event),
+        render_truncated_text(candidate.label.as_str(), 48)
+    ))
+}
+
+fn final_boss_journal_event_type_v1(event: &CampaignJournalEventV1) -> &'static str {
+    match &event.payload {
+        CampaignJournalEventPayloadV1::RewardCandidateSet { .. } => "reward_candidate_set",
+        CampaignJournalEventPayloadV1::ShopBranchCandidateSet { .. } => "shop_branch_candidate_set",
+        CampaignJournalEventPayloadV1::ShopCandidatePool { .. } => "shop_candidate_pool",
+        CampaignJournalEventPayloadV1::CampfireCandidatePool { .. } => "campfire_candidate_pool",
+        CampaignJournalEventPayloadV1::EventCandidatePool { .. } => "event_candidate_pool",
+        CampaignJournalEventPayloadV1::BossRelicCandidatePool { .. } => "boss_relic_candidate_pool",
+        CampaignJournalEventPayloadV1::RouteCandidatePool { .. } => "route_candidate_pool",
+        CampaignJournalEventPayloadV1::RouteDecision { .. } => "route_decision",
+    }
+}
+
+fn final_boss_journal_event_boundary_title_v1(event: &CampaignJournalEventV1) -> &str {
+    match &event.payload {
+        CampaignJournalEventPayloadV1::RewardCandidateSet { boundary_title, .. }
+        | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { boundary_title, .. }
+        | CampaignJournalEventPayloadV1::ShopCandidatePool { boundary_title, .. }
+        | CampaignJournalEventPayloadV1::CampfireCandidatePool { boundary_title, .. }
+        | CampaignJournalEventPayloadV1::EventCandidatePool { boundary_title, .. }
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { boundary_title, .. }
+        | CampaignJournalEventPayloadV1::RouteCandidatePool { boundary_title, .. } => {
+            boundary_title
+        }
+        CampaignJournalEventPayloadV1::RouteDecision { .. } => "Map",
+    }
 }
 
 fn final_boss_boundary_boss_key_v1(branch: &BranchCampaignBranchV1) -> String {
@@ -355,6 +505,14 @@ fn render_count_summary_v1(counts: &BTreeMap<String, usize>, limit: usize) -> St
         .map(|(label, count)| format!("{}={count}", render_truncated_text(label, 72)))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn render_count_summary_or_dash_v1(counts: &BTreeMap<String, usize>, limit: usize) -> String {
+    if counts.is_empty() {
+        "-".to_string()
+    } else {
+        render_count_summary_v1(counts, limit)
+    }
 }
 
 fn render_final_boss_comparison_lines_v1(
@@ -810,6 +968,11 @@ mod tests {
         BRANCH_CAMPAIGN_SCHEMA_VERSION,
     };
     use sts_simulator::eval::branch_experiment::BranchExperimentBossCombatRecordV1;
+    use sts_simulator::eval::campaign_journal::{
+        CampaignJournalCandidateAdmissionTraceV1, CampaignJournalCandidateDispositionV1,
+        CampaignJournalCandidateV1, CampaignJournalEventPayloadV1, CampaignJournalEventV1,
+        CampaignJournalV1,
+    };
     use sts_simulator::eval::run_control::{
         CombatAutomationActionV1, CombatAutomationMonsterStateV1, CombatAutomationStepStateV1,
     };
@@ -961,7 +1124,38 @@ mod tests {
             combat_retry_ledger: Default::default(),
             strategic_signals: Default::default(),
             state_store: Default::default(),
-            journal: Default::default(),
+            journal: CampaignJournalV1 {
+                events: vec![CampaignJournalEventV1 {
+                    event_id: "reward:shockwave".to_string(),
+                    round: 12,
+                    branch_id: "parent".to_string(),
+                    branch_index: 0,
+                    branch_frontier_title: "Card Reward".to_string(),
+                    act: 1,
+                    floor: 3,
+                    branch_choices: Vec::new(),
+                    branch_commands: Vec::new(),
+                    combat_budget_retry_used: false,
+                    payload: CampaignJournalEventPayloadV1::RewardCandidateSet {
+                        decision_id: "reward:shockwave".to_string(),
+                        boundary_title: "Card Reward".to_string(),
+                        frontier_key: "A1F3:CardReward".to_string(),
+                        depth: 0,
+                        max_reward_options_per_branch: 2,
+                        original_count: 3,
+                        selected_count: 1,
+                        candidates: vec![CampaignJournalCandidateV1 {
+                            candidate_id: "c0".to_string(),
+                            command: "rp 2".to_string(),
+                            label: "Shockwave".to_string(),
+                            semantic_class: "role:scaling".to_string(),
+                            admission: CampaignJournalCandidateAdmissionTraceV1::default(),
+                            disposition: CampaignJournalCandidateDispositionV1::Kept,
+                        }],
+                    },
+                }],
+                ..CampaignJournalV1::new()
+            },
             rounds: Vec::new(),
         };
 
@@ -973,6 +1167,9 @@ mod tests {
         assert!(rendered.contains("boundary groups:"));
         assert!(rendered.contains("deck_bucket=21-25"));
         assert!(rendered.contains("compacted_details=0/1"));
+        assert!(rendered.contains("journal_lineage=events:1 distinct_decisions:1 missing_steps:1"));
+        assert!(rendered
+            .contains("frequent_decisions=[A1F3 reward_candidate_set Card Reward -> Shockwave=1]"));
         assert!(rendered.contains("last_choices=[Smith Power Through=1]"));
         assert!(rendered.contains("stop=combat search did not find an executable complete win"));
         assert!(!rendered.contains("likely issue"));
