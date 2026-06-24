@@ -213,7 +213,6 @@ New-Item -ItemType Directory -Force -Path $CampaignPathContext.CampaignDir | Out
 . (Join-Path $PSScriptRoot "campaign_artifact_prune.ps1")
 . (Join-Path $PSScriptRoot "campaign_invocation.ps1")
 . (Join-Path $PSScriptRoot "campaign_preflight.ps1")
-. (Join-Path $PSScriptRoot "campaign_milestones.ps1")
 . (Join-Path $PSScriptRoot "campaign_manifest.ps1")
 . (Join-Path $PSScriptRoot "campaign_run_execution.ps1")
 . (Join-Path $PSScriptRoot "campaign_rounds.ps1")

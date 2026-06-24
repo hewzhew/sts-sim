@@ -164,25 +164,6 @@ function New-CampaignRunCommandContext {
     }
 }
 
-function New-CampaignRunMilestoneContext {
-    param(
-        [object] $Context,
-        [string[]] $RunIdentityArgs,
-        [object] $OptionContext
-    )
-
-    return New-CampaignMilestoneContext `
-        -ReportPath $Context.RunOutputCampaignPath `
-        -CheckpointPath $Context.RunOutputCheckpointPath `
-        -DriverExe $Context.DriverExe `
-        -UntilMilestone $Context.UntilMilestone `
-        -ResolvedMilestoneStop $Context.ResolvedMilestoneStop `
-        -MilestoneStepRounds $Context.MilestoneStepRounds `
-        -MilestoneMaxRounds $Context.MilestoneMaxRounds `
-        -RunIdentityArgs $RunIdentityArgs `
-        -OptionContext $OptionContext
-}
-
 function Write-CampaignRunDryRunCommandSet {
     param(
         [object] $Context,
@@ -209,26 +190,6 @@ function Invoke-CampaignInitialDriverCommand {
     return $LASTEXITCODE
 }
 
-function Invoke-CampaignRunMilestoneLoop {
-    param(
-        [object] $Context,
-        [string[]] $RunIdentityArgs,
-        [object] $OptionContext
-    )
-
-    if (-not $Context.UntilMilestoneBound) {
-        return 0
-    }
-
-    $MilestoneContext = New-CampaignRunMilestoneContext `
-        -Context $Context `
-        -RunIdentityArgs $RunIdentityArgs `
-        -OptionContext $OptionContext
-    return Invoke-CampaignUntilMilestone `
-        -MilestoneContext $MilestoneContext `
-        -AlreadySpentRounds $Context.MaxRounds
-}
-
 function Invoke-CampaignRunCommand {
     param(
         [object] $Context,
@@ -240,14 +201,6 @@ function Invoke-CampaignRunCommand {
         Write-Host "already-at-target-rounds=yes; nothing to run"
         return 0
     }
-    if ($Context.ContinueCampaign -and $Context.UntilMilestoneBound) {
-        $InitialMilestoneStatus = Get-CampaignMilestoneStatus -ReportPath $Context.ResumeCampaignPath -Milestone $Context.UntilMilestone
-        if ($InitialMilestoneStatus.Reached) {
-            Write-Host "already-at-milestone=yes target=$($Context.UntilMilestone) hits=$($InitialMilestoneStatus.HitCount) furthest=A$($InitialMilestoneStatus.FurthestAct)F$($InitialMilestoneStatus.FurthestFloor)"
-            return 0
-        }
-    }
-
     if ($Context.DryRun) {
         Write-CampaignRunDryRunCommandSet `
             -Context $Context `

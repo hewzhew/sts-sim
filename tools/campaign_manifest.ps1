@@ -217,26 +217,12 @@ function New-CampaignRunWrapperManifest {
     }
 
     if ($Context.UntilMilestoneBound) {
-        $MilestoneContext = New-CampaignMilestoneContext `
-            -ReportPath $Context.RunOutputCampaignPath `
-            -CheckpointPath $Context.RunOutputCheckpointPath `
-            -DriverExe $Context.DriverExe `
-            -UntilMilestone $Context.UntilMilestone `
-            -ResolvedMilestoneStop $Context.ResolvedMilestoneStop `
-            -MilestoneStepRounds $Context.MilestoneStepRounds `
-            -MilestoneMaxRounds $Context.MilestoneMaxRounds `
-            -RunIdentityArgs $RunIdentityArgs `
-            -OptionContext $OptionContext
-        $MilestoneResumeArgs = New-CampaignMilestoneResumeDriverArgs `
-            -MilestoneContext $MilestoneContext `
-            -StepRounds $Context.MilestoneStepRounds
         $Manifest["milestone"] = [ordered]@{
+            owner = "rust_campaign_engine"
             target = $Context.UntilMilestone
             stop = $Context.ResolvedMilestoneStop
             step_rounds = $Context.MilestoneStepRounds
             max_additional_rounds = $Context.MilestoneMaxRounds
-            resume_driver_args_template = @($MilestoneResumeArgs)
-            resume_driver_command_template = (Format-CommandLine -ExePath $Context.DriverExe -Arguments $MilestoneResumeArgs)
         }
     }
 

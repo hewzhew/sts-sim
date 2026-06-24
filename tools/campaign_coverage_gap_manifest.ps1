@@ -31,18 +31,14 @@ function New-CoverageGapWrapperManifest {
     }
 
     if ($ManifestContext.UntilMilestoneBound) {
-        $MilestoneResumeArgs = New-CampaignMilestoneResumeDriverArgs `
-            -MilestoneContext $ManifestContext.MilestoneContext `
-            -StepRounds $ManifestContext.MilestoneStepRounds
         $MilestoneSummaryArgs = @($ManifestContext.CoverageGapMilestoneSummaryArgs)
         $Manifest["milestone"] = [ordered]@{
+            owner = "rust_campaign_engine"
             target = $ManifestContext.UntilMilestone
             stop = $ManifestContext.ResolvedMilestoneStop
             step_rounds = $ManifestContext.MilestoneStepRounds
             max_additional_rounds = $ManifestContext.MilestoneMaxRounds
             initial_spent_rounds = $ManifestContext.CoverageGapInitialSpentRounds
-            resume_driver_args_template = @($MilestoneResumeArgs)
-            resume_driver_command_template = (Format-CommandLine -ExePath $ManifestContext.DriverExe -Arguments $MilestoneResumeArgs)
             summary_driver_args = @($MilestoneSummaryArgs)
             summary_driver_command = (Format-CommandLine -ExePath $ManifestContext.DriverExe -Arguments $MilestoneSummaryArgs)
         }

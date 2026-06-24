@@ -239,7 +239,6 @@ try {
                 "\tools\artifacts\campaigns\scratch\"
             ) `
             -NotContains @(
-                "milestone-loop-command-template:",
                 "milestone-summary-command:",
                 "Choose one campaign request kind"
             )
@@ -385,7 +384,6 @@ try {
             "\tools\artifacts\campaigns\scratch\"
         ) `
         -NotContains @(
-            "milestone-loop-command-template:",
             "Choose one campaign request kind"
         )
 

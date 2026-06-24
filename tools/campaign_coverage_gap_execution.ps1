@@ -6,7 +6,6 @@ function Write-CoverageGapContinuationDryRunCommands {
         [string] $DriverExe,
         [string[]] $CoveragePlanArgs,
         [string[]] $ContinueCoverageGapArgs,
-        [object] $MilestoneContext,
         [string[]] $CoverageGapMilestoneSummaryArgs
     )
 
@@ -46,7 +45,6 @@ function Invoke-CoverageGapContinuationCommands {
         [int] $CoverageGapInitialSpentRounds,
         [string[]] $RunIdentityArgs,
         [object] $OptionContext,
-        [object] $MilestoneContext,
         [object] $RecordContext,
         [object] $ManifestContext,
         [string[]] $CoverageGapMilestoneSummaryArgs
