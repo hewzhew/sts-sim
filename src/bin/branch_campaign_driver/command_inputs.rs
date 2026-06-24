@@ -24,6 +24,7 @@ use super::cli_args::{
 pub(super) struct RunCommandInput {
     pub(super) config: BranchCampaignConfigV1,
     pub(super) round_budget: RoundBudgetRequestV1,
+    pub(super) milestone: MilestoneContinuationRequestV1,
     pub(super) progress: bool,
     pub(super) progress_detail: BranchCampaignProgressDetailV1,
     pub(super) json: bool,
@@ -43,6 +44,7 @@ impl RunCommandInput {
         Ok(Self {
             config: campaign_config_from_args(args)?,
             round_budget: RoundBudgetRequestV1::from_args(args),
+            milestone: MilestoneContinuationRequestV1::from_args(args)?,
             progress: args.progress,
             progress_detail: BranchCampaignProgressDetailV1::from(args.progress_detail),
             json: args.json,
@@ -56,6 +58,109 @@ impl RunCommandInput {
             branch_examples: args.branch_examples,
             report_detail: BranchCampaignReportDetailV1::from(args.report_detail),
         })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CampaignMilestoneTargetV1 {
+    Act1Boss,
+    Act2Start,
+    Act2Boss,
+    Act3Boss,
+    CurrentActBoss,
+}
+
+impl CampaignMilestoneTargetV1 {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value.to_ascii_lowercase().replace(['-', '_'], "").as_str() {
+            "act1boss" => Ok(Self::Act1Boss),
+            "act2start" => Ok(Self::Act2Start),
+            "act2boss" => Ok(Self::Act2Boss),
+            "act3boss" => Ok(Self::Act3Boss),
+            "currentactboss" => Ok(Self::CurrentActBoss),
+            _ => Err(format!(
+                "invalid --until-milestone `{value}`; expected Act1Boss, Act2Start, Act2Boss, Act3Boss, or CurrentActBoss"
+            )),
+        }
+    }
+
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Act1Boss => "Act1Boss",
+            Self::Act2Start => "Act2Start",
+            Self::Act2Boss => "Act2Boss",
+            Self::Act3Boss => "Act3Boss",
+            Self::CurrentActBoss => "CurrentActBoss",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CampaignMilestoneStopV1 {
+    Auto,
+    FirstHit,
+    RoundCap,
+}
+
+impl CampaignMilestoneStopV1 {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value.to_ascii_lowercase().replace('-', "_").as_str() {
+            "auto" => Ok(Self::Auto),
+            "first_hit" => Ok(Self::FirstHit),
+            "round_cap" => Ok(Self::RoundCap),
+            _ => Err(format!(
+                "invalid --milestone-stop `{value}`; expected auto, first_hit, or round_cap"
+            )),
+        }
+    }
+
+    pub(super) fn resolve_for_run(self) -> Self {
+        match self {
+            Self::Auto => Self::FirstHit,
+            other => other,
+        }
+    }
+
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::FirstHit => "first_hit",
+            Self::RoundCap => "round_cap",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct MilestoneContinuationRequestV1 {
+    pub(super) target: Option<CampaignMilestoneTargetV1>,
+    pub(super) step_rounds: usize,
+    pub(super) max_rounds: usize,
+    pub(super) stop: CampaignMilestoneStopV1,
+}
+
+impl MilestoneContinuationRequestV1 {
+    fn from_args(args: &Args) -> Result<Self, String> {
+        if args.until_milestone.is_some() && (args.rounds.is_some() || args.until_round.is_some()) {
+            return Err("--until-milestone owns the round budget; use --milestone-step-rounds and --milestone-max-rounds instead of --rounds or --until-round".to_string());
+        }
+        if args.until_milestone.is_some() && args.milestone_step_rounds == 0 {
+            return Err("--milestone-step-rounds must be greater than zero".to_string());
+        }
+        let target = args
+            .until_milestone
+            .as_deref()
+            .map(CampaignMilestoneTargetV1::parse)
+            .transpose()?;
+        Ok(Self {
+            target,
+            step_rounds: args.milestone_step_rounds,
+            max_rounds: args.milestone_max_rounds,
+            stop: CampaignMilestoneStopV1::parse(&args.milestone_stop)?,
+        })
+    }
+
+    pub(super) fn enabled(self) -> bool {
+        self.target.is_some()
     }
 }
 
@@ -450,6 +555,7 @@ pub(super) enum RoundBudgetModeV1 {
     LegacyMaxRounds,
     Rounds,
     UntilRound,
+    UntilMilestone,
 }
 
 impl RoundBudgetModeV1 {
@@ -458,6 +564,7 @@ impl RoundBudgetModeV1 {
             Self::LegacyMaxRounds => "legacy_max_rounds",
             Self::Rounds => "rounds",
             Self::UntilRound => "until_round",
+            Self::UntilMilestone => "until_milestone",
         }
     }
 }

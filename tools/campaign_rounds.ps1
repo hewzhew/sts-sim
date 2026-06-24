@@ -106,9 +106,14 @@ function Resolve-CampaignRunRoundContext {
     $RoundBudgetAdditionalRounds = $MaxRounds
 
     if ($UntilMilestoneBound) {
-        $ResolvedMaxRounds = $MilestoneStepRounds
-        $RoundBudgetAdditionalRounds = $MilestoneStepRounds
-        $DriverRoundBudgetArgs = @("--rounds", "$MilestoneStepRounds")
+        $ResolvedMaxRounds = $MilestoneMaxRounds
+        $RoundBudgetAdditionalRounds = $MilestoneMaxRounds
+        $DriverRoundBudgetArgs = @(
+            "--until-milestone", "$ConcreteUntilMilestone",
+            "--milestone-step-rounds", "$MilestoneStepRounds",
+            "--milestone-max-rounds", "$MilestoneMaxRounds",
+            "--milestone-stop", "$ResolvedMilestoneStop"
+        )
         $RoundBudgetSource = "UntilMilestone"
     } elseif (-not $ContinueCampaign) {
         if ($RoundsBound) {
@@ -161,6 +166,16 @@ function Resolve-CampaignRunRoundContext {
             $ResolvedMaxRounds = $RunContinuationRoundBudget.AdditionalRounds
             $RoundBudgetAdditionalRounds = $RunContinuationRoundBudget.AdditionalRounds
             $RoundBudgetSource = $RunContinuationRoundBudget.Source
+            if ($UntilMilestoneBound -and -not $ContinueCoverageGaps) {
+                $DriverRoundBudgetArgs = @(
+                    "--until-milestone", "$ConcreteUntilMilestone",
+                    "--milestone-step-rounds", "$MilestoneStepRounds",
+                    "--milestone-max-rounds", "$MilestoneMaxRounds",
+                    "--milestone-stop", "$ResolvedMilestoneStop"
+                )
+                $ResolvedMaxRounds = $MilestoneMaxRounds
+                $RoundBudgetAdditionalRounds = $MilestoneMaxRounds
+            }
         }
 
         $ResumeDriverArgs += @("--resume", "$ResumeCampaignPath")

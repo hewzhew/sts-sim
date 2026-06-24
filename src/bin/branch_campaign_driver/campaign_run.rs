@@ -7,7 +7,8 @@ use sts_simulator::eval::branch_campaign::{
     run_branch_campaign_from_report_with_checkpoint_and_progress_v1,
     run_branch_campaign_from_report_with_checkpoint_v1,
     run_branch_campaign_with_checkpoint_and_progress_v1, run_branch_campaign_with_checkpoint_v1,
-    BranchCampaignProgressDetailV1,
+    BranchCampaignBranchV1, BranchCampaignCheckpointV1, BranchCampaignProgressDetailV1,
+    BranchCampaignReportV1, BranchCampaignRunResultV1,
 };
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     extract_branch_outcome_records_v1, summarize_branch_outcome_records_v1,
@@ -17,7 +18,10 @@ use super::campaign_artifacts::{
     read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
     write_campaign_report_v1,
 };
-use super::command_inputs::{render_round_budget_resolution_v1, RunCommandInput};
+use super::command_inputs::{
+    render_round_budget_resolution_v1, CampaignMilestoneStopV1, CampaignMilestoneTargetV1,
+    RoundBudgetModeV1, RoundBudgetResolutionV1, RunCommandInput,
+};
 use super::outcome_dataset::{
     learning_dataset_export_context_v1, write_branch_outcome_dataset_jsonl_v1,
     write_decision_outcome_dataset_jsonl_v1, write_learning_dataset_jsonl_v1,
@@ -44,12 +48,12 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
     if input.resume_checkpoint.is_some() && input.resume.is_none() {
         return Err("--resume-checkpoint requires --resume".to_string());
     }
-    let previous = input
+    let mut previous = input
         .resume
         .as_ref()
         .map(read_campaign_report_v1)
         .transpose()?;
-    let checkpoint = input
+    let mut checkpoint = input
         .resume_checkpoint
         .as_ref()
         .map(read_campaign_checkpoint_v1)
@@ -57,43 +61,83 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
     let source_rounds = previous
         .as_ref()
         .map_or(0, |report| report.rounds_completed);
-    let round_budget = input
+    let mut round_budget = input
         .round_budget
         .resolve_for_source_rounds(source_rounds)?;
-    let mut config = input.config.clone();
-    config.max_rounds = round_budget.round_budget;
-    let result = if input.progress && !input.json {
-        let started_at = Instant::now();
-        let progress_detail = input.progress_detail;
-        let progress = |event| {
-            let rendered = match progress_detail {
-                BranchCampaignProgressDetailV1::Summary => {
-                    render_branch_campaign_progress_event_with_detail_v1(&event, progress_detail)
-                }
-                BranchCampaignProgressDetailV1::Verbose => {
-                    Some(render_branch_campaign_progress_event_v1(&event))
-                }
-            };
-            if let Some(line) = rendered {
-                println!("[{:>4}s] {line}", started_at.elapsed().as_secs());
-            }
+    if input.milestone.enabled() {
+        round_budget = RoundBudgetResolutionV1 {
+            mode: RoundBudgetModeV1::UntilMilestone,
+            source_rounds,
+            round_budget: input.milestone.step_rounds.min(input.milestone.max_rounds),
+            target_total_rounds: source_rounds
+                .saturating_add(input.milestone.step_rounds.min(input.milestone.max_rounds)),
         };
-        if let Some(previous) = previous.as_ref() {
-            run_branch_campaign_from_report_with_checkpoint_and_progress_v1(
-                &config,
-                previous,
+    }
+    let started_at = Instant::now();
+    let mut result = run_campaign_iteration_v1(
+        input,
+        previous.as_ref(),
+        checkpoint.as_ref(),
+        round_budget.round_budget,
+        started_at,
+    )?;
+    if let Some(target) = input.milestone.target {
+        let concrete_target = resolve_campaign_milestone_target_v1(target, &result.report);
+        let stop = input.milestone.stop.resolve_for_run();
+        let mut spent_rounds = round_budget.round_budget;
+        while spent_rounds < input.milestone.max_rounds {
+            let status = campaign_milestone_status_v1(&result.report, concrete_target);
+            if !input.json {
+                println!(
+                    "MilestoneStatusV1 target={} stop={} reached={} hits={} furthest=A{}F{} spent_rounds={} cap={}",
+                    concrete_target.as_str(),
+                    stop.as_str(),
+                    status.reached,
+                    status.hit_count,
+                    status.furthest_act,
+                    status.furthest_floor,
+                    spent_rounds,
+                    input.milestone.max_rounds
+                );
+            }
+            if status.reached && stop == CampaignMilestoneStopV1::FirstHit {
+                break;
+            }
+            let step_rounds = input
+                .milestone
+                .step_rounds
+                .min(input.milestone.max_rounds - spent_rounds);
+            if step_rounds == 0 {
+                break;
+            }
+            previous = Some(result.report);
+            checkpoint = Some(result.checkpoint);
+            result = run_campaign_iteration_v1(
+                input,
+                previous.as_ref(),
                 checkpoint.as_ref(),
-                progress,
-            )?
-        } else {
-            run_branch_campaign_with_checkpoint_and_progress_v1(&config, progress)?
+                step_rounds,
+                started_at,
+            )?;
+            spent_rounds += step_rounds;
         }
-    } else if let Some(previous) = previous.as_ref() {
-        run_branch_campaign_from_report_with_checkpoint_v1(&config, previous, checkpoint.as_ref())?
-    } else {
-        run_branch_campaign_with_checkpoint_v1(&config)?
-    };
+        let status = campaign_milestone_status_v1(&result.report, concrete_target);
+        if !input.json {
+            println!(
+                "MilestoneStatusV1 target={} stop={} reached={} hits={} furthest=A{}F{} spent_rounds={} cap={}",
+                concrete_target.as_str(),
+                stop.as_str(),
+                status.reached,
+                status.hit_count,
+                status.furthest_act,
+                status.furthest_floor,
+                spent_rounds,
+                input.milestone.max_rounds
+            );
+        }
+    }
     let report = result.report;
+    let checkpoint = result.checkpoint;
     if !input.json {
         println!("{}", render_round_budget_resolution_v1(round_budget));
         eprintln!(
@@ -107,10 +151,10 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
         write_campaign_report_v1(path, &report)?;
     }
     if let Some(path) = input.checkpoint_out.as_ref() {
-        write_campaign_checkpoint_v1(path, &result.checkpoint)?;
+        write_campaign_checkpoint_v1(path, &checkpoint)?;
     }
     if let Some(path) = input.export_outcome_dataset.as_ref() {
-        let records = extract_branch_outcome_records_v1(&report, Some(&result.checkpoint))?;
+        let records = extract_branch_outcome_records_v1(&report, Some(&checkpoint))?;
         write_branch_outcome_dataset_jsonl_v1(path, &records)?;
         let summary = summarize_branch_outcome_records_v1(&records);
         eprintln!(
@@ -121,7 +165,7 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
         );
     }
     if let Some(path) = input.export_learning_dataset.as_ref() {
-        let records = extract_branch_outcome_records_v1(&report, Some(&result.checkpoint))?;
+        let records = extract_branch_outcome_records_v1(&report, Some(&checkpoint))?;
         let samples =
             sts_simulator::eval::learning_dataset_v1::learning_records_from_branch_outcomes_v1(
                 &records,
@@ -138,7 +182,7 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
         );
     }
     if let Some(path) = input.export_decision_outcome_dataset.as_ref() {
-        let records = extract_branch_outcome_records_v1(&report, Some(&result.checkpoint))?;
+        let records = extract_branch_outcome_records_v1(&report, Some(&checkpoint))?;
         let samples = sts_simulator::eval::learning_dataset_v1::decision_outcome_samples_from_campaign_report_v1(
             &report,
             &records,
@@ -183,4 +227,125 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
         );
     }
     Ok(())
+}
+
+fn run_campaign_iteration_v1(
+    input: &RunCommandInput,
+    previous: Option<&BranchCampaignReportV1>,
+    checkpoint: Option<&BranchCampaignCheckpointV1>,
+    round_budget: usize,
+    started_at: Instant,
+) -> Result<BranchCampaignRunResultV1, String> {
+    let mut config = input.config.clone();
+    config.max_rounds = round_budget;
+    if input.progress && !input.json {
+        let progress_detail = input.progress_detail;
+        let progress = |event| print_campaign_progress_event_v1(started_at, progress_detail, event);
+        if let Some(previous) = previous {
+            run_branch_campaign_from_report_with_checkpoint_and_progress_v1(
+                &config, previous, checkpoint, progress,
+            )
+        } else {
+            run_branch_campaign_with_checkpoint_and_progress_v1(&config, progress)
+        }
+    } else if let Some(previous) = previous {
+        run_branch_campaign_from_report_with_checkpoint_v1(&config, previous, checkpoint)
+    } else {
+        run_branch_campaign_with_checkpoint_v1(&config)
+    }
+}
+
+fn print_campaign_progress_event_v1(
+    started_at: Instant,
+    progress_detail: BranchCampaignProgressDetailV1,
+    event: sts_simulator::eval::branch_campaign::BranchCampaignProgressEventV1,
+) {
+    let rendered = match progress_detail {
+        BranchCampaignProgressDetailV1::Summary => {
+            render_branch_campaign_progress_event_with_detail_v1(&event, progress_detail)
+        }
+        BranchCampaignProgressDetailV1::Verbose => {
+            Some(render_branch_campaign_progress_event_v1(&event))
+        }
+    };
+    if let Some(line) = rendered {
+        println!("[{:>4}s] {line}", started_at.elapsed().as_secs());
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CampaignMilestoneStatusV1 {
+    reached: bool,
+    furthest_act: u8,
+    furthest_floor: i32,
+    hit_count: usize,
+}
+
+fn resolve_campaign_milestone_target_v1(
+    target: CampaignMilestoneTargetV1,
+    report: &BranchCampaignReportV1,
+) -> CampaignMilestoneTargetV1 {
+    if target != CampaignMilestoneTargetV1::CurrentActBoss {
+        return target;
+    }
+    let status = campaign_milestone_status_v1(report, CampaignMilestoneTargetV1::Act3Boss);
+    match status.furthest_act {
+        0 | 1 => CampaignMilestoneTargetV1::Act1Boss,
+        2 => CampaignMilestoneTargetV1::Act2Boss,
+        _ => CampaignMilestoneTargetV1::Act3Boss,
+    }
+}
+
+fn campaign_milestone_status_v1(
+    report: &BranchCampaignReportV1,
+    target: CampaignMilestoneTargetV1,
+) -> CampaignMilestoneStatusV1 {
+    let mut status = CampaignMilestoneStatusV1 {
+        reached: false,
+        furthest_act: 0,
+        furthest_floor: 0,
+        hit_count: 0,
+    };
+    for branch in report
+        .active
+        .iter()
+        .chain(report.frozen.iter())
+        .chain(report.stuck.iter())
+        .chain(report.victories.iter())
+        .chain(report.dead.iter())
+        .chain(report.abandoned.iter())
+    {
+        update_milestone_status_from_branch_v1(&mut status, target, branch);
+    }
+    status.reached = status.hit_count > 0;
+    status
+}
+
+fn update_milestone_status_from_branch_v1(
+    status: &mut CampaignMilestoneStatusV1,
+    target: CampaignMilestoneTargetV1,
+    branch: &BranchCampaignBranchV1,
+) {
+    let Some(summary) = branch.summary.as_ref() else {
+        return;
+    };
+    if summary.act > status.furthest_act
+        || (summary.act == status.furthest_act && summary.floor > status.furthest_floor)
+    {
+        status.furthest_act = summary.act;
+        status.furthest_floor = summary.floor;
+    }
+    if campaign_milestone_hit_v1(summary.act, summary.floor, target) {
+        status.hit_count += 1;
+    }
+}
+
+fn campaign_milestone_hit_v1(act: u8, floor: i32, target: CampaignMilestoneTargetV1) -> bool {
+    match target {
+        CampaignMilestoneTargetV1::Act1Boss => act > 1 || (act == 1 && floor >= 16),
+        CampaignMilestoneTargetV1::Act2Start => act >= 2,
+        CampaignMilestoneTargetV1::Act2Boss => act > 2 || (act == 2 && floor >= 32),
+        CampaignMilestoneTargetV1::Act3Boss => act > 3 || (act == 3 && floor >= 48),
+        CampaignMilestoneTargetV1::CurrentActBoss => false,
+    }
 }

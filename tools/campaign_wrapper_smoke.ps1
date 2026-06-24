@@ -376,10 +376,13 @@ try {
         ) `
         -Contains @(
             "until-milestone=Act1Boss step-rounds=1 max-additional-rounds=2",
-            "milestone-loop-command-template:",
+            "--until-milestone Act1Boss",
+            "--milestone-step-rounds 1",
+            "--milestone-max-rounds 2",
             "\tools\artifacts\campaigns\scratch\"
         ) `
         -NotContains @(
+            "milestone-loop-command-template:",
             "Choose one campaign request kind"
         )
 

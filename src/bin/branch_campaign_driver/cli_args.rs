@@ -234,6 +234,22 @@ pub(super) struct Args {
     )]
     pub(super) until_round: Option<usize>,
 
+    #[arg(
+        long = "until-milestone",
+        value_name = "MILESTONE",
+        help = "Rust-owned milestone continuation target: Act1Boss, Act2Start, Act2Boss, Act3Boss, or CurrentActBoss"
+    )]
+    pub(super) until_milestone: Option<String>,
+
+    #[arg(long = "milestone-step-rounds", default_value_t = 2)]
+    pub(super) milestone_step_rounds: usize,
+
+    #[arg(long = "milestone-max-rounds", default_value_t = 24)]
+    pub(super) milestone_max_rounds: usize,
+
+    #[arg(long = "milestone-stop", default_value = "auto")]
+    pub(super) milestone_stop: String,
+
     #[arg(long, default_value_t = 1)]
     pub(super) round_depth: usize,
 
@@ -1022,6 +1038,22 @@ struct CampaignBranchingArgs {
     )]
     until_round: Option<usize>,
 
+    #[arg(
+        long = "until-milestone",
+        value_name = "MILESTONE",
+        help = "Rust-owned milestone continuation target: Act1Boss, Act2Start, Act2Boss, Act3Boss, or CurrentActBoss"
+    )]
+    until_milestone: Option<String>,
+
+    #[arg(long = "milestone-step-rounds", default_value_t = 2)]
+    milestone_step_rounds: usize,
+
+    #[arg(long = "milestone-max-rounds", default_value_t = 24)]
+    milestone_max_rounds: usize,
+
+    #[arg(long = "milestone-stop", default_value = "auto")]
+    milestone_stop: String,
+
     #[arg(long, default_value_t = 1)]
     round_depth: usize,
 
@@ -1691,6 +1723,10 @@ impl Args {
             max_rounds: 8,
             rounds: None,
             until_round: None,
+            until_milestone: None,
+            milestone_step_rounds: 2,
+            milestone_max_rounds: 24,
+            milestone_stop: "auto".to_string(),
             round_depth: 1,
             max_active: 8,
             max_frozen: 32,
@@ -1891,6 +1927,10 @@ impl CampaignBranchingArgs {
         args.max_rounds = self.max_rounds;
         args.rounds = self.rounds;
         args.until_round = self.until_round;
+        args.until_milestone = self.until_milestone;
+        args.milestone_step_rounds = self.milestone_step_rounds;
+        args.milestone_max_rounds = self.milestone_max_rounds;
+        args.milestone_stop = self.milestone_stop;
         args.round_depth = self.round_depth;
         args.max_active = self.max_active;
         args.max_frozen = self.max_frozen;
