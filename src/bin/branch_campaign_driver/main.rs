@@ -21,9 +21,9 @@ mod outcome_dataset;
 mod shop_challenge;
 
 use campaign_artifact_store::{
-    render_campaign_artifact_manifest_ref_v1, render_campaign_artifact_ref_v1,
-    write_campaign_artifact_manifest_from_payload_text_v1, CampaignArtifactKindV1,
-    CampaignArtifactStoreV1,
+    render_campaign_artifact_manifest_ref_v1, render_campaign_artifact_prune_report_v1,
+    render_campaign_artifact_ref_v1, write_campaign_artifact_manifest_from_payload_text_v1,
+    CampaignArtifactKindV1, CampaignArtifactStoreV1,
 };
 use campaign_run::{run_ancestor_replay_self_check, run_campaign_command};
 use checkpoint_inspection::{run_checkpoint_inspection, run_final_boss_combat_report_inspection};
@@ -224,6 +224,21 @@ fn run_artifact_command(input: ArtifactCommandInput) -> Result<(), String> {
             println!(
                 "{}",
                 render_campaign_artifact_manifest_ref_v1(&manifest_ref, json)?
+            );
+            Ok(())
+        }
+        ArtifactCommandInput::Prune {
+            campaign_dir,
+            keep_runs,
+            keep_scratch,
+            apply,
+            json,
+        } => {
+            let store = CampaignArtifactStoreV1::new(campaign_dir);
+            let report = store.prune_campaign_artifacts_v1(keep_runs, keep_scratch, apply)?;
+            println!(
+                "{}",
+                render_campaign_artifact_prune_report_v1(&report, json)?
             );
             Ok(())
         }

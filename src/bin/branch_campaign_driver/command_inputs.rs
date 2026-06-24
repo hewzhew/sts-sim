@@ -199,6 +199,13 @@ pub(super) enum ArtifactCommandInput {
         created_at: String,
         json: bool,
     },
+    Prune {
+        campaign_dir: PathBuf,
+        keep_runs: usize,
+        keep_scratch: usize,
+        apply: bool,
+        json: bool,
+    },
 }
 
 impl ArtifactCommandInput {
@@ -258,6 +265,13 @@ impl ArtifactCommandInput {
                     .artifact_created_at
                     .clone()
                     .ok_or_else(|| "artifact write-manifest requires --created-at".to_string())?,
+                json: args.artifact_json,
+            }),
+            ArtifactActionV1::Prune => Ok(Self::Prune {
+                campaign_dir,
+                keep_runs: args.artifact_keep_runs,
+                keep_scratch: args.artifact_keep_scratch,
+                apply: args.artifact_apply,
                 json: args.artifact_json,
             }),
         }

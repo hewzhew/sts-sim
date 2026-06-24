@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -55,6 +56,35 @@ pub(super) struct CampaignArtifactManifestRefV1 {
     pub(super) schema_name: String,
     pub(super) schema_version: u32,
     pub(super) payload_schema_name: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(super) struct CampaignArtifactPruneReportV1 {
+    pub(super) schema_name: String,
+    pub(super) mode: String,
+    pub(super) candidates: usize,
+    pub(super) reclaim_bytes: u64,
+    pub(super) keep_runs: usize,
+    pub(super) keep_scratch: usize,
+    pub(super) deleted_files: usize,
+    pub(super) class_totals: Vec<CampaignArtifactPruneClassTotalV1>,
+    pub(super) largest_candidates: Vec<CampaignArtifactPruneCandidateV1>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(super) struct CampaignArtifactPruneClassTotalV1 {
+    pub(super) class: String,
+    pub(super) files: usize,
+    pub(super) bytes: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(super) struct CampaignArtifactPruneCandidateV1 {
+    pub(super) class: String,
+    pub(super) path: PathBuf,
+    pub(super) relative_path: String,
+    pub(super) bytes: u64,
+    pub(super) last_write_unix_ms: u128,
 }
 
 impl CampaignArtifactStoreV1 {
@@ -229,6 +259,204 @@ impl CampaignArtifactStoreV1 {
     fn scratch_latest_pointer_path_v1(&self) -> PathBuf {
         self.campaign_dir.join("scratch").join("latest.json")
     }
+
+    pub(super) fn prune_campaign_artifacts_v1(
+        &self,
+        keep_runs: usize,
+        keep_scratch: usize,
+        apply: bool,
+    ) -> Result<CampaignArtifactPruneReportV1, String> {
+        let candidates = self.campaign_artifact_prune_candidates_v1(keep_runs, keep_scratch)?;
+        let deleted_files = if apply {
+            self.delete_campaign_artifact_prune_candidates_v1(&candidates)?
+        } else {
+            0
+        };
+        Ok(campaign_artifact_prune_report_v1(
+            candidates,
+            keep_runs,
+            keep_scratch,
+            apply,
+            deleted_files,
+        ))
+    }
+
+    fn campaign_artifact_prune_candidates_v1(
+        &self,
+        keep_runs: usize,
+        keep_scratch: usize,
+    ) -> Result<Vec<CampaignArtifactPruneCandidateV1>, String> {
+        if !self.campaign_dir.exists() {
+            return Ok(Vec::new());
+        }
+        let root = canonicalize_campaign_artifact_path_v1(&self.campaign_dir)?;
+        let mut protected = HashSet::<PathBuf>::new();
+        self.add_campaign_artifact_pointer_protection_v1(&mut protected);
+        self.add_recent_run_artifact_protection_v1(&mut protected, keep_runs)?;
+        self.add_recent_scratch_artifact_protection_v1(&mut protected, keep_scratch)?;
+
+        let mut files = Vec::new();
+        collect_campaign_artifact_files_v1(&root, &mut files)?;
+        let mut candidates = Vec::new();
+        for file in files {
+            let path = canonicalize_campaign_artifact_path_v1(&file)?;
+            if !path.starts_with(&root) {
+                return Err(format!(
+                    "refusing to inspect path outside campaign artifact root: {}",
+                    path.display()
+                ));
+            }
+            if protected.contains(&path) {
+                continue;
+            }
+            let metadata = std::fs::metadata(&path).map_err(|err| {
+                format!(
+                    "failed to read campaign artifact metadata {}: {err}",
+                    path.display()
+                )
+            })?;
+            let relative_path = campaign_relative_path_string_v1(&root, &path);
+            candidates.push(CampaignArtifactPruneCandidateV1 {
+                class: campaign_artifact_prune_class_v1(&relative_path),
+                path,
+                relative_path,
+                bytes: metadata.len(),
+                last_write_unix_ms: campaign_file_modified_unix_ms_v1(&metadata),
+            });
+        }
+        candidates.sort_by(|left, right| {
+            left.class
+                .cmp(&right.class)
+                .then(left.relative_path.cmp(&right.relative_path))
+        });
+        Ok(candidates)
+    }
+
+    fn add_campaign_artifact_pointer_protection_v1(&self, protected: &mut HashSet<PathBuf>) {
+        add_campaign_protected_path_v1(protected, &self.latest_pointer_path_v1());
+        add_campaign_protected_path_v1(protected, &self.scratch_latest_pointer_path_v1());
+
+        if self.latest_pointer_path_v1().exists() {
+            if let Ok(pointer) = self.read_latest_pointer_v1() {
+                add_campaign_pointer_artifacts_v1(protected, &pointer);
+            }
+        }
+        if self.scratch_latest_pointer_path_v1().exists() {
+            if let Ok(pointer) = self.read_scratch_latest_pointer_v1() {
+                add_campaign_pointer_artifacts_v1(protected, &pointer);
+            }
+        }
+
+        for legacy_name in [
+            "latest.mode.txt",
+            "latest.command.txt",
+            "latest.manifest.json",
+            "latest.log",
+            "latest.campaign.json",
+            "latest.checkpoint.json",
+        ] {
+            add_campaign_protected_path_v1(protected, &self.campaign_dir.join(legacy_name));
+        }
+    }
+
+    fn add_recent_run_artifact_protection_v1(
+        &self,
+        protected: &mut HashSet<PathBuf>,
+        keep_runs: usize,
+    ) -> Result<(), String> {
+        if keep_runs == 0 {
+            return Ok(());
+        }
+        let runs_dir = self.campaign_dir.join("runs");
+        if !runs_dir.exists() {
+            return Ok(());
+        }
+        let mut dirs = campaign_child_dirs_with_modified_time_v1(&runs_dir)?;
+        dirs.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+        for (dir, _) in dirs.into_iter().take(keep_runs) {
+            add_campaign_protected_directory_v1(protected, &dir)?;
+        }
+        Ok(())
+    }
+
+    fn add_recent_scratch_artifact_protection_v1(
+        &self,
+        protected: &mut HashSet<PathBuf>,
+        keep_scratch: usize,
+    ) -> Result<(), String> {
+        if keep_scratch == 0 {
+            return Ok(());
+        }
+        let scratch_dir = self.campaign_dir.join("scratch");
+        if !scratch_dir.exists() {
+            return Ok(());
+        }
+        let mut groups = BTreeMap::<String, (u128, Vec<PathBuf>)>::new();
+        for file in campaign_child_files_v1(&scratch_dir)? {
+            if file.file_name().and_then(|name| name.to_str()) == Some("latest.json") {
+                continue;
+            }
+            let Some(file_name) = file.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let metadata = std::fs::metadata(&file).map_err(|err| {
+                format!(
+                    "failed to read scratch artifact metadata {}: {err}",
+                    file.display()
+                )
+            })?;
+            let group_id = campaign_scratch_artifact_group_id_v1(file_name);
+            let modified = campaign_file_modified_unix_ms_v1(&metadata);
+            let entry = groups.entry(group_id).or_insert((0, Vec::new()));
+            entry.0 = entry.0.max(modified);
+            entry.1.push(file);
+        }
+        let mut groups = groups.into_iter().collect::<Vec<_>>();
+        groups.sort_by(
+            |(left_id, (left_modified, _)), (right_id, (right_modified, _))| {
+                right_modified
+                    .cmp(left_modified)
+                    .then(left_id.cmp(right_id))
+            },
+        );
+        for (_, (_, files)) in groups.into_iter().take(keep_scratch) {
+            for file in files {
+                add_campaign_protected_path_v1(protected, &file);
+            }
+        }
+        Ok(())
+    }
+
+    fn delete_campaign_artifact_prune_candidates_v1(
+        &self,
+        candidates: &[CampaignArtifactPruneCandidateV1],
+    ) -> Result<usize, String> {
+        if !self.campaign_dir.exists() {
+            return Ok(0);
+        }
+        let root = canonicalize_campaign_artifact_path_v1(&self.campaign_dir)?;
+        let mut deleted = 0usize;
+        for candidate in candidates {
+            let path = canonicalize_campaign_artifact_path_v1(&candidate.path)?;
+            if !path.starts_with(&root) {
+                return Err(format!(
+                    "refusing to delete path outside campaign artifact root: {}",
+                    path.display()
+                ));
+            }
+            if path.exists() {
+                std::fs::remove_file(&path).map_err(|err| {
+                    format!(
+                        "failed to delete campaign artifact {}: {err}",
+                        path.display()
+                    )
+                })?;
+                deleted += 1;
+            }
+        }
+        remove_empty_campaign_artifact_dirs_v1(&root)?;
+        Ok(deleted)
+    }
 }
 
 pub(super) fn render_campaign_artifact_ref_v1(
@@ -270,6 +498,50 @@ pub(super) fn render_campaign_artifact_manifest_ref_v1(
         manifest.payload_schema_name,
         manifest.path.display()
     ))
+}
+
+pub(super) fn render_campaign_artifact_prune_report_v1(
+    report: &CampaignArtifactPruneReportV1,
+    json: bool,
+) -> Result<String, String> {
+    if json {
+        return serde_json::to_string_pretty(report)
+            .map_err(|err| format!("failed to serialize campaign prune report: {err}"));
+    }
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "CampaignArtifactPruneV1 mode={} candidates={} reclaim={} keep_runs={} keep_scratch={} deleted={}",
+        report.mode,
+        report.candidates,
+        format_campaign_artifact_size_v1(report.reclaim_bytes),
+        report.keep_runs,
+        report.keep_scratch,
+        report.deleted_files
+    ));
+    for class in &report.class_totals {
+        lines.push(format!(
+            "  {:<12} files={:4} bytes={:>10}",
+            class.class,
+            class.files,
+            format_campaign_artifact_size_v1(class.bytes)
+        ));
+    }
+    lines.push("Largest candidates:".to_string());
+    for candidate in &report.largest_candidates {
+        lines.push(format!(
+            "  {:>10} | {:<12} | {}",
+            format_campaign_artifact_size_v1(candidate.bytes),
+            candidate.class,
+            candidate.relative_path
+        ));
+    }
+    if report.mode == "dry-run" {
+        lines.push(
+            "No files deleted. Re-run with --apply, or wrapper -PruneApply, to remove these candidates."
+                .to_string(),
+        );
+    }
+    Ok(lines.join("\n"))
 }
 
 pub(super) fn write_campaign_artifact_manifest_from_payload_text_v1(
@@ -571,6 +843,346 @@ fn read_json_file_v1<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, Str
             path.display()
         )
     })
+}
+
+fn campaign_artifact_prune_report_v1(
+    candidates: Vec<CampaignArtifactPruneCandidateV1>,
+    keep_runs: usize,
+    keep_scratch: usize,
+    apply: bool,
+    deleted_files: usize,
+) -> CampaignArtifactPruneReportV1 {
+    let reclaim_bytes = candidates
+        .iter()
+        .map(|candidate| candidate.bytes)
+        .sum::<u64>();
+    let mut totals = BTreeMap::<String, (usize, u64)>::new();
+    for candidate in &candidates {
+        let entry = totals.entry(candidate.class.clone()).or_insert((0, 0));
+        entry.0 += 1;
+        entry.1 += candidate.bytes;
+    }
+    let mut class_totals = totals
+        .into_iter()
+        .map(
+            |(class, (files, bytes))| CampaignArtifactPruneClassTotalV1 {
+                class,
+                files,
+                bytes,
+            },
+        )
+        .collect::<Vec<_>>();
+    class_totals.sort_by(|left, right| {
+        right
+            .bytes
+            .cmp(&left.bytes)
+            .then(left.class.cmp(&right.class))
+    });
+    let mut largest_candidates = candidates.clone();
+    largest_candidates.sort_by(|left, right| {
+        right
+            .bytes
+            .cmp(&left.bytes)
+            .then(left.relative_path.cmp(&right.relative_path))
+    });
+    largest_candidates.truncate(12);
+    CampaignArtifactPruneReportV1 {
+        schema_name: "CampaignArtifactPruneV1".to_string(),
+        mode: if apply {
+            "apply".to_string()
+        } else {
+            "dry-run".to_string()
+        },
+        candidates: candidates.len(),
+        reclaim_bytes,
+        keep_runs,
+        keep_scratch,
+        deleted_files,
+        class_totals,
+        largest_candidates,
+    }
+}
+
+fn add_campaign_pointer_artifacts_v1(
+    protected: &mut HashSet<PathBuf>,
+    pointer: &CampaignLatestPointerV1,
+) {
+    for path in [
+        &pointer.report,
+        &pointer.state,
+        &pointer.journal,
+        &pointer.checkpoint,
+        &pointer.manifest,
+        &pointer.command,
+        &pointer.log,
+    ] {
+        add_campaign_protected_path_v1(protected, path);
+    }
+}
+
+fn add_campaign_protected_path_v1(protected: &mut HashSet<PathBuf>, path: &Path) {
+    if path.exists() {
+        if let Ok(path) = canonicalize_campaign_artifact_path_v1(path) {
+            protected.insert(path);
+        }
+    }
+}
+
+fn add_campaign_protected_directory_v1(
+    protected: &mut HashSet<PathBuf>,
+    path: &Path,
+) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let mut files = Vec::new();
+    collect_campaign_artifact_files_v1(path, &mut files)?;
+    for file in files {
+        add_campaign_protected_path_v1(protected, &file);
+    }
+    Ok(())
+}
+
+fn collect_campaign_artifact_files_v1(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(path).map_err(|err| {
+        format!(
+            "failed to read artifact directory {}: {err}",
+            path.display()
+        )
+    })? {
+        let entry = entry.map_err(|err| {
+            format!(
+                "failed to read artifact directory entry under {}: {err}",
+                path.display()
+            )
+        })?;
+        let entry_path = entry.path();
+        let metadata = entry.metadata().map_err(|err| {
+            format!(
+                "failed to read artifact metadata {}: {err}",
+                entry_path.display()
+            )
+        })?;
+        if metadata.is_dir() {
+            collect_campaign_artifact_files_v1(&entry_path, files)?;
+        } else if metadata.is_file() {
+            files.push(entry_path);
+        }
+    }
+    Ok(())
+}
+
+fn campaign_child_files_v1(path: &Path) -> Result<Vec<PathBuf>, String> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(path).map_err(|err| {
+        format!(
+            "failed to read artifact directory {}: {err}",
+            path.display()
+        )
+    })? {
+        let entry = entry.map_err(|err| {
+            format!(
+                "failed to read artifact directory entry under {}: {err}",
+                path.display()
+            )
+        })?;
+        let metadata = entry.metadata().map_err(|err| {
+            format!(
+                "failed to read artifact metadata {}: {err}",
+                entry.path().display()
+            )
+        })?;
+        if metadata.is_file() {
+            files.push(entry.path());
+        }
+    }
+    Ok(files)
+}
+
+fn campaign_child_dirs_with_modified_time_v1(path: &Path) -> Result<Vec<(PathBuf, u128)>, String> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let mut dirs = Vec::new();
+    for entry in std::fs::read_dir(path).map_err(|err| {
+        format!(
+            "failed to read artifact directory {}: {err}",
+            path.display()
+        )
+    })? {
+        let entry = entry.map_err(|err| {
+            format!(
+                "failed to read artifact directory entry under {}: {err}",
+                path.display()
+            )
+        })?;
+        let metadata = entry.metadata().map_err(|err| {
+            format!(
+                "failed to read artifact metadata {}: {err}",
+                entry.path().display()
+            )
+        })?;
+        if metadata.is_dir() {
+            dirs.push((entry.path(), campaign_file_modified_unix_ms_v1(&metadata)));
+        }
+    }
+    Ok(dirs)
+}
+
+fn remove_empty_campaign_artifact_dirs_v1(root: &Path) -> Result<(), String> {
+    if !root.exists() {
+        return Ok(());
+    }
+    let mut dirs = Vec::new();
+    collect_campaign_artifact_dirs_v1(root, &mut dirs)?;
+    dirs.sort_by(|left, right| right.components().count().cmp(&left.components().count()));
+    for dir in dirs {
+        if dir == root {
+            continue;
+        }
+        let path = canonicalize_campaign_artifact_path_v1(&dir)?;
+        if !path.starts_with(root) {
+            return Err(format!(
+                "refusing to remove directory outside campaign artifact root: {}",
+                path.display()
+            ));
+        }
+        let is_empty = std::fs::read_dir(&path)
+            .map_err(|err| {
+                format!(
+                    "failed to read artifact directory {}: {err}",
+                    path.display()
+                )
+            })?
+            .next()
+            .is_none();
+        if is_empty {
+            std::fs::remove_dir(&path).map_err(|err| {
+                format!(
+                    "failed to remove empty campaign artifact directory {}: {err}",
+                    path.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn collect_campaign_artifact_dirs_v1(path: &Path, dirs: &mut Vec<PathBuf>) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(path).map_err(|err| {
+        format!(
+            "failed to read artifact directory {}: {err}",
+            path.display()
+        )
+    })? {
+        let entry = entry.map_err(|err| {
+            format!(
+                "failed to read artifact directory entry under {}: {err}",
+                path.display()
+            )
+        })?;
+        let metadata = entry.metadata().map_err(|err| {
+            format!(
+                "failed to read artifact metadata {}: {err}",
+                entry.path().display()
+            )
+        })?;
+        if metadata.is_dir() {
+            let entry_path = entry.path();
+            dirs.push(entry_path.clone());
+            collect_campaign_artifact_dirs_v1(&entry_path, dirs)?;
+        }
+    }
+    Ok(())
+}
+
+fn canonicalize_campaign_artifact_path_v1(path: &Path) -> Result<PathBuf, String> {
+    std::fs::canonicalize(path).map_err(|err| {
+        format!(
+            "failed to resolve campaign artifact path {}: {err}",
+            path.display()
+        )
+    })
+}
+
+fn campaign_relative_path_string_v1(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .trim_start_matches(|c| c == '\\' || c == '/')
+        .to_string()
+}
+
+fn campaign_artifact_prune_class_v1(relative_path: &str) -> String {
+    let top = relative_path.split(['\\', '/']).next().unwrap_or_default();
+    if top == "runs" {
+        "old_run"
+    } else if top == "scratch" {
+        "old_scratch"
+    } else if top == "perf" {
+        "perf"
+    } else if top == "diagnostics" {
+        "diagnostic"
+    } else if top.starts_with("samples-") {
+        "sample"
+    } else if !relative_path.contains('\\') && !relative_path.contains('/') {
+        "loose_root"
+    } else {
+        "other"
+    }
+    .to_string()
+}
+
+fn campaign_scratch_artifact_group_id_v1(file_name: &str) -> String {
+    for suffix in [
+        ".decision_outcomes.after.jsonl",
+        ".campaign.state.json.gz",
+        ".campaign.state.json",
+        ".campaign.journal.json.gz",
+        ".campaign.journal.json",
+        ".campaign.json.gz",
+        ".campaign.json",
+        ".checkpoint.json.gz",
+        ".checkpoint.json",
+        ".manifest.json",
+        ".command.txt",
+        ".log",
+    ] {
+        if let Some(prefix) = file_name.strip_suffix(suffix) {
+            return prefix.to_string();
+        }
+    }
+    file_name.to_string()
+}
+
+fn campaign_file_modified_unix_ms_v1(metadata: &std::fs::Metadata) -> u128 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default()
+}
+
+fn format_campaign_artifact_size_v1(bytes: u64) -> String {
+    if bytes >= 1_073_741_824 {
+        format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
+    } else if bytes >= 1_048_576 {
+        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+    } else if bytes >= 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{bytes} B")
+    }
 }
 
 #[cfg(test)]

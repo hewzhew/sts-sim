@@ -226,13 +226,6 @@ New-Item -ItemType Directory -Force -Path $CampaignPathContext.CampaignDir | Out
 . (Join-Path $PSScriptRoot "campaign_request.ps1")
 . (Join-Path $PSScriptRoot "campaign_entry_dispatch.ps1")
 
-if ($PruneArtifacts) {
-    exit (Invoke-CampaignArtifactPrune `
-        -KeepRuns $KeepArtifactRuns `
-        -KeepScratch $KeepArtifactScratch `
-        -Apply ([bool] $PruneApply))
-}
-
 $DriverPassthroughContext = Resolve-CampaignDriverPassthroughContext `
     -DriverArgs $DriverArgs `
     -CompatibilityExtraArgs $ExtraArgs
@@ -286,6 +279,43 @@ $BuildContext = Resolve-CampaignBuildContext `
     -DebugBuild ([bool] $DebugBuild) `
     -BuildProfileBound ($PSBoundParameters.ContainsKey("BuildProfile"))
 $NeedsBuild = $Build -or (Test-DriverNeedsBuild $BuildContext.DriverExe)
+
+if ($PruneArtifacts) {
+    if ($NeedsBuild) {
+        if ($DryRun) {
+            Write-CampaignBuildCommandPreview -BuildArgs $BuildContext.BuildArgs
+        } else {
+            Invoke-CampaignDriverBuild -RepoRoot $RepoRoot -BuildArgs $BuildContext.BuildArgs
+            $NeedsBuild = $false
+        }
+    }
+
+    $PruneDriverArgs = @(
+        "artifact",
+        "prune",
+        "--campaign-dir",
+        $CampaignPathContext.CampaignDir,
+        "--keep-runs",
+        "$KeepArtifactRuns",
+        "--keep-scratch",
+        "$KeepArtifactScratch"
+    )
+    if ($PruneApply) {
+        $PruneDriverArgs += "--apply"
+    }
+
+    if ($DryRun) {
+        Write-Host (($BuildContext.DriverExe) + " " + ($PruneDriverArgs -join " "))
+        exit 0
+    }
+
+    exit (Invoke-CampaignArtifactPrune `
+        -DriverExe $BuildContext.DriverExe `
+        -CampaignDir $CampaignPathContext.CampaignDir `
+        -KeepRuns $KeepArtifactRuns `
+        -KeepScratch $KeepArtifactScratch `
+        -Apply ([bool] $PruneApply))
+}
 
 $ReadsCampaignArtifactSource = [bool] ($CampaignRequest.ReadsCampaignSource -or $Last)
 $UsesLegacyLatestSource = ([string] $From).Trim() -eq "legacy-latest"

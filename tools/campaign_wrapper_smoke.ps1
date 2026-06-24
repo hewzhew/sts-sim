@@ -164,6 +164,23 @@ try {
     Ensure-CampaignSmokeDebugDriver
     Invoke-CampaignArtifactIoSmoke
 
+    Invoke-CampaignSmokeCase `
+        -Name "PruneArtifactsDryRunUsesRustArtifactCommand" `
+        -Arguments @(
+            "-PruneArtifacts",
+            "-DebugBuild",
+            "-DryRun"
+        ) `
+        -Contains @(
+            "branch_campaign_driver.exe artifact prune",
+            "--campaign-dir",
+            "--keep-runs 5",
+            "--keep-scratch 1"
+        ) `
+        -NotContains @(
+            "Get-CampaignArtifactPruneCandidates"
+        )
+
     if ($ScratchLatestExists) {
         Invoke-CampaignSmokeCase `
             -Name "FromScratchLatestContinueScratchDryRun" `

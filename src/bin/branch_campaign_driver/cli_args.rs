@@ -99,6 +99,7 @@ pub(super) enum ArtifactActionV1 {
     Allocate,
     WriteLatest,
     WriteManifest,
+    Prune,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -192,6 +193,15 @@ pub(super) struct Args {
 
     #[arg(skip)]
     pub(super) artifact_created_at: Option<String>,
+
+    #[arg(skip)]
+    pub(super) artifact_keep_runs: usize,
+
+    #[arg(skip)]
+    pub(super) artifact_keep_scratch: usize,
+
+    #[arg(skip)]
+    pub(super) artifact_apply: bool,
 
     #[arg(long, value_enum)]
     pub(super) preset: Option<BranchCampaignPresetV1>,
@@ -895,6 +905,8 @@ enum ArtifactSubcommandV1 {
     WriteLatest(ArtifactWriteLatestCommandArgs),
     #[command(about = "Write a campaign artifact manifest envelope from JSON payload on stdin")]
     WriteManifest(ArtifactWriteManifestCommandArgs),
+    #[command(about = "List or delete old campaign artifacts while protecting latest pointers")]
+    Prune(ArtifactPruneCommandArgs),
 }
 
 #[derive(Debug, ClapArgs)]
@@ -986,6 +998,29 @@ struct ArtifactWriteManifestCommandArgs {
     created_at: String,
 
     #[arg(long, help = "Print written manifest summary as JSON")]
+    json: bool,
+}
+
+#[derive(Debug, ClapArgs)]
+struct ArtifactPruneCommandArgs {
+    #[arg(
+        long = "campaign-dir",
+        value_name = "PATH",
+        default_value = "tools/artifacts/campaigns",
+        help = "Campaign artifact root that contains latest.json, runs/, and scratch/"
+    )]
+    campaign_dir: PathBuf,
+
+    #[arg(long = "keep-runs", default_value_t = 5)]
+    keep_runs: usize,
+
+    #[arg(long = "keep-scratch", default_value_t = 1)]
+    keep_scratch: usize,
+
+    #[arg(long, help = "Delete prune candidates instead of only listing them")]
+    apply: bool,
+
+    #[arg(long, help = "Print prune report as JSON")]
     json: bool,
 }
 
@@ -1714,6 +1749,9 @@ impl Args {
             artifact_manifest_path: None,
             artifact_payload_schema_name: None,
             artifact_created_at: None,
+            artifact_keep_runs: 5,
+            artifact_keep_scratch: 1,
+            artifact_apply: false,
             preset: None,
             seed: 1,
             ascension: 0,
@@ -1897,6 +1935,14 @@ impl ArtifactCommandArgs {
                 args.artifact_payload_schema_name = Some(write_manifest.payload_schema_name);
                 args.artifact_created_at = Some(write_manifest.created_at);
                 args.artifact_json = write_manifest.json;
+            }
+            ArtifactSubcommandV1::Prune(prune) => {
+                args.artifact_action = Some(ArtifactActionV1::Prune);
+                args.artifact_campaign_dir = Some(prune.campaign_dir);
+                args.artifact_keep_runs = prune.keep_runs;
+                args.artifact_keep_scratch = prune.keep_scratch;
+                args.artifact_apply = prune.apply;
+                args.artifact_json = prune.json;
             }
         }
         args
