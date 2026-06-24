@@ -18,6 +18,13 @@ pub(super) fn render_final_boss_combat_report_inspection_v1(
         .filter(|(_, branch)| branch.final_boss_combat_record.is_some())
         .collect();
     if candidates.is_empty() {
+        let failures = final_boss_failure_branches_v1(report);
+        if !failures.is_empty() {
+            return Ok(render_final_boss_boundary_failure_inspection_v1(
+                report,
+                failures.as_slice(),
+            ));
+        }
         return Err("campaign report contains no final boss combat records".to_string());
     }
     if inspect_index >= candidates.len() {
@@ -74,6 +81,111 @@ pub(super) fn render_final_boss_combat_report_inspection_v1(
         &record.actions,
     ));
     Ok(format!("{}\n", lines.join("\n")))
+}
+
+fn render_final_boss_boundary_failure_inspection_v1(
+    report: &BranchCampaignReportV1,
+    failures: &[&BranchCampaignBranchV1],
+) -> String {
+    let mut hp_min = i32::MAX;
+    let mut hp_max = i32::MIN;
+    let mut deck_min = usize::MAX;
+    let mut deck_max = usize::MIN;
+    let mut boss_counts = BTreeMap::<String, usize>::new();
+    let mut pressure_counts = BTreeMap::<String, usize>::new();
+    let mut debt_counts = BTreeMap::<String, usize>::new();
+    for branch in failures {
+        let Some(summary) = branch.summary.as_ref() else {
+            continue;
+        };
+        hp_min = hp_min.min(summary.hp);
+        hp_max = hp_max.max(summary.hp);
+        deck_min = deck_min.min(summary.deck_count);
+        deck_max = deck_max.max(summary.deck_count);
+        let boss = if summary.boss.is_empty() {
+            "unknown".to_string()
+        } else {
+            summary.boss.clone()
+        };
+        *boss_counts.entry(boss).or_default() += 1;
+        for signal in &summary.boss_pressure {
+            *pressure_counts.entry(signal.clone()).or_default() += 1;
+        }
+        for debt in &summary.run_debt {
+            *debt_counts.entry(debt.clone()).or_default() += 1;
+        }
+    }
+
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Final boss boundary failures: seed={} count={} combat_records=0 hp={}..{} deck={}..{} bosses=[{}]",
+        report.seed,
+        failures.len(),
+        hp_min,
+        hp_max,
+        deck_min,
+        deck_max,
+        render_count_summary_v1(&boss_counts, 6)
+    ));
+    lines.push(
+        "  note: no final boss combat trajectory record was captured; this report only summarizes campaign boundary facts."
+            .to_string(),
+    );
+    if !pressure_counts.is_empty() {
+        lines.push(format!(
+            "  boss_pressure=[{}]",
+            render_count_summary_v1(&pressure_counts, 8)
+        ));
+    }
+    if !debt_counts.is_empty() {
+        lines.push(format!(
+            "  run_debt=[{}]",
+            render_count_summary_v1(&debt_counts, 8)
+        ));
+    }
+    lines.push("  examples:".to_string());
+    for (index, branch) in failures.iter().take(5).enumerate() {
+        lines.push(format!(
+            "    {}. {}",
+            index + 1,
+            render_final_boss_branch_brief_v1(branch)
+        ));
+        if let Some(deck_key) = branch
+            .summary
+            .as_ref()
+            .and_then(render_final_boss_deck_key_v1)
+        {
+            lines.push(format!("       deck: {deck_key}"));
+        }
+        if !branch.choice_labels.is_empty() {
+            lines.push(format!(
+                "       choices: {}",
+                render_truncated_text(&branch.choice_labels.join(" -> "), 240)
+            ));
+        }
+    }
+    if failures.len() > 5 {
+        lines.push(format!(
+            "    ... {} more final boss boundary failure(s)",
+            failures.len() - 5
+        ));
+    }
+    format!("{}\n", lines.join("\n"))
+}
+
+fn render_count_summary_v1(counts: &BTreeMap<String, usize>, limit: usize) -> String {
+    let mut entries = counts.iter().collect::<Vec<_>>();
+    entries.sort_by(|(left_label, left_count), (right_label, right_count)| {
+        right_count
+            .cmp(left_count)
+            .then_with(|| left_label.cmp(right_label))
+    });
+    entries
+        .into_iter()
+        .take(limit)
+        .map(|(label, count)| format!("{}={count}", render_truncated_text(label, 72)))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn render_final_boss_comparison_lines_v1(
@@ -622,6 +734,75 @@ mod tests {
 
         assert!(rendered.contains("source=search_combat"));
         assert!(rendered.contains("early_end_pending"));
+    }
+
+    #[test]
+    fn final_boss_inspect_reports_boundary_failures_without_combat_record() {
+        let report = BranchCampaignReportV1 {
+            schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
+            schema_version: BRANCH_CAMPAIGN_SCHEMA_VERSION,
+            seed: 1401646639,
+            run_domain: BranchCampaignRunDomainV1::default(),
+            run_prelude: Default::default(),
+            rounds_completed: 64,
+            stop_reason: "max_rounds".to_string(),
+            active: Vec::new(),
+            frozen: Vec::new(),
+            victories: Vec::new(),
+            dead: Vec::new(),
+            abandoned: vec![BranchCampaignBranchV1 {
+                branch_id: "final-boss-failure".to_string(),
+                commands: vec!["rp 2".to_string(), "smith 16".to_string()],
+                choice_labels: vec!["Shockwave".to_string(), "Smith Power Through".to_string()],
+                summary: Some(BranchCampaignBranchSummaryV1 {
+                    act: 3,
+                    floor: 48,
+                    hp: 80,
+                    max_hp: 80,
+                    gold: 421,
+                    deck_count: 25,
+                    deck_key: "Armaments+, Bloodletting, Clothesline, Ghostly Armor+".to_string(),
+                    formation_stage: "PlanCommitted".to_string(),
+                    formation_strengths: Vec::new(),
+                    formation_needs: Vec::new(),
+                    trajectory_key: String::new(),
+                    boss: "AwakenedOne".to_string(),
+                    boss_pressure: vec!["missing:phase_power_plan".to_string()],
+                    run_debt: vec!["SneckoEye=random_cost_deck_shape_debt".to_string()],
+                    event_boundary: None,
+                    reward_boundary: None,
+                }),
+                strategic_summary: BranchSignatureCompact::default(),
+                frontier_title: "Combat".to_string(),
+                status: BranchCampaignBranchStatusV1::Abandoned,
+                stop_reason: "combat search did not find an executable complete win".to_string(),
+                continuation_origin: None,
+                decision_candidate_axis: None,
+                lineage_decision_signal_rank_adjustment: 0,
+                rank_key: -799000,
+                final_boss_combat_record: None,
+                combat_lab_probes: Vec::new(),
+            }],
+            stuck: Vec::new(),
+            discarded_count: 0,
+            discarded_examples: Vec::new(),
+            discarded_branches: Vec::new(),
+            strategy_requests: Vec::new(),
+            route_evidence: Default::default(),
+            combat_retry_ledger: Default::default(),
+            strategic_signals: Default::default(),
+            state_store: Default::default(),
+            journal: Default::default(),
+            rounds: Vec::new(),
+        };
+
+        let rendered = super::render_final_boss_combat_report_inspection_v1(&report, 0)
+            .expect("boundary failures should be inspectable without a combat trajectory");
+
+        assert!(rendered.contains("Final boss boundary failures"));
+        assert!(rendered.contains("bosses=[AwakenedOne=1]"));
+        assert!(rendered.contains("stop=combat search did not find an executable complete win"));
+        assert!(!rendered.contains("likely issue"));
     }
 
     fn combat_action_with_time_warp(
