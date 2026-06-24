@@ -12,18 +12,20 @@ For target architecture, read:
 
 ## Current Safe Use
 
-These commands are still useful as launcher conveniences:
+These commands are still useful as launcher conveniences because they do not
+pretend the wrapper owns campaign semantics:
 
 ```powershell
 .\tools\campaign.ps1 -Mode quick
-.\tools\campaign.ps1 -From latest -Continue -Rounds 1
 .\tools\campaign.ps1 -Inspect
 .\tools\campaign.ps1 -Probe final-boss-combat
 .\tools\campaign.ps1 -DryRun
 ```
 
-Use `-DryRun` before commands that read one artifact and write another. Treat
-the printed Rust driver command and artifact paths as the authority.
+Continuation and coverage commands are still available during migration, but
+they are not the target interface. Use `-DryRun` before commands that read one
+artifact and write another. Treat the printed Rust driver command and artifact
+paths as the authority.
 
 ## Ownership Boundary
 

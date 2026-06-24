@@ -42,33 +42,29 @@
 
 ## Primary Campaign Workflow
 
-`tools/campaign.ps1` is the maintained user-facing wrapper for
-`branch_campaign_driver`. It calls the driver's `run`, `inspect`, `dataset`,
-and `continue` subcommands rather than relying on legacy top-level flag
-routing.
+The campaign architecture belongs to the Rust `branch_campaign_driver`
+campaign application. `tools/campaign.ps1` is a compatibility launcher: it may
+choose a build profile, build the driver, forward a stable request, and print
+artifact refs. It must not own source, output, milestone, coverage, report, or
+artifact lifecycle semantics.
 
 ```powershell
 .\tools\campaign.ps1 -Mode quick
-.\tools\campaign.ps1 -From latest -Continue -Rounds 1
-.\tools\campaign.ps1 -From latest -Continue -UntilMilestone CurrentActBoss
 .\tools\campaign.ps1 -Inspect
 ```
 
-Normal runs write a new artifact under
-`tools/artifacts/campaigns/runs/<run-id>/` and update
-`tools/artifacts/campaigns/latest.json` as a pointer. Continuation must state
-its source with `-From latest` or `-From run:<id>`; the old `-More` shortcut is
-retired because it mixed source, output, and round-budget semantics.
+Normal runs write artifacts under `tools/artifacts/campaigns/runs/<run-id>/`
+and update `tools/artifacts/campaigns/latest.json` through Rust-owned artifact
+store logic. Scratch runs use `tools/artifacts/campaigns/scratch/<id>/` and the
+scratch latest pointer.
 
-The script owns friendly defaults, build-profile selection, artifact source and
-output paths. It should stay a wrapper over the Rust campaign driver; campaign
-semantics belong in Rust, not in PowerShell.
-Milestone continuation is intentionally a wrapper-level convenience loop: it
-runs small `-Rounds` chunks and checks structured report fields until a branch
-reaches a requested milestone such as `Act1Boss`, `Act2Start`, `Act2Boss`, or
-`Act3Boss`, or `-MilestoneMaxRounds` is exhausted. `CurrentActBoss` resolves to
-the concrete boss milestone for the source artifact's current act.
-See `docs/CAMPAIGN_WRAPPER_USAGE.md` for the longer command cookbook.
+The old `-More` shortcut is retired because it mixed source, output, and
+round-budget semantics. Milestone continuation is Rust engine behavior, not a
+PowerShell loop.
+
+See `docs/CAMPAIGN_SYSTEM_ARCHITECTURE.md` and
+`docs/CAMPAIGN_CLI_CONTRACT.md` for the target model. See
+`docs/CAMPAIGN_WRAPPER_USAGE.md` only for current compatibility launcher usage.
 
 ## Primary Java Analysis Workflow
 

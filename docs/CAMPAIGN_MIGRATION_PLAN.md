@@ -1,200 +1,307 @@
-# Campaign Migration Gates
+# Campaign V2 Migration Plan
 
-This file tracks migration gates for the campaign architecture. The target
-architecture is defined in
-[Campaign System Architecture](CAMPAIGN_SYSTEM_ARCHITECTURE.md). This file does
-not redefine that architecture.
+This plan implements
+[Campaign System Architecture](CAMPAIGN_SYSTEM_ARCHITECTURE.md). It is not a
+list of small cleanup chores. A migration step counts only if it transfers
+semantic ownership to the right Rust component, deletes a misleading surface, or
+enforces an artifact boundary.
 
-A migration step counts only when it transfers semantic ownership to the right
-Rust component, deletes a misleading public surface, or enforces an artifact
-boundary.
+## Migration Rule
 
-A step does not count merely because it:
+Do not ask "what is the next small patch?"
 
-- splits a large file
-- renames functions
-- compresses a payload
-- formats output
-- moves PowerShell logic into another PowerShell file
+Ask:
 
-## Gate 1: Wrapper Quarantine
-
-Goal: stop `tools/campaign.ps1` from growing into a second campaign
-application.
-
-Done when:
-
-- PowerShell docs call the wrapper compatibility launch code.
-- New wrapper changes are limited to build/profile/invocation compatibility.
-- New campaign semantics are rejected unless they already exist in Rust.
-- Old aliases either fail loudly or forward to Rust without changing semantics.
-
-Evidence:
-
-```powershell
-rg -n --glob '*.ps1' "Invoke-CampaignUntilMilestone|PowerShell-owned|latest\.campaign|FromScratchLatest|\\bMore\\b" tools
+```text
+Which wrong owner still controls a campaign concept?
 ```
 
-Remaining hits must be compatibility notes, loud failures, or legacy readers.
+Then move that concept to the correct owner and delete or quarantine the old
+surface.
 
-## Gate 2: Rust ArtifactStore And CampaignApp
+Changes that do not count:
 
-Goal: make Rust the owner of artifact lifecycle and request routing.
+- splitting one PowerShell file into several PowerShell files
+- renaming active/frozen without changing the experiment model
+- compressing JSON while keeping the same boundary error
+- adding report fields because an inspect tool needs data
+- adding tests for human wording or one uncertain strategic choice
+- preserving an alias because it is convenient
 
-Done when:
+## Target Ownership Matrix
+
+| Concept | Owner | Current tolerated compatibility | Forbidden new work |
+| --- | --- | --- | --- |
+| source selector | `ArtifactStore` | wrapper forwards selector | wrapper resolves paths by convention |
+| output allocation | `ArtifactStore` | wrapper asks Rust for refs | wrapper constructs run/scratch paths |
+| latest pointers | `ArtifactStore` | old readers for archaeology | wrapper writes pointers |
+| manifests | `ArtifactStore` | wrapper may display returned manifest | wrapper creates maintained manifest truth |
+| continuation rounds | `CampaignEngine` | wrapper passes typed budget | wrapper interprets total vs additional rounds |
+| milestone continuation | `CampaignEngine` | wrapper passes `--until` flags | wrapper loops and polls reports |
+| candidate coverage | `ExperimentPlanner` + `CampaignJournal` | executor queues remain internal | active/frozen as public coverage model |
+| route/shop/event/reward candidates | `CampaignJournal` | legacy labels as display | labels or command strings as identity |
+| inspect views | `InspectRenderer` | wrapper forwards view request | wrapper parses report JSON as workflow control |
+| learning rows | `Exporter` | old scripts for archaeology | report/journal grows training-only fields |
+
+## Phase 1: Rust Campaign Request Boundary
+
+Goal: every maintained workflow has a direct Rust request.
+
+Deliverables:
+
+- `campaign run`
+- `campaign continue`
+- `campaign coverage plan`
+- `campaign coverage execute`
+- `campaign inspect`
+- `campaign artifacts`
+- `campaign export`
+
+Acceptance:
+
+```powershell
+cargo check --bin branch_campaign_driver
+branch_campaign_driver campaign run --random-seed --mode quick --dry-run
+branch_campaign_driver campaign continue --from latest --rounds 1 --dry-run
+branch_campaign_driver campaign coverage plan --from latest --budget key --dry-run
+branch_campaign_driver campaign inspect --from latest --view summary --dry-run
+branch_campaign_driver campaign artifacts prune --dry-run
+```
+
+The output must show typed request data. It must not require the PowerShell
+wrapper to construct a command sequence.
+
+Exit criteria:
+
+- every maintained wrapper path is a forwarder to one Rust request
+- wrapper help says it is compatibility launch code
+- no new workflow can be added only in PowerShell
+
+## Phase 2: ArtifactStore Ownership
+
+Goal: artifact paths, pointers, manifests, command provenance, and size metadata
+are all Rust-owned.
+
+Deliverables:
 
 - Rust resolves `latest`, `scratch-latest`, `run:<id>`, `scratch:<id>`, and
-  explicit archaeology paths.
-- Rust allocates run and scratch outputs.
-- Rust writes manifests and latest pointers.
-- Rust has typed requests for run, continue, inspect, coverage plan, coverage
-  execute, artifact, and export workflows.
-- PowerShell no longer constructs artifact paths for maintained workflows.
+  explicit `path:<path>`
+- Rust allocates `run` and `scratch` outputs
+- Rust writes manifests, command provenance, and latest pointers
+- Rust list/show/prune commands cover maintained artifact lifecycle
 
-Evidence:
+Acceptance:
 
 ```powershell
 cargo test --bin branch_campaign_driver campaign_artifact_store --quiet
-cargo check --bin branch_campaign_driver
-.\tools\campaign.ps1 -Mode quick -DryRun
+branch_campaign_driver campaign artifacts show --from latest
+branch_campaign_driver campaign artifacts prune --dry-run
+rg -n --glob '*.ps1' "latest\\.campaign|latest\\.checkpoint|Write-CampaignWrapperManifest|New-CampaignOutputArtifactViaDriver" tools
 ```
 
-The dry-run should show a Rust request or Rust driver command, not a
-PowerShell-owned lifecycle.
+Remaining PowerShell hits must be compatibility forwarders or explicit legacy
+archaeology.
 
-## Gate 3: Rust CampaignEngine Continuation
+Exit criteria:
 
-Goal: make continuation behavior one engine concept.
+- a maintained writing workflow never writes artifact metadata from PowerShell
+- old loose root artifacts can be read only through explicit legacy paths
 
-Done when:
+## Phase 3: Engine Continuation Ownership
 
-- Rust owns additional-round continuation.
-- Rust owns milestone continuation.
-- `rounds` means additional rounds in every maintained path.
-- No PowerShell file calls the driver repeatedly to implement milestone
-  behavior.
+Goal: continuation is one Rust engine concept.
 
-Evidence:
+Deliverables:
+
+- `rounds` means additional rounds in all maintained paths
+- `until` milestone execution is a Rust-owned engine loop
+- run, continue, and coverage execute share the same budget semantics
+- source progress is computed by Rust
+
+Acceptance:
 
 ```powershell
-rg -n --glob '*.ps1' "Invoke-CampaignUntilMilestone|MilestoneLoop|milestone-loop-command" tools
-.\tools\campaign.ps1 -Mode quick -UntilMilestone Act1Boss -MilestoneStepRounds 1 -MilestoneMaxRounds 1 -DryRun
+branch_campaign_driver campaign continue --from latest --rounds 1 --dry-run
+branch_campaign_driver campaign continue --from latest --until Act1Boss --dry-run
+rg -n --glob '*.ps1' "MilestoneLoop|Invoke-CampaignUntilMilestone|while.*Milestone|rounds_completed" tools
 ```
 
-The dry-run should contain one Rust invocation with milestone flags, not a loop
-template.
+Remaining hits must not implement a loop or read reports as control flow.
 
-## Gate 4: Rust ExperimentPlanner
+Exit criteria:
 
-Goal: replace active/frozen guessing with journal candidate coverage.
+- no PowerShell command calls the driver repeatedly to implement milestone
+  behavior
+- no path treats `--rounds` as total rounds
 
-Done when:
+## Phase 4: ExperimentPlanner Replaces Active/Frozen Coverage
 
-- `coverage plan` selects targets from journaled decision candidates.
-- `coverage execute` runs `ContinuationJob`s with target provenance.
-- Reports can classify candidate progress as unobserved, target-only,
-  continued, terminal, censored, budget-blocked, or invalid.
-- Route, reward, shop, event, boss relic, and major deck-mutation candidates can
-  enter coverage planning through typed ids.
-- Active/frozen ordering is not the primary coverage mechanism.
+Goal: candidate coverage comes from journaled decision candidates.
 
-Evidence:
+Deliverables:
+
+- journal entries carry typed decision ids and candidate ids
+- route, reward, shop, event, boss relic, and deck mutation candidate pools can
+  be addressed by ids
+- coverage plan produces `CoverageTarget`s
+- coverage execute runs `ContinuationJob`s with target provenance
+- outcome summaries classify candidate progress as:
+
+```text
+unobserved
+target_only
+continued
+terminal
+censored
+combat_budget_blocked
+invalid
+superseded
+```
+
+Acceptance:
 
 ```powershell
 branch_campaign_driver campaign coverage plan --from latest --budget key
 branch_campaign_driver campaign coverage execute --from latest --until Act2Start --out scratch
 branch_campaign_driver campaign inspect --from scratch-latest --view coverage
+rg -n "active/frozen|active branch|frozen branch" README.md docs tools src
 ```
 
-Until the stable subcommand exists, equivalent legacy driver paths are allowed
-only as migration scaffolding.
+Remaining active/frozen hits must be internal executor notes or explicit
+deprecation text.
 
-## Gate 5: Rust Inspect And Artifact Commands
+Exit criteria:
 
-Goal: make inspect and artifact lifecycle independent of wrapper state.
+- coverage planning does not select work by thawing frozen branches
+- reports answer "which historical candidates have not been observed?"
+- active/frozen cannot appear as winner-like output
 
-Done when:
+## Phase 5: InspectRenderer Ownership
 
-- Rust owns maintained inspect views.
-- Rust owns artifact list/show/prune.
-- Inspect commands are read-only by construction.
-- Wrapper inspect code is deleted or only forwards to Rust.
+Goal: inspect is read-only, typed, and independent of wrapper state.
 
-Evidence:
+Deliverables:
+
+- typed inspect views for summary, artifact, state, journal, coverage, lineage,
+  decision, route, shop, combat, and final-boss
+- each inspect view declares which artifacts it reads
+- no inspect path mutates latest or allocates scratch
+- no inspect path parses display labels as ids
+
+Acceptance:
 
 ```powershell
 branch_campaign_driver campaign inspect --from latest --view summary
-branch_campaign_driver campaign artifacts list
-branch_campaign_driver campaign artifacts prune --dry-run
+branch_campaign_driver campaign inspect --from latest --view artifact
+branch_campaign_driver campaign inspect --from latest --view coverage
+rg -n --glob '*.ps1' "Inspect|Read-CampaignJsonArtifact|ConvertFrom-Json" tools
 ```
 
-No maintained inspect path should parse report prose or wrapper-only paths.
+Remaining PowerShell JSON reads must be legacy archaeology, smoke tests, or
+temporary forwarder display only.
 
-## Gate 6: Artifact Boundary Enforcement
+Exit criteria:
 
-Goal: stop report/checkpoint/journal/diagnostic/export from collapsing into one
-large JSON blob.
+- maintained inspect does not depend on `tools/campaign_artifact_summary.ps1`
+- default inspect output is layered: status, refs, coverage, blockers, optional
+  drilldowns
 
-Done when:
+## Phase 6: Artifact Boundary Enforcement
 
-- default reports are bounded projections
-- checkpoint stores exact resume state only
-- state stores executor bookkeeping only
-- journal stores decision facts and candidate pools only
-- diagnostics store optional large explanations and traces
-- exports store learning/analysis datasets explicitly
-- manifests record refs, encodings, sizes, and provenance
+Goal: report, checkpoint, state, journal, diagnostics, and export stop
+collapsing into one payload.
 
-Evidence:
+Deliverables:
+
+- checkpoint contains exact resume state only
+- state contains scheduler/executor bookkeeping only
+- journal contains decision facts and candidate pools only
+- report contains bounded projections and refs
+- diagnostics contain optional large explanations and traces
+- exports contain learning/analysis rows explicitly
+- manifests record refs, schema versions, encodings, and sizes
+
+Acceptance:
 
 ```powershell
 branch_campaign_driver campaign artifacts show --from latest
 branch_campaign_driver campaign inspect --from latest --view artifact
 ```
 
-The artifact view should show refs and sizes. It should not require loading a
-large report to understand artifact ownership.
+The artifact view must show size and ownership by artifact kind without loading
+the report as a database.
 
-## Gate 7: Compatibility Retirement
+Exit criteria:
+
+- default report remains bounded for long runs
+- large evidence tables and combat traces are opt-in diagnostics
+- learning exports never require adding training-only fields to report/journal
+
+## Phase 7: Compatibility Retirement
 
 Goal: remove the old public surface from normal use.
 
-Done when:
+Deliverables:
 
-- normal help and examples use stable Rust campaign commands
-- `tools/campaign.ps1` is small enough to audit as a launcher
-- retired names appear only in deprecation notes or legacy readers
-- old artifact readers do not write new artifacts
+- wrapper help only shows supported launch aliases
+- old aliases either fail loudly or call the Rust request without changing
+  semantics
+- old artifact readers are only archaeology
+- docs and README show the Rust campaign model first
 
-Evidence:
+Acceptance:
 
 ```powershell
-rg -n "-More|FromScratchLatest|InspectScratchLatest|latest\.campaign|selected_plan|active/frozen" README.md docs tools src
+rg -n "-More|FromScratchLatest|InspectScratchLatest|latest\\.campaign|latest\\.checkpoint|selected_plan|active/frozen" README.md docs tools src
 ```
 
-Hits in current docs should be explicit deprecation or migration notes, not
-instructions for normal use.
+Allowed hits:
 
-## Stop Rules
+- explicit deprecation notes
+- legacy readers
+- tests proving retired aliases fail
+- internal executor implementation names that do not drive public coverage
 
-Stop a migration step and redesign it if it requires:
+Exit criteria:
 
-- parsing display labels as identity
-- adding a wrapper switch for a new experiment type
-- adding report fields because no better artifact owner exists
-- making source/output/rounds/scratch semantics context-dependent
-- using active/frozen ordering as the answer to a coverage question
-- writing a strategy-quality test for one uncertain card, shop, route, or relic
-- preserving a confusing alias because old smoke tests expect it
+- a new contributor can run, continue, inspect, and plan coverage without
+  learning old wrapper semantics
+
+## Deletion Policy
+
+Delete or quarantine code when it meets any of these conditions:
+
+- it implements campaign semantics in PowerShell
+- it parses report JSON to decide workflow control
+- it preserves retired aliases as normal behavior
+- it exists only to satisfy tests that protect wording or old shortcuts
+- it duplicates a Rust-owned artifact command
+- it is a one-off inspect/probe path that cannot be described as a typed view
+
+Do not preserve bad code because it once helped debug an old failure.
+
+## Documentation Policy
+
+Every campaign doc must answer one of these questions:
+
+- What is the architecture?
+- What is the CLI contract?
+- What owns artifact fields?
+- What does the journal store?
+- How do I run the maintained workflow today?
+
+If a doc only explains a retired workaround, delete it or move the relevant
+warning into a maintained doc. Search results must not be full of abandoned
+interfaces.
 
 ## Current Priority Order
 
-1. Finish retiring PowerShell-owned campaign workflow semantics.
-2. Move artifact list/show/prune into Rust.
-3. Move maintained inspect views into Rust.
-4. Make coverage planning use journal candidate ids as the normal exploration
-   interface.
-5. Enforce report/checkpoint/state/journal/diagnostic/export boundaries in
-   writers.
+1. Finish retiring PowerShell-owned campaign semantics.
+2. Establish the Rust `campaign <command>` request boundary.
+3. Move remaining wrapper artifact writes and inspect JSON reads behind Rust
+   commands.
+4. Make coverage planning and execution use journal candidate ids as the normal
+   exploration interface.
+5. Enforce artifact boundaries in writers.
 6. Return to strategy quality only after lifecycle and experiment surfaces stop
    fighting each other.

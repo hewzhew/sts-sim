@@ -39,17 +39,23 @@ PowerShell wrapper remains a local launcher, not the architecture. See
 
 ## Quick Start
 
-Run the current compatibility campaign launcher:
+The target campaign application is the Rust `branch_campaign_driver` campaign
+surface. While the migration is incomplete, `tools/campaign.ps1` remains a
+compatibility launcher for local builds and convenience aliases. Do not add new
+campaign semantics to the wrapper.
+
+Current compatibility launcher:
 
 ```powershell
 cd D:\rust\sts_simulator
 .\tools\campaign.ps1 -Mode quick
-.\tools\campaign.ps1 -From latest -Continue -Rounds 1
 .\tools\campaign.ps1 -Inspect
 ```
 
-Treat wrapper commands as transitional conveniences. New campaign semantics
-belong in the Rust `branch_campaign_driver` campaign app, not in PowerShell.
+The desired direct Rust shape is documented in
+[docs/CAMPAIGN_CLI_CONTRACT.md](docs/CAMPAIGN_CLI_CONTRACT.md). Until every
+command exists there, treat wrapper commands as temporary launch aliases, not
+the architecture.
 
 Build the main campaign driver directly when debugging the binary:
 
@@ -108,7 +114,7 @@ Start here:
 - [docs/CAMPAIGN_SYSTEM_ARCHITECTURE.md](docs/CAMPAIGN_SYSTEM_ARCHITECTURE.md)
 
 `CAMPAIGN_SYSTEM_ARCHITECTURE.md` is the campaign authority contract. The next
-three campaign docs are supporting contracts, not competing designs:
+campaign docs are supporting contracts, not competing designs:
 
 - [docs/CAMPAIGN_CLI_CONTRACT.md](docs/CAMPAIGN_CLI_CONTRACT.md)
 - [docs/CAMPAIGN_MIGRATION_PLAN.md](docs/CAMPAIGN_MIGRATION_PLAN.md)
