@@ -109,6 +109,8 @@ pub(crate) enum BranchCampaignExplicitCommandV1 {
     Inspect,
     Dataset,
     Continue,
+    PlanCoverageGapContinuation,
+    ExecuteCoverageGapContinuation,
     Artifact,
     SelfCheck,
 }
@@ -2107,7 +2109,10 @@ impl CampaignCoverageCommandArgs {
                 let mut converted = Args::compat_defaults();
                 args.target.apply_to(&mut converted);
                 converted.plan_coverage_gap_continuation = true;
-                (converted, BranchCampaignExplicitCommandV1::Dataset)
+                (
+                    converted,
+                    BranchCampaignExplicitCommandV1::PlanCoverageGapContinuation,
+                )
             }
             CampaignCoverageSubcommandV1::Execute(args) => {
                 let mut converted = ContinueCommandArgs {
@@ -2121,7 +2126,10 @@ impl CampaignCoverageCommandArgs {
                 }
                 .into_args();
                 converted.execute_coverage_gap_continuation = true;
-                (converted, BranchCampaignExplicitCommandV1::Continue)
+                (
+                    converted,
+                    BranchCampaignExplicitCommandV1::ExecuteCoverageGapContinuation,
+                )
             }
         }
     }
@@ -2836,7 +2844,7 @@ mod tests {
 
         assert_eq!(
             input.explicit_command(),
-            Some(BranchCampaignExplicitCommandV1::Dataset)
+            Some(BranchCampaignExplicitCommandV1::PlanCoverageGapContinuation)
         );
         assert!(args.plan_coverage_gap_continuation);
         assert_eq!(args.inspect_report, Some(PathBuf::from("run.json.gz")));
@@ -2863,7 +2871,7 @@ mod tests {
 
         assert_eq!(
             input.explicit_command(),
-            Some(BranchCampaignExplicitCommandV1::Continue)
+            Some(BranchCampaignExplicitCommandV1::ExecuteCoverageGapContinuation)
         );
         assert!(args.execute_coverage_gap_continuation);
         assert_eq!(args.resume, Some(PathBuf::from("run.json.gz")));

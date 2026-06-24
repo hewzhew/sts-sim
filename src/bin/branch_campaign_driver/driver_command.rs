@@ -52,6 +52,12 @@ fn explicit_driver_command_from_args(
         BranchCampaignExplicitCommandV1::Inspect => inspect_command_from_args(args),
         BranchCampaignExplicitCommandV1::Dataset => dataset_command_from_args(args),
         BranchCampaignExplicitCommandV1::Continue => continuation_command_from_args(args),
+        BranchCampaignExplicitCommandV1::PlanCoverageGapContinuation => {
+            BranchCampaignDriverCommandV1::PlanCoverageGapContinuation
+        }
+        BranchCampaignExplicitCommandV1::ExecuteCoverageGapContinuation => {
+            BranchCampaignDriverCommandV1::ExecuteCoverageGapContinuation
+        }
         BranchCampaignExplicitCommandV1::Artifact => {
             BranchCampaignDriverCommandV1::ResolveCampaignArtifact
         }
