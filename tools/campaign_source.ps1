@@ -19,32 +19,29 @@ function Get-CampaignSourceContext {
         }
     }
 
-    $Artifact = Get-CampaignSourceArtifact -Selector $From -UseScratchLatest $UseScratchLatest
-    $RunConfig = Get-CampaignArtifactRunConfig `
-        -CheckpointPath $Artifact.CheckpointPath `
-        -ManifestPath $Artifact.ManifestPath
+    $SourceInfo = Get-CampaignSourceArtifactInfo -Selector $From -UseScratchLatest $UseScratchLatest
 
     return [pscustomobject]@{
-        Artifact = $Artifact
-        RunConfig = $RunConfig
+        Artifact = $SourceInfo.Artifact
+        RunConfig = $SourceInfo.RunConfig
     }
 }
 
 function Resolve-CampaignMode {
     param(
         [string] $Mode,
-        [bool] $ModeBound,
-        [bool] $IsContinuationFamily,
-        [bool] $ContinueCampaign,
-        [object] $SourceArtifact
-    )
+    [bool] $ModeBound,
+    [bool] $IsContinuationFamily,
+    [bool] $ContinueCampaign,
+    [object] $SourceRunConfig
+)
 
     if ($ModeBound) {
         return $Mode
     }
 
     if ($IsContinuationFamily) {
-        $SavedMode = Get-CampaignArtifactMode -Artifact $SourceArtifact
+        $SavedMode = if ($SourceRunConfig) { $SourceRunConfig.Mode } else { $null }
         if ($SavedMode) {
             return $SavedMode
         }
@@ -52,7 +49,7 @@ function Resolve-CampaignMode {
     }
 
     if ($ContinueCampaign) {
-        $SavedMode = Get-CampaignArtifactMode -Artifact $SourceArtifact
+        $SavedMode = if ($SourceRunConfig) { $SourceRunConfig.Mode } else { $null }
         if ($SavedMode) {
             return $SavedMode
         }
@@ -155,7 +152,7 @@ function Resolve-CampaignSourceRunContext {
         -ModeBound $ModeBound `
         -IsContinuationFamily $Request.IsContinuationFamily `
         -ContinueCampaign $Request.ContinueCampaign `
-        -SourceArtifact $SourceArtifact
+        -SourceRunConfig $SourceRunConfig
     $ResolvedSeed = Resolve-CampaignSeed `
         -Seed $Seed `
         -ReadsCampaignSource $Request.ReadsCampaignSource `

@@ -96,6 +96,7 @@ pub(super) enum ArtifactKindArgV1 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ArtifactActionV1 {
     Resolve,
+    SourceInfo,
     Allocate,
     WriteLatest,
     WriteManifest,
@@ -899,6 +900,8 @@ struct ArtifactCommandArgs {
 enum ArtifactSubcommandV1 {
     #[command(about = "Resolve latest, scratch-latest, run:<id>, scratch:<id>, or path:<report>")]
     Resolve(ArtifactResolveCommandArgs),
+    #[command(about = "Resolve an artifact selector and summarize reusable run identity")]
+    SourceInfo(ArtifactSourceInfoCommandArgs),
     #[command(about = "Allocate run/scratch artifact output paths")]
     Allocate(ArtifactAllocateCommandArgs),
     #[command(about = "Write latest or scratch-latest pointer for an artifact id")]
@@ -923,6 +926,23 @@ struct ArtifactResolveCommandArgs {
     campaign_dir: PathBuf,
 
     #[arg(long, help = "Print resolved artifact paths as JSON")]
+    json: bool,
+}
+
+#[derive(Debug, ClapArgs)]
+struct ArtifactSourceInfoCommandArgs {
+    #[arg(value_name = "SELECTOR")]
+    selector: String,
+
+    #[arg(
+        long = "campaign-dir",
+        value_name = "PATH",
+        default_value = "tools/artifacts/campaigns",
+        help = "Campaign artifact root that contains latest.json, runs/, and scratch/"
+    )]
+    campaign_dir: PathBuf,
+
+    #[arg(long, help = "Print source info as JSON")]
     json: bool,
 }
 
@@ -1911,6 +1931,12 @@ impl ArtifactCommandArgs {
                 args.artifact_selector = Some(resolve.selector);
                 args.artifact_campaign_dir = Some(resolve.campaign_dir);
                 args.artifact_json = resolve.json;
+            }
+            ArtifactSubcommandV1::SourceInfo(source_info) => {
+                args.artifact_action = Some(ArtifactActionV1::SourceInfo);
+                args.artifact_selector = Some(source_info.selector);
+                args.artifact_campaign_dir = Some(source_info.campaign_dir);
+                args.artifact_json = source_info.json;
             }
             ArtifactSubcommandV1::Allocate(allocate) => {
                 args.artifact_action = Some(ArtifactActionV1::Allocate);

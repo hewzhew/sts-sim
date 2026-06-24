@@ -304,7 +304,7 @@ fn write_campaign_checkpoint_active_combats_v1(
     write_campaign_artifact_text_v1(path, &text, "--active-combat-out")
 }
 
-fn read_campaign_artifact_text_v1(path: &PathBuf, role: &str) -> Result<String, String> {
+pub(super) fn read_campaign_artifact_text_v1(path: &PathBuf, role: &str) -> Result<String, String> {
     let bytes =
         fs::read(path).map_err(|err| format!("failed to read {role} {}: {err}", path.display()))?;
     if is_gzip_campaign_artifact_path_v1(path) || has_gzip_magic_v1(&bytes) {

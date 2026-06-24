@@ -1,6 +1,7 @@
 #[cfg(test)]
 use clap::error::ErrorKind;
 
+mod campaign_artifact_source_info;
 mod campaign_artifact_store;
 mod campaign_artifacts;
 mod campaign_milestones;
@@ -20,6 +21,9 @@ mod journal_inspection;
 mod outcome_dataset;
 mod shop_challenge;
 
+use campaign_artifact_source_info::{
+    campaign_artifact_source_info_v1, render_campaign_artifact_source_info_v1,
+};
 use campaign_artifact_store::{
     render_campaign_artifact_manifest_ref_v1, render_campaign_artifact_prune_report_v1,
     render_campaign_artifact_ref_v1, write_campaign_artifact_manifest_from_payload_text_v1,
@@ -158,6 +162,16 @@ fn run_artifact_command(input: ArtifactCommandInput) -> Result<(), String> {
             let store = CampaignArtifactStoreV1::new(campaign_dir);
             let artifact = store.resolve_source_selector_v1(&selector)?;
             println!("{}", render_campaign_artifact_ref_v1(&artifact, json)?);
+            Ok(())
+        }
+        ArtifactCommandInput::SourceInfo {
+            campaign_dir,
+            selector,
+            json,
+        } => {
+            let store = CampaignArtifactStoreV1::new(campaign_dir);
+            let info = campaign_artifact_source_info_v1(&store, &selector)?;
+            println!("{}", render_campaign_artifact_source_info_v1(&info, json)?);
             Ok(())
         }
         ArtifactCommandInput::Allocate {

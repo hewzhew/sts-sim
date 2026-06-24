@@ -178,6 +178,11 @@ pub(super) enum ArtifactCommandInput {
         selector: String,
         json: bool,
     },
+    SourceInfo {
+        campaign_dir: PathBuf,
+        selector: String,
+        json: bool,
+    },
     Allocate {
         campaign_dir: PathBuf,
         kind: ArtifactKindArgV1,
@@ -224,6 +229,14 @@ impl ArtifactCommandInput {
                     .artifact_selector
                     .clone()
                     .ok_or_else(|| "artifact resolve requires a selector".to_string())?,
+                json: args.artifact_json,
+            }),
+            ArtifactActionV1::SourceInfo => Ok(Self::SourceInfo {
+                campaign_dir,
+                selector: args
+                    .artifact_selector
+                    .clone()
+                    .ok_or_else(|| "artifact source-info requires a selector".to_string())?,
                 json: args.artifact_json,
             }),
             ArtifactActionV1::Allocate => Ok(Self::Allocate {

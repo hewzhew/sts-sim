@@ -9,41 +9,52 @@ function Set-CampaignArtifactResolverDriver {
     $script:CampaignArtifactResolverDriverExe = $DriverExe
 }
 
-function Get-CampaignManifestField {
+function New-CampaignRunConfigObject {
     param(
-        [object] $Manifest,
-        [string] $Name
+        [object] $Seed = $null,
+        [object] $Ascension = $null,
+        [string] $Class = "",
+        [string] $Mode = ""
     )
 
-    if (-not $Manifest -or -not $Name) {
-        return $null
+    return [pscustomobject]@{
+        Seed = if ($Seed -ne $null) { [long] $Seed } else { $null }
+        Ascension = if ($Ascension -ne $null) { [int] $Ascension } else { $null }
+        Class = if ($Class) { ([string] $Class).ToLowerInvariant() } else { $null }
+        Mode = if ($Mode) { ([string] $Mode).ToLowerInvariant() } else { $null }
     }
-    $Direct = $Manifest.PSObject.Properties[$Name]
-    if ($Direct -and $Direct.Value -ne $null) {
-        return $Direct.Value
-    }
-    if ($Manifest.PSObject.Properties["compatibility"]) {
-        $Compatibility = $Manifest.compatibility
-        if ($Compatibility) {
-            $CompatField = $Compatibility.PSObject.Properties[$Name]
-            if ($CompatField -and $CompatField.Value -ne $null) {
-                return $CompatField.Value
-            }
-        }
-    }
-    if ($Manifest.PSObject.Properties["payload"]) {
-        $Payload = $Manifest.payload
-        if ($Payload) {
-            $PayloadField = $Payload.PSObject.Properties[$Name]
-            if ($PayloadField -and $PayloadField.Value -ne $null) {
-                return $PayloadField.Value
-            }
-        }
-    }
-    return $null
 }
 
-function Get-CampaignSourceArtifactViaDriver {
+function Convert-CampaignDriverRunConfig {
+    param(
+        [object] $RunConfig
+    )
+
+    if (-not $RunConfig) {
+        return New-CampaignRunConfigObject
+    }
+    return New-CampaignRunConfigObject `
+        -Seed $RunConfig.seed `
+        -Ascension $RunConfig.ascension `
+        -Class ([string] $RunConfig.class) `
+        -Mode ([string] $RunConfig.mode)
+}
+
+function Convert-CampaignDriverSourceInfo {
+    param(
+        [object] $Info
+    )
+
+    if (-not $Info -or -not $Info.artifact) {
+        throw "Internal error: empty artifact source-info response."
+    }
+    return [pscustomobject]@{
+        Artifact = Convert-CampaignDriverArtifactRef -Artifact $Info.artifact
+        RunConfig = Convert-CampaignDriverRunConfig -RunConfig $Info.run_config
+    }
+}
+
+function Get-CampaignSourceArtifactInfoViaDriver {
     param(
         [string] $Selector
     )
@@ -54,108 +65,52 @@ function Get-CampaignSourceArtifactViaDriver {
 
     $Args = @(
         "artifact",
-        "resolve",
+        "source-info",
         "$Selector",
         "--campaign-dir", "$script:CampaignDir",
         "--json"
     )
     $Json = & $script:CampaignArtifactResolverDriverExe @Args
     if ($LASTEXITCODE -ne 0) {
-        throw "Rust campaign artifact resolver failed with exit code $LASTEXITCODE for selector '$Selector'."
+        throw "Rust campaign artifact source-info failed with exit code $LASTEXITCODE for selector '$Selector'."
     }
     try {
-        return Convert-CampaignDriverArtifactRef -Artifact ($Json | ConvertFrom-Json)
+        return Convert-CampaignDriverSourceInfo -Info ($Json | ConvertFrom-Json)
     } catch {
-        throw "Rust campaign artifact resolver returned invalid JSON for selector '$Selector': $_"
+        throw "Rust campaign artifact source-info returned invalid JSON for selector '$Selector': $_"
     }
 }
 
-function Get-CampaignArtifactMode {
+function Get-CampaignLegacyLatestRunConfig {
     param(
         [object] $Artifact
     )
 
-    if ($Artifact -and $Artifact.ManifestPath -and (Test-Path -LiteralPath $Artifact.ManifestPath)) {
+    $Mode = Read-LegacyLatestCampaignMode
+    $Seed = $null
+    $Ascension = $null
+    $Class = $null
+
+    if ($Artifact -and $Artifact.CheckpointPath -and (Test-Path -LiteralPath $Artifact.CheckpointPath)) {
         try {
-            $Manifest = Get-Content -LiteralPath $Artifact.ManifestPath -Raw | ConvertFrom-Json
-            $Mode = Get-CampaignManifestField -Manifest $Manifest -Name "mode"
-            if ($Mode) {
-                return ([string] $Mode).ToLowerInvariant()
-            }
-        } catch {
-            # Keep falling back to the command text.
-        }
-    }
-    if ($Artifact -and $Artifact.CommandPath -and (Test-Path -LiteralPath $Artifact.CommandPath)) {
-        $CommandText = Get-Content -LiteralPath $Artifact.CommandPath -Raw
-        if ($CommandText -match "--preset\s+('?)(quick|focused|explore|deep)\1") {
-            return $Matches[2].ToLowerInvariant()
-        }
-    }
-    if ($Artifact -and $Artifact.Kind -eq "legacy_latest") {
-        return Read-LegacyLatestCampaignMode
-    }
-    return $null
-}
-
-function Get-CampaignArtifactRunConfig {
-    param(
-        [string] $CheckpointPath,
-        [string] $ManifestPath
-    )
-
-    $Config = [ordered]@{
-        Seed = $null
-        Ascension = $null
-        Class = $null
-        Mode = $null
-    }
-
-    if ($CheckpointPath -and (Test-Path -LiteralPath $CheckpointPath)) {
-        try {
-            $Checkpoint = Read-CampaignJsonArtifact -Path $CheckpointPath
+            $Checkpoint = Read-CampaignJsonArtifact -Path $Artifact.CheckpointPath
             if ($Checkpoint.sessions -and $Checkpoint.sessions.Count -gt 0) {
                 $RunState = $Checkpoint.sessions[0].session.run_state
                 if ($RunState) {
-                    if ($RunState.seed -ne $null) { $Config.Seed = [long] $RunState.seed }
-                    if ($RunState.ascension_level -ne $null) { $Config.Ascension = [int] $RunState.ascension_level }
-                    if ($RunState.player_class) { $Config.Class = ([string] $RunState.player_class).ToLowerInvariant() }
+                    if ($RunState.seed -ne $null) { $Seed = [long] $RunState.seed }
+                    if ($RunState.ascension_level -ne $null) { $Ascension = [int] $RunState.ascension_level }
+                    if ($RunState.player_class) { $Class = ([string] $RunState.player_class).ToLowerInvariant() }
                 }
             }
         } catch {
-            # Older checkpoints may not expose run_state; leave fields unset.
+            # Legacy sidecars are best-effort archaeology.
         }
     }
 
-    if ($ManifestPath -and (Test-Path -LiteralPath $ManifestPath)) {
-        try {
-            $Manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
-            $Seed = Get-CampaignManifestField -Manifest $Manifest -Name "seed"
-            $ManifestAscension = Get-CampaignManifestField -Manifest $Manifest -Name "ascension"
-            $ManifestClass = Get-CampaignManifestField -Manifest $Manifest -Name "class"
-            if (-not $ManifestClass) {
-                $ManifestClass = Get-CampaignManifestField -Manifest $Manifest -Name "player_class"
-            }
-            $ManifestMode = Get-CampaignManifestField -Manifest $Manifest -Name "mode"
-            if ($Config.Seed -eq $null -and $Seed -ne $null) {
-                $Config.Seed = [long] $Seed
-            }
-            if ($Config.Ascension -eq $null -and $ManifestAscension -ne $null) {
-                $Config.Ascension = [int] $ManifestAscension
-            }
-            if (-not $Config.Class -and $ManifestClass) {
-                $Config.Class = ([string] $ManifestClass).ToLowerInvariant()
-            }
-            if ($ManifestMode) { $Config.Mode = ([string] $ManifestMode).ToLowerInvariant() }
-        } catch {
-            # Latest artifacts can lack a manifest; existing sidecar mode fallback remains in effect.
-        }
-    }
-
-    return [pscustomobject] $Config
+    return New-CampaignRunConfigObject -Seed $Seed -Ascension $Ascension -Class $Class -Mode $Mode
 }
 
-function Get-CampaignSourceArtifact {
+function Get-CampaignSourceArtifactInfo {
     param(
         [string] $Selector = "",
         [bool] $UseScratchLatest
@@ -165,8 +120,12 @@ function Get-CampaignSourceArtifact {
     $ResolvedSelector = if ($Selector) { $Selector.Trim() } elseif ($UseScratchLatest) { "scratch:latest" } else { "latest" }
 
     if ($ResolvedSelector -eq "legacy-latest") {
-        return New-CampaignLegacyLatestArtifact
+        $Artifact = New-CampaignLegacyLatestArtifact
+        return [pscustomobject]@{
+            Artifact = $Artifact
+            RunConfig = Get-CampaignLegacyLatestRunConfig -Artifact $Artifact
+        }
     }
 
-    return Get-CampaignSourceArtifactViaDriver -Selector $ResolvedSelector
+    return Get-CampaignSourceArtifactInfoViaDriver -Selector $ResolvedSelector
 }
