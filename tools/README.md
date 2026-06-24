@@ -43,28 +43,26 @@
 ## Primary Campaign Workflow
 
 The campaign architecture belongs to the Rust `branch_campaign_driver`
-campaign application. `tools/campaign.ps1` is a compatibility launcher: it may
-choose a build profile, build the driver, forward a stable request, and print
-artifact refs. It must not own source, output, milestone, coverage, report, or
-artifact lifecycle semantics.
+campaign application. `tools/campaign.ps1` is now a minimal launcher. It owns
+only source selection, output allocation, and the smallest continuation path.
+It must not own manifest, milestone, coverage-gap, report-shaping, or artifact
+schema semantics.
 
 ```powershell
 .\tools\campaign.ps1 -Mode quick
-.\tools\campaign.ps1 -Inspect
+.\tools\campaign.ps1 -From latest -Continue -Mode quick -Rounds 2
+.\tools\campaign.ps1 -From latest -Inspect
 ```
 
 Normal runs write artifacts under `tools/artifacts/campaigns/runs/<run-id>/`
 and update `tools/artifacts/campaigns/latest.json` through Rust-owned artifact
-store logic. Scratch runs use `tools/artifacts/campaigns/scratch/<id>/` and the
-scratch latest pointer.
+store logic. Scratch/latest shortcut semantics are retired from this wrapper.
 
 The old `-More` shortcut is retired because it mixed source, output, and
-round-budget semantics. Milestone continuation is Rust engine behavior, not a
-PowerShell loop.
+round-budget semantics. Coverage-gap and milestone orchestration are not part
+of this launcher.
 
-See `docs/CAMPAIGN_SYSTEM_ARCHITECTURE.md` and
-`docs/CAMPAIGN_CLI_CONTRACT.md` for the target model. See
-`docs/CAMPAIGN_WRAPPER_USAGE.md` only for current compatibility launcher usage.
+See `docs/CURRENT_DIRECTION.md` for the current launcher boundary.
 
 ## Primary Java Analysis Workflow
 

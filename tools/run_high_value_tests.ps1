@@ -8,8 +8,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
 $commands = @(
-    "cargo test --quiet",
-    "powershell -ExecutionPolicy Bypass -File .\tools\campaign_wrapper_smoke.ps1"
+    "cargo test --quiet"
 )
 
 Write-Host "High-value correctness suite" -ForegroundColor Cyan

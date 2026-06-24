@@ -10,9 +10,8 @@ Current main line:
 ```text
 simulator correctness
   -> Rust-owned campaign application
-  -> journaled decision candidate coverage
-  -> search/rollout evidence
-  -> explicit exports for learning or analysis
+  -> source/output/continuation lifecycle
+  -> search/rollout evidence when needed
 ```
 
 The project is not currently focused on old watch UI, Workbench,
@@ -21,21 +20,18 @@ later as adapters, but they do not define simulator truth or search quality.
 
 ## Current Workflow
 
-The maintained campaign direction is:
+The maintained campaign wrapper direction is:
 
-1. run or continue a deterministic simulator campaign from Neow onward
-2. record typed decision candidate pools in `CampaignJournal`
-3. use coverage planning to continue historically unobserved candidates
-4. use Combat Search V2 for complete combat trajectories inside branches
-5. inspect read-only artifact views when a run fails or reaches a milestone
-6. export learning or analysis data through explicit exporters
+1. resolve a source artifact when continuing or inspecting
+2. allocate a new output artifact for each run/continue invocation
+3. run a new campaign or continue a source for a small explicit round budget
 
 Autopilot, route planning, card reward policy, traces, and search-assisted
 combat are convenience/evidence tools. They are not teacher labels.
 
 The campaign system is being migrated to a Rust-owned application boundary. The
-PowerShell wrapper remains a local launcher, not the architecture. See
-[docs/CAMPAIGN_SYSTEM_ARCHITECTURE.md](docs/CAMPAIGN_SYSTEM_ARCHITECTURE.md).
+PowerShell wrapper is now a local source/output/continuation launcher, not the
+architecture. See [docs/CURRENT_DIRECTION.md](docs/CURRENT_DIRECTION.md).
 
 ## Quick Start
 
@@ -45,8 +41,8 @@ artifact semantics:
 
 ```powershell
 cd D:\rust\sts_simulator
-cargo run --profile fast-run --bin branch_campaign_driver -- campaign run --random-seed --mode quick
-cargo run --profile fast-run --bin branch_campaign_driver -- campaign inspect --from latest --view summary
+cargo run --profile fast-run --bin branch_campaign_driver -- campaign run --preset quick --seed 1 --rounds 0
+cargo run --profile fast-run --bin branch_campaign_driver -- campaign artifacts resolve latest --json
 ```
 
 `tools/campaign.ps1` remains a compatibility launcher for local builds and
@@ -56,12 +52,11 @@ campaign behavior:
 ```powershell
 cd D:\rust\sts_simulator
 .\tools\campaign.ps1 -Mode quick
-.\tools\campaign.ps1 -Inspect
+.\tools\campaign.ps1 -From latest -Continue -Mode quick -Rounds 2
+.\tools\campaign.ps1 -From latest -Inspect
 ```
 
-The command contract is documented in
-[docs/CAMPAIGN_CLI_CONTRACT.md](docs/CAMPAIGN_CLI_CONTRACT.md). Treat wrapper
-commands as launch aliases, not architecture.
+Treat wrapper commands as launch aliases, not architecture.
 
 Build the main campaign driver directly when debugging the binary:
 
@@ -117,18 +112,13 @@ See [src/bin/README.md](src/bin/README.md) for binary details.
 Start here:
 
 - [docs/CURRENT_DIRECTION.md](docs/CURRENT_DIRECTION.md)
-- [docs/CAMPAIGN_SYSTEM_ARCHITECTURE.md](docs/CAMPAIGN_SYSTEM_ARCHITECTURE.md)
 
-`CAMPAIGN_SYSTEM_ARCHITECTURE.md` is the campaign authority contract. The next
-campaign docs are supporting contracts, not competing designs:
+Campaign supporting docs:
 
-- [docs/CAMPAIGN_CLI_CONTRACT.md](docs/CAMPAIGN_CLI_CONTRACT.md)
-- [docs/CAMPAIGN_MIGRATION_PLAN.md](docs/CAMPAIGN_MIGRATION_PLAN.md)
 - [docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md](docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md)
 - [docs/CAMPAIGN_JOURNAL.md](docs/CAMPAIGN_JOURNAL.md)
 - [docs/AUTOPILOT_BOUNDARY.md](docs/AUTOPILOT_BOUNDARY.md)
 - [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md)
-- [docs/CAMPAIGN_WRAPPER_USAGE.md](docs/CAMPAIGN_WRAPPER_USAGE.md)
 
 Retired docs were removed from the working tree to keep search results usable.
 Use git history for archaeology.

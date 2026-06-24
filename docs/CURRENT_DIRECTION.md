@@ -1,95 +1,60 @@
 # Current Direction
 
-The main line is:
+The current campaign-tooling priority is deliberately small:
 
 ```text
-simulator correctness
-  -> Rust-owned campaign application
-  -> journaled decision candidate coverage
-  -> combat/search evidence
-  -> explicit exports for learning or analysis
+source selection
+  -> output allocation
+  -> minimal continuation
 ```
 
-The project is building a Rust simulator and AI-search workspace for Slay the
-Spire. The campaign system is being redesigned around a single Rust application
-boundary. The PowerShell wrapper is compatibility launch code, not the campaign
-architecture.
+Everything else is secondary until this path is stable and easy to reason
+about.
 
-## Architecture Priority
+## Maintained Campaign Launcher
 
-Read [Campaign System Architecture](CAMPAIGN_SYSTEM_ARCHITECTURE.md) first. It
-is the target contract, not a description of current accidents. Supporting docs
-and current code must move toward it.
+`tools/campaign.ps1` is a local launcher. It may:
 
-The short version:
+- build or locate `branch_campaign_driver`
+- resolve a source artifact such as `latest` or `run:<id>`
+- allocate a new run output artifact
+- run a new campaign, continue a source for a small round budget, or inspect a
+  source checkpoint summary
 
-- Rust owns campaign semantics.
-- PowerShell only builds and launches.
-- Campaign artifacts have separate owners: checkpoint, state, journal, report,
-  diagnostic, export, and manifest.
-- The experiment model is journaled decision-candidate coverage, not
-  active/frozen branch guessing.
-- Reports are bounded projections, not checkpoint, journal, diagnostics, or
-  training datasets.
-- A migration step only counts when it removes a wrong owner, deletes a bad
-  public surface, or replaces string/display identity with typed identity.
+It must not own:
 
-## Maintained Loop
+- wrapper manifests
+- coverage-gap orchestration
+- milestone loops
+- scratch-latest shortcut semantics
+- report shaping
+- learning/export policy
 
-The maintained development loop should become:
+Those features either belong directly in Rust commands or are retired from the
+main workflow.
 
-1. run or continue a campaign through the Rust campaign app
-2. record typed decision candidate pools in `CampaignJournal`
-3. plan coverage targets from journaled candidates
-4. continue selected candidates to milestones or explicit blockers
-5. inspect read-only views over artifacts
-6. export learning or analysis samples only through explicit exporters
+## Practical Commands
 
-Current compatibility commands may not fully match this loop yet. When behavior
-differs, prefer migrating code toward the architecture over documenting wrapper
-accidents as normal use.
+```powershell
+cd D:\rust\sts_simulator
+.\tools\campaign.ps1 -Mode quick
+.\tools\campaign.ps1 -From latest -Continue -Mode quick -Rounds 2
+.\tools\campaign.ps1 -From latest -Inspect
+```
 
-## Active Work
+Use the Rust campaign namespace directly when debugging driver behavior:
 
-- simulator correctness and Java-mechanics parity when real runs expose bugs
-- migrating source, output, latest, scratch, continuation, coverage, inspect,
-  and artifact lifecycle ownership out of PowerShell and into Rust
-- enforcing checkpoint/state/journal/report/diagnostic/export boundaries
-- route/map candidate pools and candidate-coverage continuation
-- Combat Search V2 quality, performance, and special-phase handling
-- non-combat policy compilers for route, deck mutation, card reward, shop,
-  campfire, event, and boss relic choices
+```powershell
+cargo run --profile fast-run --bin branch_campaign_driver -- campaign run --preset quick --seed 1 --rounds 0
+cargo run --profile fast-run --bin branch_campaign_driver -- campaign artifacts resolve latest --json
+```
 
-## Stable Foundation
+## What Is Not Current Mainline
 
-`run_play_driver`, traces, bookmarks, combat captures, and baseline artifacts
-remain useful diagnostic tools. They are not the campaign scheduler and should
-not define campaign artifact lifecycle.
+- adding more PowerShell wrapper switches
+- preserving legacy wrapper manifests
+- treating coverage-gap milestone output as normal campaign lifecycle
+- keeping stale docs or helper scripts searchable after their owner is retired
 
-`run_control` and existing policy compilers can remain as behavior policies and
-evidence sources. They are not teacher labels and should not own experiment
-scheduling.
-
-## Not The Main Line
-
-- old Python watch UI and recording UI
-- Workbench or DecisionFrame expansion
-- LLM prompt engineering as the default controller
-- live CommunicationMod control as the default development path
-- treating route/card/search decisions as teacher labels
-- adding more wrapper switches for new probes
-
-Adapters may return later, but only as consumers of stable public observation
-and action contracts. They do not define simulator truth or search quality.
-
-## Evidence Rules
-
-- A trace records what happened. It is not a policy-quality claim.
-- A guarded autopilot decision is behavior-policy evidence, not a teacher.
-- A combat search result is budgeted evidence unless validated by exact replay
-  and a benchmark context.
-- Human baseline comparison is whole-combat outcome comparison, not stepwise
-  action agreement.
-- New artifact fields must pass [Report Field Admission](REPORT_FIELD_ADMISSION.md)
-  and the ownership rules in
-  [Campaign Artifact Architecture](CAMPAIGN_ARTIFACT_ARCHITECTURE.md).
+If a stale tool or document conflicts with the three maintained lifecycle
+concepts, remove it or move the behavior into an explicit Rust command.

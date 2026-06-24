@@ -166,10 +166,9 @@ diagnostics/ or perf/   opt-in analysis buckets
 root loose files        old/debug debris, outside maintained storage
 ```
 
-Detailed wrapper commands live in [Campaign Wrapper Usage](CAMPAIGN_WRAPPER_USAGE.md).
-This document only defines ownership. Normal runs should not write raw campaign
-artifacts into the root artifact directory, and scratch output should not
-silently update latest.
+`tools/campaign.ps1` is only a minimal source/output/continuation launcher.
+This document defines ownership. Normal runs should not write raw campaign
+artifacts into the root artifact directory.
 
 ## References
 
