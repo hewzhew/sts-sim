@@ -1,6 +1,7 @@
 use crate::ai::event_policy_v1::{
-    build_event_decision_context_v1, plan_event_decision_v1, EventCandidateTierV1,
-    EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
+    build_event_decision_context_v1, compile_event_plan_candidates_v1, plan_event_decision_v1,
+    select_event_plan_candidate_v1, EventCandidateTierV1, EventInformationModeV1, EventPlanIdV1,
+    EventPlanRewardV1, EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
 };
 use crate::ai::random_upgrade_opportunity_v1::{
     evaluate_random_upgrade_opportunity_v1, ProbabilityBucketV1, RandomUpgradeSourceV1,
@@ -358,6 +359,125 @@ fn random_upgrade_opportunity_is_scoped_to_shining_light_event() {
         EventPolicyClassV1::SelectionOrDeckMutation
     );
     assert!(context.candidates[0].random_upgrade_opportunity.is_none());
+}
+
+#[test]
+fn cursed_tome_plan_compiler_projects_public_plans_and_effective_costs() {
+    let mut run = RunState::new(1, 15, false, "Ironclad");
+    run.current_hp = 80;
+    run.max_hp = 80;
+    run.event_state = Some(EventState::new(EventId::CursedTome));
+    run.relics.push(RelicState::new(RelicId::TungstenRod));
+
+    let plans = compile_event_plan_candidates_v1(&run, EventInformationModeV1::PublicOnly);
+
+    let leave = plans
+        .iter()
+        .find(|plan| plan.plan_id == EventPlanIdV1::LeaveNow)
+        .expect("Cursed Tome should expose immediate leave");
+    assert_eq!(leave.cost.effective_hp_loss, 0);
+
+    let stop = plans
+        .iter()
+        .find(|plan| plan.plan_id == EventPlanIdV1::CursedTomeReadThenStop)
+        .expect("Cursed Tome should expose read then stop");
+    assert_eq!(
+        stop.steps
+            .iter()
+            .map(|step| (step.screen, step.choice_index))
+            .collect::<Vec<_>>(),
+        vec![(0, 0), (1, 0), (2, 0), (3, 0), (4, 1)]
+    );
+    assert_eq!(stop.cost.nominal_hp_loss, 9);
+    assert_eq!(stop.cost.effective_hp_loss, 5);
+
+    let take = plans
+        .iter()
+        .find(|plan| plan.plan_id == EventPlanIdV1::CursedTomeReadAndTakeBook)
+        .expect("Cursed Tome should expose read and take book");
+    assert_eq!(
+        take.steps
+            .iter()
+            .map(|step| (step.screen, step.choice_index))
+            .collect::<Vec<_>>(),
+        vec![(0, 0), (1, 0), (2, 0), (3, 0), (4, 0)]
+    );
+    assert_eq!(take.cost.nominal_hp_loss, 21);
+    assert_eq!(take.cost.effective_hp_loss, 17);
+    assert!(matches!(
+        take.reward,
+        EventPlanRewardV1::RandomBookRelic { observed: None }
+    ));
+    assert!(take.oracle_evidence.is_none());
+}
+
+#[test]
+fn cursed_tome_oracle_peek_records_book_without_polluting_real_rng() {
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.current_hp = 80;
+    run.max_hp = 80;
+    run.event_state = Some(EventState::new(EventId::CursedTome));
+    let misc_counter_before = run.rng_pool.misc_rng.counter;
+
+    let plans =
+        compile_event_plan_candidates_v1(&run, EventInformationModeV1::CounterfactualOracle);
+
+    assert_eq!(run.rng_pool.misc_rng.counter, misc_counter_before);
+    assert_eq!(
+        run.event_state.as_ref().unwrap().current_screen,
+        0,
+        "oracle peek must not advance the real event state"
+    );
+
+    let take = plans
+        .iter()
+        .find(|plan| plan.plan_id == EventPlanIdV1::CursedTomeReadAndTakeBook)
+        .expect("Cursed Tome should expose read and take book");
+    let Some(oracle) = &take.oracle_evidence else {
+        panic!("oracle mode should attach observed book evidence");
+    };
+    assert_eq!(oracle.event_id, EventId::CursedTome);
+    assert_eq!(oracle.committed, false);
+    assert_eq!(oracle.misc_rng_delta_if_committed, 1);
+    assert!(matches!(
+        take.reward,
+        EventPlanRewardV1::RandomBookRelic { observed: Some(_) }
+    ));
+}
+
+#[test]
+fn cursed_tome_plan_selector_takes_book_when_effective_hp_buffer_is_safe() {
+    let mut run = RunState::new(1, 15, false, "Ironclad");
+    run.current_hp = 80;
+    run.max_hp = 80;
+    run.event_state = Some(EventState::new(EventId::CursedTome));
+
+    let selected = select_event_plan_candidate_v1(
+        &run,
+        EventInformationModeV1::CounterfactualOracle,
+        &EventPolicyConfigV1::default(),
+    )
+    .expect("Cursed Tome should have a selected plan");
+
+    assert_eq!(selected.plan_id, EventPlanIdV1::CursedTomeReadAndTakeBook);
+    assert!(selected.oracle_evidence.is_some());
+}
+
+#[test]
+fn cursed_tome_plan_selector_leaves_before_reading_when_take_buffer_is_unsafe() {
+    let mut run = RunState::new(1, 15, false, "Ironclad");
+    run.current_hp = 25;
+    run.max_hp = 80;
+    run.event_state = Some(EventState::new(EventId::CursedTome));
+
+    let selected = select_event_plan_candidate_v1(
+        &run,
+        EventInformationModeV1::PublicOnly,
+        &EventPolicyConfigV1::default(),
+    )
+    .expect("Cursed Tome should have a selected plan");
+
+    assert_eq!(selected.plan_id, EventPlanIdV1::LeaveNow);
 }
 
 fn option(

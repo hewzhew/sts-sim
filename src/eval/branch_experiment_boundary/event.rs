@@ -10,8 +10,8 @@ use crate::ai::deck_mutation_compiler_v1::{
 };
 use crate::ai::event_policy_v1::{
     build_event_decision_context_v1, classify_event_decision_shape_v1, plan_event_decision_v1,
-    EventCandidateTierV1, EventDecisionShapeV1, EventPolicyActionV1, EventPolicyClassV1,
-    EventPolicyConfigV1,
+    select_event_plan_candidate_v1, EventCandidateTierV1, EventDecisionShapeV1,
+    EventInformationModeV1, EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
 };
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::{
@@ -190,6 +190,13 @@ pub(crate) fn event_branch_selection(
         return None;
     }
     let candidate_pool_options = branch_options.clone();
+    if let Some(policy_options) = event_plan_policy_branch_options(session, &branch_options) {
+        return Some(event_branch_selection_from_options(
+            event_id,
+            candidate_pool_options,
+            policy_options,
+        ));
+    }
     if let Some(policy_options) =
         repeatable_paid_menu_policy_branch_options(event_id, &event_shape, &branch_options)
     {
@@ -236,6 +243,37 @@ pub(crate) fn event_branch_selection(
         candidate_pool_options,
         branch_options,
     ))
+}
+
+fn event_plan_policy_branch_options(
+    session: &RunControlSession,
+    options: &[EventBranchOption],
+) -> Option<Vec<EventBranchOption>> {
+    let event_state = session.run_state.event_state.as_ref()?;
+    let plan = select_event_plan_candidate_v1(
+        &session.run_state,
+        EventInformationModeV1::CounterfactualOracle,
+        &EventPolicyConfigV1::default(),
+    )?;
+    let next_step = plan.steps.first()?;
+    if next_step.screen != event_state.current_screen {
+        return None;
+    }
+    let mut option = options
+        .iter()
+        .find(|option| option.event_index == Some(next_step.choice_index))
+        .cloned()?;
+    let oracle_label = plan
+        .oracle_evidence
+        .as_ref()
+        .and_then(|evidence| evidence.observed_relic)
+        .map(|relic| format!(" oracle_observed={relic:?}"))
+        .unwrap_or_default();
+    option.effect_label = format!(
+        "{} | event_plan={:?} effective_hp_cost={}{}",
+        option.effect_label, plan.plan_id, plan.cost.effective_hp_loss, oracle_label
+    );
+    Some(vec![option])
 }
 
 fn repeatable_paid_menu_policy_branch_options(

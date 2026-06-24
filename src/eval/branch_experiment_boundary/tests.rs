@@ -1139,6 +1139,37 @@ fn current_boundary_keeps_repeatable_paid_event_on_explicit_policy_path() {
 }
 
 #[test]
+fn current_boundary_routes_cursed_tome_through_event_plan_next_step() {
+    let mut session = RunControlSession::new(RunControlConfig::default());
+    session.run_state.current_hp = 80;
+    session.run_state.max_hp = 80;
+    session.run_state.ascension_level = 15;
+    session.run_state.event_state = Some(EventState {
+        id: EventId::CursedTome,
+        current_screen: 0,
+        internal_state: 0,
+        completed: false,
+        combat_pending: false,
+        extra_data: Vec::new(),
+    });
+    session.engine_state = EngineState::EventRoom;
+
+    let boundary = current_branch_boundary(&session, BranchBoundaryConfigV1::default(), None)
+        .expect("Cursed Tome should expose the next step from its compiled event plan");
+
+    assert_eq!(boundary.id, BranchBoundaryIdV1::Event);
+    assert_eq!(
+        boundary
+            .options
+            .iter()
+            .map(|option| option.command.as_str())
+            .collect::<Vec<_>>(),
+        vec!["event 0"],
+        "multi-screen events should branch by compiled plan next step, not by raw screen options"
+    );
+}
+
+#[test]
 fn current_boundary_routes_direct_event_removes_through_deck_mutation_compiler() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.run_state.master_deck = vec![
