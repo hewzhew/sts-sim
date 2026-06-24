@@ -17,8 +17,10 @@ use sts_simulator::eval::run_control::{
 
 use super::cli_args::{
     Args, ArtifactActionV1, ArtifactCommandArgs, ArtifactKindArgV1, ArtifactSubcommandV1,
-    BranchCampaignCombatRetryArgV1, CampaignCoveragePlanCommandArgs, DatasetCommandArgs,
-    InspectEvidenceDetailArg,
+    BranchCampaignCombatRetryArgV1, CampaignBranchingArgs, CampaignCombatRetryArgs,
+    CampaignCoverageExecuteCommandArgs, CampaignCoverageExecuteTargetArgs,
+    CampaignCoveragePlanCommandArgs, CampaignDomainArgs, CampaignPrefixArgs, CampaignSearchArgs,
+    ContinueCommandArgs, DatasetCommandArgs, InspectEvidenceDetailArg, RunCommandArgs,
 };
 
 #[derive(Clone, Debug)]
@@ -41,6 +43,37 @@ pub(super) struct RunCommandInput {
 }
 
 impl RunCommandInput {
+    pub(super) fn from_run_args(args: RunCommandArgs) -> Result<Self, String> {
+        let config = campaign_config_from_cli_parts(
+            &args.domain,
+            &args.branching,
+            &args.search,
+            &args.retry,
+            &args.prefix,
+            AutoCaptureInputParts {
+                enabled: args.output.auto_capture_combat,
+                root: args.output.auto_capture_root.clone(),
+            },
+        )?;
+        Ok(Self {
+            config,
+            round_budget: RoundBudgetRequestV1::from_branching_args(&args.branching),
+            milestone: MilestoneContinuationRequestV1::from_branching_args(&args.branching)?,
+            progress: args.output.progress,
+            progress_detail: BranchCampaignProgressDetailV1::from(args.output.progress_detail),
+            json: args.output.json,
+            resume: args.output.resume,
+            resume_checkpoint: args.output.resume_checkpoint,
+            out: args.output.out,
+            checkpoint_out: args.output.checkpoint_out,
+            export_outcome_dataset: args.output.export_outcome_dataset,
+            export_learning_dataset: args.output.export_learning_dataset,
+            export_decision_outcome_dataset: args.output.export_decision_outcome_dataset,
+            branch_examples: args.output.branch_examples,
+            report_detail: BranchCampaignReportDetailV1::from(args.output.report_detail),
+        })
+    }
+
     pub(super) fn from_args(args: &Args) -> Result<Self, String> {
         Ok(Self {
             config: campaign_config_from_args(args)?,
@@ -147,6 +180,28 @@ pub(super) struct MilestoneContinuationRequestV1 {
 }
 
 impl MilestoneContinuationRequestV1 {
+    fn from_branching_args(branching: &CampaignBranchingArgs) -> Result<Self, String> {
+        if branching.until_milestone.is_some()
+            && (branching.rounds.is_some() || branching.until_round.is_some())
+        {
+            return Err("--until-milestone owns the round budget; use --milestone-step-rounds and --milestone-max-rounds instead of --rounds or --until-round".to_string());
+        }
+        if branching.until_milestone.is_some() && branching.milestone_step_rounds == 0 {
+            return Err("--milestone-step-rounds must be greater than zero".to_string());
+        }
+        let target = branching
+            .until_milestone
+            .as_deref()
+            .map(CampaignMilestoneTargetV1::parse)
+            .transpose()?;
+        Ok(Self {
+            target,
+            step_rounds: branching.milestone_step_rounds,
+            max_rounds: branching.milestone_max_rounds,
+            stop: CampaignMilestoneStopV1::parse(&branching.milestone_stop)?,
+        })
+    }
+
     fn from_args(args: &Args) -> Result<Self, String> {
         if args.until_milestone.is_some() && (args.rounds.is_some() || args.until_round.is_some()) {
             return Err("--until-milestone owns the round budget; use --milestone-step-rounds and --milestone-max-rounds instead of --rounds or --until-round".to_string());
@@ -580,6 +635,37 @@ pub(super) struct ContinuationCommandInput {
 }
 
 impl ContinuationCommandInput {
+    pub(super) fn from_continue_args(args: ContinueCommandArgs) -> Result<Self, String> {
+        Ok(Self {
+            config: campaign_config_from_cli_parts(
+                &args.domain,
+                &args.branching,
+                &args.search,
+                &args.retry,
+                &args.prefix,
+                AutoCaptureInputParts {
+                    enabled: args.output.auto_capture_combat,
+                    root: args.output.auto_capture_root.clone(),
+                },
+            )?,
+            round_budget: RoundBudgetRequestV1::from_branching_args(&args.branching),
+            resume: args.output.resume,
+            resume_checkpoint: args.output.resume_checkpoint,
+            out: args.output.out,
+            checkpoint_out: args.output.checkpoint_out,
+            plan_targeted_continuation: args.continuation.plan_targeted_continuation,
+            execute_targeted_continuation: args.continuation.execute_targeted_continuation,
+            continuation_effect_before: args.continuation.continuation_effect_before,
+            continuation_effect_after: args.continuation.continuation_effect_after,
+            targeted_continuation_limit: args.continuation.targeted_continuation_limit,
+            targeted_continuation_candidates_per_target: args
+                .continuation
+                .targeted_continuation_candidates_per_target,
+            branch_examples: args.output.branch_examples,
+            report_detail: BranchCampaignReportDetailV1::from(args.output.report_detail),
+        })
+    }
+
     pub(super) fn from_args(args: &Args) -> Result<Self, String> {
         Ok(Self {
             config: campaign_config_from_args(args)?,
@@ -620,6 +706,75 @@ pub(super) struct CoverageGapExecutionCommandInput {
 }
 
 impl CoverageGapExecutionCommandInput {
+    pub(super) fn from_continue_args(args: ContinueCommandArgs) -> Result<Self, String> {
+        let continuation = args.continuation;
+        let coverage_gap_filter = coverage_gap_filter_from_continuation_args(&continuation);
+        let coverage_gap_budget_intent =
+            CoverageGapBudgetIntentV1::parse(&continuation.coverage_gap_budget_intent)?;
+        let coverage_gap_execution_mode =
+            CoverageGapExecutionModeV1::parse(&continuation.coverage_gap_execution_mode)?;
+        Ok(Self {
+            config: campaign_config_from_cli_parts(
+                &args.domain,
+                &args.branching,
+                &args.search,
+                &args.retry,
+                &args.prefix,
+                AutoCaptureInputParts {
+                    enabled: args.output.auto_capture_combat,
+                    root: args.output.auto_capture_root.clone(),
+                },
+            )?,
+            round_budget: RoundBudgetRequestV1::from_branching_args(&args.branching),
+            milestone: MilestoneContinuationRequestV1::from_branching_args(&args.branching)?,
+            resume: args.output.resume,
+            resume_checkpoint: args.output.resume_checkpoint,
+            out: args.output.out,
+            checkpoint_out: args.output.checkpoint_out,
+            coverage_gap_limit: continuation.coverage_gap_limit,
+            coverage_gap_candidates_per_decision: continuation.coverage_gap_candidates_per_decision,
+            coverage_gap_filter,
+            coverage_gap_budget_intent,
+            coverage_gap_execution_mode,
+            branch_examples: args.output.branch_examples,
+            report_detail: BranchCampaignReportDetailV1::from(args.output.report_detail),
+        })
+    }
+
+    pub(super) fn from_coverage_execute_args(
+        args: CampaignCoverageExecuteCommandArgs,
+    ) -> Result<Self, String> {
+        let coverage = args.coverage;
+        let coverage_gap_filter = coverage_gap_filter_from_coverage_execute_args(&coverage);
+        let coverage_gap_budget_intent =
+            CoverageGapBudgetIntentV1::parse(&coverage.coverage_gap_budget_intent)?;
+        let coverage_gap_execution_mode =
+            CoverageGapExecutionModeV1::parse(&coverage.coverage_gap_execution_mode)?;
+        Ok(Self {
+            config: campaign_config_from_cli_parts(
+                &args.domain,
+                &args.branching,
+                &args.search,
+                &args.retry,
+                &args.prefix,
+                AutoCaptureInputParts::disabled(),
+            )?,
+            round_budget: RoundBudgetRequestV1::from_branching_args(&args.branching),
+            milestone: MilestoneContinuationRequestV1::from_branching_args(&args.branching)?,
+            resume: args.output.resume,
+            resume_checkpoint: args.output.resume_checkpoint,
+            out: args.output.out,
+            checkpoint_out: args.output.checkpoint_out,
+            coverage_gap_limit: coverage.coverage_gap_limit,
+            coverage_gap_candidates_per_decision: coverage.coverage_gap_candidates_per_decision,
+            coverage_gap_filter,
+            coverage_gap_budget_intent,
+            coverage_gap_execution_mode,
+            branch_examples: args.output.branch_examples,
+            report_detail: BranchCampaignReportDetailV1::from(args.output.report_detail),
+        })
+    }
+
     pub(super) fn from_args(args: &Args) -> Result<Self, String> {
         Ok(Self {
             config: campaign_config_from_args(args)?,
@@ -645,6 +800,30 @@ impl CoverageGapExecutionCommandInput {
 }
 
 fn coverage_gap_filter_from_args(args: &Args) -> CoverageGapContinuationFilterV1 {
+    CoverageGapContinuationFilterV1 {
+        bucket: args.coverage_gap_bucket.clone(),
+        event_id: args.coverage_gap_event_id.clone(),
+        lane: args.coverage_gap_lane.clone(),
+        origin_source: args.coverage_gap_origin_source.clone(),
+        progress: args.coverage_gap_progress.clone(),
+    }
+}
+
+fn coverage_gap_filter_from_coverage_execute_args(
+    args: &CampaignCoverageExecuteTargetArgs,
+) -> CoverageGapContinuationFilterV1 {
+    CoverageGapContinuationFilterV1 {
+        bucket: args.coverage_gap_bucket.clone(),
+        event_id: args.coverage_gap_event_id.clone(),
+        lane: args.coverage_gap_lane.clone(),
+        origin_source: args.coverage_gap_origin_source.clone(),
+        progress: args.coverage_gap_progress.clone(),
+    }
+}
+
+fn coverage_gap_filter_from_continuation_args(
+    args: &super::cli_args::ContinuationArgs,
+) -> CoverageGapContinuationFilterV1 {
     CoverageGapContinuationFilterV1 {
         bucket: args.coverage_gap_bucket.clone(),
         event_id: args.coverage_gap_event_id.clone(),
@@ -739,6 +918,14 @@ pub(super) struct RoundBudgetRequestV1 {
 }
 
 impl RoundBudgetRequestV1 {
+    fn from_branching_args(branching: &CampaignBranchingArgs) -> Self {
+        Self {
+            legacy_max_rounds: branching.max_rounds,
+            rounds: branching.rounds,
+            until_round: branching.until_round,
+        }
+    }
+
     fn from_args(args: &Args) -> Self {
         Self {
             legacy_max_rounds: args.max_rounds,
@@ -799,66 +986,187 @@ fn inspect_search_options_from_args(args: &Args) -> Result<RunControlSearchComba
     Ok(options)
 }
 
-pub(super) fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, String> {
-    let player_class = canonical_player_class(&args.player_class)?;
-    let mut prefix_commands = Vec::new();
-    if !args.no_neow_guidance {
-        prefix_commands.extend(neow_guided_prefix_commands_v1(&NeowGuidedPrefixConfigV1 {
-            seed: args.seed,
-            ascension_level: args.ascension,
-            final_act: args.final_act,
-            player_class,
-            search_max_nodes: args.search_max_nodes,
-            search_wall_ms: Some(args.search_wall_ms),
-        })?);
-    } else {
-        prefix_commands.push("0".to_string());
+#[derive(Clone, Debug)]
+struct AutoCaptureInputParts {
+    enabled: bool,
+    root: Option<PathBuf>,
+}
+
+impl AutoCaptureInputParts {
+    fn disabled() -> Self {
+        Self {
+            enabled: false,
+            root: None,
+        }
     }
-    prefix_commands.extend(args.prefix_commands.iter().cloned());
+}
 
-    let search_max_hp_loss = parse_hp_loss_limit(args.max_hp_loss.as_deref())?
-        .or(Some(RunControlHpLossLimit::Unlimited));
+struct CampaignConfigInputParts<'a> {
+    seed: u64,
+    ascension: u8,
+    player_class: &'a str,
+    final_act: bool,
+    max_rounds: usize,
+    rounds: Option<usize>,
+    round_depth: usize,
+    max_active: usize,
+    max_frozen: usize,
+    max_branches_per_active: usize,
+    boss_relic_axes: bool,
+    retention_profile: &'a str,
+    all_reward_options: bool,
+    max_reward_options: Option<usize>,
+    max_campfire_options: usize,
+    auto_max_ops: usize,
+    experiment_wall_ms: u64,
+    search_max_nodes: Option<usize>,
+    search_wall_ms: u64,
+    max_hp_loss: Option<&'a str>,
+    combat_search_options: &'a [String],
+    combat_retry: BranchCampaignCombatRetryArgV1,
+    combat_retry_wall_ms: Option<u64>,
+    min_acceptable_victory_hp_percent: u8,
+    prefix_commands: &'a [String],
+    no_neow_guidance: bool,
+    auto_capture: AutoCaptureInputParts,
+}
 
-    Ok(BranchCampaignConfigV1 {
+pub(super) fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignConfigV1, String> {
+    campaign_config_from_parts(CampaignConfigInputParts {
         seed: args.seed,
-        ascension_level: args.ascension,
-        player_class,
+        ascension: args.ascension,
+        player_class: &args.player_class,
         final_act: args.final_act,
-        max_rounds: args.rounds.unwrap_or(args.max_rounds),
+        max_rounds: args.max_rounds,
+        rounds: args.rounds,
         round_depth: args.round_depth,
         max_active: args.max_active,
         max_frozen: args.max_frozen,
         max_branches_per_active: args.max_branches_per_active,
-        boss_relic_axis_isolation: args.boss_relic_axes,
-        retention_budget_profile: args
-            .retention_profile
-            .parse::<BranchRetentionBudgetProfileV1>()?,
-        max_reward_options_per_branch: if args.all_reward_options {
-            None
-        } else {
-            Some(args.max_reward_options.unwrap_or(2))
-        },
-        max_campfire_options_per_branch: args.max_campfire_options,
-        auto_max_operations: args.auto_max_ops,
-        experiment_wall_ms: Some(args.experiment_wall_ms),
+        boss_relic_axes: args.boss_relic_axes,
+        retention_profile: &args.retention_profile,
+        all_reward_options: args.all_reward_options,
+        max_reward_options: args.max_reward_options,
+        max_campfire_options: args.max_campfire_options,
+        auto_max_ops: args.auto_max_ops,
+        experiment_wall_ms: args.experiment_wall_ms,
         search_max_nodes: args.search_max_nodes,
-        search_wall_ms: Some(args.search_wall_ms),
-        search_max_hp_loss,
-        search_options: campaign_search_options_from_args(args)?,
-        auto_capture: AutoCombatCaptureConfig {
+        search_wall_ms: args.search_wall_ms,
+        max_hp_loss: args.max_hp_loss.as_deref(),
+        combat_search_options: &args.combat_search_options,
+        combat_retry: args.combat_retry,
+        combat_retry_wall_ms: args.combat_retry_wall_ms,
+        min_acceptable_victory_hp_percent: args.min_acceptable_victory_hp_percent,
+        prefix_commands: &args.prefix_commands,
+        no_neow_guidance: args.no_neow_guidance,
+        auto_capture: AutoCaptureInputParts {
             enabled: args.auto_capture_combat,
             root: args.auto_capture_root.clone(),
         },
-        combat_retry_policy: match args.combat_retry {
+    })
+}
+
+fn campaign_config_from_cli_parts(
+    domain: &CampaignDomainArgs,
+    branching: &CampaignBranchingArgs,
+    search: &CampaignSearchArgs,
+    retry: &CampaignCombatRetryArgs,
+    prefix: &CampaignPrefixArgs,
+    auto_capture: AutoCaptureInputParts,
+) -> Result<BranchCampaignConfigV1, String> {
+    campaign_config_from_parts(CampaignConfigInputParts {
+        seed: domain.seed,
+        ascension: domain.ascension,
+        player_class: &domain.player_class,
+        final_act: domain.final_act,
+        max_rounds: branching.max_rounds,
+        rounds: branching.rounds,
+        round_depth: branching.round_depth,
+        max_active: branching.max_active,
+        max_frozen: branching.max_frozen,
+        max_branches_per_active: branching.max_branches_per_active,
+        boss_relic_axes: branching.boss_relic_axes,
+        retention_profile: &branching.retention_profile,
+        all_reward_options: branching.all_reward_options,
+        max_reward_options: branching.max_reward_options,
+        max_campfire_options: branching.max_campfire_options,
+        auto_max_ops: branching.auto_max_ops,
+        experiment_wall_ms: branching.experiment_wall_ms,
+        search_max_nodes: search.search_max_nodes,
+        search_wall_ms: search.search_wall_ms,
+        max_hp_loss: search.max_hp_loss.as_deref(),
+        combat_search_options: &search.combat_search_options,
+        combat_retry: retry.combat_retry,
+        combat_retry_wall_ms: retry.combat_retry_wall_ms,
+        min_acceptable_victory_hp_percent: retry.min_acceptable_victory_hp_percent,
+        prefix_commands: &prefix.prefix_commands,
+        no_neow_guidance: prefix.no_neow_guidance,
+        auto_capture,
+    })
+}
+
+fn campaign_config_from_parts(
+    parts: CampaignConfigInputParts<'_>,
+) -> Result<BranchCampaignConfigV1, String> {
+    let player_class = canonical_player_class(parts.player_class)?;
+    let mut prefix_commands = Vec::new();
+    if !parts.no_neow_guidance {
+        prefix_commands.extend(neow_guided_prefix_commands_v1(&NeowGuidedPrefixConfigV1 {
+            seed: parts.seed,
+            ascension_level: parts.ascension,
+            final_act: parts.final_act,
+            player_class,
+            search_max_nodes: parts.search_max_nodes,
+            search_wall_ms: Some(parts.search_wall_ms),
+        })?);
+    } else {
+        prefix_commands.push("0".to_string());
+    }
+    prefix_commands.extend(parts.prefix_commands.iter().cloned());
+
+    let search_max_hp_loss =
+        parse_hp_loss_limit(parts.max_hp_loss)?.or(Some(RunControlHpLossLimit::Unlimited));
+
+    Ok(BranchCampaignConfigV1 {
+        seed: parts.seed,
+        ascension_level: parts.ascension,
+        player_class,
+        final_act: parts.final_act,
+        max_rounds: parts.rounds.unwrap_or(parts.max_rounds),
+        round_depth: parts.round_depth,
+        max_active: parts.max_active,
+        max_frozen: parts.max_frozen,
+        max_branches_per_active: parts.max_branches_per_active,
+        boss_relic_axis_isolation: parts.boss_relic_axes,
+        retention_budget_profile: parts
+            .retention_profile
+            .parse::<BranchRetentionBudgetProfileV1>()?,
+        max_reward_options_per_branch: if parts.all_reward_options {
+            None
+        } else {
+            Some(parts.max_reward_options.unwrap_or(2))
+        },
+        max_campfire_options_per_branch: parts.max_campfire_options,
+        auto_max_operations: parts.auto_max_ops,
+        experiment_wall_ms: Some(parts.experiment_wall_ms),
+        search_max_nodes: parts.search_max_nodes,
+        search_wall_ms: Some(parts.search_wall_ms),
+        search_max_hp_loss,
+        search_options: campaign_search_options_from_parts(parts.combat_search_options)?,
+        auto_capture: AutoCombatCaptureConfig {
+            enabled: parts.auto_capture.enabled,
+            root: parts.auto_capture.root,
+        },
+        combat_retry_policy: match parts.combat_retry {
             BranchCampaignCombatRetryArgV1::OnStall => BranchCampaignCombatRetryPolicyV1::OnStall,
             BranchCampaignCombatRetryArgV1::Immediate => {
                 BranchCampaignCombatRetryPolicyV1::Immediate
             }
             BranchCampaignCombatRetryArgV1::Disabled => BranchCampaignCombatRetryPolicyV1::Disabled,
         },
-        combat_retry_wall_ms: args.combat_retry_wall_ms,
+        combat_retry_wall_ms: parts.combat_retry_wall_ms,
         include_event_reward_skip: false,
-        min_acceptable_victory_hp_percent: args.min_acceptable_victory_hp_percent,
+        min_acceptable_victory_hp_percent: parts.min_acceptable_victory_hp_percent,
         prefix_commands,
     })
 }
@@ -866,8 +1174,14 @@ pub(super) fn campaign_config_from_args(args: &Args) -> Result<BranchCampaignCon
 pub(super) fn campaign_search_options_from_args(
     args: &Args,
 ) -> Result<RunControlSearchCombatOptions, String> {
-    let mut options = parse_branch_experiment_search_options_v1(&args.combat_search_options)?;
-    if !combat_search_options_include_segment_mode(&args.combat_search_options) {
+    campaign_search_options_from_parts(&args.combat_search_options)
+}
+
+fn campaign_search_options_from_parts(
+    combat_search_options: &[String],
+) -> Result<RunControlSearchCombatOptions, String> {
+    let mut options = parse_branch_experiment_search_options_v1(combat_search_options)?;
+    if !combat_search_options_include_segment_mode(combat_search_options) {
         options.segment_mode = Some(RunControlCombatSegmentMode::NonBossTurnBoundary);
     }
     Ok(options)
