@@ -828,6 +828,7 @@ pub(super) enum BranchCampaignCliInputV1 {
         args: Args,
     },
     CampaignArtifact(ArtifactCommandArgs),
+    CampaignCoveragePlan(CampaignCoveragePlanCommandArgs),
 }
 
 impl BranchCampaignCliInputV1 {
@@ -837,7 +838,10 @@ impl BranchCampaignCliInputV1 {
             Self::Legacy(args) => args,
             Self::Explicit { args, .. } => args,
             Self::CampaignArtifact(_) => {
-                panic!("campaign artifacts namespace builds a direct request without legacy Args")
+                panic!("campaign namespace direct requests do not expose legacy Args")
+            }
+            Self::CampaignCoveragePlan(_) => {
+                panic!("campaign namespace direct requests do not expose legacy Args")
             }
         }
     }
@@ -848,6 +852,13 @@ impl BranchCampaignCliInputV1 {
             Self::Legacy(args) => args,
             Self::Explicit { args, .. } => args,
             Self::CampaignArtifact(args) => args.into_args(),
+            Self::CampaignCoveragePlan(args) => {
+                (CampaignCoverageCommandArgs {
+                    command: CampaignCoverageSubcommandV1::Plan(args),
+                })
+                .into_args_and_command()
+                .0
+            }
         }
     }
 
@@ -857,6 +868,9 @@ impl BranchCampaignCliInputV1 {
             Self::Legacy(_) => None,
             Self::Explicit { command, .. } => Some(*command),
             Self::CampaignArtifact(_) => Some(BranchCampaignExplicitCommandV1::Artifact),
+            Self::CampaignCoveragePlan(_) => {
+                Some(BranchCampaignExplicitCommandV1::PlanCoverageGapContinuation)
+            }
         }
     }
 }
@@ -2064,6 +2078,7 @@ impl CampaignCommandArgs {
             CampaignSubcommandV1::Artifacts(args) => {
                 Ok(BranchCampaignCliInputV1::CampaignArtifact(args))
             }
+            CampaignSubcommandV1::Coverage(args) => args.into_cli_input(matches),
             command => {
                 let (args, explicit_command) =
                     (CampaignCommandArgs { command }).into_args_and_command();
@@ -2086,13 +2101,13 @@ impl InspectCommandArgs {
 }
 
 #[derive(Debug, ClapArgs)]
-struct CampaignCoverageCommandArgs {
+pub(super) struct CampaignCoverageCommandArgs {
     #[command(subcommand)]
-    command: CampaignCoverageSubcommandV1,
+    pub(super) command: CampaignCoverageSubcommandV1,
 }
 
 #[derive(Debug, Subcommand)]
-enum CampaignCoverageSubcommandV1 {
+pub(super) enum CampaignCoverageSubcommandV1 {
     #[command(about = "Plan unobserved journal candidate coverage targets")]
     Plan(CampaignCoveragePlanCommandArgs),
     #[command(about = "Execute unobserved journal candidate coverage targets")]
@@ -2100,13 +2115,13 @@ enum CampaignCoverageSubcommandV1 {
 }
 
 #[derive(Debug, ClapArgs)]
-struct CampaignCoveragePlanCommandArgs {
+pub(super) struct CampaignCoveragePlanCommandArgs {
     #[command(flatten)]
-    target: CampaignCoveragePlanTargetArgs,
+    pub(super) target: CampaignCoveragePlanTargetArgs,
 }
 
 #[derive(Debug, ClapArgs)]
-struct CampaignCoverageExecuteCommandArgs {
+pub(super) struct CampaignCoverageExecuteCommandArgs {
     #[command(flatten)]
     domain: CampaignDomainArgs,
 
@@ -2130,6 +2145,19 @@ struct CampaignCoverageExecuteCommandArgs {
 }
 
 impl CampaignCoverageCommandArgs {
+    fn into_cli_input(self, matches: &ArgMatches) -> Result<BranchCampaignCliInputV1, clap::Error> {
+        match self.command {
+            CampaignCoverageSubcommandV1::Plan(args) => {
+                Ok(BranchCampaignCliInputV1::CampaignCoveragePlan(args))
+            }
+            command => {
+                let (args, explicit_command) =
+                    (CampaignCoverageCommandArgs { command }).into_args_and_command();
+                normalize_cli_args_from_matches(args, Some(explicit_command), matches)
+            }
+        }
+    }
+
     fn into_args_and_command(self) -> (Args, BranchCampaignExplicitCommandV1) {
         match self.command {
             CampaignCoverageSubcommandV1::Plan(args) => {
@@ -2171,71 +2199,71 @@ impl DatasetCommandArgs {
 }
 
 #[derive(Debug, ClapArgs)]
-struct CampaignCoveragePlanTargetArgs {
+pub(super) struct CampaignCoveragePlanTargetArgs {
     #[arg(
         long = "inspect-checkpoint",
         value_name = "PATH",
         help = "Optional BranchCampaignCheckpointV2 sidecar paired with --inspect-report"
     )]
-    inspect_checkpoint: Option<PathBuf>,
+    pub(super) inspect_checkpoint: Option<PathBuf>,
 
     #[arg(
         long = "inspect-report",
         value_name = "PATH",
         help = "BranchCampaignV1 report whose unobserved journal candidates should be planned"
     )]
-    inspect_report: Option<PathBuf>,
+    pub(super) inspect_report: Option<PathBuf>,
 
     #[arg(
         long = "coverage-gap-limit",
         default_value_t = 8,
         help = "Maximum unobserved journal candidate branches to plan"
     )]
-    coverage_gap_limit: usize,
+    pub(super) coverage_gap_limit: usize,
 
     #[arg(
         long = "coverage-gap-candidates-per-decision",
         default_value_t = 1,
         help = "Maximum unobserved candidate branches to continue per journal decision"
     )]
-    coverage_gap_candidates_per_decision: usize,
+    pub(super) coverage_gap_candidates_per_decision: usize,
 
     #[arg(
         long = "coverage-gap-bucket",
         help = "Only plan coverage-gap targets from this bucket, e.g. event, route, shop, reward"
     )]
-    coverage_gap_bucket: Option<String>,
+    pub(super) coverage_gap_bucket: Option<String>,
 
     #[arg(
         long = "coverage-gap-event-id",
         help = "Only plan coverage-gap targets whose event id/frontier/candidate text matches this event id"
     )]
-    coverage_gap_event_id: Option<String>,
+    pub(super) coverage_gap_event_id: Option<String>,
 
     #[arg(
         long = "coverage-gap-lane",
         help = "Only plan coverage-gap targets whose lane matches this text, e.g. effect:event_card_reward"
     )]
-    coverage_gap_lane: Option<String>,
+    pub(super) coverage_gap_lane: Option<String>,
 
     #[arg(
         long = "coverage-gap-origin-source",
         help = "Only plan coverage-gap targets from this target_origin source, e.g. route_candidate_pool"
     )]
-    coverage_gap_origin_source: Option<String>,
+    pub(super) coverage_gap_origin_source: Option<String>,
 
     #[arg(
         long = "coverage-gap-progress",
         help = "Only plan coverage-gap targets with this existing progress, e.g. missing, target_only, extended"
     )]
-    coverage_gap_progress: Option<String>,
+    pub(super) coverage_gap_progress: Option<String>,
 
     #[arg(
         long = "coverage-gap-budget-intent",
         default_value = "gap_closure",
         help = "Select and interpret coverage-gap continuation targets as gap_closure or frontier_expansion"
     )]
-    coverage_gap_budget_intent: String,
+    pub(super) coverage_gap_budget_intent: String,
 }
 
 impl CampaignCoveragePlanTargetArgs {
@@ -2890,12 +2918,12 @@ mod tests {
             "5",
         ])
         .expect("campaign coverage plan should parse");
-        let args = input.args();
 
         assert_eq!(
             input.explicit_command(),
             Some(BranchCampaignExplicitCommandV1::PlanCoverageGapContinuation)
         );
+        let args = input.into_args();
         assert!(args.plan_coverage_gap_continuation);
         assert_eq!(args.inspect_report, Some(PathBuf::from("run.json.gz")));
         assert_eq!(args.coverage_gap_limit, 5);

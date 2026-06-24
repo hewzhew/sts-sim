@@ -65,6 +65,11 @@ pub(super) fn driver_request_from_cli_input(
                 ArtifactCommandInput::from_artifact_command_args(args),
             ))
         }
+        BranchCampaignCliInputV1::CampaignCoveragePlan(args) => {
+            Ok(BranchCampaignDriverRequestV1::PlanCoverageGapContinuation(
+                CoverageGapPlanCommandInput::from_coverage_plan_args(args)?,
+            ))
+        }
         BranchCampaignCliInputV1::Explicit { command, args } => {
             explicit_driver_request_from_args(command, &args)
         }
@@ -228,6 +233,9 @@ pub(super) fn driver_command_from_cli_input(
 ) -> BranchCampaignDriverCommandV1 {
     if matches!(input, BranchCampaignCliInputV1::CampaignArtifact(_)) {
         return BranchCampaignDriverCommandV1::ResolveCampaignArtifact;
+    }
+    if matches!(input, BranchCampaignCliInputV1::CampaignCoveragePlan(_)) {
+        return BranchCampaignDriverCommandV1::PlanCoverageGapContinuation;
     }
     if let Some(explicit) = input.explicit_command() {
         return explicit_driver_command_from_args(explicit, input.args());

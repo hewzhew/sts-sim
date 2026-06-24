@@ -17,7 +17,7 @@ use sts_simulator::eval::run_control::{
 
 use super::cli_args::{
     Args, ArtifactActionV1, ArtifactCommandArgs, ArtifactKindArgV1, ArtifactSubcommandV1,
-    BranchCampaignCombatRetryArgV1, InspectEvidenceDetailArg,
+    BranchCampaignCombatRetryArgV1, CampaignCoveragePlanCommandArgs, InspectEvidenceDetailArg,
 };
 
 #[derive(Clone, Debug)]
@@ -508,6 +508,29 @@ pub(super) struct CoverageGapPlanCommandInput {
 }
 
 impl CoverageGapPlanCommandInput {
+    pub(super) fn from_coverage_plan_args(
+        args: CampaignCoveragePlanCommandArgs,
+    ) -> Result<Self, String> {
+        let target = args.target;
+        Ok(Self {
+            inspect_checkpoint: target.inspect_checkpoint,
+            resume_checkpoint: None,
+            inspect_report: target.inspect_report,
+            coverage_gap_limit: target.coverage_gap_limit,
+            coverage_gap_candidates_per_decision: target.coverage_gap_candidates_per_decision,
+            coverage_gap_filter: CoverageGapContinuationFilterV1 {
+                bucket: target.coverage_gap_bucket,
+                event_id: target.coverage_gap_event_id,
+                lane: target.coverage_gap_lane,
+                origin_source: target.coverage_gap_origin_source,
+                progress: target.coverage_gap_progress,
+            },
+            coverage_gap_budget_intent: CoverageGapBudgetIntentV1::parse(
+                &target.coverage_gap_budget_intent,
+            )?,
+        })
+    }
+
     pub(super) fn from_args(args: &Args) -> Result<Self, String> {
         Ok(Self {
             inspect_checkpoint: args.inspect_checkpoint.clone(),
