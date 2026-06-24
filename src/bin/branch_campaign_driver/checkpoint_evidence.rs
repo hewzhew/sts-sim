@@ -39,8 +39,9 @@ fn render_campfire_evidence_full_v1(
 ) -> Vec<String> {
     let mut lines = Vec::new();
     let formation = context.strategy.formation_summary();
+    lines.push("Campfire evidence:".to_string());
     lines.push(format!(
-        "Campfire compiled decision: act={} floor={} hp={}/{} gold={} boss={:?}",
+        "facts: act={} floor={} hp={}/{} gold={} boss={:?}",
         session.run_state.act_num,
         session.run_state.floor_num,
         session.run_state.current_hp,
@@ -49,22 +50,22 @@ fn render_campfire_evidence_full_v1(
         session.run_state.boss_key
     ));
     lines.push(format!(
-        "execution_head: {}",
+        "execution: head={}",
         render_campfire_plan_execution_head_v1(
             &decision.selected_plan,
             &render_campfire_action_debug_v1(&decision.selected_plan.action)
         )
     ));
     lines.push(format!(
-        "context: candidates={} formation={:?} needs={:?}",
+        "diagnostics: candidates={} formation={:?} needs={:?}",
         context.candidates.len(),
         formation.stage,
         formation.needs
     ));
-    lines.push("candidate plans:".to_string());
+    lines.push("candidate_pool:".to_string());
     for plan in &decision.candidate_plans {
         lines.push(format!(
-            "  - {}",
+            "  candidate: {}",
             render_campfire_plan_candidate_line_v1(
                 plan,
                 &render_campfire_action_debug_v1(&plan.action)
@@ -82,11 +83,12 @@ fn render_campfire_evidence_full_v1(
             .find(|candidate| candidate.candidate_id == plan.plan_id)
         {
             lines.push(format!(
-                "      class={:?} support_gate={:?} upgrade_score={:?} deck_mutation_execute={:?}",
-                candidate.class,
-                candidate.support_gate,
-                candidate.upgrade_plan_score_hint,
-                candidate.deck_mutation_execute_allowed
+                "      facts: class={:?} support_gate={:?} deck_mutation_execute={:?}",
+                candidate.class, candidate.support_gate, candidate.deck_mutation_execute_allowed
+            ));
+            lines.push(format!(
+                "      diagnostics: upgrade_score={:?}",
+                candidate.upgrade_plan_score_hint
             ));
             for evidence in candidate.evidence.iter().take(6) {
                 lines.push(format!("      evidence: {evidence}"));
@@ -106,8 +108,9 @@ fn render_campfire_evidence_compact_v1(
 ) -> Vec<String> {
     let mut lines = Vec::new();
     let formation = context.strategy.formation_summary();
+    lines.push("Campfire evidence:".to_string());
     lines.push(format!(
-        "Campfire compiled decision: act={} floor={} hp={}/{} gold={} boss={:?}",
+        "facts: act={} floor={} hp={}/{} gold={} boss={:?}",
         session.run_state.act_num,
         session.run_state.floor_num,
         session.run_state.current_hp,
@@ -116,28 +119,28 @@ fn render_campfire_evidence_compact_v1(
         session.run_state.boss_key
     ));
     lines.push(format!(
-        "execution_head: {}",
+        "execution: head={}",
         render_campfire_plan_execution_head_v1(
             &decision.selected_plan,
             &render_campfire_action_label_v1(&decision.selected_plan.action)
         )
     ));
     lines.push(format!(
-        "context: candidates={} formation={:?} needs={:?} rest_vs_smith={:?}",
+        "diagnostics: candidates={} formation={:?} needs={:?} rest_vs_smith={:?}",
         context.candidates.len(),
         formation.stage,
         formation.needs,
         context.rest_vs_smith.verdict
     ));
-    lines.push(render_campfire_plan_candidate_summary_v1(decision, context));
+    lines.extend(render_campfire_plan_candidate_summary_v1(decision, context));
 
-    let highlights = compact_campfire_notable_plans_v1(decision, context);
-    if highlights.is_empty() {
-        lines.push("plan_highlights: -".to_string());
+    let samples = compact_campfire_candidate_samples_v1(decision, context);
+    if samples.is_empty() {
+        lines.push("candidate_samples: -".to_string());
     } else {
-        lines.push(format!("plan_highlights: {}", highlights.len()));
-        for (idx, line) in highlights.into_iter().enumerate() {
-            lines.push(format!("  {idx}. {line}"));
+        lines.push(format!("candidate_samples: {}", samples.len()));
+        for line in samples {
+            lines.push(format!("  {line}"));
         }
     }
     lines.push(
@@ -150,7 +153,7 @@ fn render_campfire_evidence_compact_v1(
 fn render_campfire_plan_candidate_summary_v1(
     decision: &sts_simulator::ai::campfire_policy_v1::CampfireDecisionV1,
     context: &sts_simulator::ai::campfire_policy_v1::CampfireDecisionContextV1,
-) -> String {
+) -> Vec<String> {
     let mut by_role = std::collections::BTreeMap::<String, usize>::new();
     let mut by_class = std::collections::BTreeMap::<String, usize>::new();
     let mut by_gate = std::collections::BTreeMap::<String, usize>::new();
@@ -177,84 +180,109 @@ fn render_campfire_plan_candidate_summary_v1(
                 .or_insert(0) += 1;
         }
     }
-    format!(
-        "candidate_plans: compact total={} executable={} branch_active={} by_role=[{}] by_class=[{}] by_gate=[{}]",
-        decision.candidate_plans.len(),
-        executable,
-        branch_active,
-        render_count_map_v1(&by_role),
-        render_count_map_v1(&by_class),
-        render_count_map_v1(&by_gate)
-    )
+    vec![
+        format!(
+            "candidate_pool: total={} by_role=[{}] by_class=[{}]",
+            decision.candidate_plans.len(),
+            render_count_map_v1(&by_role),
+            render_count_map_v1(&by_class),
+        ),
+        format!(
+            "scheduler: executable={} branch_active={}",
+            executable, branch_active
+        ),
+        format!(
+            "diagnostics: support_gate=[{}]",
+            render_count_map_v1(&by_gate)
+        ),
+    ]
 }
 
-fn compact_campfire_notable_plans_v1(
+fn compact_campfire_candidate_samples_v1(
     decision: &sts_simulator::ai::campfire_policy_v1::CampfireDecisionV1,
     context: &sts_simulator::ai::campfire_policy_v1::CampfireDecisionContextV1,
 ) -> Vec<String> {
-    let mut ranked = decision
+    let selected_id = decision.selected_plan.plan_id.as_str();
+    let mut samples = Vec::new();
+    let mut sampled_plan_ids = std::collections::BTreeSet::new();
+    if let Some(selected) = decision
         .candidate_plans
         .iter()
-        .filter_map(|plan| {
-            let candidate = context
-                .candidates
-                .iter()
-                .find(|candidate| candidate.candidate_id == plan.plan_id);
-            let is_selected = plan.plan_id == decision.selected_plan.plan_id;
-            let has_risk = candidate.is_some_and(|candidate| !candidate.risks.is_empty());
-            let has_debt_score = candidate
-                .and_then(|candidate| candidate.upgrade_plan_score_hint)
-                .is_some_and(|score| score >= 180);
-            let notable = is_selected
-                || plan.execute_autopilot
-                || plan.branch_active
-                || plan.score_hint >= 180
-                || has_debt_score
-                || has_risk;
-            if !notable {
-                return None;
-            }
-            Some((
-                compact_campfire_notable_rank_v1(plan, is_selected, has_risk),
-                render_campfire_notable_plan_line_v1(plan, candidate),
-            ))
+        .find(|plan| plan.plan_id == selected_id)
+    {
+        let candidate = campfire_candidate_evidence_by_plan_id_v1(context, &selected.plan_id);
+        sampled_plan_ids.insert(selected.plan_id.clone());
+        samples.push(format!(
+            "execution: {}",
+            render_campfire_candidate_sample_line_v1(selected, candidate)
+        ));
+    }
+    for plan in decision
+        .candidate_plans
+        .iter()
+        .filter(|plan| plan.branch_active && plan.plan_id != selected_id)
+        .take(3)
+    {
+        let candidate = campfire_candidate_evidence_by_plan_id_v1(context, &plan.plan_id);
+        sampled_plan_ids.insert(plan.plan_id.clone());
+        samples.push(format!(
+            "scheduler_branch: {}",
+            render_campfire_candidate_sample_line_v1(plan, candidate)
+        ));
+    }
+    for plan in decision
+        .candidate_plans
+        .iter()
+        .filter(|plan| {
+            !sampled_plan_ids.contains(&plan.plan_id)
+                && campfire_candidate_evidence_by_plan_id_v1(context, &plan.plan_id)
+                    .is_some_and(|candidate| !candidate.risks.is_empty())
         })
-        .collect::<Vec<_>>();
-    ranked.sort_by(|left, right| right.0.cmp(&left.0));
-    ranked.into_iter().take(6).map(|(_, line)| line).collect()
+        .take(2)
+    {
+        let candidate = campfire_candidate_evidence_by_plan_id_v1(context, &plan.plan_id);
+        samples.push(format!(
+            "diagnostic_risk: {}",
+            render_campfire_candidate_sample_line_v1(plan, candidate)
+        ));
+    }
+    samples
 }
 
-fn compact_campfire_notable_rank_v1(
-    plan: &sts_simulator::ai::campfire_policy_v1::CampfirePlanCandidateV1,
-    is_selected: bool,
-    has_risk: bool,
-) -> i32 {
-    let selected_bonus = if is_selected { 100_000 } else { 0 };
-    let execute_bonus = if plan.execute_autopilot { 20_000 } else { 0 };
-    let active_bonus = if plan.branch_active { 10_000 } else { 0 };
-    let risk_bonus = if has_risk { 1_000 } else { 0 };
-    selected_bonus + execute_bonus + active_bonus + risk_bonus + plan.score_hint
+fn campfire_candidate_evidence_by_plan_id_v1<'a>(
+    context: &'a sts_simulator::ai::campfire_policy_v1::CampfireDecisionContextV1,
+    plan_id: &str,
+) -> Option<&'a sts_simulator::ai::campfire_policy_v1::CampfireCandidateEvidenceV1> {
+    context
+        .candidates
+        .iter()
+        .find(|candidate| candidate.candidate_id == plan_id)
 }
 
-fn render_campfire_notable_plan_line_v1(
+fn render_campfire_candidate_sample_line_v1(
     plan: &sts_simulator::ai::campfire_policy_v1::CampfirePlanCandidateV1,
     candidate: Option<&sts_simulator::ai::campfire_policy_v1::CampfireCandidateEvidenceV1>,
 ) -> String {
     let mut parts = vec![format!(
-        "{} action={} role={:?} diagnostics=[score={} execute={} branch_active={}]",
+        "{} action={} role={:?}",
         plan.plan_id,
         render_campfire_action_label_v1(&plan.action),
-        plan.role,
-        plan.score_hint,
-        plan.execute_autopilot,
-        plan.branch_active
+        plan.role
     )];
+    parts.push(format!(
+        "scheduler=[execute={} branch_active={}]",
+        plan.execute_autopilot, plan.branch_active
+    ));
+    parts.push(format!(
+        "diagnostics=[score={} confidence={:.2}]",
+        plan.score_hint, plan.confidence
+    ));
     if let Some(tag) = &plan.strategy_tag {
         parts.push(format!("tag={tag}"));
     }
     if let Some(candidate) = candidate {
         parts.push(format!(
-            "class={:?} gate={:?} upgrade_score={}",
+            "class={:?} diagnostic_support_gate={:?} upgrade_score={}",
             candidate.class,
             candidate.support_gate,
             candidate
@@ -283,12 +311,12 @@ fn render_campfire_plan_execution_head_v1(
     action_label: &str,
 ) -> String {
     format!(
-        "plan_id={} action={} role={:?} diagnostics=[score={} execute={} confidence={:.2}]",
+        "plan_id={} action={} role={:?} execute={} diagnostics=[score={} confidence={:.2}]",
         plan.plan_id,
         action_label,
         plan.role,
-        plan.score_hint,
         plan.execute_autopilot,
+        plan.score_hint,
         plan.confidence
     )
 }
@@ -298,13 +326,13 @@ fn render_campfire_plan_candidate_line_v1(
     action_label: &str,
 ) -> String {
     format!(
-        "{} action={} role={:?} diagnostics=[score={} execute={} branch_active={} confidence={:.2}]",
+        "{} action={} role={:?} scheduler=[execute={} branch_active={}] diagnostics=[score={} confidence={:.2}]",
         plan.plan_id,
         action_label,
         plan.role,
-        plan.score_hint,
         plan.execute_autopilot,
         plan.branch_active,
+        plan.score_hint,
         plan.confidence
     )
 }
@@ -358,15 +386,16 @@ fn render_route_evidence_compact_v1(
     trace: &sts_simulator::ai::route_planner_v1::RouteDecisionTraceV1,
 ) -> Vec<String> {
     let mut lines = Vec::new();
+    lines.push("Route evidence:".to_string());
     lines.push(format!(
-        "Route compiled decision: act={} boss={} objective={:?} mode={:?}",
+        "facts: act={} boss={}",
         trace.context.act,
-        trace.context.boss.as_deref().unwrap_or("unknown"),
-        trace.objective,
-        trace.selection_mode
+        trace.context.boss.as_deref().unwrap_or("unknown")
     ));
     lines.push(format!(
-        "context: candidates={} path_budget={} label_role={}",
+        "diagnostics: objective={:?} mode={:?} candidates={} path_budget={} label_role={}",
+        trace.objective,
+        trace.selection_mode,
         trace.candidates.len(),
         trace.path_budget,
         trace.label_role
@@ -378,29 +407,31 @@ fn render_route_evidence_compact_v1(
     if let Some(idx) = trace.selected_index {
         if let Some(candidate) = trace.candidates.get(idx) {
             lines.push(format!(
-                "execution_head: candidate_index={} x={} room={} safety={:?} score={:.2} command={}",
+                "execution: head=candidate_index={} x={} room={} command={}",
                 idx,
                 candidate.target.x,
                 route_room_label_for_compact_v1(candidate.target.room_type),
-                candidate.safety,
-                candidate.total_score,
                 candidate
                     .suggested_command
                     .clone()
                     .unwrap_or_else(|| "-".to_string())
             ));
+            lines.push(format!(
+                "diagnostics: execution_safety={:?} execution_score={:.2}",
+                candidate.safety, candidate.total_score
+            ));
         }
     } else {
-        lines.push("execution_head: -".to_string());
+        lines.push("execution: head=-".to_string());
     }
 
-    let highlights = compact_route_notable_candidates_v1(trace);
-    if highlights.is_empty() {
-        lines.push("candidate_highlights: -".to_string());
+    let samples = compact_route_candidate_samples_v1(trace);
+    if samples.is_empty() {
+        lines.push("candidate_samples: -".to_string());
     } else {
-        lines.push(format!("candidate_highlights: {}", highlights.len()));
-        for (idx, line) in highlights.into_iter().enumerate() {
-            lines.push(format!("  {idx}. {line}"));
+        lines.push(format!("candidate_samples: {}", samples.len()));
+        for line in samples {
+            lines.push(format!("  {line}"));
         }
     }
     lines.push(
@@ -441,7 +472,7 @@ fn render_route_candidate_summary_v1(
     )
 }
 
-fn compact_route_notable_candidates_v1(
+fn compact_route_candidate_samples_v1(
     trace: &sts_simulator::ai::route_planner_v1::RouteDecisionTraceV1,
 ) -> Vec<String> {
     trace
@@ -451,16 +482,17 @@ fn compact_route_notable_candidates_v1(
         .take(6)
         .map(|(idx, candidate)| {
             format!(
-                "{} x={} room={} safety={:?} score={:.2} command={} path=[{}] terms=[card={:.2} relic={:.2} shop={:.2} heal={:.2} hp={:.2} risk={:.2}]",
-                route_candidate_position_label_v1(idx, trace.selected_index == Some(idx)),
+                "candidate_index={} x={} room={} command={} scheduler=[execution_head={}] diagnostics=[safety={:?} score={:.2}] path=[{}] terms=[card={:.2} relic={:.2} shop={:.2} heal={:.2} hp={:.2} risk={:.2}]",
+                idx,
                 candidate.target.x,
                 route_room_label_for_compact_v1(candidate.target.room_type),
-                candidate.safety,
-                candidate.total_score,
                 candidate
                     .suggested_command
                     .clone()
                     .unwrap_or_else(|| "-".to_string()),
+                trace.selected_index == Some(idx),
+                candidate.safety,
+                candidate.total_score,
                 route_path_compact_v1(&candidate.path_summary),
                 candidate.score_terms.card_reward,
                 candidate.score_terms.relic,
@@ -471,14 +503,6 @@ fn compact_route_notable_candidates_v1(
             )
         })
         .collect()
-}
-
-fn route_candidate_position_label_v1(index: usize, is_execution_head: bool) -> String {
-    if is_execution_head {
-        format!("candidate_index={index} execution_head")
-    } else {
-        format!("candidate_index={index}")
-    }
 }
 
 fn route_path_compact_v1(path: &sts_simulator::ai::route_planner_v1::RoutePathSummaryV1) -> String {
@@ -588,8 +612,9 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
         );
     let trace = sts_simulator::ai::strategic::strategic_trace_for_card_reward(&context);
     let mut lines = Vec::new();
+    lines.push("Card reward evidence:".to_string());
     lines.push(format!(
-        "Card reward compiled decision: act={} floor={} hp={}/{} gold={} boss={:?}",
+        "facts: act={} floor={} hp={}/{} gold={} boss={:?}",
         session.run_state.act_num,
         session.run_state.floor_num,
         session.run_state.current_hp,
@@ -598,14 +623,16 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
         session.run_state.boss_key
     ));
     lines.push(format!(
-        "context: candidates={} deck_size={} startup_strong_draw={}->{} has_singing_bowl={}",
+        "facts: candidates={} deck_size={} has_singing_bowl={}",
         context.candidates.len(),
         context.deck.deck_size,
-        context.startup.strong_draw_count,
-        context.startup.effective_strong_draw_count,
         context.has_singing_bowl
     ));
-    lines.push("candidate evidence:".to_string());
+    lines.push(format!(
+        "diagnostics: startup_strong_draw={}->{}",
+        context.startup.strong_draw_count, context.startup.effective_strong_draw_count,
+    ));
+    lines.push("candidate_pool:".to_string());
     for candidate in &context.candidates {
         let action = sts_simulator::ai::strategic::CandidateAction::TakeCard {
             index: candidate.index,
@@ -617,20 +644,15 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
             .iter()
             .find(|delta| delta.action == action);
         lines.push(format!(
-            "- {} | index={} card={:?} same_card_count={} verdict={} score={}",
+            "  candidate: id={} label={} index={} card={:?} same_card_count={}",
+            action.candidate_id(),
             candidate.name,
             candidate.index,
             candidate.card,
-            candidate.same_card_count,
-            compiled
-                .map(|decision| format!("{:?}", decision.verdict))
-                .unwrap_or_else(|| "-".to_string()),
-            compiled
-                .map(|decision| format!("{:.2}", decision.score))
-                .unwrap_or_else(|| "-".to_string()),
+            candidate.same_card_count
         ));
         lines.push(format!(
-            "    facts: type={:?} cost={} damage={} block={} draw={} energy={} roles=[{}]",
+            "      facts: type={:?} cost={} damage={} block={} draw={} energy={} roles=[{}]",
             candidate.card_type,
             candidate.facts.cost,
             candidate.facts.damage.total_damage,
@@ -650,9 +672,16 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
                 .collect::<Vec<_>>(),
             )
         ));
+        if let Some(compiled) = compiled {
+            lines.push(format!("      verdict: {:?}", compiled.verdict));
+            lines.push(format!("      diagnostics: score={:.2}", compiled.score));
+        } else {
+            lines.push("      verdict: -".to_string());
+            lines.push("      diagnostics: score=-".to_string());
+        }
         if let Some(delta) = delta {
             lines.push(format!(
-                "    delta: role={:?} hint={:?} theses=[{}] positive=[{}] negative=[{}] notes=[{}]",
+                "      diagnostics: delta_role={:?} hint={:?} theses=[{}] positive=[{}] negative=[{}] notes=[{}]",
                 delta.role,
                 delta.verdict_hint,
                 render_acquisition_theses(&delta.acquisition_theses),
@@ -669,16 +698,19 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
     };
     if let Some(compiled) = trace.compiled_for_action(&skip_action) {
         lines.push(format!(
-            "decline_candidate: action={} verdict={:?} score={:.2}",
+            "candidate: id={} label=decline",
             skip_action.candidate_id(),
-            compiled.verdict,
-            compiled.score
         ));
+        lines.push(format!("  verdict: {:?}", compiled.verdict,));
+        lines.push(format!("  diagnostics: score={:.2}", compiled.score));
     }
     if let Some(action) = trace.would_choose.as_ref() {
-        lines.push(format!("trace_would_choose: {}", action.candidate_id()));
+        lines.push(format!(
+            "execution_projection: current_trace_would_choose={}",
+            action.candidate_id()
+        ));
     } else {
-        lines.push("trace_would_choose: -".to_string());
+        lines.push("execution_projection: current_trace_would_choose=-".to_string());
     }
     Ok(lines.join("\n"))
 }
