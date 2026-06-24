@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use sts_simulator::eval::branch_campaign::{BranchCampaignBranchV1, BranchCampaignReportV1};
 use sts_simulator::eval::campaign_journal::{
     CampaignJournalCandidateV1, CampaignJournalEventPayloadV1,
@@ -134,60 +136,144 @@ fn render_final_boss_comparison_lines_v1(
                 .to_string(),
         );
     }
-    lines.push("  failure examples:".to_string());
-    for (index, branch) in failures.iter().take(3).enumerate() {
+    let divergence_groups =
+        final_boss_divergence_groups_v1(report, selected_branch, failures.as_slice());
+    lines.push("  divergence groups:".to_string());
+    for (index, group) in divergence_groups.iter().take(5).enumerate() {
         lines.push(format!(
-            "    {}. {}",
+            "    {}. failures={} hp={}..{} deck={}..{} {}",
             index + 1,
-            render_final_boss_branch_brief_v1(branch)
+            group.failure_count,
+            group.hp_min,
+            group.hp_max,
+            group.deck_min,
+            group.deck_max,
+            group.divergence.render()
         ));
-        if let Some(deck_key) = branch
-            .summary
-            .as_ref()
-            .and_then(render_final_boss_deck_key_v1)
-        {
-            lines.push(format!("       deck: {deck_key}"));
-        }
-        if let Some(divergence) =
-            render_final_boss_branch_divergence_v1(report, selected_branch, branch)
-        {
-            lines.push(format!("       divergence: {divergence}"));
-        }
-        if !branch.choice_labels.is_empty() {
+        for branch in group.examples.iter().take(2) {
             lines.push(format!(
-                "       choices: {}",
-                render_truncated_text(&branch.choice_labels.join(" -> "), 220)
+                "       example: {}",
+                render_final_boss_branch_brief_v1(branch)
             ));
         }
+    }
+    if divergence_groups.len() > 5 {
+        lines.push(format!(
+            "    ... {} more divergence group(s)",
+            divergence_groups.len() - 5
+        ));
     }
     lines
 }
 
-fn render_final_boss_branch_divergence_v1(
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FinalBossBranchDivergenceV1 {
+    common_prefix: usize,
+    victory: String,
+    failure: String,
+}
+
+impl FinalBossBranchDivergenceV1 {
+    fn render(&self) -> String {
+        format!(
+            "after {} decisions | victory -> {} | failure -> {}",
+            self.common_prefix, self.victory, self.failure
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+struct FinalBossDivergenceGroupV1<'a> {
+    divergence: FinalBossBranchDivergenceV1,
+    failure_count: usize,
+    hp_min: i32,
+    hp_max: i32,
+    deck_min: usize,
+    deck_max: usize,
+    examples: Vec<&'a BranchCampaignBranchV1>,
+}
+
+fn final_boss_divergence_groups_v1<'a>(
+    report: &BranchCampaignReportV1,
+    victory: &BranchCampaignBranchV1,
+    failures: &'a [&'a BranchCampaignBranchV1],
+) -> Vec<FinalBossDivergenceGroupV1<'a>> {
+    let mut groups = BTreeMap::<String, FinalBossDivergenceGroupV1<'a>>::new();
+    for failure in failures {
+        let divergence =
+            final_boss_branch_divergence_v1(report, victory, failure).unwrap_or_else(|| {
+                FinalBossBranchDivergenceV1 {
+                    common_prefix: common_command_prefix_len_v1(
+                        &victory.commands,
+                        &failure.commands,
+                    ),
+                    victory: "no divergent command".to_string(),
+                    failure: "no divergent command".to_string(),
+                }
+            });
+        let key = format!(
+            "{:04}|{}|{}",
+            divergence.common_prefix, divergence.victory, divergence.failure
+        );
+        let Some(summary) = failure.summary.as_ref() else {
+            continue;
+        };
+        let entry = groups
+            .entry(key)
+            .or_insert_with(|| FinalBossDivergenceGroupV1 {
+                divergence: divergence.clone(),
+                failure_count: 0,
+                hp_min: summary.hp,
+                hp_max: summary.hp,
+                deck_min: summary.deck_count,
+                deck_max: summary.deck_count,
+                examples: Vec::new(),
+            });
+        entry.failure_count += 1;
+        entry.hp_min = entry.hp_min.min(summary.hp);
+        entry.hp_max = entry.hp_max.max(summary.hp);
+        entry.deck_min = entry.deck_min.min(summary.deck_count);
+        entry.deck_max = entry.deck_max.max(summary.deck_count);
+        if entry.examples.len() < 2 {
+            entry.examples.push(*failure);
+        }
+    }
+
+    let mut groups = groups.into_values().collect::<Vec<_>>();
+    groups.sort_by(|left, right| {
+        left.divergence
+            .common_prefix
+            .cmp(&right.divergence.common_prefix)
+            .then_with(|| right.failure_count.cmp(&left.failure_count))
+            .then_with(|| left.divergence.failure.cmp(&right.divergence.failure))
+    });
+    groups
+}
+
+fn final_boss_branch_divergence_v1(
     report: &BranchCampaignReportV1,
     victory: &BranchCampaignBranchV1,
     failure: &BranchCampaignBranchV1,
-) -> Option<String> {
+) -> Option<FinalBossBranchDivergenceV1> {
     let common_prefix = common_command_prefix_len_v1(&victory.commands, &failure.commands);
     let victory_next = victory.commands.get(common_prefix)?;
     let failure_next = failure.commands.get(common_prefix)?;
     if victory_next == failure_next {
         return None;
     }
-    Some(format!(
-        "after {} decisions | victory -> {} | failure -> {}",
+    Some(FinalBossBranchDivergenceV1 {
         common_prefix,
-        render_journal_command_candidate_label_v1(
+        victory: render_journal_command_candidate_label_v1(
             report,
             &victory.commands[..common_prefix],
-            victory_next
+            victory_next,
         ),
-        render_journal_command_candidate_label_v1(
+        failure: render_journal_command_candidate_label_v1(
             report,
             &failure.commands[..common_prefix],
-            failure_next
-        )
-    ))
+            failure_next,
+        ),
+    })
 }
 
 fn common_command_prefix_len_v1(left: &[String], right: &[String]) -> usize {
