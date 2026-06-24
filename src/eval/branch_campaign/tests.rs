@@ -95,6 +95,7 @@ fn campaign_branch_from_report_appends_new_choice_path() {
         status: BranchCampaignBranchStatusV1::Scheduled,
         stop_reason: "test".to_string(),
         continuation_origin: None,
+        decision_candidate_axis: None,
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
         final_boss_combat_record: None,
@@ -150,6 +151,7 @@ fn campaign_branch_from_report_prefixes_parent_branch_id() {
         status: BranchCampaignBranchStatusV1::Scheduled,
         stop_reason: "test".to_string(),
         continuation_origin: None,
+        decision_candidate_axis: None,
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
         final_boss_combat_record: None,
@@ -238,6 +240,31 @@ fn scheduler_progress_probe_prefers_same_floor_rank_over_hp() {
     assert!(selected.scheduled[0]
         .stop_reason
         .contains("scheduler:progress_probe"));
+}
+
+#[test]
+fn scheduler_preserves_distinct_decision_candidate_axes() {
+    let mut remove_strike = test_campaign_branch("remove-strike", 6, 80);
+    remove_strike.rank_key = 12_000;
+    remove_strike.decision_candidate_axis = Some("event:LivingWall:remove_card".to_string());
+    let mut remove_defend = test_campaign_branch("remove-defend", 6, 79);
+    remove_defend.rank_key = 11_900;
+    remove_defend.decision_candidate_axis = Some("event:LivingWall:remove_card".to_string());
+    let mut transform_strike = test_campaign_branch("transform-strike", 6, 78);
+    transform_strike.rank_key = 11_000;
+    transform_strike.decision_candidate_axis = Some("event:LivingWall:transform_card".to_string());
+
+    let selected =
+        select_campaign_branches_v1(vec![remove_strike, remove_defend, transform_strike], 2, 8);
+    let scheduled_ids = selected
+        .scheduled
+        .iter()
+        .map(|branch| branch.branch_id.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(selected.scheduled.len(), 2);
+    assert!(scheduled_ids.iter().any(|id| id.starts_with("remove-")));
+    assert!(scheduled_ids.contains(&"transform-strike"));
 }
 
 #[test]
@@ -739,6 +766,7 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
         status: BranchCampaignBranchStatusV1::Scheduled,
         stop_reason: "test".to_string(),
         continuation_origin: None,
+        decision_candidate_axis: None,
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: hp,
         final_boss_combat_record: None,

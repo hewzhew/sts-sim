@@ -90,6 +90,8 @@ pub struct BranchCampaignBranchV1 {
     pub stop_reason: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub continuation_origin: Option<BranchCampaignContinuationOriginV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_candidate_axis: Option<String>,
     /// Deprecated compatibility field. Older campaign checkpoints may contain
     /// this, but campaign selection no longer carries local decision signals
     /// across rounds.

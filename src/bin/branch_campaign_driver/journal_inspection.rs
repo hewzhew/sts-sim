@@ -2226,6 +2226,7 @@ mod tests {
             status: BranchCampaignBranchStatusV1::Scheduled,
             stop_reason: "test".to_string(),
             continuation_origin: None,
+            decision_candidate_axis: None,
             lineage_decision_signal_rank_adjustment: 0,
             rank_key: 0,
             final_boss_combat_record: None,

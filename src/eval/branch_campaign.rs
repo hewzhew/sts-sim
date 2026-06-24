@@ -1393,6 +1393,7 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
         status: BranchCampaignBranchStatusV1::Scheduled,
         stop_reason: "initial".to_string(),
         continuation_origin: None,
+        decision_candidate_axis: None,
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
         final_boss_combat_record: None,
@@ -1707,11 +1708,32 @@ pub fn campaign_branch_from_report_branch_v1(
         status: campaign_status_from_report_status(branch.status),
         stop_reason: branch.stop_reason.clone(),
         continuation_origin: parent.continuation_origin.clone(),
+        decision_candidate_axis: campaign_decision_candidate_axis_from_report_branch_v1(branch),
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: branch.rank_key,
         final_boss_combat_record: branch.final_boss_combat_record.clone(),
         combat_lab_probes: Vec::new(),
     }
+}
+
+fn campaign_decision_candidate_axis_from_report_branch_v1(
+    branch: &BranchExperimentBranchReportV1,
+) -> Option<String> {
+    let choice = branch
+        .choices
+        .iter()
+        .rev()
+        .find(|choice| choice.kind == "event" && !choice.effect_kind.trim().is_empty())?;
+    let boundary = if choice.boundary_title.trim().is_empty() {
+        branch.summary.boundary_title.as_str()
+    } else {
+        choice.boundary_title.as_str()
+    };
+    Some(format!(
+        "event:{}:{}",
+        normalized_campaign_boundary_title(boundary),
+        choice.effect_kind.trim()
+    ))
 }
 
 pub(super) fn campaign_child_branch_id_v1(parent_id: &str, child_id: &str) -> String {

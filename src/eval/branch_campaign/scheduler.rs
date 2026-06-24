@@ -12,6 +12,7 @@ use super::{branch_progress_key, campaign_branch_quality_key_v1, BranchCampaignC
 enum SchedulerLaneV1 {
     BossRelicAxis,
     CoverageGapTarget,
+    DecisionCandidateAxis,
     ProgressProbe,
     SurvivalProbe,
     General,
@@ -82,6 +83,13 @@ fn schedule_campaign_workset_for_limits_v1(
         max_scheduled,
         SchedulerLaneV1::CoverageGapTarget,
         branch_coverage_gap_target_key_v1,
+    );
+    take_best_per_group_v1(
+        &mut pool,
+        &mut scheduled,
+        max_scheduled,
+        SchedulerLaneV1::DecisionCandidateAxis,
+        branch_decision_candidate_axis_key_v1,
     );
     take_best_single_v1(
         &mut pool,
@@ -235,6 +243,10 @@ fn branch_coverage_gap_target_key_v1(branch: &BranchCampaignBranchV1) -> Option<
     ))
 }
 
+fn branch_decision_candidate_axis_key_v1(branch: &BranchCampaignBranchV1) -> Option<String> {
+    branch.decision_candidate_axis.clone()
+}
+
 fn branch_progress_probe_key_v1(branch: &BranchCampaignBranchV1) -> (u8, i32, i32) {
     let (act, floor, _) = branch_progress_key(branch);
     (act, floor, branch.rank_key)
@@ -269,6 +281,7 @@ fn mark_scheduler_lane_label_v1(branch: &mut BranchCampaignBranchV1, lane: Sched
     let label = match lane {
         SchedulerLaneV1::BossRelicAxis => "scheduler:boss_relic_axis",
         SchedulerLaneV1::CoverageGapTarget => "scheduler:coverage_gap_target",
+        SchedulerLaneV1::DecisionCandidateAxis => "scheduler:decision_candidate_axis",
         SchedulerLaneV1::ProgressProbe => "scheduler:progress_probe",
         SchedulerLaneV1::SurvivalProbe => "scheduler:survival_probe",
         SchedulerLaneV1::General => "scheduler:general",

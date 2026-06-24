@@ -434,6 +434,7 @@ mod tests {
             status: BranchCampaignBranchStatusV1::Scheduled,
             stop_reason: String::new(),
             continuation_origin: None,
+            decision_candidate_axis: None,
             lineage_decision_signal_rank_adjustment: 0,
             rank_key: 22_100,
             final_boss_combat_record: None,

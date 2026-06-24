@@ -792,6 +792,7 @@ fn coverage_gap_branch_from_target_v1(
             }),
             milestone: target.milestone.clone(),
         }),
+        decision_candidate_axis: None,
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
         final_boss_combat_record: None,
