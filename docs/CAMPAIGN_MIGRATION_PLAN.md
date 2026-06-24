@@ -4,6 +4,12 @@ This plan migrates campaign ownership from the PowerShell wrapper back into the
 Rust campaign application. It is intentionally larger than a wrapper cleanup:
 the goal is to remove the two-application-layer failure mode.
 
+The phases below are ownership transfers. A change does not count as progress
+on this plan merely because it splits files, renames functions, compresses a
+payload, or makes output prettier. It counts only when a campaign semantic
+leaves the wrong layer, an obsolete public surface is deleted or loudly
+deprecated, or an artifact boundary becomes enforceable.
+
 ## Completion Definition
 
 The migration is complete when:
@@ -35,6 +41,13 @@ Done when:
 - docs point to `CAMPAIGN_SYSTEM_ARCHITECTURE.md`
 - new wrapper changes are limited to launch/build compatibility
 
+Not done by:
+
+- moving PowerShell functions into more `campaign_*.ps1` files
+- adding a new wrapper probe switch
+- adding a new compatibility alias for a Rust feature that does not exist yet
+- documenting the current wrapper behavior as if it were the target design
+
 ## Phase 1: Rust ArtifactStore
 
 Goal: make Rust the only owner of artifact source and output resolution.
@@ -54,6 +67,13 @@ Done when:
   sources without PowerShell path logic
 - PowerShell does not read or write campaign manifest or latest pointer files
 - dry-run can display the same typed artifact resolution Rust will use
+
+Not done by:
+
+- calling Rust for only one path while PowerShell still owns the surrounding
+  lifecycle
+- preserving separate PowerShell meanings for latest, scratch, continue, or
+  rounds
 
 ## Phase 2: Rust CampaignApp
 
@@ -114,6 +134,13 @@ Done when:
   blocked by combat budget, terminal loss, or victory
 - active/frozen are executor internals in output, not the primary user model
 
+Not done by:
+
+- increasing the active branch count
+- renaming active/frozen to scheduled/parked in public output
+- adding more rank terms to decide which frozen branch to thaw
+- treating the current best policy head as the only branch worth continuing
+
 ## Phase 5: Rust Inspect And Artifact Commands
 
 Goal: make inspect and artifact lifecycle independent of wrapper state.
@@ -168,6 +195,12 @@ Out of scope for this migration:
 - Keep old artifact readers only as readers.
 - New writers should emit the target artifact shape.
 - Every phase must reduce the amount of campaign semantic code in PowerShell.
+- If a migration step adds more wrapper semantic code than it removes, stop and
+  redesign the step.
+- If a migration step requires parsing labels, command prefixes, or report prose
+  as identity, stop and add a typed field instead.
+- If a migration step makes a report larger because it lacks a better owner for
+  the data, stop and define the owner before writing the field.
 
 ## First Implementation Cut
 
@@ -180,5 +213,5 @@ Rust ArtifactStore source/output resolver
   -> wrapper manifest/path code begins deletion
 ```
 
-Do not start by renaming wrapper functions or polishing existing PowerShell
-modules. That preserves the wrong architecture.
+Do not start by renaming wrapper functions, splitting wrapper files, or
+polishing existing PowerShell modules. That preserves the wrong architecture.

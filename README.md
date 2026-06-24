@@ -8,7 +8,11 @@ Slay the Spire.
 Current main line:
 
 ```text
-simulator -> state representation -> search/rollout -> value -> policy improvement
+simulator correctness
+  -> Rust-owned campaign application
+  -> journaled decision candidate coverage
+  -> search/rollout evidence
+  -> explicit exports for learning or analysis
 ```
 
 The project is not currently focused on old watch UI, Workbench,
@@ -17,20 +21,25 @@ later as adapters, but they do not define simulator truth or search quality.
 
 ## Current Workflow
 
-The maintained loop is:
+The maintained campaign direction is:
 
-1. run a deterministic simulator campaign from Neow onward
-2. keep several noncombat branches alive under explicit budgets
-3. use Combat Search V2 for complete combat trajectories inside those branches
-4. inspect checkpoints, final boss combats, and outcome datasets when a branch fails
-5. compare whole-run outcomes and branch siblings, not step-by-step action agreement
+1. run or continue a deterministic simulator campaign from Neow onward
+2. record typed decision candidate pools in `CampaignJournal`
+3. use coverage planning to continue historically unobserved candidates
+4. use Combat Search V2 for complete combat trajectories inside branches
+5. inspect read-only artifact views when a run fails or reaches a milestone
+6. export learning or analysis data through explicit exporters
 
 Autopilot, route planning, card reward policy, traces, and search-assisted
 combat are convenience/evidence tools. They are not teacher labels.
 
+The campaign system is being migrated to a Rust-owned application boundary. The
+PowerShell wrapper remains a local launcher, not the architecture. See
+[docs/CAMPAIGN_SYSTEM_ARCHITECTURE.md](docs/CAMPAIGN_SYSTEM_ARCHITECTURE.md).
+
 ## Quick Start
 
-Run the current campaign workflow:
+Run the current compatibility campaign launcher:
 
 ```powershell
 cd D:\rust\sts_simulator
@@ -38,6 +47,9 @@ cd D:\rust\sts_simulator
 .\tools\campaign.ps1 -From latest -Continue -Rounds 1
 .\tools\campaign.ps1 -Inspect
 ```
+
+Treat wrapper commands as transitional conveniences. New campaign semantics
+belong in the Rust `branch_campaign_driver` campaign app, not in PowerShell.
 
 Build the main campaign driver directly when debugging the binary:
 

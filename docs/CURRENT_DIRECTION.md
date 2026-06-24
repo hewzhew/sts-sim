@@ -1,93 +1,92 @@
 # Current Direction
 
-Main line:
+The main line is:
 
 ```text
-simulator -> campaign state -> journaled candidates -> search/rollout -> value -> policy improvement
+simulator correctness
+  -> Rust-owned campaign application
+  -> journaled decision candidate coverage
+  -> combat/search evidence
+  -> explicit exports for learning or analysis
 ```
 
-The project is building a usable Rust simulator and AI-search workspace for
-Slay the Spire. The current maintained loop is:
+The project is building a Rust simulator and AI-search workspace for Slay the
+Spire. The campaign system is being redesigned around a single Rust application
+boundary. The PowerShell wrapper is compatibility launch code, not the campaign
+architecture.
 
-1. run a deterministic campaign from Neow onward
-2. keep a bounded scheduled/parked campaign workset
-3. record non-combat decision candidate pools in `CampaignJournal`
-4. use coverage-gap or sibling continuation to revisit unobserved candidates
-5. use Combat Search V2 for complete combat trajectories inside branches
-6. compare whole-run, milestone, combat, and sibling outcomes
+## Architecture Priority
 
-## Campaign Architecture Direction
+Read [Campaign System Architecture](CAMPAIGN_SYSTEM_ARCHITECTURE.md) first. It
+defines the target ownership model and the concepts that must retire.
 
-The campaign workflow is migrating to a Rust-owned campaign application:
+The short version:
 
-```text
-Campaign CLI -> CampaignApp -> ArtifactStore / ExperimentPlanner / CampaignEngine
-```
+- Rust owns campaign semantics.
+- PowerShell only builds and launches.
+- Campaign artifacts have separate owners: checkpoint, state, journal, report,
+  diagnostic, export, and manifest.
+- The experiment model is journaled decision-candidate coverage, not
+  active/frozen branch guessing.
+- Reports are bounded projections, not checkpoint, journal, diagnostics, or
+  training datasets.
 
-`tools/campaign.ps1` should become a launcher. It should not own
-source/latest/scratch semantics, milestone loops, coverage-gap orchestration, or
-manifest writing. The target architecture is defined in
-[Campaign System Architecture](CAMPAIGN_SYSTEM_ARCHITECTURE.md), the stable CLI
-surface in [Campaign CLI Contract](CAMPAIGN_CLI_CONTRACT.md), and the migration
-sequence in [Campaign Migration Plan](CAMPAIGN_MIGRATION_PLAN.md).
+## Maintained Loop
+
+The maintained development loop should become:
+
+1. run or continue a campaign through the Rust campaign app
+2. record typed decision candidate pools in `CampaignJournal`
+3. plan coverage targets from journaled candidates
+4. continue selected candidates to milestones or explicit blockers
+5. inspect read-only views over artifacts
+6. export learning or analysis samples only through explicit exporters
+
+Current compatibility commands may not fully match this loop yet. When behavior
+differs, prefer migrating code toward the architecture over documenting wrapper
+accidents as normal use.
 
 ## Active Work
 
 - simulator correctness and Java-mechanics parity when real runs expose bugs
-- migrating campaign source/output, continuation, coverage, inspect, and
-  artifact lifecycle ownership out of PowerShell and into Rust
-- campaign lifecycle, checkpoint, journal, report, and sidecar boundaries
-- route/map candidate pools and coverage-gap continuation
+- migrating source, output, latest, scratch, continuation, coverage, inspect,
+  and artifact lifecycle ownership out of PowerShell and into Rust
+- enforcing checkpoint/state/journal/report/diagnostic/export boundaries
+- route/map candidate pools and candidate-coverage continuation
 - Combat Search V2 quality, performance, and special-phase handling
 - non-combat policy compilers for route, deck mutation, card reward, shop,
   campfire, event, and boss relic choices
 
 ## Stable Foundation
 
-`run_play_driver`, `run_control`, trace/replay, bookmarks, non-combat decision
-records, and combat captures should keep working. They are stable foundations
-and diagnostic tools, not the main expansion layer.
+`run_play_driver`, traces, bookmarks, combat captures, and baseline artifacts
+remain useful diagnostic tools. They are not the campaign scheduler and should
+not define campaign artifact lifecycle.
 
-New strategy and branch research should go through campaign, journal,
-coverage-gap continuation, policy compilers, and combat search rather than
-expanding the manual REPL or adding more ad hoc wrapper switches.
-
-## Route And Journal
-
-Route choices are handled by a planner during normal campaign runs so the
-default workset stays bounded. The planner should still record typed route
-candidate pools in `CampaignJournal`, allowing coverage-gap continuation to
-revisit unobserved map alternatives deliberately.
-
-Detailed route/map journal rules belong in
-[Campaign Journal](CAMPAIGN_JOURNAL.md). The short rule is: consume typed route
-candidates and candidate-pool provenance, not route display labels or `go N`
-strings.
+`run_control` and existing policy compilers can remain as behavior policies and
+evidence sources. They are not teacher labels and should not own experiment
+scheduling.
 
 ## Not The Main Line
 
 - old Python watch UI and recording UI
 - Workbench or DecisionFrame expansion
-- LLM prompt engineering and LLM reviewer flows
+- LLM prompt engineering as the default controller
 - live CommunicationMod control as the default development path
 - treating route/card/search decisions as teacher labels
+- adding more wrapper switches for new probes
 
-LLM and live-game adapters may return later, but only as consumers of stable
-public observation and action contracts. They do not define simulator truth or
-search quality.
+Adapters may return later, but only as consumers of stable public observation
+and action contracts. They do not define simulator truth or search quality.
 
 ## Evidence Rules
 
 - A trace records what happened. It is not a policy-quality claim.
-- A guarded autopilot decision is `behavior_policy_not_teacher`.
+- A guarded autopilot decision is behavior-policy evidence, not a teacher.
 - A combat search result is budgeted evidence unless validated by exact replay
   and a benchmark context.
 - Human baseline comparison is whole-combat outcome comparison, not stepwise
   action agreement.
-- New report, journal, and learning-sample fields should pass
-  [Report Field Admission](REPORT_FIELD_ADMISSION.md): classify the field as a
-  fact, diagnostic, verdict, or label.
-- Campaign artifacts should follow
-  [Campaign Artifact Architecture](CAMPAIGN_ARTIFACT_ARCHITECTURE.md):
-  checkpoint, journal, report, and diagnostic sidecar data have separate
-  ownership.
+- New artifact fields must pass [Report Field Admission](REPORT_FIELD_ADMISSION.md)
+  and the ownership rules in
+  [Campaign Artifact Architecture](CAMPAIGN_ARTIFACT_ARCHITECTURE.md).
