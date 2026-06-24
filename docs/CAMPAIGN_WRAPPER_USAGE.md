@@ -5,6 +5,29 @@
 selection, build profile selection, dry-run rendering, and common convenience
 defaults. Campaign semantics belong in the Rust driver and compiler layers.
 
+## Wrapper Ownership
+
+The wrapper owns:
+
+- parameter parsing and user-facing aliases
+- source and output artifact selection
+- build profile selection
+- driver command rendering and launch
+- short preflight output
+- wrapper manifest writing
+
+The wrapper must not own:
+
+- campaign strategy or scheduling semantics
+- compiler/evidence policy behavior
+- large diagnostics or learning payloads
+- one top-level switch for every temporary Rust driver probe
+
+When a workflow reads one artifact and writes another, source and output must
+stay explicit. `latest` is a pointer to a normal run artifact, not the artifact
+itself. `scratch` is an experiment surface with its own pointer and must not
+silently overwrite latest.
+
 ## Surface Rule
 
 Prefer these public shapes:
@@ -180,7 +203,7 @@ driver passthrough provenance under `driver_passthrough`, split into explicit
 .\tools\campaign.ps1 -Domain a20 -Mode explore -BossRelicAxes
 ```
 
-`-BossRelicAxes` gives boss relic lineages separate active/frozen branch
+`-BossRelicAxes` gives boss relic lineages separate scheduled/parked branch
 budgets and is useful when comparing high-impact relic choices.
 
 ## Combat Segment Compatibility

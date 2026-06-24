@@ -35,7 +35,7 @@ Run the current campaign workflow:
 ```powershell
 cd D:\rust\sts_simulator
 .\tools\campaign.ps1 -Mode quick
-.\tools\campaign.ps1 -More -Rounds 1
+.\tools\campaign.ps1 -From latest -Continue -Rounds 1
 .\tools\campaign.ps1 -Inspect
 ```
 
@@ -71,7 +71,7 @@ Useful in-session commands:
 Resume from a bookmark:
 
 ```powershell
-.\target\release\run_play_driver.exe --goto <name> --search-wall-ms 100
+cargo run --profile fast-run --bin run_play_driver -- --goto <name> --search-wall-ms 100
 ```
 
 See [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md) for the maintained play
@@ -95,8 +95,6 @@ Start here:
 - [docs/CURRENT_DIRECTION.md](docs/CURRENT_DIRECTION.md)
 - [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md)
 - [docs/AUTOPILOT_BOUNDARY.md](docs/AUTOPILOT_BOUNDARY.md)
-- [docs/ARTIFACTS.md](docs/ARTIFACTS.md)
-- [docs/KNOWN_LIMITS.md](docs/KNOWN_LIMITS.md)
 
 The old documentation tree was moved to:
 

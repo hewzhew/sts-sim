@@ -1,102 +1,100 @@
 # Autopilot Boundary
 
-Autopilot exists to reduce manual repetition. It is not a teacher, not a proof
-of strategy quality, and not a replacement for simulator/search validation.
+`run_control` automation exists to reduce manual repetition. It may execute
+routine progress, low-risk rewards, non-combat policy decisions, and combat
+search handoffs. It is not a teacher label, not an optimality proof, and not a
+replacement for simulator correctness or search validation.
 
-## Allowed Autopilot
-
-- routine single-action progress
-- automatic low-risk reward claiming, such as gold, safe relic rewards, and
-  potions when slots exist
-- route-planner map decisions
-- high-confidence card reward policy decisions
-- combat search handoff when a complete executable win is found within budget
-
-Every non-trivial autopilot decision must be treated as:
+Every automated non-trivial decision must be treated as:
 
 ```text
 label_role = behavior_policy_not_teacher
 ```
 
-## Decision Records
+## Evidence Contract
 
-Route-planner and card-reward autopilot decisions also export
-`NonCombatDecisionRecordV1`. This is the shared Phase 0 record boundary for
-non-combat behavior-policy evidence.
-
-Human-required non-combat stops, such as Neow choices, events, shops,
-campfires, boss relics, and remaining rewards, export the same record shape with
-`data_role = HumanBoundaryNotTeacher`.
+`NonCombatDecisionRecordV1` is the shared record boundary for non-combat
+automation and non-combat stops.
 
 The record must stay hidden-free:
 
 - public observations are allowed
-- known distributions and beliefs are allowed when declared
-- hidden simulator state is forbidden
+- declared distributions and beliefs are allowed
+- privileged simulator state and hidden future outcomes are forbidden
 
-Adding a new non-combat autopilot policy should adapt to this record boundary
-instead of inventing another report shape.
+All generated records must pass `validate_noncombat_decision_record_v1` before
+they are attached to run-control trace annotations. The session trace recorder
+validates again before writing annotations, and trace loading validates existing
+annotations. Invalid old traces should be fixed, regenerated, or retired instead
+of replaying silently.
 
-All generated `NonCombatDecisionRecordV1` values must pass the central
-`validate_noncombat_decision_record_v1` gate before being attached to run-control
-trace annotations. The gate checks schema identity, hidden-state exclusion,
-candidate references, evidence/value references, and whether human-boundary
-records accidentally select an action.
-The session trace recorder runs the same validation again before writing
-annotations, so future producers cannot silently bypass the boundary.
-Trace loading also validates existing annotations; old traces with invalid
-non-combat records must be fixed, regenerated, or treated as retired debug
-artifacts instead of replaying silently.
-Stopped/no-candidate policy records can also be persisted as boundary records
-without requiring a separate human-boundary annotation.
+Do not invent a new ad hoc report shape for a non-combat policy. Adapt the
+policy to this record boundary or add typed fields to the record deliberately.
 
-## Human Boundaries
+## Automation Sites
 
-Autopilot should stop at:
+Current automation sites include:
 
-- ambiguous card rewards
-- important events
-- shops, campfires, boss relics, and other high-impact non-combat choices
-- combat search unresolved states
-- observation-boundary uncertainty that matters for the decision
+- route planner map movement
+- card reward policy decisions
+- routine reward claiming
+- shop compiler execution heads
+- campfire policy choices
+- bounded event policies
+- combat search handoff when an executable complete trajectory is found
+
+These sites may make decisions, but their decisions remain behavior-policy
+evidence. If an automated decision later looks bad, fix that decision site's
+policy/compiler or its inputs. Do not reinterpret trace replay, benchmark
+baselines, or campaign reports as teacher labels.
+
+## Stop Conditions
+
+Autopilot should stop when the current site lacks a bounded policy answer.
+
+Common stop reasons:
+
+- no legal or meaningful candidate
+- low confidence or narrow margin
+- high-agency choice without a current policy/compiler
+- observation-boundary uncertainty that matters for the choice
+- combat search cannot find an executable complete trajectory under the current
+  budget
+
+Do not encode a stale fixed list such as "shops always stop" or "events always
+stop." Shops, campfires, events, boss relics, and other high-impact sites need
+their own policy/compiler boundaries; whether automation runs depends on that
+boundary, not on the screen name alone.
 
 ## Route Planner
 
-Route planning is a behavior policy over currently visible map choices. It
-should produce explainable candidate evidence, but its chosen route is not an
-optimal route label.
+Route planning is a behavior policy over currently visible map choices. It may
+select a route, stop, or emit candidate evidence for later campaign
+continuation. A selected route is not an optimal route label.
 
-The planner should be tuned by changing:
+Route records should keep candidate evidence split by role:
 
-- need estimation
-- node features
-- risk model
-- future path search
-- safety gates
+- need vector: current run pressure
+- value factors: candidate-side opportunities and risks
+- score terms: current weighted behavior-policy projection
 
-Do not hide route quality assumptions inside one-off command code.
-If safety gates reject automatic map movement, the declined planner evaluation
-still emits `NonCombatDecisionRecordV1` with `selection.status = Stopped`, so
-candidate evidence remains available without pretending a route was chosen.
-Route records keep candidate evidence split into `NeedVector`, `ValueFactors`,
-and `ScoreTerms`: needs describe current run pressure, value factors describe
-candidate-side opportunities and risks, and score terms are the current weighted
-behavior-policy projection. New tooling should inspect those layers separately.
+Tools should inspect those layers separately. Do not hide route quality
+assumptions inside one-off command code or display strings.
 
 ## Card Reward Policy
 
-The card reward policy may auto-pick only when confidence and margin gates pass.
-Low-confidence rewards must stop for human choice.
-Those declined policy evaluations still emit `NonCombatDecisionRecordV1` as
-behavior-policy evidence, with `selection.status = Stopped`; this records why
-automation declined without converting the decision into a teacher label.
+Card reward automation may auto-pick only when the policy boundary allows it.
+Declined evaluations should still emit a `NonCombatDecisionRecordV1` with a
+stopped selection, preserving candidate evidence without pretending a choice was
+made.
 
-If a card reward auto-pick later looks bad, the fix belongs in the card reward
-policy boundary, not in trace replay or benchmark labels.
+If a card reward auto-pick later looks bad, the fix belongs in card reward
+policy, candidate facts, or downstream evaluation. It does not make the trace a
+negative teacher label.
 
-## Reward Automation
+## Routine Reward Claiming
 
-Reward automation may claim rewards that do not represent a meaningful
+Routine reward automation may claim rewards that do not represent a meaningful
 strategic branch:
 
 - gold and stolen gold
@@ -104,23 +102,20 @@ strategic branch:
 - ordinary visible relic rewards only when no `SapphireKey` reward is present on
   the same screen
 
-Safe relic auto-claim emits `NonCombatDecisionRecordV1` with
-`selection.status = Selected`. The record is still
-`behavior_policy_not_teacher`, and exists so trace/replay can explain why the
-automation changed state.
+Safe reward auto-claims still emit `behavior_policy_not_teacher` records so
+trace/replay can explain state changes.
 
 Use `auto-reward relic off` to disable safe relic auto-claiming for the current
 session. `auto-reward all on|off` includes this relic gate together with
 gold/stolen-gold and empty-slot potion claiming. Session traces record this
 configuration so replay starts with the same reward automation boundary.
 
-Do not extend this boundary to boss relics, blue-key tradeoffs, card rewards,
-or event/shop/campfire choices. Those remain separate decision sites.
-
 ## Combat Search Handoff
 
-Combat search can be used during autopilot to skip fights. This is acceptable
-when the search applies an executable complete trajectory. The outcome is still
-search evidence, not a human baseline.
+Combat search may be used during autopilot to skip fights only when it applies
+an executable complete trajectory. The result is search evidence, not a human
+baseline.
 
-Manual plus search-assisted fights should not be saved as pure human baselines.
+Manual plus search-assisted fights must not be saved as pure human baselines.
+Use combat captures, benchmark suites, and search evidence for that workflow
+instead.

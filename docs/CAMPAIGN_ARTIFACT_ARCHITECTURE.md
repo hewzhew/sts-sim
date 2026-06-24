@@ -1,148 +1,123 @@
 # Campaign Artifact Architecture
 
-Campaign artifacts must keep five responsibilities separate:
+Campaign artifacts are storage and replay surfaces, not strategy authority. Keep
+these responsibilities separate:
 
 ```text
-checkpoint  = exact simulator sessions needed to resume branch execution
-state       = campaign scheduler state used to resume active/frozen rounds
-journal     = append-only decision facts and candidate pools
-report      = compact projection for humans, audits, and scripts
-diagnostic  = optional sidecar for large explanation data
+checkpoint  exact simulator state needed to resume execution
+state       scheduler/workset state needed to continue a campaign
+journal     append-only decision facts and candidate pools
+report      bounded projection for inspection and tools
+diagnostic  opt-in sidecar data for large explanations and traces
 ```
 
-This boundary is more important than any individual field name. If one file
-tries to be all four things, it will grow until it becomes hard to inspect,
-hard to replay, and easy to accidentally treat as policy truth.
+This boundary matters more than any single field name. When one artifact tries
+to be checkpoint, journal, report, and training dataset at once, it becomes
+large, hard to replay, and easy to mistake for policy truth.
 
-## Design References
+## Storage Rules
 
-This project should follow mature storage patterns:
-
-- Workflow engines keep event history separate from execution state and cut
-  long histories into new runs instead of growing one object forever.
-- Event-sourced systems use materialized views for reports. The view is not
-  the source of truth.
-- Build systems and VCS tools store large repeated objects once and refer to
-  them by id or content hash.
-- Experiment trackers separate metrics, parameters, and artifacts instead of
-  placing every diagnostic payload in a single report.
-- Telemetry systems link traces, logs, and metrics with ids. Span attributes
-  are bounded facts, not unlimited dumps.
-
-These are design constraints, not external dependencies.
+- Campaign artifacts are JSON by schema, normally written as `.json.gz`.
+- Readers should accept `.json` and `.json.gz` when practical; new default
+  outputs should prefer `.json.gz`.
+- Wrapper manifests should record artifact paths, encoding, and useful size
+  metadata such as raw and compressed bytes when available.
+- Compression is not a license to store unbounded payloads. If the raw JSON is
+  large, fix the ownership boundary instead of relying on gzip.
 
 ## Checkpoint
 
-The checkpoint is the only campaign artifact that must restore exact simulator
-sessions.
+Checkpoint owns exact resume state. It may use id pools or sidecars for repeated
+large objects, but loading a checkpoint must hydrate the same simulator session
+semantics before execution resumes.
 
 Allowed:
 
-- exact simulator state required to resume a branch
-- branch command coordinates needed to locate that state
-- content-addressed or id-addressed pools for repeated state objects
-- references from session entries into those pools
+- simulator state required to resume a branch
+- branch coordinates needed to locate that state
+- pooled repeated state objects, referenced by stable ids
+- active combat state only when it is required for resume
 
 Forbidden:
 
-- human-readable report summaries as the only source of resume truth
+- report summaries as the source of resume truth
+- policy explanations that are not needed to resume
 - duplicated large state objects when an id pool can restore the same state
-- policy explanations that are not required to resume execution
 
-Current pattern:
-
-```text
-BranchCampaignCheckpointV1
-  nodes[]
-  decision_parent_anchor_commands[]
-  run_state_maps[]                  # pooled repeated RunState.map objects
-  combat_automation_trajectories[]  # pooled repeated last-combat traces
-  sessions[]
-    commands
-    run_state_map_id?
-    session                         # hydrated before restore
-```
-
-Normal `RunControlSessionCheckpointV1` remains a complete checkpoint when used
-outside campaign export. Campaign export may externalize fields into pools, but
-must hydrate them before `into_session()`.
+Current campaign exports may pool repeated `RunState.map` objects, combat
+automation trajectories, and active-combat state. A plain
+`RunControlSessionCheckpointV1` can remain self-contained outside campaign
+export; campaign export is allowed to externalize and hydrate.
 
 ## State
 
-The state sidecar records campaign scheduler state: active/frozen/victory/dead
-branch sets, abandoned/stuck branches, round summaries, discard accounting,
-strategy requests, route evidence, and combat retry ledger.
+State owns campaign scheduling data: scheduled branches, parked branches,
+victories, dead branches, abandoned work, round summaries, discard accounting,
+retry ledgers, and other continuation bookkeeping.
 
 Allowed:
 
-- branch command coordinates and compact branch metadata needed to continue
-  campaign scheduling
-- round summaries needed to continue round-budget accounting
-- retry/intervention bookkeeping required by the next campaign round
+- compact branch metadata needed by the next scheduler step
+- round-budget and continuation counters
+- retry/intervention bookkeeping
 
 Forbidden:
 
-- exact simulator sessions, which belong in checkpoint
-- candidate pools and decision facts, which belong in journal
-- human-only render text that can be regenerated from state or journal
+- exact simulator sessions; those belong in checkpoint
+- candidate pools and decision facts; those belong in journal
+- human-only render text that can be regenerated
 
 ## Journal
 
-The journal records decision facts. It is the source for coverage-gap,
-candidate auditing, and learning-sample construction.
+Journal owns decision facts. It is the source for candidate auditing,
+coverage-gap continuation, lineage inspection, and later learning sample export.
 
 Allowed:
 
-- decision id, event id, branch id, parent branch commands
-- candidate id, command, typed summary, admission, disposition
-- enough typed route/event/shop/reward fields to replay or target a candidate
-- stable provenance references to checkpoint state or sidecar diagnostics
+- decision id, event id, branch id, and parent branch coordinates
+- candidate id, command, typed summary, admission, and disposition
+- typed route/event/shop/reward fields needed to target a candidate later
+- provenance references to checkpoint state or diagnostic sidecars
 
 Forbidden:
 
 - full run state or combat state
-- large route score decomposition in the default campaign report
-- selected-candidate payloads duplicated from a candidate pool
-- fields whose only purpose is a temporary text rendering
+- selected-candidate payloads duplicated from the same candidate pool
+- large score decompositions, node dumps, or free-form route explanations
+- fields whose only purpose is one temporary text rendering
 
-Route candidate pools are allowed to keep typed route origin data required for
-coverage-gap continuation. Internal route planner explanations such as score
-terms, node-feature dumps, value factors, needs vectors, and free-form reasons
-belong in a diagnostic sidecar unless a specific consumer needs them as typed
-facts.
+Route and map candidate pools should keep compact typed facts needed for
+coverage-gap execution. Planner internals such as score terms, value factors,
+node-feature dumps, needs vectors, and long reasons belong in diagnostics unless
+a concrete consumer needs them as typed facts.
 
 ## Report
 
-The report is a projection. It should be cheap to regenerate from checkpoint
-and journal when possible.
-
-Default report artifacts must not inline the full state or journal. They should
-carry small `state_artifact` / `journal_artifact` references plus bounded
-counts; artifact readers may hydrate sidecars back into the in-memory report for
-compatibility.
+Report is a projection. It should be cheap to inspect and, when possible, cheap
+to regenerate from checkpoint, state, and journal.
 
 Allowed:
 
-- compact branch summaries
-- active/frozen/abandoned/victory slices
-- aggregate counters
-- links or ids into journal/checkpoint/diagnostic artifacts
-- short examples for orientation
+- compact run status and aggregate counters
+- bounded branch slices and short examples
+- links or ids into checkpoint, state, journal, and diagnostics
+- small fields that pass [Report Field Admission](REPORT_FIELD_ADMISSION.md)
 
 Forbidden:
 
 - full checkpoint state
-- full route planner diagnostics
+- full journal candidate pools
 - combat trajectories
-- repeated copies of candidate pools already present in the journal
+- large route planner diagnostics
 - winner-like fields unless the evidence really supports a winner claim
 
-Report fields should pass [Report Field Admission](REPORT_FIELD_ADMISSION.md):
-classify them as fact, diagnostic, verdict, or label before adding them.
+Default reports should carry `state_artifact` / `journal_artifact` references
+instead of inlining those payloads. Compatibility readers may hydrate referenced
+sidecars into memory, but new report fields should not depend on inlining.
 
-## Diagnostic Sidecars
+## Diagnostics
 
-Large diagnostic data should be sidecar artifacts, not default report content.
+Diagnostics are opt-in sidecars for large or narrow-use explanations.
 
 Examples:
 
@@ -154,41 +129,51 @@ campfire-evidence.jsonl
 learning-sample.jsonl
 ```
 
-Sidecars may be verbose because they are opt-in. They must include provenance
-back to the journal event or checkpoint session they explain.
+Use a diagnostic sidecar when the payload:
 
-Use a sidecar when:
+- is large and not needed for normal resume
+- explains a decision but does not define the decision fact
+- is useful for one inspect command or offline analysis
 
-- the payload is large and not needed for normal resume
-- the payload explains a decision but does not define the decision fact
-- the payload is useful only for one inspect command or offline analysis
+Diagnostics must link back to a journal event, candidate id, branch id, or
+checkpoint session. They should never be the only place where a decision fact is
+stored.
 
-## Lifecycle And Retention
+## Learning Data
 
-Campaign artifacts are not a permanent database. The maintained lifecycle is:
+Learning data should be exported from campaign artifacts; it should not turn the
+report or journal into a training table.
+
+Preferred shape:
 
 ```text
-runs/<run-id>/        normal campaign history, latest points to one run
-scratch/<artifact-id> temporary experiments, scratch/latest points to one group
-loose root files      legacy/debug debris, not a maintained storage surface
-perf/diagnostics      opt-in analysis buckets, prunable unless pinned elsewhere
+campaign artifacts  ->  inspected/validated export  ->  JSONL or columnar data
 ```
 
-The wrapper provides `-PruneArtifacts` as the normal retention tool. It is
-dry-run by default and requires `-PruneApply` before deleting files. The default
-policy keeps the current latest run, current scratch latest, the newest five
-run directories, and the newest one scratch artifact group. This is deliberate:
-scratch is for disposable probes and should not become a hidden campaign
-database.
+The campaign artifact owns replay, provenance, and auditability. Learning
+exports own model-facing feature rows, labels, censored outcomes, and sampling
+metadata. If a feature exists only for a model experiment, keep it in the export
+or a diagnostic sidecar until it becomes a stable domain fact.
 
-New code should avoid writing raw campaign artifacts into the root campaign
-directory. Write normal runs under `runs/<run-id>/`, scratch experiments under
-`scratch/<artifact-id>`, and large optional diagnostics under an explicit
-diagnostic sidecar or a dedicated analysis directory.
+## Lifecycle
 
-## Object References
+The maintained lifecycle is:
 
-Prefer typed references over command-string markers.
+```text
+runs/<run-id>/          normal campaign history, addressed by latest pointer
+scratch/<artifact-id>/  disposable experiments, addressed by scratch/latest
+diagnostics/ or perf/   opt-in analysis buckets
+root loose files        old/debug debris, outside maintained storage
+```
+
+Detailed wrapper commands live in [Campaign Wrapper Usage](CAMPAIGN_WRAPPER_USAGE.md).
+This document only defines ownership. Normal runs should not write raw campaign
+artifacts into the root artifact directory, and scratch output should not
+silently update latest.
+
+## References
+
+Prefer typed references over command-string markers or parseable labels.
 
 Good:
 
@@ -207,32 +192,34 @@ label contains "CoffeeDripper | adds debt rest_lock"
 summary text must be parsed to find a route candidate
 ```
 
-String markers can remain for compatibility, but new storage should use typed
+String markers can remain for old artifacts, but new storage should use typed
 fields and hydrate through explicit references.
 
 ## Compaction Rules
 
-Default campaign artifact export should apply these projections:
+Default campaign export should:
 
 1. Pool repeated checkpoint objects before writing sessions.
-2. Drop large route planner diagnostics from journal route candidates.
-3. Drop selected route candidate copies when selected id/index/target remain.
-4. Keep candidate facts needed for coverage-gap continuation.
-5. Keep sidecar-worthy diagnostics out of the report unless explicitly
-   requested.
+2. Store scheduler state and journal candidate pools as sidecars or references.
+3. Keep route/map candidates as compact facts, not planner debug dumps.
+4. Store selected ids or target references instead of duplicating selected
+   candidate payloads.
+5. Keep combat trajectories and large evidence tables out of the default report.
+6. Prefer sidecar diagnostics or learning exports over new report payloads.
 
-If a future feature needs a dropped diagnostic field, add a sidecar or typed
-reference first. Do not re-expand the default report.
+Stop micro-compacting when the schema boundary is already correct. Continue only
+when the raw JSON cost is material or the change clarifies ownership.
 
-## Review Checklist
+## Field Review
 
 Before adding a new artifact field, answer:
 
-1. Is this resume state, decision fact, report projection, or diagnostic?
+1. Is this resume state, scheduler state, decision fact, report projection,
+   diagnostic, or learning feature?
 2. Which artifact owns it?
 3. Can it be regenerated from an existing source?
-4. Is it duplicated across many branches or sessions?
+4. Is it duplicated across branches, sessions, or candidates?
 5. Does it need a typed reference instead of embedding the payload?
-6. Is it bounded in size for a long campaign run?
+6. Is it bounded for a long campaign run?
 
-If the answer is unclear, do not add the field to the default campaign report.
+If the answer is unclear, do not add the field to the default report.

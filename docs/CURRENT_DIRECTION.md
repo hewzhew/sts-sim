@@ -3,61 +3,49 @@
 Main line:
 
 ```text
-simulator -> state representation -> search/rollout -> value -> policy improvement
+simulator -> campaign state -> journaled candidates -> search/rollout -> value -> policy improvement
 ```
 
-The project is currently about building a usable Rust simulator and AI search
-stack for Slay the Spire. The most important loop is:
+The project is building a usable Rust simulator and AI-search workspace for
+Slay the Spire. The current maintained loop is:
 
-1. run a real simulator session from Neow onward
-2. make or automate low-risk non-combat decisions under explicit boundaries
-3. capture stable combat starts
-4. run Combat Search V2 over complete combat trajectories
-5. compare whole-combat outcomes, not step-by-step imitation
+1. run a deterministic campaign from Neow onward
+2. keep a bounded scheduled/parked campaign workset
+3. record non-combat decision candidate pools in `CampaignJournal`
+4. use coverage-gap or sibling continuation to revisit unobserved candidates
+5. use Combat Search V2 for complete combat trajectories inside branches
+6. compare whole-run, milestone, combat, and sibling outcomes
 
 ## Active Work
 
 - simulator correctness and Java-mechanics parity when real runs expose bugs
-- observation boundaries: public, hidden, random, and privileged simulator state
-- Combat Search V2 value, rollout, frontier, and special-phase handling
-- Phase 1 non-combat policy quality: route, deck, card reward, shop, campfire,
-  event, and boss relic decisions under explicit boundaries
+- campaign lifecycle, checkpoint, journal, report, and sidecar boundaries
+- route/map candidate pools and coverage-gap continuation
+- Combat Search V2 quality, performance, and special-phase handling
+- non-combat policy compilers for route, deck mutation, card reward, shop,
+  campfire, event, and boss relic choices
 
-## Route/Map Handling
+## Stable Foundation
 
-Route choices currently use an auto-run planner as the default campaign path,
-not a normal `BranchBoundary` expansion at every map screen. The planner emits
-a full typed `MapDecisionPacketV1`; `CampaignJournal` records both the selected
-route decision and the route candidate pool. Coverage-gap continuation can then
-target unobserved route candidates deliberately.
+`run_play_driver`, `run_control`, trace/replay, bookmarks, non-combat decision
+records, and combat captures should keep working. They are stable foundations
+and diagnostic tools, not the main expansion layer.
 
-Planner stops are still route/map decisions. They should record a typed route
-candidate pool with `selected_index = None`, not fall back to a generic
-non-combat record that loses map alternatives.
+New strategy and branch research should go through campaign, journal,
+coverage-gap continuation, policy compilers, and combat search rather than
+expanding the manual REPL or adding more ad hoc wrapper switches.
 
-This split is intentional for now: default campaign runs stay bounded, while
-route/map alternatives remain inspectable and replayable from journal data.
-Route labels, `go N` commands, and top-candidate summaries are display or
-compatibility surfaces; new analysis should consume typed route candidates
-(`target`, `action`, `features`, `projection`, `needs`, `evaluation`).
-Coverage-gap targets and continuation branches should preserve typed route
-origin fields as well, so replay and learning tools do not need to parse route
-display strings.
+## Route And Journal
 
-Coverage-gap continuation uses the declared intent to choose targets:
-`gap_closure` fills missing historical candidate coverage before extending
-branches that only executed the target action, while `frontier_expansion`
-continues already-started coverage targets before spending leftover budget on
-new missing targets. Use an explicit progress filter such as
-`--coverage-gap-progress target_only` only when a run needs a narrower slice
-than the intent already describes.
+Route choices are handled by a planner during normal campaign runs so the
+default workset stays bounded. The planner should still record typed route
+candidate pools in `CampaignJournal`, allowing coverage-gap continuation to
+revisit unobserved map alternatives deliberately.
 
-## Closed Foundation
-
-Phase 0 run-control automation and provenance boundaries are closed. Keep
-`n`/`nr`/`ar`, trace/replay/bookmarks, non-combat boundary records, and combat
-capture artifacts working; otherwise avoid expanding this layer. New
-route/card/shop/event/campfire/boss-relic policy behavior belongs to Phase 1.
+Detailed route/map journal rules belong in
+[Campaign Journal](CAMPAIGN_JOURNAL.md). The short rule is: consume typed route
+candidates and candidate-pool provenance, not route display labels or `go N`
+strings.
 
 ## Not The Main Line
 
@@ -75,15 +63,14 @@ search quality.
 
 - A trace records what happened. It is not a policy-quality claim.
 - A guarded autopilot decision is `behavior_policy_not_teacher`.
-- A combat search result is budgeted evidence unless explicitly validated by
-  exact replay and a benchmark context.
+- A combat search result is budgeted evidence unless validated by exact replay
+  and a benchmark context.
 - Human baseline comparison is whole-combat outcome comparison, not stepwise
   action agreement.
 - New report, journal, and learning-sample fields should pass
   [Report Field Admission](REPORT_FIELD_ADMISSION.md): classify the field as a
-  fact, diagnostic, verdict, or label; do not add winner-like summary fields
-  when the evidence only supports candidate facts or diagnostics.
+  fact, diagnostic, verdict, or label.
 - Campaign artifacts should follow
   [Campaign Artifact Architecture](CAMPAIGN_ARTIFACT_ARCHITECTURE.md):
   checkpoint, journal, report, and diagnostic sidecar data have separate
-  ownership and should not be collapsed into one growing JSON object.
+  ownership.
