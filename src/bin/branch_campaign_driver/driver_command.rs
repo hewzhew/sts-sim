@@ -68,6 +68,7 @@ pub(super) fn driver_request_from_cli_input(
         BranchCampaignCliInputV1::CampaignContinue(args) => {
             continuation_request_from_continue_args(args)
         }
+        BranchCampaignCliInputV1::CampaignInspect(args) => inspect_request_from_inspect_args(args),
         BranchCampaignCliInputV1::CampaignArtifact(args) => {
             Ok(BranchCampaignDriverRequestV1::ResolveCampaignArtifact(
                 ArtifactCommandInput::from_artifact_command_args(args),
@@ -149,6 +150,55 @@ fn continuation_request_from_input(
     }
 }
 
+fn inspect_request_from_inspect_args(
+    args: super::cli_args::InspectCommandArgs,
+) -> Result<BranchCampaignDriverRequestV1, String> {
+    let command = inspect_command_from_inspect_args(&args);
+    if matches!(
+        command,
+        BranchCampaignDriverCommandV1::InspectDecisionCoverage
+    ) {
+        return Ok(BranchCampaignDriverRequestV1::InspectDecisionCoverage(
+            DatasetCommandInput::from_inspect_args_for_decision_coverage(args),
+        ));
+    }
+    inspect_request_from_input(command, InspectCommandInput::from_inspect_args(args)?)
+}
+
+fn inspect_request_from_input(
+    command: BranchCampaignDriverCommandV1,
+    input: InspectCommandInput,
+) -> Result<BranchCampaignDriverRequestV1, String> {
+    Ok(match command {
+        BranchCampaignDriverCommandV1::InspectJournal => {
+            BranchCampaignDriverRequestV1::InspectJournal(input)
+        }
+        BranchCampaignDriverCommandV1::InspectLineageDecisions => {
+            BranchCampaignDriverRequestV1::InspectLineageDecisions(input)
+        }
+        BranchCampaignDriverCommandV1::InspectCoverageGapMilestoneSummary => {
+            BranchCampaignDriverRequestV1::InspectCoverageGapMilestoneSummary(input)
+        }
+        BranchCampaignDriverCommandV1::InspectCoverageGapTargetState => {
+            BranchCampaignDriverRequestV1::InspectCoverageGapTargetState(input)
+        }
+        BranchCampaignDriverCommandV1::InspectDecisionObservations => {
+            BranchCampaignDriverRequestV1::InspectDecisionObservations(input)
+        }
+        BranchCampaignDriverCommandV1::InspectFinalBossCombat => {
+            BranchCampaignDriverRequestV1::InspectFinalBossCombat(input)
+        }
+        BranchCampaignDriverCommandV1::InspectCheckpoint => {
+            BranchCampaignDriverRequestV1::InspectCheckpoint(input)
+        }
+        other => {
+            return Err(format!(
+                "non-inspect command reached inspect request builder: {other:?}"
+            ));
+        }
+    })
+}
+
 fn explicit_driver_request_from_args(
     explicit: BranchCampaignExplicitCommandV1,
     args: &Args,
@@ -165,16 +215,6 @@ fn explicit_driver_request_from_args(
         }
         BranchCampaignExplicitCommandV1::Continue => {
             driver_request_for_command(continuation_command_from_args(args), args)
-        }
-        BranchCampaignExplicitCommandV1::PlanCoverageGapContinuation => driver_request_for_command(
-            BranchCampaignDriverCommandV1::PlanCoverageGapContinuation,
-            args,
-        ),
-        BranchCampaignExplicitCommandV1::ExecuteCoverageGapContinuation => {
-            driver_request_for_command(
-                BranchCampaignDriverCommandV1::ExecuteCoverageGapContinuation,
-                args,
-            )
         }
         BranchCampaignExplicitCommandV1::Artifact => {
             driver_request_for_command(BranchCampaignDriverCommandV1::ResolveCampaignArtifact, args)
@@ -312,6 +352,9 @@ pub(super) fn driver_command_from_cli_input(
     if let BranchCampaignCliInputV1::CampaignDataset(args) = input {
         return dataset_command_from_dataset_args(args);
     }
+    if let BranchCampaignCliInputV1::CampaignInspect(args) = input {
+        return inspect_command_from_inspect_args(args);
+    }
     if let Some(explicit) = input.explicit_command() {
         return explicit_driver_command_from_args(explicit, input.args());
     }
@@ -336,12 +379,6 @@ fn explicit_driver_command_from_args(
         BranchCampaignExplicitCommandV1::Inspect => inspect_command_from_args(args),
         BranchCampaignExplicitCommandV1::Dataset => dataset_command_from_args(args),
         BranchCampaignExplicitCommandV1::Continue => continuation_command_from_args(args),
-        BranchCampaignExplicitCommandV1::PlanCoverageGapContinuation => {
-            BranchCampaignDriverCommandV1::PlanCoverageGapContinuation
-        }
-        BranchCampaignExplicitCommandV1::ExecuteCoverageGapContinuation => {
-            BranchCampaignDriverCommandV1::ExecuteCoverageGapContinuation
-        }
         BranchCampaignExplicitCommandV1::Artifact => {
             BranchCampaignDriverCommandV1::ResolveCampaignArtifact
         }
@@ -429,6 +466,28 @@ fn inspect_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
     } else if args.inspect_decision_observations {
         BranchCampaignDriverCommandV1::InspectDecisionObservations
     } else if args.inspect_final_boss_combat {
+        BranchCampaignDriverCommandV1::InspectFinalBossCombat
+    } else {
+        BranchCampaignDriverCommandV1::InspectCheckpoint
+    }
+}
+
+fn inspect_command_from_inspect_args(
+    args: &super::cli_args::InspectCommandArgs,
+) -> BranchCampaignDriverCommandV1 {
+    if args.modes.inspect_journal {
+        BranchCampaignDriverCommandV1::InspectJournal
+    } else if args.modes.inspect_lineage_decisions {
+        BranchCampaignDriverCommandV1::InspectLineageDecisions
+    } else if args.modes.inspect_decision_coverage {
+        BranchCampaignDriverCommandV1::InspectDecisionCoverage
+    } else if args.modes.inspect_coverage_gap_target_state {
+        BranchCampaignDriverCommandV1::InspectCoverageGapTargetState
+    } else if args.modes.inspect_coverage_gap_milestone_summary {
+        BranchCampaignDriverCommandV1::InspectCoverageGapMilestoneSummary
+    } else if args.modes.inspect_decision_observations {
+        BranchCampaignDriverCommandV1::InspectDecisionObservations
+    } else if args.modes.inspect_final_boss_combat {
         BranchCampaignDriverCommandV1::InspectFinalBossCombat
     } else {
         BranchCampaignDriverCommandV1::InspectCheckpoint

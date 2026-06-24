@@ -111,8 +111,6 @@ pub(crate) enum BranchCampaignExplicitCommandV1 {
     Inspect,
     Dataset,
     Continue,
-    PlanCoverageGapContinuation,
-    ExecuteCoverageGapContinuation,
     Artifact,
     SelfCheck,
 }
@@ -829,6 +827,7 @@ pub(super) enum BranchCampaignCliInputV1 {
     },
     CampaignRun(RunCommandArgs),
     CampaignContinue(ContinueCommandArgs),
+    CampaignInspect(InspectCommandArgs),
     CampaignArtifact(ArtifactCommandArgs),
     CampaignCoveragePlan(CampaignCoveragePlanCommandArgs),
     CampaignCoverageExecute(CampaignCoverageExecuteCommandArgs),
@@ -845,6 +844,9 @@ impl BranchCampaignCliInputV1 {
                 panic!("campaign namespace direct requests do not expose legacy Args")
             }
             Self::CampaignContinue(_) => {
+                panic!("campaign namespace direct requests do not expose legacy Args")
+            }
+            Self::CampaignInspect(_) => {
                 panic!("campaign namespace direct requests do not expose legacy Args")
             }
             Self::CampaignArtifact(_) => {
@@ -869,20 +871,10 @@ impl BranchCampaignCliInputV1 {
             Self::Explicit { args, .. } => args,
             Self::CampaignRun(args) => args.into_args(),
             Self::CampaignContinue(args) => args.into_args(),
+            Self::CampaignInspect(args) => args.into_args(),
             Self::CampaignArtifact(args) => args.into_args(),
-            Self::CampaignCoveragePlan(args) => {
-                (CampaignCoverageCommandArgs {
-                    command: CampaignCoverageSubcommandV1::Plan(args),
-                })
-                .into_args_and_command()
-                .0
-            }
-            Self::CampaignCoverageExecute(args) => {
-                (CampaignCoverageCommandArgs {
-                    command: CampaignCoverageSubcommandV1::Execute(args),
-                })
-                .into_args_and_command()
-                .0
+            Self::CampaignCoveragePlan(_) | Self::CampaignCoverageExecute(_) => {
+                panic!("campaign coverage direct requests do not expose legacy Args")
             }
             Self::CampaignDataset(args) => args.into_args(),
         }
@@ -895,13 +887,9 @@ impl BranchCampaignCliInputV1 {
             Self::Explicit { command, .. } => Some(*command),
             Self::CampaignRun(_) => Some(BranchCampaignExplicitCommandV1::Run),
             Self::CampaignContinue(_) => Some(BranchCampaignExplicitCommandV1::Continue),
+            Self::CampaignInspect(_) => Some(BranchCampaignExplicitCommandV1::Inspect),
             Self::CampaignArtifact(_) => Some(BranchCampaignExplicitCommandV1::Artifact),
-            Self::CampaignCoveragePlan(_) => {
-                Some(BranchCampaignExplicitCommandV1::PlanCoverageGapContinuation)
-            }
-            Self::CampaignCoverageExecute(_) => {
-                Some(BranchCampaignExplicitCommandV1::ExecuteCoverageGapContinuation)
-            }
+            Self::CampaignCoveragePlan(_) | Self::CampaignCoverageExecute(_) => None,
             Self::CampaignDataset(_) => Some(BranchCampaignExplicitCommandV1::Dataset),
         }
     }
@@ -931,21 +919,21 @@ pub(super) struct RunCommandArgs {
 }
 
 #[derive(Debug, ClapArgs)]
-struct InspectCommandArgs {
+pub(super) struct InspectCommandArgs {
     #[command(flatten)]
-    target: InspectTargetArgs,
+    pub(super) target: InspectTargetArgs,
 
     #[command(flatten)]
-    modes: InspectModeArgs,
+    pub(super) modes: InspectModeArgs,
 
     #[command(flatten)]
-    search: CampaignSearchArgs,
+    pub(super) search: CampaignSearchArgs,
 
     #[command(flatten)]
-    challenge: InspectChallengeArgs,
+    pub(super) challenge: InspectChallengeArgs,
 
     #[command(flatten)]
-    display: InspectDisplayArgs,
+    pub(super) display: InspectDisplayArgs,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -1404,89 +1392,89 @@ pub(super) struct CampaignContinuationOutputArgs {
 }
 
 #[derive(Debug, ClapArgs)]
-struct InspectTargetArgs {
+pub(super) struct InspectTargetArgs {
     #[arg(
         long = "inspect-checkpoint",
         value_name = "PATH",
         help = "Inspect a saved BranchCampaignCheckpointV2 session instead of running a campaign"
     )]
-    inspect_checkpoint: Option<PathBuf>,
+    pub(super) inspect_checkpoint: Option<PathBuf>,
 
     #[arg(
         long = "inspect-report",
         value_name = "PATH",
         help = "Pair --inspect-checkpoint with a BranchCampaignV1 report for scheduled/parked/abandoned labels"
     )]
-    inspect_report: Option<PathBuf>,
+    pub(super) inspect_report: Option<PathBuf>,
 
     #[arg(
         long = "inspect-act",
         help = "Filter inspected checkpoint sessions by act"
     )]
-    inspect_act: Option<u8>,
+    pub(super) inspect_act: Option<u8>,
 
     #[arg(
         long = "inspect-floor",
         help = "Filter inspected checkpoint sessions by floor"
     )]
-    inspect_floor: Option<i32>,
+    pub(super) inspect_floor: Option<i32>,
 
     #[arg(
         long = "inspect-boundary",
         help = "Filter inspected checkpoint sessions by visible boundary title, e.g. Shop or Card Reward"
     )]
-    inspect_boundary: Option<String>,
+    pub(super) inspect_boundary: Option<String>,
 
     #[arg(
         long = "inspect-hp",
         help = "Filter inspected checkpoint sessions by current HP"
     )]
-    inspect_hp: Option<i32>,
+    pub(super) inspect_hp: Option<i32>,
 
     #[arg(
         long = "inspect-index",
         help = "Select the Nth matching checkpoint session after filters"
     )]
-    inspect_index: Option<usize>,
+    pub(super) inspect_index: Option<usize>,
 }
 
 #[derive(Debug, ClapArgs)]
-struct InspectModeArgs {
+pub(super) struct InspectModeArgs {
     #[arg(
         long = "inspect-summary",
         help = "Print compact deck/resource/strategy summaries for checkpoint sessions"
     )]
-    inspect_summary: bool,
+    pub(super) inspect_summary: bool,
 
     #[arg(
         long = "inspect-search",
         help = "Run search-combat from the selected checkpoint session and print the result"
     )]
-    inspect_search: bool,
+    pub(super) inspect_search: bool,
 
     #[arg(
         long = "inspect-last-auto-combat",
         help = "Print the last stored automated combat trajectory for the selected checkpoint session"
     )]
-    inspect_last_auto_combat: bool,
+    pub(super) inspect_last_auto_combat: bool,
 
     #[arg(
         long = "inspect-combat-lab",
         help = "Print a report-only CombatLabProbeV1 packet for the selected checkpoint branch"
     )]
-    inspect_combat_lab: bool,
+    pub(super) inspect_combat_lab: bool,
 
     #[arg(
         long = "probe-boss",
         help = "When used with --inspect-combat-lab, run a report-only search preview against the current act boss"
     )]
-    probe_boss: bool,
+    pub(super) probe_boss: bool,
 
     #[arg(
         long = "inspect-shop-evidence",
         help = "Print current-code shop candidate evidence and strategic deltas for the selected checkpoint session"
     )]
-    inspect_shop_evidence: bool,
+    pub(super) inspect_shop_evidence: bool,
 
     #[arg(
         long = "inspect-evidence-detail",
@@ -1494,171 +1482,171 @@ struct InspectModeArgs {
         default_value_t = InspectEvidenceDetailArg::Compact,
         help = "Detail level for evidence inspect probes; compact hides full candidate tables"
     )]
-    inspect_evidence_detail: InspectEvidenceDetailArg,
+    pub(super) inspect_evidence_detail: InspectEvidenceDetailArg,
 
     #[arg(
         long = "challenge-shop-plans",
         help = "From a selected shop checkpoint, force compiled shop plans and rollout each branch for comparison"
     )]
-    challenge_shop_plans: bool,
+    pub(super) challenge_shop_plans: bool,
 
     #[arg(
         long = "inspect-card-reward-evidence",
         help = "Print current-code card reward candidate evidence and strategic deltas for the selected checkpoint session"
     )]
-    inspect_card_reward_evidence: bool,
+    pub(super) inspect_card_reward_evidence: bool,
 
     #[arg(
         long = "inspect-campfire-evidence",
         help = "Print current-code campfire candidate evidence and selected plan for the selected checkpoint session"
     )]
-    inspect_campfire_evidence: bool,
+    pub(super) inspect_campfire_evidence: bool,
 
     #[arg(
         long = "inspect-deck-mutation",
         help = "Print current-code DeckMutationCompiler plan groups for the selected checkpoint session"
     )]
-    inspect_deck_mutation: bool,
+    pub(super) inspect_deck_mutation: bool,
 
     #[arg(
         long = "inspect-route-evidence",
         help = "Print current-code route planner candidate evidence for the selected map checkpoint session"
     )]
-    inspect_route_evidence: bool,
+    pub(super) inspect_route_evidence: bool,
 
     #[arg(
         long = "inspect-decision-observations",
         help = "Print historical branch decision observations stored in a BranchCampaignV1 report"
     )]
-    inspect_decision_observations: bool,
+    pub(super) inspect_decision_observations: bool,
 
     #[arg(
         long = "inspect-journal",
         help = "Print CampaignJournal decision events stored in a BranchCampaignV1 report"
     )]
-    inspect_journal: bool,
+    pub(super) inspect_journal: bool,
 
     #[arg(
         long = "inspect-lineage-decisions",
         help = "Print CampaignJournal candidate pools along a selected report branch lineage"
     )]
-    inspect_lineage_decisions: bool,
+    pub(super) inspect_lineage_decisions: bool,
 
     #[arg(
         long = "inspect-decision-coverage",
         help = "Print journal candidate continuation coverage from a BranchCampaignV1 report"
     )]
-    inspect_decision_coverage: bool,
+    pub(super) inspect_decision_coverage: bool,
 
     #[arg(
         long = "inspect-coverage-gap-milestone-summary",
         help = "Print milestone progress for coverage-gap continuation result branches"
     )]
-    inspect_coverage_gap_milestone_summary: bool,
+    pub(super) inspect_coverage_gap_milestone_summary: bool,
 
     #[arg(
         long = "inspect-coverage-gap-target-state",
         help = "Inspect the checkpoint state for the selected coverage-gap milestone target group"
     )]
-    inspect_coverage_gap_target_state: bool,
+    pub(super) inspect_coverage_gap_target_state: bool,
 
     #[arg(
         long = "coverage-gap-milestone-target",
         default_value = "Act2Start",
         help = "Milestone target for --inspect-coverage-gap-milestone-summary: Act1Boss, Act2Start, Act2Boss, or Act3Boss"
     )]
-    coverage_gap_milestone_target: String,
+    pub(super) coverage_gap_milestone_target: String,
 
     #[arg(
         long = "coverage-gap-bucket",
         help = "Only inspect coverage-gap milestone rows from this bucket, e.g. event, route, shop, reward"
     )]
-    coverage_gap_bucket: Option<String>,
+    pub(super) coverage_gap_bucket: Option<String>,
 
     #[arg(
         long = "coverage-gap-event-id",
         help = "Only inspect coverage-gap milestone rows whose target key/label/command matches this event id"
     )]
-    coverage_gap_event_id: Option<String>,
+    pub(super) coverage_gap_event_id: Option<String>,
 
     #[arg(
         long = "coverage-gap-lane",
         help = "Only inspect coverage-gap milestone rows whose target lane matches this text"
     )]
-    coverage_gap_lane: Option<String>,
+    pub(super) coverage_gap_lane: Option<String>,
 
     #[arg(
         long = "coverage-gap-origin-source",
         help = "Only inspect coverage-gap milestone rows from this target_origin source"
     )]
-    coverage_gap_origin_source: Option<String>,
+    pub(super) coverage_gap_origin_source: Option<String>,
 
     #[arg(
         long = "coverage-gap-progress",
         help = "Only inspect coverage-gap milestone rows with this target progress"
     )]
-    coverage_gap_progress: Option<String>,
+    pub(super) coverage_gap_progress: Option<String>,
 
     #[arg(
         long = "inspect-query",
         value_name = "TEXT",
         help = "Filter decision observations by candidate label, semantic class, frontier key, or parent choices"
     )]
-    inspect_query: Option<String>,
+    pub(super) inspect_query: Option<String>,
 
     #[arg(
         long = "inspect-final-boss-combat",
         help = "Print a final boss combat timeline from a BranchCampaignV1 report"
     )]
-    inspect_final_boss_combat: bool,
+    pub(super) inspect_final_boss_combat: bool,
 }
 
 #[derive(Debug, ClapArgs)]
-struct InspectChallengeArgs {
+pub(super) struct InspectChallengeArgs {
     #[arg(long)]
-    final_act: bool,
+    pub(super) final_act: bool,
 
     #[arg(long)]
-    max_reward_options: Option<usize>,
+    pub(super) max_reward_options: Option<usize>,
 
     #[arg(long)]
-    all_reward_options: bool,
+    pub(super) all_reward_options: bool,
 
     #[arg(long, default_value_t = 3)]
-    max_campfire_options: usize,
+    pub(super) max_campfire_options: usize,
 
     #[arg(long, default_value_t = 128)]
-    auto_max_ops: usize,
+    pub(super) auto_max_ops: usize,
 
     #[arg(long, default_value_t = 10_000)]
-    experiment_wall_ms: u64,
+    pub(super) experiment_wall_ms: u64,
 
     #[arg(
         long = "challenge-max-plans",
         default_value_t = 6,
         help = "Maximum selected+alternative shop plans to challenge"
     )]
-    challenge_max_plans: usize,
+    pub(super) challenge_max_plans: usize,
 
     #[arg(
         long = "challenge-depth",
         default_value_t = 4,
         help = "Branch experiment depth after each challenged shop plan"
     )]
-    challenge_depth: usize,
+    pub(super) challenge_depth: usize,
 
     #[arg(
         long = "challenge-max-branches",
         default_value_t = 12,
         help = "Branch cap for each challenged shop plan rollout"
     )]
-    challenge_max_branches: usize,
+    pub(super) challenge_max_branches: usize,
 }
 
 #[derive(Debug, ClapArgs)]
-struct InspectDisplayArgs {
+pub(super) struct InspectDisplayArgs {
     #[arg(long, default_value_t = 4)]
-    branch_examples: usize,
+    pub(super) branch_examples: usize,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -2027,27 +2015,6 @@ impl RunCommandArgs {
 }
 
 impl CampaignCommandArgs {
-    fn into_args_and_command(self) -> (Args, BranchCampaignExplicitCommandV1) {
-        match self.command {
-            CampaignSubcommandV1::Run(args) => {
-                (args.into_args(), BranchCampaignExplicitCommandV1::Run)
-            }
-            CampaignSubcommandV1::Continue(args) => {
-                (args.into_args(), BranchCampaignExplicitCommandV1::Continue)
-            }
-            CampaignSubcommandV1::Inspect(args) => {
-                (args.into_args(), BranchCampaignExplicitCommandV1::Inspect)
-            }
-            CampaignSubcommandV1::Export(args) => {
-                (args.into_args(), BranchCampaignExplicitCommandV1::Dataset)
-            }
-            CampaignSubcommandV1::Coverage(args) => args.into_args_and_command(),
-            CampaignSubcommandV1::Artifacts(args) => {
-                (args.into_args(), BranchCampaignExplicitCommandV1::Artifact)
-            }
-        }
-    }
-
     fn into_cli_input(self, matches: &ArgMatches) -> Result<BranchCampaignCliInputV1, clap::Error> {
         match self.command {
             CampaignSubcommandV1::Run(args) => Ok(BranchCampaignCliInputV1::CampaignRun(
@@ -2056,17 +2023,15 @@ impl CampaignCommandArgs {
             CampaignSubcommandV1::Continue(args) => Ok(BranchCampaignCliInputV1::CampaignContinue(
                 normalize_continue_command_args(args, matches)?,
             )),
+            CampaignSubcommandV1::Inspect(args) => {
+                Ok(BranchCampaignCliInputV1::CampaignInspect(args))
+            }
             CampaignSubcommandV1::Artifacts(args) => {
                 Ok(BranchCampaignCliInputV1::CampaignArtifact(args))
             }
             CampaignSubcommandV1::Coverage(args) => args.into_cli_input(matches),
             CampaignSubcommandV1::Export(args) => {
                 Ok(BranchCampaignCliInputV1::CampaignDataset(args))
-            }
-            command => {
-                let (args, explicit_command) =
-                    (CampaignCommandArgs { command }).into_args_and_command();
-                normalize_cli_args_from_matches(args, Some(explicit_command), matches)
             }
         }
     }
@@ -2138,37 +2103,6 @@ impl CampaignCoverageCommandArgs {
                 Ok(BranchCampaignCliInputV1::CampaignCoverageExecute(
                     normalize_coverage_execute_command_args(args, matches)?,
                 ))
-            }
-        }
-    }
-
-    fn into_args_and_command(self) -> (Args, BranchCampaignExplicitCommandV1) {
-        match self.command {
-            CampaignCoverageSubcommandV1::Plan(args) => {
-                let mut converted = Args::compat_defaults();
-                args.target.apply_to(&mut converted);
-                converted.plan_coverage_gap_continuation = true;
-                (
-                    converted,
-                    BranchCampaignExplicitCommandV1::PlanCoverageGapContinuation,
-                )
-            }
-            CampaignCoverageSubcommandV1::Execute(args) => {
-                let mut converted = ContinueCommandArgs {
-                    domain: args.domain,
-                    branching: args.branching,
-                    search: args.search,
-                    retry: args.retry,
-                    prefix: args.prefix,
-                    output: args.output.into_run_output_args(),
-                    continuation: args.coverage.into_continuation_args(),
-                }
-                .into_args();
-                converted.execute_coverage_gap_continuation = true;
-                (
-                    converted,
-                    BranchCampaignExplicitCommandV1::ExecuteCoverageGapContinuation,
-                )
             }
         }
     }
@@ -2248,21 +2182,6 @@ pub(super) struct CampaignCoveragePlanTargetArgs {
         help = "Select and interpret coverage-gap continuation targets as gap_closure or frontier_expansion"
     )]
     pub(super) coverage_gap_budget_intent: String,
-}
-
-impl CampaignCoveragePlanTargetArgs {
-    fn apply_to(self, args: &mut Args) {
-        args.inspect_checkpoint = self.inspect_checkpoint;
-        args.inspect_report = self.inspect_report;
-        args.coverage_gap_limit = self.coverage_gap_limit;
-        args.coverage_gap_candidates_per_decision = self.coverage_gap_candidates_per_decision;
-        args.coverage_gap_bucket = self.coverage_gap_bucket;
-        args.coverage_gap_event_id = self.coverage_gap_event_id;
-        args.coverage_gap_lane = self.coverage_gap_lane;
-        args.coverage_gap_origin_source = self.coverage_gap_origin_source;
-        args.coverage_gap_progress = self.coverage_gap_progress;
-        args.coverage_gap_budget_intent = self.coverage_gap_budget_intent;
-    }
 }
 
 impl ContinueCommandArgs {
@@ -2414,50 +2333,6 @@ impl CampaignRunOutputArgs {
         args.export_outcome_dataset = self.export_outcome_dataset;
         args.export_learning_dataset = self.export_learning_dataset;
         args.export_decision_outcome_dataset = self.export_decision_outcome_dataset;
-    }
-}
-
-impl CampaignContinuationOutputArgs {
-    fn into_run_output_args(self) -> CampaignRunOutputArgs {
-        CampaignRunOutputArgs {
-            branch_examples: self.branch_examples,
-            json: self.json,
-            report_detail: self.report_detail,
-            progress: self.progress,
-            progress_detail: self.progress_detail,
-            resume: self.resume,
-            resume_checkpoint: self.resume_checkpoint,
-            out: self.out,
-            checkpoint_out: self.checkpoint_out,
-            auto_capture_combat: false,
-            auto_capture_root: None,
-            export_outcome_dataset: None,
-            export_learning_dataset: None,
-            export_decision_outcome_dataset: None,
-        }
-    }
-}
-
-impl CampaignCoverageExecuteTargetArgs {
-    fn into_continuation_args(self) -> ContinuationArgs {
-        ContinuationArgs {
-            plan_targeted_continuation: None,
-            execute_targeted_continuation: None,
-            execute_coverage_gap_continuation: true,
-            continuation_effect_before: None,
-            continuation_effect_after: None,
-            targeted_continuation_limit: 4,
-            targeted_continuation_candidates_per_target: 1,
-            coverage_gap_limit: self.coverage_gap_limit,
-            coverage_gap_candidates_per_decision: self.coverage_gap_candidates_per_decision,
-            coverage_gap_bucket: self.coverage_gap_bucket,
-            coverage_gap_event_id: self.coverage_gap_event_id,
-            coverage_gap_lane: self.coverage_gap_lane,
-            coverage_gap_origin_source: self.coverage_gap_origin_source,
-            coverage_gap_progress: self.coverage_gap_progress,
-            coverage_gap_budget_intent: self.coverage_gap_budget_intent,
-            coverage_gap_execution_mode: self.coverage_gap_execution_mode,
-        }
     }
 }
 
@@ -3045,15 +2920,16 @@ mod tests {
         ])
         .expect("campaign coverage plan should parse");
 
-        assert_eq!(
-            input.explicit_command(),
-            Some(BranchCampaignExplicitCommandV1::PlanCoverageGapContinuation)
-        );
-        let args = input.into_args();
-        assert!(args.plan_coverage_gap_continuation);
-        assert_eq!(args.inspect_report, Some(PathBuf::from("run.json.gz")));
-        assert_eq!(args.coverage_gap_limit, 5);
-        assert!(args.export_outcome_dataset.is_none());
+        match input {
+            BranchCampaignCliInputV1::CampaignCoveragePlan(args) => {
+                assert_eq!(
+                    args.target.inspect_report,
+                    Some(PathBuf::from("run.json.gz"))
+                );
+                assert_eq!(args.target.coverage_gap_limit, 5);
+            }
+            other => panic!("expected typed coverage plan input, got {other:?}"),
+        }
     }
 
     #[test]
@@ -3072,18 +2948,16 @@ mod tests {
         ])
         .expect("campaign coverage execute should parse");
 
-        assert_eq!(
-            input.explicit_command(),
-            Some(BranchCampaignExplicitCommandV1::ExecuteCoverageGapContinuation)
-        );
-        let args = input.into_args();
-        assert!(args.execute_coverage_gap_continuation);
-        assert_eq!(args.resume, Some(PathBuf::from("run.json.gz")));
-        assert_eq!(
-            args.resume_checkpoint,
-            Some(PathBuf::from("checkpoint.json.gz"))
-        );
-        assert_eq!(args.coverage_gap_limit, 3);
-        assert!(args.execute_targeted_continuation.is_none());
+        match input {
+            BranchCampaignCliInputV1::CampaignCoverageExecute(args) => {
+                assert_eq!(args.output.resume, Some(PathBuf::from("run.json.gz")));
+                assert_eq!(
+                    args.output.resume_checkpoint,
+                    Some(PathBuf::from("checkpoint.json.gz"))
+                );
+                assert_eq!(args.coverage.coverage_gap_limit, 3);
+            }
+            other => panic!("expected typed coverage execute input, got {other:?}"),
+        }
     }
 }

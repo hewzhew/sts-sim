@@ -20,7 +20,8 @@ use super::cli_args::{
     BranchCampaignCombatRetryArgV1, CampaignBranchingArgs, CampaignCombatRetryArgs,
     CampaignCoverageExecuteCommandArgs, CampaignCoverageExecuteTargetArgs,
     CampaignCoveragePlanCommandArgs, CampaignDomainArgs, CampaignPrefixArgs, CampaignSearchArgs,
-    ContinueCommandArgs, DatasetCommandArgs, InspectEvidenceDetailArg, RunCommandArgs,
+    ContinueCommandArgs, DatasetCommandArgs, InspectChallengeArgs, InspectCommandArgs,
+    InspectEvidenceDetailArg, InspectModeArgs, RunCommandArgs,
 };
 
 #[derive(Clone, Debug)]
@@ -410,6 +411,43 @@ pub(super) struct InspectCommandInput {
 }
 
 impl InspectCommandInput {
+    pub(super) fn from_inspect_args(args: InspectCommandArgs) -> Result<Self, String> {
+        let coverage_gap_filter = coverage_gap_filter_from_inspect_mode_args(&args.modes);
+        let search_options = inspect_search_options_from_search_args(&args.search)?;
+        let shop_challenge = ShopChallengeInput::from_inspect_parts(&args.challenge, &args.search)?;
+        Ok(Self {
+            checkpoint_path: args.target.inspect_checkpoint,
+            report_path: args.target.inspect_report,
+            summary: args.modes.inspect_summary,
+            query: args.modes.inspect_query,
+            coverage_gap_milestone_target: args.modes.coverage_gap_milestone_target,
+            coverage_gap_filter,
+            filters: InspectFiltersInput {
+                act: args.target.inspect_act,
+                floor: args.target.inspect_floor,
+                boundary: args.target.inspect_boundary,
+                hp: args.target.inspect_hp,
+                index: args.target.inspect_index,
+            },
+            modes: InspectModesInput {
+                search: args.modes.inspect_search,
+                last_auto_combat: args.modes.inspect_last_auto_combat,
+                combat_lab: args.modes.inspect_combat_lab,
+                probe_boss: args.modes.probe_boss,
+                shop_evidence: args.modes.inspect_shop_evidence,
+                evidence_detail: InspectEvidenceDetailV1::from(args.modes.inspect_evidence_detail),
+                shop_challenge: args.modes.challenge_shop_plans,
+                card_reward_evidence: args.modes.inspect_card_reward_evidence,
+                campfire_evidence: args.modes.inspect_campfire_evidence,
+                deck_mutation: args.modes.inspect_deck_mutation,
+                route_evidence: args.modes.inspect_route_evidence,
+            },
+            search_options,
+            branch_examples: args.display.branch_examples,
+            shop_challenge,
+        })
+    }
+
     pub(super) fn from_args(args: &Args) -> Result<Self, String> {
         Ok(Self {
             checkpoint_path: args.inspect_checkpoint.clone(),
@@ -501,6 +539,30 @@ pub(super) struct ShopChallengeInput {
 }
 
 impl ShopChallengeInput {
+    fn from_inspect_parts(
+        challenge: &InspectChallengeArgs,
+        search: &CampaignSearchArgs,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            final_act: challenge.final_act,
+            max_reward_options_per_branch: if challenge.all_reward_options {
+                None
+            } else {
+                Some(challenge.max_reward_options.unwrap_or(2))
+            },
+            max_campfire_options_per_branch: challenge.max_campfire_options,
+            auto_max_operations: challenge.auto_max_ops,
+            experiment_wall_ms: challenge.experiment_wall_ms,
+            challenge_max_plans: challenge.challenge_max_plans,
+            challenge_depth: challenge.challenge_depth,
+            challenge_max_branches: challenge.challenge_max_branches,
+            search_max_nodes: search.search_max_nodes,
+            search_wall_ms: search.search_wall_ms,
+            search_options: campaign_search_options_from_parts(&search.combat_search_options)?,
+            retention_budget_profile: "package".parse::<BranchRetentionBudgetProfileV1>()?,
+        })
+    }
+
     fn from_args(args: &Args) -> Result<Self, String> {
         Ok(Self {
             final_act: args.final_act,
@@ -538,6 +600,19 @@ pub(super) struct DatasetCommandInput {
 }
 
 impl DatasetCommandInput {
+    pub(super) fn from_inspect_args_for_decision_coverage(args: InspectCommandArgs) -> Self {
+        Self {
+            inspect_checkpoint: args.target.inspect_checkpoint,
+            inspect_report: args.target.inspect_report,
+            export_outcome_dataset: None,
+            analyze_outcome_dataset: None,
+            analyze_decision_outcome_dataset: None,
+            probe_learning_readiness: None,
+            export_learning_dataset: None,
+            export_decision_outcome_dataset: None,
+        }
+    }
+
     pub(super) fn from_dataset_args(args: DatasetCommandArgs) -> Self {
         let paths = args.paths;
         Self {
@@ -833,6 +908,18 @@ fn coverage_gap_filter_from_continuation_args(
     }
 }
 
+fn coverage_gap_filter_from_inspect_mode_args(
+    args: &InspectModeArgs,
+) -> CoverageGapContinuationFilterV1 {
+    CoverageGapContinuationFilterV1 {
+        bucket: args.coverage_gap_bucket.clone(),
+        event_id: args.coverage_gap_event_id.clone(),
+        lane: args.coverage_gap_lane.clone(),
+        origin_source: args.coverage_gap_origin_source.clone(),
+        progress: args.coverage_gap_progress.clone(),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CoverageGapBudgetIntentV1 {
     GapClosure,
@@ -983,6 +1070,17 @@ fn inspect_search_options_from_args(args: &Args) -> Result<RunControlSearchComba
     options.max_nodes = args.search_max_nodes.or(options.max_nodes);
     options.wall_ms = options.wall_ms.or(Some(args.search_wall_ms));
     options.max_hp_loss = parse_hp_loss_limit(args.max_hp_loss.as_deref())?.or(options.max_hp_loss);
+    Ok(options)
+}
+
+fn inspect_search_options_from_search_args(
+    search: &CampaignSearchArgs,
+) -> Result<RunControlSearchCombatOptions, String> {
+    let mut options = parse_branch_experiment_search_options_v1(&search.combat_search_options)?;
+    options.max_nodes = search.search_max_nodes.or(options.max_nodes);
+    options.wall_ms = options.wall_ms.or(Some(search.search_wall_ms));
+    options.max_hp_loss =
+        parse_hp_loss_limit(search.max_hp_loss.as_deref())?.or(options.max_hp_loss);
     Ok(options)
 }
 
