@@ -22,8 +22,9 @@ pub(super) fn render_checkpoint_shop_evidence_v1(
     );
     let trace = &compiled.strategic_trace;
     let mut lines = Vec::new();
+    lines.push("Shop evidence:".to_string());
     lines.push(format!(
-        "Shop compiled decision: act={} floor={} hp={}/{} gold={} boss={:?}",
+        "facts: act={} floor={} hp={}/{} gold={} boss={:?}",
         session.run_state.act_num,
         session.run_state.floor_num,
         session.run_state.current_hp,
@@ -32,10 +33,13 @@ pub(super) fn render_checkpoint_shop_evidence_v1(
         session.run_state.boss_key
     ));
     lines.push(format!(
-        "context: conversion_pressure={} affordable_purchase_exists={} candidates={}",
+        "facts: candidates={} affordable_purchase_exists={}",
+        context.candidates.len(),
+        context.affordable_purchase_exists
+    ));
+    lines.push(format!(
+        "diagnostics: conversion_pressure={}",
         context.conversion_pressure,
-        context.affordable_purchase_exists,
-        context.candidates.len()
     ));
     if let Some(projection) = &compiled.rollout_head {
         let rendered = compiled
@@ -45,26 +49,27 @@ pub(super) fn render_checkpoint_shop_evidence_v1(
             .map(|candidate| {
                 render_shop_plan_with_evaluation_for_detail_v1(
                     &candidate.plan,
+                    Some(&candidate.evaluation),
                     &compiled.candidate_plans,
                     detail,
                 )
             })
             .unwrap_or_else(|| format!("missing plan {}", projection.plan_id));
         lines.push(format!(
-            "rollout_head: lane={:?} {}",
+            "execution_projection: rollout_head lane={:?} {}",
             projection.lane, rendered
         ));
     } else {
-        lines.push("rollout_head: -".to_string());
+        lines.push("execution_projection: rollout_head=-".to_string());
     }
-    lines.push(render_shop_plan_candidate_summary_v1(
+    lines.extend(render_shop_plan_candidate_summary_v1(
         &compiled.candidate_plans,
     ));
     if compiled.branch_frontier.is_empty() {
-        lines.push("branch_frontier: -".to_string());
+        lines.push("scheduler: branch_frontier=-".to_string());
     } else {
         lines.push(format!(
-            "branch_frontier: {}",
+            "scheduler: branch_frontier={}",
             compiled.branch_frontier.len()
         ));
         for (idx, projection) in compiled.branch_frontier.iter().enumerate() {
@@ -75,12 +80,16 @@ pub(super) fn render_checkpoint_shop_evidence_v1(
                 .map(|candidate| {
                     render_shop_plan_with_evaluation_for_detail_v1(
                         &candidate.plan,
+                        Some(&candidate.evaluation),
                         &compiled.candidate_plans,
                         detail,
                     )
                 })
                 .unwrap_or_else(|| format!("missing plan {}", projection.plan_id));
-            lines.push(format!("  {idx}. lane={:?} {}", projection.lane, rendered));
+            lines.push(format!(
+                "  scheduler_branch {idx}: lane={:?} {}",
+                projection.lane, rendered
+            ));
         }
     }
     match detail {
@@ -99,11 +108,11 @@ pub(super) fn render_checkpoint_shop_evidence_v1(
     }
     if let Some(action) = trace.would_choose.as_ref() {
         lines.push(format!(
-            "strategic_trace_would_choose: {}",
+            "execution_projection: strategic_trace_would_choose={}",
             action.candidate_id()
         ));
     } else {
-        lines.push("strategic_trace_would_choose: -".to_string());
+        lines.push("execution_projection: strategic_trace_would_choose=-".to_string());
     }
     Ok(lines.join("\n"))
 }
@@ -113,7 +122,7 @@ fn render_shop_candidate_evidence_full_v1(
     trace: &sts_simulator::ai::strategic::StrategicDecisionTrace,
 ) -> Vec<String> {
     let mut lines = Vec::new();
-    lines.push("candidate evidence:".to_string());
+    lines.push("candidate_pool:".to_string());
     for candidate in candidates {
         let action_id = inspect_shop_candidate_action_id(candidate);
         let compiled = trace
@@ -125,21 +134,28 @@ fn render_shop_candidate_evidence_full_v1(
             .iter()
             .find(|delta| delta.action.candidate_id() == action_id);
         lines.push(format!(
-            "- {} | id={} | class={:?} gate={:?} legacy_estimate={} verdict={} score={}",
-            candidate.label,
-            action_id,
-            candidate.class,
-            candidate.support_gate,
+            "  candidate: id={} label={}",
+            action_id, candidate.label
+        ));
+        lines.push(format!(
+            "      facts: class={:?} diagnostic_support_gate={:?}",
+            candidate.class, candidate.support_gate
+        ));
+        lines.push(format!(
+            "      diagnostics: legacy_estimate={} score={}",
             candidate
                 .legacy_estimate
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| "-".to_string()),
             compiled
-                .map(|decision| format!("{:?}", decision.verdict))
-                .unwrap_or_else(|| "-".to_string()),
-            compiled
                 .map(|decision| format!("{:.2}", decision.score))
-                .unwrap_or_else(|| "-".to_string()),
+                .unwrap_or_else(|| "-".to_string())
+        ));
+        lines.push(format!(
+            "      verdict: {}",
+            compiled
+                .map(|decision| format!("{:?}", decision.verdict))
+                .unwrap_or_else(|| "-".to_string())
         ));
         lines.push(format!(
             "    evidence: {}",
@@ -151,7 +167,7 @@ fn render_shop_candidate_evidence_full_v1(
         ));
         if let Some(delta) = delta {
             lines.push(format!(
-                "    delta: role={:?} hint={:?} theses=[{}] positive=[{}] negative=[{}]",
+                "    diagnostics: delta_role={:?} hint={:?} theses=[{}] positive=[{}] negative=[{}]",
                 delta.role,
                 delta.verdict_hint,
                 render_acquisition_theses(&delta.acquisition_theses),
@@ -189,20 +205,23 @@ fn render_shop_candidate_evidence_compact_v1(
 
     let mut lines = Vec::new();
     lines.push(format!(
-        "candidate_evidence: compact total={} by_class=[{}] by_gate=[{}] by_verdict=[{}]",
+        "candidate_pool: compact total={} by_class=[{}] by_verdict=[{}]",
         candidates.len(),
         render_count_map_v1(&by_class),
-        render_count_map_v1(&by_gate),
         render_count_map_v1(&by_verdict)
     ));
+    lines.push(format!(
+        "diagnostics: support_gate=[{}]",
+        render_count_map_v1(&by_gate)
+    ));
 
-    let notable = compact_shop_notable_candidates_v1(candidates, trace);
-    if notable.is_empty() {
-        lines.push("candidate_highlights: -".to_string());
+    let samples = compact_shop_candidate_samples_v1(candidates, trace);
+    if samples.is_empty() {
+        lines.push("candidate_samples: -".to_string());
     } else {
-        lines.push(format!("candidate_highlights: {}", notable.len()));
-        for (idx, line) in notable.into_iter().enumerate() {
-            lines.push(format!("  {idx}. {line}"));
+        lines.push(format!("candidate_samples: {}", samples.len()));
+        for line in samples {
+            lines.push(format!("  {line}"));
         }
     }
     lines.push(
@@ -212,47 +231,84 @@ fn render_shop_candidate_evidence_compact_v1(
     lines
 }
 
-fn compact_shop_notable_candidates_v1(
+fn compact_shop_candidate_samples_v1(
     candidates: &[sts_simulator::ai::shop_policy_v1::ShopCandidateEvidenceV1],
     trace: &sts_simulator::ai::strategic::StrategicDecisionTrace,
 ) -> Vec<String> {
-    let mut ranked = candidates
+    let mut samples = Vec::new();
+    let mut sampled_action_ids = std::collections::BTreeSet::new();
+    for candidate in candidates
         .iter()
-        .filter_map(|candidate| {
-            let action_id = inspect_shop_candidate_action_id(candidate);
-            let compiled = trace
-                .compiled
-                .iter()
-                .find(|decision| decision.action.candidate_id() == action_id);
-            let legacy = candidate.legacy_estimate.unwrap_or(0);
-            let score = compiled.map(|decision| decision.score).unwrap_or(0.0);
-            let strong_gate = matches!(
+        .filter(|candidate| {
+            matches!(
                 candidate.support_gate,
                 sts_simulator::ai::noncombat_strategy_v1::StrategyPlanSupportV1::Strong
-            );
-            let notable =
-                strong_gate || legacy >= 650 || score.abs() >= 0.30 || !candidate.risks.is_empty();
-            if !notable {
-                return None;
-            }
-            Some((
-                compact_shop_notable_rank_v1(strong_gate, legacy, score),
-                render_shop_notable_candidate_line_v1(candidate, compiled),
-            ))
+            )
         })
-        .collect::<Vec<_>>();
-    ranked.sort_by(|left, right| right.0.cmp(&left.0));
-    ranked.into_iter().take(6).map(|(_, line)| line).collect()
+        .take(3)
+    {
+        let action_id = inspect_shop_candidate_action_id(candidate);
+        let compiled = trace
+            .compiled
+            .iter()
+            .find(|decision| decision.action.candidate_id() == action_id);
+        sampled_action_ids.insert(action_id);
+        samples.push(format!(
+            "diagnostic_support_gate: {}",
+            render_shop_candidate_sample_line_v1(candidate, compiled)
+        ));
+    }
+    let mut risk_samples = 0usize;
+    for candidate in candidates.iter() {
+        if risk_samples >= 2 {
+            break;
+        }
+        if candidate.risks.is_empty() {
+            continue;
+        }
+        let action_id = inspect_shop_candidate_action_id(candidate);
+        if sampled_action_ids.contains(&action_id) {
+            continue;
+        }
+        let compiled = trace
+            .compiled
+            .iter()
+            .find(|decision| decision.action.candidate_id() == action_id);
+        sampled_action_ids.insert(action_id);
+        risk_samples += 1;
+        samples.push(format!(
+            "diagnostic_risk: {}",
+            render_shop_candidate_sample_line_v1(candidate, compiled)
+        ));
+    }
+    let mut score_samples = 0usize;
+    for candidate in candidates.iter() {
+        if score_samples >= 2 {
+            break;
+        }
+        let action_id = inspect_shop_candidate_action_id(candidate);
+        if sampled_action_ids.contains(&action_id) {
+            continue;
+        }
+        let compiled = trace
+            .compiled
+            .iter()
+            .find(|decision| decision.action.candidate_id() == action_id);
+        if !compiled.is_some_and(|decision| decision.score.abs() >= 0.30) {
+            continue;
+        }
+        sampled_action_ids.insert(action_id);
+        score_samples += 1;
+        samples.push(format!(
+            "diagnostic_score: {}",
+            render_shop_candidate_sample_line_v1(candidate, compiled)
+        ));
+    }
+    samples.truncate(6);
+    samples
 }
 
-fn compact_shop_notable_rank_v1(strong_gate: bool, legacy: i32, score: f32) -> i32 {
-    let gate_bonus = if strong_gate { 10_000 } else { 0 };
-    let legacy_bonus = legacy.max(0);
-    let score_bonus = (score.abs() * 1_000.0) as i32;
-    gate_bonus + legacy_bonus + score_bonus
-}
-
-fn render_shop_notable_candidate_line_v1(
+fn render_shop_candidate_sample_line_v1(
     candidate: &sts_simulator::ai::shop_policy_v1::ShopCandidateEvidenceV1,
     compiled: Option<&sts_simulator::ai::strategic::CompiledDecision>,
 ) -> String {
@@ -267,8 +323,8 @@ fn render_shop_notable_candidate_line_v1(
         .map(|decision| format!("{:.2}", decision.score))
         .unwrap_or_else(|| "-".to_string());
     format!(
-        "{} | class={:?} gate={:?} diagnostics=[legacy_estimate={} verdict={} score={}]",
-        candidate.label, candidate.class, candidate.support_gate, legacy, verdict, score
+        "{} | class={:?} diagnostic_support_gate={:?} verdict={} diagnostics=[legacy_estimate={} score={}]",
+        candidate.label, candidate.class, candidate.support_gate, verdict, legacy, score
     )
 }
 
@@ -285,7 +341,7 @@ fn render_count_map_v1(counts: &std::collections::BTreeMap<String, usize>) -> St
 
 fn render_shop_plan_candidate_summary_v1(
     candidates: &[sts_simulator::ai::shop_policy_v1::ShopPlanCandidateV1],
-) -> String {
+) -> Vec<String> {
     let mut counts = std::collections::BTreeMap::<String, usize>::new();
     for candidate in candidates {
         *counts.entry(format!("{:?}", candidate.role)).or_insert(0) += 1;
@@ -295,44 +351,53 @@ fn render_shop_plan_candidate_summary_v1(
         .map(|(role, count)| format!("{role}={count}"))
         .collect::<Vec<_>>()
         .join(", ");
-    let examples = candidates
+    let rollout_admitted = candidates
         .iter()
-        .take(4)
-        .map(|candidate| {
-            format!(
-                "{:?}:{:?}:rollout{:?}:branch{:?}:tier{}:score{}:{}",
-                candidate.role,
-                candidate.evaluation.verdict,
+        .filter(|candidate| {
+            matches!(
                 candidate.evaluation.rollout_admission.status,
-                candidate.evaluation.branch_admission.status,
-                candidate.evaluation.tier,
-                candidate.evaluation.score,
-                candidate.plan.plan_id
+                sts_simulator::ai::shop_policy_v1::ShopPlanRolloutAdmissionStatusV1::Admit
             )
         })
-        .collect::<Vec<_>>()
-        .join("; ");
-    format!(
-        "candidate_plans: {} [{}] examples=[{}]",
-        candidates.len(),
-        counts,
-        if examples.is_empty() { "-" } else { &examples }
-    )
+        .count();
+    let branch_admitted = candidates
+        .iter()
+        .filter(|candidate| {
+            matches!(
+                candidate.evaluation.branch_admission.status,
+                sts_simulator::ai::shop_policy_v1::ShopPlanBranchAdmissionStatusV1::Admit
+            )
+        })
+        .count();
+    vec![
+        format!(
+            "candidate_plans: total={} by_role=[{}]",
+            candidates.len(),
+            counts
+        ),
+        format!(
+            "scheduler: rollout_admitted={} branch_admitted={}",
+            rollout_admitted, branch_admitted
+        ),
+    ]
 }
 
 fn render_shop_plan_with_evaluation_for_detail_v1(
     plan: &sts_simulator::ai::shop_policy_v1::ShopPlanV1,
+    evaluation: Option<&sts_simulator::ai::shop_policy_v1::ShopPlanEvaluationV1>,
     candidates: &[sts_simulator::ai::shop_policy_v1::ShopPlanCandidateV1],
     detail: InspectEvidenceDetailV1,
 ) -> String {
-    let evaluation = candidates
-        .iter()
-        .find(|candidate| candidate.plan.plan_id == plan.plan_id)
-        .map(|candidate| match detail {
-            InspectEvidenceDetailV1::Compact => {
-                render_shop_plan_evaluation_compact_v1(&candidate.evaluation)
-            }
-            InspectEvidenceDetailV1::Full => render_shop_plan_evaluation_v1(&candidate.evaluation),
+    let evaluation = evaluation
+        .or_else(|| {
+            candidates
+                .iter()
+                .find(|candidate| candidate.plan.plan_id == plan.plan_id)
+                .map(|candidate| &candidate.evaluation)
+        })
+        .map(|evaluation| match detail {
+            InspectEvidenceDetailV1::Compact => render_shop_plan_evaluation_compact_v1(evaluation),
+            InspectEvidenceDetailV1::Full => render_shop_plan_evaluation_v1(evaluation),
         })
         .unwrap_or_else(|| "evaluation=-".to_string());
     let plan = match detail {

@@ -6,8 +6,9 @@ pub fn render_compiled_deck_mutation_decision_v1(
     decision: &CompiledDeckMutationDecisionV1,
 ) -> String {
     let mut lines = Vec::new();
+    lines.push("Deck mutation evidence:".to_string());
     lines.push(format!(
-        "DeckMutationCompilerV1 reason={:?} min={} max={} candidates={} label_role={}",
+        "facts: reason={:?} min={} max={} candidates={} label_role={}",
         decision.reason,
         decision.min_choices,
         decision.max_choices,
@@ -15,16 +16,35 @@ pub fn render_compiled_deck_mutation_decision_v1(
         decision.label_role
     ));
     lines.push(format!(
-        "selected_plan: {}",
+        "execution: head={}",
         decision
             .selected_plan
             .as_ref()
             .map(render_plan_line)
             .unwrap_or_else(|| "-".to_string())
     ));
-    push_plan_group(&mut lines, "branch_active", &decision.branch_active_plans);
-    push_plan_group(&mut lines, "inspect_only", &decision.inspect_only_plans);
-    push_plan_group(&mut lines, "blocked", &decision.blocked_plans);
+    lines.push(format!(
+        "candidate_pool: total={} branch_active={} inspect_only={} blocked={}",
+        decision.candidate_plans.len(),
+        decision.branch_active_plans.len(),
+        decision.inspect_only_plans.len(),
+        decision.blocked_plans.len(),
+    ));
+    push_plan_group(
+        &mut lines,
+        "scheduler: branch_active",
+        &decision.branch_active_plans,
+    );
+    push_plan_group(
+        &mut lines,
+        "candidate_pool: inspect_only",
+        &decision.inspect_only_plans,
+    );
+    push_plan_group(
+        &mut lines,
+        "candidate_pool: blocked",
+        &decision.blocked_plans,
+    );
     lines.join("\n")
 }
 
@@ -46,7 +66,7 @@ fn push_plan_group(lines: &mut Vec<String>, label: &str, plans: &[DeckMutationPl
 
 fn render_plan_line(plan: &DeckMutationPlanCandidateV1) -> String {
     format!(
-        "{} | command={} | role={:?} | allowed={} | confidence={:.2} | reps={} suppressed={} | reasons=[{}] | risks=[{}]",
+        "{} | command={} | role={:?} | scheduler=[{}] | diagnostics=[confidence={:.2} reps={} suppressed={}] | reasons=[{}] | risks=[{}]",
         plan.step.effect_label,
         plan.step.command,
         plan.role,

@@ -178,10 +178,10 @@ fn compiler_render_exposes_active_and_inspect_only_plan_groups() {
 
     let rendered = render_compiled_deck_mutation_decision_v1(&decision);
 
-    assert!(rendered.contains("DeckMutationCompilerV1"));
-    assert!(rendered.contains("selected_plan:"));
-    assert!(rendered.contains("branch_active:"));
-    assert!(rendered.contains("inspect_only:"));
+    assert!(rendered.contains("Deck mutation evidence:"));
+    assert!(rendered.contains("execution: head="));
+    assert!(rendered.contains("scheduler: branch_active:"));
+    assert!(rendered.contains("candidate_pool: inspect_only:"));
     assert!(rendered.contains("True Grit"));
     assert!(rendered.contains("role=InspectOnly"));
 }
