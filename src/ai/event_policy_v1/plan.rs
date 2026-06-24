@@ -96,6 +96,133 @@ pub enum EventOracleOutcomeV1 {
     },
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct EventPlanSpecV1 {
+    plan_id: EventPlanIdV1,
+    event_id: EventId,
+    reward: EventPlanRewardV1,
+    oracle_evidence: Option<EventOracleEvidenceV1>,
+    kind: EventPlanSpecKindV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum EventPlanSpecKindV1 {
+    NoCost {
+        steps: Vec<EventPlanStepV1>,
+        risk_model: EventPlanRiskModelV1,
+    },
+    HpPayment {
+        steps: Vec<EventPlanStepV1>,
+        hp_losses: Vec<i32>,
+    },
+    RepeatedPaidGamble {
+        step: EventPlanStepV1,
+        current_success_chance_percent: i32,
+        current_hp_loss: i32,
+        next_hp_loss: i32,
+        treat_as_optional_elite: bool,
+        worst_case_warning_hp_loss: i32,
+    },
+    OptionalEliteSearch {
+        step: EventPlanStepV1,
+        fight_chance_percent: i32,
+        encounter: Option<EventEncounterProjectionV1>,
+        reward_already_obtained: bool,
+    },
+}
+
+impl EventPlanSpecV1 {
+    fn leave(
+        plan_id: EventPlanIdV1,
+        event_id: EventId,
+        screen: usize,
+        choice_index: usize,
+    ) -> Self {
+        Self {
+            plan_id,
+            event_id,
+            reward: EventPlanRewardV1::None,
+            oracle_evidence: None,
+            kind: EventPlanSpecKindV1::NoCost {
+                steps: vec![event_plan_step(screen, choice_index)],
+                risk_model: EventPlanRiskModelV1::None,
+            },
+        }
+    }
+
+    fn hp_payment(
+        plan_id: EventPlanIdV1,
+        event_id: EventId,
+        steps: Vec<EventPlanStepV1>,
+        hp_losses: Vec<i32>,
+        reward: EventPlanRewardV1,
+        oracle_evidence: Option<EventOracleEvidenceV1>,
+    ) -> Self {
+        Self {
+            plan_id,
+            event_id,
+            reward,
+            oracle_evidence,
+            kind: EventPlanSpecKindV1::HpPayment { steps, hp_losses },
+        }
+    }
+
+    fn repeated_paid_gamble(
+        plan_id: EventPlanIdV1,
+        event_id: EventId,
+        step: EventPlanStepV1,
+        current_success_chance_percent: i32,
+        current_hp_loss: i32,
+        next_hp_loss: i32,
+        reward: EventPlanRewardV1,
+        oracle_evidence: Option<EventOracleEvidenceV1>,
+    ) -> Self {
+        Self {
+            plan_id,
+            event_id,
+            reward,
+            oracle_evidence,
+            kind: EventPlanSpecKindV1::RepeatedPaidGamble {
+                step,
+                current_success_chance_percent,
+                current_hp_loss,
+                next_hp_loss,
+                treat_as_optional_elite: true,
+                worst_case_warning_hp_loss: 10,
+            },
+        }
+    }
+
+    fn optional_elite_search(
+        plan_id: EventPlanIdV1,
+        event_id: EventId,
+        step: EventPlanStepV1,
+        fight_chance_percent: i32,
+        encounter: Option<EventEncounterProjectionV1>,
+        reward_already_obtained: bool,
+    ) -> Self {
+        Self {
+            plan_id,
+            event_id,
+            reward: EventPlanRewardV1::DeadAdventurerSearch,
+            oracle_evidence: None,
+            kind: EventPlanSpecKindV1::OptionalEliteSearch {
+                step,
+                fight_chance_percent,
+                encounter,
+                reward_already_obtained,
+            },
+        }
+    }
+}
+
+fn event_plan_step(screen: usize, choice_index: usize) -> EventPlanStepV1 {
+    EventPlanStepV1 {
+        screen,
+        choice_index,
+    }
+}
+
 pub fn compile_event_plan_candidates_v1(
     run_state: &RunState,
     information_mode: EventInformationModeV1,
@@ -103,14 +230,17 @@ pub fn compile_event_plan_candidates_v1(
     let Some(event_state) = &run_state.event_state else {
         return Vec::new();
     };
-    match event_state.id {
+    let specs = match event_state.id {
         EventId::CursedTome => {
-            compile_cursed_tome_plans_v1(run_state, event_state, information_mode)
+            compile_cursed_tome_plan_specs_v1(run_state, event_state, information_mode)
         }
-        EventId::ScrapOoze => compile_scrap_ooze_plans_v1(run_state, event_state, information_mode),
-        EventId::DeadAdventurer => compile_dead_adventurer_plans_v1(event_state),
+        EventId::ScrapOoze => {
+            compile_scrap_ooze_plan_specs_v1(run_state, event_state, information_mode)
+        }
+        EventId::DeadAdventurer => compile_dead_adventurer_plan_specs_v1(event_state),
         _ => Vec::new(),
-    }
+    };
+    materialize_event_plan_specs_v1(run_state, specs)
 }
 
 pub fn select_event_plan_candidate_v1(
@@ -130,25 +260,91 @@ pub fn select_event_plan_candidate_v1(
     }
 }
 
-fn compile_cursed_tome_plans_v1(
+fn materialize_event_plan_specs_v1(
+    run_state: &RunState,
+    specs: Vec<EventPlanSpecV1>,
+) -> Vec<EventPlanCandidateV1> {
+    specs
+        .into_iter()
+        .map(|spec| materialize_event_plan_spec_v1(run_state, spec))
+        .collect()
+}
+
+fn materialize_event_plan_spec_v1(
+    run_state: &RunState,
+    spec: EventPlanSpecV1,
+) -> EventPlanCandidateV1 {
+    let (steps, cost, risk_model) = match spec.kind {
+        EventPlanSpecKindV1::NoCost { steps, risk_model } => {
+            (steps, project_hp_loss_cost_v1(run_state, &[]), risk_model)
+        }
+        EventPlanSpecKindV1::HpPayment { steps, hp_losses } => (
+            steps,
+            project_hp_loss_cost_v1(run_state, &hp_losses),
+            EventPlanRiskModelV1::HpPayment,
+        ),
+        EventPlanSpecKindV1::RepeatedPaidGamble {
+            step,
+            current_success_chance_percent,
+            current_hp_loss,
+            next_hp_loss,
+            treat_as_optional_elite,
+            worst_case_warning_hp_loss,
+        } => {
+            let current_cost = project_hp_loss_cost_v1(run_state, &[current_hp_loss]);
+            let next_cost = project_hp_loss_cost_v1(run_state, &[next_hp_loss]);
+            (
+                vec![step],
+                current_cost.clone(),
+                EventPlanRiskModelV1::RepeatedGamble {
+                    current_success_chance_percent,
+                    current_effective_hp_loss: current_cost.effective_hp_loss,
+                    next_effective_hp_loss: next_cost.effective_hp_loss,
+                    treat_as_optional_elite,
+                    worst_case_warning_hp_loss,
+                },
+            )
+        }
+        EventPlanSpecKindV1::OptionalEliteSearch {
+            step,
+            fight_chance_percent,
+            encounter,
+            reward_already_obtained,
+        } => (
+            vec![step],
+            project_hp_loss_cost_v1(run_state, &[]),
+            EventPlanRiskModelV1::OptionalEliteLike {
+                fight_chance_percent,
+                encounter,
+                reward_already_obtained,
+            },
+        ),
+    };
+
+    EventPlanCandidateV1 {
+        plan_id: spec.plan_id,
+        event_id: spec.event_id,
+        steps,
+        cost,
+        reward: spec.reward,
+        risk_model,
+        oracle_evidence: spec.oracle_evidence,
+    }
+}
+
+fn compile_cursed_tome_plan_specs_v1(
     run_state: &RunState,
     event_state: &EventState,
     information_mode: EventInformationModeV1,
-) -> Vec<EventPlanCandidateV1> {
+) -> Vec<EventPlanSpecV1> {
     let mut plans = Vec::new();
     if event_state.current_screen == 0 {
-        plans.push(EventPlanCandidateV1 {
-            plan_id: EventPlanIdV1::LeaveNow,
-            event_id: EventId::CursedTome,
-            steps: vec![EventPlanStepV1 {
-                screen: 0,
-                choice_index: 1,
-            }],
-            cost: project_hp_loss_cost_v1(run_state, &[]),
-            reward: EventPlanRewardV1::None,
-            risk_model: EventPlanRiskModelV1::None,
-            oracle_evidence: None,
-        });
+        plans.push(EventPlanSpecV1::leave(
+            EventPlanIdV1::LeaveNow,
+            EventId::CursedTome,
+            0,
+            1,
+        ));
     }
 
     if event_state.current_screen <= 4 {
@@ -156,21 +352,17 @@ fn compile_cursed_tome_plans_v1(
         let prefix_losses = cursed_tome_continue_losses_from(event_state.current_screen);
 
         let mut stop_steps = prefix_steps.clone();
-        stop_steps.push(EventPlanStepV1 {
-            screen: 4,
-            choice_index: 1,
-        });
+        stop_steps.push(event_plan_step(4, 1));
         let mut stop_losses = prefix_losses.clone();
         stop_losses.push(3);
-        plans.push(EventPlanCandidateV1 {
-            plan_id: EventPlanIdV1::CursedTomeReadThenStop,
-            event_id: EventId::CursedTome,
-            steps: stop_steps,
-            cost: project_hp_loss_cost_v1(run_state, &stop_losses),
-            reward: EventPlanRewardV1::None,
-            risk_model: EventPlanRiskModelV1::HpPayment,
-            oracle_evidence: None,
-        });
+        plans.push(EventPlanSpecV1::hp_payment(
+            EventPlanIdV1::CursedTomeReadThenStop,
+            EventId::CursedTome,
+            stop_steps,
+            stop_losses,
+            EventPlanRewardV1::None,
+            None,
+        ));
 
         let final_damage = cursed_tome_final_damage(run_state);
         let oracle_evidence = match information_mode {
@@ -178,81 +370,56 @@ fn compile_cursed_tome_plans_v1(
             EventInformationModeV1::CounterfactualOracle => peek_cursed_tome_book_v1(run_state),
         };
         let mut take_steps = prefix_steps;
-        take_steps.push(EventPlanStepV1 {
-            screen: 4,
-            choice_index: 0,
-        });
+        take_steps.push(event_plan_step(4, 0));
         let mut take_losses = prefix_losses;
         take_losses.push(final_damage);
         let observed = oracle_evidence
             .as_ref()
             .and_then(|evidence| evidence.observed_relic);
-        plans.push(EventPlanCandidateV1 {
-            plan_id: EventPlanIdV1::CursedTomeReadAndTakeBook,
-            event_id: EventId::CursedTome,
-            steps: take_steps,
-            cost: project_hp_loss_cost_v1(run_state, &take_losses),
-            reward: EventPlanRewardV1::RandomBookRelic { observed },
-            risk_model: EventPlanRiskModelV1::HpPayment,
+        plans.push(EventPlanSpecV1::hp_payment(
+            EventPlanIdV1::CursedTomeReadAndTakeBook,
+            EventId::CursedTome,
+            take_steps,
+            take_losses,
+            EventPlanRewardV1::RandomBookRelic { observed },
             oracle_evidence,
-        });
+        ));
     }
 
     plans
 }
 
-fn compile_scrap_ooze_plans_v1(
+fn compile_scrap_ooze_plan_specs_v1(
     run_state: &RunState,
     event_state: &EventState,
     information_mode: EventInformationModeV1,
-) -> Vec<EventPlanCandidateV1> {
+) -> Vec<EventPlanSpecV1> {
     if event_state.current_screen != 0 {
         return Vec::new();
     }
 
     let (chance, damage) = scrap_ooze_chance_and_damage(run_state, event_state);
-    let current_cost = project_hp_loss_cost_v1(run_state, &[damage]);
-    let next_cost = project_hp_loss_cost_v1(run_state, &[damage + 1]);
     let oracle_evidence = match information_mode {
         EventInformationModeV1::PublicOnly => None,
         EventInformationModeV1::CounterfactualOracle => peek_scrap_ooze_v1(run_state),
     };
 
     vec![
-        EventPlanCandidateV1 {
-            plan_id: EventPlanIdV1::LeaveNow,
-            event_id: EventId::ScrapOoze,
-            steps: vec![EventPlanStepV1 {
-                screen: 0,
-                choice_index: 1,
-            }],
-            cost: project_hp_loss_cost_v1(run_state, &[]),
-            reward: EventPlanRewardV1::None,
-            risk_model: EventPlanRiskModelV1::None,
-            oracle_evidence: None,
-        },
-        EventPlanCandidateV1 {
-            plan_id: EventPlanIdV1::ScrapOozeReachInOnce,
-            event_id: EventId::ScrapOoze,
-            steps: vec![EventPlanStepV1 {
-                screen: 0,
-                choice_index: 0,
-            }],
-            cost: current_cost.clone(),
-            reward: EventPlanRewardV1::RandomRelic,
-            risk_model: EventPlanRiskModelV1::RepeatedGamble {
-                current_success_chance_percent: chance,
-                current_effective_hp_loss: current_cost.effective_hp_loss,
-                next_effective_hp_loss: next_cost.effective_hp_loss,
-                treat_as_optional_elite: true,
-                worst_case_warning_hp_loss: 10,
-            },
+        EventPlanSpecV1::leave(EventPlanIdV1::LeaveNow, EventId::ScrapOoze, 0, 1),
+        EventPlanSpecV1::repeated_paid_gamble(
+            EventPlanIdV1::ScrapOozeReachInOnce,
+            EventId::ScrapOoze,
+            event_plan_step(0, 0),
+            chance,
+            damage,
+            damage + 1,
+            EventPlanRewardV1::RandomRelic,
             oracle_evidence,
-        },
+        ),
     ]
 }
 
-fn compile_dead_adventurer_plans_v1(event_state: &EventState) -> Vec<EventPlanCandidateV1> {
+fn compile_dead_adventurer_plan_specs_v1(event_state: &EventState) -> Vec<EventPlanSpecV1> {
     if event_state.current_screen != 0 {
         return Vec::new();
     }
@@ -270,42 +437,20 @@ fn compile_dead_adventurer_plans_v1(event_state: &EventState) -> Vec<EventPlanCa
     });
 
     vec![
-        EventPlanCandidateV1 {
-            plan_id: EventPlanIdV1::DeadAdventurerLeaveNow,
-            event_id: EventId::DeadAdventurer,
-            steps: vec![EventPlanStepV1 {
-                screen: 0,
-                choice_index: 1,
-            }],
-            cost: EventCostProjectionV1 {
-                nominal_hp_loss: 0,
-                effective_hp_loss: 0,
-                modifiers: Vec::new(),
-            },
-            reward: EventPlanRewardV1::None,
-            risk_model: EventPlanRiskModelV1::None,
-            oracle_evidence: None,
-        },
-        EventPlanCandidateV1 {
-            plan_id: EventPlanIdV1::DeadAdventurerSearchAsOptionalElite,
-            event_id: EventId::DeadAdventurer,
-            steps: vec![EventPlanStepV1 {
-                screen: 0,
-                choice_index: 0,
-            }],
-            cost: EventCostProjectionV1 {
-                nominal_hp_loss: 0,
-                effective_hp_loss: 0,
-                modifiers: Vec::new(),
-            },
-            reward: EventPlanRewardV1::DeadAdventurerSearch,
-            risk_model: EventPlanRiskModelV1::OptionalEliteLike {
-                fight_chance_percent: fight_chance,
-                encounter,
-                reward_already_obtained,
-            },
-            oracle_evidence: None,
-        },
+        EventPlanSpecV1::leave(
+            EventPlanIdV1::DeadAdventurerLeaveNow,
+            EventId::DeadAdventurer,
+            0,
+            1,
+        ),
+        EventPlanSpecV1::optional_elite_search(
+            EventPlanIdV1::DeadAdventurerSearchAsOptionalElite,
+            EventId::DeadAdventurer,
+            event_plan_step(0, 0),
+            fight_chance,
+            encounter,
+            reward_already_obtained,
+        ),
     ]
 }
 
@@ -411,10 +556,7 @@ fn hp_safety_floor(run_state: &RunState, config: &EventPolicyConfigV1) -> i32 {
 
 fn cursed_tome_continue_steps_from(current_screen: usize) -> Vec<EventPlanStepV1> {
     (current_screen..=3)
-        .map(|screen| EventPlanStepV1 {
-            screen,
-            choice_index: 0,
-        })
+        .map(|screen| event_plan_step(screen, 0))
         .collect()
 }
 
