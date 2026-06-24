@@ -1686,63 +1686,6 @@ struct DatasetPathArgs {
         help = "Write LearningDecisionOutcomeSampleV1 JSONL with observed sibling candidates and later outcomes"
     )]
     export_decision_outcome_dataset: Option<PathBuf>,
-
-    #[arg(
-        long = "plan-coverage-gap-continuation",
-        help = "Print unobserved CampaignJournal candidate branches to continue from a BranchCampaignV1 report"
-    )]
-    plan_coverage_gap_continuation: bool,
-
-    #[arg(
-        long = "coverage-gap-limit",
-        default_value_t = 8,
-        help = "Maximum unobserved journal candidate branches to plan"
-    )]
-    coverage_gap_limit: usize,
-
-    #[arg(
-        long = "coverage-gap-candidates-per-decision",
-        default_value_t = 1,
-        help = "Maximum unobserved candidate branches to continue per journal decision"
-    )]
-    coverage_gap_candidates_per_decision: usize,
-
-    #[arg(
-        long = "coverage-gap-bucket",
-        help = "Only plan coverage-gap targets from this bucket, e.g. event, route, shop, reward"
-    )]
-    coverage_gap_bucket: Option<String>,
-
-    #[arg(
-        long = "coverage-gap-event-id",
-        help = "Only plan coverage-gap targets whose event id/frontier/candidate text matches this event id"
-    )]
-    coverage_gap_event_id: Option<String>,
-
-    #[arg(
-        long = "coverage-gap-lane",
-        help = "Only plan coverage-gap targets whose lane matches this text, e.g. effect:event_card_reward"
-    )]
-    coverage_gap_lane: Option<String>,
-
-    #[arg(
-        long = "coverage-gap-origin-source",
-        help = "Only plan coverage-gap targets from this target_origin source, e.g. route_candidate_pool, map_decision_packet, event_boundary_packet"
-    )]
-    coverage_gap_origin_source: Option<String>,
-
-    #[arg(
-        long = "coverage-gap-progress",
-        help = "Only plan coverage-gap targets with this existing progress, e.g. missing, target_only, extended"
-    )]
-    coverage_gap_progress: Option<String>,
-
-    #[arg(
-        long = "coverage-gap-budget-intent",
-        default_value = "gap_closure",
-        help = "Select and interpret coverage-gap continuation targets as gap_closure or frontier_expansion"
-    )]
-    coverage_gap_budget_intent: String,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -2550,15 +2493,6 @@ impl DatasetPathArgs {
         args.probe_learning_readiness = self.probe_learning_readiness;
         args.export_learning_dataset = self.export_learning_dataset;
         args.export_decision_outcome_dataset = self.export_decision_outcome_dataset;
-        args.plan_coverage_gap_continuation = self.plan_coverage_gap_continuation;
-        args.coverage_gap_limit = self.coverage_gap_limit;
-        args.coverage_gap_candidates_per_decision = self.coverage_gap_candidates_per_decision;
-        args.coverage_gap_bucket = self.coverage_gap_bucket;
-        args.coverage_gap_event_id = self.coverage_gap_event_id;
-        args.coverage_gap_lane = self.coverage_gap_lane;
-        args.coverage_gap_origin_source = self.coverage_gap_origin_source;
-        args.coverage_gap_progress = self.coverage_gap_progress;
-        args.coverage_gap_budget_intent = self.coverage_gap_budget_intent;
     }
 }
 

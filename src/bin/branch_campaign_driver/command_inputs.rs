@@ -888,7 +888,7 @@ fn parse_hp_loss_limit(value: Option<&str>) -> Result<Option<RunControlHpLossLim
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli_args::Args;
+    use crate::cli_args::{parse_cli_from, Args, BranchCampaignCliInputV1};
 
     #[test]
     fn coverage_gap_execution_input_parses_budget_intent() {
@@ -930,10 +930,11 @@ mod tests {
 
     #[test]
     fn coverage_gap_plan_input_parses_filter() {
-        let args = Args::try_parse_from([
+        let cli_input = parse_cli_from([
             "branch_campaign_driver",
-            "dataset",
-            "--plan-coverage-gap-continuation",
+            "campaign",
+            "coverage",
+            "plan",
             "--coverage-gap-bucket",
             "event",
             "--coverage-gap-event-id",
@@ -949,7 +950,11 @@ mod tests {
         ])
         .expect("coverage gap filter should parse");
 
-        let input = CoverageGapPlanCommandInput::from_args(&args).expect("input should build");
+        let BranchCampaignCliInputV1::CampaignCoveragePlan(args) = cli_input else {
+            panic!("coverage plan should use the direct campaign input path");
+        };
+        let input =
+            CoverageGapPlanCommandInput::from_coverage_plan_args(args).expect("input should build");
 
         assert_eq!(input.coverage_gap_filter.bucket.as_deref(), Some("event"));
         assert_eq!(
