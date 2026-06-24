@@ -222,6 +222,10 @@ fn apply_event_purge_side_effects_v1(
     deck_index: usize,
     rarity_state: i32,
 ) {
+    if run_state.event_state.as_ref().map(|event| event.id) != Some(event_id) {
+        return;
+    }
+
     match event_id {
         EventId::BonfireElementals => {
             if let Some(ref mut es) = run_state.event_state {
