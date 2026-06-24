@@ -369,11 +369,21 @@ $RunRoundContext = Resolve-CampaignRunRoundContext `
     -MaxRoundsBound $BoundParameterContext.MaxRoundsBound `
     -MaxRounds $MaxRounds
 
+$WritesCampaignOutput = ($CampaignRequest.OutputIntent -eq "campaign_output")
+if ($WritesCampaignOutput -and $NeedsBuild) {
+    if ($DryRun) {
+        throw "Dry-run output allocation requires an existing Rust driver at $($BuildContext.DriverExe). Build once first."
+    }
+    Invoke-CampaignDriverBuild -RepoRoot $RepoRoot -BuildArgs $BuildContext.BuildArgs
+    $NeedsBuild = $false
+}
+
 $RunOutputContext = Resolve-CampaignOutputArtifactContext `
     -Request $CampaignRequest `
     -Scratch ([bool] $Scratch) `
     -RunLabel $RunLabel `
-    -Seed $Seed
+    -Seed $Seed `
+    -DriverExe $BuildContext.DriverExe
 Ensure-CampaignOutputArtifactDirectory -OutputContext $RunOutputContext -DryRun ([bool] $DryRun)
 
 $EntryDispatchContext = [pscustomobject]@{

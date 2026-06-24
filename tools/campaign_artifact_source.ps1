@@ -9,31 +9,6 @@ function Set-CampaignArtifactResolverDriver {
     $script:CampaignArtifactResolverDriverExe = $DriverExe
 }
 
-function Convert-CampaignDriverArtifactRef {
-    param(
-        [object] $Artifact
-    )
-
-    if (-not $Artifact) {
-        throw "Internal error: empty artifact resolver response."
-    }
-
-    $Kind = ([string] $Artifact.kind).ToLowerInvariant()
-    return [pscustomobject]@{
-        Kind = $Kind
-        Id = [string] $Artifact.id
-        Label = [string] $Artifact.label
-        Dir = [string] $Artifact.dir
-        ReportPath = [string] $Artifact.report_path
-        StatePath = [string] $Artifact.state_path
-        JournalPath = [string] $Artifact.journal_path
-        CheckpointPath = [string] $Artifact.checkpoint_path
-        ManifestPath = [string] $Artifact.manifest_path
-        LogPath = [string] $Artifact.log_path
-        CommandPath = [string] $Artifact.command_path
-    }
-}
-
 function Get-CampaignSourceArtifactViaDriver {
     param(
         [string] $Selector

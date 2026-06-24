@@ -1,24 +1,59 @@
-function Convert-ToCampaignArtifactSlug {
+function Convert-CampaignDriverArtifactRef {
     param(
-        [string] $Value
+        [object] $Artifact
     )
 
-    $Slug = ($Value.Trim() -replace '[^A-Za-z0-9_.-]+', '-').Trim('-')
-    if (-not $Slug) {
-        return "scratch"
+    if (-not $Artifact) {
+        throw "Internal error: empty artifact resolver response."
     }
-    return $Slug
+
+    $Kind = ([string] $Artifact.kind).ToLowerInvariant()
+    return [pscustomobject]@{
+        Kind = $Kind
+        Id = [string] $Artifact.id
+        Label = [string] $Artifact.label
+        Dir = [string] $Artifact.dir
+        ReportPath = [string] $Artifact.report_path
+        StatePath = [string] $Artifact.state_path
+        JournalPath = [string] $Artifact.journal_path
+        CheckpointPath = [string] $Artifact.checkpoint_path
+        ManifestPath = [string] $Artifact.manifest_path
+        LogPath = [string] $Artifact.log_path
+        CommandPath = [string] $Artifact.command_path
+    }
 }
 
-function New-CampaignArtifactId {
+function New-CampaignOutputArtifactViaDriver {
     param(
-        [string] $BaseLabel
+        [string] $BaseLabel,
+        [bool] $Scratch,
+        [string] $DriverExe
     )
 
-    $Stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-    $Slug = Convert-ToCampaignArtifactSlug $BaseLabel
-    $Suffix = [guid]::NewGuid().ToString("N").Substring(0, 8)
-    return "$Slug-$Stamp-$Suffix"
+    if (-not $DriverExe) {
+        throw "Internal error: Rust campaign artifact allocator requires DriverExe."
+    }
+
+    $Kind = if ($Scratch) { "scratch" } else { "run" }
+    $Args = @(
+        "artifact",
+        "allocate",
+        "--kind", $Kind,
+        "--label", "$BaseLabel",
+        "--stamp", (Get-Date -Format "yyyyMMdd-HHmmss"),
+        "--suffix", ([guid]::NewGuid().ToString("N").Substring(0, 8)),
+        "--campaign-dir", "$script:CampaignDir",
+        "--json"
+    )
+    $Json = & $DriverExe @Args
+    if ($LASTEXITCODE -ne 0) {
+        throw "Rust campaign artifact allocator failed with exit code $LASTEXITCODE."
+    }
+    try {
+        return Convert-CampaignDriverArtifactRef -Artifact ($Json | ConvertFrom-Json)
+    } catch {
+        throw "Rust campaign artifact allocator returned invalid JSON: $_"
+    }
 }
 
 function Resolve-CampaignMainArtifactPath {
@@ -82,77 +117,6 @@ function Get-CampaignStateSidecarPath {
     return Get-CampaignSidecarPath -ReportPath $ReportPath -Sidecar "state"
 }
 
-function New-CampaignRunArtifact {
-    param(
-        [string] $BaseLabel,
-        [string] $ArtifactId = ""
-    )
-
-    $Id = if ($ArtifactId) { Convert-ToCampaignArtifactSlug $ArtifactId } else { New-CampaignArtifactId -BaseLabel $BaseLabel }
-    $Dir = Join-Path (Get-CampaignRunsDir) $Id
-    $PreferCompressed = -not $ArtifactId
-    $ReportPath = Resolve-CampaignMainArtifactPath `
-        -CompressedPath (Join-Path $Dir "campaign.json.gz") `
-        -LegacyPath (Join-Path $Dir "campaign.json") `
-        -PreferCompressed $PreferCompressed
-    $CheckpointPath = Resolve-CampaignMainArtifactPath `
-        -CompressedPath (Join-Path $Dir "checkpoint.json.gz") `
-        -LegacyPath (Join-Path $Dir "checkpoint.json") `
-        -PreferCompressed $PreferCompressed
-    return [pscustomobject]@{
-        Kind = "run"
-        Id = $Id
-        Label = "run:$Id"
-        Dir = $Dir
-        ReportPath = $ReportPath
-        StatePath = Get-CampaignStateSidecarPath -ReportPath $ReportPath
-        JournalPath = Get-CampaignJournalSidecarPath -ReportPath $ReportPath
-        CheckpointPath = $CheckpointPath
-        ManifestPath = Join-Path $Dir "manifest.json"
-        LogPath = Join-Path $Dir "log.txt"
-        CommandPath = Join-Path $Dir "command.txt"
-    }
-}
-
-function New-CampaignScratchArtifactRef {
-    param(
-        [string] $ArtifactId,
-        [bool] $PreferCompressed = $false
-    )
-
-    $Id = Convert-ToCampaignArtifactSlug $ArtifactId
-    $ReportPath = Resolve-CampaignMainArtifactPath `
-        -CompressedPath (Join-Path $ScratchCampaignDir "$Id.campaign.json.gz") `
-        -LegacyPath (Join-Path $ScratchCampaignDir "$Id.campaign.json") `
-        -PreferCompressed $PreferCompressed
-    $CheckpointPath = Resolve-CampaignMainArtifactPath `
-        -CompressedPath (Join-Path $ScratchCampaignDir "$Id.checkpoint.json.gz") `
-        -LegacyPath (Join-Path $ScratchCampaignDir "$Id.checkpoint.json") `
-        -PreferCompressed $PreferCompressed
-    return [pscustomobject]@{
-        Kind = "scratch"
-        Id = $Id
-        Label = "scratch:$Id"
-        Dir = $ScratchCampaignDir
-        ReportPath = $ReportPath
-        StatePath = Get-CampaignStateSidecarPath -ReportPath $ReportPath
-        JournalPath = Get-CampaignJournalSidecarPath -ReportPath $ReportPath
-        CheckpointPath = $CheckpointPath
-        ManifestPath = Join-Path $ScratchCampaignDir "$Id.manifest.json"
-        LogPath = Join-Path $ScratchCampaignDir "$Id.log"
-        CommandPath = Join-Path $ScratchCampaignDir "$Id.command.txt"
-    }
-}
-
-function New-CampaignScratchArtifact {
-    param(
-        [string] $BaseLabel
-    )
-
-    $Id = New-CampaignArtifactId -BaseLabel $BaseLabel
-    return New-CampaignScratchArtifactRef -ArtifactId $Id -PreferCompressed $true
-}
-
 function Get-CampaignOutputBaseLabel {
     param(
         [string] $RequestKind = "",
@@ -177,7 +141,8 @@ function Resolve-CampaignOutputArtifactContext {
         [object] $Request,
         [bool] $Scratch,
         [string] $RunLabel,
-        [long] $Seed
+        [long] $Seed,
+        [string] $DriverExe
     )
 
     if (-not $Request) {
@@ -198,11 +163,10 @@ function Resolve-CampaignOutputArtifactContext {
             -RequestKind $RequestKind `
             -RunLabel $RunLabel `
             -Seed $Seed
-        $RunOutputArtifact = if ($Scratch) {
-            New-CampaignScratchArtifact -BaseLabel $OutputBaseLabel
-        } else {
-            New-CampaignRunArtifact -BaseLabel $OutputBaseLabel
-        }
+        $RunOutputArtifact = New-CampaignOutputArtifactViaDriver `
+            -BaseLabel $OutputBaseLabel `
+            -Scratch ([bool] $Scratch) `
+            -DriverExe $DriverExe
         $ScratchLabel = if ($Scratch) { $RunOutputArtifact.Id } else { "" }
         $RunOutputCampaignPath = $RunOutputArtifact.ReportPath
         $RunOutputCheckpointPath = $RunOutputArtifact.CheckpointPath
