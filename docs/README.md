@@ -2,19 +2,13 @@
 
 This directory contains the active documentation for `sts_simulator`.
 
-Older notes were moved to:
-
-```text
-docs_legacy/2026-06-03_pre_rewrite/docs/
-```
-
-Treat legacy files as historical context only. They may describe retired
-workflows such as old watch UI, live communication tooling, LLM controller
-handoffs, or outdated command flags.
+Retired notes are not kept in the working tree. Use git history for archaeology
+instead of keeping stale command paths searchable.
 
 ## Read First
 
 - [CURRENT_DIRECTION.md](CURRENT_DIRECTION.md)
+- [CAMPAIGN_WRAPPER_USAGE.md](CAMPAIGN_WRAPPER_USAGE.md)
 - [CAMPAIGN_ARTIFACT_ARCHITECTURE.md](CAMPAIGN_ARTIFACT_ARCHITECTURE.md)
 - [REPORT_FIELD_ADMISSION.md](REPORT_FIELD_ADMISSION.md)
 - [CAMPAIGN_JOURNAL.md](CAMPAIGN_JOURNAL.md)
@@ -23,6 +17,5 @@ handoffs, or outdated command flags.
 
 ## Current Rule
 
-If a legacy note disagrees with this directory, the active docs win. If active
-docs disagree with current code behavior, update the active docs or fix the
-code in the same change.
+If active docs disagree with current code behavior, update the active docs or
+fix the code in the same change.

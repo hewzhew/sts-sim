@@ -93,17 +93,14 @@ See [src/bin/README.md](src/bin/README.md) for binary details.
 Start here:
 
 - [docs/CURRENT_DIRECTION.md](docs/CURRENT_DIRECTION.md)
-- [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md)
+- [docs/CAMPAIGN_WRAPPER_USAGE.md](docs/CAMPAIGN_WRAPPER_USAGE.md)
+- [docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md](docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md)
+- [docs/CAMPAIGN_JOURNAL.md](docs/CAMPAIGN_JOURNAL.md)
 - [docs/AUTOPILOT_BOUNDARY.md](docs/AUTOPILOT_BOUNDARY.md)
+- [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md)
 
-The old documentation tree was moved to:
-
-```text
-docs_legacy/2026-06-03_pre_rewrite/docs/
-```
-
-Legacy docs are for archaeology only. They may mention retired LLM, live-comm,
-watch UI, Workbench, or stale command paths.
+Retired docs were removed from the working tree to keep search results usable.
+Use git history for archaeology.
 
 ## Architecture
 

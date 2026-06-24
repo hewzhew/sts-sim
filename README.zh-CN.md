@@ -87,16 +87,13 @@ Binary 细节见 [src/bin/README.md](src/bin/README.md)。
 先读：
 
 - [docs/CURRENT_DIRECTION.md](docs/CURRENT_DIRECTION.md)
-- [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md)
+- [docs/CAMPAIGN_WRAPPER_USAGE.md](docs/CAMPAIGN_WRAPPER_USAGE.md)
+- [docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md](docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md)
+- [docs/CAMPAIGN_JOURNAL.md](docs/CAMPAIGN_JOURNAL.md)
 - [docs/AUTOPILOT_BOUNDARY.md](docs/AUTOPILOT_BOUNDARY.md)
+- [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md)
 
-旧文档已经移动到：
-
-```text
-docs_legacy/2026-06-03_pre_rewrite/docs/
-```
-
-旧文档只用于考古。里面可能会提到已经退役或降级的 LLM、live-comm、watch UI、Workbench 或过时命令。
+退役文档已经从工作区删除，避免污染搜索结果。需要考古时请查 git history。
 
 ## 架构
 
