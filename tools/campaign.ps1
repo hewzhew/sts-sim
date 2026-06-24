@@ -343,6 +343,7 @@ $CampaignSourceRunContext = Resolve-CampaignSourceRunContext `
     -BoundParameters $PSBoundParameters
 $CampaignSourceContext = $CampaignSourceRunContext.SourceContext
 $CampaignSourceArtifact = $CampaignSourceRunContext.SourceArtifact
+$CampaignSourceProgress = $CampaignSourceRunContext.SourceProgress
 $Mode = $CampaignSourceRunContext.Mode
 $Seed = $CampaignSourceRunContext.Seed
 $Ascension = $CampaignSourceRunContext.Ascension
@@ -386,6 +387,7 @@ $CoverageGapFilterContext = Resolve-CoverageGapFilterContext `
 $RunRoundContext = Resolve-CampaignRunRoundContext `
     -Request $CampaignRequest `
     -CampaignSourceArtifact $CampaignSourceArtifact `
+    -CampaignSourceProgress $CampaignSourceProgress `
     -RoundsBound $BoundParameterContext.RoundsBound `
     -Rounds $Rounds `
     -UntilRoundBound $BoundParameterContext.UntilRoundBound `

@@ -51,6 +51,10 @@ function Convert-CampaignDriverSourceInfo {
     return [pscustomobject]@{
         Artifact = Convert-CampaignDriverArtifactRef -Artifact $Info.artifact
         RunConfig = Convert-CampaignDriverRunConfig -RunConfig $Info.run_config
+        Progress = [pscustomobject]@{
+            RoundsCompleted = if ($Info.progress -and $Info.progress.rounds_completed -ne $null) { [int] $Info.progress.rounds_completed } else { $null }
+            StopReason = if ($Info.progress -and $Info.progress.stop_reason) { [string] $Info.progress.stop_reason } else { $null }
+        }
     }
 }
 
@@ -121,11 +125,15 @@ function Get-CampaignSourceArtifactInfo {
 
     if ($ResolvedSelector -eq "legacy-latest") {
         $Artifact = New-CampaignLegacyLatestArtifact
-        return [pscustomobject]@{
-            Artifact = $Artifact
-            RunConfig = Get-CampaignLegacyLatestRunConfig -Artifact $Artifact
+    return [pscustomobject]@{
+        Artifact = $Artifact
+        RunConfig = Get-CampaignLegacyLatestRunConfig -Artifact $Artifact
+        Progress = [pscustomobject]@{
+            RoundsCompleted = $null
+            StopReason = $null
         }
     }
+}
 
     return Get-CampaignSourceArtifactInfoViaDriver -Selector $ResolvedSelector
 }

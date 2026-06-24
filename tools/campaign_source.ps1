@@ -24,6 +24,7 @@ function Get-CampaignSourceContext {
     return [pscustomobject]@{
         Artifact = $SourceInfo.Artifact
         RunConfig = $SourceInfo.RunConfig
+        Progress = $SourceInfo.Progress
     }
 }
 
@@ -176,6 +177,7 @@ function Resolve-CampaignSourceRunContext {
         SourceContext = $SourceContext
         SourceArtifact = $SourceArtifact
         SourceRunConfig = $SourceRunConfig
+        SourceProgress = $SourceContext.Progress
         Mode = $ResolvedMode
         Seed = $ResolvedSeed
         Ascension = $RunIdentity.Ascension

@@ -49,6 +49,7 @@ function Resolve-CampaignRunRoundContext {
     param(
         [object] $Request,
         [object] $CampaignSourceArtifact,
+        [object] $CampaignSourceProgress,
         [bool] $RoundsBound,
         [int] $Rounds,
         [bool] $UntilRoundBound,
@@ -138,8 +139,11 @@ function Resolve-CampaignRunRoundContext {
         }
 
         $ResumeCampaignPath = $ResumeSource.ReportPath
-        $ResumeReport = Read-CampaignJsonArtifactOrThrow -Path $ResumeCampaignPath -Role "campaign report"
-        $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
+        if ($CampaignSourceProgress -and $CampaignSourceProgress.RoundsCompleted -ne $null) {
+            $ResumeRoundsCompleted = [int] $CampaignSourceProgress.RoundsCompleted
+        } else {
+            $ResumeRoundsCompleted = 0
+        }
         if ($UntilMilestoneBound -or $HasExplicitRoundBudget -or $ContinueCoverageGaps) {
             $ContinuationMaxRoundsDriverFlag = if ($ContinueCoverageGaps) { "--max-rounds" } else { "--rounds" }
             $RunContinuationRoundBudget = Resolve-CampaignAdditionalRoundBudget `
