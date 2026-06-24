@@ -12,6 +12,7 @@ pub mod card_reward_value_loop;
 pub mod combat_capture;
 pub mod combat_lab_probe_v1;
 pub mod combat_search_v2;
+pub(crate) mod decision_candidate_axis_v1;
 pub mod decision_path;
 pub(crate) mod event_auto_policy_v1;
 pub(crate) mod event_boundary_classifier_v1;

@@ -179,6 +179,7 @@ fn campaign_choice_label_prefixes_generic_event_leave_with_boundary() {
         effect_kind: "event".to_string(),
         effect_key: "leave".to_string(),
         effect_label: "[Leave] Lose 27 Gold.".to_string(),
+        candidate_axis: None,
         representative_count: 1,
         suppressed_count: 0,
         decision_signal: None,
@@ -204,6 +205,7 @@ fn campaign_choice_label_prefixes_bracketed_event_choices_with_boundary() {
         effect_kind: "event".to_string(),
         effect_key: "remove_card".to_string(),
         effect_label: "[Remove a card] Take 7 damage. Remove a card from your deck.".to_string(),
+        candidate_axis: None,
         representative_count: 1,
         suppressed_count: 0,
         decision_signal: None,
@@ -231,6 +233,7 @@ fn campaign_choice_label_omits_event_eval_from_choice_path() {
         effect_label:
             "[Pray] Upgrade a card. | event_eval tier=Risky score=-80 reasons=mutates deck identity"
                 .to_string(),
+        candidate_axis: None,
         representative_count: 1,
         suppressed_count: 0,
         decision_signal: None,
@@ -256,6 +259,7 @@ fn campaign_choice_label_compacts_shop_metadata() {
         effect_kind: "shop".to_string(),
         effect_key: "buy".to_string(),
         effect_label: "Purge Strike | 75 gold then Buy Flex Potion potion | 51 gold | total 126 gold | source=PortfolioCandidate | auto leave shop".to_string(),
+        candidate_axis: None,
         representative_count: 1,
         suppressed_count: 0,
         decision_signal: None,
@@ -283,6 +287,7 @@ fn campaign_choice_label_compacts_deck_mutation_metadata() {
         effect_label:
             "upgrade Defend | deck mutation role=SafeAlternative loss=LowValue confidence=0.66"
                 .to_string(),
+        candidate_axis: None,
         representative_count: 1,
         suppressed_count: 0,
         decision_signal: None,

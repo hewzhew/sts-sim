@@ -1719,21 +1719,46 @@ pub fn campaign_branch_from_report_branch_v1(
 fn campaign_decision_candidate_axis_from_report_branch_v1(
     branch: &BranchExperimentBranchReportV1,
 ) -> Option<String> {
-    let choice = branch
-        .choices
-        .iter()
-        .rev()
-        .find(|choice| choice.kind == "event" && !choice.effect_kind.trim().is_empty())?;
+    let choice = branch.choices.iter().rev().find(|choice| {
+        choice.candidate_axis.is_some()
+            || (choice.kind == "event" && !choice.effect_kind.trim().is_empty())
+    })?;
+    if let Some(axis) = &choice.candidate_axis {
+        if crate::eval::decision_candidate_axis_v1::shop_candidate_axis_family_v1(axis).is_some() {
+            return campaign_contiguous_shop_decision_candidate_axis_v1(branch);
+        }
+        return Some(axis.clone());
+    }
     let boundary = if choice.boundary_title.trim().is_empty() {
         branch.summary.boundary_title.as_str()
     } else {
         choice.boundary_title.as_str()
     };
-    Some(format!(
-        "event:{}:{}",
-        normalized_campaign_boundary_title(boundary),
-        choice.effect_kind.trim()
-    ))
+    crate::eval::decision_candidate_axis_v1::event_decision_candidate_axis_v1(
+        &normalized_campaign_boundary_title(boundary),
+        choice.effect_kind.trim(),
+    )
+}
+
+fn campaign_contiguous_shop_decision_candidate_axis_v1(
+    branch: &BranchExperimentBranchReportV1,
+) -> Option<String> {
+    let mut axes = Vec::new();
+    for choice in branch.choices.iter().rev() {
+        let Some(axis) = choice.candidate_axis.as_deref() else {
+            if axes.is_empty() {
+                continue;
+            }
+            break;
+        };
+        if crate::eval::decision_candidate_axis_v1::shop_candidate_axis_family_v1(axis).is_some() {
+            axes.push(axis);
+        } else if !axes.is_empty() {
+            break;
+        }
+    }
+    axes.reverse();
+    crate::eval::decision_candidate_axis_v1::compose_shop_decision_candidate_axes_v1(axes)
 }
 
 pub(super) fn campaign_child_branch_id_v1(parent_id: &str, child_id: &str) -> String {

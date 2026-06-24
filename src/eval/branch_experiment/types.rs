@@ -564,6 +564,8 @@ pub struct BranchExperimentChoiceV1 {
     pub effect_key: String,
     #[serde(default)]
     pub effect_label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidate_axis: Option<String>,
     #[serde(default)]
     pub representative_count: usize,
     #[serde(default)]

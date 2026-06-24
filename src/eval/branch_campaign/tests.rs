@@ -180,6 +180,55 @@ fn campaign_branch_from_report_prefixes_parent_branch_id() {
 }
 
 #[test]
+fn campaign_branch_from_report_preserves_explicit_decision_candidate_axis() {
+    let parent = test_campaign_branch("root", 4, 80);
+    let mut report_branch = test_report_branch(
+        "root.buy",
+        vec![("purge 0 && buy card 2", "Purge Strike then Buy Reaper")],
+        BranchExperimentBranchStatusV1::Active,
+    );
+    report_branch.choices[0].kind = "shop_buy_combo".to_string();
+    report_branch.choices[0].boundary_title = "Shop".to_string();
+    report_branch.choices[0].effect_kind = "shop_buy_combo".to_string();
+    report_branch.choices[0].candidate_axis = Some("shop:shop:purge_plus_buy_card".to_string());
+
+    let child = campaign_branch_from_report_branch_v1(&parent, &report_branch);
+
+    assert_eq!(
+        child.decision_candidate_axis.as_deref(),
+        Some("shop:shop:purge_plus_buy_card")
+    );
+}
+
+#[test]
+fn campaign_branch_from_report_combines_contiguous_shop_candidate_axes() {
+    let parent = test_campaign_branch("root", 4, 80);
+    let mut report_branch = test_report_branch(
+        "root.shop",
+        vec![
+            ("purge 5", "Purge Defend"),
+            ("buy card 2", "Buy Shrug It Off"),
+        ],
+        BranchExperimentBranchStatusV1::Active,
+    );
+    report_branch.choices[0].kind = "shop_policy_purge".to_string();
+    report_branch.choices[0].boundary_title = "Shop".to_string();
+    report_branch.choices[0].effect_kind = "shop_purge".to_string();
+    report_branch.choices[0].candidate_axis = Some("shop:shop:purge_only".to_string());
+    report_branch.choices[1].kind = "shop_buy_card".to_string();
+    report_branch.choices[1].boundary_title = "Shop".to_string();
+    report_branch.choices[1].effect_kind = "shop_buy_card".to_string();
+    report_branch.choices[1].candidate_axis = Some("shop:shop:buy_card_only".to_string());
+
+    let child = campaign_branch_from_report_branch_v1(&parent, &report_branch);
+
+    assert_eq!(
+        child.decision_candidate_axis.as_deref(),
+        Some("shop:shop:purge_plus_buy_card")
+    );
+}
+
+#[test]
 fn scheduler_schedules_distinct_boss_relic_axes_before_general_rank_fallback() {
     let mut strong_general = test_campaign_branch("strong-general", 18, 80);
     strong_general.rank_key = 99_000;
@@ -871,6 +920,7 @@ fn test_report_branch_at(
                 effect_kind: "take_card".to_string(),
                 effect_key: label.to_string(),
                 effect_label: label.to_string(),
+                candidate_axis: None,
                 representative_count: 1,
                 suppressed_count: 0,
                 decision_signal: None,

@@ -22,6 +22,7 @@ pub(crate) struct ShopBranchOption {
     pub(crate) card: Option<CardId>,
     pub(crate) effect_kind: String,
     pub(crate) effect_label: String,
+    pub(crate) candidate_axis: Option<String>,
     pub(crate) representative_count: usize,
     pub(crate) suppressed_count: usize,
     pub(crate) decision_signal: Option<BranchExperimentChoiceDecisionSignalV1>,
@@ -201,10 +202,65 @@ fn shop_branch_option_from_plan(
         card: shop_plan_card(plan),
         effect_kind: shop_plan_effect_kind(plan).to_string(),
         effect_label: shop_plan_effect_label(plan),
+        candidate_axis: shop_plan_candidate_axis_v1(plan),
         representative_count: plan.steps.len(),
         suppressed_count: plan.suppressed_count,
         decision_signal: evaluation.map(shop_decision_signal_v1),
     })
+}
+
+fn shop_plan_candidate_axis_v1(plan: &ShopPlanV1) -> Option<String> {
+    let family = shop_plan_axis_family_v1(plan);
+    crate::eval::decision_candidate_axis_v1::shop_decision_candidate_axis_v1(&family)
+}
+
+fn shop_plan_axis_family_v1(plan: &ShopPlanV1) -> String {
+    let mut parts = Vec::<&'static str>::new();
+    if plan
+        .steps
+        .iter()
+        .any(|step| matches!(step, ShopPlanStepV1::RemoveCard { .. }))
+    {
+        parts.push("purge");
+    }
+    if plan
+        .steps
+        .iter()
+        .any(|step| matches!(step, ShopPlanStepV1::BuyCard { .. }))
+    {
+        parts.push("buy_card");
+    }
+    if plan
+        .steps
+        .iter()
+        .any(|step| matches!(step, ShopPlanStepV1::BuyRelic { .. }))
+    {
+        parts.push("buy_relic");
+    }
+    if plan
+        .steps
+        .iter()
+        .any(|step| matches!(step, ShopPlanStepV1::BuyPotion { .. }))
+    {
+        parts.push("buy_potion");
+    }
+    if plan
+        .steps
+        .iter()
+        .any(|step| matches!(step, ShopPlanStepV1::LeaveShop))
+    {
+        parts.push("leave");
+    }
+
+    match parts.as_slice() {
+        [] => "stop".to_string(),
+        ["purge"] => "purge_only".to_string(),
+        ["buy_card"] => "buy_card_only".to_string(),
+        ["buy_relic"] => "buy_relic_only".to_string(),
+        ["buy_potion"] => "buy_potion_only".to_string(),
+        ["leave"] => "leave_or_save_gold".to_string(),
+        _ => parts.join("_plus_"),
+    }
 }
 
 fn shop_decision_signal_v1(
@@ -261,6 +317,49 @@ fn shop_plan_effect_kind(plan: &ShopPlanV1) -> &'static str {
         Some(ShopPlanStepV1::RemoveCard { .. }) => "shop_purge",
         Some(ShopPlanStepV1::LeaveShop) => "shop_leave",
         None => "shop_stop",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::shop_policy_v1::{ShopPlanKindV1, ShopPlanSourceV1};
+
+    fn test_shop_plan(steps: Vec<ShopPlanStepV1>) -> ShopPlanV1 {
+        ShopPlanV1 {
+            plan_id: "test".to_string(),
+            label: "test".to_string(),
+            kind: ShopPlanKindV1::Execute,
+            steps,
+            total_gold_spent: 0,
+            candidate_ids: Vec::new(),
+            source: ShopPlanSourceV1::CandidateEvidence,
+            legacy_priority: None,
+            legacy_confidence: None,
+            suppressed_count: 0,
+            reason: "test".to_string(),
+        }
+    }
+
+    #[test]
+    fn shop_candidate_axis_describes_plan_shape_without_card_value() {
+        let plan = test_shop_plan(vec![
+            ShopPlanStepV1::RemoveCard {
+                deck_index: 0,
+                card: CardId::Strike,
+                cost: 75,
+            },
+            ShopPlanStepV1::BuyCard {
+                index: 2,
+                card: CardId::Reaper,
+                cost: 80,
+            },
+        ]);
+
+        assert_eq!(
+            shop_plan_candidate_axis_v1(&plan).as_deref(),
+            Some("shop:shop:purge_plus_buy_card")
+        );
     }
 }
 
