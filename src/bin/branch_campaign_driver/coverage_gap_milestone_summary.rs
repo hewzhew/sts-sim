@@ -15,6 +15,8 @@ use super::command_inputs::InspectCommandInput;
 pub(super) enum CoverageGapMilestoneTargetV1 {
     Act1Boss,
     Act2Start,
+    Act2Boss,
+    Act3Boss,
 }
 
 impl CoverageGapMilestoneTargetV1 {
@@ -22,8 +24,10 @@ impl CoverageGapMilestoneTargetV1 {
         match value.to_ascii_lowercase().replace('-', "_").as_str() {
             "act1boss" | "act_1_boss" | "act1_boss" => Ok(Self::Act1Boss),
             "act2start" | "act_2_start" | "act2_start" => Ok(Self::Act2Start),
+            "act2boss" | "act_2_boss" | "act2_boss" => Ok(Self::Act2Boss),
+            "act3boss" | "act_3_boss" | "act3_boss" => Ok(Self::Act3Boss),
             _ => Err(format!(
-                "invalid coverage gap milestone target `{value}`; expected Act1Boss or Act2Start"
+                "invalid coverage gap milestone target `{value}`; expected Act1Boss, Act2Start, Act2Boss, or Act3Boss"
             )),
         }
     }
@@ -32,6 +36,8 @@ impl CoverageGapMilestoneTargetV1 {
         match self {
             Self::Act1Boss => "Act1Boss",
             Self::Act2Start => "Act2Start",
+            Self::Act2Boss => "Act2Boss",
+            Self::Act3Boss => "Act3Boss",
         }
     }
 
@@ -39,6 +45,8 @@ impl CoverageGapMilestoneTargetV1 {
         match self {
             Self::Act1Boss => row.act > 1 || (row.act == 1 && row.floor >= 16),
             Self::Act2Start => row.act >= 2,
+            Self::Act2Boss => row.act > 2 || (row.act == 2 && row.floor >= 33),
+            Self::Act3Boss => row.act > 3 || (row.act == 3 && row.floor >= 50),
         }
     }
 }

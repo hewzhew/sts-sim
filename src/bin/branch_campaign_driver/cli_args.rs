@@ -490,7 +490,7 @@ pub(super) struct Args {
     #[arg(
         long = "coverage-gap-milestone-target",
         default_value = "Act2Start",
-        help = "Milestone target for --inspect-coverage-gap-milestone-summary: Act1Boss or Act2Start"
+        help = "Milestone target for --inspect-coverage-gap-milestone-summary: Act1Boss, Act2Start, Act2Boss, or Act3Boss"
     )]
     pub(super) coverage_gap_milestone_target: String,
 
@@ -1178,7 +1178,7 @@ struct InspectModeArgs {
     #[arg(
         long = "coverage-gap-milestone-target",
         default_value = "Act2Start",
-        help = "Milestone target for --inspect-coverage-gap-milestone-summary: Act1Boss or Act2Start"
+        help = "Milestone target for --inspect-coverage-gap-milestone-summary: Act1Boss, Act2Start, Act2Boss, or Act3Boss"
     )]
     coverage_gap_milestone_target: String,
 

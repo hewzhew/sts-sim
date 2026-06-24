@@ -1,3 +1,49 @@
+function Test-CampaignMilestoneHit {
+    param(
+        [int] $Act,
+        [int] $Floor,
+        [string] $Milestone
+    )
+
+    switch ($Milestone) {
+        "Act1Boss" { return (($Act -gt 1) -or (($Act -eq 1) -and ($Floor -ge 16))) }
+        "Act2Start" { return ($Act -ge 2) }
+        "Act2Boss" { return (($Act -gt 2) -or (($Act -eq 2) -and ($Floor -ge 33))) }
+        "Act3Boss" { return (($Act -gt 3) -or (($Act -eq 3) -and ($Floor -ge 50))) }
+        default { return $false }
+    }
+}
+
+function Resolve-CampaignCurrentActBossMilestone {
+    param(
+        [string] $ReportPath
+    )
+
+    if (-not $ReportPath -or -not (Test-Path -LiteralPath $ReportPath)) {
+        return "Act1Boss"
+    }
+
+    $Status = Get-CampaignMilestoneStatus -ReportPath $ReportPath -Milestone "FurthestOnly"
+    switch ($Status.FurthestAct) {
+        0 { return "Act1Boss" }
+        1 { return "Act1Boss" }
+        2 { return "Act2Boss" }
+        default { return "Act3Boss" }
+    }
+}
+
+function Resolve-CampaignConcreteMilestone {
+    param(
+        [string] $Milestone,
+        [string] $ReportPath = ""
+    )
+
+    if ($Milestone -eq "CurrentActBoss") {
+        return Resolve-CampaignCurrentActBossMilestone -ReportPath $ReportPath
+    }
+    return $Milestone
+}
+
 function Get-CampaignMilestoneStatus {
     param(
         [string] $ReportPath,
@@ -53,11 +99,7 @@ function Get-CampaignMilestoneStatus {
             $FurthestAct = $Act
             $FurthestFloor = $Floor
         }
-        $Hit = switch ($Milestone) {
-            "Act1Boss" { ($Act -gt 1) -or (($Act -eq 1) -and ($Floor -ge 16)) }
-            "Act2Start" { $Act -ge 2 }
-            default { $false }
-        }
+        $Hit = Test-CampaignMilestoneHit -Act $Act -Floor $Floor -Milestone $Milestone
         if ($Hit) {
             $HitCount += 1
         }

@@ -134,10 +134,10 @@ param(
     [ValidateRange(0, 100000)]
     [int] $UntilRound = 0,
 
-    [ValidateSet("", "Act1Boss", "Act2Start")]
+    [ValidateSet("", "Act1Boss", "Act2Start", "Act2Boss", "Act3Boss", "CurrentActBoss")]
     [string] $UntilMilestone = "",
 
-    [ValidateSet("Act1Boss", "Act2Start")]
+    [ValidateSet("Act1Boss", "Act2Start", "Act2Boss", "Act3Boss")]
     [string] $CoverageGapMilestoneTarget = "Act2Start",
 
     [ValidateRange(1, 100000)]
@@ -388,7 +388,7 @@ $EntryDispatchContext = [pscustomobject]@{
         DryRun = [bool] $DryRun
         Log = [bool] $Log
         BossRelicAxes = [bool] $BossRelicAxes
-        UntilMilestone = $UntilMilestone
+        UntilMilestone = $RunRoundContext.UntilMilestone
         MilestoneStepRounds = $MilestoneStepRounds
         MilestoneMaxRounds = $MilestoneMaxRounds
     }

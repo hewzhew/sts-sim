@@ -67,7 +67,8 @@ the maintained surface and may be hidden from normal PowerShell discovery.
 .\tools\campaign.ps1 -From latest -Continue
 .\tools\campaign.ps1 -From latest -Continue -Rounds 1
 .\tools\campaign.ps1 -From latest -Continue -UntilRound 33
-.\tools\campaign.ps1 -From latest -Continue -UntilMilestone Act2Start
+.\tools\campaign.ps1 -From latest -Continue -UntilMilestone CurrentActBoss
+.\tools\campaign.ps1 -From latest -Continue -UntilMilestone Act2Boss
 ```
 
 Continuation must explicitly state its source with `-From latest` or
@@ -77,6 +78,9 @@ and can be selected with `-FromScratchLatest` or `-From scratch:<id>`. Old
 `latest.campaign.json` / `latest.checkpoint.json` sidecars must be selected
 explicitly with `-From legacy-latest`. The retired `-More` shortcut mixed
 source, output, and round budget semantics and should not be used.
+`-UntilMilestone CurrentActBoss` resolves once at command start to the concrete
+boss for the current source act, such as `Act2Boss`; it does not retarget itself
+after reaching the next act.
 
 ## Coverage-Gap Continuation
 
@@ -90,7 +94,8 @@ source, output, and round budget semantics and should not be used.
 ```
 
 Coverage-gap continuation is the preferred way to revisit unobserved journal
-candidates. Use scratch output when probing without updating latest.
+candidates. Use scratch output when probing without updating latest. Milestone
+continuation can target `Act1Boss`, `Act2Start`, `Act2Boss`, or `Act3Boss`.
 
 Older targeted continuation wrapper switches (`-PlanTargets` and
 `-ContinueTargets`) were removed from `tools/campaign.ps1`. The Rust driver

@@ -90,6 +90,10 @@ function Resolve-CampaignRunRoundContext {
             $ResolvedMilestoneStop = "first_hit"
         }
     }
+    $ConcreteUntilMilestone = $UntilMilestone
+    if ($UntilMilestoneBound) {
+        $ConcreteUntilMilestone = Resolve-CampaignConcreteMilestone -Milestone $UntilMilestone
+    }
 
     $DriverRoundBudgetArgs = @()
     $RoundBudgetSource = if ($MaxRoundsBound) { "MaxRounds" } else { "preset" }
@@ -134,6 +138,11 @@ function Resolve-CampaignRunRoundContext {
         $ResumeCampaignPath = $ResumeSource.ReportPath
         $ResumeReport = Read-CampaignJsonArtifactOrThrow -Path $ResumeCampaignPath -Role "campaign report"
         $ResumeRoundsCompleted = [int] $ResumeReport.rounds_completed
+        if ($UntilMilestoneBound) {
+            $ConcreteUntilMilestone = Resolve-CampaignConcreteMilestone `
+                -Milestone $UntilMilestone `
+                -ReportPath $ResumeCampaignPath
+        }
         if ($UntilMilestoneBound -or $HasExplicitRoundBudget -or $ContinueCoverageGaps) {
             $ContinuationMaxRoundsDriverFlag = if ($ContinueCoverageGaps) { "--max-rounds" } else { "--rounds" }
             $RunContinuationRoundBudget = Resolve-CampaignAdditionalRoundBudget `
@@ -167,7 +176,7 @@ function Resolve-CampaignRunRoundContext {
         RoundBudgetAdditionalRounds = $RoundBudgetAdditionalRounds
         HasExplicitRoundBudget = [bool] $HasExplicitRoundBudget
         UntilMilestoneBound = [bool] $UntilMilestoneBound
-        UntilMilestone = $UntilMilestone
+        UntilMilestone = $ConcreteUntilMilestone
         MilestoneStepRounds = $MilestoneStepRounds
         MilestoneMaxRounds = $MilestoneMaxRounds
         MaxRounds = $ResolvedMaxRounds

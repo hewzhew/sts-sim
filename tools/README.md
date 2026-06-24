@@ -50,7 +50,7 @@ routing.
 ```powershell
 .\tools\campaign.ps1 -Mode quick
 .\tools\campaign.ps1 -From latest -Continue -Rounds 1
-.\tools\campaign.ps1 -From latest -Continue -UntilMilestone Act2Start
+.\tools\campaign.ps1 -From latest -Continue -UntilMilestone CurrentActBoss
 .\tools\campaign.ps1 -Inspect
 ```
 
@@ -65,7 +65,9 @@ output paths. It should stay a wrapper over the Rust campaign driver; campaign
 semantics belong in Rust, not in PowerShell.
 Milestone continuation is intentionally a wrapper-level convenience loop: it
 runs small `-Rounds` chunks and checks structured report fields until a branch
-reaches `Act1Boss` or `Act2Start`, or `-MilestoneMaxRounds` is exhausted.
+reaches a requested milestone such as `Act1Boss`, `Act2Start`, `Act2Boss`, or
+`Act3Boss`, or `-MilestoneMaxRounds` is exhausted. `CurrentActBoss` resolves to
+the concrete boss milestone for the source artifact's current act.
 See `docs/CAMPAIGN_WRAPPER_USAGE.md` for the longer command cookbook.
 
 ## Primary Java Analysis Workflow
