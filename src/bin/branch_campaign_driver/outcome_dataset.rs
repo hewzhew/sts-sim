@@ -11,7 +11,7 @@ use sts_simulator::eval::branch_campaign::{
     BranchCampaignBranchV1, BranchCampaignCheckpointV1, BranchCampaignContinuationOriginV1,
     BranchCampaignContinuationTargetLaneV1, BranchCampaignReportV1,
     BranchCampaignRouteContinuationOriginV1, BranchCampaignRouteFirstEliteContinuationOriginV1,
-    BranchCampaignRoutePathContinuationOriginV1,
+    BranchCampaignRoutePathContinuationOriginV1, BranchCampaignRunResultV1,
 };
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     analyze_branch_outcome_records_v1, extract_branch_outcome_records_v1,
@@ -63,11 +63,14 @@ use super::campaign_artifacts::{
     read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
     write_campaign_report_v1,
 };
-#[cfg(test)]
-use super::command_inputs::RoundBudgetModeV1;
+use super::campaign_milestones::{
+    campaign_milestone_status_v1, render_campaign_milestone_status_v1,
+    resolve_campaign_milestone_target_v1,
+};
 use super::command_inputs::{
-    render_round_budget_resolution_v1, ContinuationCommandInput, CoverageGapBudgetIntentV1,
-    CoverageGapExecutionModeV1, DatasetCommandInput, RoundBudgetResolutionV1,
+    render_round_budget_resolution_v1, CampaignMilestoneStopV1, ContinuationCommandInput,
+    CoverageGapBudgetIntentV1, CoverageGapExecutionModeV1, DatasetCommandInput, RoundBudgetModeV1,
+    RoundBudgetResolutionV1,
 };
 
 pub(super) fn run_branch_outcome_dataset_analysis(
@@ -358,10 +361,19 @@ pub(super) fn run_coverage_gap_continuation_execution(
     let requested_round_budget = input
         .round_budget
         .resolve_for_source_rounds(source_report.rounds_completed)?;
-    let effective_round_budget = coverage_gap_effective_round_budget_v1(
-        input.coverage_gap_execution_mode,
-        requested_round_budget,
-    );
+    let effective_round_budget = if input.milestone.enabled() {
+        RoundBudgetResolutionV1 {
+            mode: RoundBudgetModeV1::UntilMilestone,
+            source_rounds: requested_round_budget.source_rounds,
+            round_budget: 0,
+            target_total_rounds: requested_round_budget.source_rounds,
+        }
+    } else {
+        coverage_gap_effective_round_budget_v1(
+            input.coverage_gap_execution_mode,
+            requested_round_budget,
+        )
+    };
     config.max_rounds = effective_round_budget.round_budget;
     let use_neow_guided_prefix =
         source_report.run_prelude.is_empty() && !config.prefix_commands.is_empty();
@@ -377,27 +389,38 @@ pub(super) fn run_coverage_gap_continuation_execution(
         source_report.run_prelude.prefix_commands.clone()
     };
 
-    let result = run_branch_campaign_from_report_with_checkpoint_v1(
+    let mut result = run_branch_campaign_from_report_with_checkpoint_v1(
         &config,
         &continuation_report,
         Some(&source_checkpoint),
     )?;
-    let result_plan = match input.coverage_gap_execution_mode {
-        CoverageGapExecutionModeV1::TargetOnly => {
-            coverage_gap_target_only_result_plan_v1(&plan, &execution)
-        }
-        CoverageGapExecutionModeV1::AdvanceRounds => {
-            let result_records =
-                extract_branch_outcome_records_v1(&result.report, Some(&result.checkpoint))?;
-            plan_coverage_gap_continuations_with_filter_and_intent_v1(
-                &result.report,
-                &result_records,
-                planning_window,
-                input.coverage_gap_candidates_per_decision,
-                &input.coverage_gap_filter,
-                coverage_gap_selection_intent_v1(input.coverage_gap_budget_intent),
-            )
-        }
+    if let Some(target) = input.milestone.target {
+        let concrete_target = resolve_campaign_milestone_target_v1(target, &result.report);
+        let stop = input.milestone.stop.resolve_for_coverage_gap();
+        result = advance_coverage_gap_result_to_milestone_v1(
+            &config,
+            result,
+            concrete_target,
+            stop,
+            input.milestone.step_rounds,
+            input.milestone.max_rounds,
+        )?;
+    }
+    let result_plan = if input.coverage_gap_execution_mode == CoverageGapExecutionModeV1::TargetOnly
+        && !input.milestone.enabled()
+    {
+        coverage_gap_target_only_result_plan_v1(&plan, &execution)
+    } else {
+        let result_records =
+            extract_branch_outcome_records_v1(&result.report, Some(&result.checkpoint))?;
+        plan_coverage_gap_continuations_with_filter_and_intent_v1(
+            &result.report,
+            &result_records,
+            planning_window,
+            input.coverage_gap_candidates_per_decision,
+            &input.coverage_gap_filter,
+            coverage_gap_selection_intent_v1(input.coverage_gap_budget_intent),
+        )
     };
     if let Some(path) = input.out.as_ref() {
         write_campaign_report_v1(path, &result.report)?;
@@ -482,6 +505,45 @@ fn render_coverage_gap_execution_mode_v1(
         requested.round_budget,
         effective.round_budget
     )
+}
+
+fn advance_coverage_gap_result_to_milestone_v1(
+    base_config: &sts_simulator::eval::branch_campaign::BranchCampaignConfigV1,
+    mut result: BranchCampaignRunResultV1,
+    target: super::command_inputs::CampaignMilestoneTargetV1,
+    stop: CampaignMilestoneStopV1,
+    step_rounds: usize,
+    max_rounds: usize,
+) -> Result<BranchCampaignRunResultV1, String> {
+    let mut spent_rounds = 0usize;
+    while spent_rounds < max_rounds {
+        let status = campaign_milestone_status_v1(&result.report, target);
+        println!(
+            "{}",
+            render_campaign_milestone_status_v1(target, stop, status, spent_rounds, max_rounds)
+        );
+        if status.reached && stop == CampaignMilestoneStopV1::FirstHit {
+            break;
+        }
+        let round_budget = step_rounds.min(max_rounds - spent_rounds);
+        if round_budget == 0 {
+            break;
+        }
+        let mut config = base_config.clone();
+        config.max_rounds = round_budget;
+        result = run_branch_campaign_from_report_with_checkpoint_v1(
+            &config,
+            &result.report,
+            Some(&result.checkpoint),
+        )?;
+        spent_rounds += round_budget;
+    }
+    let status = campaign_milestone_status_v1(&result.report, target);
+    println!(
+        "{}",
+        render_campaign_milestone_status_v1(target, stop, status, spent_rounds, max_rounds)
+    );
+    Ok(result)
 }
 
 fn coverage_gap_target_only_result_plan_v1(

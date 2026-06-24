@@ -233,11 +233,14 @@ try {
                 "source-pin=-From scratch:",
                 "coverage-gap-continue=2",
                 "execution=milestone_continuation",
-                "milestone-loop-command-template:",
-                "milestone-summary-command:",
+                "--until-milestone Act1Boss",
+                "--milestone-step-rounds 1",
+                "--milestone-max-rounds 2",
                 "\tools\artifacts\campaigns\scratch\"
             ) `
             -NotContains @(
+                "milestone-loop-command-template:",
+                "milestone-summary-command:",
                 "Choose one campaign request kind"
             )
 

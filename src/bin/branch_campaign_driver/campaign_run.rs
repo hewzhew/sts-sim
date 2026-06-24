@@ -7,8 +7,8 @@ use sts_simulator::eval::branch_campaign::{
     run_branch_campaign_from_report_with_checkpoint_and_progress_v1,
     run_branch_campaign_from_report_with_checkpoint_v1,
     run_branch_campaign_with_checkpoint_and_progress_v1, run_branch_campaign_with_checkpoint_v1,
-    BranchCampaignBranchV1, BranchCampaignCheckpointV1, BranchCampaignProgressDetailV1,
-    BranchCampaignReportV1, BranchCampaignRunResultV1,
+    BranchCampaignCheckpointV1, BranchCampaignProgressDetailV1, BranchCampaignReportV1,
+    BranchCampaignRunResultV1,
 };
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     extract_branch_outcome_records_v1, summarize_branch_outcome_records_v1,
@@ -18,9 +18,13 @@ use super::campaign_artifacts::{
     read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
     write_campaign_report_v1,
 };
+use super::campaign_milestones::{
+    campaign_milestone_status_v1, render_campaign_milestone_status_v1,
+    resolve_campaign_milestone_target_v1,
+};
 use super::command_inputs::{
-    render_round_budget_resolution_v1, CampaignMilestoneStopV1, CampaignMilestoneTargetV1,
-    RoundBudgetModeV1, RoundBudgetResolutionV1, RunCommandInput,
+    render_round_budget_resolution_v1, CampaignMilestoneStopV1, RoundBudgetModeV1,
+    RoundBudgetResolutionV1, RunCommandInput,
 };
 use super::outcome_dataset::{
     learning_dataset_export_context_v1, write_branch_outcome_dataset_jsonl_v1,
@@ -89,15 +93,14 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
             let status = campaign_milestone_status_v1(&result.report, concrete_target);
             if !input.json {
                 println!(
-                    "MilestoneStatusV1 target={} stop={} reached={} hits={} furthest=A{}F{} spent_rounds={} cap={}",
-                    concrete_target.as_str(),
-                    stop.as_str(),
-                    status.reached,
-                    status.hit_count,
-                    status.furthest_act,
-                    status.furthest_floor,
-                    spent_rounds,
-                    input.milestone.max_rounds
+                    "{}",
+                    render_campaign_milestone_status_v1(
+                        concrete_target,
+                        stop,
+                        status,
+                        spent_rounds,
+                        input.milestone.max_rounds
+                    )
                 );
             }
             if status.reached && stop == CampaignMilestoneStopV1::FirstHit {
@@ -124,15 +127,14 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
         let status = campaign_milestone_status_v1(&result.report, concrete_target);
         if !input.json {
             println!(
-                "MilestoneStatusV1 target={} stop={} reached={} hits={} furthest=A{}F{} spent_rounds={} cap={}",
-                concrete_target.as_str(),
-                stop.as_str(),
-                status.reached,
-                status.hit_count,
-                status.furthest_act,
-                status.furthest_floor,
-                spent_rounds,
-                input.milestone.max_rounds
+                "{}",
+                render_campaign_milestone_status_v1(
+                    concrete_target,
+                    stop,
+                    status,
+                    spent_rounds,
+                    input.milestone.max_rounds
+                )
             );
         }
     }
@@ -270,82 +272,5 @@ fn print_campaign_progress_event_v1(
     };
     if let Some(line) = rendered {
         println!("[{:>4}s] {line}", started_at.elapsed().as_secs());
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct CampaignMilestoneStatusV1 {
-    reached: bool,
-    furthest_act: u8,
-    furthest_floor: i32,
-    hit_count: usize,
-}
-
-fn resolve_campaign_milestone_target_v1(
-    target: CampaignMilestoneTargetV1,
-    report: &BranchCampaignReportV1,
-) -> CampaignMilestoneTargetV1 {
-    if target != CampaignMilestoneTargetV1::CurrentActBoss {
-        return target;
-    }
-    let status = campaign_milestone_status_v1(report, CampaignMilestoneTargetV1::Act3Boss);
-    match status.furthest_act {
-        0 | 1 => CampaignMilestoneTargetV1::Act1Boss,
-        2 => CampaignMilestoneTargetV1::Act2Boss,
-        _ => CampaignMilestoneTargetV1::Act3Boss,
-    }
-}
-
-fn campaign_milestone_status_v1(
-    report: &BranchCampaignReportV1,
-    target: CampaignMilestoneTargetV1,
-) -> CampaignMilestoneStatusV1 {
-    let mut status = CampaignMilestoneStatusV1 {
-        reached: false,
-        furthest_act: 0,
-        furthest_floor: 0,
-        hit_count: 0,
-    };
-    for branch in report
-        .active
-        .iter()
-        .chain(report.frozen.iter())
-        .chain(report.stuck.iter())
-        .chain(report.victories.iter())
-        .chain(report.dead.iter())
-        .chain(report.abandoned.iter())
-    {
-        update_milestone_status_from_branch_v1(&mut status, target, branch);
-    }
-    status.reached = status.hit_count > 0;
-    status
-}
-
-fn update_milestone_status_from_branch_v1(
-    status: &mut CampaignMilestoneStatusV1,
-    target: CampaignMilestoneTargetV1,
-    branch: &BranchCampaignBranchV1,
-) {
-    let Some(summary) = branch.summary.as_ref() else {
-        return;
-    };
-    if summary.act > status.furthest_act
-        || (summary.act == status.furthest_act && summary.floor > status.furthest_floor)
-    {
-        status.furthest_act = summary.act;
-        status.furthest_floor = summary.floor;
-    }
-    if campaign_milestone_hit_v1(summary.act, summary.floor, target) {
-        status.hit_count += 1;
-    }
-}
-
-fn campaign_milestone_hit_v1(act: u8, floor: i32, target: CampaignMilestoneTargetV1) -> bool {
-    match target {
-        CampaignMilestoneTargetV1::Act1Boss => act > 1 || (act == 1 && floor >= 16),
-        CampaignMilestoneTargetV1::Act2Start => act >= 2,
-        CampaignMilestoneTargetV1::Act2Boss => act > 2 || (act == 2 && floor >= 32),
-        CampaignMilestoneTargetV1::Act3Boss => act > 3 || (act == 3 && floor >= 48),
-        CampaignMilestoneTargetV1::CurrentActBoss => false,
     }
 }

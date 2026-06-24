@@ -3,6 +3,7 @@ use clap::error::ErrorKind;
 
 mod campaign_artifact_store;
 mod campaign_artifacts;
+mod campaign_milestones;
 mod campaign_run;
 mod checkpoint_evidence;
 mod checkpoint_inspection;

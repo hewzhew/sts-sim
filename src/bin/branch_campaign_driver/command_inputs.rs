@@ -121,6 +121,13 @@ impl CampaignMilestoneStopV1 {
         }
     }
 
+    pub(super) fn resolve_for_coverage_gap(self) -> Self {
+        match self {
+            Self::Auto => Self::RoundCap,
+            other => other,
+        }
+    }
+
     pub(super) fn as_str(self) -> &'static str {
         match self {
             Self::Auto => "auto",
@@ -438,6 +445,7 @@ impl DatasetCommandInput {
 pub(super) struct ContinuationCommandInput {
     pub(super) config: BranchCampaignConfigV1,
     pub(super) round_budget: RoundBudgetRequestV1,
+    pub(super) milestone: MilestoneContinuationRequestV1,
     pub(super) resume: Option<PathBuf>,
     pub(super) resume_checkpoint: Option<PathBuf>,
     pub(super) out: Option<PathBuf>,
@@ -463,6 +471,7 @@ impl ContinuationCommandInput {
         Ok(Self {
             config: campaign_config_from_args(args)?,
             round_budget: RoundBudgetRequestV1::from_args(args),
+            milestone: MilestoneContinuationRequestV1::from_args(args)?,
             resume: args.resume.clone(),
             resume_checkpoint: args.resume_checkpoint.clone(),
             out: args.out.clone(),

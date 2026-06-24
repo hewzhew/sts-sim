@@ -166,7 +166,7 @@ function Resolve-CampaignRunRoundContext {
             $ResolvedMaxRounds = $RunContinuationRoundBudget.AdditionalRounds
             $RoundBudgetAdditionalRounds = $RunContinuationRoundBudget.AdditionalRounds
             $RoundBudgetSource = $RunContinuationRoundBudget.Source
-            if ($UntilMilestoneBound -and -not $ContinueCoverageGaps) {
+            if ($UntilMilestoneBound) {
                 $DriverRoundBudgetArgs = @(
                     "--until-milestone", "$ConcreteUntilMilestone",
                     "--milestone-step-rounds", "$MilestoneStepRounds",

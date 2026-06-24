@@ -16,15 +16,6 @@ function Write-CoverageGapContinuationDryRunCommands {
     if ($ContinueCoverageGaps) {
         Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $ContinueCoverageGapArgs)
     }
-    if ($UntilMilestoneBound) {
-        Write-CampaignMilestoneLoopCommandPreview `
-            -DriverExe $DriverExe `
-            -MilestoneContext $MilestoneContext
-        if ($ContinueCoverageGaps) {
-            Write-Host "milestone-summary-command:"
-            Write-Host (Format-CommandLine -ExePath $DriverExe -Arguments $CoverageGapMilestoneSummaryArgs)
-        }
-    }
 }
 
 function Invoke-CoverageGapMilestoneSummary {
@@ -88,18 +79,7 @@ function Invoke-CoverageGapContinuationCommands {
             -RecordContext $RecordContext `
             -ManifestContext $ManifestContext) `
         -Context $RecordContext
-    if ($UntilMilestoneBound) {
-        $DriverExitCode = Invoke-CampaignUntilMilestone `
-            -MilestoneContext $MilestoneContext `
-            -AlreadySpentRounds $CoverageGapInitialSpentRounds
-        if ($DriverExitCode -eq 0) {
-            $DriverExitCode = Invoke-CoverageGapMilestoneSummary `
-                -RunOutputCampaignPath $RecordContext.RunOutputCampaignPath `
-                -DriverExe $DriverExe `
-                -CoverageGapMilestoneSummaryArgs $CoverageGapMilestoneSummaryArgs
-        }
-    }
-    $ManifestStage = if ($UntilMilestoneBound) { "completed_with_milestone_loop" } else { "completed" }
+    $ManifestStage = if ($UntilMilestoneBound) { "completed_with_rust_milestone" } else { "completed" }
     Write-CampaignWrapperManifest `
         -Path $RecordContext.RunManifestPath `
         -Manifest (New-CoverageGapWrapperManifest `
