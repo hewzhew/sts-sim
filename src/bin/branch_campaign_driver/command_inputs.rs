@@ -17,7 +17,8 @@ use sts_simulator::eval::run_control::{
 
 use super::cli_args::{
     Args, ArtifactActionV1, ArtifactCommandArgs, ArtifactKindArgV1, ArtifactSubcommandV1,
-    BranchCampaignCombatRetryArgV1, CampaignCoveragePlanCommandArgs, InspectEvidenceDetailArg,
+    BranchCampaignCombatRetryArgV1, CampaignCoveragePlanCommandArgs, DatasetCommandArgs,
+    InspectEvidenceDetailArg,
 };
 
 #[derive(Clone, Debug)]
@@ -482,6 +483,20 @@ pub(super) struct DatasetCommandInput {
 }
 
 impl DatasetCommandInput {
+    pub(super) fn from_dataset_args(args: DatasetCommandArgs) -> Self {
+        let paths = args.paths;
+        Self {
+            inspect_checkpoint: paths.inspect_checkpoint,
+            inspect_report: paths.inspect_report,
+            export_outcome_dataset: paths.export_outcome_dataset,
+            analyze_outcome_dataset: paths.analyze_outcome_dataset,
+            analyze_decision_outcome_dataset: paths.analyze_decision_outcome_dataset,
+            probe_learning_readiness: paths.probe_learning_readiness,
+            export_learning_dataset: paths.export_learning_dataset,
+            export_decision_outcome_dataset: paths.export_decision_outcome_dataset,
+        }
+    }
+
     pub(super) fn from_args(args: &Args) -> Self {
         Self {
             inspect_checkpoint: args.inspect_checkpoint.clone(),

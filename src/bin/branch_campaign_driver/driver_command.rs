@@ -1,3 +1,5 @@
+#[cfg(test)]
+use super::cli_args::DatasetCommandArgs;
 use super::cli_args::{Args, BranchCampaignCliInputV1, BranchCampaignExplicitCommandV1};
 use super::command_inputs::{
     ArtifactCommandInput, ContinuationCommandInput, CoverageGapExecutionCommandInput,
@@ -70,10 +72,37 @@ pub(super) fn driver_request_from_cli_input(
                 CoverageGapPlanCommandInput::from_coverage_plan_args(args)?,
             ))
         }
+        BranchCampaignCliInputV1::CampaignDataset(args) => Ok(dataset_request_from_input(
+            DatasetCommandInput::from_dataset_args(args),
+        )),
         BranchCampaignCliInputV1::Explicit { command, args } => {
             explicit_driver_request_from_args(command, &args)
         }
         BranchCampaignCliInputV1::Legacy(args) => legacy_driver_request_from_args(&args),
+    }
+}
+
+fn dataset_request_from_input(input: DatasetCommandInput) -> BranchCampaignDriverRequestV1 {
+    match dataset_command_from_input(&input) {
+        BranchCampaignDriverCommandV1::AnalyzeOutcomeDataset => {
+            BranchCampaignDriverRequestV1::AnalyzeOutcomeDataset(input)
+        }
+        BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset => {
+            BranchCampaignDriverRequestV1::AnalyzeDecisionOutcomeDataset(input)
+        }
+        BranchCampaignDriverCommandV1::ProbeLearningReadiness => {
+            BranchCampaignDriverRequestV1::ProbeLearningReadiness(input)
+        }
+        BranchCampaignDriverCommandV1::ExportOutcomeDataset => {
+            BranchCampaignDriverRequestV1::ExportOutcomeDataset(input)
+        }
+        BranchCampaignDriverCommandV1::ExportLearningDataset => {
+            BranchCampaignDriverRequestV1::ExportLearningDataset(input)
+        }
+        BranchCampaignDriverCommandV1::ExportDecisionOutcomeDataset => {
+            BranchCampaignDriverRequestV1::ExportDecisionOutcomeDataset(input)
+        }
+        _ => BranchCampaignDriverRequestV1::AnalyzeDecisionOutcomeDataset(input),
     }
 }
 
@@ -237,6 +266,9 @@ pub(super) fn driver_command_from_cli_input(
     if matches!(input, BranchCampaignCliInputV1::CampaignCoveragePlan(_)) {
         return BranchCampaignDriverCommandV1::PlanCoverageGapContinuation;
     }
+    if let BranchCampaignCliInputV1::CampaignDataset(args) = input {
+        return dataset_command_from_dataset_args(args);
+    }
     if let Some(explicit) = input.explicit_command() {
         return explicit_driver_command_from_args(explicit, input.args());
     }
@@ -374,6 +406,44 @@ fn dataset_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
     } else if args.export_learning_dataset.is_some() {
         BranchCampaignDriverCommandV1::ExportLearningDataset
     } else if args.export_decision_outcome_dataset.is_some() {
+        BranchCampaignDriverCommandV1::ExportDecisionOutcomeDataset
+    } else {
+        BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset
+    }
+}
+
+#[cfg(test)]
+fn dataset_command_from_dataset_args(args: &DatasetCommandArgs) -> BranchCampaignDriverCommandV1 {
+    let paths = &args.paths;
+    if paths.analyze_outcome_dataset.is_some() {
+        BranchCampaignDriverCommandV1::AnalyzeOutcomeDataset
+    } else if paths.analyze_decision_outcome_dataset.is_some() {
+        BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset
+    } else if paths.probe_learning_readiness.is_some() {
+        BranchCampaignDriverCommandV1::ProbeLearningReadiness
+    } else if paths.export_outcome_dataset.is_some() {
+        BranchCampaignDriverCommandV1::ExportOutcomeDataset
+    } else if paths.export_learning_dataset.is_some() {
+        BranchCampaignDriverCommandV1::ExportLearningDataset
+    } else if paths.export_decision_outcome_dataset.is_some() {
+        BranchCampaignDriverCommandV1::ExportDecisionOutcomeDataset
+    } else {
+        BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset
+    }
+}
+
+fn dataset_command_from_input(input: &DatasetCommandInput) -> BranchCampaignDriverCommandV1 {
+    if input.analyze_outcome_dataset.is_some() {
+        BranchCampaignDriverCommandV1::AnalyzeOutcomeDataset
+    } else if input.analyze_decision_outcome_dataset.is_some() {
+        BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset
+    } else if input.probe_learning_readiness.is_some() {
+        BranchCampaignDriverCommandV1::ProbeLearningReadiness
+    } else if input.export_outcome_dataset.is_some() {
+        BranchCampaignDriverCommandV1::ExportOutcomeDataset
+    } else if input.export_learning_dataset.is_some() {
+        BranchCampaignDriverCommandV1::ExportLearningDataset
+    } else if input.export_decision_outcome_dataset.is_some() {
         BranchCampaignDriverCommandV1::ExportDecisionOutcomeDataset
     } else {
         BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset

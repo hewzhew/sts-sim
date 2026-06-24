@@ -829,6 +829,7 @@ pub(super) enum BranchCampaignCliInputV1 {
     },
     CampaignArtifact(ArtifactCommandArgs),
     CampaignCoveragePlan(CampaignCoveragePlanCommandArgs),
+    CampaignDataset(DatasetCommandArgs),
 }
 
 impl BranchCampaignCliInputV1 {
@@ -841,6 +842,9 @@ impl BranchCampaignCliInputV1 {
                 panic!("campaign namespace direct requests do not expose legacy Args")
             }
             Self::CampaignCoveragePlan(_) => {
+                panic!("campaign namespace direct requests do not expose legacy Args")
+            }
+            Self::CampaignDataset(_) => {
                 panic!("campaign namespace direct requests do not expose legacy Args")
             }
         }
@@ -859,6 +863,7 @@ impl BranchCampaignCliInputV1 {
                 .into_args_and_command()
                 .0
             }
+            Self::CampaignDataset(args) => args.into_args(),
         }
     }
 
@@ -871,6 +876,7 @@ impl BranchCampaignCliInputV1 {
             Self::CampaignCoveragePlan(_) => {
                 Some(BranchCampaignExplicitCommandV1::PlanCoverageGapContinuation)
             }
+            Self::CampaignDataset(_) => Some(BranchCampaignExplicitCommandV1::Dataset),
         }
     }
 }
@@ -917,9 +923,9 @@ struct InspectCommandArgs {
 }
 
 #[derive(Debug, ClapArgs)]
-struct DatasetCommandArgs {
+pub(super) struct DatasetCommandArgs {
     #[command(flatten)]
-    paths: DatasetPathArgs,
+    pub(super) paths: DatasetPathArgs,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -1630,62 +1636,62 @@ struct InspectDisplayArgs {
 }
 
 #[derive(Debug, ClapArgs)]
-struct DatasetPathArgs {
+pub(super) struct DatasetPathArgs {
     #[arg(
         long = "inspect-checkpoint",
         value_name = "PATH",
         help = "Optional BranchCampaignCheckpointV2 sidecar for dataset exports"
     )]
-    inspect_checkpoint: Option<PathBuf>,
+    pub(super) inspect_checkpoint: Option<PathBuf>,
 
     #[arg(
         long = "inspect-report",
         value_name = "PATH",
         help = "BranchCampaignV1 report used by dataset exports"
     )]
-    inspect_report: Option<PathBuf>,
+    pub(super) inspect_report: Option<PathBuf>,
 
     #[arg(
         long = "export-outcome-dataset",
         value_name = "PATH",
         help = "Write BranchOutcomeRecordV1 JSONL from a campaign report and optional checkpoint sidecar"
     )]
-    export_outcome_dataset: Option<PathBuf>,
+    pub(super) export_outcome_dataset: Option<PathBuf>,
 
     #[arg(
         long = "analyze-outcome-dataset",
         value_name = "PATH",
         help = "Print structural issue counts from a BranchOutcomeRecordV1 JSONL file"
     )]
-    analyze_outcome_dataset: Option<PathBuf>,
+    pub(super) analyze_outcome_dataset: Option<PathBuf>,
 
     #[arg(
         long = "analyze-decision-outcome-dataset",
         value_name = "PATH",
         help = "Print sibling decision group coverage and outcome divergence from a LearningDecisionOutcomeSampleV1 JSONL file"
     )]
-    analyze_decision_outcome_dataset: Option<PathBuf>,
+    pub(super) analyze_decision_outcome_dataset: Option<PathBuf>,
 
     #[arg(
         long = "probe-learning-readiness",
         value_name = "PATH",
         help = "Diagnose whether a LearningDecisionOutcomeSampleV1 JSONL is blocked by censoring, scheduling, combat budget, missing context, or missing siblings"
     )]
-    probe_learning_readiness: Option<PathBuf>,
+    pub(super) probe_learning_readiness: Option<PathBuf>,
 
     #[arg(
         long = "export-learning-dataset",
         value_name = "PATH",
         help = "Write LearningBranchSampleV1 JSONL from a campaign report/run without treating choices as teacher labels"
     )]
-    export_learning_dataset: Option<PathBuf>,
+    pub(super) export_learning_dataset: Option<PathBuf>,
 
     #[arg(
         long = "export-decision-outcome-dataset",
         value_name = "PATH",
         help = "Write LearningDecisionOutcomeSampleV1 JSONL with observed sibling candidates and later outcomes"
     )]
-    export_decision_outcome_dataset: Option<PathBuf>,
+    pub(super) export_decision_outcome_dataset: Option<PathBuf>,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -2022,6 +2028,9 @@ impl CampaignCommandArgs {
                 Ok(BranchCampaignCliInputV1::CampaignArtifact(args))
             }
             CampaignSubcommandV1::Coverage(args) => args.into_cli_input(matches),
+            CampaignSubcommandV1::Export(args) => {
+                Ok(BranchCampaignCliInputV1::CampaignDataset(args))
+            }
             command => {
                 let (args, explicit_command) =
                     (CampaignCommandArgs { command }).into_args_and_command();
