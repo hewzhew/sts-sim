@@ -8,6 +8,7 @@ pub(super) enum BranchCampaignDriverCommandV1 {
     ProbeLearningReadiness,
     PlanTargetedContinuation,
     ExecuteTargetedContinuation,
+    ResolveCampaignArtifact,
     PlanCoverageGapContinuation,
     ExecuteCoverageGapContinuation,
     ContinuationEffectReport,
@@ -51,6 +52,9 @@ fn explicit_driver_command_from_args(
         BranchCampaignExplicitCommandV1::Inspect => inspect_command_from_args(args),
         BranchCampaignExplicitCommandV1::Dataset => dataset_command_from_args(args),
         BranchCampaignExplicitCommandV1::Continue => continuation_command_from_args(args),
+        BranchCampaignExplicitCommandV1::Artifact => {
+            BranchCampaignDriverCommandV1::ResolveCampaignArtifact
+        }
         BranchCampaignExplicitCommandV1::SelfCheck => {
             BranchCampaignDriverCommandV1::SelfCheckAncestorReplay
         }

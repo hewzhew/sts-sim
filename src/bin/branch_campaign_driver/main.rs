@@ -1,6 +1,7 @@
 #[cfg(test)]
 use clap::error::ErrorKind;
 
+mod campaign_artifact_store;
 mod campaign_artifacts;
 mod campaign_run;
 mod checkpoint_evidence;
@@ -18,6 +19,7 @@ mod journal_inspection;
 mod outcome_dataset;
 mod shop_challenge;
 
+use campaign_artifact_store::{render_campaign_artifact_ref_v1, CampaignArtifactStoreV1};
 use campaign_run::{run_ancestor_replay_self_check, run_campaign_command};
 use checkpoint_inspection::{run_checkpoint_inspection, run_final_boss_combat_report_inspection};
 #[cfg(test)]
@@ -26,13 +28,14 @@ use cli_args::{
     QUICK_PRESET_MAX_ACTIVE, QUICK_PRESET_MAX_ROUNDS, QUICK_PRESET_ROUND_DEPTH,
     QUICK_PRESET_SEARCH_MAX_NODES, QUICK_PRESET_SEARCH_WALL_MS,
 };
-use cli_args::{parse_cli, BranchCampaignCliInputV1};
+use cli_args::{parse_cli, ArtifactKindArgV1, BranchCampaignCliInputV1};
 #[cfg(test)]
 use command_inputs::{
     campaign_config_from_args, round_budget_for_source_from_args, RoundBudgetModeV1,
 };
 use command_inputs::{
-    ContinuationCommandInput, DatasetCommandInput, InspectCommandInput, RunCommandInput,
+    ArtifactCommandInput, ContinuationCommandInput, DatasetCommandInput, InspectCommandInput,
+    RunCommandInput,
 };
 use coverage_gap_milestone_summary::{
     resolve_coverage_gap_target_group_checkpoint_index_from_input_v1,
@@ -83,6 +86,9 @@ fn run(cli_input: BranchCampaignCliInputV1) -> Result<(), String> {
         BranchCampaignDriverCommandV1::ExecuteTargetedContinuation => {
             run_targeted_continuation_execution(&ContinuationCommandInput::from_args(args)?)
         }
+        BranchCampaignDriverCommandV1::ResolveCampaignArtifact => {
+            run_artifact_command(ArtifactCommandInput::from_args(args)?)
+        }
         BranchCampaignDriverCommandV1::PlanCoverageGapContinuation => {
             run_coverage_gap_continuation_plan(&DatasetCommandInput::from_args(args))
         }
@@ -132,6 +138,60 @@ fn run(cli_input: BranchCampaignCliInputV1) -> Result<(), String> {
         }
         BranchCampaignDriverCommandV1::RunCampaign => {
             run_campaign_command(&RunCommandInput::from_args(args)?)
+        }
+    }
+}
+
+fn run_artifact_command(input: ArtifactCommandInput) -> Result<(), String> {
+    match input {
+        ArtifactCommandInput::Resolve {
+            campaign_dir,
+            selector,
+            json,
+        } => {
+            let store = CampaignArtifactStoreV1::new(campaign_dir);
+            let artifact = store.resolve_source_selector_v1(&selector)?;
+            println!("{}", render_campaign_artifact_ref_v1(&artifact, json)?);
+            Ok(())
+        }
+        ArtifactCommandInput::Allocate {
+            campaign_dir,
+            kind,
+            label,
+            stamp,
+            suffix,
+            json,
+        } => {
+            let store = CampaignArtifactStoreV1::new(campaign_dir);
+            let artifact = match kind {
+                ArtifactKindArgV1::Run => store.run_output_ref_v1(&label, &stamp, &suffix),
+                ArtifactKindArgV1::Scratch => store.scratch_output_ref_v1(&label, &stamp, &suffix),
+            };
+            println!("{}", render_campaign_artifact_ref_v1(&artifact, json)?);
+            Ok(())
+        }
+        ArtifactCommandInput::WriteLatest {
+            campaign_dir,
+            kind,
+            artifact_id,
+            updated_at,
+            json,
+        } => {
+            let store = CampaignArtifactStoreV1::new(campaign_dir);
+            let artifact = match kind {
+                ArtifactKindArgV1::Run => {
+                    let artifact = store.run_artifact_ref_v1(&artifact_id);
+                    store.write_latest_pointer_v1(&artifact, &updated_at)?;
+                    artifact
+                }
+                ArtifactKindArgV1::Scratch => {
+                    let artifact = store.scratch_artifact_ref_v1(&artifact_id);
+                    store.write_scratch_latest_pointer_v1(&artifact, &updated_at)?;
+                    artifact
+                }
+            };
+            println!("{}", render_campaign_artifact_ref_v1(&artifact, json)?);
+            Ok(())
         }
     }
 }

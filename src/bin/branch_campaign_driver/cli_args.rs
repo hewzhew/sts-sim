@@ -87,12 +87,26 @@ pub(super) enum InspectEvidenceDetailArg {
     Full,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(super) enum ArtifactKindArgV1 {
+    Run,
+    Scratch,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ArtifactActionV1 {
+    Resolve,
+    Allocate,
+    WriteLatest,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BranchCampaignExplicitCommandV1 {
     Run,
     Inspect,
     Dataset,
     Continue,
+    Artifact,
     SelfCheck,
 }
 
@@ -138,6 +152,36 @@ pub(super) enum BranchCampaignCombatRetryArgV1 {
 pub(super) struct Args {
     #[arg(skip)]
     pub(crate) explicit_command: Option<BranchCampaignExplicitCommandV1>,
+
+    #[arg(skip)]
+    pub(super) artifact_selector: Option<String>,
+
+    #[arg(skip)]
+    pub(super) artifact_campaign_dir: Option<PathBuf>,
+
+    #[arg(skip)]
+    pub(super) artifact_json: bool,
+
+    #[arg(skip)]
+    pub(super) artifact_action: Option<ArtifactActionV1>,
+
+    #[arg(skip)]
+    pub(super) artifact_kind: Option<ArtifactKindArgV1>,
+
+    #[arg(skip)]
+    pub(super) artifact_label: Option<String>,
+
+    #[arg(skip)]
+    pub(super) artifact_stamp: Option<String>,
+
+    #[arg(skip)]
+    pub(super) artifact_suffix: Option<String>,
+
+    #[arg(skip)]
+    pub(super) artifact_id: Option<String>,
+
+    #[arg(skip)]
+    pub(super) artifact_updated_at: Option<String>,
 
     #[arg(long, value_enum)]
     pub(super) preset: Option<BranchCampaignPresetV1>,
@@ -696,6 +740,8 @@ enum BranchCampaignCliCommandV1 {
     Dataset(DatasetCommandArgs),
     #[command(about = "Plan, execute, or compare targeted sibling continuations")]
     Continue(ContinueCommandArgs),
+    #[command(about = "Resolve campaign artifact selectors and paths")]
+    Artifact(ArtifactCommandArgs),
     #[command(
         name = "self-check",
         about = "Run internal campaign driver self-checks"
@@ -805,6 +851,88 @@ struct ContinueCommandArgs {
 
     #[command(flatten)]
     continuation: ContinuationArgs,
+}
+
+#[derive(Debug, ClapArgs)]
+struct ArtifactCommandArgs {
+    #[command(subcommand)]
+    command: ArtifactSubcommandV1,
+}
+
+#[derive(Debug, Subcommand)]
+enum ArtifactSubcommandV1 {
+    #[command(about = "Resolve latest, scratch-latest, run:<id>, scratch:<id>, or path:<report>")]
+    Resolve(ArtifactResolveCommandArgs),
+    #[command(about = "Allocate deterministic run/scratch artifact output paths")]
+    Allocate(ArtifactAllocateCommandArgs),
+    #[command(about = "Write latest or scratch-latest pointer for an artifact id")]
+    WriteLatest(ArtifactWriteLatestCommandArgs),
+}
+
+#[derive(Debug, ClapArgs)]
+struct ArtifactResolveCommandArgs {
+    #[arg(value_name = "SELECTOR")]
+    selector: String,
+
+    #[arg(
+        long = "campaign-dir",
+        value_name = "PATH",
+        default_value = "tools/artifacts/campaigns",
+        help = "Campaign artifact root that contains latest.json, runs/, and scratch/"
+    )]
+    campaign_dir: PathBuf,
+
+    #[arg(long, help = "Print resolved artifact paths as JSON")]
+    json: bool,
+}
+
+#[derive(Debug, ClapArgs)]
+struct ArtifactAllocateCommandArgs {
+    #[arg(long, value_enum, default_value_t = ArtifactKindArgV1::Run)]
+    kind: ArtifactKindArgV1,
+
+    #[arg(long, value_name = "TEXT")]
+    label: String,
+
+    #[arg(long, value_name = "YYYYMMDD-HHMMSS")]
+    stamp: String,
+
+    #[arg(long, value_name = "TEXT")]
+    suffix: String,
+
+    #[arg(
+        long = "campaign-dir",
+        value_name = "PATH",
+        default_value = "tools/artifacts/campaigns",
+        help = "Campaign artifact root that contains latest.json, runs/, and scratch/"
+    )]
+    campaign_dir: PathBuf,
+
+    #[arg(long, help = "Print allocated artifact paths as JSON")]
+    json: bool,
+}
+
+#[derive(Debug, ClapArgs)]
+struct ArtifactWriteLatestCommandArgs {
+    #[arg(long, value_enum, default_value_t = ArtifactKindArgV1::Run)]
+    kind: ArtifactKindArgV1,
+
+    #[arg(value_name = "ARTIFACT_ID")]
+    artifact_id: String,
+
+    #[arg(long = "updated-at", value_name = "TIMESTAMP")]
+    updated_at: String,
+
+    #[arg(
+        long = "campaign-dir",
+        value_name = "PATH",
+        default_value = "tools/artifacts/campaigns",
+        help = "Campaign artifact root that contains latest.json, runs/, and scratch/"
+    )]
+    campaign_dir: PathBuf,
+
+    #[arg(long, help = "Print written artifact paths as JSON")]
+    json: bool,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -1503,6 +1631,16 @@ impl Args {
     fn compat_defaults() -> Self {
         Self {
             explicit_command: None,
+            artifact_selector: None,
+            artifact_campaign_dir: None,
+            artifact_json: false,
+            artifact_action: None,
+            artifact_kind: None,
+            artifact_label: None,
+            artifact_stamp: None,
+            artifact_suffix: None,
+            artifact_id: None,
+            artifact_updated_at: None,
             preset: None,
             seed: 1,
             ascension: 0,
@@ -1645,6 +1783,38 @@ impl ContinueCommandArgs {
         self.prefix.apply_to(&mut args);
         self.output.apply_to(&mut args);
         self.continuation.apply_to(&mut args);
+        args
+    }
+}
+
+impl ArtifactCommandArgs {
+    fn into_args(self) -> Args {
+        let mut args = Args::compat_defaults();
+        match self.command {
+            ArtifactSubcommandV1::Resolve(resolve) => {
+                args.artifact_action = Some(ArtifactActionV1::Resolve);
+                args.artifact_selector = Some(resolve.selector);
+                args.artifact_campaign_dir = Some(resolve.campaign_dir);
+                args.artifact_json = resolve.json;
+            }
+            ArtifactSubcommandV1::Allocate(allocate) => {
+                args.artifact_action = Some(ArtifactActionV1::Allocate);
+                args.artifact_kind = Some(allocate.kind);
+                args.artifact_label = Some(allocate.label);
+                args.artifact_stamp = Some(allocate.stamp);
+                args.artifact_suffix = Some(allocate.suffix);
+                args.artifact_campaign_dir = Some(allocate.campaign_dir);
+                args.artifact_json = allocate.json;
+            }
+            ArtifactSubcommandV1::WriteLatest(write_latest) => {
+                args.artifact_action = Some(ArtifactActionV1::WriteLatest);
+                args.artifact_kind = Some(write_latest.kind);
+                args.artifact_id = Some(write_latest.artifact_id);
+                args.artifact_updated_at = Some(write_latest.updated_at);
+                args.artifact_campaign_dir = Some(write_latest.campaign_dir);
+                args.artifact_json = write_latest.json;
+            }
+        }
         args
     }
 }
@@ -2009,6 +2179,10 @@ where
         Some(BranchCampaignCliCommandV1::Continue(args)) => (
             args.into_args(),
             Some(BranchCampaignExplicitCommandV1::Continue),
+        ),
+        Some(BranchCampaignCliCommandV1::Artifact(args)) => (
+            args.into_args(),
+            Some(BranchCampaignExplicitCommandV1::Artifact),
         ),
         Some(BranchCampaignCliCommandV1::SelfCheck(args)) => (
             args.into_args(),

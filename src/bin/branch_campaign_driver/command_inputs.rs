@@ -15,7 +15,10 @@ use sts_simulator::eval::run_control::{
     RunControlHpLossLimit, RunControlSearchCombatOptions,
 };
 
-use super::cli_args::{Args, BranchCampaignCombatRetryArgV1, InspectEvidenceDetailArg};
+use super::cli_args::{
+    Args, ArtifactActionV1, ArtifactKindArgV1, BranchCampaignCombatRetryArgV1,
+    InspectEvidenceDetailArg,
+};
 
 #[derive(Clone, Debug)]
 pub(super) struct RunCommandInput {
@@ -54,6 +57,90 @@ impl RunCommandInput {
             report_detail: BranchCampaignReportDetailV1::from(args.report_detail),
         })
     }
+}
+
+#[derive(Clone, Debug)]
+pub(super) enum ArtifactCommandInput {
+    Resolve {
+        campaign_dir: PathBuf,
+        selector: String,
+        json: bool,
+    },
+    Allocate {
+        campaign_dir: PathBuf,
+        kind: ArtifactKindArgV1,
+        label: String,
+        stamp: String,
+        suffix: String,
+        json: bool,
+    },
+    WriteLatest {
+        campaign_dir: PathBuf,
+        kind: ArtifactKindArgV1,
+        artifact_id: String,
+        updated_at: String,
+        json: bool,
+    },
+}
+
+impl ArtifactCommandInput {
+    pub(super) fn from_args(args: &Args) -> Result<Self, String> {
+        let campaign_dir = args
+            .artifact_campaign_dir
+            .clone()
+            .unwrap_or_else(default_campaign_artifact_dir_v1);
+        match args
+            .artifact_action
+            .ok_or_else(|| "artifact command requires an action".to_string())?
+        {
+            ArtifactActionV1::Resolve => Ok(Self::Resolve {
+                campaign_dir,
+                selector: args
+                    .artifact_selector
+                    .clone()
+                    .ok_or_else(|| "artifact resolve requires a selector".to_string())?,
+                json: args.artifact_json,
+            }),
+            ArtifactActionV1::Allocate => Ok(Self::Allocate {
+                campaign_dir,
+                kind: args
+                    .artifact_kind
+                    .ok_or_else(|| "artifact allocate requires a kind".to_string())?,
+                label: args
+                    .artifact_label
+                    .clone()
+                    .ok_or_else(|| "artifact allocate requires a label".to_string())?,
+                stamp: args
+                    .artifact_stamp
+                    .clone()
+                    .ok_or_else(|| "artifact allocate requires a stamp".to_string())?,
+                suffix: args
+                    .artifact_suffix
+                    .clone()
+                    .ok_or_else(|| "artifact allocate requires a suffix".to_string())?,
+                json: args.artifact_json,
+            }),
+            ArtifactActionV1::WriteLatest => Ok(Self::WriteLatest {
+                campaign_dir,
+                kind: args
+                    .artifact_kind
+                    .ok_or_else(|| "artifact write-latest requires a kind".to_string())?,
+                artifact_id: args
+                    .artifact_id
+                    .clone()
+                    .ok_or_else(|| "artifact write-latest requires an artifact id".to_string())?,
+                updated_at: args
+                    .artifact_updated_at
+                    .clone()
+                    .ok_or_else(|| "artifact write-latest requires --updated-at".to_string())?,
+                json: args.artifact_json,
+            }),
+        }
+    }
+}
+
+fn default_campaign_artifact_dir_v1() -> PathBuf {
+    PathBuf::from("tools").join("artifacts").join("campaigns")
 }
 
 #[derive(Clone, Debug)]
