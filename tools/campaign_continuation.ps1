@@ -23,6 +23,7 @@ function New-CampaignContinuationEntryContext {
         [object] $RunOutputContext,
         [object] $BoundParameterContext,
         [object] $CampaignSourceArtifact,
+        [object] $CampaignSourceProgress,
         [bool] $FromScratchLatest,
         [string] $CoverageGapExecution,
         [string] $CoverageGapIntent,
@@ -56,6 +57,7 @@ function New-CampaignContinuationEntryContext {
         WrapperBoundParameters = $BoundParameterContext.WrapperBoundParameters
         FromScratchLatest = $FromScratchLatest
         CampaignSourceArtifact = $CampaignSourceArtifact
+        CampaignSourceProgress = $CampaignSourceProgress
         RunOutputCampaignPath = $RunOutputContext.CampaignPath
         RunOutputCheckpointPath = $RunOutputContext.CheckpointPath
         RunRoundContext = $RunRoundContext
@@ -106,12 +108,11 @@ function Resolve-CampaignContinuationSourceContext {
         throw "No previous campaign checkpoint found at $($Source.CheckpointPath). Run .\tools\campaign.ps1 first."
     }
 
-    $Report = Read-CampaignJsonArtifactOrThrow -Path $Source.ReportPath -Role "campaign report"
     return [pscustomobject]@{
         Label = $Source.Label
         CampaignPath = $Source.ReportPath
         CheckpointPath = $Source.CheckpointPath
-        RoundsCompleted = [int] $Report.rounds_completed
+        RoundsCompleted = if ($Context.CampaignSourceProgress -and $Context.CampaignSourceProgress.RoundsCompleted -ne $null) { [int] $Context.CampaignSourceProgress.RoundsCompleted } else { 0 }
     }
 }
 

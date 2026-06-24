@@ -426,6 +426,7 @@ $EntryDispatchContext = [pscustomobject]@{
     Ascension = $Ascension
     Class = $Class
     CampaignSourceArtifact = $CampaignSourceArtifact
+    CampaignSourceProgress = $CampaignSourceProgress
     BuildContext = $BuildContext
     NeedsBuild = [bool] $NeedsBuild
     BoundParameterContext = $BoundParameterContext
