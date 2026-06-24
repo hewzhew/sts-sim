@@ -8,8 +8,8 @@ function Test-CampaignMilestoneHit {
     switch ($Milestone) {
         "Act1Boss" { return (($Act -gt 1) -or (($Act -eq 1) -and ($Floor -ge 16))) }
         "Act2Start" { return ($Act -ge 2) }
-        "Act2Boss" { return (($Act -gt 2) -or (($Act -eq 2) -and ($Floor -ge 33))) }
-        "Act3Boss" { return (($Act -gt 3) -or (($Act -eq 3) -and ($Floor -ge 50))) }
+        "Act2Boss" { return (($Act -gt 2) -or (($Act -eq 2) -and ($Floor -ge 32))) }
+        "Act3Boss" { return (($Act -gt 3) -or (($Act -eq 3) -and ($Floor -ge 48))) }
         default { return $false }
     }
 }

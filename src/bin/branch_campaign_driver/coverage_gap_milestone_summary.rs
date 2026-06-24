@@ -45,8 +45,8 @@ impl CoverageGapMilestoneTargetV1 {
         match self {
             Self::Act1Boss => row.act > 1 || (row.act == 1 && row.floor >= 16),
             Self::Act2Start => row.act >= 2,
-            Self::Act2Boss => row.act > 2 || (row.act == 2 && row.floor >= 33),
-            Self::Act3Boss => row.act > 3 || (row.act == 3 && row.floor >= 50),
+            Self::Act2Boss => row.act > 2 || (row.act == 2 && row.floor >= 32),
+            Self::Act3Boss => row.act > 3 || (row.act == 3 && row.floor >= 48),
         }
     }
 }
