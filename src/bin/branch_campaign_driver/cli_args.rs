@@ -1,8 +1,10 @@
 use clap::error::ErrorKind;
 use clap::parser::ValueSource;
 use clap::{
-    ArgMatches, Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum,
+    ArgMatches, Args as ClapArgs, Command, CommandFactory, FromArgMatches, Parser, Subcommand,
+    ValueEnum,
 };
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use sts_simulator::eval::branch_campaign::{
@@ -764,9 +766,6 @@ impl Args {
 struct CliRootV1 {
     #[command(subcommand)]
     command: Option<BranchCampaignCliCommandV1>,
-
-    #[command(flatten)]
-    legacy_args: Args,
 }
 
 #[derive(Debug, Subcommand)]
@@ -775,17 +774,24 @@ enum BranchCampaignCliCommandV1 {
         about = "Rust-owned campaign application namespace: run, continue, coverage, inspect, artifacts, export"
     )]
     Campaign(CampaignCommandArgs),
-    #[command(about = "Run or resume a branch campaign")]
+    #[command(hide = true, about = "Run or resume a branch campaign")]
     Run(RunCommandArgs),
-    #[command(about = "Inspect campaign checkpoints and report artifacts")]
+    #[command(
+        hide = true,
+        about = "Inspect campaign checkpoints and report artifacts"
+    )]
     Inspect(InspectCommandArgs),
-    #[command(about = "Export or analyze campaign outcome datasets")]
+    #[command(hide = true, about = "Export or analyze campaign outcome datasets")]
     Dataset(DatasetCommandArgs),
-    #[command(about = "Plan, execute, or compare targeted sibling continuations")]
+    #[command(
+        hide = true,
+        about = "Plan, execute, or compare targeted sibling continuations"
+    )]
     Continue(ContinueCommandArgs),
-    #[command(about = "Resolve campaign artifact selectors and paths")]
+    #[command(hide = true, about = "Resolve campaign artifact selectors and paths")]
     Artifact(ArtifactCommandArgs),
     #[command(
+        hide = true,
         name = "self-check",
         about = "Run internal campaign driver self-checks"
     )]
@@ -2682,11 +2688,18 @@ pub(super) fn parse_cli() -> BranchCampaignCliInputV1 {
 pub(super) fn parse_cli_from<I, T>(itr: I) -> Result<BranchCampaignCliInputV1, clap::Error>
 where
     I: IntoIterator<Item = T>,
-    T: Into<std::ffi::OsString> + Clone,
+    T: Into<OsString> + Clone,
 {
-    let matches = CliRootV1::command().try_get_matches_from(itr)?;
+    let argv = itr.into_iter().map(Into::into).collect::<Vec<OsString>>();
+    let matches = match CliRootV1::command().try_get_matches_from(argv.clone()) {
+        Ok(matches) => matches,
+        Err(err) if should_fallback_to_legacy_root_args(&err) => {
+            return parse_legacy_cli_from(argv);
+        }
+        Err(err) => return Err(err),
+    };
     let cli = CliRootV1::from_arg_matches(&matches)?;
-    let (mut args, explicit_command) = match cli.command {
+    let (args, explicit_command) = match cli.command {
         Some(BranchCampaignCliCommandV1::Campaign(args)) => {
             let (args, command) = args.into_args_and_command();
             (args, Some(command))
@@ -2714,8 +2727,27 @@ where
             args.into_args(),
             Some(BranchCampaignExplicitCommandV1::SelfCheck),
         ),
-        None => (cli.legacy_args, None),
+        None => return parse_legacy_cli_from(argv),
     };
+    normalize_cli_args_from_matches(args, explicit_command, &matches)
+}
+
+fn parse_legacy_cli_from(argv: Vec<OsString>) -> Result<BranchCampaignCliInputV1, clap::Error> {
+    let legacy_command = <Args as ClapArgs>::augment_args(Command::new("branch_campaign_driver"));
+    let matches = legacy_command.try_get_matches_from(argv)?;
+    let args = Args::from_arg_matches(&matches)?;
+    normalize_cli_args_from_matches(args, None, &matches)
+}
+
+fn should_fallback_to_legacy_root_args(err: &clap::Error) -> bool {
+    matches!(err.kind(), ErrorKind::UnknownArgument)
+}
+
+fn normalize_cli_args_from_matches(
+    mut args: Args,
+    explicit_command: Option<BranchCampaignExplicitCommandV1>,
+    matches: &ArgMatches,
+) -> Result<BranchCampaignCliInputV1, clap::Error> {
     args.explicit_command = explicit_command;
     if let Some(domain) = args.ascension_domain {
         let domain_ascension = domain.ascension_level();
