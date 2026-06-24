@@ -115,6 +115,21 @@ Use git history for archaeology.
 | `src/eval` | run-control, benchmark artifacts, diagnostics, reports |
 | `src/bin` | maintained command entrypoints |
 
+## Editing Hygiene
+
+The repository stores source, docs, and PowerShell scripts with LF line endings.
+After mechanical edits on Windows, check that a small source change did not
+become a whole-file CRLF rewrite:
+
+```powershell
+git diff --stat
+git diff --ignore-space-at-eol --stat
+git ls-files --eol $(git diff --name-only)
+```
+
+Prefer `apply_patch` for source edits. If a one-off PowerShell migration must
+rewrite files, write UTF-8 without BOM and normalize text to LF before saving.
+
 ## Verification
 
 For core code changes:
