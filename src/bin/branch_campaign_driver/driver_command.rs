@@ -60,7 +60,57 @@ pub(super) fn driver_request_from_cli_input(
     input: &BranchCampaignCliInputV1,
 ) -> Result<BranchCampaignDriverRequestV1, String> {
     let args = input.args();
-    Ok(match driver_command_from_cli_input(input) {
+    if let Some(explicit) = input.explicit_command() {
+        return explicit_driver_request_from_args(explicit, args);
+    }
+    legacy_driver_request_from_args(args)
+}
+
+fn explicit_driver_request_from_args(
+    explicit: BranchCampaignExplicitCommandV1,
+    args: &Args,
+) -> Result<BranchCampaignDriverRequestV1, String> {
+    match explicit {
+        BranchCampaignExplicitCommandV1::Run => {
+            driver_request_for_command(BranchCampaignDriverCommandV1::RunCampaign, args)
+        }
+        BranchCampaignExplicitCommandV1::Inspect => {
+            driver_request_for_command(inspect_command_from_args(args), args)
+        }
+        BranchCampaignExplicitCommandV1::Dataset => {
+            driver_request_for_command(dataset_command_from_args(args), args)
+        }
+        BranchCampaignExplicitCommandV1::Continue => {
+            driver_request_for_command(continuation_command_from_args(args), args)
+        }
+        BranchCampaignExplicitCommandV1::PlanCoverageGapContinuation => driver_request_for_command(
+            BranchCampaignDriverCommandV1::PlanCoverageGapContinuation,
+            args,
+        ),
+        BranchCampaignExplicitCommandV1::ExecuteCoverageGapContinuation => {
+            driver_request_for_command(
+                BranchCampaignDriverCommandV1::ExecuteCoverageGapContinuation,
+                args,
+            )
+        }
+        BranchCampaignExplicitCommandV1::Artifact => {
+            driver_request_for_command(BranchCampaignDriverCommandV1::ResolveCampaignArtifact, args)
+        }
+        BranchCampaignExplicitCommandV1::SelfCheck => {
+            driver_request_for_command(BranchCampaignDriverCommandV1::SelfCheckAncestorReplay, args)
+        }
+    }
+}
+
+fn legacy_driver_request_from_args(args: &Args) -> Result<BranchCampaignDriverRequestV1, String> {
+    driver_request_for_command(legacy_command_from_args(args), args)
+}
+
+fn driver_request_for_command(
+    command: BranchCampaignDriverCommandV1,
+    args: &Args,
+) -> Result<BranchCampaignDriverRequestV1, String> {
+    Ok(match command {
         BranchCampaignDriverCommandV1::SelfCheckAncestorReplay => {
             BranchCampaignDriverRequestV1::SelfCheckAncestorReplay
         }
@@ -166,6 +216,7 @@ pub(super) fn driver_request_from_cli_input(
     })
 }
 
+#[cfg(test)]
 pub(super) fn driver_command_from_cli_input(
     input: &BranchCampaignCliInputV1,
 ) -> BranchCampaignDriverCommandV1 {
@@ -183,6 +234,7 @@ pub(super) fn driver_command_from_args(args: &Args) -> BranchCampaignDriverComma
     legacy_command_from_args(args)
 }
 
+#[cfg(test)]
 fn explicit_driver_command_from_args(
     explicit: BranchCampaignExplicitCommandV1,
     args: &Args,
