@@ -9,8 +9,9 @@ use crate::ai::deck_mutation_compiler_v1::{
     DeckMutationPlanCandidateV1, DeckMutationTargetClassV1,
 };
 use crate::ai::event_policy_v1::{
-    build_event_decision_context_v1, plan_event_decision_v1, EventCandidateTierV1,
-    EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
+    build_event_decision_context_v1, classify_event_decision_shape_v1, plan_event_decision_v1,
+    EventCandidateTierV1, EventDecisionShapeV1, EventPolicyActionV1, EventPolicyClassV1,
+    EventPolicyConfigV1,
 };
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::{
@@ -85,6 +86,7 @@ pub(crate) fn event_branch_selection(
         return None;
     }
     let event_id = session.run_state.event_state.as_ref()?.id;
+    let event_shape = classify_event_decision_shape_v1(&event_options);
     let event_policy_context =
         build_event_decision_context_v1(&session.run_state, event_id, event_options.clone());
     let surface = build_decision_surface(session);
@@ -188,6 +190,18 @@ pub(crate) fn event_branch_selection(
         return None;
     }
     let candidate_pool_options = branch_options.clone();
+    if let Some(policy_options) =
+        repeatable_paid_menu_policy_branch_options(event_id, &event_shape, &branch_options)
+    {
+        return Some(event_branch_selection_from_options(
+            event_id,
+            candidate_pool_options,
+            policy_options,
+        ));
+    }
+    if matches!(event_shape, EventDecisionShapeV1::RepeatablePaidMenu(_)) {
+        return None;
+    }
     sort_all_direct_deck_mutation_options(&mut branch_options);
     sort_event_options_by_policy(&mut branch_options);
     prune_avoidable_event_options_when_alternatives_exist(&mut branch_options);
@@ -222,6 +236,30 @@ pub(crate) fn event_branch_selection(
         candidate_pool_options,
         branch_options,
     ))
+}
+
+fn repeatable_paid_menu_policy_branch_options(
+    event_id: EventId,
+    event_shape: &EventDecisionShapeV1,
+    options: &[EventBranchOption],
+) -> Option<Vec<EventBranchOption>> {
+    let EventDecisionShapeV1::RepeatablePaidMenu(menu) = event_shape else {
+        return None;
+    };
+    match event_id {
+        EventId::KnowingSkull => {
+            let mut option = options
+                .iter()
+                .find(|option| option.event_index == Some(menu.exit_index))
+                .cloned()?;
+            option.effect_label = format!(
+                "{} | repeatable paid menu policy=leave exit_hp_cost={}",
+                option.effect_label, menu.exit_cost_hp
+            );
+            Some(vec![option])
+        }
+        _ => None,
+    }
 }
 
 fn open_selection_deck_mutation_option_count(
