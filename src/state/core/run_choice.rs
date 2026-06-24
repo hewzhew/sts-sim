@@ -1,7 +1,8 @@
 use crate::content::cards::{CardId, CardType};
 use crate::state::core::EngineState;
 use crate::state::selection::{
-    SelectionConstraint, SelectionReason, SelectionRequest, SelectionScope, SelectionTargetRef,
+    DomainEventSource, SelectionConstraint, SelectionReason, SelectionRequest, SelectionScope,
+    SelectionTargetRef,
 };
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +25,8 @@ pub struct RunPendingChoiceState {
     pub min_choices: usize,
     pub max_choices: usize,
     pub reason: RunPendingChoiceReason,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<DomainEventSource>,
     pub return_state: Box<EngineState>,
 }
 

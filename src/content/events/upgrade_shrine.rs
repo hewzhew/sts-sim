@@ -1,9 +1,10 @@
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{
-    EventActionKind, EventChoiceMeta, EventEffect, EventOption, EventOptionConstraint,
+    EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionConstraint,
     EventOptionSemantics, EventOptionTransition, EventSelectionKind, EventState,
 };
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 fn has_upgradable_cards(run_state: &RunState) -> bool {
     run_state
@@ -81,6 +82,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         run_state.event_state = Some(event_state);
                         *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
                             reason: RunPendingChoiceReason::Upgrade,
+                            source: Some(DomainEventSource::Event(EventId::UpgradeShrine)),
                             min_choices: 1,
                             max_choices: 1,
                             return_state: Box::new(EngineState::EventRoom),

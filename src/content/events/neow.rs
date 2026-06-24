@@ -614,6 +614,9 @@ fn apply_reward(
                 min_choices: 1,
                 max_choices: 1,
                 reason: RunPendingChoiceReason::Purge,
+                source: Some(DomainEventSource::Event(
+                    crate::state::events::EventId::Neow,
+                )),
                 return_state: Box::new(EngineState::EventRoom),
             });
         }
@@ -622,6 +625,9 @@ fn apply_reward(
                 min_choices: 2,
                 max_choices: 2,
                 reason: RunPendingChoiceReason::Purge,
+                source: Some(DomainEventSource::Event(
+                    crate::state::events::EventId::Neow,
+                )),
                 return_state: Box::new(EngineState::EventRoom),
             });
         }
@@ -630,6 +636,9 @@ fn apply_reward(
                 min_choices: 1,
                 max_choices: 1,
                 reason: RunPendingChoiceReason::Upgrade,
+                source: Some(DomainEventSource::Event(
+                    crate::state::events::EventId::Neow,
+                )),
                 return_state: Box::new(EngineState::EventRoom),
             });
         }
@@ -643,6 +652,9 @@ fn apply_reward(
                 min_choices: count,
                 max_choices: count,
                 reason: RunPendingChoiceReason::Transform,
+                source: Some(DomainEventSource::Event(
+                    crate::state::events::EventId::Neow,
+                )),
                 return_state: Box::new(EngineState::EventRoom),
             });
         }

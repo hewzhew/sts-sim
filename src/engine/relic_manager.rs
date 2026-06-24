@@ -19,6 +19,20 @@ fn bottle_on_equip(
             min_choices: 1,
             max_choices: 1,
             reason,
+            source: Some(crate::state::selection::DomainEventSource::Relic(
+                match reason {
+                    crate::state::core::RunPendingChoiceReason::BottleFlame => {
+                        crate::content::relics::RelicId::BottledFlame
+                    }
+                    crate::state::core::RunPendingChoiceReason::BottleLightning => {
+                        crate::content::relics::RelicId::BottledLightning
+                    }
+                    crate::state::core::RunPendingChoiceReason::BottleTornado => {
+                        crate::content::relics::RelicId::BottledTornado
+                    }
+                    _ => return None,
+                },
+            )),
             return_state: Box::new(return_state),
         },
     ))

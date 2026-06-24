@@ -381,6 +381,7 @@ fn choice(reason: RunPendingChoiceReason, count: usize) -> RunPendingChoiceState
         min_choices: count,
         max_choices: count,
         reason,
+        source: None,
         return_state: Box::new(EngineState::MapNavigation),
     }
 }

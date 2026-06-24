@@ -1,10 +1,11 @@
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{
-    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventOption,
+    EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
     EventOptionConstraint, EventOptionSemantics, EventOptionTransition, EventSelectionKind,
     EventState,
 };
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 /// Returns the choices for the Living Wall event: [Forget, Change, Grow]
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
@@ -144,6 +145,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 reason,
                 min_choices: 1,
                 max_choices: 1,
+                source: Some(DomainEventSource::Event(EventId::LivingWall)),
                 return_state: Box::new(EngineState::EventRoom),
             });
         } else {

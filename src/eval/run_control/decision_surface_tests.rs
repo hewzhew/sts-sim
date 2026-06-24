@@ -580,6 +580,7 @@ fn run_pending_choice_session() -> RunControlSession {
         min_choices: 1,
         max_choices: 1,
         reason: RunPendingChoiceReason::Upgrade,
+        source: None,
         return_state: Box::new(EngineState::Campfire),
     });
     session

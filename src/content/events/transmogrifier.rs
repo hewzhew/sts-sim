@@ -1,9 +1,10 @@
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
 use crate::state::events::{
-    EventActionKind, EventChoiceMeta, EventEffect, EventOption, EventOptionConstraint,
+    EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionConstraint,
     EventOptionSemantics, EventOptionTransition, EventSelectionKind, EventState,
 };
 use crate::state::run::RunState;
+use crate::state::selection::DomainEventSource;
 
 pub fn get_options(_run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     if event_state.current_screen == 1 {
@@ -59,6 +60,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     run_state.event_state = Some(event_state);
                     *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
                         reason: RunPendingChoiceReason::TransformNonBottled,
+                        source: Some(DomainEventSource::Event(EventId::Transmorgrifier)),
                         min_choices: 1,
                         max_choices: 1,
                         return_state: Box::new(EngineState::EventRoom),

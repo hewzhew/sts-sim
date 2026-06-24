@@ -23,6 +23,7 @@ fn stable_run_pending_choice_keeps_return_state_payloads_distinct() {
             min_choices: 1,
             max_choices: 1,
             reason: crate::state::core::RunPendingChoiceReason::Purge,
+            source: None,
             return_state: Box::new(EngineState::RewardScreen(reward_a)),
         }),
         &baseline,
@@ -32,6 +33,7 @@ fn stable_run_pending_choice_keeps_return_state_payloads_distinct() {
             min_choices: 1,
             max_choices: 1,
             reason: crate::state::core::RunPendingChoiceReason::Purge,
+            source: None,
             return_state: Box::new(EngineState::RewardScreen(reward_b)),
         }),
         &baseline,
@@ -163,6 +165,7 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         min_choices: 1,
         max_choices: 1,
         reason: crate::state::core::RunPendingChoiceReason::Purge,
+        source: None,
         return_state: Box::new(EngineState::RewardScreen(
             crate::state::rewards::RewardState {
                 screen_context: crate::state::rewards::RewardScreenContext::Standard,
@@ -183,6 +186,7 @@ fn stable_postcombat_keys_normalize_display_only_order() {
         min_choices: 1,
         max_choices: 1,
         reason: crate::state::core::RunPendingChoiceReason::Purge,
+        source: None,
         return_state: Box::new(EngineState::RewardScreen(
             crate::state::rewards::RewardState {
                 screen_context: crate::state::rewards::RewardScreenContext::Standard,

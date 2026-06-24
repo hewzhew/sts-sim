@@ -665,7 +665,14 @@ fn finish_event_combat(
         } else {
             RewardScreenContext::Standard
         };
-        if !matches!(rewards.screen_context, RewardScreenContext::SmokedCombat) {
+        if matches!(rewards.screen_context, RewardScreenContext::SmokedCombat) {
+            let mut hidden_items = std::mem::take(&mut rewards.items);
+            hidden_items.append(&mut combat_state.runtime.pending_rewards);
+            crate::state::rewards::generator::add_potion_reward_like_java(
+                run_state,
+                &mut hidden_items,
+            );
+        } else {
             rewards
                 .items
                 .append(&mut combat_state.runtime.pending_rewards);
@@ -673,22 +680,13 @@ fn finish_event_combat(
                 run_state,
                 &mut rewards.items,
             );
-        }
-        if !event_context.no_cards_in_rewards
-            && !matches!(rewards.screen_context, RewardScreenContext::SmokedCombat)
-        {
-            rewards.items.extend(
-                crate::state::rewards::generator::generate_card_reward_items(
-                    run_state, false, false, false,
-                ),
-            );
-        } else {
-            let mut hidden_items = std::mem::take(&mut rewards.items);
-            hidden_items.append(&mut combat_state.runtime.pending_rewards);
-            crate::state::rewards::generator::add_potion_reward_like_java(
-                run_state,
-                &mut hidden_items,
-            );
+            if !event_context.no_cards_in_rewards {
+                rewards.items.extend(
+                    crate::state::rewards::generator::generate_card_reward_items(
+                        run_state, false, false, false,
+                    ),
+                );
+            }
         }
         *engine_state = EngineState::RewardScreen(rewards);
     } else {
@@ -837,7 +835,9 @@ pub fn tick_run_active_with_observer(
                     seen_indices.push(idx);
                 }
 
-                let source = run_selection_source(run_state, rpc_state.reason.clone());
+                let source = rpc_state
+                    .source
+                    .unwrap_or_else(|| run_selection_source(run_state, rpc_state.reason));
                 let selection_reason: SelectionReason = rpc_state.reason.clone().into();
                 let selected_refs = indices
                     .iter()
@@ -1002,6 +1002,9 @@ pub fn tick_run_active_with_observer(
                     }
                 }
             } else if let Some(ClientInput::Cancel) = input {
+                if !rpc_state.selection_request(run_state).can_cancel {
+                    return RunTickOutcome::without_finished(true);
+                }
                 // Return to stashed state without mutating deck
                 *engine_state = *rpc_state.return_state.clone();
                 if run_state.complete_pending_boss_act_transition() {
@@ -1689,6 +1692,149 @@ mod tests {
             1,
             "event combat keeps pre-populated event gold without adding standard monster gold"
         );
+    }
+
+    #[test]
+    fn event_combat_no_cards_keeps_event_rewards_and_potion_but_skips_card_reward() {
+        use crate::content::monsters::EnemyId;
+
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::WhiteBeastStatue));
+
+        let mut event_rewards = RewardState::new();
+        event_rewards.items.push(RewardItem::Gold { amount: 100 });
+        let mut engine_state = EngineState::CombatProcessing;
+        let event_context = EventCombatContext {
+            rewards: event_rewards,
+            reward_allowed: true,
+            no_cards_in_rewards: true,
+            elite_trigger: false,
+            post_combat_return: PostCombatReturn::MapNavigation,
+        };
+
+        let mut combat = crate::test_support::blank_test_combat();
+        combat
+            .entities
+            .player
+            .add_relic(RelicState::new(RelicId::WhiteBeastStatue));
+        let mut monster = crate::test_support::test_monster(EnemyId::JawWorm);
+        monster.current_hp = 0;
+        monster.is_dying = true;
+        combat.entities.monsters.push(monster);
+        let mut active_combat = Some(ActiveCombat::new(
+            EngineState::CombatProcessing,
+            combat,
+            CombatContext::Event(event_context),
+        ));
+
+        assert!(tick_run_active(
+            &mut engine_state,
+            &mut run_state,
+            &mut active_combat,
+            Some(ClientInput::EndTurn),
+        ));
+
+        let EngineState::RewardScreen(rewards) = engine_state else {
+            panic!("event combat should open a reward screen");
+        };
+        assert!(
+            rewards
+                .items
+                .iter()
+                .any(|item| matches!(item, RewardItem::Gold { amount: 100 })),
+            "no-card event combat should keep pre-populated event rewards"
+        );
+        assert!(
+            rewards
+                .items
+                .iter()
+                .any(|item| matches!(item, RewardItem::Potion { .. })),
+            "no-card event combat should still add potion rewards"
+        );
+        assert!(
+            rewards
+                .items
+                .iter()
+                .all(|item| !matches!(item, RewardItem::Card { .. })),
+            "no-card event combat should not generate card rewards"
+        );
+    }
+
+    #[test]
+    fn relic_pending_choice_keeps_relic_source_while_event_state_is_present() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.event_state = Some(crate::state::events::EventState::new(
+            crate::state::events::EventId::Neow,
+        ));
+        let _ = run_state.take_emitted_events();
+
+        let Some(mut engine_state) =
+            crate::content::relics::dollys_mirror::on_equip(&mut run_state, EngineState::EventRoom)
+        else {
+            panic!("Dolly's Mirror should request a deck duplicate target");
+        };
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::SubmitDeckSelect(vec![0])),
+        ));
+
+        let events = run_state.take_emitted_events();
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                DomainEvent::SelectionResolved {
+                    reason: SelectionReason::Duplicate,
+                    source: DomainEventSource::Relic(RelicId::DollysMirror),
+                    ..
+                }
+            )),
+            "Dolly's Mirror target selection should be attributed to the relic, not the current event: {events:?}"
+        );
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                DomainEvent::CardObtained {
+                    source: DomainEventSource::Relic(RelicId::DollysMirror),
+                    ..
+                }
+            )),
+            "Dolly's Mirror copied card should be attributed to the relic: {events:?}"
+        );
+    }
+
+    #[test]
+    fn mandatory_run_pending_choice_cannot_be_cancelled() {
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        let original_deck_len = run_state.master_deck.len();
+        let mut engine_state =
+            EngineState::RunPendingChoice(crate::state::core::RunPendingChoiceState {
+                min_choices: 1,
+                max_choices: 1,
+                reason: crate::state::core::RunPendingChoiceReason::Purge,
+                source: Some(DomainEventSource::Relic(RelicId::EmptyCage)),
+                return_state: Box::new(EngineState::MapNavigation),
+            });
+        let mut combat_state = None;
+
+        assert!(tick_run(
+            &mut engine_state,
+            &mut run_state,
+            &mut combat_state,
+            Some(ClientInput::Cancel),
+        ));
+
+        assert!(
+            matches!(engine_state, EngineState::RunPendingChoice(_)),
+            "mandatory run pending choices should ignore cancel, got {engine_state:?}"
+        );
+        assert_eq!(run_state.master_deck.len(), original_deck_len);
     }
 
     #[test]

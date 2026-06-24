@@ -24,6 +24,7 @@ use crate::state::events::{
     EventActionKind, EventCardKind, EventEffect, EventId, EventOption, EventOptionConstraint,
     EventOptionSemantics, EventOptionTransition, EventRelicKind, EventSelectionKind,
 };
+use crate::state::selection::DomainEventSource;
 
 const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 4;
 const MAX_OPEN_SELECTION_DECK_MUTATION_OPTIONS_PER_EVENT: usize = 3;
@@ -267,6 +268,7 @@ fn open_selection_deck_mutation_choice(
         reason,
         min_choices: count,
         max_choices: count,
+        source: Some(DomainEventSource::Event(event_id)),
         return_state: Box::new(EngineState::EventRoom),
     })
 }
