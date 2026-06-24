@@ -38,13 +38,11 @@ use cli_args::{
     QUICK_PRESET_SEARCH_MAX_NODES, QUICK_PRESET_SEARCH_WALL_MS,
 };
 use cli_args::{parse_cli, ArtifactKindArgV1, BranchCampaignCliInputV1};
+use command_inputs::ArtifactCommandInput;
 #[cfg(test)]
 use command_inputs::{
-    campaign_config_from_args, round_budget_for_source_from_args, RoundBudgetModeV1,
-};
-use command_inputs::{
-    ArtifactCommandInput, ContinuationCommandInput, DatasetCommandInput, InspectCommandInput,
-    RunCommandInput,
+    campaign_config_from_args, round_budget_for_source_from_args, DatasetCommandInput,
+    InspectCommandInput, RoundBudgetModeV1,
 };
 use coverage_gap_milestone_summary::{
     resolve_coverage_gap_target_group_checkpoint_index_from_input_v1,
@@ -52,8 +50,10 @@ use coverage_gap_milestone_summary::{
 };
 use decision_observations::run_decision_observation_inspection;
 #[cfg(test)]
-use driver_command::driver_command_from_args;
-use driver_command::{driver_command_from_cli_input, BranchCampaignDriverCommandV1};
+use driver_command::{
+    driver_command_from_args, driver_command_from_cli_input, BranchCampaignDriverCommandV1,
+};
+use driver_command::{driver_request_from_cli_input, BranchCampaignDriverRequestV1};
 use journal_inspection::{
     run_campaign_journal_inspection, run_campaign_lineage_decision_inspection,
 };
@@ -78,77 +78,73 @@ fn main() {
 }
 
 fn run(cli_input: BranchCampaignCliInputV1) -> Result<(), String> {
-    let args = cli_input.args();
-    match driver_command_from_cli_input(&cli_input) {
-        BranchCampaignDriverCommandV1::SelfCheckAncestorReplay => run_ancestor_replay_self_check(),
-        BranchCampaignDriverCommandV1::AnalyzeOutcomeDataset => {
-            run_branch_outcome_dataset_analysis(&DatasetCommandInput::from_args(args))
+    match driver_request_from_cli_input(&cli_input)? {
+        BranchCampaignDriverRequestV1::SelfCheckAncestorReplay => run_ancestor_replay_self_check(),
+        BranchCampaignDriverRequestV1::AnalyzeOutcomeDataset(input) => {
+            run_branch_outcome_dataset_analysis(&input)
         }
-        BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset => {
-            run_decision_outcome_dataset_analysis(&DatasetCommandInput::from_args(args))
+        BranchCampaignDriverRequestV1::AnalyzeDecisionOutcomeDataset(input) => {
+            run_decision_outcome_dataset_analysis(&input)
         }
-        BranchCampaignDriverCommandV1::ProbeLearningReadiness => {
-            run_learning_readiness_probe(&DatasetCommandInput::from_args(args))
+        BranchCampaignDriverRequestV1::ProbeLearningReadiness(input) => {
+            run_learning_readiness_probe(&input)
         }
-        BranchCampaignDriverCommandV1::PlanTargetedContinuation => {
-            run_targeted_continuation_plan(&ContinuationCommandInput::from_args(args)?)
+        BranchCampaignDriverRequestV1::PlanTargetedContinuation(input) => {
+            run_targeted_continuation_plan(&input)
         }
-        BranchCampaignDriverCommandV1::ExecuteTargetedContinuation => {
-            run_targeted_continuation_execution(&ContinuationCommandInput::from_args(args)?)
+        BranchCampaignDriverRequestV1::ExecuteTargetedContinuation(input) => {
+            run_targeted_continuation_execution(&input)
         }
-        BranchCampaignDriverCommandV1::ResolveCampaignArtifact => {
-            run_artifact_command(ArtifactCommandInput::from_args(args)?)
+        BranchCampaignDriverRequestV1::ResolveCampaignArtifact(input) => {
+            run_artifact_command(input)
         }
-        BranchCampaignDriverCommandV1::PlanCoverageGapContinuation => {
-            run_coverage_gap_continuation_plan(&DatasetCommandInput::from_args(args))
+        BranchCampaignDriverRequestV1::PlanCoverageGapContinuation(input) => {
+            run_coverage_gap_continuation_plan(&input)
         }
-        BranchCampaignDriverCommandV1::ExecuteCoverageGapContinuation => {
-            run_coverage_gap_continuation_execution(&ContinuationCommandInput::from_args(args)?)
+        BranchCampaignDriverRequestV1::ExecuteCoverageGapContinuation(input) => {
+            run_coverage_gap_continuation_execution(&input)
         }
-        BranchCampaignDriverCommandV1::ContinuationEffectReport => {
-            run_continuation_effect_report(&ContinuationCommandInput::from_args(args)?)
+        BranchCampaignDriverRequestV1::ContinuationEffectReport(input) => {
+            run_continuation_effect_report(&input)
         }
-        BranchCampaignDriverCommandV1::ExportOutcomeDataset => {
-            run_branch_outcome_dataset_export(&DatasetCommandInput::from_args(args))
+        BranchCampaignDriverRequestV1::ExportOutcomeDataset(input) => {
+            run_branch_outcome_dataset_export(&input)
         }
-        BranchCampaignDriverCommandV1::ExportLearningDataset => {
-            run_learning_dataset_export(&DatasetCommandInput::from_args(args))
+        BranchCampaignDriverRequestV1::ExportLearningDataset(input) => {
+            run_learning_dataset_export(&input)
         }
-        BranchCampaignDriverCommandV1::ExportDecisionOutcomeDataset => {
-            run_decision_outcome_dataset_export(&DatasetCommandInput::from_args(args))
+        BranchCampaignDriverRequestV1::ExportDecisionOutcomeDataset(input) => {
+            run_decision_outcome_dataset_export(&input)
         }
-        BranchCampaignDriverCommandV1::InspectFinalBossCombat => {
-            run_final_boss_combat_report_inspection(&InspectCommandInput::from_args(args)?)
+        BranchCampaignDriverRequestV1::InspectFinalBossCombat(input) => {
+            run_final_boss_combat_report_inspection(&input)
         }
-        BranchCampaignDriverCommandV1::InspectJournal => {
-            run_campaign_journal_inspection(&InspectCommandInput::from_args(args)?)
+        BranchCampaignDriverRequestV1::InspectJournal(input) => {
+            run_campaign_journal_inspection(&input)
         }
-        BranchCampaignDriverCommandV1::InspectLineageDecisions => {
-            run_campaign_lineage_decision_inspection(&InspectCommandInput::from_args(args)?)
+        BranchCampaignDriverRequestV1::InspectLineageDecisions(input) => {
+            run_campaign_lineage_decision_inspection(&input)
         }
-        BranchCampaignDriverCommandV1::InspectDecisionCoverage => {
-            run_decision_candidate_coverage_inspection(&DatasetCommandInput::from_args(args))
+        BranchCampaignDriverRequestV1::InspectDecisionCoverage(input) => {
+            run_decision_candidate_coverage_inspection(&input)
         }
-        BranchCampaignDriverCommandV1::InspectCoverageGapMilestoneSummary => {
-            run_coverage_gap_milestone_summary_inspection(&InspectCommandInput::from_args(args)?)
+        BranchCampaignDriverRequestV1::InspectCoverageGapMilestoneSummary(input) => {
+            run_coverage_gap_milestone_summary_inspection(&input)
         }
-        BranchCampaignDriverCommandV1::InspectCoverageGapTargetState => {
-            let mut input = InspectCommandInput::from_args(args)?;
+        BranchCampaignDriverRequestV1::InspectCoverageGapTargetState(mut input) => {
             let checkpoint_index =
                 resolve_coverage_gap_target_group_checkpoint_index_from_input_v1(&input)?;
             input.filters.index = Some(checkpoint_index);
             input.summary = false;
             run_checkpoint_inspection(&input)
         }
-        BranchCampaignDriverCommandV1::InspectDecisionObservations => {
-            run_decision_observation_inspection(&InspectCommandInput::from_args(args)?)
+        BranchCampaignDriverRequestV1::InspectDecisionObservations(input) => {
+            run_decision_observation_inspection(&input)
         }
-        BranchCampaignDriverCommandV1::InspectCheckpoint => {
-            run_checkpoint_inspection(&InspectCommandInput::from_args(args)?)
+        BranchCampaignDriverRequestV1::InspectCheckpoint(input) => {
+            run_checkpoint_inspection(&input)
         }
-        BranchCampaignDriverCommandV1::RunCampaign => {
-            run_campaign_command(&RunCommandInput::from_args(args)?)
-        }
+        BranchCampaignDriverRequestV1::RunCampaign(input) => run_campaign_command(&input),
     }
 }
 
