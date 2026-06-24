@@ -1,4 +1,8 @@
 use sts_simulator::eval::branch_campaign::{BranchCampaignBranchV1, BranchCampaignReportV1};
+use sts_simulator::eval::campaign_journal::{
+    CampaignJournalCandidateV1, CampaignJournalEventPayloadV1,
+};
+use sts_simulator::eval::decision_path::DecisionPathEnvelopeV1;
 use sts_simulator::eval::run_control::CombatAutomationTrajectoryRecordV1;
 
 pub(super) fn render_final_boss_combat_report_inspection_v1(
@@ -144,6 +148,11 @@ fn render_final_boss_comparison_lines_v1(
         {
             lines.push(format!("       deck: {deck_key}"));
         }
+        if let Some(divergence) =
+            render_final_boss_branch_divergence_v1(report, selected_branch, branch)
+        {
+            lines.push(format!("       divergence: {divergence}"));
+        }
         if !branch.choice_labels.is_empty() {
             lines.push(format!(
                 "       choices: {}",
@@ -152,6 +161,84 @@ fn render_final_boss_comparison_lines_v1(
         }
     }
     lines
+}
+
+fn render_final_boss_branch_divergence_v1(
+    report: &BranchCampaignReportV1,
+    victory: &BranchCampaignBranchV1,
+    failure: &BranchCampaignBranchV1,
+) -> Option<String> {
+    let common_prefix = common_command_prefix_len_v1(&victory.commands, &failure.commands);
+    let victory_next = victory.commands.get(common_prefix)?;
+    let failure_next = failure.commands.get(common_prefix)?;
+    if victory_next == failure_next {
+        return None;
+    }
+    Some(format!(
+        "after {} decisions | victory -> {} | failure -> {}",
+        common_prefix,
+        render_journal_command_candidate_label_v1(
+            report,
+            &victory.commands[..common_prefix],
+            victory_next
+        ),
+        render_journal_command_candidate_label_v1(
+            report,
+            &failure.commands[..common_prefix],
+            failure_next
+        )
+    ))
+}
+
+fn common_command_prefix_len_v1(left: &[String], right: &[String]) -> usize {
+    left.iter()
+        .zip(right.iter())
+        .take_while(|(left, right)| left == right)
+        .count()
+}
+
+fn render_journal_command_candidate_label_v1(
+    report: &BranchCampaignReportV1,
+    parent_commands: &[String],
+    command: &str,
+) -> String {
+    report
+        .journal
+        .events
+        .iter()
+        .filter(|event| {
+            let event_path = DecisionPathEnvelopeV1::from_commands(&event.branch_commands);
+            let branch_path = DecisionPathEnvelopeV1::from_commands(parent_commands);
+            event_path.journal_parent_depth_against(&branch_path) == Some(parent_commands.len())
+        })
+        .filter_map(|event| journal_event_candidate_for_command_v1(&event.payload, command))
+        .next()
+        .map(|candidate| format!("{} {{{}}}", candidate.label, candidate.command))
+        .unwrap_or_else(|| format!("{{{command}}}"))
+}
+
+fn journal_event_candidate_for_command_v1<'a>(
+    payload: &'a CampaignJournalEventPayloadV1,
+    command: &str,
+) -> Option<&'a CampaignJournalCandidateV1> {
+    journal_event_candidates_from_payload_v1(payload)
+        .iter()
+        .find(|candidate| candidate.command == command)
+}
+
+fn journal_event_candidates_from_payload_v1(
+    payload: &CampaignJournalEventPayloadV1,
+) -> &[CampaignJournalCandidateV1] {
+    match payload {
+        CampaignJournalEventPayloadV1::RewardCandidateSet { candidates, .. }
+        | CampaignJournalEventPayloadV1::ShopBranchCandidateSet { candidates, .. }
+        | CampaignJournalEventPayloadV1::ShopCandidatePool { candidates, .. }
+        | CampaignJournalEventPayloadV1::CampfireCandidatePool { candidates, .. }
+        | CampaignJournalEventPayloadV1::EventCandidatePool { candidates, .. }
+        | CampaignJournalEventPayloadV1::BossRelicCandidatePool { candidates, .. }
+        | CampaignJournalEventPayloadV1::RouteCandidatePool { candidates, .. } => candidates,
+        CampaignJournalEventPayloadV1::RouteDecision { .. } => &[],
+    }
 }
 
 fn final_boss_branch_details_are_compacted_v1(branch: &BranchCampaignBranchV1) -> bool {
