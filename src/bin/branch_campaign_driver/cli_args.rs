@@ -827,13 +827,18 @@ pub(super) enum BranchCampaignCliInputV1 {
         command: BranchCampaignExplicitCommandV1,
         args: Args,
     },
+    CampaignArtifact(ArtifactCommandArgs),
 }
 
 impl BranchCampaignCliInputV1 {
+    #[cfg(test)]
     pub(super) fn args(&self) -> &Args {
         match self {
             Self::Legacy(args) => args,
             Self::Explicit { args, .. } => args,
+            Self::CampaignArtifact(_) => {
+                panic!("campaign artifacts namespace builds a direct request without legacy Args")
+            }
         }
     }
 
@@ -842,13 +847,16 @@ impl BranchCampaignCliInputV1 {
         match self {
             Self::Legacy(args) => args,
             Self::Explicit { args, .. } => args,
+            Self::CampaignArtifact(args) => args.into_args(),
         }
     }
 
+    #[cfg(test)]
     pub(super) fn explicit_command(&self) -> Option<BranchCampaignExplicitCommandV1> {
         match self {
             Self::Legacy(_) => None,
             Self::Explicit { command, .. } => Some(*command),
+            Self::CampaignArtifact(_) => Some(BranchCampaignExplicitCommandV1::Artifact),
         }
     }
 }
@@ -925,13 +933,13 @@ struct ContinueCommandArgs {
 }
 
 #[derive(Debug, ClapArgs)]
-struct ArtifactCommandArgs {
+pub(super) struct ArtifactCommandArgs {
     #[command(subcommand)]
-    command: ArtifactSubcommandV1,
+    pub(super) command: ArtifactSubcommandV1,
 }
 
 #[derive(Debug, Subcommand)]
-enum ArtifactSubcommandV1 {
+pub(super) enum ArtifactSubcommandV1 {
     #[command(about = "Resolve latest, scratch-latest, run:<id>, scratch:<id>, or path:<report>")]
     Resolve(ArtifactResolveCommandArgs),
     #[command(about = "Resolve an artifact selector and summarize reusable run identity")]
@@ -947,9 +955,9 @@ enum ArtifactSubcommandV1 {
 }
 
 #[derive(Debug, ClapArgs)]
-struct ArtifactResolveCommandArgs {
+pub(super) struct ArtifactResolveCommandArgs {
     #[arg(value_name = "SELECTOR")]
-    selector: String,
+    pub(super) selector: String,
 
     #[arg(
         long = "campaign-dir",
@@ -957,16 +965,16 @@ struct ArtifactResolveCommandArgs {
         default_value = "tools/artifacts/campaigns",
         help = "Campaign artifact root that contains latest.json, runs/, and scratch/"
     )]
-    campaign_dir: PathBuf,
+    pub(super) campaign_dir: PathBuf,
 
     #[arg(long, help = "Print resolved artifact paths as JSON")]
-    json: bool,
+    pub(super) json: bool,
 }
 
 #[derive(Debug, ClapArgs)]
-struct ArtifactSourceInfoCommandArgs {
+pub(super) struct ArtifactSourceInfoCommandArgs {
     #[arg(value_name = "SELECTOR")]
-    selector: String,
+    pub(super) selector: String,
 
     #[arg(
         long = "campaign-dir",
@@ -974,33 +982,33 @@ struct ArtifactSourceInfoCommandArgs {
         default_value = "tools/artifacts/campaigns",
         help = "Campaign artifact root that contains latest.json, runs/, and scratch/"
     )]
-    campaign_dir: PathBuf,
+    pub(super) campaign_dir: PathBuf,
 
     #[arg(long, help = "Print source info as JSON")]
-    json: bool,
+    pub(super) json: bool,
 }
 
 #[derive(Debug, ClapArgs)]
-struct ArtifactAllocateCommandArgs {
+pub(super) struct ArtifactAllocateCommandArgs {
     #[arg(long, value_enum, default_value_t = ArtifactKindArgV1::Run)]
-    kind: ArtifactKindArgV1,
+    pub(super) kind: ArtifactKindArgV1,
 
     #[arg(long, value_name = "TEXT")]
-    label: String,
+    pub(super) label: String,
 
     #[arg(
         long,
         value_name = "YYYYMMDD-HHMMSS",
         help = "Optional deterministic timestamp component; defaults to a Rust-generated UTC stamp"
     )]
-    stamp: Option<String>,
+    pub(super) stamp: Option<String>,
 
     #[arg(
         long,
         value_name = "TEXT",
         help = "Optional deterministic suffix component; defaults to a Rust-generated short suffix"
     )]
-    suffix: Option<String>,
+    pub(super) suffix: Option<String>,
 
     #[arg(
         long = "campaign-dir",
@@ -1008,22 +1016,22 @@ struct ArtifactAllocateCommandArgs {
         default_value = "tools/artifacts/campaigns",
         help = "Campaign artifact root that contains latest.json, runs/, and scratch/"
     )]
-    campaign_dir: PathBuf,
+    pub(super) campaign_dir: PathBuf,
 
     #[arg(long, help = "Print allocated artifact paths as JSON")]
-    json: bool,
+    pub(super) json: bool,
 }
 
 #[derive(Debug, ClapArgs)]
-struct ArtifactWriteLatestCommandArgs {
+pub(super) struct ArtifactWriteLatestCommandArgs {
     #[arg(long, value_enum, default_value_t = ArtifactKindArgV1::Run)]
-    kind: ArtifactKindArgV1,
+    pub(super) kind: ArtifactKindArgV1,
 
     #[arg(value_name = "ARTIFACT_ID")]
-    artifact_id: String,
+    pub(super) artifact_id: String,
 
     #[arg(long = "updated-at", value_name = "TIMESTAMP")]
-    updated_at: String,
+    pub(super) updated_at: String,
 
     #[arg(
         long = "campaign-dir",
@@ -1031,51 +1039,51 @@ struct ArtifactWriteLatestCommandArgs {
         default_value = "tools/artifacts/campaigns",
         help = "Campaign artifact root that contains latest.json, runs/, and scratch/"
     )]
-    campaign_dir: PathBuf,
+    pub(super) campaign_dir: PathBuf,
 
     #[arg(long, help = "Print written artifact paths as JSON")]
-    json: bool,
+    pub(super) json: bool,
 }
 
 #[derive(Debug, ClapArgs)]
-struct ArtifactWriteManifestCommandArgs {
+pub(super) struct ArtifactWriteManifestCommandArgs {
     #[arg(long = "manifest-path", value_name = "PATH")]
-    manifest_path: PathBuf,
+    pub(super) manifest_path: PathBuf,
 
     #[arg(
         long = "payload-schema-name",
         default_value = "CampaignWrapperManifestPayloadV1"
     )]
-    payload_schema_name: String,
+    pub(super) payload_schema_name: String,
 
     #[arg(long = "created-at", value_name = "TIMESTAMP")]
-    created_at: String,
+    pub(super) created_at: String,
 
     #[arg(long, help = "Print written manifest summary as JSON")]
-    json: bool,
+    pub(super) json: bool,
 }
 
 #[derive(Debug, ClapArgs)]
-struct ArtifactPruneCommandArgs {
+pub(super) struct ArtifactPruneCommandArgs {
     #[arg(
         long = "campaign-dir",
         value_name = "PATH",
         default_value = "tools/artifacts/campaigns",
         help = "Campaign artifact root that contains latest.json, runs/, and scratch/"
     )]
-    campaign_dir: PathBuf,
+    pub(super) campaign_dir: PathBuf,
 
     #[arg(long = "keep-runs", default_value_t = 5)]
-    keep_runs: usize,
+    pub(super) keep_runs: usize,
 
     #[arg(long = "keep-scratch", default_value_t = 1)]
-    keep_scratch: usize,
+    pub(super) keep_scratch: usize,
 
     #[arg(long, help = "Delete prune candidates instead of only listing them")]
-    apply: bool,
+    pub(super) apply: bool,
 
     #[arg(long, help = "Print prune report as JSON")]
-    json: bool,
+    pub(super) json: bool,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -2050,6 +2058,19 @@ impl CampaignCommandArgs {
             }
         }
     }
+
+    fn into_cli_input(self, matches: &ArgMatches) -> Result<BranchCampaignCliInputV1, clap::Error> {
+        match self.command {
+            CampaignSubcommandV1::Artifacts(args) => {
+                Ok(BranchCampaignCliInputV1::CampaignArtifact(args))
+            }
+            command => {
+                let (args, explicit_command) =
+                    (CampaignCommandArgs { command }).into_args_and_command();
+                normalize_cli_args_from_matches(args, Some(explicit_command), matches)
+            }
+        }
+    }
 }
 
 impl InspectCommandArgs {
@@ -2700,10 +2721,7 @@ where
     };
     let cli = CliRootV1::from_arg_matches(&matches)?;
     let (args, explicit_command) = match cli.command {
-        Some(BranchCampaignCliCommandV1::Campaign(args)) => {
-            let (args, command) = args.into_args_and_command();
-            (args, Some(command))
-        }
+        Some(BranchCampaignCliCommandV1::Campaign(args)) => return args.into_cli_input(&matches),
         Some(BranchCampaignCliCommandV1::Run(args)) => {
             (args.into_args(), Some(BranchCampaignExplicitCommandV1::Run))
         }
@@ -2822,12 +2840,12 @@ mod tests {
             "1",
         ])
         .expect("campaign artifacts prune should parse");
-        let args = input.args();
 
         assert_eq!(
             input.explicit_command(),
             Some(BranchCampaignExplicitCommandV1::Artifact)
         );
+        let args = input.into_args();
         assert_eq!(args.artifact_action, Some(ArtifactActionV1::Prune));
         assert_eq!(args.artifact_keep_runs, 2);
         assert_eq!(args.artifact_keep_scratch, 1);

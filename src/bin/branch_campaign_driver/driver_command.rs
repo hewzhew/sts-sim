@@ -57,13 +57,19 @@ pub(super) enum BranchCampaignDriverRequestV1 {
 }
 
 pub(super) fn driver_request_from_cli_input(
-    input: &BranchCampaignCliInputV1,
+    input: BranchCampaignCliInputV1,
 ) -> Result<BranchCampaignDriverRequestV1, String> {
-    let args = input.args();
-    if let Some(explicit) = input.explicit_command() {
-        return explicit_driver_request_from_args(explicit, args);
+    match input {
+        BranchCampaignCliInputV1::CampaignArtifact(args) => {
+            Ok(BranchCampaignDriverRequestV1::ResolveCampaignArtifact(
+                ArtifactCommandInput::from_artifact_command_args(args),
+            ))
+        }
+        BranchCampaignCliInputV1::Explicit { command, args } => {
+            explicit_driver_request_from_args(command, &args)
+        }
+        BranchCampaignCliInputV1::Legacy(args) => legacy_driver_request_from_args(&args),
     }
-    legacy_driver_request_from_args(args)
 }
 
 fn explicit_driver_request_from_args(
@@ -220,6 +226,9 @@ fn driver_request_for_command(
 pub(super) fn driver_command_from_cli_input(
     input: &BranchCampaignCliInputV1,
 ) -> BranchCampaignDriverCommandV1 {
+    if matches!(input, BranchCampaignCliInputV1::CampaignArtifact(_)) {
+        return BranchCampaignDriverCommandV1::ResolveCampaignArtifact;
+    }
     if let Some(explicit) = input.explicit_command() {
         return explicit_driver_command_from_args(explicit, input.args());
     }

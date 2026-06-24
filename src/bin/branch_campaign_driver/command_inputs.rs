@@ -16,8 +16,8 @@ use sts_simulator::eval::run_control::{
 };
 
 use super::cli_args::{
-    Args, ArtifactActionV1, ArtifactKindArgV1, BranchCampaignCombatRetryArgV1,
-    InspectEvidenceDetailArg,
+    Args, ArtifactActionV1, ArtifactCommandArgs, ArtifactKindArgV1, ArtifactSubcommandV1,
+    BranchCampaignCombatRetryArgV1, InspectEvidenceDetailArg,
 };
 
 #[derive(Clone, Debug)]
@@ -214,6 +214,49 @@ pub(super) enum ArtifactCommandInput {
 }
 
 impl ArtifactCommandInput {
+    pub(super) fn from_artifact_command_args(args: ArtifactCommandArgs) -> Self {
+        match args.command {
+            ArtifactSubcommandV1::Resolve(resolve) => Self::Resolve {
+                campaign_dir: resolve.campaign_dir,
+                selector: resolve.selector,
+                json: resolve.json,
+            },
+            ArtifactSubcommandV1::SourceInfo(source_info) => Self::SourceInfo {
+                campaign_dir: source_info.campaign_dir,
+                selector: source_info.selector,
+                json: source_info.json,
+            },
+            ArtifactSubcommandV1::Allocate(allocate) => Self::Allocate {
+                campaign_dir: allocate.campaign_dir,
+                kind: allocate.kind,
+                label: allocate.label,
+                stamp: allocate.stamp,
+                suffix: allocate.suffix,
+                json: allocate.json,
+            },
+            ArtifactSubcommandV1::WriteLatest(write_latest) => Self::WriteLatest {
+                campaign_dir: write_latest.campaign_dir,
+                kind: write_latest.kind,
+                artifact_id: write_latest.artifact_id,
+                updated_at: write_latest.updated_at,
+                json: write_latest.json,
+            },
+            ArtifactSubcommandV1::WriteManifest(write_manifest) => Self::WriteManifest {
+                manifest_path: write_manifest.manifest_path,
+                payload_schema_name: write_manifest.payload_schema_name,
+                created_at: write_manifest.created_at,
+                json: write_manifest.json,
+            },
+            ArtifactSubcommandV1::Prune(prune) => Self::Prune {
+                campaign_dir: prune.campaign_dir,
+                keep_runs: prune.keep_runs,
+                keep_scratch: prune.keep_scratch,
+                apply: prune.apply,
+                json: prune.json,
+            },
+        }
+    }
+
     pub(super) fn from_args(args: &Args) -> Result<Self, String> {
         let campaign_dir = args
             .artifact_campaign_dir

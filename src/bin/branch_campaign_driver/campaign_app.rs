@@ -40,7 +40,7 @@ impl CampaignAppV1 {
     }
 
     pub(super) fn run_cli_input(&self, cli_input: BranchCampaignCliInputV1) -> Result<(), String> {
-        self.run_request(driver_request_from_cli_input(&cli_input)?)
+        self.run_request(driver_request_from_cli_input(cli_input)?)
     }
 
     pub(super) fn run_request(&self, request: BranchCampaignDriverRequestV1) -> Result<(), String> {
