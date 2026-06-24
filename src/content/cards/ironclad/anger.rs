@@ -28,7 +28,7 @@ pub fn definition() -> CardDefinition {
 pub fn anger_play(
     state: &CombatState,
     card: &CombatCard,
-    target: Option<crate::core::EntityId>,
+    target: Option<crate::EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Anger requires a valid target!");
     let evaluated = crate::content::cards::evaluate_card_for_play(card, state, Some(target));

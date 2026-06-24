@@ -20,7 +20,7 @@ pub(super) struct MonsterDamageOutcome {
 pub(super) fn queue_player_hp_loss_hooks(
     state: &mut CombatState,
     amount: i32,
-    source: Option<crate::core::EntityId>,
+    source: Option<crate::EntityId>,
     damage_type: DamageType,
     triggers_rupture: bool,
 ) {
@@ -82,7 +82,7 @@ pub(super) fn queue_red_skull_threshold_actions(
 
 pub(super) fn queue_on_block_gained_hooks(
     state: &mut CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     gained_block: i32,
 ) {
     if gained_block <= 0 {

@@ -1,7 +1,7 @@
 use crate::content::cards::CardTarget;
-use crate::core::EntityId;
 use crate::runtime::combat::CombatState;
 use crate::state::TargetValidation;
+use crate::EntityId;
 
 pub fn validation_for_card_target(target: CardTarget) -> Option<TargetValidation> {
     match target {

@@ -1,4 +1,13 @@
 use super::*;
+use crate::state::selection::{SelectionResolution, SelectionScope};
+
+fn hand_select(uuids: impl IntoIterator<Item = u32>) -> ClientInput {
+    ClientInput::SubmitSelection(SelectionResolution::card_uuids(SelectionScope::Hand, uuids))
+}
+
+fn grid_select(uuids: impl IntoIterator<Item = u32>) -> ClientInput {
+    ClientInput::SubmitSelection(SelectionResolution::card_uuids(SelectionScope::Grid, uuids))
+}
 
 #[test]
 fn stepper_dropkick_against_vulnerable_draws_and_refunds_energy() {
@@ -71,16 +80,13 @@ fn stepper_headbutt_grid_select_moves_selected_discard_card_to_draw_top() {
     }
 
     let legal = legal_actions(&after_headbutt.position);
-    assert!(legal.contains(&ClientInput::SubmitGridSelect(vec![202])));
+    assert!(legal.contains(&grid_select([202])));
     assert!(
         !legal.contains(&ClientInput::Proceed),
         "pending grid select must not expose fake Proceed to search"
     );
 
-    let after_select = apply(
-        &after_headbutt.position,
-        ClientInput::SubmitGridSelect(vec![202]),
-    );
+    let after_select = apply(&after_headbutt.position, grid_select([202]));
 
     assert_stable_player_turn(&after_select);
     assert_eq!(
@@ -132,16 +138,13 @@ fn stepper_armaments_base_resolves_upgrade_pending_choice() {
     }
 
     let legal = legal_actions(&after_armaments.position);
-    assert!(legal.contains(&ClientInput::SubmitHandSelect(vec![102])));
+    assert!(legal.contains(&hand_select([102])));
     assert!(
         !legal.contains(&ClientInput::Proceed),
         "pending hand select must not expose fake Proceed to search"
     );
 
-    let after_select = apply(
-        &after_armaments.position,
-        ClientInput::SubmitHandSelect(vec![102]),
-    );
+    let after_select = apply(&after_armaments.position, hand_select([102]));
 
     assert_stable_player_turn(&after_select);
     let bash = after_select

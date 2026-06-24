@@ -1,4 +1,4 @@
-use crate::core::EntityId;
+use crate::EntityId;
 
 pub fn on_death(
     _owner: EntityId,

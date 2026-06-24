@@ -182,9 +182,6 @@ fn fallback_action_role(input: &ClientInput) -> &'static str {
         | ClientInput::SubmitDiscoverChoice(_)
         | ClientInput::SubmitScryDiscard(_)
         | ClientInput::SubmitSelection(_)
-        | ClientInput::SubmitHandSelect(_)
-        | ClientInput::SubmitGridSelect(_)
-        | ClientInput::SubmitDeckSelect(_)
         | ClientInput::SubmitRelicChoice(_) => "pending_choice",
         _ => "other",
     }

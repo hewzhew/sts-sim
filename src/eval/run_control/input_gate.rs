@@ -1,5 +1,6 @@
 use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
 use super::session::RunControlSession;
 
@@ -89,8 +90,8 @@ impl RunControlSession {
                 ClientInput::FlyToNode(target_x, target_y),
             ) => self.map_flight_is_allowed(*target_x, *target_y),
             (EngineState::MapOverlay { .. }, ClientInput::Cancel) => true,
-            (EngineState::RunPendingChoice(choice), ClientInput::SubmitDeckSelect(indices)) => {
-                self.run_pending_selection_is_allowed(choice, indices)
+            (EngineState::RunPendingChoice(choice), ClientInput::SubmitSelection(resolution)) => {
+                self.run_pending_resolution_is_allowed(choice, resolution)
             }
             (EngineState::RunPendingChoice(_), ClientInput::Cancel) => true,
             (EngineState::Shop(shop), ClientInput::PurgeCard(idx)) => {
@@ -142,6 +143,29 @@ impl RunControlSession {
             seen.push(idx);
         }
         true
+    }
+
+    pub(in crate::eval::run_control) fn run_pending_resolution_is_allowed(
+        &self,
+        choice: &crate::state::core::RunPendingChoiceState,
+        resolution: &SelectionResolution,
+    ) -> bool {
+        if resolution.scope != SelectionScope::Deck {
+            return false;
+        }
+        let indices = resolution
+            .selected
+            .iter()
+            .filter_map(|target| match target {
+                SelectionTargetRef::CardUuid(uuid) => self
+                    .run_state
+                    .master_deck
+                    .iter()
+                    .position(|card| card.uuid == *uuid),
+            })
+            .collect::<Vec<_>>();
+        indices.len() == resolution.selected.len()
+            && self.run_pending_selection_is_allowed(choice, &indices)
     }
 
     fn shop_purge_is_allowed(&self, shop: &crate::state::shop::ShopState, idx: usize) -> bool {

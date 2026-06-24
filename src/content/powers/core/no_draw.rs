@@ -1,5 +1,5 @@
-use crate::core::EntityId;
 use crate::runtime::action::Action;
+use crate::EntityId;
 
 pub fn at_end_of_turn(owner: EntityId) -> smallvec::SmallVec<[Action; 2]> {
     smallvec::smallvec![Action::RemovePower {

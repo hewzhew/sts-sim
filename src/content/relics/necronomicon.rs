@@ -34,7 +34,7 @@ pub fn on_use_card(
     card_cost_for_turn: i32,
     relic_state: &mut crate::content::relics::RelicState,
     card: &crate::runtime::combat::CombatCard,
-    target: Option<crate::core::EntityId>,
+    target: Option<crate::EntityId>,
 ) -> SmallVec<[crate::runtime::action::ActionInfo; 4]> {
     let def = crate::content::cards::get_card_definition(card_id);
     let mut actions = SmallVec::new();

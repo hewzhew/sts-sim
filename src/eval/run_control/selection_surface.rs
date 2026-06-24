@@ -1,5 +1,6 @@
 use crate::runtime::combat::{CombatCard, CombatState};
 use crate::state::core::{ClientInput, EngineState, PendingChoice, PileType};
+use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
 
 use super::session::RunControlSession;
 
@@ -63,7 +64,9 @@ pub(super) fn resolve_selection_indices(
         EngineState::PendingChoice(choice) => {
             resolve_combat_selection_indices(session, choice, indices)
         }
-        EngineState::RunPendingChoice(_) => Ok(ClientInput::SubmitDeckSelect(indices)),
+        EngineState::RunPendingChoice(choice) => {
+            resolve_run_pending_selection_indices(session, choice, indices)
+        }
         _ => Err("select <idx...> is only valid on a selection screen".to_string()),
     }
 }
@@ -77,9 +80,9 @@ pub(super) fn current_selection_input_is_allowed(
             Some(pending_choice_input_is_allowed(session, choice, input))
         }
         EngineState::RunPendingChoice(choice) => match input {
-            ClientInput::SubmitDeckSelect(indices) => {
-                Some(session.run_pending_selection_is_allowed(choice, indices))
-            }
+            ClientInput::SubmitSelection(resolution) => Some(run_pending_resolution_is_allowed(
+                session, choice, resolution,
+            )),
             ClientInput::Cancel => Some(choice.min_choices == 0),
             _ => None,
         },
@@ -95,16 +98,16 @@ fn resolve_combat_selection_indices(
     match choice {
         PendingChoice::HandSelect {
             candidate_uuids, ..
-        } => Ok(ClientInput::SubmitHandSelect(indices_to_uuids(
-            candidate_uuids,
-            &indices,
-        )?)),
+        } => Ok(selection_input(
+            SelectionScope::Hand,
+            indices_to_uuids(candidate_uuids, &indices)?,
+        )),
         PendingChoice::GridSelect {
             candidate_uuids, ..
-        } => Ok(ClientInput::SubmitGridSelect(indices_to_uuids(
-            candidate_uuids,
-            &indices,
-        )?)),
+        } => Ok(selection_input(
+            SelectionScope::Grid,
+            indices_to_uuids(candidate_uuids, &indices)?,
+        )),
         PendingChoice::ScrySelect { cards, .. } => {
             validate_indices_in_range(cards.len(), &indices)?;
             reject_duplicate_indices(&indices)?;
@@ -139,14 +142,18 @@ pub(super) fn pending_choice_input_is_allowed(
                 max_cards,
                 ..
             },
-            ClientInput::SubmitHandSelect(uuids),
+            ClientInput::SubmitSelection(resolution),
         ) => {
+            if resolution.scope != SelectionScope::Hand {
+                return false;
+            }
+            let uuids = resolution.selected_card_uuids();
             uuid_selection_is_allowed(
-                uuids,
+                &uuids,
                 candidate_uuids,
                 *min_cards as usize,
                 *max_cards as usize,
-            ) && hand_contains_all(session, uuids)
+            ) && hand_contains_all(session, &uuids)
         }
         (
             PendingChoice::GridSelect {
@@ -156,14 +163,18 @@ pub(super) fn pending_choice_input_is_allowed(
                 source_pile,
                 ..
             },
-            ClientInput::SubmitGridSelect(uuids),
+            ClientInput::SubmitSelection(resolution),
         ) => {
+            if resolution.scope != SelectionScope::Grid {
+                return false;
+            }
+            let uuids = resolution.selected_card_uuids();
             uuid_selection_is_allowed(
-                uuids,
+                &uuids,
                 candidate_uuids,
                 *min_cards as usize,
                 *max_cards as usize,
-            ) && grid_source_contains_all(session, *source_pile, uuids)
+            ) && grid_source_contains_all(session, *source_pile, &uuids)
         }
         (
             PendingChoice::HandSelect { can_cancel, .. }
@@ -194,10 +205,52 @@ pub(super) fn pending_choice_input_is_allowed(
     }
 }
 
+fn resolve_run_pending_selection_indices(
+    session: &RunControlSession,
+    choice: &crate::state::core::RunPendingChoiceState,
+    indices: Vec<usize>,
+) -> Result<ClientInput, String> {
+    if !session.run_pending_selection_is_allowed(choice, &indices) {
+        return Err("selection is not valid for the current deck choice".to_string());
+    }
+    let uuids = indices
+        .into_iter()
+        .filter_map(|idx| session.run_state.master_deck.get(idx).map(|card| card.uuid))
+        .collect::<Vec<_>>();
+    Ok(selection_input(SelectionScope::Deck, uuids))
+}
+
+fn run_pending_resolution_is_allowed(
+    session: &RunControlSession,
+    choice: &crate::state::core::RunPendingChoiceState,
+    resolution: &SelectionResolution,
+) -> bool {
+    if resolution.scope != SelectionScope::Deck {
+        return false;
+    }
+    let indices = resolution
+        .selected
+        .iter()
+        .filter_map(|target| match target {
+            SelectionTargetRef::CardUuid(uuid) => session
+                .run_state
+                .master_deck
+                .iter()
+                .position(|card| card.uuid == *uuid),
+        })
+        .collect::<Vec<_>>();
+    indices.len() == resolution.selected.len()
+        && session.run_pending_selection_is_allowed(choice, &indices)
+}
+
 fn indices_to_uuids(candidate_uuids: &[u32], indices: &[usize]) -> Result<Vec<u32>, String> {
     validate_indices_in_range(candidate_uuids.len(), indices)?;
     reject_duplicate_indices(indices)?;
     Ok(indices.iter().map(|idx| candidate_uuids[*idx]).collect())
+}
+
+fn selection_input(scope: SelectionScope, uuids: Vec<u32>) -> ClientInput {
+    ClientInput::SubmitSelection(SelectionResolution::card_uuids(scope, uuids))
 }
 
 fn validate_indices_in_range(item_count: usize, indices: &[usize]) -> Result<(), String> {

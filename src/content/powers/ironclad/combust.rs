@@ -18,7 +18,7 @@ use smallvec::SmallVec;
 ///   2. DamageAllEnemiesAction(null, createDamageMatrix(amount, true), THORNS, FIRE)
 pub fn at_end_of_turn(
     state: &CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     amount: i32,
 ) -> SmallVec<[Action; 2]> {
     let mut actions = SmallVec::new();

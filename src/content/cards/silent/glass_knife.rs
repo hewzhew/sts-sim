@@ -1,9 +1,9 @@
 use crate::content::cards::{
     evaluate_card_for_play, CardDefinition, CardId, CardRarity, CardTarget, CardType,
 };
-use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType};
 use crate::runtime::combat::{CombatCard, CombatState};
+use crate::EntityId;
 use smallvec::SmallVec;
 
 pub fn definition() -> CardDefinition {

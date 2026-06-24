@@ -164,6 +164,7 @@ pub struct AllowedDeckMutationConsumersV1 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DeckMutationCardSnapshotV1 {
     pub deck_index: usize,
+    pub uuid: u32,
     pub card: CardId,
     pub upgrades: u8,
     pub label: String,

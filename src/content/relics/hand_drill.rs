@@ -8,7 +8,7 @@ use smallvec::SmallVec;
 
 pub fn on_break_block(
     _state: &CombatState,
-    target_id: crate::core::EntityId,
+    target_id: crate::EntityId,
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     actions.push(ActionInfo {

@@ -1,7 +1,7 @@
 use crate::content::monsters::EnemyId;
-use crate::core::EntityId;
 use crate::runtime::action::Action;
 use crate::runtime::combat::CombatState;
+use crate::EntityId;
 use smallvec::{smallvec, SmallVec};
 
 pub fn on_hp_lost(state: &CombatState, owner: EntityId, _amount: i32) -> SmallVec<[Action; 2]> {

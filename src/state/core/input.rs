@@ -1,5 +1,5 @@
-use crate::core::EntityId;
 use crate::state::selection::SelectionResolution;
+use crate::EntityId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -23,9 +23,6 @@ pub enum ClientInput {
     EventChoice(usize),
     SubmitScryDiscard(Vec<usize>),
     SubmitSelection(SelectionResolution),
-    SubmitHandSelect(Vec<u32>),
-    SubmitGridSelect(Vec<u32>),
-    SubmitDeckSelect(Vec<usize>),
     ClaimReward(usize),
     OpenRewardOverlay,
     OpenChest,

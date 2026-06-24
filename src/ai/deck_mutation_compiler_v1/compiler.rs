@@ -242,6 +242,7 @@ fn exact_target_for_deck_index(
     Some(ExactTarget {
         card: DeckMutationCardSnapshotV1 {
             deck_index,
+            uuid: card.uuid,
             card: card.id,
             upgrades: card.upgrades,
             label: card_label(card.id, card.upgrades),

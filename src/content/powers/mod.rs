@@ -804,11 +804,7 @@ pub fn power_removes_at_zero(id: PowerId) -> bool {
 }
 
 // Global Power Hook Routers
-pub fn resolve_power_on_apply(
-    id: PowerId,
-    state: &mut CombatState,
-    _target: crate::core::EntityId,
-) {
+pub fn resolve_power_on_apply(id: PowerId, state: &mut CombatState, _target: crate::EntityId) {
     match id {
         PowerId::Corruption => ironclad::corruption::on_apply(state),
         _ => {}
@@ -886,7 +882,7 @@ pub fn resolve_power_on_use_card(
 
 pub fn resolve_power_on_player_card_played(
     id: PowerId,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     amount: i32,
     card: &CombatCard,
     state: &CombatState,
@@ -902,7 +898,7 @@ pub fn resolve_power_on_player_card_played(
 pub fn resolve_power_on_exhaust(
     id: PowerId,
     _state: &CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     amount: i32,
     _card_uuid: u32,
     _card_id: crate::content::cards::CardId,
@@ -917,10 +913,10 @@ pub fn resolve_power_on_exhaust(
 pub fn resolve_power_on_hp_lost(
     id: PowerId,
     state: &CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     hp_lost: i32,
     power_amount: i32,
-    source: Option<crate::core::EntityId>,
+    source: Option<crate::EntityId>,
     damage_type: crate::runtime::action::DamageType,
     triggers_rupture: bool,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
@@ -937,7 +933,7 @@ pub fn resolve_power_on_hp_lost(
 pub fn resolve_power_on_card_played(
     id: PowerId,
     state: &CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     card: &CombatCard,
     power_amount: i32,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
@@ -999,7 +995,7 @@ pub fn resolve_power_on_card_played(
 pub fn resolve_power_at_turn_start(
     id: PowerId,
     state: &mut CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     amount: i32,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     let power = crate::runtime::combat::Power {
@@ -1016,7 +1012,7 @@ pub fn resolve_power_at_turn_start(
 pub fn resolve_power_instance_at_turn_start(
     power: &crate::runtime::combat::Power,
     state: &mut CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     let id = power.power_type;
     let amount = power.amount;
@@ -1193,7 +1189,7 @@ pub fn resolve_power_instance_at_turn_start(
 pub fn resolve_power_on_post_draw(
     id: PowerId,
     _state: &CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     amount: i32,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
@@ -1215,7 +1211,7 @@ pub fn resolve_power_on_post_draw(
 
 pub fn resolve_power_on_scry(
     id: PowerId,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     amount: i32,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
@@ -1226,7 +1222,7 @@ pub fn resolve_power_on_scry(
 
 pub fn resolve_power_on_change_stance(
     id: PowerId,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     amount: i32,
     old_stance: crate::runtime::combat::StanceId,
     new_stance: crate::runtime::combat::StanceId,
@@ -1245,7 +1241,7 @@ pub fn resolve_power_on_change_stance(
 pub fn resolve_power_at_end_of_turn(
     power: &crate::runtime::combat::Power,
     _state: &CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     let id = power.power_type;
     let amount = power.amount;
@@ -1398,7 +1394,7 @@ pub fn resolve_power_at_end_of_turn(
 
 pub fn resolve_power_during_turn(
     power: &crate::runtime::combat::Power,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match power.power_type {
         PowerId::Explosive => core::explosive::during_turn(owner, power.amount),
@@ -1410,7 +1406,7 @@ pub fn resolve_power_during_turn(
 pub fn resolve_power_at_end_of_round(
     id: PowerId,
     _state: &CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     amount: i32,
     just_applied: bool,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
@@ -1484,7 +1480,7 @@ pub fn resolve_power_at_end_of_round(
 pub fn resolve_power_on_victory(
     id: PowerId,
     state: &CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     amount: i32,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
@@ -1501,7 +1497,7 @@ pub fn resolve_power_on_victory(
 pub fn resolve_power_on_card_drawn(
     id: PowerId,
     state: &CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     amount: i32,
     card_uuid: u32,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
@@ -1535,8 +1531,8 @@ pub fn resolve_power_on_inflict_damage(
 
 pub fn resolve_power_on_attack(
     id: PowerId,
-    owner: crate::core::EntityId,
-    target: crate::core::EntityId,
+    owner: crate::EntityId,
+    target: crate::EntityId,
     damage: i32,
     damage_type: crate::runtime::action::DamageType,
     power_amount: i32,
@@ -1552,7 +1548,7 @@ pub fn resolve_power_on_attack(
 pub fn resolve_power_on_block_gained(
     id: PowerId,
     _state: &CombatState,
-    _owner: crate::core::EntityId,
+    _owner: crate::EntityId,
     amount: i32,
     _block_amount: i32,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
@@ -1568,9 +1564,9 @@ pub fn resolve_power_on_block_gained(
 pub fn resolve_power_on_attacked(
     id: PowerId,
     state: &CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     damage: i32,
-    source: crate::core::EntityId,
+    source: crate::EntityId,
     damage_type: crate::runtime::action::DamageType,
     power_amount: i32,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
@@ -1618,7 +1614,7 @@ pub fn resolve_power_on_attacked(
 pub fn resolve_power_on_death(
     id: PowerId,
     state: &CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     amount: i32,
     extra_data: i32,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
@@ -1636,7 +1632,7 @@ pub fn resolve_power_on_death(
 pub fn resolve_power_on_remove(
     id: PowerId,
     state: &CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
 ) -> smallvec::SmallVec<[crate::runtime::action::Action; 2]> {
     match id {
         PowerId::Flight => core::flight::on_remove(state, owner),
@@ -1754,7 +1750,7 @@ pub fn resolve_power_on_calculate_damage_from_player(
     id: PowerId,
     _state: &CombatState,
     card: &CombatCard,
-    _target_id: crate::core::EntityId,
+    _target_id: crate::EntityId,
     damage: f32,
     amount: i32,
 ) -> f32 {

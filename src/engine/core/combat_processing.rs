@@ -6,6 +6,7 @@ use crate::state::core::{
     ClientInput, DiscoveryChoiceState, EngineState, PendingChoice, RunResult,
 };
 use crate::state::selection::{EngineDiagnostic, EngineDiagnosticClass, EngineDiagnosticSeverity};
+use crate::state::selection::{SelectionResolution, SelectionScope};
 
 use super::diagnostics::record_engine_diagnostic;
 use super::pending_choice_resolution::{
@@ -71,7 +72,10 @@ pub(super) fn process_combat_processing(
                         true,
                         false,
                         reason,
-                        ClientInput::SubmitHandSelect(vec![candidate_uuids[0]]),
+                        ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+                            SelectionScope::Hand,
+                            [candidate_uuids[0]],
+                        )),
                     );
                     return true;
                 }
@@ -170,7 +174,10 @@ pub(super) fn process_combat_processing(
                         1,
                         false,
                         reason,
-                        ClientInput::SubmitGridSelect(vec![candidate_uuids[0]]),
+                        ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+                            SelectionScope::Grid,
+                            [candidate_uuids[0]],
+                        )),
                     );
                     return true;
                 }

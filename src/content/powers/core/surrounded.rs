@@ -1,6 +1,6 @@
 use crate::content::powers::{store, PowerId};
-use crate::core::EntityId;
 use crate::runtime::combat::{CombatState, Power, PowerPayload};
+use crate::EntityId;
 
 fn monster_is_left_of_player(state: &CombatState, monster_id: EntityId) -> Option<bool> {
     state

@@ -356,15 +356,15 @@ fn resolve_run_pending_selection(input: ClientInput, run_state: &RunState) -> Op
         }) => Some(
             selected
                 .into_iter()
-                .filter_map(|target| match target {
-                    SelectionTargetRef::CardUuid(uuid) => run_state
+                .filter_map(|target| {
+                    let uuid = target.card_uuid();
+                    run_state
                         .master_deck
                         .iter()
-                        .position(|card| card.uuid == uuid),
+                        .position(|card| card.uuid == uuid)
                 })
                 .collect(),
         ),
-        ClientInput::SubmitDeckSelect(indices) => Some(indices),
         _ => None,
     }
 }

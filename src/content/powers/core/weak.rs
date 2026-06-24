@@ -1,6 +1,6 @@
-use crate::core::EntityId;
 use crate::runtime::action::Action;
 use crate::runtime::combat::PowerId;
+use crate::EntityId;
 
 pub fn at_end_of_round(
     owner: EntityId,

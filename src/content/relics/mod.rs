@@ -36,6 +36,7 @@ pub mod black_star;
 pub mod bloody_idol;
 pub mod blue_candle;
 pub mod boot;
+pub(crate) mod bottle;
 pub mod bottled_flame;
 pub mod bottled_lightning;
 pub mod bottled_tornado;

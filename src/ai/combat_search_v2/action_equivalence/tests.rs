@@ -2,7 +2,12 @@ use super::*;
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::CombatCard;
+use crate::state::selection::{SelectionResolution, SelectionScope};
 use crate::test_support::{blank_test_combat, test_monster};
+
+fn grid_select(uuids: impl IntoIterator<Item = u32>) -> ClientInput {
+    ClientInput::SubmitSelection(SelectionResolution::card_uuids(SelectionScope::Grid, uuids))
+}
 
 #[test]
 fn compresses_duplicate_starter_basic_cards_to_same_target() {
@@ -174,9 +179,9 @@ fn compresses_single_card_pending_grid_selection_for_runtime_identical_cards() {
         reason: crate::state::core::GridSelectReason::MoveToDrawPile,
     });
     let choices = vec![
-        CombatActionChoice::from_input(&combat, ClientInput::SubmitGridSelect(vec![10])),
-        CombatActionChoice::from_input(&combat, ClientInput::SubmitGridSelect(vec![11])),
-        CombatActionChoice::from_input(&combat, ClientInput::SubmitGridSelect(vec![12])),
+        CombatActionChoice::from_input(&combat, grid_select([10])),
+        CombatActionChoice::from_input(&combat, grid_select([11])),
+        CombatActionChoice::from_input(&combat, grid_select([12])),
     ];
 
     let result = compress_equivalent_actions(&engine, &combat, choices);
@@ -206,7 +211,7 @@ fn keeps_pending_grid_multi_select_atomic() {
     });
     let choices = vec![CombatActionChoice::from_input(
         &combat,
-        ClientInput::SubmitGridSelect(vec![10, 11]),
+        grid_select([10, 11]),
     )];
 
     let result = compress_equivalent_actions(&engine, &combat, choices);

@@ -28,7 +28,7 @@ pub fn definition() -> CardDefinition {
 pub fn reckless_charge_play(
     _state: &CombatState,
     card: &CombatCard,
-    target: Option<crate::core::EntityId>,
+    target: Option<crate::EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Reckless Charge requires a valid target!");
     let evaluated = crate::content::cards::evaluate_card_for_play(card, _state, Some(target));

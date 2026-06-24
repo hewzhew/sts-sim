@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 pub struct BronzeScales;
 
 impl BronzeScales {
-    pub fn at_battle_start(player_id: crate::core::EntityId) -> SmallVec<[ActionInfo; 4]> {
+    pub fn at_battle_start(player_id: crate::EntityId) -> SmallVec<[ActionInfo; 4]> {
         let mut actions = SmallVec::new();
         actions.push(ActionInfo {
             action: Action::ApplyPower {

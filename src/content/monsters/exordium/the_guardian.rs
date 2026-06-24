@@ -477,7 +477,7 @@ fn guardian_runtime_update(
 }
 
 pub fn handle_mode_shift_threshold_triggered(
-    monster_id: crate::core::EntityId,
+    monster_id: crate::EntityId,
     hp_lost: i32,
     state: &mut CombatState,
 ) {
@@ -508,7 +508,7 @@ pub fn handle_mode_shift_threshold_triggered(
 }
 
 pub fn handle_enter_defensive_mode(
-    monster_id: crate::core::EntityId,
+    monster_id: crate::EntityId,
     next_threshold: i32,
     state: &mut CombatState,
 ) {

@@ -1364,14 +1364,14 @@ fn current_boundary_preexpands_upgrade_shrine_target_selection_through_deck_muta
         boundary
             .options
             .iter()
-            .any(|option| option.command.starts_with("event-select 0 ")
+            .any(|option| option.command.starts_with("event 0; select ")
                 && !option.command.contains(" && ")
                 && option.effect_kind == "upgrade_card"
                 && option
                     .decision_signal
                     .as_ref()
                     .is_some_and(|signal| signal.source == "deck_mutation_compiler_v1")),
-        "Upgrade Shrine should pre-expand upgrade targets through a typed event-select action"
+        "Upgrade Shrine should pre-expand upgrade targets through a typed event deck-selection action"
     );
     assert!(
         boundary
@@ -1400,13 +1400,13 @@ fn current_boundary_preexpands_transmorgrifier_target_selection_through_deck_mut
         boundary
             .options
             .iter()
-            .any(|option| option.command.starts_with("event-select 0 ")
+            .any(|option| option.command.starts_with("event 0; select ")
                 && !option.command.contains(" && ")
                 && option
                     .decision_signal
                     .as_ref()
                     .is_some_and(|signal| signal.source == "deck_mutation_compiler_v1")),
-        "Transmorgrifier should pre-expand target choices through a typed event-select action"
+        "Transmorgrifier should pre-expand target choices through a typed event deck-selection action"
     );
     assert!(
         boundary
@@ -1434,11 +1434,11 @@ fn current_boundary_preexpands_multi_card_event_deck_mutation_with_bounded_portf
     let transform_options = boundary
         .options
         .iter()
-        .filter(|option| option.command.starts_with("event-select 1 "))
+        .filter(|option| option.command.starts_with("event 1; select "))
         .collect::<Vec<_>>();
     assert!(
         !transform_options.is_empty(),
-        "Drug Dealer transform-2 should pre-expand through typed event-select actions"
+        "Drug Dealer transform-2 should pre-expand through typed event deck-selection actions"
     );
     assert!(
         boundary.options.len() <= 4,
@@ -1449,7 +1449,7 @@ fn current_boundary_preexpands_multi_card_event_deck_mutation_with_bounded_portf
         "multi-card event mutation expansion should leave room for other event options"
     );
     assert!(transform_options.iter().all(|option| {
-        option.command.split_whitespace().count() == 4
+        option.command.starts_with("event 1; select ")
             && !option.command.contains(" && ")
             && option.effect_kind == "transform_card"
             && option

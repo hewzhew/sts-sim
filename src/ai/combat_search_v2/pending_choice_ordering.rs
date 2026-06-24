@@ -5,6 +5,7 @@ use crate::runtime::combat::CombatCard;
 #[cfg(test)]
 use crate::state::core::{GridSelectReason, HandSelectReason};
 use crate::state::core::{PendingChoice, PileType};
+use crate::state::selection::SelectionScope;
 
 mod card_selection;
 mod selection_hints;
@@ -38,8 +39,11 @@ pub(super) fn pending_choice_ordering_hint(
                 reason,
                 ..
             },
-            ClientInput::SubmitHandSelect(uuids),
-        ) if selection_is_subset(uuids, candidate_uuids) => {
+            ClientInput::SubmitSelection(resolution),
+        ) if resolution.scope == SelectionScope::Hand
+            && selection_is_subset(&resolution.selected_card_uuids(), candidate_uuids) =>
+        {
+            let uuids = resolution.selected_card_uuids();
             let cards = uuids
                 .iter()
                 .filter_map(|uuid| find_card_by_uuid(&combat.zones.hand, *uuid))
@@ -53,8 +57,11 @@ pub(super) fn pending_choice_ordering_hint(
                 reason,
                 ..
             },
-            ClientInput::SubmitGridSelect(uuids),
-        ) if selection_is_subset(uuids, candidate_uuids) => {
+            ClientInput::SubmitSelection(resolution),
+        ) if resolution.scope == SelectionScope::Grid
+            && selection_is_subset(&resolution.selected_card_uuids(), candidate_uuids) =>
+        {
+            let uuids = resolution.selected_card_uuids();
             let cards = uuids
                 .iter()
                 .filter_map(|uuid| find_card_by_uuid(pile_cards(combat, *source_pile), *uuid))

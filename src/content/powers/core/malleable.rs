@@ -1,7 +1,7 @@
 use crate::content::powers::PowerId;
-use crate::core::EntityId;
 use crate::runtime::action::Action;
 use crate::runtime::combat::CombatState;
+use crate::EntityId;
 
 /// Java MalleablePower.onAttacked():
 ///   if (damageAmount < owner.currentHealth && damageAmount > 0 && info.type == NORMAL) {

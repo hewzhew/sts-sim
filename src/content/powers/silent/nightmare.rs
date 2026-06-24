@@ -4,7 +4,7 @@ use crate::runtime::combat::{CombatState, Power, PowerPayload};
 use smallvec::SmallVec;
 
 pub fn at_start_of_turn(
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     state: &CombatState,
     power: &Power,
 ) -> SmallVec<[Action; 2]> {

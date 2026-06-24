@@ -953,7 +953,9 @@ mod tests {
             &mut engine_state,
             &mut rs,
             &mut combat_state,
-            Some(ClientInput::SubmitDeckSelect(vec![1])),
+            Some(ClientInput::SubmitSelection(
+                SelectionResolution::card_uuids(SelectionScope::Deck, [12],)
+            )),
         ));
         assert!(matches!(engine_state, EngineState::RunPendingChoice(_)));
         assert_eq!(

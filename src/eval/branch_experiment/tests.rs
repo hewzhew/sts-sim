@@ -997,7 +997,7 @@ fn branch_experiment_applies_typed_event_deck_mutation_choices() {
     assert!(report.branches.iter().any(|branch| {
         branch.choices.len() == 1
             && branch.choices[0].kind == "event"
-            && branch.choices[0].command.starts_with("event-select 0 ")
+            && branch.choices[0].command.starts_with("event 0; select ")
             && branch.choices[0].effect_kind == "upgrade_card"
     }));
 }
@@ -1022,7 +1022,7 @@ fn branch_experiment_records_event_deck_mutation_action_results() {
     assert!(report.branches.iter().any(|branch| {
         branch.choices.len() == 1
             && branch.choices[0].kind == "event"
-            && branch.choices[0].command.starts_with("event-select 0 ")
+            && branch.choices[0].command.starts_with("event 0; select ")
             && branch.choices[0].effect_kind == "transform_card"
             && branch.choices[0].effect_label.contains("result:")
             && branch.choices[0].effect_label.contains(" -> ")

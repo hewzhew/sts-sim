@@ -1,5 +1,5 @@
-use crate::core::EntityId;
 use crate::runtime::action::Action;
+use crate::EntityId;
 use smallvec::SmallVec;
 
 pub fn at_end_of_round(owner: EntityId, amount: i32) -> SmallVec<[Action; 2]> {

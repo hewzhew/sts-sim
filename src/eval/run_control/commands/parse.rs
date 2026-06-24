@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use crate::state::core::{CampfireChoice, ClientInput};
+use crate::state::selection::{SelectionResolution, SelectionScope};
 
 use super::options::{
     parse_auto_reward_command, parse_auto_run_command, parse_auto_step_command, parse_buy_command,
@@ -135,11 +136,17 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
             &rest,
             "selection index",
         )?)),
-        "hand-select" => Ok(RunControlCommand::Input(ClientInput::SubmitHandSelect(
-            parse_u32_list(&rest, "hand card uuid")?,
+        "hand-select" => Ok(RunControlCommand::Input(ClientInput::SubmitSelection(
+            SelectionResolution::card_uuids(
+                SelectionScope::Hand,
+                parse_u32_list(&rest, "hand card uuid")?,
+            ),
         ))),
-        "grid-select" => Ok(RunControlCommand::Input(ClientInput::SubmitGridSelect(
-            parse_u32_list(&rest, "grid card uuid")?,
+        "grid-select" => Ok(RunControlCommand::Input(ClientInput::SubmitSelection(
+            SelectionResolution::card_uuids(
+                SelectionScope::Grid,
+                parse_u32_list(&rest, "grid card uuid")?,
+            ),
         ))),
         "choose" => Ok(RunControlCommand::Input(ClientInput::SubmitDiscoverChoice(
             parse_usize_arg(rest.first(), "choice index")?,
@@ -179,15 +186,8 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
 }
 
 fn parse_event_select_command(rest: &[&str]) -> Result<RunControlCommand, String> {
-    let event_index = parse_usize_arg(rest.first(), "event option index")?;
-    let deck_indices = parse_usize_list(&rest[1.min(rest.len())..], "deck selection index")?;
-    if deck_indices.is_empty() {
-        return Err("event-select requires at least one deck selection index".to_string());
-    }
-    Ok(RunControlCommand::InputSequence(vec![
-        ClientInput::EventChoice(event_index),
-        ClientInput::SubmitDeckSelect(deck_indices),
-    ]))
+    let _ = rest;
+    Err("event-select is retired; use `event <idx>` and then `select <deck_idx...>`".to_string())
 }
 
 fn is_candidate_id(command: &str) -> bool {

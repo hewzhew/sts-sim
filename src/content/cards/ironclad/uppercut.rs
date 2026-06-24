@@ -29,7 +29,7 @@ pub fn definition() -> CardDefinition {
 pub fn uppercut_play(
     state: &CombatState,
     card: &CombatCard,
-    target: Option<crate::core::EntityId>,
+    target: Option<crate::EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let target = target.expect("Uppercut requires a valid target!");
     let mut actions = smallvec::SmallVec::new();

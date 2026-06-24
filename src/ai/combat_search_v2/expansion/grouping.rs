@@ -5,6 +5,7 @@ use super::types::{
     ActionExpansionGroupKey, ActionExpansionGroupSummary, ActionExpansionKind,
     ActionExpansionSummary,
 };
+use crate::state::selection::SelectionScope;
 
 pub(in crate::ai::combat_search_v2) fn summarize_action_expansion(
     engine: &EngineState,
@@ -79,22 +80,26 @@ fn group_key_for_input(
             kind: ActionExpansionKind::DiscoverChoice,
             signature: format!("discover_choice/{}", pending_choice_label(engine)),
         },
-        ClientInput::SubmitHandSelect(uuids) => ActionExpansionGroupKey {
-            kind: ActionExpansionKind::HandSelect,
-            signature: format!(
-                "hand_select/{}/selected:{}",
-                pending_choice_label(engine),
-                uuids.len()
-            ),
-        },
-        ClientInput::SubmitGridSelect(uuids) => ActionExpansionGroupKey {
-            kind: ActionExpansionKind::GridSelect,
-            signature: format!(
-                "grid_select/{}/selected:{}",
-                pending_choice_label(engine),
-                uuids.len()
-            ),
-        },
+        ClientInput::SubmitSelection(resolution) if resolution.scope == SelectionScope::Hand => {
+            ActionExpansionGroupKey {
+                kind: ActionExpansionKind::HandSelect,
+                signature: format!(
+                    "hand_select/{}/selected:{}",
+                    pending_choice_label(engine),
+                    resolution.selected.len()
+                ),
+            }
+        }
+        ClientInput::SubmitSelection(resolution) if resolution.scope == SelectionScope::Grid => {
+            ActionExpansionGroupKey {
+                kind: ActionExpansionKind::GridSelect,
+                signature: format!(
+                    "grid_select/{}/selected:{}",
+                    pending_choice_label(engine),
+                    resolution.selected.len()
+                ),
+            }
+        }
         ClientInput::SubmitScryDiscard(indices) => ActionExpansionGroupKey {
             kind: ActionExpansionKind::ScryDiscard,
             signature: format!("scry_discard/selected:{}", indices.len()),

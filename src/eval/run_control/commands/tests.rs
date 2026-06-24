@@ -7,7 +7,6 @@ use crate::ai::combat_search_v2::{
 
 use super::super::reward_auto::RewardAutomationTarget;
 use super::*;
-use crate::state::core::ClientInput;
 
 #[test]
 fn run_control_parser_accepts_capture_label() {
@@ -449,16 +448,9 @@ fn run_control_parser_accepts_view_commands() {
 }
 
 #[test]
-fn run_control_parser_accepts_typed_event_select_sequence() {
-    assert_eq!(
-        parse_run_control_command("event-select 0 3").expect("event-select should parse"),
-        RunControlCommand::InputSequence(vec![
-            ClientInput::EventChoice(0),
-            ClientInput::SubmitDeckSelect(vec![3]),
-        ])
-    );
+fn run_control_parser_retires_typed_event_select_sequence() {
     assert!(
-        parse_run_control_command("event-select 0").is_err(),
-        "event-select should include the deck selection target"
+        parse_run_control_command("event-select 0 3").is_err(),
+        "event-select cannot safely encode a deck UUID selection without event context"
     );
 }

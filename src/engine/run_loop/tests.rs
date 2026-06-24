@@ -388,12 +388,15 @@ fn relic_pending_choice_keeps_relic_source_while_event_state_is_present() {
         panic!("Dolly's Mirror should request a deck duplicate target");
     };
     let mut combat_state = None;
+    let duplicate_target_uuid = run_state.master_deck[0].uuid;
 
     assert!(tick_run(
         &mut engine_state,
         &mut run_state,
         &mut combat_state,
-        Some(ClientInput::SubmitDeckSelect(vec![0])),
+        Some(ClientInput::SubmitSelection(
+            SelectionResolution::card_uuids(SelectionScope::Deck, [duplicate_target_uuid],)
+        )),
     ));
 
     let events = run_state.take_emitted_events();

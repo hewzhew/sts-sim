@@ -1,6 +1,7 @@
 use crate::engine::targeting;
 use crate::runtime::combat::CombatState;
 use crate::state::core::{ClientInput, PendingChoice};
+use crate::state::selection::{SelectionResolution, SelectionScope};
 use crate::state::EngineState;
 
 pub fn engine_local_moves(engine: &EngineState, combat: &CombatState) -> Vec<ClientInput> {
@@ -308,31 +309,34 @@ fn collect_ranked_combinations(
 
 fn push_unique_hand_select(moves: &mut Vec<ClientInput>, selection: Vec<u32>) {
     if !contains_hand_select(moves, &selection) {
-        moves.push(ClientInput::SubmitHandSelect(selection));
+        moves.push(selection_input(SelectionScope::Hand, selection));
     }
 }
 
 fn push_unique_grid_select(moves: &mut Vec<ClientInput>, selection: Vec<u32>) {
     if !contains_grid_select(moves, &selection) {
-        moves.push(ClientInput::SubmitGridSelect(selection));
+        moves.push(selection_input(SelectionScope::Grid, selection));
     }
 }
 
 fn contains_hand_select(moves: &[ClientInput], selection: &[u32]) -> bool {
-    moves.iter().any(|move_input| {
-        matches!(
-            move_input,
-            ClientInput::SubmitHandSelect(existing) if existing == selection
-        )
-    })
+    contains_selection(moves, SelectionScope::Hand, selection)
 }
 
 fn contains_grid_select(moves: &[ClientInput], selection: &[u32]) -> bool {
-    moves.iter().any(|move_input| {
-        matches!(
-            move_input,
-            ClientInput::SubmitGridSelect(existing) if existing == selection
-        )
+    contains_selection(moves, SelectionScope::Grid, selection)
+}
+
+fn selection_input(scope: SelectionScope, selection: Vec<u32>) -> ClientInput {
+    ClientInput::SubmitSelection(SelectionResolution::card_uuids(scope, selection))
+}
+
+fn contains_selection(moves: &[ClientInput], scope: SelectionScope, selection: &[u32]) -> bool {
+    moves.iter().any(|move_input| match move_input {
+        ClientInput::SubmitSelection(resolution) if resolution.scope == scope => {
+            resolution.selected_card_uuids() == selection
+        }
+        _ => false,
     })
 }
 

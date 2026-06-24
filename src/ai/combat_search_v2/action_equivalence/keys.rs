@@ -1,5 +1,6 @@
 use crate::content::cards;
 use crate::state::core::{PendingChoice, PileType};
+use crate::state::selection::SelectionScope;
 
 use super::super::*;
 
@@ -34,11 +35,13 @@ pub(super) fn equivalence_key_for_choice(
                 signature: starter_basic_card_signature(combat, card, *target),
             })
         }
-        ClientInput::SubmitGridSelect(uuids) => {
-            pending_single_card_selection_key(engine, combat, uuids)
-        }
-        ClientInput::SubmitHandSelect(uuids) => {
-            pending_single_card_selection_key(engine, combat, uuids)
+        ClientInput::SubmitSelection(resolution)
+            if matches!(
+                resolution.scope,
+                SelectionScope::Hand | SelectionScope::Grid
+            ) =>
+        {
+            pending_single_card_selection_key(engine, combat, &resolution.selected_card_uuids())
         }
         _ => None,
     }

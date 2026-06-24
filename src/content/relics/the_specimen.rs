@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 /// Java: onMonsterDeath(m) → if m has Poison, find alive enemy, apply that Poison.
 pub fn on_monster_death(
     state: &crate::runtime::combat::CombatState,
-    dead_monster_id: crate::core::EntityId,
+    dead_monster_id: crate::EntityId,
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
 

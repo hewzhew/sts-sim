@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 
 pub fn on_card_drawn(
     state: &CombatState,
-    owner: crate::core::EntityId,
+    owner: crate::EntityId,
     card_id: crate::content::cards::CardId,
     amount: i32,
 ) -> SmallVec<[Action; 2]> {

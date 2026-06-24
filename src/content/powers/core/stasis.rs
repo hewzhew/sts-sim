@@ -1,5 +1,5 @@
-use crate::core::EntityId;
 use crate::runtime::action::Action;
+use crate::EntityId;
 
 pub struct StasisPower;
 

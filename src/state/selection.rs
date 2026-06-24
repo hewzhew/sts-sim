@@ -91,6 +91,14 @@ pub enum SelectionTargetRef {
     CardUuid(u32),
 }
 
+impl SelectionTargetRef {
+    pub fn card_uuid(self) -> u32 {
+        match self {
+            SelectionTargetRef::CardUuid(uuid) => uuid,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct SelectionRequest {
     pub scope: SelectionScope,
@@ -104,6 +112,26 @@ pub struct SelectionRequest {
 pub struct SelectionResolution {
     pub scope: SelectionScope,
     pub selected: Vec<SelectionTargetRef>,
+}
+
+impl SelectionResolution {
+    pub fn card_uuids(scope: SelectionScope, uuids: impl IntoIterator<Item = u32>) -> Self {
+        Self {
+            scope,
+            selected: uuids
+                .into_iter()
+                .map(SelectionTargetRef::CardUuid)
+                .collect(),
+        }
+    }
+
+    pub fn selected_card_uuids(&self) -> Vec<u32> {
+        self.selected
+            .iter()
+            .copied()
+            .map(SelectionTargetRef::card_uuid)
+            .collect()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]

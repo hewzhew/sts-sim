@@ -704,7 +704,7 @@ pub fn at_end_of_turn(state: &mut CombatState) -> SmallVec<[ActionInfo; 4]> {
 pub fn on_use_card(
     state: &mut CombatState,
     card: &CombatCard,
-    target: Option<crate::core::EntityId>,
+    target: Option<crate::EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     let card_id = card.id;
@@ -821,9 +821,9 @@ pub fn on_use_card(
 
 pub fn on_apply_power(
     state: &mut CombatState,
-    source: crate::core::EntityId,
+    source: crate::EntityId,
     power_id: crate::content::powers::PowerId,
-    target: crate::core::EntityId,
+    target: crate::EntityId,
 ) -> smallvec::SmallVec<[ActionInfo; 4]> {
     let mut actions = smallvec::SmallVec::new();
     let bus = state.entities.player.relic_buses.on_apply_power.clone();
@@ -848,7 +848,7 @@ pub fn on_apply_power(
 
 pub fn on_monster_death(
     state: &mut CombatState,
-    _target: crate::core::EntityId,
+    _target: crate::EntityId,
 ) -> smallvec::SmallVec<[ActionInfo; 4]> {
     let mut actions = smallvec::SmallVec::new();
     let bus = state.entities.player.relic_buses.on_monster_death.clone();
@@ -1067,7 +1067,7 @@ pub fn modify_player_attack_damage_for_card(
 
 pub fn on_use_potion(
     state: &crate::runtime::combat::CombatState,
-    player_id: crate::core::EntityId,
+    player_id: crate::EntityId,
 ) -> smallvec::SmallVec<[crate::runtime::action::ActionInfo; 4]> {
     let mut actions = smallvec::SmallVec::new();
     for &relic_index in &state.entities.player.relic_buses.on_use_potion {

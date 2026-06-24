@@ -3522,7 +3522,12 @@ fn setup_matches_java_hand_select_to_draw_top_with_free_once() {
         true,
         false,
         crate::state::HandSelectReason::Setup,
-        crate::state::core::ClientInput::SubmitHandSelect(vec![21]),
+        crate::state::core::ClientInput::SubmitSelection(
+            crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Hand,
+                vec![21],
+            ),
+        ),
     )
     .expect("Setup selection should resolve");
 
@@ -3662,7 +3667,12 @@ fn retain_selection_does_not_mark_ethereal_cards_like_java() {
         false,
         true,
         crate::state::HandSelectReason::Retain,
-        crate::state::core::ClientInput::SubmitHandSelect(vec![41, 42]),
+        crate::state::core::ClientInput::SubmitSelection(
+            crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Hand,
+                vec![41, 42],
+            ),
+        ),
     )
     .expect("retain selection should resolve");
 
@@ -3787,7 +3797,12 @@ fn nightmare_selection_returns_original_and_start_turn_copies_payload() {
         true,
         false,
         crate::state::HandSelectReason::Nightmare { amount: 2 },
-        crate::state::core::ClientInput::SubmitHandSelect(vec![61]),
+        crate::state::core::ClientInput::SubmitSelection(
+            crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Hand,
+                vec![61],
+            ),
+        ),
     )
     .expect("Nightmare hand selection should resolve");
 
@@ -4092,7 +4107,12 @@ fn discard_action_manual_discard_hooks_run_card_before_relic_hooks() {
         false,
         true,
         crate::state::HandSelectReason::GamblingChip,
-        crate::state::ClientInput::SubmitHandSelect(vec![873]),
+        crate::state::ClientInput::SubmitSelection(
+            crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Hand,
+                vec![873],
+            ),
+        ),
     )
     .expect("valid Gambling Chip hand selection");
 

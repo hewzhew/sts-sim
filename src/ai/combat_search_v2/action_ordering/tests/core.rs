@@ -1,6 +1,13 @@
 use super::*;
 use std::collections::HashMap;
 
+fn grid_select(uuids: impl IntoIterator<Item = u32>) -> ClientInput {
+    ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+        crate::state::selection::SelectionScope::Grid,
+        uuids,
+    ))
+}
+
 #[test]
 fn combat_ordering_keeps_original_action_ids_after_reordering() {
     let mut combat = blank_test_combat();
@@ -457,8 +464,8 @@ fn pending_choice_actions_are_ordered_without_losing_original_ids() {
         reason: crate::state::core::GridSelectReason::MoveToDrawPile,
     });
     let choices = vec![
-        CombatActionChoice::from_input(&combat, ClientInput::SubmitGridSelect(vec![10])),
-        CombatActionChoice::from_input(&combat, ClientInput::SubmitGridSelect(vec![20])),
+        CombatActionChoice::from_input(&combat, grid_select([10])),
+        CombatActionChoice::from_input(&combat, grid_select([20])),
     ];
 
     let ordered = order_action_choices(&engine, &combat, choices);

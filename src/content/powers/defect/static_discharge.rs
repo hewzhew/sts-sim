@@ -3,8 +3,8 @@ use crate::runtime::combat::OrbId;
 use smallvec::SmallVec;
 
 pub fn on_attacked(
-    owner: crate::core::EntityId,
-    source: crate::core::EntityId,
+    owner: crate::EntityId,
+    source: crate::EntityId,
     damage: i32,
     damage_type: DamageType,
     amount: i32,

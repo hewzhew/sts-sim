@@ -6,7 +6,7 @@ pub struct GremlinHorn;
 impl GremlinHorn {
     pub fn on_monster_death(
         state: &crate::runtime::combat::CombatState,
-        target: crate::core::EntityId,
+        target: crate::EntityId,
     ) -> SmallVec<[ActionInfo; 4]> {
         let mut actions = SmallVec::new();
         let target_is_dead = state

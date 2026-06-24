@@ -795,7 +795,7 @@ impl RunState {
     }
 
     /// Extends this RunState's persistent player properties into a temporary CombatState player.
-    pub fn build_combat_player(&self, id: crate::core::EntityId) -> PlayerEntity {
+    pub fn build_combat_player(&self, id: crate::EntityId) -> PlayerEntity {
         let master_max_orbs = if self.player_class == "Defect" {
             3
         } else if self

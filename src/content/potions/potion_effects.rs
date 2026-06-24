@@ -1,9 +1,9 @@
 use super::PotionId;
 use crate::content::cards::make_constructed_temp_card_in_hand_action;
 use crate::content::powers::PowerId;
-use crate::core::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo, DamageInfo, DamageType, NO_SOURCE};
 use crate::runtime::combat::CombatState;
+use crate::EntityId;
 use smallvec::SmallVec;
 
 /// Player entity ID constant

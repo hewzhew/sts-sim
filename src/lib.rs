@@ -1,8 +1,8 @@
 extern crate self as sts_simulator;
 
 pub mod content;
-mod core;
 pub mod engine;
+mod ids;
 pub mod runtime;
 pub mod sim;
 pub mod state;
@@ -60,4 +60,4 @@ pub mod bot {
     }
 }
 
-pub use core::EntityId;
+pub use ids::EntityId;

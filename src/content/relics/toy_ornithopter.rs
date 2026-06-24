@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 
 pub fn on_use_potion(
     _state: &CombatState,
-    player_id: crate::core::EntityId,
+    player_id: crate::EntityId,
 ) -> SmallVec<[ActionInfo; 4]> {
     let mut actions = SmallVec::new();
     // Heal 5 HP when you use a potion

@@ -24,7 +24,7 @@ use crate::state::events::{
     EventActionKind, EventCardKind, EventEffect, EventId, EventOption, EventOptionConstraint,
     EventOptionSemantics, EventOptionTransition, EventRelicKind, EventSelectionKind,
 };
-use crate::state::selection::DomainEventSource;
+use crate::state::selection::{DomainEventSource, SelectionResolution, SelectionScope};
 
 const MAX_EVENT_OPTIONS_PER_BRANCH: usize = 4;
 const MAX_OPEN_SELECTION_DECK_MUTATION_OPTIONS_PER_EVENT: usize = 3;
@@ -390,7 +390,10 @@ fn open_selection_deck_mutation_event_branch_option(
         command: event_select_command_v1(event_index, &deck_indices),
         action: BranchBoundaryActionV1::Inputs(vec![
             ClientInput::EventChoice(event_index),
-            ClientInput::SubmitDeckSelect(deck_indices),
+            ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+                SelectionScope::Deck,
+                plan.step.cards.iter().map(|card| card.uuid),
+            )),
         ]),
         card: card.map(|card| card.card),
         upgrades: card.map(|card| card.upgrades),
@@ -423,9 +426,9 @@ fn event_select_command_v1(event_index: usize, deck_indices: &[usize]) -> String
         .collect::<Vec<_>>()
         .join(" ");
     if suffix.is_empty() {
-        format!("event-select {event_index}")
+        format!("event {event_index}; select")
     } else {
-        format!("event-select {event_index} {suffix}")
+        format!("event {event_index}; select {suffix}")
     }
 }
 

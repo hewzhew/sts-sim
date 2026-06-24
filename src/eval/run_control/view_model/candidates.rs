@@ -6,6 +6,7 @@ use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState, PendingChoice, PileType};
 use crate::state::events::{EventOption, EventOptionTransition};
 use crate::state::rewards::{BossRelicChoiceState, RewardState};
+use crate::state::selection::{SelectionResolution, SelectionScope};
 use std::collections::BTreeMap;
 
 use super::labels::{
@@ -621,17 +622,22 @@ fn pending_choice_input_label(
                 reason,
                 ..
             },
-            ClientInput::SubmitGridSelect(uuids),
+            ClientInput::SubmitSelection(resolution),
         ) => format!(
             "{} {}",
             grid_reason_verb(*reason),
-            selected_card_labels(grid_source_cards(combat, *source_pile), uuids).join(", ")
+            selected_card_labels(
+                grid_source_cards(combat, *source_pile),
+                &resolution.selected_card_uuids()
+            )
+            .join(", ")
         ),
-        (PendingChoice::HandSelect { reason, .. }, ClientInput::SubmitHandSelect(uuids)) => {
+        (PendingChoice::HandSelect { reason, .. }, ClientInput::SubmitSelection(resolution)) => {
             format!(
                 "{} {}",
                 hand_reason_verb(*reason),
-                selected_card_labels(&combat.zones.hand, uuids).join(", ")
+                selected_card_labels(&combat.zones.hand, &resolution.selected_card_uuids())
+                    .join(", ")
             )
         }
         (PendingChoice::DiscoverySelect(choice), ClientInput::SubmitDiscoverChoice(idx)) => choice
@@ -802,7 +808,10 @@ fn run_choice_candidates(
                 candidate(
                     idx.to_string(),
                     combat_card_label(card),
-                    ClientInput::SubmitDeckSelect(vec![idx]),
+                    ClientInput::SubmitSelection(SelectionResolution::card_uuids(
+                        SelectionScope::Deck,
+                        [card.uuid],
+                    )),
                     None::<String>,
                 )
             } else {

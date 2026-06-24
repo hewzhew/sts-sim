@@ -5,6 +5,7 @@ mod resolution;
 
 use crate::sim::combat::{combat_terminal, stable_boundary};
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::selection::SelectionScope;
 
 pub(super) use super::session::RunControlSession;
 use candidates::decision_candidates;
@@ -122,10 +123,14 @@ pub fn client_input_hint(input: &ClientInput) -> String {
             crate::state::core::CampfireChoice::Recall => "recall".to_string(),
         },
         ClientInput::SubmitScryDiscard(indices) => format_usize_command("scry", indices),
-        ClientInput::SubmitSelection(_) => "submit-selection".to_string(),
-        ClientInput::SubmitHandSelect(uuids) => format_u32_command("hand-select", uuids),
-        ClientInput::SubmitGridSelect(uuids) => format_u32_command("grid-select", uuids),
-        ClientInput::SubmitDeckSelect(indices) => format_usize_command("select", indices),
+        ClientInput::SubmitSelection(resolution) => {
+            let uuids = resolution.selected_card_uuids();
+            match resolution.scope {
+                SelectionScope::Hand => format_u32_command("hand-select", &uuids),
+                SelectionScope::Grid => format_u32_command("grid-select", &uuids),
+                SelectionScope::Deck => format_u32_command("deck-select", &uuids),
+            }
+        }
         ClientInput::ClaimReward(idx) => format!("claim {idx}"),
         ClientInput::OpenRewardOverlay => "rewards".to_string(),
         ClientInput::OpenChest => "open".to_string(),

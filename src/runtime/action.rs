@@ -1,7 +1,7 @@
-use crate::core::EntityId;
 use crate::state::{
     GridSelectFilter, GridSelectReason, HandSelectFilter, HandSelectReason, PileType,
 };
+use crate::EntityId;
 use serde::{Deserialize, Serialize};
 
 pub const NO_SOURCE: EntityId = EntityId::MAX;

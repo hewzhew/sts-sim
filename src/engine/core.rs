@@ -645,7 +645,10 @@ mod tests {
         resolve_pending_choice(
             &mut engine_state,
             &mut combat_state,
-            ClientInput::SubmitGridSelect(vec![10]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Grid,
+                vec![10],
+            )),
         )
         .expect("valid Omniscience grid selection should resolve");
 

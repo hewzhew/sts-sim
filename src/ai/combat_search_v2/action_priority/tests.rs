@@ -3,7 +3,12 @@ use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::selection::{SelectionResolution, SelectionScope};
 use crate::test_support::{blank_test_combat, test_monster};
+
+fn grid_select(uuids: impl IntoIterator<Item = u32>) -> ClientInput {
+    ClientInput::SubmitSelection(SelectionResolution::card_uuids(SelectionScope::Grid, uuids))
+}
 
 #[test]
 fn non_player_turn_priority_is_neutral() {
@@ -52,7 +57,7 @@ fn pending_choice_priority_uses_structured_selection_role() {
         reason: crate::state::core::GridSelectReason::MoveToDrawPile,
     });
 
-    let priority = priority_for_input(&engine, &combat, &ClientInput::SubmitGridSelect(vec![20]));
+    let priority = priority_for_input(&engine, &combat, &grid_select([20]));
 
     assert_eq!(
         priority.role,

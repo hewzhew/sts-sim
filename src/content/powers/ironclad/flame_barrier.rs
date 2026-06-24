@@ -2,8 +2,8 @@ use crate::runtime::action::{Action, DamageInfo, DamageType};
 use smallvec::SmallVec;
 
 pub fn on_attacked(
-    owner: crate::core::EntityId,
-    source: crate::core::EntityId,
+    owner: crate::EntityId,
+    source: crate::EntityId,
     damage_type: DamageType,
     amount: i32,
 ) -> SmallVec<[Action; 2]> {

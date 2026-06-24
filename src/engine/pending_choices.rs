@@ -15,16 +15,11 @@ fn selection_to_uuids(
             if scope != expected_scope {
                 return Err("Selection scope does not match pending choice");
             }
-            let uuids = selected
+            Ok(selected
                 .into_iter()
-                .map(|target| match target {
-                    SelectionTargetRef::CardUuid(uuid) => Ok(uuid),
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(uuids)
+                .map(SelectionTargetRef::card_uuid)
+                .collect())
         }
-        ClientInput::SubmitHandSelect(uuids) if expected_scope == SelectionScope::Hand => Ok(uuids),
-        ClientInput::SubmitGridSelect(uuids) if expected_scope == SelectionScope::Grid => Ok(uuids),
         _ => Err("Invalid input for selection"),
     }
 }
@@ -754,7 +749,10 @@ mod tests {
             true,
             false,
             HandSelectReason::Copy { amount: 3 },
-            ClientInput::SubmitHandSelect(vec![10]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Hand,
+                vec![10],
+            )),
         )
         .expect("copy selection should resolve");
 
@@ -846,7 +844,10 @@ mod tests {
             true,
             false,
             HandSelectReason::Copy { amount: 2 },
-            ClientInput::SubmitHandSelect(vec![20]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Hand,
+                vec![20],
+            )),
         )
         .expect("copy selection should resolve");
 
@@ -897,7 +898,10 @@ mod tests {
             true,
             false,
             HandSelectReason::Upgrade,
-            ClientInput::SubmitHandSelect(vec![20]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Hand,
+                vec![20],
+            )),
         )
         .expect("upgrade selection should resolve");
 
@@ -943,7 +947,10 @@ mod tests {
             true,
             false,
             HandSelectReason::Retain,
-            ClientInput::SubmitHandSelect(vec![20]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Hand,
+                vec![20],
+            )),
         )
         .expect("retain selection should resolve");
 
@@ -986,7 +993,10 @@ mod tests {
             true,
             false,
             HandSelectReason::PutToBottomOfDraw,
-            ClientInput::SubmitHandSelect(vec![10]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Hand,
+                vec![10],
+            )),
         )
         .expect("Forethought-style selection should resolve");
 
@@ -1024,7 +1034,10 @@ mod tests {
             2,
             false,
             GridSelectReason::MoveToDrawPile,
-            ClientInput::SubmitGridSelect(vec![10, 10]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Grid,
+                vec![10, 10],
+            )),
         );
 
         assert_eq!(result, Err("Duplicate grid selection"));
@@ -1066,7 +1079,10 @@ mod tests {
             1,
             false,
             GridSelectReason::DiscardToHand,
-            ClientInput::SubmitGridSelect(vec![20]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Grid,
+                vec![20],
+            )),
         )
         .expect("full hand still resolves like Java BetterDiscardPileToHandAction");
 
@@ -1107,7 +1123,10 @@ mod tests {
             1,
             false,
             GridSelectReason::DiscardToHandNoCostChange,
-            ClientInput::SubmitGridSelect(vec![21]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Grid,
+                vec![21],
+            )),
         )
         .expect("Hologram-style discard-to-hand selection should resolve");
 
@@ -1146,7 +1165,10 @@ mod tests {
             1,
             false,
             GridSelectReason::DiscardToHandRetain,
-            ClientInput::SubmitGridSelect(vec![22]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Grid,
+                vec![22],
+            )),
         )
         .expect("Meditate-style discard-to-hand selection should resolve");
 
@@ -1184,7 +1206,10 @@ mod tests {
             1,
             false,
             GridSelectReason::AttackFromDeckToHand,
-            ClientInput::SubmitGridSelect(vec![30]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Grid,
+                vec![30],
+            )),
         )
         .expect("full hand should discard selected deck-to-hand card");
 
@@ -1228,7 +1253,10 @@ mod tests {
             2,
             false,
             GridSelectReason::DrawPileToHand,
-            ClientInput::SubmitGridSelect(vec![40, 30]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Grid,
+                vec![40, 30],
+            )),
         )
         .expect("Seek should move arbitrary selected draw-pile cards to hand");
 
@@ -1270,7 +1298,10 @@ mod tests {
             true,
             false,
             HandSelectReason::Recycle,
-            ClientInput::SubmitHandSelect(vec![20]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Hand,
+                vec![20],
+            )),
         )
         .expect("Recycle should resolve selected hand card");
 
@@ -1315,7 +1346,10 @@ mod tests {
             2,
             false,
             GridSelectReason::SkillFromDeckToHand,
-            ClientInput::SubmitGridSelect(vec![40, 50]),
+            ClientInput::SubmitSelection(crate::state::selection::SelectionResolution::card_uuids(
+                crate::state::selection::SelectionScope::Grid,
+                vec![40, 50],
+            )),
         );
 
         assert_eq!(result, Err("Grid candidate no longer in draw pile"));

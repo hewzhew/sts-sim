@@ -1,6 +1,15 @@
 use super::*;
 use crate::runtime::combat::CombatCard;
+use crate::state::selection::{SelectionResolution, SelectionScope};
 use crate::test_support::blank_test_combat;
+
+fn hand_select(uuids: impl IntoIterator<Item = u32>) -> ClientInput {
+    ClientInput::SubmitSelection(SelectionResolution::card_uuids(SelectionScope::Hand, uuids))
+}
+
+fn grid_select(uuids: impl IntoIterator<Item = u32>) -> ClientInput {
+    ClientInput::SubmitSelection(SelectionResolution::card_uuids(SelectionScope::Grid, uuids))
+}
 
 #[test]
 fn move_to_draw_prefers_higher_value_card() {
@@ -18,12 +27,10 @@ fn move_to_draw_prefers_higher_value_card() {
         reason: GridSelectReason::MoveToDrawPile,
     });
 
-    let strike =
-        pending_choice_ordering_hint(&engine, &combat, &ClientInput::SubmitGridSelect(vec![10]))
-            .expect("strike candidate should rank");
-    let carnage =
-        pending_choice_ordering_hint(&engine, &combat, &ClientInput::SubmitGridSelect(vec![20]))
-            .expect("carnage candidate should rank");
+    let strike = pending_choice_ordering_hint(&engine, &combat, &grid_select([10]))
+        .expect("strike candidate should rank");
+    let carnage = pending_choice_ordering_hint(&engine, &combat, &grid_select([20]))
+        .expect("carnage candidate should rank");
 
     assert!(carnage.primary > strike.primary);
 }
@@ -43,12 +50,10 @@ fn upgrade_selection_prefers_higher_upgrade_delta() {
         reason: HandSelectReason::Upgrade,
     });
 
-    let strike =
-        pending_choice_ordering_hint(&engine, &combat, &ClientInput::SubmitHandSelect(vec![10]))
-            .expect("strike upgrade candidate should rank");
-    let bash =
-        pending_choice_ordering_hint(&engine, &combat, &ClientInput::SubmitHandSelect(vec![20]))
-            .expect("bash upgrade candidate should rank");
+    let strike = pending_choice_ordering_hint(&engine, &combat, &hand_select([10]))
+        .expect("strike upgrade candidate should rank");
+    let bash = pending_choice_ordering_hint(&engine, &combat, &hand_select([20]))
+        .expect("bash upgrade candidate should rank");
 
     assert!(bash.primary > strike.primary);
 }

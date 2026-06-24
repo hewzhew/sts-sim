@@ -28,7 +28,7 @@ pub fn definition() -> CardDefinition {
 pub fn havoc_play(
     _state: &CombatState,
     _card: &CombatCard,
-    _target: Option<crate::core::EntityId>,
+    _target: Option<crate::EntityId>,
 ) -> SmallVec<[ActionInfo; 4]> {
     smallvec::smallvec![ActionInfo {
         action: Action::PlayTopCard {

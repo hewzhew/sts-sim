@@ -2,7 +2,7 @@ use crate::runtime::action::Action;
 use smallvec::SmallVec;
 
 /// Next Turn Block: At the start of your next turn, gain X Block. (Used by Self-Forming Clay, Dodge and Roll, etc.)
-pub fn at_turn_start(entity_id: crate::core::EntityId, amount: i32) -> SmallVec<[Action; 2]> {
+pub fn at_turn_start(entity_id: crate::EntityId, amount: i32) -> SmallVec<[Action; 2]> {
     let mut actions = SmallVec::new();
 
     // Gain block

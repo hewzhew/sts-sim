@@ -1,7 +1,7 @@
 // Mechanical split from cards/mod.rs for runtime card play/evaluation helpers.
 
 use crate::content::powers::PowerId;
-use crate::core::EntityId;
+use crate::EntityId;
 use crate::runtime::action::{Action, ActionInfo, AddTo};
 use crate::runtime::combat::{CombatCard, CombatState};
 use smallvec::SmallVec;

@@ -1,5 +1,5 @@
-use crate::core::EntityId;
 use crate::runtime::action::{Action, DamageInfo, DamageType};
+use crate::EntityId;
 
 pub fn at_end_of_turn(owner: EntityId, amount: i32) -> smallvec::SmallVec<[Action; 2]> {
     let mut actions = smallvec::smallvec![];

@@ -1,6 +1,7 @@
 use crate::content::cards;
 use crate::runtime::combat::{CombatCard, CombatState};
 use crate::state::core::ClientInput;
+use crate::state::selection::SelectionScope;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CombatActionChoice {
@@ -61,8 +62,14 @@ pub fn combat_action_key(combat: &CombatState, input: &ClientInput) -> String {
         ClientInput::DiscardPotion(slot) => format!("combat/discard_potion/slot:{slot}"),
         ClientInput::EndTurn => "combat/end_turn".to_string(),
         ClientInput::SubmitDiscoverChoice(index) => format!("combat/submit_choice/{index}"),
-        ClientInput::SubmitHandSelect(uuids) => format!("combat/hand_select/{}", uuid_list(uuids)),
-        ClientInput::SubmitGridSelect(uuids) => format!("combat/grid_select/{}", uuid_list(uuids)),
+        ClientInput::SubmitSelection(resolution) => {
+            let prefix = match resolution.scope {
+                SelectionScope::Hand => "combat/hand_select",
+                SelectionScope::Grid => "combat/grid_select",
+                SelectionScope::Deck => "combat/deck_select",
+            };
+            format!("{prefix}/{}", uuid_list(&resolution.selected_card_uuids()))
+        }
         ClientInput::SubmitScryDiscard(indices) => {
             format!(
                 "combat/scry_discard/{}",

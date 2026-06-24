@@ -4,6 +4,11 @@ use crate::state::selection::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Combat-local pending selections, such as choosing cards from hand, draw/discard,
+/// or generated combat choices.
+///
+/// This shares the UI-facing `SelectionRequest` / `SelectionResolution` protocol
+/// with run-level choices, but its lifecycle and effects are combat-local.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum PendingChoice {
     GridSelect {

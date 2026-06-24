@@ -20,7 +20,6 @@ pub mod slime_boss;
 pub mod spike_slime;
 pub mod the_guardian;
 
-use crate::core::EntityId;
 use crate::runtime::action::{Action, MonsterRuntimePatch};
 use crate::runtime::combat::MonsterEntity;
 use crate::semantics::combat::{
@@ -28,6 +27,7 @@ use crate::semantics::combat::{
     MoveTarget, RandomBlockStep, RemovePowerStep, SpawnHpSpec, SpawnHpValue, SpawnMonsterStep,
     StealGoldStep, UpgradeCardsStep, UtilityStep,
 };
+use crate::EntityId;
 
 pub const PLAYER: EntityId = 0;
 

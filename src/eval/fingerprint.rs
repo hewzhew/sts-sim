@@ -319,17 +319,15 @@ fn combat_action_descriptor_v1(
             indices.clone(),
             Vec::new(),
         ),
-        ClientInput::SubmitHandSelect(uuids) => selection_descriptor(
-            "submit_hand_select",
+        ClientInput::SubmitSelection(resolution) => selection_descriptor(
+            match resolution.scope {
+                crate::state::selection::SelectionScope::Hand => "submit_hand_select",
+                crate::state::selection::SelectionScope::Grid => "submit_grid_select",
+                crate::state::selection::SelectionScope::Deck => "submit_deck_select",
+            },
             input.clone(),
             Vec::new(),
-            uuids.clone(),
-        ),
-        ClientInput::SubmitGridSelect(uuids) => selection_descriptor(
-            "submit_grid_select",
-            input.clone(),
-            Vec::new(),
-            uuids.clone(),
+            resolution.selected_card_uuids(),
         ),
         ClientInput::Proceed => descriptor(
             "proceed",
