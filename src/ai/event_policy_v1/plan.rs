@@ -2,7 +2,9 @@ use crate::content::monsters::factory::EncounterId;
 use crate::content::relics::RelicId;
 use crate::rewards::state::RewardItem;
 use crate::state::core::EngineState;
-use crate::state::events::{EventId, EventState};
+use crate::state::events::{
+    EventActionKind, EventEffect, EventId, EventOptionTransition, EventState,
+};
 use crate::state::run::RunState;
 
 use super::cost::{project_hp_loss_cost_v1, EventCostProjectionV1};
@@ -22,6 +24,7 @@ pub enum EventPlanIdV1 {
     ScrapOozeReachInOnce,
     DeadAdventurerLeaveNow,
     DeadAdventurerSearchAsOptionalElite,
+    KnowingSkullLeaveNow,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -238,6 +241,7 @@ pub fn compile_event_plan_candidates_v1(
             compile_scrap_ooze_plan_specs_v1(run_state, event_state, information_mode)
         }
         EventId::DeadAdventurer => compile_dead_adventurer_plan_specs_v1(event_state),
+        EventId::KnowingSkull => compile_knowing_skull_plan_specs_v1(run_state, event_state),
         _ => Vec::new(),
     };
     materialize_event_plan_specs_v1(run_state, specs)
@@ -256,6 +260,7 @@ pub fn select_event_plan_candidate_v1(
         EventId::CursedTome => select_cursed_tome_plan_v1(run_state, config, plans),
         EventId::ScrapOoze => select_scrap_ooze_plan_v1(run_state, config, plans),
         EventId::DeadAdventurer => select_dead_adventurer_plan_v1(run_state, config, plans),
+        EventId::KnowingSkull => select_plan_by_id_v1(plans, EventPlanIdV1::KnowingSkullLeaveNow),
         _ => None,
     }
 }
@@ -454,6 +459,24 @@ fn compile_dead_adventurer_plan_specs_v1(event_state: &EventState) -> Vec<EventP
     ]
 }
 
+fn compile_knowing_skull_plan_specs_v1(
+    run_state: &RunState,
+    event_state: &EventState,
+) -> Vec<EventPlanSpecV1> {
+    let Some((choice_index, hp_loss)) = knowing_skull_leave_choice_v1(run_state, event_state)
+    else {
+        return Vec::new();
+    };
+    vec![EventPlanSpecV1::hp_payment(
+        EventPlanIdV1::KnowingSkullLeaveNow,
+        EventId::KnowingSkull,
+        vec![event_plan_step(event_state.current_screen, choice_index)],
+        vec![hp_loss],
+        EventPlanRewardV1::None,
+        None,
+    )]
+}
+
 fn select_cursed_tome_plan_v1(
     run_state: &RunState,
     config: &EventPolicyConfigV1,
@@ -548,6 +571,13 @@ fn select_dead_adventurer_plan_v1(
     }
 }
 
+fn select_plan_by_id_v1(
+    plans: Vec<EventPlanCandidateV1>,
+    plan_id: EventPlanIdV1,
+) -> Option<EventPlanCandidateV1> {
+    plans.into_iter().find(|plan| plan.plan_id == plan_id)
+}
+
 fn hp_safety_floor(run_state: &RunState, config: &EventPolicyConfigV1) -> i32 {
     let ratio_floor =
         (run_state.max_hp.max(0) as f32 * config.min_hp_ratio_after_safe_hp_cost).ceil() as i32;
@@ -608,6 +638,35 @@ fn dead_adventurer_encounter_id(state: i32) -> Option<EncounterId> {
         2 => Some(EncounterId::LagavulinEvent),
         _ => None,
     }
+}
+
+fn knowing_skull_leave_choice_v1(
+    run_state: &RunState,
+    event_state: &EventState,
+) -> Option<(usize, i32)> {
+    if event_state.id != EventId::KnowingSkull || event_state.current_screen != 1 {
+        return None;
+    }
+    crate::content::events::knowing_skull::get_options(run_state, event_state)
+        .into_iter()
+        .enumerate()
+        .find_map(|(index, option)| {
+            if option.semantics.action != EventActionKind::Leave
+                || option.semantics.transition != EventOptionTransition::AdvanceScreen
+            {
+                return None;
+            }
+            let hp_loss = option
+                .semantics
+                .effects
+                .iter()
+                .filter_map(|effect| match effect {
+                    EventEffect::LoseHp(value) => Some(*value),
+                    _ => None,
+                })
+                .sum();
+            Some((index, hp_loss))
+        })
 }
 
 fn peek_cursed_tome_book_v1(run_state: &RunState) -> Option<EventOracleEvidenceV1> {

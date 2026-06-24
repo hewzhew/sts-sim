@@ -197,15 +197,6 @@ pub(crate) fn event_branch_selection(
             policy_options,
         ));
     }
-    if let Some(policy_options) =
-        repeatable_paid_menu_policy_branch_options(event_id, &event_shape, &branch_options)
-    {
-        return Some(event_branch_selection_from_options(
-            event_id,
-            candidate_pool_options,
-            policy_options,
-        ));
-    }
     if matches!(event_shape, EventDecisionShapeV1::RepeatablePaidMenu(_)) {
         return None;
     }
@@ -274,30 +265,6 @@ fn event_plan_policy_branch_options(
         option.effect_label, plan.plan_id, plan.cost.effective_hp_loss, oracle_label
     );
     Some(vec![option])
-}
-
-fn repeatable_paid_menu_policy_branch_options(
-    event_id: EventId,
-    event_shape: &EventDecisionShapeV1,
-    options: &[EventBranchOption],
-) -> Option<Vec<EventBranchOption>> {
-    let EventDecisionShapeV1::RepeatablePaidMenu(menu) = event_shape else {
-        return None;
-    };
-    match event_id {
-        EventId::KnowingSkull => {
-            let mut option = options
-                .iter()
-                .find(|option| option.event_index == Some(menu.exit_index))
-                .cloned()?;
-            option.effect_label = format!(
-                "{} | repeatable paid menu policy=leave exit_hp_cost={}",
-                option.effect_label, menu.exit_cost_hp
-            );
-            Some(vec![option])
-        }
-        _ => None,
-    }
 }
 
 fn open_selection_deck_mutation_option_count(
