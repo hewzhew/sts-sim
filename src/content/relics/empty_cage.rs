@@ -25,7 +25,7 @@ pub fn on_equip(run_state: &mut RunState, return_state: EngineState) -> Option<E
         min_choices: 2,
         max_choices: 2,
         reason: RunPendingChoiceReason::Purge,
-        source: Some(DomainEventSource::Relic(RelicId::EmptyCage)),
+        source: DomainEventSource::Relic(RelicId::EmptyCage),
         return_state: Box::new(return_state),
     }))
 }

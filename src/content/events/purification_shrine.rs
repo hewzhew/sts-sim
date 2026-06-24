@@ -65,7 +65,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                     run_state.event_state = Some(event_state);
                     *engine_state = EngineState::RunPendingChoice(RunPendingChoiceState {
                         reason: RunPendingChoiceReason::PurgeNonBottled,
-                        source: Some(DomainEventSource::Event(EventId::Purifier)),
+                        source: DomainEventSource::Event(EventId::Purifier),
                         min_choices: 1,
                         max_choices: 1,
                         return_state: Box::new(EngineState::EventRoom),

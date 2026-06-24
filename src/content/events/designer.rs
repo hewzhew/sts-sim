@@ -390,7 +390,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                             min_choices: 1,
                             max_choices: 1,
                             reason: RunPendingChoiceReason::Upgrade,
-                            source: Some(DomainEventSource::Event(EventId::Designer)),
+                            source: DomainEventSource::Event(EventId::Designer),
                             return_state: Box::new(EngineState::EventRoom),
                         });
                         return;
@@ -418,7 +418,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                             min_choices: 1,
                             max_choices: 1,
                             reason: RunPendingChoiceReason::PurgeNonBottled,
-                            source: Some(DomainEventSource::Event(EventId::Designer)),
+                            source: DomainEventSource::Event(EventId::Designer),
                             return_state: Box::new(EngineState::EventRoom),
                         });
                         return;
@@ -430,7 +430,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                             min_choices: 2,
                             max_choices: 2,
                             reason: RunPendingChoiceReason::TransformNonBottled,
-                            source: Some(DomainEventSource::Event(EventId::Designer)),
+                            source: DomainEventSource::Event(EventId::Designer),
                             return_state: Box::new(EngineState::EventRoom),
                         });
                         return;
@@ -453,7 +453,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                         min_choices: 1,
                         max_choices: 1,
                         reason: RunPendingChoiceReason::PurgeNonBottled,
-                        source: Some(DomainEventSource::Event(EventId::Designer)),
+                        source: DomainEventSource::Event(EventId::Designer),
                         return_state: Box::new(EngineState::EventRoom),
                     });
                     return;
@@ -944,7 +944,7 @@ mod tests {
             min_choices: 1,
             max_choices: 1,
             reason: RunPendingChoiceReason::Transform,
-            source: None,
+            source: DomainEventSource::Event(EventId::Designer),
             return_state: Box::new(EngineState::EventRoom),
         });
 

@@ -145,7 +145,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                 reason,
                 min_choices: 1,
                 max_choices: 1,
-                source: Some(DomainEventSource::Event(EventId::LivingWall)),
+                source: DomainEventSource::Event(EventId::LivingWall),
                 return_state: Box::new(EngineState::EventRoom),
             });
         } else {

@@ -1488,7 +1488,9 @@ fn current_boundary_wraps_single_card_run_selection_options() {
         min_choices: 1,
         max_choices: 1,
         reason: RunPendingChoiceReason::Purge,
-        source: None,
+        source: crate::state::selection::DomainEventSource::Selection(
+            RunPendingChoiceReason::Purge.into(),
+        ),
         return_state: Box::new(EngineState::EventRoom),
     });
 
@@ -1551,7 +1553,9 @@ fn current_boundary_does_not_expand_core_basic_purge_when_low_value_targets_exis
         min_choices: 1,
         max_choices: 1,
         reason: RunPendingChoiceReason::Purge,
-        source: None,
+        source: crate::state::selection::DomainEventSource::Selection(
+            RunPendingChoiceReason::Purge.into(),
+        ),
         return_state: Box::new(EngineState::EventRoom),
     });
 
@@ -1589,7 +1593,9 @@ fn current_boundary_keeps_distinct_run_selection_card_state_separate() {
         min_choices: 1,
         max_choices: 1,
         reason: RunPendingChoiceReason::Purge,
-        source: None,
+        source: crate::state::selection::DomainEventSource::Selection(
+            RunPendingChoiceReason::Purge.into(),
+        ),
         return_state: Box::new(EngineState::EventRoom),
     });
 
@@ -1625,7 +1631,9 @@ fn current_boundary_wraps_small_multi_card_run_selection_options() {
         min_choices: 2,
         max_choices: 2,
         reason: RunPendingChoiceReason::Transform,
-        source: None,
+        source: crate::state::selection::DomainEventSource::Selection(
+            RunPendingChoiceReason::Transform.into(),
+        ),
         return_state: Box::new(EngineState::EventRoom),
     });
 
@@ -1658,7 +1666,9 @@ fn current_boundary_compresses_multi_card_run_selection_by_effect_key() {
         min_choices: 2,
         max_choices: 2,
         reason: RunPendingChoiceReason::Transform,
-        source: None,
+        source: crate::state::selection::DomainEventSource::Selection(
+            RunPendingChoiceReason::Transform.into(),
+        ),
         return_state: Box::new(EngineState::EventRoom),
     });
 
@@ -1707,7 +1717,9 @@ fn current_boundary_uses_compiler_representative_for_high_fanout_run_selection_o
         min_choices: 2,
         max_choices: 2,
         reason: RunPendingChoiceReason::Transform,
-        source: None,
+        source: crate::state::selection::DomainEventSource::Selection(
+            RunPendingChoiceReason::Transform.into(),
+        ),
         return_state: Box::new(EngineState::EventRoom),
     });
 
@@ -1746,7 +1758,9 @@ fn current_boundary_keeps_high_value_duplicate_targets_when_fanout_is_high() {
         min_choices: 1,
         max_choices: 1,
         reason: RunPendingChoiceReason::Duplicate,
-        source: None,
+        source: crate::state::selection::DomainEventSource::Selection(
+            RunPendingChoiceReason::Duplicate.into(),
+        ),
         return_state: Box::new(EngineState::Shop(ShopState::new())),
     });
 

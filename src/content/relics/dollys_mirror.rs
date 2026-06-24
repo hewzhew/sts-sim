@@ -9,7 +9,7 @@ pub fn on_equip(run_state: &mut RunState, return_state: EngineState) -> Option<E
             min_choices: 1,
             max_choices: 1,
             reason: RunPendingChoiceReason::Duplicate,
-            source: Some(DomainEventSource::Relic(RelicId::DollysMirror)),
+            source: DomainEventSource::Relic(RelicId::DollysMirror),
             return_state: Box::new(return_state),
         }));
     }

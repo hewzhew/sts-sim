@@ -930,7 +930,9 @@ fn branch_experiment_expands_single_card_run_selection_choices() {
         min_choices: 1,
         max_choices: 1,
         reason: RunPendingChoiceReason::Purge,
-        source: None,
+        source: crate::state::selection::DomainEventSource::Selection(
+            RunPendingChoiceReason::Purge.into(),
+        ),
         return_state: Box::new(EngineState::EventRoom),
     });
 

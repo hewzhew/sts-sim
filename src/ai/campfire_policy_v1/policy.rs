@@ -78,7 +78,7 @@ fn deck_mutation_campfire_targets(
         min_choices: 1,
         max_choices: 1,
         reason,
-        source: Some(match reason {
+        source: match reason {
             RunPendingChoiceReason::Upgrade => {
                 crate::state::selection::DomainEventSource::CampfireSmith
             }
@@ -86,7 +86,7 @@ fn deck_mutation_campfire_targets(
                 crate::state::selection::DomainEventSource::CampfireToke
             }
             _ => crate::state::selection::DomainEventSource::Selection(reason.into()),
-        }),
+        },
         return_state: Box::new(EngineState::Campfire),
     };
     let decision = compile_deck_mutation_decision_v1(

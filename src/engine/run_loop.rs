@@ -1,15 +1,12 @@
 use crate::runtime::combat::CombatState;
 use crate::state::core::{
     ActiveCombat, ClientInput, CombatContext, CombatStartRequest, EngineState, EventCombatContext,
-    PostCombatReturn, RoomCombatContext,
+    PostCombatReturn,
 };
 use crate::state::map::node::RoomType;
 use crate::state::rewards::{RewardScreenContext, TreasureChestSize, TreasureChestState};
 use crate::state::run::RunState;
-use crate::state::selection::{
-    DomainEvent, DomainEventSource, SelectionReason, SelectionResolution, SelectionScope,
-    SelectionTargetRef,
-};
+use crate::state::selection::DomainEventSource;
 
 fn roll_treasure_chest_spec(run_state: &mut RunState) -> TreasureChestState {
     let roll = run_state.rng_pool.treasure_rng.random_range(0, 99);
@@ -164,123 +161,6 @@ fn remove_one_relic_from_rewards_after_chest_open(
 
 use super::campfire_handler;
 use super::shop_handler;
-
-fn bottled_choice_target(
-    reason: &crate::state::core::RunPendingChoiceReason,
-) -> Option<(
-    crate::content::relics::RelicId,
-    crate::content::cards::CardType,
-)> {
-    match reason {
-        crate::state::core::RunPendingChoiceReason::BottleFlame => Some((
-            crate::content::relics::RelicId::BottledFlame,
-            crate::content::cards::CardType::Attack,
-        )),
-        crate::state::core::RunPendingChoiceReason::BottleLightning => Some((
-            crate::content::relics::RelicId::BottledLightning,
-            crate::content::cards::CardType::Skill,
-        )),
-        crate::state::core::RunPendingChoiceReason::BottleTornado => Some((
-            crate::content::relics::RelicId::BottledTornado,
-            crate::content::cards::CardType::Power,
-        )),
-        _ => None,
-    }
-}
-
-fn assign_bottled_card(
-    run_state: &mut RunState,
-    relic_id: crate::content::relics::RelicId,
-    card_type: crate::content::cards::CardType,
-    selected_indices: &[usize],
-) {
-    let Some(&idx) = selected_indices.first() else {
-        return;
-    };
-    let Some(card) = run_state.master_deck.get(idx) else {
-        return;
-    };
-    let def = crate::content::cards::get_card_definition(card.id);
-    if def.card_type != card_type {
-        return;
-    }
-
-    let selected_uuid = card.uuid as i32;
-    if let Some(relic) = run_state
-        .relics
-        .iter_mut()
-        .rev()
-        .find(|relic| relic.id == relic_id && relic.amount == 0)
-    {
-        relic.amount = selected_uuid;
-    } else if let Some(relic) = run_state
-        .relics
-        .iter_mut()
-        .rev()
-        .find(|relic| relic.id == relic_id)
-    {
-        relic.amount = selected_uuid;
-    }
-}
-
-fn run_selection_source(
-    run_state: &RunState,
-    reason: crate::state::core::RunPendingChoiceReason,
-) -> DomainEventSource {
-    if let Some(event) = run_state.event_state.as_ref() {
-        return DomainEventSource::Event(event.id);
-    }
-
-    let has_relic = |id| run_state.relics.iter().any(|relic| relic.id == id);
-    match reason {
-        crate::state::core::RunPendingChoiceReason::TransformUpgraded
-            if has_relic(crate::content::relics::RelicId::Astrolabe) =>
-        {
-            DomainEventSource::Relic(crate::content::relics::RelicId::Astrolabe)
-        }
-        crate::state::core::RunPendingChoiceReason::Purge
-            if has_relic(crate::content::relics::RelicId::EmptyCage) =>
-        {
-            DomainEventSource::Relic(crate::content::relics::RelicId::EmptyCage)
-        }
-        crate::state::core::RunPendingChoiceReason::Duplicate
-            if has_relic(crate::content::relics::RelicId::DollysMirror) =>
-        {
-            DomainEventSource::Relic(crate::content::relics::RelicId::DollysMirror)
-        }
-        crate::state::core::RunPendingChoiceReason::BottleFlame => {
-            DomainEventSource::Relic(crate::content::relics::RelicId::BottledFlame)
-        }
-        crate::state::core::RunPendingChoiceReason::BottleLightning => {
-            DomainEventSource::Relic(crate::content::relics::RelicId::BottledLightning)
-        }
-        crate::state::core::RunPendingChoiceReason::BottleTornado => {
-            DomainEventSource::Relic(crate::content::relics::RelicId::BottledTornado)
-        }
-        reason => DomainEventSource::Selection(reason.into()),
-    }
-}
-
-fn resolve_run_pending_selection(input: ClientInput, run_state: &RunState) -> Option<Vec<usize>> {
-    match input {
-        ClientInput::SubmitSelection(SelectionResolution {
-            scope: SelectionScope::Deck,
-            selected,
-        }) => Some(
-            selected
-                .into_iter()
-                .filter_map(|target| match target {
-                    SelectionTargetRef::CardUuid(uuid) => run_state
-                        .master_deck
-                        .iter()
-                        .position(|card| card.uuid == uuid),
-                })
-                .collect(),
-        ),
-        ClientInput::SubmitDeckSelect(indices) => Some(indices),
-        _ => None,
-    }
-}
 
 fn resolve_out_of_combat_defeat(engine_state: &mut EngineState, run_state: &RunState) -> bool {
     if run_state.current_hp <= 0 && !matches!(engine_state, EngineState::GameOver(_)) {
@@ -701,13 +581,16 @@ fn finish_event_combat(
     }
 }
 
+#[cfg(test)]
+/// Test-only compatibility wrapper for older room-combat tests. Runtime code
+/// should use `tick_run_active` so combat context is explicit.
 pub fn tick_run(
     engine_state: &mut EngineState,
     run_state: &mut RunState,
     combat_state: &mut Option<CombatState>,
     input: Option<ClientInput>,
 ) -> bool {
-    let context = CombatContext::Room(RoomCombatContext {
+    let context = CombatContext::Room(crate::state::core::RoomCombatContext {
         room_type: run_state
             .map
             .get_current_room_type()
@@ -811,209 +694,19 @@ pub fn tick_run_active_with_observer(
             }
         }
         EngineState::RunPendingChoice(rpc_state) => {
-            if let Some(indices) = input
-                .clone()
-                .and_then(|value| resolve_run_pending_selection(value, run_state))
-            {
-                if indices.len() < rpc_state.min_choices || indices.len() > rpc_state.max_choices {
-                    return RunTickOutcome::without_finished(true);
+            let rpc_state = rpc_state.clone();
+            match crate::engine::run_pending_choice::tick_run_pending_choice_v1(
+                engine_state,
+                run_state,
+                &rpc_state,
+                input,
+            ) {
+                Ok(keep_running) => keep_running,
+                Err(e) => {
+                    eprintln!("Run pending choice error: {}", e);
+                    return RunTickOutcome::without_finished(false);
                 }
-                let mut seen_indices = Vec::new();
-                for &idx in &indices {
-                    let Some(card) = run_state.master_deck.get(idx) else {
-                        return RunTickOutcome::without_finished(true);
-                    };
-                    if seen_indices.contains(&idx)
-                        || !crate::state::core::run_pending_choice_allows_card_for_run(
-                            &rpc_state.reason,
-                            card,
-                            run_state,
-                        )
-                    {
-                        return RunTickOutcome::without_finished(true);
-                    }
-                    seen_indices.push(idx);
-                }
-
-                let source = rpc_state
-                    .source
-                    .unwrap_or_else(|| run_selection_source(run_state, rpc_state.reason));
-                let selection_reason: SelectionReason = rpc_state.reason.clone().into();
-                let selected_refs = indices
-                    .iter()
-                    .filter_map(|&idx| run_state.master_deck.get(idx))
-                    .map(|card| SelectionTargetRef::CardUuid(card.uuid))
-                    .collect::<Vec<_>>();
-                let selected_uuids_in_order = selected_refs
-                    .iter()
-                    .map(|target| match target {
-                        SelectionTargetRef::CardUuid(uuid) => *uuid,
-                    })
-                    .collect::<Vec<_>>();
-
-                let mut sorted_indices = indices.clone();
-                sorted_indices.sort_unstable();
-                sorted_indices.reverse(); // Remove from highest index to lowest
-
-                run_state.emit_event(DomainEvent::SelectionResolved {
-                    scope: SelectionScope::Deck,
-                    reason: selection_reason,
-                    selected: selected_refs,
-                    source,
-                });
-
-                match rpc_state.reason {
-                    crate::state::core::RunPendingChoiceReason::Purge
-                    | crate::state::core::RunPendingChoiceReason::PurgeNonBottled => {
-                        for uuid in selected_uuids_in_order {
-                            if let Some(idx) = run_state
-                                .master_deck
-                                .iter()
-                                .position(|card| card.uuid == uuid)
-                            {
-                                let event_id_for_selection =
-                                    run_state.event_state.as_ref().map(|es| es.id);
-                                // Store removed card's rarity in event_state.internal_state
-                                // so events (bonfire_elementals, bonfire_spirits) can apply
-                                // rarity-based rewards after purge returns.
-                                // Encoding: 0=Curse, 1=Basic, 2=Common, 3=Special, 4=Uncommon, 5=Rare
-                                let def = crate::content::cards::get_card_definition(
-                                    run_state.master_deck[idx].id,
-                                );
-                                let rarity_state = match def.rarity {
-                                    crate::content::cards::CardRarity::Curse => 0,
-                                    crate::content::cards::CardRarity::Basic => 1,
-                                    crate::content::cards::CardRarity::Common => 2,
-                                    crate::content::cards::CardRarity::Special => 3,
-                                    crate::content::cards::CardRarity::Uncommon => 4,
-                                    crate::content::cards::CardRarity::Rare => 5,
-                                };
-                                if let Some(ref mut es) = run_state.event_state {
-                                    es.internal_state = rarity_state;
-                                }
-                                match event_id_for_selection {
-                                    Some(crate::state::events::EventId::BonfireElementals) => {
-                                        let mut reward_engine_state = EngineState::EventRoom;
-                                        crate::content::events::bonfire_elementals::apply_offer_reward(
-                                            &mut reward_engine_state,
-                                            run_state,
-                                            rarity_state,
-                                        );
-                                        if let Some(ref mut es) = run_state.event_state {
-                                            es.current_screen = 3;
-                                        }
-                                    }
-                                    Some(crate::state::events::EventId::BonfireSpirits) => {
-                                        let mut reward_engine_state = EngineState::EventRoom;
-                                        crate::content::events::bonfire_spirits::apply_offer_reward(
-                                            &mut reward_engine_state,
-                                            run_state,
-                                            rarity_state,
-                                        );
-                                        if let Some(ref mut es) = run_state.event_state {
-                                            es.current_screen = 3;
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                                if run_state.event_state.as_ref().is_some_and(|es| {
-                                    es.id == crate::state::events::EventId::NoteForYourself
-                                }) {
-                                    let saved_card = &run_state.master_deck[idx];
-                                    run_state.note_for_yourself_card = saved_card.id;
-                                    run_state.note_for_yourself_upgrades = saved_card.upgrades;
-                                }
-                                let uuid = run_state.master_deck[idx].uuid;
-                                run_state.remove_card_from_deck_with_source(uuid, source);
-                            }
-                        }
-                    }
-                    crate::state::core::RunPendingChoiceReason::Upgrade => {
-                        for idx in sorted_indices {
-                            if idx < run_state.master_deck.len() {
-                                let uuid = run_state.master_deck[idx].uuid;
-                                run_state.upgrade_card_with_source(uuid, source);
-                            }
-                        }
-                    }
-                    crate::state::core::RunPendingChoiceReason::Transform
-                    | crate::state::core::RunPendingChoiceReason::TransformNonBottled => {
-                        if source == DomainEventSource::Event(crate::state::events::EventId::Neow)
-                            && selected_uuids_in_order.len() > 1
-                        {
-                            run_state.transform_card_uuids_after_removing_all_with_source(
-                                &selected_uuids_in_order,
-                                false,
-                                source,
-                            );
-                        } else if selected_uuids_in_order.len() > 1 {
-                            run_state.transform_card_uuids_deferred_obtain_with_source(
-                                &selected_uuids_in_order,
-                                false,
-                                source,
-                            );
-                        } else {
-                            run_state.transform_card_uuids_with_source(
-                                &selected_uuids_in_order,
-                                false,
-                                source,
-                            );
-                        }
-                    }
-                    crate::state::core::RunPendingChoiceReason::TransformUpgraded => {
-                        run_state.transform_card_uuids_deferred_obtain_with_source(
-                            &selected_uuids_in_order,
-                            true,
-                            source,
-                        );
-                    }
-                    crate::state::core::RunPendingChoiceReason::Duplicate => {
-                        let cards_to_copy: Vec<_> = sorted_indices
-                            .iter()
-                            .filter_map(|&idx| run_state.master_deck.get(idx).cloned())
-                            .collect();
-                        for card in cards_to_copy {
-                            run_state.add_card_instance_copy_to_deck_from(&card, source);
-                        }
-                    }
-                    reason @ (crate::state::core::RunPendingChoiceReason::BottleFlame
-                    | crate::state::core::RunPendingChoiceReason::BottleLightning
-                    | crate::state::core::RunPendingChoiceReason::BottleTornado) => {
-                        if let Some((relic_id, card_type)) = bottled_choice_target(&reason) {
-                            assign_bottled_card(run_state, relic_id, card_type, &sorted_indices);
-                        }
-                    }
-                }
-
-                // Return to the previous stashed state (e.g. Map, Event, or Shop)
-                *engine_state = *rpc_state.return_state.clone();
-                if run_state.complete_pending_boss_act_transition() {
-                    *engine_state = EngineState::MapNavigation;
-                }
-                if matches!(engine_state, EngineState::EventRoom) {
-                    if let Err(e) =
-                        crate::engine::event_handler::handle_event_post_run_pending_choice(
-                            engine_state,
-                            run_state,
-                        )
-                    {
-                        eprintln!("Event post-selection error: {}", e);
-                        return RunTickOutcome::without_finished(false);
-                    }
-                }
-            } else if let Some(ClientInput::Cancel) = input {
-                if !rpc_state.selection_request(run_state).can_cancel {
-                    return RunTickOutcome::without_finished(true);
-                }
-                // Return to stashed state without mutating deck
-                *engine_state = *rpc_state.return_state.clone();
-                if run_state.complete_pending_boss_act_transition() {
-                    *engine_state = EngineState::MapNavigation;
-                }
-            } else {
-                // Input wasn't matched, preserve State
             }
-            true
         }
         EngineState::MapNavigation | EngineState::MapOverlay { .. } => {
             let overlay_return_state = match engine_state {
@@ -1818,7 +1511,7 @@ mod tests {
                 min_choices: 1,
                 max_choices: 1,
                 reason: crate::state::core::RunPendingChoiceReason::Purge,
-                source: Some(DomainEventSource::Relic(RelicId::EmptyCage)),
+                source: DomainEventSource::Relic(RelicId::EmptyCage),
                 return_state: Box::new(EngineState::MapNavigation),
             });
         let mut combat_state = None;

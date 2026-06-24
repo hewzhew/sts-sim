@@ -6,6 +6,7 @@ pub mod event_handler;
 pub mod pending_choices;
 pub(crate) mod reward_handler;
 pub mod run_loop;
+pub(crate) mod run_pending_choice;
 pub mod shop_handler;
 pub mod targeting;
 

@@ -401,7 +401,7 @@ fn shop_purge_candidates_from_deck_mutation_compiler_v1(
         min_choices: 1,
         max_choices: 1,
         reason: RunPendingChoiceReason::PurgeNonBottled,
-        source: Some(crate::state::selection::DomainEventSource::Shop),
+        source: crate::state::selection::DomainEventSource::Shop,
         return_state: Box::new(EngineState::Shop(shop.clone())),
     };
     let decision = compile_deck_mutation_decision_v1(

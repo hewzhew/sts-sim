@@ -25,8 +25,7 @@ pub struct RunPendingChoiceState {
     pub min_choices: usize,
     pub max_choices: usize,
     pub reason: RunPendingChoiceReason,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<DomainEventSource>,
+    pub source: DomainEventSource,
     pub return_state: Box<EngineState>,
 }
 

@@ -381,7 +381,7 @@ fn choice(reason: RunPendingChoiceReason, count: usize) -> RunPendingChoiceState
         min_choices: count,
         max_choices: count,
         reason,
-        source: None,
+        source: crate::state::selection::DomainEventSource::Selection(reason.into()),
         return_state: Box::new(EngineState::MapNavigation),
     }
 }

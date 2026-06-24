@@ -963,7 +963,9 @@ fn run_control_auto_run_purges_curse_at_run_pending_purge_choice() {
             min_choices: 1,
             max_choices: 1,
             reason: crate::state::core::RunPendingChoiceReason::PurgeNonBottled,
-            source: None,
+            source: crate::state::selection::DomainEventSource::Selection(
+                crate::state::core::RunPendingChoiceReason::PurgeNonBottled.into(),
+            ),
             return_state: Box::new(EngineState::MapNavigation),
         });
 
@@ -1018,7 +1020,9 @@ fn run_control_auto_run_selects_starter_at_run_pending_purge_choice() {
             min_choices: 1,
             max_choices: 1,
             reason: crate::state::core::RunPendingChoiceReason::PurgeNonBottled,
-            source: None,
+            source: crate::state::selection::DomainEventSource::Selection(
+                crate::state::core::RunPendingChoiceReason::PurgeNonBottled.into(),
+            ),
             return_state: Box::new(EngineState::MapNavigation),
         });
 
@@ -1062,7 +1066,9 @@ fn run_control_details_include_deck_mutation_compiler_groups() {
             min_choices: 1,
             max_choices: 1,
             reason: crate::state::core::RunPendingChoiceReason::Purge,
-            source: None,
+            source: crate::state::selection::DomainEventSource::Selection(
+                crate::state::core::RunPendingChoiceReason::Purge.into(),
+            ),
             return_state: Box::new(EngineState::MapNavigation),
         });
 
@@ -1087,7 +1093,9 @@ fn run_control_auto_run_executes_single_forced_run_pending_choice() {
             min_choices: 1,
             max_choices: 1,
             reason: crate::state::core::RunPendingChoiceReason::Upgrade,
-            source: None,
+            source: crate::state::selection::DomainEventSource::Selection(
+                crate::state::core::RunPendingChoiceReason::Upgrade.into(),
+            ),
             return_state: Box::new(EngineState::MapNavigation),
         });
 
@@ -1187,7 +1195,9 @@ fn run_control_auto_step_run_choice_stop_exports_human_boundary_record() {
             min_choices: 1,
             max_choices: 1,
             reason: crate::state::core::RunPendingChoiceReason::Upgrade,
-            source: None,
+            source: crate::state::selection::DomainEventSource::Selection(
+                crate::state::core::RunPendingChoiceReason::Upgrade.into(),
+            ),
             return_state: Box::new(EngineState::MapNavigation),
         });
 

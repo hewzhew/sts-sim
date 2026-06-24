@@ -268,7 +268,7 @@ fn open_selection_deck_mutation_choice(
         reason,
         min_choices: count,
         max_choices: count,
-        source: Some(DomainEventSource::Event(event_id)),
+        source: DomainEventSource::Event(event_id),
         return_state: Box::new(EngineState::EventRoom),
     })
 }

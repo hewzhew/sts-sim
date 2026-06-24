@@ -133,7 +133,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                             min_choices: 2,
                             max_choices: 2,
                             reason: RunPendingChoiceReason::Transform,
-                            source: Some(DomainEventSource::Event(EventId::DrugDealer)),
+                            source: DomainEventSource::Event(EventId::DrugDealer),
                             return_state: Box::new(EngineState::EventRoom),
                         });
                         event_state.current_screen = 1;

@@ -13,7 +13,7 @@ fn pending_choice(reason: RunPendingChoiceReason, count: usize) -> RunPendingCho
         min_choices: count,
         max_choices: count,
         reason,
-        source: None,
+        source: crate::state::selection::DomainEventSource::Selection(reason.into()),
         return_state: Box::new(EngineState::EventRoom),
     }
 }

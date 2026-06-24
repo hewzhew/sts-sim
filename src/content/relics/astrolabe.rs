@@ -24,7 +24,7 @@ pub fn on_equip(run_state: &mut RunState, return_state: EngineState) -> Option<E
         min_choices: 3,
         max_choices: 3,
         reason: RunPendingChoiceReason::TransformUpgraded,
-        source: Some(DomainEventSource::Relic(RelicId::Astrolabe)),
+        source: DomainEventSource::Relic(RelicId::Astrolabe),
         return_state: Box::new(return_state),
     }))
 }

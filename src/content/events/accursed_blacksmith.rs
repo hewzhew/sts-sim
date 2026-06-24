@@ -114,7 +114,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, c
                             min_choices: 1,
                             max_choices: 1,
                             reason: RunPendingChoiceReason::Upgrade,
-                            source: Some(DomainEventSource::Event(EventId::AccursedBlacksmith)),
+                            source: DomainEventSource::Event(EventId::AccursedBlacksmith),
                             return_state: Box::new(EngineState::EventRoom),
                         });
                         event_state.current_screen = 1;

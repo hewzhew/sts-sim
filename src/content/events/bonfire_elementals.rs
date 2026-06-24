@@ -51,7 +51,7 @@ pub fn handle_choice(engine_state: &mut EngineState, run_state: &mut RunState, _
                     min_choices: 1,
                     max_choices: 1,
                     reason: RunPendingChoiceReason::PurgeNonBottled,
-                    source: Some(DomainEventSource::Event(EventId::BonfireElementals)),
+                    source: DomainEventSource::Event(EventId::BonfireElementals),
                     return_state: Box::new(EngineState::EventRoom),
                 });
                 return;
