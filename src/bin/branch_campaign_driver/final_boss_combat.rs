@@ -1,14 +1,11 @@
-use sts_simulator::eval::branch_campaign::BranchCampaignReportV1;
+use sts_simulator::eval::branch_campaign::{BranchCampaignBranchV1, BranchCampaignReportV1};
 use sts_simulator::eval::run_control::CombatAutomationTrajectoryRecordV1;
 
 pub(super) fn render_final_boss_combat_report_inspection_v1(
     report: &BranchCampaignReportV1,
     inspect_index: usize,
 ) -> Result<String, String> {
-    let candidates: Vec<(
-        usize,
-        &sts_simulator::eval::branch_campaign::BranchCampaignBranchV1,
-    )> = report
+    let candidates: Vec<(usize, &BranchCampaignBranchV1)> = report
         .victories
         .iter()
         .enumerate()
@@ -64,12 +61,161 @@ pub(super) fn render_final_boss_combat_report_inspection_v1(
             render_truncated_text(&branch.choice_labels.join(" -> "), 360)
         ));
     }
+    lines.extend(render_final_boss_comparison_lines_v1(report, branch));
     lines.extend(render_combat_automation_timeline_lines_v1(
         record.source.as_str(),
         record.action_count,
         &record.actions,
     ));
     Ok(format!("{}\n", lines.join("\n")))
+}
+
+fn render_final_boss_comparison_lines_v1(
+    report: &BranchCampaignReportV1,
+    selected_branch: &BranchCampaignBranchV1,
+) -> Vec<String> {
+    let failures = final_boss_failure_branches_v1(report);
+    if failures.is_empty() {
+        return Vec::new();
+    }
+
+    let victory_records = report
+        .victories
+        .iter()
+        .filter(|branch| branch.final_boss_combat_record.is_some())
+        .count();
+    let mut hp_min = i32::MAX;
+    let mut hp_max = i32::MIN;
+    let mut deck_min = usize::MAX;
+    let mut deck_max = usize::MIN;
+    for branch in &failures {
+        if let Some(summary) = branch.summary.as_ref() {
+            hp_min = hp_min.min(summary.hp);
+            hp_max = hp_max.max(summary.hp);
+            deck_min = deck_min.min(summary.deck_count);
+            deck_max = deck_max.max(summary.deck_count);
+        }
+    }
+
+    let mut lines = Vec::new();
+    lines.push("Comparison: final boss branches in this campaign report".to_string());
+    lines.push(format!(
+        "  victory_records={} victories={} final_boss_failures={} failure_hp={}..{} failure_deck={}..{}",
+        victory_records,
+        report.victories.len(),
+        failures.len(),
+        hp_min,
+        hp_max,
+        deck_min,
+        deck_max
+    ));
+    lines.push(format!(
+        "  selected victory: {}",
+        render_final_boss_branch_brief_v1(selected_branch)
+    ));
+    if let Some(deck_key) = selected_branch
+        .summary
+        .as_ref()
+        .and_then(render_final_boss_deck_key_v1)
+    {
+        lines.push(format!("    deck: {deck_key}"));
+    }
+    if final_boss_branch_details_are_compacted_v1(selected_branch)
+        || failures
+            .iter()
+            .any(|branch| final_boss_branch_details_are_compacted_v1(branch))
+    {
+        lines.push(
+            "  note: branch choice paths or deck_key are absent from the compact campaign state; use journal/lineage inspection for historical decision details."
+                .to_string(),
+        );
+    }
+    lines.push("  failure examples:".to_string());
+    for (index, branch) in failures.iter().take(3).enumerate() {
+        lines.push(format!(
+            "    {}. {}",
+            index + 1,
+            render_final_boss_branch_brief_v1(branch)
+        ));
+        if let Some(deck_key) = branch
+            .summary
+            .as_ref()
+            .and_then(render_final_boss_deck_key_v1)
+        {
+            lines.push(format!("       deck: {deck_key}"));
+        }
+        if !branch.choice_labels.is_empty() {
+            lines.push(format!(
+                "       choices: {}",
+                render_truncated_text(&branch.choice_labels.join(" -> "), 220)
+            ));
+        }
+    }
+    lines
+}
+
+fn final_boss_branch_details_are_compacted_v1(branch: &BranchCampaignBranchV1) -> bool {
+    branch.choice_labels.is_empty()
+        || branch
+            .summary
+            .as_ref()
+            .is_some_and(|summary| summary.deck_count > 0 && summary.deck_key.is_empty())
+}
+
+fn final_boss_failure_branches_v1(report: &BranchCampaignReportV1) -> Vec<&BranchCampaignBranchV1> {
+    report
+        .abandoned
+        .iter()
+        .filter(|branch| {
+            branch.frontier_title == "Combat"
+                && branch
+                    .summary
+                    .as_ref()
+                    .is_some_and(|summary| summary.act == 3 && summary.floor >= 48)
+        })
+        .collect()
+}
+
+fn render_final_boss_branch_brief_v1(branch: &BranchCampaignBranchV1) -> String {
+    let state = branch
+        .summary
+        .as_ref()
+        .map(|summary| {
+            format!(
+                "A{}F{} HP {}/{} gold {} deck {} boss={}",
+                summary.act,
+                summary.floor,
+                summary.hp,
+                summary.max_hp,
+                summary.gold,
+                summary.deck_count,
+                if summary.boss.is_empty() {
+                    "unknown"
+                } else {
+                    summary.boss.as_str()
+                }
+            )
+        })
+        .unwrap_or_else(|| "no-summary".to_string());
+    let stop_reason = if branch.stop_reason.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " stop={}",
+            render_truncated_text(branch.stop_reason.as_str(), 96)
+        )
+    };
+    format!("{state}{stop_reason}")
+}
+
+fn render_final_boss_deck_key_v1(
+    summary: &sts_simulator::eval::branch_campaign::BranchCampaignBranchSummaryV1,
+) -> Option<String> {
+    if summary.deck_key.is_empty() {
+        None
+    } else {
+        Some(render_truncated_text(summary.deck_key.as_str(), 260))
+    }
 }
 
 pub(super) fn render_last_auto_combat_checkpoint_inspection_v1(
