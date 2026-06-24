@@ -9,9 +9,10 @@ use crate::ai::deck_mutation_compiler_v1::{
     DeckMutationPlanCandidateV1, DeckMutationTargetClassV1,
 };
 use crate::ai::event_policy_v1::{
-    build_event_decision_context_v1, classify_event_decision_shape_v1, plan_event_decision_v1,
-    select_event_plan_candidate_v1, EventCandidateTierV1, EventDecisionShapeV1,
-    EventInformationModeV1, EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
+    build_event_decision_context_v1, classify_event_decision_shape_v1,
+    compile_event_plan_status_v1, plan_event_decision_v1, select_event_plan_candidate_v1,
+    EventCandidateTierV1, EventInformationModeV1, EventPlanCompileStatusV1, EventPolicyActionV1,
+    EventPolicyClassV1, EventPolicyConfigV1,
 };
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::{
@@ -190,15 +191,25 @@ pub(crate) fn event_branch_selection(
         return None;
     }
     let candidate_pool_options = branch_options.clone();
-    if let Some(policy_options) = event_plan_policy_branch_options(session, &branch_options) {
-        return Some(event_branch_selection_from_options(
-            event_id,
-            candidate_pool_options,
-            policy_options,
-        ));
-    }
-    if matches!(event_shape, EventDecisionShapeV1::RepeatablePaidMenu(_)) {
-        return None;
+    match compile_event_plan_status_v1(
+        &session.run_state,
+        &event_shape,
+        EventInformationModeV1::CounterfactualOracle,
+    ) {
+        EventPlanCompileStatusV1::Supported(_) => {
+            if let Some(policy_options) = event_plan_policy_branch_options(session, &branch_options)
+            {
+                return Some(event_branch_selection_from_options(
+                    event_id,
+                    candidate_pool_options,
+                    policy_options,
+                ));
+            }
+        }
+        EventPlanCompileStatusV1::UnsupportedShape { .. } => {
+            return None;
+        }
+        EventPlanCompileStatusV1::NotPlanManaged => {}
     }
     sort_all_direct_deck_mutation_options(&mut branch_options);
     sort_event_options_by_policy(&mut branch_options);

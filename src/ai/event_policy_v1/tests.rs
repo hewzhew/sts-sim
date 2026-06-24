@@ -1,8 +1,10 @@
 use crate::ai::event_policy_v1::{
-    build_event_decision_context_v1, compile_event_plan_candidates_v1, plan_event_decision_v1,
-    select_event_plan_candidate_v1, EventCandidateTierV1, EventInformationModeV1,
-    EventOracleOutcomeV1, EventPlanIdV1, EventPlanRewardV1, EventPlanRiskModelV1,
-    EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
+    build_event_decision_context_v1, compile_event_plan_candidates_v1,
+    compile_event_plan_status_v1, plan_event_decision_v1, select_event_plan_candidate_v1,
+    EventCandidateTierV1, EventDecisionShapeV1, EventInformationModeV1, EventOracleOutcomeV1,
+    EventPlanCompileStatusV1, EventPlanIdV1, EventPlanRewardV1, EventPlanRiskModelV1,
+    EventPlanUnsupportedShapeV1, EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
+    RepeatablePaidMenuShapeV1,
 };
 use crate::ai::random_upgrade_opportunity_v1::{
     evaluate_random_upgrade_opportunity_v1, ProbabilityBucketV1, RandomUpgradeSourceV1,
@@ -479,6 +481,29 @@ fn cursed_tome_plan_selector_leaves_before_reading_when_take_buffer_is_unsafe() 
     .expect("Cursed Tome should have a selected plan");
 
     assert_eq!(selected.plan_id, EventPlanIdV1::LeaveNow);
+}
+
+#[test]
+fn unsupported_repeatable_paid_shape_is_explicit_not_empty_fallback() {
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.event_state = Some(EventState::new(EventId::BigFish));
+    let status = compile_event_plan_status_v1(
+        &run,
+        &EventDecisionShapeV1::RepeatablePaidMenu(RepeatablePaidMenuShapeV1 {
+            exit_index: 1,
+            exit_cost_hp: 0,
+            paid_option_indices: vec![0],
+        }),
+        EventInformationModeV1::PublicOnly,
+    );
+
+    assert!(matches!(
+        status,
+        EventPlanCompileStatusV1::UnsupportedShape {
+            event_id: EventId::BigFish,
+            shape: EventPlanUnsupportedShapeV1::RepeatablePaidMenu,
+        }
+    ));
 }
 
 #[test]

@@ -7,6 +7,7 @@ use crate::state::run::RunState;
 
 use super::cost::EventCostProjectionV1;
 use super::oracle::{peek_cursed_tome_book_v1, peek_scrap_ooze_v1, EventOracleEvidenceV1};
+use super::shape::EventDecisionShapeV1;
 use super::spec::{event_plan_step, materialize_event_plan_specs_v1, EventPlanSpecV1};
 use super::types::EventPolicyConfigV1;
 
@@ -77,6 +78,21 @@ pub struct EventEncounterProjectionV1 {
     pub starts_awake: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EventPlanCompileStatusV1 {
+    Supported(Vec<EventPlanCandidateV1>),
+    UnsupportedShape {
+        event_id: EventId,
+        shape: EventPlanUnsupportedShapeV1,
+    },
+    NotPlanManaged,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EventPlanUnsupportedShapeV1 {
+    RepeatablePaidMenu,
+}
+
 pub fn compile_event_plan_candidates_v1(
     run_state: &RunState,
     information_mode: EventInformationModeV1,
@@ -96,6 +112,27 @@ pub fn compile_event_plan_candidates_v1(
         _ => Vec::new(),
     };
     materialize_event_plan_specs_v1(run_state, specs)
+}
+
+pub fn compile_event_plan_status_v1(
+    run_state: &RunState,
+    event_shape: &EventDecisionShapeV1,
+    information_mode: EventInformationModeV1,
+) -> EventPlanCompileStatusV1 {
+    let Some(event_state) = &run_state.event_state else {
+        return EventPlanCompileStatusV1::NotPlanManaged;
+    };
+    let plans = compile_event_plan_candidates_v1(run_state, information_mode);
+    if !plans.is_empty() {
+        return EventPlanCompileStatusV1::Supported(plans);
+    }
+    match event_shape {
+        EventDecisionShapeV1::RepeatablePaidMenu(_) => EventPlanCompileStatusV1::UnsupportedShape {
+            event_id: event_state.id,
+            shape: EventPlanUnsupportedShapeV1::RepeatablePaidMenu,
+        },
+        EventDecisionShapeV1::Standard => EventPlanCompileStatusV1::NotPlanManaged,
+    }
 }
 
 pub fn select_event_plan_candidate_v1(
