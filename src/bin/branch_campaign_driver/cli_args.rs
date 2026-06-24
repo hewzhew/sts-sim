@@ -863,7 +863,7 @@ struct ArtifactCommandArgs {
 enum ArtifactSubcommandV1 {
     #[command(about = "Resolve latest, scratch-latest, run:<id>, scratch:<id>, or path:<report>")]
     Resolve(ArtifactResolveCommandArgs),
-    #[command(about = "Allocate deterministic run/scratch artifact output paths")]
+    #[command(about = "Allocate run/scratch artifact output paths")]
     Allocate(ArtifactAllocateCommandArgs),
     #[command(about = "Write latest or scratch-latest pointer for an artifact id")]
     WriteLatest(ArtifactWriteLatestCommandArgs),
