@@ -129,11 +129,11 @@ fn branch_campaign_boss_label_v1(session: &RunControlSession) -> String {
 }
 
 fn branch_campaign_boss_pressure_labels_v1(session: &RunControlSession) -> Vec<String> {
-    let Some(boss) = branch_campaign_boss_v1(session) else {
-        return Vec::new();
-    };
-    crate::ai::boss_mechanics_v1::boss_mechanic_pressure_profile_v1(&session.run_state, boss)
-        .summary_labels()
+    let _ = session;
+    // Disabled: this report-only pressure model cannot yet measure whether a
+    // route actually satisfied the pressure it labels, so rendering it as a
+    // warning is misleading noise.
+    Vec::new()
 }
 
 fn branch_campaign_run_debt_labels_v1(session: &RunControlSession) -> Vec<String> {

@@ -521,18 +521,10 @@ fn render_potions(session: &RunControlSession) -> String {
 }
 
 fn boss_pressure_labels(session: &RunControlSession) -> Vec<String> {
-    let Some(boss) = session
-        .run_state
-        .boss_key
-        .or_else(|| session.run_state.boss_list.first().copied())
-    else {
-        return Vec::new();
-    };
-    sts_simulator::ai::boss_mechanics_v1::boss_mechanic_pressure_profile_v1(
-        &session.run_state,
-        boss,
-    )
-    .summary_labels()
+    let _ = session;
+    // Disabled: the current boss pressure labels are not calibrated enough to
+    // be useful in inspect output.
+    Vec::new()
 }
 
 #[cfg(test)]
