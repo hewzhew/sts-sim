@@ -18,7 +18,8 @@ architecture.
 ## Architecture Priority
 
 Read [Campaign System Architecture](CAMPAIGN_SYSTEM_ARCHITECTURE.md) first. It
-defines the target ownership model and the concepts that must retire.
+is the target contract, not a description of current accidents. Supporting docs
+and current code must move toward it.
 
 The short version:
 
@@ -30,6 +31,8 @@ The short version:
   active/frozen branch guessing.
 - Reports are bounded projections, not checkpoint, journal, diagnostics, or
   training datasets.
+- A migration step only counts when it removes a wrong owner, deletes a bad
+  public surface, or replaces string/display identity with typed identity.
 
 ## Maintained Loop
 

@@ -1,217 +1,251 @@
 # Campaign System Architecture
 
-This document is the authority contract for the campaign system.
+This is the authority document for the campaign system.
 
-It describes the target architecture. If current scripts, old artifacts, tests,
-or older docs disagree with this file, treat them as migration debt. Do not
-document accidental behavior as desired behavior.
+It describes the target architecture, not the current accident. Current scripts,
+old artifacts, legacy flags, tests, reports, and helper files are subordinate to
+this document. If code disagrees with this document, either migrate the code or
+make the incompatibility explicit as legacy archaeology. Do not document the
+accident as normal behavior.
 
-## Design Goal
+## Purpose
 
 The campaign system is an experiment runner for the Slay the Spire simulator.
-It should make it possible to:
+It must support this workflow:
 
 ```text
-run deterministic campaign branches
-record every important decision candidate pool
-continue deliberately selected candidates to milestones
-inspect lineage and outcomes without mutating artifacts
-export explicit learning or analysis datasets
+start or continue an exact simulator campaign
+  -> record every important non-combat decision boundary
+  -> store the full candidate pool at that boundary
+  -> deliberately continue selected historical candidates
+  -> run to milestones, terminal outcomes, or explicit blockers
+  -> inspect lineage, state, and outcomes without mutating artifacts
+  -> export explicit datasets for analysis or learning
 ```
 
-It must not be a pile of wrapper shortcuts around "latest", "scratch",
-"active", "frozen", or "run a few more rounds and inspect whatever happened".
-That shape was useful while automation still needed frequent manual help. It is
-now the main source of confusion.
-
-## Root Failure Pattern
-
-Nearly every recent campaign tooling failure came from the same mistake:
+The campaign system is not:
 
 ```text
-two layers claimed ownership of the same concept
+a PowerShell workflow with a Rust binary attached
+a report JSON database
+an active/frozen branch queue exposed as experiment truth
+a pile of latest/scratch/prefix conveniences
+a strategy system hidden inside display labels, scores, or tests
 ```
+
+## Root Problem To Prevent
+
+The previous architecture failed because the same concepts had multiple owners.
 
 Examples:
 
-- PowerShell and Rust both interpreted source, output, rounds, milestone, and
-  coverage behavior.
-- Reports became display, checkpoint, journal, diagnostics, combat trace, and
+- PowerShell and Rust both interpreted source, output, continuation, milestone,
+  scratch, latest, and coverage behavior.
+- Reports became checkpoint, journal, diagnostics, combat trace, and
   training-like data at once.
-- Internal executor queues (`active` / `frozen`) leaked into the public
-  experiment model.
-- Candidate identity leaked through labels, command prefixes, synthetic marker
-  strings, and replay snippets.
+- Internal executor queues leaked as public concepts: active, frozen, best hp,
+  cleanest, furthest.
+- Candidate identity was reconstructed from labels, command prefixes, synthetic
+  marker strings, or replay snippets.
 - Inspect modes grew as one-off switches instead of typed read-only views.
-- Tests preserved transitional wording, aliases, or uncertain strategy choices.
+- Tests preserved transitional wording or uncertain strategy choices.
 
-The target architecture exists to prevent these failure modes. A change that
-only renames, splits, compresses, or prettifies code without fixing ownership is
-not architecture progress.
+Architecture progress means removing one of these ownership conflicts. A change
+that only splits a file, renames a field, compresses JSON, or makes output
+prettier is not progress unless it also moves ownership to the correct layer or
+deletes a wrong public surface.
 
 ## Non-Negotiable Invariants
 
 1. Rust owns campaign semantics.
-2. PowerShell is a launcher only: build profile, local convenience aliases,
-   process invocation, and stdout/stderr display.
-3. Every maintained user operation maps to one typed Rust request.
-4. Every artifact-writing workflow passes through `CampaignApp` and
-   `ArtifactStore`.
+2. PowerShell is a launcher only.
+3. Every maintained operation maps to one typed Rust request.
+4. Every artifact write passes through `CampaignApp` and `ArtifactStore`.
 5. Inspect is read-only by construction.
-6. `latest` and `scratch-latest` are typed artifact pointers, not magic paths.
+6. `latest` and `scratch-latest` are artifact-store pointers, not magic paths.
 7. `rounds` means additional campaign rounds everywhere.
-8. Milestone continuation is engine behavior, not a wrapper loop.
-9. Coverage execution starts from journaled decision candidates, not from
-   active/frozen ordering.
+8. Milestone continuation is Rust engine behavior, not a wrapper loop.
+9. Coverage starts from journaled decision candidates, not active/frozen queues.
 10. Candidate identity is typed. Labels are display text only.
 11. Reports are bounded projections, not checkpoint, journal, diagnostics, or
-    training data.
+    learning datasets.
 12. Learning data is produced by explicit export commands.
-13. Strategy policy must not live in wrappers, report prose, display labels, or
-    string reason parsing.
+13. Strategy policy must not live in wrappers, report prose, display labels,
+    command prefixes, or string reason parsing.
 14. Tests protect schema, ownership, replay, and simulator mechanics. They do
     not protect temporary wording or one uncertain card/shop/relic choice.
 
-## Public Product Model
+## Public Product Surface
 
-The public campaign product is:
+The maintained Rust surface is:
 
 ```text
-campaign run
-campaign continue
-campaign coverage plan
-campaign coverage execute
-campaign inspect
-campaign artifacts
-campaign export
+branch_campaign_driver campaign run
+branch_campaign_driver campaign continue
+branch_campaign_driver campaign coverage plan
+branch_campaign_driver campaign coverage execute
+branch_campaign_driver campaign inspect
+branch_campaign_driver campaign artifacts
+branch_campaign_driver campaign export
 ```
+
+Everything else is either:
+
+- a local launcher alias that forwards to this surface
+- an internal implementation detail
+- legacy archaeology
 
 The public product is not:
 
 ```text
-active branch pool
-frozen branch pool
-latest report path
-checkpoint sidecar path
-PowerShell scratch mode
-PowerShell milestone loop
+-More
+-FromScratchLatest
+-InspectScratchLatest
+latest.campaign.json as a semantic source
+PowerShell milestone loops
+PowerShell coverage-gap orchestration
 prefix command replay
+active/frozen as experiment truth
 selected_plan as the only branch truth
-report-as-database
+report-as-checkpoint
+report-as-training-dataset
 ```
-
-Internal queues may continue to exist while the engine is rewritten. They must
-not be the vocabulary used for experiment coverage, learning, or user-facing
-analysis.
 
 ## Target Runtime Shape
 
 ```text
-User or script
+User or wrapper
   -> Campaign CLI
       -> CampaignApp
           -> ArtifactStore
           -> CampaignEngine
+          -> CampaignJournal
           -> ExperimentPlanner
           -> InspectRenderer
           -> Exporter
 ```
 
+Each component has one owner role. Cross-layer shortcuts are bugs.
+
 ### Campaign CLI
 
-The CLI parses stable commands into typed request structs and rejects ambiguous
-requests.
+The CLI parses commands into typed request structs.
 
-Allowed:
+Owns:
 
-- parse command names and options
-- expand named presets into visible typed settings
-- print typed dry-run requests
-- call `CampaignApp`
+- stable command names
+- option parsing
+- preset expansion into visible typed settings
+- dry-run request display
 
-Forbidden:
+Does not own:
 
-- resolving artifact paths by convention
-- deciding source/output semantics outside `ArtifactStore`
-- implementing continuation loops
-- inspecting JSON by hand
-- rendering strategy explanations from wrapper-only fields
+- artifact path resolution
+- latest/scratch pointer semantics
+- continuation loops
+- report parsing
+- strategy explanation
 
 ### CampaignApp
 
 `CampaignApp` is the Rust service boundary for campaign workflows.
 
-Responsibilities:
+Owns:
 
-- resolve source and output intent
-- decide whether a request reads, writes, or exports
-- dispatch to `ArtifactStore`, `CampaignEngine`, `ExperimentPlanner`,
-  `InspectRenderer`, and `Exporter`
-- record command provenance through `ArtifactStore`
+- request dispatch
+- read/write/export intent
+- calling the correct subsystem
+- command provenance
+- enforcing read-only inspect behavior
 
-Hard rule:
+Rule:
 
 ```text
-If a workflow mutates campaign artifacts, it passes through CampaignApp.
+If a workflow mutates campaign artifacts, it goes through CampaignApp.
 ```
 
 ### ArtifactStore
 
-`ArtifactStore` owns artifact lifecycle.
+`ArtifactStore` owns artifact identity, lifecycle, encoding, and references.
 
-Responsibilities:
+Owns:
 
-- resolve `latest`, `scratch-latest`, `run:<id>`, `scratch:<id>`, and explicit
-  archaeology paths
-- allocate run and scratch outputs
-- read and write checkpoint, state, journal, report, diagnostics, manifest,
-  command provenance, and exports
-- update latest pointers
-- record encoding, schema version, and size metadata
-- list and prune artifacts
+- resolving `latest`, `scratch-latest`, `run:<id>`, `scratch:<id>`, and
+  explicit `path:<path>`
+- allocating new run and scratch outputs
+- writing checkpoint, state, journal, report, diagnostics, exports, manifest,
+  command provenance, and pointer files
+- recording schema versions, encoding, raw/compressed sizes, and references
+- listing, showing, and pruning artifacts
 
-Allowed implementation details:
+Allowed implementation choices:
 
 - `.json.gz`
-- compact schema encodings
+- compact schemas
+- id pools
 - content-addressed objects
-- sidecars
-- id pools and object references
-
-Callers must not care which storage layout is used.
+- diagnostic sidecars
 
 Forbidden:
 
 - PowerShell-written latest pointers
 - PowerShell-written manifests
-- direct report-path construction outside the store
-- using a report as the only source of truth for resume or analysis
+- report path construction outside the store
+- using a report as the only resume or analysis source
 
 ### CampaignEngine
 
 `CampaignEngine` executes campaign jobs.
 
-Responsibilities:
+Owns:
 
-- start a new campaign from seed, character, ascension, and preset
-- continue from exact checkpoint state
-- run until round budget, milestone, terminal result, or explicit blocker
-- emit progress events
-- write exact resume state through `ArtifactStore`
+- new campaign execution from seed, character, ascension, and preset
+- exact continuation from checkpoint state
+- round-budget execution
+- milestone execution
+- terminal outcome detection
+- explicit blocker detection
+- progress events
+- exact resume state emission
 
-Internal executor queues are allowed. They are not the experiment model.
+Internal queues are allowed. They are not the experiment model.
+
+### CampaignJournal
+
+`CampaignJournal` records decision facts.
+
+Owns:
+
+- decision ids
+- replay roots
+- branch coordinates
+- typed candidate pools
+- candidate ids
+- candidate admission facts
+- applied candidate provenance
+- links from later observations back to historical candidates
+
+Does not own:
+
+- ranking policy
+- branch scheduling
+- combat traces
+- training labels
+- large score decompositions
 
 ### ExperimentPlanner
 
-`ExperimentPlanner` owns deliberate branch exploration.
+`ExperimentPlanner` chooses deliberate continuation work from journaled
+candidates.
 
 Input:
 
 ```text
-CampaignJournal candidate pools
+journaled decision candidate pools
 existing observations
 budget profile
 milestone target
+coverage policy
 ```
 
 Output:
@@ -220,36 +254,36 @@ Output:
 ContinuationJob {
   source_artifact,
   replay_root,
-  target_decision,
-  target_candidate,
+  target_decision_id,
+  target_candidate_id,
+  target_origin,
   budget,
   milestone,
-  provenance,
 }
 ```
 
-Responsibilities:
+Owns:
 
-- classify important decision nodes
-- choose candidates that need observation
-- allocate budget across decision kind, candidate group, and milestone
-- track whether each candidate is unobserved, target-only, continued,
-  terminal, censored, combat-budget-blocked, invalid, or superseded
+- candidate coverage planning
+- budget allocation across decision types and candidate groups
+- target provenance
+- censored/terminal/invalid/superseded outcome classification
 
 Forbidden:
 
+- thawing frozen branches as a substitute for candidate coverage
 - hiding candidates because the executor did not keep them active
-- treating active/frozen rank as candidate coverage
-- deciding a card, shop item, route, event, or boss relic is globally correct
+- deciding a card, shop item, event, route, or boss relic is globally correct
 
 ### InspectRenderer
 
-Inspect is a read-only projection over stored artifacts.
+Inspect renders typed read-only views.
 
-Stable views are typed:
+Stable view families:
 
 ```text
 summary
+artifact
 state
 journal
 coverage
@@ -259,79 +293,71 @@ route
 shop
 combat
 final-boss
-artifact
+diagnostic
 ```
 
 Inspect must not:
 
+- allocate artifacts
 - mutate latest pointers
-- allocate scratch artifacts
 - perform continuation implicitly
-- rely on PowerShell-only paths
-- parse display labels as identity
+- parse labels as ids
+- treat report fields as hidden source truth
 
 ### Exporter
 
-`Exporter` produces learning and analysis datasets.
+`Exporter` produces explicit datasets.
 
-Responsibilities:
+Owns:
 
-- read checkpoint, state, journal, diagnostics, and outcome data
-- produce explicit JSONL, Parquet, or CSV sidecars
-- record schema version and source artifact ids
+- learning JSONL
+- analysis JSONL/CSV/Parquet
+- source artifact references
+- schema version
+- censored-outcome metadata
 
 Forbidden:
 
 - changing campaign execution
-- adding training fields to default reports
-- treating autopilot choices as teacher labels
+- turning reports into training tables
+- treating autopilot decisions as teacher labels
 
-## Request Lifecycle
+## Core Domain Model
 
-Every maintained write command follows this lifecycle:
-
-```text
-parse CLI
-  -> build typed request
-  -> CampaignApp resolves source and output intent
-  -> ArtifactStore resolves source refs and allocates output refs
-  -> CampaignEngine or ExperimentPlanner executes
-  -> ArtifactStore writes checkpoint/state/journal/report/manifest
-  -> command prints stable artifact refs
-```
-
-Every inspect command follows this lifecycle:
-
-```text
-parse CLI
-  -> build typed inspect request
-  -> CampaignApp resolves source ref read-only
-  -> InspectRenderer reads necessary artifacts through ArtifactStore
-  -> render bounded view
-```
-
-Dry-run prints the typed request and resolved read/write refs. It never writes
-artifacts.
-
-## Core Domain Objects
+These concepts must be represented as typed structures in maintained code.
 
 ### ArtifactRef
 
 ```text
 ArtifactRef {
-  kind: run | scratch | path
-  id
-  report_ref
+  selector: latest | scratch-latest | run:<id> | scratch:<id> | path:<path>
+  run_id
   checkpoint_ref
   state_ref
   journal_ref
+  report_ref
+  diagnostics_refs
   manifest_ref
-  diagnostics_ref
 }
 ```
 
-An artifact ref is the only maintained way to pass artifact identity between
+Artifact refs are the only maintained way to pass artifact identity between
 components.
+
+### RunPrelude
+
+```text
+RunPrelude {
+  seed
+  character
+  ascension
+  neow_context
+  initial_map
+  deterministic_rng_context
+}
+```
+
+Run prelude replaces hidden CLI prefixes and implicit process-start assumptions.
 
 ### ReplayRoot
 
@@ -344,8 +370,8 @@ ReplayRoot {
 }
 ```
 
-Replay roots replace long prefix command strings as identity. Command strings
-may exist for human reproduction, never as the canonical replay key.
+Replay roots are canonical. Command strings may be displayed for humans, but
+they are never identity.
 
 ### DecisionNode
 
@@ -355,9 +381,19 @@ DecisionNode {
   decision_kind
   act
   floor
-  source_artifact
+  branch_coordinate
   replay_root
-  candidates
+  candidate_pool_id
+}
+```
+
+### CandidatePool
+
+```text
+CandidatePool {
+  pool_id
+  decision_id
+  candidates: Vec<DecisionCandidate>
 }
 ```
 
@@ -371,23 +407,25 @@ DecisionCandidate {
   facts
   admission
   diagnostics_ref
+  display_label
 }
 ```
 
-Display text may be derived from a candidate. It must not define identity.
+`display_label` is optional projection. It must not be parsed.
 
 ### CandidateAdmission
 
 ```text
 CandidateAdmission {
   status: scheduled | deferred | rejected | unavailable | unknown
-  category: policy | legality | budget | duplicate | dominated | bug
-  reason_code: stable enum or stable string code
+  category: legality | policy | budget | duplicate | dominated | invalid | bug
+  reason_code: stable code
+  source: compiler | scheduler | engine | legacy
   explanation: optional display text
 }
 ```
 
-Free text is commentary. It is not control flow.
+Free text is commentary, not control flow.
 
 ### CoverageTarget
 
@@ -402,9 +440,6 @@ CoverageTarget {
 }
 ```
 
-Coverage targets are selected from journaled candidates, not from current
-active/frozen queues.
-
 ### ContinuationJob
 
 ```text
@@ -418,11 +453,11 @@ ContinuationJob {
 }
 ```
 
-Continuation jobs are the unit that `CampaignEngine` runs.
+Continuation jobs are the unit the engine runs.
 
-## Artifact Model
+## Artifact Boundaries
 
-Campaign artifacts are split by purpose:
+Campaign storage is split by purpose.
 
 ```text
 checkpoint  exact simulator resume state
@@ -431,268 +466,262 @@ journal     durable decision facts and candidate pools
 report      bounded inspection projection
 diagnostic  optional large explanations and traces
 export      explicit learning or analysis dataset
-manifest    provenance, encoding, sizes, and references
+manifest    provenance, schema, encoding, sizes, and refs
 ```
 
 ### Checkpoint
 
-Answers:
+Question answered:
 
 ```text
 Can the engine resume exactly from here?
 ```
 
-Checkpoint may be opaque and compact. It must not be optimized for casual
-reading. If it becomes large, use pooling, references, or content-addressed
-objects. Do not delete resume truth to make the file pretty.
+Checkpoint may be opaque and compact. It must not be made human-readable at the
+cost of resume correctness.
 
 ### State
 
-Answers:
+Question answered:
 
 ```text
 What campaign executor work remains?
 ```
 
-State may include internal queues. Public reports translate queues into
-candidate coverage and outcomes.
+State may contain internal queues. Reports translate those queues into coverage
+and outcome views.
 
 ### Journal
 
-Answers:
+Question answered:
 
 ```text
-What decisions existed, what candidates existed, and where did later branches
-come from?
+What decision boundaries and candidates existed?
 ```
 
-Journal entries are compact facts with typed ids. Large explanations belong in
-diagnostics.
+Journal stores compact typed facts. Large explanations belong in diagnostics.
 
 ### Report
 
-Answers:
+Question answered:
 
 ```text
 What should a reader or tool inspect first?
 ```
 
-Reports may summarize run status, milestone progress, terminal outcomes,
-candidate coverage, notable blockers, and artifact references.
-
-Reports must not inline full simulator sessions, full route maps, full combat
-traces, planner score tables, or learning samples by default.
+Reports contain bounded summaries and references. They do not inline full
+checkpoint, full journal, full route maps, full combat traces, or learning rows.
 
 ### Diagnostic
 
-Answers:
+Question answered:
 
 ```text
-Why did a component rank, reject, or fail something?
+Why did a component rank, reject, fail, or stop?
 ```
 
-Diagnostics are opt-in and may be large. They link back to artifact ids,
-decision ids, candidate ids, branch ids, or checkpoint ids.
+Diagnostics are opt-in and may be large. They link back to ids.
 
 ### Export
 
-Answers:
+Question answered:
 
 ```text
-What dataset should another process train on or analyze?
+What dataset should another process consume?
 ```
 
 Exports are explicit. A campaign report is not a dataset.
 
-## Stable Command Contract
-
-The target Rust surface is:
-
-```text
-branch_campaign_driver campaign run --seed <seed> --class ironclad --ascension <n> --mode <preset>
-branch_campaign_driver campaign run --random-seed --mode explore
-
-branch_campaign_driver campaign continue --from latest --rounds <n>
-branch_campaign_driver campaign continue --from run:<id> --until Act2Start
-branch_campaign_driver campaign continue --from scratch-latest --out scratch --rounds <n>
-
-branch_campaign_driver campaign coverage plan --from latest --budget key
-branch_campaign_driver campaign coverage execute --from latest --until Act2Start --out scratch
-
-branch_campaign_driver campaign inspect --from latest --view summary
-branch_campaign_driver campaign inspect --from latest --view decision --decision-id <id>
-branch_campaign_driver campaign inspect --from scratch-latest --view coverage
-
-branch_campaign_driver campaign artifacts list
-branch_campaign_driver campaign artifacts show --from latest
-branch_campaign_driver campaign artifacts prune --dry-run
-
-branch_campaign_driver campaign export --from latest --kind learning-jsonl --out <path>
-```
-
-`tools/campaign.ps1` may remain only as:
-
-```text
-choose build profile
-build driver if needed
-translate a small set of convenience aliases
-call the Rust command
-print returned artifact refs
-```
-
-The wrapper must not own a command that Rust cannot run directly.
-
-## Presets
-
-Presets are typed request builders, not hidden policy:
-
-```text
-smoke     short health check
-quick     small local run
-focused   current policy head plus key blockers
-explore   broad candidate coverage
-deep      expensive continuation of important candidates
-```
-
-Every preset prints its expanded settings:
-
-```text
-round budget
-coverage budget
-search budget
-capture policy
-output intent
-```
-
 ## Experiment Model
 
-Old model:
+Old public model:
 
 ```text
-keep a few active branches
+keep two active branches
 freeze the rest
-hope the active branches were right
+hope active was right
 inspect after failure
 ```
 
 Target model:
 
 ```text
-record candidate pools in the journal
+record candidate pools
 select coverage targets from candidate ids
 continue targets to milestones
-compare outcomes by decision and candidate
-refine censored, close, or strategically important cases
+classify each candidate observation
+compare by decision, candidate group, and outcome
 ```
 
-This can still use internal queues. Public output describes candidate coverage
-and milestone outcomes, not an internal queue as if it were the experiment
-result.
+Internal scheduling may still use queues, beams, parking lots, or priority
+heaps. Public reports must describe candidate coverage, not internal queue
+names as if they were conclusions.
+
+Observation states:
+
+```text
+unobserved
+target_only
+continued
+milestone_reached
+terminal_victory
+terminal_death
+combat_budget_blocked
+censored_by_budget
+invalid_replay
+superseded
+```
+
+## Strategy Boundary
+
+Policy compilers may generate facts, candidate deltas, risks, and diagnostics.
+They do not get to own campaign lifecycle.
+
+Examples:
+
+- Card reward policy may say a card provides frontload, setup, scaling,
+  exhaust fuel, or debt.
+- Shop compiler may emit a frontier of purchase plans.
+- Route planner may emit route facts and risk projections.
+- Boss pressure models may describe pressure and missing answer facts.
+
+But campaign scheduling asks:
+
+```text
+Which candidates need observation under this budget?
+```
+
+It must not ask:
+
+```text
+Which string label sounds like the winner?
+Which frozen branch should be thawed?
+Which selected_plan did the old shop policy approve?
+```
+
+If a strategy concept is needed in multiple places, create or repair a typed
+domain profile. Do not copy card/relic/potion names into several policies.
 
 ## PowerShell Boundary
 
-PowerShell is allowed to:
+PowerShell may:
 
 - locate the repository
-- choose a build profile
-- run `cargo build` when needed
-- forward a stable command to Rust
-- print returned stdout/stderr
+- choose a local build profile
+- run `cargo build` when requested
+- call one Rust campaign command
+- print stdout/stderr and returned refs
 
-PowerShell is not allowed to:
+PowerShell may not:
 
-- decide artifact source semantics
-- decide output artifact paths
-- own scratch/latest behavior
-- own milestone loops
-- own coverage planning or execution
-- write manifests or latest pointers
-- parse reports as workflow control
-- add one top-level switch per probe
+- resolve source/output semantics
+- own latest/scratch behavior
+- implement milestone loops
+- implement coverage planning or execution
+- write manifests
+- write pointer files
+- parse reports for workflow control
+- add a new switch for every probe
 
-If a new feature seems to require more PowerShell semantic code, implement the
-feature in Rust first.
+If a feature seems to need PowerShell semantics, the feature belongs in Rust.
 
-## Deprecated Concepts
+## Deprecated Surfaces
 
-These concepts must not appear in new design, normal help, or public examples
-except as explicit legacy notes:
+These names may appear only in explicit legacy notes or archaeology paths:
 
 ```text
 -More
-latest.campaign.json as a semantic source
-scratch mode as a wrapper behavior
+-Last as semantic state
+-FromScratchLatest as ordinary continue
+-InspectScratchLatest
+-MaxRounds meaning total rounds
+latest.campaign.json as source truth
 PowerShell milestone loop
 PowerShell coverage-gap orchestration
-active/frozen as the public experiment model
-prefix command strings as decision identity
-selected_plan as the only branch truth
-report as checkpoint
-report as training dataset
+active/frozen as public experiment model
+prefix command strings as identity
+selected_plan as the branch truth
 strategy encoded in display labels
-tests that assert human wording
-tests that assert one uncertain card/shop/relic choice is globally correct
+tests that assert wording
+tests that assert one uncertain strategy choice
 ```
 
 ## Testing Policy
 
-Good tests:
+Good tests protect boundaries:
 
 - parser rejects ambiguous commands
-- artifact store resolves and allocates typed refs
-- writing commands create manifests through Rust
-- inspect commands are read-only
+- typed requests are built correctly
+- inspect requests are read-only
+- artifact store resolves selectors and writes refs
 - journal records candidate pools with stable ids
 - coverage planner creates jobs from candidate ids
-- replay root restores the intended decision boundary
+- replay roots restore the intended boundary
 - simulator mechanics match game rules
 
-Bad tests:
+Bad tests protect accidents:
 
-- asserting prose wording
-- asserting a transitional wrapper alias forever
-- asserting one strategy choice as universally correct
-- asserting active/frozen ordering as a product feature
-- preserving a bug because a report field once printed it
+- exact human wording
+- one temporary wrapper alias
+- active/frozen order as product behavior
+- one uncertain card/shop/relic decision as universal truth
+- a report field that exists only because an old inspect tool needed it
 
-If a test makes the architecture worse to satisfy, delete or rewrite it.
+Delete or rewrite tests that make architecture worse.
 
 ## Migration Standard
 
-Implementation can be staged. The design cannot be split into contradictory
-intermediate truths.
+Implementation can be staged. The target design cannot be contradictory.
 
-Every migration step must remove one semantic owner from the wrong layer. A
-change that only splits files, renames functions, compresses a payload, or
-formats output is not architecture progress unless it also transfers ownership
-or deletes a bad surface.
+A migration step is valid only if it does at least one of these:
 
-## Stop And Redesign Triggers
+- moves a concept to its correct owner
+- deletes a wrong public surface
+- quarantines legacy behavior behind explicit archaeology naming
+- replaces string identity with typed identity
+- converts wrapper orchestration into one Rust request
+- separates checkpoint/state/journal/report/diagnostic/export responsibilities
 
-Stop implementation and redesign if a step requires:
+Changes that do not count:
 
-- parsing display labels for identity
-- adding a report field that is actually checkpoint, journal, diagnostic, or
-  export data
-- adding a PowerShell switch for a new experiment type
+- splitting a large file without changing ownership
+- renaming active/frozen while still using it as public experiment truth
+- compressing JSON while storing the wrong payload
+- adding report fields because a probe lacks a real view
+- adding magic scores because no domain owner exists
+- adding another wrapper switch for a new experiment
+
+## Stop-And-Redesign Triggers
+
+Stop implementation and redesign when a change requires:
+
+- parsing display text for identity
+- storing training-only data in report or journal
 - making `rounds`, `latest`, `scratch`, or `source` mean different things by
   context
-- testing strategy quality through a fixed card/relic/shop assertion
-- adding a score or magic number because no owner exists for the concept
-- using active/frozen as the answer to a candidate coverage question
+- adding a PowerShell semantic branch
+- using active/frozen to answer a coverage question
+- adding a magic score because a typed profile does not exist
+- preserving a legacy alias as the normal path
+- writing a test that asserts uncertain strategic taste
 
 ## Definition Of Done
 
 The campaign architecture migration is complete when:
 
-- a direct Rust command can perform every maintained workflow
+- every maintained workflow has a direct Rust `campaign ...` command
 - PowerShell contains no campaign semantic logic
 - `latest` and `scratch-latest` are artifact-store pointers only
-- coverage execution can target historical decision candidates without
-  active/frozen guessing
-- reports are small bounded projections
-- checkpoint, state, journal, diagnostic, export, and manifest ownership is
-  visible in code
-- inspect views are read-only and typed
-- old compatibility names are absent from normal help and examples
-- new strategy work can be developed without touching wrapper lifecycle code
+- all artifact writes pass through `CampaignApp` and `ArtifactStore`
+- checkpoint, state, journal, report, diagnostic, export, and manifest are
+  distinct in code and storage
+- inspect views are typed and read-only
+- coverage planning targets historical candidate ids
+- route, reward, shop, event, boss relic, campfire, and deck mutation decisions
+  all record candidate pools in the journal
+- coverage execution can continue historical candidates without active/frozen
+  guessing
+- normal help and docs do not teach retired aliases
+- reports stay bounded for long runs
+- learning data is exported explicitly
+- new strategy work can be built without touching wrapper lifecycle code

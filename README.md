@@ -39,12 +39,19 @@ PowerShell wrapper remains a local launcher, not the architecture. See
 
 ## Quick Start
 
-The target campaign application is the Rust `branch_campaign_driver` campaign
-surface. While the migration is incomplete, `tools/campaign.ps1` remains a
-compatibility launcher for local builds and convenience aliases. Do not add new
-campaign semantics to the wrapper.
+The campaign application surface is the Rust `branch_campaign_driver campaign`
+namespace. Use it directly when checking architecture, CLI behavior, or
+artifact semantics:
 
-Current compatibility launcher:
+```powershell
+cd D:\rust\sts_simulator
+cargo run --profile fast-run --bin branch_campaign_driver -- campaign run --random-seed --mode quick
+cargo run --profile fast-run --bin branch_campaign_driver -- campaign inspect --from latest --view summary
+```
+
+`tools/campaign.ps1` remains a compatibility launcher for local builds and
+short aliases. It must forward to the Rust campaign surface rather than own new
+campaign behavior:
 
 ```powershell
 cd D:\rust\sts_simulator
@@ -52,10 +59,9 @@ cd D:\rust\sts_simulator
 .\tools\campaign.ps1 -Inspect
 ```
 
-The desired direct Rust shape is documented in
-[docs/CAMPAIGN_CLI_CONTRACT.md](docs/CAMPAIGN_CLI_CONTRACT.md). Until every
-command exists there, treat wrapper commands as temporary launch aliases, not
-the architecture.
+The command contract is documented in
+[docs/CAMPAIGN_CLI_CONTRACT.md](docs/CAMPAIGN_CLI_CONTRACT.md). Treat wrapper
+commands as launch aliases, not architecture.
 
 Build the main campaign driver directly when debugging the binary:
 
