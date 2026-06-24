@@ -14,6 +14,8 @@ $CampaignArtifactDir = Join-Path (Join-Path $ScriptDir "artifacts") "campaigns"
 $LegacyLatestCampaignPath = Join-Path $CampaignArtifactDir "latest.campaign.json"
 $LegacyLatestCheckpointPath = Join-Path $CampaignArtifactDir "latest.checkpoint.json"
 
+. (Join-Path $ScriptDir "campaign_artifact_io.ps1")
+
 function Get-SmokePowerShellExe {
     $Pwsh = Get-Command pwsh -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($Pwsh) {
@@ -87,6 +89,55 @@ function Invoke-CampaignSmokeCase {
     Write-Host "campaign-wrapper-smoke: PASS $Name"
 }
 
+function Assert-SmokeUtf8NoBomLf {
+    param(
+        [string] $Name,
+        [string] $Path
+    )
+
+    $Bytes = [System.IO.File]::ReadAllBytes($Path)
+    if ($Bytes.Length -ge 3 -and $Bytes[0] -eq 0xef -and $Bytes[1] -eq 0xbb -and $Bytes[2] -eq 0xbf) {
+        throw "case '$Name' wrote a UTF-8 BOM to $Path."
+    }
+    $Text = [System.Text.Encoding]::UTF8.GetString($Bytes)
+    if ($Text.Contains("`r")) {
+        throw "case '$Name' wrote CRLF/CR line endings to $Path."
+    }
+}
+
+function Invoke-CampaignArtifactIoSmoke {
+    $Name = "ArtifactIoUtf8Lf"
+    $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("sts_campaign_io_" + [guid]::NewGuid().ToString())
+    New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+    try {
+        $TextPath = Join-Path $TempDir "sample.txt"
+        $JsonPath = Join-Path $TempDir "sample.json"
+
+        Write-CampaignArtifactText -Path $TextPath -Text "a`r`nb`rc`n"
+        Write-CampaignJsonArtifact `
+            -Path $JsonPath `
+            -Value ([ordered]@{
+                schema_name = "CampaignArtifactIoSmokeV1"
+                value = "cat"
+            }) `
+            -Depth 4
+
+        Assert-SmokeUtf8NoBomLf -Name $Name -Path $TextPath
+        Assert-SmokeUtf8NoBomLf -Name $Name -Path $JsonPath
+
+        $Json = Read-CampaignJsonArtifactOrThrow -Path $JsonPath -Role "campaign artifact IO smoke"
+        if ($Json.schema_name -ne "CampaignArtifactIoSmokeV1" -or $Json.value -ne "cat") {
+            throw "case '$Name' failed JSON roundtrip."
+        }
+
+        Write-Host "campaign-wrapper-smoke: PASS $Name"
+    } finally {
+        if (Test-Path -LiteralPath $TempDir) {
+            Remove-Item -LiteralPath $TempDir -Recurse -Force
+        }
+    }
+}
+
 if (-not (Test-Path -LiteralPath $CampaignScript)) {
     throw "campaign wrapper not found at $CampaignScript"
 }
@@ -98,6 +149,8 @@ if ($RequireScratchLatest -and -not $ScratchLatestExists) {
 
 Push-Location $RepoRoot
 try {
+    Invoke-CampaignArtifactIoSmoke
+
     if ($ScratchLatestExists) {
         Invoke-CampaignSmokeCase `
             -Name "FromScratchLatestContinueScratchDryRun" `
