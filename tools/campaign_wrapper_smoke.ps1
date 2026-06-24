@@ -24,6 +24,18 @@ function Get-SmokePowerShellExe {
     return (Get-Command powershell -ErrorAction Stop | Select-Object -First 1).Source
 }
 
+function Ensure-CampaignSmokeDebugDriver {
+    Push-Location $RepoRoot
+    try {
+        & cargo @("build", "--quiet", "--bin", "branch_campaign_driver")
+        if ($LASTEXITCODE -ne 0) {
+            throw "campaign wrapper smoke failed to build debug branch_campaign_driver; exit code $LASTEXITCODE."
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
 function Invoke-CampaignSmokeCommand {
     param(
         [string[]] $Arguments
@@ -149,6 +161,7 @@ if ($RequireScratchLatest -and -not $ScratchLatestExists) {
 
 Push-Location $RepoRoot
 try {
+    Ensure-CampaignSmokeDebugDriver
     Invoke-CampaignArtifactIoSmoke
 
     if ($ScratchLatestExists) {

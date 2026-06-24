@@ -1,10 +1,13 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 const CAMPAIGN_LATEST_POINTER_SCHEMA_NAME: &str = "CampaignLatestPointerV1";
 const CAMPAIGN_SCRATCH_LATEST_POINTER_SCHEMA_NAME: &str = "CampaignScratchLatestPointerV1";
 const CAMPAIGN_LATEST_POINTER_SCHEMA_VERSION: u32 = 1;
+static CAMPAIGN_ARTIFACT_SUFFIX_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(super) enum CampaignArtifactKindV1 {
@@ -102,6 +105,38 @@ impl CampaignArtifactStoreV1 {
         suffix: &str,
     ) -> CampaignArtifactRefV1 {
         self.scratch_artifact_ref_v1(&campaign_output_artifact_id_v1(label, stamp, suffix))
+    }
+
+    pub(super) fn allocate_output_ref_v1(
+        &self,
+        kind: CampaignArtifactKindV1,
+        label: &str,
+        stamp: Option<&str>,
+        suffix: Option<&str>,
+    ) -> Result<CampaignArtifactRefV1, String> {
+        let generated_stamp;
+        let generated_suffix;
+        let stamp = match stamp {
+            Some(stamp) if !stamp.trim().is_empty() => stamp.trim(),
+            _ => {
+                generated_stamp = campaign_generated_artifact_stamp_v1();
+                generated_stamp.as_str()
+            }
+        };
+        let suffix = match suffix {
+            Some(suffix) if !suffix.trim().is_empty() => suffix.trim(),
+            _ => {
+                generated_suffix = campaign_generated_artifact_suffix_v1();
+                generated_suffix.as_str()
+            }
+        };
+        match kind {
+            CampaignArtifactKindV1::Run => Ok(self.run_output_ref_v1(label, stamp, suffix)),
+            CampaignArtifactKindV1::Scratch => Ok(self.scratch_output_ref_v1(label, stamp, suffix)),
+            CampaignArtifactKindV1::Path => {
+                Err("path artifacts cannot be allocated as campaign outputs".to_string())
+            }
+        }
     }
 
     pub(super) fn resolve_source_selector_v1(
@@ -345,6 +380,48 @@ fn campaign_output_artifact_id_v1(label: &str, stamp: &str, suffix: &str) -> Str
     }
 }
 
+fn campaign_generated_artifact_stamp_v1() -> String {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    campaign_format_utc_stamp_v1(duration.as_secs())
+}
+
+fn campaign_generated_artifact_suffix_v1() -> String {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let counter = CAMPAIGN_ARTIFACT_SUFFIX_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let nanos = duration.as_nanos() as u64;
+    let mixed = nanos ^ ((std::process::id() as u64) << 32) ^ counter.rotate_left(17);
+    format!("{:08x}", mixed & 0xffff_ffff)
+}
+
+fn campaign_format_utc_stamp_v1(unix_seconds: u64) -> String {
+    let days = (unix_seconds / 86_400) as i64;
+    let second_of_day = unix_seconds % 86_400;
+    let hour = second_of_day / 3_600;
+    let minute = (second_of_day % 3_600) / 60;
+    let second = second_of_day % 60;
+    let (year, month, day) = civil_from_unix_days_v1(days);
+    format!("{year:04}{month:02}{day:02}-{hour:02}{minute:02}{second:02}")
+}
+
+fn civil_from_unix_days_v1(days: i64) -> (i32, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_phase = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_phase + 2) / 5 + 1;
+    let month = month_phase + if month_phase < 10 { 3 } else { -9 };
+    let year = year + if month <= 2 { 1 } else { 0 };
+    (year as i32, month as u32, day as u32)
+}
+
 fn write_json_file_v1<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|err| {
@@ -547,6 +624,34 @@ mod tests {
             scratch.report_path,
             root.join("scratch")
                 .join("gap-probe-20260624-010203-abcdef12.campaign.json.gz")
+        );
+    }
+
+    #[test]
+    fn campaign_artifact_store_can_generate_output_refs_without_wrapper_stamp() {
+        let root = PathBuf::from(r"D:\repo\tools\artifacts\campaigns");
+        let store = CampaignArtifactStoreV1::new(root.clone());
+
+        let artifact = store
+            .allocate_output_ref_v1(CampaignArtifactKindV1::Run, "seed 1", None, None)
+            .expect("allocation should generate stamp and suffix");
+
+        assert_eq!(artifact.kind, CampaignArtifactKindV1::Run);
+        assert!(artifact.id.starts_with("seed-1-"));
+        assert_eq!(
+            artifact.report_path,
+            root.join("runs")
+                .join(&artifact.id)
+                .join("campaign.json.gz")
+        );
+    }
+
+    #[test]
+    fn campaign_artifact_store_formats_known_utc_stamp() {
+        assert_eq!(super::campaign_format_utc_stamp_v1(0), "19700101-000000");
+        assert_eq!(
+            super::campaign_format_utc_stamp_v1(1_782_304_496),
+            "20260624-123456"
         );
     }
 }

@@ -40,8 +40,6 @@ function New-CampaignOutputArtifactViaDriver {
         "allocate",
         "--kind", $Kind,
         "--label", "$BaseLabel",
-        "--stamp", (Get-Date -Format "yyyyMMdd-HHmmss"),
-        "--suffix", ([guid]::NewGuid().ToString("N").Substring(0, 8)),
         "--campaign-dir", "$script:CampaignDir",
         "--json"
     )

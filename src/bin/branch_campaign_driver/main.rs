@@ -19,7 +19,9 @@ mod journal_inspection;
 mod outcome_dataset;
 mod shop_challenge;
 
-use campaign_artifact_store::{render_campaign_artifact_ref_v1, CampaignArtifactStoreV1};
+use campaign_artifact_store::{
+    render_campaign_artifact_ref_v1, CampaignArtifactKindV1, CampaignArtifactStoreV1,
+};
 use campaign_run::{run_ancestor_replay_self_check, run_campaign_command};
 use checkpoint_inspection::{run_checkpoint_inspection, run_final_boss_combat_report_inspection};
 #[cfg(test)]
@@ -163,10 +165,16 @@ fn run_artifact_command(input: ArtifactCommandInput) -> Result<(), String> {
             json,
         } => {
             let store = CampaignArtifactStoreV1::new(campaign_dir);
-            let artifact = match kind {
-                ArtifactKindArgV1::Run => store.run_output_ref_v1(&label, &stamp, &suffix),
-                ArtifactKindArgV1::Scratch => store.scratch_output_ref_v1(&label, &stamp, &suffix),
+            let artifact_kind = match kind {
+                ArtifactKindArgV1::Run => CampaignArtifactKindV1::Run,
+                ArtifactKindArgV1::Scratch => CampaignArtifactKindV1::Scratch,
             };
+            let artifact = store.allocate_output_ref_v1(
+                artifact_kind,
+                &label,
+                stamp.as_deref(),
+                suffix.as_deref(),
+            )?;
             println!("{}", render_campaign_artifact_ref_v1(&artifact, json)?);
             Ok(())
         }

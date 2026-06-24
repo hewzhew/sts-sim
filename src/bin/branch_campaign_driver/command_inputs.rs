@@ -70,8 +70,8 @@ pub(super) enum ArtifactCommandInput {
         campaign_dir: PathBuf,
         kind: ArtifactKindArgV1,
         label: String,
-        stamp: String,
-        suffix: String,
+        stamp: Option<String>,
+        suffix: Option<String>,
         json: bool,
     },
     WriteLatest {
@@ -110,14 +110,8 @@ impl ArtifactCommandInput {
                     .artifact_label
                     .clone()
                     .ok_or_else(|| "artifact allocate requires a label".to_string())?,
-                stamp: args
-                    .artifact_stamp
-                    .clone()
-                    .ok_or_else(|| "artifact allocate requires a stamp".to_string())?,
-                suffix: args
-                    .artifact_suffix
-                    .clone()
-                    .ok_or_else(|| "artifact allocate requires a suffix".to_string())?,
+                stamp: args.artifact_stamp.clone(),
+                suffix: args.artifact_suffix.clone(),
                 json: args.artifact_json,
             }),
             ArtifactActionV1::WriteLatest => Ok(Self::WriteLatest {

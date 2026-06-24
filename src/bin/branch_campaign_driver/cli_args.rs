@@ -894,11 +894,19 @@ struct ArtifactAllocateCommandArgs {
     #[arg(long, value_name = "TEXT")]
     label: String,
 
-    #[arg(long, value_name = "YYYYMMDD-HHMMSS")]
-    stamp: String,
+    #[arg(
+        long,
+        value_name = "YYYYMMDD-HHMMSS",
+        help = "Optional deterministic timestamp component; defaults to a Rust-generated UTC stamp"
+    )]
+    stamp: Option<String>,
 
-    #[arg(long, value_name = "TEXT")]
-    suffix: String,
+    #[arg(
+        long,
+        value_name = "TEXT",
+        help = "Optional deterministic suffix component; defaults to a Rust-generated short suffix"
+    )]
+    suffix: Option<String>,
 
     #[arg(
         long = "campaign-dir",
@@ -1801,8 +1809,8 @@ impl ArtifactCommandArgs {
                 args.artifact_action = Some(ArtifactActionV1::Allocate);
                 args.artifact_kind = Some(allocate.kind);
                 args.artifact_label = Some(allocate.label);
-                args.artifact_stamp = Some(allocate.stamp);
-                args.artifact_suffix = Some(allocate.suffix);
+                args.artifact_stamp = allocate.stamp;
+                args.artifact_suffix = allocate.suffix;
                 args.artifact_campaign_dir = Some(allocate.campaign_dir);
                 args.artifact_json = allocate.json;
             }
