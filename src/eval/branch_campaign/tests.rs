@@ -225,6 +225,22 @@ fn scheduler_schedules_distinct_coverage_gap_targets() {
 }
 
 #[test]
+fn scheduler_progress_probe_prefers_same_floor_rank_over_hp() {
+    let mut high_rank_lower_hp = test_campaign_branch("high-rank-lower-hp", 6, 69);
+    high_rank_lower_hp.rank_key = 11_511;
+    let mut lower_rank_full_hp = test_campaign_branch("lower-rank-full-hp", 6, 80);
+    lower_rank_full_hp.rank_key = 11_500;
+
+    let selected = select_campaign_branches_v1(vec![lower_rank_full_hp, high_rank_lower_hp], 1, 8);
+
+    assert_eq!(selected.scheduled.len(), 1);
+    assert_eq!(selected.scheduled[0].branch_id, "high-rank-lower-hp");
+    assert!(selected.scheduled[0]
+        .stop_reason
+        .contains("scheduler:progress_probe"));
+}
+
+#[test]
 fn campaign_replay_prefix_advances_before_each_recorded_choice() {
     let replay = campaign_replay_commands_for_path_v1(&["rp 0".to_string(), "event 1".to_string()]);
 

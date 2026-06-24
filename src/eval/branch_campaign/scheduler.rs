@@ -88,7 +88,7 @@ fn schedule_campaign_workset_for_limits_v1(
         &mut scheduled,
         max_scheduled,
         SchedulerLaneV1::ProgressProbe,
-        |left, right| branch_progress_key(left).cmp(&branch_progress_key(right)),
+        |left, right| branch_progress_probe_key_v1(left).cmp(&branch_progress_probe_key_v1(right)),
     );
     take_best_single_v1(
         &mut pool,
@@ -233,6 +233,11 @@ fn branch_coverage_gap_target_key_v1(branch: &BranchCampaignBranchV1) -> Option<
         origin.target_origin_source,
         origin.milestone
     ))
+}
+
+fn branch_progress_probe_key_v1(branch: &BranchCampaignBranchV1) -> (u8, i32, i32) {
+    let (act, floor, _) = branch_progress_key(branch);
+    (act, floor, branch.rank_key)
 }
 
 fn scheduler_branch_quality_key_v1(branch: &BranchCampaignBranchV1) -> String {
