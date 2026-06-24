@@ -11,7 +11,7 @@ function Write-CampaignWrapperManifest {
     if ($Parent) {
         New-Item -ItemType Directory -Force -Path $Parent | Out-Null
     }
-    $Manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $Path
+    Write-CampaignJsonArtifact -Path $Path -Value $Manifest -Depth 12
 }
 
 function Convert-CampaignRequestForManifest {
@@ -87,7 +87,7 @@ function Write-CampaignPrimaryDriverCommandRecord {
         throw "Primary driver command recording requires an output artifact. Plan-only commands should not call this writer."
     }
 
-    Set-Content -LiteralPath $Context.RunCommandPath -Value $PrimaryDriverCommandLine
+    Write-CampaignArtifactText -Path $Context.RunCommandPath -Text "$PrimaryDriverCommandLine`n"
     if ($Context.OutputArtifact.Kind -eq "run") {
         Write-CampaignLatestPointer -Artifact $Context.OutputArtifact
         Write-Host "latest-pointer=$(Get-CampaignLatestPointerPath)"

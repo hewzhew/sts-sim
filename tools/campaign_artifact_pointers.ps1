@@ -39,7 +39,7 @@ function Write-CampaignLatestPointer {
         command = $Artifact.CommandPath
         log = $Artifact.LogPath
     }
-    $Pointer | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $PointerPath
+    Write-CampaignJsonArtifact -Path $PointerPath -Value $Pointer -Depth 6
 }
 
 function Read-CampaignScratchLatestPointer {
@@ -87,7 +87,7 @@ function Write-CampaignScratchLatestPointer {
         command = $Artifact.CommandPath
         log = $Artifact.LogPath
     }
-    $Pointer | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $PointerPath
+    Write-CampaignJsonArtifact -Path $PointerPath -Value $Pointer -Depth 6
 }
 
 function Get-LatestScratchCampaignArtifact {

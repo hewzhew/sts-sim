@@ -37,6 +37,44 @@ function Read-CampaignArtifactText {
     return [System.Text.Encoding]::UTF8.GetString($Bytes)
 }
 
+function Write-CampaignArtifactText {
+    param(
+        [string] $Path,
+        [AllowNull()]
+        [string] $Text
+    )
+
+    if (-not $Path) {
+        throw "Write-CampaignArtifactText requires a path."
+    }
+    $Parent = Split-Path -Parent $Path
+    if ($Parent) {
+        New-Item -ItemType Directory -Force -Path $Parent | Out-Null
+    }
+
+    if ($null -eq $Text) {
+        $Text = ""
+    }
+    $Normalized = $Text -replace "`r`n", "`n"
+    $Normalized = $Normalized -replace "`r", "`n"
+    [System.IO.File]::WriteAllText(
+        $Path,
+        $Normalized,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+}
+
+function Write-CampaignJsonArtifact {
+    param(
+        [string] $Path,
+        [object] $Value,
+        [int] $Depth = 12
+    )
+
+    $Json = $Value | ConvertTo-Json -Depth $Depth
+    Write-CampaignArtifactText -Path $Path -Text "$Json`n"
+}
+
 function Read-CampaignJsonArtifact {
     param(
         [string] $Path
