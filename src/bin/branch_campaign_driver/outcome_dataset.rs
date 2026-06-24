@@ -645,7 +645,7 @@ fn continuation_source_report_v1(
         if let Some(mut branch) =
             find_campaign_branch_by_id_v1(source_report, &request.representative_branch_id).cloned()
         {
-            branch.status = BranchCampaignBranchStatusV1::Active;
+            branch.status = BranchCampaignBranchStatusV1::Scheduled;
             branch.stop_reason = format!("targeted continuation to {}", request.milestone);
             selected.push(branch);
         }
@@ -703,7 +703,7 @@ fn coverage_gap_branch_from_target_v1(
         summary: None,
         strategic_summary: Default::default(),
         frontier_title: format!("Coverage Gap: {}", target.event_type),
-        status: BranchCampaignBranchStatusV1::Active,
+        status: BranchCampaignBranchStatusV1::Scheduled,
         stop_reason: coverage_gap_branch_stop_reason_v1(target),
         continuation_origin: Some(BranchCampaignContinuationOriginV1 {
             kind: "coverage_gap".to_string(),
@@ -1554,7 +1554,7 @@ mod tests {
             stop_reason: "max_rounds".to_string(),
             active: vec![coverage_gap_test_result_branch(
                 &reward_target,
-                BranchCampaignBranchStatusV1::Active,
+                BranchCampaignBranchStatusV1::Scheduled,
                 "Reward Screen",
                 "advanced to reward",
                 1,
@@ -1608,7 +1608,7 @@ mod tests {
         report.discarded_examples = vec!["some other branch".to_string()];
         let discarded_branch = coverage_gap_test_result_branch(
             &route_target,
-            BranchCampaignBranchStatusV1::Frozen,
+            BranchCampaignBranchStatusV1::Parked,
             "Map",
             "discarded by retention cap",
             1,
@@ -1650,7 +1650,7 @@ mod tests {
         };
         let mut extended_branch = coverage_gap_test_result_branch(
             &extended_target,
-            BranchCampaignBranchStatusV1::Active,
+            BranchCampaignBranchStatusV1::Scheduled,
             "Combat",
             "advanced after target",
             1,
@@ -1670,7 +1670,7 @@ mod tests {
             active: vec![extended_branch],
             frozen: vec![coverage_gap_test_result_branch(
                 &target_only_target,
-                BranchCampaignBranchStatusV1::Frozen,
+                BranchCampaignBranchStatusV1::Parked,
                 "Event",
                 "same boundary after applying target",
                 1,
@@ -1743,7 +1743,7 @@ mod tests {
             stop_reason: "max_rounds".to_string(),
             active: vec![coverage_gap_test_result_branch(
                 &target,
-                BranchCampaignBranchStatusV1::Active,
+                BranchCampaignBranchStatusV1::Scheduled,
                 "Combat",
                 "advanced after target",
                 1,
@@ -1804,7 +1804,7 @@ mod tests {
             stop_reason: "max_rounds".to_string(),
             active: vec![coverage_gap_test_result_branch(
                 &route_target,
-                BranchCampaignBranchStatusV1::Active,
+                BranchCampaignBranchStatusV1::Scheduled,
                 "Combat",
                 "advanced after target",
                 1,
@@ -1814,7 +1814,7 @@ mod tests {
             )],
             frozen: vec![coverage_gap_test_result_branch(
                 &reward_target,
-                BranchCampaignBranchStatusV1::Frozen,
+                BranchCampaignBranchStatusV1::Parked,
                 "Reward Screen",
                 "same boundary after applying target",
                 1,
@@ -2174,7 +2174,7 @@ mod tests {
             coverage_gap_test_target("reward", "rp 2", "Old discarded target", 1);
         let discarded_branch = coverage_gap_test_result_branch(
             &discarded_target,
-            BranchCampaignBranchStatusV1::Frozen,
+            BranchCampaignBranchStatusV1::Parked,
             "Reward Screen",
             "old selection capacity",
             1,

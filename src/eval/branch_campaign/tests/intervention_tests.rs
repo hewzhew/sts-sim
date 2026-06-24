@@ -45,14 +45,14 @@ fn compact_campaign_report_renders_strategy_prompt() {
         "BranchCampaignV1 seed=521 ascension=A0 domain=debug_a0 role=debug_domain class=Ironclad rounds=2 stop=needs_intervention"
     ));
     assert!(rendered.contains(
-        "Active 0 | Frozen 0 | Dead 0 | Abandoned 0 | Victories 0 | Stuck 0 | Discarded 3"
+        "Scheduled 0 | Parked 0 | Dead 0 | Abandoned 0 | Victories 0 | Stuck 0 | Discarded 3"
     ));
     assert!(rendered.contains("Needs intervention:"));
     assert!(rendered.contains("event_strategy | Falling | branches=2"));
     assert!(rendered.contains(
         "next: write a narrow event rule or choose one branch manually, then rerun the campaign"
     ));
-    assert!(!rendered.contains("Top active:"));
+    assert!(!rendered.contains("Scheduled examples:"));
 }
 
 #[test]
@@ -93,10 +93,10 @@ fn compact_campaign_report_renders_actionable_intervention_details() {
         journal: Default::default(),
         rounds: vec![BranchCampaignRoundSummaryV1 {
             round: 5,
-            started_active: 2,
+            started_scheduled: 2,
             produced_branches: 2,
-            active_after: 0,
-            frozen_added: 0,
+            scheduled_after: 0,
+            parked_added: 0,
             dead_added: 0,
             abandoned_added: 2,
             victories_added: 0,
@@ -202,11 +202,11 @@ fn compact_campaign_report_renders_first_and_best_victory_quality() {
 }
 
 #[test]
-fn compact_campaign_report_renders_needs_intervention_even_with_frozen_branches() {
+fn compact_campaign_report_renders_needs_intervention_even_with_parked_branches() {
     let mut report = test_campaign_report_with_active("a", 16, 70);
     report.stop_reason = "needs_intervention".to_string();
     report.active.clear();
-    report.frozen = vec![test_campaign_branch("old-frozen", 4, 80)];
+    report.frozen = vec![test_campaign_branch("old-parked", 4, 80)];
     report.strategy_requests = vec![test_campaign_request("combat_manual_or_budget", "Combat")];
 
     let rendered = render_branch_campaign_compact_v1(&report, 1);
@@ -286,24 +286,6 @@ fn campaign_strategy_requests_are_fatal_only_without_continuable_branches() {
         &request
     ));
     assert!(campaign_strategy_requests_are_fatal_v1(&[], &[], &request));
-}
-
-#[test]
-fn campaign_selection_treats_combat_stuck_as_abandoned_route_branch() {
-    let mut combat = test_campaign_branch_with_boundary(
-        "combat-stuck",
-        "Combat",
-        "combat search did not find an executable complete win",
-        12,
-        55,
-    );
-    combat.status = BranchCampaignBranchStatusV1::Stuck;
-
-    let selected = select_campaign_branches_v1(vec![combat], 2, 4);
-
-    assert_eq!(selected.abandoned.len(), 1);
-    assert_eq!(selected.abandoned[0].branch_id, "combat-stuck");
-    assert!(selected.stuck.is_empty());
 }
 
 #[test]

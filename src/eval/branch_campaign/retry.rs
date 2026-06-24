@@ -230,15 +230,15 @@ fn campaign_selection_act_boss_gate_retry_key_v1(
 pub(super) fn campaign_round_should_retry_combat_budget_on_stall_v1(
     config: &BranchCampaignConfigV1,
     selection: &BranchCampaignSelectionV1,
-    existing_frozen_branches: usize,
+    existing_parked_branches: usize,
 ) -> bool {
     matches!(
         config.combat_retry_policy,
         BranchCampaignCombatRetryPolicyV1::OnStall
     ) && combat_retry_campaign_config_v1(config).is_some()
-        && existing_frozen_branches == 0
-        && selection.active.is_empty()
-        && selection.frozen.is_empty()
+        && existing_parked_branches == 0
+        && selection.scheduled.is_empty()
+        && selection.parked.is_empty()
         && selection.victories.is_empty()
         && selection.dead.is_empty()
         && selection.stuck.is_empty()

@@ -35,8 +35,10 @@ use super::strategic_signals::BranchCampaignStrategicSignalsV1;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BranchCampaignBranchStatusV1 {
-    Active,
-    Frozen,
+    #[serde(alias = "active")]
+    Scheduled,
+    #[serde(alias = "frozen")]
+    Parked,
     TerminalVictory,
     TerminalDefeat,
     Abandoned,
@@ -245,8 +247,10 @@ pub struct BranchCampaignRouteFirstEliteContinuationOriginV1 {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchCampaignSelectionV1 {
-    pub active: Vec<BranchCampaignBranchV1>,
-    pub frozen: Vec<BranchCampaignBranchV1>,
+    #[serde(default, alias = "active")]
+    pub scheduled: Vec<BranchCampaignBranchV1>,
+    #[serde(default, alias = "frozen")]
+    pub parked: Vec<BranchCampaignBranchV1>,
     pub victories: Vec<BranchCampaignBranchV1>,
     pub dead: Vec<BranchCampaignBranchV1>,
     pub abandoned: Vec<BranchCampaignBranchV1>,
@@ -282,10 +286,13 @@ pub struct BranchCampaignStrategyRequestV1 {
 #[serde(deny_unknown_fields)]
 pub struct BranchCampaignRoundSummaryV1 {
     pub round: usize,
-    pub started_active: usize,
+    #[serde(default, alias = "started_active")]
+    pub started_scheduled: usize,
     pub produced_branches: usize,
-    pub active_after: usize,
-    pub frozen_added: usize,
+    #[serde(default, alias = "active_after")]
+    pub scheduled_after: usize,
+    #[serde(default, alias = "frozen_added")]
+    pub parked_added: usize,
     pub dead_added: usize,
     pub abandoned_added: usize,
     pub victories_added: usize,

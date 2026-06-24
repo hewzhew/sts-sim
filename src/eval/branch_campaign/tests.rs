@@ -1,6 +1,6 @@
 use super::*;
 use crate::ai::noncombat_strategy_v1::{StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1};
-use crate::ai::strategic::{BranchSignature, BranchSignatureCompact, RetentionBucket};
+use crate::ai::strategic::{BranchSignature, RetentionBucket};
 use crate::content::cards::CardId;
 use crate::eval::branch_experiment::{
     BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1, BranchExperimentChoiceV1,
@@ -20,12 +20,10 @@ use crate::state::events::{EventId, EventState};
 use crate::state::rewards::{RewardCard, RewardItem, RewardState};
 use std::collections::BTreeSet;
 
-mod frozen_pool_tests;
 mod intervention_tests;
 mod report_tests;
 mod resume_tests;
 mod retry_tests;
-mod selection_tests;
 mod state_store_tests;
 
 #[test]
@@ -94,7 +92,7 @@ fn campaign_branch_from_report_appends_new_choice_path() {
         summary: None,
         strategic_summary: Default::default(),
         frontier_title: "Card Reward".to_string(),
-        status: BranchCampaignBranchStatusV1::Active,
+        status: BranchCampaignBranchStatusV1::Scheduled,
         stop_reason: "test".to_string(),
         continuation_origin: None,
         lineage_decision_signal_rank_adjustment: 0,
@@ -149,7 +147,7 @@ fn campaign_branch_from_report_prefixes_parent_branch_id() {
         summary: None,
         strategic_summary: Default::default(),
         frontier_title: "Card Reward".to_string(),
-        status: BranchCampaignBranchStatusV1::Active,
+        status: BranchCampaignBranchStatusV1::Scheduled,
         stop_reason: "test".to_string(),
         continuation_origin: None,
         lineage_decision_signal_rank_adjustment: 0,
@@ -180,6 +178,53 @@ fn campaign_branch_from_report_prefixes_parent_branch_id() {
 }
 
 #[test]
+fn scheduler_schedules_distinct_boss_relic_axes_before_general_rank_fallback() {
+    let mut strong_general = test_campaign_branch("strong-general", 18, 80);
+    strong_general.rank_key = 99_000;
+
+    let mut pyramid = test_campaign_branch("pyramid", 16, 40);
+    pyramid.choice_labels = vec!["RunicPyramid".to_string()];
+    pyramid.rank_key = 1_000;
+    let mut astrolabe = test_campaign_branch("astrolabe", 16, 35);
+    astrolabe.choice_labels = vec!["Astrolabe".to_string()];
+    astrolabe.rank_key = 500;
+    let mut empty_cage = test_campaign_branch("empty-cage", 16, 30);
+    empty_cage.choice_labels = vec!["EmptyCage".to_string()];
+    empty_cage.rank_key = 100;
+
+    let selected =
+        select_campaign_branches_v1(vec![strong_general, pyramid, astrolabe, empty_cage], 3, 8);
+    let scheduled_ids = selected
+        .scheduled
+        .iter()
+        .map(|branch| branch.branch_id.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(selected.scheduled.len(), 3);
+    assert!(scheduled_ids.contains(&"pyramid"));
+    assert!(scheduled_ids.contains(&"astrolabe"));
+    assert!(scheduled_ids.contains(&"empty-cage"));
+}
+
+#[test]
+fn scheduler_schedules_distinct_coverage_gap_targets() {
+    let duplicate_a = coverage_gap_test_branch("duplicate-a", "decision-a", "candidate-1", 100);
+    let duplicate_b = coverage_gap_test_branch("duplicate-b", "decision-a", "candidate-1", 90);
+    let unique = coverage_gap_test_branch("unique", "decision-b", "candidate-2", 10);
+
+    let selected = select_campaign_branches_v1(vec![duplicate_a, duplicate_b, unique], 2, 8);
+    let scheduled_ids = selected
+        .scheduled
+        .iter()
+        .map(|branch| branch.branch_id.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(selected.scheduled.len(), 2);
+    assert!(scheduled_ids.contains(&"unique"));
+    assert!(scheduled_ids.contains(&"duplicate-a") || scheduled_ids.contains(&"duplicate-b"));
+}
+
+#[test]
 fn campaign_replay_prefix_advances_before_each_recorded_choice() {
     let replay = campaign_replay_commands_for_path_v1(&["rp 0".to_string(), "event 1".to_string()]);
 
@@ -192,6 +237,36 @@ fn campaign_replay_prefix_advances_before_each_recorded_choice() {
             "event 1"
         ]
     );
+}
+
+fn coverage_gap_test_branch(
+    branch_id: &str,
+    decision_id: &str,
+    candidate_id: &str,
+    rank_key: i32,
+) -> BranchCampaignBranchV1 {
+    let mut branch = test_campaign_branch(branch_id, 12, 55);
+    branch.rank_key = rank_key;
+    branch.continuation_origin = Some(BranchCampaignContinuationOriginV1 {
+        kind: "coverage_gap".to_string(),
+        source_event_id: "source-event".to_string(),
+        decision_id: decision_id.to_string(),
+        event_type: "reward_candidate_set".to_string(),
+        parent_branch_id: "parent".to_string(),
+        parent_frontier_title: "Reward Screen".to_string(),
+        candidate_index: 0,
+        candidate_id: candidate_id.to_string(),
+        command: "rp 0".to_string(),
+        label: candidate_id.to_string(),
+        semantic_class: "test".to_string(),
+        admission: Default::default(),
+        disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Pruned,
+        target_lane: None,
+        target_origin_source: "test".to_string(),
+        route_origin: None,
+        milestone: "Act2Start".to_string(),
+    });
+    branch
 }
 
 fn test_campaign_request(kind: &str, boundary_title: &str) -> BranchCampaignStrategyRequestV1 {
@@ -263,33 +338,16 @@ fn campaign_progress_events_render_concrete_stage_information() {
         render_branch_campaign_progress_event_v1(&BranchCampaignProgressEventV1::RoundStarted {
             round: 2,
             max_rounds: 4,
-            active_branches: 2,
-            frozen_branches: 6,
+            scheduled_branches: 2,
+            parked_branches: 6,
         });
-    let promoted_line =
-        render_branch_campaign_progress_event_v1(&BranchCampaignProgressEventV1::FrozenPromoted {
-            promoted: 2,
-            active_after: 2,
-            frozen_remaining: 4,
-            filled_active: 0,
-            stronger_rebalanced: 1,
-            diversity_rebalanced: 1,
-            coverage_rebalanced: 0,
-            rehydrated_recovered: 0,
-            checkpoint_recovered: 0,
-        });
-
     assert_eq!(
         branch_line,
         "round 2: branch 1/2 done | produced=8 branch_points=6 elapsed_ms=1234 start_ms=4321 replay=ancestor suffix=2 retry=combat_budget limits=[branch]"
     );
     assert_eq!(
         round_line,
-        "round 2/4: advancing 2 active branch(es), frozen=6"
-    );
-    assert_eq!(
-        promoted_line,
-        "promoted/rebalanced 2 frozen branch(es); active_after=2 frozen=4 sources=[stronger=1 diversity=1]"
+        "round 2/4: advancing 2 scheduled branch(es), parked=6"
     );
 }
 
@@ -352,10 +410,10 @@ fn campaign_progress_summary_hides_noisy_branch_events() {
 fn campaign_round_summary_persists_timing_metrics() {
     let summary = BranchCampaignRoundSummaryV1 {
         round: 3,
-        started_active: 2,
+        started_scheduled: 2,
         produced_branches: 5,
-        active_after: 2,
-        frozen_added: 1,
+        scheduled_after: 2,
+        parked_added: 1,
         dead_added: 0,
         abandoned_added: 1,
         victories_added: 0,
@@ -619,10 +677,10 @@ fn test_campaign_report_with_active(id: &str, floor: i32, hp: i32) -> BranchCamp
         journal: Default::default(),
         rounds: vec![BranchCampaignRoundSummaryV1 {
             round: 1,
-            started_active: 1,
+            started_scheduled: 1,
             produced_branches: 2,
-            active_after: 1,
-            frozen_added: 1,
+            scheduled_after: 1,
+            parked_added: 1,
             dead_added: 0,
             abandoned_added: 0,
             victories_added: 0,
@@ -662,7 +720,7 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
         }),
         strategic_summary: Default::default(),
         frontier_title: "Card Reward".to_string(),
-        status: BranchCampaignBranchStatusV1::Active,
+        status: BranchCampaignBranchStatusV1::Scheduled,
         stop_reason: "test".to_string(),
         continuation_origin: None,
         lineage_decision_signal_rank_adjustment: 0,

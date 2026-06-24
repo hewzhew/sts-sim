@@ -305,7 +305,7 @@ fn campaign_on_stall_does_not_retry_when_other_branches_remain() {
     abandoned.frontier_title = "Combat".to_string();
 
     let selection = BranchCampaignSelectionV1 {
-        active: vec![test_campaign_branch("active", 2, 80)],
+        scheduled: vec![test_campaign_branch("scheduled", 2, 80)],
         abandoned: vec![abandoned],
         ..BranchCampaignSelectionV1::default()
     };

@@ -42,16 +42,16 @@ pub(crate) fn render_checkpoint_inspect_summary_v1(
     if let Some(report) = report {
         render_report_section(
             &mut lines,
-            "Active",
-            BranchCampaignBranchStatusV1::Active,
+            "Scheduled",
+            BranchCampaignBranchStatusV1::Scheduled,
             &report.active,
             &sessions_by_commands,
             limit,
         );
         render_report_section(
             &mut lines,
-            "Frozen",
-            BranchCampaignBranchStatusV1::Frozen,
+            "Parked",
+            BranchCampaignBranchStatusV1::Parked,
             &report.frozen,
             &sessions_by_commands,
             limit,

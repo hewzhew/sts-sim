@@ -4,14 +4,14 @@ pub enum BranchCampaignProgressEventV1 {
         seed: u64,
         max_rounds: usize,
         round_depth: usize,
-        max_active: usize,
-        max_frozen: usize,
+        max_scheduled: usize,
+        max_parked: usize,
     },
     RoundStarted {
         round: usize,
         max_rounds: usize,
-        active_branches: usize,
-        frozen_branches: usize,
+        scheduled_branches: usize,
+        parked_branches: usize,
     },
     BranchStarted {
         round: usize,
@@ -35,27 +35,16 @@ pub enum BranchCampaignProgressEventV1 {
     },
     RoundFinished {
         round: usize,
-        started_active: usize,
+        started_scheduled: usize,
         produced_branches: usize,
-        active_after: usize,
-        frozen_added: usize,
+        scheduled_after: usize,
+        parked_added: usize,
         strategy_requests: usize,
-    },
-    FrozenPromoted {
-        promoted: usize,
-        active_after: usize,
-        frozen_remaining: usize,
-        filled_active: usize,
-        stronger_rebalanced: usize,
-        diversity_rebalanced: usize,
-        coverage_rebalanced: usize,
-        rehydrated_recovered: usize,
-        checkpoint_recovered: usize,
     },
     CampaignFinished {
         stop_reason: String,
-        active: usize,
-        frozen: usize,
+        scheduled: usize,
+        parked: usize,
         victories: usize,
         stuck: usize,
     },
@@ -104,18 +93,18 @@ fn render_branch_campaign_progress_summary_v1(
             seed,
             max_rounds,
             round_depth,
-            max_active,
-            max_frozen,
+            max_scheduled,
+            max_parked,
         } => Some(format!(
-            "campaign start: seed={seed} rounds={max_rounds} depth={round_depth} active_cap={max_active} frozen_cap={max_frozen}"
+            "campaign start: seed={seed} rounds={max_rounds} depth={round_depth} scheduled_cap={max_scheduled} parked_cap={max_parked}"
         )),
         BranchCampaignProgressEventV1::RoundStarted {
             round,
             max_rounds,
-            active_branches,
-            frozen_branches,
+            scheduled_branches,
+            parked_branches,
         } => Some(format!(
-            "round {round}/{max_rounds}: active={active_branches} frozen={frozen_branches}"
+            "round {round}/{max_rounds}: scheduled={scheduled_branches} parked={parked_branches}"
         )),
         BranchCampaignProgressEventV1::BranchStarted { .. } => None,
         BranchCampaignProgressEventV1::BranchFinished {
@@ -161,14 +150,14 @@ fn render_branch_campaign_progress_summary_v1(
         BranchCampaignProgressEventV1::RoundFinished {
             round,
             produced_branches,
-            active_after,
-            frozen_added,
+            scheduled_after,
+            parked_added,
             strategy_requests,
             ..
         } => {
             let mut extras = Vec::new();
-            if *frozen_added > 0 {
-                extras.push(format!("frozen+={frozen_added}"));
+            if *parked_added > 0 {
+                extras.push(format!("parked+={parked_added}"));
             }
             if *strategy_requests > 0 {
                 extras.push(format!("strategy_requests={strategy_requests}"));
@@ -179,43 +168,17 @@ fn render_branch_campaign_progress_summary_v1(
                 format!(" {}", extras.join(" "))
             };
             Some(format!(
-                "round {round} done: candidates={produced_branches} active={active_after}{suffix}"
-            ))
-        }
-        BranchCampaignProgressEventV1::FrozenPromoted {
-            promoted,
-            active_after,
-            frozen_remaining,
-            filled_active,
-            stronger_rebalanced,
-            diversity_rebalanced,
-            coverage_rebalanced,
-            rehydrated_recovered,
-            checkpoint_recovered,
-        } => {
-            if *promoted == 0 {
-                return None;
-            }
-            let source_suffix = render_progress_promotion_sources_v1(
-                *filled_active,
-                *stronger_rebalanced,
-                *diversity_rebalanced,
-                *coverage_rebalanced,
-                *rehydrated_recovered,
-                *checkpoint_recovered,
-            );
-            Some(format!(
-                "promoted {promoted}: active={active_after} frozen={frozen_remaining}{source_suffix}"
+                "round {round} done: candidates={produced_branches} scheduled={scheduled_after}{suffix}"
             ))
         }
         BranchCampaignProgressEventV1::CampaignFinished {
             stop_reason,
-            active,
-            frozen,
+            scheduled,
+            parked,
             victories,
             stuck,
         } => Some(format!(
-            "campaign finished: stop={stop_reason} active={active} frozen={frozen} victories={victories} stuck={stuck}"
+            "campaign finished: stop={stop_reason} scheduled={scheduled} parked={parked} victories={victories} stuck={stuck}"
         )),
     }
 }
@@ -226,18 +189,18 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
             seed,
             max_rounds,
             round_depth,
-            max_active,
-            max_frozen,
+            max_scheduled,
+            max_parked,
         } => format!(
-            "campaign start: seed={seed} rounds={max_rounds} round_depth={round_depth} active_cap={max_active} frozen_cap={max_frozen}"
+            "campaign start: seed={seed} rounds={max_rounds} round_depth={round_depth} scheduled_cap={max_scheduled} parked_cap={max_parked}"
         ),
         BranchCampaignProgressEventV1::RoundStarted {
             round,
             max_rounds,
-            active_branches,
-            frozen_branches,
+            scheduled_branches,
+            parked_branches,
         } => format!(
-            "round {round}/{max_rounds}: advancing {active_branches} active branch(es), frozen={frozen_branches}"
+            "round {round}/{max_rounds}: advancing {scheduled_branches} scheduled branch(es), parked={parked_branches}"
         ),
         BranchCampaignProgressEventV1::BranchStarted {
             round,
@@ -282,45 +245,22 @@ pub fn render_branch_campaign_progress_event_v1(event: &BranchCampaignProgressEv
         }
         BranchCampaignProgressEventV1::RoundFinished {
             round,
-            started_active,
+            started_scheduled,
             produced_branches,
-            active_after,
-            frozen_added,
+            scheduled_after,
+            parked_added,
             strategy_requests,
         } => format!(
-            "round {round} done: started={started_active} produced={produced_branches} active_after={active_after} frozen_added={frozen_added} strategy_requests={strategy_requests}"
+            "round {round} done: started={started_scheduled} produced={produced_branches} scheduled_after={scheduled_after} parked_added={parked_added} strategy_requests={strategy_requests}"
         ),
-        BranchCampaignProgressEventV1::FrozenPromoted {
-            promoted,
-            active_after,
-            frozen_remaining,
-            filled_active,
-            stronger_rebalanced,
-            diversity_rebalanced,
-            coverage_rebalanced,
-            rehydrated_recovered,
-            checkpoint_recovered,
-        } => {
-            let source_suffix = render_progress_promotion_sources_v1(
-                *filled_active,
-                *stronger_rebalanced,
-                *diversity_rebalanced,
-                *coverage_rebalanced,
-                *rehydrated_recovered,
-                *checkpoint_recovered,
-            );
-            format!(
-                "promoted/rebalanced {promoted} frozen branch(es); active_after={active_after} frozen={frozen_remaining}{source_suffix}"
-            )
-        }
         BranchCampaignProgressEventV1::CampaignFinished {
             stop_reason,
-            active,
-            frozen,
+            scheduled,
+            parked,
             victories,
             stuck,
         } => format!(
-            "campaign finished: stop={stop_reason} active={active} frozen={frozen} victories={victories} stuck={stuck}"
+            "campaign finished: stop={stop_reason} scheduled={scheduled} parked={parked} victories={victories} stuck={stuck}"
         ),
     }
 }
@@ -334,40 +274,6 @@ fn render_progress_limits_v1(branch_limit_hit: bool, wall_limit_hit: bool) -> St
         limits.push("wall");
     }
     limits.join(",")
-}
-
-fn render_progress_promotion_sources_v1(
-    filled_active: usize,
-    stronger_rebalanced: usize,
-    diversity_rebalanced: usize,
-    coverage_rebalanced: usize,
-    rehydrated_recovered: usize,
-    checkpoint_recovered: usize,
-) -> String {
-    let mut sources = Vec::new();
-    if filled_active > 0 {
-        sources.push(format!("fill={filled_active}"));
-    }
-    if stronger_rebalanced > 0 {
-        sources.push(format!("stronger={stronger_rebalanced}"));
-    }
-    if diversity_rebalanced > 0 {
-        sources.push(format!("diversity={diversity_rebalanced}"));
-    }
-    if coverage_rebalanced > 0 {
-        sources.push(format!("coverage={coverage_rebalanced}"));
-    }
-    if rehydrated_recovered > 0 {
-        sources.push(format!("rehydrated={rehydrated_recovered}"));
-    }
-    if checkpoint_recovered > 0 {
-        sources.push(format!("checkpoint={checkpoint_recovered}"));
-    }
-    if sources.is_empty() {
-        String::new()
-    } else {
-        format!(" sources=[{}]", sources.join(" "))
-    }
 }
 
 fn format_progress_seconds_v1(ms: u64) -> String {

@@ -209,10 +209,6 @@ impl BranchStateStoreV1 {
         self.nodes.get(id.0)
     }
 
-    pub(super) fn is_empty(&self) -> bool {
-        self.sessions_by_commands.is_empty()
-    }
-
     pub(super) fn checkpoint_nodes(&self) -> Vec<BranchCampaignCheckpointNodeV1> {
         self.nodes
             .iter()

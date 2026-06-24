@@ -24,7 +24,6 @@ const FOCUSED_PRESET_ROUND_DEPTH: usize = 2;
 const FOCUSED_PRESET_MAX_ACTIVE: usize = 2;
 const FOCUSED_PRESET_MAX_FROZEN: usize = 16;
 const FOCUSED_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 8;
-const FOCUSED_PRESET_ACTIVE_LINEAGE_DIVERSITY: usize = 2;
 const FOCUSED_PRESET_EXPERIMENT_WALL_MS: u64 = 10_000;
 const FOCUSED_PRESET_SEARCH_WALL_MS: u64 = 300;
 const FOCUSED_PRESET_SEARCH_MAX_NODES: usize = 50_000;
@@ -35,7 +34,6 @@ const DEEP_PRESET_ROUND_DEPTH: usize = 2;
 const DEEP_PRESET_MAX_ACTIVE: usize = 6;
 const DEEP_PRESET_MAX_FROZEN: usize = 48;
 const DEEP_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 8;
-const DEEP_PRESET_ACTIVE_LINEAGE_DIVERSITY: usize = 4;
 const DEEP_PRESET_EXPERIMENT_WALL_MS: u64 = 30_000;
 const DEEP_PRESET_SEARCH_WALL_MS: u64 = 1_000;
 const DEEP_PRESET_SEARCH_MAX_NODES: usize = 200_000;
@@ -46,7 +44,6 @@ const EXPLORE_PRESET_ROUND_DEPTH: usize = 1;
 const EXPLORE_PRESET_MAX_ACTIVE: usize = 8;
 const EXPLORE_PRESET_MAX_FROZEN: usize = 64;
 const EXPLORE_PRESET_MAX_BRANCHES_PER_ACTIVE: usize = 6;
-const EXPLORE_PRESET_ACTIVE_LINEAGE_DIVERSITY: usize = 5;
 const EXPLORE_PRESET_EXPERIMENT_WALL_MS: u64 = 8_000;
 const EXPLORE_PRESET_SEARCH_WALL_MS: u64 = 200;
 const EXPLORE_PRESET_SEARCH_MAX_NODES: usize = 30_000;
@@ -197,14 +194,7 @@ pub(super) struct Args {
 
     #[arg(
         long,
-        default_value_t = 0,
-        help = "Reserve active slots for distinct first-choice branch lineages; intended for exploration presets"
-    )]
-    pub(super) active_lineage_diversity: usize,
-
-    #[arg(
-        long,
-        help = "Isolate branch campaign active/frozen budgets by boss relic lineage"
+        help = "Isolate branch campaign scheduled/parked budgets by boss relic lineage"
     )]
     pub(super) boss_relic_axes: bool,
 
@@ -332,7 +322,7 @@ pub(super) struct Args {
     #[arg(
         long = "inspect-report",
         value_name = "PATH",
-        help = "Pair --inspect-checkpoint with a BranchCampaignV1 report for active/frozen/abandoned labels"
+        help = "Pair --inspect-checkpoint with a BranchCampaignV1 report for scheduled/parked/abandoned labels"
     )]
     pub(super) inspect_report: Option<PathBuf>,
 
@@ -880,14 +870,7 @@ struct CampaignBranchingArgs {
 
     #[arg(
         long,
-        default_value_t = 0,
-        help = "Reserve active slots for distinct first-choice branch lineages; intended for exploration presets"
-    )]
-    active_lineage_diversity: usize,
-
-    #[arg(
-        long,
-        help = "Isolate branch campaign active/frozen budgets by boss relic lineage"
+        help = "Isolate branch campaign scheduled/parked budgets by boss relic lineage"
     )]
     boss_relic_axes: bool,
 
@@ -1045,7 +1028,7 @@ struct InspectTargetArgs {
     #[arg(
         long = "inspect-report",
         value_name = "PATH",
-        help = "Pair --inspect-checkpoint with a BranchCampaignV1 report for active/frozen/abandoned labels"
+        help = "Pair --inspect-checkpoint with a BranchCampaignV1 report for scheduled/parked/abandoned labels"
     )]
     inspect_report: Option<PathBuf>,
 
@@ -1533,7 +1516,6 @@ impl Args {
             max_active: 8,
             max_frozen: 32,
             max_branches_per_active: 12,
-            active_lineage_diversity: 0,
             boss_relic_axes: false,
             retention_profile: "package".to_string(),
             max_reward_options: None,
@@ -1695,7 +1677,6 @@ impl CampaignBranchingArgs {
         args.max_active = self.max_active;
         args.max_frozen = self.max_frozen;
         args.max_branches_per_active = self.max_branches_per_active;
-        args.active_lineage_diversity = self.active_lineage_diversity;
         args.boss_relic_axes = self.boss_relic_axes;
         args.retention_profile = self.retention_profile;
         args.max_reward_options = self.max_reward_options;
@@ -1882,7 +1863,6 @@ where
             max_active: QUICK_PRESET_MAX_ACTIVE,
             max_frozen: QUICK_PRESET_MAX_FROZEN,
             max_branches_per_active: QUICK_PRESET_MAX_BRANCHES_PER_ACTIVE,
-            active_lineage_diversity: 0,
             experiment_wall_ms: QUICK_PRESET_EXPERIMENT_WALL_MS,
             search_wall_ms: QUICK_PRESET_SEARCH_WALL_MS,
             search_max_nodes: QUICK_PRESET_SEARCH_MAX_NODES,
@@ -1904,7 +1884,6 @@ where
             max_active: FOCUSED_PRESET_MAX_ACTIVE,
             max_frozen: FOCUSED_PRESET_MAX_FROZEN,
             max_branches_per_active: FOCUSED_PRESET_MAX_BRANCHES_PER_ACTIVE,
-            active_lineage_diversity: FOCUSED_PRESET_ACTIVE_LINEAGE_DIVERSITY,
             experiment_wall_ms: FOCUSED_PRESET_EXPERIMENT_WALL_MS,
             search_wall_ms: FOCUSED_PRESET_SEARCH_WALL_MS,
             search_max_nodes: FOCUSED_PRESET_SEARCH_MAX_NODES,
@@ -1926,7 +1905,6 @@ where
             max_active: DEEP_PRESET_MAX_ACTIVE,
             max_frozen: DEEP_PRESET_MAX_FROZEN,
             max_branches_per_active: DEEP_PRESET_MAX_BRANCHES_PER_ACTIVE,
-            active_lineage_diversity: DEEP_PRESET_ACTIVE_LINEAGE_DIVERSITY,
             experiment_wall_ms: DEEP_PRESET_EXPERIMENT_WALL_MS,
             search_wall_ms: DEEP_PRESET_SEARCH_WALL_MS,
             search_max_nodes: DEEP_PRESET_SEARCH_MAX_NODES,
@@ -1948,7 +1926,6 @@ where
             max_active: EXPLORE_PRESET_MAX_ACTIVE,
             max_frozen: EXPLORE_PRESET_MAX_FROZEN,
             max_branches_per_active: EXPLORE_PRESET_MAX_BRANCHES_PER_ACTIVE,
-            active_lineage_diversity: EXPLORE_PRESET_ACTIVE_LINEAGE_DIVERSITY,
             experiment_wall_ms: EXPLORE_PRESET_EXPERIMENT_WALL_MS,
             search_wall_ms: EXPLORE_PRESET_SEARCH_WALL_MS,
             search_max_nodes: EXPLORE_PRESET_SEARCH_MAX_NODES,
@@ -1964,7 +1941,6 @@ struct CampaignPresetDefaults {
     max_active: usize,
     max_frozen: usize,
     max_branches_per_active: usize,
-    active_lineage_diversity: usize,
     experiment_wall_ms: u64,
     search_wall_ms: u64,
     search_max_nodes: usize,
@@ -1992,9 +1968,6 @@ fn apply_campaign_preset_defaults<F>(
     }
     if !was_explicit("max_branches_per_active") {
         args.max_branches_per_active = defaults.max_branches_per_active;
-    }
-    if !was_explicit("active_lineage_diversity") {
-        args.active_lineage_diversity = defaults.active_lineage_diversity;
     }
     if !was_explicit("experiment_wall_ms") {
         args.experiment_wall_ms = defaults.experiment_wall_ms;

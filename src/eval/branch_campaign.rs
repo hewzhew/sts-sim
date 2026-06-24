@@ -19,11 +19,8 @@ use crate::state::rewards::{RewardCard, RewardState};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
-mod active_lineage;
-mod active_rebalance;
-mod active_selection;
 mod branch_display;
-mod frozen_pool;
+mod discard_trace;
 mod intervention;
 mod lineage;
 mod model;
@@ -34,23 +31,12 @@ mod report_render;
 mod retry;
 mod route_evidence;
 mod run_domain;
+mod scheduler;
 mod selection_key;
 mod state_graph;
 mod strategic_signals;
 mod summary;
-use active_lineage::{
-    rebalance_active_lineage_diversity_v1, refill_active_boss_relic_axes_from_frozen_v1,
-};
-use active_rebalance::{
-    branch_is_rehydrated_checkpointed_combat_failure_v1, campaign_progress_is_clearly_ahead_v1,
-    promote_frozen_to_active_v1, promote_rehydrated_combat_failures_to_active_on_stall_v1,
-    rebalance_active_coverage_probe_v1, rebalance_active_with_stronger_frozen_v1,
-};
-pub use active_selection::select_campaign_branches_v1;
-use active_selection::{append_discarded_examples_v1, select_campaign_branches_for_config_v1};
 use branch_display::{compact_campaign_choice_label_metadata_v1, render_choice_path};
-use frozen_pool::append_axis_limited_frozen_v1;
-use frozen_pool::append_limited_frozen_v1;
 #[cfg(test)]
 use intervention::campaign_strategy_next_step_v1;
 use intervention::{
@@ -58,8 +44,6 @@ use intervention::{
     leading_abandoned_combat_intervention_request_v1, merge_campaign_strategy_request_queue_v1,
     merge_campaign_strategy_requests_v1, prune_resolved_campaign_strategy_requests_v1,
 };
-#[cfg(test)]
-use lineage::campaign_branch_boss_relic_lineage_key_v1;
 pub use model::{
     BranchCampaignBranchStatusV1, BranchCampaignBranchSummaryV1, BranchCampaignBranchV1,
     BranchCampaignCheckpointActiveCombatRecordV1, BranchCampaignCheckpointCombatTrajectoryRecordV1,
@@ -83,8 +67,7 @@ pub use model::{
 use parent_batch::run_campaign_parent_batch_v1;
 #[cfg(test)]
 use parent_batch::{
-    campaign_branch_experiment_config_v1, campaign_parent_replay_error_is_retryable_v1,
-    campaign_retry_timing_for_parent_v1,
+    campaign_parent_replay_error_is_retryable_v1, campaign_retry_timing_for_parent_v1,
 };
 pub use performance::{
     BranchCampaignCombatPerformanceExampleV1, BranchCampaignCombatPerformanceSummaryV1,
@@ -117,7 +100,12 @@ pub use run_domain::{
     branch_campaign_ascension_domain_label_v1, branch_campaign_ascension_domain_role_v1,
     branch_campaign_run_domain_v1, BranchCampaignRunDomainV1,
 };
-use selection_key::{campaign_branch_retention_key_v1, compare_campaign_branches_for_promotion_v1};
+pub use scheduler::select_campaign_branches_v1;
+use scheduler::{
+    append_discarded_examples_v1, reschedule_campaign_existing_workset_v1,
+    schedule_campaign_workset_for_config_v1,
+};
+use selection_key::campaign_branch_retention_key_v1;
 use state_graph::{BranchStateSessionRetentionPolicyV1, BranchStateStoreV1};
 use strategic_signals::campaign_strategic_signals_from_groups_v1;
 pub use strategic_signals::{
@@ -146,7 +134,6 @@ pub struct BranchCampaignConfigV1 {
     pub max_active: usize,
     pub max_frozen: usize,
     pub max_branches_per_active: usize,
-    pub active_lineage_diversity_slots: usize,
     pub boss_relic_axis_isolation: bool,
     pub retention_budget_profile: BranchRetentionBudgetProfileV1,
     pub max_reward_options_per_branch: Option<usize>,
@@ -177,7 +164,6 @@ impl Default for BranchCampaignConfigV1 {
             max_active: 8,
             max_frozen: 32,
             max_branches_per_active: 12,
-            active_lineage_diversity_slots: 0,
             boss_relic_axis_isolation: false,
             retention_budget_profile: BranchRetentionBudgetProfileV1::Package,
             max_reward_options_per_branch: Some(2),
@@ -203,8 +189,8 @@ impl Default for BranchCampaignConfigV1 {
 
 struct BranchCampaignRunStateV1 {
     rounds_completed: usize,
-    active: Vec<BranchCampaignBranchV1>,
-    frozen: Vec<BranchCampaignBranchV1>,
+    scheduled: Vec<BranchCampaignBranchV1>,
+    parked: Vec<BranchCampaignBranchV1>,
     victories: Vec<BranchCampaignBranchV1>,
     dead: Vec<BranchCampaignBranchV1>,
     abandoned: Vec<BranchCampaignBranchV1>,
@@ -219,7 +205,6 @@ struct BranchCampaignRunStateV1 {
     journal: CampaignJournalV1,
     state_store: BranchStateStoreV1,
     decision_parent_anchor_commands: BTreeSet<Vec<String>>,
-    recovered_checkpoint_failure_commands: BTreeSet<Vec<String>>,
 }
 
 pub fn run_branch_campaign_v1(
@@ -387,16 +372,19 @@ where
         None => campaign_state_from_report_v1(previous),
     };
     if checkpoint.is_some() {
-        let rehydrated = rehydrate_checkpoint_failures_on_resume_v1(
-            &mut state,
+        let recovered = recover_auto_advanceable_stuck_branches_v1(
+            &mut state.scheduled,
+            &mut state.parked,
+            &mut state.stuck,
+            &mut state.state_store,
             config.max_active,
             config.max_frozen,
         );
-        if rehydrated > 0 {
+        if recovered > 0 {
             state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
                 state.strategy_requests,
-                &state.active,
-                &state.frozen,
+                &state.scheduled,
+                &state.parked,
                 &state.stuck,
                 &state.abandoned,
             );
@@ -419,16 +407,16 @@ where
         seed: config.seed,
         max_rounds: displayed_max_rounds,
         round_depth: config.round_depth,
-        max_active: config.max_active,
-        max_frozen: config.max_frozen,
+        max_scheduled: config.max_active,
+        max_parked: config.max_frozen,
     });
 
     let mut stop_reason = "max_rounds".to_string();
 
     for local_round in 0..config.max_rounds {
         let recovered = recover_auto_advanceable_stuck_branches_v1(
-            &mut state.active,
-            &mut state.frozen,
+            &mut state.scheduled,
+            &mut state.parked,
             &mut state.stuck,
             &mut state.state_store,
             config.max_active,
@@ -437,142 +425,44 @@ where
         if recovered > 0 {
             state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
                 state.strategy_requests,
-                &state.active,
-                &state.frozen,
+                &state.scheduled,
+                &state.parked,
                 &state.stuck,
                 &state.abandoned,
             );
-            let promoted = rebalance_active_with_stronger_frozen_v1(
-                &mut state.active,
-                &mut state.frozen,
-                config.max_active,
-            );
-            if promoted > 0 {
-                progress(BranchCampaignProgressEventV1::FrozenPromoted {
-                    promoted,
-                    active_after: state.active.len(),
-                    frozen_remaining: state.frozen.len(),
-                    filled_active: 0,
-                    stronger_rebalanced: promoted,
-                    diversity_rebalanced: 0,
-                    coverage_rebalanced: 0,
-                    rehydrated_recovered: 0,
-                    checkpoint_recovered: 0,
-                });
-            }
         }
-        if state.active.is_empty()
-            && !campaign_should_stop_after_victory_v1(
-                config,
-                &state.victories,
-                &state.active,
-                &state.frozen,
-            )
-            && !state.frozen.is_empty()
-        {
-            let promoted = promote_frozen_to_active_v1(
-                &mut state.active,
-                &mut state.frozen,
-                config.max_active,
-            );
-            if promoted > 0 {
-                progress(BranchCampaignProgressEventV1::FrozenPromoted {
-                    promoted,
-                    active_after: state.active.len(),
-                    frozen_remaining: state.frozen.len(),
-                    filled_active: promoted,
-                    stronger_rebalanced: 0,
-                    diversity_rebalanced: 0,
-                    coverage_rebalanced: 0,
-                    rehydrated_recovered: 0,
-                    checkpoint_recovered: 0,
-                });
-            }
-        }
-        if state.active.is_empty()
-            && !campaign_should_stop_after_victory_v1(
-                config,
-                &state.victories,
-                &state.active,
-                &state.frozen,
-            )
-        {
-            let promoted = promote_rehydrated_combat_failures_to_active_on_stall_v1(
-                &mut state.active,
-                &mut state.frozen,
-                config.max_active,
-            );
-            if promoted > 0 {
-                progress(BranchCampaignProgressEventV1::FrozenPromoted {
-                    promoted,
-                    active_after: state.active.len(),
-                    frozen_remaining: state.frozen.len(),
-                    filled_active: 0,
-                    stronger_rebalanced: 0,
-                    diversity_rebalanced: 0,
-                    coverage_rebalanced: 0,
-                    rehydrated_recovered: promoted,
-                    checkpoint_recovered: 0,
-                });
-            }
-        }
-        if state.active.is_empty()
-            && state.frozen.is_empty()
-            && !campaign_should_stop_after_victory_v1(
-                config,
-                &state.victories,
-                &state.active,
-                &state.frozen,
-            )
-        {
-            let recovered =
-                recover_checkpointed_combat_failures_on_stall_v1(&mut state, config.max_active);
-            if recovered > 0 {
-                state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
-                    state.strategy_requests,
-                    &state.active,
-                    &state.frozen,
-                    &state.stuck,
-                    &state.abandoned,
-                );
-                progress(BranchCampaignProgressEventV1::FrozenPromoted {
-                    promoted: recovered,
-                    active_after: state.active.len(),
-                    frozen_remaining: state.frozen.len(),
-                    filled_active: 0,
-                    stronger_rebalanced: 0,
-                    diversity_rebalanced: 0,
-                    coverage_rebalanced: 0,
-                    rehydrated_recovered: 0,
-                    checkpoint_recovered: recovered,
-                });
-            }
-        }
-        if state.active.is_empty()
+        let existing_schedule = reschedule_campaign_existing_workset_v1(
+            std::mem::take(&mut state.scheduled),
+            std::mem::take(&mut state.parked),
+            config,
+        );
+        let _existing_schedule_counts =
+            apply_campaign_schedule_selection_to_state_v1(&mut state, existing_schedule);
+        if state.scheduled.is_empty()
             && campaign_should_stop_after_victory_v1(
                 config,
                 &state.victories,
-                &state.active,
-                &state.frozen,
+                &state.scheduled,
+                &state.parked,
             )
         {
             stop_reason = "victory_found".to_string();
             break;
         }
-        if state.active.is_empty() {
-            stop_reason = "no_active_branch".to_string();
+        if state.scheduled.is_empty() {
+            stop_reason = "no_scheduled_branch".to_string();
             break;
         }
         let round_number = round_offset.saturating_add(local_round).saturating_add(1);
         progress(BranchCampaignProgressEventV1::RoundStarted {
             round: round_number,
             max_rounds: displayed_max_rounds,
-            active_branches: state.active.len(),
-            frozen_branches: state.frozen.len(),
+            scheduled_branches: state.scheduled.len(),
+            parked_branches: state.parked.len(),
         });
         let round_started_at = Instant::now();
-        let parents = std::mem::take(&mut state.active);
-        let started_active = parents.len();
+        let parents = std::mem::take(&mut state.scheduled);
+        let started_scheduled = parents.len();
         let mut batch = run_campaign_parent_batch_v1(
             config,
             &parents,
@@ -587,11 +477,16 @@ where
         let mut combat_retry_elapsed_wall_ms_sum = batch.combat_retry_elapsed_wall_ms_sum;
         let mut combat_retry_elapsed_wall_ms_max = batch.combat_retry_elapsed_wall_ms_max;
         let mut produced_branches = batch.candidates.len();
-        let mut selected = select_campaign_branches_for_config_v1(batch.candidates.clone(), config);
+        let parked_before_schedule = state.parked.len();
+        let mut selected = schedule_campaign_workset_for_config_v1(
+            batch.candidates.clone(),
+            state.parked.clone(),
+            config,
+        );
         if campaign_round_should_retry_combat_budget_on_stall_v1(
             config,
             &selected,
-            state.frozen.len(),
+            state.parked.len(),
         ) {
             let retry_allowed = state
                 .combat_retry_ledger
@@ -616,8 +511,11 @@ where
                     combat_retry_elapsed_wall_ms_max = combat_retry_elapsed_wall_ms_max
                         .max(batch.combat_retry_elapsed_wall_ms_max);
                     produced_branches = batch.candidates.len();
-                    selected =
-                        select_campaign_branches_for_config_v1(batch.candidates.clone(), config);
+                    selected = schedule_campaign_workset_for_config_v1(
+                        batch.candidates.clone(),
+                        state.parked.clone(),
+                        config,
+                    );
                 }
             }
         }
@@ -629,91 +527,40 @@ where
             merge_campaign_strategy_requests_v1(batch.strategy_requests.clone()),
         );
         merge_campaign_route_evidence_summary_v1(&mut state.route_evidence, batch.route_evidence);
-        let frozen_added = if config.boss_relic_axis_isolation {
-            append_axis_limited_frozen_v1(
-                &mut state.frozen,
-                selected.frozen,
-                config.max_frozen,
-                &mut state.discarded_count,
-                &mut state.discarded_examples,
-                &mut state.discarded_branches,
-            )
-        } else {
-            append_limited_frozen_v1(
-                &mut state.frozen,
-                selected.frozen,
-                config.max_frozen,
-                &mut state.discarded_count,
-                &mut state.discarded_examples,
-                &mut state.discarded_branches,
-            )
-        };
-        state.discarded_count = state
-            .discarded_count
-            .saturating_add(selected.discarded_count);
-        append_discarded_examples_v1(&mut state.discarded_examples, selected.discarded_examples);
-        state.discarded_branches.extend(selected.discarded_branches);
-        let dead_added = selected.dead.len();
-        let abandoned_added = selected.abandoned.len();
-        let victories_added = selected.victories.len();
-        let stuck_added = selected.stuck.len();
-        state.active = selected.active;
-        state.victories.extend(selected.victories);
-        state.dead.extend(selected.dead);
-        state.abandoned.extend(selected.abandoned);
-        state.stuck.extend(selected.stuck);
+        let schedule_counts = apply_campaign_schedule_selection_to_state_v1(&mut state, selected);
+        let parked_added = state.parked.len().saturating_sub(parked_before_schedule);
+        let dead_added = schedule_counts.dead_added;
+        let abandoned_added = schedule_counts.abandoned_added;
+        let victories_added = schedule_counts.victories_added;
+        let stuck_added = schedule_counts.stuck_added;
         recover_auto_advanceable_stuck_branches_v1(
-            &mut state.active,
-            &mut state.frozen,
+            &mut state.scheduled,
+            &mut state.parked,
             &mut state.stuck,
             &mut state.state_store,
             config.max_active,
             config.max_frozen,
         );
-        let rebalanced_from_frozen = rebalance_active_with_stronger_frozen_v1(
-            &mut state.active,
-            &mut state.frozen,
-            config.max_active,
-        );
-        let diversity_rebalanced_from_frozen = if config.active_lineage_diversity_slots > 0 {
-            rebalance_active_lineage_diversity_v1(
-                &mut state.active,
-                &mut state.frozen,
-                config.active_lineage_diversity_slots,
-            )
-        } else {
-            0
-        };
-        let axis_refilled_from_frozen = if config.boss_relic_axis_isolation {
-            refill_active_boss_relic_axes_from_frozen_v1(
-                &mut state.active,
-                &mut state.frozen,
-                config.max_active,
-            )
-        } else {
-            0
-        };
-        let coverage_rebalanced_from_frozen =
-            rebalance_active_coverage_probe_v1(&mut state.active, &mut state.frozen);
         state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
             state.strategy_requests,
-            &state.active,
-            &state.frozen,
+            &state.scheduled,
+            &state.parked,
             &state.stuck,
             &state.abandoned,
         );
         state
             .state_store
             .retain_for_branches_with_session_policy_and_anchors(
-                &state.active,
-                &state.frozen,
+                &state.scheduled,
+                &state.parked,
                 &state.abandoned,
                 &state.stuck,
                 &state.decision_parent_anchor_commands,
                 campaign_state_session_retention_policy_v1(config),
             );
-        let leading_abandoned_request = if state.active.is_empty() && state.victories.is_empty() {
-            leading_abandoned_combat_intervention_request_v1(&state.frozen, &state.abandoned)
+        let leading_abandoned_request = if state.scheduled.is_empty() && state.victories.is_empty()
+        {
+            leading_abandoned_combat_intervention_request_v1(&state.parked, &state.abandoned)
         } else {
             None
         };
@@ -721,71 +568,17 @@ where
             state.strategy_requests =
                 merge_campaign_strategy_request_queue_v1(state.strategy_requests, vec![request]);
         }
-        let promoted_from_frozen = if state.active.is_empty()
-            && !campaign_should_stop_after_victory_v1(
-                config,
-                &state.victories,
-                &state.active,
-                &state.frozen,
-            ) {
-            promote_frozen_to_active_v1(&mut state.active, &mut state.frozen, config.max_active)
-        } else {
-            0
-        };
-        let promoted_rehydrated_from_frozen = if state.active.is_empty()
-            && !campaign_should_stop_after_victory_v1(
-                config,
-                &state.victories,
-                &state.active,
-                &state.frozen,
-            ) {
-            promote_rehydrated_combat_failures_to_active_on_stall_v1(
-                &mut state.active,
-                &mut state.frozen,
-                config.max_active,
-            )
-        } else {
-            0
-        };
-        let recovered_from_abandoned = if state.active.is_empty()
-            && state.frozen.is_empty()
-            && !campaign_should_stop_after_victory_v1(
-                config,
-                &state.victories,
-                &state.active,
-                &state.frozen,
-            ) {
-            recover_checkpointed_combat_failures_on_stall_v1(&mut state, config.max_active)
-        } else {
-            0
-        };
-        if recovered_from_abandoned > 0 {
-            state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
-                state.strategy_requests,
-                &state.active,
-                &state.frozen,
-                &state.stuck,
-                &state.abandoned,
-            );
-        }
-        let total_promoted_from_frozen = promoted_from_frozen
-            .saturating_add(rebalanced_from_frozen)
-            .saturating_add(diversity_rebalanced_from_frozen)
-            .saturating_add(axis_refilled_from_frozen)
-            .saturating_add(coverage_rebalanced_from_frozen)
-            .saturating_add(promoted_rehydrated_from_frozen)
-            .saturating_add(recovered_from_abandoned);
         let round_summary = BranchCampaignRoundSummaryV1 {
             round: round_number,
-            started_active,
+            started_scheduled,
             produced_branches,
-            active_after: state.active.len(),
-            frozen_added,
+            scheduled_after: state.scheduled.len(),
+            parked_added,
             dead_added,
             abandoned_added,
             victories_added,
             stuck_added,
-            discarded_added: selected.discarded_count,
+            discarded_added: schedule_counts.discarded_added,
             explored_branch_points: batch.explored_branch_points,
             wall_limit_hit: batch.wall_limit_hit,
             branch_limit_hit: batch.branch_limit_hit,
@@ -801,39 +594,26 @@ where
         state.journal.extend(batch.journal_events);
         progress(BranchCampaignProgressEventV1::RoundFinished {
             round: round_number,
-            started_active,
+            started_scheduled,
             produced_branches,
-            active_after: state.active.len(),
-            frozen_added,
+            scheduled_after: state.scheduled.len(),
+            parked_added,
             strategy_requests: state.strategy_requests.len(),
         });
-        if total_promoted_from_frozen > 0 {
-            progress(BranchCampaignProgressEventV1::FrozenPromoted {
-                promoted: total_promoted_from_frozen,
-                active_after: state.active.len(),
-                frozen_remaining: state.frozen.len(),
-                filled_active: promoted_from_frozen,
-                stronger_rebalanced: rebalanced_from_frozen,
-                diversity_rebalanced: diversity_rebalanced_from_frozen,
-                coverage_rebalanced: coverage_rebalanced_from_frozen,
-                rehydrated_recovered: promoted_rehydrated_from_frozen,
-                checkpoint_recovered: recovered_from_abandoned,
-            });
-        }
         state.rounds.push(round_summary);
         state.rounds_completed = state.rounds_completed.saturating_add(1);
 
         if campaign_should_stop_after_victory_v1(
             config,
             &state.victories,
-            &state.active,
-            &state.frozen,
+            &state.scheduled,
+            &state.parked,
         ) {
             stop_reason = "victory_found".to_string();
             break;
         }
-        if state.active.is_empty()
-            && state.frozen.is_empty()
+        if state.scheduled.is_empty()
+            && state.parked.is_empty()
             && !state.abandoned.is_empty()
             && state.strategy_requests.is_empty()
         {
@@ -844,14 +624,14 @@ where
             }
         }
         if campaign_strategy_requests_are_fatal_v1(
-            &state.active,
-            &state.frozen,
+            &state.scheduled,
+            &state.parked,
             &state.strategy_requests,
         ) {
             stop_reason = "needs_intervention".to_string();
             break;
         }
-        if state.active.is_empty() && state.frozen.is_empty() && !state.stuck.is_empty() {
+        if state.scheduled.is_empty() && state.parked.is_empty() && !state.stuck.is_empty() {
             stop_reason = "stuck".to_string();
             break;
         }
@@ -863,8 +643,8 @@ where
 
     progress(BranchCampaignProgressEventV1::CampaignFinished {
         stop_reason: stop_reason.clone(),
-        active: state.active.len(),
-        frozen: state.frozen.len(),
+        scheduled: state.scheduled.len(),
+        parked: state.parked.len(),
         victories: state.victories.len(),
         stuck: state.stuck.len(),
     });
@@ -872,8 +652,8 @@ where
     campaign_refresh_all_branch_summaries_from_state_store_v1(&mut state);
 
     let strategic_signals = campaign_strategic_signals_from_groups_v1(
-        &state.active,
-        &state.frozen,
+        &state.scheduled,
+        &state.parked,
         &state.victories,
         &state.abandoned,
         &state.stuck,
@@ -889,8 +669,8 @@ where
         run_prelude: branch_campaign_run_prelude_v1(config),
         rounds_completed: state.rounds_completed,
         stop_reason,
-        active: state.active,
-        frozen: state.frozen,
+        active: state.scheduled,
+        frozen: state.parked,
         victories: state.victories,
         dead: state.dead,
         abandoned: state.abandoned,
@@ -909,11 +689,47 @@ where
     Ok(BranchCampaignRunResultV1 { report, checkpoint })
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct CampaignScheduleApplyCountsV1 {
+    dead_added: usize,
+    abandoned_added: usize,
+    victories_added: usize,
+    stuck_added: usize,
+    discarded_added: usize,
+}
+
+fn apply_campaign_schedule_selection_to_state_v1(
+    state: &mut BranchCampaignRunStateV1,
+    selection: BranchCampaignSelectionV1,
+) -> CampaignScheduleApplyCountsV1 {
+    let counts = CampaignScheduleApplyCountsV1 {
+        dead_added: selection.dead.len(),
+        abandoned_added: selection.abandoned.len(),
+        victories_added: selection.victories.len(),
+        stuck_added: selection.stuck.len(),
+        discarded_added: selection.discarded_count,
+    };
+    state.scheduled = selection.scheduled;
+    state.parked = selection.parked;
+    state.victories.extend(selection.victories);
+    state.dead.extend(selection.dead);
+    state.abandoned.extend(selection.abandoned);
+    state.stuck.extend(selection.stuck);
+    state.discarded_count = state
+        .discarded_count
+        .saturating_add(selection.discarded_count);
+    append_discarded_examples_v1(&mut state.discarded_examples, selection.discarded_examples);
+    state
+        .discarded_branches
+        .extend(selection.discarded_branches);
+    counts
+}
+
 fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
     BranchCampaignRunStateV1 {
         rounds_completed: 0,
-        active: vec![root_campaign_branch_v1()],
-        frozen: Vec::new(),
+        scheduled: vec![root_campaign_branch_v1()],
+        parked: Vec::new(),
         victories: Vec::new(),
         dead: Vec::new(),
         abandoned: Vec::new(),
@@ -928,15 +744,14 @@ fn root_campaign_state_v1() -> BranchCampaignRunStateV1 {
         journal: CampaignJournalV1::new(),
         state_store: BranchStateStoreV1::new(),
         decision_parent_anchor_commands: BTreeSet::new(),
-        recovered_checkpoint_failure_commands: BTreeSet::new(),
     }
 }
 
 fn campaign_state_from_report_v1(report: &BranchCampaignReportV1) -> BranchCampaignRunStateV1 {
     BranchCampaignRunStateV1 {
         rounds_completed: report.rounds_completed,
-        active: report.active.clone(),
-        frozen: report.frozen.clone(),
+        scheduled: report.active.clone(),
+        parked: report.frozen.clone(),
         victories: report.victories.clone(),
         dead: report.dead.clone(),
         abandoned: report.abandoned.clone(),
@@ -953,7 +768,6 @@ fn campaign_state_from_report_v1(report: &BranchCampaignReportV1) -> BranchCampa
         journal: report.journal.clone(),
         state_store: BranchStateStoreV1::new(),
         decision_parent_anchor_commands: BTreeSet::new(),
-        recovered_checkpoint_failure_commands: BTreeSet::new(),
     }
 }
 
@@ -967,9 +781,9 @@ fn campaign_state_from_report_and_checkpoint_v1(
         .state_store
         .restore_checkpoint_nodes(&checkpoint.nodes)?;
     let keep = state
-        .active
+        .scheduled
         .iter()
-        .chain(state.frozen.iter())
+        .chain(state.parked.iter())
         .chain(state.abandoned.iter())
         .chain(state.stuck.iter())
         .map(|branch| branch.commands.clone())
@@ -997,8 +811,8 @@ fn campaign_state_from_report_and_checkpoint_v1(
         .retain(|branch| state.state_store.contains_commands(&branch.commands));
     state.strategy_requests = prune_resolved_campaign_strategy_requests_v1(
         state.strategy_requests,
-        &state.active,
-        &state.frozen,
+        &state.scheduled,
+        &state.parked,
         &state.stuck,
         &state.abandoned,
     );
@@ -1034,9 +848,9 @@ fn campaign_checkpoint_from_state_v1(
     let mut active_combat_indexes = BTreeMap::<String, usize>::new();
     let mut exported_commands = BTreeSet::new();
     for branch in state
-        .active
+        .scheduled
         .iter()
-        .chain(state.frozen.iter())
+        .chain(state.parked.iter())
         .chain(state.abandoned.iter())
         .chain(state.stuck.iter())
     {
@@ -1576,7 +1390,7 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
         summary: None,
         strategic_summary: BranchSignatureCompact::default(),
         frontier_title: "start".to_string(),
-        status: BranchCampaignBranchStatusV1::Active,
+        status: BranchCampaignBranchStatusV1::Scheduled,
         stop_reason: "initial".to_string(),
         continuation_origin: None,
         lineage_decision_signal_rank_adjustment: 0,
@@ -1620,8 +1434,8 @@ fn campaign_elapsed_ms_u64(started_at: Instant) -> u64 {
 }
 
 fn recover_auto_advanceable_stuck_branches_v1(
-    active: &mut Vec<BranchCampaignBranchV1>,
-    frozen: &mut Vec<BranchCampaignBranchV1>,
+    scheduled: &mut Vec<BranchCampaignBranchV1>,
+    parked: &mut Vec<BranchCampaignBranchV1>,
     stuck: &mut Vec<BranchCampaignBranchV1>,
     state_store: &mut BranchStateStoreV1,
     max_active: usize,
@@ -1638,8 +1452,8 @@ fn recover_auto_advanceable_stuck_branches_v1(
             try_recover_auto_advanceable_stuck_branch_v1(&branch, state_store)
         {
             let _placed = place_recovered_campaign_branch_v1(
-                active,
-                frozen,
+                scheduled,
+                parked,
                 recovered_branch,
                 max_active,
                 max_frozen,
@@ -1653,206 +1467,11 @@ fn recover_auto_advanceable_stuck_branches_v1(
     recovered
 }
 
-fn recover_checkpointed_combat_failures_on_stall_v1(
-    state: &mut BranchCampaignRunStateV1,
-    max_active: usize,
-) -> usize {
-    if max_active == 0 || !state.active.is_empty() || !state.frozen.is_empty() {
-        return 0;
-    }
-    if state.state_store.is_empty() || state.abandoned.is_empty() {
-        return 0;
-    }
-
-    let mut candidates = Vec::new();
-    let mut remaining = Vec::new();
-    for branch in std::mem::take(&mut state.abandoned) {
-        if state
-            .recovered_checkpoint_failure_commands
-            .contains(&branch.commands)
-        {
-            remaining.push(branch);
-            continue;
-        }
-        if campaign_checkpoint_failure_is_combat_resume_candidate_v1(
-            &branch,
-            match state.state_store.get_session(&branch.commands) {
-                Some(session) => session,
-                None => {
-                    remaining.push(branch);
-                    continue;
-                }
-            },
-        ) {
-            candidates.push(branch);
-        } else {
-            remaining.push(branch);
-        }
-    }
-    candidates.sort_by(compare_campaign_branches_for_promotion_v1);
-
-    let mut recovered = 0usize;
-    for branch in candidates {
-        if recovered >= max_active {
-            remaining.push(branch);
-            continue;
-        }
-        match try_rehydrate_checkpoint_failure_branch_v1(&branch, &state.state_store) {
-            Some(mut recovered_branch) => {
-                recovered_branch.status = BranchCampaignBranchStatusV1::Active;
-                state
-                    .recovered_checkpoint_failure_commands
-                    .insert(branch.commands.clone());
-                state.active.push(recovered_branch);
-                recovered = recovered.saturating_add(1);
-            }
-            None => remaining.push(branch),
-        }
-    }
-    state.abandoned = remaining;
-    recovered
-}
-
-fn rehydrate_checkpoint_failures_on_resume_v1(
-    state: &mut BranchCampaignRunStateV1,
-    max_active: usize,
-    max_frozen: usize,
-) -> usize {
-    if state.state_store.is_empty() {
-        return 0;
-    }
-
-    let mut recovered = 0usize;
-    let abandoned = std::mem::take(&mut state.abandoned);
-    state.abandoned = rehydrate_checkpoint_failure_list_v1(
-        abandoned,
-        &mut state.active,
-        &mut state.frozen,
-        &state.state_store,
-        &mut state.recovered_checkpoint_failure_commands,
-        max_active,
-        max_frozen,
-        max_active,
-        &mut recovered,
-    );
-    let stuck = std::mem::take(&mut state.stuck);
-    state.stuck = rehydrate_checkpoint_failure_list_v1(
-        stuck,
-        &mut state.active,
-        &mut state.frozen,
-        &state.state_store,
-        &mut state.recovered_checkpoint_failure_commands,
-        max_active,
-        max_frozen,
-        max_active,
-        &mut recovered,
-    );
-    recovered = recovered.saturating_add(recover_auto_advanceable_stuck_branches_v1(
-        &mut state.active,
-        &mut state.frozen,
-        &mut state.stuck,
-        &mut state.state_store,
-        max_active,
-        max_frozen,
-    ));
-    recovered
-}
-
-fn rehydrate_checkpoint_failure_list_v1(
-    branches: Vec<BranchCampaignBranchV1>,
-    active: &mut Vec<BranchCampaignBranchV1>,
-    frozen: &mut Vec<BranchCampaignBranchV1>,
-    state_store: &BranchStateStoreV1,
-    recovered_commands: &mut BTreeSet<Vec<String>>,
-    max_active: usize,
-    max_frozen: usize,
-    max_recovered: usize,
-    recovered_count: &mut usize,
-) -> Vec<BranchCampaignBranchV1> {
-    let mut remaining = Vec::new();
-    let mut candidates = Vec::<(BranchCampaignBranchV1, BranchCampaignBranchV1)>::new();
-    for branch in branches {
-        if let Some(recovered) = try_rehydrate_checkpoint_failure_branch_v1(&branch, state_store) {
-            candidates.push((branch, recovered));
-        } else {
-            remaining.push(branch);
-        }
-    }
-    candidates
-        .sort_by(|(_, left), (_, right)| compare_campaign_branches_for_promotion_v1(left, right));
-
-    for (branch, recovered) in candidates {
-        if *recovered_count < max_recovered
-            && place_recovered_campaign_branch_v1(active, frozen, recovered, max_active, max_frozen)
-        {
-            recovered_commands.insert(branch.commands.clone());
-            *recovered_count = recovered_count.saturating_add(1);
-        } else {
-            remaining.push(branch);
-        }
-    }
-
-    remaining
-}
-
-fn try_rehydrate_checkpoint_failure_branch_v1(
-    branch: &BranchCampaignBranchV1,
-    state_store: &BranchStateStoreV1,
-) -> Option<BranchCampaignBranchV1> {
-    let session = state_store.get_session(&branch.commands)?;
-    if !campaign_checkpoint_failure_is_combat_resume_candidate_v1(branch, session) {
-        return None;
-    }
-
-    let mut recovered = branch.clone();
-    let previous_status = format!("{:?}", recovered.status);
-    campaign_refresh_branch_summary_from_session_v1(&mut recovered, session);
-    recovered.status = BranchCampaignBranchStatusV1::Active;
-    recovered.stop_reason = if recovered.stop_reason.trim().is_empty() {
-        format!("rehydrated checkpointed {previous_status} combat branch")
-    } else {
-        format!(
-            "rehydrated checkpointed {previous_status} combat branch: {}",
-            recovered.stop_reason
-        )
-    };
-    Some(recovered)
-}
-
-fn campaign_checkpoint_failure_is_combat_resume_candidate_v1(
-    branch: &BranchCampaignBranchV1,
-    session: &RunControlSession,
-) -> bool {
-    if !matches!(
-        branch.status,
-        BranchCampaignBranchStatusV1::Abandoned | BranchCampaignBranchStatusV1::Stuck
-    ) {
-        return false;
-    }
-    let frontier = normalized_campaign_boundary_title(&branch.frontier_title);
-    if frontier.starts_with("combat") {
+fn campaign_progress_is_clearly_ahead_v1(left: (u8, i32, i32), right: (u8, i32, i32)) -> bool {
+    if left.0 > right.0 {
         return true;
     }
-    if campaign_session_is_combat_boundary_v1(session) {
-        return true;
-    }
-    let stop = branch.stop_reason.to_ascii_lowercase();
-    stop.contains("combat search")
-        || stop.contains("search-combat")
-        || stop.contains("hp-loss")
-        || stop.contains("max_hp_loss")
-        || stop.contains("high-stakes combat")
-        || stop.contains("complete_winning_candidate")
-}
-
-fn campaign_session_is_combat_boundary_v1(session: &RunControlSession) -> bool {
-    matches!(
-        session.engine_state,
-        crate::state::core::EngineState::CombatStart(_)
-            | crate::state::core::EngineState::CombatPlayerTurn
-            | crate::state::core::EngineState::CombatProcessing
-            | crate::state::core::EngineState::PendingChoice(_)
-    )
+    left.0 == right.0 && left.1 >= right.1.saturating_add(2)
 }
 
 fn maybe_attach_campaign_combat_lab_probe_v1(
@@ -1878,7 +1497,7 @@ fn campaign_branch_should_probe_current_act_boss_v1(branch: &BranchCampaignBranc
     }
     if !matches!(
         branch.status,
-        BranchCampaignBranchStatusV1::Active | BranchCampaignBranchStatusV1::Stuck
+        BranchCampaignBranchStatusV1::Scheduled | BranchCampaignBranchStatusV1::Stuck
     ) {
         return false;
     }
@@ -1932,7 +1551,7 @@ fn try_recover_auto_advanceable_stuck_branch_v1(
     if checkpoint_frontier != original_frontier && branch_boundary_available(&session) {
         let mut recovered = branch.clone();
         recovered.frontier_title = checkpoint_frontier;
-        recovered.status = BranchCampaignBranchStatusV1::Active;
+        recovered.status = BranchCampaignBranchStatusV1::Scheduled;
         recovered.stop_reason = "recovered from checkpoint frontier drift".to_string();
         campaign_refresh_branch_summary_from_session_v1(&mut recovered, &session);
         return Some(recovered);
@@ -1940,7 +1559,7 @@ fn try_recover_auto_advanceable_stuck_branch_v1(
     if campaign_stale_empty_portfolio_branch_is_now_available_v1(branch, &session) {
         let mut recovered = branch.clone();
         recovered.frontier_title = checkpoint_frontier;
-        recovered.status = BranchCampaignBranchStatusV1::Active;
+        recovered.status = BranchCampaignBranchStatusV1::Scheduled;
         recovered.stop_reason = "recovered from current branch boundary".to_string();
         campaign_refresh_branch_summary_from_session_v1(&mut recovered, &session);
         state_store.insert_session(branch.commands.clone(), session);
@@ -1966,7 +1585,7 @@ fn try_recover_auto_advanceable_stuck_branch_v1(
 
     let mut recovered = branch.clone();
     recovered.frontier_title = new_frontier;
-    recovered.status = BranchCampaignBranchStatusV1::Active;
+    recovered.status = BranchCampaignBranchStatusV1::Scheduled;
     recovered.stop_reason = "recovered by one-step auto-advance".to_string();
     campaign_refresh_branch_summary_from_session_v1(&mut recovered, &session);
     state_store.insert_session(branch.commands.clone(), session);
@@ -1985,33 +1604,30 @@ fn campaign_stale_empty_portfolio_branch_is_now_available_v1(
 }
 
 fn place_recovered_campaign_branch_v1(
-    active: &mut Vec<BranchCampaignBranchV1>,
-    frozen: &mut Vec<BranchCampaignBranchV1>,
+    scheduled: &mut Vec<BranchCampaignBranchV1>,
+    parked: &mut Vec<BranchCampaignBranchV1>,
     mut recovered: BranchCampaignBranchV1,
     max_active: usize,
     max_frozen: usize,
 ) -> bool {
-    let recovered_is_behind_active = active.iter().any(|branch| {
+    let recovered_is_behind_scheduled = scheduled.iter().any(|branch| {
         campaign_progress_is_clearly_ahead_v1(
             branch_progress_key(branch),
             branch_progress_key(&recovered),
         )
     });
-    if active.len() < max_active
-        && !recovered_is_behind_active
-        && !branch_is_rehydrated_checkpointed_combat_failure_v1(&recovered)
-    {
-        recovered.status = BranchCampaignBranchStatusV1::Active;
-        active.push(recovered);
+    if scheduled.len() < max_active && !recovered_is_behind_scheduled {
+        recovered.status = BranchCampaignBranchStatusV1::Scheduled;
+        scheduled.push(recovered);
         return true;
     }
-    recovered.status = BranchCampaignBranchStatusV1::Frozen;
-    if frozen.len() < max_frozen {
-        frozen.push(recovered);
+    recovered.status = BranchCampaignBranchStatusV1::Parked;
+    if parked.len() < max_frozen {
+        parked.push(recovered);
         return true;
     }
     let Some((worst_index, worst_branch)) =
-        frozen.iter().enumerate().min_by(|(_, left), (_, right)| {
+        parked.iter().enumerate().min_by(|(_, left), (_, right)| {
             campaign_branch_retention_key_v1(left).cmp(&campaign_branch_retention_key_v1(right))
         })
     else {
@@ -2022,7 +1638,7 @@ fn place_recovered_campaign_branch_v1(
     {
         return false;
     }
-    frozen[worst_index] = recovered;
+    parked[worst_index] = recovered;
     true
 }
 
@@ -2191,7 +1807,7 @@ fn campaign_status_from_report_status(
     status: BranchExperimentBranchStatusV1,
 ) -> BranchCampaignBranchStatusV1 {
     match status {
-        BranchExperimentBranchStatusV1::Active => BranchCampaignBranchStatusV1::Active,
+        BranchExperimentBranchStatusV1::Active => BranchCampaignBranchStatusV1::Scheduled,
         BranchExperimentBranchStatusV1::TerminalVictory => {
             BranchCampaignBranchStatusV1::TerminalVictory
         }

@@ -45,15 +45,15 @@ fn campaign_strategic_signals_from_report_v1(
 }
 
 pub(super) fn campaign_strategic_signals_from_groups_v1(
-    active: &[BranchCampaignBranchV1],
-    frozen: &[BranchCampaignBranchV1],
+    scheduled: &[BranchCampaignBranchV1],
+    parked: &[BranchCampaignBranchV1],
     victories: &[BranchCampaignBranchV1],
     abandoned: &[BranchCampaignBranchV1],
     stuck: &[BranchCampaignBranchV1],
 ) -> BranchCampaignStrategicSignalsV1 {
     let mut groups = Vec::new();
-    push_campaign_strategic_group_v1(&mut groups, "active", active);
-    push_campaign_strategic_group_v1(&mut groups, "frozen", frozen);
+    push_campaign_strategic_group_v1(&mut groups, "scheduled", scheduled);
+    push_campaign_strategic_group_v1(&mut groups, "parked", parked);
     push_campaign_strategic_group_v1(&mut groups, "victory", victories);
     push_campaign_strategic_group_v1(&mut groups, "abandoned", abandoned);
     push_campaign_strategic_group_v1(&mut groups, "stuck", stuck);
@@ -84,29 +84,31 @@ pub(super) fn render_campaign_strategic_signals_v1(
 pub(super) fn render_campaign_strategic_concern_v1(
     signals: &BranchCampaignStrategicSignalsV1,
 ) -> Option<String> {
-    let active = campaign_strategic_group_by_label_v1(signals, "active")?;
-    let frozen = campaign_strategic_group_by_label_v1(signals, "frozen")?;
-    let engine_delta = frozen
+    let scheduled = campaign_strategic_group_by_label_v1(signals, "scheduled")
+        .or_else(|| campaign_strategic_group_by_label_v1(signals, "active"))?;
+    let parked = campaign_strategic_group_by_label_v1(signals, "parked")
+        .or_else(|| campaign_strategic_group_by_label_v1(signals, "frozen"))?;
+    let engine_delta = parked
         .average
         .engine_score_milli
-        .saturating_sub(active.average.engine_score_milli);
-    let package_delta = frozen
+        .saturating_sub(scheduled.average.engine_score_milli);
+    let package_delta = parked
         .average
         .package_coherence_milli
-        .saturating_sub(active.average.package_coherence_milli);
+        .saturating_sub(scheduled.average.package_coherence_milli);
     if engine_delta < 200 && package_delta < 200 {
         return None;
     }
     let mut concerns = Vec::new();
     if engine_delta >= 200 {
         concerns.push(format!(
-            "frozen_engine_above_active={}",
+            "parked_engine_above_scheduled={}",
             format_signal_delta_1dp_v1(engine_delta)
         ));
     }
     if package_delta >= 200 {
         concerns.push(format!(
-            "frozen_package_above_active={}",
+            "parked_package_above_scheduled={}",
             format_signal_delta_1dp_v1(package_delta)
         ));
     }

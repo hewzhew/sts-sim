@@ -35,31 +35,6 @@ const BOSS_RELIC_CHOICE_LABELS_V1: &[&str] = &[
     "WristBlade",
 ];
 
-pub(super) fn campaign_branch_first_lineage_key_v1(branch: &BranchCampaignBranchV1) -> String {
-    branch
-        .choice_labels
-        .first()
-        .cloned()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| branch.branch_id.clone())
-}
-
-pub(super) fn campaign_branch_path_lineage_key_v1(branch: &BranchCampaignBranchV1) -> String {
-    let first = branch
-        .choice_labels
-        .first()
-        .cloned()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| branch.branch_id.clone());
-    let Some(latest) = branch.choice_labels.last() else {
-        return first;
-    };
-    if latest == &first || latest.trim().is_empty() {
-        return first;
-    }
-    format!("{first} | latest={latest}")
-}
-
 pub(super) fn campaign_branch_boss_relic_lineage_key_v1(
     branch: &BranchCampaignBranchV1,
 ) -> Option<String> {
@@ -89,20 +64,6 @@ pub(super) fn campaign_boss_relic_lineage_counts_v1(
 ) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for branch in branches {
-        let Some(lineage) = campaign_branch_boss_relic_lineage_key_v1(branch) else {
-            continue;
-        };
-        *counts.entry(lineage).or_insert(0) += 1;
-    }
-    counts
-}
-
-pub(super) fn campaign_boss_relic_lineage_counts_for_pool_v1(
-    active: &[BranchCampaignBranchV1],
-    frozen: &[BranchCampaignBranchV1],
-) -> BTreeMap<String, usize> {
-    let mut counts = BTreeMap::new();
-    for branch in active.iter().chain(frozen.iter()) {
         let Some(lineage) = campaign_branch_boss_relic_lineage_key_v1(branch) else {
             continue;
         };

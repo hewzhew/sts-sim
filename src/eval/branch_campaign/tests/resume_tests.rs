@@ -108,8 +108,8 @@ fn campaign_state_uses_snapshot_without_replaying_parent_commands() {
         },
         BranchCampaignRunStateV1 {
             rounds_completed: 0,
-            active: vec![parent.clone()],
-            frozen: Vec::new(),
+            scheduled: vec![parent.clone()],
+            parked: Vec::new(),
             victories: Vec::new(),
             dead: Vec::new(),
             abandoned: Vec::new(),
@@ -128,7 +128,6 @@ fn campaign_state_uses_snapshot_without_replaying_parent_commands() {
                 store
             },
             decision_parent_anchor_commands: BTreeSet::new(),
-            recovered_checkpoint_failure_commands: BTreeSet::new(),
         },
         |_| {},
     )
@@ -168,8 +167,8 @@ fn campaign_checkpoint_preserves_abandoned_and_stuck_snapshots_for_diagnostics()
     let stuck_session = RunControlSession::new(RunControlConfig::default());
     let state = BranchCampaignRunStateV1 {
         rounds_completed: 3,
-        active: Vec::new(),
-        frozen: Vec::new(),
+        scheduled: Vec::new(),
+        parked: Vec::new(),
         victories: Vec::new(),
         dead: Vec::new(),
         abandoned: vec![abandoned.clone()],
@@ -189,7 +188,6 @@ fn campaign_checkpoint_preserves_abandoned_and_stuck_snapshots_for_diagnostics()
             store
         },
         decision_parent_anchor_commands: BTreeSet::new(),
-        recovered_checkpoint_failure_commands: BTreeSet::new(),
     };
 
     let checkpoint = campaign_checkpoint_from_state_v1(&config, &state);
@@ -399,7 +397,7 @@ fn campaign_resume_checkpoint_restores_snapshot_without_replaying_parent_command
 }
 
 #[test]
-fn campaign_resume_rehydrates_checkpointed_combat_failures() {
+fn campaign_resume_keeps_checkpointed_combat_failures_abandoned() {
     let mut active = test_campaign_branch_with_boundary("active-low", "Shop", "test", 46, 7);
     active.summary.as_mut().expect("summary").act = 3;
     active.commands = vec!["active".to_string()];
@@ -502,23 +500,23 @@ fn campaign_resume_rehydrates_checkpointed_combat_failures() {
         &previous,
         Some(&checkpoint),
     )
-    .expect("checkpointed combat failures should be resumable");
+    .expect("checkpointed combat failures should remain inspectable");
 
     assert!(
         result
             .report
-            .frozen
+            .active
             .iter()
-            .any(|branch| branch.branch_id == "combat-high"),
-        "old checkpointed combat failure should be reintroduced as a continuable macro branch"
+            .any(|branch| branch.branch_id == "active-low"),
+        "existing live work should remain scheduled"
     );
     assert!(
         result
             .report
             .abandoned
             .iter()
-            .all(|branch| branch.branch_id != "combat-high"),
-        "rehydrated combat failure should no longer remain buried in abandoned"
+            .any(|branch| branch.branch_id == "combat-high"),
+        "checkpointed combat failure should remain abandoned diagnostic material"
     );
     assert!(
         result
@@ -526,7 +524,7 @@ fn campaign_resume_rehydrates_checkpointed_combat_failures() {
             .abandoned
             .iter()
             .any(|branch| branch.branch_id == "event-old"),
-        "noncombat abandoned branches should not be rehydrated by the combat checkpoint path"
+        "noncombat abandoned branches should remain abandoned diagnostic material"
     );
 }
 
@@ -637,10 +635,10 @@ fn campaign_resume_does_not_promote_stale_combat_failure_over_later_active_branc
     assert!(
         result
             .report
-            .frozen
+            .abandoned
             .iter()
             .any(|branch| branch.branch_id == "act2-combat"),
-        "stale combat failure should remain available as frozen diagnostic material"
+        "stale combat failure should remain abandoned diagnostic material"
     );
 }
 
@@ -1082,7 +1080,7 @@ fn campaign_resume_rehydrates_combat_failures_as_frozen_diagnostics_only() {
         &previous,
         Some(&checkpoint),
     )
-    .expect("checkpointed combat failures should be resumable");
+    .expect("checkpointed combat failures should remain inspectable");
 
     assert_eq!(
         result.report.active.len(),
@@ -1091,18 +1089,18 @@ fn campaign_resume_rehydrates_combat_failures_as_frozen_diagnostics_only() {
     );
     assert_eq!(
         result.report.frozen.len(),
-        2,
-        "resume may keep active-capacity combat failure representatives as frozen diagnostics"
+        0,
+        "resume should not convert abandoned combat failures into parked work"
     );
     assert_eq!(
         result.report.abandoned.len(),
-        1,
-        "extra checkpointed combat failures should remain abandoned for diagnostics"
+        3,
+        "checkpointed combat failures should remain abandoned diagnostics"
     );
 }
 
 #[test]
-fn campaign_resume_rehydrates_later_combat_failure_before_stale_early_failure() {
+fn campaign_resume_preserves_combat_failure_diagnostic_order() {
     let mut early_failure = test_campaign_branch_with_boundary(
         "act2-combat",
         "Combat",
@@ -1187,10 +1185,10 @@ fn campaign_resume_rehydrates_later_combat_failure_before_stale_early_failure() 
         &previous,
         Some(&checkpoint),
     )
-    .expect("checkpointed combat failures should be resumable");
+    .expect("checkpointed combat failures should remain inspectable");
 
-    assert_eq!(result.report.frozen.len(), 1);
-    assert_eq!(result.report.frozen[0].branch_id, "act3-boss");
-    assert_eq!(result.report.abandoned.len(), 1);
+    assert_eq!(result.report.frozen.len(), 0);
+    assert_eq!(result.report.abandoned.len(), 2);
     assert_eq!(result.report.abandoned[0].branch_id, "act2-combat");
+    assert_eq!(result.report.abandoned[1].branch_id, "act3-boss");
 }

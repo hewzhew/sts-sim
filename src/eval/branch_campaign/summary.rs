@@ -15,11 +15,11 @@ pub(super) fn campaign_refresh_all_branch_summaries_from_state_store_v1(
     state: &mut BranchCampaignRunStateV1,
 ) {
     campaign_refresh_branch_group_summaries_from_state_store_v1(
-        &mut state.active,
+        &mut state.scheduled,
         &state.state_store,
     );
     campaign_refresh_branch_group_summaries_from_state_store_v1(
-        &mut state.frozen,
+        &mut state.parked,
         &state.state_store,
     );
     campaign_refresh_branch_group_summaries_from_state_store_v1(

@@ -665,8 +665,8 @@ fn campaign_checkpoint_writes_v2_state_graph_nodes() {
 
     let state = BranchCampaignRunStateV1 {
         rounds_completed: 1,
-        active: vec![child],
-        frozen: Vec::new(),
+        scheduled: vec![child],
+        parked: Vec::new(),
         victories: Vec::new(),
         dead: Vec::new(),
         abandoned: Vec::new(),
@@ -681,7 +681,6 @@ fn campaign_checkpoint_writes_v2_state_graph_nodes() {
         journal: Default::default(),
         state_store,
         decision_parent_anchor_commands: BTreeSet::from([parent_commands.clone()]),
-        recovered_checkpoint_failure_commands: BTreeSet::new(),
     };
 
     let checkpoint = campaign_checkpoint_from_state_v1(&config, &state);
@@ -724,8 +723,8 @@ fn campaign_checkpoint_drops_combat_automation_trajectories_from_resume_state() 
 
     let state = BranchCampaignRunStateV1 {
         rounds_completed: 1,
-        active: vec![parent, child],
-        frozen: Vec::new(),
+        scheduled: vec![parent, child],
+        parked: Vec::new(),
         victories: Vec::new(),
         dead: Vec::new(),
         abandoned: Vec::new(),
@@ -740,7 +739,6 @@ fn campaign_checkpoint_drops_combat_automation_trajectories_from_resume_state() 
         journal: Default::default(),
         state_store,
         decision_parent_anchor_commands: BTreeSet::new(),
-        recovered_checkpoint_failure_commands: BTreeSet::new(),
     };
 
     let checkpoint = campaign_checkpoint_from_state_v1(&config, &state);

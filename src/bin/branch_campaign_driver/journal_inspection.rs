@@ -2223,7 +2223,7 @@ mod tests {
             }),
             strategic_summary: Default::default(),
             frontier_title: "Reward Screen".to_string(),
-            status: BranchCampaignBranchStatusV1::Active,
+            status: BranchCampaignBranchStatusV1::Scheduled,
             stop_reason: "test".to_string(),
             continuation_origin: None,
             lineage_decision_signal_rank_adjustment: 0,

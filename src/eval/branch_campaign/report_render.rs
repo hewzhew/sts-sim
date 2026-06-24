@@ -69,7 +69,7 @@ pub fn render_branch_campaign_compact_with_detail_v1(
         ));
     }
     lines.push(format!(
-        "Active {} | Frozen {} | Dead {} | Abandoned {} | Victories {} | Stuck {} | Discarded {}",
+        "Scheduled {} | Parked {} | Dead {} | Abandoned {} | Victories {} | Stuck {} | Discarded {}",
         report.active.len(),
         report.frozen.len(),
         report.dead.len(),
@@ -80,14 +80,14 @@ pub fn render_branch_campaign_compact_with_detail_v1(
     ));
     if let Some(round) = report.rounds.last() {
         let mut last_round = format!(
-            "Last round: started={} produced={} branch_points={} active_after={}",
-            round.started_active,
+            "Last round: started={} produced={} branch_points={} scheduled_after={}",
+            round.started_scheduled,
             round.produced_branches,
             round.explored_branch_points,
-            round.active_after
+            round.scheduled_after
         );
-        if round.frozen_added > 0 {
-            last_round.push_str(&format!(" frozen+={}", round.frozen_added));
+        if round.parked_added > 0 {
+            last_round.push_str(&format!(" parked+={}", round.parked_added));
         }
         if round.discarded_added > 0 {
             last_round.push_str(&format!(" discarded+={}", round.discarded_added));
@@ -344,7 +344,7 @@ pub fn render_branch_campaign_compact_with_detail_v1(
     }
     if !report.active.is_empty() {
         lines.push(String::new());
-        lines.push("Top active:".to_string());
+        lines.push("Scheduled examples:".to_string());
         let shown = report
             .active
             .iter()
@@ -368,7 +368,7 @@ pub fn render_branch_campaign_compact_with_detail_v1(
     }
     if !report.frozen.is_empty() {
         lines.push(String::new());
-        lines.push("Frozen examples:".to_string());
+        lines.push("Parked examples:".to_string());
         let shown = report
             .frozen
             .iter()
@@ -641,7 +641,7 @@ fn render_campaign_boss_relic_coverage_v1(report: &BranchCampaignReportV1) -> Op
     }
 
     Some(format!(
-        "Boss relic coverage: active=[{}] frozen=[{}] abandoned=[{}] furthest=[{}]",
+        "Boss relic coverage: scheduled=[{}] parked=[{}] abandoned=[{}] furthest=[{}]",
         render_string_counts_v1(&active),
         render_string_counts_v1(&frozen),
         render_string_counts_v1(&abandoned),
@@ -1012,33 +1012,33 @@ fn render_campaign_choice_coverage_v1(report: &BranchCampaignReportV1) -> Option
     if report.active.is_empty() && report.frozen.is_empty() {
         return None;
     }
-    let active_first = render_campaign_choice_count_summary_v1(
+    let scheduled_first = render_campaign_choice_count_summary_v1(
         report
             .active
             .iter()
             .filter_map(campaign_branch_first_choice_v1),
     );
-    let active_latest = render_campaign_choice_count_summary_v1(
+    let scheduled_latest = render_campaign_choice_count_summary_v1(
         report
             .active
             .iter()
             .filter_map(campaign_branch_latest_choice_v1),
     );
-    let frozen_first = render_campaign_choice_count_summary_v1(
+    let parked_first = render_campaign_choice_count_summary_v1(
         report
             .frozen
             .iter()
             .filter_map(campaign_branch_first_choice_v1),
     );
-    let frozen_latest = render_campaign_choice_count_summary_v1(
+    let parked_latest = render_campaign_choice_count_summary_v1(
         report
             .frozen
             .iter()
             .filter_map(campaign_branch_latest_choice_v1),
     );
     Some(format!(
-        "Choice coverage: active_first=[{}] active_latest=[{}] frozen_first=[{}] frozen_latest=[{}]",
-        active_first, active_latest, frozen_first, frozen_latest
+        "Choice coverage: scheduled_first=[{}] scheduled_latest=[{}] parked_first=[{}] parked_latest=[{}]",
+        scheduled_first, scheduled_latest, parked_first, parked_latest
     ))
 }
 
@@ -1291,7 +1291,7 @@ fn campaign_report_stop_needs_immediate_intervention_v1(report: &BranchCampaignR
     report.stop_reason == "needs_intervention"
         || (matches!(
             report.stop_reason.as_str(),
-            "stuck" | "no_active_branch" | "no_progress"
+            "stuck" | "no_active_branch" | "no_scheduled_branch" | "no_progress"
         ) && report.active.is_empty()
             && report.frozen.is_empty())
 }

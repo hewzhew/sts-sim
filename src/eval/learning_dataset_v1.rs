@@ -2062,7 +2062,7 @@ fn coverage_gap_final_branch_target_progress_v1(
         .as_ref()
         .filter(|origin| origin.kind == "coverage_gap")?;
     Some(match branch.status {
-        BranchCampaignBranchStatusV1::Active | BranchCampaignBranchStatusV1::Frozen => {
+        BranchCampaignBranchStatusV1::Scheduled | BranchCampaignBranchStatusV1::Parked => {
             if branch
                 .commands
                 .last()
@@ -4266,7 +4266,7 @@ fn coverage_gap_final_branch_origin_is_observed_v1(
 ) -> bool {
     if matches!(
         branch.status,
-        BranchCampaignBranchStatusV1::Active | BranchCampaignBranchStatusV1::Frozen
+        BranchCampaignBranchStatusV1::Scheduled | BranchCampaignBranchStatusV1::Parked
     ) && branch
         .commands
         .last()
@@ -6038,18 +6038,18 @@ mod tests {
     #[test]
     fn coverage_gap_plan_summary_reports_existing_target_progress() {
         let mut target_only =
-            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
+            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Scheduled);
         target_only.continuation_origin =
             Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
         let mut extended =
-            sample_report_branch("root.rp 1.rp 0", BranchCampaignBranchStatusV1::Frozen);
+            sample_report_branch("root.rp 1.rp 0", BranchCampaignBranchStatusV1::Parked);
         extended.continuation_origin =
             Some(sample_coverage_gap_reward_origin("rp 1", "Reward B", 1));
         let mut abandoned =
             sample_report_branch("root.rp 2", BranchCampaignBranchStatusV1::Abandoned);
         abandoned.continuation_origin =
             Some(sample_coverage_gap_reward_origin("rp 2", "Reward C", 2));
-        let mut discarded = sample_report_branch("root.rp 3", BranchCampaignBranchStatusV1::Frozen);
+        let mut discarded = sample_report_branch("root.rp 3", BranchCampaignBranchStatusV1::Parked);
         discarded.continuation_origin =
             Some(sample_coverage_gap_reward_origin("rp 3", "Reward D", 3));
 
@@ -6109,7 +6109,7 @@ mod tests {
     #[test]
     fn coverage_gap_plan_prefers_missing_targets_before_target_only_origins() {
         let mut target_only =
-            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
+            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Scheduled);
         target_only.continuation_origin =
             Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
         let mut report = sample_campaign_report_with_branches(vec![target_only]);
@@ -6149,7 +6149,7 @@ mod tests {
     #[test]
     fn coverage_gap_progress_filter_can_continue_target_only_origins() {
         let mut target_only =
-            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
+            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Scheduled);
         target_only.continuation_origin =
             Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
         let mut report = sample_campaign_report_with_branches(vec![target_only]);
@@ -6201,7 +6201,7 @@ mod tests {
     #[test]
     fn coverage_gap_frontier_expansion_intent_prefers_target_only_origins() {
         let mut target_only =
-            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
+            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Scheduled);
         target_only.continuation_origin =
             Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
         let mut report = sample_campaign_report_with_branches(vec![target_only]);
@@ -6468,7 +6468,7 @@ mod tests {
             },
         });
         let mut discarded_branch =
-            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Frozen);
+            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Parked);
         discarded_branch.continuation_origin =
             Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
         report.discarded_count = 1;
@@ -6491,7 +6491,7 @@ mod tests {
     #[test]
     fn coverage_gap_continuation_treats_extended_final_bucket_coverage_gap_origin_as_observed() {
         let mut observed_branch =
-            sample_report_branch("root.rp 0.rp 1", BranchCampaignBranchStatusV1::Active);
+            sample_report_branch("root.rp 0.rp 1", BranchCampaignBranchStatusV1::Scheduled);
         observed_branch.continuation_origin =
             Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
         let mut report = sample_campaign_report_with_branches(vec![observed_branch]);
@@ -6535,7 +6535,7 @@ mod tests {
     #[test]
     fn coverage_gap_continuation_keeps_target_only_active_origin_eligible() {
         let mut target_only_branch =
-            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Active);
+            sample_report_branch("root.rp 0", BranchCampaignBranchStatusV1::Scheduled);
         target_only_branch.continuation_origin =
             Some(sample_coverage_gap_reward_origin("rp 0", "Reward A", 0));
         let mut report = sample_campaign_report_with_branches(vec![target_only_branch]);
@@ -7269,7 +7269,7 @@ mod tests {
         ];
         let plan = plan_targeted_continuations_v1(&[frozen_sample]);
         let report = sample_campaign_report_with_branches(vec![
-            sample_report_branch("root.rp 1", BranchCampaignBranchStatusV1::Frozen),
+            sample_report_branch("root.rp 1", BranchCampaignBranchStatusV1::Parked),
             sample_report_branch("root.rp 2", BranchCampaignBranchStatusV1::Abandoned),
         ]);
 
@@ -7458,7 +7458,7 @@ mod tests {
             branch_id: format!("root.{command}"),
             strategic_summary: BranchSignatureCompact::default(),
             outcome: LearningBranchOutcomeV1 {
-                branch_status: BranchCampaignBranchStatusV1::Active,
+                branch_status: BranchCampaignBranchStatusV1::Scheduled,
                 outcome_class: BranchOutcomeClassV1::OngoingActive,
                 supervision_status: BranchOutcomeSupervisionStatusV1::CensoredOngoing,
                 report_stop_reason: "max_rounds".to_string(),
@@ -7786,8 +7786,8 @@ mod tests {
         let mut abandoned = Vec::new();
         for branch in branches {
             match branch.status {
-                BranchCampaignBranchStatusV1::Active => active.push(branch),
-                BranchCampaignBranchStatusV1::Frozen => frozen.push(branch),
+                BranchCampaignBranchStatusV1::Scheduled => active.push(branch),
+                BranchCampaignBranchStatusV1::Parked => frozen.push(branch),
                 BranchCampaignBranchStatusV1::Abandoned => abandoned.push(branch),
                 _ => frozen.push(branch),
             }
@@ -7849,7 +7849,7 @@ mod tests {
         event_id: &str,
         candidates: Vec<EventCandidateSnapshotV1>,
     ) -> BranchCampaignBranchV1 {
-        let mut branch = sample_report_branch(branch_id, BranchCampaignBranchStatusV1::Active);
+        let mut branch = sample_report_branch(branch_id, BranchCampaignBranchStatusV1::Scheduled);
         branch.frontier_title = event_id.to_string();
         branch.summary = Some(BranchCampaignBranchSummaryV1 {
             act: 1,

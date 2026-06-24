@@ -9,7 +9,7 @@ Active binaries:
 - `branch_campaign_driver`
   - current automated branch-campaign engine used by `tools/campaign.ps1`
   - primary subcommands:
-    - `run`: advance active/frozen campaign branches from a seed, report, and
+    - `run`: advance scheduled/parked campaign branches from a seed, report, and
       checkpoint
     - `inspect`: inspect checkpoint sessions, decks, route/shop/card/campfire
       evidence, combat lab packets, and final boss timelines

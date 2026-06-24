@@ -12,7 +12,6 @@ type BranchCampaignActiveSortKeyV1 = (
     i32,
     i32,
 );
-type BranchCampaignPromotionSortKeyV1 = ((u8, i32, i32), i32);
 type BranchCampaignRetentionKeyV1 = (u8, i32, i32, i32);
 
 pub(super) fn compare_campaign_branches_for_active_v1(
@@ -21,15 +20,6 @@ pub(super) fn compare_campaign_branches_for_active_v1(
 ) -> Ordering {
     campaign_branch_active_sort_key_v1(right)
         .cmp(&campaign_branch_active_sort_key_v1(left))
-        .then_with(|| left.branch_id.cmp(&right.branch_id))
-}
-
-pub(super) fn compare_campaign_branches_for_promotion_v1(
-    left: &BranchCampaignBranchV1,
-    right: &BranchCampaignBranchV1,
-) -> Ordering {
-    campaign_branch_promotion_sort_key_v1(right)
-        .cmp(&campaign_branch_promotion_sort_key_v1(left))
         .then_with(|| left.branch_id.cmp(&right.branch_id))
 }
 
@@ -71,15 +61,6 @@ fn campaign_branch_active_sort_key_v1(
         campaign_branch_primary_eligible_key_v1(branch),
         branch_progress_key(branch),
         campaign_branch_selection_rank_bucket_v1(branch),
-        campaign_branch_selection_rank_key_v1(branch),
-    )
-}
-
-fn campaign_branch_promotion_sort_key_v1(
-    branch: &BranchCampaignBranchV1,
-) -> BranchCampaignPromotionSortKeyV1 {
-    (
-        branch_progress_key(branch),
         campaign_branch_selection_rank_key_v1(branch),
     )
 }

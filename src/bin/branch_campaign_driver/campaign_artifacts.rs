@@ -785,13 +785,13 @@ mod tests {
         report.rounds_completed = 1;
         report.active = vec![test_branch_v1(
             "active-1",
-            BranchCampaignBranchStatusV1::Active,
+            BranchCampaignBranchStatusV1::Scheduled,
         )];
         report.rounds = vec![BranchCampaignRoundSummaryV1 {
             round: 1,
-            started_active: 1,
+            started_scheduled: 1,
             produced_branches: 2,
-            active_after: 1,
+            scheduled_after: 1,
             ..BranchCampaignRoundSummaryV1::default()
         }];
 

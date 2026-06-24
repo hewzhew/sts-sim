@@ -704,8 +704,8 @@ fn branch_outcome_record(
 
 fn outcome_class_for_status(status: &BranchCampaignBranchStatusV1) -> BranchOutcomeClassV1 {
     match status {
-        BranchCampaignBranchStatusV1::Active => BranchOutcomeClassV1::OngoingActive,
-        BranchCampaignBranchStatusV1::Frozen => BranchOutcomeClassV1::OngoingFrozen,
+        BranchCampaignBranchStatusV1::Scheduled => BranchOutcomeClassV1::OngoingActive,
+        BranchCampaignBranchStatusV1::Parked => BranchOutcomeClassV1::OngoingFrozen,
         BranchCampaignBranchStatusV1::TerminalVictory => BranchOutcomeClassV1::TerminalVictory,
         BranchCampaignBranchStatusV1::TerminalDefeat => BranchOutcomeClassV1::TerminalDefeat,
         BranchCampaignBranchStatusV1::Abandoned => BranchOutcomeClassV1::Abandoned,
@@ -721,7 +721,7 @@ fn supervision_status_for_status(
         | BranchCampaignBranchStatusV1::TerminalDefeat => {
             BranchOutcomeSupervisionStatusV1::TerminalOutcome
         }
-        BranchCampaignBranchStatusV1::Active | BranchCampaignBranchStatusV1::Frozen => {
+        BranchCampaignBranchStatusV1::Scheduled | BranchCampaignBranchStatusV1::Parked => {
             BranchOutcomeSupervisionStatusV1::CensoredOngoing
         }
         BranchCampaignBranchStatusV1::Abandoned | BranchCampaignBranchStatusV1::Stuck => {
@@ -1054,8 +1054,8 @@ mod tests {
             branch_index: 0,
             branch_id: group.to_string(),
             branch_status: match outcome_class {
-                BranchOutcomeClassV1::OngoingActive => BranchCampaignBranchStatusV1::Active,
-                BranchOutcomeClassV1::OngoingFrozen => BranchCampaignBranchStatusV1::Frozen,
+                BranchOutcomeClassV1::OngoingActive => BranchCampaignBranchStatusV1::Scheduled,
+                BranchOutcomeClassV1::OngoingFrozen => BranchCampaignBranchStatusV1::Parked,
                 BranchOutcomeClassV1::TerminalVictory => {
                     BranchCampaignBranchStatusV1::TerminalVictory
                 }

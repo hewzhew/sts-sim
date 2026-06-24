@@ -342,7 +342,7 @@ pub(super) fn render_coverage_gap_milestone_summary_from_rows_with_filter_group_
             .map(format_milestone_row_v1)
             .unwrap_or_else(|| "-".to_string());
         lines.push(format!(
-            "  {event_type} total={} reached={} active={} frozen={} stuck={} abandoned={} dead={} victories={} discarded={} other={} evaluated={} target_only={} no_state={} furthest={}",
+            "  {event_type} total={} reached={} scheduled={} parked={} stuck={} abandoned={} dead={} victories={} discarded={} other={} evaluated={} target_only={} no_state={} furthest={}",
             summary.total,
             summary.reached,
             summary.active,
@@ -1084,7 +1084,7 @@ fn format_target_group_audit_line_v1(
         .map(|row| format!("A{}F{}", row.act, row.floor))
         .unwrap_or_else(|| "-".to_string());
     format!(
-        "  {} | {} {{{}}} | status={} rows={} active={} frozen={} abandoned={} stuck={} dead={} victories={} discarded={} other={} evaluated={} target_only={} no_state={} furthest={}{}{}",
+        "  {} | {} {{{}}} | status={} rows={} scheduled={} parked={} abandoned={} stuck={} dead={} victories={} discarded={} other={} evaluated={} target_only={} no_state={} furthest={}{}{}",
         first.event_type,
         first.label,
         first.command,
@@ -1455,9 +1455,9 @@ mod tests {
         );
 
         assert!(text.contains("CoverageGapMilestoneSummaryV1 target=Act2Start total=4 reached=2"));
-        assert!(text.contains("boss_relic total=1 reached=1 active=1 frozen=0"));
-        assert!(text.contains("shop total=2 reached=1 active=1 frozen=1"));
-        assert!(text.contains("route total=1 reached=0 active=0 frozen=1"));
+        assert!(text.contains("boss_relic total=1 reached=1 scheduled=1 parked=0"));
+        assert!(text.contains("shop total=2 reached=1 scheduled=1 parked=1"));
+        assert!(text.contains("route total=1 reached=0 scheduled=0 parked=1"));
         assert!(text.contains("Reached target examples:"));
         assert!(text.contains("A2F19 HP 80/80 deck 12 | active | boss_relic | RunicPyramid"));
     }
@@ -1525,10 +1525,10 @@ mod tests {
 
         assert!(text.contains("Target group audit:"));
         assert!(text.contains(
-            "boss_relic | RunicPyramid {choose RunicPyramid} | status=reached rows=2 active=1 frozen=1"
+            "boss_relic | RunicPyramid {choose RunicPyramid} | status=reached rows=2 scheduled=1 parked=1"
         ));
         assert!(text.contains(
-            "route | x=6 y=12 Rest {choose x=6 y=12 Rest} | status=not_reached rows=1 active=0 frozen=0 abandoned=1"
+            "route | x=6 y=12 Rest {choose x=6 y=12 Rest} | status=not_reached rows=1 scheduled=0 parked=0 abandoned=1"
         ));
         assert!(text.contains("stop=combat search did not find an executable complete win"));
     }
