@@ -1,3 +1,66 @@
+function Set-CampaignArtifactResolverDriver {
+    param(
+        [string] $DriverExe
+    )
+
+    if (-not $DriverExe) {
+        throw "Internal error: campaign artifact resolver requires DriverExe."
+    }
+    $script:CampaignArtifactResolverDriverExe = $DriverExe
+}
+
+function Convert-CampaignDriverArtifactRef {
+    param(
+        [object] $Artifact
+    )
+
+    if (-not $Artifact) {
+        throw "Internal error: empty artifact resolver response."
+    }
+
+    $Kind = ([string] $Artifact.kind).ToLowerInvariant()
+    return [pscustomobject]@{
+        Kind = $Kind
+        Id = [string] $Artifact.id
+        Label = [string] $Artifact.label
+        Dir = [string] $Artifact.dir
+        ReportPath = [string] $Artifact.report_path
+        StatePath = [string] $Artifact.state_path
+        JournalPath = [string] $Artifact.journal_path
+        CheckpointPath = [string] $Artifact.checkpoint_path
+        ManifestPath = [string] $Artifact.manifest_path
+        LogPath = [string] $Artifact.log_path
+        CommandPath = [string] $Artifact.command_path
+    }
+}
+
+function Get-CampaignSourceArtifactViaDriver {
+    param(
+        [string] $Selector
+    )
+
+    if (-not $script:CampaignArtifactResolverDriverExe) {
+        throw "Internal error: Rust campaign artifact resolver was not configured."
+    }
+
+    $Args = @(
+        "artifact",
+        "resolve",
+        "$Selector",
+        "--campaign-dir", "$script:CampaignDir",
+        "--json"
+    )
+    $Json = & $script:CampaignArtifactResolverDriverExe @Args
+    if ($LASTEXITCODE -ne 0) {
+        throw "Rust campaign artifact resolver failed with exit code $LASTEXITCODE for selector '$Selector'."
+    }
+    try {
+        return Convert-CampaignDriverArtifactRef -Artifact ($Json | ConvertFrom-Json)
+    } catch {
+        throw "Rust campaign artifact resolver returned invalid JSON for selector '$Selector': $_"
+    }
+}
+
 function Get-CampaignArtifactMode {
     param(
         [object] $Artifact
@@ -84,29 +147,9 @@ function Get-CampaignSourceArtifact {
     Assert-CampaignArtifactPathsInitialized
     $ResolvedSelector = if ($Selector) { $Selector.Trim() } elseif ($UseScratchLatest) { "scratch:latest" } else { "latest" }
 
-    if ($ResolvedSelector -eq "scratch:latest") {
-        return Get-LatestScratchCampaignArtifact
-    }
-
-    if ($ResolvedSelector -eq "latest") {
-        $Pointer = Read-CampaignLatestPointer
-        if ($Pointer) {
-            return New-CampaignRunArtifact -ArtifactId ([string] $Pointer.artifact_id) -BaseLabel ([string] $Pointer.artifact_id)
-        }
-        throw "No latest campaign pointer found at $(Get-CampaignLatestPointerPath). Run .\tools\campaign.ps1 to create one, or use -From legacy-latest to read old latest.campaign/checkpoint sidecars explicitly."
-    }
-
     if ($ResolvedSelector -eq "legacy-latest") {
         return New-CampaignLegacyLatestArtifact
     }
 
-    if ($ResolvedSelector -match '^run:(.+)$') {
-        return New-CampaignRunArtifact -ArtifactId $Matches[1] -BaseLabel $Matches[1]
-    }
-
-    if ($ResolvedSelector -match '^scratch:(.+)$') {
-        return New-CampaignScratchArtifactRef -ArtifactId $Matches[1]
-    }
-
-    throw "Unknown campaign artifact selector '$ResolvedSelector'. Use 'latest', 'legacy-latest', 'scratch:latest', 'scratch:<id>', or 'run:<id>'."
+    return Get-CampaignSourceArtifactViaDriver -Selector $ResolvedSelector
 }

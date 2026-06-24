@@ -232,6 +232,8 @@ try {
             -Name "FromScratchLatestInspectDryRun" `
             -Arguments @(
                 "-FromScratchLatest",
+                "-DebugBuild",
+                "-NoProgress",
                 "-DryRun"
             ) `
             -Contains @(

@@ -281,6 +281,26 @@ $InspectSwitchContext = New-CampaignInspectSwitchContext `
     -InspectQuery $InspectQuery `
     -ProbeDetail $ProbeDetail `
     -ProbeBoss ([bool] $ProbeBoss)
+$BuildContext = Resolve-CampaignBuildContext `
+    -RepoRoot $RepoRoot `
+    -BuildProfile $BuildProfile `
+    -DebugBuild ([bool] $DebugBuild) `
+    -BuildProfileBound ($PSBoundParameters.ContainsKey("BuildProfile"))
+$NeedsBuild = $Build -or (Test-DriverNeedsBuild $BuildContext.DriverExe)
+
+$ReadsCampaignArtifactSource = [bool] ($CampaignRequest.ReadsCampaignSource -or $Last)
+$UsesLegacyLatestSource = ([string] $From).Trim() -eq "legacy-latest"
+if ($ReadsCampaignArtifactSource -and -not $UsesLegacyLatestSource) {
+    if ($NeedsBuild) {
+        if ($DryRun) {
+            throw "Dry-run source resolution requires an existing Rust driver at $($BuildContext.DriverExe). Build once first, or use -From legacy-latest for old sidecar archaeology."
+        }
+        Invoke-CampaignDriverBuild -RepoRoot $RepoRoot -BuildArgs $BuildContext.BuildArgs
+        $NeedsBuild = $false
+    }
+    Set-CampaignArtifactResolverDriver -DriverExe $BuildContext.DriverExe
+}
+
 $CampaignSourceRunContext = Resolve-CampaignSourceRunContext `
     -Request $CampaignRequest `
     -Last ([bool] $Last) `
@@ -298,12 +318,6 @@ $Mode = $CampaignSourceRunContext.Mode
 $Seed = $CampaignSourceRunContext.Seed
 $Ascension = $CampaignSourceRunContext.Ascension
 $Class = $CampaignSourceRunContext.Class
-
-$BuildContext = Resolve-CampaignBuildContext `
-    -RepoRoot $RepoRoot `
-    -BuildProfile $BuildProfile `
-    -DebugBuild ([bool] $DebugBuild) `
-    -BuildProfileBound ($PSBoundParameters.ContainsKey("BuildProfile"))
 
 $CampaignRunIdentityArgs = New-CampaignRunDriverIdentityArgs -Mode $Mode -Seed $Seed -Ascension $Ascension -Class $Class
 
@@ -361,8 +375,6 @@ $RunOutputContext = Resolve-CampaignOutputArtifactContext `
     -RunLabel $RunLabel `
     -Seed $Seed
 Ensure-CampaignOutputArtifactDirectory -OutputContext $RunOutputContext -DryRun ([bool] $DryRun)
-
-$NeedsBuild = $Build -or (Test-DriverNeedsBuild $BuildContext.DriverExe)
 
 $EntryDispatchContext = [pscustomobject]@{
     CampaignRequest = $CampaignRequest

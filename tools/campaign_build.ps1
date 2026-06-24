@@ -59,6 +59,23 @@ function Test-DriverNeedsBuild {
     return $false
 }
 
+function Invoke-CampaignDriverBuild {
+    param(
+        [string] $RepoRoot,
+        [string[]] $BuildArgs
+    )
+
+    Push-Location $RepoRoot
+    try {
+        & cargo @($BuildArgs) | ForEach-Object { Write-Host $_ }
+        if ($LASTEXITCODE -ne 0) {
+            throw "cargo build failed with exit code $LASTEXITCODE."
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
 function Write-CampaignBuildCommandPreview {
     param(
         [string[]] $BuildArgs
