@@ -89,14 +89,43 @@ function Write-CampaignPrimaryDriverCommandRecord {
 
     Write-CampaignArtifactText -Path $Context.RunCommandPath -Text "$PrimaryDriverCommandLine`n"
     if ($Context.OutputArtifact.Kind -eq "run") {
-        Write-CampaignLatestPointer -Artifact $Context.OutputArtifact
+        Write-CampaignLatestPointerViaDriver -Context $Context -Kind "run"
         Write-Host "latest-pointer=$(Get-CampaignLatestPointerPath)"
     } elseif ($Context.OutputArtifact.Kind -eq "scratch") {
-        Write-CampaignScratchLatestPointer -Artifact $Context.OutputArtifact
+        Write-CampaignLatestPointerViaDriver -Context $Context -Kind "scratch"
         Write-Host "scratch-latest-pointer=$(Get-CampaignScratchLatestPointerPath)"
     }
     Write-Host "primary-driver-command=$($Context.RunCommandPath)"
     Write-Host "manifest=$($Context.RunManifestPath)"
+}
+
+function Write-CampaignLatestPointerViaDriver {
+    param(
+        [object] $Context,
+        [ValidateSet("run", "scratch")]
+        [string] $Kind
+    )
+
+    if (-not $Context.DriverExe) {
+        throw "Internal error: Rust artifact pointer writer requires DriverExe."
+    }
+    if (-not $Context.OutputArtifact -or -not $Context.OutputArtifact.Id) {
+        throw "Internal error: Rust artifact pointer writer requires an output artifact id."
+    }
+
+    $PointerArgs = @(
+        "artifact",
+        "write-latest",
+        "--kind", $Kind,
+        "$($Context.OutputArtifact.Id)",
+        "--updated-at", (Get-Date).ToString("o"),
+        "--campaign-dir", "$script:CampaignDir",
+        "--json"
+    )
+    & $Context.DriverExe @PointerArgs | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Rust artifact pointer writer failed with exit code $LASTEXITCODE."
+    }
 }
 
 function New-CampaignWrapperManifestBase {
