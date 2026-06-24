@@ -106,13 +106,17 @@ Start here:
 
 - [docs/CURRENT_DIRECTION.md](docs/CURRENT_DIRECTION.md)
 - [docs/CAMPAIGN_SYSTEM_ARCHITECTURE.md](docs/CAMPAIGN_SYSTEM_ARCHITECTURE.md)
+
+`CAMPAIGN_SYSTEM_ARCHITECTURE.md` is the campaign authority contract. The next
+three campaign docs are supporting contracts, not competing designs:
+
 - [docs/CAMPAIGN_CLI_CONTRACT.md](docs/CAMPAIGN_CLI_CONTRACT.md)
 - [docs/CAMPAIGN_MIGRATION_PLAN.md](docs/CAMPAIGN_MIGRATION_PLAN.md)
-- [docs/CAMPAIGN_WRAPPER_USAGE.md](docs/CAMPAIGN_WRAPPER_USAGE.md)
 - [docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md](docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md)
 - [docs/CAMPAIGN_JOURNAL.md](docs/CAMPAIGN_JOURNAL.md)
 - [docs/AUTOPILOT_BOUNDARY.md](docs/AUTOPILOT_BOUNDARY.md)
 - [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md)
+- [docs/CAMPAIGN_WRAPPER_USAGE.md](docs/CAMPAIGN_WRAPPER_USAGE.md)
 
 Retired docs were removed from the working tree to keep search results usable.
 Use git history for archaeology.
