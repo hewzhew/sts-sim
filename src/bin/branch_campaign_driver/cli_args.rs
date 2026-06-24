@@ -98,6 +98,7 @@ pub(super) enum ArtifactActionV1 {
     Resolve,
     Allocate,
     WriteLatest,
+    WriteManifest,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -182,6 +183,15 @@ pub(super) struct Args {
 
     #[arg(skip)]
     pub(super) artifact_updated_at: Option<String>,
+
+    #[arg(skip)]
+    pub(super) artifact_manifest_path: Option<PathBuf>,
+
+    #[arg(skip)]
+    pub(super) artifact_payload_schema_name: Option<String>,
+
+    #[arg(skip)]
+    pub(super) artifact_created_at: Option<String>,
 
     #[arg(long, value_enum)]
     pub(super) preset: Option<BranchCampaignPresetV1>,
@@ -867,6 +877,8 @@ enum ArtifactSubcommandV1 {
     Allocate(ArtifactAllocateCommandArgs),
     #[command(about = "Write latest or scratch-latest pointer for an artifact id")]
     WriteLatest(ArtifactWriteLatestCommandArgs),
+    #[command(about = "Write a campaign artifact manifest envelope from JSON payload on stdin")]
+    WriteManifest(ArtifactWriteManifestCommandArgs),
 }
 
 #[derive(Debug, ClapArgs)]
@@ -940,6 +952,24 @@ struct ArtifactWriteLatestCommandArgs {
     campaign_dir: PathBuf,
 
     #[arg(long, help = "Print written artifact paths as JSON")]
+    json: bool,
+}
+
+#[derive(Debug, ClapArgs)]
+struct ArtifactWriteManifestCommandArgs {
+    #[arg(long = "manifest-path", value_name = "PATH")]
+    manifest_path: PathBuf,
+
+    #[arg(
+        long = "payload-schema-name",
+        default_value = "CampaignWrapperManifestPayloadV1"
+    )]
+    payload_schema_name: String,
+
+    #[arg(long = "created-at", value_name = "TIMESTAMP")]
+    created_at: String,
+
+    #[arg(long, help = "Print written manifest summary as JSON")]
     json: bool,
 }
 
@@ -1649,6 +1679,9 @@ impl Args {
             artifact_suffix: None,
             artifact_id: None,
             artifact_updated_at: None,
+            artifact_manifest_path: None,
+            artifact_payload_schema_name: None,
+            artifact_created_at: None,
             preset: None,
             seed: 1,
             ascension: 0,
@@ -1821,6 +1854,13 @@ impl ArtifactCommandArgs {
                 args.artifact_updated_at = Some(write_latest.updated_at);
                 args.artifact_campaign_dir = Some(write_latest.campaign_dir);
                 args.artifact_json = write_latest.json;
+            }
+            ArtifactSubcommandV1::WriteManifest(write_manifest) => {
+                args.artifact_action = Some(ArtifactActionV1::WriteManifest);
+                args.artifact_manifest_path = Some(write_manifest.manifest_path);
+                args.artifact_payload_schema_name = Some(write_manifest.payload_schema_name);
+                args.artifact_created_at = Some(write_manifest.created_at);
+                args.artifact_json = write_manifest.json;
             }
         }
         args

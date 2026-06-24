@@ -81,6 +81,12 @@ pub(super) enum ArtifactCommandInput {
         updated_at: String,
         json: bool,
     },
+    WriteManifest {
+        manifest_path: PathBuf,
+        payload_schema_name: String,
+        created_at: String,
+        json: bool,
+    },
 }
 
 impl ArtifactCommandInput {
@@ -127,6 +133,19 @@ impl ArtifactCommandInput {
                     .artifact_updated_at
                     .clone()
                     .ok_or_else(|| "artifact write-latest requires --updated-at".to_string())?,
+                json: args.artifact_json,
+            }),
+            ArtifactActionV1::WriteManifest => Ok(Self::WriteManifest {
+                manifest_path: args.artifact_manifest_path.clone().ok_or_else(|| {
+                    "artifact write-manifest requires --manifest-path".to_string()
+                })?,
+                payload_schema_name: args.artifact_payload_schema_name.clone().ok_or_else(
+                    || "artifact write-manifest requires --payload-schema-name".to_string(),
+                )?,
+                created_at: args
+                    .artifact_created_at
+                    .clone()
+                    .ok_or_else(|| "artifact write-manifest requires --created-at".to_string())?,
                 json: args.artifact_json,
             }),
         }

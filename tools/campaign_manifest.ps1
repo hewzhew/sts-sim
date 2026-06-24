@@ -1,17 +1,33 @@
 function Write-CampaignWrapperManifest {
     param(
         [string] $Path,
-        [object] $Manifest
+        [Alias("Manifest")]
+        [object] $Payload,
+        [object] $Context
     )
 
     if (-not $Path) {
         return
     }
-    $Parent = Split-Path -Parent $Path
-    if ($Parent) {
-        New-Item -ItemType Directory -Force -Path $Parent | Out-Null
+    if (-not $Context -or -not $Context.DriverExe) {
+        throw "Rust campaign manifest writer requires DriverExe."
     }
-    Write-CampaignJsonArtifact -Path $Path -Value $Manifest -Depth 12
+
+    $PayloadJson = $Payload | ConvertTo-Json -Depth 24 -Compress
+    $ManifestArgs = @(
+        "artifact",
+        "write-manifest",
+        "--manifest-path", "$Path",
+        "--payload-schema-name", "CampaignWrapperManifestPayloadV1",
+        "--created-at", (Get-Date).ToString("o"),
+        "--json"
+    )
+    $Output = $PayloadJson | & $Context.DriverExe @ManifestArgs 2>&1
+    $ExitCode = $LASTEXITCODE
+    if ($ExitCode -ne 0) {
+        $RenderedOutput = ($Output | Out-String).Trim()
+        throw "Rust campaign manifest writer failed with exit code $ExitCode. $RenderedOutput"
+    }
 }
 
 function Convert-CampaignRequestForManifest {
@@ -139,9 +155,6 @@ function New-CampaignWrapperManifestBase {
     )
 
     return [ordered]@{
-        schema_name = "CampaignWrapperManifestV1"
-        schema_version = 1
-        created_at = (Get-Date).ToString("o")
         stage = $Stage
         exit_code = $ExitCode
         wrapper_script = $Context.WrapperScript

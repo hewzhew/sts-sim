@@ -86,7 +86,8 @@ function Invoke-CoverageGapContinuationCommands {
             -RunIdentityArgs $RunIdentityArgs `
             -OptionContext $OptionContext `
             -RecordContext $RecordContext `
-            -ManifestContext $ManifestContext)
+            -ManifestContext $ManifestContext) `
+        -Context $RecordContext
     if ($UntilMilestoneBound) {
         $DriverExitCode = Invoke-CampaignUntilMilestone `
             -MilestoneContext $MilestoneContext `
@@ -107,6 +108,7 @@ function Invoke-CoverageGapContinuationCommands {
             -RunIdentityArgs $RunIdentityArgs `
             -OptionContext $OptionContext `
             -RecordContext $RecordContext `
-            -ManifestContext $ManifestContext)
+            -ManifestContext $ManifestContext) `
+        -Context $RecordContext
     return $DriverExitCode
 }

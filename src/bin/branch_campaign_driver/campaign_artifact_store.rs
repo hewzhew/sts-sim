@@ -3,10 +3,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 const CAMPAIGN_LATEST_POINTER_SCHEMA_NAME: &str = "CampaignLatestPointerV1";
 const CAMPAIGN_SCRATCH_LATEST_POINTER_SCHEMA_NAME: &str = "CampaignScratchLatestPointerV1";
 const CAMPAIGN_LATEST_POINTER_SCHEMA_VERSION: u32 = 1;
+const CAMPAIGN_ARTIFACT_MANIFEST_SCHEMA_NAME: &str = "CampaignArtifactManifestV1";
+const CAMPAIGN_ARTIFACT_MANIFEST_SCHEMA_VERSION: u32 = 1;
 static CAMPAIGN_ARTIFACT_SUFFIX_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -44,6 +47,14 @@ pub(super) struct CampaignArtifactRefV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CampaignArtifactStoreV1 {
     campaign_dir: PathBuf,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(super) struct CampaignArtifactManifestRefV1 {
+    pub(super) path: PathBuf,
+    pub(super) schema_name: String,
+    pub(super) schema_version: u32,
+    pub(super) payload_schema_name: String,
 }
 
 impl CampaignArtifactStoreV1 {
@@ -242,6 +253,112 @@ pub(super) fn render_campaign_artifact_ref_v1(
         artifact.command_path.display(),
         artifact.log_path.display(),
     ))
+}
+
+pub(super) fn render_campaign_artifact_manifest_ref_v1(
+    manifest: &CampaignArtifactManifestRefV1,
+    json: bool,
+) -> Result<String, String> {
+    if json {
+        return serde_json::to_string_pretty(manifest)
+            .map_err(|err| format!("failed to serialize campaign manifest ref: {err}"));
+    }
+    Ok(format!(
+        "CampaignArtifactManifestRefV1 schema={} v{} payload_schema={} path={}",
+        manifest.schema_name,
+        manifest.schema_version,
+        manifest.payload_schema_name,
+        manifest.path.display()
+    ))
+}
+
+pub(super) fn write_campaign_artifact_manifest_from_payload_text_v1(
+    path: &Path,
+    payload_schema_name: &str,
+    created_at: &str,
+    payload_text: &str,
+) -> Result<CampaignArtifactManifestRefV1, String> {
+    let payload: Value = serde_json::from_str(payload_text)
+        .map_err(|err| format!("failed to parse campaign manifest payload JSON: {err}"))?;
+    let payload = match payload {
+        Value::Object(object) => Value::Object(object),
+        _ => return Err("campaign manifest payload must be a JSON object".to_string()),
+    };
+    let compatibility = CampaignArtifactManifestCompatibilityV1::from_payload_v1(&payload);
+    let manifest = CampaignArtifactManifestEnvelopeV1 {
+        schema_name: CAMPAIGN_ARTIFACT_MANIFEST_SCHEMA_NAME.to_string(),
+        schema_version: CAMPAIGN_ARTIFACT_MANIFEST_SCHEMA_VERSION,
+        created_at: created_at.to_string(),
+        writer: "branch_campaign_driver artifact write-manifest".to_string(),
+        payload_schema_name: payload_schema_name.to_string(),
+        compatibility,
+        payload,
+    };
+    write_json_file_v1(path, &manifest)?;
+    Ok(CampaignArtifactManifestRefV1 {
+        path: path.to_path_buf(),
+        schema_name: CAMPAIGN_ARTIFACT_MANIFEST_SCHEMA_NAME.to_string(),
+        schema_version: CAMPAIGN_ARTIFACT_MANIFEST_SCHEMA_VERSION,
+        payload_schema_name: payload_schema_name.to_string(),
+    })
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignArtifactManifestEnvelopeV1 {
+    schema_name: String,
+    schema_version: u32,
+    created_at: String,
+    writer: String,
+    payload_schema_name: String,
+    compatibility: CampaignArtifactManifestCompatibilityV1,
+    payload: Value,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CampaignArtifactManifestCompatibilityV1 {
+    stage: Option<String>,
+    exit_code: Option<i64>,
+    command_kind: Option<String>,
+    mode: Option<String>,
+    seed: Option<i64>,
+    ascension: Option<i64>,
+    player_class: Option<String>,
+    output_artifact: Option<String>,
+    output_report: Option<String>,
+    output_checkpoint: Option<String>,
+    command_file: Option<String>,
+}
+
+impl CampaignArtifactManifestCompatibilityV1 {
+    fn from_payload_v1(payload: &Value) -> Self {
+        Self {
+            stage: payload_string_field_v1(payload, "stage"),
+            exit_code: payload_i64_field_v1(payload, "exit_code"),
+            command_kind: payload_string_field_v1(payload, "command_kind"),
+            mode: payload_string_field_v1(payload, "mode"),
+            seed: payload_i64_field_v1(payload, "seed"),
+            ascension: payload_i64_field_v1(payload, "ascension"),
+            player_class: payload_string_field_v1(payload, "class"),
+            output_artifact: payload_string_field_v1(payload, "output_artifact"),
+            output_report: payload_string_field_v1(payload, "output_report"),
+            output_checkpoint: payload_string_field_v1(payload, "output_checkpoint"),
+            command_file: payload_string_field_v1(payload, "command_file"),
+        }
+    }
+}
+
+fn payload_string_field_v1(payload: &Value, field: &str) -> Option<String> {
+    payload
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|value| !value.is_empty())
+}
+
+fn payload_i64_field_v1(payload: &Value, field: &str) -> Option<i64> {
+    payload.get(field).and_then(Value::as_i64)
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -653,5 +770,54 @@ mod tests {
             super::campaign_format_utc_stamp_v1(1_782_304_496),
             "20260624-123456"
         );
+    }
+
+    #[test]
+    fn campaign_artifact_manifest_writer_wraps_payload_in_rust_schema() {
+        let temp = std::env::temp_dir().join(format!(
+            "sts-campaign-manifest-writer-test-{}.json",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&temp);
+        let payload = r#"{
+            "stage": "completed",
+            "exit_code": 0,
+            "command_kind": "campaign_run",
+            "mode": "quick",
+            "seed": 521,
+            "ascension": 0,
+            "class": "ironclad",
+            "output_artifact": "run:abc",
+            "output_report": "campaign.json.gz",
+            "output_checkpoint": "checkpoint.json.gz",
+            "command_file": "command.txt"
+        }"#;
+
+        super::write_campaign_artifact_manifest_from_payload_text_v1(
+            &temp,
+            "CampaignWrapperManifestPayloadV1",
+            "2026-06-24T12:34:56Z",
+            payload,
+        )
+        .expect("manifest should write");
+
+        let text = std::fs::read_to_string(&temp).expect("manifest text");
+        let value: serde_json::Value = serde_json::from_str(&text).expect("manifest json");
+        let _ = std::fs::remove_file(&temp);
+
+        assert_eq!(value["schema_name"], "CampaignArtifactManifestV1");
+        assert_eq!(value["schema_version"], 1);
+        assert_eq!(
+            value["writer"],
+            "branch_campaign_driver artifact write-manifest"
+        );
+        assert_eq!(
+            value["payload_schema_name"],
+            "CampaignWrapperManifestPayloadV1"
+        );
+        assert_eq!(value["compatibility"]["mode"], "quick");
+        assert_eq!(value["compatibility"]["seed"], 521);
+        assert_eq!(value["compatibility"]["player_class"], "ironclad");
+        assert_eq!(value["payload"]["command_kind"], "campaign_run");
     }
 }

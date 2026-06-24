@@ -278,7 +278,8 @@ function Invoke-CampaignRunCommand {
             Write-CampaignPrimaryDriverCommandRecord -PrimaryDriverCommandLine $Context.RenderedCommand -Context $Context
             Write-CampaignWrapperManifest `
                 -Path $Context.RunManifestPath `
-                -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed" -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext -Context $Context)
+                -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage "initial_driver_completed" -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext -Context $Context) `
+                -Context $Context
             $MilestoneExitCode = Invoke-CampaignRunMilestoneLoop `
                 -Context $Context `
                 -RunIdentityArgs $RunIdentityArgs `
@@ -289,7 +290,8 @@ function Invoke-CampaignRunCommand {
             $ManifestStage = if ($Context.UntilMilestoneBound) { "completed_with_milestone_loop" } else { "completed" }
             Write-CampaignWrapperManifest `
                 -Path $Context.RunManifestPath `
-                -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage $ManifestStage -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext -Context $Context)
+                -Manifest (New-CampaignRunWrapperManifest -ExitCode $DriverExitCode -Stage $ManifestStage -RunIdentityArgs $RunIdentityArgs -OptionContext $OptionContext -Context $Context) `
+                -Context $Context
         }
         return $DriverExitCode
     } finally {

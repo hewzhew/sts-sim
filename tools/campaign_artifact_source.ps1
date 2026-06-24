@@ -9,6 +9,40 @@ function Set-CampaignArtifactResolverDriver {
     $script:CampaignArtifactResolverDriverExe = $DriverExe
 }
 
+function Get-CampaignManifestField {
+    param(
+        [object] $Manifest,
+        [string] $Name
+    )
+
+    if (-not $Manifest -or -not $Name) {
+        return $null
+    }
+    $Direct = $Manifest.PSObject.Properties[$Name]
+    if ($Direct -and $Direct.Value -ne $null) {
+        return $Direct.Value
+    }
+    if ($Manifest.PSObject.Properties["compatibility"]) {
+        $Compatibility = $Manifest.compatibility
+        if ($Compatibility) {
+            $CompatField = $Compatibility.PSObject.Properties[$Name]
+            if ($CompatField -and $CompatField.Value -ne $null) {
+                return $CompatField.Value
+            }
+        }
+    }
+    if ($Manifest.PSObject.Properties["payload"]) {
+        $Payload = $Manifest.payload
+        if ($Payload) {
+            $PayloadField = $Payload.PSObject.Properties[$Name]
+            if ($PayloadField -and $PayloadField.Value -ne $null) {
+                return $PayloadField.Value
+            }
+        }
+    }
+    return $null
+}
+
 function Get-CampaignSourceArtifactViaDriver {
     param(
         [string] $Selector
@@ -44,8 +78,9 @@ function Get-CampaignArtifactMode {
     if ($Artifact -and $Artifact.ManifestPath -and (Test-Path -LiteralPath $Artifact.ManifestPath)) {
         try {
             $Manifest = Get-Content -LiteralPath $Artifact.ManifestPath -Raw | ConvertFrom-Json
-            if ($Manifest.mode) {
-                return ([string] $Manifest.mode).ToLowerInvariant()
+            $Mode = Get-CampaignManifestField -Manifest $Manifest -Name "mode"
+            if ($Mode) {
+                return ([string] $Mode).ToLowerInvariant()
             }
         } catch {
             # Keep falling back to the command text.
@@ -95,16 +130,23 @@ function Get-CampaignArtifactRunConfig {
     if ($ManifestPath -and (Test-Path -LiteralPath $ManifestPath)) {
         try {
             $Manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
-            if ($Config.Seed -eq $null -and $Manifest.seed -ne $null) {
-                $Config.Seed = [long] $Manifest.seed
+            $Seed = Get-CampaignManifestField -Manifest $Manifest -Name "seed"
+            $ManifestAscension = Get-CampaignManifestField -Manifest $Manifest -Name "ascension"
+            $ManifestClass = Get-CampaignManifestField -Manifest $Manifest -Name "class"
+            if (-not $ManifestClass) {
+                $ManifestClass = Get-CampaignManifestField -Manifest $Manifest -Name "player_class"
             }
-            if ($Config.Ascension -eq $null -and $Manifest.ascension -ne $null) {
-                $Config.Ascension = [int] $Manifest.ascension
+            $ManifestMode = Get-CampaignManifestField -Manifest $Manifest -Name "mode"
+            if ($Config.Seed -eq $null -and $Seed -ne $null) {
+                $Config.Seed = [long] $Seed
             }
-            if (-not $Config.Class -and $Manifest.class) {
-                $Config.Class = ([string] $Manifest.class).ToLowerInvariant()
+            if ($Config.Ascension -eq $null -and $ManifestAscension -ne $null) {
+                $Config.Ascension = [int] $ManifestAscension
             }
-            if ($Manifest.mode) { $Config.Mode = ([string] $Manifest.mode).ToLowerInvariant() }
+            if (-not $Config.Class -and $ManifestClass) {
+                $Config.Class = ([string] $ManifestClass).ToLowerInvariant()
+            }
+            if ($ManifestMode) { $Config.Mode = ([string] $ManifestMode).ToLowerInvariant() }
         } catch {
             # Latest artifacts can lack a manifest; existing sidecar mode fallback remains in effect.
         }

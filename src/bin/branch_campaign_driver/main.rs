@@ -20,7 +20,9 @@ mod outcome_dataset;
 mod shop_challenge;
 
 use campaign_artifact_store::{
-    render_campaign_artifact_ref_v1, CampaignArtifactKindV1, CampaignArtifactStoreV1,
+    render_campaign_artifact_manifest_ref_v1, render_campaign_artifact_ref_v1,
+    write_campaign_artifact_manifest_from_payload_text_v1, CampaignArtifactKindV1,
+    CampaignArtifactStoreV1,
 };
 use campaign_run::{run_ancestor_replay_self_check, run_campaign_command};
 use checkpoint_inspection::{run_checkpoint_inspection, run_final_boss_combat_report_inspection};
@@ -58,6 +60,7 @@ use outcome_dataset::{
     run_learning_dataset_export, run_learning_readiness_probe, run_targeted_continuation_execution,
     run_targeted_continuation_plan,
 };
+use std::io::Read;
 #[cfg(test)]
 use sts_simulator::eval::run_control::RunControlCombatSegmentMode;
 
@@ -199,6 +202,28 @@ fn run_artifact_command(input: ArtifactCommandInput) -> Result<(), String> {
                 }
             };
             println!("{}", render_campaign_artifact_ref_v1(&artifact, json)?);
+            Ok(())
+        }
+        ArtifactCommandInput::WriteManifest {
+            manifest_path,
+            payload_schema_name,
+            created_at,
+            json,
+        } => {
+            let mut payload_text = String::new();
+            std::io::stdin()
+                .read_to_string(&mut payload_text)
+                .map_err(|err| format!("failed to read manifest payload from stdin: {err}"))?;
+            let manifest_ref = write_campaign_artifact_manifest_from_payload_text_v1(
+                &manifest_path,
+                &payload_schema_name,
+                &created_at,
+                &payload_text,
+            )?;
+            println!(
+                "{}",
+                render_campaign_artifact_manifest_ref_v1(&manifest_ref, json)?
+            );
             Ok(())
         }
     }
