@@ -95,6 +95,7 @@ pub(super) enum ArtifactKindArgV1 {
     Scratch,
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ArtifactActionV1 {
     Resolve,
@@ -103,16 +104,6 @@ pub(super) enum ArtifactActionV1 {
     WriteLatest,
     WriteManifest,
     Prune,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BranchCampaignExplicitCommandV1 {
-    Run,
-    Inspect,
-    Dataset,
-    Continue,
-    Artifact,
-    SelfCheck,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -155,54 +146,67 @@ pub(super) enum BranchCampaignCombatRetryArgV1 {
 // command-specific parsers before they are converted into narrow handler inputs.
 #[derive(Debug, ClapArgs)]
 pub(super) struct Args {
-    #[arg(skip)]
-    pub(crate) explicit_command: Option<BranchCampaignExplicitCommandV1>,
-
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_selector: Option<String>,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_campaign_dir: Option<PathBuf>,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_json: bool,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_action: Option<ArtifactActionV1>,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_kind: Option<ArtifactKindArgV1>,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_label: Option<String>,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_stamp: Option<String>,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_suffix: Option<String>,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_id: Option<String>,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_updated_at: Option<String>,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_manifest_path: Option<PathBuf>,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_payload_schema_name: Option<String>,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_created_at: Option<String>,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_keep_runs: usize,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_keep_scratch: usize,
 
+    #[cfg(test)]
     #[arg(skip)]
     pub(super) artifact_apply: bool,
 
@@ -821,10 +825,6 @@ enum CampaignSubcommandV1 {
 #[derive(Debug)]
 pub(super) enum BranchCampaignCliInputV1 {
     Legacy(Args),
-    Explicit {
-        command: BranchCampaignExplicitCommandV1,
-        args: Args,
-    },
     CampaignRun(RunCommandArgs),
     CampaignContinue(ContinueCommandArgs),
     CampaignInspect(InspectCommandArgs),
@@ -832,6 +832,7 @@ pub(super) enum BranchCampaignCliInputV1 {
     CampaignCoveragePlan(CampaignCoveragePlanCommandArgs),
     CampaignCoverageExecute(CampaignCoverageExecuteCommandArgs),
     CampaignDataset(DatasetCommandArgs),
+    SelfCheck,
 }
 
 impl BranchCampaignCliInputV1 {
@@ -839,7 +840,6 @@ impl BranchCampaignCliInputV1 {
     pub(super) fn args(&self) -> &Args {
         match self {
             Self::Legacy(args) => args,
-            Self::Explicit { args, .. } => args,
             Self::CampaignRun(_) => {
                 panic!("campaign namespace direct requests do not expose legacy Args")
             }
@@ -861,6 +861,9 @@ impl BranchCampaignCliInputV1 {
             Self::CampaignDataset(_) => {
                 panic!("campaign namespace direct requests do not expose legacy Args")
             }
+            Self::SelfCheck => {
+                panic!("self-check direct requests do not expose legacy Args")
+            }
         }
     }
 
@@ -868,7 +871,6 @@ impl BranchCampaignCliInputV1 {
     pub(super) fn into_args(self) -> Args {
         match self {
             Self::Legacy(args) => args,
-            Self::Explicit { args, .. } => args,
             Self::CampaignRun(args) => args.into_args(),
             Self::CampaignContinue(args) => args.into_args(),
             Self::CampaignInspect(args) => args.into_args(),
@@ -877,20 +879,11 @@ impl BranchCampaignCliInputV1 {
                 panic!("campaign coverage direct requests do not expose legacy Args")
             }
             Self::CampaignDataset(args) => args.into_args(),
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn explicit_command(&self) -> Option<BranchCampaignExplicitCommandV1> {
-        match self {
-            Self::Legacy(_) => None,
-            Self::Explicit { command, .. } => Some(*command),
-            Self::CampaignRun(_) => Some(BranchCampaignExplicitCommandV1::Run),
-            Self::CampaignContinue(_) => Some(BranchCampaignExplicitCommandV1::Continue),
-            Self::CampaignInspect(_) => Some(BranchCampaignExplicitCommandV1::Inspect),
-            Self::CampaignArtifact(_) => Some(BranchCampaignExplicitCommandV1::Artifact),
-            Self::CampaignCoveragePlan(_) | Self::CampaignCoverageExecute(_) => None,
-            Self::CampaignDataset(_) => Some(BranchCampaignExplicitCommandV1::Dataset),
+            Self::SelfCheck => {
+                let mut args = Args::compat_defaults();
+                args.self_check_ancestor_replay = true;
+                args
+            }
         }
     }
 }
@@ -1878,10 +1871,10 @@ pub(super) struct CampaignCoverageExecuteTargetArgs {
     pub(super) coverage_gap_execution_mode: String,
 }
 
+#[cfg(test)]
 impl Args {
     fn compat_defaults() -> Self {
         Self {
-            explicit_command: None,
             artifact_selector: None,
             artifact_campaign_dir: None,
             artifact_json: false,
@@ -2001,6 +1994,7 @@ impl Args {
     }
 }
 
+#[cfg(test)]
 impl RunCommandArgs {
     fn into_args(self) -> Args {
         let mut args = Args::compat_defaults();
@@ -2037,6 +2031,7 @@ impl CampaignCommandArgs {
     }
 }
 
+#[cfg(test)]
 impl InspectCommandArgs {
     fn into_args(self) -> Args {
         let mut args = Args::compat_defaults();
@@ -2108,6 +2103,7 @@ impl CampaignCoverageCommandArgs {
     }
 }
 
+#[cfg(test)]
 impl DatasetCommandArgs {
     fn into_args(self) -> Args {
         let mut args = Args::compat_defaults();
@@ -2184,6 +2180,7 @@ pub(super) struct CampaignCoveragePlanTargetArgs {
     pub(super) coverage_gap_budget_intent: String,
 }
 
+#[cfg(test)]
 impl ContinueCommandArgs {
     fn into_args(self) -> Args {
         let mut args = Args::compat_defaults();
@@ -2198,6 +2195,7 @@ impl ContinueCommandArgs {
     }
 }
 
+#[cfg(test)]
 impl ArtifactCommandArgs {
     fn into_args(self) -> Args {
         let mut args = Args::compat_defaults();
@@ -2251,14 +2249,7 @@ impl ArtifactCommandArgs {
     }
 }
 
-impl SelfCheckCommandArgs {
-    fn into_args(self) -> Args {
-        let mut args = Args::compat_defaults();
-        args.self_check_ancestor_replay = true;
-        args
-    }
-}
-
+#[cfg(test)]
 impl CampaignDomainArgs {
     fn apply_to(self, args: &mut Args) {
         args.preset = self.preset;
@@ -2270,6 +2261,7 @@ impl CampaignDomainArgs {
     }
 }
 
+#[cfg(test)]
 impl CampaignBranchingArgs {
     fn apply_to(self, args: &mut Args) {
         args.max_rounds = self.max_rounds;
@@ -2293,6 +2285,7 @@ impl CampaignBranchingArgs {
     }
 }
 
+#[cfg(test)]
 impl CampaignSearchArgs {
     fn apply_to(self, args: &mut Args) {
         args.search_max_nodes = self.search_max_nodes;
@@ -2302,6 +2295,7 @@ impl CampaignSearchArgs {
     }
 }
 
+#[cfg(test)]
 impl CampaignCombatRetryArgs {
     fn apply_to(self, args: &mut Args) {
         args.combat_retry = self.combat_retry;
@@ -2310,6 +2304,7 @@ impl CampaignCombatRetryArgs {
     }
 }
 
+#[cfg(test)]
 impl CampaignPrefixArgs {
     fn apply_to(self, args: &mut Args) {
         args.prefix_commands = self.prefix_commands;
@@ -2317,6 +2312,7 @@ impl CampaignPrefixArgs {
     }
 }
 
+#[cfg(test)]
 impl CampaignRunOutputArgs {
     fn apply_to(self, args: &mut Args) {
         args.branch_examples = self.branch_examples;
@@ -2336,6 +2332,7 @@ impl CampaignRunOutputArgs {
     }
 }
 
+#[cfg(test)]
 impl InspectTargetArgs {
     fn apply_to(self, args: &mut Args) {
         args.inspect_checkpoint = self.inspect_checkpoint;
@@ -2348,6 +2345,7 @@ impl InspectTargetArgs {
     }
 }
 
+#[cfg(test)]
 impl InspectModeArgs {
     fn apply_to(self, args: &mut Args) {
         args.inspect_summary = self.inspect_summary;
@@ -2379,6 +2377,7 @@ impl InspectModeArgs {
     }
 }
 
+#[cfg(test)]
 impl InspectChallengeArgs {
     fn apply_to(self, args: &mut Args) {
         args.final_act = self.final_act;
@@ -2393,12 +2392,14 @@ impl InspectChallengeArgs {
     }
 }
 
+#[cfg(test)]
 impl InspectDisplayArgs {
     fn apply_to(self, args: &mut Args) {
         args.branch_examples = self.branch_examples;
     }
 }
 
+#[cfg(test)]
 impl DatasetPathArgs {
     fn apply_to(self, args: &mut Args) {
         args.inspect_checkpoint = self.inspect_checkpoint;
@@ -2412,6 +2413,7 @@ impl DatasetPathArgs {
     }
 }
 
+#[cfg(test)]
 impl ContinuationArgs {
     fn apply_to(self, args: &mut Args) {
         args.plan_targeted_continuation = self.plan_targeted_continuation;
@@ -2598,41 +2600,39 @@ where
         Err(err) => return Err(err),
     };
     let cli = CliRootV1::from_arg_matches(&matches)?;
-    let (args, explicit_command) = match cli.command {
+    match cli.command {
         Some(BranchCampaignCliCommandV1::Campaign(args)) => return args.into_cli_input(&matches),
         Some(BranchCampaignCliCommandV1::Run(args)) => {
-            (args.into_args(), Some(BranchCampaignExplicitCommandV1::Run))
+            return Ok(BranchCampaignCliInputV1::CampaignRun(
+                normalize_run_command_args(args, &matches)?,
+            ));
         }
-        Some(BranchCampaignCliCommandV1::Inspect(args)) => (
-            args.into_args(),
-            Some(BranchCampaignExplicitCommandV1::Inspect),
-        ),
-        Some(BranchCampaignCliCommandV1::Dataset(args)) => (
-            args.into_args(),
-            Some(BranchCampaignExplicitCommandV1::Dataset),
-        ),
-        Some(BranchCampaignCliCommandV1::Continue(args)) => (
-            args.into_args(),
-            Some(BranchCampaignExplicitCommandV1::Continue),
-        ),
-        Some(BranchCampaignCliCommandV1::Artifact(args)) => (
-            args.into_args(),
-            Some(BranchCampaignExplicitCommandV1::Artifact),
-        ),
-        Some(BranchCampaignCliCommandV1::SelfCheck(args)) => (
-            args.into_args(),
-            Some(BranchCampaignExplicitCommandV1::SelfCheck),
-        ),
+        Some(BranchCampaignCliCommandV1::Inspect(args)) => {
+            return Ok(BranchCampaignCliInputV1::CampaignInspect(args));
+        }
+        Some(BranchCampaignCliCommandV1::Dataset(args)) => {
+            return Ok(BranchCampaignCliInputV1::CampaignDataset(args));
+        }
+        Some(BranchCampaignCliCommandV1::Continue(args)) => {
+            return Ok(BranchCampaignCliInputV1::CampaignContinue(
+                normalize_continue_command_args(args, &matches)?,
+            ));
+        }
+        Some(BranchCampaignCliCommandV1::Artifact(args)) => {
+            return Ok(BranchCampaignCliInputV1::CampaignArtifact(args));
+        }
+        Some(BranchCampaignCliCommandV1::SelfCheck(_)) => {
+            return Ok(BranchCampaignCliInputV1::SelfCheck);
+        }
         None => return parse_legacy_cli_from(argv),
-    };
-    normalize_cli_args_from_matches(args, explicit_command, &matches)
+    }
 }
 
 fn parse_legacy_cli_from(argv: Vec<OsString>) -> Result<BranchCampaignCliInputV1, clap::Error> {
     let legacy_command = <Args as ClapArgs>::augment_args(Command::new("branch_campaign_driver"));
     let matches = legacy_command.try_get_matches_from(argv)?;
     let args = Args::from_arg_matches(&matches)?;
-    normalize_cli_args_from_matches(args, None, &matches)
+    normalize_cli_args_from_matches(args, &matches)
 }
 
 fn should_fallback_to_legacy_root_args(err: &clap::Error) -> bool {
@@ -2796,10 +2796,8 @@ fn apply_preset_defaults_to_campaign_cli_parts(
 
 fn normalize_cli_args_from_matches(
     mut args: Args,
-    explicit_command: Option<BranchCampaignExplicitCommandV1>,
     matches: &ArgMatches,
 ) -> Result<BranchCampaignCliInputV1, clap::Error> {
-    args.explicit_command = explicit_command;
     if let Some(domain) = args.ascension_domain {
         let domain_ascension = domain.ascension_level();
         let ascension_was_explicit =
@@ -2820,10 +2818,7 @@ fn normalize_cli_args_from_matches(
     apply_preset_defaults(&mut args, |name| {
         selected_value_source(&matches, name) == Some(ValueSource::CommandLine)
     });
-    Ok(match explicit_command {
-        Some(command) => BranchCampaignCliInputV1::Explicit { command, args },
-        None => BranchCampaignCliInputV1::Legacy(args),
-    })
+    Ok(BranchCampaignCliInputV1::Legacy(args))
 }
 
 #[cfg(test)]
@@ -2874,14 +2869,15 @@ mod tests {
         ])
         .expect("campaign artifacts prune should parse");
 
-        assert_eq!(
-            input.explicit_command(),
-            Some(BranchCampaignExplicitCommandV1::Artifact)
-        );
-        let args = input.into_args();
-        assert_eq!(args.artifact_action, Some(ArtifactActionV1::Prune));
-        assert_eq!(args.artifact_keep_runs, 2);
-        assert_eq!(args.artifact_keep_scratch, 1);
+        match input {
+            BranchCampaignCliInputV1::CampaignArtifact(args) => {
+                let args = args.into_args();
+                assert_eq!(args.artifact_action, Some(ArtifactActionV1::Prune));
+                assert_eq!(args.artifact_keep_runs, 2);
+                assert_eq!(args.artifact_keep_scratch, 1);
+            }
+            other => panic!("expected typed artifact input, got {other:?}"),
+        }
     }
 
     #[test]

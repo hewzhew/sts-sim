@@ -26,9 +26,9 @@ use campaign_app::CampaignAppV1;
 use cli_args::parse_cli;
 #[cfg(test)]
 use cli_args::{
-    parse_args_from, Args, BranchCampaignExplicitCommandV1, BranchCampaignPresetV1,
-    QUICK_PRESET_MAX_ACTIVE, QUICK_PRESET_MAX_ROUNDS, QUICK_PRESET_ROUND_DEPTH,
-    QUICK_PRESET_SEARCH_MAX_NODES, QUICK_PRESET_SEARCH_WALL_MS,
+    parse_args_from, Args, BranchCampaignPresetV1, QUICK_PRESET_MAX_ACTIVE,
+    QUICK_PRESET_MAX_ROUNDS, QUICK_PRESET_ROUND_DEPTH, QUICK_PRESET_SEARCH_MAX_NODES,
+    QUICK_PRESET_SEARCH_WALL_MS,
 };
 #[cfg(test)]
 use command_inputs::{
@@ -216,10 +216,6 @@ mod tests {
         .expect("typed cli input parse");
 
         assert_eq!(
-            input.explicit_command(),
-            Some(BranchCampaignExplicitCommandV1::Dataset)
-        );
-        assert_eq!(
             driver_command_from_cli_input(&input),
             BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset
         );
@@ -262,7 +258,6 @@ mod tests {
             Some(PathBuf::from("artifact.checkpoint.json"))
         );
         assert_eq!(args.preset, Some(BranchCampaignPresetV1::Quick));
-        assert_eq!(args.explicit_command, None);
     }
 
     #[test]
@@ -294,10 +289,6 @@ mod tests {
             .expect("run args parse");
         let config = campaign_config_from_args(&args).expect("config builds");
 
-        assert_eq!(
-            args.explicit_command,
-            Some(BranchCampaignExplicitCommandV1::Run)
-        );
         assert_eq!(config.max_rounds, QUICK_PRESET_MAX_ROUNDS);
         assert_eq!(config.round_depth, QUICK_PRESET_ROUND_DEPTH);
         assert_eq!(config.max_active, QUICK_PRESET_MAX_ACTIVE);

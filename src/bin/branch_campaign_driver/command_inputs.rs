@@ -16,7 +16,7 @@ use sts_simulator::eval::run_control::{
 };
 
 use super::cli_args::{
-    Args, ArtifactActionV1, ArtifactCommandArgs, ArtifactKindArgV1, ArtifactSubcommandV1,
+    Args, ArtifactCommandArgs, ArtifactKindArgV1, ArtifactSubcommandV1,
     BranchCampaignCombatRetryArgV1, CampaignBranchingArgs, CampaignCombatRetryArgs,
     CampaignCoverageExecuteCommandArgs, CampaignCoverageExecuteTargetArgs,
     CampaignCoveragePlanCommandArgs, CampaignDomainArgs, CampaignPrefixArgs, CampaignSearchArgs,
@@ -313,86 +313,6 @@ impl ArtifactCommandInput {
             },
         }
     }
-
-    pub(super) fn from_args(args: &Args) -> Result<Self, String> {
-        let campaign_dir = args
-            .artifact_campaign_dir
-            .clone()
-            .unwrap_or_else(default_campaign_artifact_dir_v1);
-        match args
-            .artifact_action
-            .ok_or_else(|| "artifact command requires an action".to_string())?
-        {
-            ArtifactActionV1::Resolve => Ok(Self::Resolve {
-                campaign_dir,
-                selector: args
-                    .artifact_selector
-                    .clone()
-                    .ok_or_else(|| "artifact resolve requires a selector".to_string())?,
-                json: args.artifact_json,
-            }),
-            ArtifactActionV1::SourceInfo => Ok(Self::SourceInfo {
-                campaign_dir,
-                selector: args
-                    .artifact_selector
-                    .clone()
-                    .ok_or_else(|| "artifact source-info requires a selector".to_string())?,
-                json: args.artifact_json,
-            }),
-            ArtifactActionV1::Allocate => Ok(Self::Allocate {
-                campaign_dir,
-                kind: args
-                    .artifact_kind
-                    .ok_or_else(|| "artifact allocate requires a kind".to_string())?,
-                label: args
-                    .artifact_label
-                    .clone()
-                    .ok_or_else(|| "artifact allocate requires a label".to_string())?,
-                stamp: args.artifact_stamp.clone(),
-                suffix: args.artifact_suffix.clone(),
-                json: args.artifact_json,
-            }),
-            ArtifactActionV1::WriteLatest => Ok(Self::WriteLatest {
-                campaign_dir,
-                kind: args
-                    .artifact_kind
-                    .ok_or_else(|| "artifact write-latest requires a kind".to_string())?,
-                artifact_id: args
-                    .artifact_id
-                    .clone()
-                    .ok_or_else(|| "artifact write-latest requires an artifact id".to_string())?,
-                updated_at: args
-                    .artifact_updated_at
-                    .clone()
-                    .ok_or_else(|| "artifact write-latest requires --updated-at".to_string())?,
-                json: args.artifact_json,
-            }),
-            ArtifactActionV1::WriteManifest => Ok(Self::WriteManifest {
-                manifest_path: args.artifact_manifest_path.clone().ok_or_else(|| {
-                    "artifact write-manifest requires --manifest-path".to_string()
-                })?,
-                payload_schema_name: args.artifact_payload_schema_name.clone().ok_or_else(
-                    || "artifact write-manifest requires --payload-schema-name".to_string(),
-                )?,
-                created_at: args
-                    .artifact_created_at
-                    .clone()
-                    .ok_or_else(|| "artifact write-manifest requires --created-at".to_string())?,
-                json: args.artifact_json,
-            }),
-            ArtifactActionV1::Prune => Ok(Self::Prune {
-                campaign_dir,
-                keep_runs: args.artifact_keep_runs,
-                keep_scratch: args.artifact_keep_scratch,
-                apply: args.artifact_apply,
-                json: args.artifact_json,
-            }),
-        }
-    }
-}
-
-fn default_campaign_artifact_dir_v1() -> PathBuf {
-    PathBuf::from("tools").join("artifacts").join("campaigns")
 }
 
 #[derive(Clone, Debug)]

@@ -1,6 +1,6 @@
 #[cfg(test)]
 use super::cli_args::DatasetCommandArgs;
-use super::cli_args::{Args, BranchCampaignCliInputV1, BranchCampaignExplicitCommandV1};
+use super::cli_args::{Args, BranchCampaignCliInputV1};
 use super::command_inputs::{
     ArtifactCommandInput, ContinuationCommandInput, CoverageGapExecutionCommandInput,
     CoverageGapPlanCommandInput, DatasetCommandInput, InspectCommandInput, RunCommandInput,
@@ -14,7 +14,6 @@ pub(super) enum BranchCampaignDriverCommandV1 {
     ProbeLearningReadiness,
     PlanTargetedContinuation,
     ExecuteTargetedContinuation,
-    ResolveCampaignArtifact,
     PlanCoverageGapContinuation,
     ExecuteCoverageGapContinuation,
     ContinuationEffectReport,
@@ -87,8 +86,8 @@ pub(super) fn driver_request_from_cli_input(
         BranchCampaignCliInputV1::CampaignDataset(args) => Ok(dataset_request_from_input(
             DatasetCommandInput::from_dataset_args(args),
         )),
-        BranchCampaignCliInputV1::Explicit { command, args } => {
-            explicit_driver_request_from_args(command, &args)
+        BranchCampaignCliInputV1::SelfCheck => {
+            Ok(BranchCampaignDriverRequestV1::SelfCheckAncestorReplay)
         }
         BranchCampaignCliInputV1::Legacy(args) => legacy_driver_request_from_args(&args),
     }
@@ -199,32 +198,6 @@ fn inspect_request_from_input(
     })
 }
 
-fn explicit_driver_request_from_args(
-    explicit: BranchCampaignExplicitCommandV1,
-    args: &Args,
-) -> Result<BranchCampaignDriverRequestV1, String> {
-    match explicit {
-        BranchCampaignExplicitCommandV1::Run => {
-            driver_request_for_command(BranchCampaignDriverCommandV1::RunCampaign, args)
-        }
-        BranchCampaignExplicitCommandV1::Inspect => {
-            driver_request_for_command(inspect_command_from_args(args), args)
-        }
-        BranchCampaignExplicitCommandV1::Dataset => {
-            driver_request_for_command(dataset_command_from_args(args), args)
-        }
-        BranchCampaignExplicitCommandV1::Continue => {
-            driver_request_for_command(continuation_command_from_args(args), args)
-        }
-        BranchCampaignExplicitCommandV1::Artifact => {
-            driver_request_for_command(BranchCampaignDriverCommandV1::ResolveCampaignArtifact, args)
-        }
-        BranchCampaignExplicitCommandV1::SelfCheck => {
-            driver_request_for_command(BranchCampaignDriverCommandV1::SelfCheckAncestorReplay, args)
-        }
-    }
-}
-
 fn legacy_driver_request_from_args(args: &Args) -> Result<BranchCampaignDriverRequestV1, String> {
     driver_request_for_command(legacy_command_from_args(args), args)
 }
@@ -261,11 +234,6 @@ fn driver_request_for_command(
             BranchCampaignDriverRequestV1::ExecuteTargetedContinuation(
                 ContinuationCommandInput::from_args(args)?,
             )
-        }
-        BranchCampaignDriverCommandV1::ResolveCampaignArtifact => {
-            BranchCampaignDriverRequestV1::ResolveCampaignArtifact(ArtifactCommandInput::from_args(
-                args,
-            )?)
         }
         BranchCampaignDriverCommandV1::PlanCoverageGapContinuation => {
             BranchCampaignDriverRequestV1::PlanCoverageGapContinuation(
@@ -343,8 +311,25 @@ fn driver_request_for_command(
 pub(super) fn driver_command_from_cli_input(
     input: &BranchCampaignCliInputV1,
 ) -> BranchCampaignDriverCommandV1 {
-    if matches!(input, BranchCampaignCliInputV1::CampaignArtifact(_)) {
-        return BranchCampaignDriverCommandV1::ResolveCampaignArtifact;
+    if matches!(input, BranchCampaignCliInputV1::SelfCheck) {
+        return BranchCampaignDriverCommandV1::SelfCheckAncestorReplay;
+    }
+    if matches!(input, BranchCampaignCliInputV1::CampaignRun(_)) {
+        return BranchCampaignDriverCommandV1::RunCampaign;
+    }
+    if let BranchCampaignCliInputV1::CampaignContinue(args) = input {
+        if args.continuation.execute_coverage_gap_continuation {
+            return BranchCampaignDriverCommandV1::ExecuteCoverageGapContinuation;
+        }
+        if args.continuation.continuation_effect_before.is_some()
+            || args.continuation.continuation_effect_after.is_some()
+        {
+            return BranchCampaignDriverCommandV1::ContinuationEffectReport;
+        }
+        if args.continuation.plan_targeted_continuation.is_some() {
+            return BranchCampaignDriverCommandV1::PlanTargetedContinuation;
+        }
+        return BranchCampaignDriverCommandV1::ExecuteTargetedContinuation;
     }
     if matches!(input, BranchCampaignCliInputV1::CampaignCoveragePlan(_)) {
         return BranchCampaignDriverCommandV1::PlanCoverageGapContinuation;
@@ -355,37 +340,12 @@ pub(super) fn driver_command_from_cli_input(
     if let BranchCampaignCliInputV1::CampaignInspect(args) = input {
         return inspect_command_from_inspect_args(args);
     }
-    if let Some(explicit) = input.explicit_command() {
-        return explicit_driver_command_from_args(explicit, input.args());
-    }
     legacy_command_from_args(input.args())
 }
 
 #[cfg(test)]
 pub(super) fn driver_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
-    if let Some(explicit) = args.explicit_command {
-        return explicit_driver_command_from_args(explicit, args);
-    }
     legacy_command_from_args(args)
-}
-
-#[cfg(test)]
-fn explicit_driver_command_from_args(
-    explicit: BranchCampaignExplicitCommandV1,
-    args: &Args,
-) -> BranchCampaignDriverCommandV1 {
-    match explicit {
-        BranchCampaignExplicitCommandV1::Run => BranchCampaignDriverCommandV1::RunCampaign,
-        BranchCampaignExplicitCommandV1::Inspect => inspect_command_from_args(args),
-        BranchCampaignExplicitCommandV1::Dataset => dataset_command_from_args(args),
-        BranchCampaignExplicitCommandV1::Continue => continuation_command_from_args(args),
-        BranchCampaignExplicitCommandV1::Artifact => {
-            BranchCampaignDriverCommandV1::ResolveCampaignArtifact
-        }
-        BranchCampaignExplicitCommandV1::SelfCheck => {
-            BranchCampaignDriverCommandV1::SelfCheckAncestorReplay
-        }
-    }
 }
 
 fn legacy_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
@@ -452,26 +412,6 @@ fn legacy_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
     BranchCampaignDriverCommandV1::RunCampaign
 }
 
-fn inspect_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
-    if args.inspect_journal {
-        BranchCampaignDriverCommandV1::InspectJournal
-    } else if args.inspect_lineage_decisions {
-        BranchCampaignDriverCommandV1::InspectLineageDecisions
-    } else if args.inspect_decision_coverage {
-        BranchCampaignDriverCommandV1::InspectDecisionCoverage
-    } else if args.inspect_coverage_gap_target_state {
-        BranchCampaignDriverCommandV1::InspectCoverageGapTargetState
-    } else if args.inspect_coverage_gap_milestone_summary {
-        BranchCampaignDriverCommandV1::InspectCoverageGapMilestoneSummary
-    } else if args.inspect_decision_observations {
-        BranchCampaignDriverCommandV1::InspectDecisionObservations
-    } else if args.inspect_final_boss_combat {
-        BranchCampaignDriverCommandV1::InspectFinalBossCombat
-    } else {
-        BranchCampaignDriverCommandV1::InspectCheckpoint
-    }
-}
-
 fn inspect_command_from_inspect_args(
     args: &super::cli_args::InspectCommandArgs,
 ) -> BranchCampaignDriverCommandV1 {
@@ -491,26 +431,6 @@ fn inspect_command_from_inspect_args(
         BranchCampaignDriverCommandV1::InspectFinalBossCombat
     } else {
         BranchCampaignDriverCommandV1::InspectCheckpoint
-    }
-}
-
-fn dataset_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
-    if args.analyze_outcome_dataset.is_some() {
-        BranchCampaignDriverCommandV1::AnalyzeOutcomeDataset
-    } else if args.analyze_decision_outcome_dataset.is_some() {
-        BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset
-    } else if args.probe_learning_readiness.is_some() {
-        BranchCampaignDriverCommandV1::ProbeLearningReadiness
-    } else if args.plan_coverage_gap_continuation {
-        BranchCampaignDriverCommandV1::PlanCoverageGapContinuation
-    } else if args.export_outcome_dataset.is_some() {
-        BranchCampaignDriverCommandV1::ExportOutcomeDataset
-    } else if args.export_learning_dataset.is_some() {
-        BranchCampaignDriverCommandV1::ExportLearningDataset
-    } else if args.export_decision_outcome_dataset.is_some() {
-        BranchCampaignDriverCommandV1::ExportDecisionOutcomeDataset
-    } else {
-        BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset
     }
 }
 
@@ -549,21 +469,6 @@ fn dataset_command_from_input(input: &DatasetCommandInput) -> BranchCampaignDriv
         BranchCampaignDriverCommandV1::ExportDecisionOutcomeDataset
     } else {
         BranchCampaignDriverCommandV1::AnalyzeDecisionOutcomeDataset
-    }
-}
-
-fn continuation_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
-    if args.plan_targeted_continuation.is_some() {
-        BranchCampaignDriverCommandV1::PlanTargetedContinuation
-    } else if args.execute_targeted_continuation.is_some() {
-        BranchCampaignDriverCommandV1::ExecuteTargetedContinuation
-    } else if args.execute_coverage_gap_continuation {
-        BranchCampaignDriverCommandV1::ExecuteCoverageGapContinuation
-    } else if args.continuation_effect_before.is_some() || args.continuation_effect_after.is_some()
-    {
-        BranchCampaignDriverCommandV1::ContinuationEffectReport
-    } else {
-        BranchCampaignDriverCommandV1::PlanTargetedContinuation
     }
 }
 
