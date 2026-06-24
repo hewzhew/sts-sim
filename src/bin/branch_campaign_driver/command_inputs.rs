@@ -429,7 +429,6 @@ impl ShopChallengeInput {
 #[derive(Clone, Debug)]
 pub(super) struct DatasetCommandInput {
     pub(super) inspect_checkpoint: Option<PathBuf>,
-    pub(super) resume_checkpoint: Option<PathBuf>,
     pub(super) inspect_report: Option<PathBuf>,
     pub(super) export_outcome_dataset: Option<PathBuf>,
     pub(super) analyze_outcome_dataset: Option<PathBuf>,
@@ -437,18 +436,12 @@ pub(super) struct DatasetCommandInput {
     pub(super) probe_learning_readiness: Option<PathBuf>,
     pub(super) export_learning_dataset: Option<PathBuf>,
     pub(super) export_decision_outcome_dataset: Option<PathBuf>,
-    pub(super) plan_coverage_gap_continuation: bool,
-    pub(super) coverage_gap_limit: usize,
-    pub(super) coverage_gap_candidates_per_decision: usize,
-    pub(super) coverage_gap_filter: CoverageGapContinuationFilterV1,
-    pub(super) coverage_gap_budget_intent: CoverageGapBudgetIntentV1,
 }
 
 impl DatasetCommandInput {
     pub(super) fn from_args(args: &Args) -> Self {
         Self {
             inspect_checkpoint: args.inspect_checkpoint.clone(),
-            resume_checkpoint: args.resume_checkpoint.clone(),
             inspect_report: args.inspect_report.clone(),
             export_outcome_dataset: args.export_outcome_dataset.clone(),
             analyze_outcome_dataset: args.analyze_outcome_dataset.clone(),
@@ -456,15 +449,34 @@ impl DatasetCommandInput {
             probe_learning_readiness: args.probe_learning_readiness.clone(),
             export_learning_dataset: args.export_learning_dataset.clone(),
             export_decision_outcome_dataset: args.export_decision_outcome_dataset.clone(),
-            plan_coverage_gap_continuation: args.plan_coverage_gap_continuation,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct CoverageGapPlanCommandInput {
+    pub(super) inspect_checkpoint: Option<PathBuf>,
+    pub(super) resume_checkpoint: Option<PathBuf>,
+    pub(super) inspect_report: Option<PathBuf>,
+    pub(super) coverage_gap_limit: usize,
+    pub(super) coverage_gap_candidates_per_decision: usize,
+    pub(super) coverage_gap_filter: CoverageGapContinuationFilterV1,
+    pub(super) coverage_gap_budget_intent: CoverageGapBudgetIntentV1,
+}
+
+impl CoverageGapPlanCommandInput {
+    pub(super) fn from_args(args: &Args) -> Result<Self, String> {
+        Ok(Self {
+            inspect_checkpoint: args.inspect_checkpoint.clone(),
+            resume_checkpoint: args.resume_checkpoint.clone(),
+            inspect_report: args.inspect_report.clone(),
             coverage_gap_limit: args.coverage_gap_limit,
             coverage_gap_candidates_per_decision: args.coverage_gap_candidates_per_decision,
             coverage_gap_filter: coverage_gap_filter_from_args(args),
             coverage_gap_budget_intent: CoverageGapBudgetIntentV1::parse(
                 &args.coverage_gap_budget_intent,
-            )
-            .expect("coverage-gap budget intent is validated by CLI parsing"),
-        }
+            )?,
+        })
     }
 }
 
@@ -472,23 +484,16 @@ impl DatasetCommandInput {
 pub(super) struct ContinuationCommandInput {
     pub(super) config: BranchCampaignConfigV1,
     pub(super) round_budget: RoundBudgetRequestV1,
-    pub(super) milestone: MilestoneContinuationRequestV1,
     pub(super) resume: Option<PathBuf>,
     pub(super) resume_checkpoint: Option<PathBuf>,
     pub(super) out: Option<PathBuf>,
     pub(super) checkpoint_out: Option<PathBuf>,
     pub(super) plan_targeted_continuation: Option<PathBuf>,
     pub(super) execute_targeted_continuation: Option<PathBuf>,
-    pub(super) execute_coverage_gap_continuation: bool,
     pub(super) continuation_effect_before: Option<PathBuf>,
     pub(super) continuation_effect_after: Option<PathBuf>,
     pub(super) targeted_continuation_limit: usize,
     pub(super) targeted_continuation_candidates_per_target: usize,
-    pub(super) coverage_gap_limit: usize,
-    pub(super) coverage_gap_candidates_per_decision: usize,
-    pub(super) coverage_gap_filter: CoverageGapContinuationFilterV1,
-    pub(super) coverage_gap_budget_intent: CoverageGapBudgetIntentV1,
-    pub(super) coverage_gap_execution_mode: CoverageGapExecutionModeV1,
     pub(super) branch_examples: usize,
     pub(super) report_detail: BranchCampaignReportDetailV1,
 }
@@ -498,19 +503,51 @@ impl ContinuationCommandInput {
         Ok(Self {
             config: campaign_config_from_args(args)?,
             round_budget: RoundBudgetRequestV1::from_args(args),
-            milestone: MilestoneContinuationRequestV1::from_args(args)?,
             resume: args.resume.clone(),
             resume_checkpoint: args.resume_checkpoint.clone(),
             out: args.out.clone(),
             checkpoint_out: args.checkpoint_out.clone(),
             plan_targeted_continuation: args.plan_targeted_continuation.clone(),
             execute_targeted_continuation: args.execute_targeted_continuation.clone(),
-            execute_coverage_gap_continuation: args.execute_coverage_gap_continuation,
             continuation_effect_before: args.continuation_effect_before.clone(),
             continuation_effect_after: args.continuation_effect_after.clone(),
             targeted_continuation_limit: args.targeted_continuation_limit,
             targeted_continuation_candidates_per_target: args
                 .targeted_continuation_candidates_per_target,
+            branch_examples: args.branch_examples,
+            report_detail: BranchCampaignReportDetailV1::from(args.report_detail),
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct CoverageGapExecutionCommandInput {
+    pub(super) config: BranchCampaignConfigV1,
+    pub(super) round_budget: RoundBudgetRequestV1,
+    pub(super) milestone: MilestoneContinuationRequestV1,
+    pub(super) resume: Option<PathBuf>,
+    pub(super) resume_checkpoint: Option<PathBuf>,
+    pub(super) out: Option<PathBuf>,
+    pub(super) checkpoint_out: Option<PathBuf>,
+    pub(super) coverage_gap_limit: usize,
+    pub(super) coverage_gap_candidates_per_decision: usize,
+    pub(super) coverage_gap_filter: CoverageGapContinuationFilterV1,
+    pub(super) coverage_gap_budget_intent: CoverageGapBudgetIntentV1,
+    pub(super) coverage_gap_execution_mode: CoverageGapExecutionModeV1,
+    pub(super) branch_examples: usize,
+    pub(super) report_detail: BranchCampaignReportDetailV1,
+}
+
+impl CoverageGapExecutionCommandInput {
+    pub(super) fn from_args(args: &Args) -> Result<Self, String> {
+        Ok(Self {
+            config: campaign_config_from_args(args)?,
+            round_budget: RoundBudgetRequestV1::from_args(args),
+            milestone: MilestoneContinuationRequestV1::from_args(args)?,
+            resume: args.resume.clone(),
+            resume_checkpoint: args.resume_checkpoint.clone(),
+            out: args.out.clone(),
+            checkpoint_out: args.checkpoint_out.clone(),
             coverage_gap_limit: args.coverage_gap_limit,
             coverage_gap_candidates_per_decision: args.coverage_gap_candidates_per_decision,
             coverage_gap_filter: coverage_gap_filter_from_args(args),
@@ -788,7 +825,7 @@ mod tests {
     use crate::cli_args::Args;
 
     #[test]
-    fn continuation_input_parses_coverage_gap_budget_intent() {
+    fn coverage_gap_execution_input_parses_budget_intent() {
         let args = Args::try_parse_from([
             "branch_campaign_driver",
             "continue",
@@ -798,7 +835,7 @@ mod tests {
         ])
         .expect("coverage gap budget intent should parse");
 
-        let input = ContinuationCommandInput::from_args(&args).expect("input should build");
+        let input = CoverageGapExecutionCommandInput::from_args(&args).expect("input should build");
 
         assert_eq!(
             input.coverage_gap_budget_intent,
@@ -807,7 +844,7 @@ mod tests {
     }
 
     #[test]
-    fn continuation_input_parses_coverage_gap_execution_mode() {
+    fn coverage_gap_execution_input_parses_execution_mode() {
         let args = Args::try_parse_from([
             "branch_campaign_driver",
             "continue",
@@ -817,7 +854,7 @@ mod tests {
         ])
         .expect("coverage gap execution mode should parse");
 
-        let input = ContinuationCommandInput::from_args(&args).expect("input should build");
+        let input = CoverageGapExecutionCommandInput::from_args(&args).expect("input should build");
 
         assert_eq!(
             input.coverage_gap_execution_mode,
@@ -826,7 +863,7 @@ mod tests {
     }
 
     #[test]
-    fn dataset_input_parses_coverage_gap_filter() {
+    fn coverage_gap_plan_input_parses_filter() {
         let args = Args::try_parse_from([
             "branch_campaign_driver",
             "dataset",
@@ -846,7 +883,7 @@ mod tests {
         ])
         .expect("coverage gap filter should parse");
 
-        let input = DatasetCommandInput::from_args(&args);
+        let input = CoverageGapPlanCommandInput::from_args(&args).expect("input should build");
 
         assert_eq!(input.coverage_gap_filter.bucket.as_deref(), Some("event"));
         assert_eq!(
@@ -872,7 +909,7 @@ mod tests {
     }
 
     #[test]
-    fn continuation_input_parses_coverage_gap_filter() {
+    fn coverage_gap_execution_input_parses_filter() {
         let args = Args::try_parse_from([
             "branch_campaign_driver",
             "continue",
@@ -890,7 +927,7 @@ mod tests {
         ])
         .expect("coverage gap filter should parse");
 
-        let input = ContinuationCommandInput::from_args(&args).expect("input should build");
+        let input = CoverageGapExecutionCommandInput::from_args(&args).expect("input should build");
 
         assert_eq!(input.coverage_gap_filter.bucket.as_deref(), Some("event"));
         assert_eq!(

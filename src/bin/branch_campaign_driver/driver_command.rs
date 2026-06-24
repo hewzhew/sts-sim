@@ -1,7 +1,7 @@
 use super::cli_args::{Args, BranchCampaignCliInputV1, BranchCampaignExplicitCommandV1};
 use super::command_inputs::{
-    ArtifactCommandInput, ContinuationCommandInput, DatasetCommandInput, InspectCommandInput,
-    RunCommandInput,
+    ArtifactCommandInput, ContinuationCommandInput, CoverageGapExecutionCommandInput,
+    CoverageGapPlanCommandInput, DatasetCommandInput, InspectCommandInput, RunCommandInput,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,8 +39,8 @@ pub(super) enum BranchCampaignDriverRequestV1 {
     PlanTargetedContinuation(ContinuationCommandInput),
     ExecuteTargetedContinuation(ContinuationCommandInput),
     ResolveCampaignArtifact(ArtifactCommandInput),
-    PlanCoverageGapContinuation(DatasetCommandInput),
-    ExecuteCoverageGapContinuation(ContinuationCommandInput),
+    PlanCoverageGapContinuation(CoverageGapPlanCommandInput),
+    ExecuteCoverageGapContinuation(CoverageGapExecutionCommandInput),
     ContinuationEffectReport(ContinuationCommandInput),
     ExportOutcomeDataset(DatasetCommandInput),
     ExportLearningDataset(DatasetCommandInput),
@@ -146,12 +146,12 @@ fn driver_request_for_command(
         }
         BranchCampaignDriverCommandV1::PlanCoverageGapContinuation => {
             BranchCampaignDriverRequestV1::PlanCoverageGapContinuation(
-                DatasetCommandInput::from_args(args),
+                CoverageGapPlanCommandInput::from_args(args)?,
             )
         }
         BranchCampaignDriverCommandV1::ExecuteCoverageGapContinuation => {
             BranchCampaignDriverRequestV1::ExecuteCoverageGapContinuation(
-                ContinuationCommandInput::from_args(args)?,
+                CoverageGapExecutionCommandInput::from_args(args)?,
             )
         }
         BranchCampaignDriverCommandV1::ContinuationEffectReport => {

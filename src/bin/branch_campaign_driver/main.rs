@@ -41,7 +41,7 @@ use cli_args::{parse_cli, ArtifactKindArgV1, BranchCampaignCliInputV1};
 use command_inputs::ArtifactCommandInput;
 #[cfg(test)]
 use command_inputs::{
-    campaign_config_from_args, round_budget_for_source_from_args, DatasetCommandInput,
+    campaign_config_from_args, round_budget_for_source_from_args, CoverageGapPlanCommandInput,
     InspectCommandInput, RoundBudgetModeV1,
 };
 use coverage_gap_milestone_summary::{
@@ -486,7 +486,7 @@ mod tests {
             driver_command_from_args(&args),
             BranchCampaignDriverCommandV1::PlanCoverageGapContinuation
         );
-        let input = DatasetCommandInput::from_args(&args);
+        let input = CoverageGapPlanCommandInput::from_args(&args).expect("input builds");
         assert_eq!(
             input.resume_checkpoint,
             Some(PathBuf::from("artifact.checkpoint.json"))

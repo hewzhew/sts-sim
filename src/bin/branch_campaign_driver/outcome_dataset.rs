@@ -69,8 +69,8 @@ use super::campaign_milestones::{
 };
 use super::command_inputs::{
     render_round_budget_resolution_v1, CampaignMilestoneStopV1, ContinuationCommandInput,
-    CoverageGapBudgetIntentV1, CoverageGapExecutionModeV1, DatasetCommandInput, RoundBudgetModeV1,
-    RoundBudgetResolutionV1,
+    CoverageGapBudgetIntentV1, CoverageGapExecutionCommandInput, CoverageGapExecutionModeV1,
+    CoverageGapPlanCommandInput, DatasetCommandInput, RoundBudgetModeV1, RoundBudgetResolutionV1,
 };
 
 pub(super) fn run_branch_outcome_dataset_analysis(
@@ -267,13 +267,10 @@ pub(super) fn run_targeted_continuation_execution(
 }
 
 pub(super) fn run_coverage_gap_continuation_plan(
-    input: &DatasetCommandInput,
+    input: &CoverageGapPlanCommandInput,
 ) -> Result<(), String> {
-    if !input.plan_coverage_gap_continuation {
-        return Err("--plan-coverage-gap-continuation is not enabled".to_string());
-    }
     let report_path = input.inspect_report.as_ref().ok_or_else(|| {
-        "--plan-coverage-gap-continuation requires --inspect-report PATH".to_string()
+        "coverage gap continuation planning requires --inspect-report PATH".to_string()
     })?;
     let report = read_campaign_report_v1(report_path)?;
     let checkpoint_path = input
@@ -321,17 +318,14 @@ pub(super) fn run_coverage_gap_continuation_plan(
 }
 
 pub(super) fn run_coverage_gap_continuation_execution(
-    input: &ContinuationCommandInput,
+    input: &CoverageGapExecutionCommandInput,
 ) -> Result<(), String> {
-    if !input.execute_coverage_gap_continuation {
-        return Err("--execute-coverage-gap-continuation is not enabled".to_string());
-    }
     let report_path = input
         .resume
         .as_ref()
-        .ok_or_else(|| "--execute-coverage-gap-continuation requires --resume PATH".to_string())?;
+        .ok_or_else(|| "coverage gap continuation execution requires --resume PATH".to_string())?;
     let checkpoint_path = input.resume_checkpoint.as_ref().ok_or_else(|| {
-        "--execute-coverage-gap-continuation requires --resume-checkpoint PATH".to_string()
+        "coverage gap continuation execution requires --resume-checkpoint PATH".to_string()
     })?;
     let source_report = read_campaign_report_v1(report_path)?;
     let source_checkpoint = read_campaign_checkpoint_v1(checkpoint_path)?;
