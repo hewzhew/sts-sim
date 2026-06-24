@@ -62,25 +62,38 @@ pub enum EventPlanRiskModelV1 {
     },
     OptionalEliteLike {
         fight_chance_percent: i32,
-        possible_encounter: Option<EncounterId>,
+        encounter: Option<EventEncounterProjectionV1>,
         reward_already_obtained: bool,
-        notes: Vec<EventRiskNoteV1>,
     },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EventRiskNoteV1 {
-    TreatSearchAsGuaranteedElite,
-    LagavulinStartsAwake,
-    LeaveAfterRelicReward,
+pub struct EventEncounterProjectionV1 {
+    pub encounter_id: EncounterId,
+    pub publicly_revealed: bool,
+    pub starts_awake: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EventOracleEvidenceV1 {
     pub event_id: EventId,
     pub observed_relic: Option<RelicId>,
+    pub outcome: EventOracleOutcomeV1,
     pub committed: bool,
     pub misc_rng_delta_if_committed: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EventOracleOutcomeV1 {
+    CursedTomeBook {
+        observed_relic: Option<RelicId>,
+    },
+    ScrapOoze {
+        attempts_until_success: Option<usize>,
+        failed_attempts_before_stop: usize,
+        effective_hp_loss_if_committed: i32,
+        observed_relic: Option<RelicId>,
+    },
 }
 
 pub fn compile_event_plan_candidates_v1(
@@ -94,7 +107,7 @@ pub fn compile_event_plan_candidates_v1(
         EventId::CursedTome => {
             compile_cursed_tome_plans_v1(run_state, event_state, information_mode)
         }
-        EventId::ScrapOoze => compile_scrap_ooze_plans_v1(run_state, event_state),
+        EventId::ScrapOoze => compile_scrap_ooze_plans_v1(run_state, event_state, information_mode),
         EventId::DeadAdventurer => compile_dead_adventurer_plans_v1(event_state),
         _ => Vec::new(),
     }
@@ -191,6 +204,7 @@ fn compile_cursed_tome_plans_v1(
 fn compile_scrap_ooze_plans_v1(
     run_state: &RunState,
     event_state: &EventState,
+    information_mode: EventInformationModeV1,
 ) -> Vec<EventPlanCandidateV1> {
     if event_state.current_screen != 0 {
         return Vec::new();
@@ -199,6 +213,10 @@ fn compile_scrap_ooze_plans_v1(
     let (chance, damage) = scrap_ooze_chance_and_damage(run_state, event_state);
     let current_cost = project_hp_loss_cost_v1(run_state, &[damage]);
     let next_cost = project_hp_loss_cost_v1(run_state, &[damage + 1]);
+    let oracle_evidence = match information_mode {
+        EventInformationModeV1::PublicOnly => None,
+        EventInformationModeV1::CounterfactualOracle => peek_scrap_ooze_v1(run_state),
+    };
 
     vec![
         EventPlanCandidateV1 {
@@ -229,7 +247,7 @@ fn compile_scrap_ooze_plans_v1(
                 treat_as_optional_elite: true,
                 worst_case_warning_hp_loss: 10,
             },
-            oracle_evidence: None,
+            oracle_evidence,
         },
     ]
 }
@@ -243,14 +261,13 @@ fn compile_dead_adventurer_plans_v1(event_state: &EventState) -> Vec<EventPlanCa
     let fight_chance = dead_adventurer_encounter_chance(event_state.internal_state);
     let reward_already_obtained = (0..num_rewards)
         .any(|idx| dead_adventurer_reward_type(event_state.internal_state, idx) == 2);
-    let possible_encounter = dead_adventurer_encounter_id(event_state.internal_state);
-    let mut notes = vec![EventRiskNoteV1::TreatSearchAsGuaranteedElite];
-    if reward_already_obtained {
-        notes.push(EventRiskNoteV1::LeaveAfterRelicReward);
-    }
-    if possible_encounter == Some(EncounterId::LagavulinEvent) {
-        notes.push(EventRiskNoteV1::LagavulinStartsAwake);
-    }
+    let encounter = dead_adventurer_encounter_id(event_state.internal_state).map(|encounter_id| {
+        EventEncounterProjectionV1 {
+            encounter_id,
+            publicly_revealed: true,
+            starts_awake: encounter_id == EncounterId::LagavulinEvent,
+        }
+    });
 
     vec![
         EventPlanCandidateV1 {
@@ -284,9 +301,8 @@ fn compile_dead_adventurer_plans_v1(event_state: &EventState) -> Vec<EventPlanCa
             reward: EventPlanRewardV1::DeadAdventurerSearch,
             risk_model: EventPlanRiskModelV1::OptionalEliteLike {
                 fight_chance_percent: fight_chance,
-                possible_encounter,
+                encounter,
                 reward_already_obtained,
-                notes,
             },
             oracle_evidence: None,
         },
@@ -483,6 +499,64 @@ fn peek_cursed_tome_book_v1(run_state: &RunState) -> Option<EventOracleEvidenceV
     Some(EventOracleEvidenceV1 {
         event_id: EventId::CursedTome,
         observed_relic,
+        outcome: EventOracleOutcomeV1::CursedTomeBook { observed_relic },
+        committed: false,
+        misc_rng_delta_if_committed: misc_after.saturating_sub(misc_before),
+    })
+}
+
+fn peek_scrap_ooze_v1(run_state: &RunState) -> Option<EventOracleEvidenceV1> {
+    let Some(event_state) = &run_state.event_state else {
+        return None;
+    };
+    if event_state.id != EventId::ScrapOoze || event_state.current_screen != 0 {
+        return None;
+    }
+
+    let mut clone = run_state.clone();
+    let misc_before = clone.rng_pool.misc_rng.counter;
+    let hp_before = clone.current_hp;
+    let relic_count_before = clone.relics.len();
+    let mut engine_state = EngineState::EventRoom;
+    let mut attempts = 0usize;
+
+    while clone
+        .event_state
+        .as_ref()
+        .is_some_and(|state| state.id == EventId::ScrapOoze && state.current_screen == 0)
+        && clone.current_hp > 0
+        && attempts < 32
+    {
+        crate::content::events::scrap_ooze::handle_choice(&mut engine_state, &mut clone, 0);
+        attempts += 1;
+    }
+
+    let success = clone
+        .event_state
+        .as_ref()
+        .is_some_and(|state| state.id == EventId::ScrapOoze && state.current_screen == 1)
+        && clone.relics.len() > relic_count_before;
+    let observed_relic = if success {
+        clone.relics.get(relic_count_before).map(|relic| relic.id)
+    } else {
+        None
+    };
+    let misc_after = clone.rng_pool.misc_rng.counter;
+    let effective_hp_loss_if_committed = hp_before.saturating_sub(clone.current_hp);
+
+    Some(EventOracleEvidenceV1 {
+        event_id: EventId::ScrapOoze,
+        observed_relic,
+        outcome: EventOracleOutcomeV1::ScrapOoze {
+            attempts_until_success: success.then_some(attempts),
+            failed_attempts_before_stop: if success {
+                attempts.saturating_sub(1)
+            } else {
+                attempts
+            },
+            effective_hp_loss_if_committed,
+            observed_relic,
+        },
         committed: false,
         misc_rng_delta_if_committed: misc_after.saturating_sub(misc_before),
     })

@@ -10,9 +10,9 @@ mod tests;
 
 pub use cost::{EventCostModifierV1, EventCostProjectionV1};
 pub use plan::{
-    compile_event_plan_candidates_v1, select_event_plan_candidate_v1, EventInformationModeV1,
-    EventOracleEvidenceV1, EventPlanCandidateV1, EventPlanIdV1, EventPlanRewardV1,
-    EventPlanRiskModelV1, EventPlanStepV1, EventRiskNoteV1,
+    compile_event_plan_candidates_v1, select_event_plan_candidate_v1, EventEncounterProjectionV1,
+    EventInformationModeV1, EventOracleEvidenceV1, EventOracleOutcomeV1, EventPlanCandidateV1,
+    EventPlanIdV1, EventPlanRewardV1, EventPlanRiskModelV1, EventPlanStepV1,
 };
 pub use policy::{build_event_decision_context_v1, plan_event_decision_v1};
 pub use shape::{

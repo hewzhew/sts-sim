@@ -1,8 +1,8 @@
 use crate::ai::event_policy_v1::{
     build_event_decision_context_v1, compile_event_plan_candidates_v1, plan_event_decision_v1,
-    select_event_plan_candidate_v1, EventCandidateTierV1, EventInformationModeV1, EventPlanIdV1,
-    EventPlanRewardV1, EventPlanRiskModelV1, EventPolicyActionV1, EventPolicyClassV1,
-    EventPolicyConfigV1,
+    select_event_plan_candidate_v1, EventCandidateTierV1, EventInformationModeV1,
+    EventOracleOutcomeV1, EventPlanIdV1, EventPlanRewardV1, EventPlanRiskModelV1,
+    EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
 };
 use crate::ai::random_upgrade_opportunity_v1::{
     evaluate_random_upgrade_opportunity_v1, ProbabilityBucketV1, RandomUpgradeSourceV1,
@@ -518,13 +518,55 @@ fn scrap_ooze_plan_exposes_repeated_gamble_as_optional_elite_like_risk() {
 }
 
 #[test]
+fn scrap_ooze_oracle_reports_attempts_until_success_without_polluting_real_state() {
+    let mut run = RunState::new(1, 15, false, "Ironclad");
+    run.current_hp = 72;
+    run.max_hp = 80;
+    run.event_state = Some(EventState::new(EventId::ScrapOoze));
+    let hp_before = run.current_hp;
+    let relic_count_before = run.relics.len();
+    let misc_counter_before = run.rng_pool.misc_rng.counter;
+
+    let plans =
+        compile_event_plan_candidates_v1(&run, EventInformationModeV1::CounterfactualOracle);
+
+    assert_eq!(run.current_hp, hp_before);
+    assert_eq!(run.relics.len(), relic_count_before);
+    assert_eq!(run.rng_pool.misc_rng.counter, misc_counter_before);
+
+    let reach = plans
+        .iter()
+        .find(|plan| plan.plan_id == EventPlanIdV1::ScrapOozeReachInOnce)
+        .expect("Scrap Ooze should expose a reach-in plan");
+    let Some(oracle) = &reach.oracle_evidence else {
+        panic!("oracle mode should attach Scrap Ooze outcome evidence");
+    };
+    assert_eq!(oracle.event_id, EventId::ScrapOoze);
+    assert_eq!(oracle.committed, false);
+    match &oracle.outcome {
+        EventOracleOutcomeV1::ScrapOoze {
+            attempts_until_success,
+            failed_attempts_before_stop,
+            effective_hp_loss_if_committed,
+            ..
+        } => {
+            assert!(
+                attempts_until_success.is_some() || *failed_attempts_before_stop > 0,
+                "oracle should either find the success attempt or report known failed attempts"
+            );
+            assert!(*effective_hp_loss_if_committed >= 0);
+        }
+        other => panic!("unexpected oracle outcome: {other:?}"),
+    }
+}
+
+#[test]
 fn dead_adventurer_plan_exposes_search_as_optional_elite_risk() {
     let mut run = RunState::new(1, 15, false, "Ironclad");
     run.current_hp = 72;
     run.max_hp = 80;
     let mut event_state = EventState::new(EventId::DeadAdventurer);
-    event_state.internal_state =
-        crate::content::events::dead_adventurer::init_dead_adventurer_state(&mut run);
+    event_state.internal_state = dead_adventurer_internal_state_for_test(0, 35, [0, 1, 2], 2);
     run.event_state = Some(event_state);
 
     let plans = compile_event_plan_candidates_v1(&run, EventInformationModeV1::PublicOnly);
@@ -546,8 +588,11 @@ fn dead_adventurer_plan_exposes_search_as_optional_elite_risk() {
         EventPlanRiskModelV1::OptionalEliteLike {
             fight_chance_percent: 35,
             reward_already_obtained: false,
+            encounter: Some(encounter),
             ..
-        }
+        } if encounter.encounter_id == crate::content::monsters::factory::EncounterId::LagavulinEvent
+            && encounter.publicly_revealed
+            && encounter.starts_awake
     ));
 }
 
