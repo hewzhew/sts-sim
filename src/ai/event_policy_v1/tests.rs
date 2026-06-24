@@ -1,7 +1,8 @@
 use crate::ai::event_policy_v1::{
     build_event_decision_context_v1, compile_event_plan_candidates_v1, plan_event_decision_v1,
     select_event_plan_candidate_v1, EventCandidateTierV1, EventInformationModeV1, EventPlanIdV1,
-    EventPlanRewardV1, EventPolicyActionV1, EventPolicyClassV1, EventPolicyConfigV1,
+    EventPlanRewardV1, EventPlanRiskModelV1, EventPolicyActionV1, EventPolicyClassV1,
+    EventPolicyConfigV1,
 };
 use crate::ai::random_upgrade_opportunity_v1::{
     evaluate_random_upgrade_opportunity_v1, ProbabilityBucketV1, RandomUpgradeSourceV1,
@@ -478,6 +479,109 @@ fn cursed_tome_plan_selector_leaves_before_reading_when_take_buffer_is_unsafe() 
     .expect("Cursed Tome should have a selected plan");
 
     assert_eq!(selected.plan_id, EventPlanIdV1::LeaveNow);
+}
+
+#[test]
+fn scrap_ooze_plan_exposes_repeated_gamble_as_optional_elite_like_risk() {
+    let mut run = RunState::new(1, 15, false, "Ironclad");
+    run.current_hp = 72;
+    run.max_hp = 80;
+    run.event_state = Some(EventState::new(EventId::ScrapOoze));
+
+    let plans = compile_event_plan_candidates_v1(&run, EventInformationModeV1::PublicOnly);
+    let reach = plans
+        .iter()
+        .find(|plan| plan.plan_id == EventPlanIdV1::ScrapOozeReachInOnce)
+        .expect("Scrap Ooze should expose a reach-in plan");
+
+    assert_eq!(
+        reach
+            .steps
+            .iter()
+            .map(|step| (step.screen, step.choice_index))
+            .collect::<Vec<_>>(),
+        vec![(0, 0)]
+    );
+    assert_eq!(reach.cost.nominal_hp_loss, 5);
+    assert_eq!(reach.cost.effective_hp_loss, 5);
+    assert!(matches!(reach.reward, EventPlanRewardV1::RandomRelic));
+    assert!(matches!(
+        &reach.risk_model,
+        EventPlanRiskModelV1::RepeatedGamble {
+            current_success_chance_percent: 25,
+            current_effective_hp_loss: 5,
+            next_effective_hp_loss: 6,
+            treat_as_optional_elite: true,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn dead_adventurer_plan_exposes_search_as_optional_elite_risk() {
+    let mut run = RunState::new(1, 15, false, "Ironclad");
+    run.current_hp = 72;
+    run.max_hp = 80;
+    let mut event_state = EventState::new(EventId::DeadAdventurer);
+    event_state.internal_state =
+        crate::content::events::dead_adventurer::init_dead_adventurer_state(&mut run);
+    run.event_state = Some(event_state);
+
+    let plans = compile_event_plan_candidates_v1(&run, EventInformationModeV1::PublicOnly);
+    let search = plans
+        .iter()
+        .find(|plan| plan.plan_id == EventPlanIdV1::DeadAdventurerSearchAsOptionalElite)
+        .expect("Dead Adventurer should expose a search plan");
+
+    assert_eq!(
+        search
+            .steps
+            .iter()
+            .map(|step| (step.screen, step.choice_index))
+            .collect::<Vec<_>>(),
+        vec![(0, 0)]
+    );
+    assert!(matches!(
+        &search.risk_model,
+        EventPlanRiskModelV1::OptionalEliteLike {
+            fight_chance_percent: 35,
+            reward_already_obtained: false,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn dead_adventurer_selector_leaves_after_relic_reward_was_obtained() {
+    let mut run = RunState::new(1, 0, false, "Ironclad");
+    run.current_hp = 72;
+    run.max_hp = 80;
+    let mut event_state = EventState::new(EventId::DeadAdventurer);
+    event_state.internal_state = dead_adventurer_internal_state_for_test(1, 50, [2, 0, 1], 0);
+    run.event_state = Some(event_state);
+
+    let selected = select_event_plan_candidate_v1(
+        &run,
+        EventInformationModeV1::PublicOnly,
+        &EventPolicyConfigV1::default(),
+    )
+    .expect("Dead Adventurer should have a selected plan");
+
+    assert_eq!(selected.plan_id, EventPlanIdV1::DeadAdventurerLeaveNow);
+}
+
+fn dead_adventurer_internal_state_for_test(
+    num_rewards: i32,
+    encounter_chance: i32,
+    reward_types: [i32; 3],
+    enemy: i32,
+) -> i32 {
+    (num_rewards & 0xF)
+        | ((encounter_chance & 0xFF) << 4)
+        | ((reward_types[0] & 0x3) << 12)
+        | ((reward_types[1] & 0x3) << 14)
+        | ((reward_types[2] & 0x3) << 16)
+        | ((enemy & 0x3) << 18)
 }
 
 fn option(
