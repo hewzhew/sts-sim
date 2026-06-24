@@ -35,12 +35,3 @@ function Read-CampaignScratchLatestPointer {
         return $null
     }
 }
-
-function Get-LatestScratchCampaignArtifact {
-    $Pointer = Read-CampaignScratchLatestPointer
-    if (-not $Pointer) {
-        throw "No scratch latest pointer found at $(Get-CampaignScratchLatestPointerPath). Run .\tools\campaign.ps1 -Scratch to create one, or use -From scratch:<id>."
-    }
-
-    return New-CampaignScratchArtifactRef -ArtifactId ([string] $Pointer.artifact_id)
-}
