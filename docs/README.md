@@ -11,6 +11,9 @@ instead of keeping stale command paths searchable.
 
 ## Campaign Supporting Contracts
 
+- [CAMPAIGN_WORKSPACE_V2.md](CAMPAIGN_WORKSPACE_V2.md): next campaign
+  lifecycle design centered on workspaces, attempts, snapshots, and disposable
+  views
 - [CAMPAIGN_ARTIFACT_ARCHITECTURE.md](CAMPAIGN_ARTIFACT_ARCHITECTURE.md):
   artifact ownership boundaries
 - [CAMPAIGN_JOURNAL.md](CAMPAIGN_JOURNAL.md): decision candidate journal

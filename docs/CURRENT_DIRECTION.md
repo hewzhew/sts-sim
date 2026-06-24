@@ -11,6 +11,11 @@ source selection
 Everything else is secondary until this path is stable and easy to reason
 about.
 
+The next lifecycle design is documented in
+[CAMPAIGN_WORKSPACE_V2.md](CAMPAIGN_WORKSPACE_V2.md). It replaces the idea that
+each driver invocation is the durable experiment object with a workspace model:
+workspace -> attempts -> snapshots/observations -> derived views.
+
 ## Maintained Campaign Launcher
 
 `tools/campaign.ps1` is a local launcher. It may:
