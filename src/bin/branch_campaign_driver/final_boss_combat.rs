@@ -143,6 +143,40 @@ fn render_final_boss_boundary_failure_inspection_v1(
             render_count_summary_v1(&debt_counts, 8)
         ));
     }
+    let boundary_groups = final_boss_boundary_groups_v1(failures);
+    lines.push("  boundary groups:".to_string());
+    for (index, group) in boundary_groups.iter().take(6).enumerate() {
+        lines.push(format!(
+            "    {}. count={} boss={} debt=[{}] deck_bucket={} hp={}..{} deck={}..{} gold={}..{} stop={} compacted_details={}/{} last_choices=[{}]",
+            index + 1,
+            group.count,
+            group.boss,
+            group.debt_key,
+            group.deck_bucket,
+            group.hp_min,
+            group.hp_max,
+            group.deck_min,
+            group.deck_max,
+            group.gold_min,
+            group.gold_max,
+            render_truncated_text(group.stop_reason.as_str(), 96),
+            group.compacted_count,
+            group.count,
+            render_count_summary_v1(&group.last_choice_counts, 4)
+        ));
+        for branch in group.examples.iter().take(2) {
+            lines.push(format!(
+                "       example: {}",
+                render_final_boss_branch_brief_v1(branch)
+            ));
+        }
+    }
+    if boundary_groups.len() > 6 {
+        lines.push(format!(
+            "    ... {} more boundary group(s)",
+            boundary_groups.len() - 6
+        ));
+    }
     lines.push("  examples:".to_string());
     for (index, branch) in failures.iter().take(5).enumerate() {
         lines.push(format!(
@@ -171,6 +205,141 @@ fn render_final_boss_boundary_failure_inspection_v1(
         ));
     }
     format!("{}\n", lines.join("\n"))
+}
+
+#[derive(Clone, Debug)]
+struct FinalBossBoundaryGroupV1<'a> {
+    boss: String,
+    debt_key: String,
+    deck_bucket: String,
+    stop_reason: String,
+    count: usize,
+    hp_min: i32,
+    hp_max: i32,
+    deck_min: usize,
+    deck_max: usize,
+    gold_min: i32,
+    gold_max: i32,
+    compacted_count: usize,
+    last_choice_counts: BTreeMap<String, usize>,
+    examples: Vec<&'a BranchCampaignBranchV1>,
+}
+
+fn final_boss_boundary_groups_v1<'a>(
+    failures: &'a [&'a BranchCampaignBranchV1],
+) -> Vec<FinalBossBoundaryGroupV1<'a>> {
+    let mut groups = BTreeMap::<String, FinalBossBoundaryGroupV1<'a>>::new();
+    for branch in failures {
+        let Some(summary) = branch.summary.as_ref() else {
+            continue;
+        };
+        let boss = final_boss_boundary_boss_key_v1(branch);
+        let debt_key = final_boss_boundary_debt_key_v1(branch);
+        let deck_bucket = final_boss_boundary_deck_bucket_v1(summary.deck_count).to_string();
+        let stop_reason = final_boss_boundary_stop_key_v1(branch);
+        let key = format!("{boss}\0{debt_key}\0{deck_bucket}\0{stop_reason}");
+        let entry = groups
+            .entry(key)
+            .or_insert_with(|| FinalBossBoundaryGroupV1 {
+                boss,
+                debt_key,
+                deck_bucket,
+                stop_reason,
+                count: 0,
+                hp_min: summary.hp,
+                hp_max: summary.hp,
+                deck_min: summary.deck_count,
+                deck_max: summary.deck_count,
+                gold_min: summary.gold,
+                gold_max: summary.gold,
+                compacted_count: 0,
+                last_choice_counts: BTreeMap::new(),
+                examples: Vec::new(),
+            });
+        entry.count += 1;
+        entry.hp_min = entry.hp_min.min(summary.hp);
+        entry.hp_max = entry.hp_max.max(summary.hp);
+        entry.deck_min = entry.deck_min.min(summary.deck_count);
+        entry.deck_max = entry.deck_max.max(summary.deck_count);
+        entry.gold_min = entry.gold_min.min(summary.gold);
+        entry.gold_max = entry.gold_max.max(summary.gold);
+        if final_boss_branch_details_are_compacted_v1(branch) {
+            entry.compacted_count += 1;
+        }
+        *entry
+            .last_choice_counts
+            .entry(final_boss_boundary_last_choice_key_v1(branch))
+            .or_default() += 1;
+        if entry.examples.len() < 2 {
+            entry.examples.push(*branch);
+        }
+    }
+
+    let mut groups = groups.into_values().collect::<Vec<_>>();
+    groups.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.boss.cmp(&right.boss))
+            .then_with(|| left.debt_key.cmp(&right.debt_key))
+            .then_with(|| left.deck_bucket.cmp(&right.deck_bucket))
+            .then_with(|| left.stop_reason.cmp(&right.stop_reason))
+    });
+    groups
+}
+
+fn final_boss_boundary_boss_key_v1(branch: &BranchCampaignBranchV1) -> String {
+    branch
+        .summary
+        .as_ref()
+        .map(|summary| {
+            if summary.boss.is_empty() {
+                "unknown".to_string()
+            } else {
+                summary.boss.clone()
+            }
+        })
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn final_boss_boundary_debt_key_v1(branch: &BranchCampaignBranchV1) -> String {
+    let Some(summary) = branch.summary.as_ref() else {
+        return "-".to_string();
+    };
+    if summary.run_debt.is_empty() {
+        return "-".to_string();
+    }
+    let mut debts = summary.run_debt.clone();
+    debts.sort();
+    debts.join(",")
+}
+
+fn final_boss_boundary_deck_bucket_v1(deck_count: usize) -> &'static str {
+    match deck_count {
+        0..=20 => "<=20",
+        21..=25 => "21-25",
+        26..=30 => "26-30",
+        31..=35 => "31-35",
+        _ => "36+",
+    }
+}
+
+fn final_boss_boundary_stop_key_v1(branch: &BranchCampaignBranchV1) -> String {
+    if branch.stop_reason.is_empty() {
+        "-".to_string()
+    } else {
+        branch.stop_reason.clone()
+    }
+}
+
+fn final_boss_boundary_last_choice_key_v1(branch: &BranchCampaignBranchV1) -> String {
+    branch
+        .choice_labels
+        .iter()
+        .rev()
+        .find(|label| !label.trim().is_empty())
+        .map(|label| render_truncated_text(label, 72))
+        .unwrap_or_else(|| "-".to_string())
 }
 
 fn render_count_summary_v1(counts: &BTreeMap<String, usize>, limit: usize) -> String {
@@ -801,6 +970,10 @@ mod tests {
 
         assert!(rendered.contains("Final boss boundary failures"));
         assert!(rendered.contains("bosses=[AwakenedOne=1]"));
+        assert!(rendered.contains("boundary groups:"));
+        assert!(rendered.contains("deck_bucket=21-25"));
+        assert!(rendered.contains("compacted_details=0/1"));
+        assert!(rendered.contains("last_choices=[Smith Power Through=1]"));
         assert!(rendered.contains("stop=combat search did not find an executable complete win"));
         assert!(!rendered.contains("likely issue"));
     }
