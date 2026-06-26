@@ -59,17 +59,22 @@ fn run() -> Result<(), String> {
     for layer in 0..=args.layers {
         println!("layer {layer} branches={}", frontier.len());
         let mut next = VecDeque::new();
+        let mut truncated = false;
         while let Some(branch) = frontier.pop_front() {
             print_branch(&branch);
-            if layer == args.layers || terminal_label(&branch.session).is_some() {
+            if layer == args.layers || !can_expand(&branch) {
                 continue;
             }
-            for child in expand(&branch, args)? {
+            for child in expand(&branch, args) {
                 if next.len() >= args.max_branches {
+                    truncated = true;
                     break;
                 }
                 next.push_back(child);
             }
+        }
+        if truncated {
+            println!("  layer_truncated cap={}", args.max_branches);
         }
         if next.is_empty() {
             break;
@@ -79,7 +84,7 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-fn expand(branch: &Branch, args: Args) -> Result<Vec<Branch>, String> {
+fn expand(branch: &Branch, args: Args) -> Vec<Branch> {
     let surface = build_decision_surface(&branch.session);
     let candidates = surface
         .view
@@ -98,7 +103,7 @@ fn expand(branch: &Branch, args: Args) -> Result<Vec<Branch>, String> {
             Err(err) => format!("apply_failed: {err}"),
         };
         let mut path = branch.path.clone();
-        path.push(label.clone());
+        path.push(format!("{candidate_id}:{label}"));
         children.push(Branch {
             id: format!("{}.{}", branch.id, index),
             path,
@@ -106,7 +111,7 @@ fn expand(branch: &Branch, args: Args) -> Result<Vec<Branch>, String> {
             stop,
         });
     }
-    Ok(children)
+    children
 }
 
 fn advance(session: &mut RunControlSession, args: Args) -> String {
@@ -129,8 +134,9 @@ fn advance(session: &mut RunControlSession, args: Args) -> String {
 fn print_branch(branch: &Branch) {
     let surface = build_decision_surface(&branch.session);
     let terminal = terminal_label(&branch.session).unwrap_or("-");
+    let candidates = visible_action_labels(&surface);
     println!(
-        "  {} A{}F{} hp={}/{} deck={} terminal={} boundary=\"{}\" stop=\"{}\" path=\"{}\"",
+        "  {} A{}F{} hp={}/{} deck={} terminal={} choices={} boundary=\"{}\" stop=\"{}\" path=\"{}\"",
         branch.id,
         branch.session.run_state.act_num,
         branch.session.run_state.floor_num,
@@ -138,6 +144,7 @@ fn print_branch(branch: &Branch) {
         branch.session.run_state.max_hp,
         branch.session.run_state.master_deck.len(),
         terminal,
+        candidates.len(),
         surface.view.header.title,
         branch.stop,
         if branch.path.is_empty() {
@@ -146,17 +153,22 @@ fn print_branch(branch: &Branch) {
             branch.path.join(" -> ")
         }
     );
-    let candidates = surface
+    if !candidates.is_empty() {
+        println!("    candidates: {}", candidates.join(" | "));
+    }
+}
+
+fn visible_action_labels(
+    surface: &sts_simulator::eval::run_control::DecisionSurface,
+) -> Vec<String> {
+    surface
         .view
         .candidates
         .iter()
         .filter(|candidate| !is_navigation_only_candidate(&candidate.id))
         .filter(|candidate| candidate.action.executable_input().is_some())
         .map(|candidate| format!("{}:{}", candidate.id, candidate.label))
-        .collect::<Vec<_>>();
-    if !candidates.is_empty() {
-        println!("    candidates: {}", candidates.join(" | "));
-    }
+        .collect()
 }
 
 fn terminal_label(session: &RunControlSession) -> Option<&'static str> {
@@ -177,6 +189,12 @@ fn is_navigation_only_candidate(id: &str) -> bool {
     matches!(id, "back" | "cancel")
 }
 
+fn can_expand(branch: &Branch) -> bool {
+    terminal_label(&branch.session).is_none()
+        && !branch.stop.starts_with("apply_failed:")
+        && !branch.stop.starts_with("advance_failed:")
+}
+
 fn parse_args() -> Result<Args, String> {
     let mut args = Args {
         seed: 1,
@@ -191,6 +209,23 @@ fn parse_args() -> Result<Args, String> {
     let mut index = 0;
     while index < raw.len() {
         let key = raw[index].as_str();
+        if matches!(key, "--help" | "-h") {
+            println!("branch_tiny --seed N --layers N --max-branches N");
+            std::process::exit(0);
+        }
+        if !matches!(
+            key,
+            "--seed"
+                | "--ascension"
+                | "--a"
+                | "--layers"
+                | "--max-branches"
+                | "--auto-ops"
+                | "--search-nodes"
+                | "--search-ms"
+        ) {
+            return Err(format!("unknown argument {key}"));
+        }
         let value = raw
             .get(index + 1)
             .ok_or_else(|| format!("{key} requires a value"))?;
@@ -202,11 +237,7 @@ fn parse_args() -> Result<Args, String> {
             "--auto-ops" => args.auto_ops = parse(value, key)?,
             "--search-nodes" => args.search_nodes = parse(value, key)?,
             "--search-ms" => args.search_ms = parse(value, key)?,
-            "--help" | "-h" => {
-                println!("branch_tiny --seed N --layers N --max-branches N");
-                std::process::exit(0);
-            }
-            _ => return Err(format!("unknown argument {key}")),
+            _ => unreachable!("argument key was validated before value parsing"),
         }
         index += 2;
     }
