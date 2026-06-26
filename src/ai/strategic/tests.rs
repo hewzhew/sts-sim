@@ -274,7 +274,7 @@ fn card_reward_decline_candidate_records_cycle_relief_under_deck_pressure() {
 }
 
 #[test]
-fn card_component_strength_down_maps_to_enemy_strength_pressure() {
+fn enemy_strength_down_fact_maps_to_enemy_strength_pressure() {
     let run_state = RunState::new(521, 0, false, "Ironclad");
     let context = build_card_reward_decision_context_v1(
         &run_state,
@@ -289,16 +289,16 @@ fn card_component_strength_down_maps_to_enemy_strength_pressure() {
         .iter()
         .find(|delta| delta.action.candidate_id().contains("Disarm"))
         .expect("Disarm candidate should have a strategic delta");
-    let direct_strength_down = disarm_delta
+    let enemy_strength_down = disarm_delta
         .positive
         .iter()
-        .find(|delta| delta.reason == "direct_strength_down_answer")
-        .expect("Disarm component report should include direct strength-down answer");
+        .find(|delta| delta.reason == "enemy_strength_down_delta")
+        .expect("Disarm should expose enemy strength-down as a structured candidate fact");
 
     assert_eq!(
-        direct_strength_down.kind,
+        enemy_strength_down.kind,
         PressureKind::MissingJob(StrategicJob::EnemyStrengthDown),
-        "component reason mapping should not classify strength-down as generic scaling"
+        "enemy strength-down should not be classified as generic scaling"
     );
 }
 
@@ -645,42 +645,6 @@ fn collector_pressure_and_aoe_candidate_share_boss_tax_kind() {
     assert!(immolate_delta.positive.iter().any(|delta| {
         delta.kind
             == PressureKind::BossTax(crate::ai::strategic::StrategicBossTax::CollectorMinionPlan)
-    }));
-}
-
-#[test]
-fn time_eater_access_candidates_align_to_card_play_cap_pressure() {
-    let mut run_state = RunState::new(521, 0, false, "Ironclad");
-    run_state.boss_key = Some(crate::content::monsters::factory::EncounterId::TimeEater);
-    let context = build_card_reward_decision_context_v1(
-        &run_state,
-        vec![RewardCard::new(CardId::Warcry, 0)],
-        None,
-    );
-    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
-
-    assert!(decision
-        .strategic_trace
-        .ledger
-        .items
-        .iter()
-        .any(|item| item.id == "boss_tax:time_eater_card_count"
-            && item.kind == PressureKind::CardPlayCap));
-
-    let warcry_delta = decision
-        .strategic_trace
-        .candidate_deltas
-        .iter()
-        .find(|delta| delta.action.candidate_id().contains("Warcry"))
-        .expect("Warcry should have a strategic delta");
-
-    assert!(warcry_delta.positive.iter().any(|delta| {
-        delta.reason == "time_eater_high_impact_or_access"
-            && delta.kind == PressureKind::CardPlayCap
-    }));
-    assert!(!warcry_delta.positive.iter().any(|delta| {
-        delta.kind
-            == PressureKind::BossTax(crate::ai::strategic::StrategicBossTax::TimeEaterCardCount)
     }));
 }
 

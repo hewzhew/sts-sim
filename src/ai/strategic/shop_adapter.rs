@@ -293,7 +293,6 @@ fn candidate_delta_has_hp_loss_control(delta: &CandidateDelta) -> bool {
             entry.reason.as_str(),
             "shop_card_adds_block_or_mitigation"
                 | "mitigates_enemy_damage"
-                | "direct_strength_down_answer"
                 | "rest_lock_candidate_adds_hp_loss_control"
         ) {
             return true;
@@ -452,7 +451,6 @@ fn add_shop_card_component_deltas(
     {
         delta.role = component_delta.role;
     }
-    delta.verdict_hint = component_delta.verdict_hint;
     delta.positive.extend(component_delta.positive);
     delta.negative.extend(component_delta.negative);
     delta.notes.extend(component_delta.notes);

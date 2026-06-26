@@ -551,7 +551,6 @@ fn candidate_delta_has_hp_loss_control(delta: &CandidateDelta) -> bool {
                 | "enemy_strength_down_delta"
                 | "weak_coverage_delta"
                 | "mitigates_enemy_damage"
-                | "direct_strength_down_answer"
                 | "rest_lock_candidate_adds_hp_loss_control"
         ) {
             return true;

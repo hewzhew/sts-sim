@@ -1,7 +1,5 @@
 use super::{CandidateAction, PressureKind, StrategicDebt};
-use crate::ai::card_component_marginal_value_v1::{
-    CardComponentMarginalReportV1, CardComponentMarginalVerdictV1,
-};
+use crate::ai::card_component_marginal_value_v1::CardComponentMarginalReportV1;
 use crate::ai::deck_startup_profile_v1::{
     startup_snecko_cost_conversion_candidate_v1, DeckStartupProfileV1,
 };
@@ -161,7 +159,6 @@ impl CandidateDelta {
     ) -> Self {
         let mut delta = Self::empty(action);
         delta.role = component_role(report);
-        delta.verdict_hint = component_verdict(report.verdict);
         for reason in &report.positive_components {
             let kind = positive_component_reason_pressure(reason);
             if kind == PressureKind::BranchDiversityNeed {
@@ -350,17 +347,6 @@ pub fn add_snecko_cost_conversion_delta_v1(
     delta.evidence.push(reason.to_string());
 }
 
-fn component_verdict(verdict: CardComponentMarginalVerdictV1) -> VerdictHint {
-    match verdict {
-        CardComponentMarginalVerdictV1::Reject => VerdictHint::Reject,
-        CardComponentMarginalVerdictV1::SkipPreferred => VerdictHint::SkipPreferred,
-        CardComponentMarginalVerdictV1::Speculative => VerdictHint::Speculative,
-        CardComponentMarginalVerdictV1::ContextTake => VerdictHint::ContextTake,
-        CardComponentMarginalVerdictV1::StrongTake => VerdictHint::StrongTake,
-        CardComponentMarginalVerdictV1::MustTake => VerdictHint::MustTake,
-    }
-}
-
 fn component_role(report: &CardComponentMarginalReportV1) -> CandidateRole {
     use crate::ai::card_component_marginal_value_v1::CardComponentRoleV1;
     if report.roles.contains(&CardComponentRoleV1::BossAnswer) {
@@ -381,9 +367,8 @@ fn component_role(report: &CardComponentMarginalReportV1) -> CandidateRole {
 }
 
 fn positive_component_reason_pressure(reason: &str) -> PressureKind {
-    use super::{StrategicBossTax, StrategicJob};
+    use super::StrategicJob;
     match reason {
-        "direct_strength_down_answer" => PressureKind::MissingJob(StrategicJob::EnemyStrengthDown),
         "mitigates_enemy_damage" => PressureKind::MissingJob(StrategicJob::Block),
         "improves_access_or_conversion" => PressureKind::MissingJob(StrategicJob::DrawEnergy),
         "improves_exhaust_access" => PressureKind::MissingJob(StrategicJob::ExhaustAccess),
@@ -392,42 +377,24 @@ fn positive_component_reason_pressure(reason: &str) -> PressureKind {
         }
         "self_damage_payoff_has_enabler"
         | "strength_payoff_has_convertible_burst_source"
-        | "strength_payoff_has_generator"
-        | "hp_loss_payoff_has_support" => PressureKind::MissingJob(StrategicJob::Scaling),
-        "block_payoff_has_block_density" | "big_block_doubles_as_exhaust_material" => {
-            PressureKind::MissingJob(StrategicJob::Block)
-        }
-        "awakened_one_multi_hit_strength_answer" => {
-            PressureKind::BossTax(StrategicBossTax::AwakenedPowerTax)
-        }
-        "automaton_big_turn_or_multi_hit_answer" => {
-            PressureKind::BossTax(StrategicBossTax::AutomatonHyperbeamPlan)
-        }
-        "time_eater_high_impact_or_access" => PressureKind::CardPlayCap,
+        | "strength_payoff_has_generator" => PressureKind::MissingJob(StrategicJob::Scaling),
         "fills_current_formation_need" => PressureKind::BranchDiversityNeed,
         _ => PressureKind::BranchDiversityNeed,
     }
 }
 
 fn negative_component_reason_pressure(reason: &str) -> PressureKind {
-    use super::{StrategicBossTax, StrategicDebt};
+    use super::StrategicDebt;
     match reason {
-        "awakened_one_minor_power_tax" => PressureKind::BossTax(StrategicBossTax::AwakenedPowerTax),
         "payoff_without_visible_gap_fill"
         | "exhaust_payoff_without_generator"
         | "self_damage_payoff_without_enabler"
         | "strength_payoff_without_stable_generator"
-        | "strength_payoff_without_generator"
-        | "block_payoff_without_block_engine" => {
+        | "strength_payoff_without_generator" => {
             PressureKind::DeckDebt(StrategicDebt::PayoffWithoutEnabler)
         }
         "snecko_random_cost_discounts_energy_startup" => {
             PressureKind::DeckDebt(StrategicDebt::SetupDebt)
-        }
-        "status_payoff_low_trigger_or_access"
-        | "plain_block_redundancy"
-        | "hp_loss_payoff_relies_on_accidental_damage" => {
-            PressureKind::DeckDebt(StrategicDebt::CombatShapeRisk)
         }
         _ => PressureKind::DeckDebt(StrategicDebt::CombatShapeRisk),
     }

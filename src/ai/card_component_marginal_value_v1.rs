@@ -85,9 +85,7 @@ pub fn evaluate_card_component_marginal_value_v1(
 
     add_generic_components(context, profile, &mut report);
     add_card_specific_components(context, profile.card, &mut report);
-    add_boss_components(context, profile, &mut report);
     add_unresolved_package_payoff_debts(profile, &mut report);
-    report.verdict = marginal_verdict(context, &report);
     report
 }
 
@@ -173,8 +171,6 @@ fn package_payoff_support_component(component: &str) -> bool {
             | "self_damage_payoff_has_enabler"
             | "strength_payoff_has_convertible_burst_source"
             | "strength_payoff_has_generator"
-            | "block_payoff_has_block_density"
-            | "hp_loss_payoff_has_support"
     )
 }
 
@@ -203,12 +199,6 @@ fn add_card_specific_components(
                 );
             }
         }
-        CardId::Disarm => {
-            push_str(
-                &mut report.positive_components,
-                "direct_strength_down_answer",
-            );
-        }
         CardId::Corruption => {
             if context.startup.has_corruption_duplicate_without_payoff {
                 push_str(
@@ -222,17 +212,7 @@ fn add_card_specific_components(
                 push_str(&mut report.positive_components, "unlocks_fnp_engine");
             }
         }
-        CardId::FeelNoPain => {}
-        CardId::FireBreathing => {
-            if context.startup.self_damage_source_count == 0
-                && context.startup.exhaust_engine_count == 0
-                && context.draw_sources <= 2
-            {
-                push_str(&mut report.debts, "status_payoff_low_trigger_or_access");
-            } else {
-                push_str(&mut report.notes, "status_payoff_needs_trigger_density");
-            }
-        }
+        CardId::FeelNoPain | CardId::FireBreathing => {}
         CardId::Rupture => {
             if context.startup.self_damage_source_count == 0 {
                 push_str(&mut report.debts, "self_damage_payoff_without_enabler");
@@ -273,143 +253,7 @@ fn add_card_specific_components(
                 );
             }
         }
-        CardId::BodySlam => {
-            if context.block_jobs >= 5 || context.startup.immediate_survival >= 3 {
-                push_str(
-                    &mut report.positive_components,
-                    "block_payoff_has_block_density",
-                );
-            } else {
-                push_str(&mut report.debts, "block_payoff_without_block_engine");
-            }
-        }
-        CardId::GhostlyArmor => {
-            if context.startup.exhaust_engine_count > 0 || context.startup.feel_no_pain_count > 0 {
-                push_str(
-                    &mut report.positive_components,
-                    "big_block_doubles_as_exhaust_material",
-                );
-            } else if context.block_jobs >= 8 {
-                push_str(&mut report.debts, "plain_block_redundancy");
-            }
-        }
-        CardId::BloodForBlood => {
-            if context.startup.self_damage_source_count > 0 || context.max_hp_buffer_available() {
-                push_str(
-                    &mut report.positive_components,
-                    "hp_loss_payoff_has_support",
-                );
-            } else if context.act >= 2 {
-                push_str(
-                    &mut report.debts,
-                    "hp_loss_payoff_relies_on_accidental_damage",
-                );
-            }
-        }
         _ => {}
-    }
-}
-
-fn add_boss_components(
-    context: &CardComponentMarginalContextV1,
-    profile: &CardRewardSemanticProfileV1,
-    report: &mut CardComponentMarginalReportV1,
-) {
-    match context.boss {
-        Some(EncounterId::AwakenedOne) => {
-            if profile
-                .roles
-                .contains(&CardRewardSemanticRoleV1::EnemyStrengthDown)
-            {
-                push_str(
-                    &mut report.positive_components,
-                    "awakened_one_multi_hit_strength_answer",
-                );
-            }
-            if profile.card == CardId::Corruption {
-                push_str(&mut report.notes, "awakened_one_power_but_core_engine");
-            } else if profile_is_minor_power(profile) {
-                push_str(&mut report.boss_taxes, "awakened_one_minor_power_tax");
-            }
-        }
-        Some(EncounterId::Automaton) => {
-            if matches!(
-                profile.card,
-                CardId::Impervious
-                    | CardId::FlameBarrier
-                    | CardId::PowerThrough
-                    | CardId::Disarm
-                    | CardId::Shockwave
-            ) {
-                push_str(
-                    &mut report.positive_components,
-                    "automaton_big_turn_or_multi_hit_answer",
-                );
-            }
-        }
-        Some(EncounterId::TimeEater) => {
-            if profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
-                || profile
-                    .roles
-                    .contains(&CardRewardSemanticRoleV1::EnemyStrengthDown)
-                || profile.roles.contains(&CardRewardSemanticRoleV1::Weak)
-            {
-                push_str(
-                    &mut report.positive_components,
-                    "time_eater_high_impact_or_access",
-                );
-            }
-        }
-        _ => {}
-    }
-}
-
-fn marginal_verdict(
-    context: &CardComponentMarginalContextV1,
-    report: &CardComponentMarginalReportV1,
-) -> CardComponentMarginalVerdictV1 {
-    if report
-        .positive_components
-        .iter()
-        .any(|component| component.contains("strength_answer"))
-        && matches!(context.boss, Some(EncounterId::AwakenedOne))
-    {
-        return CardComponentMarginalVerdictV1::MustTake;
-    }
-    if report
-        .positive_components
-        .iter()
-        .any(|component| component.contains("answer"))
-    {
-        return CardComponentMarginalVerdictV1::StrongTake;
-    }
-    if report
-        .positive_components
-        .iter()
-        .any(|component| component.contains("unlocks") || component.contains("improves_access"))
-    {
-        return CardComponentMarginalVerdictV1::ContextTake;
-    }
-    if report.boss_taxes.len() >= 1 && report.positive_components.is_empty() {
-        return CardComponentMarginalVerdictV1::SkipPreferred;
-    }
-    if report.debts.len() >= 2 {
-        return CardComponentMarginalVerdictV1::Reject;
-    }
-    if report.debts.len() == 1 && context.act >= 2 {
-        return CardComponentMarginalVerdictV1::SkipPreferred;
-    }
-    if report.positive_components.is_empty()
-        && context.act >= 3
-        && context.deck_size >= 35
-        && !report.roles.contains(&CardComponentRoleV1::Lubricant)
-    {
-        return CardComponentMarginalVerdictV1::SkipPreferred;
-    }
-    if !report.positive_components.is_empty() {
-        CardComponentMarginalVerdictV1::ContextTake
-    } else {
-        CardComponentMarginalVerdictV1::Speculative
     }
 }
 
@@ -547,19 +391,6 @@ fn effective_exhaust_access_component(
         || context.startup.exhaust_engine_count > 0
 }
 
-fn profile_is_minor_power(profile: &CardRewardSemanticProfileV1) -> bool {
-    matches!(
-        profile.card,
-        CardId::FireBreathing
-            | CardId::Rupture
-            | CardId::Metallicize
-            | CardId::Combust
-            | CardId::Evolve
-            | CardId::Inflame
-            | CardId::FeelNoPain
-    )
-}
-
 fn push_role(roles: &mut Vec<CardComponentRoleV1>, role: CardComponentRoleV1) {
     if !roles.contains(&role) {
         roles.push(role);
@@ -569,19 +400,6 @@ fn push_role(roles: &mut Vec<CardComponentRoleV1>, role: CardComponentRoleV1) {
 fn push_str(values: &mut Vec<&'static str>, value: &'static str) {
     if !values.contains(&value) {
         values.push(value);
-    }
-}
-
-impl CardComponentMarginalContextV1 {
-    fn max_hp_buffer_available(&self) -> bool {
-        self.max_hp >= 90 && self.hp_ratio_percent() >= 55
-    }
-
-    fn hp_ratio_percent(&self) -> i32 {
-        if self.max_hp <= 0 {
-            return 0;
-        }
-        self.hp.saturating_mul(100) / self.max_hp
     }
 }
 
@@ -611,16 +429,16 @@ mod tests {
     }
 
     #[test]
-    fn disarm_is_must_take_against_awakened_one() {
+    fn disarm_emits_generic_mitigation_signal() {
         let report = evaluate_card_component_marginal_value_v1(
             &context(),
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Disarm, 0)),
         );
 
-        assert_eq!(report.verdict, CardComponentMarginalVerdictV1::MustTake);
+        assert_eq!(report.verdict, CardComponentMarginalVerdictV1::Speculative);
         assert!(report
             .positive_components
-            .contains(&"awakened_one_multi_hit_strength_answer"));
+            .contains(&"mitigates_enemy_damage"));
     }
 
     #[test]
@@ -630,10 +448,6 @@ mod tests {
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Rupture, 0)),
         );
 
-        assert_eq!(
-            report.verdict,
-            CardComponentMarginalVerdictV1::SkipPreferred
-        );
         assert!(report.debts.contains(&"self_damage_payoff_without_enabler"));
     }
 
@@ -757,11 +571,10 @@ mod tests {
             .positive_components
             .contains(&"exhaust_payoff_has_generator"));
         assert!(!report.debts.contains(&"payoff_without_visible_gap_fill"));
-        assert_eq!(report.verdict, CardComponentMarginalVerdictV1::ContextTake);
     }
 
     #[test]
-    fn corruption_with_fnp_is_context_take_despite_awakened_power_tax() {
+    fn corruption_with_fnp_emits_engine_signal_without_boss_tax_verdict() {
         let mut context = context();
         context.startup.feel_no_pain_count = 1;
         let report = evaluate_card_component_marginal_value_v1(
@@ -769,9 +582,9 @@ mod tests {
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Corruption, 0)),
         );
 
-        assert_eq!(report.verdict, CardComponentMarginalVerdictV1::ContextTake);
+        assert_eq!(report.verdict, CardComponentMarginalVerdictV1::Speculative);
         assert!(report.positive_components.contains(&"unlocks_fnp_engine"));
-        assert!(report.notes.contains(&"awakened_one_power_but_core_engine"));
+        assert!(report.notes.is_empty());
     }
 
     #[test]
