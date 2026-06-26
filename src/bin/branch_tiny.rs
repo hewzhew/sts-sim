@@ -5,7 +5,7 @@ use sts_simulator::eval::run_control::{
     RunControlConfig, RunControlHpLossLimit, RunControlRouteAutomationMode,
     RunControlSearchCombatOptions, RunControlSession,
 };
-use sts_simulator::state::core::{EngineState, RunResult};
+use sts_simulator::state::core::{ClientInput, EngineState, RunResult};
 
 #[derive(Clone)]
 struct Branch {
@@ -13,6 +13,12 @@ struct Branch {
     path: Vec<String>,
     session: RunControlSession,
     status: BranchStatus,
+}
+
+#[derive(Clone)]
+struct OwnerChoice {
+    input: ClientInput,
+    label: String,
 }
 
 #[derive(Clone)]
@@ -112,17 +118,16 @@ fn expand_registered_owner(branch: &Branch, args: Args) -> Vec<Branch> {
         _ => return Vec::new(),
     };
     let surface = build_decision_surface(&branch.session);
-    let candidates = owner_candidates(owner, &surface);
+    let candidates = owner_choices(owner, &surface);
     let mut children = Vec::new();
-    for (index, (candidate_id, label)) in candidates.into_iter().enumerate() {
+    for (index, choice) in candidates.into_iter().enumerate() {
         let mut session = branch.session.clone();
-        let status = match session.apply_command(RunControlCommand::Candidate(candidate_id.clone()))
-        {
+        let status = match session.apply_command(RunControlCommand::Input(choice.input)) {
             Ok(_) => advance_to_owner_or_gap(&mut session, args),
             Err(err) => BranchStatus::ApplyFailed(err),
         };
         let mut path = branch.path.clone();
-        path.push(format!("{candidate_id}:{label}"));
+        path.push(choice.label);
         children.push(Branch {
             id: format!("{}.{}", branch.id, index),
             path,
@@ -133,15 +138,15 @@ fn expand_registered_owner(branch: &Branch, args: Args) -> Vec<Branch> {
     children
 }
 
-fn owner_candidates(
+fn owner_choices(
     owner: Owner,
     surface: &sts_simulator::eval::run_control::DecisionSurface,
-) -> Vec<(String, String)> {
+) -> Vec<OwnerChoice> {
     match owner {
-        Owner::NeowStart => executable_candidates(surface),
-        Owner::CardReward => executable_candidates(surface)
+        Owner::NeowStart => executable_choices(surface),
+        Owner::CardReward => executable_choices(surface)
             .into_iter()
-            .filter(|(id, _)| is_card_reward_candidate_id(id))
+            .filter(|choice| is_card_reward_input(&choice.input))
             .collect(),
         Owner::EventSsssserpent | Owner::ShopTiny => Vec::new(),
     }
@@ -201,42 +206,43 @@ fn owner_is_branching(owner: Owner) -> bool {
 }
 
 fn apply_policy_owner(session: &mut RunControlSession, owner: Owner) -> Result<(), String> {
-    let candidate_id = match owner {
-        Owner::ShopTiny => find_executable_candidate_by_id(session, "leave")?,
+    let input = match owner {
+        Owner::ShopTiny => require_visible_input(session, ClientInput::Proceed)?,
         Owner::EventSsssserpent => find_sssserpent_policy_candidate(session)?,
         Owner::NeowStart | Owner::CardReward => {
             return Err("branching owner cannot be consumed as policy".to_string());
         }
     };
     session
-        .apply_command(RunControlCommand::Candidate(candidate_id))
+        .apply_command(RunControlCommand::Input(input))
         .map(|_| ())
 }
 
-fn find_executable_candidate_by_id(
+fn require_visible_input(
     session: &RunControlSession,
-    preferred_id: &str,
-) -> Result<String, String> {
+    input: ClientInput,
+) -> Result<ClientInput, String> {
     let surface = build_decision_surface(session);
-    let candidates = executable_candidates(&surface);
-    if candidates
+    let visible_inputs = executable_inputs(&surface);
+    if visible_inputs
         .iter()
-        .any(|(candidate_id, _)| candidate_id == preferred_id)
+        .any(|visible_input| visible_input == &input)
     {
-        return Ok(preferred_id.to_string());
+        return Ok(input);
     }
     Err(format!(
-        "no executable candidate `{preferred_id}` at {} among [{}]",
+        "input {:?} is not visible at {} among [{}]",
+        input,
         surface.view.header.title,
-        candidates
+        executable_choices(&surface)
             .iter()
-            .map(|(id, label)| format!("{id}:{label}"))
+            .map(|choice| format!("{:?}:{}", choice.input, choice.label))
             .collect::<Vec<_>>()
             .join(" | ")
     ))
 }
 
-fn find_sssserpent_policy_candidate(session: &RunControlSession) -> Result<String, String> {
+fn find_sssserpent_policy_candidate(session: &RunControlSession) -> Result<ClientInput, String> {
     let event_state = session
         .run_state
         .event_state
@@ -257,40 +263,41 @@ fn find_sssserpent_policy_candidate(session: &RunControlSession) -> Result<Strin
             ));
         }
     };
-    find_single_event_action_candidate(session, required_action)
+    find_single_event_action_input(session, required_action)
 }
 
-fn find_single_event_action_candidate(
+fn find_single_event_action_input(
     session: &RunControlSession,
     required_action: sts_simulator::state::events::EventActionKind,
-) -> Result<String, String> {
+) -> Result<ClientInput, String> {
     let options = sts_simulator::engine::event_handler::get_event_options(&session.run_state);
     let surface = build_decision_surface(session);
-    let executable_ids = executable_candidates(&surface)
-        .into_iter()
-        .map(|(candidate_id, _)| candidate_id)
-        .collect::<Vec<_>>();
-    let mut matching_ids = Vec::new();
+    let visible_inputs = executable_inputs(&surface);
+    let mut matching_indices = Vec::new();
     for (index, option) in options.iter().enumerate() {
         if option.ui.disabled || option.semantics.action != required_action {
             continue;
         }
-        matching_ids.push(index.to_string());
+        matching_indices.push(index);
     }
-    let [candidate_id] = matching_ids.as_slice() else {
+    let [index] = matching_indices.as_slice() else {
         return Err(format!(
             "expected exactly one {:?} event candidate at {}, found {}",
             required_action,
             surface.view.header.title,
-            matching_ids.len()
+            matching_indices.len()
         ));
     };
-    if executable_ids.iter().any(|id| id == candidate_id) {
-        return Ok(candidate_id.clone());
+    let input = ClientInput::EventChoice(*index);
+    if visible_inputs
+        .iter()
+        .any(|visible_input| visible_input == &input)
+    {
+        return Ok(input);
     }
     Err(format!(
-        "event action {:?} candidate `{candidate_id}` is not executable",
-        required_action
+        "event action {:?} input {:?} is not visible",
+        required_action, input
     ))
 }
 
@@ -390,9 +397,9 @@ fn print_branch(branch: &Branch) {
     );
     if let BranchStatus::Running { owner, .. } = &branch.status {
         let surface = build_decision_surface(&branch.session);
-        let candidates = owner_candidates(*owner, &surface)
+        let candidates = owner_choices(*owner, &surface)
             .into_iter()
-            .map(|(id, label)| format!("{id}:{label}"))
+            .map(|choice| choice.label)
             .collect::<Vec<_>>();
         if !candidates.is_empty() {
             println!("    owner_candidates: {}", candidates.join(" | "));
@@ -436,16 +443,32 @@ fn status_owner(status: &BranchStatus) -> String {
     }
 }
 
-fn executable_candidates(
+fn executable_choices(
     surface: &sts_simulator::eval::run_control::DecisionSurface,
-) -> Vec<(String, String)> {
+) -> Vec<OwnerChoice> {
     surface
         .view
         .candidates
         .iter()
-        .filter(|candidate| !is_navigation_only_candidate(&candidate.id))
-        .filter(|candidate| candidate.action.executable_input().is_some())
-        .map(|candidate| (candidate.id.clone(), candidate.label.clone()))
+        .filter_map(|candidate| {
+            let input = candidate.action.executable_input()?;
+            if is_navigation_only_input(&input) {
+                return None;
+            }
+            Some(OwnerChoice {
+                input,
+                label: candidate.label.clone(),
+            })
+        })
+        .collect()
+}
+
+fn executable_inputs(
+    surface: &sts_simulator::eval::run_control::DecisionSurface,
+) -> Vec<ClientInput> {
+    executable_choices(surface)
+        .into_iter()
+        .map(|choice| choice.input)
         .collect()
 }
 
@@ -463,12 +486,12 @@ fn first_reason(message: &str) -> Option<String> {
         .find_map(|line| line.strip_prefix("Reason: ").map(str::to_string))
 }
 
-fn is_navigation_only_candidate(id: &str) -> bool {
-    matches!(id, "back" | "cancel")
+fn is_navigation_only_input(input: &ClientInput) -> bool {
+    matches!(input, ClientInput::Cancel)
 }
 
-fn is_card_reward_candidate_id(id: &str) -> bool {
-    id.parse::<usize>().is_ok() || matches!(id, "skip" | "bowl") || id.starts_with("card-")
+fn is_card_reward_input(input: &ClientInput) -> bool {
+    matches!(input, ClientInput::SelectCard(_))
 }
 
 fn one_line(text: &str) -> String {
