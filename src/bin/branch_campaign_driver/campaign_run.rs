@@ -13,7 +13,9 @@ use sts_simulator::eval::branch_campaign::{
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     extract_branch_outcome_records_v1, summarize_branch_outcome_records_v1,
 };
-use sts_simulator::eval::reward_semantic_live_sample_v1::render_reward_semantic_live_sample_v1;
+use sts_simulator::eval::reward_semantic_live_sample_v1::{
+    render_reward_semantic_live_sample_summary_v1, render_reward_semantic_live_sample_v1,
+};
 
 use super::campaign_artifacts::{
     read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
@@ -168,6 +170,11 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
                     )
                 );
             }
+            println!();
+            println!(
+                "{}",
+                render_reward_semantic_live_sample_summary_v1(&reward_semantic_live_samples)
+            );
         }
         println!("{}", render_round_budget_resolution_v1(round_budget));
         eprintln!(

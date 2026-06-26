@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+
 use crate::ai::strategy::package_state::PackageStateReport;
 use crate::ai::strategy::reward_semantic_probe::{
     assess_reward_semantics_from_cards, explain_reward_semantics_v1,
-    RewardCandidateSemanticExplanationV1,
+    RewardCandidateSemanticExplanationV1, RewardSemanticCoverageStatusV1,
 };
 use crate::content::cards::{get_card_definition, CardId};
 use crate::eval::run_control::RunControlSession;
@@ -131,6 +133,69 @@ pub fn render_reward_semantic_live_sample_v1(
     lines.join("\n")
 }
 
+pub fn render_reward_semantic_live_sample_summary_v1(
+    samples: &[RewardSemanticLiveSampleV1],
+) -> String {
+    let summary = summarize_reward_semantic_live_samples_v1(samples);
+    let mut lines = Vec::new();
+    lines.push("reward_semantic_live_sample_summary:".to_string());
+    lines.push(format!("  reward_surfaces={}", summary.reward_surfaces));
+    lines.push(format!("  candidates={}", summary.candidates));
+    lines.push("  coverage:".to_string());
+    lines.push(format!("    Explained={}", summary.explained));
+    lines.push(format!("    Empty={}", summary.empty));
+    lines.push(format!(
+        "    DeferredSequenceTactical={}",
+        summary.deferred_sequence_tactical
+    ));
+    lines.push("  empty_candidates:".to_string());
+    append_candidate_counts_v1(&mut lines, &summary.empty_candidates);
+    lines.push("  deferred_candidates:".to_string());
+    append_candidate_counts_v1(&mut lines, &summary.deferred_candidates);
+    lines.join("\n")
+}
+
+#[derive(Debug, Default)]
+struct RewardSemanticLiveSampleSummaryV1 {
+    reward_surfaces: usize,
+    candidates: usize,
+    explained: usize,
+    empty: usize,
+    deferred_sequence_tactical: usize,
+    empty_candidates: Vec<(CardId, usize)>,
+    deferred_candidates: Vec<(CardId, usize)>,
+}
+
+fn summarize_reward_semantic_live_samples_v1(
+    samples: &[RewardSemanticLiveSampleV1],
+) -> RewardSemanticLiveSampleSummaryV1 {
+    let mut summary = RewardSemanticLiveSampleSummaryV1 {
+        reward_surfaces: samples.len(),
+        ..Default::default()
+    };
+    let mut empty_candidates = HashMap::<CardId, usize>::new();
+    let mut deferred_candidates = HashMap::<CardId, usize>::new();
+    for sample in samples {
+        for candidate in &sample.candidates {
+            summary.candidates += 1;
+            match candidate.explanation.coverage.status {
+                RewardSemanticCoverageStatusV1::Explained => summary.explained += 1,
+                RewardSemanticCoverageStatusV1::Empty => {
+                    summary.empty += 1;
+                    *empty_candidates.entry(candidate.card).or_default() += 1;
+                }
+                RewardSemanticCoverageStatusV1::DeferredSequenceTactical => {
+                    summary.deferred_sequence_tactical += 1;
+                    *deferred_candidates.entry(candidate.card).or_default() += 1;
+                }
+            }
+        }
+    }
+    summary.empty_candidates = sorted_candidate_counts_v1(empty_candidates);
+    summary.deferred_candidates = sorted_candidate_counts_v1(deferred_candidates);
+    summary
+}
+
 fn active_or_visible_reward_cards_for_live_sample_v1(
     session: &RunControlSession,
 ) -> Option<Vec<RewardCard>> {
@@ -177,4 +242,28 @@ fn render_static_list_v1(items: &[&'static str]) -> String {
     } else {
         items.join(", ")
     }
+}
+
+fn sorted_candidate_counts_v1(counts: HashMap<CardId, usize>) -> Vec<(CardId, usize)> {
+    let mut counts = counts.into_iter().collect::<Vec<_>>();
+    counts.sort_by(|(left_card, left_count), (right_card, right_count)| {
+        right_count
+            .cmp(left_count)
+            .then_with(|| card_name_v1(*left_card).cmp(card_name_v1(*right_card)))
+    });
+    counts
+}
+
+fn append_candidate_counts_v1(lines: &mut Vec<String>, counts: &[(CardId, usize)]) {
+    if counts.is_empty() {
+        lines.push("    -".to_string());
+        return;
+    }
+    for (card, count) in counts {
+        lines.push(format!("    {} x{count}", card_name_v1(*card)));
+    }
+}
+
+fn card_name_v1(card: CardId) -> &'static str {
+    get_card_definition(card).name
 }
