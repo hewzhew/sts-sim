@@ -23,8 +23,9 @@ use crate::eval::branch_experiment_boundary::{
 };
 use crate::eval::branch_experiment_retention::{
     branch_retention_order_rank_key_v1, default_branch_retention_decision_v1,
-    select_branch_retention_portfolio_v1, BranchRetentionCandidateInputV1, BranchRetentionConfigV1,
-    BranchRetentionDecisionV1, BranchRetentionSlotV1,
+    select_branch_retention_portfolio_v1, BranchRetentionBudgetProfileV1,
+    BranchRetentionCandidateInputV1, BranchRetentionConfigV1, BranchRetentionDecisionV1,
+    BranchRetentionSlotV1,
 };
 use crate::eval::branch_experiment_trajectory::{
     summarize_branch_trajectory_v1, BranchTrajectorySignatureV1,
@@ -1562,14 +1563,18 @@ fn apply_branch_retention(
         .enumerate()
         .filter_map(|(index, branch)| keep_indices.contains(&index).then_some(branch))
         .collect::<Vec<_>>();
-    branches.sort_by(|left, right| {
-        retention_report_slot_priority(retention_report_slot(left.retention.selected_by_slot))
-            .cmp(&retention_report_slot_priority(retention_report_slot(
-                right.retention.selected_by_slot,
-            )))
-            .then_with(|| applied_retention_rank_key(right).cmp(&applied_retention_rank_key(left)))
-            .then_with(|| left.id.cmp(&right.id))
-    });
+    if config.retention_budget_profile != BranchRetentionBudgetProfileV1::AdvisoryOnly {
+        branches.sort_by(|left, right| {
+            retention_report_slot_priority(retention_report_slot(left.retention.selected_by_slot))
+                .cmp(&retention_report_slot_priority(retention_report_slot(
+                    right.retention.selected_by_slot,
+                )))
+                .then_with(|| {
+                    applied_retention_rank_key(right).cmp(&applied_retention_rank_key(left))
+                })
+                .then_with(|| left.id.cmp(&right.id))
+        });
+    }
 
     BranchRetentionApplyResult {
         branches,

@@ -42,6 +42,9 @@ param(
     [ValidateSet("quick", "focused", "explore", "deep")]
     [string] $Mode = "explore",
 
+    [ValidateSet("", "package", "balanced", "exploration", "survival", "advisory_only")]
+    [string] $RetentionProfile = "",
+
     [ValidateRange(0, 100000)]
     [int] $Rounds = 0,
 
@@ -361,6 +364,9 @@ $RunArgs += @(
 )
 if ($Domain) {
     $RunArgs += @("--ascension-domain", "$Domain")
+}
+if ($RetentionProfile) {
+    $RunArgs += @("--retention-profile", "$RetentionProfile")
 }
 if ($ContinueRun) {
     if (-not $SourceInfo) {

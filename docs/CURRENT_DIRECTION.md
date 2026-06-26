@@ -54,6 +54,18 @@ cargo run --profile fast-run --bin branch_campaign_driver -- campaign run --pres
 cargo run --profile fast-run --bin branch_campaign_driver -- campaign artifacts resolve latest --json
 ```
 
+## Decision Debugging Baseline
+
+When investigating bad non-combat choices on a fixed seed, first run with:
+
+```powershell
+.\tools\campaign.ps1 -Mode deep -RetentionProfile advisory_only
+```
+
+`advisory_only` keeps candidate generation and journals, but mutes branch
+retention and campaign scheduler strategy influence. Use it as the baseline
+before changing card reward, shop, campfire, event, or route strategy.
+
 ## What Is Not Current Mainline
 
 - adding more PowerShell wrapper switches

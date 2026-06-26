@@ -7,6 +7,7 @@ use super::model::{
 };
 use super::selection_key::compare_campaign_branches_for_active_v1;
 use super::{branch_progress_key, campaign_branch_quality_key_v1, BranchCampaignConfigV1};
+use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SchedulerLaneV1 {
@@ -23,6 +24,14 @@ pub(super) fn schedule_campaign_workset_for_config_v1(
     parked: Vec<BranchCampaignBranchV1>,
     config: &BranchCampaignConfigV1,
 ) -> BranchCampaignSelectionV1 {
+    if config.retention_budget_profile == BranchRetentionBudgetProfileV1::AdvisoryOnly {
+        return schedule_campaign_workset_advisory_only_v1(
+            candidates,
+            parked,
+            config.max_active,
+            config.max_frozen,
+        );
+    }
     schedule_campaign_workset_for_limits_v1(
         candidates,
         parked,
@@ -36,6 +45,14 @@ pub(super) fn reschedule_campaign_existing_workset_v1(
     parked: Vec<BranchCampaignBranchV1>,
     config: &BranchCampaignConfigV1,
 ) -> BranchCampaignSelectionV1 {
+    if config.retention_budget_profile == BranchRetentionBudgetProfileV1::AdvisoryOnly {
+        return schedule_campaign_workset_advisory_only_v1(
+            scheduled,
+            parked,
+            config.max_active,
+            config.max_frozen,
+        );
+    }
     schedule_campaign_workset_for_limits_v1(scheduled, parked, config.max_active, config.max_frozen)
 }
 
@@ -125,6 +142,61 @@ fn schedule_campaign_workset_for_limits_v1(
             );
         }
     }
+    selection
+}
+
+fn schedule_campaign_workset_advisory_only_v1(
+    candidates: Vec<BranchCampaignBranchV1>,
+    parked: Vec<BranchCampaignBranchV1>,
+    max_scheduled: usize,
+    max_parked: usize,
+) -> BranchCampaignSelectionV1 {
+    let mut selection = BranchCampaignSelectionV1::default();
+    let mut seen = BTreeSet::<String>::new();
+    let mut pool = Vec::new();
+
+    for branch in candidates.into_iter().chain(parked) {
+        match branch.status {
+            BranchCampaignBranchStatusV1::TerminalVictory => selection.victories.push(branch),
+            BranchCampaignBranchStatusV1::TerminalDefeat => selection.dead.push(branch),
+            BranchCampaignBranchStatusV1::Abandoned => selection.abandoned.push(branch),
+            BranchCampaignBranchStatusV1::Stuck => selection.stuck.push(branch),
+            BranchCampaignBranchStatusV1::Scheduled | BranchCampaignBranchStatusV1::Parked => {
+                let key = scheduler_branch_quality_key_v1(&branch);
+                if seen.insert(key) {
+                    pool.push(branch);
+                } else {
+                    record_campaign_duplicate_merge_v1(
+                        &branch,
+                        &mut selection.discarded_count,
+                        &mut selection.discarded_examples,
+                        &mut selection.discarded_branches,
+                    );
+                }
+            }
+        }
+    }
+
+    for mut branch in pool {
+        if selection.scheduled.len() < max_scheduled {
+            branch.status = BranchCampaignBranchStatusV1::Scheduled;
+            mark_scheduler_lane_label_v1(&mut branch, SchedulerLaneV1::General);
+            selection.scheduled.push(branch);
+        } else if selection.parked.len() < max_parked {
+            branch.status = BranchCampaignBranchStatusV1::Parked;
+            mark_scheduler_lane_label_v1(&mut branch, SchedulerLaneV1::General);
+            selection.parked.push(branch);
+        } else {
+            record_campaign_discard_v1(
+                &branch,
+                &mut selection.discarded_count,
+                &mut selection.discarded_examples,
+                &mut selection.discarded_branches,
+                "advisory_only_parked_capacity",
+            );
+        }
+    }
+
     selection
 }
 

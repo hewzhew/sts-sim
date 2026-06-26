@@ -46,6 +46,7 @@ pub enum BranchRetentionBudgetProfileV1 {
     Exploration,
     Survival,
     Package,
+    AdvisoryOnly,
 }
 
 impl fmt::Display for BranchRetentionBudgetProfileV1 {
@@ -55,6 +56,7 @@ impl fmt::Display for BranchRetentionBudgetProfileV1 {
             BranchRetentionBudgetProfileV1::Exploration => "exploration",
             BranchRetentionBudgetProfileV1::Survival => "survival",
             BranchRetentionBudgetProfileV1::Package => "package",
+            BranchRetentionBudgetProfileV1::AdvisoryOnly => "advisory_only",
         })
     }
 }
@@ -68,8 +70,9 @@ impl FromStr for BranchRetentionBudgetProfileV1 {
             "exploration" | "explore" => Ok(Self::Exploration),
             "survival" | "safe" => Ok(Self::Survival),
             "package" | "packages" => Ok(Self::Package),
+            "advisory_only" | "advisory" | "report_only" | "silent" => Ok(Self::AdvisoryOnly),
             other => Err(format!(
-                "invalid retention profile `{other}`; expected balanced, exploration, survival, or package"
+                "invalid retention profile `{other}`; expected balanced, exploration, survival, package, or advisory_only"
             )),
         }
     }
@@ -574,10 +577,13 @@ fn select_positions_for_retention_portfolio(
     candidates: &[BranchRetentionCandidateInputV1],
     positions: &[usize],
     limit: usize,
-    _budget_profile: BranchRetentionBudgetProfileV1,
+    budget_profile: BranchRetentionBudgetProfileV1,
 ) -> Vec<BranchRetentionLanePick> {
     if limit == 0 {
         return Vec::new();
+    }
+    if budget_profile == BranchRetentionBudgetProfileV1::AdvisoryOnly {
+        return select_positions_for_advisory_only_retention(positions, limit);
     }
     let mut selected = Vec::<BranchRetentionLanePick>::new();
     let mut selected_set = BTreeSet::<usize>::new();
@@ -599,6 +605,21 @@ fn select_positions_for_retention_portfolio(
     let selected =
         effect_coverage::preserve_lineage_flag_coverage(candidates, positions, selected, limit);
     drop_excess_first_pick_prefixes_after_coverage(candidates, positions, selected, limit)
+}
+
+fn select_positions_for_advisory_only_retention(
+    positions: &[usize],
+    limit: usize,
+) -> Vec<BranchRetentionLanePick> {
+    positions
+        .iter()
+        .copied()
+        .take(limit)
+        .map(|position| BranchRetentionLanePick {
+            position,
+            selected_by_slot: BranchRetentionSlotV1::Diversity,
+        })
+        .collect()
 }
 
 fn best_fill_position(

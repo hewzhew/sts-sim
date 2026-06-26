@@ -285,7 +285,11 @@ pub(super) struct Args {
     )]
     pub(super) boss_relic_axes: bool,
 
-    #[arg(long, default_value = "package")]
+    #[arg(
+        long,
+        default_value = "package",
+        help = "Branch retention profile: package, balanced, exploration, survival, or advisory_only"
+    )]
     pub(super) retention_profile: String,
 
     #[arg(long)]
@@ -1196,7 +1200,11 @@ pub(super) struct CampaignBranchingArgs {
     )]
     pub(super) boss_relic_axes: bool,
 
-    #[arg(long, default_value = "package")]
+    #[arg(
+        long,
+        default_value = "package",
+        help = "Branch retention profile: package, balanced, exploration, survival, or advisory_only"
+    )]
     pub(super) retention_profile: String,
 
     #[arg(long)]
