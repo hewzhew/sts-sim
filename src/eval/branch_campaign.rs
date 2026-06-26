@@ -19,6 +19,7 @@ use crate::state::rewards::{RewardCard, RewardState};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
+mod assessment;
 mod branch_display;
 mod discard_trace;
 mod intervention;
@@ -36,6 +37,7 @@ mod selection_key;
 mod state_graph;
 mod strategic_signals;
 mod summary;
+pub use assessment::{campaign_branch_assessment_v1, render_campaign_branch_assessment_v1};
 use branch_display::{compact_campaign_choice_label_metadata_v1, render_choice_path};
 #[cfg(test)]
 use intervention::campaign_strategy_next_step_v1;

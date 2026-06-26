@@ -4,8 +4,8 @@ use sts_simulator::ai::deck_startup_profile_v1::deck_startup_profile_v1;
 use sts_simulator::ai::noncombat_strategy_v1::build_run_strategy_snapshot_from_run_state_v2;
 use sts_simulator::content::cards::{get_card_definition, CardTag, CardType};
 use sts_simulator::eval::branch_campaign::{
-    BranchCampaignBranchStatusV1, BranchCampaignBranchV1, BranchCampaignRankBreakdownV1,
-    BranchCampaignReportV1,
+    render_campaign_branch_assessment_v1, BranchCampaignBranchStatusV1, BranchCampaignBranchV1,
+    BranchCampaignRankBreakdownV1, BranchCampaignReportV1,
 };
 use sts_simulator::eval::event_boundary_packet_v1::{
     event_boundary_packet_from_session_v1, EventBoundaryPacketV1,
@@ -266,6 +266,7 @@ fn render_session_details(
         lines.push(render_reward_boundary_summary_v1(&packet));
     }
     if let Some(branch) = branch {
+        lines.push(render_campaign_branch_assessment_v1(branch));
         if let Some(breakdown) = branch.rank_breakdown.as_ref() {
             lines.push(format!(
                 "rank_breakdown: {}",

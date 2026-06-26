@@ -1,5 +1,6 @@
 use crate::ai::strategic::format_compact_branch_signature;
 
+use super::assessment::render_campaign_branch_assessment_v1;
 use super::model::{BranchCampaignBranchSummaryV1, BranchCampaignBranchV1};
 use super::selection_key::render_campaign_branch_selection_basis_v1;
 
@@ -28,11 +29,15 @@ pub(super) fn render_campaign_branch_state(branch: &BranchCampaignBranchV1) -> S
         })
         .unwrap_or_else(|| "start".to_string());
     let selection_basis = render_campaign_branch_selection_basis_v1(branch);
+    let assessment = render_campaign_branch_assessment_v1(branch);
     let strategic_summary = format_compact_branch_signature(&branch.strategic_summary);
     if strategic_summary.is_empty() {
-        format!("{state} {selection_basis}")
+        format!("{state} {selection_basis} {assessment}")
     } else {
-        format!("{state} {selection_basis} strat=[{}]", strategic_summary)
+        format!(
+            "{state} {selection_basis} {assessment} strat=[{}]",
+            strategic_summary
+        )
     }
 }
 

@@ -322,6 +322,27 @@ fn scheduler_mainline_rank_key_beats_one_floor_progress() {
 }
 
 #[test]
+fn scheduler_mainline_gate_assessment_beats_raw_rank() {
+    let mut healthy_incomplete = test_campaign_branch("healthy-incomplete", 7, 80);
+    healthy_incomplete.frontier_title = "Shop".to_string();
+    healthy_incomplete.rank_key = 20_000;
+    healthy_incomplete.summary.as_mut().unwrap().trajectory_key = "frontload=1".to_string();
+
+    let mut lower_rank_package = test_campaign_branch("lower-rank-package", 7, 55);
+    lower_rank_package.rank_key = 12_000;
+    lower_rank_package.summary.as_mut().unwrap().trajectory_key =
+        "frontload=1|defense=1|scaling=1|draw_energy=1".to_string();
+
+    let selected = select_campaign_branches_v1(vec![healthy_incomplete, lower_rank_package], 1, 8);
+
+    assert_eq!(selected.scheduled.len(), 1);
+    assert_eq!(selected.scheduled[0].branch_id, "lower-rank-package");
+    assert!(selected.scheduled[0]
+        .stop_reason
+        .contains("scheduler:general"));
+}
+
+#[test]
 fn scheduler_small_budget_keeps_top_ranked_decision_candidates() {
     let mut remove_strike = test_campaign_branch("remove-strike", 6, 80);
     remove_strike.rank_key = 12_000;
