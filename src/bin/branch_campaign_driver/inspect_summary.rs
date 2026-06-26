@@ -4,7 +4,8 @@ use sts_simulator::ai::deck_startup_profile_v1::deck_startup_profile_v1;
 use sts_simulator::ai::noncombat_strategy_v1::build_run_strategy_snapshot_from_run_state_v2;
 use sts_simulator::content::cards::{get_card_definition, CardTag, CardType};
 use sts_simulator::eval::branch_campaign::{
-    BranchCampaignBranchStatusV1, BranchCampaignBranchV1, BranchCampaignReportV1,
+    BranchCampaignBranchStatusV1, BranchCampaignBranchV1, BranchCampaignRankBreakdownV1,
+    BranchCampaignReportV1,
 };
 use sts_simulator::eval::event_boundary_packet_v1::{
     event_boundary_packet_from_session_v1, EventBoundaryPacketV1,
@@ -265,6 +266,12 @@ fn render_session_details(
         lines.push(render_reward_boundary_summary_v1(&packet));
     }
     if let Some(branch) = branch {
+        if let Some(breakdown) = branch.rank_breakdown.as_ref() {
+            lines.push(format!(
+                "rank_breakdown: {}",
+                render_rank_breakdown_v1(breakdown)
+            ));
+        }
         if !branch.stop_reason.trim().is_empty() {
             lines.push(format!("stop: {}", first_line(&branch.stop_reason)));
         }
@@ -276,6 +283,39 @@ fn render_session_details(
         lines.push(format!("commands: {}", render_recent_path(commands)));
     }
     lines
+}
+
+fn render_rank_breakdown_v1(breakdown: &BranchCampaignRankBreakdownV1) -> String {
+    let components = [
+        ("startup", breakdown.startup_adjustment),
+        ("debt", breakdown.strategic_debt_adjustment),
+        ("formation", breakdown.formation_need_adjustment),
+        ("shop", breakdown.shop_plan_adjustment),
+        ("campfire", breakdown.campfire_plan_adjustment),
+        ("card_reward", breakdown.card_reward_plan_adjustment),
+    ]
+    .into_iter()
+    .filter(|(_, value)| *value != 0)
+    .map(|(label, value)| format!("{label}:{value:+}"))
+    .collect::<Vec<_>>();
+    let components = render_limited_list_v1(&components, 6, ",", "none");
+    let context = render_limited_list_v1(&breakdown.context_keys, 4, ",", "-");
+    let reasons = render_limited_list_v1(&breakdown.reasons, 4, "; ", "-");
+    format!(
+        "base={} components=[{}] effective={} context=[{}] reasons=[{}]",
+        breakdown.base_rank_key, components, breakdown.effective_rank_key, context, reasons
+    )
+}
+
+fn render_limited_list_v1(values: &[String], limit: usize, separator: &str, empty: &str) -> String {
+    if values.is_empty() {
+        return empty.to_string();
+    }
+    let mut rendered = values.iter().take(limit).cloned().collect::<Vec<_>>();
+    if values.len() > rendered.len() {
+        rendered.push(format!("+{} more", values.len() - rendered.len()));
+    }
+    rendered.join(separator)
 }
 
 fn render_event_boundary_summary_v1(packet: &EventBoundaryPacketV1) -> String {

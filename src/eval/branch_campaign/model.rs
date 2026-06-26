@@ -9,6 +9,7 @@ use crate::content::relics::{RelicId, RelicState};
 use crate::eval::branch_experiment::{
     BranchExperimentBossCombatRecordV1, BranchExperimentRewardOptionPortfolioV1,
 };
+use crate::eval::branch_experiment_retention::BranchRetentionRankAdjustmentV1;
 use crate::eval::campaign_journal::{
     CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateAdmissionTraceV1,
     CampaignJournalCandidateDispositionV1, CampaignJournalV1,
@@ -74,6 +75,64 @@ pub struct BranchCampaignBranchSummaryV1 {
     pub reward_boundary: Option<RewardBoundaryPacketV1>,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignRankBreakdownV1 {
+    #[serde(default)]
+    pub base_rank_key: i32,
+    #[serde(default)]
+    pub effective_rank_key: i32,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub startup_adjustment: i32,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub strategic_debt_adjustment: i32,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub formation_need_adjustment: i32,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub shop_plan_adjustment: i32,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub campfire_plan_adjustment: i32,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub card_reward_plan_adjustment: i32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_keys: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reasons: Vec<String>,
+}
+
+impl BranchCampaignRankBreakdownV1 {
+    pub fn from_retention_adjustment_v1(
+        adjustment: &BranchRetentionRankAdjustmentV1,
+    ) -> Option<Self> {
+        let breakdown = Self {
+            base_rank_key: adjustment.base_rank_key,
+            effective_rank_key: adjustment.effective_rank_key,
+            startup_adjustment: adjustment.startup_adjustment,
+            strategic_debt_adjustment: adjustment.strategic_debt_adjustment,
+            formation_need_adjustment: adjustment.formation_need_adjustment,
+            shop_plan_adjustment: adjustment.shop_plan_adjustment,
+            campfire_plan_adjustment: adjustment.campfire_plan_adjustment,
+            card_reward_plan_adjustment: adjustment.card_reward_plan_adjustment,
+            context_keys: adjustment.context_keys.clone(),
+            reasons: adjustment.reasons.clone(),
+        };
+        (!breakdown.is_empty()).then_some(breakdown)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.base_rank_key == 0
+            && self.effective_rank_key == 0
+            && self.startup_adjustment == 0
+            && self.strategic_debt_adjustment == 0
+            && self.formation_need_adjustment == 0
+            && self.shop_plan_adjustment == 0
+            && self.campfire_plan_adjustment == 0
+            && self.card_reward_plan_adjustment == 0
+            && self.context_keys.is_empty()
+            && self.reasons.is_empty()
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BranchCampaignBranchV1 {
@@ -98,6 +157,8 @@ pub struct BranchCampaignBranchV1 {
     #[serde(default, skip_serializing_if = "is_zero_i32")]
     pub lineage_decision_signal_rank_adjustment: i32,
     pub rank_key: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rank_breakdown: Option<BranchCampaignRankBreakdownV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub final_boss_combat_record: Option<BranchExperimentBossCombatRecordV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

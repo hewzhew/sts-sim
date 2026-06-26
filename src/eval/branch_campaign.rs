@@ -57,12 +57,13 @@ pub use model::{
     BranchCampaignCheckpointRunStateScheduleRefsV1, BranchCampaignCheckpointScheduleComponentsV1,
     BranchCampaignCheckpointSessionV1, BranchCampaignCheckpointV1,
     BranchCampaignContinuationOriginV1, BranchCampaignContinuationTargetLaneV1,
-    BranchCampaignDecisionObservationV1, BranchCampaignDiscardedBranchV1, BranchCampaignReportV1,
-    BranchCampaignRoundSummaryV1, BranchCampaignRouteContinuationOriginV1,
-    BranchCampaignRouteEvidenceExampleV1, BranchCampaignRouteEvidenceSummaryV1,
-    BranchCampaignRouteFirstEliteContinuationOriginV1, BranchCampaignRoutePathContinuationOriginV1,
-    BranchCampaignRunPreludeV1, BranchCampaignRunResultV1, BranchCampaignSelectionV1,
-    BranchCampaignStateStoreSummaryV1, BranchCampaignStrategyRequestV1,
+    BranchCampaignDecisionObservationV1, BranchCampaignDiscardedBranchV1,
+    BranchCampaignRankBreakdownV1, BranchCampaignReportV1, BranchCampaignRoundSummaryV1,
+    BranchCampaignRouteContinuationOriginV1, BranchCampaignRouteEvidenceExampleV1,
+    BranchCampaignRouteEvidenceSummaryV1, BranchCampaignRouteFirstEliteContinuationOriginV1,
+    BranchCampaignRoutePathContinuationOriginV1, BranchCampaignRunPreludeV1,
+    BranchCampaignRunResultV1, BranchCampaignSelectionV1, BranchCampaignStateStoreSummaryV1,
+    BranchCampaignStrategyRequestV1,
 };
 use parent_batch::run_campaign_parent_batch_v1;
 #[cfg(test)]
@@ -1396,6 +1397,7 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
         decision_candidate_axis: None,
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
+        rank_breakdown: None,
         final_boss_combat_record: None,
         combat_lab_probes: Vec::new(),
     }
@@ -1711,6 +1713,9 @@ pub fn campaign_branch_from_report_branch_v1(
         decision_candidate_axis: campaign_decision_candidate_axis_from_report_branch_v1(branch),
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: branch.rank_key,
+        rank_breakdown: BranchCampaignRankBreakdownV1::from_retention_adjustment_v1(
+            &branch.retention.rank_adjustment,
+        ),
         final_boss_combat_record: branch.final_boss_combat_record.clone(),
         combat_lab_probes: Vec::new(),
     }

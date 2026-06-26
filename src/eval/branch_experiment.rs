@@ -22,10 +22,10 @@ use crate::eval::branch_experiment_boundary::{
     BranchBoundaryConfigV1, BranchBoundaryIdV1, CardRewardPortfolioContext,
 };
 use crate::eval::branch_experiment_retention::{
-    branch_retention_order_rank_key_v1, default_branch_retention_decision_v1,
+    branch_retention_rank_adjustment_v1, default_branch_retention_decision_v1,
     select_branch_retention_portfolio_v1, BranchRetentionBudgetProfileV1,
     BranchRetentionCandidateInputV1, BranchRetentionConfigV1, BranchRetentionDecisionV1,
-    BranchRetentionSlotV1,
+    BranchRetentionRankAdjustmentV1, BranchRetentionSlotV1,
 };
 use crate::eval::branch_experiment_trajectory::{
     summarize_branch_trajectory_v1, BranchTrajectorySignatureV1,
@@ -643,11 +643,14 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
         .collect::<BTreeMap<_, _>>();
     let mut branch_reports = branches
         .into_iter()
-        .map(|branch| {
+        .map(|mut branch| {
             let summary = run_summary(&branch.session, &branch.choices);
             let frontier = branch_frontier(&branch.session);
+            let rank_adjustment = branch_effective_rank_adjustment(&branch);
+            let rank_key = rank_adjustment.effective_rank_key;
+            branch.retention.rank_adjustment = rank_adjustment;
             BranchExperimentBranchReportV1 {
-                rank_key: branch_effective_rank_key(&branch),
+                rank_key,
                 retention: branch.retention,
                 branch_id: branch.id,
                 status: branch.status,
@@ -1633,8 +1636,12 @@ fn branch_curse_count(run_state: &RunState) -> usize {
 }
 
 fn branch_effective_rank_key(branch: &BranchWork) -> i32 {
+    branch_effective_rank_adjustment(branch).effective_rank_key
+}
+
+fn branch_effective_rank_adjustment(branch: &BranchWork) -> BranchRetentionRankAdjustmentV1 {
     let candidate = branch_retention_candidate_input(0, branch);
-    branch_retention_order_rank_key_v1(&candidate)
+    branch_retention_rank_adjustment_v1(&candidate)
 }
 
 fn applied_retention_rank_key(branch: &BranchWork) -> i32 {

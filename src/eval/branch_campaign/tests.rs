@@ -98,6 +98,7 @@ fn campaign_branch_from_report_appends_new_choice_path() {
         decision_candidate_axis: None,
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
+        rank_breakdown: None,
         final_boss_combat_record: None,
         combat_lab_probes: Vec::new(),
     };
@@ -128,8 +129,11 @@ fn campaign_branch_from_report_ignores_deprecated_lineage_decision_signal() {
     );
     report_branch.rank_key = 21_500;
     report_branch.retention.rank_adjustment = BranchRetentionRankAdjustmentV1 {
+        base_rank_key: 20_500,
+        formation_need_adjustment: 1_000,
         decision_signal_adjustment: -100,
         effective_rank_key: 21_500,
+        reasons: vec!["formation_need_rank_adjustment:1000".to_string()],
         ..BranchRetentionRankAdjustmentV1::default()
     };
 
@@ -137,6 +141,17 @@ fn campaign_branch_from_report_ignores_deprecated_lineage_decision_signal() {
 
     assert_eq!(child.rank_key, 21_500);
     assert_eq!(child.lineage_decision_signal_rank_adjustment, 0);
+    let breakdown = child
+        .rank_breakdown
+        .as_ref()
+        .expect("campaign branch should carry compact rank breakdown");
+    assert_eq!(breakdown.base_rank_key, 20_500);
+    assert_eq!(breakdown.formation_need_adjustment, 1_000);
+    assert_eq!(breakdown.effective_rank_key, 21_500);
+    assert_eq!(
+        breakdown.reasons,
+        vec!["formation_need_rank_adjustment:1000"]
+    );
 }
 
 #[test]
@@ -154,6 +169,7 @@ fn campaign_branch_from_report_prefixes_parent_branch_id() {
         decision_candidate_axis: None,
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
+        rank_breakdown: None,
         final_boss_combat_record: None,
         combat_lab_probes: Vec::new(),
     };
@@ -806,6 +822,7 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
         decision_candidate_axis: None,
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: hp,
+        rank_breakdown: None,
         final_boss_combat_record: None,
         combat_lab_probes: Vec::new(),
     }
