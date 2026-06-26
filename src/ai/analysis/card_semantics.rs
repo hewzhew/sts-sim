@@ -269,9 +269,13 @@ pub fn card_definition(card: CardId) -> CardDefinition {
         LimitBreak => CardDefinition::new(card)
             .wants(PayoffRequirement::WantsMechanic(Strength))
             .provides(StrengthMultiplier),
-        HeavyBlade | SwordBoomerang | Pummel | Reaper => CardDefinition::new(card)
+        HeavyBlade | SwordBoomerang | Reaper => CardDefinition::new(card)
             .wants(PayoffRequirement::WantsMechanic(Strength))
             .effect(DamageUses(Strength)),
+        Pummel => CardDefinition::new(card)
+            .wants(PayoffRequirement::WantsMechanic(Strength))
+            .effect(DamageUses(Strength))
+            .effect(FrontloadDamage),
 
         Offering => CardDefinition::new(card)
             .provides(CardDraw)
@@ -351,10 +355,11 @@ pub fn card_definition(card: CardId) -> CardDefinition {
             .effect(FrontloadDamage)
             .provides(Weak),
         Disarm => CardDefinition::new(card).provides(EnemyStrengthDown),
-        FlameBarrier => CardDefinition::new(card).provides(Block),
+        FlameBarrier | Impervious => CardDefinition::new(card).provides(Block),
         IronWave => CardDefinition::new(card)
             .effect(FrontloadDamage)
             .provides(Block),
+        TwinStrike => CardDefinition::new(card).effect(FrontloadDamage),
         BodySlam => CardDefinition::new(card)
             .wants(PayoffRequirement::WantsMechanic(Block))
             .effect(DamageUses(Block)),
@@ -383,6 +388,9 @@ pub fn card_definition(card: CardId) -> CardDefinition {
             ))
             .burden(PowerSetup)
             .duplicate(StackingOutput),
+        // Juggernaut needs a future BlockGained reactive-power model; do not
+        // flatten it into ordinary frontload damage.
+        Juggernaut => CardDefinition::new(card),
         _ => CardDefinition::new(card),
     }
 }
