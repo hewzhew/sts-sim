@@ -2,7 +2,11 @@ use crate::ai::boss_mechanics_v1::{
     boss_mechanic_pressure_profile_v1, BossMechanicMissingAnswerV1, BossMechanicPressurePointV1,
     BossMechanicRedFlagV1,
 };
-use crate::content::cards::{get_card_definition, upgraded_base_cost_override, CardId, CardTag};
+use crate::ai::card_analysis_v1::{
+    card_analysis_profile_v1, CardAnalysisDeckSourceV1, CardAnalysisProfileV1,
+    CardAnalysisUpgradeRedundancyGroupV1, CardAnalysisUpgradeStackBehaviorV1,
+};
+use crate::content::cards::{get_card_definition, upgraded_base_cost_override, CardId};
 use crate::content::monsters::factory::EncounterId;
 use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
@@ -443,18 +447,19 @@ fn build_upgrade_candidate(
 
 fn mechanical_upgrade_delta(card: &CombatCard) -> UpgradeMechanicalDeltaV1 {
     let def = get_card_definition(card.id);
+    let analysis = card_analysis_profile_v1(card.id, card.upgrades);
     let mut upgraded = card.clone();
     let cost_before = current_base_cost(card);
     upgraded.upgrades = upgraded.upgrades.saturating_add(1);
     let cost_after = upgraded_base_cost_override(&upgraded).unwrap_or(cost_before);
     let mut delta = UpgradeMechanicalDeltaV1 {
         cost_delta: i32::from(cost_before.saturating_sub(cost_after)).max(0),
-        damage_delta: upgrade_damage_delta(card.id, def.upgrade_damage),
+        damage_delta: upgrade_damage_delta(&analysis, def.upgrade_damage),
         block_delta: def.upgrade_block.max(0),
         magic_delta: def.upgrade_magic,
-        exhaust_control_delta: matches!(card.id, CardId::TrueGrit | CardId::Meditate),
-        exhaust_removed_delta: matches!(card.id, CardId::Havoc | CardId::Armaments),
-        innate_delta: matches!(card.id, CardId::BootSequence),
+        exhaust_control_delta: analysis.is_upgrade_exhaust_control_delta,
+        exhaust_removed_delta: analysis.is_upgrade_exhaust_removed_delta,
+        innate_delta: analysis.is_upgrade_innate_delta,
         notes: Vec::new(),
     };
     if delta.exhaust_control_delta {
@@ -479,15 +484,10 @@ fn current_base_cost(card: &CombatCard) -> i8 {
     upgraded_base_cost_override(card).unwrap_or_else(|| get_card_definition(card.id).cost)
 }
 
-fn upgrade_damage_delta(card: CardId, single_hit_delta: i32) -> i32 {
-    let def = get_card_definition(card);
-    let hit_count = match card {
-        CardId::TwinStrike => 2,
-        CardId::SwordBoomerang => def.base_magic.max(1),
-        CardId::RiddleWithHoles => 5,
-        _ => 1,
-    };
-    single_hit_delta.max(0).saturating_mul(hit_count)
+fn upgrade_damage_delta(analysis: &CardAnalysisProfileV1, single_hit_delta: i32) -> i32 {
+    single_hit_delta
+        .max(0)
+        .saturating_mul(analysis.upgrade_damage_hit_count)
 }
 
 fn upgrade_roles(
@@ -495,80 +495,37 @@ fn upgrade_roles(
     delta: &UpgradeMechanicalDeltaV1,
     redundancy: &RedundancyProfileV1,
 ) -> Vec<UpgradeRoleV1> {
+    let analysis = card_analysis_profile_v1(card.id, card.upgrades);
     let mut roles = Vec::new();
-    match card.id {
-        CardId::TrueGrit
-        | CardId::Armaments
-        | CardId::LimitBreak
-        | CardId::Apparition
-        | CardId::Havoc => push_role(&mut roles, UpgradeRoleV1::CoreMechanic),
-        _ => {}
+    if analysis.is_upgrade_core_mechanic {
+        push_role(&mut roles, UpgradeRoleV1::CoreMechanic);
     }
-    match card.id {
-        CardId::TrueGrit
-        | CardId::SecondWind
-        | CardId::FiendFire
-        | CardId::BurningPact
-        | CardId::Corruption
-        | CardId::DarkEmbrace
-        | CardId::FeelNoPain => push_role(&mut roles, UpgradeRoleV1::EngineEnabler),
-        _ => {}
+    if analysis.is_upgrade_engine_enabler {
+        push_role(&mut roles, UpgradeRoleV1::EngineEnabler);
     }
-    match card.id {
-        CardId::PommelStrike
-        | CardId::ShrugItOff
-        | CardId::Warcry
-        | CardId::BattleTrance
-        | CardId::BurningPact
-        | CardId::Offering
-        | CardId::SecretWeapon
-        | CardId::SecretTechnique => push_role(&mut roles, UpgradeRoleV1::Consistency),
-        _ => {}
+    if analysis.is_upgrade_consistency {
+        push_role(&mut roles, UpgradeRoleV1::Consistency);
     }
-    match card.id {
-        CardId::FlameBarrier
-        | CardId::Impervious
-        | CardId::PowerThrough
-        | CardId::Apparition
-        | CardId::SecondWind
-        | CardId::TrueGrit
-        | CardId::ShrugItOff
-        | CardId::Entrench
-        | CardId::Barricade => push_role(&mut roles, UpgradeRoleV1::DefensiveSurvival),
-        _ => {}
+    if analysis.is_upgrade_defensive_survival {
+        push_role(&mut roles, UpgradeRoleV1::DefensiveSurvival);
     }
-    match card.id {
-        CardId::DemonForm
-        | CardId::Inflame
-        | CardId::SpotWeakness
-        | CardId::LimitBreak
-        | CardId::Corruption
-        | CardId::Barricade
-        | CardId::Entrench => push_role(&mut roles, UpgradeRoleV1::Scaling),
-        _ => {}
+    if analysis.is_upgrade_scaling {
+        push_role(&mut roles, UpgradeRoleV1::Scaling);
     }
-    match card.id {
-        CardId::Bludgeon
-        | CardId::Carnage
-        | CardId::Immolate
-        | CardId::Offering
-        | CardId::Bash
-        | CardId::Uppercut
-        | CardId::Whirlwind
-        | CardId::FiendFire => push_role(&mut roles, UpgradeRoleV1::PhaseBurst),
-        _ => {}
+    if analysis.is_upgrade_phase_burst {
+        push_role(&mut roles, UpgradeRoleV1::PhaseBurst);
     }
     if matches!(
         redundancy.group,
         RedundancyGroupV1::WeakApplication | RedundancyGroupV1::VulnerableApplication
-    ) || matches!(card.id, CardId::Bash | CardId::Uppercut | CardId::Shockwave)
+    ) || analysis.is_upgrade_debuff_coverage_candidate
     {
         push_role(&mut roles, UpgradeRoleV1::DebuffCoverage);
     }
     if delta.damage_delta > 0 {
         push_role(&mut roles, UpgradeRoleV1::FrontloadDamage);
     }
-    if delta.damage_delta > 0 && get_card_definition(card.id).cost >= 2 {
+    if delta.damage_delta > 0 && analysis.cost >= 2 {
         push_role(&mut roles, UpgradeRoleV1::TransitionalPower);
     }
     if roles.is_empty() {
@@ -579,7 +536,7 @@ fn upgrade_roles(
 
 fn redundancy_profile(run_state: &RunState, card: CardId) -> RedundancyProfileV1 {
     let group = redundancy_group(card);
-    let stack_behavior = stack_behavior(group, card);
+    let stack_behavior = stack_behavior(card);
     let same_card_count = run_state
         .master_deck
         .iter()
@@ -619,57 +576,47 @@ fn redundancy_profile(run_state: &RunState, card: CardId) -> RedundancyProfileV1
 }
 
 fn redundancy_group(card: CardId) -> RedundancyGroupV1 {
-    match card {
-        CardId::Clothesline | CardId::Uppercut | CardId::Shockwave | CardId::Blind => {
-            RedundancyGroupV1::WeakApplication
-        }
-        CardId::Bash | CardId::ThunderClap | CardId::Trip => {
+    match card_analysis_profile_v1(card, 0).upgrade_redundancy_group {
+        CardAnalysisUpgradeRedundancyGroupV1::WeakApplication => RedundancyGroupV1::WeakApplication,
+        CardAnalysisUpgradeRedundancyGroupV1::VulnerableApplication => {
             RedundancyGroupV1::VulnerableApplication
         }
-        CardId::TrueGrit | CardId::BurningPact => RedundancyGroupV1::ControlledExhaust,
-        CardId::SecondWind | CardId::FiendFire | CardId::SeverSoul => {
-            RedundancyGroupV1::MassExhaust
+        CardAnalysisUpgradeRedundancyGroupV1::ControlledExhaust => {
+            RedundancyGroupV1::ControlledExhaust
         }
-        CardId::PommelStrike
-        | CardId::ShrugItOff
-        | CardId::Warcry
-        | CardId::BattleTrance
-        | CardId::Offering => RedundancyGroupV1::DrawCantrip,
-        CardId::Bludgeon | CardId::Carnage | CardId::Immolate => {
+        CardAnalysisUpgradeRedundancyGroupV1::MassExhaust => RedundancyGroupV1::MassExhaust,
+        CardAnalysisUpgradeRedundancyGroupV1::DrawCantrip => RedundancyGroupV1::DrawCantrip,
+        CardAnalysisUpgradeRedundancyGroupV1::FrontloadBigAttack => {
             RedundancyGroupV1::FrontloadBigAttack
         }
-        CardId::DemonForm | CardId::Inflame | CardId::SpotWeakness => {
+        CardAnalysisUpgradeRedundancyGroupV1::PersistentStrengthScaling => {
             RedundancyGroupV1::PersistentStrengthScaling
         }
-        CardId::FeelNoPain | CardId::DarkEmbrace => RedundancyGroupV1::ExhaustPayoffPower,
-        CardId::Corruption | CardId::Barricade => RedundancyGroupV1::NonStackingPower,
-        CardId::FlameBarrier | CardId::Impervious | CardId::PowerThrough => {
-            RedundancyGroupV1::BurstBlock
+        CardAnalysisUpgradeRedundancyGroupV1::ExhaustPayoffPower => {
+            RedundancyGroupV1::ExhaustPayoffPower
         }
-        _ => RedundancyGroupV1::Generic,
+        CardAnalysisUpgradeRedundancyGroupV1::NonStackingPower => {
+            RedundancyGroupV1::NonStackingPower
+        }
+        CardAnalysisUpgradeRedundancyGroupV1::BurstBlock => RedundancyGroupV1::BurstBlock,
+        CardAnalysisUpgradeRedundancyGroupV1::Generic => RedundancyGroupV1::Generic,
     }
 }
 
-fn stack_behavior(group: RedundancyGroupV1, card: CardId) -> StackBehaviorV1 {
-    match group {
-        RedundancyGroupV1::WeakApplication | RedundancyGroupV1::VulnerableApplication => {
-            StackBehaviorV1::DurationCoverage
-        }
-        RedundancyGroupV1::ControlledExhaust | RedundancyGroupV1::DrawCantrip => {
-            StackBehaviorV1::DensityPositive
-        }
-        RedundancyGroupV1::MassExhaust | RedundancyGroupV1::FrontloadBigAttack => {
-            StackBehaviorV1::DensityNegative
-        }
-        RedundancyGroupV1::PersistentStrengthScaling | RedundancyGroupV1::NonStackingPower => {
+fn stack_behavior(card: CardId) -> StackBehaviorV1 {
+    match card_analysis_profile_v1(card, 0).upgrade_stack_behavior {
+        CardAnalysisUpgradeStackBehaviorV1::DurationCoverage => StackBehaviorV1::DurationCoverage,
+        CardAnalysisUpgradeStackBehaviorV1::DensityPositive => StackBehaviorV1::DensityPositive,
+        CardAnalysisUpgradeStackBehaviorV1::DensityNegative => StackBehaviorV1::DensityNegative,
+        CardAnalysisUpgradeStackBehaviorV1::RedundantAfterFirst => {
             StackBehaviorV1::RedundantAfterFirst
         }
-        RedundancyGroupV1::ExhaustPayoffPower => StackBehaviorV1::StackableIntensity,
-        RedundancyGroupV1::BurstBlock => StackBehaviorV1::ComboThreshold,
-        RedundancyGroupV1::Generic => match card {
-            CardId::LimitBreak => StackBehaviorV1::ComboThreshold,
-            _ => StackBehaviorV1::Generic,
-        },
+        CardAnalysisUpgradeStackBehaviorV1::StackableIntensity => {
+            StackBehaviorV1::StackableIntensity
+        }
+        CardAnalysisUpgradeStackBehaviorV1::ComboThreshold => StackBehaviorV1::ComboThreshold,
+        CardAnalysisUpgradeStackBehaviorV1::NonStackingOnce => StackBehaviorV1::NonStackingOnce,
+        CardAnalysisUpgradeStackBehaviorV1::Generic => StackBehaviorV1::Generic,
     }
 }
 
@@ -754,7 +701,10 @@ fn build_upgrade_debt_ledger(
             &mut debts,
             UpgradeDebtKindV1::StasisRecovery,
             candidates,
-            |candidate| candidate.card == CardId::Apparition,
+            |candidate| {
+                card_analysis_profile_v1(candidate.card, candidate.upgrades)
+                    .is_upgrade_stasis_recovery_candidate
+            },
             UpgradeDebtSeverityV1::ImportantBeforeBoss,
             pressure_label(run_state, "stasis recovery"),
             "unpaid stasis recovery upgrade can leave key defensive cards unusable on the boss turn",
@@ -768,10 +718,8 @@ fn build_upgrade_debt_ledger(
             UpgradeDebtKindV1::HyperbeamBlock,
             candidates,
             |candidate| {
-                matches!(
-                    candidate.card,
-                    CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier
-                )
+                card_analysis_profile_v1(candidate.card, candidate.upgrades)
+                    .is_upgrade_hyperbeam_block_candidate
             },
             UpgradeDebtSeverityV1::ImportantBeforeBoss,
             pressure_label(run_state, "hyperbeam block"),
@@ -1028,7 +976,7 @@ fn recovery_sources(run_state: &RunState) -> Vec<String> {
     if run_state
         .master_deck
         .iter()
-        .any(|card| card.id == CardId::Reaper)
+        .any(|card| card_analysis_profile_v1(card.id, card.upgrades).has_combat_sustain)
     {
         sources.push("Reaper(combat healing if supported)".to_string());
     }
@@ -1068,8 +1016,10 @@ fn card_label(card: CardId, upgrades: u8) -> String {
 }
 
 fn is_starter(card: CardId) -> bool {
-    let def = get_card_definition(card);
-    def.tags.contains(&CardTag::StarterStrike) || def.tags.contains(&CardTag::StarterDefend)
+    matches!(
+        card_analysis_profile_v1(card, 0).source,
+        CardAnalysisDeckSourceV1::StarterStrike | CardAnalysisDeckSourceV1::StarterDefend
+    )
 }
 
 #[cfg(test)]

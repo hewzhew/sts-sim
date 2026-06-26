@@ -89,6 +89,37 @@ pub enum CardAnalysisStartupKeyV1 {
     Offering,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardAnalysisUpgradeRedundancyGroupV1 {
+    WeakApplication,
+    VulnerableApplication,
+    ControlledExhaust,
+    MassExhaust,
+    DrawCantrip,
+    FrontloadBigAttack,
+    PersistentStrengthScaling,
+    ExhaustPayoffPower,
+    NonStackingPower,
+    BurstBlock,
+    #[default]
+    Generic,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardAnalysisUpgradeStackBehaviorV1 {
+    NonStackingOnce,
+    StackableIntensity,
+    DurationCoverage,
+    RedundantAfterFirst,
+    DensityPositive,
+    DensityNegative,
+    ComboThreshold,
+    #[default]
+    Generic,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CardAnalysisProfileV1 {
     pub card: CardId,
@@ -96,6 +127,8 @@ pub struct CardAnalysisProfileV1 {
     pub source: CardAnalysisDeckSourceV1,
     pub card_type: CardType,
     pub cost: i8,
+    pub attack_hit_count: i32,
+    pub upgrade_damage_hit_count: i32,
     pub damage: i32,
     pub block: i32,
     pub attack_chunk: CardAnalysisAttackChunkV1,
@@ -110,6 +143,7 @@ pub struct CardAnalysisProfileV1 {
     pub has_draw_access: bool,
     pub has_energy_access: bool,
     pub has_damage_scaling: bool,
+    pub has_combat_sustain: bool,
     pub has_block_scaling_hook: bool,
     pub has_exhaust_enabler: bool,
     pub has_exhaust_payoff: bool,
@@ -143,11 +177,26 @@ pub struct CardAnalysisProfileV1 {
     pub is_startup_stable_strength_support_candidate: bool,
     pub is_startup_self_damage_support_candidate: bool,
     pub is_startup_snecko_energy_candidate: bool,
+    pub upgrade_redundancy_group: CardAnalysisUpgradeRedundancyGroupV1,
+    pub upgrade_stack_behavior: CardAnalysisUpgradeStackBehaviorV1,
+    pub is_upgrade_exhaust_control_delta: bool,
+    pub is_upgrade_exhaust_removed_delta: bool,
+    pub is_upgrade_innate_delta: bool,
+    pub is_upgrade_core_mechanic: bool,
+    pub is_upgrade_engine_enabler: bool,
+    pub is_upgrade_consistency: bool,
+    pub is_upgrade_defensive_survival: bool,
+    pub is_upgrade_scaling: bool,
+    pub is_upgrade_phase_burst: bool,
+    pub is_upgrade_debuff_coverage_candidate: bool,
+    pub is_upgrade_stasis_recovery_candidate: bool,
+    pub is_upgrade_hyperbeam_block_candidate: bool,
 }
 
 pub fn card_analysis_profile_v1(card: CardId, upgrades: u8) -> CardAnalysisProfileV1 {
     let definition = get_card_definition(card);
     let semantic = card_reward_semantic_profile_v1(&RewardCard::new(card, upgrades));
+    let attack_hit_count = attack_hit_count_v1(card, upgrades);
     let damage = card_damage_v1(card, upgrades);
     let block = card_block_v1(card, upgrades);
     let source = deck_source_v1(card);
@@ -160,6 +209,8 @@ pub fn card_analysis_profile_v1(card: CardId, upgrades: u8) -> CardAnalysisProfi
         source,
         card_type: definition.card_type,
         cost: definition.cost,
+        attack_hit_count,
+        upgrade_damage_hit_count: upgrade_damage_hit_count_v1(card),
         damage,
         block,
         attack_chunk: attack_chunk_v1(damage, upgrades, definition.cost),
@@ -190,6 +241,7 @@ pub fn card_analysis_profile_v1(card: CardId, upgrades: u8) -> CardAnalysisProfi
                 &semantic.roles,
                 CardRewardSemanticRoleV1::CombatExternalPayoff,
             ),
+        has_combat_sustain: has_role_v1(&semantic.roles, CardRewardSemanticRoleV1::CombatSustain),
         has_block_scaling_hook: has_role_v1(
             &semantic.roles,
             CardRewardSemanticRoleV1::BlockRetention,
@@ -236,6 +288,20 @@ pub fn card_analysis_profile_v1(card: CardId, upgrades: u8) -> CardAnalysisProfi
             is_startup_stable_strength_support_candidate_v1(card),
         is_startup_self_damage_support_candidate: is_startup_self_damage_support_candidate_v1(card),
         is_startup_snecko_energy_candidate: is_startup_snecko_energy_candidate_v1(card),
+        upgrade_redundancy_group: upgrade_redundancy_group_v1(card),
+        upgrade_stack_behavior: upgrade_stack_behavior_v1(card),
+        is_upgrade_exhaust_control_delta: is_upgrade_exhaust_control_delta_v1(card),
+        is_upgrade_exhaust_removed_delta: is_upgrade_exhaust_removed_delta_v1(card),
+        is_upgrade_innate_delta: matches!(card, CardId::BootSequence),
+        is_upgrade_core_mechanic: is_upgrade_core_mechanic_v1(card),
+        is_upgrade_engine_enabler: is_upgrade_engine_enabler_v1(card),
+        is_upgrade_consistency: is_upgrade_consistency_v1(card),
+        is_upgrade_defensive_survival: is_upgrade_defensive_survival_v1(card),
+        is_upgrade_scaling: is_upgrade_scaling_v1(card),
+        is_upgrade_phase_burst: is_upgrade_phase_burst_v1(card),
+        is_upgrade_debuff_coverage_candidate: is_upgrade_debuff_coverage_candidate_v1(card),
+        is_upgrade_stasis_recovery_candidate: matches!(card, CardId::Apparition),
+        is_upgrade_hyperbeam_block_candidate: is_upgrade_hyperbeam_block_candidate_v1(card),
     }
 }
 
@@ -271,14 +337,32 @@ fn deck_source_v1(card: CardId) -> CardAnalysisDeckSourceV1 {
 
 fn card_damage_v1(card: CardId, upgrades: u8) -> i32 {
     let definition = get_card_definition(card);
+    let upgrade_count = i32::from(upgrades);
+    let damage_per_hit =
+        (definition.base_damage + definition.upgrade_damage * upgrade_count).max(0);
+    damage_per_hit.saturating_mul(attack_hit_count_v1(card, upgrades))
+}
+
+fn attack_hit_count_v1(card: CardId, upgrades: u8) -> i32 {
+    let definition = get_card_definition(card);
     let upgrades = i32::from(upgrades);
-    let damage_per_hit = (definition.base_damage + definition.upgrade_damage * upgrades).max(0);
     match card {
-        CardId::TwinStrike => damage_per_hit.saturating_mul(2),
-        CardId::SwordBoomerang => damage_per_hit
-            .saturating_mul((definition.base_magic + definition.upgrade_magic * upgrades).max(0)),
-        CardId::RiddleWithHoles => damage_per_hit.saturating_mul(5),
-        _ => damage_per_hit,
+        CardId::TwinStrike => 2,
+        CardId::SwordBoomerang => {
+            (definition.base_magic + definition.upgrade_magic * upgrades).max(1)
+        }
+        CardId::RiddleWithHoles => 5,
+        _ => 1,
+    }
+}
+
+fn upgrade_damage_hit_count_v1(card: CardId) -> i32 {
+    let definition = get_card_definition(card);
+    match card {
+        CardId::TwinStrike => 2,
+        CardId::SwordBoomerang => definition.base_magic.max(1),
+        CardId::RiddleWithHoles => 5,
+        _ => 1,
     }
 }
 
@@ -563,5 +647,176 @@ fn is_startup_snecko_energy_candidate_v1(card: CardId) -> bool {
     matches!(
         card,
         CardId::Offering | CardId::SeeingRed | CardId::Bloodletting
+    )
+}
+
+fn upgrade_redundancy_group_v1(card: CardId) -> CardAnalysisUpgradeRedundancyGroupV1 {
+    match card {
+        CardId::Clothesline | CardId::Uppercut | CardId::Shockwave | CardId::Blind => {
+            CardAnalysisUpgradeRedundancyGroupV1::WeakApplication
+        }
+        CardId::Bash | CardId::ThunderClap | CardId::Trip => {
+            CardAnalysisUpgradeRedundancyGroupV1::VulnerableApplication
+        }
+        CardId::TrueGrit | CardId::BurningPact => {
+            CardAnalysisUpgradeRedundancyGroupV1::ControlledExhaust
+        }
+        CardId::SecondWind | CardId::FiendFire | CardId::SeverSoul => {
+            CardAnalysisUpgradeRedundancyGroupV1::MassExhaust
+        }
+        CardId::PommelStrike
+        | CardId::ShrugItOff
+        | CardId::Warcry
+        | CardId::BattleTrance
+        | CardId::Offering => CardAnalysisUpgradeRedundancyGroupV1::DrawCantrip,
+        CardId::Bludgeon | CardId::Carnage | CardId::Immolate => {
+            CardAnalysisUpgradeRedundancyGroupV1::FrontloadBigAttack
+        }
+        CardId::DemonForm | CardId::Inflame | CardId::SpotWeakness => {
+            CardAnalysisUpgradeRedundancyGroupV1::PersistentStrengthScaling
+        }
+        CardId::FeelNoPain | CardId::DarkEmbrace => {
+            CardAnalysisUpgradeRedundancyGroupV1::ExhaustPayoffPower
+        }
+        CardId::Corruption | CardId::Barricade => {
+            CardAnalysisUpgradeRedundancyGroupV1::NonStackingPower
+        }
+        CardId::FlameBarrier | CardId::Impervious | CardId::PowerThrough => {
+            CardAnalysisUpgradeRedundancyGroupV1::BurstBlock
+        }
+        _ => CardAnalysisUpgradeRedundancyGroupV1::Generic,
+    }
+}
+
+fn upgrade_stack_behavior_v1(card: CardId) -> CardAnalysisUpgradeStackBehaviorV1 {
+    match upgrade_redundancy_group_v1(card) {
+        CardAnalysisUpgradeRedundancyGroupV1::WeakApplication
+        | CardAnalysisUpgradeRedundancyGroupV1::VulnerableApplication => {
+            CardAnalysisUpgradeStackBehaviorV1::DurationCoverage
+        }
+        CardAnalysisUpgradeRedundancyGroupV1::ControlledExhaust
+        | CardAnalysisUpgradeRedundancyGroupV1::DrawCantrip => {
+            CardAnalysisUpgradeStackBehaviorV1::DensityPositive
+        }
+        CardAnalysisUpgradeRedundancyGroupV1::MassExhaust
+        | CardAnalysisUpgradeRedundancyGroupV1::FrontloadBigAttack => {
+            CardAnalysisUpgradeStackBehaviorV1::DensityNegative
+        }
+        CardAnalysisUpgradeRedundancyGroupV1::PersistentStrengthScaling
+        | CardAnalysisUpgradeRedundancyGroupV1::NonStackingPower => {
+            CardAnalysisUpgradeStackBehaviorV1::RedundantAfterFirst
+        }
+        CardAnalysisUpgradeRedundancyGroupV1::ExhaustPayoffPower => {
+            CardAnalysisUpgradeStackBehaviorV1::StackableIntensity
+        }
+        CardAnalysisUpgradeRedundancyGroupV1::BurstBlock => {
+            CardAnalysisUpgradeStackBehaviorV1::ComboThreshold
+        }
+        CardAnalysisUpgradeRedundancyGroupV1::Generic => {
+            if matches!(card, CardId::LimitBreak) {
+                CardAnalysisUpgradeStackBehaviorV1::ComboThreshold
+            } else {
+                CardAnalysisUpgradeStackBehaviorV1::Generic
+            }
+        }
+    }
+}
+
+fn is_upgrade_exhaust_control_delta_v1(card: CardId) -> bool {
+    matches!(card, CardId::TrueGrit | CardId::Meditate)
+}
+
+fn is_upgrade_exhaust_removed_delta_v1(card: CardId) -> bool {
+    matches!(card, CardId::Havoc | CardId::Armaments)
+}
+
+fn is_upgrade_core_mechanic_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::TrueGrit
+            | CardId::Armaments
+            | CardId::LimitBreak
+            | CardId::Apparition
+            | CardId::Havoc
+    )
+}
+
+fn is_upgrade_engine_enabler_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::TrueGrit
+            | CardId::SecondWind
+            | CardId::FiendFire
+            | CardId::BurningPact
+            | CardId::Corruption
+            | CardId::DarkEmbrace
+            | CardId::FeelNoPain
+    )
+}
+
+fn is_upgrade_consistency_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::PommelStrike
+            | CardId::ShrugItOff
+            | CardId::Warcry
+            | CardId::BattleTrance
+            | CardId::BurningPact
+            | CardId::Offering
+            | CardId::SecretWeapon
+            | CardId::SecretTechnique
+    )
+}
+
+fn is_upgrade_defensive_survival_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::FlameBarrier
+            | CardId::Impervious
+            | CardId::PowerThrough
+            | CardId::Apparition
+            | CardId::SecondWind
+            | CardId::TrueGrit
+            | CardId::ShrugItOff
+            | CardId::Entrench
+            | CardId::Barricade
+    )
+}
+
+fn is_upgrade_scaling_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::DemonForm
+            | CardId::Inflame
+            | CardId::SpotWeakness
+            | CardId::LimitBreak
+            | CardId::Corruption
+            | CardId::Barricade
+            | CardId::Entrench
+    )
+}
+
+fn is_upgrade_phase_burst_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Bludgeon
+            | CardId::Carnage
+            | CardId::Immolate
+            | CardId::Offering
+            | CardId::Bash
+            | CardId::Uppercut
+            | CardId::Whirlwind
+            | CardId::FiendFire
+    )
+}
+
+fn is_upgrade_debuff_coverage_candidate_v1(card: CardId) -> bool {
+    matches!(card, CardId::Bash | CardId::Uppercut | CardId::Shockwave)
+}
+
+fn is_upgrade_hyperbeam_block_candidate_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier
     )
 }
