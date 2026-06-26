@@ -1,6 +1,7 @@
 use super::commands::{RunControlAutoStepOptions, RunControlRouteAutomationMode};
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::view_model::build_run_control_view_model;
+use crate::state::core::EngineState;
 
 const DEFAULT_AUTO_RUN_MAX_OPERATIONS: usize = 128;
 
@@ -8,11 +9,19 @@ pub(in crate::eval::run_control) fn apply_auto_run(
     session: &mut RunControlSession,
     options: RunControlAutoStepOptions,
 ) -> Result<RunControlCommandOutcome, String> {
-    apply_auto_run_with_noncombat_mode(
+    let outcome = apply_auto_run_with_noncombat_mode(
         session,
         options,
         super::auto_step::NonCombatAutoMode::FullPlanner,
-    )
+    )?;
+    if matches!(session.engine_state, EngineState::GameOver(_)) {
+        Ok(outcome)
+    } else {
+        Err(format!(
+            "auto_run_incomplete: automation reached a policy boundary before terminal state\n{}",
+            outcome.message
+        ))
+    }
 }
 
 pub(crate) fn apply_branch_experiment_auto_run(

@@ -127,6 +127,9 @@ fn advance(session: &mut RunControlSession, args: Args) -> String {
     };
     match session.apply_command(RunControlCommand::AutoRun(options)) {
         Ok(outcome) => first_reason(&outcome.message).unwrap_or_else(|| "boundary".to_string()),
+        Err(err) if err.starts_with("auto_run_incomplete:") => {
+            first_reason(&err).unwrap_or_else(|| "auto_run_incomplete".to_string())
+        }
         Err(err) => format!("advance_failed: {err}"),
     }
 }
