@@ -623,6 +623,10 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
             &deck_cards,
             &reward_cards,
         );
+    let semantic_explanation =
+        sts_simulator::ai::strategy::reward_semantic_probe::explain_reward_semantics_v1(
+            &semantic_probe,
+        );
     let mut lines = Vec::new();
     lines.push("Card reward evidence:".to_string());
     lines.push(format!(
@@ -646,10 +650,10 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
     ));
     lines.push(format!(
         "semantic_probe: deck_package strength={:?} exhaust={:?} self_damage={:?} block={:?}",
-        semantic_probe.deck_package.strength,
-        semantic_probe.deck_package.exhaust,
-        semantic_probe.deck_package.self_damage,
-        semantic_probe.deck_package.block
+        semantic_explanation.deck_package.strength,
+        semantic_explanation.deck_package.exhaust,
+        semantic_explanation.deck_package.self_damage,
+        semantic_explanation.deck_package.block
     ));
     lines.push("candidate_pool:".to_string());
     for (candidate_position, candidate) in context.candidates.iter().enumerate() {
@@ -691,9 +695,9 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
                 .collect::<Vec<_>>(),
             )
         ));
-        if let Some(probe_candidate) = semantic_probe.candidates.get(candidate_position) {
-            lines.extend(render_reward_semantic_probe_candidate_v1(
-                &probe_candidate.transition,
+        if let Some(probe_candidate) = semantic_explanation.candidates.get(candidate_position) {
+            lines.extend(render_reward_semantic_explanation_candidate_v1(
+                probe_candidate,
             ));
         }
         if let Some(compiled) = compiled {
@@ -738,29 +742,31 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
     Ok(lines.join("\n"))
 }
 
-fn render_reward_semantic_probe_candidate_v1(
-    transition: &sts_simulator::ai::strategy::package_transition::PackageTransitionReport,
+fn render_reward_semantic_explanation_candidate_v1(
+    explanation: &sts_simulator::ai::strategy::reward_semantic_probe::RewardCandidateSemanticExplanationV1,
 ) -> Vec<String> {
     let mut lines = Vec::new();
     lines.push(format!(
         "      semantic: package_changes=[{}] closes=[{}] opens=[{}]",
-        render_debug_list(&transition.package_changes),
-        render_debug_list(&transition.newly_closed_requirements),
-        render_debug_list(&transition.newly_open_requirements)
+        render_short_list(&explanation.package_changes),
+        render_short_list(&explanation.closes),
+        render_short_list(&explanation.opens)
     ));
     lines.push(format!(
-        "      semantic: effects=[{}] rules=[{}] handlers=[{}]",
-        render_debug_list(&transition.candidate_play_effects),
-        render_debug_list(&transition.candidate_installed_rules),
-        render_debug_list(&transition.candidate_event_handlers)
+        "      semantic: candidate_facts provides=[{}] damage_uses=[{}] emits=[{}] rules=[{}] handlers=[{}]",
+        render_short_list(&explanation.provides),
+        render_short_list(&explanation.damage_uses),
+        render_short_list(&explanation.emits),
+        render_short_list(&explanation.rules),
+        render_short_list(&explanation.handlers)
     ));
     lines.push(format!(
         "      semantic: burdens=[{}] duplicates=[{}] new_mechanics=[{}] new_streams=[{}] new_rules=[{}]",
-        render_debug_list(&transition.candidate_burdens),
-        render_debug_list(&transition.candidate_duplicate_behaviors),
-        render_debug_list(&transition.new_mechanics),
-        render_debug_list(&transition.new_event_streams),
-        render_debug_list(&transition.new_installed_rules)
+        render_short_list(&explanation.burdens),
+        render_short_list(&explanation.duplicates),
+        render_short_list(&explanation.new_mechanics),
+        render_short_list(&explanation.new_streams),
+        render_short_list(&explanation.new_rules)
     ));
     lines
 }
@@ -795,18 +801,6 @@ fn render_short_list(items: &[String]) -> String {
         "-".to_string()
     } else {
         items.join(", ")
-    }
-}
-
-fn render_debug_list<T: std::fmt::Debug>(items: &[T]) -> String {
-    if items.is_empty() {
-        "-".to_string()
-    } else {
-        items
-            .iter()
-            .map(|item| format!("{item:?}"))
-            .collect::<Vec<_>>()
-            .join(", ")
     }
 }
 
