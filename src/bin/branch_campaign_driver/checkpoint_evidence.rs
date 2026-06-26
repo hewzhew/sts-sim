@@ -746,6 +746,17 @@ fn render_reward_semantic_explanation_candidate_v1(
     explanation: &sts_simulator::ai::strategy::reward_semantic_probe::RewardCandidateSemanticExplanationV1,
 ) -> Vec<String> {
     let mut lines = Vec::new();
+    let coverage_fields = explanation
+        .coverage
+        .explained_fields
+        .iter()
+        .map(|field| (*field).to_string())
+        .collect::<Vec<_>>();
+    lines.push(format!(
+        "      semantic: coverage={:?} fields=[{}]",
+        explanation.coverage.status,
+        render_short_list(&coverage_fields)
+    ));
     lines.push(format!(
         "      semantic: package_changes=[{}] closes=[{}] opens=[{}]",
         render_short_list(&explanation.package_changes),
