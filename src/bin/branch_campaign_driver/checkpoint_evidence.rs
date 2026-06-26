@@ -604,6 +604,7 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
             session.engine_state
         )
     })?;
+    let reward_cards = cards.iter().map(|card| card.id).collect::<Vec<_>>();
     let context =
         sts_simulator::ai::card_reward_policy_v1::build_card_reward_decision_context_with_current_route_v1(
             &session.run_state,
@@ -611,6 +612,17 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
             cards,
         );
     let trace = sts_simulator::ai::strategic::strategic_trace_for_card_reward(&context);
+    let deck_cards = session
+        .run_state
+        .master_deck
+        .iter()
+        .map(|card| card.id)
+        .collect::<Vec<_>>();
+    let semantic_probe =
+        sts_simulator::ai::strategy::reward_semantic_probe::assess_reward_semantics_from_cards(
+            &deck_cards,
+            &reward_cards,
+        );
     let mut lines = Vec::new();
     lines.push("Card reward evidence:".to_string());
     lines.push(format!(
@@ -632,8 +644,14 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
         "diagnostics: startup_strong_draw={}->{}",
         context.startup.strong_draw_count, context.startup.effective_strong_draw_count,
     ));
+    lines.push(format!(
+        "semantic_probe: deck_package strength={:?} exhaust={:?} self_damage={:?}",
+        semantic_probe.deck_package.strength,
+        semantic_probe.deck_package.exhaust,
+        semantic_probe.deck_package.self_damage
+    ));
     lines.push("candidate_pool:".to_string());
-    for candidate in &context.candidates {
+    for (candidate_position, candidate) in context.candidates.iter().enumerate() {
         let action = sts_simulator::ai::strategic::CandidateAction::TakeCard {
             index: candidate.index,
             card: candidate.card,
@@ -672,6 +690,11 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
                 .collect::<Vec<_>>(),
             )
         ));
+        if let Some(probe_candidate) = semantic_probe.candidates.get(candidate_position) {
+            lines.extend(render_reward_semantic_probe_candidate_v1(
+                &probe_candidate.transition,
+            ));
+        }
         if let Some(compiled) = compiled {
             lines.push(format!("      verdict: {:?}", compiled.verdict));
             lines.push(format!("      diagnostics: score={:.2}", compiled.score));
@@ -714,6 +737,33 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
     Ok(lines.join("\n"))
 }
 
+fn render_reward_semantic_probe_candidate_v1(
+    transition: &sts_simulator::ai::strategy::package_transition::PackageTransitionReport,
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "      semantic: package_changes=[{}] closes=[{}] opens=[{}]",
+        render_debug_list(&transition.package_changes),
+        render_debug_list(&transition.newly_closed_requirements),
+        render_debug_list(&transition.newly_open_requirements)
+    ));
+    lines.push(format!(
+        "      semantic: effects=[{}] rules=[{}] handlers=[{}]",
+        render_debug_list(&transition.candidate_play_effects),
+        render_debug_list(&transition.candidate_installed_rules),
+        render_debug_list(&transition.candidate_event_handlers)
+    ));
+    lines.push(format!(
+        "      semantic: burdens=[{}] duplicates=[{}] new_mechanics=[{}] new_streams=[{}] new_rules=[{}]",
+        render_debug_list(&transition.candidate_burdens),
+        render_debug_list(&transition.candidate_duplicate_behaviors),
+        render_debug_list(&transition.new_mechanics),
+        render_debug_list(&transition.new_event_streams),
+        render_debug_list(&transition.new_installed_rules)
+    ));
+    lines
+}
+
 fn active_or_visible_reward_cards_for_inspect_v1(
     session: &RunControlSession,
 ) -> Option<Vec<sts_simulator::state::rewards::RewardCard>> {
@@ -744,6 +794,18 @@ fn render_short_list(items: &[String]) -> String {
         "-".to_string()
     } else {
         items.join(", ")
+    }
+}
+
+fn render_debug_list<T: std::fmt::Debug>(items: &[T]) -> String {
+    if items.is_empty() {
+        "-".to_string()
+    } else {
+        items
+            .iter()
+            .map(|item| format!("{item:?}"))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 

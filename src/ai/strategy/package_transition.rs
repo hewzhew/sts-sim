@@ -1,6 +1,6 @@
 use crate::ai::analysis::card_semantics::{
     CardBurden, CardDefinition, CombatEvent, DeckMechanicContext, DuplicateBehavior, EventHandler,
-    InstalledRule, Mechanic, PayoffRequirement,
+    InstalledRule, Mechanic, PayoffRequirement, PlayEffect,
 };
 use crate::ai::strategy::package_state::{
     assess_package_state, PackageMaturity, PackageStateReport,
@@ -32,6 +32,8 @@ pub struct PackageTransitionReport {
     pub new_mechanics: Vec<Mechanic>,
     pub new_event_streams: Vec<CombatEvent>,
     pub new_installed_rules: Vec<InstalledRule>,
+    pub candidate_play_effects: Vec<PlayEffect>,
+    pub candidate_installed_rules: Vec<InstalledRule>,
     pub candidate_event_handlers: Vec<EventHandler>,
     pub candidate_burdens: Vec<CardBurden>,
     pub candidate_duplicate_behaviors: Vec<DuplicateBehavior>,
@@ -66,6 +68,8 @@ pub fn assess_package_transition(
             &before_context.installed_rules,
             &after_context.installed_rules,
         ),
+        candidate_play_effects: candidate.play_effects.clone(),
+        candidate_installed_rules: candidate.installed_rules.clone(),
         candidate_event_handlers: candidate.event_handlers.clone(),
         candidate_burdens: candidate.burdens.clone(),
         candidate_duplicate_behaviors: candidate.duplicate_behaviors.clone(),

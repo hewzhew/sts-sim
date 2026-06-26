@@ -12,3 +12,4 @@ pub mod gates;
 pub mod jobs;
 pub mod package_state;
 pub mod package_transition;
+pub mod reward_semantic_probe;
