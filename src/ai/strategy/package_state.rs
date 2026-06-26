@@ -16,6 +16,7 @@ pub struct PackageStateReport {
     pub strength: PackageMaturity,
     pub exhaust: PackageMaturity,
     pub self_damage: PackageMaturity,
+    pub block: PackageMaturity,
     pub open_requirements: Vec<PayoffRequirement>,
 }
 
@@ -24,6 +25,7 @@ pub fn assess_package_state(ctx: &DeckMechanicContext) -> PackageStateReport {
         strength: assess_strength_package(ctx),
         exhaust: assess_exhaust_package(ctx),
         self_damage: assess_self_damage_package(ctx),
+        block: assess_block_package(ctx),
         open_requirements: ctx.open_payoff_requirements.clone(),
     }
 }
@@ -56,6 +58,14 @@ fn assess_self_damage_package(ctx: &DeckMechanicContext) -> PackageMaturity {
         .contains(&PayoffRequirement::WantsEventStream(
             CombatEvent::CardSelfDamage,
         ));
+    maturity_from_source_and_payoff(has_source, has_payoff, false)
+}
+
+fn assess_block_package(ctx: &DeckMechanicContext) -> PackageMaturity {
+    let has_source = ctx.mechanics.contains(&Mechanic::Block);
+    let has_payoff = ctx
+        .payoff_requirements
+        .contains(&PayoffRequirement::WantsMechanic(Mechanic::Block));
     maturity_from_source_and_payoff(has_source, has_payoff, false)
 }
 

@@ -12,6 +12,7 @@ pub enum PackageKind {
     Strength,
     Exhaust,
     SelfDamage,
+    Block,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -101,6 +102,7 @@ fn package_state_changes(
         before.self_damage,
         after.self_damage,
     );
+    push_change_if_different(&mut changes, PackageKind::Block, before.block, after.block);
     changes
 }
 

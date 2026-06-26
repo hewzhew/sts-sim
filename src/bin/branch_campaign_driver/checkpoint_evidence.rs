@@ -645,10 +645,11 @@ pub(super) fn render_checkpoint_card_reward_evidence_v1(
         context.startup.strong_draw_count, context.startup.effective_strong_draw_count,
     ));
     lines.push(format!(
-        "semantic_probe: deck_package strength={:?} exhaust={:?} self_damage={:?}",
+        "semantic_probe: deck_package strength={:?} exhaust={:?} self_damage={:?} block={:?}",
         semantic_probe.deck_package.strength,
         semantic_probe.deck_package.exhaust,
-        semantic_probe.deck_package.self_damage
+        semantic_probe.deck_package.self_damage,
+        semantic_probe.deck_package.block
     ));
     lines.push("candidate_pool:".to_string());
     for (candidate_position, candidate) in context.candidates.iter().enumerate() {

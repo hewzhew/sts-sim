@@ -333,6 +333,10 @@ pub fn card_definition(card: CardId) -> CardDefinition {
             .provides(Vulnerable)
             .provides(Weak),
         Disarm => CardDefinition::new(card).provides(EnemyStrengthDown),
+        FlameBarrier | IronWave => CardDefinition::new(card).provides(Block),
+        BodySlam => CardDefinition::new(card)
+            .wants(PayoffRequirement::WantsMechanic(Block))
+            .effect(DamageUses(Block)),
         WildStrike | RecklessCharge => CardDefinition::new(card)
             .effect(AddCombatDeckClutter)
             .burden(AddsCombatDeckClutter),
