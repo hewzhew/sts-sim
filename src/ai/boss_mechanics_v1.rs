@@ -1,6 +1,5 @@
 use crate::ai::block_plan_profile_v1::{block_plan_profile_v1, BlockPlanProfileV1};
-use crate::ai::card_semantics_v1::card_mechanics_profile_v1;
-use crate::content::cards::{get_card_definition, CardId, CardType};
+use crate::ai::card_analysis_v1::{card_analysis_profile_v1, CardAnalysisBossTransitionBurstV1};
 use crate::content::monsters::factory::EncounterId;
 use crate::content::relics::RelicId;
 use crate::state::run::RunState;
@@ -302,35 +301,35 @@ impl BossMechanicDeckFactsV1 {
         };
 
         for card in &run_state.master_deck {
-            let def = get_card_definition(card.id);
-            if def.card_type == CardType::Power {
+            let analysis = card_analysis_profile_v1(card.id, card.upgrades);
+            if matches!(analysis.card_type, crate::content::cards::CardType::Power) {
                 facts.power_count = facts.power_count.saturating_add(1);
             }
-            if def.card_type != CardType::Attack {
+            if analysis.is_non_attack {
                 facts.non_attack_count = facts.non_attack_count.saturating_add(1);
             }
-            if is_minor_power(card.id) {
+            if analysis.is_boss_minor_power {
                 facts.minor_power_count = facts.minor_power_count.saturating_add(1);
             }
-            if is_aoe(card.id) {
+            if analysis.aoe_support > Default::default() {
                 facts.aoe_count = facts.aoe_count.saturating_add(1);
             }
-            if is_artifact_strip(card.id) {
+            if analysis.is_boss_artifact_strip {
                 facts.artifact_strip_count = facts.artifact_strip_count.saturating_add(1);
             }
-            if is_low_value_spam(card.id) {
+            if analysis.is_boss_low_value_spam {
                 facts.low_value_spam_count = facts.low_value_spam_count.saturating_add(1);
             }
-            if is_transition_burst(card.id, &strength_profile) {
+            if is_transition_burst(&analysis, &strength_profile) {
                 facts.transition_burst_count = facts.transition_burst_count.saturating_add(1);
             }
-            if card.id == CardId::FeelNoPain {
+            if analysis.is_feel_no_pain_source {
                 facts.feel_no_pain_count = facts.feel_no_pain_count.saturating_add(1);
             }
-            if card.id == CardId::SecondWind {
+            if analysis.is_second_wind_source {
                 facts.second_wind_count = facts.second_wind_count.saturating_add(1);
             }
-            if is_exhaust_access(card.id) {
+            if analysis.is_boss_exhaust_access {
                 facts.exhaust_access_count = facts.exhaust_access_count.saturating_add(1);
             }
         }
@@ -464,71 +463,21 @@ fn automaton_pressure(
     }
 }
 
-fn is_minor_power(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Inflame
-            | CardId::Metallicize
-            | CardId::FireBreathing
-            | CardId::Rupture
-            | CardId::Evolve
-    )
-}
-
-fn is_aoe(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Cleave | CardId::Whirlwind | CardId::ThunderClap | CardId::Immolate
-    )
-}
-
-fn is_artifact_strip(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Bash | CardId::Shockwave | CardId::Uppercut | CardId::ThunderClap
-    )
-}
-
-fn is_exhaust_access(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::BurningPact
-            | CardId::Corruption
-            | CardId::FiendFire
-            | CardId::SecondWind
-            | CardId::SeverSoul
-            | CardId::TrueGrit
-    )
-}
-
-fn is_low_value_spam(card: CardId) -> bool {
-    if card_mechanics_profile_v1(card).temporary_strength_burst {
-        return true;
-    }
-
-    matches!(
-        card,
-        CardId::Anger | CardId::Warcry | CardId::Bloodletting | CardId::SeeingRed
-    )
-}
-
 fn is_transition_burst(
-    card: CardId,
+    card: &crate::ai::card_analysis_v1::CardAnalysisProfileV1,
     strength: &crate::ai::strength_profile_v1::StrengthProfileV1,
 ) -> bool {
-    match card {
-        CardId::DemonForm
-        | CardId::Carnage
-        | CardId::Bludgeon
-        | CardId::Offering
-        | CardId::Whirlwind => true,
-        CardId::HeavyBlade => {
+    match card.boss_transition_burst {
+        CardAnalysisBossTransitionBurstV1::Unconditional => true,
+        CardAnalysisBossTransitionBurstV1::StrengthPayoff => {
             strength.stable_sources > 0
                 || strength.temporary_bursts > 0
                 || strength.convertible_potential_count > 0
         }
-        CardId::LimitBreak => strength.stable_sources > 0 || strength.temporary_bursts > 0,
-        _ => false,
+        CardAnalysisBossTransitionBurstV1::StrengthConverter => {
+            strength.stable_sources > 0 || strength.temporary_bursts > 0
+        }
+        CardAnalysisBossTransitionBurstV1::None => false,
     }
 }
 

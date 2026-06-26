@@ -120,6 +120,16 @@ pub enum CardAnalysisUpgradeStackBehaviorV1 {
     Generic,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardAnalysisBossTransitionBurstV1 {
+    #[default]
+    None,
+    Unconditional,
+    StrengthPayoff,
+    StrengthConverter,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CardAnalysisProfileV1 {
     pub card: CardId,
@@ -143,6 +153,7 @@ pub struct CardAnalysisProfileV1 {
     pub has_draw_access: bool,
     pub has_energy_access: bool,
     pub has_damage_scaling: bool,
+    pub has_temporary_strength_burst: bool,
     pub has_combat_sustain: bool,
     pub has_block_scaling_hook: bool,
     pub has_exhaust_enabler: bool,
@@ -191,6 +202,11 @@ pub struct CardAnalysisProfileV1 {
     pub is_upgrade_debuff_coverage_candidate: bool,
     pub is_upgrade_stasis_recovery_candidate: bool,
     pub is_upgrade_hyperbeam_block_candidate: bool,
+    pub is_boss_minor_power: bool,
+    pub is_boss_artifact_strip: bool,
+    pub is_boss_exhaust_access: bool,
+    pub is_boss_low_value_spam: bool,
+    pub boss_transition_burst: CardAnalysisBossTransitionBurstV1,
 }
 
 pub fn card_analysis_profile_v1(card: CardId, upgrades: u8) -> CardAnalysisProfileV1 {
@@ -241,6 +257,10 @@ pub fn card_analysis_profile_v1(card: CardId, upgrades: u8) -> CardAnalysisProfi
                 &semantic.roles,
                 CardRewardSemanticRoleV1::CombatExternalPayoff,
             ),
+        has_temporary_strength_burst: has_role_v1(
+            &semantic.roles,
+            CardRewardSemanticRoleV1::TemporaryStrengthBurst,
+        ),
         has_combat_sustain: has_role_v1(&semantic.roles, CardRewardSemanticRoleV1::CombatSustain),
         has_block_scaling_hook: has_role_v1(
             &semantic.roles,
@@ -302,6 +322,14 @@ pub fn card_analysis_profile_v1(card: CardId, upgrades: u8) -> CardAnalysisProfi
         is_upgrade_debuff_coverage_candidate: is_upgrade_debuff_coverage_candidate_v1(card),
         is_upgrade_stasis_recovery_candidate: matches!(card, CardId::Apparition),
         is_upgrade_hyperbeam_block_candidate: is_upgrade_hyperbeam_block_candidate_v1(card),
+        is_boss_minor_power: is_boss_minor_power_v1(card),
+        is_boss_artifact_strip: is_boss_artifact_strip_v1(card),
+        is_boss_exhaust_access: is_boss_exhaust_access_v1(card),
+        is_boss_low_value_spam: has_role_v1(
+            &semantic.roles,
+            CardRewardSemanticRoleV1::TemporaryStrengthBurst,
+        ) || is_boss_low_value_spam_base_v1(card),
+        boss_transition_burst: boss_transition_burst_v1(card),
     }
 }
 
@@ -819,4 +847,54 @@ fn is_upgrade_hyperbeam_block_candidate_v1(card: CardId) -> bool {
         card,
         CardId::Impervious | CardId::PowerThrough | CardId::FlameBarrier
     )
+}
+
+fn is_boss_minor_power_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Inflame
+            | CardId::Metallicize
+            | CardId::FireBreathing
+            | CardId::Rupture
+            | CardId::Evolve
+    )
+}
+
+fn is_boss_artifact_strip_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Bash | CardId::Shockwave | CardId::Uppercut | CardId::ThunderClap
+    )
+}
+
+fn is_boss_exhaust_access_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::BurningPact
+            | CardId::Corruption
+            | CardId::FiendFire
+            | CardId::SecondWind
+            | CardId::SeverSoul
+            | CardId::TrueGrit
+    )
+}
+
+fn is_boss_low_value_spam_base_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Anger | CardId::Warcry | CardId::Bloodletting | CardId::SeeingRed
+    )
+}
+
+fn boss_transition_burst_v1(card: CardId) -> CardAnalysisBossTransitionBurstV1 {
+    match card {
+        CardId::DemonForm
+        | CardId::Carnage
+        | CardId::Bludgeon
+        | CardId::Offering
+        | CardId::Whirlwind => CardAnalysisBossTransitionBurstV1::Unconditional,
+        CardId::HeavyBlade => CardAnalysisBossTransitionBurstV1::StrengthPayoff,
+        CardId::LimitBreak => CardAnalysisBossTransitionBurstV1::StrengthConverter,
+        _ => CardAnalysisBossTransitionBurstV1::None,
+    }
 }
