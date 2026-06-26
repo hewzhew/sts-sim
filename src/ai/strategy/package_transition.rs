@@ -1,5 +1,6 @@
 use crate::ai::analysis::card_semantics::{
-    CardDefinition, CombatEvent, DeckMechanicContext, InstalledRule, Mechanic, PayoffRequirement,
+    CardBurden, CardDefinition, CombatEvent, DeckMechanicContext, DuplicateBehavior, EventHandler,
+    InstalledRule, Mechanic, PayoffRequirement,
 };
 use crate::ai::strategy::package_state::{
     assess_package_state, PackageMaturity, PackageStateReport,
@@ -14,7 +15,7 @@ pub enum PackageKind {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PackagePromotion {
+pub struct PackageStateChange {
     pub package: PackageKind,
     pub from: PackageMaturity,
     pub to: PackageMaturity,
@@ -25,12 +26,15 @@ pub struct PackageTransitionReport {
     pub candidate: CardId,
     pub before: PackageStateReport,
     pub after: PackageStateReport,
-    pub promotions: Vec<PackagePromotion>,
+    pub package_changes: Vec<PackageStateChange>,
     pub newly_closed_requirements: Vec<PayoffRequirement>,
     pub newly_open_requirements: Vec<PayoffRequirement>,
     pub new_mechanics: Vec<Mechanic>,
     pub new_event_streams: Vec<CombatEvent>,
     pub new_installed_rules: Vec<InstalledRule>,
+    pub candidate_event_handlers: Vec<EventHandler>,
+    pub candidate_burdens: Vec<CardBurden>,
+    pub candidate_duplicate_behaviors: Vec<DuplicateBehavior>,
 }
 
 pub fn assess_package_transition(
@@ -47,7 +51,7 @@ pub fn assess_package_transition(
 
     PackageTransitionReport {
         candidate: candidate.card,
-        promotions: package_promotions(&before, &after),
+        package_changes: package_state_changes(&before, &after),
         newly_closed_requirements: removed_requirements(
             &before.open_requirements,
             &after.open_requirements,
@@ -62,45 +66,48 @@ pub fn assess_package_transition(
             &before_context.installed_rules,
             &after_context.installed_rules,
         ),
+        candidate_event_handlers: candidate.event_handlers.clone(),
+        candidate_burdens: candidate.burdens.clone(),
+        candidate_duplicate_behaviors: candidate.duplicate_behaviors.clone(),
         before,
         after,
     }
 }
 
-fn package_promotions(
+fn package_state_changes(
     before: &PackageStateReport,
     after: &PackageStateReport,
-) -> Vec<PackagePromotion> {
-    let mut promotions = Vec::new();
-    push_promotion_if_changed(
-        &mut promotions,
+) -> Vec<PackageStateChange> {
+    let mut changes = Vec::new();
+    push_change_if_different(
+        &mut changes,
         PackageKind::Strength,
         before.strength,
         after.strength,
     );
-    push_promotion_if_changed(
-        &mut promotions,
+    push_change_if_different(
+        &mut changes,
         PackageKind::Exhaust,
         before.exhaust,
         after.exhaust,
     );
-    push_promotion_if_changed(
-        &mut promotions,
+    push_change_if_different(
+        &mut changes,
         PackageKind::SelfDamage,
         before.self_damage,
         after.self_damage,
     );
-    promotions
+    changes
 }
 
-fn push_promotion_if_changed(
-    promotions: &mut Vec<PackagePromotion>,
+fn push_change_if_different(
+    changes: &mut Vec<PackageStateChange>,
     package: PackageKind,
     from: PackageMaturity,
     to: PackageMaturity,
 ) {
     if from != to {
-        promotions.push(PackagePromotion { package, from, to });
+        changes.push(PackageStateChange { package, from, to });
     }
 }
 
