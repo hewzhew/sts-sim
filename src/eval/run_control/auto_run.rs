@@ -17,10 +17,7 @@ pub(in crate::eval::run_control) fn apply_auto_run(
     if matches!(session.engine_state, EngineState::GameOver(_)) {
         Ok(outcome)
     } else {
-        Err(format!(
-            "auto_run_incomplete: automation reached a policy boundary before terminal state\n{}",
-            outcome.message
-        ))
+        Ok(outcome)
     }
 }
 
@@ -49,7 +46,11 @@ fn apply_auto_run_with_noncombat_mode(
     let mut outcome =
         super::auto_step::apply_guarded_auto_step_with_mode(session, options, noncombat_mode)?;
     let title = build_run_control_view_model(session).header.title;
-    let applied_operations = count_applied_operations(&outcome.message);
+    let applied_operations = outcome
+        .auto_stop
+        .as_ref()
+        .map(|stop| stop.applied_operations)
+        .unwrap_or(0);
     outcome.message = format!(
         "Auto-run stopped: {title}\nroute=planner max_operations={max_operations} applied_operations={applied_operations}\n{}",
         outcome.message
@@ -57,47 +58,11 @@ fn apply_auto_run_with_noncombat_mode(
     Ok(outcome)
 }
 
-fn count_applied_operations(message: &str) -> usize {
-    let mut in_applied = false;
-    let mut count = 0usize;
-    for line in message.lines() {
-        if line == "Applied:" {
-            in_applied = true;
-            continue;
-        }
-        if line.starts_with("Reason: ") {
-            break;
-        }
-        if in_applied && line.starts_with("  - ") {
-            count = count.saturating_add(1);
-        }
-    }
-    count
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::state::core::EngineState;
     use crate::state::events::{EventId, EventState};
-
-    #[test]
-    fn count_applied_operations_ignores_none() {
-        assert_eq!(
-            count_applied_operations("Applied:\n  none\nReason: map route requires human choice"),
-            0
-        );
-    }
-
-    #[test]
-    fn count_applied_operations_counts_bullets_before_reason() {
-        assert_eq!(
-            count_applied_operations(
-                "Applied:\n  - route planner\n  - combat search\nReason: done\n  - detail"
-            ),
-            2
-        );
-    }
 
     #[test]
     fn branch_experiment_auto_run_consumes_terminal_single_event_leave() {

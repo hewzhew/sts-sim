@@ -9,7 +9,8 @@ use super::commands::{
     RunControlAutoStepOptions, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
 };
 use super::session::{
-    RunControlCommandOutcome, RunControlDecisionParentSnapshotV1, RunControlSession,
+    RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommandOutcome,
+    RunControlDecisionParentSnapshotV1, RunControlSession,
 };
 use super::trace_annotation::RunControlTraceAnnotationV1;
 use super::transition_report::{
@@ -69,6 +70,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 applied,
                 trace_annotations,
                 decision_parent_snapshots,
+                RunControlAutoStopKind::RepeatedBoundary,
                 "repeated auto boundary without progress",
                 Some(format!(
                     "boundary={boundary_key}\nstall_key={stall_key}\nThis usually means the selected automatic action did not mutate the visible boundary state."
@@ -99,6 +101,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                     applied,
                     trace_annotations,
                     decision_parent_snapshots,
+                    RunControlAutoStopKind::HpLossGateRequired,
                     "high-stakes combat auto-search requires an hp-loss gate",
                     Some(
                         "Use `n max_hp_loss=N` or `nr max_hp_loss=N` for this combat, or `sd max_hp_loss=N` to set a session default. Use `n max_hp_loss=off` only when you deliberately want to accept any winning search line."
@@ -166,6 +169,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                     applied,
                     trace_annotations,
                     decision_parent_snapshots,
+                    RunControlAutoStopKind::CombatSearchNoCompleteWin,
                     "combat search did not find an executable complete win",
                     Some(combine_three_search_rejections(
                         no_potion_rejection,
@@ -180,6 +184,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 applied,
                 trace_annotations,
                 decision_parent_snapshots,
+                RunControlAutoStopKind::CombatSearchNoCompleteWin,
                 "combat search did not find an executable complete win",
                 Some(combine_search_rejections(
                     no_potion_rejection,
@@ -224,6 +229,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                         applied,
                         trace_annotations,
                         decision_parent_snapshots,
+                        RunControlAutoStopKind::RoutePlannerNoMutation,
                         "route planner did not modify state",
                         Some(applied_route.outcome.message),
                     );
@@ -243,6 +249,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                         applied,
                         trace_annotations,
                         decision_parent_snapshots,
+                        RunControlAutoStopKind::RoutePlannerDeclined,
                         "route planner declined automatic map selection",
                         detail,
                     );
@@ -274,6 +281,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                         applied,
                         trace_annotations,
                         decision_parent_snapshots,
+                        RunControlAutoStopKind::NoncombatPolicyStop,
                         reason,
                         None,
                     );
@@ -293,6 +301,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 applied,
                 trace_annotations,
                 decision_parent_snapshots,
+                RunControlAutoStopKind::BranchExperimentBoundary,
                 human_stop_reason(session),
                 None,
             );
@@ -307,6 +316,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                     applied,
                     trace_annotations,
                     decision_parent_snapshots,
+                    RunControlAutoStopKind::AutoCandidateNotExecutable,
                     "auto-selected candidate is not executable",
                     None,
                 );
@@ -339,6 +349,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
             applied,
             trace_annotations,
             decision_parent_snapshots,
+            RunControlAutoStopKind::HumanBoundary,
             human_stop_reason(session),
             detail,
         );
@@ -350,6 +361,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
         applied,
         trace_annotations,
         decision_parent_snapshots,
+        RunControlAutoStopKind::OperationBudgetExhausted,
         format!("operation budget exhausted at {max_operations} automatic operations"),
         None,
     )
@@ -803,10 +815,16 @@ fn finish_auto_step(
     applied: Vec<String>,
     mut trace_annotations: Vec<RunControlTraceAnnotationV1>,
     decision_parent_snapshots: Vec<RunControlDecisionParentSnapshotV1>,
+    stop_kind: RunControlAutoStopKind,
     reason: impl Into<String>,
     detail: Option<String>,
 ) -> Result<RunControlCommandOutcome, String> {
     let reason = reason.into();
+    let auto_stop = RunControlAutoStopV1 {
+        kind: stop_kind,
+        reason: reason.clone(),
+        applied_operations: applied.len(),
+    };
     let view = build_run_control_view_model(session);
     let mut lines = vec![
         format!("Advanced to human boundary: {}", view.header.title),
@@ -834,6 +852,7 @@ fn finish_auto_step(
     if applied.is_empty() {
         lines.push(super::render::render_run_control_state(session));
         return Ok(RunControlCommandOutcome::message(lines.join("\n"))
+            .with_auto_stop(auto_stop)
             .with_trace_annotations(trace_annotations)
             .with_decision_parent_snapshots(decision_parent_snapshots));
     }
@@ -854,6 +873,7 @@ fn finish_auto_step(
     lines.push(super::render::render_run_control_state(session));
     Ok(
         RunControlCommandOutcome::action(lines.join("\n"), action_result)
+            .with_auto_stop(auto_stop)
             .with_trace_annotations(trace_annotations)
             .with_decision_parent_snapshots(decision_parent_snapshots),
     )

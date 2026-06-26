@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
 
 use sts_simulator::eval::run_control::{
-    build_decision_surface, RewardAutomationConfig, RunControlAutoStepOptions, RunControlCommand,
-    RunControlConfig, RunControlHpLossLimit, RunControlRouteAutomationMode,
-    RunControlSearchCombatOptions, RunControlSession,
+    build_decision_surface, RewardAutomationConfig, RunControlAutoStepOptions,
+    RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommand, RunControlConfig,
+    RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
+    RunControlSession,
 };
 use sts_simulator::state::core::{ClientInput, EngineState, RunResult};
 
@@ -169,13 +170,13 @@ fn advance_to_owner_or_gap(session: &mut RunControlSession, args: Args) -> Branc
             Ok(_) if terminal_label(session).is_some() => {
                 return BranchStatus::Terminal(terminal_label(session).unwrap());
             }
-            Ok(_) => {
-                return BranchStatus::AdvanceFailed(
-                    "auto_run returned non-terminal success".to_string(),
-                );
-            }
-            Err(err) if err.starts_with("auto_run_incomplete:") => {
-                let status = classify_boundary(session, &err);
+            Ok(outcome) => {
+                let Some(stop) = outcome.auto_stop.as_ref() else {
+                    return BranchStatus::AdvanceFailed(
+                        "auto_run returned non-terminal success without auto_stop".to_string(),
+                    );
+                };
+                let status = classify_boundary(session, stop);
                 let owner = match &status {
                     BranchStatus::Running { owner, .. } => *owner,
                     _ => return status,
@@ -301,18 +302,23 @@ fn find_single_event_action_input(
     ))
 }
 
-fn classify_boundary(session: &RunControlSession, message: &str) -> BranchStatus {
+fn classify_boundary(session: &RunControlSession, stop: &RunControlAutoStopV1) -> BranchStatus {
     if let Some(result) = terminal_label(session) {
         return BranchStatus::Terminal(result);
     }
     let surface = build_decision_surface(session);
     let boundary = surface.view.header.title.clone();
-    let reason = first_reason(message).unwrap_or_else(|| "auto_run_incomplete".to_string());
-    if reason.starts_with("operation budget exhausted") {
-        return BranchStatus::BudgetGap { boundary, reason };
+    if stop.kind == RunControlAutoStopKind::OperationBudgetExhausted {
+        return BranchStatus::BudgetGap {
+            boundary,
+            reason: stop.reason.clone(),
+        };
     }
-    if boundary == "Combat" || reason.starts_with("combat search did not find") {
-        return BranchStatus::CombatGap { boundary, reason };
+    if is_combat_gap(session, stop.kind) {
+        return BranchStatus::CombatGap {
+            boundary,
+            reason: stop.reason.clone(),
+        };
     }
     if let Some(owner) = owner_for_current_boundary(session) {
         return BranchStatus::Running { boundary, owner };
@@ -321,6 +327,20 @@ fn classify_boundary(session: &RunControlSession, message: &str) -> BranchStatus
         boundary,
         owner_key: owner_key_for_current_boundary(session),
     }
+}
+
+fn is_combat_gap(session: &RunControlSession, stop_kind: RunControlAutoStopKind) -> bool {
+    matches!(
+        stop_kind,
+        RunControlAutoStopKind::CombatSearchNoCompleteWin
+            | RunControlAutoStopKind::HpLossGateRequired
+    ) || matches!(
+        session.engine_state,
+        EngineState::CombatStart(_)
+            | EngineState::CombatProcessing
+            | EngineState::CombatPlayerTurn
+            | EngineState::PendingChoice(_)
+    )
 }
 
 fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
@@ -478,12 +498,6 @@ fn terminal_label(session: &RunControlSession) -> Option<&'static str> {
         EngineState::GameOver(RunResult::Defeat) => Some("defeat"),
         _ => None,
     }
-}
-
-fn first_reason(message: &str) -> Option<String> {
-    message
-        .lines()
-        .find_map(|line| line.strip_prefix("Reason: ").map(str::to_string))
 }
 
 fn is_navigation_only_input(input: &ClientInput) -> bool {

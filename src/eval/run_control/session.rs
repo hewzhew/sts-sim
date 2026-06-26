@@ -381,8 +381,30 @@ pub struct RunControlCommandOutcome {
     pub message: String,
     pub action_result: Option<ActionResult>,
     pub search_evidence_path: Option<PathBuf>,
+    pub auto_stop: Option<RunControlAutoStopV1>,
     pub trace_annotations: Vec<RunControlTraceAnnotationV1>,
     pub decision_parent_snapshots: Vec<RunControlDecisionParentSnapshotV1>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunControlAutoStopV1 {
+    pub kind: RunControlAutoStopKind,
+    pub reason: String,
+    pub applied_operations: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunControlAutoStopKind {
+    RepeatedBoundary,
+    HpLossGateRequired,
+    CombatSearchNoCompleteWin,
+    RoutePlannerNoMutation,
+    RoutePlannerDeclined,
+    NoncombatPolicyStop,
+    BranchExperimentBoundary,
+    AutoCandidateNotExecutable,
+    HumanBoundary,
+    OperationBudgetExhausted,
 }
 
 impl RunControlCommandOutcome {
@@ -392,6 +414,7 @@ impl RunControlCommandOutcome {
             message: message.into(),
             action_result: None,
             search_evidence_path: None,
+            auto_stop: None,
             trace_annotations: Vec::new(),
             decision_parent_snapshots: Vec::new(),
         }
@@ -403,6 +426,7 @@ impl RunControlCommandOutcome {
             message: message.into(),
             action_result: None,
             search_evidence_path: None,
+            auto_stop: None,
             trace_annotations: Vec::new(),
             decision_parent_snapshots: Vec::new(),
         }
@@ -417,6 +441,7 @@ impl RunControlCommandOutcome {
             message: message.into(),
             action_result: Some(action_result),
             search_evidence_path: None,
+            auto_stop: None,
             trace_annotations: Vec::new(),
             decision_parent_snapshots: Vec::new(),
         }
@@ -435,6 +460,14 @@ impl RunControlCommandOutcome {
         snapshots: Vec<RunControlDecisionParentSnapshotV1>,
     ) -> Self {
         self.decision_parent_snapshots.extend(snapshots);
+        self
+    }
+
+    pub(in crate::eval::run_control) fn with_auto_stop(
+        mut self,
+        auto_stop: RunControlAutoStopV1,
+    ) -> Self {
+        self.auto_stop = Some(auto_stop);
         self
     }
 }
