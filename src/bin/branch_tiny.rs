@@ -209,7 +209,13 @@ fn owner_is_branching(owner: Owner) -> bool {
 fn apply_policy_owner(session: &mut RunControlSession, owner: Owner) -> Result<(), String> {
     let input = match owner {
         Owner::ShopTiny => require_visible_input(session, ClientInput::Proceed)?,
-        Owner::EventSsssserpent => find_sssserpent_policy_candidate(session)?,
+        Owner::EventSsssserpent => require_visible_input(
+            session,
+            sts_simulator::content::events::sssserpent::conservative_policy_input(
+                &session.run_state,
+            )
+            .map_err(|err| format!("{err:?}"))?,
+        )?,
         Owner::NeowStart | Owner::CardReward => {
             return Err("branching owner cannot be consumed as policy".to_string());
         }
@@ -240,65 +246,6 @@ fn require_visible_input(
             .map(|choice| format!("{:?}:{}", choice.input, choice.label))
             .collect::<Vec<_>>()
             .join(" | ")
-    ))
-}
-
-fn find_sssserpent_policy_candidate(session: &RunControlSession) -> Result<ClientInput, String> {
-    let event_state = session
-        .run_state
-        .event_state
-        .as_ref()
-        .ok_or_else(|| "Ssssserpent policy requires event_state".to_string())?;
-    if event_state.id != sts_simulator::state::events::EventId::Ssssserpent {
-        return Err(format!(
-            "Ssssserpent policy received event {:?}",
-            event_state.id
-        ));
-    }
-    let required_action = match event_state.current_screen {
-        0 => sts_simulator::state::events::EventActionKind::Decline,
-        99 => sts_simulator::state::events::EventActionKind::Leave,
-        screen => {
-            return Err(format!(
-                "Ssssserpent policy has no safe action for screen {screen}"
-            ));
-        }
-    };
-    find_single_event_action_input(session, required_action)
-}
-
-fn find_single_event_action_input(
-    session: &RunControlSession,
-    required_action: sts_simulator::state::events::EventActionKind,
-) -> Result<ClientInput, String> {
-    let options = sts_simulator::engine::event_handler::get_event_options(&session.run_state);
-    let surface = build_decision_surface(session);
-    let visible_inputs = executable_inputs(&surface);
-    let mut matching_indices = Vec::new();
-    for (index, option) in options.iter().enumerate() {
-        if option.ui.disabled || option.semantics.action != required_action {
-            continue;
-        }
-        matching_indices.push(index);
-    }
-    let [index] = matching_indices.as_slice() else {
-        return Err(format!(
-            "expected exactly one {:?} event candidate at {}, found {}",
-            required_action,
-            surface.view.header.title,
-            matching_indices.len()
-        ));
-    };
-    let input = ClientInput::EventChoice(*index);
-    if visible_inputs
-        .iter()
-        .any(|visible_input| visible_input == &input)
-    {
-        return Ok(input);
-    }
-    Err(format!(
-        "event action {:?} input {:?} is not visible",
-        required_action, input
     ))
 }
 

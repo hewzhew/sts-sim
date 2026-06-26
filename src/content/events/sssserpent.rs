@@ -1,5 +1,5 @@
 use crate::content::cards::CardId;
-use crate::state::core::EngineState;
+use crate::state::core::{ClientInput, EngineState};
 use crate::state::events::{
     EventActionKind, EventCardKind, EventChoiceMeta, EventEffect, EventId, EventOption,
     EventOptionSemantics, EventOptionTransition, EventState,
@@ -81,6 +81,47 @@ pub fn get_choices(run_state: &RunState, event_state: &EventState) -> Vec<EventC
         .into_iter()
         .map(|option| option.ui)
         .collect()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SsssserpentPolicyGap {
+    MissingEventState,
+    WrongEvent(EventId),
+    NoSafeAction(usize),
+    ExpectedSingleAction {
+        action: EventActionKind,
+        found: usize,
+    },
+}
+
+pub fn conservative_policy_input(
+    run_state: &RunState,
+) -> Result<ClientInput, SsssserpentPolicyGap> {
+    let event_state = run_state
+        .event_state
+        .as_ref()
+        .ok_or(SsssserpentPolicyGap::MissingEventState)?;
+    if event_state.id != EventId::Ssssserpent {
+        return Err(SsssserpentPolicyGap::WrongEvent(event_state.id));
+    }
+    let required_action = match event_state.current_screen {
+        0 => EventActionKind::Decline,
+        99 => EventActionKind::Leave,
+        screen => return Err(SsssserpentPolicyGap::NoSafeAction(screen)),
+    };
+    let matching_indices = get_options(run_state, event_state)
+        .iter()
+        .enumerate()
+        .filter(|(_, option)| !option.ui.disabled && option.semantics.action == required_action)
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let [index] = matching_indices.as_slice() else {
+        return Err(SsssserpentPolicyGap::ExpectedSingleAction {
+            action: required_action,
+            found: matching_indices.len(),
+        });
+    };
+    Ok(ClientInput::EventChoice(*index))
 }
 
 pub fn handle_choice(_engine_state: &mut EngineState, run_state: &mut RunState, choice_idx: usize) {
