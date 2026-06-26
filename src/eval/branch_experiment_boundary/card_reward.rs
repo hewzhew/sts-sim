@@ -17,6 +17,9 @@ use crate::runtime::action::CardDestination;
 use crate::state::core::{EngineState, PendingChoice};
 use crate::state::rewards::{RewardCard, RewardItem};
 
+const CARD_REWARD_THESIS_RETENTION_PROJECTION_MIN_MILLI: i32 = -1_800;
+const CARD_REWARD_THESIS_RETENTION_PROJECTION_MAX_MILLI: i32 = 0;
+
 #[derive(Clone, Debug)]
 pub(crate) struct CardRewardBranchOption {
     pub(crate) label: String,
@@ -466,7 +469,7 @@ fn reward_option_strategic_retention_keys(
                 .compiled_for_action(&action)
                 .map(|compiled| {
                     let (thesis_adjustment, thesis_summary) =
-                        reward_option_acquisition_thesis_signal(&trace, &action);
+                        reward_option_acquisition_thesis_retention_projection(&trace, &action);
                     let preferred = trace
                         .would_choose
                         .as_ref()
@@ -487,7 +490,7 @@ fn reward_option_strategic_retention_keys(
         .collect()
 }
 
-fn reward_option_acquisition_thesis_signal(
+fn reward_option_acquisition_thesis_retention_projection(
     trace: &StrategicDecisionTrace,
     action: &CandidateAction,
 ) -> (i32, Vec<String>) {
@@ -499,8 +502,13 @@ fn reward_option_acquisition_thesis_signal(
         return (0, Vec::new());
     };
     let thesis_profile = delta.acquisition_thesis_profile_v1();
+    // Reward retention currently consumes acquisition thesis as a caution-only projection.
+    // Positive frontier protection belongs to explicit branch slots/frontier lanes.
     (
-        thesis_profile.retention_rank_adjustment.clamp(-1_800, 0),
+        thesis_profile.branch_retention_projection_milli.clamp(
+            CARD_REWARD_THESIS_RETENTION_PROJECTION_MIN_MILLI,
+            CARD_REWARD_THESIS_RETENTION_PROJECTION_MAX_MILLI,
+        ),
         thesis_profile.rendered,
     )
 }

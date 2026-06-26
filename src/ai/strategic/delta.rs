@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub const COMPONENT_SIGNAL_LEDGER_AMOUNT: f32 = 0.35;
+pub const ACQUISITION_THESIS_PROJECTION_MILLI_SCALE: f32 = 1000.0;
+pub const ACQUISITION_THESIS_SATURATED_CAUTION_MILLI: i32 = 450;
+pub const ACQUISITION_THESIS_OVER_BUDGET_CAUTION_MILLI: i32 = 800;
+pub const ACQUISITION_THESIS_UNSUPPORTED_CAUTION_MILLI: i32 = 1000;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -105,9 +109,9 @@ pub struct AcquisitionThesisProfileV1 {
     pub axes: Vec<AcquisitionExplorationAxisV1>,
     pub liability_count: usize,
     pub redundancy_count: usize,
-    pub exploration_milli: i32,
-    pub caution_milli: i32,
-    pub retention_rank_adjustment: i32,
+    pub branch_exploration_projection_milli: i32,
+    pub branch_caution_projection_milli: i32,
+    pub branch_retention_projection_milli: i32,
     pub rendered: Vec<String>,
 }
 
@@ -210,9 +214,9 @@ impl CandidateDelta {
         let mut axes = BTreeSet::new();
         let mut liability_count = 0usize;
         let mut redundancy_count = 0usize;
-        let mut exploration_milli = 0i32;
-        let mut caution_milli = 0i32;
-        let mut retention_rank_adjustment = 0i32;
+        let mut branch_exploration_projection_milli = 0i32;
+        let mut branch_caution_projection_milli = 0i32;
+        let mut branch_retention_projection_milli = 0i32;
         let mut rendered = Vec::new();
 
         for thesis in &self.acquisition_theses {
@@ -225,11 +229,12 @@ impl CandidateDelta {
             if thesis.role == AcquisitionThesisRole::RedundantCoverage {
                 redundancy_count += 1;
             }
-            exploration_milli =
-                exploration_milli.saturating_add(thesis.branch_exploration_milli_v1());
-            caution_milli = caution_milli.saturating_add(thesis.caution_milli_v1());
-            retention_rank_adjustment = retention_rank_adjustment
-                .saturating_add(thesis.retention_rank_adjustment_milli_v1());
+            branch_exploration_projection_milli = branch_exploration_projection_milli
+                .saturating_add(thesis.branch_exploration_projection_milli_v1());
+            branch_caution_projection_milli = branch_caution_projection_milli
+                .saturating_add(thesis.branch_caution_projection_milli_v1());
+            branch_retention_projection_milli = branch_retention_projection_milli
+                .saturating_add(thesis.branch_retention_projection_milli_v1());
             rendered.push(thesis.render_v1());
         }
 
@@ -237,9 +242,9 @@ impl CandidateDelta {
             axes: axes.into_iter().collect(),
             liability_count,
             redundancy_count,
-            exploration_milli,
-            caution_milli,
-            retention_rank_adjustment,
+            branch_exploration_projection_milli,
+            branch_caution_projection_milli,
+            branch_retention_projection_milli,
             rendered,
         }
     }
@@ -288,32 +293,36 @@ impl AcquisitionThesisSignal {
         }
     }
 
-    pub fn branch_exploration_milli_v1(&self) -> i32 {
+    pub fn branch_exploration_projection_milli_v1(&self) -> i32 {
         if self.exploration_axis_v1().is_none() {
             return 0;
         }
-        (self.amount.clamp(0.0, 1.0) * 1000.0).round() as i32
+        (self.amount.clamp(0.0, 1.0) * ACQUISITION_THESIS_PROJECTION_MILLI_SCALE).round() as i32
     }
 
-    pub fn caution_milli_v1(&self) -> i32 {
+    pub fn branch_caution_projection_milli_v1(&self) -> i32 {
         match self.status {
-            AcquisitionThesisStatus::Saturated => 450,
-            AcquisitionThesisStatus::OverBudget => 800,
-            AcquisitionThesisStatus::Unsupported => 1000,
+            AcquisitionThesisStatus::Saturated => ACQUISITION_THESIS_SATURATED_CAUTION_MILLI,
+            AcquisitionThesisStatus::OverBudget => ACQUISITION_THESIS_OVER_BUDGET_CAUTION_MILLI,
+            AcquisitionThesisStatus::Unsupported => ACQUISITION_THESIS_UNSUPPORTED_CAUTION_MILLI,
             AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful => 0,
         }
     }
 
-    pub fn retention_rank_adjustment_milli_v1(&self) -> i32 {
+    pub fn branch_retention_projection_milli_v1(&self) -> i32 {
         match (self.role, self.status) {
             (AcquisitionThesisRole::WinConditionOrCeiling, AcquisitionThesisStatus::Missing)
             | (AcquisitionThesisRole::SustainOrRecovery, AcquisitionThesisStatus::Missing) => {
-                (self.amount * 1000.0).round() as i32
+                (self.amount * ACQUISITION_THESIS_PROJECTION_MILLI_SCALE).round() as i32
             }
             (_, AcquisitionThesisStatus::Missing | AcquisitionThesisStatus::Useful) => 0,
-            (_, AcquisitionThesisStatus::Saturated) => -450,
-            (_, AcquisitionThesisStatus::OverBudget) => -800,
-            (_, AcquisitionThesisStatus::Unsupported) => -1000,
+            (_, AcquisitionThesisStatus::Saturated) => -ACQUISITION_THESIS_SATURATED_CAUTION_MILLI,
+            (_, AcquisitionThesisStatus::OverBudget) => {
+                -ACQUISITION_THESIS_OVER_BUDGET_CAUTION_MILLI
+            }
+            (_, AcquisitionThesisStatus::Unsupported) => {
+                -ACQUISITION_THESIS_UNSUPPORTED_CAUTION_MILLI
+            }
         }
     }
 }

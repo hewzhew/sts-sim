@@ -281,7 +281,7 @@ fn shop_plan_lane_v1(
         return ShopPlanLaneV1::BuyCombo;
     }
     match plan.steps.first() {
-        Some(ShopPlanStepV1::BuyCard { .. }) => shop_card_buy_coverage_lane_v1(
+        Some(ShopPlanStepV1::BuyCard { .. }) => shop_card_buy_frontier_lane_projection_v1(
             plan_delta_from_strategic_trace_v1(strategic_trace, plan),
         ),
         Some(ShopPlanStepV1::BuyRelic { .. }) => ShopPlanLaneV1::BuyRelic,
@@ -333,7 +333,7 @@ fn shop_plan_step_action_candidate_id_v1(step: &ShopPlanStepV1) -> Option<String
     }
 }
 
-fn shop_card_buy_coverage_lane_v1(delta: Option<&CandidateDelta>) -> ShopPlanLaneV1 {
+fn shop_card_buy_frontier_lane_projection_v1(delta: Option<&CandidateDelta>) -> ShopPlanLaneV1 {
     let Some(delta) = delta else {
         return ShopPlanLaneV1::BuyCardGeneric;
     };

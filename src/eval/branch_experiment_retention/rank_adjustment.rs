@@ -15,6 +15,12 @@ use super::{
 };
 
 const SHOP_COVERAGE_ALTERNATIVE_ACTIVE_BIAS: i32 = -900;
+const CARD_REWARD_PLAN_RANK_ADJUSTMENT_MIN_MILLI: i32 = -2_500;
+const CARD_REWARD_PLAN_RANK_ADJUSTMENT_MAX_MILLI: i32 = 1_200;
+const CARD_REWARD_SIGNAL_REJECT_BASE_MILLI: i32 = -900;
+const CARD_REWARD_SIGNAL_SKIP_PREFERRED_BASE_MILLI: i32 = -500;
+const CARD_REWARD_SIGNAL_RANK_ADJUSTMENT_MIN_MILLI: i32 = -1_800;
+const CARD_REWARD_SIGNAL_RANK_ADJUSTMENT_MAX_MILLI: i32 = 900;
 
 pub fn branch_retention_order_rank_key_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {
     branch_retention_adjusted_rank_key_v1(candidate)
@@ -145,13 +151,18 @@ fn branch_card_reward_plan_rank_adjustment_v1(candidate: &BranchRetentionCandida
         })
         .map(card_reward_signal_rank_adjustment_v1)
         .sum::<i32>()
-        .clamp(-2_500, 1_200)
+        .clamp(
+            CARD_REWARD_PLAN_RANK_ADJUSTMENT_MIN_MILLI,
+            CARD_REWARD_PLAN_RANK_ADJUSTMENT_MAX_MILLI,
+        )
 }
 
 fn card_reward_signal_rank_adjustment_v1(signal: &BranchExperimentChoiceDecisionSignalV1) -> i32 {
     let verdict_adjustment = match signal.verdict.as_str() {
-        "Reject" => -900 + signal.component_net_rank.min(0) / 2,
-        "SkipPreferred" => -500 + signal.component_net_rank.min(0) / 2,
+        "Reject" => CARD_REWARD_SIGNAL_REJECT_BASE_MILLI + signal.component_net_rank.min(0) / 2,
+        "SkipPreferred" => {
+            CARD_REWARD_SIGNAL_SKIP_PREFERRED_BASE_MILLI + signal.component_net_rank.min(0) / 2
+        }
         _ => 0,
     };
     let thesis_adjustment = if verdict_adjustment < 0 {
@@ -159,9 +170,10 @@ fn card_reward_signal_rank_adjustment_v1(signal: &BranchExperimentChoiceDecision
     } else {
         signal.acquisition_thesis_rank_adjustment
     };
-    verdict_adjustment
-        .saturating_add(thesis_adjustment)
-        .clamp(-1_800, 900)
+    verdict_adjustment.saturating_add(thesis_adjustment).clamp(
+        CARD_REWARD_SIGNAL_RANK_ADJUSTMENT_MIN_MILLI,
+        CARD_REWARD_SIGNAL_RANK_ADJUSTMENT_MAX_MILLI,
+    )
 }
 
 fn branch_shop_plan_rank_adjustment_v1(candidate: &BranchRetentionCandidateInputV1) -> i32 {

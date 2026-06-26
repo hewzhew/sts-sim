@@ -149,7 +149,8 @@ fn evaluate_purchase_v1(
                     strategic_decision.verdict, strategic_decision.score
                 ),
             );
-            return if shop_purchase_candidate_is_branch_worthy_v1(target, strategic_trace) {
+            return if shop_purchase_candidate_has_branch_frontier_thesis_v1(target, strategic_trace)
+            {
                 evaluation.with_branch_admission(
                     "shop purchase rejected as rollout head, but admitted to branch frontier by acquisition thesis",
                 )
@@ -354,7 +355,7 @@ fn purchase_strategic_decision(
     strategic_trace.compiled_for_action(&action)
 }
 
-fn shop_purchase_candidate_is_branch_worthy_v1(
+fn shop_purchase_candidate_has_branch_frontier_thesis_v1(
     target: ShopPurchaseTargetV1,
     strategic_trace: &StrategicDecisionTrace,
 ) -> bool {
