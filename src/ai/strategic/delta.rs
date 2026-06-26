@@ -1,5 +1,5 @@
 use super::{CandidateAction, PressureKind, StrategicDebt};
-use crate::ai::card_component_signal_v1::CardComponentSignalReportV1;
+use crate::ai::card_component_signal_v1::{CardComponentSignalKindV1, CardComponentSignalReportV1};
 use crate::ai::deck_startup_profile_v1::{
     startup_snecko_cost_conversion_candidate_v1, DeckStartupProfileV1,
 };
@@ -159,33 +159,38 @@ impl CandidateDelta {
     ) -> Self {
         let mut delta = Self::empty(action);
         delta.role = component_role(report);
-        for reason in &report.positive_components {
-            let kind = positive_component_reason_pressure(reason);
+        for signal in &report.positive_signals {
+            let kind = positive_component_signal_pressure(*signal);
             if kind == PressureKind::BranchDiversityNeed {
-                delta.notes.push(format!("component_report_only:{reason}"));
+                delta
+                    .notes
+                    .push(format!("component_report_only:{}", signal.label()));
                 continue;
             }
             delta.positive.push(LedgerDelta {
                 kind,
                 amount: 0.35,
-                reason: (*reason).to_string(),
+                reason: signal.label().to_string(),
             });
         }
         delta.negative = report
-            .debts
+            .debt_signals
             .iter()
-            .map(|reason| LedgerDelta {
-                kind: negative_component_reason_pressure(reason),
+            .map(|signal| LedgerDelta {
+                kind: negative_component_signal_pressure(*signal),
                 amount: 0.35,
-                reason: (*reason).to_string(),
+                reason: signal.label().to_string(),
             })
             .collect();
-        delta
-            .notes
-            .extend(report.notes.iter().map(|note| (*note).to_string()));
+        delta.notes.extend(
+            report
+                .note_signals
+                .iter()
+                .map(|note| note.label().to_string()),
+        );
         delta
             .evidence
-            .push("card_component_marginal_value contributor".to_string());
+            .push("card_component_signal contributor".to_string());
         delta
     }
 
@@ -348,7 +353,7 @@ pub fn add_snecko_cost_conversion_delta_v1(
 
 fn component_role(report: &CardComponentSignalReportV1) -> CandidateRole {
     use crate::ai::card_component_signal_v1::CardComponentRoleV1;
-    if report.roles.contains(&CardComponentRoleV1::BossAnswer) {
+    if report.roles.contains(&CardComponentRoleV1::Mitigation) {
         CandidateRole::BossAnswer
     } else if report.roles.contains(&CardComponentRoleV1::Enabler) {
         CandidateRole::Enabler
@@ -365,34 +370,42 @@ fn component_role(report: &CardComponentSignalReportV1) -> CandidateRole {
     }
 }
 
-fn positive_component_reason_pressure(reason: &str) -> PressureKind {
+fn positive_component_signal_pressure(signal: CardComponentSignalKindV1) -> PressureKind {
     use super::StrategicJob;
-    match reason {
-        "mitigates_enemy_damage" => PressureKind::MissingJob(StrategicJob::Block),
-        "improves_access_or_conversion" => PressureKind::MissingJob(StrategicJob::DrawEnergy),
-        "improves_exhaust_access" => PressureKind::MissingJob(StrategicJob::ExhaustAccess),
-        "exhaust_engine_enabler" | "unlocks_fnp_engine" | "exhaust_payoff_has_generator" => {
+    match signal {
+        CardComponentSignalKindV1::DamageMitigation => {
+            PressureKind::MissingJob(StrategicJob::Block)
+        }
+        CardComponentSignalKindV1::DrawEnergyAccess => {
+            PressureKind::MissingJob(StrategicJob::DrawEnergy)
+        }
+        CardComponentSignalKindV1::ExhaustAccess
+        | CardComponentSignalKindV1::ExhaustEngineEnabler
+        | CardComponentSignalKindV1::FnpEngineUnlock
+        | CardComponentSignalKindV1::ExhaustPayoffSupported => {
             PressureKind::MissingJob(StrategicJob::ExhaustAccess)
         }
-        "self_damage_payoff_has_enabler"
-        | "strength_payoff_has_convertible_burst_source"
-        | "strength_payoff_has_generator" => PressureKind::MissingJob(StrategicJob::Scaling),
-        "fills_current_formation_need" => PressureKind::BranchDiversityNeed,
+        CardComponentSignalKindV1::SelfDamagePayoffSupported
+        | CardComponentSignalKindV1::StrengthPayoffConvertibleBurstSupported
+        | CardComponentSignalKindV1::StrengthPayoffSupported => {
+            PressureKind::MissingJob(StrategicJob::Scaling)
+        }
+        CardComponentSignalKindV1::FormationNeedCoverage => PressureKind::BranchDiversityNeed,
         _ => PressureKind::BranchDiversityNeed,
     }
 }
 
-fn negative_component_reason_pressure(reason: &str) -> PressureKind {
+fn negative_component_signal_pressure(signal: CardComponentSignalKindV1) -> PressureKind {
     use super::StrategicDebt;
-    match reason {
-        "payoff_without_visible_gap_fill"
-        | "exhaust_payoff_without_generator"
-        | "self_damage_payoff_without_enabler"
-        | "strength_payoff_without_stable_generator"
-        | "strength_payoff_without_generator" => {
+    match signal {
+        CardComponentSignalKindV1::PayoffWithoutVisibleGapFill
+        | CardComponentSignalKindV1::ExhaustPayoffUnsupported
+        | CardComponentSignalKindV1::SelfDamagePayoffUnsupported
+        | CardComponentSignalKindV1::StrengthPayoffWithoutStableGenerator
+        | CardComponentSignalKindV1::StrengthPayoffUnsupported => {
             PressureKind::DeckDebt(StrategicDebt::PayoffWithoutEnabler)
         }
-        "snecko_random_cost_discounts_energy_startup" => {
+        CardComponentSignalKindV1::SneckoEnergyDiscountDebt => {
             PressureKind::DeckDebt(StrategicDebt::SetupDebt)
         }
         _ => PressureKind::DeckDebt(StrategicDebt::CombatShapeRisk),

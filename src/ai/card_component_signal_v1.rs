@@ -12,8 +12,75 @@ pub enum CardComponentRoleV1 {
     Payoff,
     Lubricant,
     Transition,
-    BossAnswer,
+    Mitigation,
     Liability,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CardComponentSignalKindV1 {
+    FormationNeedCoverage,
+    DamageMitigation,
+    DrawEnergyAccess,
+    ExhaustAccess,
+    ExhaustPayoffSupported,
+    ExhaustPayoffUnsupported,
+    DuplicateNoDrawAccessDebt,
+    DuplicateAccessRequiresTurnPlanning,
+    PayoffWithoutVisibleGapFill,
+    SneckoEnergyDiscountDebt,
+    OfferingEnergyGainLessReliableUnderSnecko,
+    EnergyGainLessReliableUnderSnecko,
+    CorruptionDuplicateWithoutPayoffDebt,
+    ExhaustEngineEnabler,
+    FnpEngineUnlock,
+    SelfDamagePayoffSupported,
+    SelfDamagePayoffUnsupported,
+    StrengthPayoffConvertibleBurstSupported,
+    ConvertibleStrengthRequiresDrawTiming,
+    StrengthPayoffTemporaryBurstOnly,
+    StrengthPayoffWithoutStableGenerator,
+    StrengthPayoffUnsupported,
+    StrengthPayoffSupported,
+}
+
+impl CardComponentSignalKindV1 {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::FormationNeedCoverage => "fills_current_formation_need",
+            Self::DamageMitigation => "mitigates_enemy_damage",
+            Self::DrawEnergyAccess => "improves_access_or_conversion",
+            Self::ExhaustAccess => "improves_exhaust_access",
+            Self::ExhaustPayoffSupported => "exhaust_payoff_has_generator",
+            Self::ExhaustPayoffUnsupported => "exhaust_payoff_without_generator",
+            Self::DuplicateNoDrawAccessDebt => "duplicate_draw_access_applies_no_draw_debuff",
+            Self::DuplicateAccessRequiresTurnPlanning => "duplicate_access_requires_turn_planning",
+            Self::PayoffWithoutVisibleGapFill => "payoff_without_visible_gap_fill",
+            Self::SneckoEnergyDiscountDebt => "snecko_random_cost_discounts_energy_startup",
+            Self::OfferingEnergyGainLessReliableUnderSnecko => {
+                "offering_energy_gain_is_less_reliable_under_snecko"
+            }
+            Self::EnergyGainLessReliableUnderSnecko => "energy_gain_is_less_reliable_under_snecko",
+            Self::CorruptionDuplicateWithoutPayoffDebt => {
+                "deck_shape_nonstacking_power_duplicate_without_payoff"
+            }
+            Self::ExhaustEngineEnabler => "exhaust_engine_enabler",
+            Self::FnpEngineUnlock => "unlocks_fnp_engine",
+            Self::SelfDamagePayoffSupported => "self_damage_payoff_has_enabler",
+            Self::SelfDamagePayoffUnsupported => "self_damage_payoff_without_enabler",
+            Self::StrengthPayoffConvertibleBurstSupported => {
+                "strength_payoff_has_convertible_burst_source"
+            }
+            Self::ConvertibleStrengthRequiresDrawTiming => {
+                "convertible_strength_requires_draw_timing"
+            }
+            Self::StrengthPayoffTemporaryBurstOnly => "strength_payoff_has_temporary_burst_support",
+            Self::StrengthPayoffWithoutStableGenerator => {
+                "strength_payoff_without_stable_generator"
+            }
+            Self::StrengthPayoffUnsupported => "strength_payoff_without_generator",
+            Self::StrengthPayoffSupported => "strength_payoff_has_generator",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -27,9 +94,9 @@ pub struct CardComponentSignalContextV1 {
 pub struct CardComponentSignalReportV1 {
     pub card: CardId,
     pub roles: Vec<CardComponentRoleV1>,
-    pub positive_components: Vec<&'static str>,
-    pub debts: Vec<&'static str>,
-    pub notes: Vec<&'static str>,
+    pub positive_signals: Vec<CardComponentSignalKindV1>,
+    pub debt_signals: Vec<CardComponentSignalKindV1>,
+    pub note_signals: Vec<CardComponentSignalKindV1>,
 }
 
 pub fn evaluate_card_component_signals_v1(
@@ -39,9 +106,9 @@ pub fn evaluate_card_component_signals_v1(
     let mut report = CardComponentSignalReportV1 {
         card: profile.card,
         roles: component_roles(profile),
-        positive_components: Vec::new(),
-        debts: Vec::new(),
-        notes: Vec::new(),
+        positive_signals: Vec::new(),
+        debt_signals: Vec::new(),
+        note_signals: Vec::new(),
     };
 
     add_generic_components(context, profile, &mut report);
@@ -56,9 +123,9 @@ fn add_generic_components(
     report: &mut CardComponentSignalReportV1,
 ) {
     if fills_current_need(context, profile) {
-        push_str(
-            &mut report.positive_components,
-            "fills_current_formation_need",
+        push_signal(
+            &mut report.positive_signals,
+            CardComponentSignalKindV1::FormationNeedCoverage,
         );
     }
     if profile
@@ -66,39 +133,51 @@ fn add_generic_components(
         .contains(&CardRewardSemanticRoleV1::EnemyStrengthDown)
         || profile.roles.contains(&CardRewardSemanticRoleV1::Weak)
     {
-        push_str(&mut report.positive_components, "mitigates_enemy_damage");
+        push_signal(
+            &mut report.positive_signals,
+            CardComponentSignalKindV1::DamageMitigation,
+        );
     }
     if effective_draw_energy_access_component(context, profile) {
-        push_str(
-            &mut report.positive_components,
-            "improves_access_or_conversion",
+        push_signal(
+            &mut report.positive_signals,
+            CardComponentSignalKindV1::DrawEnergyAccess,
         );
     }
     if effective_exhaust_access_component(context, profile) {
-        push_str(&mut report.positive_components, "improves_exhaust_access");
+        push_signal(
+            &mut report.positive_signals,
+            CardComponentSignalKindV1::ExhaustAccess,
+        );
     }
     if profile
         .roles
         .contains(&CardRewardSemanticRoleV1::ExhaustPayoff)
     {
         if context.startup.exhaust_engine_count > 0 {
-            push_str(
-                &mut report.positive_components,
-                "exhaust_payoff_has_generator",
+            push_signal(
+                &mut report.positive_signals,
+                CardComponentSignalKindV1::ExhaustPayoffSupported,
             );
         } else {
-            push_str(&mut report.debts, "exhaust_payoff_without_generator");
+            push_signal(
+                &mut report.debt_signals,
+                CardComponentSignalKindV1::ExhaustPayoffUnsupported,
+            );
         }
     }
     if context.same_card_count > 0
         && profile.roles.contains(&CardRewardSemanticRoleV1::CardDraw)
         && card_mechanics_profile_v1(profile.card).applies_no_draw_debuff
     {
-        push_str(
-            &mut report.debts,
-            "duplicate_draw_access_applies_no_draw_debuff",
+        push_signal(
+            &mut report.debt_signals,
+            CardComponentSignalKindV1::DuplicateNoDrawAccessDebt,
         );
-        push_str(&mut report.notes, "duplicate_access_requires_turn_planning");
+        push_signal(
+            &mut report.note_signals,
+            CardComponentSignalKindV1::DuplicateAccessRequiresTurnPlanning,
+        );
     }
 }
 
@@ -113,25 +192,28 @@ fn add_unresolved_package_payoff_debts(
         return;
     }
     if report
-        .positive_components
+        .positive_signals
         .iter()
-        .any(|component| package_payoff_support_component(component))
+        .any(|component| package_payoff_support_signal(*component))
     {
         return;
     }
-    push_str(&mut report.debts, "payoff_without_visible_gap_fill");
+    push_signal(
+        &mut report.debt_signals,
+        CardComponentSignalKindV1::PayoffWithoutVisibleGapFill,
+    );
 }
 
-fn package_payoff_support_component(component: &str) -> bool {
+fn package_payoff_support_signal(signal: CardComponentSignalKindV1) -> bool {
     matches!(
-        component,
-        "fills_current_formation_need"
-            | "exhaust_payoff_has_generator"
-            | "exhaust_engine_enabler"
-            | "unlocks_fnp_engine"
-            | "self_damage_payoff_has_enabler"
-            | "strength_payoff_has_convertible_burst_source"
-            | "strength_payoff_has_generator"
+        signal,
+        CardComponentSignalKindV1::FormationNeedCoverage
+            | CardComponentSignalKindV1::ExhaustPayoffSupported
+            | CardComponentSignalKindV1::ExhaustEngineEnabler
+            | CardComponentSignalKindV1::FnpEngineUnlock
+            | CardComponentSignalKindV1::SelfDamagePayoffSupported
+            | CardComponentSignalKindV1::StrengthPayoffConvertibleBurstSupported
+            | CardComponentSignalKindV1::StrengthPayoffSupported
     )
 }
 
@@ -144,73 +226,85 @@ fn add_card_specific_components(
         CardId::Offering | CardId::SeeingRed | CardId::Bloodletting
             if startup_energy_candidate_discounted_by_snecko_v1(&context.startup, card) =>
         {
-            push_str(
-                &mut report.debts,
-                "snecko_random_cost_discounts_energy_startup",
+            push_signal(
+                &mut report.debt_signals,
+                CardComponentSignalKindV1::SneckoEnergyDiscountDebt,
             );
             if card == CardId::Offering {
-                push_str(
-                    &mut report.notes,
-                    "offering_energy_gain_is_less_reliable_under_snecko",
+                push_signal(
+                    &mut report.note_signals,
+                    CardComponentSignalKindV1::OfferingEnergyGainLessReliableUnderSnecko,
                 );
             } else {
-                push_str(
-                    &mut report.notes,
-                    "energy_gain_is_less_reliable_under_snecko",
+                push_signal(
+                    &mut report.note_signals,
+                    CardComponentSignalKindV1::EnergyGainLessReliableUnderSnecko,
                 );
             }
         }
         CardId::Corruption => {
             if context.startup.has_corruption_duplicate_without_payoff {
-                push_str(
-                    &mut report.debts,
-                    "deck_shape_nonstacking_power_duplicate_without_payoff",
+                push_signal(
+                    &mut report.debt_signals,
+                    CardComponentSignalKindV1::CorruptionDuplicateWithoutPayoffDebt,
                 );
             } else {
-                push_str(&mut report.positive_components, "exhaust_engine_enabler");
+                push_signal(
+                    &mut report.positive_signals,
+                    CardComponentSignalKindV1::ExhaustEngineEnabler,
+                );
             }
             if context.startup.feel_no_pain_count > 0 {
-                push_str(&mut report.positive_components, "unlocks_fnp_engine");
+                push_signal(
+                    &mut report.positive_signals,
+                    CardComponentSignalKindV1::FnpEngineUnlock,
+                );
             }
         }
         CardId::FeelNoPain | CardId::FireBreathing => {}
         CardId::Rupture => {
             if context.startup.self_damage_source_count == 0 {
-                push_str(&mut report.debts, "self_damage_payoff_without_enabler");
+                push_signal(
+                    &mut report.debt_signals,
+                    CardComponentSignalKindV1::SelfDamagePayoffUnsupported,
+                );
             } else {
-                push_str(
-                    &mut report.positive_components,
-                    "self_damage_payoff_has_enabler",
+                push_signal(
+                    &mut report.positive_signals,
+                    CardComponentSignalKindV1::SelfDamagePayoffSupported,
                 );
             }
         }
         CardId::HeavyBlade | CardId::SwordBoomerang | CardId::Pummel | CardId::LimitBreak => {
             if context.startup.persistent_strength_source_count == 0 {
                 if context.startup.convertible_strength_source_count > 0 {
-                    push_str(
-                        &mut report.positive_components,
-                        "strength_payoff_has_convertible_burst_source",
+                    push_signal(
+                        &mut report.positive_signals,
+                        CardComponentSignalKindV1::StrengthPayoffConvertibleBurstSupported,
                     );
-                    push_str(
-                        &mut report.notes,
-                        "convertible_strength_requires_draw_timing",
+                    push_signal(
+                        &mut report.note_signals,
+                        CardComponentSignalKindV1::ConvertibleStrengthRequiresDrawTiming,
                     );
                 } else if context.startup.temporary_strength_burst_count > 0 {
-                    push_str(
-                        &mut report.notes,
-                        "strength_payoff_has_temporary_burst_support",
+                    push_signal(
+                        &mut report.note_signals,
+                        CardComponentSignalKindV1::StrengthPayoffTemporaryBurstOnly,
                     );
-                    push_str(
-                        &mut report.debts,
-                        "strength_payoff_without_stable_generator",
+                    push_signal(
+                        &mut report.debt_signals,
+                        CardComponentSignalKindV1::StrengthPayoffWithoutStableGenerator,
                     );
                 } else {
-                    push_str(&mut report.debts, "strength_payoff_without_generator");
+                    push_signal(
+                        &mut report.debt_signals,
+                        CardComponentSignalKindV1::StrengthPayoffUnsupported,
+                    );
                 }
             } else {
-                push_str(
-                    &mut report.positive_components,
-                    "strength_payoff_has_generator",
+                push_signal(
+                    &mut report.positive_signals,
+                    CardComponentSignalKindV1::StrengthPayoffSupported,
                 );
             }
         }
@@ -275,7 +369,7 @@ fn component_roles(profile: &CardRewardSemanticProfileV1) -> Vec<CardComponentRo
             CardRewardSemanticRoleV1::Weak | CardRewardSemanticRoleV1::EnemyStrengthDown
         )
     }) {
-        push_role(&mut roles, CardComponentRoleV1::BossAnswer);
+        push_role(&mut roles, CardComponentRoleV1::Mitigation);
     }
     if roles.is_empty() {
         push_role(&mut roles, CardComponentRoleV1::Liability);
@@ -358,7 +452,7 @@ fn push_role(roles: &mut Vec<CardComponentRoleV1>, role: CardComponentRoleV1) {
     }
 }
 
-fn push_str(values: &mut Vec<&'static str>, value: &'static str) {
+fn push_signal(values: &mut Vec<CardComponentSignalKindV1>, value: CardComponentSignalKindV1) {
     if !values.contains(&value) {
         values.push(value);
     }
@@ -369,6 +463,7 @@ mod tests {
     use super::*;
     use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
     use crate::state::rewards::RewardCard;
+    use CardComponentSignalKindV1::*;
 
     fn context() -> CardComponentSignalContextV1 {
         CardComponentSignalContextV1 {
@@ -385,9 +480,7 @@ mod tests {
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Disarm, 0)),
         );
 
-        assert!(report
-            .positive_components
-            .contains(&"mitigates_enemy_damage"));
+        assert!(report.positive_signals.contains(&DamageMitigation));
     }
 
     #[test]
@@ -397,7 +490,7 @@ mod tests {
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Rupture, 0)),
         );
 
-        assert!(report.debts.contains(&"self_damage_payoff_without_enabler"));
+        assert!(report.debt_signals.contains(&SelfDamagePayoffUnsupported));
     }
 
     #[test]
@@ -410,14 +503,14 @@ mod tests {
         );
 
         assert!(burst_report
-            .notes
-            .contains(&"strength_payoff_has_temporary_burst_support"));
+            .note_signals
+            .contains(&StrengthPayoffTemporaryBurstOnly));
         assert!(burst_report
-            .debts
-            .contains(&"strength_payoff_without_stable_generator"));
+            .debt_signals
+            .contains(&StrengthPayoffWithoutStableGenerator));
         assert!(!burst_report
-            .positive_components
-            .contains(&"strength_payoff_has_generator"));
+            .positive_signals
+            .contains(&StrengthPayoffSupported));
 
         let mut convertible = context();
         convertible.startup.temporary_strength_burst_count = 1;
@@ -429,11 +522,11 @@ mod tests {
         );
 
         assert!(convertible_report
-            .positive_components
-            .contains(&"strength_payoff_has_convertible_burst_source"));
+            .positive_signals
+            .contains(&StrengthPayoffConvertibleBurstSupported));
         assert!(convertible_report
-            .notes
-            .contains(&"convertible_strength_requires_draw_timing"));
+            .note_signals
+            .contains(&ConvertibleStrengthRequiresDrawTiming));
     }
 
     #[test]
@@ -446,12 +539,10 @@ mod tests {
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::BattleTrance, 0)),
         );
 
+        assert!(report.debt_signals.contains(&DuplicateNoDrawAccessDebt));
         assert!(report
-            .debts
-            .contains(&"duplicate_draw_access_applies_no_draw_debuff"));
-        assert!(report
-            .notes
-            .contains(&"duplicate_access_requires_turn_planning"));
+            .note_signals
+            .contains(&DuplicateAccessRequiresTurnPlanning));
     }
 
     #[test]
@@ -467,12 +558,10 @@ mod tests {
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Offering, 0)),
         );
 
+        assert!(report.debt_signals.contains(&SneckoEnergyDiscountDebt));
         assert!(report
-            .debts
-            .contains(&"snecko_random_cost_discounts_energy_startup"));
-        assert!(report
-            .notes
-            .contains(&"offering_energy_gain_is_less_reliable_under_snecko"));
+            .note_signals
+            .contains(&OfferingEnergyGainLessReliableUnderSnecko));
     }
 
     #[test]
@@ -486,12 +575,8 @@ mod tests {
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::SeverSoul, 1)),
         );
 
-        assert!(report
-            .positive_components
-            .contains(&"improves_exhaust_access"));
-        assert!(!report
-            .positive_components
-            .contains(&"improves_access_or_conversion"));
+        assert!(report.positive_signals.contains(&ExhaustAccess));
+        assert!(!report.positive_signals.contains(&DrawEnergyAccess));
         assert!(!report.roles.contains(&CardComponentRoleV1::Lubricant));
     }
 
@@ -502,8 +587,8 @@ mod tests {
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::DarkEmbrace, 0)),
         );
 
-        assert!(report.debts.contains(&"exhaust_payoff_without_generator"));
-        assert!(report.debts.contains(&"payoff_without_visible_gap_fill"));
+        assert!(report.debt_signals.contains(&ExhaustPayoffUnsupported));
+        assert!(report.debt_signals.contains(&PayoffWithoutVisibleGapFill));
     }
 
     #[test]
@@ -516,10 +601,8 @@ mod tests {
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::DarkEmbrace, 0)),
         );
 
-        assert!(report
-            .positive_components
-            .contains(&"exhaust_payoff_has_generator"));
-        assert!(!report.debts.contains(&"payoff_without_visible_gap_fill"));
+        assert!(report.positive_signals.contains(&ExhaustPayoffSupported));
+        assert!(!report.debt_signals.contains(&PayoffWithoutVisibleGapFill));
     }
 
     #[test]
@@ -531,8 +614,8 @@ mod tests {
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Corruption, 0)),
         );
 
-        assert!(report.positive_components.contains(&"unlocks_fnp_engine"));
-        assert!(report.notes.is_empty());
+        assert!(report.positive_signals.contains(&FnpEngineUnlock));
+        assert!(report.note_signals.is_empty());
     }
 
     #[test]
@@ -547,11 +630,9 @@ mod tests {
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Corruption, 0)),
         );
 
-        assert!(!report
-            .positive_components
-            .contains(&"exhaust_engine_enabler"));
+        assert!(!report.positive_signals.contains(&ExhaustEngineEnabler));
         assert!(report
-            .debts
-            .contains(&"deck_shape_nonstacking_power_duplicate_without_payoff"));
+            .debt_signals
+            .contains(&CorruptionDuplicateWithoutPayoffDebt));
     }
 }

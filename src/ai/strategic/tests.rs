@@ -1,4 +1,4 @@
-use crate::ai::card_component_signal_v1::CardComponentSignalReportV1;
+use crate::ai::card_component_signal_v1::{CardComponentSignalKindV1, CardComponentSignalReportV1};
 use crate::ai::card_reward_policy_v1::{
     build_card_reward_decision_context_v1, plan_card_reward_decision_v1,
     replay_card_reward_decision_v1, CardRewardPolicyConfigV1, PublicRewardDecisionPacketV1,
@@ -305,9 +305,9 @@ fn component_formation_coverage_signal_is_report_only() {
     let report = CardComponentSignalReportV1 {
         card: CardId::IronWave,
         roles: Vec::new(),
-        positive_components: vec!["fills_current_formation_need"],
-        debts: Vec::new(),
-        notes: Vec::new(),
+        positive_signals: vec![CardComponentSignalKindV1::FormationNeedCoverage],
+        debt_signals: Vec::new(),
+        note_signals: Vec::new(),
     };
 
     let delta = CandidateDelta::from_component_report(
