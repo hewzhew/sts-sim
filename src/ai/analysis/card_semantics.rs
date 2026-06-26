@@ -314,9 +314,15 @@ pub fn card_definition(card: CardId) -> CardDefinition {
             .burden(PowerSetup)
             .duplicate(StackingHandler),
         TrueGrit => CardDefinition::new(card)
+            .provides(Block)
             .effect(EmitEvent(CardExhausted))
             .burden(RandomExhaust),
-        SecondWind | SeverSoul => CardDefinition::new(card).effect(EmitEvent(CardExhausted)),
+        SecondWind => CardDefinition::new(card)
+            .provides(Block)
+            .effect(EmitEvent(CardExhausted)),
+        SeverSoul => CardDefinition::new(card)
+            .effect(FrontloadDamage)
+            .effect(EmitEvent(CardExhausted)),
         BurningPact => CardDefinition::new(card)
             .provides(CardDraw)
             .effect(EmitEvent(CardExhausted)),
@@ -340,6 +346,9 @@ pub fn card_definition(card: CardId) -> CardDefinition {
         Uppercut => CardDefinition::new(card)
             .effect(FrontloadDamage)
             .provides(Vulnerable)
+            .provides(Weak),
+        Clothesline => CardDefinition::new(card)
+            .effect(FrontloadDamage)
             .provides(Weak),
         Disarm => CardDefinition::new(card).provides(EnemyStrengthDown),
         FlameBarrier => CardDefinition::new(card).provides(Block),
