@@ -7,6 +7,7 @@ use crate::eval::branch_experiment_trajectory::{
 };
 use crate::eval::run_control::RunControlSession;
 
+use super::assessment::campaign_branch_assessment_from_session_v1;
 use super::model::{BranchCampaignBranchSummaryV1, BranchCampaignBranchV1};
 use super::state_graph::BranchStateStoreV1;
 use super::BranchCampaignRunStateV1;
@@ -47,10 +48,18 @@ fn campaign_refresh_branch_group_summaries_from_state_store_v1(
     }
 }
 
+pub(super) fn campaign_refresh_branch_summaries_from_state_store_v1(
+    branches: &mut [BranchCampaignBranchV1],
+    state_store: &BranchStateStoreV1,
+) {
+    campaign_refresh_branch_group_summaries_from_state_store_v1(branches, state_store);
+}
+
 pub(super) fn campaign_refresh_branch_summary_from_session_v1(
     branch: &mut BranchCampaignBranchV1,
     session: &RunControlSession,
 ) {
+    branch.assessment = Some(campaign_branch_assessment_from_session_v1(session));
     let event_boundary =
         crate::eval::event_boundary_packet_v1::event_boundary_packet_from_session_v1(session);
     let reward_boundary =

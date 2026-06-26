@@ -1021,6 +1021,7 @@ mod tests {
                 lineage_decision_signal_rank_adjustment: 0,
                 rank_key: 0,
                 rank_breakdown: None,
+                assessment: None,
                 final_boss_combat_record: Some(BranchExperimentBossCombatRecordV1 {
                     source: "final_boss_combat".to_string(),
                     action_count: 2,
@@ -1114,6 +1115,7 @@ mod tests {
                 lineage_decision_signal_rank_adjustment: 0,
                 rank_key: -799000,
                 rank_breakdown: None,
+                assessment: None,
                 final_boss_combat_record: None,
                 combat_lab_probes: Vec::new(),
             }],

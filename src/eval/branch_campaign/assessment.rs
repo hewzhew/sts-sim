@@ -1,6 +1,35 @@
-use super::model::{BranchCampaignBranchSummaryV1, BranchCampaignBranchV1};
+use crate::ai::block_plan_profile_v1::{block_plan_profile_v1, BlockPlanReadinessV1};
+use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
+use crate::ai::deck_startup_profile_v1::deck_startup_profile_v1;
+use crate::ai::noncombat_strategy_v1::{
+    build_run_strategy_snapshot_from_run_state_v2, StrategyDeckFormationNeedV1,
+    StrategyDeckFormationStageV1,
+};
+use crate::eval::run_control::RunControlSession;
+use crate::state::rewards::RewardCard;
+use crate::state::run::RunState;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+use super::model::BranchCampaignBranchV1;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BranchCampaignAssessmentSourceV1 {
+    SessionState,
+    MissingSession,
+}
+
+impl BranchCampaignAssessmentSourceV1 {
+    fn label(self) -> &'static str {
+        match self {
+            Self::SessionState => "session_state",
+            Self::MissingSession => "missing_session",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BranchCampaignGateStatusV1 {
     Unknown = 0,
     Unsolved = 1,
@@ -21,7 +50,8 @@ impl BranchCampaignGateStatusV1 {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BranchCampaignFormationStageV1 {
     Unknown = 0,
     StarterSurvival = 1,
@@ -46,7 +76,8 @@ impl BranchCampaignFormationStageV1 {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BranchCampaignResourceConversionV1 {
     None = 0,
     BufferOnly = 1,
@@ -65,30 +96,52 @@ impl BranchCampaignResourceConversionV1 {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct BranchCampaignTrajectoryJobsV1 {
-    frontload: i32,
-    transition_frontload: i32,
-    scaling: i32,
-    defense: i32,
-    engine_generators: i32,
-    engine_payoffs: i32,
-    draw_energy: i32,
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchCampaignJobCoverageV1 {
+    pub frontload_damage: u8,
+    pub aoe_damage: u8,
+    pub block: u8,
+    pub draw: u8,
+    pub energy: u8,
+    pub scaling_damage: u8,
+    pub scaling_block: u8,
+    pub exhaust_enabler: u8,
+    pub exhaust_payoff: u8,
+    pub status_enabler: u8,
+    pub status_payoff: u8,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct BranchCampaignAssessmentV1 {
+    pub source: BranchCampaignAssessmentSourceV1,
     pub formation_stage: BranchCampaignFormationStageV1,
     pub immediate_gate: BranchCampaignGateStatusV1,
     pub act_boss_gate: BranchCampaignGateStatusV1,
     pub transition_gate: BranchCampaignGateStatusV1,
     pub resource_conversion: BranchCampaignResourceConversionV1,
-    pub missing_critical_jobs: Vec<&'static str>,
+    pub job_coverage: BranchCampaignJobCoverageV1,
+    pub missing_critical_jobs: Vec<String>,
 }
 
 impl BranchCampaignAssessmentV1 {
+    pub fn unknown_v1() -> Self {
+        Self {
+            source: BranchCampaignAssessmentSourceV1::MissingSession,
+            formation_stage: BranchCampaignFormationStageV1::Unknown,
+            immediate_gate: BranchCampaignGateStatusV1::Unknown,
+            act_boss_gate: BranchCampaignGateStatusV1::Unknown,
+            transition_gate: BranchCampaignGateStatusV1::Unknown,
+            resource_conversion: BranchCampaignResourceConversionV1::None,
+            job_coverage: BranchCampaignJobCoverageV1::default(),
+            missing_critical_jobs: Vec::new(),
+        }
+    }
+
     pub fn priority_key(&self) -> BranchCampaignAssessmentPriorityKeyV1 {
         (
+            i32::from(self.source == BranchCampaignAssessmentSourceV1::SessionState),
             immediate_gate_viability_v1(self.immediate_gate),
             self.act_boss_gate,
             self.transition_gate,
@@ -102,6 +155,7 @@ impl BranchCampaignAssessmentV1 {
 
 pub type BranchCampaignAssessmentPriorityKeyV1 = (
     i32,
+    i32,
     BranchCampaignGateStatusV1,
     BranchCampaignGateStatusV1,
     BranchCampaignFormationStageV1,
@@ -113,98 +167,225 @@ pub type BranchCampaignAssessmentPriorityKeyV1 = (
 pub fn campaign_branch_assessment_v1(
     branch: &BranchCampaignBranchV1,
 ) -> BranchCampaignAssessmentV1 {
-    let Some(summary) = branch.summary.as_ref() else {
-        return BranchCampaignAssessmentV1 {
-            formation_stage: BranchCampaignFormationStageV1::Unknown,
-            immediate_gate: BranchCampaignGateStatusV1::Unknown,
-            act_boss_gate: BranchCampaignGateStatusV1::Unknown,
-            transition_gate: BranchCampaignGateStatusV1::Unknown,
-            resource_conversion: BranchCampaignResourceConversionV1::None,
-            missing_critical_jobs: Vec::new(),
-        };
-    };
-    let jobs = parse_campaign_trajectory_jobs_v1(&summary.trajectory_key);
-    let formation_stage = campaign_formation_stage_v1(summary, &jobs);
-    let immediate_gate = campaign_immediate_gate_v1(summary, &jobs);
-    let act_boss_gate = campaign_act_boss_gate_v1(branch, summary, &jobs);
-    let transition_gate = campaign_transition_gate_v1(summary, &jobs);
-    let resource_conversion = campaign_resource_conversion_v1(branch, summary);
-    let missing_critical_jobs = campaign_missing_critical_jobs_v1(summary, &jobs);
+    branch
+        .assessment
+        .clone()
+        .unwrap_or_else(BranchCampaignAssessmentV1::unknown_v1)
+}
+
+pub fn campaign_branch_assessment_from_session_v1(
+    session: &RunControlSession,
+) -> BranchCampaignAssessmentV1 {
+    let run_state = &session.run_state;
+    let strategy = build_run_strategy_snapshot_from_run_state_v2(run_state);
+    let formation = strategy.formation_summary();
+    let startup = deck_startup_profile_v1(run_state);
+    let block_plan = block_plan_profile_v1(run_state);
+    let job_coverage = campaign_job_coverage_from_run_state_v1(run_state, &startup, &block_plan);
+    let formation_stage = campaign_formation_stage_from_session_v1(
+        formation.stage,
+        &formation.needs,
+        &job_coverage,
+        &block_plan.readiness,
+    );
+    let summary = session_summary_proxy_v1(session);
+    let immediate_gate = campaign_immediate_gate_v1(&summary, &job_coverage);
+    let act_boss_gate = campaign_act_boss_gate_v1(&summary, &job_coverage, &block_plan.readiness);
+    let transition_gate = campaign_transition_gate_v1(&summary, &job_coverage);
+    let resource_conversion = campaign_resource_conversion_v1(&summary, session);
+    let missing_critical_jobs =
+        campaign_missing_critical_jobs_v1(&summary, &job_coverage, &formation.needs);
     BranchCampaignAssessmentV1 {
+        source: BranchCampaignAssessmentSourceV1::SessionState,
         formation_stage,
         immediate_gate,
         act_boss_gate,
         transition_gate,
         resource_conversion,
+        job_coverage,
         missing_critical_jobs,
     }
 }
 
 pub fn render_campaign_branch_assessment_v1(branch: &BranchCampaignBranchV1) -> String {
     let assessment = campaign_branch_assessment_v1(branch);
+    render_campaign_assessment_v1(&assessment)
+}
+
+fn render_campaign_assessment_v1(assessment: &BranchCampaignAssessmentV1) -> String {
     let missing = if assessment.missing_critical_jobs.is_empty() {
         "-".to_string()
     } else {
         assessment.missing_critical_jobs.join(",")
     };
     format!(
-        "assess=[stage={} gate={} boss={} trans={} resource={} missing={}]",
+        "assess=[src={} stage={} gate={} boss={} trans={} resource={} jobs=f{} a{} b{} d{} e{} s{} x{}/{} missing={}]",
+        assessment.source.label(),
         assessment.formation_stage.label(),
         assessment.immediate_gate.label(),
         assessment.act_boss_gate.label(),
         assessment.transition_gate.label(),
         assessment.resource_conversion.label(),
+        assessment.job_coverage.frontload_damage,
+        assessment.job_coverage.aoe_damage,
+        assessment.job_coverage.block,
+        assessment.job_coverage.draw,
+        assessment.job_coverage.energy,
+        assessment.job_coverage.scaling_damage,
+        assessment.job_coverage.exhaust_enabler,
+        assessment.job_coverage.exhaust_payoff,
         missing
     )
 }
 
-fn campaign_formation_stage_v1(
-    summary: &BranchCampaignBranchSummaryV1,
-    jobs: &BranchCampaignTrajectoryJobsV1,
+fn campaign_job_coverage_from_run_state_v1(
+    run_state: &RunState,
+    startup: &crate::ai::deck_startup_profile_v1::DeckStartupProfileV1,
+    block_plan: &crate::ai::block_plan_profile_v1::BlockPlanProfileV1,
+) -> BranchCampaignJobCoverageV1 {
+    let mut coverage = BranchCampaignJobCoverageV1::default();
+    for card in &run_state.master_deck {
+        let profile = card_reward_semantic_profile_v1(&RewardCard::new(card.id, card.upgrades));
+        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::FrontloadDamage) {
+            coverage.frontload_damage = coverage.frontload_damage.saturating_add(1);
+        }
+        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::AoeDamage) {
+            coverage.aoe_damage = coverage.aoe_damage.saturating_add(1);
+        }
+        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::Block) {
+            coverage.block = coverage.block.saturating_add(1);
+        }
+        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::CardDraw)
+            || has_role_v1(&profile.roles, CardRewardSemanticRoleV1::CycleAccess)
+        {
+            coverage.draw = coverage.draw.saturating_add(1);
+        }
+        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::EnergySource) {
+            coverage.energy = coverage.energy.saturating_add(1);
+        }
+        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::ScalingSource)
+            || has_role_v1(
+                &profile.roles,
+                CardRewardSemanticRoleV1::CombatExternalPayoff,
+            )
+        {
+            coverage.scaling_damage = coverage.scaling_damage.saturating_add(1);
+        }
+        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::BlockRetention)
+            || has_role_v1(&profile.roles, CardRewardSemanticRoleV1::BlockMultiplier)
+            || block_plan.readiness >= BlockPlanReadinessV1::Supported
+        {
+            coverage.scaling_block = coverage.scaling_block.saturating_add(1);
+        }
+        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::ExhaustGenerator) {
+            coverage.exhaust_enabler = coverage.exhaust_enabler.saturating_add(1);
+        }
+        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::ExhaustPayoff) {
+            coverage.exhaust_payoff = coverage.exhaust_payoff.saturating_add(1);
+        }
+        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::StatusGenerator) {
+            coverage.status_enabler = coverage.status_enabler.saturating_add(1);
+        }
+        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::StatusPayoff) {
+            coverage.status_payoff = coverage.status_payoff.saturating_add(1);
+        }
+    }
+    coverage.exhaust_enabler = coverage
+        .exhaust_enabler
+        .saturating_add(startup.exhaust_engine_count);
+    coverage.exhaust_payoff = coverage
+        .exhaust_payoff
+        .saturating_add(startup.exhaust_payoff_count);
+    coverage
+}
+
+fn has_role_v1(roles: &[CardRewardSemanticRoleV1], role: CardRewardSemanticRoleV1) -> bool {
+    roles.contains(&role)
+}
+
+fn campaign_formation_stage_from_session_v1(
+    stage: StrategyDeckFormationStageV1,
+    needs: &[StrategyDeckFormationNeedV1],
+    coverage: &BranchCampaignJobCoverageV1,
+    block_readiness: &BlockPlanReadinessV1,
 ) -> BranchCampaignFormationStageV1 {
-    if jobs.engine_generators > 0 && jobs.engine_payoffs > 0 {
+    if coverage.exhaust_enabler > 0 && coverage.exhaust_payoff > 0 {
         return BranchCampaignFormationStageV1::EngineOnline;
     }
-    if jobs.scaling > 0 && (jobs.draw_energy > 0 || jobs.defense > 0) {
+    if coverage.status_enabler > 0 && coverage.status_payoff > 0 {
+        return BranchCampaignFormationStageV1::EngineOnline;
+    }
+    if coverage.scaling_damage > 0
+        && (coverage.draw > 0 || coverage.energy > 0 || coverage.block >= 3)
+    {
         return BranchCampaignFormationStageV1::ScalingOnline;
     }
-    if jobs.scaling > 0 && jobs.defense > 0 {
+    if *block_readiness >= BlockPlanReadinessV1::Supported {
         return BranchCampaignFormationStageV1::PackageForming;
     }
-    match summary.formation_stage.as_str() {
-        "Mature" | "PlanCommitted" | "PlanSeeded" => {
-            BranchCampaignFormationStageV1::DirectionSeeded
+    if coverage.scaling_damage > 0
+        || coverage.exhaust_enabler > 0
+        || coverage.exhaust_payoff > 0
+        || coverage.status_payoff > 0
+    {
+        return BranchCampaignFormationStageV1::DirectionSeeded;
+    }
+    match stage {
+        StrategyDeckFormationStageV1::StarterShell => {
+            BranchCampaignFormationStageV1::StarterSurvival
         }
-        "Transitional" => BranchCampaignFormationStageV1::EarlyStableIncomplete,
-        "StarterShell" => BranchCampaignFormationStageV1::StarterSurvival,
-        _ => {
-            if jobs.frontload + jobs.transition_frontload > 0 || jobs.defense > 0 {
-                BranchCampaignFormationStageV1::EarlyStableIncomplete
+        StrategyDeckFormationStageV1::Transitional => {
+            BranchCampaignFormationStageV1::EarlyStableIncomplete
+        }
+        StrategyDeckFormationStageV1::PlanSeeded
+        | StrategyDeckFormationStageV1::PlanCommitted
+        | StrategyDeckFormationStageV1::Mature => {
+            if needs.is_empty() {
+                BranchCampaignFormationStageV1::DirectionSeeded
             } else {
-                BranchCampaignFormationStageV1::StarterSurvival
+                BranchCampaignFormationStageV1::EarlyStableIncomplete
             }
         }
     }
 }
 
+#[derive(Clone, Copy)]
+struct BranchCampaignSessionSummaryProxyV1 {
+    act: u8,
+    floor: i32,
+    hp: i32,
+    max_hp: i32,
+    gold: i32,
+}
+
+fn session_summary_proxy_v1(session: &RunControlSession) -> BranchCampaignSessionSummaryProxyV1 {
+    let (hp, max_hp) = session.visible_player_hp();
+    BranchCampaignSessionSummaryProxyV1 {
+        act: session.run_state.act_num,
+        floor: session.run_state.floor_num,
+        hp,
+        max_hp,
+        gold: session.run_state.gold,
+    }
+}
+
 fn campaign_immediate_gate_v1(
-    summary: &BranchCampaignBranchSummaryV1,
-    jobs: &BranchCampaignTrajectoryJobsV1,
+    summary: &BranchCampaignSessionSummaryProxyV1,
+    coverage: &BranchCampaignJobCoverageV1,
 ) -> BranchCampaignGateStatusV1 {
     if hp_percent_v1(summary) < 20 {
         return BranchCampaignGateStatusV1::AtRisk;
     }
-    let frontload = jobs.frontload + jobs.transition_frontload;
     if summary.act == 1 && summary.floor <= 5 {
-        if frontload > 0 {
+        if coverage.frontload_damage >= 1 {
             return BranchCampaignGateStatusV1::Solved;
         }
         return BranchCampaignGateStatusV1::AtRisk;
     }
-    if frontload <= 0 {
+    if coverage.frontload_damage <= 1 && coverage.aoe_damage == 0 {
         return BranchCampaignGateStatusV1::AtRisk;
     }
-    if jobs.defense > 0 || jobs.draw_energy > 0 || hp_percent_v1(summary) >= 55 {
+    if coverage.block > 0 || coverage.draw > 0 || hp_percent_v1(summary) >= 55 {
         BranchCampaignGateStatusV1::Passable
     } else {
         BranchCampaignGateStatusV1::AtRisk
@@ -212,34 +393,34 @@ fn campaign_immediate_gate_v1(
 }
 
 fn campaign_act_boss_gate_v1(
-    branch: &BranchCampaignBranchV1,
-    summary: &BranchCampaignBranchSummaryV1,
-    jobs: &BranchCampaignTrajectoryJobsV1,
+    summary: &BranchCampaignSessionSummaryProxyV1,
+    coverage: &BranchCampaignJobCoverageV1,
+    block_readiness: &BlockPlanReadinessV1,
 ) -> BranchCampaignGateStatusV1 {
-    if branch.strategic_summary.boss_readiness_milli >= 700 {
-        return BranchCampaignGateStatusV1::Solved;
-    }
-    if branch.strategic_summary.boss_readiness_milli >= 300 {
-        return BranchCampaignGateStatusV1::Passable;
-    }
     if summary.act == 1 && summary.floor < 7 {
         return BranchCampaignGateStatusV1::Unknown;
     }
-    if jobs.scaling > 0 || jobs.engine_generators + jobs.engine_payoffs > 1 {
+    if coverage.scaling_damage > 0
+        || coverage.exhaust_enabler > 0 && coverage.exhaust_payoff > 0
+        || *block_readiness >= BlockPlanReadinessV1::Supported
+    {
         return BranchCampaignGateStatusV1::Passable;
     }
-    if jobs.frontload + jobs.transition_frontload > 1 && jobs.defense > 0 {
+    if coverage.frontload_damage >= 3 && coverage.block > 0 {
         return BranchCampaignGateStatusV1::AtRisk;
     }
     BranchCampaignGateStatusV1::Unsolved
 }
 
 fn campaign_transition_gate_v1(
-    summary: &BranchCampaignBranchSummaryV1,
-    jobs: &BranchCampaignTrajectoryJobsV1,
+    summary: &BranchCampaignSessionSummaryProxyV1,
+    coverage: &BranchCampaignJobCoverageV1,
 ) -> BranchCampaignGateStatusV1 {
     if summary.act >= 2 {
-        if jobs.scaling > 0 || jobs.engine_generators + jobs.engine_payoffs > 1 {
+        if coverage.scaling_damage > 0
+            || coverage.exhaust_enabler > 0 && coverage.exhaust_payoff > 0
+            || coverage.aoe_damage > 0 && coverage.block > 0
+        {
             return BranchCampaignGateStatusV1::Passable;
         }
         return BranchCampaignGateStatusV1::AtRisk;
@@ -247,9 +428,9 @@ fn campaign_transition_gate_v1(
     if summary.floor < 7 {
         return BranchCampaignGateStatusV1::Unknown;
     }
-    if jobs.scaling > 0 || jobs.engine_generators + jobs.engine_payoffs > 1 {
+    if coverage.scaling_damage > 0 || coverage.exhaust_enabler > 0 && coverage.exhaust_payoff > 0 {
         BranchCampaignGateStatusV1::Passable
-    } else if jobs.draw_energy > 0 && jobs.defense > 0 {
+    } else if coverage.draw > 0 && coverage.block > 0 {
         BranchCampaignGateStatusV1::AtRisk
     } else {
         BranchCampaignGateStatusV1::Unsolved
@@ -257,10 +438,10 @@ fn campaign_transition_gate_v1(
 }
 
 fn campaign_resource_conversion_v1(
-    branch: &BranchCampaignBranchV1,
-    summary: &BranchCampaignBranchSummaryV1,
+    summary: &BranchCampaignSessionSummaryProxyV1,
+    session: &RunControlSession,
 ) -> BranchCampaignResourceConversionV1 {
-    let frontier = branch.frontier_title.to_ascii_lowercase();
+    let frontier = format!("{:?}", session.engine_state).to_ascii_lowercase();
     if frontier.contains("shop") && summary.gold >= 150 {
         return BranchCampaignResourceConversionV1::StrongConversionWindow;
     }
@@ -278,54 +459,35 @@ fn campaign_resource_conversion_v1(
 }
 
 fn campaign_missing_critical_jobs_v1(
-    summary: &BranchCampaignBranchSummaryV1,
-    jobs: &BranchCampaignTrajectoryJobsV1,
-) -> Vec<&'static str> {
+    summary: &BranchCampaignSessionSummaryProxyV1,
+    coverage: &BranchCampaignJobCoverageV1,
+    formation_needs: &[StrategyDeckFormationNeedV1],
+) -> Vec<String> {
     let mut missing = Vec::new();
-    if jobs.frontload + jobs.transition_frontload <= 0 {
-        missing.push("frontload");
+    if coverage.frontload_damage <= 1 && coverage.aoe_damage == 0 {
+        missing.push("frontload".to_string());
     }
     if summary.act >= 2 || summary.floor >= 7 {
-        if jobs.scaling <= 0 && jobs.engine_generators + jobs.engine_payoffs <= 1 {
-            missing.push("scaling_or_engine");
+        if coverage.scaling_damage == 0
+            && !(coverage.exhaust_enabler > 0 && coverage.exhaust_payoff > 0)
+            && coverage.status_payoff == 0
+        {
+            missing.push("scaling_or_engine".to_string());
         }
     }
-    if summary.act >= 2 && jobs.defense <= 0 {
-        missing.push("act2_mitigation");
+    if summary.act >= 2 && coverage.block <= 1 && coverage.scaling_block == 0 {
+        missing.push("act2_mitigation".to_string());
     }
-    if summary
-        .formation_needs
-        .iter()
-        .any(|need| need == "DrawEnergy")
-        && jobs.draw_energy <= 0
+    if formation_needs.contains(&StrategyDeckFormationNeedV1::DrawEnergy)
+        && coverage.draw == 0
+        && coverage.energy == 0
     {
-        missing.push("draw_energy");
+        missing.push("draw_energy".to_string());
     }
     missing
 }
 
-fn parse_campaign_trajectory_jobs_v1(key: &str) -> BranchCampaignTrajectoryJobsV1 {
-    let mut jobs = BranchCampaignTrajectoryJobsV1::default();
-    for part in key.split('|') {
-        let Some((name, value)) = part.split_once('=') else {
-            continue;
-        };
-        let value = value.parse::<i32>().unwrap_or_default();
-        match name {
-            "frontload" => jobs.frontload = value,
-            "transition" => jobs.transition_frontload = value,
-            "scaling" => jobs.scaling = value,
-            "defense" => jobs.defense = value,
-            "engine_gen" => jobs.engine_generators = value,
-            "engine_payoff" => jobs.engine_payoffs = value,
-            "draw_energy" => jobs.draw_energy = value,
-            _ => {}
-        }
-    }
-    jobs
-}
-
-fn hp_percent_v1(summary: &BranchCampaignBranchSummaryV1) -> i32 {
+fn hp_percent_v1(summary: &BranchCampaignSessionSummaryProxyV1) -> i32 {
     if summary.max_hp <= 0 {
         return 0;
     }

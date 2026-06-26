@@ -28,6 +28,7 @@ use crate::state::run::RunStateScheduleCheckpointV1;
 use crate::state::selection::DomainEvent;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use super::assessment::BranchCampaignAssessmentV1;
 use super::performance::BranchCampaignCombatPerformanceSummaryV1;
 use super::retry::BranchCampaignCombatRetryLedgerV1;
 use super::run_domain::BranchCampaignRunDomainV1;
@@ -159,6 +160,8 @@ pub struct BranchCampaignBranchV1 {
     pub rank_key: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rank_breakdown: Option<BranchCampaignRankBreakdownV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assessment: Option<BranchCampaignAssessmentV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub final_boss_combat_record: Option<BranchExperimentBossCombatRecordV1>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

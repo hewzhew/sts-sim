@@ -1,3 +1,7 @@
+use super::assessment::{
+    BranchCampaignAssessmentSourceV1, BranchCampaignAssessmentV1, BranchCampaignFormationStageV1,
+    BranchCampaignGateStatusV1, BranchCampaignJobCoverageV1, BranchCampaignResourceConversionV1,
+};
 use super::*;
 use crate::ai::noncombat_strategy_v1::{StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1};
 use crate::ai::strategic::{BranchSignature, RetentionBucket};
@@ -99,6 +103,7 @@ fn campaign_branch_from_report_appends_new_choice_path() {
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
         rank_breakdown: None,
+        assessment: None,
         final_boss_combat_record: None,
         combat_lab_probes: Vec::new(),
     };
@@ -170,6 +175,7 @@ fn campaign_branch_from_report_prefixes_parent_branch_id() {
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
         rank_breakdown: None,
+        assessment: None,
         final_boss_combat_record: None,
         combat_lab_probes: Vec::new(),
     };
@@ -326,12 +332,21 @@ fn scheduler_mainline_gate_assessment_beats_raw_rank() {
     let mut healthy_incomplete = test_campaign_branch("healthy-incomplete", 7, 80);
     healthy_incomplete.frontier_title = "Shop".to_string();
     healthy_incomplete.rank_key = 20_000;
-    healthy_incomplete.summary.as_mut().unwrap().trajectory_key = "frontload=1".to_string();
+    healthy_incomplete.assessment = Some(test_campaign_assessment(
+        BranchCampaignFormationStageV1::EarlyStableIncomplete,
+        BranchCampaignGateStatusV1::Passable,
+        BranchCampaignGateStatusV1::AtRisk,
+        BranchCampaignGateStatusV1::Unsolved,
+    ));
 
     let mut lower_rank_package = test_campaign_branch("lower-rank-package", 7, 55);
     lower_rank_package.rank_key = 12_000;
-    lower_rank_package.summary.as_mut().unwrap().trajectory_key =
-        "frontload=1|defense=1|scaling=1|draw_energy=1".to_string();
+    lower_rank_package.assessment = Some(test_campaign_assessment(
+        BranchCampaignFormationStageV1::ScalingOnline,
+        BranchCampaignGateStatusV1::Passable,
+        BranchCampaignGateStatusV1::Passable,
+        BranchCampaignGateStatusV1::Passable,
+    ));
 
     let selected = select_campaign_branches_v1(vec![healthy_incomplete, lower_rank_package], 1, 8);
 
@@ -340,6 +355,38 @@ fn scheduler_mainline_gate_assessment_beats_raw_rank() {
     assert!(selected.scheduled[0]
         .stop_reason
         .contains("scheduler:general"));
+}
+
+fn test_campaign_assessment(
+    formation_stage: BranchCampaignFormationStageV1,
+    immediate_gate: BranchCampaignGateStatusV1,
+    act_boss_gate: BranchCampaignGateStatusV1,
+    transition_gate: BranchCampaignGateStatusV1,
+) -> BranchCampaignAssessmentV1 {
+    BranchCampaignAssessmentV1 {
+        source: BranchCampaignAssessmentSourceV1::SessionState,
+        formation_stage,
+        immediate_gate,
+        act_boss_gate,
+        transition_gate,
+        resource_conversion: BranchCampaignResourceConversionV1::BufferOnly,
+        job_coverage: BranchCampaignJobCoverageV1 {
+            frontload_damage: 2,
+            aoe_damage: 0,
+            block: 1,
+            draw: 1,
+            energy: 0,
+            scaling_damage: u8::from(
+                formation_stage >= BranchCampaignFormationStageV1::ScalingOnline,
+            ),
+            scaling_block: 0,
+            exhaust_enabler: 0,
+            exhaust_payoff: 0,
+            status_enabler: 0,
+            status_payoff: 0,
+        },
+        missing_critical_jobs: Vec::new(),
+    }
 }
 
 #[test]
@@ -844,6 +891,7 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: hp,
         rank_breakdown: None,
+        assessment: None,
         final_boss_combat_record: None,
         combat_lab_probes: Vec::new(),
     }

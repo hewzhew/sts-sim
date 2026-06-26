@@ -116,6 +116,7 @@ pub use strategic_signals::{
 };
 use summary::{
     campaign_refresh_all_branch_summaries_from_state_store_v1,
+    campaign_refresh_branch_summaries_from_state_store_v1,
     campaign_refresh_branch_summary_from_session_v1, campaign_summary_from_report_branch_v1,
 };
 
@@ -434,6 +435,14 @@ where
                 &state.abandoned,
             );
         }
+        campaign_refresh_branch_summaries_from_state_store_v1(
+            &mut state.scheduled,
+            &state.state_store,
+        );
+        campaign_refresh_branch_summaries_from_state_store_v1(
+            &mut state.parked,
+            &state.state_store,
+        );
         let existing_schedule = reschedule_campaign_existing_workset_v1(
             std::mem::take(&mut state.scheduled),
             std::mem::take(&mut state.parked),
@@ -481,11 +490,14 @@ where
         let mut combat_retry_elapsed_wall_ms_max = batch.combat_retry_elapsed_wall_ms_max;
         let mut produced_branches = batch.candidates.len();
         let parked_before_schedule = state.parked.len();
-        let mut selected = schedule_campaign_workset_for_config_v1(
-            batch.candidates.clone(),
-            state.parked.clone(),
-            config,
+        let mut candidates = batch.candidates.clone();
+        campaign_refresh_branch_summaries_from_state_store_v1(&mut candidates, &state.state_store);
+        campaign_refresh_branch_summaries_from_state_store_v1(
+            &mut state.parked,
+            &state.state_store,
         );
+        let mut selected =
+            schedule_campaign_workset_for_config_v1(candidates, state.parked.clone(), config);
         if campaign_round_should_retry_combat_budget_on_stall_v1(
             config,
             &selected,
@@ -514,8 +526,17 @@ where
                     combat_retry_elapsed_wall_ms_max = combat_retry_elapsed_wall_ms_max
                         .max(batch.combat_retry_elapsed_wall_ms_max);
                     produced_branches = batch.candidates.len();
+                    let mut retry_candidates = batch.candidates.clone();
+                    campaign_refresh_branch_summaries_from_state_store_v1(
+                        &mut retry_candidates,
+                        &state.state_store,
+                    );
+                    campaign_refresh_branch_summaries_from_state_store_v1(
+                        &mut state.parked,
+                        &state.state_store,
+                    );
                     selected = schedule_campaign_workset_for_config_v1(
-                        batch.candidates.clone(),
+                        retry_candidates,
                         state.parked.clone(),
                         config,
                     );
@@ -1400,6 +1421,7 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
         lineage_decision_signal_rank_adjustment: 0,
         rank_key: 0,
         rank_breakdown: None,
+        assessment: None,
         final_boss_combat_record: None,
         combat_lab_probes: Vec::new(),
     }
@@ -1718,6 +1740,7 @@ pub fn campaign_branch_from_report_branch_v1(
         rank_breakdown: BranchCampaignRankBreakdownV1::from_retention_adjustment_v1(
             &branch.retention.rank_adjustment,
         ),
+        assessment: None,
         final_boss_combat_record: branch.final_boss_combat_record.clone(),
         combat_lab_probes: Vec::new(),
     }
