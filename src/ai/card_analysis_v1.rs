@@ -74,6 +74,21 @@ impl CardAnalysisVulnerableSupportV1 {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardAnalysisStartupKeyV1 {
+    Corruption,
+    Havoc,
+    Clash,
+    FeelNoPain,
+    DualWield,
+    Anger,
+    Rupture,
+    Armaments,
+    Apparition,
+    Offering,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CardAnalysisProfileV1 {
     pub card: CardId,
@@ -87,6 +102,7 @@ pub struct CardAnalysisProfileV1 {
     pub block_chunk: CardAnalysisBlockChunkV1,
     pub aoe_support: CardAnalysisAoeSupportV1,
     pub vulnerable_support: CardAnalysisVulnerableSupportV1,
+    pub startup_key: Option<CardAnalysisStartupKeyV1>,
     pub is_skill: bool,
     pub is_curse: bool,
     pub has_frontload_damage: bool,
@@ -112,6 +128,21 @@ pub struct CardAnalysisProfileV1 {
     pub is_block_plan_broad_exhaust_source: bool,
     pub is_block_plan_access_support: bool,
     pub is_stasis_sensitive_key_card: bool,
+    pub is_startup_setup_debt: bool,
+    pub is_startup_setup_payment: bool,
+    pub is_startup_immediate_survival: bool,
+    pub is_startup_base_combat_shape_risk: bool,
+    pub is_startup_unupgraded_apparition: bool,
+    pub is_startup_exhaust_engine: bool,
+    pub is_startup_strong_draw: bool,
+    pub is_startup_self_damage_source: bool,
+    pub is_startup_dual_wield_target: bool,
+    pub is_startup_strength_payoff_liability_candidate: bool,
+    pub is_startup_strong_setup_support_candidate: bool,
+    pub is_startup_fnp_exhaust_support_candidate: bool,
+    pub is_startup_stable_strength_support_candidate: bool,
+    pub is_startup_self_damage_support_candidate: bool,
+    pub is_startup_snecko_energy_candidate: bool,
 }
 
 pub fn card_analysis_profile_v1(card: CardId, upgrades: u8) -> CardAnalysisProfileV1 {
@@ -143,6 +174,7 @@ pub fn card_analysis_profile_v1(card: CardId, upgrades: u8) -> CardAnalysisProfi
         } else {
             CardAnalysisVulnerableSupportV1::None
         },
+        startup_key: startup_key_v1(card),
         is_skill: definition.card_type == CardType::Skill,
         is_curse: definition.card_type == CardType::Curse,
         has_frontload_damage: has_role_v1(
@@ -185,6 +217,25 @@ pub fn card_analysis_profile_v1(card: CardId, upgrades: u8) -> CardAnalysisProfi
         is_block_plan_broad_exhaust_source: is_block_plan_broad_exhaust_source_v1(card),
         is_block_plan_access_support: is_block_plan_access_support_v1(card),
         is_stasis_sensitive_key_card: is_stasis_sensitive_key_card_v1(card),
+        is_startup_setup_debt: is_startup_setup_debt_v1(card, upgrades),
+        is_startup_setup_payment: is_startup_setup_payment_v1(card),
+        is_startup_immediate_survival: is_startup_immediate_survival_v1(card, upgrades),
+        is_startup_base_combat_shape_risk: is_startup_base_combat_shape_risk_v1(card),
+        is_startup_unupgraded_apparition: matches!(card, CardId::Apparition) && upgrades == 0,
+        is_startup_exhaust_engine: is_startup_exhaust_engine_v1(card),
+        is_startup_strong_draw: is_startup_strong_draw_v1(card),
+        is_startup_self_damage_source: is_startup_self_damage_source_v1(card),
+        is_startup_dual_wield_target: is_startup_dual_wield_target_v1(card),
+        is_startup_strength_payoff_liability_candidate:
+            is_startup_strength_payoff_liability_candidate_v1(card),
+        is_startup_strong_setup_support_candidate: is_startup_strong_setup_support_candidate_v1(
+            card,
+        ),
+        is_startup_fnp_exhaust_support_candidate: is_startup_fnp_exhaust_support_candidate_v1(card),
+        is_startup_stable_strength_support_candidate:
+            is_startup_stable_strength_support_candidate_v1(card),
+        is_startup_self_damage_support_candidate: is_startup_self_damage_support_candidate_v1(card),
+        is_startup_snecko_energy_candidate: is_startup_snecko_energy_candidate_v1(card),
     }
 }
 
@@ -348,5 +399,169 @@ fn is_stasis_sensitive_key_card_v1(card: CardId) -> bool {
             | CardId::LimitBreak
             | CardId::DemonForm
             | CardId::Shockwave
+    )
+}
+
+fn startup_key_v1(card: CardId) -> Option<CardAnalysisStartupKeyV1> {
+    match card {
+        CardId::Corruption => Some(CardAnalysisStartupKeyV1::Corruption),
+        CardId::Havoc => Some(CardAnalysisStartupKeyV1::Havoc),
+        CardId::Clash => Some(CardAnalysisStartupKeyV1::Clash),
+        CardId::FeelNoPain => Some(CardAnalysisStartupKeyV1::FeelNoPain),
+        CardId::DualWield => Some(CardAnalysisStartupKeyV1::DualWield),
+        CardId::Anger => Some(CardAnalysisStartupKeyV1::Anger),
+        CardId::Rupture => Some(CardAnalysisStartupKeyV1::Rupture),
+        CardId::Armaments => Some(CardAnalysisStartupKeyV1::Armaments),
+        CardId::Apparition => Some(CardAnalysisStartupKeyV1::Apparition),
+        CardId::Offering => Some(CardAnalysisStartupKeyV1::Offering),
+        _ => None,
+    }
+}
+
+fn is_startup_setup_debt_v1(card: CardId, upgrades: u8) -> bool {
+    matches!(
+        card,
+        CardId::FeelNoPain
+            | CardId::DarkEmbrace
+            | CardId::DemonForm
+            | CardId::Barricade
+            | CardId::Metallicize
+            | CardId::FireBreathing
+            | CardId::Evolve
+            | CardId::Rupture
+            | CardId::DualWield
+            | CardId::LimitBreak
+    ) || (card == CardId::Armaments && upgrades == 0)
+}
+
+fn is_startup_setup_payment_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Offering
+            | CardId::BattleTrance
+            | CardId::BurningPact
+            | CardId::Bloodletting
+            | CardId::SeeingRed
+            | CardId::Sentinel
+            | CardId::ShrugItOff
+            | CardId::PommelStrike
+            | CardId::Warcry
+    )
+}
+
+fn is_startup_immediate_survival_v1(card: CardId, upgrades: u8) -> bool {
+    matches!(
+        card,
+        CardId::Impervious
+            | CardId::FlameBarrier
+            | CardId::PowerThrough
+            | CardId::ShrugItOff
+            | CardId::Disarm
+            | CardId::Shockwave
+            | CardId::Uppercut
+            | CardId::Clothesline
+            | CardId::Intimidate
+            | CardId::TrueGrit
+            | CardId::SecondWind
+    ) || (card == CardId::Apparition && upgrades > 0)
+}
+
+fn is_startup_base_combat_shape_risk_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Anger
+            | CardId::WildStrike
+            | CardId::RecklessCharge
+            | CardId::DualWield
+            | CardId::Havoc
+            | CardId::Clash
+    )
+}
+
+fn is_startup_exhaust_engine_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Corruption
+            | CardId::BurningPact
+            | CardId::TrueGrit
+            | CardId::SecondWind
+            | CardId::FiendFire
+            | CardId::SeverSoul
+            | CardId::Havoc
+    )
+}
+
+fn is_startup_strong_draw_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Offering | CardId::BattleTrance | CardId::BurningPact | CardId::DarkEmbrace
+    )
+}
+
+fn is_startup_self_damage_source_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Bloodletting
+            | CardId::Offering
+            | CardId::Hemokinesis
+            | CardId::Combust
+            | CardId::Brutality
+            | CardId::JAX
+    )
+}
+
+fn is_startup_dual_wield_target_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Feed
+            | CardId::Reaper
+            | CardId::DemonForm
+            | CardId::Barricade
+            | CardId::Corruption
+            | CardId::LimitBreak
+            | CardId::Inflame
+            | CardId::SpotWeakness
+    )
+}
+
+fn is_startup_strength_payoff_liability_candidate_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::HeavyBlade | CardId::SwordBoomerang | CardId::Pummel
+    )
+}
+
+fn is_startup_strong_setup_support_candidate_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Offering | CardId::BattleTrance | CardId::BurningPact
+    )
+}
+
+fn is_startup_fnp_exhaust_support_candidate_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::BurningPact | CardId::TrueGrit | CardId::SecondWind | CardId::FiendFire
+    )
+}
+
+fn is_startup_stable_strength_support_candidate_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Inflame | CardId::SpotWeakness | CardId::DemonForm
+    )
+}
+
+fn is_startup_self_damage_support_candidate_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Bloodletting | CardId::Hemokinesis | CardId::Combust | CardId::Brutality
+    )
+}
+
+fn is_startup_snecko_energy_candidate_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Offering | CardId::SeeingRed | CardId::Bloodletting
     )
 }

@@ -1,4 +1,7 @@
-use crate::content::cards::{get_card_definition, CardId};
+use crate::ai::card_analysis_v1::{
+    card_analysis_profile_v1, CardAnalysisProfileV1, CardAnalysisStartupKeyV1,
+};
+use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 use crate::state::run::RunState;
 use serde::{Deserialize, Serialize};
@@ -87,51 +90,56 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
 
     for card in &run_state.master_deck {
         let id = card.id;
-        record_card_cost_shape(id, &mut profile);
-        if is_setup_debt_card(id, card.upgrades) {
+        let analysis = card_analysis_profile_v1(id, card.upgrades);
+        record_card_cost_shape(&analysis, &mut profile);
+        if analysis.is_startup_setup_debt {
             profile.setup_debt = profile.setup_debt.saturating_add(1);
         }
-        if is_setup_payment_card(id) {
+        if analysis.is_startup_setup_payment {
             profile.setup_payment = profile.setup_payment.saturating_add(1);
         }
-        if is_immediate_survival_card(id, card.upgrades) {
+        if analysis.is_startup_immediate_survival {
             profile.immediate_survival = profile.immediate_survival.saturating_add(1);
         }
-        if is_combat_shape_risk_card(id, card.upgrades, profile.has_runic_pyramid) {
+        if analysis.is_startup_base_combat_shape_risk
+            || (profile.has_runic_pyramid && analysis.is_startup_unupgraded_apparition)
+        {
             profile.combat_shape_risk = profile.combat_shape_risk.saturating_add(1);
         }
-        if is_exhaust_engine_card(id) {
+        if analysis.is_startup_exhaust_engine {
             profile.exhaust_engine_count = profile.exhaust_engine_count.saturating_add(1);
         }
-        if is_strong_draw_card(id) {
+        if analysis.is_startup_strong_draw {
             profile.strong_draw_count = profile.strong_draw_count.saturating_add(1);
         }
-        if id == CardId::Rupture {
+        if analysis.startup_key == Some(CardAnalysisStartupKeyV1::Rupture) {
             profile.rupture_count = profile.rupture_count.saturating_add(1);
         }
-        if is_self_damage_source_card(id) {
+        if analysis.is_startup_self_damage_source {
             profile.self_damage_source_count = profile.self_damage_source_count.saturating_add(1);
         }
-        if is_dual_wield_target_card(id) {
+        if analysis.is_startup_dual_wield_target {
             profile.dual_wield_target_count = profile.dual_wield_target_count.saturating_add(1);
         }
 
-        match id {
-            CardId::FeelNoPain => {
+        match analysis.startup_key {
+            Some(CardAnalysisStartupKeyV1::FeelNoPain) => {
                 profile.feel_no_pain_count = profile.feel_no_pain_count.saturating_add(1)
             }
-            CardId::DualWield => {
+            Some(CardAnalysisStartupKeyV1::DualWield) => {
                 profile.dual_wield_count = profile.dual_wield_count.saturating_add(1)
             }
-            CardId::Anger => profile.anger_count = profile.anger_count.saturating_add(1),
-            CardId::Armaments => {
+            Some(CardAnalysisStartupKeyV1::Anger) => {
+                profile.anger_count = profile.anger_count.saturating_add(1)
+            }
+            Some(CardAnalysisStartupKeyV1::Armaments) => {
                 profile.armaments_count = profile.armaments_count.saturating_add(1);
                 if card.upgrades > 0 {
                     profile.upgraded_armaments_count =
                         profile.upgraded_armaments_count.saturating_add(1);
                 }
             }
-            CardId::Apparition => {
+            Some(CardAnalysisStartupKeyV1::Apparition) => {
                 profile.apparition_count = profile.apparition_count.saturating_add(1);
                 if card.upgrades > 0 {
                     profile.upgraded_apparition_count =
@@ -174,18 +182,18 @@ pub fn deck_startup_profile_v1(run_state: &RunState) -> DeckStartupProfileV1 {
         matches!(
             risk,
             crate::ai::deck_shape_v1::DeckShapeRiskV1::NonstackingPowerDuplicateWithoutPayoff {
-                card: CardId::Corruption,
+                card,
                 ..
-            }
+            } if card_has_startup_key_v1(*card, CardAnalysisStartupKeyV1::Corruption)
         )
     });
     profile.has_havoc_duplicate_without_payoff = deck_shape.risks.iter().any(|risk| {
         matches!(
             risk,
             crate::ai::deck_shape_v1::DeckShapeRiskV1::RandomExhaustSaturationWithoutPayoff {
-                card: CardId::Havoc,
+                card,
                 ..
-            }
+            } if card_has_startup_key_v1(*card, CardAnalysisStartupKeyV1::Havoc)
         )
     });
     profile.has_status_generator_saturation_without_digest = deck_shape.risks.iter().any(|risk| {
@@ -242,10 +250,10 @@ fn apply_relic_adjusted_startup_v1(profile: &mut DeckStartupProfileV1, run_state
         0
     };
 
-    let has_offering = run_state
-        .master_deck
-        .iter()
-        .any(|card| card.id == CardId::Offering);
+    let has_offering = run_state.master_deck.iter().any(|card| {
+        card_analysis_profile_v1(card.id, card.upgrades).startup_key
+            == Some(CardAnalysisStartupKeyV1::Offering)
+    });
     profile.has_snecko_offering_reliability_debt =
         has_offering && profile.snecko_random_cost_debt > 0;
 
@@ -255,16 +263,19 @@ fn apply_relic_adjusted_startup_v1(profile: &mut DeckStartupProfileV1, run_state
     }
 }
 
-fn record_card_cost_shape(card: CardId, profile: &mut DeckStartupProfileV1) {
-    let cost = get_card_definition(card).cost;
-    if cost == 0 {
+fn record_card_cost_shape(analysis: &CardAnalysisProfileV1, profile: &mut DeckStartupProfileV1) {
+    if analysis.cost == 0 {
         profile.zero_cost_card_count = profile.zero_cost_card_count.saturating_add(1);
     }
-    if (0..=1).contains(&cost) {
+    if (0..=1).contains(&analysis.cost) {
         profile.low_cost_card_count = profile.low_cost_card_count.saturating_add(1);
-    } else if cost >= 2 {
+    } else if analysis.cost >= 2 {
         profile.high_cost_card_count = profile.high_cost_card_count.saturating_add(1);
     }
+}
+
+fn card_has_startup_key_v1(card: CardId, key: CardAnalysisStartupKeyV1) -> bool {
+    card_analysis_profile_v1(card, 0).startup_key == Some(key)
 }
 
 pub fn startup_liability_for_candidate_v1(
@@ -272,35 +283,43 @@ pub fn startup_liability_for_candidate_v1(
     candidate: CardId,
     act: u8,
 ) -> Option<&'static str> {
-    match candidate {
-        CardId::Corruption
+    let candidate = card_analysis_profile_v1(candidate, 0);
+    match candidate.startup_key {
+        Some(CardAnalysisStartupKeyV1::Corruption)
             if startup.exhaust_payoff_count == 0 && startup.corruption_count >= 1 =>
         {
             Some("startup_rejects_corruption_duplicate_without_payoff")
         }
-        CardId::Havoc if startup.exhaust_payoff_count == 0 && startup.havoc_count >= 1 => {
+        Some(CardAnalysisStartupKeyV1::Havoc)
+            if startup.exhaust_payoff_count == 0 && startup.havoc_count >= 1 =>
+        {
             Some("startup_rejects_havoc_duplicate_without_payoff")
         }
-        CardId::WildStrike | CardId::RecklessCharge | CardId::PowerThrough | CardId::Immolate
-            if startup.status_generator_count >= 1 && startup.status_digest_count == 0 =>
+        _ if candidate.has_status_enabler
+            && startup.status_generator_count >= 1
+            && startup.status_digest_count == 0 =>
         {
             Some("startup_rejects_status_generator_duplicate_without_digest")
         }
-        CardId::Clash if startup.has_clash_playability_debt => {
+        Some(CardAnalysisStartupKeyV1::Clash) if startup.has_clash_playability_debt => {
             Some("startup_rejects_clash_playability_debt")
         }
-        CardId::FeelNoPain
+        Some(CardAnalysisStartupKeyV1::FeelNoPain)
             if startup.feel_no_pain_count >= 1 && startup.exhaust_engine_count == 0 =>
         {
             Some("startup_rejects_more_fnp_without_exhaust_engine")
         }
-        CardId::FeelNoPain if startup.feel_no_pain_count >= 2 && startup.setup_payment <= 2 => {
+        Some(CardAnalysisStartupKeyV1::FeelNoPain)
+            if startup.feel_no_pain_count >= 2 && startup.setup_payment <= 2 =>
+        {
             Some("startup_rejects_third_fnp_without_setup_payment")
         }
-        CardId::DualWield if startup.dual_wield_target_count == 0 || startup.setup_payment <= 1 => {
+        Some(CardAnalysisStartupKeyV1::DualWield)
+            if startup.dual_wield_target_count == 0 || startup.setup_payment <= 1 =>
+        {
             Some("startup_rejects_dual_wield_without_target_or_payment")
         }
-        CardId::Anger
+        Some(CardAnalysisStartupKeyV1::Anger)
             if startup.anger_count >= 1
                 && (act >= 2
                     || startup
@@ -311,12 +330,13 @@ pub fn startup_liability_for_candidate_v1(
         {
             Some("startup_rejects_more_anger_without_digest")
         }
-        CardId::HeavyBlade | CardId::SwordBoomerang | CardId::Pummel
-            if startup.persistent_strength_source_count == 0 && act >= 2 =>
+        _ if candidate.is_startup_strength_payoff_liability_candidate
+            && startup.persistent_strength_source_count == 0
+            && act >= 2 =>
         {
             Some("startup_rejects_strength_payoff_without_strength")
         }
-        CardId::Rupture if startup.self_damage_source_count == 0 => {
+        Some(CardAnalysisStartupKeyV1::Rupture) if startup.self_damage_source_count == 0 => {
             Some("startup_rejects_rupture_without_self_damage")
         }
         _ => None,
@@ -327,38 +347,40 @@ pub fn startup_support_for_candidate_v1(
     startup: &DeckStartupProfileV1,
     candidate: CardId,
 ) -> Option<&'static str> {
-    match candidate {
-        CardId::Offering
+    let candidate = card_analysis_profile_v1(candidate, 0);
+    match candidate.startup_key {
+        Some(CardAnalysisStartupKeyV1::Offering)
             if startup.has_setup_debt_high_payment_low
-                && !startup_energy_candidate_discounted_by_snecko_v1(startup, candidate) =>
+                && !startup_energy_candidate_discounted_by_snecko_v1(startup, candidate.card) =>
         {
             Some("startup_supports_setup_payment")
         }
-        CardId::BattleTrance | CardId::BurningPact if startup.has_setup_debt_high_payment_low => {
+        _ if candidate.startup_key != Some(CardAnalysisStartupKeyV1::Offering)
+            && candidate.is_startup_strong_setup_support_candidate
+            && startup.has_setup_debt_high_payment_low =>
+        {
             Some("startup_supports_setup_payment")
         }
-        CardId::BurningPact | CardId::TrueGrit | CardId::SecondWind | CardId::FiendFire
-            if startup.feel_no_pain_count > 0 =>
+        _ if candidate.is_startup_fnp_exhaust_support_candidate
+            && startup.feel_no_pain_count > 0 =>
         {
             Some("startup_supports_fnp_exhaust_engine")
         }
-        CardId::Inflame | CardId::SpotWeakness | CardId::DemonForm
-            if startup.has_strength_payoff_without_strength =>
+        _ if candidate.is_startup_stable_strength_support_candidate
+            && startup.has_strength_payoff_without_strength =>
         {
             Some("startup_supports_strength_source")
         }
-        CardId::Rupture
+        Some(CardAnalysisStartupKeyV1::Rupture)
             if startup.has_strength_payoff_without_strength
                 && startup.self_damage_source_count > 0 =>
         {
             Some("startup_supports_conditional_strength_source")
         }
-        CardId::Bloodletting | CardId::Hemokinesis | CardId::Combust | CardId::Brutality
-            if startup.rupture_count > 0 =>
-        {
+        _ if candidate.is_startup_self_damage_support_candidate && startup.rupture_count > 0 => {
             Some("startup_supports_rupture_self_damage_source")
         }
-        CardId::Armaments
+        Some(CardAnalysisStartupKeyV1::Armaments)
             if startup.upgraded_armaments_count == 0 && startup.armaments_count == 0 =>
         {
             Some("startup_supports_upgrade_access")
@@ -371,12 +393,10 @@ pub fn startup_energy_candidate_discounted_by_snecko_v1(
     startup: &DeckStartupProfileV1,
     candidate: CardId,
 ) -> bool {
+    let candidate = card_analysis_profile_v1(candidate, 0);
     startup.has_snecko_eye
         && startup.has_snecko_low_cost_volatility
-        && matches!(
-            candidate,
-            CardId::Offering | CardId::SeeingRed | CardId::Bloodletting
-        )
+        && candidate.is_startup_snecko_energy_candidate
 }
 
 pub fn startup_snecko_cost_conversion_candidate_v1(
@@ -387,118 +407,12 @@ pub fn startup_snecko_cost_conversion_candidate_v1(
         return None;
     }
 
-    let cost = get_card_definition(candidate).cost;
-    if cost >= 2 {
+    let candidate = card_analysis_profile_v1(candidate, 0);
+    if candidate.cost >= 2 {
         Some("snecko_high_cost_candidate_converts_random_cost_debt")
     } else {
         None
     }
-}
-
-fn is_setup_debt_card(card: CardId, upgrades: u8) -> bool {
-    matches!(
-        card,
-        CardId::FeelNoPain
-            | CardId::DarkEmbrace
-            | CardId::DemonForm
-            | CardId::Barricade
-            | CardId::Metallicize
-            | CardId::FireBreathing
-            | CardId::Evolve
-            | CardId::Rupture
-            | CardId::DualWield
-            | CardId::LimitBreak
-    ) || (card == CardId::Armaments && upgrades == 0)
-}
-
-fn is_setup_payment_card(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Offering
-            | CardId::BattleTrance
-            | CardId::BurningPact
-            | CardId::Bloodletting
-            | CardId::SeeingRed
-            | CardId::Sentinel
-            | CardId::ShrugItOff
-            | CardId::PommelStrike
-            | CardId::Warcry
-    )
-}
-
-fn is_immediate_survival_card(card: CardId, upgrades: u8) -> bool {
-    matches!(
-        card,
-        CardId::Impervious
-            | CardId::FlameBarrier
-            | CardId::PowerThrough
-            | CardId::ShrugItOff
-            | CardId::Disarm
-            | CardId::Shockwave
-            | CardId::Uppercut
-            | CardId::Clothesline
-            | CardId::Intimidate
-            | CardId::TrueGrit
-            | CardId::SecondWind
-    ) || (card == CardId::Apparition && upgrades > 0)
-}
-
-fn is_exhaust_engine_card(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Corruption
-            | CardId::BurningPact
-            | CardId::TrueGrit
-            | CardId::SecondWind
-            | CardId::FiendFire
-            | CardId::SeverSoul
-            | CardId::Havoc
-    )
-}
-
-fn is_strong_draw_card(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Offering | CardId::BattleTrance | CardId::BurningPact | CardId::DarkEmbrace
-    )
-}
-
-fn is_self_damage_source_card(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Bloodletting
-            | CardId::Offering
-            | CardId::Hemokinesis
-            | CardId::Combust
-            | CardId::Brutality
-            | CardId::JAX
-    )
-}
-
-fn is_dual_wield_target_card(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Feed
-            | CardId::Reaper
-            | CardId::DemonForm
-            | CardId::Barricade
-            | CardId::Corruption
-            | CardId::LimitBreak
-            | CardId::Inflame
-            | CardId::SpotWeakness
-    )
-}
-
-fn is_combat_shape_risk_card(card: CardId, upgrades: u8, has_runic_pyramid: bool) -> bool {
-    matches!(
-        card,
-        CardId::Anger
-            | CardId::WildStrike
-            | CardId::RecklessCharge
-            | CardId::DualWield
-            | CardId::Havoc
-            | CardId::Clash
-    ) || (card == CardId::Apparition && upgrades == 0 && has_runic_pyramid)
 }
 
 #[cfg(test)]
