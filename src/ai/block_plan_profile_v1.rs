@@ -1,4 +1,4 @@
-use crate::content::cards::{get_card_definition, CardId, CardType};
+use crate::ai::card_analysis_v1::card_analysis_profile_v1;
 use crate::content::relics::RelicId;
 use crate::state::run::RunState;
 use serde::{Deserialize, Serialize};
@@ -86,47 +86,47 @@ pub fn block_plan_profile_v1(run_state: &RunState) -> BlockPlanProfileV1 {
     }
 
     for card in &run_state.master_deck {
-        let id = card.id;
-        if is_plain_block_card(id) {
+        let analysis = card_analysis_profile_v1(card.id, card.upgrades);
+        if analysis.is_block_plan_plain_coverage {
             profile.plain_block_cards = profile.plain_block_cards.saturating_add(1);
         }
-        if is_medium_block_chunk(id) {
+        if analysis.is_block_plan_medium_chunk {
             profile.medium_block_chunks = profile.medium_block_chunks.saturating_add(1);
         }
-        if is_high_quality_block_chunk(id) {
+        if analysis.is_block_plan_high_quality_chunk {
             profile.high_quality_block_chunks = profile.high_quality_block_chunks.saturating_add(1);
         }
-        if is_retention_source(id) {
+        if analysis.is_block_retention_source {
             profile.retention_sources = profile.retention_sources.saturating_add(1);
             profile.setup_debt = profile.setup_debt.saturating_add(1);
         }
-        if is_multiplier(id) {
+        if analysis.is_block_multiplier {
             profile.multipliers = profile.multipliers.saturating_add(1);
         }
-        if is_payoff(id) {
+        if analysis.is_block_payoff {
             profile.payoffs = profile.payoffs.saturating_add(1);
         }
-        if id == CardId::FeelNoPain {
+        if analysis.is_feel_no_pain_source {
             profile.feel_no_pain_sources = profile.feel_no_pain_sources.saturating_add(1);
             profile.setup_debt = profile.setup_debt.saturating_add(1);
         }
-        if id == CardId::SecondWind {
+        if analysis.is_second_wind_source {
             profile.second_wind_sources = profile.second_wind_sources.saturating_add(1);
         }
-        if is_controlled_exhaust_source(id) {
+        if analysis.is_block_plan_controlled_exhaust_source {
             profile.controlled_exhaust_sources =
                 profile.controlled_exhaust_sources.saturating_add(1);
         }
-        if is_broad_exhaust_source(id) {
+        if analysis.is_block_plan_broad_exhaust_source {
             profile.broad_exhaust_sources = profile.broad_exhaust_sources.saturating_add(1);
         }
-        if get_card_definition(id).card_type != CardType::Attack {
+        if analysis.is_non_attack {
             profile.non_attack_cards = profile.non_attack_cards.saturating_add(1);
         }
-        if is_access_support(id) {
+        if analysis.is_block_plan_access_support {
             profile.access_support = profile.access_support.saturating_add(1);
         }
-        if is_stasis_sensitive_key_card(id) {
+        if analysis.is_stasis_sensitive_key_card {
             profile.stasis_sensitive_key_cards =
                 profile.stasis_sensitive_key_cards.saturating_add(1);
         }
@@ -193,94 +193,10 @@ fn block_plan_diagnosis_v1(profile: &BlockPlanProfileV1) -> Vec<String> {
     diagnosis
 }
 
-fn is_plain_block_card(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Defend
-            | CardId::Armaments
-            | CardId::ShrugItOff
-            | CardId::TrueGrit
-            | CardId::IronWave
-            | CardId::GhostlyArmor
-            | CardId::FlameBarrier
-            | CardId::Impervious
-            | CardId::PowerThrough
-    )
-}
-
-fn is_medium_block_chunk(card: CardId) -> bool {
-    matches!(card, CardId::FlameBarrier | CardId::GhostlyArmor)
-}
-
-fn is_high_quality_block_chunk(card: CardId) -> bool {
-    matches!(card, CardId::Impervious | CardId::PowerThrough)
-}
-
-fn is_retention_source(card: CardId) -> bool {
-    matches!(card, CardId::Barricade)
-}
-
-fn is_multiplier(card: CardId) -> bool {
-    matches!(card, CardId::Entrench)
-}
-
-fn is_payoff(card: CardId) -> bool {
-    matches!(card, CardId::BodySlam | CardId::Juggernaut)
-}
-
-fn is_controlled_exhaust_source(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::BurningPact | CardId::TrueGrit | CardId::SecondWind | CardId::FiendFire
-    )
-}
-
-fn is_broad_exhaust_source(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::BurningPact
-            | CardId::TrueGrit
-            | CardId::SecondWind
-            | CardId::FiendFire
-            | CardId::SeverSoul
-            | CardId::Corruption
-            | CardId::Havoc
-    )
-}
-
-fn is_access_support(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::BattleTrance
-            | CardId::BurningPact
-            | CardId::PommelStrike
-            | CardId::ShrugItOff
-            | CardId::Offering
-            | CardId::DeepBreath
-            | CardId::Warcry
-            | CardId::MasterOfStrategy
-    )
-}
-
-fn is_stasis_sensitive_key_card(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::Barricade
-            | CardId::Entrench
-            | CardId::Impervious
-            | CardId::PowerThrough
-            | CardId::FeelNoPain
-            | CardId::Corruption
-            | CardId::Offering
-            | CardId::LimitBreak
-            | CardId::DemonForm
-            | CardId::Shockwave
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content::cards::CardId;
 
     #[test]
     fn barricade_alone_is_latent_not_supported_block_plan() {

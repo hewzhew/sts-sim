@@ -99,6 +99,19 @@ pub struct CardAnalysisProfileV1 {
     pub has_exhaust_payoff: bool,
     pub has_status_enabler: bool,
     pub has_status_payoff: bool,
+    pub is_non_attack: bool,
+    pub is_block_plan_plain_coverage: bool,
+    pub is_block_plan_medium_chunk: bool,
+    pub is_block_plan_high_quality_chunk: bool,
+    pub is_block_retention_source: bool,
+    pub is_block_multiplier: bool,
+    pub is_block_payoff: bool,
+    pub is_feel_no_pain_source: bool,
+    pub is_second_wind_source: bool,
+    pub is_block_plan_controlled_exhaust_source: bool,
+    pub is_block_plan_broad_exhaust_source: bool,
+    pub is_block_plan_access_support: bool,
+    pub is_stasis_sensitive_key_card: bool,
 }
 
 pub fn card_analysis_profile_v1(card: CardId, upgrades: u8) -> CardAnalysisProfileV1 {
@@ -159,6 +172,19 @@ pub fn card_analysis_profile_v1(card: CardId, upgrades: u8) -> CardAnalysisProfi
         has_exhaust_payoff: has_role_v1(&semantic.roles, CardRewardSemanticRoleV1::ExhaustPayoff),
         has_status_enabler: has_role_v1(&semantic.roles, CardRewardSemanticRoleV1::StatusGenerator),
         has_status_payoff: has_role_v1(&semantic.roles, CardRewardSemanticRoleV1::StatusPayoff),
+        is_non_attack: definition.card_type != CardType::Attack,
+        is_block_plan_plain_coverage: is_block_plan_plain_coverage_v1(card),
+        is_block_plan_medium_chunk: is_block_plan_medium_chunk_v1(card),
+        is_block_plan_high_quality_chunk: is_block_plan_high_quality_chunk_v1(card),
+        is_block_retention_source: matches!(card, CardId::Barricade),
+        is_block_multiplier: matches!(card, CardId::Entrench),
+        is_block_payoff: matches!(card, CardId::BodySlam | CardId::Juggernaut),
+        is_feel_no_pain_source: matches!(card, CardId::FeelNoPain),
+        is_second_wind_source: matches!(card, CardId::SecondWind),
+        is_block_plan_controlled_exhaust_source: is_block_plan_controlled_exhaust_source_v1(card),
+        is_block_plan_broad_exhaust_source: is_block_plan_broad_exhaust_source_v1(card),
+        is_block_plan_access_support: is_block_plan_access_support_v1(card),
+        is_stasis_sensitive_key_card: is_stasis_sensitive_key_card_v1(card),
     }
 }
 
@@ -250,4 +276,77 @@ fn vulnerable_support_v1(card: CardId) -> CardAnalysisVulnerableSupportV1 {
         }
         _ => CardAnalysisVulnerableSupportV1::Reliable,
     }
+}
+
+fn is_block_plan_plain_coverage_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Defend
+            | CardId::Armaments
+            | CardId::ShrugItOff
+            | CardId::TrueGrit
+            | CardId::IronWave
+            | CardId::GhostlyArmor
+            | CardId::FlameBarrier
+            | CardId::Impervious
+            | CardId::PowerThrough
+    )
+}
+
+fn is_block_plan_medium_chunk_v1(card: CardId) -> bool {
+    matches!(card, CardId::FlameBarrier | CardId::GhostlyArmor)
+}
+
+fn is_block_plan_high_quality_chunk_v1(card: CardId) -> bool {
+    matches!(card, CardId::Impervious | CardId::PowerThrough)
+}
+
+fn is_block_plan_controlled_exhaust_source_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::BurningPact | CardId::TrueGrit | CardId::SecondWind | CardId::FiendFire
+    )
+}
+
+fn is_block_plan_broad_exhaust_source_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::BurningPact
+            | CardId::TrueGrit
+            | CardId::SecondWind
+            | CardId::FiendFire
+            | CardId::SeverSoul
+            | CardId::Corruption
+            | CardId::Havoc
+    )
+}
+
+fn is_block_plan_access_support_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::BattleTrance
+            | CardId::BurningPact
+            | CardId::PommelStrike
+            | CardId::ShrugItOff
+            | CardId::Offering
+            | CardId::DeepBreath
+            | CardId::Warcry
+            | CardId::MasterOfStrategy
+    )
+}
+
+fn is_stasis_sensitive_key_card_v1(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Barricade
+            | CardId::Entrench
+            | CardId::Impervious
+            | CardId::PowerThrough
+            | CardId::FeelNoPain
+            | CardId::Corruption
+            | CardId::Offering
+            | CardId::LimitBreak
+            | CardId::DemonForm
+            | CardId::Shockwave
+    )
 }
