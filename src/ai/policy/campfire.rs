@@ -1,0 +1,1 @@
+//! Campfire policy entry point.

@@ -1,0 +1,1 @@
+//! Shop policy entry point.

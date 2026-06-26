@@ -1,0 +1,1 @@
+//! Branch campaign journal ownership.
