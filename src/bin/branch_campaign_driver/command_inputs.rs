@@ -45,7 +45,7 @@ pub(super) struct RunCommandInput {
 
 impl RunCommandInput {
     pub(super) fn from_run_args(args: RunCommandArgs) -> Result<Self, String> {
-        let config = campaign_config_from_cli_parts(
+        let mut config = campaign_config_from_cli_parts(
             &args.domain,
             &args.branching,
             &args.search,
@@ -56,6 +56,7 @@ impl RunCommandInput {
                 root: args.output.auto_capture_root.clone(),
             },
         )?;
+        config.reward_semantic_live_sample_limit = args.output.live_reward_semantic_limit;
         Ok(Self {
             config,
             round_budget: RoundBudgetRequestV1::from_branching_args(&args.branching),
@@ -76,7 +77,7 @@ impl RunCommandInput {
     }
 
     pub(super) fn from_continue_args(args: ContinueCommandArgs) -> Result<Self, String> {
-        let config = campaign_config_from_cli_parts(
+        let mut config = campaign_config_from_cli_parts(
             &args.domain,
             &args.branching,
             &args.search,
@@ -87,6 +88,7 @@ impl RunCommandInput {
                 root: args.output.auto_capture_root.clone(),
             },
         )?;
+        config.reward_semantic_live_sample_limit = args.output.live_reward_semantic_limit;
         Ok(Self {
             config,
             round_budget: RoundBudgetRequestV1::from_branching_args(&args.branching),
@@ -1217,6 +1219,7 @@ fn campaign_config_from_parts(
         include_event_reward_skip: false,
         min_acceptable_victory_hp_percent: parts.min_acceptable_victory_hp_percent,
         prefix_commands,
+        reward_semantic_live_sample_limit: None,
     })
 }
 

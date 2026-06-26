@@ -8,6 +8,7 @@ use crate::eval::branch_experiment_boundary::branch_boundary_available;
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::eval::campaign_journal::CampaignJournalV1;
 use crate::eval::combat_lab_probe_v1::current_act_boss_preview_probe_v1;
+use crate::eval::reward_semantic_live_sample_v1::RewardSemanticLiveSampleV1;
 use crate::eval::run_control::{
     apply_branch_experiment_auto_run, build_decision_surface, AutoCombatCaptureConfig,
     RunControlAutoStepOptions, RunControlCombatSegmentMode, RunControlConfig,
@@ -154,6 +155,7 @@ pub struct BranchCampaignConfigV1 {
     pub include_event_reward_skip: bool,
     pub min_acceptable_victory_hp_percent: u8,
     pub prefix_commands: Vec<String>,
+    pub reward_semantic_live_sample_limit: Option<usize>,
 }
 
 impl Default for BranchCampaignConfigV1 {
@@ -187,6 +189,7 @@ impl Default for BranchCampaignConfigV1 {
             include_event_reward_skip: false,
             min_acceptable_victory_hp_percent: 20,
             prefix_commands: Vec::new(),
+            reward_semantic_live_sample_limit: None,
         }
     }
 }
@@ -416,6 +419,7 @@ where
     });
 
     let mut stop_reason = "max_rounds".to_string();
+    let mut reward_semantic_live_samples = Vec::<RewardSemanticLiveSampleV1>::new();
 
     for local_round in 0..config.max_rounds {
         let recovered = recover_auto_advanceable_stuck_branches_v1(
@@ -489,6 +493,8 @@ where
         let mut combat_retry_elapsed_wall_ms_sum = batch.combat_retry_elapsed_wall_ms_sum;
         let mut combat_retry_elapsed_wall_ms_max = batch.combat_retry_elapsed_wall_ms_max;
         let mut produced_branches = batch.candidates.len();
+        let mut batch_reward_semantic_live_samples =
+            std::mem::take(&mut batch.reward_semantic_live_samples);
         let parked_before_schedule = state.parked.len();
         let mut candidates = batch.candidates.clone();
         campaign_refresh_branch_summaries_from_state_store_v1(&mut candidates, &state.state_store);
@@ -526,6 +532,8 @@ where
                     combat_retry_elapsed_wall_ms_max = combat_retry_elapsed_wall_ms_max
                         .max(batch.combat_retry_elapsed_wall_ms_max);
                     produced_branches = batch.candidates.len();
+                    batch_reward_semantic_live_samples
+                        .extend(std::mem::take(&mut batch.reward_semantic_live_samples));
                     let mut retry_candidates = batch.candidates.clone();
                     campaign_refresh_branch_summaries_from_state_store_v1(
                         &mut retry_candidates,
@@ -592,6 +600,7 @@ where
             state.strategy_requests =
                 merge_campaign_strategy_request_queue_v1(state.strategy_requests, vec![request]);
         }
+        reward_semantic_live_samples.extend(batch_reward_semantic_live_samples);
         let round_summary = BranchCampaignRoundSummaryV1 {
             round: round_number,
             started_scheduled,
@@ -626,6 +635,17 @@ where
         });
         state.rounds.push(round_summary);
         state.rounds_completed = state.rounds_completed.saturating_add(1);
+
+        if config
+            .reward_semantic_live_sample_limit
+            .is_some_and(|limit| reward_semantic_live_samples.len() >= limit)
+        {
+            if let Some(limit) = config.reward_semantic_live_sample_limit {
+                reward_semantic_live_samples.truncate(limit);
+            }
+            stop_reason = "live_reward_semantic_sample_limit".to_string();
+            break;
+        }
 
         if campaign_should_stop_after_victory_v1(
             config,
@@ -710,7 +730,11 @@ where
         journal,
         rounds: state.rounds,
     };
-    Ok(BranchCampaignRunResultV1 { report, checkpoint })
+    Ok(BranchCampaignRunResultV1 {
+        report,
+        checkpoint,
+        reward_semantic_live_samples,
+    })
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

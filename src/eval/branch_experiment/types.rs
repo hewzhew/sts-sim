@@ -53,6 +53,7 @@ pub struct BranchExperimentConfigV1 {
     pub prefix_commands: Vec<String>,
     pub replay_trace_path: Option<PathBuf>,
     pub replay_trace_max_steps: Option<usize>,
+    pub reward_semantic_live_sample_limit: Option<usize>,
 }
 
 impl Default for BranchExperimentConfigV1 {
@@ -82,6 +83,7 @@ impl Default for BranchExperimentConfigV1 {
             prefix_commands: Vec::new(),
             replay_trace_path: None,
             replay_trace_max_steps: None,
+            reward_semantic_live_sample_limit: None,
         }
     }
 }

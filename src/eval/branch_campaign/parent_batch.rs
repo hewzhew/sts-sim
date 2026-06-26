@@ -18,6 +18,7 @@ use crate::eval::campaign_journal::{
     CampaignJournalCandidateV1, CampaignJournalEventPayloadV1, CampaignJournalEventV1,
 };
 use crate::eval::decision_path::decision_path_commands_include_route_parent_coordinate_v1;
+use crate::eval::reward_semantic_live_sample_v1::RewardSemanticLiveSampleV1;
 
 use super::branch_display::render_compact_choice_path;
 use super::performance::{
@@ -80,6 +81,7 @@ pub(super) struct BranchCampaignParentBatchResultV1 {
     pub(super) combat_retry_elapsed_wall_ms_sum: u64,
     pub(super) combat_retry_elapsed_wall_ms_max: u64,
     pub(super) combat_performance: BranchCampaignCombatPerformanceSummaryV1,
+    pub(super) reward_semantic_live_samples: Vec<RewardSemanticLiveSampleV1>,
 }
 
 pub(super) fn run_campaign_parent_batch_v1<F>(
@@ -110,6 +112,7 @@ where
     let mut combat_retry_elapsed_wall_ms_sum = 0u64;
     let mut combat_retry_elapsed_wall_ms_max = 0u64;
     let mut combat_performance = BranchCampaignCombatPerformanceSummaryV1::default();
+    let mut reward_semantic_live_samples = Vec::new();
 
     for (parent_index, parent) in parents.iter().enumerate() {
         progress(BranchCampaignProgressEventV1::BranchStarted {
@@ -192,6 +195,20 @@ where
             &mut combat_performance,
             &result.combat_performance_samples,
         );
+        let mut parent_reward_semantic_live_samples = result.reward_semantic_live_samples;
+        for sample in &mut parent_reward_semantic_live_samples {
+            sample.branch_id = if sample.branch_id == "root" {
+                parent.branch_id.clone()
+            } else {
+                format!("{}::{}", parent.branch_id, sample.branch_id)
+            };
+            if !parent.choice_labels.is_empty() {
+                let mut choices = parent.choice_labels.clone();
+                choices.extend(sample.branch_choices.clone());
+                sample.branch_choices = choices;
+            }
+        }
+        reward_semantic_live_samples.extend(parent_reward_semantic_live_samples);
         let report = result.report;
         for (local_commands, snapshot) in result.decision_parent_sessions {
             let mut full_commands = parent.commands.clone();
@@ -273,6 +290,7 @@ where
         combat_retry_elapsed_wall_ms_sum,
         combat_retry_elapsed_wall_ms_max,
         combat_performance,
+        reward_semantic_live_samples,
     })
 }
 
@@ -1340,6 +1358,7 @@ pub(super) fn campaign_branch_experiment_config_v1(
         include_skip: true,
         include_event_reward_skip: config.include_event_reward_skip,
         auto_leave_after_shop_purchase_branch: true,
+        reward_semantic_live_sample_limit: config.reward_semantic_live_sample_limit,
         ..BranchExperimentConfigV1::default()
     }
 }

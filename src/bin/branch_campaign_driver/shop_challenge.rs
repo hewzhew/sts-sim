@@ -328,6 +328,7 @@ fn branch_experiment_config_for_shop_challenge_v1(
         prefix_commands: Vec::new(),
         replay_trace_path: None,
         replay_trace_max_steps: None,
+        reward_semantic_live_sample_limit: None,
     })
 }
 

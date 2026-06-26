@@ -13,6 +13,7 @@ use sts_simulator::eval::branch_campaign::{
 use sts_simulator::eval::branch_outcome_dataset_v1::{
     extract_branch_outcome_records_v1, summarize_branch_outcome_records_v1,
 };
+use sts_simulator::eval::reward_semantic_live_sample_v1::render_reward_semantic_live_sample_v1;
 
 use super::campaign_artifacts::{
     read_campaign_checkpoint_v1, read_campaign_report_v1, write_campaign_checkpoint_v1,
@@ -56,6 +57,9 @@ pub(super) fn run_continue_campaign_command(input: &RunCommandInput) -> Result<(
 }
 
 pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String> {
+    if input.config.reward_semantic_live_sample_limit.is_some() && input.json {
+        return Err("--live-reward-semantic-limit cannot be combined with --json".to_string());
+    }
     if input.resume_checkpoint.is_some() && input.resume.is_none() {
         return Err("--resume-checkpoint requires --resume".to_string());
     }
@@ -147,7 +151,24 @@ pub(super) fn run_campaign_command(input: &RunCommandInput) -> Result<(), String
     }
     let report = result.report;
     let checkpoint = result.checkpoint;
+    let reward_semantic_live_samples = result.reward_semantic_live_samples;
     if !input.json {
+        if !reward_semantic_live_samples.is_empty() {
+            println!("Reward semantic live samples:");
+            for (index, sample) in reward_semantic_live_samples.iter().enumerate() {
+                if index > 0 {
+                    println!();
+                }
+                println!(
+                    "{}",
+                    render_reward_semantic_live_sample_v1(
+                        sample,
+                        index + 1,
+                        input.config.reward_semantic_live_sample_limit
+                    )
+                );
+            }
+        }
         println!("{}", render_round_budget_resolution_v1(round_budget));
         eprintln!(
             "run-domain: ascension=A{} label={} class={}",

@@ -1263,6 +1263,8 @@ impl BranchCampaignCheckpointV1 {
 pub struct BranchCampaignRunResultV1 {
     pub report: BranchCampaignReportV1,
     pub checkpoint: BranchCampaignCheckpointV1,
+    pub reward_semantic_live_samples:
+        Vec<crate::eval::reward_semantic_live_sample_v1::RewardSemanticLiveSampleV1>,
 }
 
 fn is_zero_i32(value: &i32) -> bool {

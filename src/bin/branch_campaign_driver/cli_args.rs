@@ -1284,6 +1284,13 @@ pub(super) struct CampaignRunOutputArgs {
     pub(super) progress_detail: CampaignProgressDetailArg,
 
     #[arg(
+        long = "live-reward-semantic-limit",
+        value_name = "N",
+        help = "Print live reward semantic samples from current reward surfaces before retention filtering, then stop after N samples"
+    )]
+    pub(super) live_reward_semantic_limit: Option<usize>,
+
+    #[arg(
         long,
         value_name = "PATH",
         help = "Resume from a previous BranchCampaignV1 JSON report"
@@ -2328,6 +2335,7 @@ impl CampaignRunOutputArgs {
         args.report_detail = self.report_detail;
         args.progress = self.progress;
         args.progress_detail = self.progress_detail;
+        let _ = self.live_reward_semantic_limit;
         args.resume = self.resume;
         args.resume_checkpoint = self.resume_checkpoint;
         args.out = self.out;

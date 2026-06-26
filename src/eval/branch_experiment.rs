@@ -38,6 +38,9 @@ use crate::eval::decision_path::{
     DECISION_PATH_PARENT_COMMAND_PREFIX_V1, DECISION_PATH_REPLAY_ADVANCE_COMMAND_V1,
     DECISION_PATH_ROUTE_PARENT_COMMAND_PREFIX_V1,
 };
+use crate::eval::reward_semantic_live_sample_v1::{
+    reward_semantic_live_sample_from_session_v1, RewardSemanticLiveSampleV1,
+};
 use crate::eval::run_control::CombatSearchPerformanceSnapshotV1;
 #[cfg(test)]
 use crate::eval::run_control::RunControlCommand;
@@ -141,6 +144,7 @@ pub struct BranchExperimentRunResultV1 {
     pub decision_parent_sessions: BTreeMap<Vec<String>, RunControlSession>,
     pub start_elapsed_wall_ms: u64,
     pub combat_performance_samples: Vec<CombatSearchPerformanceSnapshotV1>,
+    pub reward_semantic_live_samples: Vec<RewardSemanticLiveSampleV1>,
 }
 
 pub fn run_branch_experiment_v1(
@@ -458,6 +462,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
     let mut route_candidate_pools = Vec::new();
     let mut decision_parent_sessions = BTreeMap::<Vec<String>, RunControlSession>::new();
     let mut combat_performance_samples = Vec::new();
+    let mut reward_semantic_live_samples = Vec::new();
 
     for depth in 0..config.max_depth {
         if experiment_wall_limit_hit(started_at, config) {
@@ -491,6 +496,27 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
             if branch.status != BranchExperimentBranchStatusV1::Active {
                 next.push(branch);
                 continue;
+            }
+
+            if let Some(limit) = config.reward_semantic_live_sample_limit {
+                if reward_semantic_live_samples.len() >= limit {
+                    branch.stop_reason = "live reward semantic sample limit reached".to_string();
+                    next.push(branch);
+                    continue;
+                }
+                if let Some(sample) = reward_semantic_live_sample_from_session_v1(
+                    &branch.session,
+                    branch.id.clone(),
+                    branch_choice_labels_v1(&branch.choices),
+                ) {
+                    reward_semantic_live_samples.push(sample);
+                    if reward_semantic_live_samples.len() >= limit {
+                        branch.stop_reason =
+                            "live reward semantic sample limit reached".to_string();
+                        next.push(branch);
+                        continue;
+                    }
+                }
             }
 
             let boundary_config = BranchBoundaryConfigV1 {
@@ -719,6 +745,7 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
         decision_parent_sessions,
         start_elapsed_wall_ms: 0,
         combat_performance_samples,
+        reward_semantic_live_samples,
     }
 }
 
