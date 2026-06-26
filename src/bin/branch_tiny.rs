@@ -203,13 +203,7 @@ fn owner_is_branching(owner: Owner) -> bool {
 fn apply_policy_owner(session: &mut RunControlSession, owner: Owner) -> Result<(), String> {
     let candidate_id = match owner {
         Owner::ShopTiny => find_executable_candidate_by_id(session, "leave")?,
-        Owner::EventSsssserpent => find_event_policy_candidate(
-            session,
-            &[
-                sts_simulator::state::events::EventActionKind::Decline,
-                sts_simulator::state::events::EventActionKind::Leave,
-            ],
-        )?,
+        Owner::EventSsssserpent => find_sssserpent_policy_candidate(session)?,
         Owner::NeowStart | Owner::CardReward => {
             return Err("branching owner cannot be consumed as policy".to_string());
         }
@@ -242,9 +236,33 @@ fn find_executable_candidate_by_id(
     ))
 }
 
-fn find_event_policy_candidate(
+fn find_sssserpent_policy_candidate(session: &RunControlSession) -> Result<String, String> {
+    let event_state = session
+        .run_state
+        .event_state
+        .as_ref()
+        .ok_or_else(|| "Ssssserpent policy requires event_state".to_string())?;
+    if event_state.id != sts_simulator::state::events::EventId::Ssssserpent {
+        return Err(format!(
+            "Ssssserpent policy received event {:?}",
+            event_state.id
+        ));
+    }
+    let required_action = match event_state.current_screen {
+        0 => sts_simulator::state::events::EventActionKind::Decline,
+        99 => sts_simulator::state::events::EventActionKind::Leave,
+        screen => {
+            return Err(format!(
+                "Ssssserpent policy has no safe action for screen {screen}"
+            ));
+        }
+    };
+    find_single_event_action_candidate(session, required_action)
+}
+
+fn find_single_event_action_candidate(
     session: &RunControlSession,
-    allowed_actions: &[sts_simulator::state::events::EventActionKind],
+    required_action: sts_simulator::state::events::EventActionKind,
 ) -> Result<String, String> {
     let options = sts_simulator::engine::event_handler::get_event_options(&session.run_state);
     let surface = build_decision_surface(session);
@@ -252,22 +270,27 @@ fn find_event_policy_candidate(
         .into_iter()
         .map(|(candidate_id, _)| candidate_id)
         .collect::<Vec<_>>();
+    let mut matching_ids = Vec::new();
     for (index, option) in options.iter().enumerate() {
-        if option.ui.disabled || !allowed_actions.contains(&option.semantics.action) {
+        if option.ui.disabled || option.semantics.action != required_action {
             continue;
         }
-        let candidate_id = index.to_string();
-        if executable_ids.iter().any(|id| id == &candidate_id) {
-            return Ok(candidate_id);
-        }
+        matching_ids.push(index.to_string());
+    }
+    let [candidate_id] = matching_ids.as_slice() else {
         return Err(format!(
-            "event option action {:?} exists but candidate `{candidate_id}` is not executable",
-            option.semantics.action
+            "expected exactly one {:?} event candidate at {}, found {}",
+            required_action,
+            surface.view.header.title,
+            matching_ids.len()
         ));
+    };
+    if executable_ids.iter().any(|id| id == candidate_id) {
+        return Ok(candidate_id.clone());
     }
     Err(format!(
-        "no event option with action in {:?} at {}",
-        allowed_actions, surface.view.header.title
+        "event action {:?} candidate `{candidate_id}` is not executable",
+        required_action
     ))
 }
 
