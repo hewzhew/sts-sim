@@ -131,7 +131,8 @@ fn candidate_delta_from_card_reward(
         &component_context_from_card_reward_context(context, candidate.same_card_count),
         &profile,
     );
-    let mut delta = CandidateDelta::from_component_report(action, &component_report);
+    let mut delta = CandidateDelta::empty(action);
+    delta.apply_component_signals_v1(&component_report);
     add_candidate_impact_deltas(context, candidate, &mut delta);
     add_candidate_facts_deltas(candidate, &mut delta);
     add_candidate_startup_deltas(context, candidate, &mut delta);

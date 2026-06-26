@@ -310,13 +310,11 @@ fn component_formation_coverage_signal_is_report_only() {
         note_signals: Vec::new(),
     };
 
-    let delta = CandidateDelta::from_component_report(
-        CandidateAction::TakeCard {
-            index: 0,
-            card: CardId::IronWave,
-        },
-        &report,
-    );
+    let mut delta = CandidateDelta::empty(CandidateAction::TakeCard {
+        index: 0,
+        card: CardId::IronWave,
+    });
+    delta.apply_component_signals_v1(&report);
 
     assert!(
         delta.positive.is_empty(),

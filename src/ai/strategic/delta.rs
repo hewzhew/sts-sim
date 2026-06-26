@@ -7,6 +7,8 @@ use crate::content::cards::CardId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
+pub const COMPONENT_SIGNAL_LEDGER_AMOUNT: f32 = 0.35;
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CandidateRole {
@@ -153,45 +155,37 @@ impl CandidateDelta {
         }
     }
 
-    pub fn from_component_report(
-        action: CandidateAction,
-        report: &CardComponentSignalReportV1,
-    ) -> Self {
-        let mut delta = Self::empty(action);
-        delta.role = component_role(report);
+    pub fn apply_component_signals_v1(&mut self, report: &CardComponentSignalReportV1) {
+        if self.role == CandidateRole::Unknown {
+            self.role = component_role(report);
+        }
         for signal in &report.positive_signals {
             let kind = positive_component_signal_pressure(*signal);
             if kind == PressureKind::BranchDiversityNeed {
-                delta
-                    .notes
+                self.notes
                     .push(format!("component_report_only:{}", signal.label()));
                 continue;
             }
-            delta.positive.push(LedgerDelta {
+            self.positive.push(LedgerDelta {
                 kind,
-                amount: 0.35,
+                amount: COMPONENT_SIGNAL_LEDGER_AMOUNT,
                 reason: signal.label().to_string(),
             });
         }
-        delta.negative = report
-            .debt_signals
-            .iter()
-            .map(|signal| LedgerDelta {
+        self.negative
+            .extend(report.debt_signals.iter().map(|signal| LedgerDelta {
                 kind: negative_component_signal_pressure(*signal),
-                amount: 0.35,
+                amount: COMPONENT_SIGNAL_LEDGER_AMOUNT,
                 reason: signal.label().to_string(),
-            })
-            .collect();
-        delta.notes.extend(
+            }));
+        self.notes.extend(
             report
                 .note_signals
                 .iter()
                 .map(|note| note.label().to_string()),
         );
-        delta
-            .evidence
+        self.evidence
             .push("card_component_signal contributor".to_string());
-        delta
     }
 
     pub fn positive_amount(&self) -> f32 {

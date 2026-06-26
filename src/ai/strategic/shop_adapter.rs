@@ -442,7 +442,8 @@ fn add_shop_card_component_deltas(
         &component_context_from_shop_context(context, candidate.same_card_count),
         &profile,
     );
-    let component_delta = CandidateDelta::from_component_report(delta.action.clone(), &report);
+    let mut component_delta = CandidateDelta::empty(delta.action.clone());
+    component_delta.apply_component_signals_v1(&report);
 
     if matches!(
         delta.role,
