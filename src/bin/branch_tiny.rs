@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
 
 use sts_simulator::eval::run_control::{
-    build_decision_surface, RunControlAutoStepOptions, RunControlCommand, RunControlConfig,
-    RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
-    RunControlSession,
+    build_decision_surface, RewardAutomationConfig, RunControlAutoStepOptions, RunControlCommand,
+    RunControlConfig, RunControlHpLossLimit, RunControlRouteAutomationMode,
+    RunControlSearchCombatOptions, RunControlSession,
 };
 use sts_simulator::state::core::{EngineState, RunResult};
 
@@ -19,7 +19,7 @@ struct Branch {
 enum BranchStatus {
     Running { boundary: String, owner: Owner },
     Terminal(&'static str),
-    PolicyGap { boundary: String, owner_key: String },
+    AutomationGap { boundary: String, owner_key: String },
     CombatGap { boundary: String, reason: String },
     BudgetGap { boundary: String, reason: String },
     ApplyFailed(String),
@@ -55,6 +55,11 @@ fn run() -> Result<(), String> {
     let mut session = RunControlSession::new(RunControlConfig {
         seed: args.seed,
         ascension_level: args.ascension,
+        reward_automation: RewardAutomationConfig {
+            claim_gold: true,
+            claim_potion_with_empty_slot: true,
+            claim_safe_relic_without_sapphire_key: true,
+        },
         ..Default::default()
     });
     let status = advance_to_owner_or_gap(&mut session, args);
@@ -100,8 +105,9 @@ fn run() -> Result<(), String> {
 }
 
 fn expand_registered_owner(branch: &Branch, args: Args) -> Vec<Branch> {
-    let BranchStatus::Running { owner, .. } = branch.status else {
-        return Vec::new();
+    let owner = match &branch.status {
+        BranchStatus::Running { owner, .. } => *owner,
+        _ => return Vec::new(),
     };
     let surface = build_decision_surface(&branch.session);
     let candidates = owner_candidates(owner, &surface);
@@ -130,7 +136,11 @@ fn owner_candidates(
     surface: &sts_simulator::eval::run_control::DecisionSurface,
 ) -> Vec<(String, String)> {
     match owner {
-        Owner::NeowStart | Owner::CardReward => executable_candidates(surface),
+        Owner::NeowStart => executable_candidates(surface),
+        Owner::CardReward => executable_candidates(surface)
+            .into_iter()
+            .filter(|(id, _)| is_card_reward_candidate_id(id))
+            .collect(),
     }
 }
 
@@ -171,7 +181,7 @@ fn classify_boundary(session: &RunControlSession, message: &str) -> BranchStatus
     if let Some(owner) = owner_for_current_boundary(session) {
         return BranchStatus::Running { boundary, owner };
     }
-    BranchStatus::PolicyGap {
+    BranchStatus::AutomationGap {
         boundary,
         owner_key: owner_key_for_current_boundary(session),
     }
@@ -241,9 +251,9 @@ fn print_branch(branch: &Branch) {
             branch.path.join(" -> ")
         }
     );
-    if matches!(branch.status, BranchStatus::Running { .. }) {
+    if let BranchStatus::Running { owner, .. } = &branch.status {
         let surface = build_decision_surface(&branch.session);
-        let candidates = executable_candidates(&surface)
+        let candidates = owner_candidates(*owner, &surface)
             .into_iter()
             .map(|(id, label)| format!("{id}:{label}"))
             .collect::<Vec<_>>();
@@ -257,18 +267,18 @@ fn status_label(status: &BranchStatus) -> String {
     match status {
         BranchStatus::Running { .. } => "running".to_string(),
         BranchStatus::Terminal(result) => format!("terminal:{result}"),
-        BranchStatus::PolicyGap { .. } => "policy_gap".to_string(),
-        BranchStatus::CombatGap { reason, .. } => format!("combat_gap:{reason}"),
-        BranchStatus::BudgetGap { reason, .. } => format!("budget_gap:{reason}"),
-        BranchStatus::ApplyFailed(err) => format!("apply_failed:{err}"),
-        BranchStatus::AdvanceFailed(err) => format!("advance_failed:{err}"),
+        BranchStatus::AutomationGap { .. } => "automation_gap".to_string(),
+        BranchStatus::CombatGap { reason, .. } => format!("combat_gap:{}", one_line(reason)),
+        BranchStatus::BudgetGap { reason, .. } => format!("budget_gap:{}", one_line(reason)),
+        BranchStatus::ApplyFailed(err) => format!("apply_failed:{}", one_line(err)),
+        BranchStatus::AdvanceFailed(err) => format!("advance_failed:{}", one_line(err)),
     }
 }
 
 fn status_boundary(status: &BranchStatus) -> &str {
     match status {
         BranchStatus::Running { boundary, .. }
-        | BranchStatus::PolicyGap { boundary, .. }
+        | BranchStatus::AutomationGap { boundary, .. }
         | BranchStatus::CombatGap { boundary, .. }
         | BranchStatus::BudgetGap { boundary, .. } => boundary,
         BranchStatus::Terminal(_)
@@ -280,7 +290,7 @@ fn status_boundary(status: &BranchStatus) -> &str {
 fn status_owner(status: &BranchStatus) -> String {
     match status {
         BranchStatus::Running { owner, .. } => format!("{owner:?}"),
-        BranchStatus::PolicyGap { owner_key, .. } => owner_key.clone(),
+        BranchStatus::AutomationGap { owner_key, .. } => owner_key.clone(),
         BranchStatus::CombatGap { .. } => "combat_search".to_string(),
         BranchStatus::BudgetGap { .. } => "automation_budget".to_string(),
         BranchStatus::Terminal(_) => "terminal".to_string(),
@@ -303,7 +313,7 @@ fn executable_candidates(
 }
 
 fn terminal_label(session: &RunControlSession) -> Option<&'static str> {
-    match session.engine_state {
+    match &session.engine_state {
         EngineState::GameOver(RunResult::Victory) => Some("victory"),
         EngineState::GameOver(RunResult::Defeat) => Some("defeat"),
         _ => None,
@@ -318,6 +328,20 @@ fn first_reason(message: &str) -> Option<String> {
 
 fn is_navigation_only_candidate(id: &str) -> bool {
     matches!(id, "back" | "cancel")
+}
+
+fn is_card_reward_candidate_id(id: &str) -> bool {
+    id.parse::<usize>().is_ok() || matches!(id, "skip" | "bowl") || id.starts_with("card-")
+}
+
+fn one_line(text: &str) -> String {
+    text.lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .chars()
+        .take(160)
+        .collect()
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -336,7 +360,7 @@ fn parse_args() -> Result<Args, String> {
         let key = raw[index].as_str();
         if matches!(key, "--help" | "-h") {
             println!("branch_tiny --seed N --generations N --max-branches N");
-            println!("  owner-audit runner; only registered owners may branch");
+            println!("  owner-audit runner; registered owners: neow_start, card_reward");
             std::process::exit(0);
         }
         if !matches!(
