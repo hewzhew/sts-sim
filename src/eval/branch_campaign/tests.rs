@@ -288,6 +288,24 @@ fn scheduler_small_budget_runs_mainline_not_progress_probe() {
 }
 
 #[test]
+fn scheduler_mainline_rank_key_beats_one_floor_progress() {
+    let mut high_rank_shop = test_campaign_branch("high-rank-shop", 7, 79);
+    high_rank_shop.frontier_title = "Shop".to_string();
+    high_rank_shop.rank_key = 12_615;
+    let mut lower_rank_campfire = test_campaign_branch("lower-rank-campfire", 8, 80);
+    lower_rank_campfire.frontier_title = "Campfire".to_string();
+    lower_rank_campfire.rank_key = 12_014;
+
+    let selected = select_campaign_branches_v1(vec![lower_rank_campfire, high_rank_shop], 1, 8);
+
+    assert_eq!(selected.scheduled.len(), 1);
+    assert_eq!(selected.scheduled[0].branch_id, "high-rank-shop");
+    assert!(selected.scheduled[0]
+        .stop_reason
+        .contains("scheduler:general"));
+}
+
+#[test]
 fn scheduler_small_budget_keeps_top_ranked_decision_candidates() {
     let mut remove_strike = test_campaign_branch("remove-strike", 6, 80);
     remove_strike.rank_key = 12_000;
