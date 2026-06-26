@@ -25,6 +25,7 @@ pub enum CombatEvent {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PlayEffect {
     Provide(Mechanic),
+    FrontloadDamage,
     DamageUses(Mechanic),
     EmitEvent(CombatEvent),
     AddCombatDeckClutter,
@@ -189,7 +190,9 @@ impl DeckMechanicContext {
                 PlayEffect::PlayTopCardAndExhaust => {
                     push_unique(&mut self.event_streams, CombatEvent::CardExhausted);
                 }
-                PlayEffect::DamageUses(_) | PlayEffect::AddCombatDeckClutter => {}
+                PlayEffect::FrontloadDamage
+                | PlayEffect::DamageUses(_)
+                | PlayEffect::AddCombatDeckClutter => {}
             }
         }
         for rule in &definition.installed_rules {
@@ -327,17 +330,27 @@ pub fn card_definition(card: CardId) -> CardDefinition {
             .burden(DrawLockout)
             .duplicate(DiminishingReturn)
             .duplicate(AccessCopyUseful),
-        PommelStrike | ShrugItOff => CardDefinition::new(card).provides(CardDraw),
-        Bash | ThunderClap => CardDefinition::new(card).provides(Vulnerable),
+        PommelStrike => CardDefinition::new(card)
+            .effect(FrontloadDamage)
+            .provides(CardDraw),
+        ShrugItOff => CardDefinition::new(card).provides(CardDraw),
+        Bash | ThunderClap => CardDefinition::new(card)
+            .effect(FrontloadDamage)
+            .provides(Vulnerable),
         Uppercut => CardDefinition::new(card)
+            .effect(FrontloadDamage)
             .provides(Vulnerable)
             .provides(Weak),
         Disarm => CardDefinition::new(card).provides(EnemyStrengthDown),
-        FlameBarrier | IronWave => CardDefinition::new(card).provides(Block),
+        FlameBarrier => CardDefinition::new(card).provides(Block),
+        IronWave => CardDefinition::new(card)
+            .effect(FrontloadDamage)
+            .provides(Block),
         BodySlam => CardDefinition::new(card)
             .wants(PayoffRequirement::WantsMechanic(Block))
             .effect(DamageUses(Block)),
         WildStrike | RecklessCharge => CardDefinition::new(card)
+            .effect(FrontloadDamage)
             .effect(AddCombatDeckClutter)
             .burden(AddsCombatDeckClutter),
         Warcry | Headbutt => CardDefinition::new(card).provides(TopdeckControl),

@@ -33,6 +33,7 @@ pub struct RewardCandidateSemanticExplanationV1 {
     pub closes: Vec<String>,
     pub opens: Vec<String>,
     pub provides: Vec<String>,
+    pub damage: Vec<String>,
     pub damage_uses: Vec<String>,
     pub emits: Vec<String>,
     pub rules: Vec<String>,
@@ -115,6 +116,7 @@ fn explain_reward_candidate_semantics_v1(
             .map(payoff_requirement_label)
             .collect(),
         provides: play_effects.provides,
+        damage: play_effects.damage,
         damage_uses: play_effects.damage_uses,
         emits: play_effects.emits,
         rules: transition
@@ -154,6 +156,7 @@ fn explain_reward_candidate_semantics_v1(
 #[derive(Default)]
 struct PlayEffectExplanation {
     provides: Vec<String>,
+    damage: Vec<String>,
     damage_uses: Vec<String>,
     emits: Vec<String>,
 }
@@ -164,6 +167,9 @@ fn explain_play_effects(effects: &[PlayEffect]) -> PlayEffectExplanation {
         match effect {
             PlayEffect::Provide(mechanic) => {
                 explanation.provides.push(debug_label(mechanic));
+            }
+            PlayEffect::FrontloadDamage => {
+                explanation.damage.push("Frontload".to_string());
             }
             PlayEffect::DamageUses(mechanic) => {
                 explanation.damage_uses.push(debug_label(mechanic));

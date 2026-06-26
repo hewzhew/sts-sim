@@ -753,8 +753,9 @@ fn render_reward_semantic_explanation_candidate_v1(
         render_short_list(&explanation.opens)
     ));
     lines.push(format!(
-        "      semantic: candidate_facts provides=[{}] damage_uses=[{}] emits=[{}] rules=[{}] handlers=[{}]",
+        "      semantic: candidate_facts provides=[{}] damage=[{}] damage_uses=[{}] emits=[{}] rules=[{}] handlers=[{}]",
         render_short_list(&explanation.provides),
+        render_short_list(&explanation.damage),
         render_short_list(&explanation.damage_uses),
         render_short_list(&explanation.emits),
         render_short_list(&explanation.rules),
