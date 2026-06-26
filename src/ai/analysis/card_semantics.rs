@@ -359,10 +359,16 @@ pub fn card_definition(card: CardId) -> CardDefinition {
         IronWave => CardDefinition::new(card)
             .effect(FrontloadDamage)
             .provides(Block),
-        TwinStrike => CardDefinition::new(card).effect(FrontloadDamage),
+        Carnage | Rampage | SwiftStrike | TwinStrike => {
+            CardDefinition::new(card).effect(FrontloadDamage)
+        }
         BodySlam => CardDefinition::new(card)
             .wants(PayoffRequirement::WantsMechanic(Block))
             .effect(DamageUses(Block)),
+        PowerThrough => CardDefinition::new(card)
+            .provides(Block)
+            .effect(AddCombatDeckClutter)
+            .burden(AddsCombatDeckClutter),
         WildStrike | RecklessCharge => CardDefinition::new(card)
             .effect(FrontloadDamage)
             .effect(AddCombatDeckClutter)
