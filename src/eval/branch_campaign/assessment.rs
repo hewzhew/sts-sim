@@ -1,13 +1,14 @@
 use crate::ai::block_plan_profile_v1::{block_plan_profile_v1, BlockPlanReadinessV1};
-use crate::ai::card_reward_policy_v1::{card_reward_semantic_profile_v1, CardRewardSemanticRoleV1};
+use crate::ai::card_analysis_v1::{
+    card_analysis_profile_v1, CardAnalysisAoeSupportV1, CardAnalysisAttackChunkV1,
+    CardAnalysisBlockChunkV1, CardAnalysisDeckSourceV1, CardAnalysisVulnerableSupportV1,
+};
 use crate::ai::deck_startup_profile_v1::deck_startup_profile_v1;
 use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyDeckFormationNeedV1,
     StrategyDeckFormationStageV1,
 };
-use crate::content::cards::{get_card_definition, CardId, CardTag, CardType};
 use crate::eval::run_control::RunControlSession;
-use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
 use serde::{Deserialize, Serialize};
 
@@ -115,8 +116,8 @@ pub struct BranchCampaignFrontloadProfileV1 {
     pub starter_floor: BranchCampaignStarterFrontloadFloorV1,
     pub added_attack_count: u8,
     pub added_attack_quality: BranchCampaignAddedAttackQualityV1,
-    pub vulnerable_support: BranchCampaignVulnerableSupportV1,
-    pub aoe_support: BranchCampaignAoeSupportV1,
+    pub vulnerable_support: CardAnalysisVulnerableSupportV1,
+    pub aoe_support: CardAnalysisAoeSupportV1,
     pub draw_to_damage: BranchCampaignDrawToDamageV1,
 }
 
@@ -199,46 +200,6 @@ impl BranchCampaignAddedAttackQualityV1 {
             Self::SolidOne => "solid1",
             Self::MultipleSolid => "multi",
             Self::BurstReady => "burst",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BranchCampaignVulnerableSupportV1 {
-    #[default]
-    None = 0,
-    StarterBash = 1,
-    Reliable = 2,
-    Premium = 3,
-}
-
-impl BranchCampaignVulnerableSupportV1 {
-    fn label(self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::StarterBash => "bash",
-            Self::Reliable => "reliable",
-            Self::Premium => "premium",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BranchCampaignAoeSupportV1 {
-    #[default]
-    None = 0,
-    Present = 1,
-    Strong = 2,
-}
-
-impl BranchCampaignAoeSupportV1 {
-    fn label(self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::Present => "present",
-            Self::Strong => "strong",
         }
     }
 }
@@ -479,99 +440,78 @@ fn campaign_job_coverage_from_run_state_v1(
     let mut added_block_solid_count = 0_u8;
     let mut skill_count = 0_u8;
     for card in &run_state.master_deck {
-        let starter_role = starter_card_role_v1(card.id);
-        let definition = get_card_definition(card.id);
-        let damage = card_damage_v1(card.id, card.upgrades);
-        let block = card_block_v1(card.id, card.upgrades);
-        let profile = card_reward_semantic_profile_v1(&RewardCard::new(card.id, card.upgrades));
+        let profile = card_analysis_profile_v1(card.id, card.upgrades);
         coverage.debt.deck_size = coverage.debt.deck_size.saturating_add(1);
-        if definition.card_type == CardType::Curse {
+        if profile.is_curse {
             coverage.debt.curses = coverage.debt.curses.saturating_add(1);
         }
-        if definition.card_type == CardType::Skill {
+        if profile.is_skill {
             skill_count = skill_count.saturating_add(1);
         }
-        match starter_role {
-            BranchCampaignStarterCardRoleV1::StarterStrike => {
+        match profile.source {
+            CardAnalysisDeckSourceV1::StarterStrike => {
                 coverage.debt.starter_strikes = coverage.debt.starter_strikes.saturating_add(1);
             }
-            BranchCampaignStarterCardRoleV1::StarterDefend => {
+            CardAnalysisDeckSourceV1::StarterDefend => {
                 coverage.debt.starter_defends = coverage.debt.starter_defends.saturating_add(1);
             }
-            BranchCampaignStarterCardRoleV1::StarterUnique => {
+            CardAnalysisDeckSourceV1::StarterUnique => {
                 coverage.debt.starter_unique_cards =
                     coverage.debt.starter_unique_cards.saturating_add(1);
             }
-            BranchCampaignStarterCardRoleV1::NonStarter => {}
+            CardAnalysisDeckSourceV1::NonStarter | CardAnalysisDeckSourceV1::Curse => {}
         }
-        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::FrontloadDamage) {
-            if starter_role == BranchCampaignStarterCardRoleV1::NonStarter {
+        if profile.has_frontload_damage {
+            if profile.source == CardAnalysisDeckSourceV1::NonStarter {
                 coverage.frontload.added_attack_count =
                     coverage.frontload.added_attack_count.saturating_add(1);
-                added_attack_best_damage = added_attack_best_damage.max(damage);
-                if damage >= 10 || card.upgrades > 0 || definition.cost == -1 {
+                added_attack_best_damage = added_attack_best_damage.max(profile.damage);
+                if profile.attack_chunk >= CardAnalysisAttackChunkV1::Solid {
                     added_attack_solid_count = added_attack_solid_count.saturating_add(1);
                 }
             }
         }
-        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::AoeDamage) {
-            coverage.frontload.aoe_support = coverage.frontload.aoe_support.max(
-                if damage >= 18 || matches!(card.id, CardId::Whirlwind | CardId::Immolate) {
-                    BranchCampaignAoeSupportV1::Strong
-                } else {
-                    BranchCampaignAoeSupportV1::Present
-                },
-            );
-        }
-        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::Vulnerable) {
+        coverage.frontload.aoe_support = coverage.frontload.aoe_support.max(profile.aoe_support);
+        if profile.vulnerable_support > CardAnalysisVulnerableSupportV1::None {
             coverage.frontload.vulnerable_support = coverage
                 .frontload
                 .vulnerable_support
-                .max(vulnerable_support_for_card_v1(card.id));
+                .max(profile.vulnerable_support);
         }
-        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::Block) {
-            if starter_role == BranchCampaignStarterCardRoleV1::NonStarter {
+        if profile.has_block {
+            if profile.source == CardAnalysisDeckSourceV1::NonStarter {
                 coverage.block.added_block_count =
                     coverage.block.added_block_count.saturating_add(1);
-                added_block_best = added_block_best.max(block);
-                if block >= 8 {
+                added_block_best = added_block_best.max(profile.block);
+                if profile.block_chunk >= CardAnalysisBlockChunkV1::Solid {
                     added_block_solid_count = added_block_solid_count.saturating_add(1);
                 }
             }
         }
-        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::CardDraw)
-            || has_role_v1(&profile.roles, CardRewardSemanticRoleV1::CycleAccess)
-        {
+        if profile.has_draw_access {
             coverage.draw.draw_count = coverage.draw.draw_count.saturating_add(1);
         }
-        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::EnergySource) {
+        if profile.has_energy_access {
             coverage.draw.energy_count = coverage.draw.energy_count.saturating_add(1);
         }
-        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::ScalingSource)
-            || has_role_v1(
-                &profile.roles,
-                CardRewardSemanticRoleV1::CombatExternalPayoff,
-            )
-        {
+        if profile.has_damage_scaling {
             coverage.scaling.damage_count = coverage.scaling.damage_count.saturating_add(1);
         }
-        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::BlockRetention)
-            || has_role_v1(&profile.roles, CardRewardSemanticRoleV1::BlockMultiplier)
-            || block_plan.readiness >= BlockPlanReadinessV1::Supported
+        if profile.has_block_scaling_hook || block_plan.readiness >= BlockPlanReadinessV1::Supported
         {
             coverage.scaling.block_count = coverage.scaling.block_count.saturating_add(1);
             coverage.block.scaling_block = coverage.block.scaling_block.saturating_add(1);
         }
-        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::ExhaustGenerator) {
+        if profile.has_exhaust_enabler {
             coverage.exhaust.enabler_count = coverage.exhaust.enabler_count.saturating_add(1);
         }
-        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::ExhaustPayoff) {
+        if profile.has_exhaust_payoff {
             coverage.exhaust.payoff_count = coverage.exhaust.payoff_count.saturating_add(1);
         }
-        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::StatusGenerator) {
+        if profile.has_status_enabler {
             coverage.status.enabler_count = coverage.status.enabler_count.saturating_add(1);
         }
-        if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::StatusPayoff) {
+        if profile.has_status_payoff {
             coverage.status.payoff_count = coverage.status.payoff_count.saturating_add(1);
         }
     }
@@ -603,59 +543,6 @@ fn campaign_job_coverage_from_run_state_v1(
     coverage
 }
 
-fn has_role_v1(roles: &[CardRewardSemanticRoleV1], role: CardRewardSemanticRoleV1) -> bool {
-    roles.contains(&role)
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BranchCampaignStarterCardRoleV1 {
-    NonStarter,
-    StarterStrike,
-    StarterDefend,
-    StarterUnique,
-}
-
-fn starter_card_role_v1(card: CardId) -> BranchCampaignStarterCardRoleV1 {
-    let definition = get_card_definition(card);
-    if definition.tags.contains(&CardTag::StarterStrike) {
-        return BranchCampaignStarterCardRoleV1::StarterStrike;
-    }
-    if definition.tags.contains(&CardTag::StarterDefend) {
-        return BranchCampaignStarterCardRoleV1::StarterDefend;
-    }
-    if matches!(
-        card,
-        CardId::Bash
-            | CardId::Neutralize
-            | CardId::Survivor
-            | CardId::Zap
-            | CardId::Dualcast
-            | CardId::Eruption
-            | CardId::Vigilance
-    ) {
-        return BranchCampaignStarterCardRoleV1::StarterUnique;
-    }
-    BranchCampaignStarterCardRoleV1::NonStarter
-}
-
-fn card_damage_v1(card: CardId, upgrades: u8) -> i32 {
-    let definition = get_card_definition(card);
-    let upgrades = i32::from(upgrades);
-    let damage_per_hit = (definition.base_damage + definition.upgrade_damage * upgrades).max(0);
-    match card {
-        CardId::TwinStrike => damage_per_hit.saturating_mul(2),
-        CardId::SwordBoomerang => damage_per_hit
-            .saturating_mul((definition.base_magic + definition.upgrade_magic * upgrades).max(0)),
-        CardId::RiddleWithHoles => damage_per_hit.saturating_mul(5),
-        _ => damage_per_hit,
-    }
-}
-
-fn card_block_v1(card: CardId, upgrades: u8) -> i32 {
-    let definition = get_card_definition(card);
-    (definition.base_block + definition.upgrade_block * i32::from(upgrades)).max(0)
-}
-
 fn starter_frontload_floor_v1(
     starter_strikes: u8,
     starter_unique_cards: u8,
@@ -676,16 +563,6 @@ fn starter_block_floor_v1(starter_defends: u8) -> BranchCampaignStarterBlockFloo
         BranchCampaignStarterBlockFloorV1::Partial
     } else {
         BranchCampaignStarterBlockFloorV1::None
-    }
-}
-
-fn vulnerable_support_for_card_v1(card: CardId) -> BranchCampaignVulnerableSupportV1 {
-    match card {
-        CardId::Bash => BranchCampaignVulnerableSupportV1::StarterBash,
-        CardId::Shockwave | CardId::Terror | CardId::Uppercut => {
-            BranchCampaignVulnerableSupportV1::Premium
-        }
-        _ => BranchCampaignVulnerableSupportV1::Reliable,
     }
 }
 
@@ -742,7 +619,7 @@ fn draw_to_damage_v1(coverage: &BranchCampaignJobCoverageV1) -> BranchCampaignDr
         return BranchCampaignDrawToDamageV1::None;
     }
     if coverage.frontload.added_attack_quality >= BranchCampaignAddedAttackQualityV1::SolidOne
-        || coverage.frontload.aoe_support >= BranchCampaignAoeSupportV1::Present
+        || coverage.frontload.aoe_support >= CardAnalysisAoeSupportV1::Present
         || coverage.scaling.damage_count > 0
     {
         BranchCampaignDrawToDamageV1::ImprovesGoodTargets
@@ -753,15 +630,14 @@ fn draw_to_damage_v1(coverage: &BranchCampaignJobCoverageV1) -> BranchCampaignDr
 
 fn has_frontload_delta_v1(coverage: &BranchCampaignJobCoverageV1) -> bool {
     coverage.frontload.added_attack_quality >= BranchCampaignAddedAttackQualityV1::SolidOne
-        || coverage.frontload.aoe_support >= BranchCampaignAoeSupportV1::Present
+        || coverage.frontload.aoe_support >= CardAnalysisAoeSupportV1::Present
 }
 
 fn has_boss_frontload_plan_v1(coverage: &BranchCampaignJobCoverageV1) -> bool {
     coverage.frontload.added_attack_quality >= BranchCampaignAddedAttackQualityV1::MultipleSolid
         || coverage.frontload.added_attack_quality >= BranchCampaignAddedAttackQualityV1::SolidOne
-            && coverage.frontload.vulnerable_support
-                >= BranchCampaignVulnerableSupportV1::StarterBash
-        || coverage.frontload.aoe_support >= BranchCampaignAoeSupportV1::Strong
+            && coverage.frontload.vulnerable_support >= CardAnalysisVulnerableSupportV1::StarterBash
+        || coverage.frontload.aoe_support >= CardAnalysisAoeSupportV1::Strong
 }
 
 fn has_added_block_plan_v1(coverage: &BranchCampaignJobCoverageV1) -> bool {
@@ -899,7 +775,7 @@ fn campaign_transition_gate_v1(
 ) -> BranchCampaignGateStatusV1 {
     if summary.act >= 2 {
         if has_engine_or_scaling_plan_v1(coverage)
-            || coverage.frontload.aoe_support >= BranchCampaignAoeSupportV1::Present
+            || coverage.frontload.aoe_support >= CardAnalysisAoeSupportV1::Present
                 && has_added_block_plan_v1(coverage)
         {
             return BranchCampaignGateStatusV1::Passable;
@@ -948,7 +824,7 @@ fn campaign_missing_critical_jobs_v1(
 ) -> Vec<String> {
     let mut missing = Vec::new();
     if coverage.frontload.added_attack_quality <= BranchCampaignAddedAttackQualityV1::WeakOne
-        && coverage.frontload.aoe_support == BranchCampaignAoeSupportV1::None
+        && coverage.frontload.aoe_support == CardAnalysisAoeSupportV1::None
     {
         missing.push("frontload".to_string());
     }
