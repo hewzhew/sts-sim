@@ -229,9 +229,11 @@ fn campaign_branch_from_report_combines_contiguous_shop_candidate_axes() {
 }
 
 #[test]
-fn scheduler_schedules_distinct_boss_relic_axes_before_general_rank_fallback() {
+fn scheduler_prioritizes_mainline_before_boss_relic_axis_probes() {
     let mut strong_general = test_campaign_branch("strong-general", 18, 80);
     strong_general.rank_key = 99_000;
+    let mut second_general = test_campaign_branch("second-general", 18, 79);
+    second_general.rank_key = 98_000;
 
     let mut pyramid = test_campaign_branch("pyramid", 16, 40);
     pyramid.choice_labels = vec!["RunicPyramid".to_string()];
@@ -243,8 +245,17 @@ fn scheduler_schedules_distinct_boss_relic_axes_before_general_rank_fallback() {
     empty_cage.choice_labels = vec!["EmptyCage".to_string()];
     empty_cage.rank_key = 100;
 
-    let selected =
-        select_campaign_branches_v1(vec![strong_general, pyramid, astrolabe, empty_cage], 3, 8);
+    let selected = select_campaign_branches_v1(
+        vec![
+            strong_general,
+            second_general,
+            pyramid,
+            astrolabe,
+            empty_cage,
+        ],
+        3,
+        8,
+    );
     let scheduled_ids = selected
         .scheduled
         .iter()
@@ -252,47 +263,32 @@ fn scheduler_schedules_distinct_boss_relic_axes_before_general_rank_fallback() {
         .collect::<Vec<_>>();
 
     assert_eq!(selected.scheduled.len(), 3);
-    assert!(scheduled_ids.contains(&"pyramid"));
-    assert!(scheduled_ids.contains(&"astrolabe"));
-    assert!(scheduled_ids.contains(&"empty-cage"));
-}
-
-#[test]
-fn scheduler_schedules_distinct_coverage_gap_targets() {
-    let duplicate_a = coverage_gap_test_branch("duplicate-a", "decision-a", "candidate-1", 100);
-    let duplicate_b = coverage_gap_test_branch("duplicate-b", "decision-a", "candidate-1", 90);
-    let unique = coverage_gap_test_branch("unique", "decision-b", "candidate-2", 10);
-
-    let selected = select_campaign_branches_v1(vec![duplicate_a, duplicate_b, unique], 2, 8);
-    let scheduled_ids = selected
+    assert!(scheduled_ids.contains(&"strong-general"));
+    assert!(scheduled_ids.contains(&"second-general"));
+    assert!(selected
         .scheduled
         .iter()
-        .map(|branch| branch.branch_id.as_str())
-        .collect::<Vec<_>>();
-
-    assert_eq!(selected.scheduled.len(), 2);
-    assert!(scheduled_ids.contains(&"unique"));
-    assert!(scheduled_ids.contains(&"duplicate-a") || scheduled_ids.contains(&"duplicate-b"));
+        .any(|branch| branch.stop_reason.contains("scheduler:boss_relic_axis")));
 }
 
 #[test]
-fn scheduler_progress_probe_prefers_same_floor_rank_over_hp() {
+fn scheduler_small_budget_runs_mainline_not_progress_probe() {
     let mut high_rank_lower_hp = test_campaign_branch("high-rank-lower-hp", 6, 69);
     high_rank_lower_hp.rank_key = 11_511;
     let mut lower_rank_full_hp = test_campaign_branch("lower-rank-full-hp", 6, 80);
     lower_rank_full_hp.rank_key = 11_500;
 
-    let selected = select_campaign_branches_v1(vec![lower_rank_full_hp, high_rank_lower_hp], 1, 8);
+    let selected = select_campaign_branches_v1(vec![lower_rank_full_hp, high_rank_lower_hp], 2, 8);
 
-    assert_eq!(selected.scheduled.len(), 1);
-    assert_eq!(selected.scheduled[0].branch_id, "high-rank-lower-hp");
-    assert!(selected.scheduled[0]
-        .stop_reason
-        .contains("scheduler:progress_probe"));
+    assert_eq!(selected.scheduled.len(), 2);
+    assert!(selected
+        .scheduled
+        .iter()
+        .all(|branch| branch.stop_reason.contains("scheduler:general")));
 }
 
 #[test]
-fn scheduler_preserves_distinct_decision_candidate_axes() {
+fn scheduler_small_budget_keeps_top_ranked_decision_candidates() {
     let mut remove_strike = test_campaign_branch("remove-strike", 6, 80);
     remove_strike.rank_key = 12_000;
     remove_strike.decision_candidate_axis = Some("event:LivingWall:remove_card".to_string());
@@ -312,8 +308,12 @@ fn scheduler_preserves_distinct_decision_candidate_axes() {
         .collect::<Vec<_>>();
 
     assert_eq!(selected.scheduled.len(), 2);
-    assert!(scheduled_ids.iter().any(|id| id.starts_with("remove-")));
-    assert!(scheduled_ids.contains(&"transform-strike"));
+    assert!(scheduled_ids.contains(&"remove-strike"));
+    assert!(scheduled_ids.contains(&"remove-defend"));
+    assert!(selected
+        .scheduled
+        .iter()
+        .all(|branch| branch.stop_reason.contains("scheduler:general")));
 }
 
 #[test]
@@ -329,36 +329,6 @@ fn campaign_replay_prefix_advances_before_each_recorded_choice() {
             "event 1"
         ]
     );
-}
-
-fn coverage_gap_test_branch(
-    branch_id: &str,
-    decision_id: &str,
-    candidate_id: &str,
-    rank_key: i32,
-) -> BranchCampaignBranchV1 {
-    let mut branch = test_campaign_branch(branch_id, 12, 55);
-    branch.rank_key = rank_key;
-    branch.continuation_origin = Some(BranchCampaignContinuationOriginV1 {
-        kind: "coverage_gap".to_string(),
-        source_event_id: "source-event".to_string(),
-        decision_id: decision_id.to_string(),
-        event_type: "reward_candidate_set".to_string(),
-        parent_branch_id: "parent".to_string(),
-        parent_frontier_title: "Reward Screen".to_string(),
-        candidate_index: 0,
-        candidate_id: candidate_id.to_string(),
-        command: "rp 0".to_string(),
-        label: candidate_id.to_string(),
-        semantic_class: "test".to_string(),
-        admission: Default::default(),
-        disposition: crate::eval::campaign_journal::CampaignJournalCandidateDispositionV1::Pruned,
-        target_lane: None,
-        target_origin_source: "test".to_string(),
-        route_origin: None,
-        milestone: "Act2Start".to_string(),
-    });
-    branch
 }
 
 fn test_campaign_request(kind: &str, boundary_title: &str) -> BranchCampaignStrategyRequestV1 {

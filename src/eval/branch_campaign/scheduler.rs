@@ -87,6 +87,9 @@ fn schedule_campaign_workset_for_limits_v1(
     let mut pool = dedup_campaign_scheduler_pool_v1(pool, &mut selection);
     let mut scheduled = Vec::new();
 
+    let mainline_slots = mainline_slot_budget_v1(max_scheduled);
+    take_best_general_v1(&mut pool, &mut scheduled, mainline_slots);
+
     take_best_per_group_v1(
         &mut pool,
         &mut scheduled,
@@ -143,6 +146,18 @@ fn schedule_campaign_workset_for_limits_v1(
         }
     }
     selection
+}
+
+fn mainline_slot_budget_v1(max_scheduled: usize) -> usize {
+    match max_scheduled {
+        0..=2 => max_scheduled,
+        3 => 2,
+        4 | 5 => 3,
+        6 => 4,
+        _ => max_scheduled
+            .saturating_sub(3)
+            .max(max_scheduled.div_ceil(2)),
+    }
 }
 
 fn schedule_campaign_workset_advisory_only_v1(
