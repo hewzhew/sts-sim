@@ -202,10 +202,14 @@ fn owner_is_branching(owner: Owner) -> bool {
 
 fn apply_policy_owner(session: &mut RunControlSession, owner: Owner) -> Result<(), String> {
     let candidate_id = match owner {
-        Owner::ShopTiny => find_policy_candidate(session, &["leave"], &["leave shop", "leave"])?,
-        Owner::EventSsssserpent => {
-            find_policy_candidate(session, &[], &["disagree", "leave", "decline", "refuse"])?
-        }
+        Owner::ShopTiny => find_executable_candidate_by_id(session, "leave")?,
+        Owner::EventSsssserpent => find_event_policy_candidate(
+            session,
+            &[
+                sts_simulator::state::events::EventActionKind::Decline,
+                sts_simulator::state::events::EventActionKind::Leave,
+            ],
+        )?,
         Owner::NeowStart | Owner::CardReward => {
             return Err("branching owner cannot be consumed as policy".to_string());
         }
@@ -215,35 +219,55 @@ fn apply_policy_owner(session: &mut RunControlSession, owner: Owner) -> Result<(
         .map(|_| ())
 }
 
-fn find_policy_candidate(
+fn find_executable_candidate_by_id(
     session: &RunControlSession,
-    preferred_ids: &[&str],
-    label_terms: &[&str],
+    preferred_id: &str,
 ) -> Result<String, String> {
     let surface = build_decision_surface(session);
     let candidates = executable_candidates(&surface);
-    for preferred_id in preferred_ids {
-        if candidates
-            .iter()
-            .any(|(candidate_id, _)| candidate_id == preferred_id)
-        {
-            return Ok((*preferred_id).to_string());
-        }
-    }
-    for (candidate_id, label) in &candidates {
-        let label = label.to_ascii_lowercase();
-        if label_terms.iter().any(|term| label.contains(term)) {
-            return Ok(candidate_id.clone());
-        }
+    if candidates
+        .iter()
+        .any(|(candidate_id, _)| candidate_id == preferred_id)
+    {
+        return Ok(preferred_id.to_string());
     }
     Err(format!(
-        "no safe policy candidate at {} among [{}]",
+        "no executable candidate `{preferred_id}` at {} among [{}]",
         surface.view.header.title,
         candidates
             .iter()
             .map(|(id, label)| format!("{id}:{label}"))
             .collect::<Vec<_>>()
             .join(" | ")
+    ))
+}
+
+fn find_event_policy_candidate(
+    session: &RunControlSession,
+    allowed_actions: &[sts_simulator::state::events::EventActionKind],
+) -> Result<String, String> {
+    let options = sts_simulator::engine::event_handler::get_event_options(&session.run_state);
+    let surface = build_decision_surface(session);
+    let executable_ids = executable_candidates(&surface)
+        .into_iter()
+        .map(|(candidate_id, _)| candidate_id)
+        .collect::<Vec<_>>();
+    for (index, option) in options.iter().enumerate() {
+        if option.ui.disabled || !allowed_actions.contains(&option.semantics.action) {
+            continue;
+        }
+        let candidate_id = index.to_string();
+        if executable_ids.iter().any(|id| id == &candidate_id) {
+            return Ok(candidate_id);
+        }
+        return Err(format!(
+            "event option action {:?} exists but candidate `{candidate_id}` is not executable",
+            option.semantics.action
+        ));
+    }
+    Err(format!(
+        "no event option with action in {:?} at {}",
+        allowed_actions, surface.view.header.title
     ))
 }
 
