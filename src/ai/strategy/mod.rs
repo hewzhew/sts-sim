@@ -13,3 +13,4 @@ pub mod jobs;
 pub mod package_state;
 pub mod package_transition;
 pub mod reward_semantic_probe;
+pub mod reward_semantic_review;
