@@ -5,6 +5,7 @@ use crate::ai::noncombat_strategy_v1::{
     build_run_strategy_snapshot_from_run_state_v2, StrategyDeckFormationNeedV1,
     StrategyDeckFormationStageV1,
 };
+use crate::content::cards::{get_card_definition, CardId, CardTag};
 use crate::eval::run_control::RunControlSession;
 use crate::state::rewards::RewardCard;
 use crate::state::run::RunState;
@@ -100,8 +101,13 @@ impl BranchCampaignResourceConversionV1 {
 #[serde(deny_unknown_fields)]
 pub struct BranchCampaignJobCoverageV1 {
     pub frontload_damage: u8,
+    pub real_frontload_damage: u8,
+    pub starter_frontload_damage: u8,
     pub aoe_damage: u8,
     pub block: u8,
+    pub real_block: u8,
+    pub starter_block: u8,
+    pub starter_utility: u8,
     pub draw: u8,
     pub energy: u8,
     pub scaling_damage: u8,
@@ -219,7 +225,7 @@ fn render_campaign_assessment_v1(assessment: &BranchCampaignAssessmentV1) -> Str
         assessment.missing_critical_jobs.join(",")
     };
     format!(
-        "assess=[src={} stage={} gate={} boss={} trans={} resource={} jobs=f{} a{} b{} d{} e{} s{} x{}/{} missing={}]",
+        "assess=[src={} stage={} gate={} boss={} trans={} resource={} jobs=f{}/{}+{} a{} b{}/{}+{} u{} d{} e{} s{} x{}/{} missing={}]",
         assessment.source.label(),
         assessment.formation_stage.label(),
         assessment.immediate_gate.label(),
@@ -227,8 +233,13 @@ fn render_campaign_assessment_v1(assessment: &BranchCampaignAssessmentV1) -> Str
         assessment.transition_gate.label(),
         assessment.resource_conversion.label(),
         assessment.job_coverage.frontload_damage,
+        assessment.job_coverage.real_frontload_damage,
+        assessment.job_coverage.starter_frontload_damage,
         assessment.job_coverage.aoe_damage,
         assessment.job_coverage.block,
+        assessment.job_coverage.real_block,
+        assessment.job_coverage.starter_block,
+        assessment.job_coverage.starter_utility,
         assessment.job_coverage.draw,
         assessment.job_coverage.energy,
         assessment.job_coverage.scaling_damage,
@@ -245,15 +256,29 @@ fn campaign_job_coverage_from_run_state_v1(
 ) -> BranchCampaignJobCoverageV1 {
     let mut coverage = BranchCampaignJobCoverageV1::default();
     for card in &run_state.master_deck {
+        let starter_role = starter_card_role_v1(card.id);
         let profile = card_reward_semantic_profile_v1(&RewardCard::new(card.id, card.upgrades));
         if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::FrontloadDamage) {
             coverage.frontload_damage = coverage.frontload_damage.saturating_add(1);
+            if starter_role == BranchCampaignStarterCardRoleV1::StarterStrike {
+                coverage.starter_frontload_damage =
+                    coverage.starter_frontload_damage.saturating_add(1);
+            } else if starter_role == BranchCampaignStarterCardRoleV1::StarterUtility {
+                coverage.starter_utility = coverage.starter_utility.saturating_add(1);
+            } else {
+                coverage.real_frontload_damage = coverage.real_frontload_damage.saturating_add(1);
+            }
         }
         if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::AoeDamage) {
             coverage.aoe_damage = coverage.aoe_damage.saturating_add(1);
         }
         if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::Block) {
             coverage.block = coverage.block.saturating_add(1);
+            if starter_role == BranchCampaignStarterCardRoleV1::StarterDefend {
+                coverage.starter_block = coverage.starter_block.saturating_add(1);
+            } else {
+                coverage.real_block = coverage.real_block.saturating_add(1);
+            }
         }
         if has_role_v1(&profile.roles, CardRewardSemanticRoleV1::CardDraw)
             || has_role_v1(&profile.roles, CardRewardSemanticRoleV1::CycleAccess)
@@ -301,6 +326,37 @@ fn campaign_job_coverage_from_run_state_v1(
 
 fn has_role_v1(roles: &[CardRewardSemanticRoleV1], role: CardRewardSemanticRoleV1) -> bool {
     roles.contains(&role)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BranchCampaignStarterCardRoleV1 {
+    NonStarter,
+    StarterStrike,
+    StarterDefend,
+    StarterUtility,
+}
+
+fn starter_card_role_v1(card: CardId) -> BranchCampaignStarterCardRoleV1 {
+    let definition = get_card_definition(card);
+    if definition.tags.contains(&CardTag::StarterStrike) {
+        return BranchCampaignStarterCardRoleV1::StarterStrike;
+    }
+    if definition.tags.contains(&CardTag::StarterDefend) {
+        return BranchCampaignStarterCardRoleV1::StarterDefend;
+    }
+    if matches!(
+        card,
+        CardId::Bash
+            | CardId::Neutralize
+            | CardId::Survivor
+            | CardId::Zap
+            | CardId::Dualcast
+            | CardId::Eruption
+            | CardId::Vigilance
+    ) {
+        return BranchCampaignStarterCardRoleV1::StarterUtility;
+    }
+    BranchCampaignStarterCardRoleV1::NonStarter
 }
 
 fn campaign_formation_stage_from_session_v1(
@@ -377,15 +433,15 @@ fn campaign_immediate_gate_v1(
         return BranchCampaignGateStatusV1::AtRisk;
     }
     if summary.act == 1 && summary.floor <= 5 {
-        if coverage.frontload_damage >= 1 {
+        if coverage.real_frontload_damage >= 1 || coverage.starter_frontload_damage >= 4 {
             return BranchCampaignGateStatusV1::Solved;
         }
         return BranchCampaignGateStatusV1::AtRisk;
     }
-    if coverage.frontload_damage <= 1 && coverage.aoe_damage == 0 {
+    if coverage.real_frontload_damage <= 1 && coverage.aoe_damage == 0 {
         return BranchCampaignGateStatusV1::AtRisk;
     }
-    if coverage.block > 0 || coverage.draw > 0 || hp_percent_v1(summary) >= 55 {
+    if coverage.real_block > 0 || coverage.draw > 0 || hp_percent_v1(summary) >= 55 {
         BranchCampaignGateStatusV1::Passable
     } else {
         BranchCampaignGateStatusV1::AtRisk
@@ -406,7 +462,9 @@ fn campaign_act_boss_gate_v1(
     {
         return BranchCampaignGateStatusV1::Passable;
     }
-    if coverage.frontload_damage >= 3 && coverage.block > 0 {
+    if coverage.real_frontload_damage >= 2
+        && (coverage.real_block > 0 || coverage.starter_utility > 0)
+    {
         return BranchCampaignGateStatusV1::AtRisk;
     }
     BranchCampaignGateStatusV1::Unsolved
@@ -419,7 +477,7 @@ fn campaign_transition_gate_v1(
     if summary.act >= 2 {
         if coverage.scaling_damage > 0
             || coverage.exhaust_enabler > 0 && coverage.exhaust_payoff > 0
-            || coverage.aoe_damage > 0 && coverage.block > 0
+            || coverage.aoe_damage > 0 && coverage.real_block > 0
         {
             return BranchCampaignGateStatusV1::Passable;
         }
@@ -430,7 +488,7 @@ fn campaign_transition_gate_v1(
     }
     if coverage.scaling_damage > 0 || coverage.exhaust_enabler > 0 && coverage.exhaust_payoff > 0 {
         BranchCampaignGateStatusV1::Passable
-    } else if coverage.draw > 0 && coverage.block > 0 {
+    } else if coverage.draw > 0 && coverage.real_block > 0 {
         BranchCampaignGateStatusV1::AtRisk
     } else {
         BranchCampaignGateStatusV1::Unsolved
@@ -464,7 +522,7 @@ fn campaign_missing_critical_jobs_v1(
     formation_needs: &[StrategyDeckFormationNeedV1],
 ) -> Vec<String> {
     let mut missing = Vec::new();
-    if coverage.frontload_damage <= 1 && coverage.aoe_damage == 0 {
+    if coverage.real_frontload_damage <= 1 && coverage.aoe_damage == 0 {
         missing.push("frontload".to_string());
     }
     if summary.act >= 2 || summary.floor >= 7 {
@@ -475,7 +533,7 @@ fn campaign_missing_critical_jobs_v1(
             missing.push("scaling_or_engine".to_string());
         }
     }
-    if summary.act >= 2 && coverage.block <= 1 && coverage.scaling_block == 0 {
+    if summary.act >= 2 && coverage.real_block == 0 && coverage.scaling_block == 0 {
         missing.push("act2_mitigation".to_string());
     }
     if formation_needs.contains(&StrategyDeckFormationNeedV1::DrawEnergy)

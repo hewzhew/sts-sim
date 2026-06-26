@@ -372,8 +372,13 @@ fn test_campaign_assessment(
         resource_conversion: BranchCampaignResourceConversionV1::BufferOnly,
         job_coverage: BranchCampaignJobCoverageV1 {
             frontload_damage: 2,
+            real_frontload_damage: 2,
+            starter_frontload_damage: 0,
             aoe_damage: 0,
             block: 1,
+            real_block: 1,
+            starter_block: 0,
+            starter_utility: 0,
             draw: 1,
             energy: 0,
             scaling_damage: u8::from(
