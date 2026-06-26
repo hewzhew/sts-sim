@@ -142,21 +142,13 @@ fn evaluate_purchase_v1(
             );
         };
         if !strategic_decision.verdict.allows_behavior_acquisition() {
-            let evaluation = ShopPlanEvaluationV1::block(
+            return ShopPlanEvaluationV1::block(
                 candidate.legacy_estimate,
                 format!(
                     "strategic trace rejects shop purchase as rollout head verdict={:?} score={:.2}",
                     strategic_decision.verdict, strategic_decision.score
                 ),
             );
-            return if shop_purchase_candidate_has_branch_frontier_thesis_v1(target, strategic_trace)
-            {
-                evaluation.with_branch_admission(
-                    "shop purchase rejected as rollout head, but admitted to branch frontier by acquisition thesis",
-                )
-            } else {
-                evaluation
-            };
         }
         return strategic_purchase_evaluation_v1(
             candidate.legacy_estimate,
@@ -353,29 +345,6 @@ fn purchase_strategic_decision(
         gold: 0,
     };
     strategic_trace.compiled_for_action(&action)
-}
-
-fn shop_purchase_candidate_has_branch_frontier_thesis_v1(
-    target: ShopPurchaseTargetV1,
-    strategic_trace: &StrategicDecisionTrace,
-) -> bool {
-    let ShopPurchaseTargetV1::Card { index, card } = target else {
-        return false;
-    };
-    let action = CandidateAction::BuyCard {
-        shop_index: index,
-        card,
-        gold: 0,
-    };
-    strategic_trace
-        .candidate_deltas
-        .iter()
-        .find(|delta| delta.action == action)
-        .is_some_and(|delta| {
-            delta
-                .acquisition_thesis_profile_v1()
-                .branch_exploration_worthy()
-        })
 }
 
 fn starter_purge_strategic_decision<'a>(

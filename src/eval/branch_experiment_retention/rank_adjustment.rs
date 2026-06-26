@@ -85,13 +85,6 @@ pub fn branch_retention_rank_adjustment_v1(
         reasons.push(format!(
             "card_reward_plan_rank_adjustment:{card_reward_plan_adjustment}"
         ));
-        for signal in candidate.decision_signals.iter().filter(|signal| {
-            signal.source == BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1
-        }) {
-            for summary in &signal.acquisition_thesis_summary {
-                reasons.push(format!("acquisition_thesis:{summary}"));
-            }
-        }
     }
     let shop_plan_adjustment = branch_shop_plan_rank_adjustment_v1(candidate);
     if shop_plan_adjustment != 0 {
@@ -158,19 +151,14 @@ fn branch_card_reward_plan_rank_adjustment_v1(candidate: &BranchRetentionCandida
 }
 
 fn card_reward_signal_rank_adjustment_v1(signal: &BranchExperimentChoiceDecisionSignalV1) -> i32 {
-    let verdict_adjustment = match signal.verdict.as_str() {
+    match signal.verdict.as_str() {
         "Reject" => CARD_REWARD_SIGNAL_REJECT_BASE_MILLI + signal.component_net_rank.min(0) / 2,
         "SkipPreferred" => {
             CARD_REWARD_SIGNAL_SKIP_PREFERRED_BASE_MILLI + signal.component_net_rank.min(0) / 2
         }
         _ => 0,
-    };
-    let thesis_adjustment = if verdict_adjustment < 0 {
-        signal.acquisition_thesis_rank_adjustment.min(0)
-    } else {
-        signal.acquisition_thesis_rank_adjustment
-    };
-    verdict_adjustment.saturating_add(thesis_adjustment).clamp(
+    }
+    .clamp(
         CARD_REWARD_SIGNAL_RANK_ADJUSTMENT_MIN_MILLI,
         CARD_REWARD_SIGNAL_RANK_ADJUSTMENT_MAX_MILLI,
     )

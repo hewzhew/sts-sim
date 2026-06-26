@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardSemanticProfileV1, CardRewardSemanticRoleV1,
 };
-use crate::ai::strategic::{AcquisitionVerdict, CandidateAction, StrategicDecisionTrace};
+use crate::ai::strategic::{AcquisitionVerdict, CandidateAction};
 use crate::content::cards::CardId;
 use crate::content::relics::RelicId;
 use crate::eval::branch_experiment::{
@@ -16,9 +16,6 @@ use crate::eval::run_control::RunControlSession;
 use crate::runtime::action::CardDestination;
 use crate::state::core::{EngineState, PendingChoice};
 use crate::state::rewards::{RewardCard, RewardItem};
-
-const CARD_REWARD_THESIS_RETENTION_PROJECTION_MIN_MILLI: i32 = -1_800;
-const CARD_REWARD_THESIS_RETENTION_PROJECTION_MAX_MILLI: i32 = 0;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CardRewardBranchOption {
@@ -408,8 +405,6 @@ struct RewardOptionStrategicRetentionKey {
     verdict_label: String,
     score_milli: Option<i32>,
     preferred: bool,
-    acquisition_thesis_rank_adjustment: i32,
-    acquisition_thesis_summary: Vec<String>,
 }
 
 fn attach_card_reward_decision_signals(
@@ -468,8 +463,6 @@ fn reward_option_strategic_retention_keys(
             let order = trace
                 .compiled_for_action(&action)
                 .map(|compiled| {
-                    let (thesis_adjustment, thesis_summary) =
-                        reward_option_acquisition_thesis_retention_projection(&trace, &action);
                     let preferred = trace
                         .would_choose
                         .as_ref()
@@ -480,37 +473,12 @@ fn reward_option_strategic_retention_keys(
                         strategic_score_sort_key: -((compiled.score * 1000.0).round() as i32),
                         verdict_label: format!("{:?}", compiled.verdict),
                         preferred,
-                        acquisition_thesis_rank_adjustment: thesis_adjustment,
-                        acquisition_thesis_summary: thesis_summary,
                     }
                 })
                 .unwrap_or_else(RewardOptionStrategicRetentionKey::missing);
             (index, order)
         })
         .collect()
-}
-
-fn reward_option_acquisition_thesis_retention_projection(
-    trace: &StrategicDecisionTrace,
-    action: &CandidateAction,
-) -> (i32, Vec<String>) {
-    let Some(delta) = trace
-        .candidate_deltas
-        .iter()
-        .find(|delta| delta.action == *action)
-    else {
-        return (0, Vec::new());
-    };
-    let thesis_profile = delta.acquisition_thesis_profile_v1();
-    // Reward retention currently consumes acquisition thesis as a caution-only projection.
-    // Positive frontier protection belongs to explicit branch slots/frontier lanes.
-    (
-        thesis_profile.branch_retention_projection_milli.clamp(
-            CARD_REWARD_THESIS_RETENTION_PROJECTION_MIN_MILLI,
-            CARD_REWARD_THESIS_RETENTION_PROJECTION_MAX_MILLI,
-        ),
-        thesis_profile.rendered,
-    )
 }
 
 fn candidate_action_for_reward_option(
@@ -544,8 +512,6 @@ impl RewardOptionStrategicRetentionKey {
             verdict_label: "strategy_unavailable".to_string(),
             score_milli: None,
             preferred: false,
-            acquisition_thesis_rank_adjustment: 0,
-            acquisition_thesis_summary: Vec::new(),
         }
     }
 
@@ -556,8 +522,6 @@ impl RewardOptionStrategicRetentionKey {
             verdict_label: "missing_strategic_candidate".to_string(),
             score_milli: None,
             preferred: false,
-            acquisition_thesis_rank_adjustment: 0,
-            acquisition_thesis_summary: Vec::new(),
         }
     }
 
@@ -571,8 +535,6 @@ impl RewardOptionStrategicRetentionKey {
             confidence_milli: 650,
             component_net_rank: score.clamp(-1_200, 1_200),
             preferred: self.preferred,
-            acquisition_thesis_rank_adjustment: self.acquisition_thesis_rank_adjustment,
-            acquisition_thesis_summary: self.acquisition_thesis_summary.clone(),
         })
     }
 }

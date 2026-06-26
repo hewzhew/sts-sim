@@ -8,9 +8,7 @@ use super::types::{
     ShopPlanProjectionRoleV1, ShopPlanProjectionV1, ShopPlanSourceV1, ShopPlanStepV1, ShopPlanV1,
     ShopPlanVerdictV1, ShopPolicyClassV1, ShopPolicyConfigV1, ShopPurchaseTargetV1,
 };
-use crate::ai::strategic::{
-    AcquisitionExplorationAxisV1, CandidateDelta, CandidateRole, StrategicDecisionTrace,
-};
+use crate::ai::strategic::{CandidateDelta, CandidateRole, StrategicDecisionTrace};
 
 pub fn compile_shop_decision_v1(
     context: &ShopDecisionContextV1,
@@ -337,38 +335,14 @@ fn shop_card_buy_frontier_lane_projection_v1(delta: Option<&CandidateDelta>) -> 
     let Some(delta) = delta else {
         return ShopPlanLaneV1::BuyCardGeneric;
     };
-    let thesis = delta.acquisition_thesis_profile_v1();
-    if thesis.has_axis(AcquisitionExplorationAxisV1::BossAnswer) {
-        return ShopPlanLaneV1::BuyCardBossAnswer;
+    match delta.role {
+        CandidateRole::BossAnswer => ShopPlanLaneV1::BuyCardBossAnswer,
+        CandidateRole::Lubricant => ShopPlanLaneV1::BuyCardDrawAccess,
+        CandidateRole::DefensivePatch => ShopPlanLaneV1::BuyCardDefense,
+        CandidateRole::Transition => ShopPlanLaneV1::BuyCardFrontload,
+        CandidateRole::Enabler | CandidateRole::Payoff => ShopPlanLaneV1::BuyCardScalingEngine,
+        _ => ShopPlanLaneV1::BuyCardGeneric,
     }
-    if thesis.has_axis(AcquisitionExplorationAxisV1::FutureCeiling) {
-        return ShopPlanLaneV1::BuyCardMissingCeiling;
-    }
-    if thesis.has_axis(AcquisitionExplorationAxisV1::SustainOrRecovery) {
-        return ShopPlanLaneV1::BuyCardFutureSustain;
-    }
-    if thesis.has_axis(AcquisitionExplorationAxisV1::ScalingEngine) {
-        return ShopPlanLaneV1::BuyCardScalingEngine;
-    }
-    if thesis.has_axis(AcquisitionExplorationAxisV1::DrawAccess)
-        || delta.role == CandidateRole::Lubricant
-    {
-        return ShopPlanLaneV1::BuyCardDrawAccess;
-    }
-    if thesis.has_axis(AcquisitionExplorationAxisV1::ExhaustAccess) {
-        return ShopPlanLaneV1::BuyCardExhaustAccess;
-    }
-    if thesis.has_axis(AcquisitionExplorationAxisV1::DefenseCoverage)
-        || matches!(delta.role, CandidateRole::DefensivePatch)
-    {
-        return ShopPlanLaneV1::BuyCardDefense;
-    }
-    if thesis.has_axis(AcquisitionExplorationAxisV1::TransitionFrontload)
-        || matches!(delta.role, CandidateRole::Transition)
-    {
-        return ShopPlanLaneV1::BuyCardFrontload;
-    }
-    ShopPlanLaneV1::BuyCardGeneric
 }
 
 fn compare_branch_alternative_candidates_v1(

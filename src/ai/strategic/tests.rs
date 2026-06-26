@@ -189,60 +189,6 @@ fn card_reward_shadow_trace_records_startup_and_shape_debt() {
 }
 
 #[test]
-fn card_reward_shadow_trace_records_duplicate_coverage_debt() {
-    let mut run_state = RunState::new(521, 0, false, "Ironclad");
-    run_state.act_num = 2;
-    run_state.add_card_to_deck(CardId::Clothesline);
-    let context = build_card_reward_decision_context_v1(
-        &run_state,
-        vec![RewardCard::new(CardId::Clothesline, 0)],
-        None,
-    );
-
-    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
-    let clothesline_delta = decision
-        .strategic_trace
-        .candidate_deltas
-        .iter()
-        .find(|delta| delta.action.candidate_id().contains("Clothesline"))
-        .expect("duplicate Clothesline candidate should have a strategic delta");
-
-    assert!(clothesline_delta.negative.iter().any(|delta| {
-        delta.reason == "duplicate_transition_or_mitigation"
-            && delta.kind == PressureKind::DeckDebt(StrategicDebt::CycleTime)
-    }));
-    assert!(clothesline_delta
-        .evidence
-        .contains(&"acquisition_over_budget:redundant_coverage".to_string()));
-}
-
-#[test]
-fn card_reward_shadow_trace_preserves_duplicate_coverage_as_acquisition_thesis() {
-    let mut run_state = RunState::new(521, 0, false, "Ironclad");
-    run_state.act_num = 2;
-    run_state.add_card_to_deck(CardId::Clothesline);
-    let context = build_card_reward_decision_context_v1(
-        &run_state,
-        vec![RewardCard::new(CardId::Clothesline, 0)],
-        None,
-    );
-
-    let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
-    let clothesline_delta = decision
-        .strategic_trace
-        .candidate_deltas
-        .iter()
-        .find(|delta| delta.action.candidate_id().contains("Clothesline"))
-        .expect("duplicate Clothesline candidate should have a strategic delta");
-
-    assert!(clothesline_delta.acquisition_theses.iter().any(|thesis| {
-        thesis.role == crate::ai::strategic::AcquisitionThesisRole::RedundantCoverage
-            && thesis.status == crate::ai::strategic::AcquisitionThesisStatus::OverBudget
-            && thesis.reason == "duplicate_transition_or_mitigation"
-    }));
-}
-
-#[test]
 fn card_reward_decline_candidate_records_cycle_relief_under_deck_pressure() {
     let mut run_state = RunState::new(521, 0, false, "Ironclad");
     for _ in 0..15 {

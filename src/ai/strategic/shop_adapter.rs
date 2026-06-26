@@ -6,10 +6,6 @@ use super::{
     StrategicBossTax, StrategicDebt, StrategicDecisionSite, StrategicDeckFacts, StrategicJob,
     StrategicSnapshot, VerdictHint,
 };
-use crate::ai::acquisition_saturation_v1::{
-    apply_acquisition_saturation_to_delta_v1, evaluate_acquisition_saturation_v1,
-    AcquisitionSaturationInputV1,
-};
 use crate::ai::card_component_signal_v1::{
     evaluate_card_component_signals_v1, CardComponentSignalContextV1,
 };
@@ -256,7 +252,6 @@ fn add_shop_card_purchase_deltas(
     }
 
     add_shop_card_component_deltas(context, candidate, delta);
-    add_shop_card_acquisition_saturation_deltas(context, candidate, delta);
     add_default_shop_card_semantic_deltas(context, candidate, delta);
 }
 
@@ -475,40 +470,6 @@ fn push_default_shop_card_positive_once(
         amount,
         reason: reason.to_string(),
     });
-}
-
-fn add_shop_card_acquisition_saturation_deltas(
-    context: &ShopDecisionContextV1,
-    candidate: &ShopCandidateEvidenceV1,
-    delta: &mut CandidateDelta,
-) {
-    let Some(card) = candidate.card else {
-        return;
-    };
-    let deck = &context.strategy.v1.deck;
-    let profile = card_reward_semantic_profile_v1(&RewardCard::new(card, 0));
-    let report = evaluate_acquisition_saturation_v1(
-        &AcquisitionSaturationInputV1 {
-            act: context.need.act,
-            floor: context.need.floor,
-            deck_size: deck.deck_size,
-            frontload_cards: deck.attacks as usize,
-            weak_sources: deck.weak_sources as usize,
-            block_cards: deck.skills as usize,
-            draw_sources: deck.draw_sources.saturating_add(deck.energy_sources) as usize,
-            exhaust_generators: deck.exhaust_generators as usize,
-            exhaust_payoffs: deck.exhaust_payoffs as usize,
-            scaling_sources: deck.strength_sources as usize,
-            status_generators: deck.status_generators as usize,
-            status_payoffs: deck.status_payoffs as usize,
-            block_engine_pieces: context.block_plan.engine_support_score(),
-            same_card_count: candidate.same_card_count,
-            starter_strikes: context.need.strike_count,
-            strength_sources: deck.strength_sources as usize,
-        },
-        &profile,
-    );
-    apply_acquisition_saturation_to_delta_v1(delta, &report);
 }
 
 fn component_context_from_shop_context(

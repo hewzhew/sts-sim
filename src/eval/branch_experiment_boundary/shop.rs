@@ -274,8 +274,6 @@ fn shop_decision_signal_v1(
         confidence_milli: (evaluation.confidence * 1000.0).round() as i32,
         component_net_rank: evaluation.component_score.net.round() as i32,
         preferred: false,
-        acquisition_thesis_rank_adjustment: 0,
-        acquisition_thesis_summary: Vec::new(),
     }
 }
 

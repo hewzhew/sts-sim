@@ -587,10 +587,6 @@ pub struct BranchExperimentChoiceDecisionSignalV1 {
     pub component_net_rank: i32,
     #[serde(default, skip_serializing_if = "is_false")]
     pub preferred: bool,
-    #[serde(default)]
-    pub acquisition_thesis_rank_adjustment: i32,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub acquisition_thesis_summary: Vec<String>,
 }
 
 pub const BRANCH_EXPERIMENT_SHOP_COMPAT_SELECTED_PLAN_SIGNAL_SOURCE_V1: &str =
