@@ -30,6 +30,8 @@ enum BranchStatus {
 enum Owner {
     NeowStart,
     CardReward,
+    EventSsssserpent,
+    ShopTiny,
 }
 
 #[derive(Clone, Copy)]
@@ -141,28 +143,108 @@ fn owner_candidates(
             .into_iter()
             .filter(|(id, _)| is_card_reward_candidate_id(id))
             .collect(),
+        Owner::EventSsssserpent | Owner::ShopTiny => Vec::new(),
     }
 }
 
 fn advance_to_owner_or_gap(session: &mut RunControlSession, args: Args) -> BranchStatus {
-    let options = RunControlAutoStepOptions {
-        search: RunControlSearchCombatOptions {
-            max_nodes: Some(args.search_nodes),
-            wall_ms: Some(args.search_ms),
-            max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
-            ..Default::default()
-        },
-        max_operations: Some(args.auto_ops),
-        route: RunControlRouteAutomationMode::Planner,
-    };
-    match session.apply_command(RunControlCommand::AutoRun(options)) {
-        Ok(_) if terminal_label(session).is_some() => {
-            BranchStatus::Terminal(terminal_label(session).unwrap())
+    let mut policy_steps = 0usize;
+    loop {
+        let options = RunControlAutoStepOptions {
+            search: RunControlSearchCombatOptions {
+                max_nodes: Some(args.search_nodes),
+                wall_ms: Some(args.search_ms),
+                max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
+                ..Default::default()
+            },
+            max_operations: Some(args.auto_ops),
+            route: RunControlRouteAutomationMode::Planner,
+        };
+        match session.apply_command(RunControlCommand::AutoRun(options)) {
+            Ok(_) if terminal_label(session).is_some() => {
+                return BranchStatus::Terminal(terminal_label(session).unwrap());
+            }
+            Ok(_) => {
+                return BranchStatus::AdvanceFailed(
+                    "auto_run returned non-terminal success".to_string(),
+                );
+            }
+            Err(err) if err.starts_with("auto_run_incomplete:") => {
+                let status = classify_boundary(session, &err);
+                let owner = match &status {
+                    BranchStatus::Running { owner, .. } => *owner,
+                    _ => return status,
+                };
+                if owner_is_branching(owner) {
+                    return status;
+                }
+                policy_steps += 1;
+                if policy_steps > 16 {
+                    return BranchStatus::BudgetGap {
+                        boundary: build_decision_surface(session).view.header.title.clone(),
+                        reason: "owner policy step budget exhausted".to_string(),
+                    };
+                }
+                if let Err(err) = apply_policy_owner(session, owner) {
+                    return BranchStatus::AdvanceFailed(format!(
+                        "owner policy {owner:?} failed: {err}"
+                    ));
+                }
+            }
+            Err(err) => return BranchStatus::AdvanceFailed(err),
         }
-        Ok(_) => BranchStatus::AdvanceFailed("auto_run returned non-terminal success".to_string()),
-        Err(err) if err.starts_with("auto_run_incomplete:") => classify_boundary(session, &err),
-        Err(err) => BranchStatus::AdvanceFailed(err),
     }
+}
+
+fn owner_is_branching(owner: Owner) -> bool {
+    matches!(owner, Owner::NeowStart | Owner::CardReward)
+}
+
+fn apply_policy_owner(session: &mut RunControlSession, owner: Owner) -> Result<(), String> {
+    let candidate_id = match owner {
+        Owner::ShopTiny => find_policy_candidate(session, &["leave"], &["leave shop", "leave"])?,
+        Owner::EventSsssserpent => {
+            find_policy_candidate(session, &[], &["disagree", "leave", "decline", "refuse"])?
+        }
+        Owner::NeowStart | Owner::CardReward => {
+            return Err("branching owner cannot be consumed as policy".to_string());
+        }
+    };
+    session
+        .apply_command(RunControlCommand::Candidate(candidate_id))
+        .map(|_| ())
+}
+
+fn find_policy_candidate(
+    session: &RunControlSession,
+    preferred_ids: &[&str],
+    label_terms: &[&str],
+) -> Result<String, String> {
+    let surface = build_decision_surface(session);
+    let candidates = executable_candidates(&surface);
+    for preferred_id in preferred_ids {
+        if candidates
+            .iter()
+            .any(|(candidate_id, _)| candidate_id == preferred_id)
+        {
+            return Ok((*preferred_id).to_string());
+        }
+    }
+    for (candidate_id, label) in &candidates {
+        let label = label.to_ascii_lowercase();
+        if label_terms.iter().any(|term| label.contains(term)) {
+            return Ok(candidate_id.clone());
+        }
+    }
+    Err(format!(
+        "no safe policy candidate at {} among [{}]",
+        surface.view.header.title,
+        candidates
+            .iter()
+            .map(|(id, label)| format!("{id}:{label}"))
+            .collect::<Vec<_>>()
+            .join(" | ")
+    ))
 }
 
 fn classify_boundary(session: &RunControlSession, message: &str) -> BranchStatus {
@@ -198,6 +280,13 @@ fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
         {
             Some(Owner::NeowStart)
         }
+        EngineState::EventRoom
+            if session.run_state.event_state.as_ref().is_some_and(|event| {
+                event.id == sts_simulator::state::events::EventId::Ssssserpent
+            }) =>
+        {
+            Some(Owner::EventSsssserpent)
+        }
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
             Some(Owner::CardReward)
         }
@@ -206,6 +295,7 @@ fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
         {
             Some(Owner::CardReward)
         }
+        EngineState::Shop(_) => Some(Owner::ShopTiny),
         _ => None,
     }
 }
@@ -360,7 +450,9 @@ fn parse_args() -> Result<Args, String> {
         let key = raw[index].as_str();
         if matches!(key, "--help" | "-h") {
             println!("branch_tiny --seed N --generations N --max-branches N");
-            println!("  owner-audit runner; registered owners: neow_start, card_reward");
+            println!(
+                "  owner-audit runner; branching owners: neow_start, card_reward; policy owners: shop, event:Ssssserpent"
+            );
             std::process::exit(0);
         }
         if !matches!(
