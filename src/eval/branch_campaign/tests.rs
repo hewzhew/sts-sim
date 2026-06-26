@@ -1,6 +1,9 @@
 use super::assessment::{
+    BranchCampaignAddedAttackQualityV1, BranchCampaignAddedBlockQualityV1,
     BranchCampaignAssessmentSourceV1, BranchCampaignAssessmentV1, BranchCampaignFormationStageV1,
-    BranchCampaignGateStatusV1, BranchCampaignJobCoverageV1, BranchCampaignResourceConversionV1,
+    BranchCampaignFrontloadProfileV1, BranchCampaignGateStatusV1, BranchCampaignJobCoverageV1,
+    BranchCampaignPackageProfileV1, BranchCampaignResourceConversionV1,
+    BranchCampaignScalingProfileV1,
 };
 use super::*;
 use crate::ai::noncombat_strategy_v1::{StrategyDeckFormationNeedV1, StrategyDeckFormationStageV1};
@@ -371,24 +374,29 @@ fn test_campaign_assessment(
         transition_gate,
         resource_conversion: BranchCampaignResourceConversionV1::BufferOnly,
         job_coverage: BranchCampaignJobCoverageV1 {
-            frontload_damage: 2,
-            real_frontload_damage: 2,
-            starter_frontload_damage: 0,
-            aoe_damage: 0,
-            block: 1,
-            real_block: 1,
-            starter_block: 0,
-            starter_utility: 0,
-            draw: 1,
-            energy: 0,
-            scaling_damage: u8::from(
-                formation_stage >= BranchCampaignFormationStageV1::ScalingOnline,
-            ),
-            scaling_block: 0,
-            exhaust_enabler: 0,
-            exhaust_payoff: 0,
-            status_enabler: 0,
-            status_payoff: 0,
+            frontload: BranchCampaignFrontloadProfileV1 {
+                added_attack_count: 2,
+                added_attack_quality: BranchCampaignAddedAttackQualityV1::MultipleSolid,
+                ..Default::default()
+            },
+            block: super::assessment::BranchCampaignBlockProfileV1 {
+                added_block_count: 1,
+                added_block_quality: BranchCampaignAddedBlockQualityV1::SolidOne,
+                ..Default::default()
+            },
+            draw: super::assessment::BranchCampaignDrawProfileV1 {
+                draw_count: 1,
+                ..Default::default()
+            },
+            scaling: BranchCampaignScalingProfileV1 {
+                damage_count: u8::from(
+                    formation_stage >= BranchCampaignFormationStageV1::ScalingOnline,
+                ),
+                ..Default::default()
+            },
+            exhaust: BranchCampaignPackageProfileV1::default(),
+            status: BranchCampaignPackageProfileV1::default(),
+            debt: Default::default(),
         },
         missing_critical_jobs: Vec::new(),
     }
