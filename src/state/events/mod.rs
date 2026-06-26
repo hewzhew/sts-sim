@@ -132,6 +132,7 @@ pub struct EventOptionSemantics {
     pub transition: EventOptionTransition,
     pub repeatable: bool,
     pub terminal: bool,
+    pub owner_policy: EventOwnerPolicyKind,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -166,6 +167,13 @@ pub enum EventActionKind {
     DeckOperation,
     Gain,
     Special,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum EventOwnerPolicyKind {
+    #[default]
+    None,
+    ConservativeAuto,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

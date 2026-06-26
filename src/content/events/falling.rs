@@ -33,6 +33,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                 transition: EventOptionTransition::AdvanceScreen,
                 repeatable: false,
                 terminal: false,
+                ..Default::default()
             },
         )],
         1 => {
@@ -51,6 +52,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
+                        ..Default::default()
                     },
                 )];
             }
@@ -70,6 +72,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
+                        ..Default::default()
                     },
                 ));
             } else {
@@ -82,6 +85,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
+                        ..Default::default()
                     },
                 ));
             }
@@ -99,6 +103,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
+                        ..Default::default()
                     },
                 ));
             } else {
@@ -111,6 +116,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
+                        ..Default::default()
                     },
                 ));
             }
@@ -128,6 +134,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
+                        ..Default::default()
                     },
                 ));
             } else {
@@ -140,6 +147,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
+                        ..Default::default()
                     },
                 ));
             }
@@ -154,6 +162,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                 transition: EventOptionTransition::Complete,
                 repeatable: false,
                 terminal: true,
+                ..Default::default()
             },
         )],
     }

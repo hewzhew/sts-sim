@@ -56,6 +56,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
+                        ..Default::default()
                     },
                 ));
             }

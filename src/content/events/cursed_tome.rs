@@ -19,6 +19,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                     transition: EventOptionTransition::AdvanceScreen,
                     repeatable: false,
                     terminal: false,
+                    ..Default::default()
                 },
             ),
             EventOption::new(
@@ -30,6 +31,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                     transition: EventOptionTransition::Complete,
                     repeatable: false,
                     terminal: true,
+                    ..Default::default()
                 },
             ),
         ],
@@ -42,6 +44,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                 transition: EventOptionTransition::AdvanceScreen,
                 repeatable: false,
                 terminal: false,
+                ..Default::default()
             },
         )],
         2 => vec![EventOption::new(
@@ -53,6 +56,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                 transition: EventOptionTransition::AdvanceScreen,
                 repeatable: false,
                 terminal: false,
+                ..Default::default()
             },
         )],
         3 => vec![EventOption::new(
@@ -64,6 +68,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                 transition: EventOptionTransition::AdvanceScreen,
                 repeatable: false,
                 terminal: false,
+                ..Default::default()
             },
         )],
         4 => {
@@ -91,6 +96,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::OpenReward,
                         repeatable: false,
                         terminal: false,
+                        ..Default::default()
                     },
                 ),
                 EventOption::new(
@@ -102,6 +108,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
+                        ..Default::default()
                     },
                 ),
             ]
@@ -115,6 +122,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                 transition: EventOptionTransition::Complete,
                 repeatable: false,
                 terminal: true,
+                ..Default::default()
             },
         )],
     }

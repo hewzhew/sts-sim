@@ -936,6 +936,7 @@ mod tests {
                 transition: EventOptionTransition::AdvanceScreen,
                 repeatable: false,
                 terminal: false,
+                ..Default::default()
             },
         );
 
@@ -964,6 +965,7 @@ mod tests {
                 transition: EventOptionTransition::AdvanceScreen,
                 repeatable: false,
                 terminal: false,
+                ..Default::default()
             },
         );
 
@@ -989,6 +991,7 @@ mod tests {
                 transition: EventOptionTransition::None,
                 repeatable: false,
                 terminal: false,
+                ..Default::default()
             },
         );
 

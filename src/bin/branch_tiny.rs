@@ -7,6 +7,7 @@ use sts_simulator::eval::run_control::{
     RunControlSession,
 };
 use sts_simulator::state::core::{ClientInput, EngineState, RunResult};
+use sts_simulator::state::events::EventId;
 
 #[derive(Clone)]
 struct Branch {
@@ -24,11 +25,23 @@ struct OwnerChoice {
 
 #[derive(Clone)]
 enum BranchStatus {
-    Running { boundary: String, owner: Owner },
+    Running {
+        boundary: String,
+        owner: Owner,
+    },
     Terminal(&'static str),
-    AutomationGap { boundary: String, owner_key: String },
-    CombatGap { boundary: String, reason: String },
-    BudgetGap { boundary: String, reason: String },
+    AutomationGap {
+        boundary: String,
+        site: BoundarySite,
+    },
+    CombatGap {
+        boundary: String,
+        reason: String,
+    },
+    BudgetGap {
+        boundary: String,
+        reason: String,
+    },
     ApplyFailed(String),
     AdvanceFailed(String),
 }
@@ -37,8 +50,22 @@ enum BranchStatus {
 enum Owner {
     NeowStart,
     CardReward,
-    EventSsssserpent,
+    Event(EventId),
     ShopTiny,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum BoundarySite {
+    Event(EventId),
+    Reward,
+    Shop,
+    Route,
+    Campfire,
+    BossRelic,
+    RunChoice,
+    Treasure,
+    Terminal,
+    Unknown,
 }
 
 #[derive(Clone, Copy)]
@@ -149,7 +176,7 @@ fn owner_choices(
             .into_iter()
             .filter(|choice| is_card_reward_input(&choice.input))
             .collect(),
-        Owner::EventSsssserpent | Owner::ShopTiny => Vec::new(),
+        Owner::Event(_) | Owner::ShopTiny => Vec::new(),
     }
 }
 
@@ -209,9 +236,9 @@ fn owner_is_branching(owner: Owner) -> bool {
 fn apply_policy_owner(session: &mut RunControlSession, owner: Owner) -> Result<(), String> {
     let input = match owner {
         Owner::ShopTiny => require_visible_input(session, ClientInput::Proceed)?,
-        Owner::EventSsssserpent => require_visible_input(
+        Owner::Event(_) => require_visible_input(
             session,
-            sts_simulator::content::events::sssserpent::conservative_policy_input(
+            sts_simulator::content::events::owner_policy::conservative_owner_policy_input(
                 &session.run_state,
             )
             .map_err(|err| format!("{err:?}"))?,
@@ -272,7 +299,7 @@ fn classify_boundary(session: &RunControlSession, stop: &RunControlAutoStopV1) -
     }
     BranchStatus::AutomationGap {
         boundary,
-        owner_key: owner_key_for_current_boundary(session),
+        site: boundary_site(session),
     }
 }
 
@@ -292,21 +319,13 @@ fn is_combat_gap(session: &RunControlSession, stop_kind: RunControlAutoStopKind)
 
 fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
     match &session.engine_state {
-        EngineState::EventRoom
-            if session
-                .run_state
-                .event_state
-                .as_ref()
-                .is_some_and(|event| event.id == sts_simulator::state::events::EventId::Neow) =>
-        {
-            Some(Owner::NeowStart)
-        }
-        EngineState::EventRoom
-            if session.run_state.event_state.as_ref().is_some_and(|event| {
-                event.id == sts_simulator::state::events::EventId::Ssssserpent
-            }) =>
-        {
-            Some(Owner::EventSsssserpent)
+        EngineState::EventRoom => {
+            let event = session.run_state.event_state.as_ref()?;
+            if event.id == EventId::Neow {
+                Some(Owner::NeowStart)
+            } else {
+                Some(Owner::Event(event.id))
+            }
         }
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
             Some(Owner::CardReward)
@@ -321,26 +340,23 @@ fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
     }
 }
 
-fn owner_key_for_current_boundary(session: &RunControlSession) -> String {
+fn boundary_site(session: &RunControlSession) -> BoundarySite {
     match &session.engine_state {
         EngineState::EventRoom => session
             .run_state
             .event_state
             .as_ref()
-            .map(|event| format!("event:{:?}", event.id))
-            .unwrap_or_else(|| "event:unknown".to_string()),
-        EngineState::MapNavigation | EngineState::MapOverlay { .. } => "route".to_string(),
-        EngineState::Shop(_) => "shop".to_string(),
-        EngineState::Campfire => "campfire".to_string(),
-        EngineState::BossRelicSelect(_) => "boss_relic".to_string(),
-        EngineState::RunPendingChoice(_) => "run_choice".to_string(),
-        EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. } => "reward".to_string(),
-        EngineState::CombatStart(_)
-        | EngineState::CombatProcessing
-        | EngineState::CombatPlayerTurn => "combat".to_string(),
-        EngineState::PendingChoice(_) => "combat_pending_choice".to_string(),
-        EngineState::TreasureRoom(_) => "treasure".to_string(),
-        EngineState::GameOver(_) => "terminal".to_string(),
+            .map(|event| BoundarySite::Event(event.id))
+            .unwrap_or(BoundarySite::Unknown),
+        EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. } => BoundarySite::Reward,
+        EngineState::Shop(_) => BoundarySite::Shop,
+        EngineState::MapNavigation | EngineState::MapOverlay { .. } => BoundarySite::Route,
+        EngineState::Campfire => BoundarySite::Campfire,
+        EngineState::BossRelicSelect(_) => BoundarySite::BossRelic,
+        EngineState::RunPendingChoice(_) => BoundarySite::RunChoice,
+        EngineState::TreasureRoom(_) => BoundarySite::Treasure,
+        EngineState::GameOver(_) => BoundarySite::Terminal,
+        _ => BoundarySite::Unknown,
     }
 }
 
@@ -400,13 +416,37 @@ fn status_boundary(status: &BranchStatus) -> &str {
 
 fn status_owner(status: &BranchStatus) -> String {
     match status {
-        BranchStatus::Running { owner, .. } => format!("{owner:?}"),
-        BranchStatus::AutomationGap { owner_key, .. } => owner_key.clone(),
+        BranchStatus::Running { owner, .. } => owner_label(*owner),
+        BranchStatus::AutomationGap { site, .. } => site_label(*site),
         BranchStatus::CombatGap { .. } => "combat_search".to_string(),
         BranchStatus::BudgetGap { .. } => "automation_budget".to_string(),
         BranchStatus::Terminal(_) => "terminal".to_string(),
         BranchStatus::ApplyFailed(_) => "candidate_apply".to_string(),
         BranchStatus::AdvanceFailed(_) => "automation".to_string(),
+    }
+}
+
+fn owner_label(owner: Owner) -> String {
+    match owner {
+        Owner::NeowStart => "NeowStart".to_string(),
+        Owner::CardReward => "CardReward".to_string(),
+        Owner::Event(event_id) => format!("Event({event_id:?})"),
+        Owner::ShopTiny => "ShopTiny".to_string(),
+    }
+}
+
+fn site_label(site: BoundarySite) -> String {
+    match site {
+        BoundarySite::Event(event_id) => format!("Event({event_id:?})"),
+        BoundarySite::Reward => "Reward".to_string(),
+        BoundarySite::Shop => "Shop".to_string(),
+        BoundarySite::Route => "Route".to_string(),
+        BoundarySite::Campfire => "Campfire".to_string(),
+        BoundarySite::BossRelic => "BossRelic".to_string(),
+        BoundarySite::RunChoice => "RunChoice".to_string(),
+        BoundarySite::Treasure => "Treasure".to_string(),
+        BoundarySite::Terminal => "Terminal".to_string(),
+        BoundarySite::Unknown => "Unknown".to_string(),
     }
 }
 
@@ -482,7 +522,7 @@ fn parse_args() -> Result<Args, String> {
         if matches!(key, "--help" | "-h") {
             println!("branch_tiny --seed N --generations N --max-branches N");
             println!(
-                "  owner-audit runner; branching owners: neow_start, card_reward; policy owners: shop, event:Ssssserpent"
+                "  owner-audit runner; branching owners: NeowStart, CardReward; policy owners: ShopTiny, marked Event options"
             );
             std::process::exit(0);
         }

@@ -2,6 +2,7 @@ pub mod cleric;
 pub mod golden_idol;
 pub mod golden_shrine;
 pub mod living_wall;
+pub mod owner_policy;
 pub mod vampires;
 
 pub(crate) fn obtain_event_card(

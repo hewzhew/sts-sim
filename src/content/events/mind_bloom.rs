@@ -36,6 +36,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::StartCombat,
                         repeatable: false,
                         terminal: false,
+                        ..Default::default()
                     },
                 ),
                 EventOption::new(
@@ -53,6 +54,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
+                        ..Default::default()
                     },
                 ),
                 if run_state.floor_num % 50 <= 40 {
@@ -71,6 +73,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                             transition: EventOptionTransition::AdvanceScreen,
                             repeatable: false,
                             terminal: false,
+                            ..Default::default()
                         },
                     )
                 } else {
@@ -89,6 +92,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                             transition: EventOptionTransition::AdvanceScreen,
                             repeatable: false,
                             terminal: false,
+                            ..Default::default()
                         },
                     )
                 },
@@ -103,6 +107,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                 transition: EventOptionTransition::Complete,
                 repeatable: false,
                 terminal: true,
+                ..Default::default()
             },
         )],
     }
