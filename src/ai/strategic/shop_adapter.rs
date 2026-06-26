@@ -10,8 +10,8 @@ use crate::ai::acquisition_saturation_v1::{
     apply_acquisition_saturation_to_delta_v1, evaluate_acquisition_saturation_v1,
     AcquisitionSaturationInputV1,
 };
-use crate::ai::card_component_marginal_value_v1::{
-    evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
+use crate::ai::card_component_signal_v1::{
+    evaluate_card_component_signals_v1, CardComponentSignalContextV1,
 };
 use crate::ai::card_reward_policy_v1::{
     card_facts, card_reward_semantic_profile_v1, CardRewardSemanticRoleV1,
@@ -438,7 +438,7 @@ fn add_shop_card_component_deltas(
         return;
     };
     let profile = card_reward_semantic_profile_v1(&RewardCard::new(card, 0));
-    let report = evaluate_card_component_marginal_value_v1(
+    let report = evaluate_card_component_signals_v1(
         &component_context_from_shop_context(context, candidate.same_card_count),
         &profile,
     );
@@ -513,20 +513,8 @@ fn add_shop_card_acquisition_saturation_deltas(
 fn component_context_from_shop_context(
     context: &ShopDecisionContextV1,
     same_card_count: usize,
-) -> CardComponentMarginalContextV1 {
-    let deck = &context.strategy.v1.deck;
-    CardComponentMarginalContextV1 {
-        act: context.need.act,
-        floor: context.need.floor,
-        boss: context.need.boss,
-        hp: context.need.hp,
-        max_hp: context.need.max_hp,
-        deck_size: deck.deck_size,
-        powers: deck.powers as usize,
-        draw_sources: deck.draw_sources as usize,
-        exhaust_generators: deck.exhaust_generators as usize,
-        frontload_jobs: deck.attacks as usize,
-        block_jobs: deck.skills as usize,
+) -> CardComponentSignalContextV1 {
+    CardComponentSignalContextV1 {
         same_card_count,
         formation_needs: context.strategy.formation_summary().needs,
         startup: context.startup.clone(),

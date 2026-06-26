@@ -10,8 +10,8 @@ use crate::ai::acquisition_saturation_v1::{
     apply_acquisition_saturation_to_delta_v1, evaluate_acquisition_saturation_v1,
     AcquisitionSaturationInputV1,
 };
-use crate::ai::card_component_marginal_value_v1::{
-    evaluate_card_component_marginal_value_v1, CardComponentMarginalContextV1,
+use crate::ai::card_component_signal_v1::{
+    evaluate_card_component_signals_v1, CardComponentSignalContextV1,
 };
 use crate::ai::card_reward_policy_v1::{
     card_reward_semantic_profile_v1, CardRewardCandidateEvidenceV1, CardRewardDecisionContextV1,
@@ -127,7 +127,7 @@ fn candidate_delta_from_card_reward(
     };
     let profile =
         card_reward_semantic_profile_v1(&RewardCard::new(candidate.card, candidate.facts.upgrades));
-    let component_report = evaluate_card_component_marginal_value_v1(
+    let component_report = evaluate_card_component_signals_v1(
         &component_context_from_card_reward_context(context, candidate.same_card_count),
         &profile,
     );
@@ -433,7 +433,7 @@ fn add_candidate_boss_pressure_deltas(
     const AUTOMATON_ORB_CONTROL_SIGNAL: f32 = 0.40;
     const COLLECTOR_MINION_CONTROL_SIGNAL: f32 = 0.55;
 
-    let boss = context.run.boss.as_deref().and_then(parse_boss);
+    let boss = context.run.boss.as_deref().and_then(parse_card_reward_boss);
     if boss == Some(EncounterId::Collector)
         && profile_has_role(profile, CardRewardSemanticRoleV1::AoeDamage)
     {
@@ -593,26 +593,15 @@ fn profile_has_any_role(
 fn component_context_from_card_reward_context(
     context: &CardRewardDecisionContextV1,
     same_card_count: usize,
-) -> CardComponentMarginalContextV1 {
-    CardComponentMarginalContextV1 {
-        act: context.run.act,
-        floor: context.run.floor,
-        boss: context.run.boss.as_deref().and_then(parse_boss),
-        hp: context.run.hp,
-        max_hp: context.run.max_hp,
-        deck_size: context.deck.deck_size,
-        powers: context.deck.powers as usize,
-        draw_sources: context.deck.draw_cards as usize,
-        exhaust_generators: context.deck.exhaust_generators as usize,
-        frontload_jobs: context.deck.attacks as usize,
-        block_jobs: context.deck.skills as usize,
+) -> CardComponentSignalContextV1 {
+    CardComponentSignalContextV1 {
         same_card_count,
         formation_needs: context.strategy.formation_summary().needs,
         startup: context.startup.clone(),
     }
 }
 
-fn parse_boss(value: &str) -> Option<EncounterId> {
+fn parse_card_reward_boss(value: &str) -> Option<EncounterId> {
     match value {
         "AwakenedOne" => Some(EncounterId::AwakenedOne),
         "Automaton" => Some(EncounterId::Automaton),

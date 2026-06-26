@@ -5,7 +5,6 @@ use crate::ai::deck_startup_profile_v1::{
 };
 use crate::ai::noncombat_strategy_v1::StrategyDeckFormationNeedV1;
 use crate::content::cards::CardId;
-use crate::content::monsters::factory::EncounterId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CardComponentRoleV1 {
@@ -17,69 +16,31 @@ pub enum CardComponentRoleV1 {
     Liability,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub enum CardComponentMarginalVerdictV1 {
-    Reject,
-    SkipPreferred,
-    Speculative,
-    ContextTake,
-    StrongTake,
-    MustTake,
-}
-
 #[derive(Clone, Debug, PartialEq)]
-pub struct CardComponentMarginalContextV1 {
-    pub act: u8,
-    pub floor: i32,
-    pub boss: Option<EncounterId>,
-    pub hp: i32,
-    pub max_hp: i32,
-    pub deck_size: usize,
-    pub powers: usize,
-    pub draw_sources: usize,
-    pub exhaust_generators: usize,
-    pub frontload_jobs: usize,
-    pub block_jobs: usize,
+pub struct CardComponentSignalContextV1 {
     pub same_card_count: usize,
     pub formation_needs: Vec<StrategyDeckFormationNeedV1>,
     pub startup: DeckStartupProfileV1,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CardComponentMarginalReportV1 {
+pub struct CardComponentSignalReportV1 {
     pub card: CardId,
     pub roles: Vec<CardComponentRoleV1>,
-    pub verdict: CardComponentMarginalVerdictV1,
     pub positive_components: Vec<&'static str>,
     pub debts: Vec<&'static str>,
-    pub boss_taxes: Vec<&'static str>,
     pub notes: Vec<&'static str>,
 }
 
-impl CardComponentMarginalReportV1 {
-    pub fn has_role(&self, role: CardComponentRoleV1) -> bool {
-        self.roles.contains(&role)
-    }
-
-    pub fn is_negative(&self) -> bool {
-        matches!(
-            self.verdict,
-            CardComponentMarginalVerdictV1::Reject | CardComponentMarginalVerdictV1::SkipPreferred
-        )
-    }
-}
-
-pub fn evaluate_card_component_marginal_value_v1(
-    context: &CardComponentMarginalContextV1,
+pub fn evaluate_card_component_signals_v1(
+    context: &CardComponentSignalContextV1,
     profile: &CardRewardSemanticProfileV1,
-) -> CardComponentMarginalReportV1 {
-    let mut report = CardComponentMarginalReportV1 {
+) -> CardComponentSignalReportV1 {
+    let mut report = CardComponentSignalReportV1 {
         card: profile.card,
         roles: component_roles(profile),
-        verdict: CardComponentMarginalVerdictV1::Speculative,
         positive_components: Vec::new(),
         debts: Vec::new(),
-        boss_taxes: Vec::new(),
         notes: Vec::new(),
     };
 
@@ -90,9 +51,9 @@ pub fn evaluate_card_component_marginal_value_v1(
 }
 
 fn add_generic_components(
-    context: &CardComponentMarginalContextV1,
+    context: &CardComponentSignalContextV1,
     profile: &CardRewardSemanticProfileV1,
-    report: &mut CardComponentMarginalReportV1,
+    report: &mut CardComponentSignalReportV1,
 ) {
     if fills_current_need(context, profile) {
         push_str(
@@ -143,7 +104,7 @@ fn add_generic_components(
 
 fn add_unresolved_package_payoff_debts(
     profile: &CardRewardSemanticProfileV1,
-    report: &mut CardComponentMarginalReportV1,
+    report: &mut CardComponentSignalReportV1,
 ) {
     if !profile
         .roles
@@ -175,9 +136,9 @@ fn package_payoff_support_component(component: &str) -> bool {
 }
 
 fn add_card_specific_components(
-    context: &CardComponentMarginalContextV1,
+    context: &CardComponentSignalContextV1,
     card: CardId,
-    report: &mut CardComponentMarginalReportV1,
+    report: &mut CardComponentSignalReportV1,
 ) {
     match card {
         CardId::Offering | CardId::SeeingRed | CardId::Bloodletting
@@ -323,7 +284,7 @@ fn component_roles(profile: &CardRewardSemanticProfileV1) -> Vec<CardComponentRo
 }
 
 fn fills_current_need(
-    context: &CardComponentMarginalContextV1,
+    context: &CardComponentSignalContextV1,
     profile: &CardRewardSemanticProfileV1,
 ) -> bool {
     context.formation_needs.iter().any(|need| match need {
@@ -361,7 +322,7 @@ fn fills_current_need(
 }
 
 fn effective_draw_energy_access_component(
-    context: &CardComponentMarginalContextV1,
+    context: &CardComponentSignalContextV1,
     profile: &CardRewardSemanticProfileV1,
 ) -> bool {
     if startup_energy_candidate_discounted_by_snecko_v1(&context.startup, profile.card) {
@@ -377,7 +338,7 @@ fn effective_draw_energy_access_component(
 }
 
 fn effective_exhaust_access_component(
-    context: &CardComponentMarginalContextV1,
+    context: &CardComponentSignalContextV1,
     profile: &CardRewardSemanticProfileV1,
 ) -> bool {
     if !profile
@@ -409,19 +370,8 @@ mod tests {
     use crate::ai::card_reward_policy_v1::card_reward_semantic_profile_v1;
     use crate::state::rewards::RewardCard;
 
-    fn context() -> CardComponentMarginalContextV1 {
-        CardComponentMarginalContextV1 {
-            act: 3,
-            floor: 42,
-            boss: Some(EncounterId::AwakenedOne),
-            hp: 80,
-            max_hp: 100,
-            deck_size: 40,
-            powers: 4,
-            draw_sources: 2,
-            exhaust_generators: 1,
-            frontload_jobs: 7,
-            block_jobs: 7,
+    fn context() -> CardComponentSignalContextV1 {
+        CardComponentSignalContextV1 {
             same_card_count: 0,
             formation_needs: vec![StrategyDeckFormationNeedV1::Consistency],
             startup: DeckStartupProfileV1::default(),
@@ -430,12 +380,11 @@ mod tests {
 
     #[test]
     fn disarm_emits_generic_mitigation_signal() {
-        let report = evaluate_card_component_marginal_value_v1(
+        let report = evaluate_card_component_signals_v1(
             &context(),
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Disarm, 0)),
         );
 
-        assert_eq!(report.verdict, CardComponentMarginalVerdictV1::Speculative);
         assert!(report
             .positive_components
             .contains(&"mitigates_enemy_damage"));
@@ -443,7 +392,7 @@ mod tests {
 
     #[test]
     fn rupture_without_self_damage_is_skip_preferred_not_package_support() {
-        let report = evaluate_card_component_marginal_value_v1(
+        let report = evaluate_card_component_signals_v1(
             &context(),
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Rupture, 0)),
         );
@@ -455,7 +404,7 @@ mod tests {
     fn strength_payoff_distinguishes_temporary_and_convertible_strength() {
         let mut burst_only = context();
         burst_only.startup.temporary_strength_burst_count = 1;
-        let burst_report = evaluate_card_component_marginal_value_v1(
+        let burst_report = evaluate_card_component_signals_v1(
             &burst_only,
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::HeavyBlade, 0)),
         );
@@ -474,7 +423,7 @@ mod tests {
         convertible.startup.temporary_strength_burst_count = 1;
         convertible.startup.strength_converter_count = 1;
         convertible.startup.convertible_strength_source_count = 1;
-        let convertible_report = evaluate_card_component_marginal_value_v1(
+        let convertible_report = evaluate_card_component_signals_v1(
             &convertible,
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::HeavyBlade, 0)),
         );
@@ -492,7 +441,7 @@ mod tests {
         let mut context = context();
         context.same_card_count = 1;
 
-        let report = evaluate_card_component_marginal_value_v1(
+        let report = evaluate_card_component_signals_v1(
             &context,
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::BattleTrance, 0)),
         );
@@ -513,7 +462,7 @@ mod tests {
         context.startup.snecko_random_cost_debt = 1;
         context.startup.has_snecko_offering_reliability_debt = true;
 
-        let report = evaluate_card_component_marginal_value_v1(
+        let report = evaluate_card_component_signals_v1(
             &context,
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Offering, 0)),
         );
@@ -532,7 +481,7 @@ mod tests {
         context.startup.exhaust_payoff_count = 1;
         context.startup.exhaust_engine_count = 1;
 
-        let report = evaluate_card_component_marginal_value_v1(
+        let report = evaluate_card_component_signals_v1(
             &context,
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::SeverSoul, 1)),
         );
@@ -548,7 +497,7 @@ mod tests {
 
     #[test]
     fn exhaust_payoff_without_generator_emits_structural_debt() {
-        let report = evaluate_card_component_marginal_value_v1(
+        let report = evaluate_card_component_signals_v1(
             &context(),
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::DarkEmbrace, 0)),
         );
@@ -562,7 +511,7 @@ mod tests {
         let mut context = context();
         context.startup.exhaust_engine_count = 1;
 
-        let report = evaluate_card_component_marginal_value_v1(
+        let report = evaluate_card_component_signals_v1(
             &context,
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::DarkEmbrace, 0)),
         );
@@ -577,12 +526,11 @@ mod tests {
     fn corruption_with_fnp_emits_engine_signal_without_boss_tax_verdict() {
         let mut context = context();
         context.startup.feel_no_pain_count = 1;
-        let report = evaluate_card_component_marginal_value_v1(
+        let report = evaluate_card_component_signals_v1(
             &context,
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Corruption, 0)),
         );
 
-        assert_eq!(report.verdict, CardComponentMarginalVerdictV1::Speculative);
         assert!(report.positive_components.contains(&"unlocks_fnp_engine"));
         assert!(report.notes.is_empty());
     }
@@ -594,7 +542,7 @@ mod tests {
         context.startup.exhaust_payoff_count = 0;
         context.startup.has_corruption_duplicate_without_payoff = true;
 
-        let report = evaluate_card_component_marginal_value_v1(
+        let report = evaluate_card_component_signals_v1(
             &context,
             &card_reward_semantic_profile_v1(&RewardCard::new(CardId::Corruption, 0)),
         );

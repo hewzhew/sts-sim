@@ -1,5 +1,5 @@
 use super::{CandidateAction, PressureKind, StrategicDebt};
-use crate::ai::card_component_marginal_value_v1::CardComponentMarginalReportV1;
+use crate::ai::card_component_signal_v1::CardComponentSignalReportV1;
 use crate::ai::deck_startup_profile_v1::{
     startup_snecko_cost_conversion_candidate_v1, DeckStartupProfileV1,
 };
@@ -155,7 +155,7 @@ impl CandidateDelta {
 
     pub fn from_component_report(
         action: CandidateAction,
-        report: &CardComponentMarginalReportV1,
+        report: &CardComponentSignalReportV1,
     ) -> Self {
         let mut delta = Self::empty(action);
         delta.role = component_role(report);
@@ -174,7 +174,6 @@ impl CandidateDelta {
         delta.negative = report
             .debts
             .iter()
-            .chain(report.boss_taxes.iter())
             .map(|reason| LedgerDelta {
                 kind: negative_component_reason_pressure(reason),
                 amount: 0.35,
@@ -347,8 +346,8 @@ pub fn add_snecko_cost_conversion_delta_v1(
     delta.evidence.push(reason.to_string());
 }
 
-fn component_role(report: &CardComponentMarginalReportV1) -> CandidateRole {
-    use crate::ai::card_component_marginal_value_v1::CardComponentRoleV1;
+fn component_role(report: &CardComponentSignalReportV1) -> CandidateRole {
+    use crate::ai::card_component_signal_v1::CardComponentRoleV1;
     if report.roles.contains(&CardComponentRoleV1::BossAnswer) {
         CandidateRole::BossAnswer
     } else if report.roles.contains(&CardComponentRoleV1::Enabler) {
