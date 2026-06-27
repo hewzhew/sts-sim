@@ -1,8 +1,12 @@
 use std::collections::VecDeque;
 
+use sts_simulator::ai::analysis::card_semantics::{
+    CardBurden, CombatEvent, InstalledRule, Mechanic, PayoffRequirement,
+};
+use sts_simulator::ai::strategy::package_transition::PackageKind;
 use sts_simulator::ai::strategy::reward_admission::{
-    assess_reward_admission, render_reward_admission_compact, reward_admission_order_key_v1,
-    skip_reward_admission, RewardAdmission, RewardAdmissionOrderKeyV1,
+    assess_reward_admission, reward_admission_order_key_v1, skip_reward_admission, RewardAdmission,
+    RewardAdmissionClass, RewardAdmissionOrderKeyV1, RewardAdmissionReason,
 };
 use sts_simulator::eval::run_control::DecisionCandidateKey;
 use sts_simulator::eval::run_control::{
@@ -16,7 +20,7 @@ use sts_simulator::state::events::EventId;
 
 #[derive(Clone)]
 struct Branch {
-    id: String,
+    id: usize,
     path: Vec<BranchPathStep>,
     session: RunControlSession,
     status: BranchStatus,
@@ -116,37 +120,46 @@ fn run() -> Result<(), String> {
     });
     let status = advance_to_owner_or_gap(&mut session, args);
     let mut frontier = VecDeque::from([Branch {
-        id: "root".to_string(),
+        id: 0,
         path: Vec::new(),
         session,
         status,
     }]);
+    let mut next_branch_id = 1usize;
 
     println!(
-        "branch_tiny seed={} ascension={} generations={} max_branches={} mode=owner_audit",
+        "branch_tiny seed={} ascension={} generations={} max_branches={} mode=owner_audit render=timeline",
         args.seed, args.ascension, args.generations, args.max_branches
     );
+    println!(
+        "branch cap: {}; '>' marks expanded choices",
+        args.max_branches
+    );
     for generation in 0..=args.generations {
-        println!("generation {generation} branches={}", frontier.len());
         let mut next = VecDeque::new();
-        let mut truncated = false;
         while let Some(branch) = frontier.pop_front() {
-            print_branch(&branch);
-            if generation == args.generations
-                || !matches!(branch.status, BranchStatus::Running { .. })
-            {
+            let expandable = generation < args.generations
+                && matches!(branch.status, BranchStatus::Running { .. });
+            let choices = if expandable {
+                branch_owner_choices(&branch)
+            } else {
+                Vec::new()
+            };
+            let expanded = choices
+                .len()
+                .min(args.max_branches.saturating_sub(next.len()));
+            print_branch_timeline(generation, &branch, &choices, expanded);
+            if !expandable {
                 continue;
             }
-            for child in expand_registered_owner(&branch, args) {
-                if next.len() >= args.max_branches {
-                    truncated = true;
-                    break;
-                }
+            for child in expand_registered_owner(
+                &branch,
+                args,
+                choices.into_iter().take(expanded),
+                &mut next_branch_id,
+            ) {
                 next.push_back(child);
             }
-        }
-        if truncated {
-            println!("  generation_truncated cap={}", args.max_branches);
         }
         if next.is_empty() {
             break;
@@ -156,15 +169,23 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-fn expand_registered_owner(branch: &Branch, args: Args) -> Vec<Branch> {
+fn branch_owner_choices(branch: &Branch) -> Vec<OwnerChoice> {
     let owner = match &branch.status {
         BranchStatus::Running { owner, .. } => *owner,
         _ => return Vec::new(),
     };
     let surface = build_decision_surface(&branch.session);
-    let candidates = owner_choices(&branch.session, owner, &surface);
+    owner_choices(&branch.session, owner, &surface)
+}
+
+fn expand_registered_owner(
+    branch: &Branch,
+    args: Args,
+    candidates: impl IntoIterator<Item = OwnerChoice>,
+    next_branch_id: &mut usize,
+) -> Vec<Branch> {
     let mut children = Vec::new();
-    for (index, choice) in candidates.into_iter().enumerate() {
+    for choice in candidates {
         let mut session = branch.session.clone();
         let status = match session.apply_command(choice.action.clone()) {
             Ok(_) => advance_to_owner_or_gap(&mut session, args),
@@ -178,7 +199,11 @@ fn expand_registered_owner(branch: &Branch, args: Args) -> Vec<Branch> {
             admission: choice.admission,
         });
         children.push(Branch {
-            id: format!("{}.{}", branch.id, index),
+            id: {
+                let id = *next_branch_id;
+                *next_branch_id += 1;
+                id
+            },
             path,
             session,
             status,
@@ -383,7 +408,7 @@ fn require_visible_input(
         surface.view.header.title,
         executable_choices(&surface)
             .iter()
-            .map(render_choice)
+            .map(render_timeline_choice)
             .collect::<Vec<_>>()
             .join(" | ")
     ))
@@ -480,34 +505,46 @@ fn boundary_site(session: &RunControlSession) -> BoundarySite {
     }
 }
 
-fn print_branch(branch: &Branch) {
+fn print_branch_timeline(
+    generation: usize,
+    branch: &Branch,
+    choices: &[OwnerChoice],
+    expanded: usize,
+) {
     println!(
-        "  {} A{}F{} hp={}/{} deck={} status={} boundary=\"{}\" owner=\"{}\" path=\"{}\"",
+        "\n[{generation:02}] b{:04} A{}F{} {} owner={} hp={}/{} deck={} status={}",
         branch.id,
         branch.session.run_state.act_num,
         branch.session.run_state.floor_num,
+        status_boundary(&branch.status),
+        status_owner(&branch.status),
         branch.session.run_state.current_hp,
         branch.session.run_state.max_hp,
         branch.session.run_state.master_deck.len(),
         status_label(&branch.status),
-        status_boundary(&branch.status),
-        status_owner(&branch.status),
-        if branch.path.is_empty() {
-            "-".to_string()
-        } else {
-            render_path(&branch.path)
-        }
     );
+    if let Some(previous) = branch.path.last() {
+        println!("  arrived: {}", render_timeline_step(previous));
+    }
     print_reward_gap_detail(&branch.session, &branch.status);
-    if let BranchStatus::Running { owner, .. } = &branch.status {
-        let surface = build_decision_surface(&branch.session);
-        let candidates = owner_choices(&branch.session, *owner, &surface)
-            .into_iter()
-            .map(|choice| render_choice(&choice))
-            .collect::<Vec<_>>();
-        if !candidates.is_empty() {
-            println!("    owner_candidates: {}", candidates.join(" | "));
-        }
+    if choices.is_empty() {
+        return;
+    }
+    println!("  choices:");
+    for (rank, choice) in choices.iter().enumerate() {
+        let marker = if rank < expanded { ">" } else { " " };
+        println!(
+            "  {marker} {:>2}. {}",
+            rank + 1,
+            render_timeline_choice(choice)
+        );
+    }
+    if expanded < choices.len() {
+        println!(
+            "  expansion: expanded {} hidden {}",
+            expanded,
+            choices.len() - expanded
+        );
     }
 }
 
@@ -524,7 +561,7 @@ fn print_reward_gap_detail(session: &RunControlSession, status: &BranchStatus) {
     let surface = build_decision_surface(session);
     let candidates = executable_choices(&surface)
         .into_iter()
-        .map(|choice| render_choice(&choice))
+        .map(|choice| render_timeline_choice(&choice))
         .collect::<Vec<_>>();
     if !candidates.is_empty() {
         println!("    reward_gap_candidates: {}", candidates.join(" | "));
@@ -592,75 +629,157 @@ fn site_label(site: BoundarySite) -> String {
     }
 }
 
-fn render_path(path: &[BranchPathStep]) -> String {
-    path.iter()
-        .map(render_path_step)
-        .collect::<Vec<_>>()
-        .join(" -> ")
-}
-
-fn render_path_step(step: &BranchPathStep) -> String {
+fn render_timeline_step(step: &BranchPathStep) -> String {
     let base = match &step.key {
-        Some(key) => render_candidate_key(key),
+        Some(key) => render_choice_key_timeline(key),
         None => format!("{}:{}", command_hint(&step.action), step.label),
     };
-    append_admission(base, step.admission.as_ref())
-}
-
-fn render_choice(choice: &OwnerChoice) -> String {
-    let base = match &choice.key {
-        Some(key) => render_candidate_key(key),
-        None => format!("{}:{}", command_hint(&choice.action), choice.label),
-    };
-    append_admission(base, choice.admission.as_ref())
-}
-
-fn append_admission(base: String, admission: Option<&RewardAdmission>) -> String {
-    match admission {
-        Some(admission) => format!("{base} [{}]", render_reward_admission_compact(admission)),
+    match &step.admission {
+        Some(admission) => format!("{base}  {}", render_admission_timeline(admission)),
         None => base,
     }
 }
 
-fn render_candidate_key(key: &DecisionCandidateKey) -> String {
+fn render_timeline_choice(choice: &OwnerChoice) -> String {
+    let base = match &choice.key {
+        Some(key) => render_choice_key_timeline(key),
+        None => format!("{}:{}", command_hint(&choice.action), choice.label),
+    };
+    match &choice.admission {
+        Some(admission) => format!("{:<34} {}", base, render_admission_timeline(admission)),
+        None => base,
+    }
+}
+
+fn render_choice_key_timeline(key: &DecisionCandidateKey) -> String {
     match key {
         DecisionCandidateKey::EventOption {
-            event_id,
-            screen,
             option_index,
             action,
-        } => format!("event:{event_id:?}/screen:{screen}/option:{option_index}/{action:?}"),
+            ..
+        } => format!("option {option_index} {action:?}"),
         DecisionCandidateKey::CardRewardPick {
-            reward_item_index,
             option_index,
             card,
             upgrades,
-        } => format!("reward:{reward_item_index}:pick:{option_index}:{card:?}+{upgrades}"),
+            ..
+        } => format!("slot {option_index} {card:?}+{upgrades}"),
         DecisionCandidateKey::CardRewardOpen { reward_item_index } => {
-            format!("reward:{reward_item_index}:open")
+            format!("open reward {reward_item_index}")
         }
-        DecisionCandidateKey::CardRewardSingingBowl {
-            reward_item_index,
-            option_index,
-        } => {
-            format!("reward:{reward_item_index}:bowl:{option_index}")
+        DecisionCandidateKey::CardRewardSingingBowl { option_index, .. } => {
+            format!("bowl slot {option_index}")
         }
-        DecisionCandidateKey::CardRewardSkip { reward_item_index } => {
-            format!("reward:{reward_item_index}:skip")
-        }
+        DecisionCandidateKey::CardRewardSkip { .. } => "skip".to_string(),
         DecisionCandidateKey::ShopPurgeCard {
             deck_index,
             card,
             upgrades,
-        } => format!("shop:purge:{deck_index}:{card:?}+{upgrades}"),
-        DecisionCandidateKey::SelectionSubmit {
-            scope,
-            reason,
-            min_choices,
-            max_choices,
-            item_count,
-        } => format!("select:{scope:?}:{reason:?}:{min_choices}-{max_choices}/{item_count}"),
-        DecisionCandidateKey::ShopLeave => "shop:leave".to_string(),
+        } => format!("purge {deck_index} {card:?}+{upgrades}"),
+        DecisionCandidateKey::SelectionSubmit { reason, .. } => format!("select {reason:?}"),
+        DecisionCandidateKey::ShopLeave => "leave shop".to_string(),
+    }
+}
+
+fn render_admission_timeline(admission: &RewardAdmission) -> String {
+    let tags = admission
+        .reasons
+        .iter()
+        .take(4)
+        .map(reason_tag)
+        .collect::<Vec<_>>()
+        .join(" ");
+    if tags.is_empty() {
+        admission_class_label(admission.class).to_string()
+    } else {
+        format!("{} | {}", admission_class_label(admission.class), tags)
+    }
+}
+
+fn admission_class_label(class: RewardAdmissionClass) -> &'static str {
+    match class {
+        RewardAdmissionClass::ClosesRequirement => "Closes",
+        RewardAdmissionClass::BuildsSupportedPackage => "Supported",
+        RewardAdmissionClass::EngineSeed => "Seed",
+        RewardAdmissionClass::ImmediateWork => "Immediate",
+        RewardAdmissionClass::BurdenedImmediateWork => "Burdened",
+        RewardAdmissionClass::OpensUnsupportedPayoff => "Unsupported",
+        RewardAdmissionClass::EmptyOrDeferred => "Empty",
+        RewardAdmissionClass::Skip => "Skip",
+    }
+}
+
+fn reason_tag(reason: &RewardAdmissionReason) -> String {
+    match reason {
+        RewardAdmissionReason::Closes(req) => format!("closes:{}", requirement_tag(*req)),
+        RewardAdmissionReason::Supports(package) => format!("pkg:{}", package_tag(*package)),
+        RewardAdmissionReason::Provides(mechanic) => format!("+{}", mechanic_tag(*mechanic)),
+        RewardAdmissionReason::FrontloadDamage => "+damage".to_string(),
+        RewardAdmissionReason::DamageUses(mechanic) => format!("uses:{}", mechanic_tag(*mechanic)),
+        RewardAdmissionReason::Emits(event) => format!("emits:{}", event_tag(*event)),
+        RewardAdmissionReason::PlaysTopCardAndExhaust => "top-card-exhaust".to_string(),
+        RewardAdmissionReason::Installs(rule) => format!("installs:{}", rule_tag(*rule)),
+        RewardAdmissionReason::Opens(req) => format!("wants:{}", requirement_tag(*req)),
+        RewardAdmissionReason::Burden(burden) => format!("risk:{}", burden_tag(*burden)),
+        RewardAdmissionReason::Empty => "no-model".to_string(),
+        RewardAdmissionReason::Skip => "skip-boundary".to_string(),
+    }
+}
+
+fn mechanic_tag(mechanic: Mechanic) -> &'static str {
+    match mechanic {
+        Mechanic::Strength => "strength",
+        Mechanic::TemporaryStrength => "temp-strength",
+        Mechanic::StrengthMultiplier => "strength-mult",
+        Mechanic::CardDraw => "draw",
+        Mechanic::Energy => "energy",
+        Mechanic::Block => "block",
+        Mechanic::Weak => "weak",
+        Mechanic::Vulnerable => "vuln",
+        Mechanic::EnemyStrengthDown => "str-down",
+        Mechanic::TopdeckControl => "topdeck",
+    }
+}
+
+fn event_tag(event: CombatEvent) -> &'static str {
+    match event {
+        CombatEvent::CardExhausted => "exhaust",
+        CombatEvent::CardSelfDamage => "self-damage",
+        CombatEvent::TurnStart => "turn-start",
+        CombatEvent::TurnEnd => "turn-end",
+    }
+}
+
+fn requirement_tag(requirement: PayoffRequirement) -> String {
+    match requirement {
+        PayoffRequirement::WantsMechanic(mechanic) => mechanic_tag(mechanic).to_string(),
+        PayoffRequirement::WantsEventStream(event) => event_tag(event).to_string(),
+    }
+}
+
+fn package_tag(package: PackageKind) -> &'static str {
+    match package {
+        PackageKind::Strength => "strength",
+        PackageKind::Exhaust => "exhaust",
+        PackageKind::SelfDamage => "self-damage",
+        PackageKind::Block => "block",
+    }
+}
+
+fn burden_tag(burden: CardBurden) -> &'static str {
+    match burden {
+        CardBurden::PowerSetup => "setup",
+        CardBurden::HpCost => "hp-cost",
+        CardBurden::DrawLockout => "draw-lock",
+        CardBurden::AddsCombatDeckClutter => "deck-clutter",
+        CardBurden::RandomExhaust => "random-exhaust",
+        CardBurden::RequiresEnemyAttackIntent => "needs-attack",
+    }
+}
+
+fn rule_tag(rule: InstalledRule) -> &'static str {
+    match rule {
+        InstalledRule::SkillCardsCostZeroAndExhaust => "skills-free-exhaust",
     }
 }
 
