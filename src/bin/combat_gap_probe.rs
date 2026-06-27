@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use clap::Parser;
 use serde::Deserialize;
@@ -21,6 +21,8 @@ struct Args {
     ms: u64,
     #[arg(long)]
     json: bool,
+    #[arg(long)]
+    search_only: bool,
 }
 
 #[derive(Deserialize)]
@@ -34,6 +36,7 @@ struct CombatGapCase {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let probe_started = Instant::now();
     let args = Args::parse();
     let case = load_case(&args.case)?;
     let config = CombatSearchV2Config {
@@ -42,24 +45,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         input_label: Some(format!("combat_gap_case:{}", args.case.display())),
         ..CombatSearchV2Config::default()
     };
+    let search_started = Instant::now();
     let report = run_combat_search_v2(&case.position.engine, &case.position.combat, config.clone());
-    let microscope = explain_combat_search_v2_initial_decision(
-        &case.position.engine,
-        &case.position.combat,
-        config,
-    );
+    let search_wall_ms = search_started.elapsed().as_millis();
+    let microscope_started = Instant::now();
+    let microscope = if args.search_only {
+        None
+    } else {
+        Some(explain_combat_search_v2_initial_decision(
+            &case.position.engine,
+            &case.position.combat,
+            config,
+        ))
+    };
+    let microscope_wall_ms = microscope
+        .as_ref()
+        .map(|_| microscope_started.elapsed().as_millis());
+    let post_search_diagnostics_us = report
+        .performance
+        .shadow_audit_elapsed_us
+        .saturating_add(report.performance.root_turn_plan_diagnostics_elapsed_us);
+    let budgeted_search_core_ms = report
+        .performance
+        .total_elapsed_us
+        .saturating_sub(post_search_diagnostics_us)
+        / 1000;
+    let probe_timing = json!({
+        "budget_wall_time_ms": args.ms,
+        "budgeted_search_core_ms": budgeted_search_core_ms,
+        "post_search_diagnostics_ms": post_search_diagnostics_us / 1000,
+        "search_report_elapsed_ms": report.stats.elapsed_ms,
+        "search_wall_ms": search_wall_ms,
+        "microscope_wall_ms": microscope_wall_ms,
+        "total_wall_ms": probe_started.elapsed().as_millis(),
+    });
     if args.json {
         println!(
             "{}",
             serde_json::to_string_pretty(&json!({
                 "schema": "combat_gap_probe",
                 "case": case_header(&case),
+                "probe_timing": probe_timing,
                 "search": compact_search_report(&report),
                 "initial_decision": microscope,
             }))?
         );
     } else {
-        print_human(&case, &report, &microscope);
+        print_human(&case, &report, microscope.as_ref(), &probe_timing);
     }
     Ok(())
 }
@@ -96,13 +128,17 @@ fn compact_search_report(report: &CombatSearchV2Report) -> serde_json::Value {
             "pruning": report.diagnostics.pruning,
             "frontier": report.diagnostics.frontier,
         },
+        "performance": report.performance,
     })
 }
 
 fn print_human(
     case: &CombatGapCase,
     report: &CombatSearchV2Report,
-    microscope: &sts_simulator::ai::combat_search_v2::CombatSearchV2DecisionMicroscopeReport,
+    microscope: Option<
+        &sts_simulator::ai::combat_search_v2::CombatSearchV2DecisionMicroscopeReport,
+    >,
+    probe_timing: &serde_json::Value,
 ) {
     println!("combat_gap_probe");
     println!("  source: {}", one_line(&case.source));
@@ -129,6 +165,7 @@ fn print_human(
         report.stats.node_budget_hit,
         report.stats.elapsed_ms
     );
+    println!("  timing: {}", one_line(probe_timing));
     if let Some(best) = report.best_complete_trajectory.as_ref() {
         print_trajectory("best_complete", best);
     } else if let Some(best) = report.best_frontier_trajectory.as_ref() {
@@ -147,7 +184,9 @@ fn print_human(
         report.diagnostics.turn_plan.max_plans_in_state,
         report.diagnostics.turn_plan.total_inner_nodes_expanded
     );
-    print_initial_decision(microscope);
+    if let Some(microscope) = microscope {
+        print_initial_decision(microscope);
+    }
 }
 
 fn print_trajectory(label: &str, trajectory: &CombatSearchV2TrajectoryReport) {
