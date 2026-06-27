@@ -340,10 +340,15 @@ pub fn card_definition(card: CardId) -> CardDefinition {
             .burden(DrawLockout)
             .duplicate(DiminishingReturn)
             .duplicate(AccessCopyUseful),
+        Finesse => CardDefinition::new(card).provides(Block).provides(CardDraw),
+        FlashOfSteel => CardDefinition::new(card)
+            .effect(FrontloadDamage)
+            .provides(CardDraw),
         PommelStrike => CardDefinition::new(card)
             .effect(FrontloadDamage)
             .provides(CardDraw),
-        ShrugItOff => CardDefinition::new(card).provides(CardDraw),
+        ShrugItOff => CardDefinition::new(card).provides(Block).provides(CardDraw),
+        Trip => CardDefinition::new(card).provides(Vulnerable),
         Bash | ThunderClap => CardDefinition::new(card)
             .effect(FrontloadDamage)
             .provides(Vulnerable),
@@ -362,9 +367,14 @@ pub fn card_definition(card: CardId) -> CardDefinition {
         Carnage | Rampage | SwiftStrike | TwinStrike => {
             CardDefinition::new(card).effect(FrontloadDamage)
         }
+        Hemokinesis => CardDefinition::new(card)
+            .effect(FrontloadDamage)
+            .effect(EmitEvent(CardSelfDamage))
+            .burden(HpCost),
         BodySlam => CardDefinition::new(card)
             .wants(PayoffRequirement::WantsMechanic(Block))
             .effect(DamageUses(Block)),
+        Entrench => CardDefinition::new(card).wants(PayoffRequirement::WantsMechanic(Block)),
         PowerThrough => CardDefinition::new(card)
             .provides(Block)
             .effect(AddCombatDeckClutter)

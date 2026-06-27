@@ -1,5 +1,9 @@
 use std::collections::VecDeque;
 
+use sts_simulator::ai::strategy::reward_admission::{
+    assess_reward_admission, render_reward_admission_compact, skip_reward_admission,
+    RewardAdmission, RewardAdmissionClass,
+};
 use sts_simulator::eval::run_control::DecisionCandidateKey;
 use sts_simulator::eval::run_control::{
     build_decision_surface, RewardAutomationConfig, RunControlAutoStepOptions,
@@ -23,6 +27,7 @@ struct OwnerChoice {
     key: Option<DecisionCandidateKey>,
     action: RunControlCommand,
     label: String,
+    admission: Option<RewardAdmission>,
 }
 
 #[derive(Clone)]
@@ -30,6 +35,7 @@ struct BranchPathStep {
     key: Option<DecisionCandidateKey>,
     action: RunControlCommand,
     label: String,
+    admission: Option<RewardAdmission>,
 }
 
 #[derive(Clone)]
@@ -156,7 +162,7 @@ fn expand_registered_owner(branch: &Branch, args: Args) -> Vec<Branch> {
         _ => return Vec::new(),
     };
     let surface = build_decision_surface(&branch.session);
-    let candidates = owner_choices(owner, &surface);
+    let candidates = owner_choices(&branch.session, owner, &surface);
     let mut children = Vec::new();
     for (index, choice) in candidates.into_iter().enumerate() {
         let mut session = branch.session.clone();
@@ -169,6 +175,7 @@ fn expand_registered_owner(branch: &Branch, args: Args) -> Vec<Branch> {
             key: choice.key,
             action: choice.action,
             label: choice.label,
+            admission: choice.admission,
         });
         children.push(Branch {
             id: format!("{}.{}", branch.id, index),
@@ -181,16 +188,70 @@ fn expand_registered_owner(branch: &Branch, args: Args) -> Vec<Branch> {
 }
 
 fn owner_choices(
+    session: &RunControlSession,
     owner: Owner,
     surface: &sts_simulator::eval::run_control::DecisionSurface,
 ) -> Vec<OwnerChoice> {
     match owner {
         Owner::NeowStart => executable_choices(surface),
-        Owner::CardReward => executable_choices(surface)
-            .into_iter()
-            .filter(|choice| is_card_reward_choice(choice))
-            .collect(),
+        Owner::CardReward => card_reward_owner_choices(session, surface),
         Owner::Event(_) | Owner::RewardTiny | Owner::ShopTiny => Vec::new(),
+    }
+}
+
+fn card_reward_owner_choices(
+    session: &RunControlSession,
+    surface: &sts_simulator::eval::run_control::DecisionSurface,
+) -> Vec<OwnerChoice> {
+    let deck = session
+        .run_state
+        .master_deck
+        .iter()
+        .map(|card| card.id)
+        .collect::<Vec<_>>();
+    let mut choices = executable_choices(surface)
+        .into_iter()
+        .filter(|choice| is_card_reward_choice(choice))
+        .map(|mut choice| {
+            choice.admission = reward_admission_for_choice(&deck, &choice);
+            choice
+        })
+        .enumerate()
+        .collect::<Vec<_>>();
+    choices.sort_by_key(|(index, choice)| (card_reward_choice_rank(choice), *index));
+    choices.into_iter().map(|(_, choice)| choice).collect()
+}
+
+fn reward_admission_for_choice(
+    deck: &[sts_simulator::content::cards::CardId],
+    choice: &OwnerChoice,
+) -> Option<RewardAdmission> {
+    match choice.key {
+        Some(DecisionCandidateKey::CardRewardPick { card, .. }) => {
+            Some(assess_reward_admission(deck, card))
+        }
+        Some(DecisionCandidateKey::CardRewardSkip { .. }) => Some(skip_reward_admission()),
+        Some(DecisionCandidateKey::CardRewardOpen { .. })
+        | Some(DecisionCandidateKey::CardRewardSingingBowl { .. })
+        | None => None,
+        _ => None,
+    }
+}
+
+fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
+    match &choice.key {
+        Some(DecisionCandidateKey::CardRewardOpen { .. }) => (0, 0),
+        Some(DecisionCandidateKey::CardRewardPick { .. }) => (
+            1,
+            choice
+                .admission
+                .as_ref()
+                .map(|admission| admission.class.rank())
+                .unwrap_or(RewardAdmissionClass::EmptyOrDeferred.rank()),
+        ),
+        Some(DecisionCandidateKey::CardRewardSingingBowl { .. }) => (1, 6),
+        Some(DecisionCandidateKey::CardRewardSkip { .. }) => (1, 7),
+        _ => (2, 0),
     }
 }
 
@@ -429,7 +490,7 @@ fn print_branch(branch: &Branch) {
     print_reward_gap_detail(&branch.session, &branch.status);
     if let BranchStatus::Running { owner, .. } = &branch.status {
         let surface = build_decision_surface(&branch.session);
-        let candidates = owner_choices(*owner, &surface)
+        let candidates = owner_choices(&branch.session, *owner, &surface)
             .into_iter()
             .map(|choice| render_choice(&choice))
             .collect::<Vec<_>>();
@@ -528,16 +589,25 @@ fn render_path(path: &[BranchPathStep]) -> String {
 }
 
 fn render_path_step(step: &BranchPathStep) -> String {
-    match &step.key {
+    let base = match &step.key {
         Some(key) => render_candidate_key(key),
         None => format!("{}:{}", command_hint(&step.action), step.label),
-    }
+    };
+    append_admission(base, step.admission.as_ref())
 }
 
 fn render_choice(choice: &OwnerChoice) -> String {
-    match &choice.key {
+    let base = match &choice.key {
         Some(key) => render_candidate_key(key),
         None => format!("{}:{}", command_hint(&choice.action), choice.label),
+    };
+    append_admission(base, choice.admission.as_ref())
+}
+
+fn append_admission(base: String, admission: Option<&RewardAdmission>) -> String {
+    match admission {
+        Some(admission) => format!("{base} [{}]", render_reward_admission_compact(admission)),
+        None => base,
     }
 }
 
@@ -612,6 +682,7 @@ fn executable_choices(
                 key: candidate.key.clone(),
                 action,
                 label: candidate.label.clone(),
+                admission: None,
             })
         })
         .collect()
