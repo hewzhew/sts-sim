@@ -3,6 +3,8 @@ mod context;
 mod labels;
 mod resolution;
 
+use serde::{Deserialize, Serialize};
+
 use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
@@ -53,7 +55,7 @@ pub struct DecisionCandidate {
     pub resolution: Option<CandidateResolution>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum DecisionCandidateKey {
     EventOption {
         event_id: EventId,

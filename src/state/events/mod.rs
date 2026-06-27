@@ -154,7 +154,7 @@ impl EventOption {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub enum EventActionKind {
     #[default]
     Unknown,

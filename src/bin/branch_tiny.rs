@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::path::PathBuf;
 
 use sts_simulator::eval::run_control::{
     build_decision_surface, RewardAutomationConfig, RunControlAutoAppliedStepV1, RunControlCommand,
@@ -12,12 +13,15 @@ mod owners;
 mod render;
 #[path = "branch_tiny/runner.rs"]
 mod runner;
+#[path = "branch_tiny/trace.rs"]
+mod trace;
 
 use owners::{ChoiceAnnotation, DecisionKey, OwnerChoice};
 
 #[derive(Clone)]
 struct Branch {
     id: usize,
+    parent_id: Option<usize>,
     path: Vec<BranchPathStep>,
     session: RunControlSession,
     status: BranchStatus,
@@ -116,7 +120,11 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let args = parse_args()?;
+    let (args, trace_path) = parse_args()?;
+    let mut trace = trace_path
+        .as_ref()
+        .map(|path| trace::TraceWriter::create(path))
+        .transpose()?;
     let mut session = RunControlSession::new(RunControlConfig {
         seed: args.seed,
         ascension_level: args.ascension,
@@ -130,6 +138,7 @@ fn run() -> Result<(), String> {
     let (status, boss_retry, auto_steps) = runner::advance_to_owner_or_gap(&mut session, args);
     let mut frontier = VecDeque::from([Branch {
         id: 0,
+        parent_id: None,
         path: Vec::new(),
         session,
         status,
@@ -150,6 +159,9 @@ fn run() -> Result<(), String> {
         args.boss_search_nodes,
         args.boss_search_ms
     );
+    if let Some(trace) = trace.as_mut() {
+        trace.record_run(args)?;
+    }
     for generation in 0..=args.generations {
         let mut next = VecDeque::new();
         while let Some(branch) = frontier.pop_front() {
@@ -166,6 +178,9 @@ fn run() -> Result<(), String> {
                 .count()
                 .min(args.max_branches.saturating_sub(next.len()));
             render::print_branch_timeline(generation, &branch, &choices, expanded);
+            if let Some(trace) = trace.as_mut() {
+                trace.record_node(generation, &branch, &choices, expanded)?;
+            }
             if !expandable {
                 continue;
             }
@@ -224,6 +239,7 @@ fn expand_registered_owner(
                 *next_branch_id += 1;
                 id
             },
+            parent_id: Some(branch.id),
             path,
             session,
             status,
@@ -234,7 +250,7 @@ fn expand_registered_owner(
     children
 }
 
-fn parse_args() -> Result<Args, String> {
+fn parse_args() -> Result<(Args, Option<PathBuf>), String> {
     let mut args = Args {
         seed: 1,
         ascension: 0,
@@ -246,12 +262,13 @@ fn parse_args() -> Result<Args, String> {
         boss_search_nodes: 2_000_000,
         boss_search_ms: 15_000,
     };
+    let mut trace_jsonl = None;
     let raw = std::env::args().skip(1).collect::<Vec<_>>();
     let mut index = 0;
     while index < raw.len() {
         let key = raw[index].as_str();
         if matches!(key, "--help" | "-h") {
-            println!("branch_tiny --seed N --generations N --max-branches N");
+            println!("branch_tiny --seed N --generations N --max-branches N [--trace-jsonl PATH]");
             println!(
                 "  owner-audit runner; boss combat gaps retry once with --boss-search-nodes/--boss-search-ms"
             );
@@ -270,6 +287,7 @@ fn parse_args() -> Result<Args, String> {
                 | "--search-ms"
                 | "--boss-search-nodes"
                 | "--boss-search-ms"
+                | "--trace-jsonl"
         ) {
             return Err(format!("unknown argument {key}"));
         }
@@ -286,11 +304,12 @@ fn parse_args() -> Result<Args, String> {
             "--search-ms" => args.search_ms = parse(value, key)?,
             "--boss-search-nodes" => args.boss_search_nodes = parse(value, key)?,
             "--boss-search-ms" => args.boss_search_ms = parse(value, key)?,
+            "--trace-jsonl" => trace_jsonl = Some(PathBuf::from(value)),
             _ => unreachable!("argument key was validated before value parsing"),
         }
         index += 2;
     }
-    Ok(args)
+    Ok((args, trace_jsonl))
 }
 
 fn parse<T: std::str::FromStr>(value: &str, key: &str) -> Result<T, String> {
