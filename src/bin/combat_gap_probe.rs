@@ -6,8 +6,9 @@ use clap::Parser;
 use serde::Deserialize;
 use serde_json::json;
 use sts_simulator::ai::combat_search_v2::{
-    explain_combat_search_v2_initial_decision, run_combat_search_v2, CombatSearchV2Config,
-    CombatSearchV2Report, CombatSearchV2TrajectoryReport,
+    explain_combat_search_v2_initial_decision, run_combat_search_v2,
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config, CombatSearchV2Report,
+    CombatSearchV2RolloutPolicy, CombatSearchV2TrajectoryReport,
 };
 use sts_simulator::sim::combat::CombatPosition;
 
@@ -23,6 +24,18 @@ struct Args {
     json: bool,
     #[arg(long)]
     search_only: bool,
+    #[arg(long)]
+    accept_any_win: bool,
+    #[arg(long)]
+    accept_win_hp_loss: Option<u32>,
+    #[arg(long, value_parser = parse_child_rollout_policy)]
+    child_rollout: Option<CombatSearchV2ChildRolloutPolicy>,
+    #[arg(long, value_parser = parse_rollout_policy)]
+    rollout_policy: Option<CombatSearchV2RolloutPolicy>,
+    #[arg(long)]
+    rollout_actions: Option<usize>,
+    #[arg(long)]
+    rollout_evaluations: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -42,6 +55,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = CombatSearchV2Config {
         max_nodes: args.nodes,
         wall_time: Some(Duration::from_millis(args.ms)),
+        stop_on_win_hp_loss_at_most: accept_win_limit(&args),
+        child_rollout_policy: args
+            .child_rollout
+            .unwrap_or_else(|| CombatSearchV2Config::default().child_rollout_policy),
+        rollout_policy: args
+            .rollout_policy
+            .unwrap_or_else(|| CombatSearchV2Config::default().rollout_policy),
+        rollout_max_actions: args
+            .rollout_actions
+            .unwrap_or_else(|| CombatSearchV2Config::default().rollout_max_actions),
+        rollout_max_evaluations: args
+            .rollout_evaluations
+            .unwrap_or_else(|| CombatSearchV2Config::default().rollout_max_evaluations),
         input_label: Some(format!("combat_gap_case:{}", args.case.display())),
         ..CombatSearchV2Config::default()
     };
@@ -94,6 +120,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print_human(&case, &report, microscope.as_ref(), &probe_timing);
     }
     Ok(())
+}
+
+fn accept_win_limit(args: &Args) -> Option<u32> {
+    if args.accept_any_win {
+        Some(u32::MAX)
+    } else {
+        args.accept_win_hp_loss
+    }
+}
+
+fn parse_child_rollout_policy(value: &str) -> Result<CombatSearchV2ChildRolloutPolicy, String> {
+    match value {
+        "immediate" => Ok(CombatSearchV2ChildRolloutPolicy::Immediate),
+        "lazy" | "lazy_on_pop" => Ok(CombatSearchV2ChildRolloutPolicy::LazyOnPop),
+        _ => Err(format!("unknown child rollout policy: {value}")),
+    }
+}
+
+fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, String> {
+    match value {
+        "disabled" => Ok(CombatSearchV2RolloutPolicy::Disabled),
+        "adaptive" | "enemy_mechanics_adaptive_no_potion" => {
+            Ok(CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion)
+        }
+        "conservative" | "conservative_no_potion" => {
+            Ok(CombatSearchV2RolloutPolicy::ConservativeNoPotion)
+        }
+        "phase" | "phase_aware_no_potion" => Ok(CombatSearchV2RolloutPolicy::PhaseAwareNoPotion),
+        "turn_beam" | "turn_beam_no_potion" => Ok(CombatSearchV2RolloutPolicy::TurnBeamNoPotion),
+        _ => Err(format!("unknown rollout policy: {value}")),
+    }
 }
 
 fn load_case(path: &PathBuf) -> Result<CombatGapCase, String> {
