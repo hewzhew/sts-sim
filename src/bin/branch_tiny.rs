@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use sts_simulator::eval::run_control::DecisionCandidateKey;
 use sts_simulator::eval::run_control::{
     build_decision_surface, RewardAutomationConfig, RunControlAutoStepOptions,
     RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommand, RunControlConfig,
@@ -12,14 +13,22 @@ use sts_simulator::state::events::EventId;
 #[derive(Clone)]
 struct Branch {
     id: String,
-    path: Vec<String>,
+    path: Vec<BranchPathStep>,
     session: RunControlSession,
     status: BranchStatus,
 }
 
 #[derive(Clone)]
 struct OwnerChoice {
-    input: ClientInput,
+    key: Option<DecisionCandidateKey>,
+    action: RunControlCommand,
+    label: String,
+}
+
+#[derive(Clone)]
+struct BranchPathStep {
+    key: Option<DecisionCandidateKey>,
+    action: RunControlCommand,
     label: String,
 }
 
@@ -150,12 +159,16 @@ fn expand_registered_owner(branch: &Branch, args: Args) -> Vec<Branch> {
     let mut children = Vec::new();
     for (index, choice) in candidates.into_iter().enumerate() {
         let mut session = branch.session.clone();
-        let status = match session.apply_command(RunControlCommand::Input(choice.input)) {
+        let status = match session.apply_command(choice.action.clone()) {
             Ok(_) => advance_to_owner_or_gap(&mut session, args),
             Err(err) => BranchStatus::ApplyFailed(err),
         };
         let mut path = branch.path.clone();
-        path.push(choice.label);
+        path.push(BranchPathStep {
+            key: choice.key,
+            action: choice.action,
+            label: choice.label,
+        });
         children.push(Branch {
             id: format!("{}.{}", branch.id, index),
             path,
@@ -174,7 +187,7 @@ fn owner_choices(
         Owner::NeowStart => executable_choices(surface),
         Owner::CardReward => executable_choices(surface)
             .into_iter()
-            .filter(|choice| is_card_reward_input(&choice.input))
+            .filter(|choice| is_card_reward_choice(choice))
             .collect(),
         Owner::Event(_) | Owner::ShopTiny => Vec::new(),
     }
@@ -270,7 +283,7 @@ fn require_visible_input(
         surface.view.header.title,
         executable_choices(&surface)
             .iter()
-            .map(|choice| format!("{:?}:{}", choice.input, choice.label))
+            .map(render_choice)
             .collect::<Vec<_>>()
             .join(" | ")
     ))
@@ -375,14 +388,14 @@ fn print_branch(branch: &Branch) {
         if branch.path.is_empty() {
             "-".to_string()
         } else {
-            branch.path.join(" -> ")
+            render_path(&branch.path)
         }
     );
     if let BranchStatus::Running { owner, .. } = &branch.status {
         let surface = build_decision_surface(&branch.session);
         let candidates = owner_choices(*owner, &surface)
             .into_iter()
-            .map(|choice| choice.label)
+            .map(|choice| render_choice(&choice))
             .collect::<Vec<_>>();
         if !candidates.is_empty() {
             println!("    owner_candidates: {}", candidates.join(" | "));
@@ -450,6 +463,60 @@ fn site_label(site: BoundarySite) -> String {
     }
 }
 
+fn render_path(path: &[BranchPathStep]) -> String {
+    path.iter()
+        .map(render_path_step)
+        .collect::<Vec<_>>()
+        .join(" -> ")
+}
+
+fn render_path_step(step: &BranchPathStep) -> String {
+    match &step.key {
+        Some(key) => render_candidate_key(key),
+        None => format!("{}:{}", command_hint(&step.action), step.label),
+    }
+}
+
+fn render_choice(choice: &OwnerChoice) -> String {
+    match &choice.key {
+        Some(key) => render_candidate_key(key),
+        None => format!("{}:{}", command_hint(&choice.action), choice.label),
+    }
+}
+
+fn render_candidate_key(key: &DecisionCandidateKey) -> String {
+    match key {
+        DecisionCandidateKey::EventOption {
+            event_id,
+            screen,
+            option_index,
+            action,
+        } => format!("event:{event_id:?}/screen:{screen}/option:{option_index}/{action:?}"),
+        DecisionCandidateKey::CardRewardPick {
+            index,
+            card,
+            upgrades,
+        } => format!("reward:pick:{index}:{card:?}+{upgrades}"),
+        DecisionCandidateKey::CardRewardSingingBowl { index } => {
+            format!("reward:bowl:{index}")
+        }
+        DecisionCandidateKey::CardRewardSkip { reward_item_index } => {
+            format!("reward:skip:{reward_item_index}")
+        }
+        DecisionCandidateKey::ShopLeave => "shop:leave".to_string(),
+    }
+}
+
+fn command_hint(command: &RunControlCommand) -> String {
+    match command {
+        RunControlCommand::Input(input) => format!("{input:?}"),
+        RunControlCommand::BranchSkipCardReward(index) => {
+            format!("BranchSkipCardReward({index})")
+        }
+        _ => format!("{command:?}"),
+    }
+}
+
 fn executable_choices(
     surface: &sts_simulator::eval::run_control::DecisionSurface,
 ) -> Vec<OwnerChoice> {
@@ -458,12 +525,13 @@ fn executable_choices(
         .candidates
         .iter()
         .filter_map(|candidate| {
-            let input = candidate.action.executable_input()?;
-            if is_navigation_only_input(&input) {
+            let action = candidate.action.executable_command()?;
+            if is_navigation_only_command(&action) {
                 return None;
             }
             Some(OwnerChoice {
-                input,
+                key: candidate.key.clone(),
+                action,
                 label: candidate.label.clone(),
             })
         })
@@ -475,7 +543,10 @@ fn executable_inputs(
 ) -> Vec<ClientInput> {
     executable_choices(surface)
         .into_iter()
-        .map(|choice| choice.input)
+        .filter_map(|choice| match choice.action {
+            RunControlCommand::Input(input) => Some(input),
+            _ => None,
+        })
         .collect()
 }
 
@@ -487,12 +558,19 @@ fn terminal_label(session: &RunControlSession) -> Option<&'static str> {
     }
 }
 
-fn is_navigation_only_input(input: &ClientInput) -> bool {
-    matches!(input, ClientInput::Cancel)
+fn is_navigation_only_command(command: &RunControlCommand) -> bool {
+    matches!(command, RunControlCommand::Input(ClientInput::Cancel))
 }
 
-fn is_card_reward_input(input: &ClientInput) -> bool {
-    matches!(input, ClientInput::SelectCard(_))
+fn is_card_reward_choice(choice: &OwnerChoice) -> bool {
+    matches!(
+        choice.key,
+        Some(
+            DecisionCandidateKey::CardRewardPick { .. }
+                | DecisionCandidateKey::CardRewardSingingBowl { .. }
+                | DecisionCandidateKey::CardRewardSkip { .. }
+        )
+    )
 }
 
 fn one_line(text: &str) -> String {

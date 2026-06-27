@@ -14,7 +14,7 @@ use crate::content::cards::CardId;
 use crate::runtime::combat::CombatCard;
 use crate::state::events::{
     EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionSemantics,
-    EventOptionTransition, EventState,
+    EventOptionTransition, EventOwnerPolicyKind, EventState,
 };
 use crate::state::run::RunState;
 use crate::{content::relics::RelicId, content::relics::RelicState};
@@ -669,6 +669,7 @@ fn option(
             transition,
             repeatable: false,
             terminal: transition == EventOptionTransition::Complete,
+            owner_policy: EventOwnerPolicyKind::None,
         },
     )
 }

@@ -340,7 +340,9 @@ fn candidate_descriptor(
 
 fn candidate_command(candidate: &DecisionCandidate) -> Option<String> {
     match &candidate.action {
-        CandidateAction::Input(input) => Some(super::view_model::client_input_hint(input)),
+        CandidateAction::Input(_) | CandidateAction::Command(_) => {
+            Some(candidate.action.command_hint())
+        }
         CandidateAction::ManualCommand { template } => Some(template.clone()),
         CandidateAction::Unavailable { .. } => None,
     }

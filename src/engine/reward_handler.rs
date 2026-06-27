@@ -127,7 +127,16 @@ pub(crate) fn skip_card_reward_item_for_branch_experiment(
     reward_index: usize,
 ) -> Result<Option<EngineState>, String> {
     if reward_state.pending_card_choice.is_some() {
-        return Err("branch card reward skip requires an unopened reward item".to_string());
+        let pending_index = reward_state
+            .pending_card_reward_index
+            .ok_or_else(|| "opened card reward is missing its reward item index".to_string())?;
+        if pending_index != reward_index {
+            return Err(format!(
+                "opened card reward item is {pending_index}, not {reward_index}"
+            ));
+        }
+        reward_state.pending_card_choice = None;
+        reward_state.pending_card_reward_index = None;
     }
     if !matches!(
         reward_state.items.get(reward_index),

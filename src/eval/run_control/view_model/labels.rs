@@ -17,6 +17,7 @@ pub(crate) fn candidate(
     DecisionCandidate {
         id: id.into(),
         label: label.into(),
+        key: None,
         action: action.into(),
         note: note.map(Into::into),
         resolution: None,
@@ -32,6 +33,7 @@ pub(crate) fn unavailable_candidate(
     DecisionCandidate {
         id: id.into(),
         label: label.into(),
+        key: None,
         action: CandidateAction::Unavailable {
             reason: reason.into(),
         },

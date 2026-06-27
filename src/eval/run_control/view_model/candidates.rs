@@ -1,6 +1,7 @@
 use crate::content::potions::get_potion_definition;
 use crate::content::relics::RelicId;
 use crate::eval::event_boundary_classifier_v1::classify_event_option_boundary_v1;
+use crate::eval::run_control::RunControlCommand;
 use crate::runtime::combat::CombatCard;
 use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState, PendingChoice, PileType};
@@ -13,7 +14,7 @@ use super::labels::{
     candidate, clean_event_label, combat_card_label, monster_name, reward_card_label,
     reward_item_label, room_type_label, shop_block_note, unavailable_candidate,
 };
-use super::{CandidateResolution, DecisionCandidate, RunControlSession};
+use super::{CandidateResolution, DecisionCandidate, DecisionCandidateKey, RunControlSession};
 
 pub(super) fn decision_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
     match &session.engine_state {
@@ -46,6 +47,7 @@ pub(super) fn decision_candidates(session: &RunControlSession) -> Vec<DecisionCa
 
 fn event_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
     let options = crate::engine::event_handler::get_event_options(&session.run_state);
+    let event_state = session.run_state.event_state.as_ref();
     options
         .iter()
         .enumerate()
@@ -67,6 +69,12 @@ fn event_candidates(session: &RunControlSession) -> Vec<DecisionCandidate> {
             } else {
                 let mut candidate =
                     candidate(idx.to_string(), label, ClientInput::EventChoice(idx), note);
+                candidate.key = event_state.map(|event_state| DecisionCandidateKey::EventOption {
+                    event_id: event_state.id,
+                    screen: event_state.current_screen,
+                    option_index: idx,
+                    action: option.semantics.action,
+                });
                 candidate.resolution = resolution;
                 candidate
             }
@@ -175,6 +183,11 @@ fn reward_candidates(
                     ClientInput::SelectCard(idx),
                     None::<String>,
                 );
+                candidate.key = Some(DecisionCandidateKey::CardRewardPick {
+                    index: idx,
+                    card: card.id,
+                    upgrades: card.upgrades,
+                });
                 candidate.resolution = Some(CandidateResolution::from_reward_card(card));
                 candidate
             })
@@ -191,6 +204,20 @@ fn reward_candidates(
                 ClientInput::SelectCard(cards.len()),
                 Some("consume this card reward instead of taking a card"),
             ));
+            if let Some(candidate) = candidates.last_mut() {
+                candidate.key =
+                    Some(DecisionCandidateKey::CardRewardSingingBowl { index: cards.len() });
+            }
+        }
+        if let Some(reward_item_index) = reward.pending_card_reward_index {
+            let mut skip = candidate(
+                "skip-card-reward",
+                "Skip card reward",
+                RunControlCommand::BranchSkipCardReward(reward_item_index),
+                Some("consume this card reward without taking a card"),
+            );
+            skip.key = Some(DecisionCandidateKey::CardRewardSkip { reward_item_index });
+            candidates.push(skip);
         }
         candidates.push(candidate(
             "back",
@@ -230,6 +257,9 @@ fn reward_candidates(
             "bowl",
             Some("consume the first visible card reward instead of taking a card"),
         ));
+        if let Some(candidate) = candidates.last_mut() {
+            candidate.key = Some(DecisionCandidateKey::CardRewardSingingBowl { index: 0 });
+        }
     }
     if reward.skippable {
         let (id, label, note, input) = if let Some(return_state) = overlay_return_state {
@@ -261,6 +291,18 @@ fn reward_candidates(
             )
         };
         candidates.push(candidate(id, label, input, note));
+        if let Some(candidate) = candidates.last_mut() {
+            if candidate.id == "skip" && reward.has_card_reward_item() {
+                if let Some(reward_item_index) = reward
+                    .items
+                    .iter()
+                    .position(|item| matches!(item, crate::state::rewards::RewardItem::Card { .. }))
+                {
+                    candidate.key =
+                        Some(DecisionCandidateKey::CardRewardSkip { reward_item_index });
+                }
+            }
+        }
     }
     candidates
 }
@@ -453,12 +495,9 @@ fn shop_candidates(
             Some("shop overlay rewards remain until leaving the shop"),
         ));
     }
-    candidates.push(candidate(
-        "leave",
-        "Leave shop",
-        ClientInput::Proceed,
-        None::<String>,
-    ));
+    let mut leave = candidate("leave", "Leave shop", ClientInput::Proceed, None::<String>);
+    leave.key = Some(DecisionCandidateKey::ShopLeave);
+    candidates.push(leave);
     candidates
 }
 

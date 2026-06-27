@@ -3,8 +3,10 @@ mod context;
 mod labels;
 mod resolution;
 
+use crate::content::cards::CardId;
 use crate::sim::combat::{combat_terminal, stable_boundary};
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::events::{EventActionKind, EventId};
 use crate::state::selection::SelectionScope;
 
 pub(super) use super::session::RunControlSession;
@@ -43,14 +45,38 @@ pub struct DecisionSummary {
 pub struct DecisionCandidate {
     pub id: String,
     pub label: String,
+    pub key: Option<DecisionCandidateKey>,
     pub action: CandidateAction,
     pub note: Option<String>,
     pub resolution: Option<CandidateResolution>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DecisionCandidateKey {
+    EventOption {
+        event_id: EventId,
+        screen: usize,
+        option_index: usize,
+        action: EventActionKind,
+    },
+    CardRewardPick {
+        index: usize,
+        card: CardId,
+        upgrades: u8,
+    },
+    CardRewardSingingBowl {
+        index: usize,
+    },
+    CardRewardSkip {
+        reward_item_index: usize,
+    },
+    ShopLeave,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum CandidateAction {
     Input(ClientInput),
+    Command(super::commands::RunControlCommand),
     ManualCommand { template: String },
     Unavailable { reason: String },
 }
@@ -59,6 +85,7 @@ impl CandidateAction {
     pub fn command_hint(&self) -> String {
         match self {
             CandidateAction::Input(input) => client_input_hint(input),
+            CandidateAction::Command(command) => run_control_command_hint(command),
             CandidateAction::ManualCommand { template } => template.clone(),
             CandidateAction::Unavailable { reason } => format!("locked: {reason}"),
         }
@@ -67,6 +94,18 @@ impl CandidateAction {
     pub fn executable_input(&self) -> Option<ClientInput> {
         match self {
             CandidateAction::Input(input) => Some(input.clone()),
+            CandidateAction::Command(_)
+            | CandidateAction::ManualCommand { .. }
+            | CandidateAction::Unavailable { .. } => None,
+        }
+    }
+
+    pub fn executable_command(&self) -> Option<super::commands::RunControlCommand> {
+        match self {
+            CandidateAction::Input(input) => {
+                Some(super::commands::RunControlCommand::Input(input.clone()))
+            }
+            CandidateAction::Command(command) => Some(command.clone()),
             CandidateAction::ManualCommand { .. } | CandidateAction::Unavailable { .. } => None,
         }
     }
@@ -75,6 +114,12 @@ impl CandidateAction {
 impl From<ClientInput> for CandidateAction {
     fn from(value: ClientInput) -> Self {
         CandidateAction::Input(value)
+    }
+}
+
+impl From<super::commands::RunControlCommand> for CandidateAction {
+    fn from(value: super::commands::RunControlCommand) -> Self {
+        CandidateAction::Command(value)
     }
 }
 
@@ -142,6 +187,29 @@ pub fn client_input_hint(input: &ClientInput) -> String {
         ClientInput::SubmitRelicChoice(idx) => format!("relic {idx}"),
         ClientInput::Proceed => "proceed".to_string(),
         ClientInput::Cancel => "cancel".to_string(),
+    }
+}
+
+fn run_control_command_hint(command: &super::commands::RunControlCommand) -> String {
+    match command {
+        super::commands::RunControlCommand::Input(input) => client_input_hint(input),
+        super::commands::RunControlCommand::InputSequence(inputs) => inputs
+            .iter()
+            .map(client_input_hint)
+            .collect::<Vec<_>>()
+            .join(" then "),
+        super::commands::RunControlCommand::BranchSkipCardReward(index) => {
+            format!("branch-skip-card-reward {index}")
+        }
+        super::commands::RunControlCommand::RecordedCardRewardPick(index) => {
+            format!("record-pick {index}")
+        }
+        super::commands::RunControlCommand::CardIndex(index) => format!("card {index}"),
+        super::commands::RunControlCommand::RelicIndex(index) => format!("relic {index}"),
+        super::commands::RunControlCommand::SelectionIndices(indices) => {
+            format_usize_command("select", indices)
+        }
+        _ => format!("{command:?}"),
     }
 }
 

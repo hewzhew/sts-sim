@@ -308,6 +308,7 @@ fn branch_experiment_config(
         prefix_commands,
         replay_trace_path: effective_replay_trace(args, goto_plan),
         replay_trace_max_steps: effective_replay_steps(args, goto_plan),
+        reward_semantic_live_sample_limit: None,
     })
 }
 

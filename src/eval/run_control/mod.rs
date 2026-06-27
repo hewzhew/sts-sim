@@ -109,3 +109,4 @@ pub use transition_report::{
     RunApplyStatus as RunActionApplyStatusV1, RunEndResult as RunActionEndResultV1,
     RunKey as RunActionKeyV1, ValueChange as RunActionValueChangeV1,
 };
+pub use view_model::DecisionCandidateKey;
