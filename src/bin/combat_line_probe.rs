@@ -51,12 +51,17 @@ struct CombatGapCase {
 #[derive(Clone)]
 struct Line {
     position: CombatPosition,
-    inputs: Vec<ClientInput>,
-    actions: Vec<String>,
+    steps: Vec<LineStep>,
     terminal: CombatTerminal,
     score: i64,
     lane: &'static str,
     setup_seen: bool,
+}
+
+#[derive(Clone)]
+struct LineStep {
+    input: ClientInput,
+    label: String,
 }
 
 #[derive(Clone, Copy)]
@@ -92,14 +97,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let case = load_case(&args.case)?;
     let initial_hp = case.position.combat.entities.player.current_hp;
     let stepper = EngineCombatStepper;
-    let config = SearchConfig {
-        nodes: args.nodes,
-        ms: args.ms,
-        beam: args.beam,
-        max_actions: args.max_actions,
-        per_state_actions: args.per_state_actions,
-    };
-    let run = line_search_from(case.position.clone(), initial_hp, config, &stepper);
+    let run = line_search_from(
+        case.position.clone(),
+        initial_hp,
+        SearchConfig {
+            nodes: args.nodes,
+            ms: args.ms,
+            beam: args.beam,
+            max_actions: args.max_actions,
+            per_state_actions: args.per_state_actions,
+        },
+        &stepper,
+    );
     let (repaired_win, repair_stats) = match run.best_win.clone() {
         Some(best) => repair_line(&case.position, best, initial_hp, &args, &stepper),
         None => (None, RepairStats::default()),
@@ -158,7 +167,6 @@ fn line_search_from(
     let mut frontier = vec![line_from(
         start_position,
         Vec::new(),
-        Vec::new(),
         initial_hp,
         "root",
         false,
@@ -176,8 +184,7 @@ fn line_search_from(
                 truncated = true;
                 break;
             }
-            if line.terminal != CombatTerminal::Unresolved
-                || line.actions.len() >= config.max_actions
+            if line.terminal != CombatTerminal::Unresolved || line.steps.len() >= config.max_actions
             {
                 remember_win(&mut best_win, line);
                 continue;
@@ -202,10 +209,11 @@ fn line_search_from(
                     truncated = true;
                     continue;
                 }
-                let mut inputs = line.inputs.clone();
-                let mut actions = line.actions.clone();
-                inputs.push(input.clone());
-                actions.push(choice.action_key);
+                let mut steps = line.steps.clone();
+                steps.push(LineStep {
+                    input: input.clone(),
+                    label: choice.action_key,
+                });
                 let lane = classify_lane(&line.position, &step.position, &input);
                 let setup_seen = line.setup_seen || lane == "setup";
                 let child_lane = if setup_seen && lane != "win" {
@@ -215,8 +223,7 @@ fn line_search_from(
                 };
                 let child = line_from(
                     step.position,
-                    inputs,
-                    actions,
+                    steps,
                     initial_hp,
                     child_lane,
                     setup_seen,
@@ -260,19 +267,17 @@ fn load_case(path: &PathBuf) -> Result<CombatGapCase, String> {
 
 fn line_from(
     position: CombatPosition,
-    inputs: Vec<ClientInput>,
-    actions: Vec<String>,
+    steps: Vec<LineStep>,
     initial_hp: i32,
     lane: &'static str,
     setup_seen: bool,
     stepper: &EngineCombatStepper,
 ) -> Line {
     let terminal = stepper.terminal(&position);
-    let score = score_position(&position, terminal, initial_hp, actions.len());
+    let score = score_position(&position, terminal, initial_hp, steps.len());
     Line {
         position,
-        inputs,
-        actions,
+        steps,
         terminal,
         score,
         lane,
@@ -292,20 +297,21 @@ fn repair_line(
     if args.repair_cuts == 0 || best.terminal != CombatTerminal::Win {
         return (Some(best), stats);
     }
-    let config = SearchConfig {
+    let repair_config = SearchConfig {
         nodes: args.repair_nodes,
         ms: args.repair_ms,
         beam: args.beam,
         max_actions: args.max_actions,
         per_state_actions: args.per_state_actions,
     };
-    for cut in repair_cut_points(best.inputs.len(), args.repair_cuts) {
+    for cut in repair_cut_points(best.steps.len(), args.repair_cuts) {
+        let cut = cut.min(best.steps.len());
         stats.attempts += 1;
-        let Some(prefix_position) = replay_prefix(root, &best.inputs[..cut], stepper) else {
+        let Some(prefix_position) = replay_prefix(root, &best.steps[..cut], stepper) else {
             continue;
         };
         let Some(suffix_win) =
-            line_search_from(prefix_position, initial_hp, config, stepper).best_win
+            line_search_from(prefix_position, initial_hp, repair_config, stepper).best_win
         else {
             continue;
         };
@@ -323,29 +329,19 @@ fn repair_line(
 
 fn repair_cut_points(len: usize, limit: usize) -> Vec<usize> {
     let count = len.min(limit);
-    if count == 0 {
-        return Vec::new();
-    }
-    let mut points = Vec::new();
-    for i in 0..count {
-        let cut = i * len / count;
-        if cut < len && !points.contains(&cut) {
-            points.push(cut);
-        }
-    }
-    points
+    (0..count).map(|index| index * len / count).collect()
 }
 
 fn replay_prefix(
     root: &CombatPosition,
-    inputs: &[ClientInput],
+    steps: &[LineStep],
     stepper: &EngineCombatStepper,
 ) -> Option<CombatPosition> {
     let mut position = root.clone();
-    for input in inputs {
+    for line_step in steps {
         let step = stepper.apply_to_stable(
             &position,
-            input.clone(),
+            line_step.input.clone(),
             CombatStepLimits {
                 max_engine_steps: 250,
                 deadline: None,
@@ -369,14 +365,11 @@ fn splice_line(
     initial_hp: i32,
     stepper: &EngineCombatStepper,
 ) -> Line {
-    let mut inputs = prefix.inputs[..cut].to_vec();
-    let mut actions = prefix.actions[..cut].to_vec();
-    inputs.extend(suffix.inputs);
-    actions.extend(suffix.actions);
+    let mut steps = prefix.steps[..cut].to_vec();
+    steps.extend(suffix.steps);
     line_from(
         suffix.position,
-        inputs,
-        actions,
+        steps,
         initial_hp,
         suffix.lane,
         prefix.setup_seen || suffix.setup_seen,
@@ -405,14 +398,12 @@ fn keep_lane_frontier(mut lines: Vec<Line>, beam: usize) -> Vec<Line> {
 }
 
 fn remember_win(best: &mut Option<Line>, line: Line) {
-    if line.terminal != CombatTerminal::Win {
-        return;
-    }
-    let replace = best
-        .as_ref()
-        .map(|current| line.score > current.score)
-        .unwrap_or(true);
-    if replace {
+    if line.terminal == CombatTerminal::Win
+        && best
+            .as_ref()
+            .map(|current| line.score > current.score)
+            .unwrap_or(true)
+    {
         *best = Some(line);
     }
 }
@@ -447,9 +438,8 @@ fn classify_lane(
     after: &CombatPosition,
     input: &ClientInput,
 ) -> &'static str {
-    match after.combat.are_monsters_basically_dead_java() {
-        true => return "win",
-        false => {}
+    if after.combat.are_monsters_basically_dead_java() {
+        return "win";
     }
     if played_power(before, input) {
         return "setup";
@@ -543,8 +533,8 @@ fn line_summary(line: &Line, initial_hp: i32) -> serde_json::Value {
         "hp_loss": (initial_hp - final_hp).max(0),
         "score": line.score,
         "lane": line.lane,
-        "action_count": line.actions.len(),
-        "actions": line.actions.iter().take(32).collect::<Vec<_>>(),
+        "action_count": line.steps.len(),
+        "actions": line.steps.iter().take(32).map(|step| &step.label).collect::<Vec<_>>(),
     })
 }
 
