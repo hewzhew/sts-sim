@@ -60,12 +60,14 @@ pub enum DecisionCandidateKey {
         action: EventActionKind,
     },
     CardRewardPick {
-        index: usize,
+        reward_item_index: usize,
+        option_index: usize,
         card: CardId,
         upgrades: u8,
     },
     CardRewardSingingBowl {
-        index: usize,
+        reward_item_index: usize,
+        option_index: usize,
     },
     CardRewardSkip {
         reward_item_index: usize,

@@ -173,6 +173,7 @@ fn reward_candidates(
     overlay_return_state: Option<&EngineState>,
 ) -> Vec<DecisionCandidate> {
     if let Some(cards) = reward.pending_card_choice.as_ref() {
+        let reward_item_index = reward.pending_card_reward_index;
         let mut candidates = cards
             .iter()
             .enumerate()
@@ -183,11 +184,14 @@ fn reward_candidates(
                     ClientInput::SelectCard(idx),
                     None::<String>,
                 );
-                candidate.key = Some(DecisionCandidateKey::CardRewardPick {
-                    index: idx,
-                    card: card.id,
-                    upgrades: card.upgrades,
-                });
+                if let Some(reward_item_index) = reward_item_index {
+                    candidate.key = Some(DecisionCandidateKey::CardRewardPick {
+                        reward_item_index,
+                        option_index: idx,
+                        card: card.id,
+                        upgrades: card.upgrades,
+                    });
+                }
                 candidate.resolution = Some(CandidateResolution::from_reward_card(card));
                 candidate
             })
@@ -205,8 +209,12 @@ fn reward_candidates(
                 Some("consume this card reward instead of taking a card"),
             ));
             if let Some(candidate) = candidates.last_mut() {
-                candidate.key =
-                    Some(DecisionCandidateKey::CardRewardSingingBowl { index: cards.len() });
+                if let Some(reward_item_index) = reward_item_index {
+                    candidate.key = Some(DecisionCandidateKey::CardRewardSingingBowl {
+                        reward_item_index,
+                        option_index: cards.len(),
+                    });
+                }
             }
         }
         if let Some(reward_item_index) = reward.pending_card_reward_index {
@@ -258,7 +266,16 @@ fn reward_candidates(
             Some("consume the first visible card reward instead of taking a card"),
         ));
         if let Some(candidate) = candidates.last_mut() {
-            candidate.key = Some(DecisionCandidateKey::CardRewardSingingBowl { index: 0 });
+            if let Some(reward_item_index) = reward
+                .items
+                .iter()
+                .position(|item| matches!(item, crate::state::rewards::RewardItem::Card { .. }))
+            {
+                candidate.key = Some(DecisionCandidateKey::CardRewardSingingBowl {
+                    reward_item_index,
+                    option_index: 0,
+                });
+            }
         }
     }
     if reward.skippable {

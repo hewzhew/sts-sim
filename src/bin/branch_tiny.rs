@@ -493,15 +493,19 @@ fn render_candidate_key(key: &DecisionCandidateKey) -> String {
             action,
         } => format!("event:{event_id:?}/screen:{screen}/option:{option_index}/{action:?}"),
         DecisionCandidateKey::CardRewardPick {
-            index,
+            reward_item_index,
+            option_index,
             card,
             upgrades,
-        } => format!("reward:pick:{index}:{card:?}+{upgrades}"),
-        DecisionCandidateKey::CardRewardSingingBowl { index } => {
-            format!("reward:bowl:{index}")
+        } => format!("reward:{reward_item_index}:pick:{option_index}:{card:?}+{upgrades}"),
+        DecisionCandidateKey::CardRewardSingingBowl {
+            reward_item_index,
+            option_index,
+        } => {
+            format!("reward:{reward_item_index}:bowl:{option_index}")
         }
         DecisionCandidateKey::CardRewardSkip { reward_item_index } => {
-            format!("reward:skip:{reward_item_index}")
+            format!("reward:{reward_item_index}:skip")
         }
         DecisionCandidateKey::ShopLeave => "shop:leave".to_string(),
     }
