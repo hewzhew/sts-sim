@@ -4,6 +4,7 @@ use crate::ai::analysis::card_semantics::{
 };
 use crate::ai::strategy::package_state::{PackageMaturity, PackageStateReport};
 use crate::ai::strategy::package_transition::{assess_package_transition, PackageKind};
+use crate::ai::strategy::reward_quality::assess_reward_quality;
 use crate::content::cards::CardId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -116,14 +117,13 @@ pub fn reward_admission_order_key_v1(admission: &RewardAdmission) -> RewardAdmis
 }
 
 pub fn assess_reward_admission(deck: &[CardId], candidate: CardId) -> RewardAdmission {
-    let thin_block_payoff = thin_block_payoff_support(deck, candidate);
-    let duplicate_clutter = duplicate_clutter_frontload(deck, candidate);
-    let deck = deck
+    let deck_defs = deck
         .iter()
         .copied()
         .map(card_definition)
         .collect::<Vec<_>>();
-    let transition = assess_package_transition(&deck, card_definition(candidate));
+    let transition = assess_package_transition(&deck_defs, card_definition(candidate));
+    let quality = assess_reward_quality(deck, candidate, &transition);
     let mut reasons = Vec::new();
     reasons.extend(
         transition
@@ -138,12 +138,12 @@ pub fn assess_reward_admission(deck: &[CardId], candidate: CardId) -> RewardAdmi
             .iter()
             .filter(|change| {
                 change.to == PackageMaturity::Supported
-                    && !(thin_block_payoff && change.package == PackageKind::Block)
+                    && !quality.suppresses_support(change.package)
             })
             .map(|change| RewardAdmissionReason::Supports(change.package)),
     );
     for effect in &transition.candidate_play_effects {
-        if thin_block_payoff && matches!(effect, PlayEffect::DamageUses(Mechanic::Block)) {
+        if quality.suppresses_payoff_effect(effect) {
             continue;
         }
         let Some(package) = supported_damage_payoff_package(&transition.before, effect) else {
@@ -191,23 +191,20 @@ pub fn assess_reward_admission(deck: &[CardId], candidate: CardId) -> RewardAdmi
             .copied()
             .map(RewardAdmissionReason::Burden),
     );
-    if thin_block_payoff {
-        reasons.push(RewardAdmissionReason::ThinSupport(Mechanic::Block));
+    for mechanic in &quality.thin_payoff_support {
+        reasons.push(RewardAdmissionReason::ThinSupport(*mechanic));
     }
-    if duplicate_clutter {
-        reasons.push(RewardAdmissionReason::DuplicateBurden(
-            CardBurden::AddsCombatDeckClutter,
-        ));
+    for burden in &quality.duplicate_burdens {
+        reasons.push(RewardAdmissionReason::DuplicateBurden(*burden));
     }
 
     let closes = !transition.newly_closed_requirements.is_empty();
     let supports = transition.package_changes.iter().any(|change| {
-        change.to == PackageMaturity::Supported
-            && !(thin_block_payoff && change.package == PackageKind::Block)
+        change.to == PackageMaturity::Supported && !quality.suppresses_support(change.package)
     });
     let supported_payoff = transition.candidate_play_effects.iter().any(|effect| {
         supported_damage_payoff_package(&transition.before, effect).is_some()
-            && !(thin_block_payoff && matches!(effect, PlayEffect::DamageUses(Mechanic::Block)))
+            && !quality.suppresses_payoff_effect(effect)
     });
     let engine_seed = !transition.candidate_installed_rules.is_empty()
         || !transition.candidate_event_handlers.is_empty()
@@ -227,7 +224,7 @@ pub fn assess_reward_admission(deck: &[CardId], candidate: CardId) -> RewardAdmi
     let burdened = transition.candidate_burdens.iter().any(is_admission_burden);
     let opens = !transition.newly_open_requirements.is_empty();
 
-    let class = if duplicate_clutter {
+    let class = if quality.has_duplicate_burden() {
         RewardAdmissionClass::EmptyOrDeferred
     } else if closes {
         RewardAdmissionClass::ClosesRequirement
@@ -385,29 +382,6 @@ fn supported_damage_payoff_package(
         }
         _ => None,
     }
-}
-
-fn thin_block_payoff_support(deck: &[CardId], candidate: CardId) -> bool {
-    candidate == CardId::BodySlam && block_support_units(deck) < 2
-}
-
-fn block_support_units(deck: &[CardId]) -> u8 {
-    deck.iter().copied().map(block_source_units).sum()
-}
-
-fn block_source_units(card: CardId) -> u8 {
-    match card {
-        CardId::FlameBarrier | CardId::Impervious | CardId::PowerThrough => 2,
-        CardId::ShrugItOff | CardId::TrueGrit | CardId::SecondWind | CardId::IronWave => 1,
-        _ => 0,
-    }
-}
-
-fn duplicate_clutter_frontload(deck: &[CardId], candidate: CardId) -> bool {
-    matches!(candidate, CardId::WildStrike | CardId::RecklessCharge)
-        && deck
-            .iter()
-            .any(|card| matches!(card, CardId::WildStrike | CardId::RecklessCharge))
 }
 
 fn package_has_source(maturity: PackageMaturity) -> bool {
