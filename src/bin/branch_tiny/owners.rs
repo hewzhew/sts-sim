@@ -95,7 +95,7 @@ pub(super) enum ShopTinyAnnotation {
     Unsupported,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum ShopPurgeTargetKind {
     Curse,
     Status,
@@ -137,7 +137,7 @@ pub(super) fn owner_choices(
         Owner::NeowStart => executable_choices(surface),
         Owner::CardReward => card_reward_owner_choices(session, surface),
         Owner::BossRelic => boss_relic_owner_choices(session, surface),
-        Owner::ShopTiny => shop_tiny_owner_choices(surface),
+        Owner::ShopTiny => shop_tiny_owner_choices(session, surface),
         Owner::Event(_) | Owner::RewardTiny => Vec::new(),
     }
 }
@@ -198,19 +198,40 @@ fn boss_relic_owner_choices(
     choices.into_iter().map(|(_, choice)| choice).collect()
 }
 
-fn shop_tiny_owner_choices(surface: &DecisionSurface) -> Vec<OwnerChoice> {
+fn shop_tiny_owner_choices(
+    session: &RunControlSession,
+    surface: &DecisionSurface,
+) -> Vec<OwnerChoice> {
+    let deck = session
+        .run_state
+        .master_deck
+        .iter()
+        .map(|card| card.id)
+        .collect::<Vec<_>>();
     let mut choices = executable_choices(surface)
         .into_iter()
         .map(|mut choice| {
             choice.annotation = shop_tiny_annotation_for_choice(&choice);
-            choice.expansion = OwnerChoiceExpansion::InspectOnly(
-                "shop tiny lists atomic shop actions but does not plan a full shop",
-            );
             choice
         })
         .enumerate()
         .collect::<Vec<_>>();
-    choices.sort_by_key(|(index, choice)| (shop_tiny_choice_rank(choice), *index));
+    let mut auto_purge_targets = Vec::new();
+    for (_, choice) in choices.iter_mut() {
+        choice.expansion = shop_tiny_choice_expansion(
+            &deck,
+            session.run_state.gold,
+            &choice.annotation,
+            &mut auto_purge_targets,
+        );
+    }
+    choices.sort_by_key(|(index, choice)| {
+        (
+            if choice.auto_expand_allowed() { 0 } else { 1 },
+            shop_tiny_choice_rank(choice, &deck),
+            *index,
+        )
+    });
     choices.into_iter().map(|(_, choice)| choice).collect()
 }
 
@@ -396,25 +417,99 @@ fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
     }
 }
 
-fn shop_tiny_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
+fn shop_tiny_choice_expansion(
+    deck: &[CardId],
+    gold: i32,
+    annotation: &ChoiceAnnotation,
+    auto_purge_targets: &mut Vec<ShopPurgeTargetKind>,
+) -> OwnerChoiceExpansion {
+    let ChoiceAnnotation::ShopTiny(annotation) = annotation else {
+        return shop_tiny_inspect_only();
+    };
+    match annotation {
+        ShopTinyAnnotation::Leave | ShopTinyAnnotation::OpenRewards => {
+            OwnerChoiceExpansion::AutoAllowed
+        }
+        ShopTinyAnnotation::Purge { target, .. } if shop_tiny_auto_purge_target(*target) => {
+            if auto_purge_targets.contains(target) {
+                shop_tiny_inspect_only()
+            } else {
+                auto_purge_targets.push(*target);
+                OwnerChoiceExpansion::AutoAllowed
+            }
+        }
+        ShopTinyAnnotation::BuyCard { card, price, .. }
+            if *price <= gold && shop_tiny_auto_buy_card(deck, *card) =>
+        {
+            OwnerChoiceExpansion::AutoAllowed
+        }
+        _ => shop_tiny_inspect_only(),
+    }
+}
+
+fn shop_tiny_inspect_only() -> OwnerChoiceExpansion {
+    OwnerChoiceExpansion::InspectOnly("shop tiny keeps this atomic shop action inspect-only")
+}
+
+fn shop_tiny_auto_purge_target(target: ShopPurgeTargetKind) -> bool {
+    matches!(
+        target,
+        ShopPurgeTargetKind::Curse
+            | ShopPurgeTargetKind::Status
+            | ShopPurgeTargetKind::StarterStrike
+    )
+}
+
+fn shop_tiny_auto_buy_card(deck: &[CardId], card: CardId) -> bool {
+    reward_plan_lane(&assess_reward_admission(deck, card)) == RewardPlanLane::Mainline
+}
+
+fn shop_tiny_choice_rank(
+    choice: &OwnerChoice,
+    deck: &[CardId],
+) -> (u8, u8, RewardAdmissionOrderKeyV1) {
     match &choice.annotation {
         ChoiceAnnotation::ShopTiny(annotation) => match annotation {
             ShopTinyAnnotation::Purge { target, .. } => match target {
-                ShopPurgeTargetKind::Curse => (0, 0),
-                ShopPurgeTargetKind::Status => (0, 1),
-                ShopPurgeTargetKind::StarterStrike => (1, 0),
-                ShopPurgeTargetKind::StarterDefend => (1, 1),
-                ShopPurgeTargetKind::OtherStarter => (1, 2),
-                ShopPurgeTargetKind::Other => (3, 0),
+                ShopPurgeTargetKind::Curse => {
+                    (0, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())
+                }
+                ShopPurgeTargetKind::Status => {
+                    (0, 1, RewardAdmissionOrderKeyV1::empty_or_deferred())
+                }
+                ShopPurgeTargetKind::StarterStrike => {
+                    (1, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())
+                }
+                ShopPurgeTargetKind::StarterDefend => {
+                    (5, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())
+                }
+                ShopPurgeTargetKind::OtherStarter => {
+                    (5, 1, RewardAdmissionOrderKeyV1::empty_or_deferred())
+                }
+                ShopPurgeTargetKind::Other => {
+                    (6, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())
+                }
             },
-            ShopTinyAnnotation::BuyCard { .. } => (2, 0),
-            ShopTinyAnnotation::BuyRelic { .. } => (2, 1),
-            ShopTinyAnnotation::BuyPotion { .. } => (2, 2),
-            ShopTinyAnnotation::OpenRewards => (3, 1),
-            ShopTinyAnnotation::Leave => (4, 0),
-            ShopTinyAnnotation::Unsupported => (5, 0),
+            ShopTinyAnnotation::Leave => (2, 0, RewardAdmissionOrderKeyV1::static_skip_boundary()),
+            ShopTinyAnnotation::BuyCard { card, .. } => (
+                3,
+                0,
+                reward_admission_order_key_v1(&assess_reward_admission(deck, *card)),
+            ),
+            ShopTinyAnnotation::OpenRewards => {
+                (4, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())
+            }
+            ShopTinyAnnotation::BuyRelic { .. } => {
+                (7, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())
+            }
+            ShopTinyAnnotation::BuyPotion { .. } => {
+                (7, 1, RewardAdmissionOrderKeyV1::empty_or_deferred())
+            }
+            ShopTinyAnnotation::Unsupported => {
+                (8, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())
+            }
         },
-        _ => (5, 0),
+        _ => (8, 0, RewardAdmissionOrderKeyV1::empty_or_deferred()),
     }
 }
 
