@@ -18,6 +18,23 @@ pub enum RewardAdmissionClass {
     Skip,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum RewardAdmissionOrderTierV1 {
+    ClosesRequirement,
+    BuildsSupportedPackage,
+    ImmediateWork,
+    EngineSeed,
+    BurdenedImmediateWork,
+    StaticSkipBoundary,
+    OpensUnsupportedPayoff,
+    EmptyOrDeferred,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct RewardAdmissionOrderKeyV1 {
+    pub tier: RewardAdmissionOrderTierV1,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RewardAdmissionReason {
     Closes(PayoffRequirement),
@@ -42,17 +59,57 @@ pub struct RewardAdmission {
 }
 
 impl RewardAdmissionClass {
-    pub fn rank(self) -> u8 {
+    fn static_order_tier(self) -> RewardAdmissionOrderTierV1 {
         match self {
-            RewardAdmissionClass::ClosesRequirement => 0,
-            RewardAdmissionClass::BuildsSupportedPackage => 1,
-            RewardAdmissionClass::ImmediateWork => 2,
-            RewardAdmissionClass::EngineSeed => 3,
-            RewardAdmissionClass::BurdenedImmediateWork => 4,
-            RewardAdmissionClass::Skip => 5,
-            RewardAdmissionClass::OpensUnsupportedPayoff => 6,
-            RewardAdmissionClass::EmptyOrDeferred => 7,
+            RewardAdmissionClass::ClosesRequirement => {
+                RewardAdmissionOrderTierV1::ClosesRequirement
+            }
+            RewardAdmissionClass::BuildsSupportedPackage => {
+                RewardAdmissionOrderTierV1::BuildsSupportedPackage
+            }
+            RewardAdmissionClass::ImmediateWork => RewardAdmissionOrderTierV1::ImmediateWork,
+            RewardAdmissionClass::EngineSeed => RewardAdmissionOrderTierV1::EngineSeed,
+            RewardAdmissionClass::BurdenedImmediateWork => {
+                RewardAdmissionOrderTierV1::BurdenedImmediateWork
+            }
+            RewardAdmissionClass::Skip => RewardAdmissionOrderTierV1::StaticSkipBoundary,
+            RewardAdmissionClass::OpensUnsupportedPayoff => {
+                RewardAdmissionOrderTierV1::OpensUnsupportedPayoff
+            }
+            RewardAdmissionClass::EmptyOrDeferred => RewardAdmissionOrderTierV1::EmptyOrDeferred,
         }
+    }
+}
+
+impl RewardAdmissionOrderKeyV1 {
+    pub fn empty_or_deferred() -> Self {
+        Self {
+            tier: RewardAdmissionOrderTierV1::EmptyOrDeferred,
+        }
+    }
+
+    pub fn opens_unsupported_payoff() -> Self {
+        Self {
+            tier: RewardAdmissionOrderTierV1::OpensUnsupportedPayoff,
+        }
+    }
+
+    pub fn unscored_optional_reward() -> Self {
+        Self {
+            tier: RewardAdmissionOrderTierV1::OpensUnsupportedPayoff,
+        }
+    }
+
+    pub fn static_skip_boundary() -> Self {
+        Self {
+            tier: RewardAdmissionOrderTierV1::StaticSkipBoundary,
+        }
+    }
+}
+
+pub fn reward_admission_order_key_v1(admission: &RewardAdmission) -> RewardAdmissionOrderKeyV1 {
+    RewardAdmissionOrderKeyV1 {
+        tier: admission.class.static_order_tier(),
     }
 }
 

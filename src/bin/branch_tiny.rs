@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 
 use sts_simulator::ai::strategy::reward_admission::{
-    assess_reward_admission, render_reward_admission_compact, skip_reward_admission,
-    RewardAdmission, RewardAdmissionClass,
+    assess_reward_admission, render_reward_admission_compact, reward_admission_order_key_v1,
+    skip_reward_admission, RewardAdmission, RewardAdmissionOrderKeyV1,
 };
 use sts_simulator::eval::run_control::DecisionCandidateKey;
 use sts_simulator::eval::run_control::{
@@ -238,27 +238,31 @@ fn reward_admission_for_choice(
     }
 }
 
-fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
+fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, RewardAdmissionOrderKeyV1) {
     match &choice.key {
-        Some(DecisionCandidateKey::CardRewardOpen { .. }) => (0, 0),
+        Some(DecisionCandidateKey::CardRewardOpen { .. }) => {
+            (0, RewardAdmissionOrderKeyV1::empty_or_deferred())
+        }
         Some(DecisionCandidateKey::CardRewardPick { .. }) => (
             1,
             choice
                 .admission
                 .as_ref()
-                .map(|admission| admission.class.rank())
-                .unwrap_or(RewardAdmissionClass::EmptyOrDeferred.rank()),
+                .map(reward_admission_order_key_v1)
+                .unwrap_or_else(RewardAdmissionOrderKeyV1::empty_or_deferred),
         ),
-        Some(DecisionCandidateKey::CardRewardSingingBowl { .. }) => (1, 6),
+        Some(DecisionCandidateKey::CardRewardSingingBowl { .. }) => {
+            (1, RewardAdmissionOrderKeyV1::unscored_optional_reward())
+        }
         Some(DecisionCandidateKey::CardRewardSkip { .. }) => (
             1,
             choice
                 .admission
                 .as_ref()
-                .map(|admission| admission.class.rank())
-                .unwrap_or(RewardAdmissionClass::Skip.rank()),
+                .map(reward_admission_order_key_v1)
+                .unwrap_or_else(RewardAdmissionOrderKeyV1::static_skip_boundary),
         ),
-        _ => (2, 0),
+        _ => (2, RewardAdmissionOrderKeyV1::empty_or_deferred()),
     }
 }
 
