@@ -47,6 +47,25 @@ pub struct BossRelicPolicyConfigV1 {
     pub allow_tiny_house_as_safe_fallback: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum BossRelicOrderTierV1 {
+    StarterRelicUpgrade,
+    BroadSafeValue,
+    SupportedDeckCleanup,
+    RouteDependentValue,
+    EnergyWithConstraint,
+    StrategicPower,
+    CurseDebt,
+    TransformAgency,
+    Unknown,
+    Skip,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct BossRelicOrderKeyV1 {
+    pub tier: BossRelicOrderTierV1,
+}
+
 impl Default for BossRelicPolicyConfigV1 {
     fn default() -> Self {
         Self {

@@ -4,6 +4,7 @@ mod labels;
 mod resolution;
 
 use crate::content::cards::CardId;
+use crate::content::relics::RelicId;
 use crate::sim::combat::{combat_terminal, stable_boundary};
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::events::{EventActionKind, EventId};
@@ -75,6 +76,11 @@ pub enum DecisionCandidateKey {
     CardRewardSkip {
         reward_item_index: usize,
     },
+    BossRelicPick {
+        option_index: usize,
+        relic: RelicId,
+    },
+    BossRelicSkip,
     ShopPurgeCard {
         deck_index: usize,
         card: CardId,

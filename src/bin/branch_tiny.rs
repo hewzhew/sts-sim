@@ -1,5 +1,10 @@
 use std::collections::VecDeque;
 
+use sts_simulator::ai::boss_relic_policy_v1::{
+    boss_relic_candidate_order_key_v1, boss_relic_skip_order_key_v1,
+    build_boss_relic_decision_context_v1, render_boss_relic_candidate_compact_v1,
+    BossRelicCandidateEvidenceV1, BossRelicOrderKeyV1,
+};
 use sts_simulator::ai::strategy::reward_admission::{
     assess_reward_admission, render_reward_admission_compact, reward_admission_order_key_v1,
     skip_reward_admission, RewardAdmission, RewardAdmissionOrderKeyV1,
@@ -31,6 +36,7 @@ struct OwnerChoice {
     action: RunControlCommand,
     label: String,
     admission: Option<RewardAdmission>,
+    boss_relic: Option<BossRelicCandidateEvidenceV1>,
 }
 
 #[derive(Clone)]
@@ -54,6 +60,7 @@ struct BranchPathStep {
     action: RunControlCommand,
     label: String,
     admission: Option<RewardAdmission>,
+    boss_relic: Option<BossRelicCandidateEvidenceV1>,
 }
 
 #[derive(Clone)]
@@ -83,6 +90,7 @@ enum BranchStatus {
 enum Owner {
     NeowStart,
     CardReward,
+    BossRelic,
     Event(EventId),
     RewardTiny,
     ShopTiny,
@@ -219,6 +227,7 @@ fn expand_registered_owner(
             action: choice.action,
             label: choice.label,
             admission: choice.admission,
+            boss_relic: choice.boss_relic,
         });
         children.push(Branch {
             id: {
@@ -244,6 +253,7 @@ fn owner_choices(
     match owner {
         Owner::NeowStart => executable_choices(surface),
         Owner::CardReward => card_reward_owner_choices(session, surface),
+        Owner::BossRelic => boss_relic_owner_choices(session, surface),
         Owner::Event(_) | Owner::RewardTiny | Owner::ShopTiny => Vec::new(),
     }
 }
@@ -268,6 +278,38 @@ fn card_reward_owner_choices(
         .enumerate()
         .collect::<Vec<_>>();
     choices.sort_by_key(|(index, choice)| (card_reward_choice_rank(choice), *index));
+    choices.into_iter().map(|(_, choice)| choice).collect()
+}
+
+fn boss_relic_owner_choices(
+    session: &RunControlSession,
+    surface: &sts_simulator::eval::run_control::DecisionSurface,
+) -> Vec<OwnerChoice> {
+    let EngineState::BossRelicSelect(choice_state) = &session.engine_state else {
+        return Vec::new();
+    };
+    let context =
+        build_boss_relic_decision_context_v1(&session.run_state, choice_state.relics.clone());
+    let mut choices = executable_choices_including_cancel(surface)
+        .into_iter()
+        .filter(is_boss_relic_choice)
+        .map(|mut choice| {
+            if let Some(DecisionCandidateKey::BossRelicPick {
+                option_index,
+                relic,
+            }) = choice.key
+            {
+                choice.boss_relic = context
+                    .candidates
+                    .iter()
+                    .find(|candidate| candidate.index == option_index && candidate.relic == relic)
+                    .cloned();
+            }
+            choice
+        })
+        .enumerate()
+        .collect::<Vec<_>>();
+    choices.sort_by_key(|(index, choice)| (boss_relic_choice_rank(choice), *index));
     choices.into_iter().map(|(_, choice)| choice).collect()
 }
 
@@ -312,6 +354,21 @@ fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, RewardAdmissionOrderKey
                 .unwrap_or_else(RewardAdmissionOrderKeyV1::static_skip_boundary),
         ),
         _ => (2, RewardAdmissionOrderKeyV1::empty_or_deferred()),
+    }
+}
+
+fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, BossRelicOrderKeyV1) {
+    match choice.key {
+        Some(DecisionCandidateKey::BossRelicPick { .. }) => (
+            0,
+            choice
+                .boss_relic
+                .as_ref()
+                .map(boss_relic_candidate_order_key_v1)
+                .unwrap_or_else(boss_relic_skip_order_key_v1),
+        ),
+        Some(DecisionCandidateKey::BossRelicSkip) => (1, boss_relic_skip_order_key_v1()),
+        _ => (2, boss_relic_skip_order_key_v1()),
     }
 }
 
@@ -404,7 +461,10 @@ fn advance_to_owner_or_gap(
 }
 
 fn owner_is_branching(owner: Owner) -> bool {
-    matches!(owner, Owner::NeowStart | Owner::CardReward)
+    matches!(
+        owner,
+        Owner::NeowStart | Owner::CardReward | Owner::BossRelic
+    )
 }
 
 fn is_boss_combat(session: &RunControlSession) -> bool {
@@ -508,7 +568,7 @@ fn apply_policy_owner(
             )
             .map_err(|err| format!("{err:?}"))?,
         )?,
-        Owner::NeowStart | Owner::CardReward => {
+        Owner::NeowStart | Owner::CardReward | Owner::BossRelic => {
             return Err("branching owner cannot be consumed as policy".to_string());
         }
     };
@@ -631,6 +691,7 @@ fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
             Some(Owner::CardReward)
         }
         EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. } => Some(Owner::RewardTiny),
+        EngineState::BossRelicSelect(_) => Some(Owner::BossRelic),
         EngineState::Shop(_) => Some(Owner::ShopTiny),
         _ => None,
     }
@@ -810,6 +871,7 @@ fn owner_label(owner: Owner) -> String {
     match owner {
         Owner::NeowStart => "NeowStart".to_string(),
         Owner::CardReward => "CardReward".to_string(),
+        Owner::BossRelic => "BossRelic".to_string(),
         Owner::Event(event_id) => format!("Event({event_id:?})"),
         Owner::RewardTiny => "RewardTiny".to_string(),
         Owner::ShopTiny => "ShopTiny".to_string(),
@@ -838,7 +900,10 @@ fn render_timeline_step(step: &BranchPathStep) -> String {
     };
     match &step.admission {
         Some(admission) => format!("{base}  {}", render_admission_timeline(admission)),
-        None => base,
+        None => match &step.boss_relic {
+            Some(candidate) => format!("{base}  {}", render_boss_relic_timeline(candidate)),
+            None => base,
+        },
     }
 }
 
@@ -849,7 +914,10 @@ fn render_timeline_choice(choice: &OwnerChoice) -> String {
     };
     match &choice.admission {
         Some(admission) => format!("{:<34} {}", base, render_admission_timeline(admission)),
-        None => base,
+        None => match &choice.boss_relic {
+            Some(candidate) => format!("{:<34} {}", base, render_boss_relic_timeline(candidate)),
+            None => base,
+        },
     }
 }
 
@@ -873,6 +941,11 @@ fn render_choice_key_timeline(key: &DecisionCandidateKey) -> String {
             format!("bowl slot {option_index}")
         }
         DecisionCandidateKey::CardRewardSkip { .. } => "skip".to_string(),
+        DecisionCandidateKey::BossRelicPick {
+            option_index,
+            relic,
+        } => format!("boss relic {option_index} {relic:?}"),
+        DecisionCandidateKey::BossRelicSkip => "skip boss relic".to_string(),
         DecisionCandidateKey::ShopPurgeCard {
             deck_index,
             card,
@@ -885,6 +958,10 @@ fn render_choice_key_timeline(key: &DecisionCandidateKey) -> String {
 
 fn render_admission_timeline(admission: &RewardAdmission) -> String {
     render_reward_admission_compact(admission)
+}
+
+fn render_boss_relic_timeline(candidate: &BossRelicCandidateEvidenceV1) -> String {
+    render_boss_relic_candidate_compact_v1(candidate)
 }
 
 fn command_hint(command: &RunControlCommand) -> String {
@@ -903,13 +980,26 @@ fn command_hint(command: &RunControlCommand) -> String {
 fn executable_choices(
     surface: &sts_simulator::eval::run_control::DecisionSurface,
 ) -> Vec<OwnerChoice> {
+    executable_choices_with_cancel(surface, false)
+}
+
+fn executable_choices_including_cancel(
+    surface: &sts_simulator::eval::run_control::DecisionSurface,
+) -> Vec<OwnerChoice> {
+    executable_choices_with_cancel(surface, true)
+}
+
+fn executable_choices_with_cancel(
+    surface: &sts_simulator::eval::run_control::DecisionSurface,
+    include_cancel: bool,
+) -> Vec<OwnerChoice> {
     surface
         .view
         .candidates
         .iter()
         .filter_map(|candidate| {
             let action = candidate.action.executable_command()?;
-            if is_navigation_only_command(&action) {
+            if !include_cancel && is_navigation_only_command(&action) {
                 return None;
             }
             Some(OwnerChoice {
@@ -917,6 +1007,7 @@ fn executable_choices(
                 action,
                 label: candidate.label.clone(),
                 admission: None,
+                boss_relic: None,
             })
         })
         .collect()
@@ -955,6 +1046,13 @@ fn is_card_reward_choice(choice: &OwnerChoice) -> bool {
                 | DecisionCandidateKey::CardRewardSingingBowl { .. }
                 | DecisionCandidateKey::CardRewardSkip { .. }
         )
+    )
+}
+
+fn is_boss_relic_choice(choice: &OwnerChoice) -> bool {
+    matches!(
+        choice.key,
+        Some(DecisionCandidateKey::BossRelicPick { .. } | DecisionCandidateKey::BossRelicSkip)
     )
 }
 

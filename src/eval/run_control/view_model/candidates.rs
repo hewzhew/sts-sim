@@ -931,16 +931,22 @@ fn boss_relic_candidates(choice: &BossRelicChoiceState) -> Vec<DecisionCandidate
                 ClientInput::SubmitRelicChoice(idx),
                 None::<String>,
             );
+            candidate.key = Some(DecisionCandidateKey::BossRelicPick {
+                option_index: idx,
+                relic: *relic,
+            });
             candidate.resolution = Some(CandidateResolution::from_boss_relic(*relic));
             candidate
         })
         .collect::<Vec<_>>();
-    candidates.push(candidate(
+    let mut skip = candidate(
         "skip",
         "Skip boss relic",
         ClientInput::Cancel,
         Some("leaves boss chest without taking a boss relic"),
-    ));
+    );
+    skip.key = Some(DecisionCandidateKey::BossRelicSkip);
+    candidates.push(skip);
     candidates
 }
 

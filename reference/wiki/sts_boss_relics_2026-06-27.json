@@ -1,0 +1,727 @@
+[
+  {
+    "page": "冻结核心",
+    "title": "冻结核心",
+    "url": "https://sts.huijiwiki.com/wiki/%E5%86%BB%E7%BB%93%E6%A0%B8%E5%BF%83",
+    "relic_id": "FrozenCore",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "替换 破损核心 。 如果你在你的回合结束时还有空余的充能球栏位， 生成 1 个 冰霜 充能球。",
+    "effect_en": "Replaces Cracked Core.If you end your turn with empty Orb slots.Channel 1 Forest orb.",
+    "quote_zh": "某种脉动的冰冷能量充满了你核心中的破损处。",
+    "quote_en": "The crack in your core has been filled with a pulsating cold energy.",
+    "intro": "冻结核心（FrozenCore）是杀戮尖塔中的一件BOSS遗物。\n\n这件遗物只会在你拥有破损核心时出现在BOSS宝箱中。\n\n初始遗物燃烧之血蛇之戒指破损核心至纯之水\n\n普通遗物弹珠袋小血瓶铜制鳞片百年积木数据磁盘发条靴捕梦网开心小花灯笼意外光滑的石头御守奥利哈钢红头骨皇家枕头微笑面具异蛇头骨草莓药水腰带小宝箱金刚杵磨刀石餐券巨口储蓄罐双节棍昆虫标本陶瓷小鱼赤牛手摇鼓钢笔尖战纹涂料玩具扑翼飞机佛珠手链准备背包锚古茶具套装孙子兵法\n\n罕见遗物送货员蓝蜡烛瓶装火焰瓶装闪电瓶装旋风镀金缆线永恒羽毛冻结之蛋黑石护符地精之角苦无开信刀套娃带骨肉水银沙漏熔火之蛋干瘪之手忍术卷轴精致折扇缩放仪纸鹤纸蛙梨子问号牌自成型黏土手里剑颂钵共生病毒毒素之蛋白兽雕像两仪墨水瓶打击木偶泪滴吊坠盒船夹板日晷\n\n稀有遗物香炉历石怀表螺类化石羽翼之靴斗篷扣钨合金棍舵盘黄金眼赌博筹码鸟面瓮外卡钳冠军腰带卡戎之灰毒巫娃娃枯木树枝情感芯片生姜壶铃冰淇淋蜥蜴尾巴魔法花芒果古钱币宁静烟斗转经轮铲子萝卜生物样本针线铜钹鸟居结实绷带不休陀螺\n\nBoss遗物星盘黑暗之血黑星召唤铃铛诅咒钥匙机械臂痛楚印记核能电池潘多拉魔盒贤者之石长蛇戒指符文立方体符文圆顶符文金字塔异蛇之眼添水灵体外质小屋子天鹅绒颈圈破碎金冠空鸟笼融合之锤咖啡滤杯悬浮风筝冻结核心袖剑圣水神圣树皮紫色莲花奴隶贩子颈环\n\n事件遗物鲜血神像英雄宝典金神像死灵之书涅奥的悲恸尼利的宝典恩洛斯的礼物奇怪蘑菇精灵便便绽放印记蛇的头恩洛斯的饥饿的脸牧师的脸邪教徒头套地精容貌突变之力红面具弯曲铁钳\n\n商店遗物大锅化学物X冻结之眼李家华夫饼医药箱会员卡星系仪符文电容器奇怪的勺子工具箱算盘多利之镜齿轮工艺品扭曲漏斗手钻勇气投石索橙色药丸硫磺棱镜碎片美琅脂\n\n其他遗物头环",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:33:56.059Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "符文金字塔",
+    "title": "符文金字塔",
+    "url": "https://sts.huijiwiki.com/wiki/%E7%AC%A6%E6%96%87%E9%87%91%E5%AD%97%E5%A1%94",
+    "relic_id": "Runic Pyramid",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "你在回合结束时不再自动丢弃所有手牌。",
+    "effect_en": "At the end of your turn, you no longer discard your hand.",
+    "quote_zh": "上面的符文无法辨识",
+    "quote_en": "The runes are indecipherable.",
+    "intro": "符文金字塔（Runic Pyramid）是杀戮尖塔中的一件BOSS遗物。",
+    "strategy": "确立基础：虽然表现相同，但符文金字塔的效果不被视为保留，不能触发费用降低效果。\n计划妥当：当拥有符文金字塔时，计划妥当的选择卡牌环节会被跳过，不会触发费用降低效果。\n均衡、冥想：依然会触发费用降低效果。\n异蛇之眼：极力避免此组合，因为这会使得被改变为高耗能的卡牌难以被打出，使手牌难以周转，对大多数职业流派节奏都会造成极大负面影响。\n枯木树枝：同样极力避免此组合，因为枯木树枝产生的高耗能卡牌或限制性卡牌（例如交锋）难以被打出，会使手牌难以周转。",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:32:57.412Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "符文立方体",
+    "title": "符文立方体",
+    "url": "https://sts.huijiwiki.com/wiki/%E7%AC%A6%E6%96%87%E7%AB%8B%E6%96%B9%E4%BD%93",
+    "relic_id": "Runic Cube",
+    "rarity": "BOSS",
+    "pool": "铁甲战士",
+    "effect_zh": "每当你失去生命时，抽 1 张牌。",
+    "effect_en": "Whenever you lose HP, draw 1 card.",
+    "quote_zh": "上面的符文无法辨识。",
+    "quote_en": "The runes are indecipherable.",
+    "intro": "符文立方体（Runic Cube）是杀戮尖塔中铁甲战士的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:32:47.484Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "符文圆顶",
+    "title": "符文圆顶",
+    "url": "https://sts.huijiwiki.com/wiki/%E7%AC%A6%E6%96%87%E5%9C%86%E9%A1%B6",
+    "relic_id": "Runic Dome",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "你无法再看见敌人的 意图 。在每回合开始时获得一点能量。",
+    "effect_en": "At the start of your turn gain an energy. You can no longer see enemy intents.",
+    "quote_zh": "上面的符文无法辨识",
+    "quote_en": "The runes are indecipherable.",
+    "intro": "符文圆顶（Runic Dome）是杀戮尖塔中的一件BOSS遗物。\n\n这个遗物的副作用因人而异，当你将敌人的意图熟记于心时，这个遗物的副作用大多数情况下可以忽略不计。\n当然，一部分敌人的意图是随机的，所以它依然存在一定的副作用。\n但如果你接受并有耐心进行反复地存档与读档，那么它就完全没有副作用。\n如果你无法确认敌人的意图，且敌人本回合的攻击有可能会直接击杀你的时候，可以在结束回合、敌人意图图标出现但还未进行攻击造成伤害时进入地图页面（此时游戏内时间会完全暂停），随后再进行存档与读档，以避免在退出游戏的动画播放时被击杀。\n如果对敌人的意图依然持有怀疑，除非能保证输出，一定不能选择此遗物！！！\n\n————第一勇士：承受我的怒火吧！！！\n\n（所以如果想上进阶10，就快点把敌人意图全背下来吧）",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:32:52.466Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "核能电池",
+    "title": "核能电池",
+    "url": "https://sts.huijiwiki.com/wiki/%E6%A0%B8%E8%83%BD%E7%94%B5%E6%B1%A0",
+    "relic_id": "Nuclear Battery",
+    "rarity": "BOSS",
+    "pool": "故障机器人",
+    "effect_zh": "在每场战斗开始时， 生成 1 个 等离子 充能球。",
+    "effect_en": "At the start of each combat, Channel 1 Plasma.",
+    "quote_zh": "哇噢……",
+    "quote_en": "Ooooh...",
+    "intro": "核能电池（Nuclear Battery）是杀戮尖塔中故障机器人的一件BOSS遗物。\n\n初始遗物燃烧之血蛇之戒指破损核心至纯之水\n\n普通遗物弹珠袋小血瓶铜制鳞片百年积木数据磁盘发条靴捕梦网开心小花灯笼意外光滑的石头御守奥利哈钢红头骨皇家枕头微笑面具异蛇头骨草莓药水腰带小宝箱金刚杵磨刀石餐券巨口储蓄罐双节棍昆虫标本陶瓷小鱼赤牛手摇鼓钢笔尖战纹涂料玩具扑翼飞机佛珠手链准备背包锚古茶具套装孙子兵法\n\n罕见遗物送货员蓝蜡烛瓶装火焰瓶装闪电瓶装旋风镀金缆线永恒羽毛冻结之蛋黑石护符地精之角苦无开信刀套娃带骨肉水银沙漏熔火之蛋干瘪之手忍术卷轴精致折扇缩放仪纸鹤纸蛙梨子问号牌自成型黏土手里剑颂钵共生病毒毒素之蛋白兽雕像两仪墨水瓶打击木偶泪滴吊坠盒船夹板日晷\n\n稀有遗物香炉历石怀表螺类化石羽翼之靴斗篷扣钨合金棍舵盘黄金眼赌博筹码鸟面瓮外卡钳冠军腰带卡戎之灰毒巫娃娃枯木树枝情感芯片生姜壶铃冰淇淋蜥蜴尾巴魔法花芒果古钱币宁静烟斗转经轮铲子萝卜生物样本针线铜钹鸟居结实绷带不休陀螺\n\nBoss遗物星盘黑暗之血黑星召唤铃铛诅咒钥匙机械臂痛楚印记核能电池潘多拉魔盒贤者之石长蛇戒指符文立方体符文圆顶符文金字塔异蛇之眼添水灵体外质小屋子天鹅绒颈圈破碎金冠空鸟笼融合之锤咖啡滤杯悬浮风筝冻结核心袖剑圣水神圣树皮紫色莲花奴隶贩子颈环\n\n事件遗物鲜血神像英雄宝典金神像死灵之书涅奥的悲恸尼利的宝典恩洛斯的礼物奇怪蘑菇精灵便便绽放印记蛇的头恩洛斯的饥饿的脸牧师的脸邪教徒头套地精容貌突变之力红面具弯曲铁钳\n\n商店遗物大锅化学物X冻结之眼李家华夫饼医药箱会员卡星系仪符文电容器奇怪的勺子工具箱算盘多利之镜齿轮工艺品扭曲漏斗手钻勇气投石索橙色药丸硫磺棱镜碎片美琅脂\n\n其他遗物头环",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:32:22.447Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "黑暗之血",
+    "title": "黑暗之血",
+    "url": "https://sts.huijiwiki.com/wiki/%E9%BB%91%E6%9A%97%E4%B9%8B%E8%A1%80",
+    "relic_id": "Black Blood",
+    "rarity": "BOSS",
+    "pool": "铁甲战士",
+    "effect_zh": "替换 燃烧之血 。在战斗结束时，回复 12点生命。",
+    "effect_en": "Replaces Burning Blood. At the end of combat, heal 12 HP.",
+    "quote_zh": "你的愤怒变得更加黑暗。",
+    "quote_en": "The rage grows darker.",
+    "intro": "黑暗之血（Black Blood）是杀戮尖塔中铁甲战士的一件BOSS遗物。\n\n这件遗物只会在你拥有燃烧之血时出现在BOSS宝箱中。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:31:41.068Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "黑星",
+    "title": "黑星",
+    "url": "https://sts.huijiwiki.com/wiki/%E9%BB%91%E6%98%9F",
+    "relic_id": "Black Star",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "精英 敌人在被打败时多掉落一件 遗物 。",
+    "effect_en": "Elites drop an additional relic when defeated.",
+    "quote_zh": "最初在蛇镇上发现的遗物，当时被放在一根蜡烛旁边。",
+    "quote_en": "Originally discovered in the town of the serpent, beside a solitary candle.",
+    "intro": "黑星（Black Star）是杀戮尖塔中的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物",
+      "Trivia"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:31:45.453Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "机械臂",
+    "title": "机械臂",
+    "url": "https://sts.huijiwiki.com/wiki/%E6%9C%BA%E6%A2%B0%E8%87%82",
+    "relic_id": "Inserter",
+    "rarity": "BOSS",
+    "pool": "故障机器人",
+    "effect_zh": "每 2 回合，获得 1 个充能球栏位。",
+    "effect_en": "Every 2 turns, gain 1 Orb slot.",
+    "quote_zh": "抓取。放置。堆叠。重复。",
+    "quote_en": "Push. Pull. Stack. Repeat.",
+    "intro": "机械臂（Inserter）是杀戮尖塔中故障机器人的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物",
+      "Trivia"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:32:09.438Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "咖啡滤杯",
+    "title": "咖啡滤杯",
+    "url": "https://sts.huijiwiki.com/wiki/%E5%92%96%E5%95%A1%E6%BB%A4%E6%9D%AF",
+    "relic_id": "Coffee Dripper",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "你无法再在休息处 休息。在每回合开始时获得1点能量。",
+    "effect_en": "Gain an energy at the start of your turn. You can no longer Rest at Rest Sites.",
+    "quote_zh": "“好的，请再来一杯。继续工作，继续工作！”——建筑师\"",
+    "quote_en": "Yes, another cup please. Back to work. Back to work! - The Architect",
+    "intro": "咖啡滤杯（Coffee Dripper）是杀戮尖塔中的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:33:46.415Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "空鸟笼",
+    "title": "空鸟笼",
+    "url": "https://sts.huijiwiki.com/wiki/%E7%A9%BA%E9%B8%9F%E7%AC%BC",
+    "relic_id": "Empty Cage",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "拾起时，选择移除牌组中的 2 张牌。",
+    "effect_en": "Upon pickup, remove 2 cards from your deck.Choose 2 Cards to Remove.",
+    "quote_zh": "“将崇拜之物关进笼子，这是多么奇异的行为啊。”——兰伟德",
+    "quote_en": "\"How unusual to cage that which you worship.\" - Ranwid",
+    "intro": "空鸟笼（Empty Cage）是杀戮尖塔中的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物",
+      "Trivia"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:33:34.207Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "灵体外质",
+    "title": "灵体外质",
+    "url": "https://sts.huijiwiki.com/wiki/%E7%81%B5%E4%BD%93%E5%A4%96%E8%B4%A8",
+    "relic_id": "Ectoplasm",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "你不能再获得任何 金币 。在回合开始时获得1点能量。",
+    "effect_en": "ou can no longer gain Gold.Gain an energy at the start of your turn.",
+    "quote_zh": "这团黏液与能量的混合物微微脉动，仿佛有着生命。",
+    "quote_en": "This blob of slime and energy seems to pulse with life.",
+    "intro": "灵体外质（Ectoplasm）是杀戮尖塔中的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:33:13.033Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "奴隶贩子颈环",
+    "title": "奴隶贩子颈环",
+    "url": "https://sts.huijiwiki.com/wiki/%E5%A5%B4%E9%9A%B6%E8%B4%A9%E5%AD%90%E9%A2%88%E7%8E%AF",
+    "relic_id": "Slavers Collar",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "在Boss战与精英战中，你在每回合开始时获得1点能量。",
+    "effect_en": "During Boss and Elite combats, gain [E] at the start of your turn.",
+    "quote_zh": "锈蚀可憎的铁链。",
+    "quote_en": "Rusty miserable chains.",
+    "intro": "奴隶贩子颈环（Slavers Collar）是杀戮尖塔中的一件BOSS遗物。\n\n在BOSS战和精英战中每回合额外获得1点能量。\n少见的没有负面效果的加费遗物，但也意味着与普通敌人的战斗中不会有任何额外提升。\n\n初始遗物燃烧之血蛇之戒指破损核心至纯之水\n\n普通遗物弹珠袋小血瓶铜制鳞片百年积木数据磁盘发条靴捕梦网开心小花灯笼意外光滑的石头御守奥利哈钢红头骨皇家枕头微笑面具异蛇头骨草莓药水腰带小宝箱金刚杵磨刀石餐券巨口储蓄罐双节棍昆虫标本陶瓷小鱼赤牛手摇鼓钢笔尖战纹涂料玩具扑翼飞机佛珠手链准备背包锚古茶具套装孙子兵法\n\n罕见遗物送货员蓝蜡烛瓶装火焰瓶装闪电瓶装旋风镀金缆线永恒羽毛冻结之蛋黑石护符地精之角苦无开信刀套娃带骨肉水银沙漏熔火之蛋干瘪之手忍术卷轴精致折扇缩放仪纸鹤纸蛙梨子问号牌自成型黏土手里剑颂钵共生病毒毒素之蛋白兽雕像两仪墨水瓶打击木偶泪滴吊坠盒船夹板日晷\n\n稀有遗物香炉历石怀表螺类化石羽翼之靴斗篷扣钨合金棍舵盘黄金眼赌博筹码鸟面瓮外卡钳冠军腰带卡戎之灰毒巫娃娃枯木树枝情感芯片生姜壶铃冰淇淋蜥蜴尾巴魔法花芒果古钱币宁静烟斗转经轮铲子萝卜生物样本针线铜钹鸟居结实绷带不休陀螺\n\nBoss遗物星盘黑暗之血黑星召唤铃铛诅咒钥匙机械臂痛楚印记核能电池潘多拉魔盒贤者之石长蛇戒指符文立方体符文圆顶符文金字塔异蛇之眼添水灵体外质小屋子天鹅绒颈圈破碎金冠空鸟笼融合之锤咖啡滤杯悬浮风筝冻结核心袖剑圣水神圣树皮紫色莲花奴隶贩子颈环\n\n事件遗物鲜血神像英雄宝典金神像死灵之书涅奥的悲恸尼利的宝典恩洛斯的礼物奇怪蘑菇精灵便便绽放印记蛇的头恩洛斯的饥饿的脸牧师的脸邪教徒头套地精容貌突变之力红面具弯曲铁钳\n\n商店遗物大锅化学物X冻结之眼李家华夫饼医药箱会员卡星系仪符文电容器奇怪的勺子工具箱算盘多利之镜齿轮工艺品扭曲漏斗手钻勇气投石索橙色药丸硫磺棱镜碎片美琅脂\n\n其他遗物头环",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:34:22.247Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "潘多拉魔盒",
+    "title": "潘多拉魔盒",
+    "url": "https://sts.huijiwiki.com/wiki/%E6%BD%98%E5%A4%9A%E6%8B%89%E9%AD%94%E7%9B%92",
+    "relic_id": "Pandora",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "变化 所有“打击”和“防御”牌。",
+    "effect_en": "Upon pickup, Transform all Strike and Defend cards.",
+    "quote_zh": "你觉得打开这个盒子会很不吉利。",
+    "quote_en": "You have a bad feeling about opening this.",
+    "intro": "潘多拉魔盒（Pandora's Box）是杀戮尖塔中的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:32:27.444Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "破碎金冠",
+    "title": "破碎金冠",
+    "url": "https://sts.huijiwiki.com/wiki/%E7%A0%B4%E7%A2%8E%E9%87%91%E5%86%A0",
+    "relic_id": "Busted Crown",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "在卡牌奖励画面，可供选择的牌数减少 2 张。在每回合开始时获得1点能量。",
+    "effect_en": "Gain an energy at the start of your turn. Future card rewards have 2 less cards to choose from.",
+    "quote_zh": "第一勇士的金冠……或者只是一个拙劣的仿制品？",
+    "quote_en": "The Champ's crown... or a pale imitation?",
+    "intro": "破碎金冠（Busted Crown）是杀戮尖塔中的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:33:29.084Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "融合之锤",
+    "title": "融合之锤",
+    "url": "https://sts.huijiwiki.com/wiki/%E8%9E%8D%E5%90%88%E4%B9%8B%E9%94%A4",
+    "relic_id": "Fusion Hammer",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "你无法再在休息处锻造升级卡牌。每回合开始时获得1点能量。",
+    "effect_en": "Gain an energy at the start of your turn. You can no longer Smith at Rest Sites.",
+    "quote_zh": "一旦握住，就永远无法放下。",
+    "quote_en": "Once wielded, the owner can never let go.",
+    "intro": "融合之锤（Fusion Hammer）是杀戮尖塔中的一件BOSS遗物。\n\n初始遗物燃烧之血蛇之戒指破损核心至纯之水\n\n普通遗物弹珠袋小血瓶铜制鳞片百年积木数据磁盘发条靴捕梦网开心小花灯笼意外光滑的石头御守奥利哈钢红头骨皇家枕头微笑面具异蛇头骨草莓药水腰带小宝箱金刚杵磨刀石餐券巨口储蓄罐双节棍昆虫标本陶瓷小鱼赤牛手摇鼓钢笔尖战纹涂料玩具扑翼飞机佛珠手链准备背包锚古茶具套装孙子兵法\n\n罕见遗物送货员蓝蜡烛瓶装火焰瓶装闪电瓶装旋风镀金缆线永恒羽毛冻结之蛋黑石护符地精之角苦无开信刀套娃带骨肉水银沙漏熔火之蛋干瘪之手忍术卷轴精致折扇缩放仪纸鹤纸蛙梨子问号牌自成型黏土手里剑颂钵共生病毒毒素之蛋白兽雕像两仪墨水瓶打击木偶泪滴吊坠盒船夹板日晷\n\n稀有遗物香炉历石怀表螺类化石羽翼之靴斗篷扣钨合金棍舵盘黄金眼赌博筹码鸟面瓮外卡钳冠军腰带卡戎之灰毒巫娃娃枯木树枝情感芯片生姜壶铃冰淇淋蜥蜴尾巴魔法花芒果古钱币宁静烟斗转经轮铲子萝卜生物样本针线铜钹鸟居结实绷带不休陀螺\n\nBoss遗物星盘黑暗之血黑星召唤铃铛诅咒钥匙机械臂痛楚印记核能电池潘多拉魔盒贤者之石长蛇戒指符文立方体符文圆顶符文金字塔异蛇之眼添水灵体外质小屋子天鹅绒颈圈破碎金冠空鸟笼融合之锤咖啡滤杯悬浮风筝冻结核心袖剑圣水神圣树皮紫色莲花奴隶贩子颈环\n\n事件遗物鲜血神像英雄宝典金神像死灵之书涅奥的悲恸尼利的宝典恩洛斯的礼物奇怪蘑菇精灵便便绽放印记蛇的头恩洛斯的饥饿的脸牧师的脸邪教徒头套地精容貌突变之力红面具弯曲铁钳\n\n商店遗物大锅化学物X冻结之眼李家华夫饼医药箱会员卡星系仪符文电容器奇怪的勺子工具箱算盘多利之镜齿轮工艺品扭曲漏斗手钻勇气投石索橙色药丸硫磺棱镜碎片美琅脂\n\n其他遗物头环",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:33:41.390Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "神圣树皮",
+    "title": "神圣树皮",
+    "url": "https://sts.huijiwiki.com/wiki/%E7%A5%9E%E5%9C%A3%E6%A0%91%E7%9A%AE",
+    "relic_id": "Sacred Bark",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "药水的效果翻倍。",
+    "effect_en": "Double the effectiveness of potions.",
+    "quote_zh": "传说中来自于世界树上的一块树皮。",
+    "quote_en": "A bark rumored to originate from the World tree.",
+    "intro": "神圣树皮（Sacred Bark）是杀戮尖塔中的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:34:07.138Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "圣水",
+    "title": "圣水",
+    "url": "https://sts.huijiwiki.com/wiki/%E5%9C%A3%E6%B0%B4",
+    "relic_id": "Holy Water",
+    "rarity": "BOSS",
+    "pool": "观者",
+    "effect_zh": "在每场战斗开始时，将 3 张 奇迹 放入你的手牌。",
+    "effect_en": "Replaces Pure Water. At the start of each combat, add 3 Miracles into your hand.",
+    "quote_zh": "从高塔出现的时代前收集来的水。",
+    "quote_en": "Collected from a time before the Spire.",
+    "intro": "圣水（Holy Water）是杀戮尖塔中观者的一件BOSS遗物。\n\n这件遗物只会在你拥有至纯之水时出现在BOSS宝箱中。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:34:03.560Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "天鹅绒颈圈",
+    "title": "天鹅绒颈圈",
+    "url": "https://sts.huijiwiki.com/wiki/%E5%A4%A9%E9%B9%85%E7%BB%92%E9%A2%88%E5%9C%88",
+    "relic_id": "Velvet Choker",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "你每回合不能打出超过 6 张牌。在每回合开始时获得1点能量。",
+    "effect_en": "Gain an energy at the start of your turn. You cannot play more than 6 cards per turn.",
+    "quote_zh": "“力量巨大，但过于局限。”——忽必烈大帝",
+    "quote_en": "Immense power, but too limited. - Kublai the Great",
+    "intro": "天鹅绒颈圈（Velvet Choker）是杀戮尖塔中的一件BOSS遗物。\n\n初始遗物燃烧之血蛇之戒指破损核心至纯之水\n\n普通遗物弹珠袋小血瓶铜制鳞片百年积木数据磁盘发条靴捕梦网开心小花灯笼意外光滑的石头御守奥利哈钢红头骨皇家枕头微笑面具异蛇头骨草莓药水腰带小宝箱金刚杵磨刀石餐券巨口储蓄罐双节棍昆虫标本陶瓷小鱼赤牛手摇鼓钢笔尖战纹涂料玩具扑翼飞机佛珠手链准备背包锚古茶具套装孙子兵法\n\n罕见遗物送货员蓝蜡烛瓶装火焰瓶装闪电瓶装旋风镀金缆线永恒羽毛冻结之蛋黑石护符地精之角苦无开信刀套娃带骨肉水银沙漏熔火之蛋干瘪之手忍术卷轴精致折扇缩放仪纸鹤纸蛙梨子问号牌自成型黏土手里剑颂钵共生病毒毒素之蛋白兽雕像两仪墨水瓶打击木偶泪滴吊坠盒船夹板日晷\n\n稀有遗物香炉历石怀表螺类化石羽翼之靴斗篷扣钨合金棍舵盘黄金眼赌博筹码鸟面瓮外卡钳冠军腰带卡戎之灰毒巫娃娃枯木树枝情感芯片生姜壶铃冰淇淋蜥蜴尾巴魔法花芒果古钱币宁静烟斗转经轮铲子萝卜生物样本针线铜钹鸟居结实绷带不休陀螺\n\nBoss遗物星盘黑暗之血黑星召唤铃铛诅咒钥匙机械臂痛楚印记核能电池潘多拉魔盒贤者之石长蛇戒指符文立方体符文圆顶符文金字塔异蛇之眼添水灵体外质小屋子天鹅绒颈圈破碎金冠空鸟笼融合之锤咖啡滤杯悬浮风筝冻结核心袖剑圣水神圣树皮紫色莲花奴隶贩子颈环\n\n事件遗物鲜血神像英雄宝典金神像死灵之书涅奥的悲恸尼利的宝典恩洛斯的礼物奇怪蘑菇精灵便便绽放印记蛇的头恩洛斯的饥饿的脸牧师的脸邪教徒头套地精容貌突变之力红面具弯曲铁钳\n\n商店遗物大锅化学物X冻结之眼李家华夫饼医药箱会员卡星系仪符文电容器奇怪的勺子工具箱算盘多利之镜齿轮工艺品扭曲漏斗手钻勇气投石索橙色药丸硫磺棱镜碎片美琅脂\n\n其他遗物头环",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:33:23.378Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "添水",
+    "title": "添水",
+    "url": "https://sts.huijiwiki.com/wiki/%E6%B7%BB%E6%B0%B4",
+    "relic_id": "Sozu",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "你无法再获得药水。在每回合开始时获得1点能量。",
+    "effect_en": "Gain 1 Energy at the start of each turn. You can no longer obtain potions.",
+    "quote_zh": "你注意到所有带魔力的液体在接近这件遗物时都会失去效力。",
+    "quote_en": "You notice that magical liquids seem to lose their properties when near this relic.",
+    "intro": "添水（Sozu）是杀戮尖塔中的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:33:08.429Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "痛楚印记",
+    "title": "痛楚印记",
+    "url": "https://sts.huijiwiki.com/wiki/%E7%97%9B%E6%A5%9A%E5%8D%B0%E8%AE%B0",
+    "relic_id": "Mark of Pain",
+    "rarity": "BOSS",
+    "pool": "铁甲战士",
+    "effect_zh": "每回合开始获得 [R] 。在战斗开始时，将 2 张 伤口 放入你的抽牌堆。",
+    "effect_en": "Gain [R] at the start of your turn. At the start of combat, shuffle 2 Wounds into your draw pile.",
+    "quote_zh": "北方部落中使用这个工具来给那些在战斗中掌握痛楚的战士们打上烙印。",
+    "quote_en": "This brand was used by the northern tribes to signify warriors who had mastered pain in battle.",
+    "intro": "痛楚印记（Mark of Pain）是杀戮尖塔中铁甲战士的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:32:15.466Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "贤者之石",
+    "title": "贤者之石",
+    "url": "https://sts.huijiwiki.com/wiki/%E8%B4%A4%E8%80%85%E4%B9%8B%E7%9F%B3",
+    "relic_id": "Philosopher",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "在每回合开始时获得1点能量。所有敌人初始获得 1点 力量。",
+    "effect_en": "Gain an energy at the start of your turn. ALL enemies start combat with 1 Strength.",
+    "quote_zh": "这块石头中散发出纯粹的能量，所有周围的人与物都会因此而变强。",
+    "quote_en": "Raw energy emanates from the stone, empowering all nearby.",
+    "intro": "贤者之石（Philosopher's Stone）是杀戮尖塔中的一件BOSS遗物。\n\n初始遗物燃烧之血蛇之戒指破损核心至纯之水\n\n普通遗物弹珠袋小血瓶铜制鳞片百年积木数据磁盘发条靴捕梦网开心小花灯笼意外光滑的石头御守奥利哈钢红头骨皇家枕头微笑面具异蛇头骨草莓药水腰带小宝箱金刚杵磨刀石餐券巨口储蓄罐双节棍昆虫标本陶瓷小鱼赤牛手摇鼓钢笔尖战纹涂料玩具扑翼飞机佛珠手链准备背包锚古茶具套装孙子兵法\n\n罕见遗物送货员蓝蜡烛瓶装火焰瓶装闪电瓶装旋风镀金缆线永恒羽毛冻结之蛋黑石护符地精之角苦无开信刀套娃带骨肉水银沙漏熔火之蛋干瘪之手忍术卷轴精致折扇缩放仪纸鹤纸蛙梨子问号牌自成型黏土手里剑颂钵共生病毒毒素之蛋白兽雕像两仪墨水瓶打击木偶泪滴吊坠盒船夹板日晷\n\n稀有遗物香炉历石怀表螺类化石羽翼之靴斗篷扣钨合金棍舵盘黄金眼赌博筹码鸟面瓮外卡钳冠军腰带卡戎之灰毒巫娃娃枯木树枝情感芯片生姜壶铃冰淇淋蜥蜴尾巴魔法花芒果古钱币宁静烟斗转经轮铲子萝卜生物样本针线铜钹鸟居结实绷带不休陀螺\n\nBoss遗物星盘黑暗之血黑星召唤铃铛诅咒钥匙机械臂痛楚印记核能电池潘多拉魔盒贤者之石长蛇戒指符文立方体符文圆顶符文金字塔异蛇之眼添水灵体外质小屋子天鹅绒颈圈破碎金冠空鸟笼融合之锤咖啡滤杯悬浮风筝冻结核心袖剑圣水神圣树皮紫色莲花奴隶贩子颈环\n\n事件遗物鲜血神像英雄宝典金神像死灵之书涅奥的悲恸尼利的宝典恩洛斯的礼物奇怪蘑菇精灵便便绽放印记蛇的头恩洛斯的饥饿的脸牧师的脸邪教徒头套地精容貌突变之力红面具弯曲铁钳\n\n商店遗物大锅化学物X冻结之眼李家华夫饼医药箱会员卡星系仪符文电容器奇怪的勺子工具箱算盘多利之镜齿轮工艺品扭曲漏斗手钻勇气投石索橙色药丸硫磺棱镜碎片美琅脂\n\n其他遗物头环",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:32:35.367Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "小屋子",
+    "title": "小屋子",
+    "url": "https://sts.huijiwiki.com/wiki/%E5%B0%8F%E5%B1%8B%E5%AD%90",
+    "relic_id": "Tiny House",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "拾起时，获得 1 瓶药水。 获得 50 金币 。 将你的最大生命值提升 5。 获得 1 张牌。 随机升级 1 张牌。",
+    "effect_en": "Upon pickup, obtain 1 potion. Gain 50 Gold. Raise your Max HP by #b. Obtain 1 card. Upgrade 1 random card.",
+    "quote_zh": "“一项近乎完美的微缩化工程。这是我至今最优秀的作品，但仍然远远不够。”——建筑师",
+    "quote_en": "A near perfect implementation of miniaturization. My finest work to date, but still not adequate. - The Architect",
+    "intro": "小屋子（Tiny House）是杀戮尖塔中的一件BOSS遗物。\n\n初始遗物燃烧之血蛇之戒指破损核心至纯之水\n\n普通遗物弹珠袋小血瓶铜制鳞片百年积木数据磁盘发条靴捕梦网开心小花灯笼意外光滑的石头御守奥利哈钢红头骨皇家枕头微笑面具异蛇头骨草莓药水腰带小宝箱金刚杵磨刀石餐券巨口储蓄罐双节棍昆虫标本陶瓷小鱼赤牛手摇鼓钢笔尖战纹涂料玩具扑翼飞机佛珠手链准备背包锚古茶具套装孙子兵法\n\n罕见遗物送货员蓝蜡烛瓶装火焰瓶装闪电瓶装旋风镀金缆线永恒羽毛冻结之蛋黑石护符地精之角苦无开信刀套娃带骨肉水银沙漏熔火之蛋干瘪之手忍术卷轴精致折扇缩放仪纸鹤纸蛙梨子问号牌自成型黏土手里剑颂钵共生病毒毒素之蛋白兽雕像两仪墨水瓶打击木偶泪滴吊坠盒船夹板日晷\n\n稀有遗物香炉历石怀表螺类化石羽翼之靴斗篷扣钨合金棍舵盘黄金眼赌博筹码鸟面瓮外卡钳冠军腰带卡戎之灰毒巫娃娃枯木树枝情感芯片生姜壶铃冰淇淋蜥蜴尾巴魔法花芒果古钱币宁静烟斗转经轮铲子萝卜生物样本针线铜钹鸟居结实绷带不休陀螺\n\nBoss遗物星盘黑暗之血黑星召唤铃铛诅咒钥匙机械臂痛楚印记核能电池潘多拉魔盒贤者之石长蛇戒指符文立方体符文圆顶符文金字塔异蛇之眼添水灵体外质小屋子天鹅绒颈圈破碎金冠空鸟笼融合之锤咖啡滤杯悬浮风筝冻结核心袖剑圣水神圣树皮紫色莲花奴隶贩子颈环\n\n事件遗物鲜血神像英雄宝典金神像死灵之书涅奥的悲恸尼利的宝典恩洛斯的礼物奇怪蘑菇精灵便便绽放印记蛇的头恩洛斯的饥饿的脸牧师的脸邪教徒头套地精容貌突变之力红面具弯曲铁钳\n\n商店遗物大锅化学物X冻结之眼李家华夫饼医药箱会员卡星系仪符文电容器奇怪的勺子工具箱算盘多利之镜齿轮工艺品扭曲漏斗手钻勇气投石索橙色药丸硫磺棱镜碎片美琅脂\n\n其他遗物头环",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:33:18.159Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "星盘",
+    "title": "星盘",
+    "url": "https://sts.huijiwiki.com/wiki/%E6%98%9F%E7%9B%98",
+    "relic_id": "Astrolabe",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "拾起时，选择 3 张牌进行 变化 ，然后将这些牌 升级 。",
+    "effect_en": "Upon pickup, Transform 3 cards, then Upgrade them.",
+    "quote_zh": "可以从星星中探知宝贵知识的工具。",
+    "quote_en": "A tool to glean invaluable knowledge from the stars.",
+    "intro": "星盘（Astrolabe）是杀戮尖塔中的一件BOSS遗物。",
+    "strategy": "它可以将您的卡牌进行变化，可能能使您的一些不需要的卡牌变成关键牌，同时，也可以将一些无法消耗的低价值卡（如初始卡）变成消耗牌与能力牌，有利于卡组精简。\n同时，由于它只能BOSS宝箱中开出，选择它意味着可能需要放弃一些能增加能量的遗物，这将极大影响您在下一阶段遇到更强力敌人时的操作空间，请谨慎选择。\n变化牌的结果与卡牌的稀有度和选择三张牌的顺序相关（具体参见存档与读档）。因此，可通过反复存档与读档来查看更多的变化情况并选择最有利的一种。",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-public.huijistatic.com/sts/uploads/8/83/Astrolabe.png",
+    "collected_at": "2026-06-27T09:31:36.479Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "袖剑",
+    "title": "袖剑",
+    "url": "https://sts.huijiwiki.com/wiki/%E8%A2%96%E5%89%91",
+    "relic_id": "WristBlade",
+    "rarity": "BOSS",
+    "pool": "静默猎手",
+    "effect_zh": "费用为0的 攻击牌 额外造成 4 点伤害。",
+    "effect_en": "Attacks that cost 0 deal 4 additional damage.",
+    "quote_zh": "实用的暗杀工具。",
+    "quote_en": "Handy for assassinations.",
+    "intro": "袖剑（WristBlade）是杀戮尖塔中静默猎手的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物",
+      "Trivia"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:33:59.439Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "悬浮风筝",
+    "title": "悬浮风筝",
+    "url": "https://sts.huijiwiki.com/wiki/%E6%82%AC%E6%B5%AE%E9%A3%8E%E7%AD%9D",
+    "relic_id": "Hovering Kite",
+    "rarity": "BOSS",
+    "pool": "静默猎手",
+    "effect_zh": "你在每回合第一次弃牌时，获得1点能量。",
+    "effect_en": "The first time you discard a card each turn,gain an energy.",
+    "quote_zh": "风筝在战斗中飘浮在你的身旁，不知是何种神秘的力量让它能浮在空中。",
+    "quote_en": "The Kite floats around you in battle, propelled by a mysterious force.",
+    "intro": "悬浮风筝（Hovering Kite）是杀戮尖塔中静默猎手的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:33:50.561Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "异蛇之眼",
+    "title": "异蛇之眼",
+    "url": "https://sts.huijiwiki.com/wiki/%E5%BC%82%E8%9B%87%E4%B9%8B%E7%9C%BC",
+    "relic_id": "Snecko Eye",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "每回合多抽 2 张牌。每场战斗开始时获得 混乱 效果。",
+    "effect_en": "At the start of your turn, draw 2 additional cards. Start each combat Confused.",
+    "quote_zh": "一条死去异蛇的眼珠，比你想象中的要大上不少。",
+    "quote_en": "An eye of a fallen snecko. Much larger than you imagined.",
+    "intro": "异蛇之眼（Snecko Eye）是杀戮尖塔中的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:33:03.463Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "长蛇戒指",
+    "title": "长蛇戒指",
+    "url": "https://sts.huijiwiki.com/wiki/%E9%95%BF%E8%9B%87%E6%88%92%E6%8C%87",
+    "relic_id": "Ring of the Serpent",
+    "rarity": "BOSS",
+    "pool": "静默猎手",
+    "effect_zh": "替换 #g蛇之戒指 。在你的每个回合开始时，额外抽 1 张牌。",
+    "effect_en": "Replaces #gRing #gof #gthe #gSnake.At the start of your turn, draw 1 additional card.",
+    "quote_zh": "你的戒指改变了形态，焕然一新。",
+    "quote_en": "Your ring has morphed and changed forms.",
+    "intro": "长蛇戒指（Ring of the Serpent）是杀戮尖塔中静默猎手的一件BOSS遗物。\n\n这件遗物只会在你拥有蛇之戒指时出现在BOSS宝箱中。\n\n初始遗物燃烧之血蛇之戒指破损核心至纯之水\n\n普通遗物弹珠袋小血瓶铜制鳞片百年积木数据磁盘发条靴捕梦网开心小花灯笼意外光滑的石头御守奥利哈钢红头骨皇家枕头微笑面具异蛇头骨草莓药水腰带小宝箱金刚杵磨刀石餐券巨口储蓄罐双节棍昆虫标本陶瓷小鱼赤牛手摇鼓钢笔尖战纹涂料玩具扑翼飞机佛珠手链准备背包锚古茶具套装孙子兵法\n\n罕见遗物送货员蓝蜡烛瓶装火焰瓶装闪电瓶装旋风镀金缆线永恒羽毛冻结之蛋黑石护符地精之角苦无开信刀套娃带骨肉水银沙漏熔火之蛋干瘪之手忍术卷轴精致折扇缩放仪纸鹤纸蛙梨子问号牌自成型黏土手里剑颂钵共生病毒毒素之蛋白兽雕像两仪墨水瓶打击木偶泪滴吊坠盒船夹板日晷\n\n稀有遗物香炉历石怀表螺类化石羽翼之靴斗篷扣钨合金棍舵盘黄金眼赌博筹码鸟面瓮外卡钳冠军腰带卡戎之灰毒巫娃娃枯木树枝情感芯片生姜壶铃冰淇淋蜥蜴尾巴魔法花芒果古钱币宁静烟斗转经轮铲子萝卜生物样本针线铜钹鸟居结实绷带不休陀螺\n\nBoss遗物星盘黑暗之血黑星召唤铃铛诅咒钥匙机械臂痛楚印记核能电池潘多拉魔盒贤者之石长蛇戒指符文立方体符文圆顶符文金字塔异蛇之眼添水灵体外质小屋子天鹅绒颈圈破碎金冠空鸟笼融合之锤咖啡滤杯悬浮风筝冻结核心袖剑圣水神圣树皮紫色莲花奴隶贩子颈环\n\n事件遗物鲜血神像英雄宝典金神像死灵之书涅奥的悲恸尼利的宝典恩洛斯的礼物奇怪蘑菇精灵便便绽放印记蛇的头恩洛斯的饥饿的脸牧师的脸邪教徒头套地精容貌突变之力红面具弯曲铁钳\n\n商店遗物大锅化学物X冻结之眼李家华夫饼医药箱会员卡星系仪符文电容器奇怪的勺子工具箱算盘多利之镜齿轮工艺品扭曲漏斗手钻勇气投石索橙色药丸硫磺棱镜碎片美琅脂\n\n其他遗物头环",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:32:40.038Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "召唤铃铛",
+    "title": "召唤铃铛",
+    "url": "https://sts.huijiwiki.com/wiki/%E5%8F%AC%E5%94%A4%E9%93%83%E9%93%9B",
+    "relic_id": "Calling Bell",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "获得一个独特的 诅咒 和 3 件 遗物 。",
+    "effect_en": "Upon pickup, obtain a unique Curse and 3 relics.",
+    "quote_zh": "这个黑铁铃铛在你找到它时作响了3次，但现在它已经不再响了。",
+    "quote_en": "his dark iron bell rang 3 times when you found it, but now stays silent.",
+    "intro": "召唤铃铛（Calling Bell）是杀戮尖塔中的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:31:54.453Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "紫色莲花",
+    "title": "紫色莲花",
+    "url": "https://sts.huijiwiki.com/wiki/%E7%B4%AB%E8%89%B2%E8%8E%B2%E8%8A%B1",
+    "relic_id": "Violet Lotus",
+    "rarity": "BOSS",
+    "pool": "观者",
+    "effect_zh": "每次你离开 平静 时，获得1点额外能量。",
+    "effect_en": "Whenever you exit Calm, gain an additional energy.",
+    "quote_zh": "远古的经书上记载着，“法力池”的水面上总是有许多这些花朵。",
+    "quote_en": "The old texts describe that the surface of \\\"mana pools\\\" were littered with these flowers.",
+    "intro": "紫色莲花（Violet Lotus）是杀戮尖塔中观者的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物",
+      "Trivia"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:34:13.449Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  },
+  {
+    "page": "诅咒钥匙",
+    "title": "诅咒钥匙",
+    "url": "https://sts.huijiwiki.com/wiki/%E8%AF%85%E5%92%92%E9%92%A5%E5%8C%99",
+    "relic_id": "Cursed Key",
+    "rarity": "BOSS",
+    "pool": "通用",
+    "effect_zh": "你每次打开一个非Boss宝箱，都会获得一张 诅咒 。在每回合开始时获得一点能量。",
+    "effect_en": "at the start of your turn.gain 1 energy. Whenever you open a non-Boss chest, obtain a Curse.",
+    "quote_zh": "你能感到这把钥匙上散发出邪恶的能量。力量总是需要付出代价的。",
+    "quote_en": "You can feel the malicious energy emanating from the key. Power comes at a price.",
+    "intro": "诅咒钥匙（Cursed Key）是杀戮尖塔中的一件BOSS遗物。",
+    "strategy": "",
+    "categories": [
+      "遗物"
+    ],
+    "image": "https://huiji-thumb.huijistatic.com/sts/uploads/thumb/8/83/Astrolabe.png/48px-Astrolabe.png",
+    "collected_at": "2026-06-27T09:32:00.522Z",
+    "source": "mediawiki-api-parse",
+    "_raw_hint": {
+      "has_relic_info": true,
+      "has_boss_word": true
+    }
+  }
+]
