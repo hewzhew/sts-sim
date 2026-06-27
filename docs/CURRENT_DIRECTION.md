@@ -66,6 +66,27 @@ When investigating bad non-combat choices on a fixed seed, first run with:
 retention and campaign scheduler strategy influence. Use it as the baseline
 before changing card reward, shop, campfire, event, or route strategy.
 
+## Combat Search Experiment Notes
+
+Current small combat benchmark:
+
+```text
+combat_gap_case: seed1552225672 A2F19 Spheric Guardian
+baseline line probe: win, hp_loss=9
+line repair probe: win, hp_loss=7
+```
+
+The useful current direction is complete-line repair: find one executable win,
+then cut a prefix and repair the suffix. Two ideas are worth keeping for later
+cases, but are not current wins on this hallway benchmark:
+
+- NMCS-style one-step lookahead may help long fights where the search cannot
+  find the first complete win. It is a coarse guide toward plausible half-lines,
+  not a good precision improver once a win already exists.
+- Setup pull-forward may help cases where a delayed power is visibly the
+  bottleneck. On the Spheric Guardian case it produced legal attempts but no
+  improvement, so do not keep a generic implementation without a better case.
+
 ## What Is Not Current Mainline
 
 - adding more PowerShell wrapper switches
