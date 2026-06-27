@@ -250,7 +250,14 @@ fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
                 .unwrap_or(RewardAdmissionClass::EmptyOrDeferred.rank()),
         ),
         Some(DecisionCandidateKey::CardRewardSingingBowl { .. }) => (1, 6),
-        Some(DecisionCandidateKey::CardRewardSkip { .. }) => (1, 7),
+        Some(DecisionCandidateKey::CardRewardSkip { .. }) => (
+            1,
+            choice
+                .admission
+                .as_ref()
+                .map(|admission| admission.class.rank())
+                .unwrap_or(RewardAdmissionClass::Skip.rank()),
+        ),
         _ => (2, 0),
     }
 }
