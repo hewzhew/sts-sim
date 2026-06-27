@@ -28,6 +28,12 @@ struct Args {
     max_actions: usize,
     #[arg(long, default_value_t = 0)]
     per_state_actions: usize,
+    #[arg(long, default_value_t = 0)]
+    repair_cuts: usize,
+    #[arg(long, default_value_t = 2_000)]
+    repair_nodes: usize,
+    #[arg(long, default_value_t = 250)]
+    repair_ms: u64,
     #[arg(long)]
     json: bool,
 }
@@ -45,6 +51,7 @@ struct CombatGapCase {
 #[derive(Clone)]
 struct Line {
     position: CombatPosition,
+    inputs: Vec<ClientInput>,
     actions: Vec<String>,
     terminal: CombatTerminal,
     score: i64,
@@ -52,15 +59,105 @@ struct Line {
     setup_seen: bool,
 }
 
+#[derive(Clone, Copy)]
+struct SearchConfig {
+    nodes: usize,
+    ms: u64,
+    beam: usize,
+    max_actions: usize,
+    per_state_actions: usize,
+}
+
+struct SearchRun {
+    best_win: Option<Line>,
+    best_frontier: Option<Line>,
+    nodes_expanded: usize,
+    nodes_generated: usize,
+    truncated: bool,
+    elapsed_ms: u128,
+}
+
+#[derive(Default)]
+struct RepairStats {
+    attempts: usize,
+    wins: usize,
+    improvements: usize,
+    best_cut: Option<usize>,
+    elapsed_ms: u128,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let started = Instant::now();
-    let deadline = started + Duration::from_millis(args.ms);
     let case = load_case(&args.case)?;
     let initial_hp = case.position.combat.entities.player.current_hp;
     let stepper = EngineCombatStepper;
+    let config = SearchConfig {
+        nodes: args.nodes,
+        ms: args.ms,
+        beam: args.beam,
+        max_actions: args.max_actions,
+        per_state_actions: args.per_state_actions,
+    };
+    let run = line_search_from(case.position.clone(), initial_hp, config, &stepper);
+    let (repaired_win, repair_stats) = match run.best_win.clone() {
+        Some(best) => repair_line(&case.position, best, initial_hp, &args, &stepper),
+        None => (None, RepairStats::default()),
+    };
+    let base_best_win = run.best_win.clone();
+    let best_win = repaired_win.or(base_best_win.clone());
+
+    let report = json!({
+        "schema": "combat_line_probe",
+        "case": case_header(&case),
+        "budget": {
+            "nodes": args.nodes,
+            "ms": args.ms,
+            "beam": args.beam,
+            "max_actions": args.max_actions,
+            "per_state_actions": args.per_state_actions,
+            "repair_cuts": args.repair_cuts,
+            "repair_nodes": args.repair_nodes,
+            "repair_ms": args.repair_ms,
+        },
+        "stats": {
+            "nodes_expanded": run.nodes_expanded,
+            "nodes_generated": run.nodes_generated,
+            "elapsed_ms": started.elapsed().as_millis(),
+            "search_elapsed_ms": run.elapsed_ms,
+            "truncated": run.truncated,
+        },
+        "repair": {
+            "attempts": repair_stats.attempts,
+            "wins": repair_stats.wins,
+            "improvements": repair_stats.improvements,
+            "best_cut": repair_stats.best_cut,
+            "elapsed_ms": repair_stats.elapsed_ms,
+        },
+        "base_best_win": base_best_win.as_ref().map(|line| line_summary(line, initial_hp)),
+        "best_win": best_win.as_ref().map(|line| line_summary(line, initial_hp)),
+        "best_frontier": run.best_frontier.as_ref().map(|line| line_summary(line, initial_hp)),
+    });
+
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print_human(&report);
+    }
+    Ok(())
+}
+
+fn line_search_from(
+    start_position: CombatPosition,
+    initial_hp: i32,
+    config: SearchConfig,
+    stepper: &EngineCombatStepper,
+) -> SearchRun {
+    let started = Instant::now();
+    let deadline = started + Duration::from_millis(config.ms);
     let mut frontier = vec![line_from(
-        case.position.clone(),
+        start_position,
+        Vec::new(),
         Vec::new(),
         initial_hp,
         "root",
@@ -72,14 +169,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut nodes_generated = 0usize;
     let mut truncated = false;
 
-    while !frontier.is_empty() && nodes_expanded < args.nodes && Instant::now() < deadline {
+    while !frontier.is_empty() && nodes_expanded < config.nodes && Instant::now() < deadline {
         let mut next = Vec::new();
         for line in frontier.drain(..) {
-            if nodes_expanded >= args.nodes || Instant::now() >= deadline {
+            if nodes_expanded >= config.nodes || Instant::now() >= deadline {
                 truncated = true;
                 break;
             }
-            if line.terminal != CombatTerminal::Unresolved || line.actions.len() >= args.max_actions
+            if line.terminal != CombatTerminal::Unresolved
+                || line.actions.len() >= config.max_actions
             {
                 remember_win(&mut best_win, line);
                 continue;
@@ -87,8 +185,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             nodes_expanded += 1;
             let mut choices = no_potion_actions(stepper.legal_action_choices(&line.position));
             order_choices(&mut choices);
-            if args.per_state_actions > 0 {
-                choices.truncate(args.per_state_actions);
+            if config.per_state_actions > 0 {
+                choices.truncate(config.per_state_actions);
             }
             for choice in choices {
                 let input = choice.input.clone();
@@ -100,7 +198,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         deadline: Some(deadline),
                     },
                 );
+                if step.truncated || step.timed_out {
+                    truncated = true;
+                    continue;
+                }
+                let mut inputs = line.inputs.clone();
                 let mut actions = line.actions.clone();
+                inputs.push(input.clone());
                 actions.push(choice.action_key);
                 let lane = classify_lane(&line.position, &step.position, &input);
                 let setup_seen = line.setup_seen || lane == "setup";
@@ -111,6 +215,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 let child = line_from(
                     step.position,
+                    inputs,
                     actions,
                     initial_hp,
                     child_lane,
@@ -123,42 +228,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     next.push(child);
                 }
-                if Instant::now() >= deadline || nodes_generated >= args.nodes {
+                if Instant::now() >= deadline || nodes_generated >= config.nodes {
                     truncated = true;
                     break;
                 }
             }
         }
-        frontier = keep_lane_frontier(next, args.beam);
+        frontier = keep_lane_frontier(next, config.beam);
     }
 
     let best_frontier = frontier.into_iter().max_by_key(|line| line.score);
-    let report = json!({
-        "schema": "combat_line_probe",
-        "case": case_header(&case),
-        "budget": {
-            "nodes": args.nodes,
-            "ms": args.ms,
-            "beam": args.beam,
-            "max_actions": args.max_actions,
-            "per_state_actions": args.per_state_actions,
-        },
-        "stats": {
-            "nodes_expanded": nodes_expanded,
-            "nodes_generated": nodes_generated,
-            "elapsed_ms": started.elapsed().as_millis(),
-            "truncated": truncated,
-        },
-        "best_win": best_win.as_ref().map(|line| line_summary(line, initial_hp)),
-        "best_frontier": best_frontier.as_ref().map(|line| line_summary(line, initial_hp)),
-    });
 
-    if args.json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
-    } else {
-        print_human(&report);
+    SearchRun {
+        best_win,
+        best_frontier,
+        nodes_expanded,
+        nodes_generated,
+        truncated,
+        elapsed_ms: started.elapsed().as_millis(),
     }
-    Ok(())
 }
 
 fn load_case(path: &PathBuf) -> Result<CombatGapCase, String> {
@@ -172,6 +260,7 @@ fn load_case(path: &PathBuf) -> Result<CombatGapCase, String> {
 
 fn line_from(
     position: CombatPosition,
+    inputs: Vec<ClientInput>,
     actions: Vec<String>,
     initial_hp: i32,
     lane: &'static str,
@@ -182,12 +271,117 @@ fn line_from(
     let score = score_position(&position, terminal, initial_hp, actions.len());
     Line {
         position,
+        inputs,
         actions,
         terminal,
         score,
         lane,
         setup_seen,
     }
+}
+
+fn repair_line(
+    root: &CombatPosition,
+    mut best: Line,
+    initial_hp: i32,
+    args: &Args,
+    stepper: &EngineCombatStepper,
+) -> (Option<Line>, RepairStats) {
+    let started = Instant::now();
+    let mut stats = RepairStats::default();
+    if args.repair_cuts == 0 || best.terminal != CombatTerminal::Win {
+        return (Some(best), stats);
+    }
+    let config = SearchConfig {
+        nodes: args.repair_nodes,
+        ms: args.repair_ms,
+        beam: args.beam,
+        max_actions: args.max_actions,
+        per_state_actions: args.per_state_actions,
+    };
+    for cut in repair_cut_points(best.inputs.len(), args.repair_cuts) {
+        stats.attempts += 1;
+        let Some(prefix_position) = replay_prefix(root, &best.inputs[..cut], stepper) else {
+            continue;
+        };
+        let Some(suffix_win) =
+            line_search_from(prefix_position, initial_hp, config, stepper).best_win
+        else {
+            continue;
+        };
+        stats.wins += 1;
+        let candidate = splice_line(&best, cut, suffix_win, initial_hp, stepper);
+        if candidate.score > best.score {
+            best = candidate;
+            stats.improvements += 1;
+            stats.best_cut = Some(cut);
+        }
+    }
+    stats.elapsed_ms = started.elapsed().as_millis();
+    (Some(best), stats)
+}
+
+fn repair_cut_points(len: usize, limit: usize) -> Vec<usize> {
+    let count = len.min(limit);
+    if count == 0 {
+        return Vec::new();
+    }
+    let mut points = Vec::new();
+    for i in 0..count {
+        let cut = i * len / count;
+        if cut < len && !points.contains(&cut) {
+            points.push(cut);
+        }
+    }
+    points
+}
+
+fn replay_prefix(
+    root: &CombatPosition,
+    inputs: &[ClientInput],
+    stepper: &EngineCombatStepper,
+) -> Option<CombatPosition> {
+    let mut position = root.clone();
+    for input in inputs {
+        let step = stepper.apply_to_stable(
+            &position,
+            input.clone(),
+            CombatStepLimits {
+                max_engine_steps: 250,
+                deadline: None,
+            },
+        );
+        if step.truncated || step.timed_out {
+            return None;
+        }
+        position = step.position;
+        if step.terminal != CombatTerminal::Unresolved {
+            break;
+        }
+    }
+    Some(position)
+}
+
+fn splice_line(
+    prefix: &Line,
+    cut: usize,
+    suffix: Line,
+    initial_hp: i32,
+    stepper: &EngineCombatStepper,
+) -> Line {
+    let mut inputs = prefix.inputs[..cut].to_vec();
+    let mut actions = prefix.actions[..cut].to_vec();
+    inputs.extend(suffix.inputs);
+    actions.extend(suffix.actions);
+    line_from(
+        suffix.position,
+        inputs,
+        actions,
+        initial_hp,
+        suffix.lane,
+        prefix.setup_seen || suffix.setup_seen,
+        stepper,
+    )
 }
 
 fn keep_lane_frontier(mut lines: Vec<Line>, beam: usize) -> Vec<Line> {
@@ -358,16 +552,30 @@ fn print_human(report: &serde_json::Value) {
     println!("combat_line_probe");
     println!("  budget: {}", one_line(&report["budget"]));
     println!("  stats: {}", one_line(&report["stats"]));
-    println!("  best_win: {}", one_line(&report["best_win"]));
+    println!("  repair: {}", one_line(&report["repair"]));
+    print_line("base_best_win", &report["base_best_win"]);
+    print_line("best_win", &report["best_win"]);
     if report["best_win"].is_null() {
-        println!("  best_frontier: {}", one_line(&report["best_frontier"]));
+        print_line("best_frontier", &report["best_frontier"]);
     }
+}
+
+fn print_line(label: &str, line: &serde_json::Value) {
+    if line.is_null() {
+        println!("  {label}: null");
+        return;
+    }
+    println!(
+        "  {label}: terminal={} final_hp={} hp_loss={} actions={} score={}",
+        line["terminal"], line["final_hp"], line["hp_loss"], line["action_count"], line["score"]
+    );
+    println!("    path: {}", one_line(&line["actions"]));
 }
 
 fn one_line(value: &serde_json::Value) -> String {
     serde_json::to_string(value)
         .unwrap_or_else(|_| "<json>".to_string())
         .chars()
-        .take(480)
+        .take(4096)
         .collect()
 }
