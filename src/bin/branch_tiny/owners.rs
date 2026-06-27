@@ -40,7 +40,7 @@ pub(super) enum ChoiceAnnotation {
     ShopTiny(ShopTinyAnnotation),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum RewardPlanLane {
     Mainline,
     Probe,
@@ -169,7 +169,12 @@ fn card_reward_owner_choices(
         })
         .enumerate()
         .collect::<Vec<_>>();
-    choices.sort_by_key(|(index, choice)| (card_reward_choice_rank(choice), *index));
+    let has_mainline_take = choices
+        .iter()
+        .any(|(_, choice)| is_mainline_card_reward_take(choice));
+    choices.sort_by_key(|(index, choice)| {
+        (card_reward_choice_rank(choice, has_mainline_take), *index)
+    });
     choices.into_iter().map(|(_, choice)| choice).collect()
 }
 
@@ -306,7 +311,10 @@ fn reward_plan_lane(admission: &RewardAdmission) -> RewardPlanLane {
     }
 }
 
-fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, u8, RewardAdmissionOrderKeyV1) {
+fn card_reward_choice_rank(
+    choice: &OwnerChoice,
+    has_mainline_take: bool,
+) -> (u8, u8, RewardAdmissionOrderKeyV1) {
     match &choice.key {
         Some(DecisionCandidateKey::CardRewardOpen { .. }) => {
             (0, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())
@@ -316,7 +324,7 @@ fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, u8, RewardAdmissionOrde
             choice
                 .annotation
                 .reward_lane()
-                .map(reward_plan_lane_rank)
+                .map(|lane| reward_plan_lane_rank(lane, has_mainline_take))
                 .unwrap_or(3),
             choice
                 .annotation
@@ -324,16 +332,14 @@ fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, u8, RewardAdmissionOrde
                 .map(reward_admission_order_key_v1)
                 .unwrap_or_else(RewardAdmissionOrderKeyV1::empty_or_deferred),
         ),
-        Some(DecisionCandidateKey::CardRewardSingingBowl { .. }) => {
-            (1, 2, RewardAdmissionOrderKeyV1::unscored_optional_reward())
-        }
+        Some(DecisionCandidateKey::CardRewardSingingBowl { .. }) => (
+            1,
+            skip_reward_lane_rank(has_mainline_take),
+            RewardAdmissionOrderKeyV1::unscored_optional_reward(),
+        ),
         Some(DecisionCandidateKey::CardRewardSkip { .. }) => (
             1,
-            choice
-                .annotation
-                .reward_lane()
-                .map(reward_plan_lane_rank)
-                .unwrap_or(2),
+            skip_reward_lane_rank(has_mainline_take),
             choice
                 .annotation
                 .reward()
@@ -344,12 +350,33 @@ fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, u8, RewardAdmissionOrde
     }
 }
 
-fn reward_plan_lane_rank(lane: RewardPlanLane) -> u8 {
+fn is_mainline_card_reward_take(choice: &OwnerChoice) -> bool {
+    matches!(
+        choice.key,
+        Some(DecisionCandidateKey::CardRewardPick { .. })
+    ) && choice.annotation.reward_lane() == Some(RewardPlanLane::Mainline)
+}
+
+fn reward_plan_lane_rank(lane: RewardPlanLane, has_mainline_take: bool) -> u8 {
     match lane {
         RewardPlanLane::Mainline => 0,
-        RewardPlanLane::Probe => 1,
-        RewardPlanLane::Skip => 2,
+        RewardPlanLane::Skip => skip_reward_lane_rank(has_mainline_take),
+        RewardPlanLane::Probe => {
+            if has_mainline_take {
+                2
+            } else {
+                1
+            }
+        }
         RewardPlanLane::Reject => 3,
+    }
+}
+
+fn skip_reward_lane_rank(has_mainline_take: bool) -> u8 {
+    if has_mainline_take {
+        1
+    } else {
+        0
     }
 }
 
