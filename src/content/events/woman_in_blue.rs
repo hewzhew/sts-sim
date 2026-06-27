@@ -2,7 +2,7 @@ use crate::rewards::state::{RewardItem, RewardState};
 use crate::state::core::EngineState;
 use crate::state::events::{
     EventActionKind, EventChoiceMeta, EventEffect, EventId, EventOption, EventOptionSemantics,
-    EventOptionTransition, EventState,
+    EventOptionTransition, EventOwnerPolicyKind, EventState,
 };
 use crate::state::run::RunState;
 use crate::state::selection::DomainEventSource;
@@ -14,6 +14,8 @@ const COST_3: i32 = 40;
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => {
+            let buy_one_policy = run_state.ascension_level >= 15 && run_state.gold >= COST_1;
+            let free_leave_policy = run_state.ascension_level < 15;
             let mut choices = vec![
                 EventOption::new(
                     EventChoiceMeta::new(format!("[1 Potion] Lose {} Gold.", COST_1)),
@@ -27,6 +29,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
+                        owner_policy: conservative_auto_if(buy_one_policy),
                         ..Default::default()
                     },
                 ),
@@ -72,6 +75,7 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                         transition: EventOptionTransition::AdvanceScreen,
                         repeatable: false,
                         terminal: false,
+                        owner_policy: conservative_auto_if(free_leave_policy),
                         ..Default::default()
                     },
                 ));
@@ -100,9 +104,18 @@ pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventO
                 transition: EventOptionTransition::Complete,
                 repeatable: false,
                 terminal: true,
+                owner_policy: EventOwnerPolicyKind::ConservativeAuto,
                 ..Default::default()
             },
         )],
+    }
+}
+
+fn conservative_auto_if(enabled: bool) -> EventOwnerPolicyKind {
+    if enabled {
+        EventOwnerPolicyKind::ConservativeAuto
+    } else {
+        EventOwnerPolicyKind::None
     }
 }
 
