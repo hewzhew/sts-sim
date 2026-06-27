@@ -24,6 +24,7 @@ struct Branch {
     path: Vec<BranchPathStep>,
     session: RunControlSession,
     status: BranchStatus,
+    boss_retry: Option<BossRetryReport>,
 }
 
 #[derive(Clone)]
@@ -32,6 +33,21 @@ struct OwnerChoice {
     action: RunControlCommand,
     label: String,
     admission: Option<RewardAdmission>,
+}
+
+#[derive(Clone)]
+struct BossRetryReport {
+    status: BossRetryStatus,
+    max_nodes: usize,
+    wall_ms: u64,
+    action_keys: Vec<String>,
+}
+
+#[derive(Clone)]
+enum BossRetryStatus {
+    Failed(String),
+    Won,
+    Advanced(String),
 }
 
 #[derive(Clone)]
@@ -97,6 +113,8 @@ struct Args {
     auto_ops: usize,
     search_nodes: usize,
     search_ms: u64,
+    boss_search_nodes: usize,
+    boss_search_ms: u64,
 }
 
 fn main() {
@@ -118,12 +136,13 @@ fn run() -> Result<(), String> {
         },
         ..Default::default()
     });
-    let status = advance_to_owner_or_gap(&mut session, args);
+    let (status, boss_retry) = advance_to_owner_or_gap(&mut session, args);
     let mut frontier = VecDeque::from([Branch {
         id: 0,
         path: Vec::new(),
         session,
         status,
+        boss_retry,
     }]);
     let mut next_branch_id = 1usize;
 
@@ -132,8 +151,12 @@ fn run() -> Result<(), String> {
         args.seed, args.ascension, args.generations, args.max_branches
     );
     println!(
-        "branch cap: {}; '>' marks expanded choices",
-        args.max_branches
+        "branch cap: {}; search={}nodes/{}ms; boss_retry={}nodes/{}ms; '>' marks expanded choices",
+        args.max_branches,
+        args.search_nodes,
+        args.search_ms,
+        args.boss_search_nodes,
+        args.boss_search_ms
     );
     for generation in 0..=args.generations {
         let mut next = VecDeque::new();
@@ -187,9 +210,9 @@ fn expand_registered_owner(
     let mut children = Vec::new();
     for choice in candidates {
         let mut session = branch.session.clone();
-        let status = match session.apply_command(choice.action.clone()) {
+        let (status, boss_retry) = match session.apply_command(choice.action.clone()) {
             Ok(_) => advance_to_owner_or_gap(&mut session, args),
-            Err(err) => BranchStatus::ApplyFailed(err),
+            Err(err) => (BranchStatus::ApplyFailed(err), None),
         };
         let mut path = branch.path.clone();
         path.push(BranchPathStep {
@@ -207,6 +230,7 @@ fn expand_registered_owner(
             path,
             session,
             status,
+            boss_retry,
         });
     }
     children
@@ -291,7 +315,10 @@ fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, RewardAdmissionOrderKey
     }
 }
 
-fn advance_to_owner_or_gap(session: &mut RunControlSession, args: Args) -> BranchStatus {
+fn advance_to_owner_or_gap(
+    session: &mut RunControlSession,
+    args: Args,
+) -> (BranchStatus, Option<BossRetryReport>) {
     let mut policy_steps = 0usize;
     loop {
         let options = RunControlAutoStepOptions {
@@ -306,42 +333,146 @@ fn advance_to_owner_or_gap(session: &mut RunControlSession, args: Args) -> Branc
         };
         match session.apply_command(RunControlCommand::AutoRun(options)) {
             Ok(_) if terminal_label(session).is_some() => {
-                return BranchStatus::Terminal(terminal_label(session).unwrap());
+                return (
+                    BranchStatus::Terminal(terminal_label(session).unwrap()),
+                    None,
+                );
             }
             Ok(outcome) => {
                 let Some(stop) = outcome.auto_stop.as_ref() else {
-                    return BranchStatus::AdvanceFailed(
-                        "auto_run returned non-terminal success without auto_stop".to_string(),
+                    return (
+                        BranchStatus::AdvanceFailed(
+                            "auto_run returned non-terminal success without auto_stop".to_string(),
+                        ),
+                        None,
                     );
                 };
                 let status = classify_boundary(session, stop);
+                if matches!(status, BranchStatus::CombatGap { .. }) && is_boss_combat(session) {
+                    if let Some(result) = try_boss_retry(session, args) {
+                        return result;
+                    }
+                }
                 let owner = match &status {
                     BranchStatus::Running { owner, .. } => *owner,
-                    _ => return status,
+                    _ => return (status, None),
                 };
                 if owner_is_branching(owner) {
-                    return status;
+                    return (status, None);
                 }
                 policy_steps += 1;
                 if policy_steps > 16 {
-                    return BranchStatus::BudgetGap {
-                        boundary: build_decision_surface(session).view.header.title.clone(),
-                        reason: "owner policy step budget exhausted".to_string(),
-                    };
+                    return (
+                        BranchStatus::BudgetGap {
+                            boundary: build_decision_surface(session).view.header.title.clone(),
+                            reason: "owner policy step budget exhausted".to_string(),
+                        },
+                        None,
+                    );
                 }
                 if let Err(err) = apply_policy_owner(session, owner) {
-                    return BranchStatus::AdvanceFailed(format!(
-                        "owner policy {owner:?} failed: {err}"
-                    ));
+                    return (
+                        BranchStatus::AdvanceFailed(format!(
+                            "owner policy {owner:?} failed: {err}"
+                        )),
+                        None,
+                    );
                 }
             }
-            Err(err) => return BranchStatus::AdvanceFailed(err),
+            Err(err) => return (BranchStatus::AdvanceFailed(err), None),
         }
     }
 }
 
 fn owner_is_branching(owner: Owner) -> bool {
     matches!(owner, Owner::NeowStart | Owner::CardReward)
+}
+
+fn is_boss_combat(session: &RunControlSession) -> bool {
+    session
+        .active_combat
+        .as_ref()
+        .is_some_and(|combat| combat.combat_state.meta.is_boss_fight)
+}
+
+fn try_boss_retry(
+    session: &mut RunControlSession,
+    args: Args,
+) -> Option<(BranchStatus, Option<BossRetryReport>)> {
+    let options = RunControlAutoStepOptions {
+        search: RunControlSearchCombatOptions {
+            max_nodes: Some(args.boss_search_nodes),
+            wall_ms: Some(args.boss_search_ms),
+            max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
+            ..Default::default()
+        },
+        max_operations: Some(args.auto_ops),
+        route: RunControlRouteAutomationMode::Planner,
+    };
+    let outcome = match session.apply_command(RunControlCommand::AutoRun(options)) {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            return Some((
+                BranchStatus::AdvanceFailed(err.clone()),
+                Some(BossRetryReport {
+                    status: BossRetryStatus::Failed(err),
+                    max_nodes: args.boss_search_nodes,
+                    wall_ms: args.boss_search_ms,
+                    action_keys: Vec::new(),
+                }),
+            ));
+        }
+    };
+    let action_keys = session
+        .last_completed_combat_automation_trajectory()
+        .map(|record| {
+            record
+                .actions
+                .iter()
+                .map(|action| action.action_key.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let report_status = if !action_keys.is_empty() {
+        BossRetryStatus::Won
+    } else {
+        BossRetryStatus::Failed(one_line(&outcome.message))
+    };
+    let report = BossRetryReport {
+        status: report_status,
+        max_nodes: args.boss_search_nodes,
+        wall_ms: args.boss_search_ms,
+        action_keys,
+    };
+    if terminal_label(session).is_some() {
+        return Some((
+            BranchStatus::Terminal(terminal_label(session).unwrap()),
+            Some(report),
+        ));
+    }
+    let stop = match outcome.auto_stop.as_ref() {
+        Some(stop) => stop,
+        None => {
+            return Some((
+                BranchStatus::AdvanceFailed(
+                    "boss retry returned non-terminal success without auto_stop".to_string(),
+                ),
+                Some(report),
+            ));
+        }
+    };
+    let status = classify_boundary(session, stop);
+    let report = if matches!(report.status, BossRetryStatus::Won)
+        && !matches!(status, BranchStatus::CombatGap { .. })
+    {
+        BossRetryReport {
+            status: BossRetryStatus::Advanced(status_boundary(&status).to_string()),
+            ..report
+        }
+    } else {
+        report
+    };
+    Some((status, Some(report)))
 }
 
 fn apply_policy_owner(session: &mut RunControlSession, owner: Owner) -> Result<(), String> {
@@ -526,6 +657,9 @@ fn print_branch_timeline(
     if let Some(previous) = branch.path.last() {
         println!("  arrived: {}", render_timeline_step(previous));
     }
+    if let Some(retry) = branch.boss_retry.as_ref() {
+        print_boss_retry(retry);
+    }
     print_reward_gap_detail(&branch.session, &branch.status);
     if choices.is_empty() {
         return;
@@ -545,6 +679,39 @@ fn print_branch_timeline(
             expanded,
             choices.len() - expanded
         );
+    }
+}
+
+fn print_boss_retry(retry: &BossRetryReport) {
+    println!(
+        "  boss_retry: {} budget={}nodes/{}ms",
+        boss_retry_status_label(&retry.status),
+        retry.max_nodes,
+        retry.wall_ms
+    );
+    if retry.action_keys.is_empty() {
+        return;
+    }
+    let shown = retry
+        .action_keys
+        .iter()
+        .take(12)
+        .cloned()
+        .collect::<Vec<_>>();
+    println!("    win_path: {}", shown.join(" -> "));
+    if retry.action_keys.len() > shown.len() {
+        println!(
+            "    ... {} more actions",
+            retry.action_keys.len() - shown.len()
+        );
+    }
+}
+
+fn boss_retry_status_label(status: &BossRetryStatus) -> String {
+    match status {
+        BossRetryStatus::Failed(reason) => format!("failed ({})", one_line(reason)),
+        BossRetryStatus::Won => "combat-win".to_string(),
+        BossRetryStatus::Advanced(boundary) => format!("combat-win -> {boundary}"),
     }
 }
 
@@ -873,6 +1040,8 @@ fn parse_args() -> Result<Args, String> {
         auto_ops: 64,
         search_nodes: 20_000,
         search_ms: 300,
+        boss_search_nodes: 2_000_000,
+        boss_search_ms: 15_000,
     };
     let raw = std::env::args().skip(1).collect::<Vec<_>>();
     let mut index = 0;
@@ -881,7 +1050,7 @@ fn parse_args() -> Result<Args, String> {
         if matches!(key, "--help" | "-h") {
             println!("branch_tiny --seed N --generations N --max-branches N");
             println!(
-                "  owner-audit runner; branching owners: NeowStart, CardReward; policy owners: ShopTiny, marked Event options"
+                "  owner-audit runner; boss combat gaps retry once with --boss-search-nodes/--boss-search-ms"
             );
             std::process::exit(0);
         }
@@ -896,6 +1065,8 @@ fn parse_args() -> Result<Args, String> {
                 | "--auto-ops"
                 | "--search-nodes"
                 | "--search-ms"
+                | "--boss-search-nodes"
+                | "--boss-search-ms"
         ) {
             return Err(format!("unknown argument {key}"));
         }
@@ -910,6 +1081,8 @@ fn parse_args() -> Result<Args, String> {
             "--auto-ops" => args.auto_ops = parse(value, key)?,
             "--search-nodes" => args.search_nodes = parse(value, key)?,
             "--search-ms" => args.search_ms = parse(value, key)?,
+            "--boss-search-nodes" => args.boss_search_nodes = parse(value, key)?,
+            "--boss-search-ms" => args.boss_search_ms = parse(value, key)?,
             _ => unreachable!("argument key was validated before value parsing"),
         }
         index += 2;
