@@ -132,6 +132,11 @@ impl RunControlSession {
             RunControlCommand::BranchSkipCardReward(index) => {
                 self.apply_branch_skip_card_reward(index)
             }
+            RunControlCommand::SingingBowlVisibleCardReward(index) => {
+                super::super::card_reward_auto::apply_singing_bowl_to_visible_card_reward_item(
+                    self, index,
+                )
+            }
             RunControlCommand::RecordedCardRewardPick(index) => {
                 super::super::card_reward_auto::apply_recorded_card_reward_pick(self, index)
             }
@@ -239,15 +244,6 @@ impl RunControlSession {
     }
 
     fn apply_visible_candidate(&mut self, id: &str) -> Result<RunControlCommandOutcome, String> {
-        if id == "bowl" {
-            if let Some(outcome) =
-                super::super::card_reward_auto::apply_singing_bowl_to_visible_card_reward_item(
-                    self,
-                )?
-            {
-                return Ok(outcome);
-            }
-        }
         let surface = super::super::decision_surface::build_decision_surface(self);
         let Some(candidate) = super::super::decision_surface::resolve_surface_candidate(
             &surface,
@@ -256,8 +252,8 @@ impl RunControlSession {
         ) else {
             return Err(format!("no visible candidate '{id}'"));
         };
-        match candidate.action.executable_input() {
-            Some(input) => self.apply_input(input),
+        match candidate.action.executable_command() {
+            Some(command) => self.apply_command(command),
             None => Err(format!(
                 "candidate '{id}' is not directly executable: {}",
                 candidate.action.command_hint()

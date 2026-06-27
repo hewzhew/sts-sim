@@ -81,6 +81,7 @@ pub enum RunControlCommand {
         enabled: bool,
     },
     BranchSkipCardReward(usize),
+    SingingBowlVisibleCardReward(usize),
     RecordedCardRewardPick(usize),
     CardIndex(usize),
     RelicIndex(usize),

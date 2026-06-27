@@ -118,19 +118,18 @@ pub(super) fn apply_recorded_card_reward_pick(
 
 pub(super) fn apply_singing_bowl_to_visible_card_reward_item(
     session: &mut RunControlSession,
-) -> Result<Option<RunControlCommandOutcome>, String> {
+    reward_index: usize,
+) -> Result<RunControlCommandOutcome, String> {
     if !session
         .run_state
         .relics
         .iter()
         .any(|relic| relic.id == RelicId::SingingBowl)
     {
-        return Ok(None);
+        return Err("Singing Bowl card reward requires Singing Bowl relic".to_string());
     }
 
-    let Some((reward_index, _cards)) = visible_card_reward_item(session) else {
-        return Ok(None);
-    };
+    ensure_visible_card_reward_item_at(session, reward_index)?;
 
     session.apply_input(ClientInput::ClaimReward(reward_index))?;
     let Some(opened_cards) = active_pending_reward_cards(session) else {
@@ -139,9 +138,32 @@ pub(super) fn apply_singing_bowl_to_visible_card_reward_item(
         );
     };
     let bowl_index = opened_cards.len();
-    session
-        .apply_input_without_manual_card_reward_trace(ClientInput::SelectCard(bowl_index))
-        .map(Some)
+    session.apply_input_without_manual_card_reward_trace(ClientInput::SelectCard(bowl_index))
+}
+
+fn ensure_visible_card_reward_item_at(
+    session: &RunControlSession,
+    reward_index: usize,
+) -> Result<(), String> {
+    let reward = match &session.engine_state {
+        EngineState::RewardScreen(reward) => reward,
+        EngineState::RewardOverlay { reward_state, .. } => reward_state,
+        _ => return Err("Singing Bowl card reward requires a reward screen".to_string()),
+    };
+    if reward.pending_card_choice.is_some() {
+        return Err(
+            "Singing Bowl visible card reward requires an unopened card reward item".to_string(),
+        );
+    }
+    if !matches!(
+        reward.items.get(reward_index),
+        Some(RewardItem::Card { .. })
+    ) {
+        return Err(format!(
+            "reward item {reward_index} is not a visible card reward item"
+        ));
+    }
+    Ok(())
 }
 
 pub(super) fn card_reward_policy_stop_annotation(

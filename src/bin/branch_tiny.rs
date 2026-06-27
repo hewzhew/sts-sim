@@ -517,6 +517,9 @@ fn command_hint(command: &RunControlCommand) -> String {
         RunControlCommand::BranchSkipCardReward(index) => {
             format!("BranchSkipCardReward({index})")
         }
+        RunControlCommand::SingingBowlVisibleCardReward(index) => {
+            format!("SingingBowlVisibleCardReward({index})")
+        }
         _ => format!("{command:?}"),
     }
 }

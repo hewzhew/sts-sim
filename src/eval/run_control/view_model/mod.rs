@@ -203,6 +203,9 @@ fn run_control_command_hint(command: &super::commands::RunControlCommand) -> Str
         super::commands::RunControlCommand::BranchSkipCardReward(index) => {
             format!("branch-skip-card-reward {index}")
         }
+        super::commands::RunControlCommand::SingingBowlVisibleCardReward(index) => {
+            format!("singing-bowl-card-reward {index}")
+        }
         super::commands::RunControlCommand::RecordedCardRewardPick(index) => {
             format!("record-pick {index}")
         }

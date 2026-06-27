@@ -92,6 +92,11 @@ pub fn parse_run_control_command(line: &str) -> Result<RunControlCommand, String
             rest.first(),
             "card reward item index",
         )?)),
+        "singing-bowl-card-reward" | "bowl-reward" => {
+            Ok(RunControlCommand::SingingBowlVisibleCardReward(
+                parse_usize_arg(rest.first(), "card reward item index")?,
+            ))
+        }
         "action" => Ok(RunControlCommand::ActionIndex(parse_usize_arg(
             rest.first(),
             "action index",

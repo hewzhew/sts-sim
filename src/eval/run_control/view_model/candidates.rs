@@ -259,18 +259,18 @@ fn reward_candidates(
             .iter()
             .any(|relic| relic.id == RelicId::SingingBowl)
     {
-        candidates.push(candidate(
-            "bowl",
-            "Singing Bowl | gain 2 max HP",
-            "bowl",
-            Some("consume the first visible card reward instead of taking a card"),
-        ));
-        if let Some(candidate) = candidates.last_mut() {
-            if let Some(reward_item_index) = reward
-                .items
-                .iter()
-                .position(|item| matches!(item, crate::state::rewards::RewardItem::Card { .. }))
-            {
+        if let Some(reward_item_index) = reward
+            .items
+            .iter()
+            .position(|item| matches!(item, crate::state::rewards::RewardItem::Card { .. }))
+        {
+            candidates.push(candidate(
+                "bowl",
+                "Singing Bowl | gain 2 max HP",
+                RunControlCommand::SingingBowlVisibleCardReward(reward_item_index),
+                Some("consume the first visible card reward instead of taking a card"),
+            ));
+            if let Some(candidate) = candidates.last_mut() {
                 candidate.key = Some(DecisionCandidateKey::CardRewardSingingBowl {
                     reward_item_index,
                     option_index: 0,
