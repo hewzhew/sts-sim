@@ -247,6 +247,11 @@ fn reward_candidates(
                 ClientInput::ClaimReward(idx),
                 None::<String>,
             );
+            if matches!(item, crate::state::rewards::RewardItem::Card { .. }) {
+                candidate.key = Some(DecisionCandidateKey::CardRewardOpen {
+                    reward_item_index: idx,
+                });
+            }
             candidate.resolution =
                 CandidateResolution::from_reward_item(item, reward, &session.run_state);
             candidate

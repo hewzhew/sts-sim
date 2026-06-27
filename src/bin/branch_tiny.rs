@@ -60,6 +60,7 @@ enum Owner {
     NeowStart,
     CardReward,
     Event(EventId),
+    RewardTiny,
     ShopTiny,
 }
 
@@ -189,7 +190,7 @@ fn owner_choices(
             .into_iter()
             .filter(|choice| is_card_reward_choice(choice))
             .collect(),
-        Owner::Event(_) | Owner::ShopTiny => Vec::new(),
+        Owner::Event(_) | Owner::RewardTiny | Owner::ShopTiny => Vec::new(),
     }
 }
 
@@ -249,6 +250,7 @@ fn owner_is_branching(owner: Owner) -> bool {
 fn apply_policy_owner(session: &mut RunControlSession, owner: Owner) -> Result<(), String> {
     let input = match owner {
         Owner::ShopTiny => require_visible_input(session, ClientInput::Proceed)?,
+        Owner::RewardTiny => reward_tiny_policy_input(session)?,
         Owner::Event(_) => require_visible_input(
             session,
             sts_simulator::content::events::owner_policy::conservative_owner_policy_input(
@@ -263,6 +265,32 @@ fn apply_policy_owner(session: &mut RunControlSession, owner: Owner) -> Result<(
     session
         .apply_command(RunControlCommand::Input(input))
         .map(|_| ())
+}
+
+fn reward_tiny_policy_input(session: &RunControlSession) -> Result<ClientInput, String> {
+    let (reward, exit) = match &session.engine_state {
+        EngineState::RewardScreen(reward) => (reward, ClientInput::Proceed),
+        EngineState::RewardOverlay { reward_state, .. } => (reward_state, ClientInput::Cancel),
+        _ => return Err("RewardTiny owner requires reward surface".to_string()),
+    };
+    if reward.pending_card_choice.is_some() || reward.has_card_reward_item() {
+        return Err("RewardTiny owner received card reward surface".to_string());
+    }
+    let only_unclaimable_potions = !reward.items.is_empty()
+        && reward.items.iter().all(|item| {
+            matches!(
+                item,
+                sts_simulator::state::rewards::RewardItem::Potion { .. }
+            )
+        })
+        && session.run_state.find_empty_potion_slot().is_none();
+    if reward.items.is_empty() || only_unclaimable_potions {
+        return require_visible_input(session, exit);
+    }
+    Err(format!(
+        "RewardTiny owner has strategic residual reward items: {:?}",
+        reward.items
+    ))
 }
 
 fn require_visible_input(
@@ -343,11 +371,18 @@ fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
         EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
             Some(Owner::CardReward)
         }
+        EngineState::RewardScreen(reward) if reward.has_card_reward_item() => {
+            Some(Owner::CardReward)
+        }
         EngineState::RewardOverlay { reward_state, .. }
             if reward_state.pending_card_choice.is_some() =>
         {
             Some(Owner::CardReward)
         }
+        EngineState::RewardOverlay { reward_state, .. } if reward_state.has_card_reward_item() => {
+            Some(Owner::CardReward)
+        }
+        EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. } => Some(Owner::RewardTiny),
         EngineState::Shop(_) => Some(Owner::ShopTiny),
         _ => None,
     }
@@ -391,6 +426,7 @@ fn print_branch(branch: &Branch) {
             render_path(&branch.path)
         }
     );
+    print_reward_gap_detail(&branch.session, &branch.status);
     if let BranchStatus::Running { owner, .. } = &branch.status {
         let surface = build_decision_surface(&branch.session);
         let candidates = owner_choices(*owner, &surface)
@@ -400,6 +436,26 @@ fn print_branch(branch: &Branch) {
         if !candidates.is_empty() {
             println!("    owner_candidates: {}", candidates.join(" | "));
         }
+    }
+}
+
+fn print_reward_gap_detail(session: &RunControlSession, status: &BranchStatus) {
+    if !matches!(
+        status,
+        BranchStatus::AutomationGap {
+            site: BoundarySite::Reward,
+            ..
+        }
+    ) {
+        return;
+    }
+    let surface = build_decision_surface(session);
+    let candidates = executable_choices(&surface)
+        .into_iter()
+        .map(|choice| render_choice(&choice))
+        .collect::<Vec<_>>();
+    if !candidates.is_empty() {
+        println!("    reward_gap_candidates: {}", candidates.join(" | "));
     }
 }
 
@@ -444,6 +500,7 @@ fn owner_label(owner: Owner) -> String {
         Owner::NeowStart => "NeowStart".to_string(),
         Owner::CardReward => "CardReward".to_string(),
         Owner::Event(event_id) => format!("Event({event_id:?})"),
+        Owner::RewardTiny => "RewardTiny".to_string(),
         Owner::ShopTiny => "ShopTiny".to_string(),
     }
 }
@@ -498,6 +555,9 @@ fn render_candidate_key(key: &DecisionCandidateKey) -> String {
             card,
             upgrades,
         } => format!("reward:{reward_item_index}:pick:{option_index}:{card:?}+{upgrades}"),
+        DecisionCandidateKey::CardRewardOpen { reward_item_index } => {
+            format!("reward:{reward_item_index}:open")
+        }
         DecisionCandidateKey::CardRewardSingingBowl {
             reward_item_index,
             option_index,
@@ -585,7 +645,8 @@ fn is_card_reward_choice(choice: &OwnerChoice) -> bool {
     matches!(
         choice.key,
         Some(
-            DecisionCandidateKey::CardRewardPick { .. }
+            DecisionCandidateKey::CardRewardOpen { .. }
+                | DecisionCandidateKey::CardRewardPick { .. }
                 | DecisionCandidateKey::CardRewardSingingBowl { .. }
                 | DecisionCandidateKey::CardRewardSkip { .. }
         )

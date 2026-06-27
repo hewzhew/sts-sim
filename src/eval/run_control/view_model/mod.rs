@@ -65,6 +65,9 @@ pub enum DecisionCandidateKey {
         card: CardId,
         upgrades: u8,
     },
+    CardRewardOpen {
+        reward_item_index: usize,
+    },
     CardRewardSingingBowl {
         reward_item_index: usize,
         option_index: usize,
