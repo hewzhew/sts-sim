@@ -34,8 +34,30 @@ struct OwnerChoice {
     key: Option<DecisionCandidateKey>,
     action: RunControlCommand,
     label: String,
-    admission: Option<RewardAdmission>,
-    boss_relic_admission: Option<BossRelicAdmission>,
+    annotation: ChoiceAnnotation,
+}
+
+#[derive(Clone)]
+enum ChoiceAnnotation {
+    None,
+    Reward(RewardAdmission),
+    BossRelic(BossRelicAdmission),
+}
+
+impl ChoiceAnnotation {
+    fn reward(&self) -> Option<&RewardAdmission> {
+        match self {
+            ChoiceAnnotation::Reward(admission) => Some(admission),
+            _ => None,
+        }
+    }
+
+    fn boss_relic(&self) -> Option<&BossRelicAdmission> {
+        match self {
+            ChoiceAnnotation::BossRelic(admission) => Some(admission),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -58,8 +80,7 @@ struct BranchPathStep {
     key: Option<DecisionCandidateKey>,
     action: RunControlCommand,
     label: String,
-    admission: Option<RewardAdmission>,
-    boss_relic_admission: Option<BossRelicAdmission>,
+    annotation: ChoiceAnnotation,
 }
 
 #[derive(Clone)]
@@ -225,8 +246,7 @@ fn expand_registered_owner(
             key: choice.key,
             action: choice.action,
             label: choice.label,
-            admission: choice.admission,
-            boss_relic_admission: choice.boss_relic_admission,
+            annotation: choice.annotation,
         });
         children.push(Branch {
             id: {
@@ -271,7 +291,7 @@ fn card_reward_owner_choices(
         .into_iter()
         .filter(|choice| is_card_reward_choice(choice))
         .map(|mut choice| {
-            choice.admission = reward_admission_for_choice(&deck, &choice);
+            choice.annotation = reward_annotation_for_choice(&deck, &choice);
             choice
         })
         .enumerate()
@@ -291,7 +311,7 @@ fn boss_relic_owner_choices(
         .into_iter()
         .filter(is_boss_relic_choice)
         .map(|mut choice| {
-            choice.boss_relic_admission = boss_relic_admission_for_choice(session, &choice);
+            choice.annotation = boss_relic_annotation_for_choice(session, &choice);
             choice
         })
         .enumerate()
@@ -300,32 +320,36 @@ fn boss_relic_owner_choices(
     choices.into_iter().map(|(_, choice)| choice).collect()
 }
 
-fn boss_relic_admission_for_choice(
+fn boss_relic_annotation_for_choice(
     session: &RunControlSession,
     choice: &OwnerChoice,
-) -> Option<BossRelicAdmission> {
+) -> ChoiceAnnotation {
     match choice.key {
         Some(DecisionCandidateKey::BossRelicPick { relic, .. }) => {
-            Some(assess_boss_relic_admission(&session.run_state, relic))
+            ChoiceAnnotation::BossRelic(assess_boss_relic_admission(&session.run_state, relic))
         }
-        Some(DecisionCandidateKey::BossRelicSkip) => Some(skip_boss_relic_admission()),
-        _ => None,
+        Some(DecisionCandidateKey::BossRelicSkip) => {
+            ChoiceAnnotation::BossRelic(skip_boss_relic_admission())
+        }
+        _ => ChoiceAnnotation::None,
     }
 }
 
-fn reward_admission_for_choice(
+fn reward_annotation_for_choice(
     deck: &[sts_simulator::content::cards::CardId],
     choice: &OwnerChoice,
-) -> Option<RewardAdmission> {
+) -> ChoiceAnnotation {
     match choice.key {
         Some(DecisionCandidateKey::CardRewardPick { card, .. }) => {
-            Some(assess_reward_admission(deck, card))
+            ChoiceAnnotation::Reward(assess_reward_admission(deck, card))
         }
-        Some(DecisionCandidateKey::CardRewardSkip { .. }) => Some(skip_reward_admission()),
+        Some(DecisionCandidateKey::CardRewardSkip { .. }) => {
+            ChoiceAnnotation::Reward(skip_reward_admission())
+        }
         Some(DecisionCandidateKey::CardRewardOpen { .. })
         | Some(DecisionCandidateKey::CardRewardSingingBowl { .. })
-        | None => None,
-        _ => None,
+        | None => ChoiceAnnotation::None,
+        _ => ChoiceAnnotation::None,
     }
 }
 
@@ -337,8 +361,8 @@ fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, RewardAdmissionOrderKey
         Some(DecisionCandidateKey::CardRewardPick { .. }) => (
             1,
             choice
-                .admission
-                .as_ref()
+                .annotation
+                .reward()
                 .map(reward_admission_order_key_v1)
                 .unwrap_or_else(RewardAdmissionOrderKeyV1::empty_or_deferred),
         ),
@@ -348,8 +372,8 @@ fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, RewardAdmissionOrderKey
         Some(DecisionCandidateKey::CardRewardSkip { .. }) => (
             1,
             choice
-                .admission
-                .as_ref()
+                .annotation
+                .reward()
                 .map(reward_admission_order_key_v1)
                 .unwrap_or_else(RewardAdmissionOrderKeyV1::static_skip_boundary),
         ),
@@ -363,8 +387,8 @@ fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
         Some(DecisionCandidateKey::BossRelicPick { .. }) => (
             0,
             choice
-                .boss_relic_admission
-                .as_ref()
+                .annotation
+                .boss_relic()
                 .map(boss_relic_admission_order_rank)
                 .unwrap_or(skip_order),
         ),
@@ -607,8 +631,8 @@ fn require_visible_input(
     input: ClientInput,
 ) -> Result<ClientInput, String> {
     let surface = build_decision_surface(session);
-    let visible_inputs = executable_inputs(&surface);
-    if visible_inputs
+    if surface
+        .visible_executable_inputs
         .iter()
         .any(|visible_input| visible_input == &input)
     {
@@ -618,7 +642,7 @@ fn require_visible_input(
         "input {:?} is not visible at {} among [{}]",
         input,
         surface.view.header.title,
-        executable_choices(&surface)
+        executable_choices_including_cancel(&surface)
             .iter()
             .map(render_timeline_choice)
             .collect::<Vec<_>>()
@@ -899,12 +923,14 @@ fn render_timeline_step(step: &BranchPathStep) -> String {
         Some(key) => render_choice_key_timeline(key),
         None => format!("{}:{}", command_hint(&step.action), step.label),
     };
-    match &step.admission {
-        Some(admission) => format!("{base}  {}", render_admission_timeline(admission)),
-        None => match &step.boss_relic_admission {
-            Some(admission) => format!("{base}  {}", render_boss_relic_timeline(admission)),
-            None => base,
-        },
+    match &step.annotation {
+        ChoiceAnnotation::Reward(admission) => {
+            format!("{base}  {}", render_admission_timeline(admission))
+        }
+        ChoiceAnnotation::BossRelic(admission) => {
+            format!("{base}  {}", render_boss_relic_timeline(admission))
+        }
+        ChoiceAnnotation::None => base,
     }
 }
 
@@ -913,14 +939,14 @@ fn render_timeline_choice(choice: &OwnerChoice) -> String {
         Some(key) => render_choice_key_timeline(key),
         None => format!("{}:{}", command_hint(&choice.action), choice.label),
     };
-    match &choice.admission {
-        Some(admission) => format!("{:<34} {}", base, render_admission_timeline(admission)),
-        None => match &choice.boss_relic_admission {
-            Some(admission) => {
-                format!("{:<34} {}", base, render_boss_relic_timeline(admission))
-            }
-            None => base,
-        },
+    match &choice.annotation {
+        ChoiceAnnotation::Reward(admission) => {
+            format!("{:<34} {}", base, render_admission_timeline(admission))
+        }
+        ChoiceAnnotation::BossRelic(admission) => {
+            format!("{:<34} {}", base, render_boss_relic_timeline(admission))
+        }
+        ChoiceAnnotation::None => base,
     }
 }
 
@@ -1009,21 +1035,8 @@ fn executable_choices_with_cancel(
                 key: candidate.key.clone(),
                 action,
                 label: candidate.label.clone(),
-                admission: None,
-                boss_relic_admission: None,
+                annotation: ChoiceAnnotation::None,
             })
-        })
-        .collect()
-}
-
-fn executable_inputs(
-    surface: &sts_simulator::eval::run_control::DecisionSurface,
-) -> Vec<ClientInput> {
-    executable_choices(surface)
-        .into_iter()
-        .filter_map(|choice| match choice.action {
-            RunControlCommand::Input(input) => Some(input),
-            _ => None,
         })
         .collect()
 }
