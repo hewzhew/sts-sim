@@ -5,9 +5,9 @@ use sts_simulator::eval::run_control::{
     RunControlAutoAppliedStepV1, RunControlCommand, RunControlSession,
 };
 
+use super::owners::{ChoiceAnnotation, OwnerChoice};
 use super::{
-    BossRetryReport, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus,
-    ChoiceAnnotation, Owner, OwnerChoice,
+    BossRetryReport, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner,
 };
 
 pub(super) fn print_branch_timeline(
@@ -161,7 +161,7 @@ fn print_reward_gap_detail(session: &RunControlSession, status: &BranchStatus) {
         return;
     }
     let surface = build_decision_surface(session);
-    let candidates = super::executable_choices(&surface)
+    let candidates = super::owners::executable_choices(&surface)
         .into_iter()
         .map(|choice| render_timeline_choice(&choice))
         .collect::<Vec<_>>();
