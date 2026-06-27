@@ -76,8 +76,9 @@ pub use search_evidence::{
     COMBAT_SEARCH_EVIDENCE_SCHEMA_NAME, COMBAT_SEARCH_EVIDENCE_SCHEMA_VERSION,
 };
 pub use session::{
-    canonical_player_class, RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommandOutcome,
-    RunControlConfig, RunControlSession, RunControlSessionCheckpointV1,
+    canonical_player_class, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
+    RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommandOutcome, RunControlConfig,
+    RunControlSession, RunControlSessionCheckpointV1,
 };
 pub use session_trace::{
     SessionTraceArtifactKind, SessionTraceArtifactRefV1, SessionTraceBoundaryFingerprintV1,

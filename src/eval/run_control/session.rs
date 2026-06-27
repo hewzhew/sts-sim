@@ -382,8 +382,28 @@ pub struct RunControlCommandOutcome {
     pub action_result: Option<ActionResult>,
     pub search_evidence_path: Option<PathBuf>,
     pub auto_stop: Option<RunControlAutoStopV1>,
+    pub auto_applied_steps: Vec<RunControlAutoAppliedStepV1>,
     pub trace_annotations: Vec<RunControlTraceAnnotationV1>,
     pub decision_parent_snapshots: Vec<RunControlDecisionParentSnapshotV1>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RunControlAutoAppliedStepV1 {
+    pub kind: RunControlAutoAppliedKindV1,
+    pub label: String,
+    pub action_result: Option<ActionResult>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunControlAutoAppliedKindV1 {
+    RewardAutomation,
+    CombatSearch,
+    RoutePlanner,
+    RewardOverlay,
+    NoncombatPolicy,
+    RoutineCandidate,
+    AutoCapture,
+    OwnerPolicy,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -415,6 +435,7 @@ impl RunControlCommandOutcome {
             action_result: None,
             search_evidence_path: None,
             auto_stop: None,
+            auto_applied_steps: Vec::new(),
             trace_annotations: Vec::new(),
             decision_parent_snapshots: Vec::new(),
         }
@@ -427,6 +448,7 @@ impl RunControlCommandOutcome {
             action_result: None,
             search_evidence_path: None,
             auto_stop: None,
+            auto_applied_steps: Vec::new(),
             trace_annotations: Vec::new(),
             decision_parent_snapshots: Vec::new(),
         }
@@ -442,9 +464,18 @@ impl RunControlCommandOutcome {
             action_result: Some(action_result),
             search_evidence_path: None,
             auto_stop: None,
+            auto_applied_steps: Vec::new(),
             trace_annotations: Vec::new(),
             decision_parent_snapshots: Vec::new(),
         }
+    }
+
+    pub(in crate::eval::run_control) fn with_auto_applied_steps(
+        mut self,
+        auto_applied_steps: Vec<RunControlAutoAppliedStepV1>,
+    ) -> Self {
+        self.auto_applied_steps.extend(auto_applied_steps);
+        self
     }
 
     pub(in crate::eval::run_control) fn with_trace_annotations(

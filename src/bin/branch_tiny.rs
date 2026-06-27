@@ -10,7 +10,8 @@ use sts_simulator::ai::strategy::reward_admission::{
 };
 use sts_simulator::eval::run_control::DecisionCandidateKey;
 use sts_simulator::eval::run_control::{
-    build_decision_surface, RewardAutomationConfig, RunControlAutoStepOptions,
+    build_decision_surface, RewardAutomationConfig, RunActionResultChangeV1,
+    RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlAutoStepOptions,
     RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommand, RunControlConfig,
     RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
     RunControlSession,
@@ -25,6 +26,7 @@ struct Branch {
     session: RunControlSession,
     status: BranchStatus,
     boss_retry: Option<BossRetryReport>,
+    auto_steps: Vec<RunControlAutoAppliedStepV1>,
 }
 
 #[derive(Clone)]
@@ -136,13 +138,14 @@ fn run() -> Result<(), String> {
         },
         ..Default::default()
     });
-    let (status, boss_retry) = advance_to_owner_or_gap(&mut session, args);
+    let (status, boss_retry, auto_steps) = advance_to_owner_or_gap(&mut session, args);
     let mut frontier = VecDeque::from([Branch {
         id: 0,
         path: Vec::new(),
         session,
         status,
         boss_retry,
+        auto_steps,
     }]);
     let mut next_branch_id = 1usize;
 
@@ -210,9 +213,9 @@ fn expand_registered_owner(
     let mut children = Vec::new();
     for choice in candidates {
         let mut session = branch.session.clone();
-        let (status, boss_retry) = match session.apply_command(choice.action.clone()) {
+        let (status, boss_retry, auto_steps) = match session.apply_command(choice.action.clone()) {
             Ok(_) => advance_to_owner_or_gap(&mut session, args),
-            Err(err) => (BranchStatus::ApplyFailed(err), None),
+            Err(err) => (BranchStatus::ApplyFailed(err), None, Vec::new()),
         };
         let mut path = branch.path.clone();
         path.push(BranchPathStep {
@@ -231,6 +234,7 @@ fn expand_registered_owner(
             session,
             status,
             boss_retry,
+            auto_steps,
         });
     }
     children
@@ -318,8 +322,13 @@ fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, RewardAdmissionOrderKey
 fn advance_to_owner_or_gap(
     session: &mut RunControlSession,
     args: Args,
-) -> (BranchStatus, Option<BossRetryReport>) {
+) -> (
+    BranchStatus,
+    Option<BossRetryReport>,
+    Vec<RunControlAutoAppliedStepV1>,
+) {
     let mut policy_steps = 0usize;
+    let mut auto_steps = Vec::new();
     loop {
         let options = RunControlAutoStepOptions {
             search: RunControlSearchCombatOptions {
@@ -336,29 +345,32 @@ fn advance_to_owner_or_gap(
                 return (
                     BranchStatus::Terminal(terminal_label(session).unwrap()),
                     None,
+                    auto_steps,
                 );
             }
             Ok(outcome) => {
+                auto_steps.extend(outcome.auto_applied_steps.clone());
                 let Some(stop) = outcome.auto_stop.as_ref() else {
                     return (
                         BranchStatus::AdvanceFailed(
                             "auto_run returned non-terminal success without auto_stop".to_string(),
                         ),
                         None,
+                        auto_steps,
                     );
                 };
                 let status = classify_boundary(session, stop);
                 if matches!(status, BranchStatus::CombatGap { .. }) && is_boss_combat(session) {
                     if let Some(result) = try_boss_retry(session, args) {
-                        return result;
+                        return (result.0, result.1, auto_steps);
                     }
                 }
                 let owner = match &status {
                     BranchStatus::Running { owner, .. } => *owner,
-                    _ => return (status, None),
+                    _ => return (status, None, auto_steps),
                 };
                 if owner_is_branching(owner) {
-                    return (status, None);
+                    return (status, None, auto_steps);
                 }
                 policy_steps += 1;
                 if policy_steps > 16 {
@@ -368,18 +380,29 @@ fn advance_to_owner_or_gap(
                             reason: "owner policy step budget exhausted".to_string(),
                         },
                         None,
+                        auto_steps,
                     );
                 }
-                if let Err(err) = apply_policy_owner(session, owner) {
-                    return (
-                        BranchStatus::AdvanceFailed(format!(
-                            "owner policy {owner:?} failed: {err}"
-                        )),
-                        None,
-                    );
+                match apply_policy_owner(session, owner) {
+                    Ok(outcome) => {
+                        auto_steps.push(RunControlAutoAppliedStepV1 {
+                            kind: RunControlAutoAppliedKindV1::OwnerPolicy,
+                            label: format!("owner policy {owner:?}"),
+                            action_result: outcome.action_result,
+                        });
+                    }
+                    Err(err) => {
+                        return (
+                            BranchStatus::AdvanceFailed(format!(
+                                "owner policy {owner:?} failed: {err}"
+                            )),
+                            None,
+                            auto_steps,
+                        );
+                    }
                 }
             }
-            Err(err) => return (BranchStatus::AdvanceFailed(err), None),
+            Err(err) => return (BranchStatus::AdvanceFailed(err), None, auto_steps),
         }
     }
 }
@@ -475,7 +498,10 @@ fn try_boss_retry(
     Some((status, Some(report)))
 }
 
-fn apply_policy_owner(session: &mut RunControlSession, owner: Owner) -> Result<(), String> {
+fn apply_policy_owner(
+    session: &mut RunControlSession,
+    owner: Owner,
+) -> Result<sts_simulator::eval::run_control::RunControlCommandOutcome, String> {
     let input = match owner {
         Owner::ShopTiny => require_visible_input(session, ClientInput::Proceed)?,
         Owner::RewardTiny => reward_tiny_policy_input(session)?,
@@ -490,9 +516,7 @@ fn apply_policy_owner(session: &mut RunControlSession, owner: Owner) -> Result<(
             return Err("branching owner cannot be consumed as policy".to_string());
         }
     };
-    session
-        .apply_command(RunControlCommand::Input(input))
-        .map(|_| ())
+    session.apply_command(RunControlCommand::Input(input))
 }
 
 fn reward_tiny_policy_input(session: &RunControlSession) -> Result<ClientInput, String> {
@@ -657,6 +681,7 @@ fn print_branch_timeline(
     if let Some(previous) = branch.path.last() {
         println!("  arrived: {}", render_timeline_step(previous));
     }
+    print_auto_steps(&branch.auto_steps);
     if let Some(retry) = branch.boss_retry.as_ref() {
         print_boss_retry(retry);
     }
@@ -679,6 +704,104 @@ fn print_branch_timeline(
             expanded,
             choices.len() - expanded
         );
+    }
+}
+
+fn print_auto_steps(steps: &[RunControlAutoAppliedStepV1]) {
+    if steps.is_empty() {
+        return;
+    }
+    let shown = steps.iter().take(12).collect::<Vec<_>>();
+    println!("  auto:");
+    for step in shown {
+        println!("    - {}", render_auto_step(step));
+    }
+    if steps.len() > 12 {
+        println!("    ... {} more auto steps", steps.len() - 12);
+    }
+}
+
+fn render_auto_step(step: &RunControlAutoAppliedStepV1) -> String {
+    let mut parts = Vec::new();
+    parts.push(render_auto_kind(step.kind).to_string());
+    let change_summary = step
+        .action_result
+        .as_ref()
+        .map(render_action_changes_compact)
+        .filter(|text| !text.is_empty());
+    match change_summary {
+        Some(summary) => parts.push(summary),
+        None => parts.push(one_line(&step.label)),
+    }
+    parts.join(" | ")
+}
+
+fn render_auto_kind(kind: RunControlAutoAppliedKindV1) -> &'static str {
+    match kind {
+        RunControlAutoAppliedKindV1::RewardAutomation => "reward",
+        RunControlAutoAppliedKindV1::CombatSearch => "combat",
+        RunControlAutoAppliedKindV1::RoutePlanner => "route",
+        RunControlAutoAppliedKindV1::RewardOverlay => "reward-overlay",
+        RunControlAutoAppliedKindV1::NoncombatPolicy => "policy",
+        RunControlAutoAppliedKindV1::RoutineCandidate => "routine",
+        RunControlAutoAppliedKindV1::AutoCapture => "capture",
+        RunControlAutoAppliedKindV1::OwnerPolicy => "owner-policy",
+    }
+}
+
+fn render_action_changes_compact(
+    result: &sts_simulator::eval::run_control::RunActionResultV1,
+) -> String {
+    let mut parts = Vec::new();
+    for change in &result.changes {
+        match change {
+            RunActionResultChangeV1::LocationChanged {
+                before_act,
+                before_floor,
+                after_act,
+                after_floor,
+            } => parts.push(format!(
+                "A{before_act}F{before_floor}->A{after_act}F{after_floor}"
+            )),
+            RunActionResultChangeV1::HpChanged {
+                before_current,
+                before_max,
+                after_current,
+                after_max,
+            } => parts.push(format!(
+                "hp {before_current}/{before_max}->{after_current}/{after_max}"
+            )),
+            RunActionResultChangeV1::GoldChanged { before, after } => {
+                parts.push(format!("gold {before}->{after}"));
+            }
+            RunActionResultChangeV1::CardAdded { card } => {
+                parts.push(format!("add {:?}+{}", card.id, card.upgrades));
+            }
+            RunActionResultChangeV1::CardRemoved { card } => {
+                parts.push(format!("remove {:?}+{}", card.id, card.upgrades));
+            }
+            RunActionResultChangeV1::CardUpgraded { before, after } => {
+                parts.push(format!(
+                    "upgrade {:?}+{}->{:?}+{}",
+                    before.id, before.upgrades, after.id, after.upgrades
+                ));
+            }
+            RunActionResultChangeV1::RelicGained { relic } => {
+                parts.push(format!("relic {relic:?}"));
+            }
+            RunActionResultChangeV1::PotionGained { potion, slot } => {
+                parts.push(format!("potion {potion:?}@{slot}"));
+            }
+            RunActionResultChangeV1::RunEnded { result } => {
+                parts.push(format!("run {result:?}"));
+            }
+            _ => {}
+        }
+    }
+    if parts.is_empty() {
+        one_line(&result.chosen_label)
+    } else {
+        parts.into_iter().take(5).collect::<Vec<_>>().join("; ")
     }
 }
 

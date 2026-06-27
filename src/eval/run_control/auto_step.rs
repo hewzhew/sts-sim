@@ -9,8 +9,9 @@ use super::commands::{
     RunControlAutoStepOptions, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
 };
 use super::session::{
-    RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommandOutcome,
-    RunControlDecisionParentSnapshotV1, RunControlSession,
+    RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlAutoStopKind,
+    RunControlAutoStopV1, RunControlCommandOutcome, RunControlDecisionParentSnapshotV1,
+    RunControlSession,
 };
 use super::trace_annotation::RunControlTraceAnnotationV1;
 use super::transition_report::{
@@ -41,6 +42,58 @@ struct AutoAdvanceCandidate<'a> {
     reason: &'static str,
 }
 
+struct AutoAppliedLog {
+    labels: Vec<String>,
+    steps: Vec<RunControlAutoAppliedStepV1>,
+}
+
+impl AutoAppliedLog {
+    fn new() -> Self {
+        Self {
+            labels: Vec::new(),
+            steps: Vec::new(),
+        }
+    }
+
+    fn push_step(
+        &mut self,
+        kind: RunControlAutoAppliedKindV1,
+        label: impl Into<String>,
+        action_result: Option<super::transition_report::ActionResult>,
+    ) {
+        let label = label.into();
+        self.labels.push(label.clone());
+        self.steps.push(RunControlAutoAppliedStepV1 {
+            kind,
+            label,
+            action_result,
+        });
+    }
+
+    fn push_outcome(
+        &mut self,
+        kind: RunControlAutoAppliedKindV1,
+        label: impl Into<String>,
+        outcome: &RunControlCommandOutcome,
+    ) {
+        self.push_step(kind, label, outcome.action_result.clone());
+    }
+
+    fn extend(&mut self, labels: Vec<String>) {
+        for label in labels {
+            self.push_step(RunControlAutoAppliedKindV1::AutoCapture, label, None);
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.labels.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.labels.len()
+    }
+}
+
 pub(super) fn apply_guarded_auto_step(
     session: &mut RunControlSession,
     options: RunControlAutoStepOptions,
@@ -54,7 +107,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
     noncombat_mode: NonCombatAutoMode,
 ) -> Result<RunControlCommandOutcome, String> {
     let before = RunVisibleSnapshot::capture(session);
-    let mut applied = Vec::new();
+    let mut applied = AutoAppliedLog::new();
     let mut trace_annotations = Vec::new();
     let mut decision_parent_snapshots = Vec::new();
     let mut seen_boundaries = BTreeSet::new();
@@ -80,15 +133,19 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
 
         let reward_report = super::reward_auto::apply_reward_automation(session)?;
         if !reward_report.is_empty() {
-            applied.push(format!(
-                "routine reward: {}",
-                reward_report
-                    .claims
-                    .iter()
-                    .map(|claim| claim.label.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
+            applied.push_step(
+                RunControlAutoAppliedKindV1::RewardAutomation,
+                format!(
+                    "routine reward: {}",
+                    reward_report
+                        .claims
+                        .iter()
+                        .map(|claim| claim.label.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                None,
+            );
             trace_annotations.extend(reward_report.trace_annotations);
             continue;
         }
@@ -116,7 +173,11 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 let outcome =
                     super::combat_search::apply_search_combat(session, no_potion_options)?;
                 if let Some(result) = outcome.action_result.as_ref() {
-                    applied.push(format!("combat search(no potion): {}", result.chosen_label));
+                    applied.push_outcome(
+                        RunControlAutoAppliedKindV1::CombatSearch,
+                        format!("combat search(no potion): {}", result.chosen_label),
+                        &outcome,
+                    );
                     let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
                     decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
                     trace_annotations.extend(outcome.trace_annotations);
@@ -138,7 +199,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 } else {
                     format!("combat search: {}", result.chosen_label)
                 };
-                applied.push(label);
+                applied.push_outcome(RunControlAutoAppliedKindV1::CombatSearch, label, &outcome);
                 let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
                 decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
                 trace_annotations.extend(outcome.trace_annotations);
@@ -151,10 +212,11 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
             if let Some(rescue_options) = auto_potion_rescue_options(session, &options.search) {
                 let rescue = super::combat_search::apply_search_combat(session, rescue_options)?;
                 if let Some(result) = rescue.action_result.as_ref() {
-                    applied.push(format!(
-                        "combat search(potion rescue): {}",
-                        result.chosen_label
-                    ));
+                    applied.push_outcome(
+                        RunControlAutoAppliedKindV1::CombatSearch,
+                        format!("combat search(potion rescue): {}", result.chosen_label),
+                        &rescue,
+                    );
                     let auto_capture_summaries = auto_capture_summaries(&rescue.trace_annotations);
                     decision_parent_snapshots.extend(rescue.decision_parent_snapshots);
                     trace_annotations.extend(rescue.trace_annotations);
@@ -196,9 +258,13 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
         if let Some((outcome, summary)) = apply_map_overlay_back_without_route_candidates(session)?
         {
             let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+            applied.push_outcome(
+                RunControlAutoAppliedKindV1::RewardOverlay,
+                summary,
+                &outcome,
+            );
             decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
             trace_annotations.extend(outcome.trace_annotations);
-            applied.push(summary);
             applied.extend(auto_capture_summaries);
             continue;
         }
@@ -213,10 +279,14 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                     if applied_route.outcome.action_result.is_some() {
                         let auto_capture_summaries =
                             auto_capture_summaries(&applied_route.outcome.trace_annotations);
+                        applied.push_outcome(
+                            RunControlAutoAppliedKindV1::RoutePlanner,
+                            applied_route.auto_step_summary,
+                            &applied_route.outcome,
+                        );
                         decision_parent_snapshots
                             .extend(applied_route.outcome.decision_parent_snapshots);
                         trace_annotations.extend(applied_route.outcome.trace_annotations);
-                        applied.push(applied_route.auto_step_summary);
                         applied.extend(auto_capture_summaries);
                         continue;
                     }
@@ -259,9 +329,13 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
 
         if let Some((outcome, summary)) = apply_pending_shop_reward_overlay(session)? {
             let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+            applied.push_outcome(
+                RunControlAutoAppliedKindV1::RewardOverlay,
+                summary,
+                &outcome,
+            );
             decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
             trace_annotations.extend(outcome.trace_annotations);
-            applied.push(summary);
             applied.extend(auto_capture_summaries);
             continue;
         }
@@ -270,9 +344,13 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
             if let Some(application) = apply_noncombat_policy(session, noncombat_mode)? {
                 let auto_capture_summaries =
                     auto_capture_summaries(&application.outcome.trace_annotations);
+                applied.push_outcome(
+                    RunControlAutoAppliedKindV1::NoncombatPolicy,
+                    application.summary,
+                    &application.outcome,
+                );
                 decision_parent_snapshots.extend(application.outcome.decision_parent_snapshots);
                 trace_annotations.extend(application.outcome.trace_annotations);
-                applied.push(application.summary);
                 applied.extend(auto_capture_summaries);
                 if let Some(reason) = application.stop_after_reason {
                     return finish_auto_step(
@@ -328,13 +406,17 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 .map(|result| result.chosen_label.clone())
                 .unwrap_or_else(|| auto_candidate.candidate.label.clone());
             let auto_capture_summaries = auto_capture_summaries(&outcome.trace_annotations);
+            applied.push_outcome(
+                RunControlAutoAppliedKindV1::RoutineCandidate,
+                format!(
+                    "{}: {label} ({})",
+                    auto_class_label(auto_candidate.class),
+                    auto_candidate.reason
+                ),
+                &outcome,
+            );
             decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
             trace_annotations.extend(outcome.trace_annotations);
-            applied.push(format!(
-                "{}: {label} ({})",
-                auto_class_label(auto_candidate.class),
-                auto_candidate.reason
-            ));
             applied.extend(auto_capture_summaries);
             continue;
         }
@@ -812,7 +894,7 @@ fn reward_has_sapphire_key_item(reward: &crate::state::rewards::RewardState) -> 
 fn finish_auto_step(
     session: &RunControlSession,
     before: &RunVisibleSnapshot,
-    applied: Vec<String>,
+    applied: AutoAppliedLog,
     mut trace_annotations: Vec<RunControlTraceAnnotationV1>,
     decision_parent_snapshots: Vec<RunControlDecisionParentSnapshotV1>,
     stop_kind: RunControlAutoStopKind,
@@ -833,7 +915,7 @@ fn finish_auto_step(
     if applied.is_empty() {
         lines.push("  none".to_string());
     } else {
-        for item in &applied {
+        for item in &applied.labels {
             lines.push(format!("  - {item}"));
         }
     }
@@ -853,6 +935,7 @@ fn finish_auto_step(
         lines.push(super::render::render_run_control_state(session));
         return Ok(RunControlCommandOutcome::message(lines.join("\n"))
             .with_auto_stop(auto_stop)
+            .with_auto_applied_steps(applied.steps)
             .with_trace_annotations(trace_annotations)
             .with_decision_parent_snapshots(decision_parent_snapshots));
     }
@@ -874,6 +957,7 @@ fn finish_auto_step(
     Ok(
         RunControlCommandOutcome::action(lines.join("\n"), action_result)
             .with_auto_stop(auto_stop)
+            .with_auto_applied_steps(applied.steps)
             .with_trace_annotations(trace_annotations)
             .with_decision_parent_snapshots(decision_parent_snapshots),
     )
