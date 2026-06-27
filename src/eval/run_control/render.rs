@@ -196,6 +196,13 @@ pub fn render_run_control_raw(session: &RunControlSession) -> String {
 pub fn render_auto_applied_step_compact_v1(step: &RunControlAutoAppliedStepV1) -> String {
     let mut parts = Vec::new();
     parts.push(render_auto_applied_kind_compact_v1(step.kind).to_string());
+    if matches!(
+        step.kind,
+        RunControlAutoAppliedKindV1::NoncombatPolicy | RunControlAutoAppliedKindV1::OwnerPolicy
+    ) {
+        parts.push(compact_one_line(&step.label));
+        return parts.join(" | ");
+    }
     let change_summary = step
         .action_result
         .as_ref()

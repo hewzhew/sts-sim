@@ -1,3 +1,7 @@
+use crate::ai::strategy::campfire_upgrade_quality::{
+    rank_campfire_upgrades, should_rest_before_smith, CampfireUpgradeTier,
+};
+use crate::content::cards::get_card_definition;
 use crate::state::core::{CampfireChoice, ClientInput, EngineState};
 
 use super::session::{RunControlCommandOutcome, RunControlSession};
@@ -9,45 +13,51 @@ pub(super) fn apply_campfire_policy_action(
         return Ok(None);
     }
     let choices = crate::engine::campfire_handler::get_available_options(&session.run_state);
-    let context = crate::ai::campfire_policy_v1::build_campfire_decision_context_v1(
-        &session.run_state,
-        choices,
-    );
-    let decision = crate::ai::campfire_policy_v1::plan_campfire_decision_v1(
-        &context,
-        &crate::ai::campfire_policy_v1::CampfirePolicyConfigV1::default(),
-    );
-    let noncombat_record = decision.to_noncombat_decision_record_v1();
-    let (choice, verb, confidence, reason) = match decision.selected_plan.action.clone() {
-        crate::ai::campfire_policy_v1::CampfirePolicyActionV1::Rest { confidence, reason } => {
-            (CampfireChoice::Rest, "rest", confidence, reason)
-        }
-        crate::ai::campfire_policy_v1::CampfirePolicyActionV1::Smith {
-            deck_index,
-            confidence,
-            reason,
-        } => (
-            CampfireChoice::Smith(deck_index),
-            "smith",
-            confidence,
-            reason,
-        ),
-        crate::ai::campfire_policy_v1::CampfirePolicyActionV1::Stop { .. } => return Ok(None),
-    };
+    let rest_available = choices.contains(&CampfireChoice::Rest);
+    let smith_available = choices
+        .iter()
+        .any(|choice| matches!(choice, CampfireChoice::Smith(_)));
+    if rest_available
+        && (!smith_available
+            || should_rest_before_smith(session.run_state.current_hp, session.run_state.max_hp))
+    {
+        let outcome = session.apply_input(ClientInput::CampfireOption(CampfireChoice::Rest))?;
+        return Ok(Some((
+            outcome,
+            format!(
+                "campfire policy: rest hp={}/{}",
+                session.run_state.current_hp, session.run_state.max_hp
+            ),
+        )));
+    }
 
-    let outcome = session
-        .apply_input(ClientInput::CampfireOption(choice))?
-        .with_trace_annotations(vec![
-            super::noncombat_policy_annotation::noncombat_policy_annotation(
-                "campfire policy",
-                noncombat_record,
-            )?,
-        ]);
+    let ranked = rank_campfire_upgrades(&session.run_state.master_deck);
+    let Some(best) = ranked
+        .iter()
+        .find(|target| target.tier >= CampfireUpgradeTier::Low)
+    else {
+        return Ok(None);
+    };
+    let top = ranked
+        .iter()
+        .take(3)
+        .map(|target| target.compact_label())
+        .collect::<Vec<_>>()
+        .join(" > ");
+
+    let outcome = session.apply_input(ClientInput::CampfireOption(CampfireChoice::Smith(
+        best.deck_index,
+    )))?;
+    let card_name = get_card_definition(best.card).name;
     Ok(Some((
         outcome,
         format!(
-            "campfire policy: {verb} confidence={confidence:.2} reason={reason} label_role={}",
-            decision.label_role
+            "campfire policy: smith {card_name} tier={:?} hints={} cautions={} hp={}/{} top={top}",
+            best.tier,
+            best.hints_label(),
+            best.cautions_label(),
+            session.run_state.current_hp,
+            session.run_state.max_hp,
         ),
     )))
 }
