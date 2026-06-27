@@ -5,7 +5,9 @@ use sts_simulator::eval::run_control::{
     RunControlAutoAppliedStepV1, RunControlCommand, RunControlSession,
 };
 
-use super::owners::{render_shop_tiny_annotation_compact, ChoiceAnnotation, OwnerChoice};
+use super::owners::{
+    render_shop_tiny_annotation_compact, reward_plan_lane_label, ChoiceAnnotation, OwnerChoice,
+};
 use super::{
     BossRetryReport, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner,
 };
@@ -81,10 +83,11 @@ pub(super) fn render_timeline_choice(choice: &OwnerChoice) -> String {
         None => format!("{}:{}", command_hint(&choice.action), choice.label),
     };
     match &choice.annotation {
-        ChoiceAnnotation::Reward(admission) => {
+        ChoiceAnnotation::Reward { admission, lane } => {
             format!(
-                "{:<34} {}",
+                "{:<34} {:<8} {}",
                 base,
+                reward_plan_lane_label(*lane),
                 render_reward_admission_compact(admission)
             )
         }
@@ -239,8 +242,12 @@ fn render_timeline_step(step: &BranchPathStep) -> String {
         None => format!("{}:{}", command_hint(&step.action), step.label),
     };
     match &step.annotation {
-        ChoiceAnnotation::Reward(admission) => {
-            format!("{base}  {}", render_reward_admission_compact(admission))
+        ChoiceAnnotation::Reward { admission, lane } => {
+            format!(
+                "{base}  {} {}",
+                reward_plan_lane_label(*lane),
+                render_reward_admission_compact(admission)
+            )
         }
         ChoiceAnnotation::BossRelic(admission) => {
             format!("{base}  {}", render_boss_relic_admission_compact(admission))

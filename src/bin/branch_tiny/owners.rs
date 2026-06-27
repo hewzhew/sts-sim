@@ -4,7 +4,7 @@ use sts_simulator::ai::strategy::boss_relic_admission::{
 };
 use sts_simulator::ai::strategy::reward_admission::{
     assess_reward_admission, reward_admission_order_key_v1, skip_reward_admission, RewardAdmission,
-    RewardAdmissionOrderKeyV1,
+    RewardAdmissionClass, RewardAdmissionOrderKeyV1,
 };
 use sts_simulator::content::cards::{
     get_card_definition, is_starter_basic, is_starter_defend, is_starter_strike, CardId, CardType,
@@ -32,9 +32,20 @@ pub(super) struct OwnerChoice {
 #[derive(Clone)]
 pub(super) enum ChoiceAnnotation {
     None,
-    Reward(RewardAdmission),
+    Reward {
+        admission: RewardAdmission,
+        lane: RewardPlanLane,
+    },
     BossRelic(BossRelicAdmission),
     ShopTiny(ShopTinyAnnotation),
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum RewardPlanLane {
+    Mainline,
+    Probe,
+    Skip,
+    Reject,
 }
 
 #[derive(Clone)]
@@ -97,7 +108,14 @@ pub(super) enum ShopPurgeTargetKind {
 impl ChoiceAnnotation {
     fn reward(&self) -> Option<&RewardAdmission> {
         match self {
-            ChoiceAnnotation::Reward(admission) => Some(admission),
+            ChoiceAnnotation::Reward { admission, .. } => Some(admission),
+            _ => None,
+        }
+    }
+
+    fn reward_lane(&self) -> Option<RewardPlanLane> {
+        match self {
+            ChoiceAnnotation::Reward { lane, .. } => Some(*lane),
             _ => None,
         }
     }
@@ -257,10 +275,10 @@ fn reward_annotation_for_choice(
 ) -> ChoiceAnnotation {
     match choice.key {
         Some(DecisionCandidateKey::CardRewardPick { card, .. }) => {
-            ChoiceAnnotation::Reward(assess_reward_admission(deck, card))
+            reward_annotation(assess_reward_admission(deck, card))
         }
         Some(DecisionCandidateKey::CardRewardSkip { .. }) => {
-            ChoiceAnnotation::Reward(skip_reward_admission())
+            reward_annotation(skip_reward_admission())
         }
         Some(DecisionCandidateKey::CardRewardOpen { .. })
         | Some(DecisionCandidateKey::CardRewardSingingBowl { .. })
@@ -269,13 +287,37 @@ fn reward_annotation_for_choice(
     }
 }
 
-fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, RewardAdmissionOrderKeyV1) {
+fn reward_annotation(admission: RewardAdmission) -> ChoiceAnnotation {
+    let lane = reward_plan_lane(&admission);
+    ChoiceAnnotation::Reward { admission, lane }
+}
+
+fn reward_plan_lane(admission: &RewardAdmission) -> RewardPlanLane {
+    match admission.class {
+        RewardAdmissionClass::ClosesRequirement
+        | RewardAdmissionClass::BuildsSupportedPackage
+        | RewardAdmissionClass::ImmediateWork
+        | RewardAdmissionClass::BurdenedImmediateWork => RewardPlanLane::Mainline,
+        RewardAdmissionClass::EngineSeed | RewardAdmissionClass::OpensUnsupportedPayoff => {
+            RewardPlanLane::Probe
+        }
+        RewardAdmissionClass::Skip => RewardPlanLane::Skip,
+        RewardAdmissionClass::EmptyOrDeferred => RewardPlanLane::Reject,
+    }
+}
+
+fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, u8, RewardAdmissionOrderKeyV1) {
     match &choice.key {
         Some(DecisionCandidateKey::CardRewardOpen { .. }) => {
-            (0, RewardAdmissionOrderKeyV1::empty_or_deferred())
+            (0, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())
         }
         Some(DecisionCandidateKey::CardRewardPick { .. }) => (
             1,
+            choice
+                .annotation
+                .reward_lane()
+                .map(reward_plan_lane_rank)
+                .unwrap_or(3),
             choice
                 .annotation
                 .reward()
@@ -283,17 +325,31 @@ fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, RewardAdmissionOrderKey
                 .unwrap_or_else(RewardAdmissionOrderKeyV1::empty_or_deferred),
         ),
         Some(DecisionCandidateKey::CardRewardSingingBowl { .. }) => {
-            (1, RewardAdmissionOrderKeyV1::unscored_optional_reward())
+            (1, 2, RewardAdmissionOrderKeyV1::unscored_optional_reward())
         }
         Some(DecisionCandidateKey::CardRewardSkip { .. }) => (
             1,
+            choice
+                .annotation
+                .reward_lane()
+                .map(reward_plan_lane_rank)
+                .unwrap_or(2),
             choice
                 .annotation
                 .reward()
                 .map(reward_admission_order_key_v1)
                 .unwrap_or_else(RewardAdmissionOrderKeyV1::static_skip_boundary),
         ),
-        _ => (2, RewardAdmissionOrderKeyV1::empty_or_deferred()),
+        _ => (2, 3, RewardAdmissionOrderKeyV1::empty_or_deferred()),
+    }
+}
+
+fn reward_plan_lane_rank(lane: RewardPlanLane) -> u8 {
+    match lane {
+        RewardPlanLane::Mainline => 0,
+        RewardPlanLane::Probe => 1,
+        RewardPlanLane::Skip => 2,
+        RewardPlanLane::Reject => 3,
     }
 }
 
@@ -425,6 +481,15 @@ pub(super) fn render_shop_tiny_annotation_compact(annotation: &ShopTinyAnnotatio
         ShopTinyAnnotation::OpenRewards => "OpenRewards".to_string(),
         ShopTinyAnnotation::Leave => "Leave".to_string(),
         ShopTinyAnnotation::Unsupported => "Unsupported typed-gap".to_string(),
+    }
+}
+
+pub(super) fn reward_plan_lane_label(lane: RewardPlanLane) -> &'static str {
+    match lane {
+        RewardPlanLane::Mainline => "mainline",
+        RewardPlanLane::Probe => "probe",
+        RewardPlanLane::Skip => "skip",
+        RewardPlanLane::Reject => "reject",
     }
 }
 
