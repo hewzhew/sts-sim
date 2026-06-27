@@ -1,8 +1,8 @@
 use sts_simulator::eval::run_control::{
-    build_decision_surface, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
-    RunControlAutoStepOptions, RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommand,
-    RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
-    RunControlSession,
+    apply_owner_audit_auto_run, build_decision_surface, RunControlAutoAppliedKindV1,
+    RunControlAutoAppliedStepV1, RunControlAutoStepOptions, RunControlAutoStopKind,
+    RunControlAutoStopV1, RunControlCommand, RunControlHpLossLimit, RunControlRouteAutomationMode,
+    RunControlSearchCombatOptions, RunControlSession,
 };
 use sts_simulator::state::core::{ClientInput, EngineState, RunResult};
 
@@ -30,7 +30,7 @@ pub(super) fn advance_to_owner_or_gap(
             max_operations: Some(args.auto_ops),
             route: RunControlRouteAutomationMode::Planner,
         };
-        match session.apply_command(RunControlCommand::AutoRun(options)) {
+        match apply_owner_audit_auto_run(session, options) {
             Ok(_) if terminal_label(session).is_some() => {
                 return (
                     BranchStatus::Terminal(terminal_label(session).unwrap()),
@@ -100,7 +100,7 @@ pub(super) fn advance_to_owner_or_gap(
 fn owner_is_branching(owner: Owner) -> bool {
     matches!(
         owner,
-        Owner::NeowStart | Owner::CardReward | Owner::BossRelic
+        Owner::NeowStart | Owner::CardReward | Owner::BossRelic | Owner::ShopTiny
     )
 }
 
@@ -125,7 +125,7 @@ fn try_boss_retry(
         max_operations: Some(args.auto_ops),
         route: RunControlRouteAutomationMode::Planner,
     };
-    let outcome = match session.apply_command(RunControlCommand::AutoRun(options)) {
+    let outcome = match apply_owner_audit_auto_run(session, options) {
         Ok(outcome) => outcome,
         Err(err) => {
             return Some((
@@ -196,7 +196,7 @@ fn apply_policy_owner(
     owner: Owner,
 ) -> Result<sts_simulator::eval::run_control::RunControlCommandOutcome, String> {
     let input = match owner {
-        Owner::ShopTiny => require_visible_input(session, ClientInput::Proceed)?,
+        Owner::ShopTiny => return Err("ShopTiny has no automatic policy".to_string()),
         Owner::RewardTiny => reward_tiny_policy_input(session)?,
         Owner::Event(_) => require_visible_input(
             session,

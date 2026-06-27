@@ -21,6 +21,17 @@ pub(in crate::eval::run_control) fn apply_auto_run(
     }
 }
 
+pub fn apply_owner_audit_auto_run(
+    session: &mut RunControlSession,
+    options: RunControlAutoStepOptions,
+) -> Result<RunControlCommandOutcome, String> {
+    apply_auto_run_with_noncombat_mode(
+        session,
+        options,
+        super::auto_step::NonCombatAutoMode::OwnerAuditNoShopPolicy,
+    )
+}
+
 pub(crate) fn apply_branch_experiment_auto_run(
     session: &mut RunControlSession,
     options: RunControlAutoStepOptions,

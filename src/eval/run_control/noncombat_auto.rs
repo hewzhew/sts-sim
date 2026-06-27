@@ -10,6 +10,19 @@ pub(super) struct NonCombatAutoApplication {
 pub(super) fn apply_planner_noncombat_policy(
     session: &mut RunControlSession,
 ) -> Result<Option<NonCombatAutoApplication>, String> {
+    apply_planner_noncombat_policy_with_shop(session, true)
+}
+
+pub(super) fn apply_owner_audit_noncombat_policy(
+    session: &mut RunControlSession,
+) -> Result<Option<NonCombatAutoApplication>, String> {
+    apply_planner_noncombat_policy_with_shop(session, false)
+}
+
+fn apply_planner_noncombat_policy_with_shop(
+    session: &mut RunControlSession,
+    allow_shop_policy: bool,
+) -> Result<Option<NonCombatAutoApplication>, String> {
     if let Some((outcome, summary)) = super::campfire_policy::apply_campfire_policy_action(session)?
     {
         return Ok(Some(NonCombatAutoApplication {
@@ -18,14 +31,16 @@ pub(super) fn apply_planner_noncombat_policy(
             stop_after_reason: None,
         }));
     }
-    if let Some((outcome, summary)) = super::shop_policy::apply_shop_policy_action(session)? {
-        return Ok(Some(NonCombatAutoApplication {
-            outcome,
-            summary,
-            stop_after_reason: Some(
-                "shop policy changed shop/run state; inspect shop before continuing",
-            ),
-        }));
+    if allow_shop_policy {
+        if let Some((outcome, summary)) = super::shop_policy::apply_shop_policy_action(session)? {
+            return Ok(Some(NonCombatAutoApplication {
+                outcome,
+                summary,
+                stop_after_reason: Some(
+                    "shop policy changed shop/run state; inspect shop before continuing",
+                ),
+            }));
+        }
     }
     if let Some((outcome, summary)) =
         super::run_choice_policy::apply_run_choice_policy_deck_selection(session)?
