@@ -1,9 +1,8 @@
 use std::collections::VecDeque;
 
-use sts_simulator::ai::boss_relic_policy_v1::{
-    boss_relic_candidate_order_key_v1, boss_relic_skip_order_key_v1,
-    build_boss_relic_decision_context_v1, render_boss_relic_candidate_compact_v1,
-    BossRelicCandidateEvidenceV1, BossRelicOrderKeyV1,
+use sts_simulator::ai::strategy::boss_relic_admission::{
+    assess_boss_relic_admission, boss_relic_admission_order_rank,
+    render_boss_relic_admission_compact, skip_boss_relic_admission, BossRelicAdmission,
 };
 use sts_simulator::ai::strategy::reward_admission::{
     assess_reward_admission, render_reward_admission_compact, reward_admission_order_key_v1,
@@ -36,7 +35,7 @@ struct OwnerChoice {
     action: RunControlCommand,
     label: String,
     admission: Option<RewardAdmission>,
-    boss_relic: Option<BossRelicCandidateEvidenceV1>,
+    boss_relic_admission: Option<BossRelicAdmission>,
 }
 
 #[derive(Clone)]
@@ -60,7 +59,7 @@ struct BranchPathStep {
     action: RunControlCommand,
     label: String,
     admission: Option<RewardAdmission>,
-    boss_relic: Option<BossRelicCandidateEvidenceV1>,
+    boss_relic_admission: Option<BossRelicAdmission>,
 }
 
 #[derive(Clone)]
@@ -227,7 +226,7 @@ fn expand_registered_owner(
             action: choice.action,
             label: choice.label,
             admission: choice.admission,
-            boss_relic: choice.boss_relic,
+            boss_relic_admission: choice.boss_relic_admission,
         });
         children.push(Branch {
             id: {
@@ -285,32 +284,33 @@ fn boss_relic_owner_choices(
     session: &RunControlSession,
     surface: &sts_simulator::eval::run_control::DecisionSurface,
 ) -> Vec<OwnerChoice> {
-    let EngineState::BossRelicSelect(choice_state) = &session.engine_state else {
+    let EngineState::BossRelicSelect(_) = &session.engine_state else {
         return Vec::new();
     };
-    let context =
-        build_boss_relic_decision_context_v1(&session.run_state, choice_state.relics.clone());
     let mut choices = executable_choices_including_cancel(surface)
         .into_iter()
         .filter(is_boss_relic_choice)
         .map(|mut choice| {
-            if let Some(DecisionCandidateKey::BossRelicPick {
-                option_index,
-                relic,
-            }) = choice.key
-            {
-                choice.boss_relic = context
-                    .candidates
-                    .iter()
-                    .find(|candidate| candidate.index == option_index && candidate.relic == relic)
-                    .cloned();
-            }
+            choice.boss_relic_admission = boss_relic_admission_for_choice(session, &choice);
             choice
         })
         .enumerate()
         .collect::<Vec<_>>();
     choices.sort_by_key(|(index, choice)| (boss_relic_choice_rank(choice), *index));
     choices.into_iter().map(|(_, choice)| choice).collect()
+}
+
+fn boss_relic_admission_for_choice(
+    session: &RunControlSession,
+    choice: &OwnerChoice,
+) -> Option<BossRelicAdmission> {
+    match choice.key {
+        Some(DecisionCandidateKey::BossRelicPick { relic, .. }) => {
+            Some(assess_boss_relic_admission(&session.run_state, relic))
+        }
+        Some(DecisionCandidateKey::BossRelicSkip) => Some(skip_boss_relic_admission()),
+        _ => None,
+    }
 }
 
 fn reward_admission_for_choice(
@@ -357,18 +357,19 @@ fn card_reward_choice_rank(choice: &OwnerChoice) -> (u8, RewardAdmissionOrderKey
     }
 }
 
-fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, BossRelicOrderKeyV1) {
+fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
+    let skip_order = boss_relic_admission_order_rank(&skip_boss_relic_admission());
     match choice.key {
         Some(DecisionCandidateKey::BossRelicPick { .. }) => (
             0,
             choice
-                .boss_relic
+                .boss_relic_admission
                 .as_ref()
-                .map(boss_relic_candidate_order_key_v1)
-                .unwrap_or_else(boss_relic_skip_order_key_v1),
+                .map(boss_relic_admission_order_rank)
+                .unwrap_or(skip_order),
         ),
-        Some(DecisionCandidateKey::BossRelicSkip) => (1, boss_relic_skip_order_key_v1()),
-        _ => (2, boss_relic_skip_order_key_v1()),
+        Some(DecisionCandidateKey::BossRelicSkip) => (1, skip_order),
+        _ => (2, skip_order),
     }
 }
 
@@ -900,8 +901,8 @@ fn render_timeline_step(step: &BranchPathStep) -> String {
     };
     match &step.admission {
         Some(admission) => format!("{base}  {}", render_admission_timeline(admission)),
-        None => match &step.boss_relic {
-            Some(candidate) => format!("{base}  {}", render_boss_relic_timeline(candidate)),
+        None => match &step.boss_relic_admission {
+            Some(admission) => format!("{base}  {}", render_boss_relic_timeline(admission)),
             None => base,
         },
     }
@@ -914,8 +915,10 @@ fn render_timeline_choice(choice: &OwnerChoice) -> String {
     };
     match &choice.admission {
         Some(admission) => format!("{:<34} {}", base, render_admission_timeline(admission)),
-        None => match &choice.boss_relic {
-            Some(candidate) => format!("{:<34} {}", base, render_boss_relic_timeline(candidate)),
+        None => match &choice.boss_relic_admission {
+            Some(admission) => {
+                format!("{:<34} {}", base, render_boss_relic_timeline(admission))
+            }
             None => base,
         },
     }
@@ -960,8 +963,8 @@ fn render_admission_timeline(admission: &RewardAdmission) -> String {
     render_reward_admission_compact(admission)
 }
 
-fn render_boss_relic_timeline(candidate: &BossRelicCandidateEvidenceV1) -> String {
-    render_boss_relic_candidate_compact_v1(candidate)
+fn render_boss_relic_timeline(admission: &BossRelicAdmission) -> String {
+    render_boss_relic_admission_compact(admission)
 }
 
 fn command_hint(command: &RunControlCommand) -> String {
@@ -1007,7 +1010,7 @@ fn executable_choices_with_cancel(
                 action,
                 label: candidate.label.clone(),
                 admission: None,
-                boss_relic: None,
+                boss_relic_admission: None,
             })
         })
         .collect()

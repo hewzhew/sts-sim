@@ -8,8 +8,7 @@ use crate::state::run::RunState;
 use super::evaluator::autopilot_picks;
 use super::types::{
     BossRelicCandidateEvidenceV1, BossRelicDecisionContextV1, BossRelicDecisionV1,
-    BossRelicOrderKeyV1, BossRelicOrderTierV1, BossRelicPolicyActionV1, BossRelicPolicyClassV1,
-    BossRelicPolicyConfigV1,
+    BossRelicPolicyActionV1, BossRelicPolicyClassV1, BossRelicPolicyConfigV1,
 };
 
 pub fn build_boss_relic_decision_context_v1(
@@ -55,40 +54,6 @@ pub fn plan_boss_relic_decision_v1(
         label_role: "behavior_policy_not_teacher",
         context: context.clone(),
     }
-}
-
-pub fn boss_relic_candidate_order_key_v1(
-    candidate: &BossRelicCandidateEvidenceV1,
-) -> BossRelicOrderKeyV1 {
-    let tier = match candidate.class {
-        BossRelicPolicyClassV1::StarterRelicUpgrade => BossRelicOrderTierV1::StarterRelicUpgrade,
-        BossRelicPolicyClassV1::BroadSafeValue => BossRelicOrderTierV1::BroadSafeValue,
-        BossRelicPolicyClassV1::DeckCleanup
-            if support_rank(candidate.support_gate)
-                >= support_rank(StrategyPlanSupportV1::Weak) =>
-        {
-            BossRelicOrderTierV1::SupportedDeckCleanup
-        }
-        BossRelicPolicyClassV1::RouteDependentValue => BossRelicOrderTierV1::RouteDependentValue,
-        BossRelicPolicyClassV1::EnergyWithConstraint => BossRelicOrderTierV1::EnergyWithConstraint,
-        BossRelicPolicyClassV1::StrategicPower => BossRelicOrderTierV1::StrategicPower,
-        BossRelicPolicyClassV1::CurseDebt => BossRelicOrderTierV1::CurseDebt,
-        BossRelicPolicyClassV1::TransformAgency => BossRelicOrderTierV1::TransformAgency,
-        BossRelicPolicyClassV1::DeckCleanup | BossRelicPolicyClassV1::Unknown => {
-            BossRelicOrderTierV1::Unknown
-        }
-    };
-    BossRelicOrderKeyV1 { tier }
-}
-
-pub fn boss_relic_skip_order_key_v1() -> BossRelicOrderKeyV1 {
-    BossRelicOrderKeyV1 {
-        tier: BossRelicOrderTierV1::Skip,
-    }
-}
-
-pub fn render_boss_relic_candidate_compact_v1(candidate: &BossRelicCandidateEvidenceV1) -> String {
-    format!("{:?} gate={:?}", candidate.class, candidate.support_gate)
 }
 
 fn candidate_evidence(
@@ -232,13 +197,4 @@ fn stop_reason(context: &BossRelicDecisionContextV1) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!("boss relic policy stopped because no autopilot pick matched ({classes})")
-}
-
-fn support_rank(support: StrategyPlanSupportV1) -> u8 {
-    match support {
-        StrategyPlanSupportV1::Blocked => 0,
-        StrategyPlanSupportV1::Weak => 1,
-        StrategyPlanSupportV1::Plausible => 2,
-        StrategyPlanSupportV1::Strong => 3,
-    }
 }
