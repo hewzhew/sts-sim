@@ -428,7 +428,13 @@ fn shop_candidates(
             card.price
         );
         let note = shop_block_note(card.can_buy, card.blocked_reason.as_deref());
-        if card.can_buy {
+        let key = DecisionCandidateKey::ShopBuyCard {
+            shop_slot: idx,
+            card: card.card_id,
+            upgrades: card.upgrades,
+            price: card.price,
+        };
+        let mut candidate = if card.can_buy {
             candidate(
                 format!("card-{idx}"),
                 label,
@@ -444,12 +450,19 @@ fn shop_candidates(
                     .unwrap_or_else(|| "cannot buy".to_string()),
                 note,
             )
-        }
+        };
+        candidate.key = Some(key);
+        candidate
     }));
     candidates.extend(shop.relics.iter().enumerate().map(|(idx, relic)| {
         let label = format!("{:?} | {} gold", relic.relic_id, relic.price);
         let note = shop_block_note(relic.can_buy, relic.blocked_reason.as_deref());
-        if relic.can_buy {
+        let key = DecisionCandidateKey::ShopBuyRelic {
+            shop_slot: idx,
+            relic: relic.relic_id,
+            price: relic.price,
+        };
+        let mut candidate = if relic.can_buy {
             candidate(
                 format!("relic-{idx}"),
                 label,
@@ -466,7 +479,9 @@ fn shop_candidates(
                     .unwrap_or_else(|| "cannot buy".to_string()),
                 note,
             )
-        }
+        };
+        candidate.key = Some(key);
+        candidate
     }));
     candidates.extend(shop.potions.iter().enumerate().map(|(idx, potion)| {
         let label = format!(
@@ -477,7 +492,12 @@ fn shop_candidates(
         let block_reason =
             super::super::shop_potion_purchase_block_reason_v1(&session.run_state, potion);
         let note = shop_block_note(block_reason.is_none(), block_reason.as_deref());
-        if block_reason.is_none() {
+        let key = DecisionCandidateKey::ShopBuyPotion {
+            shop_slot: idx,
+            potion: potion.potion_id,
+            price: potion.price,
+        };
+        let mut candidate = if block_reason.is_none() {
             candidate(
                 format!("potion-{idx}"),
                 label,
@@ -491,7 +511,9 @@ fn shop_candidates(
                 block_reason.unwrap_or_else(|| "cannot buy".to_string()),
                 note,
             )
-        }
+        };
+        candidate.key = Some(key);
+        candidate
     }));
     let purge_block = shop_purge_block_reason(session, shop);
     if purge_block.is_none() {
@@ -532,12 +554,14 @@ fn shop_candidates(
         ));
     }
     if shop.pending_reward_overlay.is_some() {
-        candidates.push(candidate(
+        let mut rewards = candidate(
             "rewards",
             "Open pending rewards",
             ClientInput::OpenRewardOverlay,
             Some("shop overlay rewards remain until leaving the shop"),
-        ));
+        );
+        rewards.key = Some(DecisionCandidateKey::ShopOpenRewards);
+        candidates.push(rewards);
     }
     let mut leave = candidate("leave", "Leave shop", ClientInput::Proceed, None::<String>);
     leave.key = Some(DecisionCandidateKey::ShopLeave);

@@ -4,6 +4,7 @@ mod labels;
 mod resolution;
 
 use crate::content::cards::CardId;
+use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::sim::combat::{combat_terminal, stable_boundary};
 use crate::state::core::{ClientInput, EngineState};
@@ -86,6 +87,23 @@ pub enum DecisionCandidateKey {
         card: CardId,
         upgrades: u8,
     },
+    ShopBuyCard {
+        shop_slot: usize,
+        card: CardId,
+        upgrades: u8,
+        price: i32,
+    },
+    ShopBuyRelic {
+        shop_slot: usize,
+        relic: RelicId,
+        price: i32,
+    },
+    ShopBuyPotion {
+        shop_slot: usize,
+        potion: PotionId,
+        price: i32,
+    },
+    ShopOpenRewards,
     SelectionSubmit {
         scope: SelectionScope,
         reason: SelectionReason,

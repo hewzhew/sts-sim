@@ -5,7 +5,7 @@ use sts_simulator::eval::run_control::{
     RunControlAutoAppliedStepV1, RunControlCommand, RunControlSession,
 };
 
-use super::owners::{ChoiceAnnotation, OwnerChoice};
+use super::owners::{render_shop_tiny_annotation_compact, ChoiceAnnotation, OwnerChoice};
 use super::{
     BossRetryReport, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner,
 };
@@ -48,7 +48,13 @@ pub(super) fn print_branch_timeline(
             render_timeline_choice(choice)
         );
     }
-    if expanded < choices.len() {
+    if expanded == 0 && choices.iter().all(|choice| !choice.auto_expand_allowed()) {
+        let reason = choices
+            .iter()
+            .find_map(|choice| choice.inspect_only_reason())
+            .unwrap_or("inspect-only owner");
+        println!("  expansion: inspect-only ({reason})");
+    } else if expanded < choices.len() {
         println!(
             "  expansion: expanded {} hidden {}",
             expanded,
@@ -87,6 +93,13 @@ pub(super) fn render_timeline_choice(choice: &OwnerChoice) -> String {
                 "{:<34} {}",
                 base,
                 render_boss_relic_admission_compact(admission)
+            )
+        }
+        ChoiceAnnotation::ShopTiny(annotation) => {
+            format!(
+                "{:<34} {}",
+                base,
+                render_shop_tiny_annotation_compact(annotation)
             )
         }
         ChoiceAnnotation::None => base,
@@ -232,6 +245,12 @@ fn render_timeline_step(step: &BranchPathStep) -> String {
         ChoiceAnnotation::BossRelic(admission) => {
             format!("{base}  {}", render_boss_relic_admission_compact(admission))
         }
+        ChoiceAnnotation::ShopTiny(annotation) => {
+            format!(
+                "{base}  {}",
+                render_shop_tiny_annotation_compact(annotation)
+            )
+        }
         ChoiceAnnotation::None => base,
     }
 }
@@ -266,6 +285,23 @@ fn render_choice_key_timeline(key: &DecisionCandidateKey) -> String {
             card,
             upgrades,
         } => format!("purge {deck_index} {card:?}+{upgrades}"),
+        DecisionCandidateKey::ShopBuyCard {
+            shop_slot,
+            card,
+            upgrades,
+            price,
+        } => format!("buy card {shop_slot} {card:?}+{upgrades} {price}g"),
+        DecisionCandidateKey::ShopBuyRelic {
+            shop_slot,
+            relic,
+            price,
+        } => format!("buy relic {shop_slot} {relic:?} {price}g"),
+        DecisionCandidateKey::ShopBuyPotion {
+            shop_slot,
+            potion,
+            price,
+        } => format!("buy potion {shop_slot} {potion:?} {price}g"),
+        DecisionCandidateKey::ShopOpenRewards => "open shop rewards".to_string(),
         DecisionCandidateKey::SelectionSubmit { reason, .. } => format!("select {reason:?}"),
         DecisionCandidateKey::ShopLeave => "leave shop".to_string(),
     }

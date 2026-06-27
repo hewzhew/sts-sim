@@ -161,7 +161,9 @@ fn run() -> Result<(), String> {
                 Vec::new()
             };
             let expanded = choices
-                .len()
+                .iter()
+                .filter(|choice| choice.auto_expand_allowed())
+                .count()
                 .min(args.max_branches.saturating_sub(next.len()));
             render::print_branch_timeline(generation, &branch, &choices, expanded);
             if !expandable {
@@ -170,7 +172,10 @@ fn run() -> Result<(), String> {
             for child in expand_registered_owner(
                 &branch,
                 args,
-                choices.into_iter().take(expanded),
+                choices
+                    .into_iter()
+                    .filter(|choice| choice.auto_expand_allowed())
+                    .take(expanded),
                 &mut next_branch_id,
             ) {
                 next.push_back(child);

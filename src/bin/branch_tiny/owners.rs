@@ -6,6 +6,11 @@ use sts_simulator::ai::strategy::reward_admission::{
     assess_reward_admission, reward_admission_order_key_v1, skip_reward_admission, RewardAdmission,
     RewardAdmissionOrderKeyV1,
 };
+use sts_simulator::content::cards::{
+    get_card_definition, is_starter_basic, is_starter_defend, is_starter_strike, CardId, CardType,
+};
+use sts_simulator::content::potions::{get_potion_definition, PotionId};
+use sts_simulator::content::relics::RelicId;
 use sts_simulator::eval::run_control::{
     DecisionCandidateKey, DecisionSurface, RunControlCommand, RunControlSession,
 };
@@ -21,6 +26,7 @@ pub(super) struct OwnerChoice {
     pub(super) action: RunControlCommand,
     pub(super) label: String,
     pub(super) annotation: ChoiceAnnotation,
+    pub(super) expansion: OwnerChoiceExpansion,
 }
 
 #[derive(Clone)]
@@ -28,6 +34,64 @@ pub(super) enum ChoiceAnnotation {
     None,
     Reward(RewardAdmission),
     BossRelic(BossRelicAdmission),
+    ShopTiny(ShopTinyAnnotation),
+}
+
+#[derive(Clone)]
+pub(super) enum OwnerChoiceExpansion {
+    AutoAllowed,
+    InspectOnly(&'static str),
+}
+
+impl OwnerChoice {
+    pub(super) fn auto_expand_allowed(&self) -> bool {
+        matches!(self.expansion, OwnerChoiceExpansion::AutoAllowed)
+    }
+
+    pub(super) fn inspect_only_reason(&self) -> Option<&'static str> {
+        match self.expansion {
+            OwnerChoiceExpansion::InspectOnly(reason) => Some(reason),
+            OwnerChoiceExpansion::AutoAllowed => None,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(super) enum ShopTinyAnnotation {
+    BuyCard {
+        slot: usize,
+        card: CardId,
+        upgrades: u8,
+        price: i32,
+    },
+    BuyRelic {
+        slot: usize,
+        relic: RelicId,
+        price: i32,
+    },
+    BuyPotion {
+        slot: usize,
+        potion: PotionId,
+        price: i32,
+    },
+    Purge {
+        card: CardId,
+        upgrades: u8,
+        target: ShopPurgeTargetKind,
+    },
+    OpenRewards,
+    Leave,
+    Unsupported,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ShopPurgeTargetKind {
+    Curse,
+    Status,
+    StarterStrike,
+    StarterDefend,
+    OtherStarter,
+    Other,
 }
 
 impl ChoiceAnnotation {
@@ -55,7 +119,8 @@ pub(super) fn owner_choices(
         Owner::NeowStart => executable_choices(surface),
         Owner::CardReward => card_reward_owner_choices(session, surface),
         Owner::BossRelic => boss_relic_owner_choices(session, surface),
-        Owner::Event(_) | Owner::RewardTiny | Owner::ShopTiny => Vec::new(),
+        Owner::ShopTiny => shop_tiny_owner_choices(surface),
+        Owner::Event(_) | Owner::RewardTiny => Vec::new(),
     }
 }
 
@@ -108,6 +173,67 @@ fn boss_relic_owner_choices(
         .collect::<Vec<_>>();
     choices.sort_by_key(|(index, choice)| (boss_relic_choice_rank(choice), *index));
     choices.into_iter().map(|(_, choice)| choice).collect()
+}
+
+fn shop_tiny_owner_choices(surface: &DecisionSurface) -> Vec<OwnerChoice> {
+    let mut choices = executable_choices(surface)
+        .into_iter()
+        .map(|mut choice| {
+            choice.annotation = shop_tiny_annotation_for_choice(&choice);
+            choice.expansion = OwnerChoiceExpansion::InspectOnly(
+                "shop tiny lists atomic shop actions but does not plan a full shop",
+            );
+            choice
+        })
+        .enumerate()
+        .collect::<Vec<_>>();
+    choices.sort_by_key(|(index, choice)| (shop_tiny_choice_rank(choice), *index));
+    choices.into_iter().map(|(_, choice)| choice).collect()
+}
+
+fn shop_tiny_annotation_for_choice(choice: &OwnerChoice) -> ChoiceAnnotation {
+    let annotation = match choice.key {
+        Some(DecisionCandidateKey::ShopBuyCard {
+            shop_slot,
+            card,
+            upgrades,
+            price,
+        }) => ShopTinyAnnotation::BuyCard {
+            slot: shop_slot,
+            card,
+            upgrades,
+            price,
+        },
+        Some(DecisionCandidateKey::ShopBuyRelic {
+            shop_slot,
+            relic,
+            price,
+        }) => ShopTinyAnnotation::BuyRelic {
+            slot: shop_slot,
+            relic,
+            price,
+        },
+        Some(DecisionCandidateKey::ShopBuyPotion {
+            shop_slot,
+            potion,
+            price,
+        }) => ShopTinyAnnotation::BuyPotion {
+            slot: shop_slot,
+            potion,
+            price,
+        },
+        Some(DecisionCandidateKey::ShopPurgeCard { card, upgrades, .. }) => {
+            ShopTinyAnnotation::Purge {
+                card,
+                upgrades,
+                target: classify_shop_purge_target(card),
+            }
+        }
+        Some(DecisionCandidateKey::ShopOpenRewards) => ShopTinyAnnotation::OpenRewards,
+        Some(DecisionCandidateKey::ShopLeave) => ShopTinyAnnotation::Leave,
+        _ => ShopTinyAnnotation::Unsupported,
+    };
+    ChoiceAnnotation::ShopTiny(annotation)
 }
 
 fn boss_relic_annotation_for_choice(
@@ -187,6 +313,40 @@ fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
     }
 }
 
+fn shop_tiny_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
+    match &choice.annotation {
+        ChoiceAnnotation::ShopTiny(annotation) => match annotation {
+            ShopTinyAnnotation::Purge { target, .. } => match target {
+                ShopPurgeTargetKind::Curse => (0, 0),
+                ShopPurgeTargetKind::Status => (0, 1),
+                ShopPurgeTargetKind::StarterStrike => (1, 0),
+                ShopPurgeTargetKind::StarterDefend => (1, 1),
+                ShopPurgeTargetKind::OtherStarter => (1, 2),
+                ShopPurgeTargetKind::Other => (3, 0),
+            },
+            ShopTinyAnnotation::BuyCard { .. } => (2, 0),
+            ShopTinyAnnotation::BuyRelic { .. } => (2, 1),
+            ShopTinyAnnotation::BuyPotion { .. } => (2, 2),
+            ShopTinyAnnotation::OpenRewards => (3, 1),
+            ShopTinyAnnotation::Leave => (4, 0),
+            ShopTinyAnnotation::Unsupported => (5, 0),
+        },
+        _ => (5, 0),
+    }
+}
+
+fn classify_shop_purge_target(card: CardId) -> ShopPurgeTargetKind {
+    let definition = get_card_definition(card);
+    match definition.card_type {
+        CardType::Curse => ShopPurgeTargetKind::Curse,
+        CardType::Status => ShopPurgeTargetKind::Status,
+        _ if is_starter_strike(card) => ShopPurgeTargetKind::StarterStrike,
+        _ if is_starter_defend(card) => ShopPurgeTargetKind::StarterDefend,
+        _ if is_starter_basic(card) => ShopPurgeTargetKind::OtherStarter,
+        _ => ShopPurgeTargetKind::Other,
+    }
+}
+
 fn executable_choices_with_cancel(
     surface: &DecisionSurface,
     include_cancel: bool,
@@ -205,6 +365,7 @@ fn executable_choices_with_cancel(
                 action,
                 label: candidate.label.clone(),
                 annotation: ChoiceAnnotation::None,
+                expansion: OwnerChoiceExpansion::AutoAllowed,
             })
         })
         .collect()
@@ -235,4 +396,45 @@ fn is_boss_relic_choice(choice: &OwnerChoice) -> bool {
         choice.key,
         Some(DecisionCandidateKey::BossRelicPick { .. } | DecisionCandidateKey::BossRelicSkip)
     )
+}
+
+pub(super) fn render_shop_tiny_annotation_compact(annotation: &ShopTinyAnnotation) -> String {
+    match annotation {
+        ShopTinyAnnotation::BuyCard {
+            slot,
+            card,
+            upgrades,
+            price,
+        } => format!("BuyCard slot={slot} {card:?}+{upgrades} {price}g"),
+        ShopTinyAnnotation::BuyRelic { slot, relic, price } => {
+            format!("BuyRelic slot={slot} {relic:?} {price}g")
+        }
+        ShopTinyAnnotation::BuyPotion {
+            slot,
+            potion,
+            price,
+        } => {
+            let name = get_potion_definition(*potion).name;
+            format!("BuyPotion slot={slot} {name} {price}g")
+        }
+        ShopTinyAnnotation::Purge {
+            card,
+            upgrades,
+            target,
+        } => format!("Purge {card:?}+{upgrades} {}", purge_target_label(*target)),
+        ShopTinyAnnotation::OpenRewards => "OpenRewards".to_string(),
+        ShopTinyAnnotation::Leave => "Leave".to_string(),
+        ShopTinyAnnotation::Unsupported => "Unsupported typed-gap".to_string(),
+    }
+}
+
+fn purge_target_label(target: ShopPurgeTargetKind) -> &'static str {
+    match target {
+        ShopPurgeTargetKind::Curse => "curse",
+        ShopPurgeTargetKind::Status => "status",
+        ShopPurgeTargetKind::StarterStrike => "starter-attack",
+        ShopPurgeTargetKind::StarterDefend => "starter-skill",
+        ShopPurgeTargetKind::OtherStarter => "starter",
+        ShopPurgeTargetKind::Other => "other",
+    }
 }
