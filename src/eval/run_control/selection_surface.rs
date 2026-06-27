@@ -7,7 +7,7 @@ use crate::state::selection::{
 
 use super::session::RunControlSession;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct SelectionSurface {
     pub scope: SelectionScope,
     pub reason: SelectionReason,
@@ -19,7 +19,7 @@ pub(super) struct SelectionSurface {
     pub submit_hint: &'static str,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct SelectionSurfaceItem {
     pub visible_index: usize,
     pub location: SelectionItemLocation,
@@ -28,7 +28,7 @@ pub(super) struct SelectionSurfaceItem {
     pub upgrades: u8,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SelectionItemLocation {
     Hand { index: usize },
     Grid { pile: PileType, index: usize },

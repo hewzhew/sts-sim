@@ -53,7 +53,7 @@ pub enum PendingChoice {
     StanceChoice,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub enum PileType {
     Draw,
     Discard,
