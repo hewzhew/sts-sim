@@ -33,7 +33,6 @@ pub(super) fn print_branch_timeline(
     if let Some(previous) = branch.path.last() {
         println!("  arrived: {}", render_timeline_step(previous));
     }
-    print_branch_path(&branch.path);
     print_auto_steps(&branch.auto_steps);
     if let Some(retry) = branch.boss_retry.as_ref() {
         print_boss_retry(retry);
@@ -159,26 +158,6 @@ fn print_boss_retry(retry: &BossRetryReport) {
     }
 }
 
-fn print_branch_path(path: &[BranchPathStep]) {
-    if path.len() <= 1 {
-        return;
-    }
-    let max_steps = 14usize;
-    let start = path.len().saturating_sub(max_steps);
-    let rendered = path
-        .iter()
-        .enumerate()
-        .skip(start)
-        .map(|(index, step)| format!("{:02}:{}", index + 1, render_timeline_step_compact(step)))
-        .collect::<Vec<_>>();
-    let prefix = if start > 0 {
-        format!("...{} earlier | ", start)
-    } else {
-        String::new()
-    };
-    println!("  path: {}{}", prefix, rendered.join(" | "));
-}
-
 fn boss_retry_status_label(status: &BossRetryStatus) -> String {
     match status {
         BossRetryStatus::Failed(reason) => format!("failed ({})", one_line(reason)),
@@ -276,58 +255,6 @@ fn render_timeline_step(step: &BranchPathStep) -> String {
         ChoiceAnnotation::ShopTiny(annotation) => {
             format!(
                 "{base}  {}",
-                render_shop_tiny_annotation_compact(annotation)
-            )
-        }
-        ChoiceAnnotation::None => base,
-    }
-}
-
-fn render_timeline_step_compact(step: &BranchPathStep) -> String {
-    let base = match &step.key {
-        Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) => {
-            format!("{card:?}+{upgrades}")
-        }
-        Some(DecisionCandidateKey::CardRewardSkip { .. }) => "skip-card".to_string(),
-        Some(DecisionCandidateKey::BossRelicPick { relic, .. }) => {
-            format!("boss:{relic:?}")
-        }
-        Some(DecisionCandidateKey::BossRelicSkip) => "skip-boss-relic".to_string(),
-        Some(DecisionCandidateKey::ShopPurgeCard { card, upgrades, .. }) => {
-            format!("purge:{card:?}+{upgrades}")
-        }
-        Some(DecisionCandidateKey::ShopBuyCard {
-            card,
-            upgrades,
-            price,
-            ..
-        }) => format!("buy:{card:?}+{upgrades}@{price}g"),
-        Some(DecisionCandidateKey::ShopBuyRelic { relic, price, .. }) => {
-            format!("buy:{relic:?}@{price}g")
-        }
-        Some(DecisionCandidateKey::ShopBuyPotion { potion, price, .. }) => {
-            format!("buy:{potion:?}@{price}g")
-        }
-        Some(DecisionCandidateKey::ShopLeave) => "leave-shop".to_string(),
-        Some(DecisionCandidateKey::EventOption { action, .. }) => {
-            format!("event:{action:?}")
-        }
-        Some(DecisionCandidateKey::CardRewardOpen { .. })
-        | Some(DecisionCandidateKey::CardRewardSingingBowl { .. })
-        | Some(DecisionCandidateKey::ShopOpenRewards)
-        | Some(DecisionCandidateKey::SelectionSubmit { .. }) => render_timeline_step(step),
-        None => format!("{}:{}", command_hint(&step.action), step.label),
-    };
-    match &step.annotation {
-        ChoiceAnnotation::Reward { lane, .. } => {
-            format!("{base}[{}]", reward_plan_lane_label(*lane))
-        }
-        ChoiceAnnotation::BossRelic(admission) => {
-            format!("{base}[{}]", render_boss_relic_admission_compact(admission))
-        }
-        ChoiceAnnotation::ShopTiny(annotation) => {
-            format!(
-                "{base}[{}]",
                 render_shop_tiny_annotation_compact(annotation)
             )
         }
