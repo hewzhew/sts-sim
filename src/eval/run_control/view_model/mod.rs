@@ -72,6 +72,11 @@ pub enum DecisionCandidateKey {
     CardRewardSkip {
         reward_item_index: usize,
     },
+    ShopPurgeCard {
+        deck_index: usize,
+        card: CardId,
+        upgrades: u8,
+    },
     ShopLeave,
 }
 

@@ -490,11 +490,33 @@ fn shop_candidates(
     }));
     let purge_block = shop_purge_block_reason(session, shop);
     if purge_block.is_none() {
-        candidates.push(candidate(
-            "purge",
-            format!("Remove card | {} gold", shop.purge_cost),
-            "purge <deck_idx>",
-            None::<String>,
+        candidates.extend(session.run_state.master_deck.iter().enumerate().filter_map(
+            |(deck_index, card)| {
+                if !crate::state::core::master_deck_card_is_purgeable(card)
+                    || crate::state::core::master_deck_card_is_bottled(
+                        card,
+                        &session.run_state.relics,
+                    )
+                {
+                    return None;
+                }
+                let mut candidate = candidate(
+                    format!("purge-{deck_index}"),
+                    format!(
+                        "Remove {} | {} gold",
+                        combat_card_label(card),
+                        shop.purge_cost
+                    ),
+                    ClientInput::PurgeCard(deck_index),
+                    None::<String>,
+                );
+                candidate.key = Some(DecisionCandidateKey::ShopPurgeCard {
+                    deck_index,
+                    card: card.id,
+                    upgrades: card.upgrades,
+                });
+                Some(candidate)
+            },
         ));
     } else {
         candidates.push(unavailable_candidate(

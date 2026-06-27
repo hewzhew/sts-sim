@@ -507,6 +507,11 @@ fn render_candidate_key(key: &DecisionCandidateKey) -> String {
         DecisionCandidateKey::CardRewardSkip { reward_item_index } => {
             format!("reward:{reward_item_index}:skip")
         }
+        DecisionCandidateKey::ShopPurgeCard {
+            deck_index,
+            card,
+            upgrades,
+        } => format!("shop:purge:{deck_index}:{card:?}+{upgrades}"),
         DecisionCandidateKey::ShopLeave => "shop:leave".to_string(),
     }
 }
