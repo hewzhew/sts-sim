@@ -121,6 +121,7 @@ fn compact_search_report(report: &CombatSearchV2Report) -> serde_json::Value {
         "stats": report.stats,
         "best_complete": report.best_complete_trajectory.as_ref().map(trajectory_summary),
         "best_frontier": report.best_frontier_trajectory.as_ref().map(trajectory_summary),
+        "rollout": report.rollout,
         "diagnostics": {
             "branching": report.diagnostics.branching,
             "expansion": report.diagnostics.expansion,
