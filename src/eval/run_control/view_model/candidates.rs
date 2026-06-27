@@ -644,12 +644,20 @@ fn pending_choice_candidates(
     if let Some(surface) =
         crate::eval::run_control::selection_surface::active_selection_surface(session)
     {
-        let mut candidates = vec![candidate(
+        let mut select = candidate(
             "select",
             format!("Submit selection with `{}`", surface.submit_hint),
             surface.submit_hint,
             Some(selection_surface_note(&surface)),
-        )];
+        );
+        select.key = Some(DecisionCandidateKey::SelectionSubmit {
+            scope: surface.scope,
+            reason: surface.reason,
+            min_choices: surface.min_choices,
+            max_choices: surface.max_choices,
+            item_count: surface.item_count,
+        });
+        let mut candidates = vec![select];
         if surface.can_cancel {
             candidates.push(candidate(
                 "cancel",
@@ -893,12 +901,24 @@ fn run_choice_candidates(
                     None::<String>,
                 )
             } else {
-                candidate(
+                let mut candidate = candidate(
                     idx.to_string(),
                     combat_card_label(card),
                     "select <deck_idx...>",
                     Some("requires explicit multi-card selection"),
-                )
+                );
+                if let Some(surface) =
+                    crate::eval::run_control::selection_surface::active_selection_surface(session)
+                {
+                    candidate.key = Some(DecisionCandidateKey::SelectionSubmit {
+                        scope: surface.scope,
+                        reason: surface.reason,
+                        min_choices: surface.min_choices,
+                        max_choices: surface.max_choices,
+                        item_count: surface.item_count,
+                    });
+                }
+                candidate
             }
         })
         .collect()

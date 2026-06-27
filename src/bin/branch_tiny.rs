@@ -512,6 +512,13 @@ fn render_candidate_key(key: &DecisionCandidateKey) -> String {
             card,
             upgrades,
         } => format!("shop:purge:{deck_index}:{card:?}+{upgrades}"),
+        DecisionCandidateKey::SelectionSubmit {
+            scope,
+            reason,
+            min_choices,
+            max_choices,
+            item_count,
+        } => format!("select:{scope:?}:{reason:?}:{min_choices}-{max_choices}/{item_count}"),
         DecisionCandidateKey::ShopLeave => "shop:leave".to_string(),
     }
 }

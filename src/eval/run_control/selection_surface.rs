@@ -1,16 +1,30 @@
+use crate::content::cards::CardId;
 use crate::runtime::combat::{CombatCard, CombatState};
 use crate::state::core::{ClientInput, EngineState, PendingChoice, PileType};
-use crate::state::selection::{SelectionResolution, SelectionScope, SelectionTargetRef};
+use crate::state::selection::{
+    SelectionReason, SelectionResolution, SelectionScope, SelectionTargetRef,
+};
 
 use super::session::RunControlSession;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct SelectionSurface {
+    pub scope: SelectionScope,
+    pub reason: SelectionReason,
     pub min_choices: usize,
     pub max_choices: usize,
     pub can_cancel: bool,
     pub item_count: usize,
+    pub items: Vec<SelectionSurfaceItem>,
     pub submit_hint: &'static str,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct SelectionSurfaceItem {
+    pub index: usize,
+    pub target: SelectionTargetRef,
+    pub card: CardId,
+    pub upgrades: u8,
 }
 
 pub(super) fn active_selection_surface(session: &RunControlSession) -> Option<SelectionSurface> {
@@ -18,42 +32,143 @@ pub(super) fn active_selection_surface(session: &RunControlSession) -> Option<Se
         EngineState::PendingChoice(choice) => match choice {
             PendingChoice::HandSelect {
                 candidate_uuids,
+                reason,
                 min_cards,
                 max_cards,
                 can_cancel,
-                ..
-            }
-            | PendingChoice::GridSelect {
-                candidate_uuids,
-                min_cards,
-                max_cards,
-                can_cancel,
-                ..
             } => Some(SelectionSurface {
+                scope: SelectionScope::Hand,
+                reason: (*reason).into(),
                 min_choices: *min_cards as usize,
                 max_choices: (*max_cards as usize).min(candidate_uuids.len()),
                 can_cancel: *can_cancel,
                 item_count: candidate_uuids.len(),
+                items: selection_items_for_combat_cards(
+                    combat_hand_cards(session),
+                    candidate_uuids,
+                ),
                 submit_hint: "select <idx...>",
             }),
-            PendingChoice::ScrySelect { cards, .. } => Some(SelectionSurface {
+            PendingChoice::GridSelect {
+                source_pile,
+                candidate_uuids,
+                reason,
+                min_cards,
+                max_cards,
+                can_cancel,
+            } => Some(SelectionSurface {
+                scope: SelectionScope::Grid,
+                reason: (*reason).into(),
+                min_choices: *min_cards as usize,
+                max_choices: (*max_cards as usize).min(candidate_uuids.len()),
+                can_cancel: *can_cancel,
+                item_count: candidate_uuids.len(),
+                items: selection_items_for_combat_cards(
+                    combat_cards_for_pile(session, *source_pile),
+                    candidate_uuids,
+                ),
+                submit_hint: "select <idx...>",
+            }),
+            PendingChoice::ScrySelect { cards, card_uuids } => Some(SelectionSurface {
+                scope: SelectionScope::Grid,
+                reason: SelectionReason::PutToBottomOfDraw,
                 min_choices: 0,
                 max_choices: cards.len(),
                 can_cancel: false,
                 item_count: cards.len(),
+                items: cards
+                    .iter()
+                    .zip(card_uuids.iter())
+                    .enumerate()
+                    .map(|(index, (card, uuid))| SelectionSurfaceItem {
+                        index,
+                        target: SelectionTargetRef::CardUuid(*uuid),
+                        card: *card,
+                        upgrades: 0,
+                    })
+                    .collect(),
                 submit_hint: "select <idx...>",
             }),
             _ => None,
         },
-        EngineState::RunPendingChoice(choice) => Some(SelectionSurface {
-            min_choices: choice.min_choices,
-            max_choices: choice.max_choices,
-            can_cancel: choice.min_choices == 0,
-            item_count: choice.selection_request(&session.run_state).targets.len(),
-            submit_hint: "select <deck_idx...>",
-        }),
+        EngineState::RunPendingChoice(choice) => {
+            let request = choice.selection_request(&session.run_state);
+            Some(SelectionSurface {
+                scope: request.scope,
+                reason: request.reason,
+                min_choices: choice.min_choices,
+                max_choices: choice.max_choices,
+                can_cancel: request.can_cancel,
+                item_count: request.targets.len(),
+                items: selection_items_for_master_deck_targets(session, &request.targets),
+                submit_hint: "select <deck_idx...>",
+            })
+        }
         _ => None,
     }
+}
+
+fn combat_hand_cards(session: &RunControlSession) -> &[CombatCard] {
+    session
+        .active_combat
+        .as_ref()
+        .map(|active| active.combat_state.zones.hand.as_slice())
+        .unwrap_or(&[])
+}
+
+fn combat_cards_for_pile(session: &RunControlSession, pile: PileType) -> &[CombatCard] {
+    let Some(combat) = session
+        .active_combat
+        .as_ref()
+        .map(|active| &active.combat_state)
+    else {
+        return &[];
+    };
+    grid_source_cards(combat, pile)
+}
+
+fn selection_items_for_combat_cards(
+    cards: &[CombatCard],
+    candidate_uuids: &[u32],
+) -> Vec<SelectionSurfaceItem> {
+    candidate_uuids
+        .iter()
+        .enumerate()
+        .filter_map(|(index, uuid)| {
+            let card = cards.iter().find(|card| card.uuid == *uuid)?;
+            Some(SelectionSurfaceItem {
+                index,
+                target: SelectionTargetRef::CardUuid(*uuid),
+                card: card.id,
+                upgrades: card.upgrades,
+            })
+        })
+        .collect()
+}
+
+fn selection_items_for_master_deck_targets(
+    session: &RunControlSession,
+    targets: &[SelectionTargetRef],
+) -> Vec<SelectionSurfaceItem> {
+    targets
+        .iter()
+        .enumerate()
+        .filter_map(|(index, target)| match target {
+            SelectionTargetRef::CardUuid(uuid) => {
+                let card = session
+                    .run_state
+                    .master_deck
+                    .iter()
+                    .find(|card| card.uuid == *uuid)?;
+                Some(SelectionSurfaceItem {
+                    index,
+                    target: *target,
+                    card: card.id,
+                    upgrades: card.upgrades,
+                })
+            }
+        })
+        .collect()
 }
 
 pub(super) fn resolve_selection_indices(

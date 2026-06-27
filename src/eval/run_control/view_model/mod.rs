@@ -7,7 +7,7 @@ use crate::content::cards::CardId;
 use crate::sim::combat::{combat_terminal, stable_boundary};
 use crate::state::core::{ClientInput, EngineState};
 use crate::state::events::{EventActionKind, EventId};
-use crate::state::selection::SelectionScope;
+use crate::state::selection::{SelectionReason, SelectionScope};
 
 pub(super) use super::session::RunControlSession;
 use candidates::decision_candidates;
@@ -76,6 +76,13 @@ pub enum DecisionCandidateKey {
         deck_index: usize,
         card: CardId,
         upgrades: u8,
+    },
+    SelectionSubmit {
+        scope: SelectionScope,
+        reason: SelectionReason,
+        min_choices: usize,
+        max_choices: usize,
+        item_count: usize,
     },
     ShopLeave,
 }
