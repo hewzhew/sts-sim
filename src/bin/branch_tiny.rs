@@ -7,6 +7,8 @@ use sts_simulator::eval::run_control::{
 };
 use sts_simulator::state::events::EventId;
 
+#[path = "branch_tiny/combat_gap_case.rs"]
+mod combat_gap_case;
 #[path = "branch_tiny/owners.rs"]
 mod owners;
 #[path = "branch_tiny/render.rs"]
@@ -121,7 +123,7 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let (args, trace_path) = parse_args()?;
+    let (args, trace_path, combat_gap_case_dir) = parse_args()?;
     let mut trace = trace_path
         .as_ref()
         .map(|path| trace::TraceWriter::create(path))
@@ -182,6 +184,15 @@ fn run() -> Result<(), String> {
             render::print_branch_timeline(generation, &branch, &choices, expanded);
             if let Some(trace) = trace.as_mut() {
                 trace.record_node(generation, &branch, &choices, expanded)?;
+            }
+            if let Some(dir) = combat_gap_case_dir.as_ref() {
+                if matches!(branch.status, BranchStatus::CombatGap { .. }) {
+                    match combat_gap_case::save_combat_gap_case(dir, args, generation, &branch) {
+                        Ok(Some(path)) => println!("  combat_gap_case: {}", path.display()),
+                        Ok(None) => {}
+                        Err(err) => println!("  combat_gap_case_error: {}", render::one_line(&err)),
+                    }
+                }
             }
             if !expandable {
                 continue;
@@ -256,7 +267,7 @@ fn expand_registered_owner(
     children
 }
 
-fn parse_args() -> Result<(Args, Option<PathBuf>), String> {
+fn parse_args() -> Result<(Args, Option<PathBuf>, Option<PathBuf>), String> {
     let mut args = Args {
         seed: 1,
         ascension: 0,
@@ -269,12 +280,15 @@ fn parse_args() -> Result<(Args, Option<PathBuf>), String> {
         boss_search_ms: 15_000,
     };
     let mut trace_jsonl = None;
+    let mut combat_gap_case_dir = None;
     let raw = std::env::args().skip(1).collect::<Vec<_>>();
     let mut index = 0;
     while index < raw.len() {
         let key = raw[index].as_str();
         if matches!(key, "--help" | "-h") {
-            println!("branch_tiny --seed N --generations N --max-branches N [--trace-jsonl PATH]");
+            println!(
+                "branch_tiny --seed N --generations N --max-branches N [--trace-jsonl PATH] [--combat-gap-case-dir DIR]"
+            );
             println!(
                 "  owner-audit runner; boss combat gaps retry once with --boss-search-nodes/--boss-search-ms"
             );
@@ -294,6 +308,7 @@ fn parse_args() -> Result<(Args, Option<PathBuf>), String> {
                 | "--boss-search-nodes"
                 | "--boss-search-ms"
                 | "--trace-jsonl"
+                | "--combat-gap-case-dir"
         ) {
             return Err(format!("unknown argument {key}"));
         }
@@ -311,11 +326,12 @@ fn parse_args() -> Result<(Args, Option<PathBuf>), String> {
             "--boss-search-nodes" => args.boss_search_nodes = parse(value, key)?,
             "--boss-search-ms" => args.boss_search_ms = parse(value, key)?,
             "--trace-jsonl" => trace_jsonl = Some(PathBuf::from(value)),
+            "--combat-gap-case-dir" => combat_gap_case_dir = Some(PathBuf::from(value)),
             _ => unreachable!("argument key was validated before value parsing"),
         }
         index += 2;
     }
-    Ok((args, trace_jsonl))
+    Ok((args, trace_jsonl, combat_gap_case_dir))
 }
 
 fn parse<T: std::str::FromStr>(value: &str, key: &str) -> Result<T, String> {
