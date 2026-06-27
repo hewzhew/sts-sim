@@ -136,17 +136,16 @@ fn run() -> Result<(), String> {
         },
         ..Default::default()
     });
-    let (status, boss_retry, auto_steps, combat_search) =
-        runner::advance_to_owner_or_gap(&mut session, args);
+    let advance = runner::advance_to_owner_or_gap(&mut session, args);
     let mut frontier = VecDeque::from([Branch {
         id: 0,
         parent_id: None,
         path: Vec::new(),
         session,
-        status,
-        boss_retry,
-        auto_steps,
-        combat_search,
+        status: advance.status,
+        boss_retry: advance.boss_retry,
+        auto_steps: advance.auto_steps,
+        combat_search: advance.combat_search,
     }]);
     let mut next_branch_id = 1usize;
 
@@ -225,11 +224,15 @@ fn expand_registered_owner(
     let mut children = Vec::new();
     for choice in candidates {
         let mut session = branch.session.clone();
-        let (status, boss_retry, auto_steps, combat_search) =
-            match session.apply_command(choice.action.clone()) {
-                Ok(_) => runner::advance_to_owner_or_gap(&mut session, args),
-                Err(err) => (BranchStatus::ApplyFailed(err), None, Vec::new(), Vec::new()),
-            };
+        let advance = match session.apply_command(choice.action.clone()) {
+            Ok(_) => runner::advance_to_owner_or_gap(&mut session, args),
+            Err(err) => runner::AdvanceResult {
+                status: BranchStatus::ApplyFailed(err),
+                boss_retry: None,
+                auto_steps: Vec::new(),
+                combat_search: Vec::new(),
+            },
+        };
         let mut path = branch.path.clone();
         path.push(BranchPathStep {
             key: choice.key,
@@ -237,19 +240,17 @@ fn expand_registered_owner(
             label: choice.label,
             annotation: choice.annotation,
         });
+        let id = *next_branch_id;
+        *next_branch_id += 1;
         children.push(Branch {
-            id: {
-                let id = *next_branch_id;
-                *next_branch_id += 1;
-                id
-            },
+            id,
             parent_id: Some(branch.id),
             path,
             session,
-            status,
-            boss_retry,
-            auto_steps,
-            combat_search,
+            status: advance.status,
+            boss_retry: advance.boss_retry,
+            auto_steps: advance.auto_steps,
+            combat_search: advance.combat_search,
         });
     }
     children

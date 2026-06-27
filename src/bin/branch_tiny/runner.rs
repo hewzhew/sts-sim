@@ -10,32 +10,25 @@ use sts_simulator::state::core::{ClientInput, EngineState, RunResult};
 use super::render;
 use super::{Args, BossRetryReport, BossRetryStatus, BoundarySite, BranchStatus, Owner};
 
+pub(super) struct AdvanceResult {
+    pub(super) status: BranchStatus,
+    pub(super) boss_retry: Option<BossRetryReport>,
+    pub(super) auto_steps: Vec<RunControlAutoAppliedStepV1>,
+    pub(super) combat_search: Vec<CombatSearchTraceSummary>,
+}
+
 pub(super) fn advance_to_owner_or_gap(
     session: &mut RunControlSession,
     args: Args,
-) -> (
-    BranchStatus,
-    Option<BossRetryReport>,
-    Vec<RunControlAutoAppliedStepV1>,
-    Vec<CombatSearchTraceSummary>,
-) {
+) -> AdvanceResult {
     let mut policy_steps = 0usize;
     let mut auto_steps = Vec::new();
     let mut combat_search = Vec::new();
     loop {
-        let options = RunControlAutoStepOptions {
-            search: RunControlSearchCombatOptions {
-                max_nodes: Some(args.search_nodes),
-                wall_ms: Some(args.search_ms),
-                max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
-                ..Default::default()
-            },
-            max_operations: Some(args.auto_ops),
-            route: RunControlRouteAutomationMode::Planner,
-        };
+        let options = auto_step_options(args.search_nodes, args.search_ms, args.auto_ops);
         match apply_owner_audit_auto_run(session, options) {
             Ok(_) if terminal_label(session).is_some() => {
-                return (
+                return advance_result(
                     BranchStatus::Terminal(terminal_label(session).unwrap()),
                     None,
                     auto_steps,
@@ -46,7 +39,7 @@ pub(super) fn advance_to_owner_or_gap(
                 combat_search.extend(combat_search_summaries(&outcome));
                 auto_steps.extend(outcome.auto_applied_steps.clone());
                 let Some(stop) = outcome.auto_stop.as_ref() else {
-                    return (
+                    return advance_result(
                         BranchStatus::AdvanceFailed(
                             "auto_run returned non-terminal success without auto_stop".to_string(),
                         ),
@@ -59,19 +52,19 @@ pub(super) fn advance_to_owner_or_gap(
                 if matches!(status, BranchStatus::CombatGap { .. }) && is_boss_combat(session) {
                     if let Some(result) = try_boss_retry(session, args) {
                         combat_search.extend(result.2);
-                        return (result.0, result.1, auto_steps, combat_search);
+                        return advance_result(result.0, Some(result.1), auto_steps, combat_search);
                     }
                 }
                 let owner = match &status {
                     BranchStatus::Running { owner, .. } => *owner,
-                    _ => return (status, None, auto_steps, combat_search),
+                    _ => return advance_result(status, None, auto_steps, combat_search),
                 };
                 if owner_is_branching(owner) {
-                    return (status, None, auto_steps, combat_search);
+                    return advance_result(status, None, auto_steps, combat_search);
                 }
                 policy_steps += 1;
                 if policy_steps > 16 {
-                    return (
+                    return advance_result(
                         BranchStatus::BudgetGap {
                             boundary: build_decision_surface(session).view.header.title.clone(),
                             reason: "owner policy step budget exhausted".to_string(),
@@ -90,7 +83,7 @@ pub(super) fn advance_to_owner_or_gap(
                         });
                     }
                     Err(err) => {
-                        return (
+                        return advance_result(
                             BranchStatus::AdvanceFailed(format!(
                                 "owner policy {owner:?} failed: {err}"
                             )),
@@ -102,7 +95,7 @@ pub(super) fn advance_to_owner_or_gap(
                 }
             }
             Err(err) => {
-                return (
+                return advance_result(
                     BranchStatus::AdvanceFailed(err),
                     None,
                     auto_steps,
@@ -110,6 +103,20 @@ pub(super) fn advance_to_owner_or_gap(
                 )
             }
         }
+    }
+}
+
+fn advance_result(
+    status: BranchStatus,
+    boss_retry: Option<BossRetryReport>,
+    auto_steps: Vec<RunControlAutoAppliedStepV1>,
+    combat_search: Vec<CombatSearchTraceSummary>,
+) -> AdvanceResult {
+    AdvanceResult {
+        status,
+        boss_retry,
+        auto_steps,
+        combat_search,
     }
 }
 
@@ -132,35 +139,35 @@ fn is_boss_combat(session: &RunControlSession) -> bool {
         .is_some_and(|combat| combat.combat_state.meta.is_boss_fight)
 }
 
-fn try_boss_retry(
-    session: &mut RunControlSession,
-    args: Args,
-) -> Option<(
-    BranchStatus,
-    Option<BossRetryReport>,
-    Vec<CombatSearchTraceSummary>,
-)> {
-    let options = RunControlAutoStepOptions {
+fn auto_step_options(max_nodes: usize, wall_ms: u64, auto_ops: usize) -> RunControlAutoStepOptions {
+    RunControlAutoStepOptions {
         search: RunControlSearchCombatOptions {
-            max_nodes: Some(args.boss_search_nodes),
-            wall_ms: Some(args.boss_search_ms),
+            max_nodes: Some(max_nodes),
+            wall_ms: Some(wall_ms),
             max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
             ..Default::default()
         },
-        max_operations: Some(args.auto_ops),
+        max_operations: Some(auto_ops),
         route: RunControlRouteAutomationMode::Planner,
-    };
+    }
+}
+
+fn try_boss_retry(
+    session: &mut RunControlSession,
+    args: Args,
+) -> Option<(BranchStatus, BossRetryReport, Vec<CombatSearchTraceSummary>)> {
+    let options = auto_step_options(args.boss_search_nodes, args.boss_search_ms, args.auto_ops);
     let outcome = match apply_owner_audit_auto_run(session, options) {
         Ok(outcome) => outcome,
         Err(err) => {
             return Some((
                 BranchStatus::AdvanceFailed(err.clone()),
-                Some(BossRetryReport {
+                BossRetryReport {
                     status: BossRetryStatus::Failed(err),
                     max_nodes: args.boss_search_nodes,
                     wall_ms: args.boss_search_ms,
                     action_keys: Vec::new(),
-                }),
+                },
                 Vec::new(),
             ));
         }
@@ -190,7 +197,7 @@ fn try_boss_retry(
     if terminal_label(session).is_some() {
         return Some((
             BranchStatus::Terminal(terminal_label(session).unwrap()),
-            Some(report),
+            report,
             combat_search,
         ));
     }
@@ -201,7 +208,7 @@ fn try_boss_retry(
                 BranchStatus::AdvanceFailed(
                     "boss retry returned non-terminal success without auto_stop".to_string(),
                 ),
-                Some(report),
+                report,
                 combat_search,
             ));
         }
@@ -217,7 +224,7 @@ fn try_boss_retry(
     } else {
         report
     };
-    Some((status, Some(report), combat_search))
+    Some((status, report, combat_search))
 }
 
 fn apply_policy_owner(
