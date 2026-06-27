@@ -56,6 +56,7 @@ pub(super) fn save_combat_gap_case(
             "potion_slots": branch.session.run_state.potions.len(),
         },
         "combat": combat_summary(&position),
+        "failed_search": branch.combat_search.last(),
         "path": branch.path.iter().map(path_step).collect::<Vec<_>>(),
         "run_rng": rng_summary(&branch.session.run_state.rng_pool),
         "position": position,
