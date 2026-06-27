@@ -124,6 +124,24 @@ pub struct CombatSearchPerformanceSnapshotV1 {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct CombatSearchTraceSummary {
+    pub source: String,
+    pub act: u8,
+    pub floor: i32,
+    pub turn: u32,
+    pub combat_kind: String,
+    pub enemies: Vec<String>,
+    pub coverage_status: String,
+    pub complete_trajectory_found: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best_hp_loss: Option<i32>,
+    pub nodes_expanded: u64,
+    pub terminal_wins: u64,
+    pub total_us: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RoutePlannerCandidateSummaryV1 {
     /// Compatibility display view for old session traces and compact route
     /// snippets. New route/map tooling should consume `MapDecisionPacketV1`
@@ -320,6 +338,30 @@ pub fn combat_automation_trajectories_v1(
     annotations
         .iter()
         .filter_map(RunControlTraceAnnotationV1::as_combat_automation_trajectory_v1)
+}
+
+pub fn combat_search_trace_summaries(
+    annotations: &[RunControlTraceAnnotationV1],
+) -> impl Iterator<Item = CombatSearchTraceSummary> + '_ {
+    annotations.iter().filter_map(|annotation| {
+        let RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot } = annotation else {
+            return None;
+        };
+        Some(CombatSearchTraceSummary {
+            source: snapshot.source.clone(),
+            act: snapshot.act,
+            floor: snapshot.floor,
+            turn: snapshot.turn,
+            combat_kind: snapshot.combat_kind.clone(),
+            enemies: snapshot.enemies.clone(),
+            coverage_status: snapshot.coverage_status.clone(),
+            complete_trajectory_found: snapshot.complete_trajectory_found,
+            best_hp_loss: snapshot.best_hp_loss,
+            nodes_expanded: snapshot.nodes_expanded,
+            terminal_wins: snapshot.terminal_wins,
+            total_us: snapshot.total_us,
+        })
+    })
 }
 
 pub(in crate::eval::run_control) fn validate_run_control_trace_annotations_v1(

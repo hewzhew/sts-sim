@@ -73,6 +73,7 @@ impl TraceWriter {
             "auto": branch.auto_steps.iter()
                 .map(render_auto_applied_step_compact_v1)
                 .collect::<Vec<_>>(),
+            "combat_search": branch.combat_search,
             "boss_retry": branch.boss_retry.as_ref().map(|retry| json!({
                 "status": match &retry.status {
                     BossRetryStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),

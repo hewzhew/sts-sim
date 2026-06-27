@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use sts_simulator::eval::run_control::{
-    build_decision_surface, RewardAutomationConfig, RunControlAutoAppliedStepV1, RunControlCommand,
-    RunControlConfig, RunControlSession,
+    build_decision_surface, CombatSearchTraceSummary, RewardAutomationConfig,
+    RunControlAutoAppliedStepV1, RunControlCommand, RunControlConfig, RunControlSession,
 };
 use sts_simulator::state::events::EventId;
 
@@ -27,6 +27,7 @@ struct Branch {
     status: BranchStatus,
     boss_retry: Option<BossRetryReport>,
     auto_steps: Vec<RunControlAutoAppliedStepV1>,
+    combat_search: Vec<CombatSearchTraceSummary>,
 }
 
 #[derive(Clone)]
@@ -135,7 +136,8 @@ fn run() -> Result<(), String> {
         },
         ..Default::default()
     });
-    let (status, boss_retry, auto_steps) = runner::advance_to_owner_or_gap(&mut session, args);
+    let (status, boss_retry, auto_steps, combat_search) =
+        runner::advance_to_owner_or_gap(&mut session, args);
     let mut frontier = VecDeque::from([Branch {
         id: 0,
         parent_id: None,
@@ -144,6 +146,7 @@ fn run() -> Result<(), String> {
         status,
         boss_retry,
         auto_steps,
+        combat_search,
     }]);
     let mut next_branch_id = 1usize;
 
@@ -222,10 +225,11 @@ fn expand_registered_owner(
     let mut children = Vec::new();
     for choice in candidates {
         let mut session = branch.session.clone();
-        let (status, boss_retry, auto_steps) = match session.apply_command(choice.action.clone()) {
-            Ok(_) => runner::advance_to_owner_or_gap(&mut session, args),
-            Err(err) => (BranchStatus::ApplyFailed(err), None, Vec::new()),
-        };
+        let (status, boss_retry, auto_steps, combat_search) =
+            match session.apply_command(choice.action.clone()) {
+                Ok(_) => runner::advance_to_owner_or_gap(&mut session, args),
+                Err(err) => (BranchStatus::ApplyFailed(err), None, Vec::new(), Vec::new()),
+            };
         let mut path = branch.path.clone();
         path.push(BranchPathStep {
             key: choice.key,
@@ -245,6 +249,7 @@ fn expand_registered_owner(
             status,
             boss_retry,
             auto_steps,
+            combat_search,
         });
     }
     children
