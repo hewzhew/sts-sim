@@ -874,54 +874,44 @@ fn run_choice_candidates(
     session: &RunControlSession,
     choice: &crate::state::core::RunPendingChoiceState,
 ) -> Vec<DecisionCandidate> {
-    let request = choice.selection_request(&session.run_state);
-    let uuids = request
-        .targets
-        .iter()
-        .map(|target| match target {
-            crate::state::selection::SelectionTargetRef::CardUuid(uuid) => *uuid,
-        })
-        .collect::<Vec<_>>();
+    let Some(surface) =
+        crate::eval::run_control::selection_surface::active_selection_surface(session)
+    else {
+        return Vec::new();
+    };
     let single_choice = choice.min_choices == 1 && choice.max_choices == 1;
-    session
-        .run_state
-        .master_deck
-        .iter()
-        .enumerate()
-        .filter(|(_, card)| uuids.contains(&card.uuid))
-        .map(|(idx, card)| {
-            if single_choice {
+    if single_choice {
+        return surface
+            .items
+            .iter()
+            .map(|item| {
                 candidate(
-                    idx.to_string(),
-                    combat_card_label(card),
-                    ClientInput::SubmitSelection(SelectionResolution::card_uuids(
-                        SelectionScope::Deck,
-                        [card.uuid],
-                    )),
+                    item.visible_index.to_string(),
+                    reward_card_label(item.card, item.upgrades),
+                    ClientInput::SubmitSelection(SelectionResolution {
+                        scope: SelectionScope::Deck,
+                        selected: vec![item.target],
+                    }),
                     None::<String>,
                 )
-            } else {
-                let mut candidate = candidate(
-                    idx.to_string(),
-                    combat_card_label(card),
-                    "select <deck_idx...>",
-                    Some("requires explicit multi-card selection"),
-                );
-                if let Some(surface) =
-                    crate::eval::run_control::selection_surface::active_selection_surface(session)
-                {
-                    candidate.key = Some(DecisionCandidateKey::SelectionSubmit {
-                        scope: surface.scope,
-                        reason: surface.reason,
-                        min_choices: surface.min_choices,
-                        max_choices: surface.max_choices,
-                        item_count: surface.item_count,
-                    });
-                }
-                candidate
-            }
-        })
-        .collect()
+            })
+            .collect();
+    }
+
+    let mut select = candidate(
+        "select",
+        format!("Submit selection with `{}`", surface.submit_hint),
+        surface.submit_hint,
+        Some(selection_surface_note(&surface)),
+    );
+    select.key = Some(DecisionCandidateKey::SelectionSubmit {
+        scope: surface.scope,
+        reason: surface.reason,
+        min_choices: surface.min_choices,
+        max_choices: surface.max_choices,
+        item_count: surface.item_count,
+    });
+    vec![select]
 }
 
 fn boss_relic_candidates(choice: &BossRelicChoiceState) -> Vec<DecisionCandidate> {

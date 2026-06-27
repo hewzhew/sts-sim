@@ -7,7 +7,7 @@ use crate::state::selection::{
 
 use super::session::RunControlSession;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct SelectionSurface {
     pub scope: SelectionScope,
     pub reason: SelectionReason,
@@ -19,12 +19,21 @@ pub(super) struct SelectionSurface {
     pub submit_hint: &'static str,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct SelectionSurfaceItem {
-    pub index: usize,
+    pub visible_index: usize,
+    pub location: SelectionItemLocation,
     pub target: SelectionTargetRef,
     pub card: CardId,
     pub upgrades: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum SelectionItemLocation {
+    Hand { index: usize },
+    Grid { pile: PileType, index: usize },
+    Scry { index: usize },
+    MasterDeck { index: usize },
 }
 
 pub(super) fn active_selection_surface(session: &RunControlSession) -> Option<SelectionSurface> {
@@ -46,6 +55,7 @@ pub(super) fn active_selection_surface(session: &RunControlSession) -> Option<Se
                 items: selection_items_for_combat_cards(
                     combat_hand_cards(session),
                     candidate_uuids,
+                    CombatSelectionLocation::Hand,
                 ),
                 submit_hint: "select <idx...>",
             }),
@@ -66,6 +76,7 @@ pub(super) fn active_selection_surface(session: &RunControlSession) -> Option<Se
                 items: selection_items_for_combat_cards(
                     combat_cards_for_pile(session, *source_pile),
                     candidate_uuids,
+                    CombatSelectionLocation::Grid(*source_pile),
                 ),
                 submit_hint: "select <idx...>",
             }),
@@ -81,7 +92,8 @@ pub(super) fn active_selection_surface(session: &RunControlSession) -> Option<Se
                     .zip(card_uuids.iter())
                     .enumerate()
                     .map(|(index, (card, uuid))| SelectionSurfaceItem {
-                        index,
+                        visible_index: index,
+                        location: SelectionItemLocation::Scry { index },
                         target: SelectionTargetRef::CardUuid(*uuid),
                         card: *card,
                         upgrades: 0,
@@ -101,7 +113,7 @@ pub(super) fn active_selection_surface(session: &RunControlSession) -> Option<Se
                 can_cancel: request.can_cancel,
                 item_count: request.targets.len(),
                 items: selection_items_for_master_deck_targets(session, &request.targets),
-                submit_hint: "select <deck_idx...>",
+                submit_hint: "select <idx...>",
             })
         }
         _ => None,
@@ -127,17 +139,33 @@ fn combat_cards_for_pile(session: &RunControlSession, pile: PileType) -> &[Comba
     grid_source_cards(combat, pile)
 }
 
+#[derive(Clone, Copy)]
+enum CombatSelectionLocation {
+    Hand,
+    Grid(PileType),
+}
+
 fn selection_items_for_combat_cards(
     cards: &[CombatCard],
     candidate_uuids: &[u32],
+    source: CombatSelectionLocation,
 ) -> Vec<SelectionSurfaceItem> {
     candidate_uuids
         .iter()
         .enumerate()
-        .filter_map(|(index, uuid)| {
-            let card = cards.iter().find(|card| card.uuid == *uuid)?;
+        .filter_map(|(visible_index, uuid)| {
+            let card_index = cards.iter().position(|card| card.uuid == *uuid)?;
+            let card = &cards[card_index];
+            let location = match source {
+                CombatSelectionLocation::Hand => SelectionItemLocation::Hand { index: card_index },
+                CombatSelectionLocation::Grid(pile) => SelectionItemLocation::Grid {
+                    pile,
+                    index: card_index,
+                },
+            };
             Some(SelectionSurfaceItem {
-                index,
+                visible_index,
+                location,
                 target: SelectionTargetRef::CardUuid(*uuid),
                 card: card.id,
                 upgrades: card.upgrades,
@@ -153,15 +181,17 @@ fn selection_items_for_master_deck_targets(
     targets
         .iter()
         .enumerate()
-        .filter_map(|(index, target)| match target {
+        .filter_map(|(visible_index, target)| match target {
             SelectionTargetRef::CardUuid(uuid) => {
-                let card = session
+                let deck_index = session
                     .run_state
                     .master_deck
                     .iter()
-                    .find(|card| card.uuid == *uuid)?;
+                    .position(|card| card.uuid == *uuid)?;
+                let card = &session.run_state.master_deck[deck_index];
                 Some(SelectionSurfaceItem {
-                    index,
+                    visible_index,
+                    location: SelectionItemLocation::MasterDeck { index: deck_index },
                     target: *target,
                     card: card.id,
                     upgrades: card.upgrades,
@@ -325,14 +355,21 @@ fn resolve_run_pending_selection_indices(
     choice: &crate::state::core::RunPendingChoiceState,
     indices: Vec<usize>,
 ) -> Result<ClientInput, String> {
-    if !session.run_pending_selection_is_allowed(choice, &indices) {
-        return Err("selection is not valid for the current deck choice".to_string());
+    let request = choice.selection_request(&session.run_state);
+    validate_indices_in_range(request.targets.len(), &indices)?;
+    reject_duplicate_indices(&indices)?;
+    let input = ClientInput::SubmitSelection(SelectionResolution {
+        scope: SelectionScope::Deck,
+        selected: indices
+            .into_iter()
+            .map(|idx| request.targets[idx])
+            .collect::<Vec<_>>(),
+    });
+    if current_selection_input_is_allowed(session, &input).unwrap_or(false) {
+        Ok(input)
+    } else {
+        Err("selection is not valid for the current deck choice".to_string())
     }
-    let uuids = indices
-        .into_iter()
-        .filter_map(|idx| session.run_state.master_deck.get(idx).map(|card| card.uuid))
-        .collect::<Vec<_>>();
-    Ok(selection_input(SelectionScope::Deck, uuids))
 }
 
 fn run_pending_resolution_is_allowed(
