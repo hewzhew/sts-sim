@@ -43,16 +43,12 @@ struct AutoAdvanceCandidate<'a> {
 }
 
 struct AutoAppliedLog {
-    labels: Vec<String>,
     steps: Vec<RunControlAutoAppliedStepV1>,
 }
 
 impl AutoAppliedLog {
     fn new() -> Self {
-        Self {
-            labels: Vec::new(),
-            steps: Vec::new(),
-        }
+        Self { steps: Vec::new() }
     }
 
     fn push_step(
@@ -62,7 +58,6 @@ impl AutoAppliedLog {
         action_result: Option<super::transition_report::ActionResult>,
     ) {
         let label = label.into();
-        self.labels.push(label.clone());
         self.steps.push(RunControlAutoAppliedStepV1 {
             kind,
             label,
@@ -86,11 +81,11 @@ impl AutoAppliedLog {
     }
 
     fn is_empty(&self) -> bool {
-        self.labels.is_empty()
+        self.steps.is_empty()
     }
 
     fn len(&self) -> usize {
-        self.labels.len()
+        self.steps.len()
     }
 }
 
@@ -915,8 +910,8 @@ fn finish_auto_step(
     if applied.is_empty() {
         lines.push("  none".to_string());
     } else {
-        for item in &applied.labels {
-            lines.push(format!("  - {item}"));
+        for step in &applied.steps {
+            lines.push(format!("  - {}", step.label));
         }
     }
     lines.push(format!("Reason: {reason}"));

@@ -67,8 +67,8 @@ pub use outcome::{
 };
 pub use registry::{add_case_to_benchmark_registry, BenchmarkCasePaths};
 pub use render::{
-    render_combat_actions, render_run_control_details, render_run_control_raw,
-    render_run_control_state,
+    render_auto_applied_step_compact_v1, render_combat_actions, render_run_control_details,
+    render_run_control_raw, render_run_control_state,
 };
 pub use reward_auto::{RewardAutomationConfig, RewardAutomationTarget};
 pub use search_evidence::{

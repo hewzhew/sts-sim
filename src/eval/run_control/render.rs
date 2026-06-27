@@ -6,7 +6,8 @@ use crate::sim::combat_legal_actions::get_legal_moves;
 use crate::state::core::EngineState;
 use crate::state::run::RunState;
 
-use super::session::RunControlSession;
+use super::session::{RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlSession};
+use super::transition_report::{ActionResult, ActionResultChange};
 
 pub fn render_run_control_state(session: &RunControlSession) -> String {
     super::panels::render_run_control_main(session)
@@ -190,6 +191,92 @@ fn render_candidate_resolution_details(session: &RunControlSession, out: &mut St
 
 pub fn render_run_control_raw(session: &RunControlSession) -> String {
     format!("{session:#?}")
+}
+
+pub fn render_auto_applied_step_compact_v1(step: &RunControlAutoAppliedStepV1) -> String {
+    let mut parts = Vec::new();
+    parts.push(render_auto_applied_kind_compact_v1(step.kind).to_string());
+    let change_summary = step
+        .action_result
+        .as_ref()
+        .map(render_action_result_compact_v1)
+        .filter(|text| !text.is_empty());
+    match change_summary {
+        Some(summary) => parts.push(summary),
+        None => parts.push(compact_one_line(&step.label)),
+    }
+    parts.join(" | ")
+}
+
+fn render_action_result_compact_v1(result: &ActionResult) -> String {
+    let mut parts = Vec::new();
+    for change in &result.changes {
+        match change {
+            ActionResultChange::LocationChanged {
+                before_act,
+                before_floor,
+                after_act,
+                after_floor,
+            } => parts.push(format!(
+                "A{before_act}F{before_floor}->A{after_act}F{after_floor}"
+            )),
+            ActionResultChange::HpChanged {
+                before_current,
+                before_max,
+                after_current,
+                after_max,
+            } => parts.push(format!(
+                "hp {before_current}/{before_max}->{after_current}/{after_max}"
+            )),
+            ActionResultChange::GoldChanged { before, after } => {
+                parts.push(format!("gold {before}->{after}"));
+            }
+            ActionResultChange::CardAdded { card } => {
+                parts.push(format!("add {:?}+{}", card.id, card.upgrades));
+            }
+            ActionResultChange::CardRemoved { card } => {
+                parts.push(format!("remove {:?}+{}", card.id, card.upgrades));
+            }
+            ActionResultChange::CardUpgraded { before, after } => {
+                parts.push(format!(
+                    "upgrade {:?}+{}->{:?}+{}",
+                    before.id, before.upgrades, after.id, after.upgrades
+                ));
+            }
+            ActionResultChange::RelicGained { relic } => {
+                parts.push(format!("relic {relic:?}"));
+            }
+            ActionResultChange::PotionGained { potion, slot } => {
+                parts.push(format!("potion {potion:?}@{slot}"));
+            }
+            ActionResultChange::RunEnded { result } => {
+                parts.push(format!("run {result:?}"));
+            }
+            _ => {}
+        }
+    }
+    if parts.is_empty() {
+        compact_one_line(&result.chosen_label)
+    } else {
+        parts.into_iter().take(5).collect::<Vec<_>>().join("; ")
+    }
+}
+
+fn render_auto_applied_kind_compact_v1(kind: RunControlAutoAppliedKindV1) -> &'static str {
+    match kind {
+        RunControlAutoAppliedKindV1::RewardAutomation => "reward",
+        RunControlAutoAppliedKindV1::CombatSearch => "combat",
+        RunControlAutoAppliedKindV1::RoutePlanner => "route",
+        RunControlAutoAppliedKindV1::RewardOverlay => "reward-overlay",
+        RunControlAutoAppliedKindV1::NoncombatPolicy => "policy",
+        RunControlAutoAppliedKindV1::RoutineCandidate => "routine",
+        RunControlAutoAppliedKindV1::AutoCapture => "capture",
+        RunControlAutoAppliedKindV1::OwnerPolicy => "owner-policy",
+    }
+}
+
+fn compact_one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 pub fn render_combat_actions(session: &RunControlSession) -> Result<String, String> {

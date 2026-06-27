@@ -247,13 +247,104 @@ pub fn render_reward_admission_compact(admission: &RewardAdmission) -> String {
     let reasons = admission
         .reasons
         .iter()
-        .take(3)
-        .map(|reason| format!("{reason:?}"))
+        .take(4)
+        .map(reason_tag)
         .collect::<Vec<_>>();
     if reasons.is_empty() {
-        format!("{:?}", admission.class)
+        admission_class_label(admission.class).to_string()
     } else {
-        format!("{:?}:{}", admission.class, reasons.join(","))
+        format!(
+            "{} | {}",
+            admission_class_label(admission.class),
+            reasons.join(" ")
+        )
+    }
+}
+
+fn admission_class_label(class: RewardAdmissionClass) -> &'static str {
+    match class {
+        RewardAdmissionClass::ClosesRequirement => "Closes",
+        RewardAdmissionClass::BuildsSupportedPackage => "Supported",
+        RewardAdmissionClass::EngineSeed => "Seed",
+        RewardAdmissionClass::ImmediateWork => "Immediate",
+        RewardAdmissionClass::BurdenedImmediateWork => "Burdened",
+        RewardAdmissionClass::OpensUnsupportedPayoff => "Unsupported",
+        RewardAdmissionClass::EmptyOrDeferred => "Empty",
+        RewardAdmissionClass::Skip => "Skip",
+    }
+}
+
+fn reason_tag(reason: &RewardAdmissionReason) -> String {
+    match reason {
+        RewardAdmissionReason::Closes(req) => format!("closes:{}", requirement_tag(*req)),
+        RewardAdmissionReason::Supports(package) => format!("pkg:{}", package_tag(*package)),
+        RewardAdmissionReason::Provides(mechanic) => format!("+{}", mechanic_tag(*mechanic)),
+        RewardAdmissionReason::FrontloadDamage => "+damage".to_string(),
+        RewardAdmissionReason::DamageUses(mechanic) => format!("uses:{}", mechanic_tag(*mechanic)),
+        RewardAdmissionReason::Emits(event) => format!("emits:{}", event_tag(*event)),
+        RewardAdmissionReason::PlaysTopCardAndExhaust => "top-card-exhaust".to_string(),
+        RewardAdmissionReason::Installs(rule) => format!("installs:{}", rule_tag(*rule)),
+        RewardAdmissionReason::Opens(req) => format!("wants:{}", requirement_tag(*req)),
+        RewardAdmissionReason::Burden(burden) => format!("risk:{}", burden_tag(*burden)),
+        RewardAdmissionReason::Empty => "no-model".to_string(),
+        RewardAdmissionReason::Skip => "skip-boundary".to_string(),
+    }
+}
+
+fn mechanic_tag(mechanic: Mechanic) -> &'static str {
+    match mechanic {
+        Mechanic::Strength => "strength",
+        Mechanic::TemporaryStrength => "temp-strength",
+        Mechanic::StrengthMultiplier => "strength-mult",
+        Mechanic::CardDraw => "draw",
+        Mechanic::Energy => "energy",
+        Mechanic::Block => "block",
+        Mechanic::Weak => "weak",
+        Mechanic::Vulnerable => "vuln",
+        Mechanic::EnemyStrengthDown => "str-down",
+        Mechanic::TopdeckControl => "topdeck",
+    }
+}
+
+fn event_tag(event: CombatEvent) -> &'static str {
+    match event {
+        CombatEvent::CardExhausted => "exhaust",
+        CombatEvent::CardSelfDamage => "self-damage",
+        CombatEvent::TurnStart => "turn-start",
+        CombatEvent::TurnEnd => "turn-end",
+    }
+}
+
+fn requirement_tag(requirement: PayoffRequirement) -> String {
+    match requirement {
+        PayoffRequirement::WantsMechanic(mechanic) => mechanic_tag(mechanic).to_string(),
+        PayoffRequirement::WantsEventStream(event) => event_tag(event).to_string(),
+    }
+}
+
+fn package_tag(package: PackageKind) -> &'static str {
+    match package {
+        PackageKind::Strength => "strength",
+        PackageKind::Exhaust => "exhaust",
+        PackageKind::SelfDamage => "self-damage",
+        PackageKind::Block => "block",
+    }
+}
+
+fn burden_tag(burden: CardBurden) -> &'static str {
+    match burden {
+        CardBurden::PowerSetup => "setup",
+        CardBurden::HpCost => "hp-cost",
+        CardBurden::DrawLockout => "draw-lock",
+        CardBurden::AddsCombatDeckClutter => "deck-clutter",
+        CardBurden::RandomExhaust => "random-exhaust",
+        CardBurden::RequiresEnemyAttackIntent => "needs-attack",
+    }
+}
+
+fn rule_tag(rule: InstalledRule) -> &'static str {
+    match rule {
+        InstalledRule::SkillCardsCostZeroAndExhaust => "skills-free-exhaust",
     }
 }
 

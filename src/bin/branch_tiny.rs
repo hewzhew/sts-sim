@@ -1,16 +1,12 @@
 use std::collections::VecDeque;
 
-use sts_simulator::ai::analysis::card_semantics::{
-    CardBurden, CombatEvent, InstalledRule, Mechanic, PayoffRequirement,
-};
-use sts_simulator::ai::strategy::package_transition::PackageKind;
 use sts_simulator::ai::strategy::reward_admission::{
-    assess_reward_admission, reward_admission_order_key_v1, skip_reward_admission, RewardAdmission,
-    RewardAdmissionClass, RewardAdmissionOrderKeyV1, RewardAdmissionReason,
+    assess_reward_admission, render_reward_admission_compact, reward_admission_order_key_v1,
+    skip_reward_admission, RewardAdmission, RewardAdmissionOrderKeyV1,
 };
 use sts_simulator::eval::run_control::DecisionCandidateKey;
 use sts_simulator::eval::run_control::{
-    build_decision_surface, RewardAutomationConfig, RunActionResultChangeV1,
+    build_decision_surface, render_auto_applied_step_compact_v1, RewardAutomationConfig,
     RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlAutoStepOptions,
     RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommand, RunControlConfig,
     RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
@@ -714,94 +710,10 @@ fn print_auto_steps(steps: &[RunControlAutoAppliedStepV1]) {
     let shown = steps.iter().take(12).collect::<Vec<_>>();
     println!("  auto:");
     for step in shown {
-        println!("    - {}", render_auto_step(step));
+        println!("    - {}", render_auto_applied_step_compact_v1(step));
     }
     if steps.len() > 12 {
         println!("    ... {} more auto steps", steps.len() - 12);
-    }
-}
-
-fn render_auto_step(step: &RunControlAutoAppliedStepV1) -> String {
-    let mut parts = Vec::new();
-    parts.push(render_auto_kind(step.kind).to_string());
-    let change_summary = step
-        .action_result
-        .as_ref()
-        .map(render_action_changes_compact)
-        .filter(|text| !text.is_empty());
-    match change_summary {
-        Some(summary) => parts.push(summary),
-        None => parts.push(one_line(&step.label)),
-    }
-    parts.join(" | ")
-}
-
-fn render_auto_kind(kind: RunControlAutoAppliedKindV1) -> &'static str {
-    match kind {
-        RunControlAutoAppliedKindV1::RewardAutomation => "reward",
-        RunControlAutoAppliedKindV1::CombatSearch => "combat",
-        RunControlAutoAppliedKindV1::RoutePlanner => "route",
-        RunControlAutoAppliedKindV1::RewardOverlay => "reward-overlay",
-        RunControlAutoAppliedKindV1::NoncombatPolicy => "policy",
-        RunControlAutoAppliedKindV1::RoutineCandidate => "routine",
-        RunControlAutoAppliedKindV1::AutoCapture => "capture",
-        RunControlAutoAppliedKindV1::OwnerPolicy => "owner-policy",
-    }
-}
-
-fn render_action_changes_compact(
-    result: &sts_simulator::eval::run_control::RunActionResultV1,
-) -> String {
-    let mut parts = Vec::new();
-    for change in &result.changes {
-        match change {
-            RunActionResultChangeV1::LocationChanged {
-                before_act,
-                before_floor,
-                after_act,
-                after_floor,
-            } => parts.push(format!(
-                "A{before_act}F{before_floor}->A{after_act}F{after_floor}"
-            )),
-            RunActionResultChangeV1::HpChanged {
-                before_current,
-                before_max,
-                after_current,
-                after_max,
-            } => parts.push(format!(
-                "hp {before_current}/{before_max}->{after_current}/{after_max}"
-            )),
-            RunActionResultChangeV1::GoldChanged { before, after } => {
-                parts.push(format!("gold {before}->{after}"));
-            }
-            RunActionResultChangeV1::CardAdded { card } => {
-                parts.push(format!("add {:?}+{}", card.id, card.upgrades));
-            }
-            RunActionResultChangeV1::CardRemoved { card } => {
-                parts.push(format!("remove {:?}+{}", card.id, card.upgrades));
-            }
-            RunActionResultChangeV1::CardUpgraded { before, after } => {
-                parts.push(format!(
-                    "upgrade {:?}+{}->{:?}+{}",
-                    before.id, before.upgrades, after.id, after.upgrades
-                ));
-            }
-            RunActionResultChangeV1::RelicGained { relic } => {
-                parts.push(format!("relic {relic:?}"));
-            }
-            RunActionResultChangeV1::PotionGained { potion, slot } => {
-                parts.push(format!("potion {potion:?}@{slot}"));
-            }
-            RunActionResultChangeV1::RunEnded { result } => {
-                parts.push(format!("run {result:?}"));
-            }
-            _ => {}
-        }
-    }
-    if parts.is_empty() {
-        one_line(&result.chosen_label)
-    } else {
-        parts.into_iter().take(5).collect::<Vec<_>>().join("; ")
     }
 }
 
@@ -972,105 +884,7 @@ fn render_choice_key_timeline(key: &DecisionCandidateKey) -> String {
 }
 
 fn render_admission_timeline(admission: &RewardAdmission) -> String {
-    let tags = admission
-        .reasons
-        .iter()
-        .take(4)
-        .map(reason_tag)
-        .collect::<Vec<_>>()
-        .join(" ");
-    if tags.is_empty() {
-        admission_class_label(admission.class).to_string()
-    } else {
-        format!("{} | {}", admission_class_label(admission.class), tags)
-    }
-}
-
-fn admission_class_label(class: RewardAdmissionClass) -> &'static str {
-    match class {
-        RewardAdmissionClass::ClosesRequirement => "Closes",
-        RewardAdmissionClass::BuildsSupportedPackage => "Supported",
-        RewardAdmissionClass::EngineSeed => "Seed",
-        RewardAdmissionClass::ImmediateWork => "Immediate",
-        RewardAdmissionClass::BurdenedImmediateWork => "Burdened",
-        RewardAdmissionClass::OpensUnsupportedPayoff => "Unsupported",
-        RewardAdmissionClass::EmptyOrDeferred => "Empty",
-        RewardAdmissionClass::Skip => "Skip",
-    }
-}
-
-fn reason_tag(reason: &RewardAdmissionReason) -> String {
-    match reason {
-        RewardAdmissionReason::Closes(req) => format!("closes:{}", requirement_tag(*req)),
-        RewardAdmissionReason::Supports(package) => format!("pkg:{}", package_tag(*package)),
-        RewardAdmissionReason::Provides(mechanic) => format!("+{}", mechanic_tag(*mechanic)),
-        RewardAdmissionReason::FrontloadDamage => "+damage".to_string(),
-        RewardAdmissionReason::DamageUses(mechanic) => format!("uses:{}", mechanic_tag(*mechanic)),
-        RewardAdmissionReason::Emits(event) => format!("emits:{}", event_tag(*event)),
-        RewardAdmissionReason::PlaysTopCardAndExhaust => "top-card-exhaust".to_string(),
-        RewardAdmissionReason::Installs(rule) => format!("installs:{}", rule_tag(*rule)),
-        RewardAdmissionReason::Opens(req) => format!("wants:{}", requirement_tag(*req)),
-        RewardAdmissionReason::Burden(burden) => format!("risk:{}", burden_tag(*burden)),
-        RewardAdmissionReason::Empty => "no-model".to_string(),
-        RewardAdmissionReason::Skip => "skip-boundary".to_string(),
-    }
-}
-
-fn mechanic_tag(mechanic: Mechanic) -> &'static str {
-    match mechanic {
-        Mechanic::Strength => "strength",
-        Mechanic::TemporaryStrength => "temp-strength",
-        Mechanic::StrengthMultiplier => "strength-mult",
-        Mechanic::CardDraw => "draw",
-        Mechanic::Energy => "energy",
-        Mechanic::Block => "block",
-        Mechanic::Weak => "weak",
-        Mechanic::Vulnerable => "vuln",
-        Mechanic::EnemyStrengthDown => "str-down",
-        Mechanic::TopdeckControl => "topdeck",
-    }
-}
-
-fn event_tag(event: CombatEvent) -> &'static str {
-    match event {
-        CombatEvent::CardExhausted => "exhaust",
-        CombatEvent::CardSelfDamage => "self-damage",
-        CombatEvent::TurnStart => "turn-start",
-        CombatEvent::TurnEnd => "turn-end",
-    }
-}
-
-fn requirement_tag(requirement: PayoffRequirement) -> String {
-    match requirement {
-        PayoffRequirement::WantsMechanic(mechanic) => mechanic_tag(mechanic).to_string(),
-        PayoffRequirement::WantsEventStream(event) => event_tag(event).to_string(),
-    }
-}
-
-fn package_tag(package: PackageKind) -> &'static str {
-    match package {
-        PackageKind::Strength => "strength",
-        PackageKind::Exhaust => "exhaust",
-        PackageKind::SelfDamage => "self-damage",
-        PackageKind::Block => "block",
-    }
-}
-
-fn burden_tag(burden: CardBurden) -> &'static str {
-    match burden {
-        CardBurden::PowerSetup => "setup",
-        CardBurden::HpCost => "hp-cost",
-        CardBurden::DrawLockout => "draw-lock",
-        CardBurden::AddsCombatDeckClutter => "deck-clutter",
-        CardBurden::RandomExhaust => "random-exhaust",
-        CardBurden::RequiresEnemyAttackIntent => "needs-attack",
-    }
-}
-
-fn rule_tag(rule: InstalledRule) -> &'static str {
-    match rule {
-        InstalledRule::SkillCardsCostZeroAndExhaust => "skills-free-exhaust",
-    }
+    render_reward_admission_compact(admission)
 }
 
 fn command_hint(command: &RunControlCommand) -> String {
