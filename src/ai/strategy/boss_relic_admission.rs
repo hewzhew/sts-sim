@@ -1,5 +1,5 @@
 use crate::content::cards::{get_card_definition, is_starter_basic, CardType};
-use crate::content::relics::RelicId;
+use crate::content::relics::{energy_master_delta, RelicId};
 use crate::state::run::RunState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -13,6 +13,13 @@ pub enum BossRelicAdmissionClass {
     CurseDebt,
     TransformAgency,
     Unknown,
+    Skip,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BossRelicAdmissionLane {
+    Mainline,
+    Probe,
     Skip,
 }
 
@@ -38,6 +45,8 @@ pub enum BossRelicAdmissionReason {
     TransformsDeck,
     HandRetention,
     SneckoConfusion,
+    Act2EnergyGap,
+    DoesNotSolveAct2EnergyGap,
     Skip,
     Unknown,
 }
@@ -46,6 +55,7 @@ pub enum BossRelicAdmissionReason {
 pub struct BossRelicAdmission {
     pub relic: Option<RelicId>,
     pub class: BossRelicAdmissionClass,
+    pub lane: BossRelicAdmissionLane,
     pub reasons: Vec<BossRelicAdmissionReason>,
 }
 
@@ -66,14 +76,25 @@ impl BossRelicAdmissionClass {
     }
 }
 
+impl BossRelicAdmissionLane {
+    fn order_rank(self) -> u8 {
+        match self {
+            BossRelicAdmissionLane::Mainline => 0,
+            BossRelicAdmissionLane::Probe => 1,
+            BossRelicAdmissionLane::Skip => 2,
+        }
+    }
+}
+
 pub fn boss_relic_admission_order_rank(admission: &BossRelicAdmission) -> u8 {
-    admission.class.order_rank()
+    admission.lane.order_rank() * 16 + admission.class.order_rank()
 }
 
 pub fn skip_boss_relic_admission() -> BossRelicAdmission {
     BossRelicAdmission {
         relic: None,
         class: BossRelicAdmissionClass::Skip,
+        lane: BossRelicAdmissionLane::Skip,
         reasons: vec![BossRelicAdmissionReason::Skip],
     }
 }
@@ -89,6 +110,7 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
         .iter()
         .filter(|card| get_card_definition(card.id).card_type == CardType::Curse)
         .count();
+    let context = BossRelicAdmissionContext::from_run_state(run_state);
     let mut reasons = Vec::new();
 
     let class = match relic {
@@ -156,11 +178,75 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
             BossRelicAdmissionClass::Unknown
         }
     };
+    let lane = lane_for_relic(&context, relic, class, &mut reasons);
 
     BossRelicAdmission {
         relic: Some(relic),
         class,
+        lane,
         reasons,
+    }
+}
+
+struct BossRelicAdmissionContext {
+    entering_act: u8,
+    has_energy_relic: bool,
+}
+
+impl BossRelicAdmissionContext {
+    fn from_run_state(run_state: &RunState) -> Self {
+        Self {
+            entering_act: run_state.act_num.saturating_add(1),
+            has_energy_relic: run_state
+                .relics
+                .iter()
+                .any(|relic| energy_master_delta(relic.id) > 0),
+        }
+    }
+
+    fn has_act2_energy_gap(&self) -> bool {
+        self.entering_act == 2 && !self.has_energy_relic
+    }
+}
+
+fn lane_for_relic(
+    context: &BossRelicAdmissionContext,
+    relic: RelicId,
+    class: BossRelicAdmissionClass,
+    reasons: &mut Vec<BossRelicAdmissionReason>,
+) -> BossRelicAdmissionLane {
+    if context.has_act2_energy_gap() {
+        if is_act2_default_energy_relic(relic) {
+            reasons.push(BossRelicAdmissionReason::Act2EnergyGap);
+            return BossRelicAdmissionLane::Mainline;
+        }
+        if relic == RelicId::EmptyCage {
+            reasons.push(BossRelicAdmissionReason::DoesNotSolveAct2EnergyGap);
+            return BossRelicAdmissionLane::Probe;
+        }
+    }
+    default_lane(class)
+}
+
+fn is_act2_default_energy_relic(relic: RelicId) -> bool {
+    matches!(
+        relic,
+        RelicId::CursedKey | RelicId::FusionHammer | RelicId::PhilosopherStone
+    )
+}
+
+fn default_lane(class: BossRelicAdmissionClass) -> BossRelicAdmissionLane {
+    match class {
+        BossRelicAdmissionClass::StarterUpgrade
+        | BossRelicAdmissionClass::LowDownsideValue
+        | BossRelicAdmissionClass::DeckCleanup
+        | BossRelicAdmissionClass::StrategicPower => BossRelicAdmissionLane::Mainline,
+        BossRelicAdmissionClass::RouteValue
+        | BossRelicAdmissionClass::EnergyWithConstraint
+        | BossRelicAdmissionClass::CurseDebt
+        | BossRelicAdmissionClass::TransformAgency
+        | BossRelicAdmissionClass::Unknown => BossRelicAdmissionLane::Probe,
+        BossRelicAdmissionClass::Skip => BossRelicAdmissionLane::Skip,
     }
 }
 
@@ -180,10 +266,23 @@ pub fn render_boss_relic_admission_compact(admission: &BossRelicAdmission) -> St
         .take(3)
         .map(reason_tag)
         .collect::<Vec<_>>();
+    let header = format!(
+        "{} {}",
+        lane_tag(admission.lane),
+        class_tag(admission.class)
+    );
     if reasons.is_empty() {
-        class_tag(admission.class).to_string()
+        header
     } else {
-        format!("{} | {}", class_tag(admission.class), reasons.join(" "))
+        format!("{header} | {}", reasons.join(" "))
+    }
+}
+
+fn lane_tag(lane: BossRelicAdmissionLane) -> &'static str {
+    match lane {
+        BossRelicAdmissionLane::Mainline => "Mainline",
+        BossRelicAdmissionLane::Probe => "Probe",
+        BossRelicAdmissionLane::Skip => "Skip",
     }
 }
 
@@ -224,6 +323,8 @@ fn reason_tag(reason: &BossRelicAdmissionReason) -> String {
         BossRelicAdmissionReason::TransformsDeck => "transforms-deck".to_string(),
         BossRelicAdmissionReason::HandRetention => "retain-hand".to_string(),
         BossRelicAdmissionReason::SneckoConfusion => "confusion".to_string(),
+        BossRelicAdmissionReason::Act2EnergyGap => "act2-energy-gap".to_string(),
+        BossRelicAdmissionReason::DoesNotSolveAct2EnergyGap => "misses-act2-energy-gap".to_string(),
         BossRelicAdmissionReason::Skip => "skip".to_string(),
         BossRelicAdmissionReason::Unknown => "no-model".to_string(),
     }
