@@ -99,6 +99,8 @@ impl FrontierCheckpoint {
 
 impl BranchCheckpoint {
     fn from_branch(branch: &Branch) -> Self {
+        let mut session = RunControlSessionCheckpointV1::from_session(&branch.session);
+        session.take_last_combat_automation_trajectory_record();
         Self {
             id: branch.id,
             parent_id: branch.parent_id,
@@ -107,7 +109,7 @@ impl BranchCheckpoint {
                 .iter()
                 .map(PathStepCheckpoint::from_step)
                 .collect(),
-            session: RunControlSessionCheckpointV1::from_session(&branch.session),
+            session,
             status: BranchStatusCheckpoint::from_status(&branch.status),
         }
     }
