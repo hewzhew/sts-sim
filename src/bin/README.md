@@ -146,14 +146,6 @@ Active binaries:
   - `bench-add <benchmark_dir> <case_id>`: refresh a suite case from the saved
     capture and optional baseline
 
-Experimental or legacy binaries:
-
-- `branch_experiment_driver`
-  - standalone branch experiment microscope from a seed, bookmark, prefix, or
-    replay trace
-  - current campaign work should prefer `branch_campaign_driver` checkpoint
-    inspection or challenge modes unless a focused local experiment is needed
-
 Removed from the active binary surface:
 
 - JSONL action-env drivers
@@ -163,3 +155,5 @@ Removed from the active binary surface:
   `tools/_dormant/rust_bins/decision_lab_driver`
 - `card_reward_value_loop_driver`, now archived under
   `tools/_dormant/rust_bins/card_reward_value_loop_driver`
+- `branch_experiment_driver`, superseded by `branch_tiny` and typed
+  run-control owner probes
