@@ -74,7 +74,11 @@ pub(super) fn save(
         args,
         generation,
         next_branch_id,
-        frontier: frontier.iter().map(BranchCheckpoint::from_branch).collect(),
+        frontier: frontier
+            .iter()
+            .filter(|branch| matches!(branch.status, BranchStatus::Running { .. }))
+            .map(BranchCheckpoint::from_branch)
+            .collect(),
     };
     let payload = serde_json::to_string_pretty(&checkpoint).map_err(|err| err.to_string())?;
     fs::write(path, payload).map_err(|err| format!("failed to write {}: {err}", path.display()))
