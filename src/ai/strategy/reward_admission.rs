@@ -1,11 +1,12 @@
 use crate::ai::analysis::card_semantics::{
-    card_definition, CardBurden, CombatEvent, InstalledRule, Mechanic, PayoffRequirement,
-    PlayEffect,
+    card_definition, card_definition_with_upgrades, CardBurden, CombatEvent, InstalledRule,
+    Mechanic, PayoffRequirement, PlayEffect,
 };
 use crate::ai::strategy::package_state::{PackageMaturity, PackageStateReport};
 use crate::ai::strategy::package_transition::{assess_package_transition, PackageKind};
 use crate::ai::strategy::reward_quality::assess_reward_quality;
 use crate::content::cards::CardId;
+use crate::runtime::combat::CombatCard;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RewardAdmissionClass {
@@ -34,6 +35,7 @@ pub enum RewardAdmissionOrderTierV1 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct RewardAdmissionOrderKeyV1 {
     pub tier: RewardAdmissionOrderTierV1,
+    pub priority: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -43,6 +45,8 @@ pub enum RewardAdmissionReason {
     ThinSupport(Mechanic),
     Provides(Mechanic),
     FrontloadDamage,
+    AreaDamage,
+    CombatUpgrade,
     DamageUses(Mechanic),
     Emits(CombatEvent),
     PlaysTopCardAndExhaust,
@@ -88,24 +92,28 @@ impl RewardAdmissionOrderKeyV1 {
     pub fn empty_or_deferred() -> Self {
         Self {
             tier: RewardAdmissionOrderTierV1::EmptyOrDeferred,
+            priority: u8::MAX,
         }
     }
 
     pub fn opens_unsupported_payoff() -> Self {
         Self {
             tier: RewardAdmissionOrderTierV1::OpensUnsupportedPayoff,
+            priority: 0,
         }
     }
 
     pub fn unscored_optional_reward() -> Self {
         Self {
             tier: RewardAdmissionOrderTierV1::OpensUnsupportedPayoff,
+            priority: 0,
         }
     }
 
     pub fn static_skip_boundary() -> Self {
         Self {
             tier: RewardAdmissionOrderTierV1::StaticSkipBoundary,
+            priority: 0,
         }
     }
 }
@@ -113,17 +121,53 @@ impl RewardAdmissionOrderKeyV1 {
 pub fn reward_admission_order_key_v1(admission: &RewardAdmission) -> RewardAdmissionOrderKeyV1 {
     RewardAdmissionOrderKeyV1 {
         tier: admission.class.static_order_tier(),
+        priority: admission_reason_priority(admission),
     }
 }
 
 pub fn assess_reward_admission(deck: &[CardId], candidate: CardId) -> RewardAdmission {
+    assess_reward_admission_with_upgrades(deck, candidate, 0)
+}
+
+pub fn assess_reward_admission_with_upgrades(
+    deck: &[CardId],
+    candidate: CardId,
+    candidate_upgrades: u8,
+) -> RewardAdmission {
     let deck_defs = deck
         .iter()
         .copied()
         .map(card_definition)
         .collect::<Vec<_>>();
-    let transition = assess_package_transition(&deck_defs, card_definition(candidate));
-    let quality = assess_reward_quality(deck, candidate, &transition);
+    assess_reward_admission_from_definitions(&deck_defs, candidate, candidate_upgrades)
+}
+
+pub fn assess_reward_admission_from_master_deck(
+    deck: &[CombatCard],
+    candidate: CardId,
+    candidate_upgrades: u8,
+) -> RewardAdmission {
+    let deck_defs = deck
+        .iter()
+        .map(|card| card_definition_with_upgrades(card.id, card.upgrades))
+        .collect::<Vec<_>>();
+    assess_reward_admission_from_definitions(&deck_defs, candidate, candidate_upgrades)
+}
+
+fn assess_reward_admission_from_definitions(
+    deck_defs: &[crate::ai::analysis::card_semantics::CardDefinition],
+    candidate: CardId,
+    candidate_upgrades: u8,
+) -> RewardAdmission {
+    let deck_ids = deck_defs
+        .iter()
+        .map(|definition| definition.card)
+        .collect::<Vec<_>>();
+    let transition = assess_package_transition(
+        deck_defs,
+        card_definition_with_upgrades(candidate, candidate_upgrades),
+    );
+    let quality = assess_reward_quality(&deck_ids, candidate, &transition);
     let mut reasons = Vec::new();
     reasons.extend(
         transition
@@ -167,12 +211,16 @@ pub fn assess_reward_admission(deck: &[CardId], candidate: CardId) -> RewardAdmi
                 reasons.push(RewardAdmissionReason::Provides(mechanic))
             }
             PlayEffect::FrontloadDamage => reasons.push(RewardAdmissionReason::FrontloadDamage),
+            PlayEffect::AreaDamage => reasons.push(RewardAdmissionReason::AreaDamage),
             PlayEffect::DamageUses(mechanic) => {
                 reasons.push(RewardAdmissionReason::DamageUses(mechanic))
             }
             PlayEffect::EmitEvent(event) => reasons.push(RewardAdmissionReason::Emits(event)),
             PlayEffect::PlayTopCardAndExhaust => {
                 reasons.push(RewardAdmissionReason::PlaysTopCardAndExhaust)
+            }
+            PlayEffect::CombatUpgradeSingle | PlayEffect::CombatUpgradeAll => {
+                reasons.push(RewardAdmissionReason::CombatUpgrade)
             }
             PlayEffect::AddCombatDeckClutter => {}
         }
@@ -298,6 +346,8 @@ fn reason_tag(reason: &RewardAdmissionReason) -> String {
         RewardAdmissionReason::ThinSupport(mechanic) => format!("thin:{}", mechanic_tag(*mechanic)),
         RewardAdmissionReason::Provides(mechanic) => format!("+{}", mechanic_tag(*mechanic)),
         RewardAdmissionReason::FrontloadDamage => "+damage".to_string(),
+        RewardAdmissionReason::AreaDamage => "+aoe".to_string(),
+        RewardAdmissionReason::CombatUpgrade => "+upgrade".to_string(),
         RewardAdmissionReason::DamageUses(mechanic) => format!("uses:{}", mechanic_tag(*mechanic)),
         RewardAdmissionReason::Emits(event) => format!("emits:{}", event_tag(*event)),
         RewardAdmissionReason::PlaysTopCardAndExhaust => "top-card-exhaust".to_string(),
@@ -310,6 +360,60 @@ fn reason_tag(reason: &RewardAdmissionReason) -> String {
         RewardAdmissionReason::Empty => "no-model".to_string(),
         RewardAdmissionReason::Skip => "skip-boundary".to_string(),
     }
+}
+
+fn admission_reason_priority(admission: &RewardAdmission) -> u8 {
+    if admission.reasons.iter().any(|reason| {
+        matches!(
+            reason,
+            RewardAdmissionReason::Closes(_) | RewardAdmissionReason::Supports(_)
+        )
+    }) {
+        return 0;
+    }
+    if admission
+        .reasons
+        .contains(&RewardAdmissionReason::CombatUpgrade)
+    {
+        return 1;
+    }
+    if admission
+        .reasons
+        .contains(&RewardAdmissionReason::AreaDamage)
+    {
+        return 2;
+    }
+    if admission.reasons.iter().any(|reason| {
+        matches!(
+            reason,
+            RewardAdmissionReason::Provides(Mechanic::CardDraw | Mechanic::Energy)
+        )
+    }) {
+        return 3;
+    }
+    if admission
+        .reasons
+        .contains(&RewardAdmissionReason::FrontloadDamage)
+    {
+        return 4;
+    }
+    if admission.reasons.iter().any(|reason| {
+        matches!(
+            reason,
+            RewardAdmissionReason::Provides(
+                Mechanic::Weak | Mechanic::Vulnerable | Mechanic::EnemyStrengthDown
+            )
+        )
+    }) {
+        return 5;
+    }
+    if admission
+        .reasons
+        .contains(&RewardAdmissionReason::Provides(Mechanic::Block))
+    {
+        return 6;
+    }
+    10
 }
 
 fn mechanic_tag(mechanic: Mechanic) -> &'static str {
@@ -331,6 +435,7 @@ fn event_tag(event: CombatEvent) -> &'static str {
     match event {
         CombatEvent::CardExhausted => "exhaust",
         CombatEvent::CardSelfDamage => "self-damage",
+        CombatEvent::StatusDrawn => "status-drawn",
         CombatEvent::TurnStart => "turn-start",
         CombatEvent::TurnEnd => "turn-end",
     }
@@ -359,6 +464,7 @@ fn burden_tag(burden: CardBurden) -> &'static str {
         CardBurden::DrawLockout => "draw-lock",
         CardBurden::AddsCombatDeckClutter => "deck-clutter",
         CardBurden::RandomExhaust => "random-exhaust",
+        CardBurden::ExhaustsHand => "exhausts-hand",
         CardBurden::RequiresEnemyAttackIntent => "needs-attack",
     }
 }
@@ -393,7 +499,7 @@ fn package_has_source(maturity: PackageMaturity) -> bool {
 
 fn is_immediate_work(effect: &PlayEffect) -> bool {
     match effect {
-        PlayEffect::FrontloadDamage => true,
+        PlayEffect::FrontloadDamage | PlayEffect::AreaDamage => true,
         PlayEffect::Provide(
             Mechanic::CardDraw
             | Mechanic::Energy
@@ -402,6 +508,7 @@ fn is_immediate_work(effect: &PlayEffect) -> bool {
             | Mechanic::Vulnerable
             | Mechanic::EnemyStrengthDown,
         ) => true,
+        PlayEffect::CombatUpgradeSingle | PlayEffect::CombatUpgradeAll => true,
         PlayEffect::Provide(_)
         | PlayEffect::DamageUses(_)
         | PlayEffect::EmitEvent(_)

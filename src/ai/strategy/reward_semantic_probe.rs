@@ -248,6 +248,9 @@ fn explain_play_effects(effects: &[PlayEffect]) -> PlayEffectExplanation {
             PlayEffect::FrontloadDamage => {
                 explanation.damage.push("Frontload".to_string());
             }
+            PlayEffect::AreaDamage => {
+                explanation.damage.push("AoE".to_string());
+            }
             PlayEffect::DamageUses(mechanic) => {
                 explanation.damage_uses.push(debug_label(mechanic));
             }
@@ -261,6 +264,12 @@ fn explain_play_effects(effects: &[PlayEffect]) -> PlayEffectExplanation {
                 explanation
                     .emits
                     .push("TopCardPlayedAndExhausted".to_string());
+            }
+            PlayEffect::CombatUpgradeSingle => {
+                explanation.provides.push("CombatUpgradeSingle".to_string());
+            }
+            PlayEffect::CombatUpgradeAll => {
+                explanation.provides.push("CombatUpgradeAll".to_string());
             }
         }
     }

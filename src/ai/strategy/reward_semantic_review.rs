@@ -17,6 +17,8 @@ pub enum RewardSemanticContributionV1 {
     OpensRequirement(String),
     ProvidesMechanic(String),
     ProvidesFrontloadDamage,
+    ProvidesAreaDamage,
+    ProvidesCombatUpgrade,
     DamageUses(String),
     EmitsEvent(String),
     InstallsRule(String),
@@ -48,11 +50,17 @@ pub fn review_reward_candidate_semantics_v1(
         contributions.push(RewardSemanticContributionV1::OpensRequirement(item.clone()));
     }
     for item in &explanation.provides {
-        contributions.push(RewardSemanticContributionV1::ProvidesMechanic(item.clone()));
+        if item == "CombatUpgradeSingle" || item == "CombatUpgradeAll" {
+            contributions.push(RewardSemanticContributionV1::ProvidesCombatUpgrade);
+        } else {
+            contributions.push(RewardSemanticContributionV1::ProvidesMechanic(item.clone()));
+        }
     }
     for item in &explanation.damage {
         if item == "Frontload" {
             contributions.push(RewardSemanticContributionV1::ProvidesFrontloadDamage);
+        } else if item == "AoE" {
+            contributions.push(RewardSemanticContributionV1::ProvidesAreaDamage);
         }
     }
     for item in &explanation.damage_uses {
@@ -120,6 +128,10 @@ fn render_contributions_v1(items: &[RewardSemanticContributionV1]) -> String {
             }
             RewardSemanticContributionV1::ProvidesFrontloadDamage => {
                 "ProvidesFrontloadDamage".to_string()
+            }
+            RewardSemanticContributionV1::ProvidesAreaDamage => "ProvidesAreaDamage".to_string(),
+            RewardSemanticContributionV1::ProvidesCombatUpgrade => {
+                "ProvidesCombatUpgrade".to_string()
             }
             RewardSemanticContributionV1::DamageUses(value) => format!("DamageUses({value})"),
             RewardSemanticContributionV1::EmitsEvent(value) => format!("EmitsEvent({value})"),

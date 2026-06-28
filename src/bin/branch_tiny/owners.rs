@@ -3,8 +3,9 @@ use sts_simulator::ai::strategy::boss_relic_admission::{
     BossRelicAdmission,
 };
 use sts_simulator::ai::strategy::reward_admission::{
-    assess_reward_admission, reward_admission_order_key_v1, skip_reward_admission, RewardAdmission,
-    RewardAdmissionClass, RewardAdmissionOrderKeyV1,
+    assess_reward_admission_from_master_deck, assess_reward_admission_with_upgrades,
+    reward_admission_order_key_v1, skip_reward_admission, RewardAdmission, RewardAdmissionClass,
+    RewardAdmissionOrderKeyV1,
 };
 use sts_simulator::content::cards::{
     get_card_definition, is_starter_basic, is_starter_defend, is_starter_strike, CardId, CardType,
@@ -14,6 +15,7 @@ use sts_simulator::content::relics::RelicId;
 use sts_simulator::eval::run_control::{
     DecisionCandidateKey, DecisionSurface, RunControlCommand, RunControlSession,
 };
+use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::state::core::{ClientInput, EngineState};
 
 use super::Owner;
@@ -154,17 +156,12 @@ fn card_reward_owner_choices(
     session: &RunControlSession,
     surface: &DecisionSurface,
 ) -> Vec<OwnerChoice> {
-    let deck = session
-        .run_state
-        .master_deck
-        .iter()
-        .map(|card| card.id)
-        .collect::<Vec<_>>();
     let mut choices = executable_choices(surface)
         .into_iter()
         .filter(is_card_reward_choice)
         .map(|mut choice| {
-            choice.annotation = reward_annotation_for_choice(&deck, &choice);
+            choice.annotation =
+                reward_annotation_for_choice(&session.run_state.master_deck, &choice);
             choice
         })
         .enumerate()
@@ -295,14 +292,11 @@ fn boss_relic_annotation_for_choice(
     }
 }
 
-fn reward_annotation_for_choice(
-    deck: &[sts_simulator::content::cards::CardId],
-    choice: &OwnerChoice,
-) -> ChoiceAnnotation {
+fn reward_annotation_for_choice(deck: &[CombatCard], choice: &OwnerChoice) -> ChoiceAnnotation {
     match choice.key {
-        Some(DecisionCandidateKey::CardRewardPick { card, .. }) => {
-            reward_annotation(assess_reward_admission(deck, card))
-        }
+        Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) => reward_annotation(
+            assess_reward_admission_from_master_deck(deck, card, upgrades),
+        ),
         Some(DecisionCandidateKey::CardRewardSkip { .. }) => {
             reward_annotation(skip_reward_admission())
         }
@@ -438,9 +432,12 @@ fn shop_tiny_choice_expansion(
                 OwnerChoiceExpansion::AutoAllowed
             }
         }
-        ShopTinyAnnotation::BuyCard { card, price, .. }
-            if *price <= gold && shop_tiny_auto_buy_card(deck, *card) =>
-        {
+        ShopTinyAnnotation::BuyCard {
+            card,
+            upgrades,
+            price,
+            ..
+        } if *price <= gold && shop_tiny_auto_buy_card(deck, *card, *upgrades) => {
             OwnerChoiceExpansion::AutoAllowed
         }
         _ => shop_tiny_inspect_only(),
@@ -460,8 +457,9 @@ fn shop_tiny_auto_purge_target(target: ShopPurgeTargetKind) -> bool {
     )
 }
 
-fn shop_tiny_auto_buy_card(deck: &[CardId], card: CardId) -> bool {
-    reward_plan_lane(&assess_reward_admission(deck, card)) == RewardPlanLane::Mainline
+fn shop_tiny_auto_buy_card(deck: &[CardId], card: CardId, upgrades: u8) -> bool {
+    reward_plan_lane(&assess_reward_admission_with_upgrades(deck, card, upgrades))
+        == RewardPlanLane::Mainline
 }
 
 fn shop_tiny_choice_rank(
@@ -491,10 +489,12 @@ fn shop_tiny_choice_rank(
                 }
             },
             ShopTinyAnnotation::Leave => (2, 0, RewardAdmissionOrderKeyV1::static_skip_boundary()),
-            ShopTinyAnnotation::BuyCard { card, .. } => (
+            ShopTinyAnnotation::BuyCard { card, upgrades, .. } => (
                 3,
                 0,
-                reward_admission_order_key_v1(&assess_reward_admission(deck, *card)),
+                reward_admission_order_key_v1(&assess_reward_admission_with_upgrades(
+                    deck, *card, *upgrades,
+                )),
             ),
             ShopTinyAnnotation::OpenRewards => {
                 (4, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())

@@ -18,6 +18,7 @@ pub enum Mechanic {
 pub enum CombatEvent {
     CardExhausted,
     CardSelfDamage,
+    StatusDrawn,
     TurnStart,
     TurnEnd,
 }
@@ -26,10 +27,13 @@ pub enum CombatEvent {
 pub enum PlayEffect {
     Provide(Mechanic),
     FrontloadDamage,
+    AreaDamage,
     DamageUses(Mechanic),
     EmitEvent(CombatEvent),
     AddCombatDeckClutter,
     PlayTopCardAndExhaust,
+    CombatUpgradeSingle,
+    CombatUpgradeAll,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -69,6 +73,7 @@ pub enum CardBurden {
     DrawLockout,
     AddsCombatDeckClutter,
     RandomExhaust,
+    ExhaustsHand,
     RequiresEnemyAttackIntent,
 }
 
@@ -190,9 +195,14 @@ impl DeckMechanicContext {
                 PlayEffect::PlayTopCardAndExhaust => {
                     push_unique(&mut self.event_streams, CombatEvent::CardExhausted);
                 }
+                PlayEffect::AddCombatDeckClutter => {
+                    push_unique(&mut self.event_streams, CombatEvent::StatusDrawn);
+                }
                 PlayEffect::FrontloadDamage
+                | PlayEffect::AreaDamage
                 | PlayEffect::DamageUses(_)
-                | PlayEffect::AddCombatDeckClutter => {}
+                | PlayEffect::CombatUpgradeSingle
+                | PlayEffect::CombatUpgradeAll => {}
             }
         }
         for rule in &definition.installed_rules {
@@ -243,6 +253,10 @@ pub enum CandidateMechanicFinding {
 }
 
 pub fn card_definition(card: CardId) -> CardDefinition {
+    card_definition_with_upgrades(card, 0)
+}
+
+pub fn card_definition_with_upgrades(card: CardId, upgrades: u8) -> CardDefinition {
     use CardBurden::*;
     use CardId::*;
     use CombatEvent::*;
@@ -335,6 +349,16 @@ pub fn card_definition(card: CardId) -> CardDefinition {
             .effect(EmitEvent(CardExhausted))
             .burden(RandomExhaust),
 
+        Armaments => {
+            let upgrade_effect = if upgrades > 0 {
+                CombatUpgradeAll
+            } else {
+                CombatUpgradeSingle
+            };
+            CardDefinition::new(card)
+                .provides(Block)
+                .effect(upgrade_effect)
+        }
         BattleTrance => CardDefinition::new(card)
             .provides(CardDraw)
             .burden(DrawLockout)
@@ -367,6 +391,11 @@ pub fn card_definition(card: CardId) -> CardDefinition {
         Carnage | Rampage | SwiftStrike | TwinStrike => {
             CardDefinition::new(card).effect(FrontloadDamage)
         }
+        FiendFire => CardDefinition::new(card)
+            .effect(FrontloadDamage)
+            .effect(EmitEvent(CardExhausted))
+            .burden(ExhaustsHand),
+        Whirlwind => CardDefinition::new(card).effect(AreaDamage),
         Hemokinesis => CardDefinition::new(card)
             .effect(FrontloadDamage)
             .effect(EmitEvent(CardSelfDamage))
@@ -384,6 +413,14 @@ pub fn card_definition(card: CardId) -> CardDefinition {
             .effect(AddCombatDeckClutter)
             .burden(AddsCombatDeckClutter),
         Warcry | Headbutt => CardDefinition::new(card).provides(TopdeckControl),
+        Evolve => CardDefinition::new(card)
+            .wants(PayoffRequirement::WantsEventStream(StatusDrawn))
+            .handles(EventHandler::new(
+                StatusDrawn,
+                TriggeredEffect::Provide(CardDraw),
+            ))
+            .burden(PowerSetup)
+            .duplicate(StackingHandler),
         Metallicize => CardDefinition::new(card)
             .handles(EventHandler::new(TurnEnd, TriggeredEffect::Provide(Block)))
             .burden(PowerSetup)
