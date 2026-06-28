@@ -106,7 +106,8 @@ impl TraceWriter {
 
     fn write(&mut self, value: Value) -> Result<(), String> {
         serde_json::to_writer(&mut self.out, &value).map_err(|err| err.to_string())?;
-        self.out.write_all(b"\n").map_err(|err| err.to_string())
+        self.out.write_all(b"\n").map_err(|err| err.to_string())?;
+        self.out.flush().map_err(|err| err.to_string())
     }
 }
 
@@ -128,7 +129,7 @@ fn path_step_value(step: &BranchPathStep) -> Value {
     json!({
         "key": step.key.as_ref(),
         "label": step.label,
-        "action": command_value(&step.action),
+        "action": {"debug": step.action_debug},
         "annotation": annotation_value(&step.annotation),
     })
 }

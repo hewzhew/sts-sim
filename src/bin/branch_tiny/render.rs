@@ -246,7 +246,7 @@ fn site_label(site: BoundarySite) -> String {
 fn render_timeline_step(step: &BranchPathStep) -> String {
     let base = match &step.key {
         Some(key) => render_choice_key_timeline(key),
-        None => format!("{}:{}", command_hint(&step.action), step.label),
+        None => format!("{}:{}", step.action_debug, step.label),
     };
     match &step.annotation {
         ChoiceAnnotation::Reward { admission, lane } => {
