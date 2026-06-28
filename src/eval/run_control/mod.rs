@@ -73,7 +73,9 @@ pub use render::{
     render_auto_applied_step_compact_v1, render_combat_actions, render_run_control_details,
     render_run_control_raw, render_run_control_state,
 };
-pub use reward_auto::{RewardAutomationConfig, RewardAutomationTarget};
+pub use reward_auto::{
+    apply_reward_tiny_automation, RewardAutomationConfig, RewardAutomationTarget,
+};
 pub use search_evidence::{
     load_combat_search_evidence_v1, validate_combat_search_evidence_v1,
     COMBAT_SEARCH_EVIDENCE_SCHEMA_NAME, COMBAT_SEARCH_EVIDENCE_SCHEMA_VERSION,

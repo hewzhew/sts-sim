@@ -226,9 +226,17 @@ impl RunControlSession {
         if let Some(next_state) = next_state {
             self.engine_state = next_state;
         }
-        Ok(RunControlCommandOutcome::message(format!(
-            "Branch skipped card reward at item {reward_index}"
-        )))
+        let reward_automation = super::super::reward_auto::apply_reward_automation(self)?;
+        let message = if reward_automation.is_empty() {
+            format!("Branch skipped card reward at item {reward_index}")
+        } else {
+            format!(
+                "Branch skipped card reward at item {reward_index}\n{}",
+                reward_automation.render()
+            )
+        };
+        Ok(RunControlCommandOutcome::message(message)
+            .with_trace_annotations(reward_automation.trace_annotations))
     }
 
     fn apply_default_candidate(&mut self) -> Result<RunControlCommandOutcome, String> {

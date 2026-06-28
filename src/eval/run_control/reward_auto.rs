@@ -4,8 +4,9 @@ use crate::ai::reward_policy_v1::{
 };
 use crate::engine::run_loop::tick_run_active_with_observer;
 use crate::state::core::{ClientInput, EngineState};
+use crate::state::rewards::{RewardItem, RewardState};
 
-use super::session::RunControlSession;
+use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::trace_annotation::RunControlTraceAnnotationV1;
 
 const MAX_AUTO_REWARD_CLAIMS: usize = 16;
@@ -88,6 +89,76 @@ pub(super) fn apply_reward_automation(
     Err(format!(
         "auto-reward exceeded {MAX_AUTO_REWARD_CLAIMS} claims without reaching a stable non-claim state"
     ))
+}
+
+pub fn apply_reward_tiny_automation(
+    session: &mut RunControlSession,
+) -> Result<Option<RunControlCommandOutcome>, String> {
+    let report = apply_reward_automation(session)?;
+    if !report.is_empty() {
+        return Ok(Some(
+            RunControlCommandOutcome::message(report.render())
+                .with_trace_annotations(report.trace_annotations),
+        ));
+    }
+    let Some(labels) = discard_full_slot_potion_rewards(session) else {
+        return Ok(None);
+    };
+    Ok(Some(RunControlCommandOutcome::message(format!(
+        "Ignored unclaimable potion reward: {}",
+        labels.join(", ")
+    ))))
+}
+
+fn discard_full_slot_potion_rewards(session: &mut RunControlSession) -> Option<Vec<String>> {
+    if session.run_state.find_empty_potion_slot().is_some() {
+        return None;
+    }
+
+    let (labels, next_state) = match &mut session.engine_state {
+        EngineState::RewardScreen(reward) => {
+            let labels = remove_potion_rewards(reward);
+            let next_state = crate::engine::reward_handler::complete_reward_if_empty(
+                &mut session.run_state,
+                reward,
+                None,
+            );
+            (labels, next_state)
+        }
+        EngineState::RewardOverlay {
+            reward_state,
+            return_state,
+        } => {
+            let labels = remove_potion_rewards(reward_state);
+            let next_state = crate::engine::reward_handler::complete_reward_if_empty(
+                &mut session.run_state,
+                reward_state,
+                Some((**return_state).clone()),
+            );
+            (labels, next_state)
+        }
+        _ => return None,
+    };
+    if labels.is_empty() {
+        return None;
+    }
+    if let Some(next_state) = next_state {
+        session.engine_state = next_state;
+    }
+    Some(labels)
+}
+
+fn remove_potion_rewards(reward: &mut RewardState) -> Vec<String> {
+    let mut labels = Vec::new();
+    reward.items.retain(|item| {
+        if let RewardItem::Potion { potion_id } = item {
+            labels.push(format!("{potion_id:?}"));
+            false
+        } else {
+            true
+        }
+    });
+    labels
 }
 
 fn next_auto_claim(session: &RunControlSession) -> Result<Option<RewardAutomationPlan>, String> {

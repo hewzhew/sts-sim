@@ -396,7 +396,7 @@ fn apply_policy_owner(
 ) -> Result<sts_simulator::eval::run_control::RunControlCommandOutcome, String> {
     let input = match owner {
         Owner::ShopTiny => return Err("ShopTiny has no automatic policy".to_string()),
-        Owner::RewardTiny => reward_tiny_policy_input(session)?,
+        Owner::RewardTiny => return apply_reward_tiny_policy(session),
         Owner::Event(_) => require_visible_input(
             session,
             sts_simulator::content::events::owner_policy::event_owner_policy_input(
@@ -412,7 +412,17 @@ fn apply_policy_owner(
     session.apply_command(RunControlCommand::Input(input))
 }
 
-fn reward_tiny_policy_input(session: &RunControlSession) -> Result<ClientInput, String> {
+fn apply_reward_tiny_policy(
+    session: &mut RunControlSession,
+) -> Result<sts_simulator::eval::run_control::RunControlCommandOutcome, String> {
+    if let Some(outcome) = sts_simulator::eval::run_control::apply_reward_tiny_automation(session)?
+    {
+        return Ok(outcome);
+    }
+    session.apply_command(RunControlCommand::Input(reward_tiny_exit_input(session)?))
+}
+
+fn reward_tiny_exit_input(session: &RunControlSession) -> Result<ClientInput, String> {
     let (reward, exit) = match &session.engine_state {
         EngineState::RewardScreen(reward) => (reward, ClientInput::Proceed),
         EngineState::RewardOverlay { reward_state, .. } => (reward_state, ClientInput::Cancel),

@@ -50,6 +50,18 @@ fn reward_done_state(
     overlay_return_state.unwrap_or_else(|| post_reward_state(run_state))
 }
 
+pub(crate) fn complete_reward_if_empty(
+    run_state: &mut RunState,
+    reward_state: &RewardState,
+    overlay_return_state: Option<EngineState>,
+) -> Option<EngineState> {
+    if reward_state.items.is_empty() && reward_state.pending_card_choice.is_none() {
+        Some(reward_done_state(run_state, overlay_return_state))
+    } else {
+        None
+    }
+}
+
 fn reward_state_has_unclaimed_content(reward_state: &RewardState) -> bool {
     !reward_state.items.is_empty() || reward_state.pending_card_choice.is_some()
 }
