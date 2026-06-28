@@ -15,6 +15,18 @@ pub enum Mechanic {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DamageScalingAxis {
+    EnergySpent,
+    HandSize,
+    PerHitStrength,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RunRewardKind {
+    MaxHpOnFatal,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CombatEvent {
     CardExhausted,
     CardSelfDamage,
@@ -29,7 +41,10 @@ pub enum PlayEffect {
     FrontloadDamage,
     AreaDamage,
     DamageUses(Mechanic),
+    DamageScalesWith(DamageScalingAxis),
     EmitEvent(CombatEvent),
+    ExhaustsSelf,
+    RunReward(RunRewardKind),
     AddCombatDeckClutter,
     PlayTopCardAndExhaust,
     CombatUpgradeSingle,
@@ -201,6 +216,9 @@ impl DeckMechanicContext {
                 PlayEffect::FrontloadDamage
                 | PlayEffect::AreaDamage
                 | PlayEffect::DamageUses(_)
+                | PlayEffect::DamageScalesWith(_)
+                | PlayEffect::ExhaustsSelf
+                | PlayEffect::RunReward(_)
                 | PlayEffect::CombatUpgradeSingle
                 | PlayEffect::CombatUpgradeAll => {}
             }
@@ -260,9 +278,11 @@ pub fn card_definition_with_upgrades(card: CardId, upgrades: u8) -> CardDefiniti
     use CardBurden::*;
     use CardId::*;
     use CombatEvent::*;
+    use DamageScalingAxis::*;
     use DuplicateBehavior::*;
     use Mechanic::*;
     use PlayEffect::*;
+    use RunRewardKind::*;
 
     match card {
         Inflame => CardDefinition::new(card)
@@ -391,11 +411,20 @@ pub fn card_definition_with_upgrades(card: CardId, upgrades: u8) -> CardDefiniti
         Carnage | Rampage | SwiftStrike | TwinStrike => {
             CardDefinition::new(card).effect(FrontloadDamage)
         }
+        Feed => CardDefinition::new(card)
+            .effect(FrontloadDamage)
+            .effect(ExhaustsSelf)
+            .effect(RunReward(MaxHpOnFatal)),
         FiendFire => CardDefinition::new(card)
             .effect(FrontloadDamage)
             .effect(EmitEvent(CardExhausted))
+            .effect(DamageScalesWith(HandSize))
+            .effect(DamageScalesWith(PerHitStrength))
             .burden(ExhaustsHand),
-        Whirlwind => CardDefinition::new(card).effect(AreaDamage),
+        Whirlwind => CardDefinition::new(card)
+            .effect(AreaDamage)
+            .effect(DamageScalesWith(EnergySpent))
+            .effect(DamageScalesWith(PerHitStrength)),
         Hemokinesis => CardDefinition::new(card)
             .effect(FrontloadDamage)
             .effect(EmitEvent(CardSelfDamage))

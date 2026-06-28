@@ -18,9 +18,11 @@ pub enum RewardSemanticContributionV1 {
     ProvidesMechanic(String),
     ProvidesFrontloadDamage,
     ProvidesAreaDamage,
+    DamageScalesWith(String),
     ProvidesCombatUpgrade,
     DamageUses(String),
     EmitsEvent(String),
+    RunReward(String),
     InstallsRule(String),
     EventHandler(String),
 }
@@ -63,11 +65,17 @@ pub fn review_reward_candidate_semantics_v1(
             contributions.push(RewardSemanticContributionV1::ProvidesAreaDamage);
         }
     }
+    for item in &explanation.scales {
+        contributions.push(RewardSemanticContributionV1::DamageScalesWith(item.clone()));
+    }
     for item in &explanation.damage_uses {
         contributions.push(RewardSemanticContributionV1::DamageUses(item.clone()));
     }
     for item in &explanation.emits {
         contributions.push(RewardSemanticContributionV1::EmitsEvent(item.clone()));
+    }
+    for item in &explanation.run_rewards {
+        contributions.push(RewardSemanticContributionV1::RunReward(item.clone()));
     }
     for item in &explanation.rules {
         contributions.push(RewardSemanticContributionV1::InstallsRule(item.clone()));
@@ -130,11 +138,15 @@ fn render_contributions_v1(items: &[RewardSemanticContributionV1]) -> String {
                 "ProvidesFrontloadDamage".to_string()
             }
             RewardSemanticContributionV1::ProvidesAreaDamage => "ProvidesAreaDamage".to_string(),
+            RewardSemanticContributionV1::DamageScalesWith(value) => {
+                format!("DamageScalesWith({value})")
+            }
             RewardSemanticContributionV1::ProvidesCombatUpgrade => {
                 "ProvidesCombatUpgrade".to_string()
             }
             RewardSemanticContributionV1::DamageUses(value) => format!("DamageUses({value})"),
             RewardSemanticContributionV1::EmitsEvent(value) => format!("EmitsEvent({value})"),
+            RewardSemanticContributionV1::RunReward(value) => format!("RunReward({value})"),
             RewardSemanticContributionV1::InstallsRule(value) => format!("InstallsRule({value})"),
             RewardSemanticContributionV1::EventHandler(value) => format!("EventHandler({value})"),
         })

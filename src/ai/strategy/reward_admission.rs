@@ -1,6 +1,6 @@
 use crate::ai::analysis::card_semantics::{
-    card_definition, card_definition_with_upgrades, CardBurden, CombatEvent, InstalledRule,
-    Mechanic, PayoffRequirement, PlayEffect,
+    card_definition, card_definition_with_upgrades, CardBurden, CombatEvent, DamageScalingAxis,
+    InstalledRule, Mechanic, PayoffRequirement, PlayEffect, RunRewardKind,
 };
 use crate::ai::strategy::package_state::{PackageMaturity, PackageStateReport};
 use crate::ai::strategy::package_transition::{assess_package_transition, PackageKind};
@@ -46,9 +46,12 @@ pub enum RewardAdmissionReason {
     Provides(Mechanic),
     FrontloadDamage,
     AreaDamage,
+    DamageScalesWith(DamageScalingAxis),
     CombatUpgrade,
     DamageUses(Mechanic),
     Emits(CombatEvent),
+    ExhaustsSelf,
+    RunReward(RunRewardKind),
     PlaysTopCardAndExhaust,
     Installs(InstalledRule),
     Opens(PayoffRequirement),
@@ -216,7 +219,12 @@ fn assess_reward_admission_from_definitions(
             PlayEffect::DamageUses(mechanic) => {
                 reasons.push(RewardAdmissionReason::DamageUses(mechanic))
             }
+            PlayEffect::DamageScalesWith(axis) => {
+                reasons.push(RewardAdmissionReason::DamageScalesWith(axis))
+            }
             PlayEffect::EmitEvent(event) => reasons.push(RewardAdmissionReason::Emits(event)),
+            PlayEffect::ExhaustsSelf => reasons.push(RewardAdmissionReason::ExhaustsSelf),
+            PlayEffect::RunReward(reward) => reasons.push(RewardAdmissionReason::RunReward(reward)),
             PlayEffect::PlayTopCardAndExhaust => {
                 reasons.push(RewardAdmissionReason::PlaysTopCardAndExhaust)
             }
@@ -351,9 +359,14 @@ fn reason_tag(reason: &RewardAdmissionReason) -> String {
         RewardAdmissionReason::Provides(mechanic) => format!("+{}", mechanic_tag(*mechanic)),
         RewardAdmissionReason::FrontloadDamage => "+damage".to_string(),
         RewardAdmissionReason::AreaDamage => "+aoe".to_string(),
+        RewardAdmissionReason::DamageScalesWith(axis) => {
+            format!("scales:{}", damage_scaling_axis_tag(*axis))
+        }
         RewardAdmissionReason::CombatUpgrade => "+upgrade".to_string(),
         RewardAdmissionReason::DamageUses(mechanic) => format!("uses:{}", mechanic_tag(*mechanic)),
         RewardAdmissionReason::Emits(event) => format!("emits:{}", event_tag(*event)),
+        RewardAdmissionReason::ExhaustsSelf => "self-exhaust".to_string(),
+        RewardAdmissionReason::RunReward(reward) => format!("run:{}", run_reward_tag(*reward)),
         RewardAdmissionReason::PlaysTopCardAndExhaust => "top-card-exhaust".to_string(),
         RewardAdmissionReason::Installs(rule) => format!("installs:{}", rule_tag(*rule)),
         RewardAdmissionReason::Opens(req) => format!("wants:{}", requirement_tag(*req)),
@@ -380,15 +393,23 @@ fn admission_reason_priority(admission: &RewardAdmission) -> u8 {
     }
     if admission
         .reasons
-        .contains(&RewardAdmissionReason::CombatUpgrade)
+        .contains(&RewardAdmissionReason::RunReward(
+            RunRewardKind::MaxHpOnFatal,
+        ))
     {
         return 1;
     }
     if admission
         .reasons
-        .contains(&RewardAdmissionReason::AreaDamage)
+        .contains(&RewardAdmissionReason::CombatUpgrade)
     {
         return 2;
+    }
+    if admission
+        .reasons
+        .contains(&RewardAdmissionReason::AreaDamage)
+    {
+        return 3;
     }
     if admission.reasons.iter().any(|reason| {
         matches!(
@@ -396,13 +417,13 @@ fn admission_reason_priority(admission: &RewardAdmission) -> u8 {
             RewardAdmissionReason::Provides(Mechanic::CardDraw | Mechanic::Energy)
         )
     }) {
-        return 3;
+        return 4;
     }
     if admission
         .reasons
         .contains(&RewardAdmissionReason::FrontloadDamage)
     {
-        return 4;
+        return 5;
     }
     if admission.reasons.iter().any(|reason| {
         matches!(
@@ -412,13 +433,13 @@ fn admission_reason_priority(admission: &RewardAdmission) -> u8 {
             )
         )
     }) {
-        return 5;
+        return 6;
     }
     if admission
         .reasons
         .contains(&RewardAdmissionReason::Provides(Mechanic::Block))
     {
-        return 6;
+        return 7;
     }
     10
 }
@@ -445,6 +466,20 @@ fn event_tag(event: CombatEvent) -> &'static str {
         CombatEvent::StatusDrawn => "status-drawn",
         CombatEvent::TurnStart => "turn-start",
         CombatEvent::TurnEnd => "turn-end",
+    }
+}
+
+fn damage_scaling_axis_tag(axis: DamageScalingAxis) -> &'static str {
+    match axis {
+        DamageScalingAxis::EnergySpent => "energy",
+        DamageScalingAxis::HandSize => "hand",
+        DamageScalingAxis::PerHitStrength => "per-hit-strength",
+    }
+}
+
+fn run_reward_tag(reward: RunRewardKind) -> &'static str {
+    match reward {
+        RunRewardKind::MaxHpOnFatal => "max-hp-kill",
     }
 }
 
@@ -527,7 +562,10 @@ fn is_immediate_work(effect: &PlayEffect) -> bool {
         PlayEffect::CombatUpgradeSingle | PlayEffect::CombatUpgradeAll => true,
         PlayEffect::Provide(_)
         | PlayEffect::DamageUses(_)
+        | PlayEffect::DamageScalesWith(_)
         | PlayEffect::EmitEvent(_)
+        | PlayEffect::ExhaustsSelf
+        | PlayEffect::RunReward(_)
         | PlayEffect::AddCombatDeckClutter
         | PlayEffect::PlayTopCardAndExhaust => false,
     }

@@ -35,8 +35,10 @@ pub struct RewardCandidateSemanticExplanationV1 {
     pub opens: Vec<String>,
     pub provides: Vec<String>,
     pub damage: Vec<String>,
+    pub scales: Vec<String>,
     pub damage_uses: Vec<String>,
     pub emits: Vec<String>,
+    pub run_rewards: Vec<String>,
     pub rules: Vec<String>,
     pub handlers: Vec<String>,
     pub burdens: Vec<String>,
@@ -129,8 +131,10 @@ fn explain_reward_candidate_semantics_v1(
         .collect::<Vec<_>>();
     let provides = play_effects.provides;
     let damage = play_effects.damage;
+    let scales = play_effects.scales;
     let damage_uses = play_effects.damage_uses;
     let emits = play_effects.emits;
+    let run_rewards = play_effects.run_rewards;
     let rules = transition
         .candidate_installed_rules
         .iter()
@@ -174,8 +178,10 @@ fn explain_reward_candidate_semantics_v1(
             ("opens", opens.as_slice()),
             ("provides", provides.as_slice()),
             ("damage", damage.as_slice()),
+            ("scales", scales.as_slice()),
             ("damage_uses", damage_uses.as_slice()),
             ("emits", emits.as_slice()),
+            ("run_rewards", run_rewards.as_slice()),
             ("rules", rules.as_slice()),
             ("handlers", handlers.as_slice()),
             ("burdens", burdens.as_slice()),
@@ -193,8 +199,10 @@ fn explain_reward_candidate_semantics_v1(
         opens,
         provides,
         damage,
+        scales,
         damage_uses,
         emits,
+        run_rewards,
         rules,
         handlers,
         burdens,
@@ -234,8 +242,10 @@ fn is_deferred_sequence_tactical_candidate_v1(card: CardId) -> bool {
 struct PlayEffectExplanation {
     provides: Vec<String>,
     damage: Vec<String>,
+    scales: Vec<String>,
     damage_uses: Vec<String>,
     emits: Vec<String>,
+    run_rewards: Vec<String>,
 }
 
 fn explain_play_effects(effects: &[PlayEffect]) -> PlayEffectExplanation {
@@ -254,8 +264,17 @@ fn explain_play_effects(effects: &[PlayEffect]) -> PlayEffectExplanation {
             PlayEffect::DamageUses(mechanic) => {
                 explanation.damage_uses.push(debug_label(mechanic));
             }
+            PlayEffect::DamageScalesWith(axis) => {
+                explanation.scales.push(debug_label(axis));
+            }
             PlayEffect::EmitEvent(event) => {
                 explanation.emits.push(debug_label(event));
+            }
+            PlayEffect::ExhaustsSelf => {
+                explanation.emits.push("SelfExhaust".to_string());
+            }
+            PlayEffect::RunReward(reward) => {
+                explanation.run_rewards.push(debug_label(reward));
             }
             PlayEffect::AddCombatDeckClutter => {
                 explanation.emits.push("CombatDeckClutter".to_string());
