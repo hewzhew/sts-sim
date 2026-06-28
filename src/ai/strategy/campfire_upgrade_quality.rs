@@ -1,4 +1,6 @@
-use crate::ai::analysis::card_semantics::{card_definition, Mechanic, PlayEffect};
+use crate::ai::analysis::card_semantics::{
+    card_definition, card_definition_with_upgrades, Mechanic, PlayEffect,
+};
 use crate::content::cards::{
     get_card_definition, upgrade_card_once_java, upgraded_base_cost_override,
 };
@@ -22,6 +24,8 @@ pub enum CampfireUpgradeHint {
     MagicDelta(i32),
     DebuffDuration,
     DrawOrEnergyAmount,
+    CombatUpgradeAll,
+    ExhaustHandBurstDamage,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,6 +34,7 @@ pub enum CampfireUpgradeCaution {
     StarterUnique,
     ThinPayoffSupport,
     RedundantDebuffDuration,
+    LowMarginalRepeatDamage,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -95,7 +100,8 @@ fn assess_upgrade(
     let damage_delta = def.upgrade_damage.max(0) * attack_hits(card.id).max(1);
     let block_delta = def.upgrade_block.max(0);
     let magic_delta = def.upgrade_magic.max(0);
-    let semantic = card_definition(card.id);
+    let semantic = card_definition_with_upgrades(card.id, card.upgrades);
+    let upgraded_semantic = card_definition_with_upgrades(upgraded.id, upgraded.upgrades);
     let mut hints = Vec::new();
     let mut cautions = Vec::new();
 
@@ -120,6 +126,18 @@ fn assess_upgrade(
             hints.push(CampfireUpgradeHint::DrawOrEnergyAmount);
         }
     }
+    if semantic
+        .play_effects
+        .contains(&PlayEffect::CombatUpgradeSingle)
+        && upgraded_semantic
+            .play_effects
+            .contains(&PlayEffect::CombatUpgradeAll)
+    {
+        hints.push(CampfireUpgradeHint::CombatUpgradeAll);
+    }
+    if card.id == CardId::FiendFire && damage_delta > 0 {
+        hints.push(CampfireUpgradeHint::ExhaustHandBurstDamage);
+    }
 
     if def
         .tags
@@ -133,7 +151,7 @@ fn assess_upgrade(
     if semantic
         .play_effects
         .contains(&PlayEffect::DamageUses(Mechanic::Block))
-        && block_support_units(deck) < 2
+        && block_support_units(deck) < 3
     {
         cautions.push(CampfireUpgradeCaution::ThinPayoffSupport);
     }
@@ -141,6 +159,9 @@ fn assess_upgrade(
         && matching_debuff_sources(deck, card.id) >= 2
     {
         cautions.push(CampfireUpgradeCaution::RedundantDebuffDuration);
+    }
+    if is_low_marginal_repeat_damage(card.id) && same_card_count(deck, card.id) >= 2 {
+        cautions.push(CampfireUpgradeCaution::LowMarginalRepeatDamage);
     }
 
     let score = score_hints(&hints) - score_cautions(&cautions);
@@ -181,6 +202,8 @@ fn score_hints(hints: &[CampfireUpgradeHint]) -> i32 {
             CampfireUpgradeHint::MagicDelta(delta) => delta * 8,
             CampfireUpgradeHint::DebuffDuration => 8,
             CampfireUpgradeHint::DrawOrEnergyAmount => 28,
+            CampfireUpgradeHint::CombatUpgradeAll => 90,
+            CampfireUpgradeHint::ExhaustHandBurstDamage => 72,
         })
         .sum()
 }
@@ -193,6 +216,7 @@ fn score_cautions(cautions: &[CampfireUpgradeCaution]) -> i32 {
             CampfireUpgradeCaution::StarterUnique => 32,
             CampfireUpgradeCaution::ThinPayoffSupport => 60,
             CampfireUpgradeCaution::RedundantDebuffDuration => 35,
+            CampfireUpgradeCaution::LowMarginalRepeatDamage => 45,
         })
         .sum()
 }
@@ -247,6 +271,17 @@ fn matching_debuff_sources(deck: &[CombatCard], card: CardId) -> usize {
         .count()
 }
 
+fn same_card_count(deck: &[CombatCard], card: CardId) -> usize {
+    deck.iter().filter(|entry| entry.id == card).count()
+}
+
+fn is_low_marginal_repeat_damage(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Carnage | CardId::Rampage | CardId::SwiftStrike | CardId::TwinStrike
+    )
+}
+
 fn hint_label(hint: &CampfireUpgradeHint) -> String {
     match *hint {
         CampfireUpgradeHint::CostDown => "cost_down".to_string(),
@@ -256,6 +291,8 @@ fn hint_label(hint: &CampfireUpgradeHint) -> String {
         CampfireUpgradeHint::MagicDelta(delta) => format!("magic+{delta}"),
         CampfireUpgradeHint::DebuffDuration => "debuff_duration".to_string(),
         CampfireUpgradeHint::DrawOrEnergyAmount => "draw_or_energy_amount".to_string(),
+        CampfireUpgradeHint::CombatUpgradeAll => "combat_upgrade_all".to_string(),
+        CampfireUpgradeHint::ExhaustHandBurstDamage => "exhaust_hand_burst".to_string(),
     }
 }
 
@@ -265,6 +302,7 @@ fn caution_label(caution: &CampfireUpgradeCaution) -> &'static str {
         CampfireUpgradeCaution::StarterUnique => "starter_unique",
         CampfireUpgradeCaution::ThinPayoffSupport => "thin_payoff_support",
         CampfireUpgradeCaution::RedundantDebuffDuration => "redundant_debuff_duration",
+        CampfireUpgradeCaution::LowMarginalRepeatDamage => "low_marginal_repeat_damage",
     }
 }
 

@@ -4,7 +4,7 @@ use crate::ai::analysis::card_semantics::{
 };
 use crate::ai::strategy::package_state::{PackageMaturity, PackageStateReport};
 use crate::ai::strategy::package_transition::{assess_package_transition, PackageKind};
-use crate::ai::strategy::reward_quality::assess_reward_quality;
+use crate::ai::strategy::reward_quality::{assess_reward_quality, RewardDuplicateConcern};
 use crate::content::cards::CardId;
 use crate::runtime::combat::CombatCard;
 
@@ -54,6 +54,7 @@ pub enum RewardAdmissionReason {
     Opens(PayoffRequirement),
     Burden(CardBurden),
     DuplicateBurden(CardBurden),
+    DuplicateConcern(RewardDuplicateConcern),
     Empty,
     Skip,
 }
@@ -245,6 +246,9 @@ fn assess_reward_admission_from_definitions(
     for burden in &quality.duplicate_burdens {
         reasons.push(RewardAdmissionReason::DuplicateBurden(*burden));
     }
+    for concern in &quality.duplicate_concerns {
+        reasons.push(RewardAdmissionReason::DuplicateConcern(*concern));
+    }
 
     let closes = !transition.newly_closed_requirements.is_empty();
     let supports = transition.package_changes.iter().any(|change| {
@@ -272,7 +276,7 @@ fn assess_reward_admission_from_definitions(
     let burdened = transition.candidate_burdens.iter().any(is_admission_burden);
     let opens = !transition.newly_open_requirements.is_empty();
 
-    let class = if quality.has_duplicate_burden() {
+    let class = if quality.has_duplicate_penalty() {
         RewardAdmissionClass::EmptyOrDeferred
     } else if closes {
         RewardAdmissionClass::ClosesRequirement
@@ -356,6 +360,9 @@ fn reason_tag(reason: &RewardAdmissionReason) -> String {
         RewardAdmissionReason::Burden(burden) => format!("risk:{}", burden_tag(*burden)),
         RewardAdmissionReason::DuplicateBurden(burden) => {
             format!("dup-risk:{}", burden_tag(*burden))
+        }
+        RewardAdmissionReason::DuplicateConcern(concern) => {
+            format!("dup:{}", duplicate_concern_tag(*concern))
         }
         RewardAdmissionReason::Empty => "no-model".to_string(),
         RewardAdmissionReason::Skip => "skip-boundary".to_string(),
@@ -466,6 +473,14 @@ fn burden_tag(burden: CardBurden) -> &'static str {
         CardBurden::RandomExhaust => "random-exhaust",
         CardBurden::ExhaustsHand => "exhausts-hand",
         CardBurden::RequiresEnemyAttackIntent => "needs-attack",
+    }
+}
+
+fn duplicate_concern_tag(concern: RewardDuplicateConcern) -> &'static str {
+    match concern {
+        RewardDuplicateConcern::LowMarginalFrontload => "low-marginal-damage",
+        RewardDuplicateConcern::RedundantDebuff => "redundant-debuff",
+        RewardDuplicateConcern::RedundantCombatUpgrade => "redundant-upgrade",
     }
 }
 

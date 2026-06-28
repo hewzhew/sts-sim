@@ -2,10 +2,18 @@ use crate::ai::analysis::card_semantics::{CardBurden, Mechanic, PlayEffect};
 use crate::ai::strategy::package_transition::{PackageKind, PackageTransitionReport};
 use crate::content::cards::CardId;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RewardDuplicateConcern {
+    LowMarginalFrontload,
+    RedundantDebuff,
+    RedundantCombatUpgrade,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RewardQualityReport {
     pub thin_payoff_support: Vec<Mechanic>,
     pub duplicate_burdens: Vec<CardBurden>,
+    pub duplicate_concerns: Vec<RewardDuplicateConcern>,
 }
 
 pub fn assess_reward_quality(
@@ -14,13 +22,30 @@ pub fn assess_reward_quality(
     transition: &PackageTransitionReport,
 ) -> RewardQualityReport {
     let mut report = RewardQualityReport::default();
-    if uses_mechanic(transition, Mechanic::Block) && support_units(deck, Mechanic::Block) < 2 {
+    if uses_thin_block_payoff(candidate, transition) && support_units(deck, Mechanic::Block) < 3 {
         report.thin_payoff_support.push(Mechanic::Block);
     }
     if has_clutter_burden(transition) && has_existing_clutter_burden(deck, candidate) {
         report
             .duplicate_burdens
             .push(CardBurden::AddsCombatDeckClutter);
+    }
+    if same_card_count(deck, candidate) > 0 {
+        if is_low_marginal_frontload(candidate) {
+            report
+                .duplicate_concerns
+                .push(RewardDuplicateConcern::LowMarginalFrontload);
+        }
+        if is_debuff_frontload(candidate) {
+            report
+                .duplicate_concerns
+                .push(RewardDuplicateConcern::RedundantDebuff);
+        }
+        if has_combat_upgrade_effect(transition) {
+            report
+                .duplicate_concerns
+                .push(RewardDuplicateConcern::RedundantCombatUpgrade);
+        }
     }
     report
 }
@@ -37,6 +62,14 @@ impl RewardQualityReport {
     pub fn has_duplicate_burden(&self) -> bool {
         !self.duplicate_burdens.is_empty()
     }
+
+    pub fn has_duplicate_penalty(&self) -> bool {
+        !self.duplicate_burdens.is_empty() || !self.duplicate_concerns.is_empty()
+    }
+}
+
+fn uses_thin_block_payoff(candidate: CardId, transition: &PackageTransitionReport) -> bool {
+    candidate == CardId::Entrench || uses_mechanic(transition, Mechanic::Block)
 }
 
 fn uses_mechanic(transition: &PackageTransitionReport, mechanic: Mechanic) -> bool {
@@ -78,4 +111,31 @@ fn card_adds_clutter(card: CardId) -> bool {
         card,
         CardId::WildStrike | CardId::RecklessCharge | CardId::PowerThrough
     )
+}
+
+fn same_card_count(deck: &[CardId], candidate: CardId) -> usize {
+    deck.iter().filter(|card| **card == candidate).count()
+}
+
+fn is_low_marginal_frontload(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Carnage | CardId::Rampage | CardId::SwiftStrike | CardId::TwinStrike
+    )
+}
+
+fn is_debuff_frontload(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Clothesline | CardId::Uppercut | CardId::ThunderClap
+    )
+}
+
+fn has_combat_upgrade_effect(transition: &PackageTransitionReport) -> bool {
+    transition.candidate_play_effects.iter().any(|effect| {
+        matches!(
+            effect,
+            PlayEffect::CombatUpgradeSingle | PlayEffect::CombatUpgradeAll
+        )
+    })
 }
