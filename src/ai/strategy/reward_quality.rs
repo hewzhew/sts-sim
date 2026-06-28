@@ -25,6 +25,11 @@ pub fn assess_reward_quality(
     if uses_thin_block_payoff(candidate, transition) && support_units(deck, Mechanic::Block) < 3 {
         report.thin_payoff_support.push(Mechanic::Block);
     }
+    if uses_thin_strength_payoff(candidate, transition)
+        && support_units(deck, Mechanic::Strength) < 2
+    {
+        report.thin_payoff_support.push(Mechanic::Strength);
+    }
     if has_clutter_burden(transition) && has_existing_clutter_burden(deck, candidate) {
         report
             .duplicate_burdens
@@ -52,7 +57,11 @@ pub fn assess_reward_quality(
 
 impl RewardQualityReport {
     pub fn suppresses_support(&self, package: PackageKind) -> bool {
-        package == PackageKind::Block && self.thin_payoff_support.contains(&Mechanic::Block)
+        match package {
+            PackageKind::Block => self.thin_payoff_support.contains(&Mechanic::Block),
+            PackageKind::Strength => self.thin_payoff_support.contains(&Mechanic::Strength),
+            PackageKind::Exhaust | PackageKind::SelfDamage => false,
+        }
     }
 
     pub fn suppresses_payoff_effect(&self, effect: &PlayEffect) -> bool {
@@ -70,6 +79,10 @@ impl RewardQualityReport {
 
 fn uses_thin_block_payoff(candidate: CardId, transition: &PackageTransitionReport) -> bool {
     candidate == CardId::Entrench || uses_mechanic(transition, Mechanic::Block)
+}
+
+fn uses_thin_strength_payoff(candidate: CardId, transition: &PackageTransitionReport) -> bool {
+    matches!(candidate, CardId::LimitBreak) || uses_mechanic(transition, Mechanic::Strength)
 }
 
 fn uses_mechanic(transition: &PackageTransitionReport, mechanic: Mechanic) -> bool {
@@ -102,6 +115,9 @@ fn support_units_for_card(card: CardId, mechanic: Mechanic) -> u8 {
             Mechanic::Block,
             CardId::ShrugItOff | CardId::TrueGrit | CardId::SecondWind | CardId::IronWave,
         ) => 1,
+        (Mechanic::Strength, CardId::Inflame | CardId::DemonForm) => 3,
+        (Mechanic::Strength, CardId::SpotWeakness) => 2,
+        (Mechanic::Strength, CardId::Rupture) => 1,
         _ => 0,
     }
 }

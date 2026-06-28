@@ -1,3 +1,4 @@
+use sts_simulator::ai::analysis::card_semantics::{Mechanic, PayoffRequirement};
 use sts_simulator::ai::strategy::boss_relic_admission::{
     assess_boss_relic_admission, boss_relic_admission_order_rank, skip_boss_relic_admission,
     BossRelicAdmission,
@@ -5,7 +6,7 @@ use sts_simulator::ai::strategy::boss_relic_admission::{
 use sts_simulator::ai::strategy::reward_admission::{
     assess_reward_admission_from_master_deck, assess_reward_admission_with_upgrades,
     reward_admission_order_key_v1, skip_reward_admission, RewardAdmission, RewardAdmissionClass,
-    RewardAdmissionOrderKeyV1,
+    RewardAdmissionOrderKeyV1, RewardAdmissionReason,
 };
 use sts_simulator::content::cards::{
     get_card_definition, is_starter_basic, is_starter_defend, is_starter_strike, CardId, CardType,
@@ -170,7 +171,10 @@ fn card_reward_owner_choices(
         .iter()
         .any(|(_, choice)| is_mainline_card_reward_take(choice));
     choices.sort_by_key(|(index, choice)| {
-        (card_reward_choice_rank(choice, has_mainline_take), *index)
+        (
+            card_reward_choice_rank(session, choice, has_mainline_take),
+            *index,
+        )
     });
     choices.into_iter().map(|(_, choice)| choice).collect()
 }
@@ -327,12 +331,13 @@ fn reward_plan_lane(admission: &RewardAdmission) -> RewardPlanLane {
 }
 
 fn card_reward_choice_rank(
+    session: &RunControlSession,
     choice: &OwnerChoice,
     has_mainline_take: bool,
-) -> (u8, u8, RewardAdmissionOrderKeyV1) {
+) -> (u8, u8, u8, RewardAdmissionOrderKeyV1) {
     match &choice.key {
         Some(DecisionCandidateKey::CardRewardOpen { .. }) => {
-            (0, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())
+            (0, 0, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())
         }
         Some(DecisionCandidateKey::CardRewardPick { .. }) => (
             1,
@@ -341,6 +346,7 @@ fn card_reward_choice_rank(
                 .reward_lane()
                 .map(|lane| reward_plan_lane_rank(lane, has_mainline_take))
                 .unwrap_or(3),
+            survival_pressure_reward_rank(session, choice),
             choice
                 .annotation
                 .reward()
@@ -350,19 +356,76 @@ fn card_reward_choice_rank(
         Some(DecisionCandidateKey::CardRewardSingingBowl { .. }) => (
             1,
             skip_reward_lane_rank(has_mainline_take),
+            9,
             RewardAdmissionOrderKeyV1::unscored_optional_reward(),
         ),
         Some(DecisionCandidateKey::CardRewardSkip { .. }) => (
             1,
             skip_reward_lane_rank(has_mainline_take),
+            9,
             choice
                 .annotation
                 .reward()
                 .map(reward_admission_order_key_v1)
                 .unwrap_or_else(RewardAdmissionOrderKeyV1::static_skip_boundary),
         ),
-        _ => (2, 3, RewardAdmissionOrderKeyV1::empty_or_deferred()),
+        _ => (2, 3, 9, RewardAdmissionOrderKeyV1::empty_or_deferred()),
     }
+}
+
+fn survival_pressure_reward_rank(session: &RunControlSession, choice: &OwnerChoice) -> u8 {
+    if !reward_survival_pressure(session) {
+        return 5;
+    }
+    let Some(admission) = choice.annotation.reward() else {
+        return 5;
+    };
+    let provides_block = admission_provides(admission, Mechanic::Block);
+    let provides_draw = admission_provides(admission, Mechanic::CardDraw);
+    if provides_block && provides_draw {
+        return 0;
+    }
+    if admission.reasons.iter().any(|reason| {
+        matches!(
+            reason,
+            RewardAdmissionReason::Provides(Mechanic::Weak | Mechanic::EnemyStrengthDown)
+        )
+    }) {
+        return 1;
+    }
+    if provides_block {
+        return 2;
+    }
+    if provides_draw {
+        return 3;
+    }
+    if admission_provides(admission, Mechanic::Energy) {
+        return 4;
+    }
+    if admission.reasons.iter().any(|reason| {
+        matches!(
+            reason,
+            RewardAdmissionReason::ThinSupport(Mechanic::Strength)
+                | RewardAdmissionReason::DamageUses(Mechanic::Strength)
+                | RewardAdmissionReason::Opens(PayoffRequirement::WantsMechanic(
+                    Mechanic::Strength
+                ))
+        )
+    }) {
+        return 8;
+    }
+    5
+}
+
+fn reward_survival_pressure(session: &RunControlSession) -> bool {
+    session.run_state.act_num >= 2
+        || session.run_state.current_hp.saturating_mul(2) <= session.run_state.max_hp
+}
+
+fn admission_provides(admission: &RewardAdmission, mechanic: Mechanic) -> bool {
+    admission
+        .reasons
+        .contains(&RewardAdmissionReason::Provides(mechanic))
 }
 
 fn is_mainline_card_reward_take(choice: &OwnerChoice) -> bool {

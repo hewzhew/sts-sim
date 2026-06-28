@@ -518,6 +518,7 @@ fn is_immediate_work(effect: &PlayEffect) -> bool {
         PlayEffect::Provide(
             Mechanic::CardDraw
             | Mechanic::Energy
+            | Mechanic::Strength
             | Mechanic::Block
             | Mechanic::Weak
             | Mechanic::Vulnerable
