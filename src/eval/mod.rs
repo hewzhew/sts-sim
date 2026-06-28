@@ -10,6 +10,7 @@ pub mod branch_outcome_dataset_v1;
 pub mod campaign_journal;
 pub mod card_reward_value_loop;
 pub mod combat_capture;
+pub mod combat_case;
 pub mod combat_search_v2;
 pub(crate) mod decision_candidate_axis_v1;
 pub mod decision_path;

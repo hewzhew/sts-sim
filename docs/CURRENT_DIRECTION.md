@@ -68,6 +68,16 @@ before changing card reward, shop, campfire, event, or route strategy.
 
 ## Combat Search Experiment Notes
 
+Current combat gap review starts from a saved `combat_case`:
+
+```powershell
+cargo run --bin combat_case_review -- --case <case.json> --ladder
+```
+
+This is the preferred entry for branch-tiny combat gaps. Do not revive old
+report/probe readers for this workflow; write or load a `combat_case` and keep
+review output structured JSON.
+
 Current small combat benchmarks:
 
 ```text

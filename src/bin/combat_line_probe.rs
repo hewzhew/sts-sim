@@ -1,12 +1,12 @@
 use std::collections::HashMap;
-use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::json;
 use sts_simulator::content::cards::{get_card_definition, CardType};
+use sts_simulator::eval::combat_case::{load_combat_case, CombatCase};
 use sts_simulator::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
@@ -38,16 +38,6 @@ struct Args {
     replay_best_inputs: bool,
     #[arg(long)]
     json: bool,
-}
-
-#[derive(Deserialize)]
-struct CombatGapCase {
-    schema: String,
-    source: serde_json::Value,
-    gap: serde_json::Value,
-    run: serde_json::Value,
-    combat: serde_json::Value,
-    position: CombatPosition,
 }
 
 #[derive(Clone)]
@@ -281,13 +271,8 @@ fn line_search_from(
     }
 }
 
-fn load_case(path: &PathBuf) -> Result<CombatGapCase, String> {
-    let payload = fs::read_to_string(path).map_err(|err| err.to_string())?;
-    let case: CombatGapCase = serde_json::from_str(&payload).map_err(|err| err.to_string())?;
-    if case.schema != "combat_gap_case" {
-        return Err(format!("expected combat_gap_case, got {}", case.schema));
-    }
-    Ok(case)
+fn load_case(path: &PathBuf) -> Result<CombatCase, String> {
+    load_combat_case(path)
 }
 
 fn line_from(
@@ -596,7 +581,7 @@ fn visible_incoming(combat: &sts_simulator::runtime::combat::CombatState) -> i32
         .sum()
 }
 
-fn case_header(case: &CombatGapCase) -> serde_json::Value {
+fn case_header(case: &CombatCase) -> serde_json::Value {
     json!({
         "source": case.source,
         "gap": case.gap,
