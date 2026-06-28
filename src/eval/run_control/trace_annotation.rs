@@ -10,6 +10,34 @@ use crate::state::core::ClientInput;
 
 use super::transition_report::CardSnapshot;
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatAutomationTrajectorySource {
+    SearchCombat,
+    SearchCombatTurnSegment,
+    SearchCombatSmokeBombSurvival,
+}
+
+impl CombatAutomationTrajectorySource {
+    pub fn label(self) -> &'static str {
+        match self {
+            CombatAutomationTrajectorySource::SearchCombat => "search_combat",
+            CombatAutomationTrajectorySource::SearchCombatTurnSegment => {
+                "search_combat_turn_segment"
+            }
+            CombatAutomationTrajectorySource::SearchCombatSmokeBombSurvival => {
+                "search_combat_smoke_bomb_survival"
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for CombatAutomationTrajectorySource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatAutomationActionV1 {
@@ -50,7 +78,7 @@ pub struct CombatAutomationMonsterStateV1 {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombatAutomationTrajectoryRecordV1 {
-    pub source: String,
+    pub source: CombatAutomationTrajectorySource,
     pub action_count: usize,
     pub actions: Vec<CombatAutomationActionV1>,
     pub label_role: String,
@@ -255,7 +283,7 @@ pub enum RunControlTraceAnnotationV1 {
         label_role: String,
     },
     CombatAutomationTrajectory {
-        source: String,
+        source: CombatAutomationTrajectorySource,
         action_count: usize,
         actions: Vec<CombatAutomationActionV1>,
         label_role: String,
@@ -267,16 +295,19 @@ pub enum RunControlTraceAnnotationV1 {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CombatAutomationTrajectoryRefV1<'a> {
-    pub source: &'a str,
+    pub source: CombatAutomationTrajectorySource,
     pub action_count: usize,
     pub actions: &'a [CombatAutomationActionV1],
     pub label_role: &'a str,
 }
 
 impl CombatAutomationTrajectoryRecordV1 {
-    pub fn new(source: impl Into<String>, actions: Vec<CombatAutomationActionV1>) -> Self {
+    pub fn new(
+        source: CombatAutomationTrajectorySource,
+        actions: Vec<CombatAutomationActionV1>,
+    ) -> Self {
         Self {
-            source: source.into(),
+            source,
             action_count: actions.len(),
             actions,
             label_role: "simulator_generated_not_teacher_label".to_string(),
@@ -285,7 +316,7 @@ impl CombatAutomationTrajectoryRecordV1 {
 
     pub fn from_ref(value: CombatAutomationTrajectoryRefV1<'_>) -> Self {
         Self {
-            source: value.source.to_string(),
+            source: value.source,
             action_count: value.action_count,
             actions: value.actions.to_vec(),
             label_role: value.label_role.to_string(),
@@ -316,7 +347,7 @@ impl RunControlTraceAnnotationV1 {
             return None;
         };
         Some(CombatAutomationTrajectoryRefV1 {
-            source,
+            source: *source,
             action_count: *action_count,
             actions,
             label_role,
@@ -433,7 +464,7 @@ mod tests {
             combat_after: None,
         };
         let annotation = RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-            source: "search_combat".to_string(),
+            source: CombatAutomationTrajectorySource::SearchCombat,
             action_count: 1,
             actions: vec![action],
             label_role: "simulator_generated_not_teacher_label".to_string(),
@@ -443,7 +474,10 @@ mod tests {
             .as_combat_automation_trajectory_v1()
             .expect("combat automation annotation should expose a trajectory view");
 
-        assert_eq!(trajectory.source, "search_combat");
+        assert_eq!(
+            trajectory.source,
+            CombatAutomationTrajectorySource::SearchCombat
+        );
         assert_eq!(trajectory.action_count, 1);
         assert_eq!(trajectory.actions[0].step_index, 3);
         assert_eq!(
@@ -469,7 +503,7 @@ mod tests {
                 label_role: "human_review_artifact".to_string(),
             },
             RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-                source: "search_combat".to_string(),
+                source: CombatAutomationTrajectorySource::SearchCombat,
                 action_count: 1,
                 actions: vec![action],
                 label_role: "simulator_generated_not_teacher_label".to_string(),
@@ -492,7 +526,7 @@ mod tests {
                 label_role: "human_review_artifact".to_string(),
             },
             RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-                source: "search_combat".to_string(),
+                source: CombatAutomationTrajectorySource::SearchCombat,
                 action_count: 2,
                 actions: vec![CombatAutomationActionV1 {
                     step_index: 0,
@@ -508,7 +542,10 @@ mod tests {
         let trajectories = combat_automation_trajectories_v1(&annotations).collect::<Vec<_>>();
 
         assert_eq!(trajectories.len(), 1);
-        assert_eq!(trajectories[0].source, "search_combat");
+        assert_eq!(
+            trajectories[0].source,
+            CombatAutomationTrajectorySource::SearchCombat
+        );
         assert_eq!(trajectories[0].action_count, 2);
         assert_eq!(trajectories[0].actions[0].step_index, 0);
     }
@@ -516,7 +553,7 @@ mod tests {
     #[test]
     fn combat_automation_trajectory_record_converts_to_annotation() {
         let record = CombatAutomationTrajectoryRecordV1::new(
-            "search_combat",
+            CombatAutomationTrajectorySource::SearchCombat,
             vec![CombatAutomationActionV1 {
                 step_index: 1,
                 action_key: "combat/end_turn".to_string(),

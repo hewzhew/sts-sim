@@ -606,7 +606,7 @@ mod tests {
 
     use super::*;
     use crate::eval::run_control::trace_annotation::{
-        CombatAutomationActionV1, RunControlTraceAnnotationV1,
+        CombatAutomationActionV1, CombatAutomationTrajectorySource, RunControlTraceAnnotationV1,
     };
     use crate::eval::run_control::{
         parse_run_control_command, RunControlAutoStepOptions, RunControlCommand, RunControlConfig,
@@ -820,7 +820,7 @@ mod tests {
             .as_ref()
             .expect("combat input should produce an action result");
         let annotations = vec![RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-            source: "test".to_string(),
+            source: CombatAutomationTrajectorySource::SearchCombat,
             action_count: 1,
             actions: vec![CombatAutomationActionV1 {
                 step_index: 0,

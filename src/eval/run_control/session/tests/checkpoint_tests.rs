@@ -1,7 +1,7 @@
 use super::*;
 use crate::eval::run_control::{
-    CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1, RunControlSearchCombatOptions,
-    RunControlSearchDefaultsCommand,
+    CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
+    RunControlSearchCombatOptions, RunControlSearchDefaultsCommand,
 };
 
 #[test]
@@ -74,7 +74,7 @@ fn run_control_session_checkpoint_round_trips_exact_state() {
 fn run_control_session_checkpoint_preserves_last_combat_automation_trajectory() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.remember_combat_automation_trajectory(CombatAutomationTrajectoryRecordV1::new(
-        "search_combat",
+        CombatAutomationTrajectorySource::SearchCombat,
         vec![CombatAutomationActionV1 {
             step_index: 0,
             action_key: "combat/end_turn".to_string(),
@@ -93,7 +93,10 @@ fn run_control_session_checkpoint_preserves_last_combat_automation_trajectory() 
         .last_combat_automation_trajectory()
         .expect("checkpoint should preserve last automation trajectory");
 
-    assert_eq!(trajectory.source, "search_combat");
+    assert_eq!(
+        trajectory.source,
+        CombatAutomationTrajectorySource::SearchCombat
+    );
     assert_eq!(trajectory.action_count, 1);
     assert_eq!(trajectory.actions[0].action_key, "combat/end_turn");
     assert!(

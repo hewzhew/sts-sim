@@ -410,7 +410,9 @@ mod tests {
         NONCOMBAT_DECISION_RECORD_SCHEMA_NAME, NONCOMBAT_DECISION_RECORD_SCHEMA_VERSION,
     };
     use crate::content::cards::CardId;
-    use crate::eval::run_control::trace_annotation::CombatAutomationActionV1;
+    use crate::eval::run_control::trace_annotation::{
+        CombatAutomationActionV1, CombatAutomationTrajectorySource,
+    };
     use crate::eval::run_control::transition_report::{
         ActionResult, ActionResultChange, CardSnapshot, CombatPlayerResult, RunApplyStatus,
     };
@@ -490,7 +492,7 @@ mod tests {
                 changes: Vec::new(),
             },
             &[RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-                source: "test_search".to_string(),
+                source: CombatAutomationTrajectorySource::SearchCombat,
                 action_count: 3,
                 actions: vec![
                     combat_automation_action(
@@ -578,7 +580,7 @@ mod tests {
                 changes: Vec::new(),
             },
             &[RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-                source: "test_search".to_string(),
+                source: CombatAutomationTrajectorySource::SearchCombat,
                 action_count: 1,
                 actions: vec![combat_automation_action_with_draws(
                     0,
@@ -614,7 +616,7 @@ mod tests {
                 changes: Vec::new(),
             },
             &[RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-                source: "test_search".to_string(),
+                source: CombatAutomationTrajectorySource::SearchCombat,
                 action_count: 2,
                 actions: vec![
                     combat_automation_action(
@@ -783,7 +785,7 @@ mod tests {
         );
 
         let annotations = vec![RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-            source: "test_combat_search".to_string(),
+            source: CombatAutomationTrajectorySource::SearchCombat,
             action_count: 2,
             actions: vec![combat_automation_action(
                 0,

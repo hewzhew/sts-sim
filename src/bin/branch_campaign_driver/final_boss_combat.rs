@@ -877,7 +877,7 @@ fn render_combat_automation_record_timeline_lines_v1(
     record: &CombatAutomationTrajectoryRecordV1,
 ) -> Vec<String> {
     render_combat_automation_timeline_lines_v1(
-        record.source.as_str(),
+        record.source.label(),
         record.action_count,
         &record.actions,
     )

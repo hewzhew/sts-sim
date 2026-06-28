@@ -24,8 +24,8 @@ use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenc
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::trace_annotation::{
     CombatAutomationActionV1, CombatAutomationMonsterStateV1, CombatAutomationStepStateV1,
-    CombatAutomationTrajectoryRecordV1, CombatSearchPerformanceSnapshotV1,
-    RunControlTraceAnnotationV1,
+    CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
+    CombatSearchPerformanceSnapshotV1, RunControlTraceAnnotationV1,
 };
 use super::transition_report::{
     action_result_from_transition, render_action_result, ActionResult, ActionResultChange,
@@ -217,8 +217,10 @@ pub(super) fn apply_search_combat(
         render_action_result(&action_result),
         super::render::render_run_control_state(session)
     );
-    let automation_record =
-        CombatAutomationTrajectoryRecordV1::new("search_combat", automation_actions);
+    let automation_record = CombatAutomationTrajectoryRecordV1::new(
+        CombatAutomationTrajectorySource::SearchCombat,
+        automation_actions,
+    );
     session.remember_combat_automation_trajectory(automation_record.clone());
     let mut outcome = RunControlCommandOutcome::action(message, action_result)
         .with_trace_annotations(vec![
@@ -286,8 +288,10 @@ fn try_apply_turn_segment_after_rejection(
         render_action_result(&action_result),
         super::render::render_run_control_state(session)
     );
-    let automation_record =
-        CombatAutomationTrajectoryRecordV1::new("search_combat_turn_segment", automation_actions);
+    let automation_record = CombatAutomationTrajectoryRecordV1::new(
+        CombatAutomationTrajectorySource::SearchCombatTurnSegment,
+        automation_actions,
+    );
     session.remember_combat_automation_trajectory(automation_record.clone());
     let mut outcome = RunControlCommandOutcome::action(message, action_result)
         .with_trace_annotations(vec![
@@ -370,7 +374,7 @@ fn try_apply_smoke_bomb_survival_fallback_after_rejection(
         super::render::render_run_control_state(session)
     );
     let automation_record = CombatAutomationTrajectoryRecordV1::new(
-        "search_combat_smoke_bomb_survival",
+        CombatAutomationTrajectorySource::SearchCombatSmokeBombSurvival,
         automation_actions,
     );
     session.remember_combat_automation_trajectory(automation_record.clone());
@@ -1091,7 +1095,8 @@ mod tests {
     use crate::content::potions::{Potion, PotionId};
     use crate::content::powers::{store, PowerId};
     use crate::eval::run_control::trace_annotation::{
-        CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1, RunControlTraceAnnotationV1,
+        CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1,
+        CombatAutomationTrajectorySource, RunControlTraceAnnotationV1,
     };
     use crate::eval::run_control::{
         RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
@@ -1291,7 +1296,7 @@ mod tests {
     #[test]
     fn combat_automation_trace_annotation_preserves_action_inputs() {
         let annotation = CombatAutomationTrajectoryRecordV1::new(
-            "unit_test",
+            CombatAutomationTrajectorySource::SearchCombat,
             vec![CombatAutomationActionV1 {
                 step_index: 7,
                 action_key: "combat/end_turn".to_string(),
@@ -1311,7 +1316,7 @@ mod tests {
         else {
             panic!("expected combat automation trajectory annotation")
         };
-        assert_eq!(source, "unit_test");
+        assert_eq!(source, CombatAutomationTrajectorySource::SearchCombat);
         assert_eq!(action_count, 1);
         assert_eq!(actions[0].step_index, 7);
         assert_eq!(actions[0].action_key, "combat/end_turn");

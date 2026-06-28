@@ -117,8 +117,10 @@ pub fn current_act_boss_preview_probe_v1(
                     Some(trajectory_signature_v1(record)) != previous_trajectory_signature
                 });
             if let Some(record) = record {
-                let result =
-                    boss_preview_result_label_v1(preview.active_combat.is_none(), &record.source);
+                let result = boss_preview_result_label_v1(
+                    preview.active_combat.is_none(),
+                    record.source.label(),
+                );
                 let search_digest = search_message_digest_v1(&outcome.message);
                 CombatLabProbePacketV1 {
                     kind: "current_act_boss_preview".to_string(),
@@ -285,7 +287,7 @@ fn trajectory_signature_v1(
     record: &CombatAutomationTrajectoryRecordV1,
 ) -> (String, usize, String, String) {
     (
-        record.source.clone(),
+        record.source.to_string(),
         record.action_count,
         record
             .actions

@@ -2,11 +2,11 @@ use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::eval::run_control::{
-    apply_owner_audit_auto_run, build_decision_surface, CombatSearchTraceSummary,
-    RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlAutoStepOptions,
-    RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommand, RunControlCommandOutcome,
-    RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
-    RunControlSession, RunControlTraceAnnotationV1,
+    apply_owner_audit_auto_run, build_decision_surface, CombatAutomationTrajectorySource,
+    CombatSearchTraceSummary, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
+    RunControlAutoStepOptions, RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommand,
+    RunControlCommandOutcome, RunControlHpLossLimit, RunControlRouteAutomationMode,
+    RunControlSearchCombatOptions, RunControlSession, RunControlTraceAnnotationV1,
 };
 use sts_simulator::state::core::{ClientInput, EngineState, RunResult};
 use sts_simulator::state::selection::DomainEventSource;
@@ -379,7 +379,7 @@ fn retry_complete_search_action_keys(outcome: &RunControlCommandOutcome) -> Vec<
         .find_map(|annotation| match annotation {
             RunControlTraceAnnotationV1::CombatAutomationTrajectory {
                 source, actions, ..
-            } if source == "search_combat" => Some(
+            } if *source == CombatAutomationTrajectorySource::SearchCombat => Some(
                 actions
                     .iter()
                     .map(|action| action.action_key.clone())

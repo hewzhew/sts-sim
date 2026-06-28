@@ -1790,7 +1790,7 @@ fn final_boss_record_keeps_last_terminal_victory_combat_trajectory() {
     session.engine_state = EngineState::GameOver(RunResult::Victory);
     let annotations = vec![
         RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-            source: "earlier_combat".to_string(),
+            source: CombatAutomationTrajectorySource::SearchCombatTurnSegment,
             action_count: 1,
             actions: vec![crate::eval::run_control::CombatAutomationActionV1 {
                 step_index: 0,
@@ -1802,7 +1802,7 @@ fn final_boss_record_keeps_last_terminal_victory_combat_trajectory() {
             label_role: "behavior_policy_not_teacher".to_string(),
         },
         RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-            source: "final_boss_combat".to_string(),
+            source: CombatAutomationTrajectorySource::SearchCombat,
             action_count: 2,
             actions: vec![
                 crate::eval::run_control::CombatAutomationActionV1 {
@@ -1830,7 +1830,7 @@ fn final_boss_record_keeps_last_terminal_victory_combat_trajectory() {
     let record = final_boss_combat_record_from_annotations_v1(&session, &annotations)
         .expect("terminal victory should keep the final boss combat trajectory");
 
-    assert_eq!(record.source, "final_boss_combat");
+    assert_eq!(record.source, "search_combat");
     assert_eq!(record.action_count, 2);
     assert_eq!(record.actions.len(), 2);
     assert_eq!(record.label_role, "behavior_policy_not_teacher");
@@ -1841,7 +1841,7 @@ fn final_boss_record_is_absent_without_terminal_victory() {
     let mut session = RunControlSession::new(RunControlConfig::default());
     session.engine_state = EngineState::CombatPlayerTurn;
     let annotations = vec![RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-        source: "ordinary_combat".to_string(),
+        source: CombatAutomationTrajectorySource::SearchCombat,
         action_count: 1,
         actions: Vec::new(),
         label_role: "behavior_policy_not_teacher".to_string(),

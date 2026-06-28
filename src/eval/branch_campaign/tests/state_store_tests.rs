@@ -713,12 +713,16 @@ fn campaign_checkpoint_drops_combat_automation_trajectories_from_resume_state() 
     let mut state_store = super::state_graph::BranchStateStoreV1::new();
     state_store.insert_session(
         parent_commands.clone(),
-        super::test_run_control_session_with_last_combat_trajectory("search_combat"),
+        super::test_run_control_session_with_last_combat_trajectory(
+            crate::eval::run_control::CombatAutomationTrajectorySource::SearchCombat,
+        ),
     );
     state_store.insert_child_session(
         &parent_commands,
         child_commands.clone(),
-        super::test_run_control_session_with_last_combat_trajectory("search_combat"),
+        super::test_run_control_session_with_last_combat_trajectory(
+            crate::eval::run_control::CombatAutomationTrajectorySource::SearchCombat,
+        ),
     );
 
     let state = BranchCampaignRunStateV1 {

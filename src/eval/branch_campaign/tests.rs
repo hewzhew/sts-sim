@@ -18,8 +18,8 @@ use crate::eval::branch_experiment_retention::{
 };
 use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
 use crate::eval::run_control::{
-    CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1, RunControlConfig,
-    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
+    CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
+    RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
     RunControlSessionCheckpointV1,
 };
 use crate::state::core::EngineState;
@@ -936,7 +936,9 @@ fn test_combat_checkpoint_session(
     }
 }
 
-fn test_run_control_session_with_last_combat_trajectory(source: &str) -> RunControlSession {
+fn test_run_control_session_with_last_combat_trajectory(
+    source: CombatAutomationTrajectorySource,
+) -> RunControlSession {
     let mut checkpoint = RunControlSessionCheckpointV1::from_session(&RunControlSession::new(
         RunControlConfig::default(),
     ));
