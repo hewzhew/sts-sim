@@ -32,35 +32,46 @@ pub(super) fn advance_to_owner_or_gap(
     let mut auto_steps = Vec::new();
     let mut combat_search = Vec::new();
     loop {
-        let options = auto_step_options(args.search_nodes, args.search_ms, args.auto_ops);
-        match apply_owner_audit_auto_run(session, options) {
-            Ok(_) if terminal_label(session).is_some() => {
-                return advance_result(
-                    BranchStatus::Terminal(terminal_label(session).unwrap()),
-                    None,
-                    auto_steps,
-                    combat_search,
-                );
-            }
+        match apply_owner_audit_auto_run(session, primary_auto_step_options(args)) {
             Ok(outcome) => {
                 combat_search.extend(combat_search_summaries(&outcome));
                 auto_steps.extend(outcome.auto_applied_steps.clone());
-                let Some(stop) = outcome.auto_stop.as_ref() else {
-                    return advance_result(
-                        BranchStatus::AdvanceFailed(
-                            "auto_run returned non-terminal success without auto_stop".to_string(),
-                        ),
-                        None,
-                        auto_steps,
-                        combat_search,
-                    );
-                };
-                let status = classify_boundary(session, stop);
+                let mut status = classify_auto_outcome(session, &outcome);
                 if matches!(status, BranchStatus::CombatGap { .. }) && is_boss_combat(session) {
                     if let Some(result) = try_boss_retry(session, args) {
                         combat_search.extend(result.2);
                         return advance_result(result.0, Some(result.1), auto_steps, combat_search);
                     }
+                }
+                if matches!(status, BranchStatus::CombatGap { .. }) && !is_boss_combat(session) {
+                    match apply_owner_audit_auto_run(
+                        session,
+                        tactical_rescue_auto_step_options(args),
+                    ) {
+                        Ok(rescue) => {
+                            combat_search.extend(combat_search_summaries(&rescue));
+                            auto_steps.extend(rescue.auto_applied_steps.clone());
+                            status = classify_auto_outcome(session, &rescue);
+                        }
+                        Err(err) => {
+                            return advance_result(
+                                BranchStatus::AdvanceFailed(format!(
+                                    "tactical combat rescue failed: {err}"
+                                )),
+                                None,
+                                auto_steps,
+                                combat_search,
+                            );
+                        }
+                    }
+                }
+                if let BranchStatus::Terminal(result) = status {
+                    return advance_result(
+                        BranchStatus::Terminal(result),
+                        None,
+                        auto_steps,
+                        combat_search,
+                    );
                 }
                 let owner = match &status {
                     BranchStatus::Running { owner, .. } => *owner,
@@ -113,6 +124,24 @@ pub(super) fn advance_to_owner_or_gap(
     }
 }
 
+fn classify_auto_outcome(
+    session: &RunControlSession,
+    outcome: &RunControlCommandOutcome,
+) -> BranchStatus {
+    if let Some(result) = terminal_label(session) {
+        return BranchStatus::Terminal(result);
+    }
+    outcome
+        .auto_stop
+        .as_ref()
+        .map(|stop| classify_boundary(session, stop))
+        .unwrap_or_else(|| {
+            BranchStatus::AdvanceFailed(
+                "auto_run returned non-terminal success without auto_stop".to_string(),
+            )
+        })
+}
+
 fn advance_result(
     status: BranchStatus,
     boss_retry: Option<BossRetryReport>,
@@ -146,13 +175,36 @@ fn is_boss_combat(session: &RunControlSession) -> bool {
         .is_some_and(|combat| combat.combat_state.meta.is_boss_fight)
 }
 
-fn auto_step_options(max_nodes: usize, wall_ms: u64, auto_ops: usize) -> RunControlAutoStepOptions {
+fn primary_auto_step_options(args: Args) -> RunControlAutoStepOptions {
+    auto_step_options(
+        args.search_nodes,
+        args.search_ms,
+        args.auto_ops,
+        CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+    )
+}
+
+fn tactical_rescue_auto_step_options(args: Args) -> RunControlAutoStepOptions {
+    auto_step_options(
+        args.search_nodes,
+        args.search_ms,
+        args.auto_ops,
+        CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed,
+    )
+}
+
+fn auto_step_options(
+    max_nodes: usize,
+    wall_ms: u64,
+    auto_ops: usize,
+    turn_plan_policy: CombatSearchV2TurnPlanPolicy,
+) -> RunControlAutoStepOptions {
     RunControlAutoStepOptions {
         search: RunControlSearchCombatOptions {
             max_nodes: Some(max_nodes),
             wall_ms: Some(wall_ms),
             max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
-            turn_plan_policy: Some(CombatSearchV2TurnPlanPolicy::DiagnosticOnly),
+            turn_plan_policy: Some(turn_plan_policy),
             ..Default::default()
         },
         max_operations: Some(auto_ops),
@@ -197,7 +249,12 @@ fn boss_retry_options(
     potion_policy: CombatSearchV2PotionPolicy,
     max_potions_used: Option<u32>,
 ) -> RunControlAutoStepOptions {
-    let mut options = auto_step_options(args.boss_search_nodes, args.boss_search_ms, args.auto_ops);
+    let mut options = auto_step_options(
+        args.boss_search_nodes,
+        args.boss_search_ms,
+        args.auto_ops,
+        CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+    );
     options.search.potion_policy = Some(potion_policy);
     options.search.max_potions_used = max_potions_used;
     options
