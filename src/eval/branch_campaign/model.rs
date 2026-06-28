@@ -14,7 +14,6 @@ use crate::eval::campaign_journal::{
     CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateAdmissionTraceV1,
     CampaignJournalCandidateDispositionV1, CampaignJournalV1,
 };
-use crate::eval::combat_lab_probe_v1::CombatLabProbePacketV1;
 use crate::eval::event_boundary_packet_v1::EventBoundaryPacketV1;
 use crate::eval::reward_boundary_packet_v1::RewardBoundaryPacketV1;
 use crate::eval::run_control::{CombatAutomationTrajectoryRecordV1, RunControlSessionCheckpointV1};
@@ -164,8 +163,6 @@ pub struct BranchCampaignBranchV1 {
     pub assessment: Option<BranchCampaignAssessmentV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub final_boss_combat_record: Option<BranchExperimentBossCombatRecordV1>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub combat_lab_probes: Vec<CombatLabProbePacketV1>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

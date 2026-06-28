@@ -11,7 +11,6 @@ mod checkpoint_evidence;
 mod checkpoint_inspection;
 mod checkpoint_shop_evidence;
 mod cli_args;
-mod combat_lab;
 mod command_inputs;
 mod coverage_gap_milestone_summary;
 mod decision_observations;

@@ -7,7 +7,6 @@ use crate::eval::branch_experiment::{
 use crate::eval::branch_experiment_boundary::branch_boundary_available;
 use crate::eval::branch_experiment_retention::BranchRetentionBudgetProfileV1;
 use crate::eval::campaign_journal::CampaignJournalV1;
-use crate::eval::combat_lab_probe_v1::current_act_boss_preview_probe_v1;
 use crate::eval::reward_semantic_live_sample_v1::RewardSemanticLiveSampleV1;
 use crate::eval::run_control::{
     apply_branch_experiment_auto_run, build_decision_surface, AutoCombatCaptureConfig,
@@ -81,7 +80,6 @@ pub use progress::{
     BranchCampaignProgressDetailV1, BranchCampaignProgressEventV1,
     BranchCampaignReplayStartSourceV1,
 };
-use report_render::boss_approach_floor_v1;
 pub use report_render::{
     render_branch_campaign_compact_v1, render_branch_campaign_compact_with_detail_v1,
     BranchCampaignReportDetailV1,
@@ -126,8 +124,6 @@ pub const BRANCH_CAMPAIGN_SCHEMA_VERSION: u32 = 1;
 pub const BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_NAME: &str = "BranchCampaignCheckpointV2";
 pub const BRANCH_CAMPAIGN_CHECKPOINT_SCHEMA_VERSION: u32 = 2;
 const UNSPENT_GOLD_PRESSURE_THRESHOLD: i32 = 300;
-const COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_NODES: usize = 50_000;
-const COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_WALL_MS: u64 = 300;
 #[derive(Clone, Debug, PartialEq)]
 pub struct BranchCampaignConfigV1 {
     pub seed: u64,
@@ -1447,7 +1443,6 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
         rank_breakdown: None,
         assessment: None,
         final_boss_combat_record: None,
-        combat_lab_probes: Vec::new(),
     }
 }
 
@@ -1523,73 +1518,6 @@ fn campaign_progress_is_clearly_ahead_v1(left: (u8, i32, i32), right: (u8, i32, 
         return true;
     }
     left.0 == right.0 && left.1 >= right.1.saturating_add(2)
-}
-
-fn maybe_attach_campaign_combat_lab_probe_v1(
-    config: &BranchCampaignConfigV1,
-    branch: &mut BranchCampaignBranchV1,
-    session: &RunControlSession,
-) {
-    if !campaign_branch_should_probe_current_act_boss_v1(branch) {
-        return;
-    }
-    let options = campaign_combat_lab_boss_probe_search_options_v1(config);
-    let packet = current_act_boss_preview_probe_v1(session, &options, "campaign_key_boundary");
-    branch.combat_lab_probes.push(packet);
-}
-
-fn campaign_branch_should_probe_current_act_boss_v1(branch: &BranchCampaignBranchV1) -> bool {
-    if branch
-        .combat_lab_probes
-        .iter()
-        .any(|probe| probe.kind == "current_act_boss_preview")
-    {
-        return false;
-    }
-    if !matches!(
-        branch.status,
-        BranchCampaignBranchStatusV1::Scheduled | BranchCampaignBranchStatusV1::Stuck
-    ) {
-        return false;
-    }
-    let Some(summary) = branch.summary.as_ref() else {
-        return false;
-    };
-    if summary.act < 2
-        || summary.boss.is_empty()
-        || summary.floor < combat_lab_boss_probe_start_floor_v1(summary.act)
-    {
-        return false;
-    }
-    matches!(
-        normalized_campaign_boundary_title(&branch.frontier_title).as_str(),
-        "shop" | "campfire" | "cardreward" | "rewardscreen" | "rewardoverlay"
-    )
-}
-
-fn combat_lab_boss_probe_start_floor_v1(act: u8) -> i32 {
-    boss_approach_floor_v1(act).saturating_sub(1)
-}
-
-fn campaign_combat_lab_boss_probe_search_options_v1(
-    config: &BranchCampaignConfigV1,
-) -> RunControlSearchCombatOptions {
-    let mut options = config.search_options.clone();
-    let max_nodes = options
-        .max_nodes
-        .or(config.search_max_nodes)
-        .unwrap_or(COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_NODES)
-        .min(COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_NODES);
-    let wall_ms = options
-        .wall_ms
-        .or(config.search_wall_ms)
-        .unwrap_or(COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_WALL_MS)
-        .min(COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_WALL_MS);
-    options.max_nodes = Some(max_nodes);
-    options.wall_ms = Some(wall_ms);
-    options.max_hp_loss = Some(RunControlHpLossLimit::Unlimited);
-    options.evidence = None;
-    options
 }
 
 fn try_recover_auto_advanceable_stuck_branch_v1(
@@ -1766,7 +1694,6 @@ pub fn campaign_branch_from_report_branch_v1(
         ),
         assessment: None,
         final_boss_combat_record: branch.final_boss_combat_record.clone(),
-        combat_lab_probes: Vec::new(),
     }
 }
 

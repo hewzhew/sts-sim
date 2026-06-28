@@ -283,9 +283,6 @@ pub fn render_branch_campaign_compact_with_detail_v1(
             lines.push(format!("  boss example: {}", pressure.example));
         }
     }
-    if let Some(combat_lab) = render_campaign_combat_lab_probe_summary_v1(report) {
-        lines.extend(combat_lab);
-    }
     let strategic_signals = campaign_strategic_signals_for_render_v1(report);
     if detail != BranchCampaignReportDetailV1::Human {
         if let Some(strategic) = render_campaign_strategic_signals_v1(&strategic_signals) {
@@ -754,69 +751,6 @@ fn branch_has_boss_mechanic_pressure_v1(branch: &BranchCampaignBranchV1) -> bool
     !summary.boss.is_empty()
         && !summary.boss_pressure.is_empty()
         && summary.floor >= boss_approach_floor_v1(summary.act)
-}
-
-fn render_campaign_combat_lab_probe_summary_v1(
-    report: &BranchCampaignReportV1,
-) -> Option<Vec<String>> {
-    let probes = report
-        .active
-        .iter()
-        .chain(report.frozen.iter())
-        .chain(report.victories.iter())
-        .chain(report.abandoned.iter())
-        .chain(report.stuck.iter())
-        .chain(report.dead.iter())
-        .flat_map(|branch| branch.combat_lab_probes.iter())
-        .collect::<Vec<_>>();
-    if probes.is_empty() {
-        return None;
-    }
-
-    let mut kind_counts = BTreeMap::<String, usize>::new();
-    let mut result_counts = BTreeMap::<String, usize>::new();
-    for probe in &probes {
-        *kind_counts.entry(probe.kind.clone()).or_default() += 1;
-        *result_counts.entry(probe.result.clone()).or_default() += 1;
-    }
-    let example = probes
-        .iter()
-        .find(|probe| probe.kind == "current_act_boss_preview")
-        .or_else(|| probes.first())
-        .expect("non-empty probe list");
-
-    let mut lines = vec![
-        format!(
-            "Combat lab probes: {} {}",
-            render_string_count_map_v1(&kind_counts, 6),
-            render_string_count_map_v1(&result_counts, 6)
-        ),
-        format!(
-            "  probe example: boss={} source={} boundary={} result={}",
-            example.boss.as_deref().unwrap_or("unknown"),
-            example.source,
-            example.boundary,
-            example.result
-        ),
-    ];
-    if !example.diagnosis.is_empty() {
-        lines.push(format!(
-            "  probe diagnosis: {}/{} confidence={} signals={}",
-            example.diagnosis.outcome_class,
-            example.diagnosis.search_reason,
-            example.diagnosis.confidence,
-            render_probe_signal_list_v1(&example.diagnosis.signals)
-        ));
-    }
-    Some(lines)
-}
-
-fn render_probe_signal_list_v1(signals: &[String]) -> String {
-    if signals.is_empty() {
-        "-".to_string()
-    } else {
-        signals.join(",")
-    }
 }
 
 fn boss_mechanic_pressure_key_v1(branch: &BranchCampaignBranchV1) -> (i32, i32, i32) {

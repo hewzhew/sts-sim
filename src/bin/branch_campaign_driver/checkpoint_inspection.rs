@@ -1,4 +1,3 @@
-use sts_simulator::eval::branch_campaign::BranchCampaignReportV1;
 use sts_simulator::eval::decision_path::render_decision_path_commands_compact_v1;
 use sts_simulator::eval::run_control::{
     build_decision_surface, render_run_control_details, render_run_control_state,
@@ -16,8 +15,8 @@ use super::command_inputs::{InspectCommandInput, InspectFiltersInput, InspectMod
 use super::final_boss_combat::{
     render_final_boss_combat_report_inspection_v1, render_last_auto_combat_checkpoint_inspection_v1,
 };
+use super::inspect_summary;
 use super::shop_challenge::render_checkpoint_shop_plan_challenge_v1;
-use super::{combat_lab, inspect_summary};
 
 pub(super) fn run_final_boss_combat_report_inspection(
     input: &InspectCommandInput,
@@ -169,21 +168,6 @@ pub(super) fn run_checkpoint_inspection(input: &InspectCommandInput) -> Result<(
                 &commands,
             )?
         );
-    } else if input.modes.combat_lab {
-        let branch = report_branch_for_commands_v1(report.as_ref(), &commands);
-        println!(
-            "{}",
-            combat_lab::render_checkpoint_combat_lab_v1(
-                checkpoint.seed,
-                inspect_index,
-                match_count,
-                &session,
-                &commands,
-                branch,
-                &input.search_options,
-                input.modes.probe_boss,
-            )
-        );
     } else if input.modes.search {
         let outcome = session.apply_command(RunControlCommand::SearchCombat(
             input.search_options.clone(),
@@ -195,22 +179,6 @@ pub(super) fn run_checkpoint_inspection(input: &InspectCommandInput) -> Result<(
         println!("{}", render_run_control_state(&session));
     }
     Ok(())
-}
-
-fn report_branch_for_commands_v1<'a>(
-    report: Option<&'a BranchCampaignReportV1>,
-    commands: &[String],
-) -> Option<&'a sts_simulator::eval::branch_campaign::BranchCampaignBranchV1> {
-    let report = report?;
-    report
-        .active
-        .iter()
-        .chain(report.frozen.iter())
-        .chain(report.abandoned.iter())
-        .chain(report.stuck.iter())
-        .chain(report.victories.iter())
-        .chain(report.dead.iter())
-        .find(|branch| branch.commands == commands)
 }
 
 fn checkpoint_session_matches_filters(
@@ -362,8 +330,6 @@ mod tests {
         InspectModesInput {
             search: false,
             last_auto_combat: false,
-            combat_lab: false,
-            probe_boss: false,
             shop_evidence: false,
             evidence_detail: InspectEvidenceDetailV1::Compact,
             shop_challenge: false,

@@ -385,8 +385,6 @@ impl InspectCommandInput {
             modes: InspectModesInput {
                 search: args.modes.inspect_search,
                 last_auto_combat: args.modes.inspect_last_auto_combat,
-                combat_lab: args.modes.inspect_combat_lab,
-                probe_boss: args.modes.probe_boss,
                 shop_evidence: args.modes.inspect_shop_evidence,
                 evidence_detail: InspectEvidenceDetailV1::from(args.modes.inspect_evidence_detail),
                 shop_challenge: args.modes.challenge_shop_plans,
@@ -419,8 +417,6 @@ impl InspectCommandInput {
             modes: InspectModesInput {
                 search: args.inspect_search,
                 last_auto_combat: args.inspect_last_auto_combat,
-                combat_lab: args.inspect_combat_lab,
-                probe_boss: args.probe_boss,
                 shop_evidence: args.inspect_shop_evidence,
                 evidence_detail: InspectEvidenceDetailV1::from(args.inspect_evidence_detail),
                 shop_challenge: args.challenge_shop_plans,
@@ -449,8 +445,6 @@ pub(super) struct InspectFiltersInput {
 pub(super) struct InspectModesInput {
     pub(super) search: bool,
     pub(super) last_auto_combat: bool,
-    pub(super) combat_lab: bool,
-    pub(super) probe_boss: bool,
     pub(super) shop_evidence: bool,
     pub(super) evidence_detail: InspectEvidenceDetailV1,
     pub(super) shop_challenge: bool,

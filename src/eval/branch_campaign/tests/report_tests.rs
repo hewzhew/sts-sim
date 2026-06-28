@@ -1,66 +1,6 @@
 use super::*;
 
 #[test]
-fn campaign_current_act_boss_probe_gate_accepts_only_late_key_boundaries() {
-    let mut late_shop = test_campaign_branch("late-shop", 24, 70);
-    late_shop.frontier_title = "Shop".to_string();
-    let summary = late_shop.summary.as_mut().unwrap();
-    summary.act = 2;
-    summary.boss = "TheChamp".to_string();
-
-    assert!(campaign_branch_should_probe_current_act_boss_v1(&late_shop));
-
-    let mut late_reward_overlay = late_shop.clone();
-    late_reward_overlay.frontier_title = "Reward Overlay".to_string();
-    late_reward_overlay.summary.as_mut().unwrap().floor = 23;
-    assert!(campaign_branch_should_probe_current_act_boss_v1(
-        &late_reward_overlay
-    ));
-
-    let mut early_reward = late_shop.clone();
-    early_reward.frontier_title = "Card Reward".to_string();
-    early_reward.summary.as_mut().unwrap().floor = 12;
-    assert!(!campaign_branch_should_probe_current_act_boss_v1(
-        &early_reward
-    ));
-
-    let mut combat = late_shop.clone();
-    combat.frontier_title = "Combat".to_string();
-    assert!(!campaign_branch_should_probe_current_act_boss_v1(&combat));
-}
-
-#[test]
-fn campaign_combat_lab_boss_probe_options_are_report_only_and_capped() {
-    let config = BranchCampaignConfigV1 {
-        search_max_nodes: Some(200_000),
-        search_wall_ms: Some(2_000),
-        search_options: RunControlSearchCombatOptions {
-            max_nodes: Some(150_000),
-            wall_ms: Some(1_500),
-            max_hp_loss: Some(RunControlHpLossLimit::Limit(3)),
-            evidence: Some(
-                crate::eval::run_control::RunControlSearchEvidenceTarget::LastCaptureCase,
-            ),
-            ..RunControlSearchCombatOptions::default()
-        },
-        ..BranchCampaignConfigV1::default()
-    };
-
-    let options = campaign_combat_lab_boss_probe_search_options_v1(&config);
-
-    assert_eq!(
-        options.max_nodes,
-        Some(super::COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_NODES)
-    );
-    assert_eq!(
-        options.wall_ms,
-        Some(super::COMBAT_LAB_CAMPAIGN_BOSS_PROBE_MAX_WALL_MS)
-    );
-    assert_eq!(options.max_hp_loss, Some(RunControlHpLossLimit::Unlimited));
-    assert_eq!(options.evidence, None);
-}
-
-#[test]
 fn campaign_report_branch_preserves_stop_reason() {
     let parent = test_campaign_branch("parent", 3, 80);
     let mut child = test_report_branch(

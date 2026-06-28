@@ -38,9 +38,9 @@ use super::state_graph::{
 use super::summary::campaign_refresh_branch_summary_from_session_v1;
 use super::{
     campaign_branch_from_report_branch_v1, campaign_child_branch_id_v1,
-    campaign_replay_commands_for_path_v1, maybe_attach_campaign_combat_lab_probe_v1,
-    BranchCampaignBranchStatusV1, BranchCampaignBranchV1, BranchCampaignConfigV1,
-    BranchCampaignDecisionObservationV1, BranchCampaignRouteEvidenceSummaryV1,
+    campaign_replay_commands_for_path_v1, BranchCampaignBranchStatusV1, BranchCampaignBranchV1,
+    BranchCampaignConfigV1, BranchCampaignDecisionObservationV1,
+    BranchCampaignRouteEvidenceSummaryV1,
 };
 
 struct BranchCampaignParentRoundResultV1 {
@@ -263,7 +263,6 @@ where
             let mut child = campaign_branch_from_report_branch_v1(parent, branch);
             if let Some(snapshot) = result.branch_sessions.get(&branch.branch_id) {
                 campaign_refresh_branch_summary_from_session_v1(&mut child, snapshot);
-                maybe_attach_campaign_combat_lab_probe_v1(config, &mut child, snapshot);
                 state_store.insert_child_session(
                     &parent.commands,
                     child.commands.clone(),
@@ -1383,7 +1382,6 @@ fn campaign_branch_from_parent_replay_error_v1(
     branch.stop_reason = format!("parent replay failed: {error}");
     branch.rank_key = -900_000;
     branch.final_boss_combat_record = None;
-    branch.combat_lab_probes.clear();
     branch
 }
 
@@ -1438,7 +1436,6 @@ mod tests {
             rank_breakdown: None,
             assessment: None,
             final_boss_combat_record: None,
-            combat_lab_probes: Vec::new(),
         };
 
         let event = campaign_route_candidate_pool_journal_event_v1(

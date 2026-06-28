@@ -19,8 +19,7 @@ use crate::eval::branch_experiment_retention::{
 use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
 use crate::eval::run_control::{
     CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
-    RunControlConfig, RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSession,
-    RunControlSessionCheckpointV1,
+    RunControlConfig, RunControlHpLossLimit, RunControlSession, RunControlSessionCheckpointV1,
 };
 use crate::state::core::EngineState;
 use crate::state::events::{EventId, EventState};
@@ -108,7 +107,6 @@ fn campaign_branch_from_report_appends_new_choice_path() {
         rank_breakdown: None,
         assessment: None,
         final_boss_combat_record: None,
-        combat_lab_probes: Vec::new(),
     };
     let report_branch = test_report_branch(
         "root.rp 1",
@@ -180,7 +178,6 @@ fn campaign_branch_from_report_prefixes_parent_branch_id() {
         rank_breakdown: None,
         assessment: None,
         final_boss_combat_record: None,
-        combat_lab_probes: Vec::new(),
     };
     let report_branch = test_report_branch(
         "root.branch-skip-card-reward 0",
@@ -906,7 +903,6 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
         rank_breakdown: None,
         assessment: None,
         final_boss_combat_record: None,
-        combat_lab_probes: Vec::new(),
     }
 }
 

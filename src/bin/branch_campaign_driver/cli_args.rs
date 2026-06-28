@@ -466,18 +466,6 @@ pub(super) struct Args {
     pub(super) inspect_last_auto_combat: bool,
 
     #[arg(
-        long = "inspect-combat-lab",
-        help = "Print a report-only CombatLabProbeV1 packet for the selected checkpoint branch"
-    )]
-    pub(super) inspect_combat_lab: bool,
-
-    #[arg(
-        long = "probe-boss",
-        help = "When used with --inspect-combat-lab, run a report-only search preview against the current act boss"
-    )]
-    pub(super) probe_boss: bool,
-
-    #[arg(
         long = "inspect-shop-evidence",
         help = "Print current-code shop candidate evidence and strategic deltas for the selected checkpoint session"
     )]
@@ -1467,18 +1455,6 @@ pub(super) struct InspectModeArgs {
     pub(super) inspect_last_auto_combat: bool,
 
     #[arg(
-        long = "inspect-combat-lab",
-        help = "Print a report-only CombatLabProbeV1 packet for the selected checkpoint branch"
-    )]
-    pub(super) inspect_combat_lab: bool,
-
-    #[arg(
-        long = "probe-boss",
-        help = "When used with --inspect-combat-lab, run a report-only search preview against the current act boss"
-    )]
-    pub(super) probe_boss: bool,
-
-    #[arg(
         long = "inspect-shop-evidence",
         help = "Print current-code shop candidate evidence and strategic deltas for the selected checkpoint session"
     )]
@@ -1961,8 +1937,6 @@ impl Args {
             inspect_index: None,
             inspect_search: false,
             inspect_last_auto_combat: false,
-            inspect_combat_lab: false,
-            probe_boss: false,
             inspect_shop_evidence: false,
             inspect_evidence_detail: InspectEvidenceDetailArg::Compact,
             challenge_shop_plans: false,
@@ -2367,8 +2341,6 @@ impl InspectModeArgs {
         args.inspect_summary = self.inspect_summary;
         args.inspect_search = self.inspect_search;
         args.inspect_last_auto_combat = self.inspect_last_auto_combat;
-        args.inspect_combat_lab = self.inspect_combat_lab;
-        args.probe_boss = self.probe_boss;
         args.inspect_shop_evidence = self.inspect_shop_evidence;
         args.inspect_evidence_detail = self.inspect_evidence_detail;
         args.challenge_shop_plans = self.challenge_shop_plans;

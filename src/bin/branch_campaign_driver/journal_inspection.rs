@@ -2232,7 +2232,6 @@ mod tests {
             rank_breakdown: None,
             assessment: None,
             final_boss_combat_record: None,
-            combat_lab_probes: Vec::new(),
         }
     }
 
