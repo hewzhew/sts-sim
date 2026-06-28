@@ -3,7 +3,7 @@ use sts_simulator::eval::run_control::{
     RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlAutoStepOptions,
     RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommand, RunControlCommandOutcome,
     RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
-    RunControlSession,
+    RunControlSession, RunControlTraceAnnotationV1,
 };
 use sts_simulator::state::core::{ClientInput, EngineState, RunResult};
 
@@ -173,58 +173,67 @@ fn try_boss_retry(
         }
     };
     let combat_search = combat_search_summaries(&outcome);
-    let action_keys = session
-        .last_completed_combat_automation_trajectory()
-        .map(|record| {
-            record
-                .actions
-                .iter()
-                .map(|action| action.action_key.clone())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let report_status = if !action_keys.is_empty() {
-        BossRetryStatus::Won
-    } else {
-        BossRetryStatus::Failed(render::one_line(&outcome.message))
-    };
-    let report = BossRetryReport {
-        status: report_status,
-        max_nodes: args.boss_search_nodes,
-        wall_ms: args.boss_search_ms,
-        action_keys,
-    };
     if terminal_label(session).is_some() {
-        return Some((
-            BranchStatus::Terminal(terminal_label(session).unwrap()),
-            report,
-            combat_search,
-        ));
+        let status = BranchStatus::Terminal(terminal_label(session).unwrap());
+        let report = boss_retry_report(args, &outcome, &status);
+        return Some((status, report, combat_search));
     }
     let stop = match outcome.auto_stop.as_ref() {
         Some(stop) => stop,
         None => {
-            return Some((
-                BranchStatus::AdvanceFailed(
-                    "boss retry returned non-terminal success without auto_stop".to_string(),
-                ),
-                report,
-                combat_search,
-            ));
+            let status = BranchStatus::AdvanceFailed(
+                "boss retry returned non-terminal success without auto_stop".to_string(),
+            );
+            let report = boss_retry_report(args, &outcome, &status);
+            return Some((status, report, combat_search));
         }
     };
     let status = classify_boundary(session, stop);
-    let report = if matches!(report.status, BossRetryStatus::Won)
-        && !matches!(status, BranchStatus::CombatGap { .. })
-    {
-        BossRetryReport {
-            status: BossRetryStatus::Advanced(render::status_boundary(&status).to_string()),
-            ..report
-        }
-    } else {
-        report
-    };
+    let report = boss_retry_report(args, &outcome, &status);
     Some((status, report, combat_search))
+}
+
+fn boss_retry_report(
+    args: Args,
+    outcome: &RunControlCommandOutcome,
+    status: &BranchStatus,
+) -> BossRetryReport {
+    let action_keys = retry_complete_search_action_keys(outcome);
+    let status = match status {
+        BranchStatus::CombatGap { reason, .. } => BossRetryStatus::Failed(reason.clone()),
+        BranchStatus::ApplyFailed(err)
+        | BranchStatus::AdvanceFailed(err)
+        | BranchStatus::BudgetGap { reason: err, .. } => BossRetryStatus::Failed(err.clone()),
+        BranchStatus::Terminal("defeat") => {
+            BossRetryStatus::Failed("retry ended in defeat".to_string())
+        }
+        BranchStatus::Terminal(result) => BossRetryStatus::Terminal(result),
+        _ => BossRetryStatus::Advanced(render::status_boundary(status).to_string()),
+    };
+    BossRetryReport {
+        status,
+        max_nodes: args.boss_search_nodes,
+        wall_ms: args.boss_search_ms,
+        action_keys,
+    }
+}
+
+fn retry_complete_search_action_keys(outcome: &RunControlCommandOutcome) -> Vec<String> {
+    outcome
+        .trace_annotations
+        .iter()
+        .find_map(|annotation| match annotation {
+            RunControlTraceAnnotationV1::CombatAutomationTrajectory {
+                source, actions, ..
+            } if source == "search_combat" => Some(
+                actions
+                    .iter()
+                    .map(|action| action.action_key.clone())
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .unwrap_or_default()
 }
 
 fn apply_policy_owner(

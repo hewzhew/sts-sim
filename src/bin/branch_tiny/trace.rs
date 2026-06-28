@@ -77,8 +77,8 @@ impl TraceWriter {
             "boss_retry": branch.boss_retry.as_ref().map(|retry| json!({
                 "status": match &retry.status {
                     BossRetryStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
-                    BossRetryStatus::Won => json!({"kind": "won"}),
                     BossRetryStatus::Advanced(boundary) => json!({"kind": "advanced", "boundary": boundary}),
+                    BossRetryStatus::Terminal(result) => json!({"kind": "terminal", "result": result}),
                 },
                 "nodes": retry.max_nodes,
                 "ms": retry.wall_ms,

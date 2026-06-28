@@ -149,7 +149,7 @@ fn print_boss_retry(retry: &BossRetryReport) {
         .take(12)
         .cloned()
         .collect::<Vec<_>>();
-    println!("    win_path: {}", shown.join(" -> "));
+    println!("    applied_path: {}", shown.join(" -> "));
     if retry.action_keys.len() > shown.len() {
         println!(
             "    ... {} more actions",
@@ -161,8 +161,8 @@ fn print_boss_retry(retry: &BossRetryReport) {
 fn boss_retry_status_label(status: &BossRetryStatus) -> String {
     match status {
         BossRetryStatus::Failed(reason) => format!("failed ({})", one_line(reason)),
-        BossRetryStatus::Won => "combat-win".to_string(),
         BossRetryStatus::Advanced(boundary) => format!("combat-win -> {boundary}"),
+        BossRetryStatus::Terminal(result) => format!("terminal:{result}"),
     }
 }
 

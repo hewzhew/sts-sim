@@ -43,8 +43,8 @@ struct BossRetryReport {
 #[derive(Clone)]
 enum BossRetryStatus {
     Failed(String),
-    Won,
     Advanced(String),
+    Terminal(&'static str),
 }
 
 #[derive(Clone)]
