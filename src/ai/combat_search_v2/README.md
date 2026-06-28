@@ -33,12 +33,13 @@ this map and extend an existing boundary when one already exists.
     states whenever search reaches a new empty-prefix player-turn boundary,
     with exact source-key de-duplication. It does not prune atomic branches or
     create terminal outcome records by itself.
-  - `tactical_enemy_turn_boundary_frontier_seed` is the default gated seed. It
-    uses the same exact end-state seeding only at empty-prefix turn boundaries
-    where typed enemy-mechanics facts show tactical multi-enemy pressure, such
-    as a living Healer/support enemy with another living enemy or a Fungi Beast
-    swarm. It is intended for these narrow tactical fights without globally
-    crowding ordinary combats.
+  - `tactical_enemy_turn_boundary_frontier_seed` is an opt-in experimental
+    gated seed. It uses the same exact end-state seeding only at empty-prefix
+    turn boundaries where typed enemy-mechanics facts show tactical multi-enemy
+    pressure, such as a living Healer/support enemy with another living enemy or
+    a Fungi Beast swarm. It should stay out of default hallway search until its
+    budget and scheduling behavior are tuned enough not to crowd ordinary
+    exact search.
 - `turn_local_dominance/`: same-parent same-turn pruning only. Cross-turn or
   cross-parent dominance belongs in `frontier/` resource dominance, not here.
 

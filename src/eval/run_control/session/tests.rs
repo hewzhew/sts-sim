@@ -233,9 +233,7 @@ fn run_control_search_combat_applies_complete_winning_trajectory() {
     assert!(outcome
         .message
         .contains("frontier_policy=round_robin_eval_buckets"));
-    assert!(outcome
-        .message
-        .contains("turn_plan_policy=tactical_enemy_turn_boundary_frontier_seed"));
+    assert!(outcome.message.contains("turn_plan_policy=diagnostic_only"));
     assert!(outcome.message.contains("search_diagnostics="));
     assert!(outcome.message.contains("search_performance="));
     assert!(outcome.message.contains("turn_plan_seeded="));

@@ -170,7 +170,7 @@ fn run() -> Result<(), String> {
         args.seed, args.ascension, args.generations, args.max_branches
     );
     println!(
-        "branch cap: {}; search={}nodes/{}ms; rescue={}nodes/{}ms diagnostic+tactical; boss_retry={}nodes/{}ms; '>' marks expanded choices",
+        "branch cap: {}; search={}nodes/{}ms; rescue={}nodes/{}ms diagnostic; boss_retry={}nodes/{}ms; '>' marks expanded choices",
         args.max_branches,
         args.search_nodes,
         args.search_ms,
@@ -293,7 +293,7 @@ fn parse_args() -> Result<(Args, Option<PathBuf>, Option<PathBuf>), String> {
         search_nodes: 50_000,
         search_ms: 500,
         rescue_search_nodes: 200_000,
-        rescue_search_ms: 2_000,
+        rescue_search_ms: 3_000,
         boss_search_nodes: 800_000,
         boss_search_ms: 8_000,
     };

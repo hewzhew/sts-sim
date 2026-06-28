@@ -150,7 +150,7 @@ impl Default for CombatSearchV2Config {
             rollout_max_evaluations: super::super::rollout::DEFAULT_ROLLOUT_MAX_EVALUATIONS,
             rollout_max_actions: super::super::rollout::DEFAULT_ROLLOUT_MAX_ACTIONS,
             rollout_beam_width: super::super::rollout::DEFAULT_TURN_BEAM_WIDTH,
-            turn_plan_policy: CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
             frontier_policy: CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets,
             turn_plan_probe_max_inner_nodes: None,
             turn_plan_probe_max_end_states: None,
@@ -261,7 +261,7 @@ pub enum CombatSearchV2TurnPlanPolicy {
 
 impl Default for CombatSearchV2TurnPlanPolicy {
     fn default() -> Self {
-        Self::TacticalEnemyTurnBoundaryFrontierSeed
+        Self::DiagnosticOnly
     }
 }
 

@@ -813,7 +813,7 @@ fn config_and_turn_plan_policy_defaults_match() {
     );
     assert_eq!(
         CombatSearchV2TurnPlanPolicy::default().label(),
-        "tactical_enemy_turn_boundary_frontier_seed"
+        "diagnostic_only"
     );
 }
 
