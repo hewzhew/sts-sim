@@ -31,14 +31,6 @@ pub(super) fn apply_campfire_policy_action(
         )));
     }
     if !smith_available {
-        if !rest_available && choices.contains(&CampfireChoice::Recall) {
-            let outcome =
-                session.apply_input(ClientInput::CampfireOption(CampfireChoice::Recall))?;
-            return Ok(Some((
-                outcome,
-                "campfire policy: recall without rest or smith".to_string(),
-            )));
-        }
         return Ok(None);
     }
 

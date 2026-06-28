@@ -15,6 +15,10 @@ pub fn handle(
     run_state: &mut RunState,
     input: Option<ClientInput>,
 ) -> bool {
+    if input.is_none() && get_available_options(run_state).is_empty() {
+        *engine_state = EngineState::MapNavigation;
+        return true;
+    }
     if let Some(ClientInput::CampfireOption(choice)) = input {
         if !campfire_choice_is_available(run_state, choice) {
             return true;
@@ -284,6 +288,42 @@ mod tests {
             matches!(engine_state, EngineState::Campfire),
             "invalid campfire input should leave the player at the campfire"
         );
+    }
+
+    #[test]
+    fn no_usable_campfire_options_proceeds_like_java_ui() {
+        let mut engine_state = EngineState::Campfire;
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::CoffeeDripper));
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::FusionHammer));
+
+        assert!(handle(&mut engine_state, &mut run_state, None));
+
+        assert!(matches!(engine_state, EngineState::MapNavigation));
+    }
+
+    #[test]
+    fn recall_only_campfire_remains_a_real_choice() {
+        let mut engine_state = EngineState::Campfire;
+        let mut run_state = RunState::new(1, 0, false, "Ironclad");
+        run_state.relics.clear();
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::CoffeeDripper));
+        run_state
+            .relics
+            .push(RelicState::new(RelicId::FusionHammer));
+        run_state.is_final_act_available = true;
+        run_state.keys[0] = false;
+
+        assert!(handle(&mut engine_state, &mut run_state, None));
+
+        assert!(matches!(engine_state, EngineState::Campfire));
     }
 
     #[test]
