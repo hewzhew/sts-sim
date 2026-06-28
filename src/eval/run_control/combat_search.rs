@@ -14,6 +14,7 @@ use crate::sim::combat::{
 use crate::sim::combat_legal_actions::engine_local_moves;
 use crate::state::core::{EngineState, RunResult};
 
+use super::combat_candidate_line::{replay_candidate_line, CombatCandidateLine};
 use super::commands::{
     RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlSearchCombatOptions,
     RunControlSearchEvidenceTarget,
@@ -100,18 +101,13 @@ pub(super) fn apply_search_combat(
         outcome.search_evidence_path = saved_evidence;
         return Ok(outcome);
     };
-    let mut selected_actions = trajectory.actions.clone();
-    let mut selected_final_hp = trajectory.final_hp;
-    let mut selected_hp_loss = trajectory.hp_loss;
-    let mut selected_line_source = "search_combat";
+    let original_line = CombatCandidateLine::from_search_trajectory(trajectory);
+    let mut selected_line = original_line.clone();
     let mut repair_summary: Option<String> = None;
     if let Some(repair) =
         super::combat_line_repair::try_repair_winning_trajectory(&start, trajectory, &config)
     {
-        selected_actions = repair.actions;
-        selected_final_hp = repair.final_hp;
-        selected_hp_loss = repair.hp_loss;
-        selected_line_source = "line_repair";
+        selected_line = repair.line;
         repair_summary = Some(format!(
             "line_repair attempts={} wins={} improvements={} elapsed_ms={} original_hp_loss={} repaired_hp_loss={}",
             repair.attempts,
@@ -119,12 +115,27 @@ pub(super) fn apply_search_combat(
             repair.improvements,
             repair.elapsed_ms,
             trajectory.hp_loss,
-            selected_hp_loss
+            selected_line.hp_loss
         ));
     }
 
+    let replay = replay_candidate_line(
+        &start,
+        selected_line.source,
+        &selected_line.actions,
+        &config,
+    )?;
+    if replay.line.terminal != CombatTerminal::Win {
+        return Err(format!(
+            "selected combat candidate line did not replay to win; source={} terminal={:?}",
+            replay.line.source.label(),
+            replay.line.terminal
+        ));
+    }
+    selected_line = replay.line;
+
     if let Some(max_hp_loss) = effective_hp_loss_limit(session, &options) {
-        if selected_hp_loss > max_hp_loss as i32 {
+        if selected_line.hp_loss > max_hp_loss as i32 {
             if let Some(outcome) = try_apply_turn_segment_after_rejection(
                 session,
                 &start,
@@ -143,7 +154,7 @@ pub(super) fn apply_search_combat(
                     "complete_winning_candidate_exceeds_hp_loss_limit",
                     Some(format!(
                         "candidate_hp_loss={} max_hp_loss={max_hp_loss}",
-                        selected_hp_loss
+                        selected_line.hp_loss
                     )),
                 ),
                 render_saved_evidence_note(saved_evidence.as_deref()),
@@ -162,10 +173,8 @@ pub(super) fn apply_search_combat(
         }
     }
 
-    verify_trajectory_replays_to_win(&start, &selected_actions, &config)?;
-
     let before_snapshot = RunVisibleSnapshot::capture(session);
-    let applied = selected_actions;
+    let applied = selected_line.actions.clone();
     let mut automation_actions = Vec::new();
     session.mark_current_combat_search_resolved();
     for action in &applied {
@@ -200,9 +209,8 @@ pub(super) fn apply_search_combat(
         render_search_application(
             &report,
             &applied,
-            selected_line_source,
-            selected_final_hp,
-            selected_hp_loss,
+            &selected_line,
+            replay.applied_count,
             repair_summary.as_deref(),
         ),
         render_saved_evidence_note(saved_evidence.as_deref()),
@@ -737,54 +745,6 @@ fn search_config(
     }
 }
 
-fn verify_trajectory_replays_to_win(
-    start: &CombatPosition,
-    actions: &[CombatSearchV2ActionTrace],
-    config: &CombatSearchV2Config,
-) -> Result<(), String> {
-    let stepper = EngineCombatStepper;
-    let mut position = start.clone();
-    for action in actions {
-        let choices = filter_combat_search_legal_actions(
-            stepper.legal_action_choices(&position),
-            config.potion_policy,
-            &position.combat,
-        );
-        let Some(choice) = choices
-            .iter()
-            .find(|choice| choice.input == action.input && choice.action_key == action.action_key)
-        else {
-            return Err(format!(
-                "search-combat dry-run drift at step {}: expected {} ({})",
-                action.step_index,
-                action.action_key,
-                client_input_hint(&action.input)
-            ));
-        };
-        let step = stepper.apply_to_stable(
-            &position,
-            choice.input.clone(),
-            CombatStepLimits {
-                max_engine_steps: config.max_engine_steps_per_action,
-                deadline: None,
-            },
-        );
-        if step.truncated {
-            return Err(format!(
-                "search-combat dry-run truncated at step {} after {} engine steps",
-                action.step_index, step.engine_steps
-            ));
-        }
-        position = step.position;
-    }
-    match combat_terminal(&position.engine, &position.combat) {
-        CombatTerminal::Win => Ok(()),
-        other => Err(format!(
-            "search-combat dry-run did not finish as win; terminal={other:?}"
-        )),
-    }
-}
-
 fn verify_segment_trajectory_replays(
     start: &CombatPosition,
     actions: &[CombatSearchV2ActionTrace],
@@ -886,9 +846,8 @@ fn render_search_rejection(
 fn render_search_application(
     report: &CombatSearchV2Report,
     actions: &[CombatSearchV2ActionTrace],
-    selected_source: &str,
-    selected_final_hp: i32,
-    selected_hp_loss: i32,
+    selected_line: &CombatCandidateLine,
+    replay_applied_count: usize,
     repair_summary: Option<&str>,
 ) -> String {
     let trajectory = report
@@ -907,18 +866,29 @@ fn render_search_application(
         render_policy_evidence_summary(report),
         format!("  coverage_reason={}", report.outcome.coverage_reason),
         format!(
-            "  selected_source={selected_source} terminal={:?} final_hp={} hp_loss={}",
-            SearchTerminalLabel::Win,
-            selected_final_hp,
-            selected_hp_loss
+            "  selected_line source={} terminal={:?} final_hp={} hp_loss={} turns={} cards_played={} potions_used={} potions_discarded={} replay_applied={}",
+            selected_line.source.label(),
+            selected_line.terminal,
+            selected_line.final_hp,
+            selected_line.hp_loss,
+            selected_line.turns,
+            selected_line.cards_played,
+            selected_line.potions_used,
+            selected_line.potions_discarded,
+            replay_applied_count
         ),
         format!(
-            "  original_final_hp={} original_hp_loss={} original_turns={} original_cards_played={} original_potions_used={}",
+            "  selected_assumptions={}",
+            selected_line.assumption_labels().join(",")
+        ),
+        format!(
+            "  original_final_hp={} original_hp_loss={} original_turns={} original_cards_played={} original_potions_used={} original_potions_discarded={}",
             trajectory.final_hp,
             trajectory.hp_loss,
             trajectory.turns,
             trajectory.cards_played,
-            trajectory.potions_used
+            trajectory.potions_used,
+            trajectory.potions_discarded
         ),
         format!(
             "  nodes_expanded={} nodes_generated={} nodes_to_first_win={:?}",

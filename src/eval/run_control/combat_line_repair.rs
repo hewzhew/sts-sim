@@ -14,6 +14,8 @@ use crate::sim::combat_action::CombatActionChoice;
 use crate::sim::combat_projection::monster_preview_total_damage_in_combat;
 use crate::state::core::ClientInput;
 
+use super::combat_candidate_line::{CombatCandidateLine, CombatCandidateLineSource};
+
 const MIN_REPAIR_HP_LOSS: i32 = 8;
 const REPAIR_CUTS: usize = 4;
 const REPAIR_NODES: usize = 2_000;
@@ -21,9 +23,7 @@ const REPAIR_MS: u64 = 250;
 const REPAIR_BEAM: usize = 96;
 
 pub(super) struct CombatLineRepairOutcome {
-    pub actions: Vec<CombatSearchV2ActionTrace>,
-    pub final_hp: i32,
-    pub hp_loss: i32,
+    pub line: CombatCandidateLine,
     pub attempts: usize,
     pub wins: usize,
     pub improvements: usize,
@@ -81,11 +81,13 @@ pub(super) fn try_repair_winning_trajectory(
     {
         return None;
     }
-    let final_hp = repaired.position.combat.entities.player.current_hp;
     Some(CombatLineRepairOutcome {
-        actions: reindex_actions(repaired.actions),
-        final_hp,
-        hp_loss: (initial_hp - final_hp).max(0),
+        line: CombatCandidateLine::from_position(
+            CombatCandidateLineSource::LineRepair,
+            reindex_actions(repaired.actions),
+            initial_hp,
+            &repaired.position,
+        ),
         attempts: stats.attempts,
         wins: stats.wins,
         improvements: stats.improvements,

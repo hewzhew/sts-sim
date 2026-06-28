@@ -7,6 +7,7 @@ mod boss_relic_policy;
 mod campfire_policy;
 mod card_reward_auto;
 mod combat_auto_policy;
+mod combat_candidate_line;
 mod combat_line_repair;
 mod combat_search;
 mod combat_start;
