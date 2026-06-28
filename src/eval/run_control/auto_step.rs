@@ -726,7 +726,14 @@ fn classify_single_executable_candidate(
             AutoAdvanceClass::Forced
         }
         EngineState::RunPendingChoice(choice)
-            if choice.min_choices == 1 && choice.max_choices == 1 =>
+            if choice.min_choices == 1
+                && choice.max_choices == 1
+                && !matches!(
+                    choice.source,
+                    crate::state::selection::DomainEventSource::Event(
+                        crate::state::events::EventId::LivingWall
+                    )
+                ) =>
         {
             AutoAdvanceClass::Forced
         }

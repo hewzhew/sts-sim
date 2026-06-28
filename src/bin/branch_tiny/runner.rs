@@ -6,6 +6,7 @@ use sts_simulator::eval::run_control::{
     RunControlSession, RunControlTraceAnnotationV1,
 };
 use sts_simulator::state::core::{ClientInput, EngineState, RunResult};
+use sts_simulator::state::selection::DomainEventSource;
 
 use super::render;
 use super::{Args, BossRetryReport, BossRetryStatus, BoundarySite, BranchStatus, Owner};
@@ -245,7 +246,8 @@ fn apply_policy_owner(
         Owner::RewardTiny => reward_tiny_policy_input(session)?,
         Owner::Event(_) => require_visible_input(
             session,
-            sts_simulator::content::events::owner_policy::conservative_owner_policy_input(
+            sts_simulator::content::events::owner_policy::event_owner_policy_input(
+                &session.engine_state,
                 &session.run_state,
             )
             .map_err(|err| format!("{err:?}"))?,
@@ -375,6 +377,12 @@ fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
         EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. } => Some(Owner::RewardTiny),
         EngineState::BossRelicSelect(_) => Some(Owner::BossRelic),
         EngineState::Shop(_) => Some(Owner::ShopTiny),
+        EngineState::RunPendingChoice(choice) => match choice.source {
+            DomainEventSource::Event(sts_simulator::state::events::EventId::LivingWall) => Some(
+                Owner::Event(sts_simulator::state::events::EventId::LivingWall),
+            ),
+            _ => None,
+        },
         _ => None,
     }
 }

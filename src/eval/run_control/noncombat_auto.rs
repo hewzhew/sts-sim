@@ -42,14 +42,16 @@ fn apply_planner_noncombat_policy_with_shop(
             }));
         }
     }
-    if let Some((outcome, summary)) =
-        super::run_choice_policy::apply_run_choice_policy_deck_selection(session)?
-    {
-        return Ok(Some(NonCombatAutoApplication {
-            outcome,
-            summary,
-            stop_after_reason: None,
-        }));
+    if !owner_policy_run_choice(session) {
+        if let Some((outcome, summary)) =
+            super::run_choice_policy::apply_run_choice_policy_deck_selection(session)?
+        {
+            return Ok(Some(NonCombatAutoApplication {
+                outcome,
+                summary,
+                stop_after_reason: None,
+            }));
+        }
     }
     if let Some((outcome, summary)) =
         super::boss_relic_policy::apply_boss_relic_policy_pick(session)?
@@ -86,6 +88,19 @@ fn apply_planner_noncombat_policy_with_shop(
     }
 
     Ok(None)
+}
+
+fn owner_policy_run_choice(session: &RunControlSession) -> bool {
+    matches!(
+        &session.engine_state,
+        crate::state::core::EngineState::RunPendingChoice(choice)
+            if matches!(
+                choice.source,
+                crate::state::selection::DomainEventSource::Event(
+                    crate::state::events::EventId::LivingWall
+                )
+            )
+    )
 }
 
 pub(super) fn apply_branch_experiment_noncombat_policy(
