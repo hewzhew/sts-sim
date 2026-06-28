@@ -11,9 +11,7 @@ use super::campaign_artifact_store::{
 use super::campaign_run::{
     run_ancestor_replay_self_check, run_campaign_command, run_continue_campaign_command,
 };
-use super::checkpoint_inspection::{
-    run_checkpoint_inspection, run_final_boss_combat_report_inspection,
-};
+use super::checkpoint_inspection::run_checkpoint_inspection;
 use super::cli_args::{ArtifactKindArgV1, BranchCampaignCliInputV1};
 use super::command_inputs::ArtifactCommandInput;
 use super::coverage_gap_milestone_summary::{
@@ -88,9 +86,6 @@ impl CampaignAppV1 {
             }
             BranchCampaignDriverRequestV1::ExportDecisionOutcomeDataset(input) => {
                 run_decision_outcome_dataset_export(&input)
-            }
-            BranchCampaignDriverRequestV1::InspectFinalBossCombat(input) => {
-                run_final_boss_combat_report_inspection(&input)
             }
             BranchCampaignDriverRequestV1::InspectJournal(input) => {
                 run_campaign_journal_inspection(&input)

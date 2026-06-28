@@ -27,7 +27,6 @@ pub(super) enum BranchCampaignDriverCommandV1 {
     InspectCoverageGapMilestoneSummary,
     InspectCoverageGapTargetState,
     InspectDecisionObservations,
-    InspectFinalBossCombat,
     InspectCheckpoint,
     RunCampaign,
 }
@@ -54,7 +53,6 @@ pub(super) enum BranchCampaignDriverRequestV1 {
     InspectCoverageGapMilestoneSummary(InspectCommandInput),
     InspectCoverageGapTargetState(InspectCommandInput),
     InspectDecisionObservations(InspectCommandInput),
-    InspectFinalBossCombat(InspectCommandInput),
     InspectCheckpoint(InspectCommandInput),
     RunCampaign(RunCommandInput),
 }
@@ -198,9 +196,6 @@ fn inspect_request_from_input(
         BranchCampaignDriverCommandV1::InspectDecisionObservations => {
             BranchCampaignDriverRequestV1::InspectDecisionObservations(input)
         }
-        BranchCampaignDriverCommandV1::InspectFinalBossCombat => {
-            BranchCampaignDriverRequestV1::InspectFinalBossCombat(input)
-        }
         BranchCampaignDriverCommandV1::InspectCheckpoint => {
             BranchCampaignDriverRequestV1::InspectCheckpoint(input)
         }
@@ -310,11 +305,6 @@ fn driver_request_for_command(
                 InspectCommandInput::from_args(args)?,
             )
         }
-        BranchCampaignDriverCommandV1::InspectFinalBossCombat => {
-            BranchCampaignDriverRequestV1::InspectFinalBossCombat(InspectCommandInput::from_args(
-                args,
-            )?)
-        }
         BranchCampaignDriverCommandV1::InspectCheckpoint => {
             BranchCampaignDriverRequestV1::InspectCheckpoint(InspectCommandInput::from_args(args)?)
         }
@@ -405,9 +395,6 @@ fn legacy_command_from_args(args: &Args) -> BranchCampaignDriverCommandV1 {
     if args.export_decision_outcome_dataset.is_some() && args.inspect_report.is_some() {
         return BranchCampaignDriverCommandV1::ExportDecisionOutcomeDataset;
     }
-    if args.inspect_final_boss_combat {
-        return BranchCampaignDriverCommandV1::InspectFinalBossCombat;
-    }
     if args.inspect_journal {
         return BranchCampaignDriverCommandV1::InspectJournal;
     }
@@ -447,8 +434,6 @@ fn inspect_command_from_inspect_args(
         BranchCampaignDriverCommandV1::InspectCoverageGapMilestoneSummary
     } else if args.modes.inspect_decision_observations {
         BranchCampaignDriverCommandV1::InspectDecisionObservations
-    } else if args.modes.inspect_final_boss_combat {
-        BranchCampaignDriverCommandV1::InspectFinalBossCombat
     } else {
         BranchCampaignDriverCommandV1::InspectCheckpoint
     }

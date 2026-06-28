@@ -581,12 +581,6 @@ pub(super) struct Args {
     pub(super) inspect_query: Option<String>,
 
     #[arg(
-        long = "inspect-final-boss-combat",
-        help = "Print a final boss combat timeline from a BranchCampaignV1 report"
-    )]
-    pub(super) inspect_final_boss_combat: bool,
-
-    #[arg(
         long = "export-outcome-dataset",
         value_name = "PATH",
         help = "Write BranchOutcomeRecordV1 JSONL from a campaign report and optional checkpoint sidecar"
@@ -1577,12 +1571,6 @@ pub(super) struct InspectModeArgs {
         help = "Filter decision observations by candidate label, semantic class, frontier key, or parent choices"
     )]
     pub(super) inspect_query: Option<String>,
-
-    #[arg(
-        long = "inspect-final-boss-combat",
-        help = "Print a final boss combat timeline from a BranchCampaignV1 report"
-    )]
-    pub(super) inspect_final_boss_combat: bool,
 }
 
 #[derive(Debug, ClapArgs)]
@@ -1955,7 +1943,6 @@ impl Args {
             inspect_coverage_gap_target_state: false,
             coverage_gap_milestone_target: "Act2Start".to_string(),
             inspect_query: None,
-            inspect_final_boss_combat: false,
             export_outcome_dataset: None,
             analyze_outcome_dataset: None,
             analyze_decision_outcome_dataset: None,
@@ -2361,7 +2348,6 @@ impl InspectModeArgs {
         args.coverage_gap_origin_source = self.coverage_gap_origin_source;
         args.coverage_gap_progress = self.coverage_gap_progress;
         args.inspect_query = self.inspect_query;
-        args.inspect_final_boss_combat = self.inspect_final_boss_combat;
     }
 }
 

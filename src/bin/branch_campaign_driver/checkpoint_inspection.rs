@@ -11,27 +11,10 @@ use super::checkpoint_evidence::{
     render_checkpoint_deck_mutation_v1, render_checkpoint_route_evidence_v1,
 };
 use super::checkpoint_shop_evidence::render_checkpoint_shop_evidence_v1;
+use super::combat_timeline_inspection::render_last_auto_combat_checkpoint_inspection_v1;
 use super::command_inputs::{InspectCommandInput, InspectFiltersInput, InspectModesInput};
-use super::final_boss_combat::{
-    render_final_boss_combat_report_inspection_v1, render_last_auto_combat_checkpoint_inspection_v1,
-};
 use super::inspect_summary;
 use super::shop_challenge::render_checkpoint_shop_plan_challenge_v1;
-
-pub(super) fn run_final_boss_combat_report_inspection(
-    input: &InspectCommandInput,
-) -> Result<(), String> {
-    let path = input
-        .report_path
-        .as_ref()
-        .ok_or_else(|| "--inspect-final-boss-combat requires --inspect-report PATH".to_string())?;
-    let report = read_campaign_report_v1(path)?;
-    print!(
-        "{}",
-        render_final_boss_combat_report_inspection_v1(&report, input.filters.index.unwrap_or(0))?
-    );
-    Ok(())
-}
 
 pub(super) fn run_checkpoint_inspection(input: &InspectCommandInput) -> Result<(), String> {
     let path = input
