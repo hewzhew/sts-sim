@@ -170,7 +170,7 @@ fn run() -> Result<(), String> {
         args.seed, args.ascension, args.generations, args.max_branches
     );
     println!(
-        "branch cap: {}; search={}nodes/{}ms; rescue={}nodes/{}ms; boss_retry={}nodes/{}ms; '>' marks expanded choices",
+        "branch cap: {}; search={}nodes/{}ms; rescue={}nodes/{}ms diagnostic+tactical; boss_retry={}nodes/{}ms; '>' marks expanded choices",
         args.max_branches,
         args.search_nodes,
         args.search_ms,
@@ -308,7 +308,7 @@ fn parse_args() -> Result<(Args, Option<PathBuf>, Option<PathBuf>), String> {
                 "branch_tiny --seed N --generations N --max-branches N [--search-ms N] [--rescue-search-ms N] [--boss-search-ms N] [--trace-jsonl PATH] [--combat-gap-case-dir DIR]"
             );
             println!(
-                "  owner-audit runner; ordinary combat fast-search escalates once to rescue-search, boss combat retries with boss-search"
+                "  owner-audit runner; ordinary combat fast-search escalates through diagnostic/tactical rescue-search, boss combat retries with boss-search"
             );
             std::process::exit(0);
         }

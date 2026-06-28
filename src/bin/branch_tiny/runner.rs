@@ -44,24 +44,29 @@ pub(super) fn advance_to_owner_or_gap(
                     }
                 }
                 if matches!(status, BranchStatus::CombatGap { .. }) && !is_boss_combat(session) {
-                    match apply_owner_audit_auto_run(
-                        session,
-                        tactical_rescue_auto_step_options(args),
-                    ) {
-                        Ok(rescue) => {
-                            combat_search.extend(combat_search_summaries(&rescue));
-                            auto_steps.extend(rescue.auto_applied_steps.clone());
-                            status = classify_auto_outcome(session, &rescue);
+                    for (label, options) in [
+                        ("diagnostic", diagnostic_rescue_auto_step_options(args)),
+                        ("tactical", tactical_rescue_auto_step_options(args)),
+                    ] {
+                        if !matches!(status, BranchStatus::CombatGap { .. }) {
+                            break;
                         }
-                        Err(err) => {
-                            return advance_result(
-                                BranchStatus::AdvanceFailed(format!(
-                                    "tactical combat rescue failed: {err}"
-                                )),
-                                None,
-                                auto_steps,
-                                combat_search,
-                            );
+                        match apply_owner_audit_auto_run(session, options) {
+                            Ok(rescue) => {
+                                combat_search.extend(combat_search_summaries(&rescue));
+                                auto_steps.extend(rescue.auto_applied_steps.clone());
+                                status = classify_auto_outcome(session, &rescue);
+                            }
+                            Err(err) => {
+                                return advance_result(
+                                    BranchStatus::AdvanceFailed(format!(
+                                        "{label} combat rescue failed: {err}"
+                                    )),
+                                    None,
+                                    auto_steps,
+                                    combat_search,
+                                );
+                            }
                         }
                     }
                 }
@@ -179,6 +184,15 @@ fn primary_auto_step_options(args: Args) -> RunControlAutoStepOptions {
     auto_step_options(
         args.search_nodes,
         args.search_ms,
+        args.auto_ops,
+        CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+    )
+}
+
+fn diagnostic_rescue_auto_step_options(args: Args) -> RunControlAutoStepOptions {
+    auto_step_options(
+        args.rescue_search_nodes,
+        args.rescue_search_ms,
         args.auto_ops,
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
     )
