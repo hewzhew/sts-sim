@@ -68,17 +68,27 @@ before changing card reward, shop, campfire, event, or route strategy.
 
 ## Combat Search Experiment Notes
 
-Current small combat benchmark:
+Current small combat benchmarks:
 
 ```text
 combat_gap_case: seed1552225672 A2F19 Spheric Guardian
 baseline line probe: win, hp_loss=9
 line repair probe: win, hp_loss=7
+
+combat_gap_case: fixtures/combat_cases/seed1700000123_a2f23_slavers_b0034.json
+1000ms default tactical turn-plan seed: no complete win
+1000ms diagnostic_only: no-potion win, final_hp ~= 32
+2000ms: no-potion win, final_hp ~= 32
 ```
 
-The useful current direction is complete-line repair: find one executable win,
-then cut a prefix and repair the suffix. Two ideas are worth keeping for later
-cases, but are not current wins on this hallway benchmark:
+The Spheric Guardian case is useful for complete-line repair: find one
+executable win, then cut a prefix and repair the suffix. The Slavers case is
+different: it is a first-win discovery threshold case. It should be used to
+guard against expensive turn-plan seeding hiding a cheap complete win inside
+the smaller budget.
+
+Two ideas are worth keeping for later cases, but are not current wins on the
+Spheric Guardian hallway benchmark:
 
 - NMCS-style one-step lookahead may help long fights where the search cannot
   find the first complete win. It is a coarse guide toward plausible half-lines,

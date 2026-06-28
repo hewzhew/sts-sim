@@ -1,4 +1,6 @@
-use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
+use sts_simulator::ai::combat_search_v2::{
+    CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
+};
 use sts_simulator::eval::run_control::{
     apply_owner_audit_auto_run, build_decision_surface, CombatSearchTraceSummary,
     RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlAutoStepOptions,
@@ -150,6 +152,7 @@ fn auto_step_options(max_nodes: usize, wall_ms: u64, auto_ops: usize) -> RunCont
             max_nodes: Some(max_nodes),
             wall_ms: Some(wall_ms),
             max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
+            turn_plan_policy: Some(CombatSearchV2TurnPlanPolicy::DiagnosticOnly),
             ..Default::default()
         },
         max_operations: Some(auto_ops),

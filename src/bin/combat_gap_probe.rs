@@ -9,6 +9,7 @@ use sts_simulator::ai::combat_search_v2::{
     explain_combat_search_v2_initial_decision, run_combat_search_v2,
     CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config, CombatSearchV2PotionPolicy,
     CombatSearchV2Report, CombatSearchV2RolloutPolicy, CombatSearchV2TrajectoryReport,
+    CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::sim::combat::CombatPosition;
 
@@ -40,6 +41,8 @@ struct Args {
     rollout_actions: Option<usize>,
     #[arg(long)]
     rollout_evaluations: Option<usize>,
+    #[arg(long, value_parser = parse_turn_plan_policy)]
+    turn_plan_policy: Option<CombatSearchV2TurnPlanPolicy>,
 }
 
 #[derive(Deserialize)]
@@ -76,6 +79,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .potion_policy
             .unwrap_or_else(|| CombatSearchV2Config::default().potion_policy),
         max_potions_used: args.max_potions_used,
+        turn_plan_policy: args
+            .turn_plan_policy
+            .unwrap_or_else(|| CombatSearchV2Config::default().turn_plan_policy),
         input_label: Some(format!("combat_gap_case:{}", args.case.display())),
         ..CombatSearchV2Config::default()
     };
@@ -169,6 +175,18 @@ fn parse_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String
             Ok(CombatSearchV2PotionPolicy::SemanticBudgeted)
         }
         _ => Err(format!("unknown potion policy: {value}")),
+    }
+}
+
+fn parse_turn_plan_policy(value: &str) -> Result<CombatSearchV2TurnPlanPolicy, String> {
+    match value {
+        "diagnostic_only" | "none" => Ok(CombatSearchV2TurnPlanPolicy::DiagnosticOnly),
+        "root_frontier_seed" => Ok(CombatSearchV2TurnPlanPolicy::RootFrontierSeed),
+        "turn_boundary_frontier_seed" => Ok(CombatSearchV2TurnPlanPolicy::TurnBoundaryFrontierSeed),
+        "tactical_enemy_turn_boundary_frontier_seed" | "tactical" => {
+            Ok(CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed)
+        }
+        _ => Err(format!("unknown turn plan policy: {value}")),
     }
 }
 
