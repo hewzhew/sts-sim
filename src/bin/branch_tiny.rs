@@ -123,6 +123,8 @@ struct Args {
     auto_ops: usize,
     search_nodes: usize,
     search_ms: u64,
+    rescue_search_nodes: usize,
+    rescue_search_ms: u64,
     boss_search_nodes: usize,
     boss_search_ms: u64,
 }
@@ -168,10 +170,12 @@ fn run() -> Result<(), String> {
         args.seed, args.ascension, args.generations, args.max_branches
     );
     println!(
-        "branch cap: {}; search={}nodes/{}ms; boss_retry={}nodes/{}ms; '>' marks expanded choices",
+        "branch cap: {}; search={}nodes/{}ms; rescue={}nodes/{}ms; boss_retry={}nodes/{}ms; '>' marks expanded choices",
         args.max_branches,
         args.search_nodes,
         args.search_ms,
+        args.rescue_search_nodes,
+        args.rescue_search_ms,
         args.boss_search_nodes,
         args.boss_search_ms
     );
@@ -286,10 +290,12 @@ fn parse_args() -> Result<(Args, Option<PathBuf>, Option<PathBuf>), String> {
         generations: 2,
         max_branches: 24,
         auto_ops: 64,
-        search_nodes: 20_000,
-        search_ms: 300,
-        boss_search_nodes: 2_000_000,
-        boss_search_ms: 15_000,
+        search_nodes: 50_000,
+        search_ms: 500,
+        rescue_search_nodes: 200_000,
+        rescue_search_ms: 2_000,
+        boss_search_nodes: 800_000,
+        boss_search_ms: 8_000,
     };
     let mut trace_jsonl = None;
     let mut combat_gap_case_dir = None;
@@ -299,10 +305,10 @@ fn parse_args() -> Result<(Args, Option<PathBuf>, Option<PathBuf>), String> {
         let key = raw[index].as_str();
         if matches!(key, "--help" | "-h") {
             println!(
-                "branch_tiny --seed N --generations N --max-branches N [--trace-jsonl PATH] [--combat-gap-case-dir DIR]"
+                "branch_tiny --seed N --generations N --max-branches N [--search-ms N] [--rescue-search-ms N] [--boss-search-ms N] [--trace-jsonl PATH] [--combat-gap-case-dir DIR]"
             );
             println!(
-                "  owner-audit runner; boss combat gaps retry once with --boss-search-nodes/--boss-search-ms"
+                "  owner-audit runner; ordinary combat fast-search escalates once to rescue-search, boss combat retries with boss-search"
             );
             std::process::exit(0);
         }
@@ -317,6 +323,8 @@ fn parse_args() -> Result<(Args, Option<PathBuf>, Option<PathBuf>), String> {
                 | "--auto-ops"
                 | "--search-nodes"
                 | "--search-ms"
+                | "--rescue-search-nodes"
+                | "--rescue-search-ms"
                 | "--boss-search-nodes"
                 | "--boss-search-ms"
                 | "--trace-jsonl"
@@ -335,6 +343,8 @@ fn parse_args() -> Result<(Args, Option<PathBuf>, Option<PathBuf>), String> {
             "--auto-ops" => args.auto_ops = parse(value, key)?,
             "--search-nodes" => args.search_nodes = parse(value, key)?,
             "--search-ms" => args.search_ms = parse(value, key)?,
+            "--rescue-search-nodes" => args.rescue_search_nodes = parse(value, key)?,
+            "--rescue-search-ms" => args.rescue_search_ms = parse(value, key)?,
             "--boss-search-nodes" => args.boss_search_nodes = parse(value, key)?,
             "--boss-search-ms" => args.boss_search_ms = parse(value, key)?,
             "--trace-jsonl" => trace_jsonl = Some(PathBuf::from(value)),

@@ -44,6 +44,8 @@ pub(super) fn save_combat_gap_case(
             "reason": reason,
             "search_nodes": args.search_nodes,
             "search_ms": args.search_ms,
+            "rescue_search_nodes": args.rescue_search_nodes,
+            "rescue_search_ms": args.rescue_search_ms,
         },
         "run": {
             "act": branch.session.run_state.act_num,

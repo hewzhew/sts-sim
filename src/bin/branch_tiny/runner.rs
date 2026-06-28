@@ -186,8 +186,8 @@ fn primary_auto_step_options(args: Args) -> RunControlAutoStepOptions {
 
 fn tactical_rescue_auto_step_options(args: Args) -> RunControlAutoStepOptions {
     auto_step_options(
-        args.search_nodes,
-        args.search_ms,
+        args.rescue_search_nodes,
+        args.rescue_search_ms,
         args.auto_ops,
         CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed,
     )

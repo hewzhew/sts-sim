@@ -43,6 +43,7 @@ impl TraceWriter {
             "generations": args.generations,
             "max_branches": args.max_branches,
             "search": {"nodes": args.search_nodes, "ms": args.search_ms},
+            "rescue_search": {"nodes": args.rescue_search_nodes, "ms": args.rescue_search_ms},
             "boss_search": {"nodes": args.boss_search_nodes, "ms": args.boss_search_ms},
         }))
     }
