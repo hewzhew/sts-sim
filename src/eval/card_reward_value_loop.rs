@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 
 mod calibration;
 mod closed_loop;
-mod counterfactual_probe;
 mod promotion;
 mod replay;
 mod route_risk_calibration;
@@ -23,11 +22,6 @@ pub use closed_loop::{
     CardRewardClosedLoopSummaryV1, CARD_REWARD_CLOSED_LOOP_REPORT_SCHEMA_NAME,
     CARD_REWARD_CLOSED_LOOP_REPORT_SCHEMA_VERSION,
 };
-pub use counterfactual_probe::{
-    is_counterfactual_probe_estimate_v1, CardRewardCounterfactualProbeEstimateSetV1,
-    CARD_REWARD_COUNTERFACTUAL_PROBE_ESTIMATE_SET_SCHEMA_NAME,
-    CARD_REWARD_COUNTERFACTUAL_PROBE_ESTIMATE_SET_SCHEMA_VERSION,
-};
 pub use promotion::{
     build_card_reward_runtime_calibration_pipeline_v1, promote_card_reward_outcome_calibration_v1,
     CardRewardOutcomeCalibrationPromotionBlockerV1, CardRewardOutcomeCalibrationPromotionBucketV1,
@@ -38,10 +32,9 @@ pub use promotion::{
 pub use replay::{
     replay_card_reward_records_with_calibration_v1,
     replay_card_reward_records_with_runtime_calibrations_v1,
-    replay_card_reward_records_with_runtime_sources_v1, CardRewardCalibrationReplayCandidateV1,
-    CardRewardCalibrationReplayEstimateV1, CardRewardCalibrationReplayExampleV1,
-    CardRewardCalibrationReplayReportV1, CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_NAME,
-    CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_VERSION,
+    CardRewardCalibrationReplayCandidateV1, CardRewardCalibrationReplayEstimateV1,
+    CardRewardCalibrationReplayExampleV1, CardRewardCalibrationReplayReportV1,
+    CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_NAME, CARD_REWARD_CALIBRATION_REPLAY_SCHEMA_VERSION,
 };
 pub use route_risk_calibration::{
     calibrate_card_reward_route_risk_v1,
@@ -52,7 +45,6 @@ pub use route_risk_calibration::{
 };
 pub use runtime_inputs::{
     build_card_reward_runtime_estimator_inputs_v1, CardRewardRuntimeEstimatorCalibrationsV1,
-    CardRewardRuntimeEstimatorSourcesV1,
 };
 pub use strategy_package_calibration::{
     calibrate_card_reward_strategy_package_v1,

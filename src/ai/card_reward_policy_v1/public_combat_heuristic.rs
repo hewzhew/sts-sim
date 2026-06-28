@@ -15,7 +15,7 @@ const ROUTE_EVIDENCE_UNCERTAINTY_RELIEF: f32 = 0.08;
 const ROUTE_WARNING_UNCERTAINTY: f32 = 0.03;
 const MAX_WARNING_UNCERTAINTY: f32 = 0.15;
 
-pub(crate) fn estimate_combat_probe_values(
+pub(crate) fn estimate_public_combat_heuristic_values(
     context: &CardRewardDecisionContextV1,
 ) -> Vec<CardRewardValueEstimateV1> {
     let pressure = combat_pressure(context);

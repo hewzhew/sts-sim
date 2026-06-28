@@ -1,12 +1,12 @@
 mod arbitration;
 mod behavior_gate;
-mod combat_probe;
 mod context;
 mod facts;
 mod gate;
 mod impact;
 mod policy;
 mod profile;
+mod public_combat_heuristic;
 mod replay;
 mod route_risk;
 mod semantics;

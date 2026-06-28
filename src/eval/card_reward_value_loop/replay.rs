@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use super::{
     build_card_reward_runtime_estimator_inputs_v1, calibration::outcome_calibration_eligibility,
     CardRewardOutcomeCalibrationV1, CardRewardRouteRiskCalibrationV1,
-    CardRewardRuntimeEstimatorCalibrationsV1, CardRewardRuntimeEstimatorSourcesV1,
-    CardRewardStrategyPackageCalibrationV1, CardRewardValueLoopExampleV1,
+    CardRewardRuntimeEstimatorCalibrationsV1, CardRewardStrategyPackageCalibrationV1,
+    CardRewardValueLoopExampleV1,
 };
 use crate::ai::card_reward_policy_v1::{
     replay_card_reward_decision_with_estimator_inputs_v1, CardRewardDecisionReplayV1,
@@ -84,26 +84,14 @@ pub fn replay_card_reward_records_with_runtime_calibrations_v1(
     route_risk_calibration: Option<&CardRewardRouteRiskCalibrationV1>,
     strategy_package_calibration: Option<&CardRewardStrategyPackageCalibrationV1>,
 ) -> CardRewardCalibrationReplayReportV1 {
-    replay_card_reward_records_with_runtime_sources_v1(
-        examples,
-        CardRewardRuntimeEstimatorSourcesV1 {
-            calibrations: CardRewardRuntimeEstimatorCalibrationsV1 {
-                outcome: outcome_calibration,
-                route_risk: route_risk_calibration,
-                strategy_package: strategy_package_calibration,
-            },
-            counterfactual_probe_estimates: &[],
-        },
-    )
-}
-
-pub fn replay_card_reward_records_with_runtime_sources_v1(
-    examples: &[CardRewardValueLoopExampleV1],
-    sources: CardRewardRuntimeEstimatorSourcesV1<'_>,
-) -> CardRewardCalibrationReplayReportV1 {
+    let calibrations = CardRewardRuntimeEstimatorCalibrationsV1 {
+        outcome: outcome_calibration,
+        route_risk: route_risk_calibration,
+        strategy_package: strategy_package_calibration,
+    };
     let examples_out = examples
         .iter()
-        .map(|example| card_reward_calibration_replay_example(example, sources))
+        .map(|example| card_reward_calibration_replay_example(example, calibrations))
         .collect::<Vec<_>>();
     let full_packet_count = examples_out
         .iter()
@@ -125,10 +113,10 @@ pub fn replay_card_reward_records_with_runtime_sources_v1(
 
 fn card_reward_calibration_replay_example(
     example: &CardRewardValueLoopExampleV1,
-    sources: CardRewardRuntimeEstimatorSourcesV1<'_>,
+    calibrations: CardRewardRuntimeEstimatorCalibrationsV1<'_>,
 ) -> CardRewardCalibrationReplayExampleV1 {
     let policy_replay = example.public_packet.as_ref().map(|packet| {
-        let inputs = build_card_reward_runtime_estimator_inputs_v1(&packet.context, sources);
+        let inputs = build_card_reward_runtime_estimator_inputs_v1(&packet.context, calibrations);
         replay_card_reward_decision_with_estimator_inputs_v1(
             packet,
             &CardRewardPolicyConfigV1::default(),
@@ -168,8 +156,7 @@ fn card_reward_calibration_replay_example(
                     .cloned()
                     .unwrap_or_default(),
                 calibration_estimate: card_id.and_then(|card_id| {
-                    sources
-                        .calibrations
+                    calibrations
                         .outcome
                         .and_then(|calibration| calibration_replay_estimate(&card_id, calibration))
                 }),

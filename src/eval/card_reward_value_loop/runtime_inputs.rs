@@ -1,6 +1,4 @@
-use crate::ai::card_reward_policy_v1::{
-    CardRewardDecisionContextV1, CardRewardEstimatorInputsV1, CardRewardValueEstimateV1,
-};
+use crate::ai::card_reward_policy_v1::{CardRewardDecisionContextV1, CardRewardEstimatorInputsV1};
 
 use super::{
     estimate_card_reward_values_from_calibration_v1,
@@ -17,38 +15,10 @@ pub struct CardRewardRuntimeEstimatorCalibrationsV1<'a> {
     pub strategy_package: Option<&'a CardRewardStrategyPackageCalibrationV1>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct CardRewardRuntimeEstimatorSourcesV1<'a> {
-    pub calibrations: CardRewardRuntimeEstimatorCalibrationsV1<'a>,
-    pub counterfactual_probe_estimates: &'a [CardRewardValueEstimateV1],
-}
-
-impl Default for CardRewardRuntimeEstimatorSourcesV1<'_> {
-    fn default() -> Self {
-        Self {
-            calibrations: CardRewardRuntimeEstimatorCalibrationsV1::default(),
-            counterfactual_probe_estimates: &[],
-        }
-    }
-}
-
-impl<'a> From<CardRewardRuntimeEstimatorCalibrationsV1<'a>>
-    for CardRewardRuntimeEstimatorSourcesV1<'a>
-{
-    fn from(calibrations: CardRewardRuntimeEstimatorCalibrationsV1<'a>) -> Self {
-        Self {
-            calibrations,
-            counterfactual_probe_estimates: &[],
-        }
-    }
-}
-
-pub fn build_card_reward_runtime_estimator_inputs_v1<'a>(
+pub fn build_card_reward_runtime_estimator_inputs_v1(
     context: &CardRewardDecisionContextV1,
-    sources: impl Into<CardRewardRuntimeEstimatorSourcesV1<'a>>,
+    calibrations: CardRewardRuntimeEstimatorCalibrationsV1<'_>,
 ) -> CardRewardEstimatorInputsV1 {
-    let sources = sources.into();
-    let calibrations = sources.calibrations;
     let mut external_value_estimates = calibrations
         .outcome
         .map(|calibration| estimate_card_reward_values_from_calibration_v1(context, calibration))
@@ -66,26 +36,7 @@ pub fn build_card_reward_runtime_estimator_inputs_v1<'a>(
         );
     }
 
-    external_value_estimates.extend(
-        sources
-            .counterfactual_probe_estimates
-            .iter()
-            .filter(|estimate| is_valid_counterfactual_probe_estimate(context, estimate))
-            .cloned(),
-    );
-
     CardRewardEstimatorInputsV1 {
         external_value_estimates,
     }
-}
-
-fn is_valid_counterfactual_probe_estimate(
-    context: &CardRewardDecisionContextV1,
-    estimate: &CardRewardValueEstimateV1,
-) -> bool {
-    super::is_counterfactual_probe_estimate_v1(estimate)
-        && context
-            .candidates
-            .iter()
-            .any(|candidate| candidate.index == estimate.index && candidate.card == estimate.card)
 }

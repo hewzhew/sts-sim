@@ -73,9 +73,7 @@ fn select_gate_estimate<'a>(
 pub(crate) fn value_source_autopilot_eligible_v1(source: CardRewardValueSourceV1) -> bool {
     matches!(
         source,
-        CardRewardValueSourceV1::CombatProbe
-            | CardRewardValueSourceV1::RouteRisk
-            | CardRewardValueSourceV1::LearnedValue
+        CardRewardValueSourceV1::RouteRisk | CardRewardValueSourceV1::LearnedValue
     )
 }
 
@@ -87,9 +85,7 @@ pub(crate) fn estimate_source_gate_eligible_v1(estimate: &CardRewardValueEstimat
         CardRewardValueSourceV1::OutcomeCalibration => {
             estimate.eligibility.usable_for_autopilot_gate
         }
-        CardRewardValueSourceV1::CombatProbe
-        | CardRewardValueSourceV1::RouteRisk
-        | CardRewardValueSourceV1::LearnedValue => {
+        CardRewardValueSourceV1::RouteRisk | CardRewardValueSourceV1::LearnedValue => {
             value_source_autopilot_eligible_v1(estimate.source)
                 && estimate.eligibility.usable_for_autopilot_gate
         }
@@ -99,8 +95,7 @@ pub(crate) fn estimate_source_gate_eligible_v1(estimate: &CardRewardValueEstimat
 pub(crate) fn value_status_autopilot_eligible_v1(status: CardRewardValueStatusV1) -> bool {
     matches!(
         status,
-        CardRewardValueStatusV1::CounterfactualProbe
-            | CardRewardValueStatusV1::OutcomeCalibrated
+        CardRewardValueStatusV1::OutcomeCalibrated
             | CardRewardValueStatusV1::RouteRiskEstimate
             | CardRewardValueStatusV1::RouteRiskCalibrated
     )
@@ -147,7 +142,6 @@ fn source_rank(source: CardRewardValueSourceV1) -> u8 {
         CardRewardValueSourceV1::LearnedValue => 50,
         CardRewardValueSourceV1::OutcomeCalibration => 35,
         CardRewardValueSourceV1::RouteRisk => 25,
-        CardRewardValueSourceV1::CombatProbe => 10,
         CardRewardValueSourceV1::PublicCombatHeuristic => 8,
         CardRewardValueSourceV1::StrategyPackage => 5,
         CardRewardValueSourceV1::UncalibratedImpactPrior => 0,
@@ -156,7 +150,6 @@ fn source_rank(source: CardRewardValueSourceV1) -> u8 {
 
 fn status_rank(status: CardRewardValueStatusV1) -> u8 {
     match status {
-        CardRewardValueStatusV1::CounterfactualProbe => 30,
         CardRewardValueStatusV1::OutcomeCalibrated => 20,
         CardRewardValueStatusV1::RouteRiskCalibrated => 15,
         CardRewardValueStatusV1::RouteRiskEstimate => 10,

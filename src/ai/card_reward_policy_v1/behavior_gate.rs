@@ -178,7 +178,6 @@ fn source_label(source: CardRewardValueSourceV1) -> &'static str {
         CardRewardValueSourceV1::StrategyPackage => "strategy_package",
         CardRewardValueSourceV1::UncalibratedImpactPrior
         | CardRewardValueSourceV1::OutcomeCalibration
-        | CardRewardValueSourceV1::CombatProbe
         | CardRewardValueSourceV1::LearnedValue => "other",
     }
 }

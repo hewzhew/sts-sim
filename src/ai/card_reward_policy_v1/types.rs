@@ -317,7 +317,6 @@ pub enum CardRewardValueSourceV1 {
     StrategyPackage,
     OutcomeCalibration,
     PublicCombatHeuristic,
-    CombatProbe,
     RouteRisk,
     LearnedValue,
 }
@@ -328,7 +327,6 @@ pub enum CardRewardValueStatusV1 {
     StrategyPackageEstimate,
     StrategyPackageCalibrated,
     PublicCombatHeuristic,
-    CounterfactualProbe,
     OutcomeCalibrated,
     RouteRiskEstimate,
     RouteRiskCalibrated,
@@ -390,7 +388,6 @@ pub enum CardRewardValueEligibilityReasonV1 {
     StrategyPackageEstimateNotPromoted,
     StrategyPackageCalibrationNotGateEligible,
     PublicCombatHeuristicNotGateEligible,
-    CounterfactualProbeNotGateEligible,
     RouteRiskEstimateNotPromoted,
     RouteRiskCalibrationNotGateEligible,
 }
@@ -400,7 +397,6 @@ pub enum CardRewardValueEligibilityReasonV1 {
 pub enum CardRewardValueHorizonV1 {
     NextCombatHpLoss,
     NextCombatPublicProbe,
-    NextCombatCounterfactualProbe,
     VisibleRouteRisk,
     CurrentStrategyPackage,
 }

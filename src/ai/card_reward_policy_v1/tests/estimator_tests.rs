@@ -575,19 +575,22 @@ fn public_combat_heuristic_values_enter_arbitration_without_certifying_autopick(
     ]);
 
     let decision = plan_card_reward_decision_v1(&context, &CardRewardPolicyConfigV1::default());
-    let combat_probe_estimates = estimates_for_source(
+    let public_combat_heuristic_estimates = estimates_for_source(
         &decision.value_estimates,
         CardRewardValueSourceV1::PublicCombatHeuristic,
     );
 
-    assert_eq!(combat_probe_estimates.len(), context.candidates.len());
-    assert!(combat_probe_estimates
+    assert_eq!(
+        public_combat_heuristic_estimates.len(),
+        context.candidates.len()
+    );
+    assert!(public_combat_heuristic_estimates
         .iter()
         .all(|estimate| estimate.status == CardRewardValueStatusV1::PublicCombatHeuristic));
-    assert!(combat_probe_estimates
+    assert!(public_combat_heuristic_estimates
         .iter()
         .all(|estimate| estimate.eligibility.usable_for_value_estimate));
-    assert!(combat_probe_estimates
+    assert!(public_combat_heuristic_estimates
         .iter()
         .all(|estimate| !estimate.eligibility.usable_for_autopilot_gate));
     assert!(decision

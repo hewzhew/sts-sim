@@ -610,7 +610,6 @@ fn card_reward_value_estimate(estimate: &CardRewardValueEstimateV1) -> ValueEsti
             CardRewardValueStatusV1::StrategyPackageEstimate => 0.25,
             CardRewardValueStatusV1::StrategyPackageCalibrated => 0.35,
             CardRewardValueStatusV1::PublicCombatHeuristic => 0.30,
-            CardRewardValueStatusV1::CounterfactualProbe => 0.5,
             CardRewardValueStatusV1::OutcomeCalibrated => 0.75,
             CardRewardValueStatusV1::RouteRiskEstimate => 0.35,
             CardRewardValueStatusV1::RouteRiskCalibrated => 0.45,
@@ -636,7 +635,6 @@ fn card_reward_value_components(estimate: &CardRewardValueEstimateV1) -> Vec<Val
             CardRewardValueSourceV1::PublicCombatHeuristic => {
                 "value_source_public_combat_heuristic"
             }
-            CardRewardValueSourceV1::CombatProbe => "value_source_combat_probe",
             CardRewardValueSourceV1::RouteRisk => "value_source_route_risk",
             CardRewardValueSourceV1::LearnedValue => "value_source_learned_value",
         },
@@ -654,7 +652,6 @@ fn card_reward_value_components(estimate: &CardRewardValueEstimateV1) -> Vec<Val
             CardRewardValueStatusV1::PublicCombatHeuristic => {
                 "value_status_public_combat_heuristic"
             }
-            CardRewardValueStatusV1::CounterfactualProbe => "value_status_counterfactual_probe",
             CardRewardValueStatusV1::OutcomeCalibrated => "value_status_outcome_calibrated",
             CardRewardValueStatusV1::RouteRiskEstimate => "value_status_route_risk_estimate",
             CardRewardValueStatusV1::RouteRiskCalibrated => "value_status_route_risk_calibrated",
