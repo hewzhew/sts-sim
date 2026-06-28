@@ -535,6 +535,7 @@ fn line_summary(line: &Line, initial_hp: i32) -> serde_json::Value {
         "lane": line.lane,
         "action_count": line.steps.len(),
         "actions": line.steps.iter().take(32).map(|step| &step.label).collect::<Vec<_>>(),
+        "inputs": line.steps.iter().map(|step| &step.input).collect::<Vec<_>>(),
     })
 }
 
