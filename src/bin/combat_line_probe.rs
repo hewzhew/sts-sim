@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sts_simulator::content::cards::{get_card_definition, CardType};
 use sts_simulator::sim::combat::{
@@ -34,6 +34,8 @@ struct Args {
     repair_nodes: usize,
     #[arg(long, default_value_t = 250)]
     repair_ms: u64,
+    #[arg(long)]
+    replay_best_inputs: bool,
     #[arg(long)]
     json: bool,
 }
@@ -91,6 +93,21 @@ struct RepairStats {
     elapsed_ms: u128,
 }
 
+#[derive(Serialize)]
+struct ReplayReport {
+    terminal: CombatTerminal,
+    final_hp: i32,
+    hp_loss: i32,
+    action_count: usize,
+    applied_count: usize,
+    truncated: bool,
+    timed_out: bool,
+    matched_terminal: bool,
+    matched_final_hp: bool,
+    matched_action_count: bool,
+    match_ok: bool,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let started = Instant::now();
@@ -115,6 +132,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let base_best_win = run.best_win.clone();
     let best_win = repaired_win.or(base_best_win.clone());
+    let replay_best_inputs = if args.replay_best_inputs {
+        best_win
+            .as_ref()
+            .map(|line| replay_line(&case.position, line, initial_hp, &stepper))
+    } else {
+        None
+    };
 
     let report = json!({
         "schema": "combat_line_probe",
@@ -145,6 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         "base_best_win": base_best_win.as_ref().map(|line| line_summary(line, initial_hp)),
         "best_win": best_win.as_ref().map(|line| line_summary(line, initial_hp)),
+        "replay_best_inputs": replay_best_inputs,
         "best_frontier": run.best_frontier.as_ref().map(|line| line_summary(line, initial_hp)),
     });
 
@@ -358,6 +383,61 @@ fn replay_prefix(
     Some(position)
 }
 
+fn replay_line(
+    root: &CombatPosition,
+    line: &Line,
+    initial_hp: i32,
+    stepper: &EngineCombatStepper,
+) -> ReplayReport {
+    let mut position = root.clone();
+    let mut applied_count = 0;
+    let mut truncated = false;
+    let mut timed_out = false;
+    for line_step in &line.steps {
+        if stepper.terminal(&position) != CombatTerminal::Unresolved {
+            break;
+        }
+        let step = stepper.apply_to_stable(
+            &position,
+            line_step.input.clone(),
+            CombatStepLimits {
+                max_engine_steps: 250,
+                deadline: None,
+            },
+        );
+        applied_count += 1;
+        truncated |= step.truncated;
+        timed_out |= step.timed_out;
+        position = step.position;
+        if truncated || timed_out || step.terminal != CombatTerminal::Unresolved {
+            break;
+        }
+    }
+
+    let terminal = stepper.terminal(&position);
+    let final_hp = position.combat.entities.player.current_hp;
+    let matched_terminal = terminal == line.terminal;
+    let matched_final_hp = final_hp == line.position.combat.entities.player.current_hp;
+    let matched_action_count = applied_count == line.steps.len();
+    ReplayReport {
+        terminal,
+        final_hp,
+        hp_loss: (initial_hp - final_hp).max(0),
+        action_count: line.steps.len(),
+        applied_count,
+        truncated,
+        timed_out,
+        matched_terminal,
+        matched_final_hp,
+        matched_action_count,
+        match_ok: !truncated
+            && !timed_out
+            && matched_terminal
+            && matched_final_hp
+            && matched_action_count,
+    }
+}
+
 fn splice_line(
     prefix: &Line,
     cut: usize,
@@ -546,6 +626,17 @@ fn print_human(report: &serde_json::Value) {
     println!("  repair: {}", one_line(&report["repair"]));
     print_line("base_best_win", &report["base_best_win"]);
     print_line("best_win", &report["best_win"]);
+    if !report["replay_best_inputs"].is_null() {
+        println!(
+            "  replay_best_inputs: match_ok={} terminal={} final_hp={} hp_loss={} applied={}/{}",
+            report["replay_best_inputs"]["match_ok"],
+            report["replay_best_inputs"]["terminal"],
+            report["replay_best_inputs"]["final_hp"],
+            report["replay_best_inputs"]["hp_loss"],
+            report["replay_best_inputs"]["applied_count"],
+            report["replay_best_inputs"]["action_count"],
+        );
+    }
     if report["best_win"].is_null() {
         print_line("best_frontier", &report["best_frontier"]);
     }
