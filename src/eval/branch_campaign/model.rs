@@ -6,9 +6,7 @@ use crate::ai::strategic::BranchSignatureCompact;
 use crate::content::monsters::factory::EncounterId;
 use crate::content::potions::Potion;
 use crate::content::relics::{RelicId, RelicState};
-use crate::eval::branch_experiment::{
-    BranchExperimentBossCombatRecordV1, BranchExperimentRewardOptionPortfolioV1,
-};
+use crate::eval::branch_experiment::BranchExperimentRewardOptionPortfolioV1;
 use crate::eval::branch_experiment_retention::BranchRetentionRankAdjustmentV1;
 use crate::eval::campaign_journal::{
     CampaignJournalCandidateAdmissionStatusV1, CampaignJournalCandidateAdmissionTraceV1,
@@ -161,8 +159,6 @@ pub struct BranchCampaignBranchV1 {
     pub rank_breakdown: Option<BranchCampaignRankBreakdownV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assessment: Option<BranchCampaignAssessmentV1>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub final_boss_combat_record: Option<BranchExperimentBossCombatRecordV1>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

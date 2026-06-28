@@ -18,8 +18,7 @@ use crate::eval::branch_experiment_retention::{
 };
 use crate::eval::branch_experiment_trajectory::BranchTrajectorySignatureV1;
 use crate::eval::run_control::{
-    AutoCombatCaptureConfig, CombatAutomationActionV1, RunControlHpLossLimit,
-    RunControlSearchCombatOptions,
+    AutoCombatCaptureConfig, RunControlHpLossLimit, RunControlSearchCombatOptions,
 };
 
 pub const BRANCH_EXPERIMENT_SCHEMA_NAME: &str = "BranchExperimentV1";
@@ -523,19 +522,8 @@ pub struct BranchExperimentBranchReportV1 {
     pub stop_reason: String,
     pub summary: BranchExperimentRunSummaryV1,
     pub frontier: BranchExperimentFrontierV1,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub final_boss_combat_record: Option<BranchExperimentBossCombatRecordV1>,
     #[serde(default)]
     pub boundary_details: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct BranchExperimentBossCombatRecordV1 {
-    pub source: String,
-    pub action_count: usize,
-    pub actions: Vec<CombatAutomationActionV1>,
-    pub label_role: String,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

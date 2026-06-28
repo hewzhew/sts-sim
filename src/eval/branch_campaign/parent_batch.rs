@@ -1381,7 +1381,6 @@ fn campaign_branch_from_parent_replay_error_v1(
     branch.status = BranchCampaignBranchStatusV1::Abandoned;
     branch.stop_reason = format!("parent replay failed: {error}");
     branch.rank_key = -900_000;
-    branch.final_boss_combat_record = None;
     branch
 }
 
@@ -1435,7 +1434,6 @@ mod tests {
             rank_key: 0,
             rank_breakdown: None,
             assessment: None,
-            final_boss_combat_record: None,
         };
 
         let event = campaign_route_candidate_pool_journal_event_v1(

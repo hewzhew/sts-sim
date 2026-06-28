@@ -853,7 +853,6 @@ fn coverage_gap_branch_from_target_v1(
         rank_key: 0,
         rank_breakdown: None,
         assessment: None,
-        final_boss_combat_record: None,
     }
 }
 

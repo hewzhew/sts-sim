@@ -67,20 +67,20 @@ const COMBAT_TURN_SEGMENT_PROGRESS_STOP_REASON: &str =
     "combat turn segment progressed; continue next campaign round";
 
 pub use types::{
-    BranchExperimentBossCombatRecordV1, BranchExperimentBossRelicCandidateEntryV1,
-    BranchExperimentBossRelicCandidatePoolV1, BranchExperimentBranchReportV1,
-    BranchExperimentBranchStatusV1, BranchExperimentCampfirePlanCandidateEntryV1,
-    BranchExperimentCampfirePlanCandidatePoolV1, BranchExperimentChoiceCardV1,
-    BranchExperimentChoiceDecisionSignalV1, BranchExperimentChoiceV1, BranchExperimentConfigV1,
-    BranchExperimentEventCandidateEntryV1, BranchExperimentEventCandidatePoolV1,
-    BranchExperimentFirstEliteEvidenceV1, BranchExperimentFrontierGroupV1,
-    BranchExperimentFrontierV1, BranchExperimentLineageV1, BranchExperimentPrunedBranchSummaryV1,
-    BranchExperimentPrunedFirstPickCountV1, BranchExperimentReportV1,
-    BranchExperimentRewardOptionPortfolioEntryV1, BranchExperimentRewardOptionPortfolioV1,
-    BranchExperimentRouteCandidateEntryV1, BranchExperimentRouteCandidatePoolV1,
-    BranchExperimentRouteDecisionV1, BranchExperimentRunSummaryV1,
-    BranchExperimentShopPlanCandidateEntryV1, BranchExperimentShopPlanCandidatePoolV1,
-    BranchExperimentStrategyRequestV1, BranchExperimentWallLimitPhaseV1,
+    BranchExperimentBossRelicCandidateEntryV1, BranchExperimentBossRelicCandidatePoolV1,
+    BranchExperimentBranchReportV1, BranchExperimentBranchStatusV1,
+    BranchExperimentCampfirePlanCandidateEntryV1, BranchExperimentCampfirePlanCandidatePoolV1,
+    BranchExperimentChoiceCardV1, BranchExperimentChoiceDecisionSignalV1, BranchExperimentChoiceV1,
+    BranchExperimentConfigV1, BranchExperimentEventCandidateEntryV1,
+    BranchExperimentEventCandidatePoolV1, BranchExperimentFirstEliteEvidenceV1,
+    BranchExperimentFrontierGroupV1, BranchExperimentFrontierV1, BranchExperimentLineageV1,
+    BranchExperimentPrunedBranchSummaryV1, BranchExperimentPrunedFirstPickCountV1,
+    BranchExperimentReportV1, BranchExperimentRewardOptionPortfolioEntryV1,
+    BranchExperimentRewardOptionPortfolioV1, BranchExperimentRouteCandidateEntryV1,
+    BranchExperimentRouteCandidatePoolV1, BranchExperimentRouteDecisionV1,
+    BranchExperimentRunSummaryV1, BranchExperimentShopPlanCandidateEntryV1,
+    BranchExperimentShopPlanCandidatePoolV1, BranchExperimentStrategyRequestV1,
+    BranchExperimentWallLimitPhaseV1,
     BRANCH_EXPERIMENT_CARD_REWARD_STRATEGIC_TRACE_SIGNAL_SOURCE_V1, BRANCH_EXPERIMENT_SCHEMA_NAME,
     BRANCH_EXPERIMENT_SCHEMA_VERSION, BRANCH_EXPERIMENT_SHOP_ALTERNATIVE_PLAN_SIGNAL_SOURCE_V1,
     BRANCH_EXPERIMENT_SHOP_BRANCH_FRONTIER_SIGNAL_SOURCE_V1,
@@ -126,7 +126,6 @@ struct BranchWork {
     status: BranchExperimentBranchStatusV1,
     stop_reason: String,
     retention: BranchRetentionDecisionV1,
-    final_boss_combat_record: Option<BranchExperimentBossCombatRecordV1>,
 }
 
 #[derive(Clone, Debug)]
@@ -297,8 +296,7 @@ fn prepare_branch_experiment_start(
         }
     }
 
-    let prefix_final_boss_combat_record =
-        apply_branch_experiment_prefix_commands_v1(&mut session, config, &config.prefix_commands)?;
+    apply_branch_experiment_prefix_commands_v1(&mut session, config, &config.prefix_commands)?;
 
     let mut branch = BranchWork {
         id: "root".to_string(),
@@ -307,7 +305,6 @@ fn prepare_branch_experiment_start(
         status: BranchExperimentBranchStatusV1::Active,
         stop_reason: "initial".to_string(),
         retention: default_branch_retention_decision_v1(),
-        final_boss_combat_record: prefix_final_boss_combat_record,
     };
     if settle_to_first_boundary {
         let mut ignored_route_decisions = Vec::new();
@@ -351,8 +348,7 @@ pub fn run_branch_experiment_from_session_after_prefix_with_snapshots_v1(
     prefix_commands: &[String],
 ) -> Result<BranchExperimentRunResultV1, String> {
     session.set_auto_capture_config(config.auto_capture.clone());
-    let prefix_final_boss_combat_record =
-        apply_branch_experiment_prefix_commands_v1(&mut session, config, prefix_commands)?;
+    apply_branch_experiment_prefix_commands_v1(&mut session, config, prefix_commands)?;
     Ok(
         run_branch_experiment_from_start_branch_with_replay_and_snapshots(
             BranchWork {
@@ -362,7 +358,6 @@ pub fn run_branch_experiment_from_session_after_prefix_with_snapshots_v1(
                 status: BranchExperimentBranchStatusV1::Active,
                 stop_reason: "initial".to_string(),
                 retention: default_branch_retention_decision_v1(),
-                final_boss_combat_record: prefix_final_boss_combat_record,
             },
             config,
             0,
@@ -386,7 +381,6 @@ fn run_branch_experiment_from_session_with_replay_and_snapshots(
             status: BranchExperimentBranchStatusV1::Active,
             stop_reason: "initial".to_string(),
             retention: default_branch_retention_decision_v1(),
-            final_boss_combat_record: None,
         },
         config,
         replay_trace_applied_steps,
@@ -413,11 +407,10 @@ fn apply_branch_experiment_prefix_commands_v1(
     session: &mut RunControlSession,
     config: &BranchExperimentConfigV1,
     prefix_commands: &[String],
-) -> Result<Option<BranchExperimentBossCombatRecordV1>, String> {
-    let mut prefix_final_boss_combat_record = None;
+) -> Result<(), String> {
     for command_line in prefix_commands {
         if branch_experiment_command_is_replay_advance_v1(command_line) {
-            let outcome = crate::eval::run_control::apply_branch_experiment_auto_run(
+            crate::eval::run_control::apply_branch_experiment_auto_run(
                 session,
                 RunControlAutoStepOptions {
                     search: branch_experiment_search_options(config),
@@ -425,14 +418,11 @@ fn apply_branch_experiment_prefix_commands_v1(
                     route: RunControlRouteAutomationMode::Planner,
                 },
             )?;
-            prefix_final_boss_combat_record =
-                final_boss_combat_record_from_annotations_v1(session, &outcome.trace_annotations)
-                    .or(prefix_final_boss_combat_record);
         } else {
             apply_branch_choice(session, command_line)?;
         }
     }
-    Ok(prefix_final_boss_combat_record)
+    Ok(())
 }
 
 fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
@@ -683,7 +673,6 @@ fn run_branch_experiment_from_start_branch_with_replay_and_snapshots(
                 stop_reason: branch.stop_reason,
                 summary,
                 frontier,
-                final_boss_combat_record: branch.final_boss_combat_record,
                 boundary_details: branch_boundary_details(&branch.session),
             }
         })
@@ -863,13 +852,6 @@ fn advance_to_experiment_boundary(
                         .unwrap_or_else(|| current_boundary_title(&branch.session))
                 };
             update_terminal_status(branch);
-            if branch.status == BranchExperimentBranchStatusV1::TerminalVictory {
-                branch.final_boss_combat_record = final_boss_combat_record_from_annotations_v1(
-                    &branch.session,
-                    &outcome.trace_annotations,
-                )
-                .or_else(|| branch.final_boss_combat_record.clone());
-            }
         }
         Err(err) => {
             branch.status = BranchExperimentBranchStatusV1::Failed;
@@ -1315,34 +1297,6 @@ fn combat_performance_snapshot_from_annotation(
         RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot } => Some(snapshot.clone()),
         _ => None,
     }
-}
-
-fn final_boss_combat_record_from_annotations_v1(
-    session: &RunControlSession,
-    annotations: &[RunControlTraceAnnotationV1],
-) -> Option<BranchExperimentBossCombatRecordV1> {
-    if !matches!(
-        session.engine_state,
-        EngineState::GameOver(RunResult::Victory)
-    ) {
-        return None;
-    }
-    if let Some(record) = session.last_completed_combat_automation_trajectory() {
-        return Some(BranchExperimentBossCombatRecordV1 {
-            source: record.source.to_string(),
-            action_count: record.action_count,
-            actions: record.actions.clone(),
-            label_role: record.label_role.clone(),
-        });
-    }
-    combat_automation_trajectories_v1(annotations)
-        .last()
-        .map(|trajectory| BranchExperimentBossCombatRecordV1 {
-            source: trajectory.source.to_string(),
-            action_count: trajectory.action_count,
-            actions: trajectory.actions.to_vec(),
-            label_role: trajectory.label_role.to_string(),
-        })
 }
 
 fn update_terminal_status(branch: &mut BranchWork) {

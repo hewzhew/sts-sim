@@ -1377,7 +1377,6 @@ fn branch_with_choice(branch_id: &str, effect_kind: &str) -> BranchWork {
         status: BranchExperimentBranchStatusV1::Active,
         stop_reason: "test".to_string(),
         retention: default_branch_retention_decision_v1(),
-        final_boss_combat_record: None,
     }
 }
 
@@ -1782,72 +1781,6 @@ fn combat_turn_segment_progress_is_continuable_not_prunable() {
         "Card Reward",
         "combat turn segment progressed; continue next campaign round"
     ));
-}
-
-#[test]
-fn final_boss_record_keeps_last_terminal_victory_combat_trajectory() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    session.engine_state = EngineState::GameOver(RunResult::Victory);
-    let annotations = vec![
-        RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-            source: CombatAutomationTrajectorySource::SearchCombatTurnSegment,
-            action_count: 1,
-            actions: vec![crate::eval::run_control::CombatAutomationActionV1 {
-                step_index: 0,
-                action_key: "end".to_string(),
-                input: crate::state::core::ClientInput::EndTurn,
-                drawn_cards: Vec::new(),
-                combat_after: None,
-            }],
-            label_role: "behavior_policy_not_teacher".to_string(),
-        },
-        RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-            source: CombatAutomationTrajectorySource::SearchCombat,
-            action_count: 2,
-            actions: vec![
-                crate::eval::run_control::CombatAutomationActionV1 {
-                    step_index: 0,
-                    action_key: "play Bash".to_string(),
-                    input: crate::state::core::ClientInput::PlayCard {
-                        card_index: 0,
-                        target: Some(0),
-                    },
-                    drawn_cards: Vec::new(),
-                    combat_after: None,
-                },
-                crate::eval::run_control::CombatAutomationActionV1 {
-                    step_index: 1,
-                    action_key: "end".to_string(),
-                    input: crate::state::core::ClientInput::EndTurn,
-                    drawn_cards: Vec::new(),
-                    combat_after: None,
-                },
-            ],
-            label_role: "behavior_policy_not_teacher".to_string(),
-        },
-    ];
-
-    let record = final_boss_combat_record_from_annotations_v1(&session, &annotations)
-        .expect("terminal victory should keep the final boss combat trajectory");
-
-    assert_eq!(record.source, "search_combat");
-    assert_eq!(record.action_count, 2);
-    assert_eq!(record.actions.len(), 2);
-    assert_eq!(record.label_role, "behavior_policy_not_teacher");
-}
-
-#[test]
-fn final_boss_record_is_absent_without_terminal_victory() {
-    let mut session = RunControlSession::new(RunControlConfig::default());
-    session.engine_state = EngineState::CombatPlayerTurn;
-    let annotations = vec![RunControlTraceAnnotationV1::CombatAutomationTrajectory {
-        source: CombatAutomationTrajectorySource::SearchCombat,
-        action_count: 1,
-        actions: Vec::new(),
-        label_role: "behavior_policy_not_teacher".to_string(),
-    }];
-
-    assert!(final_boss_combat_record_from_annotations_v1(&session, &annotations).is_none());
 }
 
 #[test]

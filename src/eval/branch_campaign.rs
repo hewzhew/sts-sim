@@ -1442,7 +1442,6 @@ fn root_campaign_branch_v1() -> BranchCampaignBranchV1 {
         rank_key: 0,
         rank_breakdown: None,
         assessment: None,
-        final_boss_combat_record: None,
     }
 }
 
@@ -1693,7 +1692,6 @@ pub fn campaign_branch_from_report_branch_v1(
             &branch.retention.rank_adjustment,
         ),
         assessment: None,
-        final_boss_combat_record: branch.final_boss_combat_record.clone(),
     }
 }
 

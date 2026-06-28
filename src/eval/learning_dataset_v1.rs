@@ -7842,7 +7842,6 @@ mod tests {
             rank_key: 42,
             rank_breakdown: None,
             assessment: None,
-            final_boss_combat_record: None,
         }
     }
 

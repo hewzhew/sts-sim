@@ -106,7 +106,6 @@ fn campaign_branch_from_report_appends_new_choice_path() {
         rank_key: 0,
         rank_breakdown: None,
         assessment: None,
-        final_boss_combat_record: None,
     };
     let report_branch = test_report_branch(
         "root.rp 1",
@@ -177,7 +176,6 @@ fn campaign_branch_from_report_prefixes_parent_branch_id() {
         rank_key: 0,
         rank_breakdown: None,
         assessment: None,
-        final_boss_combat_record: None,
     };
     let report_branch = test_report_branch(
         "root.branch-skip-card-reward 0",
@@ -792,39 +790,6 @@ fn campaign_status_distinguishes_pruned_from_terminal_defeat() {
     );
 }
 
-#[test]
-fn campaign_branch_preserves_final_boss_combat_record_from_experiment_report() {
-    let parent = test_campaign_branch("parent", 47, 70);
-    let mut branch = test_report_branch(
-        "winner",
-        vec![("rp 0", "Limit Break")],
-        BranchExperimentBranchStatusV1::TerminalVictory,
-    );
-    branch.final_boss_combat_record = Some(
-        crate::eval::branch_experiment::BranchExperimentBossCombatRecordV1 {
-            source: "final_boss_combat".to_string(),
-            action_count: 1,
-            actions: vec![crate::eval::run_control::CombatAutomationActionV1 {
-                step_index: 0,
-                action_key: "end".to_string(),
-                input: crate::state::core::ClientInput::EndTurn,
-                drawn_cards: Vec::new(),
-                combat_after: None,
-            }],
-            label_role: "behavior_policy_not_teacher".to_string(),
-        },
-    );
-
-    let campaign_branch = campaign_branch_from_report_branch_v1(&parent, &branch);
-
-    let record = campaign_branch
-        .final_boss_combat_record
-        .expect("campaign branch should keep the experiment final boss combat record");
-    assert_eq!(record.source, "final_boss_combat");
-    assert_eq!(record.action_count, 1);
-    assert_eq!(record.actions[0].action_key, "end");
-}
-
 fn test_campaign_report_with_active(id: &str, floor: i32, hp: i32) -> BranchCampaignReportV1 {
     BranchCampaignReportV1 {
         schema_name: BRANCH_CAMPAIGN_SCHEMA_NAME.to_string(),
@@ -902,7 +867,6 @@ fn test_campaign_branch(id: &str, floor: i32, hp: i32) -> BranchCampaignBranchV1
         rank_key: hp,
         rank_breakdown: None,
         assessment: None,
-        final_boss_combat_record: None,
     }
 }
 
@@ -1051,6 +1015,5 @@ fn test_report_branch_at(
             },
         },
         boundary_details: Vec::new(),
-        final_boss_combat_record: None,
     }
 }
