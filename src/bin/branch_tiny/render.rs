@@ -140,21 +140,28 @@ fn print_boss_retry(retry: &BossRetryReport) {
         retry.max_nodes,
         retry.wall_ms
     );
-    if retry.action_keys.is_empty() {
+    for attempt in &retry.attempts {
+        println!(
+            "    attempt {}: {} potion={} max_potions={:?} budget={}nodes/{}ms",
+            attempt.label,
+            boss_retry_status_label(&attempt.status),
+            attempt.potion_policy,
+            attempt.max_potions_used,
+            attempt.max_nodes,
+            attempt.wall_ms
+        );
+        print_action_path("      applied_path", &attempt.action_keys);
+    }
+}
+
+fn print_action_path(prefix: &str, action_keys: &[String]) {
+    if action_keys.is_empty() {
         return;
     }
-    let shown = retry
-        .action_keys
-        .iter()
-        .take(12)
-        .cloned()
-        .collect::<Vec<_>>();
-    println!("    applied_path: {}", shown.join(" -> "));
-    if retry.action_keys.len() > shown.len() {
-        println!(
-            "    ... {} more actions",
-            retry.action_keys.len() - shown.len()
-        );
+    let shown = action_keys.iter().take(12).cloned().collect::<Vec<_>>();
+    println!("{prefix}: {}", shown.join(" -> "));
+    if action_keys.len() > shown.len() {
+        println!("      ... {} more actions", action_keys.len() - shown.len());
     }
 }
 

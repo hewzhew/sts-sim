@@ -38,6 +38,18 @@ struct BossRetryReport {
     max_nodes: usize,
     wall_ms: u64,
     action_keys: Vec<String>,
+    attempts: Vec<BossRetryAttemptReport>,
+}
+
+#[derive(Clone)]
+struct BossRetryAttemptReport {
+    label: &'static str,
+    status: BossRetryStatus,
+    max_nodes: usize,
+    wall_ms: u64,
+    potion_policy: &'static str,
+    max_potions_used: Option<u32>,
+    action_keys: Vec<String>,
 }
 
 #[derive(Clone)]

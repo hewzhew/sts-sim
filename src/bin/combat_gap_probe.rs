@@ -7,8 +7,8 @@ use serde::Deserialize;
 use serde_json::json;
 use sts_simulator::ai::combat_search_v2::{
     explain_combat_search_v2_initial_decision, run_combat_search_v2,
-    CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config, CombatSearchV2Report,
-    CombatSearchV2RolloutPolicy, CombatSearchV2TrajectoryReport,
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config, CombatSearchV2PotionPolicy,
+    CombatSearchV2Report, CombatSearchV2RolloutPolicy, CombatSearchV2TrajectoryReport,
 };
 use sts_simulator::sim::combat::CombatPosition;
 
@@ -32,6 +32,10 @@ struct Args {
     child_rollout: Option<CombatSearchV2ChildRolloutPolicy>,
     #[arg(long, value_parser = parse_rollout_policy)]
     rollout_policy: Option<CombatSearchV2RolloutPolicy>,
+    #[arg(long, value_parser = parse_potion_policy)]
+    potion_policy: Option<CombatSearchV2PotionPolicy>,
+    #[arg(long)]
+    max_potions_used: Option<u32>,
     #[arg(long)]
     rollout_actions: Option<usize>,
     #[arg(long)]
@@ -68,6 +72,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rollout_max_evaluations: args
             .rollout_evaluations
             .unwrap_or_else(|| CombatSearchV2Config::default().rollout_max_evaluations),
+        potion_policy: args
+            .potion_policy
+            .unwrap_or_else(|| CombatSearchV2Config::default().potion_policy),
+        max_potions_used: args.max_potions_used,
         input_label: Some(format!("combat_gap_case:{}", args.case.display())),
         ..CombatSearchV2Config::default()
     };
@@ -153,6 +161,17 @@ fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, Stri
     }
 }
 
+fn parse_potion_policy(value: &str) -> Result<CombatSearchV2PotionPolicy, String> {
+    match value {
+        "never" | "none" => Ok(CombatSearchV2PotionPolicy::Never),
+        "all" | "all_legal_potion_actions" => Ok(CombatSearchV2PotionPolicy::All),
+        "semantic" | "semantic_budgeted" | "semantic_budgeted_potion_actions" => {
+            Ok(CombatSearchV2PotionPolicy::SemanticBudgeted)
+        }
+        _ => Err(format!("unknown potion policy: {value}")),
+    }
+}
+
 fn load_case(path: &PathBuf) -> Result<CombatGapCase, String> {
     let payload = fs::read_to_string(path).map_err(|err| err.to_string())?;
     let case: CombatGapCase = serde_json::from_str(&payload).map_err(|err| err.to_string())?;
@@ -210,8 +229,11 @@ fn print_human(
         report.outcome.coverage_reason
     );
     println!(
-        "  budget: nodes={} ms={:?} potion={}",
-        report.budget.max_nodes, report.budget.wall_time_ms, report.search_policy.potion_policy
+        "  budget: nodes={} ms={:?} potion={} max_potions={:?}",
+        report.budget.max_nodes,
+        report.budget.wall_time_ms,
+        report.search_policy.potion_policy,
+        report.budget.max_potions_used
     );
     println!(
         "  stats: expanded={} generated={} wins={} losses={} deadline={} node_budget={} elapsed={}ms",

@@ -1,3 +1,4 @@
+use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 use sts_simulator::eval::run_control::{
     apply_owner_audit_auto_run, build_decision_surface, CombatSearchTraceSummary,
     RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlAutoStepOptions,
@@ -9,7 +10,10 @@ use sts_simulator::state::core::{ClientInput, EngineState, RunResult};
 use sts_simulator::state::selection::DomainEventSource;
 
 use super::render;
-use super::{Args, BossRetryReport, BossRetryStatus, BoundarySite, BranchStatus, Owner};
+use super::{
+    Args, BossRetryAttemptReport, BossRetryReport, BossRetryStatus, BoundarySite, BranchStatus,
+    Owner,
+};
 
 pub(super) struct AdvanceResult {
     pub(super) status: BranchStatus,
@@ -157,50 +161,137 @@ fn try_boss_retry(
     session: &mut RunControlSession,
     args: Args,
 ) -> Option<(BranchStatus, BossRetryReport, Vec<CombatSearchTraceSummary>)> {
-    let options = auto_step_options(args.boss_search_nodes, args.boss_search_ms, args.auto_ops);
+    let mut all_search = Vec::new();
+    let mut attempts = Vec::new();
+    let no_potion = boss_retry_options(args, CombatSearchV2PotionPolicy::Never, Some(0));
+    let (status, attempt, search) = run_boss_retry_attempt(session, args, "no_potion", no_potion);
+    all_search.extend(search);
+    attempts.push(attempt);
+    if !matches!(status, BranchStatus::CombatGap { .. }) {
+        let report = boss_retry_report(args, status.clone(), attempts);
+        return Some((status, report, all_search));
+    }
+
+    let max_potions = session
+        .active_combat
+        .as_ref()
+        .and_then(|active| {
+            sts_simulator::ai::combat_search_v2::high_stakes_semantic_potion_budget(
+                &active.combat_state,
+            )
+        })
+        .unwrap_or(1);
+    let rescue = boss_retry_options(args, CombatSearchV2PotionPolicy::All, Some(max_potions));
+    let (status, attempt, search) = run_boss_retry_attempt(session, args, "potion_rescue", rescue);
+    all_search.extend(search);
+    attempts.push(attempt);
+    let report = boss_retry_report(args, status.clone(), attempts);
+    Some((status, report, all_search))
+}
+
+fn boss_retry_options(
+    args: Args,
+    potion_policy: CombatSearchV2PotionPolicy,
+    max_potions_used: Option<u32>,
+) -> RunControlAutoStepOptions {
+    let mut options = auto_step_options(args.boss_search_nodes, args.boss_search_ms, args.auto_ops);
+    options.search.potion_policy = Some(potion_policy);
+    options.search.max_potions_used = max_potions_used;
+    options
+}
+
+fn run_boss_retry_attempt(
+    session: &mut RunControlSession,
+    args: Args,
+    label: &'static str,
+    options: RunControlAutoStepOptions,
+) -> (
+    BranchStatus,
+    BossRetryAttemptReport,
+    Vec<CombatSearchTraceSummary>,
+) {
+    let potion_policy = options
+        .search
+        .potion_policy
+        .unwrap_or(CombatSearchV2PotionPolicy::Never);
+    let max_potions_used = options.search.max_potions_used;
     let outcome = match apply_owner_audit_auto_run(session, options) {
         Ok(outcome) => outcome,
         Err(err) => {
-            return Some((
-                BranchStatus::AdvanceFailed(err.clone()),
-                BossRetryReport {
-                    status: BossRetryStatus::Failed(err),
-                    max_nodes: args.boss_search_nodes,
-                    wall_ms: args.boss_search_ms,
-                    action_keys: Vec::new(),
-                },
+            let status = BranchStatus::AdvanceFailed(err);
+            let attempt = boss_retry_attempt_report(
+                args,
+                label,
+                potion_policy,
+                max_potions_used,
+                &status,
                 Vec::new(),
-            ));
+            );
+            return (status, attempt, Vec::new());
         }
     };
     let combat_search = combat_search_summaries(&outcome);
-    if terminal_label(session).is_some() {
-        let status = BranchStatus::Terminal(terminal_label(session).unwrap());
-        let report = boss_retry_report(args, &outcome, &status);
-        return Some((status, report, combat_search));
-    }
-    let stop = match outcome.auto_stop.as_ref() {
-        Some(stop) => stop,
-        None => {
-            let status = BranchStatus::AdvanceFailed(
-                "boss retry returned non-terminal success without auto_stop".to_string(),
-            );
-            let report = boss_retry_report(args, &outcome, &status);
-            return Some((status, report, combat_search));
-        }
+    let status = if terminal_label(session).is_some() {
+        BranchStatus::Terminal(terminal_label(session).unwrap())
+    } else if let Some(stop) = outcome.auto_stop.as_ref() {
+        classify_boundary(session, stop)
+    } else {
+        BranchStatus::AdvanceFailed(
+            "boss retry returned non-terminal success without auto_stop".to_string(),
+        )
     };
-    let status = classify_boundary(session, stop);
-    let report = boss_retry_report(args, &outcome, &status);
-    Some((status, report, combat_search))
+    let action_keys = retry_complete_search_action_keys(&outcome);
+    let attempt = boss_retry_attempt_report(
+        args,
+        label,
+        potion_policy,
+        max_potions_used,
+        &status,
+        action_keys,
+    );
+    (status, attempt, combat_search)
 }
 
 fn boss_retry_report(
     args: Args,
-    outcome: &RunControlCommandOutcome,
-    status: &BranchStatus,
+    status: BranchStatus,
+    attempts: Vec<BossRetryAttemptReport>,
 ) -> BossRetryReport {
-    let action_keys = retry_complete_search_action_keys(outcome);
-    let status = match status {
+    let action_keys = attempts
+        .last()
+        .map(|attempt| attempt.action_keys.clone())
+        .unwrap_or_default();
+    let status = boss_retry_status(&status);
+    BossRetryReport {
+        status,
+        max_nodes: args.boss_search_nodes,
+        wall_ms: args.boss_search_ms,
+        action_keys,
+        attempts,
+    }
+}
+
+fn boss_retry_attempt_report(
+    args: Args,
+    label: &'static str,
+    potion_policy: CombatSearchV2PotionPolicy,
+    max_potions_used: Option<u32>,
+    status: &BranchStatus,
+    action_keys: Vec<String>,
+) -> BossRetryAttemptReport {
+    BossRetryAttemptReport {
+        label,
+        status: boss_retry_status(status),
+        max_nodes: args.boss_search_nodes,
+        wall_ms: args.boss_search_ms,
+        potion_policy: potion_policy_label(potion_policy),
+        max_potions_used,
+        action_keys,
+    }
+}
+
+fn boss_retry_status(status: &BranchStatus) -> BossRetryStatus {
+    match status {
         BranchStatus::CombatGap { reason, .. } => BossRetryStatus::Failed(reason.clone()),
         BranchStatus::ApplyFailed(err)
         | BranchStatus::AdvanceFailed(err)
@@ -210,12 +301,14 @@ fn boss_retry_report(
         }
         BranchStatus::Terminal(result) => BossRetryStatus::Terminal(result),
         _ => BossRetryStatus::Advanced(render::status_boundary(status).to_string()),
-    };
-    BossRetryReport {
-        status,
-        max_nodes: args.boss_search_nodes,
-        wall_ms: args.boss_search_ms,
-        action_keys,
+    }
+}
+
+fn potion_policy_label(policy: CombatSearchV2PotionPolicy) -> &'static str {
+    match policy {
+        CombatSearchV2PotionPolicy::Never => "never",
+        CombatSearchV2PotionPolicy::All => "all",
+        CombatSearchV2PotionPolicy::SemanticBudgeted => "semantic",
     }
 }
 

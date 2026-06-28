@@ -83,6 +83,19 @@ impl TraceWriter {
                 "nodes": retry.max_nodes,
                 "ms": retry.wall_ms,
                 "actions": retry.action_keys,
+                "attempts": retry.attempts.iter().map(|attempt| json!({
+                    "label": attempt.label,
+                    "status": match &attempt.status {
+                        BossRetryStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
+                        BossRetryStatus::Advanced(boundary) => json!({"kind": "advanced", "boundary": boundary}),
+                        BossRetryStatus::Terminal(result) => json!({"kind": "terminal", "result": result}),
+                    },
+                    "nodes": attempt.max_nodes,
+                    "ms": attempt.wall_ms,
+                    "potion_policy": attempt.potion_policy,
+                    "max_potions_used": attempt.max_potions_used,
+                    "actions": attempt.action_keys,
+                })).collect::<Vec<_>>(),
             })),
             "choices": choices.iter().enumerate()
                 .map(|(index, choice)| choice_value(index, choice, index < expanded))
