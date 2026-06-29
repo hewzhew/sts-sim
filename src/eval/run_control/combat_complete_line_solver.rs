@@ -24,12 +24,27 @@ const MIN_REPAIR_HP_LOSS: i32 = 8;
 pub(super) struct CompleteLineSolverOutcome {
     pub line: CombatCandidateLine,
     pub base_hp_loss: i32,
+    pub base_action_count: usize,
     pub repair_attempts: usize,
     pub repair_wins: usize,
     pub repair_improvements: usize,
+    pub base_nodes_expanded: usize,
+    pub base_nodes_generated: usize,
+    pub repair_nodes_expanded: usize,
+    pub repair_nodes_generated: usize,
     pub nodes_expanded: usize,
     pub nodes_generated: usize,
     pub elapsed_ms: u128,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum LineLane {
+    Root,
+    Setup,
+    SetupPath,
+    Progress,
+    Survival,
+    Other,
 }
 
 #[derive(Clone)]
@@ -38,7 +53,7 @@ struct Line {
     actions: Vec<CombatSearchV2ActionTrace>,
     terminal: CombatTerminal,
     score: i64,
-    lane: &'static str,
+    lane: LineLane,
     setup_seen: bool,
 }
 
@@ -61,6 +76,8 @@ struct RepairStats {
     attempts: usize,
     wins: usize,
     improvements: usize,
+    nodes_expanded: usize,
+    nodes_generated: usize,
 }
 
 pub(super) fn try_solve_complete_line(
@@ -83,6 +100,7 @@ pub(super) fn try_solve_complete_line(
     let run = line_search_from(start.clone(), initial_hp, search, config, &stepper);
     let base = run.best_win?;
     let base_hp_loss = (initial_hp - base.position.combat.entities.player.current_hp).max(0);
+    let base_action_count = base.actions.len();
     let (best, repair) = repair_line_if_useful(start, base, initial_hp, config, &stepper);
     Some(CompleteLineSolverOutcome {
         line: CombatCandidateLine::from_position(
@@ -92,11 +110,16 @@ pub(super) fn try_solve_complete_line(
             &best.position,
         ),
         base_hp_loss,
+        base_action_count,
         repair_attempts: repair.attempts,
         repair_wins: repair.wins,
         repair_improvements: repair.improvements,
-        nodes_expanded: run.nodes_expanded,
-        nodes_generated: run.nodes_generated,
+        base_nodes_expanded: run.nodes_expanded,
+        base_nodes_generated: run.nodes_generated,
+        repair_nodes_expanded: repair.nodes_expanded,
+        repair_nodes_generated: repair.nodes_generated,
+        nodes_expanded: run.nodes_expanded + repair.nodes_expanded,
+        nodes_generated: run.nodes_generated + repair.nodes_generated,
         elapsed_ms: started.elapsed().as_millis(),
     })
 }
@@ -113,7 +136,7 @@ fn line_search_from(
         start_position,
         Vec::new(),
         initial_hp,
-        "root",
+        LineLane::Root,
         false,
         stepper,
     )];
@@ -121,10 +144,17 @@ fn line_search_from(
     let mut nodes_expanded = 0usize;
     let mut nodes_generated = 0usize;
 
-    while !frontier.is_empty() && nodes_expanded < search.nodes && Instant::now() < deadline {
+    while !frontier.is_empty()
+        && nodes_expanded < search.nodes
+        && nodes_generated < search.nodes
+        && Instant::now() < deadline
+    {
         let mut next = Vec::new();
         for line in frontier.drain(..) {
-            if nodes_expanded >= search.nodes || Instant::now() >= deadline {
+            if nodes_expanded >= search.nodes
+                || nodes_generated >= search.nodes
+                || Instant::now() >= deadline
+            {
                 break;
             }
             if line.terminal != CombatTerminal::Unresolved
@@ -134,7 +164,7 @@ fn line_search_from(
                 continue;
             }
             nodes_expanded += 1;
-            let mut choices = legal_choices(&line.position, config, stepper);
+            let mut choices = legal_non_potion_choices(&line.position, config, stepper);
             order_choices(&mut choices);
             for (action_id, choice) in choices.into_iter().enumerate() {
                 let step = stepper.apply_to_stable(
@@ -157,9 +187,11 @@ fn line_search_from(
                     input: choice.input.clone(),
                 });
                 let lane = classify_lane(&line.position, &step.position, &choice.input);
-                let setup_seen = line.setup_seen || lane == "setup";
-                let child_lane = if setup_seen && lane != "win" {
-                    "setup_path"
+                let setup_seen = line.setup_seen || lane == LineLane::Setup;
+                let child_lane = if lane == LineLane::Setup {
+                    LineLane::Setup
+                } else if line.setup_seen {
+                    LineLane::SetupPath
                 } else {
                     lane
                 };
@@ -172,10 +204,10 @@ fn line_search_from(
                     stepper,
                 );
                 nodes_generated += 1;
-                if child.terminal == CombatTerminal::Win {
-                    remember_win(&mut best_win, child);
-                } else {
-                    next.push(child);
+                match child.terminal {
+                    CombatTerminal::Win => remember_win(&mut best_win, child),
+                    CombatTerminal::Unresolved => next.push(child),
+                    CombatTerminal::Loss => {}
                 }
                 if nodes_generated >= search.nodes || Instant::now() >= deadline {
                     break;
@@ -204,24 +236,28 @@ fn repair_line_if_useful(
     if best.terminal != CombatTerminal::Win || hp_loss < MIN_REPAIR_HP_LOSS {
         return (best, stats);
     }
-    let repair_config = LineSearchConfig {
-        nodes: REPAIR_NODES,
-        ms: REPAIR_MS,
-        beam: LINE_BEAM,
-        max_actions: config
-            .max_actions_per_line
-            .min(best.actions.len().saturating_add(20)),
-    };
     for cut in repair_cut_points(best.actions.len(), REPAIR_CUTS) {
         let cut = cut.min(best.actions.len());
+        let remaining_actions = config.max_actions_per_line.saturating_sub(cut);
+        if remaining_actions == 0 {
+            continue;
+        }
         stats.attempts += 1;
         let Some(prefix_position) = replay_prefix(root, &best.actions[..cut], config, stepper)
         else {
             continue;
         };
-        let Some(suffix_win) =
-            line_search_from(prefix_position, initial_hp, repair_config, config, stepper).best_win
-        else {
+        let repair_config = LineSearchConfig {
+            nodes: REPAIR_NODES,
+            ms: REPAIR_MS,
+            beam: LINE_BEAM,
+            max_actions: remaining_actions,
+        };
+        let repair_run =
+            line_search_from(prefix_position, initial_hp, repair_config, config, stepper);
+        stats.nodes_expanded += repair_run.nodes_expanded;
+        stats.nodes_generated += repair_run.nodes_generated;
+        let Some(suffix_win) = repair_run.best_win else {
             continue;
         };
         stats.wins += 1;
@@ -238,7 +274,7 @@ fn line_from(
     position: CombatPosition,
     actions: Vec<CombatSearchV2ActionTrace>,
     initial_hp: i32,
-    lane: &'static str,
+    lane: LineLane,
     setup_seen: bool,
     stepper: &EngineCombatStepper,
 ) -> Line {
@@ -254,7 +290,7 @@ fn line_from(
     }
 }
 
-fn legal_choices(
+fn legal_non_potion_choices(
     position: &CombatPosition,
     config: &CombatSearchV2Config,
     stepper: &EngineCombatStepper,
@@ -287,7 +323,7 @@ fn replay_prefix(
 ) -> Option<CombatPosition> {
     let mut position = root.clone();
     for action in actions {
-        let choices = legal_choices(&position, config, stepper);
+        let choices = legal_non_potion_choices(&position, config, stepper);
         let choice = choices.into_iter().find(|choice| {
             choice.input == action.input && choice.action_key == action.action_key
         })?;
@@ -340,7 +376,7 @@ fn keep_lane_frontier(mut lines: Vec<Line>, beam: usize) -> Vec<Line> {
     lines.sort_by(|a, b| b.score.cmp(&a.score));
     let per_lane = (beam / 5).max(4);
     let mut kept = Vec::new();
-    let mut counts: HashMap<&'static str, usize> = HashMap::new();
+    let mut counts: HashMap<LineLane, usize> = HashMap::new();
     let mut rest = Vec::new();
     for line in lines {
         let count = counts.entry(line.lane).or_default();
@@ -376,26 +412,22 @@ fn order_choices(choices: &mut [CombatActionChoice]) {
     });
 }
 
-fn classify_lane(
-    before: &CombatPosition,
-    after: &CombatPosition,
-    input: &ClientInput,
-) -> &'static str {
+fn classify_lane(before: &CombatPosition, after: &CombatPosition, input: &ClientInput) -> LineLane {
     if after.combat.are_monsters_basically_dead_java() {
-        return "win";
+        return LineLane::Progress;
     }
     if played_power(before, input) {
-        return "setup";
+        return LineLane::Setup;
     }
     if enemy_effort(&after.combat) < enemy_effort(&before.combat) {
-        return "progress";
+        return LineLane::Progress;
     }
-    if visible_pressure(&after.combat) < visible_pressure(&before.combat)
+    if net_visible_pressure(&after.combat) < net_visible_pressure(&before.combat)
         || after.combat.entities.player.block > before.combat.entities.player.block
     {
-        return "survival";
+        return LineLane::Survival;
     }
-    "other"
+    LineLane::Other
 }
 
 fn played_power(position: &CombatPosition, input: &ClientInput) -> bool {
@@ -416,25 +448,20 @@ fn score_position(
     initial_hp: i32,
     action_count: usize,
 ) -> i64 {
-    let hp = position.combat.entities.player.current_hp;
-    let hp_loss = (initial_hp - hp).max(0) as i64;
+    let hp_loss = (initial_hp - position.combat.entities.player.current_hp).max(0) as i64;
     let enemy_effort = enemy_effort(&position.combat) as i64;
-    let incoming = visible_incoming(&position.combat) as i64;
+    let net_pressure = net_visible_pressure(&position.combat) as i64;
     match terminal {
         CombatTerminal::Win => 1_000_000 - hp_loss * 10_000 - action_count as i64,
         CombatTerminal::Loss => -1_000_000 - action_count as i64,
         CombatTerminal::Unresolved => {
-            hp as i64 * 1_000
-                - hp_loss * 1_000
-                - enemy_effort * 450
-                - incoming.saturating_sub(position.combat.entities.player.block as i64) * 700
-                - action_count as i64
+            -hp_loss * 2_000 - enemy_effort * 450 - net_pressure * 700 - action_count as i64
         }
     }
 }
 
-fn visible_pressure(combat: &crate::runtime::combat::CombatState) -> i32 {
-    visible_incoming(combat).saturating_sub(combat.entities.player.block)
+fn net_visible_pressure(combat: &crate::runtime::combat::CombatState) -> i32 {
+    (visible_incoming(combat) - combat.entities.player.block).max(0)
 }
 
 fn enemy_effort(combat: &crate::runtime::combat::CombatState) -> i32 {
