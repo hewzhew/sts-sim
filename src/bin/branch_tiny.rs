@@ -173,7 +173,8 @@ fn run() -> Result<(), String> {
             ..Default::default()
         });
         let deadline = RunDeadline::new(started, args.wall_ms);
-        let advance = runner::advance_to_owner_or_gap(&mut session, deadline.cap_args(args, 1));
+        let advance =
+            runner::advance_to_owner_or_gap(&mut session, deadline.cap_args(args, 1), deadline);
         (
             VecDeque::from([Branch {
                 id: 0,
@@ -258,6 +259,7 @@ fn run() -> Result<(), String> {
             for child in expand_registered_owner(
                 &branch,
                 child_args,
+                deadline,
                 choices
                     .into_iter()
                     .filter(|choice| choice.auto_expand_allowed())
@@ -341,8 +343,20 @@ fn save_wall_stop(
         deadline.remaining_ms().unwrap_or(0)
     );
     if let Some(path) = path {
+        let running = frontier
+            .iter()
+            .filter(|branch| matches!(branch.status, BranchStatus::Running { .. }))
+            .count();
+        if running == 0 {
+            println!("frontier_checkpoint skipped: no running branches");
+            return Ok(());
+        }
         frontier_checkpoint::save(path, args, generation, next_branch_id, frontier)?;
-        println!("frontier_checkpoint: {}", path.display());
+        println!(
+            "frontier_checkpoint: {} running={}",
+            path.display(),
+            running
+        );
     } else {
         println!("wall_soft_stop reached without --frontier-checkpoint");
     }
@@ -361,6 +375,7 @@ fn branch_owner_choices(branch: &Branch) -> Vec<OwnerChoice> {
 fn expand_registered_owner(
     branch: &Branch,
     args: Args,
+    deadline: RunDeadline,
     candidates: impl IntoIterator<Item = OwnerChoice>,
     next_branch_id: &mut usize,
 ) -> Vec<Branch> {
@@ -368,7 +383,7 @@ fn expand_registered_owner(
     for choice in candidates {
         let mut session = branch.session.clone();
         let advance = match session.apply_command(choice.action.clone()) {
-            Ok(_) => runner::advance_to_owner_or_gap(&mut session, args),
+            Ok(_) => runner::advance_to_owner_or_gap(&mut session, args, deadline),
             Err(err) => runner::AdvanceResult {
                 status: BranchStatus::ApplyFailed(err),
                 boss_retry: None,

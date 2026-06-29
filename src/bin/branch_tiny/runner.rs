@@ -18,7 +18,7 @@ use sts_simulator::state::selection::DomainEventSource;
 use super::render;
 use super::{
     Args, BossRetryAttemptReport, BossRetryReport, BossRetryStatus, BoundarySite, BranchStatus,
-    Owner,
+    Owner, RunDeadline,
 };
 
 pub(super) struct AdvanceResult {
@@ -31,18 +31,35 @@ pub(super) struct AdvanceResult {
 pub(super) fn advance_to_owner_or_gap(
     session: &mut RunControlSession,
     args: Args,
+    deadline: RunDeadline,
 ) -> AdvanceResult {
     let mut policy_steps = 0usize;
+    let mut auto_ops_used = 0usize;
     let mut auto_steps = Vec::new();
     let mut combat_search = Vec::new();
     loop {
-        match apply_owner_audit_auto_run(session, primary_auto_step_options(args)) {
+        let run_args = deadline.cap_args(args, 1);
+        match apply_owner_audit_auto_run(session, primary_auto_step_options(run_args)) {
             Ok(outcome) => {
+                let stop_kind = outcome.auto_stop.as_ref().map(|stop| stop.kind);
+                auto_ops_used = auto_ops_used.saturating_add(
+                    outcome
+                        .auto_stop
+                        .as_ref()
+                        .map(|stop| stop.applied_operations)
+                        .unwrap_or(0),
+                );
                 combat_search.extend(combat_search_summaries(&outcome));
                 auto_steps.extend(outcome.auto_applied_steps.clone());
                 let mut status = classify_auto_outcome(session, &outcome);
+                if stop_kind == Some(RunControlAutoStopKind::OperationBudgetExhausted)
+                    && auto_ops_used < args.auto_ops
+                    && !deadline.should_stop()
+                {
+                    continue;
+                }
                 if matches!(status, BranchStatus::CombatGap { .. }) && is_boss_combat(session) {
-                    if let Some(result) = try_boss_retry(session, args) {
+                    if let Some(result) = try_boss_retry(session, deadline.cap_args(args, 1)) {
                         combat_search.extend(result.2);
                         return advance_result(result.0, Some(result.1), auto_steps, combat_search);
                     }
@@ -184,6 +201,7 @@ fn primary_auto_step_options(args: Args) -> RunControlAutoStepOptions {
         args.search_nodes,
         args.search_ms,
         args.auto_ops,
+        args.wall_ms.is_some(),
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
     )
 }
@@ -193,6 +211,7 @@ fn diagnostic_rescue_auto_step_options(args: Args) -> RunControlAutoStepOptions 
         args.rescue_search_nodes,
         args.rescue_search_ms,
         args.auto_ops,
+        args.wall_ms.is_some(),
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
     )
 }
@@ -201,6 +220,7 @@ fn auto_step_options(
     max_nodes: usize,
     wall_ms: u64,
     auto_ops: usize,
+    wall_limited: bool,
     turn_plan_policy: CombatSearchV2TurnPlanPolicy,
 ) -> RunControlAutoStepOptions {
     RunControlAutoStepOptions {
@@ -211,8 +231,16 @@ fn auto_step_options(
             turn_plan_policy: Some(turn_plan_policy),
             ..Default::default()
         },
-        max_operations: Some(auto_ops),
+        max_operations: Some(auto_run_chunk_ops(auto_ops, wall_limited)),
         route: RunControlRouteAutomationMode::Planner,
+    }
+}
+
+fn auto_run_chunk_ops(auto_ops: usize, wall_limited: bool) -> usize {
+    if wall_limited {
+        1
+    } else {
+        auto_ops
     }
 }
 
@@ -257,6 +285,7 @@ fn boss_retry_options(
         args.boss_search_nodes,
         args.boss_search_ms,
         args.auto_ops,
+        args.wall_ms.is_some(),
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
     );
     options.search.potion_policy = Some(potion_policy);
@@ -585,6 +614,9 @@ fn classify_boundary(session: &RunControlSession, stop: &RunControlAutoStopV1) -
     let surface = build_decision_surface(session);
     let boundary = surface.view.header.title.clone();
     if stop.kind == RunControlAutoStopKind::OperationBudgetExhausted {
+        if let Some(owner) = owner_for_current_boundary(session) {
+            return BranchStatus::Running { boundary, owner };
+        }
         return BranchStatus::BudgetGap {
             boundary,
             reason: stop.reason.clone(),
