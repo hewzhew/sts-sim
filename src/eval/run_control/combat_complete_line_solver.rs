@@ -6,8 +6,7 @@ use crate::ai::combat_search_v2::{
 };
 use crate::content::cards::{get_card_definition, CardType};
 use crate::sim::combat::{
-    combat_terminal, CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal,
-    EngineCombatStepper,
+    CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
 use crate::sim::combat_action::CombatActionChoice;
 use crate::sim::combat_projection::monster_preview_total_damage_in_combat;
@@ -20,11 +19,16 @@ const REPAIR_CUTS: usize = 4;
 const REPAIR_NODES: usize = 8_000;
 const REPAIR_MS: u64 = 500;
 const MIN_REPAIR_HP_LOSS: i32 = 8;
+const MIN_REPAIR_ACTIONS: usize = 24;
 
 pub(super) struct CompleteLineSolverOutcome {
     pub line: CombatCandidateLine,
     pub base_hp_loss: i32,
     pub base_action_count: usize,
+    pub final_hp_loss: i32,
+    pub final_action_count: usize,
+    pub repair_hp_loss_delta: i32,
+    pub repair_action_count_delta: isize,
     pub repair_attempts: usize,
     pub repair_wins: usize,
     pub repair_improvements: usize,
@@ -35,6 +39,49 @@ pub(super) struct CompleteLineSolverOutcome {
     pub nodes_expanded: usize,
     pub nodes_generated: usize,
     pub elapsed_ms: u128,
+}
+
+#[derive(Clone, Copy)]
+struct CompleteLineSolverBudget {
+    base_nodes: usize,
+    base_ms: u64,
+    repair_nodes_per_cut: usize,
+    repair_ms_per_cut: u64,
+    repair_cuts: usize,
+}
+
+impl CompleteLineSolverBudget {
+    fn from_search_config(config: &CombatSearchV2Config) -> Self {
+        Self {
+            base_nodes: config.max_nodes,
+            base_ms: config
+                .wall_time
+                .unwrap_or_else(|| Duration::from_millis(2_000))
+                .as_millis()
+                .min(u128::from(u64::MAX)) as u64,
+            repair_nodes_per_cut: REPAIR_NODES,
+            repair_ms_per_cut: REPAIR_MS,
+            repair_cuts: REPAIR_CUTS,
+        }
+    }
+
+    fn base_search(self, max_actions: usize) -> LineSearchConfig {
+        LineSearchConfig {
+            nodes: self.base_nodes,
+            ms: self.base_ms,
+            beam: LINE_BEAM,
+            max_actions,
+        }
+    }
+
+    fn repair_search(self, max_actions: usize) -> LineSearchConfig {
+        LineSearchConfig {
+            nodes: self.repair_nodes_per_cut,
+            ms: self.repair_ms_per_cut,
+            beam: LINE_BEAM,
+            max_actions,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -87,21 +134,20 @@ pub(super) fn try_solve_complete_line(
     let started = Instant::now();
     let stepper = EngineCombatStepper;
     let initial_hp = start.combat.entities.player.current_hp;
-    let search = LineSearchConfig {
-        nodes: config.max_nodes,
-        ms: config
-            .wall_time
-            .unwrap_or_else(|| Duration::from_millis(2_000))
-            .as_millis()
-            .min(u128::from(u64::MAX)) as u64,
-        beam: LINE_BEAM,
-        max_actions: config.max_actions_per_line,
-    };
-    let run = line_search_from(start.clone(), initial_hp, search, config, &stepper);
+    let budget = CompleteLineSolverBudget::from_search_config(config);
+    let run = line_search_from(
+        start.clone(),
+        initial_hp,
+        budget.base_search(config.max_actions_per_line),
+        config,
+        &stepper,
+    );
     let base = run.best_win?;
     let base_hp_loss = (initial_hp - base.position.combat.entities.player.current_hp).max(0);
     let base_action_count = base.actions.len();
-    let (best, repair) = repair_line_if_useful(start, base, initial_hp, config, &stepper);
+    let (best, repair) = repair_line_if_useful(start, base, initial_hp, budget, config, &stepper);
+    let final_hp_loss = (initial_hp - best.position.combat.entities.player.current_hp).max(0);
+    let final_action_count = best.actions.len();
     Some(CompleteLineSolverOutcome {
         line: CombatCandidateLine::from_position(
             CombatCandidateLineSource::CompleteLineSolver,
@@ -111,6 +157,10 @@ pub(super) fn try_solve_complete_line(
         ),
         base_hp_loss,
         base_action_count,
+        final_hp_loss,
+        final_action_count,
+        repair_hp_loss_delta: final_hp_loss - base_hp_loss,
+        repair_action_count_delta: final_action_count as isize - base_action_count as isize,
         repair_attempts: repair.attempts,
         repair_wins: repair.wins,
         repair_improvements: repair.improvements,
@@ -228,15 +278,15 @@ fn repair_line_if_useful(
     root: &CombatPosition,
     mut best: Line,
     initial_hp: i32,
+    budget: CompleteLineSolverBudget,
     config: &CombatSearchV2Config,
     stepper: &EngineCombatStepper,
 ) -> (Line, RepairStats) {
     let mut stats = RepairStats::default();
-    let hp_loss = (initial_hp - best.position.combat.entities.player.current_hp).max(0);
-    if best.terminal != CombatTerminal::Win || hp_loss < MIN_REPAIR_HP_LOSS {
+    if !should_repair_line(&best, initial_hp) {
         return (best, stats);
     }
-    for cut in repair_cut_points(best.actions.len(), REPAIR_CUTS) {
+    for cut in repair_cut_points(best.actions.len(), budget.repair_cuts) {
         let cut = cut.min(best.actions.len());
         let remaining_actions = config.max_actions_per_line.saturating_sub(cut);
         if remaining_actions == 0 {
@@ -247,14 +297,13 @@ fn repair_line_if_useful(
         else {
             continue;
         };
-        let repair_config = LineSearchConfig {
-            nodes: REPAIR_NODES,
-            ms: REPAIR_MS,
-            beam: LINE_BEAM,
-            max_actions: remaining_actions,
-        };
-        let repair_run =
-            line_search_from(prefix_position, initial_hp, repair_config, config, stepper);
+        let repair_run = line_search_from(
+            prefix_position,
+            initial_hp,
+            budget.repair_search(remaining_actions),
+            config,
+            stepper,
+        );
         stats.nodes_expanded += repair_run.nodes_expanded;
         stats.nodes_generated += repair_run.nodes_generated;
         let Some(suffix_win) = repair_run.best_win else {
@@ -268,6 +317,14 @@ fn repair_line_if_useful(
         }
     }
     (best, stats)
+}
+
+fn should_repair_line(line: &Line, initial_hp: i32) -> bool {
+    if line.terminal != CombatTerminal::Win {
+        return false;
+    }
+    let hp_loss = (initial_hp - line.position.combat.entities.player.current_hp).max(0);
+    hp_loss >= MIN_REPAIR_HP_LOSS || line.actions.len() >= MIN_REPAIR_ACTIONS
 }
 
 fn line_from(
@@ -339,7 +396,7 @@ fn replay_prefix(
             return None;
         }
         position = step.position;
-        if combat_terminal(&position.engine, &position.combat) != CombatTerminal::Unresolved {
+        if stepper.terminal(&position) != CombatTerminal::Unresolved {
             break;
         }
     }

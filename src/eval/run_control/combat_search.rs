@@ -70,11 +70,13 @@ pub(super) fn apply_search_combat(
                 .is_none_or(|limit| solution.line.hp_loss <= limit as i32)
             {
                 let summary = format!(
-                    "complete_line_solver actions={}/{} hp_loss={}/{} nodes={} generated={} base_nodes={}/{} repair_nodes={}/{} repair={}/{}/{} elapsed_ms={}",
-                    solution.line.actions.len(),
+                    "complete_line_solver actions={}/{} delta={} hp_loss={}/{} delta={} nodes={} generated={} base_nodes={}/{} repair_nodes={}/{} repair={}/{}/{} elapsed_ms={}",
+                    solution.final_action_count,
                     solution.base_action_count,
-                    solution.line.hp_loss,
+                    solution.repair_action_count_delta,
+                    solution.final_hp_loss,
                     solution.base_hp_loss,
+                    solution.repair_hp_loss_delta,
                     solution.nodes_expanded,
                     solution.nodes_generated,
                     solution.base_nodes_expanded,
