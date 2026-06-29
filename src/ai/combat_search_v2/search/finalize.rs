@@ -10,6 +10,7 @@ pub(super) struct SearchFinishInput {
     pub(super) dominance: HashMap<CombatDominanceKey, Vec<ResourceVector>>,
     pub(super) frontier: FrontierQueue,
     pub(super) best_complete: Option<SearchNode>,
+    pub(super) best_win: Option<SearchNode>,
     pub(super) best_frontier: Option<SearchNode>,
     pub(super) rollout_cache: RolloutCache,
     pub(super) performance: CombatSearchV2PerformanceReport,
@@ -31,6 +32,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         dominance,
         frontier,
         best_complete,
+        best_win,
         best_frontier,
         rollout_cache,
         performance,
@@ -65,7 +67,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
 
     CombatSearchV2Report {
         schema_name: "CombatSearchV2Report",
-        schema_version: 9,
+        schema_version: 10,
         input_label: config.input_label,
         information_boundary: "engine_state_snapshot_truth_v0",
         policy_evidence,
@@ -100,11 +102,13 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
             coverage_status,
             coverage_reason,
             complete_trajectory_found: best_complete.is_some(),
+            complete_win_found: best_win.is_some(),
             exhaustive,
         },
         best_complete_trajectory: best_complete
             .as_ref()
             .map(|node| trajectory_report(node, false)),
+        best_win_trajectory: best_win.as_ref().map(|node| trajectory_report(node, false)),
         best_frontier_trajectory: best_frontier.as_ref().map(|node| {
             trajectory_report(
                 node,

@@ -18,6 +18,7 @@ pub struct CombatSearchV2Report {
     pub budget: CombatSearchV2BudgetReport,
     pub outcome: CombatSearchV2OutcomeReport,
     pub best_complete_trajectory: Option<CombatSearchV2TrajectoryReport>,
+    pub best_win_trajectory: Option<CombatSearchV2TrajectoryReport>,
     pub best_frontier_trajectory: Option<CombatSearchV2TrajectoryReport>,
     pub frontier: CombatSearchV2FrontierReport,
     pub rollout: CombatSearchV2RolloutReport,
@@ -62,6 +63,7 @@ pub struct CombatSearchV2OutcomeReport {
     pub coverage_status: SearchCoverageStatus,
     pub coverage_reason: String,
     pub complete_trajectory_found: bool,
+    pub complete_win_found: bool,
     pub exhaustive: bool,
 }
 

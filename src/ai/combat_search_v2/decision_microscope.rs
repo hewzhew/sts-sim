@@ -89,6 +89,10 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
             .best_complete_trajectory
             .as_ref()
             .map(trajectory_summary),
+        best_win_summary: search_report
+            .best_win_trajectory
+            .as_ref()
+            .map(trajectory_summary),
         selected_first_action,
         initial_context: CombatSearchV2DecisionContext {
             state: summarize_state(engine, combat),
@@ -116,7 +120,7 @@ fn selected_first_action(
     search_report: &CombatSearchV2Report,
 ) -> Option<CombatSearchV2DecisionSelectedAction> {
     let action = search_report
-        .best_complete_trajectory
+        .best_win_trajectory
         .as_ref()?
         .actions
         .first()?;
@@ -129,7 +133,7 @@ fn selected_first_action(
             combat,
             &action.input,
         ),
-        selection_source: "best_complete_trajectory_first_action",
+        selection_source: "best_win_trajectory_first_action",
     })
 }
 

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ai::card_reward_policy_v1::PublicRewardDecisionPacketV1;
+use crate::ai::combat_search_v2::SearchTerminalLabel;
 use crate::ai::noncombat_decision_v1::{
     render_noncombat_decision_record_validation_errors, validate_noncombat_decision_record_v1,
     NonCombatDecisionRecordV1,
@@ -97,6 +98,12 @@ pub struct CombatSearchPerformanceSnapshotV1 {
     pub external_payoff_opportunity: bool,
     pub coverage_status: String,
     pub complete_trajectory_found: bool,
+    #[serde(default)]
+    pub complete_win_found: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best_complete: Option<CombatSearchTerminalLineSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best_win: Option<CombatSearchTerminalLineSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub best_hp_loss: Option<i32>,
     pub nodes_expanded: u64,
@@ -152,6 +159,19 @@ pub struct CombatSearchPerformanceSnapshotV1 {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct CombatSearchTerminalLineSummary {
+    pub terminal: SearchTerminalLabel,
+    pub final_hp: i32,
+    pub hp_loss: i32,
+    pub turns: u32,
+    pub cards_played: u32,
+    pub potions_used: u32,
+    pub potions_discarded: u32,
+    pub action_count: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CombatSearchTraceSummary {
     pub source: String,
     pub act: u8,
@@ -161,6 +181,12 @@ pub struct CombatSearchTraceSummary {
     pub enemies: Vec<String>,
     pub coverage_status: String,
     pub complete_trajectory_found: bool,
+    #[serde(default)]
+    pub complete_win_found: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best_complete: Option<CombatSearchTerminalLineSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub best_win: Option<CombatSearchTerminalLineSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub best_hp_loss: Option<i32>,
     pub nodes_expanded: u64,
@@ -387,6 +413,9 @@ pub fn combat_search_trace_summaries(
             enemies: snapshot.enemies.clone(),
             coverage_status: snapshot.coverage_status.clone(),
             complete_trajectory_found: snapshot.complete_trajectory_found,
+            complete_win_found: snapshot.complete_win_found,
+            best_complete: snapshot.best_complete.clone(),
+            best_win: snapshot.best_win.clone(),
             best_hp_loss: snapshot.best_hp_loss,
             nodes_expanded: snapshot.nodes_expanded,
             terminal_wins: snapshot.terminal_wins,

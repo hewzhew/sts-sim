@@ -5,7 +5,7 @@ use clap::Parser;
 use serde::Serialize;
 use sts_simulator::ai::combat_search_v2::{
     run_combat_search_v2, CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
-    CombatSearchV2TurnPlanPolicy, SearchTerminalLabel,
+    CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::eval::combat_case::{
     card_summary, load_combat_case, CombatCase, CombatCaseCardSummary, CombatCasePathStep,
@@ -217,10 +217,7 @@ fn search_review(
     max_potions_used: Option<u32>,
     report: &CombatSearchV2Report,
 ) -> SearchReview {
-    let best = report
-        .best_complete_trajectory
-        .as_ref()
-        .filter(|trajectory| trajectory.terminal == SearchTerminalLabel::Win);
+    let best = report.best_win_trajectory.as_ref();
     SearchReview {
         label,
         nodes,

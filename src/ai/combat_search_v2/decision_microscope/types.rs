@@ -17,6 +17,7 @@ pub struct CombatSearchV2DecisionMicroscopeReport {
     pub config: CombatSearchV2DecisionMicroscopeConfigReport,
     pub search_outcome: CombatSearchV2OutcomeReport,
     pub best_complete_summary: Option<CombatSearchV2DecisionTrajectorySummary>,
+    pub best_win_summary: Option<CombatSearchV2DecisionTrajectorySummary>,
     pub selected_first_action: Option<CombatSearchV2DecisionSelectedAction>,
     pub initial_context: CombatSearchV2DecisionContext,
     pub candidate_count: usize,

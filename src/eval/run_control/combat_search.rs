@@ -1,8 +1,8 @@
 use crate::ai::combat_search_v2::{
     filter_combat_search_legal_actions, has_external_payoff_opportunity,
     plan_combat_turn_segment_v1, run_combat_search_v2, CombatSearchV2ActionTrace,
-    CombatSearchV2Config, CombatSearchV2Report, CombatSearchV2TurnSegmentReport,
-    SearchTerminalLabel,
+    CombatSearchV2Config, CombatSearchV2Report, CombatSearchV2TrajectoryReport,
+    CombatSearchV2TurnSegmentReport,
 };
 use crate::content::monsters::EnemyId;
 use crate::content::potions::PotionId;
@@ -25,7 +25,8 @@ use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::trace_annotation::{
     CombatAutomationActionV1, CombatAutomationMonsterStateV1, CombatAutomationStepStateV1,
     CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
-    CombatSearchPerformanceSnapshotV1, RunControlTraceAnnotationV1,
+    CombatSearchPerformanceSnapshotV1, CombatSearchTerminalLineSummary,
+    RunControlTraceAnnotationV1,
 };
 use super::transition_report::{
     action_result_from_transition, render_action_result, ActionResult, ActionResultChange,
@@ -61,11 +62,7 @@ pub(super) fn apply_search_combat(
         outcome.search_evidence_path = saved_evidence;
         return Ok(outcome);
     }
-    let Some(trajectory) = report
-        .best_complete_trajectory
-        .as_ref()
-        .filter(|trajectory| trajectory.terminal == SearchTerminalLabel::Win)
-    else {
+    let Some(trajectory) = report.best_win_trajectory.as_ref() else {
         if let Some(outcome) = try_apply_turn_segment_after_rejection(
             session,
             &start,
@@ -466,8 +463,17 @@ fn combat_search_performance_snapshot(
         external_payoff_opportunity: has_external_payoff_opportunity(combat),
         coverage_status: format!("{:?}", report.outcome.coverage_status),
         complete_trajectory_found: report.outcome.complete_trajectory_found,
-        best_hp_loss: report
+        complete_win_found: report.outcome.complete_win_found,
+        best_complete: report
             .best_complete_trajectory
+            .as_ref()
+            .map(combat_search_line_summary),
+        best_win: report
+            .best_win_trajectory
+            .as_ref()
+            .map(combat_search_line_summary),
+        best_hp_loss: report
+            .best_win_trajectory
             .as_ref()
             .map(|trajectory| trajectory.hp_loss),
         nodes_expanded: report.stats.nodes_expanded,
@@ -569,6 +575,21 @@ fn combat_enemy_names(combat: &crate::runtime::combat::CombatState) -> Vec<Strin
                 .unwrap_or_else(|| format!("monster#{}", monster.monster_type))
         })
         .collect()
+}
+
+fn combat_search_line_summary(
+    trajectory: &CombatSearchV2TrajectoryReport,
+) -> CombatSearchTerminalLineSummary {
+    CombatSearchTerminalLineSummary {
+        terminal: trajectory.terminal,
+        final_hp: trajectory.final_hp,
+        hp_loss: trajectory.hp_loss,
+        turns: trajectory.turns,
+        cards_played: trajectory.cards_played,
+        potions_used: trajectory.potions_used,
+        potions_discarded: trajectory.potions_discarded,
+        action_count: trajectory.actions.len(),
+    }
 }
 
 fn micros_to_u64(value: u128) -> u64 {
@@ -855,7 +876,7 @@ fn render_search_application(
     repair_summary: Option<&str>,
 ) -> String {
     let trajectory = report
-        .best_complete_trajectory
+        .best_win_trajectory
         .as_ref()
         .expect("caller only renders after selecting a complete trajectory");
     let mut lines = vec![
