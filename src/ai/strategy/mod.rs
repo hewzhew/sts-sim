@@ -8,6 +8,7 @@
 pub mod assessment;
 pub mod boss_relic_admission;
 pub mod campfire_upgrade_quality;
+pub mod deck_admission;
 pub mod deck_debt;
 pub mod formation;
 pub mod gates;

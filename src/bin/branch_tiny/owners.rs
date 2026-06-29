@@ -6,6 +6,9 @@ use sts_simulator::ai::strategy::boss_relic_admission::{
     assess_boss_relic_admission, boss_relic_admission_order_rank, skip_boss_relic_admission,
     BossRelicAdmission,
 };
+use sts_simulator::ai::strategy::deck_admission::{
+    assess_deck_admission, DeckAdmission, DeckAdmissionContext,
+};
 use sts_simulator::ai::strategy::reward_admission::{
     assess_reward_admission_from_master_deck, reward_admission_order_key_v1, skip_reward_admission,
     RewardAdmission, RewardAdmissionClass, RewardAdmissionOrderKeyV1, RewardAdmissionReason,
@@ -114,6 +117,7 @@ pub(super) enum ShopPurgeTargetKind {
 struct ShopTinyContext {
     gold: i32,
     survival_pressure: bool,
+    deck_admission: DeckAdmissionContext,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -180,8 +184,7 @@ fn card_reward_owner_choices(
         .into_iter()
         .filter(is_card_reward_choice)
         .map(|mut choice| {
-            choice.annotation =
-                reward_annotation_for_choice(&session.run_state.master_deck, &choice);
+            choice.annotation = reward_annotation_for_choice(session, &choice);
             choice
         })
         .enumerate()
@@ -307,11 +310,19 @@ fn boss_relic_annotation_for_choice(
     }
 }
 
-fn reward_annotation_for_choice(deck: &[CombatCard], choice: &OwnerChoice) -> ChoiceAnnotation {
+fn reward_annotation_for_choice(
+    session: &RunControlSession,
+    choice: &OwnerChoice,
+) -> ChoiceAnnotation {
     match choice.key {
-        Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) => reward_annotation(
-            assess_reward_admission_from_master_deck(deck, card, upgrades),
-        ),
+        Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) => {
+            let deck = &session.run_state.master_deck;
+            reward_annotation_with_deck_gate(
+                assess_reward_admission_from_master_deck(deck, card, upgrades),
+                deck_admission_context(session),
+                deck,
+            )
+        }
         Some(DecisionCandidateKey::CardRewardSkip { .. }) => {
             reward_annotation(skip_reward_admission())
         }
@@ -324,6 +335,16 @@ fn reward_annotation_for_choice(deck: &[CombatCard], choice: &OwnerChoice) -> Ch
 
 fn reward_annotation(admission: RewardAdmission) -> ChoiceAnnotation {
     let lane = reward_plan_lane(&admission);
+    ChoiceAnnotation::Reward { admission, lane }
+}
+
+fn reward_annotation_with_deck_gate(
+    admission: RewardAdmission,
+    context: DeckAdmissionContext,
+    deck: &[CombatCard],
+) -> ChoiceAnnotation {
+    let deck_admission = assess_deck_admission(deck, context, &admission);
+    let lane = reward_plan_lane_for_deck(&admission, deck_admission);
     ChoiceAnnotation::Reward { admission, lane }
 }
 
@@ -341,6 +362,31 @@ fn reward_plan_lane(admission: &RewardAdmission) -> RewardPlanLane {
         }
         RewardAdmissionClass::Skip => RewardPlanLane::Skip,
         RewardAdmissionClass::EmptyOrDeferred => RewardPlanLane::Reject,
+    }
+}
+
+fn reward_plan_lane_for_deck(
+    admission: &RewardAdmission,
+    deck_admission: DeckAdmission,
+) -> RewardPlanLane {
+    match deck_admission {
+        DeckAdmission::Welcome => reward_plan_lane(admission),
+        DeckAdmission::Conditional => match reward_plan_lane(admission) {
+            RewardPlanLane::Mainline => RewardPlanLane::Probe,
+            lane => lane,
+        },
+        DeckAdmission::Discouraged => match reward_plan_lane(admission) {
+            RewardPlanLane::Mainline | RewardPlanLane::Probe => RewardPlanLane::Reject,
+            lane => lane,
+        },
+    }
+}
+
+fn deck_admission_context(session: &RunControlSession) -> DeckAdmissionContext {
+    DeckAdmissionContext {
+        act: session.run_state.act_num,
+        current_hp: session.run_state.current_hp,
+        max_hp: session.run_state.max_hp,
     }
 }
 
@@ -501,6 +547,7 @@ fn shop_tiny_context(session: &RunControlSession) -> ShopTinyContext {
     ShopTinyContext {
         gold: session.run_state.gold,
         survival_pressure: session.run_state.act_num >= 2 && hp.saturating_mul(3) <= max_hp * 2,
+        deck_admission: deck_admission_context(session),
     }
 }
 
@@ -663,6 +710,9 @@ fn shop_tiny_buy_lane(
 ) -> ShopTinyLane {
     if context.survival_pressure && shop_tiny_survival_buy(admission) {
         return ShopTinyLane::SurvivalBuy;
+    }
+    if assess_deck_admission(deck, context.deck_admission, admission) != DeckAdmission::Welcome {
+        return ShopTinyLane::InspectOnly;
     }
     if card == CardId::FeelNoPain && deck_has_exhaust_stream(deck) {
         return ShopTinyLane::SupportedEngineBuy;
