@@ -136,6 +136,55 @@ struct Args {
     wall_ms: Option<u64>,
 }
 
+#[derive(Default)]
+struct ArgsOverrides {
+    generations: Option<usize>,
+    max_branches: Option<usize>,
+    auto_ops: Option<usize>,
+    search_nodes: Option<usize>,
+    search_ms: Option<u64>,
+    rescue_search_nodes: Option<usize>,
+    rescue_search_ms: Option<u64>,
+    boss_search_nodes: Option<usize>,
+    boss_search_ms: Option<u64>,
+    wall_ms: Option<u64>,
+}
+
+impl ArgsOverrides {
+    fn apply_to(self, args: &mut Args) {
+        if let Some(value) = self.generations {
+            args.generations = value;
+        }
+        if let Some(value) = self.max_branches {
+            args.max_branches = value;
+        }
+        if let Some(value) = self.auto_ops {
+            args.auto_ops = value;
+        }
+        if let Some(value) = self.search_nodes {
+            args.search_nodes = value;
+        }
+        if let Some(value) = self.search_ms {
+            args.search_ms = value;
+        }
+        if let Some(value) = self.rescue_search_nodes {
+            args.rescue_search_nodes = value;
+        }
+        if let Some(value) = self.rescue_search_ms {
+            args.rescue_search_ms = value;
+        }
+        if let Some(value) = self.boss_search_nodes {
+            args.boss_search_nodes = value;
+        }
+        if let Some(value) = self.boss_search_ms {
+            args.boss_search_ms = value;
+        }
+        if let Some(value) = self.wall_ms {
+            args.wall_ms = Some(value);
+        }
+    }
+}
+
 fn main() {
     if let Err(err) = run() {
         eprintln!("error: {err}");
@@ -144,21 +193,24 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let (mut args, trace_path, combat_gap_case_dir, frontier_checkpoint_path, resume_frontier) =
-        parse_args()?;
+    let (
+        mut args,
+        overrides,
+        trace_path,
+        combat_gap_case_dir,
+        frontier_checkpoint_path,
+        resume_frontier,
+    ) = parse_args()?;
     let started = Instant::now();
     let mut trace = trace_path
         .as_ref()
         .map(|path| trace::TraceWriter::create(path))
         .transpose()?;
-    let resume_wall_ms = args.wall_ms;
     let mut generation_start = 0usize;
     let (mut frontier, mut next_branch_id) = if let Some(path) = resume_frontier.as_ref() {
         let checkpoint = frontier_checkpoint::load(path)?;
         args = checkpoint.args;
-        if resume_wall_ms.is_some() {
-            args.wall_ms = resume_wall_ms;
-        }
+        overrides.apply_to(&mut args);
         generation_start = checkpoint.generation;
         checkpoint.into_frontier()?
     } else {
@@ -460,6 +512,7 @@ fn expand_registered_owner(
 fn parse_args() -> Result<
     (
         Args,
+        ArgsOverrides,
         Option<PathBuf>,
         Option<PathBuf>,
         Option<PathBuf>,
@@ -481,6 +534,7 @@ fn parse_args() -> Result<
         boss_search_ms: 8_000,
         wall_ms: None,
     };
+    let mut overrides = ArgsOverrides::default();
     let mut trace_jsonl = None;
     let mut combat_gap_case_dir = None;
     let mut frontier_checkpoint = None;
@@ -527,16 +581,46 @@ fn parse_args() -> Result<
         match key {
             "--seed" => args.seed = parse(value, key)?,
             "--ascension" | "--a" => args.ascension = parse(value, key)?,
-            "--generations" | "--layers" => args.generations = parse(value, key)?,
-            "--max-branches" => args.max_branches = parse(value, key)?,
-            "--auto-ops" => args.auto_ops = parse(value, key)?,
-            "--search-nodes" => args.search_nodes = parse(value, key)?,
-            "--search-ms" => args.search_ms = parse(value, key)?,
-            "--rescue-search-nodes" => args.rescue_search_nodes = parse(value, key)?,
-            "--rescue-search-ms" => args.rescue_search_ms = parse(value, key)?,
-            "--boss-search-nodes" => args.boss_search_nodes = parse(value, key)?,
-            "--boss-search-ms" => args.boss_search_ms = parse(value, key)?,
-            "--wall-ms" => args.wall_ms = Some(parse(value, key)?),
+            "--generations" | "--layers" => {
+                args.generations = parse(value, key)?;
+                overrides.generations = Some(args.generations);
+            }
+            "--max-branches" => {
+                args.max_branches = parse(value, key)?;
+                overrides.max_branches = Some(args.max_branches);
+            }
+            "--auto-ops" => {
+                args.auto_ops = parse(value, key)?;
+                overrides.auto_ops = Some(args.auto_ops);
+            }
+            "--search-nodes" => {
+                args.search_nodes = parse(value, key)?;
+                overrides.search_nodes = Some(args.search_nodes);
+            }
+            "--search-ms" => {
+                args.search_ms = parse(value, key)?;
+                overrides.search_ms = Some(args.search_ms);
+            }
+            "--rescue-search-nodes" => {
+                args.rescue_search_nodes = parse(value, key)?;
+                overrides.rescue_search_nodes = Some(args.rescue_search_nodes);
+            }
+            "--rescue-search-ms" => {
+                args.rescue_search_ms = parse(value, key)?;
+                overrides.rescue_search_ms = Some(args.rescue_search_ms);
+            }
+            "--boss-search-nodes" => {
+                args.boss_search_nodes = parse(value, key)?;
+                overrides.boss_search_nodes = Some(args.boss_search_nodes);
+            }
+            "--boss-search-ms" => {
+                args.boss_search_ms = parse(value, key)?;
+                overrides.boss_search_ms = Some(args.boss_search_ms);
+            }
+            "--wall-ms" => {
+                args.wall_ms = Some(parse(value, key)?);
+                overrides.wall_ms = args.wall_ms;
+            }
             "--trace-jsonl" => trace_jsonl = Some(PathBuf::from(value)),
             "--combat-gap-case-dir" => combat_gap_case_dir = Some(PathBuf::from(value)),
             "--frontier-checkpoint" => frontier_checkpoint = Some(PathBuf::from(value)),
@@ -547,6 +631,7 @@ fn parse_args() -> Result<
     }
     Ok((
         args,
+        overrides,
         trace_jsonl,
         combat_gap_case_dir,
         frontier_checkpoint,
