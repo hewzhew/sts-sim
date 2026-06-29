@@ -197,10 +197,17 @@ fn run() -> Result<(), String> {
         mut args,
         overrides,
         trace_path,
-        combat_gap_case_dir,
+        mut combat_gap_case_dir,
         frontier_checkpoint_path,
         resume_frontier,
     ) = parse_args()?;
+    if combat_gap_case_dir.is_none() {
+        combat_gap_case_dir = default_combat_gap_case_dir(
+            trace_path.as_ref(),
+            frontier_checkpoint_path.as_ref(),
+            resume_frontier.as_ref(),
+        );
+    }
     let started = Instant::now();
     let mut trace = trace_path
         .as_ref()
@@ -659,10 +666,13 @@ fn parse_args() -> Result<
         let key = raw[index].as_str();
         if matches!(key, "--help" | "-h") {
             println!(
-                "branch_tiny --seed N --generations N --max-branches N [--wall-ms N] [--frontier-checkpoint PATH] [--resume-frontier PATH]"
+                "branch_tiny --seed N --generations N --max-branches N [--wall-ms N] [--trace-jsonl PATH] [--frontier-checkpoint PATH] [--resume-frontier PATH]"
             );
             println!(
                 "  owner-audit runner; ordinary combat uses diagnostic rescue-search, boss combat retries with boss-search"
+            );
+            println!(
+                "  combat-gap cases default to a sibling combat_gap_cases directory when an artifact path is supplied; override with --combat-gap-case-dir PATH"
             );
             std::process::exit(0);
         }
@@ -757,4 +767,15 @@ fn parse<T: std::str::FromStr>(value: &str, key: &str) -> Result<T, String> {
     value
         .parse()
         .map_err(|_| format!("invalid value for {key}: {value}"))
+}
+
+fn default_combat_gap_case_dir(
+    trace_path: Option<&PathBuf>,
+    frontier_checkpoint_path: Option<&PathBuf>,
+    resume_frontier: Option<&PathBuf>,
+) -> Option<PathBuf> {
+    trace_path
+        .or(frontier_checkpoint_path)
+        .or(resume_frontier)
+        .and_then(|path| path.parent().map(|parent| parent.join("combat_gap_cases")))
 }
