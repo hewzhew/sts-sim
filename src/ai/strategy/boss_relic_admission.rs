@@ -1,5 +1,5 @@
-use crate::content::cards::{get_card_definition, is_starter_basic, CardType};
-use crate::content::relics::{energy_master_delta, RelicId};
+use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
+use crate::content::relics::RelicId;
 use crate::state::run::RunState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -100,17 +100,7 @@ pub fn skip_boss_relic_admission() -> BossRelicAdmission {
 }
 
 pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> BossRelicAdmission {
-    let starter_basics = run_state
-        .master_deck
-        .iter()
-        .filter(|card| is_starter_basic(card.id))
-        .count();
-    let curses = run_state
-        .master_deck
-        .iter()
-        .filter(|card| get_card_definition(card.id).card_type == CardType::Curse)
-        .count();
-    let context = BossRelicAdmissionContext::from_run_state(run_state);
+    let facts = RunStrategicFacts::from_run_state(run_state);
     let mut reasons = Vec::new();
 
     let class = match relic {
@@ -127,8 +117,8 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
         }
         RelicId::EmptyCage => {
             reasons.push(BossRelicAdmissionReason::RemovesCards {
-                starter_basics,
-                curses,
+                starter_basics: facts.starter_basic_count,
+                curses: facts.curse_count,
             });
             BossRelicAdmissionClass::DeckCleanup
         }
@@ -178,7 +168,7 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
             BossRelicAdmissionClass::Unknown
         }
     };
-    let lane = lane_for_relic(&context, relic, class, &mut reasons);
+    let lane = lane_for_relic(&facts, relic, class, &mut reasons);
 
     BossRelicAdmission {
         relic: Some(relic),
@@ -188,34 +178,13 @@ pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> Boss
     }
 }
 
-struct BossRelicAdmissionContext {
-    entering_act: u8,
-    has_energy_relic: bool,
-}
-
-impl BossRelicAdmissionContext {
-    fn from_run_state(run_state: &RunState) -> Self {
-        Self {
-            entering_act: run_state.act_num.saturating_add(1),
-            has_energy_relic: run_state
-                .relics
-                .iter()
-                .any(|relic| energy_master_delta(relic.id) > 0),
-        }
-    }
-
-    fn has_act2_energy_gap(&self) -> bool {
-        self.entering_act == 2 && !self.has_energy_relic
-    }
-}
-
 fn lane_for_relic(
-    context: &BossRelicAdmissionContext,
+    facts: &RunStrategicFacts,
     relic: RelicId,
     class: BossRelicAdmissionClass,
     reasons: &mut Vec<BossRelicAdmissionReason>,
 ) -> BossRelicAdmissionLane {
-    if context.has_act2_energy_gap() {
+    if facts.has_act2_energy_gap() {
         if is_act2_default_energy_relic(relic) {
             reasons.push(BossRelicAdmissionReason::Act2EnergyGap);
             return BossRelicAdmissionLane::Mainline;
