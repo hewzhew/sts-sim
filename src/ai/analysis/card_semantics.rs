@@ -431,6 +431,10 @@ pub fn card_definition_with_upgrades(card: CardId, upgrades: u8) -> CardDefiniti
             .effect(AreaDamage)
             .effect(DamageScalesWith(EnergySpent))
             .effect(DamageScalesWith(PerHitStrength)),
+        Immolate => CardDefinition::new(card)
+            .effect(AreaDamage)
+            .effect(AddCombatDeckClutter)
+            .burden(AddsCombatDeckClutter),
         Hemokinesis => CardDefinition::new(card)
             .effect(FrontloadDamage)
             .effect(EmitEvent(CardSelfDamage))
