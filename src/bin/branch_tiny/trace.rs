@@ -1,9 +1,13 @@
+use std::collections::hash_map::DefaultHasher;
+use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
+use std::hash::{Hash, Hasher};
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use sts_simulator::eval::run_control::{render_auto_applied_step_compact_v1, RunControlCommand};
+use sts_simulator::runtime::combat::CombatCard;
 
 use super::owners::{
     render_shop_tiny_annotation_compact, reward_plan_lane_label, ChoiceAnnotation, OwnerChoice,
@@ -68,6 +72,7 @@ impl TraceWriter {
                 "max_hp": branch.session.run_state.max_hp,
                 "gold": branch.session.run_state.gold,
                 "deck_size": branch.session.run_state.master_deck.len(),
+                "deck_hash": deck_hash(&branch.session.run_state.master_deck),
             },
             "status": status_value(&branch.status),
             "arrived": branch.path.last().map(path_step_value),
@@ -103,6 +108,32 @@ impl TraceWriter {
                     choice_value(index, choice, expanded.get(index).copied().unwrap_or(false))
                 })
                 .collect::<Vec<_>>(),
+        }))
+    }
+
+    pub(super) fn record_branch_snapshot(
+        &mut self,
+        generation: usize,
+        reason: &'static str,
+        branch: &Branch,
+    ) -> Result<(), String> {
+        self.write(json!({
+            "event": "branch_snapshot",
+            "generation": generation,
+            "reason": reason,
+            "branch": branch_snapshot_value(branch),
+        }))
+    }
+
+    pub(super) fn record_frontier_snapshot(
+        &mut self,
+        generation: usize,
+        frontier: &VecDeque<Branch>,
+    ) -> Result<(), String> {
+        self.write(json!({
+            "event": "frontier_snapshot",
+            "generation": generation,
+            "branches": frontier.iter().map(branch_snapshot_value).collect::<Vec<_>>(),
         }))
     }
 
@@ -202,6 +233,70 @@ fn site_value(site: BoundarySite) -> Value {
         BoundarySite::Terminal => json!({"kind": "terminal"}),
         BoundarySite::Unknown => json!({"kind": "unknown"}),
     }
+}
+
+fn branch_snapshot_value(branch: &Branch) -> Value {
+    let run = &branch.session.run_state;
+    json!({
+        "branch_id": branch.id,
+        "parent_id": branch.parent_id,
+        "path_len": branch.path.len(),
+        "state": {
+            "act": run.act_num,
+            "floor": run.floor_num,
+            "hp": run.current_hp,
+            "max_hp": run.max_hp,
+            "gold": run.gold,
+            "deck_size": run.master_deck.len(),
+            "deck_hash": deck_hash(&run.master_deck),
+        },
+        "status": status_value(&branch.status),
+        "deck": run.master_deck.iter().map(card_snapshot_value).collect::<Vec<_>>(),
+        "relics": run.relics.iter().map(|relic| {
+            let mut value = Map::from_iter([("id".to_string(), json!(relic.id))]);
+            if relic.counter != -1 {
+                value.insert("counter".to_string(), json!(relic.counter));
+            }
+            if relic.used_up {
+                value.insert("used_up".to_string(), json!(true));
+            }
+            if relic.amount != 0 {
+                value.insert("amount".to_string(), json!(relic.amount));
+            }
+            Value::Object(value)
+        }).collect::<Vec<_>>(),
+        "potions": run.potions.iter().map(|slot| {
+            slot.as_ref().map(|potion| json!({
+                "id": potion.id,
+                "uuid": potion.uuid,
+            }))
+        }).collect::<Vec<_>>(),
+    })
+}
+
+fn card_snapshot_value(card: &CombatCard) -> Value {
+    let mut value = Map::from_iter([
+        ("id".to_string(), json!(card.id)),
+        ("uuid".to_string(), json!(card.uuid)),
+    ]);
+    if card.upgrades != 0 {
+        value.insert("upgrades".to_string(), json!(card.upgrades));
+    }
+    if card.misc_value != 0 {
+        value.insert("misc".to_string(), json!(card.misc_value));
+    }
+    Value::Object(value)
+}
+
+fn deck_hash(deck: &[CombatCard]) -> String {
+    let mut hasher = DefaultHasher::new();
+    for card in deck {
+        card.id.hash(&mut hasher);
+        card.uuid.hash(&mut hasher);
+        card.upgrades.hash(&mut hasher);
+        card.misc_value.hash(&mut hasher);
+    }
+    format!("{:016x}", hasher.finish())
 }
 
 fn command_value(command: &RunControlCommand) -> Value {

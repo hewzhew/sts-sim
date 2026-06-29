@@ -265,7 +265,9 @@ fn run() -> Result<(), String> {
     if let Some(trace) = trace.as_mut() {
         trace.record_run(args)?;
     }
+    let mut last_generation = generation_start;
     for generation in generation_start..=args.generations {
+        last_generation = generation;
         if deadline.should_stop() {
             save_wall_stop(
                 checkpoint_path(&frontier_checkpoint_path, &resume_frontier),
@@ -307,6 +309,9 @@ fn run() -> Result<(), String> {
                 }
             }
             if !expandable {
+                if let Some(trace) = trace.as_mut() {
+                    trace.record_branch_snapshot(generation, "stopped", &branch)?;
+                }
                 continue;
             }
             if !expanded_mask.iter().any(|expanded| *expanded) {
@@ -344,6 +349,9 @@ fn run() -> Result<(), String> {
             )?;
             break;
         }
+    }
+    if let Some(trace) = trace.as_mut() {
+        trace.record_frontier_snapshot(last_generation, &frontier)?;
     }
     Ok(())
 }
