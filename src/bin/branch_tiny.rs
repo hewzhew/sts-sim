@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use sts_simulator::eval::run_control::{
     build_decision_surface, CombatSearchTraceSummary, RewardAutomationConfig,
@@ -22,6 +22,8 @@ mod runner;
 mod trace;
 
 use owners::{ChoiceAnnotation, DecisionKey, OwnerChoice};
+
+const WALL_STOP_GUARD_MS: u64 = 1_500;
 
 #[derive(Clone)]
 struct Branch {
@@ -144,6 +146,7 @@ fn main() {
 fn run() -> Result<(), String> {
     let (mut args, trace_path, combat_gap_case_dir, frontier_checkpoint_path, resume_frontier) =
         parse_args()?;
+    let started = Instant::now();
     let mut trace = trace_path
         .as_ref()
         .map(|path| trace::TraceWriter::create(path))
@@ -169,7 +172,8 @@ fn run() -> Result<(), String> {
             },
             ..Default::default()
         });
-        let advance = runner::advance_to_owner_or_gap(&mut session, args);
+        let deadline = RunDeadline::new(started, args.wall_ms);
+        let advance = runner::advance_to_owner_or_gap(&mut session, deadline.cap_args(args, 1));
         (
             VecDeque::from([Branch {
                 id: 0,
@@ -184,10 +188,7 @@ fn run() -> Result<(), String> {
             1usize,
         )
     };
-    let started = Instant::now();
-    let deadline = args
-        .wall_ms
-        .map(|ms| started + std::time::Duration::from_millis(ms));
+    let deadline = RunDeadline::new(started, args.wall_ms);
 
     println!(
         "branch_tiny seed={} ascension={} generations={} max_branches={} mode=owner_audit render=timeline{}",
@@ -213,6 +214,18 @@ fn run() -> Result<(), String> {
     for generation in generation_start..=args.generations {
         let mut next = VecDeque::new();
         while let Some(branch) = frontier.pop_front() {
+            if next.is_empty() && deadline.should_stop() {
+                frontier.push_front(branch);
+                save_wall_stop(
+                    checkpoint_path(&frontier_checkpoint_path, &resume_frontier),
+                    args,
+                    generation,
+                    next_branch_id,
+                    &frontier,
+                    &deadline,
+                )?;
+                return Ok(());
+            }
             let expandable = generation < args.generations
                 && matches!(branch.status, BranchStatus::Running { .. });
             let choices = if expandable {
@@ -241,9 +254,10 @@ fn run() -> Result<(), String> {
             if !expandable {
                 continue;
             }
+            let child_args = deadline.cap_args(args, expanded.max(1));
             for child in expand_registered_owner(
                 &branch,
-                args,
+                child_args,
                 choices
                     .into_iter()
                     .filter(|choice| choice.auto_expand_allowed())
@@ -257,18 +271,80 @@ fn run() -> Result<(), String> {
             break;
         }
         frontier = next;
-        if deadline.is_some_and(|limit| Instant::now() >= limit) {
-            if let Some(path) = frontier_checkpoint_path
-                .as_ref()
-                .or(resume_frontier.as_ref())
-            {
-                frontier_checkpoint::save(path, args, generation + 1, next_branch_id, &frontier)?;
-                println!("frontier_checkpoint: {}", path.display());
-            } else {
-                println!("wall stop reached without --frontier-checkpoint");
-            }
+        if deadline.should_stop() {
+            save_wall_stop(
+                checkpoint_path(&frontier_checkpoint_path, &resume_frontier),
+                args,
+                generation + 1,
+                next_branch_id,
+                &frontier,
+                &deadline,
+            )?;
             break;
         }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct RunDeadline(Option<Instant>);
+
+impl RunDeadline {
+    fn new(started: Instant, wall_ms: Option<u64>) -> Self {
+        Self(wall_ms.map(|ms| started + Duration::from_millis(ms)))
+    }
+
+    fn should_stop(self) -> bool {
+        self.remaining_ms()
+            .is_some_and(|remaining| remaining <= WALL_STOP_GUARD_MS)
+    }
+
+    fn cap_args(self, mut args: Args, child_count: usize) -> Args {
+        let Some(remaining) = self.remaining_ms() else {
+            return args;
+        };
+        let per_child =
+            (remaining.saturating_sub(WALL_STOP_GUARD_MS) / child_count.max(1) as u64).max(1);
+        args.search_ms = args.search_ms.min(per_child);
+        args.rescue_search_ms = args.rescue_search_ms.min(per_child);
+        args.boss_search_ms = args.boss_search_ms.min(per_child);
+        args
+    }
+
+    fn remaining_ms(self) -> Option<u64> {
+        self.0
+            .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+            .map(|remaining| remaining.as_millis().min(u128::from(u64::MAX)) as u64)
+    }
+}
+
+fn checkpoint_path<'a>(
+    frontier_checkpoint_path: &'a Option<PathBuf>,
+    resume_frontier: &'a Option<PathBuf>,
+) -> Option<&'a PathBuf> {
+    frontier_checkpoint_path
+        .as_ref()
+        .or(resume_frontier.as_ref())
+}
+
+fn save_wall_stop(
+    path: Option<&PathBuf>,
+    args: Args,
+    generation: usize,
+    next_branch_id: usize,
+    frontier: &VecDeque<Branch>,
+    deadline: &RunDeadline,
+) -> Result<(), String> {
+    println!(
+        "wall_soft_stop: generation={} remaining_ms={}",
+        generation,
+        deadline.remaining_ms().unwrap_or(0)
+    );
+    if let Some(path) = path {
+        frontier_checkpoint::save(path, args, generation, next_branch_id, frontier)?;
+        println!("frontier_checkpoint: {}", path.display());
+    } else {
+        println!("wall_soft_stop reached without --frontier-checkpoint");
     }
     Ok(())
 }
