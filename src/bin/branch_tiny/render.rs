@@ -16,7 +16,7 @@ pub(super) fn print_branch_timeline(
     generation: usize,
     branch: &Branch,
     choices: &[OwnerChoice],
-    expanded: usize,
+    expanded: &[bool],
 ) {
     println!(
         "\n[{generation:02}] b{:04} A{}F{} {} owner={} hp={}/{} deck={} status={}",
@@ -43,24 +43,29 @@ pub(super) fn print_branch_timeline(
     }
     println!("  choices:");
     for (rank, choice) in choices.iter().enumerate() {
-        let marker = if rank < expanded { ">" } else { " " };
+        let marker = if expanded.get(rank).copied().unwrap_or(false) {
+            ">"
+        } else {
+            " "
+        };
         println!(
             "  {marker} {:>2}. {}",
             rank + 1,
             render_timeline_choice(choice)
         );
     }
-    if expanded == 0 && choices.iter().all(|choice| !choice.auto_expand_allowed()) {
+    let expanded_count = expanded.iter().filter(|expanded| **expanded).count();
+    if expanded_count == 0 && choices.iter().all(|choice| !choice.auto_expand_allowed()) {
         let reason = choices
             .iter()
             .find_map(|choice| choice.inspect_only_reason())
             .unwrap_or("inspect-only owner");
         println!("  expansion: inspect-only ({reason})");
-    } else if expanded < choices.len() {
+    } else if expanded_count < choices.len() {
         println!(
             "  expansion: expanded {} hidden {}",
-            expanded,
-            choices.len() - expanded
+            expanded_count,
+            choices.len() - expanded_count
         );
     }
 }

@@ -242,6 +242,7 @@ fn run() -> Result<(), String> {
         )
     };
     let deadline = RunDeadline::new(started, args.wall_ms);
+    let mut recent_expanded_keys = Vec::new();
 
     println!(
         "branch_tiny seed={} ascension={} generations={} max_branches={} mode=owner_audit render=timeline{}",
@@ -280,22 +281,21 @@ fn run() -> Result<(), String> {
         let mut deferred = VecDeque::new();
         let mut work = Vec::new();
         while let Some(branch) = frontier.pop_front() {
-            let expandable = generation < args.generations
-                && matches!(branch.status, BranchStatus::Running { .. });
-            let choices = if expandable {
-                branch_owner_choices(&branch)
-            } else {
-                Vec::new()
-            };
+            let (branch, expandable, choices) =
+                prepare_branch_work(branch, args, generation, deadline);
             work.push((branch, expandable, choices));
         }
-        let expanded_counts = expansion_counts(&work, args.max_branches);
-        let total_expanded = expanded_counts.iter().sum::<usize>();
+        let expanded_masks = expansion_masks(&work, args.max_branches, &mut recent_expanded_keys);
+        let total_expanded = expanded_masks
+            .iter()
+            .flatten()
+            .filter(|expanded| **expanded)
+            .count();
         let child_args = deadline.cap_args(args, total_expanded.max(1));
-        for ((branch, expandable, choices), expanded) in work.into_iter().zip(expanded_counts) {
-            render::print_branch_timeline(generation, &branch, &choices, expanded);
+        for ((branch, expandable, choices), expanded_mask) in work.into_iter().zip(expanded_masks) {
+            render::print_branch_timeline(generation, &branch, &choices, &expanded_mask);
             if let Some(trace) = trace.as_mut() {
-                trace.record_node(generation, &branch, &choices, expanded)?;
+                trace.record_node(generation, &branch, &choices, &expanded_mask)?;
             }
             if let Some(dir) = combat_gap_case_dir.as_ref() {
                 if matches!(branch.status, BranchStatus::CombatGap { .. }) {
@@ -309,7 +309,7 @@ fn run() -> Result<(), String> {
             if !expandable {
                 continue;
             }
-            if expanded == 0 {
+            if !expanded_mask.iter().any(|expanded| *expanded) {
                 deferred.push_back(branch);
                 continue;
             }
@@ -319,8 +319,9 @@ fn run() -> Result<(), String> {
                 deadline,
                 choices
                     .into_iter()
-                    .filter(|choice| choice.auto_expand_allowed())
-                    .take(expanded),
+                    .enumerate()
+                    .filter(|(index, _)| expanded_mask[*index])
+                    .map(|(_, choice)| choice),
                 &mut next_branch_id,
             ) {
                 next.push_back(child);
@@ -347,39 +348,109 @@ fn run() -> Result<(), String> {
     Ok(())
 }
 
-fn expansion_counts(work: &[(Branch, bool, Vec<OwnerChoice>)], max_branches: usize) -> Vec<usize> {
-    let auto_counts = work
+fn prepare_branch_work(
+    mut branch: Branch,
+    args: Args,
+    generation: usize,
+    deadline: RunDeadline,
+) -> (Branch, bool, Vec<OwnerChoice>) {
+    let mut expandable =
+        generation < args.generations && matches!(branch.status, BranchStatus::Running { .. });
+    let mut choices = if expandable {
+        branch_owner_choices(&branch)
+    } else {
+        Vec::new()
+    };
+    if expandable && choices.is_empty() {
+        let advance = runner::advance_to_owner_or_gap(
+            &mut branch.session,
+            deadline.cap_args(args, 1),
+            deadline,
+        );
+        branch.status = advance.status;
+        branch.boss_retry = advance.boss_retry;
+        branch.auto_steps = advance.auto_steps;
+        branch.combat_search = advance.combat_search;
+        expandable =
+            generation < args.generations && matches!(branch.status, BranchStatus::Running { .. });
+        choices = if expandable {
+            branch_owner_choices(&branch)
+        } else {
+            Vec::new()
+        };
+    }
+    (branch, expandable, choices)
+}
+
+fn expansion_masks(
+    work: &[(Branch, bool, Vec<OwnerChoice>)],
+    max_branches: usize,
+    recent_expanded_keys: &mut Vec<DecisionKey>,
+) -> Vec<Vec<bool>> {
+    let mut expanded = work
         .iter()
-        .map(|(_, expandable, choices)| {
-            if *expandable {
-                choices
-                    .iter()
-                    .filter(|choice| choice.auto_expand_allowed())
-                    .count()
-            } else {
-                0
-            }
-        })
+        .map(|(_, _, choices)| vec![false; choices.len()])
         .collect::<Vec<_>>();
-    let mut expanded = vec![0usize; work.len()];
     let mut remaining = max_branches;
     while remaining > 0 {
         let mut progressed = false;
-        for (index, count) in auto_counts.iter().enumerate() {
-            if expanded[index] < *count {
-                expanded[index] += 1;
-                remaining -= 1;
-                progressed = true;
-                if remaining == 0 {
-                    break;
-                }
+        for (branch_index, (_, expandable, choices)) in work.iter().enumerate() {
+            if !*expandable {
+                continue;
+            }
+            let Some(choice_index) =
+                next_expansion_choice(choices, &expanded[branch_index], recent_expanded_keys)
+            else {
+                continue;
+            };
+            expanded[branch_index][choice_index] = true;
+            if let Some(key) = choices[choice_index].key.clone() {
+                recent_expanded_keys.push(key);
+            }
+            remaining -= 1;
+            progressed = true;
+            if remaining == 0 {
+                break;
             }
         }
         if !progressed {
             break;
         }
     }
+    trim_recent_expanded_keys(recent_expanded_keys);
     expanded
+}
+
+fn trim_recent_expanded_keys(keys: &mut Vec<DecisionKey>) {
+    const RECENT_KEY_LIMIT: usize = 64;
+    if keys.len() > RECENT_KEY_LIMIT {
+        keys.drain(0..keys.len() - RECENT_KEY_LIMIT);
+    }
+}
+
+fn next_expansion_choice(
+    choices: &[OwnerChoice],
+    expanded: &[bool],
+    used_keys: &[DecisionKey],
+) -> Option<usize> {
+    choices
+        .iter()
+        .enumerate()
+        .filter(|(index, choice)| choice.auto_expand_allowed() && !expanded[*index])
+        .find(|(_, choice)| {
+            choice
+                .key
+                .as_ref()
+                .is_some_and(|key| !used_keys.contains(key))
+        })
+        .map(|(index, _)| index)
+        .or_else(|| {
+            choices
+                .iter()
+                .enumerate()
+                .find(|(index, choice)| choice.auto_expand_allowed() && !expanded[*index])
+                .map(|(index, _)| index)
+        })
 }
 
 fn retain_frontier(frontier: &mut VecDeque<Branch>, limit: usize) {

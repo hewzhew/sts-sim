@@ -7,10 +7,11 @@ use sts_simulator::ai::strategy::campfire_upgrade_quality::{
 use sts_simulator::content::cards::{get_card_definition, is_starter_basic, CardId, CardType};
 use sts_simulator::eval::run_control::{
     apply_owner_audit_auto_run, build_decision_surface, CombatAutomationTrajectorySource,
-    CombatSearchTraceSummary, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
-    RunControlAutoStepOptions, RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommand,
-    RunControlCommandOutcome, RunControlHpLossLimit, RunControlRouteAutomationMode,
-    RunControlSearchCombatOptions, RunControlSession, RunControlTraceAnnotationV1,
+    CombatSearchTraceSummary, DecisionCandidateKey, RunControlAutoAppliedKindV1,
+    RunControlAutoAppliedStepV1, RunControlAutoStepOptions, RunControlAutoStopKind,
+    RunControlAutoStopV1, RunControlCommand, RunControlCommandOutcome, RunControlHpLossLimit,
+    RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSession,
+    RunControlTraceAnnotationV1,
 };
 use sts_simulator::state::core::{CampfireChoice, ClientInput, EngineState, RunResult};
 use sts_simulator::state::selection::DomainEventSource;
@@ -554,7 +555,29 @@ fn apply_reward_tiny_policy(
     {
         return Ok(outcome);
     }
+    if let Some(outcome) = open_visible_card_reward(session)? {
+        return Ok(outcome);
+    }
     session.apply_command(RunControlCommand::Input(reward_tiny_exit_input(session)?))
+}
+
+fn open_visible_card_reward(
+    session: &mut RunControlSession,
+) -> Result<Option<sts_simulator::eval::run_control::RunControlCommandOutcome>, String> {
+    let command = build_decision_surface(session)
+        .view
+        .candidates
+        .iter()
+        .find(|candidate| {
+            matches!(
+                candidate.key,
+                Some(DecisionCandidateKey::CardRewardOpen { .. })
+            )
+        })
+        .and_then(|candidate| candidate.action.executable_command());
+    command
+        .map(|command| session.apply_command(command))
+        .transpose()
 }
 
 fn reward_tiny_exit_input(session: &RunControlSession) -> Result<ClientInput, String> {
@@ -665,7 +688,7 @@ fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
             Some(Owner::CardReward)
         }
         EngineState::RewardScreen(reward) if reward.has_card_reward_item() => {
-            Some(Owner::CardReward)
+            Some(Owner::RewardTiny)
         }
         EngineState::RewardOverlay { reward_state, .. }
             if reward_state.pending_card_choice.is_some() =>
@@ -673,7 +696,7 @@ fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
             Some(Owner::CardReward)
         }
         EngineState::RewardOverlay { reward_state, .. } if reward_state.has_card_reward_item() => {
-            Some(Owner::CardReward)
+            Some(Owner::RewardTiny)
         }
         EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. } => Some(Owner::RewardTiny),
         EngineState::BossRelicSelect(_) => Some(Owner::BossRelic),

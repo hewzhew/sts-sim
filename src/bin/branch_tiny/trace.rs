@@ -53,7 +53,7 @@ impl TraceWriter {
         generation: usize,
         branch: &Branch,
         choices: &[OwnerChoice],
-        expanded: usize,
+        expanded: &[bool],
     ) -> Result<(), String> {
         self.write(json!({
             "event": "node",
@@ -99,7 +99,9 @@ impl TraceWriter {
                 })).collect::<Vec<_>>(),
             })),
             "choices": choices.iter().enumerate()
-                .map(|(index, choice)| choice_value(index, choice, index < expanded))
+                .map(|(index, choice)| {
+                    choice_value(index, choice, expanded.get(index).copied().unwrap_or(false))
+                })
                 .collect::<Vec<_>>(),
         }))
     }
