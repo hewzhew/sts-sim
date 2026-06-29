@@ -10,19 +10,20 @@ pub(super) struct NonCombatAutoApplication {
 pub(super) fn apply_planner_noncombat_policy(
     session: &mut RunControlSession,
 ) -> Result<Option<NonCombatAutoApplication>, String> {
-    apply_planner_noncombat_policy_with_options(session, true, true)
+    apply_planner_noncombat_policy_with_options(session, true, true, true)
 }
 
 pub(super) fn apply_owner_audit_noncombat_policy(
     session: &mut RunControlSession,
 ) -> Result<Option<NonCombatAutoApplication>, String> {
-    apply_planner_noncombat_policy_with_options(session, false, false)
+    apply_planner_noncombat_policy_with_options(session, false, false, false)
 }
 
 fn apply_planner_noncombat_policy_with_options(
     session: &mut RunControlSession,
     allow_shop_policy: bool,
     allow_campfire_policy: bool,
+    allow_card_reward_policy_pick: bool,
 ) -> Result<Option<NonCombatAutoApplication>, String> {
     if allow_campfire_policy {
         if let Some((outcome, summary)) =
@@ -73,14 +74,16 @@ fn apply_planner_noncombat_policy_with_options(
             stop_after_reason: None,
         }));
     }
-    if let Some((outcome, summary)) =
-        super::card_reward_auto::apply_card_reward_policy_pick(session)?
-    {
-        return Ok(Some(NonCombatAutoApplication {
-            outcome,
-            summary,
-            stop_after_reason: None,
-        }));
+    if allow_card_reward_policy_pick {
+        if let Some((outcome, summary)) =
+            super::card_reward_auto::apply_card_reward_policy_pick(session)?
+        {
+            return Ok(Some(NonCombatAutoApplication {
+                outcome,
+                summary,
+                stop_after_reason: None,
+            }));
+        }
     }
     if let Some((outcome, summary)) = super::card_reward_auto::apply_card_reward_item_open(session)?
     {
