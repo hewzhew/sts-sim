@@ -185,6 +185,7 @@ fn card_reward_owner_choices(
         .filter(is_card_reward_choice)
         .map(|mut choice| {
             choice.annotation = reward_annotation_for_choice(session, &choice);
+            choice.expansion = card_reward_choice_expansion(&choice);
             choice
         })
         .enumerate()
@@ -330,6 +331,14 @@ fn reward_annotation_for_choice(
         | Some(DecisionCandidateKey::CardRewardSingingBowl { .. })
         | None => ChoiceAnnotation::None,
         _ => ChoiceAnnotation::None,
+    }
+}
+
+fn card_reward_choice_expansion(choice: &OwnerChoice) -> OwnerChoiceExpansion {
+    if choice.annotation.reward_lane() == Some(RewardPlanLane::Reject) {
+        OwnerChoiceExpansion::InspectOnly("rejected card reward candidate")
+    } else {
+        OwnerChoiceExpansion::AutoAllowed
     }
 }
 

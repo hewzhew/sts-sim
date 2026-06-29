@@ -4,7 +4,7 @@ use crate::content::cards::{
 use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventId, EventOwnerPolicyKind};
+use crate::state::events::{EventActionKind, EventId, EventOwnerPolicyKind};
 use crate::state::run::RunState;
 use crate::state::selection::{
     DomainEventSource, SelectionResolution, SelectionScope, SelectionTargetRef,
@@ -48,6 +48,9 @@ fn event_room_policy_input(run_state: &RunState) -> Result<ClientInput, EventOwn
         EventId::LivingWall => return Ok(ClientInput::EventChoice(living_wall_choice(run_state))),
         EventId::ShiningLight => {
             return Ok(ClientInput::EventChoice(shining_light_choice(run_state)))
+        }
+        EventId::WeMeetAgain => {
+            return Ok(ClientInput::EventChoice(we_meet_again_choice(run_state)))
         }
         _ => {}
     }
@@ -162,6 +165,23 @@ fn living_wall_choice(run_state: &RunState) -> usize {
         return 2;
     }
     1
+}
+
+fn we_meet_again_choice(run_state: &RunState) -> usize {
+    let action = if event_screen(run_state) == 0 {
+        EventActionKind::Decline
+    } else {
+        EventActionKind::Leave
+    };
+    event_action_choice(run_state, action).unwrap_or_default()
+}
+
+fn event_action_choice(run_state: &RunState, action: EventActionKind) -> Option<usize> {
+    crate::engine::event_handler::get_event_options(run_state)
+        .iter()
+        .enumerate()
+        .find(|(_, option)| !option.ui.disabled && option.semantics.action == action)
+        .map(|(index, _)| index)
 }
 
 fn living_wall_selection(
