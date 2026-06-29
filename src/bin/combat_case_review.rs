@@ -25,6 +25,8 @@ struct Args {
     slow_nodes: usize,
     #[arg(long, default_value_t = 8_000)]
     slow_ms: u64,
+    #[arg(long, default_value_t = 3)]
+    diagnostic_potion_max: u32,
     #[arg(long)]
     write_review: Option<PathBuf>,
     #[arg(long)]
@@ -119,6 +121,15 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
                 CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed,
                 CombatSearchV2PotionPolicy::Never,
                 Some(0),
+            ),
+            run_search(
+                "slow_potion_diagnostic",
+                &case,
+                args.slow_nodes,
+                args.slow_ms,
+                CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+                CombatSearchV2PotionPolicy::All,
+                Some(args.diagnostic_potion_max),
             ),
             run_search(
                 "slow_potion_tactical_max2",

@@ -333,12 +333,22 @@ fn reward_plan_lane(admission: &RewardAdmission) -> RewardPlanLane {
         | RewardAdmissionClass::BuildsSupportedPackage
         | RewardAdmissionClass::ImmediateWork
         | RewardAdmissionClass::BurdenedImmediateWork => RewardPlanLane::Mainline,
+        RewardAdmissionClass::EngineSeed if installs_combat_rule(admission) => {
+            RewardPlanLane::Mainline
+        }
         RewardAdmissionClass::EngineSeed | RewardAdmissionClass::OpensUnsupportedPayoff => {
             RewardPlanLane::Probe
         }
         RewardAdmissionClass::Skip => RewardPlanLane::Skip,
         RewardAdmissionClass::EmptyOrDeferred => RewardPlanLane::Reject,
     }
+}
+
+fn installs_combat_rule(admission: &RewardAdmission) -> bool {
+    admission
+        .reasons
+        .iter()
+        .any(|reason| matches!(reason, RewardAdmissionReason::Installs(_)))
 }
 
 fn card_reward_choice_rank(

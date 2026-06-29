@@ -265,21 +265,21 @@ fn run() -> Result<(), String> {
         trace.record_run(args)?;
     }
     for generation in generation_start..=args.generations {
+        if deadline.should_stop() {
+            save_wall_stop(
+                checkpoint_path(&frontier_checkpoint_path, &resume_frontier),
+                args,
+                generation,
+                next_branch_id,
+                &frontier,
+                &deadline,
+            )?;
+            break;
+        }
         let mut next = VecDeque::new();
         let mut deferred = VecDeque::new();
+        let mut work = Vec::new();
         while let Some(branch) = frontier.pop_front() {
-            if next.is_empty() && deadline.should_stop() {
-                frontier.push_front(branch);
-                save_wall_stop(
-                    checkpoint_path(&frontier_checkpoint_path, &resume_frontier),
-                    args,
-                    generation,
-                    next_branch_id,
-                    &frontier,
-                    &deadline,
-                )?;
-                return Ok(());
-            }
             let expandable = generation < args.generations
                 && matches!(branch.status, BranchStatus::Running { .. });
             let choices = if expandable {
@@ -287,11 +287,12 @@ fn run() -> Result<(), String> {
             } else {
                 Vec::new()
             };
-            let expanded = choices
-                .iter()
-                .filter(|choice| choice.auto_expand_allowed())
-                .count()
-                .min(args.max_branches.saturating_sub(next.len()));
+            work.push((branch, expandable, choices));
+        }
+        let expanded_counts = expansion_counts(&work, args.max_branches);
+        let total_expanded = expanded_counts.iter().sum::<usize>();
+        let child_args = deadline.cap_args(args, total_expanded.max(1));
+        for ((branch, expandable, choices), expanded) in work.into_iter().zip(expanded_counts) {
             render::print_branch_timeline(generation, &branch, &choices, expanded);
             if let Some(trace) = trace.as_mut() {
                 trace.record_node(generation, &branch, &choices, expanded)?;
@@ -312,7 +313,6 @@ fn run() -> Result<(), String> {
                 deferred.push_back(branch);
                 continue;
             }
-            let child_args = deadline.cap_args(args, expanded.max(1));
             for child in expand_registered_owner(
                 &branch,
                 child_args,
@@ -345,6 +345,41 @@ fn run() -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn expansion_counts(work: &[(Branch, bool, Vec<OwnerChoice>)], max_branches: usize) -> Vec<usize> {
+    let auto_counts = work
+        .iter()
+        .map(|(_, expandable, choices)| {
+            if *expandable {
+                choices
+                    .iter()
+                    .filter(|choice| choice.auto_expand_allowed())
+                    .count()
+            } else {
+                0
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut expanded = vec![0usize; work.len()];
+    let mut remaining = max_branches;
+    while remaining > 0 {
+        let mut progressed = false;
+        for (index, count) in auto_counts.iter().enumerate() {
+            if expanded[index] < *count {
+                expanded[index] += 1;
+                remaining -= 1;
+                progressed = true;
+                if remaining == 0 {
+                    break;
+                }
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+    expanded
 }
 
 fn retain_frontier(frontier: &mut VecDeque<Branch>, limit: usize) {
