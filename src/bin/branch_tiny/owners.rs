@@ -103,7 +103,7 @@ pub(super) enum ShopTinyAnnotation {
     Unsupported,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ShopPurgeTargetKind {
     Curse,
     Status,

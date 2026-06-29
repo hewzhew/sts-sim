@@ -6,13 +6,10 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use serde_json::{json, Map, Value};
-use sts_simulator::eval::run_control::{render_auto_applied_step_compact_v1, RunControlCommand};
+use sts_simulator::eval::run_control::render_auto_applied_step_compact_v1;
 use sts_simulator::runtime::combat::CombatCard;
 
-use super::owners::{
-    render_shop_tiny_annotation_compact, reward_plan_lane_label, ChoiceAnnotation, OwnerChoice,
-};
-use super::render;
+use super::owners::{reward_plan_lane_label, ChoiceAnnotation, OwnerChoice, ShopTinyAnnotation};
 use super::{Args, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner};
 
 pub(super) struct TraceWriter {
@@ -151,18 +148,13 @@ fn choice_value(index: usize, choice: &OwnerChoice, expanded: bool) -> Value {
         "auto_expand": choice.auto_expand_allowed(),
         "inspect_only": choice.inspect_only_reason(),
         "key": choice.key.as_ref(),
-        "label": choice.label,
-        "action": command_value(&choice.action),
         "annotation": annotation_value(&choice.annotation),
-        "rendered": render::render_timeline_choice(choice),
     })
 }
 
 fn path_step_value(step: &BranchPathStep) -> Value {
     json!({
         "key": step.key.as_ref(),
-        "label": step.label,
-        "action": {"debug": step.action_debug},
         "annotation": annotation_value(&step.annotation),
     })
 }
@@ -173,16 +165,66 @@ fn annotation_value(annotation: &ChoiceAnnotation) -> Value {
         ChoiceAnnotation::Reward { admission, lane } => json!({
             "kind": "reward",
             "lane": reward_plan_lane_label(*lane),
-            "admission": sts_simulator::ai::strategy::reward_admission::render_reward_admission_compact(admission),
+            "card": admission.card,
+            "class": format!("{:?}", admission.class),
         }),
         ChoiceAnnotation::BossRelic(admission) => json!({
             "kind": "boss_relic",
-            "admission": sts_simulator::ai::strategy::boss_relic_admission::render_boss_relic_admission_compact(admission),
+            "relic": admission.relic,
+            "lane": format!("{:?}", admission.lane),
+            "class": format!("{:?}", admission.class),
         }),
-        ChoiceAnnotation::ShopTiny(annotation) => json!({
+        ChoiceAnnotation::ShopTiny(annotation) => shop_tiny_annotation_value(annotation),
+    }
+}
+
+fn shop_tiny_annotation_value(annotation: &ShopTinyAnnotation) -> Value {
+    match annotation {
+        ShopTinyAnnotation::BuyCard {
+            slot,
+            card,
+            upgrades,
+            price,
+        } => json!({
             "kind": "shop_tiny",
-            "summary": render_shop_tiny_annotation_compact(annotation),
+            "action": "buy_card",
+            "slot": slot,
+            "card": card,
+            "upgrades": upgrades,
+            "price": price,
         }),
+        ShopTinyAnnotation::BuyRelic { slot, relic, price } => json!({
+            "kind": "shop_tiny",
+            "action": "buy_relic",
+            "slot": slot,
+            "relic": relic,
+            "price": price,
+        }),
+        ShopTinyAnnotation::BuyPotion {
+            slot,
+            potion,
+            price,
+        } => json!({
+            "kind": "shop_tiny",
+            "action": "buy_potion",
+            "slot": slot,
+            "potion": potion,
+            "price": price,
+        }),
+        ShopTinyAnnotation::Purge {
+            card,
+            upgrades,
+            target,
+        } => json!({
+            "kind": "shop_tiny",
+            "action": "purge",
+            "card": card,
+            "upgrades": upgrades,
+            "target": format!("{target:?}"),
+        }),
+        ShopTinyAnnotation::OpenRewards => json!({"kind": "shop_tiny", "action": "open_rewards"}),
+        ShopTinyAnnotation::Leave => json!({"kind": "shop_tiny", "action": "leave"}),
+        ShopTinyAnnotation::Unsupported => json!({"kind": "shop_tiny", "action": "unsupported"}),
     }
 }
 
@@ -297,8 +339,4 @@ fn deck_hash(deck: &[CombatCard]) -> String {
         card.misc_value.hash(&mut hasher);
     }
     format!("{:016x}", hasher.finish())
-}
-
-fn command_value(command: &RunControlCommand) -> Value {
-    json!({"debug": format!("{command:?}")})
 }
