@@ -15,6 +15,7 @@ use super::transition_report::CardSnapshot;
 #[serde(rename_all = "snake_case")]
 pub enum CombatAutomationTrajectorySource {
     SearchCombat,
+    CompleteLineSolver,
     SearchCombatTurnSegment,
     SearchCombatSmokeBombSurvival,
 }
@@ -23,6 +24,7 @@ impl CombatAutomationTrajectorySource {
     pub fn label(self) -> &'static str {
         match self {
             CombatAutomationTrajectorySource::SearchCombat => "search_combat",
+            CombatAutomationTrajectorySource::CompleteLineSolver => "complete_line_solver",
             CombatAutomationTrajectorySource::SearchCombatTurnSegment => {
                 "search_combat_turn_segment"
             }

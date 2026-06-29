@@ -13,6 +13,7 @@ use super::view_model::client_input_hint;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CombatCandidateLineSource {
     SearchComplete,
+    CompleteLineSolver,
     LineRepair,
 }
 
@@ -20,6 +21,7 @@ impl CombatCandidateLineSource {
     pub(super) fn label(self) -> &'static str {
         match self {
             CombatCandidateLineSource::SearchComplete => "search_complete",
+            CombatCandidateLineSource::CompleteLineSolver => "complete_line_solver",
             CombatCandidateLineSource::LineRepair => "line_repair",
         }
     }

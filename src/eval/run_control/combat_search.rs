@@ -2,7 +2,7 @@ use crate::ai::combat_search_v2::{
     filter_combat_search_legal_actions, has_external_payoff_opportunity,
     plan_combat_turn_segment_v1, run_combat_search_v2, CombatSearchV2ActionTrace,
     CombatSearchV2Config, CombatSearchV2Report, CombatSearchV2TrajectoryReport,
-    CombatSearchV2TurnSegmentReport,
+    CombatSearchV2TurnSegmentReport, SearchTerminalLabel,
 };
 use crate::content::monsters::EnemyId;
 use crate::content::potions::PotionId;
@@ -63,6 +63,41 @@ pub(super) fn apply_search_combat(
         return Ok(outcome);
     }
     let Some(trajectory) = report.best_win_trajectory.as_ref() else {
+        if let Some(solution) =
+            super::combat_complete_line_solver::try_solve_complete_line(&start, &config)
+        {
+            if effective_hp_loss_limit(session, &options)
+                .is_none_or(|limit| solution.line.hp_loss <= limit as i32)
+            {
+                let summary = format!(
+                    "complete_line_solver actions={} hp_loss={} base_hp_loss={} nodes={} generated={} repair={}/{}/{} elapsed_ms={}",
+                    solution.line.actions.len(),
+                    solution.line.hp_loss,
+                    solution.base_hp_loss,
+                    solution.nodes_expanded,
+                    solution.nodes_generated,
+                    solution.repair_attempts,
+                    solution.repair_wins,
+                    solution.repair_improvements,
+                    solution.elapsed_ms
+                );
+                return apply_selected_combat_candidate_line(
+                    session,
+                    &start,
+                    &config,
+                    &report,
+                    saved_evidence.as_deref(),
+                    solution.line,
+                    CombatAutomationTrajectorySource::CompleteLineSolver,
+                    summary,
+                    Some(CombatCandidateLinePerformance {
+                        nodes_expanded: solution.nodes_expanded as u64,
+                        nodes_generated: solution.nodes_generated as u64,
+                        total_us: millis_to_micros_u64(solution.elapsed_ms),
+                    }),
+                );
+            }
+        }
         if let Some(outcome) = try_apply_turn_segment_after_rejection(
             session,
             &start,
@@ -116,21 +151,6 @@ pub(super) fn apply_search_combat(
         ));
     }
 
-    let replay = replay_candidate_line(
-        &start,
-        selected_line.source,
-        &selected_line.actions,
-        &config,
-    )?;
-    if replay.line.terminal != CombatTerminal::Win {
-        return Err(format!(
-            "selected combat candidate line did not replay to win; source={} terminal={:?}",
-            replay.line.source.label(),
-            replay.line.terminal
-        ));
-    }
-    selected_line = replay.line;
-
     if let Some(max_hp_loss) = effective_hp_loss_limit(session, &options) {
         if selected_line.hp_loss > max_hp_loss as i32 {
             if let Some(outcome) = try_apply_turn_segment_after_rejection(
@@ -170,6 +190,57 @@ pub(super) fn apply_search_combat(
         }
     }
 
+    let mut summary = format!(
+        "search-combat applied {} actions",
+        selected_line.actions.len()
+    );
+    if let Some(repair_summary) = repair_summary.as_ref() {
+        summary.push_str(&format!(" {repair_summary}"));
+    }
+    if let Some(path) = saved_evidence.as_ref() {
+        summary.push_str(&format!(" saved_search={}", path.display()));
+    }
+    apply_selected_combat_candidate_line(
+        session,
+        &start,
+        &config,
+        &report,
+        saved_evidence.as_deref(),
+        selected_line,
+        CombatAutomationTrajectorySource::SearchCombat,
+        summary,
+        None,
+    )
+}
+
+#[derive(Clone, Copy)]
+struct CombatCandidateLinePerformance {
+    nodes_expanded: u64,
+    nodes_generated: u64,
+    total_us: u64,
+}
+
+fn apply_selected_combat_candidate_line(
+    session: &mut RunControlSession,
+    start: &CombatPosition,
+    config: &CombatSearchV2Config,
+    report: &CombatSearchV2Report,
+    saved_evidence: Option<&std::path::Path>,
+    mut selected_line: CombatCandidateLine,
+    trajectory_source: CombatAutomationTrajectorySource,
+    transition_label: String,
+    line_performance: Option<CombatCandidateLinePerformance>,
+) -> Result<RunControlCommandOutcome, String> {
+    let replay =
+        replay_candidate_line(start, selected_line.source, &selected_line.actions, config)?;
+    if replay.line.terminal != CombatTerminal::Win {
+        return Err(format!(
+            "selected combat candidate line did not replay to win; source={} terminal={:?}",
+            replay.line.source.label(),
+            replay.line.terminal
+        ));
+    }
+    selected_line = replay.line;
     let before_snapshot = RunVisibleSnapshot::capture(session);
     let applied = selected_line.actions.clone();
     let mut automation_actions = Vec::new();
@@ -186,13 +257,6 @@ pub(super) fn apply_search_combat(
     }
     let after_snapshot = RunVisibleSnapshot::capture(session);
     let status = current_run_apply_status(session);
-    let mut transition_label = format!("search-combat applied {} actions", applied.len());
-    if let Some(summary) = repair_summary.as_ref() {
-        transition_label.push_str(&format!(" {summary}"));
-    }
-    if let Some(path) = saved_evidence.as_ref() {
-        transition_label.push_str(&format!(" saved_search={}", path.display()));
-    }
     let action_result = action_result_from_transition(
         TransitionAction {
             label: transition_label,
@@ -201,30 +265,39 @@ pub(super) fn apply_search_combat(
         &after_snapshot,
         status,
     );
-    let message = format!(
-        "{}{}\n{}\n{}",
-        render_search_application(
-            &report,
+    let application = if line_performance.is_some() {
+        render_complete_line_solver_application(
+            report,
             &applied,
             &selected_line,
             replay.applied_count,
-            repair_summary.as_deref(),
-        ),
-        render_saved_evidence_note(saved_evidence.as_deref()),
+        )
+    } else {
+        render_search_application(report, &applied, &selected_line, replay.applied_count)
+    };
+    let message = format!(
+        "{}{}\n{}\n{}",
+        application,
+        render_saved_evidence_note(saved_evidence),
         render_action_result(&action_result),
         super::render::render_run_control_state(session)
     );
-    let automation_record = CombatAutomationTrajectoryRecordV1::new(
-        CombatAutomationTrajectorySource::SearchCombat,
-        automation_actions,
-    );
+    let automation_record =
+        CombatAutomationTrajectoryRecordV1::new(trajectory_source, automation_actions);
     session.remember_combat_automation_trajectory(automation_record.clone());
     let mut outcome = RunControlCommandOutcome::action(message, action_result)
         .with_trace_annotations(vec![
             automation_record.into_annotation(),
-            combat_search_performance_trace_annotation("search_combat", session, &start, &report),
+            combat_line_performance_trace_annotation(
+                trajectory_source.label(),
+                session,
+                start,
+                report,
+                &selected_line,
+                line_performance,
+            ),
         ]);
-    outcome.search_evidence_path = saved_evidence;
+    outcome.search_evidence_path = saved_evidence.map(std::path::Path::to_path_buf);
     Ok(outcome)
 }
 
@@ -441,6 +514,33 @@ fn combat_search_performance_trace_annotation(
     }
 }
 
+fn combat_line_performance_trace_annotation(
+    source: impl Into<String>,
+    session: &RunControlSession,
+    start: &CombatPosition,
+    report: &CombatSearchV2Report,
+    selected_line: &CombatCandidateLine,
+    line_performance: Option<CombatCandidateLinePerformance>,
+) -> RunControlTraceAnnotationV1 {
+    let Some(performance) = line_performance else {
+        return combat_search_performance_trace_annotation(source, session, start, report);
+    };
+    let mut snapshot = combat_search_performance_snapshot(source.into(), session, start, report);
+    let line_summary = combat_candidate_line_summary(selected_line);
+    snapshot.coverage_status = "CompleteLineSolverApplied".to_string();
+    snapshot.complete_trajectory_found = true;
+    snapshot.complete_win_found = selected_line.terminal == CombatTerminal::Win;
+    snapshot.best_complete = Some(line_summary.clone());
+    snapshot.best_win = (selected_line.terminal == CombatTerminal::Win).then_some(line_summary);
+    snapshot.best_hp_loss =
+        (selected_line.terminal == CombatTerminal::Win).then_some(selected_line.hp_loss);
+    snapshot.nodes_expanded = performance.nodes_expanded;
+    snapshot.nodes_generated = performance.nodes_generated;
+    snapshot.terminal_wins = u64::from(selected_line.terminal == CombatTerminal::Win);
+    snapshot.total_us = performance.total_us;
+    RunControlTraceAnnotationV1::CombatSearchPerformance { snapshot }
+}
+
 fn combat_search_performance_snapshot(
     source: String,
     session: &RunControlSession,
@@ -592,8 +692,29 @@ fn combat_search_line_summary(
     }
 }
 
+fn combat_candidate_line_summary(line: &CombatCandidateLine) -> CombatSearchTerminalLineSummary {
+    CombatSearchTerminalLineSummary {
+        terminal: match line.terminal {
+            CombatTerminal::Win => SearchTerminalLabel::Win,
+            CombatTerminal::Loss => SearchTerminalLabel::Loss,
+            CombatTerminal::Unresolved => SearchTerminalLabel::Unresolved,
+        },
+        final_hp: line.final_hp,
+        hp_loss: line.hp_loss,
+        turns: line.turns,
+        cards_played: line.cards_played,
+        potions_used: line.potions_used,
+        potions_discarded: line.potions_discarded,
+        action_count: line.actions.len(),
+    }
+}
+
 fn micros_to_u64(value: u128) -> u64 {
     value.min(u128::from(u64::MAX)) as u64
+}
+
+fn millis_to_micros_u64(value: u128) -> u64 {
+    micros_to_u64(value.saturating_mul(1_000))
 }
 
 fn drawn_cards_from_action_result(action_result: Option<&ActionResult>) -> Vec<CardSnapshot> {
@@ -873,7 +994,6 @@ fn render_search_application(
     actions: &[CombatSearchV2ActionTrace],
     selected_line: &CombatCandidateLine,
     replay_applied_count: usize,
-    repair_summary: Option<&str>,
 ) -> String {
     let trajectory = report
         .best_win_trajectory
@@ -934,9 +1054,43 @@ fn render_search_application(
             report.search_policy.potion_policy
         ),
     ];
-    if let Some(summary) = repair_summary {
-        lines.push(format!("  {summary}"));
+    for action in actions.iter().take(12) {
+        lines.push(format!(
+            "    {} | {} | {}",
+            action.step_index,
+            client_input_hint(&action.input),
+            action.action_key
+        ));
     }
+    if actions.len() > 12 {
+        lines.push(format!("    ... {} more actions", actions.len() - 12));
+    }
+    lines.join("\n")
+}
+
+fn render_complete_line_solver_application(
+    report: &CombatSearchV2Report,
+    actions: &[CombatSearchV2ActionTrace],
+    selected_line: &CombatCandidateLine,
+    replay_applied_count: usize,
+) -> String {
+    let mut lines = vec![
+        "Complete line solver applied winning candidate.".to_string(),
+        format!(
+            "  previous_search coverage_status={:?} reliability={}",
+            report.outcome.coverage_status, report.evidence_reliability.reliability
+        ),
+        format!(
+            "  selected_line source={} terminal={:?} final_hp={} hp_loss={} turns={} cards_played={} replay_applied={}",
+            selected_line.source.label(),
+            selected_line.terminal,
+            selected_line.final_hp,
+            selected_line.hp_loss,
+            selected_line.turns,
+            selected_line.cards_played,
+            replay_applied_count
+        ),
+    ];
     for action in actions.iter().take(12) {
         lines.push(format!(
             "    {} | {} | {}",

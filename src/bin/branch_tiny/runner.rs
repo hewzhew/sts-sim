@@ -413,12 +413,19 @@ fn retry_complete_search_action_keys(outcome: &RunControlCommandOutcome) -> Vec<
         .find_map(|annotation| match annotation {
             RunControlTraceAnnotationV1::CombatAutomationTrajectory {
                 source, actions, ..
-            } if *source == CombatAutomationTrajectorySource::SearchCombat => Some(
-                actions
-                    .iter()
-                    .map(|action| action.action_key.clone())
-                    .collect::<Vec<_>>(),
-            ),
+            } if matches!(
+                source,
+                CombatAutomationTrajectorySource::SearchCombat
+                    | CombatAutomationTrajectorySource::CompleteLineSolver
+            ) =>
+            {
+                Some(
+                    actions
+                        .iter()
+                        .map(|action| action.action_key.clone())
+                        .collect::<Vec<_>>(),
+                )
+            }
             _ => None,
         })
         .unwrap_or_default()
