@@ -6,7 +6,7 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use serde_json::{json, Map, Value};
-use sts_simulator::eval::run_control::render_auto_applied_step_compact_v1;
+use sts_simulator::eval::run_control::{RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1};
 use sts_simulator::runtime::combat::CombatCard;
 
 use super::owners::{reward_plan_lane_label, ChoiceAnnotation, OwnerChoice, ShopTinyAnnotation};
@@ -74,7 +74,8 @@ impl TraceWriter {
             "status": status_value(&branch.status),
             "arrived": branch.path.last().map(path_step_value),
             "auto": branch.auto_steps.iter()
-                .map(render_auto_applied_step_compact_v1)
+                .filter(|step| step.kind != RunControlAutoAppliedKindV1::AutoCapture)
+                .map(auto_step_value)
                 .collect::<Vec<_>>(),
             "combat_search": branch.combat_search,
             "boss_retry": branch.boss_retry.as_ref().map(|retry| json!({
@@ -138,6 +139,30 @@ impl TraceWriter {
         serde_json::to_writer(&mut self.out, &value).map_err(|err| err.to_string())?;
         self.out.write_all(b"\n").map_err(|err| err.to_string())?;
         self.out.flush().map_err(|err| err.to_string())
+    }
+}
+
+fn auto_step_value(step: &RunControlAutoAppliedStepV1) -> Value {
+    let Some(result) = step.action_result.as_ref() else {
+        return json!({"kind": auto_step_kind_value(step.kind)});
+    };
+    json!({
+        "kind": auto_step_kind_value(step.kind),
+        "status": result.status,
+        "changes": result.changes,
+    })
+}
+
+fn auto_step_kind_value(kind: RunControlAutoAppliedKindV1) -> &'static str {
+    match kind {
+        RunControlAutoAppliedKindV1::RewardAutomation => "reward_automation",
+        RunControlAutoAppliedKindV1::CombatSearch => "combat_search",
+        RunControlAutoAppliedKindV1::RoutePlanner => "route_planner",
+        RunControlAutoAppliedKindV1::RewardOverlay => "reward_overlay",
+        RunControlAutoAppliedKindV1::NoncombatPolicy => "noncombat_policy",
+        RunControlAutoAppliedKindV1::RoutineCandidate => "routine_candidate",
+        RunControlAutoAppliedKindV1::AutoCapture => "auto_capture",
+        RunControlAutoAppliedKindV1::OwnerPolicy => "owner_policy",
     }
 }
 

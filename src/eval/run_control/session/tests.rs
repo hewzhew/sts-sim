@@ -1456,7 +1456,12 @@ fn run_control_auto_run_claims_safe_relic_reward_with_policy_annotation() {
         ))
         .expect("auto-run should claim a safe relic reward");
 
-    assert!(outcome.message.contains("routine reward: Relic Anchor"));
+    let changes = auto_reward_changes(&outcome).expect("reward automation should report changes");
+    assert!(changes.contains(
+        &crate::eval::run_control::RunActionResultChangeV1::RelicGained {
+            relic: crate::content::relics::RelicId::Anchor
+        }
+    ));
     assert!(session
         .run_state
         .relics
@@ -1882,9 +1887,19 @@ fn run_control_auto_step_claims_low_risk_rewards_then_stops() {
         .apply_command(RunControlCommand::AutoStep(Default::default()))
         .expect("auto-step should claim deterministic rewards");
 
-    assert!(outcome
-        .message
-        .contains("routine reward: 19 gold, Essence of Steel potion"));
+    let changes = auto_reward_changes(&outcome).expect("reward automation should report changes");
+    assert!(changes.contains(
+        &crate::eval::run_control::RunActionResultChangeV1::GoldChanged {
+            before: 99,
+            after: 118
+        }
+    ));
+    assert!(changes.contains(
+        &crate::eval::run_control::RunActionResultChangeV1::PotionGained {
+            potion: crate::content::potions::PotionId::EssenceOfSteel,
+            slot: 0
+        }
+    ));
     assert!(outcome
         .message
         .contains("Reason: card reward requires human choice"));
@@ -2366,6 +2381,19 @@ fn noncombat_human_boundary_record(
     crate::ai::noncombat_decision_v1::validate_noncombat_decision_record_v1(record)
         .expect("noncombat human boundary record should validate");
     record
+}
+
+fn auto_reward_changes(
+    outcome: &RunControlCommandOutcome,
+) -> Option<&[crate::eval::run_control::RunActionResultChangeV1]> {
+    outcome
+        .auto_applied_steps
+        .iter()
+        .find(|step| {
+            step.kind == crate::eval::run_control::RunControlAutoAppliedKindV1::RewardAutomation
+        })
+        .and_then(|step| step.action_result.as_ref())
+        .map(|result| result.changes.as_slice())
 }
 
 fn unique_temp_dir(label: &str) -> PathBuf {

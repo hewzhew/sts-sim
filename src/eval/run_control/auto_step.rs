@@ -127,20 +127,22 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
             );
         }
 
+        let reward_before = RunVisibleSnapshot::capture(session);
         let reward_report = super::reward_auto::apply_reward_automation(session)?;
         if !reward_report.is_empty() {
+            let reward_after = RunVisibleSnapshot::capture(session);
+            let action_result = action_result_from_transition(
+                TransitionAction {
+                    label: "reward automation".to_string(),
+                },
+                &reward_before,
+                &reward_after,
+                current_run_apply_status(session),
+            );
             applied.push_step(
                 RunControlAutoAppliedKindV1::RewardAutomation,
-                format!(
-                    "routine reward: {}",
-                    reward_report
-                        .claims
-                        .iter()
-                        .map(|claim| claim.label.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
-                None,
+                "reward automation",
+                Some(action_result),
             );
             trace_annotations.extend(reward_report.trace_annotations);
             continue;
