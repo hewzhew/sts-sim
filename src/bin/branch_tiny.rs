@@ -214,6 +214,7 @@ fn run() -> Result<(), String> {
     }
     for generation in generation_start..=args.generations {
         let mut next = VecDeque::new();
+        let mut deferred = VecDeque::new();
         while let Some(branch) = frontier.pop_front() {
             if next.is_empty() && deadline.should_stop() {
                 frontier.push_front(branch);
@@ -255,6 +256,10 @@ fn run() -> Result<(), String> {
             if !expandable {
                 continue;
             }
+            if expanded == 0 {
+                deferred.push_back(branch);
+                continue;
+            }
             let child_args = deadline.cap_args(args, expanded.max(1));
             for child in expand_registered_owner(
                 &branch,
@@ -269,6 +274,8 @@ fn run() -> Result<(), String> {
                 next.push_back(child);
             }
         }
+        next.append(&mut deferred);
+        retain_frontier(&mut next, args.max_branches);
         if next.is_empty() {
             break;
         }
@@ -286,6 +293,42 @@ fn run() -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn retain_frontier(frontier: &mut VecDeque<Branch>, limit: usize) {
+    if frontier.len() <= limit {
+        return;
+    }
+    let mut branches = frontier.drain(..).collect::<Vec<_>>();
+    branches.sort_by(|a, b| {
+        frontier_retention_key(b)
+            .cmp(&frontier_retention_key(a))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    branches.truncate(limit);
+    *frontier = branches.into();
+}
+
+fn frontier_retention_key(branch: &Branch) -> (u8, u8, i32, u32, i32) {
+    let status = match branch.status {
+        BranchStatus::Running { .. } => 3,
+        BranchStatus::Terminal("win") => 2,
+        BranchStatus::CombatGap { .. } | BranchStatus::BudgetGap { .. } => 1,
+        BranchStatus::Terminal(_)
+        | BranchStatus::AutomationGap { .. }
+        | BranchStatus::ApplyFailed(_)
+        | BranchStatus::AdvanceFailed(_) => 0,
+    };
+    let hp = branch.session.run_state.current_hp;
+    let max_hp = branch.session.run_state.max_hp.max(1);
+    let hp_ratio = (hp.max(0) as u32).saturating_mul(1000) / max_hp as u32;
+    (
+        status,
+        branch.session.run_state.act_num,
+        branch.session.run_state.floor_num,
+        hp_ratio,
+        hp,
+    )
 }
 
 #[derive(Clone, Copy)]
