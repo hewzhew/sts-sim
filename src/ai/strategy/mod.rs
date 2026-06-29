@@ -10,6 +10,7 @@ pub mod boss_relic_admission;
 pub mod campfire_upgrade_quality;
 pub mod deck_admission;
 pub mod deck_debt;
+pub mod deck_role_inventory;
 pub mod formation;
 pub mod gates;
 pub mod jobs;
