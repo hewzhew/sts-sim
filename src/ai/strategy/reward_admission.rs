@@ -47,6 +47,8 @@ pub enum RewardAdmissionReason {
     FrontloadDamage,
     AreaDamage,
     DamageScalesWith(DamageScalingAxis),
+    RecoverCurrentHp,
+    CostReducedByHpLossThisCombat,
     CombatUpgrade,
     DamageUses(Mechanic),
     Emits(CombatEvent),
@@ -225,6 +227,10 @@ fn assess_reward_admission_from_definitions(
             PlayEffect::EmitEvent(event) => reasons.push(RewardAdmissionReason::Emits(event)),
             PlayEffect::ExhaustsSelf => reasons.push(RewardAdmissionReason::ExhaustsSelf),
             PlayEffect::RunReward(reward) => reasons.push(RewardAdmissionReason::RunReward(reward)),
+            PlayEffect::RecoverCurrentHp => reasons.push(RewardAdmissionReason::RecoverCurrentHp),
+            PlayEffect::CostReducedByHpLossThisCombat => {
+                reasons.push(RewardAdmissionReason::CostReducedByHpLossThisCombat)
+            }
             PlayEffect::PlayTopCardAndExhaust => {
                 reasons.push(RewardAdmissionReason::PlaysTopCardAndExhaust)
             }
@@ -362,6 +368,8 @@ fn reason_tag(reason: &RewardAdmissionReason) -> String {
         RewardAdmissionReason::DamageScalesWith(axis) => {
             format!("scales:{}", damage_scaling_axis_tag(*axis))
         }
+        RewardAdmissionReason::RecoverCurrentHp => "+heal-hp".to_string(),
+        RewardAdmissionReason::CostReducedByHpLossThisCombat => "cost-down:on-hp-loss".to_string(),
         RewardAdmissionReason::CombatUpgrade => "+upgrade".to_string(),
         RewardAdmissionReason::DamageUses(mechanic) => format!("uses:{}", mechanic_tag(*mechanic)),
         RewardAdmissionReason::Emits(event) => format!("emits:{}", event_tag(*event)),
@@ -480,6 +488,7 @@ fn damage_scaling_axis_tag(axis: DamageScalingAxis) -> &'static str {
 fn run_reward_tag(reward: RunRewardKind) -> &'static str {
     match reward {
         RunRewardKind::MaxHpOnFatal => "max-hp-kill",
+        RunRewardKind::GoldOnFatal => "gold-on-kill",
     }
 }
 
@@ -508,6 +517,7 @@ fn burden_tag(burden: CardBurden) -> &'static str {
         CardBurden::RandomExhaust => "random-exhaust",
         CardBurden::ExhaustsHand => "exhausts-hand",
         CardBurden::RequiresEnemyAttackIntent => "needs-attack",
+        CardBurden::CardBlockLockoutUntilNextTurn => "no-card-block-next-turn",
     }
 }
 
@@ -560,12 +570,14 @@ fn is_immediate_work(effect: &PlayEffect) -> bool {
             | Mechanic::EnemyStrengthDown,
         ) => true,
         PlayEffect::CombatUpgradeSingle | PlayEffect::CombatUpgradeAll => true,
+        PlayEffect::RecoverCurrentHp => true,
         PlayEffect::Provide(_)
         | PlayEffect::DamageUses(_)
         | PlayEffect::DamageScalesWith(_)
         | PlayEffect::EmitEvent(_)
         | PlayEffect::ExhaustsSelf
         | PlayEffect::RunReward(_)
+        | PlayEffect::CostReducedByHpLossThisCombat
         | PlayEffect::AddCombatDeckClutter
         | PlayEffect::PlayTopCardAndExhaust => false,
     }
@@ -582,6 +594,8 @@ fn is_engine_seed_effect(effect: &PlayEffect) -> bool {
 fn is_admission_burden(burden: &CardBurden) -> bool {
     matches!(
         burden,
-        CardBurden::AddsCombatDeckClutter | CardBurden::RandomExhaust
+        CardBurden::AddsCombatDeckClutter
+            | CardBurden::RandomExhaust
+            | CardBurden::CardBlockLockoutUntilNextTurn
     )
 }

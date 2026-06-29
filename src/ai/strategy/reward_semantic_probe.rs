@@ -276,6 +276,16 @@ fn explain_play_effects(effects: &[PlayEffect]) -> PlayEffectExplanation {
             PlayEffect::RunReward(reward) => {
                 explanation.run_rewards.push(debug_label(reward));
             }
+            PlayEffect::RecoverCurrentHp => {
+                explanation
+                    .run_rewards
+                    .push("CurrentHpRecovery".to_string());
+            }
+            PlayEffect::CostReducedByHpLossThisCombat => {
+                explanation
+                    .scales
+                    .push("CostReducedByHpLossThisCombat".to_string());
+            }
             PlayEffect::AddCombatDeckClutter => {
                 explanation.emits.push("CombatDeckClutter".to_string());
             }

@@ -24,6 +24,7 @@ pub enum DamageScalingAxis {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunRewardKind {
     MaxHpOnFatal,
+    GoldOnFatal,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -45,6 +46,8 @@ pub enum PlayEffect {
     EmitEvent(CombatEvent),
     ExhaustsSelf,
     RunReward(RunRewardKind),
+    RecoverCurrentHp,
+    CostReducedByHpLossThisCombat,
     AddCombatDeckClutter,
     PlayTopCardAndExhaust,
     CombatUpgradeSingle,
@@ -90,6 +93,7 @@ pub enum CardBurden {
     RandomExhaust,
     ExhaustsHand,
     RequiresEnemyAttackIntent,
+    CardBlockLockoutUntilNextTurn,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -219,6 +223,8 @@ impl DeckMechanicContext {
                 | PlayEffect::DamageScalesWith(_)
                 | PlayEffect::ExhaustsSelf
                 | PlayEffect::RunReward(_)
+                | PlayEffect::RecoverCurrentHp
+                | PlayEffect::CostReducedByHpLossThisCombat
                 | PlayEffect::CombatUpgradeSingle
                 | PlayEffect::CombatUpgradeAll => {}
             }
@@ -470,6 +476,26 @@ pub fn card_definition_with_upgrades(card: CardId, upgrades: u8) -> CardDefiniti
             ))
             .burden(PowerSetup)
             .duplicate(StackingOutput),
+        MasterOfStrategy => CardDefinition::new(card)
+            .provides(CardDraw)
+            .effect(ExhaustsSelf),
+        GoodInstincts => CardDefinition::new(card).provides(Block),
+        Intimidate => CardDefinition::new(card)
+            .provides(Weak)
+            .effect(ExhaustsSelf),
+        BandageUp => CardDefinition::new(card)
+            .effect(RecoverCurrentHp)
+            .effect(ExhaustsSelf),
+        PanicButton => CardDefinition::new(card)
+            .provides(Block)
+            .effect(ExhaustsSelf)
+            .burden(CardBlockLockoutUntilNextTurn),
+        HandOfGreed => CardDefinition::new(card)
+            .effect(FrontloadDamage)
+            .effect(RunReward(GoldOnFatal)),
+        BloodForBlood => CardDefinition::new(card)
+            .effect(FrontloadDamage)
+            .effect(CostReducedByHpLossThisCombat),
         // Juggernaut needs a future BlockGained reactive-power model; do not
         // flatten it into ordinary frontload damage.
         Juggernaut => CardDefinition::new(card),
