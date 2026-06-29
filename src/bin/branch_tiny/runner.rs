@@ -1,6 +1,10 @@
 use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
 };
+use sts_simulator::ai::strategy::campfire_upgrade_quality::{
+    rank_campfire_upgrades, should_rest_before_smith, CampfireUpgradeTier,
+};
+use sts_simulator::content::cards::{get_card_definition, is_starter_basic, CardId, CardType};
 use sts_simulator::eval::run_control::{
     apply_owner_audit_auto_run, build_decision_surface, CombatAutomationTrajectorySource,
     CombatSearchTraceSummary, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
@@ -8,7 +12,7 @@ use sts_simulator::eval::run_control::{
     RunControlCommandOutcome, RunControlHpLossLimit, RunControlRouteAutomationMode,
     RunControlSearchCombatOptions, RunControlSession, RunControlTraceAnnotationV1,
 };
-use sts_simulator::state::core::{ClientInput, EngineState, RunResult};
+use sts_simulator::state::core::{CampfireChoice, ClientInput, EngineState, RunResult};
 use sts_simulator::state::selection::DomainEventSource;
 
 use super::render;
@@ -397,6 +401,7 @@ fn apply_policy_owner(
     let input = match owner {
         Owner::ShopTiny => return Err("ShopTiny has no automatic policy".to_string()),
         Owner::RewardTiny => return apply_reward_tiny_policy(session),
+        Owner::Campfire => return apply_campfire_owner_policy(session),
         Owner::Event(_) => require_visible_input(
             session,
             sts_simulator::content::events::owner_policy::event_owner_policy_input(
@@ -410,6 +415,107 @@ fn apply_policy_owner(
         }
     };
     session.apply_command(RunControlCommand::Input(input))
+}
+
+fn apply_campfire_owner_policy(
+    session: &mut RunControlSession,
+) -> Result<sts_simulator::eval::run_control::RunControlCommandOutcome, String> {
+    if sts_simulator::engine::campfire_handler::get_available_options(&session.run_state).is_empty()
+    {
+        sts_simulator::engine::run_loop::tick_run_active_with_observer(
+            &mut session.engine_state,
+            &mut session.run_state,
+            &mut session.active_combat,
+            None,
+        );
+        return session.apply_command(RunControlCommand::Noop);
+    }
+    let input = require_visible_input(
+        session,
+        ClientInput::CampfireOption(choose_campfire_owner_action(session)?),
+    )?;
+    session.apply_command(RunControlCommand::Input(input))
+}
+
+fn choose_campfire_owner_action(session: &RunControlSession) -> Result<CampfireChoice, String> {
+    if !matches!(session.engine_state, EngineState::Campfire) {
+        return Err("Campfire owner requires Campfire engine state".to_string());
+    }
+    let options =
+        sts_simulator::engine::campfire_handler::get_available_options(&session.run_state);
+    let has_rest = options.contains(&CampfireChoice::Rest);
+    let has_smith = options
+        .iter()
+        .any(|choice| matches!(choice, CampfireChoice::Smith(_)));
+
+    if has_rest
+        && (!has_smith
+            || should_rest_before_smith(session.run_state.current_hp, session.run_state.max_hp))
+    {
+        return Ok(CampfireChoice::Rest);
+    }
+    if let Some(choice) = best_campfire_toke(session, &options) {
+        return Ok(choice);
+    }
+    if has_smith {
+        let ranked = rank_campfire_upgrades(&session.run_state.master_deck);
+        if let Some(best) = ranked
+            .iter()
+            .find(|target| target.tier >= CampfireUpgradeTier::Low)
+            .or_else(|| ranked.first())
+        {
+            return Ok(CampfireChoice::Smith(best.deck_index));
+        }
+    }
+    for fallback in [
+        CampfireChoice::Dig,
+        CampfireChoice::Lift,
+        CampfireChoice::Recall,
+        CampfireChoice::Rest,
+    ] {
+        if options.contains(&fallback) {
+            return Ok(fallback);
+        }
+    }
+    Err("Campfire owner found no policy action".to_string())
+}
+
+fn best_campfire_toke(
+    session: &RunControlSession,
+    options: &[CampfireChoice],
+) -> Option<CampfireChoice> {
+    if !options
+        .iter()
+        .any(|choice| matches!(choice, CampfireChoice::Toke(_)))
+    {
+        return None;
+    }
+    let surface = build_decision_surface(session);
+    surface
+        .visible_executable_inputs
+        .iter()
+        .filter_map(|input| {
+            let ClientInput::CampfireOption(CampfireChoice::Toke(index)) = input else {
+                return None;
+            };
+            session
+                .run_state
+                .master_deck
+                .get(*index)
+                .map(|card| (*index, card.id))
+        })
+        .min_by_key(|(_, card)| campfire_toke_rank(*card))
+        .map(|(index, _)| CampfireChoice::Toke(index))
+}
+
+fn campfire_toke_rank(card: CardId) -> u8 {
+    let definition = get_card_definition(card);
+    match definition.card_type {
+        CardType::Curse => 0,
+        CardType::Status => 1,
+        _ if is_starter_basic(card) => 2,
+        _ => 9,
+    }
 }
 
 fn apply_reward_tiny_policy(
@@ -540,6 +646,7 @@ fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
         EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. } => Some(Owner::RewardTiny),
         EngineState::BossRelicSelect(_) => Some(Owner::BossRelic),
         EngineState::Shop(_) => Some(Owner::ShopTiny),
+        EngineState::Campfire => Some(Owner::Campfire),
         EngineState::RunPendingChoice(choice) => match choice.source {
             DomainEventSource::Event(sts_simulator::state::events::EventId::LivingWall) => Some(
                 Owner::Event(sts_simulator::state::events::EventId::LivingWall),

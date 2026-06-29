@@ -225,6 +225,7 @@ fn owner_label(owner: Owner) -> String {
         Owner::Event(event_id) => format!("Event({event_id:?})"),
         Owner::RewardTiny => "RewardTiny".to_string(),
         Owner::ShopTiny => "ShopTiny".to_string(),
+        Owner::Campfire => "Campfire".to_string(),
     }
 }
 

@@ -181,6 +181,7 @@ fn owner_value(owner: Owner) -> Value {
         Owner::Event(event_id) => json!({"kind": "event", "event_id": format!("{event_id:?}")}),
         Owner::RewardTiny => json!({"kind": "reward_tiny"}),
         Owner::ShopTiny => json!({"kind": "shop_tiny"}),
+        Owner::Campfire => json!({"kind": "campfire"}),
     }
 }
 

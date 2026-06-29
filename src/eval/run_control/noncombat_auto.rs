@@ -10,26 +10,30 @@ pub(super) struct NonCombatAutoApplication {
 pub(super) fn apply_planner_noncombat_policy(
     session: &mut RunControlSession,
 ) -> Result<Option<NonCombatAutoApplication>, String> {
-    apply_planner_noncombat_policy_with_shop(session, true)
+    apply_planner_noncombat_policy_with_options(session, true, true)
 }
 
 pub(super) fn apply_owner_audit_noncombat_policy(
     session: &mut RunControlSession,
 ) -> Result<Option<NonCombatAutoApplication>, String> {
-    apply_planner_noncombat_policy_with_shop(session, false)
+    apply_planner_noncombat_policy_with_options(session, false, false)
 }
 
-fn apply_planner_noncombat_policy_with_shop(
+fn apply_planner_noncombat_policy_with_options(
     session: &mut RunControlSession,
     allow_shop_policy: bool,
+    allow_campfire_policy: bool,
 ) -> Result<Option<NonCombatAutoApplication>, String> {
-    if let Some((outcome, summary)) = super::campfire_policy::apply_campfire_policy_action(session)?
-    {
-        return Ok(Some(NonCombatAutoApplication {
-            outcome,
-            summary,
-            stop_after_reason: None,
-        }));
+    if allow_campfire_policy {
+        if let Some((outcome, summary)) =
+            super::campfire_policy::apply_campfire_policy_action(session)?
+        {
+            return Ok(Some(NonCombatAutoApplication {
+                outcome,
+                summary,
+                stop_after_reason: None,
+            }));
+        }
     }
     if allow_shop_policy {
         if let Some((outcome, summary)) = super::shop_policy::apply_shop_policy_action(session)? {

@@ -141,7 +141,7 @@ pub(super) fn owner_choices(
         Owner::CardReward => card_reward_owner_choices(session, surface),
         Owner::BossRelic => boss_relic_owner_choices(session, surface),
         Owner::ShopTiny => shop_tiny_owner_choices(session, surface),
-        Owner::Event(_) | Owner::RewardTiny => Vec::new(),
+        Owner::Event(_) | Owner::RewardTiny | Owner::Campfire => Vec::new(),
     }
 }
 

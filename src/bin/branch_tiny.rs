@@ -101,6 +101,7 @@ enum Owner {
     Event(EventId),
     RewardTiny,
     ShopTiny,
+    Campfire,
 }
 
 #[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
