@@ -6,8 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Map, Value};
 use sts_simulator::ai::strategy::decision_pipeline::candidate_lane_label;
+use sts_simulator::eval::combat_case::combat_summary;
 use sts_simulator::eval::run_control::RunControlAutoAppliedKindV1;
 use sts_simulator::runtime::combat::CombatCard;
+use sts_simulator::sim::combat::CombatPosition;
 
 use super::owners::ChoiceAnnotation;
 use super::{frontier_checkpoint, Args, Branch, BranchPathStep, BranchStatus};
@@ -144,7 +146,18 @@ fn result_value(generation: usize, branch: &Branch) -> Value {
             .filter(|step| step.kind != RunControlAutoAppliedKindV1::AutoCapture)
             .map(|step| json!({"kind": format!("{:?}", step.kind), "label": step.label}))
             .collect::<Vec<_>>(),
+        "combat": active_combat_value(branch),
+        "failed_search": branch.combat_search.last(),
     })
+}
+
+fn active_combat_value(branch: &Branch) -> Option<Value> {
+    let active = branch.session.active_combat.as_ref()?;
+    serde_json::to_value(combat_summary(&CombatPosition::new(
+        active.engine_state.clone(),
+        active.combat_state.clone(),
+    )))
+    .ok()
 }
 
 fn path_value(branch: &Branch) -> Value {
