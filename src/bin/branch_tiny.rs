@@ -17,12 +17,15 @@ mod frontier_checkpoint;
 mod owners;
 #[path = "branch_tiny/render.rs"]
 mod render;
+#[path = "branch_tiny/run_capsule.rs"]
+mod run_capsule;
 #[path = "branch_tiny/runner.rs"]
 mod runner;
 #[path = "branch_tiny/trace.rs"]
 mod trace;
 
 use owners::{ChoiceAnnotation, DecisionKey, OwnerChoice, OwnerDecision, OwnerRoutine};
+use run_capsule::RunCapsule;
 
 const WALL_STOP_GUARD_MS: u64 = 1_500;
 
@@ -207,18 +210,29 @@ fn run() -> Result<(), String> {
         mut combat_gap_case_dir,
         frontier_checkpoint_path,
         resume_frontier,
+        run_capsule_path,
         event_owner_probe,
     ) = parse_args()?;
     if let Some(probe) = event_owner_probe {
         return run_event_owner_probe(args, probe);
     }
+    let run_capsule = run_capsule_path.map(RunCapsule::new);
     if combat_gap_case_dir.is_none() {
-        combat_gap_case_dir = default_combat_gap_case_dir(
-            trace_path.as_ref(),
-            frontier_checkpoint_path.as_ref(),
-            resume_frontier.as_ref(),
-        );
+        combat_gap_case_dir = run_capsule
+            .as_ref()
+            .map(RunCapsule::combat_cases_dir)
+            .or_else(|| {
+                default_combat_gap_case_dir(
+                    trace_path.as_ref(),
+                    frontier_checkpoint_path.as_ref(),
+                    resume_frontier.as_ref(),
+                )
+            });
     }
+    if let Some(capsule) = run_capsule.as_ref() {
+        capsule.write_running_manifest(args)?;
+    }
+    let mut capsule_frontier_saved = false;
     let started = Instant::now();
     let mut trace = trace_path
         .as_ref()
@@ -286,9 +300,11 @@ fn run() -> Result<(), String> {
     let mut last_generation = generation_start;
     for generation in generation_start..=args.generations {
         last_generation = generation;
+        let mut generation_result = None;
         if deadline.should_stop() {
-            save_wall_stop(
+            capsule_frontier_saved |= save_wall_stop(
                 checkpoint_path(&frontier_checkpoint_path, &resume_frontier),
+                run_capsule.as_ref(),
                 args,
                 generation,
                 next_branch_id,
@@ -330,6 +346,11 @@ fn run() -> Result<(), String> {
                 if let Some(trace) = trace.as_mut() {
                     trace.record_branch_snapshot(generation, "stopped", &branch)?;
                 }
+                if matches!(branch.status, BranchStatus::Running { .. }) {
+                    deferred.push_back(branch);
+                    continue;
+                }
+                generation_result = Some((generation, branch.clone()));
                 continue;
             }
             if !expanded_mask.iter().any(|expanded| *expanded) {
@@ -353,12 +374,19 @@ fn run() -> Result<(), String> {
         next.append(&mut deferred);
         retain_frontier(&mut next, args.max_branches);
         if next.is_empty() {
+            if let (Some(capsule), Some((result_generation, branch))) =
+                (run_capsule.as_ref(), generation_result.as_ref())
+            {
+                capsule.save_result(args, *result_generation, branch)?;
+                println!("run_capsule_result: {}", capsule.result_path().display());
+            }
             break;
         }
         frontier = next;
         if deadline.should_stop() {
-            save_wall_stop(
+            capsule_frontier_saved |= save_wall_stop(
                 checkpoint_path(&frontier_checkpoint_path, &resume_frontier),
+                run_capsule.as_ref(),
                 args,
                 generation + 1,
                 next_branch_id,
@@ -370,6 +398,12 @@ fn run() -> Result<(), String> {
     }
     if let Some(trace) = trace.as_mut() {
         trace.record_frontier_snapshot(last_generation, &frontier)?;
+    }
+    if let Some(capsule) = run_capsule.as_ref().filter(|_| !capsule_frontier_saved) {
+        let running = capsule.save_frontier(args, last_generation, next_branch_id, &frontier)?;
+        if running > 0 {
+            println!("run_capsule_frontier: running={running}");
+        }
     }
     Ok(())
 }
@@ -561,12 +595,13 @@ fn checkpoint_path<'a>(
 
 fn save_wall_stop(
     path: Option<&PathBuf>,
+    capsule: Option<&RunCapsule>,
     args: Args,
     generation: usize,
     next_branch_id: usize,
     frontier: &VecDeque<Branch>,
     deadline: &RunDeadline,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     println!(
         "wall_soft_stop: generation={} remaining_ms={}",
         generation,
@@ -579,7 +614,7 @@ fn save_wall_stop(
             .count();
         if running == 0 {
             println!("frontier_checkpoint skipped: no running branches");
-            return Ok(());
+            return Ok(false);
         }
         frontier_checkpoint::save(path, args, generation, next_branch_id, frontier)?;
         println!(
@@ -587,10 +622,17 @@ fn save_wall_stop(
             path.display(),
             running
         );
-    } else {
+    } else if capsule.is_none() {
         println!("wall_soft_stop reached without --frontier-checkpoint");
     }
-    Ok(())
+    if let Some(capsule) = capsule {
+        let running = capsule.save_frontier(args, generation, next_branch_id, frontier)?;
+        if running > 0 {
+            println!("run_capsule_frontier: running={running}");
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn branch_owner_choices(branch: &Branch) -> Vec<OwnerChoice> {
@@ -709,6 +751,7 @@ fn parse_args() -> Result<
         Option<PathBuf>,
         Option<PathBuf>,
         Option<PathBuf>,
+        Option<PathBuf>,
         Option<EventOwnerProbeArgs>,
     ),
     String,
@@ -732,6 +775,7 @@ fn parse_args() -> Result<
     let mut combat_gap_case_dir = None;
     let mut frontier_checkpoint = None;
     let mut resume_frontier = None;
+    let mut run_capsule = None;
     let mut probe_event_owner = None;
     let mut probe_event_screen = 0usize;
     let raw = std::env::args().skip(1).collect::<Vec<_>>();
@@ -742,6 +786,7 @@ fn parse_args() -> Result<
             println!(
                 "branch_tiny --seed N --generations N --max-branches N [--wall-ms N] [--trace-jsonl PATH] [--frontier-checkpoint PATH] [--resume-frontier PATH]"
             );
+            println!("  optional: --run-capsule DIR writes manifest/frontier/result/path JSON");
             println!("branch_tiny --probe-event-owner EVENT [--probe-event-screen N]");
             println!(
                 "  owner-audit runner; ordinary combat uses diagnostic rescue-search, boss combat retries with boss-search"
@@ -771,6 +816,7 @@ fn parse_args() -> Result<
                 | "--combat-gap-case-dir"
                 | "--frontier-checkpoint"
                 | "--resume-frontier"
+                | "--run-capsule"
                 | "--probe-event-owner"
                 | "--probe-event-screen"
         ) {
@@ -826,6 +872,7 @@ fn parse_args() -> Result<
             "--combat-gap-case-dir" => combat_gap_case_dir = Some(PathBuf::from(value)),
             "--frontier-checkpoint" => frontier_checkpoint = Some(PathBuf::from(value)),
             "--resume-frontier" => resume_frontier = Some(PathBuf::from(value)),
+            "--run-capsule" => run_capsule = Some(PathBuf::from(value)),
             "--probe-event-owner" => probe_event_owner = Some(parse_event_id(value)?),
             "--probe-event-screen" => probe_event_screen = parse(value, key)?,
             _ => unreachable!("argument key was validated before value parsing"),
@@ -839,6 +886,7 @@ fn parse_args() -> Result<
         combat_gap_case_dir,
         frontier_checkpoint,
         resume_frontier,
+        run_capsule,
         probe_event_owner.map(|event_id| EventOwnerProbeArgs {
             event_id,
             screen: probe_event_screen,
