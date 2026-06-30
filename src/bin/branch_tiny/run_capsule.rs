@@ -12,7 +12,7 @@ use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::sim::combat::CombatPosition;
 
 use super::owners::ChoiceAnnotation;
-use super::{frontier_checkpoint, Args, Branch, BranchPathStep, BranchStatus};
+use super::{combat_gap_case, frontier_checkpoint, Args, Branch, BranchPathStep, BranchStatus};
 
 pub(super) struct RunCapsule {
     root: PathBuf,
@@ -66,6 +66,8 @@ impl RunCapsule {
                 next_branch_id,
                 frontier,
             )?;
+            remove_if_exists(&self.root.join("result.json"))?;
+            remove_if_exists(&self.root.join("path.json"))?;
             self.write_manifest(args, "running")?;
             return Ok(RunCapsuleSave::Frontier { running });
         }
@@ -83,11 +85,13 @@ impl RunCapsule {
         branch: &Branch,
     ) -> Result<(), String> {
         ensure_dir(&self.root)?;
+        let combat_case = combat_case_value(self, args, generation, branch);
         write_json(
             &self.root.join("result.json"),
-            result_value(generation, branch),
+            result_value(generation, branch, combat_case),
         )?;
         write_json(&self.root.join("path.json"), path_value(branch))?;
+        remove_if_exists(&self.root.join("frontier.json"))?;
         self.write_manifest(args, terminal_manifest_status(&branch.status))
     }
 
@@ -109,7 +113,7 @@ impl RunCapsule {
     }
 }
 
-fn result_value(generation: usize, branch: &Branch) -> Value {
+fn result_value(generation: usize, branch: &Branch, combat_case: Value) -> Value {
     let run = &branch.session.run_state;
     json!({
         "schema": "branch_tiny_run_result",
@@ -147,8 +151,30 @@ fn result_value(generation: usize, branch: &Branch) -> Value {
             .map(|step| json!({"kind": format!("{:?}", step.kind), "label": step.label}))
             .collect::<Vec<_>>(),
         "combat": active_combat_value(branch),
+        "combat_case": combat_case,
         "failed_search": branch.combat_search.last(),
     })
+}
+
+fn combat_case_value(
+    capsule: &RunCapsule,
+    args: Args,
+    generation: usize,
+    branch: &Branch,
+) -> Value {
+    if !matches!(branch.status, BranchStatus::CombatGap { .. }) {
+        return Value::Null;
+    }
+    match combat_gap_case::save_combat_gap_case(
+        &capsule.combat_cases_dir(),
+        args,
+        generation,
+        branch,
+    ) {
+        Ok(Some(path)) => json!(path.display().to_string()),
+        Ok(None) => Value::Null,
+        Err(error) => json!({"error": error}),
+    }
 }
 
 fn active_combat_value(branch: &Branch) -> Option<Value> {
@@ -264,6 +290,14 @@ fn write_json(path: &Path, value: Value) -> Result<(), String> {
             tmp.display()
         )
     })
+}
+
+fn remove_if_exists(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!("failed to remove {}: {err}", path.display())),
+    }
 }
 
 fn ensure_dir(path: &Path) -> Result<(), String> {
