@@ -459,6 +459,9 @@ fn run() -> Result<(), String> {
                 if let Some(trace) = trace.as_mut() {
                     trace.record_branch_snapshot(generation, "stopped", &branch)?;
                 }
+                if let Some(capsule) = run_capsule.as_ref() {
+                    capsule.save_terminal_result(args, generation, &branch)?;
+                }
                 if matches!(branch.status, BranchStatus::Running { .. }) {
                     deferred.push_back(branch);
                     continue;
@@ -481,6 +484,9 @@ fn run() -> Result<(), String> {
                     .map(|(_, choice)| choice),
                 &mut next_branch_id,
             ) {
+                if let Some(capsule) = run_capsule.as_ref() {
+                    capsule.save_terminal_result(args, generation + 1, &child)?;
+                }
                 next.push_back(child);
             }
         }

@@ -11,8 +11,8 @@ use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::sim::combat::CombatPosition;
 
 use super::{
-    combat_gap_case, frontier_checkpoint, Args, Branch, BranchPathStep, BranchStatus,
-    TerminalOutcome,
+    combat_gap_case, frontier_checkpoint, Args, BossRetryAttemptReport, BossRetryReport,
+    BossRetryStatus, Branch, BranchPathStep, BranchStatus, TerminalOutcome,
 };
 
 pub(super) struct RunCapsule {
@@ -42,6 +42,10 @@ impl RunCapsule {
 
     pub(super) fn result_path(&self) -> PathBuf {
         self.root.join("result.json")
+    }
+
+    pub(super) fn terminal_path(&self) -> PathBuf {
+        self.root.join("terminal.json")
     }
 
     pub(super) fn write_running_manifest(&self, args: Args) -> Result<(), String> {
@@ -105,6 +109,35 @@ impl RunCapsule {
         self.write_manifest(args, terminal_manifest_status(&branch.status))
     }
 
+    pub(super) fn save_terminal_result(
+        &self,
+        args: Args,
+        generation: usize,
+        branch: &Branch,
+    ) -> Result<(), String> {
+        if !matches!(branch.status, BranchStatus::Terminal(_)) {
+            return Ok(());
+        }
+        ensure_dir(&self.root)?;
+        let path = self.terminal_path();
+        let mut entries = read_terminal_entries(&path)?;
+        if entries
+            .iter()
+            .any(|entry| entry.get("branch_id").and_then(Value::as_u64) == Some(branch.id as u64))
+        {
+            return Ok(());
+        }
+        let combat_case = combat_case_value(self, args, generation, branch);
+        entries.push(result_value(generation, branch, combat_case));
+        write_json(
+            &path,
+            json!({
+                "schema": "branch_tiny_terminal_results",
+                "terminals": entries,
+            }),
+        )
+    }
+
     fn write_manifest(&self, args: Args, status: &'static str) -> Result<(), String> {
         ensure_dir(&self.root)?;
         write_json(
@@ -156,15 +189,49 @@ fn result_value(generation: usize, branch: &Branch, combat_case: Value) -> Value
         "potions": run.potions.iter().map(|slot| {
             slot.as_ref().map(|potion| json!({"id": potion.id, "uuid": potion.uuid}))
         }).collect::<Vec<_>>(),
+        "path": path_value(branch),
         "auto": branch.auto_steps.iter()
             .filter(|step| step.kind != RunControlAutoAppliedKindV1::AutoCapture)
             .map(|step| json!({"kind": format!("{:?}", step.kind), "label": step.label}))
             .collect::<Vec<_>>(),
         "combat": active_combat_value(branch),
         "combat_case": combat_case,
+        "boss_retry": branch.boss_retry.as_ref().map(boss_retry_value),
         "combat_search_attempts": &branch.combat_search,
         "failed_search": branch.combat_search.last(),
     })
+}
+
+fn boss_retry_value(report: &BossRetryReport) -> Value {
+    json!({
+        "status": boss_retry_status_value(&report.status),
+        "max_nodes": report.max_nodes,
+        "wall_ms": report.wall_ms,
+        "action_keys": report.action_keys,
+        "attempts": report.attempts.iter().map(boss_retry_attempt_value).collect::<Vec<_>>(),
+    })
+}
+
+fn boss_retry_attempt_value(attempt: &BossRetryAttemptReport) -> Value {
+    json!({
+        "label": attempt.label,
+        "status": boss_retry_status_value(&attempt.status),
+        "max_nodes": attempt.max_nodes,
+        "wall_ms": attempt.wall_ms,
+        "potion_policy": attempt.potion_policy,
+        "max_potions_used": attempt.max_potions_used,
+        "action_keys": attempt.action_keys,
+    })
+}
+
+fn boss_retry_status_value(status: &BossRetryStatus) -> Value {
+    match status {
+        BossRetryStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
+        BossRetryStatus::Advanced(boundary) => json!({"kind": "advanced", "boundary": boundary}),
+        BossRetryStatus::Terminal(result) => {
+            json!({"kind": "terminal", "result": result.as_str()})
+        }
+    }
 }
 
 fn combat_case_value(
@@ -291,6 +358,19 @@ fn remove_if_exists(path: &Path) -> Result<(), String> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(err) => Err(format!("failed to remove {}: {err}", path.display())),
     }
+}
+
+fn read_terminal_entries(path: &Path) -> Result<Vec<Value>, String> {
+    let Ok(payload) = fs::read_to_string(path) else {
+        return Ok(Vec::new());
+    };
+    let value: Value = serde_json::from_str(&payload)
+        .map_err(|err| format!("failed to parse {}: {err}", path.display()))?;
+    Ok(value
+        .get("terminals")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default())
 }
 
 fn ensure_dir(path: &Path) -> Result<(), String> {
