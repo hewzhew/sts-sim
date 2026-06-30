@@ -1,10 +1,13 @@
 use crate::content::cards::{
-    get_card_definition, is_starter_basic, is_starter_defend, is_starter_strike,
+    get_card_definition, is_starter_basic, is_starter_defend, is_starter_strike, CardId,
 };
 use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
-use crate::state::core::{ClientInput, EngineState, RunPendingChoiceReason, RunPendingChoiceState};
-use crate::state::events::{EventActionKind, EventId, EventOwnerPolicyKind};
+use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
+use crate::state::events::{
+    EventActionKind, EventCardKind, EventEffect, EventId, EventOptionSemantics,
+    EventOwnerPolicyKind,
+};
 use crate::state::run::RunState;
 use crate::state::selection::{
     DomainEventSource, SelectionResolution, SelectionScope, SelectionTargetRef,
@@ -20,70 +23,81 @@ pub enum EventOwnerPolicyGap {
     EmptySelectionTargets,
 }
 
-pub fn event_owner_policy_input(
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EventOwnerAction {
+    ChooseOption(EventOwnerOptionSelector),
+    SubmitSelection(SelectionResolution),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EventOwnerOptionSelector {
+    Action(EventActionKind),
+    Effect(EventEffect),
+    OwnerPolicy(EventOwnerPolicyKind),
+}
+
+impl EventOwnerOptionSelector {
+    pub fn matches(&self, semantics: &EventOptionSemantics) -> bool {
+        match self {
+            EventOwnerOptionSelector::Action(action) => semantics.action == *action,
+            EventOwnerOptionSelector::Effect(effect) => semantics.effects.contains(effect),
+            EventOwnerOptionSelector::OwnerPolicy(policy) => semantics.owner_policy == *policy,
+        }
+    }
+}
+
+pub fn event_owner_policy_action(
     engine_state: &EngineState,
     run_state: &RunState,
-) -> Result<ClientInput, EventOwnerPolicyGap> {
+) -> Result<EventOwnerAction, EventOwnerPolicyGap> {
     match engine_state {
-        EngineState::EventRoom => event_room_policy_input(run_state),
-        EngineState::RunPendingChoice(choice) => event_run_choice_policy_input(choice, run_state),
+        EngineState::EventRoom => event_room_policy_action(run_state),
+        EngineState::RunPendingChoice(choice) => event_run_choice_policy_action(choice, run_state),
         _ => Err(EventOwnerPolicyGap::MissingEventState),
     }
 }
 
-pub fn conservative_owner_policy_input(
-    run_state: &RunState,
-) -> Result<ClientInput, EventOwnerPolicyGap> {
-    event_room_policy_input(run_state)
-}
-
-fn event_room_policy_input(run_state: &RunState) -> Result<ClientInput, EventOwnerPolicyGap> {
+fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, EventOwnerPolicyGap> {
     let event_id = run_state
         .event_state
         .as_ref()
         .map(|event| event.id)
         .ok_or(EventOwnerPolicyGap::MissingEventState)?;
     match event_id {
-        EventId::BigFish => return Ok(ClientInput::EventChoice(big_fish_choice(run_state))),
-        EventId::CursedTome => return Ok(ClientInput::EventChoice(cursed_tome_choice(run_state))),
-        EventId::LivingWall => return Ok(ClientInput::EventChoice(living_wall_choice(run_state))),
-        EventId::ShiningLight => {
-            return Ok(ClientInput::EventChoice(shining_light_choice(run_state)))
-        }
-        EventId::WomanInBlue => {
-            return Ok(ClientInput::EventChoice(woman_in_blue_choice(run_state)))
-        }
-        EventId::WeMeetAgain => {
-            return Ok(ClientInput::EventChoice(we_meet_again_choice(run_state)))
-        }
+        EventId::BigFish => return Ok(choose(big_fish_choice(run_state))),
+        EventId::CursedTome => return Ok(choose(cursed_tome_choice(run_state))),
+        EventId::LivingWall => return Ok(choose(living_wall_choice(run_state))),
+        EventId::ShiningLight => return Ok(choose(shining_light_choice(run_state))),
+        EventId::WomanInBlue => return Ok(choose(woman_in_blue_choice(run_state))),
+        EventId::WeMeetAgain => return Ok(choose(we_meet_again_choice(run_state))),
         _ => {}
     }
-    let marked_indices = crate::engine::event_handler::get_event_options(run_state)
+    let marked_count = crate::engine::event_handler::get_event_options(run_state)
         .iter()
-        .enumerate()
-        .filter(|(_, option)| {
+        .filter(|option| {
             !option.ui.disabled
                 && option.semantics.owner_policy == EventOwnerPolicyKind::ConservativeAuto
         })
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
-    let [index] = marked_indices.as_slice() else {
-        return if marked_indices.is_empty() {
+        .count();
+    if marked_count != 1 {
+        return if marked_count == 0 {
             Err(EventOwnerPolicyGap::MissingMarkedPolicy(event_id))
         } else {
             Err(EventOwnerPolicyGap::AmbiguousMarkedPolicy {
                 event_id,
-                found: marked_indices.len(),
+                found: marked_count,
             })
         };
-    };
-    Ok(ClientInput::EventChoice(*index))
+    }
+    Ok(choose(EventOwnerOptionSelector::OwnerPolicy(
+        EventOwnerPolicyKind::ConservativeAuto,
+    )))
 }
 
-fn event_run_choice_policy_input(
+fn event_run_choice_policy_action(
     choice: &RunPendingChoiceState,
     run_state: &RunState,
-) -> Result<ClientInput, EventOwnerPolicyGap> {
+) -> Result<EventOwnerAction, EventOwnerPolicyGap> {
     let DomainEventSource::Event(event_id) = choice.source else {
         return Err(EventOwnerPolicyGap::MissingEventState);
     };
@@ -93,57 +107,72 @@ fn event_run_choice_policy_input(
     }
 }
 
-fn big_fish_choice(run_state: &RunState) -> usize {
+fn choose(selector: EventOwnerOptionSelector) -> EventOwnerAction {
+    EventOwnerAction::ChooseOption(selector)
+}
+
+fn action(action: EventActionKind) -> EventOwnerOptionSelector {
+    EventOwnerOptionSelector::Action(action)
+}
+
+fn effect(effect: EventEffect) -> EventOwnerOptionSelector {
+    EventOwnerOptionSelector::Effect(effect)
+}
+
+fn big_fish_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     if event_screen(run_state) != 0 {
-        return 0;
+        return action(EventActionKind::Leave);
     }
     if run_state.current_hp * 100 <= run_state.max_hp * 35 {
-        return 0;
+        return effect(EventEffect::Heal(run_state.max_hp / 3));
     }
     if run_state
         .relics
         .iter()
         .any(|relic| relic.id == RelicId::Omamori && relic.counter > 0 && !relic.used_up)
     {
-        return 2;
+        return effect(EventEffect::ObtainCurse {
+            count: 1,
+            kind: EventCardKind::Specific(CardId::Regret),
+        });
     }
-    1
+    effect(EventEffect::GainMaxHp(5))
 }
 
-fn shining_light_choice(run_state: &RunState) -> usize {
+fn shining_light_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     if event_screen(run_state) != 0 {
-        return 0;
+        return action(EventActionKind::Leave);
     }
     if !run_state
         .master_deck
         .iter()
         .any(crate::state::core::master_deck_card_can_upgrade)
     {
-        return 1;
+        return action(EventActionKind::Leave);
     }
     let after = run_state.current_hp - shining_light_damage(run_state);
     if after >= 18 && after * 100 >= run_state.max_hp * 35 {
-        0
+        effect(EventEffect::UpgradeCard { count: 2 })
     } else {
-        1
+        action(EventActionKind::Leave)
     }
 }
 
-fn living_wall_choice(run_state: &RunState) -> usize {
+fn living_wall_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     if event_screen(run_state) != 0 {
-        return 0;
+        return action(EventActionKind::Leave);
     }
     if legal_living_wall_cards(run_state)
         .iter()
         .any(|card| is_non_parasite_curse(card))
     {
-        return 0;
+        return effect(living_wall_remove_effect());
     }
     if legal_living_wall_cards(run_state)
         .iter()
         .any(|card| card.id == crate::content::cards::CardId::Parasite)
     {
-        return 1;
+        return effect(EventEffect::TransformCard { count: 1 });
     }
     let best_upgrade = crate::ai::strategy::campfire_upgrade_quality::rank_campfire_upgrades(
         &run_state.master_deck,
@@ -157,32 +186,39 @@ fn living_wall_choice(run_state: &RunState) -> usize {
     if best_upgrade.as_ref().is_some_and(|target| {
         target.tier >= crate::ai::strategy::campfire_upgrade_quality::CampfireUpgradeTier::Useful
     }) {
-        return 2;
+        return effect(EventEffect::UpgradeCard { count: 1 });
     }
     if legal_living_wall_cards(run_state)
         .iter()
         .any(|card| is_starter_strike(card.id))
     {
-        return 0;
+        return effect(living_wall_remove_effect());
     }
     if best_upgrade.is_some() {
-        return 2;
+        return effect(EventEffect::UpgradeCard { count: 1 });
     }
-    1
+    effect(EventEffect::TransformCard { count: 1 })
 }
 
-fn we_meet_again_choice(run_state: &RunState) -> usize {
-    let action = if event_screen(run_state) == 0 {
+fn living_wall_remove_effect() -> EventEffect {
+    EventEffect::RemoveCard {
+        count: 1,
+        target_uuid: None,
+        kind: EventCardKind::Unknown,
+    }
+}
+
+fn we_meet_again_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    action(if event_screen(run_state) == 0 {
         EventActionKind::Decline
     } else {
         EventActionKind::Leave
-    };
-    event_action_choice(run_state, action).unwrap_or_default()
+    })
 }
 
-fn woman_in_blue_choice(run_state: &RunState) -> usize {
+fn woman_in_blue_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     if event_screen(run_state) != 0 {
-        return event_action_choice(run_state, EventActionKind::Leave).unwrap_or_default();
+        return action(EventActionKind::Leave);
     }
     let empty_slots = run_state
         .potions
@@ -190,25 +226,24 @@ fn woman_in_blue_choice(run_state: &RunState) -> usize {
         .filter(|slot| slot.is_none())
         .count();
     match empty_slots {
-        0 if run_state.ascension_level >= 15 => 0,
-        0 => event_action_choice(run_state, EventActionKind::Leave).unwrap_or(3),
-        1 => 0,
-        2 => 1,
-        _ => 2,
+        0 if run_state.ascension_level >= 15 => effect(EventEffect::ObtainPotion { count: 1 }),
+        0 => action(EventActionKind::Leave),
+        1 => effect(EventEffect::ObtainPotion { count: 1 }),
+        2 => effect(EventEffect::ObtainPotion { count: 2 }),
+        _ => effect(EventEffect::ObtainPotion { count: 3 }),
     }
 }
 
-fn cursed_tome_choice(run_state: &RunState) -> usize {
+fn cursed_tome_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     let screen = event_screen(run_state);
-    let action = match screen {
+    action(match screen {
         0 if cursed_tome_take_is_safe(run_state, screen) => EventActionKind::Continue,
         0 => EventActionKind::Leave,
         1..=3 => EventActionKind::Continue,
         4 if cursed_tome_take_is_safe(run_state, screen) => EventActionKind::Accept,
         4 => EventActionKind::Decline,
         _ => EventActionKind::Leave,
-    };
-    event_action_choice(run_state, action).unwrap_or_default()
+    })
 }
 
 fn cursed_tome_take_is_safe(run_state: &RunState, screen: usize) -> bool {
@@ -245,18 +280,10 @@ fn hp_after_loss_is_safe(run_state: &RunState, loss: i32) -> bool {
     after >= 18 && after * 100 >= run_state.max_hp * 35
 }
 
-fn event_action_choice(run_state: &RunState, action: EventActionKind) -> Option<usize> {
-    crate::engine::event_handler::get_event_options(run_state)
-        .iter()
-        .enumerate()
-        .find(|(_, option)| !option.ui.disabled && option.semantics.action == action)
-        .map(|(index, _)| index)
-}
-
 fn living_wall_selection(
     choice: &RunPendingChoiceState,
     run_state: &RunState,
-) -> Result<ClientInput, EventOwnerPolicyGap> {
+) -> Result<EventOwnerAction, EventOwnerPolicyGap> {
     let request = choice.selection_request(run_state);
     let uuid = match choice.reason {
         RunPendingChoiceReason::PurgeNonBottled => {
@@ -269,7 +296,7 @@ fn living_wall_selection(
         reason => return Err(EventOwnerPolicyGap::UnsupportedLivingWallSelection(reason)),
     }
     .ok_or(EventOwnerPolicyGap::EmptySelectionTargets)?;
-    Ok(ClientInput::SubmitSelection(
+    Ok(EventOwnerAction::SubmitSelection(
         SelectionResolution::card_uuids(SelectionScope::Deck, [uuid]),
     ))
 }
