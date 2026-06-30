@@ -9,6 +9,10 @@ use sts_simulator::ai::strategy::boss_relic_admission::{
 use sts_simulator::ai::strategy::deck_admission::{
     assess_deck_admission, DeckAdmission, DeckAdmissionContext,
 };
+use sts_simulator::ai::strategy::deck_construction_pressure::{
+    assess_deck_construction_pressure, reward_construction_lane_adjustment,
+    ConstructionLaneAdjustment, DeckConstructionContext, DeckConstructionPressure,
+};
 use sts_simulator::ai::strategy::reward_admission::{
     assess_reward_admission_from_master_deck, reward_admission_order_key_v1, skip_reward_admission,
     RewardAdmission, RewardAdmissionClass, RewardAdmissionOrderKeyV1, RewardAdmissionReason,
@@ -353,7 +357,9 @@ fn reward_annotation_with_deck_gate(
     deck: &[CombatCard],
 ) -> ChoiceAnnotation {
     let deck_admission = assess_deck_admission(deck, context, &admission);
-    let lane = reward_plan_lane_for_deck(&admission, deck_admission);
+    let pressure =
+        assess_deck_construction_pressure(deck, DeckConstructionContext { act: context.act });
+    let lane = reward_plan_lane_for_deck_and_pressure(&admission, deck_admission, pressure);
     ChoiceAnnotation::Reward { admission, lane }
 }
 
@@ -385,6 +391,40 @@ fn reward_plan_lane_for_deck(
             lane => lane,
         },
         DeckAdmission::Discouraged => match reward_plan_lane(admission) {
+            RewardPlanLane::Mainline | RewardPlanLane::Probe => RewardPlanLane::Reject,
+            lane => lane,
+        },
+    }
+}
+
+fn reward_plan_lane_for_deck_and_pressure(
+    admission: &RewardAdmission,
+    deck_admission: DeckAdmission,
+    pressure: DeckConstructionPressure,
+) -> RewardPlanLane {
+    let lane = reward_plan_lane_for_deck(admission, deck_admission);
+    adjust_reward_lane_for_construction_pressure(admission, lane, pressure)
+}
+
+fn adjust_reward_lane_for_construction_pressure(
+    admission: &RewardAdmission,
+    lane: RewardPlanLane,
+    pressure: DeckConstructionPressure,
+) -> RewardPlanLane {
+    match reward_construction_lane_adjustment(pressure, admission) {
+        ConstructionLaneAdjustment::None => lane,
+        ConstructionLaneAdjustment::PromoteToMainline => RewardPlanLane::Mainline,
+        ConstructionLaneAdjustment::PromoteOneStep => match lane {
+            RewardPlanLane::Probe => RewardPlanLane::Mainline,
+            RewardPlanLane::Reject => RewardPlanLane::Probe,
+            lane => lane,
+        },
+        ConstructionLaneAdjustment::SoftDemote => match lane {
+            RewardPlanLane::Mainline => RewardPlanLane::Probe,
+            RewardPlanLane::Probe => RewardPlanLane::Reject,
+            lane => lane,
+        },
+        ConstructionLaneAdjustment::HardDemote => match lane {
             RewardPlanLane::Mainline | RewardPlanLane::Probe => RewardPlanLane::Reject,
             lane => lane,
         },
