@@ -100,6 +100,35 @@ pub struct ScoreComponent {
     pub value: i32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct CandidateOrderKey {
+    pub lane_rank: u8,
+    pub score_rank: i32,
+    pub tiebreak_rank: u8,
+}
+
+impl CandidateOrderKey {
+    pub fn fallback() -> Self {
+        Self {
+            lane_rank: 3,
+            score_rank: 0,
+            tiebreak_rank: 9,
+        }
+    }
+
+    pub fn with_auto_rank(self, auto_rank: u8) -> (u8, Self) {
+        (auto_rank, self)
+    }
+
+    pub fn optional_skip(has_mainline_take: bool) -> Self {
+        Self {
+            lane_rank: candidate_lane_rank(CandidateLane::Skip, has_mainline_take),
+            score_rank: 0,
+            tiebreak_rank: candidate_tiebreak_rank(DecisionCandidateKind::CardRewardSkip),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CandidateEvaluation {
     pub candidate: DecisionCandidateIr,
@@ -120,6 +149,34 @@ impl CandidateEvaluation {
 
     pub fn total_score(&self) -> i32 {
         self.scores.iter().map(|score| score.value).sum()
+    }
+
+    pub fn is_mainline(&self) -> bool {
+        self.lane == CandidateLane::Mainline
+    }
+
+    pub fn auto_expands(&self) -> bool {
+        self.expansion == ExpansionPlan::Auto
+    }
+
+    pub fn inspect_only_reason(&self) -> Option<&'static str> {
+        match self.expansion {
+            ExpansionPlan::Auto => None,
+            ExpansionPlan::InspectOnly(reason) => Some(reason),
+        }
+    }
+
+    pub fn order_key(&self, has_mainline_take: bool) -> CandidateOrderKey {
+        CandidateOrderKey {
+            lane_rank: candidate_lane_rank(self.lane, has_mainline_take),
+            score_rank: -self.total_score(),
+            tiebreak_rank: candidate_tiebreak_rank(self.candidate.kind),
+        }
+    }
+
+    pub fn auto_order_key(&self, has_mainline_take: bool) -> (u8, CandidateOrderKey) {
+        self.order_key(has_mainline_take)
+            .with_auto_rank(u8::from(!self.auto_expands()))
     }
 }
 

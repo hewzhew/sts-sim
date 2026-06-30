@@ -6,8 +6,8 @@ use sts_simulator::ai::strategy::campfire_upgrade_quality::{
     rank_campfire_upgrades, should_rest_before_smith, CampfireUpgradeTier,
 };
 use sts_simulator::ai::strategy::decision_pipeline::{
-    candidate_lane_rank, candidate_tiebreak_rank, evaluate_decision_candidate, CandidateEvaluation,
-    CandidateLane, CleanupTarget, DecisionCandidateKind, DecisionPipelineContext, ExpansionPlan,
+    evaluate_decision_candidate, CandidateEvaluation, CandidateOrderKey, CleanupTarget,
+    DecisionCandidateKind, DecisionPipelineContext,
 };
 use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
 use sts_simulator::ai::strategy::reward_admission::{
@@ -154,10 +154,7 @@ fn card_reward_owner_choices(
         .iter()
         .any(|(_, choice)| is_mainline_card_reward_take(choice));
     choices.sort_by_key(|(index, choice)| {
-        (
-            card_reward_choice_rank(choice, has_mainline_take, deck_plan),
-            *index,
-        )
+        (card_reward_choice_rank(choice, has_mainline_take), *index)
     });
     choices.into_iter().map(|(_, choice)| choice).collect()
 }
@@ -200,13 +197,7 @@ fn shop_tiny_owner_choices(
     for (_, choice) in choices.iter_mut() {
         choice.expansion = shop_tiny_choice_expansion(&choice.annotation, &mut auto_purge_targets);
     }
-    choices.sort_by_key(|(index, choice)| {
-        (
-            if choice.auto_expand_allowed() { 0 } else { 1 },
-            shop_tiny_choice_rank(choice),
-            *index,
-        )
-    });
+    choices.sort_by_key(|(index, choice)| (shop_tiny_choice_rank(choice), *index));
     choices.into_iter().map(|(_, choice)| choice).collect()
 }
 
@@ -450,24 +441,20 @@ fn candidate_annotation(
 fn card_reward_choice_rank(
     choice: &OwnerChoice,
     has_mainline_take: bool,
-    _deck_plan: DeckPlanSnapshot,
-) -> (u8, u8, i32, RewardAdmissionOrderKeyV1) {
+) -> (u8, CandidateOrderKey, RewardAdmissionOrderKeyV1) {
     match &choice.key {
-        Some(DecisionCandidateKey::CardRewardOpen { .. }) => {
-            (0, 0, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())
-        }
+        Some(DecisionCandidateKey::CardRewardOpen { .. }) => (
+            0,
+            CandidateOrderKey::fallback(),
+            RewardAdmissionOrderKeyV1::empty_or_deferred(),
+        ),
         Some(DecisionCandidateKey::CardRewardPick { .. }) => (
             1,
             choice
                 .annotation
                 .evaluation()
-                .map(|evaluation| candidate_lane_rank(evaluation.lane, has_mainline_take))
-                .unwrap_or(3),
-            choice
-                .annotation
-                .evaluation()
-                .map(|evaluation| -evaluation.total_score())
-                .unwrap_or(0),
+                .map(|evaluation| evaluation.order_key(has_mainline_take))
+                .unwrap_or_else(CandidateOrderKey::fallback),
             choice
                 .annotation
                 .admission()
@@ -476,21 +463,27 @@ fn card_reward_choice_rank(
         ),
         Some(DecisionCandidateKey::CardRewardSingingBowl { .. }) => (
             1,
-            candidate_lane_rank(CandidateLane::Skip, has_mainline_take),
-            0,
+            CandidateOrderKey::optional_skip(has_mainline_take),
             RewardAdmissionOrderKeyV1::unscored_optional_reward(),
         ),
         Some(DecisionCandidateKey::CardRewardSkip { .. }) => (
             1,
-            candidate_lane_rank(CandidateLane::Skip, has_mainline_take),
-            0,
+            choice
+                .annotation
+                .evaluation()
+                .map(|evaluation| evaluation.order_key(has_mainline_take))
+                .unwrap_or_else(|| CandidateOrderKey::optional_skip(has_mainline_take)),
             choice
                 .annotation
                 .admission()
                 .map(reward_admission_order_key_v1)
                 .unwrap_or_else(RewardAdmissionOrderKeyV1::static_skip_boundary),
         ),
-        _ => (2, 3, 0, RewardAdmissionOrderKeyV1::empty_or_deferred()),
+        _ => (
+            2,
+            CandidateOrderKey::fallback(),
+            RewardAdmissionOrderKeyV1::empty_or_deferred(),
+        ),
     }
 }
 
@@ -501,7 +494,7 @@ fn is_mainline_card_reward_take(choice: &OwnerChoice) -> bool {
     ) && choice
         .annotation
         .evaluation()
-        .is_some_and(|evaluation| evaluation.lane == CandidateLane::Mainline)
+        .is_some_and(|evaluation| evaluation.is_mainline())
 }
 
 fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
@@ -535,9 +528,7 @@ fn shop_tiny_choice_expansion(
         return shop_tiny_inspect_only();
     };
     match decision.evaluation.candidate.kind {
-        DecisionCandidateKind::ShopPurge { target }
-            if matches!(decision.evaluation.expansion, ExpansionPlan::Auto) =>
-        {
+        DecisionCandidateKind::ShopPurge { target } if decision.evaluation.auto_expands() => {
             if auto_purge_targets.contains(&target) {
                 shop_tiny_inspect_only()
             } else {
@@ -566,23 +557,21 @@ fn shop_card_admission(
     }
 }
 
-fn shop_tiny_choice_rank(choice: &OwnerChoice) -> (u8, i32, u8) {
+fn shop_tiny_choice_rank(choice: &OwnerChoice) -> (u8, CandidateOrderKey) {
     match &choice.annotation {
-        ChoiceAnnotation::Candidate(decision) => (
-            candidate_lane_rank(decision.evaluation.lane, false),
-            -decision.evaluation.total_score(),
-            candidate_tiebreak_rank(decision.evaluation.candidate.kind),
-        ),
-        _ => (6, 0, 9),
+        ChoiceAnnotation::Candidate(decision) => decision.evaluation.auto_order_key(false),
+        _ => (u8::MAX, CandidateOrderKey::fallback()),
     }
 }
 
 fn owner_expansion_from_evaluation(
     evaluation: Option<&CandidateEvaluation>,
 ) -> OwnerChoiceExpansion {
-    match evaluation.map(|evaluation| evaluation.expansion) {
-        Some(ExpansionPlan::Auto) => OwnerChoiceExpansion::AutoAllowed,
-        Some(ExpansionPlan::InspectOnly(reason)) => OwnerChoiceExpansion::InspectOnly(reason),
+    match evaluation {
+        Some(evaluation) => match evaluation.inspect_only_reason() {
+            None => OwnerChoiceExpansion::AutoAllowed,
+            Some(reason) => OwnerChoiceExpansion::InspectOnly(reason),
+        },
         None => shop_tiny_inspect_only(),
     }
 }
