@@ -12,7 +12,10 @@ use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::sim::combat::CombatPosition;
 
 use super::owners::ChoiceAnnotation;
-use super::{combat_gap_case, frontier_checkpoint, Args, Branch, BranchPathStep, BranchStatus};
+use super::{
+    combat_gap_case, frontier_checkpoint, Args, Branch, BranchPathStep, BranchStatus,
+    TerminalOutcome,
+};
 
 pub(super) struct RunCapsule {
     root: PathBuf,
@@ -54,6 +57,15 @@ impl RunCapsule {
         next_branch_id: usize,
         frontier: &VecDeque<Branch>,
     ) -> Result<RunCapsuleSave, String> {
+        if let Some(branch) = frontier.iter().find(|branch| {
+            matches!(
+                branch.status,
+                BranchStatus::Terminal(TerminalOutcome::Victory)
+            )
+        }) {
+            self.save_result(args, generation, branch)?;
+            return Ok(RunCapsuleSave::Result);
+        }
         let running = frontier
             .iter()
             .filter(|branch| matches!(branch.status, BranchStatus::Running { .. }))
@@ -233,7 +245,7 @@ fn status_value(status: &BranchStatus) -> Value {
         BranchStatus::Running { boundary, owner } => {
             json!({"kind": "running", "boundary": boundary, "owner": format!("{owner:?}")})
         }
-        BranchStatus::Terminal(result) => json!({"kind": "terminal", "result": result}),
+        BranchStatus::Terminal(result) => json!({"kind": "terminal", "result": result.as_str()}),
         BranchStatus::AutomationGap { boundary, site } => {
             json!({"kind": "automation_gap", "boundary": boundary, "site": format!("{site:?}")})
         }

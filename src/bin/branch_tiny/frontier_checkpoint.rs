@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sts_simulator::eval::run_control::RunControlSessionCheckpointV1;
 
 use super::owners::ChoiceAnnotation;
-use super::{Args, Branch, BranchPathStep, BranchStatus, DecisionKey};
+use super::{Args, Branch, BranchPathStep, BranchStatus, DecisionKey, TerminalOutcome};
 
 #[derive(Deserialize, Serialize)]
 pub(super) struct FrontierCheckpoint {
@@ -39,7 +39,7 @@ enum BranchStatusCheckpoint {
         boundary: String,
         owner: super::Owner,
     },
-    Terminal(String),
+    Terminal(TerminalOutcome),
     AutomationGap {
         boundary: String,
         site: super::BoundarySite,
@@ -162,7 +162,7 @@ impl BranchStatusCheckpoint {
                 boundary: boundary.clone(),
                 owner: *owner,
             },
-            BranchStatus::Terminal(result) => Self::Terminal((*result).to_string()),
+            BranchStatus::Terminal(result) => Self::Terminal(*result),
             BranchStatus::AutomationGap { boundary, site } => Self::AutomationGap {
                 boundary: boundary.clone(),
                 site: *site,
@@ -183,7 +183,7 @@ impl BranchStatusCheckpoint {
     fn into_status(self) -> BranchStatus {
         match self {
             Self::Running { boundary, owner } => BranchStatus::Running { boundary, owner },
-            Self::Terminal(result) => BranchStatus::Terminal(terminal_result(&result)),
+            Self::Terminal(result) => BranchStatus::Terminal(result),
             Self::AutomationGap { boundary, site } => {
                 BranchStatus::AutomationGap { boundary, site }
             }
@@ -192,14 +192,5 @@ impl BranchStatusCheckpoint {
             Self::ApplyFailed(reason) => BranchStatus::ApplyFailed(reason),
             Self::AdvanceFailed(reason) => BranchStatus::AdvanceFailed(reason),
         }
-    }
-}
-
-fn terminal_result(result: &str) -> &'static str {
-    match result {
-        "win" => "win",
-        "loss" => "loss",
-        "abandoned" => "abandoned",
-        _ => "terminal",
     }
 }

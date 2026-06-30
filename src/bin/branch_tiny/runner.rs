@@ -15,7 +15,7 @@ use super::owners::{OwnerDecision, OwnerRoutine};
 use super::render;
 use super::{
     Args, BossRetryAttemptReport, BossRetryReport, BossRetryStatus, BoundarySite, BranchStatus,
-    Owner, RunDeadline,
+    Owner, RunDeadline, TerminalOutcome,
 };
 
 pub(super) struct AdvanceResult {
@@ -358,8 +358,8 @@ fn run_boss_retry_attempt(
         }
     };
     let combat_search = combat_search_summaries(&outcome);
-    let status = if terminal_label(session).is_some() {
-        BranchStatus::Terminal(terminal_label(session).unwrap())
+    let status = if let Some(outcome) = terminal_label(session) {
+        BranchStatus::Terminal(outcome)
     } else if let Some(stop) = outcome.auto_stop.as_ref() {
         classify_boundary(session, stop)
     } else {
@@ -423,10 +423,10 @@ fn boss_retry_status(status: &BranchStatus) -> BossRetryStatus {
         BranchStatus::ApplyFailed(err)
         | BranchStatus::AdvanceFailed(err)
         | BranchStatus::BudgetGap { reason: err, .. } => BossRetryStatus::Failed(err.clone()),
-        BranchStatus::Terminal("defeat") => {
+        BranchStatus::Terminal(TerminalOutcome::Defeat) => {
             BossRetryStatus::Failed("retry ended in defeat".to_string())
         }
-        BranchStatus::Terminal(result) => BossRetryStatus::Terminal(result),
+        BranchStatus::Terminal(result) => BossRetryStatus::Terminal(*result),
         _ => BossRetryStatus::Advanced(render::status_boundary(status).to_string()),
     }
 }
@@ -645,10 +645,10 @@ fn boundary_site(session: &RunControlSession) -> BoundarySite {
     }
 }
 
-fn terminal_label(session: &RunControlSession) -> Option<&'static str> {
+fn terminal_label(session: &RunControlSession) -> Option<TerminalOutcome> {
     match &session.engine_state {
-        EngineState::GameOver(RunResult::Victory) => Some("victory"),
-        EngineState::GameOver(RunResult::Defeat) => Some("defeat"),
+        EngineState::GameOver(RunResult::Victory) => Some(TerminalOutcome::Victory),
+        EngineState::GameOver(RunResult::Defeat) => Some(TerminalOutcome::Defeat),
         _ => None,
     }
 }

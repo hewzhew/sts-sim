@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
 use sts_simulator::eval::run_control::{
     build_decision_surface, CombatSearchTraceSummary, RewardAutomationConfig,
     RunControlAutoAppliedStepV1, RunControlConfig, RunControlSession,
@@ -65,7 +66,7 @@ struct BossRetryAttemptReport {
 enum BossRetryStatus {
     Failed(String),
     Advanced(String),
-    Terminal(&'static str),
+    Terminal(TerminalOutcome),
 }
 
 #[derive(Clone)]
@@ -82,7 +83,7 @@ enum BranchStatus {
         boundary: String,
         owner: Owner,
     },
-    Terminal(&'static str),
+    Terminal(TerminalOutcome),
     AutomationGap {
         boundary: String,
         site: BoundarySite,
@@ -97,6 +98,21 @@ enum BranchStatus {
     },
     ApplyFailed(String),
     AdvanceFailed(String),
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+enum TerminalOutcome {
+    Victory,
+    Defeat,
+}
+
+impl TerminalOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Victory => "victory",
+            Self::Defeat => "defeat",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
@@ -567,10 +583,10 @@ fn retain_frontier(frontier: &mut VecDeque<Branch>, limit: usize) {
 
 fn frontier_retention_key(branch: &Branch) -> (u8, u8, i32, u32, i32) {
     let status = match branch.status {
+        BranchStatus::Terminal(TerminalOutcome::Victory) => 4,
         BranchStatus::Running { .. } => 3,
-        BranchStatus::Terminal("win") => 2,
         BranchStatus::CombatGap { .. } | BranchStatus::BudgetGap { .. } => 1,
-        BranchStatus::Terminal(_)
+        BranchStatus::Terminal(TerminalOutcome::Defeat)
         | BranchStatus::AutomationGap { .. }
         | BranchStatus::ApplyFailed(_)
         | BranchStatus::AdvanceFailed(_) => 0,

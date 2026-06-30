@@ -167,7 +167,7 @@ fn boss_retry_status_label(status: &BossRetryStatus) -> String {
     match status {
         BossRetryStatus::Failed(reason) => format!("failed ({})", one_line(reason)),
         BossRetryStatus::Advanced(boundary) => format!("combat-win -> {boundary}"),
-        BossRetryStatus::Terminal(result) => format!("terminal:{result}"),
+        BossRetryStatus::Terminal(result) => format!("terminal:{}", result.as_str()),
     }
 }
 
@@ -194,7 +194,7 @@ fn print_reward_gap_detail(session: &RunControlSession, status: &BranchStatus) {
 fn status_label(status: &BranchStatus) -> String {
     match status {
         BranchStatus::Running { .. } => "running".to_string(),
-        BranchStatus::Terminal(result) => format!("terminal:{result}"),
+        BranchStatus::Terminal(result) => format!("terminal:{}", result.as_str()),
         BranchStatus::AutomationGap { .. } => "automation_gap".to_string(),
         BranchStatus::CombatGap { reason, .. } => format!("combat_gap:{}", one_line(reason)),
         BranchStatus::BudgetGap { reason, .. } => format!("budget_gap:{}", one_line(reason)),

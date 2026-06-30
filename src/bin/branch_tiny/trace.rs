@@ -86,7 +86,7 @@ impl TraceWriter {
                 "status": match &retry.status {
                     BossRetryStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
                     BossRetryStatus::Advanced(boundary) => json!({"kind": "advanced", "boundary": boundary}),
-                    BossRetryStatus::Terminal(result) => json!({"kind": "terminal", "result": result}),
+                    BossRetryStatus::Terminal(result) => json!({"kind": "terminal", "result": result.as_str()}),
                 },
                 "nodes": retry.max_nodes,
                 "ms": retry.wall_ms,
@@ -96,7 +96,7 @@ impl TraceWriter {
                     "status": match &attempt.status {
                         BossRetryStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
                         BossRetryStatus::Advanced(boundary) => json!({"kind": "advanced", "boundary": boundary}),
-                        BossRetryStatus::Terminal(result) => json!({"kind": "terminal", "result": result}),
+                        BossRetryStatus::Terminal(result) => json!({"kind": "terminal", "result": result.as_str()}),
                     },
                     "nodes": attempt.max_nodes,
                     "ms": attempt.wall_ms,
@@ -269,7 +269,7 @@ fn status_value(status: &BranchStatus) -> Value {
         BranchStatus::Running { boundary, owner } => {
             json!({"kind": "running", "boundary": boundary, "owner": owner_value(*owner)})
         }
-        BranchStatus::Terminal(result) => json!({"kind": "terminal", "result": result}),
+        BranchStatus::Terminal(result) => json!({"kind": "terminal", "result": result.as_str()}),
         BranchStatus::AutomationGap { boundary, site } => {
             json!({"kind": "automation_gap", "boundary": boundary, "site": site_value(*site)})
         }
