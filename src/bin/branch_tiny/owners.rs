@@ -2,6 +2,9 @@ use sts_simulator::ai::strategy::boss_relic_admission::{
     assess_boss_relic_admission, boss_relic_admission_order_rank, skip_boss_relic_admission,
     BossRelicAdmission,
 };
+use sts_simulator::ai::strategy::campfire_upgrade_quality::{
+    rank_campfire_upgrades, should_rest_before_smith, CampfireUpgradeTier,
+};
 use sts_simulator::ai::strategy::decision_pipeline::{
     candidate_lane_rank, candidate_tiebreak_rank, evaluate_decision_candidate, CandidateEvaluation,
     CandidateLane, CleanupTarget, DecisionCandidateKind, DecisionPipelineContext, ExpansionPlan,
@@ -18,11 +21,23 @@ use sts_simulator::eval::run_control::{
     DecisionCandidateKey, DecisionSurface, RunControlCommand, RunControlSession,
 };
 use sts_simulator::runtime::combat::CombatCard;
-use sts_simulator::state::core::{ClientInput, EngineState};
+use sts_simulator::state::core::{CampfireChoice, ClientInput, EngineState};
 
 use super::Owner;
 
 pub(super) type DecisionKey = DecisionCandidateKey;
+
+pub(super) enum OwnerDecision {
+    Candidates(Vec<OwnerChoice>),
+    Routine(OwnerRoutine),
+    Gap(String),
+}
+
+pub(super) enum OwnerRoutine {
+    Command(RunControlCommand),
+    RewardTinyAutomation,
+    AdvanceEmptyCampfire,
+}
 
 #[derive(Clone)]
 pub(super) struct OwnerChoice {
@@ -95,17 +110,19 @@ impl ChoiceAnnotation {
     }
 }
 
-pub(super) fn owner_choices(
+pub(super) fn owner_decision(
     session: &RunControlSession,
     owner: Owner,
     surface: &DecisionSurface,
-) -> Vec<OwnerChoice> {
+) -> OwnerDecision {
     match owner {
-        Owner::NeowStart => executable_choices(surface),
-        Owner::CardReward => card_reward_owner_choices(session, surface),
-        Owner::BossRelic => boss_relic_owner_choices(session, surface),
-        Owner::ShopTiny => shop_tiny_owner_choices(session, surface),
-        Owner::Event(_) | Owner::RewardTiny | Owner::Campfire => Vec::new(),
+        Owner::NeowStart => OwnerDecision::Candidates(executable_choices(surface)),
+        Owner::CardReward => OwnerDecision::Candidates(card_reward_owner_choices(session, surface)),
+        Owner::BossRelic => OwnerDecision::Candidates(boss_relic_owner_choices(session, surface)),
+        Owner::ShopTiny => OwnerDecision::Candidates(shop_tiny_owner_choices(session, surface)),
+        Owner::Event(_) => event_owner_decision(session, surface),
+        Owner::RewardTiny => reward_tiny_owner_decision(surface),
+        Owner::Campfire => campfire_owner_decision(session, surface),
     }
 }
 
@@ -191,6 +208,144 @@ fn shop_tiny_owner_choices(
         )
     });
     choices.into_iter().map(|(_, choice)| choice).collect()
+}
+
+fn event_owner_decision(session: &RunControlSession, surface: &DecisionSurface) -> OwnerDecision {
+    match sts_simulator::content::events::owner_policy::event_owner_policy_input(
+        &session.engine_state,
+        &session.run_state,
+    ) {
+        Ok(input) => visible_input_decision(surface, input),
+        Err(err) => OwnerDecision::Gap(format!("{err:?}")),
+    }
+}
+
+fn reward_tiny_owner_decision(surface: &DecisionSurface) -> OwnerDecision {
+    if let Some(command) = surface
+        .view
+        .candidates
+        .iter()
+        .find(|candidate| {
+            matches!(
+                candidate.key,
+                Some(DecisionCandidateKey::CardRewardOpen { .. })
+            )
+        })
+        .and_then(|candidate| candidate.action.executable_command())
+    {
+        return OwnerDecision::Routine(OwnerRoutine::Command(command));
+    }
+    OwnerDecision::Routine(OwnerRoutine::RewardTinyAutomation)
+}
+
+fn campfire_owner_decision(
+    session: &RunControlSession,
+    surface: &DecisionSurface,
+) -> OwnerDecision {
+    if !matches!(session.engine_state, EngineState::Campfire) {
+        return OwnerDecision::Gap("Campfire owner requires Campfire engine state".to_string());
+    }
+    let options =
+        sts_simulator::engine::campfire_handler::get_available_options(&session.run_state);
+    if options.is_empty() {
+        return OwnerDecision::Routine(OwnerRoutine::AdvanceEmptyCampfire);
+    }
+    match choose_campfire_owner_action(session, surface, &options) {
+        Ok(choice) => visible_input_decision(surface, ClientInput::CampfireOption(choice)),
+        Err(err) => OwnerDecision::Gap(err),
+    }
+}
+
+fn visible_input_decision(surface: &DecisionSurface, input: ClientInput) -> OwnerDecision {
+    if surface
+        .visible_executable_inputs
+        .iter()
+        .any(|visible| visible == &input)
+    {
+        OwnerDecision::Routine(OwnerRoutine::Command(RunControlCommand::Input(input)))
+    } else {
+        OwnerDecision::Gap(format!("routine input {input:?} is not visible"))
+    }
+}
+
+fn choose_campfire_owner_action(
+    session: &RunControlSession,
+    surface: &DecisionSurface,
+    options: &[CampfireChoice],
+) -> Result<CampfireChoice, String> {
+    let has_rest = options.contains(&CampfireChoice::Rest);
+    let has_smith = options
+        .iter()
+        .any(|choice| matches!(choice, CampfireChoice::Smith(_)));
+
+    if has_rest
+        && (!has_smith
+            || should_rest_before_smith(session.run_state.current_hp, session.run_state.max_hp))
+    {
+        return Ok(CampfireChoice::Rest);
+    }
+    if let Some(choice) = best_campfire_toke(session, surface, options) {
+        return Ok(choice);
+    }
+    if has_smith {
+        let ranked = rank_campfire_upgrades(&session.run_state.master_deck);
+        if let Some(best) = ranked
+            .iter()
+            .find(|target| target.tier >= CampfireUpgradeTier::Low)
+            .or_else(|| ranked.first())
+        {
+            return Ok(CampfireChoice::Smith(best.deck_index));
+        }
+    }
+    for fallback in [
+        CampfireChoice::Dig,
+        CampfireChoice::Lift,
+        CampfireChoice::Recall,
+        CampfireChoice::Rest,
+    ] {
+        if options.contains(&fallback) {
+            return Ok(fallback);
+        }
+    }
+    Err("Campfire owner found no policy action".to_string())
+}
+
+fn best_campfire_toke(
+    session: &RunControlSession,
+    surface: &DecisionSurface,
+    options: &[CampfireChoice],
+) -> Option<CampfireChoice> {
+    if !options
+        .iter()
+        .any(|choice| matches!(choice, CampfireChoice::Toke(_)))
+    {
+        return None;
+    }
+    surface
+        .visible_executable_inputs
+        .iter()
+        .filter_map(|input| {
+            let ClientInput::CampfireOption(CampfireChoice::Toke(index)) = input else {
+                return None;
+            };
+            session
+                .run_state
+                .master_deck
+                .get(*index)
+                .map(|card| (*index, card.id))
+        })
+        .min_by_key(|(_, card)| campfire_toke_rank(*card))
+        .map(|(index, _)| CampfireChoice::Toke(index))
+}
+
+fn campfire_toke_rank(card: CardId) -> u8 {
+    let definition = get_card_definition(card);
+    match definition.card_type {
+        CardType::Curse => 0,
+        CardType::Status => 1,
+        _ if is_starter_basic(card) => 2,
+        _ => 9,
+    }
 }
 
 fn shop_tiny_candidate_for_choice(

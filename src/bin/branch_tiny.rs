@@ -21,7 +21,7 @@ mod runner;
 #[path = "branch_tiny/trace.rs"]
 mod trace;
 
-use owners::{ChoiceAnnotation, DecisionKey, OwnerChoice};
+use owners::{ChoiceAnnotation, DecisionKey, OwnerChoice, OwnerDecision};
 
 const WALL_STOP_GUARD_MS: u64 = 1_500;
 
@@ -588,7 +588,10 @@ fn branch_owner_choices(branch: &Branch) -> Vec<OwnerChoice> {
         _ => return Vec::new(),
     };
     let surface = build_decision_surface(&branch.session);
-    owners::owner_choices(&branch.session, owner, &surface)
+    match owners::owner_decision(&branch.session, owner, &surface) {
+        OwnerDecision::Candidates(choices) => choices,
+        OwnerDecision::Routine(_) | OwnerDecision::Gap(_) => Vec::new(),
+    }
 }
 
 fn expand_registered_owner(

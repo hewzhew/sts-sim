@@ -1,21 +1,17 @@
 use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
 };
-use sts_simulator::ai::strategy::campfire_upgrade_quality::{
-    rank_campfire_upgrades, should_rest_before_smith, CampfireUpgradeTier,
-};
-use sts_simulator::content::cards::{get_card_definition, is_starter_basic, CardId, CardType};
 use sts_simulator::eval::run_control::{
     apply_owner_audit_auto_run, build_decision_surface, CombatAutomationTrajectorySource,
-    CombatSearchTraceSummary, DecisionCandidateKey, RunControlAutoAppliedKindV1,
-    RunControlAutoAppliedStepV1, RunControlAutoStepOptions, RunControlAutoStopKind,
-    RunControlAutoStopV1, RunControlCommand, RunControlCommandOutcome, RunControlHpLossLimit,
-    RunControlRouteAutomationMode, RunControlSearchCombatOptions, RunControlSession,
-    RunControlTraceAnnotationV1,
+    CombatSearchTraceSummary, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
+    RunControlAutoStepOptions, RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommand,
+    RunControlCommandOutcome, RunControlHpLossLimit, RunControlRouteAutomationMode,
+    RunControlSearchCombatOptions, RunControlSession, RunControlTraceAnnotationV1,
 };
-use sts_simulator::state::core::{CampfireChoice, ClientInput, EngineState, RunResult};
+use sts_simulator::state::core::{ClientInput, EngineState, RunResult};
 use sts_simulator::state::selection::DomainEventSource;
 
+use super::owners::{OwnerDecision, OwnerRoutine};
 use super::render;
 use super::{
     Args, BossRetryAttemptReport, BossRetryReport, BossRetryStatus, BoundarySite, BranchStatus,
@@ -99,38 +95,61 @@ pub(super) fn advance_to_owner_or_gap(
                     BranchStatus::Running { owner, .. } => *owner,
                     _ => return advance_result(status, None, auto_steps, combat_search),
                 };
-                if owner_is_branching(owner) {
-                    return advance_result(status, None, auto_steps, combat_search);
-                }
-                policy_steps += 1;
-                if policy_steps > 16 {
-                    return advance_result(
-                        BranchStatus::BudgetGap {
-                            boundary: build_decision_surface(session).view.header.title.clone(),
-                            reason: "owner policy step budget exhausted".to_string(),
-                        },
-                        None,
-                        auto_steps,
-                        combat_search,
-                    );
-                }
-                match apply_policy_owner(session, owner) {
-                    Ok(outcome) => {
-                        auto_steps.push(RunControlAutoAppliedStepV1 {
-                            kind: RunControlAutoAppliedKindV1::OwnerPolicy,
-                            label: format!("owner policy {owner:?}"),
-                            action_result: outcome.action_result,
-                        });
+                let surface = build_decision_surface(session);
+                match super::owners::owner_decision(session, owner, &surface) {
+                    OwnerDecision::Candidates(choices) if !choices.is_empty() => {
+                        return advance_result(status, None, auto_steps, combat_search);
                     }
-                    Err(err) => {
+                    OwnerDecision::Candidates(_) => {
                         return advance_result(
                             BranchStatus::AdvanceFailed(format!(
-                                "owner policy {owner:?} failed: {err}"
+                                "owner {owner:?} produced no candidates"
                             )),
                             None,
                             auto_steps,
                             combat_search,
                         );
+                    }
+                    OwnerDecision::Gap(reason) => {
+                        return advance_result(
+                            BranchStatus::AdvanceFailed(format!("owner {owner:?} gap: {reason}")),
+                            None,
+                            auto_steps,
+                            combat_search,
+                        );
+                    }
+                    OwnerDecision::Routine(routine) => {
+                        policy_steps += 1;
+                        if policy_steps > 16 {
+                            return advance_result(
+                                BranchStatus::BudgetGap {
+                                    boundary: surface.view.header.title.clone(),
+                                    reason: "owner routine step budget exhausted".to_string(),
+                                },
+                                None,
+                                auto_steps,
+                                combat_search,
+                            );
+                        }
+                        match apply_owner_routine(session, routine) {
+                            Ok(outcome) => {
+                                auto_steps.push(RunControlAutoAppliedStepV1 {
+                                    kind: RunControlAutoAppliedKindV1::OwnerPolicy,
+                                    label: format!("owner routine {owner:?}"),
+                                    action_result: outcome.action_result,
+                                });
+                            }
+                            Err(err) => {
+                                return advance_result(
+                                    BranchStatus::AdvanceFailed(format!(
+                                        "owner routine {owner:?} failed: {err}"
+                                    )),
+                                    None,
+                                    auto_steps,
+                                    combat_search,
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -181,13 +200,6 @@ fn advance_result(
 fn combat_search_summaries(outcome: &RunControlCommandOutcome) -> Vec<CombatSearchTraceSummary> {
     sts_simulator::eval::run_control::combat_search_trace_summaries(&outcome.trace_annotations)
         .collect()
-}
-
-fn owner_is_branching(owner: Owner) -> bool {
-    matches!(
-        owner,
-        Owner::NeowStart | Owner::CardReward | Owner::BossRelic | Owner::ShopTiny
-    )
 }
 
 fn is_boss_combat(session: &RunControlSession) -> bool {
@@ -431,160 +443,33 @@ fn retry_complete_search_action_keys(outcome: &RunControlCommandOutcome) -> Vec<
         .unwrap_or_default()
 }
 
-fn apply_policy_owner(
+fn apply_owner_routine(
     session: &mut RunControlSession,
-    owner: Owner,
+    routine: OwnerRoutine,
 ) -> Result<sts_simulator::eval::run_control::RunControlCommandOutcome, String> {
-    let input = match owner {
-        Owner::ShopTiny => return Err("ShopTiny has no automatic policy".to_string()),
-        Owner::RewardTiny => return apply_reward_tiny_policy(session),
-        Owner::Campfire => return apply_campfire_owner_policy(session),
-        Owner::Event(_) => require_visible_input(
-            session,
-            sts_simulator::content::events::owner_policy::event_owner_policy_input(
-                &session.engine_state,
-                &session.run_state,
-            )
-            .map_err(|err| format!("{err:?}"))?,
-        )?,
-        Owner::NeowStart | Owner::CardReward | Owner::BossRelic => {
-            return Err("branching owner cannot be consumed as policy".to_string());
-        }
-    };
-    session.apply_command(RunControlCommand::Input(input))
-}
-
-fn apply_campfire_owner_policy(
-    session: &mut RunControlSession,
-) -> Result<sts_simulator::eval::run_control::RunControlCommandOutcome, String> {
-    if sts_simulator::engine::campfire_handler::get_available_options(&session.run_state).is_empty()
-    {
-        sts_simulator::engine::run_loop::tick_run_active_with_observer(
-            &mut session.engine_state,
-            &mut session.run_state,
-            &mut session.active_combat,
-            None,
-        );
-        return session.apply_command(RunControlCommand::Noop);
-    }
-    let input = require_visible_input(
-        session,
-        ClientInput::CampfireOption(choose_campfire_owner_action(session)?),
-    )?;
-    session.apply_command(RunControlCommand::Input(input))
-}
-
-fn choose_campfire_owner_action(session: &RunControlSession) -> Result<CampfireChoice, String> {
-    if !matches!(session.engine_state, EngineState::Campfire) {
-        return Err("Campfire owner requires Campfire engine state".to_string());
-    }
-    let options =
-        sts_simulator::engine::campfire_handler::get_available_options(&session.run_state);
-    let has_rest = options.contains(&CampfireChoice::Rest);
-    let has_smith = options
-        .iter()
-        .any(|choice| matches!(choice, CampfireChoice::Smith(_)));
-
-    if has_rest
-        && (!has_smith
-            || should_rest_before_smith(session.run_state.current_hp, session.run_state.max_hp))
-    {
-        return Ok(CampfireChoice::Rest);
-    }
-    if let Some(choice) = best_campfire_toke(session, &options) {
-        return Ok(choice);
-    }
-    if has_smith {
-        let ranked = rank_campfire_upgrades(&session.run_state.master_deck);
-        if let Some(best) = ranked
-            .iter()
-            .find(|target| target.tier >= CampfireUpgradeTier::Low)
-            .or_else(|| ranked.first())
-        {
-            return Ok(CampfireChoice::Smith(best.deck_index));
+    match routine {
+        OwnerRoutine::Command(command) => session.apply_command(command),
+        OwnerRoutine::RewardTinyAutomation => apply_reward_tiny_routine(session),
+        OwnerRoutine::AdvanceEmptyCampfire => {
+            sts_simulator::engine::run_loop::tick_run_active_with_observer(
+                &mut session.engine_state,
+                &mut session.run_state,
+                &mut session.active_combat,
+                None,
+            );
+            session.apply_command(RunControlCommand::Noop)
         }
     }
-    for fallback in [
-        CampfireChoice::Dig,
-        CampfireChoice::Lift,
-        CampfireChoice::Recall,
-        CampfireChoice::Rest,
-    ] {
-        if options.contains(&fallback) {
-            return Ok(fallback);
-        }
-    }
-    Err("Campfire owner found no policy action".to_string())
 }
 
-fn best_campfire_toke(
-    session: &RunControlSession,
-    options: &[CampfireChoice],
-) -> Option<CampfireChoice> {
-    if !options
-        .iter()
-        .any(|choice| matches!(choice, CampfireChoice::Toke(_)))
-    {
-        return None;
-    }
-    let surface = build_decision_surface(session);
-    surface
-        .visible_executable_inputs
-        .iter()
-        .filter_map(|input| {
-            let ClientInput::CampfireOption(CampfireChoice::Toke(index)) = input else {
-                return None;
-            };
-            session
-                .run_state
-                .master_deck
-                .get(*index)
-                .map(|card| (*index, card.id))
-        })
-        .min_by_key(|(_, card)| campfire_toke_rank(*card))
-        .map(|(index, _)| CampfireChoice::Toke(index))
-}
-
-fn campfire_toke_rank(card: CardId) -> u8 {
-    let definition = get_card_definition(card);
-    match definition.card_type {
-        CardType::Curse => 0,
-        CardType::Status => 1,
-        _ if is_starter_basic(card) => 2,
-        _ => 9,
-    }
-}
-
-fn apply_reward_tiny_policy(
+fn apply_reward_tiny_routine(
     session: &mut RunControlSession,
 ) -> Result<sts_simulator::eval::run_control::RunControlCommandOutcome, String> {
     if let Some(outcome) = sts_simulator::eval::run_control::apply_reward_tiny_automation(session)?
     {
         return Ok(outcome);
     }
-    if let Some(outcome) = open_visible_card_reward(session)? {
-        return Ok(outcome);
-    }
     session.apply_command(RunControlCommand::Input(reward_tiny_exit_input(session)?))
-}
-
-fn open_visible_card_reward(
-    session: &mut RunControlSession,
-) -> Result<Option<sts_simulator::eval::run_control::RunControlCommandOutcome>, String> {
-    let command = build_decision_surface(session)
-        .view
-        .candidates
-        .iter()
-        .find(|candidate| {
-            matches!(
-                candidate.key,
-                Some(DecisionCandidateKey::CardRewardOpen { .. })
-            )
-        })
-        .and_then(|candidate| candidate.action.executable_command());
-    command
-        .map(|command| session.apply_command(command))
-        .transpose()
 }
 
 fn reward_tiny_exit_input(session: &RunControlSession) -> Result<ClientInput, String> {
