@@ -222,6 +222,11 @@ fn candidate_kind_value(kind: DecisionCandidateKind) -> Value {
             "upgrades": upgrades,
         }),
         DecisionCandidateKind::CardRewardSkip => json!({"kind": "card_reward_skip"}),
+        DecisionCandidateKind::BossRelicPick { relic } => json!({
+            "kind": "boss_relic_pick",
+            "relic": relic,
+        }),
+        DecisionCandidateKind::BossRelicSkip => json!({"kind": "boss_relic_skip"}),
         DecisionCandidateKind::ShopBuyCard {
             card,
             upgrades,

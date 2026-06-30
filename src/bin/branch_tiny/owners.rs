@@ -1,13 +1,12 @@
 use sts_simulator::ai::strategy::boss_relic_admission::{
-    assess_boss_relic_admission, boss_relic_admission_order_rank, skip_boss_relic_admission,
-    BossRelicAdmission,
+    assess_boss_relic_admission, skip_boss_relic_admission, BossRelicAdmission,
 };
 use sts_simulator::ai::strategy::campfire_upgrade_quality::{
     rank_campfire_upgrades, should_rest_before_smith, CampfireUpgradeTier,
 };
 use sts_simulator::ai::strategy::decision_pipeline::{
-    evaluate_decision_candidate, CandidateEvaluation, CandidateOrderKey, CleanupTarget,
-    DecisionCandidateKind, DecisionPipelineContext,
+    boss_relic_order_key, evaluate_decision_candidate, CandidateEvaluation, CandidateOrderKey,
+    CleanupTarget, DecisionCandidateKind, DecisionPipelineContext,
 };
 use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
 use sts_simulator::ai::strategy::reward_admission::{
@@ -497,19 +496,28 @@ fn is_mainline_card_reward_take(choice: &OwnerChoice) -> bool {
         .is_some_and(|evaluation| evaluation.is_mainline())
 }
 
-fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
-    let skip_order = boss_relic_admission_order_rank(&skip_boss_relic_admission());
+fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, CandidateOrderKey) {
+    let kind = boss_relic_candidate_kind(choice);
     match choice.key {
         Some(DecisionCandidateKey::BossRelicPick { .. }) => (
             0,
-            choice
-                .annotation
-                .boss_relic()
-                .map(boss_relic_admission_order_rank)
-                .unwrap_or(skip_order),
+            boss_relic_order_key(kind, choice.annotation.boss_relic()),
         ),
-        Some(DecisionCandidateKey::BossRelicSkip) => (1, skip_order),
-        _ => (2, skip_order),
+        Some(DecisionCandidateKey::BossRelicSkip) => (
+            1,
+            boss_relic_order_key(kind, choice.annotation.boss_relic()),
+        ),
+        _ => (2, CandidateOrderKey::fallback()),
+    }
+}
+
+fn boss_relic_candidate_kind(choice: &OwnerChoice) -> DecisionCandidateKind {
+    match choice.key {
+        Some(DecisionCandidateKey::BossRelicPick { relic, .. }) => {
+            DecisionCandidateKind::BossRelicPick { relic }
+        }
+        Some(DecisionCandidateKey::BossRelicSkip) => DecisionCandidateKind::BossRelicSkip,
+        _ => DecisionCandidateKind::Unsupported,
     }
 }
 

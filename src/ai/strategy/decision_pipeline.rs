@@ -1,4 +1,7 @@
 use crate::ai::analysis::card_semantics::{card_definition_with_upgrades, CardBurden, Mechanic};
+use crate::ai::strategy::boss_relic_admission::{
+    boss_relic_admission_order_rank, skip_boss_relic_admission, BossRelicAdmission,
+};
 use crate::ai::strategy::deck_admission::DeckAdmission;
 use crate::ai::strategy::deck_construction_pressure::ConstructionLaneAdjustment;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
@@ -43,6 +46,10 @@ pub enum DecisionCandidateKind {
         upgrades: u8,
     },
     CardRewardSkip,
+    BossRelicPick {
+        relic: RelicId,
+    },
+    BossRelicSkip,
     ShopBuyCard {
         card: CardId,
         upgrades: u8,
@@ -215,6 +222,26 @@ pub fn evaluate_decision_candidate(
     }
 }
 
+pub fn boss_relic_order_key(
+    kind: DecisionCandidateKind,
+    admission: Option<&BossRelicAdmission>,
+) -> CandidateOrderKey {
+    match kind {
+        DecisionCandidateKind::BossRelicPick { .. } | DecisionCandidateKind::BossRelicSkip => {
+            CandidateOrderKey {
+                lane_rank: admission
+                    .map(boss_relic_admission_order_rank)
+                    .unwrap_or_else(|| {
+                        boss_relic_admission_order_rank(&skip_boss_relic_admission())
+                    }),
+                score_rank: 0,
+                tiebreak_rank: candidate_tiebreak_rank(kind),
+            }
+        }
+        _ => CandidateOrderKey::fallback(),
+    }
+}
+
 pub fn candidate_lane_label(lane: CandidateLane) -> &'static str {
     match lane {
         CandidateLane::Mainline => "mainline",
@@ -262,6 +289,8 @@ pub fn candidate_tiebreak_rank(kind: DecisionCandidateKind) -> u8 {
         DecisionCandidateKind::ShopLeave => 5,
         DecisionCandidateKind::CardRewardPick { .. } => 6,
         DecisionCandidateKind::CardRewardSkip => 7,
+        DecisionCandidateKind::BossRelicPick { .. } => 8,
+        DecisionCandidateKind::BossRelicSkip => 9,
         DecisionCandidateKind::Unsupported => 9,
     }
 }
@@ -663,9 +692,9 @@ fn survival_pressure_score(
 
 fn lane_for_candidate(kind: DecisionCandidateKind, score: i32) -> CandidateLane {
     match kind {
-        DecisionCandidateKind::CardRewardSkip | DecisionCandidateKind::ShopLeave => {
-            CandidateLane::Skip
-        }
+        DecisionCandidateKind::CardRewardSkip
+        | DecisionCandidateKind::BossRelicSkip
+        | DecisionCandidateKind::ShopLeave => CandidateLane::Skip,
         _ if score >= 110 => CandidateLane::Mainline,
         _ if score >= 45 => CandidateLane::Probe,
         _ => CandidateLane::Reject,
