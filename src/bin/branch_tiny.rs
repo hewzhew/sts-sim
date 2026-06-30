@@ -407,15 +407,19 @@ fn expansion_masks(
         .map(|(_, _, choices)| vec![false; choices.len()])
         .collect::<Vec<_>>();
     let mut remaining = max_branches;
+    let mut prefer_unused_keys = false;
     while remaining > 0 {
         let mut progressed = false;
         for (branch_index, (_, expandable, choices)) in work.iter().enumerate() {
             if !*expandable {
                 continue;
             }
-            let Some(choice_index) =
-                next_expansion_choice(choices, &expanded[branch_index], recent_expanded_keys)
-            else {
+            let Some(choice_index) = next_expansion_choice(
+                choices,
+                &expanded[branch_index],
+                recent_expanded_keys,
+                prefer_unused_keys,
+            ) else {
                 continue;
             };
             expanded[branch_index][choice_index] = true;
@@ -431,6 +435,7 @@ fn expansion_masks(
         if !progressed {
             break;
         }
+        prefer_unused_keys = true;
     }
     trim_recent_expanded_keys(recent_expanded_keys);
     expanded
@@ -447,25 +452,23 @@ fn next_expansion_choice(
     choices: &[OwnerChoice],
     expanded: &[bool],
     used_keys: &[DecisionKey],
+    prefer_unused_keys: bool,
 ) -> Option<usize> {
-    choices
+    let candidates = choices
         .iter()
         .enumerate()
-        .filter(|(index, choice)| choice.auto_expand_allowed() && !expanded[*index])
-        .find(|(_, choice)| {
+        .filter(|(index, choice)| choice.auto_expand_allowed() && !expanded[*index]);
+    if prefer_unused_keys {
+        if let Some((index, _)) = candidates.clone().find(|(_, choice)| {
             choice
                 .key
                 .as_ref()
                 .is_some_and(|key| !used_keys.contains(key))
-        })
-        .map(|(index, _)| index)
-        .or_else(|| {
-            choices
-                .iter()
-                .enumerate()
-                .find(|(index, choice)| choice.auto_expand_allowed() && !expanded[*index])
-                .map(|(index, _)| index)
-        })
+        }) {
+            return Some(index);
+        }
+    }
+    candidates.map(|(index, _)| index).next()
 }
 
 fn retain_frontier(frontier: &mut VecDeque<Branch>, limit: usize) {
