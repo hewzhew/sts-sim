@@ -6,7 +6,8 @@ use sts_simulator::eval::run_control::{
     build_decision_surface, CombatSearchTraceSummary, RewardAutomationConfig,
     RunControlAutoAppliedStepV1, RunControlConfig, RunControlSession,
 };
-use sts_simulator::state::events::EventId;
+use sts_simulator::state::core::EngineState;
+use sts_simulator::state::events::{EventId, EventState};
 
 #[path = "branch_tiny/combat_gap_case.rs"]
 mod combat_gap_case;
@@ -21,7 +22,7 @@ mod runner;
 #[path = "branch_tiny/trace.rs"]
 mod trace;
 
-use owners::{ChoiceAnnotation, DecisionKey, OwnerChoice, OwnerDecision};
+use owners::{ChoiceAnnotation, DecisionKey, OwnerChoice, OwnerDecision, OwnerRoutine};
 
 const WALL_STOP_GUARD_MS: u64 = 1_500;
 
@@ -150,6 +151,12 @@ struct ArgsOverrides {
     wall_ms: Option<u64>,
 }
 
+#[derive(Clone, Copy)]
+struct EventOwnerProbeArgs {
+    event_id: EventId,
+    screen: usize,
+}
+
 impl ArgsOverrides {
     fn apply_to(self, args: &mut Args) {
         if let Some(value) = self.generations {
@@ -200,7 +207,11 @@ fn run() -> Result<(), String> {
         mut combat_gap_case_dir,
         frontier_checkpoint_path,
         resume_frontier,
+        event_owner_probe,
     ) = parse_args()?;
+    if let Some(probe) = event_owner_probe {
+        return run_event_owner_probe(args, probe);
+    }
     if combat_gap_case_dir.is_none() {
         combat_gap_case_dir = default_combat_gap_case_dir(
             trace_path.as_ref(),
@@ -594,6 +605,60 @@ fn branch_owner_choices(branch: &Branch) -> Vec<OwnerChoice> {
     }
 }
 
+fn run_event_owner_probe(args: Args, probe: EventOwnerProbeArgs) -> Result<(), String> {
+    let mut session = RunControlSession::new(RunControlConfig {
+        seed: args.seed,
+        ascension_level: args.ascension,
+        ..Default::default()
+    });
+    let mut event_state = EventState::new(probe.event_id);
+    event_state.current_screen = probe.screen;
+    session.run_state.event_state = Some(event_state);
+    session.engine_state = EngineState::EventRoom;
+
+    let surface = build_decision_surface(&session);
+    println!(
+        "event_owner_probe event={:?} screen={} candidates={}",
+        probe.event_id,
+        probe.screen,
+        surface.view.candidates.len()
+    );
+    for candidate in &surface.view.candidates {
+        println!(
+            "  candidate id={} key={:?} label={} command={:?}",
+            candidate.id,
+            candidate.key,
+            candidate.label,
+            candidate.action.executable_command()
+        );
+    }
+
+    match owners::owner_decision(&session, Owner::Event(probe.event_id), &surface) {
+        OwnerDecision::Routine(OwnerRoutine::Command(command)) => {
+            println!("  owner_decision=command {command:?}");
+        }
+        OwnerDecision::Routine(OwnerRoutine::RewardTinyAutomation) => {
+            println!("  owner_decision=unexpected_reward_tiny_automation");
+        }
+        OwnerDecision::Routine(OwnerRoutine::AdvanceEmptyCampfire) => {
+            println!("  owner_decision=unexpected_advance_empty_campfire");
+        }
+        OwnerDecision::Candidates(choices) => {
+            println!("  owner_decision=candidates count={}", choices.len());
+            for choice in choices {
+                println!(
+                    "    choice key={:?} label={} command={:?}",
+                    choice.key, choice.label, choice.action
+                );
+            }
+        }
+        OwnerDecision::Gap(reason) => {
+            println!("  owner_decision=gap {reason}");
+        }
+    }
+    Ok(())
+}
+
 fn expand_registered_owner(
     branch: &Branch,
     args: Args,
@@ -644,6 +709,7 @@ fn parse_args() -> Result<
         Option<PathBuf>,
         Option<PathBuf>,
         Option<PathBuf>,
+        Option<EventOwnerProbeArgs>,
     ),
     String,
 > {
@@ -666,6 +732,8 @@ fn parse_args() -> Result<
     let mut combat_gap_case_dir = None;
     let mut frontier_checkpoint = None;
     let mut resume_frontier = None;
+    let mut probe_event_owner = None;
+    let mut probe_event_screen = 0usize;
     let raw = std::env::args().skip(1).collect::<Vec<_>>();
     let mut index = 0;
     while index < raw.len() {
@@ -674,6 +742,7 @@ fn parse_args() -> Result<
             println!(
                 "branch_tiny --seed N --generations N --max-branches N [--wall-ms N] [--trace-jsonl PATH] [--frontier-checkpoint PATH] [--resume-frontier PATH]"
             );
+            println!("branch_tiny --probe-event-owner EVENT [--probe-event-screen N]");
             println!(
                 "  owner-audit runner; ordinary combat uses diagnostic rescue-search, boss combat retries with boss-search"
             );
@@ -702,6 +771,8 @@ fn parse_args() -> Result<
                 | "--combat-gap-case-dir"
                 | "--frontier-checkpoint"
                 | "--resume-frontier"
+                | "--probe-event-owner"
+                | "--probe-event-screen"
         ) {
             return Err(format!("unknown argument {key}"));
         }
@@ -755,6 +826,8 @@ fn parse_args() -> Result<
             "--combat-gap-case-dir" => combat_gap_case_dir = Some(PathBuf::from(value)),
             "--frontier-checkpoint" => frontier_checkpoint = Some(PathBuf::from(value)),
             "--resume-frontier" => resume_frontier = Some(PathBuf::from(value)),
+            "--probe-event-owner" => probe_event_owner = Some(parse_event_id(value)?),
+            "--probe-event-screen" => probe_event_screen = parse(value, key)?,
             _ => unreachable!("argument key was validated before value parsing"),
         }
         index += 2;
@@ -766,7 +839,19 @@ fn parse_args() -> Result<
         combat_gap_case_dir,
         frontier_checkpoint,
         resume_frontier,
+        probe_event_owner.map(|event_id| EventOwnerProbeArgs {
+            event_id,
+            screen: probe_event_screen,
+        }),
     ))
+}
+
+fn parse_event_id(value: &str) -> Result<EventId, String> {
+    sts_simulator::engine::event_handler::event_id_from_name(value)
+        .or_else(|| {
+            sts_simulator::engine::event_handler::event_id_from_name(&value.replace('_', " "))
+        })
+        .ok_or_else(|| format!("unknown event for --probe-event-owner: {value}"))
 }
 
 fn parse<T: std::str::FromStr>(value: &str, key: &str) -> Result<T, String> {
