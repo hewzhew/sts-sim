@@ -403,7 +403,7 @@ pub enum RunControlAutoAppliedKindV1 {
     NoncombatPolicy,
     RoutineCandidate,
     AutoCapture,
-    OwnerPolicy,
+    OwnerRoutine,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

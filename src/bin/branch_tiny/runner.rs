@@ -134,7 +134,7 @@ pub(super) fn advance_to_owner_or_gap(
                         match apply_owner_routine(session, routine) {
                             Ok(outcome) => {
                                 auto_steps.push(RunControlAutoAppliedStepV1 {
-                                    kind: RunControlAutoAppliedKindV1::OwnerPolicy,
+                                    kind: RunControlAutoAppliedKindV1::OwnerRoutine,
                                     label: format!("owner routine {owner:?}"),
                                     action_result: outcome.action_result,
                                 });

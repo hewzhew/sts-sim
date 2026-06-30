@@ -198,7 +198,7 @@ pub fn render_auto_applied_step_compact_v1(step: &RunControlAutoAppliedStepV1) -
     parts.push(render_auto_applied_kind_compact_v1(step.kind).to_string());
     if matches!(
         step.kind,
-        RunControlAutoAppliedKindV1::NoncombatPolicy | RunControlAutoAppliedKindV1::OwnerPolicy
+        RunControlAutoAppliedKindV1::NoncombatPolicy | RunControlAutoAppliedKindV1::OwnerRoutine
     ) {
         parts.push(compact_one_line(&step.label));
         return parts.join(" | ");
@@ -278,7 +278,7 @@ fn render_auto_applied_kind_compact_v1(kind: RunControlAutoAppliedKindV1) -> &'s
         RunControlAutoAppliedKindV1::NoncombatPolicy => "policy",
         RunControlAutoAppliedKindV1::RoutineCandidate => "routine",
         RunControlAutoAppliedKindV1::AutoCapture => "capture",
-        RunControlAutoAppliedKindV1::OwnerPolicy => "owner-policy",
+        RunControlAutoAppliedKindV1::OwnerRoutine => "owner-routine",
     }
 }
 

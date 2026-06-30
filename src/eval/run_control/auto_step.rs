@@ -25,7 +25,7 @@ const DEFAULT_MAX_OPERATIONS: usize = 16;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::eval::run_control) enum NonCombatAutoMode {
     FullPlanner,
-    OwnerAuditNoShopPolicy,
+    OwnerAuditRoutineOnly,
     BranchExperimentBoundary,
 }
 
@@ -477,7 +477,7 @@ fn apply_noncombat_policy(
         NonCombatAutoMode::FullPlanner => {
             super::noncombat_auto::apply_planner_noncombat_policy(session)
         }
-        NonCombatAutoMode::OwnerAuditNoShopPolicy => {
+        NonCombatAutoMode::OwnerAuditRoutineOnly => {
             super::noncombat_auto::apply_owner_audit_noncombat_policy(session)
         }
         NonCombatAutoMode::BranchExperimentBoundary => {

@@ -10,44 +10,24 @@ pub(super) struct NonCombatAutoApplication {
 pub(super) fn apply_planner_noncombat_policy(
     session: &mut RunControlSession,
 ) -> Result<Option<NonCombatAutoApplication>, String> {
-    apply_planner_noncombat_policy_with_options(session, true, true, true)
-}
-
-pub(super) fn apply_owner_audit_noncombat_policy(
-    session: &mut RunControlSession,
-) -> Result<Option<NonCombatAutoApplication>, String> {
-    apply_planner_noncombat_policy_with_options(session, false, false, false)
-}
-
-fn apply_planner_noncombat_policy_with_options(
-    session: &mut RunControlSession,
-    allow_shop_policy: bool,
-    allow_campfire_policy: bool,
-    allow_card_reward_policy_pick: bool,
-) -> Result<Option<NonCombatAutoApplication>, String> {
-    if allow_campfire_policy {
-        if let Some((outcome, summary)) =
-            super::campfire_policy::apply_campfire_policy_action(session)?
-        {
-            return Ok(Some(NonCombatAutoApplication {
-                outcome,
-                summary,
-                stop_after_reason: None,
-            }));
-        }
+    if let Some((outcome, summary)) = super::campfire_policy::apply_campfire_policy_action(session)?
+    {
+        return Ok(Some(NonCombatAutoApplication {
+            outcome,
+            summary,
+            stop_after_reason: None,
+        }));
     }
-    if allow_shop_policy {
-        if let Some((outcome, summary)) = super::shop_policy::apply_shop_policy_action(session)? {
-            return Ok(Some(NonCombatAutoApplication {
-                outcome,
-                summary,
-                stop_after_reason: Some(
-                    "shop policy changed shop/run state; inspect shop before continuing",
-                ),
-            }));
-        }
+    if let Some((outcome, summary)) = super::shop_policy::apply_shop_policy_action(session)? {
+        return Ok(Some(NonCombatAutoApplication {
+            outcome,
+            summary,
+            stop_after_reason: Some(
+                "shop policy changed shop/run state; inspect shop before continuing",
+            ),
+        }));
     }
-    if !owner_policy_run_choice(session) {
+    if !living_wall_event_owned_run_choice(session) {
         if let Some((outcome, summary)) =
             super::run_choice_policy::apply_run_choice_policy_deck_selection(session)?
         {
@@ -74,16 +54,14 @@ fn apply_planner_noncombat_policy_with_options(
             stop_after_reason: None,
         }));
     }
-    if allow_card_reward_policy_pick {
-        if let Some((outcome, summary)) =
-            super::card_reward_auto::apply_card_reward_policy_pick(session)?
-        {
-            return Ok(Some(NonCombatAutoApplication {
-                outcome,
-                summary,
-                stop_after_reason: None,
-            }));
-        }
+    if let Some((outcome, summary)) =
+        super::card_reward_auto::apply_card_reward_policy_pick(session)?
+    {
+        return Ok(Some(NonCombatAutoApplication {
+            outcome,
+            summary,
+            stop_after_reason: None,
+        }));
     }
     if let Some((outcome, summary)) = super::card_reward_auto::apply_card_reward_item_open(session)?
     {
@@ -97,7 +75,16 @@ fn apply_planner_noncombat_policy_with_options(
     Ok(None)
 }
 
-fn owner_policy_run_choice(session: &RunControlSession) -> bool {
+pub(super) fn apply_owner_audit_noncombat_policy(
+    _session: &mut RunControlSession,
+) -> Result<Option<NonCombatAutoApplication>, String> {
+    // Branch/tiny owner-audit mode must not apply legacy event/reward/shop/campfire
+    // planners here. It should stop at an owner boundary; branch_tiny then asks
+    // that owner for Candidates/Routine/Gap and executes only that explicit result.
+    Ok(None)
+}
+
+fn living_wall_event_owned_run_choice(session: &RunControlSession) -> bool {
     matches!(
         &session.engine_state,
         crate::state::core::EngineState::RunPendingChoice(choice)

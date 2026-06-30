@@ -28,7 +28,7 @@ pub fn apply_owner_audit_auto_run(
     apply_auto_run_with_noncombat_mode(
         session,
         options,
-        super::auto_step::NonCombatAutoMode::OwnerAuditNoShopPolicy,
+        super::auto_step::NonCombatAutoMode::OwnerAuditRoutineOnly,
     )
 }
 
