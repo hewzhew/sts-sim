@@ -36,14 +36,14 @@ pub fn assess_deck_admission(
         return DeckAdmission::Welcome;
     }
     let inventory = DeckRoleInventory::from_deck(deck);
-    if context.survival_pressure() && survival_relevant(admission) {
-        return DeckAdmission::Welcome;
-    }
     if access_still_needed(&inventory, admission) {
         return DeckAdmission::Welcome;
     }
     if let Some(admission) = repeated_role_admission(deck.len(), context, &inventory, admission) {
         return admission;
+    }
+    if context.survival_pressure() && survival_relevant(admission) {
+        return DeckAdmission::Welcome;
     }
     if admission.class == RewardAdmissionClass::BuildsSupportedPackage {
         return DeckAdmission::Welcome;

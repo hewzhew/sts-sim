@@ -1,6 +1,6 @@
 use sts_simulator::ai::analysis::card_semantics::{
-    card_definition_with_upgrades, CombatEvent, InstalledRule, Mechanic, PayoffRequirement,
-    PlayEffect,
+    card_definition_with_upgrades, CardBurden, CombatEvent, InstalledRule, Mechanic,
+    PayoffRequirement, PlayEffect,
 };
 use sts_simulator::ai::strategy::boss_relic_admission::{
     assess_boss_relic_admission, boss_relic_admission_order_rank, skip_boss_relic_admission,
@@ -122,6 +122,7 @@ struct ShopTinyContext {
     gold: i32,
     survival_pressure: bool,
     deck_admission: DeckAdmissionContext,
+    construction_pressure: DeckConstructionPressure,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -593,10 +594,17 @@ fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
 fn shop_tiny_context(session: &RunControlSession) -> ShopTinyContext {
     let hp = session.run_state.current_hp;
     let max_hp = session.run_state.max_hp.max(1);
+    let deck_admission = deck_admission_context(session);
     ShopTinyContext {
         gold: session.run_state.gold,
         survival_pressure: session.run_state.act_num >= 2 && hp.saturating_mul(3) <= max_hp * 2,
-        deck_admission: deck_admission_context(session),
+        deck_admission,
+        construction_pressure: assess_deck_construction_pressure(
+            &session.run_state.master_deck,
+            DeckConstructionContext {
+                act: deck_admission.act,
+            },
+        ),
     }
 }
 
@@ -654,7 +662,7 @@ fn shop_tiny_auto_buy_card(
 ) -> bool {
     let admission = assess_reward_admission_from_master_deck(deck, card, upgrades);
     !matches!(
-        shop_tiny_buy_lane(context, deck, card, &admission),
+        shop_tiny_buy_lane(context, deck, card, upgrades, &admission),
         ShopTinyLane::InspectOnly
     )
 }
@@ -745,7 +753,7 @@ fn shop_tiny_card_rank(
 ) -> (u8, u8, RewardAdmissionOrderKeyV1) {
     let admission = assess_reward_admission_from_master_deck(deck, card, upgrades);
     shop_tiny_rank(
-        shop_tiny_buy_lane(context, deck, card, &admission),
+        shop_tiny_buy_lane(context, deck, card, upgrades, &admission),
         shop_tiny_survival_detail_rank(&admission),
         reward_admission_order_key_v1(&admission),
     )
@@ -755,27 +763,56 @@ fn shop_tiny_buy_lane(
     context: ShopTinyContext,
     deck: &[CombatCard],
     card: CardId,
+    upgrades: u8,
     admission: &RewardAdmission,
 ) -> ShopTinyLane {
+    let deck_admission = assess_deck_admission(deck, context.deck_admission, admission);
+    let reward_lane = reward_plan_lane_for_deck_and_pressure(
+        admission,
+        deck_admission,
+        context.construction_pressure,
+    );
+    if reward_lane != RewardPlanLane::Mainline {
+        return ShopTinyLane::InspectOnly;
+    }
+    if shop_tiny_risky_card_buy(card, upgrades, admission) {
+        return ShopTinyLane::InspectOnly;
+    }
     if context.survival_pressure && shop_tiny_survival_buy(admission) {
         return ShopTinyLane::SurvivalBuy;
-    }
-    if assess_deck_admission(deck, context.deck_admission, admission) != DeckAdmission::Welcome {
-        return ShopTinyLane::InspectOnly;
     }
     if card == CardId::FeelNoPain && deck_has_exhaust_stream(deck) {
         return ShopTinyLane::SupportedEngineBuy;
     }
-    if reward_plan_lane(admission) == RewardPlanLane::Mainline {
-        return ShopTinyLane::MainlineBuy;
-    }
-    ShopTinyLane::InspectOnly
+    ShopTinyLane::MainlineBuy
 }
 
 fn shop_tiny_survival_buy(admission: &RewardAdmission) -> bool {
     admission_provides(admission, Mechanic::EnemyStrengthDown)
         || admission_provides(admission, Mechanic::Weak)
         || admission_provides(admission, Mechanic::Block)
+}
+
+fn shop_tiny_risky_card_buy(card: CardId, upgrades: u8, admission: &RewardAdmission) -> bool {
+    let definition = card_definition_with_upgrades(card, upgrades);
+    if definition.burdens.iter().any(|burden| {
+        matches!(
+            burden,
+            CardBurden::RandomExhaust
+                | CardBurden::AddsCombatDeckClutter
+                | CardBurden::HpCost
+                | CardBurden::DrawLockout
+                | CardBurden::ExhaustsHand
+        )
+    }) {
+        return true;
+    }
+    admission.reasons.iter().any(|reason| {
+        matches!(
+            reason,
+            RewardAdmissionReason::DuplicateBurden(_) | RewardAdmissionReason::DuplicateConcern(_)
+        )
+    })
 }
 
 fn shop_tiny_survival_detail_rank(admission: &RewardAdmission) -> u8 {
