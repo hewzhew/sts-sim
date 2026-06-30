@@ -6,13 +6,9 @@ use sts_simulator::ai::strategy::boss_relic_admission::{
     assess_boss_relic_admission, boss_relic_admission_order_rank, skip_boss_relic_admission,
     BossRelicAdmission,
 };
-use sts_simulator::ai::strategy::deck_admission::{
-    assess_deck_admission, DeckAdmission, DeckAdmissionContext,
-};
-use sts_simulator::ai::strategy::deck_construction_pressure::{
-    assess_deck_construction_pressure, reward_construction_lane_adjustment,
-    ConstructionLaneAdjustment, DeckConstructionContext, DeckConstructionPressure,
-};
+use sts_simulator::ai::strategy::deck_admission::DeckAdmission;
+use sts_simulator::ai::strategy::deck_construction_pressure::ConstructionLaneAdjustment;
+use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
 use sts_simulator::ai::strategy::reward_admission::{
     assess_reward_admission_from_master_deck, reward_admission_order_key_v1, skip_reward_admission,
     RewardAdmission, RewardAdmissionClass, RewardAdmissionOrderKeyV1, RewardAdmissionReason,
@@ -120,9 +116,7 @@ pub(super) enum ShopPurgeTargetKind {
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct ShopTinyContext {
     gold: i32,
-    survival_pressure: bool,
-    deck_admission: DeckAdmissionContext,
-    construction_pressure: DeckConstructionPressure,
+    deck_plan: DeckPlanSnapshot,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -185,11 +179,12 @@ fn card_reward_owner_choices(
     session: &RunControlSession,
     surface: &DecisionSurface,
 ) -> Vec<OwnerChoice> {
+    let deck_plan = DeckPlanSnapshot::from_run_state(&session.run_state);
     let mut choices = executable_choices(surface)
         .into_iter()
         .filter(is_card_reward_choice)
         .map(|mut choice| {
-            choice.annotation = reward_annotation_for_choice(session, &choice);
+            choice.annotation = reward_annotation_for_choice(session, &choice, deck_plan);
             choice.expansion = card_reward_choice_expansion(&choice);
             choice
         })
@@ -200,7 +195,7 @@ fn card_reward_owner_choices(
         .any(|(_, choice)| is_mainline_card_reward_take(choice));
     choices.sort_by_key(|(index, choice)| {
         (
-            card_reward_choice_rank(session, choice, has_mainline_take),
+            card_reward_choice_rank(choice, has_mainline_take, deck_plan),
             *index,
         )
     });
@@ -319,14 +314,14 @@ fn boss_relic_annotation_for_choice(
 fn reward_annotation_for_choice(
     session: &RunControlSession,
     choice: &OwnerChoice,
+    deck_plan: DeckPlanSnapshot,
 ) -> ChoiceAnnotation {
     match choice.key {
         Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) => {
             let deck = &session.run_state.master_deck;
             reward_annotation_with_deck_gate(
                 assess_reward_admission_from_master_deck(deck, card, upgrades),
-                deck_admission_context(session),
-                deck,
+                deck_plan,
             )
         }
         Some(DecisionCandidateKey::CardRewardSkip { .. }) => {
@@ -354,13 +349,10 @@ fn reward_annotation(admission: RewardAdmission) -> ChoiceAnnotation {
 
 fn reward_annotation_with_deck_gate(
     admission: RewardAdmission,
-    context: DeckAdmissionContext,
-    deck: &[CombatCard],
+    deck_plan: DeckPlanSnapshot,
 ) -> ChoiceAnnotation {
-    let deck_admission = assess_deck_admission(deck, context, &admission);
-    let pressure =
-        assess_deck_construction_pressure(deck, DeckConstructionContext { act: context.act });
-    let lane = reward_plan_lane_for_deck_and_pressure(&admission, deck_admission, pressure);
+    let deck_admission = deck_plan.deck_admission(&admission);
+    let lane = reward_plan_lane_for_deck_and_pressure(&admission, deck_admission, deck_plan);
     ChoiceAnnotation::Reward { admission, lane }
 }
 
@@ -401,18 +393,18 @@ fn reward_plan_lane_for_deck(
 fn reward_plan_lane_for_deck_and_pressure(
     admission: &RewardAdmission,
     deck_admission: DeckAdmission,
-    pressure: DeckConstructionPressure,
+    deck_plan: DeckPlanSnapshot,
 ) -> RewardPlanLane {
     let lane = reward_plan_lane_for_deck(admission, deck_admission);
-    adjust_reward_lane_for_construction_pressure(admission, lane, pressure)
+    adjust_reward_lane_for_construction_pressure(admission, lane, deck_plan)
 }
 
 fn adjust_reward_lane_for_construction_pressure(
     admission: &RewardAdmission,
     lane: RewardPlanLane,
-    pressure: DeckConstructionPressure,
+    deck_plan: DeckPlanSnapshot,
 ) -> RewardPlanLane {
-    match reward_construction_lane_adjustment(pressure, admission) {
+    match deck_plan.reward_lane_adjustment(admission) {
         ConstructionLaneAdjustment::None => lane,
         ConstructionLaneAdjustment::PromoteToMainline => RewardPlanLane::Mainline,
         ConstructionLaneAdjustment::PromoteOneStep => match lane {
@@ -432,14 +424,6 @@ fn adjust_reward_lane_for_construction_pressure(
     }
 }
 
-fn deck_admission_context(session: &RunControlSession) -> DeckAdmissionContext {
-    DeckAdmissionContext {
-        act: session.run_state.act_num,
-        current_hp: session.run_state.current_hp,
-        max_hp: session.run_state.max_hp,
-    }
-}
-
 fn installs_combat_rule(admission: &RewardAdmission) -> bool {
     admission
         .reasons
@@ -448,9 +432,9 @@ fn installs_combat_rule(admission: &RewardAdmission) -> bool {
 }
 
 fn card_reward_choice_rank(
-    session: &RunControlSession,
     choice: &OwnerChoice,
     has_mainline_take: bool,
+    deck_plan: DeckPlanSnapshot,
 ) -> (u8, u8, u8, RewardAdmissionOrderKeyV1) {
     match &choice.key {
         Some(DecisionCandidateKey::CardRewardOpen { .. }) => {
@@ -463,7 +447,7 @@ fn card_reward_choice_rank(
                 .reward_lane()
                 .map(|lane| reward_plan_lane_rank(lane, has_mainline_take))
                 .unwrap_or(3),
-            survival_pressure_reward_rank(session, choice),
+            survival_pressure_reward_rank(deck_plan, choice),
             choice
                 .annotation
                 .reward()
@@ -490,8 +474,8 @@ fn card_reward_choice_rank(
     }
 }
 
-fn survival_pressure_reward_rank(session: &RunControlSession, choice: &OwnerChoice) -> u8 {
-    if !reward_survival_pressure(session) {
+fn survival_pressure_reward_rank(deck_plan: DeckPlanSnapshot, choice: &OwnerChoice) -> u8 {
+    if !deck_plan.survival_pressure() {
         return 5;
     }
     let Some(admission) = choice.annotation.reward() else {
@@ -532,10 +516,6 @@ fn survival_pressure_reward_rank(session: &RunControlSession, choice: &OwnerChoi
         return 8;
     }
     5
-}
-
-fn reward_survival_pressure(session: &RunControlSession) -> bool {
-    deck_admission_context(session).survival_pressure()
 }
 
 fn admission_provides(admission: &RewardAdmission, mechanic: Mechanic) -> bool {
@@ -591,19 +571,9 @@ fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
 }
 
 fn shop_tiny_context(session: &RunControlSession) -> ShopTinyContext {
-    let hp = session.run_state.current_hp;
-    let max_hp = session.run_state.max_hp.max(1);
-    let deck_admission = deck_admission_context(session);
     ShopTinyContext {
         gold: session.run_state.gold,
-        survival_pressure: session.run_state.act_num >= 2 && hp.saturating_mul(3) <= max_hp * 2,
-        deck_admission,
-        construction_pressure: assess_deck_construction_pressure(
-            &session.run_state.master_deck,
-            DeckConstructionContext {
-                act: deck_admission.act,
-            },
-        ),
+        deck_plan: DeckPlanSnapshot::from_run_state(&session.run_state),
     }
 }
 
@@ -717,7 +687,7 @@ fn shop_tiny_purge_rank(
 ) -> (u8, u8, RewardAdmissionOrderKeyV1) {
     let lane = match target {
         ShopPurgeTargetKind::Curse | ShopPurgeTargetKind::Status => ShopTinyLane::CriticalCleanup,
-        ShopPurgeTargetKind::StarterStrike if context.survival_pressure => {
+        ShopPurgeTargetKind::StarterStrike if context.deck_plan.survival_pressure() => {
             ShopTinyLane::StarterCleanup
         }
         ShopPurgeTargetKind::StarterStrike => ShopTinyLane::CriticalCleanup,
@@ -765,19 +735,16 @@ fn shop_tiny_buy_lane(
     upgrades: u8,
     admission: &RewardAdmission,
 ) -> ShopTinyLane {
-    let deck_admission = assess_deck_admission(deck, context.deck_admission, admission);
-    let reward_lane = reward_plan_lane_for_deck_and_pressure(
-        admission,
-        deck_admission,
-        context.construction_pressure,
-    );
+    let deck_admission = context.deck_plan.deck_admission(admission);
+    let reward_lane =
+        reward_plan_lane_for_deck_and_pressure(admission, deck_admission, context.deck_plan);
     if reward_lane != RewardPlanLane::Mainline {
         return ShopTinyLane::InspectOnly;
     }
     if shop_tiny_risky_card_buy(card, upgrades, admission) {
         return ShopTinyLane::InspectOnly;
     }
-    if context.survival_pressure && shop_tiny_survival_buy(admission) {
+    if context.deck_plan.survival_pressure() && shop_tiny_survival_buy(admission) {
         return ShopTinyLane::SurvivalBuy;
     }
     if card == CardId::FeelNoPain && deck_has_exhaust_stream(deck) {

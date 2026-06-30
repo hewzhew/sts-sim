@@ -2,7 +2,7 @@ use crate::content::cards::{get_card_definition, is_starter_basic, CardType};
 use crate::content::relics::energy_master_delta;
 use crate::state::run::RunState;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RunStrategicFacts {
     pub entering_act: u8,
     pub starter_basic_count: usize,

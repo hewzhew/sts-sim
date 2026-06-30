@@ -1,3 +1,4 @@
+use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
 use crate::content::relics::RelicId;
 use crate::state::run::RunState;
@@ -100,7 +101,8 @@ pub fn skip_boss_relic_admission() -> BossRelicAdmission {
 }
 
 pub fn assess_boss_relic_admission(run_state: &RunState, relic: RelicId) -> BossRelicAdmission {
-    let facts = RunStrategicFacts::from_run_state(run_state);
+    let plan = DeckPlanSnapshot::from_run_state(run_state);
+    let facts = plan.run_facts;
     let mut reasons = Vec::new();
 
     let class = match relic {

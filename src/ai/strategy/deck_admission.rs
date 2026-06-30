@@ -32,14 +32,23 @@ pub fn assess_deck_admission(
     context: DeckAdmissionContext,
     admission: &RewardAdmission,
 ) -> DeckAdmission {
+    let inventory = DeckRoleInventory::from_deck(deck);
+    assess_deck_admission_from_inventory(deck.len(), context, &inventory, admission)
+}
+
+pub fn assess_deck_admission_from_inventory(
+    deck_size: usize,
+    context: DeckAdmissionContext,
+    inventory: &DeckRoleInventory,
+    admission: &RewardAdmission,
+) -> DeckAdmission {
     if admission.card.is_none() || always_structural(admission) {
         return DeckAdmission::Welcome;
     }
-    let inventory = DeckRoleInventory::from_deck(deck);
-    if access_still_needed(&inventory, admission) {
+    if access_still_needed(inventory, admission) {
         return DeckAdmission::Welcome;
     }
-    if let Some(admission) = repeated_role_admission(deck.len(), context, &inventory, admission) {
+    if let Some(admission) = repeated_role_admission(deck_size, context, inventory, admission) {
         return admission;
     }
     if context.survival_pressure() && survival_relevant(admission) {
@@ -49,7 +58,6 @@ pub fn assess_deck_admission(
         return DeckAdmission::Welcome;
     }
     let (soft_limit, hard_limit) = deck_size_limits(context);
-    let deck_size = deck.len();
     if deck_size >= hard_limit && ordinary_addition(admission) {
         return DeckAdmission::Discouraged;
     }
