@@ -27,8 +27,15 @@ pub(super) struct CompleteLineSolverOutcome {
     pub base_action_count: usize,
     pub final_hp_loss: i32,
     pub final_action_count: usize,
-    pub repair_hp_loss_delta: i32,
+    pub repair_hp_loss_saved: i32,
     pub repair_action_count_delta: isize,
+    pub base_node_budget: usize,
+    pub base_ms_budget: u64,
+    pub repair_node_budget_per_cut: usize,
+    pub repair_ms_budget_per_cut: u64,
+    pub repair_cut_budget: usize,
+    pub base_stop_reason: &'static str,
+    pub last_repair_stop_reason: Option<&'static str>,
     pub repair_attempts: usize,
     pub repair_wins: usize,
     pub repair_improvements: usize,
@@ -116,6 +123,52 @@ struct LineSearchRun {
     best_win: Option<Line>,
     nodes_expanded: usize,
     nodes_generated: usize,
+    stop_reason: LineSearchStopReason,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LineSearchStopReason {
+    FrontierEmpty,
+    NodeBudget,
+    GeneratedBudget,
+    Deadline,
+}
+
+impl LineSearchStopReason {
+    fn label(self) -> &'static str {
+        match self {
+            LineSearchStopReason::FrontierEmpty => "frontier_empty",
+            LineSearchStopReason::NodeBudget => "node_budget",
+            LineSearchStopReason::GeneratedBudget => "generated_budget",
+            LineSearchStopReason::Deadline => "deadline",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct LineSearchSeed {
+    lane: LineLane,
+    setup_seen: bool,
+}
+
+impl LineSearchSeed {
+    fn root() -> Self {
+        Self {
+            lane: LineLane::Root,
+            setup_seen: false,
+        }
+    }
+
+    fn from_prefix(setup_seen: bool) -> Self {
+        Self {
+            lane: if setup_seen {
+                LineLane::SetupPath
+            } else {
+                LineLane::Root
+            },
+            setup_seen,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -125,6 +178,12 @@ struct RepairStats {
     improvements: usize,
     nodes_expanded: usize,
     nodes_generated: usize,
+    last_stop_reason: Option<LineSearchStopReason>,
+}
+
+struct ReplayedPrefix {
+    position: CombatPosition,
+    setup_seen: bool,
 }
 
 pub(super) fn try_solve_complete_line(
@@ -141,6 +200,7 @@ pub(super) fn try_solve_complete_line(
         budget.base_search(config.max_actions_per_line),
         config,
         &stepper,
+        LineSearchSeed::root(),
     );
     let base = run.best_win?;
     let base_hp_loss = (initial_hp - base.position.combat.entities.player.current_hp).max(0);
@@ -159,8 +219,15 @@ pub(super) fn try_solve_complete_line(
         base_action_count,
         final_hp_loss,
         final_action_count,
-        repair_hp_loss_delta: final_hp_loss - base_hp_loss,
+        repair_hp_loss_saved: base_hp_loss - final_hp_loss,
         repair_action_count_delta: final_action_count as isize - base_action_count as isize,
+        base_node_budget: budget.base_nodes,
+        base_ms_budget: budget.base_ms,
+        repair_node_budget_per_cut: budget.repair_nodes_per_cut,
+        repair_ms_budget_per_cut: budget.repair_ms_per_cut,
+        repair_cut_budget: budget.repair_cuts,
+        base_stop_reason: run.stop_reason.label(),
+        last_repair_stop_reason: repair.last_stop_reason.map(LineSearchStopReason::label),
         repair_attempts: repair.attempts,
         repair_wins: repair.wins,
         repair_improvements: repair.improvements,
@@ -180,14 +247,15 @@ fn line_search_from(
     search: LineSearchConfig,
     config: &CombatSearchV2Config,
     stepper: &EngineCombatStepper,
+    seed: LineSearchSeed,
 ) -> LineSearchRun {
     let deadline = Instant::now() + Duration::from_millis(search.ms);
     let mut frontier = vec![line_from(
         start_position,
         Vec::new(),
         initial_hp,
-        LineLane::Root,
-        false,
+        seed.lane,
+        seed.setup_seen,
         stepper,
     )];
     let mut best_win = None;
@@ -271,6 +339,24 @@ fn line_search_from(
         best_win,
         nodes_expanded,
         nodes_generated,
+        stop_reason: line_search_stop_reason(&frontier, nodes_expanded, nodes_generated, search),
+    }
+}
+
+fn line_search_stop_reason(
+    frontier: &[Line],
+    nodes_expanded: usize,
+    nodes_generated: usize,
+    search: LineSearchConfig,
+) -> LineSearchStopReason {
+    if frontier.is_empty() {
+        LineSearchStopReason::FrontierEmpty
+    } else if nodes_generated >= search.nodes {
+        LineSearchStopReason::GeneratedBudget
+    } else if nodes_expanded >= search.nodes {
+        LineSearchStopReason::NodeBudget
+    } else {
+        LineSearchStopReason::Deadline
     }
 }
 
@@ -286,31 +372,33 @@ fn repair_line_if_useful(
     if !should_repair_line(&best, initial_hp) {
         return (best, stats);
     }
-    for cut in repair_cut_points(best.actions.len(), budget.repair_cuts) {
-        let cut = cut.min(best.actions.len());
+    let repair_base = best.clone();
+    for cut in repair_cut_points(repair_base.actions.len(), budget.repair_cuts) {
+        let cut = cut.min(repair_base.actions.len());
         let remaining_actions = config.max_actions_per_line.saturating_sub(cut);
         if remaining_actions == 0 {
             continue;
         }
         stats.attempts += 1;
-        let Some(prefix_position) = replay_prefix(root, &best.actions[..cut], config, stepper)
-        else {
+        let Some(prefix) = replay_prefix(root, &repair_base.actions[..cut], config, stepper) else {
             continue;
         };
         let repair_run = line_search_from(
-            prefix_position,
+            prefix.position,
             initial_hp,
             budget.repair_search(remaining_actions),
             config,
             stepper,
+            LineSearchSeed::from_prefix(prefix.setup_seen),
         );
         stats.nodes_expanded += repair_run.nodes_expanded;
         stats.nodes_generated += repair_run.nodes_generated;
+        stats.last_stop_reason = Some(repair_run.stop_reason);
         let Some(suffix_win) = repair_run.best_win else {
             continue;
         };
         stats.wins += 1;
-        let candidate = splice_line(&best, cut, suffix_win, initial_hp, stepper);
+        let candidate = splice_line(&repair_base, cut, suffix_win, initial_hp, stepper);
         if candidate.score > best.score {
             best = candidate;
             stats.improvements += 1;
@@ -377,13 +465,15 @@ fn replay_prefix(
     actions: &[CombatSearchV2ActionTrace],
     config: &CombatSearchV2Config,
     stepper: &EngineCombatStepper,
-) -> Option<CombatPosition> {
+) -> Option<ReplayedPrefix> {
     let mut position = root.clone();
+    let mut setup_seen = false;
     for action in actions {
         let choices = legal_non_potion_choices(&position, config, stepper);
         let choice = choices.into_iter().find(|choice| {
             choice.input == action.input && choice.action_key == action.action_key
         })?;
+        setup_seen |= played_power(&position, &choice.input);
         let step = stepper.apply_to_stable(
             &position,
             choice.input,
@@ -400,7 +490,10 @@ fn replay_prefix(
             break;
         }
     }
-    Some(position)
+    Some(ReplayedPrefix {
+        position,
+        setup_seen,
+    })
 }
 
 fn splice_line(
