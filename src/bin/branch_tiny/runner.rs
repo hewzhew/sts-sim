@@ -11,7 +11,7 @@ use sts_simulator::eval::run_control::{
 use sts_simulator::state::core::{ClientInput, EngineState, RunResult};
 use sts_simulator::state::selection::DomainEventSource;
 
-use super::owners::{OwnerDecision, OwnerRoutine};
+use super::owner_model::{OwnerDecision, OwnerRoutine};
 use super::render;
 use super::{
     Args, BossRetryAttemptReport, BossRetryReport, BossRetryStatus, BoundarySite, BranchStatus,

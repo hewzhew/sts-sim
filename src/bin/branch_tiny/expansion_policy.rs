@@ -2,7 +2,7 @@ use sts_simulator::ai::strategy::decision_pipeline::{
     CandidateEvaluation, CleanupTarget, DecisionCandidateKind,
 };
 
-use super::owners::{ChoiceAnnotation, OwnerChoiceExpansion};
+use super::owner_model::{ChoiceAnnotation, OwnerChoiceExpansion};
 
 pub(super) fn expansion_from_evaluation(
     evaluation: Option<&CandidateEvaluation>,

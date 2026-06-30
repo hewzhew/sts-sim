@@ -18,10 +18,10 @@ use super::candidate_ir_adapter::{
     boss_relic_kind, card_reward_kind, is_boss_relic_key, is_card_reward_key, shop_tiny_kind,
 };
 use super::expansion_policy::{expansion_from_evaluation, shop_tiny_choice_expansion};
-use super::owners::{
-    executable_choices, executable_choices_including_cancel, ChoiceAnnotation,
-    OwnerCandidateDecision, OwnerChoice, OwnerChoiceExpansion,
+use super::owner_model::{
+    ChoiceAnnotation, OwnerCandidateDecision, OwnerChoice, OwnerChoiceExpansion,
 };
+use super::owners::{executable_choices, executable_choices_including_cancel};
 
 pub(super) fn card_reward_owner_choices(
     session: &RunControlSession,

@@ -6,7 +6,9 @@ use sts_simulator::eval::run_control::{
     RunControlAutoAppliedStepV1, RunControlCommand, RunControlSession,
 };
 
-use super::owners::{cleanup_target_label, ChoiceAnnotation, OwnerCandidateDecision, OwnerChoice};
+use super::owner_model::{
+    cleanup_target_label, ChoiceAnnotation, OwnerCandidateDecision, OwnerChoice,
+};
 use super::{
     BossRetryReport, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner,
 };

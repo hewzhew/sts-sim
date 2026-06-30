@@ -13,7 +13,7 @@ use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
 use sts_simulator::eval::run_control::{RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1};
 use sts_simulator::runtime::combat::CombatCard;
 
-use super::owners::{cleanup_target_label, ChoiceAnnotation, OwnerChoice};
+use super::owner_model::{cleanup_target_label, ChoiceAnnotation, OwnerChoice};
 use super::{Args, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner};
 
 pub(super) struct TraceWriter {

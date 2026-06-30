@@ -20,6 +20,8 @@ mod combat_gap_case;
 mod expansion_policy;
 #[path = "branch_tiny/frontier_checkpoint.rs"]
 mod frontier_checkpoint;
+#[path = "branch_tiny/owner_model.rs"]
+mod owner_model;
 #[path = "branch_tiny/owners.rs"]
 mod owners;
 #[path = "branch_tiny/render.rs"]
@@ -33,7 +35,7 @@ mod runner;
 #[path = "branch_tiny/trace.rs"]
 mod trace;
 
-use owners::{ChoiceAnnotation, DecisionKey, OwnerChoice, OwnerDecision, OwnerRoutine};
+use owner_model::{ChoiceAnnotation, DecisionKey, OwnerChoice, OwnerDecision, OwnerRoutine};
 use run_capsule::{RunCapsule, RunCapsuleSave};
 
 const WALL_STOP_GUARD_MS: u64 = 1_500;
