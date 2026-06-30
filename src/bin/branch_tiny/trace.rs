@@ -6,11 +6,14 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use serde_json::{json, Map, Value};
-use sts_simulator::ai::strategy::decision_pipeline::candidate_lane_label;
+use sts_simulator::ai::strategy::decision_pipeline::{
+    candidate_lane_label, CleanupTarget, DecisionCandidateKind,
+};
+use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
 use sts_simulator::eval::run_control::{RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1};
 use sts_simulator::runtime::combat::CombatCard;
 
-use super::owners::{ChoiceAnnotation, OwnerChoice, ShopTinyAnnotation};
+use super::owners::{cleanup_target_label, ChoiceAnnotation, OwnerChoice};
 use super::{Args, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner};
 
 pub(super) struct TraceWriter {
@@ -188,15 +191,12 @@ fn path_step_value(step: &BranchPathStep) -> Value {
 fn annotation_value(annotation: &ChoiceAnnotation) -> Value {
     match annotation {
         ChoiceAnnotation::None => Value::Null,
-        ChoiceAnnotation::Reward {
-            admission,
-            evaluation,
-        } => json!({
-            "kind": "reward",
-            "lane": candidate_lane_label(evaluation.lane),
-            "score": evaluation.total_score(),
-            "card": admission.card,
-            "class": format!("{:?}", admission.class),
+        ChoiceAnnotation::Candidate(decision) => json!({
+            "kind": "candidate",
+            "lane": candidate_lane_label(decision.evaluation.lane),
+            "score": decision.evaluation.total_score(),
+            "candidate": candidate_kind_value(decision.evaluation.candidate.kind),
+            "admission": decision.admission.as_ref().map(admission_value),
         }),
         ChoiceAnnotation::BossRelic(admission) => json!({
             "kind": "boss_relic",
@@ -204,71 +204,59 @@ fn annotation_value(annotation: &ChoiceAnnotation) -> Value {
             "lane": format!("{:?}", admission.lane),
             "class": format!("{:?}", admission.class),
         }),
-        ChoiceAnnotation::ShopTiny {
-            annotation,
-            evaluation,
-        } => {
-            let mut value = shop_tiny_annotation_value(annotation);
-            if let Value::Object(map) = &mut value {
-                map.insert(
-                    "lane".to_string(),
-                    json!(candidate_lane_label(evaluation.lane)),
-                );
-                map.insert("score".to_string(), json!(evaluation.total_score()));
-            }
-            value
-        }
     }
 }
 
-fn shop_tiny_annotation_value(annotation: &ShopTinyAnnotation) -> Value {
-    match annotation {
-        ShopTinyAnnotation::BuyCard {
-            slot,
+fn admission_value(admission: &RewardAdmission) -> Value {
+    json!({
+        "card": admission.card,
+        "class": format!("{:?}", admission.class),
+    })
+}
+
+fn candidate_kind_value(kind: DecisionCandidateKind) -> Value {
+    match kind {
+        DecisionCandidateKind::CardRewardPick { card, upgrades } => json!({
+            "kind": "card_reward_pick",
+            "card": card,
+            "upgrades": upgrades,
+        }),
+        DecisionCandidateKind::CardRewardSkip => json!({"kind": "card_reward_skip"}),
+        DecisionCandidateKind::ShopBuyCard {
             card,
             upgrades,
             price,
         } => json!({
-            "kind": "shop_tiny",
-            "action": "buy_card",
-            "slot": slot,
+            "kind": "shop_buy_card",
             "card": card,
             "upgrades": upgrades,
             "price": price,
         }),
-        ShopTinyAnnotation::BuyRelic { slot, relic, price } => json!({
-            "kind": "shop_tiny",
-            "action": "buy_relic",
-            "slot": slot,
+        DecisionCandidateKind::ShopBuyRelic { relic, price } => json!({
+            "kind": "shop_buy_relic",
             "relic": relic,
             "price": price,
         }),
-        ShopTinyAnnotation::BuyPotion {
-            slot,
-            potion,
-            price,
-        } => json!({
-            "kind": "shop_tiny",
-            "action": "buy_potion",
-            "slot": slot,
+        DecisionCandidateKind::ShopBuyPotion { potion, price } => json!({
+            "kind": "shop_buy_potion",
             "potion": potion,
             "price": price,
         }),
-        ShopTinyAnnotation::Purge {
-            card,
-            upgrades,
-            target,
-        } => json!({
-            "kind": "shop_tiny",
-            "action": "purge",
-            "card": card,
-            "upgrades": upgrades,
-            "target": format!("{target:?}"),
+        DecisionCandidateKind::ShopPurge { target } => json!({
+            "kind": "shop_purge",
+            "target": cleanup_target_value(target),
         }),
-        ShopTinyAnnotation::OpenRewards => json!({"kind": "shop_tiny", "action": "open_rewards"}),
-        ShopTinyAnnotation::Leave => json!({"kind": "shop_tiny", "action": "leave"}),
-        ShopTinyAnnotation::Unsupported => json!({"kind": "shop_tiny", "action": "unsupported"}),
+        DecisionCandidateKind::ShopOpenRewards => json!({"kind": "shop_open_rewards"}),
+        DecisionCandidateKind::ShopLeave => json!({"kind": "shop_leave"}),
+        DecisionCandidateKind::Unsupported => json!({"kind": "unsupported"}),
     }
+}
+
+fn cleanup_target_value(target: CleanupTarget) -> Value {
+    json!({
+        "kind": format!("{target:?}"),
+        "label": cleanup_target_label(target),
+    })
 }
 
 fn status_value(status: &BranchStatus) -> Value {

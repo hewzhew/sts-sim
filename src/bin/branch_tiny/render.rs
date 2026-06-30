@@ -1,12 +1,12 @@
 use sts_simulator::ai::strategy::boss_relic_admission::render_boss_relic_admission_compact;
-use sts_simulator::ai::strategy::decision_pipeline::candidate_lane_label;
+use sts_simulator::ai::strategy::decision_pipeline::{candidate_lane_label, DecisionCandidateKind};
 use sts_simulator::ai::strategy::reward_admission::render_reward_admission_compact;
 use sts_simulator::eval::run_control::{
     build_decision_surface, render_auto_applied_step_compact_v1, DecisionCandidateKey,
     RunControlAutoAppliedStepV1, RunControlCommand, RunControlSession,
 };
 
-use super::owners::{render_shop_tiny_annotation_compact, ChoiceAnnotation, OwnerChoice};
+use super::owners::{cleanup_target_label, ChoiceAnnotation, OwnerCandidateDecision, OwnerChoice};
 use super::{
     BossRetryReport, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner,
 };
@@ -87,16 +87,13 @@ pub(super) fn render_timeline_choice(choice: &OwnerChoice) -> String {
         None => format!("{}:{}", command_hint(&choice.action), choice.label),
     };
     match &choice.annotation {
-        ChoiceAnnotation::Reward {
-            admission,
-            evaluation,
-        } => {
+        ChoiceAnnotation::Candidate(decision) => {
             format!(
                 "{:<34} {:<8} score={:<4} {}",
                 base,
-                candidate_lane_label(evaluation.lane),
-                evaluation.total_score(),
-                render_reward_admission_compact(admission)
+                candidate_lane_label(decision.evaluation.lane),
+                decision.evaluation.total_score(),
+                render_candidate_decision_compact(decision)
             )
         }
         ChoiceAnnotation::BossRelic(admission) => {
@@ -104,18 +101,6 @@ pub(super) fn render_timeline_choice(choice: &OwnerChoice) -> String {
                 "{:<34} {}",
                 base,
                 render_boss_relic_admission_compact(admission)
-            )
-        }
-        ChoiceAnnotation::ShopTiny {
-            annotation,
-            evaluation,
-        } => {
-            format!(
-                "{:<34} {:<8} score={:<4} {}",
-                base,
-                candidate_lane_label(evaluation.lane),
-                evaluation.total_score(),
-                render_shop_tiny_annotation_compact(annotation)
             )
         }
         ChoiceAnnotation::None => base,
@@ -263,32 +248,39 @@ fn render_timeline_step(step: &BranchPathStep) -> String {
         None => format!("{}:{}", step.action_debug, step.label),
     };
     match &step.annotation {
-        ChoiceAnnotation::Reward {
-            admission,
-            evaluation,
-        } => {
+        ChoiceAnnotation::Candidate(decision) => {
             format!(
                 "{base}  {} score={} {}",
-                candidate_lane_label(evaluation.lane),
-                evaluation.total_score(),
-                render_reward_admission_compact(admission)
+                candidate_lane_label(decision.evaluation.lane),
+                decision.evaluation.total_score(),
+                render_candidate_decision_compact(decision)
             )
         }
         ChoiceAnnotation::BossRelic(admission) => {
             format!("{base}  {}", render_boss_relic_admission_compact(admission))
         }
-        ChoiceAnnotation::ShopTiny {
-            annotation,
-            evaluation,
-        } => {
-            format!(
-                "{base}  {} score={} {}",
-                candidate_lane_label(evaluation.lane),
-                evaluation.total_score(),
-                render_shop_tiny_annotation_compact(annotation)
-            )
-        }
         ChoiceAnnotation::None => base,
+    }
+}
+
+fn render_candidate_decision_compact(decision: &OwnerCandidateDecision) -> String {
+    if let Some(admission) = decision.admission.as_ref() {
+        return render_reward_admission_compact(admission);
+    }
+    match decision.evaluation.candidate.kind {
+        DecisionCandidateKind::ShopPurge { target } => {
+            format!("Purge {}", cleanup_target_label(target))
+        }
+        DecisionCandidateKind::ShopBuyRelic { relic, price } => {
+            format!("BuyRelic {relic:?} {price}g")
+        }
+        DecisionCandidateKind::ShopBuyPotion { potion, price } => {
+            format!("BuyPotion {potion:?} {price}g")
+        }
+        DecisionCandidateKind::ShopOpenRewards => "OpenRewards".to_string(),
+        DecisionCandidateKind::ShopLeave => "Leave".to_string(),
+        DecisionCandidateKind::Unsupported => "Unsupported typed-gap".to_string(),
+        _ => String::new(),
     }
 }
 

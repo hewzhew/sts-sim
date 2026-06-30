@@ -14,8 +14,6 @@ use sts_simulator::ai::strategy::reward_admission::{
 use sts_simulator::content::cards::{
     get_card_definition, is_starter_basic, is_starter_defend, is_starter_strike, CardId, CardType,
 };
-use sts_simulator::content::potions::{get_potion_definition, PotionId};
-use sts_simulator::content::relics::RelicId;
 use sts_simulator::eval::run_control::{
     DecisionCandidateKey, DecisionSurface, RunControlCommand, RunControlSession,
 };
@@ -38,18 +36,17 @@ pub(super) struct OwnerChoice {
 #[derive(Clone)]
 pub(super) enum ChoiceAnnotation {
     None,
-    Reward {
-        admission: RewardAdmission,
-        evaluation: CandidateEvaluation,
-    },
+    Candidate(OwnerCandidateDecision),
     BossRelic(BossRelicAdmission),
-    ShopTiny {
-        annotation: ShopTinyAnnotation,
-        evaluation: CandidateEvaluation,
-    },
 }
 
 #[derive(Clone)]
+pub(super) struct OwnerCandidateDecision {
+    pub(super) evaluation: CandidateEvaluation,
+    pub(super) admission: Option<RewardAdmission>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum OwnerChoiceExpansion {
     AutoAllowed,
     InspectOnly(&'static str),
@@ -68,56 +65,24 @@ impl OwnerChoice {
     }
 }
 
-#[derive(Clone)]
-pub(super) enum ShopTinyAnnotation {
-    BuyCard {
-        slot: usize,
-        card: CardId,
-        upgrades: u8,
-        price: i32,
-    },
-    BuyRelic {
-        slot: usize,
-        relic: RelicId,
-        price: i32,
-    },
-    BuyPotion {
-        slot: usize,
-        potion: PotionId,
-        price: i32,
-    },
-    Purge {
-        card: CardId,
-        upgrades: u8,
-        target: ShopPurgeTargetKind,
-    },
-    OpenRewards,
-    Leave,
-    Unsupported,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ShopPurgeTargetKind {
-    Curse,
-    Status,
-    StarterStrike,
-    StarterDefend,
-    OtherStarter,
-    Other,
-}
-
 impl ChoiceAnnotation {
-    fn reward(&self) -> Option<&RewardAdmission> {
+    fn admission(&self) -> Option<&RewardAdmission> {
         match self {
-            ChoiceAnnotation::Reward { admission, .. } => Some(admission),
+            ChoiceAnnotation::Candidate(decision) => decision.admission.as_ref(),
             _ => None,
         }
     }
 
     fn evaluation(&self) -> Option<&CandidateEvaluation> {
         match self {
-            ChoiceAnnotation::Reward { evaluation, .. }
-            | ChoiceAnnotation::ShopTiny { evaluation, .. } => Some(evaluation),
+            ChoiceAnnotation::Candidate(decision) => Some(&decision.evaluation),
+            _ => None,
+        }
+    }
+
+    fn candidate(&self) -> Option<&OwnerCandidateDecision> {
+        match self {
+            ChoiceAnnotation::Candidate(decision) => Some(decision),
             _ => None,
         }
     }
@@ -209,7 +174,7 @@ fn shop_tiny_owner_choices(
     let mut choices = executable_choices(surface)
         .into_iter()
         .map(|mut choice| {
-            choice.annotation = shop_tiny_annotation_for_choice(context, deck, &choice);
+            choice.annotation = shop_tiny_candidate_for_choice(context, deck, &choice);
             choice
         })
         .enumerate()
@@ -228,57 +193,38 @@ fn shop_tiny_owner_choices(
     choices.into_iter().map(|(_, choice)| choice).collect()
 }
 
-fn shop_tiny_annotation_for_choice(
+fn shop_tiny_candidate_for_choice(
     context: DecisionPipelineContext,
     deck: &[CombatCard],
     choice: &OwnerChoice,
 ) -> ChoiceAnnotation {
-    let annotation = match choice.key {
+    let kind = match choice.key {
         Some(DecisionCandidateKey::ShopBuyCard {
-            shop_slot,
             card,
             upgrades,
             price,
-        }) => ShopTinyAnnotation::BuyCard {
-            slot: shop_slot,
+            ..
+        }) => DecisionCandidateKind::ShopBuyCard {
             card,
             upgrades,
             price,
         },
-        Some(DecisionCandidateKey::ShopBuyRelic {
-            shop_slot,
-            relic,
-            price,
-        }) => ShopTinyAnnotation::BuyRelic {
-            slot: shop_slot,
-            relic,
-            price,
-        },
-        Some(DecisionCandidateKey::ShopBuyPotion {
-            shop_slot,
-            potion,
-            price,
-        }) => ShopTinyAnnotation::BuyPotion {
-            slot: shop_slot,
-            potion,
-            price,
-        },
-        Some(DecisionCandidateKey::ShopPurgeCard { card, upgrades, .. }) => {
-            ShopTinyAnnotation::Purge {
-                card,
-                upgrades,
+        Some(DecisionCandidateKey::ShopBuyRelic { relic, price, .. }) => {
+            DecisionCandidateKind::ShopBuyRelic { relic, price }
+        }
+        Some(DecisionCandidateKey::ShopBuyPotion { potion, price, .. }) => {
+            DecisionCandidateKind::ShopBuyPotion { potion, price }
+        }
+        Some(DecisionCandidateKey::ShopPurgeCard { card, .. }) => {
+            DecisionCandidateKind::ShopPurge {
                 target: classify_shop_purge_target(card),
             }
         }
-        Some(DecisionCandidateKey::ShopOpenRewards) => ShopTinyAnnotation::OpenRewards,
-        Some(DecisionCandidateKey::ShopLeave) => ShopTinyAnnotation::Leave,
-        _ => ShopTinyAnnotation::Unsupported,
+        Some(DecisionCandidateKey::ShopOpenRewards) => DecisionCandidateKind::ShopOpenRewards,
+        Some(DecisionCandidateKey::ShopLeave) => DecisionCandidateKind::ShopLeave,
+        _ => DecisionCandidateKind::Unsupported,
     };
-    let evaluation = shop_tiny_evaluation_for_annotation(context, deck, &annotation);
-    ChoiceAnnotation::ShopTiny {
-        annotation,
-        evaluation,
-    }
+    candidate_annotation(context, kind, shop_card_admission(deck, kind))
 }
 
 fn boss_relic_annotation_for_choice(
@@ -331,11 +277,19 @@ fn reward_annotation_with_deck_gate(
     admission: RewardAdmission,
     context: DecisionPipelineContext,
 ) -> ChoiceAnnotation {
-    let evaluation = evaluate_decision_candidate(context, kind, Some(&admission));
-    ChoiceAnnotation::Reward {
+    candidate_annotation(context, kind, Some(admission))
+}
+
+fn candidate_annotation(
+    context: DecisionPipelineContext,
+    kind: DecisionCandidateKind,
+    admission: Option<RewardAdmission>,
+) -> ChoiceAnnotation {
+    let evaluation = evaluate_decision_candidate(context, kind, admission.as_ref());
+    ChoiceAnnotation::Candidate(OwnerCandidateDecision {
         admission,
         evaluation,
-    }
+    })
 }
 
 fn card_reward_choice_rank(
@@ -361,7 +315,7 @@ fn card_reward_choice_rank(
                 .unwrap_or(0),
             choice
                 .annotation
-                .reward()
+                .admission()
                 .map(reward_admission_order_key_v1)
                 .unwrap_or_else(RewardAdmissionOrderKeyV1::empty_or_deferred),
         ),
@@ -377,7 +331,7 @@ fn card_reward_choice_rank(
             0,
             choice
                 .annotation
-                .reward()
+                .admission()
                 .map(reward_admission_order_key_v1)
                 .unwrap_or_else(RewardAdmissionOrderKeyV1::static_skip_boundary),
         ),
@@ -420,27 +374,23 @@ fn shop_tiny_context(session: &RunControlSession) -> DecisionPipelineContext {
 
 fn shop_tiny_choice_expansion(
     annotation: &ChoiceAnnotation,
-    auto_purge_targets: &mut Vec<ShopPurgeTargetKind>,
+    auto_purge_targets: &mut Vec<CleanupTarget>,
 ) -> OwnerChoiceExpansion {
-    let ChoiceAnnotation::ShopTiny {
-        annotation,
-        evaluation,
-    } = annotation
-    else {
+    let Some(decision) = annotation.candidate() else {
         return shop_tiny_inspect_only();
     };
-    match annotation {
-        ShopTinyAnnotation::Purge { target, .. }
-            if matches!(evaluation.expansion, ExpansionPlan::Auto) =>
+    match decision.evaluation.candidate.kind {
+        DecisionCandidateKind::ShopPurge { target }
+            if matches!(decision.evaluation.expansion, ExpansionPlan::Auto) =>
         {
-            if auto_purge_targets.contains(target) {
+            if auto_purge_targets.contains(&target) {
                 shop_tiny_inspect_only()
             } else {
-                auto_purge_targets.push(*target);
-                owner_expansion_from_evaluation(Some(evaluation))
+                auto_purge_targets.push(target);
+                owner_expansion_from_evaluation(Some(&decision.evaluation))
             }
         }
-        _ => owner_expansion_from_evaluation(Some(evaluation)),
+        _ => owner_expansion_from_evaluation(Some(&decision.evaluation)),
     }
 }
 
@@ -448,70 +398,25 @@ fn shop_tiny_inspect_only() -> OwnerChoiceExpansion {
     OwnerChoiceExpansion::InspectOnly("shop tiny keeps this atomic shop action inspect-only")
 }
 
-fn shop_tiny_evaluation_for_annotation(
-    context: DecisionPipelineContext,
+fn shop_card_admission(
     deck: &[CombatCard],
-    annotation: &ShopTinyAnnotation,
-) -> CandidateEvaluation {
-    match annotation {
-        ShopTinyAnnotation::BuyCard {
-            card,
-            upgrades,
-            price,
-            ..
-        } => {
-            let admission = assess_reward_admission_from_master_deck(deck, *card, *upgrades);
-            evaluate_decision_candidate(
-                context,
-                DecisionCandidateKind::ShopBuyCard {
-                    card: *card,
-                    upgrades: *upgrades,
-                    price: *price,
-                },
-                Some(&admission),
-            )
-        }
-        ShopTinyAnnotation::Purge { target, .. } => evaluate_decision_candidate(
-            context,
-            DecisionCandidateKind::ShopPurge {
-                target: cleanup_target_from_shop_purge(*target),
-            },
-            None,
-        ),
-        ShopTinyAnnotation::OpenRewards => {
-            evaluate_decision_candidate(context, DecisionCandidateKind::ShopOpenRewards, None)
-        }
-        ShopTinyAnnotation::Leave => {
-            evaluate_decision_candidate(context, DecisionCandidateKind::ShopLeave, None)
-        }
-        ShopTinyAnnotation::BuyRelic { relic, price, .. } => evaluate_decision_candidate(
-            context,
-            DecisionCandidateKind::ShopBuyRelic {
-                relic: *relic,
-                price: *price,
-            },
-            None,
-        ),
-        ShopTinyAnnotation::BuyPotion { potion, price, .. } => evaluate_decision_candidate(
-            context,
-            DecisionCandidateKind::ShopBuyPotion {
-                potion: *potion,
-                price: *price,
-            },
-            None,
-        ),
-        ShopTinyAnnotation::Unsupported => {
-            evaluate_decision_candidate(context, DecisionCandidateKind::Unsupported, None)
-        }
+    kind: DecisionCandidateKind,
+) -> Option<RewardAdmission> {
+    if let DecisionCandidateKind::ShopBuyCard { card, upgrades, .. } = kind {
+        Some(assess_reward_admission_from_master_deck(
+            deck, card, upgrades,
+        ))
+    } else {
+        None
     }
 }
 
 fn shop_tiny_choice_rank(choice: &OwnerChoice) -> (u8, i32, u8) {
     match &choice.annotation {
-        ChoiceAnnotation::ShopTiny { evaluation, .. } => (
-            candidate_lane_rank(evaluation.lane, false),
-            -evaluation.total_score(),
-            candidate_tiebreak_rank(evaluation.candidate.kind),
+        ChoiceAnnotation::Candidate(decision) => (
+            candidate_lane_rank(decision.evaluation.lane, false),
+            -decision.evaluation.total_score(),
+            candidate_tiebreak_rank(decision.evaluation.candidate.kind),
         ),
         _ => (6, 0, 9),
     }
@@ -527,26 +432,15 @@ fn owner_expansion_from_evaluation(
     }
 }
 
-fn cleanup_target_from_shop_purge(target: ShopPurgeTargetKind) -> CleanupTarget {
-    match target {
-        ShopPurgeTargetKind::Curse => CleanupTarget::Curse,
-        ShopPurgeTargetKind::Status => CleanupTarget::Status,
-        ShopPurgeTargetKind::StarterStrike => CleanupTarget::StarterStrike,
-        ShopPurgeTargetKind::StarterDefend => CleanupTarget::StarterDefend,
-        ShopPurgeTargetKind::OtherStarter => CleanupTarget::OtherStarter,
-        ShopPurgeTargetKind::Other => CleanupTarget::Other,
-    }
-}
-
-fn classify_shop_purge_target(card: CardId) -> ShopPurgeTargetKind {
+fn classify_shop_purge_target(card: CardId) -> CleanupTarget {
     let definition = get_card_definition(card);
     match definition.card_type {
-        CardType::Curse => ShopPurgeTargetKind::Curse,
-        CardType::Status => ShopPurgeTargetKind::Status,
-        _ if is_starter_strike(card) => ShopPurgeTargetKind::StarterStrike,
-        _ if is_starter_defend(card) => ShopPurgeTargetKind::StarterDefend,
-        _ if is_starter_basic(card) => ShopPurgeTargetKind::OtherStarter,
-        _ => ShopPurgeTargetKind::Other,
+        CardType::Curse => CleanupTarget::Curse,
+        CardType::Status => CleanupTarget::Status,
+        _ if is_starter_strike(card) => CleanupTarget::StarterStrike,
+        _ if is_starter_defend(card) => CleanupTarget::StarterDefend,
+        _ if is_starter_basic(card) => CleanupTarget::OtherStarter,
+        _ => CleanupTarget::Other,
     }
 }
 
@@ -601,43 +495,13 @@ fn is_boss_relic_choice(choice: &OwnerChoice) -> bool {
     )
 }
 
-pub(super) fn render_shop_tiny_annotation_compact(annotation: &ShopTinyAnnotation) -> String {
-    match annotation {
-        ShopTinyAnnotation::BuyCard {
-            slot,
-            card,
-            upgrades,
-            price,
-        } => format!("BuyCard slot={slot} {card:?}+{upgrades} {price}g"),
-        ShopTinyAnnotation::BuyRelic { slot, relic, price } => {
-            format!("BuyRelic slot={slot} {relic:?} {price}g")
-        }
-        ShopTinyAnnotation::BuyPotion {
-            slot,
-            potion,
-            price,
-        } => {
-            let name = get_potion_definition(*potion).name;
-            format!("BuyPotion slot={slot} {name} {price}g")
-        }
-        ShopTinyAnnotation::Purge {
-            card,
-            upgrades,
-            target,
-        } => format!("Purge {card:?}+{upgrades} {}", purge_target_label(*target)),
-        ShopTinyAnnotation::OpenRewards => "OpenRewards".to_string(),
-        ShopTinyAnnotation::Leave => "Leave".to_string(),
-        ShopTinyAnnotation::Unsupported => "Unsupported typed-gap".to_string(),
-    }
-}
-
-fn purge_target_label(target: ShopPurgeTargetKind) -> &'static str {
+pub(super) fn cleanup_target_label(target: CleanupTarget) -> &'static str {
     match target {
-        ShopPurgeTargetKind::Curse => "curse",
-        ShopPurgeTargetKind::Status => "status",
-        ShopPurgeTargetKind::StarterStrike => "starter-attack",
-        ShopPurgeTargetKind::StarterDefend => "starter-skill",
-        ShopPurgeTargetKind::OtherStarter => "starter",
-        ShopPurgeTargetKind::Other => "other",
+        CleanupTarget::Curse => "curse",
+        CleanupTarget::Status => "status",
+        CleanupTarget::StarterStrike => "starter-attack",
+        CleanupTarget::StarterDefend => "starter-skill",
+        CleanupTarget::OtherStarter => "starter",
+        CleanupTarget::Other => "other",
     }
 }
