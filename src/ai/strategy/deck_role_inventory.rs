@@ -8,6 +8,7 @@ pub struct DeckRoleInventory {
     pub frontload_units: u8,
     pub aoe_units: u8,
     pub block_units: u8,
+    pub cycle_block_units: u8,
     pub mitigation_units: u8,
     pub debuff_units: u8,
     pub draw_units: u8,
@@ -23,6 +24,15 @@ impl DeckRoleInventory {
         let mut inventory = Self::default();
         for card in deck {
             let definition = card_definition_with_upgrades(card.id, card.upgrades);
+            let provides_block = definition
+                .play_effects
+                .contains(&PlayEffect::Provide(Mechanic::Block));
+            let provides_draw = definition
+                .play_effects
+                .contains(&PlayEffect::Provide(Mechanic::CardDraw));
+            if provides_block && provides_draw {
+                inventory.cycle_block_units += 1;
+            }
             for effect in &definition.play_effects {
                 inventory.add_play_effect(*effect);
             }

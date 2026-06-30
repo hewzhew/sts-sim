@@ -8,6 +8,9 @@ use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::reward_admission::{
     RewardAdmission, RewardAdmissionClass, RewardAdmissionReason,
 };
+use crate::ai::strategy::role_saturation::{
+    assess_role_saturation, marginal_reason_label, LaneCap, RoleSaturationCandidate,
+};
 use crate::content::cards::CardId;
 use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
@@ -212,7 +215,21 @@ pub fn evaluate_decision_candidate(
     for pass in score_passes() {
         pass(context, candidate, admission, &mut scores);
     }
-    let lane = lane_for_candidate(candidate.kind, scores.iter().map(|score| score.value).sum());
+    let saturation = assess_role_saturation(
+        context.deck_plan,
+        role_saturation_candidate(candidate.kind),
+        admission,
+    );
+    for penalty in &saturation.penalties {
+        scores.push(score(
+            marginal_reason_label(penalty.reason),
+            penalty.score_delta,
+        ));
+    }
+    let lane = capped_lane(
+        lane_for_candidate(candidate.kind, scores.iter().map(|score| score.value).sum()),
+        saturation.lane_cap,
+    );
     let expansion = expansion_for_candidate(candidate.kind, lane);
     CandidateEvaluation {
         candidate,
@@ -698,6 +715,30 @@ fn lane_for_candidate(kind: DecisionCandidateKind, score: i32) -> CandidateLane 
         _ if score >= 110 => CandidateLane::Mainline,
         _ if score >= 45 => CandidateLane::Probe,
         _ => CandidateLane::Reject,
+    }
+}
+
+fn capped_lane(lane: CandidateLane, cap: Option<LaneCap>) -> CandidateLane {
+    match (lane, cap) {
+        (CandidateLane::Mainline, Some(LaneCap::ProbeOnly)) => CandidateLane::Probe,
+        (CandidateLane::Mainline | CandidateLane::Probe, Some(LaneCap::Reject)) => {
+            CandidateLane::Reject
+        }
+        _ => lane,
+    }
+}
+
+fn role_saturation_candidate(kind: DecisionCandidateKind) -> Option<RoleSaturationCandidate> {
+    match kind {
+        DecisionCandidateKind::CardRewardPick { upgrades, .. } => Some(RoleSaturationCandidate {
+            upgrades,
+            is_shop_card: false,
+        }),
+        DecisionCandidateKind::ShopBuyCard { upgrades, .. } => Some(RoleSaturationCandidate {
+            upgrades,
+            is_shop_card: true,
+        }),
+        _ => None,
     }
 }
 
