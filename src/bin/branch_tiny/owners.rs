@@ -1,27 +1,18 @@
-use sts_simulator::ai::strategy::boss_relic_admission::{
-    assess_boss_relic_admission, skip_boss_relic_admission, BossRelicAdmission,
-};
+use sts_simulator::ai::strategy::boss_relic_admission::BossRelicAdmission;
 use sts_simulator::ai::strategy::campfire_upgrade_quality::{
     rank_campfire_upgrades, should_rest_before_smith, CampfireUpgradeTier,
 };
-use sts_simulator::ai::strategy::decision_pipeline::{
-    boss_relic_order_key, evaluate_decision_candidate, CandidateEvaluation, CandidateOrderKey,
-    CleanupTarget, DecisionCandidateKind, DecisionPipelineContext,
-};
-use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
-use sts_simulator::ai::strategy::reward_admission::{
-    assess_reward_admission_from_master_deck, reward_admission_order_key_v1, skip_reward_admission,
-    RewardAdmission, RewardAdmissionOrderKeyV1,
-};
-use sts_simulator::content::cards::{
-    get_card_definition, is_starter_basic, is_starter_defend, is_starter_strike, CardId, CardType,
-};
+use sts_simulator::ai::strategy::decision_pipeline::{CandidateEvaluation, CleanupTarget};
+use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
+use sts_simulator::content::cards::{get_card_definition, is_starter_basic, CardId, CardType};
 use sts_simulator::eval::run_control::{
     DecisionCandidateKey, DecisionSurface, RunControlCommand, RunControlSession,
 };
-use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::state::core::{CampfireChoice, ClientInput, EngineState};
 
+use super::reward_shop_boss_owner::{
+    boss_relic_owner_choices, card_reward_owner_choices, shop_tiny_owner_choices,
+};
 use super::Owner;
 
 pub(super) type DecisionKey = DecisionCandidateKey;
@@ -80,28 +71,28 @@ impl OwnerChoice {
 }
 
 impl ChoiceAnnotation {
-    fn admission(&self) -> Option<&RewardAdmission> {
+    pub(super) fn admission(&self) -> Option<&RewardAdmission> {
         match self {
             ChoiceAnnotation::Candidate(decision) => decision.admission.as_ref(),
             _ => None,
         }
     }
 
-    fn evaluation(&self) -> Option<&CandidateEvaluation> {
+    pub(super) fn evaluation(&self) -> Option<&CandidateEvaluation> {
         match self {
             ChoiceAnnotation::Candidate(decision) => Some(&decision.evaluation),
             _ => None,
         }
     }
 
-    fn candidate(&self) -> Option<&OwnerCandidateDecision> {
+    pub(super) fn candidate(&self) -> Option<&OwnerCandidateDecision> {
         match self {
             ChoiceAnnotation::Candidate(decision) => Some(decision),
             _ => None,
         }
     }
 
-    fn boss_relic(&self) -> Option<&BossRelicAdmission> {
+    pub(super) fn boss_relic(&self) -> Option<&BossRelicAdmission> {
         match self {
             ChoiceAnnotation::BossRelic(admission) => Some(admission),
             _ => None,
@@ -131,73 +122,6 @@ pub(super) fn executable_choices(surface: &DecisionSurface) -> Vec<OwnerChoice> 
 
 pub(super) fn executable_choices_including_cancel(surface: &DecisionSurface) -> Vec<OwnerChoice> {
     executable_choices_with_cancel(surface, true)
-}
-
-fn card_reward_owner_choices(
-    session: &RunControlSession,
-    surface: &DecisionSurface,
-) -> Vec<OwnerChoice> {
-    let deck_plan = DeckPlanSnapshot::from_run_state(&session.run_state);
-    let context = DecisionPipelineContext::reward(deck_plan);
-    let mut choices = executable_choices(surface)
-        .into_iter()
-        .filter(is_card_reward_choice)
-        .map(|mut choice| {
-            choice.annotation = reward_annotation_for_choice(session, &choice, context);
-            choice.expansion = card_reward_choice_expansion(&choice);
-            choice
-        })
-        .enumerate()
-        .collect::<Vec<_>>();
-    let has_mainline_take = choices
-        .iter()
-        .any(|(_, choice)| is_mainline_card_reward_take(choice));
-    choices.sort_by_key(|(index, choice)| {
-        (card_reward_choice_rank(choice, has_mainline_take), *index)
-    });
-    choices.into_iter().map(|(_, choice)| choice).collect()
-}
-
-fn boss_relic_owner_choices(
-    session: &RunControlSession,
-    surface: &DecisionSurface,
-) -> Vec<OwnerChoice> {
-    let EngineState::BossRelicSelect(_) = &session.engine_state else {
-        return Vec::new();
-    };
-    let mut choices = executable_choices_including_cancel(surface)
-        .into_iter()
-        .filter(is_boss_relic_choice)
-        .map(|mut choice| {
-            choice.annotation = boss_relic_annotation_for_choice(session, &choice);
-            choice
-        })
-        .enumerate()
-        .collect::<Vec<_>>();
-    choices.sort_by_key(|(index, choice)| (boss_relic_choice_rank(choice), *index));
-    choices.into_iter().map(|(_, choice)| choice).collect()
-}
-
-fn shop_tiny_owner_choices(
-    session: &RunControlSession,
-    surface: &DecisionSurface,
-) -> Vec<OwnerChoice> {
-    let context = shop_tiny_context(session);
-    let deck = &session.run_state.master_deck;
-    let mut choices = executable_choices(surface)
-        .into_iter()
-        .map(|mut choice| {
-            choice.annotation = shop_tiny_candidate_for_choice(context, deck, &choice);
-            choice
-        })
-        .enumerate()
-        .collect::<Vec<_>>();
-    let mut auto_purge_targets = Vec::new();
-    for (_, choice) in choices.iter_mut() {
-        choice.expansion = shop_tiny_choice_expansion(&choice.annotation, &mut auto_purge_targets);
-    }
-    choices.sort_by_key(|(index, choice)| (shop_tiny_choice_rank(choice), *index));
-    choices.into_iter().map(|(_, choice)| choice).collect()
 }
 
 fn event_owner_decision(session: &RunControlSession, surface: &DecisionSurface) -> OwnerDecision {
@@ -386,264 +310,6 @@ fn campfire_toke_rank(card: CardId) -> u8 {
     }
 }
 
-fn shop_tiny_candidate_for_choice(
-    context: DecisionPipelineContext,
-    deck: &[CombatCard],
-    choice: &OwnerChoice,
-) -> ChoiceAnnotation {
-    let kind = match choice.key {
-        Some(DecisionCandidateKey::ShopBuyCard {
-            card,
-            upgrades,
-            price,
-            ..
-        }) => DecisionCandidateKind::ShopBuyCard {
-            card,
-            upgrades,
-            price,
-        },
-        Some(DecisionCandidateKey::ShopBuyRelic { relic, price, .. }) => {
-            DecisionCandidateKind::ShopBuyRelic { relic, price }
-        }
-        Some(DecisionCandidateKey::ShopBuyPotion { potion, price, .. }) => {
-            DecisionCandidateKind::ShopBuyPotion { potion, price }
-        }
-        Some(DecisionCandidateKey::ShopPurgeCard { card, .. }) => {
-            DecisionCandidateKind::ShopPurge {
-                target: classify_shop_purge_target(card),
-            }
-        }
-        Some(DecisionCandidateKey::ShopOpenRewards) => DecisionCandidateKind::ShopOpenRewards,
-        Some(DecisionCandidateKey::ShopLeave) => DecisionCandidateKind::ShopLeave,
-        _ => DecisionCandidateKind::Unsupported,
-    };
-    candidate_annotation(context, kind, shop_card_admission(deck, kind))
-}
-
-fn boss_relic_annotation_for_choice(
-    session: &RunControlSession,
-    choice: &OwnerChoice,
-) -> ChoiceAnnotation {
-    match choice.key {
-        Some(DecisionCandidateKey::BossRelicPick { relic, .. }) => {
-            ChoiceAnnotation::BossRelic(assess_boss_relic_admission(&session.run_state, relic))
-        }
-        Some(DecisionCandidateKey::BossRelicSkip) => {
-            ChoiceAnnotation::BossRelic(skip_boss_relic_admission())
-        }
-        _ => ChoiceAnnotation::None,
-    }
-}
-
-fn reward_annotation_for_choice(
-    session: &RunControlSession,
-    choice: &OwnerChoice,
-    context: DecisionPipelineContext,
-) -> ChoiceAnnotation {
-    match choice.key {
-        Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) => {
-            let deck = &session.run_state.master_deck;
-            reward_annotation_with_deck_gate(
-                DecisionCandidateKind::CardRewardPick { card, upgrades },
-                assess_reward_admission_from_master_deck(deck, card, upgrades),
-                context,
-            )
-        }
-        Some(DecisionCandidateKey::CardRewardSkip { .. }) => reward_annotation_with_deck_gate(
-            DecisionCandidateKind::CardRewardSkip,
-            skip_reward_admission(),
-            context,
-        ),
-        Some(DecisionCandidateKey::CardRewardOpen { .. })
-        | Some(DecisionCandidateKey::CardRewardSingingBowl { .. })
-        | None => ChoiceAnnotation::None,
-        _ => ChoiceAnnotation::None,
-    }
-}
-
-fn card_reward_choice_expansion(choice: &OwnerChoice) -> OwnerChoiceExpansion {
-    owner_expansion_from_evaluation(choice.annotation.evaluation())
-}
-
-fn reward_annotation_with_deck_gate(
-    kind: DecisionCandidateKind,
-    admission: RewardAdmission,
-    context: DecisionPipelineContext,
-) -> ChoiceAnnotation {
-    candidate_annotation(context, kind, Some(admission))
-}
-
-fn candidate_annotation(
-    context: DecisionPipelineContext,
-    kind: DecisionCandidateKind,
-    admission: Option<RewardAdmission>,
-) -> ChoiceAnnotation {
-    let evaluation = evaluate_decision_candidate(context, kind, admission.as_ref());
-    ChoiceAnnotation::Candidate(OwnerCandidateDecision {
-        admission,
-        evaluation,
-    })
-}
-
-fn card_reward_choice_rank(
-    choice: &OwnerChoice,
-    has_mainline_take: bool,
-) -> (u8, CandidateOrderKey, RewardAdmissionOrderKeyV1) {
-    match &choice.key {
-        Some(DecisionCandidateKey::CardRewardOpen { .. }) => (
-            0,
-            CandidateOrderKey::fallback(),
-            RewardAdmissionOrderKeyV1::empty_or_deferred(),
-        ),
-        Some(DecisionCandidateKey::CardRewardPick { .. }) => (
-            1,
-            choice
-                .annotation
-                .evaluation()
-                .map(|evaluation| evaluation.order_key(has_mainline_take))
-                .unwrap_or_else(CandidateOrderKey::fallback),
-            choice
-                .annotation
-                .admission()
-                .map(reward_admission_order_key_v1)
-                .unwrap_or_else(RewardAdmissionOrderKeyV1::empty_or_deferred),
-        ),
-        Some(DecisionCandidateKey::CardRewardSingingBowl { .. }) => (
-            1,
-            CandidateOrderKey::optional_skip(has_mainline_take),
-            RewardAdmissionOrderKeyV1::unscored_optional_reward(),
-        ),
-        Some(DecisionCandidateKey::CardRewardSkip { .. }) => (
-            1,
-            choice
-                .annotation
-                .evaluation()
-                .map(|evaluation| evaluation.order_key(has_mainline_take))
-                .unwrap_or_else(|| CandidateOrderKey::optional_skip(has_mainline_take)),
-            choice
-                .annotation
-                .admission()
-                .map(reward_admission_order_key_v1)
-                .unwrap_or_else(RewardAdmissionOrderKeyV1::static_skip_boundary),
-        ),
-        _ => (
-            2,
-            CandidateOrderKey::fallback(),
-            RewardAdmissionOrderKeyV1::empty_or_deferred(),
-        ),
-    }
-}
-
-fn is_mainline_card_reward_take(choice: &OwnerChoice) -> bool {
-    matches!(
-        choice.key,
-        Some(DecisionCandidateKey::CardRewardPick { .. })
-    ) && choice
-        .annotation
-        .evaluation()
-        .is_some_and(|evaluation| evaluation.is_mainline())
-}
-
-fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, CandidateOrderKey) {
-    let kind = boss_relic_candidate_kind(choice);
-    match choice.key {
-        Some(DecisionCandidateKey::BossRelicPick { .. }) => (
-            0,
-            boss_relic_order_key(kind, choice.annotation.boss_relic()),
-        ),
-        Some(DecisionCandidateKey::BossRelicSkip) => (
-            1,
-            boss_relic_order_key(kind, choice.annotation.boss_relic()),
-        ),
-        _ => (2, CandidateOrderKey::fallback()),
-    }
-}
-
-fn boss_relic_candidate_kind(choice: &OwnerChoice) -> DecisionCandidateKind {
-    match choice.key {
-        Some(DecisionCandidateKey::BossRelicPick { relic, .. }) => {
-            DecisionCandidateKind::BossRelicPick { relic }
-        }
-        Some(DecisionCandidateKey::BossRelicSkip) => DecisionCandidateKind::BossRelicSkip,
-        _ => DecisionCandidateKind::Unsupported,
-    }
-}
-
-fn shop_tiny_context(session: &RunControlSession) -> DecisionPipelineContext {
-    DecisionPipelineContext::shop(
-        DeckPlanSnapshot::from_run_state(&session.run_state),
-        session.run_state.gold,
-    )
-}
-
-fn shop_tiny_choice_expansion(
-    annotation: &ChoiceAnnotation,
-    auto_purge_targets: &mut Vec<CleanupTarget>,
-) -> OwnerChoiceExpansion {
-    let Some(decision) = annotation.candidate() else {
-        return shop_tiny_inspect_only();
-    };
-    match decision.evaluation.candidate.kind {
-        DecisionCandidateKind::ShopPurge { target } if decision.evaluation.auto_expands() => {
-            if auto_purge_targets.contains(&target) {
-                shop_tiny_inspect_only()
-            } else {
-                auto_purge_targets.push(target);
-                owner_expansion_from_evaluation(Some(&decision.evaluation))
-            }
-        }
-        _ => owner_expansion_from_evaluation(Some(&decision.evaluation)),
-    }
-}
-
-fn shop_tiny_inspect_only() -> OwnerChoiceExpansion {
-    OwnerChoiceExpansion::InspectOnly("shop tiny keeps this atomic shop action inspect-only")
-}
-
-fn shop_card_admission(
-    deck: &[CombatCard],
-    kind: DecisionCandidateKind,
-) -> Option<RewardAdmission> {
-    if let DecisionCandidateKind::ShopBuyCard { card, upgrades, .. } = kind {
-        Some(assess_reward_admission_from_master_deck(
-            deck, card, upgrades,
-        ))
-    } else {
-        None
-    }
-}
-
-fn shop_tiny_choice_rank(choice: &OwnerChoice) -> (u8, CandidateOrderKey) {
-    match &choice.annotation {
-        ChoiceAnnotation::Candidate(decision) => decision.evaluation.auto_order_key(false),
-        _ => (u8::MAX, CandidateOrderKey::fallback()),
-    }
-}
-
-fn owner_expansion_from_evaluation(
-    evaluation: Option<&CandidateEvaluation>,
-) -> OwnerChoiceExpansion {
-    match evaluation {
-        Some(evaluation) => match evaluation.inspect_only_reason() {
-            None => OwnerChoiceExpansion::AutoAllowed,
-            Some(reason) => OwnerChoiceExpansion::InspectOnly(reason),
-        },
-        None => shop_tiny_inspect_only(),
-    }
-}
-
-fn classify_shop_purge_target(card: CardId) -> CleanupTarget {
-    let definition = get_card_definition(card);
-    match definition.card_type {
-        CardType::Curse => CleanupTarget::Curse,
-        CardType::Status => CleanupTarget::Status,
-        _ if is_starter_strike(card) => CleanupTarget::StarterStrike,
-        _ if is_starter_defend(card) => CleanupTarget::StarterDefend,
-        _ if is_starter_basic(card) => CleanupTarget::OtherStarter,
-        _ => CleanupTarget::Other,
-    }
-}
-
 fn executable_choices_with_cancel(
     surface: &DecisionSurface,
     include_cancel: bool,
@@ -674,25 +340,6 @@ fn include_owner_choice_command(command: &RunControlCommand, include_cancel: boo
 
 fn is_navigation_only_command(command: &RunControlCommand) -> bool {
     matches!(command, RunControlCommand::Input(ClientInput::Cancel))
-}
-
-fn is_card_reward_choice(choice: &OwnerChoice) -> bool {
-    matches!(
-        choice.key,
-        Some(
-            DecisionCandidateKey::CardRewardOpen { .. }
-                | DecisionCandidateKey::CardRewardPick { .. }
-                | DecisionCandidateKey::CardRewardSingingBowl { .. }
-                | DecisionCandidateKey::CardRewardSkip { .. }
-        )
-    )
-}
-
-fn is_boss_relic_choice(choice: &OwnerChoice) -> bool {
-    matches!(
-        choice.key,
-        Some(DecisionCandidateKey::BossRelicPick { .. } | DecisionCandidateKey::BossRelicSkip)
-    )
 }
 
 pub(super) fn cleanup_target_label(target: CleanupTarget) -> &'static str {

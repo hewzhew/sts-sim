@@ -12,14 +12,20 @@ use sts_simulator::eval::run_control::{
 use sts_simulator::state::core::EngineState;
 use sts_simulator::state::events::{EventId, EventState};
 
+#[path = "branch_tiny/candidate_ir_adapter.rs"]
+mod candidate_ir_adapter;
 #[path = "branch_tiny/combat_gap_case.rs"]
 mod combat_gap_case;
+#[path = "branch_tiny/expansion_policy.rs"]
+mod expansion_policy;
 #[path = "branch_tiny/frontier_checkpoint.rs"]
 mod frontier_checkpoint;
 #[path = "branch_tiny/owners.rs"]
 mod owners;
 #[path = "branch_tiny/render.rs"]
 mod render;
+#[path = "branch_tiny/reward_shop_boss_owner.rs"]
+mod reward_shop_boss_owner;
 #[path = "branch_tiny/run_capsule.rs"]
 mod run_capsule;
 #[path = "branch_tiny/runner.rs"]
