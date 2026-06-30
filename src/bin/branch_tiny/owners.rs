@@ -535,8 +535,7 @@ fn survival_pressure_reward_rank(session: &RunControlSession, choice: &OwnerChoi
 }
 
 fn reward_survival_pressure(session: &RunControlSession) -> bool {
-    session.run_state.act_num >= 2
-        || session.run_state.current_hp.saturating_mul(2) <= session.run_state.max_hp
+    deck_admission_context(session).survival_pressure()
 }
 
 fn admission_provides(admission: &RewardAdmission, mechanic: Mechanic) -> bool {
