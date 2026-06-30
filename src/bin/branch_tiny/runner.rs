@@ -55,9 +55,14 @@ pub(super) fn advance_to_owner_or_gap(
                 {
                     continue;
                 }
-                if matches!(status, BranchStatus::CombatGap { .. })
-                    && args.wall_capped_search_budget
-                {
+                let combat_gap = matches!(status, BranchStatus::CombatGap { .. });
+                let boss_combat = is_boss_combat(session);
+                let combat_budget_capped = if boss_combat {
+                    args.wall_capped_boss_budget
+                } else {
+                    args.wall_capped_search_budget
+                };
+                if combat_gap && combat_budget_capped {
                     return advance_result(
                         BranchStatus::BudgetGap {
                             boundary: "Combat".to_string(),
@@ -71,13 +76,13 @@ pub(super) fn advance_to_owner_or_gap(
                         combat_search,
                     );
                 }
-                if matches!(status, BranchStatus::CombatGap { .. }) && is_boss_combat(session) {
+                if combat_gap && boss_combat {
                     if let Some(result) = try_boss_retry(session, deadline.cap_args(args, 1)) {
                         combat_search.extend(result.2);
                         return advance_result(result.0, Some(result.1), auto_steps, combat_search);
                     }
                 }
-                if matches!(status, BranchStatus::CombatGap { .. }) && !is_boss_combat(session) {
+                if combat_gap && !boss_combat {
                     match apply_owner_audit_auto_run(
                         session,
                         diagnostic_rescue_auto_step_options(args),

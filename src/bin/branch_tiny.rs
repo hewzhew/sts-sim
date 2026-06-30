@@ -138,8 +138,10 @@ struct Args {
     boss_search_nodes: usize,
     boss_search_ms: u64,
     wall_ms: Option<u64>,
-    #[serde(default)]
+    #[serde(skip)]
     wall_capped_search_budget: bool,
+    #[serde(skip)]
+    wall_capped_boss_budget: bool,
 }
 
 #[derive(Default)]
@@ -303,7 +305,7 @@ fn run() -> Result<(), String> {
     for generation in generation_start..=args.generations {
         last_generation = generation;
         let mut generation_result = None;
-        if deadline.should_stop() {
+        if deadline.should_soft_stop(args) {
             capsule_frontier_saved |= save_wall_stop(
                 frontier_checkpoint_output_path(
                     &frontier_checkpoint_path,
@@ -333,6 +335,26 @@ fn run() -> Result<(), String> {
             .flatten()
             .filter(|expanded| **expanded)
             .count();
+        if total_expanded > 0 && deadline.would_cap_core_search(args, total_expanded) {
+            frontier = work
+                .into_iter()
+                .map(|(branch, _, _)| branch)
+                .collect::<VecDeque<_>>();
+            capsule_frontier_saved |= save_wall_stop(
+                frontier_checkpoint_output_path(
+                    &frontier_checkpoint_path,
+                    &resume_frontier,
+                    run_capsule.as_ref(),
+                ),
+                run_capsule.as_ref(),
+                args,
+                generation,
+                next_branch_id,
+                &frontier,
+                &deadline,
+            )?;
+            break;
+        }
         let child_args = deadline.cap_args(args, total_expanded.max(1));
         for ((branch, expandable, choices), expanded_mask) in work.into_iter().zip(expanded_masks) {
             render::print_branch_timeline(generation, &branch, &choices, &expanded_mask);
@@ -392,7 +414,7 @@ fn run() -> Result<(), String> {
             break;
         }
         frontier = next;
-        if deadline.should_stop() {
+        if deadline.should_soft_stop(args) {
             capsule_frontier_saved |= save_wall_stop(
                 frontier_checkpoint_output_path(
                     &frontier_checkpoint_path,
@@ -578,6 +600,19 @@ impl RunDeadline {
             .is_some_and(|remaining| remaining <= WALL_STOP_GUARD_MS)
     }
 
+    fn should_soft_stop(self, args: Args) -> bool {
+        self.remaining_ms()
+            .is_some_and(|remaining| remaining <= self.soft_stop_guard_ms(args))
+    }
+
+    fn would_cap_core_search(self, args: Args, child_count: usize) -> bool {
+        self.cap_args(args, child_count).wall_capped_search_budget
+    }
+
+    fn soft_stop_guard_ms(self, args: Args) -> u64 {
+        WALL_STOP_GUARD_MS + args.search_ms.max(args.rescue_search_ms)
+    }
+
     fn cap_args(self, mut args: Args, child_count: usize) -> Args {
         let Some(remaining) = self.remaining_ms() else {
             return args;
@@ -587,11 +622,11 @@ impl RunDeadline {
         let search_ms = args.search_ms.min(per_child);
         let rescue_search_ms = args.rescue_search_ms.min(per_child);
         let boss_search_ms = args.boss_search_ms.min(per_child);
-        if search_ms != args.search_ms
-            || rescue_search_ms != args.rescue_search_ms
-            || boss_search_ms != args.boss_search_ms
-        {
+        if search_ms != args.search_ms || rescue_search_ms != args.rescue_search_ms {
             args.wall_capped_search_budget = true;
+        }
+        if boss_search_ms != args.boss_search_ms {
+            args.wall_capped_boss_budget = true;
         }
         args.search_ms = search_ms;
         args.rescue_search_ms = rescue_search_ms;
@@ -810,6 +845,7 @@ fn parse_args() -> Result<
         boss_search_ms: 8_000,
         wall_ms: None,
         wall_capped_search_budget: false,
+        wall_capped_boss_budget: false,
     };
     let mut overrides = ArgsOverrides::default();
     let mut trace_jsonl = None;
