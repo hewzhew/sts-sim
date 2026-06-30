@@ -49,6 +49,9 @@ fn event_room_policy_input(run_state: &RunState) -> Result<ClientInput, EventOwn
         EventId::ShiningLight => {
             return Ok(ClientInput::EventChoice(shining_light_choice(run_state)))
         }
+        EventId::WomanInBlue => {
+            return Ok(ClientInput::EventChoice(woman_in_blue_choice(run_state)))
+        }
         EventId::WeMeetAgain => {
             return Ok(ClientInput::EventChoice(we_meet_again_choice(run_state)))
         }
@@ -174,6 +177,24 @@ fn we_meet_again_choice(run_state: &RunState) -> usize {
         EventActionKind::Leave
     };
     event_action_choice(run_state, action).unwrap_or_default()
+}
+
+fn woman_in_blue_choice(run_state: &RunState) -> usize {
+    if event_screen(run_state) != 0 {
+        return event_action_choice(run_state, EventActionKind::Leave).unwrap_or_default();
+    }
+    let empty_slots = run_state
+        .potions
+        .iter()
+        .filter(|slot| slot.is_none())
+        .count();
+    match empty_slots {
+        0 if run_state.ascension_level >= 15 => 0,
+        0 => event_action_choice(run_state, EventActionKind::Leave).unwrap_or(3),
+        1 => 0,
+        2 => 1,
+        _ => 2,
+    }
 }
 
 fn event_action_choice(run_state: &RunState, action: EventActionKind) -> Option<usize> {

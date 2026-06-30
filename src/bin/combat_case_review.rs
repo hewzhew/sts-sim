@@ -114,15 +114,6 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
                 Some(0),
             ),
             run_search(
-                "slow_no_potion_tactical",
-                &case,
-                args.slow_nodes,
-                args.slow_ms,
-                CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed,
-                CombatSearchV2PotionPolicy::Never,
-                Some(0),
-            ),
-            run_search(
                 "slow_potion_diagnostic",
                 &case,
                 args.slow_nodes,
@@ -130,15 +121,6 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
                 CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
                 CombatSearchV2PotionPolicy::All,
                 Some(args.diagnostic_potion_max),
-            ),
-            run_search(
-                "slow_potion_tactical_max2",
-                &case,
-                args.slow_nodes,
-                args.slow_ms,
-                CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed,
-                CombatSearchV2PotionPolicy::All,
-                Some(2),
             ),
         ]
     } else {
