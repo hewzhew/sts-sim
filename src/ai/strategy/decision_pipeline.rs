@@ -6,6 +6,8 @@ use crate::ai::strategy::reward_admission::{
     RewardAdmission, RewardAdmissionClass, RewardAdmissionReason,
 };
 use crate::content::cards::CardId;
+use crate::content::potions::PotionId;
+use crate::content::relics::RelicId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DecisionPipelineContext {
@@ -44,6 +46,14 @@ pub enum DecisionCandidateKind {
     ShopBuyCard {
         card: CardId,
         upgrades: u8,
+        price: i32,
+    },
+    ShopBuyRelic {
+        relic: RelicId,
+        price: i32,
+    },
+    ShopBuyPotion {
+        potion: PotionId,
         price: i32,
     },
     ShopPurge {
@@ -189,7 +199,9 @@ pub fn candidate_tiebreak_rank(kind: DecisionCandidateKind) -> u8 {
             CleanupTarget::Other => 5,
         },
         DecisionCandidateKind::ShopOpenRewards => 1,
-        DecisionCandidateKind::ShopBuyCard { .. } => 2,
+        DecisionCandidateKind::ShopBuyRelic { .. } => 2,
+        DecisionCandidateKind::ShopBuyPotion { .. } => 3,
+        DecisionCandidateKind::ShopBuyCard { .. } => 4,
         DecisionCandidateKind::ShopLeave => 5,
         DecisionCandidateKind::CardRewardPick { .. } => 6,
         DecisionCandidateKind::CardRewardSkip => 7,
@@ -202,6 +214,7 @@ fn filter_passes() -> &'static [FilterPass] {
         unsupported_candidate_filter,
         missing_card_admission_filter,
         shop_affordability_filter,
+        shop_followup_required_filter,
         cleanup_target_filter,
         unmodeled_card_filter,
         thin_support_filter,
@@ -219,6 +232,8 @@ fn score_passes() -> &'static [ScorePass] {
         deck_admission_score,
         construction_pressure_score,
         reward_reason_score,
+        shop_relic_score,
+        shop_potion_score,
         survival_pressure_score,
     ]
 }
@@ -253,8 +268,26 @@ fn shop_affordability_filter(
     _admission: Option<&RewardAdmission>,
 ) -> FilterDecision {
     match (candidate.kind, context.gold) {
-        (DecisionCandidateKind::ShopBuyCard { price, .. }, Some(gold)) if price > gold => {
-            FilterDecision::InspectOnly("shop card is unaffordable")
+        (
+            DecisionCandidateKind::ShopBuyCard { price, .. }
+            | DecisionCandidateKind::ShopBuyRelic { price, .. }
+            | DecisionCandidateKind::ShopBuyPotion { price, .. },
+            Some(gold),
+        ) if price > gold => FilterDecision::InspectOnly("shop item is unaffordable"),
+        _ => FilterDecision::Pass,
+    }
+}
+
+fn shop_followup_required_filter(
+    _context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    _admission: Option<&RewardAdmission>,
+) -> FilterDecision {
+    match candidate.kind {
+        DecisionCandidateKind::ShopBuyRelic { relic, .. }
+            if shop_relic_purchase_needs_followup(relic) =>
+        {
+            FilterDecision::InspectOnly("shop relic purchase opens a follow-up choice")
         }
         _ => FilterDecision::Pass,
     }
@@ -509,6 +542,34 @@ fn reward_reason_score(
     }
 }
 
+fn shop_relic_score(
+    _context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    _admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    let DecisionCandidateKind::ShopBuyRelic { relic, .. } = candidate.kind else {
+        return;
+    };
+    scores.push(score("shop-relic", shop_relic_score_value(relic)));
+}
+
+fn shop_potion_score(
+    context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    _admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    let DecisionCandidateKind::ShopBuyPotion { potion, .. } = candidate.kind else {
+        return;
+    };
+    let mut value = shop_potion_score_value(potion);
+    if context.deck_plan.survival_pressure() && value > 0 {
+        value += 40;
+    }
+    scores.push(score("shop-potion", value));
+}
+
 fn survival_pressure_score(
     context: DecisionPipelineContext,
     _candidate: DecisionCandidateIr,
@@ -560,6 +621,12 @@ fn expansion_for_candidate(kind: DecisionCandidateKind, lane: CandidateLane) -> 
         (DecisionCandidateKind::ShopBuyCard { .. }, CandidateLane::Probe) => {
             ExpansionPlan::InspectOnly("shop card buy is below mainline")
         }
+        (DecisionCandidateKind::ShopBuyRelic { .. }, CandidateLane::Probe) => {
+            ExpansionPlan::InspectOnly("shop relic buy is below mainline")
+        }
+        (DecisionCandidateKind::ShopBuyPotion { .. }, CandidateLane::Probe) => {
+            ExpansionPlan::InspectOnly("shop potion buy is below mainline")
+        }
         _ => ExpansionPlan::Auto,
     }
 }
@@ -588,6 +655,55 @@ fn admission_provides(admission: &RewardAdmission, mechanic: Mechanic) -> bool {
     admission
         .reasons
         .contains(&RewardAdmissionReason::Provides(mechanic))
+}
+
+fn shop_relic_purchase_needs_followup(relic: RelicId) -> bool {
+    matches!(
+        relic,
+        RelicId::BottledFlame
+            | RelicId::BottledLightning
+            | RelicId::BottledTornado
+            | RelicId::Cauldron
+            | RelicId::DollysMirror
+            | RelicId::Orrery
+    )
+}
+
+fn shop_relic_score_value(relic: RelicId) -> i32 {
+    match relic {
+        RelicId::Waffle => 220,
+        RelicId::MedicalKit | RelicId::OrangePellets | RelicId::MembershipCard => 150,
+        RelicId::ClockworkSouvenir | RelicId::ChemicalX | RelicId::Toolbox => 115,
+        RelicId::FrozenEye => 45,
+        _ => 45,
+    }
+}
+
+fn shop_potion_score_value(potion: PotionId) -> i32 {
+    match potion {
+        PotionId::FairyPotion | PotionId::FruitJuice | PotionId::EntropicBrew => 90,
+        PotionId::FirePotion
+        | PotionId::ExplosivePotion
+        | PotionId::FearPotion
+        | PotionId::WeakenPotion
+        | PotionId::EnergyPotion
+        | PotionId::StrengthPotion
+        | PotionId::SteroidPotion
+        | PotionId::SwiftPotion
+        | PotionId::BlessingOfTheForge
+        | PotionId::LiquidMemories
+        | PotionId::GamblersBrew
+        | PotionId::DuplicationPotion => 70,
+        PotionId::BlockPotion
+        | PotionId::DexterityPotion
+        | PotionId::SpeedPotion
+        | PotionId::AncientPotion
+        | PotionId::RegenPotion
+        | PotionId::EssenceOfSteel
+        | PotionId::LiquidBronze
+        | PotionId::BloodPotion => 55,
+        _ => 35,
+    }
 }
 
 fn score(by: &'static str, value: i32) -> ScoreComponent {

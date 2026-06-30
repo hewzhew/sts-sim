@@ -484,9 +484,23 @@ fn shop_tiny_evaluation_for_annotation(
         ShopTinyAnnotation::Leave => {
             evaluate_decision_candidate(context, DecisionCandidateKind::ShopLeave, None)
         }
-        ShopTinyAnnotation::BuyRelic { .. }
-        | ShopTinyAnnotation::BuyPotion { .. }
-        | ShopTinyAnnotation::Unsupported => {
+        ShopTinyAnnotation::BuyRelic { relic, price, .. } => evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::ShopBuyRelic {
+                relic: *relic,
+                price: *price,
+            },
+            None,
+        ),
+        ShopTinyAnnotation::BuyPotion { potion, price, .. } => evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::ShopBuyPotion {
+                potion: *potion,
+                price: *price,
+            },
+            None,
+        ),
+        ShopTinyAnnotation::Unsupported => {
             evaluate_decision_candidate(context, DecisionCandidateKind::Unsupported, None)
         }
     }
