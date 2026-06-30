@@ -3,8 +3,8 @@ use sts_simulator::ai::strategy::boss_relic_admission::{
     BossRelicAdmission,
 };
 use sts_simulator::ai::strategy::decision_pipeline::{
-    evaluate_decision_candidate, CandidateEvaluation, CandidateLane, CleanupTarget,
-    DecisionCandidateKind, ExpansionPlan,
+    candidate_lane_rank, candidate_tiebreak_rank, evaluate_decision_candidate, CandidateEvaluation,
+    CandidateLane, CleanupTarget, DecisionCandidateKind, DecisionPipelineContext, ExpansionPlan,
 };
 use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
 use sts_simulator::ai::strategy::reward_admission::{
@@ -106,12 +106,6 @@ pub(super) enum ShopPurgeTargetKind {
     Other,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct ShopTinyContext {
-    gold: i32,
-    deck_plan: DeckPlanSnapshot,
-}
-
 impl ChoiceAnnotation {
     fn reward(&self) -> Option<&RewardAdmission> {
         match self {
@@ -163,11 +157,12 @@ fn card_reward_owner_choices(
     surface: &DecisionSurface,
 ) -> Vec<OwnerChoice> {
     let deck_plan = DeckPlanSnapshot::from_run_state(&session.run_state);
+    let context = DecisionPipelineContext::reward(deck_plan);
     let mut choices = executable_choices(surface)
         .into_iter()
         .filter(is_card_reward_choice)
         .map(|mut choice| {
-            choice.annotation = reward_annotation_for_choice(session, &choice, deck_plan);
+            choice.annotation = reward_annotation_for_choice(session, &choice, context);
             choice.expansion = card_reward_choice_expansion(&choice);
             choice
         })
@@ -221,8 +216,7 @@ fn shop_tiny_owner_choices(
         .collect::<Vec<_>>();
     let mut auto_purge_targets = Vec::new();
     for (_, choice) in choices.iter_mut() {
-        choice.expansion =
-            shop_tiny_choice_expansion(context, &choice.annotation, &mut auto_purge_targets);
+        choice.expansion = shop_tiny_choice_expansion(&choice.annotation, &mut auto_purge_targets);
     }
     choices.sort_by_key(|(index, choice)| {
         (
@@ -235,7 +229,7 @@ fn shop_tiny_owner_choices(
 }
 
 fn shop_tiny_annotation_for_choice(
-    context: ShopTinyContext,
+    context: DecisionPipelineContext,
     deck: &[CombatCard],
     choice: &OwnerChoice,
 ) -> ChoiceAnnotation {
@@ -305,7 +299,7 @@ fn boss_relic_annotation_for_choice(
 fn reward_annotation_for_choice(
     session: &RunControlSession,
     choice: &OwnerChoice,
-    deck_plan: DeckPlanSnapshot,
+    context: DecisionPipelineContext,
 ) -> ChoiceAnnotation {
     match choice.key {
         Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) => {
@@ -313,13 +307,13 @@ fn reward_annotation_for_choice(
             reward_annotation_with_deck_gate(
                 DecisionCandidateKind::CardRewardPick { card, upgrades },
                 assess_reward_admission_from_master_deck(deck, card, upgrades),
-                deck_plan,
+                context,
             )
         }
         Some(DecisionCandidateKey::CardRewardSkip { .. }) => reward_annotation_with_deck_gate(
             DecisionCandidateKind::CardRewardSkip,
             skip_reward_admission(),
-            deck_plan,
+            context,
         ),
         Some(DecisionCandidateKey::CardRewardOpen { .. })
         | Some(DecisionCandidateKey::CardRewardSingingBowl { .. })
@@ -335,9 +329,9 @@ fn card_reward_choice_expansion(choice: &OwnerChoice) -> OwnerChoiceExpansion {
 fn reward_annotation_with_deck_gate(
     kind: DecisionCandidateKind,
     admission: RewardAdmission,
-    deck_plan: DeckPlanSnapshot,
+    context: DecisionPipelineContext,
 ) -> ChoiceAnnotation {
-    let evaluation = evaluate_decision_candidate(deck_plan, kind, Some(&admission));
+    let evaluation = evaluate_decision_candidate(context, kind, Some(&admission));
     ChoiceAnnotation::Reward {
         admission,
         evaluation,
@@ -373,13 +367,13 @@ fn card_reward_choice_rank(
         ),
         Some(DecisionCandidateKey::CardRewardSingingBowl { .. }) => (
             1,
-            skip_reward_lane_rank(has_mainline_take),
+            candidate_lane_rank(CandidateLane::Skip, has_mainline_take),
             0,
             RewardAdmissionOrderKeyV1::unscored_optional_reward(),
         ),
         Some(DecisionCandidateKey::CardRewardSkip { .. }) => (
             1,
-            skip_reward_lane_rank(has_mainline_take),
+            candidate_lane_rank(CandidateLane::Skip, has_mainline_take),
             0,
             choice
                 .annotation
@@ -401,29 +395,6 @@ fn is_mainline_card_reward_take(choice: &OwnerChoice) -> bool {
         .is_some_and(|evaluation| evaluation.lane == CandidateLane::Mainline)
 }
 
-fn candidate_lane_rank(lane: CandidateLane, has_mainline_take: bool) -> u8 {
-    match lane {
-        CandidateLane::Mainline => 0,
-        CandidateLane::Skip => skip_reward_lane_rank(has_mainline_take),
-        CandidateLane::Probe => {
-            if has_mainline_take {
-                2
-            } else {
-                1
-            }
-        }
-        CandidateLane::Reject => 3,
-    }
-}
-
-fn skip_reward_lane_rank(has_mainline_take: bool) -> u8 {
-    if has_mainline_take {
-        1
-    } else {
-        0
-    }
-}
-
 fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
     let skip_order = boss_relic_admission_order_rank(&skip_boss_relic_admission());
     match choice.key {
@@ -440,15 +411,14 @@ fn boss_relic_choice_rank(choice: &OwnerChoice) -> (u8, u8) {
     }
 }
 
-fn shop_tiny_context(session: &RunControlSession) -> ShopTinyContext {
-    ShopTinyContext {
-        gold: session.run_state.gold,
-        deck_plan: DeckPlanSnapshot::from_run_state(&session.run_state),
-    }
+fn shop_tiny_context(session: &RunControlSession) -> DecisionPipelineContext {
+    DecisionPipelineContext::shop(
+        DeckPlanSnapshot::from_run_state(&session.run_state),
+        session.run_state.gold,
+    )
 }
 
 fn shop_tiny_choice_expansion(
-    context: ShopTinyContext,
     annotation: &ChoiceAnnotation,
     auto_purge_targets: &mut Vec<ShopPurgeTargetKind>,
 ) -> OwnerChoiceExpansion {
@@ -470,9 +440,6 @@ fn shop_tiny_choice_expansion(
                 owner_expansion_from_evaluation(Some(evaluation))
             }
         }
-        ShopTinyAnnotation::BuyCard { price, .. } if *price > context.gold => {
-            OwnerChoiceExpansion::InspectOnly("shop card is unaffordable")
-        }
         _ => owner_expansion_from_evaluation(Some(evaluation)),
     }
 }
@@ -482,7 +449,7 @@ fn shop_tiny_inspect_only() -> OwnerChoiceExpansion {
 }
 
 fn shop_tiny_evaluation_for_annotation(
-    context: ShopTinyContext,
+    context: DecisionPipelineContext,
     deck: &[CombatCard],
     annotation: &ShopTinyAnnotation,
 ) -> CandidateEvaluation {
@@ -495,7 +462,7 @@ fn shop_tiny_evaluation_for_annotation(
         } => {
             let admission = assess_reward_admission_from_master_deck(deck, *card, *upgrades);
             evaluate_decision_candidate(
-                context.deck_plan,
+                context,
                 DecisionCandidateKind::ShopBuyCard {
                     card: *card,
                     upgrades: *upgrades,
@@ -505,37 +472,32 @@ fn shop_tiny_evaluation_for_annotation(
             )
         }
         ShopTinyAnnotation::Purge { target, .. } => evaluate_decision_candidate(
-            context.deck_plan,
+            context,
             DecisionCandidateKind::ShopPurge {
                 target: cleanup_target_from_shop_purge(*target),
             },
             None,
         ),
-        ShopTinyAnnotation::OpenRewards => evaluate_decision_candidate(
-            context.deck_plan,
-            DecisionCandidateKind::ShopOpenRewards,
-            None,
-        ),
+        ShopTinyAnnotation::OpenRewards => {
+            evaluate_decision_candidate(context, DecisionCandidateKind::ShopOpenRewards, None)
+        }
         ShopTinyAnnotation::Leave => {
-            evaluate_decision_candidate(context.deck_plan, DecisionCandidateKind::ShopLeave, None)
+            evaluate_decision_candidate(context, DecisionCandidateKind::ShopLeave, None)
         }
         ShopTinyAnnotation::BuyRelic { .. }
         | ShopTinyAnnotation::BuyPotion { .. }
         | ShopTinyAnnotation::Unsupported => {
-            evaluate_decision_candidate(context.deck_plan, DecisionCandidateKind::Unsupported, None)
+            evaluate_decision_candidate(context, DecisionCandidateKind::Unsupported, None)
         }
     }
 }
 
 fn shop_tiny_choice_rank(choice: &OwnerChoice) -> (u8, i32, u8) {
     match &choice.annotation {
-        ChoiceAnnotation::ShopTiny {
-            annotation,
-            evaluation,
-        } => (
+        ChoiceAnnotation::ShopTiny { evaluation, .. } => (
             candidate_lane_rank(evaluation.lane, false),
             -evaluation.total_score(),
-            shop_tiny_detail_rank(annotation),
+            candidate_tiebreak_rank(evaluation.candidate.kind),
         ),
         _ => (6, 0, 9),
     }
@@ -548,25 +510,6 @@ fn owner_expansion_from_evaluation(
         Some(ExpansionPlan::Auto) => OwnerChoiceExpansion::AutoAllowed,
         Some(ExpansionPlan::InspectOnly(reason)) => OwnerChoiceExpansion::InspectOnly(reason),
         None => shop_tiny_inspect_only(),
-    }
-}
-
-fn shop_tiny_detail_rank(annotation: &ShopTinyAnnotation) -> u8 {
-    match annotation {
-        ShopTinyAnnotation::Purge { target, .. } => match target {
-            ShopPurgeTargetKind::Curse => 0,
-            ShopPurgeTargetKind::Status => 1,
-            ShopPurgeTargetKind::StarterStrike => 2,
-            ShopPurgeTargetKind::StarterDefend => 3,
-            ShopPurgeTargetKind::OtherStarter => 4,
-            ShopPurgeTargetKind::Other => 5,
-        },
-        ShopTinyAnnotation::OpenRewards => 1,
-        ShopTinyAnnotation::BuyCard { .. } => 2,
-        ShopTinyAnnotation::BuyRelic { .. } => 3,
-        ShopTinyAnnotation::BuyPotion { .. } => 4,
-        ShopTinyAnnotation::Leave => 5,
-        ShopTinyAnnotation::Unsupported => 9,
     }
 }
 

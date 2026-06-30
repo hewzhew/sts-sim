@@ -8,6 +8,33 @@ use crate::ai::strategy::reward_admission::{
 use crate::content::cards::CardId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DecisionPipelineContext {
+    pub deck_plan: DeckPlanSnapshot,
+    pub gold: Option<i32>,
+}
+
+impl DecisionPipelineContext {
+    pub fn reward(deck_plan: DeckPlanSnapshot) -> Self {
+        Self {
+            deck_plan,
+            gold: None,
+        }
+    }
+
+    pub fn shop(deck_plan: DeckPlanSnapshot, gold: i32) -> Self {
+        Self {
+            deck_plan,
+            gold: Some(gold),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DecisionCandidateIr {
+    pub kind: DecisionCandidateKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DecisionCandidateKind {
     CardRewardPick {
         card: CardId,
@@ -52,6 +79,12 @@ pub enum ExpansionPlan {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FilterDecision {
+    Pass,
+    InspectOnly(&'static str),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ScoreComponent {
     pub by: &'static str,
     pub value: i32,
@@ -59,16 +92,16 @@ pub struct ScoreComponent {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CandidateEvaluation {
-    pub kind: DecisionCandidateKind,
+    pub candidate: DecisionCandidateIr,
     pub lane: CandidateLane,
     pub expansion: ExpansionPlan,
     pub scores: Vec<ScoreComponent>,
 }
 
 impl CandidateEvaluation {
-    pub fn inspect_only(kind: DecisionCandidateKind, reason: &'static str) -> Self {
+    pub fn inspect_only(candidate: DecisionCandidateIr, reason: &'static str) -> Self {
         Self {
-            kind,
+            candidate,
             lane: CandidateLane::Reject,
             expansion: ExpansionPlan::InspectOnly(reason),
             scores: Vec::new(),
@@ -80,41 +113,38 @@ impl CandidateEvaluation {
     }
 }
 
+type FilterPass =
+    fn(DecisionPipelineContext, DecisionCandidateIr, Option<&RewardAdmission>) -> FilterDecision;
+type ScorePass = fn(
+    DecisionPipelineContext,
+    DecisionCandidateIr,
+    Option<&RewardAdmission>,
+    &mut Vec<ScoreComponent>,
+);
+
 pub fn evaluate_decision_candidate(
-    deck_plan: DeckPlanSnapshot,
+    context: DecisionPipelineContext,
     kind: DecisionCandidateKind,
     admission: Option<&RewardAdmission>,
 ) -> CandidateEvaluation {
-    match kind {
-        DecisionCandidateKind::CardRewardPick { .. }
-        | DecisionCandidateKind::ShopBuyCard { .. } => {
-            let Some(admission) = admission else {
-                return CandidateEvaluation::inspect_only(kind, "card candidate missing admission");
-            };
-            evaluate_card_candidate(deck_plan, kind, admission)
+    let candidate = DecisionCandidateIr { kind };
+    for pass in filter_passes() {
+        if let FilterDecision::InspectOnly(reason) = pass(context, candidate, admission) {
+            return CandidateEvaluation::inspect_only(candidate, reason);
         }
-        DecisionCandidateKind::CardRewardSkip => CandidateEvaluation {
-            kind,
-            lane: CandidateLane::Skip,
-            expansion: ExpansionPlan::Auto,
-            scores: vec![score("skip", 0)],
-        },
-        DecisionCandidateKind::ShopPurge { target } => evaluate_cleanup_candidate(kind, target),
-        DecisionCandidateKind::ShopOpenRewards => CandidateEvaluation {
-            kind,
-            lane: CandidateLane::Mainline,
-            expansion: ExpansionPlan::Auto,
-            scores: vec![score("open-rewards", 300)],
-        },
-        DecisionCandidateKind::ShopLeave => CandidateEvaluation {
-            kind,
-            lane: CandidateLane::Skip,
-            expansion: ExpansionPlan::Auto,
-            scores: vec![score("leave", 0)],
-        },
-        DecisionCandidateKind::Unsupported => {
-            CandidateEvaluation::inspect_only(kind, "unsupported decision candidate")
-        }
+    }
+
+    let mut scores = Vec::new();
+    for pass in score_passes() {
+        pass(context, candidate, admission, &mut scores);
+    }
+    let lane = lane_for_candidate(candidate.kind, scores.iter().map(|score| score.value).sum());
+    let expansion = expansion_for_candidate(candidate.kind, lane);
+    CandidateEvaluation {
+        candidate,
+        lane,
+        expansion,
+        scores,
     }
 }
 
@@ -127,140 +157,332 @@ pub fn candidate_lane_label(lane: CandidateLane) -> &'static str {
     }
 }
 
-fn evaluate_card_candidate(
-    deck_plan: DeckPlanSnapshot,
-    kind: DecisionCandidateKind,
-    admission: &RewardAdmission,
-) -> CandidateEvaluation {
-    if admission.class == RewardAdmissionClass::EmptyOrDeferred {
-        return CandidateEvaluation::inspect_only(kind, "unmodeled or deferred card candidate");
+pub fn candidate_lane_rank(lane: CandidateLane, has_mainline_take: bool) -> u8 {
+    match lane {
+        CandidateLane::Mainline => 0,
+        CandidateLane::Skip => {
+            if has_mainline_take {
+                1
+            } else {
+                0
+            }
+        }
+        CandidateLane::Probe => {
+            if has_mainline_take {
+                2
+            } else {
+                1
+            }
+        }
+        CandidateLane::Reject => 3,
     }
-    if admission
-        .reasons
-        .iter()
-        .any(|reason| matches!(reason, RewardAdmissionReason::ThinSupport(_)))
-    {
-        return CandidateEvaluation::inspect_only(kind, "payoff support is too thin");
-    }
-    if admission.reasons.iter().any(|reason| {
-        matches!(
-            reason,
-            RewardAdmissionReason::DuplicateBurden(_) | RewardAdmissionReason::DuplicateConcern(_)
-        )
-    }) {
-        return CandidateEvaluation::inspect_only(kind, "duplicate marginal value is too low");
-    }
-    if admission.class == RewardAdmissionClass::OpensUnsupportedPayoff {
-        return CandidateEvaluation::inspect_only(kind, "unsupported payoff candidate");
-    }
-    if matches!(kind, DecisionCandidateKind::ShopBuyCard { .. })
-        && shop_card_buy_is_risky(kind, admission)
-    {
-        return CandidateEvaluation::inspect_only(kind, "shop card buy carries unresolved risk");
-    }
+}
 
-    let mut scores = Vec::new();
+pub fn candidate_tiebreak_rank(kind: DecisionCandidateKind) -> u8 {
+    match kind {
+        DecisionCandidateKind::ShopPurge { target } => match target {
+            CleanupTarget::Curse => 0,
+            CleanupTarget::Status => 1,
+            CleanupTarget::StarterStrike => 2,
+            CleanupTarget::StarterDefend => 3,
+            CleanupTarget::OtherStarter => 4,
+            CleanupTarget::Other => 5,
+        },
+        DecisionCandidateKind::ShopOpenRewards => 1,
+        DecisionCandidateKind::ShopBuyCard { .. } => 2,
+        DecisionCandidateKind::ShopLeave => 5,
+        DecisionCandidateKind::CardRewardPick { .. } => 6,
+        DecisionCandidateKind::CardRewardSkip => 7,
+        DecisionCandidateKind::Unsupported => 9,
+    }
+}
+
+fn filter_passes() -> &'static [FilterPass] {
+    &[
+        unsupported_candidate_filter,
+        missing_card_admission_filter,
+        shop_affordability_filter,
+        cleanup_target_filter,
+        unmodeled_card_filter,
+        thin_support_filter,
+        duplicate_marginal_filter,
+        unsupported_payoff_filter,
+        risky_shop_card_filter,
+    ]
+}
+
+fn score_passes() -> &'static [ScorePass] {
+    &[
+        static_candidate_score,
+        cleanup_score,
+        admission_class_score,
+        deck_admission_score,
+        construction_pressure_score,
+        reward_reason_score,
+        survival_pressure_score,
+    ]
+}
+
+fn unsupported_candidate_filter(
+    _context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    _admission: Option<&RewardAdmission>,
+) -> FilterDecision {
+    if candidate.kind == DecisionCandidateKind::Unsupported {
+        FilterDecision::InspectOnly("unsupported decision candidate")
+    } else {
+        FilterDecision::Pass
+    }
+}
+
+fn missing_card_admission_filter(
+    _context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+) -> FilterDecision {
+    if candidate_requires_card_admission(candidate.kind) && admission.is_none() {
+        FilterDecision::InspectOnly("card candidate missing admission")
+    } else {
+        FilterDecision::Pass
+    }
+}
+
+fn shop_affordability_filter(
+    context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    _admission: Option<&RewardAdmission>,
+) -> FilterDecision {
+    match (candidate.kind, context.gold) {
+        (DecisionCandidateKind::ShopBuyCard { price, .. }, Some(gold)) if price > gold => {
+            FilterDecision::InspectOnly("shop card is unaffordable")
+        }
+        _ => FilterDecision::Pass,
+    }
+}
+
+fn cleanup_target_filter(
+    _context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    _admission: Option<&RewardAdmission>,
+) -> FilterDecision {
+    match candidate.kind {
+        DecisionCandidateKind::ShopPurge {
+            target: CleanupTarget::Curse | CleanupTarget::Status | CleanupTarget::StarterStrike,
+        } => FilterDecision::Pass,
+        DecisionCandidateKind::ShopPurge { .. } => {
+            FilterDecision::InspectOnly("shop purge target is not safe for tiny owner")
+        }
+        _ => FilterDecision::Pass,
+    }
+}
+
+fn unmodeled_card_filter(
+    _context: DecisionPipelineContext,
+    _candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+) -> FilterDecision {
+    if admission.is_some_and(|admission| admission.class == RewardAdmissionClass::EmptyOrDeferred) {
+        FilterDecision::InspectOnly("unmodeled or deferred card candidate")
+    } else {
+        FilterDecision::Pass
+    }
+}
+
+fn thin_support_filter(
+    _context: DecisionPipelineContext,
+    _candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+) -> FilterDecision {
+    let thin = admission.is_some_and(|admission| {
+        admission
+            .reasons
+            .iter()
+            .any(|reason| matches!(reason, RewardAdmissionReason::ThinSupport(_)))
+    });
+    if thin {
+        FilterDecision::InspectOnly("payoff support is too thin")
+    } else {
+        FilterDecision::Pass
+    }
+}
+
+fn duplicate_marginal_filter(
+    _context: DecisionPipelineContext,
+    _candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+) -> FilterDecision {
+    let low_marginal = admission.is_some_and(|admission| {
+        admission.reasons.iter().any(|reason| {
+            matches!(
+                reason,
+                RewardAdmissionReason::DuplicateBurden(_)
+                    | RewardAdmissionReason::DuplicateConcern(_)
+            )
+        })
+    });
+    if low_marginal {
+        FilterDecision::InspectOnly("duplicate marginal value is too low")
+    } else {
+        FilterDecision::Pass
+    }
+}
+
+fn unsupported_payoff_filter(
+    _context: DecisionPipelineContext,
+    _candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+) -> FilterDecision {
+    if admission
+        .is_some_and(|admission| admission.class == RewardAdmissionClass::OpensUnsupportedPayoff)
+    {
+        FilterDecision::InspectOnly("unsupported payoff candidate")
+    } else {
+        FilterDecision::Pass
+    }
+}
+
+fn risky_shop_card_filter(
+    _context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+) -> FilterDecision {
+    let DecisionCandidateKind::ShopBuyCard { card, upgrades, .. } = candidate.kind else {
+        return FilterDecision::Pass;
+    };
+    let definition = card_definition_with_upgrades(card, upgrades);
+    let card_risk = definition.burdens.iter().any(|burden| {
+        matches!(
+            burden,
+            CardBurden::RandomExhaust
+                | CardBurden::AddsCombatDeckClutter
+                | CardBurden::HpCost
+                | CardBurden::DrawLockout
+                | CardBurden::ExhaustsHand
+        )
+    });
+    let duplicate_risk = admission.is_some_and(|admission| {
+        admission.reasons.iter().any(|reason| {
+            matches!(
+                reason,
+                RewardAdmissionReason::DuplicateBurden(_)
+                    | RewardAdmissionReason::DuplicateConcern(_)
+            )
+        })
+    });
+    if card_risk || duplicate_risk {
+        FilterDecision::InspectOnly("shop card buy carries unresolved risk")
+    } else {
+        FilterDecision::Pass
+    }
+}
+
+fn static_candidate_score(
+    _context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    _admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    match candidate.kind {
+        DecisionCandidateKind::CardRewardSkip => scores.push(score("skip", 0)),
+        DecisionCandidateKind::ShopOpenRewards => scores.push(score("open-rewards", 300)),
+        DecisionCandidateKind::ShopLeave => scores.push(score("leave", 0)),
+        _ => {}
+    }
+}
+
+fn cleanup_score(
+    _context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    _admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    let DecisionCandidateKind::ShopPurge { target } = candidate.kind else {
+        return;
+    };
+    scores.push(score(
+        "cleanup-target",
+        match target {
+            CleanupTarget::Curse => 320,
+            CleanupTarget::Status => 260,
+            CleanupTarget::StarterStrike => 180,
+            CleanupTarget::StarterDefend | CleanupTarget::OtherStarter | CleanupTarget::Other => 0,
+        },
+    ));
+}
+
+fn admission_class_score(
+    _context: DecisionPipelineContext,
+    _candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    let Some(admission) = admission else {
+        return;
+    };
     scores.push(score(
         "admission-class",
-        admission_class_score(admission.class),
+        match admission.class {
+            RewardAdmissionClass::ClosesRequirement => 130,
+            RewardAdmissionClass::BuildsSupportedPackage => 105,
+            RewardAdmissionClass::EngineSeed => 65,
+            RewardAdmissionClass::ImmediateWork => 55,
+            RewardAdmissionClass::BurdenedImmediateWork => 25,
+            RewardAdmissionClass::OpensUnsupportedPayoff
+            | RewardAdmissionClass::EmptyOrDeferred
+            | RewardAdmissionClass::Skip => 0,
+        },
     ));
+}
+
+fn deck_admission_score(
+    context: DecisionPipelineContext,
+    _candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    let Some(admission) = admission else {
+        return;
+    };
     scores.push(score(
         "deck-admission",
-        deck_admission_score(deck_plan.deck_admission(admission)),
+        match context.deck_plan.deck_admission(admission) {
+            DeckAdmission::Welcome => 0,
+            DeckAdmission::Conditional => -30,
+            DeckAdmission::Discouraged => -90,
+        },
     ));
+}
+
+fn construction_pressure_score(
+    context: DecisionPipelineContext,
+    _candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    let Some(admission) = admission else {
+        return;
+    };
     scores.push(score(
         "construction-pressure",
-        construction_adjustment_score(deck_plan.reward_lane_adjustment(admission)),
+        match context.deck_plan.reward_lane_adjustment(admission) {
+            ConstructionLaneAdjustment::None => 0,
+            ConstructionLaneAdjustment::PromoteOneStep => 35,
+            ConstructionLaneAdjustment::PromoteToMainline => 70,
+            ConstructionLaneAdjustment::SoftDemote => -45,
+            ConstructionLaneAdjustment::HardDemote => -130,
+        },
     ));
-    scores.extend(reason_scores(admission));
-    if deck_plan.survival_pressure() {
-        scores.push(score(
-            "survival-pressure",
-            survival_pressure_score(admission),
-        ));
-    }
+}
 
-    let lane = lane_from_score(scores.iter().map(|score| score.value).sum());
-    let expansion = match (kind, lane) {
-        (_, CandidateLane::Reject) => ExpansionPlan::InspectOnly("candidate score rejected"),
-        (DecisionCandidateKind::ShopBuyCard { .. }, CandidateLane::Probe) => {
-            ExpansionPlan::InspectOnly("shop card buy is below mainline")
-        }
-        _ => ExpansionPlan::Auto,
+fn reward_reason_score(
+    _context: DecisionPipelineContext,
+    _candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    let Some(admission) = admission else {
+        return;
     };
-    CandidateEvaluation {
-        kind,
-        lane,
-        expansion,
-        scores,
-    }
-}
-
-fn evaluate_cleanup_candidate(
-    kind: DecisionCandidateKind,
-    target: CleanupTarget,
-) -> CandidateEvaluation {
-    let (lane, expansion, value) = match target {
-        CleanupTarget::Curse => (CandidateLane::Mainline, ExpansionPlan::Auto, 320),
-        CleanupTarget::Status => (CandidateLane::Mainline, ExpansionPlan::Auto, 260),
-        CleanupTarget::StarterStrike => (CandidateLane::Mainline, ExpansionPlan::Auto, 180),
-        CleanupTarget::StarterDefend | CleanupTarget::OtherStarter | CleanupTarget::Other => (
-            CandidateLane::Reject,
-            ExpansionPlan::InspectOnly("shop purge target is not safe for tiny owner"),
-            0,
-        ),
-    };
-    CandidateEvaluation {
-        kind,
-        lane,
-        expansion,
-        scores: vec![score("cleanup-target", value)],
-    }
-}
-
-fn lane_from_score(score: i32) -> CandidateLane {
-    if score >= 110 {
-        CandidateLane::Mainline
-    } else if score >= 45 {
-        CandidateLane::Probe
-    } else {
-        CandidateLane::Reject
-    }
-}
-
-fn admission_class_score(class: RewardAdmissionClass) -> i32 {
-    match class {
-        RewardAdmissionClass::ClosesRequirement => 130,
-        RewardAdmissionClass::BuildsSupportedPackage => 105,
-        RewardAdmissionClass::EngineSeed => 65,
-        RewardAdmissionClass::ImmediateWork => 55,
-        RewardAdmissionClass::BurdenedImmediateWork => 25,
-        RewardAdmissionClass::OpensUnsupportedPayoff
-        | RewardAdmissionClass::EmptyOrDeferred
-        | RewardAdmissionClass::Skip => 0,
-    }
-}
-
-fn deck_admission_score(admission: DeckAdmission) -> i32 {
-    match admission {
-        DeckAdmission::Welcome => 0,
-        DeckAdmission::Conditional => -30,
-        DeckAdmission::Discouraged => -90,
-    }
-}
-
-fn construction_adjustment_score(adjustment: ConstructionLaneAdjustment) -> i32 {
-    match adjustment {
-        ConstructionLaneAdjustment::None => 0,
-        ConstructionLaneAdjustment::PromoteOneStep => 35,
-        ConstructionLaneAdjustment::PromoteToMainline => 70,
-        ConstructionLaneAdjustment::SoftDemote => -45,
-        ConstructionLaneAdjustment::HardDemote => -130,
-    }
-}
-
-fn reason_scores(admission: &RewardAdmission) -> Vec<ScoreComponent> {
-    let mut scores = Vec::new();
     for reason in &admission.reasons {
         match *reason {
             RewardAdmissionReason::Closes(_) => scores.push(score("closes-requirement", 85)),
@@ -285,49 +507,68 @@ fn reason_scores(admission: &RewardAdmission) -> Vec<ScoreComponent> {
             _ => {}
         }
     }
-    scores
 }
 
-fn survival_pressure_score(admission: &RewardAdmission) -> i32 {
+fn survival_pressure_score(
+    context: DecisionPipelineContext,
+    _candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    if !context.deck_plan.survival_pressure() {
+        return;
+    }
+    let Some(admission) = admission else {
+        return;
+    };
     let provides_block = admission_provides(admission, Mechanic::Block);
     let provides_draw = admission_provides(admission, Mechanic::CardDraw);
     let mitigates = admission_provides(admission, Mechanic::Weak)
         || admission_provides(admission, Mechanic::EnemyStrengthDown);
-    if provides_block && provides_draw {
-        65
-    } else if mitigates {
-        55
-    } else if provides_block {
-        40
-    } else if provides_draw {
-        25
-    } else if admission_provides(admission, Mechanic::Energy) {
-        15
-    } else {
-        0
+    scores.push(score(
+        "survival-pressure",
+        if provides_block && provides_draw {
+            65
+        } else if mitigates {
+            55
+        } else if provides_block {
+            40
+        } else if provides_draw {
+            25
+        } else if admission_provides(admission, Mechanic::Energy) {
+            15
+        } else {
+            0
+        },
+    ));
+}
+
+fn lane_for_candidate(kind: DecisionCandidateKind, score: i32) -> CandidateLane {
+    match kind {
+        DecisionCandidateKind::CardRewardSkip | DecisionCandidateKind::ShopLeave => {
+            CandidateLane::Skip
+        }
+        _ if score >= 110 => CandidateLane::Mainline,
+        _ if score >= 45 => CandidateLane::Probe,
+        _ => CandidateLane::Reject,
     }
 }
 
-fn shop_card_buy_is_risky(kind: DecisionCandidateKind, admission: &RewardAdmission) -> bool {
-    let DecisionCandidateKind::ShopBuyCard { card, upgrades, .. } = kind else {
-        return false;
-    };
-    let definition = card_definition_with_upgrades(card, upgrades);
-    definition.burdens.iter().any(|burden| {
-        matches!(
-            burden,
-            CardBurden::RandomExhaust
-                | CardBurden::AddsCombatDeckClutter
-                | CardBurden::HpCost
-                | CardBurden::DrawLockout
-                | CardBurden::ExhaustsHand
-        )
-    }) || admission.reasons.iter().any(|reason| {
-        matches!(
-            reason,
-            RewardAdmissionReason::DuplicateBurden(_) | RewardAdmissionReason::DuplicateConcern(_)
-        )
-    })
+fn expansion_for_candidate(kind: DecisionCandidateKind, lane: CandidateLane) -> ExpansionPlan {
+    match (kind, lane) {
+        (_, CandidateLane::Reject) => ExpansionPlan::InspectOnly("candidate score rejected"),
+        (DecisionCandidateKind::ShopBuyCard { .. }, CandidateLane::Probe) => {
+            ExpansionPlan::InspectOnly("shop card buy is below mainline")
+        }
+        _ => ExpansionPlan::Auto,
+    }
+}
+
+fn candidate_requires_card_admission(kind: DecisionCandidateKind) -> bool {
+    matches!(
+        kind,
+        DecisionCandidateKind::CardRewardPick { .. } | DecisionCandidateKind::ShopBuyCard { .. }
+    )
 }
 
 fn burden_score(burden: CardBurden) -> i32 {
