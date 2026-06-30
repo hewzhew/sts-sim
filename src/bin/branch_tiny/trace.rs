@@ -184,7 +184,7 @@ fn choice_value(index: usize, choice: &OwnerChoice, expanded: bool) -> Value {
 fn path_step_value(step: &BranchPathStep) -> Value {
     json!({
         "key": step.key.as_ref(),
-        "annotation": annotation_value(&step.annotation),
+        "annotation": serde_json::to_value(&step.annotation).unwrap_or(Value::Null),
     })
 }
 
@@ -214,7 +214,7 @@ fn admission_value(admission: &RewardAdmission) -> Value {
     })
 }
 
-fn candidate_kind_value(kind: DecisionCandidateKind) -> Value {
+pub(super) fn candidate_kind_value(kind: DecisionCandidateKind) -> Value {
     match kind {
         DecisionCandidateKind::CardRewardPick { card, upgrades } => json!({
             "kind": "card_reward_pick",

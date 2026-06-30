@@ -247,23 +247,13 @@ fn render_timeline_step(step: &BranchPathStep) -> String {
         Some(key) => render_choice_key_timeline(key),
         None => format!("{}:{}", step.action_debug, step.label),
     };
-    match &step.annotation {
-        ChoiceAnnotation::Candidate(decision) => {
-            format!(
-                "{base}  {} score={} {}",
-                candidate_lane_label(decision.evaluation.lane),
-                decision.evaluation.total_score(),
-                render_candidate_decision_compact(decision)
-            )
-        }
-        ChoiceAnnotation::BossRelic(admission) => {
-            format!("{base}  {}", render_boss_relic_admission_compact(admission))
-        }
-        ChoiceAnnotation::None => base,
+    match step.annotation.detail() {
+        Some(detail) if !detail.is_empty() => format!("{base}  {detail}"),
+        _ => base,
     }
 }
 
-fn render_candidate_decision_compact(decision: &OwnerCandidateDecision) -> String {
+pub(super) fn render_candidate_decision_compact(decision: &OwnerCandidateDecision) -> String {
     if let Some(admission) = decision.admission.as_ref() {
         return render_reward_admission_compact(admission);
     }

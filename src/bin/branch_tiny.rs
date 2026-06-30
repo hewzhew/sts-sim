@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sts_simulator::ai::strategy::decision_pipeline::candidate_lane_label;
 use sts_simulator::eval::run_control::{
     build_decision_surface, CombatSearchTraceSummary, RewardAutomationConfig,
     RunControlAutoAppliedStepV1, RunControlConfig, RunControlSession,
@@ -74,7 +76,63 @@ struct BranchPathStep {
     key: Option<DecisionKey>,
     action_debug: String,
     label: String,
-    annotation: ChoiceAnnotation,
+    annotation: ChoiceAnnotationSnapshot,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum ChoiceAnnotationSnapshot {
+    None,
+    Candidate {
+        lane: String,
+        score: i32,
+        candidate: Value,
+        admission: Option<Value>,
+        detail: String,
+    },
+    BossRelic {
+        relic: Value,
+        lane: String,
+        class: String,
+        detail: String,
+    },
+}
+
+impl ChoiceAnnotationSnapshot {
+    fn none() -> Self {
+        Self::None
+    }
+
+    fn from_annotation(annotation: &ChoiceAnnotation) -> Self {
+        match annotation {
+            ChoiceAnnotation::None => Self::None,
+            ChoiceAnnotation::Candidate(decision) => Self::Candidate {
+                lane: candidate_lane_label(decision.evaluation.lane).to_string(),
+                score: decision.evaluation.total_score(),
+                candidate: trace::candidate_kind_value(decision.evaluation.candidate.kind),
+                admission: decision.admission.as_ref().map(|admission| {
+                    json!({
+                        "card": admission.card,
+                        "class": format!("{:?}", admission.class),
+                    })
+                }),
+                detail: render::render_candidate_decision_compact(decision),
+            },
+            ChoiceAnnotation::BossRelic(admission) => Self::BossRelic {
+                relic: json!(admission.relic),
+                lane: format!("{:?}", admission.lane),
+                class: format!("{:?}", admission.class),
+                detail: sts_simulator::ai::strategy::boss_relic_admission::render_boss_relic_admission_compact(admission),
+            },
+        }
+    }
+
+    fn detail(&self) -> Option<&str> {
+        match self {
+            Self::None => None,
+            Self::Candidate { detail, .. } | Self::BossRelic { detail, .. } => Some(detail),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -816,7 +874,7 @@ fn expand_registered_owner(
             key: choice.key,
             action_debug: format!("{:?}", choice.action),
             label: choice.label,
-            annotation: choice.annotation,
+            annotation: ChoiceAnnotationSnapshot::from_annotation(&choice.annotation),
         });
         let id = *next_branch_id;
         *next_branch_id += 1;

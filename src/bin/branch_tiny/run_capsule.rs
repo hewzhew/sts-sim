@@ -5,13 +5,11 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Map, Value};
-use sts_simulator::ai::strategy::decision_pipeline::candidate_lane_label;
 use sts_simulator::eval::combat_case::combat_summary;
 use sts_simulator::eval::run_control::RunControlAutoAppliedKindV1;
 use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::sim::combat::CombatPosition;
 
-use super::owners::ChoiceAnnotation;
 use super::{
     combat_gap_case, frontier_checkpoint, Args, Branch, BranchPathStep, BranchStatus,
     TerminalOutcome,
@@ -215,29 +213,8 @@ fn path_step_value((index, step): (usize, &BranchPathStep)) -> Value {
         "step": index,
         "key": serde_json::to_value(&step.key).unwrap_or(Value::Null),
         "label": step.label,
-        "annotation": annotation_value(&step.annotation),
+        "annotation": serde_json::to_value(&step.annotation).unwrap_or(Value::Null),
     })
-}
-
-fn annotation_value(annotation: &ChoiceAnnotation) -> Value {
-    match annotation {
-        ChoiceAnnotation::None => Value::Null,
-        ChoiceAnnotation::Candidate(decision) => json!({
-            "kind": "candidate",
-            "lane": candidate_lane_label(decision.evaluation.lane),
-            "score": decision.evaluation.total_score(),
-            "admission": decision.admission.as_ref().map(|admission| json!({
-                "card": admission.card,
-                "class": format!("{:?}", admission.class),
-            })),
-        }),
-        ChoiceAnnotation::BossRelic(admission) => json!({
-            "kind": "boss_relic",
-            "relic": admission.relic,
-            "lane": format!("{:?}", admission.lane),
-            "class": format!("{:?}", admission.class),
-        }),
-    }
 }
 
 fn status_value(status: &BranchStatus) -> Value {

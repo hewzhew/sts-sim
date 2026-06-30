@@ -5,8 +5,10 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sts_simulator::eval::run_control::RunControlSessionCheckpointV1;
 
-use super::owners::ChoiceAnnotation;
-use super::{Args, Branch, BranchPathStep, BranchStatus, DecisionKey, TerminalOutcome};
+use super::{
+    Args, Branch, BranchPathStep, BranchStatus, ChoiceAnnotationSnapshot, DecisionKey,
+    TerminalOutcome,
+};
 
 #[derive(Deserialize, Serialize)]
 pub(super) struct FrontierCheckpoint {
@@ -31,6 +33,8 @@ struct PathStepCheckpoint {
     key: Option<DecisionKey>,
     action_debug: String,
     label: String,
+    #[serde(default = "ChoiceAnnotationSnapshot::none")]
+    annotation: ChoiceAnnotationSnapshot,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -142,6 +146,7 @@ impl PathStepCheckpoint {
             key: step.key.clone(),
             action_debug: step.action_debug.clone(),
             label: step.label.clone(),
+            annotation: step.annotation.clone(),
         }
     }
 
@@ -150,7 +155,7 @@ impl PathStepCheckpoint {
             key: self.key,
             action_debug: self.action_debug,
             label: self.label,
-            annotation: ChoiceAnnotation::None,
+            annotation: self.annotation,
         }
     }
 }
