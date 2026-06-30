@@ -25,7 +25,7 @@ mod runner;
 mod trace;
 
 use owners::{ChoiceAnnotation, DecisionKey, OwnerChoice, OwnerDecision, OwnerRoutine};
-use run_capsule::RunCapsule;
+use run_capsule::{RunCapsule, RunCapsuleSave};
 
 const WALL_STOP_GUARD_MS: u64 = 1_500;
 
@@ -303,7 +303,11 @@ fn run() -> Result<(), String> {
         let mut generation_result = None;
         if deadline.should_stop() {
             capsule_frontier_saved |= save_wall_stop(
-                checkpoint_path(&frontier_checkpoint_path, &resume_frontier),
+                frontier_checkpoint_output_path(
+                    &frontier_checkpoint_path,
+                    &resume_frontier,
+                    run_capsule.as_ref(),
+                ),
                 run_capsule.as_ref(),
                 args,
                 generation,
@@ -385,7 +389,11 @@ fn run() -> Result<(), String> {
         frontier = next;
         if deadline.should_stop() {
             capsule_frontier_saved |= save_wall_stop(
-                checkpoint_path(&frontier_checkpoint_path, &resume_frontier),
+                frontier_checkpoint_output_path(
+                    &frontier_checkpoint_path,
+                    &resume_frontier,
+                    run_capsule.as_ref(),
+                ),
                 run_capsule.as_ref(),
                 args,
                 generation + 1,
@@ -400,10 +408,10 @@ fn run() -> Result<(), String> {
         trace.record_frontier_snapshot(last_generation, &frontier)?;
     }
     if let Some(capsule) = run_capsule.as_ref().filter(|_| !capsule_frontier_saved) {
-        let running = capsule.save_frontier(args, last_generation, next_branch_id, &frontier)?;
-        if running > 0 {
-            println!("run_capsule_frontier: running={running}");
-        }
+        print_capsule_save(
+            capsule.save_recovery(args, last_generation, next_branch_id, &frontier)?,
+            capsule,
+        );
     }
     Ok(())
 }
@@ -584,13 +592,18 @@ impl RunDeadline {
     }
 }
 
-fn checkpoint_path<'a>(
+fn frontier_checkpoint_output_path<'a>(
     frontier_checkpoint_path: &'a Option<PathBuf>,
     resume_frontier: &'a Option<PathBuf>,
+    capsule: Option<&RunCapsule>,
 ) -> Option<&'a PathBuf> {
-    frontier_checkpoint_path
-        .as_ref()
-        .or(resume_frontier.as_ref())
+    if frontier_checkpoint_path.is_some() {
+        return frontier_checkpoint_path.as_ref();
+    }
+    if capsule.is_some() {
+        return None;
+    }
+    resume_frontier.as_ref()
 }
 
 fn save_wall_stop(
@@ -626,13 +639,26 @@ fn save_wall_stop(
         println!("wall_soft_stop reached without --frontier-checkpoint");
     }
     if let Some(capsule) = capsule {
-        let running = capsule.save_frontier(args, generation, next_branch_id, frontier)?;
-        if running > 0 {
-            println!("run_capsule_frontier: running={running}");
-            return Ok(true);
-        }
+        return Ok(print_capsule_save(
+            capsule.save_recovery(args, generation, next_branch_id, frontier)?,
+            capsule,
+        ));
     }
     Ok(false)
+}
+
+fn print_capsule_save(save: RunCapsuleSave, capsule: &RunCapsule) -> bool {
+    match save {
+        RunCapsuleSave::None => false,
+        RunCapsuleSave::Frontier { running } => {
+            println!("run_capsule_frontier: running={running}");
+            true
+        }
+        RunCapsuleSave::Result => {
+            println!("run_capsule_result: {}", capsule.result_path().display());
+            true
+        }
+    }
 }
 
 fn branch_owner_choices(branch: &Branch) -> Vec<OwnerChoice> {

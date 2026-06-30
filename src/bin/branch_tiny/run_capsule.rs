@@ -18,6 +18,12 @@ pub(super) struct RunCapsule {
     git_commit: Option<String>,
 }
 
+pub(super) enum RunCapsuleSave {
+    None,
+    Frontier { running: usize },
+    Result,
+}
+
 impl RunCapsule {
     pub(super) fn new(root: PathBuf) -> Self {
         Self {
@@ -39,29 +45,33 @@ impl RunCapsule {
         self.write_manifest(args, "running")
     }
 
-    pub(super) fn save_frontier(
+    pub(super) fn save_recovery(
         &self,
         args: Args,
         generation: usize,
         next_branch_id: usize,
         frontier: &VecDeque<Branch>,
-    ) -> Result<usize, String> {
+    ) -> Result<RunCapsuleSave, String> {
         let running = frontier
             .iter()
             .filter(|branch| matches!(branch.status, BranchStatus::Running { .. }))
             .count();
-        if running == 0 {
-            return Ok(0);
+        if running > 0 {
+            frontier_checkpoint::save(
+                &self.root.join("frontier.json"),
+                args,
+                generation,
+                next_branch_id,
+                frontier,
+            )?;
+            self.write_manifest(args, "running")?;
+            return Ok(RunCapsuleSave::Frontier { running });
         }
-        frontier_checkpoint::save(
-            &self.root.join("frontier.json"),
-            args,
-            generation,
-            next_branch_id,
-            frontier,
-        )?;
-        self.write_manifest(args, "running")?;
-        Ok(running)
+        if let Some(branch) = frontier.front() {
+            self.save_result(args, generation, branch)?;
+            return Ok(RunCapsuleSave::Result);
+        }
+        Ok(RunCapsuleSave::None)
     }
 
     pub(super) fn save_result(
