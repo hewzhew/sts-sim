@@ -45,6 +45,7 @@ fn event_room_policy_input(run_state: &RunState) -> Result<ClientInput, EventOwn
         .ok_or(EventOwnerPolicyGap::MissingEventState)?;
     match event_id {
         EventId::BigFish => return Ok(ClientInput::EventChoice(big_fish_choice(run_state))),
+        EventId::CursedTome => return Ok(ClientInput::EventChoice(cursed_tome_choice(run_state))),
         EventId::LivingWall => return Ok(ClientInput::EventChoice(living_wall_choice(run_state))),
         EventId::ShiningLight => {
             return Ok(ClientInput::EventChoice(shining_light_choice(run_state)))
@@ -195,6 +196,53 @@ fn woman_in_blue_choice(run_state: &RunState) -> usize {
         2 => 1,
         _ => 2,
     }
+}
+
+fn cursed_tome_choice(run_state: &RunState) -> usize {
+    let screen = event_screen(run_state);
+    let action = match screen {
+        0 if cursed_tome_take_is_safe(run_state, screen) => EventActionKind::Continue,
+        0 => EventActionKind::Leave,
+        1..=3 => EventActionKind::Continue,
+        4 if cursed_tome_take_is_safe(run_state, screen) => EventActionKind::Accept,
+        4 => EventActionKind::Decline,
+        _ => EventActionKind::Leave,
+    };
+    event_action_choice(run_state, action).unwrap_or_default()
+}
+
+fn cursed_tome_take_is_safe(run_state: &RunState, screen: usize) -> bool {
+    hp_after_loss_is_safe(run_state, cursed_tome_take_loss_from(run_state, screen))
+}
+
+fn cursed_tome_take_loss_from(run_state: &RunState, screen: usize) -> i32 {
+    let final_damage = if run_state.ascension_level >= 15 {
+        15
+    } else {
+        10
+    };
+    [(1, 1), (2, 2), (3, 3), (4, final_damage)]
+        .into_iter()
+        .filter(|(loss_screen, _)| screen <= *loss_screen)
+        .map(|(_, amount)| event_hp_loss_estimate(run_state, amount))
+        .sum()
+}
+
+fn event_hp_loss_estimate(run_state: &RunState, amount: i32) -> i32 {
+    let has_tungsten_rod = run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::TungstenRod);
+    if has_tungsten_rod && amount > 0 {
+        amount - 1
+    } else {
+        amount
+    }
+}
+
+fn hp_after_loss_is_safe(run_state: &RunState, loss: i32) -> bool {
+    let after = run_state.current_hp.saturating_sub(loss);
+    after >= 18 && after * 100 >= run_state.max_hp * 35
 }
 
 fn event_action_choice(run_state: &RunState, action: EventActionKind) -> Option<usize> {
