@@ -6,10 +6,11 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use serde_json::{json, Map, Value};
+use sts_simulator::ai::strategy::decision_pipeline::candidate_lane_label;
 use sts_simulator::eval::run_control::{RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1};
 use sts_simulator::runtime::combat::CombatCard;
 
-use super::owners::{reward_plan_lane_label, ChoiceAnnotation, OwnerChoice, ShopTinyAnnotation};
+use super::owners::{ChoiceAnnotation, OwnerChoice, ShopTinyAnnotation};
 use super::{Args, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner};
 
 pub(super) struct TraceWriter {
@@ -187,9 +188,13 @@ fn path_step_value(step: &BranchPathStep) -> Value {
 fn annotation_value(annotation: &ChoiceAnnotation) -> Value {
     match annotation {
         ChoiceAnnotation::None => Value::Null,
-        ChoiceAnnotation::Reward { admission, lane } => json!({
+        ChoiceAnnotation::Reward {
+            admission,
+            evaluation,
+        } => json!({
             "kind": "reward",
-            "lane": reward_plan_lane_label(*lane),
+            "lane": candidate_lane_label(evaluation.lane),
+            "score": evaluation.total_score(),
             "card": admission.card,
             "class": format!("{:?}", admission.class),
         }),
@@ -199,7 +204,20 @@ fn annotation_value(annotation: &ChoiceAnnotation) -> Value {
             "lane": format!("{:?}", admission.lane),
             "class": format!("{:?}", admission.class),
         }),
-        ChoiceAnnotation::ShopTiny(annotation) => shop_tiny_annotation_value(annotation),
+        ChoiceAnnotation::ShopTiny {
+            annotation,
+            evaluation,
+        } => {
+            let mut value = shop_tiny_annotation_value(annotation);
+            if let Value::Object(map) = &mut value {
+                map.insert(
+                    "lane".to_string(),
+                    json!(candidate_lane_label(evaluation.lane)),
+                );
+                map.insert("score".to_string(), json!(evaluation.total_score()));
+            }
+            value
+        }
     }
 }
 

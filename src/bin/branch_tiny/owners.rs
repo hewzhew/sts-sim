@@ -1,17 +1,15 @@
-use sts_simulator::ai::analysis::card_semantics::{
-    card_definition_with_upgrades, CardBurden, CombatEvent, InstalledRule, Mechanic,
-    PayoffRequirement, PlayEffect,
-};
 use sts_simulator::ai::strategy::boss_relic_admission::{
     assess_boss_relic_admission, boss_relic_admission_order_rank, skip_boss_relic_admission,
     BossRelicAdmission,
 };
-use sts_simulator::ai::strategy::deck_admission::DeckAdmission;
-use sts_simulator::ai::strategy::deck_construction_pressure::ConstructionLaneAdjustment;
+use sts_simulator::ai::strategy::decision_pipeline::{
+    evaluate_decision_candidate, CandidateEvaluation, CandidateLane, CleanupTarget,
+    DecisionCandidateKind, ExpansionPlan,
+};
 use sts_simulator::ai::strategy::deck_plan::DeckPlanSnapshot;
 use sts_simulator::ai::strategy::reward_admission::{
     assess_reward_admission_from_master_deck, reward_admission_order_key_v1, skip_reward_admission,
-    RewardAdmission, RewardAdmissionClass, RewardAdmissionOrderKeyV1, RewardAdmissionReason,
+    RewardAdmission, RewardAdmissionOrderKeyV1,
 };
 use sts_simulator::content::cards::{
     get_card_definition, is_starter_basic, is_starter_defend, is_starter_strike, CardId, CardType,
@@ -42,18 +40,13 @@ pub(super) enum ChoiceAnnotation {
     None,
     Reward {
         admission: RewardAdmission,
-        lane: RewardPlanLane,
+        evaluation: CandidateEvaluation,
     },
     BossRelic(BossRelicAdmission),
-    ShopTiny(ShopTinyAnnotation),
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum RewardPlanLane {
-    Mainline,
-    Probe,
-    Skip,
-    Reject,
+    ShopTiny {
+        annotation: ShopTinyAnnotation,
+        evaluation: CandidateEvaluation,
+    },
 }
 
 #[derive(Clone)]
@@ -119,17 +112,6 @@ struct ShopTinyContext {
     deck_plan: DeckPlanSnapshot,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ShopTinyLane {
-    CriticalCleanup,
-    SurvivalBuy,
-    SupportedEngineBuy,
-    MainlineBuy,
-    StarterCleanup,
-    Leave,
-    InspectOnly,
-}
-
 impl ChoiceAnnotation {
     fn reward(&self) -> Option<&RewardAdmission> {
         match self {
@@ -138,9 +120,10 @@ impl ChoiceAnnotation {
         }
     }
 
-    fn reward_lane(&self) -> Option<RewardPlanLane> {
+    fn evaluation(&self) -> Option<&CandidateEvaluation> {
         match self {
-            ChoiceAnnotation::Reward { lane, .. } => Some(*lane),
+            ChoiceAnnotation::Reward { evaluation, .. }
+            | ChoiceAnnotation::ShopTiny { evaluation, .. } => Some(evaluation),
             _ => None,
         }
     }
@@ -231,7 +214,7 @@ fn shop_tiny_owner_choices(
     let mut choices = executable_choices(surface)
         .into_iter()
         .map(|mut choice| {
-            choice.annotation = shop_tiny_annotation_for_choice(&choice);
+            choice.annotation = shop_tiny_annotation_for_choice(context, deck, &choice);
             choice
         })
         .enumerate()
@@ -239,19 +222,23 @@ fn shop_tiny_owner_choices(
     let mut auto_purge_targets = Vec::new();
     for (_, choice) in choices.iter_mut() {
         choice.expansion =
-            shop_tiny_choice_expansion(context, deck, &choice.annotation, &mut auto_purge_targets);
+            shop_tiny_choice_expansion(context, &choice.annotation, &mut auto_purge_targets);
     }
     choices.sort_by_key(|(index, choice)| {
         (
             if choice.auto_expand_allowed() { 0 } else { 1 },
-            shop_tiny_choice_rank(context, choice, deck),
+            shop_tiny_choice_rank(choice),
             *index,
         )
     });
     choices.into_iter().map(|(_, choice)| choice).collect()
 }
 
-fn shop_tiny_annotation_for_choice(choice: &OwnerChoice) -> ChoiceAnnotation {
+fn shop_tiny_annotation_for_choice(
+    context: ShopTinyContext,
+    deck: &[CombatCard],
+    choice: &OwnerChoice,
+) -> ChoiceAnnotation {
     let annotation = match choice.key {
         Some(DecisionCandidateKey::ShopBuyCard {
             shop_slot,
@@ -293,7 +280,11 @@ fn shop_tiny_annotation_for_choice(choice: &OwnerChoice) -> ChoiceAnnotation {
         Some(DecisionCandidateKey::ShopLeave) => ShopTinyAnnotation::Leave,
         _ => ShopTinyAnnotation::Unsupported,
     };
-    ChoiceAnnotation::ShopTiny(annotation)
+    let evaluation = shop_tiny_evaluation_for_annotation(context, deck, &annotation);
+    ChoiceAnnotation::ShopTiny {
+        annotation,
+        evaluation,
+    }
 }
 
 fn boss_relic_annotation_for_choice(
@@ -320,13 +311,16 @@ fn reward_annotation_for_choice(
         Some(DecisionCandidateKey::CardRewardPick { card, upgrades, .. }) => {
             let deck = &session.run_state.master_deck;
             reward_annotation_with_deck_gate(
+                DecisionCandidateKind::CardRewardPick { card, upgrades },
                 assess_reward_admission_from_master_deck(deck, card, upgrades),
                 deck_plan,
             )
         }
-        Some(DecisionCandidateKey::CardRewardSkip { .. }) => {
-            reward_annotation(skip_reward_admission())
-        }
+        Some(DecisionCandidateKey::CardRewardSkip { .. }) => reward_annotation_with_deck_gate(
+            DecisionCandidateKind::CardRewardSkip,
+            skip_reward_admission(),
+            deck_plan,
+        ),
         Some(DecisionCandidateKey::CardRewardOpen { .. })
         | Some(DecisionCandidateKey::CardRewardSingingBowl { .. })
         | None => ChoiceAnnotation::None,
@@ -335,107 +329,26 @@ fn reward_annotation_for_choice(
 }
 
 fn card_reward_choice_expansion(choice: &OwnerChoice) -> OwnerChoiceExpansion {
-    if choice.annotation.reward_lane() == Some(RewardPlanLane::Reject) {
-        OwnerChoiceExpansion::InspectOnly("rejected card reward candidate")
-    } else {
-        OwnerChoiceExpansion::AutoAllowed
-    }
-}
-
-fn reward_annotation(admission: RewardAdmission) -> ChoiceAnnotation {
-    let lane = reward_plan_lane(&admission);
-    ChoiceAnnotation::Reward { admission, lane }
+    owner_expansion_from_evaluation(choice.annotation.evaluation())
 }
 
 fn reward_annotation_with_deck_gate(
+    kind: DecisionCandidateKind,
     admission: RewardAdmission,
     deck_plan: DeckPlanSnapshot,
 ) -> ChoiceAnnotation {
-    let deck_admission = deck_plan.deck_admission(&admission);
-    let lane = reward_plan_lane_for_deck_and_pressure(&admission, deck_admission, deck_plan);
-    ChoiceAnnotation::Reward { admission, lane }
-}
-
-fn reward_plan_lane(admission: &RewardAdmission) -> RewardPlanLane {
-    match admission.class {
-        RewardAdmissionClass::ClosesRequirement
-        | RewardAdmissionClass::BuildsSupportedPackage
-        | RewardAdmissionClass::ImmediateWork
-        | RewardAdmissionClass::BurdenedImmediateWork => RewardPlanLane::Mainline,
-        RewardAdmissionClass::EngineSeed if installs_combat_rule(admission) => {
-            RewardPlanLane::Mainline
-        }
-        RewardAdmissionClass::EngineSeed | RewardAdmissionClass::OpensUnsupportedPayoff => {
-            RewardPlanLane::Probe
-        }
-        RewardAdmissionClass::Skip => RewardPlanLane::Skip,
-        RewardAdmissionClass::EmptyOrDeferred => RewardPlanLane::Reject,
+    let evaluation = evaluate_decision_candidate(deck_plan, kind, Some(&admission));
+    ChoiceAnnotation::Reward {
+        admission,
+        evaluation,
     }
-}
-
-fn reward_plan_lane_for_deck(
-    admission: &RewardAdmission,
-    deck_admission: DeckAdmission,
-) -> RewardPlanLane {
-    match deck_admission {
-        DeckAdmission::Welcome => reward_plan_lane(admission),
-        DeckAdmission::Conditional => match reward_plan_lane(admission) {
-            RewardPlanLane::Mainline => RewardPlanLane::Probe,
-            lane => lane,
-        },
-        DeckAdmission::Discouraged => match reward_plan_lane(admission) {
-            RewardPlanLane::Mainline | RewardPlanLane::Probe => RewardPlanLane::Reject,
-            lane => lane,
-        },
-    }
-}
-
-fn reward_plan_lane_for_deck_and_pressure(
-    admission: &RewardAdmission,
-    deck_admission: DeckAdmission,
-    deck_plan: DeckPlanSnapshot,
-) -> RewardPlanLane {
-    let lane = reward_plan_lane_for_deck(admission, deck_admission);
-    adjust_reward_lane_for_construction_pressure(admission, lane, deck_plan)
-}
-
-fn adjust_reward_lane_for_construction_pressure(
-    admission: &RewardAdmission,
-    lane: RewardPlanLane,
-    deck_plan: DeckPlanSnapshot,
-) -> RewardPlanLane {
-    match deck_plan.reward_lane_adjustment(admission) {
-        ConstructionLaneAdjustment::None => lane,
-        ConstructionLaneAdjustment::PromoteToMainline => RewardPlanLane::Mainline,
-        ConstructionLaneAdjustment::PromoteOneStep => match lane {
-            RewardPlanLane::Probe => RewardPlanLane::Mainline,
-            RewardPlanLane::Reject => RewardPlanLane::Probe,
-            lane => lane,
-        },
-        ConstructionLaneAdjustment::SoftDemote => match lane {
-            RewardPlanLane::Mainline => RewardPlanLane::Probe,
-            RewardPlanLane::Probe => RewardPlanLane::Reject,
-            lane => lane,
-        },
-        ConstructionLaneAdjustment::HardDemote => match lane {
-            RewardPlanLane::Mainline | RewardPlanLane::Probe => RewardPlanLane::Reject,
-            lane => lane,
-        },
-    }
-}
-
-fn installs_combat_rule(admission: &RewardAdmission) -> bool {
-    admission
-        .reasons
-        .iter()
-        .any(|reason| matches!(reason, RewardAdmissionReason::Installs(_)))
 }
 
 fn card_reward_choice_rank(
     choice: &OwnerChoice,
     has_mainline_take: bool,
-    deck_plan: DeckPlanSnapshot,
-) -> (u8, u8, u8, RewardAdmissionOrderKeyV1) {
+    _deck_plan: DeckPlanSnapshot,
+) -> (u8, u8, i32, RewardAdmissionOrderKeyV1) {
     match &choice.key {
         Some(DecisionCandidateKey::CardRewardOpen { .. }) => {
             (0, 0, 0, RewardAdmissionOrderKeyV1::empty_or_deferred())
@@ -444,10 +357,14 @@ fn card_reward_choice_rank(
             1,
             choice
                 .annotation
-                .reward_lane()
-                .map(|lane| reward_plan_lane_rank(lane, has_mainline_take))
+                .evaluation()
+                .map(|evaluation| candidate_lane_rank(evaluation.lane, has_mainline_take))
                 .unwrap_or(3),
-            survival_pressure_reward_rank(deck_plan, choice),
+            choice
+                .annotation
+                .evaluation()
+                .map(|evaluation| -evaluation.total_score())
+                .unwrap_or(0),
             choice
                 .annotation
                 .reward()
@@ -457,92 +374,45 @@ fn card_reward_choice_rank(
         Some(DecisionCandidateKey::CardRewardSingingBowl { .. }) => (
             1,
             skip_reward_lane_rank(has_mainline_take),
-            9,
+            0,
             RewardAdmissionOrderKeyV1::unscored_optional_reward(),
         ),
         Some(DecisionCandidateKey::CardRewardSkip { .. }) => (
             1,
             skip_reward_lane_rank(has_mainline_take),
-            9,
+            0,
             choice
                 .annotation
                 .reward()
                 .map(reward_admission_order_key_v1)
                 .unwrap_or_else(RewardAdmissionOrderKeyV1::static_skip_boundary),
         ),
-        _ => (2, 3, 9, RewardAdmissionOrderKeyV1::empty_or_deferred()),
+        _ => (2, 3, 0, RewardAdmissionOrderKeyV1::empty_or_deferred()),
     }
-}
-
-fn survival_pressure_reward_rank(deck_plan: DeckPlanSnapshot, choice: &OwnerChoice) -> u8 {
-    if !deck_plan.survival_pressure() {
-        return 5;
-    }
-    let Some(admission) = choice.annotation.reward() else {
-        return 5;
-    };
-    let provides_block = admission_provides(admission, Mechanic::Block);
-    let provides_draw = admission_provides(admission, Mechanic::CardDraw);
-    if provides_block && provides_draw {
-        return 0;
-    }
-    if admission.reasons.iter().any(|reason| {
-        matches!(
-            reason,
-            RewardAdmissionReason::Provides(Mechanic::Weak | Mechanic::EnemyStrengthDown)
-        )
-    }) {
-        return 1;
-    }
-    if provides_block {
-        return 2;
-    }
-    if provides_draw {
-        return 3;
-    }
-    if admission_provides(admission, Mechanic::Energy) {
-        return 4;
-    }
-    if admission.reasons.iter().any(|reason| {
-        matches!(
-            reason,
-            RewardAdmissionReason::ThinSupport(Mechanic::Strength)
-                | RewardAdmissionReason::DamageUses(Mechanic::Strength)
-                | RewardAdmissionReason::Opens(PayoffRequirement::WantsMechanic(
-                    Mechanic::Strength
-                ))
-        )
-    }) {
-        return 8;
-    }
-    5
-}
-
-fn admission_provides(admission: &RewardAdmission, mechanic: Mechanic) -> bool {
-    admission
-        .reasons
-        .contains(&RewardAdmissionReason::Provides(mechanic))
 }
 
 fn is_mainline_card_reward_take(choice: &OwnerChoice) -> bool {
     matches!(
         choice.key,
         Some(DecisionCandidateKey::CardRewardPick { .. })
-    ) && choice.annotation.reward_lane() == Some(RewardPlanLane::Mainline)
+    ) && choice
+        .annotation
+        .evaluation()
+        .is_some_and(|evaluation| evaluation.lane == CandidateLane::Mainline)
 }
 
-fn reward_plan_lane_rank(lane: RewardPlanLane, has_mainline_take: bool) -> u8 {
+fn candidate_lane_rank(lane: CandidateLane, has_mainline_take: bool) -> u8 {
     match lane {
-        RewardPlanLane::Mainline => 0,
-        RewardPlanLane::Skip => skip_reward_lane_rank(has_mainline_take),
-        RewardPlanLane::Probe => {
+        CandidateLane::Mainline => 0,
+        CandidateLane::Skip => skip_reward_lane_rank(has_mainline_take),
+        CandidateLane::Probe => {
             if has_mainline_take {
                 2
             } else {
                 1
             }
         }
-        RewardPlanLane::Reject => 3,
+        CandidateLane::Reject => 3,
     }
 }
 
@@ -579,34 +449,31 @@ fn shop_tiny_context(session: &RunControlSession) -> ShopTinyContext {
 
 fn shop_tiny_choice_expansion(
     context: ShopTinyContext,
-    deck: &[CombatCard],
     annotation: &ChoiceAnnotation,
     auto_purge_targets: &mut Vec<ShopPurgeTargetKind>,
 ) -> OwnerChoiceExpansion {
-    let ChoiceAnnotation::ShopTiny(annotation) = annotation else {
+    let ChoiceAnnotation::ShopTiny {
+        annotation,
+        evaluation,
+    } = annotation
+    else {
         return shop_tiny_inspect_only();
     };
     match annotation {
-        ShopTinyAnnotation::Leave | ShopTinyAnnotation::OpenRewards => {
-            OwnerChoiceExpansion::AutoAllowed
-        }
-        ShopTinyAnnotation::Purge { target, .. } if shop_tiny_auto_purge_target(*target) => {
+        ShopTinyAnnotation::Purge { target, .. }
+            if matches!(evaluation.expansion, ExpansionPlan::Auto) =>
+        {
             if auto_purge_targets.contains(target) {
                 shop_tiny_inspect_only()
             } else {
                 auto_purge_targets.push(*target);
-                OwnerChoiceExpansion::AutoAllowed
+                owner_expansion_from_evaluation(Some(evaluation))
             }
         }
-        ShopTinyAnnotation::BuyCard {
-            card,
-            upgrades,
-            price,
-            ..
-        } if *price <= context.gold && shop_tiny_auto_buy_card(context, deck, *card, *upgrades) => {
-            OwnerChoiceExpansion::AutoAllowed
+        ShopTinyAnnotation::BuyCard { price, .. } if *price > context.gold => {
+            OwnerChoiceExpansion::InspectOnly("shop card is unaffordable")
         }
-        _ => shop_tiny_inspect_only(),
+        _ => owner_expansion_from_evaluation(Some(evaluation)),
     }
 }
 
@@ -614,220 +481,103 @@ fn shop_tiny_inspect_only() -> OwnerChoiceExpansion {
     OwnerChoiceExpansion::InspectOnly("shop tiny keeps this atomic shop action inspect-only")
 }
 
-fn shop_tiny_auto_purge_target(target: ShopPurgeTargetKind) -> bool {
-    matches!(
-        target,
-        ShopPurgeTargetKind::Curse
-            | ShopPurgeTargetKind::Status
-            | ShopPurgeTargetKind::StarterStrike
-    )
-}
-
-fn shop_tiny_auto_buy_card(
+fn shop_tiny_evaluation_for_annotation(
     context: ShopTinyContext,
     deck: &[CombatCard],
-    card: CardId,
-    upgrades: u8,
-) -> bool {
-    let admission = assess_reward_admission_from_master_deck(deck, card, upgrades);
-    !matches!(
-        shop_tiny_buy_lane(context, deck, card, upgrades, &admission),
-        ShopTinyLane::InspectOnly
-    )
-}
-
-fn shop_tiny_choice_rank(
-    context: ShopTinyContext,
-    choice: &OwnerChoice,
-    deck: &[CombatCard],
-) -> (u8, u8, RewardAdmissionOrderKeyV1) {
-    match &choice.annotation {
-        ChoiceAnnotation::ShopTiny(annotation) => match annotation {
-            ShopTinyAnnotation::Purge { target, .. } => shop_tiny_purge_rank(context, *target),
-            ShopTinyAnnotation::Leave => shop_tiny_rank(
-                ShopTinyLane::Leave,
-                0,
-                RewardAdmissionOrderKeyV1::static_skip_boundary(),
-            ),
-            ShopTinyAnnotation::BuyCard { card, upgrades, .. } => {
-                shop_tiny_card_rank(context, deck, *card, *upgrades)
-            }
-            ShopTinyAnnotation::OpenRewards => shop_tiny_rank(
-                ShopTinyLane::CriticalCleanup,
-                2,
-                RewardAdmissionOrderKeyV1::empty_or_deferred(),
-            ),
-            ShopTinyAnnotation::BuyRelic { .. } => shop_tiny_rank(
-                ShopTinyLane::InspectOnly,
-                0,
-                RewardAdmissionOrderKeyV1::empty_or_deferred(),
-            ),
-            ShopTinyAnnotation::BuyPotion { .. } => shop_tiny_rank(
-                ShopTinyLane::InspectOnly,
-                1,
-                RewardAdmissionOrderKeyV1::empty_or_deferred(),
-            ),
-            ShopTinyAnnotation::Unsupported => shop_tiny_rank(
-                ShopTinyLane::InspectOnly,
-                2,
-                RewardAdmissionOrderKeyV1::empty_or_deferred(),
-            ),
-        },
-        _ => shop_tiny_rank(
-            ShopTinyLane::InspectOnly,
-            3,
-            RewardAdmissionOrderKeyV1::empty_or_deferred(),
+    annotation: &ShopTinyAnnotation,
+) -> CandidateEvaluation {
+    match annotation {
+        ShopTinyAnnotation::BuyCard {
+            card,
+            upgrades,
+            price,
+            ..
+        } => {
+            let admission = assess_reward_admission_from_master_deck(deck, *card, *upgrades);
+            evaluate_decision_candidate(
+                context.deck_plan,
+                DecisionCandidateKind::ShopBuyCard {
+                    card: *card,
+                    upgrades: *upgrades,
+                    price: *price,
+                },
+                Some(&admission),
+            )
+        }
+        ShopTinyAnnotation::Purge { target, .. } => evaluate_decision_candidate(
+            context.deck_plan,
+            DecisionCandidateKind::ShopPurge {
+                target: cleanup_target_from_shop_purge(*target),
+            },
+            None,
         ),
+        ShopTinyAnnotation::OpenRewards => evaluate_decision_candidate(
+            context.deck_plan,
+            DecisionCandidateKind::ShopOpenRewards,
+            None,
+        ),
+        ShopTinyAnnotation::Leave => {
+            evaluate_decision_candidate(context.deck_plan, DecisionCandidateKind::ShopLeave, None)
+        }
+        ShopTinyAnnotation::BuyRelic { .. }
+        | ShopTinyAnnotation::BuyPotion { .. }
+        | ShopTinyAnnotation::Unsupported => {
+            evaluate_decision_candidate(context.deck_plan, DecisionCandidateKind::Unsupported, None)
+        }
     }
 }
 
-fn shop_tiny_purge_rank(
-    context: ShopTinyContext,
-    target: ShopPurgeTargetKind,
-) -> (u8, u8, RewardAdmissionOrderKeyV1) {
-    let lane = match target {
-        ShopPurgeTargetKind::Curse | ShopPurgeTargetKind::Status => ShopTinyLane::CriticalCleanup,
-        ShopPurgeTargetKind::StarterStrike if context.deck_plan.survival_pressure() => {
-            ShopTinyLane::StarterCleanup
-        }
-        ShopPurgeTargetKind::StarterStrike => ShopTinyLane::CriticalCleanup,
-        ShopPurgeTargetKind::StarterDefend | ShopPurgeTargetKind::OtherStarter => {
-            ShopTinyLane::InspectOnly
-        }
-        ShopPurgeTargetKind::Other => ShopTinyLane::InspectOnly,
-    };
-    shop_tiny_rank(
-        lane,
-        purge_target_rank(target),
-        RewardAdmissionOrderKeyV1::empty_or_deferred(),
-    )
+fn shop_tiny_choice_rank(choice: &OwnerChoice) -> (u8, i32, u8) {
+    match &choice.annotation {
+        ChoiceAnnotation::ShopTiny {
+            annotation,
+            evaluation,
+        } => (
+            candidate_lane_rank(evaluation.lane, false),
+            -evaluation.total_score(),
+            shop_tiny_detail_rank(annotation),
+        ),
+        _ => (6, 0, 9),
+    }
 }
 
-fn purge_target_rank(target: ShopPurgeTargetKind) -> u8 {
+fn owner_expansion_from_evaluation(
+    evaluation: Option<&CandidateEvaluation>,
+) -> OwnerChoiceExpansion {
+    match evaluation.map(|evaluation| evaluation.expansion) {
+        Some(ExpansionPlan::Auto) => OwnerChoiceExpansion::AutoAllowed,
+        Some(ExpansionPlan::InspectOnly(reason)) => OwnerChoiceExpansion::InspectOnly(reason),
+        None => shop_tiny_inspect_only(),
+    }
+}
+
+fn shop_tiny_detail_rank(annotation: &ShopTinyAnnotation) -> u8 {
+    match annotation {
+        ShopTinyAnnotation::Purge { target, .. } => match target {
+            ShopPurgeTargetKind::Curse => 0,
+            ShopPurgeTargetKind::Status => 1,
+            ShopPurgeTargetKind::StarterStrike => 2,
+            ShopPurgeTargetKind::StarterDefend => 3,
+            ShopPurgeTargetKind::OtherStarter => 4,
+            ShopPurgeTargetKind::Other => 5,
+        },
+        ShopTinyAnnotation::OpenRewards => 1,
+        ShopTinyAnnotation::BuyCard { .. } => 2,
+        ShopTinyAnnotation::BuyRelic { .. } => 3,
+        ShopTinyAnnotation::BuyPotion { .. } => 4,
+        ShopTinyAnnotation::Leave => 5,
+        ShopTinyAnnotation::Unsupported => 9,
+    }
+}
+
+fn cleanup_target_from_shop_purge(target: ShopPurgeTargetKind) -> CleanupTarget {
     match target {
-        ShopPurgeTargetKind::Curse => 0,
-        ShopPurgeTargetKind::Status => 1,
-        ShopPurgeTargetKind::StarterStrike => 2,
-        ShopPurgeTargetKind::StarterDefend => 3,
-        ShopPurgeTargetKind::OtherStarter => 4,
-        ShopPurgeTargetKind::Other => 5,
-    }
-}
-
-fn shop_tiny_card_rank(
-    context: ShopTinyContext,
-    deck: &[CombatCard],
-    card: CardId,
-    upgrades: u8,
-) -> (u8, u8, RewardAdmissionOrderKeyV1) {
-    let admission = assess_reward_admission_from_master_deck(deck, card, upgrades);
-    shop_tiny_rank(
-        shop_tiny_buy_lane(context, deck, card, upgrades, &admission),
-        shop_tiny_survival_detail_rank(&admission),
-        reward_admission_order_key_v1(&admission),
-    )
-}
-
-fn shop_tiny_buy_lane(
-    context: ShopTinyContext,
-    deck: &[CombatCard],
-    card: CardId,
-    upgrades: u8,
-    admission: &RewardAdmission,
-) -> ShopTinyLane {
-    let deck_admission = context.deck_plan.deck_admission(admission);
-    let reward_lane =
-        reward_plan_lane_for_deck_and_pressure(admission, deck_admission, context.deck_plan);
-    if reward_lane != RewardPlanLane::Mainline {
-        return ShopTinyLane::InspectOnly;
-    }
-    if shop_tiny_risky_card_buy(card, upgrades, admission) {
-        return ShopTinyLane::InspectOnly;
-    }
-    if context.deck_plan.survival_pressure() && shop_tiny_survival_buy(admission) {
-        return ShopTinyLane::SurvivalBuy;
-    }
-    if card == CardId::FeelNoPain && deck_has_exhaust_stream(deck) {
-        return ShopTinyLane::SupportedEngineBuy;
-    }
-    ShopTinyLane::MainlineBuy
-}
-
-fn shop_tiny_survival_buy(admission: &RewardAdmission) -> bool {
-    admission_provides(admission, Mechanic::EnemyStrengthDown)
-        || admission_provides(admission, Mechanic::Weak)
-        || admission_provides(admission, Mechanic::Block)
-}
-
-fn shop_tiny_risky_card_buy(card: CardId, upgrades: u8, admission: &RewardAdmission) -> bool {
-    let definition = card_definition_with_upgrades(card, upgrades);
-    if definition.burdens.iter().any(|burden| {
-        matches!(
-            burden,
-            CardBurden::RandomExhaust
-                | CardBurden::AddsCombatDeckClutter
-                | CardBurden::HpCost
-                | CardBurden::DrawLockout
-                | CardBurden::ExhaustsHand
-        )
-    }) {
-        return true;
-    }
-    admission.reasons.iter().any(|reason| {
-        matches!(
-            reason,
-            RewardAdmissionReason::DuplicateBurden(_) | RewardAdmissionReason::DuplicateConcern(_)
-        )
-    })
-}
-
-fn shop_tiny_survival_detail_rank(admission: &RewardAdmission) -> u8 {
-    if admission_provides(admission, Mechanic::EnemyStrengthDown) {
-        return 0;
-    }
-    if admission_provides(admission, Mechanic::Weak) {
-        return 1;
-    }
-    if admission_provides(admission, Mechanic::Block)
-        && admission_provides(admission, Mechanic::CardDraw)
-    {
-        return 2;
-    }
-    if admission_provides(admission, Mechanic::Block) {
-        return 3;
-    }
-    9
-}
-
-fn deck_has_exhaust_stream(deck: &[CombatCard]) -> bool {
-    deck.iter().any(|card| {
-        let definition = card_definition_with_upgrades(card.id, card.upgrades);
-        definition
-            .play_effects
-            .contains(&PlayEffect::EmitEvent(CombatEvent::CardExhausted))
-            || definition
-                .installed_rules
-                .contains(&InstalledRule::SkillCardsCostZeroAndExhaust)
-    })
-}
-
-fn shop_tiny_rank(
-    lane: ShopTinyLane,
-    detail: u8,
-    order: RewardAdmissionOrderKeyV1,
-) -> (u8, u8, RewardAdmissionOrderKeyV1) {
-    (shop_tiny_lane_rank(lane), detail, order)
-}
-
-fn shop_tiny_lane_rank(lane: ShopTinyLane) -> u8 {
-    match lane {
-        ShopTinyLane::CriticalCleanup => 0,
-        ShopTinyLane::SurvivalBuy => 1,
-        ShopTinyLane::SupportedEngineBuy => 2,
-        ShopTinyLane::MainlineBuy => 3,
-        ShopTinyLane::StarterCleanup => 4,
-        ShopTinyLane::Leave => 5,
-        ShopTinyLane::InspectOnly => 6,
+        ShopPurgeTargetKind::Curse => CleanupTarget::Curse,
+        ShopPurgeTargetKind::Status => CleanupTarget::Status,
+        ShopPurgeTargetKind::StarterStrike => CleanupTarget::StarterStrike,
+        ShopPurgeTargetKind::StarterDefend => CleanupTarget::StarterDefend,
+        ShopPurgeTargetKind::OtherStarter => CleanupTarget::OtherStarter,
+        ShopPurgeTargetKind::Other => CleanupTarget::Other,
     }
 }
 
@@ -921,15 +671,6 @@ pub(super) fn render_shop_tiny_annotation_compact(annotation: &ShopTinyAnnotatio
         ShopTinyAnnotation::OpenRewards => "OpenRewards".to_string(),
         ShopTinyAnnotation::Leave => "Leave".to_string(),
         ShopTinyAnnotation::Unsupported => "Unsupported typed-gap".to_string(),
-    }
-}
-
-pub(super) fn reward_plan_lane_label(lane: RewardPlanLane) -> &'static str {
-    match lane {
-        RewardPlanLane::Mainline => "mainline",
-        RewardPlanLane::Probe => "probe",
-        RewardPlanLane::Skip => "skip",
-        RewardPlanLane::Reject => "reject",
     }
 }
 

@@ -1,13 +1,12 @@
 use sts_simulator::ai::strategy::boss_relic_admission::render_boss_relic_admission_compact;
+use sts_simulator::ai::strategy::decision_pipeline::candidate_lane_label;
 use sts_simulator::ai::strategy::reward_admission::render_reward_admission_compact;
 use sts_simulator::eval::run_control::{
     build_decision_surface, render_auto_applied_step_compact_v1, DecisionCandidateKey,
     RunControlAutoAppliedStepV1, RunControlCommand, RunControlSession,
 };
 
-use super::owners::{
-    render_shop_tiny_annotation_compact, reward_plan_lane_label, ChoiceAnnotation, OwnerChoice,
-};
+use super::owners::{render_shop_tiny_annotation_compact, ChoiceAnnotation, OwnerChoice};
 use super::{
     BossRetryReport, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner,
 };
@@ -88,11 +87,15 @@ pub(super) fn render_timeline_choice(choice: &OwnerChoice) -> String {
         None => format!("{}:{}", command_hint(&choice.action), choice.label),
     };
     match &choice.annotation {
-        ChoiceAnnotation::Reward { admission, lane } => {
+        ChoiceAnnotation::Reward {
+            admission,
+            evaluation,
+        } => {
             format!(
-                "{:<34} {:<8} {}",
+                "{:<34} {:<8} score={:<4} {}",
                 base,
-                reward_plan_lane_label(*lane),
+                candidate_lane_label(evaluation.lane),
+                evaluation.total_score(),
                 render_reward_admission_compact(admission)
             )
         }
@@ -103,10 +106,15 @@ pub(super) fn render_timeline_choice(choice: &OwnerChoice) -> String {
                 render_boss_relic_admission_compact(admission)
             )
         }
-        ChoiceAnnotation::ShopTiny(annotation) => {
+        ChoiceAnnotation::ShopTiny {
+            annotation,
+            evaluation,
+        } => {
             format!(
-                "{:<34} {}",
+                "{:<34} {:<8} score={:<4} {}",
                 base,
+                candidate_lane_label(evaluation.lane),
+                evaluation.total_score(),
                 render_shop_tiny_annotation_compact(annotation)
             )
         }
@@ -255,19 +263,28 @@ fn render_timeline_step(step: &BranchPathStep) -> String {
         None => format!("{}:{}", step.action_debug, step.label),
     };
     match &step.annotation {
-        ChoiceAnnotation::Reward { admission, lane } => {
+        ChoiceAnnotation::Reward {
+            admission,
+            evaluation,
+        } => {
             format!(
-                "{base}  {} {}",
-                reward_plan_lane_label(*lane),
+                "{base}  {} score={} {}",
+                candidate_lane_label(evaluation.lane),
+                evaluation.total_score(),
                 render_reward_admission_compact(admission)
             )
         }
         ChoiceAnnotation::BossRelic(admission) => {
             format!("{base}  {}", render_boss_relic_admission_compact(admission))
         }
-        ChoiceAnnotation::ShopTiny(annotation) => {
+        ChoiceAnnotation::ShopTiny {
+            annotation,
+            evaluation,
+        } => {
             format!(
-                "{base}  {}",
+                "{base}  {} score={} {}",
+                candidate_lane_label(evaluation.lane),
+                evaluation.total_score(),
                 render_shop_tiny_annotation_compact(annotation)
             )
         }

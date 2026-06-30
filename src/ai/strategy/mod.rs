@@ -8,6 +8,7 @@
 pub mod assessment;
 pub mod boss_relic_admission;
 pub mod campfire_upgrade_quality;
+pub mod decision_pipeline;
 pub mod deck_admission;
 pub mod deck_construction_pressure;
 pub mod deck_debt;
