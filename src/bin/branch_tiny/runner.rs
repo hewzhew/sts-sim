@@ -55,6 +55,22 @@ pub(super) fn advance_to_owner_or_gap(
                 {
                     continue;
                 }
+                if matches!(status, BranchStatus::CombatGap { .. })
+                    && args.wall_capped_search_budget
+                {
+                    return advance_result(
+                        BranchStatus::BudgetGap {
+                            boundary: "Combat".to_string(),
+                            reason: format!(
+                                "outer wall budget capped combat search; effective search={}ms rescue={}ms boss={}ms",
+                                args.search_ms, args.rescue_search_ms, args.boss_search_ms
+                            ),
+                        },
+                        None,
+                        auto_steps,
+                        combat_search,
+                    );
+                }
                 if matches!(status, BranchStatus::CombatGap { .. }) && is_boss_combat(session) {
                     if let Some(result) = try_boss_retry(session, deadline.cap_args(args, 1)) {
                         combat_search.extend(result.2);

@@ -20,6 +20,8 @@ pub struct CombatCase {
     pub gap: CombatCaseGap,
     pub run: CombatCaseRunSummary,
     pub combat: CombatCaseCombatSummary,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub combat_search_attempts: Vec<CombatSearchTraceSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed_search: Option<CombatSearchTraceSummary>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -111,6 +113,7 @@ impl CombatCase {
         source: CombatCaseSource,
         gap: CombatCaseGap,
         run: CombatCaseRunSummary,
+        combat_search_attempts: Vec<CombatSearchTraceSummary>,
         failed_search: Option<CombatSearchTraceSummary>,
         path: Vec<CombatCasePathStep>,
         run_rng: CombatCaseRngSummary,
@@ -122,6 +125,7 @@ impl CombatCase {
             gap,
             run,
             combat: combat_summary(&position),
+            combat_search_attempts,
             failed_search,
             path,
             run_rng,

@@ -152,6 +152,7 @@ fn result_value(generation: usize, branch: &Branch, combat_case: Value) -> Value
             .collect::<Vec<_>>(),
         "combat": active_combat_value(branch),
         "combat_case": combat_case,
+        "combat_search_attempts": &branch.combat_search,
         "failed_search": branch.combat_search.last(),
     })
 }
@@ -162,7 +163,10 @@ fn combat_case_value(
     generation: usize,
     branch: &Branch,
 ) -> Value {
-    if !matches!(branch.status, BranchStatus::CombatGap { .. }) {
+    if !matches!(
+        branch.status,
+        BranchStatus::CombatGap { .. } | BranchStatus::BudgetGap { .. }
+    ) {
         return Value::Null;
     }
     match combat_gap_case::save_combat_gap_case(

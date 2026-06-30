@@ -138,6 +138,8 @@ struct Args {
     boss_search_nodes: usize,
     boss_search_ms: u64,
     wall_ms: Option<u64>,
+    #[serde(default)]
+    wall_capped_search_budget: bool,
 }
 
 #[derive(Default)]
@@ -338,7 +340,10 @@ fn run() -> Result<(), String> {
                 trace.record_node(generation, &branch, &choices, &expanded_mask)?;
             }
             if let Some(dir) = combat_gap_case_dir.as_ref() {
-                if matches!(branch.status, BranchStatus::CombatGap { .. }) {
+                if matches!(
+                    branch.status,
+                    BranchStatus::CombatGap { .. } | BranchStatus::BudgetGap { .. }
+                ) {
                     match combat_gap_case::save_combat_gap_case(dir, args, generation, &branch) {
                         Ok(Some(path)) => println!("  combat_gap_case: {}", path.display()),
                         Ok(None) => {}
@@ -579,9 +584,18 @@ impl RunDeadline {
         };
         let per_child =
             (remaining.saturating_sub(WALL_STOP_GUARD_MS) / child_count.max(1) as u64).max(1);
-        args.search_ms = args.search_ms.min(per_child);
-        args.rescue_search_ms = args.rescue_search_ms.min(per_child);
-        args.boss_search_ms = args.boss_search_ms.min(per_child);
+        let search_ms = args.search_ms.min(per_child);
+        let rescue_search_ms = args.rescue_search_ms.min(per_child);
+        let boss_search_ms = args.boss_search_ms.min(per_child);
+        if search_ms != args.search_ms
+            || rescue_search_ms != args.rescue_search_ms
+            || boss_search_ms != args.boss_search_ms
+        {
+            args.wall_capped_search_budget = true;
+        }
+        args.search_ms = search_ms;
+        args.rescue_search_ms = rescue_search_ms;
+        args.boss_search_ms = boss_search_ms;
         args
     }
 
@@ -795,6 +809,7 @@ fn parse_args() -> Result<
         boss_search_nodes: 800_000,
         boss_search_ms: 8_000,
         wall_ms: None,
+        wall_capped_search_budget: false,
     };
     let mut overrides = ArgsOverrides::default();
     let mut trace_jsonl = None;

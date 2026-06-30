@@ -22,7 +22,8 @@ pub(super) fn save_combat_gap_case(
         return Ok(None);
     };
     let (boundary, reason) = match &branch.status {
-        BranchStatus::CombatGap { boundary, reason } => (boundary.as_str(), reason.as_str()),
+        BranchStatus::CombatGap { boundary, reason }
+        | BranchStatus::BudgetGap { boundary, reason } => (boundary.as_str(), reason.as_str()),
         _ => return Ok(None),
     };
     fs::create_dir_all(dir).map_err(|err| err.to_string())?;
@@ -58,6 +59,7 @@ pub(super) fn save_combat_gap_case(
             relic_count: branch.session.run_state.relics.len(),
             potion_slots: branch.session.run_state.potions.len(),
         },
+        branch.combat_search.clone(),
         branch.combat_search.last().cloned(),
         branch.path.iter().map(path_step).collect(),
         CombatCaseRngSummary::from_pool(&branch.session.run_state.rng_pool),
