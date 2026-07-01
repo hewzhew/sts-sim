@@ -30,6 +30,8 @@ mod render;
 mod reward_shop_boss_owner;
 #[path = "branch_tiny/run_capsule.rs"]
 mod run_capsule;
+#[path = "branch_tiny/run_choice_owner.rs"]
+mod run_choice_owner;
 #[path = "branch_tiny/run_contract.rs"]
 mod run_contract;
 #[path = "branch_tiny/runner.rs"]
@@ -220,6 +222,7 @@ enum Owner {
     RewardTiny,
     ShopTiny,
     Campfire,
+    RunChoice,
 }
 
 #[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]

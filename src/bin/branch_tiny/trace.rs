@@ -294,6 +294,7 @@ fn owner_value(owner: Owner) -> Value {
         Owner::RewardTiny => json!({"kind": "reward_tiny"}),
         Owner::ShopTiny => json!({"kind": "shop_tiny"}),
         Owner::Campfire => json!({"kind": "campfire"}),
+        Owner::RunChoice => json!({"kind": "run_choice"}),
     }
 }
 

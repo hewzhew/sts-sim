@@ -226,6 +226,7 @@ fn owner_label(owner: Owner) -> String {
         Owner::RewardTiny => "RewardTiny".to_string(),
         Owner::ShopTiny => "ShopTiny".to_string(),
         Owner::Campfire => "Campfire".to_string(),
+        Owner::RunChoice => "RunChoice".to_string(),
     }
 }
 

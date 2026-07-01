@@ -13,6 +13,7 @@ use super::owner_model::{
 use super::reward_shop_boss_owner::{
     boss_relic_owner_choices, card_reward_owner_choices, shop_tiny_owner_choices,
 };
+use super::run_choice_owner::run_choice_owner_decision;
 use super::Owner;
 
 pub(super) fn owner_decision(
@@ -28,6 +29,7 @@ pub(super) fn owner_decision(
         Owner::Event(_) => event_owner_decision(session, surface),
         Owner::RewardTiny => reward_tiny_owner_decision(surface),
         Owner::Campfire => campfire_owner_decision(session, surface),
+        Owner::RunChoice => run_choice_owner_decision(session),
     }
 }
 

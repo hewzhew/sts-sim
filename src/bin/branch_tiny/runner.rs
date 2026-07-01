@@ -619,6 +619,7 @@ fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
             DomainEventSource::Event(sts_simulator::state::events::EventId::LivingWall) => Some(
                 Owner::Event(sts_simulator::state::events::EventId::LivingWall),
             ),
+            _ if super::run_choice_owner::can_handle(choice.reason) => Some(Owner::RunChoice),
             _ => None,
         },
         _ => None,
