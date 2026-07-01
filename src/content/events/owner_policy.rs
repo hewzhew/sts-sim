@@ -85,6 +85,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::ShiningLight => return Ok(choose(shining_light_choice(run_state))),
         EventId::WomanInBlue => return Ok(choose(woman_in_blue_choice(run_state))),
         EventId::WeMeetAgain => return Ok(choose(we_meet_again_choice(run_state))),
+        EventId::WindingHalls => return Ok(choose(winding_halls_choice(run_state))),
         _ => {}
     }
     let marked_count = crate::engine::event_handler::get_event_options(run_state)
@@ -363,6 +364,31 @@ fn woman_in_blue_choice(run_state: &RunState) -> EventOwnerOptionSelector {
         2 => effect(EventEffect::ObtainPotion { count: 2 }),
         _ => effect(EventEffect::ObtainPotion { count: 3 }),
     }
+}
+
+fn winding_halls_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 => action(EventActionKind::Continue),
+        1 if winding_halls_should_press_on(run_state) => effect(EventEffect::Heal(
+            (run_state.max_hp as f32
+                * if run_state.ascension_level >= 15 {
+                    0.20
+                } else {
+                    0.25
+                })
+            .round() as i32,
+        )),
+        1 => effect(EventEffect::LoseMaxHp(
+            (run_state.max_hp as f32 * 0.05).round() as i32,
+        )),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn winding_halls_should_press_on(run_state: &RunState) -> bool {
+    run_state.current_hp * 100 <= run_state.max_hp * 30
+        && !has_card(run_state, CardId::Writhe)
+        && curse_count(run_state) < 2
 }
 
 fn cursed_tome_choice(run_state: &RunState) -> EventOwnerOptionSelector {
