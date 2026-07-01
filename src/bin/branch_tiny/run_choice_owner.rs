@@ -1,5 +1,5 @@
 use sts_simulator::ai::strategy::deck_purge_target::{
-    best_purge_uuid, purge_rank_label, rank_purge_target,
+    best_purge_uuids, purge_rank_label, rank_purge_target,
 };
 use sts_simulator::content::cards::{get_card_definition, is_starter_basic, CardId};
 use sts_simulator::eval::run_control::{RunControlCommand, RunControlSession};
@@ -55,44 +55,44 @@ fn purge_owner_decision(
     session: &RunControlSession,
     choice: &RunPendingChoiceState,
 ) -> OwnerDecision {
-    if choice.min_choices != 1 || choice.max_choices != 1 {
+    if choice.min_choices != choice.max_choices {
         return OwnerDecision::Gap(format!(
-            "Purge owner requires single-card choice, got {}-{}",
+            "Purge owner requires fixed-count choice, got {}-{}",
             choice.min_choices, choice.max_choices
         ));
     }
     let request = choice.selection_request(&session.run_state);
-    let Some(uuid) = best_purge_uuid(&session.run_state, &request.targets) else {
-        return OwnerDecision::Gap(format!("{:?} has no legal purge target", choice.reason));
-    };
-    let Some(card) = session
-        .run_state
-        .master_deck
-        .iter()
-        .find(|card| card.uuid == uuid)
-    else {
-        return OwnerDecision::Gap(format!("{:?} target {uuid} is missing", choice.reason));
-    };
-    let rank = rank_purge_target(card);
-    if rank > 4 {
+    let uuids = best_purge_uuids(&session.run_state, &request.targets, choice.max_choices);
+    if uuids.len() != choice.max_choices {
         return OwnerDecision::Gap(format!(
-            "{:?} has no safe purge target; best is {}",
+            "{:?} needs {} safe purge targets, found {}",
             choice.reason,
-            card_label(card)
+            choice.max_choices,
+            uuids.len()
         ));
     }
+    let labels = uuids
+        .iter()
+        .filter_map(|uuid| {
+            let card = session
+                .run_state
+                .master_deck
+                .iter()
+                .find(|card| card.uuid == *uuid)?;
+            Some(format!(
+                "{} {}",
+                card_label(card),
+                purge_rank_label(rank_purge_target(card))
+            ))
+        })
+        .collect::<Vec<_>>();
 
     OwnerDecision::Candidates(vec![OwnerChoice {
         key: None,
         action: RunControlCommand::Input(ClientInput::SubmitSelection(
-            SelectionResolution::card_uuids(SelectionScope::Deck, [uuid]),
+            SelectionResolution::card_uuids(SelectionScope::Deck, uuids),
         )),
-        label: format!(
-            "{:?} {} {}",
-            choice.reason,
-            card_label(card),
-            purge_rank_label(rank)
-        ),
+        label: format!("{:?} {}", choice.reason, labels.join(", ")),
         annotation: ChoiceAnnotation::None,
         expansion: OwnerChoiceExpansion::AutoAllowed,
     }])

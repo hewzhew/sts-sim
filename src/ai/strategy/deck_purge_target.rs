@@ -6,7 +6,15 @@ use crate::state::run::RunState;
 use crate::state::selection::SelectionTargetRef;
 
 pub fn best_purge_uuid(run_state: &RunState, targets: &[SelectionTargetRef]) -> Option<u32> {
-    targets
+    best_purge_uuids(run_state, targets, 1).into_iter().next()
+}
+
+pub fn best_purge_uuids(
+    run_state: &RunState,
+    targets: &[SelectionTargetRef],
+    count: usize,
+) -> Vec<u32> {
+    let mut ranked = targets
         .iter()
         .filter_map(|target| {
             let uuid = target.card_uuid();
@@ -16,8 +24,14 @@ pub fn best_purge_uuid(run_state: &RunState, targets: &[SelectionTargetRef]) -> 
                 .find(|card| card.uuid == uuid)?;
             Some((rank_purge_target(card), uuid))
         })
-        .min_by_key(|(rank, _)| *rank)
+        .filter(|(rank, _)| *rank <= 4)
+        .collect::<Vec<_>>();
+    ranked.sort_by_key(|(rank, uuid)| (*rank, *uuid));
+    ranked
+        .into_iter()
+        .take(count)
         .map(|(_, uuid)| uuid)
+        .collect()
 }
 
 pub fn rank_purge_target(card: &CombatCard) -> u8 {
