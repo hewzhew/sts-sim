@@ -261,7 +261,14 @@ fn mysterious_sphere_choice(run_state: &RunState) -> EventOwnerOptionSelector {
 fn nest_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     match event_screen(run_state) {
         0 => action(EventActionKind::Continue),
-        1 if has_relic(run_state, RelicId::Ectoplasm) || hp_after_loss_is_safe(run_state, 6) => {
+        1 if !hp_after_loss_is_safe(run_state, 6) => {
+            effect(EventEffect::GainGold(if run_state.ascension_level >= 15 {
+                50
+            } else {
+                99
+            }))
+        }
+        1 if has_relic(run_state, RelicId::Ectoplasm) || run_state.master_deck.len() < 28 => {
             effect(EventEffect::ObtainColorlessCard {
                 count: 1,
                 kind: EventCardKind::Specific(CardId::RitualDagger),
