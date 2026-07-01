@@ -32,6 +32,8 @@ mod render;
 mod reward_shop_boss_owner;
 #[path = "branch_tiny/run_capsule.rs"]
 mod run_capsule;
+#[path = "branch_tiny/run_chain.rs"]
+mod run_chain;
 #[path = "branch_tiny/run_choice_owner.rs"]
 mod run_choice_owner;
 #[path = "branch_tiny/run_contract.rs"]
@@ -284,6 +286,11 @@ struct EventOwnerProbeArgs {
     screen: usize,
 }
 
+struct ContinueCapsuleArgs {
+    capsule: PathBuf,
+    max_slices: usize,
+}
+
 impl ArgsOverrides {
     fn apply_to(self, args: &mut Args) {
         if let Some(value) = self.objective {
@@ -336,10 +343,25 @@ fn run() -> Result<(), String> {
         trace_path,
         mut combat_gap_case_dir,
         frontier_checkpoint_path,
-        resume_frontier,
-        run_capsule_path,
+        mut resume_frontier,
+        mut run_capsule_path,
+        resume_capsule_path,
+        continue_capsule,
         event_owner_probe,
     ) = parse_args()?;
+    if let Some(continue_capsule) = continue_capsule {
+        return run_chain::run(args, continue_capsule);
+    }
+    if let Some(path) = resume_capsule_path {
+        if resume_frontier.is_some() || run_capsule_path.is_some() {
+            return Err(
+                "--resume-capsule cannot be combined with --resume-frontier or --run-capsule"
+                    .to_string(),
+            );
+        }
+        resume_frontier = Some(path.join("frontier.json"));
+        run_capsule_path = Some(path);
+    }
     if let Some(probe) = event_owner_probe {
         return run_event_owner_probe(args, probe);
     }
@@ -1017,6 +1039,8 @@ fn parse_args() -> Result<
         Option<PathBuf>,
         Option<PathBuf>,
         Option<PathBuf>,
+        Option<PathBuf>,
+        Option<ContinueCapsuleArgs>,
         Option<EventOwnerProbeArgs>,
     ),
     String,
@@ -1044,6 +1068,9 @@ fn parse_args() -> Result<
     let mut frontier_checkpoint = None;
     let mut resume_frontier = None;
     let mut run_capsule = None;
+    let mut resume_capsule = None;
+    let mut continue_capsule = None;
+    let mut continue_slices = None;
     let mut probe_event_owner = None;
     let mut probe_event_screen = 0usize;
     let raw = std::env::args().skip(1).collect::<Vec<_>>();
@@ -1055,6 +1082,12 @@ fn parse_args() -> Result<
                 "branch_tiny --seed N --generations N --max-branches N [--objective first-victory|first-terminal|exhaust-frontier] [--wall-ms N] [--trace-jsonl PATH] [--frontier-checkpoint PATH] [--resume-frontier PATH]"
             );
             println!("  optional: --run-capsule DIR writes manifest/frontier/result/path JSON");
+            println!(
+                "  optional: --resume-capsule DIR resumes DIR/frontier.json into the same capsule"
+            );
+            println!(
+                "  optional: --continue-capsule DIR --continue-slices N runs repeated wall slices"
+            );
             println!("branch_tiny --probe-event-owner EVENT [--probe-event-screen N]");
             println!(
                 "  owner-audit runner; ordinary combat uses diagnostic rescue-search, boss combat retries with boss-search"
@@ -1086,6 +1119,9 @@ fn parse_args() -> Result<
                 | "--frontier-checkpoint"
                 | "--resume-frontier"
                 | "--run-capsule"
+                | "--resume-capsule"
+                | "--continue-capsule"
+                | "--continue-slices"
                 | "--probe-event-owner"
                 | "--probe-event-screen"
         ) {
@@ -1146,12 +1182,40 @@ fn parse_args() -> Result<
             "--frontier-checkpoint" => frontier_checkpoint = Some(PathBuf::from(value)),
             "--resume-frontier" => resume_frontier = Some(PathBuf::from(value)),
             "--run-capsule" => run_capsule = Some(PathBuf::from(value)),
+            "--resume-capsule" => resume_capsule = Some(PathBuf::from(value)),
+            "--continue-capsule" => continue_capsule = Some(PathBuf::from(value)),
+            "--continue-slices" => continue_slices = Some(parse(value, key)?),
             "--probe-event-owner" => probe_event_owner = Some(parse_event_id(value)?),
             "--probe-event-screen" => probe_event_screen = parse(value, key)?,
             _ => unreachable!("argument key was validated before value parsing"),
         }
         index += 2;
     }
+    if continue_slices.is_some() && continue_capsule.is_none() {
+        return Err("--continue-slices requires --continue-capsule".to_string());
+    }
+    if continue_capsule.is_some()
+        && (resume_capsule.is_some()
+            || resume_frontier.is_some()
+            || run_capsule.is_some()
+            || frontier_checkpoint.is_some())
+    {
+        return Err(
+            "--continue-capsule cannot be combined with resume/run checkpoint flags".to_string(),
+        );
+    }
+    let continue_capsule = continue_capsule
+        .map(|capsule| {
+            let max_slices = continue_slices.unwrap_or(1);
+            if max_slices == 0 {
+                return Err("--continue-slices must be greater than zero".to_string());
+            }
+            Ok(ContinueCapsuleArgs {
+                capsule,
+                max_slices,
+            })
+        })
+        .transpose()?;
     Ok((
         args,
         overrides,
@@ -1160,6 +1224,8 @@ fn parse_args() -> Result<
         frontier_checkpoint,
         resume_frontier,
         run_capsule,
+        resume_capsule,
+        continue_capsule,
         probe_event_owner.map(|event_id| EventOwnerProbeArgs {
             event_id,
             screen: probe_event_screen,
