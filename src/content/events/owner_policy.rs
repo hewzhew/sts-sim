@@ -79,6 +79,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::Mausoleum => return Ok(choose(mausoleum_choice(run_state))),
         EventId::Mushrooms => return Ok(choose(mushrooms_choice(run_state))),
         EventId::MysteriousSphere => return Ok(choose(mysterious_sphere_choice(run_state))),
+        EventId::Nest => return Ok(choose(nest_choice(run_state))),
         EventId::ShiningLight => return Ok(choose(shining_light_choice(run_state))),
         EventId::WomanInBlue => return Ok(choose(woman_in_blue_choice(run_state))),
         EventId::WeMeetAgain => return Ok(choose(we_meet_again_choice(run_state))),
@@ -255,6 +256,24 @@ fn mysterious_sphere_choice(run_state: &RunState) -> EventOwnerOptionSelector {
         1 => EventActionKind::Fight,
         _ => EventActionKind::Leave,
     })
+}
+
+fn nest_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 => action(EventActionKind::Continue),
+        1 if has_relic(run_state, RelicId::Ectoplasm) || hp_after_loss_is_safe(run_state, 6) => {
+            effect(EventEffect::ObtainColorlessCard {
+                count: 1,
+                kind: EventCardKind::Specific(CardId::RitualDagger),
+            })
+        }
+        1 => effect(EventEffect::GainGold(if run_state.ascension_level >= 15 {
+            50
+        } else {
+            99
+        })),
+        _ => action(EventActionKind::Leave),
+    }
 }
 
 fn match_and_keep_choice(_run_state: &RunState) -> EventOwnerOptionSelector {
