@@ -84,6 +84,7 @@ pub struct CandidateConstructionFit {
     pub long_fight: FitLevel,
     pub card_flow: FitLevel,
     pub defense: FitLevel,
+    pub reliable_frontload: bool,
     pub low_margin_frontload: bool,
     pub duplicate_low_margin: bool,
 }
@@ -137,6 +138,7 @@ pub fn assess_candidate_construction_fit(admission: &RewardAdmission) -> Candida
             long_fight: FitLevel::None,
             card_flow: FitLevel::None,
             defense: FitLevel::None,
+            reliable_frontload: false,
             low_margin_frontload: false,
             duplicate_low_margin: false,
         };
@@ -146,6 +148,7 @@ pub fn assess_candidate_construction_fit(admission: &RewardAdmission) -> Candida
         long_fight: FitLevel::None,
         card_flow: FitLevel::None,
         defense: FitLevel::None,
+        reliable_frontload: false,
         low_margin_frontload: low_margin_frontload_card(card),
         duplicate_low_margin: admission.reasons.iter().any(|reason| {
             matches!(
@@ -186,6 +189,9 @@ pub fn assess_candidate_construction_fit(admission: &RewardAdmission) -> Candida
             RewardAdmissionReason::Provides(
                 Mechanic::Block | Mechanic::Weak | Mechanic::EnemyStrengthDown,
             ) => fit.defense = fit.defense.max(FitLevel::Supports),
+            RewardAdmissionReason::FrontloadDamage | RewardAdmissionReason::AreaDamage => {
+                fit.reliable_frontload = true
+            }
             RewardAdmissionReason::Installs(InstalledRule::SkillCardsCostZeroAndExhaust) => {
                 fit.long_fight = fit.long_fight.max(FitLevel::Seed)
             }
@@ -234,6 +240,16 @@ pub fn assess_candidate_construction_fit(admission: &RewardAdmission) -> Candida
     {
         fit.long_fight = FitLevel::None;
     }
+    if admission.reasons.iter().any(|reason| {
+        matches!(
+            reason,
+            RewardAdmissionReason::Opens(_)
+                | RewardAdmissionReason::ThinSupport(_)
+                | RewardAdmissionReason::DamageUses(_)
+        )
+    }) {
+        fit.reliable_frontload = false;
+    }
 
     fit
 }
@@ -246,6 +262,9 @@ pub fn reward_construction_lane_adjustment(
         return ConstructionLaneAdjustment::None;
     }
     let fit = assess_candidate_construction_fit(admission);
+    if should_promote_needed_frontload(pressure, fit) {
+        return ConstructionLaneAdjustment::PromoteToMainline;
+    }
     if responds_to_open_or_thin_pressure(pressure, fit) {
         if fit.long_fight >= FitLevel::Supports
             || fit.card_flow >= FitLevel::Supports
@@ -263,6 +282,17 @@ pub fn reward_construction_lane_adjustment(
         };
     }
     ConstructionLaneAdjustment::None
+}
+
+fn should_promote_needed_frontload(
+    pressure: DeckConstructionPressure,
+    fit: CandidateConstructionFit,
+) -> bool {
+    pressure.frontload == FrontloadPressure::NeedMore
+        && pressure.bloat != BloatPressure::Dense
+        && fit.reliable_frontload
+        && !fit.low_margin_frontload
+        && !fit.duplicate_low_margin
 }
 
 fn responds_to_open_or_thin_pressure(
