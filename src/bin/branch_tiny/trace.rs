@@ -9,9 +9,12 @@ use serde_json::{json, Map, Value};
 use sts_simulator::ai::strategy::decision_pipeline::{
     candidate_lane_label, CleanupTarget, DecisionCandidateKind,
 };
+use sts_simulator::ai::strategy::deck_strategic_deficit::assess_deck_strategic_deficit;
 use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
+use sts_simulator::ai::strategy::run_strategic_facts::RunStrategicFacts;
 use sts_simulator::eval::run_control::{RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1};
 use sts_simulator::runtime::combat::CombatCard;
+use sts_simulator::state::run::RunState;
 
 use super::owner_model::{cleanup_target_label, ChoiceAnnotation, OwnerChoice};
 use super::{Args, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner};
@@ -74,6 +77,7 @@ impl TraceWriter {
                 "gold": branch.session.run_state.gold,
                 "deck_size": branch.session.run_state.master_deck.len(),
                 "deck_hash": deck_hash(&branch.session.run_state.master_deck),
+                "strategic_deficit": strategic_deficit_value(&branch.session.run_state),
             },
             "status": status_value(&branch.status),
             "arrived": branch.path.last().map(path_step_value),
@@ -329,6 +333,7 @@ fn branch_snapshot_value(branch: &Branch) -> Value {
             "gold": run.gold,
             "deck_size": run.master_deck.len(),
             "deck_hash": deck_hash(&run.master_deck),
+            "strategic_deficit": strategic_deficit_value(run),
         },
         "status": status_value(&branch.status),
         "deck": run.master_deck.iter().map(card_snapshot_value).collect::<Vec<_>>(),
@@ -352,6 +357,14 @@ fn branch_snapshot_value(branch: &Branch) -> Value {
             }))
         }).collect::<Vec<_>>(),
     })
+}
+
+fn strategic_deficit_value(run: &RunState) -> Value {
+    serde_json::to_value(assess_deck_strategic_deficit(
+        &run.master_deck,
+        RunStrategicFacts::from_run_state(run),
+    ))
+    .unwrap_or(Value::Null)
 }
 
 fn card_snapshot_value(card: &CombatCard) -> Value {

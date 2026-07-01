@@ -5,10 +5,13 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Map, Value};
+use sts_simulator::ai::strategy::deck_strategic_deficit::assess_deck_strategic_deficit;
+use sts_simulator::ai::strategy::run_strategic_facts::RunStrategicFacts;
 use sts_simulator::eval::combat_case::combat_summary;
 use sts_simulator::eval::run_control::RunControlAutoAppliedKindV1;
 use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::sim::combat::CombatPosition;
+use sts_simulator::state::run::RunState;
 
 use super::{
     combat_gap_case, frontier_checkpoint, Args, BossRetryAttemptReport, BossRetryReport,
@@ -223,6 +226,7 @@ fn result_value(generation: usize, branch: &Branch, combat_case: Value) -> Value
             "max_hp": run.max_hp,
             "gold": run.gold,
             "deck_size": run.master_deck.len(),
+            "strategic_deficit": strategic_deficit_value(run),
         },
         "deck": run.master_deck.iter().map(card_value).collect::<Vec<_>>(),
         "relics": run.relics.iter().map(|relic| {
@@ -252,6 +256,14 @@ fn result_value(generation: usize, branch: &Branch, combat_case: Value) -> Value
         "combat_search_attempts": &branch.combat_search,
         "failed_search": branch.combat_search.last(),
     })
+}
+
+fn strategic_deficit_value(run: &RunState) -> Value {
+    serde_json::to_value(assess_deck_strategic_deficit(
+        &run.master_deck,
+        RunStrategicFacts::from_run_state(run),
+    ))
+    .unwrap_or(Value::Null)
 }
 
 fn boss_retry_value(report: &BossRetryReport) -> Value {
