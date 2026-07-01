@@ -70,6 +70,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::BigFish => return Ok(choose(big_fish_choice(run_state))),
         EventId::CursedTome => return Ok(choose(cursed_tome_choice(run_state))),
         EventId::Designer => return Ok(choose(designer_choice(run_state))),
+        EventId::Ghosts => return Ok(choose(ghosts_choice(run_state))),
         EventId::LivingWall => return Ok(choose(living_wall_choice(run_state))),
         EventId::Mausoleum => return Ok(choose(mausoleum_choice(run_state))),
         EventId::Mushrooms => return Ok(choose(mushrooms_choice(run_state))),
@@ -397,6 +398,30 @@ fn mausoleum_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     }
 }
 
+fn ghosts_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    if event_screen(run_state) != 0 {
+        return action(EventActionKind::Leave);
+    }
+    let max_hp_after = run_state
+        .max_hp
+        .saturating_sub(((run_state.max_hp as f32) * 0.5).ceil() as i32);
+    let supported = has_ghosts_support(run_state);
+    if max_hp_after < 30 && !supported {
+        return option_index(1);
+    }
+    if run_state.ascension_level >= 15 {
+        if supported {
+            option_index(0)
+        } else {
+            option_index(1)
+        }
+    } else if max_hp_after >= 35 || supported {
+        option_index(0)
+    } else {
+        option_index(1)
+    }
+}
+
 fn cursed_tome_take_loss_from(run_state: &RunState, screen: usize) -> i32 {
     let final_damage = if run_state.ascension_level >= 15 {
         15
@@ -446,6 +471,14 @@ fn has_curse_mitigation_or_synergy(run_state: &RunState) -> bool {
         || has_relic(run_state, RelicId::BlueCandle)
         || has_relic(run_state, RelicId::DuVuDoll)
         || has_relic(run_state, RelicId::DarkstonePeriapt)
+}
+
+fn has_ghosts_support(run_state: &RunState) -> bool {
+    has_relic(run_state, RelicId::ToxicEgg)
+        || has_card(run_state, CardId::Corruption)
+        || has_card(run_state, CardId::FeelNoPain)
+        || has_card(run_state, CardId::DarkEmbrace)
+        || has_card(run_state, CardId::Feed)
 }
 
 fn has_card(run_state: &RunState, card_id: CardId) -> bool {
