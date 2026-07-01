@@ -20,6 +20,7 @@ pub mod gates;
 pub mod jobs;
 pub mod package_state;
 pub mod package_transition;
+pub mod relic_expendability;
 pub mod reward_admission;
 pub mod reward_quality;
 pub mod reward_semantic_probe;

@@ -80,6 +80,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::Mushrooms => return Ok(choose(mushrooms_choice(run_state))),
         EventId::MysteriousSphere => return Ok(choose(mysterious_sphere_choice(run_state))),
         EventId::Nest => return Ok(choose(nest_choice(run_state))),
+        EventId::Nloth => return Ok(choose(nloth_choice(run_state))),
         EventId::ShiningLight => return Ok(choose(shining_light_choice(run_state))),
         EventId::WomanInBlue => return Ok(choose(woman_in_blue_choice(run_state))),
         EventId::WeMeetAgain => return Ok(choose(we_meet_again_choice(run_state))),
@@ -281,6 +282,37 @@ fn nest_choice(run_state: &RunState) -> EventOwnerOptionSelector {
         })),
         _ => action(EventActionKind::Leave),
     }
+}
+
+fn nloth_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    if event_screen(run_state) != 0 {
+        return action(EventActionKind::Leave);
+    }
+    nloth_feed_option(run_state).unwrap_or_else(|| action(EventActionKind::Leave))
+}
+
+fn nloth_feed_option(run_state: &RunState) -> Option<EventOwnerOptionSelector> {
+    crate::engine::event_handler::get_event_options(run_state)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(option_index, option)| {
+            let relic_id = option.semantics.effects.iter().find_map(|effect| {
+                if let EventEffect::LoseRelic {
+                    specific: Some(id), ..
+                } = effect
+                {
+                    Some(*id)
+                } else {
+                    None
+                }
+            })?;
+            let relic = run_state.relics.iter().find(|relic| relic.id == relic_id)?;
+            let priority =
+                crate::ai::strategy::relic_expendability::nloth_free_feed_priority(relic)?;
+            Some((priority, option_index))
+        })
+        .max_by_key(|(priority, _)| *priority)
+        .map(|(_, idx)| option_index(idx))
 }
 
 fn match_and_keep_choice(_run_state: &RunState) -> EventOwnerOptionSelector {
