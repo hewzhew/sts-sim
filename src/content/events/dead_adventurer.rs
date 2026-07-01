@@ -19,7 +19,7 @@ use crate::state::selection::DomainEventSource;
 const GOLD_REWARD: i32 = 30;
 const CHANCE_RAMP: i32 = 25;
 
-fn num_rewards(s: i32) -> i32 {
+pub(crate) fn num_rewards(s: i32) -> i32 {
     s & 0xF
 }
 fn encounter_chance(s: i32) -> i32 {

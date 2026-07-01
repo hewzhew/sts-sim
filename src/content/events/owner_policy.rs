@@ -71,6 +71,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::BackTotheBasics => return Ok(choose(back_to_basics_choice(run_state))),
         EventId::BigFish => return Ok(choose(big_fish_choice(run_state))),
         EventId::CursedTome => return Ok(choose(cursed_tome_choice(run_state))),
+        EventId::DeadAdventurer => return Ok(choose(dead_adventurer_choice(run_state))),
         EventId::Designer => return Ok(choose(designer_choice(run_state))),
         EventId::Ghosts => return Ok(choose(ghosts_choice(run_state))),
         EventId::LivingWall => return Ok(choose(living_wall_choice(run_state))),
@@ -390,6 +391,23 @@ fn designer_full_service_cost(asc: u8) -> i32 {
     } else {
         90
     }
+}
+
+fn dead_adventurer_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 if dead_adventurer_should_search_once(run_state) => option_index(0),
+        0 => action(EventActionKind::Leave),
+        1 => action(EventActionKind::Fight),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn dead_adventurer_should_search_once(run_state: &RunState) -> bool {
+    let Some(event) = run_state.event_state.as_ref() else {
+        return false;
+    };
+    crate::content::events::dead_adventurer::num_rewards(event.internal_state) == 0
+        && run_state.current_hp * 100 >= run_state.max_hp * 70
 }
 
 fn designer_cleanup_removes_cards(run_state: &RunState) -> bool {
