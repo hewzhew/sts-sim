@@ -7,10 +7,17 @@ use sts_simulator::ai::combat_search_v2::{
     run_combat_search_v2, CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
     CombatSearchV2TurnPlanPolicy, SearchTerminalLabel,
 };
+use sts_simulator::content::cards::java_id;
+use sts_simulator::content::monsters::EnemyId;
 use sts_simulator::eval::combat_case::{
     card_summary, load_combat_case, CombatCase, CombatCaseCardSummary, CombatCasePathStep,
 };
-use sts_simulator::state::core::ClientInput;
+use sts_simulator::runtime::combat::{CombatCard, CombatState};
+use sts_simulator::sim::combat::{
+    CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
+};
+use sts_simulator::sim::combat_projection::monster_preview_total_damage_in_combat;
+use sts_simulator::state::core::{ClientInput, EngineState};
 
 #[derive(Parser)]
 struct Args {
@@ -34,6 +41,8 @@ struct Args {
     compact: bool,
     #[arg(long, default_value_t = 12)]
     action_preview_limit: usize,
+    #[arg(long)]
+    replay_focus: bool,
 }
 
 #[derive(Serialize)]
@@ -52,6 +61,7 @@ struct CombatCaseReview {
     ladder: Vec<SearchReview>,
     classification: CombatGapReviewClassification,
     review_focus: Option<CombatReviewFocus>,
+    review_focus_replay: Option<CombatReviewFocusReplay>,
 }
 
 #[derive(Serialize)]
@@ -90,6 +100,62 @@ struct CombatReviewFocus {
     selected_review: &'static str,
     reason: &'static str,
     progress: SearchDiagnosticProgressFacts,
+}
+
+#[derive(Serialize)]
+struct CombatReviewFocusReplay {
+    selected_review: &'static str,
+    action_count: Option<usize>,
+    replayed_actions: usize,
+    truncated_by_preview_limit: bool,
+    terminal: CombatTerminal,
+    final_hp: i32,
+    total_enemy_hp: i32,
+    living_enemy_count: usize,
+    truncated: bool,
+    timed_out: bool,
+    matched_focus_terminal: bool,
+    matched_focus_final_hp: bool,
+    matched_focus_enemy_hp: bool,
+    steps: Vec<CombatReviewFocusReplayStep>,
+}
+
+#[derive(Serialize)]
+struct CombatReviewFocusReplayStep {
+    step_index: usize,
+    action_key: Option<String>,
+    input: ClientInput,
+    terminal: CombatTerminal,
+    truncated: bool,
+    timed_out: bool,
+    engine_steps: usize,
+    engine_state: String,
+    turn: u32,
+    energy: u8,
+    player_hp: i32,
+    player_block: i32,
+    total_enemy_hp: i32,
+    living_enemy_count: usize,
+    visible_incoming_damage: i32,
+    draw_count: usize,
+    discard_count: usize,
+    exhaust_count: usize,
+    hand: Vec<String>,
+    monsters: Vec<CombatReviewMonsterState>,
+}
+
+#[derive(Serialize)]
+struct CombatReviewMonsterState {
+    slot: u8,
+    monster_type: usize,
+    enemy_id: Option<String>,
+    enemy_name: Option<String>,
+    hp: i32,
+    max_hp: i32,
+    block: i32,
+    alive: bool,
+    move_id: u8,
+    awakened_one_form1: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -173,6 +239,13 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
     };
     let review_focus = review_focus(&ladder);
     let classification = classify_gap_review(&ladder, review_focus.as_ref());
+    let review_focus_replay = if args.replay_focus {
+        review_focus
+            .as_ref()
+            .map(|focus| replay_focus(&case.position, focus))
+    } else {
+        None
+    };
     CombatCaseReview {
         schema: "combat_case_review",
         case_path: args.case.display().to_string(),
@@ -215,6 +288,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
         ladder,
         classification,
         review_focus,
+        review_focus_replay,
     }
 }
 
@@ -351,6 +425,160 @@ fn focus_reason(progress: &SearchDiagnosticProgressFacts) -> &'static str {
     } else {
         "closest_failure_progress_by_enemy_hp"
     }
+}
+
+fn replay_focus(root: &CombatPosition, focus: &CombatReviewFocus) -> CombatReviewFocusReplay {
+    let stepper = EngineCombatStepper;
+    let mut position = root.clone();
+    let mut steps = Vec::new();
+    let mut truncated = false;
+    let mut timed_out = false;
+    for (index, input) in focus.progress.input_preview.iter().cloned().enumerate() {
+        if stepper.terminal(&position) != CombatTerminal::Unresolved {
+            break;
+        }
+        let step = stepper.apply_to_stable(
+            &position,
+            input.clone(),
+            CombatStepLimits {
+                max_engine_steps: 250,
+                deadline: None,
+            },
+        );
+        truncated |= step.truncated;
+        timed_out |= step.timed_out;
+        steps.push(replay_step(
+            index + 1,
+            focus.progress.action_key_preview.get(index).cloned(),
+            input,
+            &step,
+        ));
+        position = step.position;
+        if truncated || timed_out || step.terminal != CombatTerminal::Unresolved {
+            break;
+        }
+    }
+
+    let terminal = stepper.terminal(&position);
+    let final_hp = position.combat.entities.player.current_hp;
+    let total_enemy_hp = total_enemy_hp(&position.combat);
+    let living_enemy_count = living_enemy_count(&position.combat);
+    CombatReviewFocusReplay {
+        selected_review: focus.selected_review,
+        action_count: focus.progress.action_count,
+        replayed_actions: steps.len(),
+        truncated_by_preview_limit: focus
+            .progress
+            .action_count
+            .is_some_and(|count| count > focus.progress.input_preview.len()),
+        terminal,
+        final_hp,
+        total_enemy_hp,
+        living_enemy_count,
+        truncated,
+        timed_out,
+        matched_focus_terminal: terminal_matches(terminal, focus.progress.terminal),
+        matched_focus_final_hp: final_hp == focus.progress.final_hp,
+        matched_focus_enemy_hp: total_enemy_hp == focus.progress.total_enemy_hp,
+        steps,
+    }
+}
+
+fn replay_step(
+    step_index: usize,
+    action_key: Option<String>,
+    input: ClientInput,
+    step: &sts_simulator::sim::combat::CombatStepResult,
+) -> CombatReviewFocusReplayStep {
+    let combat = &step.position.combat;
+    CombatReviewFocusReplayStep {
+        step_index,
+        action_key,
+        input,
+        terminal: step.terminal,
+        truncated: step.truncated,
+        timed_out: step.timed_out,
+        engine_steps: step.engine_steps,
+        engine_state: engine_state_label(&step.position.engine),
+        turn: combat.turn.turn_count,
+        energy: combat.turn.energy,
+        player_hp: combat.entities.player.current_hp,
+        player_block: combat.entities.player.block,
+        total_enemy_hp: total_enemy_hp(combat),
+        living_enemy_count: living_enemy_count(combat),
+        visible_incoming_damage: visible_incoming_damage(combat),
+        draw_count: combat.zones.draw_pile.len(),
+        discard_count: combat.zones.discard_pile.len(),
+        exhaust_count: combat.zones.exhaust_pile.len(),
+        hand: combat.zones.hand.iter().map(card_label).collect(),
+        monsters: combat
+            .entities
+            .monsters
+            .iter()
+            .map(|monster| {
+                let enemy_id = EnemyId::from_id(monster.monster_type);
+                CombatReviewMonsterState {
+                    slot: monster.slot,
+                    monster_type: monster.monster_type,
+                    enemy_id: enemy_id.map(|id| format!("{id:?}")),
+                    enemy_name: enemy_id.map(|id| id.get_name().to_string()),
+                    hp: monster.current_hp,
+                    max_hp: monster.max_hp,
+                    block: monster.block,
+                    alive: monster.is_alive_for_action(),
+                    move_id: monster.planned_move_id(),
+                    awakened_one_form1: (enemy_id == Some(EnemyId::AwakenedOne))
+                        .then_some(monster.awakened_one.form1),
+                }
+            })
+            .collect(),
+    }
+}
+
+fn terminal_matches(terminal: CombatTerminal, label: SearchTerminalLabel) -> bool {
+    matches!(
+        (terminal, label),
+        (CombatTerminal::Win, SearchTerminalLabel::Win)
+            | (CombatTerminal::Loss, SearchTerminalLabel::Loss)
+            | (CombatTerminal::Unresolved, SearchTerminalLabel::Unresolved)
+    )
+}
+
+fn engine_state_label(engine: &EngineState) -> String {
+    format!("{engine:?}")
+}
+
+fn card_label(card: &CombatCard) -> String {
+    format!("{}+{}#{}", java_id(card.id), card.upgrades, card.uuid)
+}
+
+fn living_enemy_count(combat: &CombatState) -> usize {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.is_alive_for_action())
+        .count()
+}
+
+fn total_enemy_hp(combat: &CombatState) -> i32 {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.is_alive_for_action())
+        .map(|monster| monster.current_hp.max(0) + monster.block.max(0))
+        .sum()
+}
+
+fn visible_incoming_damage(combat: &CombatState) -> i32 {
+    combat
+        .entities
+        .monsters
+        .iter()
+        .filter(|monster| monster.is_alive_for_action())
+        .map(|monster| monster_preview_total_damage_in_combat(combat, monster))
+        .sum()
 }
 
 fn search_starved_by_rollout(review: &SearchReview) -> bool {
