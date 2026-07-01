@@ -83,7 +83,7 @@ fn visible_event_option_decision(
                 return None;
             }
             let option = options.get(option_index)?;
-            if option.ui.disabled || !selector.matches(&option.semantics) {
+            if option.ui.disabled || !selector.matches(option_index, &option.semantics) {
                 return None;
             }
             candidate.action.executable_command()

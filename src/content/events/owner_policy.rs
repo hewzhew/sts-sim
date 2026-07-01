@@ -19,6 +19,7 @@ pub enum EventOwnerPolicyGap {
     MissingMarkedPolicy(EventId),
     AmbiguousMarkedPolicy { event_id: EventId, found: usize },
     MissingPendingPolicy(EventId),
+    UnsupportedDesignerSelection(RunPendingChoiceReason),
     UnsupportedLivingWallSelection(RunPendingChoiceReason),
     EmptySelectionTargets,
 }
@@ -34,14 +35,16 @@ pub enum EventOwnerOptionSelector {
     Action(EventActionKind),
     Effect(EventEffect),
     OwnerPolicy(EventOwnerPolicyKind),
+    OptionIndex(usize),
 }
 
 impl EventOwnerOptionSelector {
-    pub fn matches(&self, semantics: &EventOptionSemantics) -> bool {
+    pub fn matches(&self, option_index: usize, semantics: &EventOptionSemantics) -> bool {
         match self {
             EventOwnerOptionSelector::Action(action) => semantics.action == *action,
             EventOwnerOptionSelector::Effect(effect) => semantics.effects.contains(effect),
             EventOwnerOptionSelector::OwnerPolicy(policy) => semantics.owner_policy == *policy,
+            EventOwnerOptionSelector::OptionIndex(index) => option_index == *index,
         }
     }
 }
@@ -66,6 +69,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
     match event_id {
         EventId::BigFish => return Ok(choose(big_fish_choice(run_state))),
         EventId::CursedTome => return Ok(choose(cursed_tome_choice(run_state))),
+        EventId::Designer => return Ok(choose(designer_choice(run_state))),
         EventId::LivingWall => return Ok(choose(living_wall_choice(run_state))),
         EventId::Mushrooms => return Ok(choose(mushrooms_choice(run_state))),
         EventId::MysteriousSphere => return Ok(choose(mysterious_sphere_choice(run_state))),
@@ -104,6 +108,7 @@ fn event_run_choice_policy_action(
         return Err(EventOwnerPolicyGap::MissingEventState);
     };
     match event_id {
+        EventId::Designer => designer_selection(choice, run_state),
         EventId::LivingWall => living_wall_selection(choice, run_state),
         _ => Err(EventOwnerPolicyGap::MissingPendingPolicy(event_id)),
     }
@@ -119,6 +124,10 @@ fn action(action: EventActionKind) -> EventOwnerOptionSelector {
 
 fn effect(effect: EventEffect) -> EventOwnerOptionSelector {
     EventOwnerOptionSelector::Effect(effect)
+}
+
+fn option_index(index: usize) -> EventOwnerOptionSelector {
+    EventOwnerOptionSelector::OptionIndex(index)
 }
 
 fn big_fish_choice(run_state: &RunState) -> EventOwnerOptionSelector {
@@ -271,6 +280,99 @@ fn cursed_tome_take_is_safe(run_state: &RunState, screen: usize) -> bool {
     hp_after_loss_is_safe(run_state, cursed_tome_take_loss_from(run_state, screen))
 }
 
+fn designer_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 => action(EventActionKind::Continue),
+        1 => designer_service_choice(run_state),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn designer_service_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    let asc = run_state.ascension_level;
+    let has_remove = designer_has_clear_remove_target(run_state);
+    let has_upgrade = best_upgrade_uuid(run_state, &designer_upgrade_targets(run_state)).is_some();
+    if run_state.gold >= designer_full_service_cost(asc) && has_remove {
+        return option_index(2);
+    }
+    if designer_cleanup_removes_cards(run_state)
+        && run_state.gold >= designer_cleanup_cost(asc)
+        && has_remove
+    {
+        return option_index(1);
+    }
+    if run_state.gold >= designer_adjust_cost(asc) && has_upgrade {
+        return option_index(0);
+    }
+    option_index(3)
+}
+
+fn designer_selection(
+    choice: &RunPendingChoiceState,
+    run_state: &RunState,
+) -> Result<EventOwnerAction, EventOwnerPolicyGap> {
+    let request = choice.selection_request(run_state);
+    let uuid = match choice.reason {
+        RunPendingChoiceReason::PurgeNonBottled => best_purge_uuid(run_state, &request.targets),
+        RunPendingChoiceReason::Upgrade => best_upgrade_uuid(run_state, &request.targets),
+        reason => return Err(EventOwnerPolicyGap::UnsupportedDesignerSelection(reason)),
+    }
+    .ok_or(EventOwnerPolicyGap::EmptySelectionTargets)?;
+    Ok(EventOwnerAction::SubmitSelection(
+        SelectionResolution::card_uuids(SelectionScope::Deck, [uuid]),
+    ))
+}
+
+fn designer_has_clear_remove_target(run_state: &RunState) -> bool {
+    run_state.master_deck.iter().any(|card| {
+        crate::state::core::run_pending_choice_allows_card_for_run(
+            &RunPendingChoiceReason::PurgeNonBottled,
+            card,
+            run_state,
+        ) && purge_rank(card) <= 4
+    })
+}
+
+fn designer_upgrade_targets(run_state: &RunState) -> Vec<SelectionTargetRef> {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|card| crate::state::core::master_deck_card_can_upgrade(card))
+        .map(|card| SelectionTargetRef::CardUuid(card.uuid))
+        .collect()
+}
+
+fn designer_adjust_cost(asc: u8) -> i32 {
+    if asc >= 15 {
+        50
+    } else {
+        40
+    }
+}
+
+fn designer_cleanup_cost(asc: u8) -> i32 {
+    if asc >= 15 {
+        75
+    } else {
+        60
+    }
+}
+
+fn designer_full_service_cost(asc: u8) -> i32 {
+    if asc >= 15 {
+        110
+    } else {
+        90
+    }
+}
+
+fn designer_cleanup_removes_cards(run_state: &RunState) -> bool {
+    run_state
+        .event_state
+        .as_ref()
+        .is_some_and(|event| event.internal_state & 2 != 0)
+}
+
 fn cursed_tome_take_loss_from(run_state: &RunState, screen: usize) -> i32 {
     let final_damage = if run_state.ascension_level >= 15 {
         15
@@ -313,7 +415,7 @@ fn living_wall_selection(
         RunPendingChoiceReason::TransformNonBottled => {
             pick_target_uuid(run_state, &request.targets, transform_rank)
         }
-        RunPendingChoiceReason::Upgrade => living_wall_upgrade_uuid(run_state, &request.targets),
+        RunPendingChoiceReason::Upgrade => best_upgrade_uuid(run_state, &request.targets),
         reason => return Err(EventOwnerPolicyGap::UnsupportedLivingWallSelection(reason)),
     }
     .ok_or(EventOwnerPolicyGap::EmptySelectionTargets)?;
@@ -322,7 +424,7 @@ fn living_wall_selection(
     ))
 }
 
-fn living_wall_upgrade_uuid(run_state: &RunState, targets: &[SelectionTargetRef]) -> Option<u32> {
+fn best_upgrade_uuid(run_state: &RunState, targets: &[SelectionTargetRef]) -> Option<u32> {
     crate::ai::strategy::campfire_upgrade_quality::rank_campfire_upgrades(&run_state.master_deck)
         .into_iter()
         .find_map(|target| {
@@ -333,6 +435,10 @@ fn living_wall_upgrade_uuid(run_state: &RunState, targets: &[SelectionTargetRef]
                 .then_some(uuid)
         })
         .or_else(|| pick_target_uuid(run_state, targets, |_| 0))
+}
+
+fn best_purge_uuid(run_state: &RunState, targets: &[SelectionTargetRef]) -> Option<u32> {
+    pick_target_uuid(run_state, targets, purge_rank)
 }
 
 fn pick_target_uuid(

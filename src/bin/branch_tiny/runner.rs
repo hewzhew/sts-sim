@@ -616,9 +616,10 @@ fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
         EngineState::Shop(_) => Some(Owner::ShopTiny),
         EngineState::Campfire => Some(Owner::Campfire),
         EngineState::RunPendingChoice(choice) => match choice.source {
-            DomainEventSource::Event(sts_simulator::state::events::EventId::LivingWall) => Some(
-                Owner::Event(sts_simulator::state::events::EventId::LivingWall),
-            ),
+            DomainEventSource::Event(
+                event_id @ (sts_simulator::state::events::EventId::Designer
+                | sts_simulator::state::events::EventId::LivingWall),
+            ) => Some(Owner::Event(event_id)),
             _ if super::run_choice_owner::can_handle(choice.reason) => Some(Owner::RunChoice),
             _ => None,
         },
