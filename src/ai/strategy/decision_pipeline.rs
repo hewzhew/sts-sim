@@ -19,6 +19,7 @@ use crate::content::relics::RelicId;
 pub struct DecisionPipelineContext {
     pub deck_plan: DeckPlanSnapshot,
     pub gold: Option<i32>,
+    pub shop_investment: Option<ShopInvestmentEvidence>,
 }
 
 impl DecisionPipelineContext {
@@ -26,6 +27,7 @@ impl DecisionPipelineContext {
         Self {
             deck_plan,
             gold: None,
+            shop_investment: None,
         }
     }
 
@@ -33,8 +35,29 @@ impl DecisionPipelineContext {
         Self {
             deck_plan,
             gold: Some(gold),
+            shop_investment: None,
         }
     }
+
+    pub fn with_shop_investment(self, shop_investment: ShopInvestmentEvidence) -> Self {
+        Self {
+            shop_investment: Some(shop_investment),
+            ..self
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ShopInvestmentEvidence {
+    pub membership_card: MembershipCardInvestmentEvidence,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MembershipCardInvestmentEvidence {
+    SameShopAmortized,
+    SameShopUnamortized,
+    FutureShop,
+    NoPayoff,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -317,6 +340,7 @@ fn filter_passes() -> &'static [FilterPass] {
         unsupported_candidate_filter,
         missing_card_admission_filter,
         shop_affordability_filter,
+        shop_investment_filter,
         shop_followup_required_filter,
         cleanup_target_filter,
         unmodeled_card_filter,
@@ -335,6 +359,7 @@ fn score_passes() -> &'static [ScorePass] {
         deck_admission_score,
         construction_pressure_score,
         reward_reason_score,
+        shop_investment_score,
         shop_relic_score,
         shop_potion_score,
         survival_pressure_score,
@@ -378,6 +403,19 @@ fn shop_affordability_filter(
             Some(gold),
         ) if price > gold => FilterDecision::InspectOnly("shop item is unaffordable"),
         _ => FilterDecision::Pass,
+    }
+}
+
+fn shop_investment_filter(
+    context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    _admission: Option<&RewardAdmission>,
+) -> FilterDecision {
+    match membership_card_investment(context, candidate.kind) {
+        ShopInvestmentDecision::Reject(reason) => FilterDecision::InspectOnly(reason),
+        ShopInvestmentDecision::Mainline
+        | ShopInvestmentDecision::Probe
+        | ShopInvestmentDecision::NotInvestment => FilterDecision::Pass,
     }
 }
 
@@ -645,6 +683,19 @@ fn reward_reason_score(
     }
 }
 
+fn shop_investment_score(
+    context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    _admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    match membership_card_investment(context, candidate.kind) {
+        ShopInvestmentDecision::Mainline => scores.push(score("shop-investment", 150)),
+        ShopInvestmentDecision::Probe => scores.push(score("shop-investment", 55)),
+        ShopInvestmentDecision::Reject(_) | ShopInvestmentDecision::NotInvestment => {}
+    }
+}
+
 fn shop_relic_score(
     _context: DecisionPipelineContext,
     candidate: DecisionCandidateIr,
@@ -784,6 +835,38 @@ fn admission_provides(admission: &RewardAdmission, mechanic: Mechanic) -> bool {
         .contains(&RewardAdmissionReason::Provides(mechanic))
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ShopInvestmentDecision {
+    Mainline,
+    Probe,
+    Reject(&'static str),
+    NotInvestment,
+}
+
+fn membership_card_investment(
+    context: DecisionPipelineContext,
+    kind: DecisionCandidateKind,
+) -> ShopInvestmentDecision {
+    let DecisionCandidateKind::ShopBuyRelic {
+        relic: RelicId::MembershipCard,
+        price: _,
+    } = kind
+    else {
+        return ShopInvestmentDecision::NotInvestment;
+    };
+    let Some(evidence) = context.shop_investment else {
+        return ShopInvestmentDecision::Reject("membership card missing shop investment evidence");
+    };
+    match evidence.membership_card {
+        MembershipCardInvestmentEvidence::SameShopAmortized => ShopInvestmentDecision::Mainline,
+        MembershipCardInvestmentEvidence::SameShopUnamortized
+        | MembershipCardInvestmentEvidence::FutureShop => ShopInvestmentDecision::Probe,
+        MembershipCardInvestmentEvidence::NoPayoff => {
+            ShopInvestmentDecision::Reject("membership card has no shop payoff evidence")
+        }
+    }
+}
+
 fn shop_relic_purchase_needs_followup(relic: RelicId) -> bool {
     matches!(
         relic,
@@ -799,7 +882,8 @@ fn shop_relic_purchase_needs_followup(relic: RelicId) -> bool {
 fn shop_relic_score_value(relic: RelicId) -> i32 {
     match relic {
         RelicId::Waffle => 220,
-        RelicId::MedicalKit | RelicId::OrangePellets | RelicId::MembershipCard => 150,
+        RelicId::MedicalKit | RelicId::OrangePellets => 150,
+        RelicId::MembershipCard => 0,
         RelicId::ClockworkSouvenir | RelicId::ChemicalX | RelicId::Toolbox => 115,
         RelicId::FrozenEye => 45,
         _ => 45,

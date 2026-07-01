@@ -71,3 +71,7 @@ impl ShopState {
         }
     }
 }
+
+pub fn membership_card_discounted_price(price: i32) -> i32 {
+    (price as f32 * 0.5).round() as i32
+}
