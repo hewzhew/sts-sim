@@ -71,6 +71,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::CursedTome => return Ok(choose(cursed_tome_choice(run_state))),
         EventId::Designer => return Ok(choose(designer_choice(run_state))),
         EventId::LivingWall => return Ok(choose(living_wall_choice(run_state))),
+        EventId::Mausoleum => return Ok(choose(mausoleum_choice(run_state))),
         EventId::Mushrooms => return Ok(choose(mushrooms_choice(run_state))),
         EventId::MysteriousSphere => return Ok(choose(mysterious_sphere_choice(run_state))),
         EventId::ShiningLight => return Ok(choose(shining_light_choice(run_state))),
@@ -373,6 +374,29 @@ fn designer_cleanup_removes_cards(run_state: &RunState) -> bool {
         .is_some_and(|event| event.internal_state & 2 != 0)
 }
 
+fn mausoleum_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    if event_screen(run_state) != 0 {
+        return action(EventActionKind::Leave);
+    }
+    if has_omamori_charge(run_state) {
+        return option_index(0);
+    }
+    if run_state.ascension_level < 15 {
+        if curse_count(run_state) >= 2
+            || has_card(run_state, CardId::Writhe)
+            || has_card(run_state, CardId::Clash)
+        {
+            option_index(1)
+        } else {
+            option_index(0)
+        }
+    } else if has_curse_mitigation_or_synergy(run_state) {
+        option_index(0)
+    } else {
+        option_index(1)
+    }
+}
+
 fn cursed_tome_take_loss_from(run_state: &RunState, screen: usize) -> i32 {
     let final_damage = if run_state.ascension_level >= 15 {
         15
@@ -401,6 +425,41 @@ fn event_hp_loss_estimate(run_state: &RunState, amount: i32) -> i32 {
 fn hp_after_loss_is_safe(run_state: &RunState, loss: i32) -> bool {
     let after = run_state.current_hp.saturating_sub(loss);
     after >= 18 && after * 100 >= run_state.max_hp * 35
+}
+
+fn has_omamori_charge(run_state: &RunState) -> bool {
+    run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == RelicId::Omamori && relic.counter > 0 && !relic.used_up)
+}
+
+fn has_relic(run_state: &RunState, relic_id: RelicId) -> bool {
+    run_state
+        .relics
+        .iter()
+        .any(|relic| relic.id == relic_id && !relic.used_up)
+}
+
+fn has_curse_mitigation_or_synergy(run_state: &RunState) -> bool {
+    has_omamori_charge(run_state)
+        || has_relic(run_state, RelicId::BlueCandle)
+        || has_relic(run_state, RelicId::DuVuDoll)
+        || has_relic(run_state, RelicId::DarkstonePeriapt)
+}
+
+fn has_card(run_state: &RunState, card_id: CardId) -> bool {
+    run_state.master_deck.iter().any(|card| card.id == card_id)
+}
+
+fn curse_count(run_state: &RunState) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|card| {
+            get_card_definition(card.id).card_type == crate::content::cards::CardType::Curse
+        })
+        .count()
 }
 
 fn living_wall_selection(
