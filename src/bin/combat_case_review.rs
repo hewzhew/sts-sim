@@ -80,7 +80,7 @@ struct SearchReview {
 struct CombatGapReviewClassification {
     kind: &'static str,
     reason: &'static str,
-    selected_review: Option<&'static str>,
+    basis_review: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -260,12 +260,12 @@ fn classify_gap_review(ladder: &[SearchReview]) -> CombatGapReviewClassification
 fn classification(
     kind: &'static str,
     reason: &'static str,
-    selected_review: Option<&'static str>,
+    basis_review: Option<&'static str>,
 ) -> CombatGapReviewClassification {
     CombatGapReviewClassification {
         kind,
         reason,
-        selected_review,
+        basis_review,
     }
 }
 
