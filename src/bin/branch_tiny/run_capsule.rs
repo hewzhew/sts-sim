@@ -49,7 +49,7 @@ impl RunCapsule {
     }
 
     pub(super) fn write_running_manifest(&self, args: Args) -> Result<(), String> {
-        self.write_manifest(args, "running")
+        self.write_manifest(args, "running", None)
     }
 
     pub(super) fn save_recovery(
@@ -65,7 +65,7 @@ impl RunCapsule {
                 BranchStatus::Terminal(TerminalOutcome::Victory)
             )
         }) {
-            self.save_result(args, generation, branch)?;
+            self.save_completed_result(args, generation, branch, "victory_found")?;
             return Ok(RunCapsuleSave::Result);
         }
         let running = frontier
@@ -82,7 +82,7 @@ impl RunCapsule {
             )?;
             remove_if_exists(&self.root.join("result.json"))?;
             remove_if_exists(&self.root.join("path.json"))?;
-            self.write_manifest(args, "running")?;
+            self.write_manifest(args, "running", None)?;
             return Ok(RunCapsuleSave::Frontier { running });
         }
         if let Some(branch) = frontier.front() {
@@ -106,7 +106,53 @@ impl RunCapsule {
         )?;
         write_json(&self.root.join("path.json"), path_value(branch))?;
         remove_if_exists(&self.root.join("frontier.json"))?;
-        self.write_manifest(args, terminal_manifest_status(&branch.status))
+        self.write_manifest(args, terminal_manifest_status(&branch.status), None)
+    }
+
+    pub(super) fn save_completed_result(
+        &self,
+        args: Args,
+        generation: usize,
+        branch: &Branch,
+        reason: &'static str,
+    ) -> Result<(), String> {
+        ensure_dir(&self.root)?;
+        let combat_case = combat_case_value(self, args, generation, branch);
+        write_json(
+            &self.root.join("result.json"),
+            result_value(generation, branch, combat_case),
+        )?;
+        write_json(&self.root.join("path.json"), path_value(branch))?;
+        remove_if_exists(&self.root.join("frontier.json"))?;
+        self.write_manifest(args, "completed", Some(reason))
+    }
+
+    pub(super) fn save_paused_recovery(
+        &self,
+        args: Args,
+        generation: usize,
+        next_branch_id: usize,
+        frontier: &VecDeque<Branch>,
+        reason: &'static str,
+    ) -> Result<RunCapsuleSave, String> {
+        let running = frontier
+            .iter()
+            .filter(|branch| matches!(branch.status, BranchStatus::Running { .. }))
+            .count();
+        if running > 0 {
+            frontier_checkpoint::save(
+                &self.root.join("frontier.json"),
+                args,
+                generation,
+                next_branch_id,
+                frontier,
+            )?;
+            remove_if_exists(&self.root.join("result.json"))?;
+            remove_if_exists(&self.root.join("path.json"))?;
+            self.write_manifest(args, "paused", Some(reason))?;
+            return Ok(RunCapsuleSave::Frontier { running });
+        }
+        self.save_recovery(args, generation, next_branch_id, frontier)
     }
 
     pub(super) fn save_terminal_result(
@@ -138,7 +184,12 @@ impl RunCapsule {
         )
     }
 
-    fn write_manifest(&self, args: Args, status: &'static str) -> Result<(), String> {
+    fn write_manifest(
+        &self,
+        args: Args,
+        status: &'static str,
+        reason: Option<&'static str>,
+    ) -> Result<(), String> {
         ensure_dir(&self.root)?;
         write_json(
             &self.root.join("manifest.json"),
@@ -147,6 +198,7 @@ impl RunCapsule {
                 "seed": args.seed,
                 "ascension": args.ascension,
                 "status": status,
+                "reason": reason,
                 "created_at_epoch_ms": self.started_at_ms,
                 "updated_at_epoch_ms": now_ms(),
                 "git_commit": self.git_commit,

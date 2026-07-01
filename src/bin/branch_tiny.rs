@@ -208,6 +208,31 @@ impl TerminalOutcome {
     }
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RunObjective {
+    FirstVictory,
+    FirstTerminal,
+    ExhaustFrontier,
+}
+
+impl RunObjective {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "first-victory" | "first_victory" => Ok(Self::FirstVictory),
+            "first-terminal" | "first_terminal" => Ok(Self::FirstTerminal),
+            "exhaust-frontier" | "exhaust_frontier" => Ok(Self::ExhaustFrontier),
+            _ => Err(format!(
+                "invalid value for --objective: {value}; expected first-victory, first-terminal, or exhaust-frontier"
+            )),
+        }
+    }
+}
+
+fn default_run_objective() -> RunObjective {
+    RunObjective::FirstVictory
+}
+
 #[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
 enum Owner {
     NeowStart,
@@ -237,6 +262,8 @@ enum BoundarySite {
 struct Args {
     seed: u64,
     ascension: u8,
+    #[serde(default = "default_run_objective")]
+    objective: RunObjective,
     generations: usize,
     max_branches: usize,
     auto_ops: usize,
@@ -255,6 +282,7 @@ struct Args {
 
 #[derive(Default)]
 struct ArgsOverrides {
+    objective: Option<RunObjective>,
     generations: Option<usize>,
     max_branches: Option<usize>,
     auto_ops: Option<usize>,
@@ -275,6 +303,9 @@ struct EventOwnerProbeArgs {
 
 impl ArgsOverrides {
     fn apply_to(self, args: &mut Args) {
+        if let Some(value) = self.objective {
+            args.objective = value;
+        }
         if let Some(value) = self.generations {
             args.generations = value;
         }
@@ -390,9 +421,10 @@ fn run() -> Result<(), String> {
     let mut recent_expanded_keys = Vec::new();
 
     println!(
-        "branch_tiny seed={} ascension={} generations={} max_branches={} mode=owner_audit render=timeline{}",
+        "branch_tiny seed={} ascension={} objective={:?} generations={} max_branches={} mode=owner_audit render=timeline{}",
         args.seed,
         args.ascension,
+        args.objective,
         args.generations,
         args.max_branches,
         if resume_frontier.is_some() { " resume=frontier" } else { "" }
@@ -489,6 +521,16 @@ fn run() -> Result<(), String> {
                 if let Some(capsule) = run_capsule.as_ref() {
                     capsule.save_terminal_result(args, generation, &branch)?;
                 }
+                if let Some(reason) = objective_satisfied(args.objective, &branch.status) {
+                    finalize_objective_result(
+                        run_capsule.as_ref(),
+                        args,
+                        generation,
+                        &branch,
+                        reason,
+                    )?;
+                    return Ok(());
+                }
                 if matches!(branch.status, BranchStatus::Running { .. }) {
                     deferred.push_back(branch);
                     continue;
@@ -513,6 +555,16 @@ fn run() -> Result<(), String> {
             ) {
                 if let Some(capsule) = run_capsule.as_ref() {
                     capsule.save_terminal_result(args, generation + 1, &child)?;
+                }
+                if let Some(reason) = objective_satisfied(args.objective, &child.status) {
+                    finalize_objective_result(
+                        run_capsule.as_ref(),
+                        args,
+                        generation + 1,
+                        &child,
+                        reason,
+                    )?;
+                    return Ok(());
                 }
                 next.push_back(child);
             }
@@ -816,7 +868,13 @@ fn save_wall_stop(
     }
     if let Some(capsule) = capsule {
         return Ok(print_capsule_save(
-            capsule.save_recovery(args, generation, next_branch_id, frontier)?,
+            capsule.save_paused_recovery(
+                args,
+                generation,
+                next_branch_id,
+                frontier,
+                "wall_deadline",
+            )?,
             capsule,
         ));
     }
@@ -835,6 +893,37 @@ fn print_capsule_save(save: RunCapsuleSave, capsule: &RunCapsule) -> bool {
             true
         }
     }
+}
+
+fn objective_satisfied(objective: RunObjective, status: &BranchStatus) -> Option<&'static str> {
+    match (objective, status) {
+        (RunObjective::FirstVictory, BranchStatus::Terminal(TerminalOutcome::Victory)) => {
+            Some("victory_found")
+        }
+        (RunObjective::FirstTerminal, BranchStatus::Terminal(_)) => Some("terminal_found"),
+        _ => None,
+    }
+}
+
+fn finalize_objective_result(
+    capsule: Option<&RunCapsule>,
+    args: Args,
+    generation: usize,
+    branch: &Branch,
+    reason: &'static str,
+) -> Result<(), String> {
+    if let Some(capsule) = capsule {
+        capsule.save_completed_result(args, generation, branch, reason)?;
+        println!("run_capsule_result: {}", capsule.result_path().display());
+    } else {
+        println!(
+            "run_objective_completed: reason={} branch={} status={}",
+            reason,
+            branch.id,
+            render::one_line(&branch_status_boundary_label(&branch.status))
+        );
+    }
+    Ok(())
 }
 
 fn branch_owner_choices(branch: &Branch) -> Vec<OwnerChoice> {
@@ -962,6 +1051,7 @@ fn parse_args() -> Result<
     let mut args = Args {
         seed: 1,
         ascension: 0,
+        objective: RunObjective::FirstVictory,
         generations: 2,
         max_branches: 24,
         auto_ops: 64,
@@ -989,7 +1079,7 @@ fn parse_args() -> Result<
         let key = raw[index].as_str();
         if matches!(key, "--help" | "-h") {
             println!(
-                "branch_tiny --seed N --generations N --max-branches N [--wall-ms N] [--trace-jsonl PATH] [--frontier-checkpoint PATH] [--resume-frontier PATH]"
+                "branch_tiny --seed N --generations N --max-branches N [--objective first-victory|first-terminal|exhaust-frontier] [--wall-ms N] [--trace-jsonl PATH] [--frontier-checkpoint PATH] [--resume-frontier PATH]"
             );
             println!("  optional: --run-capsule DIR writes manifest/frontier/result/path JSON");
             println!("branch_tiny --probe-event-owner EVENT [--probe-event-screen N]");
@@ -1004,6 +1094,7 @@ fn parse_args() -> Result<
         if !matches!(
             key,
             "--seed"
+                | "--objective"
                 | "--ascension"
                 | "--a"
                 | "--generations"
@@ -1032,6 +1123,10 @@ fn parse_args() -> Result<
             .ok_or_else(|| format!("{key} requires a value"))?;
         match key {
             "--seed" => args.seed = parse(value, key)?,
+            "--objective" => {
+                args.objective = RunObjective::parse(value)?;
+                overrides.objective = Some(args.objective);
+            }
             "--ascension" | "--a" => args.ascension = parse(value, key)?,
             "--generations" | "--layers" => {
                 args.generations = parse(value, key)?;
