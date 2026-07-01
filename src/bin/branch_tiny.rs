@@ -85,6 +85,18 @@ struct BranchPathStep {
     action_debug: String,
     label: String,
     annotation: ChoiceAnnotationSnapshot,
+    state_before: Option<BranchPathState>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct BranchPathState {
+    act: u8,
+    floor: i32,
+    hp: i32,
+    max_hp: i32,
+    gold: i32,
+    deck_size: usize,
+    boundary: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -139,6 +151,21 @@ impl ChoiceAnnotationSnapshot {
         match self {
             Self::None => None,
             Self::Candidate { detail, .. } | Self::BossRelic { detail, .. } => Some(detail),
+        }
+    }
+}
+
+impl BranchPathState {
+    fn from_branch(branch: &Branch) -> Self {
+        let run = &branch.session.run_state;
+        Self {
+            act: run.act_num,
+            floor: run.floor_num,
+            hp: run.current_hp,
+            max_hp: run.max_hp,
+            gold: run.gold,
+            deck_size: run.master_deck.len(),
+            boundary: branch_status_boundary_label(&branch.status),
         }
     }
 }
@@ -675,6 +702,18 @@ fn frontier_retention_key(branch: &Branch) -> (u8, u8, i32, u32, i32) {
     )
 }
 
+fn branch_status_boundary_label(status: &BranchStatus) -> String {
+    match status {
+        BranchStatus::Running { boundary, .. }
+        | BranchStatus::AutomationGap { boundary, .. }
+        | BranchStatus::CombatGap { boundary, .. }
+        | BranchStatus::BudgetGap { boundary, .. } => boundary.clone(),
+        BranchStatus::Terminal(_) => "Terminal".to_string(),
+        BranchStatus::ApplyFailed(_) => "ApplyFailed".to_string(),
+        BranchStatus::AdvanceFailed(_) => "AdvanceFailed".to_string(),
+    }
+}
+
 #[derive(Clone, Copy)]
 struct RunDeadline(Option<Instant>);
 
@@ -889,6 +928,7 @@ fn expand_registered_owner(
             action_debug: format!("{:?}", choice.action),
             label: choice.label,
             annotation: ChoiceAnnotationSnapshot::from_annotation(&choice.annotation),
+            state_before: Some(BranchPathState::from_branch(branch)),
         });
         let id = *next_branch_id;
         *next_branch_id += 1;

@@ -278,6 +278,7 @@ fn path_value(branch: &Branch) -> Value {
 fn path_step_value((index, step): (usize, &BranchPathStep)) -> Value {
     json!({
         "step": index,
+        "state_before": step.state_before.as_ref(),
         "key": serde_json::to_value(&step.key).unwrap_or(Value::Null),
         "label": step.label,
         "annotation": serde_json::to_value(&step.annotation).unwrap_or(Value::Null),
