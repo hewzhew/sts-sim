@@ -402,6 +402,11 @@ pub fn card_definition_with_upgrades(card: CardId, upgrades: u8) -> CardDefiniti
         Bash | ThunderClap => CardDefinition::new(card)
             .effect(FrontloadDamage)
             .provides(Vulnerable),
+        Shockwave => CardDefinition::new(card)
+            .provides(Vulnerable)
+            .provides(Weak)
+            .provides(EnemyStrengthDown)
+            .effect(ExhaustsSelf),
         Uppercut => CardDefinition::new(card)
             .effect(FrontloadDamage)
             .provides(Vulnerable)
@@ -431,6 +436,7 @@ pub fn card_definition_with_upgrades(card: CardId, upgrades: u8) -> CardDefiniti
             .effect(AreaDamage)
             .effect(DamageScalesWith(EnergySpent))
             .effect(DamageScalesWith(PerHitStrength)),
+        Cleave => CardDefinition::new(card).effect(AreaDamage),
         Immolate => CardDefinition::new(card)
             .effect(AreaDamage)
             .effect(AddCombatDeckClutter)
@@ -451,7 +457,10 @@ pub fn card_definition_with_upgrades(card: CardId, upgrades: u8) -> CardDefiniti
             .effect(FrontloadDamage)
             .effect(AddCombatDeckClutter)
             .burden(AddsCombatDeckClutter),
-        Warcry | Headbutt => CardDefinition::new(card).provides(TopdeckControl),
+        Headbutt => CardDefinition::new(card)
+            .effect(FrontloadDamage)
+            .provides(TopdeckControl),
+        Warcry => CardDefinition::new(card).provides(TopdeckControl),
         Evolve => CardDefinition::new(card)
             .wants(PayoffRequirement::WantsEventStream(StatusDrawn))
             .handles(EventHandler::new(

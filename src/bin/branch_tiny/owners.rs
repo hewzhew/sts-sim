@@ -7,6 +7,7 @@ use sts_simulator::eval::run_control::{
 };
 use sts_simulator::state::core::{CampfireChoice, ClientInput, EngineState};
 
+use super::neow_owner::neow_owner_decision;
 use super::owner_model::{
     ChoiceAnnotation, OwnerChoice, OwnerChoiceExpansion, OwnerDecision, OwnerRoutine,
 };
@@ -22,7 +23,7 @@ pub(super) fn owner_decision(
     surface: &DecisionSurface,
 ) -> OwnerDecision {
     match owner {
-        Owner::NeowStart => OwnerDecision::Candidates(executable_choices(surface)),
+        Owner::NeowStart => neow_owner_decision(session, surface),
         Owner::CardReward => OwnerDecision::Candidates(card_reward_owner_choices(session, surface)),
         Owner::BossRelic => OwnerDecision::Candidates(boss_relic_owner_choices(session, surface)),
         Owner::ShopTiny => OwnerDecision::Candidates(shop_tiny_owner_choices(session, surface)),

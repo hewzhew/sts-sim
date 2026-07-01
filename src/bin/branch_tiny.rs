@@ -20,6 +20,8 @@ mod combat_gap_case;
 mod expansion_policy;
 #[path = "branch_tiny/frontier_checkpoint.rs"]
 mod frontier_checkpoint;
+#[path = "branch_tiny/neow_owner.rs"]
+mod neow_owner;
 #[path = "branch_tiny/owner_model.rs"]
 mod owner_model;
 #[path = "branch_tiny/owners.rs"]
