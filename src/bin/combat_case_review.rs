@@ -167,8 +167,8 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
     } else {
         Vec::new()
     };
-    let classification = classify_gap_review(&ladder);
     let review_focus = review_focus(&ladder);
+    let classification = classify_gap_review(&ladder, review_focus.as_ref());
     CombatCaseReview {
         schema: "combat_case_review",
         case_path: args.case.display().to_string(),
@@ -214,7 +214,10 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
     }
 }
 
-fn classify_gap_review(ladder: &[SearchReview]) -> CombatGapReviewClassification {
+fn classify_gap_review(
+    ladder: &[SearchReview],
+    focus: Option<&CombatReviewFocus>,
+) -> CombatGapReviewClassification {
     if ladder.is_empty() {
         return classification("NotReviewed", "ladder_not_requested", None);
     }
@@ -250,11 +253,28 @@ fn classify_gap_review(ladder: &[SearchReview]) -> CombatGapReviewClassification
             Some(review.label),
         );
     }
+    if let Some(focus) = focus {
+        if is_exact_near_miss_loss(&focus.progress) {
+            return classification(
+                "NearMissNoWinAfterReview",
+                "exact_loss_reached_single_enemy_with_low_remaining_hp",
+                Some(focus.selected_review),
+            );
+        }
+    }
     classification(
         "StillNoWinAfterReview",
         "no_win_after_review_budget",
         Some(review.label),
     )
+}
+
+fn is_exact_near_miss_loss(progress: &SearchDiagnosticProgressFacts) -> bool {
+    progress.source == "best_complete"
+        && progress.terminal == SearchTerminalLabel::Loss
+        && !progress.estimated
+        && progress.living_enemy_count == 1
+        && progress.total_enemy_hp <= 10
 }
 
 fn classification(
