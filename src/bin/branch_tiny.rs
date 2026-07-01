@@ -30,6 +30,8 @@ mod render;
 mod reward_shop_boss_owner;
 #[path = "branch_tiny/run_capsule.rs"]
 mod run_capsule;
+#[path = "branch_tiny/run_contract.rs"]
+mod run_contract;
 #[path = "branch_tiny/runner.rs"]
 mod runner;
 #[path = "branch_tiny/trace.rs"]
@@ -37,6 +39,7 @@ mod trace;
 
 use owner_model::{ChoiceAnnotation, DecisionKey, OwnerChoice, OwnerDecision, OwnerRoutine};
 use run_capsule::{RunCapsule, RunCapsuleSave};
+use run_contract::{default_run_objective, RunObjective};
 
 const WALL_STOP_GUARD_MS: u64 = 1_500;
 
@@ -206,31 +209,6 @@ impl TerminalOutcome {
             Self::Defeat => "defeat",
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum RunObjective {
-    FirstVictory,
-    FirstTerminal,
-    ExhaustFrontier,
-}
-
-impl RunObjective {
-    fn parse(value: &str) -> Result<Self, String> {
-        match value {
-            "first-victory" | "first_victory" => Ok(Self::FirstVictory),
-            "first-terminal" | "first_terminal" => Ok(Self::FirstTerminal),
-            "exhaust-frontier" | "exhaust_frontier" => Ok(Self::ExhaustFrontier),
-            _ => Err(format!(
-                "invalid value for --objective: {value}; expected first-victory, first-terminal, or exhaust-frontier"
-            )),
-        }
-    }
-}
-
-fn default_run_objective() -> RunObjective {
-    RunObjective::FirstVictory
 }
 
 #[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
@@ -521,13 +499,13 @@ fn run() -> Result<(), String> {
                 if let Some(capsule) = run_capsule.as_ref() {
                     capsule.save_terminal_result(args, generation, &branch)?;
                 }
-                if let Some(reason) = objective_satisfied(args.objective, &branch.status) {
+                if let Some(reason) = run_contract::satisfied(args.objective, &branch.status) {
                     finalize_objective_result(
                         run_capsule.as_ref(),
                         args,
                         generation,
                         &branch,
-                        reason,
+                        reason.as_str(),
                     )?;
                     return Ok(());
                 }
@@ -556,13 +534,13 @@ fn run() -> Result<(), String> {
                 if let Some(capsule) = run_capsule.as_ref() {
                     capsule.save_terminal_result(args, generation + 1, &child)?;
                 }
-                if let Some(reason) = objective_satisfied(args.objective, &child.status) {
+                if let Some(reason) = run_contract::satisfied(args.objective, &child.status) {
                     finalize_objective_result(
                         run_capsule.as_ref(),
                         args,
                         generation + 1,
                         &child,
-                        reason,
+                        reason.as_str(),
                     )?;
                     return Ok(());
                 }
@@ -892,16 +870,6 @@ fn print_capsule_save(save: RunCapsuleSave, capsule: &RunCapsule) -> bool {
             println!("run_capsule_result: {}", capsule.result_path().display());
             true
         }
-    }
-}
-
-fn objective_satisfied(objective: RunObjective, status: &BranchStatus) -> Option<&'static str> {
-    match (objective, status) {
-        (RunObjective::FirstVictory, BranchStatus::Terminal(TerminalOutcome::Victory)) => {
-            Some("victory_found")
-        }
-        (RunObjective::FirstTerminal, BranchStatus::Terminal(_)) => Some("terminal_found"),
-        _ => None,
     }
 }
 
