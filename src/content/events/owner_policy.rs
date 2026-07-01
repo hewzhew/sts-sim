@@ -68,6 +68,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         .map(|event| event.id)
         .ok_or(EventOwnerPolicyGap::MissingEventState)?;
     match event_id {
+        EventId::BackTotheBasics => return Ok(choose(back_to_basics_choice(run_state))),
         EventId::BigFish => return Ok(choose(big_fish_choice(run_state))),
         EventId::CursedTome => return Ok(choose(cursed_tome_choice(run_state))),
         EventId::Designer => return Ok(choose(designer_choice(run_state))),
@@ -153,6 +154,23 @@ fn big_fish_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     effect(EventEffect::GainMaxHp(5))
 }
 
+fn back_to_basics_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    if event_screen(run_state) != 0 {
+        return action(EventActionKind::Leave);
+    }
+    if has_bad_purge_target(run_state) {
+        return option_index(0);
+    }
+    if unupgraded_starter_basic_count(run_state) >= 4 {
+        return option_index(1);
+    }
+    if has_safe_purge_target(run_state) {
+        option_index(0)
+    } else {
+        option_index(1)
+    }
+}
+
 fn shining_light_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     if event_screen(run_state) != 0 {
         return action(EventActionKind::Leave);
@@ -176,13 +194,13 @@ fn living_wall_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     if event_screen(run_state) != 0 {
         return action(EventActionKind::Leave);
     }
-    if legal_living_wall_cards(run_state)
+    if legal_purge_targets(run_state)
         .iter()
         .any(|card| is_non_parasite_curse(card))
     {
         return effect(living_wall_remove_effect());
     }
-    if legal_living_wall_cards(run_state)
+    if legal_purge_targets(run_state)
         .iter()
         .any(|card| card.id == crate::content::cards::CardId::Parasite)
     {
@@ -193,7 +211,7 @@ fn living_wall_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     )
     .into_iter()
     .find(|target| {
-        legal_living_wall_cards(run_state)
+        legal_purge_targets(run_state)
             .iter()
             .any(|card| card.uuid == run_state.master_deck[target.deck_index].uuid)
     });
@@ -202,7 +220,7 @@ fn living_wall_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     }) {
         return effect(EventEffect::UpgradeCard { count: 1 });
     }
-    if legal_living_wall_cards(run_state)
+    if legal_purge_targets(run_state)
         .iter()
         .any(|card| is_starter_strike(card.id))
     {
@@ -563,7 +581,19 @@ fn transform_rank(card: &CombatCard) -> u8 {
     }
 }
 
-fn legal_living_wall_cards(run_state: &RunState) -> Vec<&CombatCard> {
+fn has_bad_purge_target(run_state: &RunState) -> bool {
+    legal_purge_targets(run_state)
+        .into_iter()
+        .any(|card| is_non_parasite_curse(card) || card.id == CardId::Parasite)
+}
+
+fn has_safe_purge_target(run_state: &RunState) -> bool {
+    legal_purge_targets(run_state)
+        .into_iter()
+        .any(|card| rank_purge_target(card) <= 4)
+}
+
+fn legal_purge_targets(run_state: &RunState) -> Vec<&CombatCard> {
     run_state
         .master_deck
         .iter()
@@ -575,6 +605,16 @@ fn legal_living_wall_cards(run_state: &RunState) -> Vec<&CombatCard> {
             )
         })
         .collect()
+}
+
+fn unupgraded_starter_basic_count(run_state: &RunState) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|card| {
+            is_starter_basic(card.id) && crate::state::core::master_deck_card_can_upgrade(card)
+        })
+        .count()
 }
 
 fn is_non_parasite_curse(card: &CombatCard) -> bool {
