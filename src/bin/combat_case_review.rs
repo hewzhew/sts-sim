@@ -47,6 +47,7 @@ struct CombatCaseReview {
     path_tail: Vec<CombatCasePathStep>,
     saved_search: Option<sts_simulator::eval::run_control::CombatSearchTraceSummary>,
     ladder: Vec<SearchReview>,
+    classification: CombatGapReviewClassification,
 }
 
 #[derive(Serialize)]
@@ -70,6 +71,13 @@ struct SearchReview {
     deadline_hit: bool,
     node_budget_hit: bool,
     performance: SearchPerformanceReview,
+}
+
+#[derive(Serialize)]
+struct CombatGapReviewClassification {
+    kind: &'static str,
+    reason: &'static str,
+    selected_review: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -126,6 +134,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
     } else {
         Vec::new()
     };
+    let classification = classify_gap_review(&ladder);
     CombatCaseReview {
         schema: "combat_case_review",
         case_path: args.case.display().to_string(),
@@ -166,7 +175,74 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
         run: case.run,
         combat: case.combat,
         ladder,
+        classification,
     }
+}
+
+fn classify_gap_review(ladder: &[SearchReview]) -> CombatGapReviewClassification {
+    if ladder.is_empty() {
+        return classification("NotReviewed", "ladder_not_requested", None);
+    }
+    if let Some(review) = ladder.iter().find(|review| review.complete_win) {
+        return if review.potions_used.unwrap_or(0) > 0 {
+            classification(
+                "PotionRescueWon",
+                "win_found_using_potions",
+                Some(review.label),
+            )
+        } else {
+            classification(
+                "SearchMissWonWithReview",
+                "win_found_with_review_budget",
+                Some(review.label),
+            )
+        };
+    }
+    let review = ladder
+        .last()
+        .expect("non-empty ladder was checked before classification");
+    if search_starved_by_rollout(review) {
+        return classification(
+            "SearchStarvedByRollout",
+            "rollout_pct_high_and_nodes_low",
+            Some(review.label),
+        );
+    }
+    if review.deadline_hit && review.nodes_expanded < 1_000 {
+        return classification(
+            "TimeoutNoConclusion",
+            "deadline_hit_with_too_few_exact_nodes",
+            Some(review.label),
+        );
+    }
+    classification(
+        "StillNoWinAfterReview",
+        "no_win_after_review_budget",
+        Some(review.label),
+    )
+}
+
+fn classification(
+    kind: &'static str,
+    reason: &'static str,
+    selected_review: Option<&'static str>,
+) -> CombatGapReviewClassification {
+    CombatGapReviewClassification {
+        kind,
+        reason,
+        selected_review,
+    }
+}
+
+fn search_starved_by_rollout(review: &SearchReview) -> bool {
+    review.nodes_expanded < 500 && rollout_pct(review) >= 75.0
+}
+
+fn rollout_pct(review: &SearchReview) -> f64 {
+    if review.performance.total_us == 0 {
+        return 0.0;
+    }
+    100.0 * review.performance.rollout_us as f64 / review.performance.total_us as f64
 }
 
 fn run_search(
