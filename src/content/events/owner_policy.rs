@@ -77,6 +77,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::LivingWall => return Ok(choose(living_wall_choice(run_state))),
         EventId::MatchAndKeep => return Ok(choose(match_and_keep_choice(run_state))),
         EventId::Mausoleum => return Ok(choose(mausoleum_choice(run_state))),
+        EventId::MindBloom => return Ok(choose(mind_bloom_choice(run_state))),
         EventId::Mushrooms => return Ok(choose(mushrooms_choice(run_state))),
         EventId::MysteriousSphere => return Ok(choose(mysterious_sphere_choice(run_state))),
         EventId::Nest => return Ok(choose(nest_choice(run_state))),
@@ -319,6 +320,21 @@ fn match_and_keep_choice(_run_state: &RunState) -> EventOwnerOptionSelector {
     option_index(0)
 }
 
+fn mind_bloom_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    if event_screen(run_state) != 0 {
+        return action(EventActionKind::Leave);
+    }
+    if run_state.floor_num % 50 > 40 && run_state.current_hp * 100 <= run_state.max_hp * 35 {
+        return effect(EventEffect::Heal(
+            (run_state.max_hp - run_state.current_hp).max(0),
+        ));
+    }
+    if run_state.floor_num % 50 <= 40 && omamori_charges(run_state) >= 2 {
+        return effect(EventEffect::GainGold(999));
+    }
+    action(EventActionKind::Fight)
+}
+
 fn mushrooms_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     action(match event_screen(run_state) {
         0 if mushrooms_eat_is_emergency(run_state) => EventActionKind::Trade,
@@ -553,10 +569,16 @@ fn hp_after_loss_is_safe(run_state: &RunState, loss: i32) -> bool {
 }
 
 fn has_omamori_charge(run_state: &RunState) -> bool {
+    omamori_charges(run_state) > 0
+}
+
+fn omamori_charges(run_state: &RunState) -> i32 {
     run_state
         .relics
         .iter()
-        .any(|relic| relic.id == RelicId::Omamori && relic.counter > 0 && !relic.used_up)
+        .find(|relic| relic.id == RelicId::Omamori && !relic.used_up)
+        .map(|relic| relic.counter.max(0))
+        .unwrap_or_default()
 }
 
 fn has_relic(run_state: &RunState, relic_id: RelicId) -> bool {
