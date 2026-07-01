@@ -32,6 +32,8 @@ struct Args {
     write_review: Option<PathBuf>,
     #[arg(long)]
     compact: bool,
+    #[arg(long, default_value_t = 12)]
+    action_preview_limit: usize,
 }
 
 #[derive(Serialize)]
@@ -153,6 +155,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
                 CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
                 CombatSearchV2PotionPolicy::Never,
                 Some(0),
+                args.action_preview_limit,
             ),
             run_search(
                 "slow_potion_diagnostic",
@@ -162,6 +165,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
                 CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
                 CombatSearchV2PotionPolicy::All,
                 Some(args.diagnostic_potion_max),
+                args.action_preview_limit,
             ),
         ]
     } else {
@@ -368,6 +372,7 @@ fn run_search(
     turn_plan_policy: CombatSearchV2TurnPlanPolicy,
     potion_policy: CombatSearchV2PotionPolicy,
     max_potions_used: Option<u32>,
+    action_preview_limit: usize,
 ) -> SearchReview {
     let report = run_combat_search_v2(
         &case.position.engine,
@@ -389,6 +394,7 @@ fn run_search(
         potion_policy,
         max_potions_used,
         &report,
+        action_preview_limit,
     )
 }
 
@@ -400,6 +406,7 @@ fn search_review(
     potion_policy: CombatSearchV2PotionPolicy,
     max_potions_used: Option<u32>,
     report: &CombatSearchV2Report,
+    action_preview_limit: usize,
 ) -> SearchReview {
     let best = report.best_win_trajectory.as_ref();
     SearchReview {
@@ -431,13 +438,14 @@ fn search_review(
             child_bookkeeping_us: report.performance.child_bookkeeping_elapsed_us,
         },
         facts: SearchReviewFacts {
-            diagnostic_progress: diagnostic_progress_facts(report),
+            diagnostic_progress: diagnostic_progress_facts(report, action_preview_limit),
         },
     }
 }
 
 fn diagnostic_progress_facts(
     report: &CombatSearchV2Report,
+    action_preview_limit: usize,
 ) -> Option<SearchDiagnosticProgressFacts> {
     if let Some(trajectory) = report.best_complete_trajectory.as_ref() {
         return Some(SearchDiagnosticProgressFacts {
@@ -456,13 +464,13 @@ fn diagnostic_progress_facts(
             action_key_preview: trajectory
                 .actions
                 .iter()
-                .take(12)
+                .take(action_preview_limit)
                 .map(|action| action.action_key.clone())
                 .collect(),
             input_preview: trajectory
                 .actions
                 .iter()
-                .take(12)
+                .take(action_preview_limit)
                 .map(|action| action.input.clone())
                 .collect(),
         });
