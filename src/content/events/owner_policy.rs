@@ -1,3 +1,4 @@
+use crate::ai::strategy::deck_purge_target::{best_purge_uuid, rank_purge_target};
 use crate::content::cards::{
     get_card_definition, is_starter_basic, is_starter_defend, is_starter_strike, CardId,
 };
@@ -331,7 +332,7 @@ fn designer_has_clear_remove_target(run_state: &RunState) -> bool {
             &RunPendingChoiceReason::PurgeNonBottled,
             card,
             run_state,
-        ) && purge_rank(card) <= 4
+        ) && rank_purge_target(card) <= 4
     })
 }
 
@@ -501,9 +502,7 @@ fn living_wall_selection(
 ) -> Result<EventOwnerAction, EventOwnerPolicyGap> {
     let request = choice.selection_request(run_state);
     let uuid = match choice.reason {
-        RunPendingChoiceReason::PurgeNonBottled => {
-            pick_target_uuid(run_state, &request.targets, purge_rank)
-        }
+        RunPendingChoiceReason::PurgeNonBottled => best_purge_uuid(run_state, &request.targets),
         RunPendingChoiceReason::TransformNonBottled => {
             pick_target_uuid(run_state, &request.targets, transform_rank)
         }
@@ -529,10 +528,6 @@ fn best_upgrade_uuid(run_state: &RunState, targets: &[SelectionTargetRef]) -> Op
         .or_else(|| pick_target_uuid(run_state, targets, |_| 0))
 }
 
-fn best_purge_uuid(run_state: &RunState, targets: &[SelectionTargetRef]) -> Option<u32> {
-    pick_target_uuid(run_state, targets, purge_rank)
-}
-
 fn pick_target_uuid(
     run_state: &RunState,
     targets: &[SelectionTargetRef],
@@ -550,22 +545,6 @@ fn pick_target_uuid(
         })
         .min_by_key(|(rank, _)| *rank)
         .map(|(_, uuid)| uuid)
-}
-
-fn purge_rank(card: &CombatCard) -> u8 {
-    if is_non_parasite_curse(card) {
-        0
-    } else if is_starter_strike(card.id) {
-        1
-    } else if card.id == crate::content::cards::CardId::Parasite {
-        2
-    } else if is_starter_defend(card.id) {
-        3
-    } else if is_starter_basic(card.id) {
-        4
-    } else {
-        5
-    }
 }
 
 fn transform_rank(card: &CombatCard) -> u8 {

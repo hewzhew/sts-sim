@@ -1,7 +1,12 @@
+use sts_simulator::ai::strategy::deck_purge_target::{
+    best_purge_uuid, purge_rank_label, rank_purge_target,
+};
 use sts_simulator::content::cards::{get_card_definition, is_starter_basic, CardId};
 use sts_simulator::eval::run_control::{RunControlCommand, RunControlSession};
 use sts_simulator::runtime::combat::CombatCard;
-use sts_simulator::state::core::{ClientInput, EngineState, RunPendingChoiceReason};
+use sts_simulator::state::core::{
+    ClientInput, EngineState, RunPendingChoiceReason, RunPendingChoiceState,
+};
 use sts_simulator::state::selection::{SelectionResolution, SelectionScope};
 
 use super::owner_model::{ChoiceAnnotation, OwnerChoice, OwnerChoiceExpansion, OwnerDecision};
@@ -14,7 +19,9 @@ const AVOID: i32 = 300;
 pub(super) fn can_handle(reason: RunPendingChoiceReason) -> bool {
     matches!(
         reason,
-        RunPendingChoiceReason::BottleFlame
+        RunPendingChoiceReason::Purge
+            | RunPendingChoiceReason::PurgeNonBottled
+            | RunPendingChoiceReason::BottleFlame
             | RunPendingChoiceReason::BottleLightning
             | RunPendingChoiceReason::BottleTornado
     )
@@ -30,6 +37,71 @@ pub(super) fn run_choice_owner_decision(session: &RunControlSession) -> OwnerDec
             choice.reason
         ));
     }
+    match choice.reason {
+        RunPendingChoiceReason::Purge | RunPendingChoiceReason::PurgeNonBottled => {
+            purge_owner_decision(session, choice)
+        }
+        RunPendingChoiceReason::BottleFlame
+        | RunPendingChoiceReason::BottleLightning
+        | RunPendingChoiceReason::BottleTornado => bottle_owner_decision(session, choice),
+        _ => OwnerDecision::Gap(format!(
+            "RunChoice owner has no policy for {:?}",
+            choice.reason
+        )),
+    }
+}
+
+fn purge_owner_decision(
+    session: &RunControlSession,
+    choice: &RunPendingChoiceState,
+) -> OwnerDecision {
+    if choice.min_choices != 1 || choice.max_choices != 1 {
+        return OwnerDecision::Gap(format!(
+            "Purge owner requires single-card choice, got {}-{}",
+            choice.min_choices, choice.max_choices
+        ));
+    }
+    let request = choice.selection_request(&session.run_state);
+    let Some(uuid) = best_purge_uuid(&session.run_state, &request.targets) else {
+        return OwnerDecision::Gap(format!("{:?} has no legal purge target", choice.reason));
+    };
+    let Some(card) = session
+        .run_state
+        .master_deck
+        .iter()
+        .find(|card| card.uuid == uuid)
+    else {
+        return OwnerDecision::Gap(format!("{:?} target {uuid} is missing", choice.reason));
+    };
+    let rank = rank_purge_target(card);
+    if rank > 4 {
+        return OwnerDecision::Gap(format!(
+            "{:?} has no safe purge target; best is {}",
+            choice.reason,
+            card_label(card)
+        ));
+    }
+
+    OwnerDecision::Candidates(vec![OwnerChoice {
+        key: None,
+        action: RunControlCommand::Input(ClientInput::SubmitSelection(
+            SelectionResolution::card_uuids(SelectionScope::Deck, [uuid]),
+        )),
+        label: format!(
+            "{:?} {} {}",
+            choice.reason,
+            card_label(card),
+            purge_rank_label(rank)
+        ),
+        annotation: ChoiceAnnotation::None,
+        expansion: OwnerChoiceExpansion::AutoAllowed,
+    }])
+}
+
+fn bottle_owner_decision(
+    session: &RunControlSession,
+    choice: &RunPendingChoiceState,
+) -> OwnerDecision {
     if choice.min_choices != 1 || choice.max_choices != 1 {
         return OwnerDecision::Gap(format!(
             "Bottle owner requires single-card choice, got {}-{}",

@@ -13,6 +13,7 @@ pub mod deck_admission;
 pub mod deck_construction_pressure;
 pub mod deck_debt;
 pub mod deck_plan;
+pub mod deck_purge_target;
 pub mod deck_role_inventory;
 pub mod formation;
 pub mod gates;
