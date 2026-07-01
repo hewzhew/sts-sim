@@ -5,11 +5,12 @@ use clap::Parser;
 use serde::Serialize;
 use sts_simulator::ai::combat_search_v2::{
     run_combat_search_v2, CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
-    CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2TurnPlanPolicy, SearchTerminalLabel,
 };
 use sts_simulator::eval::combat_case::{
     card_summary, load_combat_case, CombatCase, CombatCaseCardSummary, CombatCasePathStep,
 };
+use sts_simulator::state::core::ClientInput;
 
 #[derive(Parser)]
 struct Args {
@@ -48,6 +49,7 @@ struct CombatCaseReview {
     saved_search: Option<sts_simulator::eval::run_control::CombatSearchTraceSummary>,
     ladder: Vec<SearchReview>,
     classification: CombatGapReviewClassification,
+    review_focus: Option<CombatReviewFocus>,
 }
 
 #[derive(Serialize)]
@@ -71,6 +73,7 @@ struct SearchReview {
     deadline_hit: bool,
     node_budget_hit: bool,
     performance: SearchPerformanceReview,
+    facts: SearchReviewFacts,
 }
 
 #[derive(Serialize)]
@@ -78,6 +81,13 @@ struct CombatGapReviewClassification {
     kind: &'static str,
     reason: &'static str,
     selected_review: Option<&'static str>,
+}
+
+#[derive(Serialize)]
+struct CombatReviewFocus {
+    selected_review: &'static str,
+    reason: &'static str,
+    progress: SearchDiagnosticProgressFacts,
 }
 
 #[derive(Serialize)]
@@ -89,6 +99,29 @@ struct SearchPerformanceReview {
     frontier_pop_us: u128,
     expansion_us: u128,
     child_bookkeeping_us: u128,
+}
+
+#[derive(Serialize)]
+struct SearchReviewFacts {
+    diagnostic_progress: Option<SearchDiagnosticProgressFacts>,
+}
+
+#[derive(Clone, Serialize)]
+struct SearchDiagnosticProgressFacts {
+    source: &'static str,
+    terminal: SearchTerminalLabel,
+    estimated: bool,
+    final_hp: i32,
+    hp_loss: i32,
+    turns: u32,
+    potions_used: u32,
+    cards_played: u32,
+    living_enemy_count: usize,
+    total_enemy_hp: i32,
+    visible_incoming_damage: Option<i32>,
+    action_count: Option<usize>,
+    action_key_preview: Vec<String>,
+    input_preview: Vec<ClientInput>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -135,6 +168,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
         Vec::new()
     };
     let classification = classify_gap_review(&ladder);
+    let review_focus = review_focus(&ladder);
     CombatCaseReview {
         schema: "combat_case_review",
         case_path: args.case.display().to_string(),
@@ -176,6 +210,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
         combat: case.combat,
         ladder,
         classification,
+        review_focus,
     }
 }
 
@@ -231,6 +266,66 @@ fn classification(
         kind,
         reason,
         selected_review,
+    }
+}
+
+fn review_focus(ladder: &[SearchReview]) -> Option<CombatReviewFocus> {
+    let mut selected: Option<(&SearchReview, &SearchDiagnosticProgressFacts)> = None;
+    for review in ladder {
+        let Some(progress) = review.facts.diagnostic_progress.as_ref() else {
+            continue;
+        };
+        if selected
+            .map(|(_, current)| progress_is_better_focus(progress, current))
+            .unwrap_or(true)
+        {
+            selected = Some((review, progress));
+        }
+    }
+    selected.map(|(review, progress)| CombatReviewFocus {
+        selected_review: review.label,
+        reason: focus_reason(progress),
+        progress: progress.clone(),
+    })
+}
+
+fn progress_is_better_focus(
+    candidate: &SearchDiagnosticProgressFacts,
+    current: &SearchDiagnosticProgressFacts,
+) -> bool {
+    match (
+        candidate.terminal == SearchTerminalLabel::Win,
+        current.terminal == SearchTerminalLabel::Win,
+    ) {
+        (true, false) => return true,
+        (false, true) => return false,
+        (true, true) => {
+            return (candidate.final_hp, -(candidate.potions_used as i32))
+                > (current.final_hp, -(current.potions_used as i32));
+        }
+        (false, false) => {}
+    }
+
+    (
+        -candidate.total_enemy_hp,
+        -(candidate.living_enemy_count as i32),
+        candidate.turns as i32,
+        candidate.final_hp,
+        -(candidate.potions_used as i32),
+    ) > (
+        -current.total_enemy_hp,
+        -(current.living_enemy_count as i32),
+        current.turns as i32,
+        current.final_hp,
+        -(current.potions_used as i32),
+    )
+}
+
+fn focus_reason(progress: &SearchDiagnosticProgressFacts) -> &'static str {
+    if progress.terminal == SearchTerminalLabel::Win {
+        "complete_win_available"
+    } else {
+        "closest_failure_progress_by_enemy_hp"
     }
 }
 
@@ -315,7 +410,63 @@ fn search_review(
             expansion_us: report.performance.expansion_elapsed_us,
             child_bookkeeping_us: report.performance.child_bookkeeping_elapsed_us,
         },
+        facts: SearchReviewFacts {
+            diagnostic_progress: diagnostic_progress_facts(report),
+        },
     }
+}
+
+fn diagnostic_progress_facts(
+    report: &CombatSearchV2Report,
+) -> Option<SearchDiagnosticProgressFacts> {
+    if let Some(trajectory) = report.best_complete_trajectory.as_ref() {
+        return Some(SearchDiagnosticProgressFacts {
+            source: "best_complete",
+            terminal: trajectory.terminal,
+            estimated: trajectory.estimated,
+            final_hp: trajectory.final_hp,
+            hp_loss: trajectory.hp_loss,
+            turns: trajectory.turns,
+            potions_used: trajectory.potions_used,
+            cards_played: trajectory.cards_played,
+            living_enemy_count: trajectory.final_state.living_enemy_count,
+            total_enemy_hp: trajectory.final_state.total_enemy_hp,
+            visible_incoming_damage: Some(trajectory.final_state.visible_incoming_damage),
+            action_count: Some(trajectory.actions.len()),
+            action_key_preview: trajectory
+                .actions
+                .iter()
+                .take(12)
+                .map(|action| action.action_key.clone())
+                .collect(),
+            input_preview: trajectory
+                .actions
+                .iter()
+                .take(12)
+                .map(|action| action.input.clone())
+                .collect(),
+        });
+    }
+    report
+        .rollout
+        .best_frontier_estimate
+        .as_ref()
+        .map(|rollout| SearchDiagnosticProgressFacts {
+            source: "rollout_frontier",
+            terminal: rollout.terminal,
+            estimated: rollout.estimated,
+            final_hp: rollout.final_hp,
+            hp_loss: rollout.hp_loss,
+            turns: rollout.turns,
+            potions_used: rollout.potions_used,
+            cards_played: rollout.cards_played,
+            living_enemy_count: rollout.living_enemy_count,
+            total_enemy_hp: rollout.total_enemy_hp,
+            visible_incoming_damage: None,
+            action_count: Some(rollout.actions_simulated),
+            action_key_preview: Vec::new(),
+            input_preview: Vec::new(),
+        })
 }
 
 fn potion_policy_label(policy: CombatSearchV2PotionPolicy) -> &'static str {
