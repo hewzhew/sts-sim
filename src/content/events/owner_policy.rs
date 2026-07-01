@@ -74,6 +74,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::Designer => return Ok(choose(designer_choice(run_state))),
         EventId::Ghosts => return Ok(choose(ghosts_choice(run_state))),
         EventId::LivingWall => return Ok(choose(living_wall_choice(run_state))),
+        EventId::MatchAndKeep => return Ok(choose(match_and_keep_choice(run_state))),
         EventId::Mausoleum => return Ok(choose(mausoleum_choice(run_state))),
         EventId::Mushrooms => return Ok(choose(mushrooms_choice(run_state))),
         EventId::MysteriousSphere => return Ok(choose(mysterious_sphere_choice(run_state))),
@@ -253,6 +254,10 @@ fn mysterious_sphere_choice(run_state: &RunState) -> EventOwnerOptionSelector {
         1 => EventActionKind::Fight,
         _ => EventActionKind::Leave,
     })
+}
+
+fn match_and_keep_choice(_run_state: &RunState) -> EventOwnerOptionSelector {
+    option_index(0)
 }
 
 fn mushrooms_choice(run_state: &RunState) -> EventOwnerOptionSelector {
