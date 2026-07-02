@@ -63,14 +63,14 @@ pub struct BossRelicAdmission {
 impl BossRelicAdmissionClass {
     fn order_rank(self) -> u8 {
         match self {
-            BossRelicAdmissionClass::StarterUpgrade => 0,
-            BossRelicAdmissionClass::LowDownsideValue => 1,
-            BossRelicAdmissionClass::DeckCleanup => 2,
-            BossRelicAdmissionClass::EnergyWithConstraint => 3,
-            BossRelicAdmissionClass::RouteValue => 4,
-            BossRelicAdmissionClass::StrategicPower => 5,
-            BossRelicAdmissionClass::CurseDebt => 6,
-            BossRelicAdmissionClass::TransformAgency => 7,
+            BossRelicAdmissionClass::EnergyWithConstraint => 0,
+            BossRelicAdmissionClass::StrategicPower => 1,
+            BossRelicAdmissionClass::TransformAgency => 2,
+            BossRelicAdmissionClass::DeckCleanup => 3,
+            BossRelicAdmissionClass::StarterUpgrade => 4,
+            BossRelicAdmissionClass::LowDownsideValue => 5,
+            BossRelicAdmissionClass::RouteValue => 6,
+            BossRelicAdmissionClass::CurseDebt => 7,
             BossRelicAdmissionClass::Unknown => 8,
             BossRelicAdmissionClass::Skip => 9,
         }
