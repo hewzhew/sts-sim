@@ -120,7 +120,7 @@ pub fn assess_deck_strategic_deficit(
     DeckStrategicDeficit {
         frontload_damage: frontload_level(frontload_units, counts.act),
         aoe_or_minion_control: unit_level(inventory.aoe_units, 1, 4),
-        block_or_mitigation: unit_level(block_or_mitigation_units, 2, 10),
+        block_or_mitigation: block_or_mitigation_level(block_or_mitigation_units, counts.act),
         boss_scaling_plan,
         deck_access,
         energy_or_playability,
@@ -327,12 +327,18 @@ fn block_or_mitigation_units(inventory: &DeckRoleInventory, counts: &StrategicCo
         .block_units
         .saturating_add(inventory.cycle_block_units)
         .saturating_add(inventory.mitigation_units);
-    let strong = raw_nonstarter.saturating_sub(counts.iron_wave_count);
+    let low_quality_block = counts.defend_count.saturating_add(counts.iron_wave_count);
+    let strong = raw_nonstarter.saturating_sub(low_quality_block);
     let low_quality_cap = counts
         .defend_count
         .saturating_add(counts.iron_wave_count)
         .min(3);
     strong.saturating_add(low_quality_cap)
+}
+
+fn block_or_mitigation_level(units: u8, act: u8) -> StrategicDeficitLevel {
+    let surplus_at = if act >= 3 { 16 } else { 10 };
+    unit_level(units, 2, surplus_at)
 }
 
 fn frontload_level(units: u8, act: u8) -> StrategicDeficitLevel {
