@@ -4,10 +4,11 @@ use std::time::Duration;
 use clap::Parser;
 use serde::Serialize;
 use sts_simulator::ai::combat_search_v2::{
-    run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, run_combat_search_v2,
-    CombatLineLabReport, CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config,
-    CombatSearchV2PotionPolicy, CombatSearchV2Report, CombatSearchV2RolloutPolicy,
-    CombatSearchV2TurnPlanPolicy, SearchTerminalLabel,
+    derive_combat_deficit_evidence, run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0,
+    run_combat_search_v2, CombatDeficitEvidenceReport, CombatLineLabReport,
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config, CombatSearchV2PotionPolicy,
+    CombatSearchV2Report, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
+    SearchTerminalLabel,
 };
 use sts_simulator::content::cards::java_id;
 use sts_simulator::content::monsters::EnemyId;
@@ -75,6 +76,7 @@ struct CombatCaseReview {
     review_focus: Option<CombatReviewFocus>,
     review_focus_replay: Option<CombatReviewFocusReplay>,
     line_lab: Option<CombatLineLabReport>,
+    combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
 }
 
 #[derive(Serialize)]
@@ -284,6 +286,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
     } else {
         None
     };
+    let combat_deficit_evidence = line_lab.as_ref().map(derive_combat_deficit_evidence);
     CombatCaseReview {
         schema: "combat_case_review",
         case_path: args.case.display().to_string(),
@@ -328,6 +331,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
         review_focus,
         review_focus_replay,
         line_lab,
+        combat_deficit_evidence,
     }
 }
 

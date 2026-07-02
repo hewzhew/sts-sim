@@ -77,6 +77,7 @@ pub mod state_abstraction;
 
 // Reports, diagnostics, and opt-in analysis tools.
 mod decision_microscope;
+mod deficit_evidence;
 mod diagnostics;
 mod diagnostics_tags;
 mod line_lab;
@@ -157,6 +158,10 @@ pub use decision_microscope::{
     CombatSearchV2DecisionMicroscopeConfigReport, CombatSearchV2DecisionMicroscopeReport,
     CombatSearchV2DecisionOneStepReport, CombatSearchV2DecisionSelectedAction,
     CombatSearchV2DecisionTrajectorySummary,
+};
+pub use deficit_evidence::{
+    derive_combat_deficit_evidence, CombatDeficitEvidenceFlag, CombatDeficitEvidenceObservations,
+    CombatDeficitEvidenceReport,
 };
 pub(crate) use external_payoff::has_external_payoff_opportunity;
 pub use line_lab::{
