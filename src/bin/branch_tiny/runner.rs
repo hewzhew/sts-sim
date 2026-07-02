@@ -1,6 +1,7 @@
 use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
 };
+use sts_simulator::content::cards::{get_card_definition, CardType};
 use sts_simulator::eval::run_control::{
     apply_owner_audit_auto_run, build_decision_surface, CombatAutomationTrajectorySource,
     CombatSearchTraceSummary, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
@@ -20,6 +21,12 @@ use super::{
 
 const BOSS_RETRY_POTION_RESCUE_MAX_POTIONS_USED: u32 = 3;
 const HALLWAY_POTION_RESCUE_MAX_POTIONS_USED: u32 = 1;
+
+struct HallwayPotionRescueAttempt {
+    outcome: RunControlCommandOutcome,
+    status: BranchStatus,
+    committed: bool,
+}
 
 pub(super) struct AdvanceResult {
     pub(super) status: BranchStatus,
@@ -134,14 +141,13 @@ pub(super) fn advance_to_owner_or_gap(
                     if matches!(status, BranchStatus::CombatGap { .. })
                         && should_try_hallway_potion_rescue(session)
                     {
-                        match apply_owner_audit_auto_run(
-                            session,
-                            hallway_potion_rescue_auto_step_options(args),
-                        ) {
+                        match try_hallway_potion_rescue(session, args) {
                             Ok(rescue) => {
-                                combat_search.extend(combat_search_summaries(&rescue));
-                                auto_steps.extend(rescue.auto_applied_steps.clone());
-                                status = classify_auto_outcome(session, &rescue);
+                                combat_search.extend(combat_search_summaries(&rescue.outcome));
+                                if rescue.committed {
+                                    auto_steps.extend(rescue.outcome.auto_applied_steps.clone());
+                                }
+                                status = rescue.status;
                             }
                             Err(err) => {
                                 return advance_result(
@@ -298,6 +304,52 @@ fn should_try_hallway_potion_rescue(session: &RunControlSession) -> bool {
     !meta.is_boss_fight
         && !meta.is_elite_fight
         && (session.run_state.act_num >= 3 || player.current_hp * 2 <= player.max_hp)
+}
+
+fn try_hallway_potion_rescue(
+    session: &mut RunControlSession,
+    args: Args,
+) -> Result<HallwayPotionRescueAttempt, String> {
+    let before_curses = master_deck_curse_count(session);
+    let mut trial = session.clone();
+    let outcome =
+        apply_owner_audit_auto_run(&mut trial, hallway_potion_rescue_auto_step_options(args))?;
+    let status = classify_auto_outcome(&trial, &outcome);
+    if matches!(status, BranchStatus::CombatGap { .. }) {
+        return Ok(HallwayPotionRescueAttempt {
+            outcome,
+            status,
+            committed: false,
+        });
+    }
+    let gained_curses = master_deck_curse_count(&trial).saturating_sub(before_curses);
+    if gained_curses > 0 {
+        return Ok(HallwayPotionRescueAttempt {
+            outcome,
+            status: BranchStatus::CombatGap {
+                boundary: "Combat".to_string(),
+                reason: format!(
+                    "hallway potion rescue rejected dirty win: gained {gained_curses} curse card(s)"
+                ),
+            },
+            committed: false,
+        });
+    }
+    *session = trial;
+    Ok(HallwayPotionRescueAttempt {
+        outcome,
+        status,
+        committed: true,
+    })
+}
+
+fn master_deck_curse_count(session: &RunControlSession) -> usize {
+    session
+        .run_state
+        .master_deck
+        .iter()
+        .filter(|card| get_card_definition(card.id).card_type == CardType::Curse)
+        .count()
 }
 
 fn primary_auto_step_options(args: Args) -> RunControlAutoStepOptions {
