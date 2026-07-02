@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 
 use clap::{ArgGroup, Parser};
 use sts_simulator::ai::combat_search_v2::{
-    explain_combat_search_v2_initial_decision, CombatSearchV2FrontierPolicy,
-    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
+    explain_combat_search_v2_initial_decision, CombatSearchV2ChildRolloutPolicy,
+    CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
+    CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::eval::combat_capture::load_combat_capture_v1;
 use sts_simulator::eval::combat_search_v2::{
@@ -61,6 +62,9 @@ struct Args {
 
     #[arg(long, value_parser = parse_rollout_policy)]
     rollout_policy: Option<CombatSearchV2RolloutPolicy>,
+
+    #[arg(long, value_parser = parse_child_rollout_policy)]
+    child_rollout_policy: Option<CombatSearchV2ChildRolloutPolicy>,
 
     #[arg(long)]
     compare_rollout: Option<String>,
@@ -263,6 +267,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         max_potions_used: args.max_potions_used,
         high_stakes_semantic_potions,
         rollout_policy: args.rollout_policy,
+        child_rollout_policy: args.child_rollout_policy,
         rollout_max_evaluations: args.rollout_max_evaluations,
         rollout_max_actions: args.rollout_max_actions,
         rollout_beam_width: args.rollout_beam_width,
@@ -470,6 +475,16 @@ fn parse_rollout_policy(value: &str) -> Result<CombatSearchV2RolloutPolicy, Stri
         }
         _ => Err(format!(
             "invalid rollout policy '{value}', expected disabled|enemy_mechanics_adaptive_no_potion|conservative_no_potion|phase_aware_no_potion|turn_beam_no_potion"
+        )),
+    }
+}
+
+fn parse_child_rollout_policy(value: &str) -> Result<CombatSearchV2ChildRolloutPolicy, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "immediate" | "eager" => Ok(CombatSearchV2ChildRolloutPolicy::Immediate),
+        "lazy" | "lazy-on-pop" | "lazy_on_pop" => Ok(CombatSearchV2ChildRolloutPolicy::LazyOnPop),
+        _ => Err(format!(
+            "invalid child rollout policy '{value}', expected immediate|lazy_on_pop"
         )),
     }
 }

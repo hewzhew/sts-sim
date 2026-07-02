@@ -1,5 +1,5 @@
 use sts_simulator::ai::combat_search_v2::{
-    CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::content::cards::{get_card_definition, CardType};
 use sts_simulator::eval::run_control::{
@@ -359,6 +359,7 @@ fn primary_auto_step_options(args: Args) -> RunControlAutoStepOptions {
         args.auto_ops,
         args.wall_ms.is_some(),
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+        CombatSearchV2ChildRolloutPolicy::Immediate,
     )
 }
 
@@ -369,6 +370,7 @@ fn diagnostic_rescue_auto_step_options(args: Args) -> RunControlAutoStepOptions 
         args.auto_ops,
         args.wall_ms.is_some(),
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+        CombatSearchV2ChildRolloutPolicy::Immediate,
     )
 }
 
@@ -379,6 +381,7 @@ fn hallway_potion_rescue_auto_step_options(args: Args) -> RunControlAutoStepOpti
         args.auto_ops,
         args.wall_ms.is_some(),
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+        CombatSearchV2ChildRolloutPolicy::Immediate,
     );
     options.search.potion_policy = Some(CombatSearchV2PotionPolicy::All);
     options.search.max_potions_used = Some(HALLWAY_POTION_RESCUE_MAX_POTIONS_USED);
@@ -391,6 +394,7 @@ fn auto_step_options(
     auto_ops: usize,
     wall_limited: bool,
     turn_plan_policy: CombatSearchV2TurnPlanPolicy,
+    child_rollout_policy: CombatSearchV2ChildRolloutPolicy,
 ) -> RunControlAutoStepOptions {
     RunControlAutoStepOptions {
         search: RunControlSearchCombatOptions {
@@ -398,6 +402,7 @@ fn auto_step_options(
             wall_ms: Some(wall_ms),
             max_hp_loss: Some(RunControlHpLossLimit::Unlimited),
             turn_plan_policy: Some(turn_plan_policy),
+            child_rollout_policy: Some(child_rollout_policy),
             ..Default::default()
         },
         max_operations: Some(auto_run_chunk_ops(auto_ops, wall_limited)),
@@ -457,6 +462,7 @@ fn boss_retry_options(
         args.auto_ops,
         args.wall_ms.is_some(),
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+        CombatSearchV2ChildRolloutPolicy::LazyOnPop,
     );
     options.search.potion_policy = Some(potion_policy);
     options.search.max_potions_used = max_potions_used;

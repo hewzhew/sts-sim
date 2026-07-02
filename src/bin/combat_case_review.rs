@@ -4,8 +4,9 @@ use std::time::Duration;
 use clap::Parser;
 use serde::Serialize;
 use sts_simulator::ai::combat_search_v2::{
-    run_combat_search_v2, CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
-    CombatSearchV2TurnPlanPolicy, SearchTerminalLabel,
+    run_combat_search_v2, CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config,
+    CombatSearchV2PotionPolicy, CombatSearchV2Report, CombatSearchV2TurnPlanPolicy,
+    SearchTerminalLabel,
 };
 use sts_simulator::content::cards::java_id;
 use sts_simulator::content::monsters::EnemyId;
@@ -43,6 +44,8 @@ struct Args {
     action_preview_limit: usize,
     #[arg(long)]
     replay_focus: bool,
+    #[arg(long)]
+    lazy_child_rollout: bool,
 }
 
 #[derive(Serialize)]
@@ -70,6 +73,7 @@ struct SearchReview {
     nodes: usize,
     wall_ms: u64,
     turn_plan_policy: &'static str,
+    child_rollout_policy: &'static str,
     potion_policy: &'static str,
     max_potions_used: Option<u32>,
     complete_win: bool,
@@ -222,6 +226,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
                 CombatSearchV2PotionPolicy::Never,
                 Some(0),
                 args.action_preview_limit,
+                args.lazy_child_rollout,
             ),
             run_search(
                 "slow_potion_diagnostic",
@@ -232,6 +237,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
                 CombatSearchV2PotionPolicy::All,
                 Some(args.diagnostic_potion_max),
                 args.action_preview_limit,
+                args.lazy_child_rollout,
             ),
         ]
     } else {
@@ -601,6 +607,7 @@ fn run_search(
     potion_policy: CombatSearchV2PotionPolicy,
     max_potions_used: Option<u32>,
     action_preview_limit: usize,
+    lazy_child_rollout: bool,
 ) -> SearchReview {
     let report = run_combat_search_v2(
         &case.position.engine,
@@ -611,6 +618,11 @@ fn run_search(
             turn_plan_policy,
             potion_policy,
             max_potions_used,
+            child_rollout_policy: if lazy_child_rollout {
+                CombatSearchV2ChildRolloutPolicy::LazyOnPop
+            } else {
+                CombatSearchV2ChildRolloutPolicy::Immediate
+            },
             ..CombatSearchV2Config::default()
         },
     );
@@ -642,6 +654,7 @@ fn search_review(
         nodes,
         wall_ms,
         turn_plan_policy: turn_plan_policy.label(),
+        child_rollout_policy: report.search_policy.child_rollout_policy,
         potion_policy: potion_policy_label(potion_policy),
         max_potions_used,
         complete_win: best.is_some(),

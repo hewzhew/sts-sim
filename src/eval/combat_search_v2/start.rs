@@ -5,10 +5,10 @@ use std::time::Duration;
 use serde::Serialize;
 
 use crate::ai::combat_search_v2::{
-    high_stakes_semantic_potion_budget, run_combat_search_v2, CombatSearchV2Config,
-    CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy, CombatSearchV2Report,
-    CombatSearchV2RolloutPolicy, CombatSearchV2RootActionPrior, CombatSearchV2TurnPlanPolicy,
-    CombatSearchV2TurnPlanPrior,
+    high_stakes_semantic_potion_budget, run_combat_search_v2, CombatSearchV2ChildRolloutPolicy,
+    CombatSearchV2Config, CombatSearchV2FrontierPolicy, CombatSearchV2PotionPolicy,
+    CombatSearchV2Report, CombatSearchV2RolloutPolicy, CombatSearchV2RootActionPrior,
+    CombatSearchV2TurnPlanPolicy, CombatSearchV2TurnPlanPrior,
 };
 use crate::eval::artifact::ArtifactTrustLevel;
 use crate::eval::combat_capture::load_combat_capture_v1;
@@ -27,6 +27,7 @@ pub struct CombatSearchV2RunOptions {
     pub max_potions_used: Option<u32>,
     pub high_stakes_semantic_potions: bool,
     pub rollout_policy: Option<CombatSearchV2RolloutPolicy>,
+    pub child_rollout_policy: Option<CombatSearchV2ChildRolloutPolicy>,
     pub rollout_max_evaluations: Option<usize>,
     pub rollout_max_actions: Option<usize>,
     pub rollout_beam_width: Option<usize>,
@@ -59,7 +60,9 @@ impl CombatSearchV2RunOptions {
             potion_policy: self.potion_policy.unwrap_or(defaults.potion_policy),
             max_potions_used: self.max_potions_used.or(defaults.max_potions_used),
             rollout_policy: self.rollout_policy.unwrap_or(defaults.rollout_policy),
-            child_rollout_policy: defaults.child_rollout_policy,
+            child_rollout_policy: self
+                .child_rollout_policy
+                .unwrap_or(defaults.child_rollout_policy),
             rollout_max_evaluations: self
                 .rollout_max_evaluations
                 .unwrap_or(defaults.rollout_max_evaluations),
