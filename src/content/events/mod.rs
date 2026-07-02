@@ -164,6 +164,7 @@ pub mod nest;
 
 // Phase 6: Act 3 Events
 pub mod falling;
+pub(crate) mod falling_owner;
 pub mod moai_head;
 pub mod tomb_red_mask;
 pub mod winding_halls;

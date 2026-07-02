@@ -73,6 +73,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::CursedTome => return Ok(choose(cursed_tome_choice(run_state))),
         EventId::DeadAdventurer => return Ok(choose(dead_adventurer_choice(run_state))),
         EventId::Designer => return Ok(choose(designer_choice(run_state))),
+        EventId::Falling => return Ok(choose(super::falling_owner::falling_choice(run_state))),
         EventId::Ghosts => return Ok(choose(ghosts_choice(run_state))),
         EventId::LivingWall => return Ok(choose(living_wall_choice(run_state))),
         EventId::MatchAndKeep => return Ok(choose(match_and_keep_choice(run_state))),
