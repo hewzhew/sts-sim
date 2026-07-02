@@ -2,6 +2,10 @@ use serde::Serialize;
 
 use crate::ai::analysis::card_semantics::{card_definition_with_upgrades, Mechanic, PlayEffect};
 use crate::ai::strategy::deck_role_inventory::DeckRoleInventory;
+use crate::ai::strategy::exhaust_corruption_assessment::{
+    assess_exhaust_corruption, ExhaustCorruptionAssessment, ExhaustCorruptionRisk,
+    ExhaustCorruptionState,
+};
 use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
 use crate::content::cards::{get_card_definition, CardId, CardType};
 use crate::runtime::combat::CombatCard;
@@ -46,6 +50,7 @@ pub enum StrategicRisk {
     SevereCurseBurden,
     ReliesOnPowers,
     ReliesOnLowImpactCardSpam,
+    CorruptionWithoutExhaustPayoff,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -57,6 +62,7 @@ pub struct DeckStrategicDeficit {
     pub deck_access: StrategicDeficitLevel,
     pub energy_or_playability: StrategicDeficitLevel,
     pub deck_burden: StrategicBurdenLevel,
+    pub exhaust_corruption: ExhaustCorruptionAssessment,
     pub package_evidence: Vec<StrategicPackageEvidence>,
     pub risks: Vec<StrategicRisk>,
 }
@@ -100,15 +106,16 @@ pub fn assess_deck_strategic_deficit(
 ) -> DeckStrategicDeficit {
     let inventory = DeckRoleInventory::from_deck(deck);
     let counts = StrategicCounts::from_deck(deck, facts);
+    let exhaust_corruption = assess_exhaust_corruption(deck);
     let frontload_units = inventory
         .frontload_units
         .saturating_add(counts.strike_count);
     let block_or_mitigation_units = block_or_mitigation_units(&inventory, &counts);
-    let package_evidence = package_evidence(&inventory, &counts);
+    let package_evidence = package_evidence(&inventory, &counts, &exhaust_corruption);
     let boss_scaling_plan = boss_scaling_level(&package_evidence, &counts);
     let deck_access = access_level(inventory.draw_units, counts.deck_size);
     let energy_or_playability = energy_level(&inventory, &counts);
-    let risks = risks(&inventory, &counts, deck_access);
+    let risks = risks(&inventory, &counts, deck_access, &exhaust_corruption);
 
     DeckStrategicDeficit {
         frontload_damage: frontload_level(frontload_units, counts.act),
@@ -118,6 +125,7 @@ pub fn assess_deck_strategic_deficit(
         deck_access,
         energy_or_playability,
         deck_burden: burden_level(&counts, deck_access),
+        exhaust_corruption,
         package_evidence,
         risks,
     }
@@ -150,7 +158,6 @@ struct StrategicCounts {
     has_energy_relic: bool,
     has_corruption: bool,
     has_dark_embrace: bool,
-    has_exhaust_handler: bool,
     has_ritual_dagger: bool,
 }
 
@@ -199,12 +206,6 @@ impl StrategicCounts {
         if is_conditional_payoff(card.id) {
             self.conditional_payoffs += 1;
         }
-        if matches!(
-            card.id,
-            CardId::Corruption | CardId::DarkEmbrace | CardId::FeelNoPain
-        ) {
-            self.has_exhaust_handler = true;
-        }
         if card.id == CardId::Corruption {
             self.has_corruption = true;
         }
@@ -230,11 +231,13 @@ impl StrategicCounts {
 fn package_evidence(
     inventory: &DeckRoleInventory,
     counts: &StrategicCounts,
+    exhaust_corruption: &ExhaustCorruptionAssessment,
 ) -> Vec<StrategicPackageEvidence> {
     let mut evidence = Vec::new();
-    if counts.has_corruption
-        || (counts.has_exhaust_handler && inventory.exhaust_stream_units >= 2)
-        || (counts.has_dark_embrace && inventory.exhaust_stream_units >= 1)
+    if matches!(
+        exhaust_corruption.state,
+        ExhaustCorruptionState::SupportedButSlow | ExhaustCorruptionState::EngineOnline
+    ) || (counts.has_dark_embrace && inventory.exhaust_stream_units >= 1)
     {
         evidence.push(StrategicPackageEvidence::ExhaustEngine);
     }
@@ -263,6 +266,7 @@ fn risks(
     inventory: &DeckRoleInventory,
     counts: &StrategicCounts,
     deck_access: StrategicDeficitLevel,
+    exhaust_corruption: &ExhaustCorruptionAssessment,
 ) -> Vec<StrategicRisk> {
     let mut risks = Vec::new();
     if counts.low_impact_attacks >= 4 {
@@ -290,6 +294,12 @@ fn risks(
     }
     if counts.power_count >= 4 {
         risks.push(StrategicRisk::ReliesOnPowers);
+    }
+    if exhaust_corruption
+        .risks
+        .contains(&ExhaustCorruptionRisk::CorruptionWithoutExhaustPayoff)
+    {
+        risks.push(StrategicRisk::CorruptionWithoutExhaustPayoff);
     }
     if inventory.frontload_units >= 5
         && counts.low_impact_attacks >= 4

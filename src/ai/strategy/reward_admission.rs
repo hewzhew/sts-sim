@@ -187,8 +187,7 @@ fn assess_reward_admission_from_definitions(
             .package_changes
             .iter()
             .filter(|change| {
-                change.to == PackageMaturity::Supported
-                    && !quality.suppresses_support(change.package)
+                supports_package_change(change) && !quality.suppresses_support(change.package)
             })
             .map(|change| RewardAdmissionReason::Supports(change.package)),
     );
@@ -266,7 +265,7 @@ fn assess_reward_admission_from_definitions(
 
     let closes = !transition.newly_closed_requirements.is_empty();
     let supports = transition.package_changes.iter().any(|change| {
-        change.to == PackageMaturity::Supported && !quality.suppresses_support(change.package)
+        supports_package_change(change) && !quality.suppresses_support(change.package)
     });
     let supported_payoff = transition.candidate_play_effects.iter().any(|effect| {
         supported_damage_payoff_package(&transition.before, effect).is_some()
@@ -316,6 +315,15 @@ fn assess_reward_admission_from_definitions(
         class,
         reasons,
     }
+}
+
+fn supports_package_change(
+    change: &crate::ai::strategy::package_transition::PackageStateChange,
+) -> bool {
+    change.to == PackageMaturity::Supported
+        || (change.package == PackageKind::Exhaust
+            && change.from == PackageMaturity::SourceOnly
+            && change.to == PackageMaturity::Seeded)
 }
 
 pub fn skip_reward_admission() -> RewardAdmission {

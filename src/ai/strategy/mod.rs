@@ -16,6 +16,7 @@ pub mod deck_plan;
 pub mod deck_purge_target;
 pub mod deck_role_inventory;
 pub mod deck_strategic_deficit;
+pub mod exhaust_corruption_assessment;
 pub mod formation;
 pub mod gates;
 pub mod jobs;

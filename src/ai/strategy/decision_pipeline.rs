@@ -617,7 +617,10 @@ fn strategic_deficit_score(
     admission: Option<&RewardAdmission>,
     scores: &mut Vec<ScoreComponent>,
 ) {
-    if !matches!(candidate.kind, DecisionCandidateKind::CardRewardPick { .. }) {
+    if !matches!(
+        candidate.kind,
+        DecisionCandidateKind::CardRewardPick { .. } | DecisionCandidateKind::ShopBuyCard { .. }
+    ) {
         return;
     }
     let Some(admission) = admission else {
