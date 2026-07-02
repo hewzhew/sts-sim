@@ -301,7 +301,7 @@ struct Args {
     wall_capped_boss_budget: bool,
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 struct ArgsOverrides {
     objective: Option<RunObjective>,
     generations: Option<usize>,
@@ -390,7 +390,7 @@ fn run() -> Result<(), String> {
         event_owner_probe,
     ) = parse_args()?;
     if let Some(continue_capsule) = continue_capsule {
-        return run_chain::run(args, continue_capsule);
+        return run_chain::run(args, overrides, continue_capsule);
     }
     if let Some(path) = resume_capsule_path {
         if resume_frontier.is_some() || run_capsule_path.is_some() {
