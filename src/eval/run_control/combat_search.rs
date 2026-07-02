@@ -15,13 +15,19 @@ use crate::sim::combat_legal_actions::engine_local_moves;
 use crate::state::core::{EngineState, RunResult};
 
 use super::combat_candidate_line::{replay_candidate_line, CombatCandidateLine};
+use super::combat_line_outcome::{
+    evaluate_combat_candidate_line_outcome, find_clean_no_potion_alternative,
+    render_combat_line_outcome_detail, CombatLineAcceptancePolicy,
+};
 use super::commands::{
     RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlSearchCombatOptions,
     RunControlSearchEvidenceTarget,
 };
 use super::registry::BenchmarkCasePaths;
 use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenceContextV1};
-use super::session::{RunControlCommandOutcome, RunControlSession};
+use super::session::{
+    RunControlCombatSearchRejection, RunControlCommandOutcome, RunControlSession,
+};
 use super::trace_annotation::{
     CombatAutomationActionV1, CombatAutomationMonsterStateV1, CombatAutomationStepStateV1,
     CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
@@ -50,7 +56,8 @@ pub(super) fn apply_search_combat(
             render_search_rejection(&report, "invalid_card_identity", None),
             render_saved_evidence_note(saved_evidence.as_deref()),
             super::render::render_run_control_state(session)
-        ));
+        ))
+        .with_combat_search_rejection(RunControlCombatSearchRejection::InvalidCardIdentity);
         outcome
             .trace_annotations
             .push(combat_search_performance_trace_annotation(
@@ -135,7 +142,8 @@ pub(super) fn apply_search_combat(
             render_search_rejection(&report, "no_complete_winning_candidate", None),
             render_saved_evidence_note(saved_evidence.as_deref()),
             super::render::render_run_control_state(session)
-        ));
+        ))
+        .with_combat_search_rejection(RunControlCombatSearchRejection::NoCompleteWinningCandidate);
         outcome
             .trace_annotations
             .push(combat_search_performance_trace_annotation(
@@ -149,6 +157,7 @@ pub(super) fn apply_search_combat(
     };
     let original_line = CombatCandidateLine::from_search_trajectory(trajectory);
     let mut selected_line = original_line.clone();
+    let mut selected_report_owned: Option<CombatSearchV2Report> = None;
     let mut repair_summary: Option<String> = None;
     if let Some(repair) =
         super::combat_line_repair::try_repair_winning_trajectory(&start, trajectory, &config)
@@ -163,6 +172,50 @@ pub(super) fn apply_search_combat(
             trajectory.hp_loss,
             selected_line.hp_loss
         ));
+    }
+    let policy = CombatLineAcceptancePolicy::default();
+    let selected_eval =
+        evaluate_combat_candidate_line_outcome(session, &start, &config, selected_line.clone())?;
+    if policy.classify(&selected_eval.outcome).is_rejected() {
+        if let Some(alternative) =
+            find_clean_no_potion_alternative(session, &start, &config, policy)?
+        {
+            selected_line = alternative.line;
+            selected_report_owned = Some(alternative.report);
+            append_repair_summary(
+                &mut repair_summary,
+                format!(
+                    "clean_no_potion_alternative replaced dirty_win gained_curses={} original_final_hp={} clean_final_hp={}",
+                    selected_eval.outcome.gained_curse_count(),
+                    selected_eval.outcome.final_hp,
+                    alternative.outcome.final_hp
+                ),
+            );
+        } else {
+            let mut outcome = RunControlCommandOutcome::message(format!(
+                "{}{}\n\n{}",
+                render_search_rejection(
+                    &report,
+                    "dirty_winning_candidate_rejected",
+                    Some(render_combat_line_outcome_detail(&selected_eval.outcome)),
+                ),
+                render_saved_evidence_note(saved_evidence.as_deref()),
+                super::render::render_run_control_state(session)
+            ))
+            .with_combat_search_rejection(
+                RunControlCombatSearchRejection::DirtyWinningCandidateRejected,
+            );
+            outcome
+                .trace_annotations
+                .push(combat_search_performance_trace_annotation(
+                    "search_combat_rejected_dirty_win",
+                    session,
+                    &start,
+                    &report,
+                ));
+            outcome.search_evidence_path = saved_evidence;
+            return Ok(outcome);
+        }
     }
 
     if let Some(max_hp_loss) = effective_hp_loss_limit(session, &options) {
@@ -190,7 +243,8 @@ pub(super) fn apply_search_combat(
                 ),
                 render_saved_evidence_note(saved_evidence.as_deref()),
                 super::render::render_run_control_state(session)
-            ));
+            ))
+            .with_combat_search_rejection(RunControlCombatSearchRejection::HpLossLimitExceeded);
             outcome
                 .trace_annotations
                 .push(combat_search_performance_trace_annotation(
@@ -218,7 +272,7 @@ pub(super) fn apply_search_combat(
         session,
         &start,
         &config,
-        &report,
+        selected_report_owned.as_ref().unwrap_or(&report),
         saved_evidence.as_deref(),
         selected_line,
         CombatAutomationTrajectorySource::SearchCombat,
@@ -232,6 +286,16 @@ struct CombatCandidateLinePerformance {
     nodes_expanded: u64,
     nodes_generated: u64,
     total_us: u64,
+}
+
+fn append_repair_summary(summary: &mut Option<String>, item: String) {
+    match summary {
+        Some(summary) => {
+            summary.push(' ');
+            summary.push_str(&item);
+        }
+        None => *summary = Some(item),
+    }
 }
 
 fn apply_selected_combat_candidate_line(
@@ -868,6 +932,7 @@ fn search_config(
             .or(session.search_wall_ms)
             .map(std::time::Duration::from_millis),
         stop_on_win_hp_loss_at_most,
+        min_win_candidates_before_stop: defaults.min_win_candidates_before_stop,
         input_label: Some(format!(
             "run_play_driver:search_combat:step{}",
             session.decision_step

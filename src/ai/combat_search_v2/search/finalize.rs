@@ -11,6 +11,7 @@ pub(super) struct SearchFinishInput {
     pub(super) frontier: FrontierQueue,
     pub(super) best_complete: Option<SearchNode>,
     pub(super) best_win: Option<SearchNode>,
+    pub(super) win_candidates: Vec<SearchNode>,
     pub(super) best_frontier: Option<SearchNode>,
     pub(super) rollout_cache: RolloutCache,
     pub(super) performance: CombatSearchV2PerformanceReport,
@@ -33,6 +34,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         frontier,
         best_complete,
         best_win,
+        win_candidates,
         best_frontier,
         rollout_cache,
         performance,
@@ -93,6 +95,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
             max_engine_steps_per_action: config.max_engine_steps_per_action,
             wall_time_ms: config.wall_time.map(|duration| duration.as_millis()),
             stop_on_win_hp_loss_at_most: config.stop_on_win_hp_loss_at_most,
+            min_win_candidates_before_stop: config.min_win_candidates_before_stop,
             max_potions_used: config.max_potions_used,
             rollout_max_evaluations: config.rollout_max_evaluations,
             rollout_max_actions: config.rollout_max_actions,
@@ -109,6 +112,10 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
             .as_ref()
             .map(|node| trajectory_report(node, false)),
         best_win_trajectory: best_win.as_ref().map(|node| trajectory_report(node, false)),
+        win_candidate_trajectories: win_candidates
+            .iter()
+            .map(|node| trajectory_report(node, false))
+            .collect(),
         best_frontier_trajectory: best_frontier.as_ref().map(|node| {
             trajectory_report(
                 node,

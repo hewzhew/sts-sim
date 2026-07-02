@@ -10,8 +10,8 @@ use super::commands::{
 };
 use super::session::{
     RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1, RunControlAutoStopKind,
-    RunControlAutoStopV1, RunControlCommandOutcome, RunControlDecisionParentSnapshotV1,
-    RunControlSession,
+    RunControlAutoStopV1, RunControlCombatSearchRejection, RunControlCommandOutcome,
+    RunControlDecisionParentSnapshotV1, RunControlSession,
 };
 use super::trace_annotation::RunControlTraceAnnotationV1;
 use super::transition_report::{
@@ -166,6 +166,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
             }
 
             let mut no_potion_rejection = None;
+            let mut no_potion_rejection_kind = None;
             if let Some(no_potion_options) = auto_no_potion_first_options(session, &options.search)
             {
                 let outcome =
@@ -184,6 +185,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 }
                 decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
                 trace_annotations.extend(outcome.trace_annotations);
+                no_potion_rejection_kind = outcome.combat_search_rejection;
                 no_potion_rejection = Some(trim_search_rejection(&outcome.message));
             }
 
@@ -205,6 +207,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 continue;
             }
             let fallback_rejection = trim_search_rejection(&outcome.message);
+            let fallback_rejection_kind = outcome.combat_search_rejection;
             decision_parent_snapshots.extend(outcome.decision_parent_snapshots);
             trace_annotations.extend(outcome.trace_annotations);
             if let Some(rescue_options) = auto_potion_rescue_options(session, &options.search) {
@@ -223,6 +226,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 }
                 decision_parent_snapshots.extend(rescue.decision_parent_snapshots);
                 trace_annotations.extend(rescue.trace_annotations);
+                let rescue_rejection_kind = rescue.combat_search_rejection;
                 return finish_auto_step(
                     session,
                     &before,
@@ -230,7 +234,11 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                     trace_annotations,
                     decision_parent_snapshots,
                     RunControlAutoStopKind::CombatSearchNoCompleteWin,
-                    "combat search did not find an executable complete win",
+                    combat_search_stop_reason(&[
+                        no_potion_rejection_kind,
+                        fallback_rejection_kind,
+                        rescue_rejection_kind,
+                    ]),
                     Some(combine_three_search_rejections(
                         no_potion_rejection,
                         fallback_rejection,
@@ -245,7 +253,7 @@ pub(in crate::eval::run_control) fn apply_guarded_auto_step_with_mode(
                 trace_annotations,
                 decision_parent_snapshots,
                 RunControlAutoStopKind::CombatSearchNoCompleteWin,
-                "combat search did not find an executable complete win",
+                combat_search_stop_reason(&[no_potion_rejection_kind, fallback_rejection_kind]),
                 Some(combine_search_rejections(
                     no_potion_rejection,
                     fallback_rejection,
@@ -969,6 +977,26 @@ fn finish_auto_step(
             .with_trace_annotations(trace_annotations)
             .with_decision_parent_snapshots(decision_parent_snapshots),
     )
+}
+
+fn combat_search_stop_reason(
+    rejections: &[Option<RunControlCombatSearchRejection>],
+) -> &'static str {
+    let has = |kind| {
+        rejections
+            .iter()
+            .flatten()
+            .any(|rejection| *rejection == kind)
+    };
+    if has(RunControlCombatSearchRejection::DirtyWinningCandidateRejected) {
+        "combat search rejected dirty winning line"
+    } else if has(RunControlCombatSearchRejection::HpLossLimitExceeded) {
+        "combat search win exceeded hp-loss limit"
+    } else if has(RunControlCombatSearchRejection::InvalidCardIdentity) {
+        "combat search rejected invalid card identity"
+    } else {
+        "combat search did not find an executable complete win"
+    }
 }
 
 fn auto_boundary_key(session: &RunControlSession) -> String {

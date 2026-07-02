@@ -373,10 +373,19 @@ pub struct RunControlCommandOutcome {
     pub message: String,
     pub action_result: Option<ActionResult>,
     pub search_evidence_path: Option<PathBuf>,
+    pub combat_search_rejection: Option<RunControlCombatSearchRejection>,
     pub auto_stop: Option<RunControlAutoStopV1>,
     pub auto_applied_steps: Vec<RunControlAutoAppliedStepV1>,
     pub trace_annotations: Vec<RunControlTraceAnnotationV1>,
     pub decision_parent_snapshots: Vec<RunControlDecisionParentSnapshotV1>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RunControlCombatSearchRejection {
+    InvalidCardIdentity,
+    NoCompleteWinningCandidate,
+    DirtyWinningCandidateRejected,
+    HpLossLimitExceeded,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -426,6 +435,7 @@ impl RunControlCommandOutcome {
             message: message.into(),
             action_result: None,
             search_evidence_path: None,
+            combat_search_rejection: None,
             auto_stop: None,
             auto_applied_steps: Vec::new(),
             trace_annotations: Vec::new(),
@@ -439,6 +449,7 @@ impl RunControlCommandOutcome {
             message: message.into(),
             action_result: None,
             search_evidence_path: None,
+            combat_search_rejection: None,
             auto_stop: None,
             auto_applied_steps: Vec::new(),
             trace_annotations: Vec::new(),
@@ -455,6 +466,7 @@ impl RunControlCommandOutcome {
             message: message.into(),
             action_result: Some(action_result),
             search_evidence_path: None,
+            combat_search_rejection: None,
             auto_stop: None,
             auto_applied_steps: Vec::new(),
             trace_annotations: Vec::new(),
@@ -491,6 +503,14 @@ impl RunControlCommandOutcome {
         auto_stop: RunControlAutoStopV1,
     ) -> Self {
         self.auto_stop = Some(auto_stop);
+        self
+    }
+
+    pub(in crate::eval::run_control) fn with_combat_search_rejection(
+        mut self,
+        rejection: RunControlCombatSearchRejection,
+    ) -> Self {
+        self.combat_search_rejection = Some(rejection);
         self
     }
 }

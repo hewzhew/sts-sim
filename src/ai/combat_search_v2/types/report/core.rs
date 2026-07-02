@@ -19,6 +19,8 @@ pub struct CombatSearchV2Report {
     pub outcome: CombatSearchV2OutcomeReport,
     pub best_complete_trajectory: Option<CombatSearchV2TrajectoryReport>,
     pub best_win_trajectory: Option<CombatSearchV2TrajectoryReport>,
+    #[serde(skip_serializing)]
+    pub win_candidate_trajectories: Vec<CombatSearchV2TrajectoryReport>,
     pub best_frontier_trajectory: Option<CombatSearchV2TrajectoryReport>,
     pub frontier: CombatSearchV2FrontierReport,
     pub rollout: CombatSearchV2RolloutReport,
@@ -52,6 +54,7 @@ pub struct CombatSearchV2BudgetReport {
     pub max_engine_steps_per_action: usize,
     pub wall_time_ms: Option<u128>,
     pub stop_on_win_hp_loss_at_most: Option<u32>,
+    pub min_win_candidates_before_stop: usize,
     pub max_potions_used: Option<u32>,
     pub rollout_max_evaluations: usize,
     pub rollout_max_actions: usize,

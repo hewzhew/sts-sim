@@ -11,6 +11,8 @@ pub(super) use priority::QueueEntry;
 pub(super) use queue::FrontierQueue;
 pub(super) use resources::{is_resource_covered, ResourceVector};
 
+const MAX_REMEMBERED_WIN_CANDIDATES: usize = 128;
+
 pub(super) fn push_frontier(frontier: &mut FrontierQueue, node: SearchNode, sequence_id: &mut u64) {
     let priority = priority_for_node(&node);
     frontier.push(QueueEntry {
@@ -28,6 +30,12 @@ pub(super) fn remember_best_complete(best: &mut Option<SearchNode>, candidate: S
         .unwrap_or(true);
     if replace {
         *best = Some(candidate);
+    }
+}
+
+pub(super) fn remember_win_candidate(candidates: &mut Vec<SearchNode>, candidate: &SearchNode) {
+    if candidates.len() < MAX_REMEMBERED_WIN_CANDIDATES {
+        candidates.push(candidate.clone());
     }
 }
 

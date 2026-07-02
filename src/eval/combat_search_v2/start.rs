@@ -54,6 +54,7 @@ impl CombatSearchV2RunOptions {
             stop_on_win_hp_loss_at_most: self
                 .stop_on_win_hp_loss_at_most
                 .or(defaults.stop_on_win_hp_loss_at_most),
+            min_win_candidates_before_stop: defaults.min_win_candidates_before_stop,
             input_label: Some(input_label),
             potion_policy: self.potion_policy.unwrap_or(defaults.potion_policy),
             max_potions_used: self.max_potions_used.or(defaults.max_potions_used),

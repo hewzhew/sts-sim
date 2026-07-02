@@ -1,4 +1,5 @@
 use super::*;
+use crate::ai::combat_search_v2::frontier::remember_win_candidate;
 use std::collections::HashSet;
 
 mod finalize;
@@ -94,6 +95,7 @@ pub fn run_combat_search_v2_with_stepper(
 
     let mut best_complete: Option<SearchNode> = None;
     let mut best_win: Option<SearchNode> = None;
+    let mut win_candidates: Vec<SearchNode> = Vec::new();
     let mut best_frontier: Option<SearchNode> = None;
     let mut unresolved_leaf_count = 0u64;
     let mut max_actions_cut_count = 0u64;
@@ -154,11 +156,13 @@ pub fn run_combat_search_v2_with_stepper(
                 if stats.nodes_to_first_win.is_none() {
                     stats.nodes_to_first_win = Some(stats.nodes_generated);
                 }
+                remember_win_candidate(&mut win_candidates, &node);
                 remember_best_complete(&mut best_win, node.clone());
                 remember_best_complete(&mut best_complete, node);
                 if best_win
                     .as_ref()
                     .is_some_and(|best| accepted_complete_win(best, &config))
+                    && win_candidates.len() >= config.min_win_candidates_before_stop.max(1)
                 {
                     performance.pre_expand_elapsed_us = performance
                         .pre_expand_elapsed_us
@@ -458,6 +462,7 @@ pub fn run_combat_search_v2_with_stepper(
         frontier,
         best_complete,
         best_win,
+        win_candidates,
         best_frontier,
         rollout_cache,
         performance,
