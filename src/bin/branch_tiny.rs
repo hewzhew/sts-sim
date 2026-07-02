@@ -109,12 +109,20 @@ struct BranchPathState {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+struct ScoreComponentSnapshot {
+    by: String,
+    value: i32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum ChoiceAnnotationSnapshot {
     None,
     Candidate {
         lane: String,
         score: i32,
+        #[serde(default)]
+        scores: Vec<ScoreComponentSnapshot>,
         candidate: Value,
         admission: Option<Value>,
         detail: String,
@@ -138,6 +146,15 @@ impl ChoiceAnnotationSnapshot {
             ChoiceAnnotation::Candidate(decision) => Self::Candidate {
                 lane: candidate_lane_label(decision.evaluation.lane).to_string(),
                 score: decision.evaluation.total_score(),
+                scores: decision
+                    .evaluation
+                    .scores
+                    .iter()
+                    .map(|score| ScoreComponentSnapshot {
+                        by: score.by.to_string(),
+                        value: score.value,
+                    })
+                    .collect(),
                 candidate: trace::candidate_kind_value(decision.evaluation.candidate.kind),
                 admission: decision.admission.as_ref().map(|admission| {
                     json!({

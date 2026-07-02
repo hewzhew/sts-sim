@@ -200,6 +200,10 @@ fn annotation_value(annotation: &ChoiceAnnotation) -> Value {
             "kind": "candidate",
             "lane": candidate_lane_label(decision.evaluation.lane),
             "score": decision.evaluation.total_score(),
+            "scores": decision.evaluation.scores.iter().map(|score| json!({
+                "by": score.by,
+                "value": score.value,
+            })).collect::<Vec<_>>(),
             "candidate": candidate_kind_value(decision.evaluation.candidate.kind),
             "admission": decision.admission.as_ref().map(admission_value),
         }),
