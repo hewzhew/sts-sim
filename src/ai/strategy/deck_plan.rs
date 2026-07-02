@@ -6,6 +6,9 @@ use crate::ai::strategy::deck_construction_pressure::{
     ConstructionLaneAdjustment, DeckConstructionContext, DeckConstructionPressure,
 };
 use crate::ai::strategy::deck_role_inventory::DeckRoleInventory;
+use crate::ai::strategy::deck_strategic_deficit::{
+    assess_deck_strategic_deficit_summary, DeckStrategicDeficitSummary,
+};
 use crate::ai::strategy::reward_admission::RewardAdmission;
 use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
 use crate::runtime::combat::CombatCard;
@@ -17,6 +20,7 @@ pub struct DeckPlanSnapshot {
     pub deck_size: usize,
     pub roles: DeckRoleInventory,
     pub construction: DeckConstructionPressure,
+    pub strategic_deficit: DeckStrategicDeficitSummary,
     pub run_facts: RunStrategicFacts,
 }
 
@@ -46,6 +50,7 @@ impl DeckPlanSnapshot {
                 deck,
                 DeckConstructionContext { act: context.act },
             ),
+            strategic_deficit: assess_deck_strategic_deficit_summary(deck, run_facts),
             run_facts,
         }
     }

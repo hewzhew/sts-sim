@@ -61,6 +61,39 @@ pub struct DeckStrategicDeficit {
     pub risks: Vec<StrategicRisk>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DeckStrategicDeficitSummary {
+    pub frontload_damage: StrategicDeficitLevel,
+    pub aoe_or_minion_control: StrategicDeficitLevel,
+    pub block_or_mitigation: StrategicDeficitLevel,
+    pub boss_scaling_plan: StrategicDeficitLevel,
+    pub deck_access: StrategicDeficitLevel,
+    pub energy_or_playability: StrategicDeficitLevel,
+    pub deck_burden: StrategicBurdenLevel,
+    pub too_many_low_impact_attacks: bool,
+    pub opening_hand_pollution: bool,
+    pub severe_curse_burden: bool,
+}
+
+impl DeckStrategicDeficit {
+    pub fn summary(&self) -> DeckStrategicDeficitSummary {
+        DeckStrategicDeficitSummary {
+            frontload_damage: self.frontload_damage,
+            aoe_or_minion_control: self.aoe_or_minion_control,
+            block_or_mitigation: self.block_or_mitigation,
+            boss_scaling_plan: self.boss_scaling_plan,
+            deck_access: self.deck_access,
+            energy_or_playability: self.energy_or_playability,
+            deck_burden: self.deck_burden,
+            too_many_low_impact_attacks: self
+                .risks
+                .contains(&StrategicRisk::TooManyLowImpactAttacks),
+            opening_hand_pollution: self.risks.contains(&StrategicRisk::OpeningHandPollution),
+            severe_curse_burden: self.risks.contains(&StrategicRisk::SevereCurseBurden),
+        }
+    }
+}
+
 pub fn assess_deck_strategic_deficit(
     deck: &[CombatCard],
     facts: RunStrategicFacts,
@@ -88,6 +121,13 @@ pub fn assess_deck_strategic_deficit(
         package_evidence,
         risks,
     }
+}
+
+pub fn assess_deck_strategic_deficit_summary(
+    deck: &[CombatCard],
+    facts: RunStrategicFacts,
+) -> DeckStrategicDeficitSummary {
+    assess_deck_strategic_deficit(deck, facts).summary()
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

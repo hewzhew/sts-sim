@@ -5,6 +5,7 @@ use crate::ai::strategy::boss_relic_admission::{
 use crate::ai::strategy::deck_admission::DeckAdmission;
 use crate::ai::strategy::deck_construction_pressure::ConstructionLaneAdjustment;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
+use crate::ai::strategy::deck_strategic_deficit::{StrategicBurdenLevel, StrategicDeficitLevel};
 use crate::ai::strategy::reward_admission::{
     RewardAdmission, RewardAdmissionClass, RewardAdmissionReason,
 };
@@ -356,6 +357,7 @@ fn score_passes() -> &'static [ScorePass] {
         static_candidate_score,
         cleanup_score,
         admission_class_score,
+        strategic_deficit_score,
         deck_admission_score,
         construction_pressure_score,
         reward_reason_score,
@@ -608,6 +610,68 @@ fn admission_class_score(
     ));
 }
 
+fn strategic_deficit_score(
+    context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    if !matches!(candidate.kind, DecisionCandidateKind::CardRewardPick { .. }) {
+        return;
+    }
+    let Some(admission) = admission else {
+        return;
+    };
+    let deficit = context.deck_plan.strategic_deficit;
+    let mut improves = false;
+
+    if needs(deficit.deck_access)
+        && (admission_provides(admission, Mechanic::CardDraw)
+            || admission
+                .reasons
+                .contains(&RewardAdmissionReason::CombatUpgrade))
+    {
+        improves = true;
+        scores.push(score("strategic-access-gap", 55));
+    }
+    if needs(deficit.energy_or_playability) && admission_provides(admission, Mechanic::Energy) {
+        improves = true;
+        scores.push(score("strategic-energy-gap", 50));
+    }
+    if needs(deficit.aoe_or_minion_control) && admission_aoe(admission) {
+        improves = true;
+        scores.push(score("strategic-aoe-gap", 50));
+    }
+    if needs(deficit.block_or_mitigation) && admission_survival_tool(admission) {
+        improves = true;
+        scores.push(score("strategic-survival-gap", 40));
+    }
+    if needs(deficit.boss_scaling_plan) && admission_scaling_or_engine(admission) {
+        improves = true;
+        scores.push(score("strategic-scaling-gap", 60));
+    }
+    if needs(deficit.frontload_damage) && admission_frontloads(admission) {
+        improves = true;
+        scores.push(score("strategic-frontload-gap", 35));
+    }
+
+    if !improves
+        && deficit.deck_burden == StrategicBurdenLevel::Heavy
+        && ordinary_reward_addition(admission)
+    {
+        scores.push(score("strategic-burden-no-gap", -45));
+    }
+    if deficit.too_many_low_impact_attacks
+        && deficit.frontload_damage == StrategicDeficitLevel::Surplus
+        && admission_frontloads(admission)
+        && !admission_aoe(admission)
+        && !admission_scaling_or_engine(admission)
+        && !admission_provides(admission, Mechanic::CardDraw)
+    {
+        scores.push(score("strategic-frontload-saturated", -65));
+    }
+}
+
 fn deck_admission_score(
     context: DecisionPipelineContext,
     _candidate: DecisionCandidateIr,
@@ -829,10 +893,57 @@ fn burden_score(burden: CardBurden) -> i32 {
     }
 }
 
+fn needs(level: StrategicDeficitLevel) -> bool {
+    matches!(
+        level,
+        StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
+    )
+}
+
+fn ordinary_reward_addition(admission: &RewardAdmission) -> bool {
+    matches!(
+        admission.class,
+        RewardAdmissionClass::ImmediateWork | RewardAdmissionClass::BurdenedImmediateWork
+    )
+}
+
 fn admission_provides(admission: &RewardAdmission, mechanic: Mechanic) -> bool {
     admission
         .reasons
         .contains(&RewardAdmissionReason::Provides(mechanic))
+}
+
+fn admission_frontloads(admission: &RewardAdmission) -> bool {
+    admission
+        .reasons
+        .contains(&RewardAdmissionReason::FrontloadDamage)
+}
+
+fn admission_aoe(admission: &RewardAdmission) -> bool {
+    admission
+        .reasons
+        .contains(&RewardAdmissionReason::AreaDamage)
+}
+
+fn admission_survival_tool(admission: &RewardAdmission) -> bool {
+    admission_provides(admission, Mechanic::Block)
+        || admission_provides(admission, Mechanic::Weak)
+        || admission_provides(admission, Mechanic::EnemyStrengthDown)
+}
+
+fn admission_scaling_or_engine(admission: &RewardAdmission) -> bool {
+    admission_provides(admission, Mechanic::Strength)
+        || admission_provides(admission, Mechanic::StrengthMultiplier)
+        || admission.reasons.iter().any(|reason| {
+            matches!(
+                reason,
+                RewardAdmissionReason::Closes(_)
+                    | RewardAdmissionReason::Supports(_)
+                    | RewardAdmissionReason::Installs(_)
+                    | RewardAdmissionReason::DamageScalesWith(_)
+                    | RewardAdmissionReason::RunReward(_)
+            )
+        })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
