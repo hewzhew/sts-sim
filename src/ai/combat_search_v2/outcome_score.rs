@@ -5,7 +5,9 @@ use crate::content::monsters::EnemyId;
 pub(super) struct CombatOutcomeScore {
     terminal_rank: i32,
     run_hygiene: i32,
+    persistent_adjusted_hp: i32,
     final_hp: i32,
+    persistent_run_value: i32,
     potion_conservation: i32,
     faster_turns: i32,
     fewer_cards_played: i32,
@@ -15,10 +17,18 @@ pub(super) struct CombatOutcomeScore {
 
 impl CombatOutcomeScore {
     pub(super) fn from_node(node: &SearchNode) -> Self {
+        let persistent_run_value = super::external_payoff::persistent_run_value(&node.combat);
         Self {
             terminal_rank: terminal_rank(terminal_label(&node.engine, &node.combat)),
             run_hygiene: -external_burden_count(&node.combat),
+            persistent_adjusted_hp: node
+                .combat
+                .entities
+                .player
+                .current_hp
+                .saturating_add(persistent_run_value),
             final_hp: node.combat.entities.player.current_hp,
+            persistent_run_value,
             potion_conservation: -((node.potions_used + node.potions_discarded) as i32),
             faster_turns: -(node.combat.turn.turn_count as i32),
             fewer_cards_played: -(node.cards_played as i32),
@@ -33,7 +43,12 @@ impl Ord for CombatOutcomeScore {
         self.terminal_rank
             .cmp(&other.terminal_rank)
             .then_with(|| self.run_hygiene.cmp(&other.run_hygiene))
+            .then_with(|| {
+                self.persistent_adjusted_hp
+                    .cmp(&other.persistent_adjusted_hp)
+            })
             .then_with(|| self.final_hp.cmp(&other.final_hp))
+            .then_with(|| self.persistent_run_value.cmp(&other.persistent_run_value))
             .then_with(|| self.potion_conservation.cmp(&other.potion_conservation))
             .then_with(|| self.faster_turns.cmp(&other.faster_turns))
             .then_with(|| self.fewer_cards_played.cmp(&other.fewer_cards_played))

@@ -15,6 +15,7 @@ impl RolloutNodeEstimate {
             evaluated: true,
             terminal: terminal_label(&node.engine, &node.combat),
             final_hp: node.combat.entities.player.current_hp,
+            persistent_run_value: super::super::external_payoff::persistent_run_value(&node.combat),
             hp_loss: (node.initial_hp - node.combat.entities.player.current_hp).max(0),
             turns: node.combat.turn.turn_count,
             potions_used: node.potions_used,

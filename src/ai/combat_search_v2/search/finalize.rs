@@ -69,7 +69,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
 
     CombatSearchV2Report {
         schema_name: "CombatSearchV2Report",
-        schema_version: 10,
+        schema_version: 11,
         input_label: config.input_label,
         information_boundary: "engine_state_snapshot_truth_v0",
         policy_evidence,

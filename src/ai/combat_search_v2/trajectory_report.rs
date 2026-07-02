@@ -37,6 +37,8 @@ pub(super) fn trajectory_report(
         estimated,
         actions: node.actions.clone(),
         final_hp: node.combat.entities.player.current_hp,
+        final_max_hp: node.combat.entities.player.max_hp,
+        persistent_run_value: super::external_payoff::persistent_run_value(&node.combat),
         final_block: node.combat.entities.player.block,
         hp_loss: (node.initial_hp - node.combat.entities.player.current_hp).max(0),
         turns: node.combat.turn.turn_count,

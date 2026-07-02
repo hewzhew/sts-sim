@@ -10,6 +10,8 @@ pub struct CombatSearchV2TrajectoryReport {
     pub estimated: bool,
     pub actions: Vec<CombatSearchV2ActionTrace>,
     pub final_hp: i32,
+    pub final_max_hp: i32,
+    pub persistent_run_value: i32,
     pub final_block: i32,
     pub hp_loss: i32,
     pub turns: u32,

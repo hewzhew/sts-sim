@@ -51,7 +51,9 @@ pub(in crate::ai::combat_search_v2) struct CombatEvalV2 {
     pub(super) survival: CombatEvalSurvivalBucket,
     pub(super) progress: CombatEvalProgressBucket,
     pub(super) risk_margin: i32,
+    pub(super) persistent_adjusted_hp: i32,
     pub(super) final_hp: i32,
+    pub(super) persistent_run_value: i32,
     pub(super) enemy_progress: i32,
     pub(super) phase_stability: i32,
     pub(super) resource_conservation: i32,
@@ -67,7 +69,9 @@ impl Default for CombatEvalV2 {
             survival: CombatEvalSurvivalBucket::DeadOrForcedLoss,
             progress: CombatEvalProgressBucket::Stalled,
             risk_margin: 0,
+            persistent_adjusted_hp: 0,
             final_hp: 0,
+            persistent_run_value: 0,
             enemy_progress: 0,
             phase_stability: 0,
             resource_conservation: 0,
@@ -86,7 +90,11 @@ pub(in crate::ai::combat_search_v2) fn combat_eval_from_rollout_estimate(
         survival: survival_bucket(estimate),
         progress: progress_bucket(estimate),
         risk_margin: estimate.survival_margin,
+        persistent_adjusted_hp: estimate
+            .final_hp
+            .saturating_add(estimate.persistent_run_value),
         final_hp: estimate.final_hp,
+        persistent_run_value: estimate.persistent_run_value,
         enemy_progress: -estimate.phase_adjusted_enemy_effort,
         phase_stability: phase_stability(estimate),
         resource_conservation: -((estimate.potions_used + estimate.potions_discarded) as i32),
@@ -147,8 +155,10 @@ impl CombatEvalV2 {
     }
 
     fn compare_win(self, other: &Self) -> Ordering {
-        self.final_hp
-            .cmp(&other.final_hp)
+        self.persistent_adjusted_hp
+            .cmp(&other.persistent_adjusted_hp)
+            .then_with(|| self.final_hp.cmp(&other.final_hp))
+            .then_with(|| self.persistent_run_value.cmp(&other.persistent_run_value))
             .then_with(|| self.risk_margin.cmp(&other.risk_margin))
             .then_with(|| self.enemy_progress.cmp(&other.enemy_progress))
             .then_with(|| self.phase_stability.cmp(&other.phase_stability))
@@ -173,6 +183,10 @@ impl CombatEvalV2 {
                 .then_with(|| self.progress.cmp(&other.progress))
                 .then_with(|| self.enemy_progress.cmp(&other.enemy_progress))
                 .then_with(|| self.phase_stability.cmp(&other.phase_stability))
+                .then_with(|| {
+                    self.persistent_adjusted_hp
+                        .cmp(&other.persistent_adjusted_hp)
+                })
                 .then_with(|| self.final_hp.cmp(&other.final_hp))
         } else {
             // In stable states, enemy/phase progress outranks small HP
@@ -183,6 +197,10 @@ impl CombatEvalV2 {
                 .then_with(|| self.phase_stability.cmp(&other.phase_stability))
                 .then_with(|| self.survival.cmp(&other.survival))
                 .then_with(|| self.risk_margin.cmp(&other.risk_margin))
+                .then_with(|| {
+                    self.persistent_adjusted_hp
+                        .cmp(&other.persistent_adjusted_hp)
+                })
                 .then_with(|| self.final_hp.cmp(&other.final_hp))
         }
     }
