@@ -425,7 +425,13 @@ fn try_boss_retry(
 ) -> Option<(BranchStatus, BossRetryReport, Vec<CombatSearchTraceSummary>)> {
     let mut all_search = Vec::new();
     let mut attempts = Vec::new();
-    let no_potion = boss_retry_options(args, CombatSearchV2PotionPolicy::Never, Some(0));
+    let no_potion = boss_retry_options(
+        args,
+        CombatSearchV2PotionPolicy::Never,
+        Some(0),
+        CombatSearchV2ChildRolloutPolicy::LazyOnPop,
+        CombatSearchV2RolloutPolicy::Disabled,
+    );
     let (status, attempt, search) = run_boss_retry_attempt(session, args, "no_potion", no_potion);
     all_search.extend(search);
     attempts.push(attempt);
@@ -444,7 +450,13 @@ fn try_boss_retry(
         })
         .unwrap_or(1)
         .max(BOSS_RETRY_POTION_RESCUE_MAX_POTIONS_USED);
-    let rescue = boss_retry_options(args, CombatSearchV2PotionPolicy::All, Some(max_potions));
+    let rescue = boss_retry_options(
+        args,
+        CombatSearchV2PotionPolicy::All,
+        Some(max_potions),
+        CombatSearchV2ChildRolloutPolicy::Immediate,
+        CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion,
+    );
     let (status, attempt, search) = run_boss_retry_attempt(session, args, "potion_rescue", rescue);
     all_search.extend(search);
     attempts.push(attempt);
@@ -456,6 +468,8 @@ fn boss_retry_options(
     args: Args,
     potion_policy: CombatSearchV2PotionPolicy,
     max_potions_used: Option<u32>,
+    child_rollout_policy: CombatSearchV2ChildRolloutPolicy,
+    rollout_policy: CombatSearchV2RolloutPolicy,
 ) -> RunControlAutoStepOptions {
     let mut options = auto_step_options(
         args.boss_search_nodes,
@@ -463,11 +477,11 @@ fn boss_retry_options(
         args.auto_ops,
         args.wall_ms.is_some(),
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-        CombatSearchV2ChildRolloutPolicy::LazyOnPop,
+        child_rollout_policy,
     );
     options.search.potion_policy = Some(potion_policy);
     options.search.max_potions_used = max_potions_used;
-    options.search.rollout_policy = Some(CombatSearchV2RolloutPolicy::Disabled);
+    options.search.rollout_policy = Some(rollout_policy);
     options
 }
 
