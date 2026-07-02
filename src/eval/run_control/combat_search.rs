@@ -16,8 +16,9 @@ use crate::state::core::{EngineState, RunResult};
 
 use super::combat_candidate_line::{replay_candidate_line, CombatCandidateLine};
 use super::combat_line_outcome::{
-    evaluate_combat_candidate_line_outcome, find_clean_no_potion_alternative,
-    render_combat_line_outcome_detail, CombatLineAcceptancePolicy,
+    evaluate_combat_candidate_line_outcome, find_accepted_alternative_in_report,
+    find_clean_no_potion_alternative, render_combat_line_outcome_detail,
+    CombatLineAcceptancePolicy,
 };
 use super::commands::{
     RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlSearchCombatOptions,
@@ -178,6 +179,19 @@ pub(super) fn apply_search_combat(
         evaluate_combat_candidate_line_outcome(session, &start, &config, selected_line.clone())?;
     if policy.classify(&selected_eval.outcome).is_rejected() {
         if let Some(alternative) =
+            find_accepted_alternative_in_report(session, &start, &config, &report, policy)?
+        {
+            selected_line = alternative.line;
+            append_repair_summary(
+                &mut repair_summary,
+                format!(
+                    "same_report_clean_alternative replaced dirty_win gained_curses={} original_final_hp={} clean_final_hp={}",
+                    selected_eval.outcome.gained_curse_count(),
+                    selected_eval.outcome.final_hp,
+                    alternative.outcome.final_hp
+                ),
+            );
+        } else if let Some(alternative) =
             find_clean_no_potion_alternative(session, &start, &config, policy)?
         {
             selected_line = alternative.line;

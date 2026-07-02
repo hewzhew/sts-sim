@@ -89,11 +89,29 @@ pub(super) fn find_clean_no_potion_alternative(
     clean_config.max_potions_used = Some(0);
     clean_config.min_win_candidates_before_stop = 128;
     let report = run_combat_search_v2(&start.engine, &start.combat, clean_config.clone());
+    let Some(evaluation) =
+        find_accepted_alternative_in_report(session, start, &clean_config, &report, policy)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(CombatLineAlternative {
+        line: evaluation.line,
+        outcome: evaluation.outcome,
+        report,
+    }))
+}
+
+pub(super) fn find_accepted_alternative_in_report(
+    session: &RunControlSession,
+    start: &CombatPosition,
+    config: &CombatSearchV2Config,
+    report: &CombatSearchV2Report,
+    policy: CombatLineAcceptancePolicy,
+) -> Result<Option<CombatLineEvaluation>, String> {
     let mut best_clean: Option<CombatLineEvaluation> = None;
-    for trajectory in clean_win_candidate_trajectories(&report) {
+    for trajectory in win_candidate_trajectories(report) {
         let line = CombatCandidateLine::from_search_trajectory(trajectory);
-        let evaluation =
-            evaluate_combat_candidate_line_outcome(session, start, &clean_config, line)?;
+        let evaluation = evaluate_combat_candidate_line_outcome(session, start, config, line)?;
         if policy.classify(&evaluation.outcome) != CombatLineAcceptance::CleanWin {
             continue;
         }
@@ -105,14 +123,7 @@ pub(super) fn find_clean_no_potion_alternative(
             best_clean = Some(evaluation);
         }
     }
-    let Some(evaluation) = best_clean else {
-        return Ok(None);
-    };
-    Ok(Some(CombatLineAlternative {
-        line: evaluation.line,
-        outcome: evaluation.outcome,
-        report,
-    }))
+    Ok(best_clean)
 }
 
 pub(super) fn evaluate_combat_candidate_line_outcome(
@@ -192,7 +203,7 @@ pub(super) fn render_combat_line_outcome_detail(outcome: &CombatLineOutcome) -> 
     )
 }
 
-fn clean_win_candidate_trajectories(
+fn win_candidate_trajectories(
     report: &CombatSearchV2Report,
 ) -> Vec<&CombatSearchV2TrajectoryReport> {
     let mut trajectories = Vec::new();
