@@ -202,6 +202,10 @@ enum BranchStatus {
         boundary: String,
         owner: Owner,
     },
+    AwaitingAuto {
+        boundary: String,
+        reason: String,
+    },
     Terminal(TerminalOutcome),
     AutomationGap {
         boundary: String,
@@ -217,6 +221,19 @@ enum BranchStatus {
     },
     ApplyFailed(String),
     AdvanceFailed(String),
+}
+
+impl BranchStatus {
+    fn is_resumable(&self) -> bool {
+        matches!(
+            self,
+            BranchStatus::Running { .. } | BranchStatus::AwaitingAuto { .. }
+        )
+    }
+
+    fn is_expandable_now(&self) -> bool {
+        matches!(self, BranchStatus::Running { .. })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -553,7 +570,7 @@ fn run() -> Result<(), String> {
                     )?;
                     return Ok(());
                 }
-                if matches!(branch.status, BranchStatus::Running { .. }) {
+                if branch.status.is_resumable() {
                     deferred.push_back(branch);
                     continue;
                 }
@@ -602,6 +619,26 @@ fn run() -> Result<(), String> {
             }
             break;
         }
+        if next
+            .iter()
+            .any(|branch| matches!(branch.status, BranchStatus::AwaitingAuto { .. }))
+        {
+            frontier = next;
+            capsule_frontier_saved |= save_wall_stop(
+                frontier_checkpoint_output_path(
+                    &frontier_checkpoint_path,
+                    &resume_frontier,
+                    run_capsule.as_ref(),
+                ),
+                run_capsule.as_ref(),
+                args,
+                generation + 1,
+                next_branch_id,
+                &frontier,
+                &deadline,
+            )?;
+            break;
+        }
         frontier = next;
         if deadline.should_soft_stop(args) {
             capsule_frontier_saved |= save_wall_stop(
@@ -638,14 +675,16 @@ fn prepare_branch_work(
     generation: usize,
     deadline: RunDeadline,
 ) -> (Branch, bool, Vec<OwnerChoice>) {
-    let mut expandable =
-        generation < args.generations && matches!(branch.status, BranchStatus::Running { .. });
+    let mut expandable = generation < args.generations && branch.status.is_expandable_now();
     let mut choices = if expandable {
         branch_owner_choices(&branch)
     } else {
         Vec::new()
     };
-    if expandable && choices.is_empty() {
+    if generation < args.generations
+        && (matches!(branch.status, BranchStatus::AwaitingAuto { .. })
+            || (expandable && choices.is_empty()))
+    {
         let advance = runner::advance_to_owner_or_gap(
             &mut branch.session,
             deadline.cap_args(args, 1),
@@ -655,8 +694,7 @@ fn prepare_branch_work(
         branch.boss_retry = advance.boss_retry;
         branch.auto_steps = advance.auto_steps;
         branch.combat_search = advance.combat_search;
-        expandable =
-            generation < args.generations && matches!(branch.status, BranchStatus::Running { .. });
+        expandable = generation < args.generations && branch.status.is_expandable_now();
         choices = if expandable {
             branch_owner_choices(&branch)
         } else {
@@ -757,7 +795,7 @@ fn retain_frontier(frontier: &mut VecDeque<Branch>, limit: usize) {
 fn frontier_retention_key(branch: &Branch) -> (u8, u8, i32, u32, i32) {
     let status = match branch.status {
         BranchStatus::Terminal(TerminalOutcome::Victory) => 4,
-        BranchStatus::Running { .. } => 3,
+        BranchStatus::Running { .. } | BranchStatus::AwaitingAuto { .. } => 3,
         BranchStatus::CombatGap { .. } | BranchStatus::BudgetGap { .. } => 1,
         BranchStatus::Terminal(TerminalOutcome::Defeat)
         | BranchStatus::AutomationGap { .. }
@@ -779,6 +817,7 @@ fn frontier_retention_key(branch: &Branch) -> (u8, u8, i32, u32, i32) {
 fn branch_status_boundary_label(status: &BranchStatus) -> String {
     match status {
         BranchStatus::Running { boundary, .. }
+        | BranchStatus::AwaitingAuto { boundary, .. }
         | BranchStatus::AutomationGap { boundary, .. }
         | BranchStatus::CombatGap { boundary, .. }
         | BranchStatus::BudgetGap { boundary, .. } => boundary.clone(),
@@ -873,7 +912,7 @@ fn save_wall_stop(
     if let Some(path) = path {
         let running = frontier
             .iter()
-            .filter(|branch| matches!(branch.status, BranchStatus::Running { .. }))
+            .filter(|branch| branch.status.is_resumable())
             .count();
         if running == 0 {
             println!("frontier_checkpoint skipped: no running branches");

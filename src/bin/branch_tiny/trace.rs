@@ -278,6 +278,9 @@ fn status_value(status: &BranchStatus) -> Value {
         BranchStatus::Running { boundary, owner } => {
             json!({"kind": "running", "boundary": boundary, "owner": owner_value(*owner)})
         }
+        BranchStatus::AwaitingAuto { boundary, reason } => {
+            json!({"kind": "awaiting_auto", "boundary": boundary, "reason": reason})
+        }
         BranchStatus::Terminal(result) => json!({"kind": "terminal", "result": result.as_str()}),
         BranchStatus::AutomationGap { boundary, site } => {
             json!({"kind": "automation_gap", "boundary": boundary, "site": site_value(*site)})

@@ -74,6 +74,7 @@ pub(super) fn print_branch_timeline(
 pub(super) fn status_boundary(status: &BranchStatus) -> &str {
     match status {
         BranchStatus::Running { boundary, .. }
+        | BranchStatus::AwaitingAuto { boundary, .. }
         | BranchStatus::AutomationGap { boundary, .. }
         | BranchStatus::CombatGap { boundary, .. }
         | BranchStatus::BudgetGap { boundary, .. } => boundary,
@@ -196,6 +197,9 @@ fn print_reward_gap_detail(session: &RunControlSession, status: &BranchStatus) {
 fn status_label(status: &BranchStatus) -> String {
     match status {
         BranchStatus::Running { .. } => "running".to_string(),
+        BranchStatus::AwaitingAuto { reason, .. } => {
+            format!("awaiting_auto:{}", one_line(reason))
+        }
         BranchStatus::Terminal(result) => format!("terminal:{}", result.as_str()),
         BranchStatus::AutomationGap { .. } => "automation_gap".to_string(),
         BranchStatus::CombatGap { reason, .. } => format!("combat_gap:{}", one_line(reason)),
@@ -208,6 +212,7 @@ fn status_label(status: &BranchStatus) -> String {
 fn status_owner(status: &BranchStatus) -> String {
     match status {
         BranchStatus::Running { owner, .. } => owner_label(*owner),
+        BranchStatus::AwaitingAuto { .. } => "AutoRun".to_string(),
         BranchStatus::AutomationGap { site, .. } => site_label(*site),
         BranchStatus::CombatGap { .. } => "combat_search".to_string(),
         BranchStatus::BudgetGap { .. } => "automation_budget".to_string(),

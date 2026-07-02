@@ -63,6 +63,20 @@ pub(super) fn advance_to_owner_or_gap(
                     args.wall_capped_search_budget
                 };
                 if combat_gap && combat_budget_capped {
+                    if boss_combat {
+                        return advance_result(
+                            awaiting_auto_boundary(
+                                "Combat",
+                                format!(
+                                    "outer wall budget would cap boss retry; effective search={}ms rescue={}ms boss={}ms",
+                                    args.search_ms, args.rescue_search_ms, args.boss_search_ms
+                                ),
+                            ),
+                            None,
+                            auto_steps,
+                            combat_search,
+                        );
+                    }
                     return advance_result(
                         BranchStatus::BudgetGap {
                             boundary: "Combat".to_string(),
@@ -183,6 +197,13 @@ pub(super) fn advance_to_owner_or_gap(
                 )
             }
         }
+    }
+}
+
+fn awaiting_auto_boundary(boundary: impl Into<String>, reason: String) -> BranchStatus {
+    BranchStatus::AwaitingAuto {
+        boundary: boundary.into(),
+        reason,
     }
 }
 

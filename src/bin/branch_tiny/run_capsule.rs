@@ -73,7 +73,7 @@ impl RunCapsule {
         }
         let running = frontier
             .iter()
-            .filter(|branch| matches!(branch.status, BranchStatus::Running { .. }))
+            .filter(|branch| branch.status.is_resumable())
             .count();
         if running > 0 {
             frontier_checkpoint::save(
@@ -140,7 +140,7 @@ impl RunCapsule {
     ) -> Result<RunCapsuleSave, String> {
         let running = frontier
             .iter()
-            .filter(|branch| matches!(branch.status, BranchStatus::Running { .. }))
+            .filter(|branch| branch.status.is_resumable())
             .count();
         if running > 0 {
             frontier_checkpoint::save(
@@ -354,6 +354,9 @@ fn status_value(status: &BranchStatus) -> Value {
         BranchStatus::Running { boundary, owner } => {
             json!({"kind": "running", "boundary": boundary, "owner": format!("{owner:?}")})
         }
+        BranchStatus::AwaitingAuto { boundary, reason } => {
+            json!({"kind": "awaiting_auto", "boundary": boundary, "reason": reason})
+        }
         BranchStatus::Terminal(result) => json!({"kind": "terminal", "result": result.as_str()}),
         BranchStatus::AutomationGap { boundary, site } => {
             json!({"kind": "automation_gap", "boundary": boundary, "site": format!("{site:?}")})
@@ -374,7 +377,7 @@ fn status_value(status: &BranchStatus) -> Value {
 fn terminal_manifest_status(status: &BranchStatus) -> &'static str {
     match status {
         BranchStatus::Terminal(_) => "terminal",
-        BranchStatus::Running { .. } => "running",
+        BranchStatus::Running { .. } | BranchStatus::AwaitingAuto { .. } => "running",
         BranchStatus::AutomationGap { .. }
         | BranchStatus::CombatGap { .. }
         | BranchStatus::BudgetGap { .. }

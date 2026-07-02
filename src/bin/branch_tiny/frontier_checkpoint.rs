@@ -45,6 +45,10 @@ enum BranchStatusCheckpoint {
         boundary: String,
         owner: super::Owner,
     },
+    AwaitingAuto {
+        boundary: String,
+        reason: String,
+    },
     Terminal(TerminalOutcome),
     AutomationGap {
         boundary: String,
@@ -82,7 +86,7 @@ pub(super) fn save(
         next_branch_id,
         frontier: frontier
             .iter()
-            .filter(|branch| matches!(branch.status, BranchStatus::Running { .. }))
+            .filter(|branch| branch.status.is_resumable())
             .map(BranchCheckpoint::from_branch)
             .collect(),
     };
@@ -171,6 +175,10 @@ impl BranchStatusCheckpoint {
                 boundary: boundary.clone(),
                 owner: *owner,
             },
+            BranchStatus::AwaitingAuto { boundary, reason } => Self::AwaitingAuto {
+                boundary: boundary.clone(),
+                reason: reason.clone(),
+            },
             BranchStatus::Terminal(result) => Self::Terminal(*result),
             BranchStatus::AutomationGap { boundary, site } => Self::AutomationGap {
                 boundary: boundary.clone(),
@@ -192,6 +200,9 @@ impl BranchStatusCheckpoint {
     fn into_status(self) -> BranchStatus {
         match self {
             Self::Running { boundary, owner } => BranchStatus::Running { boundary, owner },
+            Self::AwaitingAuto { boundary, reason } => {
+                BranchStatus::AwaitingAuto { boundary, reason }
+            }
             Self::Terminal(result) => BranchStatus::Terminal(result),
             Self::AutomationGap { boundary, site } => {
                 BranchStatus::AutomationGap { boundary, site }
