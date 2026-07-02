@@ -47,6 +47,10 @@ impl RunCapsule {
         self.root.join("result.json")
     }
 
+    pub(super) fn summary_path(&self) -> PathBuf {
+        self.root.join("summary.json")
+    }
+
     pub(super) fn terminal_path(&self) -> PathBuf {
         self.root.join("terminal.json")
     }
@@ -86,6 +90,7 @@ impl RunCapsule {
             remove_if_exists(&self.root.join("result.json"))?;
             remove_if_exists(&self.root.join("path.json"))?;
             self.write_manifest(args, "running", None)?;
+            self.write_frontier_summary(args, generation, frontier, "running", None)?;
             return Ok(RunCapsuleSave::Frontier { running });
         }
         if let Some(branch) = frontier.front() {
@@ -105,11 +110,19 @@ impl RunCapsule {
         let combat_case = combat_case_value(self, args, generation, branch);
         write_json(
             &self.root.join("result.json"),
-            result_value(generation, branch, combat_case),
+            result_value(generation, branch, combat_case.clone()),
         )?;
         write_json(&self.root.join("path.json"), path_value(branch))?;
         remove_if_exists(&self.root.join("frontier.json"))?;
-        self.write_manifest(args, terminal_manifest_status(&branch.status), None)
+        self.write_manifest(args, terminal_manifest_status(&branch.status), None)?;
+        self.write_branch_summary(
+            args,
+            generation,
+            branch,
+            &combat_case,
+            terminal_manifest_status(&branch.status),
+            None,
+        )
     }
 
     pub(super) fn save_completed_result(
@@ -123,11 +136,19 @@ impl RunCapsule {
         let combat_case = combat_case_value(self, args, generation, branch);
         write_json(
             &self.root.join("result.json"),
-            result_value(generation, branch, combat_case),
+            result_value(generation, branch, combat_case.clone()),
         )?;
         write_json(&self.root.join("path.json"), path_value(branch))?;
         remove_if_exists(&self.root.join("frontier.json"))?;
-        self.write_manifest(args, "completed", Some(reason))
+        self.write_manifest(args, "completed", Some(reason))?;
+        self.write_branch_summary(
+            args,
+            generation,
+            branch,
+            &combat_case,
+            "completed",
+            Some(reason),
+        )
     }
 
     pub(super) fn save_paused_recovery(
@@ -153,6 +174,7 @@ impl RunCapsule {
             remove_if_exists(&self.root.join("result.json"))?;
             remove_if_exists(&self.root.join("path.json"))?;
             self.write_manifest(args, "paused", Some(reason))?;
+            self.write_frontier_summary(args, generation, frontier, "paused", Some(reason))?;
             return Ok(RunCapsuleSave::Frontier { running });
         }
         self.save_recovery(args, generation, next_branch_id, frontier)
@@ -187,6 +209,81 @@ impl RunCapsule {
         )
     }
 
+    fn write_branch_summary(
+        &self,
+        args: Args,
+        generation: usize,
+        branch: &Branch,
+        combat_case: &Value,
+        capsule_status: &'static str,
+        reason: Option<&'static str>,
+    ) -> Result<(), String> {
+        write_json(
+            &self.summary_path(),
+            branch_summary_value(
+                &self.root,
+                args,
+                generation,
+                branch,
+                combat_case,
+                capsule_status,
+                reason,
+                None,
+            ),
+        )
+    }
+
+    fn write_frontier_summary(
+        &self,
+        args: Args,
+        generation: usize,
+        frontier: &VecDeque<Branch>,
+        capsule_status: &'static str,
+        reason: Option<&'static str>,
+    ) -> Result<(), String> {
+        let running = frontier
+            .iter()
+            .filter(|branch| branch.status.is_resumable())
+            .count();
+        let frontier_info = json!({
+            "frontier_count": frontier.len(),
+            "frontier_running_count": running,
+        });
+        if let Some(branch) = frontier
+            .iter()
+            .find(|branch| branch.status.is_resumable())
+            .or_else(|| frontier.front())
+        {
+            return write_json(
+                &self.summary_path(),
+                branch_summary_value(
+                    &self.root,
+                    args,
+                    generation,
+                    branch,
+                    &Value::Null,
+                    capsule_status,
+                    reason,
+                    Some(frontier_info),
+                ),
+            );
+        }
+        write_json(
+            &self.summary_path(),
+            json!({
+                "schema": "branch_tiny_capsule_summary",
+                "seed": args.seed,
+                "ascension": args.ascension,
+                "capsule_status": capsule_status,
+                "reason": reason,
+                "blocker_kind": reason.unwrap_or(capsule_status),
+                "generation": generation,
+                "capsule_path": self.root.display().to_string(),
+                "frontier": frontier_info,
+            }),
+        )
+    }
+
     fn write_manifest(
         &self,
         args: Args,
@@ -209,6 +306,110 @@ impl RunCapsule {
             }),
         )
     }
+}
+
+fn branch_summary_value(
+    capsule_path: &Path,
+    args: Args,
+    generation: usize,
+    branch: &Branch,
+    combat_case: &Value,
+    capsule_status: &'static str,
+    reason: Option<&'static str>,
+    frontier: Option<Value>,
+) -> Value {
+    let run = &branch.session.run_state;
+    let status = status_value(&branch.status);
+    let status_kind = status
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or(capsule_status);
+    let blocker_kind = if capsule_status == "paused" {
+        reason.unwrap_or("paused")
+    } else {
+        status_kind
+    };
+    let combat = active_combat_value(branch);
+    let enemies = combat
+        .as_ref()
+        .and_then(|value| value.get("enemies"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let subject = enemies
+        .as_array()
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .filter(|text| !text.is_empty());
+    let (next_recommended_command, next_recommended_reason) =
+        next_recommendation(capsule_path, args, &branch.status, combat_case);
+    let mut value = json!({
+        "schema": "branch_tiny_capsule_summary",
+        "seed": args.seed,
+        "ascension": args.ascension,
+        "capsule_status": capsule_status,
+        "reason": reason,
+        "blocker_kind": blocker_kind,
+        "generation": generation,
+        "branch_id": branch.id,
+        "parent_id": branch.parent_id,
+        "status": status,
+        "act": run.act_num,
+        "floor": run.floor_num,
+        "hp": run.current_hp,
+        "max_hp": run.max_hp,
+        "gold": run.gold,
+        "deck_size": run.master_deck.len(),
+        "subject": subject,
+        "enemies": enemies,
+        "capsule_path": capsule_path.display().to_string(),
+        "combat_case": combat_case,
+        "next_recommended_command": next_recommended_command,
+        "next_recommended_reason": next_recommended_reason,
+    });
+    if let Some(frontier) = frontier {
+        value["frontier"] = frontier;
+    }
+    value
+}
+
+fn next_recommendation(
+    capsule_path: &Path,
+    args: Args,
+    status: &BranchStatus,
+    combat_case: &Value,
+) -> (Option<String>, Option<&'static str>) {
+    if matches!(
+        status,
+        BranchStatus::CombatGap { .. } | BranchStatus::BudgetGap { .. }
+    ) {
+        return (
+            combat_case.as_str().map(|case| {
+                format!(
+                    ".\\target\\debug\\combat_case_review.exe --case \"{}\" --ladder --compact",
+                    case
+                )
+            }),
+            Some("combat_case_review"),
+        );
+    }
+    if status.is_resumable() {
+        return (
+            args.wall_ms.map(|wall_ms| {
+                format!(
+                ".\\target\\debug\\branch_tiny.exe --continue-capsule \"{}\" --continue-slices 1 --wall-ms {}",
+                capsule_path.display(),
+                wall_ms
+            )
+            }),
+            Some("continue_capsule"),
+        );
+    }
+    (None, None)
 }
 
 fn result_value(generation: usize, branch: &Branch, combat_case: Value) -> Value {

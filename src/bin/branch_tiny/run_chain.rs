@@ -8,12 +8,18 @@ use super::run_contract::RunObjective;
 use super::{Args, ArgsOverrides, ContinueCapsuleArgs};
 
 pub(super) fn run(
-    args: Args,
+    mut args: Args,
     overrides: ArgsOverrides,
     chain: ContinueCapsuleArgs,
 ) -> Result<(), String> {
     if args.wall_ms.is_none() {
-        return Err("--continue-capsule requires --wall-ms".to_string());
+        args.wall_ms = manifest_wall_ms(&chain.capsule)?;
+    }
+    if args.wall_ms.is_none() {
+        return Err(format!(
+            "--continue-capsule requires --wall-ms; no previous wall_ms found in {}",
+            chain.capsule.join("manifest.json").display()
+        ));
     }
     let exe = std::env::current_exe().map_err(|err| err.to_string())?;
     let mut slices = Vec::new();
@@ -211,6 +217,17 @@ fn read_json(path: &Path) -> Result<Value, String> {
     let text = fs::read_to_string(path)
         .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
     serde_json::from_str(&text).map_err(|err| format!("failed to parse {}: {err}", path.display()))
+}
+
+fn manifest_wall_ms(capsule: &Path) -> Result<Option<u64>, String> {
+    let manifest = capsule.join("manifest.json");
+    if !manifest.exists() {
+        return Ok(None);
+    }
+    Ok(read_json(&manifest)?
+        .get("args")
+        .and_then(|args| args.get("wall_ms"))
+        .and_then(Value::as_u64))
 }
 
 fn write_chain(capsule: &PathBuf, max_slices: usize, slices: &[Value]) -> Result<(), String> {
