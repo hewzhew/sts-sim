@@ -5,8 +5,8 @@ use clap::Parser;
 use serde::Serialize;
 use sts_simulator::ai::combat_search_v2::{
     run_combat_search_v2, CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config,
-    CombatSearchV2PotionPolicy, CombatSearchV2Report, CombatSearchV2TurnPlanPolicy,
-    SearchTerminalLabel,
+    CombatSearchV2PotionPolicy, CombatSearchV2Report, CombatSearchV2RolloutPolicy,
+    CombatSearchV2TurnPlanPolicy, SearchTerminalLabel,
 };
 use sts_simulator::content::cards::java_id;
 use sts_simulator::content::monsters::EnemyId;
@@ -46,6 +46,8 @@ struct Args {
     replay_focus: bool,
     #[arg(long)]
     lazy_child_rollout: bool,
+    #[arg(long)]
+    disable_rollout: bool,
 }
 
 #[derive(Serialize)]
@@ -72,6 +74,7 @@ struct SearchReview {
     label: &'static str,
     nodes: usize,
     wall_ms: u64,
+    rollout_policy: &'static str,
     turn_plan_policy: &'static str,
     child_rollout_policy: &'static str,
     potion_policy: &'static str,
@@ -227,6 +230,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
                 Some(0),
                 args.action_preview_limit,
                 args.lazy_child_rollout,
+                args.disable_rollout,
             ),
             run_search(
                 "slow_potion_diagnostic",
@@ -238,6 +242,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
                 Some(args.diagnostic_potion_max),
                 args.action_preview_limit,
                 args.lazy_child_rollout,
+                args.disable_rollout,
             ),
         ]
     } else {
@@ -608,7 +613,13 @@ fn run_search(
     max_potions_used: Option<u32>,
     action_preview_limit: usize,
     lazy_child_rollout: bool,
+    disable_rollout: bool,
 ) -> SearchReview {
+    let rollout_policy = if disable_rollout {
+        CombatSearchV2RolloutPolicy::Disabled
+    } else {
+        CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
+    };
     let report = run_combat_search_v2(
         &case.position.engine,
         &case.position.combat,
@@ -618,6 +629,7 @@ fn run_search(
             turn_plan_policy,
             potion_policy,
             max_potions_used,
+            rollout_policy,
             child_rollout_policy: if lazy_child_rollout {
                 CombatSearchV2ChildRolloutPolicy::LazyOnPop
             } else {
@@ -635,6 +647,7 @@ fn run_search(
         max_potions_used,
         &report,
         action_preview_limit,
+        rollout_policy.label(),
     )
 }
 
@@ -647,12 +660,14 @@ fn search_review(
     max_potions_used: Option<u32>,
     report: &CombatSearchV2Report,
     action_preview_limit: usize,
+    rollout_policy: &'static str,
 ) -> SearchReview {
     let best = report.best_win_trajectory.as_ref();
     SearchReview {
         label,
         nodes,
         wall_ms,
+        rollout_policy,
         turn_plan_policy: turn_plan_policy.label(),
         child_rollout_policy: report.search_policy.child_rollout_policy,
         potion_policy: potion_policy_label(potion_policy),

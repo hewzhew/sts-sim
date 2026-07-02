@@ -1,5 +1,6 @@
 use sts_simulator::ai::combat_search_v2::{
-    CombatSearchV2ChildRolloutPolicy, CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
+    CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::content::cards::{get_card_definition, CardType};
 use sts_simulator::eval::run_control::{
@@ -466,6 +467,7 @@ fn boss_retry_options(
     );
     options.search.potion_policy = Some(potion_policy);
     options.search.max_potions_used = max_potions_used;
+    options.search.rollout_policy = Some(CombatSearchV2RolloutPolicy::Disabled);
     options
 }
 
