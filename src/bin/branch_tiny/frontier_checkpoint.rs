@@ -114,7 +114,7 @@ impl FrontierCheckpoint {
 impl BranchCheckpoint {
     fn from_branch(branch: &Branch) -> Self {
         let mut session = RunControlSessionCheckpointV1::from_session(&branch.session);
-        session.take_last_combat_automation_trajectory_record();
+        session.clear_combat_diagnostics_for_external_checkpoint();
         Self {
             id: branch.id,
             parent_id: branch.parent_id,

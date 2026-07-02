@@ -91,6 +91,17 @@ pub(super) fn advance_to_owner_or_gap(
                     );
                 }
                 if combat_gap && boss_combat {
+                    if args.checkpoint_before_boss_retry {
+                        return advance_result(
+                            awaiting_auto_boundary(
+                                "Combat",
+                                "checkpoint before boss retry after primary search gap".to_string(),
+                            ),
+                            None,
+                            auto_steps,
+                            combat_search,
+                        );
+                    }
                     if let Some(result) = try_boss_retry(session, deadline.cap_args(args, 1)) {
                         combat_search.extend(result.2);
                         return advance_result(result.0, Some(result.1), auto_steps, combat_search);

@@ -294,6 +294,8 @@ struct Args {
     boss_search_ms: u64,
     wall_ms: Option<u64>,
     #[serde(skip)]
+    checkpoint_before_boss_retry: bool,
+    #[serde(skip)]
     wall_capped_search_budget: bool,
     #[serde(skip)]
     wall_capped_boss_budget: bool,
@@ -312,6 +314,7 @@ struct ArgsOverrides {
     boss_search_nodes: Option<usize>,
     boss_search_ms: Option<u64>,
     wall_ms: Option<u64>,
+    checkpoint_before_boss_retry: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -359,6 +362,9 @@ impl ArgsOverrides {
         }
         if let Some(value) = self.wall_ms {
             args.wall_ms = Some(value);
+        }
+        if self.checkpoint_before_boss_retry {
+            args.checkpoint_before_boss_retry = true;
         }
     }
 }
@@ -1115,6 +1121,7 @@ fn parse_args() -> Result<
         boss_search_nodes: 800_000,
         boss_search_ms: 8_000,
         wall_ms: None,
+        checkpoint_before_boss_retry: false,
         wall_capped_search_budget: false,
         wall_capped_boss_budget: false,
     };
@@ -1143,6 +1150,9 @@ fn parse_args() -> Result<
             );
             println!(
                 "  optional: --continue-capsule DIR --continue-slices N runs repeated wall slices"
+            );
+            println!(
+                "  optional: --checkpoint-before-boss-retry saves a resumable boss retry checkpoint"
             );
             println!("branch_tiny --probe-event-owner EVENT [--probe-event-screen N]");
             println!(
@@ -1178,10 +1188,17 @@ fn parse_args() -> Result<
                 | "--resume-capsule"
                 | "--continue-capsule"
                 | "--continue-slices"
+                | "--checkpoint-before-boss-retry"
                 | "--probe-event-owner"
                 | "--probe-event-screen"
         ) {
             return Err(format!("unknown argument {key}"));
+        }
+        if key == "--checkpoint-before-boss-retry" {
+            args.checkpoint_before_boss_retry = true;
+            overrides.checkpoint_before_boss_retry = true;
+            index += 1;
+            continue;
         }
         let value = raw
             .get(index + 1)

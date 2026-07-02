@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use serde::de::{DeserializeOwned, Error as DeError};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
@@ -213,70 +214,61 @@ impl<'de> Deserialize<'de> for RunControlSessionCheckpointV1 {
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Wire {
-            Compact(
-                EngineState,
-                RunStateCheckpointV1,
-                Option<ActiveCombat>,
-                u64,
-                Option<usize>,
-                Option<u64>,
-                Option<u32>,
-                Option<CombatSearchV2PotionPolicy>,
-                Option<u32>,
-                u64,
-                Option<RunControlSessionCheckpointExtrasV1>,
-            ),
-            Legacy(RunControlSessionCheckpointLegacyV1),
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if let Some(items) = value.as_array() {
+            return compact_checkpoint_from_values(items).map_err(D::Error::custom);
         }
-
-        match Wire::deserialize(deserializer)? {
-            Wire::Compact(
-                engine_state,
-                run_state,
-                active_combat,
-                decision_step,
-                search_max_nodes,
-                search_wall_ms,
-                search_max_hp_loss,
-                search_potion_policy,
-                search_max_potions_used,
-                combat_sequence,
-                extras,
-            ) => {
-                let extras = extras.unwrap_or_default();
-                Ok(Self {
-                    engine_state,
-                    run_state,
-                    active_combat,
-                    decision_step,
-                    reward_automation: extras.reward_automation,
-                    auto_capture: extras.auto_capture,
-                    search_max_nodes,
-                    search_wall_ms,
-                    search_max_hp_loss,
-                    search_potion_policy,
-                    search_max_potions_used,
-                    card_reward_outcome_calibration: extras.card_reward_outcome_calibration,
-                    card_reward_route_risk_calibration: extras.card_reward_route_risk_calibration,
-                    card_reward_strategy_package_calibration: extras
-                        .card_reward_strategy_package_calibration,
-                    combat_outcomes: extras.combat_outcomes,
-                    combat_sequence,
-                    auto_capture_last_combat_sequence: extras.auto_capture_last_combat_sequence,
-                    last_completed_combat_sequence: extras.last_completed_combat_sequence,
-                    last_completed_combat_source: extras.last_completed_combat_source,
-                    current_combat_source: extras.current_combat_source,
-                    last_combat_automation_sequence: extras.last_combat_automation_sequence,
-                    last_combat_automation_trajectory: extras.last_combat_automation_trajectory,
-                    last_capture_case: extras.last_capture_case,
-                })
-            }
-            Wire::Legacy(legacy) => Ok(legacy.into_checkpoint()),
-        }
+        serde_json::from_value::<RunControlSessionCheckpointLegacyV1>(value)
+            .map(RunControlSessionCheckpointLegacyV1::into_checkpoint)
+            .map_err(D::Error::custom)
     }
+}
+
+fn compact_checkpoint_from_values(
+    items: &[serde_json::Value],
+) -> Result<RunControlSessionCheckpointV1, String> {
+    if items.len() != 11 {
+        return Err(format!(
+            "compact run-control checkpoint expected 11 fields, got {}",
+            items.len()
+        ));
+    }
+    let extras = compact_value::<Option<RunControlSessionCheckpointExtrasV1>>(items, 10, "extras")?
+        .unwrap_or_default();
+    Ok(RunControlSessionCheckpointV1 {
+        engine_state: compact_value(items, 0, "engine_state")?,
+        run_state: compact_value(items, 1, "run_state")?,
+        active_combat: compact_value(items, 2, "active_combat")?,
+        decision_step: compact_value(items, 3, "decision_step")?,
+        reward_automation: extras.reward_automation,
+        auto_capture: extras.auto_capture,
+        search_max_nodes: compact_value(items, 4, "search_max_nodes")?,
+        search_wall_ms: compact_value(items, 5, "search_wall_ms")?,
+        search_max_hp_loss: compact_value(items, 6, "search_max_hp_loss")?,
+        search_potion_policy: compact_value(items, 7, "search_potion_policy")?,
+        search_max_potions_used: compact_value(items, 8, "search_max_potions_used")?,
+        card_reward_outcome_calibration: extras.card_reward_outcome_calibration,
+        card_reward_route_risk_calibration: extras.card_reward_route_risk_calibration,
+        card_reward_strategy_package_calibration: extras.card_reward_strategy_package_calibration,
+        combat_outcomes: extras.combat_outcomes,
+        combat_sequence: compact_value(items, 9, "combat_sequence")?,
+        auto_capture_last_combat_sequence: extras.auto_capture_last_combat_sequence,
+        last_completed_combat_sequence: extras.last_completed_combat_sequence,
+        last_completed_combat_source: extras.last_completed_combat_source,
+        current_combat_source: extras.current_combat_source,
+        last_combat_automation_sequence: extras.last_combat_automation_sequence,
+        last_combat_automation_trajectory: extras.last_combat_automation_trajectory,
+        last_capture_case: extras.last_capture_case,
+    })
+}
+
+fn compact_value<T: DeserializeOwned>(
+    items: &[serde_json::Value],
+    index: usize,
+    label: &str,
+) -> Result<T, String> {
+    serde_json::from_value(items[index].clone())
+        .map_err(|err| format!("invalid compact run-control checkpoint {label}: {err}"))
 }
 
 #[derive(Deserialize)]
