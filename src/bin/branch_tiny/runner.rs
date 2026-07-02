@@ -18,6 +18,9 @@ use super::{
     Owner, RunDeadline, TerminalOutcome,
 };
 
+const BOSS_RETRY_POTION_RESCUE_MAX_POTIONS_USED: u32 = 3;
+const HALLWAY_POTION_RESCUE_MAX_POTIONS_USED: u32 = 1;
+
 pub(super) struct AdvanceResult {
     pub(super) status: BranchStatus,
     pub(super) boss_retry: Option<BossRetryReport>,
@@ -126,6 +129,30 @@ pub(super) fn advance_to_owner_or_gap(
                                 auto_steps,
                                 combat_search,
                             );
+                        }
+                    }
+                    if matches!(status, BranchStatus::CombatGap { .. })
+                        && should_try_hallway_potion_rescue(session)
+                    {
+                        match apply_owner_audit_auto_run(
+                            session,
+                            hallway_potion_rescue_auto_step_options(args),
+                        ) {
+                            Ok(rescue) => {
+                                combat_search.extend(combat_search_summaries(&rescue));
+                                auto_steps.extend(rescue.auto_applied_steps.clone());
+                                status = classify_auto_outcome(session, &rescue);
+                            }
+                            Err(err) => {
+                                return advance_result(
+                                    BranchStatus::AdvanceFailed(format!(
+                                        "hallway potion rescue failed: {err}"
+                                    )),
+                                    None,
+                                    auto_steps,
+                                    combat_search,
+                                );
+                            }
                         }
                     }
                 }
@@ -262,6 +289,17 @@ fn is_boss_combat(session: &RunControlSession) -> bool {
         .is_some_and(|combat| combat.combat_state.meta.is_boss_fight)
 }
 
+fn should_try_hallway_potion_rescue(session: &RunControlSession) -> bool {
+    let Some(active) = session.active_combat.as_ref() else {
+        return false;
+    };
+    let meta = &active.combat_state.meta;
+    let player = &active.combat_state.entities.player;
+    !meta.is_boss_fight
+        && !meta.is_elite_fight
+        && (session.run_state.act_num >= 3 || player.current_hp * 2 <= player.max_hp)
+}
+
 fn primary_auto_step_options(args: Args) -> RunControlAutoStepOptions {
     auto_step_options(
         args.search_nodes,
@@ -280,6 +318,19 @@ fn diagnostic_rescue_auto_step_options(args: Args) -> RunControlAutoStepOptions 
         args.wall_ms.is_some(),
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
     )
+}
+
+fn hallway_potion_rescue_auto_step_options(args: Args) -> RunControlAutoStepOptions {
+    let mut options = auto_step_options(
+        args.boss_search_nodes,
+        args.boss_search_ms,
+        args.auto_ops,
+        args.wall_ms.is_some(),
+        CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+    );
+    options.search.potion_policy = Some(CombatSearchV2PotionPolicy::All);
+    options.search.max_potions_used = Some(HALLWAY_POTION_RESCUE_MAX_POTIONS_USED);
+    options
 }
 
 fn auto_step_options(
@@ -333,7 +384,8 @@ fn try_boss_retry(
                 &active.combat_state,
             )
         })
-        .unwrap_or(1);
+        .unwrap_or(1)
+        .max(BOSS_RETRY_POTION_RESCUE_MAX_POTIONS_USED);
     let rescue = boss_retry_options(args, CombatSearchV2PotionPolicy::All, Some(max_potions));
     let (status, attempt, search) = run_boss_retry_attempt(session, args, "potion_rescue", rescue);
     all_search.extend(search);
