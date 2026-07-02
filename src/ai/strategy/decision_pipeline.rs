@@ -361,6 +361,7 @@ fn score_passes() -> &'static [ScorePass] {
         deck_admission_score,
         construction_pressure_score,
         reward_reason_score,
+        payoff_support_quality_score,
         shop_investment_score,
         shop_relic_score,
         shop_potion_score,
@@ -646,7 +647,10 @@ fn strategic_deficit_score(
         improves = true;
         scores.push(score("strategic-survival-gap", 40));
     }
-    if needs(deficit.boss_scaling_plan) && admission_scaling_or_engine(admission) {
+    if needs(deficit.boss_scaling_plan)
+        && admission_scaling_or_engine(admission)
+        && !fragile_supported_payoff(context, admission)
+    {
         improves = true;
         scores.push(score("strategic-scaling-gap", 60));
     }
@@ -744,6 +748,20 @@ fn reward_reason_score(
             }
             _ => {}
         }
+    }
+}
+
+fn payoff_support_quality_score(
+    context: DecisionPipelineContext,
+    _candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    let Some(admission) = admission else {
+        return;
+    };
+    if fragile_supported_payoff(context, admission) {
+        scores.push(score("payoff-support-fragile", -80));
     }
 }
 
@@ -925,6 +943,12 @@ fn admission_aoe(admission: &RewardAdmission) -> bool {
         .contains(&RewardAdmissionReason::AreaDamage)
 }
 
+fn admission_damage_uses(admission: &RewardAdmission, mechanic: Mechanic) -> bool {
+    admission
+        .reasons
+        .contains(&RewardAdmissionReason::DamageUses(mechanic))
+}
+
 fn admission_survival_tool(admission: &RewardAdmission) -> bool {
     admission_provides(admission, Mechanic::Block)
         || admission_provides(admission, Mechanic::Weak)
@@ -944,6 +968,24 @@ fn admission_scaling_or_engine(admission: &RewardAdmission) -> bool {
                     | RewardAdmissionReason::RunReward(_)
             )
         })
+}
+
+fn fragile_supported_payoff(context: DecisionPipelineContext, admission: &RewardAdmission) -> bool {
+    if !admission
+        .reasons
+        .iter()
+        .any(|reason| matches!(reason, RewardAdmissionReason::Supports(_)))
+    {
+        return false;
+    }
+    if admission_damage_uses(admission, Mechanic::Strength) {
+        return context.deck_plan.roles.strength_source_units < 2;
+    }
+    if admission_damage_uses(admission, Mechanic::Block) {
+        let roles = context.deck_plan.roles;
+        return roles.block_units < 4 && roles.cycle_block_units < 2;
+    }
+    false
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

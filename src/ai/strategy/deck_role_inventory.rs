@@ -1,5 +1,5 @@
 use crate::ai::analysis::card_semantics::{
-    card_definition_with_upgrades, CombatEvent, Mechanic, PlayEffect,
+    card_definition_with_upgrades, CombatEvent, Mechanic, PlayEffect, TriggeredEffect,
 };
 use crate::runtime::combat::CombatCard;
 
@@ -13,6 +13,7 @@ pub struct DeckRoleInventory {
     pub debuff_units: u8,
     pub draw_units: u8,
     pub energy_units: u8,
+    pub strength_source_units: u8,
     pub exhaust_stream_units: u8,
     pub block_payoff_units: u8,
     pub strength_payoff_units: u8,
@@ -35,6 +36,9 @@ impl DeckRoleInventory {
             }
             for effect in &definition.play_effects {
                 inventory.add_play_effect(*effect);
+            }
+            for handler in &definition.event_handlers {
+                inventory.add_event_handler(handler.on, handler.effect);
             }
         }
         inventory
@@ -63,6 +67,17 @@ impl DeckRoleInventory {
         }
     }
 
+    fn add_event_handler(&mut self, event: CombatEvent, effect: TriggeredEffect) {
+        if effect != TriggeredEffect::Provide(Mechanic::Strength) {
+            return;
+        }
+        self.strength_source_units += match event {
+            CombatEvent::TurnStart => 2,
+            CombatEvent::CardSelfDamage => 1,
+            _ => 1,
+        };
+    }
+
     fn add_mechanic(&mut self, mechanic: Mechanic) {
         match mechanic {
             Mechanic::Block => self.block_units += 1,
@@ -73,8 +88,8 @@ impl DeckRoleInventory {
             Mechanic::Vulnerable => self.debuff_units += 1,
             Mechanic::CardDraw => self.draw_units += 1,
             Mechanic::Energy => self.energy_units += 1,
-            Mechanic::Strength
-            | Mechanic::TemporaryStrength
+            Mechanic::Strength => self.strength_source_units += 1,
+            Mechanic::TemporaryStrength
             | Mechanic::StrengthMultiplier
             | Mechanic::TopdeckControl => {}
         }
