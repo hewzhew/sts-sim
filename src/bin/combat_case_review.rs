@@ -10,8 +10,13 @@ use sts_simulator::ai::combat_search_v2::{
     CombatSearchV2Report, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
     SearchTerminalLabel,
 };
-use sts_simulator::content::cards::java_id;
+use sts_simulator::ai::strategy::deck_strategic_deficit::{
+    assess_deck_strategic_deficit, DeckStrategicDeficit,
+};
+use sts_simulator::ai::strategy::run_strategic_facts::RunStrategicFacts;
+use sts_simulator::content::cards::{get_card_definition, is_starter_basic, java_id, CardType};
 use sts_simulator::content::monsters::EnemyId;
+use sts_simulator::content::relics::energy_master_delta;
 use sts_simulator::eval::combat_case::{
     card_summary, load_combat_case, CombatCase, CombatCaseCardSummary, CombatCasePathStep,
 };
@@ -67,6 +72,7 @@ struct CombatCaseReview {
     run: sts_simulator::eval::combat_case::CombatCaseRunSummary,
     combat: sts_simulator::eval::combat_case::CombatCaseCombatSummary,
     deck: Vec<CombatCaseCardSummary>,
+    static_strategic_deficit: DeckStrategicDeficit,
     relics: Vec<String>,
     potions: Vec<Option<String>>,
     path_tail: Vec<CombatCasePathStep>,
@@ -290,6 +296,10 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
     CombatCaseReview {
         schema: "combat_case_review",
         case_path: args.case.display().to_string(),
+        static_strategic_deficit: assess_deck_strategic_deficit(
+            &case.position.combat.meta.master_deck_snapshot,
+            strategic_facts_from_case(&case),
+        ),
         deck: case
             .position
             .combat
@@ -332,6 +342,26 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
         review_focus_replay,
         line_lab,
         combat_deficit_evidence,
+    }
+}
+
+fn strategic_facts_from_case(case: &CombatCase) -> RunStrategicFacts {
+    let deck = &case.position.combat.meta.master_deck_snapshot;
+    RunStrategicFacts {
+        entering_act: case.run.act,
+        starter_basic_count: deck.iter().filter(|card| is_starter_basic(card.id)).count(),
+        curse_count: deck
+            .iter()
+            .filter(|card| get_card_definition(card.id).card_type == CardType::Curse)
+            .count(),
+        has_energy_relic: case
+            .position
+            .combat
+            .entities
+            .player
+            .relics
+            .iter()
+            .any(|relic| energy_master_delta(relic.id) > 0),
     }
 }
 
