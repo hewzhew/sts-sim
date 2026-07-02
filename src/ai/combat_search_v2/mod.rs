@@ -79,6 +79,7 @@ pub mod state_abstraction;
 mod decision_microscope;
 mod diagnostics;
 mod diagnostics_tags;
+mod line_lab;
 mod rollout_probe;
 mod segment_plan;
 mod trajectory_report;
@@ -158,6 +159,9 @@ pub use decision_microscope::{
     CombatSearchV2DecisionTrajectorySummary,
 };
 pub(crate) use external_payoff::has_external_payoff_opportunity;
+pub use line_lab::{
+    run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, CombatLineLabReport,
+};
 pub use search::{run_combat_search_v2, run_combat_search_v2_with_stepper};
 pub use segment_plan::{plan_combat_turn_segment_v1, CombatSearchV2TurnSegmentReport};
 pub use trajectory_report::trajectory_from_state;

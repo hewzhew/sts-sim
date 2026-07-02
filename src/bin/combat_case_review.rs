@@ -4,7 +4,8 @@ use std::time::Duration;
 use clap::Parser;
 use serde::Serialize;
 use sts_simulator::ai::combat_search_v2::{
-    run_combat_search_v2, CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config,
+    run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, run_combat_search_v2,
+    CombatLineLabReport, CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config,
     CombatSearchV2PotionPolicy, CombatSearchV2Report, CombatSearchV2RolloutPolicy,
     CombatSearchV2TurnPlanPolicy, SearchTerminalLabel,
 };
@@ -48,6 +49,12 @@ struct Args {
     lazy_child_rollout: bool,
     #[arg(long)]
     disable_rollout: bool,
+    #[arg(long)]
+    line_lab: bool,
+    #[arg(long, default_value_t = 30_000)]
+    line_lab_ms: u64,
+    #[arg(long, default_value_t = 8)]
+    line_lab_cuts: usize,
 }
 
 #[derive(Serialize)]
@@ -67,6 +74,7 @@ struct CombatCaseReview {
     classification: CombatGapReviewClassification,
     review_focus: Option<CombatReviewFocus>,
     review_focus_replay: Option<CombatReviewFocusReplay>,
+    line_lab: Option<CombatLineLabReport>,
 }
 
 #[derive(Serialize)]
@@ -218,35 +226,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
-    let ladder = if args.ladder {
-        vec![
-            run_search(
-                "fast_no_potion_diagnostic",
-                &case,
-                args.fast_nodes,
-                args.fast_ms,
-                CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-                CombatSearchV2PotionPolicy::Never,
-                Some(0),
-                args.action_preview_limit,
-                args.lazy_child_rollout,
-                args.disable_rollout,
-            ),
-            run_search(
-                "slow_potion_diagnostic",
-                &case,
-                args.slow_nodes,
-                args.slow_ms,
-                CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-                CombatSearchV2PotionPolicy::All,
-                Some(args.diagnostic_potion_max),
-                args.action_preview_limit,
-                args.lazy_child_rollout,
-                args.disable_rollout,
-            ),
-        ]
+    let (ladder, line_lab_parent) = if args.ladder {
+        let (fast_review, _) = run_search(
+            "fast_no_potion_diagnostic",
+            &case,
+            args.fast_nodes,
+            args.fast_ms,
+            CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            CombatSearchV2PotionPolicy::Never,
+            Some(0),
+            args.action_preview_limit,
+            args.lazy_child_rollout,
+            args.disable_rollout,
+        );
+        let (slow_review, slow_report) = run_search(
+            "slow_potion_diagnostic",
+            &case,
+            args.slow_nodes,
+            args.slow_ms,
+            CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            CombatSearchV2PotionPolicy::All,
+            Some(args.diagnostic_potion_max),
+            args.action_preview_limit,
+            args.lazy_child_rollout,
+            args.disable_rollout,
+        );
+        (
+            vec![fast_review, slow_review],
+            slow_report.best_complete_trajectory.clone(),
+        )
     } else {
-        Vec::new()
+        (Vec::new(), None)
     };
     let review_focus = review_focus(&ladder);
     let classification = classify_gap_review(&ladder, review_focus.as_ref());
@@ -254,6 +264,23 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
         review_focus
             .as_ref()
             .map(|focus| replay_focus(&case.position, focus))
+    } else {
+        None
+    };
+    let line_lab = if args.line_lab {
+        let config = line_lab_search_config(args);
+        Some(match line_lab_parent.as_ref() {
+            Some(parent) => run_combat_line_lab_from_parent_v0(
+                &case.position,
+                parent,
+                config,
+                args.line_lab_ms,
+                args.line_lab_cuts,
+            ),
+            None => {
+                run_combat_line_lab_v0(&case.position, config, args.line_lab_ms, args.line_lab_cuts)
+            }
+        })
     } else {
         None
     };
@@ -300,6 +327,28 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
         classification,
         review_focus,
         review_focus_replay,
+        line_lab,
+    }
+}
+
+fn line_lab_search_config(args: &Args) -> CombatSearchV2Config {
+    CombatSearchV2Config {
+        max_nodes: args.slow_nodes,
+        wall_time: Some(Duration::from_millis(args.line_lab_ms)),
+        turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+        child_rollout_policy: if args.lazy_child_rollout {
+            CombatSearchV2ChildRolloutPolicy::LazyOnPop
+        } else {
+            CombatSearchV2ChildRolloutPolicy::Immediate
+        },
+        potion_policy: CombatSearchV2PotionPolicy::All,
+        max_potions_used: Some(args.diagnostic_potion_max),
+        rollout_policy: if args.disable_rollout {
+            CombatSearchV2RolloutPolicy::Disabled
+        } else {
+            CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
+        },
+        ..Default::default()
     }
 }
 
@@ -614,7 +663,7 @@ fn run_search(
     action_preview_limit: usize,
     lazy_child_rollout: bool,
     disable_rollout: bool,
-) -> SearchReview {
+) -> (SearchReview, CombatSearchV2Report) {
     let rollout_policy = if disable_rollout {
         CombatSearchV2RolloutPolicy::Disabled
     } else {
@@ -638,7 +687,7 @@ fn run_search(
             ..CombatSearchV2Config::default()
         },
     );
-    search_review(
+    let review = search_review(
         label,
         nodes,
         wall_ms,
@@ -648,7 +697,8 @@ fn run_search(
         &report,
         action_preview_limit,
         rollout_policy.label(),
-    )
+    );
+    (review, report)
 }
 
 fn search_review(
