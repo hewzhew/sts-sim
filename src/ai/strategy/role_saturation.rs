@@ -3,6 +3,7 @@ use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::reward_admission::{
     RewardAdmission, RewardAdmissionClass, RewardAdmissionReason,
 };
+use crate::ai::strategy::reward_quality::RewardDuplicateConcern;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RoleSaturationCandidate {
@@ -19,6 +20,7 @@ pub enum LaneCap {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MarginalUtilityReason {
     CycleBlockSaturated,
+    DuplicateAccessCopy,
     DuplicateBlockPayoff,
     DuplicateUnupgradedPayoff,
     ThickDeckImmediateWork,
@@ -81,6 +83,14 @@ pub fn assess_role_saturation(
         }
     }
 
+    if has_duplicate_access_copy(admission) {
+        assessment.add(
+            MarginalUtilityReason::DuplicateAccessCopy,
+            -70,
+            LaneCap::ProbeOnly,
+        );
+    }
+
     if deck.context.act >= 3
         && deck.deck_size >= 24
         && generic_immediate_work(admission)
@@ -112,6 +122,7 @@ impl RoleSaturationAssessment {
 pub fn marginal_reason_label(reason: MarginalUtilityReason) -> &'static str {
     match reason {
         MarginalUtilityReason::CycleBlockSaturated => "cycle-block-saturated",
+        MarginalUtilityReason::DuplicateAccessCopy => "duplicate-access-copy",
         MarginalUtilityReason::DuplicateBlockPayoff => "duplicate-block-payoff",
         MarginalUtilityReason::DuplicateUnupgradedPayoff => "duplicate-unupgraded-payoff",
         MarginalUtilityReason::ThickDeckImmediateWork => "thick-deck-immediate",
@@ -164,4 +175,13 @@ fn admission_damage_uses(admission: &RewardAdmission, mechanic: Mechanic) -> boo
     admission
         .reasons
         .contains(&RewardAdmissionReason::DamageUses(mechanic))
+}
+
+fn has_duplicate_access_copy(admission: &RewardAdmission) -> bool {
+    admission.reasons.iter().any(|reason| {
+        matches!(
+            reason,
+            RewardAdmissionReason::DuplicateConcern(RewardDuplicateConcern::DiminishingAccessCopy)
+        )
+    })
 }

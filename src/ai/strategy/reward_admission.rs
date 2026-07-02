@@ -534,6 +534,7 @@ fn duplicate_concern_tag(concern: RewardDuplicateConcern) -> &'static str {
         RewardDuplicateConcern::LowMarginalFrontload => "low-marginal-damage",
         RewardDuplicateConcern::RedundantDebuff => "redundant-debuff",
         RewardDuplicateConcern::RedundantCombatUpgrade => "redundant-upgrade",
+        RewardDuplicateConcern::DiminishingAccessCopy => "diminishing-access-copy",
     }
 }
 

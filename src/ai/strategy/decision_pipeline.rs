@@ -9,6 +9,7 @@ use crate::ai::strategy::deck_strategic_deficit::{StrategicBurdenLevel, Strategi
 use crate::ai::strategy::reward_admission::{
     RewardAdmission, RewardAdmissionClass, RewardAdmissionReason,
 };
+use crate::ai::strategy::reward_quality::RewardDuplicateConcern;
 use crate::ai::strategy::role_saturation::{
     assess_role_saturation, marginal_reason_label, LaneCap, RoleSaturationCandidate,
 };
@@ -360,6 +361,7 @@ fn score_passes() -> &'static [ScorePass] {
         strategic_deficit_score,
         deck_admission_score,
         construction_pressure_score,
+        latent_quality_score,
         reward_reason_score,
         payoff_support_quality_score,
         shop_investment_score,
@@ -490,11 +492,12 @@ fn duplicate_marginal_filter(
 ) -> FilterDecision {
     let low_marginal = admission.is_some_and(|admission| {
         admission.reasons.iter().any(|reason| {
-            matches!(
-                reason,
-                RewardAdmissionReason::DuplicateBurden(_)
-                    | RewardAdmissionReason::DuplicateConcern(_)
-            )
+            matches!(reason, RewardAdmissionReason::DuplicateBurden(_))
+                || matches!(
+                    reason,
+                    RewardAdmissionReason::DuplicateConcern(concern)
+                        if concern.is_hard_penalty()
+                )
         })
     });
     if low_marginal {
@@ -717,6 +720,34 @@ fn construction_pressure_score(
             ConstructionLaneAdjustment::HardDemote => -130,
         },
     ));
+}
+
+fn latent_quality_score(
+    context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+    scores: &mut Vec<ScoreComponent>,
+) {
+    if !matches!(
+        candidate.kind,
+        DecisionCandidateKind::CardRewardPick { .. } | DecisionCandidateKind::ShopBuyCard { .. }
+    ) {
+        return;
+    }
+    let Some(admission) = admission else {
+        return;
+    };
+    if has_combat_upgrade(admission) && context.deck_plan.roles.upgrade_access_units == 0 {
+        let value = if context.deck_plan.context.act <= 1 {
+            55
+        } else {
+            35
+        };
+        scores.push(score("latent-upgrade-leverage", value));
+    }
+    if has_duplicate_access_copy(admission) {
+        scores.push(score("marginal-access-copy", -25));
+    }
 }
 
 fn reward_reason_score(
@@ -950,6 +981,21 @@ fn admission_damage_uses(admission: &RewardAdmission, mechanic: Mechanic) -> boo
     admission
         .reasons
         .contains(&RewardAdmissionReason::DamageUses(mechanic))
+}
+
+fn has_combat_upgrade(admission: &RewardAdmission) -> bool {
+    admission
+        .reasons
+        .contains(&RewardAdmissionReason::CombatUpgrade)
+}
+
+fn has_duplicate_access_copy(admission: &RewardAdmission) -> bool {
+    admission.reasons.iter().any(|reason| {
+        matches!(
+            reason,
+            RewardAdmissionReason::DuplicateConcern(RewardDuplicateConcern::DiminishingAccessCopy)
+        )
+    })
 }
 
 fn admission_survival_tool(admission: &RewardAdmission) -> bool {

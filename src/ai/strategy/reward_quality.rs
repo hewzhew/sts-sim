@@ -1,4 +1,4 @@
-use crate::ai::analysis::card_semantics::{CardBurden, Mechanic, PlayEffect};
+use crate::ai::analysis::card_semantics::{CardBurden, DuplicateBehavior, Mechanic, PlayEffect};
 use crate::ai::strategy::package_transition::{PackageKind, PackageTransitionReport};
 use crate::content::cards::CardId;
 
@@ -7,6 +7,7 @@ pub enum RewardDuplicateConcern {
     LowMarginalFrontload,
     RedundantDebuff,
     RedundantCombatUpgrade,
+    DiminishingAccessCopy,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -51,6 +52,13 @@ pub fn assess_reward_quality(
                 .duplicate_concerns
                 .push(RewardDuplicateConcern::RedundantCombatUpgrade);
         }
+        if has_duplicate_behavior(transition, DuplicateBehavior::DiminishingReturn)
+            && has_duplicate_behavior(transition, DuplicateBehavior::AccessCopyUseful)
+        {
+            report
+                .duplicate_concerns
+                .push(RewardDuplicateConcern::DiminishingAccessCopy);
+        }
     }
     report
 }
@@ -73,7 +81,17 @@ impl RewardQualityReport {
     }
 
     pub fn has_duplicate_penalty(&self) -> bool {
-        !self.duplicate_burdens.is_empty() || !self.duplicate_concerns.is_empty()
+        !self.duplicate_burdens.is_empty()
+            || self
+                .duplicate_concerns
+                .iter()
+                .any(|concern| concern.is_hard_penalty())
+    }
+}
+
+impl RewardDuplicateConcern {
+    pub fn is_hard_penalty(self) -> bool {
+        !matches!(self, RewardDuplicateConcern::DiminishingAccessCopy)
     }
 }
 
@@ -154,4 +172,11 @@ fn has_combat_upgrade_effect(transition: &PackageTransitionReport) -> bool {
             PlayEffect::CombatUpgradeSingle | PlayEffect::CombatUpgradeAll
         )
     })
+}
+
+fn has_duplicate_behavior(
+    transition: &PackageTransitionReport,
+    behavior: DuplicateBehavior,
+) -> bool {
+    transition.candidate_duplicate_behaviors.contains(&behavior)
 }
