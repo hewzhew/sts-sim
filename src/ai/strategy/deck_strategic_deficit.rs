@@ -29,6 +29,7 @@ pub enum StrategicPackageEvidence {
     ExhaustEngine,
     StrengthScaling,
     BlockEngine,
+    #[serde(rename = "aoe_package")]
     AoEPackage,
     DrawEngine,
     EnergyEngine,
@@ -41,6 +42,8 @@ pub enum StrategicRisk {
     TooManyConditionalPayoffs,
     NoEnablerForExploiters,
     DeckTooThickForAccess,
+    OpeningHandPollution,
+    SevereCurseBurden,
     ReliesOnPowers,
     ReliesOnLowImpactCardSpam,
 }
@@ -67,11 +70,7 @@ pub fn assess_deck_strategic_deficit(
     let frontload_units = inventory
         .frontload_units
         .saturating_add(counts.strike_count);
-    let block_or_mitigation_units = inventory
-        .block_units
-        .saturating_add(inventory.cycle_block_units)
-        .saturating_add(inventory.mitigation_units)
-        .saturating_add(counts.defend_count);
+    let block_or_mitigation_units = block_or_mitigation_units(&inventory, &counts);
     let package_evidence = package_evidence(&inventory, &counts);
     let boss_scaling_plan = boss_scaling_level(&package_evidence, &counts);
     let deck_access = access_level(inventory.draw_units, counts.deck_size);
@@ -81,7 +80,7 @@ pub fn assess_deck_strategic_deficit(
     DeckStrategicDeficit {
         frontload_damage: frontload_level(frontload_units, counts.act),
         aoe_or_minion_control: unit_level(inventory.aoe_units, 1, 4),
-        block_or_mitigation: unit_level(block_or_mitigation_units, 2, 8),
+        block_or_mitigation: unit_level(block_or_mitigation_units, 2, 10),
         boss_scaling_plan,
         deck_access,
         energy_or_playability,
@@ -100,6 +99,10 @@ struct StrategicCounts {
     power_count: u8,
     strike_count: u8,
     defend_count: u8,
+    iron_wave_count: u8,
+    writhe_count: u8,
+    normality_count: u8,
+    severe_curse_count: u8,
     low_impact_attacks: u8,
     conditional_payoffs: u8,
     strength_sources: u8,
@@ -137,6 +140,18 @@ impl StrategicCounts {
         }
         if card.id == CardId::Defend {
             self.defend_count += 1;
+        }
+        if card.id == CardId::IronWave {
+            self.iron_wave_count += 1;
+        }
+        if card.id == CardId::Writhe {
+            self.writhe_count += 1;
+        }
+        if card.id == CardId::Normality {
+            self.normality_count += 1;
+        }
+        if is_severe_curse(card.id) {
+            self.severe_curse_count += 1;
         }
         if is_low_impact_attack(card.id) {
             self.low_impact_attacks += 1;
@@ -227,6 +242,12 @@ fn risks(
     {
         risks.push(StrategicRisk::DeckTooThickForAccess);
     }
+    if counts.writhe_count > 0 {
+        risks.push(StrategicRisk::OpeningHandPollution);
+    }
+    if counts.severe_curse_count > 0 {
+        risks.push(StrategicRisk::SevereCurseBurden);
+    }
     if counts.power_count >= 4 {
         risks.push(StrategicRisk::ReliesOnPowers);
     }
@@ -249,6 +270,19 @@ fn unsupported_payoffs(inventory: &DeckRoleInventory, counts: &StrategicCounts) 
             && counts.strength_sources == 0
             && inventory.block_units <= 1
             && counts.status_clutter_sources == 0)
+}
+
+fn block_or_mitigation_units(inventory: &DeckRoleInventory, counts: &StrategicCounts) -> u8 {
+    let raw_nonstarter = inventory
+        .block_units
+        .saturating_add(inventory.cycle_block_units)
+        .saturating_add(inventory.mitigation_units);
+    let strong = raw_nonstarter.saturating_sub(counts.iron_wave_count);
+    let low_quality_cap = counts
+        .defend_count
+        .saturating_add(counts.iron_wave_count)
+        .min(3);
+    strong.saturating_add(low_quality_cap)
 }
 
 fn frontload_level(units: u8, act: u8) -> StrategicDeficitLevel {
@@ -286,9 +320,11 @@ fn boss_scaling_level(
 fn access_level(draw_units: u8, deck_size: usize) -> StrategicDeficitLevel {
     match draw_units {
         0 => StrategicDeficitLevel::Missing,
-        1 if deck_size >= 24 => StrategicDeficitLevel::Thin,
+        1 if deck_size >= 18 => StrategicDeficitLevel::Thin,
         1 => StrategicDeficitLevel::Adequate,
+        2 if deck_size >= 28 => StrategicDeficitLevel::Thin,
         2..=4 => StrategicDeficitLevel::Adequate,
+        _ if deck_size >= 30 => StrategicDeficitLevel::Adequate,
         _ => StrategicDeficitLevel::Surplus,
     }
 }
@@ -305,6 +341,10 @@ fn energy_level(inventory: &DeckRoleInventory, counts: &StrategicCounts) -> Stra
 
 fn burden_level(counts: &StrategicCounts, access: StrategicDeficitLevel) -> StrategicBurdenLevel {
     if counts.curse_count >= 2
+        || counts.normality_count > 0
+        || counts.severe_curse_count >= 2
+        || (counts.writhe_count > 0 && counts.deck_size >= 18)
+        || counts.deck_size >= 34
         || (counts.deck_size >= 30
             && matches!(
                 access,
@@ -312,7 +352,16 @@ fn burden_level(counts: &StrategicCounts, access: StrategicDeficitLevel) -> Stra
             ))
     {
         StrategicBurdenLevel::Heavy
-    } else if counts.curse_count > 0 || counts.starter_basic_count >= 6 || counts.deck_size >= 25 {
+    } else if counts.curse_count > 0
+        || counts.severe_curse_count > 0
+        || counts.starter_basic_count >= 6
+        || counts.deck_size >= 25
+        || (counts.deck_size >= 22
+            && matches!(
+                access,
+                StrategicDeficitLevel::Missing | StrategicDeficitLevel::Thin
+            ))
+    {
         StrategicBurdenLevel::Watch
     } else {
         StrategicBurdenLevel::Clean
@@ -356,5 +405,12 @@ fn is_conditional_payoff(card: CardId) -> bool {
             | CardId::Pummel
             | CardId::FireBreathing
             | CardId::Evolve
+    )
+}
+
+fn is_severe_curse(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Writhe | CardId::Normality | CardId::Regret | CardId::Pain | CardId::Parasite
     )
 }
