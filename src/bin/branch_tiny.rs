@@ -16,6 +16,8 @@ use sts_simulator::state::events::{EventId, EventState};
 mod candidate_ir_adapter;
 #[path = "branch_tiny/combat_gap_case.rs"]
 mod combat_gap_case;
+#[path = "branch_tiny/decision_delta.rs"]
+mod decision_delta;
 #[path = "branch_tiny/expansion_policy.rs"]
 mod expansion_policy;
 #[path = "branch_tiny/frontier_checkpoint.rs"]
@@ -95,6 +97,7 @@ struct BranchPathStep {
     label: String,
     annotation: ChoiceAnnotationSnapshot,
     state_before: Option<BranchPathState>,
+    decision_delta: Option<decision_delta::DecisionDeltaSnapshot>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1059,14 +1062,24 @@ fn expand_registered_owner(
     let mut children = Vec::new();
     for choice in candidates {
         let mut session = branch.session.clone();
-        let advance = match session.apply_command(choice.action.clone()) {
-            Ok(_) => runner::advance_to_owner_or_gap(&mut session, args, deadline),
-            Err(err) => runner::AdvanceResult {
-                status: BranchStatus::ApplyFailed(err),
-                boss_retry: None,
-                auto_steps: Vec::new(),
-                combat_search: Vec::new(),
-            },
+        let (advance, decision_delta) = match session.apply_command(choice.action.clone()) {
+            Ok(_) => {
+                let delta =
+                    decision_delta::decision_delta(&branch.session.run_state, &session.run_state);
+                (
+                    runner::advance_to_owner_or_gap(&mut session, args, deadline),
+                    delta,
+                )
+            }
+            Err(err) => (
+                runner::AdvanceResult {
+                    status: BranchStatus::ApplyFailed(err),
+                    boss_retry: None,
+                    auto_steps: Vec::new(),
+                    combat_search: Vec::new(),
+                },
+                None,
+            ),
         };
         let mut path = branch.path.clone();
         path.push(BranchPathStep {
@@ -1075,6 +1088,7 @@ fn expand_registered_owner(
             label: choice.label,
             annotation: ChoiceAnnotationSnapshot::from_annotation(&choice.annotation),
             state_before: Some(BranchPathState::from_branch(branch)),
+            decision_delta,
         });
         let id = *next_branch_id;
         *next_branch_id += 1;

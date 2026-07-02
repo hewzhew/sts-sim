@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use sts_simulator::eval::run_control::RunControlSessionCheckpointV1;
 
 use super::{
-    Args, Branch, BranchPathState, BranchPathStep, BranchStatus, ChoiceAnnotationSnapshot,
-    DecisionKey, TerminalOutcome,
+    decision_delta::DecisionDeltaSnapshot, Args, Branch, BranchPathState, BranchPathStep,
+    BranchStatus, ChoiceAnnotationSnapshot, DecisionKey, TerminalOutcome,
 };
 
 #[derive(Deserialize, Serialize)]
@@ -37,6 +37,8 @@ struct PathStepCheckpoint {
     annotation: ChoiceAnnotationSnapshot,
     #[serde(default)]
     state_before: Option<BranchPathState>,
+    #[serde(default)]
+    decision_delta: Option<DecisionDeltaSnapshot>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -154,6 +156,7 @@ impl PathStepCheckpoint {
             label: step.label.clone(),
             annotation: step.annotation.clone(),
             state_before: step.state_before.clone(),
+            decision_delta: step.decision_delta.clone(),
         }
     }
 
@@ -164,6 +167,7 @@ impl PathStepCheckpoint {
             label: self.label,
             annotation: self.annotation,
             state_before: self.state_before,
+            decision_delta: self.decision_delta,
         }
     }
 }

@@ -188,6 +188,7 @@ fn choice_value(index: usize, choice: &OwnerChoice, expanded: bool) -> Value {
 fn path_step_value(step: &BranchPathStep) -> Value {
     json!({
         "state_before": step.state_before.as_ref(),
+        "decision_delta": step.decision_delta.as_ref(),
         "key": step.key.as_ref(),
         "annotation": serde_json::to_value(&step.annotation).unwrap_or(Value::Null),
     })
