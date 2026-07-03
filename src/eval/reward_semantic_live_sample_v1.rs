@@ -5,9 +5,6 @@ use crate::ai::strategy::reward_semantic_probe::{
     assess_reward_semantics_from_cards, explain_reward_semantics_v1,
     RewardCandidateSemanticExplanationV1, RewardSemanticCoverageStatusV1,
 };
-use crate::ai::strategy::reward_semantic_review::{
-    render_reward_candidate_semantic_review_v1, review_reward_candidate_semantics_v1,
-};
 use crate::content::cards::{get_card_definition, CardId};
 use crate::eval::run_control::RunControlSession;
 use crate::state::core::EngineState;
@@ -131,12 +128,6 @@ pub fn render_reward_semantic_live_sample_v1(
             "  burdens=[{}] duplicates=[{}]",
             render_list_v1(&explanation.burdens),
             render_list_v1(&explanation.duplicates)
-        ));
-        lines.push(format!(
-            "  semantic_review {}",
-            render_reward_candidate_semantic_review_v1(&review_reward_candidate_semantics_v1(
-                explanation
-            ))
         ));
     }
     lines.join("\n")

@@ -26,6 +26,5 @@ pub mod relic_expendability;
 pub mod reward_admission;
 pub mod reward_quality;
 pub mod reward_semantic_probe;
-pub mod reward_semantic_review;
 pub mod role_saturation;
 pub mod run_strategic_facts;
