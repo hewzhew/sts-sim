@@ -23,6 +23,8 @@ instead of keeping stale command paths searchable.
 
 ## Other Maintained Docs
 
+- [NEW_AI_ARCHITECTURE.md](NEW_AI_ARCHITECTURE.md): current AI layering and
+  ownership rules for new strategy/policy/runtime work
 - [RUN_PLAY_GUIDE.md](RUN_PLAY_GUIDE.md): manual/semi-automatic play driver
 - [AUTOPILOT_BOUNDARY.md](AUTOPILOT_BOUNDARY.md): non-combat autopilot boundary
 
