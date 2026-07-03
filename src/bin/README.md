@@ -138,15 +138,3 @@ Active binaries:
     refresh `benchmark.json`
   - `bench-add <benchmark_dir> <case_id>`: refresh a suite case from the saved
     capture and optional baseline
-
-Removed from the active binary surface:
-
-- JSONL action-env drivers
-- micro/toy RL environment drivers
-- live/workbench/prompt controller entrypoints
-- `decision_lab_driver`, now archived under
-  `tools/_dormant/rust_bins/decision_lab_driver`
-- `card_reward_value_loop_driver`, now archived under
-  `tools/_dormant/rust_bins/card_reward_value_loop_driver`
-- `branch_experiment_driver`, superseded by `branch_tiny` and typed
-  run-control owner probes

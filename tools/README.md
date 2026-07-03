@@ -18,9 +18,6 @@
   - experimental LLM controller adapters over public simulator observations and legal actions
 - `live_comm/`
   - legacy Java bridge scripts and fixture-capture helpers
-- `_dormant/`
-  - archived toy RL smoke environments and retired Rust binaries; not an
-    active AI path
 - `manual/`
   - hand-run helper scripts
 - `rust_ast_extractor/`
