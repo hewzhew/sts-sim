@@ -7,7 +7,6 @@
 - root scripts
   - `campaign.ps1`: minimal launcher for `branch_campaign_driver`
   - `gap_panel.py`: small `branch_tiny` seed-panel runner
-  - audit helpers for generated card/source data
 - `ml/`
   - offline combat/search dataset and baseline utilities
 
