@@ -7,7 +7,10 @@
 当前主线：
 
 ```text
-模拟器 -> 状态表示 -> search/rollout -> value -> policy improvement
+simulator correctness
+  -> Rust-owned campaign application
+  -> source/output/continuation lifecycle
+  -> search/rollout evidence when needed
 ```
 
 项目现在不以旧 watch UI、Workbench、DecisionFrame、prompt 工程或 LLM 接管控制为主线。这些以后可以作为适配层回来，但不能定义模拟器真相或搜索质量。
@@ -16,24 +19,34 @@
 
 当前维护的闭环是：
 
-1. 从 Neow 开始运行确定性的模拟器 campaign
-2. 在明确预算下同时保留若干战斗外分支
-3. 在这些分支内部用 Combat Search V2 搜整场战斗轨迹
-4. 分支失败时检查 checkpoint、最终 boss 战斗和 outcome dataset
-5. 比较整局 outcome 和 sibling branch，而不是逐步动作模仿
+1. 继续或检查时先解析 source artifact
+2. 每次 run/continue 都分配新的 output artifact
+3. 用小而明确的 round budget 运行新 campaign 或继续 source
 
 Autopilot、route planner、card reward policy、trace、搜索托管战斗都是便利工具或证据工具，不是 teacher label。
 
+campaign 系统正在迁移到 Rust-owned application boundary。PowerShell wrapper 只是本地 source/output/continuation launcher，不是架构本身。见 [docs/CURRENT_DIRECTION.md](docs/CURRENT_DIRECTION.md)。
+
 ## 快速开始
 
-运行当前 campaign 工作流：
+当前 campaign application surface 是 Rust `branch_campaign_driver campaign` namespace。检查架构、CLI 行为或 artifact 语义时优先直接调用它：
+
+```powershell
+cd D:\rust\sts_simulator
+cargo run --profile fast-run --bin branch_campaign_driver -- campaign run --preset quick --seed 1 --rounds 0
+cargo run --profile fast-run --bin branch_campaign_driver -- campaign artifacts resolve latest --json
+```
+
+`tools/campaign.ps1` 保留为本地 build 和短别名兼容 launcher。它应该转发到 Rust campaign surface，而不是拥有新的 campaign 行为：
 
 ```powershell
 cd D:\rust\sts_simulator
 .\tools\campaign.ps1 -Mode quick
-.\tools\campaign.ps1 -From latest -Continue -Rounds 1
+.\tools\campaign.ps1 -From latest -Continue -Mode quick -Rounds 2
 .\tools\campaign.ps1 -Inspect
 ```
+
+把 wrapper command 当成 launch alias，不要当成架构。
 
 调试 binary 时可以直接构建主 campaign driver：
 
@@ -78,7 +91,6 @@ cargo run --profile fast-run --bin run_play_driver -- --goto <name> --search-wal
 | `branch_campaign_driver` | 当前自动分支 campaign、checkpoint 检查、outcome 导出和 continuation 实验 |
 | `run_play_driver` | 手动和半自动模拟器跑局、trace、bookmark、capture、baseline |
 | `combat_search_v2_driver` | 从 start spec、combat capture 或 benchmark suite 跑整场战斗搜索 |
-| `artifact_doctor` | 只读审计 benchmark artifact 目录 |
 
 Binary 细节见 [src/bin/README.md](src/bin/README.md)。
 
@@ -87,7 +99,6 @@ Binary 细节见 [src/bin/README.md](src/bin/README.md)。
 先读：
 
 - [docs/CURRENT_DIRECTION.md](docs/CURRENT_DIRECTION.md)
-- [docs/CAMPAIGN_WRAPPER_USAGE.md](docs/CAMPAIGN_WRAPPER_USAGE.md)
 - [docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md](docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md)
 - [docs/CAMPAIGN_JOURNAL.md](docs/CAMPAIGN_JOURNAL.md)
 - [docs/AUTOPILOT_BOUNDARY.md](docs/AUTOPILOT_BOUNDARY.md)
