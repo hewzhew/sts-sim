@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
 """Dependency-free ranking baseline for combat search guidance.
 
-Input is either:
-
-- CombatSearchGuidanceSampleV1 JSONL produced from decision microscope reports
-  by combat_search_guidance_samples.py.
-- CombatActionProbeSampleV1 JSONL produced from guidance-lab reports by
-  combat_guidance_lab_extract.py.
-- CombatTurnPlanProbeSampleV1 JSONL produced from turn-plan guidance-lab
-  reports by combat_turn_plan_guidance_lab_extract.py.
-- CombatTacticalEpisodeV1 JSONL produced by combat_tactical_trace_extract.py.
-  These are expanded into compatible turn-plan candidate samples at load time.
+Input is either historical combat guidance JSONL
+(CombatSearchGuidanceSampleV1, CombatActionProbeSampleV1,
+CombatTurnPlanProbeSampleV1), or CombatTacticalEpisodeV1 JSONL produced by
+combat_tactical_trace_extract.py. Tactical episodes are expanded into compatible
+turn-plan candidate samples at load time.
 
 This is an offline diagnostic.  It does not train a combat policy and does not
 claim the selected action is human-optimal. Targets are oracle-under-budget
