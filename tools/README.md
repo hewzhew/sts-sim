@@ -38,9 +38,3 @@ round-budget semantics. Coverage-gap and milestone orchestration are not part
 of this launcher.
 
 See `docs/CURRENT_DIRECTION.md` for the current launcher boundary.
-
-## High-Value Tests
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\run_high_value_tests.ps1
-```
