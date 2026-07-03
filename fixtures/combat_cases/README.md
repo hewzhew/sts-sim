@@ -28,23 +28,22 @@ potions=Blessing of the Forge, Blessing of the Forge, Block Potion
 Baseline checks:
 
 ```powershell
-cargo run --quiet --bin combat_gap_probe -- --case fixtures\combat_cases\seed1700000123_a2f23_slavers_b0034.json --nodes 100000 --ms 1000 --accept-any-win --search-only
-cargo run --quiet --bin combat_gap_probe -- --case fixtures\combat_cases\seed1700000123_a2f23_slavers_b0034.json --nodes 100000 --ms 1000 --accept-any-win --search-only --turn-plan-policy diagnostic_only
-cargo run --quiet --bin combat_gap_probe -- --case fixtures\combat_cases\seed1700000123_a2f23_slavers_b0034.json --nodes 100000 --ms 2000 --accept-any-win --search-only
+cargo run --quiet --bin combat_case_review -- --case fixtures\combat_cases\seed1700000123_a2f23_slavers_b0034.json --ladder --fast-nodes 100000 --fast-ms 1000 --slow-nodes 100000 --slow-ms 2000 --compact
+cargo run --quiet --bin combat_case_review -- --case fixtures\combat_cases\seed1700000123_a2f23_slavers_b0034.json --ladder --fast-nodes 100000 --fast-ms 1000 --slow-nodes 100000 --slow-ms 2000 --compact --disable-rollout
 ```
 
 Expected current behavior:
 
 ```text
-1000ms default tactical turn-plan seed: no complete win; turn-plan seeding consumes the budget
-1000ms diagnostic_only: no-potion win found; final_hp ~= 32
-2000ms: no-potion win found; final_hp ~= 32; hp_loss ~= 33
+The ladder should show whether the fast no-potion review, slow potion diagnostic,
+or rollout-disabled comparison finds a complete win. Use the JSON fields
+`classification`, `ladder[*].complete_win`, `ladder[*].hp_loss`,
+`ladder[*].nodes_expanded`, and `performance` to compare search changes.
 ```
 
 Use this case to improve first-win discovery. Do not treat raising the global
-budget as progress. A useful search change should preserve the 1000ms
-diagnostic win while reducing the need for expensive turn-plan seeding in
-first-win search paths.
+budget as progress. A useful search change should make the fast review more
+decisive without hiding the slow diagnostic comparison.
 
 Reference directions:
 

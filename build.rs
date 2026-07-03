@@ -45,7 +45,7 @@ fn main() {
     let full_schema_path = Path::new("tools/compiled_protocol_schema.json");
     if !full_schema_path.exists() {
         panic!(
-            "tools/compiled_protocol_schema.json not found. Run `cargo run --bin sts_dev_tool -- sync-schema` first."
+            "tools/compiled_protocol_schema.json not found. Restore or regenerate the compiled protocol schema before building."
         );
     }
 
