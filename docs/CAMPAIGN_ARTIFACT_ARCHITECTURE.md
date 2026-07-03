@@ -157,14 +157,18 @@ or a diagnostic sidecar until it becomes a stable domain fact.
 
 ## Lifecycle
 
-The maintained lifecycle is:
+The maintained V1 artifact layout is intentionally small:
 
 ```text
-runs/<run-id>/          normal campaign history, addressed by latest pointer
-scratch/<artifact-id>/  disposable experiments, addressed by scratch/latest
-diagnostics/ or perf/   opt-in analysis buckets
-root loose files        old/debug debris, outside maintained storage
+runs/<run-id>/        normal campaign history, addressed by latest pointer
+diagnostics/ or perf/ opt-in analysis buckets
+root loose files      old/debug debris, outside maintained storage
 ```
+
+Scratch artifacts can exist as disposable local experiments, but
+`scratch/latest` is not part of the maintained launcher lifecycle. A scratch
+artifact must not become a hidden continuation source or a second "latest"
+semantic.
 
 `tools/campaign.ps1` is only a minimal source/output/continuation launcher.
 This document defines ownership. Normal runs should not write raw campaign

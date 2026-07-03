@@ -119,3 +119,6 @@ baseline.
 Manual plus search-assisted fights must not be saved as pure human baselines.
 Use combat captures, benchmark suites, and search evidence for that workflow
 instead.
+
+Runner/search ownership, potion gates, combat cases, and review diagnostics are
+defined in [Runner / Combat Boundary](RUNNER_COMBAT_BOUNDARY.md).
