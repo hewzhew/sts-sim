@@ -43,7 +43,7 @@ cargo run --profile fast-run --bin branch_campaign_driver -- campaign artifacts 
 cd D:\rust\sts_simulator
 .\tools\campaign.ps1 -Mode quick
 .\tools\campaign.ps1 -From latest -Continue -Mode quick -Rounds 2
-.\tools\campaign.ps1 -Inspect
+.\tools\campaign.ps1 -From latest -Inspect
 ```
 
 把 wrapper command 当成 launch alias，不要当成架构。
