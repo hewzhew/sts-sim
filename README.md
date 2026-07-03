@@ -104,6 +104,7 @@ workflow.
 | `branch_tiny` | lightweight owner-audit runner with run capsules, frontier continuation, and gap-panel diagnostics |
 | `run_play_driver` | manual and semi-automatic simulator runs, traces, bookmarks, captures, baselines |
 | `combat_search_v2_driver` | whole-combat search from start specs, combat captures, or benchmark suites |
+| `combat_case_review` | review ladder for saved combat cases from branch-tiny combat gaps |
 
 See [src/bin/README.md](src/bin/README.md) for binary details.
 
