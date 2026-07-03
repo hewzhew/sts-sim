@@ -140,6 +140,30 @@ pub(super) fn advance_to_owner_or_gap(
                         }
                     }
                     if matches!(status, BranchStatus::CombatGap { .. })
+                        && should_try_hallway_immediate_rescue(session)
+                    {
+                        match apply_owner_audit_auto_run(
+                            session,
+                            hallway_immediate_rescue_auto_step_options(args),
+                        ) {
+                            Ok(rescue) => {
+                                combat_search.extend(combat_search_summaries(&rescue));
+                                auto_steps.extend(rescue.auto_applied_steps.clone());
+                                status = classify_auto_outcome(session, &rescue);
+                            }
+                            Err(err) => {
+                                return advance_result(
+                                    BranchStatus::AdvanceFailed(format!(
+                                        "hallway immediate rescue failed: {err}"
+                                    )),
+                                    None,
+                                    auto_steps,
+                                    combat_search,
+                                );
+                            }
+                        }
+                    }
+                    if matches!(status, BranchStatus::CombatGap { .. })
                         && should_try_hallway_potion_rescue(session)
                     {
                         match try_hallway_potion_rescue(session, args) {
@@ -307,6 +331,12 @@ fn should_try_hallway_potion_rescue(session: &RunControlSession) -> bool {
         && (session.run_state.act_num >= 3 || player.current_hp * 2 <= player.max_hp)
 }
 
+fn should_try_hallway_immediate_rescue(session: &RunControlSession) -> bool {
+    session.active_combat.as_ref().is_some_and(|active| {
+        !active.combat_state.meta.is_boss_fight && !active.combat_state.meta.is_elite_fight
+    })
+}
+
 fn try_hallway_potion_rescue(
     session: &mut RunControlSession,
     args: Args,
@@ -373,6 +403,19 @@ fn diagnostic_rescue_auto_step_options(args: Args) -> RunControlAutoStepOptions 
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
         CombatSearchV2ChildRolloutPolicy::LazyOnPop,
     )
+}
+
+fn hallway_immediate_rescue_auto_step_options(args: Args) -> RunControlAutoStepOptions {
+    let mut options = auto_step_options(
+        args.rescue_search_nodes,
+        args.rescue_search_ms,
+        args.auto_ops,
+        args.wall_ms.is_some(),
+        CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+        CombatSearchV2ChildRolloutPolicy::Immediate,
+    );
+    options.search.max_potions_used = Some(0);
+    options
 }
 
 fn hallway_potion_rescue_auto_step_options(args: Args) -> RunControlAutoStepOptions {
