@@ -85,6 +85,7 @@ mod rollout_probe;
 mod segment_plan;
 mod trajectory_report;
 mod turn_plan_probe;
+mod witness_guidance;
 
 #[cfg(test)]
 mod semantic_regression;
@@ -177,6 +178,11 @@ pub(crate) use turn_plan_probe::{
     CombatSearchV2TurnPlanProbeCandidateReport, CombatSearchV2TurnPlanProbeRootReport,
 };
 pub use types::*;
+pub use witness_guidance::{
+    compile_combat_search_witness_prior_v0, replay_combat_search_witness_line_v0,
+    CombatSearchV2WitnessLine, CombatSearchV2WitnessPrior, CombatSearchV2WitnessReplay,
+    CombatSearchV2WitnessReplayStep,
+};
 
 pub fn combat_search_exact_state_hash_v1(engine: &EngineState, combat: &CombatState) -> String {
     combat_exact_state_hash_v1(engine, combat)

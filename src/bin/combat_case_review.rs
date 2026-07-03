@@ -1,33 +1,28 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
 use serde::Serialize;
 use sts_simulator::ai::combat_search_v2::{
-    combat_search_exact_state_hash_v1, derive_combat_deficit_evidence,
-    run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, run_combat_search_v2,
-    CombatDeficitEvidenceReport, CombatLineLabReport, CombatSearchV2ChildRolloutPolicy,
-    CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
-    CombatSearchV2RolloutPolicy, CombatSearchV2RootActionPrior, CombatSearchV2TurnPlanPolicy,
+    compile_combat_search_witness_prior_v0, derive_combat_deficit_evidence,
+    replay_combat_search_witness_line_v0, run_combat_line_lab_from_parent_v0,
+    run_combat_line_lab_v0, run_combat_search_v2, CombatDeficitEvidenceReport, CombatLineLabReport,
+    CombatSearchV2ActionPreview, CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config,
+    CombatSearchV2PotionPolicy, CombatSearchV2Report, CombatSearchV2RolloutPolicy,
+    CombatSearchV2TurnPlanPolicy, CombatSearchV2WitnessLine, CombatSearchV2WitnessReplay,
     SearchTerminalLabel,
 };
 use sts_simulator::ai::strategy::deck_strategic_deficit::{
     assess_deck_strategic_deficit, DeckStrategicDeficit, StrategicDeficitLevel,
 };
 use sts_simulator::ai::strategy::run_strategic_facts::RunStrategicFacts;
-use sts_simulator::content::cards::{get_card_definition, is_starter_basic, java_id, CardType};
-use sts_simulator::content::monsters::EnemyId;
+use sts_simulator::content::cards::{get_card_definition, is_starter_basic, CardType};
 use sts_simulator::content::relics::energy_master_delta;
 use sts_simulator::eval::combat_case::{
     card_summary, load_combat_case, CombatCase, CombatCaseCardSummary, CombatCasePathStep,
 };
-use sts_simulator::runtime::combat::{CombatCard, CombatState};
-use sts_simulator::sim::combat::{
-    CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
-};
-use sts_simulator::sim::combat_projection::monster_preview_total_damage_in_combat;
-use sts_simulator::state::core::{ClientInput, EngineState};
+use sts_simulator::sim::combat::CombatTerminal;
+use sts_simulator::state::core::ClientInput;
 
 #[derive(Parser)]
 struct Args {
@@ -84,7 +79,7 @@ struct CombatCaseReview {
     ladder: Vec<SearchReview>,
     classification: CombatGapReviewClassification,
     review_focus: Option<CombatReviewFocus>,
-    review_focus_replay: Option<CombatReviewFocusReplay>,
+    review_focus_replay: Option<CombatSearchV2WitnessReplay>,
     review_focus_prior_rerun: Option<CombatReviewFocusPriorRerun>,
     line_lab: Option<CombatLineLabReport>,
     combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
@@ -183,24 +178,6 @@ struct CombatStrategicFeedbackObservations {
 }
 
 #[derive(Serialize)]
-struct CombatReviewFocusReplay {
-    selected_review: &'static str,
-    action_count: Option<usize>,
-    replayed_actions: usize,
-    truncated_by_preview_limit: bool,
-    terminal: CombatTerminal,
-    final_hp: i32,
-    total_enemy_hp: i32,
-    living_enemy_count: usize,
-    truncated: bool,
-    timed_out: bool,
-    matched_focus_terminal: bool,
-    matched_focus_final_hp: bool,
-    matched_focus_enemy_hp: bool,
-    steps: Vec<CombatReviewFocusReplayStep>,
-}
-
-#[derive(Serialize)]
 struct CombatReviewFocusPriorRerun {
     selected_review: &'static str,
     witness_replayed_actions: usize,
@@ -209,44 +186,6 @@ struct CombatReviewFocusPriorRerun {
     prior_states: usize,
     duplicate_prior_hints: usize,
     rerun: SearchReview,
-}
-
-#[derive(Serialize)]
-struct CombatReviewFocusReplayStep {
-    step_index: usize,
-    action_key: Option<String>,
-    input: ClientInput,
-    terminal: CombatTerminal,
-    truncated: bool,
-    timed_out: bool,
-    engine_steps: usize,
-    engine_state: String,
-    turn: u32,
-    energy: u8,
-    player_hp: i32,
-    player_block: i32,
-    total_enemy_hp: i32,
-    living_enemy_count: usize,
-    visible_incoming_damage: i32,
-    draw_count: usize,
-    discard_count: usize,
-    exhaust_count: usize,
-    hand: Vec<String>,
-    monsters: Vec<CombatReviewMonsterState>,
-}
-
-#[derive(Serialize)]
-struct CombatReviewMonsterState {
-    slot: u8,
-    monster_type: usize,
-    enemy_id: Option<String>,
-    enemy_name: Option<String>,
-    hp: i32,
-    max_hp: i32,
-    block: i32,
-    alive: bool,
-    move_id: u8,
-    awakened_one_form1: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -375,9 +314,9 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
     let review_focus = review_focus(&ladder);
     let classification = classify_gap_review(&ladder, review_focus.as_ref());
     let review_focus_replay = if args.replay_focus {
-        review_focus
-            .as_ref()
-            .map(|focus| replay_focus(&case.position, focus))
+        review_focus.as_ref().map(|focus| {
+            replay_combat_search_witness_line_v0(&case.position, &focus_witness_line(focus))
+        })
     } else {
         None
     };
@@ -817,60 +756,21 @@ fn focus_reason(progress: &SearchDiagnosticProgressFacts) -> &'static str {
     }
 }
 
-fn replay_focus(root: &CombatPosition, focus: &CombatReviewFocus) -> CombatReviewFocusReplay {
-    let stepper = EngineCombatStepper;
-    let mut position = root.clone();
-    let mut steps = Vec::new();
-    let mut truncated = false;
-    let mut timed_out = false;
-    for (index, input) in focus.progress.input_preview.iter().cloned().enumerate() {
-        if stepper.terminal(&position) != CombatTerminal::Unresolved {
-            break;
-        }
-        let step = stepper.apply_to_stable(
-            &position,
-            input.clone(),
-            CombatStepLimits {
-                max_engine_steps: 250,
-                deadline: None,
-            },
-        );
-        truncated |= step.truncated;
-        timed_out |= step.timed_out;
-        steps.push(replay_step(
-            index + 1,
-            focus.progress.action_key_preview.get(index).cloned(),
-            input,
-            &step,
-        ));
-        position = step.position;
-        if truncated || timed_out || step.terminal != CombatTerminal::Unresolved {
-            break;
-        }
-    }
-
-    let terminal = stepper.terminal(&position);
-    let final_hp = position.combat.entities.player.current_hp;
-    let total_enemy_hp = total_enemy_hp(&position.combat);
-    let living_enemy_count = living_enemy_count(&position.combat);
-    CombatReviewFocusReplay {
-        selected_review: focus.selected_review,
+fn focus_witness_line(focus: &CombatReviewFocus) -> CombatSearchV2WitnessLine {
+    CombatSearchV2WitnessLine {
+        source: focus.progress.source,
+        terminal: focus.progress.terminal,
+        final_hp: focus.progress.final_hp,
+        total_enemy_hp: focus.progress.total_enemy_hp,
         action_count: focus.progress.action_count,
-        replayed_actions: steps.len(),
-        truncated_by_preview_limit: focus
+        actions: focus
             .progress
-            .action_count
-            .is_some_and(|count| count > focus.progress.input_preview.len()),
-        terminal,
-        final_hp,
-        total_enemy_hp,
-        living_enemy_count,
-        truncated,
-        timed_out,
-        matched_focus_terminal: terminal_matches(terminal, focus.progress.terminal),
-        matched_focus_final_hp: final_hp == focus.progress.final_hp,
-        matched_focus_enemy_hp: total_enemy_hp == focus.progress.total_enemy_hp,
-        steps,
+            .action_key_preview
+            .iter()
+            .cloned()
+            .zip(focus.progress.input_preview.iter().cloned())
+            .map(|(action_key, input)| CombatSearchV2ActionPreview { action_key, input })
+            .collect(),
     }
 }
 
@@ -878,18 +778,20 @@ fn witness_prior_rerun(
     args: &Args,
     case: &CombatCase,
     focus: &CombatReviewFocus,
-    replay: &CombatReviewFocusReplay,
+    replay: &CombatSearchV2WitnessReplay,
 ) -> Option<CombatReviewFocusPriorRerun> {
     if focus.progress.source != "rollout_frontier"
         || !matches!(replay.terminal, CombatTerminal::Win)
     {
         return None;
     }
-    let (prior, prior_states, duplicate_prior_hints) =
-        witness_root_action_prior(&case.position, focus);
-    if prior.is_empty() {
+    let witness_prior =
+        compile_combat_search_witness_prior_v0(&case.position, &focus_witness_line(focus));
+    if witness_prior.prior.is_empty() {
         return None;
     }
+    let prior_states = witness_prior.prior_states;
+    let duplicate_prior_hints = witness_prior.duplicate_prior_hints;
     let rollout_policy = if args.disable_rollout {
         CombatSearchV2RolloutPolicy::Disabled
     } else {
@@ -906,7 +808,7 @@ fn witness_prior_rerun(
             max_potions_used: Some(0),
             rollout_policy,
             child_rollout_policy: review_child_rollout_policy(args),
-            root_action_prior: Some(prior),
+            root_action_prior: Some(witness_prior.prior),
             ..CombatSearchV2Config::default()
         },
     );
@@ -929,147 +831,6 @@ fn witness_prior_rerun(
             rollout_policy.label(),
         ),
     })
-}
-
-fn witness_root_action_prior(
-    root: &CombatPosition,
-    focus: &CombatReviewFocus,
-) -> (CombatSearchV2RootActionPrior, usize, usize) {
-    let stepper = EngineCombatStepper;
-    let mut position = root.clone();
-    let mut scores_by_state: HashMap<String, HashMap<String, f64>> = HashMap::new();
-    let mut duplicate_prior_hints = 0usize;
-    for (index, input) in focus.progress.input_preview.iter().cloned().enumerate() {
-        if stepper.terminal(&position) != CombatTerminal::Unresolved {
-            break;
-        }
-        let Some(action_key) = focus.progress.action_key_preview.get(index).cloned() else {
-            break;
-        };
-        let state_hash = combat_search_exact_state_hash_v1(&position.engine, &position.combat);
-        let state_scores = scores_by_state.entry(state_hash).or_default();
-        if state_scores.insert(action_key, 1.0).is_some() {
-            duplicate_prior_hints = duplicate_prior_hints.saturating_add(1);
-        }
-        let step = stepper.apply_to_stable(
-            &position,
-            input,
-            CombatStepLimits {
-                max_engine_steps: 250,
-                deadline: None,
-            },
-        );
-        position = step.position;
-        if step.truncated || step.timed_out || step.terminal != CombatTerminal::Unresolved {
-            break;
-        }
-    }
-    let prior_states = scores_by_state.len();
-    (
-        CombatSearchV2RootActionPrior::from_scores_with_duplicate_count(
-            scores_by_state,
-            duplicate_prior_hints,
-        ),
-        prior_states,
-        duplicate_prior_hints,
-    )
-}
-
-fn replay_step(
-    step_index: usize,
-    action_key: Option<String>,
-    input: ClientInput,
-    step: &sts_simulator::sim::combat::CombatStepResult,
-) -> CombatReviewFocusReplayStep {
-    let combat = &step.position.combat;
-    CombatReviewFocusReplayStep {
-        step_index,
-        action_key,
-        input,
-        terminal: step.terminal,
-        truncated: step.truncated,
-        timed_out: step.timed_out,
-        engine_steps: step.engine_steps,
-        engine_state: engine_state_label(&step.position.engine),
-        turn: combat.turn.turn_count,
-        energy: combat.turn.energy,
-        player_hp: combat.entities.player.current_hp,
-        player_block: combat.entities.player.block,
-        total_enemy_hp: total_enemy_hp(combat),
-        living_enemy_count: living_enemy_count(combat),
-        visible_incoming_damage: visible_incoming_damage(combat),
-        draw_count: combat.zones.draw_pile.len(),
-        discard_count: combat.zones.discard_pile.len(),
-        exhaust_count: combat.zones.exhaust_pile.len(),
-        hand: combat.zones.hand.iter().map(card_label).collect(),
-        monsters: combat
-            .entities
-            .monsters
-            .iter()
-            .map(|monster| {
-                let enemy_id = EnemyId::from_id(monster.monster_type);
-                CombatReviewMonsterState {
-                    slot: monster.slot,
-                    monster_type: monster.monster_type,
-                    enemy_id: enemy_id.map(|id| format!("{id:?}")),
-                    enemy_name: enemy_id.map(|id| id.get_name().to_string()),
-                    hp: monster.current_hp,
-                    max_hp: monster.max_hp,
-                    block: monster.block,
-                    alive: monster.is_alive_for_action(),
-                    move_id: monster.planned_move_id(),
-                    awakened_one_form1: (enemy_id == Some(EnemyId::AwakenedOne))
-                        .then_some(monster.awakened_one.form1),
-                }
-            })
-            .collect(),
-    }
-}
-
-fn terminal_matches(terminal: CombatTerminal, label: SearchTerminalLabel) -> bool {
-    matches!(
-        (terminal, label),
-        (CombatTerminal::Win, SearchTerminalLabel::Win)
-            | (CombatTerminal::Loss, SearchTerminalLabel::Loss)
-            | (CombatTerminal::Unresolved, SearchTerminalLabel::Unresolved)
-    )
-}
-
-fn engine_state_label(engine: &EngineState) -> String {
-    format!("{engine:?}")
-}
-
-fn card_label(card: &CombatCard) -> String {
-    format!("{}+{}#{}", java_id(card.id), card.upgrades, card.uuid)
-}
-
-fn living_enemy_count(combat: &CombatState) -> usize {
-    combat
-        .entities
-        .monsters
-        .iter()
-        .filter(|monster| monster.is_alive_for_action())
-        .count()
-}
-
-fn total_enemy_hp(combat: &CombatState) -> i32 {
-    combat
-        .entities
-        .monsters
-        .iter()
-        .filter(|monster| monster.is_alive_for_action())
-        .map(|monster| monster.current_hp.max(0) + monster.block.max(0))
-        .sum()
-}
-
-fn visible_incoming_damage(combat: &CombatState) -> i32 {
-    combat
-        .entities
-        .monsters
-        .iter()
-        .filter(|monster| monster.is_alive_for_action())
-        .map(|monster| monster_preview_total_damage_in_combat(combat, monster))
-        .sum()
 }
 
 fn search_starved_by_rollout(review: &SearchReview) -> bool {
