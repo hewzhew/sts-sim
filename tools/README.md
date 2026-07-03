@@ -12,8 +12,6 @@
   - generated reports, datasets, coverage outputs, and other derived files
 - `coverage/`
   - coverage dashboard and parsers
-- `llm/`
-  - experimental LLM controller adapters over public simulator observations and legal actions
 - `live_comm/`
   - legacy Java bridge scripts and fixture-capture helpers
 - `manual/`
