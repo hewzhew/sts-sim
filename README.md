@@ -35,65 +35,25 @@ architecture. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Quick Start
 
-The campaign application surface is the Rust `branch_campaign_driver campaign`
-namespace. Use it directly when checking architecture, CLI behavior, or
-artifact semantics:
+Use the Rust campaign surface directly when checking architecture, CLI
+behavior, or artifact semantics:
 
 ```powershell
 cd D:\rust\sts_simulator
 cargo run --profile fast-run --bin branch_campaign_driver -- campaign run --preset quick --seed 1 --rounds 0
-cargo run --profile fast-run --bin branch_campaign_driver -- campaign artifacts resolve latest --json
 ```
 
-`tools/campaign.ps1` remains a compatibility launcher for local builds and
-short aliases. It must forward to the Rust campaign surface rather than own new
-campaign behavior:
+Use the local launcher when you want the current short aliases:
 
 ```powershell
-cd D:\rust\sts_simulator
 .\tools\campaign.ps1 -Mode quick
 .\tools\campaign.ps1 -From latest -Continue -Mode quick -Rounds 2
 .\tools\campaign.ps1 -From latest -Inspect
 ```
 
-Treat wrapper commands as launch aliases, not architecture.
-
-Build the main campaign driver directly when debugging the binary:
-
-```powershell
-cd D:\rust\sts_simulator
-cargo build --profile fast-run --bin branch_campaign_driver
-```
-
-Manual REPL runs are still supported when you want to play or inspect the
-simulator interactively:
-
-```powershell
-$seed = Get-Random -Minimum 1 -Maximum 2147483647
-echo "seed=$seed"
-cargo run --profile fast-run --bin run_play_driver -- --seed $seed --ascension 0 --class ironclad --record --search-wall-ms 100
-```
-
-Useful in-session commands:
-
-| Command | Meaning |
-| --- | --- |
-| `ar` | auto-run with guarded route/card/search helpers until human input is needed |
-| `n` | guarded advance without route planning |
-| `nr` | guarded advance with route planning |
-| `rs` / `rg` | route suggestion / execute one route choice |
-| `sc` | run combat search from the current combat boundary |
-| `sd` | inspect or update search defaults |
-| `mark <name>` | save a replay bookmark while recording |
-| `q` | quit cleanly |
-
-Resume from a bookmark:
-
-```powershell
-cargo run --profile fast-run --bin run_play_driver -- --goto <name> --search-wall-ms 100
-```
-
-See [docs/RUNBOOK.md](docs/RUNBOOK.md) for maintained local commands.
+Treat wrapper commands as launch aliases, not architecture. See
+[docs/RUNBOOK.md](docs/RUNBOOK.md) for branch-tiny panels, combat case review,
+manual REPL usage, search drivers, and verification commands.
 
 ## Main Entrypoints
 
@@ -147,27 +107,9 @@ rewrite files, write UTF-8 without BOM and normalize text to LF before saving.
 
 ## Verification
 
-For core code changes:
-
-```powershell
-cargo fmt --check
-cargo check --all-targets
-cargo check --release --all-targets
-cargo build --profile fast-run --bin branch_campaign_driver
-cargo build --release --bin run_play_driver
-cargo build --release --bin combat_search_v2_driver
-git diff --check
-```
-
+Use [docs/RUNBOOK.md](docs/RUNBOOK.md) for maintained verification commands.
 Run targeted tests only when the changed surface has a stable structural
-contract worth protecting. Do not add or preserve tests for retired probes,
-temporary reports, or prose-only behavior.
-
-For documentation-only changes, at minimum run:
-
-```powershell
-git diff --check
-```
+contract worth protecting.
 
 ## License and Game Notice
 
