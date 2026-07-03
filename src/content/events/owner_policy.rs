@@ -92,6 +92,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::Nloth => return Ok(choose(nloth_choice(run_state))),
         EventId::ShiningLight => return Ok(choose(shining_light_choice(run_state))),
         EventId::Transmorgrifier => return Ok(choose(transmorgrifier_choice(run_state))),
+        EventId::Vampires => return Ok(choose(vampires_choice(run_state))),
         EventId::WomanInBlue => return Ok(choose(woman_in_blue_choice(run_state))),
         EventId::WeMeetAgain => return Ok(choose(we_meet_again_choice(run_state))),
         EventId::WindingHalls => return Ok(choose(winding_halls_choice(run_state))),
@@ -414,6 +415,28 @@ fn has_bandit_swing_potion(run_state: &RunState) -> bool {
             )
         })
     })
+}
+
+fn vampires_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 if vampires_should_give_vial(run_state) => action(EventActionKind::Trade),
+        0 => action(EventActionKind::Decline),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn vampires_should_give_vial(run_state: &RunState) -> bool {
+    has_relic(run_state, RelicId::BloodVial)
+        && starter_strike_count(run_state) >= 3
+        && run_state.master_deck.len() <= 32
+}
+
+fn starter_strike_count(run_state: &RunState) -> usize {
+    run_state
+        .master_deck
+        .iter()
+        .filter(|card| is_starter_strike(card.id))
+        .count()
 }
 
 fn woman_in_blue_choice(run_state: &RunState) -> EventOwnerOptionSelector {
