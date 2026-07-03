@@ -50,6 +50,11 @@ Active binaries:
     initial-decision microscope; reports the selected first action, current
     candidate ordering, and exact one-step consequences without writing
     artifacts or changing search policy
+- `combat_case_review`
+  - compact review ladder for saved `CombatCase` / branch-tiny combat gaps
+  - primary use: classify whether a case is still no-win, potion-rescuable,
+    budget-limited, or search-policy sensitive without reviving old report
+    probes
 - `run_play_driver`
   - thin shell over the `eval::run_control` kernel
   - starts in a game-like main screen; `deck`, `map`, `relics`, `potions`,
