@@ -12,8 +12,6 @@
   - generated reports, datasets, coverage outputs, and other derived files
 - `coverage/`
   - coverage dashboard and parsers
-- `learning/`
-  - DecisionRecord collection, contract audit, and replay verification only
 - `llm/`
   - experimental LLM controller adapters over public simulator observations and legal actions
 - `live_comm/`
@@ -84,29 +82,6 @@ Markdown reports are renderers over that cache.
 powershell -ExecutionPolicy Bypass -File .\tools\run_high_value_tests.ps1
 powershell -ExecutionPolicy Bypass -File .\tools\run_high_value_tests.ps1 -IncludeParity
 ```
-
-## DecisionRecord Tools
-
-```powershell
-python tools\learning\collect_decision_records.py `
-  --out tmp\decision_records\records.jsonl `
-  --episodes 1 `
-  --seed-start 1 `
-  --max-steps 500
-
-python tools\learning\audit_decision_record_contract.py `
-  --input tmp\decision_records\records.jsonl
-
-python tools\learning\verify_decision_records_replay.py `
-  --inputs tmp\decision_records\records.jsonl `
-  --max-steps 500 `
-  --fail-on-mismatch
-```
-
-Replay verification must use the same env config as collection; `max_steps`,
-class, ascension, and final-act status are part of the replayed state hash.
-
-These scripts do not create teacher labels or policy preferences.
 
 ## Legacy
 
