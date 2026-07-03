@@ -19,7 +19,6 @@ pub mod deck_shape_v1;
 pub mod deck_startup_profile_v1;
 pub mod domain;
 pub mod event_policy_v1;
-pub mod legacy;
 pub mod neow_policy_v1;
 pub mod noncombat_decision_v1;
 pub mod noncombat_strategy_v1;
