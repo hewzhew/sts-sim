@@ -128,13 +128,14 @@ Binary 细节见 [src/bin/README.md](src/bin/README.md)。
 ```powershell
 cargo fmt --check
 cargo check --all-targets
-cargo test --quiet
 cargo check --release --all-targets
 cargo build --profile fast-run --bin branch_campaign_driver
 cargo build --release --bin run_play_driver
 cargo build --release --bin combat_search_v2_driver
 git diff --check
 ```
+
+只有改动面存在稳定结构契约时，才运行或新增有针对性的测试。不要为了已退役 probe、临时 report 或纯文本行为保留测试。
 
 纯文档改动至少运行：
 

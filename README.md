@@ -159,13 +159,16 @@ For core code changes:
 ```powershell
 cargo fmt --check
 cargo check --all-targets
-cargo test --quiet
 cargo check --release --all-targets
 cargo build --profile fast-run --bin branch_campaign_driver
 cargo build --release --bin run_play_driver
 cargo build --release --bin combat_search_v2_driver
 git diff --check
 ```
+
+Run targeted tests only when the changed surface has a stable structural
+contract worth protecting. Do not add or preserve tests for retired probes,
+temporary reports, or prose-only behavior.
 
 For documentation-only changes, at minimum run:
 
