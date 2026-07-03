@@ -197,7 +197,7 @@ fn classify_lane(entry: &QueueEntry) -> FrontierLane {
         return FrontierLane::Balanced;
     }
 
-    let eval = combat_eval_from_rollout_estimate(entry.node.rollout_estimate);
+    let eval = combat_eval_from_rollout_estimate(&entry.node.rollout_estimate);
     if eval.outcome_class() == CombatEvalOutcomeClass::Win {
         return FrontierLane::EstimatedWin;
     }

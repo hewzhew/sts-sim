@@ -254,7 +254,7 @@ fn plan_from_node(
         None,
         pending_choice_progress,
     );
-    let eval = combat_eval_from_rollout_estimate(estimate);
+    let eval = combat_eval_from_rollout_estimate(&estimate);
     node.rollout_estimate = estimate;
     TurnPlanV1 {
         actions: node.actions[root_action_len..].to_vec(),
@@ -275,7 +275,7 @@ fn root_eval(root: &SearchNode) -> CombatEvalV2 {
         None,
         RolloutPendingChoiceProgress::default(),
     );
-    combat_eval_from_rollout_estimate(estimate)
+    combat_eval_from_rollout_estimate(&estimate)
 }
 
 fn stop_reason_for_transition(transition: TurnBranchTransition) -> TurnPlanStopReason {

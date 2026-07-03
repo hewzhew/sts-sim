@@ -77,7 +77,7 @@ impl RolloutCache {
         let cache_lookup_started = Instant::now();
         let key = combat_exact_state_key(&node.engine, &node.combat);
         self.cache_queries = self.cache_queries.saturating_add(1);
-        if let Some(cached) = self.cache.get(&key).copied() {
+        if let Some(cached) = self.cache.get(&key).cloned() {
             self.performance.cache_lookup_elapsed_us = self
                 .performance
                 .cache_lookup_elapsed_us
@@ -166,7 +166,7 @@ impl RolloutCache {
                     self.turn_beam_conservative_anchor_selected = self
                         .turn_beam_conservative_anchor_selected
                         .saturating_add(1);
-                    self.observe_turn_beam_best_pv(anchor);
+                    self.observe_turn_beam_best_pv(&anchor);
                     anchor
                 } else if self.turn_beam_extensions as usize >= self.turn_beam_extension_budget {
                     self.turn_beam_extension_budget_skips =
@@ -174,7 +174,7 @@ impl RolloutCache {
                     self.turn_beam_conservative_anchor_selected = self
                         .turn_beam_conservative_anchor_selected
                         .saturating_add(1);
-                    self.observe_turn_beam_best_pv(anchor);
+                    self.observe_turn_beam_best_pv(&anchor);
                     anchor
                 } else {
                     self.turn_beam_extensions = self.turn_beam_extensions.saturating_add(1);
@@ -187,13 +187,13 @@ impl RolloutCache {
                         &mut self.performance,
                     );
                     self.observe_turn_beam_extension_attribution(attribution);
-                    let selected = better_rollout_estimate(beam, anchor);
+                    let selected = better_rollout_estimate(beam, anchor.clone());
                     if selected == anchor {
                         self.turn_beam_conservative_anchor_selected = self
                             .turn_beam_conservative_anchor_selected
                             .saturating_add(1);
                     }
-                    self.observe_turn_beam_best_pv(selected);
+                    self.observe_turn_beam_best_pv(&selected);
                     selected
                 }
             }
@@ -226,7 +226,7 @@ impl RolloutCache {
             }
             SearchTerminalLabel::Unresolved => {}
         }
-        self.cache.insert(key, estimate);
+        self.cache.insert(key, estimate.clone());
         self.cache_inserts = self.cache_inserts.saturating_add(1);
         estimate
     }
@@ -332,7 +332,7 @@ impl RolloutCache {
         }
     }
 
-    fn observe_turn_beam_best_pv(&mut self, estimate: RolloutNodeEstimate) {
+    fn observe_turn_beam_best_pv(&mut self, estimate: &RolloutNodeEstimate) {
         if self.turn_beam_best_pv_terminal.is_none()
             || estimate.actions_simulated > self.turn_beam_best_pv_len
         {
@@ -468,8 +468,8 @@ fn better_rollout_estimate(
     left: RolloutNodeEstimate,
     right: RolloutNodeEstimate,
 ) -> RolloutNodeEstimate {
-    let left_eval = combat_eval_from_rollout_estimate(left);
-    let right_eval = combat_eval_from_rollout_estimate(right);
+    let left_eval = combat_eval_from_rollout_estimate(&left);
+    let right_eval = combat_eval_from_rollout_estimate(&right);
     if right_eval > left_eval {
         right
     } else {

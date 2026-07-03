@@ -31,6 +31,12 @@ pub struct CombatSearchV2ActionTrace {
     pub input: ClientInput,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CombatSearchV2ActionPreview {
+    pub action_key: String,
+    pub input: ClientInput,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2EnemySummary {
     pub slot: usize,

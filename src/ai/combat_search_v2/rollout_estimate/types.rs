@@ -1,6 +1,8 @@
-use super::super::SearchTerminalLabel;
+use super::super::{CombatSearchV2ActionPreview, SearchTerminalLabel};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::ai::combat_search_v2) const ROLLOUT_ACTION_PREVIEW_LIMIT: usize = 96;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::ai::combat_search_v2) struct RolloutNodeEstimate {
     pub(in crate::ai::combat_search_v2) evaluated: bool,
     pub(in crate::ai::combat_search_v2) terminal: SearchTerminalLabel,
@@ -31,6 +33,7 @@ pub(in crate::ai::combat_search_v2) struct RolloutNodeEstimate {
     pub(in crate::ai::combat_search_v2) stopped_on_high_fanout_pending_choice: bool,
     pub(in crate::ai::combat_search_v2) survival_margin: i32,
     pub(in crate::ai::combat_search_v2) actions_simulated: usize,
+    pub(in crate::ai::combat_search_v2) action_preview: Vec<CombatSearchV2ActionPreview>,
     pub(in crate::ai::combat_search_v2) truncated: bool,
     pub(in crate::ai::combat_search_v2) stop_reason: RolloutStopReason,
     pub(in crate::ai::combat_search_v2) last_action_reason: Option<&'static str>,
@@ -49,7 +52,7 @@ pub(in crate::ai::combat_search_v2) enum RolloutStopReason {
 }
 
 impl RolloutNodeEstimate {
-    pub(in crate::ai::combat_search_v2) fn is_evaluated(self) -> bool {
+    pub(in crate::ai::combat_search_v2) fn is_evaluated(&self) -> bool {
         self.evaluated
     }
 
@@ -84,6 +87,7 @@ impl RolloutNodeEstimate {
             stopped_on_high_fanout_pending_choice: false,
             survival_margin: 0,
             actions_simulated: 0,
+            action_preview: Vec::new(),
             truncated: false,
             stop_reason: RolloutStopReason::NotEvaluated,
             last_action_reason: None,

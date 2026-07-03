@@ -1,13 +1,15 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
 use serde::Serialize;
 use sts_simulator::ai::combat_search_v2::{
-    derive_combat_deficit_evidence, run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0,
-    run_combat_search_v2, CombatDeficitEvidenceReport, CombatLineLabReport,
-    CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config, CombatSearchV2PotionPolicy,
-    CombatSearchV2Report, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
+    combat_search_exact_state_hash_v1, derive_combat_deficit_evidence,
+    run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, run_combat_search_v2,
+    CombatDeficitEvidenceReport, CombatLineLabReport, CombatSearchV2ChildRolloutPolicy,
+    CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
+    CombatSearchV2RolloutPolicy, CombatSearchV2RootActionPrior, CombatSearchV2TurnPlanPolicy,
     SearchTerminalLabel,
 };
 use sts_simulator::ai::strategy::deck_strategic_deficit::{
@@ -83,6 +85,7 @@ struct CombatCaseReview {
     classification: CombatGapReviewClassification,
     review_focus: Option<CombatReviewFocus>,
     review_focus_replay: Option<CombatReviewFocusReplay>,
+    review_focus_prior_rerun: Option<CombatReviewFocusPriorRerun>,
     line_lab: Option<CombatLineLabReport>,
     combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
     combat_strategic_feedback: Option<CombatStrategicFeedbackReport>,
@@ -198,6 +201,17 @@ struct CombatReviewFocusReplay {
 }
 
 #[derive(Serialize)]
+struct CombatReviewFocusPriorRerun {
+    selected_review: &'static str,
+    witness_replayed_actions: usize,
+    witness_action_count: Option<usize>,
+    witness_terminal: CombatTerminal,
+    prior_states: usize,
+    duplicate_prior_hints: usize,
+    rerun: SearchReview,
+}
+
+#[derive(Serialize)]
 struct CombatReviewFocusReplayStep {
     step_index: usize,
     action_key: Option<String>,
@@ -302,6 +316,7 @@ struct SearchDiagnosticProgressFacts {
     total_enemy_hp: i32,
     visible_incoming_damage: Option<i32>,
     action_count: Option<usize>,
+    exact_prefix_action_count: Option<usize>,
     action_key_preview: Vec<String>,
     input_preview: Vec<ClientInput>,
 }
@@ -366,6 +381,10 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
     } else {
         None
     };
+    let review_focus_prior_rerun = review_focus
+        .as_ref()
+        .zip(review_focus_replay.as_ref())
+        .and_then(|(focus, replay)| witness_prior_rerun(args, &case, focus, replay));
     let line_lab = if args.line_lab {
         let config = line_lab_search_config(args);
         Some(match line_lab_parent.as_ref() {
@@ -439,6 +458,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
         classification,
         review_focus,
         review_focus_replay,
+        review_focus_prior_rerun,
         line_lab,
         combat_deficit_evidence,
         combat_strategic_feedback,
@@ -854,6 +874,107 @@ fn replay_focus(root: &CombatPosition, focus: &CombatReviewFocus) -> CombatRevie
     }
 }
 
+fn witness_prior_rerun(
+    args: &Args,
+    case: &CombatCase,
+    focus: &CombatReviewFocus,
+    replay: &CombatReviewFocusReplay,
+) -> Option<CombatReviewFocusPriorRerun> {
+    if focus.progress.source != "rollout_frontier"
+        || !matches!(replay.terminal, CombatTerminal::Win)
+    {
+        return None;
+    }
+    let (prior, prior_states, duplicate_prior_hints) =
+        witness_root_action_prior(&case.position, focus);
+    if prior.is_empty() {
+        return None;
+    }
+    let rollout_policy = if args.disable_rollout {
+        CombatSearchV2RolloutPolicy::Disabled
+    } else {
+        CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
+    };
+    let report = run_combat_search_v2(
+        &case.position.engine,
+        &case.position.combat,
+        CombatSearchV2Config {
+            max_nodes: args.fast_nodes,
+            wall_time: Some(Duration::from_millis(args.fast_ms)),
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            potion_policy: CombatSearchV2PotionPolicy::Never,
+            max_potions_used: Some(0),
+            rollout_policy,
+            child_rollout_policy: review_child_rollout_policy(args),
+            root_action_prior: Some(prior),
+            ..CombatSearchV2Config::default()
+        },
+    );
+    Some(CombatReviewFocusPriorRerun {
+        selected_review: focus.selected_review,
+        witness_replayed_actions: replay.replayed_actions,
+        witness_action_count: focus.progress.action_count,
+        witness_terminal: replay.terminal,
+        prior_states,
+        duplicate_prior_hints,
+        rerun: search_review(
+            "focus_witness_prior_rerun",
+            args.fast_nodes,
+            args.fast_ms,
+            CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            CombatSearchV2PotionPolicy::Never,
+            Some(0),
+            &report,
+            args.action_preview_limit,
+            rollout_policy.label(),
+        ),
+    })
+}
+
+fn witness_root_action_prior(
+    root: &CombatPosition,
+    focus: &CombatReviewFocus,
+) -> (CombatSearchV2RootActionPrior, usize, usize) {
+    let stepper = EngineCombatStepper;
+    let mut position = root.clone();
+    let mut scores_by_state: HashMap<String, HashMap<String, f64>> = HashMap::new();
+    let mut duplicate_prior_hints = 0usize;
+    for (index, input) in focus.progress.input_preview.iter().cloned().enumerate() {
+        if stepper.terminal(&position) != CombatTerminal::Unresolved {
+            break;
+        }
+        let Some(action_key) = focus.progress.action_key_preview.get(index).cloned() else {
+            break;
+        };
+        let state_hash = combat_search_exact_state_hash_v1(&position.engine, &position.combat);
+        let state_scores = scores_by_state.entry(state_hash).or_default();
+        if state_scores.insert(action_key, 1.0).is_some() {
+            duplicate_prior_hints = duplicate_prior_hints.saturating_add(1);
+        }
+        let step = stepper.apply_to_stable(
+            &position,
+            input,
+            CombatStepLimits {
+                max_engine_steps: 250,
+                deadline: None,
+            },
+        );
+        position = step.position;
+        if step.truncated || step.timed_out || step.terminal != CombatTerminal::Unresolved {
+            break;
+        }
+    }
+    let prior_states = scores_by_state.len();
+    (
+        CombatSearchV2RootActionPrior::from_scores_with_duplicate_count(
+            scores_by_state,
+            duplicate_prior_hints,
+        ),
+        prior_states,
+        duplicate_prior_hints,
+    )
+}
+
 fn replay_step(
     step_index: usize,
     action_key: Option<String>,
@@ -1130,6 +1251,7 @@ fn diagnostic_progress_facts(
             total_enemy_hp: trajectory.final_state.total_enemy_hp,
             visible_incoming_damage: Some(trajectory.final_state.visible_incoming_damage),
             action_count: Some(trajectory.actions.len()),
+            exact_prefix_action_count: Some(trajectory.actions.len()),
             action_key_preview: trajectory
                 .actions
                 .iter()
@@ -1148,21 +1270,44 @@ fn diagnostic_progress_facts(
         .rollout
         .best_frontier_estimate
         .as_ref()
-        .map(|rollout| SearchDiagnosticProgressFacts {
-            source: "rollout_frontier",
-            terminal: rollout.terminal,
-            estimated: rollout.estimated,
-            final_hp: rollout.final_hp,
-            hp_loss: rollout.hp_loss,
-            turns: rollout.turns,
-            potions_used: rollout.potions_used,
-            cards_played: rollout.cards_played,
-            living_enemy_count: rollout.living_enemy_count,
-            total_enemy_hp: rollout.total_enemy_hp,
-            visible_incoming_damage: None,
-            action_count: Some(rollout.actions_simulated),
-            action_key_preview: Vec::new(),
-            input_preview: Vec::new(),
+        .map(|rollout| {
+            let frontier = report.best_frontier_trajectory.as_ref();
+            let exact_prefix_actions = frontier
+                .map(|trajectory| trajectory.actions.as_slice())
+                .unwrap_or(&[]);
+            let exact_prefix_action_count = Some(exact_prefix_actions.len());
+            SearchDiagnosticProgressFacts {
+                source: "rollout_frontier",
+                terminal: rollout.terminal,
+                estimated: rollout.estimated,
+                final_hp: rollout.final_hp,
+                hp_loss: rollout.hp_loss,
+                turns: rollout.turns,
+                potions_used: rollout.potions_used,
+                cards_played: rollout.cards_played,
+                living_enemy_count: rollout.living_enemy_count,
+                total_enemy_hp: rollout.total_enemy_hp,
+                visible_incoming_damage: frontier
+                    .map(|trajectory| trajectory.final_state.visible_incoming_damage),
+                action_count: Some(
+                    rollout
+                        .actions_simulated
+                        .saturating_add(exact_prefix_actions.len()),
+                ),
+                exact_prefix_action_count,
+                action_key_preview: rollout
+                    .action_preview
+                    .iter()
+                    .take(action_preview_limit)
+                    .map(|action| action.action_key.clone())
+                    .collect(),
+                input_preview: rollout
+                    .action_preview
+                    .iter()
+                    .take(action_preview_limit)
+                    .map(|action| action.input.clone())
+                    .collect(),
+            }
         })
 }
 

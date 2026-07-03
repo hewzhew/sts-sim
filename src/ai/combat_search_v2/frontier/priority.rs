@@ -79,7 +79,7 @@ pub(in crate::ai::combat_search_v2::frontier) fn priority_for_node(
     };
     NodePriority {
         terminal_rank,
-        rollout_value: rollout_priority_value(node.rollout_estimate),
+        rollout_value: rollout_priority_value(&node.rollout_estimate),
         action_prior_rank: action_prior_rank(node.action_prior_score),
         state_value: combat_search_state_value(node),
         potion_tactical_priority: node.potion_tactical_priority,

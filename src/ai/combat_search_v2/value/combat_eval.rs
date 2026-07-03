@@ -82,7 +82,7 @@ impl Default for CombatEvalV2 {
 }
 
 pub(in crate::ai::combat_search_v2) fn combat_eval_from_rollout_estimate(
-    estimate: RolloutNodeEstimate,
+    estimate: &RolloutNodeEstimate,
 ) -> CombatEvalV2 {
     CombatEvalV2 {
         evidence: rollout_evidence(estimate),
@@ -252,7 +252,7 @@ impl CombatEvalSurvivalBucket {
     }
 }
 
-fn rollout_evidence(estimate: RolloutNodeEstimate) -> CombatEvalEvidenceKind {
+fn rollout_evidence(estimate: &RolloutNodeEstimate) -> CombatEvalEvidenceKind {
     if !estimate.evaluated {
         CombatEvalEvidenceKind::None
     } else if estimate.terminal == SearchTerminalLabel::Unresolved {
@@ -270,7 +270,7 @@ fn outcome_class(terminal: SearchTerminalLabel) -> CombatEvalOutcomeClass {
     }
 }
 
-fn survival_bucket(estimate: RolloutNodeEstimate) -> CombatEvalSurvivalBucket {
+fn survival_bucket(estimate: &RolloutNodeEstimate) -> CombatEvalSurvivalBucket {
     if estimate.terminal == SearchTerminalLabel::Loss || estimate.final_hp <= 0 {
         CombatEvalSurvivalBucket::DeadOrForcedLoss
     } else if estimate.survival_margin < 0 {
@@ -284,7 +284,7 @@ fn survival_bucket(estimate: RolloutNodeEstimate) -> CombatEvalSurvivalBucket {
     }
 }
 
-fn progress_bucket(estimate: RolloutNodeEstimate) -> CombatEvalProgressBucket {
+fn progress_bucket(estimate: &RolloutNodeEstimate) -> CombatEvalProgressBucket {
     if estimate.terminal == SearchTerminalLabel::Win {
         return CombatEvalProgressBucket::LethalNow;
     }
@@ -304,7 +304,7 @@ fn progress_bucket(estimate: RolloutNodeEstimate) -> CombatEvalProgressBucket {
     }
 }
 
-fn phase_stability(estimate: RolloutNodeEstimate) -> i32 {
+fn phase_stability(estimate: &RolloutNodeEstimate) -> i32 {
     let pressure = ((estimate.special_enemy_phase_count
         + estimate.guardian_mode_shift_pending_count
         + estimate.lagavulin_waking_count

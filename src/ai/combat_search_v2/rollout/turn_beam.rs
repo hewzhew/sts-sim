@@ -60,7 +60,7 @@ impl TurnBeamExtensionAttribution {
         }
     }
 
-    fn observe_best_estimate(&mut self, estimate: RolloutNodeEstimate) {
+    fn observe_best_estimate(&mut self, estimate: &RolloutNodeEstimate) {
         if self.best_pv_terminal.is_none() || estimate.actions_simulated > self.best_pv_len {
             self.best_pv_len = estimate.actions_simulated;
             self.best_pv_terminal = Some(estimate.terminal);
@@ -341,14 +341,14 @@ fn finish_with_attribution(
     estimate: RolloutNodeEstimate,
     mut attribution: TurnBeamExtensionAttribution,
 ) -> (RolloutNodeEstimate, TurnBeamExtensionAttribution) {
-    attribution.observe_best_estimate(estimate);
+    attribution.observe_best_estimate(&estimate);
     (estimate, attribution)
 }
 
 #[cfg(test)]
 fn better_estimate(left: RolloutNodeEstimate, right: RolloutNodeEstimate) -> RolloutNodeEstimate {
-    let left_eval = combat_eval_from_rollout_estimate(left);
-    let right_eval = combat_eval_from_rollout_estimate(right);
+    let left_eval = combat_eval_from_rollout_estimate(&left);
+    let right_eval = combat_eval_from_rollout_estimate(&right);
     if right_eval > left_eval {
         right
     } else {
@@ -365,8 +365,8 @@ fn select_beam(mut candidates: Vec<TurnBeamState>, beam_width: usize) -> Vec<Tur
         ))
     });
     candidates.sort_by(|left, right| {
-        let left_eval = combat_eval_from_rollout_estimate(left.node.rollout_estimate);
-        let right_eval = combat_eval_from_rollout_estimate(right.node.rollout_estimate);
+        let left_eval = combat_eval_from_rollout_estimate(&left.node.rollout_estimate);
+        let right_eval = combat_eval_from_rollout_estimate(&right.node.rollout_estimate);
         right_eval.cmp(&left_eval)
     });
     candidates.truncate(beam_width.max(1));
@@ -379,7 +379,7 @@ fn best_estimate(
     stop_reason: RolloutStopReason,
 ) -> RolloutNodeEstimate {
     let Some(best) = beam.iter().max_by_key(|state| {
-        combat_eval_from_rollout_estimate(state_estimate(state, root_action_count, stop_reason))
+        combat_eval_from_rollout_estimate(&state_estimate(state, root_action_count, stop_reason))
     }) else {
         return RolloutNodeEstimate::unevaluated();
     };
@@ -391,8 +391,8 @@ fn state_estimate(
     root_action_count: usize,
     stop_reason: RolloutStopReason,
 ) -> RolloutNodeEstimate {
-    if let Some(estimate) = state.estimate_override {
-        return estimate;
+    if let Some(estimate) = &state.estimate_override {
+        return estimate.clone();
     }
     RolloutNodeEstimate::from_node(
         &state.node,

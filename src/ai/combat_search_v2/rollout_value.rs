@@ -21,7 +21,7 @@ impl PartialOrd for CombatSearchRolloutValueV1 {
     }
 }
 
-pub(super) fn rollout_priority_value(estimate: RolloutNodeEstimate) -> CombatSearchRolloutValueV1 {
+pub(super) fn rollout_priority_value(estimate: &RolloutNodeEstimate) -> CombatSearchRolloutValueV1 {
     CombatSearchRolloutValueV1 {
         evaluated: i32::from(estimate.evaluated),
         eval: combat_eval_from_rollout_estimate(estimate),

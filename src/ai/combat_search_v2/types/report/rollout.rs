@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use super::super::SearchTerminalLabel;
+use super::super::{CombatSearchV2ActionPreview, SearchTerminalLabel};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct CombatSearchV2RolloutReport {
@@ -107,6 +107,7 @@ pub struct CombatSearchV2RolloutEstimateReport {
     pub stopped_on_high_fanout_pending_choice: bool,
     pub survival_margin: i32,
     pub actions_simulated: usize,
+    pub action_preview: Vec<CombatSearchV2ActionPreview>,
     pub truncated: bool,
     pub stop_reason: &'static str,
     pub last_action_reason: Option<&'static str>,

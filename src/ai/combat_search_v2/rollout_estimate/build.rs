@@ -1,6 +1,7 @@
 use super::super::rollout_pending_choice::RolloutPendingChoiceProgress;
+use super::super::CombatSearchV2ActionPreview;
 use super::super::{combat_search_phase_profile, living_enemy_count, terminal_label, SearchNode};
-use super::types::{RolloutNodeEstimate, RolloutStopReason};
+use super::types::{RolloutNodeEstimate, RolloutStopReason, ROLLOUT_ACTION_PREVIEW_LIMIT};
 
 impl RolloutNodeEstimate {
     pub(in crate::ai::combat_search_v2) fn from_node(
@@ -55,6 +56,15 @@ impl RolloutNodeEstimate {
                 .stopped_on_high_fanout_pending_choice,
             survival_margin: phase_profile.pressure.survival_margin,
             actions_simulated,
+            action_preview: node
+                .actions
+                .iter()
+                .take(ROLLOUT_ACTION_PREVIEW_LIMIT)
+                .map(|action| CombatSearchV2ActionPreview {
+                    action_key: action.action_key.clone(),
+                    input: action.input.clone(),
+                })
+                .collect(),
             truncated: stop_reason.is_truncated(),
             stop_reason,
             last_action_reason,

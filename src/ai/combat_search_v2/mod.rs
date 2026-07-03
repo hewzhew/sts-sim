@@ -178,6 +178,10 @@ pub(crate) use turn_plan_probe::{
 };
 pub use types::*;
 
+pub fn combat_search_exact_state_hash_v1(engine: &EngineState, combat: &CombatState) -> String {
+    combat_exact_state_hash_v1(engine, combat)
+}
+
 pub(crate) fn combat_search_action_ordering_role_label_for_state(
     engine: &EngineState,
     combat: &CombatState,

@@ -3,7 +3,7 @@ use super::types::RolloutNodeEstimate;
 
 impl RolloutNodeEstimate {
     pub(in crate::ai::combat_search_v2) fn to_report(
-        self,
+        &self,
     ) -> Option<CombatSearchV2RolloutEstimateReport> {
         self.evaluated
             .then_some(CombatSearchV2RolloutEstimateReport {
@@ -36,6 +36,7 @@ impl RolloutNodeEstimate {
                 stopped_on_high_fanout_pending_choice: self.stopped_on_high_fanout_pending_choice,
                 survival_margin: self.survival_margin,
                 actions_simulated: self.actions_simulated,
+                action_preview: self.action_preview.clone(),
                 truncated: self.truncated,
                 stop_reason: self.stop_reason.label(),
                 last_action_reason: self.last_action_reason,
