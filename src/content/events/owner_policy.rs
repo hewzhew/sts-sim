@@ -1,7 +1,12 @@
 use crate::ai::strategy::deck_purge_target::{best_purge_uuid, rank_purge_target};
+use crate::ai::strategy::deck_strategic_deficit::{
+    assess_deck_strategic_deficit_summary, StrategicDeficitLevel,
+};
+use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
 use crate::content::cards::{
     get_card_definition, is_starter_basic, is_starter_defend, is_starter_strike, CardId,
 };
+use crate::content::potions::PotionId;
 use crate::content::relics::RelicId;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{EngineState, RunPendingChoiceReason, RunPendingChoiceState};
@@ -76,6 +81,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::Falling => return Ok(choose(super::falling_owner::falling_choice(run_state))),
         EventId::Ghosts => return Ok(choose(ghosts_choice(run_state))),
         EventId::LivingWall => return Ok(choose(living_wall_choice(run_state))),
+        EventId::MaskedBandits => return Ok(choose(masked_bandits_choice(run_state))),
         EventId::MatchAndKeep => return Ok(choose(match_and_keep_choice(run_state))),
         EventId::Mausoleum => return Ok(choose(mausoleum_choice(run_state))),
         EventId::MindBloom => return Ok(choose(mind_bloom_choice(run_state))),
@@ -84,6 +90,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::Nest => return Ok(choose(nest_choice(run_state))),
         EventId::Nloth => return Ok(choose(nloth_choice(run_state))),
         EventId::ShiningLight => return Ok(choose(shining_light_choice(run_state))),
+        EventId::Transmorgrifier => return Ok(choose(transmorgrifier_choice(run_state))),
         EventId::WomanInBlue => return Ok(choose(woman_in_blue_choice(run_state))),
         EventId::WeMeetAgain => return Ok(choose(we_meet_again_choice(run_state))),
         EventId::WindingHalls => return Ok(choose(winding_halls_choice(run_state))),
@@ -247,6 +254,10 @@ fn living_wall_remove_effect() -> EventEffect {
     }
 }
 
+fn transmorgrifier_choice(_run_state: &RunState) -> EventOwnerOptionSelector {
+    action(EventActionKind::Leave)
+}
+
 fn we_meet_again_choice(run_state: &RunState) -> EventOwnerOptionSelector {
     action(if event_screen(run_state) == 0 {
         EventActionKind::Decline
@@ -347,6 +358,50 @@ fn mushrooms_choice(run_state: &RunState) -> EventOwnerOptionSelector {
 
 fn mushrooms_eat_is_emergency(run_state: &RunState) -> bool {
     run_state.current_hp * 100 < run_state.max_hp * 30
+}
+
+fn masked_bandits_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    action(match event_screen(run_state) {
+        0 if masked_bandits_should_pay(run_state) => EventActionKind::Trade,
+        0 => EventActionKind::Fight,
+        1..=3 => EventActionKind::Continue,
+        _ => EventActionKind::Leave,
+    })
+}
+
+fn masked_bandits_should_pay(run_state: &RunState) -> bool {
+    let danger = run_state.current_hp <= 20 || run_state.current_hp * 100 <= run_state.max_hp * 25;
+    let borderline =
+        run_state.current_hp <= 28 || run_state.current_hp * 100 <= run_state.max_hp * 35;
+    danger
+        || (borderline && !masked_bandits_ready(run_state))
+        || (borderline && run_state.gold <= 80)
+}
+
+fn masked_bandits_ready(run_state: &RunState) -> bool {
+    let deficit = assess_deck_strategic_deficit_summary(
+        &run_state.master_deck,
+        RunStrategicFacts::from_run_state(run_state),
+    );
+    let offense = deficit.frontload_damage != StrategicDeficitLevel::Missing
+        || deficit.aoe_or_minion_control != StrategicDeficitLevel::Missing;
+    offense
+        && (deficit.block_or_mitigation != StrategicDeficitLevel::Missing
+            || has_bandit_swing_potion(run_state))
+}
+
+fn has_bandit_swing_potion(run_state: &RunState) -> bool {
+    run_state.potions.iter().any(|slot| {
+        slot.as_ref().is_some_and(|potion| {
+            matches!(
+                potion.id,
+                PotionId::FirePotion
+                    | PotionId::ExplosivePotion
+                    | PotionId::FearPotion
+                    | PotionId::BlockPotion
+            )
+        })
+    })
 }
 
 fn woman_in_blue_choice(run_state: &RunState) -> EventOwnerOptionSelector {
