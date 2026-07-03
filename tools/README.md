@@ -10,16 +10,12 @@
   - audit helpers for generated card/source data
 - `data/`
   - curated support data such as card facts
-- `live_comm/`
-  - legacy Java bridge scripts and fixture-capture helpers
 - `ml/`
   - offline combat/search dataset and baseline utilities
 
 ## Output Rules
 
 - generated reports and datasets belong under `tools/artifacts/`
-- live replay captures belong under `logs/replays/` or `logs/runs/`
-- loose live-comm captures do not belong in the repo root
 - root-level one-off snapshots belong under `tools/artifacts/root_snapshots/`
 
 ## Primary Campaign Workflow
@@ -50,11 +46,4 @@ See `docs/CURRENT_DIRECTION.md` for the current launcher boundary.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\run_high_value_tests.ps1
-powershell -ExecutionPolicy Bypass -File .\tools\run_high_value_tests.ps1 -IncludeParity
 ```
-
-## Legacy
-
-`live_comm/` is also legacy. Use it only for fixture capture or historical
-investigation unless the adapter is rebuilt under the boundary in
-`docs_legacy/2026-06-03_pre_rewrite/docs/live_comm/LEGACY_FIXTURE_ONLY.md`.

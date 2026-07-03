@@ -1,5 +1,4 @@
 param(
-    [switch]$IncludeParity,
     [switch]$DryRun
 )
 
@@ -17,11 +16,6 @@ Write-Host ""
 Write-Host "Commands:"
 foreach ($command in $commands) {
     Write-Host "  $command"
-}
-
-if ($IncludeParity) {
-    Write-Host ""
-    Write-Host "IncludeParity is currently compatibility-only: live_comm parity drivers are retired until the adapter is rebuilt." -ForegroundColor DarkYellow
 }
 
 if ($DryRun) {

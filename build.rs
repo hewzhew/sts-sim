@@ -4,30 +4,6 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-fn git_short_sha() -> String {
-    Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|stdout| stdout.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "nogit".to_string())
-}
-
-fn build_unix_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0)
-}
-
-fn build_live_comm_tag(version: &str, git_short: &str, build_unix: u64) -> String {
-    format!("rust-live-comm-v{}-{}-{}", version, git_short, build_unix)
-}
 
 fn emit_git_rerun_watchers() {
     let git_dir = Command::new("git")
@@ -60,15 +36,6 @@ fn emit_git_rerun_watchers() {
 }
 
 fn main() {
-    let version = env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".to_string());
-    let git_short = git_short_sha();
-    let build_unix = build_unix_secs();
-    println!(
-        "cargo:rustc-env=LIVE_COMM_BUILD_TAG={}",
-        build_live_comm_tag(&version, &git_short, build_unix)
-    );
-    println!("cargo:rustc-env=LIVE_COMM_GIT_SHORT={git_short}");
-    println!("cargo:rustc-env=LIVE_COMM_BUILD_UNIX={build_unix}");
     println!("cargo:rerun-if-changed=build.rs");
     emit_git_rerun_watchers();
 
