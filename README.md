@@ -103,7 +103,6 @@ workflow.
 | `branch_campaign_driver` | current automated branch campaign, checkpoint inspection, outcome export, and continuation experiments |
 | `run_play_driver` | manual and semi-automatic simulator runs, traces, bookmarks, captures, baselines |
 | `combat_search_v2_driver` | whole-combat search from start specs, combat captures, or benchmark suites |
-| `artifact_doctor` | read-only audit over benchmark artifact directories |
 
 See [src/bin/README.md](src/bin/README.md) for binary details.
 

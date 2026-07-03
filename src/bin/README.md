@@ -24,13 +24,6 @@ Active binaries:
     `command_inputs.rs` converts CLI args into narrow handler inputs plus
     campaign/search config; `campaign_artifacts.rs` owns report/checkpoint
     JSON IO; `main.rs` owns dispatch only
-- `artifact_doctor`
-  - read-only audit over benchmark artifact directories
-  - `--root <path>` scans for `benchmark.json` suites, registered captures,
-    baselines, and search evidence links
-  - `--output <path>` writes compact `ArtifactAuditReportV1` JSON with stable
-    `check_id` plus artifact content hashes; stdout remains a short summary
-  - no replay, no search execution, no artifact mutation, and no Markdown log
 - `combat_search_v2_driver`
   - `--start-spec <path>`: single whole-combat search report
   - `--combat-snapshot <path>`: single search report from an exact
