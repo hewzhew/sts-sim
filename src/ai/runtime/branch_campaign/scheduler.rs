@@ -1,1 +1,0 @@
-//! Branch campaign scheduler ownership.

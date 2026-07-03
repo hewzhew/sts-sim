@@ -27,6 +27,10 @@ Runtime can record and schedule. Policy can generate candidates. Strategy owns
 the high-level interpretation. Analysis owns reusable profiles. Domain owns game
 facts.
 
+These are responsibility boundaries, not a requirement to keep empty
+`src/ai/<layer>` directories. A namespace earns its place only after live code
+consumes it.
+
 ## Rules
 
 Do not add a new `*_policy_v1` or `*_profile_v1` unless it is explicitly a

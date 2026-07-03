@@ -1,1 +1,0 @@
-//! Neow policy entry point.
