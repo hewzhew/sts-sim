@@ -78,6 +78,11 @@ This is the preferred entry for branch-tiny combat gaps. Do not revive old
 report/probe readers for this workflow; write or load a `combat_case` and keep
 review output structured JSON.
 
+The runner/search ownership contract is documented in
+[RUNNER_COMBAT_BOUNDARY.md](RUNNER_COMBAT_BOUNDARY.md). Update that document in
+the same change whenever a runner retry gate, potion policy, combat artifact, or
+combat review tool changes who owns a decision.
+
 Current small combat benchmarks:
 
 ```text

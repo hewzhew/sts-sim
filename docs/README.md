@@ -20,6 +20,8 @@ instead of keeping stale command paths searchable.
   semantics
 - [REPORT_FIELD_ADMISSION.md](REPORT_FIELD_ADMISSION.md): rules for adding
   report, journal, or export fields
+- [RUNNER_COMBAT_BOUNDARY.md](RUNNER_COMBAT_BOUNDARY.md): contract between
+  run-level automation, combat search, combat cases, and review diagnostics
 
 ## Other Maintained Docs
 
