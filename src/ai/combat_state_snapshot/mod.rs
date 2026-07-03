@@ -1,8 +1,8 @@
 //! AI-facing combat state snapshot schema.
 //!
 //! These types are an audit boundary, not a legacy engine wrapper. They are
-//! shaped from `docs/AI_COMBAT_STATE_SCHEMA.md`: Java source defines combat
-//! semantics, Rust owns the deterministic simulator representation.
+//! shaped around deterministic Rust simulator state; Java source defines combat
+//! semantics, while this module owns the AI-facing snapshot representation.
 
 use serde::{Deserialize, Serialize};
 
