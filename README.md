@@ -29,9 +29,9 @@ The maintained campaign wrapper direction is:
 Autopilot, route planning, card reward policy, traces, and search-assisted
 combat are convenience/evidence tools. They are not teacher labels.
 
-The campaign system is being migrated to a Rust-owned application boundary. The
-PowerShell wrapper is now a local source/output/continuation launcher, not the
-architecture. See [docs/CURRENT_DIRECTION.md](docs/CURRENT_DIRECTION.md).
+The campaign system is owned by typed Rust application boundaries. The
+PowerShell wrapper is a local source/output/continuation launcher, not the
+architecture. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Quick Start
 
@@ -93,8 +93,7 @@ Resume from a bookmark:
 cargo run --profile fast-run --bin run_play_driver -- --goto <name> --search-wall-ms 100
 ```
 
-See [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md) for the maintained play
-workflow.
+See [docs/RUNBOOK.md](docs/RUNBOOK.md) for maintained local commands.
 
 ## Main Entrypoints
 
@@ -110,19 +109,13 @@ See [src/bin/README.md](src/bin/README.md) for binary details.
 
 ## Active Docs
 
-Start here:
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): current ownership boundaries
+  and design rules.
+- [docs/RUNBOOK.md](docs/RUNBOOK.md): maintained local commands and
+  verification.
 
-- [docs/CURRENT_DIRECTION.md](docs/CURRENT_DIRECTION.md)
-
-Campaign supporting docs:
-
-- [docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md](docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md)
-- [docs/CAMPAIGN_JOURNAL.md](docs/CAMPAIGN_JOURNAL.md)
-- [docs/AUTOPILOT_BOUNDARY.md](docs/AUTOPILOT_BOUNDARY.md)
-- [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md)
-
-Retired docs were removed from the working tree to keep search results usable.
-Use git history for archaeology.
+Retired docs are not kept searchable in the working tree. Use git history for
+archaeology.
 
 ## Architecture
 

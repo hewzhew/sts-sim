@@ -37,4 +37,5 @@ The old `-More` shortcut is retired because it mixed source, output, and
 round-budget semantics. Coverage-gap and milestone orchestration are not part
 of this launcher.
 
-See `docs/CURRENT_DIRECTION.md` for the current launcher boundary.
+See `docs/RUNBOOK.md` for maintained commands and `docs/ARCHITECTURE.md` for
+the launcher ownership boundary.

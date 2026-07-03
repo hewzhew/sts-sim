@@ -25,7 +25,7 @@ simulator correctness
 
 Autopilot、route planner、card reward policy、trace、搜索托管战斗都是便利工具或证据工具，不是 teacher label。
 
-campaign 系统正在迁移到 Rust-owned application boundary。PowerShell wrapper 只是本地 source/output/continuation launcher，不是架构本身。见 [docs/CURRENT_DIRECTION.md](docs/CURRENT_DIRECTION.md)。
+campaign 系统由 typed Rust application boundary 拥有。PowerShell wrapper 只是本地 source/output/continuation launcher，不是架构本身。见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ## 快速开始
 
@@ -82,7 +82,7 @@ cargo run --profile fast-run --bin run_play_driver -- --seed $seed --ascension 0
 cargo run --profile fast-run --bin run_play_driver -- --goto <name> --search-wall-ms 100
 ```
 
-当前玩法说明见 [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md)。
+当前命令说明见 [docs/RUNBOOK.md](docs/RUNBOOK.md)。
 
 ## 主要入口
 
@@ -98,15 +98,10 @@ Binary 细节见 [src/bin/README.md](src/bin/README.md)。
 
 ## 当前文档
 
-先读：
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): 当前 ownership boundary 和设计规则。
+- [docs/RUNBOOK.md](docs/RUNBOOK.md): 当前本地命令和验证方式。
 
-- [docs/CURRENT_DIRECTION.md](docs/CURRENT_DIRECTION.md)
-- [docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md](docs/CAMPAIGN_ARTIFACT_ARCHITECTURE.md)
-- [docs/CAMPAIGN_JOURNAL.md](docs/CAMPAIGN_JOURNAL.md)
-- [docs/AUTOPILOT_BOUNDARY.md](docs/AUTOPILOT_BOUNDARY.md)
-- [docs/RUN_PLAY_GUIDE.md](docs/RUN_PLAY_GUIDE.md)
-
-退役文档已经从工作区删除，避免污染搜索结果。需要考古时请查 git history。
+退役文档不保留在工作区里污染搜索结果。需要考古时请查 git history。
 
 ## 架构
 
