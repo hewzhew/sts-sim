@@ -46,7 +46,9 @@ pub struct CombatCaseGap {
     pub reason: String,
     pub search_nodes: usize,
     pub search_ms: u64,
+    #[serde(default)]
     pub rescue_search_nodes: usize,
+    #[serde(default)]
     pub rescue_search_ms: u64,
 }
 

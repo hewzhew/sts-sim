@@ -60,6 +60,12 @@ struct Args {
     line_lab_ms: u64,
     #[arg(long, default_value_t = 8)]
     line_lab_cuts: usize,
+    #[arg(long)]
+    quality_lanes: bool,
+    #[arg(long)]
+    quality_lane_total_nodes: Option<usize>,
+    #[arg(long)]
+    quality_lane_total_ms: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -82,6 +88,7 @@ struct CombatCaseReview {
     review_focus_replay: Option<CombatSearchV2WitnessReplay>,
     review_focus_prior_rerun: Option<CombatReviewFocusPriorRerun>,
     line_lab: Option<CombatLineLabReport>,
+    quality_lanes: Option<CombatQualityLaneReview>,
     combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
     combat_strategic_feedback: Option<CombatStrategicFeedbackReport>,
 }
@@ -110,6 +117,40 @@ struct SearchReview {
     node_budget_hit: bool,
     performance: SearchPerformanceReview,
     facts: SearchReviewFacts,
+}
+
+#[derive(Serialize)]
+struct CombatQualityLaneReview {
+    schema: &'static str,
+    contract: &'static str,
+    total_nodes: usize,
+    total_wall_ms: u64,
+    per_lane_nodes: usize,
+    per_lane_wall_ms: u64,
+    selected_lane: Option<&'static str>,
+    selected_reason: &'static str,
+    lanes: Vec<CombatQualityLaneResult>,
+}
+
+#[derive(Serialize)]
+struct CombatQualityLaneResult {
+    lane: &'static str,
+    intent: &'static str,
+    review: SearchReview,
+    quality: Option<CombatLineQuality>,
+}
+
+#[derive(Clone, Serialize)]
+struct CombatLineQuality {
+    terminal: SearchTerminalLabel,
+    hp_loss: i32,
+    final_hp: i32,
+    persistent_run_value: i32,
+    persistent_adjusted_hp: i32,
+    potions_used: u32,
+    turns: u32,
+    cards_played: u32,
+    action_count: usize,
 }
 
 #[derive(Serialize)]
@@ -342,6 +383,11 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
         None
     };
     let combat_deficit_evidence = line_lab.as_ref().map(derive_combat_deficit_evidence);
+    let quality_lanes = if args.quality_lanes {
+        Some(run_quality_lanes(args, &case))
+    } else {
+        None
+    };
     let static_strategic_deficit = assess_deck_strategic_deficit(
         &case.position.combat.meta.master_deck_snapshot,
         strategic_facts_from_case(&case),
@@ -399,6 +445,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
         review_focus_replay,
         review_focus_prior_rerun,
         line_lab,
+        quality_lanes,
         combat_deficit_evidence,
         combat_strategic_feedback,
     }
@@ -861,9 +908,9 @@ fn run_search(
     } else {
         CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
     };
-    let report = run_combat_search_v2(
-        &case.position.engine,
-        &case.position.combat,
+    run_configured_search(
+        label,
+        case,
         CombatSearchV2Config {
             max_nodes: nodes,
             wall_time: Some(Duration::from_millis(wall_ms)),
@@ -874,7 +921,26 @@ fn run_search(
             child_rollout_policy,
             ..CombatSearchV2Config::default()
         },
-    );
+        action_preview_limit,
+    )
+}
+
+fn run_configured_search(
+    label: &'static str,
+    case: &CombatCase,
+    config: CombatSearchV2Config,
+    action_preview_limit: usize,
+) -> (SearchReview, CombatSearchV2Report) {
+    let nodes = config.max_nodes;
+    let wall_ms = config
+        .wall_time
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or_default();
+    let turn_plan_policy = config.turn_plan_policy;
+    let potion_policy = config.potion_policy;
+    let max_potions_used = config.max_potions_used;
+    let rollout_policy = config.rollout_policy.label();
+    let report = run_combat_search_v2(&case.position.engine, &case.position.combat, config);
     let review = search_review(
         label,
         nodes,
@@ -884,9 +950,157 @@ fn run_search(
         max_potions_used,
         &report,
         action_preview_limit,
-        rollout_policy.label(),
+        rollout_policy,
     );
     (review, report)
+}
+
+fn run_quality_lanes(args: &Args, case: &CombatCase) -> CombatQualityLaneReview {
+    const LANE_COUNT: usize = 4;
+    let total_nodes = args
+        .quality_lane_total_nodes
+        .unwrap_or(args.slow_nodes)
+        .max(1);
+    let total_wall_ms = args.quality_lane_total_ms.unwrap_or(args.slow_ms).max(1);
+    let per_lane_nodes = (total_nodes / LANE_COUNT).max(1);
+    let per_lane_wall_ms = (total_wall_ms / LANE_COUNT as u64).max(1);
+    let mut lanes = Vec::new();
+    for lane in quality_lane_specs() {
+        let (review, report) = run_configured_search(
+            lane.label,
+            case,
+            lane.config(per_lane_nodes, per_lane_wall_ms),
+            args.action_preview_limit,
+        );
+        let quality = combat_line_quality(&report);
+        lanes.push(CombatQualityLaneResult {
+            lane: lane.label,
+            intent: lane.intent,
+            review,
+            quality,
+        });
+    }
+    let selected_lane = lanes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, lane)| lane.quality.as_ref().map(|quality| (index, quality)))
+        .max_by(|(_, left), (_, right)| compare_quality(left, right))
+        .map(|(index, _)| lanes[index].lane);
+
+    CombatQualityLaneReview {
+        schema: "combat_quality_lane_review_v0",
+        contract: "case_level_experiment_only_same_total_budget_split_across_lanes_no_runner_policy_change",
+        total_nodes,
+        total_wall_ms,
+        per_lane_nodes,
+        per_lane_wall_ms,
+        selected_lane,
+        selected_reason: if selected_lane.is_some() {
+            "best_complete_win_by_persistent_adjusted_hp_then_potion_conservation"
+        } else {
+            "no_lane_found_complete_win"
+        },
+        lanes,
+    }
+}
+
+#[derive(Clone, Copy)]
+struct QualityLaneSpec {
+    label: &'static str,
+    intent: &'static str,
+    frontier_policy: sts_simulator::ai::combat_search_v2::CombatSearchV2FrontierPolicy,
+    turn_plan_policy: CombatSearchV2TurnPlanPolicy,
+    rollout_policy: CombatSearchV2RolloutPolicy,
+}
+
+impl QualityLaneSpec {
+    fn config(self, max_nodes: usize, wall_ms: u64) -> CombatSearchV2Config {
+        CombatSearchV2Config {
+            max_nodes,
+            wall_time: Some(Duration::from_millis(wall_ms)),
+            stop_on_win_hp_loss_at_most: Some(0),
+            min_win_candidates_before_stop: 4,
+            potion_policy: CombatSearchV2PotionPolicy::Never,
+            max_potions_used: Some(0),
+            rollout_policy: self.rollout_policy,
+            child_rollout_policy: CombatSearchV2ChildRolloutPolicy::LazyOnPop,
+            turn_plan_policy: self.turn_plan_policy,
+            frontier_policy: self.frontier_policy,
+            ..CombatSearchV2Config::default()
+        }
+    }
+}
+
+fn quality_lane_specs() -> [QualityLaneSpec; 4] {
+    use sts_simulator::ai::combat_search_v2::CombatSearchV2FrontierPolicy;
+    [
+        QualityLaneSpec {
+            label: "quality_balanced_rr",
+            intent: "baseline round-robin frontier with adaptive rollout",
+            frontier_policy: CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            rollout_policy: CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion,
+        },
+        QualityLaneSpec {
+            label: "quality_strict_best_first",
+            intent: "single frontier queue to let current priority fully decide",
+            frontier_policy: CombatSearchV2FrontierPolicy::SingleQueue,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            rollout_policy: CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion,
+        },
+        QualityLaneSpec {
+            label: "quality_exact_no_rollout",
+            intent: "spend budget on exact expansion instead of rollout estimates",
+            frontier_policy: CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+        },
+        QualityLaneSpec {
+            label: "quality_root_turn_seed",
+            intent: "seed exact current-turn end states before atomic expansion",
+            frontier_policy: CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::RootFrontierSeed,
+            rollout_policy: CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion,
+        },
+    ]
+}
+
+fn combat_line_quality(report: &CombatSearchV2Report) -> Option<CombatLineQuality> {
+    let trajectory = report.best_win_trajectory.as_ref()?;
+    Some(CombatLineQuality {
+        terminal: trajectory.terminal,
+        hp_loss: trajectory.hp_loss,
+        final_hp: trajectory.final_hp,
+        persistent_run_value: trajectory.persistent_run_value,
+        persistent_adjusted_hp: trajectory
+            .final_hp
+            .saturating_add(trajectory.persistent_run_value),
+        potions_used: trajectory.potions_used,
+        turns: trajectory.turns,
+        cards_played: trajectory.cards_played,
+        action_count: trajectory.actions.len(),
+    })
+}
+
+fn compare_quality(left: &CombatLineQuality, right: &CombatLineQuality) -> std::cmp::Ordering {
+    (
+        left.persistent_adjusted_hp,
+        left.final_hp,
+        left.persistent_run_value,
+        -(left.potions_used as i32),
+        -(left.turns as i32),
+        -(left.cards_played as i32),
+        -(left.action_count as i32),
+    )
+        .cmp(&(
+            right.persistent_adjusted_hp,
+            right.final_hp,
+            right.persistent_run_value,
+            -(right.potions_used as i32),
+            -(right.turns as i32),
+            -(right.cards_played as i32),
+            -(right.action_count as i32),
+        ))
 }
 
 fn search_review(
