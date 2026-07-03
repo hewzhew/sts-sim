@@ -13,7 +13,6 @@ pub mod combat_case;
 pub mod combat_search_v2;
 pub(crate) mod decision_candidate_axis_v1;
 pub mod decision_path;
-pub(crate) mod event_auto_policy_v1;
 pub(crate) mod event_boundary_classifier_v1;
 pub mod event_boundary_packet_v1;
 pub mod fingerprint;

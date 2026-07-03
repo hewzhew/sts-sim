@@ -722,9 +722,7 @@ fn event_safe_exit_collapses_default_note_mutation(
     if event_state.id != EventId::NoteForYourself || event_state.current_screen != 1 {
         return false;
     }
-    if !crate::eval::event_auto_policy_v1::note_for_yourself_default_note_is_ignorable(
-        &session.run_state,
-    ) {
+    if !crate::content::events::note_for_yourself::default_note_is_ignorable(&session.run_state) {
         return false;
     }
 

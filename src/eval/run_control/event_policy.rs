@@ -107,9 +107,7 @@ pub(super) fn apply_note_for_yourself_policy_choice(
     if event_state.id != EventId::NoteForYourself || event_state.current_screen != 1 {
         return Ok(None);
     }
-    if !crate::eval::event_auto_policy_v1::note_for_yourself_default_note_is_ignorable(
-        &session.run_state,
-    ) {
+    if !crate::content::events::note_for_yourself::default_note_is_ignorable(&session.run_state) {
         return Ok(None);
     }
 

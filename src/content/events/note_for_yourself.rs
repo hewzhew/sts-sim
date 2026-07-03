@@ -18,6 +18,20 @@ use crate::state::selection::DomainEventSource;
 /// Screen 0: [Proceed]
 /// Screen 1: [Take Card] / [Ignore]
 
+pub(crate) fn default_note_is_ignorable(run_state: &RunState) -> bool {
+    let note_card = run_state.note_for_yourself_card;
+    let def = crate::content::cards::get_card_definition(note_card);
+    if matches!(
+        def.card_type,
+        crate::content::cards::CardType::Curse | crate::content::cards::CardType::Status
+    ) {
+        return true;
+    }
+
+    note_card == crate::content::cards::CardId::IronWave
+        && run_state.note_for_yourself_upgrades == 0
+}
+
 pub fn get_options(run_state: &RunState, event_state: &EventState) -> Vec<EventOption> {
     match event_state.current_screen {
         0 => vec![EventOption::new(
