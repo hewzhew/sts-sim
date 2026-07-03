@@ -74,6 +74,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         .ok_or(EventOwnerPolicyGap::MissingEventState)?;
     match event_id {
         EventId::BackTotheBasics => return Ok(choose(back_to_basics_choice(run_state))),
+        EventId::Beggar => return Ok(choose(beggar_choice(run_state))),
         EventId::BigFish => return Ok(choose(big_fish_choice(run_state))),
         EventId::CursedTome => return Ok(choose(cursed_tome_choice(run_state))),
         EventId::DeadAdventurer => return Ok(choose(dead_adventurer_choice(run_state))),
@@ -166,6 +167,17 @@ fn big_fish_choice(run_state: &RunState) -> EventOwnerOptionSelector {
         });
     }
     effect(EventEffect::GainMaxHp(5))
+}
+
+fn beggar_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 if run_state.gold >= 75 && has_safe_purge_target(run_state) => {
+            action(EventActionKind::Trade)
+        }
+        0 => action(EventActionKind::Leave),
+        1 => action(EventActionKind::DeckOperation),
+        _ => action(EventActionKind::Leave),
+    }
 }
 
 fn back_to_basics_choice(run_state: &RunState) -> EventOwnerOptionSelector {
