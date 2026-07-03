@@ -1192,9 +1192,13 @@ mod tests {
     use super::CampaignArtifactKindV1;
     use super::CampaignArtifactStoreV1;
 
+    fn test_campaign_root() -> PathBuf {
+        PathBuf::from("tools").join("artifacts").join("campaigns")
+    }
+
     #[test]
     fn campaign_artifact_store_builds_run_and_scratch_paths() {
-        let root = PathBuf::from(r"D:\repo\tools\artifacts\campaigns");
+        let root = test_campaign_root();
         let store = CampaignArtifactStoreV1::new(root.clone());
 
         let run = store.run_artifact_ref_v1("abc");
@@ -1264,7 +1268,7 @@ mod tests {
 
     #[test]
     fn campaign_artifact_store_resolves_basic_source_selectors() {
-        let root = PathBuf::from(r"D:\repo\tools\artifacts\campaigns");
+        let root = test_campaign_root();
         let store = CampaignArtifactStoreV1::new(root.clone());
 
         assert_eq!(
@@ -1333,7 +1337,7 @@ mod tests {
 
     #[test]
     fn campaign_artifact_store_allocates_deterministic_output_refs() {
-        let root = PathBuf::from(r"D:\repo\tools\artifacts\campaigns");
+        let root = test_campaign_root();
         let store = CampaignArtifactStoreV1::new(root.clone());
 
         let run = store.run_output_ref_v1("continue seed 521", "20260624-010203", "abcdef12");
@@ -1358,7 +1362,7 @@ mod tests {
 
     #[test]
     fn campaign_artifact_store_can_generate_output_refs_without_wrapper_stamp() {
-        let root = PathBuf::from(r"D:\repo\tools\artifacts\campaigns");
+        let root = test_campaign_root();
         let store = CampaignArtifactStoreV1::new(root.clone());
 
         let artifact = store
