@@ -1,3 +1,4 @@
+use super::rollout_scheduler::{deferred_child_rollout_admission, DeferredRolloutAdmission};
 use super::*;
 use crate::ai::combat_search_v2::frontier::remember_win_candidate;
 use std::collections::HashSet;
@@ -128,7 +129,10 @@ pub fn run_combat_search_v2_with_stepper(
         }
 
         let mut node = entry.node;
-        if should_complete_deferred_child_rollout(&node, &config) {
+        let admission =
+            deferred_child_rollout_admission(&node, &config, &stats, &performance, started);
+        observe_deferred_rollout_admission(admission, &mut performance);
+        if admission.admitted() {
             node.rollout_estimate = timed_rollout_estimate(
                 &mut rollout_cache,
                 &node,
@@ -513,14 +517,32 @@ fn timed_rollout_estimate(
     estimate
 }
 
-fn should_complete_deferred_child_rollout(
-    node: &SearchNode,
-    config: &CombatSearchV2Config,
-) -> bool {
-    config.child_rollout_policy == CombatSearchV2ChildRolloutPolicy::LazyOnPop
-        && config.rollout_policy != CombatSearchV2RolloutPolicy::Disabled
-        && !node.rollout_estimate.is_evaluated()
-        && terminal_label(&node.engine, &node.combat) == SearchTerminalLabel::Unresolved
+fn observe_deferred_rollout_admission(
+    admission: DeferredRolloutAdmission,
+    performance: &mut CombatSearchV2PerformanceReport,
+) {
+    match admission {
+        DeferredRolloutAdmission::AdmitSignal => {
+            performance.deferred_child_rollout_admitted_signal = performance
+                .deferred_child_rollout_admitted_signal
+                .saturating_add(1);
+        }
+        DeferredRolloutAdmission::AdmitPeriodic => {
+            performance.deferred_child_rollout_admitted_periodic = performance
+                .deferred_child_rollout_admitted_periodic
+                .saturating_add(1);
+        }
+        DeferredRolloutAdmission::SkipLowSignal => {
+            performance.deferred_child_rollout_skipped_low_signal = performance
+                .deferred_child_rollout_skipped_low_signal
+                .saturating_add(1);
+        }
+        DeferredRolloutAdmission::SkipBudgetShare => {
+            performance.deferred_child_rollout_skipped_budget_share = performance
+                .deferred_child_rollout_skipped_budget_share
+                .saturating_add(1);
+        }
+    }
 }
 
 fn accepted_complete_win(node: &SearchNode, config: &CombatSearchV2Config) -> bool {

@@ -360,7 +360,7 @@ fn primary_auto_step_options(args: Args) -> RunControlAutoStepOptions {
         args.auto_ops,
         args.wall_ms.is_some(),
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-        CombatSearchV2ChildRolloutPolicy::Immediate,
+        CombatSearchV2ChildRolloutPolicy::LazyOnPop,
     )
 }
 
@@ -371,7 +371,7 @@ fn diagnostic_rescue_auto_step_options(args: Args) -> RunControlAutoStepOptions 
         args.auto_ops,
         args.wall_ms.is_some(),
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-        CombatSearchV2ChildRolloutPolicy::Immediate,
+        CombatSearchV2ChildRolloutPolicy::LazyOnPop,
     )
 }
 
@@ -382,7 +382,7 @@ fn hallway_potion_rescue_auto_step_options(args: Args) -> RunControlAutoStepOpti
         args.auto_ops,
         args.wall_ms.is_some(),
         CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-        CombatSearchV2ChildRolloutPolicy::Immediate,
+        CombatSearchV2ChildRolloutPolicy::LazyOnPop,
     );
     options.search.potion_policy = Some(CombatSearchV2PotionPolicy::All);
     options.search.max_potions_used = Some(HALLWAY_POTION_RESCUE_MAX_POTIONS_USED);
@@ -454,7 +454,7 @@ fn try_boss_retry(
         args,
         CombatSearchV2PotionPolicy::All,
         Some(max_potions),
-        CombatSearchV2ChildRolloutPolicy::Immediate,
+        boss_potion_rescue_child_rollout_policy(session),
         CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion,
     );
     let (status, attempt, search) = run_boss_retry_attempt(session, args, "potion_rescue", rescue);
@@ -462,6 +462,16 @@ fn try_boss_retry(
     attempts.push(attempt);
     let report = boss_retry_report(args, status.clone(), attempts);
     Some((status, report, all_search))
+}
+
+fn boss_potion_rescue_child_rollout_policy(
+    session: &RunControlSession,
+) -> CombatSearchV2ChildRolloutPolicy {
+    if session.run_state.act_num >= 3 {
+        CombatSearchV2ChildRolloutPolicy::LazyOnPop
+    } else {
+        CombatSearchV2ChildRolloutPolicy::Immediate
+    }
 }
 
 fn boss_retry_options(

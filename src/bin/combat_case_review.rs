@@ -52,6 +52,8 @@ struct Args {
     #[arg(long)]
     replay_focus: bool,
     #[arg(long)]
+    immediate_child_rollout: bool,
+    #[arg(long, hide = true)]
     lazy_child_rollout: bool,
     #[arg(long)]
     disable_rollout: bool,
@@ -185,11 +187,48 @@ struct CombatReviewMonsterState {
 struct SearchPerformanceReview {
     total_us: u128,
     rollout_us: u128,
+    rollout_calls: u64,
+    root_rollout_calls: u64,
+    child_rollout_calls: u64,
+    deferred_child_rollout_calls: u64,
+    turn_plan_seed_rollout_calls: u64,
+    rollout_evaluations: u64,
+    rollout_budget_skips: u64,
+    rollout_max_evaluation_budget_skips: u64,
+    rollout_deadline_budget_skips: u64,
+    deferred_child_rollout_admitted_signal: u64,
+    deferred_child_rollout_admitted_periodic: u64,
+    deferred_child_rollout_skipped_low_signal: u64,
+    deferred_child_rollout_skipped_budget_share: u64,
     turn_plan_seed_us: u128,
     engine_step_us: u128,
     frontier_pop_us: u128,
     expansion_us: u128,
     child_bookkeeping_us: u128,
+    rollout_profile: SearchRolloutPerformanceReview,
+}
+
+#[derive(Serialize)]
+struct SearchRolloutPerformanceReview {
+    cache_queries: u64,
+    cache_hits: u64,
+    cache_misses: u64,
+    cache_lookup_us: u128,
+    policy_dispatch_us: u128,
+    no_potion_iterations: u64,
+    no_potion_phase_profile_us: u128,
+    no_potion_legal_actions_us: u128,
+    no_potion_choose_action_us: u128,
+    no_potion_choose_ordering_us: u128,
+    no_potion_probe_us: u128,
+    no_potion_probe_score_calls: u64,
+    no_potion_probe_actions_evaluated: u64,
+    no_potion_probe_step_reuses: u64,
+    no_potion_probe_engine_step_us: u128,
+    no_potion_probe_phase_profile_us: u128,
+    no_potion_probe_action_facts_us: u128,
+    no_potion_engine_step_us: u128,
+    no_potion_child_build_us: u128,
 }
 
 #[derive(Serialize)]
@@ -244,7 +283,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
             CombatSearchV2PotionPolicy::Never,
             Some(0),
             args.action_preview_limit,
-            args.lazy_child_rollout,
+            review_child_rollout_policy(args),
             args.disable_rollout,
         );
         let (slow_review, slow_report) = run_search(
@@ -256,7 +295,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
             CombatSearchV2PotionPolicy::All,
             Some(args.diagnostic_potion_max),
             args.action_preview_limit,
-            args.lazy_child_rollout,
+            review_child_rollout_policy(args),
             args.disable_rollout,
         );
         (
@@ -365,16 +404,20 @@ fn strategic_facts_from_case(case: &CombatCase) -> RunStrategicFacts {
     }
 }
 
+fn review_child_rollout_policy(args: &Args) -> CombatSearchV2ChildRolloutPolicy {
+    if args.immediate_child_rollout && !args.lazy_child_rollout {
+        CombatSearchV2ChildRolloutPolicy::Immediate
+    } else {
+        CombatSearchV2ChildRolloutPolicy::LazyOnPop
+    }
+}
+
 fn line_lab_search_config(args: &Args) -> CombatSearchV2Config {
     CombatSearchV2Config {
         max_nodes: args.slow_nodes,
         wall_time: Some(Duration::from_millis(args.line_lab_ms)),
         turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-        child_rollout_policy: if args.lazy_child_rollout {
-            CombatSearchV2ChildRolloutPolicy::LazyOnPop
-        } else {
-            CombatSearchV2ChildRolloutPolicy::Immediate
-        },
+        child_rollout_policy: review_child_rollout_policy(args),
         potion_policy: CombatSearchV2PotionPolicy::All,
         max_potions_used: Some(args.diagnostic_potion_max),
         rollout_policy: if args.disable_rollout {
@@ -695,7 +738,7 @@ fn run_search(
     potion_policy: CombatSearchV2PotionPolicy,
     max_potions_used: Option<u32>,
     action_preview_limit: usize,
-    lazy_child_rollout: bool,
+    child_rollout_policy: CombatSearchV2ChildRolloutPolicy,
     disable_rollout: bool,
 ) -> (SearchReview, CombatSearchV2Report) {
     let rollout_policy = if disable_rollout {
@@ -713,11 +756,7 @@ fn run_search(
             potion_policy,
             max_potions_used,
             rollout_policy,
-            child_rollout_policy: if lazy_child_rollout {
-                CombatSearchV2ChildRolloutPolicy::LazyOnPop
-            } else {
-                CombatSearchV2ChildRolloutPolicy::Immediate
-            },
+            child_rollout_policy,
             ..CombatSearchV2Config::default()
         },
     );
@@ -771,11 +810,68 @@ fn search_review(
         performance: SearchPerformanceReview {
             total_us: report.performance.total_elapsed_us,
             rollout_us: report.performance.rollout_estimate_elapsed_us,
+            rollout_calls: report.performance.rollout_estimate_calls,
+            root_rollout_calls: report.performance.root_rollout_estimate_calls,
+            child_rollout_calls: report.performance.child_rollout_estimate_calls,
+            deferred_child_rollout_calls: report.performance.deferred_child_rollout_estimate_calls,
+            turn_plan_seed_rollout_calls: report.performance.turn_plan_seed_rollout_estimate_calls,
+            rollout_evaluations: report.rollout.evaluations,
+            rollout_budget_skips: report.rollout.budget_skips,
+            rollout_max_evaluation_budget_skips: report.rollout.max_evaluation_budget_skips,
+            rollout_deadline_budget_skips: report.rollout.deadline_budget_skips,
+            deferred_child_rollout_admitted_signal: report
+                .performance
+                .deferred_child_rollout_admitted_signal,
+            deferred_child_rollout_admitted_periodic: report
+                .performance
+                .deferred_child_rollout_admitted_periodic,
+            deferred_child_rollout_skipped_low_signal: report
+                .performance
+                .deferred_child_rollout_skipped_low_signal,
+            deferred_child_rollout_skipped_budget_share: report
+                .performance
+                .deferred_child_rollout_skipped_budget_share,
             turn_plan_seed_us: report.performance.turn_plan_frontier_seed_elapsed_us,
             engine_step_us: report.performance.engine_step_elapsed_us,
             frontier_pop_us: report.performance.frontier_pop_elapsed_us,
             expansion_us: report.performance.expansion_elapsed_us,
             child_bookkeeping_us: report.performance.child_bookkeeping_elapsed_us,
+            rollout_profile: SearchRolloutPerformanceReview {
+                cache_queries: report.rollout.cache_queries,
+                cache_hits: report.rollout.cache_hits,
+                cache_misses: report.rollout.cache_misses,
+                cache_lookup_us: report.rollout.performance.cache_lookup_us,
+                policy_dispatch_us: report.rollout.performance.policy_dispatch_us,
+                no_potion_iterations: report.rollout.performance.no_potion_iterations,
+                no_potion_phase_profile_us: report.rollout.performance.no_potion_phase_profile_us,
+                no_potion_legal_actions_us: report.rollout.performance.no_potion_legal_actions_us,
+                no_potion_choose_action_us: report.rollout.performance.no_potion_choose_action_us,
+                no_potion_choose_ordering_us: report
+                    .rollout
+                    .performance
+                    .no_potion_choose_ordering_us,
+                no_potion_probe_us: report.rollout.performance.no_potion_probe_us,
+                no_potion_probe_score_calls: report.rollout.performance.no_potion_probe_score_calls,
+                no_potion_probe_actions_evaluated: report
+                    .rollout
+                    .performance
+                    .no_potion_probe_actions_evaluated,
+                no_potion_probe_step_reuses: report.rollout.performance.no_potion_probe_step_reuses,
+                no_potion_probe_engine_step_us: report
+                    .rollout
+                    .performance
+                    .no_potion_probe_engine_step_us,
+                no_potion_probe_phase_profile_us: report
+                    .rollout
+                    .performance
+                    .no_potion_probe_phase_profile_us,
+                no_potion_probe_action_facts_us: report
+                    .rollout
+                    .performance
+                    .no_potion_probe_action_facts_us,
+                no_potion_engine_step_us: report.rollout.performance.no_potion_engine_step_us,
+                no_potion_child_build_us: report.rollout.performance.no_potion_child_build_us,
+            },
         },
         facts: SearchReviewFacts {
             diagnostic_progress: diagnostic_progress_facts(report, action_preview_limit),

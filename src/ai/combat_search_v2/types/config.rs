@@ -207,7 +207,7 @@ pub enum CombatSearchV2ChildRolloutPolicy {
 
 impl Default for CombatSearchV2ChildRolloutPolicy {
     fn default() -> Self {
-        Self::Immediate
+        Self::LazyOnPop
     }
 }
 
