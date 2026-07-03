@@ -50,18 +50,6 @@ Active binaries:
     initial-decision microscope; reports the selected first action, current
     candidate ordering, and exact one-step consequences without writing
     artifacts or changing search policy
-- `auto_run_batch_driver`
-  - diagnostic-only batch smoke for the current `run_control` auto-run chain
-    across seed lists or contiguous seed ranges
-  - this is not a separate bot; it reuses the same `RunControlSession` and
-    `auto-run` command as `run_play_driver`, then reports the next human
-    boundary
-  - examples:
-    - `auto_run_batch_driver --seed 521 --seed 590093712 --search-wall-ms 100`
-    - `auto_run_batch_driver --seed-start 1000 --count 20 --json-lines`
-    - `auto_run_batch_driver --seed 521 --prefix-script tools/tmp/opening.txt`
-  - without a prefix script it will usually stop at Neow Bonus, because Neow
-    remains an explicit strategy boundary
 - `run_play_driver`
   - thin shell over the `eval::run_control` kernel
   - starts in a game-like main screen; `deck`, `map`, `relics`, `potions`,
