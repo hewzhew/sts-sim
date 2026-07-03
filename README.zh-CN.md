@@ -89,6 +89,7 @@ cargo run --profile fast-run --bin run_play_driver -- --goto <name> --search-wal
 | Binary | 用途 |
 | --- | --- |
 | `branch_campaign_driver` | 当前自动分支 campaign、checkpoint 检查、outcome 导出和 continuation 实验 |
+| `branch_tiny` | 轻量 owner-audit runner，负责 run capsule、frontier continuation 和 gap-panel 诊断 |
 | `run_play_driver` | 手动和半自动模拟器跑局、trace、bookmark、capture、baseline |
 | `combat_search_v2_driver` | 从 start spec、combat capture 或 benchmark suite 跑整场战斗搜索 |
 

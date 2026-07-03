@@ -101,6 +101,7 @@ workflow.
 | Binary | Purpose |
 | --- | --- |
 | `branch_campaign_driver` | current automated branch campaign, checkpoint inspection, outcome export, and continuation experiments |
+| `branch_tiny` | lightweight owner-audit runner with run capsules, frontier continuation, and gap-panel diagnostics |
 | `run_play_driver` | manual and semi-automatic simulator runs, traces, bookmarks, captures, baselines |
 | `combat_search_v2_driver` | whole-combat search from start specs, combat captures, or benchmark suites |
 

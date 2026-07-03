@@ -24,6 +24,13 @@ Active binaries:
     `command_inputs.rs` converts CLI args into narrow handler inputs plus
     campaign/search config; `campaign_artifacts.rs` owns report/checkpoint
     JSON IO; `main.rs` owns dispatch only
+- `branch_tiny`
+  - lightweight owner-audit runner used for current run-control cleanup and
+    small seed panels
+  - writes run capsules with `summary.json`, `path.json`, optional frontier
+    checkpoints, and terminal/combat-gap artifacts
+  - execution boundary: owner modules produce typed decisions; runner applies
+    them without reinterpreting string labels
 - `combat_search_v2_driver`
   - `--start-spec <path>`: single whole-combat search report
   - `--combat-snapshot <path>`: single search report from an exact
