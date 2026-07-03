@@ -1,11 +1,6 @@
 {
   "version": "4.0",
   "description": "Compiled protocol schema for runtime consumption",
-  "inputs": {
-    "baseline": "D:\\rust\\sts_simulator\\tools\\protocol_schema_baseline.json",
-    "matched": "C:\\Users\\17239\\AppData\\Local\\Temp\\matched_schema.json",
-    "observed": "C:\\Users\\17239\\AppData\\Local\\Temp\\observed_ids.json"
-  },
   "enums": {
     "power_id": {
       "rust_type": "PowerId",
