@@ -10,7 +10,8 @@ New AI code must choose one layer before it is written:
 
 - `domain`: stable game facts and vocabulary. No value judgments.
 - `analysis`: profiles derived from facts and run state. No final scene choice.
-- `strategy`: jobs, gates, formation, package state, deck debt, and assessment.
+- `strategy`: typed deck facts, package state, strategic deficits, admission
+  rules, and small shared evaluators used by scene policy.
 - `policy`: thin scene adapters for reward, shop, campfire, event, route, Neow,
   and boss relic decisions.
 - `runtime`: campaign scheduling, branch execution, journal, replay, and budget.
@@ -43,15 +44,18 @@ acceptable for trace labels after a typed fact or verdict already exists.
 
 ## Current Migration Target
 
-The first real migration target is assessment:
+The first real migration target is the shared strategic fact path:
 
 ```text
-analysis profiles -> strategy assessment -> thin policy candidate verdicts
+analysis/domain facts -> strategy facts/deficits -> thin policy candidate verdicts
 ```
 
 The old world still contains useful code, but new work should not extend it
 without first deciding whether the concept belongs in `domain`, `analysis`,
 `strategy`, `policy`, or `runtime`.
+
+Do not create placeholder modules for future vocabulary. Add a strategy module
+only when a policy or diagnostic actually consumes its typed output.
 
 ## What This Replaces
 
