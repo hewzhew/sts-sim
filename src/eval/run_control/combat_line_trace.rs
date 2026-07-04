@@ -71,12 +71,13 @@ pub(super) fn combat_line_performance_trace_annotation(
     selected_line: &CombatCandidateLine,
     line_performance: Option<CombatCandidateLinePerformance>,
 ) -> RunControlTraceAnnotationV1 {
+    let source = source.into();
     let Some(performance) = line_performance else {
         return combat_search_performance_trace_annotation(source, session, start, report);
     };
-    let mut snapshot = combat_search_performance_snapshot(source.into(), session, start, report);
+    let mut snapshot = combat_search_performance_snapshot(source.clone(), session, start, report);
     let line_summary = combat_candidate_line_summary(selected_line);
-    snapshot.coverage_status = "CompleteLineSolverApplied".to_string();
+    snapshot.coverage_status = format!("{source}Applied");
     snapshot.complete_trajectory_found = true;
     snapshot.complete_win_found = selected_line.terminal == CombatTerminal::Win;
     snapshot.best_complete = Some(line_summary.clone());

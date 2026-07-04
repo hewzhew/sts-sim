@@ -17,9 +17,9 @@ use super::{
 };
 
 const BOSS_RETRY_POTION_RESCUE_MAX_POTIONS_USED: u32 = 3;
-const HALLWAY_POTION_RESCUE_MAX_POTIONS_USED: u32 = 1;
+const NONBOSS_POTION_RESCUE_MAX_POTIONS_USED: u32 = 1;
 
-struct HallwayPotionRescueAttempt {
+struct NonBossPotionRescueAttempt {
     outcome: RunControlCommandOutcome,
     status: BranchStatus,
     committed: bool,
@@ -79,10 +79,10 @@ pub(super) fn try_nonboss_combat_rescue(
         status = boundary_router::classify_auto_outcome(session, &rescue);
     }
 
-    if matches!(status, BranchStatus::CombatGap { .. }) && should_try_hallway_potion_rescue(session)
+    if matches!(status, BranchStatus::CombatGap { .. }) && should_try_nonboss_potion_rescue(session)
     {
-        let rescue = try_hallway_potion_rescue(session, args)
-            .map_err(|err| format!("hallway potion rescue failed: {err}"))?;
+        let rescue = try_nonboss_potion_rescue(session, args)
+            .map_err(|err| format!("nonboss potion rescue failed: {err}"))?;
         combat_search.extend(combat_search_summaries(&rescue.outcome));
         if rescue.committed {
             auto_steps.extend(rescue.outcome.auto_applied_steps.clone());
@@ -97,15 +97,24 @@ pub(super) fn try_nonboss_combat_rescue(
     })
 }
 
-fn should_try_hallway_potion_rescue(session: &RunControlSession) -> bool {
+fn should_try_nonboss_potion_rescue(session: &RunControlSession) -> bool {
     let Some(active) = session.active_combat.as_ref() else {
         return false;
     };
     let meta = &active.combat_state.meta;
     let player = &active.combat_state.entities.player;
+    let has_usable_potion = active
+        .combat_state
+        .entities
+        .potions
+        .iter()
+        .flatten()
+        .any(|potion| potion.can_use);
     !meta.is_boss_fight
-        && !meta.is_elite_fight
-        && (session.run_state.act_num >= 3 || player.current_hp * 2 <= player.max_hp)
+        && has_usable_potion
+        && (meta.is_elite_fight
+            || session.run_state.act_num >= 3
+            || player.current_hp * 2 <= player.max_hp)
 }
 
 fn should_try_hallway_immediate_rescue(session: &RunControlSession) -> bool {
@@ -114,17 +123,17 @@ fn should_try_hallway_immediate_rescue(session: &RunControlSession) -> bool {
     })
 }
 
-fn try_hallway_potion_rescue(
+fn try_nonboss_potion_rescue(
     session: &mut RunControlSession,
     args: Args,
-) -> Result<HallwayPotionRescueAttempt, String> {
+) -> Result<NonBossPotionRescueAttempt, String> {
     let before_curses = master_deck_curse_count(session);
     let mut trial = session.clone();
     let outcome =
-        apply_owner_audit_auto_run(&mut trial, hallway_potion_rescue_auto_step_options(args))?;
+        apply_owner_audit_auto_run(&mut trial, nonboss_potion_rescue_auto_step_options(args))?;
     let status = boundary_router::classify_auto_outcome(&trial, &outcome);
     if matches!(status, BranchStatus::CombatGap { .. }) {
-        return Ok(HallwayPotionRescueAttempt {
+        return Ok(NonBossPotionRescueAttempt {
             outcome,
             status,
             committed: false,
@@ -132,19 +141,19 @@ fn try_hallway_potion_rescue(
     }
     let gained_curses = master_deck_curse_count(&trial).saturating_sub(before_curses);
     if gained_curses > 0 {
-        return Ok(HallwayPotionRescueAttempt {
+        return Ok(NonBossPotionRescueAttempt {
             outcome,
             status: BranchStatus::CombatGap {
                 boundary: "Combat".to_string(),
                 reason: format!(
-                    "hallway potion rescue rejected dirty win: gained {gained_curses} curse card(s)"
+                    "nonboss potion rescue rejected dirty win: gained {gained_curses} curse card(s)"
                 ),
             },
             committed: false,
         });
     }
     *session = trial;
-    Ok(HallwayPotionRescueAttempt {
+    Ok(NonBossPotionRescueAttempt {
         outcome,
         status,
         committed: true,
@@ -184,7 +193,7 @@ fn hallway_immediate_rescue_auto_step_options(args: Args) -> RunControlAutoStepO
     options
 }
 
-fn hallway_potion_rescue_auto_step_options(args: Args) -> RunControlAutoStepOptions {
+fn nonboss_potion_rescue_auto_step_options(args: Args) -> RunControlAutoStepOptions {
     let mut options = auto_step_options(
         args.boss_search_nodes,
         args.boss_search_ms,
@@ -194,7 +203,7 @@ fn hallway_potion_rescue_auto_step_options(args: Args) -> RunControlAutoStepOpti
         CombatSearchV2ChildRolloutPolicy::LazyOnPop,
     );
     options.search.potion_policy = Some(CombatSearchV2PotionPolicy::All);
-    options.search.max_potions_used = Some(HALLWAY_POTION_RESCUE_MAX_POTIONS_USED);
+    options.search.max_potions_used = Some(NONBOSS_POTION_RESCUE_MAX_POTIONS_USED);
     options
 }
 
@@ -427,6 +436,7 @@ fn retry_complete_search_action_keys(outcome: &RunControlCommandOutcome) -> Vec<
                 source,
                 CombatAutomationTrajectorySource::SearchCombat
                     | CombatAutomationTrajectorySource::CompleteLineSolver
+                    | CombatAutomationTrajectorySource::LineLabTurnPoolRescue
             ) =>
             {
                 Some(

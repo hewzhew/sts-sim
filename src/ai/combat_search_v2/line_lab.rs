@@ -10,8 +10,8 @@ use crate::sim::combat_action::CombatActionChoice;
 use crate::state::core::ClientInput;
 
 use super::{
-    run_combat_search_v2, CombatSearchV2ActionTrace, CombatSearchV2Config,
-    CombatSearchV2TrajectoryReport, SearchTerminalLabel,
+    filter_combat_search_legal_actions, run_combat_search_v2, CombatSearchV2ActionTrace,
+    CombatSearchV2Config, CombatSearchV2TrajectoryReport, SearchTerminalLabel,
 };
 
 #[derive(Clone, Debug, Serialize)]
@@ -81,6 +81,55 @@ pub struct CombatLineLabTurnPoolLineSummary {
     pub powers_played: u32,
 }
 
+#[derive(Clone, Debug)]
+pub struct CombatLineLabTurnPoolWin {
+    pub summary: CombatLineLabTurnPoolLineSummary,
+    pub actions: Vec<CombatSearchV2ActionTrace>,
+    pub nodes_expanded: u64,
+    pub nodes_generated: u64,
+    pub deadline_hit: bool,
+}
+
+impl CombatLineLabTurnPoolWin {
+    pub fn transition_summary(&self) -> String {
+        format!(
+            "line_lab_turn_pool_rescue lane={} actions={} final_hp={} turns={} potions_used={} powers_played={} nodes={}/{} deadline_hit={}",
+            self.summary.lane,
+            self.actions.len(),
+            self.summary.final_hp,
+            self.summary.turns,
+            self.summary.potions_used,
+            self.summary.powers_played,
+            self.nodes_expanded,
+            self.nodes_generated,
+            self.deadline_hit
+        )
+    }
+}
+
+pub fn find_combat_line_lab_turn_pool_win_v0(
+    start: &CombatPosition,
+    config: &CombatSearchV2Config,
+    budget_ms: u64,
+) -> Option<CombatLineLabTurnPoolWin> {
+    let run = run_turn_pool_nodes_v1(start, budget_ms, Some(config));
+    let best = run
+        .lanes
+        .into_iter()
+        .filter(|candidate| candidate.node.terminal == SearchTerminalLabel::Win)
+        .max_by_key(|candidate| {
+            turn_pool_summary_rank(&turn_pool_summary(candidate.lane, &candidate.node))
+        })?;
+    let summary = turn_pool_summary(best.lane, &best.node);
+    Some(CombatLineLabTurnPoolWin {
+        summary,
+        actions: best.node.actions,
+        nodes_expanded: run.nodes_expanded,
+        nodes_generated: run.nodes_generated,
+        deadline_hit: run.deadline_hit,
+    })
+}
+
 pub fn run_combat_line_lab_v0(
     start: &CombatPosition,
     mut config: CombatSearchV2Config,
@@ -97,7 +146,7 @@ pub fn run_combat_line_lab_v0(
             baseline: None,
             cuts: Vec::new(),
             best_repair: None,
-            turn_pool: Some(run_turn_pool_v1(start, repair_budget_ms)),
+            turn_pool: Some(run_turn_pool_v1(start, repair_budget_ms, Some(&config))),
         };
     };
     run_combat_line_lab_from_parent_v0(start, parent, config, repair_budget_ms, max_cuts)
@@ -130,7 +179,7 @@ pub fn run_combat_line_lab_from_parent_v0(
         baseline: Some(baseline),
         cuts,
         best_repair,
-        turn_pool: Some(run_turn_pool_v1(start, turn_pool_budget_ms)),
+        turn_pool: Some(run_turn_pool_v1(start, turn_pool_budget_ms, Some(&config))),
     }
 }
 
@@ -141,7 +190,35 @@ fn per_cut_budget_ms(total_ms: u64, cut_count: usize) -> u64 {
     (total_ms / cut_count as u64).clamp(500, 8_000)
 }
 
-fn run_turn_pool_v1(start: &CombatPosition, budget_ms: u64) -> CombatLineLabTurnPoolReport {
+fn run_turn_pool_v1(
+    start: &CombatPosition,
+    budget_ms: u64,
+    config: Option<&CombatSearchV2Config>,
+) -> CombatLineLabTurnPoolReport {
+    let run = run_turn_pool_nodes_v1(start, budget_ms, config);
+    let lanes = run
+        .lanes
+        .iter()
+        .map(|candidate| turn_pool_summary(candidate.lane, &candidate.node))
+        .collect::<Vec<_>>();
+    let best = lanes
+        .iter()
+        .max_by_key(|line| turn_pool_summary_rank(line))
+        .cloned();
+    CombatLineLabTurnPoolReport {
+        schema: "combat_line_lab_turn_pool_v1",
+        lanes,
+        best,
+        nodes_expanded: run.nodes_expanded,
+        deadline_hit: run.deadline_hit,
+    }
+}
+
+fn run_turn_pool_nodes_v1(
+    start: &CombatPosition,
+    budget_ms: u64,
+    config: Option<&CombatSearchV2Config>,
+) -> TurnPoolRun {
     const LANES: [TurnPoolLane; 5] = [
         TurnPoolLane::Damage,
         TurnPoolLane::Survival,
@@ -157,6 +234,7 @@ fn run_turn_pool_v1(start: &CombatPosition, budget_ms: u64) -> CombatLineLabTurn
     let stepper = EngineCombatStepper;
     let per_lane_ms = (budget_ms / LANES.len() as u64).max(500);
     let mut total_nodes = 0u64;
+    let mut total_generated = 0u64;
     let mut any_deadline_hit = false;
     let mut lane_results = Vec::new();
 
@@ -175,9 +253,17 @@ fn run_turn_pool_v1(start: &CombatPosition, budget_ms: u64) -> CombatLineLabTurn
                     next_turn.push(node);
                     continue;
                 }
-                let outcome =
-                    expand_one_turn(node, lane, &stepper, deadline, INNER_BEAM, MAX_INNER_NODES);
+                let outcome = expand_one_turn(
+                    node,
+                    lane,
+                    &stepper,
+                    deadline,
+                    INNER_BEAM,
+                    MAX_INNER_NODES,
+                    config,
+                );
                 total_nodes = total_nodes.saturating_add(outcome.nodes_expanded);
+                total_generated = total_generated.saturating_add(outcome.nodes_generated);
                 lane_deadline_hit |= outcome.deadline_hit;
                 next_turn.extend(outcome.nodes);
                 if lane_deadline_hit {
@@ -201,19 +287,14 @@ fn run_turn_pool_v1(start: &CombatPosition, budget_ms: u64) -> CombatLineLabTurn
             .into_iter()
             .max_by_key(|node| lane_rank(node, lane))
         {
-            lane_results.push(turn_pool_summary(lane, &best));
+            lane_results.push(TurnPoolLaneNode { lane, node: best });
         }
     }
 
-    let best = lane_results
-        .iter()
-        .max_by_key(|line| turn_pool_summary_rank(line))
-        .cloned();
-    CombatLineLabTurnPoolReport {
-        schema: "combat_line_lab_turn_pool_v1",
+    TurnPoolRun {
         lanes: lane_results,
-        best,
         nodes_expanded: total_nodes,
+        nodes_generated: total_generated,
         deadline_hit: any_deadline_hit,
     }
 }
@@ -225,11 +306,13 @@ fn expand_one_turn(
     deadline: Instant,
     beam: usize,
     max_nodes: usize,
+    config: Option<&CombatSearchV2Config>,
 ) -> TurnPoolExpandOutcome {
     let start_turn = root.position.combat.turn.turn_count;
     let mut frontier = vec![root];
     let mut boundary = Vec::new();
     let mut nodes_expanded = 0u64;
+    let mut nodes_generated = 0u64;
     let mut deadline_hit = false;
     let boundary_limit = beam.saturating_mul(4).max(beam);
 
@@ -247,11 +330,16 @@ fn expand_one_turn(
                 continue;
             }
             nodes_expanded = nodes_expanded.saturating_add(1);
-            for (action_id, choice) in stepper
-                .legal_action_choices(&node.position)
-                .into_iter()
-                .enumerate()
-            {
+            let choices = match config {
+                Some(config) => filter_combat_search_legal_actions(
+                    stepper.legal_action_choices(&node.position),
+                    config.potion_policy,
+                    &node.position.combat,
+                ),
+                None => stepper.legal_action_choices(&node.position),
+            };
+            let choices = filter_turn_pool_potion_budget(choices, config, node.potions_used);
+            for (action_id, choice) in choices.into_iter().enumerate() {
                 if Instant::now() >= deadline {
                     deadline_hit = true;
                     break;
@@ -266,7 +354,9 @@ fn expand_one_turn(
                     &node.position,
                     choice.input.clone(),
                     CombatStepLimits {
-                        max_engine_steps: 250,
+                        max_engine_steps: config
+                            .map(|config| config.max_engine_steps_per_action)
+                            .unwrap_or(250),
                         deadline: Some(deadline),
                     },
                 );
@@ -276,6 +366,7 @@ fn expand_one_turn(
                 }
                 let mut child = node.child(step.position, &stepper);
                 child.note_action(action_id, choice, played_power);
+                nodes_generated = nodes_generated.saturating_add(1);
                 if child.terminal != SearchTerminalLabel::Unresolved
                     || child.position.combat.turn.turn_count > start_turn
                 {
@@ -313,8 +404,26 @@ fn expand_one_turn(
     TurnPoolExpandOutcome {
         nodes: boundary,
         nodes_expanded,
+        nodes_generated,
         deadline_hit,
     }
+}
+
+fn filter_turn_pool_potion_budget(
+    choices: Vec<CombatActionChoice>,
+    config: Option<&CombatSearchV2Config>,
+    potions_used: u32,
+) -> Vec<CombatActionChoice> {
+    let Some(max_potions) = config.and_then(|config| config.max_potions_used) else {
+        return choices;
+    };
+    if potions_used < max_potions {
+        return choices;
+    }
+    choices
+        .into_iter()
+        .filter(|choice| !matches!(choice.input, ClientInput::UsePotion { .. }))
+        .collect()
 }
 
 fn keep_lane_nodes(nodes: &mut Vec<TurnPoolNode>, lane: TurnPoolLane, limit: usize) {
@@ -790,6 +899,18 @@ struct ReplaySummary {
     living_enemy_count: usize,
 }
 
+struct TurnPoolRun {
+    lanes: Vec<TurnPoolLaneNode>,
+    nodes_expanded: u64,
+    nodes_generated: u64,
+    deadline_hit: bool,
+}
+
+struct TurnPoolLaneNode {
+    lane: TurnPoolLane,
+    node: TurnPoolNode,
+}
+
 #[derive(Clone, Copy)]
 enum TurnPoolLane {
     Damage,
@@ -862,5 +983,6 @@ impl TurnPoolNode {
 struct TurnPoolExpandOutcome {
     nodes: Vec<TurnPoolNode>,
     nodes_expanded: u64,
+    nodes_generated: u64,
     deadline_hit: bool,
 }

@@ -15,6 +15,7 @@ pub(super) enum CombatCandidateLineSource {
     SearchComplete,
     CompleteLineSolver,
     LineRepair,
+    LineLabTurnPoolRescue,
 }
 
 impl CombatCandidateLineSource {
@@ -23,6 +24,7 @@ impl CombatCandidateLineSource {
             CombatCandidateLineSource::SearchComplete => "search_complete",
             CombatCandidateLineSource::CompleteLineSolver => "complete_line_solver",
             CombatCandidateLineSource::LineRepair => "line_repair",
+            CombatCandidateLineSource::LineLabTurnPoolRescue => "line_lab_turn_pool_rescue",
         }
     }
 }
@@ -118,11 +120,16 @@ pub(super) fn replay_candidate_line(
     let initial_hp = start.combat.entities.player.current_hp;
     let mut position = start.clone();
     let mut replayed = Vec::new();
+    let mut potions_used = 0u32;
     for action in actions {
-        let choices = filter_combat_search_legal_actions(
-            stepper.legal_action_choices(&position),
-            config.potion_policy,
-            &position.combat,
+        let choices = enforce_replay_potion_budget(
+            filter_combat_search_legal_actions(
+                stepper.legal_action_choices(&position),
+                config.potion_policy,
+                &position.combat,
+            ),
+            config,
+            potions_used,
         );
         let Some(choice) = choices
             .iter()
@@ -150,6 +157,9 @@ pub(super) fn replay_candidate_line(
             ));
         }
         position = step.position;
+        if matches!(choice.input, ClientInput::UsePotion { .. }) {
+            potions_used = potions_used.saturating_add(1);
+        }
         replayed.push(action.clone());
     }
     let applied_count = replayed.len();
@@ -157,6 +167,23 @@ pub(super) fn replay_candidate_line(
         line: CombatCandidateLine::from_position(source, replayed, initial_hp, &position),
         applied_count,
     })
+}
+
+fn enforce_replay_potion_budget(
+    choices: Vec<crate::sim::combat_action::CombatActionChoice>,
+    config: &CombatSearchV2Config,
+    potions_used: u32,
+) -> Vec<crate::sim::combat_action::CombatActionChoice> {
+    let Some(max_potions) = config.max_potions_used else {
+        return choices;
+    };
+    if potions_used < max_potions {
+        return choices;
+    }
+    choices
+        .into_iter()
+        .filter(|choice| !matches!(choice.input, ClientInput::UsePotion { .. }))
+        .collect()
 }
 
 fn default_assumptions() -> Vec<CombatCandidateLineAssumption> {

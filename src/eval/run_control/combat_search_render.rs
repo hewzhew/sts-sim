@@ -96,7 +96,10 @@ pub(super) fn render_complete_line_solver_application(
     replay_applied_count: usize,
 ) -> String {
     let mut lines = vec![
-        "Complete line solver applied winning candidate.".to_string(),
+        format!(
+            "Complete combat line fallback applied winning candidate. source={}",
+            selected_line.source.label()
+        ),
         format!(
             "  previous_search coverage_status={:?} reliability={}",
             report.outcome.coverage_status, report.evidence_reliability.reliability

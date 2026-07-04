@@ -166,7 +166,8 @@ pub use deficit_evidence::{
 };
 pub(crate) use external_payoff::has_external_payoff_opportunity;
 pub use line_lab::{
-    run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, CombatLineLabReport,
+    find_combat_line_lab_turn_pool_win_v0, run_combat_line_lab_from_parent_v0,
+    run_combat_line_lab_v0, CombatLineLabReport,
 };
 pub use search::{run_combat_search_v2, run_combat_search_v2_with_stepper};
 pub use segment_plan::{plan_combat_turn_segment_v1, CombatSearchV2TurnSegmentReport};
