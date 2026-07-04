@@ -4,7 +4,7 @@ use sts_simulator::eval::run_control::{
 };
 
 use super::boundary_router;
-use super::combat_rescue;
+use super::combat_search_orchestrator;
 use super::owner_orchestrator::{orchestrate_owner_boundary, OwnerOrchestration};
 use super::run_deadline::RunDeadline;
 use super::{Args, BossRetryReport, BranchStatus};
@@ -29,7 +29,7 @@ pub(super) fn advance_to_owner_or_gap(
         let run_args = deadline.cap_args(args, 1);
         match apply_owner_audit_auto_run(
             session,
-            combat_rescue::primary_auto_step_options(run_args),
+            combat_search_orchestrator::primary_auto_step_options(run_args),
         ) {
             Ok(outcome) => {
                 let stop_kind = outcome.auto_stop.as_ref().map(|stop| stop.kind);
@@ -40,7 +40,9 @@ pub(super) fn advance_to_owner_or_gap(
                         .map(|stop| stop.applied_operations)
                         .unwrap_or(0),
                 );
-                combat_search.extend(combat_rescue::combat_search_summaries(&outcome));
+                combat_search.extend(combat_search_orchestrator::combat_search_summaries(
+                    &outcome,
+                ));
                 auto_steps.extend(outcome.auto_applied_steps.clone());
                 let mut status = boundary_router::classify_auto_outcome(session, &outcome);
                 if stop_kind == Some(RunControlAutoStopKind::OperationBudgetExhausted)
@@ -50,7 +52,7 @@ pub(super) fn advance_to_owner_or_gap(
                     continue;
                 }
                 let combat_gap = matches!(status, BranchStatus::CombatGap { .. });
-                let boss_combat = combat_rescue::is_boss_combat(session);
+                let boss_combat = combat_search_orchestrator::is_boss_combat(session);
                 let combat_budget_capped = if boss_combat {
                     args.wall_capped_boss_budget
                 } else {
@@ -84,31 +86,34 @@ pub(super) fn advance_to_owner_or_gap(
                         combat_search,
                     );
                 }
-                if combat_gap && boss_combat {
-                    if args.checkpoint_before_boss_retry {
-                        return advance_result(
-                            awaiting_auto_boundary(
-                                "Combat",
-                                "checkpoint before boss retry after primary search gap".to_string(),
-                            ),
-                            None,
-                            auto_steps,
-                            combat_search,
-                        );
-                    }
-                    if let Some(result) =
-                        combat_rescue::try_boss_retry(session, deadline.cap_args(args, 1))
-                    {
-                        combat_search.extend(result.2);
-                        return advance_result(result.0, Some(result.1), auto_steps, combat_search);
-                    }
+                if combat_gap && boss_combat && args.checkpoint_before_boss_retry {
+                    return advance_result(
+                        awaiting_auto_boundary(
+                            "Combat",
+                            "checkpoint before boss retry after primary search gap".to_string(),
+                        ),
+                        None,
+                        auto_steps,
+                        combat_search,
+                    );
                 }
-                if combat_gap && !boss_combat {
-                    match combat_rescue::try_nonboss_combat_rescue(session, args) {
-                        Ok(rescue) => {
-                            combat_search.extend(rescue.combat_search);
-                            auto_steps.extend(rescue.auto_steps);
-                            status = rescue.status;
+                if combat_gap {
+                    match combat_search_orchestrator::run_after_primary_gap(
+                        session,
+                        deadline.cap_args(args, 1),
+                    ) {
+                        Ok(portfolio) => {
+                            combat_search.extend(portfolio.combat_search);
+                            auto_steps.extend(portfolio.auto_steps);
+                            if portfolio.boss_retry.is_some() {
+                                return advance_result(
+                                    portfolio.status,
+                                    portfolio.boss_retry,
+                                    auto_steps,
+                                    combat_search,
+                                );
+                            }
+                            status = portfolio.status;
                         }
                         Err(err) => {
                             return advance_result(
