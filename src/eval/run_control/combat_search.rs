@@ -146,6 +146,7 @@ mod tests {
     use std::fs;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+    use super::super::combat_line_trace::combat_automation_step_state_v1;
     use super::super::combat_no_win_fallback::{
         segment_mode_allows_turn_segment, try_apply_smoke_bomb_survival_fallback_after_rejection,
     };
@@ -153,7 +154,6 @@ mod tests {
         effective_hp_loss_limit, high_stakes_search_options, next_available_evidence_path,
         search_config,
     };
-    use super::combat_automation_step_state_v1;
     use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
     use crate::content::potions::{Potion, PotionId};
     use crate::content::powers::{store, PowerId};

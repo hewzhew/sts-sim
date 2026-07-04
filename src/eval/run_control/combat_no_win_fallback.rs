@@ -11,8 +11,9 @@ use crate::sim::combat_legal_actions::engine_local_moves;
 
 use super::combat_line_executor::{
     apply_combat_turn_segment, apply_selected_combat_candidate_line,
-    apply_smoke_bomb_survival_fallback, millis_to_micros_u64, CombatCandidateLinePerformance,
+    apply_smoke_bomb_survival_fallback,
 };
+use super::combat_line_trace::{millis_to_micros_u64, CombatCandidateLinePerformance};
 use super::commands::{RunControlCombatSegmentMode, RunControlSearchCombatOptions};
 use super::session::{RunControlCommandOutcome, RunControlSession};
 use super::trace_annotation::CombatAutomationTrajectorySource;
