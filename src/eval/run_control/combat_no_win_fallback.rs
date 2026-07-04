@@ -70,32 +70,7 @@ fn try_apply_complete_line_solver_after_no_win(
     if hp_loss_limit.is_some_and(|limit| solution.line.hp_loss > limit as i32) {
         return Ok(None);
     }
-    let summary = format!(
-        "complete_line_solver actions={}/{} delta={} hp_loss={}/{} saved={} budget=base:{}/{}ms repair:{}x{}/{}ms stops={}/{} nodes={} generated={} base_nodes={}/{} repair_nodes={}/{} repair={}/{}/{} elapsed_ms={}",
-        solution.final_action_count,
-        solution.base_action_count,
-        solution.repair_action_count_delta,
-        solution.final_hp_loss,
-        solution.base_hp_loss,
-        solution.repair_hp_loss_saved,
-        solution.base_node_budget,
-        solution.base_ms_budget,
-        solution.repair_cut_budget,
-        solution.repair_node_budget_per_cut,
-        solution.repair_ms_budget_per_cut,
-        solution.base_stop_reason,
-        solution.last_repair_stop_reason.unwrap_or("none"),
-        solution.nodes_expanded,
-        solution.nodes_generated,
-        solution.base_nodes_expanded,
-        solution.base_nodes_generated,
-        solution.repair_nodes_expanded,
-        solution.repair_nodes_generated,
-        solution.repair_attempts,
-        solution.repair_wins,
-        solution.repair_improvements,
-        solution.elapsed_ms
-    );
+    let summary = solution.transition_summary();
     apply_selected_combat_candidate_line(
         session,
         start,
