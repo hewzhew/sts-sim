@@ -6,18 +6,18 @@ use sts_simulator::content::cards::{get_card_definition, CardType};
 use sts_simulator::eval::run_control::{
     apply_owner_audit_auto_run, build_decision_surface, CombatAutomationTrajectorySource,
     CombatSearchTraceSummary, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
-    RunControlAutoStepOptions, RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommand,
-    RunControlCommandOutcome, RunControlHpLossLimit, RunControlRouteAutomationMode,
-    RunControlSearchCombatOptions, RunControlSession, RunControlTraceAnnotationV1,
+    RunControlAutoStepOptions, RunControlAutoStopKind, RunControlCommand, RunControlCommandOutcome,
+    RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
+    RunControlSession, RunControlTraceAnnotationV1,
 };
-use sts_simulator::state::core::{ClientInput, EngineState, RunResult};
-use sts_simulator::state::selection::DomainEventSource;
+use sts_simulator::state::core::{ClientInput, EngineState};
 
+use super::boundary_router;
 use super::owner_model::{OwnerDecision, OwnerRoutine};
 use super::render;
 use super::{
-    Args, BossRetryAttemptReport, BossRetryReport, BossRetryStatus, BoundarySite, BranchStatus,
-    Owner, RunDeadline, TerminalOutcome,
+    Args, BossRetryAttemptReport, BossRetryReport, BossRetryStatus, BranchStatus, RunDeadline,
+    TerminalOutcome,
 };
 
 const BOSS_RETRY_POTION_RESCUE_MAX_POTIONS_USED: u32 = 3;
@@ -280,13 +280,13 @@ fn classify_auto_outcome(
     session: &RunControlSession,
     outcome: &RunControlCommandOutcome,
 ) -> BranchStatus {
-    if let Some(result) = terminal_label(session) {
+    if let Some(result) = boundary_router::terminal_outcome(session) {
         return BranchStatus::Terminal(result);
     }
     outcome
         .auto_stop
         .as_ref()
-        .map(|stop| classify_boundary(session, stop))
+        .map(|stop| boundary_router::classify_boundary(session, stop))
         .unwrap_or_else(|| {
             BranchStatus::AdvanceFailed(
                 "auto_run returned non-terminal success without auto_stop".to_string(),
@@ -569,10 +569,10 @@ fn run_boss_retry_attempt(
         }
     };
     let combat_search = combat_search_summaries(&outcome);
-    let status = if let Some(outcome) = terminal_label(session) {
+    let status = if let Some(outcome) = boundary_router::terminal_outcome(session) {
         BranchStatus::Terminal(outcome)
     } else if let Some(stop) = outcome.auto_stop.as_ref() {
-        classify_boundary(session, stop)
+        boundary_router::classify_boundary(session, stop)
     } else {
         BranchStatus::AdvanceFailed(
             "boss retry returned non-terminal success without auto_stop".to_string(),
@@ -752,116 +752,4 @@ fn require_visible_input(
             .collect::<Vec<_>>()
             .join(" | ")
     ))
-}
-
-fn classify_boundary(session: &RunControlSession, stop: &RunControlAutoStopV1) -> BranchStatus {
-    if let Some(result) = terminal_label(session) {
-        return BranchStatus::Terminal(result);
-    }
-    let surface = build_decision_surface(session);
-    let boundary = surface.view.header.title.clone();
-    if stop.kind == RunControlAutoStopKind::OperationBudgetExhausted {
-        if let Some(owner) = owner_for_current_boundary(session) {
-            return BranchStatus::Running { boundary, owner };
-        }
-        return BranchStatus::BudgetGap {
-            boundary,
-            reason: stop.reason.clone(),
-        };
-    }
-    if is_combat_gap(session, stop.kind) {
-        return BranchStatus::CombatGap {
-            boundary,
-            reason: stop.reason.clone(),
-        };
-    }
-    if let Some(owner) = owner_for_current_boundary(session) {
-        return BranchStatus::Running { boundary, owner };
-    }
-    BranchStatus::AutomationGap {
-        boundary,
-        site: boundary_site(session),
-    }
-}
-
-fn is_combat_gap(session: &RunControlSession, stop_kind: RunControlAutoStopKind) -> bool {
-    matches!(
-        stop_kind,
-        RunControlAutoStopKind::CombatSearchNoCompleteWin
-            | RunControlAutoStopKind::HpLossGateRequired
-    ) || matches!(
-        session.engine_state,
-        EngineState::CombatStart(_)
-            | EngineState::CombatProcessing
-            | EngineState::CombatPlayerTurn
-            | EngineState::PendingChoice(_)
-    )
-}
-
-fn owner_for_current_boundary(session: &RunControlSession) -> Option<Owner> {
-    match &session.engine_state {
-        EngineState::EventRoom => {
-            let event = session.run_state.event_state.as_ref()?;
-            if event.id == sts_simulator::state::events::EventId::Neow {
-                Some(Owner::NeowStart)
-            } else {
-                Some(Owner::Event(event.id))
-            }
-        }
-        EngineState::RewardScreen(reward) if reward.pending_card_choice.is_some() => {
-            Some(Owner::CardReward)
-        }
-        EngineState::RewardScreen(reward) if reward.has_card_reward_item() => {
-            Some(Owner::RewardTiny)
-        }
-        EngineState::RewardOverlay { reward_state, .. }
-            if reward_state.pending_card_choice.is_some() =>
-        {
-            Some(Owner::CardReward)
-        }
-        EngineState::RewardOverlay { reward_state, .. } if reward_state.has_card_reward_item() => {
-            Some(Owner::RewardTiny)
-        }
-        EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. } => Some(Owner::RewardTiny),
-        EngineState::BossRelicSelect(_) => Some(Owner::BossRelic),
-        EngineState::Shop(_) => Some(Owner::ShopTiny),
-        EngineState::Campfire => Some(Owner::Campfire),
-        EngineState::RunPendingChoice(choice) => match choice.source {
-            DomainEventSource::Event(
-                event_id @ (sts_simulator::state::events::EventId::Designer
-                | sts_simulator::state::events::EventId::LivingWall),
-            ) => Some(Owner::Event(event_id)),
-            _ if super::run_choice_owner::can_handle(choice.reason) => Some(Owner::RunChoice),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-fn boundary_site(session: &RunControlSession) -> BoundarySite {
-    match &session.engine_state {
-        EngineState::EventRoom => session
-            .run_state
-            .event_state
-            .as_ref()
-            .map(|event| BoundarySite::Event(event.id))
-            .unwrap_or(BoundarySite::Unknown),
-        EngineState::RewardScreen(_) | EngineState::RewardOverlay { .. } => BoundarySite::Reward,
-        EngineState::Shop(_) => BoundarySite::Shop,
-        EngineState::MapNavigation | EngineState::MapOverlay { .. } => BoundarySite::Route,
-        EngineState::Campfire => BoundarySite::Campfire,
-        EngineState::BossRelicSelect(_) => BoundarySite::BossRelic,
-        EngineState::RunPendingChoice(_) => BoundarySite::RunChoice,
-        EngineState::TreasureRoom(_) => BoundarySite::Treasure,
-        EngineState::GameOver(_) => BoundarySite::Terminal,
-        _ => BoundarySite::Unknown,
-    }
-}
-
-fn terminal_label(session: &RunControlSession) -> Option<TerminalOutcome> {
-    match &session.engine_state {
-        EngineState::GameOver(RunResult::Victory) => Some(TerminalOutcome::Victory),
-        EngineState::GameOver(RunResult::Defeat) => Some(TerminalOutcome::Defeat),
-        _ => None,
-    }
 }

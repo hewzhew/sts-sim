@@ -12,6 +12,8 @@ use sts_simulator::eval::run_control::{
 use sts_simulator::state::core::EngineState;
 use sts_simulator::state::events::{EventId, EventState};
 
+#[path = "branch_tiny/boundary_router.rs"]
+mod boundary_router;
 #[path = "branch_tiny/candidate_ir_adapter.rs"]
 mod candidate_ir_adapter;
 #[path = "branch_tiny/combat_gap_case.rs"]
