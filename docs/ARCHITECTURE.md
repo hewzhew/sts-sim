@@ -96,6 +96,32 @@ Accepted combat lines must be exact executable lines from the current combat
 state. Frontiers, near misses, rollout samples, and dirty diagnostic lines are
 evidence, not runnable campaign actions.
 
+### Combat Search Orchestration
+
+Combat search code should keep these phases separate:
+
+```text
+setup -> search runner -> scoring -> line selection -> repair/improvement
+      -> execution -> trace/render/rejection
+```
+
+`combat_search.rs` is the command orchestrator. It should decide which phase to
+call next, not contain search loops, render prose, or apply individual combat
+actions.
+
+Complete-line search is split by role:
+
+- `combat_complete_line_search`: one bounded frontier search from one start
+  state.
+- `combat_complete_line_scoring`: lane classification and position scoring.
+- `combat_complete_line_repair`: local improvement of an already found line.
+- `combat_complete_line_solver`: base search plus optional repair, producing
+  the selected complete-line outcome.
+
+Changing how positions are scored should usually touch scoring. Changing how a
+frontier expands should touch search. Changing how a found line is improved
+should touch repair. The solver should stay a thin phase coordinator.
+
 ## Gap Semantics
 
 Gaps are typed stops, not verdicts:
