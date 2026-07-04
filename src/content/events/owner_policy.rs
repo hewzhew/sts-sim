@@ -1,6 +1,13 @@
+use crate::ai::strategy::decision_pipeline::{
+    evaluate_decision_candidate, DecisionCandidateKind, DecisionPipelineContext,
+};
+use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
 use crate::ai::strategy::deck_purge_target::{best_purge_uuid, rank_purge_target};
 use crate::ai::strategy::deck_strategic_deficit::{
     assess_deck_strategic_deficit_summary, StrategicDeficitLevel,
+};
+use crate::ai::strategy::reward_admission::{
+    assess_reward_admission_from_master_deck, reward_admission_order_key_v1,
 };
 use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
 use crate::content::cards::{
@@ -91,7 +98,9 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::MysteriousSphere => return Ok(choose(mysterious_sphere_choice(run_state))),
         EventId::Nest => return Ok(choose(nest_choice(run_state))),
         EventId::Nloth => return Ok(choose(nloth_choice(run_state))),
+        EventId::Purifier => return Ok(choose(purifier_choice(run_state))),
         EventId::ShiningLight => return Ok(choose(shining_light_choice(run_state))),
+        EventId::TheLibrary => return Ok(choose(the_library_choice(run_state))),
         EventId::TombRedMask => return Ok(choose(tomb_red_mask_choice(run_state))),
         EventId::Transmorgrifier => return Ok(choose(transmorgrifier_choice(run_state))),
         EventId::Vampires => return Ok(choose(vampires_choice(run_state))),
@@ -271,6 +280,57 @@ fn living_wall_remove_effect() -> EventEffect {
 
 fn transmorgrifier_choice(_run_state: &RunState) -> EventOwnerOptionSelector {
     action(EventActionKind::Leave)
+}
+
+fn purifier_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 if has_safe_purge_target(run_state) => action(EventActionKind::DeckOperation),
+        0 => action(EventActionKind::Leave),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn the_library_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 if the_library_should_sleep(run_state) => option_index(1),
+        0 => option_index(0),
+        1 => the_library_best_card_index(run_state)
+            .map(option_index)
+            .unwrap_or_else(|| action(EventActionKind::Leave)),
+        _ => action(EventActionKind::Leave),
+    }
+}
+
+fn the_library_should_sleep(run_state: &RunState) -> bool {
+    !has_relic(run_state, RelicId::MarkOfTheBloom)
+        && run_state.current_hp * 100 <= run_state.max_hp * 35
+}
+
+fn the_library_best_card_index(run_state: &RunState) -> Option<usize> {
+    let event_state = run_state.event_state.as_ref()?;
+    let context = DecisionPipelineContext::reward(DeckPlanSnapshot::from_run_state(run_state));
+    (0..event_state.extra_data.len() / 2)
+        .filter_map(|idx| {
+            let (card, upgrades) =
+                super::the_library::library_card_entry_at(run_state, &event_state.extra_data, idx)?;
+            let admission =
+                assess_reward_admission_from_master_deck(&run_state.master_deck, card, upgrades);
+            let evaluation = evaluate_decision_candidate(
+                context,
+                DecisionCandidateKind::CardRewardPick { card, upgrades },
+                Some(&admission),
+            );
+            Some((
+                (
+                    evaluation.order_key(false),
+                    reward_admission_order_key_v1(&admission),
+                    idx,
+                ),
+                idx,
+            ))
+        })
+        .min_by_key(|(key, _)| *key)
+        .map(|(_, idx)| idx)
 }
 
 fn tomb_red_mask_choice(run_state: &RunState) -> EventOwnerOptionSelector {
