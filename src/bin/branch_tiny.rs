@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -48,6 +48,8 @@ mod run_chain;
 mod run_choice_owner;
 #[path = "branch_tiny/run_contract.rs"]
 mod run_contract;
+#[path = "branch_tiny/run_deadline.rs"]
+mod run_deadline;
 #[path = "branch_tiny/run_persistence.rs"]
 mod run_persistence;
 #[path = "branch_tiny/runner.rs"]
@@ -58,8 +60,7 @@ mod trace;
 use owner_model::{ChoiceAnnotation, DecisionKey, OwnerDecision, OwnerRoutine};
 use run_capsule::RunCapsule;
 use run_contract::{default_run_objective, RunObjective};
-
-const WALL_STOP_GUARD_MS: u64 = 1_500;
+use run_deadline::RunDeadline;
 
 #[derive(Clone)]
 struct Branch {
@@ -699,60 +700,6 @@ fn branch_status_boundary_label(status: &BranchStatus) -> String {
         BranchStatus::Terminal(_) => "Terminal".to_string(),
         BranchStatus::ApplyFailed(_) => "ApplyFailed".to_string(),
         BranchStatus::AdvanceFailed(_) => "AdvanceFailed".to_string(),
-    }
-}
-
-#[derive(Clone, Copy)]
-struct RunDeadline(Option<Instant>);
-
-impl RunDeadline {
-    fn new(started: Instant, wall_ms: Option<u64>) -> Self {
-        Self(wall_ms.map(|ms| started + Duration::from_millis(ms)))
-    }
-
-    fn should_stop(self) -> bool {
-        self.remaining_ms()
-            .is_some_and(|remaining| remaining <= WALL_STOP_GUARD_MS)
-    }
-
-    fn should_soft_stop(self, args: Args) -> bool {
-        self.remaining_ms()
-            .is_some_and(|remaining| remaining <= self.soft_stop_guard_ms(args))
-    }
-
-    fn would_cap_core_search(self, args: Args, child_count: usize) -> bool {
-        self.cap_args(args, child_count).wall_capped_search_budget
-    }
-
-    fn soft_stop_guard_ms(self, args: Args) -> u64 {
-        WALL_STOP_GUARD_MS + args.search_ms.max(args.rescue_search_ms)
-    }
-
-    fn cap_args(self, mut args: Args, child_count: usize) -> Args {
-        let Some(remaining) = self.remaining_ms() else {
-            return args;
-        };
-        let per_child =
-            (remaining.saturating_sub(WALL_STOP_GUARD_MS) / child_count.max(1) as u64).max(1);
-        let search_ms = args.search_ms.min(per_child);
-        let rescue_search_ms = args.rescue_search_ms.min(per_child);
-        let boss_search_ms = args.boss_search_ms.min(per_child);
-        if search_ms != args.search_ms || rescue_search_ms != args.rescue_search_ms {
-            args.wall_capped_search_budget = true;
-        }
-        if boss_search_ms != args.boss_search_ms {
-            args.wall_capped_boss_budget = true;
-        }
-        args.search_ms = search_ms;
-        args.rescue_search_ms = rescue_search_ms;
-        args.boss_search_ms = boss_search_ms;
-        args
-    }
-
-    fn remaining_ms(self) -> Option<u64> {
-        self.0
-            .map(|deadline| deadline.saturating_duration_since(Instant::now()))
-            .map(|remaining| remaining.as_millis().min(u128::from(u64::MAX)) as u64)
     }
 }
 

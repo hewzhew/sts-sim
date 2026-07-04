@@ -2,7 +2,8 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use super::run_capsule::{RunCapsule, RunCapsuleSave};
-use super::{branch_status_boundary_label, frontier_checkpoint, render, Args, Branch, RunDeadline};
+use super::run_deadline::RunDeadline;
+use super::{branch_status_boundary_label, frontier_checkpoint, render, Args, Branch};
 
 pub(super) fn frontier_checkpoint_output_path<'a>(
     frontier_checkpoint_path: &'a Option<PathBuf>,

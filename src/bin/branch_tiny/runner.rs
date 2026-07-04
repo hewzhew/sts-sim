@@ -6,7 +6,8 @@ use sts_simulator::eval::run_control::{
 use super::boundary_router;
 use super::combat_rescue;
 use super::owner_orchestrator::{orchestrate_owner_boundary, OwnerOrchestration};
-use super::{Args, BossRetryReport, BranchStatus, RunDeadline};
+use super::run_deadline::RunDeadline;
+use super::{Args, BossRetryReport, BranchStatus};
 
 pub(super) struct AdvanceResult {
     pub(super) status: BranchStatus,

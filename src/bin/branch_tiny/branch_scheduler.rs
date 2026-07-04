@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
 
 use super::owner_model::{DecisionKey, OwnerChoice, OwnerDecision};
+use super::run_deadline::RunDeadline;
 use super::{
     decision_delta, owners, runner, Args, Branch, BranchPathState, BranchPathStep, BranchStatus,
-    ChoiceAnnotationSnapshot, RunDeadline, TerminalOutcome,
+    ChoiceAnnotationSnapshot, TerminalOutcome,
 };
 
 pub(super) fn prepare_branch_work(
