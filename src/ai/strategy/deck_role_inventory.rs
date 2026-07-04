@@ -1,5 +1,6 @@
 use crate::ai::analysis::card_semantics::{
-    card_definition_with_upgrades, CombatEvent, Mechanic, PlayEffect, TriggeredEffect,
+    card_definition_with_upgrades, CombatEvent, DamageScalingAxis, Mechanic, PlayEffect,
+    TriggeredEffect,
 };
 use crate::runtime::combat::CombatCard;
 
@@ -49,7 +50,10 @@ impl DeckRoleInventory {
             PlayEffect::FrontloadDamage => self.frontload_units += 1,
             PlayEffect::AreaDamage => self.aoe_units += 1,
             PlayEffect::DamageUses(Mechanic::Block) => self.block_payoff_units += 1,
-            PlayEffect::DamageUses(Mechanic::Strength) => self.strength_payoff_units += 1,
+            PlayEffect::DamageUses(Mechanic::Strength)
+            | PlayEffect::DamageScalesWith(DamageScalingAxis::PerHitStrength) => {
+                self.strength_payoff_units += 1;
+            }
             PlayEffect::Provide(mechanic) => self.add_mechanic(mechanic),
             PlayEffect::EmitEvent(CombatEvent::CardExhausted)
             | PlayEffect::PlayTopCardAndExhaust => self.exhaust_stream_units += 1,

@@ -1,5 +1,6 @@
 use crate::ai::analysis::card_semantics::Mechanic;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
+use crate::ai::strategy::package_transition::PackageKind;
 use crate::ai::strategy::reward_admission::{
     RewardAdmission, RewardAdmissionClass, RewardAdmissionReason,
 };
@@ -22,6 +23,7 @@ pub enum MarginalUtilityReason {
     CycleBlockSaturated,
     DuplicateAccessCopy,
     DuplicateBlockPayoff,
+    DuplicateStrengthPayoff,
     DuplicateUnupgradedPayoff,
     ThickDeckImmediateWork,
 }
@@ -83,6 +85,16 @@ pub fn assess_role_saturation(
         }
     }
 
+    if is_strength_payoff(admission)
+        && deck.roles.strength_payoff_units >= strength_payoff_capacity(deck)
+    {
+        assessment.add(
+            MarginalUtilityReason::DuplicateStrengthPayoff,
+            if candidate.upgrades == 0 { -95 } else { -70 },
+            LaneCap::ProbeOnly,
+        );
+    }
+
     if has_duplicate_access_copy(admission) {
         assessment.add(
             MarginalUtilityReason::DuplicateAccessCopy,
@@ -124,8 +136,17 @@ pub fn marginal_reason_label(reason: MarginalUtilityReason) -> &'static str {
         MarginalUtilityReason::CycleBlockSaturated => "cycle-block-saturated",
         MarginalUtilityReason::DuplicateAccessCopy => "duplicate-access-copy",
         MarginalUtilityReason::DuplicateBlockPayoff => "duplicate-block-payoff",
+        MarginalUtilityReason::DuplicateStrengthPayoff => "duplicate-strength-payoff",
         MarginalUtilityReason::DuplicateUnupgradedPayoff => "duplicate-unupgraded-payoff",
         MarginalUtilityReason::ThickDeckImmediateWork => "thick-deck-immediate",
+    }
+}
+
+fn strength_payoff_capacity(deck: DeckPlanSnapshot) -> u8 {
+    if deck.roles.strength_source_units >= 2 {
+        2
+    } else {
+        1
     }
 }
 
@@ -175,6 +196,13 @@ fn admission_damage_uses(admission: &RewardAdmission, mechanic: Mechanic) -> boo
     admission
         .reasons
         .contains(&RewardAdmissionReason::DamageUses(mechanic))
+}
+
+fn is_strength_payoff(admission: &RewardAdmission) -> bool {
+    admission_damage_uses(admission, Mechanic::Strength)
+        || admission
+            .reasons
+            .contains(&RewardAdmissionReason::Supports(PackageKind::Strength))
 }
 
 fn has_duplicate_access_copy(admission: &RewardAdmission) -> bool {
