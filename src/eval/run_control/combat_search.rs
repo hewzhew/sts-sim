@@ -10,7 +10,6 @@ use crate::sim::combat::{
 };
 use crate::sim::combat_legal_actions::engine_local_moves;
 
-use super::combat_candidate_line::CombatCandidateLine;
 use super::combat_line_executor::{
     apply_selected_combat_candidate_line, combat_automation_step_state_v1,
     combat_search_performance_trace_annotation, current_run_apply_status,
@@ -19,11 +18,7 @@ use super::combat_line_executor::{
     render_search_performance_summary, render_search_policy_summary,
     CombatCandidateLinePerformance,
 };
-use super::combat_line_outcome::{
-    evaluate_combat_candidate_line_outcome, find_accepted_alternative_in_report,
-    find_clean_no_potion_alternative, render_combat_line_outcome_detail,
-    CombatLineAcceptancePolicy,
-};
+use super::combat_line_selector::{select_accepted_search_combat_line, CombatLineSelection};
 use super::commands::{
     RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlSearchCombatOptions,
     RunControlSearchEvidenceTarget,
@@ -156,84 +151,38 @@ pub(super) fn apply_search_combat(
         outcome.search_evidence_path = saved_evidence;
         return Ok(outcome);
     };
-    let original_line = CombatCandidateLine::from_search_trajectory(trajectory);
-    let mut selected_line = original_line.clone();
-    let mut selected_report_owned: Option<CombatSearchV2Report> = None;
-    let mut repair_summary: Option<String> = None;
-    if let Some(repair) =
-        super::combat_line_repair::try_repair_winning_trajectory(&start, trajectory, &config)
-    {
-        selected_line = repair.line;
-        repair_summary = Some(format!(
-            "line_repair attempts={} wins={} improvements={} elapsed_ms={} original_hp_loss={} repaired_hp_loss={}",
-            repair.attempts,
-            repair.wins,
-            repair.improvements,
-            repair.elapsed_ms,
-            trajectory.hp_loss,
-            selected_line.hp_loss
-        ));
-    }
-    let policy = CombatLineAcceptancePolicy::default();
-    let selected_eval =
-        evaluate_combat_candidate_line_outcome(session, &start, &config, selected_line.clone())?;
-    if policy.classify(&selected_eval.outcome).is_rejected() {
-        if let Some(alternative) =
-            find_accepted_alternative_in_report(session, &start, &config, &report, policy)?
-        {
-            selected_line = alternative.line;
-            append_repair_summary(
-                &mut repair_summary,
-                format!(
-                    "same_report_clean_alternative replaced dirty_win gained_curses={} original_final_hp={} clean_final_hp={}",
-                    selected_eval.outcome.gained_curse_count(),
-                    selected_eval.outcome.final_hp,
-                    alternative.outcome.final_hp
-                ),
-            );
-        } else if let Some(alternative) =
-            find_clean_no_potion_alternative(session, &start, &config, policy)?
-        {
-            selected_line = alternative.line;
-            selected_report_owned = Some(alternative.report);
-            append_repair_summary(
-                &mut repair_summary,
-                format!(
-                    "clean_no_potion_alternative replaced dirty_win gained_curses={} original_final_hp={} clean_final_hp={}",
-                    selected_eval.outcome.gained_curse_count(),
-                    selected_eval.outcome.final_hp,
-                    alternative.outcome.final_hp
-                ),
-            );
-        } else {
-            let mut outcome = RunControlCommandOutcome::message(format!(
-                "{}{}\n\n{}",
-                render_search_rejection(
-                    &report,
-                    "dirty_winning_candidate_rejected",
-                    Some(render_combat_line_outcome_detail(&selected_eval.outcome)),
-                ),
-                render_saved_evidence_note(saved_evidence.as_deref()),
-                super::render::render_run_control_state(session)
-            ))
-            .with_combat_search_rejection(
-                RunControlCombatSearchRejection::DirtyWinningCandidateRejected,
-            );
-            outcome
-                .trace_annotations
-                .push(combat_search_performance_trace_annotation(
-                    "search_combat_rejected_dirty_win",
-                    session,
-                    &start,
-                    &report,
-                ));
-            outcome.search_evidence_path = saved_evidence;
-            return Ok(outcome);
-        }
-    }
+    let selected =
+        match select_accepted_search_combat_line(session, &start, &config, &report, trajectory)? {
+            CombatLineSelection::Selected(selected) => selected,
+            CombatLineSelection::DirtyRejected { detail } => {
+                let mut outcome = RunControlCommandOutcome::message(format!(
+                    "{}{}\n\n{}",
+                    render_search_rejection(
+                        &report,
+                        "dirty_winning_candidate_rejected",
+                        Some(detail),
+                    ),
+                    render_saved_evidence_note(saved_evidence.as_deref()),
+                    super::render::render_run_control_state(session)
+                ))
+                .with_combat_search_rejection(
+                    RunControlCombatSearchRejection::DirtyWinningCandidateRejected,
+                );
+                outcome
+                    .trace_annotations
+                    .push(combat_search_performance_trace_annotation(
+                        "search_combat_rejected_dirty_win",
+                        session,
+                        &start,
+                        &report,
+                    ));
+                outcome.search_evidence_path = saved_evidence;
+                return Ok(outcome);
+            }
+        };
 
     if let Some(max_hp_loss) = effective_hp_loss_limit(session, &options) {
-        if selected_line.hp_loss > max_hp_loss as i32 {
+        if selected.line.hp_loss > max_hp_loss as i32 {
             if let Some(outcome) = try_apply_turn_segment_after_rejection(
                 session,
                 &start,
@@ -252,7 +201,7 @@ pub(super) fn apply_search_combat(
                     "complete_winning_candidate_exceeds_hp_loss_limit",
                     Some(format!(
                         "candidate_hp_loss={} max_hp_loss={max_hp_loss}",
-                        selected_line.hp_loss
+                        selected.line.hp_loss
                     )),
                 ),
                 render_saved_evidence_note(saved_evidence.as_deref()),
@@ -274,9 +223,9 @@ pub(super) fn apply_search_combat(
 
     let mut summary = format!(
         "search-combat applied {} actions",
-        selected_line.actions.len()
+        selected.line.actions.len()
     );
-    if let Some(repair_summary) = repair_summary.as_ref() {
+    if let Some(repair_summary) = selected.summary.as_ref() {
         summary.push_str(&format!(" {repair_summary}"));
     }
     if let Some(path) = saved_evidence.as_ref() {
@@ -286,23 +235,13 @@ pub(super) fn apply_search_combat(
         session,
         &start,
         &config,
-        selected_report_owned.as_ref().unwrap_or(&report),
+        selected.report.as_ref().unwrap_or(&report),
         saved_evidence.as_deref(),
-        selected_line,
+        selected.line,
         CombatAutomationTrajectorySource::SearchCombat,
         summary,
         None,
     )
-}
-
-fn append_repair_summary(summary: &mut Option<String>, item: String) {
-    match summary {
-        Some(summary) => {
-            summary.push(' ');
-            summary.push_str(&item);
-        }
-        None => *summary = Some(item),
-    }
 }
 
 fn try_apply_turn_segment_after_rejection(

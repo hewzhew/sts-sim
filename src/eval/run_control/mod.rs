@@ -12,6 +12,7 @@ mod combat_complete_line_solver;
 mod combat_line_executor;
 mod combat_line_outcome;
 mod combat_line_repair;
+mod combat_line_selector;
 mod combat_search;
 mod combat_start;
 mod commands;
