@@ -8,6 +8,7 @@ mod campfire_policy;
 mod card_reward_auto;
 mod combat_auto_policy;
 mod combat_candidate_line;
+mod combat_complete_line_repair;
 mod combat_complete_line_scoring;
 mod combat_complete_line_search;
 mod combat_complete_line_solver;

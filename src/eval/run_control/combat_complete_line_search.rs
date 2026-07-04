@@ -12,6 +12,8 @@ use crate::state::core::ClientInput;
 
 use super::combat_complete_line_scoring::{classify_lane, score_position, LineLane};
 
+pub(super) const LINE_BEAM: usize = 128;
+
 #[derive(Clone)]
 pub(super) struct Line {
     pub(super) position: CombatPosition,
@@ -239,6 +241,15 @@ pub(super) fn legal_non_potion_choices(
         )
     })
     .collect()
+}
+
+pub(super) fn reindex_actions(
+    mut actions: Vec<CombatSearchV2ActionTrace>,
+) -> Vec<CombatSearchV2ActionTrace> {
+    for (index, action) in actions.iter_mut().enumerate() {
+        action.step_index = index;
+    }
+    actions
 }
 
 fn keep_lane_frontier(mut lines: Vec<Line>, beam: usize) -> Vec<Line> {
