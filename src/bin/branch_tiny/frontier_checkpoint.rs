@@ -141,7 +141,7 @@ impl BranchCheckpoint {
                 .collect(),
             session: self.session.into_session()?,
             status: self.status.into_status(),
-            boss_retry: None,
+            combat_portfolio: None,
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
         })

@@ -10,7 +10,8 @@ use super::owner_model::{
     cleanup_target_label, ChoiceAnnotation, OwnerCandidateDecision, OwnerChoice,
 };
 use super::{
-    BossRetryReport, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner,
+    BoundarySite, Branch, BranchPathStep, BranchStatus, CombatSearchPortfolioReport,
+    CombatSearchPortfolioStatus, Owner,
 };
 
 pub(super) fn print_branch_timeline(
@@ -35,8 +36,8 @@ pub(super) fn print_branch_timeline(
         println!("  arrived: {}", render_timeline_step(previous));
     }
     print_auto_steps(&branch.auto_steps);
-    if let Some(retry) = branch.boss_retry.as_ref() {
-        print_boss_retry(retry);
+    if let Some(retry) = branch.combat_portfolio.as_ref() {
+        print_combat_portfolio(retry);
     }
     print_reward_gap_detail(&branch.session, &branch.status);
     if choices.is_empty() {
@@ -134,10 +135,10 @@ fn print_auto_steps(steps: &[RunControlAutoAppliedStepV1]) {
     }
 }
 
-fn print_boss_retry(retry: &BossRetryReport) {
+fn print_combat_portfolio(retry: &CombatSearchPortfolioReport) {
     println!(
-        "  boss_retry: {} budget={}nodes/{}ms",
-        boss_retry_status_label(&retry.status),
+        "  combat_portfolio: {} budget={}nodes/{}ms",
+        combat_portfolio_status_label(&retry.status),
         retry.max_nodes,
         retry.wall_ms
     );
@@ -145,7 +146,7 @@ fn print_boss_retry(retry: &BossRetryReport) {
         println!(
             "    attempt {}: {} potion={} max_potions={:?} budget={}nodes/{}ms",
             attempt.label,
-            boss_retry_status_label(&attempt.status),
+            combat_portfolio_status_label(&attempt.status),
             attempt.potion_policy,
             attempt.max_potions_used,
             attempt.max_nodes,
@@ -166,11 +167,11 @@ fn print_action_path(prefix: &str, action_keys: &[String]) {
     }
 }
 
-fn boss_retry_status_label(status: &BossRetryStatus) -> String {
+fn combat_portfolio_status_label(status: &CombatSearchPortfolioStatus) -> String {
     match status {
-        BossRetryStatus::Failed(reason) => format!("failed ({})", one_line(reason)),
-        BossRetryStatus::Advanced(boundary) => format!("combat-win -> {boundary}"),
-        BossRetryStatus::Terminal(result) => format!("terminal:{}", result.as_str()),
+        CombatSearchPortfolioStatus::Failed(reason) => format!("failed ({})", one_line(reason)),
+        CombatSearchPortfolioStatus::Advanced(boundary) => format!("combat-win -> {boundary}"),
+        CombatSearchPortfolioStatus::Terminal(result) => format!("terminal:{}", result.as_str()),
     }
 }
 

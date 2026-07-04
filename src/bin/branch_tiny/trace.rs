@@ -17,7 +17,9 @@ use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::state::run::RunState;
 
 use super::owner_model::{cleanup_target_label, ChoiceAnnotation, OwnerChoice};
-use super::{Args, BossRetryStatus, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner};
+use super::{
+    Args, BoundarySite, Branch, BranchPathStep, BranchStatus, CombatSearchPortfolioStatus, Owner,
+};
 
 pub(super) struct TraceWriter {
     out: BufWriter<File>,
@@ -86,11 +88,11 @@ impl TraceWriter {
                 .map(auto_step_value)
                 .collect::<Vec<_>>(),
             "combat_search": branch.combat_search,
-            "boss_retry": branch.boss_retry.as_ref().map(|retry| json!({
+            "combat_portfolio": branch.combat_portfolio.as_ref().map(|retry| json!({
                 "status": match &retry.status {
-                    BossRetryStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
-                    BossRetryStatus::Advanced(boundary) => json!({"kind": "advanced", "boundary": boundary}),
-                    BossRetryStatus::Terminal(result) => json!({"kind": "terminal", "result": result.as_str()}),
+                    CombatSearchPortfolioStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
+                    CombatSearchPortfolioStatus::Advanced(boundary) => json!({"kind": "advanced", "boundary": boundary}),
+                    CombatSearchPortfolioStatus::Terminal(result) => json!({"kind": "terminal", "result": result.as_str()}),
                 },
                 "nodes": retry.max_nodes,
                 "ms": retry.wall_ms,
@@ -98,9 +100,9 @@ impl TraceWriter {
                 "attempts": retry.attempts.iter().map(|attempt| json!({
                     "label": attempt.label,
                     "status": match &attempt.status {
-                        BossRetryStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
-                        BossRetryStatus::Advanced(boundary) => json!({"kind": "advanced", "boundary": boundary}),
-                        BossRetryStatus::Terminal(result) => json!({"kind": "terminal", "result": result.as_str()}),
+                        CombatSearchPortfolioStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
+                        CombatSearchPortfolioStatus::Advanced(boundary) => json!({"kind": "advanced", "boundary": boundary}),
+                        CombatSearchPortfolioStatus::Terminal(result) => json!({"kind": "terminal", "result": result.as_str()}),
                     },
                     "nodes": attempt.max_nodes,
                     "ms": attempt.wall_ms,

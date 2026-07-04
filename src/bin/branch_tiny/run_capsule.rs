@@ -14,8 +14,9 @@ use sts_simulator::sim::combat::CombatPosition;
 use sts_simulator::state::run::RunState;
 
 use super::{
-    combat_gap_case, frontier_checkpoint, Args, BossRetryAttemptReport, BossRetryReport,
-    BossRetryStatus, Branch, BranchPathStep, BranchStatus, TerminalOutcome,
+    combat_gap_case, frontier_checkpoint, Args, Branch, BranchPathStep, BranchStatus,
+    CombatSearchLaneReport, CombatSearchPortfolioReport, CombatSearchPortfolioStatus,
+    TerminalOutcome,
 };
 
 pub(super) struct RunCapsule {
@@ -453,7 +454,7 @@ fn result_value(generation: usize, branch: &Branch, combat_case: Value) -> Value
             .collect::<Vec<_>>(),
         "combat": active_combat_value(branch),
         "combat_case": combat_case,
-        "boss_retry": branch.boss_retry.as_ref().map(boss_retry_value),
+        "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_value),
         "combat_search_attempts": &branch.combat_search,
         "failed_search": branch.combat_search.last(),
     })
@@ -467,20 +468,20 @@ fn strategic_deficit_value(run: &RunState) -> Value {
     .unwrap_or(Value::Null)
 }
 
-fn boss_retry_value(report: &BossRetryReport) -> Value {
+fn combat_portfolio_value(report: &CombatSearchPortfolioReport) -> Value {
     json!({
-        "status": boss_retry_status_value(&report.status),
+        "status": combat_portfolio_status_value(&report.status),
         "max_nodes": report.max_nodes,
         "wall_ms": report.wall_ms,
         "action_keys": report.action_keys,
-        "attempts": report.attempts.iter().map(boss_retry_attempt_value).collect::<Vec<_>>(),
+        "attempts": report.attempts.iter().map(combat_portfolio_attempt_value).collect::<Vec<_>>(),
     })
 }
 
-fn boss_retry_attempt_value(attempt: &BossRetryAttemptReport) -> Value {
+fn combat_portfolio_attempt_value(attempt: &CombatSearchLaneReport) -> Value {
     json!({
         "label": attempt.label,
-        "status": boss_retry_status_value(&attempt.status),
+        "status": combat_portfolio_status_value(&attempt.status),
         "max_nodes": attempt.max_nodes,
         "wall_ms": attempt.wall_ms,
         "potion_policy": attempt.potion_policy,
@@ -489,11 +490,13 @@ fn boss_retry_attempt_value(attempt: &BossRetryAttemptReport) -> Value {
     })
 }
 
-fn boss_retry_status_value(status: &BossRetryStatus) -> Value {
+fn combat_portfolio_status_value(status: &CombatSearchPortfolioStatus) -> Value {
     match status {
-        BossRetryStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
-        BossRetryStatus::Advanced(boundary) => json!({"kind": "advanced", "boundary": boundary}),
-        BossRetryStatus::Terminal(result) => {
+        CombatSearchPortfolioStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
+        CombatSearchPortfolioStatus::Advanced(boundary) => {
+            json!({"kind": "advanced", "boundary": boundary})
+        }
+        CombatSearchPortfolioStatus::Terminal(result) => {
             json!({"kind": "terminal", "result": result.as_str()})
         }
     }

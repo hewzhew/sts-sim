@@ -5,18 +5,19 @@ use sts_simulator::ai::combat_search_v2::{
 use sts_simulator::content::cards::{get_card_definition, CardType};
 use sts_simulator::eval::run_control::{
     apply_owner_audit_auto_run, CombatAutomationTrajectorySource, CombatSearchTraceSummary,
-    RunControlAutoAppliedStepV1, RunControlAutoStepOptions, RunControlCommandOutcome,
-    RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
-    RunControlSession, RunControlTraceAnnotationV1,
+    RunControlAutoAppliedStepV1, RunControlAutoStepOptions, RunControlAutoStopKind,
+    RunControlCommandOutcome, RunControlHpLossLimit, RunControlRouteAutomationMode,
+    RunControlSearchCombatOptions, RunControlSession, RunControlTraceAnnotationV1,
 };
 
 use super::boundary_router;
 use super::render;
 use super::{
-    Args, BossRetryAttemptReport, BossRetryReport, BossRetryStatus, BranchStatus, TerminalOutcome,
+    Args, BranchStatus, CombatSearchLaneReport, CombatSearchPortfolioReport,
+    CombatSearchPortfolioStatus, TerminalOutcome,
 };
 
-const BOSS_RETRY_POTION_RESCUE_MAX_POTIONS_USED: u32 = 3;
+const BOSS_POTION_RESCUE_MAX_POTIONS_USED: u32 = 3;
 const NONBOSS_POTION_RESCUE_MAX_POTIONS_USED: u32 = 1;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -28,6 +29,7 @@ enum CombatSearchStakes {
 
 #[derive(Clone, Copy)]
 enum CombatSearchLaneKind {
+    Primary,
     DiagnosticRescue,
     HallwayImmediateRescue,
     NonBossPotionRescue,
@@ -49,15 +51,34 @@ struct CombatSearchRequest {
 struct CombatSearchLaneAttempt {
     outcome: Option<RunControlCommandOutcome>,
     status: BranchStatus,
+    label: &'static str,
+    max_nodes: usize,
+    wall_ms: u64,
+    potion_policy: &'static str,
+    max_potions_used: Option<u32>,
     action_keys: Vec<String>,
     committed: bool,
+    auto_stop_kind: Option<RunControlAutoStopKind>,
+    applied_operations: usize,
+}
+
+#[derive(Clone)]
+pub(super) enum CombatSearchOutcome {
+    AcceptedLine,
+    CombatGap,
+    BudgetLimited,
+    OperationBudgetExhausted,
+    Terminal,
+    Failed,
 }
 
 pub(super) struct CombatSearchPortfolioResult {
     pub(super) status: BranchStatus,
-    pub(super) boss_retry: Option<BossRetryReport>,
+    pub(super) outcome: CombatSearchOutcome,
+    pub(super) report: Option<CombatSearchPortfolioReport>,
     pub(super) auto_steps: Vec<RunControlAutoAppliedStepV1>,
     pub(super) combat_search: Vec<CombatSearchTraceSummary>,
+    pub(super) applied_operations: usize,
 }
 
 pub(super) fn combat_search_summaries(
@@ -67,25 +88,7 @@ pub(super) fn combat_search_summaries(
         .collect()
 }
 
-pub(super) fn is_boss_combat(session: &RunControlSession) -> bool {
-    session
-        .active_combat
-        .as_ref()
-        .is_some_and(|combat| combat.combat_state.meta.is_boss_fight)
-}
-
-pub(super) fn primary_auto_step_options(args: Args) -> RunControlAutoStepOptions {
-    auto_step_options(
-        args.search_nodes,
-        args.search_ms,
-        args.auto_ops,
-        args.wall_ms.is_some(),
-        CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-        CombatSearchV2ChildRolloutPolicy::LazyOnPop,
-    )
-}
-
-pub(super) fn run_after_primary_gap(
+pub(super) fn run_combat_portfolio_step(
     session: &mut RunControlSession,
     args: Args,
 ) -> Result<CombatSearchPortfolioResult, String> {
@@ -93,29 +96,106 @@ pub(super) fn run_after_primary_gap(
     let mut auto_steps = Vec::new();
     let mut combat_search = Vec::new();
     let mut attempts = Vec::new();
-    let mut status = BranchStatus::CombatGap {
-        boundary: "Combat".to_string(),
-        reason: "primary combat search gap".to_string(),
-    };
+    let mut applied_operations = 0usize;
 
-    for lane in request.portfolio(session) {
+    let primary = run_lane_attempt(
+        session,
+        &request,
+        CombatSearchLane::new(CombatSearchLaneKind::Primary),
+    )
+    .map_err(|err| format!("primary failed: {err}"))?;
+    if let Some(outcome) = primary.outcome.as_ref() {
+        applied_operations = applied_operations.saturating_add(primary.applied_operations);
+        combat_search.extend(combat_search_summaries(outcome));
+        if primary.committed {
+            auto_steps.extend(outcome.auto_applied_steps.clone());
+        }
+    }
+    let mut status = primary.status.clone();
+    let primary_stop_kind = primary.auto_stop_kind;
+    if primary_operation_budget_exhausted(&status, primary_stop_kind)
+        && !matches!(status, BranchStatus::Terminal(_))
+    {
+        return Ok(combat_search_result(
+            status,
+            primary_stop_kind,
+            None,
+            auto_steps,
+            combat_search,
+            applied_operations,
+        ));
+    }
+    let saw_primary_combat_gap = matches!(status, BranchStatus::CombatGap { .. });
+    if request.should_report() && saw_primary_combat_gap {
+        attempts.push(combat_portfolio_attempt_report(&primary));
+    }
+    if !saw_primary_combat_gap {
+        return Ok(combat_search_result(
+            status,
+            primary_stop_kind,
+            None,
+            auto_steps,
+            combat_search,
+            applied_operations,
+        ));
+    }
+
+    if request.combat_budget_capped() {
+        status = if request.stakes == CombatSearchStakes::Boss {
+            awaiting_auto_boundary(
+                "Combat",
+                format!(
+                    "outer wall budget would cap combat portfolio; effective search={}ms rescue={}ms boss={}ms",
+                    args.search_ms, args.rescue_search_ms, args.boss_search_ms
+                ),
+            )
+        } else {
+            BranchStatus::BudgetGap {
+                boundary: "Combat".to_string(),
+                reason: format!(
+                    "outer wall budget capped combat search; effective search={}ms rescue={}ms boss={}ms",
+                    args.search_ms, args.rescue_search_ms, args.boss_search_ms
+                ),
+            }
+        };
+        let report = request.report(status.clone(), attempts);
+        return Ok(combat_search_result(
+            status,
+            primary_stop_kind,
+            report,
+            auto_steps,
+            combat_search,
+            applied_operations,
+        ));
+    }
+    if request.stakes == CombatSearchStakes::Boss && args.checkpoint_before_combat_portfolio {
+        status = awaiting_auto_boundary(
+            "Combat",
+            "checkpoint before combat portfolio after primary search gap".to_string(),
+        );
+        let report = request.report(status.clone(), attempts);
+        return Ok(combat_search_result(
+            status,
+            primary_stop_kind,
+            report,
+            auto_steps,
+            combat_search,
+            applied_operations,
+        ));
+    }
+
+    for lane in request.portfolio_after_primary(session) {
         let retry = run_lane_attempt(session, &request, lane)
             .map_err(|err| format!("{} failed: {err}", lane.label()))?;
         if let Some(outcome) = retry.outcome.as_ref() {
+            applied_operations = applied_operations.saturating_add(retry.applied_operations);
             combat_search.extend(combat_search_summaries(outcome));
             if retry.committed {
                 auto_steps.extend(outcome.auto_applied_steps.clone());
             }
         }
-        if request.stakes == CombatSearchStakes::Boss {
-            attempts.push(boss_retry_attempt_report(
-                request.args,
-                lane.label(),
-                lane.potion_policy(),
-                lane.max_potions_used(session),
-                &retry.status,
-                retry.action_keys.clone(),
-            ));
+        if request.should_report() {
+            attempts.push(combat_portfolio_attempt_report(&retry));
         }
         status = retry.status;
         if !matches!(status, BranchStatus::CombatGap { .. }) {
@@ -123,17 +203,15 @@ pub(super) fn run_after_primary_gap(
         }
     }
 
-    let boss_retry = if request.stakes == CombatSearchStakes::Boss {
-        Some(boss_retry_report(request.args, status.clone(), attempts))
-    } else {
-        None
-    };
-    Ok(CombatSearchPortfolioResult {
+    let report = request.report(status.clone(), attempts);
+    Ok(combat_search_result(
         status,
-        boss_retry,
+        primary_stop_kind,
+        report,
         auto_steps,
         combat_search,
-    })
+        applied_operations,
+    ))
 }
 
 impl CombatSearchRequest {
@@ -144,7 +222,7 @@ impl CombatSearchRequest {
         }
     }
 
-    fn portfolio(&self, session: &RunControlSession) -> Vec<CombatSearchLane> {
+    fn portfolio_after_primary(&self, session: &RunControlSession) -> Vec<CombatSearchLane> {
         let mut lanes = Vec::new();
         match self.stakes {
             CombatSearchStakes::Boss => {
@@ -181,6 +259,28 @@ impl CombatSearchRequest {
         }
         lanes
     }
+
+    fn should_report(&self) -> bool {
+        self.stakes == CombatSearchStakes::Boss
+    }
+
+    fn combat_budget_capped(&self) -> bool {
+        match self.stakes {
+            CombatSearchStakes::Boss => self.args.wall_capped_boss_budget,
+            CombatSearchStakes::Elite | CombatSearchStakes::Hallway => {
+                self.args.wall_capped_search_budget
+            }
+        }
+    }
+
+    fn report(
+        &self,
+        status: BranchStatus,
+        attempts: Vec<CombatSearchLaneReport>,
+    ) -> Option<CombatSearchPortfolioReport> {
+        self.should_report()
+            .then(|| combat_portfolio_report(self.args, status, attempts))
+    }
 }
 
 impl CombatSearchLane {
@@ -190,6 +290,7 @@ impl CombatSearchLane {
 
     fn label(self) -> &'static str {
         match self.kind {
+            CombatSearchLaneKind::Primary => "primary",
             CombatSearchLaneKind::DiagnosticRescue => "diagnostic_rescue",
             CombatSearchLaneKind::HallwayImmediateRescue => "hallway_immediate_rescue",
             CombatSearchLaneKind::NonBossPotionRescue => "nonboss_potion_rescue",
@@ -199,29 +300,8 @@ impl CombatSearchLane {
         }
     }
 
-    fn potion_policy(self) -> CombatSearchV2PotionPolicy {
-        match self.kind {
-            CombatSearchLaneKind::BossNoPotion
-            | CombatSearchLaneKind::HallwayImmediateRescue
-            | CombatSearchLaneKind::DiagnosticRescue => CombatSearchV2PotionPolicy::Never,
-            CombatSearchLaneKind::BossPotionRescue | CombatSearchLaneKind::NonBossPotionRescue => {
-                CombatSearchV2PotionPolicy::All
-            }
-            CombatSearchLaneKind::QualityRealHp => CombatSearchV2PotionPolicy::SemanticBudgeted,
-        }
-    }
-
-    fn max_potions_used(self, session: &RunControlSession) -> Option<u32> {
-        match self.kind {
-            CombatSearchLaneKind::DiagnosticRescue
-            | CombatSearchLaneKind::HallwayImmediateRescue
-            | CombatSearchLaneKind::BossNoPotion => Some(0),
-            CombatSearchLaneKind::NonBossPotionRescue => {
-                Some(NONBOSS_POTION_RESCUE_MAX_POTIONS_USED)
-            }
-            CombatSearchLaneKind::BossPotionRescue => Some(boss_potion_budget(session)),
-            CombatSearchLaneKind::QualityRealHp => Some(2),
-        }
+    fn is_primary(self) -> bool {
+        matches!(self.kind, CombatSearchLaneKind::Primary)
     }
 }
 
@@ -307,14 +387,26 @@ fn run_lane_attempt(
 ) -> Result<CombatSearchLaneAttempt, String> {
     let before_curses = master_deck_curse_count(session);
     let mut trial = session.clone();
-    let outcome = match apply_owner_audit_auto_run(&mut trial, lane.options(request, session)) {
+    let options = lane.options(request, session);
+    let max_nodes = options.search.max_nodes.unwrap_or_default();
+    let wall_ms = options.search.wall_ms.unwrap_or_default();
+    let potion_policy = potion_policy_label(options.search.potion_policy);
+    let max_potions_used = options.search.max_potions_used;
+    let outcome = match apply_owner_audit_auto_run(&mut trial, options) {
         Ok(outcome) => outcome,
         Err(err) => {
             return Ok(CombatSearchLaneAttempt {
                 outcome: None,
                 status: BranchStatus::AdvanceFailed(err),
+                label: lane.label(),
+                max_nodes,
+                wall_ms,
+                potion_policy,
+                max_potions_used,
                 action_keys: Vec::new(),
                 committed: false,
+                auto_stop_kind: None,
+                applied_operations: 0,
             });
         }
     };
@@ -332,16 +424,30 @@ fn run_lane_attempt(
             ),
         };
     }
+    let auto_stop_kind = outcome.auto_stop.as_ref().map(|stop| stop.kind);
+    let applied_operations = outcome
+        .auto_stop
+        .as_ref()
+        .map(|stop| stop.applied_operations)
+        .unwrap_or(0);
     let action_keys = retry_complete_search_action_keys(&outcome);
-    let committed = lane.commits(&status);
+    let committed = lane.commits(&status)
+        || (lane.is_primary() && primary_operation_budget_exhausted(&status, auto_stop_kind));
     if committed {
         *session = trial;
     }
     Ok(CombatSearchLaneAttempt {
         outcome: Some(outcome),
         status,
+        label: lane.label(),
+        max_nodes,
+        wall_ms,
+        potion_policy,
+        max_potions_used,
         action_keys,
         committed,
+        auto_stop_kind,
+        applied_operations,
     })
 }
 
@@ -360,6 +466,14 @@ impl CombatSearchLane {
         session: &RunControlSession,
     ) -> RunControlAutoStepOptions {
         match self.kind {
+            CombatSearchLaneKind::Primary => auto_step_options(
+                request.args.search_nodes,
+                request.args.search_ms,
+                request.args.auto_ops,
+                request.args.wall_ms.is_some(),
+                CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+                CombatSearchV2ChildRolloutPolicy::LazyOnPop,
+            ),
             CombatSearchLaneKind::DiagnosticRescue => auto_step_options(
                 request.args.rescue_search_nodes,
                 request.args.rescue_search_ms,
@@ -466,7 +580,7 @@ fn boss_potion_budget(session: &RunControlSession) -> u32 {
             )
         })
         .unwrap_or(1)
-        .max(BOSS_RETRY_POTION_RESCUE_MAX_POTIONS_USED)
+        .max(BOSS_POTION_RESCUE_MAX_POTIONS_USED)
 }
 
 fn boss_budget_options(
@@ -486,17 +600,17 @@ fn boss_budget_options(
     options
 }
 
-fn boss_retry_report(
+fn combat_portfolio_report(
     args: Args,
     status: BranchStatus,
-    attempts: Vec<BossRetryAttemptReport>,
-) -> BossRetryReport {
+    attempts: Vec<CombatSearchLaneReport>,
+) -> CombatSearchPortfolioReport {
     let action_keys = attempts
         .last()
         .map(|attempt| attempt.action_keys.clone())
         .unwrap_or_default();
-    let status = boss_retry_status(&status);
-    BossRetryReport {
+    let status = combat_portfolio_status(&status);
+    CombatSearchPortfolioReport {
         status,
         max_nodes: args.boss_search_nodes,
         wall_ms: args.boss_search_ms,
@@ -505,44 +619,98 @@ fn boss_retry_report(
     }
 }
 
-fn boss_retry_attempt_report(
-    args: Args,
-    label: &'static str,
-    potion_policy: CombatSearchV2PotionPolicy,
-    max_potions_used: Option<u32>,
-    status: &BranchStatus,
-    action_keys: Vec<String>,
-) -> BossRetryAttemptReport {
-    BossRetryAttemptReport {
-        label,
-        status: boss_retry_status(status),
-        max_nodes: args.boss_search_nodes,
-        wall_ms: args.boss_search_ms,
-        potion_policy: potion_policy_label(potion_policy),
-        max_potions_used,
-        action_keys,
+fn combat_portfolio_attempt_report(attempt: &CombatSearchLaneAttempt) -> CombatSearchLaneReport {
+    CombatSearchLaneReport {
+        label: attempt.label,
+        status: combat_portfolio_status(&attempt.status),
+        max_nodes: attempt.max_nodes,
+        wall_ms: attempt.wall_ms,
+        potion_policy: attempt.potion_policy,
+        max_potions_used: attempt.max_potions_used,
+        action_keys: attempt.action_keys.clone(),
     }
 }
 
-fn boss_retry_status(status: &BranchStatus) -> BossRetryStatus {
+fn combat_portfolio_status(status: &BranchStatus) -> CombatSearchPortfolioStatus {
     match status {
-        BranchStatus::CombatGap { reason, .. } => BossRetryStatus::Failed(reason.clone()),
+        BranchStatus::CombatGap { reason, .. } => {
+            CombatSearchPortfolioStatus::Failed(reason.clone())
+        }
         BranchStatus::ApplyFailed(err)
         | BranchStatus::AdvanceFailed(err)
-        | BranchStatus::BudgetGap { reason: err, .. } => BossRetryStatus::Failed(err.clone()),
-        BranchStatus::Terminal(TerminalOutcome::Defeat) => {
-            BossRetryStatus::Failed("retry ended in defeat".to_string())
+        | BranchStatus::BudgetGap { reason: err, .. } => {
+            CombatSearchPortfolioStatus::Failed(err.clone())
         }
-        BranchStatus::Terminal(result) => BossRetryStatus::Terminal(*result),
-        _ => BossRetryStatus::Advanced(render::status_boundary(status).to_string()),
+        BranchStatus::Terminal(TerminalOutcome::Defeat) => {
+            CombatSearchPortfolioStatus::Failed("combat portfolio ended in defeat".to_string())
+        }
+        BranchStatus::Terminal(result) => CombatSearchPortfolioStatus::Terminal(*result),
+        _ => CombatSearchPortfolioStatus::Advanced(render::status_boundary(status).to_string()),
     }
 }
 
-fn potion_policy_label(policy: CombatSearchV2PotionPolicy) -> &'static str {
+fn potion_policy_label(policy: Option<CombatSearchV2PotionPolicy>) -> &'static str {
     match policy {
-        CombatSearchV2PotionPolicy::Never => "never",
-        CombatSearchV2PotionPolicy::All => "all",
-        CombatSearchV2PotionPolicy::SemanticBudgeted => "semantic",
+        Some(CombatSearchV2PotionPolicy::Never) => "never",
+        Some(CombatSearchV2PotionPolicy::All) => "all",
+        Some(CombatSearchV2PotionPolicy::SemanticBudgeted) => "semantic",
+        None => "default",
+    }
+}
+
+fn combat_search_result(
+    status: BranchStatus,
+    primary_stop_kind: Option<RunControlAutoStopKind>,
+    report: Option<CombatSearchPortfolioReport>,
+    auto_steps: Vec<RunControlAutoAppliedStepV1>,
+    combat_search: Vec<CombatSearchTraceSummary>,
+    applied_operations: usize,
+) -> CombatSearchPortfolioResult {
+    let outcome = combat_search_outcome(&status, primary_stop_kind);
+    CombatSearchPortfolioResult {
+        status,
+        outcome,
+        report,
+        auto_steps,
+        combat_search,
+        applied_operations,
+    }
+}
+
+fn combat_search_outcome(
+    status: &BranchStatus,
+    primary_stop_kind: Option<RunControlAutoStopKind>,
+) -> CombatSearchOutcome {
+    match status {
+        BranchStatus::Terminal(_) => CombatSearchOutcome::Terminal,
+        _ if primary_operation_budget_exhausted(status, primary_stop_kind) => {
+            CombatSearchOutcome::OperationBudgetExhausted
+        }
+        BranchStatus::CombatGap { .. } => CombatSearchOutcome::CombatGap,
+        BranchStatus::BudgetGap { .. } => CombatSearchOutcome::BudgetLimited,
+        BranchStatus::ApplyFailed(_) | BranchStatus::AdvanceFailed(_) => {
+            CombatSearchOutcome::Failed
+        }
+        _ => CombatSearchOutcome::AcceptedLine,
+    }
+}
+
+fn primary_operation_budget_exhausted(
+    status: &BranchStatus,
+    primary_stop_kind: Option<RunControlAutoStopKind>,
+) -> bool {
+    primary_stop_kind == Some(RunControlAutoStopKind::OperationBudgetExhausted)
+        || matches!(
+            status,
+            BranchStatus::BudgetGap { reason, .. }
+                if reason.starts_with("operation budget exhausted")
+        )
+}
+
+fn awaiting_auto_boundary(boundary: impl Into<String>, reason: String) -> BranchStatus {
+    BranchStatus::AwaitingAuto {
+        boundary: boundary.into(),
+        reason,
     }
 }
 

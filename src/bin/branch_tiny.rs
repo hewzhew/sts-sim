@@ -74,24 +74,24 @@ struct Branch {
     path: Vec<BranchPathStep>,
     session: RunControlSession,
     status: BranchStatus,
-    boss_retry: Option<BossRetryReport>,
+    combat_portfolio: Option<CombatSearchPortfolioReport>,
     auto_steps: Vec<RunControlAutoAppliedStepV1>,
     combat_search: Vec<CombatSearchTraceSummary>,
 }
 
 #[derive(Clone)]
-struct BossRetryReport {
-    status: BossRetryStatus,
+struct CombatSearchPortfolioReport {
+    status: CombatSearchPortfolioStatus,
     max_nodes: usize,
     wall_ms: u64,
     action_keys: Vec<String>,
-    attempts: Vec<BossRetryAttemptReport>,
+    attempts: Vec<CombatSearchLaneReport>,
 }
 
 #[derive(Clone)]
-struct BossRetryAttemptReport {
+struct CombatSearchLaneReport {
     label: &'static str,
-    status: BossRetryStatus,
+    status: CombatSearchPortfolioStatus,
     max_nodes: usize,
     wall_ms: u64,
     potion_policy: &'static str,
@@ -100,7 +100,7 @@ struct BossRetryAttemptReport {
 }
 
 #[derive(Clone)]
-enum BossRetryStatus {
+enum CombatSearchPortfolioStatus {
     Failed(String),
     Advanced(String),
     Terminal(TerminalOutcome),
@@ -382,7 +382,7 @@ fn run() -> Result<(), String> {
                 path: Vec::new(),
                 session,
                 status: advance.status,
-                boss_retry: advance.boss_retry,
+                combat_portfolio: advance.combat_portfolio,
                 auto_steps: advance.auto_steps,
                 combat_search: advance.combat_search,
             }]),
@@ -402,7 +402,7 @@ fn run() -> Result<(), String> {
         if resume_frontier.is_some() { " resume=frontier" } else { "" }
     );
     println!(
-        "branch cap: {}; search={}nodes/{}ms; rescue={}nodes/{}ms diagnostic; boss_retry={}nodes/{}ms; '>' marks expanded choices",
+        "branch cap: {}; search={}nodes/{}ms; rescue={}nodes/{}ms diagnostic; combat_portfolio={}nodes/{}ms; '>' marks expanded choices",
         args.max_branches,
         args.search_nodes,
         args.search_ms,

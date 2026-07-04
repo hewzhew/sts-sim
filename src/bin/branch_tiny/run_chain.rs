@@ -79,8 +79,8 @@ fn push_overrides(command: &mut Command, args: Args, overrides: ArgsOverrides) {
     if let Some(wall_ms) = args.wall_ms {
         command.arg("--wall-ms").arg(wall_ms.to_string());
     }
-    if overrides.checkpoint_before_boss_retry {
-        command.arg("--checkpoint-before-boss-retry");
+    if overrides.checkpoint_before_combat_portfolio {
+        command.arg("--checkpoint-before-combat-portfolio");
     }
 }
 

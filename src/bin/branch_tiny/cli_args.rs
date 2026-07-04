@@ -21,7 +21,7 @@ pub(super) struct Args {
     pub(super) boss_search_ms: u64,
     pub(super) wall_ms: Option<u64>,
     #[serde(skip)]
-    pub(super) checkpoint_before_boss_retry: bool,
+    pub(super) checkpoint_before_combat_portfolio: bool,
     #[serde(skip)]
     pub(super) wall_capped_search_budget: bool,
     #[serde(skip)]
@@ -41,7 +41,7 @@ pub(super) struct ArgsOverrides {
     pub(super) boss_search_nodes: Option<usize>,
     pub(super) boss_search_ms: Option<u64>,
     pub(super) wall_ms: Option<u64>,
-    pub(super) checkpoint_before_boss_retry: bool,
+    pub(super) checkpoint_before_combat_portfolio: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -90,8 +90,8 @@ impl ArgsOverrides {
         if let Some(value) = self.wall_ms {
             args.wall_ms = Some(value);
         }
-        if self.checkpoint_before_boss_retry {
-            args.checkpoint_before_boss_retry = true;
+        if self.checkpoint_before_combat_portfolio {
+            args.checkpoint_before_combat_portfolio = true;
         }
     }
 }
@@ -125,7 +125,7 @@ pub(super) fn parse_args() -> Result<
         boss_search_nodes: 800_000,
         boss_search_ms: 8_000,
         wall_ms: None,
-        checkpoint_before_boss_retry: false,
+        checkpoint_before_combat_portfolio: false,
         wall_capped_search_budget: false,
         wall_capped_boss_budget: false,
     };
@@ -156,7 +156,7 @@ pub(super) fn parse_args() -> Result<
                 "  optional: --continue-capsule DIR --continue-slices N runs repeated wall slices"
             );
             println!(
-                "  optional: --checkpoint-before-boss-retry saves a resumable boss retry checkpoint"
+                "  optional: --checkpoint-before-combat-portfolio saves a resumable combat portfolio checkpoint"
             );
             println!("branch_tiny --probe-event-owner EVENT [--probe-event-screen N]");
             println!(
@@ -192,15 +192,15 @@ pub(super) fn parse_args() -> Result<
                 | "--resume-capsule"
                 | "--continue-capsule"
                 | "--continue-slices"
-                | "--checkpoint-before-boss-retry"
+                | "--checkpoint-before-combat-portfolio"
                 | "--probe-event-owner"
                 | "--probe-event-screen"
         ) {
             return Err(format!("unknown argument {key}"));
         }
-        if key == "--checkpoint-before-boss-retry" {
-            args.checkpoint_before_boss_retry = true;
-            overrides.checkpoint_before_boss_retry = true;
+        if key == "--checkpoint-before-combat-portfolio" {
+            args.checkpoint_before_combat_portfolio = true;
+            overrides.checkpoint_before_combat_portfolio = true;
             index += 1;
             continue;
         }

@@ -29,7 +29,7 @@ pub(super) fn prepare_branch_work(
             deadline,
         );
         branch.status = advance.status;
-        branch.boss_retry = advance.boss_retry;
+        branch.combat_portfolio = advance.combat_portfolio;
         branch.auto_steps = advance.auto_steps;
         branch.combat_search = advance.combat_search;
         expandable = generation < args.generations && branch.status.is_expandable_now();
@@ -174,7 +174,7 @@ pub(super) fn expand_registered_owner(
             Err(err) => (
                 runner::AdvanceResult {
                     status: BranchStatus::ApplyFailed(err),
-                    boss_retry: None,
+                    combat_portfolio: None,
                     auto_steps: Vec::new(),
                     combat_search: Vec::new(),
                 },
@@ -198,7 +198,7 @@ pub(super) fn expand_registered_owner(
             path,
             session,
             status: advance.status,
-            boss_retry: advance.boss_retry,
+            combat_portfolio: advance.combat_portfolio,
             auto_steps: advance.auto_steps,
             combat_search: advance.combat_search,
         });
