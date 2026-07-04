@@ -19,6 +19,7 @@ pub(super) struct ProjectedMonsterDamage {
     pub(super) guardian_close_up_triggered: bool,
     pub(super) guardian_mode_shift_remaining: Option<i32>,
     pub(super) lagavulin_sleeping: bool,
+    pub(super) champ_threshold_pending: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -114,5 +115,6 @@ fn projected_monster_from(
             None
         },
         lagavulin_sleeping: enemy_id == EnemyId::Lagavulin && !monster.lagavulin.is_out,
+        champ_threshold_pending: enemy_id == EnemyId::Champ && !monster.champ.threshold_reached,
     })
 }

@@ -12,6 +12,7 @@ pub(in crate::ai::combat_search_v2) fn priority_for_input(
     engine: &EngineState,
     combat: &CombatState,
     input: &ClientInput,
+    phase_guard_policy: super::super::CombatSearchV2PhaseGuardPolicy,
 ) -> ActionOrderingPriority {
     if let Some(hint) = pending_choice_ordering_hint(engine, combat, input) {
         let (role, role_rank) = pending_choice_role_rank(hint.role);
@@ -32,7 +33,13 @@ pub(in crate::ai::combat_search_v2) fn priority_for_input(
     match input {
         ClientInput::PlayCard { card_index, target } => {
             let phase_profile = combat_search_phase_profile(engine, combat);
-            super::play_card::priority_for_play_card(combat, *card_index, *target, phase_profile)
+            super::play_card::priority_for_play_card(
+                combat,
+                *card_index,
+                *target,
+                phase_profile,
+                phase_guard_policy,
+            )
         }
         ClientInput::UsePotion { .. } => {
             let potion_rank =

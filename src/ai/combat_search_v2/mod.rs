@@ -193,9 +193,14 @@ pub(crate) fn combat_search_action_ordering_role_label_for_state(
     combat: &CombatState,
     input: &ClientInput,
 ) -> &'static str {
-    action_priority::priority_for_input(engine, combat, input)
-        .role
-        .label()
+    action_priority::priority_for_input(
+        engine,
+        combat,
+        input,
+        CombatSearchV2PhaseGuardPolicy::Default,
+    )
+    .role
+    .label()
 }
 
 pub(crate) fn combat_search_phase_profile_report_for_state(

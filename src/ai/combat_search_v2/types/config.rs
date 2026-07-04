@@ -128,6 +128,7 @@ pub struct CombatSearchV2Config {
     pub rollout_beam_width: usize,
     pub turn_plan_policy: CombatSearchV2TurnPlanPolicy,
     pub frontier_policy: CombatSearchV2FrontierPolicy,
+    pub phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
     pub turn_plan_probe_max_inner_nodes: Option<usize>,
     pub turn_plan_probe_max_end_states: Option<usize>,
     pub turn_plan_probe_per_bucket_limit: Option<usize>,
@@ -154,12 +155,39 @@ impl Default for CombatSearchV2Config {
             rollout_beam_width: super::super::rollout::DEFAULT_TURN_BEAM_WIDTH,
             turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
             frontier_policy: CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets,
+            phase_guard_policy: CombatSearchV2PhaseGuardPolicy::Default,
             turn_plan_probe_max_inner_nodes: None,
             turn_plan_probe_max_end_states: None,
             turn_plan_probe_per_bucket_limit: None,
             root_action_prior: None,
             turn_plan_prior: None,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatSearchV2PhaseGuardPolicy {
+    Default,
+    ChampSplitGuard,
+}
+
+impl Default for CombatSearchV2PhaseGuardPolicy {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+impl CombatSearchV2PhaseGuardPolicy {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::ChampSplitGuard => "champ_split_guard",
+        }
+    }
+
+    pub(in crate::ai::combat_search_v2) fn guards_champ_split(self) -> bool {
+        matches!(self, Self::ChampSplitGuard)
     }
 }
 

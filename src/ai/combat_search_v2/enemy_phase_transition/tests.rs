@@ -34,6 +34,7 @@ fn detects_large_slime_split_trigger_from_card_damage() {
             card_index: 0,
             target: Some(11),
         },
+        CombatSearchV2PhaseGuardPolicy::Default,
     );
 
     assert_eq!(hint.split_trigger_count, 1);
@@ -61,6 +62,7 @@ fn lethal_split_monster_damage_is_not_split_debt() {
             card_index: 0,
             target: Some(11),
         },
+        CombatSearchV2PhaseGuardPolicy::Default,
     );
 
     assert_eq!(hint.split_trigger_count, 0);
@@ -87,6 +89,7 @@ fn detects_slime_boss_split_trigger_from_card_damage() {
             card_index: 0,
             target: Some(14),
         },
+        CombatSearchV2PhaseGuardPolicy::Default,
     );
 
     assert_eq!(hint.split_trigger_count, 1);
@@ -114,6 +117,7 @@ fn detects_guardian_mode_shift_trigger_from_card_damage() {
             card_index: 0,
             target: Some(12),
         },
+        CombatSearchV2PhaseGuardPolicy::Default,
     );
 
     assert_eq!(hint.guardian_mode_shift_trigger_count, 1);
@@ -135,6 +139,7 @@ fn detects_lagavulin_wake_risk_from_card_damage() {
             card_index: 0,
             target: Some(13),
         },
+        CombatSearchV2PhaseGuardPolicy::Default,
     );
 
     assert_eq!(hint.lagavulin_wake_risk_count, 1);

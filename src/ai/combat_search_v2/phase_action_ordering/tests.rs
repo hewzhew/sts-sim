@@ -34,6 +34,7 @@ fn lagavulin_sleep_phase_penalizes_wake_damage_and_rewards_power_setup() {
                         card_index: 0,
                         target: Some(1),
                     },
+                    super::super::CombatSearchV2PhaseGuardPolicy::Default,
                 ),
         },
     );
@@ -53,6 +54,7 @@ fn lagavulin_sleep_phase_penalizes_wake_damage_and_rewards_power_setup() {
                         card_index: 1,
                         target: None,
                     },
+                    super::super::CombatSearchV2PhaseGuardPolicy::Default,
                 ),
         },
     );

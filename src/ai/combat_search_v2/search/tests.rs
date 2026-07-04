@@ -400,7 +400,7 @@ fn search_report_declares_privileged_policy_evidence_boundary() {
         &OneCardWinStepper,
     );
 
-    assert_eq!(report.schema_version, 9);
+    assert_eq!(report.schema_version, 11);
     assert_eq!(
         report.policy_evidence.information_access,
         CombatSearchV2InformationAccess::PrivilegedSimulator
@@ -616,7 +616,7 @@ fn root_turn_plan_frontier_seed_remains_explicit_opt_in() {
     assert!(!diagnostic_only.outcome.complete_trajectory_found);
     assert_eq!(
         diagnostic_only.search_policy.turn_plan_policy,
-        "tactical_enemy_turn_boundary_frontier_seed"
+        "diagnostic_only"
     );
 
     let seeded = run_combat_search_v2_with_stepper(

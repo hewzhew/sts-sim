@@ -15,6 +15,7 @@ pub(super) fn priority_for_play_card(
     card_index: usize,
     target: Option<usize>,
     phase_profile: CombatSearchPhaseProfileV1,
+    phase_guard_policy: super::super::CombatSearchV2PhaseGuardPolicy,
 ) -> ActionOrderingPriority {
     let Some(card) = combat.zones.hand.get(card_index) else {
         return ActionOrderingPriority::neutral(ActionOrderingRole::Neutral);
@@ -37,6 +38,7 @@ pub(super) fn priority_for_play_card(
     let phase_transition = enemy_phase_transition_hint_for_input(
         combat,
         &ClientInput::PlayCard { card_index, target },
+        phase_guard_policy,
     );
     let current_turn_attack_setup =
         current_turn_attack_setup_score(combat, card_index, card, effects);

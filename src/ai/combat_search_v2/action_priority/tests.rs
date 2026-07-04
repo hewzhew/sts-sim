@@ -1,4 +1,5 @@
 use super::*;
+use crate::ai::combat_search_v2::CombatSearchV2PhaseGuardPolicy;
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::CombatCard;
@@ -18,6 +19,7 @@ fn non_player_turn_priority_is_neutral() {
         &EngineState::CombatProcessing,
         &combat,
         &ClientInput::EndTurn,
+        CombatSearchV2PhaseGuardPolicy::Default,
     );
 
     assert_eq!(priority.role, ActionOrderingRole::Neutral);
@@ -39,6 +41,7 @@ fn lethal_play_card_gets_lethal_role() {
             card_index: 0,
             target: Some(1),
         },
+        CombatSearchV2PhaseGuardPolicy::Default,
     );
 
     assert_eq!(priority.role, ActionOrderingRole::LethalCard);
@@ -57,7 +60,12 @@ fn pending_choice_priority_uses_structured_selection_role() {
         reason: crate::state::core::GridSelectReason::MoveToDrawPile,
     });
 
-    let priority = priority_for_input(&engine, &combat, &grid_select([20]));
+    let priority = priority_for_input(
+        &engine,
+        &combat,
+        &grid_select([20]),
+        CombatSearchV2PhaseGuardPolicy::Default,
+    );
 
     assert_eq!(
         priority.role,
@@ -82,6 +90,7 @@ fn sleeping_lagavulin_wake_damage_has_phase_penalty() {
             card_index: 0,
             target: Some(1),
         },
+        CombatSearchV2PhaseGuardPolicy::Default,
     );
 
     assert!(priority.phase_hint.has_signal());

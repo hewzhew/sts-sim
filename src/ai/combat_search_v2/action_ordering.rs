@@ -91,7 +91,13 @@ pub(super) fn order_indexed_action_choices(
     combat: &CombatState,
     choices: Vec<IndexedActionChoice>,
 ) -> ActionOrderingResult {
-    order_indexed_action_choices_with_prior(engine, combat, choices, None)
+    order_indexed_action_choices_with_prior(
+        engine,
+        combat,
+        choices,
+        None,
+        CombatSearchV2PhaseGuardPolicy::Default,
+    )
 }
 
 pub(super) fn order_indexed_action_choices_with_prior(
@@ -99,6 +105,7 @@ pub(super) fn order_indexed_action_choices_with_prior(
     combat: &CombatState,
     choices: Vec<IndexedActionChoice>,
     root_action_prior: Option<&CombatSearchV2RootActionPrior>,
+    phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
 ) -> ActionOrderingResult {
     let exact_state_hash = root_action_prior
         .filter(|prior| !prior.is_empty())
@@ -111,7 +118,7 @@ pub(super) fn order_indexed_action_choices_with_prior(
                 root_action_prior
                     .and_then(|prior| prior.score(state_hash, &indexed.choice.action_key))
             }),
-            priority: priority_for_input(engine, combat, &indexed.choice.input),
+            priority: priority_for_input(engine, combat, &indexed.choice.input, phase_guard_policy),
             choice: indexed.choice,
         })
         .collect::<Vec<_>>();

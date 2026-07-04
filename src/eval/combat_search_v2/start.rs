@@ -74,6 +74,7 @@ impl CombatSearchV2RunOptions {
                 .unwrap_or(defaults.rollout_beam_width),
             turn_plan_policy: self.turn_plan_policy.unwrap_or(defaults.turn_plan_policy),
             frontier_policy: self.frontier_policy.unwrap_or(defaults.frontier_policy),
+            phase_guard_policy: defaults.phase_guard_policy,
             turn_plan_probe_max_inner_nodes: self
                 .turn_plan_probe_max_inner_nodes
                 .or(defaults.turn_plan_probe_max_inner_nodes),

@@ -976,6 +976,7 @@ fn search_config(
             .turn_plan_policy
             .unwrap_or(defaults.turn_plan_policy),
         frontier_policy: options.frontier_policy.unwrap_or(defaults.frontier_policy),
+        phase_guard_policy: defaults.phase_guard_policy,
         turn_plan_probe_max_inner_nodes: defaults.turn_plan_probe_max_inner_nodes,
         turn_plan_probe_max_end_states: defaults.turn_plan_probe_max_end_states,
         turn_plan_probe_per_bucket_limit: defaults.turn_plan_probe_per_bucket_limit,

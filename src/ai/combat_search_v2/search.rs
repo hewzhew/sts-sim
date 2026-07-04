@@ -275,6 +275,7 @@ pub fn run_combat_search_v2_with_stepper(
             &node.combat,
             equivalence.choices,
             config.root_action_prior.as_ref(),
+            config.phase_guard_policy,
         );
         diagnostics.observe_action_ordering(&ordered.summary);
         diagnostics.observe_pending_choice_ordering(pending_choice.as_ref(), &ordered.summary);
