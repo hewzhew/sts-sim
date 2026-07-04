@@ -14,6 +14,8 @@ use sts_simulator::state::events::EventId;
 mod boundary_router;
 #[path = "branch_tiny/branch_frontier.rs"]
 mod branch_frontier;
+#[path = "branch_tiny/branch_observer.rs"]
+mod branch_observer;
 #[path = "branch_tiny/branch_scheduler.rs"]
 mod branch_scheduler;
 #[path = "branch_tiny/branch_status_view.rs"]
@@ -483,39 +485,23 @@ fn run() -> Result<(), String> {
         }
         let child_args = deadline.cap_args(args, total_expanded.max(1));
         for ((branch, expandable, choices), expanded_mask) in work.into_iter().zip(expanded_masks) {
-            render::print_branch_timeline(generation, &branch, &choices, &expanded_mask);
-            if let Some(trace) = trace.as_mut() {
-                trace.record_node(generation, &branch, &choices, &expanded_mask)?;
-            }
-            if let Some(dir) = combat_gap_case_dir.as_ref() {
-                if matches!(
-                    branch.status,
-                    BranchStatus::CombatGap { .. }
-                        | BranchStatus::OperationBudgetExhausted { .. }
-                        | BranchStatus::BudgetGap { .. }
-                ) {
-                    match combat_gap_case::save_combat_gap_case(dir, args, generation, &branch) {
-                        Ok(Some(path)) => println!("  combat_gap_case: {}", path.display()),
-                        Ok(None) => {}
-                        Err(err) => println!("  combat_gap_case_error: {}", render::one_line(&err)),
-                    }
-                }
-            }
+            branch_observer::record_branch_node(
+                args,
+                generation,
+                &branch,
+                &choices,
+                &expanded_mask,
+                &mut trace,
+                combat_gap_case_dir.as_ref(),
+            )?;
             if !expandable {
-                if let Some(trace) = trace.as_mut() {
-                    trace.record_branch_snapshot(generation, "stopped", &branch)?;
-                }
-                if let Some(capsule) = run_capsule.as_ref() {
-                    capsule.save_terminal_result(args, generation, &branch)?;
-                }
-                if let Some(reason) = run_contract::satisfied(args.objective, &branch.status) {
-                    run_persistence::finalize_objective_result(
-                        run_capsule.as_ref(),
-                        args,
-                        generation,
-                        &branch,
-                        reason.as_str(),
-                    )?;
+                if branch_observer::record_stopped_branch(
+                    args,
+                    generation,
+                    &branch,
+                    &mut trace,
+                    run_capsule.as_ref(),
+                )? {
                     return Ok(());
                 }
                 if branch.status.is_resumable() {
@@ -540,17 +526,12 @@ fn run() -> Result<(), String> {
                     .map(|(_, choice)| choice),
                 &mut next_branch_id,
             ) {
-                if let Some(capsule) = run_capsule.as_ref() {
-                    capsule.save_terminal_result(args, generation + 1, &child)?;
-                }
-                if let Some(reason) = run_contract::satisfied(args.objective, &child.status) {
-                    run_persistence::finalize_objective_result(
-                        run_capsule.as_ref(),
-                        args,
-                        generation + 1,
-                        &child,
-                        reason.as_str(),
-                    )?;
+                if branch_observer::record_child_branch(
+                    args,
+                    generation + 1,
+                    &child,
+                    run_capsule.as_ref(),
+                )? {
                     return Ok(());
                 }
                 next.push_back(child);
