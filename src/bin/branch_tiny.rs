@@ -14,6 +14,8 @@ use sts_simulator::state::events::EventId;
 mod boundary_router;
 #[path = "branch_tiny/branch_scheduler.rs"]
 mod branch_scheduler;
+#[path = "branch_tiny/branch_status_view.rs"]
+mod branch_status_view;
 #[path = "branch_tiny/candidate_ir_adapter.rs"]
 mod candidate_ir_adapter;
 #[path = "branch_tiny/cli_args.rs"]

@@ -31,7 +31,7 @@ struct CombatSearchLaneAttempt {
 }
 
 #[derive(Clone)]
-pub(super) enum CombatSearchOutcome {
+enum CombatSearchOutcome {
     AcceptedLine,
     CombatGap,
     BudgetLimited,
@@ -42,11 +42,24 @@ pub(super) enum CombatSearchOutcome {
 
 pub(super) struct CombatSearchPortfolioResult {
     pub(super) status: BranchStatus,
-    pub(super) outcome: CombatSearchOutcome,
+    outcome: CombatSearchOutcome,
     pub(super) report: Option<CombatSearchPortfolioReport>,
     pub(super) auto_steps: Vec<RunControlAutoAppliedStepV1>,
     pub(super) combat_search: Vec<CombatSearchTraceSummary>,
     pub(super) applied_operations: usize,
+}
+
+impl CombatSearchPortfolioResult {
+    pub(super) fn should_continue_operation_budget_chunk(
+        &self,
+        auto_ops_used: usize,
+        auto_ops_limit: usize,
+        deadline_reached: bool,
+    ) -> bool {
+        matches!(self.outcome, CombatSearchOutcome::OperationBudgetExhausted)
+            && auto_ops_used < auto_ops_limit
+            && !deadline_reached
+    }
 }
 
 pub(super) fn combat_search_summaries(

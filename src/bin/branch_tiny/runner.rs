@@ -3,7 +3,6 @@ use sts_simulator::eval::run_control::{
 };
 
 use super::combat_search_orchestrator;
-use super::combat_search_orchestrator::CombatSearchOutcome;
 use super::owner_orchestrator::{orchestrate_owner_boundary, OwnerOrchestration};
 use super::run_deadline::RunDeadline;
 use super::{Args, BranchStatus, CombatSearchPortfolioReport};
@@ -28,15 +27,16 @@ pub(super) fn advance_to_owner_or_gap(
         let run_args = deadline.cap_args(args, 1);
         match combat_search_orchestrator::run_combat_portfolio_step(session, run_args) {
             Ok(portfolio) => {
+                let continue_operation_budget_chunk = portfolio
+                    .should_continue_operation_budget_chunk(
+                        auto_ops_used.saturating_add(portfolio.applied_operations),
+                        args.auto_ops,
+                        deadline.should_stop(),
+                    );
                 auto_ops_used = auto_ops_used.saturating_add(portfolio.applied_operations);
                 combat_search.extend(portfolio.combat_search);
                 auto_steps.extend(portfolio.auto_steps);
-                if matches!(
-                    portfolio.outcome,
-                    CombatSearchOutcome::OperationBudgetExhausted
-                ) && auto_ops_used < args.auto_ops
-                    && !deadline.should_stop()
-                {
+                if continue_operation_budget_chunk {
                     continue;
                 }
                 if portfolio.report.is_some() {

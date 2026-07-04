@@ -6,6 +6,7 @@ use sts_simulator::eval::run_control::{
     RunControlAutoAppliedStepV1, RunControlCommand, RunControlSession,
 };
 
+use super::branch_status_view;
 use super::owner_model::{
     cleanup_target_label, ChoiceAnnotation, OwnerCandidateDecision, OwnerChoice,
 };
@@ -25,7 +26,7 @@ pub(super) fn print_branch_timeline(
         branch.id,
         branch.session.run_state.act_num,
         branch.session.run_state.floor_num,
-        status_boundary(&branch.status),
+        branch_status_view::status_boundary(&branch.status),
         status_owner(&branch.status),
         branch.session.run_state.current_hp,
         branch.session.run_state.max_hp,
@@ -69,20 +70,6 @@ pub(super) fn print_branch_timeline(
             expanded_count,
             choices.len() - expanded_count
         );
-    }
-}
-
-pub(super) fn status_boundary(status: &BranchStatus) -> &str {
-    match status {
-        BranchStatus::Running { boundary, .. }
-        | BranchStatus::AwaitingAuto { boundary, .. }
-        | BranchStatus::AutomationGap { boundary, .. }
-        | BranchStatus::CombatGap { boundary, .. }
-        | BranchStatus::OperationBudgetExhausted { boundary, .. }
-        | BranchStatus::BudgetGap { boundary, .. } => boundary,
-        BranchStatus::Terminal(_)
-        | BranchStatus::ApplyFailed(_)
-        | BranchStatus::AdvanceFailed(_) => "-",
     }
 }
 

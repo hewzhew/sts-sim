@@ -1,6 +1,6 @@
 use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 
-use super::render;
+use super::branch_status_view;
 use super::{
     Args, BranchStatus, CombatSearchLaneReport, CombatSearchPortfolioReport,
     CombatSearchPortfolioStatus, TerminalOutcome,
@@ -64,7 +64,9 @@ fn combat_portfolio_status(status: &BranchStatus) -> CombatSearchPortfolioStatus
             CombatSearchPortfolioStatus::Failed("combat portfolio ended in defeat".to_string())
         }
         BranchStatus::Terminal(result) => CombatSearchPortfolioStatus::Terminal(*result),
-        _ => CombatSearchPortfolioStatus::Advanced(render::status_boundary(status).to_string()),
+        _ => CombatSearchPortfolioStatus::Advanced(
+            branch_status_view::status_boundary(status).to_string(),
+        ),
     }
 }
 
