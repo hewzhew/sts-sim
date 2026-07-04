@@ -28,6 +28,8 @@ mod frontier_checkpoint;
 mod neow_owner;
 #[path = "branch_tiny/owner_model.rs"]
 mod owner_model;
+#[path = "branch_tiny/owner_orchestrator.rs"]
+mod owner_orchestrator;
 #[path = "branch_tiny/owners.rs"]
 mod owners;
 #[path = "branch_tiny/render.rs"]

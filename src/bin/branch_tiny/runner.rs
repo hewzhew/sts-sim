@@ -4,16 +4,14 @@ use sts_simulator::ai::combat_search_v2::{
 };
 use sts_simulator::content::cards::{get_card_definition, CardType};
 use sts_simulator::eval::run_control::{
-    apply_owner_audit_auto_run, build_decision_surface, CombatAutomationTrajectorySource,
-    CombatSearchTraceSummary, RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1,
-    RunControlAutoStepOptions, RunControlAutoStopKind, RunControlCommand, RunControlCommandOutcome,
-    RunControlHpLossLimit, RunControlRouteAutomationMode, RunControlSearchCombatOptions,
-    RunControlSession, RunControlTraceAnnotationV1,
+    apply_owner_audit_auto_run, CombatAutomationTrajectorySource, CombatSearchTraceSummary,
+    RunControlAutoAppliedStepV1, RunControlAutoStepOptions, RunControlAutoStopKind,
+    RunControlCommandOutcome, RunControlHpLossLimit, RunControlRouteAutomationMode,
+    RunControlSearchCombatOptions, RunControlSession, RunControlTraceAnnotationV1,
 };
-use sts_simulator::state::core::{ClientInput, EngineState};
 
 use super::boundary_router;
-use super::owner_model::{OwnerDecision, OwnerRoutine};
+use super::owner_orchestrator::{orchestrate_owner_boundary, OwnerOrchestration};
 use super::render;
 use super::{
     Args, BossRetryAttemptReport, BossRetryReport, BossRetryStatus, BranchStatus, RunDeadline,
@@ -199,61 +197,15 @@ pub(super) fn advance_to_owner_or_gap(
                     BranchStatus::Running { owner, .. } => *owner,
                     _ => return advance_result(status, None, auto_steps, combat_search),
                 };
-                let surface = build_decision_surface(session);
-                match super::owners::owner_decision(session, owner, &surface) {
-                    OwnerDecision::Candidates(choices) if !choices.is_empty() => {
+                match orchestrate_owner_boundary(session, owner, &mut policy_steps) {
+                    OwnerOrchestration::StopAtCandidates => {
                         return advance_result(status, None, auto_steps, combat_search);
                     }
-                    OwnerDecision::Candidates(_) => {
-                        return advance_result(
-                            BranchStatus::AdvanceFailed(format!(
-                                "owner {owner:?} produced no candidates"
-                            )),
-                            None,
-                            auto_steps,
-                            combat_search,
-                        );
+                    OwnerOrchestration::Stop(status) => {
+                        return advance_result(status, None, auto_steps, combat_search);
                     }
-                    OwnerDecision::Gap(reason) => {
-                        return advance_result(
-                            BranchStatus::AdvanceFailed(format!("owner {owner:?} gap: {reason}")),
-                            None,
-                            auto_steps,
-                            combat_search,
-                        );
-                    }
-                    OwnerDecision::Routine(routine) => {
-                        policy_steps += 1;
-                        if policy_steps > 16 {
-                            return advance_result(
-                                BranchStatus::BudgetGap {
-                                    boundary: surface.view.header.title.clone(),
-                                    reason: "owner routine step budget exhausted".to_string(),
-                                },
-                                None,
-                                auto_steps,
-                                combat_search,
-                            );
-                        }
-                        match apply_owner_routine(session, routine) {
-                            Ok(outcome) => {
-                                auto_steps.push(RunControlAutoAppliedStepV1 {
-                                    kind: RunControlAutoAppliedKindV1::OwnerRoutine,
-                                    label: format!("owner routine {owner:?}"),
-                                    action_result: outcome.action_result,
-                                });
-                            }
-                            Err(err) => {
-                                return advance_result(
-                                    BranchStatus::AdvanceFailed(format!(
-                                        "owner routine {owner:?} failed: {err}"
-                                    )),
-                                    None,
-                                    auto_steps,
-                                    combat_search,
-                                );
-                            }
-                        }
+                    OwnerOrchestration::AppliedRoutine(step) => {
+                        auto_steps.push(step);
                     }
                 }
             }
@@ -673,83 +625,4 @@ fn retry_complete_search_action_keys(outcome: &RunControlCommandOutcome) -> Vec<
             _ => None,
         })
         .unwrap_or_default()
-}
-
-fn apply_owner_routine(
-    session: &mut RunControlSession,
-    routine: OwnerRoutine,
-) -> Result<sts_simulator::eval::run_control::RunControlCommandOutcome, String> {
-    match routine {
-        OwnerRoutine::Command(command) => session.apply_command(command),
-        OwnerRoutine::RewardTinyAutomation => apply_reward_tiny_routine(session),
-        OwnerRoutine::AdvanceEmptyCampfire => {
-            sts_simulator::engine::run_loop::tick_run_active_with_observer(
-                &mut session.engine_state,
-                &mut session.run_state,
-                &mut session.active_combat,
-                None,
-            );
-            session.apply_command(RunControlCommand::Noop)
-        }
-    }
-}
-
-fn apply_reward_tiny_routine(
-    session: &mut RunControlSession,
-) -> Result<sts_simulator::eval::run_control::RunControlCommandOutcome, String> {
-    if let Some(outcome) = sts_simulator::eval::run_control::apply_reward_tiny_automation(session)?
-    {
-        return Ok(outcome);
-    }
-    session.apply_command(RunControlCommand::Input(reward_tiny_exit_input(session)?))
-}
-
-fn reward_tiny_exit_input(session: &RunControlSession) -> Result<ClientInput, String> {
-    let (reward, exit) = match &session.engine_state {
-        EngineState::RewardScreen(reward) => (reward, ClientInput::Proceed),
-        EngineState::RewardOverlay { reward_state, .. } => (reward_state, ClientInput::Cancel),
-        _ => return Err("RewardTiny owner requires reward surface".to_string()),
-    };
-    if reward.pending_card_choice.is_some() || reward.has_card_reward_item() {
-        return Err("RewardTiny owner received card reward surface".to_string());
-    }
-    let only_unclaimable_potions = !reward.items.is_empty()
-        && reward.items.iter().all(|item| {
-            matches!(
-                item,
-                sts_simulator::state::rewards::RewardItem::Potion { .. }
-            )
-        })
-        && session.run_state.find_empty_potion_slot().is_none();
-    if reward.items.is_empty() || only_unclaimable_potions {
-        return require_visible_input(session, exit);
-    }
-    Err(format!(
-        "RewardTiny owner has strategic residual reward items: {:?}",
-        reward.items
-    ))
-}
-
-fn require_visible_input(
-    session: &RunControlSession,
-    input: ClientInput,
-) -> Result<ClientInput, String> {
-    let surface = build_decision_surface(session);
-    if surface
-        .visible_executable_inputs
-        .iter()
-        .any(|visible_input| visible_input == &input)
-    {
-        return Ok(input);
-    }
-    Err(format!(
-        "input {:?} is not visible at {} among [{}]",
-        input,
-        surface.view.header.title,
-        super::owners::executable_choices_including_cancel(&surface)
-            .iter()
-            .map(render::render_timeline_choice)
-            .collect::<Vec<_>>()
-            .join(" | ")
-    ))
 }
