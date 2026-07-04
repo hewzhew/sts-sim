@@ -18,6 +18,8 @@ mod boundary_router;
 mod candidate_ir_adapter;
 #[path = "branch_tiny/combat_gap_case.rs"]
 mod combat_gap_case;
+#[path = "branch_tiny/combat_rescue.rs"]
+mod combat_rescue;
 #[path = "branch_tiny/decision_delta.rs"]
 mod decision_delta;
 #[path = "branch_tiny/expansion_policy.rs"]

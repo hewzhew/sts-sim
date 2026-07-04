@@ -1,10 +1,29 @@
 use sts_simulator::eval::run_control::{
-    build_decision_surface, RunControlAutoStopKind, RunControlAutoStopV1, RunControlSession,
+    build_decision_surface, RunControlAutoStopKind, RunControlAutoStopV1, RunControlCommandOutcome,
+    RunControlSession,
 };
 use sts_simulator::state::core::{EngineState, RunResult};
 use sts_simulator::state::selection::DomainEventSource;
 
 use super::{BoundarySite, BranchStatus, Owner, TerminalOutcome};
+
+pub(super) fn classify_auto_outcome(
+    session: &RunControlSession,
+    outcome: &RunControlCommandOutcome,
+) -> BranchStatus {
+    if let Some(result) = terminal_outcome(session) {
+        return BranchStatus::Terminal(result);
+    }
+    outcome
+        .auto_stop
+        .as_ref()
+        .map(|stop| classify_boundary(session, stop))
+        .unwrap_or_else(|| {
+            BranchStatus::AdvanceFailed(
+                "auto_run returned non-terminal success without auto_stop".to_string(),
+            )
+        })
+}
 
 pub(super) fn classify_boundary(
     session: &RunControlSession,
