@@ -16,6 +16,7 @@ mod combat_line_selector;
 mod combat_no_win_fallback;
 mod combat_search;
 mod combat_search_rejection;
+mod combat_search_setup;
 mod combat_start;
 mod commands;
 mod decision_case;
