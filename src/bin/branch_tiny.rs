@@ -234,6 +234,10 @@ enum BranchStatus {
         boundary: String,
         reason: String,
     },
+    OperationBudgetExhausted {
+        boundary: String,
+        reason: String,
+    },
     BudgetGap {
         boundary: String,
         reason: String,
@@ -478,7 +482,9 @@ fn run() -> Result<(), String> {
             if let Some(dir) = combat_gap_case_dir.as_ref() {
                 if matches!(
                     branch.status,
-                    BranchStatus::CombatGap { .. } | BranchStatus::BudgetGap { .. }
+                    BranchStatus::CombatGap { .. }
+                        | BranchStatus::OperationBudgetExhausted { .. }
+                        | BranchStatus::BudgetGap { .. }
                 ) {
                     match combat_gap_case::save_combat_gap_case(dir, args, generation, &branch) {
                         Ok(Some(path)) => println!("  combat_gap_case: {}", path.display()),
@@ -609,6 +615,7 @@ fn branch_status_boundary_label(status: &BranchStatus) -> String {
         | BranchStatus::AwaitingAuto { boundary, .. }
         | BranchStatus::AutomationGap { boundary, .. }
         | BranchStatus::CombatGap { boundary, .. }
+        | BranchStatus::OperationBudgetExhausted { boundary, .. }
         | BranchStatus::BudgetGap { boundary, .. } => boundary.clone(),
         BranchStatus::Terminal(_) => "Terminal".to_string(),
         BranchStatus::ApplyFailed(_) => "ApplyFailed".to_string(),

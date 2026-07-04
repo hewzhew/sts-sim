@@ -78,6 +78,7 @@ pub(super) fn status_boundary(status: &BranchStatus) -> &str {
         | BranchStatus::AwaitingAuto { boundary, .. }
         | BranchStatus::AutomationGap { boundary, .. }
         | BranchStatus::CombatGap { boundary, .. }
+        | BranchStatus::OperationBudgetExhausted { boundary, .. }
         | BranchStatus::BudgetGap { boundary, .. } => boundary,
         BranchStatus::Terminal(_)
         | BranchStatus::ApplyFailed(_)
@@ -204,6 +205,9 @@ fn status_label(status: &BranchStatus) -> String {
         BranchStatus::Terminal(result) => format!("terminal:{}", result.as_str()),
         BranchStatus::AutomationGap { .. } => "automation_gap".to_string(),
         BranchStatus::CombatGap { reason, .. } => format!("combat_gap:{}", one_line(reason)),
+        BranchStatus::OperationBudgetExhausted { reason, .. } => {
+            format!("operation_budget:{}", one_line(reason))
+        }
         BranchStatus::BudgetGap { reason, .. } => format!("budget_gap:{}", one_line(reason)),
         BranchStatus::ApplyFailed(err) => format!("apply_failed:{}", one_line(err)),
         BranchStatus::AdvanceFailed(err) => format!("advance_failed:{}", one_line(err)),
@@ -216,6 +220,7 @@ fn status_owner(status: &BranchStatus) -> String {
         BranchStatus::AwaitingAuto { .. } => "AutoRun".to_string(),
         BranchStatus::AutomationGap { site, .. } => site_label(*site),
         BranchStatus::CombatGap { .. } => "combat_search".to_string(),
+        BranchStatus::OperationBudgetExhausted { .. } => "automation_budget".to_string(),
         BranchStatus::BudgetGap { .. } => "automation_budget".to_string(),
         BranchStatus::Terminal(_) => "terminal".to_string(),
         BranchStatus::ApplyFailed(_) => "candidate_apply".to_string(),

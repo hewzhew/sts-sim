@@ -60,6 +60,10 @@ enum BranchStatusCheckpoint {
         boundary: String,
         reason: String,
     },
+    OperationBudgetExhausted {
+        boundary: String,
+        reason: String,
+    },
     BudgetGap {
         boundary: String,
         reason: String,
@@ -192,6 +196,12 @@ impl BranchStatusCheckpoint {
                 boundary: boundary.clone(),
                 reason: reason.clone(),
             },
+            BranchStatus::OperationBudgetExhausted { boundary, reason } => {
+                Self::OperationBudgetExhausted {
+                    boundary: boundary.clone(),
+                    reason: reason.clone(),
+                }
+            }
             BranchStatus::BudgetGap { boundary, reason } => Self::BudgetGap {
                 boundary: boundary.clone(),
                 reason: reason.clone(),
@@ -212,6 +222,9 @@ impl BranchStatusCheckpoint {
                 BranchStatus::AutomationGap { boundary, site }
             }
             Self::CombatGap { boundary, reason } => BranchStatus::CombatGap { boundary, reason },
+            Self::OperationBudgetExhausted { boundary, reason } => {
+                BranchStatus::OperationBudgetExhausted { boundary, reason }
+            }
             Self::BudgetGap { boundary, reason } => BranchStatus::BudgetGap { boundary, reason },
             Self::ApplyFailed(reason) => BranchStatus::ApplyFailed(reason),
             Self::AdvanceFailed(reason) => BranchStatus::AdvanceFailed(reason),

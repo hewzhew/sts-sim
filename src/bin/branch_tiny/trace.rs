@@ -291,6 +291,9 @@ fn status_value(status: &BranchStatus) -> Value {
         BranchStatus::CombatGap { boundary, reason } => {
             json!({"kind": "combat_gap", "boundary": boundary, "reason": reason})
         }
+        BranchStatus::OperationBudgetExhausted { boundary, reason } => {
+            json!({"kind": "operation_budget_exhausted", "boundary": boundary, "reason": reason})
+        }
         BranchStatus::BudgetGap { boundary, reason } => {
             json!({"kind": "budget_gap", "boundary": boundary, "reason": reason})
         }

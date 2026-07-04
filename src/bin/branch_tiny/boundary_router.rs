@@ -38,7 +38,7 @@ pub(super) fn classify_boundary(
         if let Some(owner) = owner_for_current_boundary(session) {
             return BranchStatus::Running { boundary, owner };
         }
-        return BranchStatus::BudgetGap {
+        return BranchStatus::OperationBudgetExhausted {
             boundary,
             reason: stop.reason.clone(),
         };

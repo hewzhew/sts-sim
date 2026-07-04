@@ -23,6 +23,7 @@ pub(super) fn save_combat_gap_case(
     };
     let (boundary, reason) = match &branch.status {
         BranchStatus::CombatGap { boundary, reason }
+        | BranchStatus::OperationBudgetExhausted { boundary, reason }
         | BranchStatus::BudgetGap { boundary, reason } => (boundary.as_str(), reason.as_str()),
         _ => return Ok(None),
     };

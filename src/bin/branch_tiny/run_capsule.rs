@@ -386,7 +386,9 @@ fn next_recommendation(
 ) -> (Option<String>, Option<&'static str>) {
     if matches!(
         status,
-        BranchStatus::CombatGap { .. } | BranchStatus::BudgetGap { .. }
+        BranchStatus::CombatGap { .. }
+            | BranchStatus::OperationBudgetExhausted { .. }
+            | BranchStatus::BudgetGap { .. }
     ) {
         return (
             combat_case.as_str().map(|case| {
@@ -510,7 +512,9 @@ fn combat_case_value(
 ) -> Value {
     if !matches!(
         branch.status,
-        BranchStatus::CombatGap { .. } | BranchStatus::BudgetGap { .. }
+        BranchStatus::CombatGap { .. }
+            | BranchStatus::OperationBudgetExhausted { .. }
+            | BranchStatus::BudgetGap { .. }
     ) {
         return Value::Null;
     }
@@ -569,6 +573,9 @@ fn status_value(status: &BranchStatus) -> Value {
         BranchStatus::CombatGap { boundary, reason } => {
             json!({"kind": "combat_gap", "boundary": boundary, "reason": reason})
         }
+        BranchStatus::OperationBudgetExhausted { boundary, reason } => {
+            json!({"kind": "operation_budget_exhausted", "boundary": boundary, "reason": reason})
+        }
         BranchStatus::BudgetGap { boundary, reason } => {
             json!({"kind": "budget_gap", "boundary": boundary, "reason": reason})
         }
@@ -585,6 +592,7 @@ fn terminal_manifest_status(status: &BranchStatus) -> &'static str {
         BranchStatus::Running { .. } | BranchStatus::AwaitingAuto { .. } => "running",
         BranchStatus::AutomationGap { .. }
         | BranchStatus::CombatGap { .. }
+        | BranchStatus::OperationBudgetExhausted { .. }
         | BranchStatus::BudgetGap { .. }
         | BranchStatus::ApplyFailed(_)
         | BranchStatus::AdvanceFailed(_) => "gap",

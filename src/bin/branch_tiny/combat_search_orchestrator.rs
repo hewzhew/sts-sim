@@ -552,6 +552,7 @@ impl CombatSearchLane {
         !matches!(
             status,
             BranchStatus::CombatGap { .. }
+                | BranchStatus::OperationBudgetExhausted { .. }
                 | BranchStatus::BudgetGap { .. }
                 | BranchStatus::ApplyFailed(_)
                 | BranchStatus::AdvanceFailed(_)
@@ -638,6 +639,7 @@ fn combat_portfolio_status(status: &BranchStatus) -> CombatSearchPortfolioStatus
         }
         BranchStatus::ApplyFailed(err)
         | BranchStatus::AdvanceFailed(err)
+        | BranchStatus::OperationBudgetExhausted { reason: err, .. }
         | BranchStatus::BudgetGap { reason: err, .. } => {
             CombatSearchPortfolioStatus::Failed(err.clone())
         }
@@ -700,11 +702,7 @@ fn primary_operation_budget_exhausted(
     primary_stop_kind: Option<RunControlAutoStopKind>,
 ) -> bool {
     primary_stop_kind == Some(RunControlAutoStopKind::OperationBudgetExhausted)
-        || matches!(
-            status,
-            BranchStatus::BudgetGap { reason, .. }
-                if reason.starts_with("operation budget exhausted")
-        )
+        || matches!(status, BranchStatus::OperationBudgetExhausted { .. })
 }
 
 fn awaiting_auto_boundary(boundary: impl Into<String>, reason: String) -> BranchStatus {

@@ -134,7 +134,9 @@ fn frontier_retention_key(branch: &Branch) -> (u8, u8, i32, u32, i32) {
     let status = match branch.status {
         BranchStatus::Terminal(TerminalOutcome::Victory) => 4,
         BranchStatus::Running { .. } | BranchStatus::AwaitingAuto { .. } => 3,
-        BranchStatus::CombatGap { .. } | BranchStatus::BudgetGap { .. } => 1,
+        BranchStatus::CombatGap { .. }
+        | BranchStatus::OperationBudgetExhausted { .. }
+        | BranchStatus::BudgetGap { .. } => 1,
         BranchStatus::Terminal(TerminalOutcome::Defeat)
         | BranchStatus::AutomationGap { .. }
         | BranchStatus::ApplyFailed(_)
