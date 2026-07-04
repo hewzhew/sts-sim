@@ -3,15 +3,28 @@ use sts_simulator::eval::run_control::{
 };
 
 use super::combat_search_orchestrator;
+use super::combat_search_orchestrator::CombatSearchPortfolioResult;
 use super::owner_orchestrator::{orchestrate_owner_boundary, OwnerOrchestration};
 use super::run_deadline::RunDeadline;
-use super::{Args, BranchStatus, CombatSearchPortfolioReport};
+use super::{Args, BranchStatus, CombatSearchPortfolioReport, Owner};
 
 pub(super) struct AdvanceResult {
     pub(super) status: BranchStatus,
     pub(super) combat_portfolio: Option<CombatSearchPortfolioReport>,
     pub(super) auto_steps: Vec<RunControlAutoAppliedStepV1>,
     pub(super) combat_search: Vec<CombatSearchTraceSummary>,
+}
+
+enum PortfolioTransition {
+    ContinueAuto,
+    Stop {
+        status: BranchStatus,
+        combat_portfolio: Option<CombatSearchPortfolioReport>,
+    },
+    OwnerBoundary {
+        status: BranchStatus,
+        owner: Owner,
+    },
 }
 
 pub(super) fn advance_to_owner_or_gap(
@@ -27,38 +40,23 @@ pub(super) fn advance_to_owner_or_gap(
         let run_args = deadline.cap_args(args, 1);
         match combat_search_orchestrator::run_combat_portfolio_step(session, run_args) {
             Ok(portfolio) => {
-                let continue_operation_budget_chunk = portfolio
-                    .should_continue_operation_budget_chunk(
-                        auto_ops_used.saturating_add(portfolio.applied_operations),
-                        args.auto_ops,
-                        deadline.should_stop(),
-                    );
-                auto_ops_used = auto_ops_used.saturating_add(portfolio.applied_operations);
-                combat_search.extend(portfolio.combat_search);
-                auto_steps.extend(portfolio.auto_steps);
-                if continue_operation_budget_chunk {
-                    continue;
-                }
-                if portfolio.report.is_some() {
-                    return advance_result(
-                        portfolio.status,
-                        portfolio.report,
-                        auto_steps,
-                        combat_search,
-                    );
-                }
-                let status = portfolio.status;
-                if let BranchStatus::Terminal(result) = status {
-                    return advance_result(
-                        BranchStatus::Terminal(result),
-                        None,
-                        auto_steps,
-                        combat_search,
-                    );
-                }
-                let owner = match &status {
-                    BranchStatus::Running { owner, .. } => *owner,
-                    _ => return advance_result(status, None, auto_steps, combat_search),
+                let transition = absorb_portfolio_result(
+                    portfolio,
+                    args,
+                    deadline,
+                    &mut auto_ops_used,
+                    &mut auto_steps,
+                    &mut combat_search,
+                );
+                let (status, owner) = match transition {
+                    PortfolioTransition::ContinueAuto => continue,
+                    PortfolioTransition::Stop {
+                        status,
+                        combat_portfolio,
+                    } => {
+                        return advance_result(status, combat_portfolio, auto_steps, combat_search)
+                    }
+                    PortfolioTransition::OwnerBoundary { status, owner } => (status, owner),
                 };
                 match orchestrate_owner_boundary(session, owner, &mut policy_steps) {
                     OwnerOrchestration::StopAtCandidates => {
@@ -81,6 +79,47 @@ pub(super) fn advance_to_owner_or_gap(
                 )
             }
         }
+    }
+}
+
+fn absorb_portfolio_result(
+    portfolio: CombatSearchPortfolioResult,
+    args: Args,
+    deadline: RunDeadline,
+    auto_ops_used: &mut usize,
+    auto_steps: &mut Vec<RunControlAutoAppliedStepV1>,
+    combat_search: &mut Vec<CombatSearchTraceSummary>,
+) -> PortfolioTransition {
+    let next_auto_ops_used = auto_ops_used.saturating_add(portfolio.applied_operations);
+    let continue_operation_budget_chunk = portfolio.should_continue_operation_budget_chunk(
+        next_auto_ops_used,
+        args.auto_ops,
+        deadline.should_stop(),
+    );
+    *auto_ops_used = next_auto_ops_used;
+    combat_search.extend(portfolio.combat_search);
+    auto_steps.extend(portfolio.auto_steps);
+    if continue_operation_budget_chunk {
+        return PortfolioTransition::ContinueAuto;
+    }
+    let combat_portfolio = portfolio.report;
+    let status = portfolio.status;
+    if combat_portfolio.is_some() {
+        return PortfolioTransition::Stop {
+            status,
+            combat_portfolio,
+        };
+    }
+    let owner = match &status {
+        BranchStatus::Running { owner, .. } => Some(*owner),
+        _ => None,
+    };
+    match owner {
+        Some(owner) => PortfolioTransition::OwnerBoundary { status, owner },
+        None => PortfolioTransition::Stop {
+            status,
+            combat_portfolio: None,
+        },
     }
 }
 
