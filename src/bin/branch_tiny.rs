@@ -6,11 +6,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_simulator::ai::strategy::decision_pipeline::candidate_lane_label;
 use sts_simulator::eval::run_control::{
-    build_decision_surface, CombatSearchTraceSummary, RewardAutomationConfig,
-    RunControlAutoAppliedStepV1, RunControlConfig, RunControlSession,
+    CombatSearchTraceSummary, RewardAutomationConfig, RunControlAutoAppliedStepV1,
+    RunControlConfig, RunControlSession,
 };
-use sts_simulator::state::core::EngineState;
-use sts_simulator::state::events::{EventId, EventState};
+use sts_simulator::state::events::EventId;
 
 #[path = "branch_tiny/boundary_router.rs"]
 mod boundary_router;
@@ -24,6 +23,8 @@ mod combat_gap_case;
 mod combat_rescue;
 #[path = "branch_tiny/decision_delta.rs"]
 mod decision_delta;
+#[path = "branch_tiny/event_owner_probe.rs"]
+mod event_owner_probe;
 #[path = "branch_tiny/expansion_policy.rs"]
 mod expansion_policy;
 #[path = "branch_tiny/frontier_checkpoint.rs"]
@@ -57,7 +58,7 @@ mod runner;
 #[path = "branch_tiny/trace.rs"]
 mod trace;
 
-use owner_model::{ChoiceAnnotation, DecisionKey, OwnerDecision, OwnerRoutine};
+use owner_model::{ChoiceAnnotation, DecisionKey};
 use run_capsule::RunCapsule;
 use run_contract::{default_run_objective, RunObjective};
 use run_deadline::RunDeadline;
@@ -417,7 +418,7 @@ fn run() -> Result<(), String> {
         run_capsule_path = Some(path);
     }
     if let Some(probe) = event_owner_probe {
-        return run_event_owner_probe(args, probe);
+        return event_owner_probe::run(args, probe);
     }
     let run_capsule = run_capsule_path.map(RunCapsule::new);
     if combat_gap_case_dir.is_none() {
@@ -701,60 +702,6 @@ fn branch_status_boundary_label(status: &BranchStatus) -> String {
         BranchStatus::ApplyFailed(_) => "ApplyFailed".to_string(),
         BranchStatus::AdvanceFailed(_) => "AdvanceFailed".to_string(),
     }
-}
-
-fn run_event_owner_probe(args: Args, probe: EventOwnerProbeArgs) -> Result<(), String> {
-    let mut session = RunControlSession::new(RunControlConfig {
-        seed: args.seed,
-        ascension_level: args.ascension,
-        ..Default::default()
-    });
-    let mut event_state = EventState::new(probe.event_id);
-    event_state.current_screen = probe.screen;
-    session.run_state.event_state = Some(event_state);
-    session.engine_state = EngineState::EventRoom;
-
-    let surface = build_decision_surface(&session);
-    println!(
-        "event_owner_probe event={:?} screen={} candidates={}",
-        probe.event_id,
-        probe.screen,
-        surface.view.candidates.len()
-    );
-    for candidate in &surface.view.candidates {
-        println!(
-            "  candidate id={} key={:?} label={} command={:?}",
-            candidate.id,
-            candidate.key,
-            candidate.label,
-            candidate.action.executable_command()
-        );
-    }
-
-    match owners::owner_decision(&session, Owner::Event(probe.event_id), &surface) {
-        OwnerDecision::Routine(OwnerRoutine::Command(command)) => {
-            println!("  owner_decision=command {command:?}");
-        }
-        OwnerDecision::Routine(OwnerRoutine::RewardTinyAutomation) => {
-            println!("  owner_decision=unexpected_reward_tiny_automation");
-        }
-        OwnerDecision::Routine(OwnerRoutine::AdvanceEmptyCampfire) => {
-            println!("  owner_decision=unexpected_advance_empty_campfire");
-        }
-        OwnerDecision::Candidates(choices) => {
-            println!("  owner_decision=candidates count={}", choices.len());
-            for choice in choices {
-                println!(
-                    "    choice key={:?} label={} command={:?}",
-                    choice.key, choice.label, choice.action
-                );
-            }
-        }
-        OwnerDecision::Gap(reason) => {
-            println!("  owner_decision=gap {reason}");
-        }
-    }
-    Ok(())
 }
 
 fn parse_args() -> Result<
