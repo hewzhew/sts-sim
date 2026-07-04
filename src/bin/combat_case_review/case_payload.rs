@@ -12,6 +12,7 @@ use sts_simulator::eval::combat_case::{
     card_summary, CombatCase, CombatCaseCardSummary, CombatCasePathStep,
 };
 
+use super::boss_pressure_lens::BossPressureLensReport;
 use super::champ_phase::ChampPhaseAudit;
 use super::classification::CombatGapReviewClassification;
 use super::counterfactual_hp::CounterfactualHpProbe;
@@ -44,6 +45,7 @@ pub(super) struct CombatCaseReview {
     counterfactual_hp_probe: Option<CounterfactualHpProbe>,
     combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
     combat_strategic_feedback: Option<CombatStrategicFeedbackReport>,
+    boss_pressure_lens: Option<BossPressureLensReport>,
     champ_phase_audit: Option<ChampPhaseAudit>,
 }
 
@@ -57,6 +59,7 @@ pub(super) struct CombatCaseReviewArtifacts {
     pub(super) quality_lanes: Option<CombatQualityLaneReview>,
     pub(super) counterfactual_hp_probe: Option<CounterfactualHpProbe>,
     pub(super) combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
+    pub(super) boss_pressure_lens: Option<BossPressureLensReport>,
     pub(super) champ_phase_audit: Option<ChampPhaseAudit>,
 }
 
@@ -75,6 +78,7 @@ pub(super) fn assemble_combat_case_review(
         quality_lanes,
         counterfactual_hp_probe,
         combat_deficit_evidence,
+        boss_pressure_lens,
         champ_phase_audit,
     } = artifacts;
     let static_strategic_deficit = assess_deck_strategic_deficit(
@@ -142,6 +146,7 @@ pub(super) fn assemble_combat_case_review(
         counterfactual_hp_probe,
         combat_deficit_evidence,
         combat_strategic_feedback,
+        boss_pressure_lens,
         champ_phase_audit,
     }
 }

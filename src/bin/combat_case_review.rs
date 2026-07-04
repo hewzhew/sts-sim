@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+#[path = "combat_case_review/boss_pressure_lens.rs"]
+mod boss_pressure_lens;
 #[path = "combat_case_review/case_payload.rs"]
 mod case_payload;
 #[path = "combat_case_review/champ_phase.rs"]
@@ -26,6 +28,7 @@ mod search_types;
 #[path = "combat_case_review/strategic_feedback.rs"]
 mod strategic_feedback;
 
+use boss_pressure_lens::boss_pressure_lens;
 use case_payload::{assemble_combat_case_review, CombatCaseReview, CombatCaseReviewArtifacts};
 use champ_phase::champ_phase_audit;
 use classification::classify_gap_review;
@@ -152,6 +155,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
         .and_then(|(focus, replay)| witness_prior_rerun(&options, &case, focus, replay));
     let line_lab = run_line_lab(&options, &case, line_lab_parent.as_ref());
     let combat_deficit_evidence = line_lab.as_ref().map(derive_combat_deficit_evidence);
+    let boss_pressure_lens = boss_pressure_lens(&case, &ladder, line_lab.as_ref());
     let quality_lanes = if options.quality_lanes {
         Some(run_quality_lanes(&options, &case))
     } else {
@@ -178,6 +182,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
             quality_lanes,
             counterfactual_hp_probe,
             combat_deficit_evidence,
+            boss_pressure_lens,
             champ_phase_audit,
         },
     )
