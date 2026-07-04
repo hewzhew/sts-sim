@@ -1,9 +1,9 @@
 use crate::ai::combat_search_v2::CombatSearchV2Report;
 use crate::sim::combat::CombatPosition;
 
-use super::combat_line_executor::{
-    combat_search_performance_trace_annotation, render_policy_evidence_summary,
-    render_saved_evidence_note, render_search_diagnostics_summary,
+use super::combat_line_executor::combat_search_performance_trace_annotation;
+use super::combat_search_render::{
+    render_policy_evidence_summary, render_saved_evidence_note, render_search_diagnostics_summary,
     render_search_performance_summary, render_search_policy_summary,
 };
 use super::session::{
