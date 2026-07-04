@@ -13,6 +13,8 @@ mod counterfactual_hp;
 mod focus;
 #[path = "combat_case_review/line_lab.rs"]
 mod line_lab;
+#[path = "combat_case_review/options.rs"]
+mod options;
 #[path = "combat_case_review/quality_lanes.rs"]
 mod quality_lanes;
 #[path = "combat_case_review/search_review.rs"]
@@ -30,8 +32,9 @@ use classification::classify_gap_review;
 use counterfactual_hp::run_counterfactual_hp_probe;
 use focus::{focus_witness_line, review_focus, witness_prior_rerun};
 use line_lab::run_line_lab;
+use options::ReviewOptions;
 use quality_lanes::run_quality_lanes;
-use search_runner::{review_child_rollout_policy, run_search};
+use search_runner::run_search;
 use sts_simulator::ai::combat_search_v2::{
     derive_combat_deficit_evidence, replay_combat_search_witness_line_v0,
     CombatSearchV2PotionPolicy, CombatSearchV2TurnPlanPolicy,
@@ -105,30 +108,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
-    let (ladder, line_lab_parent) = if args.ladder {
+    let options = ReviewOptions::from_args(args);
+    let (ladder, line_lab_parent) = if options.ladder {
         let (fast_review, _) = run_search(
             "fast_no_potion_diagnostic",
             &case,
-            args.fast_nodes,
-            args.fast_ms,
+            options.fast_nodes,
+            options.fast_ms,
             CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
             CombatSearchV2PotionPolicy::Never,
             Some(0),
-            args.action_preview_limit,
-            review_child_rollout_policy(args),
-            args.disable_rollout,
+            &options,
         );
         let (slow_review, slow_report) = run_search(
             "slow_potion_diagnostic",
             &case,
-            args.slow_nodes,
-            args.slow_ms,
+            options.slow_nodes,
+            options.slow_ms,
             CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
             CombatSearchV2PotionPolicy::All,
-            Some(args.diagnostic_potion_max),
-            args.action_preview_limit,
-            review_child_rollout_policy(args),
-            args.disable_rollout,
+            Some(options.diagnostic_potion_max),
+            &options,
         );
         (
             vec![fast_review, slow_review],
@@ -139,7 +139,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
     };
     let review_focus = review_focus(&ladder);
     let classification = classify_gap_review(&ladder, review_focus.as_ref());
-    let review_focus_replay = if args.replay_focus {
+    let review_focus_replay = if options.replay_focus {
         review_focus.as_ref().map(|focus| {
             replay_combat_search_witness_line_v0(&case.position, &focus_witness_line(focus))
         })
@@ -149,16 +149,16 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
     let review_focus_prior_rerun = review_focus
         .as_ref()
         .zip(review_focus_replay.as_ref())
-        .and_then(|(focus, replay)| witness_prior_rerun(args, &case, focus, replay));
-    let line_lab = run_line_lab(args, &case, line_lab_parent.as_ref());
+        .and_then(|(focus, replay)| witness_prior_rerun(&options, &case, focus, replay));
+    let line_lab = run_line_lab(&options, &case, line_lab_parent.as_ref());
     let combat_deficit_evidence = line_lab.as_ref().map(derive_combat_deficit_evidence);
-    let quality_lanes = if args.quality_lanes {
-        Some(run_quality_lanes(args, &case))
+    let quality_lanes = if options.quality_lanes {
+        Some(run_quality_lanes(&options, &case))
     } else {
         None
     };
-    let counterfactual_hp_probe = if args.counterfactual_hp_probe {
-        Some(run_counterfactual_hp_probe(args, &case))
+    let counterfactual_hp_probe = if options.counterfactual_hp_probe {
+        Some(run_counterfactual_hp_probe(&options, &case))
     } else {
         None
     };

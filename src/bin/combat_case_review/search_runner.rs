@@ -1,23 +1,14 @@
 use std::time::Duration;
 
 use sts_simulator::ai::combat_search_v2::{
-    run_combat_search_v2, CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config,
-    CombatSearchV2PotionPolicy, CombatSearchV2Report, CombatSearchV2RolloutPolicy,
-    CombatSearchV2TurnPlanPolicy,
+    run_combat_search_v2, CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
+    CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::eval::combat_case::CombatCase;
 
+use super::options::ReviewOptions;
 use super::search_review::search_review;
 use super::search_types::SearchReview;
-use super::Args;
-
-pub(crate) fn review_child_rollout_policy(args: &Args) -> CombatSearchV2ChildRolloutPolicy {
-    if args.immediate_child_rollout && !args.lazy_child_rollout {
-        CombatSearchV2ChildRolloutPolicy::Immediate
-    } else {
-        CombatSearchV2ChildRolloutPolicy::LazyOnPop
-    }
-}
 
 pub(crate) fn run_search(
     label: &'static str,
@@ -27,11 +18,9 @@ pub(crate) fn run_search(
     turn_plan_policy: CombatSearchV2TurnPlanPolicy,
     potion_policy: CombatSearchV2PotionPolicy,
     max_potions_used: Option<u32>,
-    action_preview_limit: usize,
-    child_rollout_policy: CombatSearchV2ChildRolloutPolicy,
-    disable_rollout: bool,
+    options: &ReviewOptions,
 ) -> (SearchReview, CombatSearchV2Report) {
-    let rollout_policy = if disable_rollout {
+    let rollout_policy = if options.disable_rollout {
         CombatSearchV2RolloutPolicy::Disabled
     } else {
         CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
@@ -46,10 +35,10 @@ pub(crate) fn run_search(
             potion_policy,
             max_potions_used,
             rollout_policy,
-            child_rollout_policy,
+            child_rollout_policy: options.child_rollout_policy(),
             ..CombatSearchV2Config::default()
         },
-        action_preview_limit,
+        options.action_preview_limit,
     )
 }
 

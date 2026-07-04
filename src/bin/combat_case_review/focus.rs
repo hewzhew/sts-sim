@@ -10,9 +10,9 @@ use sts_simulator::ai::combat_search_v2::{
 use sts_simulator::eval::combat_case::CombatCase;
 use sts_simulator::sim::combat::CombatTerminal;
 
-use super::search_runner::{review_child_rollout_policy, run_configured_search};
+use super::options::ReviewOptions;
+use super::search_runner::run_configured_search;
 use super::search_types::{SearchDiagnosticProgressFacts, SearchReview};
-use super::Args;
 
 #[derive(Serialize)]
 pub(super) struct CombatReviewFocus {
@@ -71,7 +71,7 @@ pub(super) fn focus_witness_line(focus: &CombatReviewFocus) -> CombatSearchV2Wit
 }
 
 pub(super) fn witness_prior_rerun(
-    args: &Args,
+    options: &ReviewOptions,
     case: &CombatCase,
     focus: &CombatReviewFocus,
     replay: &CombatSearchV2WitnessReplay,
@@ -88,7 +88,7 @@ pub(super) fn witness_prior_rerun(
     }
     let prior_states = witness_prior.prior_states;
     let duplicate_prior_hints = witness_prior.duplicate_prior_hints;
-    let rollout_policy = if args.disable_rollout {
+    let rollout_policy = if options.disable_rollout {
         CombatSearchV2RolloutPolicy::Disabled
     } else {
         CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
@@ -97,18 +97,18 @@ pub(super) fn witness_prior_rerun(
         "focus_witness_prior_rerun",
         case,
         CombatSearchV2Config {
-            max_nodes: args.fast_nodes,
-            wall_time: Some(Duration::from_millis(args.fast_ms)),
+            max_nodes: options.fast_nodes,
+            wall_time: Some(Duration::from_millis(options.fast_ms)),
             turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
             potion_policy: CombatSearchV2PotionPolicy::Never,
             max_potions_used: Some(0),
             phase_guard_policy: CombatSearchV2PhaseGuardPolicy::Default,
             rollout_policy,
-            child_rollout_policy: review_child_rollout_policy(args),
+            child_rollout_policy: options.child_rollout_policy(),
             root_action_prior: Some(witness_prior.prior),
             ..CombatSearchV2Config::default()
         },
-        args.action_preview_limit,
+        options.action_preview_limit,
     );
     Some(CombatReviewFocusPriorRerun {
         selected_review: focus.selected_review,

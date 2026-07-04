@@ -5,13 +5,13 @@ use sts_simulator::ai::combat_search_v2::{
 use sts_simulator::eval::combat_case::CombatCase;
 use sts_simulator::sim::combat::CombatTerminal;
 
+use super::options::ReviewOptions;
 use super::quality_lanes::{
     combat_line_quality, compare_quality, quality_lane_specs, witness_line_from_trajectory,
     CombatLineQuality,
 };
 use super::search_runner::run_configured_search;
 use super::search_types::SearchReview;
-use super::Args;
 
 #[derive(Serialize)]
 pub(super) struct CounterfactualHpProbe {
@@ -61,12 +61,15 @@ struct CounterfactualHpCandidate {
     witness: CombatSearchV2WitnessLine,
 }
 
-pub(super) fn run_counterfactual_hp_probe(args: &Args, case: &CombatCase) -> CounterfactualHpProbe {
+pub(super) fn run_counterfactual_hp_probe(
+    options: &ReviewOptions,
+    case: &CombatCase,
+) -> CounterfactualHpProbe {
     let original_hp = case.position.combat.entities.player.current_hp;
     let max_hp = case.position.combat.entities.player.max_hp.max(1);
-    let levels = counterfactual_hp_targets(&args.counterfactual_hp_levels, original_hp, max_hp)
+    let levels = counterfactual_hp_targets(&options.counterfactual_hp_levels, original_hp, max_hp)
         .into_iter()
-        .map(|(label, hp)| run_counterfactual_hp_level(args, case, label, hp))
+        .map(|(label, hp)| run_counterfactual_hp_level(options, case, label, hp))
         .collect::<Vec<_>>();
     let classification = classify_counterfactual_hp_probe(&levels, original_hp);
     CounterfactualHpProbe {
@@ -80,7 +83,7 @@ pub(super) fn run_counterfactual_hp_probe(args: &Args, case: &CombatCase) -> Cou
 }
 
 fn run_counterfactual_hp_level(
-    args: &Args,
+    options: &ReviewOptions,
     original_case: &CombatCase,
     label: String,
     hp: i32,
@@ -88,11 +91,14 @@ fn run_counterfactual_hp_level(
     let case = combat_case_with_player_hp(original_case, hp);
     let specs = quality_lane_specs();
     let lane_count = specs.len().max(1);
-    let total_nodes = args
+    let total_nodes = options
         .quality_lane_total_nodes
-        .unwrap_or(args.slow_nodes)
+        .unwrap_or(options.slow_nodes)
         .max(1);
-    let total_wall_ms = args.quality_lane_total_ms.unwrap_or(args.slow_ms).max(1);
+    let total_wall_ms = options
+        .quality_lane_total_ms
+        .unwrap_or(options.slow_ms)
+        .max(1);
     let per_lane_nodes = (total_nodes / lane_count).max(1);
     let per_lane_wall_ms = (total_wall_ms / lane_count as u64).max(1);
     let mut best: Option<CounterfactualHpCandidate> = None;
@@ -102,7 +108,7 @@ fn run_counterfactual_hp_level(
             spec.label,
             &case,
             spec.config(per_lane_nodes, per_lane_wall_ms),
-            args.action_preview_limit,
+            options.action_preview_limit,
         );
         total_terminal_wins += review.terminal_wins;
         let quality = combat_line_quality(&report);

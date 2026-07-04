@@ -10,9 +10,9 @@ use sts_simulator::ai::combat_search_v2::{
 };
 use sts_simulator::eval::combat_case::CombatCase;
 
+use super::options::ReviewOptions;
 use super::search_runner::run_configured_search;
 use super::search_types::SearchReview;
-use super::Args;
 
 #[derive(Serialize)]
 pub(super) struct CombatQualityLaneReview {
@@ -141,14 +141,20 @@ impl CombatSuccessFeedbackMetrics {
     }
 }
 
-pub(super) fn run_quality_lanes(args: &Args, case: &CombatCase) -> CombatQualityLaneReview {
+pub(super) fn run_quality_lanes(
+    options: &ReviewOptions,
+    case: &CombatCase,
+) -> CombatQualityLaneReview {
     let specs = quality_lane_specs();
     let lane_count = specs.len().max(1);
-    let total_nodes = args
+    let total_nodes = options
         .quality_lane_total_nodes
-        .unwrap_or(args.slow_nodes)
+        .unwrap_or(options.slow_nodes)
         .max(1);
-    let total_wall_ms = args.quality_lane_total_ms.unwrap_or(args.slow_ms).max(1);
+    let total_wall_ms = options
+        .quality_lane_total_ms
+        .unwrap_or(options.slow_ms)
+        .max(1);
     let per_lane_nodes = (total_nodes / lane_count).max(1);
     let per_lane_wall_ms = (total_wall_ms / lane_count as u64).max(1);
     let mut lanes = Vec::new();
@@ -158,7 +164,7 @@ pub(super) fn run_quality_lanes(args: &Args, case: &CombatCase) -> CombatQuality
             lane.label,
             case,
             lane.config(per_lane_nodes, per_lane_wall_ms),
-            args.action_preview_limit,
+            options.action_preview_limit,
         );
         let quality = combat_line_quality(&report);
         if let (Some(quality), Some(trajectory)) =
@@ -195,7 +201,7 @@ pub(super) fn run_quality_lanes(args: &Args, case: &CombatCase) -> CombatQuality
             source,
             per_lane_nodes,
             per_lane_wall_ms,
-            args.action_preview_limit,
+            options.action_preview_limit,
         )
     });
 
