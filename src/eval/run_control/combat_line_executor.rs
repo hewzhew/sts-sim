@@ -1,5 +1,6 @@
 use crate::ai::combat_search_v2::{
-    CombatSearchV2Config, CombatSearchV2Report, CombatSearchV2TurnSegmentReport,
+    CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2Report,
+    CombatSearchV2TurnSegmentReport,
 };
 use crate::sim::combat::{CombatPosition, CombatTerminal};
 use crate::state::core::ClientInput;
@@ -46,18 +47,8 @@ pub(super) fn apply_selected_combat_candidate_line(
     selected_line = replay.line;
     let before_snapshot = RunVisibleSnapshot::capture(session);
     let applied = selected_line.actions.clone();
-    let mut automation_actions = Vec::new();
     session.mark_current_combat_search_resolved();
-    for action in &applied {
-        let outcome = session.apply_input(action.input.clone())?;
-        automation_actions.push(CombatAutomationActionV1 {
-            step_index: action.step_index,
-            action_key: action.action_key.clone(),
-            input: action.input.clone(),
-            drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
-            combat_after: combat_automation_step_state_v1(session),
-        });
-    }
+    let automation_actions = apply_combat_action_traces(session, &applied)?;
     let after_snapshot = RunVisibleSnapshot::capture(session);
     let status = current_run_apply_status(session);
     let action_result = action_result_from_transition(
@@ -118,18 +109,8 @@ pub(super) fn apply_combat_turn_segment(
         .expect("caller only applies after selecting a segment");
     let before_snapshot = RunVisibleSnapshot::capture(session);
     let applied = trajectory.actions.clone();
-    let mut automation_actions = Vec::new();
     session.mark_current_combat_search_resolved();
-    for action in &applied {
-        let outcome = session.apply_input(action.input.clone())?;
-        automation_actions.push(CombatAutomationActionV1 {
-            step_index: action.step_index,
-            action_key: action.action_key.clone(),
-            input: action.input.clone(),
-            drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
-            combat_after: combat_automation_step_state_v1(session),
-        });
-    }
+    let automation_actions = apply_combat_action_traces(session, &applied)?;
     let after_snapshot = RunVisibleSnapshot::capture(session);
     let status = current_run_apply_status(session);
     let mut transition_label = format!(
@@ -237,6 +218,25 @@ fn active_combat_is_waiting_for_smoke_escape_turn_end(session: &RunControlSessio
         .active_combat
         .as_ref()
         .is_some_and(|active| active.combat_state.turn.counters.player_escaping)
+}
+
+fn apply_combat_action_traces(
+    session: &mut RunControlSession,
+    actions: &[CombatSearchV2ActionTrace],
+) -> Result<Vec<CombatAutomationActionV1>, String> {
+    actions
+        .iter()
+        .map(|action| {
+            let outcome = session.apply_input(action.input.clone())?;
+            Ok(CombatAutomationActionV1 {
+                step_index: action.step_index,
+                action_key: action.action_key.clone(),
+                input: action.input.clone(),
+                drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
+                combat_after: combat_automation_step_state_v1(session),
+            })
+        })
+        .collect()
 }
 
 pub(super) fn drawn_cards_from_action_result(
