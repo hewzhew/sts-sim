@@ -43,6 +43,10 @@ pub enum StrategicPackageEvidence {
 #[serde(rename_all = "snake_case")]
 pub enum StrategicRisk {
     TooManyLowImpactAttacks,
+    ApparentFrontloadLowQuality,
+    #[serde(rename = "shallow_aoe_for_multi_enemy")]
+    ShallowAoEForMultiEnemy,
+    HighStarterBurden,
     TooManyConditionalPayoffs,
     NoEnablerForExploiters,
     DeckTooThickForAccess,
@@ -107,9 +111,7 @@ pub fn assess_deck_strategic_deficit(
     let inventory = DeckRoleInventory::from_deck(deck);
     let counts = StrategicCounts::from_deck(deck, facts);
     let exhaust_corruption = assess_exhaust_corruption(deck);
-    let frontload_units = inventory
-        .frontload_units
-        .saturating_add(counts.strike_count);
+    let frontload_units = calibrated_frontload_units(&inventory, &counts);
     let block_or_mitigation_units = block_or_mitigation_units(&inventory, &counts);
     let package_evidence = package_evidence(&inventory, &counts, &exhaust_corruption);
     let boss_scaling_plan = boss_scaling_level(&package_evidence, &counts);
@@ -119,7 +121,7 @@ pub fn assess_deck_strategic_deficit(
 
     DeckStrategicDeficit {
         frontload_damage: frontload_level(frontload_units, counts.act),
-        aoe_or_minion_control: unit_level(inventory.aoe_units, 1, 4),
+        aoe_or_minion_control: aoe_or_minion_level(&inventory, &counts),
         block_or_mitigation: block_or_mitigation_level(block_or_mitigation_units, counts.act),
         boss_scaling_plan,
         deck_access,
@@ -159,6 +161,7 @@ struct StrategicCounts {
     has_corruption: bool,
     has_dark_embrace: bool,
     has_ritual_dagger: bool,
+    strong_aoe_count: u8,
 }
 
 impl StrategicCounts {
@@ -214,6 +217,9 @@ impl StrategicCounts {
         }
         if card.id == CardId::RitualDagger {
             self.has_ritual_dagger = true;
+        }
+        if is_strong_aoe(card.id) {
+            self.strong_aoe_count += 1;
         }
         let semantics = card_definition_with_upgrades(card.id, card.upgrades);
         for effect in semantics.play_effects {
@@ -272,6 +278,15 @@ fn risks(
     if counts.low_impact_attacks >= 4 {
         risks.push(StrategicRisk::TooManyLowImpactAttacks);
     }
+    if counts.low_impact_attacks >= 4 && counts.act >= 2 {
+        risks.push(StrategicRisk::ApparentFrontloadLowQuality);
+    }
+    if counts.act >= 2 && inventory.aoe_units == 2 && counts.strong_aoe_count == 0 {
+        risks.push(StrategicRisk::ShallowAoEForMultiEnemy);
+    }
+    if high_starter_burden(counts) {
+        risks.push(StrategicRisk::HighStarterBurden);
+    }
     if counts.conditional_payoffs >= 3 {
         risks.push(StrategicRisk::TooManyConditionalPayoffs);
     }
@@ -311,6 +326,31 @@ fn risks(
         risks.push(StrategicRisk::ReliesOnLowImpactCardSpam);
     }
     risks
+}
+
+fn calibrated_frontload_units(inventory: &DeckRoleInventory, counts: &StrategicCounts) -> u8 {
+    inventory
+        .frontload_units
+        .saturating_add(starter_strike_frontload_credit(counts))
+}
+
+fn starter_strike_frontload_credit(counts: &StrategicCounts) -> u8 {
+    if counts.act <= 1 {
+        counts.strike_count.min(2)
+    } else {
+        counts.strike_count.min(1)
+    }
+}
+
+fn aoe_or_minion_level(
+    inventory: &DeckRoleInventory,
+    counts: &StrategicCounts,
+) -> StrategicDeficitLevel {
+    if counts.act >= 2 && inventory.aoe_units == 2 && counts.strong_aoe_count == 0 {
+        StrategicDeficitLevel::Thin
+    } else {
+        unit_level(inventory.aoe_units, 1, 4)
+    }
 }
 
 fn unsupported_payoffs(inventory: &DeckRoleInventory, counts: &StrategicCounts) -> bool {
@@ -400,6 +440,7 @@ fn burden_level(counts: &StrategicCounts, access: StrategicDeficitLevel) -> Stra
         || counts.normality_count > 0
         || counts.severe_curse_count >= 2
         || (counts.writhe_count > 0 && counts.deck_size >= 18)
+        || high_starter_burden(counts)
         || counts.deck_size >= 34
         || (counts.deck_size >= 30
             && matches!(
@@ -422,6 +463,11 @@ fn burden_level(counts: &StrategicCounts, access: StrategicDeficitLevel) -> Stra
     } else {
         StrategicBurdenLevel::Clean
     }
+}
+
+fn high_starter_burden(counts: &StrategicCounts) -> bool {
+    (counts.act >= 2 && counts.starter_basic_count >= 8 && counts.deck_size >= 18)
+        || (counts.act >= 3 && counts.starter_basic_count >= 6)
 }
 
 fn unit_level(units: u8, thin_under: u8, surplus_at: u8) -> StrategicDeficitLevel {
@@ -447,6 +493,10 @@ fn is_low_impact_attack(card: CardId) -> bool {
             | CardId::SwordBoomerang
             | CardId::Clash
     )
+}
+
+fn is_strong_aoe(card: CardId) -> bool {
+    matches!(card, CardId::Immolate | CardId::Whirlwind | CardId::Combust)
 }
 
 fn is_conditional_payoff(card: CardId) -> bool {
