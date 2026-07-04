@@ -91,6 +91,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::Nest => return Ok(choose(nest_choice(run_state))),
         EventId::Nloth => return Ok(choose(nloth_choice(run_state))),
         EventId::ShiningLight => return Ok(choose(shining_light_choice(run_state))),
+        EventId::TombRedMask => return Ok(choose(tomb_red_mask_choice(run_state))),
         EventId::Transmorgrifier => return Ok(choose(transmorgrifier_choice(run_state))),
         EventId::Vampires => return Ok(choose(vampires_choice(run_state))),
         EventId::WomanInBlue => return Ok(choose(woman_in_blue_choice(run_state))),
@@ -269,6 +270,15 @@ fn living_wall_remove_effect() -> EventEffect {
 
 fn transmorgrifier_choice(_run_state: &RunState) -> EventOwnerOptionSelector {
     action(EventActionKind::Leave)
+}
+
+fn tomb_red_mask_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 if has_relic(run_state, RelicId::RedMask) => effect(EventEffect::GainGold(222)),
+        0 if run_state.gold <= 80 => action(EventActionKind::Trade),
+        0 => action(EventActionKind::Leave),
+        _ => action(EventActionKind::Leave),
+    }
 }
 
 fn we_meet_again_choice(run_state: &RunState) -> EventOwnerOptionSelector {
