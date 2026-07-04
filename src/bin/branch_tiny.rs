@@ -12,6 +12,8 @@ use sts_simulator::state::events::EventId;
 
 #[path = "branch_tiny/boundary_router.rs"]
 mod boundary_router;
+#[path = "branch_tiny/branch_frontier.rs"]
+mod branch_frontier;
 #[path = "branch_tiny/branch_scheduler.rs"]
 mod branch_scheduler;
 #[path = "branch_tiny/branch_status_view.rs"]
@@ -453,7 +455,7 @@ fn run() -> Result<(), String> {
             work.push((branch, expandable, choices));
         }
         let expanded_masks =
-            branch_scheduler::expansion_masks(&work, args.max_branches, &mut recent_expanded_keys);
+            branch_frontier::expansion_masks(&work, args.max_branches, &mut recent_expanded_keys);
         let total_expanded = expanded_masks
             .iter()
             .flatten()
@@ -555,7 +557,7 @@ fn run() -> Result<(), String> {
             }
         }
         next.append(&mut deferred);
-        branch_scheduler::retain_frontier(&mut next, args.max_branches);
+        branch_frontier::retain_frontier(&mut next, args.max_branches);
         if next.is_empty() {
             if let (Some(capsule), Some((result_generation, branch))) =
                 (run_capsule.as_ref(), generation_result.as_ref())
