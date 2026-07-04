@@ -1,6 +1,6 @@
 use crate::ai::analysis::card_semantics::{
-    card_definition_with_upgrades, CombatEvent, DamageScalingAxis, Mechanic, PlayEffect,
-    TriggeredEffect,
+    card_definition_with_upgrades, CombatEvent, DamageScalingAxis, InstalledRule, Mechanic,
+    PlayEffect, TriggeredEffect,
 };
 use crate::runtime::combat::CombatCard;
 
@@ -15,7 +15,9 @@ pub struct DeckRoleInventory {
     pub draw_units: u8,
     pub energy_units: u8,
     pub strength_source_units: u8,
+    pub corruption_units: u8,
     pub exhaust_stream_units: u8,
+    pub exhaust_payoff_units: u8,
     pub block_payoff_units: u8,
     pub strength_payoff_units: u8,
     pub upgrade_access_units: u8,
@@ -37,6 +39,9 @@ impl DeckRoleInventory {
             }
             for effect in &definition.play_effects {
                 inventory.add_play_effect(*effect);
+            }
+            for rule in &definition.installed_rules {
+                inventory.add_installed_rule(*rule);
             }
             for handler in &definition.event_handlers {
                 inventory.add_event_handler(handler.on, handler.effect);
@@ -72,6 +77,14 @@ impl DeckRoleInventory {
     }
 
     fn add_event_handler(&mut self, event: CombatEvent, effect: TriggeredEffect) {
+        if event == CombatEvent::CardExhausted
+            && matches!(
+                effect,
+                TriggeredEffect::Provide(Mechanic::Block | Mechanic::CardDraw)
+            )
+        {
+            self.exhaust_payoff_units += 1;
+        }
         if effect != TriggeredEffect::Provide(Mechanic::Strength) {
             return;
         }
@@ -80,6 +93,12 @@ impl DeckRoleInventory {
             CombatEvent::CardSelfDamage => 1,
             _ => 1,
         };
+    }
+
+    fn add_installed_rule(&mut self, rule: InstalledRule) {
+        match rule {
+            InstalledRule::SkillCardsCostZeroAndExhaust => self.corruption_units += 1,
+        }
     }
 
     fn add_mechanic(&mut self, mechanic: Mechanic) {

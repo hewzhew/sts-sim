@@ -2,6 +2,7 @@ use crate::ai::analysis::card_semantics::{card_definition_with_upgrades, CardBur
 use crate::ai::strategy::boss_relic_admission::{
     boss_relic_admission_order_rank, skip_boss_relic_admission, BossRelicAdmission,
 };
+use crate::ai::strategy::boss_scaling_evidence::assess_boss_scaling_evidence;
 use crate::ai::strategy::deck_admission::DeckAdmission;
 use crate::ai::strategy::deck_construction_pressure::ConstructionLaneAdjustment;
 use crate::ai::strategy::deck_plan::DeckPlanSnapshot;
@@ -656,12 +657,18 @@ fn strategic_deficit_score(
         improves = true;
         scores.push(score("strategic-survival-gap", 40));
     }
-    if needs(deficit.boss_scaling_plan)
-        && admission_scaling_or_engine(admission)
-        && !fragile_supported_payoff(context, admission)
-    {
-        improves = true;
-        scores.push(score("strategic-scaling-gap", 60));
+    if needs(deficit.boss_scaling_plan) {
+        let evidence = assess_boss_scaling_evidence(
+            context.deck_plan,
+            candidate_card(candidate.kind),
+            admission,
+        );
+        if evidence.score_delta != 0 {
+            scores.push(score(evidence.label, evidence.score_delta));
+        }
+        if evidence.relevant_to_boss_plan && !fragile_supported_payoff(context, admission) {
+            improves = true;
+        }
     }
     if needs(deficit.frontload_damage) && admission_frontloads(admission) {
         improves = true;
@@ -1016,7 +1023,8 @@ fn improves_strategic_gap(context: DecisionPipelineContext, admission: &RewardAd
         || (needs(deficit.aoe_or_minion_control) && admission_aoe(admission))
         || (needs(deficit.block_or_mitigation) && admission_survival_tool(admission))
         || (needs(deficit.boss_scaling_plan)
-            && admission_scaling_or_engine(admission)
+            && assess_boss_scaling_evidence(context.deck_plan, None, admission)
+                .relevant_to_boss_plan
             && !fragile_supported_payoff(context, admission))
         || (needs(deficit.frontload_damage) && admission_frontloads(admission))
 }
@@ -1036,6 +1044,14 @@ fn admission_provides(admission: &RewardAdmission, mechanic: Mechanic) -> bool {
     admission
         .reasons
         .contains(&RewardAdmissionReason::Provides(mechanic))
+}
+
+fn candidate_card(kind: DecisionCandidateKind) -> Option<(CardId, u8)> {
+    match kind {
+        DecisionCandidateKind::CardRewardPick { card, upgrades }
+        | DecisionCandidateKind::ShopBuyCard { card, upgrades, .. } => Some((card, upgrades)),
+        _ => None,
+    }
 }
 
 fn admission_frontloads(admission: &RewardAdmission) -> bool {

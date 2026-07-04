@@ -6,6 +6,7 @@
 //! models.
 
 pub mod boss_relic_admission;
+pub mod boss_scaling_evidence;
 pub mod campfire_upgrade_quality;
 pub mod decision_pipeline;
 pub mod deck_admission;
