@@ -1,6 +1,6 @@
 use sts_simulator::ai::combat_search_v2::{
-    CombatSearchV2ChildRolloutPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
-    CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2ChildRolloutPolicy, CombatSearchV2FrontierPolicy, CombatSearchV2PhaseGuardPolicy,
+    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::content::cards::{get_card_definition, CardType};
 use sts_simulator::eval::run_control::{
@@ -22,6 +22,13 @@ const NONBOSS_POTION_RESCUE_MAX_POTIONS_USED: u32 = 1;
 struct NonBossPotionRescueAttempt {
     outcome: RunControlCommandOutcome,
     status: BranchStatus,
+    committed: bool,
+}
+
+struct RealHpQualityRetryAttempt {
+    outcome: Option<RunControlCommandOutcome>,
+    status: BranchStatus,
+    report: BossRetryAttemptReport,
     committed: bool,
 }
 
@@ -88,6 +95,18 @@ pub(super) fn try_nonboss_combat_rescue(
             auto_steps.extend(rescue.outcome.auto_applied_steps.clone());
         }
         status = rescue.status;
+    }
+
+    if matches!(status, BranchStatus::CombatGap { .. }) && should_try_real_hp_quality_retry(session)
+    {
+        let retry = run_real_hp_quality_retry_attempt(session, args);
+        if let Some(outcome) = retry.outcome.as_ref() {
+            combat_search.extend(combat_search_summaries(outcome));
+            if retry.committed {
+                auto_steps.extend(outcome.auto_applied_steps.clone());
+            }
+        }
+        status = retry.status;
     }
 
     Ok(NonBossCombatRescue {
@@ -278,8 +297,25 @@ pub(super) fn try_boss_retry(
     let (status, attempt, search) = run_boss_retry_attempt(session, args, "potion_rescue", rescue);
     all_search.extend(search);
     attempts.push(attempt);
+
+    let status = if matches!(status, BranchStatus::CombatGap { .. }) {
+        let retry = run_real_hp_quality_retry_attempt(session, args);
+        if let Some(outcome) = retry.outcome.as_ref() {
+            all_search.extend(combat_search_summaries(outcome));
+        }
+        attempts.push(retry.report);
+        retry.status
+    } else {
+        status
+    };
     let report = boss_retry_report(args, status.clone(), attempts);
     Some((status, report, all_search))
+}
+
+fn should_try_real_hp_quality_retry(session: &RunControlSession) -> bool {
+    session.active_combat.as_ref().is_some_and(|active| {
+        active.combat_state.meta.is_boss_fight || active.combat_state.meta.is_elite_fight
+    })
 }
 
 fn boss_potion_rescue_child_rollout_policy(
@@ -311,6 +347,92 @@ fn boss_retry_options(
     options.search.max_potions_used = max_potions_used;
     options.search.rollout_policy = Some(rollout_policy);
     options
+}
+
+fn quality_real_hp_retry_options(args: Args) -> RunControlAutoStepOptions {
+    let mut options = auto_step_options(
+        args.boss_search_nodes,
+        args.boss_search_ms,
+        args.auto_ops,
+        args.wall_ms.is_some(),
+        CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+        CombatSearchV2ChildRolloutPolicy::Immediate,
+    );
+    options.search.frontier_policy = Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets);
+    options.search.rollout_policy =
+        Some(CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion);
+    options.search.potion_policy = Some(CombatSearchV2PotionPolicy::SemanticBudgeted);
+    options.search.max_potions_used = Some(2);
+    options.search.phase_guard_policy = Some(CombatSearchV2PhaseGuardPolicy::ChampSplitGuard);
+    options
+}
+
+fn run_real_hp_quality_retry_attempt(
+    session: &mut RunControlSession,
+    args: Args,
+) -> RealHpQualityRetryAttempt {
+    let options = quality_real_hp_retry_options(args);
+    let potion_policy = options
+        .search
+        .potion_policy
+        .unwrap_or(CombatSearchV2PotionPolicy::Never);
+    let max_potions_used = options.search.max_potions_used;
+    let mut trial = session.clone();
+    let outcome = match apply_owner_audit_auto_run(&mut trial, options) {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            let status = BranchStatus::AdvanceFailed(err);
+            let report = boss_retry_attempt_report(
+                args,
+                "quality_real_hp",
+                potion_policy,
+                max_potions_used,
+                &status,
+                Vec::new(),
+            );
+            return RealHpQualityRetryAttempt {
+                outcome: None,
+                status,
+                report,
+                committed: false,
+            };
+        }
+    };
+    let status = if let Some(outcome) = boundary_router::terminal_outcome(&trial) {
+        BranchStatus::Terminal(outcome)
+    } else {
+        boundary_router::classify_auto_outcome(&trial, &outcome)
+    };
+    let action_keys = retry_complete_search_action_keys(&outcome);
+    let committed = real_hp_quality_retry_commits(&status);
+    let report = boss_retry_attempt_report(
+        args,
+        "quality_real_hp",
+        potion_policy,
+        max_potions_used,
+        &status,
+        action_keys,
+    );
+    if committed {
+        *session = trial;
+    }
+    RealHpQualityRetryAttempt {
+        outcome: Some(outcome),
+        status,
+        report,
+        committed,
+    }
+}
+
+fn real_hp_quality_retry_commits(status: &BranchStatus) -> bool {
+    !matches!(
+        status,
+        BranchStatus::CombatGap { .. }
+            | BranchStatus::BudgetGap { .. }
+            | BranchStatus::ApplyFailed(_)
+            | BranchStatus::AdvanceFailed(_)
+            | BranchStatus::Terminal(TerminalOutcome::Defeat)
+    )
 }
 
 fn run_boss_retry_attempt(
