@@ -86,6 +86,7 @@ fn event_room_policy_action(run_state: &RunState) -> Result<EventOwnerAction, Ev
         EventId::MatchAndKeep => return Ok(choose(match_and_keep_choice(run_state))),
         EventId::Mausoleum => return Ok(choose(mausoleum_choice(run_state))),
         EventId::MindBloom => return Ok(choose(mind_bloom_choice(run_state))),
+        EventId::MoaiHead => return Ok(choose(moai_head_choice(run_state))),
         EventId::Mushrooms => return Ok(choose(mushrooms_choice(run_state))),
         EventId::MysteriousSphere => return Ok(choose(mysterious_sphere_choice(run_state))),
         EventId::Nest => return Ok(choose(nest_choice(run_state))),
@@ -369,6 +370,17 @@ fn mind_bloom_choice(run_state: &RunState) -> EventOwnerOptionSelector {
         return effect(EventEffect::GainGold(999));
     }
     action(EventActionKind::Fight)
+}
+
+fn moai_head_choice(run_state: &RunState) -> EventOwnerOptionSelector {
+    match event_screen(run_state) {
+        0 if run_state.current_hp * 100 <= run_state.max_hp * 45 => option_index(0),
+        0 if has_relic(run_state, RelicId::GoldenIdol) && run_state.floor_num <= 43 => {
+            option_index(1)
+        }
+        0 => action(EventActionKind::Leave),
+        _ => action(EventActionKind::Leave),
+    }
 }
 
 fn mushrooms_choice(run_state: &RunState) -> EventOwnerOptionSelector {
