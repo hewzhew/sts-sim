@@ -1,25 +1,18 @@
 use crate::ai::combat_search_v2::{
-    filter_combat_search_legal_actions, plan_combat_turn_segment_v1, run_combat_search_v2,
-    CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2Report,
+    run_combat_search_v2, CombatSearchV2Config, CombatSearchV2Report,
 };
-use crate::content::potions::PotionId;
-use crate::sim::combat::{
-    combat_terminal, CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal,
-    EngineCombatStepper,
-};
-use crate::sim::combat_legal_actions::engine_local_moves;
 
 use super::combat_line_executor::{
-    apply_combat_turn_segment, apply_selected_combat_candidate_line,
-    apply_smoke_bomb_survival_fallback, combat_search_performance_trace_annotation,
-    millis_to_micros_u64, render_policy_evidence_summary, render_saved_evidence_note,
-    render_search_diagnostics_summary, render_search_performance_summary,
-    render_search_policy_summary, CombatCandidateLinePerformance,
+    apply_selected_combat_candidate_line, combat_search_performance_trace_annotation,
+    render_policy_evidence_summary, render_saved_evidence_note, render_search_diagnostics_summary,
+    render_search_performance_summary, render_search_policy_summary,
 };
 use super::combat_line_selector::{select_accepted_search_combat_line, CombatLineSelection};
+use super::combat_no_win_fallback::{
+    try_apply_no_win_fallback, try_apply_turn_segment_after_rejection,
+};
 use super::commands::{
-    RunControlCombatSegmentMode, RunControlHpLossLimit, RunControlSearchCombatOptions,
-    RunControlSearchEvidenceTarget,
+    RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSearchEvidenceTarget,
 };
 use super::registry::BenchmarkCasePaths;
 use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenceContextV1};
@@ -27,7 +20,6 @@ use super::session::{
     RunControlCombatSearchRejection, RunControlCommandOutcome, RunControlSession,
 };
 use super::trace_annotation::CombatAutomationTrajectorySource;
-use super::view_model::client_input_hint;
 
 pub(super) fn apply_search_combat(
     session: &mut RunControlSession,
@@ -59,70 +51,14 @@ pub(super) fn apply_search_combat(
         return Ok(outcome);
     }
     let Some(trajectory) = report.best_win_trajectory.as_ref() else {
-        if let Some(solution) =
-            super::combat_complete_line_solver::try_solve_complete_line(&start, &config)
-        {
-            if effective_hp_loss_limit(session, &options)
-                .is_none_or(|limit| solution.line.hp_loss <= limit as i32)
-            {
-                let summary = format!(
-                    "complete_line_solver actions={}/{} delta={} hp_loss={}/{} saved={} budget=base:{}/{}ms repair:{}x{}/{}ms stops={}/{} nodes={} generated={} base_nodes={}/{} repair_nodes={}/{} repair={}/{}/{} elapsed_ms={}",
-                    solution.final_action_count,
-                    solution.base_action_count,
-                    solution.repair_action_count_delta,
-                    solution.final_hp_loss,
-                    solution.base_hp_loss,
-                    solution.repair_hp_loss_saved,
-                    solution.base_node_budget,
-                    solution.base_ms_budget,
-                    solution.repair_cut_budget,
-                    solution.repair_node_budget_per_cut,
-                    solution.repair_ms_budget_per_cut,
-                    solution.base_stop_reason,
-                    solution.last_repair_stop_reason.unwrap_or("none"),
-                    solution.nodes_expanded,
-                    solution.nodes_generated,
-                    solution.base_nodes_expanded,
-                    solution.base_nodes_generated,
-                    solution.repair_nodes_expanded,
-                    solution.repair_nodes_generated,
-                    solution.repair_attempts,
-                    solution.repair_wins,
-                    solution.repair_improvements,
-                    solution.elapsed_ms
-                );
-                return apply_selected_combat_candidate_line(
-                    session,
-                    &start,
-                    &config,
-                    &report,
-                    saved_evidence.as_deref(),
-                    solution.line,
-                    CombatAutomationTrajectorySource::CompleteLineSolver,
-                    summary,
-                    Some(CombatCandidateLinePerformance {
-                        nodes_expanded: solution.nodes_expanded as u64,
-                        nodes_generated: solution.nodes_generated as u64,
-                        total_us: millis_to_micros_u64(solution.elapsed_ms),
-                    }),
-                );
-            }
-        }
-        if let Some(outcome) = try_apply_turn_segment_after_rejection(
+        if let Some(outcome) = try_apply_no_win_fallback(
             session,
             &start,
             &config,
             &options,
             &report,
             saved_evidence.as_deref(),
-            "no_complete_winning_candidate",
-        )? {
-            return Ok(outcome);
-        }
-        if let Some(outcome) = try_apply_smoke_bomb_survival_fallback_after_rejection(
-            session,
-            saved_evidence.as_deref(),
-            "no_complete_winning_candidate",
+            effective_hp_loss_limit(session, &options),
         )? {
             return Ok(outcome);
         }
@@ -235,76 +171,6 @@ pub(super) fn apply_search_combat(
         summary,
         None,
     )
-}
-
-fn try_apply_turn_segment_after_rejection(
-    session: &mut RunControlSession,
-    start: &CombatPosition,
-    config: &CombatSearchV2Config,
-    options: &RunControlSearchCombatOptions,
-    search_report: &CombatSearchV2Report,
-    saved_evidence: Option<&std::path::Path>,
-    rejection_result: &'static str,
-) -> Result<Option<RunControlCommandOutcome>, String> {
-    if !segment_mode_allows_turn_segment(options.segment_mode, start) {
-        return Ok(None);
-    }
-
-    let segment_report = plan_combat_turn_segment_v1(&start.engine, &start.combat, config);
-    let Some(trajectory) = segment_report.selected.as_ref() else {
-        return Ok(None);
-    };
-    verify_segment_trajectory_replays(start, &trajectory.actions, config)?;
-    Ok(Some(apply_combat_turn_segment(
-        session,
-        start,
-        search_report,
-        &segment_report,
-        saved_evidence,
-        rejection_result,
-    )?))
-}
-
-fn try_apply_smoke_bomb_survival_fallback_after_rejection(
-    session: &mut RunControlSession,
-    saved_evidence: Option<&std::path::Path>,
-    rejection_result: &'static str,
-) -> Result<Option<RunControlCommandOutcome>, String> {
-    let Some(active) = session.active_combat.as_ref() else {
-        return Ok(None);
-    };
-    let smoke_input = engine_local_moves(&active.engine_state, &active.combat_state)
-        .into_iter()
-        .find(|input| match input {
-            crate::state::core::ClientInput::UsePotion { potion_index, .. } => active
-                .combat_state
-                .entities
-                .potions
-                .get(*potion_index)
-                .and_then(|potion| potion.as_ref())
-                .is_some_and(|potion| potion.id == PotionId::SmokeBomb),
-            _ => false,
-        });
-    let Some(smoke_input) = smoke_input else {
-        return Ok(None);
-    };
-    Ok(Some(apply_smoke_bomb_survival_fallback(
-        session,
-        smoke_input,
-        saved_evidence,
-        rejection_result,
-    )?))
-}
-
-fn segment_mode_allows_turn_segment(
-    mode: Option<RunControlCombatSegmentMode>,
-    start: &CombatPosition,
-) -> bool {
-    match mode {
-        Some(RunControlCombatSegmentMode::TurnBoundary) => true,
-        Some(RunControlCombatSegmentMode::NonBossTurnBoundary) => !start.combat.meta.is_boss_fight,
-        None => false,
-    }
 }
 
 fn save_search_evidence_if_requested(
@@ -467,55 +333,6 @@ fn search_config(
     }
 }
 
-fn verify_segment_trajectory_replays(
-    start: &CombatPosition,
-    actions: &[CombatSearchV2ActionTrace],
-    config: &CombatSearchV2Config,
-) -> Result<(), String> {
-    if actions.is_empty() {
-        return Err("search-combat segment dry-run refused empty action list".to_string());
-    }
-    let stepper = EngineCombatStepper;
-    let mut position = start.clone();
-    for action in actions {
-        let choices = filter_combat_search_legal_actions(
-            stepper.legal_action_choices(&position),
-            config.potion_policy,
-            &position.combat,
-        );
-        let Some(choice) = choices
-            .iter()
-            .find(|choice| choice.input == action.input && choice.action_key == action.action_key)
-        else {
-            return Err(format!(
-                "search-combat segment dry-run drift at step {}: expected {} ({})",
-                action.step_index,
-                action.action_key,
-                client_input_hint(&action.input)
-            ));
-        };
-        let step = stepper.apply_to_stable(
-            &position,
-            choice.input.clone(),
-            CombatStepLimits {
-                max_engine_steps: config.max_engine_steps_per_action,
-                deadline: None,
-            },
-        );
-        if step.truncated {
-            return Err(format!(
-                "search-combat segment dry-run truncated at step {} after {} engine steps",
-                action.step_index, step.engine_steps
-            ));
-        }
-        position = step.position;
-    }
-    match combat_terminal(&position.engine, &position.combat) {
-        CombatTerminal::Loss => Err("search-combat segment dry-run ended in loss".to_string()),
-        CombatTerminal::Win | CombatTerminal::Unresolved => Ok(()),
-    }
-}
-
 fn render_search_rejection(
     report: &CombatSearchV2Report,
     result: &'static str,
@@ -570,9 +387,12 @@ mod tests {
     use std::fs;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+    use super::super::combat_no_win_fallback::{
+        segment_mode_allows_turn_segment, try_apply_smoke_bomb_survival_fallback_after_rejection,
+    };
     use super::{
         combat_automation_step_state_v1, effective_hp_loss_limit, high_stakes_search_options,
-        next_available_evidence_path, search_config, segment_mode_allows_turn_segment,
+        next_available_evidence_path, search_config,
     };
     use crate::ai::combat_search_v2::CombatSearchV2PotionPolicy;
     use crate::content::potions::{Potion, PotionId};
@@ -729,7 +549,7 @@ mod tests {
             }),
         ));
 
-        let outcome = super::try_apply_smoke_bomb_survival_fallback_after_rejection(
+        let outcome = try_apply_smoke_bomb_survival_fallback_after_rejection(
             &mut session,
             None,
             "no_complete_winning_candidate",
