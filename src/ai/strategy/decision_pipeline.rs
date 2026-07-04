@@ -253,7 +253,10 @@ pub fn evaluate_decision_candidate(
     }
     let lane = capped_lane(
         lane_for_candidate(candidate.kind, scores.iter().map(|score| score.value).sum()),
-        saturation.lane_cap,
+        stricter_lane_cap(
+            saturation.lane_cap,
+            strategic_lane_cap(context, candidate.kind, admission),
+        ),
     );
     let expansion = expansion_for_candidate(candidate.kind, lane);
     CandidateEvaluation {
@@ -665,11 +668,8 @@ fn strategic_deficit_score(
         scores.push(score("strategic-frontload-gap", 35));
     }
 
-    if !improves
-        && deficit.deck_burden == StrategicBurdenLevel::Heavy
-        && ordinary_reward_addition(admission)
-    {
-        scores.push(score("strategic-burden-no-gap", -45));
+    if !improves && heavy_burden_penalty_applies(context, admission) {
+        scores.push(score("strategic-burden-no-gap", -85));
     }
     if deficit.too_many_low_impact_attacks
         && deficit.frontload_damage == StrategicDeficitLevel::Surplus
@@ -895,6 +895,32 @@ fn capped_lane(lane: CandidateLane, cap: Option<LaneCap>) -> CandidateLane {
     }
 }
 
+fn stricter_lane_cap(left: Option<LaneCap>, right: Option<LaneCap>) -> Option<LaneCap> {
+    match (left, right) {
+        (Some(LaneCap::Reject), _) | (_, Some(LaneCap::Reject)) => Some(LaneCap::Reject),
+        (Some(LaneCap::ProbeOnly), _) | (_, Some(LaneCap::ProbeOnly)) => Some(LaneCap::ProbeOnly),
+        _ => None,
+    }
+}
+
+fn strategic_lane_cap(
+    context: DecisionPipelineContext,
+    kind: DecisionCandidateKind,
+    admission: Option<&RewardAdmission>,
+) -> Option<LaneCap> {
+    if !matches!(
+        kind,
+        DecisionCandidateKind::CardRewardPick { .. } | DecisionCandidateKind::ShopBuyCard { .. }
+    ) {
+        return None;
+    }
+    let admission = admission?;
+    if !heavy_burden_penalty_applies(context, admission) {
+        return None;
+    }
+    Some(LaneCap::ProbeOnly)
+}
+
 fn role_saturation_candidate(kind: DecisionCandidateKind) -> Option<RoleSaturationCandidate> {
     match kind {
         DecisionCandidateKind::CardRewardPick { upgrades, .. } => Some(RoleSaturationCandidate {
@@ -957,6 +983,53 @@ fn ordinary_reward_addition(admission: &RewardAdmission) -> bool {
         admission.class,
         RewardAdmissionClass::ImmediateWork | RewardAdmissionClass::BurdenedImmediateWork
     )
+}
+
+fn heavy_burden_penalty_applies(
+    context: DecisionPipelineContext,
+    admission: &RewardAdmission,
+) -> bool {
+    context.deck_plan.strategic_deficit.deck_burden == StrategicBurdenLevel::Heavy
+        && ordinary_reward_addition(admission)
+        && !improves_strategic_gap(context, admission)
+        && !heavy_burden_exception(context, admission)
+}
+
+fn heavy_burden_exception(context: DecisionPipelineContext, admission: &RewardAdmission) -> bool {
+    survival_pressure_exception(context, admission)
+        || (admission_provides(admission, Mechanic::CardDraw)
+            && admission_provides(admission, Mechanic::Energy))
+        || admission
+            .reasons
+            .iter()
+            .any(|reason| matches!(reason, RewardAdmissionReason::RunReward(_)))
+}
+
+fn improves_strategic_gap(context: DecisionPipelineContext, admission: &RewardAdmission) -> bool {
+    let deficit = context.deck_plan.strategic_deficit;
+    (needs(deficit.deck_access)
+        && (admission_provides(admission, Mechanic::CardDraw)
+            || admission
+                .reasons
+                .contains(&RewardAdmissionReason::CombatUpgrade)))
+        || (needs(deficit.energy_or_playability) && admission_provides(admission, Mechanic::Energy))
+        || (needs(deficit.aoe_or_minion_control) && admission_aoe(admission))
+        || (needs(deficit.block_or_mitigation) && admission_survival_tool(admission))
+        || (needs(deficit.boss_scaling_plan)
+            && admission_scaling_or_engine(admission)
+            && !fragile_supported_payoff(context, admission))
+        || (needs(deficit.frontload_damage) && admission_frontloads(admission))
+}
+
+fn survival_pressure_exception(
+    context: DecisionPipelineContext,
+    admission: &RewardAdmission,
+) -> bool {
+    context.deck_plan.survival_pressure()
+        && (admission_provides(admission, Mechanic::EnemyStrengthDown)
+            || admission_provides(admission, Mechanic::Weak)
+            || (admission_provides(admission, Mechanic::Block)
+                && admission_provides(admission, Mechanic::CardDraw)))
 }
 
 fn admission_provides(admission: &RewardAdmission, mechanic: Mechanic) -> bool {
