@@ -48,13 +48,15 @@ mod run_chain;
 mod run_choice_owner;
 #[path = "branch_tiny/run_contract.rs"]
 mod run_contract;
+#[path = "branch_tiny/run_persistence.rs"]
+mod run_persistence;
 #[path = "branch_tiny/runner.rs"]
 mod runner;
 #[path = "branch_tiny/trace.rs"]
 mod trace;
 
 use owner_model::{ChoiceAnnotation, DecisionKey, OwnerDecision, OwnerRoutine};
-use run_capsule::{RunCapsule, RunCapsuleSave};
+use run_capsule::RunCapsule;
 use run_contract::{default_run_objective, RunObjective};
 
 const WALL_STOP_GUARD_MS: u64 = 1_500;
@@ -503,8 +505,8 @@ fn run() -> Result<(), String> {
         last_generation = generation;
         let mut generation_result = None;
         if deadline.should_soft_stop(args) {
-            capsule_frontier_saved |= save_wall_stop(
-                frontier_checkpoint_output_path(
+            capsule_frontier_saved |= run_persistence::save_wall_stop(
+                run_persistence::frontier_checkpoint_output_path(
                     &frontier_checkpoint_path,
                     &resume_frontier,
                     run_capsule.as_ref(),
@@ -538,8 +540,8 @@ fn run() -> Result<(), String> {
                 .into_iter()
                 .map(|(branch, _, _)| branch)
                 .collect::<VecDeque<_>>();
-            capsule_frontier_saved |= save_wall_stop(
-                frontier_checkpoint_output_path(
+            capsule_frontier_saved |= run_persistence::save_wall_stop(
+                run_persistence::frontier_checkpoint_output_path(
                     &frontier_checkpoint_path,
                     &resume_frontier,
                     run_capsule.as_ref(),
@@ -579,7 +581,7 @@ fn run() -> Result<(), String> {
                     capsule.save_terminal_result(args, generation, &branch)?;
                 }
                 if let Some(reason) = run_contract::satisfied(args.objective, &branch.status) {
-                    finalize_objective_result(
+                    run_persistence::finalize_objective_result(
                         run_capsule.as_ref(),
                         args,
                         generation,
@@ -614,7 +616,7 @@ fn run() -> Result<(), String> {
                     capsule.save_terminal_result(args, generation + 1, &child)?;
                 }
                 if let Some(reason) = run_contract::satisfied(args.objective, &child.status) {
-                    finalize_objective_result(
+                    run_persistence::finalize_objective_result(
                         run_capsule.as_ref(),
                         args,
                         generation + 1,
@@ -642,8 +644,8 @@ fn run() -> Result<(), String> {
             .any(|branch| matches!(branch.status, BranchStatus::AwaitingAuto { .. }))
         {
             frontier = next;
-            capsule_frontier_saved |= save_wall_stop(
-                frontier_checkpoint_output_path(
+            capsule_frontier_saved |= run_persistence::save_wall_stop(
+                run_persistence::frontier_checkpoint_output_path(
                     &frontier_checkpoint_path,
                     &resume_frontier,
                     run_capsule.as_ref(),
@@ -659,8 +661,8 @@ fn run() -> Result<(), String> {
         }
         frontier = next;
         if deadline.should_soft_stop(args) {
-            capsule_frontier_saved |= save_wall_stop(
-                frontier_checkpoint_output_path(
+            capsule_frontier_saved |= run_persistence::save_wall_stop(
+                run_persistence::frontier_checkpoint_output_path(
                     &frontier_checkpoint_path,
                     &resume_frontier,
                     run_capsule.as_ref(),
@@ -679,7 +681,7 @@ fn run() -> Result<(), String> {
         trace.record_frontier_snapshot(last_generation, &frontier)?;
     }
     if let Some(capsule) = run_capsule.as_ref().filter(|_| !capsule_frontier_saved) {
-        print_capsule_save(
+        run_persistence::print_capsule_save(
             capsule.save_recovery(args, last_generation, next_branch_id, &frontier)?,
             capsule,
         );
@@ -752,102 +754,6 @@ impl RunDeadline {
             .map(|deadline| deadline.saturating_duration_since(Instant::now()))
             .map(|remaining| remaining.as_millis().min(u128::from(u64::MAX)) as u64)
     }
-}
-
-fn frontier_checkpoint_output_path<'a>(
-    frontier_checkpoint_path: &'a Option<PathBuf>,
-    resume_frontier: &'a Option<PathBuf>,
-    capsule: Option<&RunCapsule>,
-) -> Option<&'a PathBuf> {
-    if frontier_checkpoint_path.is_some() {
-        return frontier_checkpoint_path.as_ref();
-    }
-    if capsule.is_some() {
-        return None;
-    }
-    resume_frontier.as_ref()
-}
-
-fn save_wall_stop(
-    path: Option<&PathBuf>,
-    capsule: Option<&RunCapsule>,
-    args: Args,
-    generation: usize,
-    next_branch_id: usize,
-    frontier: &VecDeque<Branch>,
-    deadline: &RunDeadline,
-) -> Result<bool, String> {
-    println!(
-        "wall_soft_stop: generation={} remaining_ms={}",
-        generation,
-        deadline.remaining_ms().unwrap_or(0)
-    );
-    if let Some(path) = path {
-        let running = frontier
-            .iter()
-            .filter(|branch| branch.status.is_resumable())
-            .count();
-        if running == 0 {
-            println!("frontier_checkpoint skipped: no running branches");
-            return Ok(false);
-        }
-        frontier_checkpoint::save(path, args, generation, next_branch_id, frontier)?;
-        println!(
-            "frontier_checkpoint: {} running={}",
-            path.display(),
-            running
-        );
-    } else if capsule.is_none() {
-        println!("wall_soft_stop reached without --frontier-checkpoint");
-    }
-    if let Some(capsule) = capsule {
-        return Ok(print_capsule_save(
-            capsule.save_paused_recovery(
-                args,
-                generation,
-                next_branch_id,
-                frontier,
-                "wall_deadline",
-            )?,
-            capsule,
-        ));
-    }
-    Ok(false)
-}
-
-fn print_capsule_save(save: RunCapsuleSave, capsule: &RunCapsule) -> bool {
-    match save {
-        RunCapsuleSave::None => false,
-        RunCapsuleSave::Frontier { running } => {
-            println!("run_capsule_frontier: running={running}");
-            true
-        }
-        RunCapsuleSave::Result => {
-            println!("run_capsule_result: {}", capsule.result_path().display());
-            true
-        }
-    }
-}
-
-fn finalize_objective_result(
-    capsule: Option<&RunCapsule>,
-    args: Args,
-    generation: usize,
-    branch: &Branch,
-    reason: &'static str,
-) -> Result<(), String> {
-    if let Some(capsule) = capsule {
-        capsule.save_completed_result(args, generation, branch, reason)?;
-        println!("run_capsule_result: {}", capsule.result_path().display());
-    } else {
-        println!(
-            "run_objective_completed: reason={} branch={} status={}",
-            reason,
-            branch.id,
-            render::one_line(&branch_status_boundary_label(&branch.status))
-        );
-    }
-    Ok(())
 }
 
 fn run_event_owner_probe(args: Args, probe: EventOwnerProbeArgs) -> Result<(), String> {
