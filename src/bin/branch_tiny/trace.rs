@@ -88,16 +88,16 @@ impl TraceWriter {
                 .map(auto_step_value)
                 .collect::<Vec<_>>(),
             "combat_search": branch.combat_search,
-            "combat_portfolio": branch.combat_portfolio.as_ref().map(|retry| json!({
-                "status": match &retry.status {
+            "combat_portfolio": branch.combat_portfolio.as_ref().map(|report| json!({
+                "status": match &report.status {
                     CombatSearchPortfolioStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
                     CombatSearchPortfolioStatus::Advanced(boundary) => json!({"kind": "advanced", "boundary": boundary}),
                     CombatSearchPortfolioStatus::Terminal(result) => json!({"kind": "terminal", "result": result.as_str()}),
                 },
-                "nodes": retry.max_nodes,
-                "ms": retry.wall_ms,
-                "actions": retry.action_keys,
-                "attempts": retry.attempts.iter().map(|attempt| json!({
+                "nodes": report.max_nodes,
+                "ms": report.wall_ms,
+                "actions": report.action_keys,
+                "attempts": report.attempts.iter().map(|attempt| json!({
                     "label": attempt.label,
                     "status": match &attempt.status {
                         CombatSearchPortfolioStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),

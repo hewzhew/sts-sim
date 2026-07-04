@@ -20,8 +20,12 @@ mod candidate_ir_adapter;
 mod cli_args;
 #[path = "branch_tiny/combat_gap_case.rs"]
 mod combat_gap_case;
+#[path = "branch_tiny/combat_search_lanes.rs"]
+mod combat_search_lanes;
 #[path = "branch_tiny/combat_search_orchestrator.rs"]
 mod combat_search_orchestrator;
+#[path = "branch_tiny/combat_search_report.rs"]
+mod combat_search_report;
 #[path = "branch_tiny/decision_delta.rs"]
 mod decision_delta;
 #[path = "branch_tiny/event_owner_probe.rs"]

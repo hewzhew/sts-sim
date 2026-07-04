@@ -36,8 +36,8 @@ pub(super) fn print_branch_timeline(
         println!("  arrived: {}", render_timeline_step(previous));
     }
     print_auto_steps(&branch.auto_steps);
-    if let Some(retry) = branch.combat_portfolio.as_ref() {
-        print_combat_portfolio(retry);
+    if let Some(report) = branch.combat_portfolio.as_ref() {
+        print_combat_portfolio(report);
     }
     print_reward_gap_detail(&branch.session, &branch.status);
     if choices.is_empty() {
@@ -136,14 +136,14 @@ fn print_auto_steps(steps: &[RunControlAutoAppliedStepV1]) {
     }
 }
 
-fn print_combat_portfolio(retry: &CombatSearchPortfolioReport) {
+fn print_combat_portfolio(report: &CombatSearchPortfolioReport) {
     println!(
         "  combat_portfolio: {} budget={}nodes/{}ms",
-        combat_portfolio_status_label(&retry.status),
-        retry.max_nodes,
-        retry.wall_ms
+        combat_portfolio_status_label(&report.status),
+        report.max_nodes,
+        report.wall_ms
     );
-    for attempt in &retry.attempts {
+    for attempt in &report.attempts {
         println!(
             "    attempt {}: {} potion={} max_potions={:?} budget={}nodes/{}ms",
             attempt.label,
