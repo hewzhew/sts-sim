@@ -2,14 +2,13 @@ use crate::ai::combat_search_v2::{
     run_combat_search_v2, CombatSearchV2Config, CombatSearchV2Report,
 };
 
-use super::combat_line_executor::{
-    apply_selected_combat_candidate_line, combat_search_performance_trace_annotation,
-    render_policy_evidence_summary, render_saved_evidence_note, render_search_diagnostics_summary,
-    render_search_performance_summary, render_search_policy_summary,
-};
+use super::combat_line_executor::apply_selected_combat_candidate_line;
 use super::combat_line_selector::{select_accepted_search_combat_line, CombatLineSelection};
 use super::combat_no_win_fallback::{
     try_apply_no_win_fallback, try_apply_turn_segment_after_rejection,
+};
+use super::combat_search_rejection::{
+    build_combat_search_rejection_outcome, CombatSearchRejectionOutcome,
 };
 use super::commands::{
     RunControlHpLossLimit, RunControlSearchCombatOptions, RunControlSearchEvidenceTarget,
@@ -32,23 +31,18 @@ pub(super) fn apply_search_combat(
     let saved_evidence =
         save_search_evidence_if_requested(session, options.evidence.as_ref(), &report)?;
     if search_report_has_invalid_card_identity(&report) {
-        let mut outcome = RunControlCommandOutcome::message(format!(
-            "{}{}\n\n{}",
-            render_search_rejection(&report, "invalid_card_identity", None),
-            render_saved_evidence_note(saved_evidence.as_deref()),
-            super::render::render_run_control_state(session)
-        ))
-        .with_combat_search_rejection(RunControlCombatSearchRejection::InvalidCardIdentity);
-        outcome
-            .trace_annotations
-            .push(combat_search_performance_trace_annotation(
-                "search_combat_rejected",
-                session,
-                &start,
-                &report,
-            ));
-        outcome.search_evidence_path = saved_evidence;
-        return Ok(outcome);
+        return Ok(build_combat_search_rejection_outcome(
+            session,
+            &start,
+            &report,
+            CombatSearchRejectionOutcome {
+                result: "invalid_card_identity",
+                detail: None,
+                rejection: RunControlCombatSearchRejection::InvalidCardIdentity,
+                trace_source: "search_combat_rejected",
+                saved_evidence: saved_evidence.as_deref(),
+            },
+        ));
     }
     let Some(trajectory) = report.best_win_trajectory.as_ref() else {
         if let Some(outcome) = try_apply_no_win_fallback(
@@ -62,51 +56,35 @@ pub(super) fn apply_search_combat(
         )? {
             return Ok(outcome);
         }
-        let mut outcome = RunControlCommandOutcome::message(format!(
-            "{}{}\n\n{}",
-            render_search_rejection(&report, "no_complete_winning_candidate", None),
-            render_saved_evidence_note(saved_evidence.as_deref()),
-            super::render::render_run_control_state(session)
-        ))
-        .with_combat_search_rejection(RunControlCombatSearchRejection::NoCompleteWinningCandidate);
-        outcome
-            .trace_annotations
-            .push(combat_search_performance_trace_annotation(
-                "search_combat_rejected",
-                session,
-                &start,
-                &report,
-            ));
-        outcome.search_evidence_path = saved_evidence;
-        return Ok(outcome);
+        return Ok(build_combat_search_rejection_outcome(
+            session,
+            &start,
+            &report,
+            CombatSearchRejectionOutcome {
+                result: "no_complete_winning_candidate",
+                detail: None,
+                rejection: RunControlCombatSearchRejection::NoCompleteWinningCandidate,
+                trace_source: "search_combat_rejected",
+                saved_evidence: saved_evidence.as_deref(),
+            },
+        ));
     };
     let selected =
         match select_accepted_search_combat_line(session, &start, &config, &report, trajectory)? {
             CombatLineSelection::Selected(selected) => selected,
             CombatLineSelection::DirtyRejected { detail } => {
-                let mut outcome = RunControlCommandOutcome::message(format!(
-                    "{}{}\n\n{}",
-                    render_search_rejection(
-                        &report,
-                        "dirty_winning_candidate_rejected",
-                        Some(detail),
-                    ),
-                    render_saved_evidence_note(saved_evidence.as_deref()),
-                    super::render::render_run_control_state(session)
-                ))
-                .with_combat_search_rejection(
-                    RunControlCombatSearchRejection::DirtyWinningCandidateRejected,
-                );
-                outcome
-                    .trace_annotations
-                    .push(combat_search_performance_trace_annotation(
-                        "search_combat_rejected_dirty_win",
-                        session,
-                        &start,
-                        &report,
-                    ));
-                outcome.search_evidence_path = saved_evidence;
-                return Ok(outcome);
+                return Ok(build_combat_search_rejection_outcome(
+                    session,
+                    &start,
+                    &report,
+                    CombatSearchRejectionOutcome {
+                        result: "dirty_winning_candidate_rejected",
+                        detail: Some(detail),
+                        rejection: RunControlCombatSearchRejection::DirtyWinningCandidateRejected,
+                        trace_source: "search_combat_rejected_dirty_win",
+                        saved_evidence: saved_evidence.as_deref(),
+                    },
+                ));
             }
         };
 
@@ -123,30 +101,21 @@ pub(super) fn apply_search_combat(
             )? {
                 return Ok(outcome);
             }
-            let mut outcome = RunControlCommandOutcome::message(format!(
-                "{}{}\n\n{}",
-                render_search_rejection(
-                    &report,
-                    "complete_winning_candidate_exceeds_hp_loss_limit",
-                    Some(format!(
+            return Ok(build_combat_search_rejection_outcome(
+                session,
+                &start,
+                &report,
+                CombatSearchRejectionOutcome {
+                    result: "complete_winning_candidate_exceeds_hp_loss_limit",
+                    detail: Some(format!(
                         "candidate_hp_loss={} max_hp_loss={max_hp_loss}",
                         selected.line.hp_loss
                     )),
-                ),
-                render_saved_evidence_note(saved_evidence.as_deref()),
-                super::render::render_run_control_state(session)
-            ))
-            .with_combat_search_rejection(RunControlCombatSearchRejection::HpLossLimitExceeded);
-            outcome
-                .trace_annotations
-                .push(combat_search_performance_trace_annotation(
-                    "search_combat_rejected",
-                    session,
-                    &start,
-                    &report,
-                ));
-            outcome.search_evidence_path = saved_evidence;
-            return Ok(outcome);
+                    rejection: RunControlCombatSearchRejection::HpLossLimitExceeded,
+                    trace_source: "search_combat_rejected",
+                    saved_evidence: saved_evidence.as_deref(),
+                },
+            ));
         }
     }
 
@@ -331,55 +300,6 @@ fn search_config(
         root_action_prior: None,
         turn_plan_prior: None,
     }
-}
-
-fn render_search_rejection(
-    report: &CombatSearchV2Report,
-    result: &'static str,
-    detail: Option<String>,
-) -> String {
-    let mut lines = vec![
-        "Search combat did not modify state.".to_string(),
-        format!("  result={result}"),
-    ];
-    if let Some(detail) = detail {
-        lines.push(format!("  detail={detail}"));
-    }
-    if let Some(candidate) = report.best_complete_trajectory.as_ref() {
-        lines.push(format!(
-            "  best_complete_candidate terminal={:?} final_hp={} hp_loss={} turns={} cards_played={} potions_used={} actions={}",
-            candidate.terminal,
-            candidate.final_hp,
-            candidate.hp_loss,
-            candidate.turns,
-            candidate.cards_played,
-            candidate.potions_used,
-            candidate.actions.len()
-        ));
-    } else {
-        lines.push("  best_complete_candidate=none".to_string());
-    }
-    lines.extend([
-        format!("  coverage_status={:?}", report.outcome.coverage_status),
-        render_search_policy_summary(report),
-        render_search_diagnostics_summary(report),
-        render_search_performance_summary(report),
-        render_policy_evidence_summary(report),
-        format!(
-            "  complete_trajectory_found={}",
-            report.outcome.complete_trajectory_found
-        ),
-        format!("  terminal_wins={}", report.stats.terminal_wins),
-        format!("  nodes_expanded={}", report.stats.nodes_expanded),
-        format!("  nodes_generated={}", report.stats.nodes_generated),
-        format!(
-            "  rollouts={} rollout_wins={} rollout_skips={}",
-            report.rollout.evaluations, report.rollout.terminal_wins, report.rollout.budget_skips
-        ),
-        format!("  reliability={}", report.evidence_reliability.reliability),
-        format!("  coverage_reason={}", report.outcome.coverage_reason),
-    ]);
-    lines.join("\n")
 }
 
 #[cfg(test)]
