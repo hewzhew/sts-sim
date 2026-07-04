@@ -1,7 +1,6 @@
 use crate::ai::combat_search_v2::{
     filter_combat_search_legal_actions, plan_combat_turn_segment_v1, run_combat_search_v2,
     CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2Report,
-    CombatSearchV2TurnSegmentReport,
 };
 use crate::content::potions::PotionId;
 use crate::sim::combat::{
@@ -11,12 +10,11 @@ use crate::sim::combat::{
 use crate::sim::combat_legal_actions::engine_local_moves;
 
 use super::combat_line_executor::{
-    apply_selected_combat_candidate_line, combat_automation_step_state_v1,
-    combat_search_performance_trace_annotation, current_run_apply_status,
-    drawn_cards_from_action_result, millis_to_micros_u64, render_policy_evidence_summary,
-    render_saved_evidence_note, render_search_diagnostics_summary,
-    render_search_performance_summary, render_search_policy_summary,
-    CombatCandidateLinePerformance,
+    apply_combat_turn_segment, apply_selected_combat_candidate_line,
+    apply_smoke_bomb_survival_fallback, combat_search_performance_trace_annotation,
+    millis_to_micros_u64, render_policy_evidence_summary, render_saved_evidence_note,
+    render_search_diagnostics_summary, render_search_performance_summary,
+    render_search_policy_summary, CombatCandidateLinePerformance,
 };
 use super::combat_line_selector::{select_accepted_search_combat_line, CombatLineSelection};
 use super::commands::{
@@ -28,12 +26,7 @@ use super::search_evidence::{save_combat_search_evidence_v1, CombatSearchEvidenc
 use super::session::{
     RunControlCombatSearchRejection, RunControlCommandOutcome, RunControlSession,
 };
-use super::trace_annotation::{
-    CombatAutomationActionV1, CombatAutomationTrajectoryRecordV1, CombatAutomationTrajectorySource,
-};
-use super::transition_report::{
-    action_result_from_transition, render_action_result, RunVisibleSnapshot, TransitionAction,
-};
+use super::trace_annotation::CombatAutomationTrajectorySource;
 use super::view_model::client_input_hint;
 
 pub(super) fn apply_search_combat(
@@ -262,62 +255,14 @@ fn try_apply_turn_segment_after_rejection(
         return Ok(None);
     };
     verify_segment_trajectory_replays(start, &trajectory.actions, config)?;
-
-    let before_snapshot = RunVisibleSnapshot::capture(session);
-    let applied = trajectory.actions.clone();
-    let mut automation_actions = Vec::new();
-    session.mark_current_combat_search_resolved();
-    for action in &applied {
-        let outcome = session.apply_input(action.input.clone())?;
-        automation_actions.push(CombatAutomationActionV1 {
-            step_index: action.step_index,
-            action_key: action.action_key.clone(),
-            input: action.input.clone(),
-            drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
-            combat_after: combat_automation_step_state_v1(session),
-        });
-    }
-    let after_snapshot = RunVisibleSnapshot::capture(session);
-    let status = current_run_apply_status(session);
-    let mut transition_label = format!(
-        "search-combat segment applied {} actions (partial turn; not terminal claim)",
-        applied.len()
-    );
-    if let Some(path) = saved_evidence.as_ref() {
-        transition_label.push_str(&format!(" saved_search={}", path.display()));
-    }
-    let action_result = action_result_from_transition(
-        TransitionAction {
-            label: transition_label,
-        },
-        &before_snapshot,
-        &after_snapshot,
-        status,
-    );
-    let message = format!(
-        "{}{}\n{}\n{}",
-        render_segment_application(search_report, &segment_report, rejection_result),
-        render_saved_evidence_note(saved_evidence),
-        render_action_result(&action_result),
-        super::render::render_run_control_state(session)
-    );
-    let automation_record = CombatAutomationTrajectoryRecordV1::new(
-        CombatAutomationTrajectorySource::SearchCombatTurnSegment,
-        automation_actions,
-    );
-    session.remember_combat_automation_trajectory(automation_record.clone());
-    let mut outcome = RunControlCommandOutcome::action(message, action_result)
-        .with_trace_annotations(vec![
-            automation_record.into_annotation(),
-            combat_search_performance_trace_annotation(
-                "search_combat_turn_segment",
-                session,
-                start,
-                search_report,
-            ),
-        ]);
-    outcome.search_evidence_path = saved_evidence.map(|path| path.to_path_buf());
-    Ok(Some(outcome))
+    Ok(Some(apply_combat_turn_segment(
+        session,
+        start,
+        search_report,
+        &segment_report,
+        saved_evidence,
+        rejection_result,
+    )?))
 }
 
 fn try_apply_smoke_bomb_survival_fallback_after_rejection(
@@ -343,65 +288,12 @@ fn try_apply_smoke_bomb_survival_fallback_after_rejection(
     let Some(smoke_input) = smoke_input else {
         return Ok(None);
     };
-
-    let before_snapshot = RunVisibleSnapshot::capture(session);
-    let mut automation_actions = Vec::new();
-    let outcome = session.apply_input(smoke_input.clone())?;
-    automation_actions.push(CombatAutomationActionV1 {
-        step_index: 0,
-        action_key: "combat/use_smoke_bomb_survival".to_string(),
-        input: smoke_input,
-        drawn_cards: drawn_cards_from_action_result(outcome.action_result.as_ref()),
-        combat_after: combat_automation_step_state_v1(session),
-    });
-    if active_combat_is_waiting_for_smoke_escape_turn_end(session) {
-        let end_turn_outcome = session.apply_input(crate::state::core::ClientInput::EndTurn)?;
-        automation_actions.push(CombatAutomationActionV1 {
-            step_index: 1,
-            action_key: "combat/end_turn_after_smoke_bomb".to_string(),
-            input: crate::state::core::ClientInput::EndTurn,
-            drawn_cards: drawn_cards_from_action_result(end_turn_outcome.action_result.as_ref()),
-            combat_after: combat_automation_step_state_v1(session),
-        });
-    }
-    let after_snapshot = RunVisibleSnapshot::capture(session);
-    let status = current_run_apply_status(session);
-    let mut transition_label = format!(
-        "Smoke Bomb survival fallback after {rejection_result} (not a combat victory claim)"
-    );
-    if let Some(path) = saved_evidence.as_ref() {
-        transition_label.push_str(&format!(" saved_search={}", path.display()));
-    }
-    let action_result = action_result_from_transition(
-        TransitionAction {
-            label: transition_label,
-        },
-        &before_snapshot,
-        &after_snapshot,
-        status,
-    );
-    let message = format!(
-        "Search combat did not find a complete win; used Smoke Bomb as a survival fallback after {rejection_result}.{}\n{}\n{}",
-        render_saved_evidence_note(saved_evidence),
-        render_action_result(&action_result),
-        super::render::render_run_control_state(session)
-    );
-    let automation_record = CombatAutomationTrajectoryRecordV1::new(
-        CombatAutomationTrajectorySource::SearchCombatSmokeBombSurvival,
-        automation_actions,
-    );
-    session.remember_combat_automation_trajectory(automation_record.clone());
-    let mut outcome = RunControlCommandOutcome::action(message, action_result)
-        .with_trace_annotations(vec![automation_record.into_annotation()]);
-    outcome.search_evidence_path = saved_evidence.map(|path| path.to_path_buf());
-    Ok(Some(outcome))
-}
-
-fn active_combat_is_waiting_for_smoke_escape_turn_end(session: &RunControlSession) -> bool {
-    session
-        .active_combat
-        .as_ref()
-        .is_some_and(|active| active.combat_state.turn.counters.player_escaping)
+    Ok(Some(apply_smoke_bomb_survival_fallback(
+        session,
+        smoke_input,
+        saved_evidence,
+        rejection_result,
+    )?))
 }
 
 fn segment_mode_allows_turn_segment(
@@ -670,65 +562,6 @@ fn render_search_rejection(
         format!("  reliability={}", report.evidence_reliability.reliability),
         format!("  coverage_reason={}", report.outcome.coverage_reason),
     ]);
-    lines.join("\n")
-}
-
-fn render_segment_application(
-    search_report: &CombatSearchV2Report,
-    segment_report: &CombatSearchV2TurnSegmentReport,
-    rejection_result: &'static str,
-) -> String {
-    let trajectory = segment_report
-        .selected
-        .as_ref()
-        .expect("caller only renders after selecting a segment");
-    let mut lines = vec![
-        "Search combat applied partial turn segment.".to_string(),
-        format!("  behavior_label={}", segment_report.behavior_label),
-        format!("  source={}", segment_report.source),
-        format!("  original_search_result={rejection_result}"),
-        format!(
-            "  segment_bucket={} stop_reason={} candidate_count={} nodes_expanded={} nodes_generated={}",
-            segment_report.selected_bucket.unwrap_or("unknown"),
-            segment_report.selected_stop_reason.unwrap_or("unknown"),
-            segment_report.candidate_count,
-            segment_report.nodes_expanded,
-            segment_report.nodes_generated
-        ),
-        format!(
-            "  segment_terminal={:?} final_hp={} hp_loss={} turns={} cards_played={} potions_used={}",
-            trajectory.terminal,
-            trajectory.final_hp,
-            trajectory.hp_loss,
-            trajectory.turns,
-            trajectory.cards_played,
-            trajectory.potions_used
-        ),
-        format!(
-            "  search_coverage={:?} reliability={}",
-            search_report.outcome.coverage_status, search_report.evidence_reliability.reliability
-        ),
-        render_search_policy_summary(search_report),
-        render_search_performance_summary(search_report),
-        render_policy_evidence_summary(search_report),
-        "  terminal_claim=none; this is an exact applied prefix, not a complete-win proof"
-            .to_string(),
-        format!("  action_count={}", trajectory.actions.len()),
-    ];
-    for action in trajectory.actions.iter().take(12) {
-        lines.push(format!(
-            "    {} | {} | {}",
-            action.step_index,
-            client_input_hint(&action.input),
-            action.action_key
-        ));
-    }
-    if trajectory.actions.len() > 12 {
-        lines.push(format!(
-            "    ... {} more actions",
-            trajectory.actions.len() - 12
-        ));
-    }
     lines.join("\n")
 }
 
