@@ -52,6 +52,8 @@ mod render;
 mod reward_shop_boss_owner;
 #[path = "branch_tiny/run_capsule.rs"]
 mod run_capsule;
+#[path = "branch_tiny/run_capsule_format.rs"]
+mod run_capsule_format;
 #[path = "branch_tiny/run_chain.rs"]
 mod run_chain;
 #[path = "branch_tiny/run_choice_owner.rs"]
