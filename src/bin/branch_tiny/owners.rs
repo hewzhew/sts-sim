@@ -8,12 +8,13 @@ use sts_simulator::eval::run_control::{
 use sts_simulator::state::core::{CampfireChoice, ClientInput, EngineState};
 
 use super::boss_relic_owner::boss_relic_owner_choices;
+use super::card_reward_owner::card_reward_owner_choices;
 use super::neow_owner::neow_owner_decision;
 use super::owner_model::{
     ChoiceAnnotation, OwnerChoice, OwnerChoiceExpansion, OwnerDecision, OwnerRoutine,
 };
-use super::reward_shop_boss_owner::{card_reward_owner_choices, shop_tiny_owner_choices};
 use super::run_choice_owner::run_choice_owner_decision;
+use super::shop_tiny_owner::shop_tiny_owner_choices;
 use super::Owner;
 
 pub(super) fn owner_decision(

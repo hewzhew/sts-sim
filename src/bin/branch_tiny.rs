@@ -22,6 +22,8 @@ mod branch_scheduler;
 mod branch_status_view;
 #[path = "branch_tiny/candidate_ir_adapter.rs"]
 mod candidate_ir_adapter;
+#[path = "branch_tiny/card_reward_owner.rs"]
+mod card_reward_owner;
 #[path = "branch_tiny/cli_args.rs"]
 mod cli_args;
 #[path = "branch_tiny/combat_gap_case.rs"]
@@ -42,6 +44,8 @@ mod expansion_policy;
 mod frontier_checkpoint;
 #[path = "branch_tiny/neow_owner.rs"]
 mod neow_owner;
+#[path = "branch_tiny/owner_candidate_eval.rs"]
+mod owner_candidate_eval;
 #[path = "branch_tiny/owner_model.rs"]
 mod owner_model;
 #[path = "branch_tiny/owner_orchestrator.rs"]
@@ -52,8 +56,6 @@ mod owners;
 mod render;
 #[path = "branch_tiny/render_choice.rs"]
 mod render_choice;
-#[path = "branch_tiny/reward_shop_boss_owner.rs"]
-mod reward_shop_boss_owner;
 #[path = "branch_tiny/run_capsule.rs"]
 mod run_capsule;
 #[path = "branch_tiny/run_capsule_format.rs"]
@@ -74,6 +76,8 @@ mod run_persistence;
 mod run_startup;
 #[path = "branch_tiny/runner.rs"]
 mod runner;
+#[path = "branch_tiny/shop_tiny_owner.rs"]
+mod shop_tiny_owner;
 #[path = "branch_tiny/trace.rs"]
 mod trace;
 #[path = "branch_tiny/trace_format.rs"]
