@@ -820,7 +820,7 @@ fn shop_investment_score(
 }
 
 fn shop_relic_score(
-    _context: DecisionPipelineContext,
+    context: DecisionPipelineContext,
     candidate: DecisionCandidateIr,
     _admission: Option<&RewardAdmission>,
     scores: &mut Vec<ScoreComponent>,
@@ -828,7 +828,9 @@ fn shop_relic_score(
     let DecisionCandidateKind::ShopBuyRelic { relic, .. } = candidate.kind else {
         return;
     };
-    scores.push(score("shop-relic", shop_relic_score_value(relic)));
+    for component in shop_relic_score_components(context.deck_plan, relic) {
+        scores.push(component);
+    }
 }
 
 fn shop_potion_score(
@@ -1170,12 +1172,38 @@ fn shop_relic_purchase_needs_followup(relic: RelicId) -> bool {
     )
 }
 
+fn shop_relic_score_components(
+    deck_plan: DeckPlanSnapshot,
+    relic: RelicId,
+) -> impl Iterator<Item = ScoreComponent> {
+    let mut scores = vec![score("shop-relic", shop_relic_score_value(relic))];
+    match relic {
+        RelicId::ChemicalX if deck_plan.roles.x_cost_payoff_units > 0 => {
+            scores.push(score("shop-relic-x-cost-payoff", 75));
+        }
+        RelicId::ChemicalX => scores.push(score("shop-relic-x-cost-missing", -40)),
+        RelicId::PaperFrog => {
+            if deck_plan.roles.vulnerable_units >= 2 {
+                scores.push(score("shop-relic-vulnerable-density", 70));
+            } else if deck_plan.roles.vulnerable_units == 1 {
+                scores.push(score("shop-relic-vulnerable-source", 35));
+            }
+            if deck_plan.roles.vulnerable_units > 0 && deck_plan.roles.aoe_units > 0 {
+                scores.push(score("shop-relic-vulnerable-aoe", 25));
+            }
+        }
+        _ => {}
+    }
+    scores.into_iter()
+}
+
 fn shop_relic_score_value(relic: RelicId) -> i32 {
     match relic {
         RelicId::Waffle => 220,
         RelicId::MedicalKit | RelicId::OrangePellets => 150,
         RelicId::MembershipCard => 0,
-        RelicId::ClockworkSouvenir | RelicId::ChemicalX | RelicId::Toolbox => 115,
+        RelicId::ClockworkSouvenir | RelicId::Toolbox => 115,
+        RelicId::ChemicalX => 45,
         RelicId::FrozenEye => 45,
         _ => 45,
     }
@@ -1210,4 +1238,80 @@ fn shop_potion_score_value(potion: PotionId) -> i32 {
 
 fn score(by: &'static str, value: i32) -> ScoreComponent {
     ScoreComponent { by, value }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::strategy::deck_admission::DeckAdmissionContext;
+    use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
+    use crate::runtime::combat::CombatCard;
+
+    fn shop_context(cards: &[CardId]) -> DecisionPipelineContext {
+        let deck: Vec<_> = cards
+            .iter()
+            .enumerate()
+            .map(|(index, card)| CombatCard::new(*card, index as u32 + 1))
+            .collect();
+        DecisionPipelineContext::shop(
+            DeckPlanSnapshot::from_deck(
+                &deck,
+                DeckAdmissionContext {
+                    act: 2,
+                    current_hp: 70,
+                    max_hp: 80,
+                },
+                RunStrategicFacts {
+                    entering_act: 2,
+                    starter_basic_count: 0,
+                    curse_count: 0,
+                    has_energy_relic: false,
+                },
+            ),
+            999,
+        )
+    }
+
+    fn shop_relic(context: DecisionPipelineContext, relic: RelicId) -> CandidateEvaluation {
+        evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::ShopBuyRelic { relic, price: 150 },
+            None,
+        )
+    }
+
+    #[test]
+    fn shop_paper_frog_beats_chemical_x_without_x_cost_payoff() {
+        let context = shop_context(&[
+            CardId::Shockwave,
+            CardId::Uppercut,
+            CardId::Cleave,
+            CardId::Cleave,
+        ]);
+
+        let chemical_x = shop_relic(context, RelicId::ChemicalX);
+        let paper_frog = shop_relic(context, RelicId::PaperFrog);
+
+        assert!(
+            paper_frog.total_score() > chemical_x.total_score(),
+            "Paper Frog should beat dead Chemical X with vulnerable/AoE support: Paper Frog={:?}, Chemical X={:?}",
+            paper_frog.scores,
+            chemical_x.scores
+        );
+        assert_ne!(chemical_x.lane, CandidateLane::Mainline);
+    }
+
+    #[test]
+    fn shop_chemical_x_stays_mainline_with_x_cost_payoff() {
+        let context = shop_context(&[
+            CardId::Shockwave,
+            CardId::Uppercut,
+            CardId::Cleave,
+            CardId::Whirlwind,
+        ]);
+
+        let chemical_x = shop_relic(context, RelicId::ChemicalX);
+
+        assert_eq!(chemical_x.lane, CandidateLane::Mainline);
+    }
 }

@@ -2,6 +2,7 @@ use crate::ai::analysis::card_semantics::{
     card_definition_with_upgrades, CombatEvent, DamageScalingAxis, InstalledRule, Mechanic,
     PlayEffect, TriggeredEffect,
 };
+use crate::content::cards::get_card_definition;
 use crate::runtime::combat::CombatCard;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -12,8 +13,10 @@ pub struct DeckRoleInventory {
     pub cycle_block_units: u8,
     pub mitigation_units: u8,
     pub debuff_units: u8,
+    pub vulnerable_units: u8,
     pub draw_units: u8,
     pub energy_units: u8,
+    pub x_cost_payoff_units: u8,
     pub strength_source_units: u8,
     pub corruption_units: u8,
     pub exhaust_stream_units: u8,
@@ -27,6 +30,9 @@ impl DeckRoleInventory {
     pub fn from_deck(deck: &[CombatCard]) -> Self {
         let mut inventory = Self::default();
         for card in deck {
+            if get_card_definition(card.id).cost == -1 {
+                inventory.x_cost_payoff_units += 1;
+            }
             let definition = card_definition_with_upgrades(card.id, card.upgrades);
             let provides_block = definition
                 .play_effects
@@ -108,7 +114,10 @@ impl DeckRoleInventory {
                 self.mitigation_units += 1;
                 self.debuff_units += 1;
             }
-            Mechanic::Vulnerable => self.debuff_units += 1,
+            Mechanic::Vulnerable => {
+                self.debuff_units += 1;
+                self.vulnerable_units += 1;
+            }
             Mechanic::CardDraw => self.draw_units += 1,
             Mechanic::Energy => self.energy_units += 1,
             Mechanic::Strength => self.strength_source_units += 1,
