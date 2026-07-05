@@ -6,6 +6,8 @@ use sts_simulator::eval::run_control::{
 };
 use sts_simulator::state::events::EventId;
 
+#[path = "branch_tiny/boss_relic_owner.rs"]
+mod boss_relic_owner;
 #[path = "branch_tiny/boundary_router.rs"]
 mod boundary_router;
 #[path = "branch_tiny/branch_frontier.rs"]
