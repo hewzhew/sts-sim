@@ -12,7 +12,7 @@ use sts_simulator::eval::combat_case::CombatCase;
 
 use super::options::ReviewOptions;
 use super::search_runner::run_configured_search;
-use super::search_types::SearchReview;
+use super::search_types::{SearchDiagnosticProgressFacts, SearchReview};
 
 #[derive(Serialize)]
 pub(super) struct CombatQualityLaneReview {
@@ -40,6 +40,7 @@ struct CombatQualityLaneResult {
 struct CombatSuccessFeedbackRerun {
     schema: &'static str,
     contract: &'static str,
+    source_kind: &'static str,
     source_lane: &'static str,
     witness_action_count: usize,
     prior_states: usize,
@@ -101,9 +102,9 @@ pub(crate) struct QualityLaneSpec {
 
 struct CombatSuccessFeedbackSource {
     spec: QualityLaneSpec,
-    quality: CombatLineQuality,
     baseline: CombatSuccessFeedbackMetrics,
     witness: CombatSearchV2WitnessLine,
+    source_kind: &'static str,
 }
 
 impl QualityLaneSpec {
@@ -158,7 +159,10 @@ pub(super) fn run_quality_lanes(
     let per_lane_nodes = (total_nodes / lane_count).max(1);
     let per_lane_wall_ms = (total_wall_ms / lane_count as u64).max(1);
     let mut lanes = Vec::new();
-    let mut feedback_source: Option<CombatSuccessFeedbackSource> = None;
+    let mut complete_feedback_source: Option<(CombatLineQuality, CombatSuccessFeedbackSource)> =
+        None;
+    let mut estimated_feedback_source: Option<((i32, i32, i32, i32), CombatSuccessFeedbackSource)> =
+        None;
     for lane in specs {
         let (review, report) = run_configured_search(
             lane.label,
@@ -170,16 +174,37 @@ pub(super) fn run_quality_lanes(
         if let (Some(quality), Some(trajectory)) =
             (quality.as_ref(), report.best_win_trajectory.as_ref())
         {
-            if feedback_source
+            if complete_feedback_source
                 .as_ref()
-                .is_none_or(|source| !compare_quality(quality, &source.quality).is_lt())
+                .is_none_or(|(current, _)| !compare_quality(quality, current).is_lt())
             {
-                feedback_source = Some(CombatSuccessFeedbackSource {
-                    spec: lane,
-                    quality: quality.clone(),
-                    baseline: CombatSuccessFeedbackMetrics::from_review(&review),
-                    witness: witness_line_from_trajectory(lane.label, trajectory),
-                });
+                complete_feedback_source = Some((
+                    quality.clone(),
+                    CombatSuccessFeedbackSource {
+                        spec: lane,
+                        baseline: CombatSuccessFeedbackMetrics::from_review(&review),
+                        witness: witness_line_from_trajectory(lane.label, trajectory),
+                        source_kind: "complete_win",
+                    },
+                ));
+            }
+        } else if let Some(progress) = review.facts.diagnostic_progress.as_ref() {
+            if let Some(witness) = estimated_rollout_feedback_witness(lane.label, progress) {
+                let rank = estimated_rollout_feedback_rank(progress);
+                if estimated_feedback_source
+                    .as_ref()
+                    .is_none_or(|(current, _)| rank > *current)
+                {
+                    estimated_feedback_source = Some((
+                        rank,
+                        CombatSuccessFeedbackSource {
+                            spec: lane,
+                            baseline: CombatSuccessFeedbackMetrics::from_review(&review),
+                            witness,
+                            source_kind: "estimated_rollout_frontier",
+                        },
+                    ));
+                }
             }
         }
         lanes.push(CombatQualityLaneResult {
@@ -195,6 +220,9 @@ pub(super) fn run_quality_lanes(
         .filter_map(|(index, lane)| lane.quality.as_ref().map(|quality| (index, quality)))
         .max_by(|(_, left), (_, right)| compare_quality(left, right))
         .map(|(index, _)| lanes[index].lane);
+    let feedback_source = complete_feedback_source
+        .map(|(_, source)| source)
+        .or_else(|| estimated_feedback_source.map(|(_, source)| source));
     let success_feedback_rerun = feedback_source.and_then(|source| {
         run_success_feedback_rerun(
             case,
@@ -274,7 +302,8 @@ fn run_success_feedback_rerun(
     let comparison = compare_success_feedback(&source.baseline, &rerun);
     Some(CombatSuccessFeedbackRerun {
         schema: "combat_success_feedback_rerun_v0",
-        contract: "best_complete_quality_lane_win_compiled_to_exact_state_action_prior_then_rerun_with_same_lane_budget",
+        contract: "best_complete_or_estimated_rollout_witness_compiled_to_exact_state_action_prior_then_rerun_with_same_lane_budget",
+        source_kind: source.source_kind,
         source_lane: source.spec.label,
         witness_action_count: source.witness.actions.len(),
         prior_states,
@@ -283,6 +312,52 @@ fn run_success_feedback_rerun(
         rerun,
         comparison,
     })
+}
+
+fn estimated_rollout_feedback_witness(
+    source: &'static str,
+    progress: &SearchDiagnosticProgressFacts,
+) -> Option<CombatSearchV2WitnessLine> {
+    if progress.source != "rollout_frontier"
+        || progress.terminal != SearchTerminalLabel::Win
+        || !progress.estimated
+    {
+        return None;
+    }
+    let exact_prefix_action_count = progress.exact_prefix_action_count?;
+    if exact_prefix_action_count == 0 {
+        return None;
+    }
+    let actions = progress
+        .action_key_preview
+        .iter()
+        .cloned()
+        .zip(progress.input_preview.iter().cloned())
+        .take(exact_prefix_action_count)
+        .map(|(action_key, input)| CombatSearchV2ActionPreview { action_key, input })
+        .collect::<Vec<_>>();
+    if actions.is_empty() {
+        return None;
+    }
+    Some(CombatSearchV2WitnessLine {
+        source,
+        terminal: progress.terminal,
+        final_hp: progress.final_hp,
+        total_enemy_hp: progress.total_enemy_hp,
+        action_count: progress.action_count,
+        actions,
+    })
+}
+
+fn estimated_rollout_feedback_rank(
+    progress: &SearchDiagnosticProgressFacts,
+) -> (i32, i32, i32, i32) {
+    (
+        progress.final_hp,
+        -(progress.potions_used as i32),
+        -(progress.total_enemy_hp),
+        -(progress.action_count.unwrap_or(usize::MAX) as i32),
+    )
 }
 
 fn compare_success_feedback(
@@ -402,4 +477,65 @@ pub(crate) fn compare_quality(
             -(right.cards_played as i32),
             -(right.action_count as i32),
         ))
+}
+
+#[cfg(test)]
+mod tests {
+    use sts_simulator::ai::combat_search_v2::SearchTerminalLabel;
+    use sts_simulator::state::core::ClientInput;
+
+    use super::*;
+    use crate::search_types::SearchDiagnosticProgressFacts;
+
+    #[test]
+    fn estimated_rollout_win_progress_can_become_feedback_witness() {
+        let progress = SearchDiagnosticProgressFacts {
+            source: "rollout_frontier",
+            terminal: SearchTerminalLabel::Win,
+            estimated: true,
+            final_hp: 12,
+            hp_loss: 8,
+            turns: 3,
+            potions_used: 1,
+            cards_played: 4,
+            living_enemy_count: 0,
+            total_enemy_hp: 0,
+            visible_incoming_damage: Some(0),
+            action_count: Some(6),
+            exact_prefix_action_count: Some(2),
+            action_key_preview: vec!["a".to_string(), "b".to_string()],
+            input_preview: vec![ClientInput::EndTurn, ClientInput::EndTurn],
+        };
+
+        let witness = estimated_rollout_feedback_witness("lane", &progress)
+            .expect("rollout win progress should be reusable as witness");
+
+        assert_eq!(witness.source, "lane");
+        assert_eq!(witness.terminal, SearchTerminalLabel::Win);
+        assert_eq!(witness.action_count, Some(6));
+        assert_eq!(witness.actions.len(), 2);
+    }
+
+    #[test]
+    fn non_winning_rollout_progress_is_not_feedback_witness() {
+        let progress = SearchDiagnosticProgressFacts {
+            source: "rollout_frontier",
+            terminal: SearchTerminalLabel::Loss,
+            estimated: true,
+            final_hp: 0,
+            hp_loss: 30,
+            turns: 2,
+            potions_used: 0,
+            cards_played: 3,
+            living_enemy_count: 2,
+            total_enemy_hp: 100,
+            visible_incoming_damage: Some(20),
+            action_count: Some(4),
+            exact_prefix_action_count: Some(2),
+            action_key_preview: vec!["a".to_string()],
+            input_preview: vec![ClientInput::EndTurn],
+        };
+
+        assert!(estimated_rollout_feedback_witness("lane", &progress).is_none());
+    }
 }
