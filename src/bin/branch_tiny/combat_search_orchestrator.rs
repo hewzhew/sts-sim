@@ -8,8 +8,10 @@ use super::combat_search_lane_runner::{
     run_lane_attempt, CombatSearchLaneAttempt,
 };
 use super::combat_search_lanes::{CombatSearchLane, CombatSearchRequest, CombatSearchStakes};
-use super::combat_search_report::combat_portfolio_report;
-use super::{Args, BranchStatus, CombatSearchLaneReport, CombatSearchPortfolioReport};
+use super::combat_search_report::{
+    combat_portfolio_report, CombatSearchLaneReport, CombatSearchPortfolioReport,
+};
+use super::{Args, BranchStatus};
 
 #[derive(Clone)]
 enum CombatSearchOutcome {

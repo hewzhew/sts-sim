@@ -4,9 +4,10 @@ use sts_simulator::eval::run_control::{
 
 use super::combat_search_orchestrator;
 use super::combat_search_orchestrator::CombatSearchPortfolioResult;
+use super::combat_search_report::CombatSearchPortfolioReport;
 use super::owner_orchestrator::{orchestrate_owner_boundary, OwnerOrchestration};
 use super::run_deadline::RunDeadline;
-use super::{Args, BranchStatus, CombatSearchPortfolioReport, Owner};
+use super::{Args, BranchStatus, Owner};
 
 pub(super) struct AdvanceResult {
     pub(super) status: BranchStatus,

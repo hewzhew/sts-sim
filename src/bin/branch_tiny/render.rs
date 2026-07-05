@@ -4,12 +4,10 @@ use sts_simulator::eval::run_control::{
 };
 
 use super::branch_status_view;
+use super::combat_search_report::{CombatSearchPortfolioReport, CombatSearchPortfolioStatus};
 use super::owner_model::OwnerChoice;
 pub(super) use super::render_choice::{render_candidate_decision_compact, render_timeline_choice};
-use super::{
-    render_choice, BoundarySite, Branch, BranchStatus, CombatSearchPortfolioReport,
-    CombatSearchPortfolioStatus, Owner,
-};
+use super::{render_choice, BoundarySite, Branch, BranchStatus, Owner};
 
 pub(super) fn print_branch_timeline(
     generation: usize,

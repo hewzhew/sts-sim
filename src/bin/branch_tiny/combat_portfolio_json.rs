@@ -1,6 +1,8 @@
 use serde_json::{json, Value};
 
-use super::{CombatSearchLaneReport, CombatSearchPortfolioReport, CombatSearchPortfolioStatus};
+use super::combat_search_report::{
+    CombatSearchLaneReport, CombatSearchPortfolioReport, CombatSearchPortfolioStatus,
+};
 
 pub(super) fn capsule_value(report: &CombatSearchPortfolioReport) -> Value {
     json!({

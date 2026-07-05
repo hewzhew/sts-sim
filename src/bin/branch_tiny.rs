@@ -116,6 +116,7 @@ mod trace;
 mod trace_format;
 
 use cli_args::{Args, ArgsOverrides, ContinueCapsuleArgs, EventOwnerProbeArgs};
+use combat_search_report::CombatSearchPortfolioReport;
 use owner_model::{ChoiceAnnotation, DecisionKey};
 
 #[derive(Clone)]
@@ -128,33 +129,6 @@ struct Branch {
     combat_portfolio: Option<CombatSearchPortfolioReport>,
     auto_steps: Vec<RunControlAutoAppliedStepV1>,
     combat_search: Vec<CombatSearchTraceSummary>,
-}
-
-#[derive(Clone)]
-struct CombatSearchPortfolioReport {
-    status: CombatSearchPortfolioStatus,
-    max_nodes: usize,
-    wall_ms: u64,
-    action_keys: Vec<String>,
-    attempts: Vec<CombatSearchLaneReport>,
-}
-
-#[derive(Clone)]
-struct CombatSearchLaneReport {
-    label: &'static str,
-    status: CombatSearchPortfolioStatus,
-    max_nodes: usize,
-    wall_ms: u64,
-    potion_policy: &'static str,
-    max_potions_used: Option<u32>,
-    action_keys: Vec<String>,
-}
-
-#[derive(Clone)]
-enum CombatSearchPortfolioStatus {
-    Failed(String),
-    Advanced(String),
-    Terminal(TerminalOutcome),
 }
 
 #[derive(Clone)]

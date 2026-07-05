@@ -1,10 +1,34 @@
 use sts_simulator::ai::combat_search_v2::CombatSearchV2PotionPolicy;
 
 use super::branch_status_view;
-use super::{
-    Args, BranchStatus, CombatSearchLaneReport, CombatSearchPortfolioReport,
-    CombatSearchPortfolioStatus, TerminalOutcome,
-};
+use super::{Args, BranchStatus, TerminalOutcome};
+
+#[derive(Clone)]
+pub(super) struct CombatSearchPortfolioReport {
+    pub(super) status: CombatSearchPortfolioStatus,
+    pub(super) max_nodes: usize,
+    pub(super) wall_ms: u64,
+    pub(super) action_keys: Vec<String>,
+    pub(super) attempts: Vec<CombatSearchLaneReport>,
+}
+
+#[derive(Clone)]
+pub(super) struct CombatSearchLaneReport {
+    pub(super) label: &'static str,
+    pub(super) status: CombatSearchPortfolioStatus,
+    pub(super) max_nodes: usize,
+    pub(super) wall_ms: u64,
+    pub(super) potion_policy: &'static str,
+    pub(super) max_potions_used: Option<u32>,
+    pub(super) action_keys: Vec<String>,
+}
+
+#[derive(Clone)]
+pub(super) enum CombatSearchPortfolioStatus {
+    Failed(String),
+    Advanced(String),
+    Terminal(TerminalOutcome),
+}
 
 pub(super) struct CombatSearchLaneReportInput {
     pub(super) label: &'static str,

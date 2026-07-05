@@ -8,8 +8,10 @@ use sts_simulator::eval::run_control::{
 use super::combat_search_lanes::{
     CombatSearchLane, CombatSearchLaneCommitPolicy, CombatSearchRequest,
 };
-use super::combat_search_report::{combat_portfolio_attempt_report, CombatSearchLaneReportInput};
-use super::{boundary_router, BranchStatus, CombatSearchLaneReport, TerminalOutcome};
+use super::combat_search_report::{
+    combat_portfolio_attempt_report, CombatSearchLaneReport, CombatSearchLaneReportInput,
+};
+use super::{boundary_router, BranchStatus, TerminalOutcome};
 
 pub(super) struct CombatSearchLaneAttempt {
     pub(super) outcome: Option<RunControlCommandOutcome>,
