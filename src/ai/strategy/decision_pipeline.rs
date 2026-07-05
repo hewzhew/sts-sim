@@ -587,10 +587,9 @@ fn shop_card_acquisition_filter(
         admission,
     );
     let policy = evaluate_card_acquisition_policy_v0(&report);
-    if policy.allows_acquisition() {
-        FilterDecision::Pass
-    } else {
-        FilterDecision::InspectOnly("shop card fails acquisition discipline")
+    match policy.inspect_only_reason() {
+        None => FilterDecision::Pass,
+        Some(reason) => FilterDecision::InspectOnly(reason),
     }
 }
 
@@ -1448,11 +1447,11 @@ mod tests {
 
         assert_eq!(
             clothesline.inspect_only_reason(),
-            Some("shop card fails acquisition discipline")
+            Some("shop card has no acquisition policy support")
         );
         assert_eq!(
             iron_wave.inspect_only_reason(),
-            Some("shop card fails acquisition discipline")
+            Some("shop card has no acquisition policy support")
         );
     }
 
@@ -1477,11 +1476,11 @@ mod tests {
 
         assert_eq!(
             clothesline.inspect_only_reason(),
-            Some("shop card fails acquisition discipline")
+            Some("shop card has no acquisition policy support")
         );
         assert_eq!(
             spot_weakness.inspect_only_reason(),
-            Some("shop card fails acquisition discipline")
+            Some("shop card has no acquisition policy support")
         );
     }
 
@@ -1496,11 +1495,11 @@ mod tests {
 
         assert_eq!(
             shrug.inspect_only_reason(),
-            Some("shop card fails acquisition discipline")
+            Some("shop card has no acquisition policy support")
         );
         assert_eq!(
             clothesline.inspect_only_reason(),
-            Some("shop card fails acquisition discipline")
+            Some("shop card has no acquisition policy support")
         );
     }
 
@@ -1528,7 +1527,7 @@ mod tests {
 
         assert_eq!(
             shrug.inspect_only_reason(),
-            Some("shop card fails acquisition discipline")
+            Some("shop card would spend purge reserve despite hard gap")
         );
     }
 }

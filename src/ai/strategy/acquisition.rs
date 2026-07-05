@@ -184,6 +184,14 @@ impl AcquisitionPolicyDecision {
     pub fn allows_acquisition(self) -> bool {
         self.verdict.allows_acquisition()
     }
+
+    pub fn inspect_only_reason(self) -> Option<&'static str> {
+        if self.allows_acquisition() {
+            None
+        } else {
+            Some(acquisition_policy_reason_label(self.reason))
+        }
+    }
 }
 
 fn acquisition_policy_decision(report: &CardAcquisitionReport) -> AcquisitionPolicyDecision {
@@ -227,6 +235,21 @@ fn acquisition_policy(
     reason: AcquisitionPolicyReason,
 ) -> AcquisitionPolicyDecision {
     AcquisitionPolicyDecision { verdict, reason }
+}
+
+fn acquisition_policy_reason_label(reason: AcquisitionPolicyReason) -> &'static str {
+    match reason {
+        AcquisitionPolicyReason::PurgeReserveBlocksHardGap => {
+            "shop card would spend purge reserve despite hard gap"
+        }
+        AcquisitionPolicyReason::NoPolicySupport => "shop card has no acquisition policy support",
+        AcquisitionPolicyReason::RewardSurfaceChoice
+        | AcquisitionPolicyReason::PremiumCard
+        | AcquisitionPolicyReason::UpgradedShopCard
+        | AcquisitionPolicyReason::HardGapWithAcceptableOpportunityCost => {
+            "shop card fails acquisition discipline"
+        }
+    }
 }
 
 fn premium_card(card: CardId) -> bool {
