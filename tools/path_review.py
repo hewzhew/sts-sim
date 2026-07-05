@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +19,8 @@ def main() -> int:
             contains=parse_contains(args.contains),
             interesting=args.interesting,
             show_summary=args.summary,
+            inspect_summary=args.inspect_summary,
+            max_summary_examples=args.max_summary_examples,
         )
     )
     return 0
@@ -46,6 +47,12 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Only show steps whose selected choice, candidates, or inspect reasons contain text.",
     )
+    parser.add_argument(
+        "--inspect-summary",
+        action="store_true",
+        help="Group inspect-only reasons instead of rendering full path steps.",
+    )
+    parser.add_argument("--max-summary-examples", type=int, default=3)
     parser.add_argument("--summary", action="store_true", help="Print a compact count header.")
     return parser.parse_args()
 
@@ -57,10 +64,16 @@ def render_source(
     contains: list[str] | None = None,
     interesting: bool = False,
     show_summary: bool = False,
+    inspect_summary: bool = False,
+    max_summary_examples: int = 3,
 ) -> str:
     paths = load_review_paths(source)
     if not paths:
         raise SystemExit(f"no path data found in {source}")
+    if inspect_summary:
+        return render_inspect_summary(
+            paths, boundaries, contains, interesting, max_summary_examples
+        )
     chunks = []
     summary = review_summary(paths, boundaries, contains, interesting)
     if show_summary:
@@ -82,6 +95,82 @@ def render_source(
         if index + 1 < len(paths):
             chunks.append("")
     return "\n".join(chunks)
+
+
+def render_inspect_summary(
+    paths: list[dict[str, Any]],
+    boundaries: set[str] | None,
+    contains: list[str] | None,
+    interesting: bool,
+    max_examples: int,
+) -> str:
+    summary = review_summary(paths, boundaries, contains, interesting)
+    grouped: dict[str, dict[str, Any]] = {}
+    for title, index, step, candidate in inspect_records(
+        paths, boundaries, contains, interesting
+    ):
+        reason = str(candidate.get("inspect_only") or "")
+        group = grouped.setdefault(reason, {"count": 0, "examples": []})
+        group["count"] += 1
+        if len(group["examples"]) < max_examples:
+            group["examples"].append(inspect_example(title, index, step, candidate))
+
+    lines = [
+        (
+            "inspect_summary: paths={paths} steps={steps} "
+            "shown={shown} inspect_reasons={inspect}"
+        ).format(
+            paths=summary["paths"],
+            steps=summary["steps"],
+            shown=summary["shown"],
+            inspect=summary["inspect_reasons"],
+        )
+    ]
+    if not grouped:
+        lines.append("(no inspect reasons matched)")
+        return "\n".join(lines)
+
+    for reason, group in sorted(
+        grouped.items(), key=lambda item: (-item[1]["count"], item[0])
+    ):
+        lines.append(f"- {group['count']}x {reason}")
+        for example in group["examples"]:
+            lines.append(f"  example: {example}")
+    return "\n".join(lines)
+
+
+def inspect_records(
+    paths: list[dict[str, Any]],
+    boundaries: set[str] | None,
+    contains: list[str] | None,
+    interesting: bool,
+) -> list[tuple[str, int, dict[str, Any], dict[str, Any]]]:
+    records = []
+    for path in paths:
+        title = path["title"]
+        for index, step in select_steps(path["steps"], boundaries, contains, interesting):
+            for candidate in step.get("candidate_pool") or []:
+                if candidate.get("inspect_only"):
+                    records.append((title, index, step, candidate))
+    return records
+
+
+def inspect_example(
+    title: str,
+    index: int,
+    step: dict[str, Any],
+    candidate: dict[str, Any],
+) -> str:
+    state = step.get("state_before") or {}
+    act = state.get("act", "?")
+    floor = state.get("floor", "?")
+    boundary = state.get("boundary", "?")
+    selected = step.get("label") or "-"
+    candidate_label = candidate.get("label") or "-"
+    return (
+        f"{title}#{index:02} A{act}F{floor} {boundary}: "
+        f"candidate={candidate_label!r} selected={selected!r}"
+    )
 
 
 def load_review_paths(source: Path) -> list[dict[str, Any]]:

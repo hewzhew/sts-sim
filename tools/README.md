@@ -14,6 +14,7 @@ Path review examples:
 ```powershell
 python tools\path_review.py target\gap-panel-candidate-pool-smoke2\1552225675 --boundary Shop --interesting --summary
 python tools\path_review.py target\gap-panel-candidate-pool-smoke2\1552225675 --contains "purge reserve" --summary
+python tools\path_review.py target\gap-panel-candidate-pool-smoke2\1552225675 --boundary Shop --inspect-summary
 ```
 - `ml/`
   - offline combat/search dataset and baseline utilities

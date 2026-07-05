@@ -223,6 +223,49 @@ class PathReviewTests(unittest.TestCase):
         self.assertIn("Shrug It Off | 51 gold", output)
         self.assertNotIn("Combust | 28 gold", output)
 
+    def test_can_group_inspect_reasons(self):
+        path_review = load_path_review()
+        payload = {
+            "schema": "branch_tiny_run_path",
+            "branch_id": 7,
+            "steps": [
+                {
+                    "state_before": {"act": 1, "floor": 7, "boundary": "Shop"},
+                    "label": "Leave shop",
+                    "candidate_pool": [
+                        {
+                            "label": "Shrug It Off | 51 gold",
+                            "inspect_only": "shop card would spend purge reserve",
+                        },
+                        {
+                            "label": "Combust | 28 gold",
+                            "inspect_only": "shop card has no acquisition policy support",
+                        },
+                    ],
+                },
+                {
+                    "state_before": {"act": 2, "floor": 18, "boundary": "Shop"},
+                    "label": "Leave shop",
+                    "candidate_pool": [
+                        {
+                            "label": "Iron Wave | 47 gold",
+                            "inspect_only": "shop card would spend purge reserve",
+                        }
+                    ],
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "path.json"
+            path.write_text(path_review.dumps_json(payload), encoding="utf-8")
+            output = path_review.render_source(path, inspect_summary=True)
+
+        self.assertIn("inspect_summary: paths=1 steps=2 shown=2 inspect_reasons=3", output)
+        self.assertIn("- 2x shop card would spend purge reserve", output)
+        self.assertIn("- 1x shop card has no acquisition policy support", output)
+        self.assertIn("path.json#00 A1F7 Shop", output)
+        self.assertIn("candidate='Shrug It Off | 51 gold'", output)
+
 
 if __name__ == "__main__":
     unittest.main()
