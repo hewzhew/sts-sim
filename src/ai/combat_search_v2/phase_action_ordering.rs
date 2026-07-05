@@ -153,7 +153,7 @@ fn apply_time_eater_clock_hint(
         hint.role_rank_adjustment = hint
             .role_rank_adjustment
             .saturating_sub(TIME_EATER_CLOCK_PENALTY);
-        hint.phase_transition_safety -= 1;
+        hint.phase_transition_safety -= 1 + facts.access.time_warp_access_risk();
     }
 
     if pending_haste && target_time_eater && !facts.target_lethal {
@@ -194,6 +194,12 @@ impl PhaseActionAccessFacts {
             self.declared_draw_cards
                 .saturating_add(self.conditional_draw_cards),
         )
+    }
+
+    fn time_warp_access_risk(self) -> i32 {
+        self.bad_draw_cards
+            .max(0)
+            .saturating_add(i32::from(self.forced_turn_end))
     }
 }
 
