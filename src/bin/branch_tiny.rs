@@ -84,6 +84,8 @@ mod run_capsule_format;
 mod run_capsule_io;
 #[path = "branch_tiny/run_chain.rs"]
 mod run_chain;
+#[path = "branch_tiny/run_chain_state.rs"]
+mod run_chain_state;
 #[path = "branch_tiny/run_choice_owner.rs"]
 mod run_choice_owner;
 #[path = "branch_tiny/run_contract.rs"]
