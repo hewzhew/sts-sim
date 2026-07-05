@@ -16,6 +16,7 @@ pub(super) enum CombatSearchLaneKind {
     DiagnosticRescue,
     HallwayImmediateRescue,
     NonBossPotionRescue,
+    HallwayQualityPotionRescue,
     BossNoPotion,
     BossPotionRescue,
     QualityRealHp,
@@ -80,6 +81,9 @@ impl CombatSearchRequest {
                     lanes.push(CombatSearchLane::new(
                         CombatSearchLaneKind::NonBossPotionRescue,
                     ));
+                    lanes.push(CombatSearchLane::new(
+                        CombatSearchLaneKind::HallwayQualityPotionRescue,
+                    ));
                 }
             }
         }
@@ -119,6 +123,7 @@ impl CombatSearchLane {
             CombatSearchLaneKind::DiagnosticRescue => "diagnostic_rescue",
             CombatSearchLaneKind::HallwayImmediateRescue => "hallway_immediate_rescue",
             CombatSearchLaneKind::NonBossPotionRescue => "nonboss_potion_rescue",
+            CombatSearchLaneKind::HallwayQualityPotionRescue => "hallway_quality_potion_rescue",
             CombatSearchLaneKind::BossNoPotion => "no_potion",
             CombatSearchLaneKind::BossPotionRescue => "potion_rescue",
             CombatSearchLaneKind::QualityRealHp => "quality_real_hp",
@@ -135,7 +140,11 @@ impl CombatSearchLane {
     }
 
     pub(super) fn rejects_new_curses(self) -> bool {
-        matches!(self.kind, CombatSearchLaneKind::NonBossPotionRescue)
+        matches!(
+            self.kind,
+            CombatSearchLaneKind::NonBossPotionRescue
+                | CombatSearchLaneKind::HallwayQualityPotionRescue
+        )
     }
 
     pub(super) fn options(

@@ -12,6 +12,8 @@ use super::Args;
 
 const BOSS_POTION_RESCUE_MAX_POTIONS_USED: u32 = 3;
 const NONBOSS_POTION_RESCUE_MAX_POTIONS_USED: u32 = 1;
+const HALLWAY_QUALITY_MAX_NODES: usize = 300_000;
+const HALLWAY_QUALITY_MAX_MS: u64 = 5_000;
 
 pub(super) fn lane_options(
     lane: CombatSearchLane,
@@ -58,6 +60,25 @@ pub(super) fn lane_options(
             );
             options.search.potion_policy = Some(CombatSearchV2PotionPolicy::All);
             options.search.max_potions_used = Some(NONBOSS_POTION_RESCUE_MAX_POTIONS_USED);
+            options
+        }
+        CombatSearchLaneKind::HallwayQualityPotionRescue => {
+            let mut options = auto_step_options(
+                hallway_quality_nodes(request.args),
+                hallway_quality_ms(request.args),
+                request.args.auto_ops,
+                request.args.wall_ms.is_some(),
+                CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
+                CombatSearchV2ChildRolloutPolicy::Immediate,
+            );
+            options.search.rollout_policy =
+                Some(CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion);
+            options.search.frontier_policy =
+                Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets);
+            options.search.potion_policy = Some(CombatSearchV2PotionPolicy::SemanticBudgeted);
+            options.search.max_potions_used = Some(2);
+            options.search.phase_guard_policy =
+                Some(CombatSearchV2PhaseGuardPolicy::ChampSplitGuard);
             options
         }
         CombatSearchLaneKind::BossNoPotion => {
@@ -148,6 +169,18 @@ fn boss_potion_budget(session: &RunControlSession) -> u32 {
         })
         .unwrap_or(1)
         .max(BOSS_POTION_RESCUE_MAX_POTIONS_USED)
+}
+
+fn hallway_quality_nodes(args: Args) -> usize {
+    args.boss_search_nodes
+        .min(HALLWAY_QUALITY_MAX_NODES)
+        .max(args.rescue_search_nodes)
+}
+
+fn hallway_quality_ms(args: Args) -> u64 {
+    args.boss_search_ms
+        .min(HALLWAY_QUALITY_MAX_MS)
+        .max(args.rescue_search_ms)
 }
 
 fn boss_budget_options(
