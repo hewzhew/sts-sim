@@ -50,6 +50,8 @@ mod frontier_checkpoint;
 mod neow_owner;
 #[path = "branch_tiny/owner_candidate_eval.rs"]
 mod owner_candidate_eval;
+#[path = "branch_tiny/owner_choice_expander.rs"]
+mod owner_choice_expander;
 #[path = "branch_tiny/owner_commands.rs"]
 mod owner_commands;
 #[path = "branch_tiny/owner_model.rs"]

@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use super::owner_model::{DecisionKey, OwnerChoice};
 use super::run_capsule::RunCapsule;
 use super::run_deadline::RunDeadline;
-use super::{branch_frontier, branch_observer, branch_scheduler, trace, Args, Branch};
+use super::{
+    branch_frontier, branch_observer, branch_scheduler, owner_choice_expander, trace, Args, Branch,
+};
 
 type BranchWork = (Branch, bool, Vec<OwnerChoice>);
 
@@ -96,7 +98,7 @@ pub(super) fn advance_generation(
             deferred.push_back(branch);
             continue;
         }
-        for child in branch_scheduler::expand_registered_owner(
+        for child in owner_choice_expander::expand_registered_owner(
             &branch,
             child_args,
             deadline,
