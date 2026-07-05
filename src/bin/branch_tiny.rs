@@ -80,6 +80,8 @@ mod reward_tiny_owner;
 mod run_capsule;
 #[path = "branch_tiny/run_capsule_format.rs"]
 mod run_capsule_format;
+#[path = "branch_tiny/run_capsule_io.rs"]
+mod run_capsule_io;
 #[path = "branch_tiny/run_chain.rs"]
 mod run_chain;
 #[path = "branch_tiny/run_choice_owner.rs"]
