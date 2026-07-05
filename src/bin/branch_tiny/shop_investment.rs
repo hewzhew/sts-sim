@@ -5,8 +5,9 @@ use sts_simulator::ai::strategy::decision_pipeline::{
 use sts_simulator::ai::strategy::reward_admission::assess_reward_admission_from_master_deck;
 use sts_simulator::eval::run_control::{DecisionCandidateKey, DecisionSurface, RunControlSession};
 use sts_simulator::runtime::combat::CombatCard;
-use sts_simulator::state::map::RoomType;
 use sts_simulator::state::shop::membership_card_discounted_price;
+
+use super::shop_route_evidence::has_visible_future_shop;
 
 pub(super) fn shop_investment_for_surface(
     session: &RunControlSession,
@@ -73,36 +74,6 @@ pub(super) fn shop_investment_for_surface(
         MembershipCardInvestmentEvidence::NoPayoff
     };
     Some(ShopInvestmentEvidence { membership_card })
-}
-
-fn has_visible_future_shop(session: &RunControlSession) -> bool {
-    let map = &session.run_state.map;
-    if map.graph.is_empty() {
-        return false;
-    }
-    let mut frontier = Vec::new();
-    if map.current_y == -1 {
-        if let Some(row) = map.graph.first() {
-            frontier.extend(row.iter().map(|node| (node.x, node.y)));
-        }
-    } else if let Some(current) = map.get_current_node() {
-        frontier.extend(current.edges.iter().map(|edge| (edge.dst_x, edge.dst_y)));
-    }
-
-    while let Some((x, y)) = frontier.pop() {
-        let Some(node) = map
-            .graph
-            .get(y.max(0) as usize)
-            .and_then(|row| row.get(x.max(0) as usize))
-        else {
-            continue;
-        };
-        if node.class == Some(RoomType::ShopRoom) {
-            return true;
-        }
-        frontier.extend(node.edges.iter().map(|edge| (edge.dst_x, edge.dst_y)));
-    }
-    false
 }
 
 #[derive(Clone, Copy)]

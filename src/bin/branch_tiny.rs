@@ -78,6 +78,8 @@ mod run_startup;
 mod runner;
 #[path = "branch_tiny/shop_investment.rs"]
 mod shop_investment;
+#[path = "branch_tiny/shop_route_evidence.rs"]
+mod shop_route_evidence;
 #[path = "branch_tiny/shop_tiny_owner.rs"]
 mod shop_tiny_owner;
 #[path = "branch_tiny/trace.rs"]
