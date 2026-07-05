@@ -17,6 +17,8 @@ pub(super) struct PlayCardEffectSummary {
     pub(super) reactive_enemy_damage: i32,
     pub(super) reactive_bad_draw_cards: i32,
     pub(super) reactive_forced_turn_end: bool,
+    pub(super) declared_draw_cards: i32,
+    pub(super) conditional_draw_cards: i32,
     pub(super) enemy_weak: i32,
     pub(super) enemy_vulnerable: i32,
 }
@@ -34,6 +36,8 @@ pub(super) struct PlayCardEffectDiagnostics {
     pub(super) reactive_enemy_damage: i32,
     pub(super) reactive_bad_draw_cards: i32,
     pub(super) reactive_forced_turn_end: bool,
+    pub(super) declared_draw_cards: i32,
+    pub(super) conditional_draw_cards: i32,
 }
 
 impl PlayCardEffectSummary {
@@ -73,6 +77,8 @@ impl PlayCardEffectSummary {
             reactive_enemy_damage: self.reactive_enemy_damage,
             reactive_bad_draw_cards: self.reactive_bad_draw_cards,
             reactive_forced_turn_end: self.reactive_forced_turn_end,
+            declared_draw_cards: self.declared_draw_cards,
+            conditional_draw_cards: self.conditional_draw_cards,
         }
     }
 }

@@ -75,6 +75,8 @@ pub struct CombatSearchV2ActionMechanicsFacts {
     pub reactive_enemy_damage: i32,
     pub reactive_bad_draw_cards: i32,
     pub reactive_forced_turn_end: bool,
+    pub declared_draw_cards: i32,
+    pub conditional_draw_cards: i32,
 }
 
 #[derive(Clone, Debug, Serialize)]

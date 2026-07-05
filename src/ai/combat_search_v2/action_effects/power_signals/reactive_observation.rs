@@ -30,7 +30,7 @@ pub(super) fn observe_card_play_reactive_power_actions(
 }
 
 fn observe_reactive_action(combat: &CombatState, raw: &mut RawPowerEffects, action: Action) {
-    observe_power_action(raw, action.clone());
+    observe_power_action(combat, raw, action.clone());
     match action {
         Action::Damage(info)
         | Action::PummelDamage(info)

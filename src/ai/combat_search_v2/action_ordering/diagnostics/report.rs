@@ -80,6 +80,8 @@ impl ActionOrderingDiagnosticsCollector {
                 reactive_enemy_damage: sample.effects.reactive_enemy_damage,
                 reactive_bad_draw_cards: sample.effects.reactive_bad_draw_cards,
                 reactive_forced_turn_end: sample.effects.reactive_forced_turn_end,
+                declared_draw_cards: sample.effects.declared_draw_cards,
+                conditional_draw_cards: sample.effects.conditional_draw_cards,
             })
             .collect()
     }

@@ -16,6 +16,8 @@ pub(super) struct RawPowerEffects {
     pub(super) reactive_enemy_damage: i32,
     pub(super) reactive_bad_draw_cards: i32,
     pub(super) reactive_forced_turn_end: bool,
+    pub(super) declared_draw_cards: i32,
+    pub(super) conditional_draw_cards: i32,
     pub(super) enemy_weak: i32,
     pub(super) enemy_vulnerable: i32,
 }
@@ -27,13 +29,17 @@ pub(super) fn observe_card_power_effects(
 ) -> RawPowerEffects {
     let mut raw = RawPowerEffects::default();
     for action in actions {
-        observe_power_action(&mut raw, action);
+        observe_power_action(combat, &mut raw, action);
     }
     super::reactive_observation::observe_card_play_reactive_power_actions(combat, card, &mut raw);
     raw
 }
 
-pub(super) fn observe_power_action(raw: &mut RawPowerEffects, action: Action) {
+pub(super) fn observe_power_action(
+    combat: &CombatState,
+    raw: &mut RawPowerEffects,
+    action: Action,
+) {
     match action {
         Action::ApplyPower {
             target,
@@ -53,6 +59,33 @@ pub(super) fn observe_power_action(raw: &mut RawPowerEffects, action: Action) {
             amount,
             ..
         } => observe_apply_power(raw, target, power_id, amount),
+        Action::DrawCards(amount) | Action::DrawCardsWithHistory { amount, .. } => {
+            raw.declared_draw_cards = raw.declared_draw_cards.saturating_add(amount as i32);
+        }
+        Action::ExpertiseDraw { target_hand_size } => {
+            let hand_after_play = combat.zones.hand.len().saturating_sub(1) as i32;
+            raw.conditional_draw_cards = raw
+                .conditional_draw_cards
+                .saturating_add(target_hand_size.saturating_sub(hand_after_play).max(0));
+        }
+        Action::InnerPeace { draw_amount } | Action::Sanctity { draw_amount } => {
+            raw.conditional_draw_cards = raw
+                .conditional_draw_cards
+                .saturating_add(draw_amount as i32);
+        }
+        Action::CalculatedGamble { draw_extra } => {
+            let hand_after_play = combat.zones.hand.len().saturating_sub(1) as i32;
+            raw.conditional_draw_cards = raw
+                .conditional_draw_cards
+                .saturating_add(hand_after_play.saturating_add(i32::from(draw_extra)).max(0));
+        }
+        Action::DrawForUniqueOrbTypes {
+            amount_per_orb_type,
+        } => {
+            raw.conditional_draw_cards = raw
+                .conditional_draw_cards
+                .saturating_add(amount_per_orb_type as i32);
+        }
         _ => {}
     }
 }

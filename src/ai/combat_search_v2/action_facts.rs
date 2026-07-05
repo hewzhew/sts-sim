@@ -167,6 +167,8 @@ fn immediate_and_mechanics_facts(
             reactive_enemy_damage: effects.reactive_enemy_damage,
             reactive_bad_draw_cards: effects.reactive_bad_draw_cards,
             reactive_forced_turn_end: effects.reactive_forced_turn_end,
+            declared_draw_cards: effects.declared_draw_cards,
+            conditional_draw_cards: effects.conditional_draw_cards,
         },
     )
 }

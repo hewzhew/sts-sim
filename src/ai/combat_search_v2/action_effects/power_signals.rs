@@ -52,6 +52,8 @@ fn summarize_power_effects(combat: &CombatState, raw: RawPowerEffects) -> PlayCa
         reactive_enemy_damage: raw.reactive_enemy_damage,
         reactive_bad_draw_cards: raw.reactive_bad_draw_cards,
         reactive_forced_turn_end: raw.reactive_forced_turn_end,
+        declared_draw_cards: raw.declared_draw_cards,
+        conditional_draw_cards: raw.conditional_draw_cards,
         enemy_weak: raw.enemy_weak,
         enemy_vulnerable: raw.enemy_vulnerable,
         player_strength_gain: raw.player_strength_gain,

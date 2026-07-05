@@ -19,6 +19,7 @@ pub(super) struct PhaseActionOrderingFacts {
     pub(super) target_progress: i32,
     pub(super) target_lethal: bool,
     pub(super) future_debuff: bool,
+    pub(super) draw_cards: i32,
     pub(super) target_enemy_id: Option<EnemyId>,
     pub(super) target_has_stasis_card: bool,
     pub(super) phase_transition: EnemyPhaseTransitionHint,
@@ -107,6 +108,18 @@ fn apply_time_eater_clock_hint(
         .time_eater_cards_until_warp
         .is_some_and(|cards| cards <= 1);
     let pending_haste = profile.enemy_mechanics.time_eater_pending_haste_count > 0;
+    let plain_draw = facts.draw_cards > 0
+        && facts.target_progress <= 0
+        && facts.block <= 0
+        && facts.mitigation <= 0
+        && !facts.future_debuff
+        && facts.card_type != CardType::Power;
+    let low_impact_spam = facts.draw_cards <= 0
+        && facts.target_progress <= 0
+        && facts.block <= 0
+        && facts.mitigation <= 0
+        && !facts.future_debuff
+        && facts.card_type != CardType::Power;
     let target_time_eater = facts.target_enemy_id == Some(EnemyId::TimeEater)
         || (profile.enemy_mechanics.time_eater_count == 1
             && facts.target_enemy_id.is_none()
@@ -125,6 +138,7 @@ fn apply_time_eater_clock_hint(
         && facts.block <= 0
         && facts.mitigation <= 0
         && facts.card_type != CardType::Power
+        && (plain_draw || low_impact_spam)
     {
         hint.role_rank_adjustment = hint
             .role_rank_adjustment

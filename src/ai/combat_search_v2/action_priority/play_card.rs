@@ -40,6 +40,9 @@ pub(super) fn priority_for_play_card(
         || effects.enemy_vulnerable > 0
         || effects.persistent_enemy_strength_down > 0
         || effects.temporary_enemy_strength_down > 0;
+    let draw_cards = effects
+        .declared_draw_cards
+        .saturating_add(effects.conditional_draw_cards);
     let phase_transition = enemy_phase_transition_hint_for_input(
         combat,
         &ClientInput::PlayCard { card_index, target },
@@ -57,6 +60,7 @@ pub(super) fn priority_for_play_card(
             target_progress,
             target_lethal,
             future_debuff,
+            draw_cards,
             target_enemy_id: target_enemy_id(combat, target),
             target_has_stasis_card: target_has_stasis_card(combat, target),
             phase_transition,
