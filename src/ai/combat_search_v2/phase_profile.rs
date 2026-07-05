@@ -95,6 +95,7 @@ impl CombatSearchPhaseProfileV1 {
             )
             .saturating_add(self.enemy_mechanics.bronze_orb_stasis_pending_count)
             .saturating_add(self.enemy_mechanics.bronze_orb_stasis_card_count)
+            .saturating_add(self.enemy_mechanics.time_eater_pending_haste_count)
     }
 }
 

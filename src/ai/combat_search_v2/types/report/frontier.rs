@@ -98,5 +98,12 @@ pub struct CombatSearchV2EnemyMechanicsReport {
     pub bronze_orb_stasis_pending_count: usize,
     pub bronze_orb_stasis_card_count: usize,
     pub awakened_one_curiosity_count: usize,
+    pub time_eater_count: usize,
+    pub time_eater_time_warp_counter: Option<i32>,
+    pub time_eater_cards_until_warp: Option<i32>,
+    pub time_eater_haste_used: Option<bool>,
+    pub time_eater_pending_haste_count: usize,
+    pub time_eater_current_hp: Option<i32>,
+    pub time_eater_half_hp: Option<i32>,
     pub notes: Vec<&'static str>,
 }

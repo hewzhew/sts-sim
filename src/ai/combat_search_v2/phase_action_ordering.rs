@@ -1,5 +1,6 @@
 use super::enemy_phase_transition::EnemyPhaseTransitionHint;
 use super::phase_profile::CombatSearchPhaseProfileV1;
+use super::CombatSearchV2PhaseGuardPolicy;
 use crate::content::cards::CardType;
 use crate::content::monsters::EnemyId;
 
@@ -7,6 +8,7 @@ use crate::content::monsters::EnemyId;
 // ordering decisions without turning this module into an alternate policy.
 const PHASE_ROLE_ADJUSTMENT: i32 = 12;
 const AWAKENED_POWER_PENALTY: i32 = PHASE_ROLE_ADJUSTMENT * 2;
+const TIME_EATER_CLOCK_PENALTY: i32 = PHASE_ROLE_ADJUSTMENT;
 const STASIS_TARGET_SETUP_MAX: i32 = 20;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -15,6 +17,8 @@ pub(super) struct PhaseActionOrderingFacts {
     pub(super) block: i32,
     pub(super) mitigation: i32,
     pub(super) target_progress: i32,
+    pub(super) target_lethal: bool,
+    pub(super) future_debuff: bool,
     pub(super) target_enemy_id: Option<EnemyId>,
     pub(super) target_has_stasis_card: bool,
     pub(super) phase_transition: EnemyPhaseTransitionHint,
@@ -30,6 +34,7 @@ pub(super) struct PhaseActionOrderingHint {
 
 pub(super) fn phase_action_ordering_hint(
     profile: CombatSearchPhaseProfileV1,
+    phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
     facts: PhaseActionOrderingFacts,
 ) -> PhaseActionOrderingHint {
     let mut hint = PhaseActionOrderingHint {
@@ -62,6 +67,9 @@ pub(super) fn phase_action_ordering_hint(
             .saturating_sub(AWAKENED_POWER_PENALTY);
         hint.phase_setup -= 1;
     }
+    if phase_guard_policy.guards_time_eater_clock() {
+        apply_time_eater_clock_hint(&mut hint, profile, facts);
+    }
 
     hint
 }
@@ -86,6 +94,73 @@ fn apply_lagavulin_sleep_hint(hint: &mut PhaseActionOrderingHint, facts: PhaseAc
             .role_rank_adjustment
             .saturating_add(PHASE_ROLE_ADJUSTMENT);
         hint.phase_setup += 1;
+    }
+}
+
+fn apply_time_eater_clock_hint(
+    hint: &mut PhaseActionOrderingHint,
+    profile: CombatSearchPhaseProfileV1,
+    facts: PhaseActionOrderingFacts,
+) {
+    let triggers_warp = profile
+        .enemy_mechanics
+        .time_eater_cards_until_warp
+        .is_some_and(|cards| cards <= 1);
+    let pending_haste = profile.enemy_mechanics.time_eater_pending_haste_count > 0;
+    let target_time_eater = facts.target_enemy_id == Some(EnemyId::TimeEater)
+        || (profile.enemy_mechanics.time_eater_count == 1
+            && facts.target_enemy_id.is_none()
+            && facts.target_progress > 0);
+    let crosses_half = target_time_eater
+        && profile
+            .enemy_mechanics
+            .time_eater_current_hp
+            .zip(profile.enemy_mechanics.time_eater_half_hp)
+            .is_some_and(|(hp, half)| {
+                hp >= half && hp.saturating_sub(facts.target_progress) < half
+            });
+
+    if triggers_warp
+        && !facts.target_lethal
+        && facts.block <= 0
+        && facts.mitigation <= 0
+        && facts.card_type != CardType::Power
+    {
+        hint.role_rank_adjustment = hint
+            .role_rank_adjustment
+            .saturating_sub(TIME_EATER_CLOCK_PENALTY);
+        hint.phase_transition_safety -= 1;
+    }
+
+    if pending_haste && target_time_eater && !facts.target_lethal {
+        if facts.target_progress > 0
+            && facts.block <= 0
+            && facts.mitigation <= 0
+            && facts.card_type != CardType::Power
+        {
+            hint.role_rank_adjustment = hint
+                .role_rank_adjustment
+                .saturating_sub(TIME_EATER_CLOCK_PENALTY);
+            hint.phase_transition_safety -= facts.target_progress.min(20);
+        }
+        if facts.future_debuff && facts.mitigation <= 0 {
+            hint.role_rank_adjustment = hint
+                .role_rank_adjustment
+                .saturating_sub(TIME_EATER_CLOCK_PENALTY);
+            hint.phase_transition_safety -= 1;
+        }
+    }
+
+    if crosses_half
+        && !facts.target_lethal
+        && facts.block <= 0
+        && facts.mitigation <= 0
+        && facts.card_type != CardType::Power
+    {
+        hint.role_rank_adjustment = hint
+            .role_rank_adjustment
+            .saturating_sub(TIME_EATER_CLOCK_PENALTY);
+        hint.phase_transition_safety -= 1;
     }
 }
 

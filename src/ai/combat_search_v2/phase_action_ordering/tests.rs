@@ -20,11 +20,14 @@ fn lagavulin_sleep_phase_penalizes_wake_damage_and_rewards_power_setup() {
 
     let wake_hint = phase_action_ordering_hint(
         profile,
+        super::super::CombatSearchV2PhaseGuardPolicy::Default,
         PhaseActionOrderingFacts {
             card_type: CardType::Attack,
             block: 0,
             mitigation: 0,
             target_progress: 6,
+            target_lethal: false,
+            future_debuff: false,
             target_enemy_id: Some(EnemyId::Lagavulin),
             target_has_stasis_card: false,
             phase_transition:
@@ -40,11 +43,14 @@ fn lagavulin_sleep_phase_penalizes_wake_damage_and_rewards_power_setup() {
     );
     let setup_hint = phase_action_ordering_hint(
         profile,
+        super::super::CombatSearchV2PhaseGuardPolicy::Default,
         PhaseActionOrderingFacts {
             card_type: CardType::Power,
             block: 0,
             mitigation: 0,
             target_progress: 0,
+            target_lethal: false,
+            future_debuff: false,
             target_enemy_id: None,
             target_has_stasis_card: false,
             phase_transition:
@@ -75,11 +81,14 @@ fn guardian_defensive_phase_records_survival_tiebreak() {
 
     let hint = phase_action_ordering_hint(
         profile,
+        super::super::CombatSearchV2PhaseGuardPolicy::Default,
         PhaseActionOrderingFacts {
             card_type: CardType::Skill,
             block: 8,
             mitigation: 3,
             target_progress: 0,
+            target_lethal: false,
+            future_debuff: false,
             target_enemy_id: None,
             target_has_stasis_card: false,
             phase_transition: EnemyPhaseTransitionHint::default(),
@@ -103,11 +112,14 @@ fn bronze_orb_stasis_phase_rewards_attacking_stasis_orb() {
 
     let orb_hint = phase_action_ordering_hint(
         profile,
+        super::super::CombatSearchV2PhaseGuardPolicy::Default,
         PhaseActionOrderingFacts {
             card_type: CardType::Attack,
             block: 0,
             mitigation: 0,
             target_progress: 9,
+            target_lethal: false,
+            future_debuff: false,
             target_enemy_id: Some(EnemyId::BronzeOrb),
             target_has_stasis_card: false,
             phase_transition: EnemyPhaseTransitionHint::default(),
@@ -115,11 +127,14 @@ fn bronze_orb_stasis_phase_rewards_attacking_stasis_orb() {
     );
     let boss_hint = phase_action_ordering_hint(
         profile,
+        super::super::CombatSearchV2PhaseGuardPolicy::Default,
         PhaseActionOrderingFacts {
             card_type: CardType::Attack,
             block: 0,
             mitigation: 0,
             target_progress: 9,
+            target_lethal: false,
+            future_debuff: false,
             target_enemy_id: Some(EnemyId::BronzeAutomaton),
             target_has_stasis_card: false,
             phase_transition: EnemyPhaseTransitionHint::default(),

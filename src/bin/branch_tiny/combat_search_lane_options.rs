@@ -101,6 +101,20 @@ pub(super) fn lane_options(
             options.search.max_potions_used = Some(boss_potion_budget(session));
             options
         }
+        CombatSearchLaneKind::BossTimeEaterClock => {
+            let mut options = boss_budget_options(
+                request.args,
+                CombatSearchV2ChildRolloutPolicy::LazyOnPop,
+                CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion,
+            );
+            options.search.frontier_policy =
+                Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets);
+            options.search.potion_policy = Some(CombatSearchV2PotionPolicy::SemanticBudgeted);
+            options.search.max_potions_used = Some(2);
+            options.search.phase_guard_policy =
+                Some(CombatSearchV2PhaseGuardPolicy::TimeEaterClockHint);
+            options
+        }
         CombatSearchLaneKind::QualityRealHp => {
             let mut options = boss_budget_options(
                 request.args,

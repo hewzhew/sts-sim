@@ -1,3 +1,4 @@
+use sts_simulator::content::monsters::EnemyId;
 use sts_simulator::eval::run_control::{RunControlAutoStepOptions, RunControlSession};
 
 use super::combat_search_lane_options;
@@ -19,6 +20,7 @@ pub(super) enum CombatSearchLaneKind {
     HallwayQualityPotionRescue,
     BossNoPotion,
     BossPotionRescue,
+    BossTimeEaterClock,
     QualityRealHp,
 }
 
@@ -57,6 +59,11 @@ impl CombatSearchRequest {
                 lanes.push(CombatSearchLane::new(
                     CombatSearchLaneKind::BossPotionRescue,
                 ));
+                if is_time_eater_boss(session) {
+                    lanes.push(CombatSearchLane::new(
+                        CombatSearchLaneKind::BossTimeEaterClock,
+                    ));
+                }
                 lanes.push(CombatSearchLane::new(CombatSearchLaneKind::QualityRealHp));
             }
             CombatSearchStakes::Elite => {
@@ -126,6 +133,7 @@ impl CombatSearchLane {
             CombatSearchLaneKind::HallwayQualityPotionRescue => "hallway_quality_potion_rescue",
             CombatSearchLaneKind::BossNoPotion => "no_potion",
             CombatSearchLaneKind::BossPotionRescue => "potion_rescue",
+            CombatSearchLaneKind::BossTimeEaterClock => "time_eater_clock",
             CombatSearchLaneKind::QualityRealHp => "quality_real_hp",
         }
     }
@@ -154,6 +162,19 @@ impl CombatSearchLane {
     ) -> RunControlAutoStepOptions {
         combat_search_lane_options::lane_options(self, request, session)
     }
+}
+
+fn is_time_eater_boss(session: &RunControlSession) -> bool {
+    session.active_combat.as_ref().is_some_and(|active| {
+        active.combat_state.meta.is_boss_fight
+            && active
+                .combat_state
+                .entities
+                .monsters
+                .iter()
+                .filter(|monster| monster.is_alive_for_action())
+                .any(|monster| EnemyId::from_id(monster.monster_type) == Some(EnemyId::TimeEater))
+    })
 }
 
 fn should_try_nonboss_potion_rescue(session: &RunControlSession) -> bool {

@@ -35,6 +35,11 @@ pub(super) fn priority_for_play_card(
         .saturating_add(effects.reactive_enemy_damage);
     let mitigation = effects.net_mitigation_ordering_score().max(0);
     let reactive_risk = effects.reactive_risk_score();
+    let target_lethal = target_progress_kills(combat, target_kind, target, damage);
+    let future_debuff = effects.enemy_weak > 0
+        || effects.enemy_vulnerable > 0
+        || effects.persistent_enemy_strength_down > 0
+        || effects.temporary_enemy_strength_down > 0;
     let phase_transition = enemy_phase_transition_hint_for_input(
         combat,
         &ClientInput::PlayCard { card_index, target },
@@ -44,11 +49,14 @@ pub(super) fn priority_for_play_card(
         current_turn_attack_setup_score(combat, card_index, card, effects);
     let phase_hint = phase_action_ordering_hint(
         phase_profile,
+        phase_guard_policy,
         PhaseActionOrderingFacts {
             card_type: def.card_type,
             block,
             mitigation,
             target_progress,
+            target_lethal,
+            future_debuff,
             target_enemy_id: target_enemy_id(combat, target),
             target_has_stasis_card: target_has_stasis_card(combat, target),
             phase_transition,
@@ -65,7 +73,7 @@ pub(super) fn priority_for_play_card(
     let prevents_visible_lethal =
         visible_loss_now >= current_hp && visible_loss_after_block < current_hp;
     let prevents_hp_loss = visible_loss_after_block < visible_loss_now;
-    let (role, role_rank) = if target_progress_kills(combat, target_kind, target, damage) {
+    let (role, role_rank) = if target_lethal {
         (ActionOrderingRole::LethalCard, ROLE_LETHAL_CARD)
     } else if prevents_visible_lethal {
         (

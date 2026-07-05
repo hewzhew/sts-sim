@@ -99,6 +99,7 @@ fn run_control_parser_accepts_search_combat_options() {
                 rollout_beam_width: Some(4),
                 turn_plan_policy: Some(CombatSearchV2TurnPlanPolicy::RootFrontierSeed),
                 frontier_policy: Some(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets),
+                phase_guard_policy: None,
                 segment_mode: None,
                 evidence: None,
             })
@@ -193,6 +194,7 @@ fn run_control_parser_accepts_auto_step_options() {
                 rollout_beam_width: None,
                 turn_plan_policy: None,
                 frontier_policy: None,
+                phase_guard_policy: None,
                 segment_mode: None,
                 evidence: None,
             },

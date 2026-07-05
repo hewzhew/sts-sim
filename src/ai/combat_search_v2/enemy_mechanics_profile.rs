@@ -32,6 +32,13 @@ pub(super) struct EnemyMechanicsProfileV1 {
     pub(super) bronze_orb_stasis_pending_count: usize,
     pub(super) bronze_orb_stasis_card_count: usize,
     pub(super) awakened_one_curiosity_count: usize,
+    pub(super) time_eater_count: usize,
+    pub(super) time_eater_time_warp_counter: Option<i32>,
+    pub(super) time_eater_cards_until_warp: Option<i32>,
+    pub(super) time_eater_haste_used: Option<bool>,
+    pub(super) time_eater_pending_haste_count: usize,
+    pub(super) time_eater_current_hp: Option<i32>,
+    pub(super) time_eater_half_hp: Option<i32>,
 }
 
 pub(super) fn enemy_mechanics_profile(combat: &CombatState) -> EnemyMechanicsProfileV1 {
@@ -144,6 +151,22 @@ pub(super) fn enemy_mechanics_profile(combat: &CombatState) -> EnemyMechanicsPro
                     profile.awakened_one_curiosity_count += 1;
                 }
             }
+            EnemyId::TimeEater => {
+                profile.tracked_monsters += 1;
+                profile.time_eater_count += 1;
+                let counter =
+                    store::power_amount(combat, monster.id, PowerId::TimeWarp).clamp(0, 11);
+                let haste_used = monster.time_eater.used_haste;
+                let half_hp = monster.max_hp.saturating_div(2);
+                profile.time_eater_time_warp_counter = Some(counter);
+                profile.time_eater_cards_until_warp = Some(12 - counter);
+                profile.time_eater_haste_used = Some(haste_used);
+                profile.time_eater_current_hp = Some(monster.current_hp);
+                profile.time_eater_half_hp = Some(half_hp);
+                if monster.current_hp < half_hp && !haste_used {
+                    profile.time_eater_pending_haste_count += 1;
+                }
+            }
             _ => {}
         }
     }
@@ -178,6 +201,13 @@ pub(super) fn enemy_mechanics_profile_report(
         bronze_orb_stasis_pending_count: profile.bronze_orb_stasis_pending_count,
         bronze_orb_stasis_card_count: profile.bronze_orb_stasis_card_count,
         awakened_one_curiosity_count: profile.awakened_one_curiosity_count,
+        time_eater_count: profile.time_eater_count,
+        time_eater_time_warp_counter: profile.time_eater_time_warp_counter,
+        time_eater_cards_until_warp: profile.time_eater_cards_until_warp,
+        time_eater_haste_used: profile.time_eater_haste_used,
+        time_eater_pending_haste_count: profile.time_eater_pending_haste_count,
+        time_eater_current_hp: profile.time_eater_current_hp,
+        time_eater_half_hp: profile.time_eater_half_hp,
         notes: vec![
             "enemy mechanics profile exposes typed phase/support facts for value/rollout consumers",
             "this profile does not by itself score or prune search branches",

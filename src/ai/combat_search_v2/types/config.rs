@@ -170,6 +170,7 @@ impl Default for CombatSearchV2Config {
 pub enum CombatSearchV2PhaseGuardPolicy {
     Default,
     ChampSplitGuard,
+    TimeEaterClockHint,
 }
 
 impl Default for CombatSearchV2PhaseGuardPolicy {
@@ -183,11 +184,16 @@ impl CombatSearchV2PhaseGuardPolicy {
         match self {
             Self::Default => "default",
             Self::ChampSplitGuard => "champ_split_guard",
+            Self::TimeEaterClockHint => "time_eater_clock_hint",
         }
     }
 
     pub(in crate::ai::combat_search_v2) fn guards_champ_split(self) -> bool {
         matches!(self, Self::ChampSplitGuard)
+    }
+
+    pub(in crate::ai::combat_search_v2) fn guards_time_eater_clock(self) -> bool {
+        matches!(self, Self::TimeEaterClockHint)
     }
 }
 
