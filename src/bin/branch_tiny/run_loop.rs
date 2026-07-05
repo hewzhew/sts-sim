@@ -1,6 +1,6 @@
 use super::run_deadline::RunDeadline;
 use super::run_startup::RunStartupContext;
-use super::{branch_frontier, branch_generation, run_persistence, trace, BranchStatus};
+use super::{branch_frontier, branch_generation, run_stop_recorder, trace, BranchStatus};
 
 pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
     let RunStartupContext {
@@ -15,7 +15,11 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
         mut next_branch_id,
         started,
     } = context;
-    let mut capsule_frontier_saved = false;
+    let mut stop_recorder = run_stop_recorder::RunStopRecorder::new(
+        &frontier_checkpoint_path,
+        &resume_frontier,
+        run_capsule.as_ref(),
+    );
     let mut trace = trace_path
         .as_ref()
         .map(|path| trace::TraceWriter::create(path))
@@ -31,16 +35,7 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
     for generation in generation_start..=args.generations {
         last_generation = generation;
         if deadline.should_soft_stop(args) {
-            capsule_frontier_saved |= run_persistence::save_context_wall_stop(
-                &frontier_checkpoint_path,
-                &resume_frontier,
-                run_capsule.as_ref(),
-                args,
-                generation,
-                next_branch_id,
-                &frontier,
-                &deadline,
-            )?;
+            stop_recorder.save_soft_wall(args, generation, next_branch_id, &frontier, &deadline)?;
             break;
         }
         let prepared = branch_generation::prepare_generation(
@@ -54,16 +49,7 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
             && deadline.would_cap_core_search(args, prepared.total_expanded)
         {
             frontier = prepared.into_frontier();
-            capsule_frontier_saved |= run_persistence::save_context_wall_stop(
-                &frontier_checkpoint_path,
-                &resume_frontier,
-                run_capsule.as_ref(),
-                args,
-                generation,
-                next_branch_id,
-                &frontier,
-                &deadline,
-            )?;
+            stop_recorder.save_soft_wall(args, generation, next_branch_id, &frontier, &deadline)?;
             break;
         }
         let child_args = deadline.cap_args(args, prepared.total_expanded.max(1));
@@ -99,10 +85,7 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
             .any(|branch| matches!(branch.status, BranchStatus::AwaitingAuto { .. }))
         {
             frontier = next;
-            capsule_frontier_saved |= run_persistence::save_context_wall_stop(
-                &frontier_checkpoint_path,
-                &resume_frontier,
-                run_capsule.as_ref(),
+            stop_recorder.save_soft_wall(
                 args,
                 generation + 1,
                 next_branch_id,
@@ -113,10 +96,7 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
         }
         frontier = next;
         if deadline.should_soft_stop(args) {
-            capsule_frontier_saved |= run_persistence::save_context_wall_stop(
-                &frontier_checkpoint_path,
-                &resume_frontier,
-                run_capsule.as_ref(),
+            stop_recorder.save_soft_wall(
                 args,
                 generation + 1,
                 next_branch_id,
@@ -129,12 +109,7 @@ pub(super) fn run(context: RunStartupContext) -> Result<(), String> {
     if let Some(trace) = trace.as_mut() {
         trace.record_frontier_snapshot(last_generation, &frontier)?;
     }
-    if let Some(capsule) = run_capsule.as_ref().filter(|_| !capsule_frontier_saved) {
-        run_persistence::print_capsule_save(
-            capsule.save_recovery(args, last_generation, next_branch_id, &frontier)?,
-            capsule,
-        );
-    }
+    stop_recorder.save_recovery_if_needed(args, last_generation, next_branch_id, &frontier)?;
     Ok(())
 }
 
