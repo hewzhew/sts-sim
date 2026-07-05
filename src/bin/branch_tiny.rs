@@ -32,6 +32,8 @@ mod card_reward_owner;
 mod cli_args;
 #[path = "branch_tiny/combat_gap_case.rs"]
 mod combat_gap_case;
+#[path = "branch_tiny/combat_search_lane_runner.rs"]
+mod combat_search_lane_runner;
 #[path = "branch_tiny/combat_search_lanes.rs"]
 mod combat_search_lanes;
 #[path = "branch_tiny/combat_search_orchestrator.rs"]
