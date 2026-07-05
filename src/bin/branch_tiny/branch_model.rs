@@ -19,7 +19,7 @@ pub(super) struct Branch {
     pub(super) combat_search: Vec<CombatSearchTraceSummary>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 pub(super) enum BranchStatus {
     Running {
         boundary: String,

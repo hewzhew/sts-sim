@@ -7,7 +7,7 @@ use sts_simulator::eval::run_control::RunControlSessionCheckpointV1;
 
 use super::branch_path::{BranchPathState, BranchPathStep, ChoiceAnnotationSnapshot};
 use super::owner_model::DecisionKey;
-use super::{decision_delta::DecisionDeltaSnapshot, Args, Branch, BranchStatus, TerminalOutcome};
+use super::{decision_delta::DecisionDeltaSnapshot, Args, Branch, BranchStatus};
 
 #[derive(Deserialize, Serialize)]
 pub(super) struct FrontierCheckpoint {
@@ -24,7 +24,7 @@ struct BranchCheckpoint {
     parent_id: Option<usize>,
     path: Vec<PathStepCheckpoint>,
     session: RunControlSessionCheckpointV1,
-    status: BranchStatusCheckpoint,
+    status: BranchStatus,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -38,37 +38,6 @@ struct PathStepCheckpoint {
     state_before: Option<BranchPathState>,
     #[serde(default)]
     decision_delta: Option<DecisionDeltaSnapshot>,
-}
-
-#[derive(Deserialize, Serialize)]
-enum BranchStatusCheckpoint {
-    Running {
-        boundary: String,
-        owner: super::Owner,
-    },
-    AwaitingAuto {
-        boundary: String,
-        reason: String,
-    },
-    Terminal(TerminalOutcome),
-    AutomationGap {
-        boundary: String,
-        site: super::BoundarySite,
-    },
-    CombatGap {
-        boundary: String,
-        reason: String,
-    },
-    OperationBudgetExhausted {
-        boundary: String,
-        reason: String,
-    },
-    BudgetGap {
-        boundary: String,
-        reason: String,
-    },
-    ApplyFailed(String),
-    AdvanceFailed(String),
 }
 
 pub(super) fn save(
@@ -129,7 +98,7 @@ impl BranchCheckpoint {
                 .map(PathStepCheckpoint::from_step)
                 .collect(),
             session,
-            status: BranchStatusCheckpoint::from_status(&branch.status),
+            status: branch.status.clone(),
         }
     }
 
@@ -143,7 +112,7 @@ impl BranchCheckpoint {
                 .map(PathStepCheckpoint::into_step)
                 .collect(),
             session: self.session.into_session()?,
-            status: self.status.into_status(),
+            status: self.status,
             combat_portfolio: None,
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
@@ -171,62 +140,6 @@ impl PathStepCheckpoint {
             annotation: self.annotation,
             state_before: self.state_before,
             decision_delta: self.decision_delta,
-        }
-    }
-}
-
-impl BranchStatusCheckpoint {
-    fn from_status(status: &BranchStatus) -> Self {
-        match status {
-            BranchStatus::Running { boundary, owner } => Self::Running {
-                boundary: boundary.clone(),
-                owner: *owner,
-            },
-            BranchStatus::AwaitingAuto { boundary, reason } => Self::AwaitingAuto {
-                boundary: boundary.clone(),
-                reason: reason.clone(),
-            },
-            BranchStatus::Terminal(result) => Self::Terminal(*result),
-            BranchStatus::AutomationGap { boundary, site } => Self::AutomationGap {
-                boundary: boundary.clone(),
-                site: *site,
-            },
-            BranchStatus::CombatGap { boundary, reason } => Self::CombatGap {
-                boundary: boundary.clone(),
-                reason: reason.clone(),
-            },
-            BranchStatus::OperationBudgetExhausted { boundary, reason } => {
-                Self::OperationBudgetExhausted {
-                    boundary: boundary.clone(),
-                    reason: reason.clone(),
-                }
-            }
-            BranchStatus::BudgetGap { boundary, reason } => Self::BudgetGap {
-                boundary: boundary.clone(),
-                reason: reason.clone(),
-            },
-            BranchStatus::ApplyFailed(reason) => Self::ApplyFailed(reason.clone()),
-            BranchStatus::AdvanceFailed(reason) => Self::AdvanceFailed(reason.clone()),
-        }
-    }
-
-    fn into_status(self) -> BranchStatus {
-        match self {
-            Self::Running { boundary, owner } => BranchStatus::Running { boundary, owner },
-            Self::AwaitingAuto { boundary, reason } => {
-                BranchStatus::AwaitingAuto { boundary, reason }
-            }
-            Self::Terminal(result) => BranchStatus::Terminal(result),
-            Self::AutomationGap { boundary, site } => {
-                BranchStatus::AutomationGap { boundary, site }
-            }
-            Self::CombatGap { boundary, reason } => BranchStatus::CombatGap { boundary, reason },
-            Self::OperationBudgetExhausted { boundary, reason } => {
-                BranchStatus::OperationBudgetExhausted { boundary, reason }
-            }
-            Self::BudgetGap { boundary, reason } => BranchStatus::BudgetGap { boundary, reason },
-            Self::ApplyFailed(reason) => BranchStatus::ApplyFailed(reason),
-            Self::AdvanceFailed(reason) => BranchStatus::AdvanceFailed(reason),
         }
     }
 }
