@@ -16,9 +16,11 @@ use delta::{action_kind, exact_delta_facts_from_step};
 use payload::resolved_card_action_payload_facts;
 use target::{all_enemy_progress_hint, target_facts, target_progress_hint};
 pub use types::{
-    CombatSearchV2ActionCardFacts, CombatSearchV2ActionExactDeltaFacts, CombatSearchV2ActionFacts,
+    CombatSearchV2ActionAccessMechanicsFacts, CombatSearchV2ActionCardFacts,
+    CombatSearchV2ActionDerivedMechanicsFacts, CombatSearchV2ActionDirectMechanicsFacts,
+    CombatSearchV2ActionExactDeltaFacts, CombatSearchV2ActionFacts,
     CombatSearchV2ActionImmediateFacts, CombatSearchV2ActionMechanicsFacts,
-    CombatSearchV2ActionTargetFacts,
+    CombatSearchV2ActionReactiveMechanicsFacts, CombatSearchV2ActionTargetFacts,
 };
 
 #[cfg(test)]
@@ -153,34 +155,55 @@ fn immediate_and_mechanics_facts(
             creates_pending_choice_after_one_step: false,
         },
         CombatSearchV2ActionMechanicsFacts {
-            persistent_enemy_strength_down: effects.direct.persistent_enemy_strength_down,
-            temporary_enemy_strength_down: effects.direct.temporary_enemy_strength_down,
-            visible_attack_mitigation_hint: effects.direct.visible_attack_mitigation_hint,
-            enemy_weak: effects
-                .direct
-                .enemy_weak
-                .saturating_add(effects.reactive.enemy_weak),
-            enemy_vulnerable: effects
-                .direct
-                .enemy_vulnerable
-                .saturating_add(effects.reactive.enemy_vulnerable),
-            enemy_strength_gain: effects
-                .direct
-                .enemy_strength_gain
-                .saturating_add(effects.reactive.enemy_strength_gain),
-            visible_attack_pressure_hint: effects
-                .direct
-                .visible_attack_pressure_hint
-                .saturating_add(effects.reactive.visible_attack_pressure_hint),
-            player_strength_gain: effects.direct.player_strength_gain,
-            player_temporary_strength_gain: effects.direct.player_temporary_strength_gain,
-            reactive_player_hp_loss: effects.reactive.player_hp_loss,
-            reactive_player_block: effects.reactive.player_block,
-            reactive_enemy_damage: effects.reactive.enemy_damage,
-            reactive_bad_draw_cards: effects.reactive.bad_draw_cards,
-            reactive_forced_turn_end: effects.reactive.forced_turn_end,
-            declared_draw_cards: effects.direct.declared_draw_cards,
-            conditional_draw_cards: effects.direct.conditional_draw_cards,
+            direct: CombatSearchV2ActionDirectMechanicsFacts {
+                persistent_enemy_strength_down: effects.direct.persistent_enemy_strength_down,
+                temporary_enemy_strength_down: effects.direct.temporary_enemy_strength_down,
+                visible_attack_mitigation_hint: effects.direct.visible_attack_mitigation_hint,
+                enemy_weak: effects.direct.enemy_weak,
+                enemy_vulnerable: effects.direct.enemy_vulnerable,
+                enemy_strength_gain: effects.direct.enemy_strength_gain,
+                visible_attack_pressure_hint: effects.direct.visible_attack_pressure_hint,
+                player_strength_gain: effects.direct.player_strength_gain,
+                player_temporary_strength_gain: effects.direct.player_temporary_strength_gain,
+            },
+            reactive: CombatSearchV2ActionReactiveMechanicsFacts {
+                player_hp_loss: effects.reactive.player_hp_loss,
+                player_block: effects.reactive.player_block,
+                enemy_damage: effects.reactive.enemy_damage,
+                bad_draw_cards: effects.reactive.bad_draw_cards,
+                forced_turn_end: effects.reactive.forced_turn_end,
+                enemy_strength_gain: effects.reactive.enemy_strength_gain,
+                visible_attack_pressure_hint: effects.reactive.visible_attack_pressure_hint,
+                enemy_weak: effects.reactive.enemy_weak,
+                enemy_vulnerable: effects.reactive.enemy_vulnerable,
+            },
+            access: CombatSearchV2ActionAccessMechanicsFacts {
+                declared_draw_cards: effects.direct.declared_draw_cards,
+                conditional_draw_cards: effects.direct.conditional_draw_cards,
+                total_draw_cards: effects.total_draw_cards(),
+            },
+            derived: CombatSearchV2ActionDerivedMechanicsFacts {
+                mitigation_score: effects.mitigation_ordering_score(),
+                enemy_scaling_risk_score: effects.enemy_scaling_risk_score(),
+                reactive_risk_score: effects.reactive_risk_score(),
+                net_mitigation_score: effects.net_mitigation_ordering_score(),
+                enemy_weak: effects
+                    .direct
+                    .enemy_weak
+                    .saturating_add(effects.reactive.enemy_weak),
+                enemy_vulnerable: effects
+                    .direct
+                    .enemy_vulnerable
+                    .saturating_add(effects.reactive.enemy_vulnerable),
+                enemy_strength_gain: effects
+                    .direct
+                    .enemy_strength_gain
+                    .saturating_add(effects.reactive.enemy_strength_gain),
+                visible_attack_pressure_hint: effects
+                    .direct
+                    .visible_attack_pressure_hint
+                    .saturating_add(effects.reactive.visible_attack_pressure_hint),
+            },
         },
     )
 }

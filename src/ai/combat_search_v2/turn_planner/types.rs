@@ -475,24 +475,24 @@ impl TurnPlanCoverageSignatureV1 {
             let mechanics = &facts.mechanics;
             signature.enemy_vulnerable_added = signature
                 .enemy_vulnerable_added
-                .saturating_add(mechanics.enemy_vulnerable);
+                .saturating_add(mechanics.derived.enemy_vulnerable);
             signature.enemy_weak_added = signature
                 .enemy_weak_added
-                .saturating_add(mechanics.enemy_weak);
+                .saturating_add(mechanics.derived.enemy_weak);
             signature.enemy_strength_down_added = signature
                 .enemy_strength_down_added
-                .saturating_add(mechanics.persistent_enemy_strength_down)
-                .saturating_add(mechanics.temporary_enemy_strength_down);
+                .saturating_add(mechanics.direct.persistent_enemy_strength_down)
+                .saturating_add(mechanics.direct.temporary_enemy_strength_down);
             signature.player_strength_gain = signature
                 .player_strength_gain
-                .saturating_add(mechanics.player_strength_gain);
+                .saturating_add(mechanics.direct.player_strength_gain);
             signature.player_temporary_strength_gain = signature
                 .player_temporary_strength_gain
-                .saturating_add(mechanics.player_temporary_strength_gain);
+                .saturating_add(mechanics.direct.player_temporary_strength_gain);
             signature.reactive_player_hp_loss = signature
                 .reactive_player_hp_loss
-                .saturating_add(mechanics.reactive_player_hp_loss);
-            if mechanics.reactive_forced_turn_end {
+                .saturating_add(mechanics.reactive.player_hp_loss);
+            if mechanics.reactive.forced_turn_end {
                 signature.reactive_forced_turn_end_actions =
                     signature.reactive_forced_turn_end_actions.saturating_add(1);
             }

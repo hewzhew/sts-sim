@@ -146,9 +146,11 @@ use value::{combat_search_frontier_value_report, COMBAT_SEARCH_FRONTIER_VALUE_PO
 use value_facts::{living_enemy_count, terminal_rank, total_living_enemy_hp};
 
 pub use action_facts::{
-    CombatSearchV2ActionCardFacts, CombatSearchV2ActionExactDeltaFacts, CombatSearchV2ActionFacts,
+    CombatSearchV2ActionAccessMechanicsFacts, CombatSearchV2ActionCardFacts,
+    CombatSearchV2ActionDerivedMechanicsFacts, CombatSearchV2ActionDirectMechanicsFacts,
+    CombatSearchV2ActionExactDeltaFacts, CombatSearchV2ActionFacts,
     CombatSearchV2ActionImmediateFacts, CombatSearchV2ActionMechanicsFacts,
-    CombatSearchV2ActionTargetFacts,
+    CombatSearchV2ActionReactiveMechanicsFacts, CombatSearchV2ActionTargetFacts,
 };
 pub use baseline::{
     compare_outcome_metrics, CombatSearchV2OutcomeMetrics, WHOLE_COMBAT_OUTCOME_CRITERIA,

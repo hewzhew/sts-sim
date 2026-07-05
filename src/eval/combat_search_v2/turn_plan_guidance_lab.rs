@@ -587,18 +587,18 @@ fn tactical_trace_for_plan_report(
         }
 
         let mechanics = &step.action_facts.mechanics;
-        trace.visible_attack_mitigation_hint += mechanics.visible_attack_mitigation_hint;
-        trace.enemy_debuff_pressure_hint += mechanics.enemy_weak
-            + mechanics.enemy_vulnerable
-            + mechanics.persistent_enemy_strength_down
-            + mechanics.temporary_enemy_strength_down;
-        trace.player_strength_gain += mechanics.player_strength_gain;
-        trace.player_temporary_strength_gain += mechanics.player_temporary_strength_gain;
-        trace.reactive_player_hp_loss += mechanics.reactive_player_hp_loss;
-        trace.reactive_player_block += mechanics.reactive_player_block;
-        trace.reactive_enemy_damage += mechanics.reactive_enemy_damage;
-        trace.reactive_bad_draw_cards += mechanics.reactive_bad_draw_cards;
-        if mechanics.reactive_forced_turn_end {
+        trace.visible_attack_mitigation_hint += mechanics.direct.visible_attack_mitigation_hint;
+        trace.enemy_debuff_pressure_hint += mechanics.derived.enemy_weak
+            + mechanics.derived.enemy_vulnerable
+            + mechanics.direct.persistent_enemy_strength_down
+            + mechanics.direct.temporary_enemy_strength_down;
+        trace.player_strength_gain += mechanics.direct.player_strength_gain;
+        trace.player_temporary_strength_gain += mechanics.direct.player_temporary_strength_gain;
+        trace.reactive_player_hp_loss += mechanics.reactive.player_hp_loss;
+        trace.reactive_player_block += mechanics.reactive.player_block;
+        trace.reactive_enemy_damage += mechanics.reactive.enemy_damage;
+        trace.reactive_bad_draw_cards += mechanics.reactive.bad_draw_cards;
+        if mechanics.reactive.forced_turn_end {
             trace.forced_turn_end_actions += 1;
         }
     }
@@ -1156,9 +1156,11 @@ fn record_guided_prefix_budgeted_root_verdict_count(
 #[cfg(test)]
 mod tests {
     use crate::ai::combat_search_v2::{
-        CombatSearchV2ActionCardFacts, CombatSearchV2ActionExactDeltaFacts,
-        CombatSearchV2ActionFacts, CombatSearchV2ActionImmediateFacts,
-        CombatSearchV2ActionMechanicsFacts, CombatSearchV2ActionTargetFacts,
+        CombatSearchV2ActionAccessMechanicsFacts, CombatSearchV2ActionCardFacts,
+        CombatSearchV2ActionDerivedMechanicsFacts, CombatSearchV2ActionDirectMechanicsFacts,
+        CombatSearchV2ActionExactDeltaFacts, CombatSearchV2ActionFacts,
+        CombatSearchV2ActionImmediateFacts, CombatSearchV2ActionMechanicsFacts,
+        CombatSearchV2ActionReactiveMechanicsFacts, CombatSearchV2ActionTargetFacts,
         CombatSearchV2ActionTrace, CombatSearchV2EnemySummary, CombatSearchV2StateSummary,
         CombatSearchV2TurnPlanProbeCandidateReport, CombatSearchV2TurnPlanProbeStepReport,
         SearchTerminalLabel,
@@ -1865,12 +1867,26 @@ mod tests {
         reactive_bad_draw_cards: i32,
     ) -> CombatSearchV2ActionMechanicsFacts {
         CombatSearchV2ActionMechanicsFacts {
-            visible_attack_mitigation_hint,
-            player_strength_gain,
-            player_temporary_strength_gain,
-            reactive_player_hp_loss,
-            reactive_bad_draw_cards,
-            ..CombatSearchV2ActionMechanicsFacts::default()
+            direct: CombatSearchV2ActionDirectMechanicsFacts {
+                visible_attack_mitigation_hint,
+                player_strength_gain,
+                player_temporary_strength_gain,
+                ..CombatSearchV2ActionDirectMechanicsFacts::default()
+            },
+            reactive: CombatSearchV2ActionReactiveMechanicsFacts {
+                player_hp_loss: reactive_player_hp_loss,
+                bad_draw_cards: reactive_bad_draw_cards,
+                ..CombatSearchV2ActionReactiveMechanicsFacts::default()
+            },
+            access: CombatSearchV2ActionAccessMechanicsFacts::default(),
+            derived: CombatSearchV2ActionDerivedMechanicsFacts {
+                mitigation_score: visible_attack_mitigation_hint,
+                reactive_risk_score: reactive_player_hp_loss + reactive_bad_draw_cards,
+                net_mitigation_score: visible_attack_mitigation_hint
+                    - reactive_player_hp_loss
+                    - reactive_bad_draw_cards,
+                ..CombatSearchV2ActionDerivedMechanicsFacts::default()
+            },
         }
     }
 

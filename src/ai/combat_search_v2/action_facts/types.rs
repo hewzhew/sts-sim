@@ -61,6 +61,14 @@ pub struct CombatSearchV2ActionImmediateFacts {
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct CombatSearchV2ActionMechanicsFacts {
+    pub direct: CombatSearchV2ActionDirectMechanicsFacts,
+    pub reactive: CombatSearchV2ActionReactiveMechanicsFacts,
+    pub access: CombatSearchV2ActionAccessMechanicsFacts,
+    pub derived: CombatSearchV2ActionDerivedMechanicsFacts,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CombatSearchV2ActionDirectMechanicsFacts {
     pub persistent_enemy_strength_down: i32,
     pub temporary_enemy_strength_down: i32,
     pub visible_attack_mitigation_hint: i32,
@@ -70,13 +78,38 @@ pub struct CombatSearchV2ActionMechanicsFacts {
     pub visible_attack_pressure_hint: i32,
     pub player_strength_gain: i32,
     pub player_temporary_strength_gain: i32,
-    pub reactive_player_hp_loss: i32,
-    pub reactive_player_block: i32,
-    pub reactive_enemy_damage: i32,
-    pub reactive_bad_draw_cards: i32,
-    pub reactive_forced_turn_end: bool,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CombatSearchV2ActionReactiveMechanicsFacts {
+    pub player_hp_loss: i32,
+    pub player_block: i32,
+    pub enemy_damage: i32,
+    pub bad_draw_cards: i32,
+    pub forced_turn_end: bool,
+    pub enemy_strength_gain: i32,
+    pub visible_attack_pressure_hint: i32,
+    pub enemy_weak: i32,
+    pub enemy_vulnerable: i32,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CombatSearchV2ActionAccessMechanicsFacts {
     pub declared_draw_cards: i32,
     pub conditional_draw_cards: i32,
+    pub total_draw_cards: i32,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CombatSearchV2ActionDerivedMechanicsFacts {
+    pub mitigation_score: i32,
+    pub enemy_scaling_risk_score: i32,
+    pub reactive_risk_score: i32,
+    pub net_mitigation_score: i32,
+    pub enemy_weak: i32,
+    pub enemy_vulnerable: i32,
+    pub enemy_strength_gain: i32,
+    pub visible_attack_pressure_hint: i32,
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -89,7 +89,8 @@ fn facts_report_nob_anger_from_reactive_power_without_card_tag() {
 
     assert_eq!(facts.card.as_ref().map(|card| card.name), Some("Defend"));
     assert!(facts.immediate.block_hint > 0);
-    assert!(facts.mechanics.enemy_strength_gain > 0);
+    assert!(facts.mechanics.reactive.enemy_strength_gain > 0);
+    assert!(facts.mechanics.derived.enemy_strength_gain > 0);
 }
 
 #[test]
@@ -109,9 +110,9 @@ fn facts_report_player_strength_gain_without_enemy_scaling_risk() {
     );
 
     assert_eq!(facts.card.as_ref().map(|card| card.name), Some("Flex"));
-    assert_eq!(facts.mechanics.player_strength_gain, 2);
-    assert_eq!(facts.mechanics.player_temporary_strength_gain, 2);
-    assert_eq!(facts.mechanics.enemy_strength_gain, 0);
+    assert_eq!(facts.mechanics.direct.player_strength_gain, 2);
+    assert_eq!(facts.mechanics.direct.player_temporary_strength_gain, 2);
+    assert_eq!(facts.mechanics.derived.enemy_strength_gain, 0);
 }
 
 #[test]

@@ -270,18 +270,19 @@ pub(super) fn probe_upgrade_reason(
 
 fn action_facts_probe_score(facts: &CombatSearchV2ActionFacts) -> RolloutActionFactsProbeScore {
     RolloutActionFactsProbeScore {
-        sustained_mitigation: facts.mechanics.persistent_enemy_strength_down,
+        sustained_mitigation: facts.mechanics.direct.persistent_enemy_strength_down,
         visible_mitigation: facts
             .mechanics
+            .direct
             .temporary_enemy_strength_down
-            .saturating_add(facts.mechanics.visible_attack_mitigation_hint)
-            .saturating_add(facts.mechanics.enemy_weak),
-        debuff_setup: facts.mechanics.enemy_vulnerable,
+            .saturating_add(facts.mechanics.direct.visible_attack_mitigation_hint)
+            .saturating_add(facts.mechanics.derived.enemy_weak),
+        debuff_setup: facts.mechanics.derived.enemy_vulnerable,
         progress_hint: facts
             .immediate
             .target_progress_hint
             .max(facts.immediate.all_enemy_progress_hint)
-            .saturating_add(facts.mechanics.reactive_enemy_damage),
+            .saturating_add(facts.mechanics.reactive.enemy_damage),
         access_gain: facts
             .exact_one_step_delta
             .hand_delta
@@ -290,11 +291,12 @@ fn action_facts_probe_score(facts: &CombatSearchV2ActionFacts) -> RolloutActionF
             .saturating_add(facts.exact_one_step_delta.energy_delta.max(0)),
         reactive_safety: -facts
             .mechanics
+            .derived
             .enemy_strength_gain
-            .saturating_add(facts.mechanics.visible_attack_pressure_hint)
-            .saturating_add(facts.mechanics.reactive_player_hp_loss)
-            .saturating_add(facts.mechanics.reactive_bad_draw_cards)
-            .saturating_add(i32::from(facts.mechanics.reactive_forced_turn_end)),
+            .saturating_add(facts.mechanics.derived.visible_attack_pressure_hint)
+            .saturating_add(facts.mechanics.reactive.player_hp_loss)
+            .saturating_add(facts.mechanics.reactive.bad_draw_cards)
+            .saturating_add(i32::from(facts.mechanics.reactive.forced_turn_end)),
     }
 }
 

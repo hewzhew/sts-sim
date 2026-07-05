@@ -564,13 +564,13 @@ fn low_impact_exhaust_action_count(plan: &TurnPlanV1) -> usize {
                 && facts.immediate.block_hint <= 0
                 && facts.immediate.target_progress_hint <= 0
                 && facts.immediate.all_enemy_progress_hint <= 0
-                && facts.mechanics.visible_attack_mitigation_hint <= 0
-                && facts.mechanics.persistent_enemy_strength_down <= 0
-                && facts.mechanics.temporary_enemy_strength_down <= 0
-                && facts.mechanics.enemy_vulnerable <= 0
-                && facts.mechanics.enemy_weak <= 0
-                && facts.mechanics.player_strength_gain <= 0
-                && facts.mechanics.player_temporary_strength_gain <= 0
+                && facts.mechanics.direct.visible_attack_mitigation_hint <= 0
+                && facts.mechanics.direct.persistent_enemy_strength_down <= 0
+                && facts.mechanics.direct.temporary_enemy_strength_down <= 0
+                && facts.mechanics.derived.enemy_vulnerable <= 0
+                && facts.mechanics.derived.enemy_weak <= 0
+                && facts.mechanics.direct.player_strength_gain <= 0
+                && facts.mechanics.direct.player_temporary_strength_gain <= 0
                 && facts.exact_one_step_delta.energy_delta <= 0
                 && facts.exact_one_step_delta.hand_delta <= 0
         })
