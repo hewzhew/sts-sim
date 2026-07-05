@@ -7,6 +7,27 @@ use sts_simulator::sim::combat::CombatPosition;
 
 use super::{combat_portfolio_json, run_state_json, Args, Branch, BranchPathStep, BranchStatus};
 
+pub(super) fn manifest_value(
+    args: Args,
+    status: &'static str,
+    reason: Option<&'static str>,
+    created_at_ms: u128,
+    updated_at_ms: u128,
+    git_commit: &Option<String>,
+) -> Value {
+    json!({
+        "schema": "branch_tiny_run_capsule",
+        "seed": args.seed,
+        "ascension": args.ascension,
+        "status": status,
+        "reason": reason,
+        "created_at_epoch_ms": created_at_ms,
+        "updated_at_epoch_ms": updated_at_ms,
+        "git_commit": git_commit,
+        "args": args,
+    })
+}
+
 pub(super) fn branch_summary_value(
     capsule_path: &Path,
     args: Args,
@@ -76,6 +97,34 @@ pub(super) fn branch_summary_value(
     value
 }
 
+pub(super) fn frontier_summary_info_value(frontier_count: usize, running: usize) -> Value {
+    json!({
+        "frontier_count": frontier_count,
+        "frontier_running_count": running,
+    })
+}
+
+pub(super) fn empty_frontier_summary_value(
+    capsule_path: &Path,
+    args: Args,
+    generation: usize,
+    capsule_status: &'static str,
+    reason: Option<&'static str>,
+    frontier: Value,
+) -> Value {
+    json!({
+        "schema": "branch_tiny_capsule_summary",
+        "seed": args.seed,
+        "ascension": args.ascension,
+        "capsule_status": capsule_status,
+        "reason": reason,
+        "blocker_kind": reason.unwrap_or(capsule_status),
+        "generation": generation,
+        "capsule_path": capsule_path.display().to_string(),
+        "frontier": frontier,
+    })
+}
+
 fn next_recommendation(
     capsule_path: &Path,
     args: Args,
@@ -143,6 +192,13 @@ pub(super) fn result_value(generation: usize, branch: &Branch, combat_case: Valu
         "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_json::capsule_value),
         "combat_search_attempts": &branch.combat_search,
         "failed_search": branch.combat_search.last(),
+    })
+}
+
+pub(super) fn terminal_results_value(entries: Vec<Value>) -> Value {
+    json!({
+        "schema": "branch_tiny_terminal_results",
+        "terminals": entries,
     })
 }
 

@@ -210,13 +210,7 @@ impl RunCapsule {
             branch,
             combat_case,
         ));
-        write_json(
-            &path,
-            json!({
-                "schema": "branch_tiny_terminal_results",
-                "terminals": entries,
-            }),
-        )
+        write_json(&path, run_capsule_format::terminal_results_value(entries))
     }
 
     fn write_branch_summary(
@@ -255,10 +249,8 @@ impl RunCapsule {
             .iter()
             .filter(|branch| branch.status.is_resumable())
             .count();
-        let frontier_info = json!({
-            "frontier_count": frontier.len(),
-            "frontier_running_count": running,
-        });
+        let frontier_info =
+            run_capsule_format::frontier_summary_info_value(frontier.len(), running);
         if let Some(branch) = frontier
             .iter()
             .find(|branch| branch.status.is_resumable())
@@ -280,17 +272,14 @@ impl RunCapsule {
         }
         write_json(
             &self.summary_path(),
-            json!({
-                "schema": "branch_tiny_capsule_summary",
-                "seed": args.seed,
-                "ascension": args.ascension,
-                "capsule_status": capsule_status,
-                "reason": reason,
-                "blocker_kind": reason.unwrap_or(capsule_status),
-                "generation": generation,
-                "capsule_path": self.root.display().to_string(),
-                "frontier": frontier_info,
-            }),
+            run_capsule_format::empty_frontier_summary_value(
+                &self.root,
+                args,
+                generation,
+                capsule_status,
+                reason,
+                frontier_info,
+            ),
         )
     }
 
@@ -303,17 +292,14 @@ impl RunCapsule {
         ensure_dir(&self.root)?;
         write_json(
             &self.root.join("manifest.json"),
-            json!({
-                "schema": "branch_tiny_run_capsule",
-                "seed": args.seed,
-                "ascension": args.ascension,
-                "status": status,
-                "reason": reason,
-                "created_at_epoch_ms": self.started_at_ms,
-                "updated_at_epoch_ms": now_ms(),
-                "git_commit": self.git_commit,
-                "args": args,
-            }),
+            run_capsule_format::manifest_value(
+                args,
+                status,
+                reason,
+                self.started_at_ms,
+                now_ms(),
+                &self.git_commit,
+            ),
         )
     }
 }
