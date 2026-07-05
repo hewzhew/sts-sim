@@ -1,15 +1,11 @@
 use std::path::Path;
 
-use serde_json::{json, Map, Value};
-use sts_simulator::ai::strategy::deck_strategic_deficit::assess_deck_strategic_deficit;
-use sts_simulator::ai::strategy::run_strategic_facts::RunStrategicFacts;
+use serde_json::{json, Value};
 use sts_simulator::eval::combat_case::combat_summary;
 use sts_simulator::eval::run_control::RunControlAutoAppliedKindV1;
-use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::sim::combat::CombatPosition;
-use sts_simulator::state::run::RunState;
 
-use super::{combat_portfolio_json, Args, Branch, BranchPathStep, BranchStatus};
+use super::{combat_portfolio_json, run_state_json, Args, Branch, BranchPathStep, BranchStatus};
 
 pub(super) fn branch_summary_value(
     capsule_path: &Path,
@@ -132,25 +128,11 @@ pub(super) fn result_value(generation: usize, branch: &Branch, combat_case: Valu
             "max_hp": run.max_hp,
             "gold": run.gold,
             "deck_size": run.master_deck.len(),
-            "strategic_deficit": strategic_deficit_value(run),
+            "strategic_deficit": run_state_json::strategic_deficit_value(run),
         },
-        "deck": run.master_deck.iter().map(card_value).collect::<Vec<_>>(),
-        "relics": run.relics.iter().map(|relic| {
-            let mut value = Map::from_iter([("id".to_string(), json!(relic.id))]);
-            if relic.counter != -1 {
-                value.insert("counter".to_string(), json!(relic.counter));
-            }
-            if relic.used_up {
-                value.insert("used_up".to_string(), json!(true));
-            }
-            if relic.amount != 0 {
-                value.insert("amount".to_string(), json!(relic.amount));
-            }
-            Value::Object(value)
-        }).collect::<Vec<_>>(),
-        "potions": run.potions.iter().map(|slot| {
-            slot.as_ref().map(|potion| json!({"id": potion.id, "uuid": potion.uuid}))
-        }).collect::<Vec<_>>(),
+        "deck": run_state_json::deck_value(run),
+        "relics": run_state_json::relics_value(run),
+        "potions": run_state_json::potions_value(run),
         "path": path_value(branch),
         "auto": branch.auto_steps.iter()
             .filter(|step| step.kind != RunControlAutoAppliedKindV1::AutoCapture)
@@ -162,14 +144,6 @@ pub(super) fn result_value(generation: usize, branch: &Branch, combat_case: Valu
         "combat_search_attempts": &branch.combat_search,
         "failed_search": branch.combat_search.last(),
     })
-}
-
-fn strategic_deficit_value(run: &RunState) -> Value {
-    serde_json::to_value(assess_deck_strategic_deficit(
-        &run.master_deck,
-        RunStrategicFacts::from_run_state(run),
-    ))
-    .unwrap_or(Value::Null)
 }
 
 fn active_combat_value(branch: &Branch) -> Option<Value> {
@@ -239,18 +213,4 @@ pub(super) fn terminal_manifest_status(status: &BranchStatus) -> &'static str {
         | BranchStatus::ApplyFailed(_)
         | BranchStatus::AdvanceFailed(_) => "gap",
     }
-}
-
-fn card_value(card: &CombatCard) -> Value {
-    let mut value = Map::from_iter([
-        ("id".to_string(), json!(card.id)),
-        ("uuid".to_string(), json!(card.uuid)),
-    ]);
-    if card.upgrades != 0 {
-        value.insert("upgrades".to_string(), json!(card.upgrades));
-    }
-    if card.misc_value != 0 {
-        value.insert("misc".to_string(), json!(card.misc_value));
-    }
-    Value::Object(value)
 }

@@ -1,21 +1,16 @@
-use std::collections::hash_map::DefaultHasher;
 use std::collections::VecDeque;
-use std::hash::{Hash, Hasher};
 
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use sts_simulator::ai::strategy::decision_pipeline::{
     candidate_lane_label, CleanupTarget, DecisionCandidateKind,
 };
-use sts_simulator::ai::strategy::deck_strategic_deficit::assess_deck_strategic_deficit;
 use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
-use sts_simulator::ai::strategy::run_strategic_facts::RunStrategicFacts;
 use sts_simulator::eval::run_control::{RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1};
-use sts_simulator::runtime::combat::CombatCard;
-use sts_simulator::state::run::RunState;
 
 use super::owner_model::{cleanup_target_label, ChoiceAnnotation, OwnerChoice};
 use super::{
-    combat_portfolio_json, Args, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner,
+    combat_portfolio_json, run_state_json, Args, BoundarySite, Branch, BranchPathStep,
+    BranchStatus, Owner,
 };
 
 pub(super) fn run_start_event(args: Args) -> Value {
@@ -51,8 +46,8 @@ pub(super) fn node_event(
             "max_hp": branch.session.run_state.max_hp,
             "gold": branch.session.run_state.gold,
             "deck_size": branch.session.run_state.master_deck.len(),
-            "deck_hash": deck_hash(&branch.session.run_state.master_deck),
-            "strategic_deficit": strategic_deficit_value(&branch.session.run_state),
+            "deck_hash": run_state_json::deck_hash(&branch.session.run_state.master_deck),
+            "strategic_deficit": run_state_json::strategic_deficit_value(&branch.session.run_state),
         },
         "status": status_value(&branch.status),
         "arrived": branch.path.last().map(path_step_value),
@@ -284,62 +279,12 @@ fn branch_snapshot_value(branch: &Branch) -> Value {
             "max_hp": run.max_hp,
             "gold": run.gold,
             "deck_size": run.master_deck.len(),
-            "deck_hash": deck_hash(&run.master_deck),
-            "strategic_deficit": strategic_deficit_value(run),
+            "deck_hash": run_state_json::deck_hash(&run.master_deck),
+            "strategic_deficit": run_state_json::strategic_deficit_value(run),
         },
         "status": status_value(&branch.status),
-        "deck": run.master_deck.iter().map(card_snapshot_value).collect::<Vec<_>>(),
-        "relics": run.relics.iter().map(|relic| {
-            let mut value = Map::from_iter([("id".to_string(), json!(relic.id))]);
-            if relic.counter != -1 {
-                value.insert("counter".to_string(), json!(relic.counter));
-            }
-            if relic.used_up {
-                value.insert("used_up".to_string(), json!(true));
-            }
-            if relic.amount != 0 {
-                value.insert("amount".to_string(), json!(relic.amount));
-            }
-            Value::Object(value)
-        }).collect::<Vec<_>>(),
-        "potions": run.potions.iter().map(|slot| {
-            slot.as_ref().map(|potion| json!({
-                "id": potion.id,
-                "uuid": potion.uuid,
-            }))
-        }).collect::<Vec<_>>(),
+        "deck": run_state_json::deck_value(run),
+        "relics": run_state_json::relics_value(run),
+        "potions": run_state_json::potions_value(run),
     })
-}
-
-fn strategic_deficit_value(run: &RunState) -> Value {
-    serde_json::to_value(assess_deck_strategic_deficit(
-        &run.master_deck,
-        RunStrategicFacts::from_run_state(run),
-    ))
-    .unwrap_or(Value::Null)
-}
-
-fn card_snapshot_value(card: &CombatCard) -> Value {
-    let mut value = Map::from_iter([
-        ("id".to_string(), json!(card.id)),
-        ("uuid".to_string(), json!(card.uuid)),
-    ]);
-    if card.upgrades != 0 {
-        value.insert("upgrades".to_string(), json!(card.upgrades));
-    }
-    if card.misc_value != 0 {
-        value.insert("misc".to_string(), json!(card.misc_value));
-    }
-    Value::Object(value)
-}
-
-fn deck_hash(deck: &[CombatCard]) -> String {
-    let mut hasher = DefaultHasher::new();
-    for card in deck {
-        card.id.hash(&mut hasher);
-        card.uuid.hash(&mut hasher);
-        card.upgrades.hash(&mut hasher);
-        card.misc_value.hash(&mut hasher);
-    }
-    format!("{:016x}", hasher.finish())
 }

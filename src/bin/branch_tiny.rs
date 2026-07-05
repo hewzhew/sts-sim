@@ -98,6 +98,8 @@ mod run_loop;
 mod run_persistence;
 #[path = "branch_tiny/run_startup.rs"]
 mod run_startup;
+#[path = "branch_tiny/run_state_json.rs"]
+mod run_state_json;
 #[path = "branch_tiny/run_stop_recorder.rs"]
 mod run_stop_recorder;
 #[path = "branch_tiny/runner.rs"]
