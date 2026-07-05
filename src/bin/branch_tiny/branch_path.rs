@@ -5,13 +5,16 @@ use sts_simulator::ai::strategy::decision_pipeline::candidate_lane_label;
 use super::owner_model::{ChoiceAnnotation, DecisionKey};
 use super::{branch_status_view, decision_delta, render, trace, Branch};
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 pub(super) struct BranchPathStep {
     pub(super) key: Option<DecisionKey>,
     pub(super) action_debug: String,
     pub(super) label: String,
+    #[serde(default = "ChoiceAnnotationSnapshot::none")]
     pub(super) annotation: ChoiceAnnotationSnapshot,
+    #[serde(default)]
     pub(super) state_before: Option<BranchPathState>,
+    #[serde(default)]
     pub(super) decision_delta: Option<decision_delta::DecisionDeltaSnapshot>,
 }
 

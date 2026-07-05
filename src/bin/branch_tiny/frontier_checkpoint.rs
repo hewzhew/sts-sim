@@ -5,9 +5,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sts_simulator::eval::run_control::RunControlSessionCheckpointV1;
 
-use super::branch_path::{BranchPathState, BranchPathStep, ChoiceAnnotationSnapshot};
-use super::owner_model::DecisionKey;
-use super::{decision_delta::DecisionDeltaSnapshot, Args, Branch, BranchStatus};
+use super::branch_path::BranchPathStep;
+use super::{Args, Branch, BranchStatus};
 
 #[derive(Deserialize, Serialize)]
 pub(super) struct FrontierCheckpoint {
@@ -22,22 +21,9 @@ pub(super) struct FrontierCheckpoint {
 struct BranchCheckpoint {
     id: usize,
     parent_id: Option<usize>,
-    path: Vec<PathStepCheckpoint>,
+    path: Vec<BranchPathStep>,
     session: RunControlSessionCheckpointV1,
     status: BranchStatus,
-}
-
-#[derive(Deserialize, Serialize)]
-struct PathStepCheckpoint {
-    key: Option<DecisionKey>,
-    action_debug: String,
-    label: String,
-    #[serde(default = "ChoiceAnnotationSnapshot::none")]
-    annotation: ChoiceAnnotationSnapshot,
-    #[serde(default)]
-    state_before: Option<BranchPathState>,
-    #[serde(default)]
-    decision_delta: Option<DecisionDeltaSnapshot>,
 }
 
 pub(super) fn save(
@@ -92,11 +78,7 @@ impl BranchCheckpoint {
         Self {
             id: branch.id,
             parent_id: branch.parent_id,
-            path: branch
-                .path
-                .iter()
-                .map(PathStepCheckpoint::from_step)
-                .collect(),
+            path: branch.path.clone(),
             session,
             status: branch.status.clone(),
         }
@@ -106,40 +88,12 @@ impl BranchCheckpoint {
         Ok(Branch {
             id: self.id,
             parent_id: self.parent_id,
-            path: self
-                .path
-                .into_iter()
-                .map(PathStepCheckpoint::into_step)
-                .collect(),
+            path: self.path,
             session: self.session.into_session()?,
             status: self.status,
             combat_portfolio: None,
             auto_steps: Vec::new(),
             combat_search: Vec::new(),
         })
-    }
-}
-
-impl PathStepCheckpoint {
-    fn from_step(step: &BranchPathStep) -> Self {
-        Self {
-            key: step.key.clone(),
-            action_debug: step.action_debug.clone(),
-            label: step.label.clone(),
-            annotation: step.annotation.clone(),
-            state_before: step.state_before.clone(),
-            decision_delta: step.decision_delta.clone(),
-        }
-    }
-
-    fn into_step(self) -> BranchPathStep {
-        BranchPathStep {
-            key: self.key,
-            action_debug: self.action_debug,
-            label: self.label,
-            annotation: self.annotation,
-            state_before: self.state_before,
-            decision_delta: self.decision_delta,
-        }
     }
 }
