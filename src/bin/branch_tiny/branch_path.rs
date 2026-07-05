@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_simulator::ai::strategy::decision_pipeline::candidate_lane_label;
 
-use super::owner_model::{ChoiceAnnotation, DecisionKey};
+use super::owner_model::{ChoiceAnnotation, DecisionKey, OwnerChoice};
 use super::{branch_status_view, decision_delta, render, trace, Branch};
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -16,6 +16,8 @@ pub(super) struct BranchPathStep {
     pub(super) state_before: Option<BranchPathState>,
     #[serde(default)]
     pub(super) decision_delta: Option<decision_delta::DecisionDeltaSnapshot>,
+    #[serde(default)]
+    pub(super) candidate_pool: Vec<BranchPathCandidateSnapshot>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -33,6 +35,35 @@ pub(super) struct BranchPathState {
 pub(super) struct ScoreComponentSnapshot {
     by: String,
     value: i32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub(super) struct BranchPathCandidateSnapshot {
+    rank: usize,
+    selected: bool,
+    auto_expand: bool,
+    inspect_only: Option<String>,
+    key: Option<DecisionKey>,
+    label: String,
+    annotation: ChoiceAnnotationSnapshot,
+}
+
+impl BranchPathCandidateSnapshot {
+    pub(super) fn from_choices(choices: &[OwnerChoice], selected_index: usize) -> Vec<Self> {
+        choices
+            .iter()
+            .enumerate()
+            .map(|(index, choice)| Self {
+                rank: index + 1,
+                selected: index == selected_index,
+                auto_expand: choice.auto_expand_allowed(),
+                inspect_only: choice.inspect_only_reason().map(str::to_string),
+                key: choice.key.clone(),
+                label: choice.label.clone(),
+                annotation: ChoiceAnnotationSnapshot::from_annotation(&choice.annotation),
+            })
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -114,5 +145,40 @@ impl BranchPathState {
             deck_size: run.master_deck.len(),
             boundary: branch_status_view::status_boundary_label(&branch.status),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sts_simulator::eval::run_control::RunControlCommand;
+
+    use super::*;
+    use crate::owner_model::{OwnerChoice, OwnerChoiceExpansion};
+
+    #[test]
+    fn candidate_snapshot_keeps_selected_and_inspect_reason() {
+        let choices = vec![
+            OwnerChoice {
+                key: None,
+                action: RunControlCommand::Noop,
+                label: "take".to_string(),
+                annotation: ChoiceAnnotation::None,
+                expansion: OwnerChoiceExpansion::AutoAllowed,
+            },
+            OwnerChoice {
+                key: None,
+                action: RunControlCommand::Noop,
+                label: "skip".to_string(),
+                annotation: ChoiceAnnotation::None,
+                expansion: OwnerChoiceExpansion::InspectOnly("blocked"),
+            },
+        ];
+
+        let snapshot = BranchPathCandidateSnapshot::from_choices(&choices, 1);
+
+        assert_eq!(snapshot.len(), 2);
+        assert!(!snapshot[0].selected);
+        assert!(snapshot[1].selected);
+        assert_eq!(snapshot[1].inspect_only.as_deref(), Some("blocked"));
     }
 }

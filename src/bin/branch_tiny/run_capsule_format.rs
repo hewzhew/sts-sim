@@ -228,6 +228,7 @@ fn path_step_value((index, step): (usize, &BranchPathStep)) -> Value {
         "key": serde_json::to_value(&step.key).unwrap_or(Value::Null),
         "label": step.label,
         "annotation": serde_json::to_value(&step.annotation).unwrap_or(Value::Null),
+        "candidate_pool": serde_json::to_value(&step.candidate_pool).unwrap_or(Value::Null),
     })
 }
 

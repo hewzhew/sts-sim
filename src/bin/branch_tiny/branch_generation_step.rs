@@ -54,11 +54,8 @@ pub(super) fn advance_branch_work(
         &branch,
         child_args,
         deadline,
-        choices
-            .into_iter()
-            .enumerate()
-            .filter(|(index, _)| expanded_mask[*index])
-            .map(|(_, choice)| choice),
+        &choices,
+        &expanded_mask,
         next_branch_id,
     ) {
         if branch_observer::record_child_branch(args, generation + 1, &child, capsule)? {

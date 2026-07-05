@@ -127,6 +127,7 @@ fn path_step_value(step: &BranchPathStep) -> Value {
         "decision_delta": step.decision_delta.as_ref(),
         "key": step.key.as_ref(),
         "annotation": serde_json::to_value(&step.annotation).unwrap_or(Value::Null),
+        "candidate_pool": serde_json::to_value(&step.candidate_pool).unwrap_or(Value::Null),
     })
 }
 

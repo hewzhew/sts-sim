@@ -1,4 +1,6 @@
-use super::branch_path::{BranchPathState, BranchPathStep, ChoiceAnnotationSnapshot};
+use super::branch_path::{
+    BranchPathCandidateSnapshot, BranchPathState, BranchPathStep, ChoiceAnnotationSnapshot,
+};
 use super::owner_model::OwnerChoice;
 use super::run_deadline::RunDeadline;
 use super::{decision_delta, runner, Args, Branch, BranchStatus};
@@ -7,11 +9,15 @@ pub(super) fn expand_registered_owner(
     branch: &Branch,
     args: Args,
     deadline: RunDeadline,
-    candidates: impl IntoIterator<Item = OwnerChoice>,
+    choices: &[OwnerChoice],
+    expanded_mask: &[bool],
     next_branch_id: &mut usize,
 ) -> Vec<Branch> {
     let mut children = Vec::new();
-    for choice in candidates {
+    for (choice_index, choice) in choices.iter().cloned().enumerate() {
+        if !expanded_mask.get(choice_index).copied().unwrap_or(false) {
+            continue;
+        }
         let mut session = branch.session.clone();
         let (advance, decision_delta) = match session.apply_command(choice.action.clone()) {
             Ok(_) => {
@@ -40,6 +46,7 @@ pub(super) fn expand_registered_owner(
             annotation: ChoiceAnnotationSnapshot::from_annotation(&choice.annotation),
             state_before: Some(BranchPathState::from_branch(branch)),
             decision_delta,
+            candidate_pool: BranchPathCandidateSnapshot::from_choices(choices, choice_index),
         });
         let id = *next_branch_id;
         *next_branch_id += 1;
