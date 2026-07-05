@@ -1,6 +1,8 @@
 use serde::Serialize;
 
-use crate::ai::analysis::card_semantics::{card_definition_with_upgrades, Mechanic, PlayEffect};
+use crate::ai::analysis::card_semantics::{
+    card_definition_with_upgrades, Mechanic, PlayEffect, TriggeredEffect,
+};
 use crate::ai::strategy::deck_role_inventory::DeckRoleInventory;
 use crate::ai::strategy::exhaust_corruption_assessment::{
     assess_exhaust_corruption, ExhaustCorruptionAssessment, ExhaustCorruptionRisk,
@@ -229,6 +231,16 @@ impl StrategicCounts {
                 ) => self.strength_sources += 1,
                 PlayEffect::AddCombatDeckClutter => self.status_clutter_sources += 1,
                 _ => {}
+            }
+        }
+        for handler in semantics.event_handlers {
+            if matches!(
+                handler.effect,
+                TriggeredEffect::Provide(
+                    Mechanic::Strength | Mechanic::TemporaryStrength | Mechanic::StrengthMultiplier
+                )
+            ) {
+                self.strength_sources += 1;
             }
         }
     }
@@ -519,4 +531,40 @@ fn is_severe_curse(card: CardId) -> bool {
         card,
         CardId::Writhe | CardId::Normality | CardId::Regret | CardId::Pain | CardId::Parasite
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn card(id: CardId, uuid: u32) -> CombatCard {
+        CombatCard::new(id, uuid)
+    }
+
+    fn act3_facts() -> RunStrategicFacts {
+        RunStrategicFacts {
+            entering_act: 3,
+            starter_basic_count: 0,
+            curse_count: 0,
+            has_energy_relic: false,
+        }
+    }
+
+    #[test]
+    fn triggered_strength_source_counts_as_boss_scaling_evidence() {
+        let deficit = assess_deck_strategic_deficit(
+            &[
+                card(CardId::Strike, 1),
+                card(CardId::Defend, 2),
+                card(CardId::Bash, 3),
+                card(CardId::DemonForm, 4),
+            ],
+            act3_facts(),
+        );
+
+        assert_eq!(deficit.boss_scaling_plan, StrategicDeficitLevel::Thin);
+        assert!(deficit
+            .package_evidence
+            .contains(&StrategicPackageEvidence::StrengthScaling));
+    }
 }
