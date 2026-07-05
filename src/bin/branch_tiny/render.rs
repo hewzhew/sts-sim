@@ -1,17 +1,13 @@
-use sts_simulator::ai::strategy::boss_relic_admission::render_boss_relic_admission_compact;
-use sts_simulator::ai::strategy::decision_pipeline::{candidate_lane_label, DecisionCandidateKind};
-use sts_simulator::ai::strategy::reward_admission::render_reward_admission_compact;
 use sts_simulator::eval::run_control::{
-    build_decision_surface, render_auto_applied_step_compact_v1, DecisionCandidateKey,
-    RunControlAutoAppliedStepV1, RunControlCommand, RunControlSession,
+    build_decision_surface, render_auto_applied_step_compact_v1, RunControlAutoAppliedStepV1,
+    RunControlSession,
 };
 
 use super::branch_status_view;
-use super::owner_model::{
-    cleanup_target_label, ChoiceAnnotation, OwnerCandidateDecision, OwnerChoice,
-};
+use super::owner_model::OwnerChoice;
+pub(super) use super::render_choice::{render_candidate_decision_compact, render_timeline_choice};
 use super::{
-    BoundarySite, Branch, BranchPathStep, BranchStatus, CombatSearchPortfolioReport,
+    render_choice, BoundarySite, Branch, BranchStatus, CombatSearchPortfolioReport,
     CombatSearchPortfolioStatus, Owner,
 };
 
@@ -34,7 +30,10 @@ pub(super) fn print_branch_timeline(
         status_label(&branch.status),
     );
     if let Some(previous) = branch.path.last() {
-        println!("  arrived: {}", render_timeline_step(previous));
+        println!(
+            "  arrived: {}",
+            render_choice::render_timeline_step(previous)
+        );
     }
     print_auto_steps(&branch.auto_steps);
     if let Some(report) = branch.combat_portfolio.as_ref() {
@@ -54,7 +53,7 @@ pub(super) fn print_branch_timeline(
         println!(
             "  {marker} {:>2}. {}",
             rank + 1,
-            render_timeline_choice(choice)
+            render_choice::render_timeline_choice(choice)
         );
     }
     let expanded_count = expanded.iter().filter(|expanded| **expanded).count();
@@ -70,32 +69,6 @@ pub(super) fn print_branch_timeline(
             expanded_count,
             choices.len() - expanded_count
         );
-    }
-}
-
-pub(super) fn render_timeline_choice(choice: &OwnerChoice) -> String {
-    let base = match &choice.key {
-        Some(key) => render_choice_key_timeline(key),
-        None => format!("{}:{}", command_hint(&choice.action), choice.label),
-    };
-    match &choice.annotation {
-        ChoiceAnnotation::Candidate(decision) => {
-            format!(
-                "{:<34} {:<8} score={:<4} {}",
-                base,
-                candidate_lane_label(decision.evaluation.lane),
-                decision.evaluation.total_score(),
-                render_candidate_decision_compact(decision)
-            )
-        }
-        ChoiceAnnotation::BossRelic(admission) => {
-            format!(
-                "{:<34} {}",
-                base,
-                render_boss_relic_admission_compact(admission)
-            )
-        }
-        ChoiceAnnotation::None => base,
     }
 }
 
@@ -176,7 +149,7 @@ fn print_reward_gap_detail(session: &RunControlSession, status: &BranchStatus) {
     let surface = build_decision_surface(session);
     let candidates = super::owners::executable_choices(&surface)
         .into_iter()
-        .map(|choice| render_timeline_choice(&choice))
+        .map(|choice| render_choice::render_timeline_choice(&choice))
         .collect::<Vec<_>>();
     if !candidates.is_empty() {
         println!("    reward_gap_candidates: {}", candidates.join(" | "));
@@ -240,102 +213,5 @@ fn site_label(site: BoundarySite) -> String {
         BoundarySite::Treasure => "Treasure".to_string(),
         BoundarySite::Terminal => "Terminal".to_string(),
         BoundarySite::Unknown => "Unknown".to_string(),
-    }
-}
-
-fn render_timeline_step(step: &BranchPathStep) -> String {
-    let base = match &step.key {
-        Some(key) => render_choice_key_timeline(key),
-        None => format!("{}:{}", step.action_debug, step.label),
-    };
-    match step.annotation.detail() {
-        Some(detail) if !detail.is_empty() => format!("{base}  {detail}"),
-        _ => base,
-    }
-}
-
-pub(super) fn render_candidate_decision_compact(decision: &OwnerCandidateDecision) -> String {
-    if let Some(admission) = decision.admission.as_ref() {
-        return render_reward_admission_compact(admission);
-    }
-    match decision.evaluation.candidate.kind {
-        DecisionCandidateKind::ShopPurge { target } => {
-            format!("Purge {}", cleanup_target_label(target))
-        }
-        DecisionCandidateKind::ShopBuyRelic { relic, price } => {
-            format!("BuyRelic {relic:?} {price}g")
-        }
-        DecisionCandidateKind::ShopBuyPotion { potion, price } => {
-            format!("BuyPotion {potion:?} {price}g")
-        }
-        DecisionCandidateKind::ShopOpenRewards => "OpenRewards".to_string(),
-        DecisionCandidateKind::ShopLeave => "Leave".to_string(),
-        DecisionCandidateKind::Unsupported => "Unsupported typed-gap".to_string(),
-        _ => String::new(),
-    }
-}
-
-fn render_choice_key_timeline(key: &DecisionCandidateKey) -> String {
-    match key {
-        DecisionCandidateKey::EventOption {
-            option_index,
-            action,
-            ..
-        } => format!("option {option_index} {action:?}"),
-        DecisionCandidateKey::CardRewardPick {
-            option_index,
-            card,
-            upgrades,
-            ..
-        } => format!("slot {option_index} {card:?}+{upgrades}"),
-        DecisionCandidateKey::CardRewardOpen { reward_item_index } => {
-            format!("open reward {reward_item_index}")
-        }
-        DecisionCandidateKey::CardRewardSingingBowl { option_index, .. } => {
-            format!("bowl slot {option_index}")
-        }
-        DecisionCandidateKey::CardRewardSkip { .. } => "skip".to_string(),
-        DecisionCandidateKey::BossRelicPick {
-            option_index,
-            relic,
-        } => format!("boss relic {option_index} {relic:?}"),
-        DecisionCandidateKey::BossRelicSkip => "skip boss relic".to_string(),
-        DecisionCandidateKey::ShopPurgeCard {
-            deck_index,
-            card,
-            upgrades,
-        } => format!("purge {deck_index} {card:?}+{upgrades}"),
-        DecisionCandidateKey::ShopBuyCard {
-            shop_slot,
-            card,
-            upgrades,
-            price,
-        } => format!("buy card {shop_slot} {card:?}+{upgrades} {price}g"),
-        DecisionCandidateKey::ShopBuyRelic {
-            shop_slot,
-            relic,
-            price,
-        } => format!("buy relic {shop_slot} {relic:?} {price}g"),
-        DecisionCandidateKey::ShopBuyPotion {
-            shop_slot,
-            potion,
-            price,
-        } => format!("buy potion {shop_slot} {potion:?} {price}g"),
-        DecisionCandidateKey::ShopOpenRewards => "open shop rewards".to_string(),
-        DecisionCandidateKey::SelectionSubmit { reason, .. } => format!("select {reason:?}"),
-        DecisionCandidateKey::ShopLeave => "leave shop".to_string(),
-    }
-}
-
-fn command_hint(command: &RunControlCommand) -> String {
-    match command {
-        RunControlCommand::Input(input) => format!("{input:?}"),
-        RunControlCommand::BranchSkipCardReward(index) => {
-            format!("BranchSkipCardReward({index})")
-        }
-        RunControlCommand::SingingBowlVisibleCardReward(index) => {
-            format!("SingingBowlVisibleCardReward({index})")
-        }
-        _ => format!("{command:?}"),
     }
 }

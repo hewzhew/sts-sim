@@ -48,6 +48,8 @@ mod owner_orchestrator;
 mod owners;
 #[path = "branch_tiny/render.rs"]
 mod render;
+#[path = "branch_tiny/render_choice.rs"]
+mod render_choice;
 #[path = "branch_tiny/reward_shop_boss_owner.rs"]
 mod reward_shop_boss_owner;
 #[path = "branch_tiny/run_capsule.rs"]
