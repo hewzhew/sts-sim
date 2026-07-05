@@ -433,12 +433,9 @@ fn run() -> Result<(), String> {
         last_generation = generation;
         let mut generation_result = None;
         if deadline.should_soft_stop(args) {
-            capsule_frontier_saved |= run_persistence::save_wall_stop(
-                run_persistence::frontier_checkpoint_output_path(
-                    &frontier_checkpoint_path,
-                    &resume_frontier,
-                    run_capsule.as_ref(),
-                ),
+            capsule_frontier_saved |= run_persistence::save_context_wall_stop(
+                &frontier_checkpoint_path,
+                &resume_frontier,
                 run_capsule.as_ref(),
                 args,
                 generation,
@@ -468,12 +465,9 @@ fn run() -> Result<(), String> {
                 .into_iter()
                 .map(|(branch, _, _)| branch)
                 .collect::<VecDeque<_>>();
-            capsule_frontier_saved |= run_persistence::save_wall_stop(
-                run_persistence::frontier_checkpoint_output_path(
-                    &frontier_checkpoint_path,
-                    &resume_frontier,
-                    run_capsule.as_ref(),
-                ),
+            capsule_frontier_saved |= run_persistence::save_context_wall_stop(
+                &frontier_checkpoint_path,
+                &resume_frontier,
                 run_capsule.as_ref(),
                 args,
                 generation,
@@ -553,12 +547,9 @@ fn run() -> Result<(), String> {
             .any(|branch| matches!(branch.status, BranchStatus::AwaitingAuto { .. }))
         {
             frontier = next;
-            capsule_frontier_saved |= run_persistence::save_wall_stop(
-                run_persistence::frontier_checkpoint_output_path(
-                    &frontier_checkpoint_path,
-                    &resume_frontier,
-                    run_capsule.as_ref(),
-                ),
+            capsule_frontier_saved |= run_persistence::save_context_wall_stop(
+                &frontier_checkpoint_path,
+                &resume_frontier,
                 run_capsule.as_ref(),
                 args,
                 generation + 1,
@@ -570,12 +561,9 @@ fn run() -> Result<(), String> {
         }
         frontier = next;
         if deadline.should_soft_stop(args) {
-            capsule_frontier_saved |= run_persistence::save_wall_stop(
-                run_persistence::frontier_checkpoint_output_path(
-                    &frontier_checkpoint_path,
-                    &resume_frontier,
-                    run_capsule.as_ref(),
-                ),
+            capsule_frontier_saved |= run_persistence::save_context_wall_stop(
+                &frontier_checkpoint_path,
+                &resume_frontier,
                 run_capsule.as_ref(),
                 args,
                 generation + 1,

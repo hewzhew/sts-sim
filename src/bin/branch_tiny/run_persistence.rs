@@ -5,7 +5,28 @@ use super::run_capsule::{RunCapsule, RunCapsuleSave};
 use super::run_deadline::RunDeadline;
 use super::{branch_status_boundary_label, frontier_checkpoint, render, Args, Branch};
 
-pub(super) fn frontier_checkpoint_output_path<'a>(
+pub(super) fn save_context_wall_stop(
+    frontier_checkpoint_path: &Option<PathBuf>,
+    resume_frontier: &Option<PathBuf>,
+    capsule: Option<&RunCapsule>,
+    args: Args,
+    generation: usize,
+    next_branch_id: usize,
+    frontier: &VecDeque<Branch>,
+    deadline: &RunDeadline,
+) -> Result<bool, String> {
+    save_wall_stop(
+        frontier_checkpoint_output_path(frontier_checkpoint_path, resume_frontier, capsule),
+        capsule,
+        args,
+        generation,
+        next_branch_id,
+        frontier,
+        deadline,
+    )
+}
+
+fn frontier_checkpoint_output_path<'a>(
     frontier_checkpoint_path: &'a Option<PathBuf>,
     resume_frontier: &'a Option<PathBuf>,
     capsule: Option<&RunCapsule>,
@@ -19,7 +40,7 @@ pub(super) fn frontier_checkpoint_output_path<'a>(
     resume_frontier.as_ref()
 }
 
-pub(super) fn save_wall_stop(
+fn save_wall_stop(
     path: Option<&PathBuf>,
     capsule: Option<&RunCapsule>,
     args: Args,
