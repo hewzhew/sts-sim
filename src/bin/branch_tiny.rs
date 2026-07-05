@@ -72,6 +72,8 @@ mod run_startup;
 mod runner;
 #[path = "branch_tiny/trace.rs"]
 mod trace;
+#[path = "branch_tiny/trace_format.rs"]
+mod trace_format;
 
 use cli_args::{Args, ArgsOverrides, ContinueCapsuleArgs, EventOwnerProbeArgs};
 use owner_model::{ChoiceAnnotation, DecisionKey};
