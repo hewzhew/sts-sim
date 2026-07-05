@@ -14,6 +14,8 @@ mod boundary_router;
 mod branch_frontier;
 #[path = "branch_tiny/branch_generation.rs"]
 mod branch_generation;
+#[path = "branch_tiny/branch_generation_step.rs"]
+mod branch_generation_step;
 #[path = "branch_tiny/branch_observer.rs"]
 mod branch_observer;
 #[path = "branch_tiny/branch_scheduler.rs"]

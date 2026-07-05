@@ -4,9 +4,7 @@ use std::path::PathBuf;
 use super::owner_model::{DecisionKey, OwnerChoice};
 use super::run_capsule::RunCapsule;
 use super::run_deadline::RunDeadline;
-use super::{
-    branch_frontier, branch_observer, branch_scheduler, owner_choice_expander, trace, Args, Branch,
-};
+use super::{branch_frontier, branch_generation_step, branch_scheduler, trace, Args, Branch};
 
 type BranchWork = (Branch, bool, Vec<OwnerChoice>);
 
@@ -74,45 +72,32 @@ pub(super) fn advance_generation(
     for ((branch, expandable, choices), expanded_mask) in
         prepared.work.into_iter().zip(prepared.expanded_masks)
     {
-        branch_observer::record_branch_node(
+        match branch_generation_step::advance_branch_work(
+            branch,
+            expandable,
+            choices,
+            expanded_mask,
             args,
+            child_args,
             generation,
-            &branch,
-            &choices,
-            &expanded_mask,
+            deadline,
+            next_branch_id,
             trace,
             combat_gap_case_dir,
-        )?;
-        if !expandable {
-            if branch_observer::record_stopped_branch(args, generation, &branch, trace, capsule)? {
+            capsule,
+        )? {
+            branch_generation_step::BranchWorkAdvance::ObjectiveCompleted => {
                 return Ok(GenerationAdvance::ObjectiveCompleted);
             }
-            if branch.status.is_resumable() {
+            branch_generation_step::BranchWorkAdvance::Deferred(branch) => {
                 deferred.push_back(branch);
-                continue;
             }
-            generation_result = Some((generation, branch.clone()));
-            continue;
-        }
-        if !expanded_mask.iter().any(|expanded| *expanded) {
-            deferred.push_back(branch);
-            continue;
-        }
-        for child in owner_choice_expander::expand_registered_owner(
-            &branch,
-            child_args,
-            deadline,
-            choices
-                .into_iter()
-                .enumerate()
-                .filter(|(index, _)| expanded_mask[*index])
-                .map(|(_, choice)| choice),
-            next_branch_id,
-        ) {
-            if branch_observer::record_child_branch(args, generation + 1, &child, capsule)? {
-                return Ok(GenerationAdvance::ObjectiveCompleted);
+            branch_generation_step::BranchWorkAdvance::GenerationResult(branch) => {
+                generation_result = Some((generation, branch));
             }
-            next.push_back(child);
+            branch_generation_step::BranchWorkAdvance::Children(children) => {
+                next.extend(children);
+            }
         }
     }
     next.append(&mut deferred);
