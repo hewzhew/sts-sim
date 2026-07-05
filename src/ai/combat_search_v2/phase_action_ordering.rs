@@ -19,10 +19,19 @@ pub(super) struct PhaseActionOrderingFacts {
     pub(super) target_progress: i32,
     pub(super) target_lethal: bool,
     pub(super) future_debuff: bool,
-    pub(super) draw_cards: i32,
+    pub(super) access: PhaseActionAccessFacts,
     pub(super) target_enemy_id: Option<EnemyId>,
     pub(super) target_has_stasis_card: bool,
     pub(super) phase_transition: EnemyPhaseTransitionHint,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct PhaseActionAccessFacts {
+    pub(super) declared_draw_cards: i32,
+    pub(super) conditional_draw_cards: i32,
+    pub(super) total_draw_cards: i32,
+    pub(super) bad_draw_cards: i32,
+    pub(super) forced_turn_end: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -108,13 +117,14 @@ fn apply_time_eater_clock_hint(
         .time_eater_cards_until_warp
         .is_some_and(|cards| cards <= 1);
     let pending_haste = profile.enemy_mechanics.time_eater_pending_haste_count > 0;
-    let plain_draw = facts.draw_cards > 0
+    let access_draw = facts.access.draw_cards();
+    let plain_draw = access_draw > 0
         && facts.target_progress <= 0
         && facts.block <= 0
         && facts.mitigation <= 0
         && !facts.future_debuff
         && facts.card_type != CardType::Power;
-    let low_impact_spam = facts.draw_cards <= 0
+    let low_impact_spam = access_draw <= 0
         && facts.target_progress <= 0
         && facts.block <= 0
         && facts.mitigation <= 0
@@ -175,6 +185,15 @@ fn apply_time_eater_clock_hint(
             .role_rank_adjustment
             .saturating_sub(TIME_EATER_CLOCK_PENALTY);
         hint.phase_transition_safety -= 1;
+    }
+}
+
+impl PhaseActionAccessFacts {
+    fn draw_cards(self) -> i32 {
+        self.total_draw_cards.max(
+            self.declared_draw_cards
+                .saturating_add(self.conditional_draw_cards),
+        )
     }
 }
 

@@ -28,7 +28,7 @@ fn lagavulin_sleep_phase_penalizes_wake_damage_and_rewards_power_setup() {
             target_progress: 6,
             target_lethal: false,
             future_debuff: false,
-            draw_cards: 0,
+            access: PhaseActionAccessFacts::default(),
             target_enemy_id: Some(EnemyId::Lagavulin),
             target_has_stasis_card: false,
             phase_transition:
@@ -52,7 +52,7 @@ fn lagavulin_sleep_phase_penalizes_wake_damage_and_rewards_power_setup() {
             target_progress: 0,
             target_lethal: false,
             future_debuff: false,
-            draw_cards: 0,
+            access: PhaseActionAccessFacts::default(),
             target_enemy_id: None,
             target_has_stasis_card: false,
             phase_transition:
@@ -91,7 +91,7 @@ fn guardian_defensive_phase_records_survival_tiebreak() {
             target_progress: 0,
             target_lethal: false,
             future_debuff: false,
-            draw_cards: 0,
+            access: PhaseActionAccessFacts::default(),
             target_enemy_id: None,
             target_has_stasis_card: false,
             phase_transition: EnemyPhaseTransitionHint::default(),
@@ -123,7 +123,7 @@ fn bronze_orb_stasis_phase_rewards_attacking_stasis_orb() {
             target_progress: 9,
             target_lethal: false,
             future_debuff: false,
-            draw_cards: 0,
+            access: PhaseActionAccessFacts::default(),
             target_enemy_id: Some(EnemyId::BronzeOrb),
             target_has_stasis_card: false,
             phase_transition: EnemyPhaseTransitionHint::default(),
@@ -139,7 +139,7 @@ fn bronze_orb_stasis_phase_rewards_attacking_stasis_orb() {
             target_progress: 9,
             target_lethal: false,
             future_debuff: false,
-            draw_cards: 0,
+            access: PhaseActionAccessFacts::default(),
             target_enemy_id: Some(EnemyId::BronzeAutomaton),
             target_has_stasis_card: false,
             phase_transition: EnemyPhaseTransitionHint::default(),
@@ -147,4 +147,66 @@ fn bronze_orb_stasis_phase_rewards_attacking_stasis_orb() {
     );
 
     assert!(orb_hint.phase_setup > boss_hint.phase_setup);
+}
+
+#[test]
+fn time_eater_clock_hint_penalizes_declared_and_conditional_access_at_warp() {
+    let mut combat = blank_test_combat();
+    let mut eater = test_monster(EnemyId::TimeEater);
+    eater.id = 1;
+    combat.entities.monsters = vec![eater];
+    combat.entities.power_db.insert(
+        1,
+        vec![crate::runtime::combat::Power {
+            power_type: crate::content::powers::PowerId::TimeWarp,
+            instance_id: None,
+            amount: 11,
+            extra_data: 0,
+            payload: crate::runtime::combat::PowerPayload::None,
+            just_applied: false,
+        }],
+    );
+    let profile = combat_search_phase_profile(&EngineState::CombatPlayerTurn, &combat);
+
+    let declared = phase_action_ordering_hint(
+        profile,
+        super::super::CombatSearchV2PhaseGuardPolicy::TimeEaterClockHint,
+        PhaseActionOrderingFacts {
+            card_type: CardType::Skill,
+            block: 0,
+            mitigation: 0,
+            target_progress: 0,
+            target_lethal: false,
+            future_debuff: false,
+            access: PhaseActionAccessFacts {
+                declared_draw_cards: 1,
+                ..PhaseActionAccessFacts::default()
+            },
+            target_enemy_id: None,
+            target_has_stasis_card: false,
+            phase_transition: EnemyPhaseTransitionHint::default(),
+        },
+    );
+    let conditional = phase_action_ordering_hint(
+        profile,
+        super::super::CombatSearchV2PhaseGuardPolicy::TimeEaterClockHint,
+        PhaseActionOrderingFacts {
+            card_type: CardType::Skill,
+            block: 0,
+            mitigation: 0,
+            target_progress: 0,
+            target_lethal: false,
+            future_debuff: false,
+            access: PhaseActionAccessFacts {
+                conditional_draw_cards: 1,
+                ..PhaseActionAccessFacts::default()
+            },
+            target_enemy_id: None,
+            target_has_stasis_card: false,
+            phase_transition: EnemyPhaseTransitionHint::default(),
+        },
+    );
+
+    assert!(declared.phase_transition_safety < 0);
+    assert_eq!(declared, conditional);
 }

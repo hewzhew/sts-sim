@@ -1,5 +1,7 @@
 use super::super::action_effects::card_play_effect_facts;
-use super::super::phase_action_ordering::{phase_action_ordering_hint, PhaseActionOrderingFacts};
+use super::super::phase_action_ordering::{
+    phase_action_ordering_hint, PhaseActionAccessFacts, PhaseActionOrderingFacts,
+};
 use super::super::phase_profile::CombatSearchPhaseProfileV1;
 use super::super::{enemy_phase_transition_hint_for_input, visible_incoming_damage};
 use super::constants::*;
@@ -37,7 +39,6 @@ pub(super) fn priority_for_play_card(
     let reactive_risk = effects.reactive_risk_score();
     let target_lethal = target_progress_kills(combat, target_kind, target, damage);
     let future_debuff = effects.has_future_debuff();
-    let draw_cards = effects.total_draw_cards();
     let phase_transition = enemy_phase_transition_hint_for_input(
         combat,
         &ClientInput::PlayCard { card_index, target },
@@ -55,7 +56,13 @@ pub(super) fn priority_for_play_card(
             target_progress,
             target_lethal,
             future_debuff,
-            draw_cards,
+            access: PhaseActionAccessFacts {
+                declared_draw_cards: effects.direct.declared_draw_cards,
+                conditional_draw_cards: effects.direct.conditional_draw_cards,
+                total_draw_cards: effects.total_draw_cards(),
+                bad_draw_cards: effects.reactive.bad_draw_cards,
+                forced_turn_end: effects.reactive.forced_turn_end,
+            },
             target_enemy_id: target_enemy_id(combat, target),
             target_has_stasis_card: target_has_stasis_card(combat, target),
             phase_transition,
