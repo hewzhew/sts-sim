@@ -72,26 +72,34 @@ pub struct AcquisitionStrategicDelta {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AcquisitionVerdict {
-    Acquire,
+pub enum AcquisitionPolicyVerdict {
+    AutoAcquire,
+    ContextTake,
+    Speculative,
+    SkipPreferred,
     Reject,
 }
 
-impl AcquisitionVerdict {
+impl AcquisitionPolicyVerdict {
     pub fn allows_acquisition(self) -> bool {
-        self == Self::Acquire
+        matches!(self, Self::AutoAcquire | Self::ContextTake)
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct AcquisitionPolicyDecision {
-    pub verdict: AcquisitionVerdict,
+pub enum AcquisitionPolicyReason {
+    RewardSurfaceChoice,
+    PremiumCard,
+    UpgradedShopCard,
+    HardGapWithAcceptableOpportunityCost,
+    PurgeReserveBlocksHardGap,
+    NoPolicySupport,
 }
 
-impl AcquisitionPolicyDecision {
-    pub fn allows_acquisition(self) -> bool {
-        self.verdict.allows_acquisition()
-    }
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AcquisitionPolicyDecision {
+    pub verdict: AcquisitionPolicyVerdict,
+    pub reason: AcquisitionPolicyReason,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -136,9 +144,7 @@ pub fn assess_card_acquisition(
 pub fn evaluate_card_acquisition_policy_v0(
     report: &CardAcquisitionReport,
 ) -> AcquisitionPolicyDecision {
-    AcquisitionPolicyDecision {
-        verdict: acquisition_verdict(report),
-    }
+    acquisition_policy_decision(report)
 }
 
 fn acquisition_source(source: AcquisitionContextSource) -> AcquisitionSource {
@@ -174,22 +180,53 @@ fn acquisition_opportunity_cost(source: AcquisitionContextSource) -> Acquisition
     }
 }
 
-fn acquisition_verdict(report: &CardAcquisitionReport) -> AcquisitionVerdict {
+impl AcquisitionPolicyDecision {
+    pub fn allows_acquisition(self) -> bool {
+        self.verdict.allows_acquisition()
+    }
+}
+
+fn acquisition_policy_decision(report: &CardAcquisitionReport) -> AcquisitionPolicyDecision {
     match report.source {
-        AcquisitionSource::Reward => AcquisitionVerdict::Acquire,
-        AcquisitionSource::Shop
-            if report.upgrades > 0 || report.quality == MarginalAcquisitionQuality::Premium =>
-        {
-            AcquisitionVerdict::Acquire
+        AcquisitionSource::Reward => acquisition_policy(
+            AcquisitionPolicyVerdict::ContextTake,
+            AcquisitionPolicyReason::RewardSurfaceChoice,
+        ),
+        AcquisitionSource::Shop if report.quality == MarginalAcquisitionQuality::Premium => {
+            acquisition_policy(
+                AcquisitionPolicyVerdict::AutoAcquire,
+                AcquisitionPolicyReason::PremiumCard,
+            )
         }
+        AcquisitionSource::Shop if report.upgrades > 0 => acquisition_policy(
+            AcquisitionPolicyVerdict::AutoAcquire,
+            AcquisitionPolicyReason::UpgradedShopCard,
+        ),
         AcquisitionSource::Shop
             if report.strategic_delta.improves_hard_gap
                 && report.opportunity_cost != AcquisitionOpportunityCost::SpendsPurgeReserve =>
         {
-            AcquisitionVerdict::Acquire
+            acquisition_policy(
+                AcquisitionPolicyVerdict::ContextTake,
+                AcquisitionPolicyReason::HardGapWithAcceptableOpportunityCost,
+            )
         }
-        AcquisitionSource::Shop => AcquisitionVerdict::Reject,
+        AcquisitionSource::Shop if report.strategic_delta.improves_hard_gap => acquisition_policy(
+            AcquisitionPolicyVerdict::SkipPreferred,
+            AcquisitionPolicyReason::PurgeReserveBlocksHardGap,
+        ),
+        AcquisitionSource::Shop => acquisition_policy(
+            AcquisitionPolicyVerdict::Reject,
+            AcquisitionPolicyReason::NoPolicySupport,
+        ),
     }
+}
+
+fn acquisition_policy(
+    verdict: AcquisitionPolicyVerdict,
+    reason: AcquisitionPolicyReason,
+) -> AcquisitionPolicyDecision {
+    AcquisitionPolicyDecision { verdict, reason }
 }
 
 fn premium_card(card: CardId) -> bool {
@@ -276,8 +313,8 @@ mod tests {
 
     use super::{
         assess_card_acquisition, evaluate_card_acquisition_policy_v0, AcquisitionContext,
-        AcquisitionCost, AcquisitionOpportunityCost, AcquisitionSource, AcquisitionVerdict,
-        MarginalAcquisitionQuality,
+        AcquisitionCost, AcquisitionOpportunityCost, AcquisitionPolicyReason,
+        AcquisitionPolicyVerdict, AcquisitionSource, MarginalAcquisitionQuality,
     };
 
     fn deck(cards: &[CardId]) -> Vec<CombatCard> {
@@ -350,7 +387,12 @@ mod tests {
             AcquisitionOpportunityCost::SpendsPurgeReserve
         );
         assert!(report.strategic_delta.improves_hard_gap);
-        assert_eq!(policy.verdict, AcquisitionVerdict::Reject);
+        assert_eq!(policy.verdict, AcquisitionPolicyVerdict::SkipPreferred);
+        assert_eq!(
+            policy.reason,
+            AcquisitionPolicyReason::PurgeReserveBlocksHardGap
+        );
+        assert!(!policy.allows_acquisition());
     }
 
     #[test]
@@ -368,6 +410,11 @@ mod tests {
         assert_eq!(report.source, AcquisitionSource::Reward);
         assert_eq!(report.cost, AcquisitionCost::Free);
         assert_eq!(report.opportunity_cost, AcquisitionOpportunityCost::None);
+
+        let policy = evaluate_card_acquisition_policy_v0(&report);
+        assert_eq!(policy.verdict, AcquisitionPolicyVerdict::ContextTake);
+        assert_eq!(policy.reason, AcquisitionPolicyReason::RewardSurfaceChoice);
+        assert!(policy.allows_acquisition());
     }
 
     #[test]
@@ -385,6 +432,8 @@ mod tests {
         let policy = evaluate_card_acquisition_policy_v0(&report);
 
         assert_eq!(report.quality, MarginalAcquisitionQuality::Premium);
-        assert_eq!(policy.verdict, AcquisitionVerdict::Acquire);
+        assert_eq!(policy.verdict, AcquisitionPolicyVerdict::AutoAcquire);
+        assert_eq!(policy.reason, AcquisitionPolicyReason::PremiumCard);
+        assert!(policy.allows_acquisition());
     }
 }
