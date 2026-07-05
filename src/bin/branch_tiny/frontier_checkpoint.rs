@@ -5,10 +5,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sts_simulator::eval::run_control::RunControlSessionCheckpointV1;
 
-use super::{
-    decision_delta::DecisionDeltaSnapshot, Args, Branch, BranchPathState, BranchPathStep,
-    BranchStatus, ChoiceAnnotationSnapshot, DecisionKey, TerminalOutcome,
-};
+use super::branch_path::{BranchPathState, BranchPathStep, ChoiceAnnotationSnapshot};
+use super::owner_model::DecisionKey;
+use super::{decision_delta::DecisionDeltaSnapshot, Args, Branch, BranchStatus, TerminalOutcome};
 
 #[derive(Deserialize, Serialize)]
 pub(super) struct FrontierCheckpoint {

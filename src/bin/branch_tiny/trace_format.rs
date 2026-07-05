@@ -7,10 +7,10 @@ use sts_simulator::ai::strategy::decision_pipeline::{
 use sts_simulator::ai::strategy::reward_admission::RewardAdmission;
 use sts_simulator::eval::run_control::{RunControlAutoAppliedKindV1, RunControlAutoAppliedStepV1};
 
+use super::branch_path::BranchPathStep;
 use super::owner_model::{cleanup_target_label, ChoiceAnnotation, OwnerChoice};
 use super::{
-    combat_portfolio_json, run_state_json, Args, BoundarySite, Branch, BranchPathStep,
-    BranchStatus, Owner,
+    combat_portfolio_json, run_state_json, Args, BoundarySite, Branch, BranchStatus, Owner,
 };
 
 pub(super) fn run_start_event(args: Args) -> Value {

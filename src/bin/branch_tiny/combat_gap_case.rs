@@ -10,7 +10,8 @@ use sts_simulator::runtime::combat::CombatState;
 use sts_simulator::sim::combat::CombatPosition;
 use sts_simulator::state::core::EngineState;
 
-use super::{Args, Branch, BranchPathStep, BranchStatus};
+use super::branch_path::BranchPathStep;
+use super::{Args, Branch, BranchStatus};
 
 pub(super) fn save_combat_gap_case(
     dir: &Path,

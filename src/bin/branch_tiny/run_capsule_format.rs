@@ -5,7 +5,8 @@ use sts_simulator::eval::combat_case::combat_summary;
 use sts_simulator::eval::run_control::RunControlAutoAppliedKindV1;
 use sts_simulator::sim::combat::CombatPosition;
 
-use super::{combat_portfolio_json, run_state_json, Args, Branch, BranchPathStep, BranchStatus};
+use super::branch_path::BranchPathStep;
+use super::{combat_portfolio_json, run_state_json, Args, Branch, BranchStatus};
 
 pub(super) fn manifest_value(
     args: Args,

@@ -1,9 +1,7 @@
+use super::branch_path::{BranchPathState, BranchPathStep, ChoiceAnnotationSnapshot};
 use super::owner_model::OwnerChoice;
 use super::run_deadline::RunDeadline;
-use super::{
-    decision_delta, runner, Args, Branch, BranchPathState, BranchPathStep, BranchStatus,
-    ChoiceAnnotationSnapshot,
-};
+use super::{decision_delta, runner, Args, Branch, BranchStatus};
 
 pub(super) fn expand_registered_owner(
     branch: &Branch,

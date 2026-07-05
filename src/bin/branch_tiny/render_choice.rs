@@ -3,10 +3,10 @@ use sts_simulator::ai::strategy::decision_pipeline::{candidate_lane_label, Decis
 use sts_simulator::ai::strategy::reward_admission::render_reward_admission_compact;
 use sts_simulator::eval::run_control::{DecisionCandidateKey, RunControlCommand};
 
+use super::branch_path::BranchPathStep;
 use super::owner_model::{
     cleanup_target_label, ChoiceAnnotation, OwnerCandidateDecision, OwnerChoice,
 };
-use super::BranchPathStep;
 
 pub(super) fn render_timeline_choice(choice: &OwnerChoice) -> String {
     let base = match &choice.key {
