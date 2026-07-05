@@ -6,8 +6,8 @@ use sts_simulator::state::events::{
     EventRelicKind, EventSelectionKind,
 };
 
+use super::owner_commands::executable_choices;
 use super::owner_model::{ChoiceAnnotation, OwnerChoice, OwnerChoiceExpansion, OwnerDecision};
-use super::owners::executable_choices;
 
 pub(super) fn neow_owner_decision(
     session: &RunControlSession,

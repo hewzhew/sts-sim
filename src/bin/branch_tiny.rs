@@ -20,6 +20,8 @@ mod branch_observer;
 mod branch_scheduler;
 #[path = "branch_tiny/branch_status_view.rs"]
 mod branch_status_view;
+#[path = "branch_tiny/campfire_owner.rs"]
+mod campfire_owner;
 #[path = "branch_tiny/candidate_ir_adapter.rs"]
 mod candidate_ir_adapter;
 #[path = "branch_tiny/card_reward_owner.rs"]
@@ -36,6 +38,8 @@ mod combat_search_orchestrator;
 mod combat_search_report;
 #[path = "branch_tiny/decision_delta.rs"]
 mod decision_delta;
+#[path = "branch_tiny/event_owner_bridge.rs"]
+mod event_owner_bridge;
 #[path = "branch_tiny/event_owner_probe.rs"]
 mod event_owner_probe;
 #[path = "branch_tiny/expansion_policy.rs"]
@@ -46,6 +50,8 @@ mod frontier_checkpoint;
 mod neow_owner;
 #[path = "branch_tiny/owner_candidate_eval.rs"]
 mod owner_candidate_eval;
+#[path = "branch_tiny/owner_commands.rs"]
+mod owner_commands;
 #[path = "branch_tiny/owner_model.rs"]
 mod owner_model;
 #[path = "branch_tiny/owner_orchestrator.rs"]
@@ -56,6 +62,8 @@ mod owners;
 mod render;
 #[path = "branch_tiny/render_choice.rs"]
 mod render_choice;
+#[path = "branch_tiny/reward_tiny_owner.rs"]
+mod reward_tiny_owner;
 #[path = "branch_tiny/run_capsule.rs"]
 mod run_capsule;
 #[path = "branch_tiny/run_capsule_format.rs"]

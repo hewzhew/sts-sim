@@ -124,7 +124,7 @@ fn require_visible_input(
         "input {:?} is not visible at {} among [{}]",
         input,
         surface.view.header.title,
-        super::owners::executable_choices_including_cancel(&surface)
+        super::owner_commands::executable_choices_including_cancel(&surface)
             .iter()
             .map(render::render_timeline_choice)
             .collect::<Vec<_>>()

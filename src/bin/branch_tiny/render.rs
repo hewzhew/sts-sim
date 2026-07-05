@@ -147,7 +147,7 @@ fn print_reward_gap_detail(session: &RunControlSession, status: &BranchStatus) {
         return;
     }
     let surface = build_decision_surface(session);
-    let candidates = super::owners::executable_choices(&surface)
+    let candidates = super::owner_commands::executable_choices(&surface)
         .into_iter()
         .map(|choice| render_choice::render_timeline_choice(&choice))
         .collect::<Vec<_>>();

@@ -11,8 +11,8 @@ use sts_simulator::eval::run_control::{DecisionCandidateKey, DecisionSurface, Ru
 use super::candidate_ir_adapter::{card_reward_kind, is_card_reward_key};
 use super::expansion_policy::expansion_from_evaluation;
 use super::owner_candidate_eval::candidate_annotation;
+use super::owner_commands::executable_choices;
 use super::owner_model::{ChoiceAnnotation, OwnerChoice, OwnerChoiceExpansion};
-use super::owners::executable_choices;
 
 pub(super) fn card_reward_owner_choices(
     session: &RunControlSession,

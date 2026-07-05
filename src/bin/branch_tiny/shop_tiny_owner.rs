@@ -11,8 +11,8 @@ use sts_simulator::runtime::combat::CombatCard;
 use super::candidate_ir_adapter::shop_tiny_kind;
 use super::expansion_policy::shop_tiny_choice_expansion;
 use super::owner_candidate_eval::candidate_annotation;
+use super::owner_commands::executable_choices;
 use super::owner_model::{ChoiceAnnotation, OwnerChoice};
-use super::owners::executable_choices;
 use super::shop_investment::shop_investment_for_surface;
 
 pub(super) fn shop_tiny_owner_choices(

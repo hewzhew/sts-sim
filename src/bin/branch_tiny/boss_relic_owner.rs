@@ -6,8 +6,8 @@ use sts_simulator::eval::run_control::{DecisionCandidateKey, DecisionSurface, Ru
 use sts_simulator::state::core::EngineState;
 
 use super::candidate_ir_adapter::{boss_relic_kind, is_boss_relic_key};
+use super::owner_commands::executable_choices_including_cancel;
 use super::owner_model::{ChoiceAnnotation, OwnerChoice};
-use super::owners::executable_choices_including_cancel;
 
 pub(super) fn boss_relic_owner_choices(
     session: &RunControlSession,
