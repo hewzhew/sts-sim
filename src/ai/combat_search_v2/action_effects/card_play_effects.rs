@@ -9,13 +9,13 @@ use monster_signals::{
     is_living_monster_id, monster_attack_relevance, visible_strength_down_mitigation_hint,
     visible_strength_gain_pressure_hint,
 };
-use observation::{observe_card_power_effects, RawPowerEffects};
+use observation::{observe_card_play_effects, CardPlayEffectAccumulator};
 
-pub(super) fn summarize_play_card_power_effects(
+pub(super) fn card_play_effect_facts(
     combat: &CombatState,
     card: &CombatCard,
     target: Option<usize>,
-) -> PlayCardEffectSummary {
+) -> CardPlayEffectFacts {
     let actions = crate::content::cards::resolve_card_play_with_context(
         card.id,
         combat,
@@ -25,8 +25,9 @@ pub(super) fn summarize_play_card_power_effects(
             played_from_hand: true,
         },
     );
-    let raw = observe_card_power_effects(combat, card, actions.into_iter().map(|info| info.action));
-    summarize_power_effects(combat, raw)
+    let accumulator =
+        observe_card_play_effects(combat, card, actions.into_iter().map(|info| info.action));
+    card_play_facts_from_accumulator(combat, accumulator)
 }
 
 pub(super) fn state_sustained_mitigation_score(combat: &CombatState) -> i32 {
@@ -45,51 +46,61 @@ pub(super) fn state_sustained_mitigation_score(combat: &CombatState) -> i32 {
         .sum()
 }
 
-fn summarize_power_effects(combat: &CombatState, raw: RawPowerEffects) -> PlayCardEffectSummary {
-    let mut summary = PlayCardEffectSummary {
-        reactive_player_hp_loss: raw.reactive_player_hp_loss,
-        reactive_player_block: raw.reactive_player_block,
-        reactive_enemy_damage: raw.reactive_enemy_damage,
-        reactive_bad_draw_cards: raw.reactive_bad_draw_cards,
-        reactive_forced_turn_end: raw.reactive_forced_turn_end,
-        declared_draw_cards: raw.declared_draw_cards,
-        conditional_draw_cards: raw.conditional_draw_cards,
-        enemy_weak: raw.enemy_weak,
-        enemy_vulnerable: raw.enemy_vulnerable,
-        player_strength_gain: raw.player_strength_gain,
-        player_temporary_strength_gain: raw.player_strength_gain.min(raw.player_lose_strength),
-        ..PlayCardEffectSummary::default()
+fn card_play_facts_from_accumulator(
+    combat: &CombatState,
+    accumulator: CardPlayEffectAccumulator,
+) -> CardPlayEffectFacts {
+    let mut facts = CardPlayEffectFacts {
+        direct: DirectCardPlayEffectFacts {
+            declared_draw_cards: accumulator.direct.declared_draw_cards,
+            conditional_draw_cards: accumulator.direct.conditional_draw_cards,
+            enemy_weak: accumulator.direct.enemy_weak,
+            enemy_vulnerable: accumulator.direct.enemy_vulnerable,
+            player_strength_gain: accumulator.direct.player_strength_gain,
+            player_temporary_strength_gain: accumulator
+                .direct
+                .player_strength_gain
+                .min(accumulator.direct.player_lose_strength),
+            ..DirectCardPlayEffectFacts::default()
+        },
+        reactive: accumulator.reactive,
     };
 
-    for (target, amount) in raw.enemy_strength_down_by_target {
+    for (target, amount) in accumulator.direct.enemy_strength_down_by_target {
         if !is_living_monster_id(combat, target) {
             continue;
         }
         let weighted_amount = amount.saturating_mul(monster_attack_relevance(combat, target));
-        if raw.shackled_targets.contains(&target) {
-            summary.temporary_enemy_strength_down = summary
+        if accumulator.direct.shackled_targets.contains(&target) {
+            facts.direct.temporary_enemy_strength_down = facts
+                .direct
                 .temporary_enemy_strength_down
                 .saturating_add(weighted_amount);
         } else {
-            summary.persistent_enemy_strength_down = summary
+            facts.direct.persistent_enemy_strength_down = facts
+                .direct
                 .persistent_enemy_strength_down
                 .saturating_add(weighted_amount);
         }
-        summary.visible_attack_mitigation_hint =
-            summary.visible_attack_mitigation_hint.saturating_add(
+        facts.direct.visible_attack_mitigation_hint =
+            facts.direct.visible_attack_mitigation_hint.saturating_add(
                 visible_strength_down_mitigation_hint(combat, target, amount),
             );
     }
-    for (target, amount) in raw.enemy_strength_gain_by_target {
+    for (target, amount) in accumulator.direct.enemy_strength_gain_by_target {
         if !is_living_monster_id(combat, target) {
             continue;
         }
         let weighted_amount = amount.saturating_mul(monster_attack_relevance(combat, target));
-        summary.enemy_strength_gain = summary.enemy_strength_gain.saturating_add(weighted_amount);
-        summary.visible_attack_pressure_hint = summary
+        facts.direct.enemy_strength_gain = facts
+            .direct
+            .enemy_strength_gain
+            .saturating_add(weighted_amount);
+        facts.direct.visible_attack_pressure_hint = facts
+            .direct
             .visible_attack_pressure_hint
             .saturating_add(visible_strength_gain_pressure_hint(combat, target, amount));
     }
 
-    summary
+    facts
 }

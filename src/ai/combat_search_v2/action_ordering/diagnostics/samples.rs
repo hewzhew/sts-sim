@@ -1,4 +1,4 @@
-use super::super::super::action_effects::PlayCardEffectDiagnostics;
+use super::super::super::action_effects::CardPlayEffectDiagnostics;
 use super::super::super::action_priority::ActionOrderingRole;
 
 pub(super) const LARGEST_REORDER_SAMPLE_LIMIT: usize = 8;
@@ -27,5 +27,5 @@ pub(super) struct ActionOrderingActionEffectObservation {
     pub(super) ordered_index: usize,
     pub(super) role: ActionOrderingRole,
     pub(super) action_key: String,
-    pub(super) effects: PlayCardEffectDiagnostics,
+    pub(super) effects: CardPlayEffectDiagnostics,
 }

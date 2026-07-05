@@ -14,10 +14,10 @@ fn disarm_reports_persistent_enemy_strength_down_without_card_id_special_case() 
     combat.entities.monsters = vec![guardian];
     let disarm = CombatCard::new(CardId::Disarm, 10);
 
-    let summary = summarize_play_card_effects(&combat, &disarm, Some(1));
+    let facts = card_play_effect_facts(&combat, &disarm, Some(1));
 
-    assert!(summary.persistent_enemy_strength_down > 0);
-    assert_eq!(summary.temporary_enemy_strength_down, 0);
+    assert!(facts.direct.persistent_enemy_strength_down > 0);
+    assert_eq!(facts.direct.temporary_enemy_strength_down, 0);
 }
 
 #[test]
@@ -52,12 +52,12 @@ fn anger_power_reports_enemy_strength_gain_for_skill_without_monster_special_cas
     let defend = CombatCard::new(CardId::Defend, 10);
     let strike = CombatCard::new(CardId::Strike, 11);
 
-    let defend_summary = summarize_play_card_effects(&combat, &defend, None);
-    let strike_summary = summarize_play_card_effects(&combat, &strike, Some(1));
+    let defend_facts = card_play_effect_facts(&combat, &defend, None);
+    let strike_facts = card_play_effect_facts(&combat, &strike, Some(1));
 
-    assert!(defend_summary.enemy_strength_gain > 0);
-    assert!(defend_summary.enemy_scaling_risk_score() > 0);
-    assert_eq!(strike_summary.enemy_strength_gain, 0);
+    assert!(defend_facts.reactive.enemy_strength_gain > 0);
+    assert!(defend_facts.enemy_scaling_risk_score() > 0);
+    assert_eq!(strike_facts.reactive.enemy_strength_gain, 0);
 }
 
 #[test]
@@ -65,12 +65,12 @@ fn flex_reports_player_strength_gain_without_enemy_scaling_risk() {
     let combat = blank_test_combat();
     let flex = CombatCard::new(CardId::Flex, 10);
 
-    let summary = summarize_play_card_effects(&combat, &flex, None);
+    let facts = card_play_effect_facts(&combat, &flex, None);
 
-    assert_eq!(summary.player_strength_gain, 2);
-    assert_eq!(summary.player_temporary_strength_gain, 2);
-    assert_eq!(summary.enemy_strength_gain, 0);
-    assert_eq!(summary.enemy_scaling_risk_score(), 0);
+    assert_eq!(facts.direct.player_strength_gain, 2);
+    assert_eq!(facts.direct.player_temporary_strength_gain, 2);
+    assert_eq!(facts.direct.enemy_strength_gain, 0);
+    assert_eq!(facts.enemy_scaling_risk_score(), 0);
 }
 
 #[test]
@@ -84,11 +84,11 @@ fn sharp_hide_reports_reactive_player_hp_loss_for_attack() {
     let strike = CombatCard::new(CardId::Strike, 10);
     let defend = CombatCard::new(CardId::Defend, 11);
 
-    let strike_summary = summarize_play_card_effects(&combat, &strike, Some(1));
-    let defend_summary = summarize_play_card_effects(&combat, &defend, None);
+    let strike_facts = card_play_effect_facts(&combat, &strike, Some(1));
+    let defend_facts = card_play_effect_facts(&combat, &defend, None);
 
-    assert_eq!(strike_summary.reactive_player_hp_loss, 3);
-    assert_eq!(defend_summary.reactive_player_hp_loss, 0);
+    assert_eq!(strike_facts.reactive.player_hp_loss, 3);
+    assert_eq!(defend_facts.reactive.player_hp_loss, 0);
 }
 
 #[test]
@@ -97,9 +97,9 @@ fn after_image_reports_reactive_player_block() {
     insert_power(&mut combat, 0, PowerId::AfterImage, 1);
     let strike = CombatCard::new(CardId::Strike, 10);
 
-    let summary = summarize_play_card_effects(&combat, &strike, Some(1));
+    let facts = card_play_effect_facts(&combat, &strike, Some(1));
 
-    assert_eq!(summary.reactive_player_block, 1);
+    assert_eq!(facts.reactive.player_block, 1);
 }
 
 #[test]
@@ -113,11 +113,11 @@ fn hex_reports_bad_draw_cards_for_non_attack() {
     let defend = CombatCard::new(CardId::Defend, 10);
     let strike = CombatCard::new(CardId::Strike, 11);
 
-    let defend_summary = summarize_play_card_effects(&combat, &defend, None);
-    let strike_summary = summarize_play_card_effects(&combat, &strike, Some(1));
+    let defend_facts = card_play_effect_facts(&combat, &defend, None);
+    let strike_facts = card_play_effect_facts(&combat, &strike, Some(1));
 
-    assert_eq!(defend_summary.reactive_bad_draw_cards, 1);
-    assert_eq!(strike_summary.reactive_bad_draw_cards, 0);
+    assert_eq!(defend_facts.reactive.bad_draw_cards, 1);
+    assert_eq!(strike_facts.reactive.bad_draw_cards, 0);
 }
 
 #[test]
@@ -129,9 +129,9 @@ fn time_warp_reports_forced_turn_end() {
     insert_power(&mut combat, 1, PowerId::TimeWarp, 11);
     let strike = CombatCard::new(CardId::Strike, 10);
 
-    let summary = summarize_play_card_effects(&combat, &strike, Some(1));
+    let facts = card_play_effect_facts(&combat, &strike, Some(1));
 
-    assert!(summary.reactive_forced_turn_end);
+    assert!(facts.reactive.forced_turn_end);
 }
 
 fn insert_power(combat: &mut CombatState, owner: usize, power_type: PowerId, amount: i32) {

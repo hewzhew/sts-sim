@@ -5,7 +5,7 @@ use crate::sim::combat::CombatStepResult;
 #[cfg(test)]
 use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper};
 
-use super::action_effects::summarize_play_card_effects;
+use super::action_effects::card_play_effect_facts;
 use super::*;
 
 mod delta;
@@ -120,7 +120,7 @@ fn immediate_and_mechanics_facts(
         );
     };
     let payload = resolved_card_action_payload_facts(combat, runtime_card, target);
-    let effects = summarize_play_card_effects(combat, runtime_card, target);
+    let effects = card_play_effect_facts(combat, runtime_card, target);
     let target_progress_damage = if card_facts.effective_target == CardTarget::AllEnemy {
         card_facts.evaluated_damage
     } else {
@@ -146,29 +146,41 @@ fn immediate_and_mechanics_facts(
             block_hint: card_facts
                 .evaluated_block
                 .max(payload.player_block_hint)
-                .saturating_add(effects.reactive_player_block),
+                .saturating_add(effects.reactive.player_block),
             target_progress_hint: target_progress,
             all_enemy_progress_hint: all_enemy_progress,
             exhausts_card: card_facts.exhaust,
             creates_pending_choice_after_one_step: false,
         },
         CombatSearchV2ActionMechanicsFacts {
-            persistent_enemy_strength_down: effects.persistent_enemy_strength_down,
-            temporary_enemy_strength_down: effects.temporary_enemy_strength_down,
-            visible_attack_mitigation_hint: effects.visible_attack_mitigation_hint,
-            enemy_weak: effects.enemy_weak,
-            enemy_vulnerable: effects.enemy_vulnerable,
-            enemy_strength_gain: effects.enemy_strength_gain,
-            visible_attack_pressure_hint: effects.visible_attack_pressure_hint,
-            player_strength_gain: effects.player_strength_gain,
-            player_temporary_strength_gain: effects.player_temporary_strength_gain,
-            reactive_player_hp_loss: effects.reactive_player_hp_loss,
-            reactive_player_block: effects.reactive_player_block,
-            reactive_enemy_damage: effects.reactive_enemy_damage,
-            reactive_bad_draw_cards: effects.reactive_bad_draw_cards,
-            reactive_forced_turn_end: effects.reactive_forced_turn_end,
-            declared_draw_cards: effects.declared_draw_cards,
-            conditional_draw_cards: effects.conditional_draw_cards,
+            persistent_enemy_strength_down: effects.direct.persistent_enemy_strength_down,
+            temporary_enemy_strength_down: effects.direct.temporary_enemy_strength_down,
+            visible_attack_mitigation_hint: effects.direct.visible_attack_mitigation_hint,
+            enemy_weak: effects
+                .direct
+                .enemy_weak
+                .saturating_add(effects.reactive.enemy_weak),
+            enemy_vulnerable: effects
+                .direct
+                .enemy_vulnerable
+                .saturating_add(effects.reactive.enemy_vulnerable),
+            enemy_strength_gain: effects
+                .direct
+                .enemy_strength_gain
+                .saturating_add(effects.reactive.enemy_strength_gain),
+            visible_attack_pressure_hint: effects
+                .direct
+                .visible_attack_pressure_hint
+                .saturating_add(effects.reactive.visible_attack_pressure_hint),
+            player_strength_gain: effects.direct.player_strength_gain,
+            player_temporary_strength_gain: effects.direct.player_temporary_strength_gain,
+            reactive_player_hp_loss: effects.reactive.player_hp_loss,
+            reactive_player_block: effects.reactive.player_block,
+            reactive_enemy_damage: effects.reactive.enemy_damage,
+            reactive_bad_draw_cards: effects.reactive.bad_draw_cards,
+            reactive_forced_turn_end: effects.reactive.forced_turn_end,
+            declared_draw_cards: effects.direct.declared_draw_cards,
+            conditional_draw_cards: effects.direct.conditional_draw_cards,
         },
     )
 }

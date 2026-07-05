@@ -1,4 +1,4 @@
-use super::super::action_effects::summarize_play_card_effects;
+use super::super::action_effects::card_play_effect_facts;
 use super::super::phase_action_ordering::{phase_action_ordering_hint, PhaseActionOrderingFacts};
 use super::super::phase_profile::CombatSearchPhaseProfileV1;
 use super::super::{enemy_phase_transition_hint_for_input, visible_incoming_damage};
@@ -25,24 +25,19 @@ pub(super) fn priority_for_play_card(
     let def = cards::get_card_definition(card.id);
     let target_kind = cards::effective_target(card);
     let damage = evaluated.base_damage_mut.max(0);
-    let effects = summarize_play_card_effects(combat, card, target);
+    let effects = card_play_effect_facts(combat, card, target);
     let effect_diagnostics = effects.diagnostics();
     let block = evaluated
         .base_block_mut
         .max(0)
-        .saturating_add(effects.reactive_player_block);
+        .saturating_add(effects.reactive.player_block);
     let target_progress = target_progress_hint(combat, target_kind, target, damage)
-        .saturating_add(effects.reactive_enemy_damage);
+        .saturating_add(effects.reactive.enemy_damage);
     let mitigation = effects.net_mitigation_ordering_score().max(0);
     let reactive_risk = effects.reactive_risk_score();
     let target_lethal = target_progress_kills(combat, target_kind, target, damage);
-    let future_debuff = effects.enemy_weak > 0
-        || effects.enemy_vulnerable > 0
-        || effects.persistent_enemy_strength_down > 0
-        || effects.temporary_enemy_strength_down > 0;
-    let draw_cards = effects
-        .declared_draw_cards
-        .saturating_add(effects.conditional_draw_cards);
+    let future_debuff = effects.has_future_debuff();
+    let draw_cards = effects.total_draw_cards();
     let phase_transition = enemy_phase_transition_hint_for_input(
         combat,
         &ClientInput::PlayCard { card_index, target },
@@ -71,9 +66,9 @@ pub(super) fn priority_for_play_card(
     let current_hp = combat.entities.player.current_hp;
     let visible_loss_now = (visible_damage - current_block).max(0);
     let visible_loss_after_block =
-        (visible_damage - current_block - block - effects.visible_attack_mitigation_hint)
+        (visible_damage - current_block - block - effects.direct.visible_attack_mitigation_hint)
             .max(0)
-            .saturating_add(effects.reactive_player_hp_loss);
+            .saturating_add(effects.reactive.player_hp_loss);
     let prevents_visible_lethal =
         visible_loss_now >= current_hp && visible_loss_after_block < current_hp;
     let prevents_hp_loss = visible_loss_after_block < visible_loss_now;
@@ -135,9 +130,9 @@ fn current_turn_attack_setup_score(
     combat: &CombatState,
     card_index: usize,
     card: &crate::runtime::combat::CombatCard,
-    effects: super::super::action_effects::PlayCardEffectSummary,
+    effects: super::super::action_effects::CardPlayEffectFacts,
 ) -> i32 {
-    if effects.player_strength_gain <= 0 {
+    if effects.direct.player_strength_gain <= 0 {
         return 0;
     }
 
@@ -161,6 +156,7 @@ fn current_turn_attack_setup_score(
         .count() as i32;
 
     effects
+        .direct
         .player_strength_gain
         .saturating_mul(playable_attacks)
 }

@@ -108,13 +108,15 @@ impl ActionOrderingDiagnosticsCollector {
         self.action_effect_samples.sort_by(|left, right| {
             right
                 .effects
+                .derived
                 .reactive_risk_score
-                .cmp(&left.effects.reactive_risk_score)
+                .cmp(&left.effects.derived.reactive_risk_score)
                 .then_with(|| {
                     right
                         .effects
+                        .derived
                         .mitigation_score
-                        .cmp(&left.effects.mitigation_score)
+                        .cmp(&left.effects.derived.mitigation_score)
                 })
                 .then_with(|| {
                     right

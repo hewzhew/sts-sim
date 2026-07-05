@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use super::super::action_effects::PlayCardEffectDiagnostics;
+use super::super::action_effects::CardPlayEffectDiagnostics;
 use super::super::phase_action_ordering::PhaseActionOrderingHint;
 use super::constants::ROLE_END_TURN;
 use super::role::ActionOrderingRole;
@@ -23,7 +23,7 @@ pub(in crate::ai::combat_search_v2) struct ActionOrderingPriority {
     pub(in crate::ai::combat_search_v2) pending_choice_secondary: i32,
     pub(in crate::ai::combat_search_v2) pending_choice_selected_count: i32,
     pub(in crate::ai::combat_search_v2) phase_hint: PhaseActionOrderingHint,
-    pub(in crate::ai::combat_search_v2) effects: PlayCardEffectDiagnostics,
+    pub(in crate::ai::combat_search_v2) effects: CardPlayEffectDiagnostics,
 }
 
 impl ActionOrderingPriority {
@@ -45,7 +45,7 @@ impl ActionOrderingPriority {
             pending_choice_secondary: 0,
             pending_choice_selected_count: 0,
             phase_hint: PhaseActionOrderingHint::default(),
-            effects: PlayCardEffectDiagnostics::default(),
+            effects: CardPlayEffectDiagnostics::default(),
         }
     }
 }

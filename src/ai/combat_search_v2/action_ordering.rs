@@ -1,4 +1,4 @@
-use super::action_effects::PlayCardEffectDiagnostics;
+use super::action_effects::CardPlayEffectDiagnostics;
 use super::action_priority::{priority_for_input, ActionOrderingPriority, ActionOrderingRole};
 use super::*;
 use std::collections::BTreeMap;
@@ -49,7 +49,7 @@ struct ActionOrderingActionEffectSummary {
     ordered_index: usize,
     role: ActionOrderingRole,
     action_key: String,
-    effects: PlayCardEffectDiagnostics,
+    effects: CardPlayEffectDiagnostics,
 }
 
 impl ActionOrderingSummary {

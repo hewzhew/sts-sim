@@ -1,10 +1,16 @@
 use super::*;
 use crate::runtime::combat::CombatCard;
 
-mod power_signals;
+mod card_play_effects;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(super) struct PlayCardEffectSummary {
+pub(super) struct CardPlayEffectFacts {
+    pub(super) direct: DirectCardPlayEffectFacts,
+    pub(super) reactive: ReactiveCardPlayEffectFacts,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct DirectCardPlayEffectFacts {
     pub(super) persistent_enemy_strength_down: i32,
     pub(super) temporary_enemy_strength_down: i32,
     pub(super) visible_attack_mitigation_hint: i32,
@@ -12,11 +18,6 @@ pub(super) struct PlayCardEffectSummary {
     pub(super) visible_attack_pressure_hint: i32,
     pub(super) player_strength_gain: i32,
     pub(super) player_temporary_strength_gain: i32,
-    pub(super) reactive_player_hp_loss: i32,
-    pub(super) reactive_player_block: i32,
-    pub(super) reactive_enemy_damage: i32,
-    pub(super) reactive_bad_draw_cards: i32,
-    pub(super) reactive_forced_turn_end: bool,
     pub(super) declared_draw_cards: i32,
     pub(super) conditional_draw_cards: i32,
     pub(super) enemy_weak: i32,
@@ -24,9 +25,29 @@ pub(super) struct PlayCardEffectSummary {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(super) struct PlayCardEffectDiagnostics {
+pub(super) struct ReactiveCardPlayEffectFacts {
+    pub(super) player_hp_loss: i32,
+    pub(super) player_block: i32,
+    pub(super) enemy_damage: i32,
+    pub(super) bad_draw_cards: i32,
+    pub(super) forced_turn_end: bool,
+    pub(super) enemy_strength_gain: i32,
+    pub(super) visible_attack_pressure_hint: i32,
+    pub(super) enemy_weak: i32,
+    pub(super) enemy_vulnerable: i32,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct CardPlayDerivedEffectScores {
     pub(super) mitigation_score: i32,
+    pub(super) enemy_scaling_risk_score: i32,
     pub(super) reactive_risk_score: i32,
+    pub(super) net_mitigation_score: i32,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct CardPlayEffectDiagnostics {
+    pub(super) derived: CardPlayDerivedEffectScores,
     pub(super) enemy_strength_gain: i32,
     pub(super) visible_attack_pressure_hint: i32,
     pub(super) player_strength_gain: i32,
@@ -40,23 +61,27 @@ pub(super) struct PlayCardEffectDiagnostics {
     pub(super) conditional_draw_cards: i32,
 }
 
-impl PlayCardEffectSummary {
+impl CardPlayEffectFacts {
     pub(super) fn mitigation_ordering_score(self) -> i32 {
-        self.persistent_enemy_strength_down
-            .saturating_add(self.temporary_enemy_strength_down)
-            .saturating_add(self.visible_attack_mitigation_hint)
+        self.direct
+            .persistent_enemy_strength_down
+            .saturating_add(self.direct.temporary_enemy_strength_down)
+            .saturating_add(self.direct.visible_attack_mitigation_hint)
     }
 
     pub(super) fn enemy_scaling_risk_score(self) -> i32 {
-        self.enemy_strength_gain
-            .saturating_add(self.visible_attack_pressure_hint)
+        self.direct
+            .enemy_strength_gain
+            .saturating_add(self.reactive.enemy_strength_gain)
+            .saturating_add(self.direct.visible_attack_pressure_hint)
+            .saturating_add(self.reactive.visible_attack_pressure_hint)
     }
 
     pub(super) fn reactive_risk_score(self) -> i32 {
         self.enemy_scaling_risk_score()
-            .saturating_add(self.reactive_player_hp_loss)
-            .saturating_add(self.reactive_bad_draw_cards)
-            .saturating_add(i32::from(self.reactive_forced_turn_end))
+            .saturating_add(self.reactive.player_hp_loss)
+            .saturating_add(self.reactive.bad_draw_cards)
+            .saturating_add(i32::from(self.reactive.forced_turn_end))
     }
 
     pub(super) fn net_mitigation_ordering_score(self) -> i32 {
@@ -64,44 +89,73 @@ impl PlayCardEffectSummary {
             .saturating_sub(self.reactive_risk_score())
     }
 
-    pub(super) fn diagnostics(self) -> PlayCardEffectDiagnostics {
-        PlayCardEffectDiagnostics {
+    pub(super) fn derived_scores(self) -> CardPlayDerivedEffectScores {
+        CardPlayDerivedEffectScores {
             mitigation_score: self.mitigation_ordering_score(),
+            enemy_scaling_risk_score: self.enemy_scaling_risk_score(),
             reactive_risk_score: self.reactive_risk_score(),
-            enemy_strength_gain: self.enemy_strength_gain,
-            visible_attack_pressure_hint: self.visible_attack_pressure_hint,
-            player_strength_gain: self.player_strength_gain,
-            player_temporary_strength_gain: self.player_temporary_strength_gain,
-            reactive_player_hp_loss: self.reactive_player_hp_loss,
-            reactive_player_block: self.reactive_player_block,
-            reactive_enemy_damage: self.reactive_enemy_damage,
-            reactive_bad_draw_cards: self.reactive_bad_draw_cards,
-            reactive_forced_turn_end: self.reactive_forced_turn_end,
-            declared_draw_cards: self.declared_draw_cards,
-            conditional_draw_cards: self.conditional_draw_cards,
+            net_mitigation_score: self.net_mitigation_ordering_score(),
+        }
+    }
+
+    pub(super) fn total_draw_cards(self) -> i32 {
+        self.direct
+            .declared_draw_cards
+            .saturating_add(self.direct.conditional_draw_cards)
+    }
+
+    pub(super) fn has_future_debuff(self) -> bool {
+        self.direct.enemy_weak > 0
+            || self.direct.enemy_vulnerable > 0
+            || self.direct.persistent_enemy_strength_down > 0
+            || self.direct.temporary_enemy_strength_down > 0
+            || self.reactive.enemy_weak > 0
+            || self.reactive.enemy_vulnerable > 0
+    }
+
+    pub(super) fn diagnostics(self) -> CardPlayEffectDiagnostics {
+        CardPlayEffectDiagnostics {
+            derived: self.derived_scores(),
+            enemy_strength_gain: self
+                .direct
+                .enemy_strength_gain
+                .saturating_add(self.reactive.enemy_strength_gain),
+            visible_attack_pressure_hint: self
+                .direct
+                .visible_attack_pressure_hint
+                .saturating_add(self.reactive.visible_attack_pressure_hint),
+            player_strength_gain: self.direct.player_strength_gain,
+            player_temporary_strength_gain: self.direct.player_temporary_strength_gain,
+            reactive_player_hp_loss: self.reactive.player_hp_loss,
+            reactive_player_block: self.reactive.player_block,
+            reactive_enemy_damage: self.reactive.enemy_damage,
+            reactive_bad_draw_cards: self.reactive.bad_draw_cards,
+            reactive_forced_turn_end: self.reactive.forced_turn_end,
+            declared_draw_cards: self.direct.declared_draw_cards,
+            conditional_draw_cards: self.direct.conditional_draw_cards,
         }
     }
 }
 
-impl PlayCardEffectDiagnostics {
+impl CardPlayEffectDiagnostics {
     pub(super) fn has_reactive_signal(self) -> bool {
-        self.reactive_risk_score > 0
+        self.derived.reactive_risk_score > 0
             || self.reactive_player_block > 0
             || self.reactive_enemy_damage > 0
-            || self.mitigation_score > 0
+            || self.derived.mitigation_score > 0
     }
 }
 
-pub(super) fn summarize_play_card_effects(
+pub(super) fn card_play_effect_facts(
     combat: &CombatState,
     card: &CombatCard,
     target: Option<usize>,
-) -> PlayCardEffectSummary {
-    power_signals::summarize_play_card_power_effects(combat, card, target)
+) -> CardPlayEffectFacts {
+    card_play_effects::card_play_effect_facts(combat, card, target)
 }
 
 pub(super) fn state_sustained_mitigation_score(combat: &CombatState) -> i32 {
-    power_signals::state_sustained_mitigation_score(combat)
+    card_play_effects::state_sustained_mitigation_score(combat)
 }
 
 #[cfg(test)]
