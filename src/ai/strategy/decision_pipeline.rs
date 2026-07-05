@@ -1,4 +1,7 @@
 use crate::ai::analysis::card_semantics::{card_definition_with_upgrades, CardBurden, Mechanic};
+use crate::ai::strategy::acquisition::{
+    assess_card_acquisition, evaluate_card_acquisition_policy_v0, AcquisitionContext,
+};
 use crate::ai::strategy::boss_relic_admission::{
     boss_relic_admission_order_rank, skip_boss_relic_admission, BossRelicAdmission,
 };
@@ -566,50 +569,29 @@ fn shop_card_acquisition_filter(
     candidate: DecisionCandidateIr,
     admission: Option<&RewardAdmission>,
 ) -> FilterDecision {
-    let DecisionCandidateKind::ShopBuyCard { card, upgrades, .. } = candidate.kind else {
+    let DecisionCandidateKind::ShopBuyCard {
+        card,
+        upgrades,
+        price,
+    } = candidate.kind
+    else {
         return FilterDecision::Pass;
     };
-    let Some(admission) = admission else {
+    let (Some(admission), Some(gold)) = (admission, context.gold) else {
         return FilterDecision::Pass;
     };
-    if upgrades > 0 || shop_card_acquisition_exception(context, card, admission) {
+    let report = assess_card_acquisition(
+        AcquisitionContext::shop(context.deck_plan, gold, price),
+        card,
+        upgrades,
+        admission,
+    );
+    let policy = evaluate_card_acquisition_policy_v0(&report);
+    if policy.allows_acquisition() {
         FilterDecision::Pass
     } else {
         FilterDecision::InspectOnly("shop card fails acquisition discipline")
     }
-}
-
-fn shop_card_acquisition_exception(
-    context: DecisionPipelineContext,
-    card: CardId,
-    admission: &RewardAdmission,
-) -> bool {
-    premium_shop_card(card) || improves_shop_hard_gap(context, admission)
-}
-
-fn premium_shop_card(card: CardId) -> bool {
-    matches!(
-        card,
-        CardId::MasterOfStrategy | CardId::Offering | CardId::Apotheosis
-    )
-}
-
-fn improves_shop_hard_gap(context: DecisionPipelineContext, admission: &RewardAdmission) -> bool {
-    let deficit = context.deck_plan.strategic_deficit;
-    (deficit.deck_access == StrategicDeficitLevel::Missing
-        && (admission_provides(admission, Mechanic::CardDraw)
-            || admission
-                .reasons
-                .contains(&RewardAdmissionReason::CombatUpgrade)))
-        || (needs(deficit.energy_or_playability) && admission_provides(admission, Mechanic::Energy))
-        || (deficit.aoe_or_minion_control == StrategicDeficitLevel::Missing
-            && admission_aoe(admission))
-        || (deficit.boss_scaling_plan == StrategicDeficitLevel::Missing
-            && assess_boss_scaling_evidence(context.deck_plan, None, admission)
-                .relevant_to_boss_plan
-            && !fragile_supported_payoff(context, admission))
-        || (deficit.frontload_damage == StrategicDeficitLevel::Missing
-            && admission_frontloads(admission))
 }
 
 fn static_candidate_score(
@@ -1301,11 +1283,20 @@ mod tests {
     use crate::runtime::combat::CombatCard;
 
     fn shop_context(cards: &[CardId]) -> DecisionPipelineContext {
-        shop_context_with_hp(cards, 70, 80)
+        shop_context_with_gold_and_hp(cards, 999, 70, 80)
     }
 
     fn shop_context_with_hp(
         cards: &[CardId],
+        current_hp: i32,
+        max_hp: i32,
+    ) -> DecisionPipelineContext {
+        shop_context_with_gold_and_hp(cards, 999, current_hp, max_hp)
+    }
+
+    fn shop_context_with_gold_and_hp(
+        cards: &[CardId],
+        gold: i32,
         current_hp: i32,
         max_hp: i32,
     ) -> DecisionPipelineContext {
@@ -1329,7 +1320,7 @@ mod tests {
                     has_energy_relic: false,
                 },
             ),
-            999,
+            gold,
         )
     }
 
@@ -1361,13 +1352,23 @@ mod tests {
         candidate: CardId,
         upgrades: u8,
     ) -> CandidateEvaluation {
+        shop_card_in_context_with_price(context, deck, candidate, upgrades, 80)
+    }
+
+    fn shop_card_in_context_with_price(
+        context: DecisionPipelineContext,
+        deck: &[CombatCard],
+        candidate: CardId,
+        upgrades: u8,
+        price: i32,
+    ) -> CandidateEvaluation {
         let admission = assess_reward_admission_from_master_deck(&deck, candidate, upgrades);
         evaluate_decision_candidate(
             context,
             DecisionCandidateKind::ShopBuyCard {
                 card: candidate,
                 upgrades,
-                price: 80,
+                price,
             },
             Some(&admission),
         )
@@ -1499,6 +1500,34 @@ mod tests {
         );
         assert_eq!(
             clothesline.inspect_only_reason(),
+            Some("shop card fails acquisition discipline")
+        );
+    }
+
+    #[test]
+    fn shop_rejects_common_access_card_when_it_spends_purge_reserve() {
+        let cards = vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Armaments,
+            CardId::Cleave,
+            CardId::Inflame,
+            CardId::Uppercut,
+            CardId::Whirlwind,
+        ];
+        let deck = test_deck(&cards);
+        let context = shop_context_with_gold_and_hp(&cards, 72, 74, 85);
+
+        let shrug = shop_card_in_context_with_price(context, &deck, CardId::ShrugItOff, 0, 51);
+
+        assert_eq!(
+            shrug.inspect_only_reason(),
             Some("shop card fails acquisition discipline")
         );
     }
