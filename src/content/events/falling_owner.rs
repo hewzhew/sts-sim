@@ -83,6 +83,9 @@ fn falling_removal_harm(card: &CombatCard, run_state: &RunState) -> RemovalHarm 
 fn is_critical_card(card: CardId, run_state: &RunState) -> bool {
     match card {
         CardId::Corruption | CardId::DarkEmbrace => true,
+        CardId::DemonForm | CardId::Inflame | CardId::SpotWeakness => {
+            is_unique_strength_scaling_source(card, run_state)
+        }
         CardId::FeelNoPain => {
             has_corruption(run_state) || same_card_count(run_state, CardId::FeelNoPain) == 1
         }
@@ -91,6 +94,23 @@ fn is_critical_card(card: CardId, run_state: &RunState) -> bool {
         CardId::Evolve => has_status_source(run_state),
         _ => false,
     }
+}
+
+fn is_unique_strength_scaling_source(card: CardId, run_state: &RunState) -> bool {
+    is_direct_strength_source(card)
+        && run_state
+            .master_deck
+            .iter()
+            .filter(|candidate| is_direct_strength_source(candidate.id))
+            .count()
+            == 1
+}
+
+fn is_direct_strength_source(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::Inflame | CardId::SpotWeakness | CardId::DemonForm
+    )
 }
 
 fn is_high_protect_card(card: CardId) -> bool {
@@ -219,4 +239,23 @@ fn event_screen(run_state: &RunState) -> usize {
         .as_ref()
         .map(|event| event.current_screen)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unique_demon_form_is_protected_over_generic_access_card() {
+        let mut run_state = RunState::new(1, 0, true, "Ironclad");
+        let demon_form = CombatCard::new(CardId::DemonForm, 1);
+        let shrug = CombatCard::new(CardId::ShrugItOff, 2);
+        run_state.master_deck = vec![demon_form.clone(), shrug.clone()];
+
+        assert!(
+            falling_removal_harm(&demon_form, &run_state)
+                > falling_removal_harm(&shrug, &run_state),
+            "unique Demon Form should be harder for Falling to sacrifice than a generic access card"
+        );
+    }
 }

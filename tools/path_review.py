@@ -91,7 +91,13 @@ def render_source(
             continue
         if len(paths) > 1:
             chunks.append(f"== {review_path['title']} ==")
-        chunks.extend(render_steps(selected, max_candidates=max_candidates))
+        chunks.extend(
+            render_steps(
+                selected,
+                max_candidates=max_candidates,
+                all_steps=review_path["steps"],
+            )
+        )
         if index + 1 < len(paths):
             chunks.append("")
     return "\n".join(chunks)
@@ -312,7 +318,11 @@ def step_search_text(step: dict[str, Any]) -> list[str]:
     return values
 
 
-def render_steps(steps: list[tuple[int, dict[str, Any]]], max_candidates: int) -> list[str]:
+def render_steps(
+    steps: list[tuple[int, dict[str, Any]]],
+    max_candidates: int,
+    all_steps: list[dict[str, Any]],
+) -> list[str]:
     lines: list[str] = []
     for index, step in steps:
         state = step.get("state_before") or {}
@@ -320,6 +330,9 @@ def render_steps(steps: list[tuple[int, dict[str, Any]]], max_candidates: int) -
         selected = step.get("label") or "-"
         lines.append(prefix)
         lines.append(f"  selected: {selected}")
+        transition = hidden_auto_transition(all_steps, index, state)
+        if transition:
+            lines.append(f"  auto transition: {transition}")
         pool = step.get("candidate_pool") or []
         if pool:
             lines.append("  candidates:")
@@ -335,6 +348,35 @@ def render_steps(steps: list[tuple[int, dict[str, Any]]], max_candidates: int) -
     if lines and lines[-1] == "":
         lines.pop()
     return lines
+
+
+def hidden_auto_transition(
+    all_steps: list[dict[str, Any]], index: int, state: dict[str, Any]
+) -> str:
+    if index <= 0 or index >= len(all_steps):
+        return ""
+    previous = all_steps[index - 1]
+    if previous.get("decision_delta"):
+        return ""
+    previous_state = previous.get("state_before") or {}
+    if not isinstance(previous_state, dict) or not isinstance(state, dict):
+        return ""
+
+    changes = []
+    previous_site = site_summary(previous_state)
+    current_site = site_summary(state)
+    if previous_site != current_site:
+        changes.append(f"{previous_site} -> {current_site}")
+    for key, label in (("hp", "hp"), ("gold", "gold"), ("deck_size", "deck")):
+        before = previous_state.get(key)
+        after = state.get(key)
+        if before is not None and after is not None and before != after:
+            changes.append(f"{label} {before}->{after}")
+    return " ".join(changes) if len(changes) > 1 else ""
+
+
+def site_summary(state: dict[str, Any]) -> str:
+    return f"A{state.get('act', '?')}F{state.get('floor', '?')}"
 
 
 def state_line(index: int, state: dict[str, Any]) -> str:

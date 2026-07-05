@@ -266,6 +266,50 @@ class PathReviewTests(unittest.TestCase):
         self.assertIn("path.json#00 A1F7 Shop", output)
         self.assertIn("candidate='Shrug It Off | 51 gold'", output)
 
+    def test_flags_hidden_auto_transition_between_path_steps(self):
+        path_review = load_path_review()
+        payload = {
+            "schema": "branch_tiny_run_path",
+            "branch_id": 7,
+            "steps": [
+                {
+                    "state_before": {
+                        "act": 3,
+                        "floor": 36,
+                        "hp": 103,
+                        "max_hp": 103,
+                        "gold": 315,
+                        "deck_size": 17,
+                        "boundary": "Shop",
+                    },
+                    "label": "Leave shop",
+                    "candidate_pool": [],
+                },
+                {
+                    "state_before": {
+                        "act": 3,
+                        "floor": 39,
+                        "hp": 63,
+                        "max_hp": 103,
+                        "gold": 342,
+                        "deck_size": 16,
+                        "boundary": "Card Reward",
+                    },
+                    "label": "Shrug It Off+1",
+                    "candidate_pool": [],
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "path.json"
+            path.write_text(path_review.dumps_json(payload), encoding="utf-8")
+            output = path_review.render_source(path)
+
+        self.assertIn(
+            "auto transition: A3F36 -> A3F39 hp 103->63 gold 315->342 deck 17->16",
+            output,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
