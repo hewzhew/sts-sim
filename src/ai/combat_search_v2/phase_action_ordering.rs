@@ -6,6 +6,7 @@ use crate::content::monsters::EnemyId;
 // Kept smaller than the main role gaps in action_priority; phase facts nudge nearby
 // ordering decisions without turning this module into an alternate policy.
 const PHASE_ROLE_ADJUSTMENT: i32 = 12;
+const AWAKENED_POWER_PENALTY: i32 = PHASE_ROLE_ADJUSTMENT * 2;
 const STASIS_TARGET_SETUP_MAX: i32 = 20;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -52,6 +53,14 @@ pub(super) fn phase_action_ordering_hint(
         hint.phase_setup = hint
             .phase_setup
             .saturating_add(facts.target_progress.min(STASIS_TARGET_SETUP_MAX));
+    }
+    if profile.enemy_mechanics.awakened_one_curiosity_count > 0
+        && facts.card_type == CardType::Power
+    {
+        hint.role_rank_adjustment = hint
+            .role_rank_adjustment
+            .saturating_sub(AWAKENED_POWER_PENALTY);
+        hint.phase_setup -= 1;
     }
 
     hint

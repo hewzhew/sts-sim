@@ -31,6 +31,7 @@ pub(super) struct EnemyMechanicsProfileV1 {
     pub(super) bronze_orb_count: usize,
     pub(super) bronze_orb_stasis_pending_count: usize,
     pub(super) bronze_orb_stasis_card_count: usize,
+    pub(super) awakened_one_curiosity_count: usize,
 }
 
 pub(super) fn enemy_mechanics_profile(combat: &CombatState) -> EnemyMechanicsProfileV1 {
@@ -137,6 +138,12 @@ pub(super) fn enemy_mechanics_profile(combat: &CombatState) -> EnemyMechanicsPro
                     profile.bronze_orb_stasis_card_count += 1;
                 }
             }
+            EnemyId::AwakenedOne => {
+                profile.tracked_monsters += 1;
+                if store::has_power(combat, monster.id, PowerId::Curiosity) {
+                    profile.awakened_one_curiosity_count += 1;
+                }
+            }
             _ => {}
         }
     }
@@ -170,6 +177,7 @@ pub(super) fn enemy_mechanics_profile_report(
         bronze_orb_count: profile.bronze_orb_count,
         bronze_orb_stasis_pending_count: profile.bronze_orb_stasis_pending_count,
         bronze_orb_stasis_card_count: profile.bronze_orb_stasis_card_count,
+        awakened_one_curiosity_count: profile.awakened_one_curiosity_count,
         notes: vec![
             "enemy mechanics profile exposes typed phase/support facts for value/rollout consumers",
             "this profile does not by itself score or prune search branches",

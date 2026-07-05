@@ -97,5 +97,6 @@ pub struct CombatSearchV2EnemyMechanicsReport {
     pub bronze_orb_count: usize,
     pub bronze_orb_stasis_pending_count: usize,
     pub bronze_orb_stasis_card_count: usize,
+    pub awakened_one_curiosity_count: usize,
     pub notes: Vec<&'static str>,
 }
