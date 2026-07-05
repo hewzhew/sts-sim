@@ -13,6 +13,8 @@ mod classification;
 mod counterfactual_hp;
 #[path = "combat_case_review/focus.rs"]
 mod focus;
+#[path = "combat_case_review/key_card_lifecycle.rs"]
+mod key_card_lifecycle;
 #[path = "combat_case_review/line_lab.rs"]
 mod line_lab;
 #[path = "combat_case_review/options.rs"]

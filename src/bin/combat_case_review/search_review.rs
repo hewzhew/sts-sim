@@ -1,5 +1,6 @@
 use sts_simulator::ai::combat_search_v2::{
-    CombatSearchV2PotionPolicy, CombatSearchV2Report, CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2ActionPreview, CombatSearchV2PotionPolicy, CombatSearchV2Report,
+    CombatSearchV2TurnPlanPolicy,
 };
 
 use super::search_types::{
@@ -145,6 +146,14 @@ fn diagnostic_progress_facts(
                 .take(action_preview_limit)
                 .map(|action| action.input.clone())
                 .collect(),
+            full_action_preview: trajectory
+                .actions
+                .iter()
+                .map(|action| CombatSearchV2ActionPreview {
+                    action_key: action.action_key.clone(),
+                    input: action.input.clone(),
+                })
+                .collect(),
         });
     }
     report
@@ -188,6 +197,7 @@ fn diagnostic_progress_facts(
                     .take(action_preview_limit)
                     .map(|action| action.input.clone())
                     .collect(),
+                full_action_preview: rollout.action_preview.clone(),
             }
         })
 }

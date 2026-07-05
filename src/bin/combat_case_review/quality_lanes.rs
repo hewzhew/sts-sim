@@ -481,7 +481,7 @@ pub(crate) fn compare_quality(
 
 #[cfg(test)]
 mod tests {
-    use sts_simulator::ai::combat_search_v2::SearchTerminalLabel;
+    use sts_simulator::ai::combat_search_v2::{CombatSearchV2ActionPreview, SearchTerminalLabel};
     use sts_simulator::state::core::ClientInput;
 
     use super::*;
@@ -505,6 +505,16 @@ mod tests {
             exact_prefix_action_count: Some(2),
             action_key_preview: vec!["a".to_string(), "b".to_string()],
             input_preview: vec![ClientInput::EndTurn, ClientInput::EndTurn],
+            full_action_preview: vec![
+                CombatSearchV2ActionPreview {
+                    action_key: "a".to_string(),
+                    input: ClientInput::EndTurn,
+                },
+                CombatSearchV2ActionPreview {
+                    action_key: "b".to_string(),
+                    input: ClientInput::EndTurn,
+                },
+            ],
         };
 
         let witness = estimated_rollout_feedback_witness("lane", &progress)
@@ -534,6 +544,10 @@ mod tests {
             exact_prefix_action_count: Some(2),
             action_key_preview: vec!["a".to_string()],
             input_preview: vec![ClientInput::EndTurn],
+            full_action_preview: vec![CombatSearchV2ActionPreview {
+                action_key: "a".to_string(),
+                input: ClientInput::EndTurn,
+            }],
         };
 
         assert!(estimated_rollout_feedback_witness("lane", &progress).is_none());

@@ -53,20 +53,25 @@ pub(super) fn review_focus(ladder: &[SearchReview]) -> Option<CombatReviewFocus>
 }
 
 pub(super) fn focus_witness_line(focus: &CombatReviewFocus) -> CombatSearchV2WitnessLine {
-    CombatSearchV2WitnessLine {
-        source: focus.progress.source,
-        terminal: focus.progress.terminal,
-        final_hp: focus.progress.final_hp,
-        total_enemy_hp: focus.progress.total_enemy_hp,
-        action_count: focus.progress.action_count,
-        actions: focus
+    let actions = if focus.progress.full_action_preview.is_empty() {
+        focus
             .progress
             .action_key_preview
             .iter()
             .cloned()
             .zip(focus.progress.input_preview.iter().cloned())
             .map(|(action_key, input)| CombatSearchV2ActionPreview { action_key, input })
-            .collect(),
+            .collect()
+    } else {
+        focus.progress.full_action_preview.clone()
+    };
+    CombatSearchV2WitnessLine {
+        source: focus.progress.source,
+        terminal: focus.progress.terminal,
+        final_hp: focus.progress.final_hp,
+        total_enemy_hp: focus.progress.total_enemy_hp,
+        action_count: focus.progress.action_count,
+        actions,
     }
 }
 
@@ -158,5 +163,62 @@ fn focus_reason(progress: &SearchDiagnosticProgressFacts) -> &'static str {
         "complete_win_available"
     } else {
         "closest_failure_progress_by_enemy_hp"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sts_simulator::ai::combat_search_v2::CombatSearchV2ActionPreview;
+    use sts_simulator::state::core::ClientInput;
+
+    fn progress_with_hidden_full_actions() -> SearchDiagnosticProgressFacts {
+        SearchDiagnosticProgressFacts {
+            source: "best_complete",
+            terminal: SearchTerminalLabel::Loss,
+            estimated: false,
+            final_hp: 0,
+            hp_loss: 10,
+            turns: 1,
+            potions_used: 0,
+            cards_played: 0,
+            living_enemy_count: 1,
+            total_enemy_hp: 20,
+            visible_incoming_damage: None,
+            action_count: Some(2),
+            exact_prefix_action_count: Some(2),
+            action_key_preview: vec!["preview_only".to_string()],
+            input_preview: vec![ClientInput::EndTurn],
+            full_action_preview: vec![
+                CombatSearchV2ActionPreview {
+                    action_key: "full_1".to_string(),
+                    input: ClientInput::EndTurn,
+                },
+                CombatSearchV2ActionPreview {
+                    action_key: "full_2".to_string(),
+                    input: ClientInput::Cancel,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn focus_witness_line_prefers_hidden_full_actions_over_json_preview() {
+        let focus = CombatReviewFocus {
+            selected_review: "test",
+            reason: "test",
+            progress: progress_with_hidden_full_actions(),
+        };
+
+        let witness = focus_witness_line(&focus);
+
+        assert_eq!(
+            witness
+                .actions
+                .iter()
+                .map(|action| action.action_key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["full_1", "full_2"]
+        );
     }
 }

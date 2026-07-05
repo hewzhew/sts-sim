@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sts_simulator::ai::combat_search_v2::SearchTerminalLabel;
+use sts_simulator::ai::combat_search_v2::{CombatSearchV2ActionPreview, SearchTerminalLabel};
 use sts_simulator::state::core::ClientInput;
 
 #[derive(Serialize)]
@@ -99,4 +99,6 @@ pub(super) struct SearchDiagnosticProgressFacts {
     pub(super) exact_prefix_action_count: Option<usize>,
     pub(super) action_key_preview: Vec<String>,
     pub(super) input_preview: Vec<ClientInput>,
+    #[serde(skip)]
+    pub(super) full_action_preview: Vec<CombatSearchV2ActionPreview>,
 }

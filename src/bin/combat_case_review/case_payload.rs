@@ -17,6 +17,7 @@ use super::champ_phase::ChampPhaseAudit;
 use super::classification::CombatGapReviewClassification;
 use super::counterfactual_hp::CounterfactualHpProbe;
 use super::focus::{CombatReviewFocus, CombatReviewFocusPriorRerun};
+use super::key_card_lifecycle::{key_card_lifecycle, KeyCardLifecycleReport};
 use super::quality_lanes::CombatQualityLaneReview;
 use super::search_types::SearchReview;
 use super::strategic_feedback::{combat_strategic_feedback, CombatStrategicFeedbackReport};
@@ -47,6 +48,7 @@ pub(super) struct CombatCaseReview {
     combat_strategic_feedback: Option<CombatStrategicFeedbackReport>,
     boss_pressure_lens: Option<BossPressureLensReport>,
     champ_phase_audit: Option<ChampPhaseAudit>,
+    key_card_lifecycle: Option<KeyCardLifecycleReport>,
 }
 
 pub(super) struct CombatCaseReviewArtifacts {
@@ -92,6 +94,7 @@ pub(super) fn assemble_combat_case_review(
         review_focus.as_ref(),
         &ladder,
     );
+    let key_card_lifecycle = key_card_lifecycle(&case.position, review_focus.as_ref());
     let deck = case
         .position
         .combat
@@ -148,6 +151,7 @@ pub(super) fn assemble_combat_case_review(
         combat_strategic_feedback,
         boss_pressure_lens,
         champ_phase_audit,
+        key_card_lifecycle,
     }
 }
 
