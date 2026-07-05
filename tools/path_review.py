@@ -12,7 +12,16 @@ from typing import Any
 
 def main() -> int:
     args = parse_args()
-    print(render_source(Path(args.source), max_candidates=args.max_candidates))
+    print(
+        render_source(
+            Path(args.source),
+            max_candidates=args.max_candidates,
+            boundaries=parse_boundaries(args.boundary),
+            contains=parse_contains(args.contains),
+            interesting=args.interesting,
+            show_summary=args.summary,
+        )
+    )
     return 0
 
 
@@ -20,18 +29,56 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("source", help="capsule directory or path/result/frontier/terminal json")
     parser.add_argument("--max-candidates", type=int, default=12)
+    parser.add_argument(
+        "--boundary",
+        action="append",
+        default=[],
+        help="Filter boundary names; may be repeated or comma-separated.",
+    )
+    parser.add_argument(
+        "--interesting",
+        action="store_true",
+        help="Only show steps with multiple candidates or inspect-only reasons.",
+    )
+    parser.add_argument(
+        "--contains",
+        action="append",
+        default=[],
+        help="Only show steps whose selected choice, candidates, or inspect reasons contain text.",
+    )
+    parser.add_argument("--summary", action="store_true", help="Print a compact count header.")
     return parser.parse_args()
 
 
-def render_source(source: Path, max_candidates: int = 12) -> str:
+def render_source(
+    source: Path,
+    max_candidates: int = 12,
+    boundaries: set[str] | None = None,
+    contains: list[str] | None = None,
+    interesting: bool = False,
+    show_summary: bool = False,
+) -> str:
     paths = load_review_paths(source)
     if not paths:
         raise SystemExit(f"no path data found in {source}")
     chunks = []
+    summary = review_summary(paths, boundaries, contains, interesting)
+    if show_summary:
+        chunks.append(
+            "summary: paths={paths} steps={steps} shown={shown} inspect_reasons={inspect}".format(
+                paths=summary["paths"],
+                steps=summary["steps"],
+                shown=summary["shown"],
+                inspect=summary["inspect_reasons"],
+            )
+        )
     for index, review_path in enumerate(paths):
+        selected = select_steps(review_path["steps"], boundaries, contains, interesting)
+        if not selected:
+            continue
         if len(paths) > 1:
             chunks.append(f"== {review_path['title']} ==")
-        chunks.extend(render_steps(review_path["steps"], max_candidates=max_candidates))
+        chunks.extend(render_steps(selected, max_candidates=max_candidates))
         if index + 1 < len(paths):
             chunks.append("")
     return "\n".join(chunks)
@@ -80,9 +127,105 @@ def review_paths_from_value(value: Any, title: str) -> list[dict[str, Any]]:
     return []
 
 
-def render_steps(steps: list[dict[str, Any]], max_candidates: int) -> list[str]:
-    lines: list[str] = []
+def review_summary(
+    paths: list[dict[str, Any]],
+    boundaries: set[str] | None,
+    contains: list[str] | None,
+    interesting: bool,
+) -> dict[str, int]:
+    steps = sum(len(path["steps"]) for path in paths)
+    selected = [
+        item
+        for path in paths
+        for item in select_steps(path["steps"], boundaries, contains, interesting)
+    ]
+    return {
+        "paths": len(paths),
+        "steps": steps,
+        "shown": len(selected),
+        "inspect_reasons": sum(count_inspect_reasons(step) for _, step in selected),
+    }
+
+
+def select_steps(
+    steps: list[dict[str, Any]],
+    boundaries: set[str] | None,
+    contains: list[str] | None,
+    interesting: bool,
+) -> list[tuple[int, dict[str, Any]]]:
+    selected = []
     for index, step in enumerate(steps):
+        if (
+            boundaries
+            and normalize_boundary((step.get("state_before") or {}).get("boundary"))
+            not in boundaries
+        ):
+            continue
+        if contains and not step_contains(step, contains):
+            continue
+        if interesting and not step_is_interesting(step):
+            continue
+        selected.append((index, step))
+    return selected
+
+
+def step_is_interesting(step: dict[str, Any]) -> bool:
+    pool = step.get("candidate_pool") or []
+    return len(pool) > 1 or count_inspect_reasons(step) > 0
+
+
+def count_inspect_reasons(step: dict[str, Any]) -> int:
+    return sum(1 for candidate in step.get("candidate_pool") or [] if candidate.get("inspect_only"))
+
+
+def parse_boundaries(values: list[str]) -> set[str] | None:
+    boundaries = {
+        normalize_boundary(part)
+        for value in values
+        for part in value.split(",")
+        if part.strip()
+    }
+    return boundaries or None
+
+
+def parse_contains(values: list[str]) -> list[str] | None:
+    terms = [
+        normalize_search_text(part)
+        for value in values
+        for part in value.split(",")
+        if part.strip()
+    ]
+    return terms or None
+
+
+def normalize_boundary(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def normalize_search_text(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def step_contains(step: dict[str, Any], terms: list[str]) -> bool:
+    text = "\n".join(step_search_text(step)).lower()
+    return any(term in text for term in terms)
+
+
+def step_search_text(step: dict[str, Any]) -> list[str]:
+    values = [str(step.get("label") or "")]
+    state = step.get("state_before") or {}
+    values.append(str(state.get("boundary") or ""))
+    for candidate in step.get("candidate_pool") or []:
+        values.append(str(candidate.get("label") or ""))
+        values.append(str(candidate.get("inspect_only") or ""))
+        annotation = candidate.get("annotation") if isinstance(candidate.get("annotation"), dict) else {}
+        values.append(candidate_summary(annotation.get("candidate")))
+    return values
+
+
+def render_steps(steps: list[tuple[int, dict[str, Any]]], max_candidates: int) -> list[str]:
+    lines: list[str] = []
+    for index, step in steps:
         state = step.get("state_before") or {}
         prefix = state_line(index, state)
         selected = step.get("label") or "-"

@@ -8,6 +8,13 @@
   - `campaign.ps1`: minimal launcher for `branch_campaign_driver`
   - `gap_panel.py`: small `branch_tiny` seed-panel runner
   - `path_review.py`: render branch_tiny capsule paths with selected choices and candidate pools
+
+Path review examples:
+
+```powershell
+python tools\path_review.py target\gap-panel-candidate-pool-smoke2\1552225675 --boundary Shop --interesting --summary
+python tools\path_review.py target\gap-panel-candidate-pool-smoke2\1552225675 --contains "purge reserve" --summary
+```
 - `ml/`
   - offline combat/search dataset and baseline utilities
 
