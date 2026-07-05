@@ -1,12 +1,8 @@
-use std::collections::VecDeque;
-use std::time::Instant;
-
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sts_simulator::ai::strategy::decision_pipeline::candidate_lane_label;
 use sts_simulator::eval::run_control::{
-    CombatSearchTraceSummary, RewardAutomationConfig, RunControlAutoAppliedStepV1,
-    RunControlConfig, RunControlSession,
+    CombatSearchTraceSummary, RunControlAutoAppliedStepV1, RunControlSession,
 };
 use sts_simulator::state::events::EventId;
 
@@ -66,17 +62,15 @@ mod run_contract;
 mod run_deadline;
 #[path = "branch_tiny/run_persistence.rs"]
 mod run_persistence;
+#[path = "branch_tiny/run_startup.rs"]
+mod run_startup;
 #[path = "branch_tiny/runner.rs"]
 mod runner;
 #[path = "branch_tiny/trace.rs"]
 mod trace;
 
-use cli_args::{
-    default_combat_gap_case_dir, parse_args, Args, ArgsOverrides, ContinueCapsuleArgs,
-    EventOwnerProbeArgs,
-};
+use cli_args::{Args, ArgsOverrides, ContinueCapsuleArgs, EventOwnerProbeArgs};
 use owner_model::{ChoiceAnnotation, DecisionKey};
-use run_capsule::RunCapsule;
 use run_deadline::RunDeadline;
 
 #[derive(Clone)]
@@ -222,7 +216,7 @@ impl BranchPathState {
             max_hp: run.max_hp,
             gold: run.gold,
             deck_size: run.master_deck.len(),
-            boundary: branch_status_boundary_label(&branch.status),
+            boundary: branch_status_view::status_boundary_label(&branch.status),
         }
     }
 }
@@ -320,91 +314,26 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    let (
-        mut args,
-        overrides,
+    let run_startup::RunStartupContext {
+        args,
         trace_path,
-        mut combat_gap_case_dir,
+        combat_gap_case_dir,
         frontier_checkpoint_path,
-        mut resume_frontier,
-        mut run_capsule_path,
-        resume_capsule_path,
-        continue_capsule,
-        event_owner_probe,
-    ) = parse_args()?;
-    if let Some(continue_capsule) = continue_capsule {
-        return run_chain::run(args, overrides, continue_capsule);
-    }
-    if let Some(path) = resume_capsule_path {
-        if resume_frontier.is_some() || run_capsule_path.is_some() {
-            return Err(
-                "--resume-capsule cannot be combined with --resume-frontier or --run-capsule"
-                    .to_string(),
-            );
-        }
-        resume_frontier = Some(path.join("frontier.json"));
-        run_capsule_path = Some(path);
-    }
-    if let Some(probe) = event_owner_probe {
-        return event_owner_probe::run(args, probe);
-    }
-    let run_capsule = run_capsule_path.map(RunCapsule::new);
-    if combat_gap_case_dir.is_none() {
-        combat_gap_case_dir = run_capsule
-            .as_ref()
-            .map(RunCapsule::combat_cases_dir)
-            .or_else(|| {
-                default_combat_gap_case_dir(
-                    trace_path.as_ref(),
-                    frontier_checkpoint_path.as_ref(),
-                    resume_frontier.as_ref(),
-                )
-            });
-    }
-    if let Some(capsule) = run_capsule.as_ref() {
-        capsule.write_running_manifest(args)?;
-    }
+        resume_frontier,
+        run_capsule,
+        generation_start,
+        mut frontier,
+        mut next_branch_id,
+        started,
+    } = match run_startup::prepare()? {
+        run_startup::RunStartup::Delegated => return Ok(()),
+        run_startup::RunStartup::Ready(context) => context,
+    };
     let mut capsule_frontier_saved = false;
-    let started = Instant::now();
     let mut trace = trace_path
         .as_ref()
         .map(|path| trace::TraceWriter::create(path))
         .transpose()?;
-    let mut generation_start = 0usize;
-    let (mut frontier, mut next_branch_id) = if let Some(path) = resume_frontier.as_ref() {
-        let checkpoint = frontier_checkpoint::load(path)?;
-        args = checkpoint.args;
-        overrides.apply_to(&mut args);
-        generation_start = checkpoint.generation;
-        checkpoint.into_frontier()?
-    } else {
-        let mut session = RunControlSession::new(RunControlConfig {
-            seed: args.seed,
-            ascension_level: args.ascension,
-            reward_automation: RewardAutomationConfig {
-                claim_gold: true,
-                claim_potion_with_empty_slot: true,
-                claim_safe_relic_without_sapphire_key: true,
-            },
-            ..Default::default()
-        });
-        let deadline = RunDeadline::new(started, args.wall_ms);
-        let advance =
-            runner::advance_to_owner_or_gap(&mut session, deadline.cap_args(args, 1), deadline);
-        (
-            VecDeque::from([Branch {
-                id: 0,
-                parent_id: None,
-                path: Vec::new(),
-                session,
-                status: advance.status,
-                combat_portfolio: advance.combat_portfolio,
-                auto_steps: advance.auto_steps,
-                combat_search: advance.combat_search,
-            }]),
-            1usize,
-        )
-    };
     let deadline = RunDeadline::new(started, args.wall_ms);
     let mut recent_expanded_keys = Vec::new();
 
@@ -539,18 +468,4 @@ fn run() -> Result<(), String> {
         );
     }
     Ok(())
-}
-
-fn branch_status_boundary_label(status: &BranchStatus) -> String {
-    match status {
-        BranchStatus::Running { boundary, .. }
-        | BranchStatus::AwaitingAuto { boundary, .. }
-        | BranchStatus::AutomationGap { boundary, .. }
-        | BranchStatus::CombatGap { boundary, .. }
-        | BranchStatus::OperationBudgetExhausted { boundary, .. }
-        | BranchStatus::BudgetGap { boundary, .. } => boundary.clone(),
-        BranchStatus::Terminal(_) => "Terminal".to_string(),
-        BranchStatus::ApplyFailed(_) => "ApplyFailed".to_string(),
-        BranchStatus::AdvanceFailed(_) => "AdvanceFailed".to_string(),
-    }
 }

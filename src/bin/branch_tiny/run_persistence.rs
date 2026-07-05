@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use super::run_capsule::{RunCapsule, RunCapsuleSave};
 use super::run_deadline::RunDeadline;
-use super::{branch_status_boundary_label, frontier_checkpoint, render, Args, Branch};
+use super::{branch_status_view, frontier_checkpoint, render, Args, Branch};
 
 pub(super) fn save_context_wall_stop(
     frontier_checkpoint_path: &Option<PathBuf>,
@@ -116,7 +116,7 @@ pub(super) fn finalize_objective_result(
             "run_objective_completed: reason={} branch={} status={}",
             reason,
             branch.id,
-            render::one_line(&branch_status_boundary_label(&branch.status))
+            render::one_line(&branch_status_view::status_boundary_label(&branch.status))
         );
     }
     Ok(())
