@@ -354,6 +354,7 @@ fn filter_passes() -> &'static [FilterPass] {
         duplicate_marginal_filter,
         unsupported_payoff_filter,
         risky_shop_card_filter,
+        shop_card_acquisition_filter,
     ]
 }
 
@@ -558,6 +559,57 @@ fn risky_shop_card_filter(
     } else {
         FilterDecision::Pass
     }
+}
+
+fn shop_card_acquisition_filter(
+    context: DecisionPipelineContext,
+    candidate: DecisionCandidateIr,
+    admission: Option<&RewardAdmission>,
+) -> FilterDecision {
+    let DecisionCandidateKind::ShopBuyCard { card, upgrades, .. } = candidate.kind else {
+        return FilterDecision::Pass;
+    };
+    let Some(admission) = admission else {
+        return FilterDecision::Pass;
+    };
+    if upgrades > 0 || shop_card_acquisition_exception(context, card, admission) {
+        FilterDecision::Pass
+    } else {
+        FilterDecision::InspectOnly("shop card fails acquisition discipline")
+    }
+}
+
+fn shop_card_acquisition_exception(
+    context: DecisionPipelineContext,
+    card: CardId,
+    admission: &RewardAdmission,
+) -> bool {
+    premium_shop_card(card) || improves_shop_hard_gap(context, admission)
+}
+
+fn premium_shop_card(card: CardId) -> bool {
+    matches!(
+        card,
+        CardId::MasterOfStrategy | CardId::Offering | CardId::Apotheosis
+    )
+}
+
+fn improves_shop_hard_gap(context: DecisionPipelineContext, admission: &RewardAdmission) -> bool {
+    let deficit = context.deck_plan.strategic_deficit;
+    (deficit.deck_access == StrategicDeficitLevel::Missing
+        && (admission_provides(admission, Mechanic::CardDraw)
+            || admission
+                .reasons
+                .contains(&RewardAdmissionReason::CombatUpgrade)))
+        || (needs(deficit.energy_or_playability) && admission_provides(admission, Mechanic::Energy))
+        || (deficit.aoe_or_minion_control == StrategicDeficitLevel::Missing
+            && admission_aoe(admission))
+        || (deficit.boss_scaling_plan == StrategicDeficitLevel::Missing
+            && assess_boss_scaling_evidence(context.deck_plan, None, admission)
+                .relevant_to_boss_plan
+            && !fragile_supported_payoff(context, admission))
+        || (deficit.frontload_damage == StrategicDeficitLevel::Missing
+            && admission_frontloads(admission))
 }
 
 fn static_candidate_score(
@@ -1244,10 +1296,19 @@ fn score(by: &'static str, value: i32) -> ScoreComponent {
 mod tests {
     use super::*;
     use crate::ai::strategy::deck_admission::DeckAdmissionContext;
+    use crate::ai::strategy::reward_admission::assess_reward_admission_from_master_deck;
     use crate::ai::strategy::run_strategic_facts::RunStrategicFacts;
     use crate::runtime::combat::CombatCard;
 
     fn shop_context(cards: &[CardId]) -> DecisionPipelineContext {
+        shop_context_with_hp(cards, 70, 80)
+    }
+
+    fn shop_context_with_hp(
+        cards: &[CardId],
+        current_hp: i32,
+        max_hp: i32,
+    ) -> DecisionPipelineContext {
         let deck: Vec<_> = cards
             .iter()
             .enumerate()
@@ -1258,11 +1319,11 @@ mod tests {
                 &deck,
                 DeckAdmissionContext {
                     act: 2,
-                    current_hp: 70,
-                    max_hp: 80,
+                    current_hp,
+                    max_hp,
                 },
                 RunStrategicFacts {
-                    entering_act: 2,
+                    entering_act: 3,
                     starter_basic_count: 0,
                     curse_count: 0,
                     has_energy_relic: false,
@@ -1278,6 +1339,68 @@ mod tests {
             DecisionCandidateKind::ShopBuyRelic { relic, price: 150 },
             None,
         )
+    }
+
+    fn shop_card(cards: &[CardId], candidate: CardId) -> CandidateEvaluation {
+        shop_card_with_upgrades(cards, candidate, 0)
+    }
+
+    fn shop_card_with_upgrades(
+        cards: &[CardId],
+        candidate: CardId,
+        upgrades: u8,
+    ) -> CandidateEvaluation {
+        let deck = test_deck(cards);
+        let context = shop_context(cards);
+        shop_card_in_context(context, &deck, candidate, upgrades)
+    }
+
+    fn shop_card_in_context(
+        context: DecisionPipelineContext,
+        deck: &[CombatCard],
+        candidate: CardId,
+        upgrades: u8,
+    ) -> CandidateEvaluation {
+        let admission = assess_reward_admission_from_master_deck(&deck, candidate, upgrades);
+        evaluate_decision_candidate(
+            context,
+            DecisionCandidateKind::ShopBuyCard {
+                card: candidate,
+                upgrades,
+                price: 80,
+            },
+            Some(&admission),
+        )
+    }
+
+    fn test_deck(cards: &[CardId]) -> Vec<CombatCard> {
+        cards
+            .iter()
+            .enumerate()
+            .map(|(index, card)| CombatCard::new(*card, index as u32 + 1))
+            .collect()
+    }
+
+    fn act2_collector_pressure_deck() -> Vec<CardId> {
+        vec![
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Strike,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Defend,
+            CardId::Bash,
+            CardId::Armaments,
+            CardId::Cleave,
+            CardId::IronWave,
+            CardId::Shockwave,
+            CardId::BattleTrance,
+            CardId::Whirlwind,
+            CardId::ShrugItOff,
+            CardId::Inflame,
+            CardId::ShrugItOff,
+        ]
     }
 
     #[test]
@@ -1313,5 +1436,70 @@ mod tests {
         let chemical_x = shop_relic(context, RelicId::ChemicalX);
 
         assert_eq!(chemical_x.lane, CandidateLane::Mainline);
+    }
+
+    #[test]
+    fn shop_rejects_ordinary_unupgraded_transition_card_without_gap() {
+        let deck = act2_collector_pressure_deck();
+
+        let clothesline = shop_card(&deck, CardId::Clothesline);
+        let iron_wave = shop_card(&deck, CardId::IronWave);
+
+        assert_eq!(
+            clothesline.inspect_only_reason(),
+            Some("shop card fails acquisition discipline")
+        );
+        assert_eq!(
+            iron_wave.inspect_only_reason(),
+            Some("shop card fails acquisition discipline")
+        );
+    }
+
+    #[test]
+    fn shop_keeps_premium_access_card_eligible() {
+        let deck = act2_collector_pressure_deck();
+
+        let master_of_strategy = shop_card(&deck, CardId::MasterOfStrategy);
+
+        assert_ne!(
+            master_of_strategy.inspect_only_reason(),
+            Some("shop card fails acquisition discipline")
+        );
+    }
+
+    #[test]
+    fn shop_rejects_act2_ordinary_cards_that_only_pad_adequate_roles() {
+        let deck = act2_collector_pressure_deck();
+
+        let clothesline = shop_card(&deck, CardId::Clothesline);
+        let spot_weakness = shop_card(&deck, CardId::SpotWeakness);
+
+        assert_eq!(
+            clothesline.inspect_only_reason(),
+            Some("shop card fails acquisition discipline")
+        );
+        assert_eq!(
+            spot_weakness.inspect_only_reason(),
+            Some("shop card fails acquisition discipline")
+        );
+    }
+
+    #[test]
+    fn shop_low_hp_does_not_turn_ordinary_cards_into_emergency_buys() {
+        let cards = act2_collector_pressure_deck();
+        let deck = test_deck(&cards);
+        let context = shop_context_with_hp(&cards, 24, 90);
+
+        let shrug = shop_card_in_context(context, &deck, CardId::ShrugItOff, 0);
+        let clothesline = shop_card_in_context(context, &deck, CardId::Clothesline, 0);
+
+        assert_eq!(
+            shrug.inspect_only_reason(),
+            Some("shop card fails acquisition discipline")
+        );
+        assert_eq!(
+            clothesline.inspect_only_reason(),
+            Some("shop card fails acquisition discipline")
+        );
     }
 }
