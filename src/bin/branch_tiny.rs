@@ -1,9 +1,3 @@
-use serde::{Deserialize, Serialize};
-use sts_simulator::eval::run_control::{
-    CombatSearchTraceSummary, RunControlAutoAppliedStepV1, RunControlSession,
-};
-use sts_simulator::state::events::EventId;
-
 #[path = "branch_tiny/boss_relic_owner.rs"]
 mod boss_relic_owner;
 #[path = "branch_tiny/boundary_router.rs"]
@@ -14,6 +8,8 @@ mod branch_frontier;
 mod branch_generation;
 #[path = "branch_tiny/branch_generation_step.rs"]
 mod branch_generation_step;
+#[path = "branch_tiny/branch_model.rs"]
+mod branch_model;
 #[path = "branch_tiny/branch_observer.rs"]
 mod branch_observer;
 #[path = "branch_tiny/branch_path.rs"]
@@ -115,106 +111,8 @@ mod trace;
 #[path = "branch_tiny/trace_format.rs"]
 mod trace_format;
 
-use branch_path::BranchPathStep;
+use branch_model::{BoundarySite, Branch, BranchStatus, Owner, TerminalOutcome};
 use cli_args::{Args, ArgsOverrides, ContinueCapsuleArgs, EventOwnerProbeArgs};
-use combat_search_report::CombatSearchPortfolioReport;
-
-#[derive(Clone)]
-struct Branch {
-    id: usize,
-    parent_id: Option<usize>,
-    path: Vec<BranchPathStep>,
-    session: RunControlSession,
-    status: BranchStatus,
-    combat_portfolio: Option<CombatSearchPortfolioReport>,
-    auto_steps: Vec<RunControlAutoAppliedStepV1>,
-    combat_search: Vec<CombatSearchTraceSummary>,
-}
-
-#[derive(Clone)]
-enum BranchStatus {
-    Running {
-        boundary: String,
-        owner: Owner,
-    },
-    AwaitingAuto {
-        boundary: String,
-        reason: String,
-    },
-    Terminal(TerminalOutcome),
-    AutomationGap {
-        boundary: String,
-        site: BoundarySite,
-    },
-    CombatGap {
-        boundary: String,
-        reason: String,
-    },
-    OperationBudgetExhausted {
-        boundary: String,
-        reason: String,
-    },
-    BudgetGap {
-        boundary: String,
-        reason: String,
-    },
-    ApplyFailed(String),
-    AdvanceFailed(String),
-}
-
-impl BranchStatus {
-    fn is_resumable(&self) -> bool {
-        matches!(
-            self,
-            BranchStatus::Running { .. } | BranchStatus::AwaitingAuto { .. }
-        )
-    }
-
-    fn is_expandable_now(&self) -> bool {
-        matches!(self, BranchStatus::Running { .. })
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-enum TerminalOutcome {
-    Victory,
-    Defeat,
-}
-
-impl TerminalOutcome {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Victory => "victory",
-            Self::Defeat => "defeat",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
-enum Owner {
-    NeowStart,
-    CardReward,
-    BossRelic,
-    Event(EventId),
-    RewardTiny,
-    ShopTiny,
-    Campfire,
-    RunChoice,
-}
-
-#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
-enum BoundarySite {
-    Event(EventId),
-    Reward,
-    Shop,
-    Route,
-    Campfire,
-    BossRelic,
-    RunChoice,
-    Treasure,
-    Terminal,
-    Unknown,
-}
 
 fn main() {
     if let Err(err) = run() {
