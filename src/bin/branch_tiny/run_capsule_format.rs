@@ -9,10 +9,7 @@ use sts_simulator::runtime::combat::CombatCard;
 use sts_simulator::sim::combat::CombatPosition;
 use sts_simulator::state::run::RunState;
 
-use super::{
-    Args, Branch, BranchPathStep, BranchStatus, CombatSearchLaneReport,
-    CombatSearchPortfolioReport, CombatSearchPortfolioStatus,
-};
+use super::{combat_portfolio_json, Args, Branch, BranchPathStep, BranchStatus};
 
 pub(super) fn branch_summary_value(
     capsule_path: &Path,
@@ -161,7 +158,7 @@ pub(super) fn result_value(generation: usize, branch: &Branch, combat_case: Valu
             .collect::<Vec<_>>(),
         "combat": active_combat_value(branch),
         "combat_case": combat_case,
-        "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_value),
+        "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_json::capsule_value),
         "combat_search_attempts": &branch.combat_search,
         "failed_search": branch.combat_search.last(),
     })
@@ -173,40 +170,6 @@ fn strategic_deficit_value(run: &RunState) -> Value {
         RunStrategicFacts::from_run_state(run),
     ))
     .unwrap_or(Value::Null)
-}
-
-fn combat_portfolio_value(report: &CombatSearchPortfolioReport) -> Value {
-    json!({
-        "status": combat_portfolio_status_value(&report.status),
-        "max_nodes": report.max_nodes,
-        "wall_ms": report.wall_ms,
-        "action_keys": report.action_keys,
-        "attempts": report.attempts.iter().map(combat_portfolio_attempt_value).collect::<Vec<_>>(),
-    })
-}
-
-fn combat_portfolio_attempt_value(attempt: &CombatSearchLaneReport) -> Value {
-    json!({
-        "label": attempt.label,
-        "status": combat_portfolio_status_value(&attempt.status),
-        "max_nodes": attempt.max_nodes,
-        "wall_ms": attempt.wall_ms,
-        "potion_policy": attempt.potion_policy,
-        "max_potions_used": attempt.max_potions_used,
-        "action_keys": attempt.action_keys,
-    })
-}
-
-fn combat_portfolio_status_value(status: &CombatSearchPortfolioStatus) -> Value {
-    match status {
-        CombatSearchPortfolioStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
-        CombatSearchPortfolioStatus::Advanced(boundary) => {
-            json!({"kind": "advanced", "boundary": boundary})
-        }
-        CombatSearchPortfolioStatus::Terminal(result) => {
-            json!({"kind": "terminal", "result": result.as_str()})
-        }
-    }
 }
 
 fn active_combat_value(branch: &Branch) -> Option<Value> {

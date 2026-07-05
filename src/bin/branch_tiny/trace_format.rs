@@ -15,7 +15,7 @@ use sts_simulator::state::run::RunState;
 
 use super::owner_model::{cleanup_target_label, ChoiceAnnotation, OwnerChoice};
 use super::{
-    Args, BoundarySite, Branch, BranchPathStep, BranchStatus, CombatSearchPortfolioStatus, Owner,
+    combat_portfolio_json, Args, BoundarySite, Branch, BranchPathStep, BranchStatus, Owner,
 };
 
 pub(super) fn run_start_event(args: Args) -> Value {
@@ -61,7 +61,7 @@ pub(super) fn node_event(
             .map(auto_step_value)
             .collect::<Vec<_>>(),
         "combat_search": branch.combat_search,
-        "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_value),
+        "combat_portfolio": branch.combat_portfolio.as_ref().map(combat_portfolio_json::trace_value),
         "choices": choices.iter().enumerate()
             .map(|(index, choice)| {
                 choice_value(index, choice, expanded.get(index).copied().unwrap_or(false))
@@ -89,36 +89,6 @@ pub(super) fn frontier_snapshot_event(generation: usize, frontier: &VecDeque<Bra
         "generation": generation,
         "branches": frontier.iter().map(branch_snapshot_value).collect::<Vec<_>>(),
     })
-}
-
-fn combat_portfolio_value(report: &super::CombatSearchPortfolioReport) -> Value {
-    json!({
-        "status": combat_portfolio_status_value(&report.status),
-        "nodes": report.max_nodes,
-        "ms": report.wall_ms,
-        "actions": report.action_keys,
-        "attempts": report.attempts.iter().map(|attempt| json!({
-            "label": attempt.label,
-            "status": combat_portfolio_status_value(&attempt.status),
-            "nodes": attempt.max_nodes,
-            "ms": attempt.wall_ms,
-            "potion_policy": attempt.potion_policy,
-            "max_potions_used": attempt.max_potions_used,
-            "actions": attempt.action_keys,
-        })).collect::<Vec<_>>(),
-    })
-}
-
-fn combat_portfolio_status_value(status: &CombatSearchPortfolioStatus) -> Value {
-    match status {
-        CombatSearchPortfolioStatus::Failed(reason) => json!({"kind": "failed", "reason": reason}),
-        CombatSearchPortfolioStatus::Advanced(boundary) => {
-            json!({"kind": "advanced", "boundary": boundary})
-        }
-        CombatSearchPortfolioStatus::Terminal(result) => {
-            json!({"kind": "terminal", "result": result.as_str()})
-        }
-    }
 }
 
 fn auto_step_value(step: &RunControlAutoAppliedStepV1) -> Value {
