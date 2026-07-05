@@ -1,4 +1,6 @@
 use super::super::super::{
+    CombatSearchV2DiagnosticsActionEffectAccess, CombatSearchV2DiagnosticsActionEffectDerived,
+    CombatSearchV2DiagnosticsActionEffectDirect, CombatSearchV2DiagnosticsActionEffectReactive,
     CombatSearchV2DiagnosticsActionEffectSample, CombatSearchV2DiagnosticsActionRoleCount,
     CombatSearchV2DiagnosticsOrdering, CombatSearchV2DiagnosticsOrderingSample,
 };
@@ -71,17 +73,57 @@ impl ActionOrderingDiagnosticsCollector {
                 ordered_index: sample.ordered_index,
                 role: sample.role.label().to_string(),
                 action_key: sample.action_key.clone(),
-                mitigation_score: sample.effects.derived.mitigation_score,
-                reactive_risk_score: sample.effects.derived.reactive_risk_score,
-                enemy_strength_gain: sample.effects.enemy_strength_gain,
-                visible_attack_pressure_hint: sample.effects.visible_attack_pressure_hint,
-                reactive_player_hp_loss: sample.effects.reactive_player_hp_loss,
-                reactive_player_block: sample.effects.reactive_player_block,
-                reactive_enemy_damage: sample.effects.reactive_enemy_damage,
-                reactive_bad_draw_cards: sample.effects.reactive_bad_draw_cards,
-                reactive_forced_turn_end: sample.effects.reactive_forced_turn_end,
-                declared_draw_cards: sample.effects.declared_draw_cards,
-                conditional_draw_cards: sample.effects.conditional_draw_cards,
+                direct: CombatSearchV2DiagnosticsActionEffectDirect {
+                    persistent_enemy_strength_down: sample
+                        .effects
+                        .direct
+                        .persistent_enemy_strength_down,
+                    temporary_enemy_strength_down: sample
+                        .effects
+                        .direct
+                        .temporary_enemy_strength_down,
+                    visible_attack_mitigation_hint: sample
+                        .effects
+                        .direct
+                        .visible_attack_mitigation_hint,
+                    enemy_weak: sample.effects.direct.enemy_weak,
+                    enemy_vulnerable: sample.effects.direct.enemy_vulnerable,
+                    enemy_strength_gain: sample.effects.direct.enemy_strength_gain,
+                    visible_attack_pressure_hint: sample
+                        .effects
+                        .direct
+                        .visible_attack_pressure_hint,
+                    player_strength_gain: sample.effects.direct.player_strength_gain,
+                    player_temporary_strength_gain: sample
+                        .effects
+                        .direct
+                        .player_temporary_strength_gain,
+                },
+                reactive: CombatSearchV2DiagnosticsActionEffectReactive {
+                    player_hp_loss: sample.effects.reactive.player_hp_loss,
+                    player_block: sample.effects.reactive.player_block,
+                    enemy_damage: sample.effects.reactive.enemy_damage,
+                    bad_draw_cards: sample.effects.reactive.bad_draw_cards,
+                    forced_turn_end: sample.effects.reactive.forced_turn_end,
+                    enemy_strength_gain: sample.effects.reactive.enemy_strength_gain,
+                    visible_attack_pressure_hint: sample
+                        .effects
+                        .reactive
+                        .visible_attack_pressure_hint,
+                    enemy_weak: sample.effects.reactive.enemy_weak,
+                    enemy_vulnerable: sample.effects.reactive.enemy_vulnerable,
+                },
+                access: CombatSearchV2DiagnosticsActionEffectAccess {
+                    declared_draw_cards: sample.effects.access.declared_draw_cards,
+                    conditional_draw_cards: sample.effects.access.conditional_draw_cards,
+                    total_draw_cards: sample.effects.access.total_draw_cards,
+                },
+                derived: CombatSearchV2DiagnosticsActionEffectDerived {
+                    mitigation_score: sample.effects.derived.mitigation_score,
+                    reactive_risk_score: sample.effects.derived.reactive_risk_score,
+                    enemy_scaling_risk_score: sample.effects.derived.enemy_scaling_risk_score,
+                    net_mitigation_score: sample.effects.derived.net_mitigation_score,
+                },
             })
             .collect()
     }

@@ -48,17 +48,42 @@ pub(super) struct CardPlayDerivedEffectScores {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct CardPlayEffectDiagnostics {
     pub(super) derived: CardPlayDerivedEffectScores,
+    pub(super) direct: CardPlayDirectEffectDiagnostics,
+    pub(super) reactive: CardPlayReactiveEffectDiagnostics,
+    pub(super) access: CardPlayAccessEffectDiagnostics,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct CardPlayDirectEffectDiagnostics {
+    pub(super) persistent_enemy_strength_down: i32,
+    pub(super) temporary_enemy_strength_down: i32,
+    pub(super) visible_attack_mitigation_hint: i32,
+    pub(super) enemy_weak: i32,
+    pub(super) enemy_vulnerable: i32,
     pub(super) enemy_strength_gain: i32,
     pub(super) visible_attack_pressure_hint: i32,
     pub(super) player_strength_gain: i32,
     pub(super) player_temporary_strength_gain: i32,
-    pub(super) reactive_player_hp_loss: i32,
-    pub(super) reactive_player_block: i32,
-    pub(super) reactive_enemy_damage: i32,
-    pub(super) reactive_bad_draw_cards: i32,
-    pub(super) reactive_forced_turn_end: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct CardPlayReactiveEffectDiagnostics {
+    pub(super) player_hp_loss: i32,
+    pub(super) player_block: i32,
+    pub(super) enemy_damage: i32,
+    pub(super) bad_draw_cards: i32,
+    pub(super) forced_turn_end: bool,
+    pub(super) enemy_strength_gain: i32,
+    pub(super) visible_attack_pressure_hint: i32,
+    pub(super) enemy_weak: i32,
+    pub(super) enemy_vulnerable: i32,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct CardPlayAccessEffectDiagnostics {
     pub(super) declared_draw_cards: i32,
     pub(super) conditional_draw_cards: i32,
+    pub(super) total_draw_cards: i32,
 }
 
 impl CardPlayEffectFacts {
@@ -116,23 +141,33 @@ impl CardPlayEffectFacts {
     pub(super) fn diagnostics(self) -> CardPlayEffectDiagnostics {
         CardPlayEffectDiagnostics {
             derived: self.derived_scores(),
-            enemy_strength_gain: self
-                .direct
-                .enemy_strength_gain
-                .saturating_add(self.reactive.enemy_strength_gain),
-            visible_attack_pressure_hint: self
-                .direct
-                .visible_attack_pressure_hint
-                .saturating_add(self.reactive.visible_attack_pressure_hint),
-            player_strength_gain: self.direct.player_strength_gain,
-            player_temporary_strength_gain: self.direct.player_temporary_strength_gain,
-            reactive_player_hp_loss: self.reactive.player_hp_loss,
-            reactive_player_block: self.reactive.player_block,
-            reactive_enemy_damage: self.reactive.enemy_damage,
-            reactive_bad_draw_cards: self.reactive.bad_draw_cards,
-            reactive_forced_turn_end: self.reactive.forced_turn_end,
-            declared_draw_cards: self.direct.declared_draw_cards,
-            conditional_draw_cards: self.direct.conditional_draw_cards,
+            direct: CardPlayDirectEffectDiagnostics {
+                persistent_enemy_strength_down: self.direct.persistent_enemy_strength_down,
+                temporary_enemy_strength_down: self.direct.temporary_enemy_strength_down,
+                visible_attack_mitigation_hint: self.direct.visible_attack_mitigation_hint,
+                enemy_weak: self.direct.enemy_weak,
+                enemy_vulnerable: self.direct.enemy_vulnerable,
+                enemy_strength_gain: self.direct.enemy_strength_gain,
+                visible_attack_pressure_hint: self.direct.visible_attack_pressure_hint,
+                player_strength_gain: self.direct.player_strength_gain,
+                player_temporary_strength_gain: self.direct.player_temporary_strength_gain,
+            },
+            reactive: CardPlayReactiveEffectDiagnostics {
+                player_hp_loss: self.reactive.player_hp_loss,
+                player_block: self.reactive.player_block,
+                enemy_damage: self.reactive.enemy_damage,
+                bad_draw_cards: self.reactive.bad_draw_cards,
+                forced_turn_end: self.reactive.forced_turn_end,
+                enemy_strength_gain: self.reactive.enemy_strength_gain,
+                visible_attack_pressure_hint: self.reactive.visible_attack_pressure_hint,
+                enemy_weak: self.reactive.enemy_weak,
+                enemy_vulnerable: self.reactive.enemy_vulnerable,
+            },
+            access: CardPlayAccessEffectDiagnostics {
+                declared_draw_cards: self.direct.declared_draw_cards,
+                conditional_draw_cards: self.direct.conditional_draw_cards,
+                total_draw_cards: self.total_draw_cards(),
+            },
         }
     }
 }
@@ -140,8 +175,8 @@ impl CardPlayEffectFacts {
 impl CardPlayEffectDiagnostics {
     pub(super) fn has_reactive_signal(self) -> bool {
         self.derived.reactive_risk_score > 0
-            || self.reactive_player_block > 0
-            || self.reactive_enemy_damage > 0
+            || self.reactive.player_block > 0
+            || self.reactive.enemy_damage > 0
             || self.derived.mitigation_score > 0
     }
 }

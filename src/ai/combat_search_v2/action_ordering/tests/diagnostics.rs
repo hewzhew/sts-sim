@@ -93,8 +93,8 @@ fn ordering_collector_caps_action_effect_samples() {
         report.action_effect_samples.len(),
         ACTION_EFFECT_SAMPLE_LIMIT
     );
-    assert!(report.action_effect_samples[0].enemy_strength_gain > 0);
-    assert!(report.action_effect_samples[0].reactive_risk_score > 0);
+    assert!(report.action_effect_samples[0].reactive.enemy_strength_gain > 0);
+    assert!(report.action_effect_samples[0].derived.reactive_risk_score > 0);
 }
 
 #[test]

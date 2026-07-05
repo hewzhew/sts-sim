@@ -162,15 +162,49 @@ pub struct CombatSearchV2DiagnosticsActionEffectSample {
     pub ordered_index: usize,
     pub role: String,
     pub action_key: String,
-    pub mitigation_score: i32,
-    pub reactive_risk_score: i32,
+    pub direct: CombatSearchV2DiagnosticsActionEffectDirect,
+    pub reactive: CombatSearchV2DiagnosticsActionEffectReactive,
+    pub access: CombatSearchV2DiagnosticsActionEffectAccess,
+    pub derived: CombatSearchV2DiagnosticsActionEffectDerived,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsActionEffectDirect {
+    pub persistent_enemy_strength_down: i32,
+    pub temporary_enemy_strength_down: i32,
+    pub visible_attack_mitigation_hint: i32,
+    pub enemy_weak: i32,
+    pub enemy_vulnerable: i32,
     pub enemy_strength_gain: i32,
     pub visible_attack_pressure_hint: i32,
-    pub reactive_player_hp_loss: i32,
-    pub reactive_player_block: i32,
-    pub reactive_enemy_damage: i32,
-    pub reactive_bad_draw_cards: i32,
-    pub reactive_forced_turn_end: bool,
+    pub player_strength_gain: i32,
+    pub player_temporary_strength_gain: i32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsActionEffectReactive {
+    pub player_hp_loss: i32,
+    pub player_block: i32,
+    pub enemy_damage: i32,
+    pub bad_draw_cards: i32,
+    pub forced_turn_end: bool,
+    pub enemy_strength_gain: i32,
+    pub visible_attack_pressure_hint: i32,
+    pub enemy_weak: i32,
+    pub enemy_vulnerable: i32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsActionEffectAccess {
     pub declared_draw_cards: i32,
     pub conditional_draw_cards: i32,
+    pub total_draw_cards: i32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CombatSearchV2DiagnosticsActionEffectDerived {
+    pub mitigation_score: i32,
+    pub reactive_risk_score: i32,
+    pub enemy_scaling_risk_score: i32,
+    pub net_mitigation_score: i32,
 }

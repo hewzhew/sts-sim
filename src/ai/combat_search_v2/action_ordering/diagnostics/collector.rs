@@ -121,8 +121,9 @@ impl ActionOrderingDiagnosticsCollector {
                 .then_with(|| {
                     right
                         .effects
-                        .reactive_enemy_damage
-                        .cmp(&left.effects.reactive_enemy_damage)
+                        .reactive
+                        .enemy_damage
+                        .cmp(&left.effects.reactive.enemy_damage)
                 })
                 .then_with(|| {
                     left.observed_at_state_query
