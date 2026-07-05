@@ -14,6 +14,8 @@ use sts_simulator::state::events::EventId;
 mod boundary_router;
 #[path = "branch_tiny/branch_frontier.rs"]
 mod branch_frontier;
+#[path = "branch_tiny/branch_generation.rs"]
+mod branch_generation;
 #[path = "branch_tiny/branch_observer.rs"]
 mod branch_observer;
 #[path = "branch_tiny/branch_scheduler.rs"]
@@ -431,7 +433,6 @@ fn run() -> Result<(), String> {
     let mut last_generation = generation_start;
     for generation in generation_start..=args.generations {
         last_generation = generation;
-        let mut generation_result = None;
         if deadline.should_soft_stop(args) {
             capsule_frontier_saved |= run_persistence::save_context_wall_stop(
                 &frontier_checkpoint_path,
@@ -445,26 +446,17 @@ fn run() -> Result<(), String> {
             )?;
             break;
         }
-        let mut next = VecDeque::new();
-        let mut deferred = VecDeque::new();
-        let mut work = Vec::new();
-        while let Some(branch) = frontier.pop_front() {
-            let (branch, expandable, choices) =
-                branch_scheduler::prepare_branch_work(branch, args, generation, deadline);
-            work.push((branch, expandable, choices));
-        }
-        let expanded_masks =
-            branch_frontier::expansion_masks(&work, args.max_branches, &mut recent_expanded_keys);
-        let total_expanded = expanded_masks
-            .iter()
-            .flatten()
-            .filter(|expanded| **expanded)
-            .count();
-        if total_expanded > 0 && deadline.would_cap_core_search(args, total_expanded) {
-            frontier = work
-                .into_iter()
-                .map(|(branch, _, _)| branch)
-                .collect::<VecDeque<_>>();
+        let prepared = branch_generation::prepare_generation(
+            &mut frontier,
+            args,
+            generation,
+            deadline,
+            &mut recent_expanded_keys,
+        );
+        if prepared.total_expanded > 0
+            && deadline.would_cap_core_search(args, prepared.total_expanded)
+        {
+            frontier = prepared.into_frontier();
             capsule_frontier_saved |= run_persistence::save_context_wall_stop(
                 &frontier_checkpoint_path,
                 &resume_frontier,
@@ -477,61 +469,24 @@ fn run() -> Result<(), String> {
             )?;
             break;
         }
-        let child_args = deadline.cap_args(args, total_expanded.max(1));
-        for ((branch, expandable, choices), expanded_mask) in work.into_iter().zip(expanded_masks) {
-            branch_observer::record_branch_node(
-                args,
-                generation,
-                &branch,
-                &choices,
-                &expanded_mask,
-                &mut trace,
-                combat_gap_case_dir.as_ref(),
-            )?;
-            if !expandable {
-                if branch_observer::record_stopped_branch(
-                    args,
-                    generation,
-                    &branch,
-                    &mut trace,
-                    run_capsule.as_ref(),
-                )? {
-                    return Ok(());
-                }
-                if branch.status.is_resumable() {
-                    deferred.push_back(branch);
-                    continue;
-                }
-                generation_result = Some((generation, branch.clone()));
-                continue;
-            }
-            if !expanded_mask.iter().any(|expanded| *expanded) {
-                deferred.push_back(branch);
-                continue;
-            }
-            for child in branch_scheduler::expand_registered_owner(
-                &branch,
-                child_args,
-                deadline,
-                choices
-                    .into_iter()
-                    .enumerate()
-                    .filter(|(index, _)| expanded_mask[*index])
-                    .map(|(_, choice)| choice),
-                &mut next_branch_id,
-            ) {
-                if branch_observer::record_child_branch(
-                    args,
-                    generation + 1,
-                    &child,
-                    run_capsule.as_ref(),
-                )? {
-                    return Ok(());
-                }
-                next.push_back(child);
-            }
-        }
-        next.append(&mut deferred);
+        let child_args = deadline.cap_args(args, prepared.total_expanded.max(1));
+        let (mut next, generation_result) = match branch_generation::advance_generation(
+            prepared,
+            args,
+            child_args,
+            generation,
+            deadline,
+            &mut next_branch_id,
+            &mut trace,
+            combat_gap_case_dir.as_ref(),
+            run_capsule.as_ref(),
+        )? {
+            branch_generation::GenerationAdvance::ObjectiveCompleted => return Ok(()),
+            branch_generation::GenerationAdvance::Advanced {
+                next,
+                generation_result,
+            } => (next, generation_result),
+        };
         branch_frontier::retain_frontier(&mut next, args.max_branches);
         if next.is_empty() {
             if let (Some(capsule), Some((result_generation, branch))) =
