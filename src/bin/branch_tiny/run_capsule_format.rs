@@ -139,28 +139,30 @@ fn next_recommendation(
             | BranchStatus::BudgetGap { .. }
     ) {
         return (
-            combat_case.as_str().map(|case| {
-                format!(
-                    ".\\target\\debug\\combat_case_review.exe --case \"{}\" --ladder --compact",
-                    case
-                )
-            }),
+            combat_case.as_str().map(combat_case_review_command),
             Some("combat_case_review"),
         );
     }
     if status.is_resumable() {
         return (
-            args.wall_ms.map(|wall_ms| {
-                format!(
-                ".\\target\\debug\\branch_tiny.exe --continue-capsule \"{}\" --continue-slices 1 --wall-ms {}",
-                capsule_path.display(),
-                wall_ms
-            )
-            }),
+            args.wall_ms
+                .map(|wall_ms| branch_tiny_continue_command(capsule_path, wall_ms)),
             Some("continue_capsule"),
         );
     }
     (None, None)
+}
+
+fn combat_case_review_command(case: &str) -> String {
+    format!("cargo run --quiet --bin combat_case_review -- --case \"{case}\" --ladder --compact")
+}
+
+fn branch_tiny_continue_command(capsule_path: &Path, wall_ms: u64) -> String {
+    format!(
+        "cargo run --quiet --bin branch_tiny -- --continue-capsule \"{}\" --continue-slices 1 --wall-ms {}",
+        capsule_path.display(),
+        wall_ms
+    )
 }
 
 pub(super) fn result_value(generation: usize, branch: &Branch, combat_case: Value) -> Value {
@@ -270,5 +272,34 @@ pub(super) fn terminal_manifest_status(status: &BranchStatus) -> &'static str {
         | BranchStatus::BudgetGap { .. }
         | BranchStatus::ApplyFailed(_)
         | BranchStatus::AdvanceFailed(_) => "gap",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn continue_recommendation_uses_cargo_run_not_stale_exe() {
+        let command = branch_tiny_continue_command(Path::new("target/capsule"), 60_000);
+
+        assert_eq!(
+            command,
+            "cargo run --quiet --bin branch_tiny -- --continue-capsule \"target/capsule\" --continue-slices 1 --wall-ms 60000"
+        );
+        assert!(!command.contains("target\\debug"));
+        assert!(!command.contains("branch_tiny.exe"));
+    }
+
+    #[test]
+    fn combat_review_recommendation_uses_cargo_run_not_stale_exe() {
+        let command = combat_case_review_command("target/cases/case.json");
+
+        assert_eq!(
+            command,
+            "cargo run --quiet --bin combat_case_review -- --case \"target/cases/case.json\" --ladder --compact"
+        );
+        assert!(!command.contains("target\\debug"));
+        assert!(!command.contains("combat_case_review.exe"));
     }
 }

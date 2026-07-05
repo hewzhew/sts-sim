@@ -16,6 +16,24 @@ def main() -> int:
     root = Path(args.capsule_root)
     root.mkdir(parents=True, exist_ok=True)
     branch_tiny = Path(args.branch_tiny)
+    if not args.no_build:
+        build_exit = run_command(
+            ["cargo", "build", "--bin", "branch_tiny"],
+            root / "build.log",
+            root / "build.stderr.log",
+        )
+        if build_exit != 0:
+            payload = {
+                "schema": "branch_tiny_gap_panel_summary",
+                "capsule_root": str(root),
+                "panel_status": "build_failed",
+                "process_exit": build_exit,
+                "rows": [],
+            }
+            write_json(root / "panel_summary.json", payload)
+            print(f"build_failed exit={build_exit}", flush=True)
+            print(f"wrote {root / 'panel_summary.json'}")
+            return 1
     rows = []
     had_process_failure = False
     for seed in parse_seeds(args.seeds):
@@ -102,9 +120,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-branches", type=int, default=1)
     parser.add_argument("--continue-soft-wall", type=int, default=0)
     parser.add_argument(
+        "--no-build",
+        action="store_true",
+        help="Skip the default cargo build step before running branch_tiny.",
+    )
+    parser.add_argument(
         "--branch-tiny",
         default=str(default_branch_tiny()),
-        help="Path to branch_tiny executable; falls back to cargo run if missing.",
+        help="Path to branch_tiny executable after the default build step; falls back to cargo run if missing.",
     )
     return parser.parse_args()
 
