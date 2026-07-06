@@ -122,6 +122,12 @@ this map and extend an existing boundary when one already exists.
   `enemy_phase_value.rs`, `card_pile_value.rs`: state evaluation facts and
   ordering scores. These may guide frontier/rollout priority but do not prove
   terminal outcomes.
+  - `value/combat_eval/types.rs`: estimate-ordering schema, labels, and public
+    accessors.
+  - `value/combat_eval/build.rs`: conversion from rollout estimates into
+    estimate-ordering buckets and signals.
+  - `value/combat_eval/ordering.rs`: ordering contract for wins, losses, and
+    unresolved estimates.
 - `rollout/`, `rollout_cache/`, `rollout_policy.rs`, `rollout_probe/`,
   `rollout_pending_choice.rs`, `rollout_scheduler.rs`, `rollout_value.rs`:
   estimate-only rollout behavior. Rollout output must remain labeled as
