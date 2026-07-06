@@ -5,6 +5,10 @@ use super::search_types::SearchReview;
 
 #[path = "boss_pressure_lens/collector.rs"]
 mod collector;
+#[path = "boss_pressure_lens/collector_assessment.rs"]
+mod collector_assessment;
+#[path = "boss_pressure_lens/collector_start.rs"]
+mod collector_start;
 #[path = "boss_pressure_lens/line_reviews.rs"]
 mod line_reviews;
 #[path = "boss_pressure_lens/types.rs"]
