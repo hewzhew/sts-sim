@@ -24,9 +24,15 @@ this map and extend an existing boundary when one already exists.
     dominance prune gates.
   - `search/turn_plan_seed_gate.rs` and `search/turn_plan_seeding.rs`:
     turn-boundary frontier seed admission and insertion.
-- `search/node_expansion.rs`: one expandable node to an ordered action batch:
-  legal-action collection, diagnostics observation, local equivalence
-  compression, action ordering, and per-node child observers.
+- `search/node_expansion.rs`: one expandable node to an ordered action batch. It
+  coordinates the action-surface and ordering stages below.
+  - `search/node_action_surface.rs`: legal-action collection, potion filtering,
+    and report-only diagnostics for the node action surface.
+  - `search/node_action_ordering.rs`: local action equivalence compression,
+    root action prior lookup, action ordering, and pending-choice ordering
+    diagnostics.
+  - `search/node_child_observers.rs`: per-node child observer initialization for
+    turn branching and same-turn local dominance.
 - `search/child_expansion.rs`: one ordered action to child disposition. It
   coordinates the child-stage pipeline below.
   - `search/child_preflight.rs`: per-child potion budget and deadline gates.
@@ -43,6 +49,11 @@ this map and extend an existing boundary when one already exists.
   assemble existing facts; avoid adding new search behavior here.
 - `search/finish_diagnostics.rs`: post-loop diagnostics and timing finalization
   before report assembly.
+  - `search/finish_coverage.rs`: finished-search coverage status and reason.
+  - `search/finish_frontier.rs`: frontier sample extraction for reports.
+  - `search/finish_policy.rs`: config-to-policy/budget report sections.
+  - `search/finish_outcome.rs`: coverage outcome report section.
+  - `search/finish_evidence.rs`: evidence reliability and warning section.
 - `search/win_acceptance.rs`: stop/accept criteria for complete win candidates.
 - `frontier/`: frontier queue, priority, `SearchNode`, and resource dominance
   vectors.
