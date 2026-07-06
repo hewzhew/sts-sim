@@ -1,23 +1,20 @@
-use super::rollout_scheduler::{deferred_child_rollout_admission, DeferredRolloutAdmission};
 use super::*;
 
 mod child_expansion;
 mod finalize;
 mod loop_state;
+mod node_expansion;
+mod node_preflight;
+mod rollout_timing;
 
 use child_expansion::{expand_ordered_child, ChildExpansionInput, ChildExpansionOutcome};
 use finalize::{finish_combat_search_report, SearchFinishInput};
 use loop_state::SearchLoopState;
+use node_expansion::prepare_node_expansion;
+use node_preflight::{prepare_node_for_expansion, NodePreflightInput, NodePreflightOutcome};
+use rollout_timing::{timed_rollout_estimate, RolloutEstimateSource};
 
 const TURN_PLAN_SEED_CRITICAL_SURVIVAL_MARGIN: i32 = 6;
-
-#[derive(Clone, Copy, Debug)]
-enum RolloutEstimateSource {
-    Root,
-    Child,
-    DeferredChild,
-    TurnPlanSeed,
-}
 
 pub fn run_combat_search_v2(
     engine: &EngineState,
@@ -80,195 +77,37 @@ pub fn run_combat_search_v2_with_stepper(
             break;
         };
 
-        if loop_state.stats.nodes_expanded as usize >= config.max_nodes {
-            loop_state.stats.node_budget_hit = true;
-            loop_state.exhausted = true;
-            loop_state.push_frontier(entry.node);
-            break;
-        }
-        if deadline.is_some_and(|limit| Instant::now() >= limit) {
-            loop_state.stats.deadline_hit = true;
-            loop_state.exhausted = true;
-            loop_state.push_frontier(entry.node);
-            break;
-        }
-
-        let mut node = entry.node;
-        let admission = deferred_child_rollout_admission(
-            &node,
-            &config,
-            &loop_state.stats,
-            &loop_state.performance,
-            started,
-        );
-        observe_deferred_rollout_admission(admission, &mut loop_state.performance);
-        if admission.admitted() {
-            node.rollout_estimate = timed_rollout_estimate(
-                &mut loop_state.rollout_cache,
-                &node,
+        let node = match prepare_node_for_expansion(
+            &mut loop_state,
+            NodePreflightInput {
+                node: entry.node,
+                started,
                 stepper,
-                &config,
+                config: &config,
                 deadline,
-                &mut loop_state.performance,
-                RolloutEstimateSource::DeferredChild,
-            );
-            if node.rollout_estimate.is_evaluated() {
-                loop_state.performance.deferred_child_rollout_requeues = loop_state
-                    .performance
-                    .deferred_child_rollout_requeues
-                    .saturating_add(1);
-                loop_state.push_frontier(node);
-                continue;
-            }
-        }
+            },
+        ) {
+            NodePreflightOutcome::Expand(node) => node,
+            NodePreflightOutcome::Continue => continue,
+            NodePreflightOutcome::Stop => break,
+        };
 
-        let pre_expand_started = Instant::now();
-        loop_state.remember_best_frontier(&node);
-
-        match terminal_label(&node.engine, &node.combat) {
-            SearchTerminalLabel::Win => {
-                if loop_state.remember_win(node, &config) {
-                    loop_state.performance.pre_expand_elapsed_us = loop_state
-                        .performance
-                        .pre_expand_elapsed_us
-                        .saturating_add(pre_expand_started.elapsed().as_micros());
-                    loop_state.accepted_complete_candidate = true;
-                    break;
-                }
-                loop_state.performance.pre_expand_elapsed_us = loop_state
-                    .performance
-                    .pre_expand_elapsed_us
-                    .saturating_add(pre_expand_started.elapsed().as_micros());
-                continue;
-            }
-            SearchTerminalLabel::Loss => {
-                loop_state.remember_loss(node);
-                loop_state.performance.pre_expand_elapsed_us = loop_state
-                    .performance
-                    .pre_expand_elapsed_us
-                    .saturating_add(pre_expand_started.elapsed().as_micros());
-                continue;
-            }
-            SearchTerminalLabel::Unresolved => {}
-        }
-
-        if node.actions.len() >= config.max_actions_per_line {
-            loop_state.max_actions_cut_count = loop_state.max_actions_cut_count.saturating_add(1);
-            loop_state.performance.pre_expand_elapsed_us = loop_state
-                .performance
-                .pre_expand_elapsed_us
-                .saturating_add(pre_expand_started.elapsed().as_micros());
+        let Some(mut expansion) = prepare_node_expansion(&mut loop_state, &node, stepper, &config)
+        else {
             continue;
-        }
+        };
 
-        let resource = node.resource_vector();
-        let exact_key = combat_exact_state_key(&node.engine, &node.combat);
-        if is_resource_covered(&mut loop_state.exact_transpositions, exact_key, resource) {
-            loop_state.stats.transposition_prunes =
-                loop_state.stats.transposition_prunes.saturating_add(1);
-            loop_state.performance.pre_expand_elapsed_us = loop_state
-                .performance
-                .pre_expand_elapsed_us
-                .saturating_add(pre_expand_started.elapsed().as_micros());
-            continue;
-        }
-
-        let dominance_key = combat_dominance_key(&node.engine, &node.combat);
-        if is_resource_covered(&mut loop_state.dominance, dominance_key, resource) {
-            loop_state.stats.dominance_prunes = loop_state.stats.dominance_prunes.saturating_add(1);
-            loop_state.performance.pre_expand_elapsed_us = loop_state
-                .performance
-                .pre_expand_elapsed_us
-                .saturating_add(pre_expand_started.elapsed().as_micros());
-            continue;
-        }
-
-        if should_seed_turn_plan_at_node(&node, &config) {
-            loop_state.seed_turn_plan_frontier(&node, stepper, &config, deadline);
-        }
-        loop_state.performance.pre_expand_elapsed_us = loop_state
-            .performance
-            .pre_expand_elapsed_us
-            .saturating_add(pre_expand_started.elapsed().as_micros());
-
-        loop_state.stats.nodes_expanded = loop_state.stats.nodes_expanded.saturating_add(1);
-        let expansion_started = Instant::now();
-        let position = CombatPosition::new(node.engine.clone(), node.combat.clone());
-        let legal = filtered_legal_actions(
-            stepper.legal_action_choices(&position),
-            config.potion_policy,
-            &node.combat,
-        );
-        let pending_choice = summarize_pending_choice(&node.engine);
-        loop_state
-            .diagnostics
-            .observe_pending_choice(pending_choice.as_ref());
-        let expansion = summarize_action_expansion(&node.engine, &node.combat, &legal);
-        loop_state.diagnostics.observe_legal_actions(&expansion);
-        let turn_prefix = summarize_turn_prefix(&node.turn_prefix, legal.len());
-        loop_state.diagnostics.observe_turn_prefix(&turn_prefix);
-        let turn_sequence = summarize_turn_sequence(&node, legal.len());
-        loop_state
-            .diagnostics
-            .observe_turn_sequence(&turn_sequence, &node);
-        let card_identity = summarize_card_identity(&node.combat);
-        loop_state.diagnostics.observe_card_identity(&card_identity);
-        let target_fanout = summarize_target_fanout(&node.combat, &legal);
-        loop_state.diagnostics.observe_target_fanout(&target_fanout);
-        if legal.is_empty() {
-            loop_state.unresolved_leaf_count = loop_state.unresolved_leaf_count.saturating_add(1);
-            loop_state.performance.expansion_elapsed_us = loop_state
-                .performance
-                .expansion_elapsed_us
-                .saturating_add(expansion_started.elapsed().as_micros());
-            continue;
-        }
-        let equivalence = compress_equivalent_actions(&node.engine, &node.combat, legal);
-        loop_state
-            .diagnostics
-            .observe_action_equivalence(&equivalence.summary);
-        let action_prior_state_hash = config
-            .root_action_prior
-            .as_ref()
-            .filter(|prior| !prior.is_empty())
-            .map(|_| combat_exact_state_hash_v1(&node.engine, &node.combat));
-        let ordered = order_indexed_action_choices_with_prior(
-            &node.engine,
-            &node.combat,
-            equivalence.choices,
-            config.root_action_prior.as_ref(),
-            config.phase_guard_policy,
-            config.setup_bias_policy,
-        );
-        loop_state
-            .diagnostics
-            .observe_action_ordering(&ordered.summary);
-        loop_state
-            .diagnostics
-            .observe_pending_choice_ordering(pending_choice.as_ref(), &ordered.summary);
-        let mut turn_branching =
-            TurnBranchingStateObservation::new(&node.combat, ordered.choices.len());
-        let mut turn_local_dominance = TurnLocalDominanceStateObservation::new(
-            &node.engine,
-            &node.combat,
-            ordered.choices.len(),
-        );
-        loop_state.performance.expansion_elapsed_us = loop_state
-            .performance
-            .expansion_elapsed_us
-            .saturating_add(expansion_started.elapsed().as_micros());
-
-        for ordered_choice in ordered.choices {
+        for ordered_choice in expansion.ordered_choices {
             let outcome = expand_ordered_child(
                 &mut loop_state,
-                &mut turn_branching,
-                &mut turn_local_dominance,
+                &mut expansion.turn_branching,
+                &mut expansion.turn_local_dominance,
                 ChildExpansionInput {
                     parent: &node,
-                    position: &position,
+                    position: &expansion.position,
                     ordered_choice,
-                    action_prior_state_hash: action_prior_state_hash.as_deref(),
-                    pending_choice: pending_choice.as_ref(),
+                    action_prior_state_hash: expansion.action_prior_state_hash.as_deref(),
+                    pending_choice: expansion.pending_choice.as_ref(),
                     stepper,
                     config: &config,
                     deadline,
@@ -280,10 +119,10 @@ pub fn run_combat_search_v2_with_stepper(
         }
         loop_state
             .diagnostics
-            .observe_turn_branching(&turn_branching);
+            .observe_turn_branching(&expansion.turn_branching);
         loop_state
             .diagnostics
-            .observe_turn_local_dominance(&turn_local_dominance);
+            .observe_turn_local_dominance(&expansion.turn_local_dominance);
 
         if loop_state.exhausted {
             break;
@@ -317,72 +156,6 @@ pub fn run_combat_search_v2_with_stepper(
         exhausted: loop_state.exhausted,
         accepted_complete_candidate: loop_state.accepted_complete_candidate,
     })
-}
-
-fn timed_rollout_estimate(
-    rollout_cache: &mut RolloutCache,
-    node: &SearchNode,
-    stepper: &impl CombatStepper,
-    config: &CombatSearchV2Config,
-    deadline: Option<Instant>,
-    performance: &mut CombatSearchV2PerformanceReport,
-    source: RolloutEstimateSource,
-) -> RolloutNodeEstimate {
-    let started = Instant::now();
-    let estimate = rollout_cache.estimate(node, stepper, config, deadline);
-    performance.rollout_estimate_calls = performance.rollout_estimate_calls.saturating_add(1);
-    match source {
-        RolloutEstimateSource::Root => {
-            performance.root_rollout_estimate_calls =
-                performance.root_rollout_estimate_calls.saturating_add(1);
-        }
-        RolloutEstimateSource::Child => {
-            performance.child_rollout_estimate_calls =
-                performance.child_rollout_estimate_calls.saturating_add(1);
-        }
-        RolloutEstimateSource::DeferredChild => {
-            performance.deferred_child_rollout_estimate_calls = performance
-                .deferred_child_rollout_estimate_calls
-                .saturating_add(1);
-        }
-        RolloutEstimateSource::TurnPlanSeed => {
-            performance.turn_plan_seed_rollout_estimate_calls = performance
-                .turn_plan_seed_rollout_estimate_calls
-                .saturating_add(1);
-        }
-    }
-    performance.rollout_estimate_elapsed_us = performance
-        .rollout_estimate_elapsed_us
-        .saturating_add(started.elapsed().as_micros());
-    estimate
-}
-
-fn observe_deferred_rollout_admission(
-    admission: DeferredRolloutAdmission,
-    performance: &mut CombatSearchV2PerformanceReport,
-) {
-    match admission {
-        DeferredRolloutAdmission::AdmitSignal => {
-            performance.deferred_child_rollout_admitted_signal = performance
-                .deferred_child_rollout_admitted_signal
-                .saturating_add(1);
-        }
-        DeferredRolloutAdmission::AdmitPeriodic => {
-            performance.deferred_child_rollout_admitted_periodic = performance
-                .deferred_child_rollout_admitted_periodic
-                .saturating_add(1);
-        }
-        DeferredRolloutAdmission::SkipLowSignal => {
-            performance.deferred_child_rollout_skipped_low_signal = performance
-                .deferred_child_rollout_skipped_low_signal
-                .saturating_add(1);
-        }
-        DeferredRolloutAdmission::SkipBudgetShare => {
-            performance.deferred_child_rollout_skipped_budget_share = performance
-                .deferred_child_rollout_skipped_budget_share
-                .saturating_add(1);
-        }
-    }
 }
 
 fn accepted_complete_win(node: &SearchNode, config: &CombatSearchV2Config) -> bool {

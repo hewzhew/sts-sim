@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use super::super::*;
 use super::loop_state::SearchLoopState;
-use super::{timed_rollout_estimate, RolloutEstimateSource};
+use super::rollout_timing::{timed_rollout_estimate, RolloutEstimateSource};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ChildExpansionOutcome {

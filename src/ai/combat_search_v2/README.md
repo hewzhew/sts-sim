@@ -5,14 +5,22 @@ this map and extend an existing boundary when one already exists.
 
 ## Primary Entry Points
 
-- `search.rs`: whole-combat search loop, frontier expansion, terminal handling,
-  transposition/dominance checks, and report finalization.
+- `search.rs`: whole-combat search orchestration: root setup, main loop, action
+  expansion handoff, and report finalization.
 - `search/loop_state.rs`: mutable search-loop state ownership: frontier, stats,
   diagnostics, transposition/dominance tables, rollout cache, and best-line
   candidates.
+- `search/node_preflight.rs`: one frontier node to either expansion, skip, or
+  stop: budget/deadline checks, deferred rollout requeue, terminal handling,
+  transposition/dominance checks, and turn-plan frontier seeding.
+- `search/node_expansion.rs`: one expandable node to an ordered action batch:
+  legal-action collection, diagnostics observation, local equivalence
+  compression, action ordering, and per-node child observers.
 - `search/child_expansion.rs`: one ordered action to child disposition:
   stepping, child bookkeeping, same-turn local dominance, rollout admission, and
   frontier insertion.
+- `search/rollout_timing.rs`: shared rollout-estimate timing and attribution
+  counters for root, child, deferred-child, and turn-plan seed estimates.
 - `frontier/`: frontier queue, priority, `SearchNode`, and resource dominance
   vectors.
 - `types/config.rs`: user-visible policy switches. New experimental behavior
