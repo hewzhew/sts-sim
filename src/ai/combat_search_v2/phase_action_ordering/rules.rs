@@ -1,48 +1,14 @@
-use super::enemy_phase_transition::EnemyPhaseTransitionHint;
-use super::phase_profile::CombatSearchPhaseProfileV1;
-use super::CombatSearchV2PhaseGuardPolicy;
+use super::super::phase_profile::CombatSearchPhaseProfileV1;
+use super::super::CombatSearchV2PhaseGuardPolicy;
+use super::constants::{
+    AWAKENED_POWER_PENALTY, PHASE_ROLE_ADJUSTMENT, STASIS_TARGET_SETUP_MAX,
+    TIME_EATER_CLOCK_PENALTY,
+};
+use super::types::{PhaseActionOrderingFacts, PhaseActionOrderingHint};
 use crate::content::cards::CardType;
 use crate::content::monsters::EnemyId;
 
-// Kept smaller than the main role gaps in action_priority; phase facts nudge nearby
-// ordering decisions without turning this module into an alternate policy.
-const PHASE_ROLE_ADJUSTMENT: i32 = 12;
-const AWAKENED_POWER_PENALTY: i32 = PHASE_ROLE_ADJUSTMENT * 2;
-const TIME_EATER_CLOCK_PENALTY: i32 = PHASE_ROLE_ADJUSTMENT;
-const STASIS_TARGET_SETUP_MAX: i32 = 20;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct PhaseActionOrderingFacts {
-    pub(super) card_type: CardType,
-    pub(super) block: i32,
-    pub(super) mitigation: i32,
-    pub(super) target_progress: i32,
-    pub(super) target_lethal: bool,
-    pub(super) future_debuff: bool,
-    pub(super) access: PhaseActionAccessFacts,
-    pub(super) target_enemy_id: Option<EnemyId>,
-    pub(super) target_has_stasis_card: bool,
-    pub(super) phase_transition: EnemyPhaseTransitionHint,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(super) struct PhaseActionAccessFacts {
-    pub(super) declared_draw_cards: i32,
-    pub(super) conditional_draw_cards: i32,
-    pub(super) total_draw_cards: i32,
-    pub(super) bad_draw_cards: i32,
-    pub(super) forced_turn_end: bool,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(super) struct PhaseActionOrderingHint {
-    pub(super) role_rank_adjustment: i32,
-    pub(super) phase_setup: i32,
-    pub(super) phase_survival: i32,
-    pub(super) phase_transition_safety: i32,
-}
-
-pub(super) fn phase_action_ordering_hint(
+pub(in crate::ai::combat_search_v2) fn phase_action_ordering_hint(
     profile: CombatSearchPhaseProfileV1,
     phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
     facts: PhaseActionOrderingFacts,
@@ -82,15 +48,6 @@ pub(super) fn phase_action_ordering_hint(
     }
 
     hint
-}
-
-impl PhaseActionOrderingHint {
-    pub(super) fn has_signal(self) -> bool {
-        self.role_rank_adjustment != 0
-            || self.phase_setup != 0
-            || self.phase_survival != 0
-            || self.phase_transition_safety != 0
-    }
 }
 
 fn apply_lagavulin_sleep_hint(hint: &mut PhaseActionOrderingHint, facts: PhaseActionOrderingFacts) {
@@ -187,21 +144,3 @@ fn apply_time_eater_clock_hint(
         hint.phase_transition_safety -= 1;
     }
 }
-
-impl PhaseActionAccessFacts {
-    fn draw_cards(self) -> i32 {
-        self.total_draw_cards.max(
-            self.declared_draw_cards
-                .saturating_add(self.conditional_draw_cards),
-        )
-    }
-
-    fn time_warp_access_risk(self) -> i32 {
-        self.bad_draw_cards
-            .max(0)
-            .saturating_add(i32::from(self.forced_turn_end))
-    }
-}
-
-#[cfg(test)]
-mod tests;

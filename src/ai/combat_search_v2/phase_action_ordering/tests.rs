@@ -1,5 +1,7 @@
 use super::super::phase_profile::combat_search_phase_profile;
 use super::*;
+use crate::ai::combat_search_v2::enemy_phase_transition::EnemyPhaseTransitionHint;
+use crate::content::cards::CardType;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::CombatCard;
 use crate::state::core::{ClientInput, EngineState};

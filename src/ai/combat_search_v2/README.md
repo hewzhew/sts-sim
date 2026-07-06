@@ -98,6 +98,9 @@ this map and extend an existing boundary when one already exists.
     search loop.
 - `action_ordering/`: action child-generation order only. It must not prune or
   merge legal actions.
+- `phase_action_ordering/`: phase-specific ordering nudges. Keep input/output
+  types, constants, and boss/phase rules separated; this layer must stay a
+  nudge, not a second search policy.
 - `action_equivalence/`: soundness-scoped local action-list deduplication only. Do
   not use it for global state merging.
 - `turn_planner/`: exact same-turn enumeration and optional frontier seeding.
