@@ -1,0 +1,110 @@
+use super::action_priority::priority_for_input;
+use super::*;
+
+mod compare;
+mod diagnostics;
+mod summary;
+mod types;
+
+pub(super) use diagnostics::ActionOrderingDiagnosticsCollector;
+#[cfg(test)]
+use diagnostics::ACTION_EFFECT_SAMPLE_LIMIT;
+pub(super) use types::{ActionOrderingSummary, IndexedActionChoice};
+
+use compare::compare_action_ordering_entries;
+use summary::summarize_ordering;
+use types::{ActionOrderingEntry, ActionOrderingResult};
+
+#[cfg(test)]
+fn order_action_choices(
+    engine: &EngineState,
+    combat: &CombatState,
+    choices: Vec<CombatActionChoice>,
+) -> ActionOrderingResult {
+    order_indexed_action_choices(
+        engine,
+        combat,
+        choices
+            .into_iter()
+            .enumerate()
+            .map(|(original_action_id, choice)| IndexedActionChoice {
+                original_action_id,
+                choice,
+            })
+            .collect(),
+    )
+}
+
+pub(super) fn order_indexed_action_choices(
+    engine: &EngineState,
+    combat: &CombatState,
+    choices: Vec<IndexedActionChoice>,
+) -> ActionOrderingResult {
+    order_indexed_action_choices_with_prior(
+        engine,
+        combat,
+        choices,
+        None,
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    )
+}
+
+pub(super) fn order_indexed_action_choices_with_prior(
+    engine: &EngineState,
+    combat: &CombatState,
+    choices: Vec<IndexedActionChoice>,
+    root_action_prior: Option<&CombatSearchV2RootActionPrior>,
+    phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
+    setup_bias_policy: CombatSearchV2SetupBiasPolicy,
+) -> ActionOrderingResult {
+    let exact_state_hash = root_action_prior
+        .filter(|prior| !prior.is_empty())
+        .map(|_| combat_exact_state_hash_v1(engine, combat));
+    let mut entries = choices
+        .into_iter()
+        .map(|indexed| ActionOrderingEntry {
+            original_action_id: indexed.original_action_id,
+            root_action_prior_score: exact_state_hash.as_ref().and_then(|state_hash| {
+                root_action_prior
+                    .and_then(|prior| prior.score(state_hash, &indexed.choice.action_key))
+            }),
+            priority: priority_for_input(
+                engine,
+                combat,
+                &indexed.choice.input,
+                phase_guard_policy,
+                setup_bias_policy,
+            ),
+            choice: indexed.choice,
+        })
+        .collect::<Vec<_>>();
+
+    if action_ordering_enabled(engine) {
+        entries.sort_by(|left, right| {
+            compare_action_ordering_entries(left, right)
+                .then_with(|| left.original_action_id.cmp(&right.original_action_id))
+        });
+    }
+
+    let summary = summarize_ordering(&entries);
+    let choices = entries
+        .into_iter()
+        .map(|entry| IndexedActionChoice {
+            original_action_id: entry.original_action_id,
+            choice: entry.choice,
+        })
+        .collect();
+
+    ActionOrderingResult { choices, summary }
+}
+
+fn action_ordering_enabled(engine: &EngineState) -> bool {
+    matches!(
+        engine,
+        EngineState::CombatPlayerTurn | EngineState::PendingChoice(_)
+    )
+}
+
+#[cfg(test)]
+mod tests;

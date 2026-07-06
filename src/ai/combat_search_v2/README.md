@@ -98,6 +98,9 @@ this map and extend an existing boundary when one already exists.
     search loop.
 - `action_ordering/`: action child-generation order only. It must not prune or
   merge legal actions.
+  - `action_ordering/types.rs`: ordered action, result, and summary data shapes.
+  - `action_ordering/summary.rs`: diagnostics-only summary aggregation.
+  - `action_ordering/compare.rs`: priority and prior-score comparison.
 - `phase_action_ordering/`: phase-specific ordering nudges. Keep input/output
   types, constants, and boss/phase rules separated; this layer must stay a
   nudge, not a second search policy.
