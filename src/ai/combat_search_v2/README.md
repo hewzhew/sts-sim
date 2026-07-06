@@ -3,6 +3,17 @@
 This directory is the combat-search mainline. Before adding a new module, check
 this map and extend an existing boundary when one already exists.
 
+## Module Layer Contract
+
+| Layer | Modules | Runner effect | Rule |
+| --- | --- | --- | --- |
+| Mainline exact search | `search/`, `frontier/`, `transition.rs`, `action_equivalence/`, `turn_local_dominance/` | Yes | May prune or schedule exact branches only inside its documented safety boundary. |
+| Deployable rescue/candidates | `turn_pool_rescue/`, replayable witness helpers | Yes, after replay/check | May propose a concrete line, but must keep its own engine, ranking, and report schema separate. |
+| Estimate/value evidence | `value/`, `rollout/`, `rollout_*`, `pressure_value.rs`, `enemy_phase_value.rs` | Indirect | May order or estimate; must not claim a terminal result unless replayed by exact search. |
+| Report-only diagnostics | `diagnostics/`, `decision_microscope/`, `rollout_probe/`, `turn_plan_probe*`, `trajectory_report.rs` | No | May explain behavior; must not become a strategy entrance. |
+| Lab experiments | `line_lab.rs`, ad hoc binaries/tools | No | May compare lanes and probes; useful ideas must graduate into a named deployable module before runner use. |
+| Legacy-risk / audit-first | large mixed files, old probes, one-off reports | No by default | Before extending, split boundaries or delete/retire unused parts. |
+
 ## Primary Entry Points
 
 - `search.rs`: whole-combat search orchestration: root setup, main loop, action
@@ -104,10 +115,14 @@ this map and extend an existing boundary when one already exists.
   `enemy_mechanics_adaptive_no_potion` rollout currently uses phase-aware
   rollout only for typed Guardian and Bronze Automaton mechanics and otherwise
   stays conservative.
-- `turn_pool_rescue.rs`: deployable no-win rescue candidate generation. It may
+- `turn_pool_rescue/`: deployable no-win rescue candidate generation. It may
   produce a replay-checked line for run-control, so it is not a report-only lab
   module. Keep new rescue lanes here or in another explicitly deployable module,
   not in `line_lab.rs`.
+  - `turn_pool_rescue/types.rs`: public report/win schema plus internal lane
+    node types.
+  - `turn_pool_rescue/engine.rs`: bounded lane expansion and combat stepping.
+  - `turn_pool_rescue/ranking.rs`: lane ranking and report-line summaries.
 
 ## Game-Mechanics State Facts
 
