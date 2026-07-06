@@ -68,8 +68,12 @@ this map and extend an existing boundary when one already exists.
 - `search/win_acceptance.rs`: stop/accept criteria for complete win candidates.
 - `frontier/`: frontier queue, priority, `SearchNode`, and resource dominance
   vectors.
-- `types/config.rs`: user-visible policy switches. New experimental behavior
-  should be named here before it affects search.
+- `types/config/`: user-visible policy switches and prior hints. New
+  experimental behavior should be named here before it affects search.
+  - `types/config/options.rs`: `CombatSearchV2Config` and defaults.
+  - `types/config/policies.rs`: policy enums, labels, serde aliases, and
+    high-stakes potion budget helper.
+  - `types/config/prior.rs`: root-action and turn-plan prior hint maps.
 - `types/report/`: JSON report schema. Add fields only when a consumer uses
   them to make an implementation decision.
 
