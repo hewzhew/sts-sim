@@ -1,12 +1,12 @@
 use sts_simulator::ai::combat_search_v2::explain_combat_search_v2_initial_decision;
-use sts_simulator::content::cards::java_id;
 use sts_simulator::eval::combat_case::CombatCase;
 use sts_simulator::runtime::combat::CombatCard;
 
-use super::key_card_counterfactual::{move_key_card, KeyCardCounterfactualPlacement};
 use super::key_card_lifecycle::{key_card_targets, KeyCardReason};
 use super::options::ReviewOptions;
 
+#[path = "root_action_role_duel/basis.rs"]
+mod basis;
 #[path = "root_action_role_duel/config.rs"]
 mod config;
 #[path = "root_action_role_duel/execution.rs"]
@@ -20,10 +20,11 @@ mod types;
 
 pub(super) use types::RootActionRoleDuelProbe;
 
+use basis::{prepare_duel_variant_case, PreparedRootActionRoleDuelVariant};
 use config::duel_search_config;
 use execution::run_duel;
 use selection::select_duel_candidate_indices;
-use types::{RootActionRoleDuelBasis, RootActionRoleDuelKeyCard, RootActionRoleDuelVariant};
+use types::RootActionRoleDuelVariant;
 
 pub(super) fn run_root_action_role_duel_probe(
     options: &ReviewOptions,
@@ -61,71 +62,26 @@ fn run_variant(
     original_case: &CombatCase,
     key_card: Option<(&CombatCard, KeyCardReason)>,
 ) -> RootActionRoleDuelVariant {
-    let mut case = original_case.clone();
-    let basis = match key_card {
-        Some((card, reason)) => {
-            let placement = KeyCardCounterfactualPlacement::OpeningHand;
-            if move_key_card(&mut case.position.combat, card.uuid, placement).is_none() {
-                return skipped_variant(
-                    card,
-                    reason,
-                    placement,
-                    "key_card_not_in_active_combat_zones",
-                );
-            }
-            RootActionRoleDuelBasis {
-                label: format!("key_card_opening_hand:{}#{}", java_id(card.id), card.uuid),
-                moved_key_card: Some(RootActionRoleDuelKeyCard {
-                    card: format!("{}+{}", java_id(card.id), card.upgrades),
-                    uuid: card.uuid,
-                    reason: reason.label(),
-                    placement: placement.label(),
-                }),
-            }
-        }
-        None => RootActionRoleDuelBasis {
-            label: "original_root".to_string(),
-            moved_key_card: None,
-        },
+    let prepared = match prepare_duel_variant_case(original_case, key_card) {
+        PreparedRootActionRoleDuelVariant::Ready(prepared) => prepared,
+        PreparedRootActionRoleDuelVariant::Skipped(variant) => return variant,
     };
 
     let microscope = explain_combat_search_v2_initial_decision(
-        &case.position.engine,
-        &case.position.combat,
+        &prepared.case.position.engine,
+        &prepared.case.position.combat,
         duel_search_config(options, "root_action_role_duel_microscope"),
     );
     let selections = select_duel_candidate_indices(&microscope);
     let duels = selections
         .iter()
-        .filter_map(|selection| run_duel(options, &case, &microscope, selection))
+        .filter_map(|selection| run_duel(options, &prepared.case, &microscope, selection))
         .collect();
 
     RootActionRoleDuelVariant {
-        basis,
+        basis: prepared.basis,
         skipped_reason: None,
         microscope: Some(microscope),
         duels,
-    }
-}
-
-fn skipped_variant(
-    card: &CombatCard,
-    reason: KeyCardReason,
-    placement: KeyCardCounterfactualPlacement,
-    skipped_reason: &'static str,
-) -> RootActionRoleDuelVariant {
-    RootActionRoleDuelVariant {
-        basis: RootActionRoleDuelBasis {
-            label: format!("key_card_opening_hand:{}#{}", java_id(card.id), card.uuid),
-            moved_key_card: Some(RootActionRoleDuelKeyCard {
-                card: format!("{}+{}", java_id(card.id), card.upgrades),
-                uuid: card.uuid,
-                reason: reason.label(),
-                placement: placement.label(),
-            }),
-        },
-        skipped_reason: Some(skipped_reason),
-        microscope: None,
-        duels: Vec::new(),
     }
 }
