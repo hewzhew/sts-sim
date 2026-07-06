@@ -104,6 +104,10 @@ this map and extend an existing boundary when one already exists.
   `enemy_mechanics_adaptive_no_potion` rollout currently uses phase-aware
   rollout only for typed Guardian and Bronze Automaton mechanics and otherwise
   stays conservative.
+- `turn_pool_rescue.rs`: deployable no-win rescue candidate generation. It may
+  produce a replay-checked line for run-control, so it is not a report-only lab
+  module. Keep new rescue lanes here or in another explicitly deployable module,
+  not in `line_lab.rs`.
 
 ## Game-Mechanics State Facts
 
@@ -123,6 +127,9 @@ this map and extend an existing boundary when one already exists.
   to a prune-safe consumer.
 - `decision_microscope/` and `rollout_probe/`: opt-in analysis tools. Do not
   route normal search behavior through them.
+- `line_lab.rs`: opt-in combat-line review and cut repair reports. It may
+  include `turn_pool_rescue` evidence in its report, but runner behavior must
+  call the deployable rescue module directly rather than depending on lab code.
 - `trajectory_report.rs` and `baseline.rs`: whole-combat outcome reporting and
   baseline comparison. Baselines are comparison evidence, not teacher labels.
 
