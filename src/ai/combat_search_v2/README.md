@@ -7,6 +7,12 @@ this map and extend an existing boundary when one already exists.
 
 - `search.rs`: whole-combat search loop, frontier expansion, terminal handling,
   transposition/dominance checks, and report finalization.
+- `search/loop_state.rs`: mutable search-loop state ownership: frontier, stats,
+  diagnostics, transposition/dominance tables, rollout cache, and best-line
+  candidates.
+- `search/child_expansion.rs`: one ordered action to child disposition:
+  stepping, child bookkeeping, same-turn local dominance, rollout admission, and
+  frontier insertion.
 - `frontier/`: frontier queue, priority, `SearchNode`, and resource dominance
   vectors.
 - `types/config.rs`: user-visible policy switches. New experimental behavior

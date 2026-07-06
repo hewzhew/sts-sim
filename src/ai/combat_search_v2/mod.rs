@@ -108,10 +108,7 @@ use enemy_phase_transition::enemy_phase_transition_hint_for_input;
 use expansion::{
     summarize_action_expansion, ActionExpansionDiagnosticsCollector, ActionExpansionSummary,
 };
-use frontier::{
-    is_resource_covered, push_frontier, remember_best_complete, remember_best_frontier,
-    FrontierQueue, ResourceVector, SearchNode,
-};
+use frontier::{is_resource_covered, ResourceVector, SearchNode};
 use outcome_score::CombatOutcomeScore;
 use pending_choice_ordering::pending_choice_ordering_hint;
 use pending_choice_profile::{
