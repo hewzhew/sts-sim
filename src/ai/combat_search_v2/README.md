@@ -130,6 +130,9 @@ this map and extend an existing boundary when one already exists.
 - `line_lab.rs`: opt-in combat-line review and cut repair reports. It may
   include `turn_pool_rescue` evidence in its report, but runner behavior must
   call the deployable rescue module directly rather than depending on lab code.
+- `turn_plan_probe.rs` and `turn_plan_probe_report.rs`: opt-in exact
+  same-turn probe enumeration and its JSON schema. Keep report type growth in
+  the report file so the probe file stays focused on enumeration and mapping.
 - `trajectory_report.rs` and `baseline.rs`: whole-combat outcome reporting and
   baseline comparison. Baselines are comparison evidence, not teacher labels.
 
