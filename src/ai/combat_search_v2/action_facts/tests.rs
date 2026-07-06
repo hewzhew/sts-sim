@@ -1,5 +1,6 @@
 use crate::content::cards::{CardId, CardType};
 use crate::content::monsters::EnemyId;
+use crate::content::powers::PowerId;
 use crate::runtime::combat::{CombatCard, Power, PowerPayload};
 use crate::sim::combat::EngineCombatStepper;
 use crate::test_support::{blank_test_combat, planned_monster, test_monster};

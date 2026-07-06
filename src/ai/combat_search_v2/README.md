@@ -88,6 +88,9 @@ this map and extend an existing boundary when one already exists.
 - `action_facts/`, `action_effects/`, `action_priority/`: structured action
   semantics. Put reusable action knowledge here instead of embedding it in
   search, rollout, or reports.
+  - `action_facts/`: action fact report assembly. Keep card facts,
+    immediate/mechanics mapping, payload hints, target hints, and exact deltas
+    in separate helpers.
   - `action_effects/types.rs`: card-play effect fact and diagnostic structs.
     Keep effect schema changes separate from effect observation logic.
   - `action_priority/play_card/`: play-card ordering entrypoint plus small
