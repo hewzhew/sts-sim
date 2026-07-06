@@ -23,6 +23,24 @@ pub(in crate::ai::combat_search_v2) struct SearchNode {
 }
 
 impl SearchNode {
+    pub(in crate::ai::combat_search_v2) fn root(engine: EngineState, combat: CombatState) -> Self {
+        let initial_hp = combat.entities.player.current_hp;
+        Self {
+            engine,
+            combat,
+            actions: Vec::new(),
+            turn_prefix: TurnPrefixState::default(),
+            initial_hp,
+            potions_used: 0,
+            potions_discarded: 0,
+            cards_played: 0,
+            potion_tactical_priority: 0,
+            last_turn_branch_priority: 0,
+            action_prior_score: None,
+            rollout_estimate: RolloutNodeEstimate::unevaluated(),
+        }
+    }
+
     pub(in crate::ai::combat_search_v2) fn clone_for_child(
         &self,
         engine: EngineState,

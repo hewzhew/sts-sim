@@ -1,32 +1,20 @@
 use super::super::frontier::FrontierQueue;
 use super::super::*;
+use super::loop_state::SearchLoopState;
 
 pub(super) struct SearchFinishInput {
     pub(super) config: CombatSearchV2Config,
     pub(super) policy_evidence: CombatSearchV2PolicyEvidenceReport,
-    pub(super) stats: CombatSearchV2Stats,
-    pub(super) diagnostics: SearchDiagnosticsCollector,
-    pub(super) exact_transpositions: HashMap<CombatExactStateKey, Vec<ResourceVector>>,
-    pub(super) dominance: HashMap<CombatDominanceKey, Vec<ResourceVector>>,
-    pub(super) frontier: FrontierQueue,
-    pub(super) best_complete: Option<SearchNode>,
-    pub(super) best_win: Option<SearchNode>,
-    pub(super) win_candidates: Vec<SearchNode>,
-    pub(super) best_frontier: Option<SearchNode>,
-    pub(super) rollout_cache: RolloutCache,
-    pub(super) performance: CombatSearchV2PerformanceReport,
-    pub(super) unresolved_leaf_count: u64,
-    pub(super) max_actions_cut_count: u64,
-    pub(super) engine_step_limit_count: u64,
-    pub(super) potion_budget_cut_count: u64,
-    pub(super) exhausted: bool,
-    pub(super) accepted_complete_candidate: bool,
+    pub(super) loop_state: SearchLoopState,
 }
 
 pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSearchV2Report {
     let SearchFinishInput {
         config,
         policy_evidence,
+        loop_state,
+    } = input;
+    let SearchLoopState {
         stats,
         diagnostics,
         exact_transpositions,
@@ -44,7 +32,8 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         potion_budget_cut_count,
         exhausted,
         accepted_complete_candidate,
-    } = input;
+        ..
+    } = loop_state;
 
     let exhaustive = !accepted_complete_candidate && !exhausted && frontier.is_empty();
     let coverage_status =

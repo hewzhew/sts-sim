@@ -8,8 +8,8 @@ use super::turn_planner::{
     enumerate_turn_plans, TurnPlanBucket, TurnPlanStopReason, TurnPlanV1, TurnPlannerConfigV1,
 };
 use super::{
-    terminal_label, CombatSearchV2ActionTrace, CombatSearchV2Config, CombatSearchV2PotionPolicy,
-    CombatSearchV2TrajectoryReport, RolloutNodeEstimate, SearchTerminalLabel, TurnPrefixState,
+    terminal_label, CombatSearchV2Config, CombatSearchV2PotionPolicy,
+    CombatSearchV2TrajectoryReport, SearchTerminalLabel,
 };
 
 #[derive(Clone, Debug)]
@@ -38,20 +38,7 @@ fn plan_combat_turn_segment_with_stepper_v1(
     config: &CombatSearchV2Config,
     stepper: &impl CombatStepper,
 ) -> CombatSearchV2TurnSegmentReport {
-    let root = SearchNode {
-        engine: engine.clone(),
-        combat: combat.clone(),
-        actions: Vec::<CombatSearchV2ActionTrace>::new(),
-        turn_prefix: TurnPrefixState::default(),
-        initial_hp: combat.entities.player.current_hp,
-        potions_used: 0,
-        potions_discarded: 0,
-        cards_played: 0,
-        potion_tactical_priority: 0,
-        last_turn_branch_priority: 0,
-        action_prior_score: None,
-        rollout_estimate: RolloutNodeEstimate::unevaluated(),
-    };
+    let root = SearchNode::root(engine.clone(), combat.clone());
     let turn_config = TurnPlannerConfigV1 {
         max_inner_nodes: 512,
         max_end_states: 24,

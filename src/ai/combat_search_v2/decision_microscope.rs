@@ -37,20 +37,7 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
     let selected_identity = selected_first_action
         .as_ref()
         .map(|action| (action.action_id, action.action_key.as_str()));
-    let initial_node = SearchNode {
-        engine: engine.clone(),
-        combat: combat.clone(),
-        actions: Vec::new(),
-        turn_prefix: TurnPrefixState::default(),
-        initial_hp: combat.entities.player.current_hp,
-        potions_used: 0,
-        potions_discarded: 0,
-        cards_played: 0,
-        potion_tactical_priority: 0,
-        last_turn_branch_priority: 0,
-        action_prior_score: None,
-        rollout_estimate: RolloutNodeEstimate::unevaluated(),
-    };
+    let initial_node = SearchNode::root(engine.clone(), combat.clone());
     let position = CombatPosition::new(engine.clone(), combat.clone());
     let legal = filtered_legal_actions(
         stepper.legal_action_choices(&position),

@@ -205,20 +205,7 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
     combat: &CombatState,
     config: &CombatSearchV2Config,
 ) -> CombatSearchV2TurnPlanProbeEnumeration {
-    let root = SearchNode {
-        engine: engine.clone(),
-        combat: combat.clone(),
-        actions: Vec::new(),
-        turn_prefix: TurnPrefixState::default(),
-        initial_hp: combat.entities.player.current_hp,
-        potions_used: 0,
-        potions_discarded: 0,
-        cards_played: 0,
-        potion_tactical_priority: 0,
-        last_turn_branch_priority: 0,
-        action_prior_score: None,
-        rollout_estimate: RolloutNodeEstimate::unevaluated(),
-    };
+    let root = SearchNode::root(engine.clone(), combat.clone());
     let turn_config = TurnPlannerConfigV1 {
         max_inner_nodes: config
             .turn_plan_probe_max_inner_nodes

@@ -34,23 +34,9 @@ pub fn run_combat_search_v2_with_stepper(
 ) -> CombatSearchV2Report {
     let started = Instant::now();
     let deadline = config.wall_time.map(|duration| started + duration);
-    let initial_hp = combat.entities.player.current_hp;
     let policy_evidence = combat_search_policy_evidence_for_combat(combat);
     let mut loop_state = SearchLoopState::new(&config);
-    let mut root = SearchNode {
-        engine: engine.clone(),
-        combat: combat.clone(),
-        actions: Vec::new(),
-        turn_prefix: TurnPrefixState::default(),
-        initial_hp,
-        potions_used: 0,
-        potions_discarded: 0,
-        cards_played: 0,
-        potion_tactical_priority: 0,
-        last_turn_branch_priority: 0,
-        action_prior_score: None,
-        rollout_estimate: RolloutNodeEstimate::unevaluated(),
-    };
+    let mut root = SearchNode::root(engine.clone(), combat.clone());
     root.rollout_estimate = timed_rollout_estimate(
         &mut loop_state.rollout_cache,
         &root,
@@ -140,23 +126,7 @@ pub fn run_combat_search_v2_with_stepper(
     finish_combat_search_report(SearchFinishInput {
         config,
         policy_evidence,
-        stats: loop_state.stats,
-        diagnostics: loop_state.diagnostics,
-        exact_transpositions: loop_state.exact_transpositions,
-        dominance: loop_state.dominance,
-        frontier: loop_state.frontier,
-        best_complete: loop_state.best_complete,
-        best_win: loop_state.best_win,
-        win_candidates: loop_state.win_candidates,
-        best_frontier: loop_state.best_frontier,
-        rollout_cache: loop_state.rollout_cache,
-        performance: loop_state.performance,
-        unresolved_leaf_count: loop_state.unresolved_leaf_count,
-        max_actions_cut_count: loop_state.max_actions_cut_count,
-        engine_step_limit_count: loop_state.engine_step_limit_count,
-        potion_budget_cut_count: loop_state.potion_budget_cut_count,
-        exhausted: loop_state.exhausted,
-        accepted_complete_candidate: loop_state.accepted_complete_candidate,
+        loop_state,
     })
 }
 
