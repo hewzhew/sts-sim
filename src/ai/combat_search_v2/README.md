@@ -20,9 +20,14 @@ this map and extend an existing boundary when one already exists.
   expansion handoff, and report finalization.
 - `search/bootstrap.rs`: root search-node construction, root rollout estimate,
   initial frontier insertion, and optional root turn-plan seeding.
-- `search/loop_state.rs`: mutable search-loop state ownership: frontier, stats,
+- `search/loop_state/`: mutable search-loop state ownership: frontier, stats,
   diagnostics, transposition/dominance tables, rollout cache, and best-line
   candidates.
+  - `search/loop_state/frontier.rs`: frontier push/pop and pop timing.
+  - `search/loop_state/counters.rs`: stop flags, node counters, and prune/cut
+    counters.
+  - `search/loop_state/trajectories.rs`: best frontier/complete/win/loss
+    trajectory bookkeeping.
 - `search/node_preflight.rs`: one frontier node to expansion, skip, or stop. It
   coordinates the node-stage gates below; do not add new gate logic directly
   here unless it is only wiring.
