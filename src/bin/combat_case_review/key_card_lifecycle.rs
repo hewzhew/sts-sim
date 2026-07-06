@@ -4,6 +4,8 @@ use sts_simulator::sim::combat::{
 
 use super::focus::{focus_witness_line, CombatReviewFocus};
 
+#[path = "key_card_lifecycle/report.rs"]
+mod report;
 #[path = "key_card_lifecycle/targets.rs"]
 mod targets;
 #[cfg(test)]
@@ -19,10 +21,8 @@ mod zones;
 pub(super) use targets::key_card_targets;
 pub(super) use types::{KeyCardLifecycleReport, KeyCardReason};
 
-use tracking::{
-    finish_lifecycles, note_played_key_card, note_seen_zones, report_without_focus,
-    tracked_key_cards,
-};
+use report::{finish_lifecycles, report_without_focus};
+use tracking::{note_played_key_card, note_seen_zones, tracked_key_cards};
 
 pub(super) fn key_card_lifecycle(
     root: &CombatPosition,
