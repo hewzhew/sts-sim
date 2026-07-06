@@ -95,8 +95,10 @@ this map and extend an existing boundary when one already exists.
     prior-score tie breaking.
   - `turn_planner/types/core.rs`: turn-plan config, plan records,
     enumeration counters, stop reasons, and bucket classification.
-  - `turn_planner/types/coverage.rs`: coverage signatures and coverage-key
-    bands used for candidate diversity.
+  - `turn_planner/types/coverage/bands.rs`: coverage-key fields, band enums,
+    and stable labels.
+  - `turn_planner/types/coverage/signature.rs`: coverage signature extraction
+    from a candidate plan.
   - `turn_planner/types/selection.rs`: bucket/coverage selection audit schema.
   - `root_frontier_seed` seeds exact current-turn end states from the initial
     search root only.
