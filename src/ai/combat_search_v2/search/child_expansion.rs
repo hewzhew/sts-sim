@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use super::super::*;
 use super::child_dominance::{apply_child_dominance_gate, ChildDominanceOutcome};
+use super::child_frontier::enqueue_child_or_remember_leaf;
 use super::child_node::{build_child_node, BuiltChildNode};
 use super::child_preflight::{prepare_child_for_expansion, ChildPreflightOutcome};
 use super::child_rollout::child_rollout_estimate;
@@ -91,22 +92,6 @@ pub(super) fn expand_ordered_child<S: CombatStepper>(
         input.deadline,
     );
 
-    let child_bookkeeping_started = Instant::now();
-    if loop_state.stats.nodes_to_first_win.is_none()
-        && terminal_label(&child.engine, &child.combat) == SearchTerminalLabel::Win
-    {
-        loop_state.stats.nodes_to_first_win = Some(loop_state.stats.nodes_generated);
-    }
-
-    if !truncated {
-        loop_state.push_frontier(child);
-    } else {
-        loop_state.unresolved_leaf_count = loop_state.unresolved_leaf_count.saturating_add(1);
-        loop_state.remember_best_frontier(&child);
-    }
-    loop_state.performance.child_bookkeeping_elapsed_us = loop_state
-        .performance
-        .child_bookkeeping_elapsed_us
-        .saturating_add(child_bookkeeping_started.elapsed().as_micros());
+    enqueue_child_or_remember_leaf(loop_state, child, truncated);
     ChildExpansionOutcome::Advanced
 }

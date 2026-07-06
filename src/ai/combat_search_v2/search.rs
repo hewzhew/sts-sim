@@ -4,6 +4,7 @@ mod best_trajectories;
 mod bootstrap;
 mod child_dominance;
 mod child_expansion;
+mod child_frontier;
 mod child_node;
 mod child_preflight;
 mod child_rollout;
