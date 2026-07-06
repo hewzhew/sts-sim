@@ -7,6 +7,8 @@ use super::search_types::SearchReview;
 
 #[path = "strategic_feedback/observations.rs"]
 mod observations;
+#[path = "strategic_feedback/signal_context.rs"]
+mod signal_context;
 #[path = "strategic_feedback/signals.rs"]
 mod signals;
 #[path = "strategic_feedback/site.rs"]
