@@ -1,5 +1,7 @@
 #[path = "quality_lanes/feedback.rs"]
 mod feedback;
+#[path = "quality_lanes/feedback_selection.rs"]
+mod feedback_selection;
 #[cfg(test)]
 #[path = "quality_lanes/feedback_tests.rs"]
 mod feedback_tests;
@@ -19,11 +21,9 @@ pub(super) use types::CombatQualityLaneReview;
 
 use super::options::ReviewOptions;
 use super::search_runner::run_configured_search;
-use feedback::{
-    estimated_rollout_feedback_rank, estimated_rollout_feedback_witness,
-    run_success_feedback_rerun, CombatSuccessFeedbackSource,
-};
-use types::{CombatQualityLaneResult, CombatSuccessFeedbackMetrics};
+use feedback::run_success_feedback_rerun;
+use feedback_selection::CombatFeedbackSourcePicker;
+use types::CombatQualityLaneResult;
 
 pub(super) fn run_quality_lanes(
     options: &ReviewOptions,
@@ -42,10 +42,7 @@ pub(super) fn run_quality_lanes(
     let per_lane_nodes = (total_nodes / lane_count).max(1);
     let per_lane_wall_ms = (total_wall_ms / lane_count as u64).max(1);
     let mut lanes = Vec::new();
-    let mut complete_feedback_source: Option<(CombatLineQuality, CombatSuccessFeedbackSource)> =
-        None;
-    let mut estimated_feedback_source: Option<((i32, i32, i32, i32), CombatSuccessFeedbackSource)> =
-        None;
+    let mut feedback_sources = CombatFeedbackSourcePicker::default();
     for lane in specs {
         let (review, report) = run_configured_search(
             lane.label,
@@ -57,38 +54,9 @@ pub(super) fn run_quality_lanes(
         if let (Some(quality), Some(trajectory)) =
             (quality.as_ref(), report.best_win_trajectory.as_ref())
         {
-            if complete_feedback_source
-                .as_ref()
-                .is_none_or(|(current, _)| !compare_quality(quality, current).is_lt())
-            {
-                complete_feedback_source = Some((
-                    quality.clone(),
-                    CombatSuccessFeedbackSource {
-                        spec: lane,
-                        baseline: CombatSuccessFeedbackMetrics::from_review(&review),
-                        witness: witness_line_from_trajectory(lane.label, trajectory),
-                        source_kind: "complete_win",
-                    },
-                ));
-            }
-        } else if let Some(progress) = review.facts.diagnostic_progress.as_ref() {
-            if let Some(witness) = estimated_rollout_feedback_witness(lane.label, progress) {
-                let rank = estimated_rollout_feedback_rank(progress);
-                if estimated_feedback_source
-                    .as_ref()
-                    .is_none_or(|(current, _)| rank > *current)
-                {
-                    estimated_feedback_source = Some((
-                        rank,
-                        CombatSuccessFeedbackSource {
-                            spec: lane,
-                            baseline: CombatSuccessFeedbackMetrics::from_review(&review),
-                            witness,
-                            source_kind: "estimated_rollout_frontier",
-                        },
-                    ));
-                }
-            }
+            feedback_sources.consider_complete_win(lane, &review, quality, trajectory);
+        } else {
+            feedback_sources.consider_estimated_rollout(lane, &review);
         }
         lanes.push(CombatQualityLaneResult {
             lane: lane.label,
@@ -103,10 +71,7 @@ pub(super) fn run_quality_lanes(
         .filter_map(|(index, lane)| lane.quality.as_ref().map(|quality| (index, quality)))
         .max_by(|(_, left), (_, right)| compare_quality(left, right))
         .map(|(index, _)| lanes[index].lane);
-    let feedback_source = complete_feedback_source
-        .map(|(_, source)| source)
-        .or_else(|| estimated_feedback_source.map(|(_, source)| source));
-    let success_feedback_rerun = feedback_source.and_then(|source| {
+    let success_feedback_rerun = feedback_sources.into_source().and_then(|source| {
         run_success_feedback_rerun(
             case,
             source,
