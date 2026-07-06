@@ -179,6 +179,10 @@ this map and extend an existing boundary when one already exists.
   to a prune-safe consumer.
 - `decision_microscope/`: opt-in analysis tool. Do not route normal search
   behavior through it.
+  - `decision_microscope/candidate_probe.rs`: exact one-step candidate
+    diagnostics for the initial action surface.
+  - `decision_microscope/report.rs`: selected-action, trajectory, and config
+    report mapping only.
 - `line_lab/`: opt-in combat-line review and cut repair reports. It may
   include `turn_pool_rescue` evidence in its report, but runner behavior must
   call the deployable rescue module directly rather than depending on lab code.
