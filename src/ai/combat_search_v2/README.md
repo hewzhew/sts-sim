@@ -86,6 +86,11 @@ this map and extend an existing boundary when one already exists.
 - `turn_planner/`: exact same-turn enumeration and optional frontier seeding.
   Reuse this for turn-level macro candidates; do not create another turn-plan
   system.
+  - `turn_planner/types/core.rs`: turn-plan config, plan records,
+    enumeration counters, stop reasons, and bucket classification.
+  - `turn_planner/types/coverage.rs`: coverage signatures and coverage-key
+    bands used for candidate diversity.
+  - `turn_planner/types/selection.rs`: bucket/coverage selection audit schema.
   - `root_frontier_seed` seeds exact current-turn end states from the initial
     search root only.
   - `turn_boundary_frontier_seed` is opt-in and seeds exact current-turn end
