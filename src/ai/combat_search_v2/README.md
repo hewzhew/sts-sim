@@ -86,6 +86,13 @@ this map and extend an existing boundary when one already exists.
 - `turn_planner/`: exact same-turn enumeration and optional frontier seeding.
   Reuse this for turn-level macro candidates; do not create another turn-plan
   system.
+  - `turn_planner/enumerate/mod.rs`: exact same-turn enumeration coordinator.
+  - `turn_planner/enumerate/plan.rs`: turn-plan construction from terminal,
+    next-turn, pending-choice, and engine-limit boundaries.
+  - `turn_planner/enumerate/selection.rs`: bucket diversity selection and
+    selection audit construction.
+  - `turn_planner/enumerate/ranking.rs`: turn-plan candidate comparison and
+    prior-score tie breaking.
   - `turn_planner/types/core.rs`: turn-plan config, plan records,
     enumeration counters, stop reasons, and bucket classification.
   - `turn_planner/types/coverage.rs`: coverage signatures and coverage-key
