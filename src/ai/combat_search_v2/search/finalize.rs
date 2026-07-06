@@ -1,6 +1,8 @@
-use super::super::frontier::FrontierQueue;
 use super::super::*;
 use super::best_trajectories::SearchTrajectoryBook;
+use super::finish_coverage::{coverage_status_for_finished_search, coverage_status_reason};
+use super::finish_evidence::evidence_warnings;
+use super::finish_frontier::frontier_sample_states;
 use super::loop_state::SearchLoopState;
 
 pub(super) struct SearchFinishInput {
@@ -144,66 +146,4 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
             warnings: evidence_warnings,
         },
     }
-}
-
-fn coverage_status_for_finished_search(
-    stats: &CombatSearchV2Stats,
-    exhaustive: bool,
-    accepted_complete_candidate: bool,
-) -> SearchCoverageStatus {
-    if accepted_complete_candidate {
-        SearchCoverageStatus::AcceptedCompleteCandidate
-    } else if stats.deadline_hit {
-        SearchCoverageStatus::TimeBudgetLimited
-    } else if stats.node_budget_hit {
-        SearchCoverageStatus::NodeBudgetLimited
-    } else if exhaustive {
-        SearchCoverageStatus::Exhaustive
-    } else {
-        SearchCoverageStatus::FrontierOpen
-    }
-}
-
-fn coverage_status_reason(coverage_status: SearchCoverageStatus) -> String {
-    match coverage_status {
-        SearchCoverageStatus::Exhaustive => {
-            "frontier exhausted under the current exact-state search configuration".to_string()
-        }
-        SearchCoverageStatus::AcceptedCompleteCandidate => {
-            "stopped after finding a complete winning candidate within the configured hp-loss acceptance threshold".to_string()
-        }
-        SearchCoverageStatus::NodeBudgetLimited => {
-            "node budget limit reached with frontier still open".to_string()
-        }
-        SearchCoverageStatus::TimeBudgetLimited => {
-            "wall-clock deadline reached with frontier still open".to_string()
-        }
-        SearchCoverageStatus::FrontierOpen => {
-            "frontier remains open under current safety limits".to_string()
-        }
-    }
-}
-
-fn frontier_sample_states(frontier: &FrontierQueue) -> Vec<CombatSearchV2StateSummary> {
-    frontier
-        .iter()
-        .take(FRONTIER_SAMPLE_LIMIT)
-        .map(|entry| summarize_state(&entry.node.engine, &entry.node.combat))
-        .collect()
-}
-
-fn evidence_warnings(invalid_card_identity_observed: bool) -> Vec<&'static str> {
-    let mut warnings = vec![
-        "unresolved_cannot_be_claimed_better_than_a_complete_baseline",
-        "no_stepwise_human_action_agreement_objective",
-        "no_llm_control_path",
-        "combat_only_runner_does_not_validate_out_of_combat_strategy_quality",
-        "default_potion_policy_disables_potions_until_a_real_potion_option_planner_exists",
-    ];
-    if invalid_card_identity_observed {
-        warnings.push(
-            "duplicate_active_card_uuid_with_conflicting_card_ids_observed_input_or_rollout_state_invalid_until_investigated",
-        );
-    }
-    warnings
 }
