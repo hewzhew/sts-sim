@@ -2,6 +2,7 @@ use super::*;
 
 mod bootstrap;
 mod child_expansion;
+mod child_node;
 mod finalize;
 mod loop_state;
 mod node_expansion;
