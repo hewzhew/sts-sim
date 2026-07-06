@@ -380,6 +380,7 @@ mod tests {
                 cards_played: 1,
                 living_enemy_count: 1,
                 total_enemy_hp: 10,
+                half_dead_enemy_count: 0,
                 visible_incoming_damage: None,
                 action_count: Some(1),
                 exact_prefix_action_count: Some(1),

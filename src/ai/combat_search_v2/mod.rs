@@ -196,12 +196,28 @@ pub(crate) fn combat_search_action_ordering_role_label_for_state(
     combat: &CombatState,
     input: &ClientInput,
 ) -> &'static str {
-    action_priority::priority_for_input(
+    combat_search_action_ordering_role_label_for_state_with_policy(
         engine,
         combat,
         input,
         CombatSearchV2PhaseGuardPolicy::Default,
         CombatSearchV2SetupBiasPolicy::Default,
+    )
+}
+
+pub(crate) fn combat_search_action_ordering_role_label_for_state_with_policy(
+    engine: &EngineState,
+    combat: &CombatState,
+    input: &ClientInput,
+    phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
+    setup_bias_policy: CombatSearchV2SetupBiasPolicy,
+) -> &'static str {
+    action_priority::priority_for_input(
+        engine,
+        combat,
+        input,
+        phase_guard_policy,
+        setup_bias_policy,
     )
     .role
     .label()

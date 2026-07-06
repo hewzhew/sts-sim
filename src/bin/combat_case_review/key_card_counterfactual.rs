@@ -38,13 +38,13 @@ struct KeyCardCounterfactualVariant {
 }
 
 #[derive(Clone, Copy)]
-enum KeyCardCounterfactualPlacement {
+pub(super) enum KeyCardCounterfactualPlacement {
     OpeningHand,
     DrawTop,
 }
 
 impl KeyCardCounterfactualPlacement {
-    fn label(self) -> &'static str {
+    pub(super) fn label(self) -> &'static str {
         match self {
             Self::OpeningHand => "opening_hand",
             Self::DrawTop => "draw_top",
@@ -166,7 +166,7 @@ fn skipped_variant(
     }
 }
 
-fn move_key_card(
+pub(super) fn move_key_card(
     combat: &mut CombatState,
     uuid: u32,
     placement: KeyCardCounterfactualPlacement,

@@ -17,6 +17,8 @@ mod counterfactual_hp;
 mod focus;
 #[path = "combat_case_review/key_card_counterfactual.rs"]
 mod key_card_counterfactual;
+#[path = "combat_case_review/key_card_decision_microscope.rs"]
+mod key_card_decision_microscope;
 #[path = "combat_case_review/key_card_lifecycle.rs"]
 mod key_card_lifecycle;
 #[path = "combat_case_review/line_lab.rs"]
@@ -25,6 +27,8 @@ mod line_lab;
 mod options;
 #[path = "combat_case_review/quality_lanes.rs"]
 mod quality_lanes;
+#[path = "combat_case_review/root_action_role_duel.rs"]
+mod root_action_role_duel;
 #[path = "combat_case_review/search_review.rs"]
 mod search_review;
 #[path = "combat_case_review/search_runner.rs"]
@@ -42,9 +46,11 @@ use classification::classify_gap_review;
 use counterfactual_hp::run_counterfactual_hp_probe;
 use focus::{focus_witness_line, review_focus, witness_prior_rerun};
 use key_card_counterfactual::run_key_card_counterfactual_probe;
+use key_card_decision_microscope::run_key_card_decision_microscope_probe;
 use line_lab::run_line_lab;
 use options::ReviewOptions;
 use quality_lanes::run_quality_lanes;
+use root_action_role_duel::run_root_action_role_duel_probe;
 use search_runner::run_search;
 use sts_simulator::ai::combat_search_v2::{
     derive_combat_deficit_evidence, replay_combat_search_witness_line_v0,
@@ -94,6 +100,10 @@ struct Args {
     boss_setup_lane: bool,
     #[arg(long)]
     key_card_counterfactual: bool,
+    #[arg(long)]
+    key_card_decision_microscope: bool,
+    #[arg(long)]
+    root_action_role_duel: bool,
     #[arg(long)]
     quality_lane_total_nodes: Option<usize>,
     #[arg(long)]
@@ -170,6 +180,8 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
     let boss_pressure_lens = boss_pressure_lens(&case, &ladder, line_lab.as_ref());
     let boss_setup_lane = run_boss_setup_lane(&options, &case);
     let key_card_counterfactual = run_key_card_counterfactual_probe(&options, &case);
+    let key_card_decision_microscope = run_key_card_decision_microscope_probe(&options, &case);
+    let root_action_role_duel = run_root_action_role_duel_probe(&options, &case);
     let quality_lanes = if options.quality_lanes {
         Some(run_quality_lanes(&options, &case))
     } else {
@@ -199,6 +211,8 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
             boss_pressure_lens,
             boss_setup_lane,
             key_card_counterfactual,
+            key_card_decision_microscope,
+            root_action_role_duel,
             champ_phase_audit,
         },
     )

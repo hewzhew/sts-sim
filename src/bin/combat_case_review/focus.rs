@@ -144,12 +144,14 @@ fn progress_is_better_focus(
     }
 
     (
+        -(candidate.half_dead_enemy_count as i32),
         -candidate.total_enemy_hp,
         -(candidate.living_enemy_count as i32),
         candidate.turns as i32,
         candidate.final_hp,
         -(candidate.potions_used as i32),
     ) > (
+        -(current.half_dead_enemy_count as i32),
         -current.total_enemy_hp,
         -(current.living_enemy_count as i32),
         current.turns as i32,
@@ -161,6 +163,8 @@ fn progress_is_better_focus(
 fn focus_reason(progress: &SearchDiagnosticProgressFacts) -> &'static str {
     if progress.terminal == SearchTerminalLabel::Win {
         "complete_win_available"
+    } else if progress.final_hp <= 0 && progress.half_dead_enemy_count > 0 {
+        "phase_pending_enemy_player_died"
     } else {
         "closest_failure_progress_by_enemy_hp"
     }
@@ -184,6 +188,7 @@ mod tests {
             cards_played: 0,
             living_enemy_count: 1,
             total_enemy_hp: 20,
+            half_dead_enemy_count: 0,
             visible_incoming_damage: None,
             action_count: Some(2),
             exact_prefix_action_count: Some(2),
@@ -220,5 +225,34 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["full_1", "full_2"]
         );
+    }
+
+    #[test]
+    fn focus_reason_marks_phase_pending_enemy_death_separately() {
+        let mut progress = progress_with_hidden_full_actions();
+        progress.final_hp = 0;
+        progress.total_enemy_hp = 0;
+        progress.living_enemy_count = 0;
+        progress.half_dead_enemy_count = 1;
+
+        assert_eq!(focus_reason(&progress), "phase_pending_enemy_player_died");
+    }
+
+    #[test]
+    fn focus_ranking_does_not_treat_half_dead_zero_hp_as_plain_enemy_clear() {
+        let mut phase_pending = progress_with_hidden_full_actions();
+        phase_pending.final_hp = 0;
+        phase_pending.total_enemy_hp = 0;
+        phase_pending.living_enemy_count = 0;
+        phase_pending.half_dead_enemy_count = 1;
+
+        let mut ordinary_failure = progress_with_hidden_full_actions();
+        ordinary_failure.final_hp = 0;
+        ordinary_failure.total_enemy_hp = 10;
+        ordinary_failure.living_enemy_count = 1;
+        ordinary_failure.half_dead_enemy_count = 0;
+
+        assert!(progress_is_better_focus(&ordinary_failure, &phase_pending));
+        assert!(!progress_is_better_focus(&phase_pending, &ordinary_failure));
     }
 }

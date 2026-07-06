@@ -33,7 +33,7 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
     stepper: &impl CombatStepper,
 ) -> CombatSearchV2DecisionMicroscopeReport {
     let search_report = run_combat_search_v2_with_stepper(engine, combat, config.clone(), stepper);
-    let selected_first_action = selected_first_action(engine, combat, &search_report);
+    let selected_first_action = selected_first_action(engine, combat, &config, &search_report);
     let selected_identity = selected_first_action
         .as_ref()
         .map(|action| (action.action_id, action.action_key.as_str()));
@@ -58,7 +58,14 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
         combat,
     );
     let equivalence = compress_equivalent_actions(engine, combat, legal);
-    let ordered = order_indexed_action_choices(engine, combat, equivalence.choices);
+    let ordered = order_indexed_action_choices_with_prior(
+        engine,
+        combat,
+        equivalence.choices,
+        config.root_action_prior.as_ref(),
+        config.phase_guard_policy,
+        config.setup_bias_policy,
+    );
     let candidate_count = ordered.choices.len();
     let candidates = ordered
         .choices
@@ -117,23 +124,37 @@ fn explain_combat_search_v2_initial_decision_with_stepper(
 fn selected_first_action(
     engine: &EngineState,
     combat: &CombatState,
+    config: &CombatSearchV2Config,
     search_report: &CombatSearchV2Report,
 ) -> Option<CombatSearchV2DecisionSelectedAction> {
-    let action = search_report
+    let (selection_source, action) = if let Some(action) = search_report
         .best_win_trajectory
-        .as_ref()?
-        .actions
-        .first()?;
+        .as_ref()
+        .and_then(|trajectory| trajectory.actions.first())
+    {
+        ("best_win_trajectory_first_action", action)
+    } else {
+        (
+            "best_complete_trajectory_first_action",
+            search_report
+                .best_complete_trajectory
+                .as_ref()?
+                .actions
+                .first()?,
+        )
+    };
     Some(CombatSearchV2DecisionSelectedAction {
         action_id: action.action_id,
         action_key: action.action_key.clone(),
         action_debug: action.action_debug.clone(),
-        action_role: combat_search_action_ordering_role_label_for_state(
+        action_role: combat_search_action_ordering_role_label_for_state_with_policy(
             engine,
             combat,
             &action.input,
+            config.phase_guard_policy,
+            config.setup_bias_policy,
         ),
-        selection_source: "best_win_trajectory_first_action",
+        selection_source,
     })
 }
 
@@ -166,6 +187,8 @@ fn config_report(config: &CombatSearchV2Config) -> CombatSearchV2DecisionMicrosc
         rollout_max_actions: config.rollout_max_actions,
         rollout_beam_width: config.rollout_beam_width,
         frontier_policy: config.frontier_policy.label(),
+        phase_guard_policy: config.phase_guard_policy.label(),
+        setup_bias_policy: config.setup_bias_policy.label(),
     }
 }
 
@@ -206,5 +229,61 @@ mod tests {
             .iter()
             .any(|candidate| candidate.one_step.status == "stable"));
         assert!(report.selected_first_action.is_some());
+    }
+
+    #[test]
+    fn microscope_candidate_order_respects_key_card_setup_bias() {
+        let mut combat = blank_test_combat();
+        let mut monster = planned_monster(EnemyId::JawWorm, 1);
+        monster.current_hp = 50;
+        monster.max_hp = 50;
+        combat.entities.monsters = vec![monster];
+        combat.zones.hand = vec![
+            CombatCard::new(CardId::Strike, 1),
+            CombatCard::new(CardId::DemonForm, 2),
+        ];
+        let config = CombatSearchV2Config {
+            max_nodes: 20,
+            rollout_policy: CombatSearchV2RolloutPolicy::Disabled,
+            setup_bias_policy: CombatSearchV2SetupBiasPolicy::KeyCardOnline,
+            input_label: Some("microscope_key_card_bias_test".to_string()),
+            ..CombatSearchV2Config::default()
+        };
+
+        let report = explain_combat_search_v2_initial_decision(
+            &EngineState::CombatPlayerTurn,
+            &combat,
+            config,
+        );
+
+        let demon_form = report
+            .candidates
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.input,
+                    ClientInput::PlayCard {
+                        card_index: 1,
+                        target: None
+                    }
+                )
+            })
+            .expect("Demon Form candidate should be reported");
+        let strike = report
+            .candidates
+            .iter()
+            .find(|candidate| {
+                matches!(
+                    candidate.input,
+                    ClientInput::PlayCard {
+                        card_index: 0,
+                        target: Some(_)
+                    }
+                )
+            })
+            .expect("Strike candidate should be reported");
+
+        assert_eq!(demon_form.action_role, "key_setup_card");
+        assert!(demon_form.ordered_index < strike.ordered_index);
     }
 }

@@ -133,6 +133,12 @@ fn diagnostic_progress_facts(
             cards_played: trajectory.cards_played,
             living_enemy_count: trajectory.final_state.living_enemy_count,
             total_enemy_hp: trajectory.final_state.total_enemy_hp,
+            half_dead_enemy_count: trajectory
+                .final_state
+                .enemy_slots
+                .iter()
+                .filter(|enemy| enemy.half_dead)
+                .count(),
             visible_incoming_damage: Some(trajectory.final_state.visible_incoming_damage),
             action_count: Some(trajectory.actions.len()),
             exact_prefix_action_count: Some(trajectory.actions.len()),
@@ -179,6 +185,16 @@ fn diagnostic_progress_facts(
                 cards_played: rollout.cards_played,
                 living_enemy_count: rollout.living_enemy_count,
                 total_enemy_hp: rollout.total_enemy_hp,
+                half_dead_enemy_count: frontier
+                    .map(|trajectory| {
+                        trajectory
+                            .final_state
+                            .enemy_slots
+                            .iter()
+                            .filter(|enemy| enemy.half_dead)
+                            .count()
+                    })
+                    .unwrap_or_default(),
                 visible_incoming_damage: frontier
                     .map(|trajectory| trajectory.final_state.visible_incoming_damage),
                 action_count: Some(

@@ -16,8 +16,13 @@ pub(super) fn candidate_report(
     selected_identity: Option<(usize, &str)>,
 ) -> CombatSearchV2DecisionCandidateReport {
     let input = choice.choice.input.clone();
-    let role =
-        combat_search_action_ordering_role_label_for_state(&root.engine, &root.combat, &input);
+    let role = combat_search_action_ordering_role_label_for_state_with_policy(
+        &root.engine,
+        &root.combat,
+        &input,
+        config.phase_guard_policy,
+        config.setup_bias_policy,
+    );
     let selected_by_best_complete = selected_identity
         .map(|(id, key)| id == choice.original_action_id && key == choice.choice.action_key)
         .unwrap_or(false);
