@@ -1,10 +1,10 @@
 use std::time::Instant;
 
-use super::super::frontier::is_resource_covered;
 use super::super::*;
 use super::loop_state::SearchLoopState;
 use super::node_budget::{apply_node_budget_gate, NodeBudgetGateOutcome};
 use super::node_deferred_rollout::{apply_deferred_child_rollout, DeferredRolloutOutcome};
+use super::node_pruning::{apply_node_prune_gates, NodePruneOutcome};
 use super::node_terminal::{apply_node_terminal_gate, NodeTerminalOutcome};
 use super::turn_plan_seed_gate::should_seed_turn_plan_at_node;
 use super::turn_plan_seeding::seed_turn_plan_frontier;
@@ -58,24 +58,7 @@ pub(super) fn prepare_node_for_expansion<S: CombatStepper>(
         }
     };
 
-    if node.actions.len() >= input.config.max_actions_per_line {
-        loop_state.max_actions_cut_count = loop_state.max_actions_cut_count.saturating_add(1);
-        record_pre_expand_elapsed(loop_state, pre_expand_started);
-        return NodePreflightOutcome::Continue;
-    }
-
-    let resource = node.resource_vector();
-    let exact_key = combat_exact_state_key(&node.engine, &node.combat);
-    if is_resource_covered(&mut loop_state.exact_transpositions, exact_key, resource) {
-        loop_state.stats.transposition_prunes =
-            loop_state.stats.transposition_prunes.saturating_add(1);
-        record_pre_expand_elapsed(loop_state, pre_expand_started);
-        return NodePreflightOutcome::Continue;
-    }
-
-    let dominance_key = combat_dominance_key(&node.engine, &node.combat);
-    if is_resource_covered(&mut loop_state.dominance, dominance_key, resource) {
-        loop_state.stats.dominance_prunes = loop_state.stats.dominance_prunes.saturating_add(1);
+    if apply_node_prune_gates(loop_state, &node, input.config) == NodePruneOutcome::Pruned {
         record_pre_expand_elapsed(loop_state, pre_expand_started);
         return NodePreflightOutcome::Continue;
     }
