@@ -6,10 +6,12 @@ use super::rollout_profile::RolloutPerformanceCounters;
 use super::*;
 
 mod score;
-use score::{
-    probe_action, probe_terminal_action, probe_upgrade_reason, RolloutActionProbeScore,
-    RolloutTerminalProbeScore,
-};
+mod score_types;
+mod upgrade;
+
+use score::{probe_action, probe_terminal_action};
+use score_types::{RolloutActionProbeScore, RolloutTerminalProbeScore};
+use upgrade::probe_upgrade_reason;
 
 #[derive(Clone, Debug)]
 pub(super) enum OneStepProbeSelection {
@@ -179,5 +181,5 @@ fn choose_by_terminal_one_step_probe(
 }
 
 #[cfg(test)]
-#[path = "rollout_probe_tests.rs"]
+#[path = "../rollout_probe_tests.rs"]
 mod tests;

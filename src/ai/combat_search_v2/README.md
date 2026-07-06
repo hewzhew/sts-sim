@@ -10,7 +10,7 @@ this map and extend an existing boundary when one already exists.
 | Mainline exact search | `search/`, `frontier/`, `transition.rs`, `action_equivalence/`, `turn_local_dominance/` | Yes | May prune or schedule exact branches only inside its documented safety boundary. |
 | Deployable rescue/candidates | `turn_pool_rescue/`, replayable witness helpers | Yes, after replay/check | May propose a concrete line, but must keep its own engine, ranking, and report schema separate. |
 | Estimate/value evidence | `value/`, `rollout/`, `rollout_*`, `pressure_value.rs`, `enemy_phase_value.rs` | Indirect | May order or estimate; must not claim a terminal result unless replayed by exact search. |
-| Report-only diagnostics | `diagnostics/`, `decision_microscope/`, `rollout_probe/`, `turn_plan_probe*`, `trajectory_report.rs` | No | May explain behavior; must not become a strategy entrance. |
+| Report-only diagnostics | `diagnostics/`, `decision_microscope/`, `turn_plan_probe*`, `trajectory_report.rs` | No | May explain behavior; must not become a strategy entrance. |
 | Lab experiments | `line_lab/`, ad hoc binaries/tools | No | May compare lanes and probes; useful ideas must graduate into a named deployable module before runner use. |
 | Legacy-risk / audit-first | large mixed files, old probes, one-off reports | No by default | Before extending, split boundaries or delete/retire unused parts. |
 
@@ -108,7 +108,7 @@ this map and extend an existing boundary when one already exists.
   `enemy_phase_value.rs`, `card_pile_value.rs`: state evaluation facts and
   ordering scores. These may guide frontier/rollout priority but do not prove
   terminal outcomes.
-- `rollout/`, `rollout_cache.rs`, `rollout_policy.rs`,
+- `rollout/`, `rollout_cache/`, `rollout_policy.rs`, `rollout_probe/`,
   `rollout_pending_choice.rs`, `rollout_scheduler.rs`, `rollout_value.rs`:
   estimate-only rollout behavior. Rollout output must remain labeled as
   estimate evidence unless replayed into an exact search node. The default
@@ -120,6 +120,12 @@ this map and extend an existing boundary when one already exists.
   - `rollout_cache/report.rs`: rollout report assembly only.
   - `rollout_cache/policy.rs`: adaptive policy selection and estimate
     comparison helpers.
+- `rollout_probe/`: bounded one-step rollout action selection. This is
+  behavior-affecting estimate code, not report-only diagnostics.
+  - `rollout_probe/score.rs`: exact one-step probe transitions and score
+    construction.
+  - `rollout_probe/score_types.rs`: probe score ordering types.
+  - `rollout_probe/upgrade.rs`: fallback-vs-candidate upgrade admission.
 - `turn_pool_rescue/`: deployable no-win rescue candidate generation. It may
   produce a replay-checked line for run-control, so it is not a report-only lab
   module. Keep new rescue lanes here or in another explicitly deployable module,
@@ -145,8 +151,8 @@ this map and extend an existing boundary when one already exists.
   `state_abstraction/`: observation, audit, and boundary classification.
   These modules must not remove exact branches unless the boundary is promoted
   to a prune-safe consumer.
-- `decision_microscope/` and `rollout_probe/`: opt-in analysis tools. Do not
-  route normal search behavior through them.
+- `decision_microscope/`: opt-in analysis tool. Do not route normal search
+  behavior through it.
 - `line_lab/`: opt-in combat-line review and cut repair reports. It may
   include `turn_pool_rescue` evidence in its report, but runner behavior must
   call the deployable rescue module directly rather than depending on lab code.
