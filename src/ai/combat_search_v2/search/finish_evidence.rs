@@ -1,4 +1,25 @@
-pub(super) fn evidence_warnings(invalid_card_identity_observed: bool) -> Vec<&'static str> {
+use super::super::*;
+
+pub(super) fn evidence_reliability_report(
+    invalid_card_identity_observed: bool,
+    exhaustive: bool,
+) -> CombatSearchV2EvidenceReport {
+    CombatSearchV2EvidenceReport {
+        hidden_info_policy: "uses_only_the_supplied_engine_state; if that state contains hidden draw/rng truth, the report is engine-evidence rather than public-agent evidence",
+        random_policy: "rng state is part of the transposition key; belief particles are not implemented in this first runner",
+        estimate_policy: "unresolved frontier summaries are estimates/partial evidence and are never reported as terminal outcomes",
+        reliability: if invalid_card_identity_observed {
+            "invalid_input_or_rollout_state_duplicate_card_uuid_conflict_observed"
+        } else if exhaustive {
+            "exact_under_supplied_state_and_engine_semantics"
+        } else {
+            "partial_budgeted_evidence"
+        },
+        warnings: evidence_warnings(invalid_card_identity_observed),
+    }
+}
+
+fn evidence_warnings(invalid_card_identity_observed: bool) -> Vec<&'static str> {
     let mut warnings = vec![
         "unresolved_cannot_be_claimed_better_than_a_complete_baseline",
         "no_stepwise_human_action_agreement_objective",
