@@ -6,10 +6,17 @@ use sts_simulator::eval::combat_case::CombatCase;
 
 use super::super::search_runner::run_configured_search;
 use super::super::search_types::{SearchDiagnosticProgressFacts, SearchReview};
+use super::specs::QualityLaneSpec;
 use super::types::{
     CombatSuccessFeedbackComparison, CombatSuccessFeedbackMetrics, CombatSuccessFeedbackRerun,
-    CombatSuccessFeedbackSource,
 };
+
+pub(super) struct CombatSuccessFeedbackSource {
+    pub(super) spec: QualityLaneSpec,
+    pub(super) baseline: CombatSuccessFeedbackMetrics,
+    pub(super) witness: CombatSearchV2WitnessLine,
+    pub(super) source_kind: &'static str,
+}
 
 pub(super) fn run_success_feedback_rerun(
     case: &CombatCase,
@@ -119,81 +126,5 @@ fn compare_success_feedback(
             .zip(rerun.potions_used)
             .map(|(base, next)| next as i32 - base as i32),
         easier_first_win: first_win_nodes_delta.map(|delta| delta < 0),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use sts_simulator::ai::combat_search_v2::{CombatSearchV2ActionPreview, SearchTerminalLabel};
-    use sts_simulator::state::core::ClientInput;
-
-    use super::*;
-
-    #[test]
-    fn estimated_rollout_win_progress_can_become_feedback_witness() {
-        let progress = SearchDiagnosticProgressFacts {
-            source: "rollout_frontier",
-            terminal: SearchTerminalLabel::Win,
-            estimated: true,
-            final_hp: 12,
-            hp_loss: 8,
-            turns: 3,
-            potions_used: 1,
-            cards_played: 4,
-            living_enemy_count: 0,
-            total_enemy_hp: 0,
-            half_dead_enemy_count: 0,
-            visible_incoming_damage: Some(0),
-            action_count: Some(6),
-            exact_prefix_action_count: Some(2),
-            action_key_preview: vec!["a".to_string(), "b".to_string()],
-            input_preview: vec![ClientInput::EndTurn, ClientInput::EndTurn],
-            full_action_preview: vec![
-                CombatSearchV2ActionPreview {
-                    action_key: "a".to_string(),
-                    input: ClientInput::EndTurn,
-                },
-                CombatSearchV2ActionPreview {
-                    action_key: "b".to_string(),
-                    input: ClientInput::EndTurn,
-                },
-            ],
-        };
-
-        let witness = estimated_rollout_feedback_witness("lane", &progress)
-            .expect("rollout win progress should be reusable as witness");
-
-        assert_eq!(witness.source, "lane");
-        assert_eq!(witness.terminal, SearchTerminalLabel::Win);
-        assert_eq!(witness.action_count, Some(6));
-        assert_eq!(witness.actions.len(), 2);
-    }
-
-    #[test]
-    fn non_winning_rollout_progress_is_not_feedback_witness() {
-        let progress = SearchDiagnosticProgressFacts {
-            source: "rollout_frontier",
-            terminal: SearchTerminalLabel::Loss,
-            estimated: true,
-            final_hp: 0,
-            hp_loss: 30,
-            turns: 2,
-            potions_used: 0,
-            cards_played: 3,
-            living_enemy_count: 2,
-            total_enemy_hp: 100,
-            half_dead_enemy_count: 0,
-            visible_incoming_damage: Some(20),
-            action_count: Some(4),
-            exact_prefix_action_count: Some(2),
-            action_key_preview: vec!["a".to_string()],
-            input_preview: vec![ClientInput::EndTurn],
-            full_action_preview: vec![CombatSearchV2ActionPreview {
-                action_key: "a".to_string(),
-                input: ClientInput::EndTurn,
-            }],
-        };
-
-        assert!(estimated_rollout_feedback_witness("lane", &progress).is_none());
     }
 }

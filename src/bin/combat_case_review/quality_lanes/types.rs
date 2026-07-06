@@ -1,11 +1,5 @@
-use std::time::Duration;
-
 use serde::Serialize;
-use sts_simulator::ai::combat_search_v2::{
-    CombatSearchV2ChildRolloutPolicy, CombatSearchV2Config, CombatSearchV2FrontierPolicy,
-    CombatSearchV2PhaseGuardPolicy, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
-    CombatSearchV2TurnPlanPolicy, CombatSearchV2WitnessLine, SearchTerminalLabel,
-};
+use sts_simulator::ai::combat_search_v2::SearchTerminalLabel;
 
 use super::super::search_types::SearchReview;
 
@@ -80,45 +74,6 @@ pub(crate) struct CombatLineQuality {
     pub(super) turns: u32,
     pub(super) cards_played: u32,
     pub(super) action_count: usize,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct QualityLaneSpec {
-    pub(crate) label: &'static str,
-    pub(super) intent: &'static str,
-    pub(super) frontier_policy: CombatSearchV2FrontierPolicy,
-    pub(super) turn_plan_policy: CombatSearchV2TurnPlanPolicy,
-    pub(super) rollout_policy: CombatSearchV2RolloutPolicy,
-    pub(super) child_rollout_policy: CombatSearchV2ChildRolloutPolicy,
-    pub(super) potion_policy: CombatSearchV2PotionPolicy,
-    pub(super) max_potions_used: Option<u32>,
-    pub(super) phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
-}
-
-pub(super) struct CombatSuccessFeedbackSource {
-    pub(super) spec: QualityLaneSpec,
-    pub(super) baseline: CombatSuccessFeedbackMetrics,
-    pub(super) witness: CombatSearchV2WitnessLine,
-    pub(super) source_kind: &'static str,
-}
-
-impl QualityLaneSpec {
-    pub(crate) fn config(self, max_nodes: usize, wall_ms: u64) -> CombatSearchV2Config {
-        CombatSearchV2Config {
-            max_nodes,
-            wall_time: Some(Duration::from_millis(wall_ms)),
-            stop_on_win_hp_loss_at_most: Some(0),
-            min_win_candidates_before_stop: 4,
-            potion_policy: self.potion_policy,
-            max_potions_used: self.max_potions_used,
-            rollout_policy: self.rollout_policy,
-            child_rollout_policy: self.child_rollout_policy,
-            turn_plan_policy: self.turn_plan_policy,
-            frontier_policy: self.frontier_policy,
-            phase_guard_policy: self.phase_guard_policy,
-            ..CombatSearchV2Config::default()
-        }
-    }
 }
 
 impl CombatSuccessFeedbackMetrics {

@@ -1,5 +1,8 @@
 #[path = "quality_lanes/feedback.rs"]
 mod feedback;
+#[cfg(test)]
+#[path = "quality_lanes/feedback_tests.rs"]
+mod feedback_tests;
 #[path = "quality_lanes/quality.rs"]
 mod quality;
 #[path = "quality_lanes/specs.rs"]
@@ -17,9 +20,10 @@ pub(super) use types::CombatQualityLaneReview;
 use super::options::ReviewOptions;
 use super::search_runner::run_configured_search;
 use feedback::{
-    estimated_rollout_feedback_rank, estimated_rollout_feedback_witness, run_success_feedback_rerun,
+    estimated_rollout_feedback_rank, estimated_rollout_feedback_witness,
+    run_success_feedback_rerun, CombatSuccessFeedbackSource,
 };
-use types::{CombatQualityLaneResult, CombatSuccessFeedbackMetrics, CombatSuccessFeedbackSource};
+use types::{CombatQualityLaneResult, CombatSuccessFeedbackMetrics};
 
 pub(super) fn run_quality_lanes(
     options: &ReviewOptions,
