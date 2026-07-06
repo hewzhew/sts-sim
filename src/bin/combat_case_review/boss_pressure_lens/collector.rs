@@ -3,9 +3,8 @@ use sts_simulator::content::monsters::EnemyId;
 use sts_simulator::eval::combat_case::CombatCase;
 
 use super::super::search_types::SearchReview;
-use super::collector_assessment::{
-    collector_objectives, collector_phase, collector_potion_permission, collector_tags,
-};
+use super::collector_assessment::{collector_phase, collector_potion_permission, collector_tags};
+use super::collector_objectives::collector_objectives;
 use super::collector_start::{collector_start_signals, find_enemy};
 use super::line_reviews::{aggregate_line_tags, collect_line_reviews};
 use super::types::BossPressureLensReport;

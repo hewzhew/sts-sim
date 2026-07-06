@@ -7,6 +7,8 @@ use super::search_types::SearchReview;
 mod collector;
 #[path = "boss_pressure_lens/collector_assessment.rs"]
 mod collector_assessment;
+#[path = "boss_pressure_lens/collector_objectives.rs"]
+mod collector_objectives;
 #[path = "boss_pressure_lens/collector_start.rs"]
 mod collector_start;
 #[path = "boss_pressure_lens/line_reviews.rs"]
