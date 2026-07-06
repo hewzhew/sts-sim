@@ -1,0 +1,112 @@
+mod action_mask;
+mod candidate_report;
+mod selection_audit;
+mod types;
+
+pub(crate) use types::CombatSearchV2TurnPlanProbeEnumeration;
+
+use crate::sim::combat::{CombatPosition, CombatStepper, EngineCombatStepper};
+
+use super::frontier::SearchNode;
+use super::turn_plan_probe_report::*;
+use super::turn_planner::{enumerate_turn_plans, TurnPlannerConfigV1};
+use super::*;
+
+const TURN_PLAN_PROBE_MAX_INNER_NODES: usize = 256;
+const TURN_PLAN_PROBE_MAX_END_STATES: usize = 24;
+const TURN_PLAN_PROBE_PER_BUCKET_LIMIT: usize = TURN_PLAN_PROBE_MAX_END_STATES;
+
+pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
+    engine: &EngineState,
+    combat: &CombatState,
+    config: &CombatSearchV2Config,
+) -> CombatSearchV2TurnPlanProbeEnumeration {
+    let root = SearchNode::root(engine.clone(), combat.clone());
+    let turn_config = turn_planner_config(config);
+    let enumeration = enumerate_turn_plans(&root, &EngineCombatStepper, &turn_config, None);
+    let position = CombatPosition::new(engine.clone(), combat.clone());
+    let legal_action_choices = EngineCombatStepper.legal_action_choices(&position);
+    let root_action_mask = action_mask::root_action_mask_report(
+        engine,
+        combat,
+        turn_config.potion_policy,
+        legal_action_choices,
+        &enumeration.preselection_first_actions,
+        &enumeration.preselection_first_action_summaries,
+    );
+    let candidates = enumeration
+        .plans
+        .iter()
+        .enumerate()
+        .map(candidate_report::candidate_report)
+        .collect::<Vec<_>>();
+    let root_report = CombatSearchV2TurnPlanProbeRootReport {
+        schema_name: "CombatSearchV2TurnPlanProbeRootReport",
+        schema_version: 2,
+        question: "which_exact_same_turn_plan_should_receive_followup_search_budget",
+        behavioral_scope: "diagnostic_only_no_prune_no_policy_change_no_artifact_promotion",
+        input_label: config.input_label.clone(),
+        config: CombatSearchV2TurnPlanProbeConfigReport {
+            max_inner_nodes: turn_config.max_inner_nodes,
+            max_end_states: turn_config.max_end_states,
+            per_bucket_limit: turn_config.per_bucket_limit,
+            potion_policy: turn_config.potion_policy.label(),
+            max_engine_steps_per_action: turn_config.max_engine_steps_per_action,
+        },
+        initial_context: CombatSearchV2DecisionContext {
+            state: summarize_state(engine, combat),
+            phase_profile: combat_search_phase_profile_report(combat_search_phase_profile(
+                engine, combat,
+            )),
+            frontier_value: combat_search_frontier_value_report(&root),
+        },
+        root_action_mask,
+        enumeration: CombatSearchV2TurnPlanProbeEnumerationReport {
+            planning_policy: "turn_plan_v1_root_only_bounded_exact_step_enumeration",
+            plans: enumeration.plans.len(),
+            preselection_plans: enumeration.preselection_plan_count,
+            preselection_first_action_count: enumeration.preselection_first_actions.len(),
+            preselection_bucket_counts: selection_audit::bucket_count_report(
+                &enumeration.preselection_bucket_counts,
+            ),
+            selected_bucket_counts: selection_audit::selected_bucket_count_report(
+                &enumeration.plans,
+            ),
+            nodes_expanded: enumeration.nodes_expanded,
+            nodes_generated: enumeration.nodes_generated,
+            exact_state_skips: enumeration.exact_state_skips,
+            truncated_children: enumeration.truncated_children,
+        },
+        selection_audit: selection_audit::selection_audit_report(&enumeration.selection_audit),
+        candidates: candidates
+            .iter()
+            .map(|candidate| candidate.report.clone())
+            .collect(),
+        notes: vec![
+            "turn-plan probes are exact same-turn candidates ending at a stable boundary",
+            "plan enumeration preserves bucket diversity; plan_index is not an optimality claim",
+            "followup child search is owned by eval labs, not by this root probe helper",
+        ],
+    };
+    CombatSearchV2TurnPlanProbeEnumeration {
+        report: root_report,
+        candidates,
+    }
+}
+
+fn turn_planner_config(config: &CombatSearchV2Config) -> TurnPlannerConfigV1 {
+    TurnPlannerConfigV1 {
+        max_inner_nodes: config
+            .turn_plan_probe_max_inner_nodes
+            .unwrap_or(TURN_PLAN_PROBE_MAX_INNER_NODES),
+        max_end_states: config
+            .turn_plan_probe_max_end_states
+            .unwrap_or(TURN_PLAN_PROBE_MAX_END_STATES),
+        per_bucket_limit: config
+            .turn_plan_probe_per_bucket_limit
+            .unwrap_or(TURN_PLAN_PROBE_PER_BUCKET_LIMIT),
+        potion_policy: config.potion_policy,
+        max_engine_steps_per_action: config.max_engine_steps_per_action,
+        turn_plan_prior: config.turn_plan_prior.clone(),
+    }
+}
