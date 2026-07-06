@@ -11,7 +11,7 @@ this map and extend an existing boundary when one already exists.
 | Deployable rescue/candidates | `turn_pool_rescue/`, replayable witness helpers | Yes, after replay/check | May propose a concrete line, but must keep its own engine, ranking, and report schema separate. |
 | Estimate/value evidence | `value/`, `rollout/`, `rollout_*`, `pressure_value.rs`, `enemy_phase_value.rs` | Indirect | May order or estimate; must not claim a terminal result unless replayed by exact search. |
 | Report-only diagnostics | `diagnostics/`, `decision_microscope/`, `rollout_probe/`, `turn_plan_probe*`, `trajectory_report.rs` | No | May explain behavior; must not become a strategy entrance. |
-| Lab experiments | `line_lab.rs`, ad hoc binaries/tools | No | May compare lanes and probes; useful ideas must graduate into a named deployable module before runner use. |
+| Lab experiments | `line_lab/`, ad hoc binaries/tools | No | May compare lanes and probes; useful ideas must graduate into a named deployable module before runner use. |
 | Legacy-risk / audit-first | large mixed files, old probes, one-off reports | No by default | Before extending, split boundaries or delete/retire unused parts. |
 
 ## Primary Entry Points
