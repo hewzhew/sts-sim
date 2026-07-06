@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use super::super::*;
+use super::child_dominance::{apply_child_dominance_gate, ChildDominanceOutcome};
 use super::child_node::{build_child_node, BuiltChildNode};
 use super::child_preflight::{prepare_child_for_expansion, ChildPreflightOutcome};
 use super::child_rollout::child_rollout_estimate;
@@ -76,20 +77,9 @@ pub(super) fn expand_ordered_child<S: CombatStepper>(
         .child_bookkeeping_elapsed_us
         .saturating_add(child_bookkeeping_started.elapsed().as_micros());
 
-    let child_bookkeeping_started = Instant::now();
-    if !truncated && turn_local_dominance.observe_child(&child) {
-        loop_state.stats.turn_local_dominance_prunes = loop_state
-            .stats
-            .turn_local_dominance_prunes
-            .saturating_add(1);
-        loop_state.performance.turn_local_dominance_rollout_skips = loop_state
-            .performance
-            .turn_local_dominance_rollout_skips
-            .saturating_add(1);
-        loop_state.performance.child_bookkeeping_elapsed_us = loop_state
-            .performance
-            .child_bookkeeping_elapsed_us
-            .saturating_add(child_bookkeeping_started.elapsed().as_micros());
+    if apply_child_dominance_gate(loop_state, turn_local_dominance, &child, truncated)
+        == ChildDominanceOutcome::Pruned
+    {
         return ChildExpansionOutcome::Advanced;
     }
 

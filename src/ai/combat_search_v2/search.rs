@@ -2,6 +2,7 @@ use super::*;
 
 mod best_trajectories;
 mod bootstrap;
+mod child_dominance;
 mod child_expansion;
 mod child_node;
 mod child_preflight;
