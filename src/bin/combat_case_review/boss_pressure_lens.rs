@@ -13,6 +13,8 @@ mod collector_objectives;
 mod collector_start;
 #[path = "boss_pressure_lens/line_reviews.rs"]
 mod line_reviews;
+#[path = "boss_pressure_lens/line_tags.rs"]
+mod line_tags;
 #[path = "boss_pressure_lens/types.rs"]
 mod types;
 
