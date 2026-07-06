@@ -6,6 +6,8 @@ mod loop_state;
 mod node_expansion;
 mod node_preflight;
 mod rollout_timing;
+mod turn_plan_seed_gate;
+mod win_acceptance;
 
 use child_expansion::{expand_ordered_child, ChildExpansionInput, ChildExpansionOutcome};
 use finalize::{finish_combat_search_report, SearchFinishInput};
@@ -13,8 +15,8 @@ use loop_state::SearchLoopState;
 use node_expansion::prepare_node_expansion;
 use node_preflight::{prepare_node_for_expansion, NodePreflightInput, NodePreflightOutcome};
 use rollout_timing::{timed_rollout_estimate, RolloutEstimateSource};
-
-const TURN_PLAN_SEED_CRITICAL_SURVIVAL_MARGIN: i32 = 6;
+#[cfg(test)]
+use turn_plan_seed_gate::{should_seed_turn_plan_at_node, tactical_enemy_turn_plan_seed_gate};
 
 pub fn run_combat_search_v2(
     engine: &EngineState,
@@ -156,80 +158,6 @@ pub fn run_combat_search_v2_with_stepper(
         exhausted: loop_state.exhausted,
         accepted_complete_candidate: loop_state.accepted_complete_candidate,
     })
-}
-
-fn accepted_complete_win(node: &SearchNode, config: &CombatSearchV2Config) -> bool {
-    if terminal_label(&node.engine, &node.combat) != SearchTerminalLabel::Win {
-        return false;
-    }
-    let hp_loss = (node.initial_hp - node.combat.entities.player.current_hp).max(0) as u32;
-    if hp_loss == 0 && !super::external_payoff::has_external_payoff_opportunity(&node.combat) {
-        return true;
-    }
-    let Some(limit) = config.stop_on_win_hp_loss_at_most else {
-        return false;
-    };
-    hp_loss <= limit
-}
-
-fn should_seed_turn_plan_at_node(node: &SearchNode, config: &CombatSearchV2Config) -> bool {
-    if !config.turn_plan_policy.seeds_turn_boundary_frontier()
-        || !matches!(node.engine, EngineState::CombatPlayerTurn)
-        || node.turn_prefix.prefix_length() != 0
-        || terminal_label(&node.engine, &node.combat) != SearchTerminalLabel::Unresolved
-    {
-        return false;
-    }
-
-    if turn_plan_prior_has_current_state(node, config) {
-        return true;
-    }
-
-    if config.turn_plan_policy.requires_tactical_enemy_gate() {
-        return tactical_enemy_turn_plan_seed_gate(node);
-    }
-
-    true
-}
-
-fn turn_plan_prior_has_current_state(node: &SearchNode, config: &CombatSearchV2Config) -> bool {
-    let Some(prior) = config
-        .turn_plan_prior
-        .as_ref()
-        .filter(|prior| !prior.is_empty())
-    else {
-        return false;
-    };
-    let state_hash = combat_exact_state_hash_v1(&node.engine, &node.combat);
-    prior.has_hints_for_state(&state_hash)
-}
-
-fn tactical_enemy_turn_plan_seed_gate(node: &SearchNode) -> bool {
-    if node.combat.meta.is_boss_fight || node.combat.meta.is_elite_fight {
-        return true;
-    }
-
-    if visible_high_pressure_turn_plan_seed_gate(&node.combat) {
-        return true;
-    }
-
-    let profile = combat_search_phase_profile(&node.engine, &node.combat);
-    (profile.enemy_mechanics.healer_support_count > 0 && living_enemy_count(&node.combat) >= 2)
-        || profile.enemy_mechanics.fungi_beast_count >= 3
-}
-
-fn visible_high_pressure_turn_plan_seed_gate(combat: &CombatState) -> bool {
-    let incoming = visible_incoming_damage(combat);
-    if incoming <= 0 {
-        return false;
-    }
-    let survival_margin = combat
-        .entities
-        .player
-        .current_hp
-        .saturating_add(combat.entities.player.block)
-        .saturating_sub(incoming);
-    survival_margin <= TURN_PLAN_SEED_CRITICAL_SURVIVAL_MARGIN
 }
 
 #[cfg(test)]

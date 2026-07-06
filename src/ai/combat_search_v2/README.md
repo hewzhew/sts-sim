@@ -21,6 +21,9 @@ this map and extend an existing boundary when one already exists.
   frontier insertion.
 - `search/rollout_timing.rs`: shared rollout-estimate timing and attribution
   counters for root, child, deferred-child, and turn-plan seed estimates.
+- `search/win_acceptance.rs`: stop/accept criteria for complete win candidates.
+- `search/turn_plan_seed_gate.rs`: turn-boundary frontier seed admission gates,
+  including tactical enemy-pressure gates.
 - `frontier/`: frontier queue, priority, `SearchNode`, and resource dominance
   vectors.
 - `types/config.rs`: user-visible policy switches. New experimental behavior

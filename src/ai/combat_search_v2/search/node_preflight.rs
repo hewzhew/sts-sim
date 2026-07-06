@@ -7,7 +7,7 @@ use super::loop_state::SearchLoopState;
 use super::rollout_timing::{
     observe_deferred_rollout_admission, timed_rollout_estimate, RolloutEstimateSource,
 };
-use super::should_seed_turn_plan_at_node;
+use super::turn_plan_seed_gate::should_seed_turn_plan_at_node;
 
 pub(super) enum NodePreflightOutcome {
     Expand(SearchNode),

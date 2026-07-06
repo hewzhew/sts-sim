@@ -6,8 +6,8 @@ use super::super::frontier::{
     FrontierQueue, QueueEntry, ResourceVector, SearchNode,
 };
 use super::super::*;
-use super::accepted_complete_win;
 use super::rollout_timing::{timed_rollout_estimate, RolloutEstimateSource};
+use super::win_acceptance::accepted_complete_win;
 
 pub(super) struct SearchLoopState {
     pub(super) stats: CombatSearchV2Stats,
