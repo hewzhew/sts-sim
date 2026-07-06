@@ -4,6 +4,7 @@ mod best_trajectories;
 mod bootstrap;
 mod child_expansion;
 mod child_node;
+mod child_preflight;
 mod child_rollout;
 mod finalize;
 mod finish_diagnostics;

@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use super::super::*;
 use super::child_node::{build_child_node, BuiltChildNode};
+use super::child_preflight::{prepare_child_for_expansion, ChildPreflightOutcome};
 use super::child_rollout::child_rollout_estimate;
 use super::loop_state::SearchLoopState;
 
@@ -28,21 +29,19 @@ pub(super) fn expand_ordered_child<S: CombatStepper>(
     turn_local_dominance: &mut TurnLocalDominanceStateObservation,
     input: ChildExpansionInput<'_, S>,
 ) -> ChildExpansionOutcome {
-    let potion_tactical_priority = potions::semantic_potion_tactical_priority(
-        &input.parent.combat,
-        &input.ordered_choice.choice.input,
-    );
-    if input.config.max_potions_used.is_some_and(|max| {
-        input.parent.potions_used >= max && is_use_potion_input(&input.ordered_choice.choice.input)
-    }) {
-        loop_state.potion_budget_cut_count = loop_state.potion_budget_cut_count.saturating_add(1);
-        return ChildExpansionOutcome::Advanced;
-    }
-    if input.deadline.is_some_and(|limit| Instant::now() >= limit) {
-        loop_state.stats.deadline_hit = true;
-        loop_state.exhausted = true;
-        return ChildExpansionOutcome::DeadlineReached;
-    }
+    let potion_tactical_priority = match prepare_child_for_expansion(
+        loop_state,
+        input.parent,
+        &input.ordered_choice,
+        input.config,
+        input.deadline,
+    ) {
+        ChildPreflightOutcome::Continue {
+            potion_tactical_priority,
+        } => potion_tactical_priority,
+        ChildPreflightOutcome::Advanced => return ChildExpansionOutcome::Advanced,
+        ChildPreflightOutcome::DeadlineReached => return ChildExpansionOutcome::DeadlineReached,
+    };
 
     let step_started = Instant::now();
     let step = input.stepper.apply_to_stable(
