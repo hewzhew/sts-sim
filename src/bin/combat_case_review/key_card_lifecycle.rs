@@ -1,10 +1,5 @@
-use serde::Serialize;
-use sts_simulator::ai::analysis::card_semantics::{
-    card_definition_with_upgrades, CombatEvent, InstalledRule, Mechanic, PlayEffect,
-    TriggeredEffect,
-};
-use sts_simulator::content::cards::{java_id, CardId};
-use sts_simulator::runtime::combat::{CombatCard, CombatState};
+use sts_simulator::content::cards::java_id;
+use sts_simulator::runtime::combat::CombatState;
 use sts_simulator::sim::combat::{
     CombatPosition, CombatStepLimits, CombatStepper, CombatTerminal, EngineCombatStepper,
 };
@@ -12,79 +7,18 @@ use sts_simulator::state::core::ClientInput;
 
 use super::focus::{focus_witness_line, CombatReviewFocus};
 
-#[derive(Serialize)]
-pub(super) struct KeyCardLifecycleReport {
-    schema: &'static str,
-    contract: &'static str,
-    basis_line: &'static str,
-    witness_action_count: Option<usize>,
-    replayed_actions: usize,
-    truncated_by_preview: bool,
-    truncated: bool,
-    timed_out: bool,
-    tracked_cards: Vec<KeyCardLifecycle>,
-}
+#[path = "key_card_lifecycle/targets.rs"]
+mod targets;
+#[path = "key_card_lifecycle/types.rs"]
+mod types;
+#[path = "key_card_lifecycle/zones.rs"]
+mod zones;
 
-#[derive(Serialize)]
-struct KeyCardLifecycle {
-    card: String,
-    uuid: u32,
-    upgrades: u8,
-    reason: KeyCardReason,
-    initial_zone: CardZoneLabel,
-    first_seen_zone: CardZoneAtStep,
-    first_play: Option<KeyCardPlay>,
-    final_zone: CardZoneAtStep,
-    played_in_replay: bool,
-}
+pub(super) use targets::key_card_targets;
+pub(super) use types::{KeyCardLifecycleReport, KeyCardReason};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum KeyCardReason {
-    StrengthScaling,
-    ExhaustEngine,
-}
-
-impl KeyCardReason {
-    pub(super) fn label(self) -> &'static str {
-        match self {
-            Self::StrengthScaling => "strength_scaling",
-            Self::ExhaustEngine => "exhaust_engine",
-        }
-    }
-}
-
-#[derive(Clone)]
-pub(super) struct KeyCardTarget {
-    pub(super) card: CombatCard,
-    pub(super) reason: KeyCardReason,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum CardZoneLabel {
-    MasterOnly,
-    Hand,
-    Draw,
-    Discard,
-    Exhaust,
-    Limbo,
-    Queued,
-    Missing,
-}
-
-#[derive(Clone, Serialize)]
-struct CardZoneAtStep {
-    step_index: usize,
-    zone: CardZoneLabel,
-}
-
-#[derive(Serialize)]
-struct KeyCardPlay {
-    step_index: usize,
-    action_key: String,
-    input: ClientInput,
-}
+use types::{CardZoneAtStep, CardZoneLabel, KeyCardLifecycle, KeyCardPlay, TrackedKeyCard};
+use zones::zone_for_uuid;
 
 pub(super) fn key_card_lifecycle(
     root: &CombatPosition,
@@ -150,14 +84,6 @@ pub(super) fn key_card_lifecycle(
     })
 }
 
-struct TrackedKeyCard {
-    card: CombatCard,
-    reason: KeyCardReason,
-    initial_zone: CardZoneLabel,
-    first_seen_zone: CardZoneAtStep,
-    first_play: Option<KeyCardPlay>,
-}
-
 fn report_without_focus(tracked_cards: Vec<TrackedKeyCard>) -> KeyCardLifecycleReport {
     KeyCardLifecycleReport {
         schema: "key_card_lifecycle_v0",
@@ -192,55 +118,6 @@ fn tracked_key_cards(combat: &CombatState) -> Vec<TrackedKeyCard> {
             }
         })
         .collect()
-}
-
-pub(super) fn key_card_targets(combat: &CombatState) -> Vec<KeyCardTarget> {
-    combat
-        .meta
-        .master_deck_snapshot
-        .iter()
-        .filter_map(|card| {
-            key_card_reason(card.id, card.upgrades).map(|reason| KeyCardTarget {
-                card: card.clone(),
-                reason,
-            })
-        })
-        .collect()
-}
-
-fn key_card_reason(card: CardId, upgrades: u8) -> Option<KeyCardReason> {
-    let definition = card_definition_with_upgrades(card, upgrades);
-    if definition.play_effects.iter().any(|effect| {
-        matches!(
-            effect,
-            PlayEffect::Provide(
-                Mechanic::Strength | Mechanic::TemporaryStrength | Mechanic::StrengthMultiplier
-            )
-        )
-    }) || definition.event_handlers.iter().any(|handler| {
-        matches!(
-            handler.effect,
-            TriggeredEffect::Provide(
-                Mechanic::Strength | Mechanic::TemporaryStrength | Mechanic::StrengthMultiplier
-            )
-        )
-    }) {
-        return Some(KeyCardReason::StrengthScaling);
-    }
-    if definition
-        .installed_rules
-        .contains(&InstalledRule::SkillCardsCostZeroAndExhaust)
-        || definition.event_handlers.iter().any(|handler| {
-            handler.on == CombatEvent::CardExhausted
-                && matches!(
-                    handler.effect,
-                    TriggeredEffect::Provide(Mechanic::Block | Mechanic::CardDraw)
-                )
-        })
-    {
-        return Some(KeyCardReason::ExhaustEngine);
-    }
-    None
 }
 
 fn note_played_key_card(
@@ -311,51 +188,12 @@ fn lifecycle_from_tracked(
     }
 }
 
-fn zone_for_uuid(combat: &CombatState, uuid: u32) -> CardZoneLabel {
-    if combat.zones.hand.iter().any(|card| card.uuid == uuid) {
-        CardZoneLabel::Hand
-    } else if combat.zones.draw_pile.iter().any(|card| card.uuid == uuid) {
-        CardZoneLabel::Draw
-    } else if combat
-        .zones
-        .discard_pile
-        .iter()
-        .any(|card| card.uuid == uuid)
-    {
-        CardZoneLabel::Discard
-    } else if combat
-        .zones
-        .exhaust_pile
-        .iter()
-        .any(|card| card.uuid == uuid)
-    {
-        CardZoneLabel::Exhaust
-    } else if combat.zones.limbo.iter().any(|card| card.uuid == uuid) {
-        CardZoneLabel::Limbo
-    } else if combat
-        .zones
-        .queued_cards
-        .iter()
-        .any(|queued| queued.card.uuid == uuid)
-    {
-        CardZoneLabel::Queued
-    } else if combat
-        .meta
-        .master_deck_snapshot
-        .iter()
-        .any(|card| card.uuid == uuid)
-    {
-        CardZoneLabel::MasterOnly
-    } else {
-        CardZoneLabel::Missing
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use sts_simulator::ai::combat_search_v2::CombatSearchV2ActionPreview;
     use sts_simulator::ai::combat_search_v2::SearchTerminalLabel;
+    use sts_simulator::content::cards::CardId;
     use sts_simulator::runtime::combat::CombatCard;
     use sts_simulator::sim::combat::CombatPosition;
     use sts_simulator::state::core::EngineState;
