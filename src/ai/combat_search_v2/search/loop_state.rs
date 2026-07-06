@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::Instant;
 
 use super::super::frontier::{
@@ -6,7 +6,7 @@ use super::super::frontier::{
     QueueEntry, ResourceVector, SearchNode,
 };
 use super::super::*;
-use super::rollout_timing::{timed_rollout_estimate, RolloutEstimateSource};
+use super::turn_plan_seeding::TurnPlanSeedTracker;
 use super::win_acceptance::accepted_complete_win;
 
 pub(super) struct SearchLoopState {
@@ -17,7 +17,7 @@ pub(super) struct SearchLoopState {
     pub(super) rollout_cache: RolloutCache,
     pub(super) performance: CombatSearchV2PerformanceReport,
     pub(super) frontier: FrontierQueue,
-    pub(super) turn_plan_seeded_sources: HashSet<CombatExactStateKey>,
+    pub(super) turn_plan_seed_tracker: TurnPlanSeedTracker,
     pub(super) best_complete: Option<SearchNode>,
     pub(super) best_win: Option<SearchNode>,
     pub(super) win_candidates: Vec<SearchNode>,
@@ -45,7 +45,7 @@ impl SearchLoopState {
             ),
             performance: CombatSearchV2PerformanceReport::default(),
             frontier: FrontierQueue::new(config.frontier_policy),
-            turn_plan_seeded_sources: HashSet::new(),
+            turn_plan_seed_tracker: TurnPlanSeedTracker::default(),
             best_complete: None,
             best_win: None,
             win_candidates: Vec::new(),
@@ -99,68 +99,6 @@ impl SearchLoopState {
     pub(super) fn remember_loss(&mut self, node: SearchNode) {
         self.stats.terminal_losses = self.stats.terminal_losses.saturating_add(1);
         self.remember_complete(node);
-    }
-
-    pub(super) fn seed_turn_plan_frontier(
-        &mut self,
-        source: &SearchNode,
-        stepper: &impl CombatStepper,
-        config: &CombatSearchV2Config,
-        deadline: Option<Instant>,
-    ) {
-        let source_key = combat_exact_state_key(&source.engine, &source.combat);
-        if !self.turn_plan_seeded_sources.insert(source_key) {
-            return;
-        }
-
-        let seed_started = Instant::now();
-        let mut seeded_nodes = turn_plan_frontier_seed(source, stepper, config, deadline);
-        self.performance.turn_plan_frontier_seed_calls = self
-            .performance
-            .turn_plan_frontier_seed_calls
-            .saturating_add(1);
-        self.performance.turn_plan_frontier_seed_elapsed_us = self
-            .performance
-            .turn_plan_frontier_seed_elapsed_us
-            .saturating_add(seed_started.elapsed().as_micros());
-        self.diagnostics
-            .observe_turn_plan_frontier_seeded_nodes(seeded_nodes.nodes.len());
-        self.diagnostics
-            .observe_turn_plan_prior_scored_plans(seeded_nodes.turn_plan_prior_scored_plans);
-        for mut seed in seeded_nodes.nodes.drain(..) {
-            seed.rollout_estimate = if terminal_label(&seed.engine, &seed.combat)
-                == SearchTerminalLabel::Unresolved
-            {
-                timed_rollout_estimate(
-                    &mut self.rollout_cache,
-                    &seed,
-                    stepper,
-                    config,
-                    deadline,
-                    &mut self.performance,
-                    RolloutEstimateSource::TurnPlanSeed,
-                )
-            } else {
-                self.performance.terminal_turn_plan_seed_rollout_skips = self
-                    .performance
-                    .terminal_turn_plan_seed_rollout_skips
-                    .saturating_add(1);
-                RolloutNodeEstimate::from_node(
-                    &seed,
-                    0,
-                    RolloutStopReason::TerminalState,
-                    Some("terminal_turn_plan_seed_no_rollout"),
-                    super::super::rollout_pending_choice::RolloutPendingChoiceProgress::default(),
-                )
-            };
-            self.stats.nodes_generated = self.stats.nodes_generated.saturating_add(1);
-            if self.stats.nodes_to_first_win.is_none()
-                && terminal_label(&seed.engine, &seed.combat) == SearchTerminalLabel::Win
-            {
-                self.stats.nodes_to_first_win = Some(self.stats.nodes_generated);
-            }
-            self.push_frontier(seed);
-        }
     }
 
     pub(super) fn finish_diagnostics_and_timing(

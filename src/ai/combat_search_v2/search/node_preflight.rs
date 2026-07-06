@@ -8,6 +8,7 @@ use super::rollout_timing::{
     observe_deferred_rollout_admission, timed_rollout_estimate, RolloutEstimateSource,
 };
 use super::turn_plan_seed_gate::should_seed_turn_plan_at_node;
+use super::turn_plan_seeding::seed_turn_plan_frontier;
 
 pub(super) enum NodePreflightOutcome {
     Expand(SearchNode),
@@ -112,7 +113,13 @@ pub(super) fn prepare_node_for_expansion<S: CombatStepper>(
     }
 
     if should_seed_turn_plan_at_node(&node, input.config) {
-        loop_state.seed_turn_plan_frontier(&node, input.stepper, input.config, input.deadline);
+        seed_turn_plan_frontier(
+            loop_state,
+            &node,
+            input.stepper,
+            input.config,
+            input.deadline,
+        );
     }
     record_pre_expand_elapsed(loop_state, pre_expand_started);
     NodePreflightOutcome::Expand(node)

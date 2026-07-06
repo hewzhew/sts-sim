@@ -3,6 +3,7 @@ use std::time::Instant;
 use super::super::*;
 use super::loop_state::SearchLoopState;
 use super::rollout_timing::{timed_rollout_estimate, RolloutEstimateSource};
+use super::turn_plan_seeding::seed_turn_plan_frontier;
 
 pub(super) fn initialize_root_frontier(
     loop_state: &mut SearchLoopState,
@@ -28,7 +29,8 @@ pub(super) fn initialize_root_frontier(
     let root_for_turn_plan_diagnostics = root.clone();
     loop_state.push_frontier(root);
     if config.turn_plan_policy.seeds_root_frontier() {
-        loop_state.seed_turn_plan_frontier(
+        seed_turn_plan_frontier(
+            loop_state,
             &root_for_turn_plan_diagnostics,
             stepper,
             config,

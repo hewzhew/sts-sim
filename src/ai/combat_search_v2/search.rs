@@ -9,6 +9,7 @@ mod node_expansion;
 mod node_preflight;
 mod rollout_timing;
 mod turn_plan_seed_gate;
+mod turn_plan_seeding;
 mod win_acceptance;
 
 use bootstrap::initialize_root_frontier;
