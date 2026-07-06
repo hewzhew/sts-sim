@@ -1,5 +1,6 @@
 use super::*;
 
+mod bootstrap;
 mod child_expansion;
 mod finalize;
 mod loop_state;
@@ -9,12 +10,12 @@ mod rollout_timing;
 mod turn_plan_seed_gate;
 mod win_acceptance;
 
+use bootstrap::initialize_root_frontier;
 use child_expansion::{expand_ordered_child, ChildExpansionInput, ChildExpansionOutcome};
 use finalize::{finish_combat_search_report, SearchFinishInput};
 use loop_state::SearchLoopState;
 use node_expansion::prepare_node_expansion;
 use node_preflight::{prepare_node_for_expansion, NodePreflightInput, NodePreflightOutcome};
-use rollout_timing::{timed_rollout_estimate, RolloutEstimateSource};
 #[cfg(test)]
 use turn_plan_seed_gate::{should_seed_turn_plan_at_node, tactical_enemy_turn_plan_seed_gate};
 
@@ -36,29 +37,8 @@ pub fn run_combat_search_v2_with_stepper(
     let deadline = config.wall_time.map(|duration| started + duration);
     let policy_evidence = combat_search_policy_evidence_for_combat(combat);
     let mut loop_state = SearchLoopState::new(&config);
-    let mut root = SearchNode::root(engine.clone(), combat.clone());
-    root.rollout_estimate = timed_rollout_estimate(
-        &mut loop_state.rollout_cache,
-        &root,
-        stepper,
-        &config,
-        deadline,
-        &mut loop_state.performance,
-        RolloutEstimateSource::Root,
-    );
-    if terminal_label(&root.engine, &root.combat) == SearchTerminalLabel::Win {
-        loop_state.stats.nodes_to_first_win = Some(0);
-    }
-    let root_for_turn_plan_diagnostics = root.clone();
-    loop_state.push_frontier(root);
-    if config.turn_plan_policy.seeds_root_frontier() {
-        loop_state.seed_turn_plan_frontier(
-            &root_for_turn_plan_diagnostics,
-            stepper,
-            &config,
-            deadline,
-        );
-    }
+    let root_for_turn_plan_diagnostics =
+        initialize_root_frontier(&mut loop_state, engine, combat, stepper, &config, deadline);
 
     loop {
         let Some(entry) = loop_state.pop_frontier() else {

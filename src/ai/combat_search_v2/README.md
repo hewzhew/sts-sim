@@ -7,6 +7,8 @@ this map and extend an existing boundary when one already exists.
 
 - `search.rs`: whole-combat search orchestration: root setup, main loop, action
   expansion handoff, and report finalization.
+- `search/bootstrap.rs`: root search-node construction, root rollout estimate,
+  initial frontier insertion, and optional root turn-plan seeding.
 - `search/loop_state.rs`: mutable search-loop state ownership: frontier, stats,
   diagnostics, transposition/dominance tables, rollout cache, and best-line
   candidates.
