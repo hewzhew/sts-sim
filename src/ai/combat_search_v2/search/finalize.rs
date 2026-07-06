@@ -1,5 +1,6 @@
 use super::super::frontier::FrontierQueue;
 use super::super::*;
+use super::best_trajectories::SearchTrajectoryBook;
 use super::loop_state::SearchLoopState;
 
 pub(super) struct SearchFinishInput {
@@ -20,10 +21,7 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         exact_transpositions,
         dominance,
         frontier,
-        best_complete,
-        best_win,
-        win_candidates,
-        best_frontier,
+        trajectories,
         rollout_cache,
         performance,
         unresolved_leaf_count,
@@ -34,6 +32,12 @@ pub(super) fn finish_combat_search_report(input: SearchFinishInput) -> CombatSea
         accepted_complete_candidate,
         ..
     } = loop_state;
+    let SearchTrajectoryBook {
+        best_complete,
+        best_win,
+        win_candidates,
+        best_frontier,
+    } = trajectories;
 
     let exhaustive = !accepted_complete_candidate && !exhausted && frontier.is_empty();
     let coverage_status =

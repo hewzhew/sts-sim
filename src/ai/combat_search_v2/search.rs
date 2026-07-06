@@ -1,5 +1,6 @@
 use super::*;
 
+mod best_trajectories;
 mod bootstrap;
 mod child_expansion;
 mod child_node;
