@@ -5,6 +5,7 @@ use super::super::*;
 use super::loop_state::SearchLoopState;
 use super::node_budget::{apply_node_budget_gate, NodeBudgetGateOutcome};
 use super::node_deferred_rollout::{apply_deferred_child_rollout, DeferredRolloutOutcome};
+use super::node_terminal::{apply_node_terminal_gate, NodeTerminalOutcome};
 use super::turn_plan_seed_gate::should_seed_turn_plan_at_node;
 use super::turn_plan_seeding::seed_turn_plan_frontier;
 
@@ -44,24 +45,18 @@ pub(super) fn prepare_node_for_expansion<S: CombatStepper>(
     };
 
     let pre_expand_started = Instant::now();
-    loop_state.remember_best_frontier(&node);
-    match terminal_label(&node.engine, &node.combat) {
-        SearchTerminalLabel::Win => {
-            if loop_state.remember_win(node, input.config) {
-                record_pre_expand_elapsed(loop_state, pre_expand_started);
-                loop_state.accepted_complete_candidate = true;
-                return NodePreflightOutcome::Stop;
-            }
+    let node = match apply_node_terminal_gate(loop_state, node, input.config) {
+        NodeTerminalOutcome::Continue(node) => node,
+        NodeTerminalOutcome::Skip => {
             record_pre_expand_elapsed(loop_state, pre_expand_started);
             return NodePreflightOutcome::Continue;
         }
-        SearchTerminalLabel::Loss => {
-            loop_state.remember_loss(node);
+        NodeTerminalOutcome::StopAcceptedWin => {
+            loop_state.accepted_complete_candidate = true;
             record_pre_expand_elapsed(loop_state, pre_expand_started);
-            return NodePreflightOutcome::Continue;
+            return NodePreflightOutcome::Stop;
         }
-        SearchTerminalLabel::Unresolved => {}
-    }
+    };
 
     if node.actions.len() >= input.config.max_actions_per_line {
         loop_state.max_actions_cut_count = loop_state.max_actions_cut_count.saturating_add(1);

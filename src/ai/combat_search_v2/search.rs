@@ -11,6 +11,7 @@ mod node_budget;
 mod node_deferred_rollout;
 mod node_expansion;
 mod node_preflight;
+mod node_terminal;
 mod rollout_timing;
 mod turn_plan_seed_gate;
 mod turn_plan_seeding;
