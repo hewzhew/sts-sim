@@ -83,6 +83,9 @@ this map and extend an existing boundary when one already exists.
 - `action_facts/`, `action_effects/`, `action_priority/`: structured action
   semantics. Put reusable action knowledge here instead of embedding it in
   search, rollout, or reports.
+  - `action_priority/play_card/`: play-card ordering entrypoint plus small
+    setup and target helpers. Keep boss/setup/card-role hints out of the
+    search loop.
 - `action_ordering/`: action child-generation order only. It must not prune or
   merge legal actions.
 - `action_equivalence/`: soundness-scoped local action-list deduplication only. Do

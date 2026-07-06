@@ -1,3 +1,6 @@
+mod setup;
+mod target;
+
 use super::super::action_effects::card_play_effect_facts;
 use super::super::phase_action_ordering::{
     phase_action_ordering_hint, PhaseActionAccessFacts, PhaseActionOrderingFacts,
@@ -6,15 +9,14 @@ use super::super::phase_profile::CombatSearchPhaseProfileV1;
 use super::super::{enemy_phase_transition_hint_for_input, visible_incoming_damage};
 use super::constants::*;
 use super::*;
-use crate::ai::analysis::card_semantics::{
-    card_definition_with_upgrades, CombatEvent, InstalledRule, Mechanic, PlayEffect,
-    TriggeredEffect,
-};
-use crate::content::cards::{self, CardTarget, CardType};
-use crate::content::monsters::EnemyId;
-use crate::content::powers::{store, PowerId};
+use crate::content::cards::{self, CardType};
 use crate::runtime::combat::CombatState;
 use crate::state::core::ClientInput;
+
+use setup::{current_turn_attack_setup_score, key_setup_card_online_candidate};
+use target::{
+    target_enemy_id, target_has_stasis_card, target_progress_hint, target_progress_kills,
+};
 
 pub(super) fn priority_for_play_card(
     combat: &CombatState,
@@ -140,153 +142,4 @@ pub(super) fn priority_for_play_card(
         effects: effect_diagnostics,
         ..ActionOrderingPriority::neutral(role)
     }
-}
-
-fn key_setup_card_online_candidate(card: crate::content::cards::CardId, upgrades: u8) -> bool {
-    let definition = card_definition_with_upgrades(card, upgrades);
-    definition.play_effects.iter().any(|effect| {
-        matches!(
-            effect,
-            PlayEffect::Provide(
-                Mechanic::Strength | Mechanic::TemporaryStrength | Mechanic::StrengthMultiplier
-            )
-        )
-    }) || definition.event_handlers.iter().any(|handler| {
-        matches!(
-            handler.effect,
-            TriggeredEffect::Provide(
-                Mechanic::Strength | Mechanic::TemporaryStrength | Mechanic::StrengthMultiplier
-            )
-        )
-    }) || definition
-        .installed_rules
-        .contains(&InstalledRule::SkillCardsCostZeroAndExhaust)
-        || definition.event_handlers.iter().any(|handler| {
-            handler.on == CombatEvent::CardExhausted
-                && matches!(
-                    handler.effect,
-                    TriggeredEffect::Provide(Mechanic::Block | Mechanic::CardDraw)
-                )
-        })
-}
-
-fn current_turn_attack_setup_score(
-    combat: &CombatState,
-    card_index: usize,
-    card: &crate::runtime::combat::CombatCard,
-    effects: super::super::action_effects::CardPlayEffectFacts,
-) -> i32 {
-    if effects.direct.player_strength_gain <= 0 {
-        return 0;
-    }
-
-    let setup_cost = card.cost_for_turn_java().max(0);
-    let available_energy = i32::from(combat.turn.energy);
-    if setup_cost > available_energy {
-        return 0;
-    }
-    let remaining_energy = available_energy - setup_cost;
-    let playable_attacks = combat
-        .zones
-        .hand
-        .iter()
-        .enumerate()
-        .filter(|(index, candidate)| {
-            *index != card_index
-                && cards::get_card_definition(candidate.id).card_type == CardType::Attack
-                && cards::can_play_card(candidate, combat).is_ok()
-                && attack_cost_is_payable_after_setup(candidate, remaining_energy)
-        })
-        .count() as i32;
-
-    effects
-        .direct
-        .player_strength_gain
-        .saturating_mul(playable_attacks)
-}
-
-fn attack_cost_is_payable_after_setup(
-    card: &crate::runtime::combat::CombatCard,
-    remaining_energy: i32,
-) -> bool {
-    let cost = card.cost_for_turn_java();
-    if cost < 0 {
-        return remaining_energy > 0;
-    }
-    cost <= remaining_energy
-}
-
-fn target_progress_hint(
-    combat: &CombatState,
-    target_kind: CardTarget,
-    target: Option<usize>,
-    damage: i32,
-) -> i32 {
-    if damage <= 0 {
-        return 0;
-    }
-
-    match target_kind {
-        CardTarget::AllEnemy => combat
-            .entities
-            .monsters
-            .iter()
-            .filter(|monster| monster.is_alive_for_action())
-            .map(|monster| damage.min(monster.current_hp + monster.block).max(0))
-            .sum(),
-        CardTarget::Enemy | CardTarget::SelfAndEnemy => target
-            .and_then(|target| monster_hp_with_block(combat, target))
-            .map(|hp| damage.min(hp).max(0))
-            .unwrap_or_default(),
-        _ => 0,
-    }
-}
-
-fn target_progress_kills(
-    combat: &CombatState,
-    target_kind: CardTarget,
-    target: Option<usize>,
-    damage: i32,
-) -> bool {
-    if damage <= 0 {
-        return false;
-    }
-
-    match target_kind {
-        CardTarget::AllEnemy => combat
-            .entities
-            .monsters
-            .iter()
-            .filter(|monster| monster.is_alive_for_action())
-            .any(|monster| damage >= monster.current_hp + monster.block),
-        CardTarget::Enemy | CardTarget::SelfAndEnemy => target
-            .and_then(|target| monster_hp_with_block(combat, target))
-            .is_some_and(|hp| damage >= hp),
-        _ => false,
-    }
-}
-
-fn monster_hp_with_block(combat: &CombatState, entity_id: usize) -> Option<i32> {
-    combat
-        .entities
-        .monsters
-        .iter()
-        .find(|monster| monster.id == entity_id && monster.is_alive_for_action())
-        .map(|monster| monster.current_hp + monster.block)
-}
-
-fn target_enemy_id(combat: &CombatState, target: Option<usize>) -> Option<EnemyId> {
-    target
-        .and_then(|entity_id| {
-            combat
-                .entities
-                .monsters
-                .iter()
-                .find(|monster| monster.id == entity_id && monster.is_alive_for_action())
-        })
-        .and_then(|monster| EnemyId::from_id(monster.monster_type))
-}
-
-fn target_has_stasis_card(combat: &CombatState, target: Option<usize>) -> bool {
-    target.is_some_and(|entity_id| store::has_power(combat, entity_id, PowerId::Stasis))
 }
