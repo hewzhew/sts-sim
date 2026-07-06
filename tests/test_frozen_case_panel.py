@@ -48,6 +48,15 @@ def sample_review():
                             }
                         },
                     },
+                    "key_card_lifecycle": {
+                        "tracked_cards": [
+                            {
+                                "card": "Demon Form+0",
+                                "played_in_replay": False,
+                                "first_play": None,
+                            }
+                        ]
+                    },
                 },
                 {
                     "lane": "key_setup_bias",
@@ -76,6 +85,15 @@ def sample_review():
                             }
                         },
                     },
+                    "key_card_lifecycle": {
+                        "tracked_cards": [
+                            {
+                                "card": "Demon Form+0",
+                                "played_in_replay": True,
+                                "first_play": {"step_index": 3},
+                            }
+                        ]
+                    },
                 },
             ],
         },
@@ -94,7 +112,11 @@ class FrozenCasePanelTests(unittest.TestCase):
         self.assertEqual(rows[0]["outcome_tier"], "phase_complete_but_player_died")
         self.assertEqual(rows[0]["first_action_key"], "play Whirlwind+")
         self.assertIsNone(rows[0]["first_action_role"])
+        self.assertFalse(rows[0]["key_card_played"])
+        self.assertIsNone(rows[0]["key_card_first_play_step"])
         self.assertEqual(rows[1]["outcome_tier"], "complete_win")
+        self.assertTrue(rows[1]["key_card_played"])
+        self.assertEqual(rows[1]["key_card_first_play_step"], 3)
         self.assertEqual(rows[1]["search_config_summary"]["setup_bias_policy"], "key_card_online")
 
     def test_classifies_incomplete_without_inventing_progress(self):
@@ -125,7 +147,10 @@ class FrozenCasePanelTests(unittest.TestCase):
             table = (root / "panel_table.md").read_text()
 
         self.assertEqual(len(loaded), 2)
-        self.assertIn("| case_id | lane | outcome_tier | complete_win |", table)
+        self.assertIn(
+            "| case_id | lane | outcome_tier | complete_win | key_card_played |",
+            table,
+        )
         self.assertIn("| frozen_v0a_awakened_one_1552225675_a3f48 | baseline |", table)
 
 

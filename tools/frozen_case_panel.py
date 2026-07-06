@@ -114,6 +114,7 @@ def rows_from_review(
     for lane in lanes:
         lane_review = lane.get("review") or {}
         progress = ((lane_review.get("facts") or {}).get("diagnostic_progress")) or None
+        key_play = first_key_card_play(lane.get("key_card_lifecycle"))
         final_hp = first_present(lane_review.get("final_hp"), get(progress, "final_hp"))
         turns = first_present(lane_review.get("turns"), get(progress, "turns"))
         potions_used = first_present(
@@ -135,8 +136,8 @@ def rows_from_review(
             "potions_used": potions_used,
             "first_action_key": first_action_key(progress),
             "first_action_role": None,
-            "key_card_played": None,
-            "key_card_first_play_step": None,
+            "key_card_played": key_play is not None,
+            "key_card_first_play_step": get(key_play, "step_index"),
             "living_enemy_count": get(progress, "living_enemy_count"),
             "total_enemy_hp": get(progress, "total_enemy_hp"),
             "half_dead_enemy_count": half_dead,
@@ -207,6 +208,8 @@ def render_markdown_table(rows: list[dict[str, Any]]) -> str:
         "lane",
         "outcome_tier",
         "complete_win",
+        "key_card_played",
+        "key_card_first_play_step",
         "final_hp",
         "turns",
         "potions_used",
@@ -233,6 +236,16 @@ def markdown_value(value: Any) -> str:
 def first_action_key(progress: dict[str, Any] | None) -> str | None:
     preview = get(progress, "action_key_preview") or []
     return preview[0] if preview else None
+
+
+def first_key_card_play(lifecycle: dict[str, Any] | None) -> dict[str, Any] | None:
+    tracked_cards = get(lifecycle, "tracked_cards") or []
+    plays = [
+        card.get("first_play")
+        for card in tracked_cards
+        if card.get("played_in_replay") and card.get("first_play")
+    ]
+    return min(plays, key=lambda play: play.get("step_index", 10**9)) if plays else None
 
 
 def first_present(*values: Any) -> Any:

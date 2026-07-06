@@ -7,6 +7,8 @@ use sts_simulator::ai::combat_search_v2::{
 };
 use sts_simulator::eval::combat_case::CombatCase;
 
+use super::focus::{review_focus, CombatReviewFocus};
+use super::key_card_lifecycle::{key_card_lifecycle, KeyCardLifecycleReport};
 use super::options::ReviewOptions;
 use super::search_runner::run_configured_search;
 use super::search_types::SearchReview;
@@ -23,6 +25,8 @@ struct FrozenPanelLaneResult {
     lane: &'static str,
     search_config_summary: FrozenPanelLaneConfigSummary,
     review: SearchReview,
+    focus: Option<CombatReviewFocus>,
+    key_card_lifecycle: Option<KeyCardLifecycleReport>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -131,10 +135,14 @@ pub(super) fn run_frozen_panel_lanes(
                 },
                 options.action_preview_limit,
             );
+            let focus = review_focus(std::slice::from_ref(&review));
+            let key_card_lifecycle = key_card_lifecycle(&case.position, focus.as_ref());
             FrozenPanelLaneResult {
                 lane: spec.lane,
                 search_config_summary: summary,
                 review,
+                focus,
+                key_card_lifecycle,
             }
         })
         .collect();
