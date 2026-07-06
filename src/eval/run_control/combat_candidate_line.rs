@@ -15,7 +15,7 @@ pub(super) enum CombatCandidateLineSource {
     SearchComplete,
     CompleteLineSolver,
     LineRepair,
-    LineLabTurnPoolRescue,
+    TurnPoolRescue,
 }
 
 impl CombatCandidateLineSource {
@@ -24,7 +24,7 @@ impl CombatCandidateLineSource {
             CombatCandidateLineSource::SearchComplete => "search_complete",
             CombatCandidateLineSource::CompleteLineSolver => "complete_line_solver",
             CombatCandidateLineSource::LineRepair => "line_repair",
-            CombatCandidateLineSource::LineLabTurnPoolRescue => "line_lab_turn_pool_rescue",
+            CombatCandidateLineSource::TurnPoolRescue => "turn_pool_rescue",
         }
     }
 }

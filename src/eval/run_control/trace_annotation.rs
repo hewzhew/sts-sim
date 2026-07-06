@@ -16,7 +16,8 @@ use super::transition_report::CardSnapshot;
 pub enum CombatAutomationTrajectorySource {
     SearchCombat,
     CompleteLineSolver,
-    LineLabTurnPoolRescue,
+    #[serde(alias = "line_lab_turn_pool_rescue")]
+    TurnPoolRescue,
     SearchCombatTurnSegment,
     SearchCombatSmokeBombSurvival,
 }
@@ -26,7 +27,7 @@ impl CombatAutomationTrajectorySource {
         match self {
             CombatAutomationTrajectorySource::SearchCombat => "search_combat",
             CombatAutomationTrajectorySource::CompleteLineSolver => "complete_line_solver",
-            CombatAutomationTrajectorySource::LineLabTurnPoolRescue => "line_lab_turn_pool_rescue",
+            CombatAutomationTrajectorySource::TurnPoolRescue => "turn_pool_rescue",
             CombatAutomationTrajectorySource::SearchCombatTurnSegment => {
                 "search_combat_turn_segment"
             }

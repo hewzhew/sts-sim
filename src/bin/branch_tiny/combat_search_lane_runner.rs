@@ -177,7 +177,7 @@ fn complete_search_action_keys(outcome: &RunControlCommandOutcome) -> Vec<String
                 source,
                 CombatAutomationTrajectorySource::SearchCombat
                     | CombatAutomationTrajectorySource::CompleteLineSolver
-                    | CombatAutomationTrajectorySource::LineLabTurnPoolRescue
+                    | CombatAutomationTrajectorySource::TurnPoolRescue
             ) =>
             {
                 Some(

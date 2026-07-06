@@ -1,5 +1,5 @@
 use crate::ai::combat_search_v2::{
-    filter_combat_search_legal_actions, find_combat_line_lab_turn_pool_win_v0,
+    filter_combat_search_legal_actions, find_combat_turn_pool_rescue_win_v0,
     plan_combat_turn_segment_v1, CombatSearchV2ActionTrace, CombatSearchV2Config,
     CombatSearchV2Report,
 };
@@ -75,13 +75,13 @@ fn try_apply_line_lab_turn_pool_after_no_win(
     saved_evidence: Option<&std::path::Path>,
     hp_loss_limit: Option<u32>,
 ) -> Result<Option<RunControlCommandOutcome>, String> {
-    let budget_ms = line_lab_turn_pool_rescue_budget_ms(config);
-    let Some(rescue) = find_combat_line_lab_turn_pool_win_v0(start, config, budget_ms) else {
+    let budget_ms = turn_pool_rescue_budget_ms(config);
+    let Some(rescue) = find_combat_turn_pool_rescue_win_v0(start, config, budget_ms) else {
         return Ok(None);
     };
     let replay = replay_candidate_line(
         start,
-        CombatCandidateLineSource::LineLabTurnPoolRescue,
+        CombatCandidateLineSource::TurnPoolRescue,
         &rescue.actions,
         config,
     )?;
@@ -99,7 +99,7 @@ fn try_apply_line_lab_turn_pool_after_no_win(
         search_report,
         saved_evidence,
         replay.line,
-        CombatAutomationTrajectorySource::LineLabTurnPoolRescue,
+        CombatAutomationTrajectorySource::TurnPoolRescue,
         summary,
         Some(CombatCandidateLinePerformance {
             nodes_expanded: rescue.nodes_expanded,
@@ -110,7 +110,7 @@ fn try_apply_line_lab_turn_pool_after_no_win(
     .map(Some)
 }
 
-fn line_lab_turn_pool_rescue_budget_ms(config: &CombatSearchV2Config) -> u64 {
+fn turn_pool_rescue_budget_ms(config: &CombatSearchV2Config) -> u64 {
     let configured = config
         .wall_time
         .unwrap_or_else(|| std::time::Duration::from_millis(2_000))

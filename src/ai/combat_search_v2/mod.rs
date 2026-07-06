@@ -85,6 +85,7 @@ mod rollout_probe;
 mod segment_plan;
 mod trajectory_report;
 mod turn_plan_probe;
+mod turn_pool_rescue;
 mod witness_guidance;
 
 #[cfg(test)]
@@ -165,8 +166,7 @@ pub use deficit_evidence::{
 };
 pub(crate) use external_payoff::has_external_payoff_opportunity;
 pub use line_lab::{
-    find_combat_line_lab_turn_pool_win_v0, run_combat_line_lab_from_parent_v0,
-    run_combat_line_lab_v0, CombatLineLabReport,
+    run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, CombatLineLabReport,
 };
 pub use search::{run_combat_search_v2, run_combat_search_v2_with_stepper};
 pub use segment_plan::{plan_combat_turn_segment_v1, CombatSearchV2TurnSegmentReport};
@@ -177,6 +177,7 @@ pub(crate) use turn_plan_probe::{
     enumerate_combat_search_v2_turn_plan_probe_candidates,
     CombatSearchV2TurnPlanProbeCandidateReport, CombatSearchV2TurnPlanProbeRootReport,
 };
+pub use turn_pool_rescue::{find_combat_turn_pool_rescue_win_v0, CombatTurnPoolRescueWin};
 pub use types::*;
 pub use witness_guidance::{
     compile_combat_search_witness_prior_v0, replay_combat_search_witness_line_v0,
