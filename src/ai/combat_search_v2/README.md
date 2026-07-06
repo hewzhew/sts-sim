@@ -115,6 +115,11 @@ this map and extend an existing boundary when one already exists.
   `enemy_mechanics_adaptive_no_potion` rollout currently uses phase-aware
   rollout only for typed Guardian and Bronze Automaton mechanics and otherwise
   stays conservative.
+  - `rollout_cache/estimate.rs`: cache lookup, budget gates, policy dispatch,
+    and rollout observation counters.
+  - `rollout_cache/report.rs`: rollout report assembly only.
+  - `rollout_cache/policy.rs`: adaptive policy selection and estimate
+    comparison helpers.
 - `turn_pool_rescue/`: deployable no-win rescue candidate generation. It may
   produce a replay-checked line for run-control, so it is not a report-only lab
   module. Keep new rescue lanes here or in another explicitly deployable module,
