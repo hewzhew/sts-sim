@@ -2,15 +2,8 @@ use serde::Serialize;
 use sts_simulator::ai::combat_search_v2::{
     CombatDeficitEvidenceReport, CombatLineLabReport, CombatSearchV2WitnessReplay,
 };
-use sts_simulator::ai::strategy::deck_strategic_deficit::{
-    assess_deck_strategic_deficit, DeckStrategicDeficit,
-};
-use sts_simulator::ai::strategy::run_strategic_facts::RunStrategicFacts;
-use sts_simulator::content::cards::{get_card_definition, is_starter_basic, CardType};
-use sts_simulator::content::relics::energy_master_delta;
-use sts_simulator::eval::combat_case::{
-    card_summary, CombatCase, CombatCaseCardSummary, CombatCasePathStep,
-};
+use sts_simulator::ai::strategy::deck_strategic_deficit::DeckStrategicDeficit;
+use sts_simulator::eval::combat_case::{CombatCase, CombatCaseCardSummary, CombatCasePathStep};
 
 use super::boss_pressure_lens::BossPressureLensReport;
 use super::boss_setup_lane::BossSetupLaneReview;
@@ -26,6 +19,11 @@ use super::quality_lanes::CombatQualityLaneReview;
 use super::root_action_role_duel::RootActionRoleDuelProbe;
 use super::search_types::SearchReview;
 use super::strategic_feedback::{combat_strategic_feedback, CombatStrategicFeedbackReport};
+
+#[path = "case_payload/derived.rs"]
+mod derived;
+
+use derived::derived_payload_from_case;
 
 #[derive(Serialize)]
 pub(super) struct CombatCaseReview {
@@ -103,57 +101,23 @@ pub(super) fn assemble_combat_case_review(
         root_action_role_duel,
         champ_phase_audit,
     } = artifacts;
-    let static_strategic_deficit = assess_deck_strategic_deficit(
-        &case.position.combat.meta.master_deck_snapshot,
-        strategic_facts_from_case(&case),
-    );
+    let derived = derived_payload_from_case(&case);
     let combat_strategic_feedback = combat_strategic_feedback(
         &case,
-        &static_strategic_deficit,
+        &derived.static_strategic_deficit,
         &classification,
         review_focus.as_ref(),
         &ladder,
     );
     let key_card_lifecycle = key_card_lifecycle(&case.position, review_focus.as_ref());
-    let deck = case
-        .position
-        .combat
-        .meta
-        .master_deck_snapshot
-        .iter()
-        .map(card_summary)
-        .collect();
-    let relics = case
-        .position
-        .combat
-        .entities
-        .player
-        .relics
-        .iter()
-        .map(|relic| format!("{:?}", relic.id))
-        .collect();
-    let potions = case
-        .position
-        .combat
-        .entities
-        .potions
-        .iter()
-        .map(|potion| potion.as_ref().map(|potion| format!("{:?}", potion.id)))
-        .collect();
-    let path_tail = case
-        .path
-        .iter()
-        .skip(case.path.len().saturating_sub(12))
-        .cloned()
-        .collect();
     CombatCaseReview {
         schema: "combat_case_review",
         case_path,
-        static_strategic_deficit,
-        deck,
-        relics,
-        potions,
-        path_tail,
+        static_strategic_deficit: derived.static_strategic_deficit,
+        deck: derived.deck,
+        relics: derived.relics,
+        potions: derived.potions,
+        path_tail: derived.path_tail,
         saved_search: case.failed_search.clone(),
         source: case.source,
         gap: case.gap,
@@ -177,25 +141,5 @@ pub(super) fn assemble_combat_case_review(
         root_action_role_duel,
         champ_phase_audit,
         key_card_lifecycle,
-    }
-}
-
-fn strategic_facts_from_case(case: &CombatCase) -> RunStrategicFacts {
-    let deck = &case.position.combat.meta.master_deck_snapshot;
-    RunStrategicFacts {
-        entering_act: case.run.act,
-        starter_basic_count: deck.iter().filter(|card| is_starter_basic(card.id)).count(),
-        curse_count: deck
-            .iter()
-            .filter(|card| get_card_definition(card.id).card_type == CardType::Curse)
-            .count(),
-        has_energy_relic: case
-            .position
-            .combat
-            .entities
-            .player
-            .relics
-            .iter()
-            .any(|relic| energy_master_delta(relic.id) > 0),
     }
 }
