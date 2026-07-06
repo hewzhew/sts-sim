@@ -7,6 +7,7 @@ mod child_node;
 mod finalize;
 mod finish_diagnostics;
 mod loop_state;
+mod node_budget;
 mod node_expansion;
 mod node_preflight;
 mod rollout_timing;

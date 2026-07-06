@@ -4,6 +4,7 @@ use super::super::frontier::is_resource_covered;
 use super::super::rollout_scheduler::deferred_child_rollout_admission;
 use super::super::*;
 use super::loop_state::SearchLoopState;
+use super::node_budget::{apply_node_budget_gate, NodeBudgetGateOutcome};
 use super::rollout_timing::{
     observe_deferred_rollout_admission, timed_rollout_estimate, RolloutEstimateSource,
 };
@@ -28,20 +29,11 @@ pub(super) fn prepare_node_for_expansion<S: CombatStepper>(
     loop_state: &mut SearchLoopState,
     input: NodePreflightInput<'_, S>,
 ) -> NodePreflightOutcome {
-    if loop_state.stats.nodes_expanded as usize >= input.config.max_nodes {
-        loop_state.stats.node_budget_hit = true;
-        loop_state.exhausted = true;
-        loop_state.push_frontier(input.node);
-        return NodePreflightOutcome::Stop;
-    }
-    if input.deadline.is_some_and(|limit| Instant::now() >= limit) {
-        loop_state.stats.deadline_hit = true;
-        loop_state.exhausted = true;
-        loop_state.push_frontier(input.node);
-        return NodePreflightOutcome::Stop;
-    }
-
-    let mut node = input.node;
+    let mut node =
+        match apply_node_budget_gate(loop_state, input.node, input.config, input.deadline) {
+            NodeBudgetGateOutcome::Continue(node) => node,
+            NodeBudgetGateOutcome::Stop => return NodePreflightOutcome::Stop,
+        };
     let admission = deferred_child_rollout_admission(
         &node,
         input.config,
