@@ -8,6 +8,10 @@ use super::search_types::{SearchReview, SearchReviewFacts};
 mod performance;
 #[path = "search_review/progress.rs"]
 mod progress;
+#[path = "search_review/progress_complete.rs"]
+mod progress_complete;
+#[path = "search_review/progress_rollout.rs"]
+mod progress_rollout;
 
 use performance::performance_review;
 use progress::diagnostic_progress_facts;
