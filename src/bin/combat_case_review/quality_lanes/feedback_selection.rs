@@ -1,9 +1,9 @@
 use sts_simulator::ai::combat_search_v2::CombatSearchV2TrajectoryReport;
 
 use super::super::search_types::SearchReview;
-use super::feedback::{
+use super::feedback::CombatSuccessFeedbackSource;
+use super::feedback_progress::{
     estimated_rollout_feedback_rank, estimated_rollout_feedback_witness,
-    CombatSuccessFeedbackSource,
 };
 use super::quality::{compare_quality, witness_line_from_trajectory};
 use super::specs::QualityLaneSpec;

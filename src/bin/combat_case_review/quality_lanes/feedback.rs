@@ -1,15 +1,12 @@
 use sts_simulator::ai::combat_search_v2::{
-    compile_combat_search_witness_prior_v0, CombatSearchV2ActionPreview, CombatSearchV2WitnessLine,
-    SearchTerminalLabel,
+    compile_combat_search_witness_prior_v0, CombatSearchV2WitnessLine,
 };
 use sts_simulator::eval::combat_case::CombatCase;
 
 use super::super::search_runner::run_configured_search;
-use super::super::search_types::{SearchDiagnosticProgressFacts, SearchReview};
+use super::feedback_comparison::compare_success_feedback;
 use super::specs::QualityLaneSpec;
-use super::types::{
-    CombatSuccessFeedbackComparison, CombatSuccessFeedbackMetrics, CombatSuccessFeedbackRerun,
-};
+use super::types::{CombatSuccessFeedbackMetrics, CombatSuccessFeedbackRerun};
 
 pub(super) struct CombatSuccessFeedbackSource {
     pub(super) spec: QualityLaneSpec,
@@ -53,78 +50,4 @@ pub(super) fn run_success_feedback_rerun(
         rerun,
         comparison,
     })
-}
-
-pub(super) fn estimated_rollout_feedback_witness(
-    source: &'static str,
-    progress: &SearchDiagnosticProgressFacts,
-) -> Option<CombatSearchV2WitnessLine> {
-    if progress.source != "rollout_frontier"
-        || progress.terminal != SearchTerminalLabel::Win
-        || !progress.estimated
-    {
-        return None;
-    }
-    let exact_prefix_action_count = progress.exact_prefix_action_count?;
-    if exact_prefix_action_count == 0 {
-        return None;
-    }
-    let actions = progress
-        .action_key_preview
-        .iter()
-        .cloned()
-        .zip(progress.input_preview.iter().cloned())
-        .take(exact_prefix_action_count)
-        .map(|(action_key, input)| CombatSearchV2ActionPreview { action_key, input })
-        .collect::<Vec<_>>();
-    if actions.is_empty() {
-        return None;
-    }
-    Some(CombatSearchV2WitnessLine {
-        source,
-        terminal: progress.terminal,
-        final_hp: progress.final_hp,
-        total_enemy_hp: progress.total_enemy_hp,
-        action_count: progress.action_count,
-        actions,
-    })
-}
-
-pub(super) fn estimated_rollout_feedback_rank(
-    progress: &SearchDiagnosticProgressFacts,
-) -> (i32, i32, i32, i32) {
-    (
-        progress.final_hp,
-        -(progress.potions_used as i32),
-        -(progress.total_enemy_hp),
-        -(progress.action_count.unwrap_or(usize::MAX) as i32),
-    )
-}
-
-fn compare_success_feedback(
-    baseline: &CombatSuccessFeedbackMetrics,
-    rerun: &SearchReview,
-) -> CombatSuccessFeedbackComparison {
-    let first_win_nodes_delta = match (baseline.nodes_to_first_win, rerun.nodes_to_first_win) {
-        (Some(base), Some(next)) => Some(next as i64 - base as i64),
-        _ => None,
-    };
-    CombatSuccessFeedbackComparison {
-        rerun_found_win: rerun.complete_win,
-        first_win_nodes_delta,
-        terminal_wins_delta: rerun.terminal_wins as i64 - baseline.terminal_wins as i64,
-        final_hp_delta: baseline
-            .final_hp
-            .zip(rerun.final_hp)
-            .map(|(base, next)| next - base),
-        hp_loss_delta: baseline
-            .hp_loss
-            .zip(rerun.hp_loss)
-            .map(|(base, next)| next - base),
-        potions_used_delta: baseline
-            .potions_used
-            .zip(rerun.potions_used)
-            .map(|(base, next)| next as i32 - base as i32),
-        easier_first_win: first_win_nodes_delta.map(|delta| delta < 0),
-    }
 }

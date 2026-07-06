@@ -1,5 +1,9 @@
 #[path = "quality_lanes/feedback.rs"]
 mod feedback;
+#[path = "quality_lanes/feedback_comparison.rs"]
+mod feedback_comparison;
+#[path = "quality_lanes/feedback_progress.rs"]
+mod feedback_progress;
 #[path = "quality_lanes/feedback_selection.rs"]
 mod feedback_selection;
 #[cfg(test)]

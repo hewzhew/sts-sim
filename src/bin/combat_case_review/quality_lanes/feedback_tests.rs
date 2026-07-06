@@ -2,7 +2,7 @@ use sts_simulator::ai::combat_search_v2::{CombatSearchV2ActionPreview, SearchTer
 use sts_simulator::state::core::ClientInput;
 
 use super::super::search_types::SearchDiagnosticProgressFacts;
-use super::feedback::estimated_rollout_feedback_witness;
+use super::feedback_progress::estimated_rollout_feedback_witness;
 
 #[test]
 fn estimated_rollout_win_progress_can_become_feedback_witness() {
