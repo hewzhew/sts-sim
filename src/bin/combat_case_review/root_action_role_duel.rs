@@ -13,6 +13,9 @@ mod config;
 mod execution;
 #[path = "root_action_role_duel/selection.rs"]
 mod selection;
+#[cfg(test)]
+#[path = "root_action_role_duel/selection_tests.rs"]
+mod selection_tests;
 #[path = "root_action_role_duel/transition.rs"]
 mod transition;
 #[path = "root_action_role_duel/types.rs"]
