@@ -18,6 +18,7 @@ use super::champ_phase::ChampPhaseAudit;
 use super::classification::CombatGapReviewClassification;
 use super::counterfactual_hp::CounterfactualHpProbe;
 use super::focus::{CombatReviewFocus, CombatReviewFocusPriorRerun};
+use super::frozen_panel_lanes::FrozenPanelLaneReview;
 use super::key_card_counterfactual::KeyCardCounterfactualProbe;
 use super::key_card_decision_microscope::KeyCardDecisionMicroscopeProbe;
 use super::key_card_lifecycle::{key_card_lifecycle, KeyCardLifecycleReport};
@@ -52,6 +53,7 @@ pub(super) struct CombatCaseReview {
     combat_strategic_feedback: Option<CombatStrategicFeedbackReport>,
     boss_pressure_lens: Option<BossPressureLensReport>,
     boss_setup_lane: Option<BossSetupLaneReview>,
+    frozen_panel_lanes: Option<FrozenPanelLaneReview>,
     key_card_counterfactual: Option<KeyCardCounterfactualProbe>,
     key_card_decision_microscope: Option<KeyCardDecisionMicroscopeProbe>,
     root_action_role_duel: Option<RootActionRoleDuelProbe>,
@@ -71,6 +73,7 @@ pub(super) struct CombatCaseReviewArtifacts {
     pub(super) combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
     pub(super) boss_pressure_lens: Option<BossPressureLensReport>,
     pub(super) boss_setup_lane: Option<BossSetupLaneReview>,
+    pub(super) frozen_panel_lanes: Option<FrozenPanelLaneReview>,
     pub(super) key_card_counterfactual: Option<KeyCardCounterfactualProbe>,
     pub(super) key_card_decision_microscope: Option<KeyCardDecisionMicroscopeProbe>,
     pub(super) root_action_role_duel: Option<RootActionRoleDuelProbe>,
@@ -94,6 +97,7 @@ pub(super) fn assemble_combat_case_review(
         combat_deficit_evidence,
         boss_pressure_lens,
         boss_setup_lane,
+        frozen_panel_lanes,
         key_card_counterfactual,
         key_card_decision_microscope,
         root_action_role_duel,
@@ -167,6 +171,7 @@ pub(super) fn assemble_combat_case_review(
         combat_strategic_feedback,
         boss_pressure_lens,
         boss_setup_lane,
+        frozen_panel_lanes,
         key_card_counterfactual,
         key_card_decision_microscope,
         root_action_role_duel,

@@ -15,6 +15,8 @@ mod classification;
 mod counterfactual_hp;
 #[path = "combat_case_review/focus.rs"]
 mod focus;
+#[path = "combat_case_review/frozen_panel_lanes.rs"]
+mod frozen_panel_lanes;
 #[path = "combat_case_review/key_card_counterfactual.rs"]
 mod key_card_counterfactual;
 #[path = "combat_case_review/key_card_decision_microscope.rs"]
@@ -45,6 +47,7 @@ use champ_phase::champ_phase_audit;
 use classification::classify_gap_review;
 use counterfactual_hp::run_counterfactual_hp_probe;
 use focus::{focus_witness_line, review_focus, witness_prior_rerun};
+use frozen_panel_lanes::run_frozen_panel_lanes;
 use key_card_counterfactual::run_key_card_counterfactual_probe;
 use key_card_decision_microscope::run_key_card_decision_microscope_probe;
 use line_lab::run_line_lab;
@@ -96,6 +99,8 @@ struct Args {
     line_lab_cuts: usize,
     #[arg(long)]
     quality_lanes: bool,
+    #[arg(long)]
+    frozen_panel_lanes: bool,
     #[arg(long)]
     boss_setup_lane: bool,
     #[arg(long)]
@@ -179,6 +184,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
     let combat_deficit_evidence = line_lab.as_ref().map(derive_combat_deficit_evidence);
     let boss_pressure_lens = boss_pressure_lens(&case, &ladder, line_lab.as_ref());
     let boss_setup_lane = run_boss_setup_lane(&options, &case);
+    let frozen_panel_lanes = run_frozen_panel_lanes(&options, &case);
     let key_card_counterfactual = run_key_card_counterfactual_probe(&options, &case);
     let key_card_decision_microscope = run_key_card_decision_microscope_probe(&options, &case);
     let root_action_role_duel = run_root_action_role_duel_probe(&options, &case);
@@ -210,6 +216,7 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
             combat_deficit_evidence,
             boss_pressure_lens,
             boss_setup_lane,
+            frozen_panel_lanes,
             key_card_counterfactual,
             key_card_decision_microscope,
             root_action_role_duel,

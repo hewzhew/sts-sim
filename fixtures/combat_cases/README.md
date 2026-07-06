@@ -4,6 +4,20 @@ This folder holds small, fixed combat-search cases that are useful for local
 search work. A case is not a policy verdict or a campaign artifact. It is a
 reproducible combat boundary with enough state to compare search behavior.
 
+## Frozen Case Panel V0a
+
+These cases are fixed inputs for the review-only Frozen Case Panel. They are
+combat boundaries, not campaign-policy verdicts.
+
+```text
+fixtures/combat_cases/frozen_v0a_awakened_one_1552225675_a3f48.json
+fixtures/combat_cases/frozen_v0a_collector_1552225671_a2f32.json
+fixtures/combat_cases/frozen_v0a_gremlin_leader_1552225671_a2f29.json
+```
+
+The V0a panel compares exactly two explicit search lanes on these three cases:
+`baseline` and `key_setup_bias`.
+
 ## A2F23 Slavers Threshold Case
 
 Case:
