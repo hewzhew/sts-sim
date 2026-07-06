@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use super::super::frontier::{
-    push_frontier, remember_best_complete, remember_best_frontier, remember_win_candidate,
-    FrontierQueue, QueueEntry, ResourceVector, SearchNode,
+    remember_best_complete, remember_best_frontier, remember_win_candidate, FrontierQueue,
+    QueueEntry, ResourceVector, SearchNode,
 };
 use super::super::*;
 use super::rollout_timing::{timed_rollout_estimate, RolloutEstimateSource};
@@ -18,7 +18,6 @@ pub(super) struct SearchLoopState {
     pub(super) performance: CombatSearchV2PerformanceReport,
     pub(super) frontier: FrontierQueue,
     pub(super) turn_plan_seeded_sources: HashSet<CombatExactStateKey>,
-    pub(super) next_sequence_id: u64,
     pub(super) best_complete: Option<SearchNode>,
     pub(super) best_win: Option<SearchNode>,
     pub(super) win_candidates: Vec<SearchNode>,
@@ -47,7 +46,6 @@ impl SearchLoopState {
             performance: CombatSearchV2PerformanceReport::default(),
             frontier: FrontierQueue::new(config.frontier_policy),
             turn_plan_seeded_sources: HashSet::new(),
-            next_sequence_id: 0,
             best_complete: None,
             best_win: None,
             win_candidates: Vec::new(),
@@ -62,7 +60,7 @@ impl SearchLoopState {
     }
 
     pub(super) fn push_frontier(&mut self, node: SearchNode) {
-        push_frontier(&mut self.frontier, node, &mut self.next_sequence_id);
+        self.frontier.push_node(node);
     }
 
     pub(super) fn pop_frontier(&mut self) -> Option<QueueEntry> {

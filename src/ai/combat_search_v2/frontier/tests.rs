@@ -1,3 +1,4 @@
+use super::priority::priority_for_node;
 use super::*;
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
@@ -80,14 +81,13 @@ fn frontier_priority_uses_sustained_mitigation_after_raw_enemy_progress() {
 #[test]
 fn frontier_queue_preserves_single_queue_priority_order() {
     let mut queue = FrontierQueue::new(CombatSearchV2FrontierPolicy::SingleQueue);
-    let mut next_sequence_id = 0;
 
     let low_priority = test_node();
     let mut high_priority = test_node();
     high_priority.potion_tactical_priority = 50;
 
-    push_frontier(&mut queue, low_priority, &mut next_sequence_id);
-    push_frontier(&mut queue, high_priority, &mut next_sequence_id);
+    queue.push_node(low_priority);
+    queue.push_node(high_priority);
 
     assert_eq!(queue.len(), 2);
     assert_eq!(queue.pop().unwrap().node.potion_tactical_priority, 50);
@@ -98,20 +98,19 @@ fn frontier_queue_preserves_single_queue_priority_order() {
 #[test]
 fn round_robin_frontier_queue_interleaves_survival_and_progress_lanes() {
     let mut queue = FrontierQueue::new(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets);
-    let mut next_sequence_id = 0;
 
     for index in 0..8 {
         let mut progress = evaluated_node(20, 40);
         progress
             .actions
             .push(test_action_trace(format!("progress-{index}")));
-        push_frontier(&mut queue, progress, &mut next_sequence_id);
+        queue.push_node(progress);
     }
     let mut survival = evaluated_node(0, 300);
     survival
         .actions
         .push(test_action_trace("survival".to_string()));
-    push_frontier(&mut queue, survival, &mut next_sequence_id);
+    queue.push_node(survival);
 
     for index in 0..7 {
         assert_eq!(
@@ -125,20 +124,19 @@ fn round_robin_frontier_queue_interleaves_survival_and_progress_lanes() {
 #[test]
 fn round_robin_frontier_gives_dangerous_race_progress_its_own_budget() {
     let mut queue = FrontierQueue::new(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets);
-    let mut next_sequence_id = 0;
 
     for index in 0..32 {
         let mut survival = evaluated_node(5, 300);
         survival
             .actions
             .push(test_action_trace(format!("survival-{index}")));
-        push_frontier(&mut queue, survival, &mut next_sequence_id);
+        queue.push_node(survival);
     }
     let mut dangerous_race = evaluated_node(-1, 40);
     dangerous_race
         .actions
         .push(test_action_trace("dangerous-race".to_string()));
-    push_frontier(&mut queue, dangerous_race, &mut next_sequence_id);
+    queue.push_node(dangerous_race);
 
     let popped = (0..16)
         .map(|_| queue.pop().unwrap().node.actions[0].action_key.clone())
@@ -153,21 +151,20 @@ fn round_robin_frontier_gives_dangerous_race_progress_its_own_budget() {
 #[test]
 fn round_robin_frontier_does_not_treat_unevaluated_rollout_as_survival_crisis() {
     let mut queue = FrontierQueue::new(CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets);
-    let mut next_sequence_id = 0;
 
     for index in 0..8 {
         let mut progress = evaluated_node(20, 40);
         progress
             .actions
             .push(test_action_trace(format!("progress-{index}")));
-        push_frontier(&mut queue, progress, &mut next_sequence_id);
+        queue.push_node(progress);
     }
     let mut unevaluated = test_node();
     unevaluated.combat.entities.monsters = vec![test_monster(EnemyId::JawWorm)];
     unevaluated
         .actions
         .push(test_action_trace("unevaluated".to_string()));
-    push_frontier(&mut queue, unevaluated, &mut next_sequence_id);
+    queue.push_node(unevaluated);
 
     let popped = (0..8)
         .map(|_| queue.pop().unwrap().node.actions[0].action_key.clone())

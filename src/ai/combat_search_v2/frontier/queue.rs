@@ -5,13 +5,15 @@ use super::super::value::{
     CombatEvalSurvivalBucket,
 };
 use super::super::SearchTerminalLabel;
-use super::priority::QueueEntry;
+use super::node::SearchNode;
+use super::priority::{priority_for_node, QueueEntry};
 use std::collections::BinaryHeap;
 
 pub(in crate::ai::combat_search_v2) struct FrontierQueue {
     policy: CombatSearchV2FrontierPolicy,
     single: BinaryHeap<QueueEntry>,
     lanes: FrontierLanes,
+    next_sequence_id: u64,
 }
 
 impl FrontierQueue {
@@ -20,10 +22,21 @@ impl FrontierQueue {
             policy,
             single: BinaryHeap::new(),
             lanes: FrontierLanes::new(),
+            next_sequence_id: 0,
         }
     }
 
-    pub(in crate::ai::combat_search_v2) fn push(&mut self, entry: QueueEntry) {
+    pub(in crate::ai::combat_search_v2) fn push_node(&mut self, node: SearchNode) {
+        let entry = QueueEntry {
+            priority: priority_for_node(&node),
+            sequence_id: self.next_sequence_id,
+            node,
+        };
+        self.next_sequence_id = self.next_sequence_id.saturating_add(1);
+        self.push_entry(entry);
+    }
+
+    fn push_entry(&mut self, entry: QueueEntry) {
         match self.policy {
             CombatSearchV2FrontierPolicy::SingleQueue => self.single.push(entry),
             CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets => self.lanes.push(entry),
