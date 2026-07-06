@@ -100,40 +100,4 @@ impl SearchLoopState {
         self.stats.terminal_losses = self.stats.terminal_losses.saturating_add(1);
         self.remember_complete(node);
     }
-
-    pub(super) fn finish_diagnostics_and_timing(
-        &mut self,
-        started: Instant,
-        root_for_turn_plan_diagnostics: &SearchNode,
-        stepper: &impl CombatStepper,
-        config: &CombatSearchV2Config,
-    ) {
-        let shadow_audit_started = Instant::now();
-        self.diagnostics
-            .run_discard_order_exact_shadow_audit(stepper, config);
-        self.performance.shadow_audit_elapsed_us = shadow_audit_started.elapsed().as_micros();
-
-        let root_turn_plan_diagnostics_started = Instant::now();
-        self.diagnostics
-            .observe_root_turn_plan(root_for_turn_plan_diagnostics, stepper);
-        self.performance.root_turn_plan_diagnostics_elapsed_us =
-            root_turn_plan_diagnostics_started.elapsed().as_micros();
-
-        let total_elapsed = started.elapsed();
-        self.stats.elapsed_ms = total_elapsed.as_millis();
-        self.performance.total_elapsed_us = total_elapsed.as_micros();
-        self.performance.unattributed_elapsed_us =
-            self.performance.total_elapsed_us.saturating_sub(
-                self.performance
-                    .engine_step_elapsed_us
-                    .saturating_add(self.performance.rollout_estimate_elapsed_us)
-                    .saturating_add(self.performance.frontier_pop_elapsed_us)
-                    .saturating_add(self.performance.pre_expand_elapsed_us)
-                    .saturating_add(self.performance.expansion_elapsed_us)
-                    .saturating_add(self.performance.child_bookkeeping_elapsed_us)
-                    .saturating_add(self.performance.turn_plan_frontier_seed_elapsed_us)
-                    .saturating_add(self.performance.shadow_audit_elapsed_us)
-                    .saturating_add(self.performance.root_turn_plan_diagnostics_elapsed_us),
-            );
-    }
 }

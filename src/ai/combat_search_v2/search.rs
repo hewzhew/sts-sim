@@ -4,6 +4,7 @@ mod bootstrap;
 mod child_expansion;
 mod child_node;
 mod finalize;
+mod finish_diagnostics;
 mod loop_state;
 mod node_expansion;
 mod node_preflight;
@@ -15,6 +16,7 @@ mod win_acceptance;
 use bootstrap::initialize_root_frontier;
 use child_expansion::{expand_ordered_child, ChildExpansionInput, ChildExpansionOutcome};
 use finalize::{finish_combat_search_report, SearchFinishInput};
+use finish_diagnostics::finish_diagnostics_and_timing;
 use loop_state::SearchLoopState;
 use node_expansion::prepare_node_expansion;
 use node_preflight::{prepare_node_for_expansion, NodePreflightInput, NodePreflightOutcome};
@@ -99,7 +101,8 @@ pub fn run_combat_search_v2_with_stepper(
         }
     }
 
-    loop_state.finish_diagnostics_and_timing(
+    finish_diagnostics_and_timing(
+        &mut loop_state,
         started,
         &root_for_turn_plan_diagnostics,
         stepper,
