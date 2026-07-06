@@ -1,6 +1,6 @@
 use sts_simulator::ai::combat_search_v2::CombatSearchV2ChildRolloutPolicy;
 
-use super::Args;
+use super::args::Args;
 
 pub(super) struct ReviewOptions {
     pub(super) ladder: bool,
