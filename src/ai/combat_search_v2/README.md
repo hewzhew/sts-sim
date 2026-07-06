@@ -12,20 +12,38 @@ this map and extend an existing boundary when one already exists.
 - `search/loop_state.rs`: mutable search-loop state ownership: frontier, stats,
   diagnostics, transposition/dominance tables, rollout cache, and best-line
   candidates.
-- `search/node_preflight.rs`: one frontier node to either expansion, skip, or
-  stop: budget/deadline checks, deferred rollout requeue, terminal handling,
-  transposition/dominance checks, and turn-plan frontier seeding.
+- `search/node_preflight.rs`: one frontier node to expansion, skip, or stop. It
+  coordinates the node-stage gates below; do not add new gate logic directly
+  here unless it is only wiring.
+  - `search/node_budget.rs`: node and wall-clock budget admission.
+  - `search/node_deferred_rollout.rs`: lazy child rollout completion when a
+    deferred child is popped.
+  - `search/node_terminal.rs`: terminal-node handling and complete-candidate
+    acceptance.
+  - `search/node_pruning.rs`: max-action, exact-transposition, and global
+    dominance prune gates.
+  - `search/turn_plan_seed_gate.rs` and `search/turn_plan_seeding.rs`:
+    turn-boundary frontier seed admission and insertion.
 - `search/node_expansion.rs`: one expandable node to an ordered action batch:
   legal-action collection, diagnostics observation, local equivalence
   compression, action ordering, and per-node child observers.
-- `search/child_expansion.rs`: one ordered action to child disposition:
-  stepping, child bookkeeping, same-turn local dominance, rollout admission, and
-  frontier insertion.
+- `search/child_expansion.rs`: one ordered action to child disposition. It
+  coordinates the child-stage pipeline below.
+  - `search/child_preflight.rs`: per-child potion budget and deadline gates.
+  - `search/child_step.rs`: apply one action through the combat stepper and
+    record engine-step timing/limits.
+  - `search/child_node.rs`: construct the child `SearchNode` and action trace.
+  - `search/child_dominance.rs`: same-parent same-turn child dominance prune.
+  - `search/child_rollout.rs`: terminal/deferred/immediate child rollout
+    estimate admission.
+  - `search/child_frontier.rs`: enqueue a child or remember a truncated leaf.
 - `search/rollout_timing.rs`: shared rollout-estimate timing and attribution
   counters for root, child, deferred-child, and turn-plan seed estimates.
+- `search/finalize.rs`: final report construction from loop state. It should
+  assemble existing facts; avoid adding new search behavior here.
+- `search/finish_diagnostics.rs`: post-loop diagnostics and timing finalization
+  before report assembly.
 - `search/win_acceptance.rs`: stop/accept criteria for complete win candidates.
-- `search/turn_plan_seed_gate.rs`: turn-boundary frontier seed admission gates,
-  including tactical enemy-pressure gates.
 - `frontier/`: frontier queue, priority, `SearchNode`, and resource dominance
   vectors.
 - `types/config.rs`: user-visible policy switches. New experimental behavior
@@ -108,5 +126,8 @@ this map and extend an existing boundary when one already exists.
    claim a terminal outcome.
 5. If the work only explains behavior, it belongs in diagnostics and needs a
    concrete consumer before adding more report fields.
-6. New top-level files in this directory should be rare. Prefer extending the
+6. If the work changes the search-loop lifecycle, start in `search/` and place
+   the logic in the narrowest stage module. `search.rs`, `node_preflight.rs`,
+   and `child_expansion.rs` should stay as coordinators.
+7. New top-level files in this directory should be rare. Prefer extending the
    nearest existing submodule and updating this map.
