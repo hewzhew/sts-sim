@@ -1,63 +1,19 @@
-use std::time::Duration;
-
-use serde::Serialize;
-use sts_simulator::ai::combat_search_v2::{
-    CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
-    CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
-};
-use sts_simulator::content::cards::java_id;
 use sts_simulator::eval::combat_case::CombatCase;
-use sts_simulator::runtime::combat::{CombatCard, CombatState};
 
-use super::focus::{review_focus, CombatReviewFocus};
-use super::key_card_lifecycle::{
-    key_card_lifecycle, key_card_targets, KeyCardLifecycleReport, KeyCardReason,
-};
+use super::key_card_lifecycle::key_card_targets;
 use super::options::ReviewOptions;
-use super::search_runner::run_configured_search;
-use super::search_types::SearchReview;
 
-#[derive(Serialize)]
-pub(super) struct KeyCardCounterfactualProbe {
-    schema: &'static str,
-    contract: &'static str,
-    skipped_reason: Option<&'static str>,
-    variants: Vec<KeyCardCounterfactualVariant>,
-}
+#[path = "key_card_counterfactual/execution.rs"]
+mod execution;
+#[path = "key_card_counterfactual/movement.rs"]
+mod movement;
+#[path = "key_card_counterfactual/types.rs"]
+mod types;
 
-#[derive(Serialize)]
-struct KeyCardCounterfactualVariant {
-    card: String,
-    uuid: u32,
-    reason: &'static str,
-    placement: &'static str,
-    skipped_reason: Option<&'static str>,
-    search: Option<SearchReview>,
-    focus: Option<CombatReviewFocus>,
-    key_card_lifecycle: Option<KeyCardLifecycleReport>,
-}
+pub(super) use movement::move_key_card;
+pub(super) use types::{KeyCardCounterfactualPlacement, KeyCardCounterfactualProbe};
 
-#[derive(Clone, Copy)]
-pub(super) enum KeyCardCounterfactualPlacement {
-    OpeningHand,
-    DrawTop,
-}
-
-impl KeyCardCounterfactualPlacement {
-    pub(super) fn label(self) -> &'static str {
-        match self {
-            Self::OpeningHand => "opening_hand",
-            Self::DrawTop => "draw_top",
-        }
-    }
-
-    fn search_label(self) -> &'static str {
-        match self {
-            Self::OpeningHand => "key_card_counterfactual_opening_hand",
-            Self::DrawTop => "key_card_counterfactual_draw_top",
-        }
-    }
-}
+use execution::run_key_card_variant;
 
 pub(super) fn run_key_card_counterfactual_probe(
     options: &ReviewOptions,
@@ -99,120 +55,6 @@ pub(super) fn run_key_card_counterfactual_probe(
         skipped_reason: None,
         variants,
     })
-}
-
-fn run_key_card_variant(
-    options: &ReviewOptions,
-    original_case: &CombatCase,
-    card: &CombatCard,
-    reason: KeyCardReason,
-    placement: KeyCardCounterfactualPlacement,
-) -> KeyCardCounterfactualVariant {
-    let mut case = original_case.clone();
-    if move_key_card(&mut case.position.combat, card.uuid, placement).is_none() {
-        return skipped_variant(card, reason, placement, "card_not_in_active_combat_zones");
-    }
-    sync_combat_summary(&mut case);
-    let rollout_policy = if options.disable_rollout {
-        CombatSearchV2RolloutPolicy::Disabled
-    } else {
-        CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
-    };
-    let (search, _) = run_configured_search(
-        placement.search_label(),
-        &case,
-        CombatSearchV2Config {
-            max_nodes: options.slow_nodes,
-            wall_time: Some(Duration::from_millis(options.slow_ms)),
-            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-            potion_policy: CombatSearchV2PotionPolicy::All,
-            max_potions_used: Some(options.diagnostic_potion_max),
-            rollout_policy,
-            child_rollout_policy: options.child_rollout_policy(),
-            setup_bias_policy: CombatSearchV2SetupBiasPolicy::KeyCardOnline,
-            ..CombatSearchV2Config::default()
-        },
-        options.action_preview_limit,
-    );
-    let focus = review_focus(std::slice::from_ref(&search));
-    let key_card_lifecycle = key_card_lifecycle(&case.position, focus.as_ref());
-    KeyCardCounterfactualVariant {
-        card: format!("{}+{}", java_id(card.id), card.upgrades),
-        uuid: card.uuid,
-        reason: reason.label(),
-        placement: placement.label(),
-        skipped_reason: None,
-        search: Some(search),
-        focus,
-        key_card_lifecycle,
-    }
-}
-
-fn skipped_variant(
-    card: &CombatCard,
-    reason: KeyCardReason,
-    placement: KeyCardCounterfactualPlacement,
-    skipped_reason: &'static str,
-) -> KeyCardCounterfactualVariant {
-    KeyCardCounterfactualVariant {
-        card: format!("{}+{}", java_id(card.id), card.upgrades),
-        uuid: card.uuid,
-        reason: reason.label(),
-        placement: placement.label(),
-        skipped_reason: Some(skipped_reason),
-        search: None,
-        focus: None,
-        key_card_lifecycle: None,
-    }
-}
-
-pub(super) fn move_key_card(
-    combat: &mut CombatState,
-    uuid: u32,
-    placement: KeyCardCounterfactualPlacement,
-) -> Option<()> {
-    if matches!(placement, KeyCardCounterfactualPlacement::OpeningHand)
-        && combat.zones.hand.iter().any(|card| card.uuid == uuid)
-    {
-        return Some(());
-    }
-    if matches!(placement, KeyCardCounterfactualPlacement::DrawTop)
-        && combat
-            .zones
-            .draw_pile
-            .first()
-            .is_some_and(|card| card.uuid == uuid)
-    {
-        return Some(());
-    }
-
-    let card = take_card_by_uuid(combat, uuid)?;
-    match placement {
-        KeyCardCounterfactualPlacement::OpeningHand => combat.zones.hand.push(card),
-        KeyCardCounterfactualPlacement::DrawTop => combat.zones.add_to_draw_pile_top(card),
-    }
-    Some(())
-}
-
-fn take_card_by_uuid(combat: &mut CombatState, uuid: u32) -> Option<CombatCard> {
-    CombatState::remove_card_by_uuid(&mut combat.zones.hand, uuid)
-        .or_else(|| CombatState::remove_card_by_uuid(&mut combat.zones.draw_pile, uuid))
-        .or_else(|| CombatState::remove_card_by_uuid(&mut combat.zones.discard_pile, uuid))
-        .or_else(|| CombatState::remove_card_by_uuid(&mut combat.zones.exhaust_pile, uuid))
-}
-
-fn sync_combat_summary(case: &mut CombatCase) {
-    case.combat.hand = case
-        .position
-        .combat
-        .zones
-        .hand
-        .iter()
-        .map(sts_simulator::eval::combat_case::card_summary)
-        .collect();
-    case.combat.draw_count = case.position.combat.zones.draw_pile.len();
-    case.combat.discard_count = case.position.combat.zones.discard_pile.len();
-    case.combat.exhaust_count = case.position.combat.zones.exhaust_pile.len();
 }
 
 #[cfg(test)]
