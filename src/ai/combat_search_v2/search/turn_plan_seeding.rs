@@ -47,12 +47,8 @@ pub(super) fn seed_turn_plan_frontier(
     for mut seed in seeded_nodes.nodes.drain(..) {
         seed.rollout_estimate =
             turn_plan_seed_rollout_estimate(loop_state, &seed, stepper, config, deadline);
-        loop_state.stats.nodes_generated = loop_state.stats.nodes_generated.saturating_add(1);
-        if loop_state.stats.nodes_to_first_win.is_none()
-            && terminal_label(&seed.engine, &seed.combat) == SearchTerminalLabel::Win
-        {
-            loop_state.stats.nodes_to_first_win = Some(loop_state.stats.nodes_generated);
-        }
+        loop_state.record_node_generated();
+        loop_state.record_first_generated_win_if_needed(&seed);
         loop_state.push_frontier(seed);
     }
 }

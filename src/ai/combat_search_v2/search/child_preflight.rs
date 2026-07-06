@@ -24,12 +24,11 @@ pub(super) fn prepare_child_for_expansion(
     if config.max_potions_used.is_some_and(|max| {
         parent.potions_used >= max && is_use_potion_input(&ordered_choice.choice.input)
     }) {
-        loop_state.potion_budget_cut_count = loop_state.potion_budget_cut_count.saturating_add(1);
+        loop_state.record_potion_budget_cut();
         return ChildPreflightOutcome::Advanced;
     }
     if deadline.is_some_and(|limit| Instant::now() >= limit) {
-        loop_state.stats.deadline_hit = true;
-        loop_state.exhausted = true;
+        loop_state.mark_deadline_hit();
         return ChildPreflightOutcome::DeadlineReached;
     }
     ChildPreflightOutcome::Continue {

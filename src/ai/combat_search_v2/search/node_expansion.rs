@@ -21,12 +21,12 @@ pub(super) fn prepare_node_expansion(
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
 ) -> Option<PreparedNodeExpansion> {
-    loop_state.stats.nodes_expanded = loop_state.stats.nodes_expanded.saturating_add(1);
+    loop_state.record_node_expanded();
     let expansion_started = Instant::now();
     let position = CombatPosition::new(node.engine.clone(), node.combat.clone());
     let surface = collect_node_action_surface(loop_state, node, &position, stepper, config);
     if surface.legal.is_empty() {
-        loop_state.unresolved_leaf_count = loop_state.unresolved_leaf_count.saturating_add(1);
+        loop_state.record_unresolved_leaf(node);
         record_expansion_elapsed(loop_state, expansion_started);
         return None;
     }

@@ -52,7 +52,7 @@ pub(super) fn prepare_node_for_expansion<S: CombatStepper>(
             return NodePreflightOutcome::Continue;
         }
         NodeTerminalOutcome::StopAcceptedWin => {
-            loop_state.accepted_complete_candidate = true;
+            loop_state.mark_accepted_complete_candidate();
             record_pre_expand_elapsed(loop_state, pre_expand_started);
             return NodePreflightOutcome::Stop;
         }

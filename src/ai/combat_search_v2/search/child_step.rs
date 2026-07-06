@@ -38,10 +38,9 @@ fn observe_child_step(
         .engine_step_elapsed_us
         .saturating_add(elapsed.as_micros());
     if step.truncated && !step.timed_out {
-        loop_state.engine_step_limit_count = loop_state.engine_step_limit_count.saturating_add(1);
+        loop_state.record_engine_step_limit();
     }
     if step.timed_out {
-        loop_state.stats.deadline_hit = true;
-        loop_state.exhausted = true;
+        loop_state.mark_deadline_hit();
     }
 }

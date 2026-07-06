@@ -72,7 +72,7 @@ pub(super) fn expand_ordered_child<S: CombatStepper>(
         .diagnostics
         .observe_pending_choice_child_transition(input.pending_choice, truncated, &child.engine);
     turn_branching.observe_child(turn_transition);
-    loop_state.stats.nodes_generated = loop_state.stats.nodes_generated.saturating_add(1);
+    loop_state.record_node_generated();
     loop_state.performance.child_bookkeeping_elapsed_us = loop_state
         .performance
         .child_bookkeeping_elapsed_us

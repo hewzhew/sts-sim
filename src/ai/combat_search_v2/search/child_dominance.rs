@@ -17,14 +17,7 @@ pub(super) fn apply_child_dominance_gate(
 ) -> ChildDominanceOutcome {
     let started = Instant::now();
     if !truncated && turn_local_dominance.observe_child(child) {
-        loop_state.stats.turn_local_dominance_prunes = loop_state
-            .stats
-            .turn_local_dominance_prunes
-            .saturating_add(1);
-        loop_state.performance.turn_local_dominance_rollout_skips = loop_state
-            .performance
-            .turn_local_dominance_rollout_skips
-            .saturating_add(1);
+        loop_state.record_turn_local_dominance_prune();
         loop_state.performance.child_bookkeeping_elapsed_us = loop_state
             .performance
             .child_bookkeeping_elapsed_us

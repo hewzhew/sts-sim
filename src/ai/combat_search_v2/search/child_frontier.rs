@@ -9,17 +9,12 @@ pub(super) fn enqueue_child_or_remember_leaf(
     truncated: bool,
 ) {
     let started = Instant::now();
-    if loop_state.stats.nodes_to_first_win.is_none()
-        && terminal_label(&child.engine, &child.combat) == SearchTerminalLabel::Win
-    {
-        loop_state.stats.nodes_to_first_win = Some(loop_state.stats.nodes_generated);
-    }
+    loop_state.record_first_generated_win_if_needed(&child);
 
     if !truncated {
         loop_state.push_frontier(child);
     } else {
-        loop_state.unresolved_leaf_count = loop_state.unresolved_leaf_count.saturating_add(1);
-        loop_state.remember_best_frontier(&child);
+        loop_state.record_unresolved_leaf(&child);
     }
     loop_state.performance.child_bookkeeping_elapsed_us = loop_state
         .performance
