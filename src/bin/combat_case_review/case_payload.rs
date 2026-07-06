@@ -1,82 +1,15 @@
-use serde::Serialize;
-use sts_simulator::ai::combat_search_v2::{
-    CombatDeficitEvidenceReport, CombatLineLabReport, CombatSearchV2WitnessReplay,
-};
-use sts_simulator::ai::strategy::deck_strategic_deficit::DeckStrategicDeficit;
-use sts_simulator::eval::combat_case::{CombatCase, CombatCaseCardSummary, CombatCasePathStep};
+use sts_simulator::eval::combat_case::CombatCase;
 
-use super::boss_pressure_lens::BossPressureLensReport;
-use super::boss_setup_lane::BossSetupLaneReview;
-use super::champ_phase::ChampPhaseAudit;
-use super::classification::CombatGapReviewClassification;
-use super::counterfactual_hp::CounterfactualHpProbe;
-use super::focus::{CombatReviewFocus, CombatReviewFocusPriorRerun};
-use super::frozen_panel_lanes::FrozenPanelLaneReview;
-use super::key_card_counterfactual::KeyCardCounterfactualProbe;
-use super::key_card_decision_microscope::KeyCardDecisionMicroscopeProbe;
-use super::key_card_lifecycle::{key_card_lifecycle, KeyCardLifecycleReport};
-use super::quality_lanes::CombatQualityLaneReview;
-use super::root_action_role_duel::RootActionRoleDuelProbe;
-use super::search_types::SearchReview;
-use super::strategic_feedback::{combat_strategic_feedback, CombatStrategicFeedbackReport};
+use super::key_card_lifecycle::key_card_lifecycle;
+use super::strategic_feedback::combat_strategic_feedback;
 
 #[path = "case_payload/derived.rs"]
 mod derived;
+#[path = "case_payload/types.rs"]
+mod types;
 
 use derived::derived_payload_from_case;
-
-#[derive(Serialize)]
-pub(super) struct CombatCaseReview {
-    schema: &'static str,
-    case_path: String,
-    source: sts_simulator::eval::combat_case::CombatCaseSource,
-    gap: sts_simulator::eval::combat_case::CombatCaseGap,
-    run: sts_simulator::eval::combat_case::CombatCaseRunSummary,
-    combat: sts_simulator::eval::combat_case::CombatCaseCombatSummary,
-    deck: Vec<CombatCaseCardSummary>,
-    static_strategic_deficit: DeckStrategicDeficit,
-    relics: Vec<String>,
-    potions: Vec<Option<String>>,
-    path_tail: Vec<CombatCasePathStep>,
-    saved_search: Option<sts_simulator::eval::run_control::CombatSearchTraceSummary>,
-    ladder: Vec<SearchReview>,
-    classification: CombatGapReviewClassification,
-    review_focus: Option<CombatReviewFocus>,
-    review_focus_replay: Option<CombatSearchV2WitnessReplay>,
-    review_focus_prior_rerun: Option<CombatReviewFocusPriorRerun>,
-    line_lab: Option<CombatLineLabReport>,
-    quality_lanes: Option<CombatQualityLaneReview>,
-    counterfactual_hp_probe: Option<CounterfactualHpProbe>,
-    combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
-    combat_strategic_feedback: Option<CombatStrategicFeedbackReport>,
-    boss_pressure_lens: Option<BossPressureLensReport>,
-    boss_setup_lane: Option<BossSetupLaneReview>,
-    frozen_panel_lanes: Option<FrozenPanelLaneReview>,
-    key_card_counterfactual: Option<KeyCardCounterfactualProbe>,
-    key_card_decision_microscope: Option<KeyCardDecisionMicroscopeProbe>,
-    root_action_role_duel: Option<RootActionRoleDuelProbe>,
-    champ_phase_audit: Option<ChampPhaseAudit>,
-    key_card_lifecycle: Option<KeyCardLifecycleReport>,
-}
-
-pub(super) struct CombatCaseReviewArtifacts {
-    pub(super) ladder: Vec<SearchReview>,
-    pub(super) classification: CombatGapReviewClassification,
-    pub(super) review_focus: Option<CombatReviewFocus>,
-    pub(super) review_focus_replay: Option<CombatSearchV2WitnessReplay>,
-    pub(super) review_focus_prior_rerun: Option<CombatReviewFocusPriorRerun>,
-    pub(super) line_lab: Option<CombatLineLabReport>,
-    pub(super) quality_lanes: Option<CombatQualityLaneReview>,
-    pub(super) counterfactual_hp_probe: Option<CounterfactualHpProbe>,
-    pub(super) combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
-    pub(super) boss_pressure_lens: Option<BossPressureLensReport>,
-    pub(super) boss_setup_lane: Option<BossSetupLaneReview>,
-    pub(super) frozen_panel_lanes: Option<FrozenPanelLaneReview>,
-    pub(super) key_card_counterfactual: Option<KeyCardCounterfactualProbe>,
-    pub(super) key_card_decision_microscope: Option<KeyCardDecisionMicroscopeProbe>,
-    pub(super) root_action_role_duel: Option<RootActionRoleDuelProbe>,
-    pub(super) champ_phase_audit: Option<ChampPhaseAudit>,
-}
+pub(super) use types::{CombatCaseReview, CombatCaseReviewArtifacts};
 
 pub(super) fn assemble_combat_case_review(
     case_path: String,
