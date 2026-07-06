@@ -8,6 +8,7 @@ mod finalize;
 mod finish_diagnostics;
 mod loop_state;
 mod node_budget;
+mod node_deferred_rollout;
 mod node_expansion;
 mod node_preflight;
 mod rollout_timing;

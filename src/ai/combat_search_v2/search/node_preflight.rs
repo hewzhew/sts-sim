@@ -1,13 +1,10 @@
 use std::time::Instant;
 
 use super::super::frontier::is_resource_covered;
-use super::super::rollout_scheduler::deferred_child_rollout_admission;
 use super::super::*;
 use super::loop_state::SearchLoopState;
 use super::node_budget::{apply_node_budget_gate, NodeBudgetGateOutcome};
-use super::rollout_timing::{
-    observe_deferred_rollout_admission, timed_rollout_estimate, RolloutEstimateSource,
-};
+use super::node_deferred_rollout::{apply_deferred_child_rollout, DeferredRolloutOutcome};
 use super::turn_plan_seed_gate::should_seed_turn_plan_at_node;
 use super::turn_plan_seeding::seed_turn_plan_frontier;
 
@@ -29,38 +26,22 @@ pub(super) fn prepare_node_for_expansion<S: CombatStepper>(
     loop_state: &mut SearchLoopState,
     input: NodePreflightInput<'_, S>,
 ) -> NodePreflightOutcome {
-    let mut node =
-        match apply_node_budget_gate(loop_state, input.node, input.config, input.deadline) {
-            NodeBudgetGateOutcome::Continue(node) => node,
-            NodeBudgetGateOutcome::Stop => return NodePreflightOutcome::Stop,
-        };
-    let admission = deferred_child_rollout_admission(
-        &node,
-        input.config,
-        &loop_state.stats,
-        &loop_state.performance,
+    let node = match apply_node_budget_gate(loop_state, input.node, input.config, input.deadline) {
+        NodeBudgetGateOutcome::Continue(node) => node,
+        NodeBudgetGateOutcome::Stop => return NodePreflightOutcome::Stop,
+    };
+
+    let node = match apply_deferred_child_rollout(
+        loop_state,
+        node,
         input.started,
-    );
-    observe_deferred_rollout_admission(admission, &mut loop_state.performance);
-    if admission.admitted() {
-        node.rollout_estimate = timed_rollout_estimate(
-            &mut loop_state.rollout_cache,
-            &node,
-            input.stepper,
-            input.config,
-            input.deadline,
-            &mut loop_state.performance,
-            RolloutEstimateSource::DeferredChild,
-        );
-        if node.rollout_estimate.is_evaluated() {
-            loop_state.performance.deferred_child_rollout_requeues = loop_state
-                .performance
-                .deferred_child_rollout_requeues
-                .saturating_add(1);
-            loop_state.push_frontier(node);
-            return NodePreflightOutcome::Continue;
-        }
-    }
+        input.stepper,
+        input.config,
+        input.deadline,
+    ) {
+        DeferredRolloutOutcome::Continue(node) => node,
+        DeferredRolloutOutcome::Requeued => return NodePreflightOutcome::Continue,
+    };
 
     let pre_expand_started = Instant::now();
     loop_state.remember_best_frontier(&node);
