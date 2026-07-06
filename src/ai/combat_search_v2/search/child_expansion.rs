@@ -4,6 +4,7 @@ use super::super::*;
 use super::child_node::{build_child_node, BuiltChildNode};
 use super::child_preflight::{prepare_child_for_expansion, ChildPreflightOutcome};
 use super::child_rollout::child_rollout_estimate;
+use super::child_step::apply_child_step;
 use super::loop_state::SearchLoopState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -43,28 +44,14 @@ pub(super) fn expand_ordered_child<S: CombatStepper>(
         ChildPreflightOutcome::DeadlineReached => return ChildExpansionOutcome::DeadlineReached,
     };
 
-    let step_started = Instant::now();
-    let step = input.stepper.apply_to_stable(
+    let step = apply_child_step(
+        loop_state,
         input.position,
-        input.ordered_choice.choice.input.clone(),
-        CombatStepLimits {
-            max_engine_steps: input.config.max_engine_steps_per_action,
-            deadline: input.deadline,
-        },
+        &input.ordered_choice.choice.input,
+        input.stepper,
+        input.config,
+        input.deadline,
     );
-    loop_state.performance.engine_step_calls =
-        loop_state.performance.engine_step_calls.saturating_add(1);
-    loop_state.performance.engine_step_elapsed_us = loop_state
-        .performance
-        .engine_step_elapsed_us
-        .saturating_add(step_started.elapsed().as_micros());
-    if step.truncated && !step.timed_out {
-        loop_state.engine_step_limit_count = loop_state.engine_step_limit_count.saturating_add(1);
-    }
-    if step.timed_out {
-        loop_state.stats.deadline_hit = true;
-        loop_state.exhausted = true;
-    }
 
     let child_bookkeeping_started = Instant::now();
     let BuiltChildNode {
