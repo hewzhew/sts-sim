@@ -115,6 +115,12 @@ this map and extend an existing boundary when one already exists.
   `enemy_mechanics_adaptive_no_potion` rollout currently uses phase-aware
   rollout only for typed Guardian and Bronze Automaton mechanics and otherwise
   stays conservative.
+  - `rollout/turn_beam/mod.rs`: turn-beam rollout public entry points and
+    conservative-anchor wiring.
+  - `rollout/turn_beam/extension.rs`: bounded turn-plan beam extension loop.
+  - `rollout/turn_beam/selection.rs`: beam de-duplication, ranking, and
+    estimate construction helpers.
+  - `rollout/turn_beam/attribution.rs`: turn-plan attribution counters.
   - `rollout_cache/estimate.rs`: cache lookup, budget gates, policy dispatch,
     and rollout observation counters.
   - `rollout_cache/report.rs`: rollout report assembly only.

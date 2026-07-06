@@ -1,0 +1,88 @@
+use std::collections::HashSet;
+
+use super::super::super::rollout_pending_choice::RolloutPendingChoiceProgress;
+use super::super::super::value::combat_eval_from_rollout_estimate;
+use super::super::super::*;
+use super::attribution::TurnBeamExtensionAttribution;
+use super::types::TurnBeamState;
+
+pub(super) fn finish_with_attribution(
+    estimate: RolloutNodeEstimate,
+    mut attribution: TurnBeamExtensionAttribution,
+) -> (RolloutNodeEstimate, TurnBeamExtensionAttribution) {
+    attribution.observe_best_estimate(&estimate);
+    (estimate, attribution)
+}
+
+pub(super) fn select_beam(
+    mut candidates: Vec<TurnBeamState>,
+    beam_width: usize,
+) -> Vec<TurnBeamState> {
+    let mut seen = HashSet::new();
+    candidates.retain(|state| {
+        seen.insert(combat_exact_state_key(
+            &state.node.engine,
+            &state.node.combat,
+        ))
+    });
+    candidates.sort_by(|left, right| {
+        let left_eval = combat_eval_from_rollout_estimate(&left.node.rollout_estimate);
+        let right_eval = combat_eval_from_rollout_estimate(&right.node.rollout_estimate);
+        right_eval.cmp(&left_eval)
+    });
+    candidates.truncate(beam_width.max(1));
+    candidates
+}
+
+pub(super) fn best_estimate(
+    beam: &[TurnBeamState],
+    root_action_count: usize,
+    stop_reason: RolloutStopReason,
+) -> RolloutNodeEstimate {
+    let Some(best) = beam.iter().max_by_key(|state| {
+        combat_eval_from_rollout_estimate(&state_estimate(state, root_action_count, stop_reason))
+    }) else {
+        return RolloutNodeEstimate::unevaluated();
+    };
+    state_estimate(best, root_action_count, stop_reason)
+}
+
+pub(super) fn state_estimate(
+    state: &TurnBeamState,
+    root_action_count: usize,
+    stop_reason: RolloutStopReason,
+) -> RolloutNodeEstimate {
+    if let Some(estimate) = &state.estimate_override {
+        return estimate.clone();
+    }
+    RolloutNodeEstimate::from_node(
+        &state.node,
+        state.node.actions.len().saturating_sub(root_action_count),
+        stop_reason,
+        state.last_action_reason,
+        state.progress,
+    )
+}
+
+pub(super) fn merge_prior_pending_choice_progress(
+    estimate: &mut RolloutNodeEstimate,
+    prior: RolloutPendingChoiceProgress,
+) {
+    estimate.pending_choices_seen = estimate
+        .pending_choices_seen
+        .saturating_add(prior.pending_choices_seen);
+    estimate.pending_choice_actions_simulated = estimate
+        .pending_choice_actions_simulated
+        .saturating_add(prior.pending_choice_actions_simulated);
+    estimate.max_pending_choice_candidate_count = estimate
+        .max_pending_choice_candidate_count
+        .max(prior.max_pending_choice_candidate_count);
+    estimate.max_pending_choice_estimated_action_fanout = estimate
+        .max_pending_choice_estimated_action_fanout
+        .max(prior.max_pending_choice_estimated_action_fanout);
+    if estimate.last_pending_choice_kind.is_none() {
+        estimate.last_pending_choice_kind = prior.last_pending_choice_kind_label();
+    }
+    estimate.stopped_on_high_fanout_pending_choice |= prior.stopped_on_high_fanout_pending_choice;
+    estimate.high_fanout_pending_choice |= prior.stopped_on_high_fanout_pending_choice;
+}
