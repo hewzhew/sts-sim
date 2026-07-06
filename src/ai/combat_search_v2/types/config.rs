@@ -129,6 +129,7 @@ pub struct CombatSearchV2Config {
     pub turn_plan_policy: CombatSearchV2TurnPlanPolicy,
     pub frontier_policy: CombatSearchV2FrontierPolicy,
     pub phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
+    pub setup_bias_policy: CombatSearchV2SetupBiasPolicy,
     pub turn_plan_probe_max_inner_nodes: Option<usize>,
     pub turn_plan_probe_max_end_states: Option<usize>,
     pub turn_plan_probe_per_bucket_limit: Option<usize>,
@@ -156,12 +157,39 @@ impl Default for CombatSearchV2Config {
             turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
             frontier_policy: CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets,
             phase_guard_policy: CombatSearchV2PhaseGuardPolicy::Default,
+            setup_bias_policy: CombatSearchV2SetupBiasPolicy::Default,
             turn_plan_probe_max_inner_nodes: None,
             turn_plan_probe_max_end_states: None,
             turn_plan_probe_per_bucket_limit: None,
             root_action_prior: None,
             turn_plan_prior: None,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CombatSearchV2SetupBiasPolicy {
+    Default,
+    KeyCardOnline,
+}
+
+impl Default for CombatSearchV2SetupBiasPolicy {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+impl CombatSearchV2SetupBiasPolicy {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::KeyCardOnline => "key_card_online",
+        }
+    }
+
+    pub(in crate::ai::combat_search_v2) fn prioritizes_key_card_online(self) -> bool {
+        matches!(self, Self::KeyCardOnline)
     }
 }
 

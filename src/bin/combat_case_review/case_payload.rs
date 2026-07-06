@@ -13,10 +13,12 @@ use sts_simulator::eval::combat_case::{
 };
 
 use super::boss_pressure_lens::BossPressureLensReport;
+use super::boss_setup_lane::BossSetupLaneReview;
 use super::champ_phase::ChampPhaseAudit;
 use super::classification::CombatGapReviewClassification;
 use super::counterfactual_hp::CounterfactualHpProbe;
 use super::focus::{CombatReviewFocus, CombatReviewFocusPriorRerun};
+use super::key_card_counterfactual::KeyCardCounterfactualProbe;
 use super::key_card_lifecycle::{key_card_lifecycle, KeyCardLifecycleReport};
 use super::quality_lanes::CombatQualityLaneReview;
 use super::search_types::SearchReview;
@@ -47,6 +49,8 @@ pub(super) struct CombatCaseReview {
     combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
     combat_strategic_feedback: Option<CombatStrategicFeedbackReport>,
     boss_pressure_lens: Option<BossPressureLensReport>,
+    boss_setup_lane: Option<BossSetupLaneReview>,
+    key_card_counterfactual: Option<KeyCardCounterfactualProbe>,
     champ_phase_audit: Option<ChampPhaseAudit>,
     key_card_lifecycle: Option<KeyCardLifecycleReport>,
 }
@@ -62,6 +66,8 @@ pub(super) struct CombatCaseReviewArtifacts {
     pub(super) counterfactual_hp_probe: Option<CounterfactualHpProbe>,
     pub(super) combat_deficit_evidence: Option<CombatDeficitEvidenceReport>,
     pub(super) boss_pressure_lens: Option<BossPressureLensReport>,
+    pub(super) boss_setup_lane: Option<BossSetupLaneReview>,
+    pub(super) key_card_counterfactual: Option<KeyCardCounterfactualProbe>,
     pub(super) champ_phase_audit: Option<ChampPhaseAudit>,
 }
 
@@ -81,6 +87,8 @@ pub(super) fn assemble_combat_case_review(
         counterfactual_hp_probe,
         combat_deficit_evidence,
         boss_pressure_lens,
+        boss_setup_lane,
+        key_card_counterfactual,
         champ_phase_audit,
     } = artifacts;
     let static_strategic_deficit = assess_deck_strategic_deficit(
@@ -150,6 +158,8 @@ pub(super) fn assemble_combat_case_review(
         combat_deficit_evidence,
         combat_strategic_feedback,
         boss_pressure_lens,
+        boss_setup_lane,
+        key_card_counterfactual,
         champ_phase_audit,
         key_card_lifecycle,
     }

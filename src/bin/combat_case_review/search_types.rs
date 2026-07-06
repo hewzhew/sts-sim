@@ -10,6 +10,7 @@ pub(super) struct SearchReview {
     pub(super) rollout_policy: &'static str,
     pub(super) turn_plan_policy: &'static str,
     pub(super) phase_guard_policy: &'static str,
+    pub(super) setup_bias_policy: &'static str,
     pub(super) child_rollout_policy: &'static str,
     pub(super) potion_policy: &'static str,
     pub(super) max_potions_used: Option<u32>,

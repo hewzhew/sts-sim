@@ -1,5 +1,5 @@
 use super::*;
-use crate::ai::combat_search_v2::CombatSearchV2PhaseGuardPolicy;
+use crate::ai::combat_search_v2::{CombatSearchV2PhaseGuardPolicy, CombatSearchV2SetupBiasPolicy};
 use crate::content::cards::CardId;
 use crate::content::monsters::EnemyId;
 use crate::runtime::combat::CombatCard;
@@ -20,6 +20,7 @@ fn non_player_turn_priority_is_neutral() {
         &combat,
         &ClientInput::EndTurn,
         CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
     );
 
     assert_eq!(priority.role, ActionOrderingRole::Neutral);
@@ -42,6 +43,7 @@ fn lethal_play_card_gets_lethal_role() {
             target: Some(1),
         },
         CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
     );
 
     assert_eq!(priority.role, ActionOrderingRole::LethalCard);
@@ -65,6 +67,7 @@ fn pending_choice_priority_uses_structured_selection_role() {
         &combat,
         &grid_select([20]),
         CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
     );
 
     assert_eq!(
@@ -91,9 +94,60 @@ fn sleeping_lagavulin_wake_damage_has_phase_penalty() {
             target: Some(1),
         },
         CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
     );
 
     assert!(priority.phase_hint.has_signal());
     assert!(priority.phase_setup < 0);
     assert!(priority.phase_transition_safety < 0);
+}
+
+#[test]
+fn key_card_setup_bias_promotes_strength_scaling_power() {
+    let mut combat = blank_test_combat();
+    let mut monster = test_monster(EnemyId::JawWorm);
+    monster.id = 1;
+    monster.current_hp = 50;
+    monster.max_hp = 50;
+    combat.entities.monsters = vec![monster];
+    combat.zones.hand = vec![
+        CombatCard::new(CardId::Strike, 10),
+        CombatCard::new(CardId::DemonForm, 11),
+    ];
+
+    let default_setup = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 1,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
+    );
+    assert_eq!(default_setup.role, ActionOrderingRole::DeferredSetup);
+
+    let biased_setup = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 1,
+            target: None,
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::KeyCardOnline,
+    );
+    let strike = priority_for_input(
+        &EngineState::CombatPlayerTurn,
+        &combat,
+        &ClientInput::PlayCard {
+            card_index: 0,
+            target: Some(1),
+        },
+        CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::KeyCardOnline,
+    );
+
+    assert_eq!(biased_setup.role, ActionOrderingRole::KeySetupCard);
+    assert!(biased_setup > strike);
 }

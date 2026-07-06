@@ -6,6 +6,10 @@ use super::super::phase_profile::CombatSearchPhaseProfileV1;
 use super::super::{enemy_phase_transition_hint_for_input, visible_incoming_damage};
 use super::constants::*;
 use super::*;
+use crate::ai::analysis::card_semantics::{
+    card_definition_with_upgrades, CombatEvent, InstalledRule, Mechanic, PlayEffect,
+    TriggeredEffect,
+};
 use crate::content::cards::{self, CardTarget, CardType};
 use crate::content::monsters::EnemyId;
 use crate::content::powers::{store, PowerId};
@@ -18,6 +22,7 @@ pub(super) fn priority_for_play_card(
     target: Option<usize>,
     phase_profile: CombatSearchPhaseProfileV1,
     phase_guard_policy: super::super::CombatSearchV2PhaseGuardPolicy,
+    setup_bias_policy: super::super::CombatSearchV2SetupBiasPolicy,
 ) -> ActionOrderingPriority {
     let Some(card) = combat.zones.hand.get(card_index) else {
         return ActionOrderingPriority::neutral(ActionOrderingRole::Neutral);
@@ -79,6 +84,8 @@ pub(super) fn priority_for_play_card(
     let prevents_visible_lethal =
         visible_loss_now >= current_hp && visible_loss_after_block < current_hp;
     let prevents_hp_loss = visible_loss_after_block < visible_loss_now;
+    let key_setup_card = setup_bias_policy.prioritizes_key_card_online()
+        && key_setup_card_online_candidate(card.id, card.upgrades);
     let (role, role_rank) = if target_lethal {
         (ActionOrderingRole::LethalCard, ROLE_LETHAL_CARD)
     } else if prevents_visible_lethal {
@@ -91,6 +98,8 @@ pub(super) fn priority_for_play_card(
             ActionOrderingRole::SustainedMitigation,
             ROLE_SUSTAINED_MITIGATION,
         )
+    } else if key_setup_card {
+        (ActionOrderingRole::KeySetupCard, ROLE_KEY_SETUP_CARD)
     } else if current_turn_attack_setup > 0 {
         (
             ActionOrderingRole::CurrentTurnAttackSetup,
@@ -131,6 +140,34 @@ pub(super) fn priority_for_play_card(
         effects: effect_diagnostics,
         ..ActionOrderingPriority::neutral(role)
     }
+}
+
+fn key_setup_card_online_candidate(card: crate::content::cards::CardId, upgrades: u8) -> bool {
+    let definition = card_definition_with_upgrades(card, upgrades);
+    definition.play_effects.iter().any(|effect| {
+        matches!(
+            effect,
+            PlayEffect::Provide(
+                Mechanic::Strength | Mechanic::TemporaryStrength | Mechanic::StrengthMultiplier
+            )
+        )
+    }) || definition.event_handlers.iter().any(|handler| {
+        matches!(
+            handler.effect,
+            TriggeredEffect::Provide(
+                Mechanic::Strength | Mechanic::TemporaryStrength | Mechanic::StrengthMultiplier
+            )
+        )
+    }) || definition
+        .installed_rules
+        .contains(&InstalledRule::SkillCardsCostZeroAndExhaust)
+        || definition.event_handlers.iter().any(|handler| {
+            handler.on == CombatEvent::CardExhausted
+                && matches!(
+                    handler.effect,
+                    TriggeredEffect::Provide(Mechanic::Block | Mechanic::CardDraw)
+                )
+        })
 }
 
 fn current_turn_attack_setup_score(

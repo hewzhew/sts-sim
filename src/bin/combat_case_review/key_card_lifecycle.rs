@@ -40,9 +40,24 @@ struct KeyCardLifecycle {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum KeyCardReason {
+pub(super) enum KeyCardReason {
     StrengthScaling,
     ExhaustEngine,
+}
+
+impl KeyCardReason {
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::StrengthScaling => "strength_scaling",
+            Self::ExhaustEngine => "exhaust_engine",
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(super) struct KeyCardTarget {
+    pub(super) card: CombatCard,
+    pub(super) reason: KeyCardReason,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -161,23 +176,33 @@ fn report_without_focus(tracked_cards: Vec<TrackedKeyCard>) -> KeyCardLifecycleR
 }
 
 fn tracked_key_cards(combat: &CombatState) -> Vec<TrackedKeyCard> {
+    key_card_targets(combat)
+        .into_iter()
+        .map(|target| {
+            let initial_zone = zone_for_uuid(combat, target.card.uuid);
+            TrackedKeyCard {
+                card: target.card,
+                reason: target.reason,
+                initial_zone,
+                first_seen_zone: CardZoneAtStep {
+                    step_index: 0,
+                    zone: initial_zone,
+                },
+                first_play: None,
+            }
+        })
+        .collect()
+}
+
+pub(super) fn key_card_targets(combat: &CombatState) -> Vec<KeyCardTarget> {
     combat
         .meta
         .master_deck_snapshot
         .iter()
         .filter_map(|card| {
-            key_card_reason(card.id, card.upgrades).map(|reason| {
-                let initial_zone = zone_for_uuid(combat, card.uuid);
-                TrackedKeyCard {
-                    card: card.clone(),
-                    reason,
-                    initial_zone,
-                    first_seen_zone: CardZoneAtStep {
-                        step_index: 0,
-                        zone: initial_zone,
-                    },
-                    first_play: None,
-                }
+            key_card_reason(card.id, card.upgrades).map(|reason| KeyCardTarget {
+                card: card.clone(),
+                reason,
             })
         })
         .collect()

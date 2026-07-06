@@ -210,6 +210,7 @@ fn test_config() -> CombatSearchV2Config {
         turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
         frontier_policy: CombatSearchV2FrontierPolicy::SingleQueue,
         phase_guard_policy: CombatSearchV2PhaseGuardPolicy::Default,
+        setup_bias_policy: CombatSearchV2SetupBiasPolicy::Default,
         turn_plan_probe_max_inner_nodes: None,
         turn_plan_probe_max_end_states: None,
         turn_plan_probe_per_bucket_limit: None,

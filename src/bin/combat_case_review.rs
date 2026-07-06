@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use clap::Parser;
 #[path = "combat_case_review/boss_pressure_lens.rs"]
 mod boss_pressure_lens;
+#[path = "combat_case_review/boss_setup_lane.rs"]
+mod boss_setup_lane;
 #[path = "combat_case_review/case_payload.rs"]
 mod case_payload;
 #[path = "combat_case_review/champ_phase.rs"]
@@ -13,6 +15,8 @@ mod classification;
 mod counterfactual_hp;
 #[path = "combat_case_review/focus.rs"]
 mod focus;
+#[path = "combat_case_review/key_card_counterfactual.rs"]
+mod key_card_counterfactual;
 #[path = "combat_case_review/key_card_lifecycle.rs"]
 mod key_card_lifecycle;
 #[path = "combat_case_review/line_lab.rs"]
@@ -31,11 +35,13 @@ mod search_types;
 mod strategic_feedback;
 
 use boss_pressure_lens::boss_pressure_lens;
+use boss_setup_lane::run_boss_setup_lane;
 use case_payload::{assemble_combat_case_review, CombatCaseReview, CombatCaseReviewArtifacts};
 use champ_phase::champ_phase_audit;
 use classification::classify_gap_review;
 use counterfactual_hp::run_counterfactual_hp_probe;
 use focus::{focus_witness_line, review_focus, witness_prior_rerun};
+use key_card_counterfactual::run_key_card_counterfactual_probe;
 use line_lab::run_line_lab;
 use options::ReviewOptions;
 use quality_lanes::run_quality_lanes;
@@ -84,6 +90,10 @@ struct Args {
     line_lab_cuts: usize,
     #[arg(long)]
     quality_lanes: bool,
+    #[arg(long)]
+    boss_setup_lane: bool,
+    #[arg(long)]
+    key_card_counterfactual: bool,
     #[arg(long)]
     quality_lane_total_nodes: Option<usize>,
     #[arg(long)]
@@ -158,6 +168,8 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
     let line_lab = run_line_lab(&options, &case, line_lab_parent.as_ref());
     let combat_deficit_evidence = line_lab.as_ref().map(derive_combat_deficit_evidence);
     let boss_pressure_lens = boss_pressure_lens(&case, &ladder, line_lab.as_ref());
+    let boss_setup_lane = run_boss_setup_lane(&options, &case);
+    let key_card_counterfactual = run_key_card_counterfactual_probe(&options, &case);
     let quality_lanes = if options.quality_lanes {
         Some(run_quality_lanes(&options, &case))
     } else {
@@ -185,6 +197,8 @@ fn build_review(args: &Args, case: CombatCase) -> CombatCaseReview {
             counterfactual_hp_probe,
             combat_deficit_evidence,
             boss_pressure_lens,
+            boss_setup_lane,
+            key_card_counterfactual,
             champ_phase_audit,
         },
     )

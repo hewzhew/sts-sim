@@ -201,6 +201,7 @@ pub(crate) fn combat_search_action_ordering_role_label_for_state(
         combat,
         input,
         CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
     )
     .role
     .label()

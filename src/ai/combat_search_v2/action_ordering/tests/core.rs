@@ -90,6 +90,7 @@ fn root_action_prior_reorders_equal_role_actions_without_pruning() {
             .collect(),
         Some(&prior),
         CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
     );
 
     assert_eq!(ordered.choices.len(), 2);
@@ -146,6 +147,7 @@ fn root_action_prior_can_reorder_within_the_same_semantic_role() {
             .collect(),
         Some(&prior),
         CombatSearchV2PhaseGuardPolicy::Default,
+        CombatSearchV2SetupBiasPolicy::Default,
     );
 
     assert_eq!(

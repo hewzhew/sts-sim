@@ -57,6 +57,7 @@ pub(crate) fn run_configured_search(
     let potion_policy = config.potion_policy;
     let max_potions_used = config.max_potions_used;
     let phase_guard_policy = config.phase_guard_policy.label();
+    let setup_bias_policy = config.setup_bias_policy.label();
     let rollout_policy = config.rollout_policy.label();
     let report = run_combat_search_v2(&case.position.engine, &case.position.combat, config);
     let review = search_review(
@@ -67,6 +68,7 @@ pub(crate) fn run_configured_search(
         potion_policy,
         max_potions_used,
         phase_guard_policy,
+        setup_bias_policy,
         &report,
         action_preview_limit,
         rollout_policy,
