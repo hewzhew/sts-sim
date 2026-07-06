@@ -93,3 +93,16 @@ pub(super) enum ChampPhaseAuditVerdict {
     SplitWithLowHp,
     Unclear,
 }
+
+pub(super) struct ChampPhaseReplay {
+    pub(super) witness_action_count: Option<usize>,
+    pub(super) replayed_actions: usize,
+    pub(super) truncated_by_preview: bool,
+    pub(super) truncated: bool,
+    pub(super) timed_out: bool,
+    pub(super) initial_snapshot: ChampPhaseSnapshot,
+    pub(super) first_below_half_hp: Option<ChampHpCrossing>,
+    pub(super) split_trigger: Option<ChampSplitTrigger>,
+    pub(super) post_split_snapshot: Option<ChampPhaseSnapshot>,
+    pub(super) resources_before_split: ChampResourceTiming,
+}
