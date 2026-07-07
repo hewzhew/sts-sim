@@ -239,6 +239,7 @@ mod tests {
             frontier_exists: false,
             terminal_exists: false,
             summary_exists: false,
+            capsule_ledger_exists: false,
             artifact_refs: Vec::new(),
             read_error: None,
             tool_error: None,
@@ -295,6 +296,7 @@ mod tests {
         std::fs::write(capsule.join("manifest.json"), "{}").unwrap();
         std::fs::write(capsule.join("frontier.json"), "{}").unwrap();
         std::fs::write(capsule.join("summary.json"), "{}").unwrap();
+        std::fs::write(capsule.join("capsule_ledger.jsonl"), "{}\n").unwrap();
 
         let artifacts = store.read_seed_artifacts(7).unwrap();
 
@@ -303,6 +305,7 @@ mod tests {
         assert!(!artifacts.result_exists);
         assert!(!artifacts.terminal_exists);
         assert!(artifacts.summary_exists);
+        assert!(artifacts.capsule_ledger_exists);
 
         let _ = std::fs::remove_dir_all(root);
     }

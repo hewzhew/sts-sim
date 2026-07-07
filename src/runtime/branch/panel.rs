@@ -18,6 +18,7 @@ pub struct PanelSeedArtifacts {
     pub frontier_exists: bool,
     pub terminal_exists: bool,
     pub summary_exists: bool,
+    pub capsule_ledger_exists: bool,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -159,6 +160,7 @@ pub struct PanelArtifactFacts {
     pub frontier_exists: bool,
     pub terminal_exists: bool,
     pub summary_exists: bool,
+    pub capsule_ledger_exists: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -175,6 +177,7 @@ pub struct PanelRow {
     pub frontier_exists: bool,
     pub terminal_exists: bool,
     pub summary_exists: bool,
+    pub capsule_ledger_exists: bool,
     pub artifact_refs: Vec<ArtifactRef>,
     pub read_error: Option<String>,
     pub tool_error: Option<String>,
@@ -610,6 +613,7 @@ impl PanelRow {
             frontier_exists: artifacts.frontier_exists,
             terminal_exists: artifacts.terminal_exists,
             summary_exists: artifacts.summary_exists,
+            capsule_ledger_exists: artifacts.capsule_ledger_exists,
             artifact_refs,
             read_error: resolution.read_error,
             tool_error,
@@ -731,6 +735,7 @@ impl PanelSeedArtifacts {
             frontier_exists: path.join("frontier.json").exists(),
             terminal_exists: path.join("terminal.json").exists(),
             summary_exists: path.join("summary.json").exists(),
+            capsule_ledger_exists: path.join("capsule_ledger.jsonl").exists(),
         })
     }
 
@@ -747,6 +752,7 @@ impl PanelArtifactFacts {
             frontier_exists: artifacts.frontier_exists,
             terminal_exists: artifacts.terminal_exists,
             summary_exists: artifacts.summary_exists,
+            capsule_ledger_exists: artifacts.capsule_ledger_exists,
         }
     }
 
@@ -757,6 +763,7 @@ impl PanelArtifactFacts {
             frontier_exists: path.join("frontier.json").exists(),
             terminal_exists: path.join("terminal.json").exists(),
             summary_exists: path.join("summary.json").exists(),
+            capsule_ledger_exists: path.join("capsule_ledger.jsonl").exists(),
         }
     }
 }
@@ -1059,6 +1066,7 @@ mod tests {
                     frontier_exists: true,
                     terminal_exists: false,
                     summary_exists: true,
+                    capsule_ledger_exists: true,
                 },
             },
             read_error: None,
@@ -1074,6 +1082,7 @@ mod tests {
         assert_eq!(value["row_status"], "soft_paused");
         assert_eq!(value["frontier_exists"], true);
         assert_eq!(value["result_exists"], false);
+        assert_eq!(value["capsule_ledger_exists"], true);
         assert_eq!(value["read_error"], serde_json::Value::Null);
         assert_eq!(value["tool_error"], serde_json::Value::Null);
     }
@@ -1094,6 +1103,7 @@ mod tests {
                 frontier_exists: true,
                 terminal_exists: false,
                 summary_exists: true,
+                capsule_ledger_exists: true,
                 artifact_refs: Vec::new(),
                 read_error: None,
                 tool_error: None,
@@ -1112,6 +1122,7 @@ mod tests {
                 frontier_exists: false,
                 terminal_exists: false,
                 summary_exists: false,
+                capsule_ledger_exists: false,
                 artifact_refs: Vec::new(),
                 read_error: None,
                 tool_error: None,
@@ -1145,6 +1156,7 @@ mod tests {
             frontier_exists: false,
             terminal_exists: false,
             summary_exists: false,
+            capsule_ledger_exists: false,
             artifact_refs: Vec::new(),
             read_error: None,
             tool_error: None,
@@ -1176,6 +1188,7 @@ mod tests {
                     frontier_exists: true,
                     terminal_exists: false,
                     summary_exists: true,
+                    capsule_ledger_exists: true,
                 },
             },
             read_error: None,

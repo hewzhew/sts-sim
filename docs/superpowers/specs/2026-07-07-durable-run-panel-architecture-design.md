@@ -19,7 +19,8 @@ Current implementation has established the first durable panel path:
 - `branch_panel panel drain` runs bounded repeated slices for longer
   continuation experiments.
 - `panel_summary.json` now records run mode, max slices, row status, reuse
-  decision, scheduler action, artifact facts, and tool errors.
+  decision, scheduler action, artifact facts including capsule ledger
+  presence, and tool errors.
 - `panel_ledger.jsonl` records each executed/skipped/failed slice with run
   mode and slice index.
 - `capsule_ledger.jsonl` records capsule `slice_started` and
@@ -41,7 +42,7 @@ Current implementation has established the first durable panel path:
   implementation modules from `src/bin/branch_tiny`.
 - `BranchArtifactStore` owns panel seed artifact presence reads; panel
   resolution consumes typed artifact facts instead of reading capsule files
-  directly.
+  directly, including `capsule_ledger.jsonl` presence.
 - `RunSliceResult` now carries an `ArtifactWriteSummary` for core capsule
   writes observed by the slice path, so in-process callers no longer need to
   infer manifest/frontier/result/summary writes from the filesystem.
