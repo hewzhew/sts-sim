@@ -3,7 +3,7 @@ use std::time::Instant;
 use crate::sim::combat::CombatStepper;
 
 use super::super::frontier::SearchNode;
-use super::super::types::CombatSearchV2Config;
+use super::super::{CombatSearchPluginStack, CombatSearchV2Config};
 use super::enumerate::enumerate_turn_plans;
 use super::types::{TurnPlanBucket, TurnPlanStopReason, TurnPlannerConfigV1};
 
@@ -21,13 +21,14 @@ pub(in crate::ai::combat_search_v2) fn turn_plan_frontier_seed(
     node: &SearchNode,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
+    plugins: &CombatSearchPluginStack,
     deadline: Option<Instant>,
 ) -> TurnPlanFrontierSeedResult {
     let turn_config = TurnPlannerConfigV1 {
         max_inner_nodes: TURN_PLAN_FRONTIER_SEED_MAX_INNER_NODES,
         max_end_states: TURN_PLAN_FRONTIER_SEED_MAX_END_STATES,
         per_bucket_limit: TURN_PLAN_FRONTIER_SEED_PER_BUCKET_LIMIT,
-        potion_policy: config.potion_policy,
+        potion_policy: plugins.potion.policy,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
         turn_plan_prior: config.turn_plan_prior.clone(),
     };

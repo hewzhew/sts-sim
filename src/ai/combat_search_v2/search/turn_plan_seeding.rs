@@ -29,7 +29,8 @@ pub(super) fn seed_turn_plan_frontier(
     }
 
     let seed_started = Instant::now();
-    let mut seeded_nodes = turn_plan_frontier_seed(source, stepper, config, deadline);
+    let mut seeded_nodes =
+        turn_plan_frontier_seed(source, stepper, config, &loop_state.plugins, deadline);
     loop_state.performance.turn_plan_frontier_seed_calls = loop_state
         .performance
         .turn_plan_frontier_seed_calls
