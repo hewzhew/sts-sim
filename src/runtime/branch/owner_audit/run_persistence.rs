@@ -73,7 +73,7 @@ fn save_wall_stop(
             return Ok(artifacts);
         }
         frontier_checkpoint::save(path, args, generation, next_branch_id, frontier)?;
-        artifacts.merge(ArtifactWriteSummary::frontier_checkpoint());
+        artifacts.merge(ArtifactWriteSummary::frontier_checkpoint_at(path.clone()));
         if human_output {
             println!(
                 "frontier_checkpoint: {} running={}",
@@ -94,7 +94,7 @@ fn save_wall_stop(
             frontier,
             "wall_deadline",
         )?;
-        artifacts.merge(save.artifact_writes());
+        artifacts.merge(capsule.artifact_writes(save));
         print_capsule_save(save, capsule, human_output);
     }
     Ok(artifacts)
@@ -133,7 +133,7 @@ pub(super) fn finalize_objective_result(
     let mut artifacts = ArtifactWriteSummary::default();
     if let Some(capsule) = capsule {
         capsule.save_completed_result(args, generation, branch, reason)?;
-        artifacts.merge(RunCapsuleSave::Result.artifact_writes());
+        artifacts.merge(capsule.artifact_writes(RunCapsuleSave::Result));
         if human_output {
             println!("run_capsule_result: {}", capsule.result_path().display());
         }

@@ -65,7 +65,7 @@ impl<'a> RunStopRecorder<'a> {
     ) -> Result<ArtifactWriteSummary, String> {
         if let Some(capsule) = self.capsule.filter(|_| !self.frontier_saved) {
             let save = capsule.save_recovery(args, generation, next_branch_id, frontier)?;
-            self.artifact_writes.merge(save.artifact_writes());
+            self.artifact_writes.merge(capsule.artifact_writes(save));
             run_persistence::print_capsule_save(save, capsule, self.human_output);
         }
         Ok(self.artifact_writes)

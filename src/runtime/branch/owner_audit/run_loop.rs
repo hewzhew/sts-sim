@@ -125,7 +125,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
                 (run_capsule.as_ref(), generation_result.as_ref())
             {
                 capsule.save_result(args, *result_generation, branch)?;
-                artifact_writes.merge(RunCapsuleSave::Result.artifact_writes());
+                artifact_writes.merge(capsule.artifact_writes(RunCapsuleSave::Result));
                 if human_output {
                     println!("run_capsule_result: {}", capsule.result_path().display());
                 }

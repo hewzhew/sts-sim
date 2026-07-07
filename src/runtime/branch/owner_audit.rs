@@ -183,7 +183,7 @@ impl OwnerAuditRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::branch::{default_branch_args, RunSliceRequestKind};
+    use crate::runtime::branch::{default_branch_args, ArtifactKind, RunSliceRequestKind};
 
     #[test]
     fn owner_audit_runtime_exposes_cli_entrypoint() {
@@ -218,6 +218,37 @@ mod tests {
         assert!(result.artifacts.frontier_written);
         assert!(result.artifacts.summary_written);
         assert!(!result.artifacts.result_written);
+        assert_eq!(
+            result
+                .artifacts
+                .manifest_ref
+                .as_ref()
+                .map(|artifact| artifact.kind),
+            Some(ArtifactKind::Manifest)
+        );
+        assert_eq!(
+            result
+                .artifacts
+                .frontier_ref
+                .as_ref()
+                .map(|artifact| artifact.kind),
+            Some(ArtifactKind::Frontier)
+        );
+        assert_eq!(
+            result
+                .artifacts
+                .summary_ref
+                .as_ref()
+                .map(|artifact| artifact.kind),
+            Some(ArtifactKind::Summary)
+        );
+        assert!(result
+            .artifacts
+            .frontier_ref
+            .as_ref()
+            .unwrap()
+            .path
+            .ends_with("frontier.json"));
         assert!(root.join("manifest.json").exists());
         assert!(root.join("frontier.json").exists());
         assert!(root.join("summary.json").exists());

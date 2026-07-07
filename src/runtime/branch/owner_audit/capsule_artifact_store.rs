@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 use super::run_identity::{current_source_identity, SourceIdentity};
+use super::run_slice_result::{ArtifactKind, ArtifactRef, ArtifactWriteSummary};
 use super::{
     combat_gap_case, frontier_checkpoint, run_capsule_format, run_capsule_io, Args, Branch,
     BranchStatus,
@@ -43,6 +44,67 @@ impl CapsuleArtifactStore {
 
     pub(super) fn terminal_path(&self) -> PathBuf {
         self.root.join("terminal.json")
+    }
+
+    pub(super) fn running_manifest_summary(&self) -> ArtifactWriteSummary {
+        ArtifactWriteSummary::single_ref(self.artifact_ref(
+            ArtifactKind::Manifest,
+            "manifest.json",
+            "branch_tiny_capsule_manifest",
+        ))
+    }
+
+    pub(super) fn frontier_summary(&self) -> ArtifactWriteSummary {
+        let mut summary = ArtifactWriteSummary::default();
+        summary.record_ref(self.artifact_ref(
+            ArtifactKind::Manifest,
+            "manifest.json",
+            "branch_tiny_capsule_manifest",
+        ));
+        summary.record_ref(self.artifact_ref(
+            ArtifactKind::Frontier,
+            "frontier.json",
+            "branch_tiny_frontier_checkpoint",
+        ));
+        summary.record_ref(self.artifact_ref(
+            ArtifactKind::Summary,
+            "summary.json",
+            "branch_tiny_capsule_summary",
+        ));
+        summary
+    }
+
+    pub(super) fn result_summary(&self) -> ArtifactWriteSummary {
+        let mut summary = ArtifactWriteSummary::default();
+        summary.record_ref(self.artifact_ref(
+            ArtifactKind::Manifest,
+            "manifest.json",
+            "branch_tiny_capsule_manifest",
+        ));
+        summary.record_ref(self.artifact_ref(
+            ArtifactKind::Result,
+            "result.json",
+            "branch_tiny_capsule_result",
+        ));
+        summary.record_ref(self.artifact_ref(
+            ArtifactKind::Path,
+            "path.json",
+            "branch_tiny_capsule_path",
+        ));
+        summary.record_ref(self.artifact_ref(
+            ArtifactKind::Summary,
+            "summary.json",
+            "branch_tiny_capsule_summary",
+        ));
+        summary
+    }
+
+    pub(super) fn terminal_summary(&self) -> ArtifactWriteSummary {
+        ArtifactWriteSummary::single_ref(self.artifact_ref(
+            ArtifactKind::Terminal,
+            "terminal.json",
+            "branch_tiny_terminal_results",
+        ))
     }
 
     pub(super) fn write_running_manifest(&self, args: Args) -> Result<(), String> {
@@ -272,6 +334,15 @@ impl CapsuleArtifactStore {
             Ok(None) => Value::Null,
             Err(error) => json!({"error": error}),
         }
+    }
+
+    fn artifact_ref(&self, kind: ArtifactKind, file_name: &str, schema: &str) -> ArtifactRef {
+        ArtifactRef::new(
+            kind,
+            self.root.join(file_name),
+            schema,
+            "owner_audit_runtime",
+        )
     }
 }
 

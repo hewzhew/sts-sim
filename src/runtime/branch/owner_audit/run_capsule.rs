@@ -16,27 +16,6 @@ pub(super) enum RunCapsuleSave {
     Result,
 }
 
-impl RunCapsuleSave {
-    pub(super) fn artifact_writes(self) -> ArtifactWriteSummary {
-        match self {
-            Self::None => ArtifactWriteSummary::default(),
-            Self::Frontier { .. } => ArtifactWriteSummary {
-                manifest_written: true,
-                frontier_written: true,
-                summary_written: true,
-                ..ArtifactWriteSummary::default()
-            },
-            Self::Result => ArtifactWriteSummary {
-                manifest_written: true,
-                result_written: true,
-                path_written: true,
-                summary_written: true,
-                ..ArtifactWriteSummary::default()
-            },
-        }
-    }
-}
-
 impl RunCapsule {
     pub(super) fn new(root: PathBuf) -> Self {
         Self {
@@ -52,8 +31,20 @@ impl RunCapsule {
         self.store.result_path()
     }
 
-    pub(super) fn write_running_manifest(&self, args: Args) -> Result<(), String> {
-        self.store.write_running_manifest(args)
+    pub(super) fn write_running_manifest(
+        &self,
+        args: Args,
+    ) -> Result<ArtifactWriteSummary, String> {
+        self.store.write_running_manifest(args)?;
+        Ok(self.store.running_manifest_summary())
+    }
+
+    pub(super) fn artifact_writes(&self, save: RunCapsuleSave) -> ArtifactWriteSummary {
+        match save {
+            RunCapsuleSave::None => ArtifactWriteSummary::default(),
+            RunCapsuleSave::Frontier { .. } => self.store.frontier_summary(),
+            RunCapsuleSave::Result => self.store.result_summary(),
+        }
     }
 
     pub(super) fn save_recovery(
@@ -135,10 +126,7 @@ impl RunCapsule {
             .store
             .append_terminal_result(args, generation, branch)?
         {
-            return Ok(ArtifactWriteSummary {
-                terminal_written: true,
-                ..ArtifactWriteSummary::default()
-            });
+            return Ok(self.store.terminal_summary());
         }
         Ok(ArtifactWriteSummary::default())
     }

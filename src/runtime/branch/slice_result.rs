@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 use super::{Args, BoundarySite, BranchStatus, Owner, RunContract, TerminalOutcome};
@@ -147,7 +149,26 @@ pub struct SliceBudgetSummary {
     pub boss_budget_was_capped: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum ArtifactKind {
+    Manifest,
+    Frontier,
+    Result,
+    Path,
+    Summary,
+    Terminal,
+    CombatCase,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ArtifactRef {
+    pub kind: ArtifactKind,
+    pub path: PathBuf,
+    pub schema: String,
+    pub created_by: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ArtifactWriteSummary {
     pub manifest_written: bool,
     pub frontier_written: bool,
@@ -156,6 +177,13 @@ pub struct ArtifactWriteSummary {
     pub summary_written: bool,
     pub terminal_written: bool,
     pub combat_case_written: bool,
+    pub manifest_ref: Option<ArtifactRef>,
+    pub frontier_ref: Option<ArtifactRef>,
+    pub result_ref: Option<ArtifactRef>,
+    pub path_ref: Option<ArtifactRef>,
+    pub summary_ref: Option<ArtifactRef>,
+    pub terminal_ref: Option<ArtifactRef>,
+    pub combat_case_ref: Option<ArtifactRef>,
 }
 
 impl ArtifactWriteSummary {
@@ -167,19 +195,76 @@ impl ArtifactWriteSummary {
         self.summary_written |= other.summary_written;
         self.terminal_written |= other.terminal_written;
         self.combat_case_written |= other.combat_case_written;
+        self.manifest_ref = other.manifest_ref.or(self.manifest_ref.take());
+        self.frontier_ref = other.frontier_ref.or(self.frontier_ref.take());
+        self.result_ref = other.result_ref.or(self.result_ref.take());
+        self.path_ref = other.path_ref.or(self.path_ref.take());
+        self.summary_ref = other.summary_ref.or(self.summary_ref.take());
+        self.terminal_ref = other.terminal_ref.or(self.terminal_ref.take());
+        self.combat_case_ref = other.combat_case_ref.or(self.combat_case_ref.take());
     }
 
-    pub fn manifest() -> Self {
-        Self {
-            manifest_written: true,
-            ..Self::default()
+    pub fn frontier_checkpoint_at(path: impl Into<PathBuf>) -> Self {
+        Self::single_ref(ArtifactRef::new(
+            ArtifactKind::Frontier,
+            path,
+            "branch_tiny_frontier_checkpoint",
+            "owner_audit_runtime",
+        ))
+    }
+
+    pub fn single_ref(artifact: ArtifactRef) -> Self {
+        let mut summary = Self::default();
+        summary.record_ref(artifact);
+        summary
+    }
+
+    pub fn record_ref(&mut self, artifact: ArtifactRef) {
+        match artifact.kind {
+            ArtifactKind::Manifest => {
+                self.manifest_written = true;
+                self.manifest_ref = Some(artifact);
+            }
+            ArtifactKind::Frontier => {
+                self.frontier_written = true;
+                self.frontier_ref = Some(artifact);
+            }
+            ArtifactKind::Result => {
+                self.result_written = true;
+                self.result_ref = Some(artifact);
+            }
+            ArtifactKind::Path => {
+                self.path_written = true;
+                self.path_ref = Some(artifact);
+            }
+            ArtifactKind::Summary => {
+                self.summary_written = true;
+                self.summary_ref = Some(artifact);
+            }
+            ArtifactKind::Terminal => {
+                self.terminal_written = true;
+                self.terminal_ref = Some(artifact);
+            }
+            ArtifactKind::CombatCase => {
+                self.combat_case_written = true;
+                self.combat_case_ref = Some(artifact);
+            }
         }
     }
+}
 
-    pub fn frontier_checkpoint() -> Self {
+impl ArtifactRef {
+    pub fn new(
+        kind: ArtifactKind,
+        path: impl Into<PathBuf>,
+        schema: impl Into<String>,
+        created_by: impl Into<String>,
+    ) -> Self {
         Self {
-            frontier_written: true,
-            ..Self::default()
+            kind,
+            path: path.into(),
+            schema: schema.into(),
+            created_by: created_by.into(),
         }
     }
 }

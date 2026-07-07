@@ -51,8 +51,7 @@ impl ContinueSliceRequest {
             self.overrides.apply_to(&mut effective_args);
             branch_runtime::BranchRuntime::initial_frontier(effective_args, started)
         };
-        run_capsule.write_running_manifest(effective_args)?;
-        let artifact_writes = ArtifactWriteSummary::manifest();
+        let artifact_writes = run_capsule.write_running_manifest(effective_args)?;
         let combat_gap_case_dir = Some(run_capsule.combat_cases_dir());
         Ok(RunSliceRequest {
             args: effective_args,

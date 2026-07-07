@@ -57,8 +57,7 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
     }
     let mut artifact_writes = ArtifactWriteSummary::default();
     if let Some(capsule) = run_capsule.as_ref() {
-        capsule.write_running_manifest(args)?;
-        artifact_writes.merge(ArtifactWriteSummary::manifest());
+        artifact_writes.merge(capsule.write_running_manifest(args)?);
     }
     let started = Instant::now();
     let mut generation_start = 0usize;

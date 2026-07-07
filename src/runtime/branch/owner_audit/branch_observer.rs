@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use super::owner_model::OwnerChoice;
 use super::run_capsule::RunCapsule;
-use super::run_slice_result::ArtifactWriteSummary;
+use super::run_slice_result::{ArtifactKind, ArtifactRef, ArtifactWriteSummary};
 use super::{combat_gap_case, render, run_contract, run_persistence, trace, Args, Branch};
 
 pub(super) struct BranchRecordOutcome {
@@ -30,11 +30,11 @@ pub(super) fn record_branch_node(
     if let Some(dir) = combat_gap_case_dir {
         match combat_gap_case::save_combat_gap_case(dir, args, generation, branch) {
             Ok(Some(path)) if human_output => {
-                artifacts.combat_case_written = true;
+                artifacts.record_ref(combat_case_ref(path.clone()));
                 println!("  combat_gap_case: {}", path.display());
             }
-            Ok(Some(_)) => {
-                artifacts.combat_case_written = true;
+            Ok(Some(path)) => {
+                artifacts.record_ref(combat_case_ref(path));
             }
             Ok(None) => {}
             Err(err) if human_output => {
@@ -44,6 +44,15 @@ pub(super) fn record_branch_node(
         }
     }
     Ok(artifacts)
+}
+
+fn combat_case_ref(path: PathBuf) -> ArtifactRef {
+    ArtifactRef::new(
+        ArtifactKind::CombatCase,
+        path,
+        "branch_tiny_combat_gap_case",
+        "owner_audit_runtime",
+    )
 }
 
 pub(super) fn record_stopped_branch(

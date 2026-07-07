@@ -1,7 +1,7 @@
 use super::Branch;
 pub(super) use sts_simulator::runtime::branch::{
-    ArtifactWriteSummary, BranchSummary, FrontierExhausted, FrontierSummary, RealStop,
-    RunSliceRequestKind, RunSliceResult, RunStop, SoftPause,
+    ArtifactKind, ArtifactRef, ArtifactWriteSummary, BranchSummary, FrontierExhausted,
+    FrontierSummary, RealStop, RunSliceRequestKind, RunSliceResult, RunStop, SoftPause,
 };
 
 pub(super) trait RunSliceResultBranchExt {
