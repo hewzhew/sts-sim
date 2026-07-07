@@ -128,14 +128,70 @@ pub(super) fn manifest_wall_ms(capsule: &Path) -> Result<Option<u64>, String> {
     if !manifest.exists() {
         return Ok(None);
     }
-    Ok(read_json(&manifest)?
-        .get("args")
-        .and_then(|args| args.get("wall_ms"))
-        .and_then(Value::as_u64))
+    let value = read_json(&manifest)?;
+    Ok(value
+        .get("run_contract")
+        .and_then(|contract| contract.get("slice"))
+        .and_then(|slice| slice.get("slice_ms"))
+        .and_then(Value::as_u64)
+        .or_else(|| {
+            value
+                .get("args")
+                .and_then(|args| args.get("wall_ms"))
+                .and_then(Value::as_u64)
+        }))
 }
 
 fn read_json(path: &Path) -> Result<Value, String> {
     let text = fs::read_to_string(path)
         .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
     serde_json::from_str(&text).map_err(|err| format!("failed to parse {}: {err}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_manifest(dir_name: &str, value: serde_json::Value) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(dir_name);
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("manifest.json"),
+            serde_json::to_string_pretty(&value).unwrap(),
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn manifest_wall_ms_prefers_run_contract_slice_ms() {
+        let dir = write_manifest(
+            "branch_tiny_manifest_run_contract_wall",
+            serde_json::json!({
+                "run_contract": {
+                    "slice": { "slice_ms": 1234 }
+                },
+                "args": { "wall_ms": 9999 }
+            }),
+        );
+
+        assert_eq!(manifest_wall_ms(&dir).unwrap(), Some(1234));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn manifest_wall_ms_falls_back_to_legacy_args() {
+        let dir = write_manifest(
+            "branch_tiny_manifest_legacy_wall",
+            serde_json::json!({
+                "args": { "wall_ms": 4321 }
+            }),
+        );
+
+        assert_eq!(manifest_wall_ms(&dir).unwrap(), Some(4321));
+
+        let _ = fs::remove_dir_all(dir);
+    }
 }
