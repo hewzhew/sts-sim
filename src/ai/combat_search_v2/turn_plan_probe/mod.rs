@@ -22,7 +22,8 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
     config: &CombatSearchV2Config,
 ) -> CombatSearchV2TurnPlanProbeEnumeration {
     let root = SearchNode::root(engine.clone(), combat.clone());
-    let turn_config = turn_planner_config(config);
+    let plugins = CombatSearchPluginStack::from_config(config);
+    let turn_config = turn_planner_config(config, &plugins);
     let enumeration = enumerate_turn_plans(&root, &EngineCombatStepper, &turn_config, None);
     let position = CombatPosition::new(engine.clone(), combat.clone());
     let legal_action_choices = EngineCombatStepper.legal_action_choices(&position);
@@ -94,7 +95,10 @@ pub(crate) fn enumerate_combat_search_v2_turn_plan_probe_candidates(
     }
 }
 
-fn turn_planner_config(config: &CombatSearchV2Config) -> TurnPlannerConfigV1 {
+fn turn_planner_config(
+    config: &CombatSearchV2Config,
+    plugins: &CombatSearchPluginStack,
+) -> TurnPlannerConfigV1 {
     TurnPlannerConfigV1 {
         max_inner_nodes: config
             .turn_plan_probe_max_inner_nodes
@@ -105,7 +109,7 @@ fn turn_planner_config(config: &CombatSearchV2Config) -> TurnPlannerConfigV1 {
         per_bucket_limit: config
             .turn_plan_probe_per_bucket_limit
             .unwrap_or(TURN_PLAN_PROBE_PER_BUCKET_LIMIT),
-        potion_policy: config.potion_policy,
+        potion_policy: plugins.potion.policy,
         max_engine_steps_per_action: config.max_engine_steps_per_action,
         turn_plan_prior: config.turn_plan_prior.clone(),
     }

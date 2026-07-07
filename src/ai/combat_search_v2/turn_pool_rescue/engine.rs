@@ -5,7 +5,10 @@ use crate::sim::combat::{CombatPosition, CombatStepLimits, CombatStepper, Engine
 use crate::sim::combat_action::CombatActionChoice;
 use crate::state::core::ClientInput;
 
-use super::super::{filter_combat_search_legal_actions, CombatSearchV2Config, SearchTerminalLabel};
+use super::super::{
+    filter_combat_search_legal_actions, CombatSearchPluginStack, CombatSearchV2Config,
+    SearchTerminalLabel,
+};
 use super::ranking::{keep_lane_nodes, lane_rank};
 use super::types::{
     TurnPoolExpandOutcome, TurnPoolLane, TurnPoolLaneNode, TurnPoolNode, TurnPoolRun,
@@ -30,6 +33,7 @@ pub(super) fn run_turn_pool_nodes_v0(
 
     let stepper = EngineCombatStepper;
     let per_lane_ms = (budget_ms / LANES.len() as u64).max(500);
+    let plugins = config.map(CombatSearchPluginStack::from_config);
     let mut total_nodes = 0u64;
     let mut total_generated = 0u64;
     let mut any_deadline_hit = false;
@@ -58,6 +62,7 @@ pub(super) fn run_turn_pool_nodes_v0(
                     INNER_BEAM,
                     MAX_INNER_NODES,
                     config,
+                    plugins.as_ref(),
                 );
                 total_nodes = total_nodes.saturating_add(outcome.nodes_expanded);
                 total_generated = total_generated.saturating_add(outcome.nodes_generated);
@@ -104,6 +109,7 @@ fn expand_one_turn(
     beam: usize,
     max_nodes: usize,
     config: Option<&CombatSearchV2Config>,
+    plugins: Option<&CombatSearchPluginStack>,
 ) -> TurnPoolExpandOutcome {
     let start_turn = root.position.combat.turn.turn_count;
     let mut frontier = vec![root];
@@ -127,15 +133,15 @@ fn expand_one_turn(
                 continue;
             }
             nodes_expanded = nodes_expanded.saturating_add(1);
-            let choices = match config {
-                Some(config) => filter_combat_search_legal_actions(
+            let choices = match plugins {
+                Some(plugins) => filter_combat_search_legal_actions(
                     stepper.legal_action_choices(&node.position),
-                    config.potion_policy,
+                    plugins.potion.policy,
                     &node.position.combat,
                 ),
                 None => stepper.legal_action_choices(&node.position),
             };
-            let choices = filter_turn_pool_potion_budget(choices, config, node.potions_used);
+            let choices = filter_turn_pool_potion_budget(choices, plugins, node.potions_used);
             for (action_id, choice) in choices.into_iter().enumerate() {
                 if Instant::now() >= deadline {
                     deadline_hit = true;
@@ -208,10 +214,10 @@ fn expand_one_turn(
 
 fn filter_turn_pool_potion_budget(
     choices: Vec<CombatActionChoice>,
-    config: Option<&CombatSearchV2Config>,
+    plugins: Option<&CombatSearchPluginStack>,
     potions_used: u32,
 ) -> Vec<CombatActionChoice> {
-    let Some(max_potions) = config.and_then(|config| config.max_potions_used) else {
+    let Some(max_potions) = plugins.and_then(|plugins| plugins.potion.max_potions_used) else {
         return choices;
     };
     if potions_used < max_potions {
