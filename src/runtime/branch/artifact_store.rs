@@ -239,6 +239,7 @@ mod tests {
             frontier_exists: false,
             terminal_exists: false,
             summary_exists: false,
+            artifact_refs: Vec::new(),
             read_error: None,
             tool_error: None,
             archived_capsule_path: None,

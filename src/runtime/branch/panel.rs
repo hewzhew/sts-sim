@@ -175,6 +175,7 @@ pub struct PanelRow {
     pub frontier_exists: bool,
     pub terminal_exists: bool,
     pub summary_exists: bool,
+    pub artifact_refs: Vec<ArtifactRef>,
     pub read_error: Option<String>,
     pub tool_error: Option<String>,
     pub archived_capsule_path: Option<String>,
@@ -314,6 +315,7 @@ impl PanelInspectConfig {
         failures: &BTreeMap<u64, String>,
         status_overrides: &BTreeMap<u64, PanelRowStatus>,
         reuse_overrides: &BTreeMap<u64, PanelReuseDecision>,
+        artifact_refs: &BTreeMap<u64, Vec<ArtifactRef>>,
         archive_paths: &BTreeMap<u64, PathBuf>,
         options: PanelRunOptions,
     ) -> PanelSummary {
@@ -324,6 +326,10 @@ impl PanelInspectConfig {
                     let tool_error = failures.get(&resolution.seed).cloned();
                     let status_override = status_overrides.get(&resolution.seed).copied();
                     let reuse_override = reuse_overrides.get(&resolution.seed).copied();
+                    let row_artifact_refs = artifact_refs
+                        .get(&resolution.seed)
+                        .cloned()
+                        .unwrap_or_default();
                     let archived_capsule_path = archive_paths
                         .get(&resolution.seed)
                         .map(|path| path.display().to_string());
@@ -331,6 +337,7 @@ impl PanelInspectConfig {
                         resolution,
                         status_override,
                         reuse_override,
+                        row_artifact_refs,
                         tool_error,
                         archived_capsule_path,
                     )
@@ -383,6 +390,7 @@ fn run_slices_with_executor(
     let mut failures = BTreeMap::new();
     let mut status_overrides = BTreeMap::new();
     let mut reuse_overrides = BTreeMap::new();
+    let mut artifact_refs = BTreeMap::new();
     let mut archive_paths = BTreeMap::new();
     let mut fresh_prepared = BTreeSet::new();
     for slice_index in 0..options.max_slices {
@@ -433,7 +441,7 @@ fn run_slices_with_executor(
                         status_overrides.insert(resolution.seed, PanelRowStatus::Skipped);
                         continue;
                     }
-                    if let Some(error) = run_panel_seed_slice(
+                    let (error, refs) = run_panel_seed_slice(
                         &config,
                         resolution.seed,
                         action,
@@ -442,13 +450,17 @@ fn run_slices_with_executor(
                         &mut executor,
                         options.mode,
                         slice_index,
-                    )? {
+                    )?;
+                    if !refs.is_empty() {
+                        artifact_refs.insert(resolution.seed, refs);
+                    }
+                    if let Some(error) = error {
                         failures.insert(resolution.seed, error);
                     }
                     ran_slice = true;
                 }
                 PanelSeedAction::ContinueCapsule => {
-                    if let Some(error) = run_panel_seed_slice(
+                    let (error, refs) = run_panel_seed_slice(
                         &config,
                         resolution.seed,
                         action,
@@ -457,7 +469,11 @@ fn run_slices_with_executor(
                         &mut executor,
                         options.mode,
                         slice_index,
-                    )? {
+                    )?;
+                    if !refs.is_empty() {
+                        artifact_refs.insert(resolution.seed, refs);
+                    }
+                    if let Some(error) = error {
                         failures.insert(resolution.seed, error);
                     }
                     ran_slice = true;
@@ -484,6 +500,7 @@ fn run_slices_with_executor(
         &failures,
         &status_overrides,
         &reuse_overrides,
+        &artifact_refs,
         &archive_paths,
         options,
     ))
@@ -498,7 +515,7 @@ fn run_panel_seed_slice(
     executor: &mut impl PanelSliceExecutor,
     run_mode: PanelRunMode,
     slice_index: usize,
-) -> Result<Option<String>, String> {
+) -> Result<(Option<String>, Vec<ArtifactRef>), String> {
     match executor.run_slice(OwnerAuditSliceRequest {
         args: config.args_for_seed(seed),
         capsule_path,
@@ -506,6 +523,7 @@ fn run_panel_seed_slice(
         human_output: false,
     }) {
         Ok(result) => {
+            let refs = result.artifacts.refs();
             append_panel_event(
                 config,
                 seed,
@@ -514,9 +532,9 @@ fn run_panel_seed_slice(
                 run_mode,
                 slice_index,
                 None,
-                result.artifacts.refs(),
+                refs.clone(),
             )?;
-            Ok(None)
+            Ok((None, refs))
         }
         Err(error) => {
             append_panel_event(
@@ -529,7 +547,7 @@ fn run_panel_seed_slice(
                 Some(error.clone()),
                 Vec::new(),
             )?;
-            Ok(Some(error))
+            Ok((Some(error), Vec::new()))
         }
     }
 }
@@ -561,13 +579,14 @@ fn append_panel_event(
 
 impl PanelRow {
     pub fn from_resolution(resolution: PanelSeedResolution) -> Self {
-        Self::from_resolution_with_execution(resolution, None, None, None, None)
+        Self::from_resolution_with_execution(resolution, None, None, Vec::new(), None, None)
     }
 
     fn from_resolution_with_execution(
         resolution: PanelSeedResolution,
         status_override: Option<PanelRowStatus>,
         reuse_override: Option<PanelReuseDecision>,
+        artifact_refs: Vec<ArtifactRef>,
         tool_error: Option<String>,
         archived_capsule_path: Option<String>,
     ) -> Self {
@@ -591,6 +610,7 @@ impl PanelRow {
             frontier_exists: artifacts.frontier_exists,
             terminal_exists: artifacts.terminal_exists,
             summary_exists: artifacts.summary_exists,
+            artifact_refs,
             read_error: resolution.read_error,
             tool_error,
             archived_capsule_path,
@@ -749,8 +769,8 @@ mod tests {
 
     use super::*;
     use crate::runtime::branch::{
-        Args, FrontierSummary, RunObjective, RunSliceRequestKind, RunSliceResult, RunStop,
-        SoftPause,
+        Args, ArtifactKind, FrontierSummary, RunObjective, RunSliceRequestKind, RunSliceResult,
+        RunStop, SoftPause,
     };
 
     fn args(seed: u64) -> Args {
@@ -1074,6 +1094,7 @@ mod tests {
                 frontier_exists: true,
                 terminal_exists: false,
                 summary_exists: true,
+                artifact_refs: Vec::new(),
                 read_error: None,
                 tool_error: None,
                 archived_capsule_path: None,
@@ -1091,6 +1112,7 @@ mod tests {
                 frontier_exists: false,
                 terminal_exists: false,
                 summary_exists: false,
+                artifact_refs: Vec::new(),
                 read_error: None,
                 tool_error: None,
                 archived_capsule_path: None,
@@ -1123,6 +1145,7 @@ mod tests {
             frontier_exists: false,
             terminal_exists: false,
             summary_exists: false,
+            artifact_refs: Vec::new(),
             read_error: None,
             tool_error: None,
             archived_capsule_path: None,
@@ -1259,6 +1282,13 @@ mod tests {
             ledger_row["artifact_refs"][1]["schema"],
             serde_json::json!("branch_tiny_frontier_checkpoint")
         );
+        assert_eq!(
+            summary.rows[0].artifact_refs[1].kind,
+            ArtifactKind::Frontier
+        );
+        assert!(summary.rows[0].artifact_refs[1]
+            .path
+            .ends_with("frontier.json"));
         assert!(summary.rows[0].manifest_exists);
 
         let _ = fs::remove_dir_all(root);
