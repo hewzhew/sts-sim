@@ -6,6 +6,7 @@ use sts_simulator::eval::run_control::RunControlAutoAppliedKindV1;
 use sts_simulator::sim::combat::CombatPosition;
 
 use super::branch_path::BranchPathStep;
+use super::run_contract::RunContract;
 use super::{combat_portfolio_json, run_state_json, Args, Branch, BranchStatus};
 
 pub(super) fn manifest_value(
@@ -25,6 +26,8 @@ pub(super) fn manifest_value(
         "created_at_epoch_ms": created_at_ms,
         "updated_at_epoch_ms": updated_at_ms,
         "git_commit": git_commit,
+        "run_contract": RunContract::from_args(args),
+        "args_schema": "legacy_args_projection_v1",
         "args": args,
     })
 }
@@ -278,6 +281,47 @@ pub(super) fn terminal_manifest_status(status: &BranchStatus) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sample_args() -> Args {
+        Args {
+            seed: 99,
+            ascension: 3,
+            objective: super::super::run_contract::RunObjective::FirstTerminal,
+            generations: 8,
+            max_branches: 2,
+            auto_ops: 13,
+            search_nodes: 100,
+            search_ms: 200,
+            rescue_search_nodes: 300,
+            rescue_search_ms: 400,
+            boss_search_nodes: 500,
+            boss_search_ms: 600,
+            wall_ms: Some(700),
+            checkpoint_before_combat_portfolio: true,
+            wall_capped_search_budget: true,
+            wall_capped_boss_budget: true,
+        }
+    }
+
+    #[test]
+    fn manifest_writes_run_contract_and_legacy_args_projection() {
+        let value = manifest_value(
+            sample_args(),
+            "running",
+            None,
+            10,
+            20,
+            &Some("abc123".to_string()),
+        );
+
+        assert_eq!(value["run_contract"]["game"]["seed"], 99);
+        assert_eq!(value["run_contract"]["game"]["ascension"], 3);
+        assert_eq!(value["run_contract"]["slice"]["slice_ms"], 700);
+        assert_eq!(value["run_contract"]["combat_search"]["boss_ms"], 600);
+        assert_eq!(value["args"]["wall_ms"], 700);
+        assert_eq!(value["args_schema"], "legacy_args_projection_v1");
+        assert!(value["run_contract"]["wall_capped_search_budget"].is_null());
+    }
 
     #[test]
     fn continue_recommendation_uses_cargo_run_not_stale_exe() {
