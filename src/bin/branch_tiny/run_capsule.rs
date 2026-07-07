@@ -1,10 +1,10 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
+use super::run_identity::{current_source_identity, SourceIdentity};
 use super::{
     combat_gap_case, frontier_checkpoint, run_capsule_format, run_capsule_io, Args, Branch,
     BranchStatus, TerminalOutcome,
@@ -15,6 +15,7 @@ pub(super) struct RunCapsule {
     root: PathBuf,
     started_at_ms: u128,
     git_commit: Option<String>,
+    source_identity: SourceIdentity,
 }
 
 pub(super) enum RunCapsuleSave {
@@ -25,10 +26,12 @@ pub(super) enum RunCapsuleSave {
 
 impl RunCapsule {
     pub(super) fn new(root: PathBuf) -> Self {
+        let source_identity = current_source_identity();
         Self {
             root,
             started_at_ms: now_ms(),
-            git_commit: current_git_commit(),
+            git_commit: source_identity.git_commit.clone(),
+            source_identity,
         }
     }
 
@@ -299,6 +302,7 @@ impl RunCapsule {
                 self.started_at_ms,
                 now_ms(),
                 &self.git_commit,
+                &self.source_identity,
             ),
         )
     }
@@ -335,16 +339,4 @@ fn now_ms() -> u128 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or_default()
-}
-
-fn current_git_commit() -> Option<String> {
-    let output = Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
-        .output()
-        .ok()?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .filter(|commit| !commit.is_empty())
 }

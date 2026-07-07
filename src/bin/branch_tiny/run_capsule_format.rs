@@ -7,6 +7,7 @@ use sts_simulator::sim::combat::CombatPosition;
 
 use super::branch_path::BranchPathStep;
 use super::run_contract::RunContract;
+use super::run_identity::{RunIdentity, SourceIdentity};
 use super::{combat_portfolio_json, run_state_json, Args, Branch, BranchStatus};
 
 pub(super) fn manifest_value(
@@ -16,6 +17,7 @@ pub(super) fn manifest_value(
     created_at_ms: u128,
     updated_at_ms: u128,
     git_commit: &Option<String>,
+    source_identity: &SourceIdentity,
 ) -> Value {
     json!({
         "schema": "branch_tiny_run_capsule",
@@ -27,6 +29,8 @@ pub(super) fn manifest_value(
         "updated_at_epoch_ms": updated_at_ms,
         "git_commit": git_commit,
         "run_contract": RunContract::from_args(args),
+        "run_identity": RunIdentity::from_args(args),
+        "source_identity": source_identity,
         "args_schema": "legacy_args_projection_v1",
         "args": args,
     })
@@ -312,9 +316,16 @@ mod tests {
             10,
             20,
             &Some("abc123".to_string()),
+            &super::super::run_identity::SourceIdentity {
+                git_commit: Some("abc123".to_string()),
+                git_dirty: Some(true),
+            },
         );
 
         assert_eq!(value["run_contract"]["game"]["seed"], 99);
+        assert_eq!(value["run_identity"]["run_contract"]["game"]["seed"], 99);
+        assert_eq!(value["source_identity"]["git_commit"], "abc123");
+        assert_eq!(value["source_identity"]["git_dirty"], true);
         assert_eq!(value["run_contract"]["game"]["ascension"], 3);
         assert_eq!(value["run_contract"]["slice"]["slice_ms"], 700);
         assert_eq!(value["run_contract"]["combat_search"]["boss_ms"], 600);

@@ -108,6 +108,8 @@ mod run_choice_owner;
 mod run_contract;
 #[path = "branch_tiny/run_deadline.rs"]
 mod run_deadline;
+#[path = "branch_tiny/run_identity.rs"]
+mod run_identity;
 #[path = "branch_tiny/run_loop.rs"]
 mod run_loop;
 #[path = "branch_tiny/run_persistence.rs"]
