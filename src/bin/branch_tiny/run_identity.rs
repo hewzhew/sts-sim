@@ -4,17 +4,12 @@ use serde::{Deserialize, Serialize};
 
 use super::run_contract::RunContract;
 use super::Args;
+pub(super) use sts_simulator::runtime::branch::SourceIdentity;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(super) struct RunIdentity {
     pub(super) schema: String,
     pub(super) run_contract: RunContract,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(super) struct SourceIdentity {
-    pub(super) git_commit: Option<String>,
-    pub(super) git_dirty: Option<bool>,
 }
 
 impl RunIdentity {
