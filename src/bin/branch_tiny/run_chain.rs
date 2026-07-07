@@ -118,8 +118,8 @@ fn print_slice_summary(
 mod tests {
     use std::fs;
 
+    use super::super::run_contract::RunObjective;
     use super::*;
-    use crate::run_contract::RunObjective;
 
     fn sample_args(seed: u64) -> Args {
         Args {

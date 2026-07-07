@@ -77,9 +77,9 @@ impl ContinueSliceRequest {
 mod tests {
     use std::fs;
 
+    use super::super::cli_args::ArgsOverrides;
+    use super::super::run_contract::RunObjective;
     use super::*;
-    use crate::cli_args::ArgsOverrides;
-    use crate::run_contract::RunObjective;
 
     fn sample_args(seed: u64) -> Args {
         Args {

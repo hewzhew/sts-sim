@@ -51,10 +51,10 @@ impl BranchRuntime {
 mod tests {
     use std::time::Instant;
 
+    use super::super::run_slice_request::RunSliceRequest;
+    use super::super::run_slice_result::RunSliceRequestKind;
+    use super::super::{run_contract::RunObjective, Args};
     use super::*;
-    use crate::run_slice_request::RunSliceRequest;
-    use crate::run_slice_result::RunSliceRequestKind;
-    use crate::{run_contract::RunObjective, Args};
 
     fn sample_args() -> Args {
         Args {

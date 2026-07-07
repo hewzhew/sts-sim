@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{
-    decide_manifest_reuse, Args, BranchArtifactStore, CapsuleReuseDecision, RunContract,
-    SourceIdentity,
+    decide_manifest_reuse, Args, BranchArtifactStore, CapsuleReuseDecision, OwnerAuditRuntime,
+    OwnerAuditSliceRequest, RunContract, SourceIdentity,
 };
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -73,6 +73,8 @@ pub struct PanelSeedResolution {
 }
 
 pub struct PanelScheduler;
+
+pub struct PanelSmokeRunner;
 
 #[derive(Clone)]
 pub struct PanelInspectConfig {
@@ -214,8 +216,7 @@ impl PanelInspectConfig {
             .iter()
             .copied()
             .map(|seed| {
-                let mut args = self.args_template;
-                args.seed = seed;
+                let args = self.args_for_seed(seed);
                 PanelSeedRequest {
                     seed,
                     capsule_path: self.artifact_store.capsule_path(seed),
@@ -228,6 +229,39 @@ impl PanelInspectConfig {
 
     pub fn summarize(&self) -> PanelSummary {
         PanelScheduler::summarize_requests(self.requests())
+    }
+
+    fn args_for_seed(&self, seed: u64) -> Args {
+        let mut args = self.args_template;
+        args.seed = seed;
+        args
+    }
+}
+
+impl PanelSmokeRunner {
+    pub fn run_once(config: PanelInspectConfig) -> Result<PanelSummary, String> {
+        for resolution in PanelScheduler::resolve_requests(config.requests()) {
+            match resolution.scheduler_action() {
+                PanelSeedAction::StartNew => {
+                    OwnerAuditRuntime::run_capsule_slice(OwnerAuditSliceRequest {
+                        args: config.args_for_seed(resolution.seed),
+                        capsule_path: resolution.capsule_path,
+                        resume: false,
+                        human_output: false,
+                    })?;
+                }
+                PanelSeedAction::ContinueCapsule => {
+                    OwnerAuditRuntime::run_capsule_slice(OwnerAuditSliceRequest {
+                        args: config.args_for_seed(resolution.seed),
+                        capsule_path: resolution.capsule_path,
+                        resume: true,
+                        human_output: false,
+                    })?;
+                }
+                PanelSeedAction::ReuseRealStop | PanelSeedAction::RejectCapsule => {}
+            }
+        }
+        Ok(config.summarize())
     }
 }
 
@@ -755,5 +789,35 @@ mod tests {
         assert_eq!(requests[0].contract.branching.generations, 9);
         assert_eq!(requests[0].source_identity, source);
         assert_eq!(requests[1].contract.game.seed, 8);
+    }
+
+    #[test]
+    fn smoke_runner_executes_missing_seed_capsules_in_process() {
+        let root = std::env::temp_dir().join("runtime_branch_panel_smoke_runner");
+        let _ = fs::remove_dir_all(&root);
+        let mut template = args(0);
+        template.generations = 0;
+        template.max_branches = 1;
+        template.search_nodes = 1;
+        template.search_ms = 1;
+        template.rescue_search_nodes = 1;
+        template.rescue_search_ms = 1;
+        template.boss_search_nodes = 1;
+        template.boss_search_ms = 1;
+        template.wall_ms = Some(1_000);
+        let config = PanelInspectConfig {
+            seeds: vec![123],
+            artifact_store: BranchArtifactStore::new(&root),
+            args_template: template,
+            source_identity: source_identity(),
+        };
+
+        let summary = PanelSmokeRunner::run_once(config).unwrap();
+
+        assert_eq!(summary.total_rows, 1);
+        assert!(root.join("123").join("manifest.json").exists());
+        assert!(summary.rows[0].manifest_exists);
+
+        let _ = fs::remove_dir_all(root);
     }
 }

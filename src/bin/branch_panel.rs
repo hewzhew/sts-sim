@@ -4,7 +4,7 @@ use std::process;
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use sts_simulator::runtime::branch::{
     current_source_identity, default_branch_args, Args, BranchArtifactStore, PanelInspectConfig,
-    PanelSummary, RunObjective, SourceIdentity,
+    PanelSmokeRunner, PanelSummary, RunObjective, SourceIdentity,
 };
 
 fn main() {
@@ -18,6 +18,8 @@ fn run() -> Result<(), String> {
     match Cli::parse().command {
         Command::Panel(panel) => match panel.command {
             PanelCommand::Inspect(raw) => run_inspect(raw.into_inspect_args()?),
+            PanelCommand::Smoke(raw) => run_smoke(raw.into_inspect_args()?),
+            PanelCommand::Continue(raw) => run_continue(raw.into_inspect_args()?),
         },
     }
 }
@@ -26,7 +28,23 @@ fn run_inspect(args: InspectArgs) -> Result<(), String> {
     let store = args.artifact_store();
     let summary = args.inspect_config(current_source_identity())?.summarize();
     let summary_path = store.write_panel_summary(args.summary_path.as_deref(), &summary)?;
-    print_summary(&summary, &summary_path);
+    print_summary("inspect", &summary, &summary_path);
+    Ok(())
+}
+
+fn run_smoke(args: InspectArgs) -> Result<(), String> {
+    let store = args.artifact_store();
+    let summary = PanelSmokeRunner::run_once(args.inspect_config(current_source_identity())?)?;
+    let summary_path = store.write_panel_summary(args.summary_path.as_deref(), &summary)?;
+    print_summary("smoke", &summary, &summary_path);
+    Ok(())
+}
+
+fn run_continue(args: InspectArgs) -> Result<(), String> {
+    let store = args.artifact_store();
+    let summary = PanelSmokeRunner::run_once(args.inspect_config(current_source_identity())?)?;
+    let summary_path = store.write_panel_summary(args.summary_path.as_deref(), &summary)?;
+    print_summary("continue", &summary, &summary_path);
     Ok(())
 }
 
@@ -54,6 +72,8 @@ struct PanelArgs {
 #[derive(Subcommand)]
 enum PanelCommand {
     Inspect(RawInspectArgs),
+    Smoke(RawInspectArgs),
+    Continue(RawInspectArgs),
 }
 
 #[derive(ClapArgs)]
@@ -219,9 +239,9 @@ fn parse_seed(value: &str) -> Result<u64, String> {
         .map_err(|_| format!("invalid seed value: {value}"))
 }
 
-fn print_summary(summary: &PanelSummary, path: &PathBuf) {
+fn print_summary(label: &str, summary: &PanelSummary, path: &PathBuf) {
     println!(
-        "branch_panel inspect rows={} wrote {}",
+        "branch_panel {label} rows={} wrote {}",
         summary.total_rows,
         path.display()
     );
@@ -305,5 +325,49 @@ mod tests {
                 .features
                 .checkpoint_before_combat_portfolio
         );
+    }
+
+    #[test]
+    fn parses_panel_smoke_command() {
+        let cli = Cli::try_parse_from([
+            "branch_panel",
+            "panel",
+            "smoke",
+            "--seeds",
+            "1..2",
+            "--capsule-root",
+            "target/panel",
+        ])
+        .unwrap();
+
+        let Command::Panel(panel) = cli.command;
+        let PanelCommand::Smoke(args) = panel.command else {
+            panic!("expected panel smoke command");
+        };
+
+        assert_eq!(args.seeds, vec!["1..2".to_string()]);
+        assert_eq!(args.capsule_root, PathBuf::from("target/panel"));
+    }
+
+    #[test]
+    fn parses_panel_continue_command() {
+        let cli = Cli::try_parse_from([
+            "branch_panel",
+            "panel",
+            "continue",
+            "--seeds",
+            "1",
+            "--capsule-root",
+            "target/panel",
+        ])
+        .unwrap();
+
+        let Command::Panel(panel) = cli.command;
+        let PanelCommand::Continue(args) = panel.command else {
+            panic!("expected panel continue command");
+        };
+
+        assert_eq!(args.seeds, vec!["1".to_string()]);
+        assert_eq!(args.capsule_root, PathBuf::from("target/panel"));
     }
 }

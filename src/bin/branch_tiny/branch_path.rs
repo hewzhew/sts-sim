@@ -152,8 +152,8 @@ impl BranchPathState {
 mod tests {
     use sts_simulator::eval::run_control::RunControlCommand;
 
+    use super::super::owner_model::{OwnerChoice, OwnerChoiceExpansion};
     use super::*;
-    use crate::owner_model::{OwnerChoice, OwnerChoiceExpansion};
 
     #[test]
     fn candidate_snapshot_keeps_selected_and_inspect_reason() {
