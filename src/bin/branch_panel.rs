@@ -20,6 +20,7 @@ fn run() -> Result<(), String> {
             PanelCommand::Inspect(raw) => run_inspect(raw.into_inspect_args()?),
             PanelCommand::Smoke(raw) => run_smoke(raw.into_run_args()?),
             PanelCommand::Continue(raw) => run_continue(raw.into_run_args()?),
+            PanelCommand::Drain(raw) => run_drain(raw.into_run_args()?),
         },
     }
 }
@@ -54,6 +55,17 @@ fn run_continue(args: RunArgs) -> Result<(), String> {
     Ok(())
 }
 
+fn run_drain(args: RunArgs) -> Result<(), String> {
+    let store = args.common.artifact_store();
+    let summary = PanelSmokeRunner::run_slices(
+        args.common.inspect_config(current_source_identity())?,
+        PanelRunOptions::drain(args.max_slices),
+    )?;
+    let summary_path = store.write_panel_summary(args.common.summary_path.as_deref(), &summary)?;
+    print_summary("drain", &summary, &summary_path);
+    Ok(())
+}
+
 #[derive(Parser)]
 #[command(
     name = "branch_panel",
@@ -80,6 +92,7 @@ enum PanelCommand {
     Inspect(RawInspectArgs),
     Smoke(RawRunArgs),
     Continue(RawRunArgs),
+    Drain(RawRunArgs),
 }
 
 #[derive(ClapArgs)]
@@ -447,6 +460,30 @@ mod tests {
         };
 
         assert_eq!(args.max_slices, 2);
+    }
+
+    #[test]
+    fn parses_panel_drain_command() {
+        let cli = Cli::try_parse_from([
+            "branch_panel",
+            "panel",
+            "drain",
+            "--seeds",
+            "1",
+            "--capsule-root",
+            "target/panel",
+            "--max-slices",
+            "3",
+        ])
+        .unwrap();
+
+        let Command::Panel(panel) = cli.command;
+        let PanelCommand::Drain(args) = panel.command else {
+            panic!("expected panel drain command");
+        };
+
+        assert_eq!(args.common.seeds, vec!["1".to_string()]);
+        assert_eq!(args.max_slices, 3);
     }
 
     #[test]

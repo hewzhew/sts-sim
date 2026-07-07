@@ -91,6 +91,7 @@ pub struct PanelSmokeRunner;
 pub enum PanelRunMode {
     Smoke,
     Continue,
+    Drain,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -110,6 +111,13 @@ impl PanelRunOptions {
     pub fn continue_existing(max_slices: usize) -> Self {
         Self {
             mode: PanelRunMode::Continue,
+            max_slices,
+        }
+    }
+
+    pub fn drain(max_slices: usize) -> Self {
+        Self {
+            mode: PanelRunMode::Drain,
             max_slices,
         }
     }
