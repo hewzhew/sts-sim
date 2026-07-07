@@ -1,6 +1,4 @@
-use sts_simulator::ai::combat_search_v2::{
-    CombatSearchActionPriorPluginId, CombatSearchProfile, CombatSearchV2PotionPolicy,
-};
+use sts_simulator::ai::combat_search_v2::CombatSearchProfile;
 use sts_simulator::content::cards::java_id;
 use sts_simulator::eval::combat_case::CombatCase;
 use sts_simulator::runtime::combat::CombatCard;
@@ -8,7 +6,7 @@ use sts_simulator::runtime::combat::CombatCard;
 use super::super::focus::review_focus;
 use super::super::key_card_lifecycle::{key_card_lifecycle, KeyCardReason};
 use super::super::options::ReviewOptions;
-use super::super::search_runner::{review_search_profile, run_profile_search};
+use super::super::search_runner::{review_key_setup_profile, run_profile_search};
 use super::movement::move_key_card;
 use super::types::{KeyCardCounterfactualPlacement, KeyCardCounterfactualVariant};
 
@@ -65,10 +63,7 @@ fn counterfactual_search_profile(
     options: &ReviewOptions,
     label: &'static str,
 ) -> CombatSearchProfile {
-    review_search_profile(label, options.slow_nodes, options.slow_ms, options)
-        .with_action_prior_plugin(CombatSearchActionPriorPluginId::KeyCardOnline)
-        .with_potion_policy(CombatSearchV2PotionPolicy::All)
-        .with_max_potions_used(options.diagnostic_potion_max)
+    review_key_setup_profile(label, options.slow_nodes, options.slow_ms, options)
 }
 
 fn sync_combat_summary(case: &mut CombatCase) {

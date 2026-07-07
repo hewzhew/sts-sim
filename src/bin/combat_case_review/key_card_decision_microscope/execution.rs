@@ -1,6 +1,5 @@
 use sts_simulator::ai::combat_search_v2::{
-    explain_combat_search_v2_initial_decision, CombatSearchActionPriorPluginId,
-    CombatSearchV2Config, CombatSearchV2PotionPolicy,
+    explain_combat_search_v2_initial_decision, CombatSearchV2Config,
 };
 use sts_simulator::content::cards::java_id;
 use sts_simulator::eval::combat_case::CombatCase;
@@ -10,7 +9,7 @@ use super::super::key_card_counterfactual::{move_key_card, KeyCardCounterfactual
 use super::super::key_card_lifecycle::KeyCardReason;
 use super::super::options::ReviewOptions;
 use super::super::search_intervention::ReviewSearchIntervention;
-use super::super::search_runner::review_search_profile;
+use super::super::search_runner::review_key_setup_profile;
 use super::digest::{candidates_before_target, selected_candidate, target_candidate};
 use super::types::KeyCardDecisionMicroscopeVariant;
 
@@ -78,15 +77,12 @@ fn skipped_variant(
 }
 
 fn microscope_config(options: &ReviewOptions, card: &CombatCard) -> CombatSearchV2Config {
-    let profile = review_search_profile(
+    let profile = review_key_setup_profile(
         "key_card_decision_microscope",
         options.slow_nodes,
         options.slow_ms,
         options,
-    )
-    .with_action_prior_plugin(CombatSearchActionPriorPluginId::KeyCardOnline)
-    .with_potion_policy(CombatSearchV2PotionPolicy::All)
-    .with_max_potions_used(options.diagnostic_potion_max);
+    );
     ReviewSearchIntervention::default()
         .with_input_label(format!(
             "key_card_decision_microscope:{}#{}",

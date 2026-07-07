@@ -1,11 +1,11 @@
 use sts_simulator::ai::combat_search_v2::{
     run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, CombatLineLabReport,
-    CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2TrajectoryReport,
+    CombatSearchV2Config, CombatSearchV2TrajectoryReport,
 };
 use sts_simulator::eval::combat_case::CombatCase;
 
 use super::options::ReviewOptions;
-use super::search_runner::review_search_profile;
+use super::search_runner::review_all_potions_profile;
 
 pub(super) fn run_line_lab(
     options: &ReviewOptions,
@@ -34,8 +34,6 @@ pub(super) fn run_line_lab(
 }
 
 fn line_lab_search_config(options: &ReviewOptions) -> CombatSearchV2Config {
-    review_search_profile("line_lab", options.slow_nodes, options.line_lab_ms, options)
-        .with_potion_policy(CombatSearchV2PotionPolicy::All)
-        .with_max_potions_used(options.diagnostic_potion_max)
+    review_all_potions_profile("line_lab", options.slow_nodes, options.line_lab_ms, options)
         .to_config()
 }

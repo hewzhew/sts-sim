@@ -1,10 +1,9 @@
 use sts_simulator::ai::combat_search_v2::{
     CombatSearchActionPriorPluginId, CombatSearchProfile, CombatSearchRolloutPluginId,
-    CombatSearchV2PotionPolicy,
 };
 
 use super::super::options::ReviewOptions;
-use super::super::search_runner::review_search_profile;
+use super::super::search_runner::review_all_potions_profile;
 use super::types::FrozenPanelLaneSpec;
 
 impl FrozenPanelLaneSpec {
@@ -13,11 +12,9 @@ impl FrozenPanelLaneSpec {
         options: &ReviewOptions,
         rollout_plugin: CombatSearchRolloutPluginId,
     ) -> CombatSearchProfile {
-        review_search_profile(self.lane, options.slow_nodes, options.slow_ms, options)
+        review_all_potions_profile(self.lane, options.slow_nodes, options.slow_ms, options)
             .with_action_prior_plugin(self.action_prior_plugin)
             .with_rollout_plugin(rollout_plugin)
-            .with_potion_policy(CombatSearchV2PotionPolicy::All)
-            .with_max_potions_used(options.diagnostic_potion_max)
     }
 }
 
