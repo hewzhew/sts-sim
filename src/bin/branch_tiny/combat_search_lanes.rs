@@ -1,9 +1,8 @@
 use sts_simulator::eval::run_control::{RunControlAutoStepOptions, RunControlSession};
 
 use super::combat_search_lane_options;
-use super::combat_search_portfolio_plan::{
-    CombatSearchPortfolioContext, CombatSearchPortfolioPlan,
-};
+use super::combat_search_portfolio_context::CombatSearchPortfolioContext;
+use super::combat_search_portfolio_plan::CombatSearchPortfolioPlan;
 use super::Args;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
