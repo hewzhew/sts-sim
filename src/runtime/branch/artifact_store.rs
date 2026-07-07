@@ -207,6 +207,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let store = BranchArtifactStore::new(&root);
         let summary = PanelSummary::from_rows(vec![PanelRow {
+            profile: None,
             seed: 1,
             capsule_path: "capsule".to_string(),
             row_status: crate::runtime::branch::PanelRowStatus::Scheduled,

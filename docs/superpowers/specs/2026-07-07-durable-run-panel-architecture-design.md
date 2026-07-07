@@ -533,6 +533,7 @@ caller explicitly asks for disposable output.
 Each row should include:
 
 ```text
+profile
 seed
 capsule_path
 run_identity

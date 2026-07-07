@@ -75,11 +75,14 @@ fn run_compare(args: CompareArgs) -> Result<(), String> {
         let mut common = args.run.common.clone();
         profile.apply_to(&mut common);
         common.capsule_root = store.compare_profile_root(profile.name());
-        let summary = PanelSmokeRunner::run_slices(
+        let mut summary = PanelSmokeRunner::run_slices(
             common.inspect_config(source_identity.clone())?,
             args.run
                 .run_options(PanelRunOptions::compare(args.run.max_slices)),
         )?;
+        for row in &mut summary.rows {
+            row.profile = Some(profile.name().to_string());
+        }
         rows.extend(summary.rows);
     }
     let summary = PanelSummary::from_rows_with_compare(

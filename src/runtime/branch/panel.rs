@@ -161,6 +161,7 @@ pub struct PanelArtifactFacts {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct PanelRow {
+    pub profile: Option<String>,
     pub seed: u64,
     pub capsule_path: String,
     pub row_status: PanelRowStatus,
@@ -561,6 +562,7 @@ impl PanelRow {
             status_override.unwrap_or_else(|| row_status_from_action(scheduler_action))
         };
         Self {
+            profile: None,
             seed: resolution.seed,
             capsule_path: resolution.capsule_path.display().to_string(),
             row_status,
@@ -1021,6 +1023,7 @@ mod tests {
     fn panel_summary_counts_rows_by_reuse_decision() {
         let rows = vec![
             PanelRow {
+                profile: None,
                 seed: 1,
                 capsule_path: "one".to_string(),
                 row_status: PanelRowStatus::SoftPaused,
@@ -1037,6 +1040,7 @@ mod tests {
                 archived_capsule_path: None,
             },
             PanelRow {
+                profile: None,
                 seed: 2,
                 capsule_path: "two".to_string(),
                 row_status: PanelRowStatus::Scheduled,
@@ -1063,6 +1067,37 @@ mod tests {
         assert_eq!(value["counts_by_status"]["scheduled"], 1);
         assert_eq!(value["counts_by_reuse_decision"]["continue_soft_pause"], 1);
         assert_eq!(value["counts_by_reuse_decision"]["create_new_capsule"], 1);
+    }
+
+    #[test]
+    fn compare_summary_rows_carry_profile_identity() {
+        let rows = vec![PanelRow {
+            profile: Some("baseline".to_string()),
+            seed: 1,
+            capsule_path: "target/panel/_compare/baseline/1".to_string(),
+            row_status: PanelRowStatus::Scheduled,
+            identity_status: PanelIdentityStatus::Missing,
+            reuse_decision: PanelReuseDecision::CreateNewCapsule,
+            scheduler_action: PanelSeedAction::StartNew,
+            manifest_exists: false,
+            result_exists: false,
+            frontier_exists: false,
+            terminal_exists: false,
+            summary_exists: false,
+            read_error: None,
+            tool_error: None,
+            archived_capsule_path: None,
+        }];
+
+        let value = serde_json::to_value(PanelSummary::from_rows_with_compare(
+            rows,
+            1,
+            vec!["baseline".to_string()],
+        ))
+        .unwrap();
+
+        assert_eq!(value["profiles"], json!(["baseline"]));
+        assert_eq!(value["rows"][0]["profile"], json!("baseline"));
     }
 
     #[test]
