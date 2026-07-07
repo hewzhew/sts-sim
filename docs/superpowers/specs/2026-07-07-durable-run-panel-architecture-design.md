@@ -1055,6 +1055,192 @@ It should not yet:
 
 This cut gives later work a typed contract without risking behavior drift.
 
+## RunSliceResult And Stop Semantics
+
+After `RunContract`, the next important boundary is `RunSliceResult`. Today,
+stop facts are spread across:
+
+```text
+run_loop:
+  decides loop exits and soft stops.
+
+run_stop_recorder / run_persistence:
+  saves frontier/result and prints messages.
+
+branch_observer:
+  records terminal branches and objective completion.
+
+run_capsule_format:
+  projects status into summary/report JSON.
+```
+
+This is why later tools must inspect artifacts or logs to understand what
+happened. Runtime should instead produce one typed result first, then let sinks
+persist or render it.
+
+### RunStop Shape
+
+`RunStop` should classify the slice outcome, not the cause of the whole run:
+
+```text
+RunStop:
+  RealStop(RealStop)
+  SoftPause(SoftPause)
+  FrontierExhausted(FrontierExhausted)
+```
+
+`RealStop`:
+
+```text
+Terminal { outcome, branch_id }
+ObjectiveSatisfied { objective, reason, branch_id }
+CombatGap { branch_id, boundary, reason, combat_case }
+AutomationGap { branch_id, boundary, site }
+BudgetGap { branch_id, boundary, reason }
+ApplyFailed { branch_id, reason }
+AdvanceFailed { branch_id, reason }
+AwaitingUnsupportedAuto { branch_id, boundary, reason }
+```
+
+`SoftPause`:
+
+```text
+SliceDeadline { generation, frontier_running_count }
+AwaitingAutoBoundary { generation, frontier_running_count }
+SearchBudgetCappedBeforeGeneration { generation, frontier_running_count }
+```
+
+`FrontierExhausted`:
+
+```text
+NoRunningBranches { generation }
+NoExpandableBranches { generation }
+```
+
+Tool/runtime errors stay outside `RunStop`:
+
+```text
+Result<RunSliceResult, RunRuntimeError>
+```
+
+Malformed checkpoint, artifact read/write failure, and invariant violation are
+runtime errors. Combat gap, owner gap, terminal defeat, and soft deadline are
+successful slice results.
+
+### RunSliceResult Shape
+
+`RunSliceResult` should be enough for `branch_tiny`, `branch_panel`, tests, and
+future analysis without reading stdout or `summary.json`:
+
+```text
+RunSliceResult:
+  contract: RunContract
+  request_kind: Start | Continue
+  generation_start
+  generation_end
+  next_branch_id
+  stop: RunStop
+  frontier: FrontierSummary
+  selected_branch: Option<BranchSummary>
+  artifacts: ArtifactWriteSummary
+  budget: SliceBudgetSummary
+  elapsed_ms
+```
+
+`FrontierSummary`:
+
+```text
+total_count
+running_count
+expandable_count
+terminal_count
+gap_count
+```
+
+`BranchSummary`:
+
+```text
+branch_id
+parent_id
+status_kind
+boundary
+owner
+act
+floor
+hp
+max_hp
+gold
+deck_size
+subject
+```
+
+`ArtifactWriteSummary`:
+
+```text
+manifest_written
+frontier_written
+result_written
+terminal_written
+summary_written
+combat_case_written
+ledger_appended
+```
+
+`SliceBudgetSummary`:
+
+```text
+slice_ms
+elapsed_ms
+remaining_ms
+search_budget_was_capped
+boss_budget_was_capped
+```
+
+### Stop Selection Rule
+
+When several facts are true, runtime should select the stop in this order:
+
+```text
+1. objective satisfied
+2. real terminal/gap/failure branch selected as result
+3. unsupported/awaiting auto boundary
+4. soft deadline with resumable frontier
+5. frontier exhausted
+```
+
+This order keeps "victory found" from being hidden by a simultaneous deadline,
+and keeps a true gap from being reported as a generic frontier condition.
+
+### Sink Rule
+
+Artifact and human outputs are projections:
+
+```text
+RunSliceResult -> capsule manifest/frontier/result/summary
+RunSliceResult -> terminal table/log lines
+RunSliceResult -> panel row
+```
+
+No sink should discover a new stop kind by re-reading files or parsing strings.
+If a sink needs a field that is not in `RunSliceResult`, add the field to the
+typed result or to a referenced artifact, not to the sink's private parser.
+
+### First RunSliceResult Cut
+
+The first implementation should not rewrite all stop handling at once. It
+should:
+
+```text
+1. Add RunStop and RunSliceResult types.
+2. Make run_loop construct a best-effort RunSliceResult before returning.
+3. Keep existing artifact writes in place.
+4. Keep existing prints in place.
+5. Add tests that map current summary cases to RunStop.
+```
+
+Then later cuts can move artifact writes behind `ArtifactStore` and remove
+summary/log parsing.
+
 ### Phase 1: Extract BranchRuntime
 
 - Introduce typed `RunSliceRequest`, `ContinueSliceRequest`, `RunSliceResult`,
