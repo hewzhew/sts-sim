@@ -2,8 +2,9 @@
 
 ## Status
 
-Review draft, iteration 4. This document defines the intended architecture
-before implementation. It does not change runner behavior by itself.
+Implementation-ready review draft. This document defines the intended
+architecture before implementation. It does not change runner behavior by
+itself.
 
 ## Problem
 
@@ -1604,18 +1605,108 @@ The design is working when:
   process.
 - panel scheduling can run multiple slices inside one Rust process.
 
-## Open Decisions Before Implementation
+## Implementation Decisions
 
-These should be answered in the implementation plan, not by ad hoc code:
+These decisions are fixed for the first implementation plan.
 
-- exact location of run identity: `manifest.json`, `summary.json`, or both,
-- whether `--fresh` archives old capsules or deletes them,
-- initial source fingerprint: git commit only, dirty-tree hash, or binary mtime,
-- transition period for `--continue-soft-wall`,
-- exact migration rule for old capsules without identity fields.
-- exact crate/module location for `BranchRuntime` and `PanelScheduler`,
-- how much of current `src/bin/branch_tiny/*` moves into library modules before
-  `branch_panel` is introduced.
+### Run Identity Location
+
+`manifest.json` is the primary identity location.
+
+```text
+manifest.run_contract
+manifest.run_identity
+manifest.source_identity
+```
+
+`summary.json` may include the same identity as a projection for convenient
+readers. `frontier.json` must carry `run_contract` because it is the exact
+resume artifact. The panel ledger records identity resolution decisions but is
+not the primary identity store.
+
+### Fresh Policy
+
+`--fresh` archives by default.
+
+```text
+--fresh:
+  archive old capsule, then create a new capsule.
+
+--fresh --discard-old:
+  delete old capsule only after writing a tombstone event.
+```
+
+Silent deletion is not allowed.
+
+### Source Fingerprint
+
+The initial source identity is:
+
+```text
+git_commit
+git_dirty
+dirty_tree_hash: optional, present only when cheap to compute
+```
+
+Binary mtime may be recorded as diagnostic information, but it is not part of
+the primary identity. The scheduler is in-process Rust, so source identity is
+more meaningful than executable timestamp.
+
+### Legacy Capsule Rule
+
+Capsules without `run_contract` are `unknown_legacy`.
+
+They may be:
+
+```text
+inspected
+archived by --fresh
+continued only with an explicit legacy compatibility flag
+```
+
+They may not be silently reused as exact matches. If continued, the new slice
+must write modern identity fields.
+
+### CLI Transition
+
+`branch_tiny --continue-capsule` remains during migration, but it must be
+rewritten to call `BranchRuntime` in-process before `branch_panel` is added.
+
+`tools/gap_panel.py` gets no new semantics. It may remain temporarily as a thin
+launcher or be retired once `branch_panel` supports `smoke` and `continue`.
+
+### Module Location
+
+The final locations are:
+
+```text
+src/runtime/branch
+src/runtime/panel
+```
+
+During the first cuts, runtime-shaped types may be introduced under
+`src/bin/branch_tiny` to keep diffs mechanical. Before `branch_panel` is added,
+the reusable runtime facade must move into library code under
+`src/runtime/branch`.
+
+### Move Scope Before `branch_panel`
+
+Move only the minimal runtime surface before introducing `branch_panel`:
+
+```text
+RunContract
+RunSliceRequest
+RunSliceResult
+RunStop
+BranchRuntime facade
+ArtifactStore facade
+frontier checkpoint compatibility
+```
+
+Scene owners, reward/shop policy, and combat portfolio internals may remain as
+dependencies behind `BranchRuntime` until there is a separate reason to move
+them. `branch_panel` should depend on the runtime facade, not on every owner
+module directly.
 
 ## External References Considered
 
