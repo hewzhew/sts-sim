@@ -118,6 +118,8 @@ mod run_identity;
 mod run_loop;
 #[path = "branch_tiny/run_persistence.rs"]
 mod run_persistence;
+#[path = "branch_tiny/run_slice_request.rs"]
+mod run_slice_request;
 #[path = "branch_tiny/run_slice_result.rs"]
 mod run_slice_result;
 #[path = "branch_tiny/run_startup.rs"]

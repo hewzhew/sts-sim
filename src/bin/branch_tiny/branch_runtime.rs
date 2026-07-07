@@ -6,15 +6,15 @@ use sts_simulator::eval::run_control::{
 };
 
 use super::run_deadline::RunDeadline;
+use super::run_slice_request::RunSliceRequest;
 use super::run_slice_result::RunSliceResult;
-use super::run_startup::RunStartupContext;
 use super::{run_loop, runner, Args, Branch};
 
 pub(super) struct BranchRuntime;
 
 impl BranchRuntime {
-    pub(super) fn run_slice(context: RunStartupContext) -> Result<RunSliceResult, String> {
-        run_loop::run(context)
+    pub(super) fn run_slice(request: RunSliceRequest) -> Result<RunSliceResult, String> {
+        run_loop::run(request)
     }
 
     pub(super) fn initial_frontier(args: Args, started: Instant) -> (VecDeque<Branch>, usize) {
@@ -52,6 +52,8 @@ mod tests {
     use std::time::Instant;
 
     use super::*;
+    use crate::run_slice_request::RunSliceRequest;
+    use crate::run_slice_result::RunSliceRequestKind;
     use crate::{run_contract::RunObjective, Args};
 
     fn sample_args() -> Args {
@@ -83,5 +85,30 @@ mod tests {
         assert_eq!(frontier.len(), 1);
         assert_eq!(frontier.front().unwrap().id, 0);
         assert_eq!(next_branch_id, 1);
+    }
+
+    #[test]
+    fn runtime_slice_result_uses_explicit_request_kind() {
+        let args = sample_args();
+        let started = Instant::now();
+        let (frontier, next_branch_id) = BranchRuntime::initial_frontier(args, started);
+        let request = RunSliceRequest {
+            args,
+            request_kind: RunSliceRequestKind::ResumeFrontier,
+            human_output: false,
+            trace_path: None,
+            combat_gap_case_dir: None,
+            frontier_checkpoint_path: None,
+            resume_frontier: None,
+            run_capsule: None,
+            generation_start: 0,
+            frontier,
+            next_branch_id,
+            started,
+        };
+
+        let result = BranchRuntime::run_slice(request).unwrap();
+
+        assert_eq!(result.request_kind, RunSliceRequestKind::ResumeFrontier);
     }
 }

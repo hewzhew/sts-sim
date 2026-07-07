@@ -6,8 +6,9 @@ use serde_json::{json, Value};
 
 use super::run_capsule::RunCapsule;
 use super::run_chain_state::{capsule_state, manifest_wall_ms, CapsuleState};
+use super::run_slice_request::RunSliceRequest;
+use super::run_slice_result::RunSliceRequestKind;
 use super::run_slice_result::RunSliceResult;
-use super::run_startup::RunStartupContext;
 use super::{branch_runtime, frontier_checkpoint, Args, ArgsOverrides, ContinueCapsuleArgs};
 
 pub(super) fn run(
@@ -79,8 +80,13 @@ fn run_slice(
     };
     run_capsule.write_running_manifest(effective_args)?;
     let combat_gap_case_dir = Some(run_capsule.combat_cases_dir());
-    let context = RunStartupContext {
+    let request = RunSliceRequest {
         args: effective_args,
+        request_kind: if resume {
+            RunSliceRequestKind::ResumeFrontier
+        } else {
+            RunSliceRequestKind::Start
+        },
         human_output: false,
         trace_path: None,
         combat_gap_case_dir,
@@ -92,7 +98,7 @@ fn run_slice(
         next_branch_id,
         started,
     };
-    branch_runtime::BranchRuntime::run_slice(context)
+    branch_runtime::BranchRuntime::run_slice(request)
 }
 
 fn write_chain(capsule: &PathBuf, max_slices: usize, slices: &[Value]) -> Result<(), String> {

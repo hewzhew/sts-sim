@@ -1,28 +1,14 @@
-use std::collections::VecDeque;
-use std::path::PathBuf;
 use std::time::Instant;
 
 use super::cli_args::{default_combat_gap_case_dir, parse_args};
 use super::run_capsule::RunCapsule;
-use super::{branch_runtime, event_owner_probe, frontier_checkpoint, run_chain, Args, Branch};
+use super::run_slice_request::RunSliceRequest;
+use super::run_slice_result::RunSliceRequestKind;
+use super::{branch_runtime, event_owner_probe, frontier_checkpoint, run_chain};
 
 pub(super) enum RunStartup {
     Delegated,
-    Ready(RunStartupContext),
-}
-
-pub(super) struct RunStartupContext {
-    pub(super) args: Args,
-    pub(super) human_output: bool,
-    pub(super) trace_path: Option<PathBuf>,
-    pub(super) combat_gap_case_dir: Option<PathBuf>,
-    pub(super) frontier_checkpoint_path: Option<PathBuf>,
-    pub(super) resume_frontier: Option<PathBuf>,
-    pub(super) run_capsule: Option<RunCapsule>,
-    pub(super) generation_start: usize,
-    pub(super) frontier: VecDeque<Branch>,
-    pub(super) next_branch_id: usize,
-    pub(super) started: Instant,
+    Ready(RunSliceRequest),
 }
 
 pub(super) fn prepare() -> Result<RunStartup, String> {
@@ -83,8 +69,13 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
     } else {
         branch_runtime::BranchRuntime::initial_frontier(args, started)
     };
-    Ok(RunStartup::Ready(RunStartupContext {
+    Ok(RunStartup::Ready(RunSliceRequest {
         args,
+        request_kind: if resume_frontier.is_some() {
+            RunSliceRequestKind::ResumeFrontier
+        } else {
+            RunSliceRequestKind::Start
+        },
         human_output: true,
         trace_path,
         combat_gap_case_dir,

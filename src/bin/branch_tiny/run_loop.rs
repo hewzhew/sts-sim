@@ -1,14 +1,14 @@
 use super::run_deadline::RunDeadline;
+use super::run_slice_request::RunSliceRequest;
 use super::run_slice_result::{
-    FrontierExhausted, FrontierSummary, RealStop, RunSliceRequestKind, RunSliceResult, RunStop,
-    SoftPause,
+    FrontierExhausted, FrontierSummary, RealStop, RunSliceResult, RunStop, SoftPause,
 };
-use super::run_startup::RunStartupContext;
 use super::{branch_frontier, branch_generation, run_stop_recorder, trace, BranchStatus};
 
-pub(super) fn run(context: RunStartupContext) -> Result<RunSliceResult, String> {
-    let RunStartupContext {
+pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
+    let RunSliceRequest {
         args,
+        request_kind,
         human_output,
         trace_path,
         combat_gap_case_dir,
@@ -19,12 +19,7 @@ pub(super) fn run(context: RunStartupContext) -> Result<RunSliceResult, String> 
         mut frontier,
         mut next_branch_id,
         started,
-    } = context;
-    let request_kind = if resume_frontier.is_some() {
-        RunSliceRequestKind::ResumeFrontier
-    } else {
-        RunSliceRequestKind::Start
-    };
+    } = request;
     let mut stop_recorder = run_stop_recorder::RunStopRecorder::new(
         &frontier_checkpoint_path,
         &resume_frontier,
