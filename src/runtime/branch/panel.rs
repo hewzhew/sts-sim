@@ -76,6 +76,11 @@ pub struct PanelScheduler;
 
 pub struct PanelSmokeRunner;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PanelRunOptions {
+    pub max_slices: usize,
+}
+
 #[derive(Clone)]
 pub struct PanelInspectConfig {
     pub seeds: Vec<u64>,
@@ -240,43 +245,72 @@ impl PanelInspectConfig {
 
 impl PanelSmokeRunner {
     pub fn run_once(config: PanelInspectConfig) -> Result<PanelSummary, String> {
-        for resolution in PanelScheduler::resolve_requests(config.requests()) {
-            let action = resolution.scheduler_action();
-            match action {
-                PanelSeedAction::StartNew => {
-                    match OwnerAuditRuntime::run_capsule_slice(OwnerAuditSliceRequest {
-                        args: config.args_for_seed(resolution.seed),
-                        capsule_path: resolution.capsule_path,
-                        resume: false,
-                        human_output: false,
-                    }) {
-                        Ok(_) => append_panel_event(&config, resolution.seed, action, "executed")?,
-                        Err(error) => {
-                            append_panel_event(&config, resolution.seed, action, "failed")?;
-                            return Err(error);
-                        }
+        Self::run_slices(config, PanelRunOptions { max_slices: 1 })
+    }
+
+    pub fn run_slices(
+        config: PanelInspectConfig,
+        options: PanelRunOptions,
+    ) -> Result<PanelSummary, String> {
+        if options.max_slices == 0 {
+            return Err("max_slices must be greater than zero".to_string());
+        }
+        for _ in 0..options.max_slices {
+            let mut ran_slice = false;
+            for resolution in PanelScheduler::resolve_requests(config.requests()) {
+                let action = resolution.scheduler_action();
+                match action {
+                    PanelSeedAction::StartNew => {
+                        run_panel_seed_slice(
+                            &config,
+                            resolution.seed,
+                            action,
+                            resolution.capsule_path,
+                            false,
+                        )?;
+                        ran_slice = true;
+                    }
+                    PanelSeedAction::ContinueCapsule => {
+                        run_panel_seed_slice(
+                            &config,
+                            resolution.seed,
+                            action,
+                            resolution.capsule_path,
+                            true,
+                        )?;
+                        ran_slice = true;
+                    }
+                    PanelSeedAction::ReuseRealStop | PanelSeedAction::RejectCapsule => {
+                        append_panel_event(&config, resolution.seed, action, "skipped")?;
                     }
                 }
-                PanelSeedAction::ContinueCapsule => {
-                    match OwnerAuditRuntime::run_capsule_slice(OwnerAuditSliceRequest {
-                        args: config.args_for_seed(resolution.seed),
-                        capsule_path: resolution.capsule_path,
-                        resume: true,
-                        human_output: false,
-                    }) {
-                        Ok(_) => append_panel_event(&config, resolution.seed, action, "executed")?,
-                        Err(error) => {
-                            append_panel_event(&config, resolution.seed, action, "failed")?;
-                            return Err(error);
-                        }
-                    }
-                }
-                PanelSeedAction::ReuseRealStop | PanelSeedAction::RejectCapsule => {
-                    append_panel_event(&config, resolution.seed, action, "skipped")?;
-                }
+            }
+            if !ran_slice {
+                break;
             }
         }
         Ok(config.summarize())
+    }
+}
+
+fn run_panel_seed_slice(
+    config: &PanelInspectConfig,
+    seed: u64,
+    action: PanelSeedAction,
+    capsule_path: PathBuf,
+    resume: bool,
+) -> Result<(), String> {
+    match OwnerAuditRuntime::run_capsule_slice(OwnerAuditSliceRequest {
+        args: config.args_for_seed(seed),
+        capsule_path,
+        resume,
+        human_output: false,
+    }) {
+        Ok(_) => append_panel_event(config, seed, action, "executed"),
+        Err(error) => {
+            append_panel_event(config, seed, action, "failed")?;
+            Err(error)
+        }
     }
 }
 
@@ -846,6 +880,38 @@ mod tests {
         let ledger = fs::read_to_string(root.join("panel_ledger.jsonl")).unwrap();
         assert!(ledger.contains("\"event\":\"executed\""));
         assert!(summary.rows[0].manifest_exists);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn smoke_runner_honors_max_slices() {
+        let root = std::env::temp_dir().join("runtime_branch_panel_two_slices");
+        let _ = fs::remove_dir_all(&root);
+        let mut template = args(0);
+        template.generations = 0;
+        template.max_branches = 1;
+        template.search_nodes = 1;
+        template.search_ms = 1;
+        template.rescue_search_nodes = 1;
+        template.rescue_search_ms = 1;
+        template.boss_search_nodes = 1;
+        template.boss_search_ms = 1;
+        template.wall_ms = Some(1_000);
+        let config = PanelInspectConfig {
+            seeds: vec![123],
+            artifact_store: BranchArtifactStore::new(&root),
+            args_template: template,
+            source_identity: source_identity(),
+        };
+
+        let summary =
+            PanelSmokeRunner::run_slices(config, PanelRunOptions { max_slices: 2 }).unwrap();
+
+        let ledger = fs::read_to_string(root.join("panel_ledger.jsonl")).unwrap();
+
+        assert_eq!(summary.total_rows, 1);
+        assert_eq!(ledger.lines().count(), 2);
 
         let _ = fs::remove_dir_all(root);
     }

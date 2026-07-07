@@ -4,7 +4,7 @@ use std::process;
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use sts_simulator::runtime::branch::{
     current_source_identity, default_branch_args, Args, BranchArtifactStore, PanelInspectConfig,
-    PanelSmokeRunner, PanelSummary, RunObjective, SourceIdentity,
+    PanelRunOptions, PanelSmokeRunner, PanelSummary, RunObjective, SourceIdentity,
 };
 
 fn main() {
@@ -18,8 +18,8 @@ fn run() -> Result<(), String> {
     match Cli::parse().command {
         Command::Panel(panel) => match panel.command {
             PanelCommand::Inspect(raw) => run_inspect(raw.into_inspect_args()?),
-            PanelCommand::Smoke(raw) => run_smoke(raw.into_inspect_args()?),
-            PanelCommand::Continue(raw) => run_continue(raw.into_inspect_args()?),
+            PanelCommand::Smoke(raw) => run_smoke(raw.into_run_args()?),
+            PanelCommand::Continue(raw) => run_continue(raw.into_run_args()?),
         },
     }
 }
@@ -32,18 +32,28 @@ fn run_inspect(args: InspectArgs) -> Result<(), String> {
     Ok(())
 }
 
-fn run_smoke(args: InspectArgs) -> Result<(), String> {
-    let store = args.artifact_store();
-    let summary = PanelSmokeRunner::run_once(args.inspect_config(current_source_identity())?)?;
-    let summary_path = store.write_panel_summary(args.summary_path.as_deref(), &summary)?;
+fn run_smoke(args: RunArgs) -> Result<(), String> {
+    let store = args.common.artifact_store();
+    let summary = PanelSmokeRunner::run_slices(
+        args.common.inspect_config(current_source_identity())?,
+        PanelRunOptions {
+            max_slices: args.max_slices,
+        },
+    )?;
+    let summary_path = store.write_panel_summary(args.common.summary_path.as_deref(), &summary)?;
     print_summary("smoke", &summary, &summary_path);
     Ok(())
 }
 
-fn run_continue(args: InspectArgs) -> Result<(), String> {
-    let store = args.artifact_store();
-    let summary = PanelSmokeRunner::run_once(args.inspect_config(current_source_identity())?)?;
-    let summary_path = store.write_panel_summary(args.summary_path.as_deref(), &summary)?;
+fn run_continue(args: RunArgs) -> Result<(), String> {
+    let store = args.common.artifact_store();
+    let summary = PanelSmokeRunner::run_slices(
+        args.common.inspect_config(current_source_identity())?,
+        PanelRunOptions {
+            max_slices: args.max_slices,
+        },
+    )?;
+    let summary_path = store.write_panel_summary(args.common.summary_path.as_deref(), &summary)?;
     print_summary("continue", &summary, &summary_path);
     Ok(())
 }
@@ -72,8 +82,8 @@ struct PanelArgs {
 #[derive(Subcommand)]
 enum PanelCommand {
     Inspect(RawInspectArgs),
-    Smoke(RawInspectArgs),
-    Continue(RawInspectArgs),
+    Smoke(RawRunArgs),
+    Continue(RawRunArgs),
 }
 
 #[derive(ClapArgs)]
@@ -112,6 +122,14 @@ struct RawInspectArgs {
     checkpoint_before_combat_portfolio: bool,
 }
 
+#[derive(ClapArgs)]
+struct RawRunArgs {
+    #[command(flatten)]
+    common: RawInspectArgs,
+    #[arg(long, default_value_t = 1)]
+    max_slices: usize,
+}
+
 #[derive(Clone, Debug)]
 struct InspectArgs {
     seeds: Vec<String>,
@@ -130,6 +148,11 @@ struct InspectArgs {
     boss_search_ms: u64,
     wall_ms: Option<u64>,
     checkpoint_before_combat_portfolio: bool,
+}
+
+struct RunArgs {
+    common: InspectArgs,
+    max_slices: usize,
 }
 
 impl RawInspectArgs {
@@ -155,6 +178,18 @@ impl RawInspectArgs {
             wall_ms: self.wall_ms.or(defaults.wall_ms),
             checkpoint_before_combat_portfolio: self.checkpoint_before_combat_portfolio
                 || defaults.checkpoint_before_combat_portfolio,
+        })
+    }
+}
+
+impl RawRunArgs {
+    fn into_run_args(self) -> Result<RunArgs, String> {
+        if self.max_slices == 0 {
+            return Err("--max-slices must be greater than zero".to_string());
+        }
+        Ok(RunArgs {
+            common: self.common.into_inspect_args()?,
+            max_slices: self.max_slices,
         })
     }
 }
@@ -345,8 +380,9 @@ mod tests {
             panic!("expected panel smoke command");
         };
 
-        assert_eq!(args.seeds, vec!["1..2".to_string()]);
-        assert_eq!(args.capsule_root, PathBuf::from("target/panel"));
+        assert_eq!(args.common.seeds, vec!["1..2".to_string()]);
+        assert_eq!(args.common.capsule_root, PathBuf::from("target/panel"));
+        assert_eq!(args.max_slices, 1);
     }
 
     #[test]
@@ -367,7 +403,31 @@ mod tests {
             panic!("expected panel continue command");
         };
 
-        assert_eq!(args.seeds, vec!["1".to_string()]);
-        assert_eq!(args.capsule_root, PathBuf::from("target/panel"));
+        assert_eq!(args.common.seeds, vec!["1".to_string()]);
+        assert_eq!(args.common.capsule_root, PathBuf::from("target/panel"));
+        assert_eq!(args.max_slices, 1);
+    }
+
+    #[test]
+    fn parses_panel_run_max_slices() {
+        let cli = Cli::try_parse_from([
+            "branch_panel",
+            "panel",
+            "continue",
+            "--seeds",
+            "1",
+            "--capsule-root",
+            "target/panel",
+            "--max-slices",
+            "2",
+        ])
+        .unwrap();
+
+        let Command::Panel(panel) = cli.command;
+        let PanelCommand::Continue(args) = panel.command else {
+            panic!("expected panel continue command");
+        };
+
+        assert_eq!(args.max_slices, 2);
     }
 }
