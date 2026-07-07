@@ -105,6 +105,20 @@ pub enum CombatSearchTurnPlanPluginId {
     TacticalEnemyTurnBoundaryFrontierSeed,
 }
 
+impl CombatSearchTurnPlanPluginId {
+    pub(in crate::ai::combat_search_v2) fn seeds_root_frontier(self) -> bool {
+        CombatSearchV2TurnPlanPolicy::from(self).seeds_root_frontier()
+    }
+
+    pub(in crate::ai::combat_search_v2) fn seeds_turn_boundary_frontier(self) -> bool {
+        CombatSearchV2TurnPlanPolicy::from(self).seeds_turn_boundary_frontier()
+    }
+
+    pub(in crate::ai::combat_search_v2) fn requires_tactical_enemy_gate(self) -> bool {
+        CombatSearchV2TurnPlanPolicy::from(self).requires_tactical_enemy_gate()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatSearchChildRolloutPluginId {
@@ -120,6 +134,12 @@ pub enum CombatSearchRolloutPluginId {
     ConservativeNoPotion,
     PhaseAwareNoPotion,
     TurnBeamNoPotion,
+}
+
+impl Default for CombatSearchRolloutPluginId {
+    fn default() -> Self {
+        Self::EnemyMechanicsAdaptiveNoPotion
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

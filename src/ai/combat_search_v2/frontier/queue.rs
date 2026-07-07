@@ -1,5 +1,5 @@
+use super::super::plugins::CombatSearchFrontierPluginId;
 use super::super::transition::terminal_label;
-use super::super::types::CombatSearchV2FrontierPolicy;
 use super::super::value::{
     combat_eval_from_rollout_estimate, CombatEvalOutcomeClass, CombatEvalProgressBucket,
     CombatEvalSurvivalBucket,
@@ -10,16 +10,18 @@ use super::priority::{priority_for_node, QueueEntry};
 use std::collections::BinaryHeap;
 
 pub(in crate::ai::combat_search_v2) struct FrontierQueue {
-    policy: CombatSearchV2FrontierPolicy,
+    policy: CombatSearchFrontierPluginId,
     single: BinaryHeap<QueueEntry>,
     lanes: FrontierLanes,
     next_sequence_id: u64,
 }
 
 impl FrontierQueue {
-    pub(in crate::ai::combat_search_v2) fn new(policy: CombatSearchV2FrontierPolicy) -> Self {
+    pub(in crate::ai::combat_search_v2) fn new(
+        policy: impl Into<CombatSearchFrontierPluginId>,
+    ) -> Self {
         Self {
-            policy,
+            policy: policy.into(),
             single: BinaryHeap::new(),
             lanes: FrontierLanes::new(),
             next_sequence_id: 0,
@@ -38,22 +40,22 @@ impl FrontierQueue {
 
     fn push_entry(&mut self, entry: QueueEntry) {
         match self.policy {
-            CombatSearchV2FrontierPolicy::SingleQueue => self.single.push(entry),
-            CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets => self.lanes.push(entry),
+            CombatSearchFrontierPluginId::SingleQueue => self.single.push(entry),
+            CombatSearchFrontierPluginId::RoundRobinEvalBuckets => self.lanes.push(entry),
         }
     }
 
     pub(in crate::ai::combat_search_v2) fn pop(&mut self) -> Option<QueueEntry> {
         match self.policy {
-            CombatSearchV2FrontierPolicy::SingleQueue => self.single.pop(),
-            CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets => self.lanes.pop(),
+            CombatSearchFrontierPluginId::SingleQueue => self.single.pop(),
+            CombatSearchFrontierPluginId::RoundRobinEvalBuckets => self.lanes.pop(),
         }
     }
 
     pub(in crate::ai::combat_search_v2) fn len(&self) -> usize {
         match self.policy {
-            CombatSearchV2FrontierPolicy::SingleQueue => self.single.len(),
-            CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets => self.lanes.len(),
+            CombatSearchFrontierPluginId::SingleQueue => self.single.len(),
+            CombatSearchFrontierPluginId::RoundRobinEvalBuckets => self.lanes.len(),
         }
     }
 

@@ -24,8 +24,8 @@ pub(super) fn child_rollout_estimate(
             super::super::rollout_pending_choice::RolloutPendingChoiceProgress::default(),
         );
     }
-    if config.child_rollout_policy == CombatSearchV2ChildRolloutPolicy::LazyOnPop
-        && config.rollout_policy != CombatSearchV2RolloutPolicy::Disabled
+    if loop_state.plugins.child_rollout == CombatSearchChildRolloutPluginId::LazyOnPop
+        && loop_state.plugins.rollout != CombatSearchRolloutPluginId::Disabled
     {
         loop_state.performance.deferred_child_rollout_nodes = loop_state
             .performance

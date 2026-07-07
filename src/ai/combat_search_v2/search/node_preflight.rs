@@ -63,7 +63,7 @@ pub(super) fn prepare_node_for_expansion<S: CombatStepper>(
         return NodePreflightOutcome::Continue;
     }
 
-    if should_seed_turn_plan_at_node(&node, input.config) {
+    if should_seed_turn_plan_at_node(&node, input.config, &loop_state.plugins) {
         seed_turn_plan_frontier(
             loop_state,
             &node,

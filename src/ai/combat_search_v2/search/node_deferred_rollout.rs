@@ -22,7 +22,7 @@ pub(super) fn apply_deferred_child_rollout(
 ) -> DeferredRolloutOutcome {
     let admission = deferred_child_rollout_admission(
         &node,
-        config,
+        &loop_state.plugins,
         &loop_state.stats,
         &loop_state.performance,
         started,

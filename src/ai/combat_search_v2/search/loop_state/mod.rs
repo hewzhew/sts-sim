@@ -10,6 +10,7 @@ use super::best_trajectories::SearchTrajectoryBook;
 use super::turn_plan_seeding::TurnPlanSeedTracker;
 
 pub(super) struct SearchLoopState {
+    pub(super) plugins: CombatSearchPluginStack,
     pub(super) stats: CombatSearchV2Stats,
     pub(super) diagnostics: SearchDiagnosticsCollector,
     pub(super) exact_transpositions: HashMap<CombatExactStateKey, Vec<ResourceVector>>,
@@ -31,18 +32,19 @@ impl SearchLoopState {
     pub(super) fn new(config: &CombatSearchV2Config) -> Self {
         let plugins = CombatSearchPluginStack::from_config(config);
         Self {
+            plugins,
             stats: CombatSearchV2Stats::default(),
             diagnostics: SearchDiagnosticsCollector::default(),
             exact_transpositions: HashMap::new(),
             dominance: HashMap::new(),
             rollout_cache: RolloutCache::new(
-                plugins.rollout.into(),
+                plugins.rollout,
                 config.rollout_max_evaluations,
                 config.rollout_max_actions,
                 config.rollout_beam_width,
             ),
             performance: CombatSearchV2PerformanceReport::default(),
-            frontier: FrontierQueue::new(plugins.frontier.into()),
+            frontier: FrontierQueue::new(plugins.frontier),
             turn_plan_seed_tracker: TurnPlanSeedTracker::default(),
             trajectories: SearchTrajectoryBook::default(),
             unresolved_leaf_count: 0,

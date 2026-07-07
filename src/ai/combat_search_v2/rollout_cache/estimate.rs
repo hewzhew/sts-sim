@@ -15,7 +15,7 @@ impl RolloutCache {
         config: &CombatSearchV2Config,
         deadline: Option<Instant>,
     ) -> RolloutNodeEstimate {
-        if self.policy == CombatSearchV2RolloutPolicy::Disabled {
+        if self.policy == CombatSearchRolloutPluginId::Disabled {
             return RolloutNodeEstimate::unevaluated();
         }
 
@@ -49,8 +49,8 @@ impl RolloutCache {
         self.evaluations = self.evaluations.saturating_add(1);
         let policy_dispatch_started = Instant::now();
         let estimate = match self.policy {
-            CombatSearchV2RolloutPolicy::Disabled => RolloutNodeEstimate::unevaluated(),
-            CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion => {
+            CombatSearchRolloutPluginId::Disabled => RolloutNodeEstimate::unevaluated(),
+            CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion => {
                 match adaptive_no_potion_rollout_policy(node) {
                     CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => {
                         rollout::phase_aware_no_potion_rollout(
@@ -72,7 +72,7 @@ impl RolloutCache {
                     ),
                 }
             }
-            CombatSearchV2RolloutPolicy::ConservativeNoPotion => {
+            CombatSearchRolloutPluginId::ConservativeNoPotion => {
                 rollout::conservative_no_potion_rollout(
                     node,
                     stepper,
@@ -82,7 +82,7 @@ impl RolloutCache {
                     &mut self.performance,
                 )
             }
-            CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => {
+            CombatSearchRolloutPluginId::PhaseAwareNoPotion => {
                 rollout::phase_aware_no_potion_rollout(
                     node,
                     stepper,
@@ -92,7 +92,7 @@ impl RolloutCache {
                     &mut self.performance,
                 )
             }
-            CombatSearchV2RolloutPolicy::TurnBeamNoPotion => {
+            CombatSearchRolloutPluginId::TurnBeamNoPotion => {
                 self.turn_beam_calls = self.turn_beam_calls.saturating_add(1);
                 let anchor = rollout::turn_beam_conservative_anchor_rollout(
                     node,

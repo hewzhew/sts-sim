@@ -5,8 +5,9 @@ const TURN_PLAN_SEED_CRITICAL_SURVIVAL_MARGIN: i32 = 6;
 pub(super) fn should_seed_turn_plan_at_node(
     node: &SearchNode,
     config: &CombatSearchV2Config,
+    plugins: &CombatSearchPluginStack,
 ) -> bool {
-    if !config.turn_plan_policy.seeds_turn_boundary_frontier()
+    if !plugins.turn_plan.seeds_turn_boundary_frontier()
         || !matches!(node.engine, EngineState::CombatPlayerTurn)
         || node.turn_prefix.prefix_length() != 0
         || terminal_label(&node.engine, &node.combat) != SearchTerminalLabel::Unresolved
@@ -18,7 +19,7 @@ pub(super) fn should_seed_turn_plan_at_node(
         return true;
     }
 
-    if config.turn_plan_policy.requires_tactical_enemy_gate() {
+    if plugins.turn_plan.requires_tactical_enemy_gate() {
         return tactical_enemy_turn_plan_seed_gate(node);
     }
 

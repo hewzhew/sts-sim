@@ -3,12 +3,12 @@ use std::time::Instant;
 use super::frontier::SearchNode;
 use super::phase_profile::combat_search_phase_profile;
 use super::transition::terminal_label;
-use super::types::{
-    CombatSearchV2Config, CombatSearchV2PerformanceReport, CombatSearchV2RolloutPolicy,
-    CombatSearchV2Stats,
-};
+use super::types::{CombatSearchV2PerformanceReport, CombatSearchV2Stats};
 use super::value_facts::total_living_enemy_hp;
 use super::SearchTerminalLabel;
+use super::{
+    CombatSearchChildRolloutPluginId, CombatSearchPluginStack, CombatSearchRolloutPluginId,
+};
 
 const TURN_BEAM_EVALUATIONS_PER_EXTENSION: usize = 32;
 const TURN_BEAM_MAX_EXTENSION_MULTIPLIER: usize = 4;
@@ -45,12 +45,12 @@ impl DeferredRolloutAdmission {
 
 pub(super) fn deferred_child_rollout_admission(
     node: &SearchNode,
-    config: &CombatSearchV2Config,
+    plugins: &CombatSearchPluginStack,
     stats: &CombatSearchV2Stats,
     performance: &CombatSearchV2PerformanceReport,
     started: Instant,
 ) -> DeferredRolloutAdmission {
-    if !deferred_rollout_candidate(node, config) {
+    if !deferred_rollout_candidate(node, plugins) {
         return DeferredRolloutAdmission::SkipLowSignal;
     }
     let over_budget = rollout_time_share_over_budget(performance, started);
@@ -71,9 +71,9 @@ pub(super) fn deferred_child_rollout_admission(
     DeferredRolloutAdmission::SkipLowSignal
 }
 
-fn deferred_rollout_candidate(node: &SearchNode, config: &CombatSearchV2Config) -> bool {
-    config.child_rollout_policy == super::types::CombatSearchV2ChildRolloutPolicy::LazyOnPop
-        && config.rollout_policy != CombatSearchV2RolloutPolicy::Disabled
+fn deferred_rollout_candidate(node: &SearchNode, plugins: &CombatSearchPluginStack) -> bool {
+    plugins.child_rollout == CombatSearchChildRolloutPluginId::LazyOnPop
+        && plugins.rollout != CombatSearchRolloutPluginId::Disabled
         && !node.rollout_estimate.is_evaluated()
         && terminal_label(&node.engine, &node.combat) == SearchTerminalLabel::Unresolved
 }

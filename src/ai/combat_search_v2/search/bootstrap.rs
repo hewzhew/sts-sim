@@ -28,7 +28,7 @@ pub(super) fn initialize_root_frontier(
     }
     let root_for_turn_plan_diagnostics = root.clone();
     loop_state.push_frontier(root);
-    if config.turn_plan_policy.seeds_root_frontier() {
+    if loop_state.plugins.turn_plan.seeds_root_frontier() {
         seed_turn_plan_frontier(
             loop_state,
             &root_for_turn_plan_diagnostics,

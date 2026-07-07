@@ -916,7 +916,11 @@ fn tactical_turn_plan_policy_seeds_exact_states_with_turn_plan_prior_hints() {
     };
 
     assert!(
-        should_seed_turn_plan_at_node(&node, &config),
+        should_seed_turn_plan_at_node(
+            &node,
+            &config,
+            &CombatSearchPluginStack::from_config(&config)
+        ),
         "exact-state turn-plan hints should make tactical policy enumerate known prior states"
     );
 }

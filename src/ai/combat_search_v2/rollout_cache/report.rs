@@ -7,7 +7,7 @@ impl RolloutCache {
         best_frontier: Option<&SearchNode>,
     ) -> CombatSearchV2RolloutReport {
         CombatSearchV2RolloutReport {
-            policy: self.policy.label(),
+            policy: CombatSearchV2RolloutPolicy::from(self.policy).label(),
             behavioral_effect:
                 "estimated_frontier_priority_only_no_terminal_outcome_no_baseline_claim",
             max_evaluations: self.max_evaluations,
@@ -35,7 +35,7 @@ impl RolloutCache {
                 .max_pending_choice_estimated_action_fanout,
             performance: self.performance.to_report(),
             turn_beam_attribution: CombatSearchV2TurnBeamAttributionReport {
-                enabled: self.policy == CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
+                enabled: self.policy == CombatSearchRolloutPluginId::TurnBeamNoPotion,
                 calls: self.turn_beam_calls,
                 conservative_anchor_present: self.turn_beam_conservative_anchor_present,
                 conservative_anchor_selected: self.turn_beam_conservative_anchor_selected,

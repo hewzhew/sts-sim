@@ -12,7 +12,7 @@ mod report;
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct RolloutCache {
-    pub(super) policy: CombatSearchV2RolloutPolicy,
+    pub(super) policy: CombatSearchRolloutPluginId,
     pub(super) max_evaluations: usize,
     pub(super) max_actions: usize,
     pub(super) beam_width: usize,
@@ -52,13 +52,13 @@ pub(super) struct RolloutCache {
 
 impl RolloutCache {
     pub(super) fn new(
-        policy: CombatSearchV2RolloutPolicy,
+        policy: impl Into<CombatSearchRolloutPluginId>,
         max_evaluations: usize,
         max_actions: usize,
         beam_width: usize,
     ) -> Self {
         Self {
-            policy,
+            policy: policy.into(),
             max_evaluations,
             max_actions,
             beam_width,
