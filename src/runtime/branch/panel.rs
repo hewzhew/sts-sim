@@ -71,6 +71,7 @@ pub struct PanelSeedDecision {
 pub struct PanelSeedRequest {
     pub seed: u64,
     pub capsule_path: PathBuf,
+    pub artifacts: Result<PanelSeedArtifacts, String>,
     pub contract: RunContract,
     pub source_identity: SourceIdentity,
 }
@@ -220,7 +221,7 @@ pub fn decide_seed_capsule(
 
 impl PanelSeedRequest {
     pub fn resolve(self) -> PanelSeedResolution {
-        let artifacts = match PanelSeedArtifacts::from_capsule_path(&self.capsule_path) {
+        let artifacts = match self.artifacts {
             Ok(artifacts) => {
                 let decision = decide_seed_capsule(artifacts, self.contract, &self.source_identity);
                 return PanelSeedResolution {
@@ -295,6 +296,7 @@ impl PanelInspectConfig {
                 PanelSeedRequest {
                     seed,
                     capsule_path: self.artifact_store.capsule_path(seed),
+                    artifacts: self.artifact_store.read_seed_artifacts(seed),
                     contract: RunContract::from_args(args),
                     source_identity: self.source_identity.clone(),
                 }
@@ -761,6 +763,16 @@ mod tests {
         }
     }
 
+    fn request_for_path(seed: u64, capsule_path: PathBuf) -> PanelSeedRequest {
+        PanelSeedRequest {
+            seed,
+            artifacts: PanelSeedArtifacts::from_capsule_path(&capsule_path),
+            capsule_path,
+            contract: RunContract::from_args(args(seed)),
+            source_identity: source_identity(),
+        }
+    }
+
     fn exact_manifest(contract: RunContract) -> serde_json::Value {
         json!({
             "run_contract": contract,
@@ -915,6 +927,7 @@ mod tests {
 
         let resolution = PanelSeedRequest {
             seed: 1,
+            artifacts: PanelSeedArtifacts::from_capsule_path(&dir),
             capsule_path: dir.clone(),
             contract: RunContract::from_args(args(1)),
             source_identity: source_identity(),
@@ -949,24 +962,9 @@ mod tests {
         fs::write(bad.join("manifest.json"), "{bad").unwrap();
 
         let rows = PanelScheduler::resolve_requests(vec![
-            PanelSeedRequest {
-                seed: 1,
-                capsule_path: good,
-                contract: RunContract::from_args(args(1)),
-                source_identity: source_identity(),
-            },
-            PanelSeedRequest {
-                seed: 2,
-                capsule_path: bad,
-                contract: RunContract::from_args(args(2)),
-                source_identity: source_identity(),
-            },
-            PanelSeedRequest {
-                seed: 3,
-                capsule_path: root.join("missing"),
-                contract: RunContract::from_args(args(3)),
-                source_identity: source_identity(),
-            },
+            request_for_path(1, good),
+            request_for_path(2, bad),
+            request_for_path(3, root.join("missing")),
         ]);
 
         assert_eq!(rows.len(), 3);
@@ -1139,12 +1137,7 @@ mod tests {
         .unwrap();
         fs::write(capsule.join("result.json"), "{}").unwrap();
 
-        let summary = PanelScheduler::summarize_requests(vec![PanelSeedRequest {
-            seed: 1,
-            capsule_path: capsule,
-            contract: RunContract::from_args(args(1)),
-            source_identity: source_identity(),
-        }]);
+        let summary = PanelScheduler::summarize_requests(vec![request_for_path(1, capsule)]);
 
         assert_eq!(summary.total_rows, 1);
         assert_eq!(

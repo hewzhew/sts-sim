@@ -36,6 +36,9 @@ Current implementation has established the first durable panel path:
 - Owner-audit implementation files now live under
   `src/runtime/branch/owner_audit/`; the runtime facade no longer imports
   implementation modules from `src/bin/branch_tiny`.
+- `BranchArtifactStore` owns panel seed artifact presence reads; panel
+  resolution consumes typed artifact facts instead of reading capsule files
+  directly.
 - `tools/gap_panel.py` is now a deprecated compatibility wrapper over
   `branch_panel`; it no longer owns seed deletion, continuation, or
   `branch_tiny` process orchestration.
@@ -46,7 +49,8 @@ Still open:
   wanted.
 - richer named policy/search config comparison beyond the current
   `baseline` / `double-search` V0.
-- moving more capsule artifact writes behind `BranchArtifactStore`.
+- moving capsule artifact writes behind a store boundary; current write logic
+  still lives mostly in `owner_audit/run_capsule.rs`.
 - narrowing the remaining owner-audit facade surface so persistence and
   run-slice result construction are less mixed with owner/search internals.
 

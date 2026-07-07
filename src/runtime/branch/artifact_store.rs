@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use super::{PanelRunMode, PanelSeedAction, PanelSummary};
+use super::{PanelRunMode, PanelSeedAction, PanelSeedArtifacts, PanelSummary};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BranchArtifactStore {
@@ -74,6 +74,22 @@ impl BranchArtifactStore {
 
     pub fn compare_profile_capsule_path(&self, profile: &str, seed: u64) -> PathBuf {
         self.compare_profile_root(profile).join(seed.to_string())
+    }
+
+    pub fn read_seed_artifacts(&self, seed: u64) -> Result<PanelSeedArtifacts, String> {
+        self.read_capsule_artifacts(&self.capsule_path(seed))
+    }
+
+    pub fn read_compare_seed_artifacts(
+        &self,
+        profile: &str,
+        seed: u64,
+    ) -> Result<PanelSeedArtifacts, String> {
+        self.read_capsule_artifacts(&self.compare_profile_capsule_path(profile, seed))
+    }
+
+    pub fn read_capsule_artifacts(&self, path: &Path) -> Result<PanelSeedArtifacts, String> {
+        PanelSeedArtifacts::from_capsule_path(path)
     }
 
     pub fn default_panel_summary_path(&self) -> PathBuf {
@@ -260,6 +276,28 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(lines[1]).unwrap()["scheduler_action"],
             "reuse_real_stop"
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn store_reads_seed_artifact_presence() {
+        let root = std::env::temp_dir().join("branch_artifact_store_seed_artifacts");
+        let _ = std::fs::remove_dir_all(&root);
+        let store = BranchArtifactStore::new(&root);
+        let capsule = store.capsule_path(7);
+        std::fs::create_dir_all(&capsule).unwrap();
+        std::fs::write(capsule.join("manifest.json"), "{}").unwrap();
+        std::fs::write(capsule.join("frontier.json"), "{}").unwrap();
+        std::fs::write(capsule.join("summary.json"), "{}").unwrap();
+
+        let artifacts = store.read_seed_artifacts(7).unwrap();
+
+        assert!(artifacts.manifest.is_some());
+        assert!(artifacts.frontier_exists);
+        assert!(!artifacts.result_exists);
+        assert!(!artifacts.terminal_exists);
+        assert!(artifacts.summary_exists);
 
         let _ = std::fs::remove_dir_all(root);
     }
