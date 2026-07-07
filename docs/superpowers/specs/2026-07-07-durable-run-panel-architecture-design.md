@@ -850,6 +850,211 @@ and receives RunSliceResult
 Only after that is true should `branch_tiny --continue-capsule` be rewritten.
 Only after continuation is in-process should `branch_panel` be added.
 
+## RunContract Extraction Design
+
+`Args` currently appears throughout the runner, search portfolio, capsule,
+trace, checkpoint, and rendering code. Most uses read stable runtime contract
+fields, but some fields are CLI-only or per-slice derived state. A mechanical
+rename would preserve the wrong shape, so the first cut must classify fields.
+
+### Field Classification
+
+Stable run contract:
+
+```text
+seed
+ascension
+objective
+generations
+max_branches
+auto_ops
+search_nodes
+search_ms
+rescue_search_nodes
+rescue_search_ms
+boss_search_nodes
+boss_search_ms
+slice_ms        // current wall_ms semantics renamed at the contract boundary
+```
+
+Runtime feature flags:
+
+```text
+checkpoint_before_combat_portfolio
+```
+
+Per-slice derived budget facts:
+
+```text
+wall_capped_search_budget
+wall_capped_boss_budget
+```
+
+CLI/artifact/probe fields that must not enter `RunContract`:
+
+```text
+trace_jsonl
+combat_gap_case_dir
+frontier_checkpoint
+resume_frontier
+run_capsule
+resume_capsule
+continue_capsule
+continue_slices
+probe_event_owner
+probe_event_screen
+```
+
+### Contract Types
+
+The first runtime extraction should use small nested types rather than one
+large flat struct:
+
+```text
+RunContract:
+  game: GameRunContract
+  objective: RunObjective
+  branching: BranchingContract
+  automation: AutomationContract
+  combat_search: CombatSearchContract
+  slice: SliceContract
+  features: RuntimeFeatureContract
+
+GameRunContract:
+  seed
+  ascension
+
+BranchingContract:
+  generations
+  max_branches
+
+AutomationContract:
+  auto_ops
+
+CombatSearchContract:
+  primary_nodes
+  primary_ms
+  rescue_nodes
+  rescue_ms
+  boss_nodes
+  boss_ms
+
+SliceContract:
+  slice_ms: Option<u64>
+
+RuntimeFeatureContract:
+  checkpoint_before_combat_portfolio
+```
+
+The nested shape makes identity and future config diffs readable. It also
+prevents every call site from depending on one giant `Args`-like object.
+
+### SliceBudgetView
+
+`RunDeadline::cap_args` currently mutates an `Args` copy by reducing search
+budgets and setting `wall_capped_*` flags. In the runtime design, this should
+become a derived view:
+
+```text
+RunContract
+  + SliceDeadline
+  + child_count
+  -> SliceBudgetView
+```
+
+`SliceBudgetView` carries:
+
+```text
+effective_search_ms
+effective_rescue_search_ms
+effective_boss_search_ms
+search_budget_was_capped
+boss_budget_was_capped
+```
+
+This avoids polluting the stable run identity with per-slice wall pressure.
+The contract says what was requested. The slice view says what this slice could
+afford.
+
+### Compatibility During Migration
+
+For the first implementation, `Args` can remain as:
+
+```text
+Args:
+  contract: RunContract
+  cli/runtime compatibility flags needed by old call sites
+```
+
+or it can remain flat with conversion helpers:
+
+```text
+impl From<Args> for RunContract
+impl Args {
+  fn from_contract_for_cli(contract: RunContract) -> Args
+}
+```
+
+The preferred first step is conversion helpers, not a full `Args` rewrite.
+That lets checkpoints and capsule JSON keep reading old payloads while new
+runtime code starts accepting `RunContract`.
+
+### Artifact Migration
+
+Existing artifacts store:
+
+```text
+manifest.args
+frontier.args
+```
+
+New artifacts should store:
+
+```text
+manifest.run_contract
+frontier.run_contract
+```
+
+During migration, readers should accept both:
+
+```text
+if run_contract exists:
+  use run_contract
+else if args exists:
+  convert args -> run_contract
+  mark identity_match = unknown_or_legacy
+else:
+  malformed_capsule
+```
+
+Writers should write `run_contract` and may temporarily also write `args` as a
+legacy projection. The legacy projection must be marked as compatibility data,
+not as the primary identity source.
+
+### First Implementation Cut
+
+The first code cut should do only this:
+
+```text
+1. Add RunContract and nested contract structs.
+2. Add Args -> RunContract conversion.
+3. Add run_contract to manifest/frontier JSON while preserving args.
+4. Update no behavior.
+5. Add focused tests for conversion and artifact compatibility.
+```
+
+It should not yet:
+
+```text
+- move files into src/runtime,
+- rewrite run_loop,
+- introduce branch_panel,
+- delete Args,
+- delete child-process continuation.
+```
+
+This cut gives later work a typed contract without risking behavior drift.
+
 ### Phase 1: Extract BranchRuntime
 
 - Introduce typed `RunSliceRequest`, `ContinueSliceRequest`, `RunSliceResult`,
