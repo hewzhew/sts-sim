@@ -90,6 +90,19 @@ pub enum CombatSearchActionPriorPluginId {
     KeyCardOnline,
 }
 
+impl CombatSearchActionPriorPluginId {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::KeyCardOnline => "key_card_online",
+        }
+    }
+
+    pub(in crate::ai::combat_search_v2) fn prioritizes_key_card_online(self) -> bool {
+        matches!(self, Self::KeyCardOnline)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatSearchNodeEvaluatorPluginId {
@@ -155,6 +168,24 @@ pub enum CombatSearchPhaseGuardPluginId {
     Default,
     ChampSplitGuard,
     TimeEaterClockHint,
+}
+
+impl CombatSearchPhaseGuardPluginId {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::ChampSplitGuard => "champ_split_guard",
+            Self::TimeEaterClockHint => "time_eater_clock_hint",
+        }
+    }
+
+    pub(in crate::ai::combat_search_v2) fn guards_champ_split(self) -> bool {
+        matches!(self, Self::ChampSplitGuard)
+    }
+
+    pub(in crate::ai::combat_search_v2) fn guards_time_eater_clock(self) -> bool {
+        matches!(self, Self::TimeEaterClockHint)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -228,13 +259,15 @@ impl<'a> CombatSearchActionOrderingPlugins<'a> {
             phase_guard: stack.phase_guard,
         }
     }
+}
 
-    pub fn setup_bias_policy(self) -> CombatSearchV2SetupBiasPolicy {
-        self.action_prior.into()
-    }
-
-    pub fn phase_guard_policy(self) -> CombatSearchV2PhaseGuardPolicy {
-        self.phase_guard.into()
+impl Default for CombatSearchActionOrderingPlugins<'_> {
+    fn default() -> Self {
+        Self {
+            root_action_prior: None,
+            action_prior: CombatSearchActionPriorPluginId::Default,
+            phase_guard: CombatSearchPhaseGuardPluginId::Default,
+        }
     }
 }
 

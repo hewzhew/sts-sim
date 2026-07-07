@@ -207,31 +207,11 @@ pub(crate) fn combat_search_action_ordering_role_label_for_state(
     combat: &CombatState,
     input: &ClientInput,
 ) -> &'static str {
-    combat_search_action_ordering_role_label_for_state_with_policy(
-        engine,
-        combat,
-        input,
-        CombatSearchV2PhaseGuardPolicy::Default,
-        CombatSearchV2SetupBiasPolicy::Default,
-    )
-}
-
-pub(crate) fn combat_search_action_ordering_role_label_for_state_with_policy(
-    engine: &EngineState,
-    combat: &CombatState,
-    input: &ClientInput,
-    phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
-    setup_bias_policy: CombatSearchV2SetupBiasPolicy,
-) -> &'static str {
     combat_search_action_ordering_role_label_for_state_with_plugins(
         engine,
         combat,
         input,
-        CombatSearchActionOrderingPlugins {
-            root_action_prior: None,
-            phase_guard: phase_guard_policy.into(),
-            action_prior: setup_bias_policy.into(),
-        },
+        CombatSearchActionOrderingPlugins::default(),
     )
 }
 

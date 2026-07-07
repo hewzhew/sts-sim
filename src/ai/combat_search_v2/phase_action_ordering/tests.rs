@@ -22,7 +22,7 @@ fn lagavulin_sleep_phase_penalizes_wake_damage_and_rewards_power_setup() {
 
     let wake_hint = phase_action_ordering_hint(
         profile,
-        super::super::CombatSearchV2PhaseGuardPolicy::Default,
+        super::super::CombatSearchPhaseGuardPluginId::Default,
         PhaseActionOrderingFacts {
             card_type: CardType::Attack,
             block: 0,
@@ -40,13 +40,13 @@ fn lagavulin_sleep_phase_penalizes_wake_damage_and_rewards_power_setup() {
                         card_index: 0,
                         target: Some(1),
                     },
-                    super::super::CombatSearchV2PhaseGuardPolicy::Default,
+                    super::super::CombatSearchPhaseGuardPluginId::Default,
                 ),
         },
     );
     let setup_hint = phase_action_ordering_hint(
         profile,
-        super::super::CombatSearchV2PhaseGuardPolicy::Default,
+        super::super::CombatSearchPhaseGuardPluginId::Default,
         PhaseActionOrderingFacts {
             card_type: CardType::Power,
             block: 0,
@@ -64,7 +64,7 @@ fn lagavulin_sleep_phase_penalizes_wake_damage_and_rewards_power_setup() {
                         card_index: 1,
                         target: None,
                     },
-                    super::super::CombatSearchV2PhaseGuardPolicy::Default,
+                    super::super::CombatSearchPhaseGuardPluginId::Default,
                 ),
         },
     );
@@ -85,7 +85,7 @@ fn guardian_defensive_phase_records_survival_tiebreak() {
 
     let hint = phase_action_ordering_hint(
         profile,
-        super::super::CombatSearchV2PhaseGuardPolicy::Default,
+        super::super::CombatSearchPhaseGuardPluginId::Default,
         PhaseActionOrderingFacts {
             card_type: CardType::Skill,
             block: 8,
@@ -117,7 +117,7 @@ fn bronze_orb_stasis_phase_rewards_attacking_stasis_orb() {
 
     let orb_hint = phase_action_ordering_hint(
         profile,
-        super::super::CombatSearchV2PhaseGuardPolicy::Default,
+        super::super::CombatSearchPhaseGuardPluginId::Default,
         PhaseActionOrderingFacts {
             card_type: CardType::Attack,
             block: 0,
@@ -133,7 +133,7 @@ fn bronze_orb_stasis_phase_rewards_attacking_stasis_orb() {
     );
     let boss_hint = phase_action_ordering_hint(
         profile,
-        super::super::CombatSearchV2PhaseGuardPolicy::Default,
+        super::super::CombatSearchPhaseGuardPluginId::Default,
         PhaseActionOrderingFacts {
             card_type: CardType::Attack,
             block: 0,
@@ -172,7 +172,7 @@ fn time_eater_clock_hint_penalizes_declared_and_conditional_access_at_warp() {
 
     let declared = phase_action_ordering_hint(
         profile,
-        super::super::CombatSearchV2PhaseGuardPolicy::TimeEaterClockHint,
+        super::super::CombatSearchPhaseGuardPluginId::TimeEaterClockHint,
         PhaseActionOrderingFacts {
             card_type: CardType::Skill,
             block: 0,
@@ -191,7 +191,7 @@ fn time_eater_clock_hint_penalizes_declared_and_conditional_access_at_warp() {
     );
     let conditional = phase_action_ordering_hint(
         profile,
-        super::super::CombatSearchV2PhaseGuardPolicy::TimeEaterClockHint,
+        super::super::CombatSearchPhaseGuardPluginId::TimeEaterClockHint,
         PhaseActionOrderingFacts {
             card_type: CardType::Skill,
             block: 0,
@@ -233,7 +233,7 @@ fn time_eater_clock_hint_penalizes_bad_access_more_than_clean_spam_at_warp() {
     let profile = combat_search_phase_profile(&EngineState::CombatPlayerTurn, &combat);
     let clean = phase_action_ordering_hint(
         profile,
-        super::super::CombatSearchV2PhaseGuardPolicy::TimeEaterClockHint,
+        super::super::CombatSearchPhaseGuardPluginId::TimeEaterClockHint,
         PhaseActionOrderingFacts {
             card_type: CardType::Skill,
             block: 0,
@@ -249,7 +249,7 @@ fn time_eater_clock_hint_penalizes_bad_access_more_than_clean_spam_at_warp() {
     );
     let risky = phase_action_ordering_hint(
         profile,
-        super::super::CombatSearchV2PhaseGuardPolicy::TimeEaterClockHint,
+        super::super::CombatSearchPhaseGuardPluginId::TimeEaterClockHint,
         PhaseActionOrderingFacts {
             card_type: CardType::Skill,
             block: 0,

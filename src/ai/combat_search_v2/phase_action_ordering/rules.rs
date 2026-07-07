@@ -1,5 +1,5 @@
 use super::super::phase_profile::CombatSearchPhaseProfileV1;
-use super::super::CombatSearchV2PhaseGuardPolicy;
+use super::super::CombatSearchPhaseGuardPluginId;
 use super::constants::{
     AWAKENED_POWER_PENALTY, PHASE_ROLE_ADJUSTMENT, STASIS_TARGET_SETUP_MAX,
     TIME_EATER_CLOCK_PENALTY,
@@ -10,7 +10,7 @@ use crate::content::monsters::EnemyId;
 
 pub(in crate::ai::combat_search_v2) fn phase_action_ordering_hint(
     profile: CombatSearchPhaseProfileV1,
-    phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
+    phase_guard: CombatSearchPhaseGuardPluginId,
     facts: PhaseActionOrderingFacts,
 ) -> PhaseActionOrderingHint {
     let mut hint = PhaseActionOrderingHint {
@@ -43,7 +43,7 @@ pub(in crate::ai::combat_search_v2) fn phase_action_ordering_hint(
             .saturating_sub(AWAKENED_POWER_PENALTY);
         hint.phase_setup -= 1;
     }
-    if phase_guard_policy.guards_time_eater_clock() {
+    if phase_guard.guards_time_eater_clock() {
         apply_time_eater_clock_hint(&mut hint, profile, facts);
     }
 

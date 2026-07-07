@@ -7,8 +7,8 @@ pub(super) fn search_policy_report(config: &CombatSearchV2Config) -> CombatSearc
         terminal_policy: "whole_combat_terminal_only",
         expansion_order:
             "conservative_duplicate_action_equivalence_then_semantic_turn_action_ordering_then_frontier_value_v1",
-        action_prior_policy: CombatSearchV2SetupBiasPolicy::from(plugins.action_prior).label(),
-        phase_guard_policy: CombatSearchV2PhaseGuardPolicy::from(plugins.phase_guard).label(),
+        action_prior_policy: plugins.action_prior.label(),
+        phase_guard_policy: plugins.phase_guard.label(),
         frontier_value: COMBAT_SEARCH_FRONTIER_VALUE_POLICY,
         frontier_policy: CombatSearchV2FrontierPolicy::from(plugins.frontier).label(),
         turn_branching: "turn_transition_classification_with_late_frontier_tie_break",

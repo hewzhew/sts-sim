@@ -28,14 +28,14 @@ pub(super) struct EnemyPhaseTransitionHint {
 pub(super) fn enemy_phase_transition_hint_for_input(
     combat: &CombatState,
     input: &ClientInput,
-    phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
+    phase_guard: CombatSearchPhaseGuardPluginId,
 ) -> EnemyPhaseTransitionHint {
     match input {
         ClientInput::PlayCard { card_index, target } => combat
             .zones
             .hand
             .get(*card_index)
-            .map(|card| play_card_phase_transition_hint(combat, card, *target, phase_guard_policy))
+            .map(|card| play_card_phase_transition_hint(combat, card, *target, phase_guard))
             .unwrap_or_default(),
         _ => EnemyPhaseTransitionHint::default(),
     }
@@ -67,7 +67,7 @@ fn play_card_phase_transition_hint(
     combat: &CombatState,
     card: &CombatCard,
     target: Option<usize>,
-    phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
+    phase_guard: CombatSearchPhaseGuardPluginId,
 ) -> EnemyPhaseTransitionHint {
     let mut hint = EnemyPhaseTransitionHint::default();
     let evaluated = cards::evaluate_card_for_play(card, combat, target);
@@ -91,7 +91,7 @@ fn play_card_phase_transition_hint(
         observe_split_transition(&mut hint, projected);
         observe_guardian_transition(&mut hint, projected);
         observe_lagavulin_transition(&mut hint, projected);
-        if phase_guard_policy.guards_champ_split() {
+        if phase_guard.guards_champ_split() {
             observe_champ_threshold_transition(&mut hint, projected);
         }
     }

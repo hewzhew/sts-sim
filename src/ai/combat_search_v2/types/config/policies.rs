@@ -20,10 +20,6 @@ impl CombatSearchV2SetupBiasPolicy {
             Self::KeyCardOnline => "key_card_online",
         }
     }
-
-    pub(in crate::ai::combat_search_v2) fn prioritizes_key_card_online(self) -> bool {
-        matches!(self, Self::KeyCardOnline)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -47,14 +43,6 @@ impl CombatSearchV2PhaseGuardPolicy {
             Self::ChampSplitGuard => "champ_split_guard",
             Self::TimeEaterClockHint => "time_eater_clock_hint",
         }
-    }
-
-    pub(in crate::ai::combat_search_v2) fn guards_champ_split(self) -> bool {
-        matches!(self, Self::ChampSplitGuard)
-    }
-
-    pub(in crate::ai::combat_search_v2) fn guards_time_eater_clock(self) -> bool {
-        matches!(self, Self::TimeEaterClockHint)
     }
 }
 

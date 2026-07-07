@@ -72,7 +72,7 @@ pub(super) fn config_report(
         rollout_max_actions: config.rollout_max_actions,
         rollout_beam_width: config.rollout_beam_width,
         frontier_policy: CombatSearchV2FrontierPolicy::from(plugins.frontier).label(),
-        phase_guard_policy: CombatSearchV2PhaseGuardPolicy::from(plugins.phase_guard).label(),
-        setup_bias_policy: CombatSearchV2SetupBiasPolicy::from(plugins.action_prior).label(),
+        phase_guard_policy: plugins.phase_guard.label(),
+        setup_bias_policy: plugins.action_prior.label(),
     }
 }

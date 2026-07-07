@@ -40,23 +40,22 @@ pub(super) fn order_indexed_action_choices(
     combat: &CombatState,
     choices: Vec<IndexedActionChoice>,
 ) -> ActionOrderingResult {
-    order_indexed_action_choices_with_prior(
+    order_indexed_action_choices_with_plugins(
         engine,
         combat,
         choices,
-        None,
-        CombatSearchV2PhaseGuardPolicy::Default,
-        CombatSearchV2SetupBiasPolicy::Default,
+        CombatSearchActionOrderingPlugins::default(),
     )
 }
 
+#[cfg(test)]
 pub(super) fn order_indexed_action_choices_with_prior(
     engine: &EngineState,
     combat: &CombatState,
     choices: Vec<IndexedActionChoice>,
     root_action_prior: Option<&CombatSearchV2RootActionPrior>,
-    phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
-    setup_bias_policy: CombatSearchV2SetupBiasPolicy,
+    phase_guard: CombatSearchPhaseGuardPluginId,
+    action_prior: CombatSearchActionPriorPluginId,
 ) -> ActionOrderingResult {
     order_indexed_action_choices_with_plugins(
         engine,
@@ -64,8 +63,8 @@ pub(super) fn order_indexed_action_choices_with_prior(
         choices,
         CombatSearchActionOrderingPlugins {
             root_action_prior,
-            phase_guard: phase_guard_policy.into(),
-            action_prior: setup_bias_policy.into(),
+            phase_guard,
+            action_prior,
         },
     )
 }
