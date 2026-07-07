@@ -93,6 +93,7 @@ pub enum PanelRunMode {
     Smoke,
     Continue,
     Drain,
+    Compare,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -122,6 +123,14 @@ impl PanelRunOptions {
     pub fn drain(max_slices: usize) -> Self {
         Self {
             mode: PanelRunMode::Drain,
+            max_slices,
+            fresh: false,
+        }
+    }
+
+    pub fn compare(max_slices: usize) -> Self {
+        Self {
+            mode: PanelRunMode::Compare,
             max_slices,
             fresh: false,
         }
@@ -173,6 +182,7 @@ pub struct PanelSummary {
     pub schema: &'static str,
     pub run_mode: Option<PanelRunMode>,
     pub max_slices: Option<usize>,
+    pub profiles: Vec<String>,
     pub total_rows: usize,
     pub counts_by_status: BTreeMap<String, usize>,
     pub counts_by_reuse_decision: BTreeMap<String, usize>,
@@ -571,17 +581,36 @@ impl PanelRow {
 
 impl PanelSummary {
     pub fn from_rows(rows: Vec<PanelRow>) -> Self {
-        Self::from_rows_with_context(rows, None, None)
+        Self::from_rows_with_context(rows, None, None, Vec::new())
     }
 
     pub fn from_rows_with_run_options(rows: Vec<PanelRow>, options: PanelRunOptions) -> Self {
-        Self::from_rows_with_context(rows, Some(options.mode), Some(options.max_slices))
+        Self::from_rows_with_context(
+            rows,
+            Some(options.mode),
+            Some(options.max_slices),
+            Vec::new(),
+        )
+    }
+
+    pub fn from_rows_with_compare(
+        rows: Vec<PanelRow>,
+        max_slices: usize,
+        profiles: Vec<String>,
+    ) -> Self {
+        Self::from_rows_with_context(
+            rows,
+            Some(PanelRunMode::Compare),
+            Some(max_slices),
+            profiles,
+        )
     }
 
     fn from_rows_with_context(
         rows: Vec<PanelRow>,
         run_mode: Option<PanelRunMode>,
         max_slices: Option<usize>,
+        profiles: Vec<String>,
     ) -> Self {
         let mut counts_by_status = BTreeMap::new();
         let mut counts_by_reuse_decision = BTreeMap::new();
@@ -597,6 +626,7 @@ impl PanelSummary {
             schema: "branch_panel_summary_v0",
             run_mode,
             max_slices,
+            profiles,
             total_rows: rows.len(),
             counts_by_status,
             counts_by_reuse_decision,

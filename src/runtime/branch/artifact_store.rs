@@ -68,6 +68,14 @@ impl BranchArtifactStore {
         self.capsule_root.join(seed.to_string())
     }
 
+    pub fn compare_profile_root(&self, profile: &str) -> PathBuf {
+        self.capsule_root.join("_compare").join(profile)
+    }
+
+    pub fn compare_profile_capsule_path(&self, profile: &str, seed: u64) -> PathBuf {
+        self.compare_profile_root(profile).join(seed.to_string())
+    }
+
     pub fn default_panel_summary_path(&self) -> PathBuf {
         self.capsule_root.join("panel_summary.json")
     }
@@ -180,6 +188,16 @@ mod tests {
         assert_eq!(
             store.default_panel_summary_path(),
             std::path::PathBuf::from("target/panel-root/panel_summary.json")
+        );
+    }
+
+    #[test]
+    fn store_owns_compare_profile_capsule_paths() {
+        let store = BranchArtifactStore::new("target/panel-root");
+
+        assert_eq!(
+            store.compare_profile_capsule_path("double-search", 123),
+            std::path::PathBuf::from("target/panel-root/_compare/double-search/123")
         );
     }
 

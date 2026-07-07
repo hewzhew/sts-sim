@@ -21,6 +21,7 @@ fn run() -> Result<(), String> {
             PanelCommand::Smoke(raw) => run_smoke(raw.into_run_args()?),
             PanelCommand::Continue(raw) => run_continue(raw.into_run_args()?),
             PanelCommand::Drain(raw) => run_drain(raw.into_run_args()?),
+            PanelCommand::Compare(raw) => run_compare(raw.into_compare_args()?),
         },
     }
 }
@@ -66,6 +67,35 @@ fn run_drain(args: RunArgs) -> Result<(), String> {
     Ok(())
 }
 
+fn run_compare(args: CompareArgs) -> Result<(), String> {
+    let store = args.run.common.artifact_store();
+    let source_identity = current_source_identity();
+    let mut rows = Vec::new();
+    for profile in &args.profiles {
+        let mut common = args.run.common.clone();
+        profile.apply_to(&mut common);
+        common.capsule_root = store.compare_profile_root(profile.name());
+        let summary = PanelSmokeRunner::run_slices(
+            common.inspect_config(source_identity.clone())?,
+            args.run
+                .run_options(PanelRunOptions::compare(args.run.max_slices)),
+        )?;
+        rows.extend(summary.rows);
+    }
+    let summary = PanelSummary::from_rows_with_compare(
+        rows,
+        args.run.max_slices,
+        args.profiles
+            .iter()
+            .map(|profile| profile.name().to_string())
+            .collect(),
+    );
+    let summary_path =
+        store.write_panel_summary(args.run.common.summary_path.as_deref(), &summary)?;
+    print_summary("compare", &summary, &summary_path);
+    Ok(())
+}
+
 #[derive(Parser)]
 #[command(
     name = "branch_panel",
@@ -93,6 +123,7 @@ enum PanelCommand {
     Smoke(RawRunArgs),
     Continue(RawRunArgs),
     Drain(RawRunArgs),
+    Compare(RawCompareArgs),
 }
 
 #[derive(ClapArgs)]
@@ -143,6 +174,14 @@ struct RawRunArgs {
     fresh: bool,
 }
 
+#[derive(ClapArgs)]
+struct RawCompareArgs {
+    #[command(flatten)]
+    run: RawRunArgs,
+    #[arg(long, num_args = 1.., required = true)]
+    profiles: Vec<String>,
+}
+
 #[derive(Clone, Debug)]
 struct InspectArgs {
     seeds: Vec<String>,
@@ -167,6 +206,17 @@ struct RunArgs {
     common: InspectArgs,
     max_slices: usize,
     fresh: bool,
+}
+
+struct CompareArgs {
+    run: RunArgs,
+    profiles: Vec<PanelCompareProfile>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PanelCompareProfile {
+    Baseline,
+    DoubleSearch,
 }
 
 impl RawInspectArgs {
@@ -209,12 +259,44 @@ impl RawRunArgs {
     }
 }
 
+impl RawCompareArgs {
+    fn into_compare_args(self) -> Result<CompareArgs, String> {
+        Ok(CompareArgs {
+            run: self.run.into_run_args()?,
+            profiles: parse_compare_profiles(&self.profiles)?,
+        })
+    }
+}
+
 impl RunArgs {
     fn run_options(&self, options: PanelRunOptions) -> PanelRunOptions {
         if self.fresh {
             options.fresh()
         } else {
             options
+        }
+    }
+}
+
+impl PanelCompareProfile {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Baseline => "baseline",
+            Self::DoubleSearch => "double-search",
+        }
+    }
+
+    fn apply_to(self, args: &mut InspectArgs) {
+        match self {
+            Self::Baseline => {}
+            Self::DoubleSearch => {
+                args.search_nodes = args.search_nodes.saturating_mul(2);
+                args.search_ms = args.search_ms.saturating_mul(2);
+                args.rescue_search_nodes = args.rescue_search_nodes.saturating_mul(2);
+                args.rescue_search_ms = args.rescue_search_ms.saturating_mul(2);
+                args.boss_search_nodes = args.boss_search_nodes.saturating_mul(2);
+                args.boss_search_ms = args.boss_search_ms.saturating_mul(2);
+            }
         }
     }
 }
@@ -280,6 +362,33 @@ fn parse_seed_specs(specs: &[String]) -> Result<Vec<u64>, String> {
         return Err("--seeds must include at least one seed".to_string());
     }
     Ok(seeds)
+}
+
+fn parse_compare_profiles(specs: &[String]) -> Result<Vec<PanelCompareProfile>, String> {
+    let mut profiles = Vec::new();
+    for spec in specs {
+        for part in spec
+            .split(',')
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+        {
+            profiles.push(parse_compare_profile(part)?);
+        }
+    }
+    if profiles.is_empty() {
+        return Err("--profiles must include at least one profile".to_string());
+    }
+    Ok(profiles)
+}
+
+fn parse_compare_profile(value: &str) -> Result<PanelCompareProfile, String> {
+    match value {
+        "baseline" => Ok(PanelCompareProfile::Baseline),
+        "double-search" => Ok(PanelCompareProfile::DoubleSearch),
+        _ => Err(format!(
+            "unknown compare profile: {value}; expected baseline or double-search"
+        )),
+    }
 }
 
 fn append_seed_part(part: &str, seeds: &mut Vec<u64>) -> Result<(), String> {
@@ -498,6 +607,33 @@ mod tests {
 
         assert_eq!(args.common.seeds, vec!["1".to_string()]);
         assert_eq!(args.max_slices, 3);
+    }
+
+    #[test]
+    fn parses_panel_compare_profiles() {
+        let cli = Cli::try_parse_from([
+            "branch_panel",
+            "panel",
+            "compare",
+            "--profiles",
+            "baseline,double-search",
+            "--seeds",
+            "1",
+            "--capsule-root",
+            "target/panel",
+            "--max-slices",
+            "2",
+        ])
+        .unwrap();
+
+        let Command::Panel(panel) = cli.command;
+        let PanelCommand::Compare(args) = panel.command else {
+            panic!("expected panel compare command");
+        };
+
+        assert_eq!(args.profiles, vec!["baseline,double-search".to_string()]);
+        assert_eq!(args.run.common.seeds, vec!["1".to_string()]);
+        assert_eq!(args.run.max_slices, 2);
     }
 
     #[test]

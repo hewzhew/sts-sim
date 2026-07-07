@@ -27,6 +27,9 @@ Current implementation has established the first durable panel path:
 - `--fresh` archives an existing seed capsule under `_archive/` before
   starting a replacement run, and the summary records
   `fresh_replaced_capsule` plus the archived capsule path.
+- `branch_panel panel compare` materializes named search profiles under
+  `_compare/<profile>/<seed>` and writes one combined comparison summary. V0
+  supports `baseline` and `double-search`.
 - `tools/gap_panel.py` is now a deprecated compatibility wrapper over
   `branch_panel`; it no longer owns seed deletion, continuation, or
   `branch_tiny` process orchestration.
@@ -35,7 +38,8 @@ Still open:
 
 - `--fresh --discard-old` explicit destructive replacement, if it is still
   wanted.
-- compare mode and named policy/search config comparison.
+- richer named policy/search config comparison beyond the current
+  `baseline` / `double-search` V0.
 - moving more capsule artifact writes behind `BranchArtifactStore`.
 - making `branch_tiny` itself a thinner adapter over the same runtime surface.
 
@@ -1504,7 +1508,7 @@ The first cut should come after `BranchRuntime` and in-process continuation:
 
 ```text
 1. Add branch_panel binary.
-2. Support mode=smoke, continue, and drain.
+2. Support mode=smoke, continue, drain, and compare.
 3. Support max_active=1 only.
 4. Use BranchRuntime directly.
 5. Write panel_summary.json and panel_ledger.jsonl.
@@ -1512,7 +1516,7 @@ The first cut should come after `BranchRuntime` and in-process continuation:
    branch_panel covers current usage.
 ```
 
-It should not yet implement compare mode, parallelism, HTML, or ML export.
+It should not yet implement parallelism, HTML, or ML export.
 
 ## Design Completion Checklist
 
@@ -1596,10 +1600,14 @@ The design is complete, but implementation should be staged.
 ### Phase 7: Compare Mode
 
 - Allow named policy/search profiles to be compared over the same compatible
-  capsule set.
-- Write comparison rows without mutating the base capsule unless the mode
-  explicitly materializes new capsules.
+  seed set.
+- Materialize comparison capsules under `_compare/<profile>/<seed>` so compare
+  runs do not mutate the base capsule namespace.
+- Write a combined `panel_summary.json` with `run_mode = compare` and
+  `profiles = [...]`.
 - Keep this separate from normal smoke/continue/drain usage.
+- V0 supports `baseline` and `double-search`; later profile work should move
+  toward typed policy/search profiles rather than ad hoc CLI switches.
 
 ## Tests
 
