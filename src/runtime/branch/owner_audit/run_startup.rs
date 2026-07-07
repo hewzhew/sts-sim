@@ -3,7 +3,7 @@ use std::time::Instant;
 use super::cli_args::{default_combat_gap_case_dir, parse_args};
 use super::run_capsule::RunCapsule;
 use super::run_slice_request::RunSliceRequest;
-use super::run_slice_result::RunSliceRequestKind;
+use super::run_slice_result::{ArtifactWriteSummary, RunSliceRequestKind};
 use super::{branch_runtime, event_owner_probe, frontier_checkpoint, run_chain};
 
 pub(super) enum RunStartup {
@@ -55,8 +55,10 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
                 )
             });
     }
+    let mut artifact_writes = ArtifactWriteSummary::default();
     if let Some(capsule) = run_capsule.as_ref() {
         capsule.write_running_manifest(args)?;
+        artifact_writes.merge(ArtifactWriteSummary::manifest());
     }
     let started = Instant::now();
     let mut generation_start = 0usize;
@@ -82,6 +84,7 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
         frontier_checkpoint_path,
         resume_frontier,
         run_capsule,
+        artifact_writes,
         generation_start,
         frontier,
         next_branch_id,

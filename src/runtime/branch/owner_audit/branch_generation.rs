@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use super::owner_model::{DecisionKey, OwnerChoice};
 use super::run_capsule::RunCapsule;
 use super::run_deadline::RunDeadline;
+use super::run_slice_result::ArtifactWriteSummary;
 use super::{branch_frontier, branch_generation_step, branch_scheduler, trace, Args, Branch};
 
 type BranchWork = (Branch, bool, Vec<OwnerChoice>);
@@ -15,10 +16,14 @@ pub(super) struct PreparedGeneration {
 }
 
 pub(super) enum GenerationAdvance {
-    ObjectiveCompleted(Branch),
+    ObjectiveCompleted {
+        branch: Branch,
+        artifacts: ArtifactWriteSummary,
+    },
     Advanced {
         next: VecDeque<Branch>,
         generation_result: Option<(usize, Branch)>,
+        artifacts: ArtifactWriteSummary,
     },
 }
 
@@ -70,6 +75,7 @@ pub(super) fn advance_generation(
     let mut next = VecDeque::new();
     let mut deferred = VecDeque::new();
     let mut generation_result = None;
+    let mut artifacts = ArtifactWriteSummary::default();
     for ((branch, expandable, choices), expanded_mask) in
         prepared.work.into_iter().zip(prepared.expanded_masks)
     {
@@ -88,16 +94,32 @@ pub(super) fn advance_generation(
             capsule,
             human_output,
         )? {
-            branch_generation_step::BranchWorkAdvance::ObjectiveCompleted(branch) => {
-                return Ok(GenerationAdvance::ObjectiveCompleted(branch));
+            branch_generation_step::BranchWorkAdvance::ObjectiveCompleted {
+                branch,
+                artifacts: step_artifacts,
+            } => {
+                artifacts.merge(step_artifacts);
+                return Ok(GenerationAdvance::ObjectiveCompleted { branch, artifacts });
             }
-            branch_generation_step::BranchWorkAdvance::Deferred(branch) => {
+            branch_generation_step::BranchWorkAdvance::Deferred {
+                branch,
+                artifacts: step_artifacts,
+            } => {
+                artifacts.merge(step_artifacts);
                 deferred.push_back(branch);
             }
-            branch_generation_step::BranchWorkAdvance::GenerationResult(branch) => {
+            branch_generation_step::BranchWorkAdvance::GenerationResult {
+                branch,
+                artifacts: step_artifacts,
+            } => {
+                artifacts.merge(step_artifacts);
                 generation_result = Some((generation, branch));
             }
-            branch_generation_step::BranchWorkAdvance::Children(children) => {
+            branch_generation_step::BranchWorkAdvance::Children {
+                children,
+                artifacts: step_artifacts,
+            } => {
+                artifacts.merge(step_artifacts);
                 next.extend(children);
             }
         }
@@ -106,5 +128,6 @@ pub(super) fn advance_generation(
     Ok(GenerationAdvance::Advanced {
         next,
         generation_result,
+        artifacts,
     })
 }

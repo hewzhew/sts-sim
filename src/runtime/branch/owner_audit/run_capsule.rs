@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{json, Value};
 
 use super::run_identity::{current_source_identity, SourceIdentity};
+use super::run_slice_result::ArtifactWriteSummary;
 use super::{
     combat_gap_case, frontier_checkpoint, run_capsule_format, run_capsule_io, Args, Branch,
     BranchStatus, TerminalOutcome,
@@ -18,10 +19,32 @@ pub(super) struct RunCapsule {
     source_identity: SourceIdentity,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum RunCapsuleSave {
     None,
     Frontier { running: usize },
     Result,
+}
+
+impl RunCapsuleSave {
+    pub(super) fn artifact_writes(self) -> ArtifactWriteSummary {
+        match self {
+            Self::None => ArtifactWriteSummary::default(),
+            Self::Frontier { .. } => ArtifactWriteSummary {
+                manifest_written: true,
+                frontier_written: true,
+                summary_written: true,
+                ..ArtifactWriteSummary::default()
+            },
+            Self::Result => ArtifactWriteSummary {
+                manifest_written: true,
+                result_written: true,
+                path_written: true,
+                summary_written: true,
+                ..ArtifactWriteSummary::default()
+            },
+        }
+    }
 }
 
 impl RunCapsule {
@@ -194,9 +217,9 @@ impl RunCapsule {
         args: Args,
         generation: usize,
         branch: &Branch,
-    ) -> Result<(), String> {
+    ) -> Result<ArtifactWriteSummary, String> {
         if !matches!(branch.status, BranchStatus::Terminal(_)) {
-            return Ok(());
+            return Ok(ArtifactWriteSummary::default());
         }
         ensure_dir(&self.root)?;
         let path = self.terminal_path();
@@ -205,7 +228,7 @@ impl RunCapsule {
             .iter()
             .any(|entry| entry.get("branch_id").and_then(Value::as_u64) == Some(branch.id as u64))
         {
-            return Ok(());
+            return Ok(ArtifactWriteSummary::default());
         }
         let combat_case = combat_case_value(self, args, generation, branch);
         entries.push(run_capsule_format::result_value(
@@ -213,7 +236,11 @@ impl RunCapsule {
             branch,
             combat_case,
         ));
-        write_json(&path, run_capsule_format::terminal_results_value(entries))
+        write_json(&path, run_capsule_format::terminal_results_value(entries))?;
+        Ok(ArtifactWriteSummary {
+            terminal_written: true,
+            ..ArtifactWriteSummary::default()
+        })
     }
 
     fn write_branch_summary(

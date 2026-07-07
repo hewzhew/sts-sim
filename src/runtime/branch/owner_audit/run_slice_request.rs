@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use super::cli_args::ArgsOverrides;
 use super::run_capsule::RunCapsule;
-use super::run_slice_result::RunSliceRequestKind;
+use super::run_slice_result::{ArtifactWriteSummary, RunSliceRequestKind};
 use super::{branch_runtime, frontier_checkpoint, Args, Branch};
 
 pub(super) struct RunSliceRequest {
@@ -16,6 +16,7 @@ pub(super) struct RunSliceRequest {
     pub(super) frontier_checkpoint_path: Option<PathBuf>,
     pub(super) resume_frontier: Option<PathBuf>,
     pub(super) run_capsule: Option<RunCapsule>,
+    pub(super) artifact_writes: ArtifactWriteSummary,
     pub(super) generation_start: usize,
     pub(super) frontier: VecDeque<Branch>,
     pub(super) next_branch_id: usize,
@@ -51,6 +52,7 @@ impl ContinueSliceRequest {
             branch_runtime::BranchRuntime::initial_frontier(effective_args, started)
         };
         run_capsule.write_running_manifest(effective_args)?;
+        let artifact_writes = ArtifactWriteSummary::manifest();
         let combat_gap_case_dir = Some(run_capsule.combat_cases_dir());
         Ok(RunSliceRequest {
             args: effective_args,
@@ -65,6 +67,7 @@ impl ContinueSliceRequest {
             frontier_checkpoint_path: None,
             resume_frontier,
             run_capsule: Some(run_capsule),
+            artifact_writes,
             generation_start,
             frontier,
             next_branch_id,

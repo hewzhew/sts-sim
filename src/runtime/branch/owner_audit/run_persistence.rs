@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use super::run_capsule::{RunCapsule, RunCapsuleSave};
 use super::run_deadline::RunDeadline;
+use super::run_slice_result::ArtifactWriteSummary;
 use super::{branch_status_view, frontier_checkpoint, render, Args, Branch};
 
 pub(super) fn save_context_wall_stop(
@@ -15,7 +16,7 @@ pub(super) fn save_context_wall_stop(
     frontier: &VecDeque<Branch>,
     deadline: &RunDeadline,
     human_output: bool,
-) -> Result<bool, String> {
+) -> Result<ArtifactWriteSummary, String> {
     save_wall_stop(
         frontier_checkpoint_output_path(frontier_checkpoint_path, resume_frontier, capsule),
         capsule,
@@ -51,7 +52,8 @@ fn save_wall_stop(
     frontier: &VecDeque<Branch>,
     deadline: &RunDeadline,
     human_output: bool,
-) -> Result<bool, String> {
+) -> Result<ArtifactWriteSummary, String> {
+    let mut artifacts = ArtifactWriteSummary::default();
     if human_output {
         println!(
             "wall_soft_stop: generation={} remaining_ms={}",
@@ -68,9 +70,10 @@ fn save_wall_stop(
             if human_output {
                 println!("frontier_checkpoint skipped: no running branches");
             }
-            return Ok(false);
+            return Ok(artifacts);
         }
         frontier_checkpoint::save(path, args, generation, next_branch_id, frontier)?;
+        artifacts.merge(ArtifactWriteSummary::frontier_checkpoint());
         if human_output {
             println!(
                 "frontier_checkpoint: {} running={}",
@@ -84,19 +87,17 @@ fn save_wall_stop(
         }
     }
     if let Some(capsule) = capsule {
-        return Ok(print_capsule_save(
-            capsule.save_paused_recovery(
-                args,
-                generation,
-                next_branch_id,
-                frontier,
-                "wall_deadline",
-            )?,
-            capsule,
-            human_output,
-        ));
+        let save = capsule.save_paused_recovery(
+            args,
+            generation,
+            next_branch_id,
+            frontier,
+            "wall_deadline",
+        )?;
+        artifacts.merge(save.artifact_writes());
+        print_capsule_save(save, capsule, human_output);
     }
-    Ok(false)
+    Ok(artifacts)
 }
 
 pub(super) fn print_capsule_save(
@@ -128,9 +129,11 @@ pub(super) fn finalize_objective_result(
     branch: &Branch,
     reason: &'static str,
     human_output: bool,
-) -> Result<(), String> {
+) -> Result<ArtifactWriteSummary, String> {
+    let mut artifacts = ArtifactWriteSummary::default();
     if let Some(capsule) = capsule {
         capsule.save_completed_result(args, generation, branch, reason)?;
+        artifacts.merge(RunCapsuleSave::Result.artifact_writes());
         if human_output {
             println!("run_capsule_result: {}", capsule.result_path().display());
         }
@@ -144,5 +147,5 @@ pub(super) fn finalize_objective_result(
             );
         }
     }
-    Ok(())
+    Ok(artifacts)
 }

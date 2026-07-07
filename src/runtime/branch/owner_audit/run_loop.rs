@@ -1,3 +1,4 @@
+use super::run_capsule::RunCapsuleSave;
 use super::run_deadline::RunDeadline;
 use super::run_slice_request::RunSliceRequest;
 use super::run_slice_result::{
@@ -16,6 +17,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         frontier_checkpoint_path,
         resume_frontier,
         run_capsule,
+        mut artifact_writes,
         generation_start,
         mut frontier,
         mut next_branch_id,
@@ -88,7 +90,8 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
             run_capsule.as_ref(),
             human_output,
         )? {
-            branch_generation::GenerationAdvance::ObjectiveCompleted(branch) => {
+            branch_generation::GenerationAdvance::ObjectiveCompleted { branch, artifacts } => {
+                artifact_writes.merge(artifacts);
                 let result = RunSliceResult::new(
                     args,
                     request_kind,
@@ -103,13 +106,18 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
                     deadline.remaining_ms(),
                     elapsed_ms(started),
                 )
+                .with_artifacts(artifact_writes)
                 .with_selected_branch(&branch);
                 return Ok(result);
             }
             branch_generation::GenerationAdvance::Advanced {
                 next,
                 generation_result,
-            } => (next, generation_result),
+                artifacts,
+            } => {
+                artifact_writes.merge(artifacts);
+                (next, generation_result)
+            }
         };
         branch_frontier::retain_frontier(&mut next, args.max_branches);
         if next.is_empty() {
@@ -117,6 +125,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
                 (run_capsule.as_ref(), generation_result.as_ref())
             {
                 capsule.save_result(args, *result_generation, branch)?;
+                artifact_writes.merge(RunCapsuleSave::Result.artifact_writes());
                 if human_output {
                     println!("run_capsule_result: {}", capsule.result_path().display());
                 }
@@ -182,7 +191,12 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
     if let Some(trace) = trace.as_mut() {
         trace.record_frontier_snapshot(last_generation, &frontier)?;
     }
-    stop_recorder.save_recovery_if_needed(args, last_generation, next_branch_id, &frontier)?;
+    artifact_writes.merge(stop_recorder.save_recovery_if_needed(
+        args,
+        last_generation,
+        next_branch_id,
+        &frontier,
+    )?);
     let summary = frontier_summary_from_branches(frontier.iter());
     let stop = stop.unwrap_or_else(|| {
         if summary.running_count == 0 {
@@ -210,6 +224,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
     if let Some(branch) = selected_branch.as_ref() {
         result = result.with_selected_branch(branch);
     }
+    result = result.with_artifacts(artifact_writes);
     Ok(result)
 }
 

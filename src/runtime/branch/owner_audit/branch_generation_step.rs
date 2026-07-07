@@ -3,13 +3,26 @@ use std::path::PathBuf;
 use super::owner_model::OwnerChoice;
 use super::run_capsule::RunCapsule;
 use super::run_deadline::RunDeadline;
+use super::run_slice_result::ArtifactWriteSummary;
 use super::{branch_observer, owner_choice_expander, trace, Args, Branch};
 
 pub(super) enum BranchWorkAdvance {
-    ObjectiveCompleted(Branch),
-    Deferred(Branch),
-    GenerationResult(Branch),
-    Children(Vec<Branch>),
+    ObjectiveCompleted {
+        branch: Branch,
+        artifacts: ArtifactWriteSummary,
+    },
+    Deferred {
+        branch: Branch,
+        artifacts: ArtifactWriteSummary,
+    },
+    GenerationResult {
+        branch: Branch,
+        artifacts: ArtifactWriteSummary,
+    },
+    Children {
+        children: Vec<Branch>,
+        artifacts: ArtifactWriteSummary,
+    },
 }
 
 pub(super) fn advance_branch_work(
@@ -27,7 +40,7 @@ pub(super) fn advance_branch_work(
     capsule: Option<&RunCapsule>,
     human_output: bool,
 ) -> Result<BranchWorkAdvance, String> {
-    branch_observer::record_branch_node(
+    let mut artifacts = branch_observer::record_branch_node(
         args,
         generation,
         &branch,
@@ -38,24 +51,26 @@ pub(super) fn advance_branch_work(
         human_output,
     )?;
     if !expandable {
-        if branch_observer::record_stopped_branch(
+        let outcome = branch_observer::record_stopped_branch(
             args,
             generation,
             &branch,
             trace,
             capsule,
             human_output,
-        )? {
-            return Ok(BranchWorkAdvance::ObjectiveCompleted(branch));
+        )?;
+        artifacts.merge(outcome.artifacts);
+        if outcome.objective_completed {
+            return Ok(BranchWorkAdvance::ObjectiveCompleted { branch, artifacts });
         }
         return if branch.status.is_resumable() {
-            Ok(BranchWorkAdvance::Deferred(branch))
+            Ok(BranchWorkAdvance::Deferred { branch, artifacts })
         } else {
-            Ok(BranchWorkAdvance::GenerationResult(branch))
+            Ok(BranchWorkAdvance::GenerationResult { branch, artifacts })
         };
     }
     if !expanded_mask.iter().any(|expanded| *expanded) {
-        return Ok(BranchWorkAdvance::Deferred(branch));
+        return Ok(BranchWorkAdvance::Deferred { branch, artifacts });
     }
 
     let mut children = Vec::new();
@@ -67,16 +82,24 @@ pub(super) fn advance_branch_work(
         &expanded_mask,
         next_branch_id,
     ) {
-        if branch_observer::record_child_branch(
+        let outcome = branch_observer::record_child_branch(
             args,
             generation + 1,
             &child,
             capsule,
             human_output,
-        )? {
-            return Ok(BranchWorkAdvance::ObjectiveCompleted(child));
+        )?;
+        artifacts.merge(outcome.artifacts);
+        if outcome.objective_completed {
+            return Ok(BranchWorkAdvance::ObjectiveCompleted {
+                branch: child,
+                artifacts,
+            });
         }
         children.push(child);
     }
-    Ok(BranchWorkAdvance::Children(children))
+    Ok(BranchWorkAdvance::Children {
+        children,
+        artifacts,
+    })
 }

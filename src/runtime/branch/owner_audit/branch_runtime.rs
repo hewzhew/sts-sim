@@ -52,7 +52,7 @@ mod tests {
     use std::time::Instant;
 
     use super::super::run_slice_request::RunSliceRequest;
-    use super::super::run_slice_result::RunSliceRequestKind;
+    use super::super::run_slice_result::{ArtifactWriteSummary, RunSliceRequestKind};
     use super::super::{run_contract::RunObjective, Args};
     use super::*;
 
@@ -101,6 +101,7 @@ mod tests {
             frontier_checkpoint_path: None,
             resume_frontier: None,
             run_capsule: None,
+            artifact_writes: ArtifactWriteSummary::default(),
             generation_start: 0,
             frontier,
             next_branch_id,

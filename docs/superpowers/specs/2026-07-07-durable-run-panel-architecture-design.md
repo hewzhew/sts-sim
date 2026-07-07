@@ -39,6 +39,9 @@ Current implementation has established the first durable panel path:
 - `BranchArtifactStore` owns panel seed artifact presence reads; panel
   resolution consumes typed artifact facts instead of reading capsule files
   directly.
+- `RunSliceResult` now carries an `ArtifactWriteSummary` for core capsule
+  writes observed by the slice path, so in-process callers no longer need to
+  infer manifest/frontier/result/summary writes from the filesystem.
 - `tools/gap_panel.py` is now a deprecated compatibility wrapper over
   `branch_panel`; it no longer owns seed deletion, continuation, or
   `branch_tiny` process orchestration.
@@ -49,8 +52,9 @@ Still open:
   wanted.
 - richer named policy/search config comparison beyond the current
   `baseline` / `double-search` V0.
-- moving capsule artifact writes behind a store boundary; current write logic
-  still lives mostly in `owner_audit/run_capsule.rs`.
+- completing the capsule artifact store boundary; core write facts now flow
+  through `RunSliceResult`, but write logic still lives mostly in
+  `owner_audit/run_capsule.rs`.
 - narrowing the remaining owner-audit facade surface so persistence and
   run-slice result construction are less mixed with owner/search internals.
 
@@ -1402,6 +1406,11 @@ The first cut should be deliberately modest:
 4. Make RunSliceResult receive ArtifactWriteSummary from the adapter.
 5. Keep direct JSON format code private to the store adapter.
 ```
+
+Current implementation has completed the first `ArtifactWriteSummary` plumbing
+for core capsule writes in `RunSliceResult`. `ArtifactRef` and the full
+`CapsuleArtifactStore` write adapter remain open; direct JSON write code is
+still concentrated in the current capsule adapter.
 
 It should not yet redesign every artifact schema. The goal is to put a wall
 around persistence semantics first.

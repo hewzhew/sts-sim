@@ -13,6 +13,7 @@ pub struct RunSliceResult {
     pub frontier: FrontierSummary,
     pub selected_branch: Option<BranchSummary>,
     pub budget: SliceBudgetSummary,
+    pub artifacts: ArtifactWriteSummary,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -146,6 +147,43 @@ pub struct SliceBudgetSummary {
     pub boss_budget_was_capped: bool,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ArtifactWriteSummary {
+    pub manifest_written: bool,
+    pub frontier_written: bool,
+    pub result_written: bool,
+    pub path_written: bool,
+    pub summary_written: bool,
+    pub terminal_written: bool,
+    pub combat_case_written: bool,
+}
+
+impl ArtifactWriteSummary {
+    pub fn merge(&mut self, other: Self) {
+        self.manifest_written |= other.manifest_written;
+        self.frontier_written |= other.frontier_written;
+        self.result_written |= other.result_written;
+        self.path_written |= other.path_written;
+        self.summary_written |= other.summary_written;
+        self.terminal_written |= other.terminal_written;
+        self.combat_case_written |= other.combat_case_written;
+    }
+
+    pub fn manifest() -> Self {
+        Self {
+            manifest_written: true,
+            ..Self::default()
+        }
+    }
+
+    pub fn frontier_checkpoint() -> Self {
+        Self {
+            frontier_written: true,
+            ..Self::default()
+        }
+    }
+}
+
 impl RunSliceResult {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -175,11 +213,17 @@ impl RunSliceResult {
                 search_budget_was_capped: args.wall_capped_search_budget,
                 boss_budget_was_capped: args.wall_capped_boss_budget,
             },
+            artifacts: ArtifactWriteSummary::default(),
         }
     }
 
     pub fn with_selected_branch_summary(mut self, branch: BranchSummary) -> Self {
         self.selected_branch = Some(branch);
+        self
+    }
+
+    pub fn with_artifacts(mut self, artifacts: ArtifactWriteSummary) -> Self {
+        self.artifacts = artifacts;
         self
     }
 }

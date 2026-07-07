@@ -212,7 +212,13 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.request_kind, RunSliceRequestKind::Start);
+        assert!(result.artifacts.manifest_written);
+        assert!(result.artifacts.frontier_written);
+        assert!(result.artifacts.summary_written);
+        assert!(!result.artifacts.result_written);
         assert!(root.join("manifest.json").exists());
+        assert!(root.join("frontier.json").exists());
+        assert!(root.join("summary.json").exists());
 
         let _ = std::fs::remove_dir_all(root);
     }

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use super::run_capsule::RunCapsule;
 use super::run_deadline::RunDeadline;
+use super::run_slice_result::ArtifactWriteSummary;
 use super::{run_persistence, Args, Branch};
 
 pub(super) struct RunStopRecorder<'a> {
@@ -11,6 +12,7 @@ pub(super) struct RunStopRecorder<'a> {
     capsule: Option<&'a RunCapsule>,
     human_output: bool,
     frontier_saved: bool,
+    artifact_writes: ArtifactWriteSummary,
 }
 
 impl<'a> RunStopRecorder<'a> {
@@ -26,6 +28,7 @@ impl<'a> RunStopRecorder<'a> {
             capsule,
             human_output,
             frontier_saved: false,
+            artifact_writes: ArtifactWriteSummary::default(),
         }
     }
 
@@ -37,7 +40,7 @@ impl<'a> RunStopRecorder<'a> {
         frontier: &VecDeque<Branch>,
         deadline: &RunDeadline,
     ) -> Result<(), String> {
-        self.frontier_saved |= run_persistence::save_context_wall_stop(
+        let artifacts = run_persistence::save_context_wall_stop(
             self.frontier_checkpoint_path,
             self.resume_frontier,
             self.capsule,
@@ -48,23 +51,23 @@ impl<'a> RunStopRecorder<'a> {
             deadline,
             self.human_output,
         )?;
+        self.frontier_saved |= artifacts.frontier_written || artifacts.result_written;
+        self.artifact_writes.merge(artifacts);
         Ok(())
     }
 
     pub(super) fn save_recovery_if_needed(
-        self,
+        mut self,
         args: Args,
         generation: usize,
         next_branch_id: usize,
         frontier: &VecDeque<Branch>,
-    ) -> Result<(), String> {
+    ) -> Result<ArtifactWriteSummary, String> {
         if let Some(capsule) = self.capsule.filter(|_| !self.frontier_saved) {
-            run_persistence::print_capsule_save(
-                capsule.save_recovery(args, generation, next_branch_id, frontier)?,
-                capsule,
-                self.human_output,
-            );
+            let save = capsule.save_recovery(args, generation, next_branch_id, frontier)?;
+            self.artifact_writes.merge(save.artifact_writes());
+            run_persistence::print_capsule_save(save, capsule, self.human_output);
         }
-        Ok(())
+        Ok(self.artifact_writes)
     }
 }
