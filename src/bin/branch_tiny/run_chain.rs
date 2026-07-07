@@ -1,12 +1,13 @@
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::time::Instant;
 
 use serde_json::{json, Value};
 
+use super::run_capsule::RunCapsule;
 use super::run_chain_state::{capsule_state, manifest_wall_ms, CapsuleState};
-use super::run_contract::RunObjective;
-use super::{Args, ArgsOverrides, ContinueCapsuleArgs};
+use super::run_startup::RunStartupContext;
+use super::{branch_runtime, frontier_checkpoint, Args, ArgsOverrides, ContinueCapsuleArgs};
 
 pub(super) fn run(
     mut args: Args,
@@ -22,7 +23,6 @@ pub(super) fn run(
             chain.capsule.join("manifest.json").display()
         ));
     }
-    let exe = std::env::current_exe().map_err(|err| err.to_string())?;
     let mut slices = Vec::new();
     for index in 0..chain.max_slices {
         let before = capsule_state(&chain.capsule)?;
@@ -31,25 +31,15 @@ pub(super) fn run(
             break;
         }
         let resume = before.frontier_exists;
-        let mut command = Command::new(&exe);
-        push_overrides(&mut command, args, overrides);
-        if resume {
-            command.arg("--resume-capsule").arg(&chain.capsule);
-        } else {
-            command.arg("--run-capsule").arg(&chain.capsule);
-        }
-        command.stdout(Stdio::null());
-        let status = command
-            .status()
-            .map_err(|err| format!("failed to run continuation slice {index}: {err}"))?;
+        let slice = run_slice(args, overrides, &chain.capsule, resume);
         let after = capsule_state(&chain.capsule)?;
         let should_continue = after.is_wall_pause();
-        let success = status.success();
+        let success = slice.is_ok();
         print_slice_summary(index, chain.max_slices, resume, success, &after);
         slices.push(after.into_value(index, resume, Some(success)));
         write_chain(&chain.capsule, chain.max_slices, &slices)?;
-        if !success {
-            return Err(format!("continuation slice {index} exited with {status}"));
+        if let Err(err) = slice {
+            return Err(format!("continuation slice {index} failed: {err}"));
         }
         if !should_continue {
             break;
@@ -58,45 +48,46 @@ pub(super) fn run(
     write_chain(&chain.capsule, chain.max_slices, &slices)
 }
 
-fn push_overrides(command: &mut Command, args: Args, overrides: ArgsOverrides) {
-    push_optional_arg(
-        command,
-        "--objective",
-        overrides.objective.map(objective_arg),
-    );
-    push_optional_arg(command, "--generations", overrides.generations);
-    push_optional_arg(command, "--max-branches", overrides.max_branches);
-    push_optional_arg(command, "--auto-ops", overrides.auto_ops);
-    push_optional_arg(command, "--search-nodes", overrides.search_nodes);
-    push_optional_arg(command, "--search-ms", overrides.search_ms);
-    push_optional_arg(
-        command,
-        "--rescue-search-nodes",
-        overrides.rescue_search_nodes,
-    );
-    push_optional_arg(command, "--rescue-search-ms", overrides.rescue_search_ms);
-    push_optional_arg(command, "--boss-search-nodes", overrides.boss_search_nodes);
-    push_optional_arg(command, "--boss-search-ms", overrides.boss_search_ms);
-    if let Some(wall_ms) = args.wall_ms {
-        command.arg("--wall-ms").arg(wall_ms.to_string());
-    }
-    if overrides.checkpoint_before_combat_portfolio {
-        command.arg("--checkpoint-before-combat-portfolio");
-    }
-}
-
-fn push_optional_arg<T: ToString>(command: &mut Command, key: &str, value: Option<T>) {
-    if let Some(value) = value {
-        command.arg(key).arg(value.to_string());
-    }
-}
-
-fn objective_arg(objective: RunObjective) -> &'static str {
-    match objective {
-        RunObjective::FirstVictory => "first-victory",
-        RunObjective::FirstTerminal => "first-terminal",
-        RunObjective::ExhaustFrontier => "exhaust-frontier",
-    }
+fn run_slice(
+    args: Args,
+    overrides: ArgsOverrides,
+    capsule_path: &PathBuf,
+    resume: bool,
+) -> Result<(), String> {
+    let started = Instant::now();
+    let run_capsule = RunCapsule::new(capsule_path.clone());
+    let mut effective_args = args;
+    let mut generation_start = 0usize;
+    let resume_frontier = resume.then(|| capsule_path.join("frontier.json"));
+    let (frontier, next_branch_id) = if let Some(path) = resume_frontier.as_ref() {
+        let checkpoint = frontier_checkpoint::load(path)?;
+        effective_args = checkpoint.args;
+        overrides.apply_to(&mut effective_args);
+        if effective_args.wall_ms.is_none() {
+            effective_args.wall_ms = args.wall_ms;
+        }
+        generation_start = checkpoint.generation;
+        checkpoint.into_frontier()?
+    } else {
+        overrides.apply_to(&mut effective_args);
+        branch_runtime::BranchRuntime::initial_frontier(effective_args, started)
+    };
+    run_capsule.write_running_manifest(effective_args)?;
+    let combat_gap_case_dir = Some(run_capsule.combat_cases_dir());
+    let context = RunStartupContext {
+        args: effective_args,
+        human_output: false,
+        trace_path: None,
+        combat_gap_case_dir,
+        frontier_checkpoint_path: None,
+        resume_frontier,
+        run_capsule: Some(run_capsule),
+        generation_start,
+        frontier,
+        next_branch_id,
+        started,
+    };
+    branch_runtime::BranchRuntime::run_slice(context).map(|_| ())
 }
 
 fn write_chain(capsule: &PathBuf, max_slices: usize, slices: &[Value]) -> Result<(), String> {
@@ -143,4 +134,56 @@ fn print_slice_summary(
         state.frontier_exists,
         state.result_exists
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+    use crate::run_contract::RunObjective;
+
+    fn sample_args(seed: u64) -> Args {
+        Args {
+            seed,
+            ascension: 0,
+            objective: RunObjective::FirstVictory,
+            generations: 0,
+            max_branches: 1,
+            auto_ops: 64,
+            search_nodes: 1,
+            search_ms: 1,
+            rescue_search_nodes: 1,
+            rescue_search_ms: 1,
+            boss_search_nodes: 1,
+            boss_search_ms: 1,
+            wall_ms: Some(5_000),
+            checkpoint_before_combat_portfolio: false,
+            wall_capped_search_budget: false,
+            wall_capped_boss_budget: false,
+        }
+    }
+
+    #[test]
+    fn run_chain_start_slice_uses_requested_seed() {
+        let capsule = std::env::temp_dir().join("branch_tiny_chain_start_seed");
+        let _ = fs::remove_dir_all(&capsule);
+
+        run(
+            sample_args(123),
+            ArgsOverrides::default(),
+            ContinueCapsuleArgs {
+                capsule: capsule.clone(),
+                max_slices: 1,
+            },
+        )
+        .unwrap();
+
+        let manifest: Value =
+            serde_json::from_str(&fs::read_to_string(capsule.join("manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(manifest["run_contract"]["game"]["seed"], 123);
+
+        let _ = fs::remove_dir_all(capsule);
+    }
 }

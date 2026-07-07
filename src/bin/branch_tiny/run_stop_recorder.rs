@@ -9,6 +9,7 @@ pub(super) struct RunStopRecorder<'a> {
     frontier_checkpoint_path: &'a Option<PathBuf>,
     resume_frontier: &'a Option<PathBuf>,
     capsule: Option<&'a RunCapsule>,
+    human_output: bool,
     frontier_saved: bool,
 }
 
@@ -17,11 +18,13 @@ impl<'a> RunStopRecorder<'a> {
         frontier_checkpoint_path: &'a Option<PathBuf>,
         resume_frontier: &'a Option<PathBuf>,
         capsule: Option<&'a RunCapsule>,
+        human_output: bool,
     ) -> Self {
         Self {
             frontier_checkpoint_path,
             resume_frontier,
             capsule,
+            human_output,
             frontier_saved: false,
         }
     }
@@ -43,6 +46,7 @@ impl<'a> RunStopRecorder<'a> {
             next_branch_id,
             frontier,
             deadline,
+            self.human_output,
         )?;
         Ok(())
     }
@@ -58,6 +62,7 @@ impl<'a> RunStopRecorder<'a> {
             run_persistence::print_capsule_save(
                 capsule.save_recovery(args, generation, next_branch_id, frontier)?,
                 capsule,
+                self.human_output,
             );
         }
         Ok(())

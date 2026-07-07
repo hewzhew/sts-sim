@@ -25,6 +25,7 @@ pub(super) fn advance_branch_work(
     trace: &mut Option<trace::TraceWriter>,
     combat_gap_case_dir: Option<&PathBuf>,
     capsule: Option<&RunCapsule>,
+    human_output: bool,
 ) -> Result<BranchWorkAdvance, String> {
     branch_observer::record_branch_node(
         args,
@@ -34,9 +35,17 @@ pub(super) fn advance_branch_work(
         &expanded_mask,
         trace,
         combat_gap_case_dir,
+        human_output,
     )?;
     if !expandable {
-        if branch_observer::record_stopped_branch(args, generation, &branch, trace, capsule)? {
+        if branch_observer::record_stopped_branch(
+            args,
+            generation,
+            &branch,
+            trace,
+            capsule,
+            human_output,
+        )? {
             return Ok(BranchWorkAdvance::ObjectiveCompleted(branch));
         }
         return if branch.status.is_resumable() {
@@ -58,7 +67,13 @@ pub(super) fn advance_branch_work(
         &expanded_mask,
         next_branch_id,
     ) {
-        if branch_observer::record_child_branch(args, generation + 1, &child, capsule)? {
+        if branch_observer::record_child_branch(
+            args,
+            generation + 1,
+            &child,
+            capsule,
+            human_output,
+        )? {
             return Ok(BranchWorkAdvance::ObjectiveCompleted(child));
         }
         children.push(child);

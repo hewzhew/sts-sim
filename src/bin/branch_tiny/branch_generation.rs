@@ -65,6 +65,7 @@ pub(super) fn advance_generation(
     trace: &mut Option<trace::TraceWriter>,
     combat_gap_case_dir: Option<&PathBuf>,
     capsule: Option<&RunCapsule>,
+    human_output: bool,
 ) -> Result<GenerationAdvance, String> {
     let mut next = VecDeque::new();
     let mut deferred = VecDeque::new();
@@ -85,6 +86,7 @@ pub(super) fn advance_generation(
             trace,
             combat_gap_case_dir,
             capsule,
+            human_output,
         )? {
             branch_generation_step::BranchWorkAdvance::ObjectiveCompleted(branch) => {
                 return Ok(GenerationAdvance::ObjectiveCompleted(branch));

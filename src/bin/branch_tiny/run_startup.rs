@@ -13,6 +13,7 @@ pub(super) enum RunStartup {
 
 pub(super) struct RunStartupContext {
     pub(super) args: Args,
+    pub(super) human_output: bool,
     pub(super) trace_path: Option<PathBuf>,
     pub(super) combat_gap_case_dir: Option<PathBuf>,
     pub(super) frontier_checkpoint_path: Option<PathBuf>,
@@ -84,6 +85,7 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
     };
     Ok(RunStartup::Ready(RunStartupContext {
         args,
+        human_output: true,
         trace_path,
         combat_gap_case_dir,
         frontier_checkpoint_path,

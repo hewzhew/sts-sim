@@ -9,6 +9,7 @@ use super::{branch_frontier, branch_generation, run_stop_recorder, trace, Branch
 pub(super) fn run(context: RunStartupContext) -> Result<RunSliceResult, String> {
     let RunStartupContext {
         args,
+        human_output,
         trace_path,
         combat_gap_case_dir,
         frontier_checkpoint_path,
@@ -28,6 +29,7 @@ pub(super) fn run(context: RunStartupContext) -> Result<RunSliceResult, String> 
         &frontier_checkpoint_path,
         &resume_frontier,
         run_capsule.as_ref(),
+        human_output,
     );
     let mut trace = trace_path
         .as_ref()
@@ -36,7 +38,9 @@ pub(super) fn run(context: RunStartupContext) -> Result<RunSliceResult, String> 
     let deadline = RunDeadline::new(started, args.wall_ms);
     let mut recent_expanded_keys = Vec::new();
 
-    print_header(args, resume_frontier.is_some());
+    if human_output {
+        print_header(args, resume_frontier.is_some());
+    }
     if let Some(trace) = trace.as_mut() {
         trace.record_run(args)?;
     }
@@ -86,6 +90,7 @@ pub(super) fn run(context: RunStartupContext) -> Result<RunSliceResult, String> 
             &mut trace,
             combat_gap_case_dir.as_ref(),
             run_capsule.as_ref(),
+            human_output,
         )? {
             branch_generation::GenerationAdvance::ObjectiveCompleted(branch) => {
                 let result = RunSliceResult::new(
@@ -116,7 +121,9 @@ pub(super) fn run(context: RunStartupContext) -> Result<RunSliceResult, String> 
                 (run_capsule.as_ref(), generation_result.as_ref())
             {
                 capsule.save_result(args, *result_generation, branch)?;
-                println!("run_capsule_result: {}", capsule.result_path().display());
+                if human_output {
+                    println!("run_capsule_result: {}", capsule.result_path().display());
+                }
             }
             if let Some((result_generation, branch)) = generation_result {
                 stop = Some(

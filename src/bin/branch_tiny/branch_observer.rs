@@ -12,16 +12,23 @@ pub(super) fn record_branch_node(
     expanded_mask: &[bool],
     trace: &mut Option<trace::TraceWriter>,
     combat_gap_case_dir: Option<&PathBuf>,
+    human_output: bool,
 ) -> Result<(), String> {
-    render::print_branch_timeline(generation, branch, choices, expanded_mask);
+    if human_output {
+        render::print_branch_timeline(generation, branch, choices, expanded_mask);
+    }
     if let Some(trace) = trace.as_mut() {
         trace.record_node(generation, branch, choices, expanded_mask)?;
     }
     if let Some(dir) = combat_gap_case_dir {
         match combat_gap_case::save_combat_gap_case(dir, args, generation, branch) {
-            Ok(Some(path)) => println!("  combat_gap_case: {}", path.display()),
+            Ok(Some(path)) if human_output => println!("  combat_gap_case: {}", path.display()),
+            Ok(Some(_)) => {}
             Ok(None) => {}
-            Err(err) => println!("  combat_gap_case_error: {}", render::one_line(&err)),
+            Err(err) if human_output => {
+                println!("  combat_gap_case_error: {}", render::one_line(&err));
+            }
+            Err(_) => {}
         }
     }
     Ok(())
@@ -33,11 +40,12 @@ pub(super) fn record_stopped_branch(
     branch: &Branch,
     trace: &mut Option<trace::TraceWriter>,
     capsule: Option<&RunCapsule>,
+    human_output: bool,
 ) -> Result<bool, String> {
     if let Some(trace) = trace.as_mut() {
         trace.record_branch_snapshot(generation, "stopped", branch)?;
     }
-    record_terminal_and_objective(args, generation, branch, capsule)
+    record_terminal_and_objective(args, generation, branch, capsule, human_output)
 }
 
 pub(super) fn record_child_branch(
@@ -45,8 +53,9 @@ pub(super) fn record_child_branch(
     generation: usize,
     branch: &Branch,
     capsule: Option<&RunCapsule>,
+    human_output: bool,
 ) -> Result<bool, String> {
-    record_terminal_and_objective(args, generation, branch, capsule)
+    record_terminal_and_objective(args, generation, branch, capsule, human_output)
 }
 
 fn record_terminal_and_objective(
@@ -54,6 +63,7 @@ fn record_terminal_and_objective(
     generation: usize,
     branch: &Branch,
     capsule: Option<&RunCapsule>,
+    human_output: bool,
 ) -> Result<bool, String> {
     if let Some(capsule) = capsule {
         capsule.save_terminal_result(args, generation, branch)?;
@@ -65,6 +75,7 @@ fn record_terminal_and_objective(
             generation,
             branch,
             reason.as_str(),
+            human_output,
         )?;
         return Ok(true);
     }
