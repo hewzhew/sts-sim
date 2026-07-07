@@ -1,7 +1,8 @@
 use super::run_deadline::RunDeadline;
 use super::run_slice_request::RunSliceRequest;
 use super::run_slice_result::{
-    FrontierExhausted, FrontierSummary, RealStop, RunSliceResult, RunStop, SoftPause,
+    frontier_summary_from_branches, FrontierExhausted, FrontierSummary, RealStop, RunSliceResult,
+    RunSliceResultBranchExt, RunStop, SoftPause,
 };
 use super::{branch_frontier, branch_generation, run_stop_recorder, trace, BranchStatus};
 
@@ -46,7 +47,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         last_generation = generation;
         if deadline.should_soft_stop(args) {
             stop_recorder.save_soft_wall(args, generation, next_branch_id, &frontier, &deadline)?;
-            let summary = FrontierSummary::from_branches(frontier.iter());
+            let summary = frontier_summary_from_branches(frontier.iter());
             stop = Some(RunStop::SoftPause(SoftPause::SliceDeadline {
                 generation,
                 frontier_running_count: summary.running_count,
@@ -65,7 +66,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         {
             frontier = prepared.into_frontier();
             stop_recorder.save_soft_wall(args, generation, next_branch_id, &frontier, &deadline)?;
-            let summary = FrontierSummary::from_branches(frontier.iter());
+            let summary = frontier_summary_from_branches(frontier.iter());
             stop = Some(RunStop::SoftPause(
                 SoftPause::SearchBudgetCappedBeforeGeneration {
                     generation,
@@ -147,7 +148,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
             .any(|branch| matches!(branch.status, BranchStatus::AwaitingAuto { .. }))
         {
             frontier = next;
-            let summary = FrontierSummary::from_branches(frontier.iter());
+            let summary = frontier_summary_from_branches(frontier.iter());
             stop = Some(RunStop::SoftPause(SoftPause::AwaitingAutoBoundary {
                 generation: generation + 1,
                 frontier_running_count: summary.running_count,
@@ -163,7 +164,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         }
         frontier = next;
         if deadline.should_soft_stop(args) {
-            let summary = FrontierSummary::from_branches(frontier.iter());
+            let summary = frontier_summary_from_branches(frontier.iter());
             stop = Some(RunStop::SoftPause(SoftPause::SliceDeadline {
                 generation: generation + 1,
                 frontier_running_count: summary.running_count,
@@ -182,7 +183,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         trace.record_frontier_snapshot(last_generation, &frontier)?;
     }
     stop_recorder.save_recovery_if_needed(args, last_generation, next_branch_id, &frontier)?;
-    let summary = FrontierSummary::from_branches(frontier.iter());
+    let summary = frontier_summary_from_branches(frontier.iter());
     let stop = stop.unwrap_or_else(|| {
         if summary.running_count == 0 {
             RunStop::FrontierExhausted(FrontierExhausted::NoRunningBranches {
