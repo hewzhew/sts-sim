@@ -15,6 +15,24 @@ pub(in crate::ai::combat_search_v2) fn priority_for_input(
     phase_guard_policy: super::super::CombatSearchV2PhaseGuardPolicy,
     setup_bias_policy: super::super::CombatSearchV2SetupBiasPolicy,
 ) -> ActionOrderingPriority {
+    priority_for_input_with_plugins(
+        engine,
+        combat,
+        input,
+        super::super::CombatSearchActionOrderingPlugins {
+            root_action_prior: None,
+            action_prior: setup_bias_policy.into(),
+            phase_guard: phase_guard_policy.into(),
+        },
+    )
+}
+
+pub(in crate::ai::combat_search_v2) fn priority_for_input_with_plugins(
+    engine: &EngineState,
+    combat: &CombatState,
+    input: &ClientInput,
+    plugins: super::super::CombatSearchActionOrderingPlugins<'_>,
+) -> ActionOrderingPriority {
     if let Some(hint) = pending_choice_ordering_hint(engine, combat, input) {
         let (role, role_rank) = pending_choice_role_rank(hint.role);
         return ActionOrderingPriority {
@@ -39,8 +57,7 @@ pub(in crate::ai::combat_search_v2) fn priority_for_input(
                 *card_index,
                 *target,
                 phase_profile,
-                phase_guard_policy,
-                setup_bias_policy,
+                plugins,
             )
         }
         ClientInput::UsePotion { .. } => {

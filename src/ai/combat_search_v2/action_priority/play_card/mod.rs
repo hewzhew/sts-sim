@@ -23,8 +23,7 @@ pub(super) fn priority_for_play_card(
     card_index: usize,
     target: Option<usize>,
     phase_profile: CombatSearchPhaseProfileV1,
-    phase_guard_policy: super::super::CombatSearchV2PhaseGuardPolicy,
-    setup_bias_policy: super::super::CombatSearchV2SetupBiasPolicy,
+    plugins: super::super::CombatSearchActionOrderingPlugins<'_>,
 ) -> ActionOrderingPriority {
     let Some(card) = combat.zones.hand.get(card_index) else {
         return ActionOrderingPriority::neutral(ActionOrderingRole::Neutral);
@@ -49,13 +48,13 @@ pub(super) fn priority_for_play_card(
     let phase_transition = enemy_phase_transition_hint_for_input(
         combat,
         &ClientInput::PlayCard { card_index, target },
-        phase_guard_policy,
+        plugins.phase_guard_policy(),
     );
     let current_turn_attack_setup =
         current_turn_attack_setup_score(combat, card_index, card, effects);
     let phase_hint = phase_action_ordering_hint(
         phase_profile,
-        phase_guard_policy,
+        plugins.phase_guard_policy(),
         PhaseActionOrderingFacts {
             card_type: def.card_type,
             block,
@@ -86,7 +85,7 @@ pub(super) fn priority_for_play_card(
     let prevents_visible_lethal =
         visible_loss_now >= current_hp && visible_loss_after_block < current_hp;
     let prevents_hp_loss = visible_loss_after_block < visible_loss_now;
-    let key_setup_card = setup_bias_policy.prioritizes_key_card_online()
+    let key_setup_card = plugins.setup_bias_policy().prioritizes_key_card_online()
         && key_setup_card_online_candidate(card.id, card.upgrades);
     let (role, role_rank) = if target_lethal {
         (ActionOrderingRole::LethalCard, ROLE_LETHAL_CARD)

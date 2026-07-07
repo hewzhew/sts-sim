@@ -1,4 +1,4 @@
-use super::action_priority::priority_for_input;
+use super::action_priority::priority_for_input_with_plugins;
 use super::*;
 
 mod compare;
@@ -89,12 +89,11 @@ pub(super) fn order_indexed_action_choices_with_plugins(
                     .root_action_prior
                     .and_then(|prior| prior.score(state_hash, &indexed.choice.action_key))
             }),
-            priority: priority_for_input(
+            priority: priority_for_input_with_plugins(
                 engine,
                 combat,
                 &indexed.choice.input,
-                plugins.phase_guard_policy(),
-                plugins.setup_bias_policy(),
+                plugins,
             ),
             choice: indexed.choice,
         })
