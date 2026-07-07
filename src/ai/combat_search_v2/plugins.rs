@@ -331,6 +331,27 @@ impl CombatSearchProfile {
         self
     }
 
+    pub fn with_action_prior_plugin(
+        mut self,
+        action_prior: CombatSearchActionPriorPluginId,
+    ) -> Self {
+        self.plugins.action_prior = action_prior;
+        self
+    }
+
+    pub fn with_turn_plan_plugin(mut self, turn_plan: CombatSearchTurnPlanPluginId) -> Self {
+        self.plugins.turn_plan = turn_plan;
+        self
+    }
+
+    pub fn with_child_rollout_plugin(
+        mut self,
+        child_rollout: CombatSearchChildRolloutPluginId,
+    ) -> Self {
+        self.plugins.child_rollout = child_rollout;
+        self
+    }
+
     pub fn with_rollout_plugin(mut self, rollout: CombatSearchRolloutPluginId) -> Self {
         self.plugins.rollout = rollout;
         self
@@ -598,5 +619,37 @@ mod tests {
             CombatSearchV2PotionPolicy::SemanticBudgeted
         );
         assert_eq!(stack.potion.max_potions_used, Some(2));
+    }
+
+    #[test]
+    fn profile_builder_can_set_core_search_plugins() {
+        let profile = CombatSearchProfile {
+            label: "test",
+            budget: CombatSearchBudgetSpec {
+                max_nodes: 7,
+                wall_ms: 11,
+            },
+            plugins: CombatSearchPluginStack::default(),
+            acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+            artifacts: CombatSearchArtifactPluginId::None,
+        }
+        .with_action_prior_plugin(CombatSearchActionPriorPluginId::KeyCardOnline)
+        .with_turn_plan_plugin(CombatSearchTurnPlanPluginId::RootFrontierSeed)
+        .with_child_rollout_plugin(CombatSearchChildRolloutPluginId::Immediate);
+
+        let config = profile.to_config();
+
+        assert_eq!(
+            config.setup_bias_policy,
+            CombatSearchV2SetupBiasPolicy::KeyCardOnline
+        );
+        assert_eq!(
+            config.turn_plan_policy,
+            CombatSearchV2TurnPlanPolicy::RootFrontierSeed
+        );
+        assert_eq!(
+            config.child_rollout_policy,
+            CombatSearchV2ChildRolloutPolicy::Immediate
+        );
     }
 }

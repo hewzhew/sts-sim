@@ -1,7 +1,7 @@
-use sts_simulator::ai::combat_search_v2::CombatSearchV2RolloutPolicy;
 use sts_simulator::eval::combat_case::CombatCase;
 
 use super::options::ReviewOptions;
+use super::search_runner::review_rollout_plugin;
 
 #[path = "frozen_panel_lanes/execution.rs"]
 mod execution;
@@ -23,14 +23,10 @@ pub(super) fn run_frozen_panel_lanes(
         return None;
     }
 
-    let rollout_policy = if options.disable_rollout {
-        CombatSearchV2RolloutPolicy::Disabled
-    } else {
-        CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
-    };
+    let rollout_plugin = review_rollout_plugin(options);
     let lanes = frozen_panel_lane_specs()
         .into_iter()
-        .map(|spec| run_frozen_panel_lane(options, case, spec, rollout_policy))
+        .map(|spec| run_frozen_panel_lane(options, case, spec, rollout_plugin))
         .collect();
 
     Some(FrozenPanelLaneReview {

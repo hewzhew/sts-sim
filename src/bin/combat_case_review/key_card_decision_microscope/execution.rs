@@ -1,8 +1,6 @@
-use std::time::Duration;
-
 use sts_simulator::ai::combat_search_v2::{
-    explain_combat_search_v2_initial_decision, CombatSearchV2Config, CombatSearchV2PotionPolicy,
-    CombatSearchV2RolloutPolicy, CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
+    explain_combat_search_v2_initial_decision, CombatSearchActionPriorPluginId,
+    CombatSearchV2Config, CombatSearchV2PotionPolicy,
 };
 use sts_simulator::content::cards::java_id;
 use sts_simulator::eval::combat_case::CombatCase;
@@ -11,6 +9,7 @@ use sts_simulator::runtime::combat::CombatCard;
 use super::super::key_card_counterfactual::{move_key_card, KeyCardCounterfactualPlacement};
 use super::super::key_card_lifecycle::KeyCardReason;
 use super::super::options::ReviewOptions;
+use super::super::search_runner::review_search_profile;
 use super::digest::{candidates_before_target, selected_candidate, target_candidate};
 use super::types::KeyCardDecisionMicroscopeVariant;
 
@@ -78,25 +77,20 @@ fn skipped_variant(
 }
 
 fn microscope_config(options: &ReviewOptions, card: &CombatCard) -> CombatSearchV2Config {
-    let rollout_policy = if options.disable_rollout {
-        CombatSearchV2RolloutPolicy::Disabled
-    } else {
-        CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
-    };
-    CombatSearchV2Config {
-        max_nodes: options.slow_nodes,
-        wall_time: Some(Duration::from_millis(options.slow_ms)),
-        turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-        potion_policy: CombatSearchV2PotionPolicy::All,
-        max_potions_used: Some(options.diagnostic_potion_max),
-        rollout_policy,
-        child_rollout_policy: options.child_rollout_policy(),
-        setup_bias_policy: CombatSearchV2SetupBiasPolicy::KeyCardOnline,
-        input_label: Some(format!(
-            "key_card_decision_microscope:{}#{}",
-            java_id(card.id),
-            card.uuid
-        )),
-        ..CombatSearchV2Config::default()
-    }
+    let mut config = review_search_profile(
+        "key_card_decision_microscope",
+        options.slow_nodes,
+        options.slow_ms,
+        options,
+    )
+    .with_action_prior_plugin(CombatSearchActionPriorPluginId::KeyCardOnline)
+    .with_potion_policy(CombatSearchV2PotionPolicy::All)
+    .with_max_potions_used(options.diagnostic_potion_max)
+    .to_config();
+    config.input_label = Some(format!(
+        "key_card_decision_microscope:{}#{}",
+        java_id(card.id),
+        card.uuid
+    ));
+    config
 }

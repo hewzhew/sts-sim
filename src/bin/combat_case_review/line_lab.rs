@@ -1,13 +1,11 @@
-use std::time::Duration;
-
 use sts_simulator::ai::combat_search_v2::{
     run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, CombatLineLabReport,
-    CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
-    CombatSearchV2TrajectoryReport, CombatSearchV2TurnPlanPolicy,
+    CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2TrajectoryReport,
 };
 use sts_simulator::eval::combat_case::CombatCase;
 
 use super::options::ReviewOptions;
+use super::search_runner::review_search_profile;
 
 pub(super) fn run_line_lab(
     options: &ReviewOptions,
@@ -36,18 +34,8 @@ pub(super) fn run_line_lab(
 }
 
 fn line_lab_search_config(options: &ReviewOptions) -> CombatSearchV2Config {
-    CombatSearchV2Config {
-        max_nodes: options.slow_nodes,
-        wall_time: Some(Duration::from_millis(options.line_lab_ms)),
-        turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-        child_rollout_policy: options.child_rollout_policy(),
-        potion_policy: CombatSearchV2PotionPolicy::All,
-        max_potions_used: Some(options.diagnostic_potion_max),
-        rollout_policy: if options.disable_rollout {
-            CombatSearchV2RolloutPolicy::Disabled
-        } else {
-            CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
-        },
-        ..Default::default()
-    }
+    review_search_profile("line_lab", options.slow_nodes, options.line_lab_ms, options)
+        .with_potion_policy(CombatSearchV2PotionPolicy::All)
+        .with_max_potions_used(options.diagnostic_potion_max)
+        .to_config()
 }

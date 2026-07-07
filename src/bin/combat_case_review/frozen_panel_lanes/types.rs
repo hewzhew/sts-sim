@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sts_simulator::ai::combat_search_v2::CombatSearchV2SetupBiasPolicy;
+use sts_simulator::ai::combat_search_v2::CombatSearchActionPriorPluginId;
 
 use super::super::focus::CombatReviewFocus;
 use super::super::key_card_lifecycle::KeyCardLifecycleReport;
@@ -37,5 +37,5 @@ pub(super) struct FrozenPanelLaneConfigSummary {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct FrozenPanelLaneSpec {
     pub(crate) lane: &'static str,
-    pub(crate) setup_bias_policy: CombatSearchV2SetupBiasPolicy,
+    pub(crate) action_prior_plugin: CombatSearchActionPriorPluginId,
 }

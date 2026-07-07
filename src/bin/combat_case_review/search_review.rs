@@ -1,6 +1,4 @@
-use sts_simulator::ai::combat_search_v2::{
-    CombatSearchV2PotionPolicy, CombatSearchV2Report, CombatSearchV2TurnPlanPolicy,
-};
+use sts_simulator::ai::combat_search_v2::CombatSearchV2Report;
 
 use super::search_types::{SearchReview, SearchReviewFacts};
 
@@ -20,27 +18,21 @@ pub(super) fn search_review(
     label: &'static str,
     nodes: usize,
     wall_ms: u64,
-    turn_plan_policy: CombatSearchV2TurnPlanPolicy,
-    potion_policy: CombatSearchV2PotionPolicy,
-    max_potions_used: Option<u32>,
-    phase_guard_policy: &'static str,
-    setup_bias_policy: &'static str,
     report: &CombatSearchV2Report,
     action_preview_limit: usize,
-    rollout_policy: &'static str,
 ) -> SearchReview {
     let best = report.best_win_trajectory.as_ref();
     SearchReview {
         label,
         nodes,
         wall_ms,
-        rollout_policy,
-        turn_plan_policy: turn_plan_policy.label(),
-        phase_guard_policy,
-        setup_bias_policy,
+        rollout_policy: report.search_policy.rollout_policy,
+        turn_plan_policy: report.search_policy.turn_plan_policy,
+        phase_guard_policy: report.search_policy.phase_guard_policy,
+        setup_bias_policy: report.search_policy.action_prior_policy,
         child_rollout_policy: report.search_policy.child_rollout_policy,
-        potion_policy: potion_policy_label(potion_policy),
-        max_potions_used,
+        potion_policy: report.search_policy.potion_policy,
+        max_potions_used: report.budget.max_potions_used,
         complete_win: best.is_some(),
         hp_loss: best.map(|trajectory| trajectory.hp_loss),
         final_hp: best.map(|trajectory| trajectory.final_hp),
@@ -57,13 +49,5 @@ pub(super) fn search_review(
         facts: SearchReviewFacts {
             diagnostic_progress: diagnostic_progress_facts(report, action_preview_limit),
         },
-    }
-}
-
-fn potion_policy_label(policy: CombatSearchV2PotionPolicy) -> &'static str {
-    match policy {
-        CombatSearchV2PotionPolicy::Never => "never",
-        CombatSearchV2PotionPolicy::All => "all",
-        CombatSearchV2PotionPolicy::SemanticBudgeted => "semantic",
     }
 }

@@ -1,8 +1,8 @@
-use std::time::Duration;
-
 use sts_simulator::ai::combat_search_v2::{
-    run_combat_search_v2, CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2Report,
-    CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
+    run_combat_search_v2, CombatSearchAcceptancePluginId, CombatSearchArtifactPluginId,
+    CombatSearchBudgetSpec, CombatSearchPluginStack, CombatSearchProfile,
+    CombatSearchRolloutPluginId, CombatSearchV2Config, CombatSearchV2PotionPolicy,
+    CombatSearchV2Report, CombatSearchV2TurnPlanPolicy,
 };
 use sts_simulator::eval::combat_case::CombatCase;
 
@@ -20,25 +20,55 @@ pub(crate) fn run_search(
     max_potions_used: Option<u32>,
     options: &ReviewOptions,
 ) -> (SearchReview, CombatSearchV2Report) {
-    let rollout_policy = if options.disable_rollout {
-        CombatSearchV2RolloutPolicy::Disabled
-    } else {
-        CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
-    };
-    run_configured_search(
+    let mut profile = review_search_profile(label, nodes, wall_ms, options)
+        .with_turn_plan_plugin(turn_plan_policy.into())
+        .with_potion_policy(potion_policy);
+    if let Some(max_potions_used) = max_potions_used {
+        profile = profile.with_max_potions_used(max_potions_used);
+    }
+    run_profile_search(case, profile, options.action_preview_limit)
+}
+
+pub(crate) fn review_search_profile(
+    label: &'static str,
+    nodes: usize,
+    wall_ms: u64,
+    options: &ReviewOptions,
+) -> CombatSearchProfile {
+    CombatSearchProfile {
         label,
-        case,
-        CombatSearchV2Config {
+        budget: CombatSearchBudgetSpec {
             max_nodes: nodes,
-            wall_time: Some(Duration::from_millis(wall_ms)),
-            turn_plan_policy,
-            potion_policy,
-            max_potions_used,
-            rollout_policy,
-            child_rollout_policy: options.child_rollout_policy(),
-            ..CombatSearchV2Config::default()
+            wall_ms,
         },
-        options.action_preview_limit,
+        plugins: CombatSearchPluginStack {
+            rollout: review_rollout_plugin(options),
+            child_rollout: options.child_rollout_plugin(),
+            ..CombatSearchPluginStack::default()
+        },
+        acceptance: CombatSearchAcceptancePluginId::AcceptedLineOnly,
+        artifacts: CombatSearchArtifactPluginId::None,
+    }
+}
+
+pub(crate) fn review_rollout_plugin(options: &ReviewOptions) -> CombatSearchRolloutPluginId {
+    if options.disable_rollout {
+        CombatSearchRolloutPluginId::Disabled
+    } else {
+        CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion
+    }
+}
+
+pub(crate) fn run_profile_search(
+    case: &CombatCase,
+    profile: CombatSearchProfile,
+    action_preview_limit: usize,
+) -> (SearchReview, CombatSearchV2Report) {
+    run_configured_search(
+        profile.label,
+        case,
+        profile.to_config(),
+        action_preview_limit,
     )
 }
 
@@ -53,25 +83,7 @@ pub(crate) fn run_configured_search(
         .wall_time
         .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
         .unwrap_or_default();
-    let turn_plan_policy = config.turn_plan_policy;
-    let potion_policy = config.potion_policy;
-    let max_potions_used = config.max_potions_used;
-    let phase_guard_policy = config.phase_guard_policy.label();
-    let setup_bias_policy = config.setup_bias_policy.label();
-    let rollout_policy = config.rollout_policy.label();
     let report = run_combat_search_v2(&case.position.engine, &case.position.combat, config);
-    let review = search_review(
-        label,
-        nodes,
-        wall_ms,
-        turn_plan_policy,
-        potion_policy,
-        max_potions_used,
-        phase_guard_policy,
-        setup_bias_policy,
-        &report,
-        action_preview_limit,
-        rollout_policy,
-    );
+    let review = search_review(label, nodes, wall_ms, &report, action_preview_limit);
     (review, report)
 }

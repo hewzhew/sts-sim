@@ -1,15 +1,11 @@
-use std::time::Duration;
-
 use sts_simulator::ai::combat_search_v2::{
-    compile_combat_search_witness_prior_v0, CombatSearchV2Config, CombatSearchV2PhaseGuardPolicy,
-    CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy, CombatSearchV2TurnPlanPolicy,
-    CombatSearchV2WitnessReplay,
+    compile_combat_search_witness_prior_v0, CombatSearchV2PotionPolicy, CombatSearchV2WitnessReplay,
 };
 use sts_simulator::eval::combat_case::CombatCase;
 use sts_simulator::sim::combat::CombatTerminal;
 
 use super::super::options::ReviewOptions;
-use super::super::search_runner::run_configured_search;
+use super::super::search_runner::{review_search_profile, run_configured_search};
 use super::types::{CombatReviewFocus, CombatReviewFocusPriorRerun};
 use super::witness::focus_witness_line;
 
@@ -31,26 +27,20 @@ pub(crate) fn witness_prior_rerun(
     }
     let prior_states = witness_prior.prior_states;
     let duplicate_prior_hints = witness_prior.duplicate_prior_hints;
-    let rollout_policy = if options.disable_rollout {
-        CombatSearchV2RolloutPolicy::Disabled
-    } else {
-        CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
-    };
+    let mut config = review_search_profile(
+        "focus_witness_prior_rerun",
+        options.fast_nodes,
+        options.fast_ms,
+        options,
+    )
+    .with_potion_policy(CombatSearchV2PotionPolicy::Never)
+    .with_max_potions_used(0)
+    .to_config();
+    config.root_action_prior = Some(witness_prior.prior);
     let (rerun, _) = run_configured_search(
         "focus_witness_prior_rerun",
         case,
-        CombatSearchV2Config {
-            max_nodes: options.fast_nodes,
-            wall_time: Some(Duration::from_millis(options.fast_ms)),
-            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-            potion_policy: CombatSearchV2PotionPolicy::Never,
-            max_potions_used: Some(0),
-            phase_guard_policy: CombatSearchV2PhaseGuardPolicy::Default,
-            rollout_policy,
-            child_rollout_policy: options.child_rollout_policy(),
-            root_action_prior: Some(witness_prior.prior),
-            ..CombatSearchV2Config::default()
-        },
+        config,
         options.action_preview_limit,
     );
     Some(CombatReviewFocusPriorRerun {

@@ -1,16 +1,13 @@
-use std::time::Duration;
-
 use serde::Serialize;
 use sts_simulator::ai::combat_search_v2::{
-    CombatSearchV2Config, CombatSearchV2PotionPolicy, CombatSearchV2RolloutPolicy,
-    CombatSearchV2SetupBiasPolicy, CombatSearchV2TurnPlanPolicy,
+    CombatSearchActionPriorPluginId, CombatSearchV2PotionPolicy,
 };
 use sts_simulator::eval::combat_case::CombatCase;
 
 use super::focus::{review_focus, CombatReviewFocus};
 use super::key_card_lifecycle::{key_card_lifecycle, KeyCardLifecycleReport};
 use super::options::ReviewOptions;
-use super::search_runner::run_configured_search;
+use super::search_runner::{review_search_profile, run_profile_search};
 use super::search_types::SearchReview;
 
 #[derive(Serialize)]
@@ -35,27 +32,16 @@ pub(super) fn run_boss_setup_lane(
         return Some(skipped("not_boss_fight"));
     }
 
-    let rollout_policy = if options.disable_rollout {
-        CombatSearchV2RolloutPolicy::Disabled
-    } else {
-        CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
-    };
-    let (search, _) = run_configured_search(
+    let profile = review_search_profile(
         "boss_setup_key_card_online",
-        case,
-        CombatSearchV2Config {
-            max_nodes: options.slow_nodes,
-            wall_time: Some(Duration::from_millis(options.slow_ms)),
-            turn_plan_policy: CombatSearchV2TurnPlanPolicy::DiagnosticOnly,
-            potion_policy: CombatSearchV2PotionPolicy::All,
-            max_potions_used: Some(options.diagnostic_potion_max),
-            rollout_policy,
-            child_rollout_policy: options.child_rollout_policy(),
-            setup_bias_policy: CombatSearchV2SetupBiasPolicy::KeyCardOnline,
-            ..CombatSearchV2Config::default()
-        },
-        options.action_preview_limit,
-    );
+        options.slow_nodes,
+        options.slow_ms,
+        options,
+    )
+    .with_action_prior_plugin(CombatSearchActionPriorPluginId::KeyCardOnline)
+    .with_potion_policy(CombatSearchV2PotionPolicy::All)
+    .with_max_potions_used(options.diagnostic_potion_max);
+    let (search, _) = run_profile_search(case, profile, options.action_preview_limit);
     let focus = review_focus(std::slice::from_ref(&search));
     let key_card_lifecycle = key_card_lifecycle(&case.position, focus.as_ref());
 
