@@ -42,8 +42,12 @@ mod combat_search_lane_runner;
 mod combat_search_lanes;
 #[path = "branch_tiny/combat_search_orchestrator.rs"]
 mod combat_search_orchestrator;
+#[path = "branch_tiny/combat_search_portfolio_output.rs"]
+mod combat_search_portfolio_output;
 #[path = "branch_tiny/combat_search_portfolio_plan.rs"]
 mod combat_search_portfolio_plan;
+#[path = "branch_tiny/combat_search_portfolio_result.rs"]
+mod combat_search_portfolio_result;
 #[path = "branch_tiny/combat_search_recipe.rs"]
 mod combat_search_recipe;
 #[path = "branch_tiny/combat_search_report.rs"]
