@@ -7,6 +7,7 @@ notes are not kept searchable; use git history for archaeology.
 
 1. [ARCHITECTURE.md](ARCHITECTURE.md): ownership boundaries and design rules.
 2. [RUNBOOK.md](RUNBOOK.md): maintained commands and local verification.
+3. [TESTING.md](TESTING.md): test ownership, cleanup, and review standards.
 
 ## Rules
 
