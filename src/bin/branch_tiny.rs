@@ -88,6 +88,8 @@ mod owner_orchestrator;
 mod owner_routines;
 #[path = "branch_tiny/owners.rs"]
 mod owners;
+#[path = "branch_tiny/panel_scheduler.rs"]
+mod panel_scheduler;
 #[path = "branch_tiny/render.rs"]
 mod render;
 #[path = "branch_tiny/render_choice.rs"]

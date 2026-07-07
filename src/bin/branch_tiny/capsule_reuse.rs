@@ -4,14 +4,12 @@ use super::run_contract::RunContract;
 use super::run_identity::SourceIdentity;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
 pub(super) enum CapsuleReuseDecision {
     Exact,
     UnknownLegacy,
     Incompatible,
 }
 
-#[allow(dead_code)]
 pub(super) fn decide_manifest_reuse(
     manifest: &Value,
     expected_contract: RunContract,
