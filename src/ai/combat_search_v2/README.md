@@ -21,8 +21,10 @@ this map and extend an existing boundary when one already exists.
 - `search/bootstrap.rs`: root search-node construction, root rollout estimate,
   initial frontier insertion, and optional root turn-plan seeding.
 - `search/loop_state/`: mutable search-loop state ownership: frontier, stats,
-  diagnostics, transposition/dominance tables, rollout cache, and best-line
-  candidates.
+  diagnostics, transposition/dominance tables, rollout cache, runtime plugin
+  stack, and best-line candidates. Search-loop stages should read deployable
+  search behavior from this plugin stack rather than reinterpreting
+  `CombatSearchV2Config` policy fields.
   - `search/loop_state/frontier.rs`: frontier push/pop and pop timing.
   - `search/loop_state/counters.rs`: stop flags, node counters, and prune/cut
     counters.
@@ -42,8 +44,8 @@ this map and extend an existing boundary when one already exists.
     turn-boundary frontier seed admission and insertion.
 - `search/node_expansion.rs`: one expandable node to an ordered action batch. It
   coordinates the action-surface and ordering stages below.
-  - `search/node_action_surface.rs`: legal-action collection, potion filtering,
-    and report-only diagnostics for the node action surface.
+  - `search/node_action_surface.rs`: legal-action collection, potion-plugin
+    filtering, and report-only diagnostics for the node action surface.
   - `search/node_action_ordering.rs`: local action equivalence compression,
     root action prior lookup, action ordering, and pending-choice ordering
     diagnostics.
@@ -51,7 +53,8 @@ this map and extend an existing boundary when one already exists.
     turn branching and same-turn local dominance.
 - `search/child_expansion.rs`: one ordered action to child disposition. It
   coordinates the child-stage pipeline below.
-  - `search/child_preflight.rs`: per-child potion budget and deadline gates.
+  - `search/child_preflight.rs`: per-child potion-plugin budget and deadline
+    gates.
   - `search/child_step.rs`: apply one action through the combat stepper and
     record engine-step timing/limits.
   - `search/child_node.rs`: construct the child `SearchNode` and action trace.
@@ -67,7 +70,8 @@ this map and extend an existing boundary when one already exists.
   before report assembly.
   - `search/finish_coverage.rs`: finished-search coverage status and reason.
   - `search/finish_frontier.rs`: frontier sample extraction for reports.
-  - `search/finish_policy.rs`: config-to-policy/budget report sections.
+  - `search/finish_policy.rs`: plugin/config-to-policy and budget report
+    sections.
   - `search/finish_outcome.rs`: coverage outcome report section.
   - `search/finish_evidence.rs`: evidence reliability and warning section.
 - `search/win_acceptance.rs`: stop/accept criteria for complete win candidates.
@@ -79,6 +83,10 @@ this map and extend an existing boundary when one already exists.
   - `types/config/policies.rs`: policy enums, labels, serde aliases, and
     high-stakes potion budget helper.
   - `types/config/prior.rs`: root-action and turn-plan prior hint maps.
+- `plugins.rs`: deployable search profile/plugin identity. Runner-facing
+  profiles materialize config for compatibility, but runtime search stages
+  should consume plugin ids for action prior, phase guard, frontier, rollout,
+  turn-plan, potion, acceptance, and artifact behavior.
 - `types/report/`: JSON report schema. Add fields only when a consumer uses
   them to make an implementation decision.
 
