@@ -2,7 +2,7 @@
 
 ## Status
 
-Review draft, iteration 2. This document defines the intended architecture
+Review draft, iteration 3. This document defines the intended architecture
 before implementation. It does not change runner behavior by itself.
 
 ## Problem
@@ -45,6 +45,7 @@ The closest mature analogs are:
 
 - durable workflow engines: event history plus deterministic replay,
 - data/workflow systems: task identity plus work avoidance,
+- build caches: strict keys, partial restore, and cache-hit visibility,
 - experiment trackers: runs with params, metrics, artifacts, and resume ids,
 - HPC schedulers: wall-time signal, checkpoint, requeue,
 - anytime/contract algorithms: bounded slices with meaningful partial results.
@@ -274,6 +275,62 @@ The panel can start with a smaller implementation, but the design target is
 fielded identity. Opaque hashes are useful for equality checks; fielded identity
 is useful for review.
 
+### Identity Strictness
+
+The scheduler should distinguish exact identity matches from weaker matches.
+
+```text
+identity_match = exact
+               | compatible_partial
+               | incompatible
+               | unknown
+```
+
+Only `exact` may silently reuse a real stop. `compatible_partial` may be used
+for inspection or explicit continuation, but the row must show that it was not
+a strict cache hit. This follows cache systems where a fallback/restore-key hit
+is useful but not equivalent to the primary key.
+
+Initial strictness should be conservative:
+
+```text
+exact:
+  game identity, runner contract, policy/search versions, and source identity
+  all match.
+
+compatible_partial:
+  game identity matches and the capsule has a valid frontier, but one
+  non-state-changing display/report field changed.
+
+incompatible:
+  game identity differs, policy/search behavior differs, source is newer, or
+  artifact schema is not understood.
+
+unknown:
+  old capsule lacks enough identity fields.
+```
+
+For V1, `unknown` should not be silently reused. It can be continued only under
+an explicit compatibility flag or after a one-time migration stamps enough
+identity into the capsule.
+
+### Input-Addressed, Not Output-Addressed
+
+Run identity should be input-addressed:
+
+```text
+requested run contract + policy/search/source identity -> reusable capsule
+```
+
+It should not be output-addressed:
+
+```text
+capsule happened to reach A3 or victory -> reuse
+```
+
+This matters because two different policies can both win while producing
+different evidence. The panel must preserve which policy produced the result.
+
 ## Budget Model
 
 Four budgets must stay separate:
@@ -323,10 +380,28 @@ reuse_decision = reused_real_stop
                | created_new_capsule
                | rejected_stale_capsule
                | fresh_replaced_capsule
+               | inspected_partial_match
+               | rejected_unknown_identity
 ```
 
 This field matters because "not rerun" can be either a correct cache hit or a
 bug that hid stale data.
+
+### Fresh And Archive Semantics
+
+`--fresh` should not silently delete prior evidence. The preferred behavior is:
+
+```text
+--fresh:
+  move existing capsule to an archive directory with timestamp and old identity,
+  then create a new capsule.
+
+--fresh --discard-old:
+  delete old capsule after writing a short tombstone row in the panel ledger.
+```
+
+The default should be archive, not delete. Deletion is acceptable only when the
+caller explicitly asks for disposable output.
 
 ## Panel Output Contract
 
@@ -376,6 +451,75 @@ total_slices
 
 Do not add prose conclusions such as "reward is the problem" to the panel
 summary. A later analysis tool may interpret rows, but the scheduler should not.
+
+## Ledger Placement
+
+There should be two ledgers with different scopes.
+
+### Panel Ledger
+
+`panel_ledger.jsonl` records scheduler decisions:
+
+```text
+panel_started
+build_started
+build_finished
+seed_identity_resolved
+capsule_reuse_decision
+slice_scheduled
+slice_finished
+row_refreshed
+panel_finished
+```
+
+It answers:
+
+```text
+Why did this panel run, skip, continue, or reject a seed?
+```
+
+### Capsule Ledger
+
+`capsule_ledger.jsonl` records one capsule's execution history:
+
+```text
+capsule_created
+slice_started
+manifest_written
+frontier_written
+result_written
+terminal_written
+summary_written
+slice_finished
+```
+
+It answers:
+
+```text
+What happened to this run identity over time?
+```
+
+Neither ledger should contain large path snapshots, full decks, candidate pools,
+or combat traces. They should reference existing artifacts by path and schema.
+This prevents ledgers from becoming another report system.
+
+### Summary Is A Projection
+
+`summary.json` is derived from the latest valid capsule state plus selected
+ledger facts. Tools may read it for convenience. Tools must not assume it is
+the recovery source of truth.
+
+If a summary disagrees with ledger/artifacts, the repair path is:
+
+```text
+read ledger/artifacts -> regenerate summary
+```
+
+not:
+
+```text
+edit summary by hand
+```
 
 ## CLI Shape
 
@@ -491,6 +635,8 @@ The design is complete, but implementation can be staged.
 - Detect stale/incompatible capsules.
 - Record binary/source fingerprint at the level available locally.
 - Make panel reuse conditional on identity match.
+- Treat unknown identity as non-reusable by default.
+- Implement `--fresh` archival before destructive replacement.
 
 ### Phase 3: Round-Robin Slice Scheduling
 
@@ -523,8 +669,10 @@ Tests should cover stable scheduler contracts, not prose:
 - missing summary becomes `missing_summary`,
 - `--wall-ms` and `--slice-ms` produce the same slice budget.
 - incompatible identity is not silently reused,
+- unknown identity is not silently reused,
 - panel summary includes one row per requested seed,
 - scheduler ledger records reuse decisions.
+- `--fresh` archives or tombstones the previous capsule.
 
 Do not add tests for exact human table spacing.
 
@@ -541,6 +689,8 @@ The design is working when:
   logs or human summaries.
 - a second invocation of the same panel produces mostly reuse decisions, not
   duplicate work.
+- a fallback/partial identity match is visibly marked and never counted as an
+  exact reuse.
 
 ## Open Decisions Before Implementation
 
@@ -552,6 +702,7 @@ These should be answered in the implementation plan, not by ad hoc code:
 - transition period for `--continue-soft-wall`,
 - whether `gap_panel.py` remains the long-term scheduler or becomes a thin
   launcher over a Rust scheduler.
+- exact migration rule for old capsules without identity fields.
 
 ## External References Considered
 
@@ -566,8 +717,15 @@ These references informed the architecture; they are not dependencies.
   https://docs.seqera.io/nextflow/cache-and-resume
 - Bazel remote caching:
   https://bazel.build/remote/caching
+- Nix input-addressed and content-addressed derivations:
+  https://nix.dev/manual/nix/2.24/language/advanced-attributes.html
 - DVC pipelines and run cache:
   https://doc.dvc.org/start/data-pipelines/data-pipelines
+  and https://doc.dvc.org/command-reference/repro
+- ccache direct/preprocessor cache key modes:
+  https://ccache.dev/manual/4.13.6.html
+- GitHub Actions dependency cache keys and restore keys:
+  https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching
 - Argo Workflows work avoidance and memoization:
   https://argo-workflows.readthedocs.io/en/latest/work-avoidance/
   and https://argo-workflows.readthedocs.io/en/latest/memoization/
