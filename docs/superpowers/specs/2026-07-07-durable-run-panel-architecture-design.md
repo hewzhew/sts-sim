@@ -44,6 +44,9 @@ Current implementation has established the first durable panel path:
   infer manifest/frontier/result/summary writes from the filesystem.
 - `ArtifactWriteSummary` now includes typed `ArtifactRef` entries for observed
   capsule writes, including kind, path, schema, and creator metadata.
+- `panel_ledger.jsonl` now records `ArtifactRef` entries from executed
+  `RunSliceResult` values, so ledger rows no longer rely only on capsule file
+  existence checks.
 - Capsule JSON/path persistence for owner-audit runs is now isolated in
   `capsule_artifact_store.rs`; `run_capsule.rs` is a runtime handle that
   delegates concrete filesystem writes to that adapter.
@@ -58,8 +61,9 @@ Still open:
 - richer named policy/search config comparison beyond the current
   `baseline` / `double-search` V0.
 - completing the capsule artifact store boundary with a more public store
-  facade and broader `ArtifactRef` consumption in panel rows/ledgers; concrete
-  owner-audit capsule writes have been moved out of `run_capsule.rs`.
+  facade and broader `ArtifactRef` consumption in panel rows; concrete
+  owner-audit capsule writes have been moved out of `run_capsule.rs`, and panel
+  ledger events now consume runtime artifact refs.
 - narrowing the remaining owner-audit facade surface so persistence and
   run-slice result construction are less mixed with owner/search internals.
 
@@ -1415,8 +1419,9 @@ The first cut should be deliberately modest:
 Current implementation has completed the first `ArtifactWriteSummary` plumbing
 for core capsule writes in `RunSliceResult`; those summaries now carry typed
 `ArtifactRef` values. Owner-audit JSON writes live behind a
-`CapsuleArtifactStore` adapter. A fully public store facade and wider
-`ArtifactRef` consumption remain open; the current adapter still preserves the
+`CapsuleArtifactStore` adapter. Panel ledger events now consume those refs from
+executed `RunSliceResult` values. A fully public store facade and wider
+panel-row consumption remain open; the current adapter still preserves the
 legacy JSON schemas.
 
 It should not yet redesign every artifact schema. The goal is to put a wall

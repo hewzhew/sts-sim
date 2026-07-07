@@ -150,6 +150,7 @@ pub struct SliceBudgetSummary {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ArtifactKind {
     Manifest,
     Frontier,
@@ -250,6 +251,21 @@ impl ArtifactWriteSummary {
                 self.combat_case_ref = Some(artifact);
             }
         }
+    }
+
+    pub fn refs(&self) -> Vec<ArtifactRef> {
+        [
+            self.manifest_ref.clone(),
+            self.frontier_ref.clone(),
+            self.result_ref.clone(),
+            self.path_ref.clone(),
+            self.summary_ref.clone(),
+            self.terminal_ref.clone(),
+            self.combat_case_ref.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
     }
 }
 

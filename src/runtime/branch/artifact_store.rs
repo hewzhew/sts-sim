@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use super::{PanelRunMode, PanelSeedAction, PanelSeedArtifacts, PanelSummary};
+use super::{ArtifactRef, PanelRunMode, PanelSeedAction, PanelSeedArtifacts, PanelSummary};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BranchArtifactStore {
@@ -22,6 +22,7 @@ pub struct PanelLedgerEvent {
     pub run_mode: Option<PanelRunMode>,
     pub slice_index: Option<usize>,
     pub error: Option<String>,
+    pub artifact_refs: Vec<ArtifactRef>,
 }
 
 impl PanelLedgerEvent {
@@ -34,6 +35,7 @@ impl PanelLedgerEvent {
             run_mode: None,
             slice_index: None,
             error: None,
+            artifact_refs: Vec::new(),
         }
     }
 
@@ -44,6 +46,7 @@ impl PanelLedgerEvent {
         run_mode: PanelRunMode,
         slice_index: usize,
         error: Option<String>,
+        artifact_refs: Vec<ArtifactRef>,
     ) -> Self {
         Self {
             schema: "branch_panel_ledger_event_v0",
@@ -53,6 +56,7 @@ impl PanelLedgerEvent {
             run_mode: Some(run_mode),
             slice_index: Some(slice_index),
             error,
+            artifact_refs,
         }
     }
 }

@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{
-    decide_manifest_reuse, Args, BranchArtifactStore, CapsuleReuseDecision, OwnerAuditRuntime,
-    OwnerAuditSliceRequest, PanelLedgerEvent, RunContract, SourceIdentity,
+    decide_manifest_reuse, Args, ArtifactRef, BranchArtifactStore, CapsuleReuseDecision,
+    OwnerAuditRuntime, OwnerAuditSliceRequest, PanelLedgerEvent, RunContract, RunSliceResult,
+    SourceIdentity,
 };
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -360,14 +361,14 @@ impl PanelSmokeRunner {
 }
 
 trait PanelSliceExecutor {
-    fn run_slice(&mut self, request: OwnerAuditSliceRequest) -> Result<(), String>;
+    fn run_slice(&mut self, request: OwnerAuditSliceRequest) -> Result<RunSliceResult, String>;
 }
 
 struct OwnerAuditSliceExecutor;
 
 impl PanelSliceExecutor for OwnerAuditSliceExecutor {
-    fn run_slice(&mut self, request: OwnerAuditSliceRequest) -> Result<(), String> {
-        OwnerAuditRuntime::run_capsule_slice(request).map(|_| ())
+    fn run_slice(&mut self, request: OwnerAuditSliceRequest) -> Result<RunSliceResult, String> {
+        OwnerAuditRuntime::run_capsule_slice(request)
     }
 }
 
@@ -408,6 +409,7 @@ fn run_slices_with_executor(
                             options.mode,
                             slice_index,
                             Some(error.clone()),
+                            Vec::new(),
                         )?;
                         failures.insert(resolution.seed, error);
                         continue;
@@ -426,6 +428,7 @@ fn run_slices_with_executor(
                             options.mode,
                             slice_index,
                             None,
+                            Vec::new(),
                         )?;
                         status_overrides.insert(resolution.seed, PanelRowStatus::Skipped);
                         continue;
@@ -468,6 +471,7 @@ fn run_slices_with_executor(
                         options.mode,
                         slice_index,
                         None,
+                        Vec::new(),
                     )?;
                 }
             }
@@ -501,7 +505,7 @@ fn run_panel_seed_slice(
         resume,
         human_output: false,
     }) {
-        Ok(_) => {
+        Ok(result) => {
             append_panel_event(
                 config,
                 seed,
@@ -510,6 +514,7 @@ fn run_panel_seed_slice(
                 run_mode,
                 slice_index,
                 None,
+                result.artifacts.refs(),
             )?;
             Ok(None)
         }
@@ -522,6 +527,7 @@ fn run_panel_seed_slice(
                 run_mode,
                 slice_index,
                 Some(error.clone()),
+                Vec::new(),
             )?;
             Ok(Some(error))
         }
@@ -536,8 +542,17 @@ fn append_panel_event(
     run_mode: PanelRunMode,
     slice_index: usize,
     error: Option<String>,
+    artifact_refs: Vec<ArtifactRef>,
 ) -> Result<(), String> {
-    let event = PanelLedgerEvent::for_slice(seed, action, event, run_mode, slice_index, error);
+    let event = PanelLedgerEvent::for_slice(
+        seed,
+        action,
+        event,
+        run_mode,
+        slice_index,
+        error,
+        artifact_refs,
+    );
     config
         .artifact_store
         .append_panel_ledger_event(None, &event)
@@ -733,7 +748,10 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::runtime::branch::{Args, RunObjective};
+    use crate::runtime::branch::{
+        Args, FrontierSummary, RunObjective, RunSliceRequestKind, RunSliceResult, RunStop,
+        SoftPause,
+    };
 
     fn args(seed: u64) -> Args {
         Args {
@@ -761,6 +779,29 @@ mod tests {
             git_commit: Some("abc123".to_string()),
             git_dirty: Some(false),
         }
+    }
+
+    fn ok_slice_result(args: Args) -> RunSliceResult {
+        RunSliceResult::new(
+            args,
+            RunSliceRequestKind::Start,
+            0,
+            0,
+            1,
+            RunStop::SoftPause(SoftPause::GenerationLimit {
+                generation: 0,
+                frontier_running_count: 1,
+            }),
+            FrontierSummary {
+                total_count: 1,
+                running_count: 1,
+                expandable_count: 1,
+                terminal_count: 0,
+                gap_count: 0,
+            },
+            Some(0),
+            0,
+        )
     }
 
     fn request_for_path(seed: u64, capsule_path: PathBuf) -> PanelSeedRequest {
@@ -1208,6 +1249,16 @@ mod tests {
         assert!(root.join("123").join("manifest.json").exists());
         let ledger = fs::read_to_string(root.join("panel_ledger.jsonl")).unwrap();
         assert!(ledger.contains("\"event\":\"executed\""));
+        let ledger_row: serde_json::Value =
+            serde_json::from_str(ledger.lines().next().unwrap()).unwrap();
+        assert_eq!(
+            ledger_row["artifact_refs"][1]["kind"],
+            serde_json::json!("frontier")
+        );
+        assert_eq!(
+            ledger_row["artifact_refs"][1]["schema"],
+            serde_json::json!("branch_tiny_frontier_checkpoint")
+        );
         assert!(summary.rows[0].manifest_exists);
 
         let _ = fs::remove_dir_all(root);
@@ -1261,11 +1312,14 @@ mod tests {
         }
 
         impl PanelSliceExecutor for FailingSeedExecutor {
-            fn run_slice(&mut self, request: OwnerAuditSliceRequest) -> Result<(), String> {
+            fn run_slice(
+                &mut self,
+                request: OwnerAuditSliceRequest,
+            ) -> Result<RunSliceResult, String> {
                 if request.args.seed == self.failed_seed {
                     Err("synthetic slice failure".to_string())
                 } else {
-                    Ok(())
+                    Ok(ok_slice_result(request.args))
                 }
             }
         }
@@ -1308,7 +1362,10 @@ mod tests {
         struct PanicExecutor;
 
         impl PanelSliceExecutor for PanicExecutor {
-            fn run_slice(&mut self, _request: OwnerAuditSliceRequest) -> Result<(), String> {
+            fn run_slice(
+                &mut self,
+                _request: OwnerAuditSliceRequest,
+            ) -> Result<RunSliceResult, String> {
                 panic!("continue mode should not start missing capsules")
             }
         }
@@ -1343,8 +1400,11 @@ mod tests {
         struct OkExecutor;
 
         impl PanelSliceExecutor for OkExecutor {
-            fn run_slice(&mut self, _request: OwnerAuditSliceRequest) -> Result<(), String> {
-                Ok(())
+            fn run_slice(
+                &mut self,
+                request: OwnerAuditSliceRequest,
+            ) -> Result<RunSliceResult, String> {
+                Ok(ok_slice_result(request.args))
             }
         }
 
