@@ -3,7 +3,8 @@ use sts_simulator::ai::combat_search_v2::{
 };
 use sts_simulator::eval::combat_case::CombatCase;
 
-use super::super::search_runner::run_configured_search;
+use super::super::search_intervention::ReviewSearchIntervention;
+use super::super::search_runner::run_config_search;
 use super::feedback_comparison::compare_success_feedback;
 use super::specs::QualityLaneSpec;
 use super::types::{CombatSuccessFeedbackMetrics, CombatSuccessFeedbackRerun};
@@ -28,10 +29,11 @@ pub(super) fn run_success_feedback_rerun(
     }
     let prior_states = witness_prior.prior_states;
     let duplicate_prior_hints = witness_prior.duplicate_prior_hints;
-    let mut config = source.spec.config(max_nodes, wall_ms);
-    config.input_label = Some(format!("success_feedback_rerun:{}", source.spec.label));
-    config.root_action_prior = Some(witness_prior.prior);
-    let (rerun, _report) = run_configured_search(
+    let config = ReviewSearchIntervention::default()
+        .with_input_label(format!("success_feedback_rerun:{}", source.spec.label))
+        .with_root_action_prior(witness_prior.prior)
+        .apply(source.spec.config(max_nodes, wall_ms));
+    let (rerun, _report) = run_config_search(
         "quality_success_feedback_rerun",
         case,
         config,

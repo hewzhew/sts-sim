@@ -9,7 +9,7 @@ use sts_simulator::sim::combat::{
 use super::super::focus::review_focus;
 use super::super::key_card_lifecycle::key_card_lifecycle;
 use super::super::options::ReviewOptions;
-use super::super::search_runner::run_configured_search;
+use super::super::search_runner::run_config_search;
 use super::super::search_types::SearchReview;
 use super::config::duel_search_config;
 use super::transition::{root_potions_used, root_transition};
@@ -83,7 +83,7 @@ fn run_child_search(
             .diagnostic_potion_max
             .saturating_sub(root_potions_used),
     );
-    run_configured_search(
+    run_config_search(
         "root_action_role_duel_child",
         case,
         config,

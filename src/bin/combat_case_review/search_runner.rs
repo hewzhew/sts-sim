@@ -64,7 +64,7 @@ pub(crate) fn run_profile_search(
     profile: CombatSearchProfile,
     action_preview_limit: usize,
 ) -> (SearchReview, CombatSearchV2Report) {
-    run_configured_search(
+    run_config_search(
         profile.label,
         case,
         profile.to_config(),
@@ -72,7 +72,7 @@ pub(crate) fn run_profile_search(
     )
 }
 
-pub(crate) fn run_configured_search(
+pub(crate) fn run_config_search(
     label: &'static str,
     case: &CombatCase,
     config: CombatSearchV2Config,

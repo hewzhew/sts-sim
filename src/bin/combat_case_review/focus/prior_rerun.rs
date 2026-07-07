@@ -5,7 +5,8 @@ use sts_simulator::eval::combat_case::CombatCase;
 use sts_simulator::sim::combat::CombatTerminal;
 
 use super::super::options::ReviewOptions;
-use super::super::search_runner::{review_search_profile, run_configured_search};
+use super::super::search_intervention::ReviewSearchIntervention;
+use super::super::search_runner::{review_search_profile, run_config_search};
 use super::types::{CombatReviewFocus, CombatReviewFocusPriorRerun};
 use super::witness::focus_witness_line;
 
@@ -27,17 +28,18 @@ pub(crate) fn witness_prior_rerun(
     }
     let prior_states = witness_prior.prior_states;
     let duplicate_prior_hints = witness_prior.duplicate_prior_hints;
-    let mut config = review_search_profile(
+    let profile = review_search_profile(
         "focus_witness_prior_rerun",
         options.fast_nodes,
         options.fast_ms,
         options,
     )
     .with_potion_policy(CombatSearchV2PotionPolicy::Never)
-    .with_max_potions_used(0)
-    .to_config();
-    config.root_action_prior = Some(witness_prior.prior);
-    let (rerun, _) = run_configured_search(
+    .with_max_potions_used(0);
+    let config = ReviewSearchIntervention::default()
+        .with_root_action_prior(witness_prior.prior)
+        .apply_to_profile(profile);
+    let (rerun, _) = run_config_search(
         "focus_witness_prior_rerun",
         case,
         config,

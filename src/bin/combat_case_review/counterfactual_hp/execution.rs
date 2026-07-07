@@ -5,7 +5,7 @@ use super::super::options::ReviewOptions;
 use super::super::quality_lanes::{
     combat_line_quality, compare_quality, quality_lane_specs, witness_line_from_trajectory,
 };
-use super::super::search_runner::run_configured_search;
+use super::super::search_runner::run_config_search;
 use super::targets::combat_case_with_player_hp;
 use super::types::{CounterfactualHpCandidate, CounterfactualHpLevel, CounterfactualHpReplay};
 
@@ -31,7 +31,7 @@ pub(super) fn run_counterfactual_hp_level(
     let mut best: Option<CounterfactualHpCandidate> = None;
     let mut total_terminal_wins = 0;
     for spec in specs {
-        let (review, report) = run_configured_search(
+        let (review, report) = run_config_search(
             spec.label,
             &case,
             spec.config(per_lane_nodes, per_lane_wall_ms),

@@ -24,7 +24,7 @@ pub(crate) use types::CombatLineQuality;
 pub(super) use types::CombatQualityLaneReview;
 
 use super::options::ReviewOptions;
-use super::search_runner::run_configured_search;
+use super::search_runner::run_config_search;
 use feedback::run_success_feedback_rerun;
 use feedback_selection::CombatFeedbackSourcePicker;
 use types::CombatQualityLaneResult;
@@ -48,7 +48,7 @@ pub(super) fn run_quality_lanes(
     let mut lanes = Vec::new();
     let mut feedback_sources = CombatFeedbackSourcePicker::default();
     for lane in specs {
-        let (review, report) = run_configured_search(
+        let (review, report) = run_config_search(
             lane.label,
             case,
             lane.config(per_lane_nodes, per_lane_wall_ms),

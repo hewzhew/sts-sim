@@ -33,6 +33,8 @@ mod quality_lanes;
 mod review_pipeline;
 #[path = "combat_case_review/root_action_role_duel.rs"]
 mod root_action_role_duel;
+#[path = "combat_case_review/search_intervention.rs"]
+mod search_intervention;
 #[path = "combat_case_review/search_review.rs"]
 mod search_review;
 #[path = "combat_case_review/search_runner.rs"]
