@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 
 use super::run_capsule::RunCapsule;
 use super::run_chain_state::{capsule_state, manifest_wall_ms, CapsuleState};
+use super::run_slice_result::RunSliceResult;
 use super::run_startup::RunStartupContext;
 use super::{branch_runtime, frontier_checkpoint, Args, ArgsOverrides, ContinueCapsuleArgs};
 
@@ -27,7 +28,7 @@ pub(super) fn run(
     for index in 0..chain.max_slices {
         let before = capsule_state(&chain.capsule)?;
         if index == 0 && before.manifest_exists && !before.frontier_exists {
-            slices.push(before.into_value(index, false, None));
+            slices.push(before.into_value(index, false, None, None));
             break;
         }
         let resume = before.frontier_exists;
@@ -35,8 +36,12 @@ pub(super) fn run(
         let after = capsule_state(&chain.capsule)?;
         let should_continue = after.is_wall_pause();
         let success = slice.is_ok();
+        let slice_result = match &slice {
+            Ok(result) => Some(serde_json::to_value(result).map_err(|err| err.to_string())?),
+            Err(err) => Some(json!({"runtime_error": err})),
+        };
         print_slice_summary(index, chain.max_slices, resume, success, &after);
-        slices.push(after.into_value(index, resume, Some(success)));
+        slices.push(after.into_value(index, resume, Some(success), slice_result));
         write_chain(&chain.capsule, chain.max_slices, &slices)?;
         if let Err(err) = slice {
             return Err(format!("continuation slice {index} failed: {err}"));
@@ -53,7 +58,7 @@ fn run_slice(
     overrides: ArgsOverrides,
     capsule_path: &PathBuf,
     resume: bool,
-) -> Result<(), String> {
+) -> Result<RunSliceResult, String> {
     let started = Instant::now();
     let run_capsule = RunCapsule::new(capsule_path.clone());
     let mut effective_args = args;
@@ -87,7 +92,7 @@ fn run_slice(
         next_branch_id,
         started,
     };
-    branch_runtime::BranchRuntime::run_slice(context).map(|_| ())
+    branch_runtime::BranchRuntime::run_slice(context)
 }
 
 fn write_chain(capsule: &PathBuf, max_slices: usize, slices: &[Value]) -> Result<(), String> {
@@ -183,6 +188,14 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(capsule.join("manifest.json")).unwrap())
                 .unwrap();
         assert_eq!(manifest["run_contract"]["game"]["seed"], 123);
+        let chain: Value =
+            serde_json::from_str(&fs::read_to_string(capsule.join("chain.json")).unwrap()).unwrap();
+        assert_eq!(chain["slices"][0]["runtime_success"], true);
+        assert!(chain["slices"][0]["process_success"].is_null());
+        assert_eq!(
+            chain["slices"][0]["slice_result"]["contract"]["game"]["seed"],
+            123
+        );
 
         let _ = fs::remove_dir_all(capsule);
     }

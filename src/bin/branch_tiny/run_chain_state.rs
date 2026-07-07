@@ -27,12 +27,14 @@ impl CapsuleState {
         self,
         slice: usize,
         resumed: bool,
-        process_success: Option<bool>,
+        runtime_success: Option<bool>,
+        slice_result: Option<Value>,
     ) -> Value {
         json!({
             "slice": slice,
             "resumed": resumed,
-            "process_success": process_success,
+            "runtime_success": runtime_success,
+            "slice_result": slice_result,
             "manifest": self.manifest_exists,
             "frontier": self.frontier_exists,
             "result": self.result_exists,
