@@ -30,16 +30,8 @@ For bounded continuation, use `drain`:
 cargo run --bin branch_panel -- panel drain --seeds 1552225671 1552225672 --capsule-root tools/artifacts/panels/current --max-slices 3 --slice-ms 60000
 ```
 
-Compare named search profiles without mutating the base seed capsules:
-
-```powershell
-cargo run --bin branch_panel -- panel compare --profiles baseline,double-search --seeds 1552225671 1552225672 --capsule-root tools/artifacts/panels/current --max-slices 1 --slice-ms 60000
-```
-
-Compare capsules are materialized under `_compare/<profile>/<seed>`.
-
-`tools/gap_panel.py` is a deprecated compatibility wrapper over
-`branch_panel`; do not add new panel semantics there.
+The retired `tools/gap_panel.py` compatibility wrapper has been removed. Use
+`branch_panel` directly for all panel runs.
 
 ## Continue A Capsule
 

@@ -68,9 +68,8 @@ Current implementation has established the first durable panel path:
 - `run_loop.rs` now delegates capsule result persistence to
   `RunStopRecorder`, so the loop no longer directly writes result artifacts or
   formats capsule result output.
-- `tools/gap_panel.py` is now a deprecated compatibility wrapper over
-  `branch_panel`; it no longer owns seed deletion, continuation, or
-  `branch_tiny` process orchestration.
+- The retired `tools/gap_panel.py` compatibility wrapper has been removed.
+  Panel scheduling must use `branch_panel` directly.
 
 Still open:
 
@@ -89,7 +88,8 @@ Still open:
 
 ## Problem
 
-`tools/gap_panel.py` currently behaves like a convenience wrapper:
+The retired `tools/gap_panel.py` wrapper used to behave like a convenience
+wrapper:
 
 - build `branch_tiny`,
 - delete each seed capsule,
@@ -692,13 +692,12 @@ edit summary by hand
 
 ## CLI Shape
 
-The future panel command should call a Rust scheduler, not a Python scheduler:
+The panel command calls a Rust scheduler, not a Python scheduler:
 
 ```powershell
-cargo run --bin branch_panel -- panel run `
+cargo run --bin branch_panel -- panel drain `
   --seeds 1552225671..1552225675 `
-  --capsule-root tools/artifacts/gap_panels/current `
-  --mode continue `
+  --capsule-root tools/artifacts/panels/current `
   --slice-ms 15000 `
   --max-slices 8 `
   --max-active 1
@@ -709,7 +708,7 @@ Compatibility:
 - keep `branch_tiny --wall-ms` as an alias for `--slice-ms` during migration,
 - keep `branch_tiny --continue-capsule` temporarily, but implement it through
   `BranchRuntime`, not by spawning a child process,
-- keep `tools/gap_panel.py` only as a temporary wrapper or retire it,
+- do not keep a Python gap-panel compatibility wrapper,
 - add `--fresh` for explicit reruns,
 - add `--mode smoke|continue|drain|compare`,
 - reject ambiguous aliases such as `--output-root` unless intentionally added
@@ -1567,8 +1566,7 @@ The first cut should come after `BranchRuntime` and in-process continuation:
 3. Support max_active=1 only.
 4. Use BranchRuntime directly.
 5. Write panel_summary.json and panel_ledger.jsonl.
-6. Keep tools/gap_panel.py as deprecated wrapper or leave it untouched until
-   branch_panel covers current usage.
+6. Do not keep a Python compatibility wrapper for panel scheduling.
 ```
 
 It should not yet implement parallelism, HTML, or ML export.
@@ -1652,8 +1650,8 @@ The design is complete, but implementation should be staged.
 
 - Update `docs/RUNBOOK.md`.
 - Rename panel wording from wall deadline to slice soft pause.
-- Deprecate or delete `tools/gap_panel.py` after `branch_panel` covers the
-  workflow.
+- Keep the retired `tools/gap_panel.py` wrapper deleted after `branch_panel`
+  covers the workflow.
 - Remove or deprecate obsolete panel options after one migration window.
 
 ### Phase 7: Compare Mode
@@ -1772,8 +1770,8 @@ must write modern identity fields.
 `branch_tiny --continue-capsule` remains during migration, but it must be
 rewritten to call `BranchRuntime` in-process before `branch_panel` is added.
 
-`tools/gap_panel.py` gets no new semantics. It may remain temporarily as a thin
-launcher or be retired once `branch_panel` supports `smoke` and `continue`.
+The retired `tools/gap_panel.py` wrapper is removed. Do not reintroduce a
+Python compatibility launcher for panel scheduling.
 
 ### Module Location
 
