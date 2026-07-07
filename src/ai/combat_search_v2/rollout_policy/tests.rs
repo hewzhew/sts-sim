@@ -54,7 +54,7 @@ fn conservative_rollout_policy_filters_potion_actions() {
     ];
 
     let filtered = filtered_rollout_legal_actions(
-        CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+        CombatSearchRolloutPluginId::ConservativeNoPotion,
         legal,
         &combat,
     );
@@ -72,7 +72,7 @@ fn conservative_rollout_policy_reports_selection_reason() {
     )];
 
     let selection = choose_rollout_action(
-        CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+        CombatSearchRolloutPluginId::ConservativeNoPotion,
         &test_node(combat.clone()),
         &ProbeWinStepper,
         &test_config(),
@@ -109,7 +109,7 @@ fn conservative_rollout_probe_can_select_non_first_terminal_win() {
     ];
 
     let selection = choose_rollout_action(
-        CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+        CombatSearchRolloutPluginId::ConservativeNoPotion,
         &test_node(combat.clone()),
         &ProbeWinStepper,
         &test_config(),
@@ -147,7 +147,7 @@ fn conservative_rollout_probe_does_not_rescore_fallback_candidate() {
     let mut performance = RolloutPerformanceCounters::default();
 
     let selection = choose_rollout_action(
-        CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+        CombatSearchRolloutPluginId::ConservativeNoPotion,
         &test_node(combat.clone()),
         &ProbeWinStepper,
         &test_config(),

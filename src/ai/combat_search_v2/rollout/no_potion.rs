@@ -13,7 +13,7 @@ pub(in crate::ai::combat_search_v2) fn conservative_no_potion_rollout(
     performance: &mut RolloutPerformanceCounters,
 ) -> RolloutNodeEstimate {
     no_potion_rollout(
-        CombatSearchV2RolloutPolicy::ConservativeNoPotion,
+        CombatSearchRolloutPluginId::ConservativeNoPotion,
         node,
         stepper,
         config,
@@ -32,7 +32,7 @@ pub(in crate::ai::combat_search_v2) fn phase_aware_no_potion_rollout(
     performance: &mut RolloutPerformanceCounters,
 ) -> RolloutNodeEstimate {
     no_potion_rollout(
-        CombatSearchV2RolloutPolicy::PhaseAwareNoPotion,
+        CombatSearchRolloutPluginId::PhaseAwareNoPotion,
         node,
         stepper,
         config,
@@ -43,7 +43,7 @@ pub(in crate::ai::combat_search_v2) fn phase_aware_no_potion_rollout(
 }
 
 fn no_potion_rollout(
-    policy: CombatSearchV2RolloutPolicy,
+    policy: CombatSearchRolloutPluginId,
     node: &SearchNode,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,

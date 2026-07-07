@@ -27,23 +27,23 @@ pub(super) struct RolloutPolicySelection {
 }
 
 pub(super) fn filtered_rollout_legal_actions(
-    policy: CombatSearchV2RolloutPolicy,
+    plugin: CombatSearchRolloutPluginId,
     legal: Vec<CombatActionChoice>,
     combat: &CombatState,
 ) -> Vec<CombatActionChoice> {
-    match policy {
-        CombatSearchV2RolloutPolicy::Disabled => Vec::new(),
-        CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
-        | CombatSearchV2RolloutPolicy::ConservativeNoPotion
-        | CombatSearchV2RolloutPolicy::PhaseAwareNoPotion
-        | CombatSearchV2RolloutPolicy::TurnBeamNoPotion => {
+    match plugin {
+        CombatSearchRolloutPluginId::Disabled => Vec::new(),
+        CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion
+        | CombatSearchRolloutPluginId::ConservativeNoPotion
+        | CombatSearchRolloutPluginId::PhaseAwareNoPotion
+        | CombatSearchRolloutPluginId::TurnBeamNoPotion => {
             filtered_legal_actions(legal, CombatSearchV2PotionPolicy::Never, combat)
         }
     }
 }
 
 pub(super) fn choose_rollout_action(
-    policy: CombatSearchV2RolloutPolicy,
+    plugin: CombatSearchRolloutPluginId,
     node: &SearchNode,
     stepper: &impl CombatStepper,
     config: &CombatSearchV2Config,
@@ -53,10 +53,10 @@ pub(super) fn choose_rollout_action(
     legal: Vec<CombatActionChoice>,
     performance: &mut RolloutPerformanceCounters,
 ) -> Option<RolloutPolicySelection> {
-    match policy {
-        CombatSearchV2RolloutPolicy::Disabled => None,
-        CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion
-        | CombatSearchV2RolloutPolicy::ConservativeNoPotion => {
+    match plugin {
+        CombatSearchRolloutPluginId::Disabled => None,
+        CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion
+        | CombatSearchRolloutPluginId::ConservativeNoPotion => {
             choose_conservative_no_potion_action(
                 false,
                 node,
@@ -69,7 +69,7 @@ pub(super) fn choose_rollout_action(
                 performance,
             )
         }
-        CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => choose_conservative_no_potion_action(
+        CombatSearchRolloutPluginId::PhaseAwareNoPotion => choose_conservative_no_potion_action(
             true,
             node,
             stepper,
@@ -80,7 +80,7 @@ pub(super) fn choose_rollout_action(
             legal,
             performance,
         ),
-        CombatSearchV2RolloutPolicy::TurnBeamNoPotion => choose_conservative_no_potion_action(
+        CombatSearchRolloutPluginId::TurnBeamNoPotion => choose_conservative_no_potion_action(
             true,
             node,
             stepper,
