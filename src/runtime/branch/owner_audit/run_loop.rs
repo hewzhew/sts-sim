@@ -2,8 +2,8 @@ use super::run_capsule::{RunCapsule, RunCapsuleSave};
 use super::run_deadline::RunDeadline;
 use super::run_slice_request::RunSliceRequest;
 use super::run_slice_result::{
-    frontier_summary_from_branches, FrontierExhausted, FrontierSummary, RealStop, RunSliceResult,
-    RunSliceResultBranchExt, RunStop, SoftPause,
+    frontier_summary_from_branches, objective_satisfied_result, slice_result_from_summary,
+    FrontierExhausted, RunSliceResult, RunStop, SoftPause,
 };
 use super::{branch_frontier, branch_generation, run_stop_recorder, trace, BranchStatus};
 
@@ -92,22 +92,17 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         )? {
             branch_generation::GenerationAdvance::ObjectiveCompleted { branch, artifacts } => {
                 artifact_writes.merge(artifacts);
-                let result = RunSliceResult::new(
+                let result = objective_satisfied_result(
                     args,
                     request_kind,
                     generation_start,
                     generation,
                     next_branch_id,
-                    RunStop::Real(RealStop::ObjectiveSatisfied {
-                        generation,
-                        reason: "objective_satisfied".to_string(),
-                    }),
-                    FrontierSummary::from_statuses(std::iter::once(&branch.status)),
+                    &branch,
+                    artifact_writes,
                     deadline.remaining_ms(),
                     elapsed_ms(started),
-                )
-                .with_artifacts(artifact_writes)
-                .with_selected_branch(&branch);
+                );
                 return finish_slice_result(run_capsule.as_ref(), result);
             }
             branch_generation::GenerationAdvance::Advanced {
@@ -210,7 +205,7 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
             })
         }
     });
-    let mut result = RunSliceResult::new(
+    let result = slice_result_from_summary(
         args,
         request_kind,
         generation_start,
@@ -218,13 +213,11 @@ pub(super) fn run(request: RunSliceRequest) -> Result<RunSliceResult, String> {
         next_branch_id,
         stop,
         summary,
+        selected_branch.as_ref(),
+        artifact_writes,
         deadline.remaining_ms(),
         elapsed_ms(started),
     );
-    if let Some(branch) = selected_branch.as_ref() {
-        result = result.with_selected_branch(branch);
-    }
-    result = result.with_artifacts(artifact_writes);
     finish_slice_result(run_capsule.as_ref(), result)
 }
 

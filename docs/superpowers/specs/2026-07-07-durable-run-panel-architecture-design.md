@@ -62,6 +62,9 @@ Current implementation has established the first durable panel path:
 - `run_persistence.rs` is now limited to recovery/soft-wall persistence;
   objective completion artifact handling lives with branch observation instead
   of the recovery helper.
+- `run_loop.rs` now delegates `RunSliceResult` construction to
+  `owner_audit/run_slice_result.rs`, keeping slice result assembly out of the
+  main expansion loop.
 - `tools/gap_panel.py` is now a deprecated compatibility wrapper over
   `branch_panel`; it no longer owns seed deletion, continuation, or
   `branch_tiny` process orchestration.
@@ -78,7 +81,8 @@ Still open:
   capsule reads are routed through `BranchArtifactStore`, and panel
   ledger/summary rows now consume runtime artifact refs.
 - narrowing the remaining owner-audit facade surface so persistence and
-  run-slice result construction are less mixed with owner/search internals.
+  run-slice result construction continue to stay outside owner/search
+  internals.
 
 ## Problem
 

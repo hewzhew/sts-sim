@@ -72,3 +72,14 @@ fn panel_scheduler_does_not_know_capsule_file_names() {
         );
     }
 }
+
+#[test]
+fn run_loop_delegates_slice_result_construction() {
+    let run_loop = std::fs::read_to_string("src/runtime/branch/owner_audit/run_loop.rs")
+        .expect("read run_loop");
+
+    assert!(
+        !run_loop.contains("RunSliceResult::new"),
+        "run_loop should delegate RunSliceResult construction to run_slice_result helpers"
+    );
+}
