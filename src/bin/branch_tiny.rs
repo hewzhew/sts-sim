@@ -14,6 +14,8 @@ mod branch_model;
 mod branch_observer;
 #[path = "branch_tiny/branch_path.rs"]
 mod branch_path;
+#[path = "branch_tiny/branch_runtime.rs"]
+mod branch_runtime;
 #[path = "branch_tiny/branch_scheduler.rs"]
 mod branch_scheduler;
 #[path = "branch_tiny/branch_status_view.rs"]
@@ -146,5 +148,5 @@ fn run() -> Result<(), String> {
         run_startup::RunStartup::Delegated => return Ok(()),
         run_startup::RunStartup::Ready(context) => context,
     };
-    run_loop::run(context).map(|_| ())
+    branch_runtime::BranchRuntime::run_slice(context).map(|_| ())
 }

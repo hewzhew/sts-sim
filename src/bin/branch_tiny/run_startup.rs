@@ -2,14 +2,9 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use sts_simulator::eval::run_control::{
-    RewardAutomationConfig, RunControlConfig, RunControlSession,
-};
-
 use super::cli_args::{default_combat_gap_case_dir, parse_args};
 use super::run_capsule::RunCapsule;
-use super::run_deadline::RunDeadline;
-use super::{event_owner_probe, frontier_checkpoint, run_chain, runner, Args, Branch};
+use super::{branch_runtime, event_owner_probe, frontier_checkpoint, run_chain, Args, Branch};
 
 pub(super) enum RunStartup {
     Delegated,
@@ -85,7 +80,7 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
         generation_start = checkpoint.generation;
         checkpoint.into_frontier()?
     } else {
-        initial_frontier(args, started)
+        branch_runtime::BranchRuntime::initial_frontier(args, started)
     };
     Ok(RunStartup::Ready(RunStartupContext {
         args,
@@ -99,33 +94,4 @@ pub(super) fn prepare() -> Result<RunStartup, String> {
         next_branch_id,
         started,
     }))
-}
-
-fn initial_frontier(args: Args, started: Instant) -> (VecDeque<Branch>, usize) {
-    let mut session = RunControlSession::new(RunControlConfig {
-        seed: args.seed,
-        ascension_level: args.ascension,
-        reward_automation: RewardAutomationConfig {
-            claim_gold: true,
-            claim_potion_with_empty_slot: true,
-            claim_safe_relic_without_sapphire_key: true,
-        },
-        ..Default::default()
-    });
-    let deadline = RunDeadline::new(started, args.wall_ms);
-    let advance =
-        runner::advance_to_owner_or_gap(&mut session, deadline.cap_args(args, 1), deadline);
-    (
-        VecDeque::from([Branch {
-            id: 0,
-            parent_id: None,
-            path: Vec::new(),
-            session,
-            status: advance.status,
-            combat_portfolio: advance.combat_portfolio,
-            auto_steps: advance.auto_steps,
-            combat_search: advance.combat_search,
-        }]),
-        1usize,
-    )
 }
