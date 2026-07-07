@@ -1,11 +1,10 @@
-use std::fs;
 use std::path::PathBuf;
 use std::process;
 
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use sts_simulator::runtime::branch::{
-    current_source_identity, default_branch_args, Args, PanelScheduler, PanelSeedRequest,
-    PanelSummary, RunContract, RunObjective, SourceIdentity,
+    current_source_identity, default_branch_args, Args, BranchArtifactStore, PanelInspectConfig,
+    PanelSummary, RunObjective, SourceIdentity,
 };
 
 fn main() {
@@ -24,10 +23,9 @@ fn run() -> Result<(), String> {
 }
 
 fn run_inspect(args: InspectArgs) -> Result<(), String> {
-    let summary_path = args.effective_summary_path();
-    let summary =
-        PanelScheduler::summarize_requests(args.panel_requests(current_source_identity())?);
-    write_panel_summary(&summary_path, &summary)?;
+    let store = args.artifact_store();
+    let summary = args.inspect_config(current_source_identity())?.summarize();
+    let summary_path = store.write_panel_summary(args.summary_path.as_deref(), &summary)?;
     print_summary(&summary, &summary_path);
     Ok(())
 }
@@ -142,26 +140,24 @@ impl RawInspectArgs {
 }
 
 impl InspectArgs {
-    fn panel_requests(
-        &self,
-        source_identity: SourceIdentity,
-    ) -> Result<Vec<PanelSeedRequest>, String> {
-        parse_seed_specs(&self.seeds)?
-            .into_iter()
-            .map(|seed| {
-                let args = self.args_for_seed(seed);
-                Ok(PanelSeedRequest {
-                    seed,
-                    capsule_path: self.capsule_root.join(seed.to_string()),
-                    contract: RunContract::from_args(args),
-                    source_identity: source_identity.clone(),
-                })
-            })
-            .collect()
+    fn artifact_store(&self) -> BranchArtifactStore {
+        BranchArtifactStore::new(&self.capsule_root)
     }
 
-    fn args_for_seed(&self, seed: u64) -> Args {
-        let mut args = default_branch_args(seed);
+    fn inspect_config(
+        &self,
+        source_identity: SourceIdentity,
+    ) -> Result<PanelInspectConfig, String> {
+        Ok(PanelInspectConfig {
+            seeds: parse_seed_specs(&self.seeds)?,
+            artifact_store: self.artifact_store(),
+            args_template: self.args_template(),
+            source_identity,
+        })
+    }
+
+    fn args_template(&self) -> Args {
+        let mut args = default_branch_args(0);
         args.ascension = self.ascension;
         args.objective = self.objective;
         args.generations = self.generations;
@@ -176,12 +172,6 @@ impl InspectArgs {
         args.wall_ms = self.wall_ms;
         args.checkpoint_before_combat_portfolio = self.checkpoint_before_combat_portfolio;
         args
-    }
-
-    fn effective_summary_path(&self) -> PathBuf {
-        self.summary_path
-            .clone()
-            .unwrap_or_else(|| self.capsule_root.join("panel_summary.json"))
     }
 }
 
@@ -227,16 +217,6 @@ fn parse_seed(value: &str) -> Result<u64, String> {
     value
         .parse()
         .map_err(|_| format!("invalid seed value: {value}"))
-}
-
-fn write_panel_summary(path: &PathBuf, summary: &PanelSummary) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("failed to create {}: {err}", parent.display()))?;
-    }
-    let text = serde_json::to_string_pretty(summary)
-        .map_err(|err| format!("failed to serialize panel summary: {err}"))?;
-    fs::write(path, text).map_err(|err| format!("failed to write {}: {err}", path.display()))
 }
 
 fn print_summary(summary: &PanelSummary, path: &PathBuf) {
@@ -300,7 +280,7 @@ mod tests {
             git_dirty: Some(false),
         };
 
-        let requests = args.panel_requests(source.clone()).unwrap();
+        let requests = args.inspect_config(source.clone()).unwrap().requests();
 
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].seed, 7);

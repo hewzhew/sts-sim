@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{decide_manifest_reuse, CapsuleReuseDecision, RunContract, SourceIdentity};
+use super::{
+    decide_manifest_reuse, Args, BranchArtifactStore, CapsuleReuseDecision, RunContract,
+    SourceIdentity,
+};
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct PanelSeedArtifacts {
@@ -70,6 +73,14 @@ pub struct PanelSeedResolution {
 }
 
 pub struct PanelScheduler;
+
+#[derive(Clone)]
+pub struct PanelInspectConfig {
+    pub seeds: Vec<u64>,
+    pub artifact_store: BranchArtifactStore,
+    pub args_template: Args,
+    pub source_identity: SourceIdentity,
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PanelArtifactFacts {
@@ -194,6 +205,29 @@ impl PanelScheduler {
                 .map(PanelRow::from_resolution)
                 .collect(),
         )
+    }
+}
+
+impl PanelInspectConfig {
+    pub fn requests(&self) -> Vec<PanelSeedRequest> {
+        self.seeds
+            .iter()
+            .copied()
+            .map(|seed| {
+                let mut args = self.args_template;
+                args.seed = seed;
+                PanelSeedRequest {
+                    seed,
+                    capsule_path: self.artifact_store.capsule_path(seed),
+                    contract: RunContract::from_args(args),
+                    source_identity: self.source_identity.clone(),
+                }
+            })
+            .collect()
+    }
+
+    pub fn summarize(&self) -> PanelSummary {
+        PanelScheduler::summarize_requests(self.requests())
     }
 }
 
@@ -693,5 +727,33 @@ mod tests {
         assert_eq!(summary.counts_by_reuse_decision["reuse_real_stop"], 1);
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn inspect_config_materializes_seed_requests_from_a_template() {
+        let mut template = args(999);
+        template.ascension = 3;
+        template.generations = 9;
+        let source = source_identity();
+        let config = PanelInspectConfig {
+            seeds: vec![7, 8],
+            artifact_store: BranchArtifactStore::new("target/panel-config"),
+            args_template: template,
+            source_identity: source.clone(),
+        };
+
+        let requests = config.requests();
+
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].seed, 7);
+        assert_eq!(
+            requests[0].capsule_path,
+            PathBuf::from("target/panel-config/7")
+        );
+        assert_eq!(requests[0].contract.game.seed, 7);
+        assert_eq!(requests[0].contract.game.ascension, 3);
+        assert_eq!(requests[0].contract.branching.generations, 9);
+        assert_eq!(requests[0].source_identity, source);
+        assert_eq!(requests[1].contract.game.seed, 8);
     }
 }

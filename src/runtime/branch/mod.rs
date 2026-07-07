@@ -1,8 +1,10 @@
+mod artifact_store;
 mod capsule_reuse;
 mod contract;
 mod identity;
 mod panel;
 
+pub use artifact_store::*;
 pub use capsule_reuse::*;
 pub use contract::*;
 pub use identity::*;
