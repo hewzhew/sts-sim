@@ -4,7 +4,7 @@ use crate::ai::combat_state_key::combat_exact_state_key;
 use crate::sim::combat::CombatStepper;
 
 use super::super::*;
-use super::policy::{adaptive_no_potion_rollout_policy, better_rollout_estimate};
+use super::policy::{adaptive_no_potion_rollout_plugin, better_rollout_estimate};
 use super::RolloutCache;
 
 impl RolloutCache {
@@ -51,8 +51,8 @@ impl RolloutCache {
         let estimate = match self.policy {
             CombatSearchRolloutPluginId::Disabled => RolloutNodeEstimate::unevaluated(),
             CombatSearchRolloutPluginId::EnemyMechanicsAdaptiveNoPotion => {
-                match adaptive_no_potion_rollout_policy(node) {
-                    CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => {
+                match adaptive_no_potion_rollout_plugin(node) {
+                    CombatSearchRolloutPluginId::PhaseAwareNoPotion => {
                         rollout::phase_aware_no_potion_rollout(
                             node,
                             stepper,

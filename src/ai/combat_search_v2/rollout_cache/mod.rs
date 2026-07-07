@@ -70,7 +70,7 @@ impl RolloutCache {
 
 #[cfg(test)]
 mod tests {
-    use super::policy::adaptive_no_potion_rollout_policy;
+    use super::policy::adaptive_no_potion_rollout_plugin;
     use super::*;
     use crate::content::monsters::EnemyId;
     use crate::runtime::combat::CombatState;
@@ -83,16 +83,16 @@ mod tests {
         guardian_combat.entities.monsters = vec![test_monster(EnemyId::TheGuardian)];
 
         assert_eq!(
-            adaptive_no_potion_rollout_policy(&test_search_node(guardian_combat)),
-            CombatSearchV2RolloutPolicy::PhaseAwareNoPotion
+            adaptive_no_potion_rollout_plugin(&test_search_node(guardian_combat)),
+            CombatSearchRolloutPluginId::PhaseAwareNoPotion
         );
 
         let mut nob_combat = blank_test_combat();
         nob_combat.entities.monsters = vec![test_monster(EnemyId::GremlinNob)];
 
         assert_eq!(
-            adaptive_no_potion_rollout_policy(&test_search_node(nob_combat)),
-            CombatSearchV2RolloutPolicy::ConservativeNoPotion
+            adaptive_no_potion_rollout_plugin(&test_search_node(nob_combat)),
+            CombatSearchRolloutPluginId::ConservativeNoPotion
         );
     }
 
@@ -102,8 +102,8 @@ mod tests {
         combat.entities.monsters = vec![test_monster(EnemyId::BronzeAutomaton)];
 
         assert_eq!(
-            adaptive_no_potion_rollout_policy(&test_search_node(combat)),
-            CombatSearchV2RolloutPolicy::PhaseAwareNoPotion
+            adaptive_no_potion_rollout_plugin(&test_search_node(combat)),
+            CombatSearchRolloutPluginId::PhaseAwareNoPotion
         );
     }
 
