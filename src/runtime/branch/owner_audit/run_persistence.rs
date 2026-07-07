@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use super::run_capsule::{RunCapsule, RunCapsuleSave};
 use super::run_deadline::RunDeadline;
 use super::run_slice_result::ArtifactWriteSummary;
-use super::{branch_status_view, frontier_checkpoint, render, Args, Branch};
+use super::{frontier_checkpoint, Args, Branch};
 
 pub(super) fn save_context_wall_stop(
     frontier_checkpoint_path: &Option<PathBuf>,
@@ -120,32 +120,4 @@ pub(super) fn print_capsule_save(
             true
         }
     }
-}
-
-pub(super) fn finalize_objective_result(
-    capsule: Option<&RunCapsule>,
-    args: Args,
-    generation: usize,
-    branch: &Branch,
-    reason: &'static str,
-    human_output: bool,
-) -> Result<ArtifactWriteSummary, String> {
-    let mut artifacts = ArtifactWriteSummary::default();
-    if let Some(capsule) = capsule {
-        capsule.save_completed_result(args, generation, branch, reason)?;
-        artifacts.merge(capsule.artifact_writes(RunCapsuleSave::Result));
-        if human_output {
-            println!("run_capsule_result: {}", capsule.result_path().display());
-        }
-    } else {
-        if human_output {
-            println!(
-                "run_objective_completed: reason={} branch={} status={}",
-                reason,
-                branch.id,
-                render::one_line(&branch_status_view::status_boundary_label(&branch.status))
-            );
-        }
-    }
-    Ok(artifacts)
 }

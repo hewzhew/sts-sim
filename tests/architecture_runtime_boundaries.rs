@@ -35,3 +35,19 @@ fn run_capsule_delegates_filesystem_writes_to_capsule_artifact_store() {
         );
     }
 }
+
+#[test]
+fn run_persistence_only_handles_recovery_persistence() {
+    let run_persistence =
+        std::fs::read_to_string("src/runtime/branch/owner_audit/run_persistence.rs")
+            .expect("read run_persistence runtime module");
+
+    assert!(
+        !run_persistence.contains("finalize_objective_result"),
+        "objective completion should be owned by branch observation, not recovery persistence"
+    );
+    assert!(
+        !run_persistence.contains("branch_status_view"),
+        "run_persistence should not format branch status labels"
+    );
+}
