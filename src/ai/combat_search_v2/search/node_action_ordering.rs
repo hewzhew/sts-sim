@@ -17,18 +17,16 @@ pub(super) fn order_node_actions(
     loop_state
         .diagnostics
         .observe_action_equivalence(&equivalence.summary);
-    let action_prior_state_hash = config
+    let plugins = CombatSearchActionOrderingPlugins::from_config(config);
+    let action_prior_state_hash = plugins
         .root_action_prior
-        .as_ref()
         .filter(|prior| !prior.is_empty())
         .map(|_| combat_exact_state_hash_v1(&node.engine, &node.combat));
-    let ordered = order_indexed_action_choices_with_prior(
+    let ordered = order_indexed_action_choices_with_plugins(
         &node.engine,
         &node.combat,
         equivalence.choices,
-        config.root_action_prior.as_ref(),
-        config.phase_guard_policy,
-        config.setup_bias_policy,
+        plugins,
     );
     loop_state
         .diagnostics

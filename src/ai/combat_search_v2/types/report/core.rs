@@ -35,6 +35,8 @@ pub struct CombatSearchV2PolicyReport {
     pub kind: &'static str,
     pub terminal_policy: &'static str,
     pub expansion_order: &'static str,
+    pub action_prior_policy: &'static str,
+    pub phase_guard_policy: &'static str,
     pub frontier_value: &'static str,
     pub frontier_policy: &'static str,
     pub turn_branching: &'static str,
@@ -43,6 +45,7 @@ pub struct CombatSearchV2PolicyReport {
     pub transposition_table: &'static str,
     pub dominance_pruning: &'static str,
     pub rollout_value: &'static str,
+    pub rollout_policy: &'static str,
     pub child_rollout_policy: &'static str,
     pub llm_authority: &'static str,
 }

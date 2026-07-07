@@ -29,19 +29,20 @@ pub(super) struct SearchLoopState {
 
 impl SearchLoopState {
     pub(super) fn new(config: &CombatSearchV2Config) -> Self {
+        let plugins = CombatSearchPluginStack::from_config(config);
         Self {
             stats: CombatSearchV2Stats::default(),
             diagnostics: SearchDiagnosticsCollector::default(),
             exact_transpositions: HashMap::new(),
             dominance: HashMap::new(),
             rollout_cache: RolloutCache::new(
-                config.rollout_policy,
+                plugins.rollout.into(),
                 config.rollout_max_evaluations,
                 config.rollout_max_actions,
                 config.rollout_beam_width,
             ),
             performance: CombatSearchV2PerformanceReport::default(),
-            frontier: FrontierQueue::new(config.frontier_policy),
+            frontier: FrontierQueue::new(plugins.frontier.into()),
             turn_plan_seed_tracker: TurnPlanSeedTracker::default(),
             trajectories: SearchTrajectoryBook::default(),
             unresolved_leaf_count: 0,

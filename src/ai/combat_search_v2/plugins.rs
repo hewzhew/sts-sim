@@ -50,6 +50,24 @@ impl Default for CombatSearchPluginStack {
     }
 }
 
+impl CombatSearchPluginStack {
+    pub fn from_config(config: &CombatSearchV2Config) -> Self {
+        Self {
+            action_prior: config.setup_bias_policy.into(),
+            node_evaluator: CombatSearchNodeEvaluatorPluginId::CombatOutcomeScore,
+            turn_plan: config.turn_plan_policy.into(),
+            child_rollout: config.child_rollout_policy.into(),
+            rollout: config.rollout_policy.into(),
+            frontier: config.frontier_policy.into(),
+            potion: CombatSearchPotionPlugin {
+                policy: config.potion_policy,
+                max_potions_used: config.max_potions_used,
+            },
+            phase_guard: config.phase_guard_policy.into(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CombatSearchPotionPlugin {
     pub policy: CombatSearchV2PotionPolicy,
@@ -172,6 +190,31 @@ pub trait CombatSearchArtifactPlugin {
     fn id(&self) -> CombatSearchArtifactPluginId;
 }
 
+#[derive(Clone, Copy)]
+pub struct CombatSearchActionOrderingPlugins<'a> {
+    pub root_action_prior: Option<&'a super::CombatSearchV2RootActionPrior>,
+    pub action_prior: CombatSearchActionPriorPluginId,
+    pub phase_guard: CombatSearchPhaseGuardPluginId,
+}
+
+impl<'a> CombatSearchActionOrderingPlugins<'a> {
+    pub fn from_config(config: &'a CombatSearchV2Config) -> Self {
+        Self {
+            root_action_prior: config.root_action_prior.as_ref(),
+            action_prior: config.setup_bias_policy.into(),
+            phase_guard: config.phase_guard_policy.into(),
+        }
+    }
+
+    pub fn setup_bias_policy(self) -> CombatSearchV2SetupBiasPolicy {
+        self.action_prior.into()
+    }
+
+    pub fn phase_guard_policy(self) -> CombatSearchV2PhaseGuardPolicy {
+        self.phase_guard.into()
+    }
+}
+
 impl CombatSearchActionPriorPlugin for CombatSearchActionPriorPluginId {
     fn id(&self) -> CombatSearchActionPriorPluginId {
         *self
@@ -284,6 +327,15 @@ impl From<CombatSearchActionPriorPluginId> for CombatSearchV2SetupBiasPolicy {
     }
 }
 
+impl From<CombatSearchV2SetupBiasPolicy> for CombatSearchActionPriorPluginId {
+    fn from(policy: CombatSearchV2SetupBiasPolicy) -> Self {
+        match policy {
+            CombatSearchV2SetupBiasPolicy::Default => Self::Default,
+            CombatSearchV2SetupBiasPolicy::KeyCardOnline => Self::KeyCardOnline,
+        }
+    }
+}
+
 impl From<CombatSearchTurnPlanPluginId> for CombatSearchV2TurnPlanPolicy {
     fn from(plugin: CombatSearchTurnPlanPluginId) -> Self {
         match plugin {
@@ -299,11 +351,35 @@ impl From<CombatSearchTurnPlanPluginId> for CombatSearchV2TurnPlanPolicy {
     }
 }
 
+impl From<CombatSearchV2TurnPlanPolicy> for CombatSearchTurnPlanPluginId {
+    fn from(policy: CombatSearchV2TurnPlanPolicy) -> Self {
+        match policy {
+            CombatSearchV2TurnPlanPolicy::DiagnosticOnly => Self::DiagnosticOnly,
+            CombatSearchV2TurnPlanPolicy::RootFrontierSeed => Self::RootFrontierSeed,
+            CombatSearchV2TurnPlanPolicy::TurnBoundaryFrontierSeed => {
+                Self::TurnBoundaryFrontierSeed
+            }
+            CombatSearchV2TurnPlanPolicy::TacticalEnemyTurnBoundaryFrontierSeed => {
+                Self::TacticalEnemyTurnBoundaryFrontierSeed
+            }
+        }
+    }
+}
+
 impl From<CombatSearchChildRolloutPluginId> for CombatSearchV2ChildRolloutPolicy {
     fn from(plugin: CombatSearchChildRolloutPluginId) -> Self {
         match plugin {
             CombatSearchChildRolloutPluginId::Immediate => Self::Immediate,
             CombatSearchChildRolloutPluginId::LazyOnPop => Self::LazyOnPop,
+        }
+    }
+}
+
+impl From<CombatSearchV2ChildRolloutPolicy> for CombatSearchChildRolloutPluginId {
+    fn from(policy: CombatSearchV2ChildRolloutPolicy) -> Self {
+        match policy {
+            CombatSearchV2ChildRolloutPolicy::Immediate => Self::Immediate,
+            CombatSearchV2ChildRolloutPolicy::LazyOnPop => Self::LazyOnPop,
         }
     }
 }
@@ -322,11 +398,34 @@ impl From<CombatSearchRolloutPluginId> for CombatSearchV2RolloutPolicy {
     }
 }
 
+impl From<CombatSearchV2RolloutPolicy> for CombatSearchRolloutPluginId {
+    fn from(policy: CombatSearchV2RolloutPolicy) -> Self {
+        match policy {
+            CombatSearchV2RolloutPolicy::Disabled => Self::Disabled,
+            CombatSearchV2RolloutPolicy::EnemyMechanicsAdaptiveNoPotion => {
+                Self::EnemyMechanicsAdaptiveNoPotion
+            }
+            CombatSearchV2RolloutPolicy::ConservativeNoPotion => Self::ConservativeNoPotion,
+            CombatSearchV2RolloutPolicy::PhaseAwareNoPotion => Self::PhaseAwareNoPotion,
+            CombatSearchV2RolloutPolicy::TurnBeamNoPotion => Self::TurnBeamNoPotion,
+        }
+    }
+}
+
 impl From<CombatSearchFrontierPluginId> for CombatSearchV2FrontierPolicy {
     fn from(plugin: CombatSearchFrontierPluginId) -> Self {
         match plugin {
             CombatSearchFrontierPluginId::SingleQueue => Self::SingleQueue,
             CombatSearchFrontierPluginId::RoundRobinEvalBuckets => Self::RoundRobinEvalBuckets,
+        }
+    }
+}
+
+impl From<CombatSearchV2FrontierPolicy> for CombatSearchFrontierPluginId {
+    fn from(policy: CombatSearchV2FrontierPolicy) -> Self {
+        match policy {
+            CombatSearchV2FrontierPolicy::SingleQueue => Self::SingleQueue,
+            CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets => Self::RoundRobinEvalBuckets,
         }
     }
 }
@@ -337,6 +436,16 @@ impl From<CombatSearchPhaseGuardPluginId> for CombatSearchV2PhaseGuardPolicy {
             CombatSearchPhaseGuardPluginId::Default => Self::Default,
             CombatSearchPhaseGuardPluginId::ChampSplitGuard => Self::ChampSplitGuard,
             CombatSearchPhaseGuardPluginId::TimeEaterClockHint => Self::TimeEaterClockHint,
+        }
+    }
+}
+
+impl From<CombatSearchV2PhaseGuardPolicy> for CombatSearchPhaseGuardPluginId {
+    fn from(policy: CombatSearchV2PhaseGuardPolicy) -> Self {
+        match policy {
+            CombatSearchV2PhaseGuardPolicy::Default => Self::Default,
+            CombatSearchV2PhaseGuardPolicy::ChampSplitGuard => Self::ChampSplitGuard,
+            CombatSearchV2PhaseGuardPolicy::TimeEaterClockHint => Self::TimeEaterClockHint,
         }
     }
 }
@@ -389,5 +498,49 @@ mod tests {
             acceptance_id(CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse),
             CombatSearchAcceptancePluginId::CleanAcceptedLineNoNewCurse
         );
+    }
+
+    #[test]
+    fn plugin_stack_can_be_projected_from_legacy_config() {
+        let config = CombatSearchV2Config {
+            setup_bias_policy: CombatSearchV2SetupBiasPolicy::KeyCardOnline,
+            phase_guard_policy: CombatSearchV2PhaseGuardPolicy::TimeEaterClockHint,
+            frontier_policy: CombatSearchV2FrontierPolicy::RoundRobinEvalBuckets,
+            rollout_policy: CombatSearchV2RolloutPolicy::TurnBeamNoPotion,
+            child_rollout_policy: CombatSearchV2ChildRolloutPolicy::Immediate,
+            turn_plan_policy: CombatSearchV2TurnPlanPolicy::RootFrontierSeed,
+            potion_policy: CombatSearchV2PotionPolicy::SemanticBudgeted,
+            max_potions_used: Some(2),
+            ..CombatSearchV2Config::default()
+        };
+
+        let stack = CombatSearchPluginStack::from_config(&config);
+
+        assert_eq!(
+            stack.action_prior,
+            CombatSearchActionPriorPluginId::KeyCardOnline
+        );
+        assert_eq!(
+            stack.phase_guard,
+            CombatSearchPhaseGuardPluginId::TimeEaterClockHint
+        );
+        assert_eq!(
+            stack.frontier,
+            CombatSearchFrontierPluginId::RoundRobinEvalBuckets
+        );
+        assert_eq!(stack.rollout, CombatSearchRolloutPluginId::TurnBeamNoPotion);
+        assert_eq!(
+            stack.child_rollout,
+            CombatSearchChildRolloutPluginId::Immediate
+        );
+        assert_eq!(
+            stack.turn_plan,
+            CombatSearchTurnPlanPluginId::RootFrontierSeed
+        );
+        assert_eq!(
+            stack.potion.policy,
+            CombatSearchV2PotionPolicy::SemanticBudgeted
+        );
+        assert_eq!(stack.potion.max_potions_used, Some(2));
     }
 }

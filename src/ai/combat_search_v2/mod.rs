@@ -99,8 +99,9 @@ use action_equivalence::{
 };
 use action_facts::summarize_action_facts_from_step;
 use action_ordering::{
-    order_indexed_action_choices, order_indexed_action_choices_with_prior,
-    ActionOrderingDiagnosticsCollector, ActionOrderingSummary, IndexedActionChoice,
+    order_indexed_action_choices, order_indexed_action_choices_with_plugins,
+    order_indexed_action_choices_with_prior, ActionOrderingDiagnosticsCollector,
+    ActionOrderingSummary, IndexedActionChoice,
 };
 use card_identity::{
     summarize_card_identity, CardIdentityDiagnosticsCollector, CardIdentitySummary,
@@ -171,7 +172,8 @@ pub use line_lab::{
     run_combat_line_lab_from_parent_v0, run_combat_line_lab_v0, CombatLineLabReport,
 };
 pub use plugins::{
-    CombatSearchAcceptancePlugin, CombatSearchAcceptancePluginId, CombatSearchActionPriorPlugin,
+    CombatSearchAcceptancePlugin, CombatSearchAcceptancePluginId,
+    CombatSearchActionOrderingPlugins, CombatSearchActionPriorPlugin,
     CombatSearchActionPriorPluginId, CombatSearchArtifactPlugin, CombatSearchArtifactPluginId,
     CombatSearchBudgetSpec, CombatSearchChildRolloutPlugin, CombatSearchChildRolloutPluginId,
     CombatSearchFrontierPlugin, CombatSearchFrontierPluginId, CombatSearchNodeEvaluatorPlugin,

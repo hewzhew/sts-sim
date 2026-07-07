@@ -58,7 +58,26 @@ pub(super) fn order_indexed_action_choices_with_prior(
     phase_guard_policy: CombatSearchV2PhaseGuardPolicy,
     setup_bias_policy: CombatSearchV2SetupBiasPolicy,
 ) -> ActionOrderingResult {
-    let exact_state_hash = root_action_prior
+    order_indexed_action_choices_with_plugins(
+        engine,
+        combat,
+        choices,
+        CombatSearchActionOrderingPlugins {
+            root_action_prior,
+            phase_guard: phase_guard_policy.into(),
+            action_prior: setup_bias_policy.into(),
+        },
+    )
+}
+
+pub(super) fn order_indexed_action_choices_with_plugins(
+    engine: &EngineState,
+    combat: &CombatState,
+    choices: Vec<IndexedActionChoice>,
+    plugins: CombatSearchActionOrderingPlugins<'_>,
+) -> ActionOrderingResult {
+    let exact_state_hash = plugins
+        .root_action_prior
         .filter(|prior| !prior.is_empty())
         .map(|_| combat_exact_state_hash_v1(engine, combat));
     let mut entries = choices
@@ -66,15 +85,16 @@ pub(super) fn order_indexed_action_choices_with_prior(
         .map(|indexed| ActionOrderingEntry {
             original_action_id: indexed.original_action_id,
             root_action_prior_score: exact_state_hash.as_ref().and_then(|state_hash| {
-                root_action_prior
+                plugins
+                    .root_action_prior
                     .and_then(|prior| prior.score(state_hash, &indexed.choice.action_key))
             }),
             priority: priority_for_input(
                 engine,
                 combat,
                 &indexed.choice.input,
-                phase_guard_policy,
-                setup_bias_policy,
+                plugins.phase_guard_policy(),
+                plugins.setup_bias_policy(),
             ),
             choice: indexed.choice,
         })
